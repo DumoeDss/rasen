@@ -219,7 +219,7 @@ export interface SetupStoreInput {
   remote?: string;
 }
 
-export interface RegisterExistingStoreInput {
+export interface RegisterExistingStoreInput extends StorePathOptions {
   path?: string;
   id?: string;
   allowCreateIdentity?: boolean;
@@ -596,7 +596,8 @@ function mutationPayload(
   createdFiles: string[],
   registry: { registered: boolean; alreadyRegistered: boolean },
   diagnostics: StoreDiagnostic[] = [],
-  remotes?: { canonical?: string; observed?: string }
+  remotes?: { canonical?: string; observed?: string },
+  pathOptions: StorePathOptions = {}
 ): StoreMutationResult {
   return {
     store: {
@@ -606,7 +607,7 @@ function mutationPayload(
     },
     ...(remotes && (remotes.canonical || remotes.observed) ? { remotes } : {}),
     registryCommit: {
-      path: getStoreRegistryPath(),
+      path: getStoreRegistryPath(pathOptions),
       registered: registry.registered,
       alreadyRegistered: registry.alreadyRegistered,
     },
@@ -945,6 +946,8 @@ export async function setupStore(
 export async function registerExistingStore(
   input: RegisterExistingStoreInput
 ): Promise<StoreMutationResult> {
+  const pathOptions: StorePathOptions =
+    input.globalDataDir !== undefined ? { globalDataDir: input.globalDataDir } : {};
   const storeRoot = resolveRegisterRoot(input.path);
   const kind = await pathKind(storeRoot);
 
@@ -1002,7 +1005,7 @@ export async function registerExistingStore(
   if (metadata && explicitId !== undefined && metadata.id !== explicitId) {
     // The fix must account for whether the metadata id is already registered,
     // so following it never lands on the already-registered error.
-    const currentRegistry = await readStoreRegistryState();
+    const currentRegistry = await readStoreRegistryState(pathOptions);
     const registeredElsewhere =
       findRegistryEntryKeys(currentRegistry, type, metadata.id).length > 0 &&
       !isRegisteredAtPath(currentRegistry, metadata.id, storeRoot, type);
@@ -1032,7 +1035,7 @@ export async function registerExistingStore(
   }
 
   const backend = await resolveBackendWithObservedOrigin(storeRoot);
-  const registry = await readStoreRegistryState();
+  const registry = await readStoreRegistryState(pathOptions);
   // The checkout's own permanent identity decides what collides: with it, a
   // repeated display name is no longer a conflict (two stores may share one —
   // resolving it is what reports ambiguity), while a SECOND checkout of the
@@ -1068,6 +1071,7 @@ export async function registerExistingStore(
     backend,
     writeMetadataIfMissing: true,
     type,
+    ...pathOptions,
   });
   if (registered.metadataCreated) {
     createdFiles.push('.rasen-store/store.yaml');
@@ -1098,7 +1102,7 @@ export async function registerExistingStore(
   }, diagnostics, {
     ...(metadata?.remote ? { canonical: metadata.remote } : {}),
     ...(backend.remote ? { observed: backend.remote } : {}),
-  });
+  }, pathOptions);
 }
 
 /**

@@ -810,6 +810,41 @@ export async function readStoreMetadataState(
   );
 }
 
+/**
+ * Discriminated probe of whether a Store root carries readable metadata.
+ * Routing decisions (Store-first vs Project-first) and post-clone identity
+ * verification both consume this: the spec's fail-closed rule turns an
+ * unreadable metadata file into a blocked report, never a silent fallthrough
+ * to "no Store here".
+ *
+ * Reuses `resolveReadableStoreMetadataPath` (modern first, legacy second) so
+ * both locations are covered without duplicating the precedence the rest of
+ * the codebase already agrees on. A file that exists but fails to parse is
+ * `unreadable`, distinct from `absent`: collapsing them would tell a user
+ * their Store is not a Store.
+ */
+export type StoreMetadataProbe =
+  | { kind: 'absent' }
+  | { kind: 'valid'; metadata: StoreMetadataState; path: string }
+  | { kind: 'unreadable'; path: string; failure: unknown };
+
+export async function probeStoreMetadataState(
+  storeRoot: string
+): Promise<StoreMetadataProbe> {
+  const readablePath = await resolveReadableStoreMetadataPath(storeRoot);
+  if (!(await pathIsFile(readablePath))) {
+    return { kind: 'absent' };
+  }
+  try {
+    const metadata = parseStoreMetadataState(
+      await fs.readFile(readablePath, 'utf-8')
+    );
+    return { kind: 'valid', metadata, path: readablePath };
+  } catch (failure) {
+    return { kind: 'unreadable', path: readablePath, failure };
+  }
+}
+
 export async function readOptionalStoreMetadataState(
   storeRoot: string
 ): Promise<StoreMetadataState | null> {

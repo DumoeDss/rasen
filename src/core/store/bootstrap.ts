@@ -38,6 +38,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { reportConfigDiagnostic } from '../config-diagnostics.js';
@@ -76,6 +77,7 @@ import {
   getStoreMetadataPath,
   getStoreRegistryPath,
   listStoreRegistryEntries,
+  probeStoreMetadataState,
   readOptionalStoreMetadataState,
   readStoreRegistryState,
   storeMetadataUid,
@@ -1500,61 +1502,198 @@ async function prepareDeclaredBundleImports(
  * project obtain flows route through it, so a future change to the guard
  * cannot fix one and miss the other.
  *
- * Returns `{ ok: true }` on success, or `{ ok: false, targetExistedBefore }`
- * on failure (the cleanup decision has already been executed and reported).
- * Failures are pushed to `diagnostics` by this function; the caller sets the
- * entry's action.
+ * Each call clones into a per-call STAGING directory that is a sibling of
+ * `target` (same filesystem, so the publish rename is atomic). On failure
+ * the staging dir alone is removed — `target` is NEVER touched, which is
+ * the provable-creation guarantee: no concurrent process's successful
+ * checkout can be deleted by this one's failure (finding B3).
+ *
+ * Returns `{ ok: true, stagingPath }` on success, or `{ ok: false }` on
+ * failure (the staging cleanup has already been executed). Failures are
+ * pushed to `diagnostics`; the caller sets the entry's action.
  */
 async function cloneWithCleanupGuard(
   remote: string,
   target: string,
   diagnostics: StoreDiagnostic[]
-): Promise<{ ok: true } | { ok: false; targetExistedBefore: boolean }> {
-  // PROVENANCE PROOF — THE data-destruction guard's evidence. Record whether
-  // the target existed BEFORE the clone attempt. This is the single piece of
-  // evidence the cleanup guard consumes at clone-failure time. If the
-  // directory did not exist before this run → safe to remove on failure. If
-  // it pre-existed → leave untouched, always.
-  const targetExistedBefore = fs.existsSync(target);
-
+): Promise<{ ok: true; stagingPath: string } | { ok: false }> {
+  const stagingPath = buildStagingPath(target);
   try {
-    await cloneRepository(remote, target);
-    return { ok: true };
+    await cloneRepository(remote, stagingPath);
+    return { ok: true, stagingPath };
   } catch (failure) {
-    // FAILED-RETRIEVAL CLEANUP — THE data-destruction guard's action.
-    if (!targetExistedBefore) {
-      // This run created (or attempted to create) the directory. Removing it
-      // restores the pre-run state — the directory contained only the failed
-      // clone attempt.
-      try {
-        fs.rmSync(target, { recursive: true, force: true });
-      } catch (cleanupFailure) {
-        diagnostics.push(...diagnosticsFor(cleanupFailure));
-      }
+    // FAILED-RETRIEVAL CLEANUP — delete ONLY this transaction's own staging
+    // directory. The target is never touched at this stage: it is either
+    // absent (the ordinary case selectBootstrapLocation accepted), or it is
+    // a pre-existing directory that belongs to the user or to another
+    // process's already-published checkout. Either way, it is not ours to
+    // delete.
+    try {
+      fs.rmSync(stagingPath, { recursive: true, force: true });
+    } catch (cleanupFailure) {
+      diagnostics.push(...diagnosticsFor(cleanupFailure));
     }
-    // If `targetExistedBefore` is true, leave the directory exactly as it is.
-    // A half-corrupted clone in a pre-existing directory is the user's to
-    // diagnose, not bootstrap's to "fix" by deleting.
     diagnostics.push(...diagnosticsFor(failure));
-    if (targetExistedBefore) {
-      diagnostics.push({
-        severity: 'warning',
-        code: 'bootstrap_obtain_target_preserved',
-        message: `The directory at ${target} pre-existed and was left untouched. Inspect it manually before retrying.`,
-        target: 'store.root',
-      });
-    }
-    return { ok: false, targetExistedBefore };
+    return { ok: false };
   }
 }
 
 /**
- * THE obtain step (design D3, D5). Clones a declared Store from its remote,
- * registers the checkout, and governs failed-retrieval cleanup by a
- * provable-creation guard. The cleanup proof (`fs.existsSync` recorded BEFORE
- * the clone) and the cleanup decision are in THIS function — the proof does
- * not cross a module boundary where a future change could consume it without
- * establishing it.
+ * Staging directory path: a sibling of `target` in the SAME parent directory,
+ * so `fs.rename(staging, target)` is a same-filesystem atomic move. The name
+ * carries the pid and random suffix so two concurrent clones into the same
+ * absent target get distinct staging dirs (finding B3).
+ */
+function buildStagingPath(target: string): string {
+  const rand = randomBytes(6).toString('hex');
+  return `${target}.rasen-stage.${process.pid}.${rand}`;
+}
+
+/**
+ * Publishes a staged checkout by atomically renaming the staging directory
+ * into place as `target`. On POSIX `rename(2)` onto a non-empty directory
+ * fails with ENOTEMPTY; on Windows `fs.rename` onto an existing directory
+ * fails with EPERM (from `MoveFileEx`'s `ERROR_ACCESS_DENIED`), or
+ * EEXIST/ENOTEMPTY depending on the Windows and Node version. Two cases
+ * therefore surface as EPERM/EEXIST/ENOTEMPTY:
+ *
+ *   1. Another process won the race and already published `target`.
+ *   2. (Windows only) `target` is a pre-existing EMPTY directory that
+ *      `selectBootstrapLocation` accepted as `usable`. POSIX silently
+ *      replaces an empty dir on rename; Windows `MoveFileEx` cannot.
+ *
+ * Case 2 is recovered here: if `target` is an empty directory it is removed
+ * via `fs.rmdir` — which FAILS with ENOTEMPTY on a non-empty directory, so no
+ * content can be lost — and the rename is retried. Only when the retry still
+ * fails (someone filled `target` between the check and the rmdir), or when
+ * `target` is non-empty, does the function fall through to the race-loser
+ * diagnostic. In every failure case the staging dir is LEFT IN PLACE (never
+ * deleted) so the user can inspect or manually move it (finding B3).
+ *
+ * Returns `true` when the publish succeeded and `false` when another process
+ * won the race or the move failed; in the `false` case the staging dir is
+ * LEFT IN PLACE (never deleted) so the user can inspect or manually move it.
+ */
+async function publishStagedCheckout(
+  stagingPath: string,
+  target: string,
+  diagnostics: StoreDiagnostic[]
+): Promise<boolean> {
+  try {
+    await fs.promises.rename(stagingPath, target);
+    return true;
+  } catch (error) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? (error as NodeJS.ErrnoException).code
+        : undefined;
+    // EEXIST/ENOTEMPTY/EPERM all indicate "target exists as a directory" on
+    // Windows (EPERM is MoveFileEx's ERROR_ACCESS_DENIED for a directory
+    // rename over an existing directory). Either another process published
+    // first, OR `target` is a pre-existing EMPTY directory that
+    // `selectBootstrapLocation` accepted as `usable`. The safe empty-dir
+    // recovery is attempted before reporting a race; `tryClearEmptyTargetDir`
+    // only removes a directory that is provably empty at rmdir time, so if
+    // another process fills `target` between the readdir and the rmdir the
+    // rmdir fails with ENOTEMPTY and we fall through to the race-loser
+    // diagnostic below.
+    if (!isPublishBlockedCode(code)) {
+      diagnostics.push({
+        severity: 'warning',
+        code: 'bootstrap_obtain_publish_failed',
+        message:
+          `Publishing ${stagingPath} to ${target} failed (${code ?? 'unknown error'}: ${(error as Error).message}). The staging directory was left in place.`,
+        target: 'store.root',
+        fix: `Inspect ${stagingPath} and move it manually, or remove it: rm -rf ${pasteablePath(stagingPath)}`,
+      });
+      return false;
+    }
+    if (await tryClearEmptyTargetDir(target)) {
+      try {
+        await fs.promises.rename(stagingPath, target);
+        return true;
+      } catch (retryError) {
+        const retryCode =
+          typeof retryError === 'object' && retryError !== null && 'code' in retryError
+            ? (retryError as NodeJS.ErrnoException).code
+            : undefined;
+        if (!isPublishBlockedCode(retryCode)) {
+          diagnostics.push({
+            severity: 'warning',
+            code: 'bootstrap_obtain_publish_failed',
+            message:
+              `Publishing ${stagingPath} to ${target} failed after clearing an empty target directory (${retryCode ?? 'unknown error'}: ${(retryError as Error).message}). The staging directory was left in place.`,
+            target: 'store.root',
+            fix: `Inspect ${stagingPath} and move it manually, or remove it: rm -rf ${pasteablePath(stagingPath)}`,
+          });
+          return false;
+        }
+        // Retry still blocked — a real race occurred between the rmdir and the
+        // retry. Fall through to the race-loser diagnostic.
+      }
+    }
+    diagnostics.push({
+      severity: 'warning',
+      code: 'bootstrap_obtain_publish_lost_race',
+      message:
+        `Another process published ${target} first. The staging directory ${stagingPath} was left in place for inspection.`,
+      target: 'store.root',
+      fix: `Remove the staging directory if not needed: rm -rf ${pasteablePath(stagingPath)}`,
+    });
+    return false;
+  }
+}
+
+/**
+ * The errno codes that indicate "target exists as a directory" on Windows
+ * (and "target is a non-empty directory" on POSIX for ENOTEMPTY). EPERM comes
+ * from `MoveFileEx`'s `ERROR_ACCESS_DENIED` when renaming a directory over an
+ * existing directory; EEXIST/ENOTEMPTY appear on some Windows + Node version
+ * combinations. All three are candidates for the empty-dir recovery path.
+ */
+function isPublishBlockedCode(
+  code: string | undefined
+): code is 'EEXIST' | 'ENOTEMPTY' | 'EPERM' {
+  return code === 'EEXIST' || code === 'ENOTEMPTY' || code === 'EPERM';
+}
+
+/**
+ * Removes `target` only when it is provably an EMPTY directory. Returns true
+ * when the directory was removed and false in every other case (target does
+ * not exist, is not a directory, is a non-empty directory, or any IO call
+ * failed). Combined with the caller's EPERM/EEXIST/ENOTEMPTY gate, the ONLY
+ * path that removes anything is the empty-dir path — `fs.rmdir` itself fails
+ * with ENOTEMPTY on a non-empty directory, so even a race that fills `target`
+ * between the readdir and the rmdir cannot lose content.
+ */
+async function tryClearEmptyTargetDir(target: string): Promise<boolean> {
+  try {
+    const stat = await fs.promises.stat(target);
+    if (!stat.isDirectory()) return false;
+    const entries = await fs.promises.readdir(target);
+    if (entries.length > 0) return false;
+    await fs.promises.rmdir(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * THE obtain step (design D3, D5). Clones a declared Store from its remote
+ * into an exclusive staging directory, verifies the clone's identity (B4),
+ * atomically publishes the staging dir into place (B3), and registers the
+ * result (M2 threads `globalDataDir`).
+ *
+ * The data-destruction guarantee is the staging-dir exclusivity introduced in
+ * B3: each call clones into a per-call sibling of `target` (same filesystem,
+ * so the publish rename is atomic), and on failure cleanup only ever removes
+ * that staging dir — `target` is never touched at the clone stage, so no
+ * concurrent process's successful publish can be deleted by this one's
+ * failure. The cleanup decision lives in `cloneWithCleanupGuard` and
+ * `publishStagedCheckout`, the two places that own the staging dir's
+ * lifecycle; the guarantee does not cross a module boundary where a future
+ * change could consume it without establishing it.
  *
  * Returns the outcome, mutates `entry` in place (action, class, root, repair,
  * diagnostics). Never throws — failures are pushed as diagnostics so the
@@ -1620,19 +1759,76 @@ async function obtainAbsentStore(
     return 'declined';
   }
 
-  // Clone through the shared cleanup guard — the proof and the cleanup
-  // decision are in `cloneWithCleanupGuard`, the single place the
-  // data-destruction guard lives.
+  // Clone through the shared cleanup guard into an exclusive staging
+  // directory. The cleanup decision is in `cloneWithCleanupGuard`, the single
+  // place the data-destruction guard lives.
   const result = await cloneWithCleanupGuard(rawRemote, location.path, entry.diagnostics);
   if (!result.ok) {
     entry.action = 'obtain-failed';
     return 'obtain-failed';
   }
 
-  // Clone succeeded. Register through the same path E2 uses for a
-  // present-unregistered Store.
+  // B4 — Identity verification (canonical spec: "A mismatched checkout writes
+  // nothing"). Re-read the clone's Store metadata from the staging dir and
+  // compare its permanent UID against what the project declared. Missing,
+  // unreadable, or mismatched identity fails closed: the registry is never
+  // written, the staging dir is LEFT IN PLACE for inspection, and the target
+  // is never created (no publish). The rare alias-only path
+  // (`entry.uid === undefined`) skips this check and proceeds; register's own
+  // identity-confirmation gate still applies.
+  if (entry.uid !== undefined) {
+    const probe = await probeStoreMetadataState(result.stagingPath);
+    if (
+      probe.kind === 'absent' ||
+      probe.kind === 'unreadable' ||
+      !storeUidsMatch(storeMetadataUid(probe.metadata), entry.uid)
+    ) {
+      entry.action = 'obtain-failed';
+      const reason =
+        probe.kind === 'absent'
+          ? 'carries no Store metadata file'
+          : probe.kind === 'unreadable'
+            ? `has unreadable Store metadata at ${probe.path}`
+            : `identifies as '${storeMetadataUid(probe.metadata) ?? '(none)'}'`;
+      entry.diagnostics.push({
+        severity: 'error',
+        code: 'bootstrap_obtain_identity_mismatch',
+        message:
+          `The cloned Store at ${result.stagingPath} ${reason}, but the project declared '${entry.uid}'. The checkout was left in place for inspection.`,
+        target: 'store.uid',
+      });
+      entry.diagnostics.push({
+        severity: 'warning',
+        code: 'bootstrap_obtain_clone_identity_unverified',
+        message:
+          `The staging directory ${result.stagingPath} was not published. Inspect it, then remove it: rm -rf ${pasteablePath(result.stagingPath)}`,
+        target: 'store.root',
+      });
+      return 'obtain-failed';
+    }
+  }
+
+  // B3 — Publish: atomically rename the staging dir into place as the target.
+  // EEXIST/ENOTEMPTY means another process won the race; the staging dir is
+  // kept for inspection.
+  const published = await publishStagedCheckout(
+    result.stagingPath,
+    location.path,
+    entry.diagnostics
+  );
+  if (!published) {
+    entry.action = 'obtain-failed';
+    return 'obtain-failed';
+  }
+
+  // Clone succeeded and was published. Register through the same path E2 uses
+  // for a present-unregistered Store. Thread `globalDataDir` so the registry
+  // write goes where bootstrap was told the registry lives (M2).
   try {
-    await registerExistingStore({ path: location.path });
+    await registerExistingStore({
+      path: location.path,
+      ...(input.globalDataDir !== undefined ? { globalDataDir: input.globalDataDir } : {}),
+    });
   } catch (failure) {
     // The clone succeeded but registration failed. The checkout IS there —
     // report the failure but do NOT remove the checkout. A valid clone is
@@ -1821,7 +2017,10 @@ async function applyProjectFirstActions(
     }
 
     try {
-      await registerExistingStore({ path: entry.root });
+      await registerExistingStore({
+        path: entry.root,
+        ...(input.globalDataDir !== undefined ? { globalDataDir: input.globalDataDir } : {}),
+      });
       entry.action = 'registered';
       entry.alreadyRegistered = false;
       // The Store is now registered — its class moves to verified, and no
@@ -2604,7 +2803,10 @@ async function buildStoreFirstReport(
     // invoking apply (the Store is what the user is running bootstrap from).
     if (registered === undefined) {
       try {
-        await registerExistingStore({ path: canonicalRoot });
+        await registerExistingStore({
+          path: canonicalRoot,
+          ...(input.globalDataDir !== undefined ? { globalDataDir: input.globalDataDir } : {}),
+        });
         storeRegisteredAfterApply = true;
       } catch (failure) {
         // Idempotent on rerun: if already registered, this is a no-op.
@@ -2706,7 +2908,7 @@ async function buildStoreFirstReport(
         continue;
       }
 
-      // Clone with the shared cleanup guard.
+      // Clone with the shared cleanup guard into an exclusive staging dir.
       const result = await cloneWithCleanupGuard(
         rawRemote,
         location.path,
@@ -2717,25 +2919,58 @@ async function buildStoreFirstReport(
         continue;
       }
 
-      // Identity verification (design D4, task 6.6): re-read the cloned
-      // project's own config and verify its projectId matches what the Store
-      // recorded. A mismatch means the remote held a different project than
-      // expected — the checkout is left in place (it is valid data the user
-      // may want to inspect), and the mismatch is reported.
-      const clonedConfig = readProjectConfig(location.path);
-      const clonedProjectId = clonedConfig?.projectId;
+      // M1 — Identity verification (canonical spec: "A checkout that turns out
+      // to be a different Store SHALL fail without writing anything"). Re-read
+      // the cloned project's own config from the staging dir and verify its
+      // projectId matches what the Store recorded. Missing, unreadable, or
+      // mismatched identity fails closed: the registry is never written, the
+      // staging dir is LEFT IN PLACE, and the target is never created.
+      let clonedProjectId: string | undefined;
+      let clonedConfigReadable = true;
+      try {
+        const clonedConfig = readProjectConfig(result.stagingPath);
+        clonedProjectId = clonedConfig?.projectId;
+      } catch {
+        clonedConfigReadable = false;
+      }
+
       if (
-        clonedProjectId !== undefined &&
+        !clonedConfigReadable ||
+        clonedProjectId === undefined ||
         normalizeProjectIdentity(clonedProjectId) !==
           normalizeProjectIdentity(project.projectId)
       ) {
         project.action = 'obtain-failed';
+        const reason = !clonedConfigReadable
+          ? 'has an unreadable project config'
+          : clonedProjectId === undefined
+            ? 'does not declare a project identity'
+            : `identifies as '${clonedProjectId}'`;
         project.diagnostics.push({
           severity: 'error',
           code: 'bootstrap_obtain_identity_mismatch',
-          message: `The cloned project at ${location.path} identifies as '${clonedProjectId}' but the Store recorded it as '${project.projectId}'. The checkout was left in place for inspection.`,
+          message:
+            `The cloned project at ${result.stagingPath} ${reason}, but the Store recorded it as '${project.projectId}'. The checkout was left in place for inspection.`,
           target: 'project.projectId',
         });
+        project.diagnostics.push({
+          severity: 'warning',
+          code: 'bootstrap_obtain_clone_identity_unverified',
+          message:
+            `The staging directory ${result.stagingPath} was not published. Inspect it, then remove it: rm -rf ${pasteablePath(result.stagingPath)}`,
+          target: 'project.root',
+        });
+        continue;
+      }
+
+      // B3 — Publish: atomically rename the staging dir into place.
+      const published = await publishStagedCheckout(
+        result.stagingPath,
+        location.path,
+        project.diagnostics
+      );
+      if (!published) {
+        project.action = 'obtain-failed';
         continue;
       }
 
@@ -2931,9 +3166,25 @@ function findLocalProject(
  */
 export async function buildBootstrapReport(input: BootstrapInput): Promise<BootstrapReport> {
   const root = findBootstrapRoot(input.cwd);
-  const metadata = await readOptionalStoreMetadataState(root).catch(() => null);
-  if (metadata !== null || fs.existsSync(getStoreMetadataDir(root))) {
+  // M11 — Route on the metadata probe, not a `.catch(() => null)` plus a
+  // modern-only dir check. A corrupt legacy-only `.openspec-store/store.yaml`
+  // is `unreadable` (not `absent`): the spec says "machine state that cannot
+  // be read is reported, not crashed on" — so routing falls through to a
+  // blocked report naming the file, never to Project-first `complete`.
+  const probe = await probeStoreMetadataState(root);
+  if (probe.kind === 'valid') {
     return buildStoreFirstReport(input, root);
+  }
+  if (probe.kind === 'unreadable') {
+    return {
+      mode: input.mode,
+      origin: 'store',
+      state: 'blocked',
+      stores: [],
+      projects: [],
+      problems: [unreadableState(probe.path, probe.failure)],
+      diagnostics: [],
+    };
   }
   return buildProjectReport(input);
 }

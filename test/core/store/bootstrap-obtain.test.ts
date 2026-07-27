@@ -11,6 +11,7 @@ import {
   updateProjectConfigKey,
 } from '../../../src/core/project-config.js';
 import {
+  allBootstrapDiagnostics,
   buildBootstrapReport,
   selectBootstrapLocation,
   type BootstrapConsent,
@@ -254,9 +255,9 @@ describe('failed-retrieval cleanup — THE data-destruction guard (design D2, D5
   it('guard preserves a pre-existing EMPTY directory when the clone fails through the apply path', async () => {
     // An empty pre-existing directory passes `selectBootstrapLocation` (returns
     // `usable`), so the clone ACTUALLY RUNS through `cloneWithCleanupGuard`.
-    // The guard records `targetExistedBefore = true`, the clone fails, and the
-    // guard leaves the directory untouched. This is the guard's preservation
-    // path — the test that proves it works end-to-end.
+    // In the staging-dir design (B3), the clone goes into a staging sibling,
+    // the clone fails, the staging is cleaned up, and the target (empty
+    // pre-existing dir) is NEVER touched at any step.
     const project = makeProject('project');
     updateProjectConfigKey(project, 'store', {
       uid: '11111111-2222-4333-8444-555555666666',
@@ -279,18 +280,18 @@ describe('failed-retrieval cleanup — THE data-destruction guard (design D2, D5
 
     const entry = entryFor(report, 'fail-store');
     expect(entry.action).toBe('obtain-failed');
-    // The guard pushed the "target pre-existed" warning — proof it ran.
-    expect(
-      entry.diagnostics.some((d) => d.code === 'bootstrap_obtain_target_preserved')
-    ).toBe(true);
-    // THE guard assertion: the pre-existing directory survives.
+    // THE guard assertion: the pre-existing directory survives untouched.
     expect(fs.existsSync(target)).toBe(true);
+    // No staging dir is left behind.
+    const siblings = fs.readdirSync(path.dirname(target));
+    expect(siblings.some((s) => s.includes('.rasen-stage.'))).toBe(false);
   });
 
-  it('guard cleans up a self-created directory when the clone fails through the apply path', async () => {
+  it('guard cleans up the staging dir when the clone fails, target is never created', async () => {
     // Converse of the preservation test: when the target did NOT exist before
-    // this run, the clone creates (or attempts to create) the directory, and
-    // the guard removes it on failure — restoring the pre-run state.
+    // this run, the clone goes into a staging sibling, the clone fails, and
+    // the staging dir is removed. The target is NEVER created — only the
+    // staging existed, and it is cleaned up.
     const project = makeProject('project');
     updateProjectConfigKey(project, 'store', {
       uid: '11111111-2222-4333-8444-555555666666',
@@ -298,7 +299,7 @@ describe('failed-retrieval cleanup — THE data-destruction guard (design D2, D5
       remote: path.join(tempDir, 'nonexistent-remote'),
     });
 
-    // Target does NOT exist — guard records targetExistedBefore = false.
+    // Target does NOT exist.
     const target = path.join(tempDir, 'self-created');
     expect(fs.existsSync(target)).toBe(false);
 
@@ -312,10 +313,14 @@ describe('failed-retrieval cleanup — THE data-destruction guard (design D2, D5
 
     const entry = entryFor(report, 'fail-store');
     expect(entry.action).toBe('obtain-failed');
-    // THE guard assertion: no directory is left behind from the failed clone.
-    // (If git created the directory before failing, the guard removed it.
-    // If git didn't create it, it was never there. Either way: clean.)
+    // THE guard assertion: the target was never created.
     expect(fs.existsSync(target)).toBe(false);
+    // No staging dir is left behind.
+    const parent = path.dirname(target);
+    if (fs.existsSync(parent)) {
+      const siblings = fs.readdirSync(parent);
+      expect(siblings.some((s) => s.includes('.rasen-stage.'))).toBe(false);
+    }
   });
 });
 
@@ -790,4 +795,477 @@ describe('acceptance: two-machine fixture with clone remotes', () => {
     // Never uses exec (shell).
     expect(source).not.toMatch(/\bexec\b(?!File)/);
   });
+});
+
+// -----------------------------------------------------------------------------
+// Group 10: B4 — Store clone identity verification (fail-closed, zero-write)
+// -----------------------------------------------------------------------------
+
+describe('B4 — Store obtain identity verification', () => {
+  it('fails closed when the cloned Store UID does not match the declared UID', async () => {
+    // The project declares Store A (by UID), but the remote holds Store B.
+    const wrongStore = await makeRemoteStore('wrong-identity-store');
+    const project = makeProject('project');
+    updateProjectConfigKey(project, 'store', {
+      uid: '00000000-0000-4000-8000-000000000000',
+      id: 'expected-store',
+      remote: wrongStore.remote,
+    });
+
+    const target = path.join(tempDir, 'obtained');
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([['expected-store', target]]),
+      consent: blanketConsent,
+    });
+
+    const entry = entryFor(report, 'expected-store');
+    expect(entry.action).toBe('obtain-failed');
+    // Registry zero-write: no entry was committed.
+    const registryPath = getStoreRegistryPath({ globalDataDir });
+    const registryContent = fs.existsSync(registryPath)
+      ? fs.readFileSync(registryPath, 'utf-8')
+      : '';
+    expect(registryContent).not.toContain(wrongStore.uid);
+    expect(registryContent).not.toContain('expected-store');
+    // Target was never created (no publish).
+    expect(fs.existsSync(target)).toBe(false);
+    // Diagnostic names the identity mismatch.
+    expect(
+      entry.diagnostics.some((d) => d.code === 'bootstrap_obtain_identity_mismatch')
+    ).toBe(true);
+    expect(
+      entry.diagnostics.some((d) => d.code === 'bootstrap_obtain_clone_identity_unverified')
+    ).toBe(true);
+  });
+
+  it('fails closed when the cloned Store has no metadata file at all (missing UID)', async () => {
+    // Clone a repo that has no Store metadata.
+    const bareRemoteRoot = path.join(tempDir, 'bare-remote');
+    createOpenSpecRoot(bareRemoteRoot);
+    await execFileAsync('git', ['init'], { cwd: bareRemoteRoot });
+    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: bareRemoteRoot });
+    await execFileAsync('git', ['config', 'user.email', 'test@test.test'], { cwd: bareRemoteRoot });
+    await execFileAsync('git', ['add', '-A'], { cwd: bareRemoteRoot });
+    await execFileAsync('git', ['commit', '-m', 'init'], { cwd: bareRemoteRoot });
+
+    const project = makeProject('project');
+    updateProjectConfigKey(project, 'store', {
+      uid: '11111111-2222-4333-8444-555555666666',
+      id: 'expected-store',
+      remote: bareRemoteRoot,
+    });
+
+    const target = path.join(tempDir, 'obtained');
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([['expected-store', target]]),
+      consent: blanketConsent,
+    });
+
+    const entry = entryFor(report, 'expected-store');
+    expect(entry.action).toBe('obtain-failed');
+    expect(fs.existsSync(target)).toBe(false);
+    expect(
+      entry.diagnostics.some((d) => d.code === 'bootstrap_obtain_identity_mismatch')
+    ).toBe(true);
+  });
+
+  it('fails closed when the cloned Store metadata is unreadable (corrupt YAML)', async () => {
+    // Create a remote with corrupt Store metadata.
+    const corruptRemoteRoot = path.join(tempDir, 'corrupt-remote');
+    createOpenSpecRoot(corruptRemoteRoot);
+    // Write garbage at the modern metadata path.
+    fs.mkdirSync(path.join(corruptRemoteRoot, '.rasen-store'), { recursive: true });
+    fs.writeFileSync(
+      path.join(corruptRemoteRoot, '.rasen-store', 'store.yaml'),
+      'this: is: not: valid: yaml: ['
+    );
+    await execFileAsync('git', ['init'], { cwd: corruptRemoteRoot });
+    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: corruptRemoteRoot });
+    await execFileAsync('git', ['config', 'user.email', 'test@test.test'], { cwd: corruptRemoteRoot });
+    await execFileAsync('git', ['add', '-A'], { cwd: corruptRemoteRoot });
+    await execFileAsync('git', ['commit', '-m', 'init'], { cwd: corruptRemoteRoot });
+
+    const project = makeProject('project');
+    updateProjectConfigKey(project, 'store', {
+      uid: '11111111-2222-4333-8444-555555666666',
+      id: 'expected-store',
+      remote: corruptRemoteRoot,
+    });
+
+    const target = path.join(tempDir, 'obtained');
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([['expected-store', target]]),
+      consent: blanketConsent,
+    });
+
+    const entry = entryFor(report, 'expected-store');
+    expect(entry.action).toBe('obtain-failed');
+    expect(fs.existsSync(target)).toBe(false);
+    expect(
+      entry.diagnostics.some((d) => d.code === 'bootstrap_obtain_identity_mismatch')
+    ).toBe(true);
+  });
+
+  it('succeeds when no expected UID is declared (alias-only bootstrap path)', async () => {
+    // The alias-only path: a store hint provides a remote but no UID. The
+    // identity check is skipped (entry.uid === undefined) and the clone
+    // proceeds through register's own allowCreateIdentity gate.
+    const remoteRoot = path.join(tempDir, 'alias-remote');
+    createOpenSpecRoot(remoteRoot);
+    await writeStoreMetadataState(remoteRoot, { version: 1, id: 'alias-store' });
+    await execFileAsync('git', ['init'], { cwd: remoteRoot });
+    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: remoteRoot });
+    await execFileAsync('git', ['config', 'user.email', 'test@test.test'], { cwd: remoteRoot });
+    await execFileAsync('git', ['add', '-A'], { cwd: remoteRoot });
+    await execFileAsync('git', ['commit', '-m', 'init'], { cwd: remoteRoot });
+
+    // Declare by hint only (no UID) — use a file:// URL so the portability
+    // guard accepts it.
+    const project = makeProject('project');
+    await appendStoreMembershipHint(project, {
+      id: 'alias-store',
+      remote: `file:///${remoteRoot.replace(/\\/g, '/')}`,
+    });
+
+    const target = path.join(tempDir, 'obtained');
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([['alias-store', target]]),
+      consent: { blanket: false, confirm: async () => true },
+    });
+
+    const entry = entryFor(report, 'alias-store');
+    expect(entry.action).toBe('obtained');
+    expect(fs.existsSync(target)).toBe(true);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Group 11: M1 — Project obtain identity verification (fail-closed)
+// -----------------------------------------------------------------------------
+
+describe('M1 — Project obtain identity verification', () => {
+  async function makeRegisteredStoreForProj(
+    name: string
+  ): Promise<{ root: string; uid: string; id: string }> {
+    const root = path.join(tempDir, name);
+    createOpenSpecRoot(root);
+    const uid = mintStoreUid();
+    await writeStoreMetadataState(root, { version: 2, uid, id: name });
+    await registerStore({ id: name, localPath: root, globalDataDir });
+    return { root, uid, id: name };
+  }
+
+  async function makeRemoteProjectWithId(
+    storeRoot: string,
+    projectId: string,
+    options: { id?: string } = {}
+  ): Promise<void> {
+    const projectDirName = options.id ?? projectId;
+    const remoteRoot = path.join(tempDir, 'remotes', projectDirName);
+    createOpenSpecRoot(remoteRoot);
+    updateProjectConfigKey(remoteRoot, 'projectId', projectId);
+    await execFileAsync('git', ['init'], { cwd: remoteRoot });
+    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: remoteRoot });
+    await execFileAsync('git', ['config', 'user.email', 'test@test.test'], { cwd: remoteRoot });
+    await execFileAsync('git', ['add', '-A'], { cwd: remoteRoot });
+    await execFileAsync('git', ['commit', '-m', 'init'], { cwd: remoteRoot });
+
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId,
+      roles: { planning: true, knowledge: true },
+      ...(options.id !== undefined ? { id: options.id } : {}),
+      remote: remoteRoot,
+    });
+  }
+
+  it('fails closed when the cloned project ID does not match', async () => {
+    const store = await makeRegisteredStoreForProj('m1-store');
+    // The Store records project 'expected-proj-id', but the remote's project
+    // declares itself as 'different-project-id'.
+    const remoteRoot = path.join(tempDir, 'remotes', 'mismatched-project');
+    createOpenSpecRoot(remoteRoot);
+    updateProjectConfigKey(remoteRoot, 'projectId', 'different-project-id');
+    await execFileAsync('git', ['init'], { cwd: remoteRoot });
+    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: remoteRoot });
+    await execFileAsync('git', ['config', 'user.email', 'test@test.test'], { cwd: remoteRoot });
+    await execFileAsync('git', ['add', '-A'], { cwd: remoteRoot });
+    await execFileAsync('git', ['commit', '-m', 'init'], { cwd: remoteRoot });
+
+    await writeStoreProjectRecord(store.root, {
+      version: 1,
+      projectId: 'expected-proj-id',
+      roles: { planning: true, knowledge: true },
+      remote: remoteRoot,
+    });
+
+    const target = path.join(tempDir, 'obtained-proj');
+    const report = await buildBootstrapReport({
+      cwd: store.root,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([['expected-proj-id', target]]),
+      consent: blanketConsent,
+    });
+
+    const proj = report.projects.find((p) => p.projectId === 'expected-proj-id');
+    expect(proj).toBeDefined();
+    expect(proj!.action).toBe('obtain-failed');
+    expect(fs.existsSync(target)).toBe(false);
+    expect(
+      proj!.diagnostics.some((d) => d.code === 'bootstrap_obtain_identity_mismatch')
+    ).toBe(true);
+  });
+
+  it('fails closed when the cloned project has no projectId', async () => {
+    const store = await makeRegisteredStoreForProj('m1-missing-store');
+    // Create a remote with no projectId declared.
+    const remoteRoot = path.join(tempDir, 'remotes', 'no-id-project');
+    createOpenSpecRoot(remoteRoot);
+    // No updateProjectConfigKey for projectId.
+    await execFileAsync('git', ['init'], { cwd: remoteRoot });
+    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: remoteRoot });
+    await execFileAsync('git', ['config', 'user.email', 'test@test.test'], { cwd: remoteRoot });
+    await execFileAsync('git', ['add', '-A'], { cwd: remoteRoot });
+    await execFileAsync('git', ['commit', '-m', 'init'], { cwd: remoteRoot });
+
+    await writeStoreProjectRecord(store.root, {
+      version: 1,
+      projectId: 'expected-proj-id',
+      roles: { planning: true, knowledge: true },
+      remote: remoteRoot,
+    });
+
+    const target = path.join(tempDir, 'obtained-proj');
+    const report = await buildBootstrapReport({
+      cwd: store.root,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([['expected-proj-id', target]]),
+      consent: blanketConsent,
+    });
+
+    const proj = report.projects.find((p) => p.projectId === 'expected-proj-id');
+    expect(proj).toBeDefined();
+    expect(proj!.action).toBe('obtain-failed');
+    expect(fs.existsSync(target)).toBe(false);
+    expect(
+      proj!.diagnostics.some((d) => d.code === 'bootstrap_obtain_identity_mismatch')
+    ).toBe(true);
+  });
+
+  it('fails closed when the cloned project config is unreadable', async () => {
+    const store = await makeRegisteredStoreForProj('m1-unreadable-store');
+    // Create a remote with corrupt config.
+    const remoteRoot = path.join(tempDir, 'remotes', 'corrupt-config-project');
+    createOpenSpecRoot(remoteRoot);
+    // Write garbage to the config file.
+    const configPath = path.join(remoteRoot, 'openspec', 'config.yaml');
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, 'this: is: not: valid: yaml: [');
+    await execFileAsync('git', ['init'], { cwd: remoteRoot });
+    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: remoteRoot });
+    await execFileAsync('git', ['config', 'user.email', 'test@test.test'], { cwd: remoteRoot });
+    await execFileAsync('git', ['add', '-A'], { cwd: remoteRoot });
+    await execFileAsync('git', ['commit', '-m', 'init'], { cwd: remoteRoot });
+
+    await writeStoreProjectRecord(store.root, {
+      version: 1,
+      projectId: 'corrupt-proj-id',
+      roles: { planning: true, knowledge: true },
+      remote: remoteRoot,
+    });
+
+    const target = path.join(tempDir, 'obtained-proj');
+    const report = await buildBootstrapReport({
+      cwd: store.root,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([['corrupt-proj-id', target]]),
+      consent: blanketConsent,
+    });
+
+    const proj = report.projects.find((p) => p.projectId === 'corrupt-proj-id');
+    expect(proj).toBeDefined();
+    expect(proj!.action).toBe('obtain-failed');
+    expect(fs.existsSync(target)).toBe(false);
+    expect(
+      proj!.diagnostics.some((d) => d.code === 'bootstrap_obtain_identity_mismatch')
+    ).toBe(true);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Group 12: B3 — Cross-process same-target concurrent clone race
+// -----------------------------------------------------------------------------
+
+describe('B3 — concurrent clone race on the same absent target', () => {
+  it('exactly one publish succeeds when two obtains race on the same target', async () => {
+    // Two separate remotes, each with a distinct Store identity, but both
+    // declared with the SAME target path. The staging-dir design ensures
+    // exactly one fs.rename succeeds; the loser keeps its staging dir and
+    // does NOT delete the winner's checkout.
+    const sourceA = await makeRemoteStore('race-source-a');
+    const sourceB = await makeRemoteStore('race-source-b');
+
+    // Two separate projects, each declaring a different store but pointing at
+    // the same target path.
+    const projectA = makeProject('project-a');
+    updateProjectConfigKey(projectA, 'store', {
+      uid: sourceA.uid,
+      id: sourceA.id,
+      remote: sourceA.remote,
+    });
+    const projectB = makeProject('project-b');
+    updateProjectConfigKey(projectB, 'store', {
+      uid: sourceB.uid,
+      id: sourceB.id,
+      remote: sourceB.remote,
+    });
+
+    const target = path.join(tempDir, 'race-target');
+
+    const inputA = {
+      cwd: projectA,
+      mode: 'apply' as const,
+      globalDataDir,
+      paths: new Map([[sourceA.id, target]]),
+      consent: blanketConsent,
+    };
+    const inputB = {
+      cwd: projectB,
+      mode: 'apply' as const,
+      globalDataDir,
+      paths: new Map([[sourceB.id, target]]),
+      consent: blanketConsent,
+    };
+
+    // Race two concurrent obtains on the same target.
+    const [reportA, reportB] = await Promise.all([
+      buildBootstrapReport(inputA),
+      buildBootstrapReport(inputB),
+    ]);
+
+    const entryA = entryFor(reportA, sourceA.id);
+    const entryB = entryFor(reportB, sourceB.id);
+
+    // Exactly one must have succeeded.
+    const aObtained = entryA.action === 'obtained';
+    const bObtained = entryB.action === 'obtained';
+    expect(aObtained || bObtained).toBe(true);
+    expect(aObtained && bObtained).toBe(false);
+
+    // The target exists (the winner published it).
+    expect(fs.existsSync(target)).toBe(true);
+
+    // The winner's target contains a valid git checkout.
+    expect(fs.existsSync(path.join(target, '.git'))).toBe(true);
+
+    // The loser did NOT delete the winner's checkout — target still exists
+    // and is a valid checkout.
+    const loserEntry = aObtained ? entryB : entryA;
+    expect(loserEntry.action).toBe('obtain-failed');
+  }, 30000);
+});
+
+// -----------------------------------------------------------------------------
+// Group 13: B3 — Publish over a pre-existing EMPTY target directory
+// -----------------------------------------------------------------------------
+//
+// `selectBootstrapLocation` accepts a pre-existing EMPTY directory as `usable`.
+// On POSIX, `rename(2)` onto an empty directory silently replaces it, so the
+// publish succeeds. On Windows, `fs.rename` onto ANY existing directory fails
+// (EPERM from MoveFileEx's ERROR_ACCESS_DENIED, or EEXIST/ENOTEMPTY depending
+// on the Windows + Node version) — without recovery the user would see a
+// misleading "another process published first" warning even though no race
+// occurred. This group pins the recovered behavior: the empty dir is cleared
+// and the publish succeeds with no race-loser diagnostic.
+describe('B3 — publish over a pre-existing empty target directory', () => {
+  it('obtains successfully when target is a pre-existing empty directory', async () => {
+    const source = await makeRemoteStore('empty-target-source');
+    const project = makeProject('project-empty-target');
+    updateProjectConfigKey(project, 'store', {
+      uid: source.uid,
+      id: source.id,
+      remote: source.remote,
+    });
+
+    const target = path.join(tempDir, 'preexisting-empty-target');
+    // Pre-create the target as an EMPTY directory — the case
+    // `selectBootstrapLocation` accepts as `usable`. On Windows, the publish
+    // rename cannot replace this without the empty-dir recovery.
+    fs.mkdirSync(target);
+
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([[source.id, target]]),
+      consent: blanketConsent,
+    });
+
+    const entry = entryFor(report, source.id);
+    expect(entry.action).toBe('obtained');
+    expect(fs.existsSync(path.join(target, '.git'))).toBe(true);
+    expect(fs.existsSync(path.join(target, '.rasen-store'))).toBe(true);
+
+    // No false-positive "another process published first" warning was emitted.
+    const lostRace = allBootstrapDiagnostics(report).find(
+      (d) => d.code === 'bootstrap_obtain_publish_lost_race'
+    );
+    expect(lostRace, 'no race-loser diagnostic should fire for an empty pre-existing target').toBeUndefined();
+
+    // No leftover staging directory.
+    const stagingLeftover = fs
+      .readdirSync(tempDir)
+      .find((name) => name.startsWith('preexisting-empty-target.rasen-stage.'));
+    expect(stagingLeftover, 'no staging directory should be left after a successful publish').toBeUndefined();
+  }, 30000);
+
+  it('still loses the race when target is a pre-existing NON-empty directory (refused before clone)', async () => {
+    // selectBootstrapLocation refuses a non-empty target before the clone
+    // runs, so this case never reaches publishStagedCheckout. Pinned here to
+    // document that the empty-dir recovery does NOT weaken the refusal of a
+    // directory with content.
+    const source = await makeRemoteStore('nonempty-target-source');
+    const project = makeProject('project-nonempty-target');
+    updateProjectConfigKey(project, 'store', {
+      uid: source.uid,
+      id: source.id,
+      remote: source.remote,
+    });
+
+    const target = path.join(tempDir, 'preexisting-nonempty-target');
+    fs.mkdirSync(target);
+    fs.writeFileSync(path.join(target, 'do-not-delete.txt'), 'user content');
+
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([[source.id, target]]),
+      consent: blanketConsent,
+    });
+
+    const entry = entryFor(report, source.id);
+    expect(entry.action).toBe('not-acted');
+    expect(
+      entry.diagnostics.some((d) => d.code === 'bootstrap_obtain_target_refused')
+    ).toBe(true);
+
+    // The user's content is untouched.
+    expect(fs.readFileSync(path.join(target, 'do-not-delete.txt'), 'utf-8')).toBe('user content');
+  }, 30000);
 });
