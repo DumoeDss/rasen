@@ -53,10 +53,10 @@
 
 ## 6. Closed Actions, Actors, completion, and external effects
 
-- [ ] 6.1 RED: Add closed Agent Action tests for role/model/effort/runtime/sandbox/input/session policy bounds and cross-variant/unknown/extra rejection.
-- [ ] 6.2 RED: Add closed Command Action tests for exact Adapter/executable artifacts, argv/env allowlist, WorkspaceInstance/workdir, timeout, `shell:false`, injection strings, ambient env/PATH drift, and bounds.
-- [ ] 6.3 RED: Add closed Host Action tests for supported operation/effects/input and Definition inability to inject executable code, argv, Adapter paths, or validators.
-- [ ] 6.4 GREEN: Implement exact versioned Agent/Command/Host constructors/codecs from trusted frozen capability bindings only.
+- [x] 6.1 RED: Add closed Agent Action tests for role/model/effort/runtime/sandbox/input/session policy bounds and cross-variant/unknown/extra rejection.
+- [x] 6.2 RED: Add closed Command Action tests for exact Adapter/executable artifacts, argv/env allowlist, WorkspaceInstance/workdir, timeout, `shell:false`, injection strings, ambient env/PATH drift, and bounds.
+- [x] 6.3 RED: Add closed Host Action tests for supported operation/effects/input and Definition inability to inject executable code, argv, Adapter paths, or validators.
+- [x] 6.4 GREEN: Implement exact versioned Agent/Command/Host constructors/codecs from trusted frozen capability bindings only.
 - [ ] 6.5 RED: Add ActorRef tests for agent role/provider/runtime/principal/session/Adapter, command Adapter/executable, host Adapter/principal, canonical identity digest, privacy, attestation, spoof, and unknown-major rejection.
 - [ ] 6.6 GREEN: Implement trusted Adapter-attested ActorRef validation; forbid raw principal/token/path/env data and retain principal-vs-session semantics.
 - [ ] 6.7 RED: Add completion discriminated-union matrix tests for domain result, required per-effect observation, infrastructure failure, required/forbidden fields, bounded contract-owned JSON, actor/evidence/action binding, and canonical receipt bytes.
