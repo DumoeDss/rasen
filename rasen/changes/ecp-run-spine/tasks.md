@@ -101,12 +101,12 @@
 - [x] 9.6 GREEN: Implement staging-directory launch and `wx` immutable Record publication with named fault injector, fsync/close, predecessor/digest validation, and one successful publish.
 - [x] 9.7 RED: Add aggregate-budget tests for large/sparse/many Records/evidence, cumulative ledger limit, healthy plus malicious Runs, 100-summary/512-candidate/256-MiB list page, stable opaque cursor, and ordering.
 - [x] 9.8 GREEN: Enforce per-file/structure/count/cumulative budgets before parse/canonicalize and bounded isolated `run_store_too_large` list summaries.
-- [ ] 9.9 RED: Add SafeCoordinationPath tests for benign global-data aliases, nested symlink/junction/reparse/non-dir/parent swap, cross-device hardlink, and physical anchor convergence.
-- [ ] 9.10 GREEN: Implement physically anchored coordination paths with pre/post parent/file identity checks and no replacement-capable fallback.
-- [ ] 9.11 RED: Add IPC lease tests on Linux/macOS Unix sockets and Windows named pipes for nonce/token response, timeout/permission unknown, paused loop, stable refusal twice, listener loss, stale socket, PID reuse, live-owner metadata corruption/unprovable companion remaining unknown-busy, and ABA release.
-- [ ] 9.12 GREEN: Implement token-bound `net` challenge ownership, quarantine only for complete-metadata stable-refusal proven death, pre-publish lease revalidation, compare-token release, no automatic corrupt-lock steal, and no mtime/PID/process-table truth.
-- [ ] 9.13 RED: Fault staging/fsync/link/link-before-unlink/post-return and test nlink=1, valid nlink=2 strict same-inode/token companion, crash residual, >2/unknown companion, extra hardlink, old-token cleanup, and unsupported Windows hardlink.
-- [ ] 9.14 GREEN: Implement atomic same-volume hard-link-to-absent claim, strict companion validation/cleanup, `lock_unavailable` fallback behavior, and fixed bootstrap->association->engine->workspace->create->commit ordering.
+- [x] 9.9 RED: Add SafeCoordinationPath tests for benign global-data aliases, nested symlink/junction/reparse/non-dir/parent swap, cross-device hardlink, and physical anchor convergence.
+- [x] 9.10 GREEN: Implement physically anchored coordination paths with pre/post parent/file identity checks and no replacement-capable fallback.
+- [x] 9.11 RED: Add IPC lease tests on Linux/macOS Unix sockets and Windows named pipes for nonce/token response, timeout/permission unknown, paused loop, stable refusal twice, listener loss, stale socket, PID reuse, live-owner metadata corruption/unprovable companion remaining unknown-busy, and ABA release.
+- [x] 9.12 GREEN: Implement token-bound `net` challenge ownership, quarantine only for complete-metadata stable-refusal proven death, pre-publish lease revalidation, compare-token release, no automatic corrupt-lock steal, and no mtime/PID/process-table truth.
+- [x] 9.13 RED: Fault staging/fsync/link/link-before-unlink/post-return and test nlink=1, valid nlink=2 strict same-inode/token companion, crash residual, >2/unknown companion, extra hardlink, old-token cleanup, and unsupported Windows hardlink.
+- [x] 9.14 GREEN: Implement atomic same-volume hard-link-to-absent claim, strict companion validation/cleanup, `lock_unavailable` fallback behavior, and fixed bootstrap->association->engine->workspace->create->commit ordering.
 - [ ] 9.15 RED/GREEN: Prove concurrent first bind, registered-no-association legacy resume versus canonical start, aliases, separate worktrees, archive-vs-recreate, and multi-process crash retries derive the same instance/engine lease and avoid lost association/Record revisions or nested facade locks.
 
 ## 10. Runtime facade, engine ownership, and recovery
