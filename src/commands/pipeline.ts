@@ -66,6 +66,7 @@ import {
   type Stage,
   type StageRole,
 } from '../core/pipeline-registry/index.js';
+import { analyzeReconcilerSupport } from '../core/pipeline-registry/execution-plan-internal.js';
 import {
   resolveConfigStoreLayer,
   resolveHandoffThresholdLayers,
@@ -367,6 +368,12 @@ export class PipelineCommand {
     );
     const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline, thresholdContext);
 
+    // Engine support analysis (task 12.8): availableEngines/reconcilerSupport
+    // are additive fields shared with `pipeline start`, management detail, and
+    // Canvas. Without a launch-time execution profile, a supported root-DAG
+    // reports legacy availability and execution_profile_unavailable.
+    const support = analyzeReconcilerSupport(resolution.prepared, null);
+
     const result = {
       version: pipeline.version,
       name: pipeline.name,
@@ -375,6 +382,8 @@ export class PipelineCommand {
       reuse,
       buildOrder,
       stages,
+      availableEngines: support.availableEngines,
+      reconcilerSupport: support.reconcilerSupport,
       // Provenance marker (autonomy-ladder rung 2: composed pipelines) —
       // included only when declared so a human-authored pipeline's JSON shape
       // is unchanged.

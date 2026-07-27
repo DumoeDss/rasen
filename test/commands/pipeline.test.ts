@@ -390,6 +390,14 @@ describe('pipeline command', () => {
       });
       expect(payloads.show.description).toContain('Minimal bug-fix pipeline');
       expect(Object.prototype.hasOwnProperty.call(payloads.show, 'source')).toBe(false);
+      // Engine support analysis (task 12.8): additive fields shared with start,
+      // management detail, and Canvas. bug-fix is a supported root-DAG, but
+      // `show` has no launch-time profile, so only legacy is available.
+      expect(payloads.show.availableEngines).toEqual(['legacy']);
+      expect(payloads.show.reconcilerSupport).toMatchObject({
+        supported: false,
+        reason: 'execution_profile_unavailable',
+      });
       expect(payloads.classify).toMatchObject({
         suggested: 'bug-fix',
         basis: 'keyword',
