@@ -131,8 +131,8 @@
 
 ## 12. Engine-aware Pipeline CLI
 
-- [ ] 12.1 RED: Extend Pipeline command/help/localization tests for start/status/resume/complete/control/cancel, stable launch key, exact Run, WaitId, store/project/planning-space root, duplicate-projectId ambiguity, error codes, and bounded file/stdin input.
-- [ ] 12.2 GREEN: Register handlers/options and route only through public runtime/host evidence seams; keep cancel typed control sugar.
+- [x] 12.1 RED: Extend Pipeline command/help/localization tests for start/status/resume/complete/control/cancel, stable launch key, exact Run, WaitId, store/project/planning-space root, duplicate-projectId ambiguity, error codes, and bounded file/stdin input.
+- [x] 12.2 GREEN: Register handlers/options and route only through public runtime/host evidence seams; keep cancel typed control sugar.
 - [ ] 12.3 RED: Add versioned JSON/human goldens for view/receipt/actions/disposition/full IDs/native diagnostics, reused start empty grants, deferred ActionView, trusted resume first claim, and status zero writes.
 - [ ] 12.4 GREEN: Implement start/status output with no plan/Record serialization and no executable inference from ActionView.
 - [ ] 12.5 RED: Add completion/control tests for exact discriminated variants, ActorRef/EvidenceRef, transport uploads, expected version+WaitId, conflict current view, symlink/nonfile/oversized/malformed bodies, and unknown fields.

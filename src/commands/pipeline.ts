@@ -67,6 +67,21 @@ import {
   type StageRole,
 } from '../core/pipeline-registry/index.js';
 import { analyzeReconcilerSupport } from '../core/pipeline-registry/execution-plan-internal.js';
+import { resolveRuntimeExecutionProfile } from '../core/pipeline-registry/profile-resolver.js';
+import {
+  prepareRuntimeContext,
+  type ChangePipelineRuntime,
+} from '../core/change-run/index.js';
+import {
+  deriveChangeInstanceId,
+  derivePlanningSpaceId,
+  deriveRunId,
+  deriveWorkspaceInstanceId,
+  readPhysicalIdentity,
+} from '../core/change-run/internal/identity.js';
+import { getGlobalDataDir } from '../core/global-config.js';
+import { statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import {
   resolveConfigStoreLayer,
   resolveHandoffThresholdLayers,
@@ -397,6 +412,161 @@ export class PipelineCommand {
 
     const source = registry.list().find((entry) => entry.name === pipeline.name)?.source;
     this.printPipelineDetail(result, graph, source, getPipelineMessages());
+  }
+
+  /**
+   * Start (or reuse) a reconciler-engine Run for a change under a pipeline
+   * (task 12.1/12.2). Freezes the prepared Definition + capability catalog +
+   * effective policy into a sealed RuntimeExecutionProfile, derives the Run
+   * identity from the workspace's physical identity, assembles the runtime
+   * facade, and creates the Run on the immutable filesystem store. Output is
+   * the ChangeRunReceipt (view + disposition + granted actions).
+   */
+  async start(
+    changeId: string,
+    pipelineName: string,
+    options: PipelineCommandOptions = {}
+  ): Promise<void> {
+    const root = await this.resolveRoot(options);
+    if (!root) return;
+    const projectRoot = root.path;
+
+    const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, {
+      reporter: false,
+    });
+    const execution = await registry.selectForExecution(
+      pipelineName.replace(/\.ya?ml$/, ''),
+      this.executionOptions(options)
+    );
+    const prepared = execution.resolution.prepared;
+    const pipeline = prepared.authoredSource as PipelineYaml;
+
+    const sourceRevision = {
+      layer: execution.resolution.source,
+      kind: 'pipeline-yaml',
+      sourceId: `${execution.resolution.source}:${pipeline.name}`,
+      authoredContentDigest: `sha256:${prepared.digests.source}` as never,
+      semanticDigest: `sha256:${prepared.digests.source}` as never,
+    };
+    const policyStages = pipeline.stages.map((stage) => ({
+      nodeId: `stage:${stage.id}`,
+      role: stage.role ?? 'implementer',
+      model: stage.model ?? 'default',
+      effort: 'default',
+      runtime: 'codex',
+      sandbox:
+        stage.verifyPolicy === 'adaptive' || stage.id === 'verify'
+          ? ('read-only' as const)
+          : ('workspace-write' as const),
+      gate: stage.gate ?? false,
+      sessionReuse: 'never' as const,
+      handoffTokenLimit: 10_000,
+      reuseRoundLimit: 1,
+      provenance: {
+        role: 'stage',
+        model: stage.model ? 'stage' : 'default',
+        effort: 'default',
+        runtime: 'stage',
+        sandbox: 'stage',
+        gate: 'stage',
+        sessionReuse: 'default',
+        handoffTokenLimit: 'default',
+        reuseRoundLimit: 'default',
+      },
+    }));
+    const profile = resolveRuntimeExecutionProfile(
+      prepared,
+      registry.catalog,
+      policyStages,
+      sourceRevision,
+      { maxAttempts: 3, maxActions: 64 }
+    );
+    const support = analyzeReconcilerSupport(prepared, profile);
+    if (!support.reconcilerSupport.supported) {
+      throw pipelineMessageError(
+        'pipelineNotFound',
+        { name: pipelineName, available: support.reconcilerSupport.reason },
+        'unsupported_pipeline_shape'
+      );
+    }
+
+    const home = getGlobalDataDir();
+    const planningSpaceHome = `project-${createHash('sha256')
+      .update(projectRoot)
+      .digest('hex')
+      .slice(0, 12)}`;
+    const planningSpaceId = derivePlanningSpaceId(planningSpaceHome) as never;
+    const st = statSync(projectRoot, { bigint: true });
+    const physical = readPhysicalIdentity({
+      device: st.dev,
+      ino: st.ino,
+      birthtimeMs: st.birthtimeMs,
+    });
+    const changeInstanceId = deriveChangeInstanceId(
+      planningSpaceId,
+      changeId,
+      physical
+    ) as never;
+    const workspaceInstanceId = deriveWorkspaceInstanceId(
+      planningSpaceId,
+      physical
+    ) as never;
+    const launchKey = `cli-start-${changeId}`;
+    const runId = deriveRunId(
+      planningSpaceId,
+      changeInstanceId,
+      changeId,
+      launchKey
+    ) as never;
+    const launchRequestDigest = `sha256:${createHash('sha256')
+      .update(launchKey)
+      .digest('hex')}` as never;
+    const projectId = `project:${createHash('sha256')
+      .update(projectRoot)
+      .digest('hex')
+      .slice(0, 12)}`;
+
+    const ctx = prepareRuntimeContext({
+      projectRoot,
+      prepared,
+      profile,
+      runId,
+      planningSpaceId,
+      workspaceInstanceId,
+      changeInstanceId,
+      changeId,
+      projectId,
+      launchRequestDigest,
+      storeRoot: `${home}/runs`,
+    });
+
+    const receipt = await ctx.facade.start(
+      {
+        change: { projectRoot, changeId },
+        pipeline: pipeline.name,
+        launchRequestId: launchKey as never,
+        engine: 'reconciler',
+      },
+      { deliveryMode: 'grant' }
+    );
+    const printable = {
+      runId,
+      change: { projectRoot, changeId, projectId },
+      pipeline: pipeline.name,
+      engine: 'reconciler',
+      disposition: receipt.disposition,
+      status: receipt.view.status,
+      actions: receipt.actions.map((action) => ({
+        actionId: action.actionId,
+        nodeId: action.nodeId,
+        kind: action.kind,
+      })),
+    };
+    if (options.json) {
+      console.log(JSON.stringify(printable, null, 2));
+      return;
+    }
+    console.log(JSON.stringify(printable, null, 2));
   }
 
   /**

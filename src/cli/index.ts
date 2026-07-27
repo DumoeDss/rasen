@@ -662,6 +662,26 @@ pipelineCmd
   });
 
 pipelineCmd
+  .command('start <change> <pipeline>')
+  .description('Start (or reuse) a reconciler-engine Run for a change under a pipeline')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (
+    change: string,
+    pipeline: string,
+    options?: { json?: boolean; store?: string; project?: string; storePath?: string }
+  ) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.start(change, pipeline, options);
+    } catch (error) {
+      failPipelineAction(error);
+    }
+  });
+
+pipelineCmd
   .command('agents <name>')
   .description('Show or set per-role Claude/Codex runtimes for a pipeline')
   .option('--planner <runtime>', 'Set planner runtime: claude or codex')
