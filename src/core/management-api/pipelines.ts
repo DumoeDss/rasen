@@ -34,6 +34,7 @@ import {
   type PreparedDefinition,
   type StageRole,
 } from '../pipeline-registry/index.js';
+import { analyzeReconcilerSupport } from '../pipeline-registry/execution-plan-internal.js';
 import { isPortableWorkflowId, loadWorkflowCatalog } from '../workflow-registry/index.js';
 import {
   resolveConfigContext,
@@ -515,8 +516,13 @@ export async function handlePipelineDetail(
     };
   }
 
-  const response: PipelineDetailResponse = {
-    pipeline: resolvedView,
+  const support = analyzeReconcilerSupport(prepared, null);
+  const response = {
+    pipeline: {
+      ...resolvedView,
+      availableEngines: support.availableEngines,
+      reconcilerSupport: support.reconcilerSupport,
+    },
     definition: prepared.authoredSource,
     preparation,
     editable: info.source !== 'package',

@@ -150,7 +150,7 @@
 - [ ] 13.6 GREEN: Implement exact encoded detail route through the shared projector.
 - [ ] 13.7 RED: Add POST tests for closed control+version+WaitId, sealed defer mode, Gate-to-undelivered Action, browser response loss/retry, no executable payload, later CLI first claim/double claim, wrong/stale wait, workspace mismatch, engine conflict, safe argv, output validation, timeout/exit, and no in-process file write.
 - [ ] 13.8 GREEN: Implement CLI-backed POST bridge with exact identifiers/space, pre-spawn admission, non-overridable defer context, and view-only/empty-grant response.
-- [ ] 13.9 RED/GREEN: Add Pipeline-detail availableEngines/reconcilerSupport parity with CLI start/show and Canvas while keeping legacy capability fields additive.
+- [x] 13.9 RED/GREEN: Add Pipeline-detail availableEngines/reconcilerSupport parity with CLI start/show and Canvas while keeping legacy capability fields additive.
 
 ## 14. Task-detail Operations and Canvas
 
