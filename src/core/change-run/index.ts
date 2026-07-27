@@ -49,3 +49,9 @@ export {
   type RuntimeMutationContext,
   type StartChangePipeline,
 } from './facade.js';
+
+export {
+  prepareRuntimeContext,
+  type RuntimeContext,
+  type RuntimeContextInput,
+} from './internal/runtime-context.js';
