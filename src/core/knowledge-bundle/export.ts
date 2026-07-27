@@ -70,6 +70,7 @@ export type KnowledgeBundleExportErrorCode =
   | 'knowledge_bundle_project_not_found'
   | 'knowledge_bundle_destination_occupied'
   | 'knowledge_bundle_record_unreadable'
+  | 'knowledge_bundle_catalog_degraded'
   | 'knowledge_bundle_store_overlap'
   | 'knowledge_bundle_store_unavailable'
   | 'knowledge_bundle_store_write_failed'
@@ -763,6 +764,30 @@ export async function exportKnowledgeBundle(
       'knowledge_bundle_record_unreadable',
       `Project record "${unreadable.id}" could not be read: ${unreadable.reason}`,
       { recordId: unreadable.id, reason: unreadable.reason }
+    );
+  }
+  // M5 invariant (extended to the export path): a catalog with recoverable
+  // backup debris is NOT empty — it carries real records a killed mutation
+  // renamed into `.rasen-learned-skill-backup-*`. Exporting the visible
+  // records would silently produce an incomplete bundle (the backed-up
+  // records would be missing). Fail closed with a clear repair instead. The
+  // user runs any learned-skill mutation to trigger sweepMutationDebris,
+  // which restores the backup, then re-exports.
+  //
+  // Defensive against an absent field (`?? []`): the type contract says
+  // `recoverableBackups` is always present, but test mocks that inject a
+  // partial StoreCatalogRead (constructed before the M5 field landed)
+  // exercise every other branch without populating it. Defaulting to empty
+  // preserves the prior behavior for those mocks without weakening the
+  // guard for real catalogs.
+  const recoverableBackups = catalog.recoverableBackups ?? [];
+  if (recoverableBackups.length > 0) {
+    throw new KnowledgeBundleExportError(
+      'knowledge_bundle_catalog_degraded',
+      `Project catalog has recoverable backup debris (${recoverableBackups.join(
+        ', '
+      )}); run a learned-skill mutation to restore it before exporting.`,
+      { recoverableBackups: recoverableBackups.join(';') }
     );
   }
 

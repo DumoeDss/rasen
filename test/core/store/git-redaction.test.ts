@@ -50,11 +50,22 @@ describe('M9 defense-in-depth — cloneRepository redacts credential-bearing URL
       }
     );
 
-    await expect(cloneRepository(remote, target)).rejects.toThrow(/<redacted>/);
-    await expect(cloneRepository(remote, target)).rejects.toThrow(/Failed to clone/);
+    // Clone ONCE and assert every property on the caught error. Repeated
+    // cloneRepository calls per assertion would re-run the (mocked) git exec
+    // and obscure the single-error contract under test.
+    let caught: unknown;
+    try {
+      await cloneRepository(remote, target);
+      expect.fail('should have thrown');
+    } catch (error) {
+      caught = error;
+    }
+    const message = (caught as Error).message;
+    expect(message).toMatch(/<redacted>/);
+    expect(message).toMatch(/Failed to clone/);
     // The raw credential MUST NEVER appear in the StoreError message.
-    await expect(cloneRepository(remote, target)).rejects.not.toThrow(/secret/);
-    await expect(cloneRepository(remote, target)).rejects.not.toThrow(/user:secret/);
+    expect(message).not.toMatch(/secret/);
+    expect(message).not.toMatch(/user:secret/);
   });
 
   it('produces a StoreError (not a raw Error)', async () => {
@@ -96,10 +107,19 @@ describe('M9 defense-in-depth — cloneRepository redacts credential-bearing URL
       }
     );
 
+    // Clone ONCE; assert every property on the single caught error.
+    let caught: unknown;
+    try {
+      await cloneRepository(remote, target);
+      expect.fail('should have thrown');
+    } catch (error) {
+      caught = error;
+    }
+    const message = (caught as Error).message;
     // No <redacted> form — the remote has no credentials.
-    await expect(cloneRepository(remote, target)).rejects.toThrow(/Failed to clone/);
-    await expect(cloneRepository(remote, target)).rejects.not.toThrow(/<redacted>/);
+    expect(message).toMatch(/Failed to clone/);
+    expect(message).not.toMatch(/<redacted>/);
     // The clean URL still appears (it carries no secrets).
-    await expect(cloneRepository(remote, target)).rejects.toThrow(/host\.example\.com/);
+    expect(message).toMatch(/host\.example\.com/);
   });
 });

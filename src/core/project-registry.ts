@@ -318,9 +318,18 @@ export async function registerProject(
       // so active projects converge to one entry without waiting for gc. A
       // worktree path already gone from disk is not a live sibling here; it
       // stays a dangling entry for gc (matches the "live" wording in D5).
+      // Identity is normalized on BOTH sides: an uppercase entry from a
+      // pre-normalization registry and a lowercase placed projectId are the
+      // same project, and leaving the case-different duplicate alive would
+      // resurrect a stale entry until gc (the sameIdEntries filter above
+      // already recognizes them as same-project via the same normalization).
       for (const otherPath of Object.keys(projects)) {
         if (otherPath === canonicalPath) continue;
-        if (projects[otherPath].projectId !== projectId) continue;
+        if (
+          normalizeProjectIdentity(projects[otherPath].projectId) !==
+          normalizeProjectIdentity(projectId)
+        )
+          continue;
         if (await isGitWorktreeSibling(canonicalPath, otherPath)) {
           delete projects[otherPath];
         }

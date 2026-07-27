@@ -634,10 +634,19 @@ async function listCommand(
   // indistinguishable from one that was deleted, and the check that removed it
   // is the last thing a user would guess at.
   const unreadable: Array<{ scope: LearnedSkillScope; entry: UnreadableCanonicalRecord }> = [];
+  // M5: recoverable backup debris is reported as degraded, not empty. A scope
+  // showing zero records MAY actually hold recoverable data (a killed
+  // mutation renamed the records into `.rasen-learned-skill-backup-*`); the
+  // user must see that the catalog is degraded rather than conclude the data
+  // is permanently gone.
+  const degraded: Array<{ scope: LearnedSkillScope; dirs: string[] }> = [];
   for (const scope of defaultReadScopes(explicit, context.execution!)) {
     const catalog = await readCanonicalLearnedSkillCatalog(scope, readContextForScope(scope, context));
     for (const record of catalog.records) rows.push({ scope, record });
     for (const entry of catalog.unreadable) unreadable.push({ scope, entry });
+    if (catalog.recoverableBackups.length > 0) {
+      degraded.push({ scope, dirs: [...catalog.recoverableBackups] });
+    }
   }
 
   if (options.json) {
@@ -650,10 +659,11 @@ async function listCommand(
         directory: entry.directory,
         reason: entry.reason,
       })),
+      degraded: degraded.map(({ scope, dirs }) => ({ scope, recoverableBackups: dirs })),
     });
     return;
   }
-  if (rows.length === 0 && unreadable.length === 0) {
+  if (rows.length === 0 && unreadable.length === 0 && degraded.length === 0) {
     console.log(messages.listEmpty);
     return;
   }
@@ -674,6 +684,17 @@ async function listCommand(
     }
     console.log(messages.unreadableNext);
   }
+  if (degraded.length > 0) {
+    // Inline (unlocalized) M5 reporting — matches the effective-materialization
+    // path's "catalog degraded" diagnostic. The user-visible repair is the
+    // same in either surface: run any learned-skill mutation to restore the
+    // backup before reading/exporting.
+    console.log('Catalog degraded — recoverable backup debris:');
+    for (const { scope, dirs } of degraded) {
+      console.log(`  [${scope}] ${dirs.join(', ')}`);
+    }
+    console.log('  Run a learned-skill mutation (e.g. rasen knowledge apply) to restore the backup.');
+  }
 }
 
 async function showCommand(
@@ -687,9 +708,18 @@ async function showCommand(
   if (!options.json) reportHumanContext(context.execution!, messages);
 
   const unreadable: Array<{ scope: LearnedSkillScope; entry: UnreadableCanonicalRecord }> = [];
+  // M5: track scopes whose catalog is degraded (recoverable backup debris).
+  // When the requested id is neither in records nor in unreadable, a degraded
+  // catalog explains WHY the id cannot be read — the backed-up record is real
+  // data, not permanently lost. Surfacing this turns an unexplained "not
+  // found" into a recoverable state with a clear repair.
+  const degraded: Array<{ scope: LearnedSkillScope; dirs: string[] }> = [];
   for (const scope of defaultReadScopes(explicit, context.execution!)) {
     const catalog = await readCanonicalLearnedSkillCatalog(scope, readContextForScope(scope, context));
     for (const entry of catalog.unreadable) unreadable.push({ scope, entry });
+    if (catalog.recoverableBackups.length > 0) {
+      degraded.push({ scope, dirs: [...catalog.recoverableBackups] });
+    }
     const found = catalog.records.find((record) => record.manifest.id === id);
     if (!found) continue;
     if (options.json) {
@@ -717,6 +747,25 @@ async function showCommand(
       messages.showUnreadable(id, refused.scope, refused.entry.reason),
       'unreadable_record',
       { directory: refused.entry.directory, next: messages.unreadableNext }
+    );
+    return;
+  }
+  // M5: a degraded catalog explains an otherwise-unexplained "not found". The
+  // requested id may be one of the records a killed mutation renamed into
+  // `.rasen-learned-skill-backup-*`; surface the degraded state and the
+  // repair instead of reporting permanent loss. The details carry the
+  // recoverable dirs so a JSON consumer can act programmatically.
+  if (degraded.length > 0) {
+    const dirs = degraded.flatMap((entry) => entry.dirs);
+    reportError(
+      options.json,
+      options.json
+        ? messages.showNotFound(id, explicit ?? 'project')
+        : `${messages.showNotFound(id, explicit ?? 'project')} The catalog is degraded with recoverable backup debris (${dirs.join(
+            ', '
+          )}); run a learned-skill mutation to restore it.`,
+      'catalog_degraded',
+      { recoverableBackups: dirs.join(';') }
     );
     return;
   }

@@ -796,6 +796,132 @@ describe('project-registry', () => {
       fs.rmSync(repoRoot, { recursive: true, force: true });
     });
 
+    it('M10 normalization: findWorktreeDuplicateEntries detects a case-different UUID across worktree/main paths', async () => {
+      // Trivial 3: the existing worktree-duplicate test seeds duplicates
+      // with the SAME projectId (case-exact match). This test seeds the
+      // worktree-keyed entry with an UPPERCASE projectId while the main
+      // entry carries lowercase — the normalization at lines 467-469 must
+      // recognize them as the same project and report the duplicate.
+      // Without normalization, the case-difference would hide the duplicate.
+      const repoRoot = makeProjectDir('norm-dup-main');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoRoot, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitExecEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      const wt = path.join(path.dirname(repoRoot), `norm-dup-wt-${randomUUID().slice(0, 8)}`);
+      execFileSync('git', ['worktree', 'add', wt], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      const projectIdLower = randomUUID();
+      const projectIdUpper = projectIdLower.toUpperCase();
+      const main = await registerProject(
+        { projectRoot: repoRoot, projectId: projectIdLower, mode: 'in-repo' },
+        { globalDataDir }
+      );
+      const canonicalWt = FileSystemUtils.canonicalizeExistingPath(wt);
+
+      // Seed a legacy worktree-keyed entry with the UPPERCASE projectId,
+      // sharing the main entry's home. (Different case, same identity.)
+      await updateProjectRegistryState((current) => ({
+        version: 1,
+        projects: {
+          ...(current?.projects ?? {}),
+          [canonicalWt]: {
+            ...main.entry,
+            projectId: projectIdUpper,
+            name: 'norm-dup-wt',
+            lastSeen: '2026-07-09T12:00:00.000Z',
+          },
+        },
+      }), { globalDataDir });
+
+      const duplicates = await findWorktreeDuplicateEntries({ globalDataDir });
+      expect(duplicates.map((d) => d.path)).toEqual([canonicalWt]);
+      expect(duplicates[0].mainRoot).toBe(main.canonicalPath);
+
+      // --gc collapses the case-different duplicate onto the main entry,
+      // exercising the normalization at lines 558-559, and keeps the home.
+      const gcResult = await gcProjectRegistry({ globalDataDir });
+      expect(gcResult.removedEntries.map((r) => r.path)).toEqual([canonicalWt]);
+      expect(gcResult.removedHomes).toEqual([]);
+
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(Object.keys(state?.projects ?? {})).toEqual([main.canonicalPath]);
+      expect(fs.existsSync(getProjectHomeDir(main.entry.home, { globalDataDir }))).toBe(true);
+
+      execFileSync('git', ['worktree', 'remove', '--force', wt], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    });
+
+    it('M10 normalization: registerProject place() prunes a case-different sibling worktree duplicate', async () => {
+      // Minor 1 regression: place()'s sibling-pruning loop must normalize
+      // both sides. Seed a main entry with a lowercase projectId and a
+      // legacy worktree-keyed entry with the UPPERCASE projectId (sharing
+      // the home). A fresh registration for the main path with the lowercase
+      // projectId must prune the case-different worktree sibling in the
+      // same write — without normalization, the strict !== comparison would
+      // leave the duplicate alive until gc.
+      const repoRoot = makeProjectDir('norm-prune-main');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoRoot, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitExecEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      const worktreePath = path.join(
+        path.dirname(repoRoot),
+        `norm-prune-wt-${randomUUID().slice(0, 8)}`
+      );
+      execFileSync('git', ['worktree', 'add', worktreePath], {
+        cwd: repoRoot,
+        env: gitExecEnv,
+        stdio: 'ignore',
+      });
+
+      const projectIdLower = randomUUID();
+      const projectIdUpper = projectIdLower.toUpperCase();
+      const main = await registerProject(
+        { projectRoot: repoRoot, projectId: projectIdLower, mode: 'in-repo' },
+        { globalDataDir }
+      );
+      const canonicalWorktree = FileSystemUtils.canonicalizeExistingPath(worktreePath);
+
+      // Seed the case-different legacy sibling.
+      await updateProjectRegistryState(
+        (current) => ({
+          version: 1,
+          projects: {
+            ...(current?.projects ?? {}),
+            [canonicalWorktree]: {
+              ...main.entry,
+              projectId: projectIdUpper,
+              name: 'norm-prune-wt',
+              lastSeen: '2026-07-09T12:00:00.000Z',
+            },
+          },
+        }),
+        { globalDataDir }
+      );
+
+      // Re-register the main path; the pruning loop must collapse the
+      // case-different worktree sibling in the same write.
+      await registerProject(
+        { projectRoot: repoRoot, projectId: projectIdLower, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(state?.projects[canonicalWorktree]).toBeUndefined();
+      expect(state?.projects[main.canonicalPath]).toBeDefined();
+      expect(fs.existsSync(getProjectHomeDir(main.entry.home, { globalDataDir }))).toBe(true);
+
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], {
+        cwd: repoRoot,
+        env: gitExecEnv,
+        stdio: 'ignore',
+      });
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    });
+
     it('rebinds a worktree-keyed entry onto the main root when the main is unregistered', async () => {
       const repoRoot = makeProjectDir('rebind-main');
       const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
