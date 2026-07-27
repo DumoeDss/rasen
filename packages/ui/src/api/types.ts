@@ -1330,3 +1330,39 @@ export interface PipelineCatalogResponse {
   gate: { default: boolean };
   handoff: { fractionRange: [number, number]; remainingTokensGt: number };
 }
+
+// --- Reconciler-engine ChangeRunView types (task 14.1/14.2) ---
+
+/** A reconciler-engine Run's projected view (consumed from server truth). */
+export interface ChangeRunView {
+  format: 'change-run-view/1';
+  engine: 'reconciler';
+  runId: string;
+  change: { planningSpaceId: string; projectId: string; changeId: string; instanceId: string };
+  recordVersion: number;
+  status: 'running' | 'waiting' | 'completed' | 'escalated' | 'failed' | 'cancelled';
+  sourceState: 'active' | 'archived' | 'missing';
+  workspace: { instanceId: string; scope: 'current' | 'other' };
+  sections: readonly ChangeRunViewSection[];
+}
+
+export interface ChangeRunViewSection {
+  kind: string;
+  version: number;
+  [key: string]: unknown;
+}
+
+/** Additive availableEngines/reconcilerSupport on pipeline detail (14.7/14.8). */
+export interface PipelineEngineSupport {
+  availableEngines: readonly string[];
+  reconcilerSupport: {
+    supported: boolean;
+    reason: string;
+    profileDigest: string;
+  };
+}
+
+// Extend PipelineDetailResponse to include engine support (additive).
+export interface PipelineDetailResponseWithEngines extends PipelineDetailResponse {
+  pipeline: WirePipeline & Partial<PipelineEngineSupport>;
+}
