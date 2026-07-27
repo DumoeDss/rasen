@@ -28,6 +28,11 @@ import * as path from 'node:path';
 
 import { FileSystemUtils } from '../../utils/file-system.js';
 import {
+  makeLockErrorFactory,
+  machineLockPath,
+  withOwnerAwareFileLock,
+} from '../file-state.js';
+import {
   PROJECT_REFERENCE_PREFIX,
   appendStoreMembershipHint,
   readProjectConfig,
@@ -69,6 +74,7 @@ import {
 } from './migration.js';
 import {
   assertRecordableProjectIdentity,
+  getStoreProjectRecordPath,
   listStoreProjectRecords,
   mergeStoreProjectRoles,
   normalizeProjectIdentity,
@@ -721,11 +727,30 @@ function recordsEqual(left: StoreProjectRecord, right: StoreProjectRecord): bool
 }
 
 /**
+ * Lock-error factory for the Store authority-record mutation. Same shape as
+ * the registry / import lock factories: a create-failure reports a filesystem
+ * problem with a "check permissions" fix; a timeout reports a busy peer with
+ * a "retry / inspect the lock" fix.
+ */
+const membershipRecordLockError = makeLockErrorFactory({
+  createSubject: 'the Store membership record lock file',
+  busyMessage: 'The Store membership record is busy.',
+  code: 'store_membership_record_busy',
+  target: 'store.membership',
+});
+
+/**
  * Writes the Store's authority record and verifies it by reading it back.
  *
  * Identity is validated and the remote is checked BEFORE anything is written,
  * so a refused mutation leaves no partial state — the same order child A's
  * registration uses.
+ *
+ * The read-compose-write-verify sequence runs inside an owner-aware lock
+ * keyed by the absolute record path (`machineLockPath`). The lock file lives
+ * in `os.tmpdir()`, never inside the Store git repo, so concurrent rasen
+ * commands mutating DIFFERENT fields of the SAME Project's record serialize
+ * instead of silently clobbering each other's non-overlapping writes.
  */
 export async function writeMembershipRecord(
   input: MembershipMutationInput
@@ -733,31 +758,44 @@ export async function writeMembershipRecord(
   const projectId = assertRecordableProjectIdentity(input.projectId);
   assertCredentialFreeRemote(input.projectRemote, 'store.metadata');
 
-  const existing = await readStoreProjectRecord(input.store.root, projectId);
-  const next = composeRecord(existing.record, projectId, input);
+  const lockPath = machineLockPath(
+    path.resolve(getStoreProjectRecordPath(input.store.root, projectId))
+  );
 
-  if (existing.record && recordsEqual(existing.record, next)) {
-    return { record: existing.record, filePath: existing.filePath, changed: false };
-  }
+  return withOwnerAwareFileLock(
+    {
+      lockPath,
+      errorFor: membershipRecordLockError,
+      holder: 'store-membership-record',
+    },
+    async () => {
+      const existing = await readStoreProjectRecord(input.store.root, projectId);
+      const next = composeRecord(existing.record, projectId, input);
 
-  const filePath = await writeStoreProjectRecord(input.store.root, next);
-
-  // Verified by re-reading, not inferred from the absence of an error: the
-  // project hint is written only once the authority record is provably on
-  // disk and readable.
-  const verified = await readStoreProjectRecord(input.store.root, projectId);
-  if (!verified.record || !recordsEqual(verified.record, next)) {
-    throw new StoreError(
-      `The membership record for project ${projectId} did not read back as written (${filePath}).`,
-      'store_project_record_unverified',
-      {
-        target: 'store.membership',
-        fix: `Inspect ${filePath} and rerun.`,
+      if (existing.record && recordsEqual(existing.record, next)) {
+        return { record: existing.record, filePath: existing.filePath, changed: false };
       }
-    );
-  }
 
-  return { record: verified.record, filePath, changed: true };
+      const filePath = await writeStoreProjectRecord(input.store.root, next);
+
+      // Verified by re-reading, not inferred from the absence of an error: the
+      // project hint is written only once the authority record is provably on
+      // disk and readable.
+      const verified = await readStoreProjectRecord(input.store.root, projectId);
+      if (!verified.record || !recordsEqual(verified.record, next)) {
+        throw new StoreError(
+          `The membership record for project ${projectId} did not read back as written (${filePath}).`,
+          'store_project_record_unverified',
+          {
+            target: 'store.membership',
+            fix: `Inspect ${filePath} and rerun.`,
+          }
+        );
+      }
+
+      return { record: verified.record, filePath, changed: true };
+    }
+  );
 }
 
 /** Writes the project's locator hint. Errors propagate for the caller to record. */

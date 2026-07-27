@@ -1,12 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
 import {
   acquireFileLock,
+  acquireOwnerAwareFileLock,
+  machineLockPath,
   releaseFileLock,
+  releaseOwnerAwareFileLock,
   writeFileAtomically,
+  withOwnerAwareFileLock,
 } from '../../src/core/file-state.js';
 import { updateStoreRegistryState } from '../../src/core/store/index.js';
 
@@ -154,5 +159,255 @@ describe('file-state', () => {
         fs.chmodSync(storesDir, 0o755);
       }
     });
+  });
+});
+
+describe('owner-aware file lock', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-owner-lock-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function errorFor(
+    kind: 'create-failed' | 'timeout',
+    info: { lockPath: string; cause?: unknown }
+  ): Error {
+    return new Error(`${kind}:${info.lockPath}`);
+  }
+
+  it('acquires and releases with a populated token', async () => {
+    const lockPath = path.join(tempDir, 'owner.lock');
+
+    const handle = await acquireOwnerAwareFileLock({ lockPath, errorFor });
+
+    const content = fs.readFileSync(lockPath, 'utf-8');
+    expect(content).toMatch(/^pid: \d+$/m);
+    expect(content).toMatch(/^bornAt: /m);
+    expect(content).toMatch(/^holder: unnamed$/m);
+    expect(content).toMatch(/^nonce: [0-9a-f]{32}$/m);
+
+    await releaseOwnerAwareFileLock(handle);
+
+    expect(fs.existsSync(lockPath)).toBe(false);
+  });
+
+  it('uses the provided holder label in the token', async () => {
+    const lockPath = path.join(tempDir, 'labeled.lock');
+
+    const handle = await acquireOwnerAwareFileLock({
+      lockPath,
+      errorFor,
+      holder: 'test-suite',
+    });
+
+    expect(fs.readFileSync(lockPath, 'utf-8')).toMatch(/^holder: test-suite$/m);
+    await releaseOwnerAwareFileLock(handle);
+  });
+
+  it('steals a lock whose owner PID is provably dead (ESRCH)', async () => {
+    const lockPath = path.join(tempDir, 'dead-pid.lock');
+    // Spawn a child just to obtain a PID that immediately exits.
+    const child = spawn(process.execPath, ['--eval', 'process.exit(0)'], {
+      stdio: 'ignore',
+    });
+    const deadPid = child.pid;
+    if (deadPid === undefined) throw new Error('child did not start');
+    await new Promise<void>((resolve) => child.on('exit', () => resolve()));
+
+    // Write a lock file that claims the now-dead PID.
+    const deadToken = [
+      `pid: ${deadPid}`,
+      `bornAt: ${new Date().toISOString()}`,
+      'holder: dead-process',
+      'nonce: deadbeefdeadbeefdeadbeefdeadbeef',
+      '',
+    ].join('\n');
+    fs.writeFileSync(lockPath, deadToken, 'utf-8');
+
+    // Acquire should steal quickly (within one poll interval).
+    const started = Date.now();
+    const handle = await acquireOwnerAwareFileLock({
+      lockPath,
+      errorFor,
+      pollMs: 10,
+      deadlineMs: 2000,
+    });
+    expect(Date.now() - started).toBeLessThan(1500);
+
+    // New lock content differs from the dead token.
+    expect(handle.token).not.toBe(deadToken);
+    await releaseOwnerAwareFileLock(handle);
+  });
+
+  it('does NOT steal a lock whose owner PID is alive (times out)', async () => {
+    const lockPath = path.join(tempDir, 'alive-pid.lock');
+    // Write a lock claiming OUR OWN pid (definitely alive).
+    const aliveToken = [
+      `pid: ${process.pid}`,
+      `bornAt: ${new Date().toISOString()}`,
+      'holder: self',
+      'nonce: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      '',
+    ].join('\n');
+    fs.writeFileSync(lockPath, aliveToken, 'utf-8');
+
+    const started = Date.now();
+    await expect(
+      acquireOwnerAwareFileLock({
+        lockPath,
+        errorFor,
+        deadlineMs: 300,
+        pollMs: 50,
+      })
+    ).rejects.toThrow('timeout');
+    expect(Date.now() - started).toBeGreaterThanOrEqual(250);
+
+    // Lock file is untouched (never stolen).
+    expect(fs.readFileSync(lockPath, 'utf-8')).toBe(aliveToken);
+  });
+
+  it('does NOT steal an empty (unparseable) lock', async () => {
+    const lockPath = path.join(tempDir, 'empty.lock');
+    fs.writeFileSync(lockPath, '', 'utf-8');
+
+    await expect(
+      acquireOwnerAwareFileLock({
+        lockPath,
+        errorFor,
+        deadlineMs: 200,
+        pollMs: 40,
+      })
+    ).rejects.toThrow('timeout');
+
+    // Empty lock survives — never deleted.
+    expect(fs.readFileSync(lockPath, 'utf-8')).toBe('');
+  });
+
+  it('does NOT steal an unparseable (no pid line) lock', async () => {
+    const lockPath = path.join(tempDir, 'garbage.lock');
+    fs.writeFileSync(lockPath, 'not a valid lock file\n', 'utf-8');
+
+    await expect(
+      acquireOwnerAwareFileLock({
+        lockPath,
+        errorFor,
+        deadlineMs: 200,
+        pollMs: 40,
+      })
+    ).rejects.toThrow('timeout');
+
+    expect(fs.readFileSync(lockPath, 'utf-8')).toBe('not a valid lock file\n');
+  });
+
+  it('does not unlink on release when the token content changed', async () => {
+    const lockPath = path.join(tempDir, 'replaced.lock');
+    const handle = await acquireOwnerAwareFileLock({ lockPath, errorFor });
+
+    // Simulate another owner stealing and rewriting the lock.
+    const replacementToken = [
+      `pid: ${process.pid}`,
+      `bornAt: ${new Date().toISOString()}`,
+      'holder: other',
+      'nonce: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      '',
+    ].join('\n');
+    // Delete and rewrite to simulate the steal-and-recreate path.
+    fs.unlinkSync(lockPath);
+    fs.writeFileSync(lockPath, replacementToken, 'utf-8');
+
+    await releaseOwnerAwareFileLock(handle);
+
+    // The replacement lock survives — our release detected the mismatch.
+    expect(fs.readFileSync(lockPath, 'utf-8')).toBe(replacementToken);
+  });
+
+  it('does not unlink on release when the lock file is already gone', async () => {
+    const lockPath = path.join(tempDir, 'gone.lock');
+    const handle = await acquireOwnerAwareFileLock({ lockPath, errorFor });
+
+    fs.unlinkSync(lockPath);
+
+    // Should not throw.
+    await releaseOwnerAwareFileLock(handle);
+
+    expect(fs.existsSync(lockPath)).toBe(false);
+  });
+
+  it('withOwnerAwareFileLock runs the action and releases the lock', async () => {
+    const lockPath = path.join(tempDir, 'scoped.lock');
+
+    const result = await withOwnerAwareFileLock({ lockPath, errorFor }, async () => {
+      expect(fs.existsSync(lockPath)).toBe(true);
+      return 42;
+    });
+
+    expect(result).toBe(42);
+    expect(fs.existsSync(lockPath)).toBe(false);
+  });
+
+  it('withOwnerAwareFileLock releases the lock even when the action throws', async () => {
+    const lockPath = path.join(tempDir, 'throwing.lock');
+
+    await expect(
+      withOwnerAwareFileLock({ lockPath, errorFor }, async () => {
+        throw new Error('action failed');
+      })
+    ).rejects.toThrow('action failed');
+
+    expect(fs.existsSync(lockPath)).toBe(false);
+  });
+
+  it('serializes two concurrent callers via the same lock path', async () => {
+    const lockPath = path.join(tempDir, 'contended.lock');
+    const log: string[] = [];
+
+    const [a, b] = await Promise.all([
+      withOwnerAwareFileLock(
+        { lockPath, errorFor, deadlineMs: 5000, pollMs: 10 },
+        async () => {
+          log.push('A-start');
+          await new Promise((r) => setTimeout(r, 100));
+          log.push('A-end');
+          return 'a';
+        }
+      ),
+      // Small delay so A acquires first; otherwise B might win the race.
+      (async () => {
+        await new Promise((r) => setTimeout(r, 10));
+        return withOwnerAwareFileLock(
+          { lockPath, errorFor, deadlineMs: 5000, pollMs: 10 },
+          async () => {
+            log.push('B-start');
+            log.push('B-end');
+            return 'b';
+          }
+        );
+      })(),
+    ]);
+
+    expect([a, b]).toEqual(['a', 'b']);
+    // A fully completed before B started — serialized.
+    expect(log).toEqual(['A-start', 'A-end', 'B-start', 'B-end']);
+  });
+
+  it('machineLockPath returns a deterministic path under os.tmpdir()', () => {
+    const abs = path.resolve(tempDir, 'some-file.yaml');
+    const lockPath = machineLockPath(abs);
+
+    // Always under tmpdir/rasen-locks.
+    expect(lockPath.startsWith(path.join(os.tmpdir(), 'rasen-locks'))).toBe(true);
+    expect(lockPath.endsWith('.lock')).toBe(true);
+
+    // Deterministic for the same input.
+    expect(machineLockPath(abs)).toBe(lockPath);
+
+    // Different inputs produce different paths.
+    const other = machineLockPath(path.resolve(tempDir, 'other-file.yaml'));
+    expect(other).not.toBe(lockPath);
   });
 });

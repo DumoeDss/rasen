@@ -24,6 +24,11 @@ import {
   readStoreProjectRecord,
   writeStoreProjectRecord,
 } from '../../../src/core/store/project-records.js';
+import {
+  acquireOwnerAwareFileLock,
+  machineLockPath,
+  releaseOwnerAwareFileLock,
+} from '../../../src/core/file-state.js';
 import { upsertAdoptionEntry } from '../../../src/core/store/migration.js';
 import { appendStoreReference } from '../../../src/core/project-config.js';
 import { registerExistingStore } from '../../../src/core/store/operations.js';
@@ -513,6 +518,130 @@ describe('store membership provider', () => {
           'git@github.com:org/team-store.git'
         )
       ).toEqual({ uid: 'u', id: 'team-store', remote: 'git@github.com:org/team-store.git' });
+    });
+  });
+
+  describe('concurrent membership record writes (M7 owner-aware lock)', () => {
+    const KNOWLEDGE_PROJECT = 'd1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1';
+    const ADOPTION_PROJECT = 'e2e2e2e2-e2e2-4e2e-8e2e-e2e2e2e2e2e2';
+
+    /** Removes the machineLockPath lock file for a given absolute record path. */
+    function cleanMachineLock(absolutePath: string): void {
+      const lockPath = machineLockPath(absolutePath);
+      fs.rmSync(lockPath, { force: true });
+    }
+
+    afterEach(() => {
+      // Clean any lock files left by tests in this block.
+      cleanMachineLock(path.resolve(getStoreProjectRecordPath(storeRoot, KNOWLEDGE_PROJECT)));
+      cleanMachineLock(path.resolve(getStoreProjectRecordPath(storeRoot, ADOPTION_PROJECT)));
+    });
+
+    it('preserves both fields when two concurrent writes target different fields of the same record', async () => {
+      // Seed a base record.
+      await writeStoreProjectRecord(storeRoot, {
+        version: 1,
+        projectId: KNOWLEDGE_PROJECT,
+        roles: { planning: true, knowledge: false },
+      });
+
+      const recordPath = path.resolve(
+        getStoreProjectRecordPath(storeRoot, KNOWLEDGE_PROJECT)
+      );
+      const lockPath = machineLockPath(recordPath);
+
+      // Pre-acquire the lock so BOTH writes queue against it deterministically.
+      // This forces real read-modify-write overlap rather than relying on
+      // scheduler timing.
+      const block = await acquireOwnerAwareFileLock({
+        lockPath,
+        errorFor: () => new Error('test-block'),
+      });
+
+      const promise = Promise.all([
+        writeMembershipRecord({
+          projectRoot: tempDir,
+          projectId: KNOWLEDGE_PROJECT,
+          store,
+          // Adds knowledge role; planning stays as-is.
+          roles: { planning: false, knowledge: true },
+          globalDataDir,
+        }),
+        writeMembershipRecord({
+          projectRoot: tempDir,
+          projectId: KNOWLEDGE_PROJECT,
+          store,
+          // Sets an adoption; roles unchanged.
+          roles: { planning: false, knowledge: false },
+          adoption: {
+            specs: ['billing'],
+            changes: [],
+            adoptedAt: '2026-07-27T00:00:00Z',
+          },
+          globalDataDir,
+        }),
+      ]);
+
+      // Give both a moment to hit the lock, then release.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await releaseOwnerAwareFileLock(block);
+
+      const [r1, r2] = await promise;
+      expect(r1.changed).toBe(true);
+      expect(r2.changed).toBe(true);
+
+      // BOTH non-overlapping updates are present. Without the lock, the
+      // second writer's composeRecord() would read the pre-first-write base
+      // and the second write would clobber the first's field.
+      const final = (await readStoreProjectRecord(storeRoot, KNOWLEDGE_PROJECT)).record;
+      expect(final?.roles).toEqual({ planning: true, knowledge: true });
+      expect(final?.adoption).toEqual({
+        specs: ['billing'],
+        changes: [],
+        adoptedAt: '2026-07-27T00:00:00Z',
+      });
+
+      // Lock file cleaned up by the last writer's release.
+      expect(fs.existsSync(lockPath)).toBe(false);
+    });
+
+    it('does not serialize concurrent writes targeting different projects', async () => {
+      // Different projectIds → different absolute record paths → different
+      // lock paths → no mutual exclusion.
+      await writeStoreProjectRecord(storeRoot, {
+        version: 1,
+        projectId: KNOWLEDGE_PROJECT,
+        roles: { planning: false, knowledge: false },
+      });
+      await writeStoreProjectRecord(storeRoot, {
+        version: 1,
+        projectId: ADOPTION_PROJECT,
+        roles: { planning: false, knowledge: false },
+      });
+
+      const started = Date.now();
+      await Promise.all([
+        writeMembershipRecord({
+          projectRoot: tempDir,
+          projectId: KNOWLEDGE_PROJECT,
+          store,
+          roles: { planning: true, knowledge: false },
+          globalDataDir,
+        }),
+        writeMembershipRecord({
+          projectRoot: tempDir,
+          projectId: ADOPTION_PROJECT,
+          store,
+          roles: { planning: false, knowledge: true },
+          globalDataDir,
+        }),
+      ]);
+      const elapsed = Date.now() - started;
+
+      // Both finished quickly — no contention because they locked different
+      // paths. The assertion guards against accidentally over-locking at the
+      // Store-dir level.
+      expect(elapsed).toBeLessThan(3_000);
     });
   });
 });

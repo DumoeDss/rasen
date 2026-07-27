@@ -10,7 +10,10 @@ import {
   importKnowledgeBundle,
   type ImportKnowledgeBundleOptions,
 } from '../../../src/core/knowledge-bundle/import.js';
-import { acquireFileLock } from '../../../src/core/file-state.js';
+import {
+  acquireOwnerAwareFileLock,
+  releaseOwnerAwareFileLock,
+} from '../../../src/core/file-state.js';
 import { exportKnowledgeBundle } from '../../../src/core/knowledge-bundle/export.js';
 import {
   createKnowledgeBundle,
@@ -1299,7 +1302,7 @@ describe('project knowledge bundle import', () => {
       importKnowledgeBundle(
         options(bundle, {
           acquireLock: async (lockOptions) => {
-            const lock = await acquireFileLock(lockOptions);
+            const lock = await acquireOwnerAwareFileLock(lockOptions);
             writeLocal(id, {}, 'Concurrent local content.');
             lockedSnapshot = snapshotTree(store.root);
             return lock;
@@ -1590,5 +1593,103 @@ describe('project knowledge bundle import', () => {
         error.issues.some((issue) => issue.reason.includes('collides with'))
     );
     expect(snapshotTree(store.root)).toEqual([]);
+  });
+
+  describe('owner-aware import lock (B5)', () => {
+    it('waits rather than stealing when the lock is held by a live process', async () => {
+      const bundle = writeBundle([record('portable-lock-wait-routing')]);
+
+      // Pre-acquire the import lock so the importer cannot proceed. The lock
+      // content (PID + nonce) identifies the TEST as the live owner.
+      const blocking = await acquireOwnerAwareFileLock({
+        lockPath: store.lockPath,
+        errorFor: () => new Error('test-blocking-lock'),
+      });
+
+      const started = Date.now();
+      await expect(
+        importKnowledgeBundle(
+          options(bundle, {
+            // Use a short deadline so the test doesn't wait 5 seconds.
+            acquireLock: (lockOpts) =>
+              acquireOwnerAwareFileLock({ ...lockOpts, deadlineMs: 400, pollMs: 50 }),
+          })
+        )
+      ).rejects.toMatchObject({
+        code: 'knowledge_bundle_import_lock_failed',
+        details: { reason: 'timeout' },
+      });
+      const elapsed = Date.now() - started;
+
+      // Timed out near the 400 ms deadline — NOT after the OLD 30 s mtime
+      // threshold. The whole point of B5 is that a live owner is never stolen.
+      expect(elapsed).toBeGreaterThanOrEqual(350);
+      expect(elapsed).toBeLessThan(5_000);
+
+      // Lock was NOT stolen: our token is still on disk byte-for-byte.
+      expect(fs.readFileSync(store.lockPath, 'utf-8')).toBe(blocking.token);
+
+      // Release and retry — import succeeds.
+      await releaseOwnerAwareFileLock(blocking);
+      const result = await importKnowledgeBundle(options(bundle));
+      expect(result.state).toBe('imported');
+      expect(result.changed).toBe(true);
+
+      // Lock file cleaned up after a successful import.
+      expect(fs.existsSync(store.lockPath)).toBe(false);
+    });
+
+    it('serializes two concurrent imports so both records survive', async () => {
+      const bundleA = writeBundle([record('portable-concurrent-a')]);
+      const bundleB = writeBundle([record('portable-concurrent-b')]);
+
+      const [a, b] = await Promise.all([
+        importKnowledgeBundle(options(bundleA)),
+        // Small stagger so A wins the first acquire; B then waits.
+        (async () => {
+          await new Promise((r) => setTimeout(r, 10));
+          return importKnowledgeBundle(options(bundleB));
+        })(),
+      ]);
+
+      expect(a.state).toBe('imported');
+      expect(b.state).toBe('imported');
+
+      // BOTH records present — no silent loss from a stale-steal race.
+      const readA = readCanonicalRecord(
+        path.join(store.dir, 'portable-concurrent-a'),
+        'project',
+        store.owner
+      );
+      const readB = readCanonicalRecord(
+        path.join(store.dir, 'portable-concurrent-b'),
+        'project',
+        store.owner
+      );
+      expect(readA).toMatchObject({ kind: 'managed' });
+      expect(readB).toMatchObject({ kind: 'managed' });
+    });
+
+    it('cleans up the lock file on a transactional rollback', async () => {
+      const bundle = writeBundle([record('portable-rollback-lock-routing')]);
+
+      // Force a rollback by making publishStagedFileExclusive throw.
+      await expect(
+        importKnowledgeBundle(
+          options(bundle, {
+            io: {
+              publishStagedFileExclusive: () => {
+                throw new Error('injected publish failure');
+              },
+            },
+          })
+        )
+      ).rejects.toMatchObject({
+        code: 'knowledge_bundle_import_transaction_failed',
+      });
+
+      // Lock file is gone — release ran in the finally block even on rollback.
+      expect(fs.existsSync(store.lockPath)).toBe(false);
+    });
   });
 });

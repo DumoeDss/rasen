@@ -9,6 +9,11 @@ import {
   readProjectConfig,
   storeMembershipHintKey,
 } from '../../src/core/project-config.js';
+import {
+  acquireOwnerAwareFileLock,
+  machineLockPath,
+  releaseOwnerAwareFileLock,
+} from '../../src/core/file-state.js';
 
 const UID_A = '11111111-1111-4111-8111-111111111111';
 const UID_B = '22222222-2222-4222-8222-222222222222';
@@ -217,6 +222,109 @@ describe('project-side store membership hints', () => {
       } finally {
         fs.rmSync(bare, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe('concurrent appends (M8 owner-aware lock)', () => {
+    const UID_C = '33333333-3333-4333-8333-333333333333';
+
+    afterEach(() => {
+      // Clean the machineLockPath lock for the test config.
+      const abs = path.resolve(configPath);
+      fs.rmSync(machineLockPath(abs), { force: true });
+    });
+
+    it('preserves both hints when two concurrent appends target different Stores', async () => {
+      // Seed with one existing hint so the test is about ADDING, not the
+      // first write.
+      await appendStoreMembershipHint(projectRoot, { uid: UID_A, id: 'team-store' });
+
+      // Pre-acquire the lock so both appends queue deterministically. Without
+      // this, Promise.all might complete one append before the other starts,
+      // trivially passing without real contention.
+      const abs = path.resolve(configPath);
+      const lockPath = machineLockPath(abs);
+      const block = await acquireOwnerAwareFileLock({
+        lockPath,
+        errorFor: () => new Error('test-block'),
+      });
+
+      const promise = Promise.all([
+        appendStoreMembershipHint(projectRoot, { uid: UID_B }),
+        appendStoreMembershipHint(projectRoot, { uid: UID_C }),
+      ]);
+
+      // Let both appends hit the lock.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await releaseOwnerAwareFileLock(block);
+
+      const [r1, r2] = await promise;
+      expect(r1.changed).toBe(true);
+      expect(r2.changed).toBe(true);
+
+      // ALL THREE hints survive — the original plus both concurrent appends.
+      // Without the lock, one of B/C would be silently lost (last-writer-wins
+      // on the snapshot taken before the lock was acquired).
+      const uids = (readProjectConfig(projectRoot)?.storeMemberships ?? [])
+        .map((h) => h.uid)
+        .sort();
+      expect(uids).toEqual([UID_A, UID_B, UID_C].sort());
+
+      // Lock file cleaned up by the last writer.
+      expect(fs.existsSync(lockPath)).toBe(false);
+    });
+
+    it('does not duplicate when two concurrent appends target the same Store', async () => {
+      // Seed with one existing hint.
+      await appendStoreMembershipHint(projectRoot, { uid: UID_A, id: 'team-store' });
+
+      const abs = path.resolve(configPath);
+      const lockPath = machineLockPath(abs);
+      const block = await acquireOwnerAwareFileLock({
+        lockPath,
+        errorFor: () => new Error('test-block'),
+      });
+
+      const promise = Promise.all([
+        appendStoreMembershipHint(projectRoot, { uid: UID_B, id: 'knowledge-store' }),
+        appendStoreMembershipHint(projectRoot, { uid: UID_B, id: 'knowledge-store' }),
+      ]);
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await releaseOwnerAwareFileLock(block);
+
+      const [r1, r2] = await promise;
+
+      // Exactly ONE entry for UID_B — the existing dedup-by-UID logic is
+      // preserved under contention.
+      const hints = readProjectConfig(projectRoot)?.storeMemberships ?? [];
+      const bHints = hints.filter((h) => h.uid === UID_B);
+      expect(bHints).toHaveLength(1);
+    });
+
+    it('the lock file does not live inside the project git repo', async () => {
+      // Verify the lock is created in os.tmpdir(), not next to the config.
+      const abs = path.resolve(configPath);
+      const lockPath = machineLockPath(abs);
+
+      await appendStoreMembershipHint(projectRoot, { uid: UID_B });
+
+      // After the call, the lock should be gone (released). But the PATH
+      // it would have used must be outside the project root.
+      expect(lockPath.startsWith(projectRoot)).toBe(false);
+      expect(lockPath.startsWith(path.join(os.tmpdir(), 'rasen-locks'))).toBe(true);
+
+      // And no lock file leaked into the project tree.
+      function walk(dir: string): string[] {
+        const found: string[] = [];
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) found.push(...walk(full));
+          else if (entry.name.endsWith('.lock')) found.push(full);
+        }
+        return found;
+      }
+      expect(walk(projectRoot)).toEqual([]);
     });
   });
 });

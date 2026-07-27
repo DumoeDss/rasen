@@ -18,8 +18,8 @@ import {
   type ResolvedProject,
 } from '../config-api/project-addressing.js';
 import {
-  acquireFileLock,
-  releaseFileLock,
+  acquireOwnerAwareFileLock,
+  releaseOwnerAwareFileLock,
   type FileLockErrorInfo,
   type FileLockErrorKind,
 } from '../file-state.js';
@@ -211,8 +211,8 @@ export interface KnowledgeBundleImportDependencies {
     context: LearnedSkillContext
   ) => Promise<{ ok: true; store: ResolvedStore } | { ok: false; code: string; message: string; repair?: string[] }>;
   readRecord: typeof readCanonicalRecord;
-  acquireLock: typeof acquireFileLock;
-  releaseLock: typeof releaseFileLock;
+  acquireLock: typeof acquireOwnerAwareFileLock;
+  releaseLock: typeof releaseOwnerAwareFileLock;
   io: KnowledgeBundleImportIo;
 }
 
@@ -287,8 +287,8 @@ const DEFAULT_DEPENDENCIES: KnowledgeBundleImportDependencies = {
       projectRoot: project.root,
     }),
   readRecord: readCanonicalRecord,
-  acquireLock: acquireFileLock,
-  releaseLock: releaseFileLock,
+  acquireLock: acquireOwnerAwareFileLock,
+  releaseLock: releaseOwnerAwareFileLock,
   io: DEFAULT_IO,
 };
 
@@ -1065,7 +1065,7 @@ async function applyPlan(
       refused: false,
     };
   } finally {
-    await dependencies.releaseLock(lock, initialStore.lockPath);
+    await dependencies.releaseLock(lock);
   }
 }
 

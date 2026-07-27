@@ -7,7 +7,12 @@ import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'y
 import { z } from 'zod';
 
 import { withProjectRegistryLock, type ProjectPathOptions } from './project-registry.js';
-import { writeFileAtomically } from './file-state.js';
+import {
+  makeLockErrorFactory,
+  machineLockPath,
+  writeFileAtomically,
+  withOwnerAwareFileLock,
+} from './file-state.js';
 import { isKebabId } from './id.js';
 import { thresholdSchema, type ThresholdValue } from './pipeline-registry/types.js';
 import {
@@ -2057,6 +2062,20 @@ function assertPortableHintValue(field: string, value: string): void {
  * reports, never a file this function invents (a config carrying nothing but
  * `storeMemberships` would not be a Rasen project).
  */
+/**
+ * Lock-error factory for the project-side membership hint append. Same shape
+ * as the registry / membership-record factories. The lock lives in
+ * `os.tmpdir()` (never inside the project git repo) so concurrent rasen
+ * commands appending hints for DIFFERENT Stores serialize against each other
+ * instead of one silently clobbering the other's non-overlapping append.
+ */
+const projectMembershipHintLockError = makeLockErrorFactory({
+  createSubject: 'the project membership hint lock file',
+  busyMessage: 'The project membership hint list is busy.',
+  code: 'project_membership_hint_busy',
+  target: 'project.config',
+});
+
 export async function appendStoreMembershipHint(
   projectRoot: string,
   hint: StoreMembershipHint
@@ -2076,34 +2095,49 @@ export async function appendStoreMembershipHint(
     );
   }
 
-  const existing = readProjectConfig(projectRoot)?.storeMemberships ?? [];
-  const key = storeMembershipHintKey(hint);
-  const match = existing.find((entry) => storeMembershipHintKey(entry) === key);
+  // Wrap the read-modify-write so a concurrent append for a DIFFERENT Store
+  // sees this write and adds its own next to it. The lock is keyed by the
+  // absolute config path and lives under `os.tmpdir()`; it is never committable.
+  return withOwnerAwareFileLock(
+    {
+      lockPath: machineLockPath(path.resolve(configPath)),
+      errorFor: projectMembershipHintLockError,
+      holder: 'project-membership-hint',
+    },
+    async () => {
+      // Re-read INSIDE the lock so we see any append a concurrent caller
+      // committed just before we acquired. The snapshot taken before the
+      // lock was the root cause of the lost-write bug.
+      const existing = readProjectConfig(projectRoot)?.storeMemberships ?? [];
+      const key = storeMembershipHintKey(hint);
+      const match = existing.find((entry) => storeMembershipHintKey(entry) === key);
 
-  if (match) {
-    const merged: StoreMembershipHint = {
-      ...match,
-      ...(match.uid === undefined && hint.uid !== undefined ? { uid: hint.uid } : {}),
-      ...(match.id === undefined && hint.id !== undefined ? { id: hint.id } : {}),
-      ...(match.remote === undefined && hint.remote !== undefined ? { remote: hint.remote } : {}),
-    };
-    if (
-      merged.uid === match.uid &&
-      merged.id === match.id &&
-      merged.remote === match.remote
-    ) {
-      return { configPath, changed: false, hints: existing };
+      if (match) {
+        const merged: StoreMembershipHint = {
+          ...match,
+          ...(match.uid === undefined && hint.uid !== undefined ? { uid: hint.uid } : {}),
+          ...(match.id === undefined && hint.id !== undefined ? { id: hint.id } : {}),
+          ...(match.remote === undefined && hint.remote !== undefined ? { remote: hint.remote } : {}),
+        };
+        if (
+          merged.uid === match.uid &&
+          merged.id === match.id &&
+          merged.remote === match.remote
+        ) {
+          return { configPath, changed: false, hints: existing };
+        }
+        const hints = existing.map((entry) =>
+          storeMembershipHintKey(entry) === key ? merged : entry
+        );
+        await writeStoreMembershipHints(configPath, hints);
+        return { configPath, changed: true, hints };
+      }
+
+      const hints = [...existing, hint];
+      await writeStoreMembershipHints(configPath, hints);
+      return { configPath, changed: true, hints };
     }
-    const hints = existing.map((entry) =>
-      storeMembershipHintKey(entry) === key ? merged : entry
-    );
-    await writeStoreMembershipHints(configPath, hints);
-    return { configPath, changed: true, hints };
-  }
-
-  const hints = [...existing, hint];
-  await writeStoreMembershipHints(configPath, hints);
-  return { configPath, changed: true, hints };
+  );
 }
 
 async function writeStoreMembershipHints(
