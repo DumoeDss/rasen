@@ -25,11 +25,11 @@
 - [x] 3.1 RED: Extend Definition/plan-reader tests for exact envelope/payload digest, closed version, deep immutability, tampering, and stored-plan open without current source.
 - [x] 3.2 GREEN: Extract the shared non-barrel plan codec and private opener/lowerer while keeping the public phase-1 payload opaque.
 - [x] 3.3 RED: Add RuntimeExecutionProfile/1 fixtures freezing path-independent SourceRevision layer/source/content/semantic identity, exact capability/result/evidence/recovery/Adapter artifact, and every action-shaping effective policy value with provenance.
-- [ ] 3.4 GREEN: Implement private launch-time execution sealing and bind plan/profile/source/capability/policy digests into launch and Record; reject unsupported effective values.
-- [ ] 3.5 RED: Add drift tests for project/user/package shadowing, same-semantic raw edits, skill/artifact/config changes, removal, and unavailable current state while stored Actions remain byte-stable.
-- [ ] 3.6 GREEN: Implement comparison-only DriftObserver and exact artifact resolution; never recompile or substitute current source/profile during resume.
-- [ ] 3.7 RED: Add one support-analyzer fixture matrix across start, CLI show, management Pipeline detail, and Canvas for root DAG/Atomic/Gate/Finish/simple bug-fix versus unsupported Composite/Loop/FanOut/Join/other v1/v2.
-- [ ] 3.8 GREEN: Implement `availableEngines`/`reconcilerSupport {supported, reason, profileDigest}` once and preserve legacy executionMode/LEGACY_NORMALIZED as separate compatibility information.
+- [x] 3.4 GREEN: Implement private launch-time execution sealing and bind plan/profile/source/capability/policy digests into launch and Record; reject unsupported effective values.
+- [x] 3.5 RED: Add drift tests for project/user/package shadowing, same-semantic raw edits, skill/artifact/config changes, removal, and unavailable current state while stored Actions remain byte-stable.
+- [x] 3.6 GREEN: Implement comparison-only DriftObserver and exact artifact resolution; never recompile or substitute current source/profile during resume.
+- [x] 3.7 RED: Add one support-analyzer fixture matrix across start, CLI show, management Pipeline detail, and Canvas for root DAG/Atomic/Gate/Finish/simple bug-fix versus unsupported Composite/Loop/FanOut/Join/other v1/v2.
+- [x] 3.8 GREEN: Implement `availableEngines`/`reconcilerSupport {supported, reason, profileDigest}` once and preserve legacy executionMode/LEGACY_NORMALIZED as separate compatibility information.
 
 ## 4. Canonical Record, reducer, waits, and limits
 
