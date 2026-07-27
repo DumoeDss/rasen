@@ -2,11 +2,11 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev/0.1.5]
   merge_group:
-    branches: [main]
+    branches: [main, dev/0.1.5]
   push:
-    branches: [main]
+    branches: [main, dev/0.1.5]
   workflow_dispatch:
 
 permissions:
@@ -139,6 +139,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -154,6 +156,11 @@ jobs:
 
       - name: Build project
         run: pnpm run build
+
+      - name: Check for whitespace errors in diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || 'HEAD~1' }}
+        run: git diff --check "${BASE_SHA}...HEAD"
 
       - name: Type check
         run: pnpm exec tsc --noEmit
