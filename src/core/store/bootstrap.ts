@@ -110,7 +110,7 @@ import {
   readStoreProjectRecord,
   WINDOWS_RESERVED_DEVICE_NAMES,
 } from './project-records.js';
-import { redactOptionalRemote } from './remote.js';
+import { assertCredentialFreeRemote, redactOptionalRemote } from './remote.js';
 import { writeDurablePointer } from './upgrade-identity.js';
 
 // -----------------------------------------------------------------------------
@@ -1519,6 +1519,12 @@ async function cloneWithCleanupGuard(
 ): Promise<{ ok: true; stagingPath: string } | { ok: false }> {
   const stagingPath = buildStagingPath(target);
   try {
+    // Credential gate (M9): reject BEFORE any staging dir is created or git is
+    // spawned, so the remote never lands in process argv and git's error output
+    // can never echo it. The thrown StoreError is caught below; its message
+    // already carries only `redactRemote(remote)`. No staging directory exists
+    // yet, so the cleanup `fs.rmSync(stagingPath, { force: true })` is a no-op.
+    assertCredentialFreeRemote(remote, 'store.pointer');
     await cloneRepository(remote, stagingPath);
     return { ok: true, stagingPath };
   } catch (failure) {

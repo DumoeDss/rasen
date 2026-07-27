@@ -68,7 +68,9 @@ export async function readCanonicalLearnedSkillCatalog(
   context: LearnedSkillContext = {}
 ): Promise<StoreCatalogRead> {
   const resolution = await resolveCanonicalStore(scope, context);
-  return resolution.ok ? readStoreCatalog(resolution.store, scope) : { records: [], unreadable: [] };
+  return resolution.ok
+    ? readStoreCatalog(resolution.store, scope)
+    : { records: [], unreadable: [], recoverableBackups: [] };
 }
 
 /** Lists every record (active and retired) in a scope — powers `knowledge list`/`show`. */

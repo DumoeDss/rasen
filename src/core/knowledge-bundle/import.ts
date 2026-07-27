@@ -47,6 +47,7 @@ import {
   resolveCanonicalStore,
   type ResolvedStore,
 } from '../learned-skills/stores.js';
+import { normalizeProjectIdentity } from '../store/project-records.js';
 import type {
   LearnedSkillContext,
   LearnedSkillManifestV2,
@@ -1104,7 +1105,7 @@ export async function importKnowledgeBundle(
       }
     );
   }
-  if (bundle.projectId !== project.ref.projectId) {
+  if (normalizeProjectIdentity(bundle.projectId) !== normalizeProjectIdentity(project.ref.projectId)) {
     throw new KnowledgeBundleImportError(
       'knowledge_bundle_import_project_mismatch',
       `Bundle project "${bundle.projectId}" does not match target project "${project.ref.projectId}".`,
@@ -1134,8 +1135,9 @@ export async function importKnowledgeBundle(
   if (
     storeResolution.store.owner.type !== 'project' ||
     canonicalProjectId === undefined ||
-    storeResolution.store.projectId !== canonicalProjectId ||
-    canonicalProjectId !== project.ref.projectId
+    normalizeProjectIdentity(storeResolution.store.projectId ?? '') !==
+      normalizeProjectIdentity(canonicalProjectId) ||
+    normalizeProjectIdentity(canonicalProjectId) !== normalizeProjectIdentity(project.ref.projectId)
   ) {
     throw new KnowledgeBundleImportError(
       'knowledge_bundle_import_catalog_drift',

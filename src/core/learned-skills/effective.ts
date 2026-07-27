@@ -33,7 +33,7 @@ import { storeBindingDeclarationFrom } from '../effective-config.js';
 import { resolveStoreBinding } from '../store/identity.js';
 import { storeUidsMatch } from '../store/identity-types.js';
 import { matchesApplicability } from './applicability.js';
-import { loadStoreCatalog } from './catalog.js';
+import { loadStoreCatalog, readStoreCatalog } from './catalog.js';
 import { LEARNED_SKILL_ACTIVE_DESCRIPTION_BUDGET, STORE_LEARNED_SKILLS_SEGMENTS } from './constants.js';
 import { resolveEvaluationCheckout } from './evaluation-root.js';
 import {
@@ -593,7 +593,24 @@ export async function resolveEffectiveLearnedSkillPlan(
     }
 
     try {
-      const catalog = loadStoreCatalog(storeCatalogAt(store.root, owner), 'store')
+      const catalogRead = readStoreCatalog(storeCatalogAt(store.root, owner), 'store');
+      // Recoverable backup debris (M5): a killed mutation left a backup
+      // directory. The catalog is NOT empty — it holds recoverable data the
+      // next mutation restores. Report the Store as unavailable/degraded so
+      // resolution and materialization defer cleanup rather than destructively
+      // reconciling away generated files the backed-up record still owns.
+      if (catalogRead.recoverableBackups.length > 0) {
+        storeFacts.push({
+          status: 'unavailable',
+          store: owner,
+          diagnostic: `store ${describeDurableOwner(owner)} holds a catalog with a recoverable backup directory (${catalogRead.recoverableBackups.join(', ')}); run a learned-skill mutation to restore it`,
+          relevant: relevance.length > 0,
+          relevance,
+          repair: ['rasen doctor'],
+        });
+        continue;
+      }
+      const catalog = catalogRead.records
         .filter((record) => record.manifest.status === 'active')
         .sort((left, right) => left.manifest.id.localeCompare(right.manifest.id));
       storeFacts.push({ status: 'member', store: owner, relevance, catalog });

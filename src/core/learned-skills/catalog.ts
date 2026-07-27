@@ -19,6 +19,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { isOsJunkEntryName } from '../workflow-registry/path-policy.js';
 import {
+  LEARNED_SKILL_BACKUP_PREFIX,
   LEARNED_SKILL_CONTENT_FILE,
   LEARNED_SKILL_GENERATED_BY,
   LEARNED_SKILL_MANIFEST_FILE,
@@ -323,6 +324,18 @@ export interface StoreCatalogRead {
    * out why the skill vanished.
    */
   unreadable: UnreadableCanonicalRecord[];
+  /**
+   * Recoverable backup debris left by a killed mutation (M5). A killed
+   * mid-swap mutation renames the previous record directory to
+   * `.rasen-learned-skill-backup-*`; until the next mutation runs
+   * `sweepMutationDebris`, these directories exist but cannot be read as
+   * records (their directory-name/id mismatch is not a verifiable record).
+   * Reporting them — rather than silently filtering as "junk" and treating
+   * the catalog as empty — lets the effective-materialization path mark the
+   * Store degraded/unavailable instead of destructively reconciling away
+   * generated files the backed-up record still owns.
+   */
+  recoverableBackups: string[];
 }
 
 /**
@@ -343,11 +356,24 @@ export interface StoreCatalogRead {
  * every killed mutation starts reporting its own backup as a corrupt record.
  */
 export function readStoreCatalog(store: ResolvedStore, scope: LearnedSkillScope): StoreCatalogRead {
-  if (!fs.existsSync(store.dir)) return { records: [], unreadable: [] };
+  if (!fs.existsSync(store.dir)) return { records: [], unreadable: [], recoverableBackups: [] };
   const entries = fs.readdirSync(store.dir, { withFileTypes: true });
   const records: CanonicalLearnedSkill[] = [];
   const unreadable: UnreadableCanonicalRecord[] = [];
+  const recoverableBackups: string[] = [];
   for (const entry of entries) {
+    // Backup debris (M5): detect BEFORE the isOsJunkEntryName filter (which
+    // skips every dot-prefixed entry). A killed mutation renames the previous
+    // record into this prefix; collect the directory name and skip — it is
+    // not a verifiable record (its directory-name/id mismatch would be a
+    // reported refusal if it were not dot-filtered), but it IS recoverable
+    // data the next mutation restores. Staging dirs are NOT collected: those
+    // are partial new records removed by sweepMutationDebris, not recoverable
+    // data.
+    if (entry.isDirectory() && entry.name.startsWith(LEARNED_SKILL_BACKUP_PREFIX)) {
+      recoverableBackups.push(entry.name);
+      continue;
+    }
     if (!entry.isDirectory() || isOsJunkEntryName(entry.name)) continue;
     const directory = FileSystemUtils.joinPath(store.dir, entry.name);
     const read = readCanonicalRecord(directory, scope, store.owner);
@@ -359,7 +385,7 @@ export function readStoreCatalog(store: ResolvedStore, scope: LearnedSkillScope)
       unreadable.push({ id: entry.name, directory, reason: read.reason });
     }
   }
-  return { records, unreadable };
+  return { records, unreadable, recoverableBackups };
 }
 
 /** Loads every managed record in a catalog (unmanaged/absent entries are skipped). */

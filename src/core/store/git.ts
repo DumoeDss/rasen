@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { promisify } from 'node:util';
 
 import { StoreError } from './errors.js';
+import { redactRemote } from './remote.js';
 
 const fs = nodeFs.promises;
 const execFilePromise = promisify(execFile);
@@ -172,8 +173,15 @@ export async function cloneRepository(remote: string, target: string): Promise<v
       );
     }
 
+    // Defense-in-depth (M9): git's error output echoes the raw remote URL,
+    // which may carry credentials. Replace every occurrence of the raw remote
+    // with its redacted form BEFORE constructing the diagnostic, so even a
+    // future caller that bypasses cloneWithCleanupGuard's credential gate
+    // cannot leak credentials into the error surface.
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    const safeMessage = rawMessage.split(remote).join(redactRemote(remote));
     throw new StoreError(
-      `Failed to clone the repository: ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to clone the repository: ${safeMessage}`,
       'store_clone_failed',
       {
         target: 'store.git',

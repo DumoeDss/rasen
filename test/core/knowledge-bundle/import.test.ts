@@ -1692,4 +1692,147 @@ describe('project knowledge bundle import', () => {
       expect(fs.existsSync(store.lockPath)).toBe(false);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // M10 — normalizeProjectIdentity at every comparison
+  // ---------------------------------------------------------------------------
+
+  describe('M10 — uppercase UUID export→import roundtrip', () => {
+    const UPPER_PROJECT_ID = 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA';
+    const LOWER_PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+    it('imports a lowercase-canonical bundle into a project whose registry carries the uppercase UUID', async () => {
+      // The bundle was exported with the LOWERCASE canonical form (export
+      // normalizes via normalizeProjectIdentity). The registry carries the
+      // UPPERCASE UUID (the original the user typed). Without M10's fix, the
+      // strict comparison bundle.projectId !== project.ref.projectId would
+      // refuse the import.
+      const uppercaseStore: ResolvedStore = {
+        root: path.join(machineData, 'project-knowledge', UPPER_PROJECT_ID),
+        dir: path.join(
+          machineData,
+          'project-knowledge',
+          UPPER_PROJECT_ID,
+          'learned-skills'
+        ),
+        owner: { type: 'project', projectId: UPPER_PROJECT_ID },
+        projectId: UPPER_PROJECT_ID,
+        lockPath: path.join(machineData, 'learned-skill-locks', 'upper-project.lock'),
+      };
+
+      // Write a bundle carrying the LOWERCASE canonical projectId.
+      const bundle = writeBundle(
+        [
+          record('portable-uppercase-routing', {
+            owner: { type: 'project', projectId: LOWER_PROJECT_ID },
+          }),
+        ],
+        LOWER_PROJECT_ID,
+        'uppercase-roundtrip.json'
+      );
+
+      const result = await importKnowledgeBundle({
+        bundle,
+        project: UPPER_PROJECT_ID,
+        dependencies: {
+          resolveProject: async (selector) =>
+            selector === UPPER_PROJECT_ID || selector === checkout
+              ? {
+                  root: checkout,
+                  ref: {
+                    projectId: UPPER_PROJECT_ID,
+                    name: 'uppercase-project',
+                    root: checkout,
+                  },
+                }
+              : null,
+          resolveProjectStore: async () => ({ ok: true, store: uppercaseStore }),
+        },
+      });
+
+      expect(result).toMatchObject({
+        state: 'imported',
+        projectId: UPPER_PROJECT_ID,
+        changed: true,
+        refused: false,
+      });
+    });
+
+    it('still rejects a genuinely different project identity', async () => {
+      // M10 normalizes for comparison, but a truly different id is still rejected.
+      const bundle = writeBundle(
+        [record('portable-wrong-project', {
+          owner: { type: 'project', projectId: OTHER_PROJECT_ID },
+        })],
+        OTHER_PROJECT_ID,
+        'genuinely-different.json'
+      );
+
+      await expect(
+        importKnowledgeBundle(
+          options(bundle, {
+            resolveProject: async () => ({
+              root: checkout,
+              ref: {
+                projectId: PROJECT_ID,
+                name: 'portable-project',
+                root: checkout,
+              },
+            }),
+            resolveProjectStore: async () => ({ ok: true, store }),
+          })
+        )
+      ).rejects.toMatchObject({
+        code: 'knowledge_bundle_import_project_mismatch',
+      });
+    });
+
+    it('catalog-drift check does not fire for case-only differences', async () => {
+      // The resolved store carries the uppercase UUID; the project ref also
+      // carries the uppercase UUID. The canonicalProjectId derived from the
+      // store owner is uppercase. All three are the same after normalization.
+      const upperStore: ResolvedStore = {
+        root: path.join(machineData, 'project-knowledge', UPPER_PROJECT_ID),
+        dir: path.join(
+          machineData,
+          'project-knowledge',
+          UPPER_PROJECT_ID,
+          'learned-skills'
+        ),
+        owner: { type: 'project', projectId: UPPER_PROJECT_ID },
+        projectId: UPPER_PROJECT_ID,
+        lockPath: path.join(machineData, 'learned-skill-locks', 'upper-drift.lock'),
+      };
+
+      const bundle = writeBundle(
+        [
+          record('portable-drift-check', {
+            owner: { type: 'project', projectId: LOWER_PROJECT_ID },
+          }),
+        ],
+        LOWER_PROJECT_ID,
+        'drift-check.json'
+      );
+
+      // The import must NOT throw knowledge_bundle_import_catalog_drift.
+      const result = await importKnowledgeBundle({
+        bundle,
+        project: UPPER_PROJECT_ID,
+        dependencies: {
+          resolveProject: async () => ({
+            root: checkout,
+            ref: {
+              projectId: UPPER_PROJECT_ID,
+              name: 'uppercase-project',
+              root: checkout,
+            },
+          }),
+          resolveProjectStore: async () => ({ ok: true, store: upperStore }),
+        },
+      });
+
+      expect(result.state).toBe('imported');
+      expect(result.refused).toBe(false);
+    });
+  });
 });

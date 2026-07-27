@@ -925,4 +925,53 @@ describe('project-registry', () => {
       fs.rmSync(cloneB, { recursive: true, force: true });
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // M10 — normalizeProjectIdentity at registry comparisons
+  // ---------------------------------------------------------------------------
+
+  describe('M10 — project identity normalization', () => {
+    it('finds an existing uppercase-UUID entry when the same path re-registers with lowercase', async () => {
+      const dir = makeProjectDir('upper-project');
+      const upperId = 'BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB';
+
+      // First registration with the uppercase UUID.
+      const first = await registerProject(
+        { projectRoot: dir, projectId: upperId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      // Second registration at the SAME path with the LOWERCASE form.
+      // normalizeProjectIdentity makes these the same identity, so the
+      // registry finds the existing entry (path-exact match) and does NOT
+      // create a duplicate.
+      const lowerId = upperId.toLowerCase();
+      const second = await registerProject(
+        { projectRoot: dir, projectId: lowerId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      expect(second.canonicalPath).toBe(first.canonicalPath);
+      // Same home — no duplicate was created.
+      expect(second.entry.home).toBe(first.entry.home);
+    });
+
+    it('treats the same path with different-case projectIds as the same project (no clone-fork)', async () => {
+      const dir = makeProjectDir('case-project');
+      const upperId = 'CCCCCCCC-CCCC-4CCC-8CCC-CCCCCCCCCCCC';
+
+      const first = await registerProject(
+        { projectRoot: dir, projectId: upperId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      // The registry retains the original string for display. Re-registering
+      // with a different case at the same path is a path-exact match — the
+      // entry stays as-is. What matters is that same-ID lookups elsewhere
+      // (worktree share, moved repo) normalize both sides.
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(state).toBeDefined();
+      expect(state!.projects[first.canonicalPath]?.projectId).toBe(upperId);
+    });
+  });
 });

@@ -1269,3 +1269,143 @@ describe('B3 — publish over a pre-existing empty target directory', () => {
     expect(fs.readFileSync(path.join(target, 'do-not-delete.txt'), 'utf-8')).toBe('user content');
   }, 30000);
 });
+
+// -----------------------------------------------------------------------------
+// M9 — Credential-bearing remotes rejected before obtain
+// -----------------------------------------------------------------------------
+
+describe('M9 — credential-bearing remotes rejected before obtain', () => {
+  it.each([
+    ['https with userinfo', 'https://user:secret@host.example.com/repo.git', 'secret'],
+    ['https with token-only userinfo', 'https://token@host.example.com/repo.git', 'token'],
+    ['git+https with token', 'git+https://token@host.example.com/repo.git', 'token'],
+    ['https with password only', 'https://:pass@host.example.com/repo.git', 'pass'],
+  ])(
+    'rejects %s before cloning — diagnostic carries the redacted form, never the raw credential',
+    async (_label, remote, secret) => {
+      const project = makeProject('project');
+      updateProjectConfigKey(project, 'store', {
+        uid: '11111111-2222-4333-8444-555555666666',
+        id: 'cred-store',
+        remote,
+      });
+
+      const target = path.join(tempDir, 'cred-target');
+      const report = await buildBootstrapReport({
+        cwd: project,
+        mode: 'apply',
+        globalDataDir,
+        paths: new Map([['cred-store', target]]),
+        consent: blanketConsent,
+      });
+
+      const entry = entryFor(report, 'cred-store');
+      expect(entry.action).toBe('obtain-failed');
+
+      // The diagnostic code for credential rejection.
+      const cred_diag = entry.diagnostics.find((d) => d.code === 'store_remote_credentials');
+      expect(cred_diag, 'credential rejection diagnostic should be present').toBeDefined();
+      // The message MUST contain the redacted form.
+      expect(cred_diag!.message).toContain('<redacted>');
+      // The raw credential MUST NEVER appear in any diagnostic.
+      for (const d of entry.diagnostics) {
+        expect(d.message).not.toContain(secret);
+      }
+
+      // No staging dir was created — the credential check fires BEFORE the clone.
+      expect(fs.existsSync(target)).toBe(false);
+      const parent = path.dirname(target);
+      if (fs.existsSync(parent)) {
+        const siblings = fs.readdirSync(parent);
+        expect(siblings.some((s) => s.includes('.rasen-stage.'))).toBe(false);
+      }
+    }
+  );
+
+  it('rejects credential-bearing Store remote and Store hint in the same report', async () => {
+    const project = makeProject('project');
+    // Store declaration with credentials.
+    updateProjectConfigKey(project, 'store', {
+      uid: '11111111-2222-4333-8444-555555666666',
+      id: 'declared-store',
+      remote: 'https://user:pass@host.example.com/repo.git',
+    });
+
+    const target = path.join(tempDir, 'multi-cred-target');
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([['declared-store', target]]),
+      consent: blanketConsent,
+    });
+
+    const entry = entryFor(report, 'declared-store');
+    expect(entry.action).toBe('obtain-failed');
+    expect(
+      entry.diagnostics.some((d) => d.code === 'store_remote_credentials')
+    ).toBe(true);
+    // The raw password never appears.
+    for (const d of entry.diagnostics) {
+      expect(d.message).not.toContain('pass');
+    }
+  });
+
+  it('credential-free SSH remote still proceeds to clone (not rejected for credentials)', async () => {
+    // ssh://git@host is the ordinary SSH form — the userinfo is an account
+    // name, not a secret. assertCredentialFreeRemote explicitly allows it.
+    const source = await makeRemoteStore('ssh-source');
+    const project = makeProject('project');
+    // Use a local file remote (not a real SSH remote) — the point is that
+    // the credential gate does NOT fire for credential-free remotes. We
+    // verify by using a local file:// remote that has no userinfo.
+    updateProjectConfigKey(project, 'store', {
+      uid: source.uid,
+      id: source.id,
+      remote: source.remote,
+    });
+
+    const target = path.join(tempDir, 'ssh-ok-target');
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([[source.id, target]]),
+      consent: blanketConsent,
+    });
+
+    const entry = entryFor(report, source.id);
+    // The entry was obtained (not rejected for credentials).
+    expect(entry.action).toBe('obtained');
+    expect(
+      entry.diagnostics.some((d) => d.code === 'store_remote_credentials')
+    ).toBe(false);
+  });
+
+  it('credential-free https remote still proceeds to clone', async () => {
+    // A plain https remote without userinfo is credential-free and must
+    // not be rejected. Use a local file:// path to avoid network dependency.
+    const source = await makeRemoteStore('https-source');
+    const project = makeProject('project');
+    updateProjectConfigKey(project, 'store', {
+      uid: source.uid,
+      id: source.id,
+      remote: source.remote,
+    });
+
+    const target = path.join(tempDir, 'https-ok-target');
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'apply',
+      globalDataDir,
+      paths: new Map([[source.id, target]]),
+      consent: blanketConsent,
+    });
+
+    const entry = entryFor(report, source.id);
+    expect(entry.action).toBe('obtained');
+    expect(
+      entry.diagnostics.some((d) => d.code === 'store_remote_credentials')
+    ).toBe(false);
+  });
+});

@@ -17,6 +17,7 @@ import {
 } from './file-state.js';
 import { formatZodIssues } from './zod-issues.js';
 import { StoreError } from './store/errors.js';
+import { normalizeProjectIdentity } from './store/project-records.js';
 
 const fs = nodeFs.promises;
 
@@ -334,7 +335,8 @@ export async function registerProject(
     }
 
     const sameIdEntries = Object.entries(projects).filter(
-      ([, entry]) => entry.projectId === input.projectId
+      ([, entry]) =>
+        normalizeProjectIdentity(entry.projectId) === normalizeProjectIdentity(input.projectId)
     );
 
     // 2a. Worktree share: an entry with the same projectId whose path still
@@ -462,7 +464,10 @@ export async function findWorktreeDuplicateEntries(
     const pierced = await resolveRegistrationRoot(entryPath);
     if (pierced === entryPath) continue;
     const mainEntry = state.projects[pierced];
-    if (mainEntry && mainEntry.projectId === entry.projectId) {
+    if (
+      mainEntry &&
+      normalizeProjectIdentity(mainEntry.projectId) === normalizeProjectIdentity(entry.projectId)
+    ) {
       duplicates.push({ path: entryPath, entry, mainRoot: pierced });
     }
   }
@@ -541,7 +546,9 @@ export async function gcProjectRegistry(
       if (pierced === entryPath) continue;
       const mainEntry = projects[pierced];
       if (mainEntry) {
-        if (mainEntry.projectId === entry.projectId) {
+        if (
+          normalizeProjectIdentity(mainEntry.projectId) === normalizeProjectIdentity(entry.projectId)
+        ) {
           collapsedRemoved.push({ path: entryPath, entry });
           delete projects[entryPath];
         }
