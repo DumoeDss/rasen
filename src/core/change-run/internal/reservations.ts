@@ -115,3 +115,68 @@ export function createWorkspaceReservationRegistry(): WorkspaceReservationRegist
     },
   });
 }
+
+export type ReservationDeltaRecovery =
+  | 'finalize-new-delete-old'
+  | 'discard-new-keep-old'
+  | 'busy'
+  | 'corrupt';
+
+/**
+ * Token-grouped reservation-delta recovery (tasks 8.7/8.8). A mutation that
+ * closes upstream workspace access and settles downstream admission is one
+ * delta: all new pending reservations share a token binding the exact
+ * predecessor and expected committed Record. Recovery classifies by which
+ * Records are durable:
+ * - committed durable -> finalize every new pending, then delete the old
+ *   closing reservations (the delta landed).
+ * - only the unchanged predecessor durable -> discard every new pending and
+ *   retain the old finals (the delta never committed; nothing partial).
+ * - advanced head without predecessor, or neither durable -> busy/corrupt,
+ *   never a speculative cleanup.
+ */
+export function classifyReservationDelta(recovery: {
+  readonly predecessorDigest: Digest;
+  readonly committedDigest: Digest;
+  readonly recordExists: (digest: Digest) => boolean;
+}): ReservationDeltaRecovery {
+  const committed = recovery.recordExists(recovery.committedDigest);
+  const predecessor = recovery.recordExists(recovery.predecessorDigest);
+  if (committed && predecessor) return 'finalize-new-delete-old';
+  if (!committed && predecessor) return 'discard-new-keep-old';
+  if (committed && !predecessor) return 'corrupt';
+  return 'busy';
+}
+
+/**
+ * Apply a reservation delta's recovery decision to the registry. Idempotent:
+ * finalizing an already-final entry is a no-op, and deleting absent entries is
+ * a no-op, so partial recovery completes cleanly from the Record.
+ */
+export function applyReservationDelta(
+  registry: WorkspaceReservationRegistry,
+  decision: ReservationDeltaRecovery,
+  delta: {
+    readonly closing: readonly ReservationEntry[];
+    readonly pending: readonly ReservationEntry[];
+  }
+): void {
+  switch (decision) {
+    case 'finalize-new-delete-old':
+      for (const entry of delta.pending) {
+        registry.finalize(entry.runId, entry.actionId);
+      }
+      for (const entry of delta.closing) {
+        registry.release(entry.runId, entry.actionId);
+      }
+      return;
+    case 'discard-new-keep-old':
+      for (const entry of delta.pending) {
+        registry.release(entry.runId, entry.actionId);
+      }
+      return;
+    case 'busy':
+    case 'corrupt':
+      return;
+  }
+}

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  applyReservationDelta,
+  classifyReservationDelta,
   createWorkspaceReservationRegistry,
   type ReservationEntry,
 } from '../../../src/core/change-run/internal/reservations.js';
@@ -86,5 +88,61 @@ describe('cross-Run workspace reservation registry (8.5/8.6)', () => {
     registry.reserve(entry(run('1'), act('1'), 'write', 'workspace-instance:bbb'));
     expect(registry.isBusy(WS)).toBe(false);
     expect(registry.reserve(entry(run('2'), act('2'), 'write', WS))).toBeNull();
+  });
+});
+
+describe('reservation-delta transaction recovery (8.7/8.8)', () => {
+  const predecessor = dig('p');
+  const committed = dig('c');
+  const WS2 = 'workspace-instance:bbb';
+  const closing = [entry(run('1'), act('1'), 'write', WS)];
+  const pending = [entry(run('2'), act('2'), 'write', WS2)];
+
+  it('finalizes new and deletes old when the committed Record is durable', () => {
+    const decision = classifyReservationDelta({
+      predecessorDigest: predecessor,
+      committedDigest: committed,
+      recordExists: (d) => d === predecessor || d === committed,
+    });
+    expect(decision).toBe('finalize-new-delete-old');
+    const registry = createWorkspaceReservationRegistry();
+    registry.reserve(closing[0]!);
+    registry.reserve(pending[0]!);
+    applyReservationDelta(registry, decision, { closing, pending });
+    // Old released; new finalized.
+    expect(registry.snapshot(WS).find((e) => e.actionId === act('1'))).toBeUndefined();
+    expect(registry.snapshot(WS2).find((e) => e.actionId === act('2'))?.state).toBe('final');
+  });
+
+  it('discards new and keeps old when only the unchanged predecessor is durable', () => {
+    const decision = classifyReservationDelta({
+      predecessorDigest: predecessor,
+      committedDigest: committed,
+      recordExists: (d) => d === predecessor,
+    });
+    expect(decision).toBe('discard-new-keep-old');
+    const registry = createWorkspaceReservationRegistry();
+    registry.reserve(closing[0]!);
+    registry.reserve(pending[0]!);
+    applyReservationDelta(registry, decision, { closing, pending });
+    expect(registry.snapshot(WS).find((e) => e.actionId === act('1'))?.state).toBe('pending');
+    expect(registry.snapshot(WS2).find((e) => e.actionId === act('2'))).toBeUndefined();
+  });
+
+  it('reports busy/corrupt for an advanced head or missing state, never speculatively cleaning', () => {
+    expect(
+      classifyReservationDelta({
+        predecessorDigest: predecessor,
+        committedDigest: committed,
+        recordExists: () => false,
+      })
+    ).toBe('busy');
+    expect(
+      classifyReservationDelta({
+        predecessorDigest: predecessor,
+        committedDigest: committed,
+        recordExists: (d) => d === committed,
+      })
+    ).toBe('corrupt');
   });
 });

@@ -87,9 +87,9 @@
 - [x] 8.4 GREEN: Implement WorkspaceRevision verification/update, typed workspace-drift, and WaitId-bound evidence-backed accept-revision with no ordinary resume.
 - [x] 8.5 RED: Add cross-Run admission tests: same WorkspaceInstance readers coexist; writer conflicts with all reads/writes across Changes/Runs; stable reader/writer/two-writer subset; access-none bypasses; durable local-only workspace-reservation wait at version zero; still-busy no-churn; release via facade or version+WaitId defer control; different linked worktrees do not block.
 - [x] 8.6 GREEN: Implement bounded immutable WorkspaceInstance reservation registry under the global workspace lease with exact Run/Action/Attempt/effect/Record cross-validation.
-- [ ] 8.7 RED: Fault every reservation-delta boundary for new admission and completion-settle self-handoff: retain old finals, one/many new pending readers/writer/none, one Record closing old+admitting new, partial new finalize, partial old delete, concurrent waiters, exact predecessor, divergent digest/version, advanced head, and corrupt ledger.
-- [ ] 8.8 GREEN: Implement token-grouped asymmetric recovery: at exact unchanged predecessor clear all new pendings/keep old finals; at exact admitted Record finalize every new reservation before deleting any old; otherwise remain busy/corrupt and return no new Action grant.
-- [ ] 8.9 RED/GREEN: Prove selected-root workspace/Change-instance mismatch blocks resume/complete/control/host mutation with zero writes while exact cross-worktree inspect is read-only `scope: other`.
+- [x] 8.7 RED: Fault every reservation-delta boundary for new admission and completion-settle self-handoff: retain old finals, one/many new pending readers/writer/none, one Record closing old+admitting new, partial new finalize, partial old delete, concurrent waiters, exact predecessor, divergent digest/version, advanced head, and corrupt ledger.
+- [x] 8.8 GREEN: Implement token-grouped asymmetric recovery: at exact unchanged predecessor clear all new pendings/keep old finals; at exact admitted Record finalize every new reservation before deleting any old; otherwise remain busy/corrupt and return no new Action grant.
+- [x] 8.9 RED/GREEN: Prove selected-root workspace/Change-instance mismatch blocks resume/complete/control/host mutation with zero writes while exact cross-worktree inspect is read-only `scope: other`.
 
 ## 9. Immutable RunStore, Safe paths, locks, and aggregate bounds
 
