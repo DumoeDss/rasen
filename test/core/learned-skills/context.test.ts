@@ -255,6 +255,29 @@ describe('learned-skill execution context', () => {
     expect(resumed.source).toBe('run-state');
   });
 
+  it('recognizes a case-differing project UUID in a frozen-resume selector (M3)', async () => {
+    const project = await createProject('frozen-case-project');
+    const initial = await resolveLearnedSkillExecutionContext({
+      launchDirectory: project.root,
+      requestedScope: 'project',
+      globalDataDir,
+    });
+    const frozen = freezeKnowledgeContext(initial);
+
+    // Resume with the same project but an UPPERCASE selector — the frozen
+    // record carries the lowercase form. Pre-fix (raw === in sameOwner), the
+    // selector didn't match and was rejected as drift. Post-fix,
+    // sameProjectIdentity canonicalizes the comparison.
+    const resumed = await resolveLearnedSkillExecutionContext({
+      launchDirectory: project.root,
+      selector: { project: project.id.toUpperCase() },
+      requestedScope: 'project',
+      frozen,
+      globalDataDir,
+    });
+    expect(resumed.owner).toMatchObject({ type: 'project', root: project.root });
+  });
+
   // Frozen Store ownership is keyed on PERMANENT identity, so a rename cannot
   // retarget a run in flight and a namesake cannot claim one. Records written
   // before that keep working, but resolving the name they carry is fail-closed.

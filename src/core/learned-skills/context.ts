@@ -234,10 +234,15 @@ function selectorIdentity(selector: KnowledgeSelector): KnowledgeOwnerRef | unde
 }
 
 function sameOwner(left: KnowledgeOwnerRef, right: KnowledgeOwnerRef): boolean {
-  return (
-    left.type === right.type &&
-    (left.type === 'global' || (right.type !== 'global' && left.id === right.id))
-  );
+  if (left.type !== right.type) return false;
+  if (left.type === 'global') return true;
+  // Project identities are UUIDs that may differ only in case or whitespace
+  // — compare in canonical form (M3). Store ids are display aliases compared
+  // as-is, matching the registry's own alias equality.
+  if (left.type === 'project' && right.type === 'project')
+    return sameProjectIdentity(left.id, right.id);
+  if (left.type === 'store' && right.type === 'store') return left.id === right.id;
+  return false;
 }
 
 function pathOptions(globalDataDir: string | undefined): { globalDataDir?: string } {
