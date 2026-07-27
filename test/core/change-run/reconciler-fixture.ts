@@ -102,6 +102,7 @@ export function bugFixPlanInput(): RuntimePlanInput {
         hierarchicalPath: BUG_FIX_PATHS[0],
         requires: [],
         admissionKind: 'agent',
+        workspace: { access: 'read' },
         gate: {
           gateId: 'propose-gate',
           decisionIds: [...GATE_DECISIONS],
@@ -113,6 +114,7 @@ export function bugFixPlanInput(): RuntimePlanInput {
         hierarchicalPath: BUG_FIX_PATHS[1],
         requires: [BUG_FIX_PATHS[0]],
         admissionKind: 'agent',
+        workspace: { access: 'write' },
         gate: {
           gateId: 'apply-gate',
           decisionIds: [...GATE_DECISIONS],
@@ -124,6 +126,7 @@ export function bugFixPlanInput(): RuntimePlanInput {
         hierarchicalPath: BUG_FIX_PATHS[2],
         requires: [BUG_FIX_PATHS[1]],
         admissionKind: 'agent',
+        workspace: { access: 'read' },
         adaptiveVerify: true,
       },
       {
@@ -131,6 +134,7 @@ export function bugFixPlanInput(): RuntimePlanInput {
         hierarchicalPath: BUG_FIX_PATHS[3],
         requires: [BUG_FIX_PATHS[2]],
         admissionKind: 'agent',
+        workspace: { access: 'write' },
         gate: {
           gateId: 'ship-gate',
           decisionIds: [...GATE_DECISIONS],
@@ -142,6 +146,7 @@ export function bugFixPlanInput(): RuntimePlanInput {
         hierarchicalPath: BUG_FIX_PATHS[4],
         requires: [BUG_FIX_PATHS[3]],
         admissionKind: 'agent',
+        workspace: { access: 'write' },
       },
     ],
   };
@@ -172,6 +177,11 @@ export function agentAction(
   const actionId = deriveActionId(attemptId, 'agent', [
     { slot: 'workspace', effectId },
   ]);
+  const node = plan.nodes.find((entry) => entry.hierarchicalPath === path);
+  const access =
+    node !== undefined && node.kind === 'atomic'
+      ? node.workspace.access
+      : 'write';
   return {
     format: 'change-run-action/1',
     kind: 'agent',
@@ -210,7 +220,7 @@ export function agentAction(
     resultContractDigest: fixtureDigests.workspaceDigest,
     evidenceContractDigest: fixtureDigests.workspaceDigest,
     policyDigest: plan.policyDigest,
-    workspace: { access: 'write', resources: ['worktree'] },
+    workspace: { access, resources: ['worktree'] },
     expectedBeforeWorkspace: fixtureWorkspaceRevision,
     agent: {
       role: 'implementer',

@@ -1007,3 +1007,44 @@ export function reduceCanonicalRunRecord(
       });
   }
 }
+
+/**
+ * The candidate-commit seam (task 5.7). Applies a sequence of stimuli as ONE
+ * candidate Record revision: each stimulus is validated against the
+ * accumulating intermediate state exactly as `reduceCanonicalRunRecord` does,
+ * but the N intermediate revisions are collapsed into a single revision over
+ * the original base (recordVersion = base + 1, predecessor = base digest, all
+ * appended transitions carried with gap-free ordinals).
+ *
+ * This is what lets the reconciler land "one completion plus all mechanically
+ * implied downstream admissions/waits" in one candidate Record rather than one
+ * revision per stimulus. The batch is atomic: the first stimulus that returns
+ * a typed failure aborts the whole batch and nothing is committed.
+ */
+export function reduceCandidateBatch(
+  base: CanonicalRunRecord,
+  stimuli: readonly RunStimulus[]
+): RunReductionResult {
+  if (stimuli.length === 0) {
+    return { ok: true, record: base };
+  }
+  let working = base;
+  for (const stimulus of stimuli) {
+    const step = reduceCanonicalRunRecord(working, stimulus);
+    if (!step.ok) {
+      return step;
+    }
+    working = step.record;
+  }
+  // Collapse the intermediate revision chain into one candidate revision over
+  // the original base. Transitions/actions/waits/counters/status/terminal are
+  // the final accumulated values; only the version pointer is re-rooted.
+  return {
+    ok: true,
+    record: decodeCanonicalRunRecord({
+      ...working,
+      recordVersion: (base.recordVersion as number) + 1,
+      previousRecordDigest: digestCanonicalRunRecord(base),
+    }),
+  };
+}

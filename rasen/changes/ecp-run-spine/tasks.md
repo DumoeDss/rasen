@@ -47,9 +47,9 @@
 - [x] 5.2 GREEN: Implement pure `reconcile(runtimePlan, record)` from only frozen plan/Record, sorting ready nodes by hierarchical NodeId.
 - [x] 5.3 RED: Cover dependencies, AtomicStage, Gate, rejected Gate policy, adaptive simple/complex route, implicit/explicit root Finish, and terminal no-action behavior.
 - [x] 5.4 GREEN: Implement only root-DAG semantics and reject ReviewCycle/Composite/BoundedLoop/GoalLoop/FanOut/Join before Run creation.
-- [ ] 5.5 RED: Add settle tests for two concurrent Gates, Gate plus independent read Action, ready reader+writer, two writers, access-none plus blocked workspace work, external reader/writer reservation races, concurrent completions with a remaining wait, and whole-root terminal rules.
-- [ ] 5.6 GREEN: Implement branch-local `waits[]` settling and pure stable-NodeId compatible admission selection; persist local-only workspace-reservation waits without blocking access-none progress.
-- [ ] 5.7 RED/GREEN: Add cycle/progress guards and prove a result plus downstream admissions/waits are committed in one candidate Record.
+- [x] 5.5 RED: Add settle tests for two concurrent Gates, Gate plus independent read Action, ready reader+writer, two writers, access-none plus blocked workspace work, external reader/writer reservation races, concurrent completions with a remaining wait, and whole-root terminal rules.
+- [x] 5.6 GREEN: Implement branch-local `waits[]` settling and pure stable-NodeId compatible admission selection; persist local-only workspace-reservation waits without blocking access-none progress.
+- [x] 5.7 RED/GREEN: Add cycle/progress guards and prove a result plus downstream admissions/waits are committed in one candidate Record.
 
 ## 6. Closed Actions, Actors, completion, and external effects
 

@@ -27,6 +27,15 @@ export type ReconcilerNextAction =
       decisionIds: readonly string[];
     }>
   | Readonly<{
+      kind: 'await-workspace';
+      workspaceInstanceId: string;
+      intents: readonly Readonly<{
+        nodeId: NodeId;
+        occurrence: number;
+        access: 'read' | 'write';
+      }>[];
+    }>
+  | Readonly<{
       kind: 'suspend-unsupported';
       nodeId: NodeId;
       code: string;
@@ -110,9 +119,12 @@ export function reconcile(
     }
   }
 
-  // Pass 2: classify each node against the precomputed succeeded set and emit
-  // candidates in the plan's stable topological order.
+  // Pass 2: classify each node against the precomputed succeeded set. Admit
+  // candidates are collected and then passed through workspace-compatible
+  // selection (Step settle); non-admit candidates (Gate, suspend, escalate)
+  // are emitted directly in the plan's stable topological order.
   const actions: ReconcilerNextAction[] = [];
+  const admitCandidates: AdmissionCandidate[] = [];
   for (const node of atomicNodes) {
     const disposition = dispositionFor(plan, record, node, succeeded);
     switch (disposition.status) {
@@ -126,11 +138,11 @@ export function reconcile(
         break;
       case 'ready':
       case 'gate-decided-proceed':
-        actions.push({
-          kind: 'admit',
+        admitCandidates.push({
           nodeId: node.nodeId,
           occurrence: occurrenceFor(record, node),
           admissionKind: node.admissionKind,
+          access: node.workspace.access,
         });
         break;
       case 'gate-pending':
@@ -158,6 +170,33 @@ export function reconcile(
     }
   }
 
+  // Workspace-compatible admission selection. access:none candidates always
+  // join the batch; read/write candidates compete for the single workspace
+  // lease under the design's deterministic rules.
+  const lock = activeWorkspaceLock(record);
+  const selection = selectCompatibleAdmissions(admitCandidates, lock);
+  for (const candidate of selection.admitted) {
+    actions.push({
+      kind: 'admit',
+      nodeId: candidate.nodeId,
+      occurrence: candidate.occurrence,
+      admissionKind: candidate.admissionKind,
+    });
+  }
+  if (selection.blocked.length > 0) {
+    actions.push({
+      kind: 'await-workspace',
+      workspaceInstanceId: record.workspaceInstanceId,
+      // Blocked candidates are provably never access:'none' (the selection
+      // always admits access-none work), so the access narrows to read|write.
+      intents: selection.blocked.map((candidate) => ({
+        nodeId: candidate.nodeId,
+        occurrence: candidate.occurrence,
+        access: candidate.access as 'read' | 'write',
+      })),
+    });
+  }
+
   const finish = finishCandidate(plan, record, succeeded);
   if (finish !== null) {
     actions.push(finish);
@@ -167,6 +206,103 @@ export function reconcile(
     actions.length === 0 ? 'waiting' : 'running';
 
   return { ok: true, classification, actions: Object.freeze(actions) };
+}
+
+interface AdmissionCandidate {
+  readonly nodeId: NodeId;
+  readonly occurrence: number;
+  readonly admissionKind: ReconcilerAdmissionKind;
+  readonly access: 'none' | 'read' | 'write';
+}
+
+interface WorkspaceLock {
+  readonly writerActive: boolean;
+  readonly readerActive: boolean;
+}
+
+/**
+ * Derive the current workspace lease state from the Record's active actions.
+ * A writer excludes every other workspace touch; readers coexist. The pure
+ * reconciler sees only this single-Run snapshot; the cross-Run registry that
+ * also feeds this lock arrives in a later group.
+ */
+function activeWorkspaceLock(record: CanonicalRunRecord): WorkspaceLock {
+  let writerActive = false;
+  let readerActive = false;
+  for (const committed of Object.values(record.actions)) {
+    if (committed.state !== 'active') continue;
+    const access = committed.action.workspace.access;
+    if (access === 'write') writerActive = true;
+    else if (access === 'read') readerActive = true;
+  }
+  return { writerActive, readerActive };
+}
+
+/**
+ * Pure stable-NodeId compatible admission selection (design section 6).
+ *
+ * - `access:none` candidates join every batch and never block or be blocked.
+ * - With an active writer, every ready reader/writer is blocked.
+ * - With active readers (no writer), ready readers join and writers block.
+ * - With no active workspace access, the first sorted workspace candidate sets
+ *   the batch: a writer admits only itself; a reader admits all ready readers
+ *   and leaves writers on the frontier.
+ *
+ * Blocked candidates are returned so the caller can persist one local
+ * `workspace-reservation` wait. The result is identical for any insertion
+ * order of the input — candidates are sorted by NodeId first.
+ */
+export function selectCompatibleAdmissions(
+  candidates: readonly AdmissionCandidate[],
+  lock: WorkspaceLock
+): Readonly<{ admitted: readonly AdmissionCandidate[]; blocked: readonly AdmissionCandidate[] }> {
+  const sorted = [...candidates].sort((left, right) =>
+    left.nodeId < right.nodeId ? -1 : left.nodeId > right.nodeId ? 1 : 0
+  );
+  const admitted: AdmissionCandidate[] = [];
+  const blocked: AdmissionCandidate[] = [];
+  const workspaceCandidates = sorted.filter(
+    (candidate) => candidate.access !== 'none'
+  );
+
+  for (const candidate of sorted) {
+    if (candidate.access === 'none') {
+      admitted.push(candidate);
+    }
+  }
+
+  if (lock.writerActive) {
+    for (const candidate of workspaceCandidates) {
+      blocked.push(candidate);
+    }
+    return Object.freeze({ admitted: Object.freeze(admitted), blocked: Object.freeze(blocked) });
+  }
+
+  if (lock.readerActive) {
+    for (const candidate of workspaceCandidates) {
+      if (candidate.access === 'read') admitted.push(candidate);
+      else blocked.push(candidate);
+    }
+    return Object.freeze({ admitted: Object.freeze(admitted), blocked: Object.freeze(blocked) });
+  }
+
+  // No active workspace access: the first sorted workspace candidate sets the batch.
+  if (workspaceCandidates.length === 0) {
+    return Object.freeze({ admitted: Object.freeze(admitted), blocked: Object.freeze(blocked) });
+  }
+  const first = workspaceCandidates[0]!;
+  if (first.access === 'write') {
+    admitted.push(first);
+    for (let index = 1; index < workspaceCandidates.length; index += 1) {
+      blocked.push(workspaceCandidates[index]!);
+    }
+  } else {
+    for (const candidate of workspaceCandidates) {
+      if (candidate.access === 'read') admitted.push(candidate);
+      else blocked.push(candidate);
+    }
+  }
+  return Object.freeze({ admitted: Object.freeze(admitted), blocked: Object.freeze(blocked) });
 }
 
 function nodeSucceeded(

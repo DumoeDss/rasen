@@ -12,6 +12,7 @@ import {
   bugFixPlan,
   bugFixPlanInput,
   decideGate,
+  evidenceFor,
   fixtureDigests,
   fixtureLimits,
   fixtureWorkspaceRevision,
@@ -363,9 +364,382 @@ describe('createRuntimePlan rejects unsupported semantics (5.4)', () => {
   });
 });
 
+describe('reconcile workspace-compatible admission selection (5.5/5.6)', () => {
+  it('admits coexisting readers and emits no reservation when no workspace work is active', () => {
+    const plan = frontierPlan({ 'root/r1': 'read', 'root/r2': 'read' });
+    const result = reconcile(plan, startRecord(plan));
+    expect(admitOf(plan, result, 'root/r1')).toBeDefined();
+    expect(admitOf(plan, result, 'root/r2')).toBeDefined();
+    expect(awaitWorkspace(result)).toBeUndefined();
+  });
+
+  it('admits only the lower-NodeId writer and blocks the other behind one reservation wait', () => {
+    const plan = frontierPlan({ 'root/w1': 'write', 'root/w2': 'write' });
+    const result = reconcile(plan, startRecord(plan));
+    const [first, second] = sortedPaths(plan, ['root/w1', 'root/w2']);
+    expect(admitOf(plan, result, first)).toBeDefined();
+    expect(admitOf(plan, result, second)).toBeUndefined();
+    const wait = awaitWorkspace(result);
+    expect(wait).toBeDefined();
+    expect(wait!.intents.map((intent) => intent.nodeId)).toEqual([
+      nodeIdFor(plan, second),
+    ]);
+    expect(wait!.intents[0]!.access).toBe('write');
+  });
+
+  it('admits access-none work alongside a blocked workspace-reservation wait', () => {
+    const plan = frontierPlan({
+      'root/w1': 'write',
+      'root/w2': 'write',
+      'root/n1': 'none',
+    });
+    const result = reconcile(plan, startRecord(plan));
+    expect(admitOf(plan, result, 'root/n1')).toBeDefined();
+    const [first, second] = sortedPaths(plan, ['root/w1', 'root/w2']);
+    expect(admitOf(plan, result, first)).toBeDefined();
+    expect(awaitWorkspace(result)!.intents.map((i) => i.nodeId)).toEqual([
+      nodeIdFor(plan, second),
+    ]);
+  });
+
+  it('blocks every ready reader and writer while a writer action is active', () => {
+    const plan = frontierPlan({
+      'root/seed': 'write',
+      'root/w': 'write',
+      'root/r': 'read',
+      'root/n': 'none',
+    });
+    const record = admitNode(plan, startRecord(plan), 'root/seed');
+    const result = reconcile(plan, record);
+    expect(admitOf(plan, result, 'root/n')).toBeDefined();
+    expect(admitOf(plan, result, 'root/w')).toBeUndefined();
+    expect(admitOf(plan, result, 'root/r')).toBeUndefined();
+    const wait = awaitWorkspace(result);
+    expect(wait).toBeDefined();
+    expect(
+      wait!.intents
+        .map((intent) => intent.nodeId)
+        .sort()
+    ).toEqual(
+      [nodeIdFor(plan, 'root/w'), nodeIdFor(plan, 'root/r')].sort()
+    );
+  });
+
+  it('admits ready readers and blocks writers while a reader action is active', () => {
+    const plan = frontierPlan({
+      'root/seed': 'read',
+      'root/r': 'read',
+      'root/w': 'write',
+    });
+    const record = admitNode(plan, startRecord(plan), 'root/seed');
+    const result = reconcile(plan, record);
+    expect(admitOf(plan, result, 'root/r')).toBeDefined();
+    expect(admitOf(plan, result, 'root/w')).toBeUndefined();
+    expect(awaitWorkspace(result)!.intents.map((i) => i.nodeId)).toEqual([
+      nodeIdFor(plan, 'root/w'),
+    ]);
+  });
+
+  it('emits two independent Gates without subjecting them to workspace selection', () => {
+    const plan = createRuntimePlan(
+      planInput([
+        {
+          kind: 'atomic',
+          hierarchicalPath: 'root/g1',
+          requires: [],
+          admissionKind: 'agent',
+          workspace: { access: 'write' },
+          gate: {
+            gateId: 'g1',
+            decisionIds: ['approve', 'reject'],
+            outcomes: { approve: 'proceed', reject: 'escalate' },
+          },
+        },
+        {
+          kind: 'atomic',
+          hierarchicalPath: 'root/g2',
+          requires: [],
+          admissionKind: 'agent',
+          workspace: { access: 'write' },
+          gate: {
+            gateId: 'g2',
+            decisionIds: ['approve', 'reject'],
+            outcomes: { approve: 'proceed', reject: 'escalate' },
+          },
+        },
+      ])
+    );
+    const result = reconcile(plan, startRecord(plan));
+    if (!result.ok) return;
+    expect(result.actions.filter((a) => a.kind === 'await-gate')).toHaveLength(2);
+    expect(result.actions.some((a) => a.kind === 'await-workspace')).toBe(false);
+  });
+
+  it('coexists a Gate with an independent access-none admit', () => {
+    const plan = createRuntimePlan(
+      planInput([
+        {
+          kind: 'atomic',
+          hierarchicalPath: 'root/g',
+          requires: [],
+          admissionKind: 'agent',
+          workspace: { access: 'write' },
+          gate: {
+            gateId: 'g',
+            decisionIds: ['approve'],
+            outcomes: { approve: 'proceed' },
+          },
+        },
+        {
+          kind: 'atomic',
+          hierarchicalPath: 'root/n',
+          requires: [],
+          admissionKind: 'agent',
+          workspace: { access: 'none' },
+        },
+      ])
+    );
+    const result = reconcile(plan, startRecord(plan));
+    expect(result.actions.some((a) => a.kind === 'await-gate')).toBe(true);
+    expect(admitOf(plan, result, 'root/n')).toBeDefined();
+    expect(awaitWorkspace(result)).toBeUndefined();
+  });
+});
+
+describe('candidate-commit seam and progress guards (5.7)', () => {
+  it('commits a completion plus downstream admissions as one candidate Record revision', () => {
+    const plan = createRuntimePlan(
+      planInput([
+        {
+          kind: 'atomic',
+          hierarchicalPath: 'root/a',
+          requires: [],
+          admissionKind: 'agent',
+          workspace: { access: 'write' },
+        },
+      ])
+    );
+    const base = startRecord(plan);
+    const action = agentAction(plan, 'root/a');
+    const stimuli = [
+      {
+        kind: 'admit-action' as const,
+        action,
+        attemptOrdinal: 0,
+        deliveryMode: 'grant' as const,
+      },
+      {
+        kind: 'observe-effect' as const,
+        actionId: action.actionId,
+        effectId: action.effects[0]!.effectId,
+        status: 'succeeded' as const,
+        receiptDigest: fixtureDigests.receiptDigest,
+        observation: { ok: true } as unknown,
+        evidence: evidenceFor(plan, action.actionId),
+      },
+      {
+        kind: 'commit-action-result' as const,
+        actionId: action.actionId,
+        status: 'succeeded' as const,
+        receiptDigest: fixtureDigests.receiptDigest,
+        result: { ok: true } as unknown,
+        evidence: evidenceFor(plan, action.actionId),
+      },
+    ];
+    const result = reduceCandidateBatch(base, stimuli);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // One candidate revision over the base: version 1, predecessor rooted at
+    // the base digest, all four appended transitions with gap-free ordinals.
+    expect(result.record.recordVersion).toBe(1);
+    expect(result.record.previousRecordDigest).toBe(
+      digestCanonicalRunRecord(base)
+    );
+    expect(result.record.transitions.map((t) => t.transitionOrdinal)).toEqual([
+      0, 1, 2, 3, 4,
+    ]);
+    expect(result.record.transitions.map((t) => t.kind)).toEqual([
+      'RunStarted',
+      'ActionAdmitted',
+      'ActionGranted',
+      'ActionEffectObserved',
+      'ActionResultCommitted',
+    ]);
+    expect(result.record.counters.transitions).toBe(5);
+    expect(result.record.counters.actions).toBe(1);
+  });
+
+  it('would cost one revision per stimulus when committed individually', () => {
+    const plan = createRuntimePlan(
+      planInput([
+        {
+          kind: 'atomic',
+          hierarchicalPath: 'root/a',
+          requires: [],
+          admissionKind: 'agent',
+          workspace: { access: 'write' },
+        },
+      ])
+    );
+    const base = startRecord(plan);
+    const action = agentAction(plan, 'root/a');
+    // Sequential admission consumes one revision per stimulus (0 -> 1 -> 2),
+    // in contrast to the single-revision batch proven above.
+    const grant = reduceCanonicalRunRecord(base, {
+      kind: 'admit-action',
+      action,
+      attemptOrdinal: 0,
+      deliveryMode: 'grant',
+    });
+    const effect = reduceCanonicalRunRecord(grant.record, {
+      kind: 'observe-effect',
+      actionId: action.actionId,
+      effectId: action.effects[0]!.effectId,
+      status: 'succeeded',
+      receiptDigest: fixtureDigests.receiptDigest,
+      observation: { ok: true },
+      evidence: evidenceFor(plan, action.actionId),
+    });
+    expect(grant.record.recordVersion).toBe(1);
+    expect(effect.record.recordVersion).toBe(2);
+  });
+
+  it('aborts atomically when any stimulus in the batch is invalid', () => {
+    const plan = createRuntimePlan(
+      planInput([
+        {
+          kind: 'atomic',
+          hierarchicalPath: 'root/a',
+          requires: [],
+          admissionKind: 'agent',
+          workspace: { access: 'write' },
+        },
+      ])
+    );
+    const base = startRecord(plan);
+    const action = agentAction(plan, 'root/a');
+    const result = reduceCandidateBatch(base, [
+      {
+        kind: 'admit-action',
+        action,
+        attemptOrdinal: 0,
+        deliveryMode: 'grant',
+      },
+      {
+        // Invalid: no such action has been admitted, so this must fail and the
+        // whole batch aborts without committing the admission either.
+        kind: 'commit-action-result',
+        actionId: action.actionId,
+        status: 'succeeded',
+        receiptDigest: fixtureDigests.receiptDigest,
+        result: { ok: true },
+        evidence: evidenceFor(plan, action.actionId),
+      },
+    ]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure.code).toBe('illegal_transition');
+  });
+
+  it('never re-admits a node that already has an active invocation (progress guard)', () => {
+    const plan = frontierPlan({ 'root/a': 'write', 'root/b': 'write' });
+    const record = admitNode(plan, startRecord(plan), 'root/a');
+    const result = reconcile(plan, record);
+    if (!result.ok) return;
+    const admits = result.actions.filter((action) => action.kind === 'admit');
+    // root/a is active -> not re-admitted; only root/b is on the frontier (and
+    // blocked by the active writer behind a reservation wait, not admitted).
+    expect(admits.some((a) => a.kind === 'admit' && a.nodeId === nodeIdFor(plan, 'root/a'))).toBe(false);
+    expect(result.actions.some((a) => a.kind === 'admit')).toBe(false);
+  });
+
+  it('never emits two admit candidates for the same NodeId (cycle guard)', () => {
+    const plan = bugFixPlan();
+    const record = startRecord(plan);
+    for (let round = 0; round < 4; round += 1) {
+      const result = reconcile(plan, record);
+      if (!result.ok) return;
+      const ids = result.actions
+        .filter((a) => a.kind === 'admit')
+        .map((a) => (a as { nodeId: NodeId }).nodeId);
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+  });
+});
+
 // ---- local helpers (kept here so the test file is self-explanatory) ----
 
-import { reduceCanonicalRunRecord } from '../../../src/core/change-run/internal/reducer.js';
+import {
+  reduceCanonicalRunRecord,
+  reduceCandidateBatch,
+} from '../../../src/core/change-run/internal/reducer.js';
+import { digestCanonicalRunRecord } from '../../../src/core/change-run/internal/record.js';
+import type {
+  ReconcilerNextAction,
+  ReconcilerResult,
+} from '../../../src/core/change-run/internal/reconciler.js';
+import type { RuntimePlanNodeInput } from '../../../src/core/change-run/internal/runtime-plan.js';
+
+function planInput(nodes: readonly RuntimePlanNodeInput[]): RuntimePlanInput {
+  return {
+    runId: fixtureDigests.runId,
+    pipeline: 'settle',
+    planDigest: fixtureDigests.planDigest,
+    profileDigest: fixtureDigests.profileDigest,
+    sourceRevisionDigest: fixtureDigests.sourceRevisionDigest,
+    capabilityDigest: fixtureDigests.capabilityDigest,
+    policyDigest: fixtureDigests.policyDigest,
+    implicitFinishOutcome: 'settle-completed',
+    nodes,
+  };
+}
+
+function frontierPlan(
+  accessByPath: Readonly<Record<string, 'none' | 'read' | 'write'>>
+): RuntimePlan {
+  return createRuntimePlan(
+    planInput(
+      Object.entries(accessByPath).map(([path, access]) => ({
+        kind: 'atomic' as const,
+        hierarchicalPath: path,
+        requires: [],
+        admissionKind: 'agent' as const,
+        workspace: { access },
+      }))
+    )
+  );
+}
+
+function sortedPaths(plan: RuntimePlan, paths: readonly string[]): string[] {
+  return [...paths].sort((left, right) => {
+    const leftId = nodeIdFor(plan, left);
+    const rightId = nodeIdFor(plan, right);
+    return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
+  });
+}
+
+function admitOf(
+  plan: RuntimePlan,
+  result: ReconcilerResult,
+  path: string
+): unknown {
+  if (!result.ok) return undefined;
+  const id = nodeIdFor(plan, path);
+  return result.actions.find(
+    (action) => action.kind === 'admit' && action.nodeId === id
+  );
+}
+
+function awaitWorkspace(
+  result: ReconcilerResult
+): Extract<ReconcilerNextAction, { kind: 'await-workspace' }> | undefined {
+  if (!result.ok) return undefined;
+  return result.actions.find(
+    (action): action is Extract<ReconcilerNextAction, { kind: 'await-workspace' }> =>
+      action.kind === 'await-workspace'
+  );
+}
 
 function admitNode(plan: RuntimePlan, record: ReturnType<typeof startRecord>, path: string) {
   const action = agentAction(plan, path);

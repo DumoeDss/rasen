@@ -7,6 +7,8 @@ import { deriveNodeId } from './identity.js';
 
 export type RuntimePlanAdmissionKind = 'agent' | 'command' | 'host';
 
+export type RuntimePlanWorkspaceAccess = 'none' | 'read' | 'write';
+
 export type RuntimePlanGateOutcome = 'proceed' | 'fail' | 'escalate';
 
 export interface RuntimePlanGate {
@@ -15,12 +17,17 @@ export interface RuntimePlanGate {
   readonly outcomes: Readonly<Record<string, RuntimePlanGateOutcome>>;
 }
 
+export interface RuntimePlanWorkspace {
+  readonly access: RuntimePlanWorkspaceAccess;
+}
+
 export interface RuntimePlanAtomicNode {
   readonly kind: 'atomic';
   readonly nodeId: NodeId;
   readonly hierarchicalPath: string;
   readonly requires: readonly NodeId[];
   readonly admissionKind: RuntimePlanAdmissionKind;
+  readonly workspace: RuntimePlanWorkspace;
   readonly adaptiveVerify: boolean;
   readonly gate?: RuntimePlanGate;
 }
@@ -60,6 +67,7 @@ export interface RuntimePlanNodeInput {
   readonly hierarchicalPath: string;
   readonly requires: readonly string[];
   readonly admissionKind?: RuntimePlanAdmissionKind;
+  readonly workspace?: Readonly<{ access?: RuntimePlanWorkspaceAccess }>;
   readonly adaptiveVerify?: boolean;
   readonly gate?: RuntimePlanGateInput;
   readonly outcome?: string;
@@ -237,6 +245,9 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
         hierarchicalPath: node.hierarchicalPath,
         requires,
         admissionKind: node.admissionKind!,
+        workspace: {
+          access: node.workspace?.access ?? 'write',
+        },
         adaptiveVerify: node.adaptiveVerify === true,
         ...(node.gate === undefined
           ? {}
