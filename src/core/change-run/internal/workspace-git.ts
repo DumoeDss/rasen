@@ -42,6 +42,17 @@ function isSha(value: string): value is string {
   return /^[0-9a-f]{40}$/.test(value) || /^[0-9a-f]{64}$/.test(value);
 }
 
+const textEncoder = new TextEncoder();
+
+/**
+ * Git object SHAs are SHA-1 (40 hex); the canonical Digest type is
+ * sha256-prefixed 64 hex. Re-hash the git SHA under sha256 so git identities
+ * surface as stable canonical Digests without changing their meaning.
+ */
+function gitShaToDigest(sha: string): Digest {
+  return blobDigest(textEncoder.encode(sha));
+}
+
 function headRevision(repoPath: string): WorkspaceHead {
   // On an unborn repo `rev-parse HEAD` exits non-zero; treat that as unborn
   // rather than a git-unavailable error.
@@ -63,7 +74,7 @@ function headRevision(repoPath: string): WorkspaceHead {
   }
   return Object.freeze({
     kind: 'commit',
-    digest: `sha256:${commit}` as Digest,
+    digest: gitShaToDigest(commit),
     detached: symbolic.length === 0,
   });
 }
@@ -77,7 +88,7 @@ function parseLsTree(output: string): { path: string; mode: string; blobDigest: 
     if (meta === undefined || filePath === undefined) continue;
     const [mode, type, blob] = meta.split(' ');
     if (type !== 'blob' || !isSha(blob ?? '')) continue;
-    entries.push({ path: filePath, mode: mode ?? '100644', blobDigest: `sha256:${blob}` as Digest });
+    entries.push({ path: filePath, mode: mode ?? '100644', blobDigest: gitShaToDigest(blob) });
   }
   return entries;
 }
@@ -108,7 +119,7 @@ export function observeGitWorkspace(repoPath: string): WorkspaceManifest {
         path: filePath ?? '',
         stage: Number.parseInt(parts[2] ?? '0', 10),
         mode: parts[0] ?? '100644',
-        blobDigest: `sha256:${parts[1] ?? ''}` as Digest,
+        blobDigest: gitShaToDigest(parts[1] ?? ''),
       };
     })
     .filter((entry) => entry.path.length > 0);
