@@ -10,6 +10,7 @@ import type { ManagementApiContext } from '../../../src/core/management-api/rout
 import { registerProject } from '../../../src/core/project-registry.js';
 import { registerStore } from '../../../src/core/store/registry.js';
 import { getStoreMetadataPath } from '../../../src/core/store/foundation.js';
+import { writeStoreProjectRecord } from '../../../src/core/store/project-records.js';
 import { FileSystemUtils } from '../../../src/utils/file-system.js';
 import { fakeClaudeBin } from '../../helpers/fake-claude-bin.js';
 import { createOpenSpecRoot } from '../../helpers/rasen-fixtures.js';
@@ -163,6 +164,11 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
       { projectRoot: memberRoot, projectId: 'member-project-id', mode: 'store' },
       { globalDataDir: dataDir }
     );
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId: 'member-project-id',
+      roles: { planning: true, knowledge: true },
+    });
 
     const h = await startServer();
     const res = await launchSession(h.port, {
@@ -198,6 +204,11 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
       { projectRoot: cloneB, projectId: 'shared-clone-id', mode: 'store' },
       { globalDataDir: dataDir }
     );
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId: 'shared-clone-id',
+      roles: { planning: true, knowledge: true },
+    });
 
     const h = await startServer();
     const res = await launchSession(h.port, {
@@ -235,6 +246,11 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
       { projectRoot: mainRoot, projectId: 'worktree-member-id', mode: 'store' },
       { globalDataDir: dataDir }
     );
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId: 'worktree-member-id',
+      roles: { planning: true, knowledge: true },
+    });
 
     const h = await startServer();
     const res = await launchSession(h.port, {
@@ -315,6 +331,11 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
       { projectRoot: memberRoot, projectId: 'joined-member-id', mode: 'store' },
       { globalDataDir: dataDir }
     );
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId: 'joined-member-id',
+      roles: { planning: true, knowledge: true },
+    });
 
     const h = await startServer();
     const launched = (await launchSession(h.port, {
