@@ -686,16 +686,18 @@ export class PipelineCommand {
         childrenComplete
         && (portfolio.delivery.status === 'pending'
           || portfolio.delivery.status === 'in_progress');
+      // Delivery-related fields (`next`, `remaining`, `delivery`, `childrenComplete`)
+      // surface ONLY once every child has finished — matching the first-parent
+      // portfolio output, which never let a portfolio with outstanding children
+      // frame delivery as the frontier. Omitting the keys entirely (vs. `null`)
+      // keeps them `undefined` in the JSON round-trip so a stale `next` can never
+      // reach a caller that never asked about delivery.
       const result = {
         change: changeName,
         isPortfolio: true as const,
         hasRunState: true as const,
         runStateDir: portfolioLocation.dir,
         complete: isPortfolioComplete(portfolio),
-        childrenComplete,
-        delivery: portfolio.delivery,
-        next: deliveryRunnable ? 'portfolio-delivery' : null,
-        remaining: deliveryTerminal ? [] : ['portfolio-delivery'],
         completedChildren,
         runnableChildren: runnable,
         interruptedChildren: interrupted,
@@ -712,6 +714,14 @@ export class PipelineCommand {
           // than only in the file. A clean record gains no new key.
           ...(c.statusRaw !== undefined ? { statusRaw: c.statusRaw } : {}),
         })),
+        ...(childrenComplete
+          ? {
+              childrenComplete,
+              delivery: portfolio.delivery,
+              next: deliveryRunnable ? 'portfolio-delivery' : null,
+              remaining: deliveryTerminal ? [] : ['portfolio-delivery'],
+            }
+          : {}),
       };
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
@@ -744,11 +754,13 @@ export class PipelineCommand {
           ?? messages.format('recorded');
         console.log(messages.format('persistentPlanner', { planner: plannerId }));
       }
-      console.log(messages.format('portfolioDelivery', {
-        status: portfolio.delivery.status,
-      }));
-      if (deliveryRunnable) {
-        console.log(messages.format('nextStage', { stage: 'portfolio-delivery' }));
+      if (childrenComplete) {
+        console.log(messages.format('portfolioDelivery', {
+          status: portfolio.delivery.status,
+        }));
+        if (deliveryRunnable) {
+          console.log(messages.format('nextStage', { stage: 'portfolio-delivery' }));
+        }
       }
       console.log(messages.format('remaining', {
         stages: remainingChildren.length > 0 ? remainingChildren.join(', ') : none,

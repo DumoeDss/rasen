@@ -575,15 +575,16 @@ export function initializeRunState(
 
 /**
  * Stages that count as completed for resume purposes: when `stages` is present,
- * those with status done|skipped|delegated; otherwise the `completed`
- * convenience array. `delegated` is terminal at the parent stage because the
- * portfolio children own that work.
+ * those with status done|skipped; otherwise the `completed` convenience array.
+ *
+ * `delegated` is NOT completed — work handed to children is outstanding until
+ * the children finish it, so a decomposed parent's stage list can never on its
+ * own leave delivery as the only thing remaining.
  */
 export function completedStages(state: RunState): string[] {
   if (state.stages) {
     return Object.entries(state.stages)
-      .filter(([, s]) =>
-        s.status === 'done' || s.status === 'skipped' || s.status === 'delegated')
+      .filter(([, s]) => s.status === 'done' || s.status === 'skipped')
       .map(([id]) => id);
   }
   return state.completed ?? [];

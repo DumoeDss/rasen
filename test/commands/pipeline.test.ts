@@ -2231,7 +2231,11 @@ stages:
               id: 'invalid-portfolio-child',
               pipeline: 'small-feature',
               dependsOn: [],
-              status: 'propose-done',
+              status: 'done',
+              // A structurally invalid `prerequisites` (non-array) makes the
+              // portfolio genuinely invalid even after M4's status normalization
+              // restored tolerance for unrecognized status values.
+              prerequisites: 'not-an-array',
             },
           ],
         }),
@@ -2265,7 +2269,7 @@ stages:
         remaining: [],
       });
       expect(json.portfolioStatePath).toContain('portfolio-run.json');
-      expect(json.note).toContain('propose-done');
+      expect(json.note).toContain('prerequisites');
 
       const textResult = await runCLI(
         ['pipeline', 'resume', 'invalid-portfolio'],
@@ -2273,7 +2277,7 @@ stages:
       );
       expect(textResult.exitCode).toBe(0);
       expect(textResult.stdout).toContain('Invalid portfolio run-state');
-      expect(textResult.stdout).toContain('propose-done');
+      expect(textResult.stdout).toContain('prerequisites');
     });
 
     it('resumes portfolio-level delivery after every child has completed', async () => {
@@ -2433,7 +2437,7 @@ stages:
       expect(json.ready).toEqual([]);
       expect(json.remaining).toEqual([]);
       // Specifically NOT the stage frontier the auto-run.json above would give.
-      expect(json.pipeline).toBeUndefined();
+      expect(json.pipeline).toBeNull();
 
       const textResult = await runCLI(['pipeline', 'resume', 'portfolio-unreadable'], {
         cwd: testDir,
@@ -2474,6 +2478,47 @@ stages:
       expect(json.next).not.toBe('ship');
     });
 
+    // B2 regression guard: delegated stages + a corrupt portfolio-run.json must
+    // report the invalid portfolio and NOT fall through to a stage-based resume
+    // that could offer delivery (ship). The stage list below would leave only
+    // `ship` if the stage frontier were used — exactly the defect B2 prevents.
+    it('reports an invalid portfolio and offers no delivery when delegated stages meet a corrupt portfolio record', async () => {
+      const changeDir = path.join(changesDir, 'delegated-corrupt-portfolio');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          stages: {
+            propose: { status: 'delegated' },
+            apply: { status: 'delegated' },
+            verify: { status: 'delegated' },
+          },
+        }),
+        'utf-8'
+      );
+      await fs.writeFile(
+        path.join(changeDir, 'portfolio-run.json'),
+        '{ not valid json',
+        'utf-8'
+      );
+
+      const result = await runCLI(
+        ['pipeline', 'resume', 'delegated-corrupt-portfolio', '--json'],
+        { cwd: testDir }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.invalidPortfolioState).toBe(true);
+      expect(json.portfolioStatePath).toContain('portfolio-run.json');
+      expect(json.note).toContain('could not be read');
+      expect(json.next).toBeNull();
+      expect(json.ready).toEqual([]);
+      expect(json.remaining).toEqual([]);
+      // Specifically NOT the stage frontier the auto-run.json would give.
+      expect(json.pipeline).toBeNull();
+    });
+
     it('resumes a change with no portfolio record from its own stages, exactly as before', async () => {
       const changeDir = path.join(changesDir, 'undivided-change');
       await fs.mkdir(changeDir, { recursive: true });
@@ -2506,6 +2551,7 @@ stages:
             { id: 'pf-a', pipeline: 'small-feature', dependsOn: [], status: 'done' },
             { id: 'pf-b', pipeline: 'small-feature', dependsOn: ['pf-a'], status: 'skipped' },
           ],
+          delivery: { status: 'done' },
         }),
         'utf-8'
       );

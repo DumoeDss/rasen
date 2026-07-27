@@ -23,13 +23,22 @@ export const PORTFOLIO_STATE_FILENAME = 'portfolio-run.json';
 export const ChildExecutionModeSchema = z.enum(['serial', 'parallel']);
 export type ChildExecutionMode = z.infer<typeof ChildExecutionModeSchema>;
 
-/** Child lifecycle status; intentionally excludes parent-stage `delegated`. */
+/**
+ * Child lifecycle status; intentionally excludes parent-stage `delegated`.
+ * `unknown` is the normalized landing place for an unrecognized status value
+ * (see `normalizeChildStatusRaw`): it is non-terminal (does not satisfy
+ * `isSatisfied`) and NOT runnable (excluded from `runnableChildren`'s `pending`
+ * filter), so drift surfaces for human attention rather than disguising itself
+ * as the most actionable terminal-adjacent state. The raw value is preserved in
+ * `statusRaw` so drift is visible.
+ */
 export const PortfolioChildStatusSchema = z.enum([
   'pending',
   'in_progress',
   'done',
   'skipped',
   'escalated',
+  'unknown',
 ]);
 export type PortfolioChildStatus = z.infer<typeof PortfolioChildStatusSchema>;
 
@@ -122,7 +131,7 @@ function normalizeChildStatusRaw(child: Record<string, unknown>): void {
     return;
   }
   child.statusRaw = typeof child.status === 'string' ? child.status : String(child.status);
-  child.status = 'pending';
+  child.status = 'unknown';
 }
 
 function normalizePortfolioStateJson(json: unknown): unknown {

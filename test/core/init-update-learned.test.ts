@@ -9,17 +9,38 @@ import { UpdateCommand } from '../../src/core/update.js';
 import {
   commitLearnedSkillPlan,
   planLearnedSkillMutation,
+  EffectiveLearnedSkillPlanningError,
   type LearnedSkillMutationRequest,
 } from '../../src/core/learned-skills/index.js';
 import { readWorkflowArtifactLedger } from '../../src/core/workflow-artifact-ledger.js';
 import { readProjectLearnedLedger } from '../../src/core/project-learned-skill-ledger.js';
 import { resolveProjectHome } from '../../src/core/project-home.js';
 
-const { confirmMock, showWelcomeScreenMock, searchableMultiSelectMock } = vi.hoisted(() => ({
+const { confirmMock, showWelcomeScreenMock, searchableMultiSelectMock, planErrorMock } = vi.hoisted(() => ({
   confirmMock: vi.fn(),
   showWelcomeScreenMock: vi.fn().mockResolvedValue(undefined),
   searchableMultiSelectMock: vi.fn(),
+  /**
+   * M3 merge-regression test hook: when set, the mocked
+   * `resolveEffectiveLearnedSkillPlan` throws this error instead of delegating
+   * to the real resolver. Both InitCommand and UpdateCommand MUST report the
+   * error message (the merge resolution swallowed it in init.ts).
+   */
+  planErrorMock: {
+    error: null as EffectiveLearnedSkillPlanningError | null,
+  },
 }));
+
+vi.mock('../../src/core/learned-skills/index.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../src/core/learned-skills/index.js')>();
+  return {
+    ...original,
+    resolveEffectiveLearnedSkillPlan: vi.fn(async (...args: Parameters<typeof original.resolveEffectiveLearnedSkillPlan>) => {
+      if (planErrorMock.error) throw planErrorMock.error;
+      return original.resolveEffectiveLearnedSkillPlan(...args);
+    }),
+  };
+});
 
 vi.mock('@inquirer/prompts', () => ({ confirm: confirmMock }));
 vi.mock('../../src/ui/welcome-screen.js', () => ({ showWelcomeScreen: showWelcomeScreenMock }));
@@ -155,5 +176,39 @@ describe('init/update learned-skill wiring', () => {
     expect(fsSync.existsSync(materialized)).toBe(false);
     // A core workflow skill is still present.
     expect(fsSync.existsSync(path.join(testDir, '.claude', 'skills', 'rasen-apply-change', 'SKILL.md'))).toBe(true);
+  });
+
+  // M3 merge-regression guard: the merge commit a884f5e4 rewrote init.ts's
+  // reconcileLearnedSkills to swallow ALL exceptions (bare `catch {}`) and
+  // dropped the `previousStores` / `globalDataDir` propagation that update.ts
+  // kept. A user debugging a missing skill would get NO explanation from
+  // `rasen init` while `rasen update` correctly reported the same failure.
+  // This test mocks resolveEffectiveLearnedSkillPlan to throw, runs BOTH
+  // commands against the same project, and asserts the error message appears
+  // in both outputs — proving init and update report identically.
+  it('init and update both report a learned-skill planning failure (M3 merge regression)', async () => {
+    // First init succeeds with real resolution (planErrorMock.error is null).
+    await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+
+    // Now inject a planning failure for BOTH commands.
+    const ERROR_MESSAGE = 'TEST_PLANNING_FAILURE_M3_MERGE_REGRESSION';
+    planErrorMock.error = new EffectiveLearnedSkillPlanningError(
+      ERROR_MESSAGE,
+      'project_catalog_unavailable',
+      ['rasen init --force']
+    );
+    try {
+      (console.log as ReturnType<typeof vi.fn>).mockClear();
+      await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+      const initOutput = loggedOutput();
+      expect(initOutput).toContain(ERROR_MESSAGE);
+
+      (console.log as ReturnType<typeof vi.fn>).mockClear();
+      await new UpdateCommand({}).execute(testDir);
+      const updateOutput = loggedOutput();
+      expect(updateOutput).toContain(ERROR_MESSAGE);
+    } finally {
+      planErrorMock.error = null;
+    }
   });
 });
