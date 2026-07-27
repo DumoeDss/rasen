@@ -195,3 +195,12 @@ task-detail-ui,pipelines-ui,change-run-operations,ecp-change-run-runtime}/spec.m
   engine is reconciler (409) → expectedRecordVersion matches (409). All read-only.
 - Response: `{ view, disposition, actions: [] }` — committed view re-projected, empty
   actions always.
+
+### Cross-cutting: ChangeRunViewSection is NOT a clean discriminated union
+`ChangeRunViewSection = RootDagViewSection | Readonly<Record<string, unknown>>`
+(the catch-all member preserves unknown additive sections for `decodeChangeRunView`).
+Because the catch-all's `kind` is `unknown` (not a literal), `if (section.kind !== 'root-dag')`
+does NOT narrow it. **Any consumer that needs the root-dag section's typed fields
+(`actions`, `waits`, `allowedControls`, …) must use a type guard**, e.g.
+`function isRootDagSection(s): s is RootDagViewSection { return s.kind === 'root-dag'; }`
+(see `src/core/management-api/runs.ts`). Do NOT rely on kind-checks or blind casts.

@@ -55,6 +55,10 @@ import {
 } from '../change-run/internal/identity.js';
 import { projectRunView } from '../change-run/internal/projector.js';
 import { decodeCanonicalRunRecord, type CanonicalRunRecord } from '../change-run/internal/record.js';
+import type {
+  ChangeRunView,
+  RootDagViewSection,
+} from '../change-run/contracts.js';
 
 /** No typed reader module exists for this file (design D5); read as opaque raw JSON. */
 const GOAL_RUN_STATE_FILENAME = 'goal-run.json';
@@ -193,7 +197,7 @@ interface RunCandidate {
 interface ProjectedRun {
   runId: string;
   record: CanonicalRunRecord;
-  view: ReturnType<typeof projectRunView>;
+  view: ChangeRunView;
 }
 
 /**
@@ -275,7 +279,7 @@ function tryProjectRun(dirPath: string): { ok: true; run: ProjectedRun } | { ok:
         : 'run_store_corrupt';
     return { ok: false, dirName, error: { code, message: err instanceof Error ? err.message : String(err) } };
   }
-  let view: ReturnType<typeof projectRunView>;
+  let view: ChangeRunView;
   try {
     view = projectRunView(record);
   } catch (err) {
@@ -432,7 +436,7 @@ async function discoverReconcilerRuns(
  * The read-only detail result — either the projected view or a typed error.
  */
 export type RunDetailResult =
-  | { ok: true; view: ReturnType<typeof projectRunView> }
+  | { ok: true; view: ChangeRunView }
   | { ok: false; status: number; code: string; message: string };
 
 /**
@@ -503,17 +507,28 @@ export async function handleRunDetail(
 }
 
 /**
+ * Type guard: narrows a `ChangeRunViewSection` to `RootDagViewSection`. The
+ * section union (`RootDagViewSection | Readonly<Record<string, unknown>>`)
+ * is not a proper discriminated union because the Record member has
+ * `kind: unknown`, so a plain `section.kind === 'root-dag'` check does not
+ * narrow. This guard uses an explicit type predicate instead.
+ */
+function isRootDagSection(
+  section: ChangeRunView['sections'][number]
+): section is RootDagViewSection {
+  return section.kind === 'root-dag';
+}
+
+/**
  * Post-processes a projected view for the "other workspace" read-only case:
  * sets `workspace.scope` to `"other"`, clears `allowedControls`, and
  * downgrades any `granted` delivery states to `admitted_undelivered`. The
  * canonical change-run-view/1 invariant forbids controls or granted Actions
  * in an other-worktree view.
  */
-function withOtherWorkspaceScope(
-  view: ReturnType<typeof projectRunView>
-): ReturnType<typeof projectRunView> {
+function withOtherWorkspaceScope(view: ChangeRunView): ChangeRunView {
   const sections = view.sections.map((section) => {
-    if (section.kind !== 'root-dag') return section;
+    if (!isRootDagSection(section)) return section;
     return {
       ...section,
       allowedControls: [] as never[],
@@ -528,7 +543,7 @@ function withOtherWorkspaceScope(
     ...view,
     workspace: { ...view.workspace, scope: 'other' as const },
     sections,
-  } as ReturnType<typeof projectRunView>;
+  };
 }
 
 // ---------------------------------------------------------------------------
