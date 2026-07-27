@@ -99,8 +99,8 @@
 - [x] 9.4 GREEN: Implement bounded SafeRunPath checks, same-parent exclusive create/publish, and the documented pure-Node same-user race boundary.
 - [ ] 9.5 RED: Add immutable launch/commit fault tests before/after stage/fsync/publish/return, concurrent same/different keys, CAS conflicts, abnormal/overwidth/variant entries, plan mismatch, and Windows rename behavior.
 - [ ] 9.6 GREEN: Implement staging-directory launch and `wx` immutable Record publication with named fault injector, fsync/close, predecessor/digest validation, and one successful publish.
-- [ ] 9.7 RED: Add aggregate-budget tests for large/sparse/many Records/evidence, cumulative ledger limit, healthy plus malicious Runs, 100-summary/512-candidate/256-MiB list page, stable opaque cursor, and ordering.
-- [ ] 9.8 GREEN: Enforce per-file/structure/count/cumulative budgets before parse/canonicalize and bounded isolated `run_store_too_large` list summaries.
+- [x] 9.7 RED: Add aggregate-budget tests for large/sparse/many Records/evidence, cumulative ledger limit, healthy plus malicious Runs, 100-summary/512-candidate/256-MiB list page, stable opaque cursor, and ordering.
+- [x] 9.8 GREEN: Enforce per-file/structure/count/cumulative budgets before parse/canonicalize and bounded isolated `run_store_too_large` list summaries.
 - [ ] 9.9 RED: Add SafeCoordinationPath tests for benign global-data aliases, nested symlink/junction/reparse/non-dir/parent swap, cross-device hardlink, and physical anchor convergence.
 - [ ] 9.10 GREEN: Implement physically anchored coordination paths with pre/post parent/file identity checks and no replacement-capable fallback.
 - [ ] 9.11 RED: Add IPC lease tests on Linux/macOS Unix sockets and Windows named pipes for nonce/token response, timeout/permission unknown, paused loop, stable refusal twice, listener loss, stale socket, PID reuse, live-owner metadata corruption/unprovable companion remaining unknown-busy, and ABA release.
