@@ -17,6 +17,7 @@ import {
 } from './reducer.js';
 import { reconcile, type ReconcilerNextAction } from './reconciler.js';
 import { projectRunView } from './projector.js';
+import { verifyCompletion } from './completion.js';
 
 export interface RuntimeDeps {
   readonly store: RunStore;
@@ -131,7 +132,28 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
     },
     complete(request: CompleteRunAction, _context: RuntimeMutationContext) {
       const record = deps.store.load(deps.plan.runId);
-      const result = reduceCanonicalRunRecord(record, request as unknown as RunStimulus);
+      const committed = record.actions[request.actionId];
+      if (committed === undefined) {
+        throw new Error(`facade complete failed: action ${request.actionId} is not admitted.`);
+      }
+      // Verify binding + canonical receipt before mutation, then convert to the
+      // reducer's commit-action-result stimulus (the completion envelope is NOT
+      // itself a RunStimulus).
+      verifyCompletion(request, committed.action);
+      if (request.kind !== 'domain-action-result') {
+        throw new Error(
+          'facade complete failed: only domain-action-result completions are supported by this facade path.'
+        );
+      }
+      const stimulus: RunStimulus = {
+        kind: 'commit-action-result',
+        actionId: request.actionId,
+        status: request.status,
+        receiptDigest: request.receiptDigest as never,
+        result: request.result,
+        evidence: request.evidence,
+      };
+      const result = reduceCanonicalRunRecord(record, stimulus);
       if (!result.ok) {
         throw new Error(`facade complete failed: ${result.failure.message}`);
       }
