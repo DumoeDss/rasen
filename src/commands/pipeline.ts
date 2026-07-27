@@ -422,13 +422,27 @@ export class PipelineCommand {
    * facade, and creates the Run on the immutable filesystem store. Output is
    * the ChangeRunReceipt (view + disposition + granted actions).
    */
-  async start(
+  /**
+   * Resolve the runtime context for a change under a pipeline (shared by the
+   * engine-aware run commands). Freezes the prepared Definition + capability
+   * catalog + effective policy into a sealed profile, derives the Run identity
+   * from the workspace's physical identity, and assembles the facade against
+   * the immutable filesystem store.
+   */
+  private async resolveRuntime(
     changeId: string,
     pipelineName: string,
-    options: PipelineCommandOptions = {}
-  ): Promise<void> {
+    options: PipelineCommandOptions
+  ): Promise<{
+    ctx: ReturnType<typeof prepareRuntimeContext>;
+    pipeline: PipelineYaml;
+    runId: string;
+    projectRoot: string;
+    projectId: string;
+    launchKey: string;
+  }> {
     const root = await this.resolveRoot(options);
-    if (!root) return;
+    if (!root) throw new Error('No Rasen root resolved.');
     const projectRoot = root.path;
 
     const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, {
@@ -539,7 +553,27 @@ export class PipelineCommand {
       launchRequestDigest,
       storeRoot: `${home}/runs`,
     });
+    return { ctx, pipeline, runId, projectRoot, projectId, launchKey };
+  }
 
+  private printRunReceipt(
+    options: PipelineCommandOptions,
+    payload: unknown
+  ): void {
+    console.log(JSON.stringify(payload, null, 2));
+  }
+
+  /**
+   * Start (or reuse) a reconciler-engine Run for a change under a pipeline
+   * (task 12.1/12.2).
+   */
+  async start(
+    changeId: string,
+    pipelineName: string,
+    options: PipelineCommandOptions = {}
+  ): Promise<void> {
+    const { ctx, pipeline, runId, projectRoot, projectId, launchKey } =
+      await this.resolveRuntime(changeId, pipelineName, options);
     const receipt = await ctx.facade.start(
       {
         change: { projectRoot, changeId },
@@ -549,7 +583,7 @@ export class PipelineCommand {
       },
       { deliveryMode: 'grant' }
     );
-    const printable = {
+    this.printRunReceipt(options, {
       runId,
       change: { projectRoot, changeId, projectId },
       pipeline: pipeline.name,
@@ -561,13 +595,84 @@ export class PipelineCommand {
         nodeId: action.nodeId,
         kind: action.kind,
       })),
-    };
-    if (options.json) {
-      console.log(JSON.stringify(printable, null, 2));
-      return;
-    }
-    console.log(JSON.stringify(printable, null, 2));
+    });
   }
+
+  /**
+   * Print a Run's current view (task 12.3/12.4 inspect).
+   */
+  async status(
+    changeId: string,
+    pipelineName: string,
+    options: PipelineCommandOptions = {}
+  ): Promise<void> {
+    const { ctx, runId, projectRoot } = await this.resolveRuntime(
+      changeId,
+      pipelineName,
+      options
+    );
+    if (!ctx.store.has(runId as never)) {
+      throw pipelineMessageError(
+        'pipelineNotFound',
+        { name: changeId, available: 'no_run' },
+        'run_not_found'
+      );
+    }
+    const view = await ctx.facade.inspect({
+      change: { projectRoot, changeId },
+      runId: runId as never,
+    });
+    this.printRunReceipt(options, { runId, status: view.status, view });
+  }
+
+  /**
+   * Resume a Run: grant the ready frontier (task 12.3/12.4).
+   */
+  async resumeRun(
+    changeId: string,
+    pipelineName: string,
+    options: PipelineCommandOptions = {}
+  ): Promise<void> {
+    const { ctx, pipeline, runId, projectRoot, launchKey } =
+      await this.resolveRuntime(changeId, pipelineName, options);
+    const receipt = await ctx.facade.resume(
+      { change: { projectRoot, changeId }, runId: runId as never },
+      { deliveryMode: 'grant' }
+    );
+    this.printRunReceipt(options, {
+      runId,
+      pipeline: pipeline.name,
+      disposition: receipt.disposition,
+      status: receipt.view.status,
+      actions: receipt.actions.map((action) => ({
+        actionId: action.actionId,
+        nodeId: action.nodeId,
+        kind: action.kind,
+      })),
+    });
+    void launchKey;
+  }
+
+  /**
+   * Cancel a Run (task 12.3/12.4 control).
+   */
+  async cancelRun(
+    changeId: string,
+    pipelineName: string,
+    options: PipelineCommandOptions = {}
+  ): Promise<void> {
+    const { ctx, runId, projectRoot } = await this.resolveRuntime(
+      changeId,
+      pipelineName,
+      options
+    );
+    const receipt = await ctx.facade.control(
+      { kind: 'cancel', change: { projectRoot, changeId }, runId: runId as never } as never,
+      { deliveryMode: 'grant' }
+    );
+    this.printRunReceipt(options, { runId, disposition: receipt.disposition, status: receipt.view.status });
+  }
+
 
   /**
    * Show or update role-level Claude/Codex runtime defaults for a pipeline.

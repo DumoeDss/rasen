@@ -682,6 +682,66 @@ pipelineCmd
   });
 
 pipelineCmd
+  .command('status <change> <pipeline>')
+  .description('Print a reconciler-engine Run view for a change')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (
+    change: string,
+    pipeline: string,
+    options?: { json?: boolean; store?: string; project?: string; storePath?: string }
+  ) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.status(change, pipeline, options);
+    } catch (error) {
+      failPipelineAction(error);
+    }
+  });
+
+pipelineCmd
+  .command('resume-run <change> <pipeline>')
+  .description('Resume a reconciler-engine Run: grant the ready frontier')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (
+    change: string,
+    pipeline: string,
+    options?: { json?: boolean; store?: string; project?: string; storePath?: string }
+  ) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.resumeRun(change, pipeline, options);
+    } catch (error) {
+      failPipelineAction(error);
+    }
+  });
+
+pipelineCmd
+  .command('cancel <change> <pipeline>')
+  .description('Cancel a reconciler-engine Run for a change')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (
+    change: string,
+    pipeline: string,
+    options?: { json?: boolean; store?: string; project?: string; storePath?: string }
+  ) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.cancelRun(change, pipeline, options);
+    } catch (error) {
+      failPipelineAction(error);
+    }
+  });
+
+pipelineCmd
   .command('agents <name>')
   .description('Show or set per-role Claude/Codex runtimes for a pipeline')
   .option('--planner <runtime>', 'Set planner runtime: claude or codex')
