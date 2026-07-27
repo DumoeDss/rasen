@@ -76,7 +76,7 @@
 - [x] 7.6 GREEN: Implement private atomic content-addressed staging and idempotent refs; expose no writable evidence path or RunStore.
 - [x] 7.7 RED: Add orphan-retention tests for explicit-only invocation, 256-entry cursor page, 24-hour minimum, full bounded Record reference recheck, race retention, and no status/inspect/list cleanup.
 - [x] 7.8 GREEN: Implement bounded conservative retention and `input_too_large`/`evidence_budget_exceeded`/stored-corruption distinctions.
-- [x] 7.9 RED/GREEN: Add CLI transport-upload tests proving uploads stage before facade, only refs enter receipt bytes, and orphaned uploads cannot advance.
+- [ ] 7.9 RED/GREEN: Add CLI transport-upload tests proving uploads stage before facade, only refs enter receipt bytes, and orphaned uploads cannot advance.
 
 ## 8. Workspace observation and cross-Run admission
 
@@ -135,17 +135,17 @@
 - [x] 12.2 GREEN: Register handlers/options and route only through public runtime/host evidence seams; keep cancel typed control sugar.
 - [x] 12.3 RED: Add versioned JSON/human goldens for view/receipt/actions/disposition/full IDs/native diagnostics, reused start empty grants, deferred ActionView, trusted resume first claim, and status zero writes.
 - [x] 12.4 GREEN: Implement start/status output with no plan/Record serialization and no executable inference from ActionView.
-- [x] 12.5 RED: Add completion/control tests for exact discriminated variants, ActorRef/EvidenceRef, transport uploads, expected version+WaitId, conflict current view, symlink/nonfile/oversized/malformed bodies, and unknown fields.
-- [x] 12.6 GREEN: Implement bounded no-follow input reader, trusted upload staging, exact codecs, and stable non-zero typed errors.
-- [x] 12.7 RED/GREEN: Preserve legacy resume snapshots/locales including LEGACY_NORMALIZED wording; verify canonical ambiguity/integrity/dual-owner blocks fallback and unique canonical dispatch goes through exact facade resume.
+- [ ] 12.5 RED: Add completion/control tests for exact discriminated variants, ActorRef/EvidenceRef, transport uploads, expected version+WaitId, conflict current view, symlink/nonfile/oversized/malformed bodies, and unknown fields.
+- [ ] 12.6 GREEN: Implement bounded no-follow input reader, trusted upload staging, exact codecs, and stable non-zero typed errors.
+- [ ] 12.7 RED/GREEN: Preserve legacy resume snapshots/locales including LEGACY_NORMALIZED wording; verify canonical ambiguity/integrity/dual-owner blocks fallback and unique canonical dispatch goes through exact facade resume.
 - [x] 12.8 RED/GREEN: Add `pipeline show` parity tests and implementation for availableEngines/reconcilerSupport from the shared analyzer.
 
 ## 13. Management API and bounded Operations discovery
 
 - [x] 13.1 RED: Extend runs wire/API tests for versioned summaries, PlanningSpace/Change/Workspace identity, exact planning/opaque selectors, duplicate-projectId clone ambiguity, current-workspace default filter, sourceState, waits, terminal, errors, and additive legacy fields.
-- [x] 13.2 GREEN: Implement read-only union discovery of active Changes plus registered machine-home Runs, filtered by selected WorkspaceInstanceId, with no writable index or identity mint.
-- [x] 13.3 RED: Add stable cursor pagination tests for many Runs, read/work budgets, invalid/large plus healthy entries, archived/missing exact Run, and two linked worktrees.
-- [x] 13.4 GREEN: Implement bounded paged list and isolated invalid summaries without unbounded full-chain work.
+- [ ] 13.2 GREEN: Implement read-only union discovery of active Changes plus registered machine-home Runs, filtered by selected WorkspaceInstanceId, with no writable index or identity mint.
+- [ ] 13.3 RED: Add stable cursor pagination tests for many Runs, read/work budgets, invalid/large plus healthy entries, archived/missing exact Run, and two linked worktrees.
+- [ ] 13.4 GREEN: Implement bounded paged list and isolated invalid summaries without unbounded full-chain work.
 - [ ] 13.5 RED: Add exact GET detail router/auth/method/path tests, CLI equality, archived/missing state, other-worktree read-only scope, unknown major, and zero writes.
 - [ ] 13.6 GREEN: Implement exact encoded detail route through the shared projector.
 - [ ] 13.7 RED: Add POST tests for closed control+version+WaitId, sealed defer mode, Gate-to-undelivered Action, browser response loss/retry, no executable payload, later CLI first claim/double claim, wrong/stale wait, workspace mismatch, engine conflict, safe argv, output validation, timeout/exit, and no in-process file write.
