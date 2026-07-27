@@ -97,7 +97,19 @@ export async function handleRuns(root: string, home?: ProjectHome | null): Promi
     buildChangeRunEntry(name, path.join(changesDir, name), resolvedHome ? resolvedHome.workDir(name) : null)
   );
 
-  return { runs };
+  // Discover reconciler-engine Runs from the immutable filesystem store
+  // (task 13.2). These are additive to the legacy per-change runs.
+  let reconcilerRuns: readonly { runId: string; recordVersion: number; status: string; terminal: unknown }[] = [];
+  try {
+    const { createFilesystemRunStore } = await import('../change-run/internal/run-store-fs.js');
+    const { getGlobalDataDir } = await import('../global-config.js');
+    const store = createFilesystemRunStore(path.join(getGlobalDataDir(), 'runs'));
+    reconcilerRuns = store.list();
+  } catch {
+    // Store root not yet created — no reconciler Runs.
+  }
+
+  return { runs, reconcilerRuns } as RunsResponse & { reconcilerRuns: readonly unknown[] };
 }
 
 /**
