@@ -72,8 +72,8 @@
 - [x] 7.2 GREEN: Implement private local-substitutable EvidenceStore/EvidenceVerifier and closed path-free refs with no Record write capability.
 - [x] 7.3 RED: Add verification tests for missing/tampered/relabelled/cross-binding/oversized/sparse/link/reparse/traversal/TOCTOU evidence and strong `effect-not-executed` attestation/query.
 - [x] 7.4 GREEN: Implement bounded no-follow physical reads, stable identity/containment rechecks, digest/contract/producer attestation validation, and fail-closed errors.
-- [ ] 7.5 RED: Add HostEvidenceWriter staging tests for bytes/local source, request/Run file-byte budgets, capacity reservation, claimed-digest conflict, and named before/after-publish crashes.
-- [ ] 7.6 GREEN: Implement private atomic content-addressed staging and idempotent refs; expose no writable evidence path or RunStore.
+- [x] 7.5 RED: Add HostEvidenceWriter staging tests for bytes/local source, request/Run file-byte budgets, capacity reservation, claimed-digest conflict, and named before/after-publish crashes.
+- [x] 7.6 GREEN: Implement private atomic content-addressed staging and idempotent refs; expose no writable evidence path or RunStore.
 - [ ] 7.7 RED: Add orphan-retention tests for explicit-only invocation, 256-entry cursor page, 24-hour minimum, full bounded Record reference recheck, race retention, and no status/inspect/list cleanup.
 - [ ] 7.8 GREEN: Implement bounded conservative retention and `input_too_large`/`evidence_budget_exceeded`/stored-corruption distinctions.
 - [ ] 7.9 RED/GREEN: Add CLI transport-upload tests proving uploads stage before facade, only refs enter receipt bytes, and orphaned uploads cannot advance.

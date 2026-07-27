@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import {
   EvidenceError,
   buildEvidenceRef,
+  createBoundedEvidenceStore,
   createInMemoryEvidenceStore,
   verifyEvidenceBinding,
   verifyEvidenceContent,
@@ -111,5 +112,43 @@ describe('EvidenceRef envelope + verification (7.1-7.3)', () => {
     const absent = { ...r, contentDigest: digest('9') };
     expect(store.has(absent)).toBe(false);
     expect(() => store.read(absent)).toThrowError(EvidenceError);
+  });
+});
+
+describe('HostEvidenceWriter staging budgets + claim conflict (7.5/7.6)', () => {
+  it('rejects content that does not match the claimed contentDigest', () => {
+    const store = createBoundedEvidenceStore({ maxRunBytes: 1024, maxEntries: 8 });
+    const r = ref();
+    const wrongBytes = encoder.encode('{"ok":false}');
+    expect(() => store.stageClaimed(r, wrongBytes)).toThrowError(EvidenceError);
+    expect(store.usage().entries).toBe(0);
+  });
+
+  it('stages claimed content and is idempotent on re-stage', () => {
+    const store = createBoundedEvidenceStore({ maxRunBytes: 1024, maxEntries: 8 });
+    store.stageClaimed(ref(), content);
+    expect(store.usage().entries).toBe(1);
+    // Re-staging identical content does not consume budget.
+    store.stageClaimed(ref(), content);
+    expect(store.usage().entries).toBe(1);
+    expect(store.usage().bytes).toBe(content.byteLength);
+  });
+
+  it('rejects when the byte or entry budget is exceeded', () => {
+    const store = createBoundedEvidenceStore({
+      maxRunBytes: content.byteLength + 1,
+      maxEntries: 8,
+    });
+    store.stage(content);
+    const extra = encoder.encode('{"other":true}');
+    expect(() => store.stage(extra)).toThrowError(EvidenceError);
+    expect(store.usage().bytes).toBe(content.byteLength);
+
+    const entryCapped = createBoundedEvidenceStore({
+      maxRunBytes: 4096,
+      maxEntries: 1,
+    });
+    entryCapped.stage(content);
+    expect(() => entryCapped.stage(extra)).toThrowError(EvidenceError);
   });
 });

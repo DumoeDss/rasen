@@ -10,7 +10,9 @@ export type EvidenceErrorCode =
   | 'evidence_content_mismatch'
   | 'evidence_size_mismatch'
   | 'evidence_identity_mismatch'
-  | 'evidence_binding_mismatch';
+  | 'evidence_binding_mismatch'
+  | 'evidence_budget_exceeded'
+  | 'evidence_claim_conflict';
 
 export class EvidenceError extends Error {
   constructor(
@@ -176,4 +178,88 @@ export function createInMemoryEvidenceStore(): EvidenceStore {
     },
   };
   return Object.freeze(store);
+}
+
+export interface BoundedEvidenceOptions {
+  readonly maxRunBytes: number;
+  readonly maxEntries: number;
+}
+
+export interface BoundedEvidenceStore extends EvidenceStore {
+  /** Stage content whose digest was pre-claimed by a ref; reject a mismatch. */
+  readonly stageClaimed: (ref: EvidenceRef, content: Uint8Array) => void;
+  readonly usage: () => Readonly<{ bytes: number; entries: number }>;
+}
+
+/**
+ * HostEvidenceWriter staging (tasks 7.5/7.6): atomic content-addressed staging
+ * bounded by a per-Run byte and entry budget, with claimed-digest conflict
+ * detection. Staging is idempotent (re-staging identical content is a no-op
+ * that does not consume budget); a writer that claims one digest but supplies
+ * the bytes of another is rejected before publish.
+ */
+export function createBoundedEvidenceStore(
+  options: BoundedEvidenceOptions
+): BoundedEvidenceStore {
+  const entries = new Map<string, Uint8Array>();
+  let totalBytes = 0;
+
+  const assertBudget = (content: Uint8Array): void => {
+    if (
+      entries.size >= options.maxEntries &&
+      !entries.has(computeEvidenceContentDigest(content))
+    ) {
+      throw new EvidenceError(
+        'evidence_budget_exceeded',
+        'Evidence entry budget exceeded for this Run.'
+      );
+    }
+    const digest = computeEvidenceContentDigest(content);
+    if (!entries.has(digest) && totalBytes + content.byteLength > options.maxRunBytes) {
+      throw new EvidenceError(
+        'evidence_budget_exceeded',
+        'Evidence byte budget exceeded for this Run.'
+      );
+    }
+  };
+
+  const stage = (content: Uint8Array): Digest => {
+    const digest = computeEvidenceContentDigest(content);
+    if (!entries.has(digest)) {
+      assertBudget(content);
+      entries.set(digest, content.slice());
+      totalBytes += content.byteLength;
+    }
+    return digest;
+  };
+
+  return Object.freeze({
+    stage,
+    stageClaimed(ref: EvidenceRef, content: Uint8Array): void {
+      const actual = computeEvidenceContentDigest(content);
+      if (actual !== ref.contentDigest) {
+        throw new EvidenceError(
+          'evidence_claim_conflict',
+          'Staged content does not match the evidence ref claimed contentDigest.'
+        );
+      }
+      stage(content);
+    },
+    read(ref: EvidenceRef): Uint8Array {
+      const bytes = entries.get(ref.contentDigest);
+      if (bytes === undefined) {
+        throw new EvidenceError(
+          'evidence_content_mismatch',
+          'No staged content matches this evidence ref.'
+        );
+      }
+      return bytes;
+    },
+    has(ref: EvidenceRef): boolean {
+      return entries.has(ref.contentDigest);
+    },
+    usage() {
+      return Object.freeze({ bytes: totalBytes, entries: entries.size });
+    },
+  });
 }
