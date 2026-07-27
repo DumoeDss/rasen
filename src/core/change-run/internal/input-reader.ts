@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from 'node:fs';
+import { lstatSync, readFileSync } from 'node:fs';
 
 export type InputReaderErrorCode =
   | 'input_too_large'
@@ -24,7 +24,7 @@ export class InputReaderError extends Error {
 export function readBoundedJson(path: string, maxBytes = 1024 * 1024): unknown {
   let st;
   try {
-    st = statSync(path);
+    st = lstatSync(path);
   } catch {
     throw new InputReaderError('input_not_found', `Input file not found: ${path}`);
   }
