@@ -70,7 +70,13 @@ import { analyzeReconcilerSupport } from '../core/pipeline-registry/execution-pl
 import { resolveRuntimeExecutionProfile } from '../core/pipeline-registry/profile-resolver.js';
 import {
   prepareRuntimeContext,
+  decodeCompletion,
+  decodeControl,
   type ChangePipelineRuntime,
+  type CompleteRunAction,
+  type ChangeRunControlRequest,
+  type EvidenceRef,
+  type Digest,
 } from '../core/change-run/index.js';
 import {
   deriveChangeInstanceId,
@@ -79,6 +85,15 @@ import {
   deriveWorkspaceInstanceId,
   readPhysicalIdentity,
 } from '../core/change-run/internal/identity.js';
+import { createFilesystemRunStore } from '../core/change-run/internal/run-store-fs.js';
+import {
+  createBoundedEvidenceStore,
+  computeEvidenceContentDigest,
+} from '../core/change-run/internal/evidence.js';
+import {
+  readBoundedJson,
+  InputReaderError,
+} from '../core/change-run/internal/input-reader.js';
 import { getGlobalDataDir } from '../core/global-config.js';
 import { statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -131,6 +146,34 @@ interface PipelineAgentsOptions extends PipelineCommandOptions {
   fixer?: string;
   shipper?: string;
 }
+
+/**
+ * The resolved runtime context for an engine-aware Run command (start/status/
+ * resume-run/cancel/complete/control). All engine-aware commands share this
+ * shape from {@link PipelineCommand.resolveRuntime}.
+ */
+interface ResolvedRuntime {
+  ctx: ReturnType<typeof prepareRuntimeContext>;
+  pipeline: PipelineYaml;
+  runId: string;
+  projectRoot: string;
+  projectId: string;
+  launchKey: string;
+}
+
+/**
+ * Test-injected resolver for the --run-based commands (complete/control).
+ * In production this is undefined; the default filesystem-backed resolution
+ * loads the Record by runId to recover the pipeline name and re-prepares the
+ * definition + profile. Tests inject a pre-built in-memory context so the CLI
+ * parsing/validation/upload-staging/formatting layer can be exercised without
+ * spawning a real project setup.
+ */
+type RuntimeForRunResolver = (
+  changeId: string,
+  runId: string,
+  options: PipelineCommandOptions
+) => Promise<ResolvedRuntime>;
 
 const STAGE_ROLES: StageRole[] = ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'];
 
@@ -214,6 +257,17 @@ function formatThreshold(
 }
 
 export class PipelineCommand {
+  /**
+   * @param runtimeForRunOverride Optional test-injected resolver for the
+   *   --run-based commands (complete/control). When set, bypasses the default
+   *   filesystem-backed Run resolution (open store → load record → recover
+   *   pipeline name → re-prepare definition + profile). Production callers
+   *   never pass this — the default path is the real CLI surface.
+   */
+  constructor(
+    private readonly runtimeForRunOverride?: RuntimeForRunResolver
+  ) {}
+
   /**
    * Resolve the Rasen root through the shared root-selection layer, exactly
    * as `rasen validate` does: `--store <id>` selects a registered store,
@@ -432,15 +486,9 @@ export class PipelineCommand {
   private async resolveRuntime(
     changeId: string,
     pipelineName: string,
-    options: PipelineCommandOptions
-  ): Promise<{
-    ctx: ReturnType<typeof prepareRuntimeContext>;
-    pipeline: PipelineYaml;
-    runId: string;
-    projectRoot: string;
-    projectId: string;
-    launchKey: string;
-  }> {
+    options: PipelineCommandOptions,
+    runIdOverride?: string
+  ): Promise<ResolvedRuntime> {
     const root = await this.resolveRoot(options);
     if (!root) throw new Error('No Rasen root resolved.');
     const projectRoot = root.path;
@@ -526,12 +574,12 @@ export class PipelineCommand {
       physical
     ) as never;
     const launchKey = `cli-start-${changeId}`;
-    const runId = deriveRunId(
+    const runId = (runIdOverride ?? deriveRunId(
       planningSpaceId,
       changeInstanceId,
       changeId,
       launchKey
-    ) as never;
+    )) as never;
     const launchRequestDigest = `sha256:${createHash('sha256')
       .update(launchKey)
       .digest('hex')}` as never;
@@ -671,6 +719,361 @@ export class PipelineCommand {
       { deliveryMode: 'grant' }
     );
     this.printRunReceipt(options, { runId, disposition: receipt.disposition, status: receipt.view.status });
+  }
+
+  // -------------------------------------------------------------------------
+  // Engine-aware complete / control (tasks 12.5 / 12.6 / 7.9)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Resolve the runtime context for a --run-based command (complete/control).
+   * Opens the filesystem RunStore, loads the Record by the exact runId to
+   * recover the pipeline name, then delegates to {@link resolveRuntime} with
+   * the runId override so the plan's runId matches the stored Record.
+   * Test-injected resolvers bypass this path entirely.
+   */
+  private async resolveRuntimeForRun(
+    changeId: string,
+    runId: string,
+    options: PipelineCommandOptions
+  ): Promise<ResolvedRuntime> {
+    if (this.runtimeForRunOverride) {
+      return this.runtimeForRunOverride(changeId, runId, options);
+    }
+
+    const root = await this.resolveRoot(options);
+    if (!root) throw new Error('No Rasen root resolved.');
+
+    const home = getGlobalDataDir();
+    const storeRoot = `${home}/runs`;
+    const store = createFilesystemRunStore(storeRoot);
+    if (!store.has(runId as never)) {
+      throw pipelineMessageError(
+        'pipelineNotFound',
+        { name: runId, available: 'no_run' },
+        'run_not_found'
+      );
+    }
+    const record = store.load(runId as never);
+    const pipelineName = record.pipeline;
+
+    // Re-prepare the definition + profile using the recovered pipeline name,
+    // overriding the derived runId with the exact --run value. The identities
+    // (planningSpaceId, changeInstanceId, workspaceInstanceId) are derived from
+    // the physical workspace and remain stable across re-preparation.
+    return this.resolveRuntime(changeId, pipelineName, options, runId);
+  }
+
+  /**
+   * Read a bounded JSON payload from a file path or `-` (stdin). Applies the
+   * same bounded no-follow reader as the kernel (task 12.6): symlinks,
+   * non-regular files, oversized bodies, and malformed JSON are rejected with
+   * stable typed errors before any staging or facade call.
+   */
+  private readBoundedPayload(from: string, maxBytes = 1024 * 1024): unknown {
+    if (from === '-') {
+      let buf: Buffer;
+      try {
+        buf = fs.readFileSync(0);
+      } catch {
+        throw new InputReaderError('input_not_found', 'Could not read from stdin.');
+      }
+      if (buf.byteLength > maxBytes) {
+        throw new InputReaderError(
+          'input_too_large',
+          `Input exceeds ${maxBytes} bytes.`
+        );
+      }
+      try {
+        return JSON.parse(buf.toString('utf8'));
+      } catch {
+        throw new InputReaderError('input_malformed', 'Input is not valid JSON.');
+      }
+    }
+    return readBoundedJson(from, maxBytes);
+  }
+
+  /**
+   * Stage trusted-host transport uploads through a bounded content-addressed
+   * HostEvidenceWriter BEFORE the facade receives any refs (task 7.9). Only
+   * refs (contentDigest + identity) enter the receipt bytes — never raw
+   * content. Every EvidenceRef in the completion must have its content staged;
+   * orphaned uploads (not referenced by any ref) are rejected so arbitrary
+   * content cannot be injected into the evidence store.
+   *
+   * Returns the bounded store handle so tests can inspect what was staged.
+   */
+  private stageTransportUploads(
+    uploads: ReadonlyArray<{ contentDigest: string; contentBase64: string }>,
+    requiredDigests: ReadonlySet<string>
+  ): ReturnType<typeof createBoundedEvidenceStore> {
+    const store = createBoundedEvidenceStore({
+      maxRunBytes: 64 * 1024 * 1024,
+      maxEntries: 64,
+    });
+
+    const stagedDigests = new Set<string>();
+    for (const upload of uploads) {
+      const content = Buffer.from(upload.contentBase64, 'base64');
+      const actualDigest = computeEvidenceContentDigest(
+        new Uint8Array(content)
+      );
+      if (actualDigest !== upload.contentDigest) {
+        throw new InputReaderError(
+          'input_malformed',
+          `Upload contentDigest mismatch: claimed ${upload.contentDigest}, actual ${actualDigest}.`
+        );
+      }
+      store.stage(new Uint8Array(content));
+      stagedDigests.add(upload.contentDigest);
+    }
+
+    // Every EvidenceRef must have staged content — no ref enters the facade
+    // without its raw bytes proven against the claimed digest.
+    for (const digest of requiredDigests) {
+      if (!stagedDigests.has(digest)) {
+        throw new InputReaderError(
+          'input_malformed',
+          `Evidence ref contentDigest ${digest} has no staged upload content.`
+        );
+      }
+    }
+    // Orphaned uploads cannot advance: content uploaded but not referenced by
+    // any EvidenceRef is rejected (prevents evidence-store injection).
+    for (const digest of stagedDigests) {
+      if (!requiredDigests.has(digest)) {
+        throw new InputReaderError(
+          'input_malformed',
+          `Orphaned upload ${digest} is not referenced by any evidence ref.`
+        );
+      }
+    }
+    return store;
+  }
+
+  /**
+   * Collect every contentDigest from EvidenceRefs in a completion envelope.
+   * These are the digests that MUST have staged upload content before the
+   * facade sees the refs.
+   */
+  private collectRequiredDigests(completion: CompleteRunAction): Set<string> {
+    const digests = new Set<string>();
+    digests.add(completion.actorAttestation.contentDigest);
+    for (const ref of completion.evidence) {
+      digests.add(ref.contentDigest);
+    }
+    return digests;
+  }
+
+  /**
+   * Validate and parse the uploads array from a submission body. Each entry
+   * must be an object with string `contentDigest` and `contentBase64` fields.
+   */
+  private parseUploads(
+    raw: unknown
+  ): Array<{ contentDigest: string; contentBase64: string }> {
+    if (!Array.isArray(raw)) return [];
+    const uploads: Array<{ contentDigest: string; contentBase64: string }> = [];
+    for (let i = 0; i < raw.length; i++) {
+      const entry = raw[i];
+      if (entry === null || typeof entry !== 'object') {
+        throw new InputReaderError(
+          'input_malformed',
+          `Upload entry ${i} must be an object.`
+        );
+      }
+      const e = entry as Record<string, unknown>;
+      if (
+        typeof e.contentDigest !== 'string' ||
+        typeof e.contentBase64 !== 'string'
+      ) {
+        throw new InputReaderError(
+          'input_malformed',
+          `Upload entry ${i} must have string contentDigest and contentBase64.`
+        );
+      }
+      uploads.push({
+        contentDigest: e.contentDigest,
+        contentBase64: e.contentBase64,
+      });
+    }
+    return uploads;
+  }
+
+  /**
+   * Complete a Run action from a receipt body (task 12.5/12.6).
+   *
+   * `rasen pipeline complete <change> --run <runId> --from <receipt.json|->`
+   *
+   * Reads a bounded JSON body from a file or stdin, stages trusted-host
+   * transport uploads through HostEvidenceWriter BEFORE the facade receives
+   * refs (only refs/digests enter receipt bytes — never raw content), then
+   * calls `facade.complete(...)`. The body is a submission wrapper:
+   *
+   * ```json
+   * {
+   *   "completion": { ...change-run-completion/1 envelope... },
+   *   "uploads": [{ "contentDigest": "sha256:...", "contentBase64": "..." }]
+   * }
+   * ```
+   */
+  async complete(
+    changeId: string,
+    runId: string,
+    from: string,
+    options: PipelineCommandOptions = {}
+  ): Promise<void> {
+    const resolved = await this.resolveRuntimeForRun(changeId, runId, options);
+    const body = this.readBoundedPayload(from) as {
+      completion?: unknown;
+      uploads?: unknown;
+    };
+    if (
+      body === null ||
+      typeof body !== 'object' ||
+      body.completion === undefined
+    ) {
+      throw new InputReaderError(
+        'input_malformed',
+        'Body must be an object with a "completion" field.'
+      );
+    }
+    const uploads = this.parseUploads(body.uploads);
+    // Decode the completion through the strict contract schema — unknown
+    // fields, wrong types, and missing required fields all fail here.
+    const completion = decodeCompletion(body.completion);
+    const requiredDigests = this.collectRequiredDigests(completion);
+    // Stage uploads through HostEvidenceWriter before the facade sees refs.
+    this.stageTransportUploads(uploads, requiredDigests);
+    const receipt = await resolved.ctx.facade.complete(completion, {
+      deliveryMode: 'grant',
+    });
+    this.printRunReceipt(options, {
+      runId,
+      disposition: receipt.disposition,
+      status: receipt.view.status,
+    });
+  }
+
+  /**
+   * Submit a typed control request from a body (task 12.5/12.6).
+   *
+   * `rasen pipeline control <change> --run <runId> --from <control.json|->`
+   *
+   * The body is a submission wrapper:
+   *
+   * ```json
+   * {
+   *   "control": { ...change-run-control/1 request... },
+   *   "uploads": [{ "contentDigest": "sha256:...", "contentBase64": "..." }]
+   * }
+   * ```
+   *
+   * Transport uploads are staged through HostEvidenceWriter when the control
+   * command carries EvidenceRefs (e.g. accept-workspace-revision, decision).
+   * `cancel` is typed sugar over this path.
+   */
+  async control(
+    changeId: string,
+    runId: string,
+    from: string,
+    options: PipelineCommandOptions = {}
+  ): Promise<void> {
+    const resolved = await this.resolveRuntimeForRun(changeId, runId, options);
+    const body = this.readBoundedPayload(from) as {
+      control?: unknown;
+      uploads?: unknown;
+    };
+    if (
+      body === null ||
+      typeof body !== 'object' ||
+      body.control === undefined
+    ) {
+      throw new InputReaderError(
+        'input_malformed',
+        'Body must be an object with a "control" field.'
+      );
+    }
+    const uploads = this.parseUploads(body.uploads);
+    const control = decodeControl(body.control);
+    // Collect required digests from any EvidenceRefs the command carries.
+    const requiredDigests = this.collectRequiredDigestsFromControl(control);
+    if (requiredDigests.size > 0 || uploads.length > 0) {
+      this.stageTransportUploads(uploads, requiredDigests);
+    }
+    // The facade's control method casts the request as a RunStimulus (the
+    // reducer expects a top-level `kind`, not the control envelope's nested
+    // `command.kind`). Convert the decoded control request to the matching
+    // stimulus shape. This mirrors how cancelRun already passes a stimulus-
+    // shaped object via `as never`.
+    const stimulus = this.controlRequestToStimulus(control);
+    const receipt = await resolved.ctx.facade.control(stimulus as never, {
+      deliveryMode: 'grant',
+    });
+    this.printRunReceipt(options, {
+      runId,
+      disposition: receipt.disposition,
+      status: receipt.view.status,
+    });
+  }
+
+  /**
+   * Collect content digests from EvidenceRefs embedded in a control request's
+   * command (decision/accept-workspace-revision may carry evidence).
+   */
+  private collectRequiredDigestsFromControl(
+    control: ChangeRunControlRequest
+  ): Set<string> {
+    const digests = new Set<string>();
+    const cmd = control.command;
+    if (cmd.kind === 'decision' && cmd.evidence) {
+      for (const ref of cmd.evidence) {
+        digests.add(ref.contentDigest);
+      }
+    }
+    if (cmd.kind === 'accept-workspace-revision') {
+      for (const ref of cmd.evidence) {
+        digests.add(ref.contentDigest);
+      }
+    }
+    return digests;
+  }
+
+  /**
+   * Convert a decoded ChangeRunControlRequest into the RunStimulus shape the
+   * reducer expects (top-level `kind`, not nested `command.kind`). The facade's
+   * control method casts its argument as a RunStimulus, so the command must be
+   * flattened before the call. This mirrors how `cancelRun` already constructs
+   * a stimulus-shaped object inline.
+   */
+  private controlRequestToStimulus(
+    control: ChangeRunControlRequest
+  ): Readonly<Record<string, unknown>> {
+    const cmd = control.command;
+    switch (cmd.kind) {
+      case 'cancel':
+        return { kind: 'cancel', ...(cmd.reason ? { reason: cmd.reason } : {}) };
+      case 'escalate':
+        // The escalate stimulus requires a `code`; the control command only
+        // carries a human `reason`. Use a stable default code.
+        return { kind: 'escalate', code: 'user_escalated', reason: cmd.reason };
+      case 'resume':
+        return { kind: 'resume-wait', waitId: cmd.waitId };
+      case 'decision':
+        return {
+          kind: 'decide-gate',
+          waitId: cmd.waitId,
+          decisionId: cmd.decisionId,
+          outcome: cmd.outcome,
+        };
+      case 'accept-workspace-revision':
+        return {
+          kind: 'accept-workspace-revision',
+          waitId: cmd.waitId,
+          revision: cmd.revision,
+          evidence: cmd.evidence,
+        };
+    }
   }
 
 

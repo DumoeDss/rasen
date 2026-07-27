@@ -113,3 +113,49 @@ task-detail-ui,pipelines-ui,change-run-operations,ecp-change-run-runtime}/spec.m
 - API group owns: `src/core/management-api/{runs,router,wire-types}.ts` +
   `test/core/management-api/` (or change-run). Consumes `projector`, `run-store-fs`.
 - UI group owns: `packages/ui/**`. Consumes server wire types + `src/api/`.
+
+## Durable findings from completed waves (append as workers report)
+
+### Wave 1 API-reads (13.2–13.6, commit e7e1c7b4)
+- **WorkspaceInstanceId derivation chain**: management reaches into
+  `src/core/change-run/internal/identity.js` for `derivePlanningSpaceId`/
+  `deriveWorkspaceInstanceId`/`readPhysicalIdentity` — the same read-only
+  (statSync + SHA-256) chain the CLI uses. No public barrel export; importing
+  internal modules directly is the established pattern. All steps are zero-write.
+- **Filesystem store `list()` silently skips invalid Runs**. To report them as
+  per-entry errors (spec requirement), enumerate directories directly via
+  `readdirSync` and try `decodeCanonicalRunRecord` on each head `record-v<N>.json`.
+- **Other-worktree projection needs post-processing**: the projector always sets
+  `workspace.scope: 'current'`. For `scope: 'other'`, post-process the projected
+  view: clear `allowedControls`, downgrade `granted` → `admitted_undelivered`.
+  The `change-run-view/1` invariant (in `decodeChangeRunView`) forbids controls
+  or granted Actions in other-worktree views. **UI wave**: render other-worktree
+  Runs read-only per this rule.
+- `handleRunDetail(changeId, runId, projectRoot, home)` and `handleRuns` now
+  accept `{ planningSpaceId }` / `{ limit, cursor }` options; detail returns
+  `{ ok, view }` or `{ ok:false, status, code }`.
+- `handleRunDetail(changeId, runId, projectRoot, home)` and `handleRuns` now
+  accept `{ planningSpaceId }` / `{ limit, cursor }` options; detail returns
+  `{ ok, view }` or `{ ok:false, status, code }`.
+
+### Wave 1 CLI (7.9, 12.5–12.7)
+- **facade.control() stimulus mismatch**: `facade.control()` type-signs
+  `ChangeRunControlRequest` but internally casts it as `RunStimulus` (top-level
+  `kind`, not nested `command.kind`). Any caller MUST flatten the decoded
+  control request into the stimulus shape first — the CLI added
+  `controlRequestToStimulus()` for this; `cancelRun` works around it with
+  `as never`. **Wave 2 API-control**: if the POST bridge calls facade.control
+  directly (vs spawning the CLI), reuse this conversion.
+- **facade.complete() is domain-action-result only**: it throws for
+  effect-observation / infrastructure-observation kinds — those go through the
+  reducer (kernel-internal). The CLI `complete` command therefore only accepts
+  domain-action-result completions; a multi-effect action needs its effects
+  observed first (via the reducer) before `complete` can close it.
+- **PipelineCommand test injection**: the constructor takes an optional
+  `RuntimeForRunResolver`. Production passes nothing (filesystem-backed
+  `resolveRuntimeForRun`); tests inject an in-memory context to exercise the
+  CLI parsing / upload-staging / formatting layer without spawning a process
+  or building a real project. **Wave 2** can reuse this pattern for bridge tests.
+- The CLI `complete`/`control` subcommands are registered in `src/cli/index.ts`
+  after `cancel`; both take `--from <file|->` and thread `--store`/`--project`/
+  `--planning-space` like start/status.
