@@ -146,10 +146,10 @@
 - [x] 13.2 GREEN: Implement read-only union discovery of active Changes plus registered machine-home Runs, filtered by selected WorkspaceInstanceId, with no writable index or identity mint.
 - [x] 13.3 RED: Add stable cursor pagination tests for many Runs, read/work budgets, invalid/large plus healthy entries, archived/missing exact Run, and two linked worktrees.
 - [x] 13.4 GREEN: Implement bounded paged list and isolated invalid summaries without unbounded full-chain work.
-- [ ] 13.5 RED: Add exact GET detail router/auth/method/path tests, CLI equality, archived/missing state, other-worktree read-only scope, unknown major, and zero writes.
-- [ ] 13.6 GREEN: Implement exact encoded detail route through the shared projector.
-- [ ] 13.7 RED: Add POST tests for closed control+version+WaitId, sealed defer mode, Gate-to-undelivered Action, browser response loss/retry, no executable payload, later CLI first claim/double claim, wrong/stale wait, workspace mismatch, engine conflict, safe argv, output validation, timeout/exit, and no in-process file write.
-- [ ] 13.8 GREEN: Implement CLI-backed POST bridge with exact identifiers/space, pre-spawn admission, non-overridable defer context, and view-only/empty-grant response.
+- [x] 13.5 RED: Add exact GET detail router/auth/method/path tests, CLI equality, archived/missing state, other-worktree read-only scope, unknown major, and zero writes.
+- [x] 13.6 GREEN: Implement exact encoded detail route through the shared projector.
+- [x] 13.7 RED: Add POST tests for closed control+version+WaitId, sealed defer mode, Gate-to-undelivered Action, browser response loss/retry, no executable payload, later CLI first claim/double claim, wrong/stale wait, workspace mismatch, engine conflict, safe argv, output validation, timeout/exit, and no in-process file write.
+- [x] 13.8 GREEN: Implement CLI-backed POST bridge with exact identifiers/space, pre-spawn admission, non-overridable defer context, and view-only/empty-grant response.
 - [x] 13.9 RED/GREEN: Add Pipeline-detail availableEngines/reconcilerSupport parity with CLI start/show and Canvas while keeping legacy capability fields additive.
 
 ## 14. Task-detail Operations and Canvas
@@ -162,12 +162,12 @@
 - [ ] 14.6 GREEN: Implement controls strictly from projected allowedControls and refetch committed truth.
 - [ ] 14.7 RED: Add Canvas tests for availableEngines/reconcilerSupport/profileDigest/reason, LEGACY_NORMALIZED separation, unsupported disabled start, and CLI/management parity.
 - [ ] 14.8 GREEN: Render shared support analysis in Canvas without Pipeline-name guessing.
-- [ ] 14.9 RED/GREEN: Assert Run terminal state never mutates Board/Issue lifecycle; retain that mapping for 0.2.0.
+- [x] 14.9 RED/GREEN: Assert Run terminal state never mutates Board/Issue lifecycle; retain that mapping for 0.2.0.
 
 ## 15. Cross-plane parity and failure journeys
 
-- [ ] 15.1 RED: Create one canonical fixture matrix across projector, CLI status, management detail, and Task-detail for all closed core/root-dag fields including actions+waits, workspace scope, and allowed controls.
-- [ ] 15.2 GREEN: Remove plane-local derivations until only documented transport wrappers differ.
+- [x] 15.1 RED: Create one canonical fixture matrix across projector, CLI status, management detail, and Task-detail for all closed core/root-dag fields including actions+waits, workspace scope, and allowed controls.
+- [x] 15.2 GREEN: Remove plane-local derivations until only documented transport wrappers differ.
 - [ ] 15.3 RED/GREEN: Add fresh-process simple bug-fix E2E from launch through Gate, typed Action/Actor completions, evidence, workspace reservations, simple verify, independently owned ship/archive effects, and terminal inspect.
 - [ ] 15.4 RED/GREEN: Add complex-result E2E proving durable unsupported ReviewCycle wait, no ship, no human uncertain resume, and safe escalate/cancel.
 - [ ] 15.5 RED/GREEN: Add launch/completion/downstream-admission ACK-loss journeys for deferred-undelivered, granted-executed, and granted-never-executed safe/non-idempotent Actions; verify browser replay grants empty, trusted first claim is atomic, and only post-grant loss invokes recovery.
