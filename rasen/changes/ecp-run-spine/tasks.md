@@ -176,9 +176,9 @@
 
 ## 16. Verification and scope gates
 
-- [ ] 16.1 Run focused change-run, Definition, Pipeline command, management, UI, and support-analyzer suites; resolve failures without weakening closed contracts.
-- [ ] 16.2 Run legacy Pipeline resume/JSON/locales, portfolio/goal reading, management/session/Task-detail/Board regressions and prove additive behavior.
-- [ ] 16.3 Run typecheck, lint, unit/integration/CLI E2E, UI typecheck/tests/build, and required POSIX/Windows lock/path/durability jobs.
-- [ ] 16.4 Audit one canonical Record owner, complete executable freeze, PlanningSpace/Change/Workspace scoping, exact Actor/effect evidence, bilateral engine guard, zero read-side writes, bounded pagination, and no direct API/UI mutation.
-- [ ] 16.5 Audit scope exclusions: no ReviewCycle body, Composite/Loop/Goal/FanOut/Join execution, Issue scheduling, or Board lifecycle mapping.
-- [ ] 16.6 Perform real dogfood and named crash exercises, capture commands/results in Change work evidence, and map every scenario in all six delta specs to automated or explicit verification.
+- [x] 16.1 Run focused change-run, Definition, Pipeline command, management, UI, and support-analyzer suites; resolve failures without weakening closed contracts.
+- [x] 16.2 Run legacy Pipeline resume/JSON/locales, portfolio/goal reading, management/session/Task-detail/Board regressions and prove additive behavior.
+- [x] 16.3 Run typecheck, lint, unit/integration/CLI E2E, UI typecheck/tests/build, and required POSIX/Windows lock/path/durability jobs.
+- [x] 16.4 Audit one canonical Record owner, complete executable freeze, PlanningSpace/Change/Workspace scoping, exact Actor/effect evidence, bilateral engine guard, zero read-side writes, bounded pagination, and no direct API/UI mutation.
+- [x] 16.5 Audit scope exclusions: no ReviewCycle body, Composite/Loop/Goal/FanOut/Join execution, Issue scheduling, or Board lifecycle mapping.
+- [x] 16.6 Perform real dogfood and named crash exercises, capture commands/results in Change work evidence, and map every scenario in all six delta specs to automated or explicit verification.
