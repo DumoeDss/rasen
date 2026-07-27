@@ -4,9 +4,9 @@
 - [x] 1.2 GREEN: Implement closed branded request/error contracts and the public facade export without exporting plan, Record, reducer, store, or filesystem internals.
 - [x] 1.3 RED: Add strict `change-run-view/1`, `root-dag/1`, receipt, control, completion, Action, Actor, EvidenceRef, and WorkspaceRevision codec golden/unknown-major/extra-field tests.
 - [x] 1.4 GREEN: Implement the closed codecs, including commit-vs-unborn WorkspaceRevision, safe integers/bounds, additive unknown view sections, and typed unknown-major rejection.
-- [ ] 1.5 RED: Add root-dag invariant tests for stable arrays, actions plus `waits[]`, terminal mutual exclusion, status priority, workspace scope, Action delivery state, allowed-control derivation, and receipt disposition/action-grant matrix.
-- [ ] 1.6 GREEN: Implement invariant validation and exact disposition priority; make `RunActionView` diagnostic only and return executable receipt actions only on a durable grant/first claim or recovery-approved redelivery.
-- [ ] 1.7 RED/GREEN: Prove reused start, idempotent completion, stale/conflicting control, waiting, and terminal responses carry `actions: []`; exact resume alone classifies lost delivery.
+- [x] 1.5 RED: Add root-dag invariant tests for stable arrays, actions plus `waits[]`, terminal mutual exclusion, status priority, workspace scope, Action delivery state, allowed-control derivation, and receipt disposition/action-grant matrix.
+- [x] 1.6 GREEN: Implement invariant validation and exact disposition priority; make `RunActionView` diagnostic only and return executable receipt actions only on a durable grant/first claim or recovery-approved redelivery.
+- [x] 1.7 RED/GREEN: Prove reused start, idempotent completion, stale/conflicting control, waiting, and terminal responses carry `actions: []`; exact resume alone classifies lost delivery.
 
 ## 2. Planning-space, Change-instance, and launch identity
 
