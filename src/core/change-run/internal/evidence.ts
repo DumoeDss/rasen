@@ -263,3 +263,107 @@ export function createBoundedEvidenceStore(
     },
   });
 }
+
+export interface StagedEvidenceEntry {
+  readonly contentDigest: Digest;
+  readonly stagedAtMs: number;
+  readonly bytes: number;
+}
+
+export interface RetentionOptions {
+  readonly minAgeMs: number;
+  readonly cursorPageSize: number;
+}
+
+export const DEFAULT_RETENTION: RetentionOptions = Object.freeze({
+  minAgeMs: 24 * 60 * 60 * 1000,
+  cursorPageSize: 256,
+});
+
+export interface RetentionLedger {
+  /** Record that content was staged at a facade-supplied time. */
+  readonly record: (ref: EvidenceRef, nowMs: number) => void;
+  /** Paginated orphan list (read-only — listing never cleans up). */
+  readonly listOrphans: (
+    nowMs: number,
+    isReferenced: (ref: EvidenceRef) => boolean,
+    cursor: number
+  ) => Readonly<{ entries: readonly StagedEvidenceEntry[]; nextCursor: number }>;
+  /**
+   * Explicit-only cleanup. Removes orphans older than minAge whose references
+   * are absent from every Record, rechecking each reference immediately before
+   * delete (race retention). Returns the removed digests.
+   */
+  readonly cleanupEligible: (
+    nowMs: number,
+    isReferenced: (ref: EvidenceRef) => boolean,
+    options?: RetentionOptions
+  ) => readonly Digest[];
+}
+
+/**
+ * Bounded conservative orphan retention (tasks 7.7/7.8). The ledger tracks
+ * staged-at times and removes only entries that are (a) older than the minimum
+ * age AND (b) unreferenced by any committed Record at the moment of delete.
+ * Listing, inspecting, and status never clean up. `nowMs` is facade-supplied so
+ * the module stays deterministic and testable without a wall clock.
+ */
+export function createRetentionLedger(
+  refs: () => Iterable<EvidenceRef>
+): RetentionLedger {
+  const stagedAt = new Map<string, number>();
+
+  const entryFor = (digest: string, nowMs: number): StagedEvidenceEntry | null => {
+    const at = stagedAt.get(digest);
+    if (at === undefined) return null;
+    return Object.freeze({ contentDigest: digest as Digest, stagedAtMs: at, bytes: 0 });
+  };
+
+  const ledger: RetentionLedger = {
+    record(ref: EvidenceRef, nowMs: number) {
+      if (!stagedAt.has(ref.contentDigest)) {
+        stagedAt.set(ref.contentDigest, nowMs);
+      }
+    },
+    listOrphans(
+      nowMs: number,
+      isReferenced: (ref: EvidenceRef) => boolean,
+      cursor: number
+    ) {
+      const options = DEFAULT_RETENTION;
+      const entries: StagedEvidenceEntry[] = [];
+      let visited = 0;
+      for (const ref of refs()) {
+        if (stagedAt.get(ref.contentDigest) === undefined) continue;
+        if (isReferenced(ref)) continue;
+        if (visited < cursor) {
+          visited += 1;
+          continue;
+        }
+        const entry = entryFor(ref.contentDigest, nowMs);
+        if (entry) entries.push(entry);
+        if (entries.length >= options.cursorPageSize) break;
+      }
+      const nextCursor = cursor + entries.length;
+      return Object.freeze({ entries: Object.freeze(entries), nextCursor });
+    },
+    cleanupEligible(
+      nowMs: number,
+      isReferenced: (ref: EvidenceRef) => boolean,
+      options: RetentionOptions = DEFAULT_RETENTION
+    ) {
+      const removed: string[] = [];
+      for (const ref of refs()) {
+        const at = stagedAt.get(ref.contentDigest);
+        if (at === undefined) continue;
+        if (nowMs - at < options.minAgeMs) continue;
+        // Recheck reference immediately before delete (race retention).
+        if (isReferenced(ref)) continue;
+        stagedAt.delete(ref.contentDigest);
+        removed.push(ref.contentDigest);
+      }
+      return Object.freeze(removed) as readonly Digest[];
+    },
+  };
+  return Object.freeze(ledger);
+}

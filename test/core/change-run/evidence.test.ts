@@ -6,6 +6,7 @@ import {
   buildEvidenceRef,
   createBoundedEvidenceStore,
   createInMemoryEvidenceStore,
+  createRetentionLedger,
   verifyEvidenceBinding,
   verifyEvidenceContent,
   verifyEvidenceRefIdentity,
@@ -150,5 +151,80 @@ describe('HostEvidenceWriter staging budgets + claim conflict (7.5/7.6)', () => 
     });
     entryCapped.stage(content);
     expect(() => entryCapped.stage(extra)).toThrowError(EvidenceError);
+  });
+});
+
+describe('orphan evidence retention (7.7/7.8)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  // Distinct content so each ref gets its own content digest.
+  const youngBytes = encoder.encode('{"age":"young"}');
+  const oldBytes = encoder.encode('{"age":"old"}');
+  const refByAge = (age: 'young' | 'old') =>
+    buildEvidenceRef({
+      content: age === 'young' ? youngBytes : oldBytes,
+      mediaType: 'application/json',
+      observationKind: 'domain-result',
+      producer,
+      binding,
+    });
+
+  it('lists unreferenced orphans and excludes referenced ones (read-only)', () => {
+    const known = new Map<string, ReturnType<typeof refByAge>>();
+    const young = refByAge('young');
+    const old = refByAge('old');
+    known.set(young.contentDigest, young);
+    known.set(old.contentDigest, old);
+    const ledger = createRetentionLedger(() => known.values());
+    ledger.record(young, 0);
+    ledger.record(old, 0);
+    const listed = ledger.listOrphans(0, (r) => r.contentDigest === young.contentDigest, 0);
+    // young is referenced -> only old appears.
+    expect(listed.entries.map((e) => e.contentDigest)).toEqual([old.contentDigest]);
+  });
+
+  it('removes only old + unreferenced orphans; retains young and referenced (race retention)', () => {
+    const known = new Map<string, ReturnType<typeof refByAge>>();
+    const young = refByAge('young');
+    const old = refByAge('old');
+    known.set(young.contentDigest, young);
+    known.set(old.contentDigest, old);
+    const ledger = createRetentionLedger(() => known.values());
+    const now = DAY + 1;
+    // young staged recently (too young to reap); old staged at dawn of time.
+    ledger.record(young, now - 1000);
+    ledger.record(old, 0);
+    const removed = ledger.cleanupEligible(now, (r) => r.contentDigest === old.contentDigest, {
+      minAgeMs: DAY,
+      cursorPageSize: 256,
+    });
+    // young is too young; old is old but referenced at delete time -> nothing removed.
+    expect(removed).toEqual([]);
+
+    const removed2 = ledger.cleanupEligible(now, () => false, {
+      minAgeMs: DAY,
+      cursorPageSize: 256,
+    });
+    expect(removed2).toEqual([old.contentDigest]);
+  });
+
+  it('paginates the orphan list at the cursor page size', () => {
+    const known = new Map<string, ReturnType<typeof refByAge>>();
+    for (let i = 0; i < 300; i += 1) {
+      const bytes = encoder.encode(`{"i":${i}}`);
+      const r = buildEvidenceRef({
+        content: bytes,
+        mediaType: 'application/json',
+        observationKind: 'domain-result',
+        producer,
+        binding,
+      });
+      known.set(r.contentDigest, r);
+    }
+    const ledger = createRetentionLedger(() => known.values());
+    for (const r of known.values()) ledger.record(r, 0);
+    const page1 = ledger.listOrphans(0, () => false, 0);
+    expect(page1.entries).toHaveLength(256);
+    const page2 = ledger.listOrphans(0, () => false, page1.nextCursor);
+    expect(page2.entries).toHaveLength(300 - 256);
   });
 });
