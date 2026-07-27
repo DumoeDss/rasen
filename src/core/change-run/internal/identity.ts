@@ -406,6 +406,39 @@ export function digestPhysicalIdentity(
   );
 }
 
+/**
+ * Read the proven physical identity of a workspace path (task 2.3/2.4 runtime
+ * reader). Uses BigInt stat for stable 64-bit device/inode/volume/file-index
+ * values; the birth/creation identity is the birthtime in nanoseconds. On
+ * Windows the file index may be partial without elevation — that limitation
+ * surfaces as identity drift, not a silent wrong match.
+ */
+export function readPhysicalIdentity(
+  stat: Readonly<{
+    device: bigint;
+    ino: bigint;
+    birthtimeMs: number | bigint;
+  }>
+): PhysicalIdentity {
+  const birth = BigInt(stat.birthtimeMs) * 1_000_000n;
+  if (process.platform === 'win32') {
+    return {
+      format: 'physical-identity/1',
+      platform: 'windows',
+      volume: stat.device,
+      fileIndex: stat.ino,
+      creationIdentity: birth,
+    };
+  }
+  return {
+    format: 'physical-identity/1',
+    platform: 'posix',
+    device: stat.device,
+    fileIndex: stat.ino,
+    birthIdentity: birth,
+  };
+}
+
 export interface LaunchIntent {
   readonly pipeline: string;
   readonly engine: 'reconciler';
