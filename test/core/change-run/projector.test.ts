@@ -95,4 +95,31 @@ describe('ChangeRunProjector (11.1/11.2)', () => {
     expect(root.allowedControls).toEqual([]);
     expect(root.terminal).toEqual({ kind: 'completed', outcome: 'bug-fix-completed' });
   });
+
+  it('a terminal Run view never references Board/Issue lifecycle (14.9)', () => {
+    // The change-run kernel owns no Board/Issue types: a terminal Run's
+    // projected view is self-contained and must not reference or mutate any
+    // Board/Issue lifecycle. That mapping is explicitly retained for 0.2.0.
+    const plan = bugFixPlan();
+    let record = startRecord(plan);
+    for (const path of ['root/propose', 'root/apply', 'root/verify', 'root/ship', 'root/archive']) {
+      record = succeedNode(
+        plan,
+        record,
+        path,
+        path === 'root/verify' ? { route: 'simple' } : { ok: true }
+      );
+    }
+    const finished = reduceCanonicalRunRecord(record, {
+      kind: 'finish',
+      outcome: 'bug-fix-completed',
+    });
+    if (!finished.ok) throw new Error(finished.failure.message);
+    // Assert against the RAW projection (pre-decode) so the check cannot be
+    // weakened by decoder field-stripping.
+    const json = JSON.stringify(projectRunView(finished.record));
+    expect(json).not.toContain('board');
+    expect(json).not.toContain('issue');
+    expect(json).not.toContain('lifecycle');
+  });
 });
