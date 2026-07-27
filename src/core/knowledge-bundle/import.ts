@@ -1,11 +1,16 @@
 /**
- * Validate, plan, preview, and transactionally import one portable project
- * knowledge bundle.
+ * Validate, plan, preview, and import one portable project knowledge bundle.
  *
  * The bundle reader is the sole untrusted-input parser. This module adds only
  * target-dependent validation and an add-only catalog transaction. Preview
  * and apply share the same immutable plan; apply re-computes that plan under
  * the canonical project's existing owner lock before it creates staging.
+ *
+ * Crash-consistency boundary: a multi-record import is atomic for catchable
+ * exceptions (all published records are rolled back on throw). It is NOT
+ * crash-safe across SIGKILL or power loss — a crash mid-publish may leave a
+ * subset of records published. A transaction marker file enables best-effort
+ * detection of this state on the next import run.
  */
 
 import * as fs from 'node:fs';
@@ -20,6 +25,7 @@ import {
 import {
   acquireOwnerAwareFileLock,
   releaseOwnerAwareFileLock,
+  writeFileAtomically,
   type FileLockErrorInfo,
   type FileLockErrorKind,
 } from '../file-state.js';
@@ -62,6 +68,35 @@ import {
 
 export const KNOWLEDGE_BUNDLE_IMPORT_STAGING_PREFIX =
   '.rasen-knowledge-bundle-import-' as const;
+
+/**
+ * Transaction marker filename inside the project knowledge catalog directory.
+ * Written before the publish loop begins; removed on successful completion.
+ * Survives a SIGKILL/power-loss crash, enabling best-effort detection on the
+ * next import run.
+ */
+export const BUNDLE_IMPORT_TRANSACTION_MARKER =
+  '.bundle-import-transaction.json' as const;
+
+export interface BundleImportTransactionMarker {
+  bundleId: string;
+  projectId: string;
+  expectedRecords: string[];
+  startedAt: string;
+}
+
+/**
+ * Best-effort report produced when a stale transaction marker is detected on
+ * the next import. The catalog is consistent (every managed record is valid)
+ * but may be incomplete (some expected records from the interrupted import
+ * were never published).
+ */
+export interface StaleTransactionReport {
+  bundleId: string;
+  publishedRecords: readonly string[];
+  missingRecords: readonly string[];
+  startedAt: string;
+}
 
 export type KnowledgeBundleImportState = 'previewed' | 'imported';
 export type KnowledgeBundleImportWarningCode =
@@ -128,6 +163,7 @@ export interface KnowledgeBundleImportResult extends KnowledgeBundleImportPlan {
   state: KnowledgeBundleImportState;
   changed: boolean;
   refused: boolean;
+  staleTransaction?: StaleTransactionReport;
 }
 
 export type KnowledgeBundleImportChanged = boolean | 'unknown';
@@ -883,6 +919,85 @@ function publishStagedRecords(
   });
 }
 
+function removeTransactionMarker(storeDir: string): void {
+  const markerPath = path.join(storeDir, BUNDLE_IMPORT_TRANSACTION_MARKER);
+  try {
+    fs.rmSync(markerPath, { force: true });
+  } catch {
+    // Best-effort: a failed removal does not block the import.
+  }
+}
+
+/**
+ * Detects a stale transaction marker from a previously interrupted import.
+ * If found, scans which expected records are actually published (managed) vs
+ * missing, returns a degraded diagnostic. Does NOT remove the marker —
+ * removal happens inside the lock in `applyPlan` to avoid a TOCTOU where a
+ * concurrent import's marker could be removed prematurely. Returns null when
+ * no marker is present.
+ */
+function detectStaleImportTransaction(
+  store: ResolvedStore,
+  dependencies: KnowledgeBundleImportDependencies
+): StaleTransactionReport | null {
+  const markerPath = path.join(store.dir, BUNDLE_IMPORT_TRANSACTION_MARKER);
+  let content: string;
+  try {
+    content = fs.readFileSync(markerPath, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    // Unreadable marker — best-effort removal and proceed without a report.
+    removeTransactionMarker(store.dir);
+    return null;
+  }
+  let marker: BundleImportTransactionMarker;
+  try {
+    marker = JSON.parse(content) as BundleImportTransactionMarker;
+  } catch {
+    // Corrupt marker — best-effort removal and proceed.
+    removeTransactionMarker(store.dir);
+    return null;
+  }
+  if (
+    typeof marker.bundleId !== 'string' ||
+    typeof marker.projectId !== 'string' ||
+    typeof marker.startedAt !== 'string' ||
+    !Array.isArray(marker.expectedRecords)
+  ) {
+    removeTransactionMarker(store.dir);
+    return null;
+  }
+  const publishedRecords: string[] = [];
+  const missingRecords: string[] = [];
+  for (const recordId of marker.expectedRecords) {
+    if (typeof recordId !== 'string') {
+      missingRecords.push(String(recordId));
+      continue;
+    }
+    const target = learnedSkillDir(store, recordId);
+    try {
+      const read = dependencies.readRecord(target, 'project', store.owner);
+      if (read.kind === 'managed') {
+        publishedRecords.push(recordId);
+      } else {
+        missingRecords.push(recordId);
+      }
+    } catch {
+      missingRecords.push(recordId);
+    }
+  }
+  // NOTE: the marker is NOT removed here. Removal is deferred to `applyPlan`
+  // (inside the lock) so a concurrent import's active marker is not removed
+  // prematurely. For early-return paths (dry-run, conflicts, zero records),
+  // the marker persists and is cleaned up by the next actual import.
+  return Object.freeze({
+    bundleId: marker.bundleId,
+    publishedRecords: Object.freeze(publishedRecords),
+    missingRecords: Object.freeze(missingRecords),
+    startedAt: marker.startedAt,
+  });
+}
+
 function importLockError(
   kind: FileLockErrorKind,
   info: FileLockErrorInfo
@@ -926,6 +1041,11 @@ async function applyPlan(
       dependencies
     );
     if (!storeResolution.ok) throw catalogUnavailable(storeResolution);
+    // B8: Clean up any stale marker from a previously interrupted import,
+    // now that we hold the lock (serialized with concurrent imports). The
+    // detection in importKnowledgeBundle already read and reported it; this
+    // is the authoritative removal.
+    removeTransactionMarker(storeResolution.store.dir);
     if (!sameStore(initialStore, storeResolution.store)) {
       throw new KnowledgeBundleImportError(
         'knowledge_bundle_import_catalog_drift',
@@ -994,6 +1114,21 @@ async function applyPlan(
         dependencies
       );
       ensureDirectoryChain(storeResolution.store.dir, dependencies, createdCatalog);
+      // B8: Write the transaction marker immediately before the publish loop
+      // begins (inside the lock, after staging is verified). If the process is
+      // killed mid-publish, this marker survives and enables best-effort
+      // detection on the next import run.
+      const markerPath = path.join(
+        storeResolution.store.dir,
+        BUNDLE_IMPORT_TRANSACTION_MARKER
+      );
+      const transactionMarker: BundleImportTransactionMarker = {
+        bundleId: bundle.bundleId,
+        projectId: project.ref.projectId,
+        expectedRecords: locked.newRecords.map((record) => record.source.id),
+        startedAt: new Date().toISOString(),
+      };
+      await writeFileAtomically(markerPath, JSON.stringify(transactionMarker, null, 2));
       publishStagedRecords(
         stagingPath,
         locked.newRecords,
@@ -1001,15 +1136,31 @@ async function applyPlan(
         dependencies,
         published
       );
+      // All records published and verified — remove the marker. The import is
+      // complete; a crash after this point does not indicate a partial import.
+      removeTransactionMarker(storeResolution.store.dir);
     } catch (error) {
-      const rollbackFailures = [
+      // Minor-1: Rollback in two phases. Phase 1 removes published records
+      // and staging (recursive). If phase 1 fails, partial publish state
+      // exists — the marker MUST survive so the next run detects it.
+      const publishRollbackFailures = [
         ...removeOwnedDirectories(published, dependencies, true),
         ...(staging === undefined
           ? []
           : removeOwnedDirectories([staging], dependencies, true)),
+      ];
+      // Only remove the marker if published records were rolled back
+      // successfully. The store directory must also be empty of the marker
+      // for the catalog directory cleanup below.
+      if (publishRollbackFailures.length === 0) {
+        removeTransactionMarker(storeResolution.store.dir);
+      }
+      // Phase 2: clean up catalog and parent directories (non-recursive).
+      const dirCleanupFailures = [
         ...removeOwnedDirectories(createdCatalog, dependencies, false),
         ...removeOwnedDirectories(createdParents, dependencies, false),
       ];
+      const rollbackFailures = [...publishRollbackFailures, ...dirCleanupFailures];
       if (rollbackFailures.length > 0) {
         const retainedPaths = [
           ...new Set(rollbackFailures.map((failure) => failure.path)),
@@ -1152,6 +1303,14 @@ export async function importKnowledgeBundle(
     );
   }
 
+  // B8: Detect a stale transaction marker from a previously interrupted
+  // import before acquiring the lock. If found, report which expected records
+  // were published vs missing, then clean up the marker.
+  const staleTransaction = detectStaleImportTransaction(
+    storeResolution.store,
+    dependencies
+  );
+
   const plan = buildPlan(
     project,
     bundlePath,
@@ -1165,18 +1324,28 @@ export async function importKnowledgeBundle(
       state: 'previewed',
       changed: false,
       refused: plan.publicPlan.conflicts.length > 0,
+      ...(staleTransaction ? { staleTransaction } : {}),
     };
   }
-  if (plan.publicPlan.conflicts.length > 0) throw conflictError(plan.publicPlan);
+  if (plan.publicPlan.conflicts.length > 0) {
+    const error = conflictError(plan.publicPlan);
+    if (staleTransaction) {
+      // Surface the stale transaction detection alongside the conflict so
+      // the user knows about both issues.
+      error.message += ` Additionally, a previous bundle import was interrupted: ${staleTransaction.publishedRecords.length} record(s) were published, ${staleTransaction.missingRecords.length} record(s) were not.`;
+    }
+    throw error;
+  }
   if (plan.newRecords.length === 0) {
     return {
       ...plan.publicPlan,
       state: 'imported',
       changed: false,
       refused: false,
+      ...(staleTransaction ? { staleTransaction } : {}),
     };
   }
-  return applyPlan(
+  const result = await applyPlan(
     plan,
     project,
     bundlePath,
@@ -1185,4 +1354,5 @@ export async function importKnowledgeBundle(
     context,
     dependencies
   );
+  return staleTransaction ? { ...result, staleTransaction } : result;
 }

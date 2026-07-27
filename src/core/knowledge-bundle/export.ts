@@ -559,9 +559,57 @@ function writeBundleFile(
     if (options.authorization !== undefined) {
       verifyKnowledgeBundleStoreDirectory(options.authorization);
     }
+    // M2: Re-verify the temp file's identity immediately before the link,
+    // after all authorization checks have completed. This closes the TOCTOU
+    // window between the original ownership check and the authorization.
+    if (!io.pathOwnsOpenFile(fd, temporary)) {
+      ownershipLost = true;
+      throw new KnowledgeBundleExportError(
+        'knowledge_bundle_write_failed',
+        `Could not safely publish knowledge bundle to ${destination}.`,
+        {
+          destination,
+          reason: 'staging pathname ownership changed after authorization',
+        }
+      );
+    }
     publicationAttempted = true;
     io.publishNewFile(temporary, destination);
     published = true;
+    // M2: Post-link destination verification — read the published bytes and
+    // compare to the serialized bundle written to the descriptor. On
+    // platforms where file identity cannot be proven via inode (ino === 0n
+    // on Windows NTFS), this content comparison is the authoritative guard
+    // against a path-swap publishing the wrong bytes.
+    const publishedBytes = fs.readFileSync(destination, 'utf8');
+    if (publishedBytes !== serializedBundle) {
+      throw new KnowledgeBundleExportError(
+        'knowledge_bundle_write_failed',
+        `Published knowledge bundle content does not match the written bytes for ${destination}.`,
+        {
+          destination,
+          reason: 'published destination content does not match the written bundle',
+        }
+      );
+    }
+    // M2: Post-link destination containment — verify the published
+    // destination still resolves within the authorized Store subtree. A
+    // symlink/junction swap on the destination parent after authorization
+    // would publish the bundle outside the Store; realpath reveals this.
+    if (options.authorization !== undefined) {
+      const resolvedDestination = fs.realpathSync(destination);
+      if (!pathIsInside(options.authorization.storeRoot, resolvedDestination)) {
+        throw new KnowledgeBundleExportError(
+          'knowledge_bundle_write_failed',
+          `Published knowledge bundle destination escaped the Store subtree: ${destination}.`,
+          {
+            destination,
+            reason: 'destination realpath is outside the authorized Store directory',
+            storeRoot: options.authorization.storeRoot,
+          }
+        );
+      }
+    }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (

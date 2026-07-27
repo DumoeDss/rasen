@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  BUNDLE_IMPORT_TRANSACTION_MARKER,
   KnowledgeBundleImportError,
   importKnowledgeBundle,
   type ImportKnowledgeBundleOptions,
@@ -1833,6 +1834,170 @@ describe('project knowledge bundle import', () => {
 
       expect(result.state).toBe('imported');
       expect(result.refused).toBe(false);
+    });
+  });
+
+  describe('B8: transaction marker for crash-consistency detection', () => {
+    function markerPath(): string {
+      return path.join(store.dir, BUNDLE_IMPORT_TRANSACTION_MARKER);
+    }
+
+    function writeStaleMarker(
+      bundleId: string,
+      expectedRecords: string[]
+    ): void {
+      fs.mkdirSync(store.dir, { recursive: true });
+      fs.writeFileSync(
+        markerPath(),
+        JSON.stringify(
+          {
+            bundleId,
+            projectId: PROJECT_ID,
+            expectedRecords,
+            startedAt: '2026-07-28T00:00:00.000Z',
+          },
+          null,
+          2
+        )
+      );
+    }
+
+    it('detects a stale marker from a crashed import and reports published vs missing', async () => {
+      // Simulate a crash: 2 of 3 expected records were published; marker survives.
+      writeLocal('partial-alpha-routing');
+      writeLocal('partial-beta-routing');
+      writeStaleMarker('crash-bundle-id', [
+        'partial-alpha-routing',
+        'partial-beta-routing',
+        'partial-gamma-routing',
+      ]);
+
+      const bundle = writeBundle([
+        record('partial-alpha-routing'),
+        record('partial-beta-routing'),
+        record('partial-gamma-routing'),
+      ]);
+      const result = await importKnowledgeBundle(options(bundle));
+
+      // The stale transaction is detected and reported honestly.
+      expect(result.staleTransaction).toBeDefined();
+      expect(result.staleTransaction!.bundleId).toBe('crash-bundle-id');
+      expect(result.staleTransaction!.publishedRecords).toEqual([
+        'partial-alpha-routing',
+        'partial-beta-routing',
+      ]);
+      expect(result.staleTransaction!.missingRecords).toEqual([
+        'partial-gamma-routing',
+      ]);
+      // It is NOT falsely reported as complete or all-or-nothing.
+      expect(result.staleTransaction!.missingRecords.length).toBeGreaterThan(0);
+      // Marker is cleaned up after reporting.
+      expect(fs.existsSync(markerPath())).toBe(false);
+    });
+
+    it('does not report a stale transaction when no marker exists', async () => {
+      const bundle = writeBundle([record('clean-alpha-routing')]);
+      const result = await importKnowledgeBundle(options(bundle));
+
+      expect(result.staleTransaction).toBeUndefined();
+      expect(fs.existsSync(markerPath())).toBe(false);
+    });
+
+    it('writes the marker before publishing and removes it on successful completion', async () => {
+      let markerSeenDuringPublish: string | null = null;
+      const bundle = writeBundle([
+        record('marker-alpha-routing'),
+        record('marker-beta-routing'),
+      ]);
+      const result = await importKnowledgeBundle(
+        options(bundle, {
+          io: {
+            beforePublish: (_recordId: string, index: number) => {
+              if (index === 0) {
+                markerSeenDuringPublish = fs.readFileSync(markerPath(), 'utf8');
+              }
+            },
+          },
+        })
+      );
+
+      expect(result.state).toBe('imported');
+      expect(result.changed).toBe(true);
+      expect(markerSeenDuringPublish).not.toBeNull();
+      const parsedMarker = JSON.parse(markerSeenDuringPublish!);
+      expect(parsedMarker.expectedRecords).toEqual([
+        'marker-alpha-routing',
+        'marker-beta-routing',
+      ]);
+      expect(parsedMarker.bundleId).toBeDefined();
+      expect(parsedMarker.projectId).toBe(PROJECT_ID);
+      // Marker removed after successful import.
+      expect(fs.existsSync(markerPath())).toBe(false);
+    });
+
+    it('removes the marker on catchable-exception rollback', async () => {
+      let markerSeenDuringPublish: string | null = null;
+      const bundle = writeBundle([
+        record('rollback-alpha-routing'),
+        record('rollback-beta-routing'),
+      ]);
+      let publishCallCount = 0;
+      await expect(
+        importKnowledgeBundle(
+          options(bundle, {
+            io: {
+              beforePublish: () => {
+                // The marker must exist during publish — proves it was written
+                // before the rollback path removes it. On pre-fix code (no
+                // marker feature), this reads '__MISSING__' and fails below.
+                if (markerSeenDuringPublish === null) {
+                  try {
+                    markerSeenDuringPublish = fs.readFileSync(
+                      markerPath(),
+                      'utf8'
+                    );
+                  } catch {
+                    markerSeenDuringPublish = '__MISSING__';
+                  }
+                }
+              },
+              publishStagedFileExclusive: (
+                stagedFile: string,
+                targetFile: string
+              ) => {
+                publishCallCount += 1;
+                // Record 1 (manifest + content = 2 calls) publishes normally;
+                // throw on the 3rd call (record 2 manifest) to simulate a
+                // catchable mid-publish failure.
+                if (publishCallCount > 2) {
+                  throw new Error('simulated mid-publish failure');
+                }
+                fs.linkSync(stagedFile, targetFile);
+              },
+            },
+          })
+        )
+      ).rejects.toMatchObject({
+        code: 'knowledge_bundle_import_transaction_failed',
+      });
+
+      // The marker was written before publish began (red on pre-fix).
+      expect(markerSeenDuringPublish).not.toBeNull();
+      expect(markerSeenDuringPublish).not.toBe('__MISSING__');
+      const parsedMarker = JSON.parse(markerSeenDuringPublish!);
+      expect(parsedMarker.expectedRecords).toEqual([
+        'rollback-alpha-routing',
+        'rollback-beta-routing',
+      ]);
+      // Marker is removed by the rollback path (rollback succeeded).
+      expect(fs.existsSync(markerPath())).toBe(false);
+      // Published record is rolled back (catalog clean).
+      expect(
+        fs.existsSync(path.join(store.dir, 'rollback-alpha-routing'))
+      ).toBe(false);
+      expect(
+        fs.existsSync(path.join(store.dir, 'rollback-beta-routing'))
+      ).toBe(false);
     });
   });
 });

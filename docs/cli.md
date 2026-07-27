@@ -1741,7 +1741,7 @@ rasen knowledge bundle import <bundle> --project <projectId|root> [--dry-run] [-
 | `effective` | Show what this project actually receives — the resolved set, its sources by permanent identity, conflicts, unreachable Stores, and the three roots. Reads only; writes nothing. |
 | `migrate` | Move per-clone knowledge into the project's canonical home and re-key ownership records onto permanent identity. Both steps preview with `--dry-run`. |
 | `bundle export` | Export the named project's own canonical learned knowledge to one new portable file and optionally place the same file in a Store as transport. |
-| `bundle import <bundle>` | Validate and classify a complete portable bundle, then add every new record to the named project's canonical knowledge home or add nothing. |
+| `bundle import <bundle>` | Validate and classify a complete portable bundle, then add every new record to the named project's canonical knowledge home. Multi-record import is atomic for catchable failures (all published records are rolled back on error) but not crash-safe across SIGKILL or power loss — a crash may leave a subset published, detected and reported as degraded on the next import. |
 
 **Options:**
 

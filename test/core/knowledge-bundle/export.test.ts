@@ -568,7 +568,7 @@ describe('project knowledge bundle export', () => {
           },
           pathOwnsOpenFile: () => {
             ownershipChecks += 1;
-            if (ownershipChecks === 2) {
+            if (ownershipChecks === 3) {
               fs.unlinkSync(staging);
               fs.writeFileSync(staging, foreignBytes, { flag: 'wx' });
               return false;
@@ -584,7 +584,7 @@ describe('project knowledge bundle export', () => {
     );
 
     expect(result.warnings).toEqual(['staging_cleanup_deferred']);
-    expect(ownershipChecks).toBe(2);
+    expect(ownershipChecks).toBe(3);
     expect(removalAttempts).toEqual([]);
     expect(readKnowledgeBundle(destination).projectId).toBe(PROJECT_ID);
     expect(fs.readFileSync(staging)).toEqual(foreignBytes);
@@ -755,4 +755,162 @@ describe('project knowledge bundle export', () => {
       expect(snapshotTree(outputDir)).toEqual(before);
     }
   );
+
+  describe('M2: export publication integrity (TOCTOU)', () => {
+    it('detects a temp-path swap between authorization and link', async () => {
+      writeProjectRecord('swap-test-record');
+      const destination = path.join(outputDir, 'swap.bundle.json');
+      let beforePublishRan = false;
+
+      await expect(
+        exportKnowledgeBundle(
+          options(PROJECT_ID, destination, {
+            io: {
+              beforePublish: () => {
+                beforePublishRan = true;
+              },
+              pathOwnsOpenFile: (fd: number, target: string) => {
+                if (beforePublishRan) {
+                  // After authorization: simulate a path swap. The fd no longer
+                  // owns the temp pathname — an attacker replaced it.
+                  return false;
+                }
+                // Before authorization: real ownership check.
+                const opened = fs.fstatSync(fd, { bigint: true });
+                try {
+                  const named = fs.statSync(target, { bigint: true });
+                  return opened.dev === named.dev && opened.ino === named.ino;
+                } catch (error) {
+                  if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+                    return false;
+                  throw error;
+                }
+              },
+            },
+          })
+        )
+      ).rejects.toMatchObject({
+        code: 'knowledge_bundle_write_failed',
+        details: {
+          reason: 'staging pathname ownership changed after authorization',
+        },
+      });
+    });
+
+    it('detects wrong bytes at the destination after link', async () => {
+      writeProjectRecord('mismatch-test-record');
+      const destination = path.join(outputDir, 'mismatch.bundle.json');
+
+      await expect(
+        exportKnowledgeBundle(
+          options(PROJECT_ID, destination, {
+            io: {
+              publishNewFile: (_temporary: string, dest: string) => {
+                // Publish wrong bytes instead of linking the temp file.
+                fs.writeFileSync(dest, 'these are the wrong bytes\n');
+              },
+            },
+          })
+        )
+      ).rejects.toMatchObject({
+        code: 'knowledge_bundle_write_failed',
+        details: {
+          reason:
+            'published destination content does not match the written bundle',
+        },
+      });
+    });
+
+    it('publishes and verifies a bundle on the happy path with the new checks', async () => {
+      writeProjectRecord('happy-path-record');
+      const destination = path.join(outputDir, 'happy.bundle.json');
+
+      const result = await exportKnowledgeBundle(
+        options(PROJECT_ID, destination)
+      );
+
+      expect(result.destination).toBe(destination);
+      const parsed = readKnowledgeBundle(destination);
+      expect(parsed.records.map((r) => r.id)).toEqual(['happy-path-record']);
+    });
+
+    it('detects a destination-containment escape after link (Store transport)', async () => {
+      writeProjectRecord('containment-test-record');
+      const userDestination = path.join(outputDir, 'containment.bundle.json');
+      const storeRoot = path.join(tempRoot, 'team-store');
+      const escapeDir = path.join(tempRoot, 'escape-dir');
+      fs.mkdirSync(storeRoot, { recursive: true });
+      fs.mkdirSync(escapeDir, { recursive: true });
+
+      let swapSucceeded = true;
+      await expect(
+        exportKnowledgeBundle({
+          project: PROJECT_ID,
+          to: userDestination,
+          toStore: 'team-store',
+          dependencies: {
+            resolveProject: async () => ({
+              root: checkoutOne,
+              ref: {
+                projectId: PROJECT_ID,
+                name: 'portable-project',
+                root: checkoutOne,
+              },
+            }),
+            resolveKnowledgeHome: (projectId) =>
+              resolveProjectKnowledgeHome(projectId, { globalDataDir }),
+            readBaseProjectCommit: async () => BASE_COMMIT,
+            bundleId: () => '66666666-6666-4666-8666-666666666666',
+            now: () => new Date(CREATED_AT),
+            resolveStore: async () => ({
+              kind: 'resolved' as const,
+              store: {
+                type: 'store' as const,
+                uid: '55555555-5555-4555-8555-555555555555',
+                id: 'team-store',
+                root: storeRoot,
+              },
+              pointer: { form: 'alias' as const, id: 'team-store' },
+              resolvedBy: 'alias' as const,
+              diagnostics: [],
+            }),
+            io: {
+              publishNewFile: (temporary: string, destination: string) => {
+                // After authorization + pre-link verification, swap the
+                // destination's parent directory with a symlink/junction
+                // pointing outside the Store root. The link then publishes
+                // through the swap into the escape directory.
+                const parentDir = path.dirname(destination);
+                const backup = `${parentDir}.bak`;
+                try {
+                  fs.renameSync(parentDir, backup);
+                  fs.symlinkSync(
+                    escapeDir,
+                    parentDir,
+                    process.platform === 'win32'
+                      ? 'junction'
+                      : undefined
+                  );
+                } catch {
+                  swapSucceeded = false;
+                  fs.renameSync(backup, parentDir);
+                }
+                fs.linkSync(temporary, destination);
+              },
+            },
+          },
+        })
+      ).rejects.toMatchObject({
+        code: 'knowledge_bundle_store_write_failed',
+        details: {
+          reason:
+            'destination realpath is outside the authorized Store directory',
+        },
+      });
+
+      // Skip-pass guard: if the symlink swap itself failed (permissions),
+      // the containment check was never exercised — flag it.
+      expect(swapSucceeded).toBe(true);
+    });
+  });
 });
