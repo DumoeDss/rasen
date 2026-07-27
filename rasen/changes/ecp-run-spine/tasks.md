@@ -80,9 +80,9 @@
 
 ## 8. Workspace observation and cross-Run admission
 
-- [ ] 8.1 RED: Add WorkspaceObserver golden manifests for commit/unborn/detached HEAD, HEAD tree, index stages/modes/blob IDs, tracked bytes/modes/deletions, untracked nonignored files, symlink target, clean submodule gitlink/commit, NFC/case collisions, and Windows paths.
-- [ ] 8.2 GREEN: Implement bounded Git-plumbing plus physical reads, two identical passes/retry-once, and `workspace_observation_raced`/unsupported typed failures without `git diff` or mtimes.
-- [ ] 8.2a RED/GREEN: Prove unchanged submodule HEAD with inner staged/unstaged/untracked/mode/symlink dirtiness fails `workspace_submodule_dirty`, while nested/uninitialized/unreadable/racing/over-budget submodules fail unsupported; implement bounded per-submodule proof and no recursive dirty interpretation.
+- [x] 8.1 RED: Add WorkspaceObserver golden manifests for commit/unborn/detached HEAD, HEAD tree, index stages/modes/blob IDs, tracked bytes/modes/deletions, untracked nonignored files, symlink target, clean submodule gitlink/commit, NFC/case collisions, and Windows paths.
+- [x] 8.2 GREEN: Implement bounded Git-plumbing plus physical reads, two identical passes/retry-once, and `workspace_observation_raced`/unsupported typed failures without `git diff` or mtimes.
+- [x] 8.2a RED/GREEN: Prove unchanged submodule HEAD with inner staged/unstaged/untracked/mode/symlink dirtiness fails `workspace_submodule_dirty`, while nested/uninitialized/unreadable/racing/over-budget submodules fail unsupported; implement bounded per-submodule proof and no recursive dirty interpretation.
 - [ ] 8.3 RED: Add writer completion tests for exact before/after/delta, false/stale/external edits, not_executed no-delta proof, stale reader, and active-writer change becoming uncertain-effect rather than generic drift.
 - [ ] 8.4 GREEN: Implement WorkspaceRevision verification/update, typed workspace-drift, and WaitId-bound evidence-backed accept-revision with no ordinary resume.
 - [ ] 8.5 RED: Add cross-Run admission tests: same WorkspaceInstance readers coexist; writer conflicts with all reads/writes across Changes/Runs; stable reader/writer/two-writer subset; access-none bypasses; durable local-only workspace-reservation wait at version zero; still-busy no-churn; release via facade or version+WaitId defer control; different linked worktrees do not block.
