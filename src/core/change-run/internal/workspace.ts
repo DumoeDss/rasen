@@ -233,4 +233,48 @@ export function deriveWorkspaceRevision(
   } as WorkspaceRevision);
 }
 
+/** Structural equality of two workspace revisions (head + tree + dirty). */
+export function workspaceMatches(
+  a: WorkspaceRevision,
+  b: WorkspaceRevision
+): boolean {
+  return (
+    canonicalJson(a.head) === canonicalJson(b.head) &&
+    a.treeDigest === b.treeDigest &&
+    a.dirtyWorktreeDigest === b.dirtyWorktreeDigest
+  );
+}
+
+export type WorkspaceDrift = 'unchanged' | 'drifted';
+
+/** Detect whether an observed revision drifted from the expected baseline. */
+export function detectWorkspaceDrift(
+  expected: WorkspaceRevision,
+  observed: WorkspaceRevision
+): WorkspaceDrift {
+  return workspaceMatches(expected, observed) ? 'unchanged' : 'drifted';
+}
+
+/**
+ * Writer completion verification (task 8.3). A workspace writer must prove its
+ * expected before-revision matches the observed before-revision; otherwise the
+ * workspace was changed by something else and the writer's effect is ungrounded
+ * (workspace-drift). A `not_executed` writer must prove before === after (no
+ * delta); a successful writer's after is the validated new revision.
+ */
+export function verifyWriterBefore(
+  expectedBefore: WorkspaceRevision,
+  observedBefore: WorkspaceRevision
+): WorkspaceDrift {
+  return detectWorkspaceDrift(expectedBefore, observedBefore);
+}
+
+/** A not_executed writer must leave the workspace byte-identical (no delta). */
+export function verifyWriterNotExecuted(
+  before: WorkspaceRevision,
+  after: WorkspaceRevision
+): boolean {
+  return workspaceMatches(before, after);
+}
+
 export { canonicalJson };

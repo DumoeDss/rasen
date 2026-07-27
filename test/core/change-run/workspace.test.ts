@@ -6,6 +6,10 @@ import {
   deriveDirtyWorktreeDigest,
   deriveTreeDigest,
   deriveWorkspaceRevision,
+  detectWorkspaceDrift,
+  verifyWriterBefore,
+  verifyWriterNotExecuted,
+  workspaceMatches,
   type WorkspaceManifest,
 } from '../../../src/core/change-run/internal/workspace.js';
 import type { Digest } from '../../../src/core/change-run/index.js';
@@ -167,5 +171,43 @@ describe('submodule cleanliness (8.2a)', () => {
       ],
     });
     expect(() => deriveWorkspaceRevision(manifest)).toThrowError(WorkspaceError);
+  });
+});
+
+describe('writer completion + workspace drift (8.3/8.4)', () => {
+  const before = deriveWorkspaceRevision(cleanManifest());
+  const changed = deriveWorkspaceRevision(
+    cleanManifest([{ path: 'src/a.ts', content: 'changed' }])
+  );
+  const dirtyOnly = deriveWorkspaceRevision(
+    cleanManifest(undefined, {
+      untracked: [{ path: 'u.ts', bytes: bytes('u') }],
+    })
+  );
+
+  it('matches identical revisions and distinguishes tree/dirty drift', () => {
+    expect(workspaceMatches(before, before)).toBe(true);
+    expect(workspaceMatches(before, changed)).toBe(false);
+    expect(workspaceMatches(before, dirtyOnly)).toBe(false);
+  });
+
+  it('classifies unchanged vs drifted', () => {
+    expect(detectWorkspaceDrift(before, before)).toBe('unchanged');
+    expect(detectWorkspaceDrift(before, changed)).toBe('drifted');
+    expect(detectWorkspaceDrift(before, dirtyOnly)).toBe('drifted');
+  });
+
+  it('accepts a writer whose expected before matches the observed before', () => {
+    expect(verifyWriterBefore(before, before)).toBe('unchanged');
+  });
+
+  it('rejects a writer whose expected before was externally or stalely changed', () => {
+    expect(verifyWriterBefore(before, changed)).toBe('drifted');
+    expect(verifyWriterBefore(before, dirtyOnly)).toBe('drifted');
+  });
+
+  it('proves a not_executed writer left no delta and detects a spurious one', () => {
+    expect(verifyWriterNotExecuted(before, before)).toBe(true);
+    expect(verifyWriterNotExecuted(before, changed)).toBe(false);
   });
 });
