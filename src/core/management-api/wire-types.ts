@@ -430,6 +430,45 @@ export type ChangeRunEntry =
 
 export interface RunsResponse {
   runs: ChangeRunEntry[];
+  /**
+   * Reconciler-engine Run summaries from the machine-home store, projected
+   * through the shared Change-run projector (task 13.2). Additive to legacy
+   * `runs`; absent when the store root does not exist (pre-reconciler install).
+   */
+  reconcilerRuns?: ReconcilerRunSummary[];
+  /**
+   * Opaque stable cursor for the next page of reconciler summaries (task
+   * 13.3/13.4). Absent when there are no more entries.
+   */
+  nextCursor?: string;
+  /** Whether more reconciler summaries remain beyond this page. */
+  hasMore?: boolean;
+}
+
+/**
+ * One reconciler-engine Run summary in the runs list (task 13.2). Derived
+ * from the canonical machine-home Record through the shared projector; never
+ * from a secondary index. Includes exact Run identity, frozen engine, status,
+ * Record version, and a waits-or-terminal summary.
+ */
+export interface ReconcilerRunSummary {
+  runId: string;
+  changeId: string;
+  planningSpaceId: string;
+  engine: 'reconciler';
+  recordVersion: number;
+  status: string;
+  sourceState: 'active' | 'archived' | 'missing';
+  /** Number of active waits (non-terminal Runs). */
+  waits?: number;
+  /** Terminal outcome summary (terminal Runs). */
+  terminal?: unknown;
+  /**
+   * Present when the Run's Record ledger is corrupt, gapped, oversized, or
+   * otherwise unreadable. The Run is reported as an individual error without
+   * hiding unrelated Runs or falling back to an earlier revision.
+   */
+  error?: { code: string; message: string };
 }
 
 // -----------------------------------------------------------------------

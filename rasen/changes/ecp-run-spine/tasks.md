@@ -143,11 +143,11 @@
 ## 13. Management API and bounded Operations discovery
 
 - [x] 13.1 RED: Extend runs wire/API tests for versioned summaries, PlanningSpace/Change/Workspace identity, exact planning/opaque selectors, duplicate-projectId clone ambiguity, current-workspace default filter, sourceState, waits, terminal, errors, and additive legacy fields.
-- [ ] 13.2 GREEN: Implement read-only union discovery of active Changes plus registered machine-home Runs, filtered by selected WorkspaceInstanceId, with no writable index or identity mint.
-- [ ] 13.3 RED: Add stable cursor pagination tests for many Runs, read/work budgets, invalid/large plus healthy entries, archived/missing exact Run, and two linked worktrees.
-- [ ] 13.4 GREEN: Implement bounded paged list and isolated invalid summaries without unbounded full-chain work.
-- [ ] 13.5 RED: Add exact GET detail router/auth/method/path tests, CLI equality, archived/missing state, other-worktree read-only scope, unknown major, and zero writes.
-- [ ] 13.6 GREEN: Implement exact encoded detail route through the shared projector.
+- [x] 13.2 GREEN: Implement read-only union discovery of active Changes plus registered machine-home Runs, filtered by selected WorkspaceInstanceId, with no writable index or identity mint.
+- [x] 13.3 RED: Add stable cursor pagination tests for many Runs, read/work budgets, invalid/large plus healthy entries, archived/missing exact Run, and two linked worktrees.
+- [x] 13.4 GREEN: Implement bounded paged list and isolated invalid summaries without unbounded full-chain work.
+- [x] 13.5 RED: Add exact GET detail router/auth/method/path tests, CLI equality, archived/missing state, other-worktree read-only scope, unknown major, and zero writes.
+- [x] 13.6 GREEN: Implement exact encoded detail route through the shared projector.
 - [ ] 13.7 RED: Add POST tests for closed control+version+WaitId, sealed defer mode, Gate-to-undelivered Action, browser response loss/retry, no executable payload, later CLI first claim/double claim, wrong/stale wait, workspace mismatch, engine conflict, safe argv, output validation, timeout/exit, and no in-process file write.
 - [ ] 13.8 GREEN: Implement CLI-backed POST bridge with exact identifiers/space, pre-spawn admission, non-overridable defer context, and view-only/empty-grant response.
 - [x] 13.9 RED/GREEN: Add Pipeline-detail availableEngines/reconcilerSupport parity with CLI start/show and Canvas while keeping legacy capability fields additive.
