@@ -61,8 +61,8 @@
 - [x] 6.6 GREEN: Implement trusted Adapter-attested ActorRef validation; forbid raw principal/token/path/env data and retain principal-vs-session semantics.
 - [x] 6.7 RED: Add completion discriminated-union matrix tests for domain result, required per-effect observation, infrastructure failure, required/forbidden fields, bounded contract-owned JSON, actor/evidence/action binding, and canonical receipt bytes.
 - [x] 6.8 GREEN: Implement exact completion decoding and validation before mutation; never treat caller-supplied digest, actor, result, observation, or evidence as trusted.
-- [ ] 6.9 RED: Add completion-slot idempotency tests for `(ActionId, kind, EffectId-or-domain)`: same canonical bytes idempotent, same slot conflict, different EffectIds mixed-order independent, and domain closure after all required effects.
-- [ ] 6.10 GREEN: Implement per-slot receipt idempotency independent of Record version and transport-only uploads.
+- [x] 6.9 RED: Add completion-slot idempotency tests for `(ActionId, kind, EffectId-or-domain)`: same canonical bytes idempotent, same slot conflict, different EffectIds mixed-order independent, and domain closure after all required effects.
+- [x] 6.10 GREEN: Implement per-slot receipt idempotency independent of Record version and transport-only uploads.
 - [ ] 6.11 RED: Add external-operation ownership tests for commit/ref/trailer, push lease, PR head/marker, archive manifest/receipt, two Runs on one resource, response loss, preexisting identical output, and marker tamper.
 - [ ] 6.12 GREEN: Freeze operation key/ownership-marker strategy per effect; credit only exact EffectId ownership, return typed conflict, and keep unprovable provider state uncertain.
 

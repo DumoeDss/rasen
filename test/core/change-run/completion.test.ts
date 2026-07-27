@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CompletionError,
+  classifyCompletionSlot,
   computeCompletionReceiptDigest,
   verifyCompletion,
 } from '../../../src/core/change-run/internal/completion.js';
@@ -13,6 +14,11 @@ import type {
   EvidenceRef,
   JsonValue,
 } from '../../../src/core/change-run/index.js';
+import type {
+  CommittedAction,
+  CommittedDomainResult,
+  CommittedEffect,
+} from '../../../src/core/change-run/internal/record.js';
 
 const branded = <T>(value: string): T => value as T;
 const digest = (c: string) => branded<Digest>(`sha256:${c.repeat(64)}`);
@@ -178,5 +184,124 @@ describe('completion receipt + binding (6.7/6.8)', () => {
     const effectReceipt = computeCompletionReceiptDigest(effectBase as CompleteRunAction);
     expect(effectReceipt).not.toBe(domain);
     expect(effectReceipt).toMatch(/^sha256:[0-9a-f]{64}$/);
+  });
+});
+
+describe('completion slot idempotency (6.9/6.10)', () => {
+  const effectId = action().effects[0]!.effectId;
+
+  function effectCompletion(
+    id: string,
+    status: 'succeeded' | 'failed' | 'not_executed',
+    observation: JsonValue,
+    receiptOverride?: Digest
+  ): CompleteRunAction {
+    const a = action();
+    const base = {
+      format: 'change-run-completion/1' as const,
+      change: { projectRoot: '/root', changeId: 'fixture-change' },
+      runId: a.runId,
+      actionId: a.actionId,
+      invocationId: a.invocationId,
+      actor: actor(),
+      actorAttestation: evidence(a.actionId),
+      evidence: [evidence(a.actionId)],
+      kind: 'effect-observation' as const,
+      effectId: id,
+      status,
+      observation,
+    };
+    const receipt = receiptOverride ?? computeCompletionReceiptDigest(base as CompleteRunAction);
+    return { ...base, receiptDigest: receipt } as CompleteRunAction;
+  }
+
+  function committed(opts: {
+    readonly effects?: readonly CommittedEffect[];
+    readonly result?: CommittedDomainResult;
+  }): CommittedAction {
+    const a = action();
+    return {
+      action: a,
+      attemptOrdinal: 0,
+      deliveryState: 'granted',
+      state: opts.result !== undefined ? 'closed' : 'active',
+      effects:
+        opts.effects ??
+        a.effects.map((e) => ({ slot: e.slot, effectId: e.effectId, state: 'admitted' as const })),
+      ...(opts.result === undefined ? {} : { result: opts.result }),
+    } as CommittedAction;
+  }
+
+  it('classifies a fresh domain slot as new and a replay as idempotent', () => {
+    const c = domainCompletion('succeeded', { ok: true });
+    expect(classifyCompletionSlot(c, committed({}))).toBe('new');
+    const recorded: CommittedDomainResult = {
+      status: 'succeeded',
+      receiptDigest: c.receiptDigest,
+      result: { ok: true },
+      evidence: [evidence(action().actionId)],
+    };
+    expect(classifyCompletionSlot(c, committed({ result: recorded }))).toBe('idempotent');
+  });
+
+  it('classifies a different receipt for the same domain slot as conflict', () => {
+    const c = domainCompletion('succeeded', { ok: true });
+    const recorded: CommittedDomainResult = {
+      status: 'succeeded',
+      receiptDigest: digest('z'),
+      result: { ok: true },
+      evidence: [evidence(action().actionId)],
+    };
+    expect(classifyCompletionSlot(c, committed({ result: recorded }))).toBe('conflict');
+  });
+
+  it('treats different effect IDs as independent slots regardless of order', () => {
+    const otherId = `effect:${'1'.repeat(60)}1111`;
+    const observed: CommittedEffect = {
+      slot: 'workspace',
+      effectId,
+      state: 'succeeded',
+      receiptDigest: digest('o'),
+      observation: {},
+      evidence: [],
+    };
+    const otherAdmitted: CommittedEffect = {
+      slot: 'other',
+      effectId: otherId,
+      state: 'admitted',
+    };
+    const record = committed({ effects: [observed, otherAdmitted] });
+    // The observed slot replays idempotently against its exact receipt.
+    expect(
+      classifyCompletionSlot(
+        effectCompletion(effectId, 'succeeded', {}, digest('o')),
+        record
+      )
+    ).toBe('idempotent');
+    // The other effect is still a fresh slot.
+    expect(
+      classifyCompletionSlot(
+        effectCompletion(otherId, 'succeeded', {}),
+        record
+      )
+    ).toBe('new');
+  });
+
+  it('classifies a different receipt for an observed effect slot as conflict', () => {
+    const observed: CommittedEffect = {
+      slot: 'workspace',
+      effectId,
+      state: 'succeeded',
+      receiptDigest: digest('o'),
+      observation: {},
+      evidence: [],
+    };
+    const record = committed({ effects: [observed] });
+    expect(
+      classifyCompletionSlot(
+        effectCompletion(effectId, 'succeeded', {}, digest('x')),
+        record
+      )
+    ).toBe('conflict');
   });
 });

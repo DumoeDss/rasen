@@ -3,6 +3,7 @@ import type {
   Digest,
   RunAction,
 } from '../contracts.js';
+import type { CommittedAction } from './record.js';
 import { domainDigest } from './identity.js';
 
 export type CompletionErrorCode =
@@ -74,5 +75,48 @@ export function verifyCompletion(
       'completion_receipt_mismatch',
       'Completion receiptDigest does not match its canonical payload digest.'
     );
+  }
+}
+
+export type CompletionSlotClassification = 'new' | 'idempotent' | 'conflict';
+
+/**
+ * Per-slot receipt idempotency (tasks 6.9/6.10), independent of Record version
+ * and transport-only uploads. A completion addresses exactly one slot keyed by
+ * `(actionId, kind, effectId-or-domain)`:
+ * - a fresh slot is `new`;
+ * - a slot whose recorded receipt matches the canonical bytes is `idempotent`
+ *   (a replay — e.g. a browser re-upload after response loss — commits nothing);
+ * - a slot carrying a different receipt is `conflict`.
+ *
+ * Different effect IDs of one action are independent slots and may complete in
+ * any order. The domain slot closes only after every required effect slot has
+ * been observed (the reducer's existing ordering rule).
+ */
+export function classifyCompletionSlot(
+  completion: CompleteRunAction,
+  committed: CommittedAction
+): CompletionSlotClassification {
+  switch (completion.kind) {
+    case 'domain-action-result':
+      if (committed.result === undefined) return 'new';
+      return committed.result.receiptDigest === completion.receiptDigest
+        ? 'idempotent'
+        : 'conflict';
+    case 'effect-observation': {
+      const effect = committed.effects.find(
+        (entry) => entry.effectId === completion.effectId
+      );
+      if (effect === undefined) return 'conflict';
+      if (effect.state === 'admitted') return 'new';
+      return effect.receiptDigest === completion.receiptDigest
+        ? 'idempotent'
+        : 'conflict';
+    }
+    case 'infrastructure-observation':
+      if (committed.infrastructure === undefined) return 'new';
+      return committed.infrastructure.receiptDigest === completion.receiptDigest
+        ? 'idempotent'
+        : 'conflict';
   }
 }
