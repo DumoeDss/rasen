@@ -159,3 +159,18 @@ task-detail-ui,pipelines-ui,change-run-operations,ecp-change-run-runtime}/spec.m
 - The CLI `complete`/`control` subcommands are registered in `src/cli/index.ts`
   after `cancel`; both take `--from <file|->` and thread `--store`/`--project`/
   `--planning-space` like start/status.
+
+### Wave 3 UI rendering (14.1–14.4, 14.7–14.8)
+- **`packages/ui/**` has no eslint coverage from the root config** — the UI
+  package's quality gates are `tsc --noEmit` and `vitest run` (run from inside
+  `packages/ui/`). Don't expect `pnpm exec eslint packages/ui/src/` to match.
+- **Preact useEffect + async fetch in jsdom needs a two-phase `act` flush**:
+  one `act` for the click (state update + useEffect scheduling), then a second
+  `act` with microtask flushing for the promise resolution + re-render. A single
+  `act(click + flush)` leaves the fetch pending. **UI-controls wave (14.5/14.6)**:
+  reuse this pattern for control-submit interactions.
+- `OperationsSection` renders server-projected runs/detail; controls render as
+  read-only badges (no submit yet). `EngineSupportPanel` renders the additive
+  analyzer fields. Both are wired into TaskDetailPage / PipelineCanvasPage.
+- `client.getRunDetail(changeId, runId, space?)` and `listRuns(space?, {cursor,limit})`
+  are the consumption seam for the UI-controls wave.

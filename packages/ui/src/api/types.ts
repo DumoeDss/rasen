@@ -253,6 +253,18 @@ export interface WirePipeline {
   executionMode?: 'legacy' | 'unavailable';
   unavailableReason?: string;
   diagnostics?: PipelineValidationIssue[];
+  /**
+   * Additive engine support analysis (task 14.7/14.8): present on the detail
+   * endpoint and on list entries when the server includes it. The UI renders
+   * these verbatim — never guesses from the pipeline name. `executionMode`
+   * above is the LEGACY_NORMALIZED compatibility field, kept separate.
+   */
+  availableEngines?: readonly ('legacy' | 'reconciler')[];
+  reconcilerSupport?: {
+    supported: boolean;
+    reason: ReconcilerSupportReason;
+    profileDigest: string;
+  };
 }
 
 export interface ThresholdPresetSeed {
@@ -505,6 +517,38 @@ export type ChangeRunEntry =
 
 export interface RunsResponse {
   runs: ChangeRunEntry[];
+  /**
+   * Reconciler-engine Run summaries from the machine-home store, projected
+   * through the shared Change-run projector (task 13.2). Additive to legacy
+   * `runs`; absent when the store root does not exist (pre-reconciler install).
+   */
+  reconcilerRuns?: ReconcilerRunSummary[];
+  /** Opaque stable cursor for the next page of reconciler summaries. */
+  nextCursor?: string;
+  /** Whether more reconciler summaries remain beyond this page. */
+  hasMore?: boolean;
+}
+
+/**
+ * One reconciler-engine Run summary in the runs list (task 13.2). Derived
+ * from the canonical machine-home Record through the shared projector. The
+ * UI consumes this verbatim — it never derives status/waits/terminal
+ * client-side.
+ */
+export interface ReconcilerRunSummary {
+  runId: string;
+  changeId: string;
+  planningSpaceId: string;
+  engine: 'reconciler';
+  recordVersion: number;
+  status: string;
+  sourceState: 'active' | 'archived' | 'missing';
+  /** Number of active waits (non-terminal Runs). */
+  waits?: number;
+  /** Terminal outcome summary (terminal Runs). */
+  terminal?: unknown;
+  /** Present when the Run's Record ledger is corrupt/unreadable. */
+  error?: { code: string; message: string };
 }
 
 // ---- Task detail (ui-space-redesign-task-detail design D2) ----
@@ -1332,6 +1376,129 @@ export interface PipelineCatalogResponse {
 }
 
 // --- Reconciler-engine ChangeRunView types (task 14.1/14.2) ---
+//
+// Mirror of the server-projected `ChangeRunView` (change-run-view/1) and its
+// root-dag section. Source of truth: `src/core/change-run/contracts.ts` in
+// the root package (`ChangeRunView`, `RootDagViewSection`). The UI CONSUMES
+// these — it never derives frontier/status/waits/terminal/drift client-side.
+
+/** A git workspace revision observed by the run (workspace-revision/1). */
+export interface WorkspaceRevision {
+  format: 'workspace-revision/1';
+  head:
+    | { kind: 'commit'; digest: string; detached: boolean }
+    | { kind: 'unborn'; detached: false };
+  treeDigest: string;
+  dirtyWorktreeDigest: string;
+}
+
+/** One effect's state within an ActionView or invocation. */
+export interface EffectView {
+  slot: string;
+  effectId: string;
+  state: 'admitted' | 'succeeded' | 'failed' | 'not_executed' | 'uncertain' | 'infrastructure_failed';
+  /** Present only on effectDiagnostics entries. */
+  reason?: string;
+}
+
+/** A projected Action's view (change-run-action-view/1) — diagnostic only. */
+export interface RunActionView {
+  format: 'change-run-action-view/1';
+  kind: 'agent' | 'command' | 'host';
+  actionId: string;
+  invocationId: string;
+  attemptId: string;
+  nodeId: string;
+  deliveryState: 'admitted_undelivered' | 'granted' | 'closed';
+  capability: {
+    id: string;
+    contractVersion: string;
+    contractDigest: string;
+    artifactDigest: string;
+  };
+  effects: EffectView[];
+}
+
+/** A discriminated wait reason projected from committed Record truth. */
+export type WaitView =
+  | { waitId: string; kind: 'gate'; nodeId: string; invocationId: string; occurrence: number; gateId: string; decisionIds: string[] }
+  | { waitId: string; kind: 'domain-blocked'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; reasonCode: string }
+  | { waitId: string; kind: 'infrastructure'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; code: string; retryable: boolean }
+  | { waitId: string; kind: 'uncertain-effect'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[] }
+  | { waitId: string; kind: 'capability-unavailable'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; code: string }
+  | { waitId: string; kind: 'workspace-drift'; workspaceInstanceId: string; expected: WorkspaceRevision; observed: WorkspaceRevision }
+  | { waitId: string; kind: 'workspace-reservation'; workspaceInstanceId: string; intents: { nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; access: 'read' | 'write' }[] };
+
+/** A terminal outcome projected from a completed/escalated/failed/cancelled Run. */
+export type TerminalView =
+  | { kind: 'completed'; outcome: string }
+  | { kind: 'escalated'; code: string; reason?: string }
+  | { kind: 'failed'; code: string; reason?: string }
+  | { kind: 'cancelled'; reason?: string };
+
+/** A safe control the UI may offer for a wait (from projected allowedControls). */
+export type AllowedControl =
+  | { kind: 'resume'; waitId: string }
+  | { kind: 'decision'; waitId: string; decisionId: string; outcomes: string[] }
+  | { kind: 'accept-workspace-revision'; waitId: string; revision: WorkspaceRevision }
+  | { kind: 'escalate' }
+  | { kind: 'cancel' };
+
+/** An active invocation projected from the root-DAG frontier. */
+export interface ActiveInvocationView {
+  invocationId: string;
+  nodeId: string;
+  attemptId: string;
+  actionIds: string[];
+  effects: EffectView[];
+}
+
+/** The root-DAG/1 section of a ChangeRunView — the server's single projection. */
+export interface RootDagViewSection {
+  kind: 'root-dag';
+  version: 1;
+  frontier: readonly string[];
+  activeInvocations: readonly ActiveInvocationView[];
+  actions: readonly RunActionView[];
+  waits: readonly WaitView[];
+  terminal?: TerminalView;
+  workspace: {
+    current: WorkspaceRevision;
+    expectedByActiveWriters: readonly WorkspaceRevision[];
+  };
+  effectDiagnostics: readonly EffectView[];
+  allowedControls: readonly AllowedControl[];
+}
+
+/** An additive unknown section (tolerated, not rendered by name). */
+export interface AdditiveViewSection {
+  kind: string;
+  version: number;
+  [key: string]: unknown;
+}
+
+export type ChangeRunViewSection = RootDagViewSection | AdditiveViewSection;
+
+/** Drift state reported by the server's comparison-only DriftObserver. */
+export interface DriftView {
+  definition: 'unchanged' | 'changed' | 'unavailable';
+  sourceRevision: {
+    provenance: 'unchanged' | 'changed' | 'unavailable';
+    content: 'unchanged' | 'changed' | 'unavailable';
+    semantic: 'unchanged' | 'changed' | 'unavailable';
+    current?: {
+      layer: 'project' | 'user' | 'package';
+      sourceId: string;
+      authoredContentDigest: string;
+      semanticDigest: string;
+    };
+  };
+  capability: 'unchanged' | 'changed' | 'unavailable';
+  policy: 'unchanged' | 'changed' | 'unavailable';
+  workspace: 'unchanged' | 'changed' | 'unavailable';
+  currentCapabilityProfileDigest?: string;
+  currentPolicyDigest?: string;
+}
 
 /** A reconciler-engine Run's projected view (consumed from server truth). */
 export interface ChangeRunView {
@@ -1343,26 +1510,44 @@ export interface ChangeRunView {
   status: 'running' | 'waiting' | 'completed' | 'escalated' | 'failed' | 'cancelled';
   sourceState: 'active' | 'archived' | 'missing';
   workspace: { instanceId: string; scope: 'current' | 'other' };
+  drift: DriftView;
   sections: readonly ChangeRunViewSection[];
 }
 
-export interface ChangeRunViewSection {
-  kind: string;
-  version: number;
-  [key: string]: unknown;
+/**
+ * Extracts the root-dag/1 section from a ChangeRunView. Returns null when
+ * the view has no root-dag section (should not happen for valid views — the
+ * server enforces exactly one — but the UI degrades safely).
+ */
+export function getRootDagSection(view: ChangeRunView): RootDagViewSection | null {
+  for (const section of view.sections) {
+    if (section.kind === 'root-dag' && section.version === 1) {
+      return section as RootDagViewSection;
+    }
+  }
+  return null;
 }
+
+// --- Engine support analysis (14.7/14.8) ---
+// Additive `availableEngines`/`reconcilerSupport` on pipeline detail (and
+// the list endpoint's pipeline shape). Source of truth:
+// `src/core/pipeline-registry/execution-plan-internal.ts`
+// (`ReconcilerSupportAnalysis`). The UI renders these verbatim — it never
+// guesses engine support from the pipeline name.
+
+export type ReconcilerSupportReason =
+  | 'supported_root_dag_bug_fix'
+  | 'unsupported_definition_version'
+  | 'unsupported_pipeline_shape'
+  | 'unsupported_capability'
+  | 'unsupported_verify_policy';
 
 /** Additive availableEngines/reconcilerSupport on pipeline detail (14.7/14.8). */
 export interface PipelineEngineSupport {
-  availableEngines: readonly string[];
+  availableEngines: readonly ('legacy' | 'reconciler')[];
   reconcilerSupport: {
     supported: boolean;
-    reason: string;
+    reason: ReconcilerSupportReason;
     profileDigest: string;
   };
-}
-
-// Extend PipelineDetailResponse to include engine support (additive).
-export interface PipelineDetailResponseWithEngines extends PipelineDetailResponse {
-  pipeline: WirePipeline & Partial<PipelineEngineSupport>;
 }

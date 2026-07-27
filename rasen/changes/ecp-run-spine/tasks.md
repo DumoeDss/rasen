@@ -154,14 +154,14 @@
 
 ## 14. Task-detail Operations and Canvas
 
-- [ ] 14.1 RED: Extend UI API types/client tests for versioned view/sections, waits/WaitIds, delivery grants versus ActionView, workspace scope, paged list cursor, exact PlanningSpace/opaque selected-space token on every route, duplicate-projectId ambiguity, exact detail/control, typed errors, and legacy compatibility.
-- [ ] 14.2 GREEN: Update the shared client/types to consume server truth without deriving frontier/status/waits/terminal/drift/support.
-- [ ] 14.3 RED: Add Task-detail tests for child grouping, selected-workspace isolation, archived/missing Runs, detail selection, concurrent actions+waits, full IDs, source/drift/diagnostics, terminal, loading/errors, and legacy sessions.
-- [ ] 14.4 GREEN: Implement Operations UI while preserving session launch/tail/kill and legacy Run displays.
+- [x] 14.1 RED: Extend UI API types/client tests for versioned view/sections, waits/WaitIds, delivery grants versus ActionView, workspace scope, paged list cursor, exact PlanningSpace/opaque selected-space token on every route, duplicate-projectId ambiguity, exact detail/control, typed errors, and legacy compatibility.
+- [x] 14.2 GREEN: Update the shared client/types to consume server truth without deriving frontier/status/waits/terminal/drift/support.
+- [x] 14.3 RED: Add Task-detail tests for child grouping, selected-workspace isolation, archived/missing Runs, detail selection, concurrent actions+waits, full IDs, source/drift/diagnostics, terminal, loading/errors, and legacy sessions.
+- [x] 14.4 GREEN: Implement Operations UI while preserving session launch/tail/kill and legacy Run displays.
 - [ ] 14.5 RED: Add control tests for exact per-wait affordances, version+WaitId submit, workspace-other hidden controls, cancel confirmation, duplicate suppression, conflict refetch, unauthorized handling, and no arbitrary completion/optimistic patch.
 - [ ] 14.6 GREEN: Implement controls strictly from projected allowedControls and refetch committed truth.
-- [ ] 14.7 RED: Add Canvas tests for availableEngines/reconcilerSupport/profileDigest/reason, LEGACY_NORMALIZED separation, unsupported disabled start, and CLI/management parity.
-- [ ] 14.8 GREEN: Render shared support analysis in Canvas without Pipeline-name guessing.
+- [x] 14.7 RED: Add Canvas tests for availableEngines/reconcilerSupport/profileDigest/reason, LEGACY_NORMALIZED separation, unsupported disabled start, and CLI/management parity.
+- [x] 14.8 GREEN: Render shared support analysis in Canvas without Pipeline-name guessing.
 - [x] 14.9 RED/GREEN: Assert Run terminal state never mutates Board/Issue lifecycle; retain that mapping for 0.2.0.
 
 ## 15. Cross-plane parity and failure journeys

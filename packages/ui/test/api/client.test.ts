@@ -395,4 +395,85 @@ describe('api client', () => {
       expect(init.method).toBeUndefined();
     });
   });
+
+  describe('reconciler runs (14.1/14.2)', () => {
+    it('listRuns threads cursor and limit for reconciler pagination', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(200, { runs: [], reconcilerRuns: [], hasMore: false })
+      );
+      await client.listRuns('project:test', { cursor: 'abc123', limit: 50 });
+      const [url] = (fetch as any).mock.calls[0];
+      expect(url).toContain('space=project%3Atest');
+      expect(url).toContain('cursor=abc123');
+      expect(url).toContain('limit=50');
+    });
+
+    it('listRuns omits cursor/limit when not provided (backward-compatible)', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(200, { runs: [], reconcilerRuns: [], hasMore: false })
+      );
+      await client.listRuns('project:test');
+      const [url] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/runs?space=project%3Atest');
+    });
+
+    it('getRunDetail GETs the exact run detail route with percent-encoded ids', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(200, {
+          format: 'change-run-view/1',
+          engine: 'reconciler',
+          runId: 'run:abc',
+          change: {
+            planningSpaceId: 'ps:1',
+            projectId: 'p',
+            changeId: 'my-change',
+            instanceId: 'ci:1',
+          },
+          recordVersion: 1,
+          status: 'running',
+          sourceState: 'active',
+          workspace: { instanceId: 'wi:1', scope: 'current' },
+          drift: {
+            definition: 'unchanged',
+            sourceRevision: { provenance: 'unchanged', content: 'unchanged', semantic: 'unchanged' },
+            capability: 'unchanged',
+            policy: 'unchanged',
+            workspace: 'unchanged',
+          },
+          sections: [],
+        })
+      );
+      const view = await client.getRunDetail('my-change', 'run:abc', 'project:test');
+      const [url] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/runs/my-change/run%3Aabc?space=project%3Atest');
+      expect(view.format).toBe('change-run-view/1');
+      expect(view.engine).toBe('reconciler');
+    });
+
+    it('getRunDetail omits space query when no selector is given', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(200, {
+          format: 'change-run-view/1',
+          engine: 'reconciler',
+          runId: 'run:abc',
+          change: { planningSpaceId: 'ps:1', projectId: 'p', changeId: 'c', instanceId: 'ci:1' },
+          recordVersion: 1,
+          status: 'running',
+          sourceState: 'active',
+          workspace: { instanceId: 'wi:1', scope: 'current' },
+          drift: {
+            definition: 'unchanged',
+            sourceRevision: { provenance: 'unchanged', content: 'unchanged', semantic: 'unchanged' },
+            capability: 'unchanged',
+            policy: 'unchanged',
+            workspace: 'unchanged',
+          },
+          sections: [],
+        })
+      );
+      await client.getRunDetail('c', 'run:abc');
+      const [url] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/runs/c/run%3Aabc');
+    });
+  });
 });

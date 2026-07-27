@@ -61,6 +61,7 @@ import { PalettePanel, PALETTE_DND_TYPE } from './PalettePanel.js';
 import { StagePanel } from './StagePanel.js';
 import { V2NodePanel } from './V2NodePanel.js';
 import { IssuesDrawer } from './IssuesDrawer.js';
+import { EngineSupportPanel } from './EngineSupportPanel.js';
 import { consumePendingDraft, setPendingDraft } from './pending-draft.js';
 import { validatePipelineName } from './pipeline-name.js';
 
@@ -990,6 +991,11 @@ export function PipelineCanvasPage() {
             >
               {detail.pipeline.provenance}
             </span>
+            {/* Engine support analysis (task 14.7/14.8): renders the SAME
+                shared analyzer's availableEngines/reconcilerSupport/profileDigest/
+                reason that `pipeline show`/`pipeline start`/management detail use.
+                LEGACY_NORMALIZED executionMode is kept as separate compat info. */}
+            <EngineSupportPanel pipeline={detail.pipeline} />
             {!detail.editable && (
               <>
                 <span class="pipeline-canvas__readonly" data-testid="pipeline-canvas-readonly-notice">
