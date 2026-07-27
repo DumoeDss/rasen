@@ -82,8 +82,30 @@ describe('built-in workflow catalog', () => {
     expect(byId.get('goal-iterate')).toBe('internal');
     expect(byId.get('goal-report')).toBe('internal');
     expect(byId.get('retain-command')).toBe('internal');
+    expect(byId.get('direction')).toBe('task');
     expect(byId.get('propose')).toBe('task');
     expect(byId.get('apply')).toBe('task');
+  });
+
+  it('registers Direction as a dependency-free task outside the core profile', () => {
+    const direction = getBuiltInWorkflowDefinitions().find(
+      (definition) => definition.id === 'direction'
+    );
+    expect(direction).toMatchObject({
+      id: 'direction',
+      kind: 'task',
+      skill: {
+        dirName: 'rasen-direction',
+        template: { name: 'rasen-direction' },
+      },
+      requires: {
+        workflows: [],
+        skills: [],
+        pipelines: [],
+        schemas: [],
+      },
+    });
+    expect(CORE_WORKFLOW_IDS as readonly string[]).not.toContain('direction');
   });
 
   it('produces well-formed, stable digests for both workflows and experts', () => {
@@ -119,6 +141,12 @@ describe('built-in workflow catalog', () => {
     expect(byId.get('verify-enhanced-command')?.requires).toEqual({
       workflows: [],
       skills: ['rasen-review', 'rasen-cso', 'rasen-qa', 'rasen-design-review', 'rasen-qa-only'],
+      pipelines: [],
+      schemas: [],
+    });
+    expect(byId.get('ship-command')?.requires).toEqual({
+      workflows: ['retain-command'],
+      skills: [],
       pipelines: [],
       schemas: [],
     });

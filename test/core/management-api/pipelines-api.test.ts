@@ -6,7 +6,10 @@ import * as os from 'node:os';
 
 import { startManagementServer, type ManagementServerHandle } from '../../../src/core/management-api/server.js';
 import type { ManagementApiContext } from '../../../src/core/management-api/router.js';
-import type { PipelineCatalogResponse } from '../../../src/core/management-api/wire-types.js';
+import type {
+  PipelineCatalogResponse,
+  WirePipelineDefinition,
+} from '../../../src/core/management-api/wire-types.js';
 import type { DispatchRuntime } from '../../../src/core/runtime-adapters.js';
 import { getGlobalDataDir } from '../../../src/core/index.js';
 import { registerStore } from '../../../src/core/store/registry.js';
@@ -188,9 +191,13 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
 
       const propose = bugFix.stages.find((s: any) => s.id === 'propose');
       expect(propose).toMatchObject({ id: 'propose', role: 'planner', skill: 'rasen-propose', gate: true });
-      // Each stage carries effective values with sources (no config → definition/default).
+      // The server has no LEAD host context, so it reports the explicit
+      // unknown-host compatibility provenance instead of claiming native.
       expect(propose.effectiveGate).toEqual({ value: true, source: 'stage' });
-      expect(propose.effectiveRuntime).toEqual({ value: 'claude', source: 'default' });
+      expect(propose.effectiveRuntime).toEqual({
+        value: 'claude',
+        source: 'legacy-default',
+      });
       expect(propose.effectiveModel).toHaveProperty('source');
       expect(propose.effectiveHandoff).toHaveProperty('source');
 
@@ -801,6 +808,7 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
       const body = detail.json() as any;
       expect(body.pipeline.name).toBe('bug-fix');
       expect(body.definition.name).toBe('bug-fix');
+      expect(body.definition.version).toBe(1);
       expect(body.editable).toBe(false);
 
       // A two-segment suffix was never claimed by either group's dispatch — it
@@ -829,6 +837,7 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
       expect(res.status).toBe(200);
       const body = res.json() as any;
       expect(body.pipeline.name).toBe('my-pipe');
+      expect(body.definition.version).toBe(1);
       expect(body.definition.stages[0].id).toBe('implement');
       expect(body.editable).toBe(true);
     });
@@ -904,6 +913,7 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
   describe('pipeline-validation (pipeline-definition-api)', () => {
     function validDefinition() {
       return {
+        version: 1 as const,
         name: 'draft',
         stages: [
           { id: 'implement', skill: 'rasen-apply-change', role: 'implementer' },
@@ -913,6 +923,7 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
     }
 
     it('200s a valid draft with no error issues', async () => {
+      expectTypeOf<WirePipelineDefinition['version']>().toEqualTypeOf<1>();
       const h = await startServer();
       const res = await req(h.port, {
         method: 'POST',
@@ -924,6 +935,33 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
       const body = res.json() as any;
       expect(body.valid).toBe(true);
       expect(body.issues.filter((i: any) => i.severity === 'error')).toHaveLength(0);
+    });
+
+    it('reports an actionable /version issue for an unknown content version', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipeline-validation',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          definition: { ...validDefinition(), version: 2 },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(body.valid).toBe(false);
+      expect(body.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            severity: 'error',
+            path: '/version',
+            message: expect.stringMatching(
+              /received 2.*supported version is 1.*Upgrade to a compatible Rasen version/
+            ),
+          }),
+        ])
+      );
     });
 
     it.each(['zed', 'unknown'])(

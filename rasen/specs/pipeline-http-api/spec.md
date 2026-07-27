@@ -67,12 +67,12 @@ The endpoint SHALL require the session token like every management path. Error r
 
 ### Requirement: Pipeline detail endpoint returns both the resolved view and a round-trippable definition
 
-The server SHALL serve `GET /api/v1/pipelines/<name>` (exactly one percent-decoded path segment, validated by the same identifier grammar pipeline names accept) returning, for a pipeline available to the addressed space (`?space=` accepted exactly like the collection endpoint): `pipeline` — the resolved view in the collection's per-pipeline shape; `definition` — the pipeline's declared form as accepted by the pipeline loader, normalized (loader defaults applied, legacy gate spellings surfaced as booleans), carrying every field the loader accepts so that saving the definition back yields a semantically identical pipeline; and `editable` — `false` for built-in (package-provenance) pipelines and `true` otherwise. Built-in pipelines SHALL be returned read-only rather than refused. An unknown name SHALL answer 404 `not_found`; an option-shaped or grammar-violating name SHALL answer 400 before any lookup. The endpoint SHALL require the session token and serve errors in the unified envelope.
+The server SHALL serve `GET /api/v1/pipelines/<name>` (exactly one percent-decoded path segment, validated by the same identifier grammar pipeline names accept) returning, for a pipeline available to the addressed space (`?space=` accepted exactly like the collection endpoint): `pipeline` — the resolved view in the collection's per-pipeline shape; `definition` — the pipeline's declared form as accepted by the pipeline loader, normalized to content `version: 1` (including when the source file was historically unversioned; loader defaults applied; legacy gate spellings surfaced as booleans), carrying every field the loader accepts so that saving the definition back yields a semantically identical pipeline; and `editable` — `false` for built-in (package-provenance) pipelines and `true` otherwise. Built-in pipelines SHALL be returned read-only rather than refused. An unknown name SHALL answer 404 `not_found`; an option-shaped or grammar-violating name SHALL answer 400 before any lookup. The endpoint SHALL require the session token and serve errors in the unified envelope.
 
 #### Scenario: Detail carries both views
 
 - **WHEN** a client sends an authorized `GET /api/v1/pipelines/<name>` for a user pipeline
-- **THEN** the response carries the resolved view, the declared definition, and `editable: true`
+- **THEN** the response carries the resolved view, a declared definition with `version: 1`, and `editable: true`
 
 #### Scenario: Built-in is readable but not editable
 
@@ -82,7 +82,12 @@ The server SHALL serve `GET /api/v1/pipelines/<name>` (exactly one percent-decod
 #### Scenario: Definition round-trips through save
 
 - **WHEN** a client saves a detail response's `definition` unchanged under a new user pipeline name and then requests that pipeline's detail
-- **THEN** the returned definition is semantically identical to the one saved (same stages, fields, and values after loader normalization)
+- **THEN** the returned definition is semantically identical to the one saved (same content `version: 1`, stages, fields, and values after loader normalization)
+
+#### Scenario: Legacy detail exposes the normalized content version
+
+- **WHEN** a client requests detail for a valid historical Pipeline whose source YAML has no top-level `version`
+- **THEN** the response is 200 and its `definition` explicitly reports `version: 1` without requiring the source file to be rewritten
 
 #### Scenario: Unknown and malformed names
 
@@ -91,7 +96,7 @@ The server SHALL serve `GET /api/v1/pipelines/<name>` (exactly one percent-decod
 
 ### Requirement: Draft validation endpoint dry-runs a definition without writing or spawning
 
-The server SHALL serve `POST /api/v1/pipeline-validation` accepting `{ definition, space? }` and validating the body-carried draft in-process through the same rule chain the pipeline loader and execution preflight enforce — schema shape, duplicate stage ids, dangling `requires` references, dependency cycles (reporting the cycle path), parallel-group mutual independence, decompose-stage constraints, the composed-origin quality floor, and skill known/enabled checks against the installed skill inventory. The response SHALL be 200 with `{ valid, issues }` for BOTH valid and invalid drafts — invalidity is data, not a transport error — where each issue carries a severity (`error` or `warning`), a locator path into the definition (such as `/stages/2/skill`), and a message; a draft failing any error-severity rule reports `valid: false`. The endpoint SHALL report ALL discoverable issues rather than stopping at the first, SHALL write no file and spawn no subprocess, and SHALL NOT occupy the mutation bridge's concurrency slot. 400 SHALL be answered only when the body is not an object carrying a `definition`. The path is its own top-level path so that a pipeline named `validation` is never shadowed.
+The server SHALL serve `POST /api/v1/pipeline-validation` accepting `{ definition, space? }` and validating the body-carried draft in-process through the same rule chain the pipeline loader and execution preflight enforce — content version, schema shape, duplicate stage ids, dangling `requires` references, dependency cycles (reporting the cycle path), parallel-group mutual independence, decompose-stage constraints, the origin-scoped quality floor, and skill known/enabled checks against the installed skill inventory. The response SHALL be 200 with `{ valid, issues }` for BOTH valid and invalid drafts — invalidity is data, not a transport error — where each issue carries a severity (`error` or `warning`), a locator path into the definition (such as `/stages/2/skill`), and a message; a draft failing any error-severity rule reports `valid: false`. The endpoint SHALL report ALL discoverable issues rather than stopping at the first, SHALL write no file and spawn no subprocess, and SHALL NOT occupy the mutation bridge's concurrency slot. 400 SHALL be answered only when the body is not an object carrying a `definition`. The path is its own top-level path so that a pipeline named `validation` is never shadowed.
 
 #### Scenario: Invalid draft reports all issues at 200
 
@@ -103,15 +108,16 @@ The server SHALL serve `POST /api/v1/pipeline-validation` accepting `{ definitio
 - **WHEN** a client posts a draft that passes every rule
 - **THEN** the response is 200 with `valid: true` and no error-severity issues
 
-#### Scenario: Floor-free Canvas draft is valid
-
-- **WHEN** a client posts an otherwise valid `origin: ui` draft that omits a reviewer-role stage, a review-cycle loop, or both
-- **THEN** the response is 200 with `valid: true` and no quality-floor error issue
-
 #### Scenario: Floor-free composed draft is invalid
 
 - **WHEN** a client posts an `origin: composed` draft that omits a reviewer-role stage or a review-cycle loop
 - **THEN** the response is 200 with `valid: false` and a quality-floor error issue naming the composed origin
+
+#### Scenario: Unknown content version is an actionable validation issue
+
+- **WHEN** a client posts an otherwise valid draft with an explicit Pipeline content version other than `1`
+- **THEN** the response is 200 with `valid: false`
+- **AND** an error issue at `/version` names the received version, supported version `1`, and the need for a compatible Rasen upgrade
 
 #### Scenario: Validation is side-effect free and slot-free
 

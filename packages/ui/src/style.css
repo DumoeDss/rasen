@@ -322,8 +322,18 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   width: 100%; max-width: var(--container-max); margin-inline: auto;
   display: flex; align-items: center; gap: var(--space-5);
 }
+.app-brand {
+  display: flex; align-items: center; gap: var(--space-2);
+  flex: 0 0 auto; margin-right: var(--space-2);
+}
+.app-brand__mark {
+  display: block; width: 18px; height: 30px; flex: none;
+  color: var(--fg);
+}
+.app-brand__mark-cap { fill: #e4312d; }
+.app-brand__mark-body { fill: currentColor; }
 .app-header h1 {
-  font-size: var(--text-xl); letter-spacing: 0.005em; margin-right: var(--space-2);
+  font-size: var(--text-xl); letter-spacing: 0.005em;
 }
 
 .app-header nav { display: flex; gap: var(--space-1); margin-right: auto; }
@@ -1199,8 +1209,7 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 /* Threshold policy workbench. The runtime -> scheme rail is the one signature
    element; scheme/preset cards stay deliberately quiet around it. */
 .threshold-library,
-.threshold-bindings,
-.pipelines-advanced {
+.threshold-bindings {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl);
   box-shadow: var(--ring), var(--shadow); padding: var(--space-5) var(--space-6);
 }
@@ -1270,9 +1279,7 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 }
 .threshold-summary dd span { color: var(--muted); font: 600 var(--text-xs) var(--font-sans); }
 .threshold-role-details summary,
-.threshold-editor__roles summary,
-.pipeline-stage-advanced summary,
-.pipelines-advanced > summary {
+.threshold-editor__roles summary {
   cursor: pointer; color: var(--fg-2); font-size: var(--text-sm); font-weight: 700;
 }
 .threshold-role-details > div {
@@ -1323,14 +1330,6 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   padding: 1px var(--space-2); border-radius: var(--radius-pill); background: var(--surface-muted);
 }
 .binding-rail__warning { color: var(--warn-fg); font-size: var(--text-xs); overflow-wrap: anywhere; }
-.threshold-migration {
-  display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: var(--space-3);
-  padding: var(--space-4) var(--space-5); color: var(--warn-fg); background: var(--warn-bg);
-  border: 1px solid color-mix(in oklab, var(--warn), transparent 45%); border-radius: var(--radius-xl);
-}
-.threshold-migration p { margin: var(--space-1) 0 0; font-size: var(--text-sm); max-width: 82ch; }
-.threshold-migration a { color: var(--warn-fg); font-size: var(--text-sm); font-weight: 700; text-decoration: underline; }
-
 .threshold-editor { width: min(680px, calc(100vw - var(--space-8))); }
 .threshold-editor__identity {
   display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-3); align-items: center;
@@ -1352,17 +1351,6 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   align-items: start; padding-top: var(--space-2);
 }
 .threshold-editor__role > label { display: flex; gap: var(--space-2); align-items: center; }
-
-.pipelines-advanced > summary {
-  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3);
-}
-.pipelines-advanced > summary small { color: var(--muted); font-weight: 400; }
-.pipelines-advanced > p { color: var(--muted); font-size: var(--text-sm); max-width: 82ch; }
-.pipelines-advanced__grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-3) var(--space-6);
-}
-.pipelines-advanced__grid .config-entry { border-top: 1px solid var(--border-soft); }
-.pipelines-advanced__lifecycle { padding: var(--space-3); background: var(--surface-muted); border-radius: var(--radius-lg); }
 
 /* Defaults — a compact role matrix plus the two autopilot controls, all inside
    one panel that fits roughly a screen. */
@@ -1406,6 +1394,24 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 }
 /* Autopilot reuses the full ConfigEntryRow; drop its own top divider/padding inside the grid. */
 .pipelines-defaults__autopilot .config-entry { border-top: none; padding: 0; }
+.pipelines-defaults__keepalive {
+  display: flex; flex-direction: column; gap: var(--space-4);
+  padding-top: var(--space-4); border-top: 1px solid var(--border-soft);
+}
+.pipelines-defaults__keepalive-lifecycle {
+  display: flex; flex-direction: column; gap: var(--space-3);
+  padding: var(--space-3); border-radius: var(--radius-lg); background: var(--surface-muted);
+}
+.pipelines-defaults__keepalive-lifecycle > p {
+  margin: 0; color: var(--muted); font-size: var(--text-sm); max-width: 76ch;
+}
+.pipelines-defaults__keepalive-rows {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: var(--space-3) var(--space-5);
+}
+.pipelines-defaults__keepalive-rows .config-entry {
+  min-width: 0; padding: var(--space-3) 0 0; border-top: 1px solid var(--border);
+}
 
 /* Per-pipeline sections. */
 .pipelines-list { display: flex; flex-direction: column; gap: var(--space-4); }
@@ -1490,36 +1496,20 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--meta);
 }
 .stage-control input, .stage-control select { width: 100%; min-width: 0; }
-.stage-control__handoff-forms { display: inline-flex; gap: var(--space-3); flex-wrap: wrap; }
-.stage-control__handoff-forms label {
-  display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); color: var(--muted);
-}
-.stage-control__effective { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-2); }
 .stage-control__error { color: var(--danger-fg); font-size: var(--text-xs); font-weight: 600; }
 .stage-row__source, .role-runtime .stage-row__source {
   align-self: flex-start; font-size: var(--text-xs); font-weight: 600; color: var(--muted);
   background: var(--surface-muted); border-radius: var(--radius-pill); padding: 1px var(--space-2); white-space: nowrap;
 }
 .stage-row__source--override { background: var(--success-bg); color: var(--success-fg); }
-.pipeline-stage-advanced {
-  padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg);
-}
-.pipeline-stage-advanced > p { color: var(--muted); font-size: var(--text-xs); }
-.pipeline-stage-advanced__rows { display: flex; flex-direction: column; gap: var(--space-3); }
-.pipeline-stage-advanced__row {
-  display: grid; grid-template-columns: minmax(130px, 170px) 1fr;
-  gap: var(--space-4); align-items: start; padding-top: var(--space-3); border-top: 1px solid var(--border-soft);
-}
-
 @media (max-width: 720px) {
   .stage-row { grid-template-columns: 1fr; }
   .role-runtime { grid-template-columns: 1fr; }
   .binding-rail__row { grid-template-columns: 1fr; }
   .binding-rail__arrow { transform: rotate(90deg); }
-  .threshold-migration { grid-template-columns: 1fr; }
   .threshold-value-field,
-  .threshold-editor__role,
-  .pipeline-stage-advanced__row { grid-template-columns: 1fr; }
+  .threshold-editor__role { grid-template-columns: 1fr; }
+  .pipelines-defaults__keepalive-rows { grid-template-columns: 1fr; }
 }
 
 /* Pipeline library dialogs — the workflow-dialog overlay idiom. */
@@ -1665,6 +1655,17 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .stage-panel__field--checkbox { flex-direction: row; align-items: center; }
 .stage-panel__field--issue-error { outline: 2px solid var(--danger-fg); border-radius: var(--radius); padding: var(--space-1); }
 .stage-panel__field--issue-warning { outline: 2px solid var(--warn-fg); border-radius: var(--radius); padding: var(--space-1); }
+.stage-panel__handoff {
+  margin: 0; padding: var(--space-2); border: 1px solid var(--border);
+  border-radius: var(--radius); background: var(--surface-muted);
+}
+.stage-panel__handoff legend {
+  padding: 0 var(--space-1); font-size: var(--text-sm); font-weight: 700;
+}
+.stage-panel__handoff label {
+  display: flex; flex-direction: column; gap: var(--space-1);
+}
+.stage-panel__handoff small { color: var(--muted); font-size: var(--text-xs); }
 .stage-panel__json { font-size: var(--text-xs); background: var(--surface-muted); padding: var(--space-2); border-radius: var(--radius); overflow-x: auto; }
 
 /* The flow and its issues drawer share a vertical column; the drawer is a

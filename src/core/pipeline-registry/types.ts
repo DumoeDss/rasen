@@ -14,6 +14,7 @@ import {
 } from '../threshold-resolver.js';
 import {
   DISPATCH_RUNTIMES,
+  type DetectedHostRuntime,
   type DispatchRuntime,
 } from '../runtime-adapters.js';
 
@@ -48,7 +49,7 @@ export const AgentRuntimeSandboxSchema = z.enum(['read-only', 'workspace-write']
 export type AgentRuntimeSandbox = z.infer<typeof AgentRuntimeSandboxSchema>;
 
 export const AgentRuntimeConfigSchema = z.object({
-  runtime: AgentRuntimeSchema.default('claude'),
+  runtime: AgentRuntimeSchema.optional(),
   sessionReuse: AgentRuntimeSessionReuseSchema.optional(),
   sandbox: AgentRuntimeSandboxSchema.optional(),
   model: z.string().min(1).optional(),
@@ -415,7 +416,28 @@ function coerceLegacyVetGates(raw: unknown): unknown {
 /**
  * Full pipeline YAML structure.
  */
+export const PIPELINE_DEFINITION_VERSION = 1 as const;
+
+/**
+ * The public Pipeline definition content version. A missing version is the
+ * sole legacy form and normalizes to v1; every explicit non-v1 value fails
+ * closed so a future definition is never interpreted with the wrong grammar.
+ */
+export const PipelineDefinitionVersionSchema = z
+  .literal(PIPELINE_DEFINITION_VERSION, {
+    error: (issue) => {
+      const received = JSON.stringify(issue.input) ?? String(issue.input);
+      return (
+        `Unsupported Pipeline content version at /version: received ${received}; ` +
+        `supported version is ${PIPELINE_DEFINITION_VERSION}. Upgrade to a compatible ` +
+        'Rasen version before using this definition.'
+      );
+    },
+  })
+  .default(PIPELINE_DEFINITION_VERSION);
+
 export const PipelineYamlSchema = z.preprocess(coerceLegacyVetGates, z.object({
+  version: PipelineDefinitionVersionSchema,
   name: z.string().min(1, { error: 'Pipeline name is required' }),
   description: z.string().optional(),
   agents: PipelineAgentRuntimeOverridesSchema.optional(),
@@ -477,20 +499,32 @@ export type ModelSource =
 
 /** Provenance of the resolved `runtime` field specifically — a per-role config instance tops the pipeline declaration and default. */
 export type RuntimeSource =
+  | 'invocation'
   | 'stage-override-project'
   | 'stage-override-store'
   | 'stage-override-global'
   | 'stage'
   | 'agent'
-  | 'default';
+  | 'host'
+  | 'legacy-default';
 
 export interface ResolvedStageRuntimeConfig extends AgentRuntimeConfig {
+  runtime: AgentRuntime;
   source: 'stage' | 'agent' | 'default';
   /** Provenance of the resolved `model` field; always present, independent of `source`. */
   modelSource: ModelSource;
   /** Provenance of the resolved `runtime` field; always present, independent of `source`. Equals `source` when no runtime override applies. */
   runtimeSource: RuntimeSource;
 }
+
+export interface RuntimeResolutionContext {
+  host: DetectedHostRuntime;
+}
+
+export const UNKNOWN_HOST_RUNTIME = {
+  runtime: 'unknown',
+  source: 'unknown',
+} as const satisfies DetectedHostRuntime;
 
 /**
  * Project/store/global machine-config model layers, slotted below the pipeline
@@ -547,7 +581,8 @@ export function resolveStageRuntimeConfig(
   stage: Stage,
   pipeline: PipelineYaml,
   modelLayers?: ModelConfigLayers,
-  stageOverrides?: StageConfigOverrides
+  stageOverrides?: StageConfigOverrides,
+  runtimeContext: RuntimeResolutionContext = { host: UNKNOWN_HOST_RUNTIME }
 ): ResolvedStageRuntimeConfig {
   const roleDefault = stage.role
     ? normalizeAgentRuntimeConfig(pipeline.agents?.[stage.role])
@@ -563,11 +598,25 @@ export function resolveStageRuntimeConfig(
   const storeRoleModel = stage.role ? modelLayers?.storeRoles?.[stage.role] : undefined;
   const globalRoleModel = stage.role ? modelLayers?.globalRoles?.[stage.role] : undefined;
 
-  // The per-stage runtime family instance tops the runtime field's resolution;
-  // absent, `runtimeSource` mirrors the bundle `source` (byte-identical).
   const runtimeOverride = stageOverrides?.runtime;
-  const runtimeSourceFor = (base: 'stage' | 'agent' | 'default'): RuntimeSource =>
-    runtimeOverride ? (`stage-override-${runtimeOverride.scope}` as RuntimeSource) : base;
+  let runtime: AgentRuntime;
+  let runtimeSource: RuntimeSource;
+  if (runtimeOverride) {
+    runtime = runtimeOverride.value;
+    runtimeSource = `stage-override-${runtimeOverride.scope}` as RuntimeSource;
+  } else if (stage.runtime !== undefined) {
+    runtime = stage.runtime;
+    runtimeSource = 'stage';
+  } else if (roleDefault?.runtime !== undefined) {
+    runtime = roleDefault.runtime;
+    runtimeSource = 'agent';
+  } else if (runtimeContext.host.runtime !== 'unknown') {
+    runtime = runtimeContext.host.runtime;
+    runtimeSource = 'host';
+  } else {
+    runtime = 'claude';
+    runtimeSource = 'legacy-default';
+  }
 
   let model: string | undefined;
   let modelSource: ModelSource;
@@ -605,34 +654,34 @@ export function resolveStageRuntimeConfig(
 
   if (stageHasOverride) {
     return {
-      runtime: runtimeOverride?.value ?? stage.runtime ?? roleDefault?.runtime ?? 'claude',
+      runtime,
       sessionReuse: stage.sessionReuse ?? roleDefault?.sessionReuse,
       sandbox: stage.sandbox ?? roleDefault?.sandbox,
       model,
       effort: stage.effort ?? roleDefault?.effort,
       source: 'stage',
       modelSource,
-      runtimeSource: runtimeSourceFor('stage'),
+      runtimeSource,
     };
   }
 
   if (roleDefault) {
     return {
       ...roleDefault,
-      runtime: runtimeOverride?.value ?? roleDefault.runtime,
+      runtime,
       model,
       source: 'agent',
       modelSource,
-      runtimeSource: runtimeSourceFor('agent'),
+      runtimeSource,
     };
   }
 
   return {
-    runtime: runtimeOverride?.value ?? 'claude',
+    runtime,
     model,
     source: 'default',
     modelSource,
-    runtimeSource: runtimeSourceFor('default'),
+    runtimeSource,
   };
 }
 
@@ -679,8 +728,12 @@ export interface ResolvedStageHandoffConfig {
 export interface ThresholdResolutionContext {
   bindings?: ThresholdBindingLayers;
   schemes?: ThresholdSchemeSnapshot;
-  /** Effective per-role runtimes after config-family overrides. */
+  /** Role-wide effective runtimes used by reuse resolution. */
   runtimes?: Partial<Record<StageRole, AgentRuntime>>;
+  /** Final effective runtime for the one stage whose handoff is being resolved. */
+  stageRuntime?: AgentRuntime;
+  /** Host detected once for this execution/inspection plan. */
+  host?: DetectedHostRuntime;
 }
 
 /**
@@ -749,7 +802,14 @@ export function resolveStageHandoffConfig(
   const globalRoleThreshold = stage.role ? configLayers?.globalRoles?.[stage.role] : undefined;
   // The preset keys off the stage's RESOLVED model, so a per-stage model
   // override must feed the preset lookup too (pass the full override set).
-  const resolvedRuntime = resolveStageRuntimeConfig(stage, pipeline, modelLayers, stageOverrides);
+  const resolvedRuntime = resolveStageRuntimeConfig(
+    stage,
+    pipeline,
+    modelLayers,
+    stageOverrides,
+    { host: thresholdContext?.host ?? UNKNOWN_HOST_RUNTIME }
+  );
+  const bindingRuntime = thresholdContext?.stageRuntime ?? resolvedRuntime.runtime;
   const presetThreshold = resolveModelPreset(resolvedRuntime.model)?.handoffThreshold;
 
   // A `pipelines.<name>.handoff.<stage>` instance tops the threshold chain.
@@ -758,7 +818,7 @@ export function resolveStageHandoffConfig(
   const resolvedThreshold = resolveThreshold({
     family: 'handoff',
     role: stage.role,
-    runtime: resolvedRuntime.runtime,
+    runtime: bindingRuntime,
     pipeline: pipeline.name,
     stage: stage.id,
     bindings: thresholdContext?.bindings,
@@ -895,12 +955,15 @@ export function resolvePipelineReuseConfig(
   const roleThreshold = (role: 'planner' | 'implementer') => {
     const roleModel = normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.model;
     const presetThreshold = resolveModelPreset(roleModel)?.reuseThreshold;
-    const declaredRuntime =
-      normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime ?? 'claude';
+    const declaredRuntime = normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime;
+    const fallbackRuntime =
+      thresholdContext?.host?.runtime && thresholdContext.host.runtime !== 'unknown'
+        ? thresholdContext.host.runtime
+        : 'claude';
     return resolveThreshold({
       family: 'reuse',
       role,
-      runtime: thresholdContext?.runtimes?.[role] ?? declaredRuntime,
+      runtime: thresholdContext?.runtimes?.[role] ?? declaredRuntime ?? fallbackRuntime,
       bindings: thresholdContext?.bindings,
       schemes: thresholdContext?.schemes,
       nonBinding: {

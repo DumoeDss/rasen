@@ -443,12 +443,14 @@
       "selectedStoreRoot": "使用 Rasen 根目录：{store}（{path}）",
       "selectedProjectRoot": "使用 Rasen 根目录：项目 {project}（{path}）",
       "staleProfileWorkflowsWarning": "警告：已从存储的配置方案中忽略未知工作流 ID：{workflows}",
+      "unknownHostRuntimeWarning": "警告：无法识别 LEAD 工具宿主，正在使用旧版兼容路由。设置 {override}=claude|codex 可获得确定的派发行为。",
       "noPipelinesFound": "未找到流水线。",
       "availablePipelinesHeading": "可用流水线：",
       "pipelineTableEntry": "  {name}  [{source}]",
       "unknownHostRuntimeWarning": "警告：无法识别 LEAD 工具宿主，正在使用旧版兼容路由。设置 {override}=claude|codex 可获得确定的派发行为。",
       "pipelineTableStages": "    阶段：{stages}",
       "pipelineLabel": "流水线：{name}",
+      "definitionVersionLabel": "定义版本：{version}",
       "hostRuntimeLabel": "工具宿主：{runtime}（{source}）",
       "pipelineNotFound": "未找到流水线 '{name}'。可用流水线：\n  {available}",
       "originLabel": "来源：{origin}",
@@ -491,7 +493,9 @@
       "interrupted": "已中断（通过 warm-seed 恢复）：{stages}",
       "escalated": "已升级（需要处理）：{stages}",
       "persistentPlanner": "规划者（持久、可恢复）：{planner}",
+      "portfolioDelivery": "组合交付：{status}",
       "remaining": "剩余：{stages}",
+      "invalidPortfolioStateNote": "{path} 中的组合运行状态文件无效：{reason}",
       "invalidRunStateNote": "{path} 中的运行状态文件无效：{reason}",
       "invalidPortfolioStateNote": "无法读取 {path} 中的组合运行状态文件：{reason}。该变更已拆分为子变更，因此不会按未拆分的变更恢复；请先修复该记录再恢复。",
       "noRunStateNote": "未找到运行状态（auto-run.json）；请运行分类以选择流水线。",
@@ -605,6 +609,10 @@
         "help": {
           "name": "获取帮助",
           "description": "为当前情况找到合适的 Rasen 命令、技能或工作流"
+        },
+        "direction": {
+          "name": "治理长期方向",
+          "description": "维护长期方向、选择一个 Roadmap 切片并协调可观测证据"
         },
         "office-hours-command": {
           "name": "产品咨询",
@@ -1224,6 +1232,7 @@
     "Open the shipped viewer in your default browser, pre-loaded with the report": "在默认浏览器中打开随包分发的 viewer，并预加载本次生成的报告",
     "Open with this tool just this once": "仅本次使用此工具打开",
     "Optional goal metadata to store with the change": "与变更一起存储的可选目标元数据",
+    "Pipeline to initialize run-state for": "用于初始化运行状态的流水线",
     "Output as JSON": "输出为 JSON",
     "Output as JSON (non-interactive)": "输出为 JSON（非交互）",
     "Output as JSON (non-interactive; requires --yes to execute)": "输出为 JSON（非交互；执行时需要 --yes）",

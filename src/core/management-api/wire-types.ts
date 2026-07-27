@@ -5,10 +5,8 @@
  * re-exports it rather than declaring its own — one shape, one definition.
  */
 import type { RunState } from '../pipeline-registry/run-state.js';
-import type {
-  PortfolioChildStatus,
-  PortfolioState,
-} from '../pipeline-registry/portfolio-state.js';
+import type { PortfolioChildStatus } from '../pipeline-registry/portfolio-state.js';
+import type { PortfolioState } from '../pipeline-registry/portfolio-state.js';
 import type {
   PipelineYaml,
   StageRole,
@@ -37,7 +35,7 @@ import type { WorkflowUsage, WorkflowValidationSummary } from '../workflow-libra
 export interface ProjectRef {
   projectId: string;
   name: string;
-  root: string;
+  root?: string;
 }
 
 /**
@@ -242,18 +240,8 @@ export interface SubmitChangeRequest {
 export interface SessionSpaceWire {
   type: 'project' | 'store';
   id: string;
-  root: string;
+  root?: string;
 }
-
-/**
- * What a session works on (unified-session-runtime-context design D2/D7).
- * Planning-only is an explicit arm so a client can state "this run will not
- * modify any project's code" rather than inferring it from a missing field.
- * `root` is a machine-local checkout path; it never enters Git.
- */
-export type SessionExecutionWire =
-  | { kind: 'planning-only' }
-  | { kind: 'project'; projectId: string; root: string; home?: string };
 
 /** `POST /api/v1/changes` success response: the CLI-created change, as reported by its own `--json` output. */
 export interface SubmitChangeResponse {
@@ -496,6 +484,37 @@ export interface LocalPathsResponse {
   entries: LocalPathEntry[];
 }
 
+/** Selection kinds accepted by the read-only path resolver. */
+export type LocalPathSelectionKind = 'directory' | 'file' | 'file-or-directory';
+
+/** `GET /api/v1/local-paths/resolve` response. */
+export interface ResolveLocalPathResponse {
+  path: string;
+  kind: 'directory' | 'file';
+  separator: string;
+}
+
+/** Fixed chooser modes and filters; callers cannot provide executable text. */
+export interface ChooseLocalPathRequest {
+  kind: 'directory' | 'file';
+  initialDirectory?: string;
+  filter?: 'rasen-package';
+}
+
+/** `POST /api/v1/local-paths/choose` response. */
+export type ChooseLocalPathResponse =
+  | {
+      status: 'selected';
+      path: string;
+      kind: 'directory' | 'file';
+      separator: string;
+    }
+  | { status: 'cancelled' }
+  | {
+      status: 'unavailable';
+      reason: 'unsupported' | 'headless' | 'missing-utility' | 'launch-failed' | 'timeout';
+    };
+
 // -----------------------------------------------------------------------
 // Space creation (space-creation design D4/D5) — `POST /api/v1/spaces`.
 // The server never writes workspace files: it spawns the CLI (init / store
@@ -503,13 +522,10 @@ export interface LocalPathsResponse {
 // -----------------------------------------------------------------------
 
 /** `POST /api/v1/spaces` request body (design D4). */
-export interface CreateSpaceRequest {
-  kind: 'project' | 'store';
-  /** An absolute filesystem path — the space's target directory. */
-  path: string;
-  /** Store id; required only for a fresh store (a directory with no `rasen/` root). */
-  id?: string;
-}
+export type CreateSpaceRequest =
+  | { op: 'create-project'; path: string }
+  | { op: 'create-store'; parent: string; id: string }
+  | { op: 'register-store'; path: string; id?: string };
 
 /** `POST /api/v1/spaces` success response (design D4): the operation performed plus the new space's listing entry. */
 export interface CreateSpaceResponse {
@@ -530,11 +546,6 @@ export interface SessionRecordWire {
   cwd: string;
   /** Planning-space attribution frozen at launch (design D3); absent when the cwd yielded no derivable space. */
   space?: SessionSpaceWire;
-  /**
-   * Execution identity and local checkout binding, frozen at launch. Absent
-   * only for a record created before this field existed.
-   */
-  execution?: SessionExecutionWire;
   pid?: number;
   agentSessionId?: string;
   state: 'starting' | 'running' | 'exiting' | 'exited';
@@ -609,12 +620,6 @@ export interface SessionActionResponse {
 export interface SpaceMember {
   projectId: string;
   name: string;
-  /**
-   * The member's live checkout on this machine. ABSENT when the store records
-   * the project as a member but no checkout of it exists here — the member is
-   * listed with its identity and display name rather than omitted or given a
-   * fabricated path (see `store-project-membership`).
-   */
   root?: string;
 }
 
@@ -623,7 +628,7 @@ export interface ProjectSpaceEntry {
   type: 'project';
   id: string;
   name: string;
-  root: string;
+  root?: string;
   /**
    * The project's live worktree count (worktree-aware-spaces D3), derived from
    * `git worktree list` at read time and never persisted. Present only when the
@@ -638,7 +643,7 @@ export interface StoreSpaceEntry {
   type: 'store';
   id: string;
   name: string;
-  root: string;
+  root?: string;
   members: SpaceMember[];
 }
 
@@ -656,7 +661,7 @@ export interface SpacesResponse {
  */
 export interface SpaceWorktreeEntry {
   /** The worktree's absolute working-tree root. */
-  root: string;
+  root?: string;
   /** The checked-out branch's short name, or null when detached. */
   branch: string | null;
   /** True for the main checkout. */

@@ -5,12 +5,13 @@ Define the data-driven pipeline registry — pipeline definitions, dual-root ext
 ## Requirements
 ### Requirement: Data-Driven Pipeline Definitions
 
-The system SHALL define pipelines as data files at `pipelines/<name>/pipeline.yaml`, each an ordered DAG of stages, parsed and validated into typed objects through a loader that mirrors the artifact-graph schema loader.
+The system SHALL define pipelines as content-versioned data files at `pipelines/<name>/pipeline.yaml`, each an ordered DAG of stages, parsed and validated into typed objects through a loader that mirrors the artifact-graph schema loader.
 
 #### Scenario: Pipeline file shape
 
 - **WHEN** a `pipeline.yaml` is loaded
-- **THEN** it SHALL declare a `name`, optional `description`, and a non-empty `stages` array
+- **THEN** its normalized definition SHALL declare `version: 1`, a `name`, optional `description`, and a non-empty `stages` array
+- **AND** a historical file with no `version` SHALL be accepted and normalized to `version: 1`
 - **AND** it MAY declare an `origin` field whose values are `composed` (a pipeline assembled by the autopilot LEAD) or `ui` (a pipeline assembled in the management UI's canvas); absent means human-authored; `rasen pipeline show` SHALL surface the field when present
 - **AND** each stage SHALL declare an `id` and a `skill`, and MAY declare `role`, `requires`, `gate`, `loop`, `parallelGroup`, `condition`, `leadReview`, and `verifyPolicy`
 - **AND** parse or validation failures SHALL raise a typed error identifying the offending file and field
@@ -20,6 +21,43 @@ The system SHALL define pipelines as data files at `pipelines/<name>/pipeline.ya
 - **WHEN** a pipeline declares stages with `requires` edges
 - **THEN** the registry SHALL expose a stage build order via topological sort
 - **AND** SHALL expose, for a set of completed stages, which stages are ready and which are blocked
+
+### Requirement: Pipeline content format v1 is backward-readable and future-safe
+
+Rasen SHALL identify the normalized Pipeline definition content format with the
+top-level integer `version: 1`. Historical unversioned definitions SHALL remain
+readable as v1, while a definition carrying any unsupported explicit version
+SHALL fail closed with an actionable diagnostic naming both the received and
+supported versions. The Pipeline content version SHALL remain distinct from a
+`.rasenpkg` package format version.
+
+#### Scenario: Historical unversioned definition normalizes to v1
+
+- **WHEN** Rasen loads a valid project, user, package, JSON, or YAML Pipeline definition that has no top-level `version`
+- **THEN** the normalized definition is accepted as `version: 1` with the same stage DAG and runtime meaning it had before versioning
+
+#### Scenario: Unknown future version fails closed
+
+- **WHEN** a Pipeline definition explicitly declares a content version other than `1`
+- **THEN** load, validation, save, and export refuse it without modifying installed content
+- **AND** the diagnostic identifies `/version`, the unsupported value, the supported value `1`, and that a newer compatible Rasen version is required
+
+#### Scenario: Canonical outputs expose v1
+
+- **WHEN** Rasen scaffolds, shows, saves, or exports a valid Pipeline definition, including an unversioned legacy definition
+- **THEN** the resulting public definition or packaged `pipeline.yaml` explicitly carries `version: 1`
+- **AND** save/export preserve all other normalized fields and do not rewrite the source file merely because it was read or exported
+
+#### Scenario: Existing flat DAG and loops remain compatibility inputs
+
+- **WHEN** a v1 definition uses the existing flat `requires` DAG and `stage.loop.kind: review-cycle` or `stage.loop.kind: goal`
+- **THEN** it remains readable without user migration and retains its current LEAD-playbook execution meaning
+- **AND** the v1 definition remains a supported source input for a future compiled Composite run plan
+
+#### Scenario: Canvas documentation does not imply a runner
+
+- **WHEN** a user reads the Pipeline and Canvas authoring documentation
+- **THEN** it states that Canvas views and edits definitions, current loop declarations are interpreted by the LEAD orchestration playbook, and Canvas is not a programmatic Pipeline runner
 
 ### Requirement: Pipeline save subcommand installs a definition into the user layer
 
@@ -112,7 +150,7 @@ The `init`, `validate`, `import`, `export`, and `delete` subcommands SHALL mirro
 
 ### Requirement: Pipeline Validation
 
-`rasen validate` SHALL validate pipeline definitions for structural integrity. The optional `origin` field SHALL record provenance: `composed` identifies an autopilot-assembled definition and `ui` identifies a management-UI Canvas definition. Only `origin: composed` SHALL activate the mandatory quality floor.
+`rasen validate` SHALL validate pipeline definitions for structural integrity.
 
 #### Scenario: Structural rules enforced
 
@@ -120,22 +158,11 @@ The `init`, `validate`, `import`, `export`, and `delete` subcommands SHALL mirro
 - **THEN** validation SHALL fail if stage ids are not unique, if any `requires` references a missing stage, if the dependency graph contains a cycle, if a `skill` is not a registered skill, or if a `role` is unknown
 - **AND** `parallelGroup` members SHALL be mutually independent in the DAG
 
-#### Scenario: Composed quality floor enforced
+#### Scenario: Origin-stamped quality floor enforced
 
-- **WHEN** a pipeline declaring `origin: composed` is parsed or validated
-- **THEN** it SHALL fail unless it contains at least one stage with role `reviewer` and at least one stage with `loop.kind: review-cycle`
-- **AND** the failure message SHALL name the pipeline's `composed` origin
-
-#### Scenario: UI origin records provenance without imposing the composed floor
-
-- **WHEN** an otherwise valid pipeline declaring `origin: ui` is parsed or validated without a reviewer-role stage, a review-cycle loop, or both
-- **THEN** it SHALL pass the quality-floor check
-- **AND** its `ui` origin SHALL remain present in the parsed definition
-
-#### Scenario: Origin-free pipelines remain unaffected
-
-- **WHEN** an otherwise valid pipeline has no `origin` field and omits one or both quality-floor stages
-- **THEN** it SHALL pass the quality-floor check and continue through every other validation rule unchanged
+- **WHEN** a pipeline declaring an `origin` (`composed` or `ui`) is parsed or validated
+- **THEN** it SHALL fail unless it contains at least one stage with role `reviewer` and at least one stage with `loop.kind: review-cycle`, with the failure message naming the pipeline's actual origin value
+- **AND** pipelines without an `origin` field SHALL be entirely unaffected by this rule — existing built-in, user, and project pipelines parse and validate unchanged
 
 ### Requirement: Built-In Pipelines
 
@@ -310,19 +337,83 @@ The effective model for a stage SHALL resolve with precedence: a `pipelines.<nam
 - **WHEN** a per-stage instance determines a stage's effective model and the user runs `rasen pipeline show <name> --json`
 - **THEN** that stage's reported model is the instance value with a source identifying the per-stage configured layer and its scope
 
+### Requirement: Effective stage runtime resolves independently from other stage fields
+
+The effective runtime for a stage SHALL resolve independently from model, sandbox, effort, and session-reuse fields. Runtime precedence SHALL be: the per-role runtime configuration instance (project over store over global), then an explicit stage runtime, then an explicit pipeline `agents.<role>.runtime`, then the detected LEAD host, then the legacy Claude fallback when the host is unknown. A declaration that configures only a non-runtime field SHALL NOT count as an explicit runtime source.
+
+#### Scenario: Model-only stage inherits the Codex host
+
+- **WHEN** a stage declares `model` but no runtime and the detected LEAD host is Codex
+- **THEN** the stage resolves runtime `codex` with runtime source `host`
+- **AND** its model retains the stage model source
+
+#### Scenario: Model-only role object does not manufacture Claude
+
+- **WHEN** `agents.reviewer` is an object containing a model or lifecycle field but no `runtime`
+- **AND** no higher runtime configuration instance or stage runtime exists
+- **THEN** reviewer stages inherit the detected host
+- **AND** do not treat the object’s omitted runtime as an explicit Claude declaration
+
+#### Scenario: Explicit runtime layers retain precedence
+
+- **WHEN** a configured role runtime, stage runtime, pipeline role runtime, and host default provide different values
+- **THEN** the configured role runtime wins over the stage runtime
+- **AND** the stage runtime wins over the pipeline role runtime
+- **AND** every explicit layer wins over host inheritance
+
+#### Scenario: Unknown host uses the annotated legacy default
+
+- **WHEN** no explicit runtime layer exists and host detection returns unknown
+- **THEN** the stage resolves runtime `claude`
+- **AND** reports runtime source `legacy-default`
+
+### Requirement: Pipeline execution inspection reports host and dispatch provenance
+
+`rasen pipeline show` and `rasen pipeline agents` SHALL report the detected host runtime and its source, and SHALL report each resolved stage runtime with its independent runtime source and dispatch mode. JSON output SHALL use stable locale-neutral values; human output SHALL present the same facts in the active locale. These fields SHALL be additive to the existing pipeline output.
+
+#### Scenario: Codex-native default is observable
+
+- **WHEN** a Codex-hosted user inspects a pipeline stage with no explicit runtime
+- **THEN** output reports host runtime `codex` with its detection source
+- **AND** the stage reports runtime `codex`, runtime source `host`, and dispatch mode `native`
+
+#### Scenario: Cross-runtime bridge is observable
+
+- **WHEN** a Claude-hosted pipeline stage explicitly resolves to Codex
+- **THEN** the stage reports runtime `codex`
+- **AND** reports its explicit runtime source and dispatch mode `exec-bridge`
+
+#### Scenario: Unknown host is not presented as native
+
+- **WHEN** pipeline inspection runs outside a recognized host
+- **THEN** output reports host runtime `unknown`
+- **AND** implicit stages report runtime source `legacy-default` and dispatch mode `legacy-fallback`
+
+#### Scenario: Existing JSON consumers keep established fields
+
+- **WHEN** a client ignores host and dispatch provenance fields
+- **THEN** every pre-existing pipeline and stage field retains its established type and meaning
+
 ### Requirement: Per-role runtime updates persist as configuration, not pipeline copies
 
-`rasen pipeline agents <name>` SHALL keep its command surface (per-role runtime flags, `--json`, root selection) while persisting per-role runtime updates as `pipelines.<name>.runtimes.<role>` configuration instances written to the resolved root's configuration through the standard config write path — it SHALL NOT write a pipeline definition file. The effective runtime for a role SHALL resolve: the per-role runtime family instance (project over store over global) first, then the pipeline's declared `agents.<role>.runtime`, then the default runtime. Reads SHALL report each role's resolved runtime with the layer that supplied it. A pipeline definition copy previously frozen into a project by the old behavior SHALL remain untouched and SHALL keep resolving as that project's definition (the project layer of pipeline resolution) — the inspection surface's source badge makes the frozen copy visible, and removing it is the user's explicit action, never an automatic migration.
+`rasen pipeline agents <name>` SHALL keep its command surface (per-role runtime flags, `--json`, root selection) while persisting per-role runtime updates as `pipelines.<name>.runtimes.<role>` configuration instances written to the resolved root's configuration through the standard config write path — it SHALL NOT write a pipeline definition file. The effective runtime for a role SHALL resolve: the per-role runtime family instance (project over store over global) first, then an explicit pipeline `agents.<role>.runtime`, then the detected host runtime, then the legacy Claude fallback when the host is unknown. Reads SHALL report each role's resolved runtime with the layer that supplied it and its host × target dispatch mode. A pipeline definition copy previously frozen into a project by the old behavior SHALL remain untouched and SHALL keep resolving as that project's definition (the project layer of pipeline resolution) — the inspection surface's source badge makes the frozen copy visible, and removing it is the user's explicit action, never an automatic migration.
 
 #### Scenario: Setting a runtime writes config, not YAML
 
 - **WHEN** the user runs `rasen pipeline agents small-feature --reviewer codex` in a project
 - **THEN** a `pipelines.small-feature.runtimes.reviewer` instance is written to the project's configuration, no `pipeline.yaml` is created or modified, and subsequent upstream changes to the built-in pipeline keep applying in that project
 
-#### Scenario: Runtime chain resolves config over declaration
+#### Scenario: Runtime chain resolves config over declaration and host
 
-- **WHEN** a pipeline declares `agents.reviewer.runtime: claude` and the project sets the reviewer runtime instance to `codex`
-- **THEN** the reviewer-role stages resolve to `codex` with a config-layer source, and unsetting the instance reverts to the declaration
+- **WHEN** a pipeline declares `agents.reviewer.runtime: claude`, the detected host is Codex, and the project sets the reviewer runtime instance to `codex`
+- **THEN** reviewer-role stages resolve to `codex` with a config-layer source
+- **AND** unsetting the instance reverts to the explicit Claude declaration rather than the host
+
+#### Scenario: Undeclared role runtime inherits the host
+
+- **WHEN** no runtime configuration instance or explicit pipeline role runtime exists
+- **THEN** the role resolves to the detected host with a host source
+- **AND** an unknown host resolves to the visibly labelled legacy default
 
 #### Scenario: Existing frozen copies stay visible, not silently migrated
 
@@ -385,31 +476,48 @@ A `.rasenpkg` package MAY declare an optional `minRasenVersion`. When decoding a
 
 ### Requirement: Runtime preflight probes agent-runtime availability
 
-Before a pipeline is dispatched for execution, the execution preflight SHALL resolve each stage's effective agent runtime — using the precedence stage runtime, then the pipeline's per-role runtime, then the default — across all stages, including the stages of any decompose child pipeline. When any resolved effective runtime is `codex`, the preflight SHALL probe the codex CLI's availability at most once per invocation through an injectable prober, and SHALL fail before dispatch if codex is required but unavailable. The failure message SHALL name both remedies: overriding the affected role to the default runtime, or installing the codex CLI. When no stage resolves to `codex`, the preflight SHALL NOT probe and SHALL NOT fail on runtime-availability grounds.
+Before a pipeline is dispatched for execution, the execution preflight SHALL detect the LEAD host once, resolve every stage's effective target runtime with all configured runtime layers, and resolve the host × target dispatch mode across all stages, including stages of any decompose child pipeline. A known `unsupported` route SHALL fail before dispatch with an actionable error naming the host, target, affected stage or role, and a supported override. When any route is `exec-bridge`, the preflight SHALL probe Codex CLI availability at most once per invocation through an injectable prober and SHALL fail before dispatch if the bridge is required but unavailable. Codex-native stages SHALL NOT require or probe the external Codex CLI. An unknown host SHALL retain the legacy fallback with an actionable diagnostic rather than being represented as a verified native route.
 
-#### Scenario: Codex required but unavailable fails before dispatch
+#### Scenario: Claude-to-Codex bridge unavailable fails before dispatch
 
-- **WHEN** a pipeline has a stage whose effective runtime resolves to `codex`
-- **AND** the codex CLI is unavailable
-- **THEN** the execution preflight SHALL fail before dispatch
-- **AND** the error SHALL name both remedies (override the role to the default runtime, or install codex)
+- **WHEN** a Claude-hosted pipeline has a stage whose effective runtime resolves to Codex
+- **AND** the Codex CLI is unavailable
+- **THEN** execution preflight fails before dispatch
+- **AND** the error names both remedies: use a supported runtime override or install the Codex CLI
 
-#### Scenario: Decompose child runtime is covered
+#### Scenario: Codex-native pipeline does not probe the CLI
 
-- **WHEN** a decompose stage's child pipeline has a stage whose effective runtime resolves to `codex`
-- **AND** the codex CLI is unavailable
-- **THEN** the execution preflight SHALL fail before dispatch
+- **WHEN** the host is Codex and one or more stages inherit or explicitly select Codex
+- **THEN** each such stage resolves dispatch mode `native`
+- **AND** the Codex CLI availability prober is not called
 
-#### Scenario: Pure-default pipeline does not probe
+#### Scenario: Known unsupported route fails early
 
-- **WHEN** no stage in the pipeline or its decompose children resolves to `codex`
-- **THEN** the preflight SHALL NOT probe codex availability
-- **AND** it SHALL NOT fail on runtime-availability grounds
+- **WHEN** the host is Codex and an explicit runtime layer selects Claude for a stage
+- **THEN** execution preflight fails before any worker starts
+- **AND** the error identifies the unsupported Codex→Claude pair and explains that removing or changing the explicit runtime allows a supported route
 
-#### Scenario: Probe is injectable and runs at most once
+#### Scenario: Configured runtime instances participate in preflight
 
-- **WHEN** the preflight runs with an injected availability prober over a pipeline containing several `codex` stages
-- **THEN** the prober SHALL be consulted at most once for that invocation
+- **WHEN** project, store, or global runtime configuration changes a role's effective target
+- **THEN** preflight validates the route for that configured target
+- **AND** it does not validate a different target obtained by ignoring configuration
+
+#### Scenario: Decompose child routes are covered
+
+- **WHEN** a decompose child pipeline contains an exec-bridge or unsupported route after effective runtime resolution
+- **THEN** the parent execution preflight applies the same availability or rejection rule before fan-out
+
+#### Scenario: Bridge probe is injectable and runs at most once
+
+- **WHEN** the preflight runs with an injected availability prober over a pipeline containing several `exec-bridge` stages
+- **THEN** the prober is consulted at most once for that invocation
+
+#### Scenario: Unknown host keeps compatibility with a diagnostic
+
+- **WHEN** host detection returns unknown
+- **THEN** execution retains the legacy runtime/bridge behavior
+- **AND** reports how to select a deterministic host with `RASEN_AGENT_RUNTIME`
 
 ### Requirement: Pipeline human presentation is localized
 

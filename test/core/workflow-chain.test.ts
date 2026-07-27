@@ -42,6 +42,17 @@ describe('workflow-chain', () => {
         }
       }
     });
+
+    it('keeps Direction outside the mandatory main line and every automatic chain edge', () => {
+      expect(MAIN_LINE as readonly string[]).not.toContain('direction');
+      expect(WORKFLOW_CHAIN).not.toHaveProperty('direction');
+      for (const edges of Object.values(WORKFLOW_CHAIN)) {
+        for (const edge of edges ?? []) {
+          expect(edge.to).not.toBe('direction');
+          expect(edge.fallback ?? []).not.toContain('direction');
+        }
+      }
+    });
   });
 
   describe('resolveNextSteps: apply', () => {

@@ -58,6 +58,7 @@ A change moves: **propose → apply → verify → sync → archive**.
 
 **Choosing a variant** — route by situation:
 - Idea still fuzzy → \`rasen-office-hours-command <topic>\` (structured design Q&A) or \`rasen-explore\` (investigate, no code changes).
+- Work spans multiple Changes, versions, horizons, or projects; the user wants a North Star/Target State, the next Roadmap Slice, alignment across Changes, or evidence reconciliation → \`rasen-direction\`. Direction is optional: ordinary bugs and features still go directly through the Change flow.
 - Want artifacts one at a time with review between → \`rasen-new-change <name>\`, then \`rasen-continue-change <name>\`.
 - Several finished changes piled up → \`rasen-bulk-archive-change\`.
 - Session running out of context mid-change → \`rasen-handoff\` (writes a handoff document a fresh session resumes from).
@@ -69,7 +70,7 @@ When the user wants Rasen to drive the loop instead of stepping manually:
 - **\`rasen-auto <task>\`** — the default "do this for me": a LEAD agent classifies the task, picks a pipeline, and drives role agents (planner/implementer/reviewer/fixer/shipper) through it, pausing at gates for approval.
 - **\`rasen-review-cycle <name>\`** — adversarial review loop over a change until findings run dry.
 - **\`rasen-ship <name>\`** — finalize: commit, sync specs, archive.
-- **\`rasen-goal <goal>\`** — goal-driven iteration (plan → iterate → report) toward a measurable target; for "make X faster/better" work rather than a defined feature.
+- **\`rasen-goal <goal>\`** — a bounded plan → iterate → report loop toward one measure, evaluation rubric, or research gate. Its \`goal-plan.md\`/\`goal-run.json\` are distinct from Direction's cross-Change \`target-state.md\`.
 - **\`rasen-retain\`** — the profile's retention step, run after ship and before archive. \`report\` and \`codify\` are mutually exclusive profile-policy choices: report writes a retrospective (\`retro.md\`), codify turns durable evidence into managed learned skills, \`off\` does neither. (\`rasen-retro\` remains only a temporary user-invoked compatibility alias for report mode — not profile-selectable or model-invoked.)
 
 Resuming and inspecting a run: \`rasen pipeline resume <change>\` shows a change's run-state (next/remaining stages); \`rasen-auto\` picks up where it left off.

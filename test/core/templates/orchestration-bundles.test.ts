@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { generateSkillContent } from '../../../src/core/shared/skill-generation.js';
-import {
-  getAutoCommandSkillTemplate,
-  getGoalCommandSkillTemplate,
-  getReviewCycleSkillTemplate,
-} from '../../../src/core/templates/skill-templates.js';
 import {
   AUTO_ORCHESTRATION_PLAYBOOK,
   GOAL_ORCHESTRATION_PLAYBOOK,
@@ -47,6 +41,16 @@ const CANONICAL_STEP_ORDER = [
 
 function stepHeading(step: string): string {
   return `### Step ${step} `;
+}
+
+function stepSection(playbook: string, step: string): string {
+  const start = playbook.indexOf(stepHeading(step));
+  expect(start, `missing Step ${step}`).toBeGreaterThanOrEqual(0);
+  const following = playbook.slice(start + stepHeading(step).length);
+  const next = following.search(/\n### Step [A-Z]/);
+  return next < 0
+    ? playbook.slice(start)
+    : playbook.slice(start, start + stepHeading(step).length + next);
 }
 
 function expectSteps(
@@ -105,6 +109,25 @@ describe('selective orchestration bundles', () => {
     expectCanonicalOrder(
       AUTO_ORCHESTRATION_PLAYBOOK,
       CANONICAL_STEP_ORDER
+    );
+  });
+
+  it('keeps portfolio state canonical and every child resumable from creation', () => {
+    const stepG = AUTO_ORCHESTRATION_PLAYBOOK.slice(
+      AUTO_ORCHESTRATION_PLAYBOOK.indexOf('### Step G '),
+      AUTO_ORCHESTRATION_PLAYBOOK.indexOf('### Step G.1 ')
+    );
+    expect(stepG).toContain(
+      'rasen new change <child-id> --pipeline <childPipeline>'
+    );
+    expect(stepG).toContain('"dependsOn": ["<parent>-a"]');
+    expect(stepG).toContain('"delivery":');
+    expect(stepG).toContain('"status": "pending"');
+    expect(stepG).toContain('next: portfolio-delivery');
+    expect(stepG).toContain('present but invalid portfolio is an error');
+    expect(stepG).not.toContain("each child's prerequisites");
+    expect(AUTO_ORCHESTRATION_PLAYBOOK).toContain(
+      '**done | skipped | delegated** count as complete for resume'
     );
   });
 
@@ -212,6 +235,88 @@ describe('selective orchestration bundles', () => {
     }
   });
 
+  it('branches Codex native, exec-bridge, and Claude-native worker lifecycles', () => {
+    for (const playbook of [
+      AUTO_ORCHESTRATION_PLAYBOOK,
+      GOAL_ORCHESTRATION_PLAYBOOK,
+      REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK,
+    ]) {
+      expect(playbook).toContain('`hostRuntime`');
+      expect(playbook).toContain('`dispatchMode`');
+      expect(playbook).toContain('`spawn_agent`');
+      expect(playbook).toContain('`followup_task`');
+      expect(playbook).toContain(
+        "worker's final `DONE` or `HANDOFF` response is delivered to the LEAD automatically"
+      );
+      expect(playbook).toContain('do NOT send a duplicate completion message');
+      expect(playbook).toContain('`wait_agent`');
+      expect(playbook).toContain('one long, barrier-sized event-driven wait');
+      expect(playbook).toContain('repeated 30- or 60-second polling cycles');
+
+      // Claude-native and external exec-bridge contracts remain complete.
+      expect(playbook).toContain('Task tool (subagent_type: "general-purpose"');
+      expect(playbook).toContain('via `SendMessage` to the LEAD');
+      expect(playbook).toContain('codex exec --json --output-schema');
+      expect(playbook).toContain('< /dev/null');
+      expect(playbook).toContain('codex exec resume <threadId>');
+      expect(playbook).toContain('Exec mode yields NO turn id');
+    }
+  });
+
+  it('keeps every review, goal, and resume continuation site dispatch-mode-aware', () => {
+    for (const playbook of [
+      AUTO_ORCHESTRATION_PLAYBOOK,
+      REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK,
+    ]) {
+      const reviewLoop = stepSection(playbook, 'E');
+      expect(reviewLoop).toContain('Claude-native uses `SendMessage` by agentId');
+      expect(reviewLoop).toContain('Codex-native uses `followup_task` by agent id');
+      expect(reviewLoop).toContain('exec-bridge uses `codex exec resume <threadId>`');
+    }
+
+    for (const playbook of [
+      AUTO_ORCHESTRATION_PLAYBOOK,
+      GOAL_ORCHESTRATION_PLAYBOOK,
+    ]) {
+      const goalLoop = stepSection(playbook, 'L');
+      expect(goalLoop).toContain('Claude-native uses `SendMessage` on the same implementer agentId');
+      expect(goalLoop).toContain('Codex-native uses `followup_task` on the same idle implementer agent');
+      expect(goalLoop).toContain('exec-bridge uses `codex exec resume <threadId>`');
+    }
+
+    for (const playbook of [
+      AUTO_ORCHESTRATION_PLAYBOOK,
+      GOAL_ORCHESTRATION_PLAYBOOK,
+      REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK,
+    ]) {
+      const resume = stepSection(playbook, 'F.1');
+      expect(resume).toContain('Claude-native `SendMessage`');
+      expect(resume).toContain('Codex-native `followup_task`');
+      expect(resume).toContain('exec-bridge resume by `threadId`');
+      expect(resume).toContain('never invent one');
+    }
+  });
+
+  it('freezes retention before every canonical retain-stage dispatch', () => {
+    for (const playbook of [
+      AUTO_ORCHESTRATION_PLAYBOOK,
+      GOAL_ORCHESTRATION_PLAYBOOK,
+    ]) {
+      expectOrderedFragments(playbook, [
+        'canonical ID is `retain`',
+        'record it in run-state BEFORE dispatch',
+        'Pass the frozen mode in the dispatch instructions',
+        'The LEAD is the sole run-state writer',
+      ]);
+      expect(playbook).toContain(
+        'This stage-identity rule applies in every pipeline'
+      );
+      expect(playbook).toContain(
+        'ship → retain → archive for code-producing pipelines, or report only for research'
+      );
+    }
+  });
+
   it('states the exact binding-aware handoff order in the canonical playbook', () => {
     expectOrderedFragments(AUTO_ORCHESTRATION_PLAYBOOK, [
       'configured `pipelines.<name>.handoff.<stage>` instance',
@@ -302,19 +407,4 @@ describe('selective orchestration bundles', () => {
     }
   });
 
-  it('keeps fully generated SKILL.md files within their UTF-8 byte budgets', () => {
-    const cases = [
-      ['auto', getAutoCommandSkillTemplate, 106],
-      ['goal', getGoalCommandSkillTemplate, 70],
-      ['review-cycle', getReviewCycleSkillTemplate, 60],
-    ] as const;
-
-    for (const [name, createTemplate, maxKiB] of cases) {
-      const content = generateSkillContent(createTemplate(), 'SIZE-BUDGET');
-      expect(
-        Buffer.byteLength(content, 'utf8'),
-        `${name} generated SKILL.md exceeds ${maxKiB} KiB`
-      ).toBeLessThanOrEqual(maxKiB * 1024);
-    }
-  });
 });

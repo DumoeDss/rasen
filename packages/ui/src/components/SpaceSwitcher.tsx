@@ -6,6 +6,7 @@ import { parseSelector, parseSpacePath, spaceHref, spaceSection } from '../store
 import { getRecentSpaces, recordSpaceVisit } from '../store/recent-spaces.js';
 import { guardedRoute } from '../store/use-navigation-guard.js';
 import { useT } from '../i18n/store.js';
+import { ensureSpaceCatalog, useSpaceCatalog } from '../store/space-catalog.js';
 
 /** The header switcher shows at most this many space entries (spaces-ui design D2); "All spaces…" escapes to the full page. */
 const SWITCHER_CAP = 8;
@@ -76,14 +77,13 @@ export function SpaceSwitcher() {
   const space = parseSpacePath(path);
   const section = spaceSection(path);
 
-  const [spaces, setSpaces] = useState<SpaceEntry[] | null>(null);
+  const { spaces, error: catalogError } = useSpaceCatalog();
   const [pins, setPins] = useState<string[]>([]);
-  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      client.listSpaces(),
+      ensureSpaceCatalog(),
       // The pins read is best-effort — deferred into a then so even a missing
       // client method or an older server degrades to "no pins" rather than
       // failing the switcher.
@@ -91,14 +91,11 @@ export function SpaceSwitcher() {
         .then(() => client.getKey(PINNED_KEY))
         .catch(() => null),
     ])
-      .then(([spacesRes, pinsRes]) => {
+      .then(([, pinsRes]) => {
         if (cancelled) return;
-        setSpaces(spacesRes.spaces);
         setPins(coercePins(pinsRes?.entry.value));
       })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -110,11 +107,11 @@ export function SpaceSwitcher() {
     if (space) recordSpaceVisit(space.selector);
   }, [space?.selector]);
 
-  if (spaces === null && !failed) {
+  if (spaces === null && !catalogError) {
     return <div class="space-switcher space-switcher--loading">{t('spaces.switcher.loading')}</div>;
   }
 
-  if (failed || (spaces && spaces.length === 0)) {
+  if ((catalogError && spaces === null) || (spaces && spaces.length === 0)) {
     return (
       <div class="space-switcher space-switcher--empty" data-testid="space-switcher-empty">
         {t('spaces.switcher.empty_pre')}<code>rasen ui</code>{t('spaces.switcher.empty_post')}

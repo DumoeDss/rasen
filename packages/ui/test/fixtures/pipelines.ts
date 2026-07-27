@@ -267,6 +267,7 @@ export const pipelineDetailFixture = {
     ],
   },
   definition: {
+    version: 1,
     name: 'small-feature',
     description: 'A small feature pipeline',
     stages: [
@@ -425,6 +426,20 @@ export const pipelinesConfigFixture = {
         constraints: { type: 'boolean' },
       },
       value: true,
+      source: 'default',
+      scopeValues: {},
+    },
+    {
+      definition: {
+        key: 'keepalive.runtimes.codex',
+        scopes: ['global'],
+        type: 'boolean',
+        defaultValue: false,
+        description: 'Allow keepalive beats under the Codex runtime',
+        group: 'Pipelines',
+        constraints: { type: 'boolean' },
+      },
+      value: false,
       source: 'default',
       scopeValues: {},
     },

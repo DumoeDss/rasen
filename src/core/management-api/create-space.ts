@@ -8,21 +8,20 @@
  * `submit.ts` (the established change-submission machinery) — its own cap-1
  * concurrency, 60s timeout with SIGTERM→SIGKILL escalation, and
  * slot-release-on-child-close discipline, admitted through the shared
- * bounded-CLI whitelist tier. The verb is selected deterministically from the
- * kind and the target directory's state:
- *  - `project`                    → `init <path>`
- *  - `store` + `<path>/rasen`     → `store register <path> --yes [--id <id>] --json`
- *  - `store` + no `<path>/rasen`  → `store setup <id> --path <path> --json`  (id required)
+ * bounded-CLI whitelist tier. The request discriminant selects the verb
+ * without inspecting filesystem state:
+ *  - `create-project` → `init <path>`
+ *  - `register-store` → `store register <path> --yes [--id <id>] --json`
+ *  - `create-store` → `store setup <id> --path <joined-parent-and-id> --json`
  */
 import { spawn } from 'node:child_process';
-import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { validateStoreId } from '../store/foundation.js';
+import { PATH_CONTROL_CHAR_PATTERN } from './local-path-resolver.js';
 import { handleSpaces } from './spaces.js';
-import { CONTROL_CHAR_PATTERN } from './submit.js';
 import { getBoundedCliEntry } from './whitelist.js';
 import type { CreateSpaceResponse, SpaceEntry } from './wire-types.js';
 
@@ -63,15 +62,6 @@ function canonicalizeOrResolve(target: string): string {
     return FileSystemUtils.canonicalizeExistingPath(target);
   } catch {
     return target;
-  }
-}
-
-/** Read-only stat: does the target directory already contain a `rasen/` root? */
-function hasRasenRoot(targetPath: string): boolean {
-  try {
-    return fs.statSync(path.join(targetPath, 'rasen')).isDirectory();
-  } catch {
-    return false;
   }
 }
 
@@ -116,63 +106,111 @@ interface Validated {
   argv: string[];
 }
 
-/** All validation before any subprocess (design D5). Returns the resolved verb, or a 400. */
-function validate(body: unknown): Validated | { ok: false; status: number; code: string; message: string } {
-  const request = (body ?? {}) as { kind?: unknown; path?: unknown; id?: unknown };
+type ValidationFailure = { ok: false; status: number; code: string; message: string };
 
-  if (request.kind !== 'project' && request.kind !== 'store') {
-    return { ok: false, status: 400, code: 'invalid_input', message: "kind must be 'project' or 'store'." };
+function validateAbsolutePath(value: unknown, field: 'path' | 'parent'): string | ValidationFailure {
+  if (typeof value !== 'string' || value.length === 0) {
+    return { ok: false, status: 400, code: 'invalid_input', message: `${field} must be a non-empty string.` };
+  }
+  if (!path.isAbsolute(value)) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'invalid_input',
+      message: `${field} must be an absolute filesystem path.`,
+    };
+  }
+  if (value.length > MAX_PATH_LENGTH) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'invalid_input',
+      message: `${field} must be at most ${MAX_PATH_LENGTH} characters.`,
+    };
+  }
+  if (PATH_CONTROL_CHAR_PATTERN.test(value)) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'invalid_input',
+      message: `${field} must not contain control characters.`,
+    };
+  }
+  return value;
+}
+
+function validateId(value: unknown, required: boolean): string | undefined | ValidationFailure {
+  if (value === undefined && !required) return undefined;
+  if (typeof value !== 'string' || value.length === 0) {
+    return { ok: false, status: 400, code: 'invalid_input', message: 'id must be a non-empty string.' };
+  }
+  try {
+    validateStoreId(value);
+    return value;
+  } catch (error) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'invalid_input',
+      message: error instanceof Error ? error.message : 'Invalid store id.',
+    };
+  }
+}
+
+/** All validation before any subprocess. The operation and allowed fields are explicit. */
+function validate(body: unknown): Validated | ValidationFailure {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, status: 400, code: 'invalid_input', message: 'Request body must be an object.' };
+  }
+  const request = body as Record<string, unknown>;
+  if (
+    request.op !== 'create-project' &&
+    request.op !== 'create-store' &&
+    request.op !== 'register-store'
+  ) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'invalid_input',
+      message: "op must be 'create-project', 'create-store', or 'register-store'.",
+    };
   }
 
-  const targetPath = request.path;
-  if (typeof targetPath !== 'string' || targetPath.length === 0) {
-    return { ok: false, status: 400, code: 'invalid_input', message: 'path must be a non-empty string.' };
-  }
-  if (!path.isAbsolute(targetPath)) {
-    // Absoluteness doubles as the option-injection guard: an absolute path
-    // cannot begin with `-`, so it can never be parsed as a CLI option.
-    return { ok: false, status: 400, code: 'invalid_input', message: 'path must be an absolute filesystem path.' };
-  }
-  if (targetPath.length > MAX_PATH_LENGTH) {
-    return { ok: false, status: 400, code: 'invalid_input', message: `path must be at most ${MAX_PATH_LENGTH} characters.` };
-  }
-  if (CONTROL_CHAR_PATTERN.test(targetPath)) {
-    return { ok: false, status: 400, code: 'invalid_input', message: 'path must not contain control characters.' };
-  }
-
-  let id: string | undefined;
-  if (request.id !== undefined) {
-    if (typeof request.id !== 'string') {
-      return { ok: false, status: 400, code: 'invalid_input', message: 'id must be a string.' };
-    }
-    try {
-      // The CLI's own store-id validation, so the server and CLI can never
-      // disagree on id shape; it also excludes option-like strings.
-      validateStoreId(request.id);
-    } catch (error) {
-      return {
-        ok: false,
-        status: 400,
-        code: 'invalid_input',
-        message: error instanceof Error ? error.message : 'Invalid store id.',
-      };
-    }
-    id = request.id;
+  const allowed =
+    request.op === 'create-project'
+      ? new Set(['op', 'path'])
+      : request.op === 'create-store'
+        ? new Set(['op', 'parent', 'id'])
+        : new Set(['op', 'path', 'id']);
+  if (Object.keys(request).some((key) => !allowed.has(key))) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'invalid_input',
+      message: `${request.op} contains fields that belong to a different operation.`,
+    };
   }
 
-  if (request.kind === 'project') {
+  if (request.op === 'create-project') {
+    const targetPath = validateAbsolutePath(request.path, 'path');
+    if (typeof targetPath !== 'string') return targetPath;
     return {
       kind: 'project',
       targetPath,
-      id,
+      id: undefined,
       op: 'create-project-space',
       operation: 'init',
       argv: ['init', targetPath],
     };
   }
 
-  // kind === 'store': the target directory's state selects register vs setup.
-  if (hasRasenRoot(targetPath)) {
+  // Store ids are validated before any path join.
+  const id = validateId(request.id, request.op === 'create-store');
+  if (id !== undefined && typeof id !== 'string') return id;
+
+  if (request.op === 'register-store') {
+    const targetPath = validateAbsolutePath(request.path, 'path');
+    if (typeof targetPath !== 'string') return targetPath;
     return {
       kind: 'store',
       targetPath,
@@ -183,21 +221,16 @@ function validate(body: unknown): Validated | { ok: false; status: number; code:
     };
   }
 
-  if (!id) {
-    return {
-      ok: false,
-      status: 400,
-      code: 'invalid_input',
-      message: 'id is required to create a fresh store (the target directory has no rasen/ root).',
-    };
-  }
+  const parent = validateAbsolutePath(request.parent, 'parent');
+  if (typeof parent !== 'string') return parent;
+  const targetPath = path.join(parent, id as string);
   return {
     kind: 'store',
     targetPath,
     id,
     op: 'setup-store-space',
     operation: 'store-setup',
-    argv: ['store', 'setup', id, '--path', targetPath, '--json'],
+    argv: ['store', 'setup', id as string, '--path', targetPath, '--json'],
   };
 }
 
@@ -215,7 +248,13 @@ function findSpace(
   if (validated.kind === 'project') {
     const canonicalTarget = canonicalizeOrResolve(validated.targetPath);
     return spaces.find(
-      (s) => s.type === 'project' && canonicalizeOrResolve(s.root) === canonicalTarget
+      (s) => s.type === 'project' && s.root !== undefined && canonicalizeOrResolve(s.root) === canonicalTarget
+    );
+  }
+  const canonicalTarget = canonicalizeOrResolve(validated.targetPath);
+  if (validated.operation === 'store-setup') {
+    return spaces.find(
+      (s) => s.type === 'store' && s.root !== undefined && canonicalizeOrResolve(s.root) === canonicalTarget
     );
   }
   const wantedId = storeIdFromStdout ?? validated.id;
@@ -223,8 +262,7 @@ function findSpace(
     const byId = spaces.find((s) => s.type === 'store' && s.id === wantedId);
     if (byId) return byId;
   }
-  const canonicalTarget = canonicalizeOrResolve(validated.targetPath);
-  return spaces.find((s) => s.type === 'store' && canonicalizeOrResolve(s.root) === canonicalTarget);
+  return spaces.find((s) => s.type === 'store' && s.root !== undefined && canonicalizeOrResolve(s.root) === canonicalTarget);
 }
 
 /**

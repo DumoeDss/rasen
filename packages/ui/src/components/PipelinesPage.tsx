@@ -1,5 +1,5 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
@@ -7,7 +7,6 @@ import type {
   ConfigSource,
   StoreLayerRef,
   ThresholdSchemeCatalogResponse,
-  ThresholdValue,
   WireConfigEntry,
   WireEffectiveValue,
   WirePipeline,
@@ -31,13 +30,16 @@ import { PageHeader } from './ui/PageHeader.js';
 import { ValueDisplay } from './ui/ValueDisplay.js';
 import { ThresholdPolicyWorkbench } from './ThresholdPolicyWorkbench.js';
 import { useT } from '../i18n/store.js';
+import { LocalPathPicker } from './LocalPathPicker.js';
+import type { LocalPathSelectionController } from '../store/use-local-path-selection.js';
 
 /**
  * The Pipelines page (pipelines-ui spec). A space-PREFIXED route
  * (`/p/:id/pipelines`, `/s/:id/pipelines`) where a pipeline's shape is
- * inspected and its per-stage gate / model / handoff and per-role runtime are
- * tuned — every override riding the ordinary config scope chain, never a YAML
- * fork. The page opens with the Defaults table (the role-matrix config keys,
+ * inspected and its per-stage gate / model and per-role runtime are tuned
+ * through the ordinary config scope chain. Durable stage handoff exceptions
+ * belong to the Canvas definition editor. The page opens with the Defaults
+ * table (the role-matrix config keys and keepalive lifecycle controls,
  * edited through the shared `ConfigEntryRow` under a page-level Global / Local
  * scope mode — W2's exact pattern), then one section per pipeline: the
  * build-order stage lane (read-only), per-stage override rows, per-role runtime
@@ -47,11 +49,10 @@ import { useT } from '../i18n/store.js';
  */
 
 /**
- * The role matrix (design D5): one row per role, each pairing that role's model
- * key with its handoff-threshold key. The `Default` row carries the base
- * `models.default` / `handoff.threshold` keys every other role inherits from.
- * Rendered as a compact table — role down the side, Model and Handoff across —
- * rather than one full-width config row per key.
+ * The role matrix (design D5): one row per role containing that role's model
+ * key. Handoff policy is authored through Threshold Schemes instead of legacy
+ * machine keys. Rendered as a compact table rather than one full-width config
+ * row per key.
  */
 const MATRIX_ROLES: ReadonlyArray<{ role: string; modelKey: string }> = [
   { role: 'default', modelKey: 'models.default' },
@@ -62,14 +63,15 @@ const MATRIX_ROLES: ReadonlyArray<{ role: string; modelKey: string }> = [
   { role: 'shipper', modelKey: 'models.roles.shipper' },
 ];
 const AUTOPILOT_KEYS = ['autopilot.gates', 'autopilot.selection'];
+const KEEPALIVE_LIFECYCLE_KEYS = [
+  'keepalive.runtimes.claude',
+  'keepalive.runtimes.codex',
+  'keepalive.contextFloor',
+] as const;
 
 /** A per-stage/per-role override is set when the effective source came from a family instance. */
 function isOverridden(source: string): boolean {
   return source.startsWith('stage-override');
-}
-
-function formatThreshold(value: ThresholdValue): string {
-  return typeof value === 'number' ? String(value) : `${value.remainingTokens} tokens`;
 }
 
 export function PipelinesPage() {
@@ -277,11 +279,17 @@ export function PipelinesPage() {
         {(() => {
           const enabledEntry = byKey('keepalive.enabled');
           const beatEntry = byKey('keepalive.beatSeconds');
+          const lifecycleEntries = KEEPALIVE_LIFECYCLE_KEYS
+            .map((key) => byKey(key))
+            .filter(
+              (entry): entry is WireConfigEntry =>
+                entry !== undefined && isVisibleInMode(entry, mode, spaceType)
+            );
           const visibleEnabled =
             enabledEntry && isVisibleInMode(enabledEntry, mode, spaceType) ? enabledEntry : undefined;
           const visibleBeat =
             beatEntry && isVisibleInMode(beatEntry, mode, spaceType) ? beatEntry : undefined;
-          return visibleEnabled || visibleBeat ? (
+          return visibleEnabled || visibleBeat || lifecycleEntries.length > 0 ? (
             <div class="pipelines-defaults__keepalive" data-testid="pipelines-defaults-keepalive">
               <KeepaliveBeatControl
                 enabledEntry={visibleEnabled}
@@ -293,22 +301,41 @@ export function PipelinesPage() {
                 onPageError={(message, fix) => setPageError({ message, fix })}
                 onEntryUpdated={updateEntry}
               />
+              {lifecycleEntries.length > 0 && (
+                <div
+                  class="pipelines-defaults__keepalive-lifecycle"
+                  data-testid="pipelines-keepalive-lifecycle"
+                >
+                  <p>{t('pipelines.keepalive.lifecycle_description')}</p>
+                  <div class="pipelines-defaults__keepalive-rows">
+                    {lifecycleEntries.map((entry) => {
+                      const runtime = entry.definition.key.endsWith('.claude')
+                        ? 'Claude Code'
+                        : 'Codex';
+                      const description = entry.definition.key.startsWith('keepalive.runtimes.')
+                        ? t('pipelines.keepalive.runtime_description', { runtime })
+                        : t('pipelines.keepalive.context_floor_description');
+                      return (
+                        <ConfigEntryRow
+                          key={entry.definition.key}
+                          entry={entry}
+                          description={description}
+                          mode={mode}
+                          spaceType={spaceType}
+                          spaceSelector={selector}
+                          storeRef={storeRef}
+                          onPageError={(message, fix) => setPageError({ message, fix })}
+                          onEntryUpdated={updateEntry}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           ) : null;
         })()}
       </section>
-
-      {entries && (
-        <AdvancedOverrides
-          entries={entries}
-          mode={mode}
-          spaceType={spaceType}
-          selector={selector}
-          storeRef={storeRef}
-          onPageError={(message, fix) => setPageError({ message, fix })}
-          onEntryUpdated={updateEntry}
-        />
-      )}
 
       <section class="pipelines-list" data-testid="pipelines-list">
         {(pipelines ?? []).map((pipeline) => (
@@ -558,86 +585,6 @@ function StoreInheritedCell({ entry, storeRef }: { entry: WireConfigEntry; store
   );
 }
 
-function AdvancedOverrides({
-  entries,
-  mode,
-  spaceType,
-  selector,
-  storeRef,
-  onPageError,
-  onEntryUpdated,
-}: {
-  entries: WireConfigEntry[];
-} & DefaultsCellCtx) {
-  const t = useT();
-  const advancedKeys = new Set([
-    'handoff.threshold',
-    'handoff.roles.planner',
-    'handoff.roles.implementer',
-    'handoff.roles.reviewer',
-    'handoff.roles.fixer',
-    'handoff.roles.shipper',
-    'keepalive.runtimes.claude',
-    'keepalive.runtimes.codex',
-    'keepalive.contextFloor',
-  ]);
-  const visible = entries.filter(
-    (entry) =>
-      advancedKeys.has(entry.definition.key) &&
-      isVisibleInMode(entry, mode, spaceType)
-  );
-  const localizedDescription = (key: string): string => {
-    if (key === 'handoff.threshold') {
-      return t('pipelines.threshold.advanced.entry.handoff_default');
-    }
-    if (key.startsWith('handoff.roles.')) {
-      const role = key.slice('handoff.roles.'.length);
-      return t('pipelines.threshold.advanced.entry.handoff_role', {
-        role: t(`pipelines.threshold.role.${role}`),
-      });
-    }
-    if (key.startsWith('keepalive.runtimes.')) {
-      const runtime =
-        key.slice('keepalive.runtimes.'.length) === 'claude' ? 'Claude Code' : 'Codex';
-      return t('pipelines.threshold.advanced.entry.keepalive_runtime', {
-        runtime,
-      });
-    }
-    return t('pipelines.threshold.advanced.entry.keepalive_context_floor');
-  };
-  return (
-    <details
-      id="pipelines-advanced"
-      class="pipelines-advanced"
-      data-testid="pipelines-advanced"
-    >
-      <summary>
-        <span>{t('pipelines.threshold.advanced.title')}</span>
-        <small>{t('pipelines.threshold.advanced.summary')}</small>
-      </summary>
-      <p>{t('pipelines.threshold.advanced.description')}</p>
-      <div class="pipelines-advanced__grid">
-        {visible.map((entry) => (
-          <ConfigEntryRow
-            key={entry.definition.key}
-            entry={entry}
-            description={localizedDescription(entry.definition.key)}
-            mode={mode}
-            spaceType={spaceType}
-            spaceSelector={selector}
-            storeRef={storeRef}
-            onPageError={onPageError}
-            onEntryUpdated={onEntryUpdated}
-          />
-        ))}
-      </div>
-      <p class="pipelines-advanced__lifecycle">
-        {t('pipelines.threshold.advanced.keepalive_note')}
-      </p>
-    </details>
-  );
-}
-
 // ── Per-pipeline section ─────────────────────────────────────────────────────
 
 function PipelineSection({
@@ -658,7 +605,6 @@ function PipelineSection({
   onExport: (name: string) => void;
   onDelete: (name: string) => void;
 }) {
-  const t = useT();
   // Export AND delete are user-library-only in the CLI (`exportPipeline` /
   // `deletePipeline` both refuse `source !== 'user'`), so the affordances gate on
   // the resolved SOURCE LAYER, not provenance: a project-layer copy (provenance
@@ -761,7 +707,8 @@ function PipelineSection({
             </div>
           )}
 
-          {/* Per-stage gate / model / handoff overrides. */}
+          {/* Per-stage gate / model overrides. Durable stage handoff values are
+              authored in the Canvas pipeline definition editor. */}
           <div class="pipeline-stages" data-testid="pipeline-stages">
             {pipeline.stages.map((stage) => (
               <StageOverrideRow
@@ -774,27 +721,6 @@ function PipelineSection({
               />
             ))}
           </div>
-          <details
-            class="pipeline-stage-advanced"
-            data-testid="pipeline-stage-advanced"
-          >
-            <summary>{t('pipelines.threshold.advanced.stage_title')}</summary>
-            <p>{t('pipelines.threshold.advanced.stage_description')}</p>
-            <div class="pipeline-stage-advanced__rows">
-              {pipeline.stages.map((stage) => (
-                <div key={stage.id} class="pipeline-stage-advanced__row">
-                  <code>{stage.id}</code>
-                  <StageHandoffControl
-                    pipeline={pipeline.name}
-                    stage={stage}
-                    scope={scope}
-                    selector={selector}
-                    onWrite={onWrite}
-                  />
-                </div>
-              ))}
-            </div>
-          </details>
         </div>
       )}
     </div>
@@ -963,92 +889,6 @@ function StageModelControl({
   );
 }
 
-function StageHandoffControl({
-  pipeline,
-  stage,
-  scope,
-  selector,
-  onWrite,
-}: {
-  pipeline: string;
-  stage: WirePipelineStage;
-  scope: 'global' | 'store' | 'project';
-  selector: string;
-  onWrite: () => Promise<void>;
-}) {
-  const t = useT();
-  const key = `pipelines.${pipeline}.handoff.${stage.id}`;
-  const w = useInstanceWriter(key, scope, selector, onWrite);
-  const eff = stage.effectiveHandoff;
-  const overridden = isOverridden(eff.source);
-  const isAbsolute = typeof eff.value === 'object' && eff.value !== null && 'remainingTokens' in eff.value;
-
-  return (
-    <div class="stage-control stage-control--handoff" data-testid="stage-handoff" data-pipeline={pipeline} data-stage={stage.id}>
-      <span class="stage-control__label">
-        {t('pipelines.threshold.family.handoff')}
-      </span>
-      <div class="stage-control__handoff-forms">
-        <label>
-          <input
-            type="radio"
-            name={`${key}-form`}
-            checked={!isAbsolute}
-            disabled={w.pending}
-            onChange={() => w.set(0.5)}
-          />
-          {t('pipelines.threshold.editor.fraction')}
-        </label>
-        <label>
-          <input
-            type="radio"
-            name={`${key}-form`}
-            checked={isAbsolute}
-            disabled={w.pending}
-            onChange={() => w.set({ remainingTokens: 50_000 })}
-          />
-          {t('pipelines.threshold.editor.remaining_tokens')}
-        </label>
-      </div>
-      {!isAbsolute ? (
-        <input
-          type="number"
-          step="any"
-          data-testid="stage-handoff-fraction"
-          value={typeof eff.value === 'number' ? String(eff.value) : '0.5'}
-          disabled={w.pending}
-          onChange={(e) => {
-            const raw = Number((e.target as HTMLInputElement).value);
-            if (!Number.isNaN(raw)) w.set(raw);
-          }}
-        />
-      ) : (
-        <input
-          type="number"
-          step="1"
-          data-testid="stage-handoff-remaining"
-          value={String((eff.value as { remainingTokens: number }).remainingTokens)}
-          disabled={w.pending}
-          onChange={(e) => {
-            const raw = Number((e.target as HTMLInputElement).value);
-            if (Number.isInteger(raw)) w.set({ remainingTokens: raw });
-          }}
-        />
-      )}
-      <span class="stage-control__effective" data-testid="stage-handoff-effective">
-        {formatThreshold(eff.value)}
-      </span>
-      <SourceBadge source={eff.source} />
-      {overridden && (
-        <button type="button" data-testid="stage-handoff-inherit" disabled={w.pending} onClick={() => w.clear()}>
-          {t('pipelines.threshold.action.inherit')}
-        </button>
-      )}
-      {w.error && <span class="stage-control__error" role="alert">{w.error}</span>}
-    </div>
-  );
-}
-
 function RoleRuntimeControl({
   pipeline,
   role,
@@ -1114,38 +954,12 @@ function DialogShell({ title, onClose, children }: { title: string; onClose: () 
   );
 }
 
-function PathField({
-  label,
-  value,
-  onInput,
-  disabled,
-  testid,
-}: {
-  label: string;
-  value: string;
-  onInput: (v: string) => void;
-  disabled?: boolean;
-  testid: string;
-}) {
-  return (
-    <label class="pipeline-dialog__field">
-      <span>{label} (absolute path on this machine)</span>
-      <input
-        type="text"
-        data-testid={testid}
-        value={value}
-        disabled={disabled}
-        onInput={(e) => onInput((e.target as HTMLInputElement).value)}
-      />
-    </label>
-  );
-}
-
 function cliMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback;
 }
 
 function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const picker = useRef<LocalPathSelectionController | null>(null);
   const [path, setPath] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1157,8 +971,13 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
     if (submitting) return;
     setSubmitting(true);
     setError(null);
+    const selectedPath = await picker.current?.resolveForSubmit();
+    if (!selectedPath) {
+      setSubmitting(false);
+      return;
+    }
     try {
-      const res = (await client.mutatePipeline({ op: 'import', path, force })) as { imported: string[] };
+      const res = (await client.mutatePipeline({ op: 'import', path: selectedPath, force })) as { imported: string[] };
       setResult({ imported: res.imported });
       onDone();
     } catch (err) {
@@ -1177,7 +996,17 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
         </div>
       ) : (
         <form class="pipeline-dialog__form" onSubmit={(e) => run(false, e)}>
-          <PathField label="Pipeline directory or package" testid="pipeline-import-path" value={path} onInput={setPath} disabled={submitting} />
+          <LocalPathPicker
+            classPrefix="local-path-picker"
+            mode="file"
+            currentLabel="Pipeline package"
+            disabled={submitting}
+            controllerRef={picker}
+            onValueChange={setPath}
+          />
+          <p class="pipeline-dialog__hint" data-testid="pipeline-import-path">
+            Selected: <code>{path || 'nothing yet'}</code>
+          </p>
           {error && <p class="pipeline-dialog__error" role="alert" data-testid="pipeline-dialog-error">{error}</p>}
           <div class="pipeline-dialog__actions">
             <button type="submit" class="btn--primary" data-testid="pipeline-import-submit" disabled={submitting}>
@@ -1196,7 +1025,9 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
 }
 
 function ExportDialog({ name, onClose }: { name: string; onClose: () => void }) {
+  const picker = useRef<LocalPathSelectionController | null>(null);
   const [dir, setDir] = useState('');
+  const [separator, setSeparator] = useState('/');
   const [filename, setFilename] = useState(`${name}.rasenpkg`);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1204,8 +1035,8 @@ function ExportDialog({ name, onClose }: { name: string; onClose: () => void }) 
   const [refused, setRefused] = useState(false);
 
   function destination(): string {
-    const trimmed = dir.replace(/[/\\]+$/, '');
-    return `${trimmed}/${filename}`;
+    const trimmed = dir.endsWith(separator) ? dir.slice(0, -separator.length) : dir;
+    return `${trimmed}${separator}${filename}`;
   }
 
   async function run(force: boolean, event?: Event) {
@@ -1213,8 +1044,18 @@ function ExportDialog({ name, onClose }: { name: string; onClose: () => void }) 
     if (submitting) return;
     setSubmitting(true);
     setError(null);
+    const selectedDir = await picker.current?.resolveForSubmit();
+    if (!selectedDir) {
+      setSubmitting(false);
+      return;
+    }
+    const selectedSeparator = picker.current?.separator ?? separator;
+    const trimmed = selectedDir.endsWith(selectedSeparator)
+      ? selectedDir.slice(0, -selectedSeparator.length)
+      : selectedDir;
+    const resolvedDestination = `${trimmed}${selectedSeparator}${filename}`;
     try {
-      const res = (await client.mutatePipeline({ op: 'export', name, path: destination(), force })) as {
+      const res = (await client.mutatePipeline({ op: 'export', name, path: resolvedDestination, force })) as {
         pipeline: { path: string };
       };
       setDone(res.pipeline.path);
@@ -1237,7 +1078,19 @@ function ExportDialog({ name, onClose }: { name: string; onClose: () => void }) 
         </div>
       ) : (
         <form class="pipeline-dialog__form" onSubmit={(e) => run(false, e)}>
-          <PathField label="Destination directory" testid="pipeline-export-dir" value={dir} onInput={setDir} disabled={submitting} />
+          <LocalPathPicker
+            classPrefix="local-path-picker"
+            currentLabel="Destination directory"
+            disabled={submitting}
+            controllerRef={picker}
+            onValueChange={(value, nextSeparator) => {
+              setDir(value);
+              setSeparator(nextSeparator);
+            }}
+          />
+          <p class="pipeline-dialog__hint" data-testid="pipeline-export-dir">
+            Destination directory: <code>{dir || 'nothing yet'}</code>
+          </p>
           <label class="pipeline-dialog__field">
             <span>Filename</span>
             <input
@@ -1248,6 +1101,11 @@ function ExportDialog({ name, onClose }: { name: string; onClose: () => void }) 
               onInput={(e) => setFilename((e.target as HTMLInputElement).value)}
             />
           </label>
+          {dir && filename && (
+            <p class="pipeline-dialog__hint" data-testid="pipeline-export-destination">
+              Export to: <code>{destination()}</code>
+            </p>
+          )}
           {error && <p class="pipeline-dialog__error" role="alert" data-testid="pipeline-dialog-error">{error}</p>}
           <div class="pipeline-dialog__actions">
             <button type="submit" class="btn--primary" data-testid="pipeline-export-submit" disabled={submitting}>

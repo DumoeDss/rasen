@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { stringify as stringifyYaml } from 'yaml';
 
 import {
   acquireFileLock,
@@ -11,7 +10,12 @@ import {
 } from './file-state.js';
 import { getGlobalConfigDir } from './global-config.js';
 import { findRepoPlanningRootSync } from './planning-home.js';
-import { PipelineValidationError, parsePipeline, validatePipelineSkills } from './pipeline-registry/pipeline.js';
+import {
+  PipelineValidationError,
+  parsePipeline,
+  serializePipelineYaml,
+  validatePipelineSkills,
+} from './pipeline-registry/pipeline.js';
 import { resolvePipelineExecutionSkillSets } from './pipeline-registry/execution-validation.js';
 import {
   getUserPipelinesDir,
@@ -19,7 +23,10 @@ import {
   loadPipelineByName,
   resolveChildPipelineName,
 } from './pipeline-registry/resolver.js';
-import type { PipelineYaml } from './pipeline-registry/types.js';
+import {
+  PIPELINE_DEFINITION_VERSION,
+  type PipelineYaml,
+} from './pipeline-registry/types.js';
 import { isPortableWorkflowId } from './workflow-registry/path-policy.js';
 import {
   loadWorkflowCatalog,
@@ -132,6 +139,48 @@ function readDirectoryFiles(root: string): PackageFile[] {
   return files.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
 }
 
+function assertSafePipelineExportSource(
+  name: string,
+  pipelineDir: string,
+  userManifest: string
+): void {
+  let pipelineStats: fs.Stats;
+  try {
+    // lstat is intentional: never follow a pipeline-root junction or symlink.
+    pipelineStats = fs.lstatSync(pipelineDir);
+  } catch {
+    throw new PipelineLibraryError(
+      `Pipeline "${name}" was not found in the user pipeline library (built-in and project pipelines cannot be exported)`,
+      'pipeline_not_found'
+    );
+  }
+  if (pipelineStats.isSymbolicLink() || !pipelineStats.isDirectory()) {
+    throw new PipelineLibraryError(
+      `Pipeline "${name}" export source must be a real directory with a regular non-link pipeline.yaml`,
+      'pipeline_export_source_unsafe',
+      { pipelineDir, manifestPath: userManifest }
+    );
+  }
+
+  let manifestStats: fs.Stats;
+  try {
+    // The root is known-safe before the nested manifest is inspected.
+    manifestStats = fs.lstatSync(userManifest);
+  } catch {
+    throw new PipelineLibraryError(
+      `Pipeline "${name}" was not found in the user pipeline library (built-in and project pipelines cannot be exported)`,
+      'pipeline_not_found'
+    );
+  }
+  if (manifestStats.isSymbolicLink() || !manifestStats.isFile()) {
+    throw new PipelineLibraryError(
+      `Pipeline "${name}" export source must be a real directory with a regular non-link pipeline.yaml`,
+      'pipeline_export_source_unsafe',
+      { pipelineDir, manifestPath: userManifest }
+    );
+  }
+}
+
 export interface PipelineUsage {
   kind: 'requires' | 'decompose';
   consumer: string;
@@ -240,6 +289,7 @@ export function scaffoldPipeline(name: string, outputPath: string): string {
   }
 
   const yaml = [
+    `version: ${PIPELINE_DEFINITION_VERSION}`,
     `name: ${name}`,
     `description: Describe when to use the ${name} pipeline.`,
     'stages:',
@@ -249,8 +299,11 @@ export function scaffoldPipeline(name: string, outputPath: string): string {
     '    requires: []',
     '',
   ].join('\n');
-  parsePipeline(yaml); // fail fast if the scaffold itself is not structurally valid
-  fs.writeFileSync(path.join(target, 'pipeline.yaml'), yaml, { flag: 'wx', mode: 0o600 });
+  const pipeline = parsePipeline(yaml); // fail fast if the scaffold itself is not structurally valid
+  fs.writeFileSync(path.join(target, 'pipeline.yaml'), serializePipelineYaml(pipeline), {
+    flag: 'wx',
+    mode: 0o600,
+  });
   return target;
 }
 
@@ -498,24 +551,44 @@ export function exportPipeline(
   destination: string,
   options: WorkflowRegistryOptions & { projectRoot?: string; overwrite?: boolean } = {}
 ): string {
-  // Resolve `name` through the registry enumeration BEFORE constructing any
-  // filesystem path from it — exactly as `deletePipeline` does — rather than
-  // joining `getUserPipelinesDir()` with a raw, unvalidated `name`. A `name`
-  // containing `../` segments must never reach `path.join`/`readDirectoryFiles`
-  // even though the later package-domain check (`isPortableWorkflowId` in
-  // `validatePackageDomain`) would still refuse to WRITE the resulting
-  // package — the arbitrary-directory READ must not happen in the first place.
-  const projectRoot =
-    options.projectRoot ?? findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
-  const info = listPipelinesWithInfo(projectRoot).find((entry) => entry.name === name);
-  if (!info || info.source !== 'user') {
+  // Registry enumeration intentionally omits invalid manifests. Validate the
+  // identifier before any path construction so an addressable user manifest
+  // can still report its real parse/version error without reopening the
+  // traversal read that the registry-first guard originally prevented.
+  if (!isPortableWorkflowId(name)) {
     throw new PipelineLibraryError(
       `Pipeline "${name}" was not found in the user pipeline library (built-in and project pipelines cannot be exported)`,
       'pipeline_not_found'
     );
   }
+  // Guard the exact user candidate before registry enumeration, because the
+  // registry reads manifests while collecting metadata. Portable-ID validation
+  // above makes this name-derived path safe to construct.
   const pipelineDir = path.join(getUserPipelinesDir(), name);
-  const packageValue = createPipelinePackage([name], [{ name, files: readDirectoryFiles(pipelineDir) }]);
+  const userManifest = path.join(pipelineDir, 'pipeline.yaml');
+  assertSafePipelineExportSource(name, pipelineDir, userManifest);
+
+  const projectRoot =
+    options.projectRoot ?? findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
+  // Preserve project > user > package precedence after the candidate is safe.
+  const info = listPipelinesWithInfo(projectRoot).find((entry) => entry.name === name);
+  if (info && info.source !== 'user') {
+    throw new PipelineLibraryError(
+      `Pipeline "${name}" was not found in the user pipeline library (built-in and project pipelines cannot be exported)`,
+      'pipeline_not_found'
+    );
+  }
+  const pipeline = parsePipeline(fs.readFileSync(userManifest, 'utf8'));
+  const files = readDirectoryFiles(pipelineDir).map((file) => {
+    if (file.path !== 'pipeline.yaml') return file;
+    const content = serializePipelineYaml(pipeline);
+    return {
+      ...file,
+      content,
+      sha256: computeFileDigest(content),
+    };
+  });
+  const packageValue = createPipelinePackage([name], [{ name, files }]);
   const bytes = encodePackage(packageValue);
   writeFileAtomically(destination, bytes, options.overwrite === true);
   return path.resolve(destination);
@@ -680,7 +753,10 @@ export async function savePipeline(
     const targetDir = path.join(getUserPipelinesDir(), name);
     fs.mkdirSync(targetDir, { recursive: true, mode: 0o700 });
     const targetFile = path.join(targetDir, 'pipeline.yaml');
-    fs.writeFileSync(targetFile, stringifyYaml(pipeline), { encoding: 'utf8', mode: 0o600 });
+    fs.writeFileSync(targetFile, serializePipelineYaml(pipeline), {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
     return { name, path: targetFile, created: !info };
   });
 }

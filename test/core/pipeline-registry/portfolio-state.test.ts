@@ -57,6 +57,20 @@ describe('portfolio run-state', () => {
       );
       expect(s.children[0].dependsOn).toEqual([]);
       expect(s.children[0].status).toBe('pending');
+      expect(s.delivery).toEqual({ status: 'pending' });
+    });
+
+    it('migrates legacy delivery metadata without a status to pending', () => {
+      const state = parsePortfolioState(JSON.stringify({
+        parent: 'p',
+        children: [],
+        delivery: { mode: 'local', note: 'deliver once at parent level' },
+      }));
+      expect(state.delivery).toEqual({
+        status: 'pending',
+        mode: 'local',
+        note: 'deliver once at parent level',
+      });
     });
 
     it('keeps unknown passthrough fields', () => {
@@ -94,131 +108,58 @@ describe('portfolio run-state', () => {
       expect(readPortfolioState(dir)).toBeNull();
     });
 
+    it('readPortfolioStateDetailed distinguishes invalid content from absence', () => {
+      expect(readPortfolioStateDetailed(dir)).toEqual({ kind: 'absent' });
+      fs.writeFileSync(portfolioStatePath(dir), '{ broken', 'utf-8');
+      const result = readPortfolioStateDetailed(dir);
+      expect(result.kind).toBe('invalid');
+      if (result.kind === 'invalid') {
+        expect(result.reason).toContain('JSON');
+      }
+    });
+
+    it('migrates legacy prerequisites to canonical dependsOn before computing the frontier', () => {
+      const state = parsePortfolioState(JSON.stringify({
+        parent: 'p',
+        children: [
+          { id: 'D', pipeline: 'small-feature', prerequisites: [], status: 'done' },
+          { id: 'E', pipeline: 'small-feature', prerequisites: ['D'], status: 'pending' },
+          { id: 'F', pipeline: 'small-feature', prerequisites: ['E'], status: 'pending' },
+        ],
+      }));
+      expect(state.children.map(child => child.dependsOn)).toEqual([[], ['D'], ['E']]);
+      expect(runnableChildren(state)).toEqual(['E']);
+      expect(state.children[1]).not.toHaveProperty('prerequisites');
+    });
+
+    it('rejects conflicting canonical and legacy dependency fields', () => {
+      expect(() => parsePortfolioState(JSON.stringify({
+        parent: 'p',
+        children: [{
+          id: 'E',
+          pipeline: 'small-feature',
+          dependsOn: ['D'],
+          prerequisites: ['C'],
+        }],
+      }))).toThrow(/conflicting dependsOn and prerequisites/);
+    });
+
     it('throws on schema mismatch (missing parent)', () => {
       expect(() => parsePortfolioState('{"children":[]}')).toThrow(PortfolioStateValidationError);
     });
 
-    // Previously this threw PortfolioStateValidationError. It no longer does:
-    // an unrecognized child status normalizes to non-terminal `unknown` rather
-    // than making the whole portfolio unreadable. See the normalization
-    // describe block below for the full contract.
-    it('does not throw on an unrecognized child status (normalizes instead)', () => {
-      const s = parsePortfolioState(
-        '{"parent":"p","children":[{"id":"c","pipeline":"x","status":"nope"}]}'
+    it('preserves an unrecognized child status in statusRaw (stabilization: do not crash)', () => {
+      const state = parsePortfolioState('{"parent":"p","children":[{"id":"c","pipeline":"x","status":"nope"}]}');
+      expect(state.children[0].status).toBe('pending');
+      expect(state.children[0].statusRaw).toBe('nope');
+    });
+
+    it('preserves delegated in statusRaw rather than rejecting it', () => {
+      const state = parsePortfolioState(
+        '{"parent":"p","children":[{"id":"c","pipeline":"x","status":"delegated"}]}'
       );
-      expect(s.children[0].status).toBe('unknown');
-      expect(s.children[0].statusRaw).toBe('nope');
-    });
-  });
-
-  // The child progress vocabulary and its read tolerance. Ordering matters:
-  // tolerance means vocabulary drift degrades to "not done" (safe), never to
-  // "portfolio invisible" (unsafe — that is what let a paused parent fall
-  // through to a stage-based resume that offered `ship`).
-  describe('child progress vocabulary', () => {
-    it('accepts `proposed` and counts it unfinished', () => {
-      const s = parsePortfolioState(
-        JSON.stringify({
-          parent: 'p',
-          children: [
-            { id: 'A', pipeline: 'small-feature', dependsOn: [], status: 'done' },
-            { id: 'B', pipeline: 'small-feature', dependsOn: [], status: 'proposed' },
-          ],
-        })
-      );
-      expect(s.children[1].status).toBe('proposed');
-      expect(isPortfolioComplete(s)).toBe(false);
-      // `proposed` is not `pending`: the proposal is done, so it is not a
-      // fresh start, and it is not offered as a runnable root.
-      expect(runnableChildren(s)).toEqual([]);
-    });
-
-    it('preserves an unrecognized status under statusRaw and treats it as unfinished', () => {
-      const s = parsePortfolioState(
-        JSON.stringify({
-          parent: 'p',
-          children: [{ id: 'F', pipeline: 'small-feature', dependsOn: [], status: 'propose-done' }],
-        })
-      );
-      expect(s.children[0].status).toBe('unknown');
-      expect(s.children[0].statusRaw).toBe('propose-done');
-      expect(isPortfolioComplete(s)).toBe(false);
-    });
-
-    it('an unrecognized status cannot complete a portfolio whose other children are done', () => {
-      const s = parsePortfolioState(
-        JSON.stringify({
-          parent: 'p',
-          children: [
-            { id: 'A', pipeline: 'small-feature', dependsOn: [], status: 'done' },
-            { id: 'B', pipeline: 'small-feature', dependsOn: [], status: 'skipped' },
-            { id: 'C', pipeline: 'small-feature', dependsOn: [], status: 'who-knows' },
-          ],
-        })
-      );
-      expect(isPortfolioComplete(s)).toBe(false);
-    });
-
-    it('does not disturb a recognized status (no statusRaw on canonical records)', () => {
-      const s = parsePortfolioState(
-        JSON.stringify({
-          parent: 'p',
-          children: [{ id: 'A', pipeline: 'small-feature', dependsOn: [], status: 'in_progress' }],
-        })
-      );
-      expect(s.children[0].status).toBe('in_progress');
-      expect(s.children[0].statusRaw).toBeUndefined();
-    });
-
-    it('does not satisfy a dependent through an unrecognized prerequisite', () => {
-      const s = parsePortfolioState(
-        JSON.stringify({
-          parent: 'p',
-          children: [
-            { id: 'A', pipeline: 'small-feature', dependsOn: [], status: 'mystery' },
-            { id: 'B', pipeline: 'small-feature', dependsOn: ['A'], status: 'pending' },
-          ],
-        })
-      );
-      expect(runnableChildren(s)).toEqual([]);
-    });
-  });
-
-  // readPortfolioStateDetailed: resume needs "present but unreadable" to be
-  // distinguishable from "never split", because the lenient reader's null
-  // makes the two look identical.
-  describe('readPortfolioStateDetailed', () => {
-    it('reports absent when no file exists', () => {
-      expect(readPortfolioStateDetailed(dir)).toEqual({ kind: 'absent' });
-    });
-
-    it('reports ok with the parsed state when the file is readable', () => {
-      writePortfolioState(dir, {
-        parent: 'p',
-        children: [{ id: 'A', pipeline: 'small-feature', dependsOn: [], status: 'pending' }],
-      });
-      const read = readPortfolioStateDetailed(dir);
-      expect(read.kind).toBe('ok');
-      if (read.kind === 'ok') expect(read.state.parent).toBe('p');
-    });
-
-    it('reports invalid with a reason for malformed JSON', () => {
-      fs.writeFileSync(portfolioStatePath(dir), '{ broken', 'utf-8');
-      const read = readPortfolioStateDetailed(dir);
-      expect(read.kind).toBe('invalid');
-      if (read.kind === 'invalid') expect(read.reason.length).toBeGreaterThan(0);
-    });
-
-    it('reports invalid with a reason for a schema mismatch', () => {
-      fs.writeFileSync(portfolioStatePath(dir), JSON.stringify({ children: [] }), 'utf-8');
-      const read = readPortfolioStateDetailed(dir);
-      expect(read.kind).toBe('invalid');
-      if (read.kind === 'invalid') expect(read.reason).toContain('parent');
-    });
-
-    it('leaves readPortfolioState lenient (still null on the same broken file)', () => {
-      fs.writeFileSync(portfolioStatePath(dir), '{ broken', 'utf-8');
-      expect(readPortfolioState(dir)).toBeNull();
+      expect(state.children[0].status).toBe('pending');
+      expect(state.children[0].statusRaw).toBe('delegated');
     });
   });
 
@@ -378,25 +319,16 @@ describe('portfolio run-state', () => {
   });
 
   describe('isPortfolioComplete', () => {
-    // A portfolio with no children has nothing that finished, so it cannot be
-    // complete. `[].every(...)` is vacuously true, which would otherwise report
-    // a record written before its children were appended as a finished
-    // portfolio — the same "reported done with no evidence" failure this module
-    // exists to prevent, reached by a different route.
-    it('is false for a record with no children (not vacuously true)', () => {
-      expect(isPortfolioComplete({ parent: 'p', children: [] })).toBe(false);
-      // Including the schema default, which is where the empty array comes from.
-      expect(isPortfolioComplete(parsePortfolioState('{"parent":"p"}'))).toBe(false);
-    });
-
-    it('is true only when every child is done or skipped', () => {
-      const s: PortfolioState = {
+    it('requires both terminal children and terminal portfolio delivery', () => {
+      const s = parsePortfolioState(JSON.stringify({
         parent: 'p',
         children: [
           { id: 'A', pipeline: 'small-feature', dependsOn: [], status: 'done' },
           { id: 'B', pipeline: 'small-feature', dependsOn: ['A'], status: 'skipped' },
         ],
-      };
+      }));
+      expect(isPortfolioComplete(s)).toBe(false);
+      s.delivery.status = 'done';
       expect(isPortfolioComplete(s)).toBe(true);
       s.children[1].status = 'pending';
       expect(isPortfolioComplete(s)).toBe(false);

@@ -5,9 +5,9 @@
  * pre-flight + classification, selects ONE backend goal-loop pipeline
  * (explicit override wins), then drives it via the SAME orchestration playbook.
  * The three backend pipelines are homogeneous (one gate type each):
- *  - goal-loop-measure  — measure gate, code iterate, ship -> archive
- *  - goal-loop-evaluate — evaluate gate, code iterate, ship -> archive
- *  - goal-loop-research — evaluate gate, prose/research iterate, report tail
+ *  - goal-loop-measure  — measure gate, code iterate, ship -> retain -> archive
+ *  - goal-loop-evaluate — evaluate gate, code iterate, ship -> retain -> archive
+ *  - goal-loop-research — evaluate gate, prose/research iterate, report-only tail
  * This mirrors how \`rasen-auto\` classifies among full/small/bug-fix today; it
  * does NOT reimplement orchestration (it embeds the shared playbook).
  */
@@ -44,9 +44,9 @@ Choose the pipeline in this order:
 DISPLAY the chosen pipeline and let the user change it before proceeding.
 
 Built-in goal-loop pipelines (see \`rasen pipeline list --json\`):
-- **goal-loop-measure** — define-goal -> iterate (measure gate) -> ship -> archive  _(quantifiable targets)_
-- **goal-loop-evaluate** — define-goal -> iterate (evaluate gate) -> ship -> archive  _(rubric/quality)_
-- **goal-loop-research** — define-goal -> iterate (evaluate gate) -> report  _(research/writing; prose work product, earlier relay)_
+- **goal-loop-measure** — define-goal -> iterate (measure gate) -> ship -> retain -> archive  _(quantifiable targets)_
+- **goal-loop-evaluate** — define-goal -> iterate (evaluate gate) -> ship -> retain -> archive  _(rubric/quality)_
+- **goal-loop-research** — define-goal -> iterate (evaluate gate) -> report only  _(research/writing; prose work product, earlier relay; no ship, retain, or archive)_
 
 ## 2. Fetch the selected pipeline's stage DAG
 
@@ -71,7 +71,7 @@ ${GOAL_ORCHESTRATION_PLAYBOOK}
 
 ## Resume
 
-On invocation for an existing change, read \`goal-run.json\` (the authoritative loop spine) and run \`rasen pipeline resume <change> --json\` to find the next incomplete stage. The goal-loop resume protocol (playbook Step L): last record satisfied -> tail; last record not-passed -> resume at lastRound+1; no record -> round 1.
+On invocation for an existing change, read \`goal-run.json\` (the authoritative loop spine) and run \`rasen pipeline resume <change> --json\` to find the next incomplete stage. The goal-loop resume protocol (playbook Step L): last record satisfied -> the declared tail (\`ship -> retain -> archive\` for measure/evaluate; report only for research); last record not-passed -> resume at lastRound+1; no record -> round 1.
 
 ## Output Format
 
@@ -83,7 +83,10 @@ Pipeline: goal-loop-<variant>      Gate: measure | evaluate      Tier: A | B | C
 ### Loop
 - [x] define-goal  — goal-plan.md (gate: <type>)
 - [ ] iterate      — round 2/5, last score 87 (threshold 90)
-- [ ] ship | report
+
+### Tail (show only the selected pipeline's tail)
+- [ ] ship -> retain -> archive  — measure/evaluate
+- [ ] report only                — research; no ship, retain, or archive
 
 ### Outcome
 satisfied | maxRounds-exhausted | in-progress

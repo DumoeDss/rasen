@@ -20,30 +20,25 @@ import {
   type FrozenKnowledgeContext,
 } from '../learned-skills/index.js';
 
-/** The full-feature retention stage id and the retired legacy retro stage id. */
+/** Canonical retention stage id and the retired full-feature retro stage id. */
 export const RETAIN_STAGE_ID = 'retain';
 const LEGACY_RETRO_STAGE_ID = 'retro';
+const ARCHIVE_STAGE_ID = 'archive';
+const LEGACY_GOAL_PIPELINE_NAMES = new Set([
+  'goal-loop-measure',
+  'goal-loop-evaluate',
+]);
+const LEGACY_GOAL_COMPLETED_REASON = 'legacy-completed';
 
 export const RUN_STATE_FILENAME = 'auto-run.json';
 
-/**
- * Per-stage status. `skipped` and `delegated` are deliberately distinct:
- *
- *  - `skipped` — deliberately not needed. It counts as SETTLED, exactly as it
- *    always has; records written before `delegated` existed keep this meaning.
- *  - `delegated` — handed to this change's children. It counts as OUTSTANDING,
- *    so a parent that delegated its work is never mistaken for one that
- *    finished it. Before this existed, `skipped` had to carry both meanings,
- *    and a decomposed parent whose stages were all "skipped" reported nothing
- *    left but delivery.
- */
 export const StageStatusSchema = z.enum([
   'pending',
   'in_progress',
   'done',
   'skipped',
-  'delegated',
   'escalated',
+  'delegated',
 ]);
 export type StageStatus = z.infer<typeof StageStatusSchema>;
 
@@ -72,6 +67,7 @@ export type StageStatus = z.infer<typeof StageStatusSchema>;
  */
 export const RunStateWorkerSchema = z.object({
   runtime: AgentRuntimeSchema.optional(),
+  dispatchMode: z.enum(['native', 'exec-bridge', 'legacy-fallback']).optional(),
   role: z.string().optional(),
   agentId: z.string().optional(),
   transcript: z.string().optional(),
@@ -91,6 +87,41 @@ export const RunStateWorkerSchema = z.object({
   updatedAt: z.string().optional(),
 }).passthrough();
 export type RunStateWorker = z.infer<typeof RunStateWorkerSchema>;
+export type RunStateDispatchMode = NonNullable<RunStateWorker['dispatchMode']>;
+
+export interface WorkerDispatchInference {
+  dispatchMode?: RunStateDispatchMode;
+  inferred: boolean;
+  warning?: string;
+}
+
+/**
+ * Resolve lifecycle mechanics for archived worker records without inventing a
+ * handle. A Codex thread is the verified exec-bridge shape; agent handles are
+ * native. Transcript-only Codex records remain ambiguous and fall back to
+ * artifact/transcript reconstruction with a warning.
+ */
+export function inferWorkerDispatchMode(
+  worker: RunStateWorker
+): WorkerDispatchInference {
+  if (worker.dispatchMode) {
+    return { dispatchMode: worker.dispatchMode, inferred: false };
+  }
+  if (worker.runtime === 'codex' && worker.threadId) {
+    return { dispatchMode: 'exec-bridge', inferred: true };
+  }
+  if (worker.agentId) {
+    return { dispatchMode: 'native', inferred: true };
+  }
+  if (worker.runtime === 'claude' && worker.transcript) {
+    return { dispatchMode: 'native', inferred: true };
+  }
+  return {
+    inferred: true,
+    warning:
+      'Worker dispatch mode is ambiguous; use the recorded transcript/artifacts for conservative reconstruction.',
+  };
+}
 
 /**
  * A single mid-stage handoff: an exhausted worker distilled its state to a
@@ -335,6 +366,69 @@ function migrateLegacyRetroStage(
   if (obj.retention === undefined) obj.retention = 'report';
 }
 
+function stageIsComplete(stages: Record<string, unknown>, stageId: string): boolean {
+  const stage = stages[stageId];
+  if (typeof stage !== 'object' || stage === null || Array.isArray(stage)) return false;
+  const status = (stage as Record<string, unknown>).status;
+  return status === 'done' || status === 'skipped';
+}
+
+/**
+ * Preserves completion for pre-retain goal runs that already archived. Runs
+ * still awaiting archive need no mutation: with `ship` done, the upgraded DAG
+ * naturally exposes `retain` as their next frontier. This migration is bounded
+ * to the two changed built-in pipelines and exact stage identities; it never
+ * infers completion from retention configuration or learned-skill state.
+ */
+function migrateLegacyCompletedGoalTail(
+  obj: Record<string, unknown>,
+  stages: Record<string, unknown>
+): void {
+  if (
+    typeof obj.pipeline !== 'string' ||
+    !LEGACY_GOAL_PIPELINE_NAMES.has(obj.pipeline) ||
+    RETAIN_STAGE_ID in stages ||
+    !stageIsComplete(stages, ARCHIVE_STAGE_ID)
+  ) {
+    return;
+  }
+
+  stages[RETAIN_STAGE_ID] = {
+    status: 'skipped',
+    reason: LEGACY_GOAL_COMPLETED_REASON,
+  };
+}
+
+/**
+ * Migrates the older top-level `completed[]` form without losing its existing
+ * frontier. Once archive is complete, materialize equivalent stage records and
+ * the synthetic skipped retain record so `completedStages()` continues to see
+ * the whole run as complete and the legacy-completed reason remains auditable.
+ */
+function migrateLegacyCompletedGoalTailFromCompleted(
+  obj: Record<string, unknown>
+): void {
+  if (
+    typeof obj.pipeline !== 'string' ||
+    !LEGACY_GOAL_PIPELINE_NAMES.has(obj.pipeline) ||
+    !Array.isArray(obj.completed)
+  ) {
+    return;
+  }
+
+  const completed = obj.completed.filter((stageId): stageId is string => typeof stageId === 'string');
+  if (!completed.includes(ARCHIVE_STAGE_ID) || completed.includes(RETAIN_STAGE_ID)) return;
+
+  const stages: Record<string, unknown> = Object.fromEntries(
+    completed.map((stageId) => [stageId, { status: 'done' }])
+  );
+  stages[RETAIN_STAGE_ID] = {
+    status: 'skipped',
+    reason: LEGACY_GOAL_COMPLETED_REASON,
+  };
+  obj.stages = stages;
+}
+
 /** Normalize the raw run-state JSON's per-stage `worker` records before validation. */
 function normalizeRunStateJson(json: unknown): unknown {
   if (typeof json !== 'object' || json === null || Array.isArray(json)) return json;
@@ -350,7 +444,10 @@ function normalizeRunStateJson(json: unknown): unknown {
       stages[id] = s;
     }
     migrateLegacyRetroStage(obj, stages);
+    migrateLegacyCompletedGoalTail(obj, stages);
     obj.stages = stages;
+  } else if (obj.stages === undefined) {
+    migrateLegacyCompletedGoalTailFromCompleted(obj);
   }
   return obj;
 }
@@ -448,18 +545,45 @@ export function writeRunState(changeDir: string, state: RunState): void {
   fs.writeFileSync(runStatePath(changeDir), `${JSON.stringify(validated, null, 2)}\n`, 'utf-8');
 }
 
+export interface RunStatePipelineSeed {
+  name: string;
+  stages: readonly { id: string }[];
+}
+
+/**
+ * Initialize the durable state for a newly-created change assigned to a
+ * pipeline. This is the single writer seam used by portfolio child creation,
+ * so every child is resumable before its first stage starts.
+ */
+export function initializeRunState(
+  changeDir: string,
+  pipeline: RunStatePipelineSeed
+): { path: string; state: RunState } {
+  const destination = runStatePath(changeDir);
+  if (fs.existsSync(destination)) {
+    throw new Error(`Run-state already exists at ${destination}`);
+  }
+  const state: RunState = {
+    pipeline: pipeline.name,
+    stages: Object.fromEntries(
+      pipeline.stages.map(stage => [stage.id, { status: 'pending' as const }])
+    ),
+  };
+  writeRunState(changeDir, state);
+  return { path: destination, state };
+}
+
 /**
  * Stages that count as completed for resume purposes: when `stages` is present,
- * those with status done|skipped; otherwise the `completed` convenience array.
- *
- * `delegated` is NOT completed — work handed to children is outstanding until
- * the children finish it, so a decomposed parent's stage list can never on its
- * own leave delivery as the only thing remaining.
+ * those with status done|skipped|delegated; otherwise the `completed`
+ * convenience array. `delegated` is terminal at the parent stage because the
+ * portfolio children own that work.
  */
 export function completedStages(state: RunState): string[] {
   if (state.stages) {
     return Object.entries(state.stages)
-      .filter(([, s]) => s.status === 'done' || s.status === 'skipped')
+      .filter(([, s]) =>
+        s.status === 'done' || s.status === 'skipped' || s.status === 'delegated')
       .map(([id]) => id);
   }
   return state.completed ?? [];
@@ -484,10 +608,7 @@ export function frozenKnowledgeContext(
 
 /**
  * The execution binding this run was frozen against, or undefined when it
- * recorded none (a version 1 record, written before this existed). Resolving
- * that identity to a checkout on THIS machine is
- * `resolveFrozenExecutionBinding` in `execution-binding.ts` — the frozen
- * record is the authority for WHICH project and deliberately carries no root.
+ * recorded none (a version 1 record, written before this existed).
  */
 export function frozenExecutionBinding(
   state: RunState

@@ -25,6 +25,9 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
     putKey: vi.fn(),
     deleteKey: vi.fn(),
     mutatePipeline: vi.fn(),
+    listLocalPaths: vi.fn(),
+    resolveLocalPath: vi.fn(),
+    chooseLocalPath: vi.fn(),
   };
 });
 
@@ -107,6 +110,19 @@ describe('PipelinesPage', () => {
     });
     (client.putKey as any).mockResolvedValue({ entry: pipelinesConfigFixture.entries[3], store: null });
     (client.deleteKey as any).mockResolvedValue({ entry: pipelinesConfigFixture.entries[0], store: null });
+    (client.listLocalPaths as any).mockResolvedValue({
+      path: '/home/user',
+      parent: null,
+      separator: '/',
+      home: true,
+      entries: [{ name: 'new-pipe.rasenpkg', isDir: false, isGitRepo: false }],
+    });
+    (client.resolveLocalPath as any).mockImplementation(async (candidate: string) => ({
+      path: candidate,
+      kind: candidate.endsWith('.rasenpkg') ? 'file' : 'directory',
+      separator: '/',
+    }));
+    (client.chooseLocalPath as any).mockResolvedValue({ status: 'unavailable', reason: 'headless' });
   });
 
   afterEach(() => {
@@ -286,14 +302,46 @@ describe('PipelinesPage', () => {
     await mount(container);
     await clickAndFlush(container.querySelector('[data-testid="pipeline-import"]'));
     await act(async () => {
-      const input = container.querySelector('[data-testid="pipeline-import-path"]') as HTMLInputElement;
-      input.value = '/pkgs/new-pipe';
+      const input = container.querySelector('.local-path-picker__path-input') as HTMLInputElement;
+      input.value = '/pkgs/new-pipe.rasenpkg';
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await flushMicrotasks();
     });
     await clickAndFlush(container.querySelector('[data-testid="pipeline-import-submit"]'));
-    expect(client.mutatePipeline).toHaveBeenCalledWith({ op: 'import', path: '/pkgs/new-pipe', force: false });
+    expect(client.mutatePipeline).toHaveBeenCalledWith({ op: 'import', path: '/pkgs/new-pipe.rasenpkg', force: false });
     expect(container.querySelector('[data-testid="pipeline-import-result"]')!.textContent).toContain('new-pipe');
+  });
+
+  it('uses a selected Windows directory for export preview and submission', async () => {
+    (client.listLocalPaths as any).mockResolvedValue({
+      path: 'D:\\packages',
+      parent: null,
+      separator: '\\',
+      home: true,
+      entries: [],
+    });
+    (client.resolveLocalPath as any).mockResolvedValue({
+      path: 'D:\\packages',
+      kind: 'directory',
+      separator: '\\',
+    });
+    (client.mutatePipeline as any).mockResolvedValue({
+      pipeline: { path: 'D:\\packages\\my-flow.rasenpkg' },
+    });
+    await mount(container);
+    await clickAndFlush(
+      stageSection(container, 'my-flow').querySelector('[data-testid="pipeline-export"]')
+    );
+    expect(
+      container.querySelector('[data-testid="pipeline-export-destination"]')?.textContent
+    ).toContain('D:\\packages\\my-flow.rasenpkg');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-export-submit"]'));
+    expect(client.mutatePipeline).toHaveBeenCalledWith({
+      op: 'export',
+      name: 'my-flow',
+      path: 'D:\\packages\\my-flow.rasenpkg',
+      force: false,
+    });
   });
 
   it('surfaces a guarded-delete refusal verbatim then deletes only after an explicit force confirmation', async () => {
@@ -347,194 +395,73 @@ describe('PipelinesPage', () => {
     expect(expanded.querySelector('[data-testid="stage-gate-select"]')).not.toBeNull();
   });
 
-  it('keeps Defaults model-only and moves legacy thresholds plus stage handoff under Advanced Overrides', async () => {
+  it('keeps legacy and scoped stage handoff editors out of Pipelines while retaining Configure controls', async () => {
     await mount(container);
     const defaults = container.querySelector('[data-testid="pipelines-defaults"]')!;
     const headings = [...defaults.querySelectorAll('[data-testid="defaults-matrix"] th')]
       .map((heading) => heading.textContent);
     expect(headings).toEqual(['Role', 'Model', 'Default', 'Planner']);
     expect(defaults.querySelector('[data-key="handoff.threshold"]')).toBeNull();
-
-    const advanced = container.querySelector(
-      '[data-testid="pipelines-advanced"]'
-    ) as HTMLDetailsElement;
-    expect(advanced.open).toBe(false);
-    expect(advanced.querySelector('[data-key="handoff.threshold"]')).not.toBeNull();
-    expect(advanced.querySelector('[data-key="handoff.roles.reviewer"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="pipelines-advanced"]')).toBeNull();
 
     await expandConfig(container, 'small-feature');
     const section = stageSection(container, 'small-feature');
-    expect(
-      section.querySelector('[data-testid="pipeline-stages"] [data-testid="stage-handoff"]')
-    ).toBeNull();
-    expect(
-      section.querySelector(
-        '[data-testid="pipeline-stage-advanced"] [data-testid="stage-handoff"]'
-      )
-    ).not.toBeNull();
+    expect(section.querySelector('[data-testid="pipeline-stage-advanced"]')).toBeNull();
+    expect(section.querySelector('[data-testid="stage-handoff"]')).toBeNull();
+    expect(section.querySelector('[data-testid="stage-gate"]')).not.toBeNull();
+    expect(section.querySelector('[data-testid="stage-model"]')).not.toBeNull();
+    expect(section.querySelector('[data-testid="role-runtime"]')).not.toBeNull();
   });
 
-  it('keeps beat timing in Defaults and runtime/context lifecycle gates separate in global Advanced Overrides', async () => {
+  it('keeps every lifecycle key together in Defaults and respects global-only scopes', async () => {
     await mount(container);
     expect(container.querySelector('[data-testid="pipelines-defaults-keepalive"]')).not.toBeNull();
-    expect(
-      container.querySelector(
-        '[data-testid="pipelines-advanced"] [data-key="keepalive.runtimes.claude"]'
-      )
-    ).toBeNull();
+    expect(container.querySelector('[data-testid="pipelines-keepalive-lifecycle"]')).toBeNull();
 
     const globalButton = [...container.querySelectorAll('[data-testid="pipelines-mode"] button')]
       .find((button) => button.textContent === 'Global')!;
     await clickAndFlush(globalButton);
 
     expect(container.querySelector('[data-testid="pipelines-defaults-keepalive"]')).not.toBeNull();
-    const advanced = container.querySelector('[data-testid="pipelines-advanced"]')!;
-    expect(advanced.querySelector('[data-key="keepalive.runtimes.claude"]')).not.toBeNull();
-    expect(advanced.querySelector('[data-key="keepalive.contextFloor"]')).not.toBeNull();
-    expect(advanced.textContent).toContain('lifecycle and cache behavior');
-    expect(
-      advanced.querySelector('[data-key="thresholds.bindings.claude"]')
-    ).toBeNull();
+    const lifecycle = container.querySelector('[data-testid="pipelines-keepalive-lifecycle"]')!;
+    expect(lifecycle.querySelector('[data-key="keepalive.runtimes.claude"]')).not.toBeNull();
+    expect(lifecycle.querySelector('[data-key="keepalive.runtimes.codex"]')).not.toBeNull();
+    expect(lifecycle.querySelector('[data-key="keepalive.contextFloor"]')).not.toBeNull();
+    expect(lifecycle.textContent).toContain('lifecycle and cache behavior');
+    expect(lifecycle.querySelector('[data-key="handoff.threshold"]')).toBeNull();
   });
 
-  it('localizes open global and per-pipeline Advanced threshold controls across live locale switches', async () => {
-    const localeFixture = {
-      ...pipelinesFixture,
-      pipelines: pipelinesFixture.pipelines.map((pipeline) =>
-        pipeline.name !== 'small-feature'
-          ? pipeline
-          : {
-              ...pipeline,
-              stages: pipeline.stages.map((stage) =>
-                stage.id !== 'implement'
-                  ? stage
-                  : {
-                      ...stage,
-                      effectiveHandoff: {
-                        value: 0.6,
-                        source: 'stage-override-project',
-                      },
-                    }
-              ),
-            }
-      ),
-    };
-    (client.listPipelines as any).mockResolvedValue(localeFixture);
+  it('re-localizes the visible Keepalive lifecycle rows without remounting', async () => {
     await mount(container);
     const globalButton = [...container.querySelectorAll('[data-testid="pipelines-mode"] button')]
       .find((button) => button.textContent === 'Global')!;
     await clickAndFlush(globalButton);
 
-    const globalAdvanced = container.querySelector(
-      '[data-testid="pipelines-advanced"]'
-    ) as HTMLDetailsElement;
-    await clickAndFlush(globalAdvanced.querySelector('summary'));
-    await expandConfig(container, 'small-feature');
-    const pipelineAdvanced = stageSection(container, 'small-feature').querySelector(
-      '[data-testid="pipeline-stage-advanced"]'
-    ) as HTMLDetailsElement;
-    await clickAndFlush(pipelineAdvanced.querySelector('summary'));
-
-    const handoff = stageControl(
-      container,
-      'stage-handoff',
-      'small-feature',
-      'implement'
-    )!;
-    expect(globalAdvanced.open).toBe(true);
-    expect(pipelineAdvanced.open).toBe(true);
-    expect(globalAdvanced.querySelector('summary')!.textContent).toContain(
-      'Advanced overrides'
-    );
-    expect(pipelineAdvanced.querySelector('summary')!.textContent).toContain(
-      'Advanced stage thresholds'
-    );
-    const englishDescriptions = [
-      'Context-handoff threshold at which agents should hand off',
-      'Context-handoff threshold for Reviewer workers',
-      'Allow keepalive beats under the Claude Code runtime',
-      'Minimum context tokens required for keepalive parking',
-    ];
-    const rawCatalogDescriptions = [
-      'Context-handoff threshold at which agents should hand off',
-      'Context-handoff threshold for reviewer workers',
-      'Allow keepalive beats under the Claude Code runtime',
-      'Minimum context tokens required for keepalive parking',
-    ];
-    for (const description of englishDescriptions) {
-      expect(globalAdvanced.textContent).toContain(description);
-    }
-    const englishAdvancedText =
-      `${globalAdvanced.textContent ?? ''} ${pipelineAdvanced.textContent ?? ''}`;
-    for (const literal of ['Handoff', 'Fraction', 'Remaining tokens', 'Inherit']) {
-      expect(englishAdvancedText).toContain(literal);
-    }
+    const lifecycle = container.querySelector('[data-testid="pipelines-keepalive-lifecycle"]')!;
+    expect(lifecycle.textContent).toContain('Claude keepalive');
+    expect(lifecycle.textContent).toContain('Keepalive context floor');
+    expect(lifecycle.textContent).toContain('Allow keepalive beats under the Claude Code runtime');
+    expect(lifecycle.textContent).toContain('Minimum context tokens required for keepalive parking');
 
     await act(async () => {
       setLocale('zh-cn');
       await flushMicrotasks();
     });
-    expect(globalAdvanced.open).toBe(true);
-    expect(pipelineAdvanced.open).toBe(true);
-    expect(globalAdvanced.querySelector('summary')!.textContent).toContain('高级覆盖');
-    expect(pipelineAdvanced.querySelector('summary')!.textContent).toContain(
-      '高级阶段阈值'
-    );
-    expect(globalAdvanced.textContent).toContain('智能体应发起交接的上下文阈值');
-    expect(globalAdvanced.textContent).toContain('审查者 worker 的上下文交接阈值');
-    expect(globalAdvanced.textContent).toContain(
-      '允许 Claude Code 运行时使用 keepalive 心跳'
-    );
-    expect(globalAdvanced.textContent).toContain(
-      '允许 keepalive 停驻所需的最少上下文 token 数'
-    );
-    for (const literal of ['交接', '比例', '剩余 token', '继承']) {
-      expect(handoff.textContent).toContain(literal);
-    }
-    const chineseAdvancedText =
-      `${globalAdvanced.textContent ?? ''} ${pipelineAdvanced.textContent ?? ''}`;
-    for (const description of rawCatalogDescriptions) {
-      expect(chineseAdvancedText).not.toContain(description);
-    }
-    for (const literal of ['Handoff', 'Fraction', 'Remaining tokens', 'Inherit']) {
-      expect(chineseAdvancedText).not.toContain(literal);
-    }
+    expect(container.querySelector('[data-testid="pipelines-keepalive-lifecycle"]')).toBe(lifecycle);
+    expect(lifecycle.textContent).toContain('Claude 保活');
+    expect(lifecycle.textContent).toContain('保活上下文下限');
+    expect(lifecycle.textContent).toContain('允许 Claude Code 运行时使用 keepalive 心跳');
+    expect(lifecycle.textContent).toContain('允许 keepalive 停驻所需的最少上下文 token 数');
 
     await act(async () => {
       setLocale('ja');
       await flushMicrotasks();
     });
-    expect(globalAdvanced.open).toBe(true);
-    expect(pipelineAdvanced.open).toBe(true);
-    expect(globalAdvanced.querySelector('summary')!.textContent).toContain(
-      '高度な上書き'
-    );
-    expect(pipelineAdvanced.querySelector('summary')!.textContent).toContain(
-      '高度なステージしきい値'
-    );
-    expect(globalAdvanced.textContent).toContain(
-      'エージェントが引き継ぐコンテキストしきい値'
-    );
-    expect(globalAdvanced.textContent).toContain(
-      'レビュー担当 worker のコンテキスト引き継ぎしきい値'
-    );
-    expect(globalAdvanced.textContent).toContain(
-      'Claude Code ランタイムで keepalive ビートを許可'
-    );
-    expect(globalAdvanced.textContent).toContain(
-      'keepalive 待機に必要な最小コンテキストトークン数'
-    );
-    for (const literal of ['引き継ぎ', '割合', '残りトークン', '継承']) {
-      expect(handoff.textContent).toContain(literal);
-    }
-    const japaneseAdvancedText =
-      `${globalAdvanced.textContent ?? ''} ${pipelineAdvanced.textContent ?? ''}`;
-    for (const description of rawCatalogDescriptions) {
-      expect(japaneseAdvancedText).not.toContain(description);
-    }
-    for (const literal of ['Handoff', 'Fraction', 'Remaining tokens', 'Inherit']) {
-      expect(japaneseAdvancedText).not.toContain(literal);
-    }
+    expect(container.querySelector('[data-testid="pipelines-keepalive-lifecycle"]')).toBe(lifecycle);
+    expect(lifecycle.textContent).toContain('Claude keepalive');
+    expect(lifecycle.textContent).toContain('keepalive コンテキスト下限');
+    expect(lifecycle.textContent).toContain('Claude Code ランタイムで keepalive ビートを許可');
+    expect(lifecycle.textContent).toContain('keepalive 待機に必要な最小コンテキストトークン数');
   });
 
   it('rejects a malformed name and, once valid, navigates to the graph route in edit mode (pipeline-canvas-edit)', async () => {

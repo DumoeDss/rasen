@@ -23,6 +23,8 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
     validateWorkflow: vi.fn(),
     mutateWorkflow: vi.fn(),
     listLocalPaths: vi.fn(),
+    resolveLocalPath: vi.fn(),
+    chooseLocalPath: vi.fn(),
   };
 });
 
@@ -95,6 +97,12 @@ describe('WorkflowsPage', () => {
     (client.listWorkflows as any).mockResolvedValue(workflowsListFixture);
     (client.getWorkflow as any).mockResolvedValue(workflowDetailFixture);
     (client.listLocalPaths as any).mockResolvedValue(HOME_LISTING);
+    (client.resolveLocalPath as any).mockImplementation(async (candidate: string) => ({
+      path: candidate,
+      kind: candidate.endsWith('.rasenpkg') ? 'file' : 'directory',
+      separator: '/',
+    }));
+    (client.chooseLocalPath as any).mockResolvedValue({ status: 'unavailable', reason: 'headless' });
   });
 
   afterEach(() => {
@@ -325,7 +333,7 @@ describe('WorkflowsPage', () => {
     expect(client.listWorkflows).toHaveBeenCalledTimes(2);
   });
 
-  it('imports a draft directory via "use this folder" (browse-to-dir, no file wire needed)', async () => {
+  it('imports the current draft directory directly with no second commit action', async () => {
     (client.mutateWorkflow as any).mockResolvedValue({ imported: ['draft-flow'], reused: [], roots: ['draft-flow'] });
 
     await mount(container);
@@ -333,11 +341,141 @@ describe('WorkflowsPage', () => {
 
     // Home listing loaded → current folder is /home/user; "use this folder"
     // selects it as a draft-directory import source.
-    await clickAndFlush(container.querySelector('[data-testid="workflow-import-use-dir"]'));
-    expect(container.querySelector('[data-testid="workflow-import-source"]')!.textContent).toContain('/home/user');
+    expect(container.querySelector('[data-testid="workflow-import-use-dir"]')).toBeNull();
+    expect(container.querySelector('[data-testid="current-path"]')!.textContent).toContain('/home/user');
     await clickAndFlush(container.querySelector('[data-testid="workflow-import-submit"]'));
 
     expect(client.mutateWorkflow).toHaveBeenCalledWith({ op: 'import', path: '/home/user' });
+  });
+
+  it('resolves a dirty visible import path through the primary action', async () => {
+    (client.mutateWorkflow as any).mockResolvedValue({ imported: ['typed'], reused: [] });
+    await mount(container);
+    await clickAndFlush(container.querySelector('[data-testid="workflow-import"]'));
+    await act(async () => {
+      setInput(container.querySelector('.local-path-picker__path-input'), '/typed/other.rasenpkg');
+      await flushMicrotasks();
+    });
+    await clickAndFlush(container.querySelector('[data-testid="workflow-import-submit"]'));
+    expect(client.resolveLocalPath).toHaveBeenCalledWith(
+      '/typed/other.rasenpkg',
+      'file-or-directory'
+    );
+    expect(client.mutateWorkflow).toHaveBeenCalledWith({
+      op: 'import',
+      path: '/typed/other.rasenpkg',
+    });
+  });
+
+  it('validates a dirty path only after the shared picker resolves it', async () => {
+    (client.validateWorkflow as any).mockResolvedValue({
+      validation: {
+        valid: true,
+        kind: 'draft',
+        diagnostics: [],
+      },
+    });
+    await mount(container);
+    await clickAndFlush(
+      container.querySelector('[data-testid="workflow-validate-standalone"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="workflow-validate-mode-path"]')
+    );
+    await act(async () => {
+      setInput(
+        container.querySelector('.local-path-picker__path-input'),
+        '/typed/draft-workflow'
+      );
+      await flushMicrotasks();
+    });
+    await clickAndFlush(
+      container.querySelector('[data-testid="workflow-validate-submit"]')
+    );
+
+    expect(client.resolveLocalPath).toHaveBeenCalledWith(
+      '/typed/draft-workflow',
+      'file-or-directory'
+    );
+    expect(client.validateWorkflow).toHaveBeenCalledWith(
+      '/typed/draft-workflow'
+    );
+  });
+
+  it('keeps an installed id authoritative when a discarded path browse resolves late', async () => {
+    let resolveBrowse!: (value: typeof HOME_LISTING) => void;
+    (client.listLocalPaths as any).mockReturnValueOnce(
+      new Promise<typeof HOME_LISTING>((resolve) => {
+        resolveBrowse = resolve;
+      })
+    );
+    (client.validateWorkflow as any).mockResolvedValue({
+      validation: {
+        valid: true,
+        kind: 'installed',
+        diagnostics: [],
+      },
+    });
+    await mount(container);
+    await clickAndFlush(
+      container.querySelector('[data-testid="workflow-validate-standalone"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="workflow-validate-mode-path"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="workflow-validate-mode-id"]')
+    );
+    await act(async () => {
+      setInput(
+        container.querySelector('[data-testid="workflow-validate-target"]'),
+        'team-flow'
+      );
+      resolveBrowse(HOME_LISTING);
+      await flushMicrotasks();
+    });
+
+    expect(
+      (container.querySelector(
+        '[data-testid="workflow-validate-target"]'
+      ) as HTMLInputElement).value
+    ).toBe('team-flow');
+    await clickAndFlush(
+      container.querySelector('[data-testid="workflow-validate-submit"]')
+    );
+    expect(client.validateWorkflow).toHaveBeenCalledWith('team-flow');
+    expect(client.resolveLocalPath).not.toHaveBeenCalled();
+  });
+
+  it('constructs a Windows export destination with the server-native separator', async () => {
+    (client.listLocalPaths as any).mockResolvedValue({
+      ...HOME_LISTING,
+      path: 'C:\\exports',
+      separator: '\\',
+    });
+    (client.resolveLocalPath as any).mockResolvedValue({
+      path: 'C:\\exports',
+      kind: 'directory',
+      separator: '\\',
+    });
+    (client.mutateWorkflow as any).mockResolvedValue({
+      workflow: { path: 'C:\\exports\\team-flow.rasenpkg' },
+    });
+    await mount(container);
+    const user = container
+      .querySelector('[data-testid="workflows-section-task"]')!
+      .querySelector('[data-id="team-flow"]')!;
+    await clickAndFlush(user.querySelector('[data-testid="workflow-export"]'));
+    expect(container.querySelector('[data-testid="workflow-export-destination"]')?.textContent).toContain(
+      'C:\\exports\\team-flow.rasenpkg'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="workflow-export-submit"]'));
+    expect(client.mutateWorkflow).toHaveBeenCalledWith({
+      op: 'export',
+      id: 'team-flow',
+      path: 'C:\\exports\\team-flow.rasenpkg',
+      force: false,
+    });
   });
 
   it('scaffolds a draft into a parent folder picked through the browser (output = parent/<id>)', async () => {

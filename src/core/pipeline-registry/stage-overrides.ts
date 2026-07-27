@@ -33,6 +33,7 @@ import {
   type ModelSource,
   type PipelineYaml,
   type ResolvedStageHandoffConfig,
+  type ResolvedStageRuntimeConfig,
   type RuntimeSource,
   type Stage,
   type StageConfigOverrides,
@@ -43,7 +44,12 @@ import {
   type ThresholdValue,
   type ThresholdResolutionContext,
 } from './types.js';
-import { hasRuntimeCapability } from '../runtime-adapters.js';
+import {
+  hasRuntimeCapability,
+  resolveDispatchRoute,
+  type DetectedHostRuntime,
+  type DispatchMode,
+} from '../runtime-adapters.js';
 
 export type { StageOverride, StageOverrideScope };
 
@@ -61,15 +67,79 @@ export interface PipelineStageOverrides {
 }
 
 export type RoleRuntimeSource =
+  | 'invocation'
   | 'config-project'
   | 'config-store'
   | 'config-global'
   | 'declaration'
-  | 'default';
+  | 'host'
+  | 'legacy-default';
 
 export interface ResolvedRoleRuntime {
   runtime: AgentRuntime;
   source: RoleRuntimeSource;
+  dispatchMode: DispatchMode;
+}
+
+export interface ExecutionStageRuntime extends ResolvedStageRuntimeConfig {
+  id: string;
+  role: StageRole | null;
+  dispatchMode: DispatchMode;
+}
+
+export interface PipelineExecutionPlan {
+  hostRuntime: DetectedHostRuntime['runtime'];
+  hostRuntimeSource: DetectedHostRuntime['source'];
+  stages: ExecutionStageRuntime[];
+}
+
+export interface PipelineExecutionPlanInputs {
+  host: DetectedHostRuntime;
+  overrides: PipelineStageOverrides;
+  modelLayers?: ModelConfigLayers;
+  /** Ephemeral role choices supplied for this run. These top persisted
+   * config and pipeline declarations but are never written back. */
+  roleRuntimeOverrides?: Partial<Record<StageRole, AgentRuntime>>;
+}
+
+/**
+ * Resolve one immutable host-aware runtime/route plan for display and
+ * execution preflight. Callers reuse this output rather than scanning raw
+ * runtime declarations independently.
+ */
+export function resolvePipelineExecutionPlan(
+  pipeline: PipelineYaml,
+  inputs: PipelineExecutionPlanInputs
+): PipelineExecutionPlan {
+  return {
+    hostRuntime: inputs.host.runtime,
+    hostRuntimeSource: inputs.host.source,
+    stages: pipeline.stages.map((stage) => {
+      const resolvedRuntime = resolveStageRuntimeConfig(
+        stage,
+        pipeline,
+        inputs.modelLayers,
+        stageConfigOverridesFor(stage, inputs.overrides),
+        { host: inputs.host }
+      );
+      const invocationRuntime = stage.role
+        ? inputs.roleRuntimeOverrides?.[stage.role]
+        : undefined;
+      const runtime = invocationRuntime
+        ? {
+            ...resolvedRuntime,
+            runtime: invocationRuntime,
+            runtimeSource: 'invocation' as const,
+          }
+        : resolvedRuntime;
+      return {
+        id: stage.id,
+        role: stage.role ?? null,
+        ...runtime,
+        dispatchMode: resolveDispatchRoute(inputs.host.runtime, runtime.runtime).mode,
+      };
+    }),
+  };
 }
 
 /**
@@ -77,23 +147,59 @@ export interface ResolvedRoleRuntime {
  * role-scoped (not stage-scoped), so stage declarations and stage order never
  * participate in this chain:
  *
- * config role override > pipeline agents role declaration > Claude default.
+ * invocation role override > config role override > pipeline agents role
+ * declaration > detected host > legacy Claude compatibility default.
  */
 export function resolvePipelineRoleRuntimes(
   pipeline: PipelineYaml,
-  overrides: PipelineStageOverrides
+  overrides: PipelineStageOverrides,
+  host: DetectedHostRuntime = { runtime: 'unknown', source: 'unknown' },
+  roleRuntimeOverrides: Partial<Record<StageRole, AgentRuntime>> = {}
 ): Record<StageRole, ResolvedRoleRuntime> {
   return Object.fromEntries(
     THRESHOLD_ROLES.map((role): [StageRole, ResolvedRoleRuntime] => {
+      const invocationRuntime = roleRuntimeOverrides[role];
+      if (invocationRuntime) {
+        return [
+          role,
+          {
+            runtime: invocationRuntime,
+            source: 'invocation',
+            dispatchMode: resolveDispatchRoute(host.runtime, invocationRuntime).mode,
+          },
+        ];
+      }
       const override = overrides.runtimes.get(role);
       if (override) {
-        return [role, { runtime: override.value, source: `config-${override.scope}` }];
+        return [
+          role,
+          {
+            runtime: override.value,
+            source: `config-${override.scope}`,
+            dispatchMode: resolveDispatchRoute(host.runtime, override.value).mode,
+          },
+        ];
       }
       const declared = normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime;
       if (declared) {
-        return [role, { runtime: declared, source: 'declaration' }];
+        return [
+          role,
+          {
+            runtime: declared,
+            source: 'declaration',
+            dispatchMode: resolveDispatchRoute(host.runtime, declared).mode,
+          },
+        ];
       }
-      return [role, { runtime: 'claude', source: 'default' }];
+      const runtime = host.runtime === 'unknown' ? 'claude' : host.runtime;
+      return [
+        role,
+        {
+          runtime,
+          source: host.runtime === 'unknown' ? 'legacy-default' : 'host',
+          dispatchMode: resolveDispatchRoute(host.runtime, runtime).mode,
+        },
+      ];
     })
   ) as Record<StageRole, ResolvedRoleRuntime>;
 }
@@ -247,6 +353,7 @@ export interface EffectiveStageConfig {
     diagnostics?: ResolvedStageHandoffConfig['diagnostics'];
   };
   runtime: { value: AgentRuntime; source: RuntimeSource };
+  dispatchMode: DispatchMode;
 }
 
 /** The per-root resolution inputs a pipeline's effective per-stage values are computed against. */
@@ -256,6 +363,7 @@ export interface EffectiveStageInputs {
   configLayers?: HandoffConfigLayers;
   modelLayers?: ModelConfigLayers;
   thresholdContext?: ThresholdResolutionContext;
+  host?: DetectedHostRuntime;
 }
 
 /** The `StageConfigOverrides` for one stage: model/handoff by stage id, runtime by role. */
@@ -282,14 +390,21 @@ export function resolveEffectiveStage(
   inputs: EffectiveStageInputs
 ): EffectiveStageConfig {
   const stageOverrides = stageConfigOverridesFor(stage, inputs.overrides);
-  const runtime = resolveStageRuntimeConfig(stage, pipeline, inputs.modelLayers, stageOverrides);
+  const host = inputs.host ?? { runtime: 'unknown', source: 'unknown' };
+  const runtime = resolveStageRuntimeConfig(
+    stage,
+    pipeline,
+    inputs.modelLayers,
+    stageOverrides,
+    { host }
+  );
   const handoff = resolveStageHandoffConfig(
     stage,
     pipeline,
     inputs.configLayers,
     inputs.modelLayers,
     stageOverrides,
-    inputs.thresholdContext
+    { ...inputs.thresholdContext, host, stageRuntime: runtime.runtime }
   );
   const gate = resolveMaskedStageGate(
     stage.gate,
@@ -310,5 +425,6 @@ export function resolveEffectiveStage(
       ...(handoff.diagnostics ? { diagnostics: handoff.diagnostics } : {}),
     },
     runtime: { value: runtime.runtime, source: runtime.runtimeSource },
+    dispatchMode: resolveDispatchRoute(host.runtime, runtime.runtime).mode,
   };
 }

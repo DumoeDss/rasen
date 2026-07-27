@@ -34,14 +34,16 @@ describe('profiles', () => {
   });
 
   describe('ALL_WORKFLOWS', () => {
-    it('should contain all 22 selectable workflows (11 base + 4 Rasen fusion + review-cycle + handoff + 4 goal-loop + audit; retro retired, retain internal)', () => {
-      expect(ALL_WORKFLOWS).toHaveLength(22);
+    it('should contain all 23 selectable workflows (11 base + Direction + 4 Rasen fusion + review-cycle + handoff + 4 goal-loop + audit; retro retired, retain internal)', () => {
+      expect(ALL_WORKFLOWS).toHaveLength(23);
     });
 
     it('should contain expected workflow IDs', () => {
       const expected = [
         'propose', 'explore', 'new', 'continue', 'apply',
         'sync', 'archive', 'bulk-archive', 'verify', 'onboard', 'help',
+        // Optional long-horizon governance
+        'direction',
         // Rasen fusion workflow commands
         'office-hours-command', 'verify-enhanced-command', 'ship-command',
         'auto-command',
@@ -65,6 +67,15 @@ describe('profiles', () => {
     it('should NOT include review-cycle in CORE_WORKFLOWS (opt-in only)', () => {
       expect(ALL_WORKFLOWS).toContain('review-cycle');
       expect([...CORE_WORKFLOWS]).not.toContain('review-cycle');
+    });
+
+    it('should include Direction in full/custom selection but NOT in CORE_WORKFLOWS', () => {
+      expect(ALL_WORKFLOWS).toContain('direction');
+      expect([...getProfileWorkflows('full')]).toContain('direction');
+      expect(
+        getProfileWorkflows('custom', ['direction'], { expertSelectionExplicit: true })
+      ).toEqual(['direction']);
+      expect([...CORE_WORKFLOWS]).not.toContain('direction');
     });
 
     it('should include the goal-loop workflow family but NOT in CORE_WORKFLOWS (opt-in only)', () => {
@@ -168,6 +179,35 @@ describe('profiles', () => {
 
     it('includes the recently-added `audit` workflow', () => {
       expect(getCurrentBuiltInWorkflowIds()).toContain('audit');
+    });
+  });
+
+  describe('effective install selection compatibility root', () => {
+    it('installs one internal runner for a ship-only selection without changing the profile roots', () => {
+      const roots = ['ship-command'];
+      const { ids } = resolveDesiredWorkflowSelection(
+        loadWorkflowCatalog(),
+        'custom',
+        roots,
+        true
+      );
+
+      expect(roots).toEqual(['ship-command']);
+      expect(ids).toEqual(expect.arrayContaining(['ship-command', 'retain-command']));
+      expect(ids.filter((id) => id === 'retain-command')).toHaveLength(1);
+    });
+
+    it('installs the compatibility runner even when the profile selects neither ship nor auto', () => {
+      const { ids } = resolveDesiredWorkflowSelection(
+        loadWorkflowCatalog(),
+        'custom',
+        ['explore'],
+        true
+      );
+
+      expect(ids).toContain('retain-command');
+      expect(ids).not.toContain('ship-command');
+      expect(ids).not.toContain('auto-command');
     });
   });
 

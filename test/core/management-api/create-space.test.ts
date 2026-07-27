@@ -1,36 +1,44 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import * as os from 'node:os';
+import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createSpaceCreator } from '../../../src/core/management-api/create-space.js';
 import type { SpaceEntry } from '../../../src/core/management-api/wire-types.js';
 import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const fakeCliEntry = path.resolve(__dirname, '..', '..', 'fixtures', 'management-api', 'create-space-fake-cli.mjs');
+const here = path.dirname(fileURLToPath(import.meta.url));
+const fakeCliEntry = path.resolve(
+  here,
+  '..',
+  '..',
+  'fixtures',
+  'management-api',
+  'create-space-fake-cli.mjs'
+);
 
-/** Reads the fake CLI's argv log (one JSON array per invocation); [] when nothing spawned. */
 function readArgvLog(logPath: string): string[][] {
   if (!fs.existsSync(logPath)) return [];
   return fs
     .readFileSync(logPath, 'utf-8')
     .split('\n')
-    .filter((line) => line.trim().length > 0)
+    .filter(Boolean)
     .map((line) => JSON.parse(line) as string[]);
 }
 
-function listingOf(spaces: SpaceEntry[]): () => Promise<{ spaces: SpaceEntry[] }> {
+function listingOf(spaces: SpaceEntry[]) {
   return async () => ({ spaces });
 }
 
-describe('createSpaceCreator (space-creation design D4/D5)', () => {
+describe('createSpaceCreator explicit operations', () => {
   let dir: string;
   let argvLog: string;
 
   beforeEach(() => {
-    dir = fs.realpathSync(fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'rasen-create-space-')));
+    dir = fs.realpathSync(
+      fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'rasen-create-space-'))
+    );
     argvLog = path.join(dir, 'argv.log');
     process.env.RASEN_FAKE_ARGV_LOG = argvLog;
   });
@@ -40,205 +48,137 @@ describe('createSpaceCreator (space-creation design D4/D5)', () => {
     await cleanupTempPathAsync(dir);
   });
 
-  describe('validation before spawn (spawns nothing)', () => {
-    function creator() {
-      return createSpaceCreator({ cliEntryOverride: fakeCliEntry, listSpacesOverride: listingOf([]) });
-    }
-
-    it('rejects a bad kind with 400', async () => {
-      const result = await creator()({ kind: 'banana', path: dir });
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.status).toBe(400);
-      expect(readArgvLog(argvLog)).toEqual([]);
+  function creator(spaces: SpaceEntry[] = []) {
+    return createSpaceCreator({
+      cliEntryOverride: fakeCliEntry,
+      listSpacesOverride: listingOf(spaces),
     });
+  }
 
-    it('rejects a relative path with 400', async () => {
-      const result = await creator()({ kind: 'project', path: 'repo' });
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.status).toBe(400);
-      expect(readArgvLog(argvLog)).toEqual([]);
-    });
-
-    it('rejects an option-like path with 400 (absoluteness is the injection guard)', async () => {
-      const result = await creator()({ kind: 'project', path: '--store=evil' });
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.status).toBe(400);
-      expect(readArgvLog(argvLog)).toEqual([]);
-    });
-
-    it('rejects a path with control characters with 400', async () => {
-      const result = await creator()({ kind: 'project', path: path.join(dir, 'bad\x00name') });
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.status).toBe(400);
-      expect(readArgvLog(argvLog)).toEqual([]);
-    });
-
-    it('rejects a fresh store with no id with 400', async () => {
-      const fresh = path.join(dir, 'fresh-no-id');
-      fs.mkdirSync(fresh);
-      const result = await creator()({ kind: 'store', path: fresh });
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.status).toBe(400);
-      expect(readArgvLog(argvLog)).toEqual([]);
-    });
-
-    it('rejects an id that fails the CLI store-id validation with 400', async () => {
-      const result = await creator()({ kind: 'store', path: dir, id: '--evil Id' });
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.status).toBe(400);
-      expect(readArgvLog(argvLog)).toEqual([]);
-    });
+  it.each([
+    [{ kind: 'project', path: dir }, 'legacy body'],
+    [{ op: 'banana', path: dir }, 'unknown op'],
+    [{ op: 'create-project', path: 'relative' }, 'relative path'],
+    [{ op: 'create-project', path: `${dir}\tchild` }, 'tab in path'],
+    [{ op: 'create-project', path: `${dir}\nchild` }, 'newline in path'],
+    [{ op: 'register-store', path: `${dir}\u007fchild` }, 'DEL in path'],
+    [{ op: 'create-store', parent: `${dir}\tparent`, id: 'team' }, 'tab in parent'],
+    [{ op: 'create-store', parent: `${dir}\nparent`, id: 'team' }, 'newline in parent'],
+    [{ op: 'create-project', path: dir, id: 'extra' }, 'cross-operation field'],
+    [{ op: 'create-store', parent: dir }, 'missing id'],
+    [{ op: 'create-store', parent: dir, id: '--evil Id' }, 'invalid id'],
+    [{ op: 'register-store', path: dir, parent: dir }, 'ambiguous fields'],
+  ])('rejects %s before spawning (%s)', async (body) => {
+    const result = await creator()(body);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe(400);
+    expect(readArgvLog(argvLog)).toEqual([]);
   });
 
-  describe('verb selection (exact argv)', () => {
-    it('spawns `init <path>` for a project', async () => {
-      const creator = createSpaceCreator({
-        cliEntryOverride: fakeCliEntry,
-        listSpacesOverride: listingOf([{ type: 'project', id: 'proj', name: 'Proj', root: dir }]),
-      });
-      const result = await creator({ kind: 'project', path: dir });
-
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.response.operation).toBe('init');
-      expect(result.response.space.id).toBe('proj');
-      expect(readArgvLog(argvLog)).toEqual([['init', dir]]);
-    });
-
-    it('spawns `store register <path> --yes --id <id> --json` when a rasen/ root exists', async () => {
-      const storeDir = path.join(dir, 'existing-store');
-      fs.mkdirSync(path.join(storeDir, 'rasen'), { recursive: true });
-      const creator = createSpaceCreator({
-        cliEntryOverride: fakeCliEntry,
-        listSpacesOverride: listingOf([
-          { type: 'store', id: 'team-store', name: 'team-store', root: storeDir, members: [] },
-        ]),
-      });
-      const result = await creator({ kind: 'store', path: storeDir, id: 'team-store' });
-
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.response.operation).toBe('store-register');
-      expect(result.response.space.id).toBe('team-store');
-      expect(readArgvLog(argvLog)).toEqual([
-        ['store', 'register', storeDir, '--yes', '--id', 'team-store', '--json'],
-      ]);
-    });
-
-    it('spawns `store register <path> --yes --json` (no --id) when the id is omitted', async () => {
-      const storeDir = path.join(dir, 'existing-store-noid');
-      fs.mkdirSync(path.join(storeDir, 'rasen'), { recursive: true });
-      const creator = createSpaceCreator({
-        cliEntryOverride: fakeCliEntry,
-        listSpacesOverride: listingOf([
-          { type: 'store', id: 'registered-store', name: 'registered-store', root: storeDir, members: [] },
-        ]),
-      });
-      const result = await creator({ kind: 'store', path: storeDir });
-
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(readArgvLog(argvLog)).toEqual([['store', 'register', storeDir, '--yes', '--json']]);
-    });
-
-    it('spawns `store setup <id> --path <path> --json` for a fresh store', async () => {
-      const fresh = path.join(dir, 'fresh-store');
-      fs.mkdirSync(fresh);
-      const creator = createSpaceCreator({
-        cliEntryOverride: fakeCliEntry,
-        listSpacesOverride: listingOf([
-          { type: 'store', id: 'fresh-store', name: 'fresh-store', root: fresh, members: [] },
-        ]),
-      });
-      const result = await creator({ kind: 'store', path: fresh, id: 'fresh-store' });
-
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.response.operation).toBe('store-setup');
-      expect(readArgvLog(argvLog)).toEqual([['store', 'setup', 'fresh-store', '--path', fresh, '--json']]);
-    });
+  it('spawns exact project argv', async () => {
+    const result = await creator([
+      { type: 'project', id: 'proj', name: 'Proj', root: dir },
+    ])({ op: 'create-project', path: dir });
+    expect(result.ok).toBe(true);
+    expect(readArgvLog(argvLog)).toEqual([['init', dir]]);
   });
 
-  describe('outcomes', () => {
-    it('passes a project init failure through as 422 with exit code and stderr', async () => {
-      const failDir = path.join(dir, 'FAKEFAIL-proj');
-      const creator = createSpaceCreator({ cliEntryOverride: fakeCliEntry, listSpacesOverride: listingOf([]) });
-      const result = await creator({ kind: 'project', path: failDir });
+  it('joins parent plus validated id and locates setup success by child root', async () => {
+    const child = path.join(dir, 'team-store');
+    const result = await creator([
+      {
+        type: 'store',
+        id: 'team-store',
+        name: 'team-store',
+        root: child,
+        members: [],
+      },
+    ])({ op: 'create-store', parent: dir, id: 'team-store' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.response.operation).toBe('store-setup');
+    expect(result.response.space.root).toBe(child);
+    expect(readArgvLog(argvLog)).toEqual([
+      ['store', 'setup', 'team-store', '--path', child, '--json'],
+    ]);
+  });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.status).toBe(422);
-      expect(result.code).toBe('cli_error');
-      expect(result.cliExitCode).toBe(1);
-      expect(result.message).toContain('fake init failure');
-      expect(result.stderr).toContain('fake init failure');
+  it('create never infers registration from Store-like child state', async () => {
+    const child = path.join(dir, 'existing-child');
+    fs.mkdirSync(path.join(child, 'rasen'), { recursive: true });
+    await creator([
+      {
+        type: 'store',
+        id: 'existing-child',
+        name: 'existing-child',
+        root: child,
+        members: [],
+      },
+    ])({ op: 'create-store', parent: dir, id: 'existing-child' });
+    expect(readArgvLog(argvLog)[0]?.slice(0, 2)).toEqual(['store', 'setup']);
+  });
+
+  it('register always invokes register, with optional id as one argv token', async () => {
+    const existing = path.join(dir, 'existing;store');
+    const result = await creator([
+      {
+        type: 'store',
+        id: 'team-store',
+        name: 'team-store',
+        root: existing,
+        members: [],
+      },
+    ])({ op: 'register-store', path: existing, id: 'team-store' });
+    expect(result.ok).toBe(true);
+    expect(readArgvLog(argvLog)).toEqual([
+      ['store', 'register', existing, '--yes', '--id', 'team-store', '--json'],
+    ]);
+  });
+
+  it('registration never invokes setup when the CLI refuses it', async () => {
+    const missing = path.join(dir, 'FAKEFAIL-missing-store');
+    const result = await creator()({ op: 'register-store', path: missing });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe(422);
+    expect(result.message).toContain('fake store failure');
+    expect(readArgvLog(argvLog)[0]?.slice(0, 2)).toEqual(['store', 'register']);
+  });
+
+  it('passes project CLI errors through with exit code and stderr', async () => {
+    const target = path.join(dir, 'FAKEFAIL-project');
+    const result = await creator()({ op: 'create-project', path: target });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe(422);
+    expect(result.cliExitCode).toBe(1);
+    expect(result.message).toContain('fake init failure');
+  });
+
+  it('reports protocol error when success is absent from the listing', async () => {
+    const result = await creator()({ op: 'create-project', path: dir });
+    expect(result.ok).toBe(false);
+    if (result.ok) expect.unreachable();
+    expect(result.status).toBe(500);
+    expect(result.code).toBe('cli_protocol_error');
+  });
+
+  it('keeps cap-one concurrency and bounded timeout', async () => {
+    const slow = path.join(dir, 'FAKESLEEP5000-project');
+    const create = createSpaceCreator({
+      cliEntryOverride: fakeCliEntry,
+      listSpacesOverride: listingOf([]),
+      timeoutMs: 100,
+      killGraceMs: 50,
     });
-
-    it('passes a store failure JSON message through as 422', async () => {
-      const failStore = path.join(dir, 'FAKEFAIL-store');
-      fs.mkdirSync(path.join(failStore, 'rasen'), { recursive: true });
-      const creator = createSpaceCreator({ cliEntryOverride: fakeCliEntry, listSpacesOverride: listingOf([]) });
-      const result = await creator({ kind: 'store', path: failStore, id: 'team-store' });
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.status).toBe(422);
-      expect(result.message).toContain('fake store failure');
-    });
-
-    it('reports 500 cli_protocol_error when the new space is absent from the listing', async () => {
-      const creator = createSpaceCreator({
-        cliEntryOverride: fakeCliEntry,
-        listSpacesOverride: listingOf([]), // success, but the space is not listed
-      });
-      const result = await creator({ kind: 'project', path: dir });
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.status).toBe(500);
-      expect(result.code).toBe('cli_protocol_error');
-    });
-
-    it('rejects an overlapping creation immediately with 409 busy', async () => {
-      const slow = path.join(dir, 'FAKESLEEP300-proj');
-      const creator = createSpaceCreator({
-        cliEntryOverride: fakeCliEntry,
-        listSpacesOverride: listingOf([{ type: 'project', id: 'proj', name: 'Proj', root: slow }]),
-        timeoutMs: 5000,
-      });
-
-      const first = creator({ kind: 'project', path: slow });
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      const second = await creator({ kind: 'project', path: slow });
-
-      expect(second.ok).toBe(false);
-      if (second.ok) return;
-      expect(second.status).toBe(409);
-      expect(second.code).toBe('busy');
-
-      await first;
-    });
-
-    it('times out a hung subprocess with 504', async () => {
-      const slow = path.join(dir, 'FAKESLEEP5000-proj');
-      const creator = createSpaceCreator({
-        cliEntryOverride: fakeCliEntry,
-        listSpacesOverride: listingOf([]),
-        timeoutMs: 200,
-        killGraceMs: 100,
-      });
-      const result = await creator({ kind: 'project', path: slow });
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.status).toBe(504);
-      expect(result.code).toBe('cli_timeout');
-    });
+    const first = create({ op: 'create-project', path: slow });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const second = await create({ op: 'create-project', path: slow });
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.status).toBe(409);
+    const timedOut = await first;
+    expect(timedOut.ok).toBe(false);
+    if (!timedOut.ok) expect(timedOut.status).toBe(504);
   });
 });

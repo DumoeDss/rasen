@@ -12,11 +12,11 @@
 The artifact workflow breaks "a requirement → implemented, reviewed, verified, shipped, archived" into several stages. Each stage can be automatically chained by autopilot, or manually invoked on its own.
 
 ```
- explore ─▶ office-hours ─▶ propose ─▶ apply ─▶ verify ─▶ review-cycle ─▶ ship ─▶ archive ─▶ retro
- (think)    (validate need)  (plan)    (implement)  (expert review)  (loop: fix→re-review Δ)  (deliver)  (archive+merge)  (retro)
+ explore ─▶ office-hours ─▶ propose ─▶ apply ─▶ verify ─▶ review-cycle ─▶ ship ─▶ retain ─▶ archive
+ (think)    (validate need)  (plan)    (implement)  (expert review)  (loop: fix→re-review Δ)  (deliver)  (retain)  (archive+merge)
    │            │             │          │        │            │           │         │
- optional    optional     produces    check off  experts/    iterate     PR/deploy  merge    learnings
-                          contract      tasks    security/QA  until clean            spec     distilled
+ optional    optional     produces    check off  experts/    iterate     PR/deploy policy-driven merge
+                          contract      tasks    security/QA  until clean           learning     spec
 ```
 
 > Note: In the autopilot pipeline, `verify` (expert review; can run review/cso/benchmark/design-review/qa in parallel) produces findings first, and then `review-cycle` (the `review-loop` stage) drives "triage → fix → re-review Δ" until clean. Bug-fix goes through adaptive verify, without a review-loop.
@@ -59,15 +59,15 @@ Built-in pipelines (can be overridden or augmented by user/project; resolution p
 
 | Pipeline | Stages (buildOrder summary) |
 |---|---|
-| **full-feature** | office-hours → propose (optional direction review) → apply → parallel expert review (review / cso / benchmark / design-review / qa\|qa-only) → review-loop → ship → archive → retro |
+| **full-feature** | office-hours → propose (optional direction review) → apply → parallel expert review (review / cso / benchmark / design-review / qa\|qa-only) → review-loop → ship → retain → archive |
 | **small-feature** _(default)_ | propose → apply → verify → review-loop → ship → archive |
 | **bug-fix** | propose → apply → adaptive verify → ship → archive |
 | **auto-decompose** | **decompose** (conditional first step, LEAD self-review, not a human gate) → propose → apply → verify → review-loop → ship → archive; taking decompose fans out into multiple sub-changes, each running `childPipeline` (default small-feature, see §2.7) |
-| **goal-loop-measure** | define-goal → iterate (measure gate, loops until satisfied/maxRounds) → ship → archive — driven by `/rasen-goal`, **see §9** |
-| **goal-loop-evaluate** | define-goal → iterate (evaluate gate, loops) → ship → archive — driven by `/rasen-goal`, **see §9** |
+| **goal-loop-measure** | define-goal → iterate (measure gate, loops until satisfied/maxRounds) → ship → retain → archive — driven by `/rasen-goal`, **see §9** |
+| **goal-loop-evaluate** | define-goal → iterate (evaluate gate, loops) → ship → retain → archive — driven by `/rasen-goal`, **see §9** |
 | **goal-loop-research** | define-goal → iterate (evaluate gate, loops) → report — driven by `/rasen-goal`, **see §9** |
 
-> All built-in pipelines **explicitly specify `model: sonnet` for the ship and archive stages** — these two stages are mechanical execution (run tests / push / create PR, archive / merge specs) and don't need a large-model reasoning; when `model` is not specified, the worker inherits the main agent's model, needlessly spending more. Custom pipelines are also encouraged to set `model: sonnet` for ship/archive.
+> All built-in pipeline ship and archive stages, plus the canonical retain stages in retained tails, **explicitly specify `model: sonnet`** — these stages are mechanical execution (run tests / push / create PR, apply retention policy, archive / merge specs) and don't need a large-model reasoning; when `model` is not specified, the worker inherits the main agent's model, needlessly spending more. Custom pipelines are also encouraged to set `model: sonnet` for ship/retain/archive stages they declare.
 
 **How to pick a pipeline** (explicit takes priority, otherwise the default is `small-feature`):
 - **Explicit**: `/rasen-auto --pipeline <name> <task>`, or **put the pipeline name at the very front** — `/rasen-auto full-feature refactor the auth subsystem` (if the first token is a known pipeline name, it's used directly).
@@ -77,7 +77,7 @@ Optional: `rasen pipeline classify "<task>"` for a suggestion, or `rasen pipelin
 
 > **Opt-in autonomy**: `--auto-select` lets the LEAD adopt the classify suggestion instead of defaulting, and `--auto-compose` further allows composing a new pipeline from the stage library when nothing fits (machine-enforced review floor). Both default OFF; explicit selection always stays on top. See [autopilot.md](autopilot.md).
 
-Each stage carries metadata the LEAD uses to execute: **kind** (`standard` default / `decompose` fan-out point, §2.7), **skill** (the skill the worker invokes; the decompose stage has no such field), **childPipeline** (decompose only — the pipeline each sub-change runs, default `small-feature`), **role** (isolation), **gate** (human pause), **loop** (review loop), **parallelGroup** (concurrent fan-out, e.g. verify's expert group), **condition** (runs only when satisfied; mutually exclusive conditions like ui / non-ui pick one), **leadReview** (LEAD checks for direction drift, §2.3), **verifyPolicy** (adaptive / standard / light, §2.3), **model** (the model override for that stage's worker; if omitted it inherits the main agent's model — built-in pipelines set `model: sonnet` for ship/archive).
+Each stage carries metadata the LEAD uses to execute: **kind** (`standard` default / `decompose` fan-out point, §2.7), **skill** (the skill the worker invokes; the decompose stage has no such field), **childPipeline** (decompose only — the pipeline each sub-change runs, default `small-feature`), **role** (isolation), **gate** (human pause), **loop** (review loop), **parallelGroup** (concurrent fan-out, e.g. verify's expert group), **condition** (runs only when satisfied; mutually exclusive conditions like ui / non-ui pick one), **leadReview** (LEAD checks for direction drift, §2.3), **verifyPolicy** (adaptive / standard / light, §2.3), **model** (the model override for that stage's worker; if omitted it inherits the main agent's model — built-in pipelines set `model: sonnet` for ship/archive and for canonical retain stages where present).
 
 ### 2.3 Two task-related enhancements
 
@@ -103,6 +103,7 @@ Three steps, zero code — re-orchestrate existing stage skills into a new pipel
    - User level: `~/.rasen/pipelines/<name>/pipeline.yaml` (or `$RASEN_HOME/pipelines/<name>/pipeline.yaml` when set)
 2. **Write stages, picking `skill` from the existing ones** (this is "choosing from existing steps"):
    ```yaml
+   version: 1
    name: hotfix
    description: Fast-track — propose, apply, review loop, ship.
    stages:
@@ -119,6 +120,8 @@ Three steps, zero code — re-orchestrate existing stage skills into a new pipel
    rasen pipeline show <name>              # view the buildOrder
    ```
    After that, `/rasen-auto` lists it under `available`, and you can **override** and select it after classification.
+
+`version: 1` identifies the Pipeline definition content format, independently of any `.rasenpkg` package `formatVersion`. Legacy definitions without the field are accepted and normalize to v1; an explicit unsupported or malformed version is refused at `/version`. Scaffold, save, detail/show, and packaged export surfaces emit or expose normalized v1 content, while read/export never rewrites the source definition. The v1 flat `requires` DAG and both current loop declarations (`review-cycle` and `goal`) remain readable and are future-compiler inputs. Today the LEAD playbook owns loop interpretation; Canvas is a definition editor, not a programmatic or nested Pipeline runner.
 
 > Two real constraints: ① **skill names must be exact** — experts are `openspec:xxx` (not `openspec-xxx`), apply is `openspec-apply-change` (not `openspec-apply`); getting it wrong makes `validate` report the skill as not existing; ② **classify will not auto-recommend custom pipelines** (it's a built-in keyword heuristic that only suggests among the three built-ins) — custom pipelines are always in `available`, but you/the user must **manually override** the selection after classification. To make a keyword automatically hit a custom pipeline you currently have to edit the keyword table in `src/commands/pipeline.ts` (a possible follow-up enhancement).
 
@@ -156,9 +159,10 @@ For fine-grained control, invoke them manually one at a time. The table below is
 | Deep verify | `/rasen-verify-enhanced` | Artifact checks + code review + security audit + browser QA + visual audit (auto-scales by change size) | Various reports |
 | **Iterative review loop** | `/rasen-review-cycle` | review→triage→fix→re-review(Δ)→{pass\|loop\|escalate}; also auto's `review-loop` stage | `review-cycle-report.md` |
 | Deliver | `/rasen-ship` | Test, push, create PR, optional merge & deploy; PR body from proposal (always run with `model: sonnet` in the pipeline) | `ship-log.md` |
+| Retain | `/rasen-retain [change]` | Run the profile's `off` / `report` / `codify` retention policy after ship and before archive (always run with `model: sonnet` in the pipeline) | `retro.md`, managed learned-skill changes, or no-op |
 | Archive | `/rasen-archive-change` / `/rasen-bulk-archive-change` | Archive the change, merging delta specs into canonical specs (always run with `model: sonnet` in the pipeline) | Archive directory + updated specs |
 | Merge spec | `/rasen-sync-specs` | Merge delta specs into main specs | Updated specs |
-| Retrospective | `/rasen-retro [change]` | Engineering retrospective: analyze what shipped, patterns, learnings (change/general/global modes) | `retro.md` |
+| Temporary report-mode compatibility alias | `/rasen-retro [change]` | Force `/rasen-retain` report mode for one migration window; user-invoked only, not a lifecycle stage | `retro.md` |
 | **Handoff** | `/rasen-handoff` | Probe context usage and write a handoff doc for a new session / successor worker to continue (opt-in) | `handoff/lead-<n>.md` + run-state pointer |
 | Onboard | `/rasen-onboard` | Walk through a complete workflow cycle as a tutorial | (tutorial) |
 
@@ -346,13 +350,15 @@ rasen status --change add-jwt-auth        # check artifact completion
 # 6) Deliver
 /rasen-ship
 
-# 7) Archive (merge delta spec into canonical specs)
+# 7) Retain after ship and before archive (profile policy: off / report / codify)
+/rasen-retain add-jwt-auth
+
+# 8) Archive (merge delta spec into canonical specs)
 rasen validate add-jwt-auth --strict
 rasen archive add-jwt-auth
-
-# 8) Retrospective (optional)
-/rasen-retro add-jwt-auth
 ```
+
+> `/rasen-retro add-jwt-auth` is only a temporary, user-invoked compatibility alias that forces `/rasen-retain` report mode for one migration window. Use it instead of the canonical retain command only for compatibility; it is not a post-archive lifecycle stage.
 
 ---
 
@@ -371,17 +377,53 @@ rasen archive add-jwt-auth
 | Deep verify (code / security / QA / visual) | `/rasen-verify-enhanced` (or `/rasen-verify-change`) |
 | Run a single expert on its own | `/review` `/cso` `/qa` `/benchmark` `/design-review` … |
 | Deliver (tests / PR / deploy) | `/rasen-ship` |
+| Run retention policy after ship and before archive | `/rasen-retain [change]` |
 | Archive and merge spec | `/rasen-archive-change` (or CLI `rasen archive`) |
-| Retrospective | `/rasen-retro` |
+| Use the temporary report-mode compatibility alias | `/rasen-retro [change]` (forces report mode; not a lifecycle stage) |
 | Measure context usage / hand off | `rasen agent context --latest`; `/rasen-handoff` |
 | View change completion | `rasen status --change <id>` |
 | Validate | `rasen validate <id> --strict` |
 | Enable more commands | `rasen config profile` → `rasen update` |
 ---
 
-## 8. Claude / Codex agent runtime switching
+## 8. Host-aware Claude / Codex worker runtimes
 
-The pipeline now supports switching each role individually to `claude` or `codex`. The switchable roles are:
+Rasen detects the current tool host once at execution preflight and uses that host as the default worker runtime when a pipeline does not explicitly select one. A Codex-hosted run therefore uses Codex-native collaboration by default; a Claude-hosted run uses the existing Claude Task/subagent path. Inspect the resolved decision with:
+
+```bash
+rasen pipeline show small-feature --for-execution --json
+```
+
+For a run-local choice, pass the same role flags to this mandatory final-plan command:
+
+```bash
+rasen pipeline show small-feature --for-execution --planner codex --reviewer codex --json
+```
+
+The output reports top-level `hostRuntime` / `hostRuntimeSource` and, for every stage, `runtime`, `runtimeSource`, and `dispatchMode`. Invocation choices appear with `runtimeSource: invocation` and are route-validated before dispatch.
+
+Explicit choices keep their authority. Runtime precedence is:
+
+1. per-invocation role override;
+2. persisted `pipelines.<name>.runtimes.<role>` config;
+3. stage `runtime`;
+4. pipeline `agents.<role>.runtime`;
+5. detected host;
+6. legacy Claude fallback only when the host cannot be identified.
+
+The shipped route matrix is:
+
+| Host | Target worker | Dispatch mode | Behavior |
+|---|---|---|---|
+| Claude | Claude | `native` | Task/subagent + `SendMessage` |
+| Claude | Codex | `exec-bridge` | non-interactive `codex exec`; Codex CLI is preflighted once |
+| Codex | Codex | `native` | Codex collaboration tools; final worker results are delivered automatically |
+| Codex | Claude | `unsupported` | preflight fails; Rasen does not silently change the requested runtime |
+| Unknown | compatible legacy target | `legacy-fallback` | non-fatal warning; set `RASEN_AGENT_RUNTIME=claude|codex` to disambiguate |
+
+Codex-native orchestration treats `wait_agent` as a dependency join, not a heartbeat: wait only when no independent work remains, use one long event-driven wait, and do not repeat short polling waits. `send_message` is for intermediate coordination; a native worker's final `DONE` / `HANDOFF` response is already delivered to the lead.
+
+Each role can still be switched individually to `claude` or `codex`. The switchable roles are:
 
 - `planner`
 - `implementer`
@@ -389,13 +431,15 @@ The pipeline now supports switching each role individually to `claude` or `codex
 - `fixer`
 - `shipper`
 
-Temporary switch for a single `/rasen-auto` invocation:
+Temporary switch for a single `/rasen-auto` invocation on a **Claude host** (where Claude → Codex is supported through the exec bridge):
 
 ```text
 /rasen-auto --planner codex --reviewer codex --fixer claude <task>
 ```
 
-To pin to a pipeline, use the CLI to write a project-local override:
+On a Codex host, selecting any Claude worker is unsupported and the final preflight rejects the run instead of silently substituting Codex.
+
+To pin a role for a pipeline, write a config override:
 
 ```bash
 rasen pipeline agents small-feature --planner codex --reviewer codex
@@ -403,13 +447,13 @@ rasen pipeline agents small-feature --json
 rasen pipeline show small-feature --json
 ```
 
-This creates or updates:
+This creates or updates the pipeline runtime family in:
 
 ```text
-openspec/pipelines/small-feature/pipeline.yaml
+rasen/config.yaml
 ```
 
-The resolution priority is still `project > user > package`, so built-in pipelines are not modified; the current project will prefer the local override. To switch back to Claude:
+The config layer priority is project > inherited store > global. Built-in pipeline definitions are not copied or modified. To switch back to Claude explicitly:
 
 ```bash
 rasen pipeline agents small-feature --planner claude --reviewer claude
@@ -442,12 +486,13 @@ stages:
     sandbox: read-only
 ```
 
-Session-resume semantics differ:
+Run-state records both `runtime` and `dispatchMode`, plus only the handles the selected route actually returned:
 
-- A Claude worker records `agentId` / `transcript`, and after a restart warm-seeds a new worker from the transcript.
-- A Codex worker records `threadId` / `turnId`, and after a restart prefers `thread/resume(threadId)` to continue the same Codex thread.
+- Claude native records `agentId` and, when available, `transcript`.
+- Codex native records its returned native `agentId`; it never fabricates an exec `threadId`.
+- Codex exec-bridge records `threadId` and rollout `transcript`; exec mode has no `turnId`.
 
-`rasen pipeline resume <change> --json` puts both kinds of resume handles in `workers`, distinguished by `runtime`.
+Archived records without `dispatchMode` remain readable. A Codex `threadId` implies exec-bridge, a native `agentId` implies native dispatch, and ambiguous records fall back conservatively with a warning.
 
 ---
 
@@ -473,9 +518,9 @@ You see one command. The LEAD classifies the task and selects ONE backend pipeli
 
 | Keywords in the task | Selected pipeline | Gate (examiner) | Work product | Tail |
 |---|---|---|---|---|
-| `score` `latency` `optimize` `lighthouse` `benchmark` `p99` `memory` `throughput` | **goal-loop-measure** | measure — a deterministic command emits `{score, passed}` | code | ship → archive |
-| `rubric` `quality` `clean` `standard` `refactor-quality` | **goal-loop-evaluate** | evaluate — a fresh reviewer worker judges `{satisfied, gaps}` | code | ship → archive |
-| `research` `investigate` `write report` `write brief` `autoresearch` `literature` | **goal-loop-research** | evaluate — a fresh reviewer worker judges | prose (research + writing) | report |
+| `score` `latency` `optimize` `lighthouse` `benchmark` `p99` `memory` `throughput` | **goal-loop-measure** | measure — a deterministic command emits `{score, passed}` | code | ship → retain → archive |
+| `rubric` `quality` `clean` `standard` `refactor-quality` | **goal-loop-evaluate** | evaluate — a fresh reviewer worker judges `{satisfied, gaps}` | code | ship → retain → archive |
+| `research` `investigate` `write report` `write brief` `autoresearch` `literature` | **goal-loop-research** | evaluate — a fresh reviewer worker judges | prose (research + writing) | report only |
 
 Each pipeline is **homogeneous** — exactly one gate type, one iterate-skill flavor, one tail. No runtime conditions, no gate combination. This is deliberate: an earlier single-pipeline design that combined measure+evaluate gates was killed by three defects (an AND-semantics stall hole, an unenforced conditional tail, a hand-waved generic skill); the family dissolves all three.
 
@@ -492,7 +537,7 @@ The `iterate` stage carries `loop: { kind: goal, gate: {...} }`. The LEAD interp
 2. **iterate** (implementer, `openspec-goal-iterate`) — the loop body. The LEAD injects the concrete gate config from `goal-plan.md` into the run-state's `loopConfig` before round 1. Each round: dispatch the **warm-reused** implementer (same worker across all rounds, like review-cycle reuses the fixer thread), then run the gate:
    - **measure** — run `gate.command`, parse `{score, passed, detail}`. A failed command (non-zero exit / timeout / unparseable JSON) is recorded as `{round, error}` and treated as not-passed — it does NOT deadlock.
    - **evaluate** — dispatch a **fresh reviewer worker** (≠ implementer — author ≠ verifier) that MUST return structured `{satisfied: boolean, gaps: string[]}`.
-3. **tail** — measure/evaluate → `ship` → `archive` (the iterated code is delivered normally); research → `report` (the `openspec-goal-report` skill summarizes the run into a final document — there is no code to ship).
+3. **tail** — measure/evaluate → `ship` → `retain` → `archive` (the iterated code is delivered, the frozen retention policy runs, then the change archives); research → `report` only (the `openspec-goal-report` skill summarizes the run into a final document — there is no ship, retain, or archive stage).
 
 ### 9.3 `goal-run.json` — the authoritative loop spine
 
@@ -534,7 +579,7 @@ Before resuming a round, the LEAD MAY re-run the gate once on the current tree (
 You: /rasen-goal drive the Lighthouse performance score to 90
 
 AI:  Keyword "lighthouse" + "score" -> goal-loop-measure
-     Fetch DAG: define-goal -> iterate (measure gate) -> ship -> archive
+     Fetch DAG: define-goal -> iterate (measure gate) -> ship -> retain -> archive
      ▸ planner -> goal-plan.md (gate: measure, command: lighthouse --output=json,
         threshold: 90, direction: gte, workProduct: code, maxRounds: 5)
      ⏸ gate: confirm the measure command? -> You: continue
@@ -542,7 +587,7 @@ AI:  Keyword "lighthouse" + "score" -> goal-loop-measure
      ▸ measure gate: score 82 (not passed) -> recorded to goal-run.json
      ▸ implementer (round 2, warm-reused, seeded with score 82) -> further edits
      ▸ measure gate: score 91 (satisfied) -> recorded
-     ▸ ship -> archive   (outcome: satisfied)
+     ▸ ship -> retain -> archive   (outcome: satisfied)
 ```
 
 **Evaluate — make a module rubric-clean.**
@@ -558,7 +603,7 @@ AI:  Keyword "rubric" -> goal-loop-evaluate
      ▸ evaluate gate: FRESH reviewer worker -> { satisfied: false, gaps: [...] }
      ▸ implementer (round 2, warm-reused, seeded with the gaps) -> addresses them
      ▸ evaluate gate: FRESH reviewer -> { satisfied: true } -> recorded
-     ▸ ship -> archive   (outcome: satisfied)
+     ▸ ship -> retain -> archive   (outcome: satisfied)
 ```
 
 **Research — research and write a brief.**
@@ -576,7 +621,7 @@ AI:  Keyword "research" + "write brief" -> goal-loop-research
         support matrix"] }
      ▸ implementer (round 2, warm-reused) -> adds the matrix
      ▸ evaluate gate: FRESH reviewer -> { satisfied: true } -> recorded
-     ▸ report -> final brief + run summary   (no ship/archive; outcome: satisfied)
+     ▸ report -> final brief + run summary   (report-only; no ship/retain/archive; outcome: satisfied)
 ```
 
 > **Quick reference**: `/rasen-goal <task>` (or `measure|evaluate|research` selector / `--pipeline goal-loop-<variant>`); rounds record to `goal-run.json`; `maxRounds` exhaustion is marked honestly; `rasen pipeline resume <change>` resumes from the last record. The loop semantics live in the LEAD playbook (Step L), driven by the same orchestration as `/rasen-auto`.

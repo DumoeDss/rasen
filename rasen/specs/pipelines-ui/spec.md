@@ -5,17 +5,17 @@ Provide a per-space Pipelines page in the management web UI presenting each pipe
 ## Requirements
 ### Requirement: A Pipelines page presents each pipeline's structure and configuration together
 
-The web UI SHALL provide a Pipelines route within each planning space, reachable from the header navigation beside the Board, Archive, and Config entries. For every pipeline available in the addressed space the page SHALL always show a scannable summary — a provenance badge (built-in or user), the layer the definition resolves from (project, user, or package), the pipeline's description, the graph-view affordance, and the pipeline's stages in build order with each stage's id, role, and skill. The pipeline's effective per-stage configuration (gate, model, handoff threshold, runtime as the server resolved them, with their source layers) and its per-role runtime controls SHALL sit behind an explicit per-pipeline configure/expand affordance rather than rendering inline for every pipeline at once, so the list page reads as a library instead of a wall of controls; expanding one pipeline SHALL NOT require collapsing another. The structural view is read-only: the page SHALL offer no stage adding, removing, or reordering — structural editing remains pipeline authoring.
+The web UI SHALL provide a Pipelines route within each planning space, reachable from the header navigation beside the Board, Archive, and Config entries. For every pipeline available in the addressed space the page SHALL always show a scannable summary—a provenance badge (built-in or user), the layer the definition resolves from (project, user, or package), the pipeline's description, the graph-view affordance, and the pipeline's stages in build order with each stage's id, role, and skill. The pipeline's editable per-stage gate and model configuration, including effective values and source layers, and its per-role runtime controls SHALL sit behind an explicit per-pipeline configure/expand affordance rather than rendering inline for every pipeline at once, so the list page reads as a library instead of a wall of controls; expanding one pipeline SHALL NOT require collapsing another. The structural view is read-only: the page SHALL offer no stage adding, removing, or reordering—structural editing remains pipeline authoring.
 
 #### Scenario: List page reads as a scannable library
 
 - **WHEN** the user opens the Pipelines page in a space with several pipelines
 - **THEN** each pipeline shows its name, badges, description, and build-order stage lane, and no per-stage configuration controls render until that pipeline's configure affordance is expanded
 
-#### Scenario: Stage graph with effective values on demand
+#### Scenario: Configurable values appear on demand
 
 - **WHEN** the user expands a pipeline's configure affordance
-- **THEN** that pipeline's stages show their effective gate, model, handoff, and runtime with the source layer that supplied each, with the same editable controls as before
+- **THEN** that pipeline's stages show editable effective gate and model controls with their source layers, together with the pipeline's per-role runtime controls
 
 #### Scenario: Provenance and source layer are visible
 
@@ -24,7 +24,9 @@ The web UI SHALL provide a Pipelines route within each planning space, reachable
 
 ### Requirement: Per-stage configuration rows write the pipeline config families
 
-Each stage row SHALL offer editable controls bound to the per-stage configuration families—gate (`on`/`off`/inherit) and model (a suggestion-backed text input accepting any id)—and each pipeline section SHALL offer per-role runtime controls bound to the runtime family. The stage's dual-form handoff threshold control SHALL remain available in that pipeline section under an explicit Advanced Overrides disclosure rather than occupying the ordinary stage row. Writes SHALL go through the config API as family-instance writes carrying the page's scope mode (the same Global/Local segmented control the Config page uses: Local targets the space's own scope, Global the machine scope), and an inherit/unset action SHALL remove the instance at the active scope so the value falls back down the chain. Setting any per-stage or per-role value SHALL never write a pipeline definition file. After a write the row SHALL re-render from the server's re-resolved state, including any binding metadata or fallback diagnostic the server reports.
+Each stage row SHALL offer editable controls bound to the per-stage gate (`on`/`off`/inherit) and model (a suggestion-backed text input accepting any id) configuration families, and each pipeline section SHALL offer per-role runtime controls bound to the runtime family. Writes SHALL go through the config API as family-instance writes carrying the page's scope mode (the same Global/Local segmented control the Config page uses: Local targets the space's own scope, Global the machine scope), and an inherit/unset action SHALL remove the instance at the active scope so the value falls back down the chain. Setting any per-stage gate/model or per-role runtime value SHALL never write a pipeline definition file. After a write the row SHALL re-render from the server's re-resolved state.
+
+The Configure surface SHALL reserve stage handoff authoring for the Canvas pipeline definition editor and SHALL NOT offer a mutation control for `pipelines.<name>.handoff.<stage>` instances. Existing instances remain compatibility inputs to server-side resolution.
 
 #### Scenario: Gate a single stage in two writes
 
@@ -41,33 +43,33 @@ Each stage row SHALL offer editable controls bound to the per-stage configuratio
 - **WHEN** a stage has a Local-scope model override and the user unsets it in Local mode
 - **THEN** the row re-renders with the value the chain resolves without that instance, naming the new source
 
-#### Scenario: Stage threshold remains available but secondary
+#### Scenario: Configure remains focused
 
-- **WHEN** the user expands a pipeline's configuration and opens Advanced Overrides
-- **THEN** each stage offers its existing dual-form `pipelines.<name>.handoff.<stage>` control with source and inherit behavior
-- **AND** those controls are absent from the ordinary collapsed stage row
+- **WHEN** the user expands a pipeline's Configure surface
+- **THEN** stage gate, stage model, and per-role runtime controls are available
+- **AND** no stage handoff instance editor or nested Advanced stage threshold disclosure is offered
 
 ### Requirement: The Defaults table presents the role matrix and autopilot keys
 
-The Pipelines page SHALL retain a slim Defaults area presenting the base and per-role model keys (`models.default`, `models.roles.<role>`) as a compact role grid, together with the `autopilot.gates` mask base, `autopilot.selection`, and the separately specified keepalive beat control. These are ordinary configuration keys written through the config API under the page's scope mode, with suggestion-backed model inputs accepting any id.
+The Pipelines page SHALL retain a slim Defaults area presenting the base and per-role model keys (`models.default`, `models.roles.<role>`) as a compact role grid, together with the `autopilot.gates` mask base, `autopilot.selection`, and the separately specified keepalive lifecycle controls. These are ordinary configuration keys written through the config API under the page's scope mode, with suggestion-backed model inputs accepting any id.
 
-The base and per-role handoff keys SHALL no longer appear as a primary column in this grid. They SHALL remain editable under Advanced Overrides, while scheme and binding sections become the primary threshold controls.
+The base and per-role legacy handoff keys SHALL not appear in the Defaults area. Threshold Schemes and runtime bindings SHALL be the page's ordinary controls for scalar and role-specific handoff policy, while stored legacy values remain backend compatibility inputs.
 
 #### Scenario: Model defaults remain a compact grid
 
 - **WHEN** the user views the Defaults area
 - **THEN** the six model values render as one role-keyed grid
-- **AND** no handoff-threshold column appears in that primary grid
+- **AND** no handoff-threshold column or legacy handoff editor appears in that area
 
 #### Scenario: Defaults write like config keys
 
 - **WHEN** the user edits `models.roles.reviewer` in Local mode at a project space
 - **THEN** the write carries the project scope through the config API and the grid re-renders from the re-resolved response
 
-#### Scenario: Legacy handoff keys remain reachable
+#### Scenario: Threshold policy has one ordinary home
 
-- **WHEN** a user needs to inspect or change `handoff.threshold` or `handoff.roles.reviewer`
-- **THEN** those keys are available with their dual-form controls and source badges after opening Advanced Overrides
+- **WHEN** the user configures default or role-specific handoff policy from the Pipelines page
+- **THEN** the page directs that work through Threshold Schemes and runtime bindings rather than machine legacy handoff controls
 
 ### Requirement: The Pipelines page manages the threshold scheme library
 
@@ -163,52 +165,53 @@ When no binding exists at any scope, the section SHALL show an empty state expla
 - **WHEN** Zed remains audit-capable but not probe-capable
 - **THEN** it is absent from add choices and rows
 
-### Requirement: Advanced Overrides preserves legacy controls and gives non-destructive migration guidance
-
-The Pipelines page SHALL provide a collapsed Advanced Overrides area for legacy machine handoff scalar/role keys, per-stage handoff instances, `keepalive.runtimes.*`, and `keepalive.contextFloor`. Every control SHALL preserve its existing validation, scope mode, source badge, and inherit/unset behavior. Keepalive controls SHALL be labeled as independent lifecycle/cache gates and SHALL NOT be presented as threshold binding rows.
-
-When one or more effective runtime bindings coexist with an explicitly configured legacy `handoff.threshold` or `handoff.roles.<role>` value, the page SHALL show a migration notice. The notice SHALL explain the actual precedence—configured stage instance and stage YAML remain above schemes; a usable bound scheme outranks pipeline-wide and legacy machine thresholds—and SHALL warn that stored legacy values can become active again when bindings are removed or unusable. It SHALL link or focus the scheme editor and Advanced Overrides but SHALL NOT create, rename, bind, unset, or delete any value automatically.
-
-#### Scenario: Advanced area is collapsed by default
-
-- **WHEN** the user opens the Pipelines page
-- **THEN** dense legacy threshold and keepalive controls do not occupy the primary scheme/binding view
-- **AND** an explicit Advanced Overrides affordance reveals them
-
-#### Scenario: Keepalive stays independent
-
-- **WHEN** the user edits `keepalive.runtimes.claude` or `keepalive.contextFloor`
-- **THEN** the existing config key is written with its existing scope rules and no threshold binding changes
-
-#### Scenario: Coexistence produces guidance, not a mutation
-
-- **WHEN** a runtime binding and a legacy role/scalar handoff value are both explicitly set
-- **THEN** the migration notice explains which layer wins and where to inspect both
-- **AND** merely viewing or dismissing the notice performs no write
-
-#### Scenario: Legacy-only configuration is not misreported as migrated
-
-- **WHEN** legacy handoff values exist but no binding is configured
-- **THEN** the page does not claim they are shadowed by schemes and the empty binding state explains compatibility behavior
-
 ### Requirement: The pipeline library is managed from the page
 
-The page SHALL offer pipeline library actions through the pipelines API's CLI-backed bridge, never by the browser touching the filesystem, and SHALL offer each action only where the CLI supports it: **import** (a picked `.rasenpkg`, with an explicit overwrite retry when a same-name pipeline is already installed), **export** (user pipelines only — the CLI refuses to export a built-in or project pipeline; picked destination and filename, explicit overwrite retry on an existing destination), **delete** (user pipelines only, behind confirmation; a referrer-guard refusal shows the CLI's message naming the referrers with a separately confirmed force option). Creating a new pipeline SHALL be a single entry on the page: the name-first canvas assembly flow (the editor-save requirement's entry) — the page SHALL NOT offer a second, scaffold-to-disk creation dialog; scaffolding a draft directory remains a CLI capability (`rasen pipeline init`). A pipeline the CLI will not export or delete — a built-in (package) pipeline or a project-layer pipeline, i.e. anything not resolved from the user library — SHALL therefore present neither a delete nor an export affordance and SHALL be visibly locked, so no action leads to a dead CLI refusal. The bridge's **save** operation is exercised only by the canvas editor's save flow (its own requirement), not by a page dialog; draft validation's only UI surface is likewise the canvas editor — the page itself offers no separate validation control, and `rasen pipeline validate` remains the CLI path. Every failure SHALL surface the CLI's own error message verbatim, and the page SHALL prevent submitting a second mutation while one is in flight.
+The page SHALL offer pipeline library actions through the pipelines API's CLI-backed bridge, never by the browser touching the filesystem, and SHALL offer each action only where the CLI supports it: **import** (a `.rasenpkg` selected through the shared server-local chooser/fallback control, with an explicit overwrite retry when a same-name pipeline is already installed), **export** (user pipelines only; a destination directory selected through the same control plus a filename, with an explicit overwrite retry on an existing destination), and **delete** (user pipelines only, behind confirmation; a referrer-guard refusal shows the CLI's message naming the referrers with a separately confirmed force option).
+
+For import and export, the visible path SHALL be the submitted selection: a typed dirty value SHALL resolve or fail inline before mutation, and unavailable or cancelled native choice SHALL leave the typed-path/server-browser fallback usable. Cross-platform destination construction SHALL retain the server-selected directory's native path semantics.
+
+Creating a new pipeline SHALL be a single entry on the page: the name-first canvas assembly flow. The page SHALL NOT offer a second, scaffold-to-disk creation dialog; scaffolding a draft directory remains a CLI capability (`rasen pipeline init`). A pipeline the CLI will not export or delete, including a built-in package pipeline or a project-layer pipeline, SHALL present neither action and SHALL be visibly locked. The bridge's **save** operation SHALL be exercised only by the canvas editor's save flow, and draft validation's only UI surface SHALL likewise be the canvas editor. Every failure SHALL surface the CLI's own error message verbatim, and the page SHALL prevent submitting a second mutation while one is in flight.
 
 #### Scenario: One creation entry leads to the canvas
 
 - **WHEN** the user looks for a way to create a pipeline on the Pipelines page
-- **THEN** exactly one creation entry is offered (besides Import), and choosing it starts the name-first canvas assembly flow
+- **THEN** exactly one creation entry is offered besides Import, and choosing it starts the name-first canvas assembly flow
 
 #### Scenario: Non-user-library pipelines are locked
 
-- **WHEN** the user views a pipeline that is not resolved from the user library (a built-in package pipeline or a project-layer pipeline)
+- **WHEN** the user views a pipeline that is not resolved from the user library, whether a built-in package pipeline or a project-layer pipeline
 - **THEN** neither a delete nor an export control is offered and the entry is visibly locked, matching what the CLI will accept
+
+#### Scenario: Import uses the shared package chooser
+
+- **WHEN** the user selects a pipeline `.rasenpkg` through native choice or the fallback browser and activates Import
+- **THEN** that visible absolute package path is submitted through the pipeline bridge instead of requiring manual copy/paste
+
+#### Scenario: Dirty import path cannot submit an older value
+
+- **WHEN** the user selects one package, types a different absolute package path, and immediately activates Import
+- **THEN** only the typed visible path is resolved and submitted, or its inline error stops the import
 
 #### Scenario: Import conflict offers overwrite
 
 - **WHEN** the user imports a package whose pipeline name is already installed
 - **THEN** the CLI's refusal is shown and an explicit overwrite retry succeeds
+
+#### Scenario: Export uses a chosen destination directory
+
+- **WHEN** the user selects an export directory through native choice or the fallback browser and enters a filename
+- **THEN** the UI displays and submits the resulting absolute destination using the selected directory's native path semantics
+
+#### Scenario: Windows export does not hardcode POSIX separators
+
+- **WHEN** the selected Pipeline export directory is a Windows drive path
+- **THEN** the destination preview and submitted path preserve Windows separator and drive behavior
+
+#### Scenario: Native choice falls back safely
+
+- **WHEN** native file or directory choice is unavailable or cancelled
+- **THEN** the current selection remains unchanged and the typed-path/server-browser fallback remains usable
 
 #### Scenario: Guarded delete surfaces referrers
 
@@ -260,7 +263,7 @@ The graph view's canvas machinery SHALL live in a lazily loaded bundle chunk tha
 
 ### Requirement: The canvas editor composes and modifies pipelines
 
-The graph route SHALL offer an edit mode for editable pipelines (and for new drafts): entered by an explicit control, absent for built-ins. In edit mode the user SHALL be able to move stage cards freely (positions are session-only presentation — the saved definition carries no coordinates, and reopening auto-lays-out again), connect one stage to another to add a dependency, delete edges, and delete stages — deleting a stage also removes every dependency reference to it. A connection that would create a dependency cycle SHALL be rejected at connect time with a transient explanation and no edge added; this instant check is a convenience, with the server's draft validation remaining the authority. A palette listing the installed skills from the pipeline catalog endpoint SHALL support dragging a skill onto the canvas to create a new stage (with a generated, editable stage id); skills the catalog reports as disabled SHALL be visibly greyed with their state named and SHALL not be placeable. A properties panel on the selected stage SHALL edit the stage's id (rewriting references), role, skill, gate, condition, verify policy, model, runtime, parallel group, and review-cycle loop settings — with every closed vocabulary sourced from the catalog endpoint's response, never restated in UI code — and the pipeline's description SHALL be editable in the header. Definition content the editor does not expose SHALL be preserved verbatim through editing and saving. Changing a stage's parallel group SHALL re-run auto-layout so group containers stay truthful, and a re-layout control SHALL be available at any time.
+The graph route SHALL offer an edit mode for editable pipelines (and for new drafts): entered by an explicit control, absent for built-ins. In edit mode the user SHALL be able to move stage cards freely (positions are session-only presentation—the saved definition carries no coordinates, and reopening auto-lays-out again), connect one stage to another to add a dependency, delete edges, and delete stages—deleting a stage also removes every dependency reference to it. A connection that would create a dependency cycle SHALL be rejected at connect time with a transient explanation and no edge added; this instant check is a convenience, with the server's draft validation remaining the authority. A palette listing the installed skills from the pipeline catalog endpoint SHALL support dragging a skill onto the canvas to create a new stage (with a generated, editable stage id); skills the catalog reports as disabled SHALL be visibly greyed with their state named and SHALL not be placeable. A properties panel on the selected stage SHALL edit the stage's id (rewriting references), role, skill, gate, condition, verify policy, model, runtime, optional dual-form `handoff.threshold`, parallel group, and review-cycle loop settings—with every closed vocabulary and threshold constraint sourced from the catalog endpoint's response, never restated in UI code—and the pipeline's description SHALL be editable in the header. Definition content the editor does not expose SHALL be preserved verbatim through editing and saving. Changing a stage's parallel group SHALL re-run auto-layout so group containers stay truthful, and a re-layout control SHALL be available at any time.
 
 #### Scenario: Assemble by drag and connect
 
@@ -281,6 +284,18 @@ The graph route SHALL offer an edit mode for editable pipelines (and for new dra
 
 - **WHEN** the catalog reports a skill as installed but disabled in the active selection
 - **THEN** the palette shows it greyed with its disabled state named, and it cannot be dropped onto the canvas
+
+#### Scenario: Stage handoff threshold is durable definition data
+
+- **WHEN** the user selects fraction or remaining-tokens form for a stage handoff threshold, enters a valid value, and saves the Canvas draft
+- **THEN** the corresponding `stage.handoff.threshold` value is saved in the pipeline definition and reloads in the same form
+- **AND** no `pipelines.<name>.handoff.<stage>` config instance is created
+
+#### Scenario: Clearing a stage threshold preserves other handoff fields
+
+- **WHEN** a stage definition contains an authored threshold plus unexposed `maxRelays` or `stallLimit` and the user returns the threshold control to inherit
+- **THEN** the threshold is removed while the unexposed handoff fields survive unchanged
+- **AND** a handoff block containing no remaining fields is omitted rather than saved as an empty object
 
 #### Scenario: Unexposed fields survive the editor
 
@@ -403,7 +418,9 @@ The canvas's viewport controls (zoom, fit) SHALL render with the app's own visua
 
 ### Requirement: The Defaults section offers a keepalive beat control
 
-The Pipelines page's Defaults section SHALL offer a keepalive control for the `keepalive.enabled` and `keepalive.beatSeconds` configuration keys, rendering each setting only when its key is visible in the active scope mode. The control SHALL show the effective enabled value and source, allow the user to write or unset it in Global mode or in Local mode for a project space, and SHALL NOT offer a Local write in a store space. The beat control SHALL offer one built-in preset — 270 seconds (economy, the default) — plus a custom numeric input bounded to 90–280; activating the preset or committing a custom value SHALL write `keepalive.beatSeconds` through the config API exactly like other Defaults keys, and the control SHALL reflect the effective value on load and after each write (270 selects the economy preset, any other value presents as custom). The control SHALL display an informational derived tool-timeout hint of the effective beat plus 50 seconds, clearly presented as guidance for the shell tool timeout rather than a written setting. Unset SHALL be offered per key under the page's existing scope-mode rules, returning that key to its inherited or registry-default value. Labels, descriptions, state text, and accessible names for the enabled switch SHALL use the active UI locale.
+The Pipelines page's Defaults section SHALL offer one keepalive lifecycle area for the `keepalive.enabled`, `keepalive.beatSeconds`, `keepalive.runtimes.claude`, `keepalive.runtimes.codex`, and `keepalive.contextFloor` configuration keys, rendering each setting only when its key is visible in the active scope mode. The enabled switch and beat control SHALL show their effective values and sources, allow the user to write or unset them in Global mode or in Local mode for a project space, and SHALL NOT offer a Local write in a store space. The global-only runtime gates and context floor SHALL appear in the same lifecycle area in Global mode and use the standard config control, source, validation, and unset behavior.
+
+The beat control SHALL offer one built-in preset—270 seconds (economy, the default)—plus a custom numeric input bounded to 90–280; activating the preset or committing a custom value SHALL write `keepalive.beatSeconds` through the config API exactly like other Defaults keys, and the control SHALL reflect the effective value on load and after each write (270 selects the economy preset, any other value presents as custom). The control SHALL display an informational derived tool-timeout hint of the effective beat plus 50 seconds, clearly presented as guidance for the shell tool timeout rather than a written setting. Unset SHALL be offered per key under the page's existing scope-mode rules, returning that key to its inherited or registry-default value. Labels, descriptions, state text, and accessible names for the lifecycle controls SHALL use the active UI locale.
 
 #### Scenario: Preset writes the key
 
@@ -445,7 +462,18 @@ The Pipelines page's Defaults section SHALL offer a keepalive control for the `k
 - **WHEN** the Pipelines page is in Local mode for a store space
 - **THEN** `keepalive.enabled` is not rendered as an editable setting because the key has no store scope
 
-#### Scenario: Enabled copy follows the active locale
+#### Scenario: Global lifecycle gates stay with keepalive
+
+- **WHEN** the user selects Global mode
+- **THEN** the Keepalive lifecycle area exposes the Claude and Codex runtime gates and context floor with their effective sources
+- **AND** those keys are not presented as threshold overrides or scheme bindings
+
+#### Scenario: Global-only lifecycle gates do not leak into Local mode
+
+- **WHEN** the user selects Local mode for a project or store
+- **THEN** the runtime gates and context floor are absent because their registry scopes are global-only
+
+#### Scenario: Lifecycle copy follows the active locale
 
 - **WHEN** the active UI locale changes among English, Japanese, and Simplified Chinese
-- **THEN** the enabled label, description, on/off state text, and accessible name update without remounting the page
+- **THEN** the lifecycle labels, descriptions, state text, and accessible names update without remounting the page

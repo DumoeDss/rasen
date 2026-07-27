@@ -11,13 +11,7 @@ import ora from 'ora';
 import * as fs from 'fs';
 import { createRequire } from 'module';
 import { FileSystemUtils } from '../utils/file-system.js';
-import {
-  classifyOpenSpecDir,
-  describeStoreDeclaration,
-  hasStoreDeclaration,
-  storePointerProblem,
-  updateProjectConfigKey,
-} from './project-config.js';
+import { classifyOpenSpecDir, storePointerProblem, updateProjectConfigKey } from './project-config.js';
 import { resolveProjectHome } from './project-home.js';
 import { findRepoPlanningRootSync } from './planning-home.js';
 import {
@@ -66,9 +60,9 @@ import {
   RETRO_COMPAT_WRAPPER_DIR_NAME,
 } from './templates/skill-templates.js';
 import {
-  EffectiveLearnedSkillPlanningError,
-  resolveEffectiveLearnedSkillPlan,
   resolveLearnedSkillExecutionContext,
+  resolveEffectiveLearnedSkillPlan,
+  type EffectiveLearnedSkillPlan,
 } from './learned-skills/index.js';
 import {
   emptyLearnedReconcileResult,
@@ -78,8 +72,6 @@ import {
   reconcileProjectLearnedSkillsForTool,
   type LearnedReconcileResult,
 } from './learned-skill-materialization.js';
-import { collectProjectLearnedStores } from './project-learned-skill-ledger.js';
-import { learnedMaterializationReport } from './learned-materialization-locale.js';
 import { getGlobalConfig, saveGlobalConfig, type Profile, type RepoMode } from './global-config.js';
 import { writeExpertSelectionAck } from './expert-selection-state.js';
 import {
@@ -101,7 +93,7 @@ import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
 import {
   filterKnownWorkflowRoots,
   loadWorkflowCatalog,
-  resolveWorkflowSelection,
+  resolveEffectiveWorkflowInstallSelection,
 } from './workflow-registry/index.js';
 import { syncWorkflowArtifactLedger } from './workflow-artifact-ledger.js';
 import { getAvailableTools } from './available-tools.js';
@@ -168,6 +160,7 @@ export class InitCommand {
     // finds the nearest ancestor root (so pointer-repo subdirectories
     // refuse exactly where a normal command would resolve the pointer).
     const guardRoot = findRepoPlanningRootSync(projectPath);
+    let pointerToolOnlySelection: string[] | undefined;
     if (guardRoot) {
       const { hasPlanningShape, pointer } = classifyOpenSpecDir(guardRoot);
       if (!hasPlanningShape) {
@@ -178,11 +171,22 @@ export class InitCommand {
               `). Fix or remove the store: line before running rasen init.`
           );
         }
-        if (hasStoreDeclaration(pointer)) {
-          throw new Error(
-            `This repo's planning is externalized to store '${describeStoreDeclaration(pointer)}' (${pointer.filePath}). ` +
-              `Remove the store: line first to convert this repo to a local Rasen root.`
-          );
+        if (pointer.value !== undefined) {
+          const targetsPointerRoot =
+            FileSystemUtils.canonicalizeExistingPath(projectPath) ===
+            FileSystemUtils.canonicalizeExistingPath(guardRoot);
+          if (targetsPointerRoot && this.toolsArg !== undefined) {
+            const explicitSelection = this.resolveToolsArg();
+            if (explicitSelection !== null && explicitSelection.length > 0) {
+              pointerToolOnlySelection = explicitSelection;
+            }
+          }
+          if (pointerToolOnlySelection === undefined) {
+            throw new Error(
+              `This repo's planning is externalized to store '${pointer.value}' (${pointer.filePath}). ` +
+                `Remove the store: line first to convert this repo to a local Rasen root.`
+            );
+          }
         }
       }
     }
@@ -216,7 +220,9 @@ export class InitCommand {
     const toolStates = getToolStates(projectPath);
 
     // Get tool selection (pass detected tools for pre-selection)
-    const selectedToolIds = await this.getSelectedTools(toolStates, extendMode, detectedTools, projectPath);
+    const selectedToolIds =
+      pointerToolOnlySelection ??
+      await this.getSelectedTools(toolStates, extendMode, detectedTools, projectPath);
 
     // Validate selected tools
     const validatedTools = this.validateTools(selectedToolIds, toolStates);
@@ -273,13 +279,18 @@ export class InitCommand {
     }
 
     // Create directory structure and config
-    await this.createDirectoryStructure(openspecPath, extendMode);
+    if (pointerToolOnlySelection === undefined) {
+      await this.createDirectoryStructure(openspecPath, extendMode);
+    }
 
     // Generate skills and commands for each tool
     const results = await this.generateSkillsAndCommands(projectPath, validatedTools);
 
     // Create config.yaml if needed (and persist an explicit profile lock)
-    const configStatus = await this.createConfig(openspecPath, extendMode, projectPath);
+    const configStatus =
+      pointerToolOnlySelection === undefined
+        ? await this.createConfig(openspecPath, extendMode, projectPath)
+        : 'exists';
 
     // Establish machine-home identity and registration (task 4.1). Best
     // effort: a registration failure never fails init - the repo-side
@@ -415,7 +426,7 @@ export class InitCommand {
     } else {
       const definition = resolveProfileDefinition(override.name);
       const { known, unknown } = filterKnownWorkflowRoots(catalog, definition.workflows);
-      const ids = resolveWorkflowSelection(catalog, known, { includeSkillDependencies: true }).map(
+      const ids = resolveEffectiveWorkflowInstallSelection(catalog, known).map(
         (workflowDefinition) => workflowDefinition.id
       );
       result = { ids, unknown, mode: 'locked-profile', lockedProfile: override.name };
@@ -832,81 +843,55 @@ export class InitCommand {
   }
 
   /**
-   * Resolves what this project receives and materializes it into each
-   * successfully configured tool, tracking exact ownership.
-   *
-   * The three roots stay apart: the plan's own `evaluationRoot` is where files
-   * land and where the ownership record lives, `plan.project.root` is the
-   * project's registered root, and the canonical catalog is somewhere else
-   * again. A failure is REPORTED rather than swallowed — a learned
-   * reconciliation that silently did nothing is how a user ends up debugging a
-   * missing skill with no explanation — but never fails init, whose repo-side
-   * setup has already completed.
+   * Resolves the active learned skills and materializes the applicable ones
+   * into each successfully configured tool, tracking exact ownership in the
+   * artifact ledgers. Learned-skill ids are NOT added to the profile or
+   * workflow selection. Best-effort: a resolution or per-tool failure never
+   * fails init — the repo-side setup has already completed.
    */
   private async reconcileLearnedSkills(
     projectPath: string,
     tools: Array<{ value: string; name: string; skillsDir: string; wasConfigured: boolean }>
   ): Promise<LearnedReconcileResult> {
     const aggregate = emptyLearnedReconcileResult();
+    let plan: EffectiveLearnedSkillPlan;
     try {
       const execution = await resolveLearnedSkillExecutionContext({
         launchDirectory: projectPath,
         requestedScope: 'mixed',
       });
-      const plan = await resolveEffectiveLearnedSkillPlan({
-        execution,
-        previousStores:
-          execution.owner.type === 'project'
-            ? collectProjectLearnedStores(execution.evaluationRoot ?? projectPath)
-            : [],
-      });
+      plan = await resolveEffectiveLearnedSkillPlan({ execution });
+    } catch {
+      return aggregate;
+    }
 
-      for (const tool of tools) {
-        const toolDefinition = AI_TOOLS.find((candidate) => candidate.value === tool.value);
-        const skillsRoot = resolveToolSkillsRoot(
-          toolDefinition ?? {
-            name: tool.name,
-            value: tool.value,
-            available: true,
-            skillsDir: tool.skillsDir,
-          },
-          plan.evaluationRoot
-        );
-        try {
-          const result =
-            toolDefinition?.skillsHome === 'global'
-              ? reconcileGlobalLearnedSkillsForTool({
-                  toolId: tool.value,
-                  toolLabel: tool.name,
-                  skillsRoot,
-                  globalRecords: plan.globalRecords,
-                  localRecords: plan.skills,
-                  plan,
-                  ...(execution.globalDataDir ? { globalDataDir: execution.globalDataDir } : {}),
-                })
-              : reconcileProjectLearnedSkillsForTool({
-                  toolId: tool.value,
-                  toolLabel: tool.name,
-                  skillsRoot,
-                  plan,
-                });
-          mergeLearnedReconcileResult(aggregate, result);
-        } catch (error) {
-          aggregate.errors.push({
-            code: 'tool_reconcile_failed',
-            message: `${tool.name}: ${error instanceof Error ? error.message : String(error)}`,
-          });
-        }
+    for (const tool of tools) {
+      const toolDefinition = AI_TOOLS.find((candidate) => candidate.value === tool.value);
+      const skillsRoot = resolveToolSkillsRoot(
+        toolDefinition ?? { name: tool.name, value: tool.value, available: true, skillsDir: tool.skillsDir },
+        plan.evaluationRoot
+      );
+      try {
+        const result =
+          toolDefinition?.skillsHome === 'global'
+            ? reconcileGlobalLearnedSkillsForTool({
+                toolId: tool.value,
+                toolLabel: tool.name,
+                skillsRoot,
+                globalRecords: plan.globalRecords,
+                localRecords: plan.skills,
+                plan,
+              })
+            : reconcileProjectLearnedSkillsForTool({
+                toolId: tool.value,
+                toolLabel: tool.name,
+                skillsRoot,
+                plan,
+              });
+        mergeLearnedReconcileResult(aggregate, result);
+      } catch {
+        // Best-effort per tool.
       }
-    } catch (error) {
-      aggregate.errors.push({
-        code:
-          error instanceof EffectiveLearnedSkillPlanningError ? error.code : 'effective_plan_failed',
-        message: error instanceof Error ? error.message : String(error),
-        ...(error instanceof EffectiveLearnedSkillPlanningError && error.repair.length > 0
-          ? { repair: error.repair }
-          : {}),
-      });
     }
     return aggregate;
   }
@@ -1176,15 +1161,14 @@ export class InitCommand {
       console.log(chalk.yellow(`  ⚠ ${machineHome.warning}`));
     }
 
-    // Learned-skill materialization (reported separately from workflow skills):
-    // what was written, what was left alone, and anything deferred or blocked.
-    if (learnedReconcileHasActivity(learned) || learned.noOp) {
+    // Learned-skill materialization (reported separately from workflow skills).
+    if (learnedReconcileHasActivity(learned)) {
       const materialized = learned.created.length + learned.updated.length;
       if (materialized > 0) {
         console.log(`Learned skills: ${materialized} materialized`);
       }
-      for (const line of learnedMaterializationReport(learned)) {
-        console.log(line.tone === 'warn' ? chalk.yellow(`  ⚠ ${line.text}`) : chalk.dim(line.text));
+      for (const skip of learned.skipped) {
+        console.log(chalk.yellow(`  ⚠ ${skip.message}`));
       }
     }
 

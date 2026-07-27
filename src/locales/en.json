@@ -449,6 +449,7 @@
       "pipelineTableEntry": "  {name}  [{source}]",
       "pipelineTableStages": "    stages: {stages}",
       "pipelineLabel": "Pipeline: {name}",
+      "definitionVersionLabel": "Definition version: {version}",
       "hostRuntimeLabel": "Host runtime: {runtime} ({source})",
       "pipelineNotFound": "Pipeline '{name}' not found. Available pipelines:\n  {available}",
       "originLabel": "Origin: {origin}",
@@ -491,7 +492,9 @@
       "interrupted": "Interrupted (warm-seed resume): {stages}",
       "escalated": "Escalated (needs attention): {stages}",
       "persistentPlanner": "Planner (persistent, resumable): {planner}",
+      "portfolioDelivery": "Portfolio delivery: {status}",
       "remaining": "Remaining: {stages}",
+      "invalidPortfolioStateNote": "Portfolio run-state file at {path} is invalid: {reason}",
       "invalidRunStateNote": "Run-state file at {path} is invalid: {reason}",
       "invalidPortfolioStateNote": "Portfolio run-state file at {path} could not be read: {reason}. This change was split into children, so it is not resumed as an undivided change; repair the record before resuming.",
       "noRunStateNote": "No run-state (auto-run.json) found; run classification to select a pipeline.",
@@ -605,6 +608,10 @@
         "help": {
           "name": "Find help",
           "description": "Find the right Rasen command, skill, or workflow for your situation"
+        },
+        "direction": {
+          "name": "Govern direction",
+          "description": "Maintain long-lived direction, select one Roadmap slice, and reconcile observable evidence"
         },
         "office-hours-command": {
           "name": "Office hours",
@@ -1224,6 +1231,7 @@
     "Open the shipped viewer in your default browser, pre-loaded with the report": "Open the shipped viewer in your default browser, pre-loaded with the report",
     "Open with this tool just this once": "Open with this tool just this once",
     "Optional goal metadata to store with the change": "Optional goal metadata to store with the change",
+    "Pipeline to initialize run-state for": "Pipeline to initialize run-state for",
     "Output as JSON": "Output as JSON",
     "Output as JSON (non-interactive)": "Output as JSON (non-interactive)",
     "Output as JSON (non-interactive; requires --yes to execute)": "Output as JSON (non-interactive; requires --yes to execute)",

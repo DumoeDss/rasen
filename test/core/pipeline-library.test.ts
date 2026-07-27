@@ -1,8 +1,10 @@
 import * as fs from 'node:fs';
+import fsDefault from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   deletePipeline,
@@ -15,10 +17,18 @@ import {
 } from '../../src/core/pipeline-library.js';
 import {
   createPipelinePackage,
+  decodePackage,
   encodePackage,
+  type PipelinePackage,
   type PipelinePackageInput,
 } from '../../src/core/workflow-package/index.js';
-import { getUserPipelinesDir, listPipelines, loadPipelineByName } from '../../src/core/pipeline-registry/index.js';
+import {
+  getUserPipelinesDir,
+  listPipelines,
+  loadPipelineByName,
+  parsePipeline,
+  PIPELINE_DEFINITION_VERSION,
+} from '../../src/core/pipeline-registry/index.js';
 import { loadWorkflowCatalog } from '../../src/core/workflow-registry/index.js';
 import { scaffoldWorkflow, importWorkflow } from '../../src/core/workflow-library.js';
 
@@ -164,6 +174,16 @@ describe('pipeline library lifecycle', () => {
     expect(listPipelines()).not.toContain('validate-only');
   });
 
+  it('scaffolds a canonical v1 Pipeline definition', () => {
+    const draftParent = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-pipeline-v1-scaffold-'));
+    cleanup.push(draftParent);
+    const draft = scaffoldPipeline('v1-draft', path.join(draftParent, 'v1-draft'));
+    const manifest = fs.readFileSync(path.join(draft, 'pipeline.yaml'), 'utf8');
+
+    expect(manifest).toMatch(/^version: 1$/m);
+    expect(parsePipeline(manifest).version).toBe(PIPELINE_DEFINITION_VERSION);
+  });
+
   it('refuses to export a pipeline that is not in the user layer', () => {
     expect(() => exportPipeline('small-feature', path.join(home, 'small-feature.rasenpkg'))).toThrow(
       expect.objectContaining<Partial<PipelineLibraryError>>({ code: 'pipeline_not_found' })
@@ -273,7 +293,11 @@ describe('pipeline library lifecycle', () => {
       expect(result.created).toBe(true);
       expect(listPipelines()).toContain('saved-from-json');
       const pipeline = loadPipelineByName('saved-from-json');
+      expect(pipeline.version).toBe(PIPELINE_DEFINITION_VERSION);
       expect(pipeline.stages[0].skill).toBe('rasen-apply-change');
+      expect(
+        fs.readFileSync(path.join(getUserPipelinesDir(), 'saved-from-json', 'pipeline.yaml'), 'utf8')
+      ).toMatch(/^version: 1$/m);
     });
 
     it('installs a valid YAML definition, preserving origin verbatim', async () => {
@@ -385,6 +409,183 @@ describe('pipeline library lifecycle', () => {
       );
       await expect(savePipeline('saved-unknown-skill', definitionPath)).rejects.toThrow(/unknown skill/);
       expect(listPipelines()).not.toContain('saved-unknown-skill');
+    });
+  });
+
+  describe('v1 package export normalization', () => {
+    function writeUserPipeline(name: string, manifest: string, ancillary?: string): string {
+      const directory = path.join(getUserPipelinesDir(), name);
+      fs.mkdirSync(directory, { recursive: true });
+      fs.writeFileSync(path.join(directory, 'pipeline.yaml'), manifest);
+      if (ancillary !== undefined) fs.writeFileSync(path.join(directory, 'README.md'), ancillary);
+      return directory;
+    }
+
+    it('normalizes only packaged pipeline.yaml, preserves ancillary files and package formatVersion, then imports cleanly', async () => {
+      const legacyManifest = [
+        'name: legacy-export',
+        'description: Legacy source remains untouched.',
+        'stages:',
+        '  - id: implement',
+        '    skill: rasen-apply-change',
+        '    role: implementer',
+        '',
+      ].join('\n');
+      const ancillary = '# Keep these exact ancillary bytes.\n';
+      const sourceDir = writeUserPipeline('legacy-export', legacyManifest, ancillary);
+      const destination = path.join(home, 'legacy-export.rasenpkg');
+
+      exportPipeline('legacy-export', destination);
+      expect(fs.readFileSync(path.join(sourceDir, 'pipeline.yaml'), 'utf8')).toBe(legacyManifest);
+
+      const packageValue = decodePackage(
+        fs.readFileSync(destination),
+        'pipeline'
+      ) as PipelinePackage;
+      expect(packageValue.formatVersion).toBe(1);
+      const packaged = packageValue.pipelines[0];
+      const packagedManifest = packaged.files.find((file) => file.path === 'pipeline.yaml')!;
+      const packagedAncillary = packaged.files.find((file) => file.path === 'README.md')!;
+      expect(parsePipeline(packagedManifest.content).version).toBe(PIPELINE_DEFINITION_VERSION);
+      expect(packagedManifest.content).toMatch(/^version: 1$/m);
+      expect(packagedAncillary.content).toBe(ancillary);
+
+      await deletePipeline('legacy-export');
+      await importPipelinePackage(destination);
+      expect(loadPipelineByName('legacy-export').version).toBe(PIPELINE_DEFINITION_VERSION);
+      expect(
+        fs.readFileSync(path.join(getUserPipelinesDir(), 'legacy-export', 'README.md'), 'utf8')
+      ).toBe(ancillary);
+    });
+
+    it('fails closed without writing a package when the source declares an unknown content version', () => {
+      writeUserPipeline(
+        'future-export',
+        [
+          'version: 2',
+          'name: future-export',
+          'stages:',
+          '  - id: implement',
+          '    skill: rasen-apply-change',
+          '',
+        ].join('\n')
+      );
+      const destination = path.join(home, 'future-export.rasenpkg');
+
+      expect(() => exportPipeline('future-export', destination)).toThrow(/\/version/);
+      expect(fs.existsSync(destination)).toBe(false);
+    });
+
+    it('refuses to export through a pipeline-root symlink or Windows junction', () => {
+      const externalDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-external-pipeline-'));
+      cleanup.push(externalDirectory);
+      fs.writeFileSync(
+        path.join(externalDirectory, 'pipeline.yaml'),
+        [
+          'version: 1',
+          'name: linked-export',
+          'stages:',
+          '  - id: implement',
+          '    skill: rasen-apply-change',
+          '',
+        ].join('\n')
+      );
+      fs.writeFileSync(path.join(externalDirectory, 'secret.txt'), 'must-not-be-packaged');
+
+      fs.mkdirSync(getUserPipelinesDir(), { recursive: true });
+      const linkedRoot = path.join(getUserPipelinesDir(), 'linked-export');
+      try {
+        fs.symlinkSync(
+          externalDirectory,
+          linkedRoot,
+          process.platform === 'win32' ? 'junction' : 'dir'
+        );
+      } catch (error) {
+        if (
+          process.platform === 'win32' &&
+          ['EPERM', 'EACCES', 'UNKNOWN'].includes(
+            (error as NodeJS.ErrnoException).code ?? ''
+          )
+        ) {
+          return;
+        }
+        throw error;
+      }
+
+      const destination = path.join(home, 'linked-export.rasenpkg');
+      const linkedManifest = path.join(linkedRoot, 'pipeline.yaml');
+      const readFileSpy = vi.spyOn(fsDefault, 'readFileSync');
+      syncBuiltinESMExports();
+      try {
+        expect(() => exportPipeline('linked-export', destination)).toThrow(
+          expect.objectContaining({ code: 'pipeline_export_source_unsafe' })
+        );
+        expect(
+          readFileSpy.mock.calls.some(
+            ([candidate]) =>
+              typeof candidate === 'string' &&
+              path.resolve(candidate) === path.resolve(linkedManifest)
+          )
+        ).toBe(false);
+        expect(fs.existsSync(destination)).toBe(false);
+      } finally {
+        readFileSpy.mockRestore();
+        syncBuiltinESMExports();
+      }
+    });
+
+    it('refuses to export when pipeline.yaml is a symlink where supported', () => {
+      const externalDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-external-manifest-'));
+      cleanup.push(externalDirectory);
+      const externalManifest = path.join(externalDirectory, 'pipeline.yaml');
+      fs.writeFileSync(
+        externalManifest,
+        [
+          'version: 1',
+          'name: linked-manifest',
+          'stages:',
+          '  - id: implement',
+          '    skill: rasen-apply-change',
+          '',
+        ].join('\n')
+      );
+
+      const pipelineDirectory = path.join(getUserPipelinesDir(), 'linked-manifest');
+      fs.mkdirSync(pipelineDirectory, { recursive: true });
+      try {
+        fs.symlinkSync(externalManifest, path.join(pipelineDirectory, 'pipeline.yaml'), 'file');
+      } catch (error) {
+        if (
+          process.platform === 'win32' &&
+          ['EPERM', 'EACCES', 'UNKNOWN'].includes(
+            (error as NodeJS.ErrnoException).code ?? ''
+          )
+        ) {
+          return;
+        }
+        throw error;
+      }
+
+      const destination = path.join(home, 'linked-manifest.rasenpkg');
+      const linkedManifest = path.join(pipelineDirectory, 'pipeline.yaml');
+      const readFileSpy = vi.spyOn(fsDefault, 'readFileSync');
+      syncBuiltinESMExports();
+      try {
+        expect(() => exportPipeline('linked-manifest', destination)).toThrow(
+          expect.objectContaining({ code: 'pipeline_export_source_unsafe' })
+        );
+        expect(
+          readFileSpy.mock.calls.some(
+            ([candidate]) =>
+              typeof candidate === 'string' &&
+              path.resolve(candidate) === path.resolve(linkedManifest)
+          )
+        ).toBe(false);
+        expect(fs.existsSync(destination)).toBe(false);
+      } finally {
+        readFileSpy.mockRestore();
+        syncBuiltinESMExports();
+      }
     });
   });
 });

@@ -4,7 +4,7 @@ import path from 'path';
 import os from 'os';
 import { InitCommand } from '../../src/core/init.js';
 import { saveGlobalConfig } from '../../src/core/global-config.js';
-import { saveNamedProfile } from '../../src/core/named-profiles.js';
+import { readNamedProfile, saveNamedProfile } from '../../src/core/named-profiles.js';
 
 const { confirmMock, showWelcomeScreenMock, searchableMultiSelectMock } = vi.hoisted(() => ({
   confirmMock: vi.fn(),
@@ -98,6 +98,38 @@ describe('InitCommand profile lock persistence (init-profile-lock)', () => {
     expect(await fileExists(path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md'))).toBe(true);
     expect(await fileExists(path.join(testDir, '.claude', 'skills', 'rasen-new-change', 'SKILL.md'))).toBe(true);
     expect(await fileExists(path.join(testDir, '.claude', 'skills', 'rasen-propose', 'SKILL.md'))).toBe(false);
+  });
+
+  it('a ship-only named profile installs the canonical retention runner without changing its snapshot', async () => {
+    saveNamedProfile('pashifika', {
+      version: 2,
+      workflows: ['ship-command'],
+      retention: 'codify',
+    });
+
+    await new InitCommand({
+      tools: 'claude',
+      force: true,
+      profile: 'pashifika',
+    }).execute(testDir);
+
+    const skillsRoot = path.join(testDir, '.claude', 'skills');
+    for (const fileName of ['SKILL.md', 'report.md', 'codify.md']) {
+      expect(await fileExists(path.join(skillsRoot, 'rasen-retain', fileName))).toBe(true);
+    }
+    expect(await fileExists(path.join(skillsRoot, 'rasen-ship', 'SKILL.md'))).toBe(true);
+    expect(await fileExists(path.join(skillsRoot, 'rasen-auto', 'SKILL.md'))).toBe(false);
+
+    const wrapperPath = path.join(skillsRoot, 'rasen-retro', 'SKILL.md');
+    expect(await fileExists(wrapperPath)).toBe(true);
+    expect(await fs.readFile(wrapperPath, 'utf-8')).toContain('disable-model-invocation: true');
+
+    expect(readNamedProfile('pashifika')).toEqual({
+      version: 2,
+      workflows: ['ship-command'],
+      retention: 'codify',
+    });
+    expect(await fs.readFile(configFile(), 'utf-8')).toMatch(/^profile: pashifika$/m);
   });
 
   it('init without --profile writes no profile key', async () => {

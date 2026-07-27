@@ -126,6 +126,7 @@ describe('InitCommand', () => {
         'rasen-continue-change',
         'rasen-bulk-archive-change',
         'rasen-verify-change',
+        'rasen-direction',
       ];
 
       for (const skillName of expectedSkillNames) {
@@ -156,6 +157,7 @@ describe('InitCommand', () => {
         'rasen-continue-change',
         'rasen-bulk-archive-change',
         'rasen-verify-change',
+        'rasen-direction',
       ];
 
       for (const dirName of expectedSkillDirs) {
@@ -190,6 +192,7 @@ describe('InitCommand', () => {
         'rasen-continue-change',
         'rasen-bulk-archive-change',
         'rasen-verify-change',
+        'rasen-direction',
       ];
 
       for (const skillName of nonCoreSkillNames) {
@@ -206,6 +209,30 @@ describe('InitCommand', () => {
 
       const skillFile = path.join(testDir, '.codex', 'skills', 'rasen-explore', 'SKILL.md');
       expect(await fileExists(skillFile)).toBe(true);
+    });
+
+    it('should install Codex skills at an externalized repository root without creating local planning directories', async () => {
+      process.env.CODEX_HOME = path.join(testDir, '.codex-home');
+      const openspecPath = path.join(testDir, 'rasen');
+      const configPath = path.join(openspecPath, 'config.yaml');
+      await fs.mkdir(openspecPath, { recursive: true });
+      await fs.writeFile(configPath, 'store: team-context\n');
+
+      const initCommand = new InitCommand({
+        tools: 'codex',
+        force: true,
+        profile: 'core',
+      });
+      await initCommand.execute(await fs.realpath(testDir));
+
+      const skillFile = path.join(testDir, '.codex', 'skills', 'rasen-explore', 'SKILL.md');
+      expect(await fileExists(skillFile)).toBe(true);
+      const configContent = await fs.readFile(configPath, 'utf-8');
+      expect(configContent).toContain('store: team-context');
+      expect(configContent).not.toContain('profile:');
+      expect(await directoryExists(path.join(openspecPath, 'specs'))).toBe(false);
+      expect(await directoryExists(path.join(openspecPath, 'changes'))).toBe(false);
+      expect(await directoryExists(path.join(openspecPath, 'changes', 'archive'))).toBe(false);
     });
 
     it('should install Hermes skills to the resolved Hermes home, not project-local .hermes/', async () => {
@@ -735,6 +762,30 @@ describe('InitCommand - profile and detection features', () => {
     // Non-selected skills should NOT be created
     const proposeSkill = path.join(testDir, '.claude', 'skills', 'rasen-propose', 'SKILL.md');
     expect(await fileExists(proposeSkill)).toBe(false);
+  });
+
+  it('installs the retro wrapper and its complete runner for a profile with neither ship nor auto', async () => {
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'custom',
+      workflows: ['explore'],
+      retention: 'off',
+      expertSelectionExplicit: true,
+    });
+
+    await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+
+    const skillsRoot = path.join(testDir, '.claude', 'skills');
+    for (const fileName of ['SKILL.md', 'report.md', 'codify.md']) {
+      expect(await fileExists(path.join(skillsRoot, 'rasen-retain', fileName))).toBe(true);
+    }
+    expect(await fileExists(path.join(skillsRoot, 'rasen-ship', 'SKILL.md'))).toBe(false);
+    expect(await fileExists(path.join(skillsRoot, 'rasen-auto', 'SKILL.md'))).toBe(false);
+
+    const wrapperPath = path.join(skillsRoot, 'rasen-retro', 'SKILL.md');
+    expect(await fs.readFile(wrapperPath, 'utf-8')).toContain('disable-model-invocation: true');
+    expect(getGlobalConfig().workflows).toEqual(['explore']);
+    expect(getGlobalConfig().workflows).not.toContain('retain-command');
   });
 
   it('should migrate a pre-retirement commands-only extend mode to custom profile, restoring skills and cleaning up the stale command file', async () => {

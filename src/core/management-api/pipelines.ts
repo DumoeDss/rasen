@@ -43,6 +43,12 @@ import type {
   PipelineValidationResponse,
   WirePipeline,
 } from './wire-types.js';
+import type { DetectedHostRuntime } from '../runtime-adapters.js';
+
+const MANAGEMENT_HOST: DetectedHostRuntime = {
+  runtime: 'unknown',
+  source: 'unknown',
+};
 
 /**
  * Pipelines inventory endpoint (pipeline-http-api): the pipelines available to
@@ -85,11 +91,19 @@ export async function handleListPipelines(
       continue;
     }
     const overrides = resolvePipelineStageOverrides(pipeline.name, bundle.effOptions);
-    const inputs: EffectiveStageInputs = { ...bundle.inputsBase, overrides };
+    const inputs: EffectiveStageInputs = {
+      ...bundle.inputsBase,
+      overrides,
+      host: MANAGEMENT_HOST,
+    };
     const effectiveStages = pipeline.stages.map((stage) =>
       resolveEffectiveStage(stage, pipeline, inputs)
     );
-    const resolvedRoleRuntimes = resolvePipelineRoleRuntimes(pipeline, overrides);
+    const resolvedRoleRuntimes = resolvePipelineRoleRuntimes(
+      pipeline,
+      overrides,
+      MANAGEMENT_HOST
+    );
     const runtimes = Object.fromEntries(
       Object.entries(resolvedRoleRuntimes).map(([role, resolved]) => [
         role,
@@ -185,11 +199,19 @@ export async function handlePipelineDetail(
   }
 
   const overrides = resolvePipelineStageOverrides(pipeline.name, bundle.effOptions);
-  const inputs: EffectiveStageInputs = { ...bundle.inputsBase, overrides };
+  const inputs: EffectiveStageInputs = {
+    ...bundle.inputsBase,
+    overrides,
+    host: MANAGEMENT_HOST,
+  };
   const effectiveStages = pipeline.stages.map((stage) =>
     resolveEffectiveStage(stage, pipeline, inputs)
   );
-  const resolvedRoleRuntimes = resolvePipelineRoleRuntimes(pipeline, overrides);
+  const resolvedRoleRuntimes = resolvePipelineRoleRuntimes(
+    pipeline,
+    overrides,
+    MANAGEMENT_HOST
+  );
   const runtimes = Object.fromEntries(
     Object.entries(resolvedRoleRuntimes).map(([role, resolved]) => [
       role,
@@ -277,6 +299,7 @@ export async function handlePipelineValidation(
     bundle.pipelineRoot,
     {
       reporter: (notice) => {
+        if (notice.kind !== 'unknown-profile-workflows') return;
         warnings.push({
           severity: 'warning',
           path: '/',

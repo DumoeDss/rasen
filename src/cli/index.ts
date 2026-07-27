@@ -607,6 +607,7 @@ newCmd
   .option('--proposal <text>', 'Seed proposal.md with this text, making the change active immediately')
   .option('--goal <text>', 'Optional goal metadata to store with the change')
   .option('--schema <name>', `Workflow schema to use (default: ${DEFAULT_SCHEMA})`)
+  .option('--pipeline <name>', 'Pipeline to initialize run-state for')
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
   .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
@@ -649,11 +650,27 @@ pipelineCmd
   .command('show <name>')
   .description('Show a pipeline stage DAG and build order')
   .option('--for-execution', 'Validate active-profile skills before returning the executable DAG')
+  .option('--planner <runtime>', 'Override planner runtime for this run: claude or codex')
+  .option('--implementer <runtime>', 'Override implementer runtime for this run: claude or codex')
+  .option('--reviewer <runtime>', 'Override reviewer runtime for this run: claude or codex')
+  .option('--fixer <runtime>', 'Override fixer runtime for this run: claude or codex')
+  .option('--shipper <runtime>', 'Override shipper runtime for this run: claude or codex')
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
   .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
-  .action(async (name: string, options?: { json?: boolean; forExecution?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (name: string, options?: {
+    planner?: string;
+    implementer?: string;
+    reviewer?: string;
+    fixer?: string;
+    shipper?: string;
+    json?: boolean;
+    forExecution?: boolean;
+    store?: string;
+    project?: string;
+    storePath?: string;
+  }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.show(name, options);

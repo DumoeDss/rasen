@@ -46,6 +46,88 @@ export type ProbeRuntime = RuntimeForCapability<'canProbeContext'>;
 export type AuditRuntime = RuntimeForCapability<'canAudit'>;
 export type DispatchRuntime = RuntimeForCapability<'canDispatch'>;
 
+export type HostRuntime = DispatchRuntime | 'unknown';
+export type HostRuntimeSource =
+  | 'env-override'
+  | 'codex-thread-id'
+  | 'codex-sandbox'
+  | 'claude-code'
+  | 'unknown';
+
+export interface DetectedHostRuntime {
+  runtime: HostRuntime;
+  source: HostRuntimeSource;
+}
+
+export type DispatchMode =
+  | 'native'
+  | 'exec-bridge'
+  | 'unsupported'
+  | 'legacy-fallback';
+
+export interface DispatchRoute {
+  host: HostRuntime;
+  target: DispatchRuntime;
+  mode: DispatchMode;
+  bridge?: 'codex-exec';
+}
+
+type KnownHostRuntime = Exclude<HostRuntime, 'unknown'>;
+
+const KNOWN_DISPATCH_ROUTES = {
+  claude: {
+    claude: { mode: 'native' },
+    codex: { mode: 'exec-bridge', bridge: 'codex-exec' },
+  },
+  codex: {
+    claude: { mode: 'unsupported' },
+    codex: { mode: 'native' },
+  },
+} as const satisfies Readonly<
+  Record<
+    KnownHostRuntime,
+    Readonly<Record<DispatchRuntime, Pick<DispatchRoute, 'mode' | 'bridge'>>>
+  >
+>;
+
+function hasText(value: string | undefined): boolean {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+/**
+ * Detect the tool host running the LEAD. Codex fingerprints precede Claude
+ * because nested Codex sessions can inherit Claude environment variables.
+ */
+export function detectHostRuntime(
+  env: NodeJS.ProcessEnv = process.env
+): DetectedHostRuntime {
+  const explicit = env.RASEN_AGENT_RUNTIME?.trim().toLowerCase();
+  if (explicit === 'claude' || explicit === 'codex') {
+    return { runtime: explicit, source: 'env-override' };
+  }
+  if (hasText(env.CODEX_THREAD_ID)) {
+    return { runtime: 'codex', source: 'codex-thread-id' };
+  }
+  if (hasText(env.CODEX_SANDBOX)) {
+    return { runtime: 'codex', source: 'codex-sandbox' };
+  }
+  if (hasText(env.CLAUDECODE)) {
+    return { runtime: 'claude', source: 'claude-code' };
+  }
+  return { runtime: 'unknown', source: 'unknown' };
+}
+
+/** Resolve the concrete dispatch mechanism implemented for a host/target pair. */
+export function resolveDispatchRoute(
+  host: HostRuntime,
+  target: DispatchRuntime
+): DispatchRoute {
+  if (host === 'unknown') {
+    return { host, target, mode: 'legacy-fallback' };
+  }
+  return { host, target, ...KNOWN_DISPATCH_ROUTES[host][target] };
+}
+
 /**
  * Capability-derived runtime values in registry declaration order. The
  * non-empty tuple type lets schema consumers pass these values directly to

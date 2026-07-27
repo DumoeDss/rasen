@@ -1,11 +1,44 @@
-import { useState } from 'preact/hooks';
-import type { PipelineCatalogResponse, WirePipelineDefinitionStage } from '../api/types.js';
-import { KNOWN_MODEL_IDS } from '../config/controls.js';
+import { useEffect, useState } from 'preact/hooks';
+import type {
+  PipelineCatalogResponse,
+  ThresholdValue,
+  WirePipelineDefinitionStage,
+} from '../api/types.js';
+import { KNOWN_MODEL_IDS, validateThresholdValue } from '../config/controls.js';
+import { useT } from '../i18n/store.js';
+
+function thresholdInputValue(threshold: ThresholdValue | undefined): string {
+  if (threshold === undefined) return '';
+  return String(
+    typeof threshold === 'number' ? threshold : threshold.remainingTokens
+  );
+}
+
+function parseThresholdInput(
+  raw: string,
+  form: 'fraction' | 'remaining',
+  fractionRange: [number, number] | undefined,
+  remainingTokensGt: number | undefined
+): ThresholdValue | null {
+  if (raw.trim() === '') return null;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return null;
+
+  const threshold: ThresholdValue =
+    form === 'fraction' ? parsed : { remainingTokens: parsed };
+  const range = fractionRange
+    ? { gt: fractionRange[0], lte: fractionRange[1] }
+    : undefined;
+  return validateThresholdValue(threshold, range, remainingTokensGt) === null
+    ? threshold
+    : null;
+}
 
 /**
  * The selection-driven properties panel (pipeline-canvas-edit design D3):
  * edits id (rename), role, skill, gate, condition, verify policy, model,
- * runtime, parallel group, and the review-cycle loop's kind + max rounds.
+ * runtime, optional dual-form handoff threshold, parallel group, and the
+ * review-cycle loop's kind + max rounds.
  * Every closed vocabulary comes from the catalog response, never a literal
  * retyped in UI code. A stage carrying a `loop.kind: 'goal'` config renders it
  * read-only with a "preserved as-is" note — goal-loop gate authoring is out of
@@ -18,6 +51,7 @@ export function StagePanel({
   fieldIssues,
   onRename,
   onPatch,
+  onHandoffThreshold,
   onClose,
 }: {
   stage: WirePipelineDefinitionStage;
@@ -28,8 +62,10 @@ export function StagePanel({
   fieldIssues?: Record<string, 'error' | 'warning'>;
   onRename: (newId: string) => void;
   onPatch: (patch: Partial<WirePipelineDefinitionStage>) => void;
+  onHandoffThreshold: (threshold: ThresholdValue | undefined) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const [idDraft, setIdDraft] = useState(stage.id);
 
   function commitRename() {
@@ -46,6 +82,38 @@ export function StagePanel({
 
   const loopKind = stage.loop?.kind ?? 'none';
   const isGoalLoop = stage.loop?.kind === 'goal';
+  const handoffThreshold = stage.handoff?.threshold;
+  const handoffForm =
+    handoffThreshold === undefined
+      ? 'inherit'
+      : typeof handoffThreshold === 'number'
+        ? 'fraction'
+        : 'remaining';
+  const fractionRange = catalog?.handoff.fractionRange;
+  const remainingTokensGt = catalog?.handoff.remainingTokensGt;
+  const [handoffValueDraft, setHandoffValueDraft] = useState(() =>
+    thresholdInputValue(handoffThreshold)
+  );
+  const handoffThresholdKey =
+    handoffThreshold === undefined
+      ? 'inherit'
+      : typeof handoffThreshold === 'number'
+        ? `fraction:${handoffThreshold}`
+        : `remaining:${handoffThreshold.remainingTokens}`;
+  useEffect(() => {
+    setHandoffValueDraft(thresholdInputValue(handoffThreshold));
+  }, [handoffThresholdKey]);
+  const fractionSeed = fractionRange
+    ? 0.5 > fractionRange[0] && 0.5 <= fractionRange[1]
+      ? 0.5
+      : (fractionRange[0] + fractionRange[1]) / 2
+    : 0.5;
+  const remainingSeed = Math.max(
+    50_000,
+    Math.floor(remainingTokensGt ?? 0) + 1
+  );
+  const handoffIssueClass =
+    fieldClass('handoff/threshold') || fieldClass('handoff');
 
   return (
     <aside class="stage-panel" data-testid="stage-panel" data-stage={stage.id}>
@@ -186,6 +254,120 @@ export function StagePanel({
           ))}
         </select>
       </label>
+
+      <fieldset
+        class={`stage-panel__field stage-panel__handoff${handoffIssueClass}`}
+        data-testid="stage-panel-handoff"
+      >
+        <legend>{t('pipelines.canvas.handoff.label')}</legend>
+        <label>
+          <span>{t('pipelines.canvas.handoff.form')}</span>
+          <select
+            data-testid="stage-panel-handoff-form"
+            value={handoffForm}
+            onChange={(event) => {
+              const form = (event.target as HTMLSelectElement).value;
+              if (form === 'inherit') {
+                setHandoffValueDraft('');
+                onHandoffThreshold(undefined);
+              } else if (form === 'fraction') {
+                setHandoffValueDraft(String(fractionSeed));
+                onHandoffThreshold(fractionSeed);
+              } else {
+                setHandoffValueDraft(String(remainingSeed));
+                onHandoffThreshold({ remainingTokens: remainingSeed });
+              }
+            }}
+          >
+            <option value="inherit">{t('pipelines.canvas.handoff.inherit')}</option>
+            <option value="fraction">{t('pipelines.canvas.handoff.fraction')}</option>
+            <option value="remaining">{t('pipelines.canvas.handoff.remaining_tokens')}</option>
+          </select>
+        </label>
+        {handoffForm === 'fraction' && typeof handoffThreshold === 'number' && (
+          <label>
+            <span>{t('pipelines.canvas.handoff.value')}</span>
+            <input
+              type="number"
+              step="any"
+              min={fractionRange?.[0]}
+              max={fractionRange?.[1]}
+              data-testid="stage-panel-handoff-fraction"
+              value={handoffValueDraft}
+              onInput={(event) => {
+                const raw = (event.target as HTMLInputElement).value;
+                setHandoffValueDraft(raw);
+                const threshold = parseThresholdInput(
+                  raw,
+                  'fraction',
+                  fractionRange,
+                  remainingTokensGt
+                );
+                if (threshold !== null) onHandoffThreshold(threshold);
+              }}
+              onBlur={() => {
+                if (
+                  parseThresholdInput(
+                    handoffValueDraft,
+                    'fraction',
+                    fractionRange,
+                    remainingTokensGt
+                  ) === null
+                ) {
+                  setHandoffValueDraft(thresholdInputValue(handoffThreshold));
+                }
+              }}
+            />
+          </label>
+        )}
+        {handoffForm === 'remaining' && typeof handoffThreshold === 'object' && (
+          <label>
+            <span>{t('pipelines.canvas.handoff.value')}</span>
+            <input
+              type="number"
+              step="1"
+              min={remainingTokensGt === undefined ? undefined : remainingTokensGt + 1}
+              data-testid="stage-panel-handoff-remaining"
+              value={handoffValueDraft}
+              onInput={(event) => {
+                const raw = (event.target as HTMLInputElement).value;
+                setHandoffValueDraft(raw);
+                const threshold = parseThresholdInput(
+                  raw,
+                  'remaining',
+                  fractionRange,
+                  remainingTokensGt
+                );
+                if (threshold !== null) onHandoffThreshold(threshold);
+              }}
+              onBlur={() => {
+                if (
+                  parseThresholdInput(
+                    handoffValueDraft,
+                    'remaining',
+                    fractionRange,
+                    remainingTokensGt
+                  ) === null
+                ) {
+                  setHandoffValueDraft(thresholdInputValue(handoffThreshold));
+                }
+              }}
+            />
+          </label>
+        )}
+        <small>
+          {handoffForm === 'remaining'
+            ? t('pipelines.canvas.handoff.remaining_hint', {
+                minimum: (remainingTokensGt ?? 0) + 1,
+              })
+            : handoffForm === 'fraction' && fractionRange
+              ? t('pipelines.canvas.handoff.fraction_hint', {
+                  minimum: fractionRange[0],
+                  maximum: fractionRange[1],
+                })
+              : t('pipelines.canvas.handoff.inherit_hint')}
+        </small>
+      </fieldset>
 
       <label class={`stage-panel__field${fieldClass('parallelGroup')}`}>
         <span>Parallel group</span>

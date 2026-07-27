@@ -13,6 +13,7 @@ import {
   getGoalReportSkillTemplate,
   getHandoffSkillTemplate,
   getHelpSkillTemplate,
+  getDirectionSkillTemplate,
   getNewChangeSkillTemplate,
   getOfficeHoursCommandSkillTemplate,
   getOnboardSkillTemplate,
@@ -50,6 +51,7 @@ export const BUILT_IN_WORKFLOW_IDS = [
   'verify',
   'onboard',
   'help',
+  'direction',
   'office-hours-command',
   'verify-enhanced-command',
   'ship-command',
@@ -67,9 +69,9 @@ export const BUILT_IN_WORKFLOW_IDS = [
  * Internal built-in workflows that live in the catalog (so dependency closure
  * can install them) but are NOT selectable: they never appear in
  * `BUILT_IN_WORKFLOW_IDS`, the `full` profile, or the profile picker.
- * `retain-command` (the policy-driven retention runner) is installed only via
- * `auto-command`'s `requires.workflows`; the retention radio is its only
- * profile control.
+ * `retain-command` (the policy-driven retention runner) is installed through
+ * strong workflow dependencies and the temporary retro-wrapper compatibility
+ * install root; the retention radio is its only profile control.
  */
 export const INTERNAL_BUILTIN_WORKFLOW_IDS = ['retain-command'] as const;
 
@@ -101,6 +103,7 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
   { id: 'verify', dirName: 'rasen-verify-change', skill: getVerifyChangeSkillTemplate },
   { id: 'onboard', dirName: 'rasen-onboard', skill: getOnboardSkillTemplate },
   { id: 'help', dirName: 'rasen-help', skill: getHelpSkillTemplate },
+  { id: 'direction', dirName: 'rasen-direction', skill: getDirectionSkillTemplate },
   { id: 'office-hours-command', dirName: 'rasen-office-hours-command', skill: getOfficeHoursCommandSkillTemplate },
   {
     id: 'verify-enhanced-command',
@@ -110,7 +113,12 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
       skills: ['rasen-review', 'rasen-cso', 'rasen-qa', 'rasen-design-review', 'rasen-qa-only'],
     },
   },
-  { id: 'ship-command', dirName: 'rasen-ship', skill: getShipCommandSkillTemplate },
+  {
+    id: 'ship-command',
+    dirName: 'rasen-ship',
+    skill: getShipCommandSkillTemplate,
+    requires: { workflows: [RETENTION_RUNNER_WORKFLOW_ID] },
+  },
   {
     id: 'retain-command',
     dirName: RETAIN_SKILL_DIR_NAME,
@@ -123,7 +131,7 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
     skill: getAutoCommandSkillTemplate,
     kind: 'driver',
     requires: {
-      workflows: ['retain-command'],
+      workflows: [RETENTION_RUNNER_WORKFLOW_ID],
       skills: ['rasen-review'],
       pipelines: ['small-feature', 'full-feature', 'bug-fix', 'auto-decompose'],
     },

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { buildCodexWorkerRecord } from '../../../src/core/codex/identity.js';
-import { RunStateWorkerSchema, stageWorkers, type RunState } from '../../../src/core/pipeline-registry/run-state.js';
+import {
+  buildCodexWorkerRecord,
+  buildNativeCodexWorkerRecord,
+} from '../../../src/core/codex/identity.js';
+import {
+  inferWorkerDispatchMode,
+  RunStateWorkerSchema,
+  stageWorkers,
+  type RunState,
+} from '../../../src/core/pipeline-registry/run-state.js';
 
 describe('buildCodexWorkerRecord', () => {
   it('builds a record that validates against RunStateWorkerSchema', () => {
@@ -15,10 +23,35 @@ describe('buildCodexWorkerRecord', () => {
     const result = RunStateWorkerSchema.safeParse(record);
     expect(result.success).toBe(true);
     expect(record.runtime).toBe('codex');
+    expect(record.dispatchMode).toBe('exec-bridge');
     expect(record.threadId).toBe('019f5504-86db-7cf1-9b59-5cdcf0f70672');
     expect(record.model).toBe('gpt-5.6-sol');
     expect(record.sandbox).toBe('workspace-write');
     expect(record.effort).toBe('high');
+  });
+
+  it('builds a native Codex record without fabricating exec handles', () => {
+    const record = buildNativeCodexWorkerRecord({
+      role: 'reviewer',
+      agentId: 'native-agent-1',
+    });
+    expect(record).toEqual({
+      runtime: 'codex',
+      dispatchMode: 'native',
+      role: 'reviewer',
+      agentId: 'native-agent-1',
+    });
+    expect(record.threadId).toBeUndefined();
+    expect(record.turnId).toBeUndefined();
+  });
+
+  it('infers archived thread records as exec bridge and leaves ambiguous records observable', () => {
+    expect(
+      inferWorkerDispatchMode({ runtime: 'codex', threadId: 'legacy-thread' })
+    ).toEqual({ dispatchMode: 'exec-bridge', inferred: true });
+    expect(
+      inferWorkerDispatchMode({ runtime: 'codex', transcript: 'rollout.jsonl' })
+    ).toMatchObject({ inferred: true, warning: expect.stringContaining('ambiguous') });
   });
 
   it('carries the rollout path as the transcript pointer', () => {

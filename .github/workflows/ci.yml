@@ -104,6 +104,13 @@ jobs:
           VITEST_MAX_WORKERS: ${{ matrix.vitest_workers }}
         run: pnpm test
 
+      - name: Run focused Windows server-local path and UI path tests
+        if: matrix.label == 'windows-pwsh'
+        run: |
+          pnpm --dir packages/ui install --frozen-lockfile
+          pnpm exec vitest run test/core/management-api/local-path-resolver.test.ts test/core/management-api/local-path-chooser.test.ts test/core/management-api/create-space.test.ts
+          pnpm --dir packages/ui exec vitest run test/components/local-path-picker.test.tsx test/components/spaces-page.test.tsx test/components/workflows-page.test.tsx test/components/pipelines-page.test.tsx
+
       - name: Upload test coverage
         if: matrix.label == 'linux-bash'
         uses: actions/upload-artifact@v4

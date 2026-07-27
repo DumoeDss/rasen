@@ -21,7 +21,7 @@ import {
   filterKnownWorkflowRoots,
   getBuiltInWorkflowDefinitions,
   getExpertSkillDefinitions,
-  resolveWorkflowSelection,
+  resolveEffectiveWorkflowInstallSelection,
   WorkflowCatalog,
   type BuiltInWorkflowId,
 } from './workflow-registry/index.js';
@@ -205,7 +205,7 @@ export function resolveDesiredWorkflowSelection(
     ? baseResult.workflows
     : [...getProfileWorkflows('full', undefined, { expertSelectionExplicit })];
   const { known, unknown } = filterKnownWorkflowRoots(catalog, base);
-  const ids = resolveWorkflowSelection(catalog, known, { includeSkillDependencies: true }).map(
+  const ids = resolveEffectiveWorkflowInstallSelection(catalog, known).map(
     (definition) => definition.id
   );
   return { ids, unknown, ...(baseResult.ok ? {} : { profileWarning: baseResult.warning }) };
@@ -350,7 +350,7 @@ export function resolveProjectWorkflowSelection(
 
   if (override !== undefined) {
     const { known, unknown } = filterKnownWorkflowRoots(catalog, override);
-    const ids = resolveWorkflowSelection(catalog, known, { includeSkillDependencies: true }).map(
+    const ids = resolveEffectiveWorkflowInstallSelection(catalog, known).map(
       (definition) => definition.id
     );
     return {
@@ -367,7 +367,7 @@ export function resolveProjectWorkflowSelection(
     const lockBase = resolveLockedProfileBase(lockedProfile, expertSelectionExplicit);
     if (lockBase.ok) {
       const { known, unknown } = filterKnownWorkflowRoots(catalog, lockBase.workflows);
-      const ids = resolveWorkflowSelection(catalog, known, { includeSkillDependencies: true }).map(
+      const ids = resolveEffectiveWorkflowInstallSelection(catalog, known).map(
         (definition) => definition.id
       );
       return { ids, unknown, mode: 'locked-profile', lockedProfile };

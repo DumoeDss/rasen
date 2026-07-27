@@ -11,6 +11,7 @@ import {
   resolvePipelineReuseConfig,
   DEFAULT_HANDOFF_CONFIG,
   DEFAULT_REUSE_CONFIG,
+  PIPELINE_DEFINITION_VERSION,
 } from '../../../src/core/pipeline-registry/types.js';
 
 describe('pipeline-registry/pipeline', () => {
@@ -35,6 +36,7 @@ stages:
 
       expect(pipeline.name).toBe('test-pipeline');
       expect(pipeline.description).toBe('A test pipeline');
+      expect(pipeline.version).toBe(PIPELINE_DEFINITION_VERSION);
       expect(pipeline.stages).toHaveLength(2);
       expect(pipeline.stages[0].id).toBe('propose');
       expect(pipeline.stages[0].role).toBe('planner');
@@ -60,6 +62,102 @@ stages:
       expect(stage.condition).toBeUndefined();
       expect(stage.loop).toBeUndefined();
       expect(stage.verifyPolicy).toBeUndefined();
+    });
+
+    describe('Pipeline definition content version', () => {
+      const stages = [
+        {
+          id: 'implement',
+          skill: 'rasen-apply-change',
+          requires: [],
+        },
+      ];
+      const skillSets = {
+        knownSkillNames: new Set(['rasen-apply-change']),
+        enabledSkillNames: new Set(['rasen-apply-change']),
+      };
+
+      it('accepts explicit v1 and normalizes legacy unversioned YAML and JSON to v1', () => {
+        const explicit = parsePipeline(`
+version: 1
+name: explicit-v1
+stages:
+  - id: implement
+    skill: rasen-apply-change
+`);
+        const legacyYaml = parsePipeline(`
+name: legacy-yaml
+stages:
+  - id: implement
+    skill: rasen-apply-change
+`);
+        const legacyJson = parsePipeline(JSON.stringify({ name: 'legacy-json', stages }));
+
+        expect(explicit.version).toBe(PIPELINE_DEFINITION_VERSION);
+        expect(legacyYaml.version).toBe(PIPELINE_DEFINITION_VERSION);
+        expect(legacyJson.version).toBe(PIPELINE_DEFINITION_VERSION);
+      });
+
+      it.each([
+        { label: 'unsupported numeric', version: 2 },
+        { label: 'malformed string', version: '1' },
+        { label: 'malformed object', version: { major: 1 } },
+        { label: 'malformed null', version: null },
+      ])('fails closed on an explicit $label version in both validation paths', ({ version }) => {
+        const definition = { version, name: 'future-pipeline', stages };
+        let throwingMessage = '';
+        try {
+          parsePipeline(JSON.stringify(definition));
+        } catch (error) {
+          expect(error).toBeInstanceOf(PipelineValidationError);
+          throwingMessage = (error as Error).message;
+        }
+
+        const issues = validatePipelineDraft(definition, skillSets);
+        const versionIssue = issues.find((issue) => issue.path === '/version');
+        expect(versionIssue).toBeDefined();
+        expect(versionIssue?.message).toContain('received');
+        expect(versionIssue?.message).toContain('supported version is 1');
+        expect(versionIssue?.message).toContain('Upgrade to a compatible Rasen version');
+        expect(throwingMessage).toContain('/version');
+        expect(throwingMessage).toContain(versionIssue!.message);
+      });
+
+      it('keeps the v1 flat DAG and review-cycle/goal loop declarations readable', () => {
+        const pipeline = parsePipeline(`
+version: 1
+name: v1-loop-inputs
+stages:
+  - id: implement
+    skill: rasen-apply-change
+  - id: review
+    skill: rasen-review-cycle
+    requires: [implement]
+    loop:
+      kind: review-cycle
+  - id: iterate
+    skill: rasen-goal-iterate
+    requires: [review]
+    loop:
+      kind: goal
+      gate: { kind: evaluate }
+`);
+
+        expect(pipeline.stages.map((stage) => stage.requires)).toEqual([
+          [],
+          ['implement'],
+          ['review'],
+        ]);
+        expect(pipeline.stages[1].loop).toEqual({ kind: 'review-cycle', maxRounds: 3 });
+        expect(pipeline.stages[2].loop).toMatchObject({
+          kind: 'goal',
+          gate: { kind: 'evaluate' },
+          maxRounds: 5,
+          loopStallLimit: 2,
+          blockedThreshold: 3,
+          runArtifact: 'goal-run.json',
+        });
+      });
     });
 
     // autopilot-gate-policy: the stage gate is a plain boolean. This is a
@@ -376,6 +474,75 @@ stages:
         sessionReuse: 'review-thread',
         sandbox: 'read-only',
       });
+    });
+
+    it('does not manufacture a Claude runtime for non-runtime role fields', () => {
+      const pipeline = parsePipeline(`
+name: host-inherited-role-fields
+agents:
+  planner:
+    model: gpt-5.6-sol
+  implementer:
+    sandbox: workspace-write
+  reviewer:
+    effort: high
+  fixer:
+    sessionReuse: review-thread
+stages:
+  - id: propose
+    skill: rasen-propose
+    role: planner
+  - id: apply
+    skill: rasen-apply-change
+    role: implementer
+  - id: verify
+    skill: rasen-review
+    role: reviewer
+  - id: fix
+    skill: rasen-review-cycle
+    role: fixer
+`);
+      for (const role of ['planner', 'implementer', 'reviewer', 'fixer'] as const) {
+        expect(pipeline.agents?.[role]).not.toHaveProperty('runtime');
+        const stage = pipeline.stages.find((candidate) => candidate.role === role)!;
+        expect(
+          resolveStageRuntimeConfig(stage, pipeline, undefined, undefined, {
+            host: { runtime: 'codex', source: 'codex-thread-id' },
+          })
+        ).toMatchObject({ runtime: 'codex', runtimeSource: 'host', source: 'agent' });
+      }
+    });
+
+    it('resolves runtime field-wise across config, stage, role, host, and legacy fallback', () => {
+      const pipeline = parsePipeline(`
+name: runtime-precedence
+agents:
+  reviewer:
+    runtime: claude
+    model: opus
+stages:
+  - id: review
+    skill: rasen-review
+    role: reviewer
+    runtime: codex
+    model: gpt-5.6-sol
+  - id: inherit
+    skill: rasen-propose
+    role: planner
+    model: gpt-5.6-sol
+`);
+      const host = { host: { runtime: 'codex', source: 'codex-thread-id' } } as const;
+      expect(
+        resolveStageRuntimeConfig(pipeline.stages[0], pipeline, undefined, {
+          runtime: { value: 'claude', scope: 'project' },
+        }, host)
+      ).toMatchObject({ runtime: 'claude', runtimeSource: 'stage-override-project' });
+      expect(resolveStageRuntimeConfig(pipeline.stages[0], pipeline, undefined, undefined, host))
+        .toMatchObject({ runtime: 'codex', runtimeSource: 'stage' });
+      expect(resolveStageRuntimeConfig(pipeline.stages[1], pipeline, undefined, undefined, host))
+        .toMatchObject({ runtime: 'codex', runtimeSource: 'host', modelSource: 'stage' });
+      expect(resolveStageRuntimeConfig(pipeline.stages[1], pipeline))
+        .toMatchObject({ runtime: 'claude', runtimeSource: 'legacy-default' });
     });
 
     describe('per-role machine model config layers (config-page-coherence)', () => {

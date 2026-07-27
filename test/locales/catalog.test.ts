@@ -74,6 +74,18 @@ describe('locale catalogs', () => {
     }
   });
 
+  it('defines localized Direction picker metadata in English, Japanese, and Simplified Chinese', () => {
+    const names = SUPPORTED_CLI_LOCALES.map(
+      (locale) => getLocaleCatalog(locale).profile.prompt.workflows.direction.name
+    );
+    for (const locale of SUPPORTED_CLI_LOCALES) {
+      const direction = getLocaleCatalog(locale).profile.prompt.workflows.direction;
+      expect(direction.name, locale).not.toBe('');
+      expect(direction.description, locale).not.toBe('');
+    }
+    expect(new Set(names).size).toBe(SUPPORTED_CLI_LOCALES.length);
+  });
+
   it('defines a name and description for every built-in expert in every supported locale (mirrors the workflow guard; ALL_WORKFLOWS/profile.prompt.workflows stay untouched — experts are a disjoint id space)', () => {
     for (const locale of SUPPORTED_CLI_LOCALES) {
       const experts = getLocaleCatalog(locale).profile.prompt.experts as Record<
