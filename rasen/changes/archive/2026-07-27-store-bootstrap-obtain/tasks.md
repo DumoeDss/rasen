@@ -86,7 +86,8 @@ a rebase could have moved, then act on the drift it already records.
 - [x] 9.9 Never-harvest: a Store with many obtainable projects, run under `--yes`, obtains zero projects.
 - [x] 9.10 The remote is passed as an argument vector, never a shell string — assert `execFile` is used (not `exec`), and the remote never appears in a concatenated command line.
 - [x] 9.11 Windows: clone targets, the non-empty-directory guard under a path differing only by drive-letter case or separator form, derived-name safety, and git invoked with `windowsHide`. Expected paths built with `path.join()`.
-- [x] 9.12 Full suite green: `pnpm lint`, `pnpm build`, `pnpm test`. Run serially, backgrounded with bounded foreground polling; never concurrent vitest batches. Attribute any pre-existing failure individually (known baseline: `test/release-contract.test.ts`, `test/cli-e2e/basic.test.ts`, `test/commands/handoff.test.ts`, `test/commands/workset.test.ts` — all unmodified in this tree).
+- [ ] 9.12 Full suite green: `pnpm lint`, `pnpm build`, `pnpm test`. Run serially, backgrounded with bounded foreground polling; never concurrent vitest batches. Attribute any pre-existing failure individually (known baseline: `test/release-contract.test.ts`, `test/cli-e2e/basic.test.ts`, `test/commands/handoff.test.ts`, `test/commands/workset.test.ts` — all unmodified in this tree).
+  - **Deliberately left unticked — no green full-suite run was evidenced at the time.** `pnpm lint` and `pnpm build` are clean. `pnpm test` was NOT proven green: no pass/fail totals were recorded for this child, and the branch baseline already carried known pre-existing failures (see E1 §9.7 for the same baseline, which recorded 4949 passed / 6 failed / 31 skipped across 286 files). The gate as literally worded ("full suite green") was not met; this box stays unticked until a serial run captures honest numbers.
 
 ## 10. Docs and locales
 

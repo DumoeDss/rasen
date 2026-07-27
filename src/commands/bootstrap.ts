@@ -1,19 +1,22 @@
 /**
  * `rasen bootstrap` — reports what this machine still needs before a project
- * works, and does nothing else.
+ * works, and (in `--apply` mode) prepares it.
  *
- * Two modes, requested separately because they are two promises: `--check`
- * reads local information and contacts no network at all; `--dry-run`
+ * Three modes, requested separately because they are three different promises:
+ * `--check` reads local information and contacts no network at all; `--dry-run`
  * additionally resolves remotes and the exact location each repository would be
- * placed at. Neither creates a directory, runs a version-control operation, or
- * writes a registration or a declaration.
+ * placed at; `--apply` acts — it registers the current checkout, registers
+ * present-unregistered Stores the user names a location for, obtains declared
+ * Stores that are absent with a recorded remote, prepares the knowledge
+ * location, writes the durable Store declaration when the project's declaration
+ * is in the earlier form, and then offers every declared portable knowledge
+ * bundle as a separate confirmed import. `--check` and `--dry-run` create no
+ * directory, run no version-control operation, and write no registration or
+ * declaration; only `--apply` mutates state.
  *
  * The bare invocation is deliberately left UNDEFINED: it reports which modes
  * exist and exits. Giving it any other meaning here — even "the same as
- * `--check`" — would have to be redefined by the acting half, breaking anyone
- * who scripted it. For the same reason no flag that would obtain, register, or
- * write is defined, not even one that errors: a "not available yet" message is
- * itself a promise.
+ * `--check`" — would break anyone who scripted it.
  */
 import type { Command } from 'commander';
 

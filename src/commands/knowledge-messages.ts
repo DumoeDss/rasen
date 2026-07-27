@@ -57,6 +57,10 @@ export interface KnowledgeMessages {
   unreadableHeading: string;
   unreadableRow: (id: string, scope: string, reason: string) => string;
   unreadableNext: string;
+  degradedHeading: string;
+  degradedRow: (scope: string, dirs: string) => string;
+  degradedRepair: string;
+  showDegradedSuffix: (dirs: string) => string;
   showUnreadable: (id: string, scope: string, reason: string) => string;
   showNotFound: (id: string, scope: string) => string;
   showApplicability: (mode: string, markers: string) => string;
@@ -255,6 +259,10 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
     unreadableHeading: raw.unreadableHeading,
     unreadableRow: (id, scope, reason) => format(raw.unreadableRow, { id, scope, reason }),
     unreadableNext: raw.unreadableNext,
+    degradedHeading: raw.degradedHeading,
+    degradedRow: (scope, dirs) => format(raw.degradedRow, { scope, dirs }),
+    degradedRepair: raw.degradedRepair,
+    showDegradedSuffix: (dirs) => format(raw.showDegradedSuffix, { dirs }),
     showUnreadable: (id, scope, reason) => format(raw.showUnreadable, { id, scope, reason }),
     showNotFound: (id, scope) => format(raw.showNotFound, { id, scope }),
     showApplicability: (mode, markers) => format(raw.showApplicability, { mode, markers }),

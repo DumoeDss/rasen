@@ -685,15 +685,15 @@ async function listCommand(
     console.log(messages.unreadableNext);
   }
   if (degraded.length > 0) {
-    // Inline (unlocalized) M5 reporting — matches the effective-materialization
-    // path's "catalog degraded" diagnostic. The user-visible repair is the
-    // same in either surface: run any learned-skill mutation to restore the
-    // backup before reading/exporting.
-    console.log('Catalog degraded — recoverable backup debris:');
+    // M5 reporting — matches the effective-materialization path's "catalog
+    // degraded" diagnostic. The user-visible repair is the same in either
+    // surface: run any learned-skill mutation to restore the backup before
+    // reading/exporting.
+    console.log(messages.degradedHeading);
     for (const { scope, dirs } of degraded) {
-      console.log(`  [${scope}] ${dirs.join(', ')}`);
+      console.log(messages.degradedRow(scope, dirs.join(', ')));
     }
-    console.log('  Run a learned-skill mutation (e.g. rasen knowledge apply) to restore the backup.');
+    console.log(messages.degradedRepair);
   }
 }
 
@@ -761,9 +761,7 @@ async function showCommand(
       options.json,
       options.json
         ? messages.showNotFound(id, explicit ?? 'project')
-        : `${messages.showNotFound(id, explicit ?? 'project')} The catalog is degraded with recoverable backup debris (${dirs.join(
-            ', '
-          )}); run a learned-skill mutation to restore it.`,
+        : `${messages.showNotFound(id, explicit ?? 'project')}${messages.showDegradedSuffix(dirs.join(', '))}`,
       'catalog_degraded',
       { recoverableBackups: dirs.join(';') }
     );
