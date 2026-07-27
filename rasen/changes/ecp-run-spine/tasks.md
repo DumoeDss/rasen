@@ -148,8 +148,8 @@
 - [x] 13.4 GREEN: Implement bounded paged list and isolated invalid summaries without unbounded full-chain work.
 - [x] 13.5 RED: Add exact GET detail router/auth/method/path tests, CLI equality, archived/missing state, other-worktree read-only scope, unknown major, and zero writes.
 - [x] 13.6 GREEN: Implement exact encoded detail route through the shared projector.
-- [ ] 13.7 RED: Add POST tests for closed control+version+WaitId, sealed defer mode, Gate-to-undelivered Action, browser response loss/retry, no executable payload, later CLI first claim/double claim, wrong/stale wait, workspace mismatch, engine conflict, safe argv, output validation, timeout/exit, and no in-process file write.
-- [ ] 13.8 GREEN: Implement CLI-backed POST bridge with exact identifiers/space, pre-spawn admission, non-overridable defer context, and view-only/empty-grant response.
+- [x] 13.7 RED: Add POST tests for closed control+version+WaitId, sealed defer mode, Gate-to-undelivered Action, browser response loss/retry, no executable payload, later CLI first claim/double claim, wrong/stale wait, workspace mismatch, engine conflict, safe argv, output validation, timeout/exit, and no in-process file write.
+- [x] 13.8 GREEN: Implement CLI-backed POST bridge with exact identifiers/space, pre-spawn admission, non-overridable defer context, and view-only/empty-grant response.
 - [x] 13.9 RED/GREEN: Add Pipeline-detail availableEngines/reconcilerSupport parity with CLI start/show and Canvas while keeping legacy capability fields additive.
 
 ## 14. Task-detail Operations and Canvas

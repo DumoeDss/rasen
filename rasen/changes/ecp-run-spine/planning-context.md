@@ -174,3 +174,24 @@ task-detail-ui,pipelines-ui,change-run-operations,ecp-change-run-runtime}/spec.m
   analyzer fields. Both are wired into TaskDetailPage / PipelineCanvasPage.
 - `client.getRunDetail(changeId, runId, space?)` and `listRuns(space?, {cursor,limit})`
   are the consumption seam for the UI-controls wave.
+
+### Wave 2 API-control (13.7–13.8)
+- **Spawn seam `RunControlSpawner`** in `src/core/management-api/run-control.ts`:
+  `type RunControlSpawner = (call: RunControlSpawnCall) => Promise<RunControlSpawnResult>`,
+  where `RunControlSpawnCall = { cwd, argv, stdin, timeoutMs, killGraceMs }` and
+  `RunControlSpawnResult = { exitCode, stdout, stderr, timedOut }`. Production:
+  `createProductionRunControlSpawner()` (child_process.spawn, shell:false, SIGTERM→SIGKILL).
+  Threaded via `ManagementRouterOptions.runControlSpawner`. **UI-controls wave
+  (14.5/14.6) and E2E wave (15.x)**: reuse this seam — `handleRunControl(...)` and
+  the spawner type are stable.
+- **Defer-sealing is architectural, not a bridge override**: `facade.control()`'s
+  `_context` param is unused and it always returns `actions: []` (admitted_undelivered,
+  never granted). The first grant happens on a later `resume-run` with
+  `deliveryMode:'grant'`. A smuggled `deliveryMode` in the body is rejected by the
+  strict control schema (400 invalid_control).
+- **Pre-spawn admission** loads the head Record via the same path as
+  `handleRunDetail`, then checks: valid body schema → path/ref consistency → Record
+  exists + IDs match → workspace scope (403 on mismatch) → not terminal (409) →
+  engine is reconciler (409) → expectedRecordVersion matches (409). All read-only.
+- Response: `{ view, disposition, actions: [] }` — committed view re-projected, empty
+  actions always.

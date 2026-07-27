@@ -21,6 +21,7 @@ import { FileSystemUtils } from '../../utils/file-system.js';
 import { handleChanges } from './changes.js';
 import { handleArchive } from './archive.js';
 import { handleRuns, handleRunDetail } from './runs.js';
+import { handleRunControl, createProductionRunControlSpawner, type RunControlSpawner } from './run-control.js';
 import { handleTaskDetail } from './task-detail.js';
 import {
   handleGetSession,
@@ -126,6 +127,13 @@ export interface ManagementRouterOptions {
   sessionKillGraceMs?: number;
   /** Test/daemon override for native runtime homes and the Rasen machine-data directory. */
   audit?: AuditManagementOptions;
+  /**
+   * Test-only override for the POST run-control bridge's spawn seam (task
+   * 13.7/13.8). Production passes nothing — the router creates the real
+   * subprocess spawner. Tests inject a fake that asserts argv + returns a
+   * canned receipt.
+   */
+  runControlSpawner?: RunControlSpawner;
 }
 
 export interface ManagementRouterHandle {
@@ -319,9 +327,8 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
     return method === 'GET';
   }
   if (matchRunDetailPath(pathname) !== null) {
-    // GET-only for now (task 13.5/13.6). POST control (13.7/13.8) will be
-    // admitted in a later wave once the CLI complete/control bridge exists.
-    return method === 'GET';
+    // GET detail (task 13.5/13.6) and POST control (task 13.7/13.8).
+    return method === 'GET' || method === 'POST';
   }
   if (pathname === '/api/v1/pipeline-validation') {
     // POST-only: GET/PUT/DELETE are rejected 405 (pipeline-definition-api spec).
@@ -503,6 +510,9 @@ export function createManagementRouter(
   // whitelist. GET /api/v1/pipelines is this router's own read handler; POST
   // rides this bridge.
   const submitPipeline = createPipelineSubmitter(context);
+  // The POST run-control bridge's spawn seam (task 13.7/13.8): production uses
+  // the real subprocess spawner; tests inject a fake through options.
+  const runControlSpawner = options.runControlSpawner ?? createProductionRunControlSpawner();
   const audits = new AuditManagementService(options.audit);
 
   // One supervisor per server instance (design D4/task 2.4): its own
@@ -1217,9 +1227,56 @@ export function createManagementRouter(
       return;
     }
 
-    // Exact Run detail: `/api/v1/runs/<changeId>/<runId>` (task 13.5/13.6).
-    // Checked before the bare collection route so the more specific path wins.
+    // Exact Run detail: `/api/v1/runs/<changeId>/<runId>` (task 13.5/13.6 GET,
+    // 13.7/13.8 POST). Checked before the bare collection route so the more
+    // specific path wins.
     const runDetail = matchRunDetailPath(pathname);
+    if (runDetail !== null && req.method === 'POST') {
+      const space = await resolveRunsSpace(spaceSelector);
+      if (!space.ok) {
+        if (space.code === 'project_selector_ambiguous') {
+          sendJson(res, space.status, {
+            error: { code: space.code, message: space.message },
+            ...(space.candidates ? { candidates: space.candidates } : {}),
+          });
+        } else {
+          sendError(res, space.status, space.code, space.message);
+        }
+        return;
+      }
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const home = space.root ? await resolveHomeForRoot(space.root) : null;
+      const result = await handleRunControl(
+        runDetail.changeId,
+        runDetail.runId,
+        space.root,
+        home,
+        body.value,
+        runControlSpawner
+      );
+      if (!result.ok) {
+        res.writeHead(result.status, JSON_HEADERS);
+        res.end(
+          JSON.stringify({
+            error: {
+              code: result.code,
+              message: result.message,
+              ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
+              ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+            },
+          })
+        );
+        return;
+      }
+      sendJson(res, result.status, result.response);
+      return;
+    }
+
     if (runDetail !== null && req.method === 'GET') {
       const space = await resolveRunsSpace(spaceSelector);
       if (!space.ok) {
