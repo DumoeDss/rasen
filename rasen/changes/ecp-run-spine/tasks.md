@@ -115,9 +115,9 @@
 - [x] 10.2 GREEN: Implement `ChangePipelineRuntime` factory/facade wiring codecs, association, plan seal/open, observer, reducer/settler, reservations, store, projector, and one canonical commit path.
 - [x] 10.3 RED: Add resume/complete/control/inspect tests for exact RunId, trusted grant/defer context, admitted_undelivered -> first grant, double claim, committed view/action version equality, disposition matrix, read-only inspect, safe redelivery serialization, ambiguous suspension, and typed errors.
 - [x] 10.4 GREEN: Complete facade methods without exposing internal plan/Record/store/path; enforce source/workspace instance scope and durable delivery-state transition before any executable return.
-- [ ] 10.5 RED: Add bilateral engine-guard cases for legacy-only, canonical-only, both, late legacy file, terminal history, corrupt/unreadable either side, exact/unknown legacy ChangeInstance binding after recreation, archive source absence, multiple canonical candidates, and discovery-to-lock race.
-- [ ] 10.6 GREEN: Implement EngineOwnershipGuard under stable PlanningSpace/ChangeInstance lease; every registered mutation rechecks both stores exactly once and invalid state is never absence.
-- [ ] 10.7 RED/GREEN: Extract legacy resume behind one authoritative lease, retain byte-shape/workdir-first behavior, prohibit nested lock-taking facade calls, and prove read-only candidate discovery creates nothing.
+- [x] 10.5 RED: Add bilateral engine-guard cases for legacy-only, canonical-only, both, late legacy file, terminal history, corrupt/unreadable either side, exact/unknown legacy ChangeInstance binding after recreation, archive source absence, multiple canonical candidates, and discovery-to-lock race.
+- [x] 10.6 GREEN: Implement EngineOwnershipGuard under stable PlanningSpace/ChangeInstance lease; every registered mutation rechecks both stores exactly once and invalid state is never absence.
+- [x] 10.7 RED/GREEN: Extract legacy resume behind one authoritative lease, retain byte-shape/workdir-first behavior, prohibit nested lock-taking facade calls, and prove read-only candidate discovery creates nothing.
 
 ## 11. Projector and simple bug-fix dogfood
 
