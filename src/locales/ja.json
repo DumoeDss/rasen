@@ -122,7 +122,7 @@
     "bundleRefusalRollback": "ロールバックを検証できません。保持されたパスを確認してください",
     "bundleRefusalGeneric": "インポートを完了できませんでした",
     "bundleRefusalDetailsHeading": "    拒否の詳細:",
-    "bundleRefusalDetailLine": "      {key}: {value}",
+    "bundleRefusalDetailLine": "      {key} の値: {value}",
     "bundleRefusalIssuesHeading": "    拒否の問題:",
     "bundleRefusalIssueLine": "      レコード {record}、フィールド {field}: {reason}",
     "bundleChangedLine": "    ナレッジの変更: {changed}",

@@ -122,7 +122,7 @@
     "bundleRefusalRollback": "无法验证回滚；请检查保留的路径",
     "bundleRefusalGeneric": "无法完成导入",
     "bundleRefusalDetailsHeading": "    拒绝详情：",
-    "bundleRefusalDetailLine": "      {key}：{value}",
+    "bundleRefusalDetailLine": "      {key} 的值：{value}",
     "bundleRefusalIssuesHeading": "    拒绝问题：",
     "bundleRefusalIssueLine": "      记录 {record}，字段 {field}：{reason}",
     "bundleChangedLine": "    知识是否变化：{changed}",

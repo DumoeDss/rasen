@@ -1387,6 +1387,31 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             name: 'for-execution',
             description: 'Validate active-profile skills before returning the executable DAG',
           },
+          {
+            name: 'planner',
+            description: 'Set planner runtime: claude or codex',
+            takesValue: true,
+          },
+          {
+            name: 'implementer',
+            description: 'Set implementer runtime: claude or codex',
+            takesValue: true,
+          },
+          {
+            name: 'reviewer',
+            description: 'Set reviewer runtime: claude or codex',
+            takesValue: true,
+          },
+          {
+            name: 'fixer',
+            description: 'Set fixer runtime: claude or codex',
+            takesValue: true,
+          },
+          {
+            name: 'shipper',
+            description: 'Set shipper runtime: claude or codex',
+            takesValue: true,
+          },
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,

@@ -134,6 +134,10 @@ const POINTER_VALUE_ALLOWLIST: Record<string, string> = {
   // the alias is read only to build the declaration's alias arm and to label
   // the reported Store, both guarded by the shape on the same expression.
   'src/core/store/bootstrap.ts': 'reads the declared display alias, as the declared alias',
+  // The init guard refuses to extend a store-externalized repo and names the
+  // declared store in the error; pointer.value is the display alias, undefined
+  // for a uid-only declaration.
+  'src/core/init.ts': 'guards the store-externalization refusal and names the declared store in the error',
   // Both entries retired by unified-session-runtime-context: the launch
   // resolver's member check and the knowledge resolver's "planning is
   // externalized" check now go through `hasStoreDeclaration` +

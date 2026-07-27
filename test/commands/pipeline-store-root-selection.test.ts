@@ -293,7 +293,7 @@ describe('pipeline command store root selection', () => {
     const json = parseJson(result);
     // `--store` resolves the store's own root, whose config is written project-scope
     // (the CLI-in-store-root asymmetry), so the source reports config-project.
-    expect(json.effectiveRoles.planner).toEqual({ runtime: 'codex', source: 'config-project' });
+    expect(json.effectiveRoles.planner).toEqual({ runtime: 'codex', source: 'config-project', dispatchMode: 'exec-bridge' });
     expect(json.configPath).toContain(path.join(storeRoot, 'rasen', 'config.yaml'));
 
     // The instance landed in the STORE root's config, not a frozen pipeline copy,
