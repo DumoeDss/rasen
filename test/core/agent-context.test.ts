@@ -38,14 +38,19 @@ const FIXTURE_ROLLOUT = path.join(
   'sample-rollout.jsonl'
 );
 
-/** Build a Codex rollout jsonl from event_msg token_count payloads (last wins). */
-function tokenCountLine(totalTokens: number, modelContextWindow: number): string {
+/** Build a Codex token_count line with lifetime spend and current-context usage. */
+function tokenCountLine(
+  totalTokens: number,
+  modelContextWindow: number,
+  contextTokens: number = totalTokens
+): string {
   return JSON.stringify({
     type: 'event_msg',
     payload: {
       type: 'token_count',
       info: {
         total_token_usage: { total_tokens: totalTokens },
+        last_token_usage: { total_tokens: contextTokens },
         model_context_window: modelContextWindow,
       },
     },
@@ -576,38 +581,51 @@ describe('agent-context', () => {
   });
 
   describe('computeContextFromRollout', () => {
-    it('maps the last token_count event to the result shape', () => {
+    it('maps current context rather than cumulative spend to the result shape', () => {
       const p = writeTranscript('rollout-2026-01-01T00-00-00-abc.jsonl', [
         SESSION_META_LINE,
         turnContextLine('gpt-5.6-sol'),
-        tokenCountLine(12_885, 353_400),
+        tokenCountLine(164_620_250, 258_400, 40_556),
       ]);
       const r = computeContextFromRollout(p);
-      expect(r.contextTokens).toBe(12_885);
-      expect(r.limit).toBe(353_400);
+      expect(r.contextTokens).toBe(40_556);
+      expect(r.limit).toBe(258_400);
       expect(r.model).toBe('gpt-5.6-sol');
-      expect(r.pct).toBeCloseTo(12_885 / 353_400, 6);
-      expect(r.remainingTokens).toBe(353_400 - 12_885);
+      expect(r.pct).toBeCloseTo(40_556 / 258_400, 6);
+      expect(r.remainingTokens).toBe(258_400 - 40_556);
       expect(r.transcript).toBe(p);
     });
 
-    it('uses the LAST token_count event and the LAST turn_context model (last wins)', () => {
+    it('uses the last valid token_count snapshot and the last turn_context model', () => {
       const p = writeTranscript('rollout-2026-01-01T00-00-01-abc.jsonl', [
         SESSION_META_LINE,
         turnContextLine('gpt-5-earlier'),
-        tokenCountLine(100, 1_000),
+        tokenCountLine(400, 1_000, 100),
         turnContextLine('gpt-5.6-sol'),
-        tokenCountLine(500, 1_000),
+        tokenCountLine(900, 2_000, 500),
+        'not json',
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              total_token_usage: { total_tokens: 1_100 },
+              last_token_usage: {},
+              model_context_window: 3_000,
+            },
+          },
+        }),
       ]);
       const r = computeContextFromRollout(p);
       expect(r.contextTokens).toBe(500);
+      expect(r.limit).toBe(2_000);
       expect(r.model).toBe('gpt-5.6-sol');
     });
 
     it('honors an explicit limit override and recomputes pct', () => {
       const p = writeTranscript('rollout-2026-01-01T00-00-02-abc.jsonl', [
         SESSION_META_LINE,
-        tokenCountLine(500_000, 353_400),
+        tokenCountLine(1_500_000, 353_400, 500_000),
       ]);
       const r = computeContextFromRollout(p, { limit: 1_000_000 });
       expect(r.limit).toBe(1_000_000);
@@ -648,6 +666,27 @@ describe('agent-context', () => {
       expect(() => computeContextFromRollout(path.join(dir, 'rollout-nope.jsonl'))).toThrow(
         /Cannot read Codex rollout/
       );
+    });
+
+    it('fails actionably when token counts exist without current-context usage', () => {
+      const p = writeTranscript('rollout-2026-01-01T00-00-legacy.jsonl', [
+        SESSION_META_LINE,
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              total_token_usage: { total_tokens: 12_885 },
+              model_context_window: 353_400,
+            },
+          },
+        }),
+      ]);
+
+      expect(() => computeContextFromRollout(p)).toThrow(
+        /current-context.*last_token_usage\.total_tokens/i
+      );
+      expect(tryContextEstimate(p)).toBeUndefined();
     });
 
     it('reads the real captured rollout fixture end to end', () => {
