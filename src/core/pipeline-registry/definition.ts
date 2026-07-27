@@ -1,8 +1,7 @@
-import { createHash } from 'node:crypto';
-
 import { PipelineYamlSchema, type PipelineYaml } from './types.js';
 import { validateLegacyPipelineDefinition } from './legacy-validation.js';
 import { parsePipelineSourceDocument } from './source-document.js';
+import { sealDefinitionPlan } from './definition-plan-internal.js';
 
 export const ECP_DEFINITION_VERSION = 2 as const;
 export const CHANGE_RUN_PLAN_VERSION = 1 as const;
@@ -252,52 +251,6 @@ function deepFreeze<T>(value: T): T {
  */
 function compareCanonicalStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
-}
-
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(canonicalize);
-  }
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value)
-        .filter(([, nested]) => nested !== undefined)
-        .sort(([left], [right]) => compareCanonicalStrings(left, right))
-        .map(([key, nested]) => [key, canonicalize(nested)])
-    );
-  }
-  return value;
-}
-
-const NON_SEMANTIC_DEFINITION_KEYS = new Set([
-  'canvas',
-  'position',
-  'provenance',
-  'sourcePath',
-]);
-
-function semanticCanonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(semanticCanonicalize);
-  }
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value)
-        .filter(
-          ([key, nested]) =>
-            nested !== undefined && !NON_SEMANTIC_DEFINITION_KEYS.has(key)
-        )
-        .sort(([left], [right]) => compareCanonicalStrings(left, right))
-        .map(([key, nested]) => [key, semanticCanonicalize(nested)])
-    );
-  }
-  return value;
-}
-
-function digest(value: unknown): string {
-  return createHash('sha256')
-    .update(JSON.stringify(canonicalize(value)))
-    .digest('hex');
 }
 
 export function createCapabilityCatalogSnapshot(
@@ -2148,29 +2101,12 @@ function prepare(source: DefinitionSource, catalog: CapabilityCatalogSnapshot): 
 
   const frozenAuthoredSource = deepFreeze(authoredSource);
   const frozenDefinition = deepFreeze(structuredClone(definition));
-  const semanticDefinition = semanticCanonicalize(frozenDefinition);
-  const sourceDigest = digest(semanticDefinition);
   const relevantDescriptors = relevantCapabilityDescriptors(frozenDefinition, catalog);
-  const capabilityDigest = digest({
-    version: catalog.version,
-    descriptors: relevantDescriptors,
-  });
-  const payload = deepFreeze({
-    definition: semanticDefinition,
-    catalogVersion: catalog.version,
-    capabilities: relevantDescriptors,
-  });
-  const planDigest = digest({
-    version: CHANGE_RUN_PLAN_VERSION,
-    sourceDigest,
-    capabilityDigest,
-    payload,
-  });
-  const plan = deepFreeze({
-    version: CHANGE_RUN_PLAN_VERSION,
-    digest: planDigest,
-    payload,
-  }) as ChangeRunPlan;
+  const sealedPlan = sealDefinitionPlan(
+    frozenDefinition,
+    catalog.version,
+    relevantDescriptors
+  );
   const warnings = authoredVersion === 1
     ? orderDefinitionDiagnostics([
         {
@@ -2191,11 +2127,11 @@ function prepare(source: DefinitionSource, catalog: CapabilityCatalogSnapshot): 
       authoredSource: frozenAuthoredSource,
       definition: frozenDefinition,
       warnings,
-      plan,
+      plan: sealedPlan.plan,
       digests: {
-        source: sourceDigest,
-        capability: capabilityDigest,
-        plan: planDigest,
+        source: sealedPlan.sourceDigest,
+        capability: sealedPlan.capabilityDigest,
+        plan: sealedPlan.planDigest,
       },
       capability: authoredVersion === 1
         ? {

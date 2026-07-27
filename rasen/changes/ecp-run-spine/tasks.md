@@ -1,30 +1,30 @@
 ## 1. Closed runtime and wire contracts
 
-- [ ] 1.1 RED: Add contract tests for `ChangePipelineRuntime.start/resume/complete/inspect/control`, requiring full RunId after start and proving optional Run selection exists only in CLI read-only discovery.
-- [ ] 1.2 GREEN: Implement closed branded request/error contracts and the public facade export without exporting plan, Record, reducer, store, or filesystem internals.
-- [ ] 1.3 RED: Add strict `change-run-view/1`, `root-dag/1`, receipt, control, completion, Action, Actor, EvidenceRef, and WorkspaceRevision codec golden/unknown-major/extra-field tests.
-- [ ] 1.4 GREEN: Implement the closed codecs, including commit-vs-unborn WorkspaceRevision, safe integers/bounds, additive unknown view sections, and typed unknown-major rejection.
+- [x] 1.1 RED: Add contract tests for `ChangePipelineRuntime.start/resume/complete/inspect/control`, requiring full RunId after start and proving optional Run selection exists only in CLI read-only discovery.
+- [x] 1.2 GREEN: Implement closed branded request/error contracts and the public facade export without exporting plan, Record, reducer, store, or filesystem internals.
+- [x] 1.3 RED: Add strict `change-run-view/1`, `root-dag/1`, receipt, control, completion, Action, Actor, EvidenceRef, and WorkspaceRevision codec golden/unknown-major/extra-field tests.
+- [x] 1.4 GREEN: Implement the closed codecs, including commit-vs-unborn WorkspaceRevision, safe integers/bounds, additive unknown view sections, and typed unknown-major rejection.
 - [ ] 1.5 RED: Add root-dag invariant tests for stable arrays, actions plus `waits[]`, terminal mutual exclusion, status priority, workspace scope, Action delivery state, allowed-control derivation, and receipt disposition/action-grant matrix.
 - [ ] 1.6 GREEN: Implement invariant validation and exact disposition priority; make `RunActionView` diagnostic only and return executable receipt actions only on a durable grant/first claim or recovery-approved redelivery.
 - [ ] 1.7 RED/GREEN: Prove reused start, idempotent completion, stale/conflicting control, waiting, and terminal responses carry `actions: []`; exact resume alone classifies lost delivery.
 
 ## 2. Planning-space, Change-instance, and launch identity
 
-- [ ] 2.1 RED: Add domain-separated SHA-256 golden vectors for PlanningSpaceId, ChangeInstanceId, WorkspaceInstanceId, RunId, NodeId, InvocationId, AttemptId, EffectId, ActionId, and WaitId.
-- [ ] 2.2 GREEN: Implement identity allocation from persisted registry-home, versioned physical-identity bytes, Change name/incarnation, committed ordinals, sorted effect descriptors, and exact wait context; exclude clocks, randomness, paths, PIDs, mtimes, Record version, and runOrdinal.
+- [x] 2.1 RED: Add domain-separated SHA-256 golden vectors for PlanningSpaceId, ChangeInstanceId, WorkspaceInstanceId, RunId, NodeId, InvocationId, AttemptId, EffectId, ActionId, and WaitId.
+- [x] 2.2 GREEN: Implement identity allocation from persisted registry-home, versioned physical-identity bytes, Change name/incarnation, committed ordinals, sorted effect descriptors, and exact wait context; exclude clocks, randomness, paths, PIDs, mtimes, Record version, and runOrdinal.
 - [ ] 2.3 RED: Add POSIX device/inode/birth and Windows volume/file-index/creation codec tests for aliases, same-volume rename, reuse/conflicting history, missing precision, cross-volume copy, linked worktrees, independent clones with equal projectId, project move, and RASEN_HOME relocation.
 - [ ] 2.4 GREEN: Implement fail-closed physical identity codecs and deterministic PlanningSpace/ChangeInstance/WorkspaceInstance derivation; keep projectId lineage/display-only.
 - [ ] 2.5 RED: Add immutable association-registry contract tests for first bind, concurrent registered first starts, active/archive/missing aliases, runtime archive migration, manual unprovable move, same-name recreation, and crash-safe revision replay.
 - [ ] 2.6 GREEN: Implement the bounded SafeRunPath-protected machine-home association ledger under the stable `(PlanningSpaceId, changeId)` association lease.
 - [ ] 2.7 RED: Add launch-intent tests for normalized key-order-independent inputs, exact Pipeline/engine binding within `(PlanningSpaceId, ChangeInstanceId, launchRequestId)`, conflict, cross-scope reuse, and display-only runOrdinal.
-- [ ] 2.8 GREEN: Implement `RunId = H("run", PlanningSpaceId, ChangeInstanceId, changeId, launchRequestId)` and launch digesting with no global mutable key index.
+- [x] 2.8 GREEN: Implement `RunId = H("run", PlanningSpaceId, ChangeInstanceId, changeId, launchRequestId)` and launch digesting with no global mutable key index.
 - [ ] 2.9 RED/GREEN: Cover active-instance lookup, unique historical same-key retry without source, multiple-history `launch_instance_ambiguous`, archived same-name recreation, and old Run inability to target the new directory.
 
 ## 3. Frozen executable plan and support analysis
 
-- [ ] 3.1 RED: Extend Definition/plan-reader tests for exact envelope/payload digest, closed version, deep immutability, tampering, and stored-plan open without current source.
+- [x] 3.1 RED: Extend Definition/plan-reader tests for exact envelope/payload digest, closed version, deep immutability, tampering, and stored-plan open without current source.
 - [ ] 3.2 GREEN: Extract the shared non-barrel plan codec and private opener/lowerer while keeping the public phase-1 payload opaque.
-- [ ] 3.3 RED: Add RuntimeExecutionProfile/1 fixtures freezing path-independent SourceRevision layer/source/content/semantic identity, exact capability/result/evidence/recovery/Adapter artifact, and every action-shaping effective policy value with provenance.
+- [x] 3.3 RED: Add RuntimeExecutionProfile/1 fixtures freezing path-independent SourceRevision layer/source/content/semantic identity, exact capability/result/evidence/recovery/Adapter artifact, and every action-shaping effective policy value with provenance.
 - [ ] 3.4 GREEN: Implement private launch-time execution sealing and bind plan/profile/source/capability/policy digests into launch and Record; reject unsupported effective values.
 - [ ] 3.5 RED: Add drift tests for project/user/package shadowing, same-semantic raw edits, skill/artifact/config changes, removal, and unavailable current state while stored Actions remain byte-stable.
 - [ ] 3.6 GREEN: Implement comparison-only DriftObserver and exact artifact resolution; never recompile or substitute current source/profile during resume.
