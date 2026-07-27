@@ -525,6 +525,13 @@ export interface LearnedSkillResult {
   /** Absolute paths this mutation wrote. Rasen stages and commits nothing. */
   changedFiles?: string[];
   block?: LearnedSkillBlock;
+  /**
+   * Present when the new record was published successfully but backup cleanup
+   * failed (e.g. a Windows file lock or antivirus killed the recursive delete
+   * mid-way). The new record is intact; inert debris remains under a temp
+   * prefix until the next mutation's debris sweep removes it.
+   */
+  degraded?: string;
 }
 
 /** The read-side result: active canonical skills relevant to a context. */

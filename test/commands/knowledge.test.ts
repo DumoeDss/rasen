@@ -19,10 +19,48 @@ import {
   commitStoreRegistration,
   registerStore,
 } from '../../src/core/store/registry.js';
+import {
+  LEARNED_SKILL_BACKUP_PREFIX,
+  LEARNED_SKILL_MANIFEST_FILE,
+} from '../../src/core/learned-skills/index.js';
 
 vi.mock('@inquirer/prompts', async () => {
   const actual = await vi.importActual<typeof import('@inquirer/prompts')>('@inquirer/prompts');
   return { ...actual, confirm: vi.fn() };
+});
+
+// --- B3 fault injection: same toggle as mutate.test.ts ---
+const { backupFail } = vi.hoisted(() => ({ backupFail: { enabled: false } }));
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  const { join } = await import('node:path');
+  return {
+    ...actual,
+    rmSync: ((target: fs.PathLike, options?: fs.RmOptions) => {
+      const p = typeof target === 'string' ? target : target.toString();
+      if (
+        backupFail.enabled &&
+        options?.recursive &&
+        p.includes(LEARNED_SKILL_BACKUP_PREFIX)
+      ) {
+        try {
+          const entries = actual.readdirSync(p);
+          const victim = entries.find((e) => e.name !== LEARNED_SKILL_MANIFEST_FILE);
+          if (victim) {
+            actual.rmSync(join(p, victim.name), { force: true });
+          }
+        } catch {
+          // already damaged
+        }
+        const err: NodeJS.ErrnoException = new Error(
+          'EBUSY: resource busy or locked (simulated partial delete)'
+        );
+        err.code = 'EBUSY';
+        throw err;
+      }
+      return actual.rmSync(target, options);
+    }) as typeof fs.rmSync,
+  };
 });
 
 const DIGEST = `sha256:${'b'.repeat(64)}`;
@@ -1048,5 +1086,53 @@ describe('rasen knowledge command', () => {
       await runKnowledge(['migrate', '--json']);
       expect(lastJson()).toMatchObject({ catalog: { status: 'nothing-to-do' } });
     });
+  });
+
+  // --- B3: degraded signal reaches CLI output (JSON + human) ---
+
+  it('surfaces the degraded warning in JSON output when backup cleanup fails', async () => {
+    const candidate = writeCandidate(projectCandidate());
+    await runKnowledge(['apply', '--from', candidate, '--project', projectId, '--json']);
+    expect(lastJson()).toMatchObject({ ok: true, outcome: 'created' });
+
+    // Rewrite with a different evidence chain + backup-cleanup failure.
+    const rewriteCandidate = writeCandidate(
+      projectCandidate({ evidence: [evidence(projectId, 'degraded-output-change')] })
+    );
+    backupFail.enabled = true;
+    try {
+      await runKnowledge(['apply', '--from', rewriteCandidate, '--project', projectId, '--json']);
+    } finally {
+      backupFail.enabled = false;
+    }
+
+    const json = lastJson() as Record<string, unknown>;
+    expect(json.ok).toBe(true);
+    expect(json.outcome).toBe('rewritten');
+    expect(json.degraded).toBeDefined();
+    expect(String(json.degraded)).toContain('debris');
+  });
+
+  it('surfaces the degraded warning in human output when backup cleanup fails', async () => {
+    const candidate = writeCandidate(projectCandidate());
+    await runKnowledge(['apply', '--from', candidate, '--project', projectId]);
+    logSpy.mockClear();
+    errSpy.mockClear();
+
+    // Rewrite with a different evidence chain + backup-cleanup failure.
+    const rewriteCandidate = writeCandidate(
+      projectCandidate({ evidence: [evidence(projectId, 'degraded-human-change')] })
+    );
+    backupFail.enabled = true;
+    try {
+      await runKnowledge(['apply', '--from', rewriteCandidate, '--project', projectId]);
+    } finally {
+      backupFail.enabled = false;
+    }
+
+    // The degraded warning is printed to stderr.
+    const errOutput = errSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(errOutput).toContain('Degraded:');
+    expect(errOutput).toContain('debris');
   });
 });

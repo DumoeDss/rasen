@@ -369,6 +369,7 @@ function resultWire(
     status: result.status,
     ...(result.storeRoot ? { storeRoot: result.storeRoot } : {}),
     ...(result.changedFiles ? { changedFiles: result.changedFiles } : {}),
+    ...(result.degraded ? { degraded: result.degraded } : {}),
     context: contextToWire(context),
   };
 }
@@ -386,6 +387,16 @@ function reportStoreWrites(result: LearnedSkillResult, messages: KnowledgeMessag
     console.log(messages.commitReminderFile(file));
   }
   console.log(messages.commitReminderNothingStaged);
+}
+
+/**
+ * Prints a degraded warning when a mutation succeeded but left backup debris.
+ * The new record is intact; the debris is inert and self-heals on the next
+ * mutation — but the user must be told, not left to discover it in git status.
+ */
+function reportDegraded(result: LearnedSkillResult, messages: KnowledgeMessages): void {
+  if (!result.degraded) return;
+  console.error(messages.mutationDegraded(result.degraded));
 }
 
 /**
@@ -565,6 +576,7 @@ async function applyCommand(options: {
       break;
   }
   reportStoreWrites(result, messages);
+  reportDegraded(result, messages);
 }
 
 function toWireRecord(record: CanonicalLearnedSkill): Record<string, unknown> {
@@ -811,6 +823,7 @@ async function retireCommand(
   if (result.outcome === 'retired') console.log(messages.retired(result.scope, result.id));
   else if (result.outcome === 'no-op') console.log(messages.noop(result.id));
   reportStoreWrites(result, messages);
+  reportDegraded(result, messages);
 }
 
 /**

@@ -50,6 +50,7 @@ export interface KnowledgeMessages {
   retired: (scope: string, id: string) => string;
   renamed: (id: string) => string;
   noop: (id: string) => string;
+  mutationDegraded: (detail: string) => string;
   listHeading: string;
   listEmpty: string;
   listRow: (marker: string, id: string, scope: string, status: string, description: string) => string;
@@ -251,6 +252,7 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
     retired: (scope, id) => format(raw.retired, { scope, id }),
     renamed: (id) => format(raw.renamed, { id }),
     noop: (id) => format(raw.noop, { id }),
+    mutationDegraded: (detail) => format(raw.mutationDegraded, { detail }),
     listHeading: raw.listHeading,
     listEmpty: raw.listEmpty,
     listRow: (marker, id, scope, status, description) =>

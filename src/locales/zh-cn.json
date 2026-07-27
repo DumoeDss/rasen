@@ -204,6 +204,7 @@
     "retired": "已退役 {scope} 学习技能 \"{id}\"。",
     "renamed": "已将学习技能改名为 \"{id}\"。",
     "noop": "无变更：\"{id}\" 已反映该证据。",
+    "mutationDegraded": "降级：{detail}",
     "listHeading": "学习技能",
     "listEmpty": "未找到学习技能。",
     "listRow": "{marker} {id} [{scope}/{status}] {description}",

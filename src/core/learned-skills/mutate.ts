@@ -926,13 +926,19 @@ function writeContentFrom(
 // Committing
 // -----------------------------------------------------------------------------
 
-/** Atomically writes a fresh learned-skill directory (manifest + content) at `directory`. */
+/**
+ * Atomically writes a fresh learned-skill directory (manifest + content) at `directory`.
+ *
+ * Returns `undefined` on a clean write. Returns a degraded message when the new
+ * record was published successfully but the backup cleanup failed — the new
+ * record stays intact and the debris is left for {@link sweepMutationDebris}.
+ */
 function writeCanonicalDirectory(
   directory: string,
   manifest: LearnedSkillManifest,
   content: string,
   expectedContentDigest: string | undefined
-): void {
+): string | undefined {
   const parent = path.dirname(directory);
   fs.mkdirSync(parent, { recursive: true });
   const suffix = `${process.pid}-${Math.random().toString(36).slice(2)}`;
@@ -941,6 +947,7 @@ function writeCanonicalDirectory(
 
   fs.rmSync(staging, { recursive: true, force: true });
   fs.mkdirSync(staging, { recursive: true });
+  let degraded: string | undefined;
   try {
     const contentPath = path.join(staging, LEARNED_SKILL_CONTENT_FILE);
     fs.writeFileSync(path.join(staging, LEARNED_SKILL_MANIFEST_FILE), serializeManifest(manifest), {
@@ -958,11 +965,14 @@ function writeCanonicalDirectory(
 
     if (!fs.existsSync(directory)) {
       fs.renameSync(staging, directory);
-      return;
+      return undefined;
     }
     // Rewrite: move the current record aside, swap in the new one, then remove
-    // the backup. Restore the backup if the swap fails, so an interruption
-    // leaves the catalog reading exactly as it did before.
+    // the backup. Restore the backup if the swap fails (the new record does
+    // not exist yet and the backup is still intact). But once the new record
+    // is published, a backup-cleanup failure must NOT roll back — the backup
+    // may be partially deleted and deleting `directory` would destroy the
+    // published record. Instead the debris is left for sweepMutationDebris.
     fs.renameSync(directory, backup);
     try {
       fs.renameSync(staging, directory);
@@ -973,14 +983,13 @@ function writeCanonicalDirectory(
     }
     try {
       fs.rmSync(backup, { recursive: true, force: true });
-    } catch (error) {
-      if (fs.existsSync(directory)) fs.rmSync(directory, { recursive: true, force: true });
-      if (fs.existsSync(backup)) fs.renameSync(backup, directory);
-      throw error;
+    } catch {
+      degraded = `Backup cleanup left debris at ${backup}; it will be removed on the next mutation.`;
     }
   } finally {
     if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true, force: true });
   }
+  return degraded;
 }
 
 /**
@@ -1176,19 +1185,22 @@ export async function commitLearnedSkillPlan(
     if (sourceDrift) return { outcome: 'blocked', ...base, block: sourceDrift };
 
     if (payload.action === 'rename' && payload.fromDirectory) {
-      const renameBlock = commitRename(payload, plan);
-      if (renameBlock) return { outcome: 'blocked', ...base, block: renameBlock };
+      const renameResult = commitRename(payload, plan);
+      if (renameResult && 'code' in renameResult) {
+        return { outcome: 'blocked', ...base, block: renameResult };
+      }
       return {
         outcome: 'renamed',
         ...base,
         status: 'active',
         directory: payload.directory,
         ...(payload.targetStoreRoot ? { storeRoot: payload.targetStoreRoot } : {}),
+        ...(renameResult?.degraded ? { degraded: renameResult.degraded } : {}),
         changedFiles: changedFiles(payload),
       };
     }
 
-    writeCanonicalDirectory(
+    const degraded = writeCanonicalDirectory(
       payload.directory,
       payload.manifest as LearnedSkillManifest,
       payload.content as string,
@@ -1203,6 +1215,7 @@ export async function commitLearnedSkillPlan(
       status: payload.action === 'retire' ? 'retired' : 'active',
       directory: payload.directory,
       ...(payload.targetStoreRoot ? { storeRoot: payload.targetStoreRoot } : {}),
+      ...(degraded ? { degraded } : {}),
       changedFiles: changedFiles(payload),
     };
   } finally {
@@ -1293,11 +1306,16 @@ async function sourcesDrifted(
 /**
  * Renames by moving the source aside first, so the new directory is written
  * into a free name and the old one is restored on any failure.
+ *
+ * Returns a `LearnedSkillBlock` when the rename is blocked (source drift).
+ * Returns `{ degraded }` when the new record was published but backup cleanup
+ * failed (debris left for sweepMutationDebris). Returns `undefined` on a clean
+ * rename.
  */
 function commitRename(
   payload: NonNullable<LearnedSkillPlan['commit']>,
   plan: LearnedSkillPlan
-): LearnedSkillBlock | undefined {
+): LearnedSkillBlock | { degraded: string } | undefined {
   const fromDirectory = payload.fromDirectory as string;
   const from = readCanonicalRecord(fromDirectory, payload.scope, plan.identity.owner);
   if (
@@ -1317,18 +1335,30 @@ function commitRename(
       .slice(2)}`
   );
   fs.renameSync(fromDirectory, backup);
+  // Publish the new record. If publication fails, the backup is still intact
+  // and restoring it to the old name is correct.
+  let writeDegraded: string | undefined;
   try {
-    writeCanonicalDirectory(
+    writeDegraded = writeCanonicalDirectory(
       payload.directory,
       payload.manifest as LearnedSkillManifest,
       payload.content as string,
       payload.expectedContentDigest
     );
-    fs.rmSync(backup, { recursive: true, force: true });
   } catch (error) {
     if (fs.existsSync(payload.directory)) fs.rmSync(payload.directory, { recursive: true, force: true });
     if (fs.existsSync(backup)) fs.renameSync(backup, fromDirectory);
     throw error;
   }
-  return undefined;
+  // Publication succeeded — backup cleanup is best-effort. A cleanup failure
+  // must NOT roll back: the new record is live and the backup may be partially
+  // deleted.
+  let degraded = writeDegraded;
+  try {
+    fs.rmSync(backup, { recursive: true, force: true });
+  } catch {
+    const msg = `Backup cleanup left debris at ${backup}; it will be removed on the next mutation.`;
+    degraded = degraded ? `${degraded} ${msg}` : msg;
+  }
+  return degraded ? { degraded } : undefined;
 }
