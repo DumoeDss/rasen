@@ -33,7 +33,7 @@ and parsed every line as JSON, printing `type` and a payload excerpt.
 }
 ```
 
-## `event_msg` → `token_count` carries cumulative + last-turn usage, AND the context window again
+## `event_msg` → `token_count` carries cumulative + current-context usage, AND the context window again
 
 ```json
 {
@@ -57,10 +57,14 @@ and parsed every line as JSON, printing `type` and a payload excerpt.
 }
 ```
 
+`total_token_usage.total_tokens` is lifetime-cumulative spend. It remains useful for audit
+accounting but continues rising across context compaction, so it is not occupancy.
+
 **Exact JSON path for an occupancy probe:** open the newest rollout JSONL for the thread, scan
-for the *last* line where `.payload.type == "token_count"`, read
-`.payload.info.total_token_usage.total_tokens` and `.payload.info.model_context_window`.
-`pct = total_tokens / model_context_window`. This is a direct, better-than-Claude analog — Claude
+for the *last valid* line where `.payload.type == "token_count"`, read
+`.payload.info.last_token_usage.total_tokens` and `.payload.info.model_context_window`.
+`pct = last_token_usage.total_tokens / model_context_window`. This is a direct,
+better-than-Claude analog — Claude
 transcripts require summing `input + cache_read + cache_creation` against an externally-known
 context window constant; Codex's rollout emits the context window inline per event, so no
 external model-to-window lookup table is needed.
@@ -91,5 +95,5 @@ for line in open(rollout_path):
     d = json.loads(line)
     if d["type"] == "event_msg" and d["payload"]["type"] == "token_count":
         info = d["payload"]["info"]
-        pct = info["total_token_usage"]["total_tokens"] / info["model_context_window"]
+        pct = info["last_token_usage"]["total_tokens"] / info["model_context_window"]
 ```
