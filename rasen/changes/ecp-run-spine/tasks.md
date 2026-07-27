@@ -135,9 +135,9 @@
 - [x] 12.2 GREEN: Register handlers/options and route only through public runtime/host evidence seams; keep cancel typed control sugar.
 - [x] 12.3 RED: Add versioned JSON/human goldens for view/receipt/actions/disposition/full IDs/native diagnostics, reused start empty grants, deferred ActionView, trusted resume first claim, and status zero writes.
 - [x] 12.4 GREEN: Implement start/status output with no plan/Record serialization and no executable inference from ActionView.
-- [ ] 12.5 RED: Add completion/control tests for exact discriminated variants, ActorRef/EvidenceRef, transport uploads, expected version+WaitId, conflict current view, symlink/nonfile/oversized/malformed bodies, and unknown fields.
-- [ ] 12.6 GREEN: Implement bounded no-follow input reader, trusted upload staging, exact codecs, and stable non-zero typed errors.
-- [ ] 12.7 RED/GREEN: Preserve legacy resume snapshots/locales including LEGACY_NORMALIZED wording; verify canonical ambiguity/integrity/dual-owner blocks fallback and unique canonical dispatch goes through exact facade resume.
+- [x] 12.5 RED: Add completion/control tests for exact discriminated variants, ActorRef/EvidenceRef, transport uploads, expected version+WaitId, conflict current view, symlink/nonfile/oversized/malformed bodies, and unknown fields.
+- [x] 12.6 GREEN: Implement bounded no-follow input reader, trusted upload staging, exact codecs, and stable non-zero typed errors.
+- [x] 12.7 RED/GREEN: Preserve legacy resume snapshots/locales including LEGACY_NORMALIZED wording; verify canonical ambiguity/integrity/dual-owner blocks fallback and unique canonical dispatch goes through exact facade resume.
 - [x] 12.8 RED/GREEN: Add `pipeline show` parity tests and implementation for availableEngines/reconcilerSupport from the shared analyzer.
 
 ## 13. Management API and bounded Operations discovery
