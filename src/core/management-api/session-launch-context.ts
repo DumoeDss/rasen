@@ -70,41 +70,21 @@ export function rootsEqual(left: string, right: string): boolean {
 }
 
 /**
- * THE membership seam (design D6). A Store session may work on a project when
- * either authority vouches for it:
- *
- * 1. the Store's own membership record (child B's `resolveProjectMembership`
- *    over `<store>/.rasen-store/projects/<projectId>.yaml`, plus the legacy
- *    sources that provider already normalizes); or
- * 2. the project's own durable Store declaration resolving to THIS Store —
- *    a project that declares the Store as its planning Store is self-evidently
- *    one of its projects, and this is the linkage that predates the record.
- *
- * The declaration arm is compared by RESOLVED ROOT through child A's single
- * resolver, never by `pointer.value`: a durable declaration carries only a
- * permanent identity, so its display alias is undefined and an alias
- * comparison silently reads "not a member". Two Stores sharing a display name
- * resolve to different roots, so root equality is the identity-safe test.
- *
- * A project whose declaration names a DIFFERENT Store is still permitted when
- * arm 1 answers — the session pins planning explicitly, which is the whole
- * point of separating planning binding from membership.
+ * THE membership seam (design D6). A Store session may work on a project only
+ * when the Store's own membership record vouches for it — the record under the
+ * Store's metadata directory named by the project's permanent identity,
+ * resolved through `resolveProjectMembership`. The project's own durable Store
+ * declaration is a LOCATOR and SHALL NOT vouch for the project here. The
+ * declaration MAY be consulted by the caller, ONLY to shape the rejection
+ * diagnostic when this function returns false.
  */
 async function storePermitsProject(
   space: { id: string; root: string },
-  checkoutRoot: string,
   projectId: string
 ): Promise<boolean> {
   const store: ResolvedStoreRef = { type: 'store', id: space.id, root: space.root };
   const membership = await resolveProjectMembership(store, projectId).catch(() => null);
-  if (membership) return true;
-
-  const pointer = readStorePointer(checkoutRoot);
-  if (!hasStoreDeclaration(pointer)) return false;
-  const binding = await resolveStoreBinding({
-    declaration: storeBindingDeclarationFrom(pointer),
-  }).catch(() => null);
-  return binding?.kind === 'resolved' && rootsEqual(binding.store.root, space.root);
+  return membership !== null;
 }
 
 export async function resolveSessionLaunchContext(
@@ -273,12 +253,28 @@ export async function resolveSessionLaunchContext(
         };
       }
 
-      if (!(await storePermitsProject(resolvedSpace.space, cwd, project.ref.projectId))) {
+      if (!(await storePermitsProject(resolvedSpace.space, project.ref.projectId))) {
+        // The declaration is a LOCATOR and cannot vouch for the project. The
+        // declaration helpers are consulted here ONLY to classify the
+        // rejection diagnostic — never to re-grant eligibility. The
+        // malformed-pointer branch above already handled `pointer.malformed`.
+        const repairCommand = `rasen store add-project ${project.ref.projectId} --store ${resolvedSpace.space.id}`;
+        let declarationNamesThisStore = false;
+        if (hasStoreDeclaration(pointer)) {
+          const binding = await resolveStoreBinding({
+            declaration: storeBindingDeclarationFrom(pointer),
+          }).catch(() => null);
+          declarationNamesThisStore =
+            binding?.kind === 'resolved' && rootsEqual(binding.store.root, resolvedSpace.space.root);
+        }
+        const message = declarationNamesThisStore
+          ? `Store "${resolvedSpace.space.id}" has no membership record for project "${project.ref.projectId}", although the project's own declaration names this Store (legacy declaration-only install). Establish the record with \`${repairCommand}\`.`
+          : `Store "${resolvedSpace.space.id}" does not record project "${project.ref.projectId}" as a member; the project's own declaration does not name this Store. Add it with \`${repairCommand}\`.`;
         return {
           ok: false,
           status: 409,
           code: 'execution_not_member',
-          message: `Store "${resolvedSpace.space.id}" does not record project "${project.ref.projectId}" as a member. Add it with \`rasen store add-project ${project.ref.projectId} --store ${resolvedSpace.space.id}\`.`,
+          message,
         };
       }
 

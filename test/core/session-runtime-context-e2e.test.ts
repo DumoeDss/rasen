@@ -80,6 +80,13 @@ describe('session runtime context end to end', () => {
       { projectRoot: checkout, projectId: 'project-p', mode: 'store' },
       { globalDataDir: dataDir }
     );
+    // Store record is the sole authority for session eligibility (M6):
+    // the declaration alone cannot vouch for the project.
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId: 'project-p',
+      roles: { planning: true, knowledge: true },
+    });
 
     const launch = await resolveSessionLaunchContext({
       space: 'store:store-s',
@@ -153,6 +160,13 @@ describe('session runtime context end to end', () => {
       { projectRoot: mainRoot, projectId: 'wt-project', mode: 'store' },
       { globalDataDir: dataDir }
     );
+    // Store record is the sole authority for session eligibility (M6):
+    // the declaration alone cannot vouch for the project.
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId: 'wt-project',
+      roles: { planning: true, knowledge: true },
+    });
 
     const launch = await resolveSessionLaunchContext({
       space: 'store:wt-store',
