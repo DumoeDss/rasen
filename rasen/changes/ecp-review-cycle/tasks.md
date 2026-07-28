@@ -72,9 +72,9 @@
 
 ## 11. Real Dogfood (Acceptance #8)
 
-- [ ] 11.1 Run a real local Change through the ReviewCycle: start a Run, have the review phase produce a real Major finding, complete triage/fix with a different actor, complete re-review with an independent verifier, reach clean
-- [ ] 11.2 Record the dogfood evidence: revision (`git rev-parse HEAD`), RunId, ActionId for each phase, actor identities, evidence refs, and the final `ChangeRunView` projection
-- [ ] 11.3 Write the dogfood result to the slice `result.md` at `rasen/work/issue-centered-automation-platform/executable-composite-pipelines/slices/review-cycle-vertical-closure/result.md`
+- [x] 11.1 Run a real local Change through the ReviewCycle: start a Run, have the review phase produce a real Major finding, complete triage/fix with a different actor, complete re-review with an independent verifier, reach clean
+- [x] 11.2 Record the dogfood evidence: revision (`git rev-parse HEAD`), RunId, ActionId for each phase, actor identities, evidence refs, and the final `ChangeRunView` projection
+- [x] 11.3 Write the dogfood result to the slice `result.md` at `rasen/work/issue-centered-automation-platform/executable-composite-pipelines/slices/review-cycle-vertical-closure/result.md`
 
 ## 12. Regression and Cross-Platform Verification
 
