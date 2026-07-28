@@ -36,28 +36,16 @@ import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
 
 const IS_WINDOWS = process.platform === 'win32';
 /**
- * Windows-only evidence-gated buffer (design D5): a local timing probe
- * measured a single `taskkill /F /T` invocation (spawn, execute, target
- * confirmed dead) at roughly 550-650ms end to end on this machine — far
- * more than the near-instant POSIX SIGKILL these grace/wait windows were
- * originally tuned for. The forced kill still fires exactly at
- * `killGraceMs` (kill-tree.ts's escalation timer is unaffected), but a
- * fixed-sleep-then-assert test needs its own wait window widened by this
- * much extra to observe the process actually gone, not merely dispatched
- * against. POSIX keeps every wait exactly as tuned (buffer is 0).
- */
-const KILL_SETTLE_BUFFER_MS = IS_WINDOWS ? 1800 : 0;
-/**
  * Windows-only evidence-gated buffer, second kind (design D5): spawning a
  * session on win32 now hops through `cmd.exe /d /s /c` before `node.exe`
  * itself starts (design D1) — that extra process-creation link can itself
  * take longer than a no-output threshold tuned for POSIX's near-instant
- * direct exec, so a streaming fixture's very first byte can arrive later
- * than the timer expects. Widens only the no-output threshold/wait pairs
- * that assert on a fixture emitting output shortly after launch, not the
- * kill-escalation ones above (POSIX buffer is 0).
+ * direct exec. Under parallel test load the fixture's first byte has been
+ * observed after one second, so the test-only watchdog threshold needs a
+ * generous startup allowance. This does not change production defaults,
+ * and successful fixtures still finish as soon as their close event lands.
  */
-const STARTUP_LATENCY_BUFFER_MS = IS_WINDOWS ? 400 : 0;
+const STARTUP_LATENCY_BUFFER_MS = IS_WINDOWS ? 2000 : 0;
 
 function makeSupervisor(overrides: Partial<Parameters<typeof createSessionSupervisor>[0]> = {}): SessionSupervisor {
   return createSessionSupervisor({
@@ -66,6 +54,20 @@ function makeSupervisor(overrides: Partial<Parameters<typeof createSessionSuperv
     killGraceMs: 200,
     ...overrides,
   });
+}
+
+async function waitFor(
+  description: string,
+  predicate: () => boolean,
+  timeoutMs = 7000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for ${description}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
 }
 
 describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
@@ -95,7 +97,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(result.record.state === 'starting' || result.record.state === 'running').toBe(true);
     expect(typeof result.record.pid).toBe('number');
 
-    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
+    await waitFor('the normal session to exit', () => supervisor.getRecord(result.record.id)?.state === 'exited');
 
     const finalRecord = supervisor.getRecord(result.record.id)!;
     expect(finalRecord.state).toBe('exited');
@@ -118,7 +120,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     if (!result.ok) return;
     const options = mockSpawnCalls.at(-1)?.[2] as { windowsHide?: boolean } | undefined;
     expect(options?.windowsHide).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
+    await waitFor('the windowsHide fixture to exit', () => supervisor.getRecord(result.record.id)?.state === 'exited');
   }, 10_000);
 
   it('omits --add-dir when the resolved launch facts contain no distinct planning root', async () => {
@@ -142,7 +144,9 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(result.ok).toBe(true);
     const argv = mockSpawnCalls.at(-1)?.[1] as string[] | undefined;
     expect(argv).not.toContain('--add-dir');
-    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
+    if (result.ok) {
+      await waitFor('the no-add-dir fixture to exit', () => supervisor.getRecord(result.record.id)?.state === 'exited');
+    }
   }, 10_000);
 
   it('appends a distinct planning root as one literal --add-dir pair on a native executable', async () => {
@@ -181,7 +185,9 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
       '--add-dir',
       planningRoot,
     ]);
-    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
+    if (result.ok) {
+      await waitFor('the add-dir fixture to exit', () => supervisor.getRecord(result.record.id)?.state === 'exited');
+    }
   }, 10_000);
 
   it('captures agentSessionId from the stream-json init event', async () => {
@@ -197,7 +203,10 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
+    await waitFor(
+      'the agent session id',
+      () => supervisor.getRecord(result.record.id)?.agentSessionId === 'fake-session-fast-exit'
+    );
     expect(supervisor.getRecord(result.record.id)!.agentSessionId).toBe('fake-session-fast-exit');
   }, 10_000);
 
@@ -214,7 +223,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
+    await waitFor('the garbage-init fixture to exit', () => supervisor.getRecord(result.record.id)?.state === 'exited');
     const record = supervisor.getRecord(result.record.id)!;
     expect(record.state).toBe('exited');
     expect(record.agentSessionId).toBeUndefined();
@@ -234,7 +243,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
+    await waitFor('the nonzero fixture to exit', () => supervisor.getRecord(result.record.id)?.state === 'exited');
     const record = supervisor.getRecord(result.record.id)!;
     expect(record.state).toBe('exited');
     expect(record.terminationReason).toBe('exit');
@@ -256,7 +265,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const id = result.record.id;
 
     // Let it actually start emitting (init line) before killing.
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await waitFor('the resistant fixture to initialize', () => supervisor.getRecord(id)?.agentSessionId !== undefined);
 
     const killResult = supervisor.kill(id);
     expect(killResult.ok).toBe(true);
@@ -269,9 +278,9 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     // (SIGTERM is ignored) — the record must not yet be exited.
     expect(supervisor.getRecord(id)!.state).toBe('exiting');
 
-    // Wait past the SIGKILL grace period: only the forced signal actually
-    // ends it.
-    await new Promise((resolve) => setTimeout(resolve, 600 + KILL_SETTLE_BUFFER_MS));
+    // Only the forced signal ends this fixture; observe the close event
+    // instead of assuming a platform-specific taskkill duration.
+    await waitFor('the resistant fixture to be force-killed', () => supervisor.getRecord(id)?.state === 'exited');
 
     const finalRecord = supervisor.getRecord(id)!;
     expect(finalRecord.state).toBe('exited');
@@ -292,8 +301,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     if (!result.ok) return;
     const id = result.record.id;
 
-    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
-    expect(supervisor.getRecord(id)!.state).toBe('exited');
+    await waitFor('the fast fixture to exit', () => supervisor.getRecord(id)?.state === 'exited');
 
     const killResult = supervisor.kill(id);
     expect(killResult.ok).toBe(true);
@@ -320,8 +328,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     if (!result.ok) return;
     const id = result.record.id;
 
-    // Let the init line land, then wait past the no-output threshold + kill grace.
-    await new Promise((resolve) => setTimeout(resolve, 700 + KILL_SETTLE_BUFFER_MS));
+    await waitFor('the no-output watchdog to finish killing the fixture', () => supervisor.getRecord(id)?.state === 'exited');
 
     const finalRecord = supervisor.getRecord(id)!;
     expect(finalRecord.state).toBe('exited');
@@ -345,7 +352,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     if (!result.ok) return;
     const id = result.record.id;
 
-    await new Promise((resolve) => setTimeout(resolve, 400 + STARTUP_LATENCY_BUFFER_MS));
+    await waitFor('the streaming fixture to exit', () => supervisor.getRecord(id)?.state === 'exited');
 
     const finalRecord = supervisor.getRecord(id)!;
     expect(finalRecord.state).toBe('exited');
@@ -366,7 +373,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     if (!result.ok) return;
     const id = result.record.id;
 
-    await new Promise((resolve) => setTimeout(resolve, 700 + KILL_SETTLE_BUFFER_MS));
+    await waitFor('the overall-timeout watchdog to finish killing the fixture', () => supervisor.getRecord(id)?.state === 'exited');
 
     const finalRecord = supervisor.getRecord(id)!;
     expect(finalRecord.state).toBe('exited');
@@ -387,7 +394,10 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     if (!result.ok) return;
     const id = result.record.id;
 
-    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
+    await waitFor(
+      'the streaming output tail',
+      () => supervisor.getTails(id)?.stdout.includes('thinking_tokens') === true
+    );
 
     const tails = supervisor.getTails(id);
     expect(tails).toBeDefined();
@@ -427,7 +437,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     // Clean up the still-live first session.
     if (first.ok) {
       supervisor.kill(first.record.id);
-      await new Promise((resolve) => setTimeout(resolve, 400 + KILL_SETTLE_BUFFER_MS));
+      await waitFor('the capped session cleanup', () => supervisor.getRecord(first.record.id)?.state === 'exited');
     }
   }, 10_000);
 
@@ -463,7 +473,10 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     for (const r of succeeded) {
       if (r.ok) supervisor.kill(r.record.id);
     }
-    await new Promise((resolve) => setTimeout(resolve, 400 + KILL_SETTLE_BUFFER_MS));
+    await waitFor(
+      'all concurrent session cleanup',
+      () => succeeded.every((result) => result.ok && supervisor.getRecord(result.record.id)?.state === 'exited')
+    );
   }, 10_000);
 
   it('review M2 regression: a repeated triggerKill (double DELETE) dispatches only one SIGKILL escalation, and it is fully cancelled on close', async () => {
@@ -484,7 +497,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     const id = result.record.id;
 
     // Let it actually start (init line) before killing.
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await waitFor('the repeated-kill fixture to initialize', () => supervisor.getRecord(id)?.agentSessionId !== undefined);
 
     // Double DELETE while still 'exiting' (SIGTERM-resistant, so the first
     // kill hasn't settled yet) — this is exactly the reachable path M2
@@ -499,9 +512,9 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
 
     expect(killProcessTreeSpy).toHaveBeenCalledTimes(1);
 
-    // Past the SIGKILL grace period, the process is dead (proves the one
-    // escalation that did fire still worked end to end).
-    await new Promise((resolve) => setTimeout(resolve, 600 + KILL_SETTLE_BUFFER_MS));
+    // The close event proves the one escalation that did fire worked end
+    // to end, without depending on taskkill wall-clock latency.
+    await waitFor('the repeated-kill fixture to exit', () => supervisor.getRecord(id)?.state === 'exited');
     const finalRecord = supervisor.getRecord(id)!;
     expect(finalRecord.state).toBe('exited');
     expect(finalRecord.terminationReason).toBe('killed');
@@ -525,7 +538,10 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(first.ok).toBe(true);
     if (!first.ok) return;
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await waitFor(
+      'the slot-retention fixture to initialize',
+      () => supervisor.getRecord(first.record.id)?.agentSessionId !== undefined
+    );
     supervisor.kill(first.record.id);
 
     // Immediately after kill(), the resistant child is still alive (ignores
@@ -541,8 +557,8 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(second.ok).toBe(false);
     if (!second.ok) expect(second.code).toBe('busy');
 
-    // Wait past the SIGKILL grace period — the slot is now free.
-    await new Promise((resolve) => setTimeout(resolve, 600 + KILL_SETTLE_BUFFER_MS));
+    // The slot becomes free only after the child close event.
+    await waitFor('the slot-retention fixture to exit', () => supervisor.getRecord(first.record.id)?.state === 'exited');
 
     const third = await supervisor.launch({
       kind: 'auto',
@@ -553,7 +569,9 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
       noOutputTimeoutMs: 5000,
     });
     expect(third.ok).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
+    if (third.ok) {
+      await waitFor('the replacement fixture to exit', () => supervisor.getRecord(third.record.id)?.state === 'exited');
+    }
   }, 10_000);
 
   it('503s with agent_cli_unavailable when no agent CLI can be resolved, spawning nothing', async () => {
@@ -599,7 +617,12 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(b.ok).toBe(true);
     if (!a.ok || !b.ok) return;
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await waitFor(
+      'both shutdown fixtures to initialize',
+      () =>
+        supervisor.getRecord(a.record.id)?.agentSessionId !== undefined &&
+        supervisor.getRecord(b.record.id)?.agentSessionId !== undefined
+    );
 
     await supervisor.shutdownAll('server-shutdown');
 
@@ -668,7 +691,7 @@ describe('createSessionSupervisor (design D1/D2/D3/D5)', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    await new Promise((resolve) => setTimeout(resolve, 300 + STARTUP_LATENCY_BUFFER_MS));
+    await waitFor('the pruned-tail fixture to exit', () => supervisor.getRecord(result.record.id)?.state === 'exited');
 
     // The stub-reported pruned id's tail is gone — freed as part of this
     // session's own finalize, exactly like a real registry would report a

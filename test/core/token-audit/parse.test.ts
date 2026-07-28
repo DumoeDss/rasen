@@ -5,6 +5,7 @@ import * as path from 'node:path';
 
 import { parseTranscriptFile } from '../../../src/core/token-audit/parse.js';
 import { TranscriptFormatError } from '../../../src/core/token-audit/errors.js';
+import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
 
 describe('parseTranscriptFile', () => {
   let dir: string;
@@ -12,8 +13,8 @@ describe('parseTranscriptFile', () => {
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-token-audit-parse-'));
   });
-  afterEach(() => {
-    fs.rmSync(dir, { recursive: true, force: true });
+  afterEach(async () => {
+    await cleanupTempPathAsync(dir);
   });
 
   function write(name: string, lines: string[]): string {

@@ -156,5 +156,74 @@ Verdict: the component is correct (`handleChangeCreated` â†’ `setRefreshNonce` â
   ```
   Confirm 100% pass, no flakes on a second run.
 - [x] 7.2 Run `cd packages/ui && pnpm test -- test/components/board-page.test.tsx`. Confirm both "New change submission" tests pass.
-- [ ] 7.3 Run the full root test suite once (`pnpm test`) to confirm no regressions from the three code fixes (the socket teardown, AuditServiceError wrap, and bootstrap race-loser action each touch code that other tests exercise).
+- [x] 7.3 Run the full root test suite once (`pnpm test`, or exhaustive
+  non-overlapping Vitest shards) to confirm no regressions from the three code
+  fixes (the socket teardown, AuditServiceError wrap, and bootstrap race-loser
+  action each touch code that other tests exercise).
 - [x] 7.4 Run `pnpm run build` and `pnpm run typecheck` (or `pnpm exec tsc --noEmit`) to confirm the code fixes compile cleanly across the matrix. The LEAD handles the actual ship/PR push and triggering CI on both linux-bash and windows-pwsh. (or `pnpm exec tsc --noEmit`) to confirm the code fixes compile cleanly across the matrix. The LEAD handles the actual ship/PR push and triggering CI on both linux-bash and windows-pwsh.
+
+## 8. Cross-platform path identity residue
+
+- [x] 8.1 Extend `FileSystemUtils.canonicalizeExistingPath()` so a missing
+  descendant is rebuilt from its deepest existing canonical ancestor. Preserve
+  the lexical `path.resolve()` fallback for errors other than a missing path.
+- [x] 8.2 Add a regression covering a missing descendant below an aliased or
+  canonicalized existing parent.
+- [x] 8.3 Canonicalize the temporary fixture roots used by the macOS `/var` and
+  Windows 8.3 failures in bootstrap, knowledge, config, store identity,
+  membership, migration, learned-skill materialization, and multi-project
+  update tests.
+- [x] 8.4 Run the matrix-relevant path test files and confirm the same expected
+  identity is used on Windows, macOS, and Linux.
+
+## 9. Windows open-file ownership tests
+
+- [x] 9.1 Change the owner-aware lock token-mismatch test to mutate the token
+  through the acquired descriptor instead of unlinking an open Windows file.
+- [x] 9.2 Keep the real knowledge-bundle pathname swap on platforms that permit
+  it, and use the injected ownership predicate on Windows where the open
+  descriptor prevents the swap.
+- [x] 9.3 Run the owner-lock and knowledge-bundle export test files.
+
+## 10. Final matrix verification
+
+- [x] 10.1 Rebuild `dist/`, then run the focused macOS/Windows residue set.
+- [x] 10.2 Run `pnpm run typecheck` (or `pnpm exec tsc --noEmit`) and the
+  exhaustive root test suite.
+- [x] 10.3 Trigger CI from the fix branch and confirm linux-bash,
+  linux-bash-node24, macos-bash, and all three windows-pwsh partitions are
+  green. Run 30350757805 completed successfully.
+
+## 11. Full-suite runtime and timing isolation
+
+- [x] 11.1 Clear `CODEX_THREAD_ID` alongside the other host-runtime signals in
+  `agent-wait` tests so a Codex parent process cannot override the intended
+  Claude fixture runtime.
+- [x] 11.2 Pin the CLI localization test to its asserted Claude runtime so the
+  parent Codex thread cannot change its human output.
+- [x] 11.3 Replace fixed sleeps in session supervisor and sessions API
+  assertions with bounded polling of the actual record state or output tail.
+- [x] 11.4 Give the Windows streaming fixture a test-only process-startup
+  allowance and use a short test-only kill grace in the sessions API suite.
+- [x] 11.5 Run the three affected files and confirm `agent-wait` 28/28,
+  `supervisor` 24/24, and `sessions-api` 21/21 pass.
+- [x] 11.6 Replace the token-audit parser test's raw Windows cleanup with the
+  repository's bounded async retry helper after CI reproduced `ENOTEMPTY`.
+- [x] 11.7 Treat Windows `EPERM`/`EACCES`/`EBUSY` from owner-aware lock
+  creation as bounded transient contention after PR CI reproduced the
+  concurrent-stealer race; add a deterministic sharing-violation regression
+  and run the original race test 10/10 successfully.
+
+## 12. Windows CI wall-clock
+
+- [x] 12.1 Replace the single Windows matrix row with three deterministic file
+  partitions, retaining two workers per runner and running the additional
+  focused Windows/UI checks only once.
+- [x] 12.2 Give Windows shards a 20-minute infrastructure cushion while keeping
+  the other matrix rows at 15 minutes.
+- [x] 12.3 Confirm `vitest list --filesOnly` produces exhaustive,
+  non-overlapping partitions (105/104/104 files; 313 unique; 0 duplicates),
+  then run all three below the CI timeout (7m31s, 7m23s, 7m05s).
+- [x] 12.4 Push the fix branch and confirm all three Windows partition jobs are
+  green. Their test steps completed in 5m13s, 5m01s, and 4m59s; total job
+  durations were 6m30s, 6m06s, and 6m12s.

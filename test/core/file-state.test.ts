@@ -180,6 +180,8 @@ describe('owner-aware file lock', () => {
     return new Error(`${kind}:${info.lockPath}`);
   }
 
+  const itWindows = it.skipIf(process.platform !== 'win32');
+
   it('acquires and releases with a populated token', async () => {
     const lockPath = path.join(tempDir, 'owner.lock');
 
@@ -316,9 +318,11 @@ describe('owner-aware file lock', () => {
       'nonce: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       '',
     ].join('\n');
-    // Delete and rewrite to simulate the steal-and-recreate path.
-    fs.unlinkSync(lockPath);
-    fs.writeFileSync(lockPath, replacementToken, 'utf-8');
+    // Mutate through the descriptor we already own. Windows may correctly
+    // reject unlink/recreate while that descriptor is open; the release guard
+    // under test is the token mismatch, independent of how it arose.
+    await handle.fd.truncate(0);
+    await handle.fd.write(replacementToken, 0, 'utf-8');
 
     await releaseOwnerAwareFileLock(handle);
 
@@ -396,6 +400,37 @@ describe('owner-aware file lock', () => {
   });
 
   // --- B1 regression: rename-based atomic steal ---
+
+  itWindows('retries a transient Windows sharing violation while opening the lock', async () => {
+    const lockPath = path.join(tempDir, 'transient-open.lock');
+    const origOpen = fs.promises.open;
+    let injected = false;
+    fs.promises.open = (async (p: fs.PathLike, flags: string, ...args: unknown[]) => {
+      if (!injected && p === lockPath && flags === 'wx') {
+        injected = true;
+        const error = new Error('synthetic Windows sharing violation') as NodeJS.ErrnoException;
+        error.code = 'EPERM';
+        throw error;
+      }
+      return (origOpen as (...openArgs: unknown[]) => unknown)(p, flags, ...args);
+    }) as typeof fs.promises.open;
+
+    let handle: Awaited<ReturnType<typeof acquireOwnerAwareFileLock>> | undefined;
+    try {
+      handle = await acquireOwnerAwareFileLock({
+        lockPath,
+        errorFor,
+        pollMs: 0,
+        deadlineMs: 500,
+        holder: 'transient-open',
+      });
+      expect(injected).toBe(true);
+      expect(fs.existsSync(lockPath)).toBe(true);
+    } finally {
+      fs.promises.open = origOpen;
+      if (handle) await releaseOwnerAwareFileLock(handle);
+    }
+  });
 
   it('two concurrent stealers of a dead-owner lock: exactly one claims, the other waits', async () => {
     const lockPath = path.join(tempDir, 'dual-steal.lock');

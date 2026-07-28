@@ -216,8 +216,12 @@ describe('rasen knowledge command', () => {
   }
 
   beforeEach(async () => {
-    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-knowledge-home-'));
-    projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-knowledge-proj-'));
+    tempHome = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-knowledge-home-'))
+    );
+    projectRoot = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-knowledge-proj-'))
+    );
     originalEnv = { ...process.env };
     originalCwd = process.cwd();
     originalTTY = (process.stdout as unknown as { isTTY?: boolean }).isTTY;
@@ -948,7 +952,9 @@ describe('rasen knowledge command', () => {
   });
 
   it('prevents a known candidate project id from redirecting the selected owner', async () => {
-    const otherRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-knowledge-other-'));
+    const otherRoot = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-knowledge-other-'))
+    );
     try {
       fs.mkdirSync(path.join(otherRoot, 'rasen'), { recursive: true });
       fs.writeFileSync(
