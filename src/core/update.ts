@@ -84,6 +84,7 @@ import {
   scanInstalledWorkflows as scanInstalledWorkflowsShared,
   migrateIfNeeded as migrateIfNeededShared,
 } from './migration.js';
+import { reconcileCodexProjectConfig, formatCodexConfigSummary, type CodexConfigReconcileResult } from './codex/index.js';
 
 const require = createRequire(import.meta.url);
 const { version: OPENSPEC_VERSION } = require('../../package.json');
@@ -316,6 +317,18 @@ export class UpdateCommand {
       return;
     }
 
+    // Reconcile the Codex project-local wait policy when Codex belongs to the
+    // authoritative configured-tool set (manifest, or the one-time migration
+    // seed which itself requires real Rasen artifacts — a stray `.codex/`
+    // directory stays advisory-only). Done before the up-to-date short-circuit
+    // so missing/stale/blocked policy is treated as update-required drift even
+    // when every generated skill is current (cli-update spec).
+    const codexConfig: CodexConfigReconcileResult | undefined = configuredTools.includes('codex')
+      ? await reconcileCodexProjectConfig(resolvedProjectPath)
+      : undefined;
+    const codexConfigNeedsAttention =
+      codexConfig !== undefined && codexConfig.outcome !== 'unchanged';
+
     // 6. Check version status for all configured tools
     const toolStatuses = configuredTools.map((toolId) => {
       const status = getToolVersionStatus(resolvedProjectPath, toolId, OPENSPEC_VERSION);
@@ -376,8 +389,9 @@ export class UpdateCommand {
     const learned = await this.reconcileLearnedSkills(resolvedProjectPath, configuredTools);
     const learnedActivity = learnedReconcileHasActivity(learned);
 
-    if (!this.force && toolsToUpdateSet.size === 0 && !learnedActivity) {
-      // All tools are up to date and no learned-skill materialization changed.
+    if (!this.force && toolsToUpdateSet.size === 0 && !learnedActivity && !codexConfigNeedsAttention) {
+      // All tools are up to date, no learned-skill materialization changed, and
+      // every manifest-configured Codex policy is current.
       this.displayUpToDateMessage(toolStatuses);
       // A complete reconciliation that changed nothing still says so, in its
       // own words. Silence here is what makes a user unsure whether their
@@ -495,6 +509,23 @@ export class UpdateCommand {
     // (created/updated/removed/skipped) so an empty learned category is never
     // merged into the workflow counts.
     this.displayLearnedSummary(learned);
+
+    // Codex project config (cli-update spec): report the managed wait-policy
+    // outcome separately from the workflow skill summary. The TOML file is
+    // never counted as a workflow or skill. Created/updated include a restart
+    // reminder; blocked/failed are actionable and never let the project read
+    // as already current.
+    if (codexConfig) {
+      for (const line of formatCodexConfigSummary(codexConfig)) {
+        const rendered =
+          line.tone === 'error'
+            ? chalk.red(`  ✗ ${line.text}`)
+            : line.tone === 'warn'
+              ? chalk.yellow(`  ⚠ ${line.text}`)
+              : chalk.white(`  ${line.text}`);
+        console.log(rendered);
+      }
+    }
 
     // 12. Detect new tool directories not currently configured
     this.detectNewTools(resolvedProjectPath, configuredTools);
