@@ -1873,6 +1873,11 @@ function supportsV2ReviewCycleRuntime(
   let loops = 0;
   for (const node of definition.root.nodes) {
     if (node.kind === 'Finish') continue;
+    // Mixed plans allow AtomicStage (regular stages) alongside BoundedLoop
+    // (ReviewCycle). Other node kinds are not supported by the v2 reconciler.
+    if (node.kind === 'AtomicStage') continue;
+    if (node.kind === 'Gate') continue;
+    if (node.kind === 'Choice') continue;
     if (node.kind !== 'BoundedLoop') return false;
     loops += 1;
     if (
@@ -1922,6 +1927,93 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
       ...stage,
       requires: [...stage.requires].sort(compareCanonicalStrings),
     };
+
+    // D4 migration: stages with loop.kind === 'review-cycle' or
+    // verifyPolicy === 'adaptive' produce a v2 BoundedLoop with a 4-phase
+    // ReviewCycle body, enabling reconciler execution.
+    const isReviewCycleLoop =
+      stage.loop?.kind === 'review-cycle';
+    const isAdaptiveVerify = stage.verifyPolicy === 'adaptive';
+
+    if (isReviewCycleLoop || isAdaptiveVerify) {
+      const bodyId = `review-cycle-body:${stage.id}`;
+      const maxIterations = isReviewCycleLoop
+        ? stage.loop!.maxRounds
+        : 3;
+      declarations.push({
+        id: bodyId,
+        kind: 'Composite',
+        provenance: 'built-in',
+        inputs: [],
+        artifacts: [],
+        outcomes: ['clean', 'needs_fix'],
+        graph: {
+          nodes: [
+            {
+              id: `${stage.id}:review`,
+              kind: 'AtomicStage',
+              capability,
+              reviewCyclePhase: 'review',
+              legacyStageId: stage.id,
+              legacyRuntimeOwner: 'prompt-owned-v1',
+            },
+            {
+              id: `${stage.id}:triage`,
+              kind: 'AtomicStage',
+              capability: { id: 'skill:rasen-review', version: 'legacy' },
+              reviewCyclePhase: 'triage',
+              legacyRuntimeOwner: 'prompt-owned-v1',
+            },
+            {
+              id: `${stage.id}:fix`,
+              kind: 'AtomicStage',
+              capability: { id: 'skill:rasen-review', version: 'legacy' },
+              reviewCyclePhase: 'fix',
+              legacyRuntimeOwner: 'prompt-owned-v1',
+            },
+            {
+              id: `${stage.id}:re-review`,
+              kind: 'AtomicStage',
+              capability: { id: 'skill:rasen-review', version: 'legacy' },
+              reviewCyclePhase: 're-review',
+              legacyRuntimeOwner: 'prompt-owned-v1',
+            },
+          ],
+          connections: [
+            {
+              id: `${stage.id}:review-to-triage`,
+              from: { node: `${stage.id}:review`, port: 'findings' },
+              to: { node: `${stage.id}:triage`, port: 'start' },
+            },
+            {
+              id: `${stage.id}:triage-to-fix`,
+              from: { node: `${stage.id}:triage`, port: 'ready' },
+              to: { node: `${stage.id}:fix`, port: 'start' },
+            },
+            {
+              id: `${stage.id}:fix-to-re-review`,
+              from: { node: `${stage.id}:fix`, port: 'fixed' },
+              to: { node: `${stage.id}:re-review`, port: 'start' },
+            },
+          ],
+        },
+      });
+      nodes.push({
+        id: `stage:${stage.id}`,
+        kind: 'BoundedLoop',
+        body: bodyId,
+        limits: { maxIterations },
+        exits: {
+          clean: { action: 'exit', outcome: 'clean' },
+          needs_fix: { action: 'continue' },
+        },
+        exhaustedOutcome: 'review_cycle_exhausted',
+        legacyRuntimeOwner: 'prompt-owned-v1',
+        legacy: normalizedLegacyStage,
+      });
+      continue;
+    }
+
     nodes.push({
       id: `stage:${stage.id}`,
       kind: 'AtomicStage',

@@ -173,6 +173,35 @@ function lowerV2ReviewCyclePlanInput(
   const nodes: RuntimePlanNodeInput[] = [];
 
   for (const node of definition.root.nodes) {
+    if (node.kind === 'AtomicStage') {
+      const path = `root:${node.id}`;
+      const capability = capabilityByPath.get(path);
+      const policy = policyByPath.get(path);
+      if (capability === undefined) {
+        throw new RuntimePlanLowererError(
+          'lowerer_shape_mismatch',
+          `No frozen capability binding exists for ${path}.`
+        );
+      }
+      if (policy === undefined) {
+        throw new RuntimePlanLowererError(
+          'lowerer_shape_mismatch',
+          `No effective policy for ${path}.`
+        );
+      }
+      nodes.push({
+        kind: 'atomic',
+        hierarchicalPath: path,
+        requires: incomingRequirements(definition, node.id),
+        admissionKind: capability.actionKind,
+        workspace: { access: capability.workspace.access },
+        adaptiveVerify: false,
+        ...(policy.gate
+          ? { gate: gateInput(node.id, DEFAULT_LOWERED_GATE_POLICY) }
+          : {}),
+      });
+      continue;
+    }
     if (node.kind === 'BoundedLoop') {
       const body = reviewCycleBody(definition, node);
       const cleanExit = node.exits.clean;
@@ -230,12 +259,6 @@ function lowerV2ReviewCyclePlanInput(
     throw new RuntimePlanLowererError(
       'lowerer_shape_mismatch',
       `Authored v2 ReviewCycle runtime does not yet support root node kind ${node.kind}.`
-    );
-  }
-  if (!nodes.some((node) => node.kind === 'bounded-loop')) {
-    throw new RuntimePlanLowererError(
-      'lowerer_shape_mismatch',
-      'Authored v2 ReviewCycle runtime requires one BoundedLoop root node.'
     );
   }
   const hasFinish = nodes.some((node) => node.kind === 'finish');

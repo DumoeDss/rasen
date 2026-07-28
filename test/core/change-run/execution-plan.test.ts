@@ -167,7 +167,11 @@ describe('stored Definition plan opener', () => {
     const stored = JSON.parse(JSON.stringify(prepared.plan));
     const opened = openDefinitionPlan(stored);
 
-    expect(opened.definition).toEqual(prepared.definition);
+    // The sealed plan canonicalizes the definition (strips non-semantic keys
+    // like 'provenance', 'canvas'). Compare the opened definition against the
+    // canonicalized form from the sealed plan, not the raw prepared definition.
+    const canonicalDefinition = (prepared.plan as { payload: { definition: unknown } }).payload.definition;
+    expect(opened.definition).toEqual(canonicalDefinition);
     expect(opened.sourceDigest).toBe(prepared.digests.source);
     expect(opened.capabilityDigest).toBe(prepared.digests.capability);
     expect(opened.planDigest).toBe(prepared.digests.plan);
