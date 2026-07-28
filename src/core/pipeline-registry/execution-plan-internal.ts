@@ -603,6 +603,55 @@ export function analyzeReconcilerSupport(
     });
   }
   const pipeline = prepared.authoredSource as PipelineYaml;
+
+  // D4 migration: v1 definitions whose normalized form contains a ReviewCycle
+  // BoundedLoop are analyzed via the v2 path. The capability bindings must
+  // include both root AtomicStage paths (`root:<nodeId>`) and BoundedLoop body
+  // phase paths (`declaration:<bodyId>/node:<phaseId>`).
+  const hasV2ReviewCycle = prepared.definition.root.nodes.some(
+    (node) =>
+      node.kind === 'BoundedLoop' &&
+      node.exits.clean?.action === 'exit' &&
+      node.exits.needs_fix?.action === 'continue'
+  );
+  if (hasV2ReviewCycle) {
+    if (profile === null) {
+      return unsupported('execution_profile_unavailable');
+    }
+    const expectedRootIds = prepared.definition.root.nodes
+      .filter((node) => node.kind === 'AtomicStage')
+      .map((node) => `root:${node.id}`);
+    const expectedBodyIds = prepared.definition.declarations.flatMap(
+      (declaration) =>
+        declaration.graph.nodes
+          .filter(
+            (node) =>
+              node.kind === 'AtomicStage' &&
+              typeof node.reviewCyclePhase === 'string'
+          )
+          .map(
+            (node) => `declaration:${declaration.id}/node:${node.id}`
+          )
+    );
+    const expectedNodeIds = [...expectedRootIds, ...expectedBodyIds].sort(
+      compareStrings
+    );
+    if (
+      expectedNodeIds.length === 0 ||
+      JSON.stringify(profile.capabilities.map((binding) => binding.nodeId)) !==
+        JSON.stringify(expectedNodeIds)
+    ) {
+      return unsupported('unsupported_pipeline_shape');
+    }
+    return deepFreeze({
+      availableEngines: ['legacy', 'reconciler'],
+      reconcilerSupport: {
+        supported: true,
+        reason: 'supported_v2_review_cycle',
+        profileDigest: profile.profileDigest,
+      },
+    });
+  }
   if (hasUnsupportedSemantics(pipeline)) {
     return unsupported('unsupported_pipeline_semantics');
   }

@@ -38,6 +38,20 @@ const BUG_FIX = {
   ],
 } as const;
 
+const SMALL_FEATURE = {
+  version: 1,
+  name: 'small-feature',
+  description: 'fixture',
+  stages: [
+    { id: 'propose', skill: 'rasen-propose', role: 'planner', requires: [], gate: true },
+    { id: 'apply', skill: 'rasen-apply-change', role: 'implementer', requires: ['propose'], gate: true },
+    { id: 'verify', skill: 'rasen-review', role: 'reviewer', requires: ['apply'], condition: 'always' },
+    { id: 'review-loop', skill: 'rasen-review-cycle', role: 'fixer', requires: ['verify'], loop: { kind: 'review-cycle' as const, maxRounds: 3 } },
+    { id: 'ship', skill: 'rasen-ship', role: 'shipper', requires: ['review-loop'], gate: true, model: 'sonnet' },
+    { id: 'archive', skill: 'rasen-archive-change', role: 'shipper', requires: ['ship'], model: 'sonnet' },
+  ],
+} as const;
+
 const branded = <T>(value: string): T => value as T;
 const runId = branded<RunId>(`run:${'a'.repeat(64)}`);
 const workspaceDigest = branded<Digest>(`sha256:${'c'.repeat(64)}`);
@@ -136,6 +150,221 @@ function profileFor(prepared: PreparedDefinition) {
           },
         })
       ),
+    },
+  });
+}
+
+/**
+ * Build a v2-compatible execution profile for the bug-fix pipeline after D4
+ * migration. The verify stage is absorbed into a ReviewCycle BoundedLoop, so
+ * capabilities and policy stages use `root:stage:*` paths for root AtomicStages
+ * and `declaration:review-cycle-body:verify/node:*` paths for body phases.
+ */
+function bugFixV2Profile(prepared: PreparedDefinition) {
+  const reviewSkill = 'rasen-review';
+  const rootStages = (prepared.definition.root.nodes)
+    .filter((n): n is typeof n & { kind: 'AtomicStage' } => n.kind === 'AtomicStage');
+  const bodyDecl = prepared.definition.declarations.find(
+    (d) => d.id === 'review-cycle-body:verify'
+  );
+  const bodyPhases = bodyDecl
+    ? bodyDecl.graph.nodes.filter((n): n is typeof n & { kind: 'AtomicStage' } => n.kind === 'AtomicStage')
+    : [];
+
+  const allPaths = [
+    ...rootStages.map((n) => `root:${n.id}`),
+    ...bodyPhases.map((n) => `declaration:${bodyDecl!.id}/node:${n.id}`),
+  ];
+
+  const gateFor = (path: string): boolean => {
+    // Root stages with gate=true
+    const node = rootStages.find((n) => `root:${n.id}` === path);
+    if (node) {
+      const legacyStageId = (node as { legacyStageId?: string }).legacyStageId;
+      return BUG_FIX.stages.find((s) => s.id === legacyStageId)?.gate ?? false;
+    }
+    return false;
+  };
+
+  const accessFor = (path: string): 'read' | 'write' => {
+    if (path.includes('declaration:')) {
+      return path.includes(':fix') ? 'write' : 'read';
+    }
+    const node = rootStages.find((n) => `root:${n.id}` === path);
+    const legacyStageId = (node as { legacyStageId?: string }).legacyStageId;
+    const stageDef = BUG_FIX.stages.find((s) => s.id === legacyStageId);
+    return stageDef?.id === 'propose' || stageDef?.role === 'reviewer' ? 'read' : 'write';
+  };
+
+  const skillFor = (path: string): string => {
+    if (path.includes('declaration:')) return reviewSkill;
+    const node = rootStages.find((n) => `root:${n.id}` === path);
+    const legacyStageId = (node as { legacyStageId?: string }).legacyStageId;
+    return BUG_FIX.stages.find((s) => s.id === legacyStageId)?.skill ?? 'default';
+  };
+
+  return createRuntimeExecutionProfile({
+    sourceRevision: {
+      layer: 'package',
+      kind: 'pipeline-yaml',
+      sourceId: 'package:bug-fix',
+      authoredContentDigest: `sha256:${'1'.repeat(64)}`,
+      semanticDigest: `sha256:${'2'.repeat(64)}`,
+    },
+    capabilities: allPaths.map((path) => {
+      const skill = skillFor(path);
+      return {
+        nodeId: path,
+        authoredCapability: { id: `skill:${skill}`, version: 'legacy' },
+        contract: { id: skill, version: '1', digest: `sha256:${'3'.repeat(64)}` },
+        actionKind: 'agent' as const,
+        resultContract: { id: `${skill}-result`, version: '1', digest: `sha256:${'4'.repeat(64)}` },
+        evidenceContract: { id: `${skill}-evidence`, version: '1', digest: `sha256:${'5'.repeat(64)}` },
+        recovery: 'suspend-if-ambiguous' as const,
+        workspace: {
+          access: accessFor(path),
+          resources: ['worktree'],
+        },
+        effects: [
+          {
+            slot: 'workspace',
+            kind: 'workspace' as const,
+            resource: 'worktree',
+            recovery: 'suspend-if-ambiguous' as const,
+          },
+        ],
+        adapter: {
+          id: `adapter:${skill}`,
+          version: '1',
+          contentDigest: `sha256:${'6'.repeat(64)}`,
+        },
+      };
+    }),
+    policy: {
+      format: 'effective-run-policy/1',
+      maxAttempts: 3,
+      maxActions: 64,
+      stages: allPaths.map((path) => {
+        const skill = skillFor(path);
+        const isBody = path.includes('declaration:');
+        const isFix = path.includes(':fix');
+        return {
+          nodeId: path,
+          role: isFix ? 'implementer' : isBody ? 'reviewer' : (BUG_FIX.stages.find((s) => s.id === skill)?.role ?? 'implementer'),
+          model: 'default',
+          effort: 'default',
+          runtime: 'codex',
+          sandbox: accessFor(path) === 'read' ? 'read-only' as const : 'workspace-write' as const,
+          gate: gateFor(path),
+          sessionReuse: 'never' as const,
+          handoffTokenLimit: 10_000,
+          reuseRoundLimit: 1,
+          provenance: {
+            role: 'stage',
+            model: 'default',
+            effort: 'default',
+            runtime: 'stage',
+            sandbox: 'stage',
+            gate: 'stage',
+            sessionReuse: 'default',
+            handoffTokenLimit: 'default',
+            reuseRoundLimit: 'default',
+          },
+        };
+      }),
+    },
+  });
+}
+
+/**
+ * Build a v2-compatible execution profile for the small-feature pipeline.
+ * The review-loop stage is migrated to a ReviewCycle BoundedLoop.
+ */
+function smallFeatureV2Profile(prepared: PreparedDefinition) {
+  const reviewSkill = 'rasen-review';
+  const rootStages = (prepared.definition.root.nodes)
+    .filter((n): n is typeof n & { kind: 'AtomicStage' } => n.kind === 'AtomicStage');
+  const bodyDecl = prepared.definition.declarations.find(
+    (d) => d.id === 'review-cycle-body:review-loop'
+  );
+  const bodyPhases = bodyDecl
+    ? bodyDecl.graph.nodes.filter((n): n is typeof n & { kind: 'AtomicStage' } => n.kind === 'AtomicStage')
+    : [];
+
+  const allPaths = [
+    ...rootStages.map((n) => `root:${n.id}`),
+    ...bodyPhases.map((n) => `declaration:${bodyDecl!.id}/node:${n.id}`),
+  ];
+
+  return createRuntimeExecutionProfile({
+    sourceRevision: {
+      layer: 'package',
+      kind: 'pipeline-yaml',
+      sourceId: 'package:small-feature',
+      authoredContentDigest: `sha256:${'a'.repeat(64)}`,
+      semanticDigest: `sha256:${'b'.repeat(64)}`,
+    },
+    capabilities: allPaths.map((path) => {
+      const isBody = path.includes('declaration:');
+      const skill = isBody ? reviewSkill : 'default';
+      return {
+        nodeId: path,
+        authoredCapability: { id: `skill:${skill}`, version: 'legacy' },
+        contract: { id: skill, version: '1', digest: `sha256:${'3'.repeat(64)}` },
+        actionKind: 'agent' as const,
+        resultContract: { id: `${skill}-result`, version: '1', digest: `sha256:${'4'.repeat(64)}` },
+        evidenceContract: { id: `${skill}-evidence`, version: '1', digest: `sha256:${'5'.repeat(64)}` },
+        recovery: 'suspend-if-ambiguous' as const,
+        workspace: {
+          access: (isBody && path.includes(':fix')) || (!isBody) ? 'write' as const : 'read' as const,
+          resources: ['worktree'],
+        },
+        effects: [
+          {
+            slot: 'workspace',
+            kind: 'workspace' as const,
+            resource: 'worktree',
+            recovery: 'suspend-if-ambiguous' as const,
+          },
+        ],
+        adapter: {
+          id: `adapter:${skill}`,
+          version: '1',
+          contentDigest: `sha256:${'6'.repeat(64)}`,
+        },
+      };
+    }),
+    policy: {
+      format: 'effective-run-policy/1',
+      maxAttempts: 3,
+      maxActions: 64,
+      stages: allPaths.map((path) => {
+        const isBody = path.includes('declaration:');
+        const isFix = path.includes(':fix');
+        return {
+          nodeId: path,
+          role: isFix ? 'implementer' : isBody ? 'reviewer' : 'implementer',
+          model: 'default',
+          effort: 'default',
+          runtime: 'codex',
+          sandbox: isFix || (!isBody) ? 'workspace-write' as const : 'read-only' as const,
+          gate: false,
+          sessionReuse: 'never' as const,
+          handoffTokenLimit: 10_000,
+          reuseRoundLimit: 1,
+          provenance: {
+            role: 'stage',
+            model: 'default',
+            effort: 'default',
+            runtime: 'stage',
+            sandbox: 'stage',
+            gate: 'default',
+            sessionReuse: 'default',
+            handoffTokenLimit: 'default',
+            reuseRoundLimit: 'default',
+          },
+        };
+      }),
     },
   });
 }
@@ -347,41 +576,58 @@ function reviewCycleProfile() {
 }
 
 describe('runtime plan lowerer (3.2)', () => {
-  it('lowers a v1 bug-fix definition+profile into a reconcilable RuntimePlan', () => {
+  it('lowers a v1 bug-fix definition+profile into a mixed v2 RuntimePlan with a BoundedLoop', () => {
+    // D4 migration: bug-fix's verifyPolicy:'adaptive' stage is absorbed into a
+    // ReviewCycle BoundedLoop. The plan has 4 root atomic nodes (propose, apply,
+    // ship, archive) + 1 bounded-loop node (verify). The verify stage's atomic
+    // path is replaced by the bounded-loop and its declaration body phases.
     const prepared = prepare();
-    const profile = profileFor(prepared);
+    const profile = bugFixV2Profile(prepared);
     const plan = lowerRuntimePlan(prepared, profile, runId);
 
     expect(plan.pipeline).toBe('bug-fix');
-    expect(plan.nodes.map((n) => n.hierarchicalPath)).toEqual([
-      'stage:propose',
-      'stage:apply',
-      'stage:verify',
-      'stage:ship',
-      'stage:archive',
+    const atomicPaths = plan.nodes
+      .filter((n) => n.kind === 'atomic')
+      .map((n) => n.hierarchicalPath);
+    const loopPaths = plan.nodes
+      .filter((n) => n.kind === 'bounded-loop')
+      .map((n) => n.hierarchicalPath);
+    expect(atomicPaths).toEqual([
+      'root:stage:propose',
+      'root:stage:apply',
+      'root:stage:ship',
+      'root:stage:archive',
     ]);
-    const propose = plan.nodes.find((n) => n.hierarchicalPath === 'stage:propose')!;
+    expect(loopPaths).toEqual(['root:stage:verify']);
+
+    const propose = plan.nodes.find((n) => n.hierarchicalPath === 'root:stage:propose')!;
     expect(propose.kind).toBe('atomic');
     if (propose.kind !== 'atomic') return;
-    expect(propose.gate?.gateId).toBe('propose-gate');
+    expect(propose.gate?.gateId).toBe('stage:propose-gate');
     expect(propose.workspace.access).toBe('read');
-    const verify = plan.nodes.find((n) => n.hierarchicalPath === 'stage:verify')!;
-    if (verify.kind !== 'atomic') return;
-    expect(verify.adaptiveVerify).toBe(true);
-    expect(verify.gate).toBeUndefined();
+
+    const loop = plan.nodes.find((n) => n.kind === 'bounded-loop')!;
+    if (loop.kind !== 'bounded-loop') return;
+    expect(loop.body.phases.map((p) => p.phase)).toEqual([
+      'review',
+      'triage',
+      'fix',
+      're-review',
+    ]);
+    expect(loop.maxIterations).toBe(3);
     expect(plan.implicitFinishOutcome).toBe('bug-fix-completed');
   });
 
-  it('produces a plan the reconciler accepts and drives from the propose Gate', () => {
-    const plan = lowerRuntimePlan(prepare(), profileFor(prepare()), runId);
+  it('produces a mixed plan the reconciler accepts and drives from the propose Gate', () => {
+    const plan = lowerRuntimePlan(prepare(), bugFixV2Profile(prepare()), runId);
     const result = reconcile(plan, startRecord(plan));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.actions).toEqual([
       {
         kind: 'await-gate',
-        nodeId: deriveNodeId(runId, 'stage:propose'),
-        gateId: 'propose-gate',
+        nodeId: deriveNodeId(runId, 'root:stage:propose'),
+        gateId: 'stage:propose-gate',
         waitId: expect.any(String),
         decisionIds: ['approve', 'reject'],
       },
@@ -389,7 +635,7 @@ describe('runtime plan lowerer (3.2)', () => {
   });
 
   it('binds plan and profile digests so a record with the lowered identity reconciles', () => {
-    const plan = lowerRuntimePlan(prepare(), profileFor(prepare()), runId);
+    const plan = lowerRuntimePlan(prepare(), bugFixV2Profile(prepare()), runId);
     // A record built from the plan's own digests must pass identity validation
     // (this is the contract the facade will rely on at launch).
     const result = reconcile(plan, startRecord(plan));
@@ -446,5 +692,67 @@ describe('runtime plan lowerer (3.2)', () => {
         },
       }),
     ]);
+  });
+
+  // Task 7.4: bug-fix normalizes to v2 BoundedLoop, lowers to valid mixed plan,
+  // and analyzeReconcilerSupport returns supported_v2_review_cycle.
+  it('bug-fix normalizes to v2 BoundedLoop, lowers, and reports supported (7.4)', () => {
+    const prepared = prepare();
+    expect(prepared.capability.executionMode).toBe('reconciler');
+    const profile = bugFixV2Profile(prepared);
+
+    // Normalized definition has a BoundedLoop.
+    const boundedLoop = prepared.definition.root.nodes.find(
+      (n) => n.kind === 'BoundedLoop'
+    );
+    expect(boundedLoop).toBeDefined();
+
+    // analyzeReconcilerSupport returns supported_v2_review_cycle.
+    const support = analyzeReconcilerSupport(prepared, profile);
+    expect(support.reconcilerSupport).toMatchObject({
+      supported: true,
+      reason: 'supported_v2_review_cycle',
+    });
+    expect(support.availableEngines).toContain('reconciler');
+
+    // Lowers to a valid mixed plan: 4 atomic root nodes + 1 bounded-loop.
+    const plan = lowerRuntimePlan(prepared, profile, runId);
+    expect(plan.nodes.filter((n) => n.kind === 'atomic')).toHaveLength(4);
+    expect(plan.nodes.filter((n) => n.kind === 'bounded-loop')).toHaveLength(1);
+
+    // Reconciler accepts the plan.
+    const result = reconcile(plan, startRecord(plan));
+    expect(result.ok).toBe(true);
+  });
+
+  // Task 7.5: small-feature normalizes to v2 BoundedLoop (review-loop stage),
+  // lowers to valid mixed plan, and analyzeReconcilerSupport returns supported.
+  it('small-feature normalizes to v2 BoundedLoop, lowers, and reports supported (7.5)', () => {
+    const prepared = prepare(SMALL_FEATURE);
+    expect(prepared.capability.executionMode).toBe('reconciler');
+    const profile = smallFeatureV2Profile(prepared);
+
+    // Normalized definition has a BoundedLoop from the review-loop stage.
+    const boundedLoop = prepared.definition.root.nodes.find(
+      (n) => n.kind === 'BoundedLoop'
+    );
+    expect(boundedLoop).toBeDefined();
+
+    // analyzeReconcilerSupport returns supported_v2_review_cycle.
+    const support = analyzeReconcilerSupport(prepared, profile);
+    expect(support.reconcilerSupport).toMatchObject({
+      supported: true,
+      reason: 'supported_v2_review_cycle',
+    });
+    expect(support.availableEngines).toContain('reconciler');
+
+    // Lowers to a valid mixed plan: 5 atomic root nodes + 1 bounded-loop.
+    const plan = lowerRuntimePlan(prepared, profile, runId);
+    expect(plan.nodes.filter((n) => n.kind === 'atomic')).toHaveLength(5);
+    expect(plan.nodes.filter((n) => n.kind === 'bounded-loop')).toHaveLength(1);
+
+    // Reconciler accepts the plan.
+    const result = reconcile(plan, startRecord(plan));
+    expect(result.ok).toBe(true);
   });
 });

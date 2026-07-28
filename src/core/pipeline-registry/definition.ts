@@ -1940,6 +1940,10 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
       const maxIterations = isReviewCycleLoop
         ? stage.loop!.maxRounds
         : 3;
+      // Trivial-1 fix: all 4 ReviewCycle body phases use the same capability
+      // (`skill:rasen-review`) for consistency. The per-phase role/workspace
+      // differentiation is encoded in the execution profile, not the capability.
+      const reviewCycleCapability = { id: 'skill:rasen-review', version: 'legacy' };
       declarations.push({
         id: bodyId,
         kind: 'Composite',
@@ -1952,7 +1956,7 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
             {
               id: `${stage.id}:review`,
               kind: 'AtomicStage',
-              capability,
+              capability: reviewCycleCapability,
               reviewCyclePhase: 'review',
               legacyStageId: stage.id,
               legacyRuntimeOwner: 'prompt-owned-v1',
@@ -1960,21 +1964,21 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
             {
               id: `${stage.id}:triage`,
               kind: 'AtomicStage',
-              capability: { id: 'skill:rasen-review', version: 'legacy' },
+              capability: reviewCycleCapability,
               reviewCyclePhase: 'triage',
               legacyRuntimeOwner: 'prompt-owned-v1',
             },
             {
               id: `${stage.id}:fix`,
               kind: 'AtomicStage',
-              capability: { id: 'skill:rasen-review', version: 'legacy' },
+              capability: reviewCycleCapability,
               reviewCyclePhase: 'fix',
               legacyRuntimeOwner: 'prompt-owned-v1',
             },
             {
               id: `${stage.id}:re-review`,
               kind: 'AtomicStage',
-              capability: { id: 'skill:rasen-review', version: 'legacy' },
+              capability: reviewCycleCapability,
               reviewCyclePhase: 're-review',
               legacyRuntimeOwner: 'prompt-owned-v1',
             },
@@ -2247,8 +2251,11 @@ function prepare(source: DefinitionSource, catalog: CapabilityCatalogSnapshot): 
         },
       ])
     : [];
-  const v2ReviewCycleExecutable =
-    authoredVersion === 2 && supportsV2ReviewCycleRuntime(frozenDefinition);
+  // D4 migration: a v1 definition whose normalized form contains a
+  // ReviewCycle BoundedLoop is executable via the reconciler. This makes
+  // `bug-fix` (verifyPolicy: 'adaptive') and `small-feature` (review-loop)
+  // route through the same ReviewCycle body as authored v2 definitions.
+  const v2ReviewCycleExecutable = supportsV2ReviewCycleRuntime(frozenDefinition);
 
   return deepFreeze({
     ok: true,
@@ -2264,27 +2271,27 @@ function prepare(source: DefinitionSource, catalog: CapabilityCatalogSnapshot): 
         capability: sealedPlan.capabilityDigest,
         plan: sealedPlan.planDigest,
       },
-      capability: authoredVersion === 1
+      capability: v2ReviewCycleExecutable
         ? {
             definitionValid: true,
             planAvailable: true,
             executable: true,
-            executionMode: 'legacy',
+            executionMode: 'reconciler' as const,
           }
-        : v2ReviewCycleExecutable
+        : authoredVersion === 1
           ? {
               definitionValid: true,
               planAvailable: true,
               executable: true,
-              executionMode: 'reconciler',
+              executionMode: 'legacy' as const,
             }
-        : {
-            definitionValid: true,
-            planAvailable: true,
-            executable: false,
-            executionMode: 'unavailable',
-            unavailableReason: V2_RUNTIME_UNAVAILABLE_REASON,
-          },
+          : {
+              definitionValid: true,
+              planAvailable: true,
+              executable: false,
+              executionMode: 'unavailable' as const,
+              unavailableReason: V2_RUNTIME_UNAVAILABLE_REASON,
+            },
     },
   });
 }

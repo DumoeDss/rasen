@@ -173,6 +173,20 @@ function lowerV2ReviewCyclePlanInput(
   const nodes: RuntimePlanNodeInput[] = [];
 
   for (const node of definition.root.nodes) {
+    // Skip v1-normalization structural artifacts. Gate/Choice nodes are
+    // metadata carriers — gate logic is encoded in the AtomicStage's policy
+    // gate field, and Choice is handled at the execution layer. Legacy-loop
+    // BoundedLoop nodes (non-ReviewCycle) are not supported by the v2 runtime.
+    if (node.kind === 'Gate' || node.kind === 'Choice') continue;
+    if (node.kind === 'BoundedLoop') {
+      // Only ReviewCycle-shaped BoundedLoops are lowered. Legacy loops (from
+      // non-review-cycle v1 stages) are skipped.
+      const cleanExit = node.exits.clean;
+      const continueExit = node.exits.needs_fix;
+      if (cleanExit?.action !== 'exit' || continueExit?.action !== 'continue') {
+        continue;
+      }
+    }
     if (node.kind === 'AtomicStage') {
       const path = `root:${node.id}`;
       const capability = capabilityByPath.get(path);
@@ -286,7 +300,14 @@ export function lowerRuntimePlanInput(
   runId: RunId,
   gatePolicy: LoweredGatePolicy = DEFAULT_LOWERED_GATE_POLICY
 ): RuntimePlanInput {
-  if (prepared.authoredVersion === 2) {
+  // D4 migration: route through the v2 lowerer when the normalized definition
+  // contains a BoundedLoop, regardless of authoredVersion. This makes v1
+  // built-in pipelines (bug-fix, small-feature) whose normalized form includes
+  // a ReviewCycle BoundedLoop lower as mixed atomic + bounded-loop plans.
+  const hasBoundedLoop = prepared.definition.root.nodes.some(
+    (node) => node.kind === 'BoundedLoop'
+  );
+  if (prepared.authoredVersion === 2 || hasBoundedLoop) {
     return lowerV2ReviewCyclePlanInput(prepared, profile, runId);
   }
   const pipeline = prepared.authoredSource as PipelineYaml;
