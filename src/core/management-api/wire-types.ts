@@ -126,7 +126,7 @@ export interface WirePipeline {
   definitionValid: boolean;
   planAvailable: boolean;
   executable: boolean;
-  executionMode: 'legacy' | 'unavailable';
+  executionMode: 'legacy' | 'reconciler' | 'unavailable';
   unavailableReason?: string;
   /** Present when the authoritative winning source failed preparation. */
   diagnostics?: PipelineValidationIssue[];
@@ -200,7 +200,7 @@ export interface WireDefinitionPreparation {
   };
   planAvailable: boolean;
   executable: boolean;
-  executionMode: 'legacy' | 'unavailable';
+  executionMode: 'legacy' | 'reconciler' | 'unavailable';
   unavailableReason?: string;
 }
 

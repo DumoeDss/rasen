@@ -1,4 +1,10 @@
 import type { PreparedDefinition } from '../../pipeline-registry/definition.js';
+import type {
+  AtomicStageNode,
+  BoundedLoopNode,
+  CompositeDeclaration,
+  DefinitionSourceV2,
+} from '../../pipeline-registry/definition.js';
 import type { RuntimeExecutionProfile } from '../../pipeline-registry/execution-plan-internal.js';
 import type { PipelineYaml } from '../../pipeline-registry/types.js';
 import type { Digest, RunId } from '../contracts.js';
@@ -56,6 +62,196 @@ function gateInput(
   };
 }
 
+const REVIEW_CYCLE_PHASES = [
+  'review',
+  'triage',
+  'fix',
+  're-review',
+] as const;
+
+function incomingRequirements(
+  definition: DefinitionSourceV2,
+  nodeId: string
+): readonly string[] {
+  return definition.root.connections
+    .filter((connection) => connection.to.node === nodeId)
+    .map((connection) => `root:${connection.from.node}`)
+    .sort();
+}
+
+function reviewCycleBody(
+  definition: DefinitionSourceV2,
+  loop: BoundedLoopNode
+): Readonly<{
+  declaration: CompositeDeclaration;
+  phases: readonly Readonly<{
+    phase: (typeof REVIEW_CYCLE_PHASES)[number];
+    node: AtomicStageNode;
+    profilePath: string;
+  }>[];
+}> {
+  const declaration = definition.declarations.find(
+    (candidate) => candidate.id === loop.body
+  );
+  if (declaration === undefined) {
+    throw new RuntimePlanLowererError(
+      'lowerer_shape_mismatch',
+      `BoundedLoop ${loop.id} references missing body ${loop.body}.`
+    );
+  }
+  const phases = declaration.graph.nodes.map((node) => {
+    if (node.kind !== 'AtomicStage') {
+      throw new RuntimePlanLowererError(
+        'lowerer_shape_mismatch',
+        `ReviewCycle body ${declaration.id} may contain only AtomicStage phases in this slice.`
+      );
+    }
+    const phase = node.reviewCyclePhase;
+    if (
+      typeof phase !== 'string' ||
+      !(REVIEW_CYCLE_PHASES as readonly string[]).includes(phase)
+    ) {
+      throw new RuntimePlanLowererError(
+        'lowerer_shape_mismatch',
+        `ReviewCycle body node ${node.id} must declare one reviewCyclePhase.`
+      );
+    }
+    return {
+      phase: phase as (typeof REVIEW_CYCLE_PHASES)[number],
+      node,
+      profilePath: `declaration:${declaration.id}/node:${node.id}`,
+    };
+  });
+  phases.sort(
+    (left, right) =>
+      REVIEW_CYCLE_PHASES.indexOf(left.phase) -
+      REVIEW_CYCLE_PHASES.indexOf(right.phase)
+  );
+  if (
+    phases.length !== REVIEW_CYCLE_PHASES.length ||
+    phases.some((entry, index) => entry.phase !== REVIEW_CYCLE_PHASES[index])
+  ) {
+    throw new RuntimePlanLowererError(
+      'lowerer_shape_mismatch',
+      `ReviewCycle body ${declaration.id} must declare each phase exactly once.`
+    );
+  }
+  const nodeByPhase = new Map(phases.map((entry) => [entry.phase, entry.node.id]));
+  const requiredEdges = [
+    ['review', 'triage'],
+    ['triage', 'fix'],
+    ['fix', 're-review'],
+  ] as const;
+  for (const [from, to] of requiredEdges) {
+    const found = declaration.graph.connections.some(
+      (connection) =>
+        connection.from.node === nodeByPhase.get(from) &&
+        connection.to.node === nodeByPhase.get(to)
+    );
+    if (!found) {
+      throw new RuntimePlanLowererError(
+        'lowerer_shape_mismatch',
+        `ReviewCycle body ${declaration.id} must connect ${from} to ${to}.`
+      );
+    }
+  }
+  return { declaration, phases };
+}
+
+function lowerV2ReviewCyclePlanInput(
+  prepared: PreparedDefinition,
+  profile: RuntimeExecutionProfile,
+  runId: RunId
+): RuntimePlanInput {
+  const definition = prepared.definition;
+  const capabilityByPath = new Map(
+    profile.capabilities.map((binding) => [binding.nodeId, binding] as const)
+  );
+  const policyByPath = new Map(
+    profile.policy.stages.map((stage) => [stage.nodeId, stage] as const)
+  );
+  const nodes: RuntimePlanNodeInput[] = [];
+
+  for (const node of definition.root.nodes) {
+    if (node.kind === 'BoundedLoop') {
+      const body = reviewCycleBody(definition, node);
+      const cleanExit = node.exits.clean;
+      const continueExit = node.exits.needs_fix;
+      if (
+        cleanExit?.action !== 'exit' ||
+        continueExit?.action !== 'continue'
+      ) {
+        throw new RuntimePlanLowererError(
+          'lowerer_shape_mismatch',
+          `ReviewCycle loop ${node.id} must exit on clean and continue on needs_fix.`
+        );
+      }
+      const phases = body.phases.map((entry) => {
+        const capability = capabilityByPath.get(entry.profilePath);
+        const policy = policyByPath.get(entry.profilePath);
+        if (capability === undefined || policy === undefined) {
+          throw new RuntimePlanLowererError(
+            'lowerer_shape_mismatch',
+            `No frozen capability/policy binding exists for ${entry.profilePath}.`
+          );
+        }
+        return {
+          phase: entry.phase,
+          profilePath: entry.profilePath,
+          admissionKind: capability.actionKind,
+          workspace: { access: capability.workspace.access },
+        };
+      });
+      nodes.push({
+        kind: 'bounded-loop',
+        hierarchicalPath: `root:${node.id}`,
+        requires: incomingRequirements(definition, node.id),
+        maxIterations: node.limits.maxIterations,
+        body: { kind: 'review-cycle', phases },
+        outcomes: {
+          clean: cleanExit.outcome,
+          exhausted:
+            typeof node.exhaustedOutcome === 'string'
+              ? node.exhaustedOutcome
+              : 'exhausted',
+        },
+      });
+      continue;
+    }
+    if (node.kind === 'Finish') {
+      nodes.push({
+        kind: 'finish',
+        hierarchicalPath: `root:${node.id}`,
+        requires: incomingRequirements(definition, node.id),
+        outcome: node.outcome,
+      });
+      continue;
+    }
+    throw new RuntimePlanLowererError(
+      'lowerer_shape_mismatch',
+      `Authored v2 ReviewCycle runtime does not yet support root node kind ${node.kind}.`
+    );
+  }
+  if (!nodes.some((node) => node.kind === 'bounded-loop')) {
+    throw new RuntimePlanLowererError(
+      'lowerer_shape_mismatch',
+      'Authored v2 ReviewCycle runtime requires one BoundedLoop root node.'
+    );
+  }
+  const hasFinish = nodes.some((node) => node.kind === 'finish');
+  return {
+    runId,
+    pipeline: definition.name,
+    planDigest: `sha256:${prepared.digests.plan}` as Digest,
+    profileDigest: profile.profileDigest,
+    sourceRevisionDigest: profile.sourceRevision.semanticDigest as Digest,
+    capabilityDigest: profile.capabilityProfileDigest,
+    policyDigest: profile.policyDigest,
+    ...(hasFinish ? {} : { implicitFinishOutcome: `${definition.name}-completed` }),
+    nodes,
+  };
+}
+
 /**
  * Produce the private {@link RuntimePlanInput} from a prepared Definition and a
  * frozen execution profile. The returned input is fed through
@@ -67,11 +263,8 @@ export function lowerRuntimePlanInput(
   runId: RunId,
   gatePolicy: LoweredGatePolicy = DEFAULT_LOWERED_GATE_POLICY
 ): RuntimePlanInput {
-  if (prepared.authoredVersion !== 1) {
-    throw new RuntimePlanLowererError(
-      'unsupported_definition_version',
-      'The runtime plan lowerer supports only v1 authored definitions in this slice.'
-    );
+  if (prepared.authoredVersion === 2) {
+    return lowerV2ReviewCyclePlanInput(prepared, profile, runId);
   }
   const pipeline = prepared.authoredSource as PipelineYaml;
   if (

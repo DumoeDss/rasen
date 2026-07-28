@@ -501,6 +501,7 @@ export interface ReconcilerSupportAnalysis {
     supported: boolean;
     reason:
       | 'supported_root_dag_bug_fix'
+      | 'supported_v2_review_cycle'
       | 'unsupported_definition_version'
       | 'unsupported_pipeline_shape'
       | 'unsupported_pipeline_semantics'
@@ -556,12 +557,50 @@ export function analyzeReconcilerSupport(
     reason: ReconcilerSupportAnalysis['reconcilerSupport']['reason']
   ): ReconcilerSupportAnalysis =>
     deepFreeze({
-      availableEngines: prepared.authoredVersion === 1 ? ['legacy'] : [],
+      availableEngines:
+        prepared.authoredVersion === 1
+          ? ['legacy']
+          : prepared.capability.executionMode === 'reconciler'
+            ? ['reconciler']
+            : [],
       reconcilerSupport: { supported: false, reason, profileDigest },
     });
 
-  if (prepared.authoredVersion !== 1) {
-    return unsupported('unsupported_definition_version');
+  if (prepared.authoredVersion === 2) {
+    if (prepared.capability.executionMode !== 'reconciler') {
+      return unsupported('unsupported_pipeline_semantics');
+    }
+    if (profile === null) {
+      return unsupported('execution_profile_unavailable');
+    }
+    const expectedNodeIds = prepared.definition.declarations
+      .flatMap((declaration) =>
+        declaration.graph.nodes
+          .filter(
+            (node) =>
+              node.kind === 'AtomicStage' &&
+              typeof node.reviewCyclePhase === 'string'
+          )
+          .map(
+            (node) => `declaration:${declaration.id}/node:${node.id}`
+          )
+      )
+      .sort(compareStrings);
+    if (
+      expectedNodeIds.length === 0 ||
+      JSON.stringify(profile.capabilities.map((binding) => binding.nodeId)) !==
+        JSON.stringify(expectedNodeIds)
+    ) {
+      return unsupported('unsupported_pipeline_shape');
+    }
+    return deepFreeze({
+      availableEngines: ['reconciler'],
+      reconcilerSupport: {
+        supported: true,
+        reason: 'supported_v2_review_cycle',
+        profileDigest: profile.profileDigest,
+      },
+    });
   }
   const pipeline = prepared.authoredSource as PipelineYaml;
   if (hasUnsupportedSemantics(pipeline)) {

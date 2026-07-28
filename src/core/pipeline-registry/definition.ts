@@ -225,7 +225,7 @@ export interface PreparedDefinition {
     definitionValid: true;
     planAvailable: true;
     executable: boolean;
-    executionMode: 'legacy' | 'unavailable';
+    executionMode: 'legacy' | 'reconciler' | 'unavailable';
     unavailableReason?: typeof V2_RUNTIME_UNAVAILABLE_REASON;
   }>;
 }
@@ -1867,6 +1867,43 @@ function relevantCapabilityDescriptors(
   );
 }
 
+function supportsV2ReviewCycleRuntime(
+  definition: DefinitionSourceV2
+): boolean {
+  let loops = 0;
+  for (const node of definition.root.nodes) {
+    if (node.kind === 'Finish') continue;
+    if (node.kind !== 'BoundedLoop') return false;
+    loops += 1;
+    if (
+      node.exits.clean?.action !== 'exit' ||
+      node.exits.needs_fix?.action !== 'continue'
+    ) {
+      return false;
+    }
+    const declaration = definition.declarations.find(
+      (candidate) => candidate.id === node.body
+    );
+    if (declaration === undefined) return false;
+    const phases = declaration.graph.nodes
+      .map((bodyNode) =>
+        bodyNode.kind === 'AtomicStage'
+          ? bodyNode.reviewCyclePhase
+          : undefined
+      )
+      .filter((phase): phase is string => typeof phase === 'string')
+      .sort();
+    if (
+      phases.length !== 4 ||
+      JSON.stringify(phases) !==
+        JSON.stringify(['fix', 're-review', 'review', 'triage'])
+    ) {
+      return false;
+    }
+  }
+  return loops > 0;
+}
+
 function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
   const stages = [...pipeline.stages].sort((left, right) =>
     compareCanonicalStrings(left.id, right.id)
@@ -2118,6 +2155,8 @@ function prepare(source: DefinitionSource, catalog: CapabilityCatalogSnapshot): 
         },
       ])
     : [];
+  const v2ReviewCycleExecutable =
+    authoredVersion === 2 && supportsV2ReviewCycleRuntime(frozenDefinition);
 
   return deepFreeze({
     ok: true,
@@ -2140,6 +2179,13 @@ function prepare(source: DefinitionSource, catalog: CapabilityCatalogSnapshot): 
             executable: true,
             executionMode: 'legacy',
           }
+        : v2ReviewCycleExecutable
+          ? {
+              definitionValid: true,
+              planAvailable: true,
+              executable: true,
+              executionMode: 'reconciler',
+            }
         : {
             definitionValid: true,
             planAvailable: true,

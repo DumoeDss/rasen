@@ -351,7 +351,7 @@ export interface PipelineInfo {
   definitionValid?: boolean;
   planAvailable?: boolean;
   executable?: boolean;
-  executionMode?: 'legacy' | 'unavailable';
+  executionMode?: 'legacy' | 'reconciler' | 'unavailable';
   unavailableReason?: string;
   prepared?: PreparedDefinition;
   diagnostics?: readonly DefinitionDiagnostic[];

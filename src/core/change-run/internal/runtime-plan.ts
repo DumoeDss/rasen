@@ -32,6 +32,31 @@ export interface RuntimePlanAtomicNode {
   readonly gate?: RuntimePlanGate;
 }
 
+export interface RuntimePlanReviewCyclePhase {
+  readonly phase: 'review' | 'triage' | 'fix' | 're-review';
+  readonly profilePath: string;
+  readonly admissionKind: RuntimePlanAdmissionKind;
+  readonly workspace: RuntimePlanWorkspace;
+}
+
+export interface RuntimePlanReviewCycleBody {
+  readonly kind: 'review-cycle';
+  readonly phases: readonly RuntimePlanReviewCyclePhase[];
+}
+
+export interface RuntimePlanBoundedLoopNode {
+  readonly kind: 'bounded-loop';
+  readonly nodeId: NodeId;
+  readonly hierarchicalPath: string;
+  readonly requires: readonly NodeId[];
+  readonly maxIterations: number;
+  readonly body: RuntimePlanReviewCycleBody;
+  readonly outcomes: Readonly<{
+    clean: string;
+    exhausted: string;
+  }>;
+}
+
 export interface RuntimePlanFinishNode {
   readonly kind: 'finish';
   readonly nodeId: NodeId;
@@ -40,7 +65,10 @@ export interface RuntimePlanFinishNode {
   readonly outcome: string;
 }
 
-export type RuntimePlanNode = RuntimePlanAtomicNode | RuntimePlanFinishNode;
+export type RuntimePlanNode =
+  | RuntimePlanAtomicNode
+  | RuntimePlanBoundedLoopNode
+  | RuntimePlanFinishNode;
 
 export interface RuntimePlan {
   readonly format: 'change-run-runtime-plan/1';
@@ -62,8 +90,20 @@ export interface RuntimePlanGateInput {
   readonly outcomes: Readonly<Record<string, RuntimePlanGateOutcome>>;
 }
 
+export interface RuntimePlanReviewCyclePhaseInput {
+  readonly phase: RuntimePlanReviewCyclePhase['phase'];
+  readonly profilePath: string;
+  readonly admissionKind: RuntimePlanAdmissionKind;
+  readonly workspace?: Readonly<{ access?: RuntimePlanWorkspaceAccess }>;
+}
+
+export interface RuntimePlanReviewCycleBodyInput {
+  readonly kind: 'review-cycle';
+  readonly phases: readonly RuntimePlanReviewCyclePhaseInput[];
+}
+
 export interface RuntimePlanNodeInput {
-  readonly kind: 'atomic' | 'finish';
+  readonly kind: 'atomic' | 'bounded-loop' | 'finish';
   readonly hierarchicalPath: string;
   readonly requires: readonly string[];
   readonly admissionKind?: RuntimePlanAdmissionKind;
@@ -71,6 +111,12 @@ export interface RuntimePlanNodeInput {
   readonly adaptiveVerify?: boolean;
   readonly gate?: RuntimePlanGateInput;
   readonly outcome?: string;
+  readonly maxIterations?: number;
+  readonly body?: RuntimePlanReviewCycleBodyInput;
+  readonly outcomes?: Readonly<{
+    clean: string;
+    exhausted: string;
+  }>;
 }
 
 export interface RuntimePlanInput {
@@ -121,8 +167,8 @@ function reject(code: RuntimePlanErrorCode, message: string): never {
  * consumes. This is an internal seam: only the lowerer (task 3.2) and the
  * reconciler read it, and it never leaves this package.
  *
- * Only root-DAG AtomicStage/Gate/Finish meaning is supported. Any
- * Composite/BoundedLoop/GoalLoop/FanOut/Join semantics are rejected here,
+ * Root-DAG AtomicStage/Gate/Finish and the first closed bounded Composite
+ * consumer (ReviewCycle) are supported. GoalLoop/FanOut/Join remain rejected
  * before a Run can be created from the plan.
  */
 export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
@@ -172,7 +218,11 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
   // representable in RuntimePlanNodeInput, but the guard keeps the contract
   // explicit if the input union ever widens before the reconciler does.
   for (const node of input.nodes) {
-    if (node.kind !== 'atomic' && node.kind !== 'finish') {
+    if (
+      node.kind !== 'atomic' &&
+      node.kind !== 'bounded-loop' &&
+      node.kind !== 'finish'
+    ) {
       reject(
         'unsupported_runtime_plan',
         `Node ${node.hierarchicalPath} uses unsupported kind ${JSON.stringify(node.kind)}.`
@@ -199,6 +249,9 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
       if (node.gate !== undefined) {
         validateGate(node.hierarchicalPath, node.gate);
       }
+    }
+    if (node.kind === 'bounded-loop') {
+      validateBoundedLoop(node.hierarchicalPath, node);
     }
     if (node.kind === 'finish') {
       if (node.outcome === undefined || node.outcome.length === 0) {
@@ -260,6 +313,30 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
             }),
       } as RuntimePlanAtomicNode;
     }
+    if (node.kind === 'bounded-loop') {
+      return {
+        kind: 'bounded-loop',
+        nodeId,
+        hierarchicalPath: node.hierarchicalPath,
+        requires,
+        maxIterations: node.maxIterations!,
+        body: {
+          kind: 'review-cycle',
+          phases: node.body!.phases.map((phase) => ({
+            phase: phase.phase,
+            profilePath: phase.profilePath,
+            admissionKind: phase.admissionKind,
+            workspace: {
+              access: phase.workspace?.access ?? 'write',
+            },
+          })),
+        },
+        outcomes: {
+          clean: node.outcomes!.clean,
+          exhausted: node.outcomes!.exhausted,
+        },
+      } as RuntimePlanBoundedLoopNode;
+    }
     return {
       kind: 'finish',
       nodeId,
@@ -301,6 +378,85 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
       : { implicitFinishOutcome: input.implicitFinishOutcome }),
     ...(finishNode === undefined ? {} : { finishNode }),
   } as RuntimePlan);
+}
+
+function validateBoundedLoop(
+  path: string,
+  node: RuntimePlanNodeInput
+): void {
+  if (
+    !Number.isSafeInteger(node.maxIterations) ||
+    node.maxIterations === undefined ||
+    node.maxIterations < 1 ||
+    node.maxIterations > 100
+  ) {
+    reject(
+      'invalid_runtime_plan',
+      `Bounded loop ${path} maxIterations must be between 1 and 100.`
+    );
+  }
+  if (node.body?.kind !== 'review-cycle') {
+    reject(
+      'unsupported_runtime_plan',
+      `Bounded loop ${path} uses an unsupported body kind.`
+    );
+  }
+  const expected = ['review', 'triage', 'fix', 're-review'] as const;
+  const actual = node.body.phases.map((phase) => phase.phase);
+  if (
+    actual.length !== expected.length ||
+    actual.some((phase, index) => phase !== expected[index])
+  ) {
+    reject(
+      'invalid_runtime_plan',
+      `ReviewCycle body ${path} must declare review, triage, fix, re-review in order.`
+    );
+  }
+  const profilePaths = new Set<string>();
+  for (const phase of node.body.phases) {
+    if (
+      phase.profilePath.length === 0 ||
+      phase.profilePath.length > 1024 ||
+      phase.profilePath.includes('\\') ||
+      profilePaths.has(phase.profilePath)
+    ) {
+      reject(
+        'invalid_runtime_plan',
+        `ReviewCycle phase profile path ${JSON.stringify(phase.profilePath)} is malformed or duplicated.`
+      );
+    }
+    profilePaths.add(phase.profilePath);
+    if (
+      phase.admissionKind !== 'agent' &&
+      phase.admissionKind !== 'command' &&
+      phase.admissionKind !== 'host'
+    ) {
+      reject(
+        'invalid_runtime_plan',
+        `ReviewCycle phase ${phase.phase} must declare a supported admission kind.`
+      );
+    }
+  }
+  if (
+    node.outcomes === undefined ||
+    node.outcomes.clean.length === 0 ||
+    node.outcomes.exhausted.length === 0
+  ) {
+    reject(
+      'invalid_runtime_plan',
+      `Bounded loop ${path} must declare clean and exhausted outcomes.`
+    );
+  }
+  if (
+    node.admissionKind !== undefined ||
+    node.gate !== undefined ||
+    node.outcome !== undefined
+  ) {
+    reject(
+      'invalid_runtime_plan',
+      `Bounded loop ${path} must not declare atomic, gate, or finish fields.`
+    );
+  }
 }
 
 function validateGate(path: string, gate: RuntimePlanGateInput): void {

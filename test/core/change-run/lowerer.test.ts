@@ -3,9 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
   EcpDefinitionModule,
   createCapabilityCatalogSnapshot,
+  type DefinitionSourceV2,
   type PreparedDefinition,
 } from '../../../src/core/pipeline-registry/index.js';
-import { createRuntimeExecutionProfile } from '../../../src/core/pipeline-registry/execution-plan-internal.js';
+import {
+  analyzeReconcilerSupport,
+  createRuntimeExecutionProfile,
+} from '../../../src/core/pipeline-registry/execution-plan-internal.js';
 import { lowerRuntimePlan } from '../../../src/core/change-run/internal/lowerer.js';
 import { reconcile } from '../../../src/core/change-run/internal/reconciler.js';
 import {
@@ -160,6 +164,188 @@ function startRecord(plan: RuntimePlan) {
   });
 }
 
+const REVIEW_CAPABILITIES = [
+  {
+    phase: 'review',
+    id: 'review-cycle:review',
+    inputs: [],
+    outcomes: ['clean', 'findings'],
+  },
+  {
+    phase: 'triage',
+    id: 'review-cycle:triage',
+    inputs: [{ name: 'start', type: 'ecp/control', required: true }],
+    outcomes: ['ready'],
+  },
+  {
+    phase: 'fix',
+    id: 'review-cycle:fix',
+    inputs: [{ name: 'start', type: 'ecp/control', required: true }],
+    outcomes: ['fixed'],
+  },
+  {
+    phase: 're-review',
+    id: 'review-cycle:re-review',
+    inputs: [{ name: 'start', type: 'ecp/control', required: true }],
+    outcomes: ['clean', 'needs_fix'],
+  },
+] as const;
+
+const REVIEW_CYCLE_V2: DefinitionSourceV2 = {
+  version: 2,
+  id: 'review-cycle-v2',
+  sourceId: 'fixture:review-cycle-v2',
+  name: 'review-cycle-v2',
+  inputs: [],
+  artifacts: [],
+  outcomes: ['clean'],
+  declarations: [
+    {
+      id: 'review-cycle-body',
+      kind: 'Composite',
+      provenance: 'built-in',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['clean', 'needs_fix'],
+      graph: {
+        nodes: REVIEW_CAPABILITIES.map((capability) => ({
+          id: capability.phase,
+          kind: 'AtomicStage' as const,
+          capability: { id: capability.id, version: '1' },
+          reviewCyclePhase: capability.phase,
+        })),
+        connections: [
+          {
+            id: 'review-to-triage',
+            from: { node: 'review', port: 'findings' },
+            to: { node: 'triage', port: 'start' },
+          },
+          {
+            id: 'triage-to-fix',
+            from: { node: 'triage', port: 'ready' },
+            to: { node: 'fix', port: 'start' },
+          },
+          {
+            id: 'fix-to-re-review',
+            from: { node: 'fix', port: 'fixed' },
+            to: { node: 're-review', port: 'start' },
+          },
+        ],
+      },
+    },
+  ],
+  root: {
+    nodes: [
+      {
+        id: 'review-loop',
+        kind: 'BoundedLoop',
+        body: 'review-cycle-body',
+        limits: { maxIterations: 3, maxActions: 12 },
+        exits: {
+          clean: { action: 'exit', outcome: 'clean' },
+          needs_fix: { action: 'continue' },
+        },
+        exhaustedOutcome: 'exhausted',
+      },
+    ],
+    connections: [],
+  },
+};
+
+function prepareReviewCycleV2(): PreparedDefinition {
+  const result = EcpDefinitionModule.prepare(
+    REVIEW_CYCLE_V2,
+    createCapabilityCatalogSnapshot(
+      REVIEW_CAPABILITIES.map((capability) => ({
+        id: capability.id,
+        version: '1',
+        availability: 'enabled',
+        inputs: capability.inputs,
+        artifacts: [],
+        outcomes: capability.outcomes,
+        limits: { maxActions: 8 },
+      }))
+    )
+  );
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw result.error;
+  return result.value;
+}
+
+function reviewCycleProfile() {
+  return createRuntimeExecutionProfile({
+    sourceRevision: {
+      layer: 'package',
+      kind: 'pipeline-definition-v2',
+      sourceId: 'fixture:review-cycle-v2',
+      authoredContentDigest: `sha256:${'7'.repeat(64)}`,
+      semanticDigest: `sha256:${'8'.repeat(64)}`,
+    },
+    capabilities: REVIEW_CAPABILITIES.map((capability) => ({
+      nodeId: `declaration:review-cycle-body/node:${capability.phase}`,
+      authoredCapability: { id: capability.id, version: '1' },
+      contract: {
+        id: capability.id,
+        version: '1',
+        digest: `sha256:${'3'.repeat(64)}`,
+      },
+      actionKind: 'agent' as const,
+      resultContract: {
+        id: `${capability.id}-result`,
+        version: '1',
+        digest: `sha256:${'4'.repeat(64)}`,
+      },
+      evidenceContract: {
+        id: 'review-cycle-evidence',
+        version: '1',
+        digest: `sha256:${'5'.repeat(64)}`,
+      },
+      recovery: 'suspend-if-ambiguous' as const,
+      workspace: {
+        access: capability.phase === 'fix' ? ('write' as const) : ('read' as const),
+        resources: capability.phase === 'fix' ? ['worktree'] : [],
+      },
+      effects: [],
+      adapter: {
+        id: `adapter:${capability.id}`,
+        version: '1',
+        contentDigest: `sha256:${'6'.repeat(64)}`,
+      },
+    })),
+    policy: {
+      format: 'effective-run-policy/1',
+      maxAttempts: 3,
+      maxActions: 64,
+      stages: REVIEW_CAPABILITIES.map((capability) => ({
+        nodeId: `declaration:review-cycle-body/node:${capability.phase}`,
+        role: capability.phase,
+        model: 'default',
+        effort: 'default',
+        runtime: 'codex',
+        sandbox:
+          capability.phase === 'fix'
+            ? ('workspace-write' as const)
+            : ('read-only' as const),
+        gate: false,
+        sessionReuse: 'never' as const,
+        handoffTokenLimit: 10_000,
+        reuseRoundLimit: 1,
+        provenance: {
+          role: 'definition',
+          model: 'default',
+          effort: 'default',
+          runtime: 'default',
+          sandbox: 'definition',
+          gate: 'default',
+          sessionReuse: 'default',
+          handoffTokenLimit: 'default',
+          reuseRoundLimit: 'default',
+        },
+      })),
+    },
+  });
+}
+
 describe('runtime plan lowerer (3.2)', () => {
   it('lowers a v1 bug-fix definition+profile into a reconcilable RuntimePlan', () => {
     const prepared = prepare();
@@ -208,5 +394,57 @@ describe('runtime plan lowerer (3.2)', () => {
     // (this is the contract the facade will rely on at launch).
     const result = reconcile(plan, startRecord(plan));
     expect(result.ok).toBe(true);
+  });
+
+  it('lowers an authored v2 ReviewCycle BoundedLoop into the canonical runtime', () => {
+    const prepared = prepareReviewCycleV2();
+    const profile = reviewCycleProfile();
+    expect(prepared.capability).toMatchObject({
+      executable: true,
+      executionMode: 'reconciler',
+    });
+    expect(prepared.capability.unavailableReason).toBeUndefined();
+    expect(analyzeReconcilerSupport(prepared, profile)).toMatchObject({
+      availableEngines: ['reconciler'],
+      reconcilerSupport: {
+        supported: true,
+        reason: 'supported_v2_review_cycle',
+      },
+    });
+    const plan = lowerRuntimePlan(prepared, profile, runId);
+
+    expect(plan.nodes).toHaveLength(1);
+    const loop = plan.nodes[0]!;
+    expect(loop).toMatchObject({
+      kind: 'bounded-loop',
+      hierarchicalPath: 'root:review-loop',
+      maxIterations: 3,
+      outcomes: { clean: 'clean', exhausted: 'exhausted' },
+    });
+    if (loop.kind !== 'bounded-loop') return;
+    expect(loop.body.phases.map((phase) => phase.phase)).toEqual([
+      'review',
+      'triage',
+      'fix',
+      're-review',
+    ]);
+
+    const result = reconcile(plan, startRecord(plan));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.actions).toEqual([
+      expect.objectContaining({
+        kind: 'admit',
+        profilePath: 'declaration:review-cycle-body/node:review',
+        input: {
+          reviewCycle: {
+            loopPath: 'root:review-loop',
+            round: 1,
+            phase: 'review',
+            openFindingIds: [],
+          },
+        },
+      }),
+    ]);
   });
 });

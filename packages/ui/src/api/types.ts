@@ -250,7 +250,7 @@ export interface WirePipeline {
   definitionValid?: boolean;
   planAvailable?: boolean;
   executable?: boolean;
-  executionMode?: 'legacy' | 'unavailable';
+  executionMode?: 'legacy' | 'reconciler' | 'unavailable';
   unavailableReason?: string;
   diagnostics?: PipelineValidationIssue[];
   /**
@@ -1352,7 +1352,7 @@ export interface WireDefinitionPreparation {
   digests?: { source: string; capability: string; plan: string };
   planAvailable: boolean;
   executable: boolean;
-  executionMode: 'legacy' | 'unavailable';
+  executionMode: 'legacy' | 'reconciler' | 'unavailable';
   unavailableReason?: string;
 }
 
@@ -1654,8 +1654,11 @@ export function getRootDagSection(view: ChangeRunView): RootDagViewSection | nul
 
 export type ReconcilerSupportReason =
   | 'supported_root_dag_bug_fix'
+  | 'supported_v2_review_cycle'
   | 'unsupported_definition_version'
   | 'unsupported_pipeline_shape'
+  | 'unsupported_pipeline_semantics'
+  | 'execution_profile_unavailable'
   | 'unsupported_capability'
   | 'unsupported_verify_policy';
 

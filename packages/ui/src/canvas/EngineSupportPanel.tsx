@@ -20,10 +20,16 @@ function reasonLabel(reason: string): string {
   switch (reason) {
     case 'supported_root_dag_bug_fix':
       return 'Supported: root-DAG bug-fix';
+    case 'supported_v2_review_cycle':
+      return 'Supported: v2 ReviewCycle';
     case 'unsupported_definition_version':
       return 'Unsupported: definition version';
     case 'unsupported_pipeline_shape':
       return 'Unsupported: pipeline shape';
+    case 'unsupported_pipeline_semantics':
+      return 'Unsupported: pipeline semantics';
+    case 'execution_profile_unavailable':
+      return 'Unavailable: execution profile';
     case 'unsupported_capability':
       return 'Unsupported: capability';
     case 'unsupported_verify_policy':
