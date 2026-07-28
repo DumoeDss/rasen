@@ -3,9 +3,9 @@
  *
  * Codex CLI persists its config, auth, prompts, and session rollouts under a
  * single home directory (`CODEX_HOME` env override, default `~/.codex`). This
- * is the single resolution point for that path — previously duplicated
- * privately in the command-generation codex adapter, which now imports it
- * from here (design D1).
+ * is the single resolution point for that path, also imported by the static
+ * retired-command-paths module (`src/core/shared/retired-command-paths.ts`)
+ * for Codex's absolute, global-scoped command file location.
  */
 import * as os from 'node:os';
 import * as path from 'node:path';

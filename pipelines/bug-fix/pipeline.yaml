@@ -1,3 +1,4 @@
+version: 1
 name: bug-fix
 description: >-
   Minimal bug-fix pipeline: propose, apply, an adaptive verification, then ship
@@ -16,7 +17,7 @@ stages:
     gate: true
 
   - id: verify
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [apply]
     verifyPolicy: adaptive

@@ -4,14 +4,20 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { AgentCommand } from '../../../src/commands/agent.js';
+import { saveThresholdScheme } from '../../../src/core/threshold-schemes.js';
 
-function tokenCountLine(totalTokens: number, modelContextWindow: number): string {
+function tokenCountLine(
+  totalTokens: number,
+  modelContextWindow: number,
+  contextTokens: number = totalTokens
+): string {
   return JSON.stringify({
     type: 'event_msg',
     payload: {
       type: 'token_count',
       info: {
         total_token_usage: { total_tokens: totalTokens },
+        last_token_usage: { total_tokens: contextTokens },
         model_context_window: modelContextWindow,
       },
     },
@@ -52,7 +58,7 @@ describe('AgentCommand.context — Codex rollout support', () => {
     const p = writeRollout('rollout-2026-01-01T00-00-00-abc.jsonl', [
       SESSION_META_LINE,
       TURN_CONTEXT_LINE,
-      tokenCountLine(12_885, 353_400),
+      tokenCountLine(164_620_250, 258_400, 40_556),
     ]);
 
     const logs: string[] = [];
@@ -65,10 +71,11 @@ describe('AgentCommand.context — Codex rollout support', () => {
     }
 
     const parsed = JSON.parse(logs[0]);
-    expect(parsed.contextTokens).toBe(12_885);
-    expect(parsed.limit).toBe(353_400);
+    expect(parsed.contextTokens).toBe(40_556);
+    expect(parsed.limit).toBe(258_400);
     expect(parsed.model).toBe('gpt-5.6-sol');
-    expect(parsed.remainingTokens).toBe(353_400 - 12_885);
+    expect(parsed.runtime).toBe('codex');
+    expect(parsed.remainingTokens).toBe(258_400 - 40_556);
     expect(parsed.transcript).toBe(p);
   });
 
@@ -110,9 +117,9 @@ describe('AgentCommand.context — Codex rollout support', () => {
     expect(parsed.pct).toBe(0);
   });
 
-  it('--runtime bogus errors actionably', async () => {
+  it.each(['zed', 'bogus'])('--runtime %s errors actionably', async (runtime) => {
     const p = writeRollout('rollout-2026-01-01T00-00-02-abc.jsonl', [SESSION_META_LINE]);
-    await expect(cmd.context({ transcript: p, runtime: 'bogus' })).rejects.toThrow(
+    await expect(cmd.context({ transcript: p, runtime })).rejects.toThrow(
       /--runtime must be "claude" or "codex"/
     );
   });
@@ -129,7 +136,10 @@ describe('AgentCommand.context — Codex rollout support', () => {
       console.log = orig;
     }
 
-    expect(JSON.parse(logs[0]).contextTokens).toBe(500);
+    expect(JSON.parse(logs[0])).toMatchObject({
+      runtime: 'codex',
+      contextTokens: 500,
+    });
   });
 
   it('--json includes threshold, thresholdSource, and shouldHandoff (MIN6b)', async () => {
@@ -155,6 +165,82 @@ describe('AgentCommand.context — Codex rollout support', () => {
     expect(parsed.threshold).toBe(0.05);
     expect(parsed.thresholdSource).toBe('global');
     expect(parsed.shouldHandoff).toBe(true);
+  });
+
+  it('uses current context rather than cumulative spend for threshold calculations', async () => {
+    const p = writeRollout('rollout-2026-01-01T00-00-10-abc.jsonl', [
+      SESSION_META_LINE,
+      TURN_CONTEXT_LINE,
+      tokenCountLine(90_000, 100_000, 20_000),
+    ]);
+
+    const logs: string[] = [];
+    const orig = console.log;
+    console.log = (msg?: unknown) => logs.push(String(msg));
+    try {
+      await cmd.context({ transcript: p, json: true });
+    } finally {
+      console.log = orig;
+    }
+
+    expect(JSON.parse(logs[0]!)).toMatchObject({
+      contextTokens: 20_000,
+      pct: 0.2,
+      threshold: 0.5,
+      shouldHandoff: false,
+    });
+  });
+
+  it('surfaces an actionable error for unsupported token-count streams', async () => {
+    const p = writeRollout('rollout-2026-01-01T00-00-11-abc.jsonl', [
+      SESSION_META_LINE,
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { total_tokens: 90_000 },
+            model_context_window: 100_000,
+          },
+        },
+      }),
+    ]);
+
+    await expect(cmd.context({ transcript: p, json: true })).rejects.toThrow(
+      /current-context.*last_token_usage\.total_tokens/i
+    );
+  });
+
+  it('uses a runtime-bound scheme scalar and ignores its role overrides', async () => {
+    const { saveGlobalConfig } = await import('../../../src/core/global-config.js');
+    saveThresholdScheme('focused', {
+      handoff: 0.55,
+      handoffRoles: { reviewer: 0.9 },
+      reuse: 0.25,
+    });
+    saveGlobalConfig({
+      thresholds: { bindings: { codex: 'focused' } },
+      handoff: { threshold: 0.8 },
+    });
+    const p = writeRollout('rollout-2026-01-01T00-00-09-abc.jsonl', [
+      SESSION_META_LINE,
+      TURN_CONTEXT_LINE,
+      tokenCountLine(60_000, 100_000),
+    ]);
+    const logs: string[] = [];
+    const orig = console.log;
+    console.log = (msg?: unknown) => logs.push(String(msg));
+    try {
+      await cmd.context({ transcript: p, json: true });
+    } finally {
+      console.log = orig;
+    }
+    expect(JSON.parse(logs[0]!)).toMatchObject({
+      runtime: 'codex',
+      threshold: 0.55,
+      thresholdSource: 'global-scheme',
+      shouldHandoff: true,
+    });
   });
 
   it('--json includes threshold as the absolute { remainingTokens } form when configured', async () => {

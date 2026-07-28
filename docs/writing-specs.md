@@ -1,6 +1,6 @@
 # Writing Good Specs
 
-You rarely write a spec from a blank page. You describe a change in plain language, `/rasen:propose` drafts the requirements and scenarios, and then you make them good. This page is about that last part — what "good" looks like, and how to steer the AI toward it.
+You rarely write a spec from a blank page. You describe a change in plain language, `/rasen-propose` drafts the requirements and scenarios, and then you make them good. This page is about that last part — what "good" looks like, and how to steer the AI toward it.
 
 It's the companion to [Reviewing a Change](reviewing-changes.md): reviewing is catching the weak spots in a draft, writing is knowing what a strong one is made of.
 
@@ -77,7 +77,7 @@ The opposite also happens: a one-line typo fix doesn't need three requirements a
 
 ## How to steer the AI toward a good draft
 
-Because `/rasen:propose` does the first draft, the quality of what you get back tracks the quality of what you give it. You don't have to write requirements by hand — you have to aim the AI well:
+Because `/rasen-propose` does the first draft, the quality of what you get back tracks the quality of what you give it. You don't have to write requirements by hand — you have to aim the AI well:
 
 - **State the intent and the boundary.** *"Add a dark-mode toggle that follows the OS setting on first load — don't touch the existing theme API."* The out-of-scope half matters as much as the in-scope half.
 - **Name the cases you care about.** *"Make sure there's a scenario for a user who already picked a theme manually."* The AI covers what you point at.

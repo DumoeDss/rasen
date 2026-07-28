@@ -6,10 +6,11 @@
  */
 
 import type { AIToolOption } from './config.js';
-import { getGlobalConfig, getGlobalConfigPath, saveGlobalConfig, type Delivery } from './global-config.js';
-import { CommandAdapterRegistry, getCommandFilePathCandidates } from './command-generation/index.js';
+import { getGlobalConfig, getGlobalConfigPath, saveGlobalConfig } from './global-config.js';
+import { getCommandFilePathCandidates } from './shared/retired-command-paths.js';
 import { WORKFLOW_TO_SKILL_DIR } from './profile-sync-drift.js';
-import { ALL_WORKFLOWS } from './profiles.js';
+import { ALL_WORKFLOWS, getCurrentBuiltInWorkflowIds } from './profiles.js';
+import { RETIRED_RETRO_WORKFLOW_ID, resolveMigratedRetention } from './retention.js';
 import { resolveToolSkillsRoot } from './shared/index.js';
 import path from 'path';
 import * as fs from 'fs';
@@ -41,11 +42,13 @@ function scanInstalledWorkflowArtifacts(
       }
     }
 
-    const adapter = CommandAdapterRegistry.get(tool.value);
-    if (!adapter) continue;
-
+    // The command surface itself is retired, but a pre-existing install may
+    // still carry command files from before the retirement — detected here
+    // (via the frozen static path knowledge) purely so such a project is
+    // still recognized as "has this workflow installed" during one-time
+    // migration, not silently treated as a fresh/empty install.
     for (const workflowId of ALL_WORKFLOWS) {
-      for (const commandPath of getCommandFilePathCandidates(adapter, workflowId)) {
+      for (const commandPath of getCommandFilePathCandidates(tool.value, workflowId)) {
         const fullPath = path.isAbsolute(commandPath)
           ? commandPath
           : path.join(projectPath, commandPath);
@@ -71,15 +74,6 @@ function scanInstalledWorkflowArtifacts(
  */
 export function scanInstalledWorkflows(projectPath: string, tools: AIToolOption[]): string[] {
   return scanInstalledWorkflowArtifacts(projectPath, tools).workflows;
-}
-
-function inferDelivery(artifacts: InstalledWorkflowArtifacts): Delivery {
-  if (artifacts.hasCommands) {
-    // Commands-only installs (pre-profile era) heal to 'both': skills are
-    // restored on the next update rather than treated as data loss.
-    return 'both';
-  }
-  return 'skills';
 }
 
 /**
@@ -113,21 +107,32 @@ export function migrateIfNeeded(projectPath: string, tools: AIToolOption[]): voi
 
   // Scan for installed workflows
   const artifacts = scanInstalledWorkflowArtifacts(projectPath, tools);
-  const installedWorkflows = artifacts.workflows;
+  const detectedWorkflows = artifacts.workflows;
 
-  if (installedWorkflows.length === 0) {
+  if (detectedWorkflows.length === 0) {
     // No workflows installed, new user — defaults will apply
     return;
   }
 
-  // Migrate: set profile to custom with detected workflows
+  // Map the detected v1 selection onto the version-2 model: a detected retired
+  // `retro-command` becomes retention `report` (its former meaning), otherwise
+  // retention is `off`, and the retired id is dropped from the persisted
+  // selection. No other workflow file is added or removed by migration.
+  const retention = resolveMigratedRetention(detectedWorkflows);
+  const installedWorkflows = detectedWorkflows.filter(
+    (workflowId) => workflowId !== RETIRED_RETRO_WORKFLOW_ID
+  );
+
+  // Migrate: set profile to custom with detected workflows. Seed the
+  // known-built-in-workflows baseline at the same time — this is a selection
+  // save, so a later `update` surfaces only workflows the catalog gains after
+  // this migration, never one absent from the detected legacy set.
   config.profile = 'custom';
   config.workflows = installedWorkflows;
-  if (rawConfig.delivery === undefined) {
-    config.delivery = inferDelivery(artifacts);
-  }
+  config.retention = retention;
+  config.knownBuiltInWorkflows = getCurrentBuiltInWorkflowIds();
   saveGlobalConfig(config);
 
-  console.log(`Migrated: custom profile with ${installedWorkflows.length} workflows`);
-  console.log("New in this version: /rasen:propose. Try 'rasen config profile core' for the streamlined experience.");
+  console.log(`Migrated: custom profile with ${installedWorkflows.length} workflows (${installedWorkflows.join(', ')})`);
+  console.log("New in this version: the rasen-propose skill (combines new + ff). Try 'rasen config profile core' for the streamlined 4-workflow experience.");
 }

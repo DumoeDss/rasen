@@ -342,6 +342,45 @@ describe('artifact-workflow CLI commands', () => {
       expect(stat.isDirectory()).toBe(true);
     });
 
+    it('initializes resumable per-change run-state when --pipeline is provided', async () => {
+      const result = await runCLI(
+        ['new', 'change', 'portfolio-child', '--pipeline', 'small-feature', '--json'],
+        { cwd: tempDir }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.change.pipeline).toBe('small-feature');
+      expect(json.change.runStatePath).toMatch(/auto-run\.json$/);
+
+      const state = JSON.parse(await fs.readFile(json.change.runStatePath, 'utf-8'));
+      expect(state.pipeline).toBe('small-feature');
+      expect(state.stages.propose.status).toBe('pending');
+      const stages = state.stages as Record<string, { status: string }>;
+      expect(Object.values(stages).every(stage => stage.status === 'pending')).toBe(true);
+
+      const resumed = await runCLI(
+        ['pipeline', 'resume', 'portfolio-child', '--json'],
+        { cwd: tempDir }
+      );
+      expect(resumed.exitCode).toBe(0);
+      expect(JSON.parse(resumed.stdout.trim())).toMatchObject({
+        pipeline: 'small-feature',
+        next: 'propose',
+      });
+    });
+
+    it('rejects an unknown --pipeline before creating the change', async () => {
+      const result = await runCLI(
+        ['new', 'change', 'bad-child', '--pipeline', 'not-a-pipeline', '--json'],
+        { cwd: tempDir }
+      );
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toContain('not-a-pipeline');
+      await expect(fs.stat(path.join(changesDir, 'bad-child'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    });
+
     it('rejects --initiative and writes no change', async () => {
       const result = await runCLI(
         ['new', 'change', 'linked-change', '--initiative', 'billing-launch'],
@@ -395,6 +434,48 @@ describe('artifact-workflow CLI commands', () => {
       const content = await fs.readFile(readmePath, 'utf-8');
       expect(content).toContain('described-feature');
       expect(content).toContain('This is a test feature');
+    });
+
+    it('creates proposal.md when --proposal is provided, making the change active', async () => {
+      const result = await runCLI(
+        ['new', 'change', 'submitted-feature', '--proposal', 'Add feature Y'],
+        { cwd: tempDir }
+      );
+      expect(result.exitCode).toBe(0);
+
+      const proposalPath = path.join(changesDir, 'submitted-feature', 'proposal.md');
+      const content = await fs.readFile(proposalPath, 'utf-8');
+      expect(content).toContain('submitted-feature');
+      expect(content).toContain('Add feature Y');
+
+      const { getActiveChangeIds } = await import('../../src/utils/item-discovery.js');
+      const activeIds = await getActiveChangeIds(tempDir);
+      expect(activeIds).toContain('submitted-feature');
+    });
+
+    it('creates no proposal.md without --proposal (unchanged behavior)', async () => {
+      const result = await runCLI(['new', 'change', 'unsubmitted-feature'], { cwd: tempDir });
+      expect(result.exitCode).toBe(0);
+
+      const proposalPath = path.join(changesDir, 'unsubmitted-feature', 'proposal.md');
+      expect(existsSync(proposalPath)).toBe(false);
+    });
+
+    it('errors on an empty or whitespace-only --proposal instead of silently skipping it (review m2)', async () => {
+      const emptyResult = await runCLI(
+        ['new', 'change', 'empty-proposal-feature', '--proposal', ''],
+        { cwd: tempDir }
+      );
+      expect(emptyResult.exitCode).toBe(1);
+      expect(getOutput(emptyResult)).toContain('--proposal must not be empty');
+      expect(existsSync(path.join(changesDir, 'empty-proposal-feature'))).toBe(false);
+
+      const whitespaceResult = await runCLI(
+        ['new', 'change', 'whitespace-proposal-feature', '--proposal', '   '],
+        { cwd: tempDir }
+      );
+      expect(whitespaceResult.exitCode).toBe(1);
+      expect(existsSync(path.join(changesDir, 'whitespace-proposal-feature'))).toBe(false);
     });
 
     it('errors for invalid change name with spaces', async () => {
@@ -673,6 +754,120 @@ artifacts:
       expect(json.schemaName).toBe('no-apply-full');
       expect(json.state).toBe('ready');
       expect(json.instruction).toContain('All required artifacts complete');
+    });
+  });
+
+  describe('nextWorkflows (design D1/D3/D4, workflow-next-steps spec)', () => {
+    /**
+     * Points a CLI invocation at an isolated machine home carrying the
+     * given profile, so the installed-workflow set (design D5) resolves
+     * to that profile's selection instead of the harness's default `full`.
+     */
+    async function coreProfileEnv(): Promise<NodeJS.ProcessEnv> {
+      const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rasen-core-profile-home-'));
+      await fs.writeFile(path.join(homeDir, 'config.json'), JSON.stringify({ profile: 'core' }));
+      return { RASEN_HOME: homeDir };
+    }
+
+    it('apply --json: all_done under the default (full) profile resolves to verify', async () => {
+      const changeDir = await createTestChange('next-full-apply', ['proposal', 'design', 'specs', 'tasks']);
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '## Tasks\n- [x] Task 1');
+
+      const result = await runCLI(
+        ['instructions', 'apply', '--change', 'next-full-apply', '--json'],
+        { cwd: tempDir }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.state).toBe('all_done');
+      expect(json.nextWorkflows).toEqual([{ workflow: 'verify', reason: expect.any(String) }]);
+    });
+
+    it('apply --json: all_done under a core profile skips to archive, never naming an uninstalled workflow', async () => {
+      const changeDir = await createTestChange('next-core-apply', ['proposal', 'design', 'specs', 'tasks']);
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '## Tasks\n- [x] Task 1');
+
+      const result = await runCLI(
+        ['instructions', 'apply', '--change', 'next-core-apply', '--json'],
+        { cwd: tempDir, env: await coreProfileEnv() }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.state).toBe('all_done');
+      expect(json.nextWorkflows).toEqual([{ workflow: 'archive', reason: expect.any(String) }]);
+      expect(json.nextWorkflows[0].workflow).not.toBe('verify');
+      expect(json.nextWorkflows[0].workflow).not.toBe('ship-command');
+    });
+
+    it('apply --json: blocked state points at the continuation', async () => {
+      await createTestChange('next-blocked-apply', ['proposal']);
+
+      const result = await runCLI(
+        ['instructions', 'apply', '--change', 'next-blocked-apply', '--json'],
+        { cwd: tempDir }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.state).toBe('blocked');
+      expect(json.nextWorkflows).toEqual([{ workflow: 'continue', reason: expect.any(String) }]);
+    });
+
+    it('apply --json: ready (mid-implementation) state has no forward step', async () => {
+      await createTestChange('next-ready-apply', ['proposal', 'design', 'specs', 'tasks']);
+
+      const result = await runCLI(
+        ['instructions', 'apply', '--change', 'next-ready-apply', '--json'],
+        { cwd: tempDir }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.state).toBe('ready');
+      expect(json.nextWorkflows).toEqual([]);
+    });
+
+    it('apply text output: prints a trailing Next: hint with the -command suffix stripped', async () => {
+      const changeDir = await createTestChange('next-hint-apply', ['proposal', 'design', 'specs', 'tasks']);
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '## Tasks\n- [x] Task 1');
+
+      const result = await runCLI(['instructions', 'apply', '--change', 'next-hint-apply'], {
+        cwd: tempDir,
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toMatch(/Next: verify — /);
+    });
+
+    it('status --json: complete artifacts resolve to apply', async () => {
+      await createTestChange('next-status-complete', ['proposal', 'design', 'specs', 'tasks']);
+
+      const result = await runCLI(['status', '--change', 'next-status-complete', '--json'], {
+        cwd: tempDir,
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.isComplete).toBe(true);
+      expect(json.nextWorkflows).toEqual([{ workflow: 'apply', reason: expect.any(String) }]);
+      // The pre-existing artifact-authoring string array stays untouched.
+      expect(Array.isArray(json.nextSteps)).toBe(true);
+    });
+
+    it('status --json: incomplete artifacts have no nextWorkflows entry', async () => {
+      await createTestChange('next-status-pending', ['proposal']);
+
+      const result = await runCLI(['status', '--change', 'next-status-pending', '--json'], {
+        cwd: tempDir,
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.isComplete).toBe(false);
+      expect(json.nextWorkflows).toEqual([]);
+    });
+
+    it('status text output: prints a trailing Next: hint when a next workflow resolves', async () => {
+      await createTestChange('next-status-hint', ['proposal', 'design', 'specs', 'tasks']);
+
+      const result = await runCLI(['status', '--change', 'next-status-hint'], { cwd: tempDir });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toMatch(/Next: apply — /);
     });
   });
 
@@ -1070,10 +1265,10 @@ artifacts:
       const stat = await fs.stat(skillFile);
       expect(stat.isFile()).toBe(true);
 
-      // Verify commands were created with Codex format (in CODEX_HOME)
+      // Skills-only delivery (command-generation retired): no command file
+      // is written under CODEX_HOME/prompts for any tool, including Codex.
       const commandFile = path.join(codexHome, 'prompts', 'rasen-explore.md');
-      const content = await fs.readFile(commandFile, 'utf-8');
-      expect(content).toContain('description:');
+      await expect(fs.access(commandFile)).rejects.toThrow();
     });
 
     it('rejects Cursor tool as recognized but not yet adapted', async () => {

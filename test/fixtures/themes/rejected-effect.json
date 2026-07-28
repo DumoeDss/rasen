@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "scripted",
+  "name": "Scripted",
+  "mode": "light",
+  "tokens": {
+    "light": {}
+  },
+  "effects": ["javascript"]
+}

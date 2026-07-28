@@ -7,8 +7,31 @@ import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'y
 import { z } from 'zod';
 
 import { withProjectRegistryLock, type ProjectPathOptions } from './project-registry.js';
+import {
+  makeLockErrorFactory,
+  machineLockPath,
+  writeFileAtomically,
+  withOwnerAwareFileLock,
+} from './file-state.js';
 import { isKebabId } from './id.js';
-import { thresholdSchema } from './pipeline-registry/types.js';
+import { thresholdSchema, type ThresholdValue } from './pipeline-registry/types.js';
+import {
+  DISPATCH_RUNTIMES,
+  PROBE_RUNTIMES,
+  hasRuntimeCapability,
+  type DispatchRuntime,
+} from './runtime-adapters.js';
+import { normalizeRetiredEditBoundaryExpertIds } from './retired-edit-boundary.js';
+import {
+  ThresholdSchemeNameSchema,
+  validateThresholdSchemeName,
+} from './threshold-schemes.js';
+import {
+  reportConfigDiagnostic,
+  type ConfigDiagnostic,
+  type ConfigDiagnosticReporter,
+} from './config-diagnostics.js';
+import { isValidStoreUid, type StorePointerV2 } from './store/identity-types.js';
 
 /**
  * Zod schema for project configuration.
@@ -65,12 +88,53 @@ export const ProjectConfigSchema = z.object({
     .optional()
     .describe('Store id used as the Rasen root when no local planning shape exists'),
 
+  // In-memory normalization of the durable `store: { uid, id?, remote? }`
+  // declaration. Never written from here — the config file keeps whichever
+  // form the user (or `store upgrade-identity`) put there.
+  storeDeclaration: z
+    .object({
+      uid: z.string(),
+      id: z.string().optional(),
+      remote: z.string().optional(),
+    })
+    .optional()
+    .describe('Durable store declaration: permanent identity, display alias, credential-free remote'),
+
   // Optional: stable machine-local project identity (opaque string; any
   // non-empty JS string is accepted, minted as a UUID by init/first use).
   projectId: z
     .string()
     .optional()
     .describe('Stable project identity used by the machine-wide project registry'),
+
+  // Optional: a portable project-knowledge bundle deliberately declared by
+  // this project. It is a locator only and is resolved by machine preparation
+  // relative to the project root.
+  knowledgeBundle: z
+    .string()
+    .min(1)
+    .optional()
+    .describe('Project-root-relative portable project-knowledge bundle locator'),
+
+  // Optional: a per-space workflow selection override (space-workflow-enablement
+  // spec). When present, this list (plus its dependency closure) is the
+  // space's desired workflow set verbatim — it replaces the user-wide
+  // profile for this project only. Absent means the space follows the
+  // user-wide profile exactly as before this field existed.
+  workflows: z
+    .array(z.string())
+    .optional()
+    .describe('Per-space workflow selection override (replaces the user-wide profile for this project)'),
+
+  // Optional: the project's locked profile (init-profile-lock spec). A
+  // reference by name — `full`, `core`, or a saved named profile — resolved
+  // where the selection is resolved (profiles.ts), not at parse time. A
+  // `workflows` override, when present, takes precedence over this lock.
+  profile: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("The project's locked profile: full, core, or a saved profile name"),
 
   // Optional: archive behavior configuration. Extensible - future fields
   // join this same map.
@@ -117,9 +181,131 @@ export const ProjectConfigSchema = z.object({
   handoff: z
     .object({
       threshold: thresholdSchema('threshold').optional(),
+      roles: z
+        .object({
+          planner: thresholdSchema('threshold').optional(),
+          implementer: thresholdSchema('threshold').optional(),
+          reviewer: thresholdSchema('threshold').optional(),
+          fixer: thresholdSchema('threshold').optional(),
+          shipper: thresholdSchema('threshold').optional(),
+        })
+        .optional()
+        .describe('Per-role context-handoff threshold overrides (role beats the scalar threshold above)'),
     })
     .optional()
     .describe('Context-handoff threshold configuration'),
+
+  thresholds: z
+    .object({
+      bindings: z
+        .record(z.string(), ThresholdSchemeNameSchema)
+        .refine(
+          (bindings) =>
+            Object.keys(bindings).every(
+              (runtime) => runtime === 'default' || PROBE_RUNTIMES.includes(runtime as never)
+            ),
+          { error: `binding runtime must be default or one of: ${PROBE_RUNTIMES.join(', ')}` }
+        )
+        .optional()
+        .default({}),
+    })
+    .optional()
+    .describe('Runtime threshold-scheme bindings'),
+
+  // Optional: keepalive gate for `rasen agent wait` (cli-agent-wait spec).
+  // Only `enabled` and `beatSeconds` are project-settable (the registry marks
+  // runtimes/contextFloor global-only — machine-level runtime params); project
+  // scope wins over the global config value of the same name (see
+  // effective-config.ts). Mirrors the GlobalConfigSchema keepalive block so the
+  // two share a shape; runtimes/contextFloor are accepted here only for forward
+  // compatibility and are not project-settable.
+  keepalive: z
+    .object({
+      enabled: z.boolean().optional(),
+      runtimes: z
+        .object({
+          claude: z.boolean().optional(),
+          codex: z.boolean().optional(),
+        })
+        .optional(),
+      contextFloor: z.number().int().nonnegative().optional(),
+      beatSeconds: z.number().int().min(90).max(280).optional(),
+    })
+    .optional()
+    .describe('Keepalive gate configuration (project scope; enabled and beatSeconds are project-settable)'),
+
+  // Optional: per-agent model configuration. `default` is the base model for
+  // all roles; `roles` overrides it per role. Project scope wins over the
+  // global config value of the same name (see effective-config.ts). Model
+  // ids are free strings — never validated against an allow-list.
+  models: z
+    .object({
+      default: z.string().min(1).optional(),
+      roles: z
+        .object({
+          planner: z.string().min(1).optional(),
+          implementer: z.string().min(1).optional(),
+          reviewer: z.string().min(1).optional(),
+          fixer: z.string().min(1).optional(),
+          shipper: z.string().min(1).optional(),
+        })
+        .optional()
+        .describe('Per-role model overrides (role beats the base default above)'),
+    })
+    .optional()
+    .describe('Per-agent model configuration'),
+
+  // Optional: per-pipeline config overrides keyed by pipeline name — the
+  // planning-root storage side of the
+  // `pipelines.<name>.{gates,models,handoff}.<stage>` and
+  // `pipelines.<name>.runtimes.<role>` config-key families, serving both the
+  // project and (a store root's own) store layers. `gates`/`models`/`handoff`
+  // are keyed by stage; `runtimes` by role. Inner objects `.passthrough()` so
+  // an unknown sub-key survives the schema; the resilient parser below drops
+  // invalid leaves with a warning. Shares nothing with the `rasen/pipelines/`
+  // directory namespace.
+  pipelines: z
+    .record(
+      z.string(),
+      z
+        .object({
+          gates: z.record(z.string(), z.enum(['on', 'off'])).optional(),
+          models: z.record(z.string(), z.string().min(1)).optional(),
+          handoff: z.record(z.string(), thresholdSchema('threshold')).optional(),
+          runtimes: z.record(z.string(), z.enum(DISPATCH_RUNTIMES)).optional(),
+        })
+        .passthrough()
+    )
+    .optional()
+    .describe('Per-pipeline config overrides keyed by pipeline name'),
+
+  // Optional: the project's authoritative tool-selection manifest
+  // (project-install-manifest spec). When present, this list is the sole
+  // source of the project's configured tools — on-disk artifact detection
+  // cannot add to or remove from it. Each entry MUST be a non-empty tool id
+  // string (matching the `value` field of an `AI_TOOLS` entry). An empty
+  // array is valid and means "no tools configured."
+  tools: z
+    .array(z.string().min(1))
+    .optional()
+    .describe(
+      "Authoritative list of tool ids the user selected at 'rasen init' (empty array = no tools configured)"
+    ),
+
+  // Optional: update behavior configuration. Extensible - future update
+  // fields join this same map. Only `pin` is parsed today; `pin: true`
+  // excludes the project from multi-project update prompts and `--all-projects`.
+  update: z
+    .object({
+      pin: z
+        .boolean()
+        .optional()
+        .describe(
+          'When true, this project is never offered or touched by multi-project update (direct update is unaffected)'
+        ),
+    })
+    .optional()
+    .describe('Update behavior configuration (multi-project opt-out, etc.)'),
 });
 
 /** Valid `archive.timing` values. */
@@ -146,8 +332,50 @@ export interface DeclarationEntry {
   type?: 'store' | 'project';
 }
 
+/** The config key holding the project's Store membership locator hints. */
+export const STORE_MEMBERSHIPS_FIELD = 'storeMemberships';
+
+/**
+ * A project-side locator for a Store the project belongs to.
+ *
+ * A HINT and never authority: the Store's own
+ * `.rasen-store/projects/<projectId>.yaml` record decides membership, and a
+ * hint that disagrees with it is reported as drift rather than believed. Its
+ * job is discovery — a fresh clone of the project, on a machine that has never
+ * seen these Stores, can still say which Stores it belongs to and how to
+ * obtain each one.
+ *
+ * Nothing machine-specific ever enters it: permanent identity, display alias,
+ * and a credential-free remote, and no filesystem path on any platform.
+ */
+export interface StoreMembershipHint {
+  /** The Store's permanent identity. Absent only for a legacy-identity Store. */
+  uid?: string;
+  /** Display alias, for reading and for naming a Store that has no identity yet. */
+  id?: string;
+  /** Credential-free clone source. */
+  remote?: string;
+}
+
+/**
+ * De-duplication key: the permanent identity when there is one, else the
+ * display alias. Two hints for one Store must collapse even when one of them
+ * predates the Store's identity.
+ */
+export function storeMembershipHintKey(hint: StoreMembershipHint): string {
+  return hint.uid !== undefined
+    ? `uid:${hint.uid.trim().toLowerCase()}`
+    : `id:${(hint.id ?? '').trim().toLowerCase()}`;
+}
+
+/** The alias, else the identity — never an empty string. */
+export function describeStoreMembershipHint(hint: StoreMembershipHint): string {
+  return hint.id ?? hint.uid ?? '(unnamed store)';
+}
+
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema> & {
   references?: DeclarationEntry[];
+  storeMemberships?: StoreMembershipHint[];
 };
 
 /**
@@ -162,13 +390,29 @@ export type ProjectConfig = z.infer<typeof ProjectConfigSchema> & {
  * (unlike a bare id, which is grammar-checked downstream at assembly time).
  * Returns undefined when the field is absent or normalizes to empty.
  */
-function parseDeclarationList(raw: unknown): DeclarationEntry[] | undefined {
+function warnConfig(
+  diagnostic: Omit<ConfigDiagnostic, 'output'>,
+  reporter?: ConfigDiagnosticReporter
+): void {
+  reportConfigDiagnostic({ ...diagnostic, output: 'warn' }, reporter);
+}
+
+function parseDeclarationList(
+  raw: unknown,
+  reporter?: ConfigDiagnosticReporter
+): DeclarationEntry[] | undefined {
   const fieldName = 'references';
   if (raw === undefined) {
     return undefined;
   }
   if (!Array.isArray(raw)) {
-    console.warn(`Invalid '${fieldName}' field in config (must be an array of store ids)`);
+    warnConfig(
+      {
+        key: 'invalidReferences',
+        fallback: `Invalid '${fieldName}' field in config (must be an array of store ids)`,
+      },
+      reporter
+    );
     return undefined;
   }
 
@@ -218,14 +462,226 @@ function parseDeclarationList(raw: unknown): DeclarationEntry[] | undefined {
   }
 
   if (droppedEntries) {
-    console.warn(`Some '${fieldName}' entries are invalid, ignoring them`);
+    warnConfig(
+      {
+        key: 'invalidReferenceEntries',
+        fallback: `Some '${fieldName}' entries are invalid, ignoring them`,
+      },
+      reporter
+    );
   }
   if (droppedRemotes) {
-    console.warn(
-      `Some '${fieldName}' remotes are not non-empty strings; the ids are kept without a clone source`
+    warnConfig(
+      {
+        key: 'invalidReferenceRemotes',
+        fallback: `Some '${fieldName}' remotes are not non-empty strings; the ids are kept without a clone source`,
+      },
+      reporter
     );
   }
   return byId.size > 0 ? [...byId.values()] : undefined;
+}
+
+/**
+ * Resilient parser for `storeMemberships:` — the SAME drop-with-a-warning
+ * discipline `references:` uses, and deliberately not a strict schema.
+ *
+ * That is correct precisely BECAUSE these are locators: losing one hint costs
+ * a diagnostic and a rediscovery, while a strict schema would reject the whole
+ * file over one bad entry and take every other hint with it. Authority lives
+ * in the Store's own record, where strictness belongs.
+ *
+ * Accepts a bare string (a permanent identity, else a display alias) and the
+ * `{uid?, id?, remote?}` map. Entries de-duplicate on permanent identity —
+ * falling back to the display alias for a Store that has none — keeping the
+ * first position, with a later duplicate filling a field the first left empty.
+ * An entry carrying no identity survives with a warning naming the upgrade
+ * path: it still locates the Store by name today, and dropping it would lose
+ * the only record that the membership exists at all.
+ */
+function parseStoreMembershipList(
+  raw: unknown,
+  reporter?: ConfigDiagnosticReporter
+): StoreMembershipHint[] | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(raw)) {
+    warnConfig(
+      {
+        key: 'invalidStoreMemberships',
+        fallback: `Invalid '${STORE_MEMBERSHIPS_FIELD}' field in config (must be an array of store references)`,
+      },
+      reporter
+    );
+    return undefined;
+  }
+
+  const byKey = new Map<string, StoreMembershipHint>();
+  let dropped = false;
+  let identityless = false;
+
+  for (const entry of raw) {
+    let hint: StoreMembershipHint | null = null;
+
+    if (typeof entry === 'string') {
+      const value = entry.trim();
+      if (isValidStoreUid(value)) {
+        hint = { uid: value };
+      } else if (isKebabId(value)) {
+        hint = { id: value };
+      }
+    } else if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      const candidate = entry as Record<string, unknown>;
+      const uid =
+        typeof candidate.uid === 'string' && isValidStoreUid(candidate.uid)
+          ? candidate.uid.trim()
+          : undefined;
+      const id =
+        typeof candidate.id === 'string' && candidate.id.length > 0 && isKebabId(candidate.id)
+          ? candidate.id
+          : undefined;
+      const remote =
+        typeof candidate.remote === 'string' && candidate.remote.length > 0
+          ? candidate.remote
+          : undefined;
+
+      if (uid !== undefined || id !== undefined) {
+        hint = {
+          ...(uid !== undefined ? { uid } : {}),
+          ...(id !== undefined ? { id } : {}),
+          ...(remote !== undefined ? { remote } : {}),
+        };
+      }
+      // A field this parser could not read (a malformed uid, a non-kebab id,
+      // an empty remote) is reported alongside a wholly unreadable entry: in
+      // both cases something the user wrote is not being used.
+      if (
+        hint !== null &&
+        ((candidate.uid !== undefined && uid === undefined) ||
+          (candidate.id !== undefined && id === undefined) ||
+          (candidate.remote !== undefined && remote === undefined))
+      ) {
+        dropped = true;
+      }
+    }
+
+    if (!hint) {
+      dropped = true;
+      continue;
+    }
+    if (hint.uid === undefined) {
+      identityless = true;
+    }
+
+    const key = storeMembershipHintKey(hint);
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, hint);
+      continue;
+    }
+    if (existing.id === undefined && hint.id !== undefined) existing.id = hint.id;
+    if (existing.remote === undefined && hint.remote !== undefined) existing.remote = hint.remote;
+    if (existing.uid === undefined && hint.uid !== undefined) existing.uid = hint.uid;
+  }
+
+  if (dropped) {
+    warnConfig(
+      {
+        key: 'invalidStoreMembershipEntries',
+        fallback: `Some '${STORE_MEMBERSHIPS_FIELD}' entries are invalid; ignoring the unusable entries and fields`,
+      },
+      reporter
+    );
+  }
+  if (identityless) {
+    warnConfig(
+      {
+        key: 'storeMembershipsWithoutIdentity',
+        fallback: `Some '${STORE_MEMBERSHIPS_FIELD}' entries name a store only by display name; run 'rasen store upgrade-identity <store> --apply' so the hint survives a rename`,
+      },
+      reporter
+    );
+  }
+
+  return byKey.size > 0 ? [...byKey.values()] : undefined;
+}
+
+/**
+ * Resilient parser for the `pipelines:` block (a map keyed by pipeline name of
+ * `gates`/`models`/`handoff` per-stage records). Mirrors the field-by-field
+ * drop-with-warning discipline of the blocks above: a non-map pipeline entry,
+ * an unknown or non-map axis, or an invalid per-stage leaf is dropped while
+ * valid siblings survive. `gates` leaves must be `on`/`off`, `models` leaves a
+ * non-empty string, `handoff` leaves the dual-form threshold. Returns
+ * undefined when nothing valid remains.
+ */
+function parsePipelinesBlock(raw: unknown): ProjectConfig['pipelines'] | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    console.warn(`Invalid 'pipelines' field in config (must be an object)`);
+    return undefined;
+  }
+
+  type PipelineEntry = NonNullable<ProjectConfig['pipelines']>[string];
+  const result: NonNullable<ProjectConfig['pipelines']> = {};
+
+  for (const [pipelineName, pipelineRaw] of Object.entries(raw as Record<string, unknown>)) {
+    if (!pipelineRaw || typeof pipelineRaw !== 'object' || Array.isArray(pipelineRaw)) {
+      console.warn(`Invalid 'pipelines.${pipelineName}' field in config (must be an object)`);
+      continue;
+    }
+    const entry: PipelineEntry = {};
+
+    for (const [axis, axisRaw] of Object.entries(pipelineRaw as Record<string, unknown>)) {
+      if (axis !== 'gates' && axis !== 'models' && axis !== 'handoff' && axis !== 'runtimes') {
+        console.warn(
+          `Unknown 'pipelines.${pipelineName}.${axis}' field in config (expected gates, models, handoff, or runtimes); ignoring it.`
+        );
+        continue;
+      }
+      if (!axisRaw || typeof axisRaw !== 'object' || Array.isArray(axisRaw)) {
+        console.warn(`Invalid 'pipelines.${pipelineName}.${axis}' field in config (must be an object)`);
+        continue;
+      }
+
+      const gates: Record<string, 'on' | 'off'> = {};
+      const models: Record<string, string> = {};
+      const handoff: Record<string, ThresholdValue> = {};
+      const runtimes: Record<string, DispatchRuntime> = {};
+      // `gates`/`models`/`handoff` leaves are keyed by stage; `runtimes` by role.
+      for (const [leafKey, leaf] of Object.entries(axisRaw as Record<string, unknown>)) {
+        const label = `pipelines.${pipelineName}.${axis}.${leafKey}`;
+        if (axis === 'gates') {
+          if (leaf === 'on' || leaf === 'off') gates[leafKey] = leaf;
+          else console.warn(`Invalid '${label}' field in config (must be 'on' or 'off')`);
+        } else if (axis === 'models') {
+          if (typeof leaf === 'string' && leaf.length > 0) models[leafKey] = leaf;
+          else console.warn(`Invalid '${label}' field in config (must be a non-empty string)`);
+        } else if (axis === 'runtimes') {
+          if (hasRuntimeCapability(leaf, 'canDispatch')) runtimes[leafKey] = leaf;
+          else {
+            const expected = DISPATCH_RUNTIMES.map((runtime) => `'${runtime}'`).join(' or ');
+            console.warn(`Invalid '${label}' field in config (must be ${expected})`);
+          }
+        } else {
+          const parsed = thresholdSchema('threshold').safeParse(leaf);
+          if (parsed.success) handoff[leafKey] = parsed.data;
+          else
+            console.warn(
+              `Invalid '${label}' field in config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> })`
+            );
+        }
+      }
+      if (axis === 'gates' && Object.keys(gates).length > 0) entry.gates = gates;
+      if (axis === 'models' && Object.keys(models).length > 0) entry.models = models;
+      if (axis === 'handoff' && Object.keys(handoff).length > 0) entry.handoff = handoff;
+      if (axis === 'runtimes' && Object.keys(runtimes).length > 0) entry.runtimes = runtimes;
+    }
+
+    if (Object.keys(entry).length > 0) result[pipelineName] = entry;
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 export const MAX_CONTEXT_SIZE = 50 * 1024; // 50KB hard limit, shared with the references index
@@ -249,21 +705,52 @@ export const MAX_CONTEXT_SIZE = 50 * 1024; // 50KB hard limit, shared with the r
  * @param projectRoot - The root directory of the project (where `openspec/` lives)
  * @returns Parsed config or null if file doesn't exist
  */
-export function readProjectConfig(projectRoot: string): ProjectConfig | null {
+/**
+ * Discriminated result of reading a project config file, so callers can
+ * distinguish "no config file present" from "config file exists but is
+ * unparseable." The absent state is the ordinary "no config" signal; the
+ * unreadable state carries a diagnostic so a caller never silently treats a
+ * corrupt config as a project with no identity.
+ */
+export type ProjectConfigReadResult =
+  | { status: 'absent' }
+  | { status: 'ok'; config: ProjectConfig | null }
+  | { status: 'unreadable'; path: string; error: string };
+
+export function readProjectConfigWithDiagnostics(
+  projectRoot: string,
+  options: { reporter?: ConfigDiagnosticReporter } = {}
+): ProjectConfigReadResult {
   const configPath = resolveConfigFilePath(projectRoot);
   if (configPath === null) {
-    return null; // No config is OK
+    return { status: 'absent' };
   }
 
   try {
     const content = readFileSync(configPath, 'utf-8');
-    return parseProjectConfigContent(content, projectRoot);
+    const config = parseProjectConfigContent(content, projectRoot, options.reporter);
+    return { status: 'ok', config };
   } catch (error) {
-    console.warn(
-      `Warning: could not parse ${configPathForWarnings(projectRoot)} (${error instanceof Error ? error.message.split('\n')[0] : String(error)}); ignoring it.`
+    const warnPath = configPathForWarnings(projectRoot);
+    const detail = error instanceof Error ? error.message.split('\n')[0] : String(error);
+    warnConfig(
+      {
+        key: 'projectParseFailed',
+        values: { path: warnPath, detail },
+        fallback: `Warning: could not parse ${warnPath} (${detail}); ignoring it.`,
+      },
+      options.reporter
     );
-    return null;
+    return { status: 'unreadable', path: configPath, error: detail };
   }
+}
+
+export function readProjectConfig(
+  projectRoot: string,
+  options: { reporter?: ConfigDiagnosticReporter } = {}
+): ProjectConfig | null {
+  const result = readProjectConfigWithDiagnostics(projectRoot, options);
+  return result.status === 'ok' ? result.config : null;
 }
 
 /**
@@ -274,11 +761,21 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
  * YAML content passed in as a string — that only happens via
  * `readProjectConfig`'s own try/catch, since `parseYaml` can throw.
  */
-function parseProjectConfigContent(content: string, projectRoot: string): ProjectConfig | null {
+function parseProjectConfigContent(
+  content: string,
+  projectRoot: string,
+  reporter?: ConfigDiagnosticReporter
+): ProjectConfig | null {
   const raw = parseYaml(content);
 
   if (!raw || typeof raw !== 'object') {
-    console.warn(`openspec/config.yaml is not a valid YAML object`);
+    warnConfig(
+      {
+        key: 'projectNotObject',
+        fallback: 'openspec/config.yaml is not a valid YAML object',
+      },
+      reporter
+    );
     return null;
   }
 
@@ -290,7 +787,13 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
     if (schemaResult.success) {
       config.schema = schemaResult.data;
     } else if (raw.schema !== undefined) {
-      console.warn(`Invalid 'schema' field in config (must be non-empty string)`);
+      warnConfig(
+        {
+          key: 'invalidSchema',
+          fallback: `Invalid 'schema' field in config (must be non-empty string)`,
+        },
+        reporter
+      );
     }
 
     // Parse context field with size limit
@@ -301,15 +804,34 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
       if (contextResult.success) {
         const contextSize = Buffer.byteLength(contextResult.data, 'utf-8');
         if (contextSize > MAX_CONTEXT_SIZE) {
-          console.warn(
-            `Context too large (${(contextSize / 1024).toFixed(1)}KB, limit: ${MAX_CONTEXT_SIZE / 1024}KB)`
+          const size = (contextSize / 1024).toFixed(1);
+          const maximum = MAX_CONTEXT_SIZE / 1024;
+          warnConfig(
+            {
+              key: 'contextTooLarge',
+              values: { size, maximum },
+              fallback: `Context too large (${size}KB, limit: ${maximum}KB)`,
+            },
+            reporter
           );
-          console.warn(`Ignoring context field`);
+          warnConfig(
+            {
+              key: 'ignoringContext',
+              fallback: 'Ignoring context field',
+            },
+            reporter
+          );
         } else {
           config.context = contextResult.data;
         }
       } else {
-        console.warn(`Invalid 'context' field in config (must be string)`);
+        warnConfig(
+          {
+            key: 'invalidContext',
+            fallback: `Invalid 'context' field in config (must be string)`,
+          },
+          reporter
+        );
       }
     }
 
@@ -333,13 +855,23 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
               hasValidRules = true;
             }
             if (validRules.length < rulesArrayResult.data.length) {
-              console.warn(
-                `Some rules for '${artifactId}' are empty strings, ignoring them`
+              warnConfig(
+                {
+                  key: 'emptyArtifactRules',
+                  values: { artifactId },
+                  fallback: `Some rules for '${artifactId}' are empty strings, ignoring them`,
+                },
+                reporter
               );
             }
           } else {
-            console.warn(
-              `Rules for '${artifactId}' must be an array of strings, ignoring this artifact's rules`
+            warnConfig(
+              {
+                key: 'invalidArtifactRules',
+                values: { artifactId },
+                fallback: `Rules for '${artifactId}' must be an array of strings, ignoring this artifact's rules`,
+              },
+              reporter
             );
           }
         }
@@ -348,7 +880,13 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
           config.rules = parsedRules;
         }
       } else {
-        console.warn(`Invalid 'rules' field in config (must be object)`);
+        warnConfig(
+          {
+            key: 'invalidRules',
+            fallback: `Invalid 'rules' field in config (must be object)`,
+          },
+          reporter
+        );
       }
     }
 
@@ -364,27 +902,60 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
           config['quality-rules'] = validRules;
         }
         if (validRules.length < qualityRulesResult.data.length) {
-          console.warn(`Some quality-rules are empty strings, ignoring them`);
+          warnConfig(
+            {
+              key: 'emptyQualityRules',
+              fallback: 'Some quality-rules are empty strings, ignoring them',
+            },
+            reporter
+          );
         }
       } else {
-        console.warn(`Invalid 'quality-rules' field in config (must be array of strings)`);
+        warnConfig(
+          {
+            key: 'invalidQualityRules',
+            fallback: `Invalid 'quality-rules' field in config (must be array of strings)`,
+          },
+          reporter
+        );
       }
     }
 
-    const references = parseDeclarationList(raw.references);
+    const references = parseDeclarationList(raw.references, reporter);
     if (references) {
       config.references = references;
     }
 
-    // Parse store pointer field: a string, or dropped with a warning.
+    // Store membership locator hints. Parsed like `references:` and for the
+    // same reason — they are hints, so one bad entry costs a diagnostic, not
+    // the whole list.
+    const storeMemberships = parseStoreMembershipList(raw[STORE_MEMBERSHIPS_FIELD], reporter);
+    if (storeMemberships) {
+      config.storeMemberships = storeMemberships;
+    }
+
+    // Parse store declaration: the legacy id string, the durable
+    // `{ uid, id?, remote? }` form, or dropped with a warning.
     // (Root resolution does NOT use this parse — it uses readStorePointer
-    // below, which errors on malformed pointers instead of dropping.)
+    // below, which errors on malformed declarations instead of dropping.)
     if (raw.store !== undefined) {
+      const durable = parseDurableStoreDeclaration(raw.store);
       if (typeof raw.store === 'string') {
         config.store = raw.store;
+      } else if (durable) {
+        config.storeDeclaration = durable;
+        if (durable.id !== undefined) {
+          config.store = durable.id;
+        }
       } else {
-        console.warn(
-          `Warning: ignoring invalid store: field in ${configPathForWarnings(projectRoot)} (must be a single store id string).`
+        const configPath = configPathForWarnings(projectRoot);
+        warnConfig(
+          {
+            key: 'invalidStore',
+            values: { path: configPath },
+            fallback: `Warning: ignoring invalid store: field in ${configPath} (must be a single store id string).`,
+          },
+          reporter
         );
       }
     }
@@ -395,7 +966,144 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
       if (typeof raw.projectId === 'string') {
         config.projectId = raw.projectId;
       } else {
-        console.warn(`Invalid 'projectId' field in config (must be string)`);
+        warnConfig(
+          {
+            key: 'invalidProjectId',
+            fallback: `Invalid 'projectId' field in config (must be string)`,
+          },
+          reporter
+        );
+      }
+    }
+
+    // Parse the portable knowledge-bundle declaration independently. A bad
+    // locator drops only this field; every valid sibling remains usable.
+    if (raw.knowledgeBundle !== undefined) {
+      if (
+        typeof raw.knowledgeBundle === 'string' &&
+        raw.knowledgeBundle.trim().length > 0
+      ) {
+        config.knowledgeBundle = raw.knowledgeBundle;
+      } else if (reporter !== undefined) {
+        // Bundle-aware callers collect this into their structured result. A
+        // generic config read must not emit an out-of-band English warning
+        // that can corrupt localized or JSON command output.
+        warnConfig(
+          {
+            key: 'invalidKnowledgeBundle',
+            fallback: `Invalid 'knowledgeBundle' field in config (must be a non-empty string)`,
+          },
+          reporter
+        );
+      }
+    }
+
+    // Parse workflows field: an optional per-space workflow selection
+    // override (array of strings). Non-array -> dropped with a warning;
+    // valid siblings still parse.
+    if (raw.workflows !== undefined) {
+      const workflowsResult = z.array(z.string()).safeParse(raw.workflows);
+      if (workflowsResult.success) {
+        config.workflows = normalizeRetiredEditBoundaryExpertIds(
+          workflowsResult.data
+        );
+      } else {
+        warnConfig(
+          {
+            key: 'invalidWorkflows',
+            fallback: `Invalid 'workflows' field in config (must be an array of strings)`,
+          },
+          reporter
+        );
+      }
+    }
+
+    // Parse profile field: an optional locked-profile name (non-empty
+    // string). The value is opaque here — whether it resolves to an
+    // available profile is decided at selection-resolution time
+    // (profiles.ts), never during config loading. Non-string or empty ->
+    // dropped with a warning; valid siblings still parse.
+    if (raw.profile !== undefined) {
+      if (typeof raw.profile === 'string' && raw.profile.length > 0) {
+        config.profile = raw.profile;
+      } else {
+        warnConfig(
+          {
+            key: 'invalidProfile',
+            fallback: `Invalid 'profile' field in config (must be a non-empty profile name string)`,
+          },
+          reporter
+        );
+      }
+    }
+
+    // Parse tools field: an optional array of non-empty tool id strings
+    // (project-install-manifest spec). Non-array -> whole field dropped
+    // with a warning. A non-string or empty-string entry -> that entry is
+    // dropped with a warning, valid siblings survive. An empty array is
+    // valid and means "no tools configured."
+    if (raw.tools !== undefined) {
+      if (Array.isArray(raw.tools)) {
+        const tools: string[] = [];
+        let droppedEntries = false;
+        for (const entry of raw.tools) {
+          if (typeof entry === 'string' && entry.length > 0) {
+            tools.push(entry);
+          } else {
+            droppedEntries = true;
+          }
+        }
+        config.tools = tools;
+        if (droppedEntries) {
+          warnConfig(
+            {
+              key: 'invalidToolsEntries',
+              fallback: `Some 'tools' entries are invalid (must be non-empty strings); ignoring them`,
+            },
+            reporter
+          );
+        }
+      } else {
+        warnConfig(
+          {
+            key: 'invalidTools',
+            fallback: `Invalid 'tools' field in config (must be an array of tool id strings)`,
+          },
+          reporter
+        );
+      }
+    }
+
+    // Parse update field: an optional map with an optional `pin` boolean
+    // field (project-install-manifest spec). Non-map -> whole block
+    // dropped with a warning. An invalid `pin` -> that field dropped with
+    // a warning, siblings (future fields) still parse.
+    if (raw.update !== undefined) {
+      if (raw.update && typeof raw.update === 'object' && !Array.isArray(raw.update)) {
+        const updateRaw = raw.update as Record<string, unknown>;
+        const update: ProjectConfig['update'] = {};
+        if (updateRaw.pin !== undefined) {
+          if (typeof updateRaw.pin === 'boolean') {
+            update.pin = updateRaw.pin;
+          } else {
+            warnConfig(
+              {
+                key: 'invalidUpdatePin',
+                fallback: `Invalid 'update.pin' field in config (must be a boolean)`,
+              },
+              reporter
+            );
+          }
+        }
+        config.update = update;
+      } else {
+        warnConfig(
+          {
+            key: 'invalidUpdate',
+            fallback: `Invalid 'update' field in config (must be an object)`,
+          },
+          reporter
+        );
       }
     }
 
@@ -411,7 +1119,13 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
           if (archiveRaw.timing === 'on-merge' || archiveRaw.timing === 'in-ship') {
             archive.timing = archiveRaw.timing;
           } else {
-            console.warn(`Invalid 'archive.timing' field in config (must be 'on-merge' or 'in-ship')`);
+            warnConfig(
+              {
+                key: 'invalidArchiveTiming',
+                fallback: `Invalid 'archive.timing' field in config (must be 'on-merge' or 'in-ship')`,
+              },
+              reporter
+            );
           }
         }
         if (archiveRaw.destination !== undefined) {
@@ -422,14 +1136,24 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
           ) {
             archive.destination = archiveRaw.destination;
           } else {
-            console.warn(
-              `Invalid 'archive.destination' field in config (must be 'in-repo', 'external', or 'prune')`
+            warnConfig(
+              {
+                key: 'invalidArchiveDestination',
+                fallback: `Invalid 'archive.destination' field in config (must be 'in-repo', 'external', or 'prune')`,
+              },
+              reporter
             );
           }
         }
         config.archive = archive;
       } else {
-        console.warn(`Invalid 'archive' field in config (must be an object)`);
+        warnConfig(
+          {
+            key: 'invalidArchive',
+            fallback: `Invalid 'archive' field in config (must be an object)`,
+          },
+          reporter
+        );
       }
     }
 
@@ -445,7 +1169,13 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
           if (autopilotRaw.gates === 'on' || autopilotRaw.gates === 'off') {
             autopilot.gates = autopilotRaw.gates;
           } else {
-            console.warn(`Invalid 'autopilot.gates' field in config (must be 'on' or 'off')`);
+            warnConfig(
+              {
+                key: 'invalidAutopilotGates',
+                fallback: `Invalid 'autopilot.gates' field in config (must be 'on' or 'off')`,
+              },
+              reporter
+            );
           }
         }
         if (autopilotRaw.selection !== undefined) {
@@ -456,22 +1186,34 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
           ) {
             autopilot.selection = autopilotRaw.selection;
           } else {
-            console.warn(
-              `Invalid 'autopilot.selection' field in config (must be 'classify', 'manual', or 'compose')`
+            warnConfig(
+              {
+                key: 'invalidAutopilotSelection',
+                fallback: `Invalid 'autopilot.selection' field in config (must be 'classify', 'manual', or 'compose')`,
+              },
+              reporter
             );
           }
         }
         config.autopilot = autopilot;
       } else {
-        console.warn(`Invalid 'autopilot' field in config (must be an object)`);
+        warnConfig(
+          {
+            key: 'invalidAutopilot',
+            fallback: `Invalid 'autopilot' field in config (must be an object)`,
+          },
+          reporter
+        );
       }
     }
 
     // Parse handoff field: an optional map with an optional dual-form
     // `threshold` field (a bare fraction in (0, 1], or the absolute
-    // `{ remainingTokens: N }` headroom form). Non-map -> whole block dropped
-    // with a warning. An invalid threshold (either form) -> the field
-    // dropped with a warning, the rest of the config still parses.
+    // `{ remainingTokens: N }` headroom form), plus an optional `roles` map
+    // of per-role dual-form threshold overrides. Non-map -> whole block
+    // dropped with a warning. An invalid threshold (either form, at either
+    // the scalar or a per-role field) -> that field dropped with a warning,
+    // siblings still parse.
     if (raw.handoff !== undefined) {
       if (raw.handoff && typeof raw.handoff === 'object' && !Array.isArray(raw.handoff)) {
         const handoffRaw = raw.handoff as Record<string, unknown>;
@@ -481,14 +1223,205 @@ function parseProjectConfigContent(content: string, projectRoot: string): Projec
           if (parsedThreshold.success) {
             handoff.threshold = parsedThreshold.data;
           } else {
-            console.warn(
-              `Invalid 'handoff.threshold' field in config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> })`
+            warnConfig(
+              {
+                key: 'invalidHandoffThreshold',
+                fallback: `Invalid 'handoff.threshold' field in config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> })`,
+              },
+              reporter
             );
+          }
+        }
+        if (handoffRaw.roles !== undefined) {
+          if (handoffRaw.roles && typeof handoffRaw.roles === 'object' && !Array.isArray(handoffRaw.roles)) {
+            const rolesRaw = handoffRaw.roles as Record<string, unknown>;
+            const roles: NonNullable<ProjectConfig['handoff']>['roles'] = {};
+            for (const role of ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'] as const) {
+              if (rolesRaw[role] === undefined) continue;
+              const parsedRoleThreshold = thresholdSchema('threshold').safeParse(rolesRaw[role]);
+              if (parsedRoleThreshold.success) {
+                roles[role] = parsedRoleThreshold.data;
+              } else {
+                console.warn(
+                  `Invalid 'handoff.roles.${role}' field in config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> })`
+                );
+              }
+            }
+            if (Object.keys(roles).length > 0) {
+              handoff.roles = roles;
+            }
+          } else {
+            console.warn(`Invalid 'handoff.roles' field in config (must be an object)`);
           }
         }
         config.handoff = handoff;
       } else {
-        console.warn(`Invalid 'handoff' field in config (must be an object)`);
+        warnConfig(
+          {
+            key: 'invalidHandoff',
+            fallback: `Invalid 'handoff' field in config (must be an object)`,
+          },
+          reporter
+        );
+      }
+    }
+
+    // Runtime threshold bindings preserve syntactically valid scheme names
+    // even when the referenced machine-local scheme is absent. Resolution
+    // reports dangling names; parsing only rejects invalid rows/keys.
+    if (raw.thresholds !== undefined) {
+      if (raw.thresholds && typeof raw.thresholds === 'object' && !Array.isArray(raw.thresholds)) {
+        const thresholdsRaw = raw.thresholds as Record<string, unknown>;
+        const bindingsRaw = thresholdsRaw.bindings;
+        if (bindingsRaw === undefined) {
+          config.thresholds = { bindings: {} };
+        } else if (
+          bindingsRaw &&
+          typeof bindingsRaw === 'object' &&
+          !Array.isArray(bindingsRaw)
+        ) {
+          const bindings: Record<string, string> = {};
+          for (const [runtime, schemeName] of Object.entries(
+            bindingsRaw as Record<string, unknown>
+          )) {
+            const validRuntime =
+              runtime === 'default' || hasRuntimeCapability(runtime, 'canProbeContext');
+            const validScheme =
+              typeof schemeName === 'string' &&
+              validateThresholdSchemeName(schemeName) === null;
+            if (validRuntime && validScheme) {
+              bindings[runtime] = schemeName;
+            } else {
+              console.warn(
+                `Invalid 'thresholds.bindings.${runtime}' field in config (runtime must be default or one of ${PROBE_RUNTIMES.join(', ')} and value must be a valid non-reserved scheme name)`
+              );
+            }
+          }
+          config.thresholds = { bindings };
+        } else {
+          console.warn(`Invalid 'thresholds.bindings' field in config (must be an object)`);
+        }
+      } else {
+        console.warn(`Invalid 'thresholds' field in config (must be an object)`);
+      }
+    }
+
+    // Parse keepalive field resiliently so project-scoped enabled/beat values
+    // participate in effective-config resolution without invalid siblings
+    // discarding the whole block.
+    if (raw.keepalive !== undefined) {
+      if (raw.keepalive && typeof raw.keepalive === 'object' && !Array.isArray(raw.keepalive)) {
+        const keepaliveRaw = raw.keepalive as Record<string, unknown>;
+        const keepalive: NonNullable<ProjectConfig['keepalive']> = {};
+        if (keepaliveRaw.enabled !== undefined) {
+          if (typeof keepaliveRaw.enabled === 'boolean') {
+            keepalive.enabled = keepaliveRaw.enabled;
+          } else {
+            console.warn(`Invalid 'keepalive.enabled' field in config (must be a boolean)`);
+          }
+        }
+        if (keepaliveRaw.runtimes !== undefined) {
+          if (
+            keepaliveRaw.runtimes &&
+            typeof keepaliveRaw.runtimes === 'object' &&
+            !Array.isArray(keepaliveRaw.runtimes)
+          ) {
+            const runtimesRaw = keepaliveRaw.runtimes as Record<string, unknown>;
+            const runtimes: NonNullable<NonNullable<ProjectConfig['keepalive']>['runtimes']> = {};
+            for (const runtime of ['claude', 'codex'] as const) {
+              if (runtimesRaw[runtime] === undefined) continue;
+              if (typeof runtimesRaw[runtime] === 'boolean') {
+                runtimes[runtime] = runtimesRaw[runtime];
+              } else {
+                console.warn(`Invalid 'keepalive.runtimes.${runtime}' field in config (must be a boolean)`);
+              }
+            }
+            if (Object.keys(runtimes).length > 0) keepalive.runtimes = runtimes;
+          } else {
+            console.warn(`Invalid 'keepalive.runtimes' field in config (must be an object)`);
+          }
+        }
+        if (keepaliveRaw.contextFloor !== undefined) {
+          if (
+            typeof keepaliveRaw.contextFloor === 'number' &&
+            Number.isInteger(keepaliveRaw.contextFloor) &&
+            keepaliveRaw.contextFloor >= 0
+          ) {
+            keepalive.contextFloor = keepaliveRaw.contextFloor;
+          } else {
+            console.warn(`Invalid 'keepalive.contextFloor' field in config (must be a non-negative integer)`);
+          }
+        }
+        if (keepaliveRaw.beatSeconds !== undefined) {
+          if (
+            typeof keepaliveRaw.beatSeconds === 'number' &&
+            Number.isInteger(keepaliveRaw.beatSeconds) &&
+            keepaliveRaw.beatSeconds >= 90 &&
+            keepaliveRaw.beatSeconds <= 280
+          ) {
+            keepalive.beatSeconds = keepaliveRaw.beatSeconds;
+          } else {
+            console.warn(`Invalid 'keepalive.beatSeconds' field in config (must be an integer between 90 and 280)`);
+          }
+        }
+        config.keepalive = keepalive;
+      } else {
+        console.warn(`Invalid 'keepalive' field in config (must be an object)`);
+      }
+    }
+
+    // Parse models field: an optional map with an optional `default` string
+    // and an optional `roles` map of per-role model strings. Non-map -> whole
+    // block dropped with a warning. An invalid field -> that field dropped
+    // with a warning, siblings still parse. Model ids are free strings — any
+    // non-empty string is accepted, never validated against an allow-list.
+    if (raw.models !== undefined) {
+      if (raw.models && typeof raw.models === 'object' && !Array.isArray(raw.models)) {
+        const modelsRaw = raw.models as Record<string, unknown>;
+        const models: ProjectConfig['models'] = {};
+        if (modelsRaw.default !== undefined) {
+          if (typeof modelsRaw.default === 'string' && modelsRaw.default.length > 0) {
+            models.default = modelsRaw.default;
+          } else {
+            console.warn(`Invalid 'models.default' field in config (must be a non-empty string)`);
+          }
+        }
+        if (modelsRaw.roles !== undefined) {
+          if (modelsRaw.roles && typeof modelsRaw.roles === 'object' && !Array.isArray(modelsRaw.roles)) {
+            const rolesRaw = modelsRaw.roles as Record<string, unknown>;
+            const roles: NonNullable<ProjectConfig['models']>['roles'] = {};
+            for (const role of ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'] as const) {
+              if (rolesRaw[role] === undefined) continue;
+              if (typeof rolesRaw[role] === 'string' && (rolesRaw[role] as string).length > 0) {
+                roles[role] = rolesRaw[role] as string;
+              } else {
+                console.warn(`Invalid 'models.roles.${role}' field in config (must be a non-empty string)`);
+              }
+            }
+            if (Object.keys(roles).length > 0) {
+              models.roles = roles;
+            }
+          } else {
+            console.warn(`Invalid 'models.roles' field in config (must be an object)`);
+          }
+        }
+        config.models = models;
+      } else {
+        console.warn(`Invalid 'models' field in config (must be an object)`);
+      }
+    }
+
+    // Parse pipelines field: an optional map keyed by pipeline name, each
+    // value an optional map of `gates`/`models`/`handoff` per-stage records —
+    // the storage side of the `pipelines.<name>.{gates,models,handoff}.<stage>`
+    // config-key families. Resilient like every block above: a non-map, an
+    // invalid axis, or an invalid per-stage leaf is dropped with a warning
+    // while valid siblings survive. Unknown axes (not gates/models/handoff)
+    // are ignored with a warning, never a hard error.
+    if (raw.pipelines !== undefined) {
+      const pipelines = parsePipelinesBlock(raw.pipelines);
+      if (pipelines) {
+        config.pipelines = pipelines;
       }
     }
 
@@ -607,28 +1540,80 @@ export function suggestSchemas(
 // Store pointer (declared default store)
 // -----------------------------------------------------------------------------
 
+/**
+ * Normalizes a `store:` value in the durable object form, or null when it is
+ * not one. Shared by the resilient parser and the targeted pointer read so the
+ * two can never disagree on what counts as a usable declaration.
+ */
+function parseDurableStoreDeclaration(value: unknown): StorePointerV2 | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (!isValidStoreUid(raw.uid)) return null;
+
+  const id = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : undefined;
+  const remote = typeof raw.remote === 'string' && raw.remote.length > 0 ? raw.remote : undefined;
+
+  return {
+    uid: raw.uid,
+    ...(id !== undefined ? { id } : {}),
+    ...(remote !== undefined ? { remote } : {}),
+  };
+}
+
+/** How a project declared its Store, before any resolution is attempted. */
+export type StorePointerShape = 'absent' | 'alias' | 'durable' | 'malformed';
+
+export type StorePointerProblem = 'unparseable' | 'non_string' | 'invalid_object';
+
 export interface StorePointerRead {
-  /** The declared store id, when present and a string. */
+  /** Discriminates the declaration form actually found on disk. */
+  shape: StorePointerShape;
+  /**
+   * The declared display alias: the whole value for the legacy string form,
+   * and the `id` field for the durable object form. Absent for a durable
+   * declaration that records only a permanent identity.
+   */
   value?: string;
+  /** The durable declaration, when the `store:` value is the object form. */
+  durable?: StorePointerV2;
   /** Set when the pointer cannot be trusted: the config file could not be
-   * read as YAML, or the store key is present but not a string. An empty
+   * read as YAML, the store key is neither a string nor a store declaration,
+   * or the declaration carries no usable permanent identity. An empty
    * or comments-only config is NOT malformed - it simply has no pointer. */
-  malformed?: 'unparseable' | 'non_string';
+  malformed?: StorePointerProblem;
   /** Absolute path of the config file actually read, or null when none exists. */
   filePath: string | null;
 }
 
+function readDurableStorePointer(
+  raw: Record<string, unknown>,
+  configPath: string
+): StorePointerRead {
+  const durable = parseDurableStoreDeclaration(raw);
+  if (!durable) {
+    return { shape: 'malformed', malformed: 'invalid_object', filePath: configPath };
+  }
+
+  return {
+    shape: 'durable',
+    ...(durable.id !== undefined ? { value: durable.id } : {}),
+    durable,
+    filePath: configPath,
+  };
+}
+
 /**
- * Warning-silent targeted read of the `store:` pointer. Used by root
+ * Warning-silent targeted read of the `store:` declaration. Used by root
  * resolution (which must not re-emit the resilient parser's field
  * warnings) and by `rasen init`'s pointer guard. Unlike
  * `readProjectConfig`, a malformed value is REPORTED, not dropped —
- * a dropped pointer would silently flip where work lands.
+ * a dropped pointer would silently flip where work lands. Both the legacy
+ * single-name form and the durable `{ uid, id?, remote? }` form are read.
  */
 export function readStorePointer(projectRoot: string): StorePointerRead {
   const configPath = resolveConfigFilePath(projectRoot);
   if (configPath === null) {
-    return { filePath: null };
+    return { shape: 'absent', filePath: null };
   }
 
   try {
@@ -637,18 +1622,21 @@ export function readStorePointer(projectRoot: string): StorePointerRead {
     // they are imperfect, not malformed (readProjectConfig owns the
     // field warnings for those).
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      return { filePath: configPath };
+      return { shape: 'absent', filePath: configPath };
     }
     const value = (raw as Record<string, unknown>).store;
     if (value === undefined) {
-      return { filePath: configPath };
+      return { shape: 'absent', filePath: configPath };
     }
     if (typeof value === 'string') {
-      return { value, filePath: configPath };
+      return { shape: 'alias', value, filePath: configPath };
     }
-    return { malformed: 'non_string', filePath: configPath };
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      return readDurableStorePointer(value as Record<string, unknown>, configPath);
+    }
+    return { shape: 'malformed', malformed: 'non_string', filePath: configPath };
   } catch {
-    return { malformed: 'unparseable', filePath: configPath };
+    return { shape: 'malformed', malformed: 'unparseable', filePath: configPath };
   }
 }
 
@@ -662,11 +1650,32 @@ export function resolveConfigFilePath(projectRoot: string): string | null {
   return existsSync(ymlPath) ? ymlPath : null;
 }
 
+/**
+ * True when the config declares a store in ANY usable form. Every guard that
+ * asks "is this repo's planning externalized?" MUST go through this — checking
+ * `value` alone silently misses a durable declaration that records only the
+ * permanent identity.
+ */
+export function hasStoreDeclaration(pointer: StorePointerRead): boolean {
+  return pointer.shape === 'alias' || pointer.shape === 'durable';
+}
+
+/** The store a declaration names, for display: its alias, else its identity. */
+export function describeStoreDeclaration(pointer: StorePointerRead): string | undefined {
+  if (!hasStoreDeclaration(pointer)) return undefined;
+  return pointer.value ?? pointer.durable?.uid;
+}
+
 /** Human rendering of a malformed pointer reason, shared by every surface. */
-export function storePointerProblem(reason: 'unparseable' | 'non_string'): string {
-  return reason === 'unparseable'
-    ? 'the config file could not be read as YAML'
-    : 'the store key must be a single store id string';
+export function storePointerProblem(reason: StorePointerProblem): string {
+  switch (reason) {
+    case 'unparseable':
+      return 'the config file could not be read as YAML';
+    case 'invalid_object':
+      return 'the store declaration must carry a well-formed permanent store identity as uid';
+    case 'non_string':
+      return 'the store key must be a single store id string';
+  }
 }
 
 export interface OpenSpecDirClassification {
@@ -809,28 +1818,50 @@ export function resolveArchiveDestinationValue(
 /** The resolved autopilot gate policy plus which layer produced it. */
 export interface ResolvedGatePolicy {
   effective: AutopilotGatePolicy;
-  source: 'flag' | 'config' | 'default';
+  source: 'flag' | 'project' | 'store' | 'global' | 'default';
+}
+
+/** Minimal shape of the global config's `autopilot` block, accepted so this module need not import `GlobalConfig` for one field. */
+export interface AutopilotGlobalConfig {
+  autopilot?: {
+    gates?: 'on' | 'off';
+    selection?: 'classify' | 'manual' | 'compose';
+  };
 }
 
 /**
  * Resolves the effective autopilot gate policy with precedence: the run
  * argument (`--no-gate`) first, then the project config default
- * (`autopilot.gates`), then the built-in default (gates ON). Every consumer
- * (the `/rasen:auto` gate-policy resolution, run-state recording) MUST
- * resolve through this function so precedence is applied identically
- * everywhere. An absent or previously-dropped `autopilot.gates` value falls
- * back to the built-in default without failing config parsing.
+ * (`autopilot.gates`), then the inherited store config default (when a store
+ * layer is active — see `store-config-inheritance`), then the global config
+ * default (`autopilot.gates`), then the built-in default (gates ON). Every
+ * consumer (the `/rasen-auto` gate-policy resolution, run-state recording)
+ * MUST resolve through this function so precedence is applied identically
+ * everywhere. An absent or previously-dropped `autopilot.gates` value at any
+ * scope falls back to the next layer without failing config parsing.
+ * `storeConfig` defaults to `undefined` so existing three-argument call sites
+ * (pre-dating the store layer) are unaffected.
  */
 export function resolveAutopilotGatePolicy(
   config: ProjectConfig | null | undefined,
-  noGateFlag: boolean
+  noGateFlag: boolean,
+  globalConfig?: AutopilotGlobalConfig | null,
+  storeConfig?: ProjectConfig | null
 ): ResolvedGatePolicy {
   if (noGateFlag) {
     return { effective: 'off', source: 'flag' };
   }
-  const configValue = config?.autopilot?.gates;
-  if (configValue === 'on' || configValue === 'off') {
-    return { effective: configValue, source: 'config' };
+  const projectValue = config?.autopilot?.gates;
+  if (projectValue === 'on' || projectValue === 'off') {
+    return { effective: projectValue, source: 'project' };
+  }
+  const storeValue = storeConfig?.autopilot?.gates;
+  if (storeValue === 'on' || storeValue === 'off') {
+    return { effective: storeValue, source: 'store' };
+  }
+  const globalValue = globalConfig?.autopilot?.gates;
+  if (globalValue === 'on' || globalValue === 'off') {
+    return { effective: globalValue, source: 'global' };
   }
   return { effective: 'on', source: 'default' };
 }
@@ -842,7 +1873,7 @@ export function resolveAutopilotGatePolicy(
 /** The resolved autopilot pipeline-selection policy plus which layer produced it. */
 export interface ResolvedSelectionPolicy {
   effective: AutopilotSelectionPolicy;
-  source: 'flag' | 'config' | 'default';
+  source: 'flag' | 'project' | 'store' | 'global' | 'default';
 }
 
 /**
@@ -850,21 +1881,31 @@ export interface ResolvedSelectionPolicy {
  * the run arguments first — `--auto-compose` ahead of `--auto-select` when
  * both are present (compose is the superset policy: classify-first, with
  * composition permitted on no-fit — see `autopilot-composed-pipelines`) —
- * then the project config default (`autopilot.selection`), then the built-in
- * default (`manual`). Every consumer (the `/rasen:auto` selection-policy
- * resolution) MUST resolve through this function so precedence is applied
- * identically everywhere. An absent or previously-dropped
- * `autopilot.selection` value falls back to the built-in default without
- * failing config parsing. Mirrors `resolveAutopilotGatePolicy`'s shape (same
- * source vocabulary) by design — this is that axis's sibling. Kept as a
- * single resolver (not split by flag) so precedence lives in exactly one
- * place; `autoComposeFlag` defaults to `false` so existing two-argument call
- * sites (pre-dating the `compose` policy) are unaffected.
+ * then the project config default (`autopilot.selection`), then the global
+ * config default (`autopilot.selection`), then the built-in default
+ * (`manual`). Every consumer (the `/rasen-auto` selection-policy resolution)
+ * MUST resolve through this function so precedence is applied identically
+ * everywhere. An absent or previously-dropped `autopilot.selection` value at
+ * either scope falls back to the next layer without failing config parsing.
+ * Mirrors `resolveAutopilotGatePolicy`'s shape (same source vocabulary) by
+ * design — this is that axis's sibling. Precedence: run flags first
+ * (`--auto-compose` ahead of `--auto-select`), then the project config, then
+ * the inherited store config (when a store layer is active — see
+ * `store-config-inheritance`), then the global config, then the built-in
+ * default (`manual`). Kept as a single resolver (not split by flag) so
+ * precedence lives in exactly one place; `autoComposeFlag` defaults to `false`
+ * so existing call sites (pre-dating the `compose` policy) are unaffected,
+ * `globalConfig` defaults to `undefined` so existing two/three-argument call
+ * sites (pre-dating the global layer) are unaffected, and `storeConfig`
+ * defaults to `undefined` so existing four-argument call sites (pre-dating
+ * the store layer) are unaffected.
  */
 export function resolveAutopilotSelectionPolicy(
   config: ProjectConfig | null | undefined,
   autoSelectFlag: boolean,
-  autoComposeFlag: boolean = false
+  autoComposeFlag: boolean = false,
+  globalConfig?: AutopilotGlobalConfig | null,
+  storeConfig?: ProjectConfig | null
 ): ResolvedSelectionPolicy {
   if (autoComposeFlag) {
     return { effective: 'compose', source: 'flag' };
@@ -872,9 +1913,17 @@ export function resolveAutopilotSelectionPolicy(
   if (autoSelectFlag) {
     return { effective: 'classify', source: 'flag' };
   }
-  const configValue = config?.autopilot?.selection;
-  if (configValue === 'classify' || configValue === 'manual' || configValue === 'compose') {
-    return { effective: configValue, source: 'config' };
+  const projectValue = config?.autopilot?.selection;
+  if (projectValue === 'classify' || projectValue === 'manual' || projectValue === 'compose') {
+    return { effective: projectValue, source: 'project' };
+  }
+  const storeValue = storeConfig?.autopilot?.selection;
+  if (storeValue === 'classify' || storeValue === 'manual' || storeValue === 'compose') {
+    return { effective: storeValue, source: 'store' };
+  }
+  const globalValue = globalConfig?.autopilot?.selection;
+  if (globalValue === 'classify' || globalValue === 'manual' || globalValue === 'compose') {
+    return { effective: globalValue, source: 'global' };
   }
   return { effective: 'manual', source: 'default' };
 }
@@ -910,7 +1959,8 @@ export interface UpdateProjectConfigKeyResult {
 export function updateProjectConfigKey(
   projectRoot: string,
   keyPath: string,
-  value: unknown
+  value: unknown,
+  options: { reporter?: ConfigDiagnosticReporter } = {}
 ): UpdateProjectConfigKeyResult {
   const configPath = resolveConfigFilePath(projectRoot);
   if (configPath === null) {
@@ -951,7 +2001,75 @@ export function updateProjectConfigKey(
 
   // Post-write sanity check via the resilient reader (warnings, if any, are
   // real signal at this point — the registry validated the value already).
-  parseProjectConfigContent(nextContent, projectRoot);
+  parseProjectConfigContent(nextContent, projectRoot, options.reporter);
+
+  return { configPath, existed };
+}
+
+/** One key edit for {@link updateProjectConfigKeys}: `value === undefined` removes the key, any other value sets it. */
+export interface ProjectConfigKeyEdit {
+  keyPath: string;
+  value: unknown;
+}
+
+/**
+ * Applies several project-config key edits (set and/or unset) in ONE
+ * read→parse→write cycle of `rasen/config.yaml`, so a group of related keys can
+ * never be left in a partial state by a crash (or a Windows EBUSY-class error)
+ * between two separate single-key writes. This is the multi-key counterpart to
+ * {@link updateProjectConfigKey} — same comment/ordering preservation via the
+ * document-tree API and the same post-write re-parse sanity check; the ONLY
+ * difference is that every edit lands in a single `writeFileSync`. Edits are
+ * applied in order (a later edit to the same key wins). Callers MUST validate
+ * every key/value against the config-key registry BEFORE calling this.
+ * `existed` reports whether ANY unset edit removed a present key.
+ */
+export function updateProjectConfigKeys(
+  projectRoot: string,
+  edits: ProjectConfigKeyEdit[],
+  options: { reporter?: ConfigDiagnosticReporter } = {}
+): UpdateProjectConfigKeyResult {
+  const configPath = resolveConfigFilePath(projectRoot);
+  if (configPath === null) {
+    throw new Error(
+      `No rasen/config.yaml found at ${path.join(projectRoot, WORKSPACE_DIR_NAME)}. Create the file (e.g. run 'rasen init') before setting project-scope config.`
+    );
+  }
+
+  const originalContent = readFileSync(configPath, 'utf-8');
+  const doc = parseDocument(originalContent);
+
+  let existed = false;
+  for (const edit of edits) {
+    const keys = edit.keyPath.split('.');
+    if (edit.value === undefined) {
+      if (doc.hasIn(keys)) {
+        existed = true;
+        doc.deleteIn(keys);
+      }
+    } else {
+      doc.setIn(keys, edit.value);
+    }
+  }
+
+  const nextContent = String(doc);
+
+  try {
+    parseYaml(nextContent);
+  } catch (error) {
+    const keyList = edits.map((edit) => `"${edit.keyPath}"`).join(', ');
+    throw new Error(
+      `Writing ${keyList} would produce invalid YAML in ${configPath}; the file was not modified (${
+        error instanceof Error ? error.message.split('\n')[0] : String(error)
+      }).`
+    );
+  }
+
+  writeFileSync(configPath, nextContent, 'utf-8');
+
+  // Post-write sanity check via the resilient reader (same rationale as the
+  // single-key path: the registry validated the values already).
+  parseProjectConfigContent(nextContent, projectRoot, options.reporter);
 
   return { configPath, existed };
 }
@@ -1013,6 +2131,165 @@ export function appendStoreReference(
   writeFileSync(configPath, stringifyYaml(rawConfig), 'utf-8');
 
   return { configPath, changed: true };
+}
+
+// -----------------------------------------------------------------------------
+// Store membership hints (store add-project / store adopt)
+// -----------------------------------------------------------------------------
+
+export interface AppendStoreMembershipHintResult {
+  configPath: string;
+  /** False when an equivalent hint was already present; nothing was written. */
+  changed: boolean;
+  /** The hint list as it stands after the append. */
+  hints: StoreMembershipHint[];
+}
+
+/** Renders a hint back to raw YAML, carrying only portable fields. */
+function membershipHintToRaw(hint: StoreMembershipHint): Record<string, unknown> {
+  return {
+    ...(hint.uid !== undefined ? { uid: hint.uid } : {}),
+    ...(hint.id !== undefined ? { id: hint.id } : {}),
+    ...(hint.remote !== undefined ? { remote: hint.remote } : {}),
+  };
+}
+
+/**
+ * Refuses anything that looks like a location on this machine. The hint list
+ * is committed and shared, so a path here would be wrong on every other
+ * machine — and `path.isAbsolute` alone answers only for the CURRENT platform,
+ * which is not the platform the file will be read on.
+ */
+function assertPortableHintValue(field: string, value: string): void {
+  // path.isAbsolute catches the CURRENT platform's absolute forms;
+  // path.win32.isAbsolute catches Windows forms regardless of platform
+  // (drive-letter paths, UNC, POSIX-style root). A leading backslash covers
+  // single-backslash root-relative (\Users\...), UNC (\\server\share),
+  // device namespace (\\?\C:\...), and NT-namespace (\??\C:\...) forms.
+  // /??/ is the POSIX-slash NT-namespace variant. All are machine-specific.
+  if (
+    path.isAbsolute(value) ||
+    path.win32.isAbsolute(value) ||
+    value.startsWith('\\') ||
+    value.startsWith('/??/')
+  ) {
+    throw new Error(
+      `Refusing to write a filesystem path into a store membership hint (${field}: ${value}). Membership hints are shared through git and carry only a permanent identity, a display name, and a credential-free remote.`
+    );
+  }
+}
+
+/**
+ * Appends one Store membership hint to the project's config, preserving every
+ * other field AND the file's comments (`parseDocument`, not a schema-typed
+ * rewrite). De-duplicates on the Store's permanent identity, falling back to
+ * its display alias for a Store that has none, and fills a field an existing
+ * hint left empty rather than adding a second entry for the same Store.
+ *
+ * Written atomically: temp file in the same directory, then rename, so an
+ * interrupted write never leaves a half-written config behind.
+ *
+ * Throws when the project has no config file — that is a repair the caller
+ * reports, never a file this function invents (a config carrying nothing but
+ * `storeMemberships` would not be a Rasen project).
+ */
+/**
+ * Lock-error factory for the project-side membership hint append. Same shape
+ * as the registry / membership-record factories. The lock lives in
+ * `os.tmpdir()` (never inside the project git repo) so concurrent rasen
+ * commands appending hints for DIFFERENT Stores serialize against each other
+ * instead of one silently clobbering the other's non-overlapping append.
+ */
+const projectMembershipHintLockError = makeLockErrorFactory({
+  createSubject: 'the project membership hint lock file',
+  busyMessage: 'The project membership hint list is busy.',
+  code: 'project_membership_hint_busy',
+  target: 'project.config',
+});
+
+export async function appendStoreMembershipHint(
+  projectRoot: string,
+  hint: StoreMembershipHint
+): Promise<AppendStoreMembershipHintResult> {
+  if (hint.uid === undefined && hint.id === undefined) {
+    throw new Error(
+      'A store membership hint must name the store by permanent identity or display name.'
+    );
+  }
+  if (hint.remote !== undefined) assertPortableHintValue('remote', hint.remote);
+  if (hint.id !== undefined) assertPortableHintValue('id', hint.id);
+
+  const configPath = resolveConfigFilePath(projectRoot);
+  if (configPath === null) {
+    throw new Error(
+      `No rasen/config.yaml found at ${path.join(projectRoot, WORKSPACE_DIR_NAME)}; run 'rasen init' in the project before recording store membership.`
+    );
+  }
+
+  // Wrap the read-modify-write so a concurrent append for a DIFFERENT Store
+  // sees this write and adds its own next to it. The lock is keyed by the
+  // absolute config path and lives under `os.tmpdir()`; it is never committable.
+  return withOwnerAwareFileLock(
+    {
+      lockPath: machineLockPath(path.resolve(configPath)),
+      errorFor: projectMembershipHintLockError,
+      holder: 'project-membership-hint',
+    },
+    async () => {
+      // Re-read INSIDE the lock so we see any append a concurrent caller
+      // committed just before we acquired. The snapshot taken before the
+      // lock was the root cause of the lost-write bug.
+      const existing = readProjectConfig(projectRoot)?.storeMemberships ?? [];
+      const key = storeMembershipHintKey(hint);
+      const match = existing.find((entry) => storeMembershipHintKey(entry) === key);
+
+      if (match) {
+        const merged: StoreMembershipHint = {
+          ...match,
+          ...(match.uid === undefined && hint.uid !== undefined ? { uid: hint.uid } : {}),
+          ...(match.id === undefined && hint.id !== undefined ? { id: hint.id } : {}),
+          ...(match.remote === undefined && hint.remote !== undefined ? { remote: hint.remote } : {}),
+        };
+        if (
+          merged.uid === match.uid &&
+          merged.id === match.id &&
+          merged.remote === match.remote
+        ) {
+          return { configPath, changed: false, hints: existing };
+        }
+        const hints = existing.map((entry) =>
+          storeMembershipHintKey(entry) === key ? merged : entry
+        );
+        await writeStoreMembershipHints(configPath, hints);
+        return { configPath, changed: true, hints };
+      }
+
+      const hints = [...existing, hint];
+      await writeStoreMembershipHints(configPath, hints);
+      return { configPath, changed: true, hints };
+    }
+  );
+}
+
+async function writeStoreMembershipHints(
+  configPath: string,
+  hints: StoreMembershipHint[]
+): Promise<void> {
+  const doc = parseDocument(readFileSync(configPath, 'utf-8'));
+  doc.setIn([STORE_MEMBERSHIPS_FIELD], hints.map(membershipHintToRaw));
+  const nextContent = String(doc);
+
+  try {
+    parseYaml(nextContent);
+  } catch (error) {
+    throw new Error(
+      `Writing "${STORE_MEMBERSHIPS_FIELD}" would produce invalid YAML in ${configPath}; the file was not modified (${
+        error instanceof Error ? error.message.split('\n')[0] : String(error)
+      }).`
+    );
+  }
+
+  await writeFileAtomically(configPath, nextContent);
 }
 
 /** Extracts a valid string `projectId` field from raw config content, or undefined. */

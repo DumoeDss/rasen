@@ -1,7 +1,7 @@
 # opsx-ship-command Specification
 
 ## Purpose
-Provide the `/rasen:ship` command — pre-flight checks, delivery-mode resolution (pr / push / local), commit-with-hooks, an evidence-based test gate, a PR body derived from the proposal, a mode-aware ship log, and optional land-and-deploy.
+Provide the `/rasen-ship` command — pre-flight checks, delivery-mode resolution (pr / push / local), commit-with-hooks, an evidence-based test gate, a PR body derived from the proposal, a mode-aware ship log, and optional land-and-deploy.
 ## Requirements
 ### Requirement: Ship Skill and Command Templates
 
@@ -43,7 +43,7 @@ Pre-flight checks SHALL verify readiness before shipping. A dirty working tree S
 
 ### Requirement: Ship Execution
 
-Ship SHALL commit, integrate, and deliver according to the resolved delivery mode, using a self-contained execution contract absorbed into the `/rasen:ship` workflow template. Tests SHALL be gated on evidence rather than run unconditionally. It SHALL NOT delegate to a legacy `/ship` expert skill.
+Ship SHALL commit, integrate, and deliver according to the resolved delivery mode, using a self-contained execution contract absorbed into the `/rasen-ship` workflow template. Tests SHALL be gated on evidence rather than run unconditionally. It SHALL NOT delegate to a legacy `/ship` expert skill.
 
 #### Scenario: Merge base branch only in pr mode
 
@@ -59,19 +59,42 @@ Ship SHALL commit, integrate, and deliver according to the resolved delivery mod
 #### Scenario: Evidence-based test gate
 
 - **WHEN** the ship phase reaches the test gate
-- **THEN** the system SHALL run the project's detected test command only if at least one holds: (a) the base merge introduced new commits, (b) no green test evidence exists for the current code state — i.e. no recorded passing test run (review report, review-cycle report, or run-state) whose recorded content tree fingerprint (`git rev-parse HEAD^{tree}`) matches the current tree fingerprint, or (c) the user explicitly requests it
-- **AND** if tests run and any in-branch test fails, the system SHALL stop and NOT deliver
+- **THEN** the system SHALL derive the required verification scope from the delivered diff, project instructions, and any merged commits
+- **AND** SHALL accept green evidence only when its recorded commands and scope rationale cover that required scope and its content tree fingerprint (`git rev-parse HEAD^{tree}`) matches the current tree
+- **AND** SHALL run only uncovered checks from the required scope
+- **AND** if any required check fails, the system SHALL stop and NOT deliver
 
 #### Scenario: Tests skipped on fresh evidence
 
-- **WHEN** green test evidence exists for the current code state and the base merge introduced nothing new
-- **THEN** the system SHALL skip the test run
-- **AND** SHALL record the skip and the evidence source in the ship log
+- **WHEN** scoped green evidence covers the required verification scope and matches the current tree
+- **THEN** the system SHALL skip the checks already covered
+- **AND** SHALL record the scope, rationale, skip, evidence source, and matched tree in the ship log
+
+#### Scenario: Localized change stays focused
+
+- **WHEN** the delivered diff is confined to one behavior with a regression test and directly affected module checks
+- **AND** no cross-cutting risk trigger or project instruction requires broader coverage
+- **THEN** the ship gate SHALL accept that focused scope
+- **AND** SHALL NOT escalate missing evidence to the full project test command
+
+#### Scenario: Full-suite escalation is explicit and cost-aware
+
+- **WHEN** the user or project instructions require a full suite, or affected behavior cannot be bounded more narrowly
+- **THEN** the ship gate SHALL state the trigger and expected cost before starting a run expected to exceed 60 seconds
+- **AND** SHALL NOT repeat an unchanged full-suite command that already timed out
+- **AND** SHALL instead shard it, use CI, or ask for direction
+
+#### Scenario: Merge recalculates scope without forcing full
+
+- **WHEN** the pr-mode base merge introduces new commits
+- **THEN** the ship gate SHALL recalculate the required verification scope against the merged diff
+- **AND** SHALL NOT treat the merge alone as proof that a full repository suite is necessary
 
 #### Scenario: Fresh-verification gate before delivery
 
-- **WHEN** code changed after the last green test run (for example, from review fixes or lint fixes during commit)
-- **THEN** the system SHALL re-run the tests and require fresh passing evidence before delivering
+- **WHEN** code changed after the last scoped green evidence (for example, from review fixes or lint fixes during commit)
+- **THEN** the system SHALL re-run invalidated checks from the same required verification scope and require fresh passing evidence before delivering
+- **AND** SHALL widen the scope only if a newly introduced full-suite trigger applies
 
 #### Scenario: Deliver per mode
 
@@ -111,7 +134,7 @@ PR body SHALL include the proposal summary from the change's `proposal.md`.
 
 - **WHEN** the ship phase completes delivery (PR created, branch pushed, or local commit recorded)
 - **THEN** the system SHALL write `ship-log.md` to the work directory (or the legacy location per the fallback)
-- **AND** the log SHALL include: the delivery mode, branch name, commit, the content tree fingerprint (`git rev-parse HEAD^{tree}`) of that commit, timestamp, the test decision (ran green, or skipped with the evidence source and the matched tree fingerprint), the PR URL in `pr` mode, and the deferral note in `local` mode
+- **AND** the log SHALL include: the delivery mode, branch name, commit, the content tree fingerprint (`git rev-parse HEAD^{tree}`) of that commit, timestamp, the required verification scope and rationale, exact checks and result (or skip with evidence source and matched tree), the PR URL in `pr` mode, and the deferral note in `local` mode
 
 #### Scenario: Ship log updated after deployment
 

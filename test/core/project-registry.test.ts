@@ -12,6 +12,7 @@ import {
   deriveProjectDisplayName,
   findDanglingProjectEntries,
   findProjectRegistryEntry,
+  findWorktreeDuplicateEntries,
   gcProjectRegistry,
   getProjectHomeDir,
   getProjectRegistryPath,
@@ -19,11 +20,13 @@ import {
   parseProjectRegistryState,
   readProjectRegistryState,
   registerProject,
+  resolveRegistrationRoot,
   serializeProjectRegistryState,
   updateProjectRegistryState,
   writeProjectRegistryState,
   type ProjectRegistryState,
 } from '../../src/core/project-registry.js';
+import { FileSystemUtils } from '../../src/utils/file-system.js';
 import { isolatedGitEnv } from '../helpers/store-git.js';
 
 describe('project-registry', () => {
@@ -285,7 +288,7 @@ describe('project-registry', () => {
       fs.rmSync(cloneB, { recursive: true, force: true });
     });
 
-    it('forks (does not share) a same-tree copy that carries no separate .git (MINOR-2)', async () => {
+    it('unifies same-tree paths of one repo onto the single main-checkout entry (worktree-aware-spaces D1)', async () => {
       const repoRoot = makeProjectDir('monorepo');
       const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
       execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
@@ -295,15 +298,16 @@ describe('project-registry', () => {
       execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
 
       const projectId = randomUUID();
+      // Registration pierces any path inside the working tree to the MAIN
+      // checkout's root (D1's resolveRegistrationRoot). A subdirectory and a
+      // same-tree `cp -r` copy therefore both resolve to the ONE entry keyed at
+      // the repo root — same identity, one space (no more path-keyed forks).
       const original = await registerProject(
         { projectRoot: path.join(repoRoot, 'packages', 'app'), projectId, mode: 'in-repo' },
         { globalDataDir }
       );
+      expect(original.canonicalPath).toBe(FileSystemUtils.canonicalizeExistingPath(repoRoot));
 
-      // A `cp -r` copy inside the SAME working tree - no separate .git, so
-      // it shares both --git-common-dir AND --git-dir with the original
-      // (both resolve to the one enclosing repo). Only the common-dir
-      // matches a true worktree sibling; this must fork, not share.
       const copyPath = path.join(repoRoot, 'packages', 'app-experiment');
       fs.cpSync(path.join(repoRoot, 'packages', 'app'), copyPath, { recursive: true });
 
@@ -312,9 +316,11 @@ describe('project-registry', () => {
         { globalDataDir }
       );
 
-      expect(copy.entry.home).not.toBe(original.entry.home);
-      expect(fs.existsSync(getProjectHomeDir(original.entry.home, { globalDataDir }))).toBe(true);
-      expect(fs.existsSync(getProjectHomeDir(copy.entry.home, { globalDataDir }))).toBe(true);
+      expect(copy.canonicalPath).toBe(original.canonicalPath);
+      expect(copy.entry.home).toBe(original.entry.home);
+
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(Object.keys(state?.projects ?? {})).toEqual([original.canonicalPath]);
 
       fs.rmSync(repoRoot, { recursive: true, force: true });
     });
@@ -497,6 +503,134 @@ describe('project-registry', () => {
     });
   });
 
+  describe('worktree piercing (worktree-aware-spaces D1)', () => {
+    /** Builds a committed git repo at `root`. */
+    function initRepo(root: string, gitExecEnv: NodeJS.ProcessEnv): void {
+      execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' });
+      fs.writeFileSync(path.join(root, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '-A'], { cwd: root, env: gitExecEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: root, env: gitExecEnv, stdio: 'ignore' });
+    }
+
+    it('resolveRegistrationRoot pierces a worktree to the main checkout and is identity/noop elsewhere', async () => {
+      const repoRoot = makeProjectDir('pierce-main');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      initRepo(repoRoot, gitExecEnv);
+      const worktreePath = path.join(path.dirname(repoRoot), `pierce-wt-${randomUUID().slice(0, 8)}`);
+      execFileSync('git', ['worktree', 'add', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      const canonicalMain = FileSystemUtils.canonicalizeExistingPath(repoRoot);
+      // A linked worktree pierces to the main checkout.
+      expect(await resolveRegistrationRoot(FileSystemUtils.canonicalizeExistingPath(worktreePath))).toBe(canonicalMain);
+      // The main checkout pierces to itself.
+      expect(await resolveRegistrationRoot(canonicalMain)).toBe(canonicalMain);
+      // A non-git path is returned unchanged.
+      const plain = makeProjectDir('pierce-plain');
+      const canonicalPlain = FileSystemUtils.canonicalizeExistingPath(plain);
+      expect(await resolveRegistrationRoot(canonicalPlain)).toBe(canonicalPlain);
+
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+      fs.rmSync(plain, { recursive: true, force: true });
+    });
+
+    it('registers only the main entry when a worktree registers (no worktree-keyed entry)', async () => {
+      const repoRoot = makeProjectDir('wt-only-main');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      initRepo(repoRoot, gitExecEnv);
+      const worktreePath = path.join(path.dirname(repoRoot), `wt-only-${randomUUID().slice(0, 8)}`);
+      execFileSync('git', ['worktree', 'add', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      const projectId = randomUUID();
+      const result = await registerProject({ projectRoot: worktreePath, projectId, mode: 'in-repo' }, { globalDataDir });
+
+      const canonicalMain = FileSystemUtils.canonicalizeExistingPath(repoRoot);
+      expect(result.canonicalPath).toBe(canonicalMain);
+      expect(result.entry.name).toBe(deriveProjectDisplayName(canonicalMain));
+
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(Object.keys(state?.projects ?? {})).toEqual([canonicalMain]);
+      expect(state?.projects[FileSystemUtils.canonicalizeExistingPath(worktreePath)]).toBeUndefined();
+
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    });
+
+    it('falls back to the worktree root when the main checkout is gone', async () => {
+      const repoRoot = makeProjectDir('fallback-main');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      initRepo(repoRoot, gitExecEnv);
+      const worktreePath = path.join(path.dirname(repoRoot), `fallback-wt-${randomUUID().slice(0, 8)}`);
+      execFileSync('git', ['worktree', 'add', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      // The main checkout (with its shared .git) is deleted, breaking git
+      // resolution from the worktree — registration must fall back to keying
+      // the surviving worktree so the work is never homeless.
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+
+      const projectId = randomUUID();
+      const result = await registerProject({ projectRoot: worktreePath, projectId, mode: 'in-repo' }, { globalDataDir });
+
+      expect(result.canonicalPath).toBe(FileSystemUtils.canonicalizeExistingPath(worktreePath));
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(state?.projects[result.canonicalPath]).toBeDefined();
+
+      fs.rmSync(worktreePath, { recursive: true, force: true });
+    });
+
+    it('prunes a legacy sibling worktree duplicate on the next registration write', async () => {
+      const repoRoot = makeProjectDir('prune-main');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      initRepo(repoRoot, gitExecEnv);
+      const worktreePath = path.join(path.dirname(repoRoot), `prune-wt-${randomUUID().slice(0, 8)}`);
+      execFileSync('git', ['worktree', 'add', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      const projectId = randomUUID();
+      const main = await registerProject({ projectRoot: repoRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+      const canonicalWorktree = FileSystemUtils.canonicalizeExistingPath(worktreePath);
+
+      // Seed a LEGACY worktree-keyed duplicate (as an older build would have
+      // written), sharing the main entry's home, alongside the live worktree.
+      await updateProjectRegistryState((current) => ({
+        version: 1,
+        projects: {
+          ...(current?.projects ?? {}),
+          [canonicalWorktree]: { ...main.entry, name: 'prune-wt', lastSeen: '2026-07-09T12:00:00.000Z' },
+        },
+      }), { globalDataDir });
+
+      // Any registration write for the same identity prunes the live sibling.
+      await registerProject({ projectRoot: repoRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(state?.projects[canonicalWorktree]).toBeUndefined();
+      expect(state?.projects[main.canonicalPath]).toBeDefined();
+      // The shared home is untouched.
+      expect(fs.existsSync(getProjectHomeDir(main.entry.home, { globalDataDir }))).toBe(true);
+
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    });
+
+    it('findProjectRegistryEntry resolves the main entry from a worktree path', async () => {
+      const repoRoot = makeProjectDir('lookup-main');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      initRepo(repoRoot, gitExecEnv);
+      const worktreePath = path.join(path.dirname(repoRoot), `lookup-wt-${randomUUID().slice(0, 8)}`);
+      execFileSync('git', ['worktree', 'add', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      const projectId = randomUUID();
+      const main = await registerProject({ projectRoot: repoRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+
+      const found = await findProjectRegistryEntry(worktreePath, { globalDataDir });
+      expect(found?.canonicalPath).toBe(main.canonicalPath);
+      expect(found?.entry.home).toBe(main.entry.home);
+
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    });
+  });
+
   describe('Windows path canonicalization', () => {
     it('registers the same entry regardless of path casing on a case-insensitive filesystem', async () => {
       if (process.platform !== 'win32') {
@@ -578,7 +712,7 @@ describe('project-registry', () => {
       expect(state?.projects[canonicalPath]).toBeUndefined();
     });
 
-    it('keeps a home still referenced by a live (worktree-shared) entry', async () => {
+    it('keeps a home still referenced by a live entry when a dangling duplicate is removed', async () => {
       const repoRoot = makeProjectDir('gc-worktree-main');
       const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
       execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
@@ -586,35 +720,252 @@ describe('project-registry', () => {
       execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitExecEnv });
       execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
 
-      const worktreePath = path.join(path.dirname(repoRoot), `gc-worktree-${randomUUID().slice(0, 8)}`);
+      const projectId = randomUUID();
+      const main = await registerProject({ projectRoot: repoRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+
+      // A registration from a worktree now pierces to the main entry (no
+      // separate worktree entry is created), so a home-sharing DUPLICATE only
+      // arises from a legacy registry. Seed one keyed at a now-deleted worktree
+      // path, sharing the main entry's home — it is dangling (path gone), so gc
+      // removes the entry but must KEEP the home (still referenced by `main`).
+      const legacyWorktreePath = path.join(path.dirname(repoRoot), `gc-legacy-wt-${randomUUID().slice(0, 8)}`);
+      await updateProjectRegistryState((current) => ({
+        version: 1,
+        projects: {
+          ...(current?.projects ?? {}),
+          [legacyWorktreePath]: { ...main.entry, lastSeen: '2026-07-09T12:00:00.000Z' },
+        },
+      }), { globalDataDir });
+
+      const gcResult = await gcProjectRegistry({ globalDataDir });
+      expect(gcResult.removedEntries.map((removed) => removed.path)).toEqual([legacyWorktreePath]);
+      // The home is still referenced by the main repo's live entry - keep it.
+      expect(gcResult.removedHomes).toEqual([]);
+      expect(fs.existsSync(getProjectHomeDir(main.entry.home, { globalDataDir }))).toBe(true);
+
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    });
+
+    it('reports worktree-duplicate entries read-only and --gc collapses them keeping the shared home', async () => {
+      const repoRoot = makeProjectDir('dup-main');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoRoot, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitExecEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      const wtA = path.join(path.dirname(repoRoot), `dup-wtA-${randomUUID().slice(0, 8)}`);
+      const wtB = path.join(path.dirname(repoRoot), `dup-wtB-${randomUUID().slice(0, 8)}`);
+      execFileSync('git', ['worktree', 'add', wtA], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      execFileSync('git', ['worktree', 'add', wtB], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      const projectId = randomUUID();
+      const main = await registerProject({ projectRoot: repoRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+      const canonicalA = FileSystemUtils.canonicalizeExistingPath(wtA);
+      const canonicalB = FileSystemUtils.canonicalizeExistingPath(wtB);
+
+      // Seed two legacy worktree-keyed duplicates sharing the main entry's home.
+      await updateProjectRegistryState((current) => ({
+        version: 1,
+        projects: {
+          ...(current?.projects ?? {}),
+          [canonicalA]: { ...main.entry, name: 'dup-wta', lastSeen: '2026-07-09T12:00:00.000Z' },
+          [canonicalB]: { ...main.entry, name: 'dup-wtb', lastSeen: '2026-07-09T12:00:00.000Z' },
+        },
+      }), { globalDataDir });
+
+      // Read-only report names both duplicates without mutating the registry.
+      const before = fs.readFileSync(getProjectRegistryPath({ globalDataDir }), 'utf-8');
+      const duplicates = await findWorktreeDuplicateEntries({ globalDataDir });
+      expect(duplicates.map((d) => d.path).sort()).toEqual([canonicalA, canonicalB].sort());
+      expect(duplicates.every((d) => d.mainRoot === main.canonicalPath)).toBe(true);
+      expect(fs.readFileSync(getProjectRegistryPath({ globalDataDir }), 'utf-8')).toBe(before);
+
+      // --gc collapses both, keeps the main entry and the shared home.
+      const gcResult = await gcProjectRegistry({ globalDataDir });
+      expect(gcResult.removedEntries.map((r) => r.path).sort()).toEqual([canonicalA, canonicalB].sort());
+      expect(gcResult.removedHomes).toEqual([]);
+
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(Object.keys(state?.projects ?? {})).toEqual([main.canonicalPath]);
+      expect(fs.existsSync(getProjectHomeDir(main.entry.home, { globalDataDir }))).toBe(true);
+
+      for (const wt of [wtA, wtB]) {
+        execFileSync('git', ['worktree', 'remove', '--force', wt], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      }
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    });
+
+    it('M10 normalization: findWorktreeDuplicateEntries detects a case-different UUID across worktree/main paths', async () => {
+      // Trivial 3: the existing worktree-duplicate test seeds duplicates
+      // with the SAME projectId (case-exact match). This test seeds the
+      // worktree-keyed entry with an UPPERCASE projectId while the main
+      // entry carries lowercase — the normalization at lines 467-469 must
+      // recognize them as the same project and report the duplicate.
+      // Without normalization, the case-difference would hide the duplicate.
+      const repoRoot = makeProjectDir('norm-dup-main');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoRoot, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitExecEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      const wt = path.join(path.dirname(repoRoot), `norm-dup-wt-${randomUUID().slice(0, 8)}`);
+      execFileSync('git', ['worktree', 'add', wt], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      const projectIdLower = randomUUID();
+      const projectIdUpper = projectIdLower.toUpperCase();
+      const main = await registerProject(
+        { projectRoot: repoRoot, projectId: projectIdLower, mode: 'in-repo' },
+        { globalDataDir }
+      );
+      const canonicalWt = FileSystemUtils.canonicalizeExistingPath(wt);
+
+      // Seed a legacy worktree-keyed entry with the UPPERCASE projectId,
+      // sharing the main entry's home. (Different case, same identity.)
+      await updateProjectRegistryState((current) => ({
+        version: 1,
+        projects: {
+          ...(current?.projects ?? {}),
+          [canonicalWt]: {
+            ...main.entry,
+            projectId: projectIdUpper,
+            name: 'norm-dup-wt',
+            lastSeen: '2026-07-09T12:00:00.000Z',
+          },
+        },
+      }), { globalDataDir });
+
+      const duplicates = await findWorktreeDuplicateEntries({ globalDataDir });
+      expect(duplicates.map((d) => d.path)).toEqual([canonicalWt]);
+      expect(duplicates[0].mainRoot).toBe(main.canonicalPath);
+
+      // --gc collapses the case-different duplicate onto the main entry,
+      // exercising the normalization at lines 558-559, and keeps the home.
+      const gcResult = await gcProjectRegistry({ globalDataDir });
+      expect(gcResult.removedEntries.map((r) => r.path)).toEqual([canonicalWt]);
+      expect(gcResult.removedHomes).toEqual([]);
+
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(Object.keys(state?.projects ?? {})).toEqual([main.canonicalPath]);
+      expect(fs.existsSync(getProjectHomeDir(main.entry.home, { globalDataDir }))).toBe(true);
+
+      execFileSync('git', ['worktree', 'remove', '--force', wt], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    });
+
+    it('M10 normalization: registerProject place() prunes a case-different sibling worktree duplicate', async () => {
+      // Minor 1 regression: place()'s sibling-pruning loop must normalize
+      // both sides. Seed a main entry with a lowercase projectId and a
+      // legacy worktree-keyed entry with the UPPERCASE projectId (sharing
+      // the home). A fresh registration for the main path with the lowercase
+      // projectId must prune the case-different worktree sibling in the
+      // same write — without normalization, the strict !== comparison would
+      // leave the duplicate alive until gc.
+      const repoRoot = makeProjectDir('norm-prune-main');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoRoot, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitExecEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      const worktreePath = path.join(
+        path.dirname(repoRoot),
+        `norm-prune-wt-${randomUUID().slice(0, 8)}`
+      );
       execFileSync('git', ['worktree', 'add', worktreePath], {
         cwd: repoRoot,
         env: gitExecEnv,
         stdio: 'ignore',
       });
 
-      const projectId = randomUUID();
-      const main = await registerProject({ projectRoot: repoRoot, projectId, mode: 'in-repo' }, { globalDataDir });
-      const worktree = await registerProject(
-        { projectRoot: worktreePath, projectId, mode: 'in-repo' },
+      const projectIdLower = randomUUID();
+      const projectIdUpper = projectIdLower.toUpperCase();
+      const main = await registerProject(
+        { projectRoot: repoRoot, projectId: projectIdLower, mode: 'in-repo' },
         { globalDataDir }
       );
-      expect(worktree.entry.home).toBe(main.entry.home);
+      const canonicalWorktree = FileSystemUtils.canonicalizeExistingPath(worktreePath);
 
-      // Delete the worktree checkout only (simulating a dangling entry),
-      // leaving the main repo (and thus the shared home) live.
+      // Seed the case-different legacy sibling.
+      await updateProjectRegistryState(
+        (current) => ({
+          version: 1,
+          projects: {
+            ...(current?.projects ?? {}),
+            [canonicalWorktree]: {
+              ...main.entry,
+              projectId: projectIdUpper,
+              name: 'norm-prune-wt',
+              lastSeen: '2026-07-09T12:00:00.000Z',
+            },
+          },
+        }),
+        { globalDataDir }
+      );
+
+      // Re-register the main path; the pruning loop must collapse the
+      // case-different worktree sibling in the same write.
+      await registerProject(
+        { projectRoot: repoRoot, projectId: projectIdLower, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(state?.projects[canonicalWorktree]).toBeUndefined();
+      expect(state?.projects[main.canonicalPath]).toBeDefined();
+      expect(fs.existsSync(getProjectHomeDir(main.entry.home, { globalDataDir }))).toBe(true);
+
       execFileSync('git', ['worktree', 'remove', '--force', worktreePath], {
         cwd: repoRoot,
         env: gitExecEnv,
         stdio: 'ignore',
       });
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    });
+
+    it('rebinds a worktree-keyed entry onto the main root when the main is unregistered', async () => {
+      const repoRoot = makeProjectDir('rebind-main');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoRoot, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitExecEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      const wt = path.join(path.dirname(repoRoot), `rebind-wt-${randomUUID().slice(0, 8)}`);
+      execFileSync('git', ['worktree', 'add', wt], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      const projectId = randomUUID();
+      const canonicalWt = FileSystemUtils.canonicalizeExistingPath(wt);
+      const canonicalMain = FileSystemUtils.canonicalizeExistingPath(repoRoot);
+      const home = deriveHomeBaseName(canonicalMain, projectId);
+      fs.mkdirSync(getProjectHomeDir(home, { globalDataDir }), { recursive: true });
+
+      // Only the worktree-keyed entry exists; the main root exists on disk but
+      // is unregistered — gc must rebind the entry onto the main root.
+      await writeProjectRegistryState(
+        {
+          version: 1,
+          projects: {
+            [canonicalWt]: {
+              projectId,
+              name: 'rebind-wt',
+              mode: 'in-repo',
+              home,
+              lastSeen: '2026-07-09T12:00:00.000Z',
+            },
+          },
+        },
+        { globalDataDir }
+      );
 
       const gcResult = await gcProjectRegistry({ globalDataDir });
-      expect(gcResult.removedEntries.map((removed) => removed.path)).toEqual([worktree.canonicalPath]);
-      // The home is still referenced by the main repo's live entry - keep it.
+      expect(gcResult.removedEntries.map((r) => r.path)).toEqual([canonicalWt]);
       expect(gcResult.removedHomes).toEqual([]);
-      expect(fs.existsSync(getProjectHomeDir(main.entry.home, { globalDataDir }))).toBe(true);
 
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(state?.projects[canonicalMain]?.home).toBe(home);
+      expect(state?.projects[canonicalWt]).toBeUndefined();
+
+      execFileSync('git', ['worktree', 'remove', '--force', wt], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
       fs.rmSync(repoRoot, { recursive: true, force: true });
     });
 
@@ -698,6 +1049,158 @@ describe('project-registry', () => {
       expect(state?.projects[freshRegistration.canonicalPath]?.home).toBe(home);
 
       fs.rmSync(cloneB, { recursive: true, force: true });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // M10 — normalizeProjectIdentity at registry comparisons
+  // ---------------------------------------------------------------------------
+
+  describe('M10 — project identity normalization', () => {
+    it('finds an existing uppercase-UUID entry when the same path re-registers with lowercase', async () => {
+      const dir = makeProjectDir('upper-project');
+      const upperId = 'BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB';
+
+      // First registration with the uppercase UUID.
+      const first = await registerProject(
+        { projectRoot: dir, projectId: upperId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      // Second registration at the SAME path with the LOWERCASE form.
+      // normalizeProjectIdentity makes these the same identity, so the
+      // registry finds the existing entry (path-exact match) and does NOT
+      // create a duplicate.
+      const lowerId = upperId.toLowerCase();
+      const second = await registerProject(
+        { projectRoot: dir, projectId: lowerId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      expect(second.canonicalPath).toBe(first.canonicalPath);
+      // Same home — no duplicate was created.
+      expect(second.entry.home).toBe(first.entry.home);
+    });
+
+    it('treats the same path with different-case projectIds as the same project (no clone-fork)', async () => {
+      const dir = makeProjectDir('case-project');
+      const upperId = 'CCCCCCCC-CCCC-4CCC-8CCC-CCCCCCCCCCCC';
+
+      const first = await registerProject(
+        { projectRoot: dir, projectId: upperId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      // The registry retains the original string for display. Re-registering
+      // with a different case at the same path is a path-exact match — the
+      // entry stays as-is. What matters is that same-ID lookups elsewhere
+      // (worktree share, moved repo) normalize both sides.
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(state).toBeDefined();
+      expect(state!.projects[first.canonicalPath]?.projectId).toBe(upperId);
+    });
+  });
+
+  describe('cache fields (project-install-manifest)', () => {
+    it('round-trips the new cache fields through serialize/parse', () => {
+      const state: ProjectRegistryState = {
+        version: 1,
+        projects: {
+          '/repos/my-app': {
+            projectId: 'abc-123',
+            name: 'my-app',
+            mode: 'in-repo',
+            home: 'my-app-a1b2c3d4',
+            lastSeen: '2026-07-09T12:00:00.000Z',
+            tools: ['claude', 'codex'],
+            installedVersion: '0.1.7',
+            lastUpdated: '2026-07-28T12:00:00.000Z',
+          },
+        },
+      };
+
+      const serialized = serializeProjectRegistryState(state);
+      expect(parseProjectRegistryState(serialized)).toEqual(state);
+    });
+
+    it('parses a legacy entry (without cache fields) under the new schema', () => {
+      const legacyJson = JSON.stringify({
+        version: 1,
+        projects: {
+          '/repos/old': {
+            projectId: 'old-1',
+            name: 'old',
+            mode: 'in-repo',
+            home: 'old-deadbeef',
+            lastSeen: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      });
+      const parsed = parseProjectRegistryState(legacyJson);
+      expect(parsed.projects['/repos/old'].tools).toBeUndefined();
+      expect(parsed.projects['/repos/old'].installedVersion).toBeUndefined();
+      expect(parsed.projects['/repos/old'].lastUpdated).toBeUndefined();
+    });
+
+    it('.strict() still rejects genuinely unknown keys', () => {
+      expect(() =>
+        parseProjectRegistryState(
+          JSON.stringify({
+            version: 1,
+            projects: {
+              '/x': {
+                projectId: 'a',
+                name: 'x',
+                mode: 'in-repo',
+                home: 'x-1',
+                lastSeen: '2026-01-01T00:00:00.000Z',
+                color: 'red',
+              },
+            },
+          })
+        )
+      ).toThrow(/Invalid project registry state/u);
+    });
+
+    it('registerProject with tools + installedVersion writes them on a fresh entry', async () => {
+      const dir = makeProjectDir('cache-fresh');
+      const { entry } = await registerProject(
+        {
+          projectRoot: dir,
+          projectId: 'cache-fresh-1',
+          mode: 'in-repo',
+          tools: ['claude'],
+          installedVersion: '0.1.7',
+        },
+        { globalDataDir }
+      );
+      expect(entry.tools).toEqual(['claude']);
+      expect(entry.installedVersion).toBe('0.1.7');
+    });
+
+    it('registerProject on a path-exact entry WITHOUT cache fields preserves the existing values', async () => {
+      const dir = makeProjectDir('cache-preserve');
+      // First registration: supplies cache fields.
+      const first = await registerProject(
+        {
+          projectRoot: dir,
+          projectId: 'cache-preserve-1',
+          mode: 'in-repo',
+          tools: ['claude', 'codex'],
+          installedVersion: '0.1.5',
+        },
+        { globalDataDir }
+      );
+      expect(first.entry.tools).toEqual(['claude', 'codex']);
+      expect(first.entry.installedVersion).toBe('0.1.5');
+
+      // Second registration: does NOT supply cache fields — should preserve.
+      const second = await registerProject(
+        { projectRoot: dir, projectId: 'cache-preserve-1', mode: 'in-repo' },
+        { globalDataDir }
+      );
+      expect(second.entry.tools).toEqual(['claude', 'codex']);
+      expect(second.entry.installedVersion).toBe('0.1.5');
     });
   });
 });

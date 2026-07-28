@@ -286,7 +286,7 @@ Because the CLI never invokes `gh`, and uses git only for local read-only status
 #### Scenario: CLI blocks the merge-gate bypass
 
 - **WHEN** `rasen archive <change>` runs for a change whose ship log records a `pr` delivery under `on-merge` timing, without `--yes`
-- **THEN** the command SHALL refuse, explain that merge confirmation is required, and point to `/rasen:archive` or an explicit `--yes` after the user confirms the merge
+- **THEN** the command SHALL refuse, explain that merge confirmation is required, and point to `/rasen-archive-change` or an explicit `--yes` after the user confirms the merge
 
 #### Scenario: Explicit override archives anyway
 

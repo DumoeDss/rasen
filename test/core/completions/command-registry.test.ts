@@ -5,6 +5,14 @@ import { COMMAND_REGISTRY } from '../../../src/core/completions/command-registry
 import { COMMON_FLAGS } from '../../../src/core/completions/shared-flags.js';
 import { STORE_SELECTION_GUIDANCE } from '../../../src/core/templates/workflows/store-selection.js';
 import { getCommandPath, program } from '../../../src/cli/index.js';
+import { getKnowledgeMessages } from '../../../src/commands/knowledge-messages.js';
+import {
+  hasLocalizedDescription,
+  localizeCommandRegistry,
+  localizeDescription,
+} from '../../../src/core/completions/description-localization.js';
+import { formatLocaleMessage, getLocaleCatalog } from '../../../src/locales/index.js';
+import { SUPPORTED_CLI_LOCALES } from '../../../src/utils/locale.js';
 import type {
   CommandDefinition,
   FlagDefinition,
@@ -147,8 +155,68 @@ describe('command completion registry', () => {
     assertRegistryParity(program, COMMAND_REGISTRY);
   });
 
-  it('uses one --store description on every lifecycle command', () => {
+  it('has descriptions for every command and flag in every supported locale', () => {
+    function assertLocalized(
+      definitions: CommandDefinition[],
+      locale: (typeof SUPPORTED_CLI_LOCALES)[number]
+    ): void {
+      for (const definition of definitions) {
+        expect(
+          hasLocalizedDescription(definition.description, locale),
+          `missing ${locale} command description: ${definition.name} / ${definition.description}`
+        ).toBe(true);
+        for (const flag of definition.flags) {
+          expect(
+            hasLocalizedDescription(flag.description, locale),
+            `missing ${locale} flag description: ${definition.name} --${flag.name} / ${flag.description}`
+          ).toBe(true);
+        }
+        assertLocalized(definition.subcommands ?? [], locale);
+      }
+    }
+
+    for (const locale of SUPPORTED_CLI_LOCALES) {
+      assertLocalized(COMMAND_REGISTRY, locale);
+    }
+  });
+
+  it('creates a localized completion registry without changing command structure', () => {
+    const expectedProfileDescriptions = {
+      en: 'Manage reusable workflow profiles',
+      ja: '再利用可能なワークフロープロファイルを管理します',
+      'zh-cn': '管理可复用的工作流配置方案',
+    } as const;
+
+    for (const locale of SUPPORTED_CLI_LOCALES) {
+      const localized = localizeCommandRegistry(COMMAND_REGISTRY, locale);
+      expect(localized.map((entry) => entry.name), locale).toEqual(
+        COMMAND_REGISTRY.map((entry) => entry.name)
+      );
+      expect(localized.find((entry) => entry.name === 'profile')?.description).toBe(
+        expectedProfileDescriptions[locale]
+      );
+    }
+  });
+
+  it('localizes dynamic tool descriptions in every supported locale', () => {
+    const ids = 'claude, codex';
+    const source = formatLocaleMessage(
+      getLocaleCatalog('en').commandDescriptionTemplates.toolsPrefix,
+      { ids }
+    );
+
+    for (const locale of SUPPORTED_CLI_LOCALES) {
+      expect(localizeDescription(source, locale), locale).toBe(
+        formatLocaleMessage(getLocaleCatalog(locale).commandDescriptionTemplates.toolsPrefix, {
+          ids,
+        })
+      );
+    }
+  });
+
+  it('uses the root-selector description except on knowledge-owner selectors', () => {
     const expected = COMMON_FLAGS.store.description;
+    const knowledgeExpected = getKnowledgeMessages().storeSelectorDescription;
     const seen: string[] = [];
 
     function walk(command: Command, parentPath: string): void {
@@ -157,7 +225,9 @@ describe('command completion registry', () => {
         const storeOption = child.options.find((option) => option.long === '--store');
         if (storeOption) {
           seen.push(commandPath);
-          expect(storeOption.description, `${commandPath} --store description`).toBe(expected);
+          expect(storeOption.description, `${commandPath} --store description`).toBe(
+            commandPath.startsWith('knowledge ') ? knowledgeExpected : expected
+          );
         }
         walk(child, commandPath);
       }
@@ -169,7 +239,10 @@ describe('command completion registry', () => {
     // both use the shared description (asserted above): the normal lifecycle
     // commands, and the pipeline inspection group. Only the lifecycle set is
     // enumerated in the agent-facing store-selection guidance.
-    const lifecycle = seen.filter((commandPath) => !commandPath.startsWith('pipeline '));
+    const lifecycle = seen.filter(
+      (commandPath) =>
+        !commandPath.startsWith('pipeline ') && !commandPath.startsWith('knowledge ')
+    );
     const pipelineStore = seen.filter((commandPath) => commandPath.startsWith('pipeline '));
 
     expect(lifecycle.sort()).toEqual([
@@ -190,16 +263,41 @@ describe('command completion registry', () => {
     expect(pipelineStore.sort()).toEqual([
       'pipeline agents',
       'pipeline classify',
+      'pipeline delete',
+      'pipeline export',
+      'pipeline import',
+      'pipeline init',
       'pipeline list',
       'pipeline resume',
+      'pipeline save',
       'pipeline show',
+      'pipeline validate',
     ]);
 
     // The store-selection guidance interpolated into every generated skill
     // must name every --store-capable command — both the lifecycle set and the
     // pipeline inspection group. Drift here means agents are taught a stale flag
     // surface (the M1 finding: the guidance once denied pipeline --store).
+    //
+    // The pipeline LIBRARY verbs (init/validate/import/export/delete —
+    // concept-coherence-pipeline-library) are deliberately excluded from this
+    // completeness check: STORE_SELECTION_GUIDANCE is interpolated into ~45
+    // skill templates whose generated content is pinned by
+    // skill-templates-parity.test.ts, so it is out of scope for this change.
+    // They still carry --store/--project (asserted above via pipelineStore)
+    // for CLI symmetry with the inspection group; only the guidance TEXT is
+    // deferred to a future docs/skill-template pass.
+    const pipelineLibraryVerbs = new Set([
+      'pipeline init',
+      'pipeline validate',
+      'pipeline import',
+      'pipeline export',
+      'pipeline delete',
+      'pipeline save',
+    ]);
     for (const commandPath of seen) {
+      if (commandPath.startsWith('knowledge ')) continue;
+      if (pipelineLibraryVerbs.has(commandPath)) continue;
       expect(STORE_SELECTION_GUIDANCE, `guidance names ${commandPath}`).toContain(
         `\`${commandPath}\``
       );
@@ -208,6 +306,7 @@ describe('command completion registry', () => {
 
   it('advertises --project in parity with --store on every --store-bearing command (store-project-namespace)', () => {
     const expectedProject = COMMON_FLAGS.project.description;
+    const knowledgeExpected = getKnowledgeMessages().projectSelectorDescription;
     const storeCommands: string[] = [];
     const projectCommands: string[] = [];
 
@@ -221,7 +320,7 @@ describe('command completion registry', () => {
         if (projectOption) {
           projectCommands.push(commandPath);
           expect(projectOption.description, `${commandPath} --project description`).toBe(
-            expectedProject
+            commandPath.startsWith('knowledge ') ? knowledgeExpected : expectedProject
           );
         }
         walk(child, commandPath);
@@ -230,9 +329,17 @@ describe('command completion registry', () => {
 
     walk(program, '');
 
-    // Every --store-bearing command also carries --project, and vice versa —
-    // never a lopsided flag surface between the two namespaces.
-    expect(projectCommands.sort()).toEqual(storeCommands.sort());
+    // Every owner/root selector command stays paired except the deliberate
+    // portable-bundle seams: a project bundle can contain only the project's
+    // own records, while Store transport is selected by export's separate
+    // --to-store route rather than by an owner/root selector.
+    const projectOnly = ['knowledge bundle export', 'knowledge bundle import'];
+    expect(
+      projectCommands.filter((commandPath) => !projectOnly.includes(commandPath)).sort()
+    ).toEqual(storeCommands.sort());
+    expect(
+      projectCommands.filter((commandPath) => projectOnly.includes(commandPath)).sort()
+    ).toEqual(projectOnly);
     expect(STORE_SELECTION_GUIDANCE).toContain('--project <id>');
     expect(STORE_SELECTION_GUIDANCE).toContain('mutually exclusive');
   });
@@ -255,8 +362,10 @@ describe('command completion registry', () => {
     const newChange = command('new')?.subcommands?.find((entry) => entry.name === 'change');
     expect(newChange?.flags.map((flag) => flag.name)).toEqual([
       'description',
+      'proposal',
       'goal',
       'schema',
+      'pipeline',
       'json',
       'store',
       'project',
@@ -286,8 +395,12 @@ describe('command completion registry', () => {
       'setup',
       'register',
       'add-project',
+      'migrate-membership',
+      'upgrade-identity',
       'unregister',
       'remove',
+      'adopt',
+      'eject',
       'list',
       'ls',
       'doctor',

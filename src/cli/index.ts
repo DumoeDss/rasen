@@ -16,14 +16,27 @@ import { ShowCommand } from '../commands/show.js';
 import { CompletionCommand } from '../commands/completion.js';
 import { FeedbackCommand } from '../commands/feedback.js';
 import { registerConfigCommand } from '../commands/config.js';
+import { registerUiCommand } from '../commands/ui.js';
+import { registerDaemonCommand } from '../commands/daemon.js';
+import { registerProfileCommand } from '../commands/profile.js';
+import { registerSchemeCommand } from '../commands/scheme.js';
+import { registerKnowledgeCommand } from '../commands/knowledge.js';
 import { registerSchemaCommand } from '../commands/schema.js';
 import { PipelineCommand } from '../commands/pipeline.js';
+import { PipelineLibraryCommand } from '../commands/pipeline-library.js';
+import { formatPipelineError } from '../commands/pipeline-messages.js';
 import { AgentCommand } from '../commands/agent.js';
 import { registerStoreCommand } from '../commands/store.js';
+import { registerBootstrapCommand } from '../commands/bootstrap.js';
+import {
+  registerArchiveRelocateSubcommand,
+  registerHomeCommand,
+} from '../commands/store-migration.js';
 import { registerDoctorCommand } from '../commands/doctor.js';
 import { registerContextCommand } from '../commands/context.js';
 import { registerWorksetCommand } from '../commands/workset.js';
 import { registerWorkCommand } from '../commands/work.js';
+import { registerWorkflowLibraryCommand } from '../commands/workflow-library.js';
 import {
   statusCommand,
   instructionsCommand,
@@ -42,6 +55,7 @@ import { maybeShowTelemetryNotice, trackCommand, shutdown } from '../telemetry/i
 import { adoptLegacyMachineData } from '../core/global-config.js';
 import { COMMON_FLAGS } from '../core/completions/shared-flags.js';
 import { isInteractive } from '../utils/interactive.js';
+import { localizeProgramHelp, ROOT_OPTION_DESCRIPTIONS } from './help-localization.js';
 
 const STORE_OPTION_DESCRIPTION = COMMON_FLAGS.store.description;
 const PROJECT_OPTION_DESCRIPTION = COMMON_FLAGS.project.description;
@@ -83,6 +97,12 @@ function failWithError(
   process.exitCode = process.exitCode ?? 1;
 }
 
+function failPipelineAction(error: unknown): never {
+  console.log();
+  ora().fail(formatPipelineError(error));
+  process.exit(1);
+}
+
 const program = new Command();
 const require = createRequire(import.meta.url);
 const { version } = require('../../package.json');
@@ -113,7 +133,7 @@ program
   .version(version);
 
 // Global options
-program.option('--no-color', 'Disable color output');
+program.option('--no-color', ROOT_OPTION_DESCRIPTIONS[0]);
 
 // Apply global flags and telemetry before any command runs
 // Note: preAction receives (thisCommand, actionCommand) where:
@@ -150,7 +170,7 @@ program
   .description('Initialize Rasen in your project')
   .option('--tools <tools>', toolsOptionDescription)
   .option('--force', 'Auto-cleanup legacy files without prompting')
-  .option('--profile <profile>', 'Override global config profile (full, core, or custom)')
+  .option('--profile <profile>', 'Install and lock a profile in rasen/config.yaml (full, core, or a saved profile; custom applies once without locking)')
   .action(async (targetPath = '.', options?: { tools?: string; force?: boolean; profile?: string }) => {
     try {
       // Validate that the path is a valid directory
@@ -210,9 +230,15 @@ program
   .command('update [path]')
   .description('Update Rasen instruction files')
   .option('--force', 'Force update even when tools are up to date')
-  .action(async (targetPath = '.', options?: { force?: boolean }) => {
+  .option('--all-projects', 'Update every reachable, non-pinned registered project whose version is behind')
+  .option('--only-this', 'Skip multi-project registry consultation (update only this project)')
+  .action(async (targetPath = '.', options?: { force?: boolean; allProjects?: boolean; onlyThis?: boolean }) => {
     try {
-      const updateCommand = new UpdateCommand({ force: options?.force });
+      const updateCommand = new UpdateCommand({
+        force: options?.force,
+        allProjects: options?.allProjects,
+        onlyThis: options?.onlyThis,
+      });
       await updateCommand.execute(targetPath);
     } catch (error) {
       failWithError(error);
@@ -328,7 +354,7 @@ program
     }
   });
 
-program
+const archiveCommand = program
   .command('archive [change-name]')
   .description('Archive a completed change and update main specs')
   .option('-y, --yes', 'Skip confirmation prompts')
@@ -341,21 +367,33 @@ program
   .addOption(hiddenStorePathOption())
   .action(async (changeName?: string, options?: ArchiveOptions) => {
     try {
-      const archiveCommand = new ArchiveCommand();
-      await archiveCommand.execute(changeName, options);
+      const command = new ArchiveCommand();
+      await command.execute(changeName, options);
     } catch (error) {
       failWithError(error);
       process.exit(1);
     }
   });
 
+// `rasen archive relocate` — a subcommand of the archive command (commander
+// runs it instead of the parent action when `relocate` is the first operand).
+registerArchiveRelocateSubcommand(archiveCommand);
+registerHomeCommand(program);
+
 registerConfigCommand(program);
+registerUiCommand(program);
+registerDaemonCommand(program);
+registerProfileCommand(program);
+registerSchemeCommand(program);
+registerKnowledgeCommand(program);
 registerSchemaCommand(program);
 registerStoreCommand(program);
+registerBootstrapCommand(program);
 registerDoctorCommand(program);
 registerContextCommand(program);
 registerWorksetCommand(program);
 registerWorkCommand(program);
+registerWorkflowLibraryCommand(program);
 
 // Top-level validate command
 program
@@ -572,8 +610,10 @@ newCmd
   .command('change <name>')
   .description('Create a new change directory')
   .option('--description <text>', 'Description to add to README.md')
+  .option('--proposal <text>', 'Seed proposal.md with this text, making the change active immediately')
   .option('--goal <text>', 'Optional goal metadata to store with the change')
   .option('--schema <name>', `Workflow schema to use (default: ${DEFAULT_SCHEMA})`)
+  .option('--pipeline <name>', 'Pipeline to initialize run-state for')
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
   .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
@@ -594,7 +634,7 @@ newCmd
 // Pipeline command group: inspect orchestration pipelines and run-state
 const pipelineCmd = program
   .command('pipeline')
-  .description('Inspect orchestration pipelines (list, show, classify, resume)');
+  .description('Inspect and manage orchestration pipelines');
 
 pipelineCmd
   .command('list')
@@ -608,27 +648,40 @@ pipelineCmd
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.list(options);
     } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exit(1);
+      failPipelineAction(error);
     }
   });
 
 pipelineCmd
   .command('show <name>')
   .description('Show a pipeline stage DAG and build order')
+  .option('--for-execution', 'Validate active-profile skills before returning the executable DAG')
+  .option('--planner <runtime>', 'Set planner runtime: claude or codex')
+  .option('--implementer <runtime>', 'Set implementer runtime: claude or codex')
+  .option('--reviewer <runtime>', 'Set reviewer runtime: claude or codex')
+  .option('--fixer <runtime>', 'Set fixer runtime: claude or codex')
+  .option('--shipper <runtime>', 'Set shipper runtime: claude or codex')
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
   .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
-  .action(async (name: string, options?: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (name: string, options?: {
+    planner?: string;
+    implementer?: string;
+    reviewer?: string;
+    fixer?: string;
+    shipper?: string;
+    json?: boolean;
+    forExecution?: boolean;
+    store?: string;
+    project?: string;
+    storePath?: string;
+  }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.show(name, options);
     } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exit(1);
+      failPipelineAction(error);
     }
   });
 
@@ -662,9 +715,7 @@ pipelineCmd
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.agents(name, options);
     } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exit(1);
+      failPipelineAction(error);
     }
   });
 
@@ -680,9 +731,7 @@ pipelineCmd
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.classify(task, options);
     } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exit(1);
+      failPipelineAction(error);
     }
   });
 
@@ -698,16 +747,155 @@ pipelineCmd
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.resume(change, options);
     } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exit(1);
+      failPipelineAction(error);
     }
+  });
+
+pipelineCmd
+  .command('init <name>')
+  .description('Create a minimal pipeline draft without installing it')
+  .requiredOption('--output <path>', 'Empty pipeline draft directory to create')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (name: string, options: { output: string; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+    const pipelineLibraryCommand = new PipelineLibraryCommand();
+    await pipelineLibraryCommand.init(name, options);
+  });
+
+pipelineCmd
+  .command('validate <name-or-path>')
+  .description('Validate an installed pipeline, draft directory, or .rasenpkg')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (nameOrPath: string, options: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
+    const pipelineLibraryCommand = new PipelineLibraryCommand();
+    await pipelineLibraryCommand.validate(nameOrPath, options);
+  });
+
+pipelineCmd
+  .command('import <path>')
+  .description('Validate and atomically install a pipeline .rasenpkg')
+  .option('--force', 'Overwrite an already-installed pipeline of the same name')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (sourcePath: string, options: { force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+    const pipelineLibraryCommand = new PipelineLibraryCommand();
+    await pipelineLibraryCommand.import(sourcePath, options);
+  });
+
+pipelineCmd
+  .command('export <name> <path>')
+  .description('Export a user pipeline as .rasenpkg')
+  .option('--force', 'Replace an existing destination file')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (name: string, destination: string, options: { force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+    const pipelineLibraryCommand = new PipelineLibraryCommand();
+    await pipelineLibraryCommand.export(name, destination, options);
+  });
+
+pipelineCmd
+  .command('save <name>')
+  .description('Validate and install a pipeline definition file as a user pipeline')
+  .requiredOption('--from <file>', 'Path to a JSON or YAML pipeline definition')
+  .option('--force', 'Overwrite an already-installed user pipeline of the same name')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (name: string, options: { from: string; force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+    const pipelineLibraryCommand = new PipelineLibraryCommand();
+    await pipelineLibraryCommand.save(name, options);
+  });
+
+pipelineCmd
+  .command('delete <name>')
+  .description('Delete an unreferenced user pipeline')
+  .option('-y, --yes', 'Skip confirmation')
+  .option('--force', 'Bypass the referrer guard, deleting even a still-referenced pipeline')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (name: string, options: { yes?: boolean; force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+    const pipelineLibraryCommand = new PipelineLibraryCommand();
+    await pipelineLibraryCommand.delete(name, options);
   });
 
 // Agent command group: introspect an agent's own runtime state
 const agentCmd = program
   .command('agent')
-  .description('Introspect agent runtime state (context)');
+  .description('Inspect and control base agent runtime state');
+
+const editBoundaryCmd = agentCmd
+  .command('edit-boundary')
+  .description('Control the checkout-scoped runtime edit boundary');
+
+editBoundaryCmd
+  .command('set <directory>')
+  .description('Set the checkout-scoped edit boundary to an existing directory')
+  .option('--runtime <runtime>', 'Force runtime: claude, codex, or zed')
+  .option('--json', 'Output stable JSON')
+  .action(async (directory: string, options: { runtime?: string; json?: boolean }) => {
+    try {
+      const result = await new AgentCommand().editBoundarySet(directory, options);
+      if (result.error) process.exitCode = 1;
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exitCode = 1;
+    }
+  });
+
+editBoundaryCmd
+  .command('status')
+  .description('Show the active boundary and observed host enforcement')
+  .option('--runtime <runtime>', 'Force runtime: claude, codex, or zed')
+  .option('--json', 'Output stable JSON')
+  .action(async (options: { runtime?: string; json?: boolean }) => {
+    try {
+      await new AgentCommand().editBoundaryStatus(options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exitCode = 1;
+    }
+  });
+
+editBoundaryCmd
+  .command('clear')
+  .description('Clear the checkout-scoped edit boundary')
+  .option('--runtime <runtime>', 'Force runtime: claude, codex, or zed')
+  .option('--json', 'Output stable JSON')
+  .action(async (options: { runtime?: string; json?: boolean }) => {
+    try {
+      await new AgentCommand().editBoundaryClear(options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exitCode = 1;
+    }
+  });
+
+editBoundaryCmd
+  .command('check', { hidden: true })
+  .option('--runtime <runtime>', 'Hook runtime')
+  .action(async (options: { runtime?: string }) => {
+    try {
+      await new AgentCommand().editBoundaryCheck(options);
+    } catch {
+      // Hooks fail open: a checker failure must never be reported as hard
+      // protection or turn a parse/configuration error into a denial.
+    }
+  });
 
 agentCmd
   .command('context')
@@ -736,6 +924,62 @@ agentCmd
     }
   });
 
+agentCmd
+  .command('wait')
+  .description('One cache-keepalive beat: block briefly polling the change\'s role signal file')
+  .requiredOption('--change <name>', 'Change whose signals directory to poll')
+  .requiredOption('--role <key>', 'Role key identifying this worker\'s signal file (e.g. reviewer, impl-spaces)')
+  .option('--max-beats <n>', 'Override the default beat cap (12)', (v) => parseInt(v, 10))
+  .option('--context-tokens <n>', 'Self-reported context size; below the keepalive floor stands down immediately', (v) => parseInt(v, 10))
+  .option('--beat-seconds <s>', 'Beat duration in seconds. Resolution: flag > keepalive.beatSeconds config (default 270) > 100s fuse; max 300. Beats over the shell tool default timeout require raising that tool timeout.', (v) => parseInt(v, 10))
+  .action(async (options: {
+    change: string;
+    role: string;
+    maxBeats?: number;
+    contextTokens?: number;
+    beatSeconds?: number;
+  }) => {
+    try {
+      const agentCommand = new AgentCommand();
+      await agentCommand.wait(options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+agentCmd
+  .command('audit [sessionId|path]')
+  .description(
+    "Analyze a session's token spend from its Claude transcript, Codex rollout, or Zed thread database (experimental: parses internal, undocumented formats that may change with harness or Zed updates)"
+  )
+  .option('--projects-dir <dir>', 'Override the Claude projects directory a session id is resolved against')
+  .option('--out <path>', 'Write the report to this file instead of the default analytics directory')
+  .option('--runtime <runtime>', 'Force the runtime: "claude", "codex", or "zed" (Zed reads its local threads.db; experimental, format may change)')
+  .option('--match <text>', 'Zed only: resolve the session by its first user command instead of a thread id')
+  .option('--db <path>', "Zed only: override the threads.db path (default: Zed's per-OS location)")
+  .option('--json', 'Output as JSON')
+  .option('--open', 'Open the shipped viewer in your default browser, pre-loaded with the report')
+  .action(async (target: string | undefined, options?: {
+    projectsDir?: string;
+    out?: string;
+    runtime?: string;
+    match?: string;
+    db?: string;
+    json?: boolean;
+    open?: boolean;
+  }) => {
+    try {
+      const agentCommand = new AgentCommand();
+      await agentCommand.audit(target ?? '', options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
 export { program };
 
 export function runCli(argv = process.argv): void {
@@ -743,6 +987,7 @@ export function runCli(argv = process.argv): void {
   // relocation) into the resolved config/data locations. Best-effort and
   // synchronous; must run before any config is read.
   adoptLegacyMachineData();
+  localizeProgramHelp(program);
   program.parse(argv);
 }
 

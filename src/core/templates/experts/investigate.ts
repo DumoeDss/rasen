@@ -1,6 +1,6 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE_DIALOGUE } from './_shared.js';
+import { EDIT_BOUNDARY_GUIDANCE, PREAMBLE_DIALOGUE } from './_shared.js';
 
 const BODY = `
 ${PREAMBLE_DIALOGUE}
@@ -67,26 +67,24 @@ Do not proceed until you have reproduced **and** minimised.
 
 ## Scope Lock
 
-With a minimised repro in hand you know the affected module — lock edits to it to prevent scope creep.
+With a minimised repro in hand you know the affected module. Identify the
+narrowest directory containing the affected files and use the base runtime:
 
 \`\`\`bash
-[ -x "\${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh" ] && echo "FREEZE_AVAILABLE" || echo "FREEZE_UNAVAILABLE"
+rasen agent edit-boundary set "<detected-directory>"
+rasen agent edit-boundary status --json
 \`\`\`
 
-**If FREEZE_AVAILABLE:** Identify the narrowest directory containing the affected files. Write it to the freeze state file:
+Substitute the actual directory (for example \`src/auth/\`) and inspect the
+returned status before describing protection. On \`hard\`, say only that
+covered structured write tools are rejected outside the directory. On
+\`soft\`, cooperate with the scope and explicitly say the host does not
+guarantee denial. On \`unsupported\`, state that edits remain unrestricted and
+do not claim a lock. When debugging is complete, run
+\`rasen agent edit-boundary clear\`. If the bug spans the whole checkout or the
+scope is genuinely unclear, skip setting a boundary and note why.
 
-\`\`\`bash
-STATE_DIR="\${CLAUDE_PLUGIN_DATA:-$HOME/.rasen}"
-mkdir -p "$STATE_DIR"
-echo "<detected-directory>/" > "$STATE_DIR/freeze-dir.txt"
-echo "Debug scope locked to: <detected-directory>/"
-\`\`\`
-
-Substitute \`<detected-directory>\` with the actual directory path (e.g., \`src/auth/\`). Tell the user: "Edits restricted to \`<dir>/\` for this debug session. This prevents changes to unrelated code. Run \`/unfreeze\` to remove the restriction."
-
-If the bug spans the entire repo or the scope is genuinely unclear, skip the lock and note why.
-
-**If FREEZE_UNAVAILABLE:** Skip scope lock. Edits are unrestricted.
+${EDIT_BOUNDARY_GUIDANCE}
 
 ---
 
@@ -169,7 +167,27 @@ Once root cause is confirmed:
 
 4. **Watch the regression test pass**, then re-run the Phase 1 feedback loop against the original (un-minimised) scenario.
 
-5. **Run the full test suite.** Paste the output. No regressions allowed.
+5. **Risk-proportional verification.** Select the smallest verification scope
+   that can credibly detect regressions from this fix, and record the scope,
+   rationale, exact command(s), result, and current content tree fingerprint.
+   - **Always required:** the Phase 1 feedback loop, the regression test (when a
+     correct seam exists), and directly affected module or package tests.
+   - **Localized fix:** when the change is confined to one behavior and has no
+     cross-cutting risk trigger, stop after the regression and affected-area
+     checks pass. A localized fix does not require the full repository suite
+     merely because this workflow is finishing.
+   - **Broaden when evidence demands it:** shared or global contracts,
+     dependency/build/config/CI changes, concurrency, persistence, migrations,
+     security boundaries, cross-platform behavior, broad multi-module edits,
+     or a focused failure outside the expected area.
+   - **Full-suite trigger:** run the full repository suite only when the user or
+     project instructions explicitly require it, or when the risk assessment
+     shows that affected behavior cannot be bounded more narrowly. File count
+     alone is a signal to inspect, not proof that the full suite is necessary.
+   - **Cost guard:** before starting a full suite expected to exceed 60 seconds,
+     state the trigger and expected cost. Never repeat an unchanged full-suite
+     command that already timed out; shard it, narrow it, use CI, or ask for
+     direction.
 
 6. **If the fix touches >5 files:** Use AskUserQuestion to flag the blast radius:
    \`\`\`
@@ -183,7 +201,9 @@ Once root cause is confirmed:
 
 ## Phase 7: Verification & Report
 
-**Fresh verification:** Reproduce the original bug scenario by re-running the Phase 1 loop and confirm it's fixed. This is not optional. Run the test suite and paste the output.
+**Fresh verification:** Reproduce the original bug scenario by re-running the
+Phase 1 loop and confirm it's fixed. This is not optional. Re-run the selected
+risk-proportional verification scope and paste the output.
 
 Before declaring done:
 - [ ] Original repro no longer reproduces (Phase 1 loop is green)
@@ -217,14 +237,14 @@ Status:          DONE | DONE_WITH_CONCERNS | BLOCKED
 - **Never say "this should fix it."** Verify and prove it. Run the tests.
 - **If fix touches >5 files → AskUserQuestion** about blast radius before proceeding.
 - **Completion status:**
-  - DONE — root cause found, fix applied, regression test written (or seam absence documented), all tests pass
+  - DONE — root cause found, fix applied, regression test written (or seam absence documented), and all checks required by the recorded verification scope pass
   - DONE_WITH_CONCERNS — fixed but cannot fully verify (e.g., intermittent bug, requires staging)
   - BLOCKED — root cause unclear after investigation, escalated
 `;
 
 export function getInvestigateSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:investigate',
+    name: 'rasen-investigate',
     description: 'Systematic debugging — reproduce, isolate, and root-cause a bug with evidence before attempting any fix',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

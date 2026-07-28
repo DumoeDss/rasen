@@ -8,6 +8,7 @@ import path from 'path';
 import * as fs from 'fs';
 import { AI_TOOLS, type AIToolOption } from '../config.js';
 import { resolveHermesHome } from '../hermes/hermes-home.js';
+import { readProjectConfig, updateProjectConfigKey, resolveConfigFilePath } from '../project-config.js';
 
 /**
  * Names of skill directories created by rasen init.
@@ -17,7 +18,6 @@ export const SKILL_NAMES = [
   'rasen-new-change',
   'rasen-continue-change',
   'rasen-apply-change',
-  'rasen-ff-change',
   'rasen-sync-specs',
   'rasen-archive-change',
   'rasen-bulk-archive-change',
@@ -36,7 +36,6 @@ export const COMMAND_IDS = [
   'new',
   'continue',
   'apply',
-  'ff',
   'sync',
   'archive',
   'bulk-archive',
@@ -249,6 +248,95 @@ export function getConfiguredTools(projectRoot: string): string[] {
   return AI_TOOLS
     .filter((t) => t.skillsDir && getToolSkillStatus(projectRoot, t.value).configured)
     .map((t) => t.value);
+}
+
+/**
+ * Result of resolving configured tools through the project-install-manifest.
+ */
+export interface ResolvedConfiguredTools {
+  /** The resolved list of tool ids (the authoritative configured-tool set). */
+  tools: string[];
+  /**
+   * `true` when the `tools:` manifest was absent in `rasen/config.yaml` and
+   * this call seeded it from on-disk detection (or attempted to). `false`
+   * when the manifest was already present and used verbatim.
+   */
+  seeded: boolean;
+}
+
+/**
+ * Options for {@link resolveConfiguredTools}.
+ */
+export interface ResolveConfiguredToolsOptions {
+  /**
+   * Seed provider invoked when the manifest is absent. Required — every
+   * caller knows which on-disk union is appropriate for its context (the
+   * basic `getConfiguredTools` union, the richer profile-sync union
+   * `rasen update` uses, or a test stub).
+   */
+  seedProvider: () => string[];
+}
+
+/**
+ * Resolves the project's configured-tool set through the authoritative
+ * `tools:` manifest in `rasen/config.yaml` (project-install-manifest spec).
+ *
+ * Behavior:
+ * 1. If `tools:` is present (even empty), it is returned verbatim and is the
+ *    authoritative set. `seeded === false`.
+ * 2. If `tools:` is absent, the seed set is computed via `options.seedProvider`,
+ *    then written into `rasen/config.yaml` via `updateProjectConfigKey`. The
+ *    seed is returned for the current run. `seeded === true`.
+ * 3. If the write fails (read-only, parse failure), a warning naming the
+ *    config path is emitted and the in-memory seed is returned for the
+ *    current run. `seeded` remains `true`.
+ * 4. If the config itself cannot be parsed (not just absent), behaves as the
+ *    write-failed path: fall back to on-disk detection for the current run.
+ *
+ * Migration is idempotent: a second call with the manifest present returns it
+ * verbatim and does not rewrite.
+ */
+export function resolveConfiguredTools(
+  projectRoot: string,
+  options: ResolveConfiguredToolsOptions
+): ResolvedConfiguredTools {
+  const config = readProjectConfig(projectRoot);
+  const computeSeed = options.seedProvider;
+
+  if (config === null) {
+    // Config itself unparseable/missing: fall back to disk for this run.
+    const seed = computeSeed();
+    const configPath = resolveConfigFilePath(projectRoot);
+    if (configPath !== null) {
+      console.warn(
+        `Warning: could not read Rasen config at ${configPath}; falling back to on-disk tool detection for this run.`
+      );
+    }
+    return { tools: seed, seeded: true };
+  }
+
+  if (Array.isArray(config.tools)) {
+    return { tools: config.tools, seeded: false };
+  }
+
+  // Manifest absent: seed from disk.
+  const seed = computeSeed();
+  const configPath = resolveConfigFilePath(projectRoot);
+  if (configPath === null) {
+    // No config file at all — nothing to write into. Behave as fail-open.
+    return { tools: seed, seeded: true };
+  }
+  try {
+    updateProjectConfigKey(projectRoot, 'tools', seed);
+  } catch (error) {
+    // Write failure (read-only, parse issue): emit a warning and continue.
+    console.warn(
+      `Warning: could not seed tools: into ${configPath} (${
+        error instanceof Error ? error.message : String(error)
+      }); the manifest was not updated. On-disk detection is used for this run.`
+    );
+  }
+  return { tools: seed, seeded: true };
 }
 
 /**

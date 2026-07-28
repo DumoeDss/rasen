@@ -284,13 +284,31 @@ The status command SHALL provide machine-readable planning context for changes.
 - **AND** the guidance SHALL use plain action language
 
 ### Requirement: Status JSON action context
-The status command SHALL expose action context that lets agents act without hardcoded filesystem assumptions.
+The status command SHALL expose action context that lets agents act without hardcoded filesystem assumptions. The action context SHALL state separately the roots where planning artifacts may be written, the roots where code may be written, and the roots that may only be read, together with the constraints the agent is expected to respect, and SHALL carry a version identifying which contract it is reporting. Planning write access SHALL name the planning directories rather than a whole repository root, and no user home directory SHALL appear in any of the three lists. When the change is being worked on inside a session that records a planning space and an execution project separately, the reported roots SHALL reflect that split rather than collapsing to a single editable root. A consumer reading the earlier single-list form SHALL keep working through a compatibility view that never grants a root the earlier form would not have granted for that same context.
 
 #### Scenario: Repo-local action context
 - **GIVEN** the change is repo-local
 - **WHEN** a user runs `rasen status --change <id> --json`
 - **THEN** status JSON SHALL preserve existing artifact status behavior
 - **AND** it SHALL report a repo-local planning home for agents that use action context
+- **AND** the action context SHALL report the project's planning directories as its planning write roots and that same checkout as its code write root
+
+#### Scenario: Store planning with project execution reports both roots
+- **GIVEN** the change is planned in a Store while a project checkout is being worked on
+- **WHEN** a user runs `rasen status --change <id> --json`
+- **THEN** the action context SHALL report the Store's planning directories as planning write roots and the selected checkout as the code write root
+- **AND** no other member checkout of that Store SHALL appear in any write list
+
+#### Scenario: Planning-only reports no code write root
+- **GIVEN** the session plans in a Store and works on no project
+- **WHEN** a user runs `rasen status --change <id> --json`
+- **THEN** the action context SHALL report an empty set of code write roots
+- **AND** it SHALL still report the Store's planning directories as planning write roots
+
+#### Scenario: The compatibility view never widens access
+- **WHEN** a consumer reads the earlier single-list form of the action context for any context shape
+- **THEN** every root it receives SHALL be one the earlier form would also have granted
+- **AND** a context that cannot be expressed in the earlier form without widening it SHALL report a version identifying the newer contract instead
 
 ### Requirement: Instructions use resolved planning paths
 Artifact and apply instructions SHALL use resolved planning paths rather than hardcoded repo-local change paths.
@@ -366,3 +384,40 @@ The change-scoped workflow surfaces SHALL expose the change's external work dire
 
 - **WHEN** destination is `external` but the project has no machine identity
 - **THEN** the payload SHALL include `destination` = `external`, omit `archiveDir`, and the command SHALL perform no writes
+
+### Requirement: Status and apply instructions surface next workflows
+The `rasen status` and `rasen instructions` (apply) surfaces SHALL emit the runtime-resolved next workflow(s) for the change, filtered to the installed workflow set. In `--json` output this SHALL be a `nextWorkflows` array of `{ workflow, reason }` objects (a field distinct from the existing `nextSteps` artifact-authoring string array). In human-readable output this SHALL be a trailing `Next:` hint line. When resolution yields no installed next workflow, `nextWorkflows` SHALL be an empty array and no `Next:` line SHALL be printed.
+
+#### Scenario: Apply instructions JSON includes nextWorkflows on completion
+- **WHEN** `rasen instructions apply --change <name> --json` is run for a change whose tasks are all complete
+- **THEN** the payload SHALL include a `nextWorkflows` array whose entries each have a `workflow` (canonical id) and a `reason`
+- **AND** under a `core` profile (no `verify`/`ship`) the entry SHALL be `archive`, not an uninstalled workflow
+
+#### Scenario: Apply instructions JSON while blocked
+- **WHEN** `rasen instructions apply --json` is run for a change blocked on missing artifacts
+- **THEN** `nextWorkflows` SHALL point at the authoring continuation (e.g. `continue`, or the nearest installed authoring step)
+
+#### Scenario: Status JSON includes nextWorkflows when artifacts are complete
+- **WHEN** `rasen status --change <name> --json` is run and all artifacts are complete
+- **THEN** the payload SHALL include a `nextWorkflows` entry for `apply`
+- **AND** the pre-existing `nextSteps` string array SHALL remain unchanged in shape and meaning
+
+#### Scenario: Human-readable Next hint
+- **WHEN** the apply or status text output is printed and a next workflow resolves
+- **THEN** a trailing `Next: <workflow> — <reason>` line SHALL be shown
+- **AND** an internal `-command` suffix SHALL be stripped from the displayed workflow name
+- **AND** any command the hint prints SHALL carry the active `--store`/`--project` flag when the surface was invoked in a store- or project-scoped root
+
+Note: the current `Next:` hint prints only the bare workflow name and a
+prose reason — never a runnable `rasen ...` command line, because under
+skills-only delivery the next workflow is invoked as a skill in the user's
+agent (e.g. `/rasen-verify-change`), not as a scoped `rasen` subcommand a
+`--store`/`--project` flag would need to be threaded onto. The store/
+project-flag clause above therefore has no antecedent today and is
+vacuously satisfied; it stays in the requirement as a forward-looking
+constraint in case a later change adds a runnable command to the hint.
+
+#### Scenario: No next workflow installed
+- **WHEN** resolution finds no installed downstream workflow
+- **THEN** `nextWorkflows` SHALL be an empty array
+- **AND** no `Next:` line SHALL be printed

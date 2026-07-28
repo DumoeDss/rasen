@@ -1,3 +1,4 @@
+version: 1
 name: small-feature
 description: >-
   Lightweight feature pipeline: propose, apply, a single standard verification
@@ -16,7 +17,7 @@ stages:
     gate: true
 
   - id: verify
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [apply]
     condition: always

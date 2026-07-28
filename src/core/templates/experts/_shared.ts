@@ -64,7 +64,19 @@ If an explicit \`MODE: dispatched (report-only)\` token is present in your instr
 
 These dispatched-mode prohibitions **override** any contrary standalone instruction later in this skill (fix loops, batched questions, clean-tree gates, adversarial subagent dispatch, native report paths). Standalone mode retains all of that behavior.
 
-**Denied-edit honesty.** If an Edit or Write you attempt is **denied** by an active edit boundary — a \`/freeze\` or \`/guard\` whose target is outside the allowed directory — the fix did NOT land. Report it as an un-applied finding, \`[BLOCKED: freeze/guard] file:line — proposed fix\`, never as \`[AUTO-FIXED]\`, and never silently drop it. The boundary hook wins over any Fix-First rule; do not claim a fix succeeded when it was refused. (Dispatched mode does no AUTO-FIX at all; this clause primarily governs the standalone fix loops.)`;
+**Denied-edit honesty.** Read \`rasen agent edit-boundary status --json\` before describing an edit restriction. If a covered write is denied by an active **hard** boundary, the fix did NOT land: report it as an un-applied finding, \`[BLOCKED: edit-boundary] file:line — proposed fix\`, never as \`[AUTO-FIXED]\`, and never silently drop it. A **soft** boundary requires cooperation and is not a host denial; **unsupported** leaves edits unrestricted. (Dispatched mode does no AUTO-FIX at all; this clause primarily governs the standalone fix loops.)`;
+
+export const EDIT_BOUNDARY_GUIDANCE = `## Runtime edit boundary
+
+Use the base runtime, which works independently of optional skills:
+
+\`\`\`bash
+rasen agent edit-boundary set <directory>
+rasen agent edit-boundary status --json
+rasen agent edit-boundary clear
+\`\`\`
+
+The state is shared by concurrent agents in the same canonical checkout. Always read \`status\` before describing the restriction: **hard** means the detected host rejects covered structured write tools outside the boundary, while shell, MCP, external-process, and other unhooked writes remain outside the contract; **soft** requires agent cooperation and must not be described as a host denial; **unsupported** means edits remain unrestricted and no active boundary is created. Never state enforcement more strongly than the reported level.`;
 
 const ASK_USER_QUESTION_FORMAT = `## AskUserQuestion Format
 
@@ -138,12 +150,12 @@ When you are in plan mode and about to call ExitPlanMode:
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| Verify | \\\`/rasen:verify\\\` | Implementation matches the change artifacts | 0 | — | — |
-| Verify (enhanced) | \\\`/rasen:verify-enhanced\\\` | Adds code-review, security, and browser passes | 0 | — | — |
-| Review cycle | \\\`/rasen:review-cycle\\\` | Iterate review → triage → fix until clean | 0 | — | — |
+| Verify | \\\`/rasen-verify-change\\\` | Implementation matches the change artifacts | 0 | — | — |
+| Verify (enhanced) | \\\`/rasen-verify-enhanced\\\` | Adds code-review, security, and browser passes | 0 | — | — |
+| Review cycle | \\\`/rasen-review-cycle\\\` | Iterate review → triage → fix until clean | 0 | — | — |
 | Codex Review | \\\`/codex review\\\` | Independent 2nd opinion | 0 | — | — |
 
-**VERDICT:** NO REVIEWS YET — run \\\`/rasen:review-cycle\\\` for the full review loop, or the individual reviews above.
+**VERDICT:** NO REVIEWS YET — run \\\`/rasen-review-cycle\\\` for the full review loop, or the individual reviews above.
 \\\`\\\`\\\`
 
 **PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
@@ -157,6 +169,7 @@ plan's living status.`;
  */
 export const PREAMBLE = [
   `${PREAMBLE_BASE}\n${REPO_MODE_CONFIG}`,
+  EDIT_BOUNDARY_GUIDANCE,
   SEVERITY_VOCABULARY,
   DISPATCH_CONTRACT,
   ASK_USER_QUESTION_FORMAT,
@@ -185,6 +198,24 @@ export const PREAMBLE_DIALOGUE = [
  * none of the review-orchestration protocol applies to them.
  */
 export const PREAMBLE_LITE = PREAMBLE_BASE;
+
+/**
+ * Resolves the project's registry-backed machine-local documents directory.
+ * Replaces the old `SLUG=$(basename ...) && mkdir -p ~/.rasen/projects/$SLUG`
+ * pattern: that ad-hoc directory name was never written to the project
+ * registry's `home` field, so `rasen doctor --gc` (which deletes any
+ * `projects/` subdirectory no registry entry references) treated it as an
+ * orphan and deleted it outright — including the design docs standalone
+ * office-hours/qa/design-review sessions had just written there. `rasen init`
+ * always registers the project before these skills can run, so `machineHome`
+ * is reliably present; the in-repo fallback only covers a corrupt/unreadable
+ * registry, and is never gc'd because gc only touches the global data dir.
+ */
+export const PROJECT_DOCS_DIR_RESOLUTION = `\`\`\`bash
+DOCS_DIR=$(rasen context --json 2>/dev/null | jq -r '.root.machineHome // empty')
+if [ -n "$DOCS_DIR" ]; then DOCS_DIR="$DOCS_DIR/design-docs"; else DOCS_DIR=".rasen/design-docs"; fi
+mkdir -p "$DOCS_DIR"
+\`\`\``;
 
 export const CHROME_USE_SETUP = `## SETUP (run this BEFORE any chrome-use command)
 
@@ -346,9 +377,9 @@ Produce this markdown table:
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| Verify | \\\`/rasen:verify\\\` | Implementation matches the change artifacts | {runs} | {status} | {findings} |
-| Verify (enhanced) | \\\`/rasen:verify-enhanced\\\` | Adds code-review, security, and browser passes | {runs} | {status} | {findings} |
-| Review cycle | \\\`/rasen:review-cycle\\\` | Iterate review → triage → fix until clean | {runs} | {status} | {findings} |
+| Verify | \\\`/rasen-verify-change\\\` | Implementation matches the change artifacts | {runs} | {status} | {findings} |
+| Verify (enhanced) | \\\`/rasen-verify-enhanced\\\` | Adds code-review, security, and browser passes | {runs} | {status} | {findings} |
+| Review cycle | \\\`/rasen-review-cycle\\\` | Iterate review → triage → fix until clean | {runs} | {status} | {findings} |
 | Codex Review | \\\`/codex review\\\` | Independent 2nd opinion | {runs} | {status} | {findings} |
 \\\`\\\`\\\`
 
@@ -911,10 +942,8 @@ Compare screenshots and observations across pages for:
 **Local:** \`.rasen/design-reports/design-audit-{domain}-{YYYY-MM-DD}.md\`
 
 **Project-scoped:**
-\`\`\`bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)") && mkdir -p ~/.rasen/projects/$SLUG
-\`\`\`
-Write to: \`~/.rasen/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md\`
+${PROJECT_DOCS_DIR_RESOLUTION}
+Write to: \`$DOCS_DIR/{user}-{branch}-design-audit-{datetime}.md\`
 
 **Baseline:** Write \`design-baseline.json\` for regression mode:
 \`\`\`json
@@ -1530,8 +1559,8 @@ The screenshot file at \`/tmp/rasen-sketch.png\` can be referenced by downstream
 export const SPEC_REVIEW_LOOP = `## Spec Review Loop
 
 Before presenting the document to the user for approval, run adversarial review. This is
-a **quality bonus, not a gate** — the document is a DRAFT; downstream \`/rasen:propose\` →
-implement → \`/rasen:review-cycle\` will scrutinize it again (review-cycle is the real
+a **quality bonus, not a gate** — the document is a DRAFT; downstream \`/rasen-propose\` →
+implement → \`/rasen-review-cycle\` will scrutinize it again (review-cycle is the real
 adversarial code review). Do not over-polish a draft, and never iterate to convergence.
 
 **Step 1: One fresh adversarial review**
@@ -1595,7 +1624,7 @@ fresh pass after a major redesign**. Do NOT iterate toward a perfect score.
 
 - If the reviewer returns the SAME unresolved issue on two consecutive passes (the fix didn't
   land, or it's a genuine disagreement), STOP. Persist it as an "## Open Questions" or
-  "## Reviewer Concerns" section in the document for \`/rasen:propose\` to resolve. A draft is
+  "## Reviewer Concerns" section in the document for \`/rasen-propose\` to resolve. A draft is
   allowed to carry open questions — that is not a failure.
 - If the subagent fails, times out, or is unavailable — skip the loop: tell the user "Spec
   review unavailable — presenting unreviewed doc." The document is already on disk; the

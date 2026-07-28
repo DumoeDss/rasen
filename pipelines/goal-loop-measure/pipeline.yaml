@@ -1,14 +1,15 @@
+version: 1
 name: goal-loop-measure
 description: >-
   Goal-driven iteration for measurable code targets (perf, scores, latency).
-  define-goal -> iterate (measure gate) -> ship -> archive. The LEAD injects
-  the concrete measure command/threshold from goal-plan.md before round 1.
+  define-goal -> iterate (measure gate) -> ship -> retain -> archive. The LEAD
+  injects the concrete measure command/threshold from goal-plan.md before round 1.
 stages:
   - id: define-goal
     skill: rasen-goal-plan
     role: planner
     requires: []
-    gate: vet
+    gate: true
 
   - id: iterate
     skill: rasen-goal-iterate
@@ -26,8 +27,14 @@ stages:
     gate: true
     model: sonnet
 
+  - id: retain
+    skill: rasen-retain
+    role: reviewer
+    requires: [ship]
+    model: sonnet
+
   - id: archive
     skill: rasen-archive-change
     role: shipper
-    requires: [ship]
+    requires: [retain]
     model: sonnet

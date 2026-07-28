@@ -29,7 +29,6 @@ When the user types \`/benchmark\`, run this skill.
 ### Phase 1: Setup
 
 \`\`\`bash
-SLUG=$(basename "$(git remote get-url origin 2>/dev/null)" .git 2>/dev/null || basename "$(pwd)")
 mkdir -p .rasen/benchmark-reports
 mkdir -p .rasen/benchmark-reports/baselines
 \`\`\`
@@ -225,7 +224,7 @@ TREND: Performance degrading. LCP doubled in 8 days.
 
 export function getBenchmarkSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:benchmark',
+    name: 'rasen-benchmark',
     description: 'Performance regression detection — run repeatable timing and size benchmarks for the branch, compare against budgets, and grade regressions',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

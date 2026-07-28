@@ -15,9 +15,28 @@ export interface ProjectRef {
   root: string;
 }
 
+/**
+ * The store contributing the store layer to a config read (design D6): the
+ * inherited store for a project context, or the addressed store's own root
+ * for a store context. `null` in a response when no store layer is active.
+ */
+export interface StoreLayerRef {
+  id: string;
+  root: string;
+}
+
 export interface WireConstraints {
   type: ConfigValueType;
   enumValues?: readonly string[];
+  /**
+   * Per-scope allowed values for an enum key whose domain differs by scope
+   * (today only `profile`: global adds `custom`, both scopes add saved names).
+   * Present only for such keys; covers exactly the scopes the key is settable
+   * in. A client renders the value list for the scope it is writing to and
+   * falls back to the static `enumValues` when this map is absent, so an older
+   * client stays correct (config-http-api spec).
+   */
+  enumValuesByScope?: Partial<Record<ConfigScope, readonly string[]>>;
   /** For `type: 'number'`, or the fraction branch of `type: 'threshold'`. */
   range?: { gt: number; lte: number };
   /**
@@ -46,12 +65,24 @@ export interface WireConfigEntry {
   definition: WireConfigKeyDefinition;
   value: unknown;
   source: ConfigSource;
-  scopeValues: { global?: unknown; project?: unknown };
+  scopeValues: { global?: unknown; store?: unknown; project?: unknown };
+  /**
+   * The fully-qualified instance path for a wildcard family instance entry
+   * (e.g. `pipelines.small-feature.gates.propose`). Absent on fixed keys and
+   * on a family's template entry. Additive optional field — the UI mirror in
+   * `packages/ui/src/api/types.ts` does NOT carry it yet (it lands with the
+   * Pipelines-page consumer, keeping this change's touch-set disjoint).
+   */
+  instanceKey?: string;
   /** Present only when a raw on-disk scope value fails registry validation; the API never rewrites the file to fix it. */
   warnings?: string[];
 }
 
-/** Uniform non-2xx error envelope, mirroring the CLI's `StoreError` code/fix vocabulary. */
-export interface ApiErrorBody {
-  error: { code: string; message: string; fix?: string };
-}
+/**
+ * Uniform non-2xx error envelope, mirroring the CLI's `StoreError` code/fix
+ * vocabulary. Re-exported from `management-api/wire-types.ts` — the
+ * management envelope is canonical (unify-pipeline-http-api design D6: one
+ * shared envelope, one helper family, across both route groups) — rather
+ * than re-declared, so there is a single definition to diverge from.
+ */
+export type { ApiErrorBody } from '../management-api/wire-types.js';

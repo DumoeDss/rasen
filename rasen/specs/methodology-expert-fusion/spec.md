@@ -4,27 +4,27 @@
 Fuses the three methodology experts (`codebase-design`, `tdd`, `prototype`) into the Rasen workflow templates (propose, apply, explore) as conditional, teaching-level references — with their artifacts captured in the change directory rather than skill-native paths — and removes dangling `enhance` hooks and doc references to the plan-review skills deleted in an earlier change.
 ## Requirements
 ### Requirement: Apply references the TDD and careful disciplines
-The `/rasen:apply` workflow template SHALL mention `/tdd` as an optional test-first implementation discipline and `/careful` for changes touching destructive operations, as conditional references without inlining their bodies.
+The `rasen-apply-change` workflow template SHALL mention the `rasen-tdd` skill as an optional test-first implementation discipline and the `rasen-careful` skill for changes touching destructive operations, as conditional references without inlining their bodies. References SHALL name the canonical skill, not a bare-slash or `/rasen:*` colon command.
 
 #### Scenario: Apply template names the implementation disciplines
-- **WHEN** the generated `/rasen:apply` skill and command templates are inspected
-- **THEN** each SHALL reference `/tdd` as an implementation option and `/careful` for destructive-operation-heavy work
+- **WHEN** the generated `rasen-apply-change` skill template is inspected
+- **THEN** it SHALL reference the `rasen-tdd` skill as an implementation option and the `rasen-careful` skill for destructive-operation-heavy work
 - **AND** SHALL NOT contain an inlined copy of either expert's body
 
 ### Requirement: Explore references the prototype discipline
 
-The `/rasen:explore` workflow template SHALL reference `/prototype` as the way to settle a design question that only building can answer, SHALL instruct capturing the answer in the change directory and deleting the throwaway code, and its "Don't implement" guardrail SHALL carry an explicit exception for the throwaway `/prototype` probe so the template does not contradict itself.
+The `rasen-explore` workflow template SHALL reference the `rasen-prototype` skill as the way to settle a design question that only building can answer, SHALL instruct capturing the answer in the change directory and deleting the throwaway code, and its "Don't implement" guardrail SHALL carry an explicit exception for the throwaway prototype probe so the template does not contradict itself.
 
 #### Scenario: Explore template names prototype
 
-- **WHEN** the generated `/rasen:explore` skill and command templates are inspected
-- **THEN** each SHALL reference `/prototype` for settling a stuck design question
+- **WHEN** the generated `rasen-explore` skill template is inspected
+- **THEN** it SHALL reference the `rasen-prototype` skill for settling a stuck design question
 - **AND** SHALL instruct capturing the answer in the change directory and deleting the throwaway code
 
 #### Scenario: Explore guardrail carve-out stays consistent with the prototype reference
 
-- **WHEN** the Guardrails section of the generated `/rasen:explore` skill and command templates is inspected
-- **THEN** the "Don't implement" guardrail SHALL name the throwaway `/prototype` probe as its only exception
+- **WHEN** the Guardrails section of the generated `rasen-explore` skill template is inspected
+- **THEN** the "Don't implement" guardrail SHALL name the throwaway `rasen-prototype` probe as its only exception
 - **AND** SHALL require the probe's code to be deleted once the answer is captured
 
 ### Requirement: Spec-driven enhance hooks reference only existing skills
@@ -70,12 +70,12 @@ The surviving methodology experts SHALL remain registered and standalone-invokab
 
 ### Requirement: Propose references the design methodology expert
 
-The `/rasen:propose` workflow template SHALL reference `/codebase-design` as a conditional, teaching-level consultation for design-dense changes (a new module or a non-trivial interface), without inlining its skill body. The reference SHALL instruct that resulting interface/design decisions are captured in the change directory (the change's `design.md` Decisions section or a change-directory sidecar), not in expert-skill-native report paths.
+The `rasen-propose` workflow template SHALL reference the `rasen-codebase-design` skill as a conditional, teaching-level consultation for design-dense changes (a new module or a non-trivial interface), without inlining its skill body. The reference SHALL instruct that resulting interface/design decisions are captured in the change directory (the change's `design.md` Decisions section or a change-directory sidecar), not in expert-skill-native report paths.
 
 #### Scenario: Propose template names the design methodology expert
 
-- **WHEN** the generated `/rasen:propose` skill and command templates are inspected
-- **THEN** each SHALL reference `/codebase-design` as a conditional consultation for design-dense changes
+- **WHEN** the generated `rasen-propose` skill template is inspected
+- **THEN** it SHALL reference the `rasen-codebase-design` skill as a conditional consultation for design-dense changes
 - **AND** SHALL NOT reference `/domain-modeling`
 - **AND** SHALL NOT contain an inlined copy of the expert's body
 

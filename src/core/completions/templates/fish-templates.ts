@@ -43,4 +43,22 @@ function __fish_rasen_schemas
     rasen __complete schemas 2>/dev/null | while read -l id desc
         printf '%s\\t%s\\n' "$id" "$desc"
     end
+end
+
+function __fish_rasen_profiles
+    rasen __complete profiles 2>/dev/null | while read -l id desc
+        printf '%s\\t%s\\n' "$id" "$desc"
+    end
+end
+
+function __fish_rasen_saved_profiles
+    rasen __complete saved-profiles 2>/dev/null | while read -l id desc
+        printf '%s\\t%s\\n' "$id" "$desc"
+    end
+end
+
+function __fish_rasen_workflows
+    rasen __complete workflows 2>/dev/null | while read -l id desc
+        printf '%s\\t%s\\n' "$id" "$desc"
+    end
 end`;

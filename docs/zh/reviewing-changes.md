@@ -1,6 +1,6 @@
 # 审查变更
 
-OpenSpec 的引擎会在写下任何代码之前就替你起草规格和方案——但没人读过的方案毫无价值。本页讲的就是你真正读一遍它起草内容的那两分钟——打开什么、按什么顺序、找什么。
+rasen 的引擎会在写下任何代码之前就替你起草规格和方案——但没人读过的方案毫无价值。本页讲的就是你真正读一遍它起草内容的那两分钟——打开什么、按什么顺序、找什么。
 
 这个赌注很简单：在一页纸的方案里抓住一个错误方向几乎不花成本。在 300 行代码里抓住同样的错误方向则不然。审查就是你兑现这个赌注的地方。
 
@@ -9,12 +9,12 @@ OpenSpec 的引擎会在写下任何代码之前就替你起草规格和方案�
 恰好有两个：
 
 ```
-/rasen:propose ──► REVIEW THE PLAN ──► /rasen:apply ──► REVIEW THE CODE ──► /rasen:archive
-                  (before any code)                    (/rasen:verify)
+/rasen-propose ──► REVIEW THE PLAN ──► /rasen-apply-change ──► REVIEW THE CODE ──► /rasen-archive-change
+                  (before any code)                    (/rasen-verify-change)
 ```
 
-1. **在 `/rasen:propose`（或 `/rasen:ff`）之后、`/rasen:apply` 之前** —— 趁方案还只是一堆文字时读它。
-2. **在构建之后**，用 `/rasen:verify` —— 检查代码是否真的做到了方案所说的。
+1. **在 `/rasen-propose` 之后、`/rasen-apply-change` 之前** —— 趁方案还只是一堆文字时读它。
+2. **在构建之后**，用 `/rasen-verify-change` —— 检查代码是否真的做到了方案所说的。
 
 第一次审查为你省下的最多，也是人们最常跳过的一次。本页把大部分篇幅花在它上面。
 
@@ -97,7 +97,7 @@ The system SHALL let a user switch between light and dark themes.
 
 ## 代码之后：验证
 
-工作构建完成后，`/rasen:verify` 是你的第二次审查。它重新读一遍产物和代码，并从三个维度报告不匹配之处：
+工作构建完成后，`/rasen-verify-change` 是你的第二次审查。它重新读一遍产物和代码，并从三个维度报告不匹配之处：
 
 | 维度 | 检查内容 |
 |-----------|----------------|
@@ -106,7 +106,7 @@ The system SHALL let a user switch between light and dark themes.
 | **一致性（Coherence）** | 设计决策确实体现在代码中 |
 
 ```
-You: /rasen:verify
+You: /rasen-verify-change
 
 AI:  Verifying add-dark-mode...
 
@@ -118,7 +118,7 @@ AI:  Verifying add-dark-mode...
 
 它把问题标记为 CRITICAL、WARNING 或 SUGGESTION，并且**不会**阻止归档——它把差距摆出来，把决定留给你。这就是"AI 写了代码"和"它构建了我们一致同意的东西"之间的区别。
 
-`/rasen:verify` 属于扩展模式。如果你没有它，用 `rasen config profile`（然后 `rasen update`）开启，或者干脆自己重读一遍变更和 diff。
+`/rasen-verify-change` 属于扩展模式。如果你没有它，用 `rasen config profile`（然后 `rasen update`）开启，或者干脆自己重读一遍变更和 diff。
 
 ## 给审查定好大小
 
@@ -134,7 +134,7 @@ AI:  Verifying add-dark-mode...
 - [ ] 任务能映射到需求；没有任何神秘之处或超出范围。
 - [ ] 如果 AI 恰好构建出这个、且不多做一点，我会感到放心。
 
-如果全部七条通过，就放心地运行 `/rasen:apply`。如果有任何一条失败，那不是挫折——而是这两分钟在发挥作用。
+如果全部七条通过，就放心地运行 `/rasen-apply-change`。如果有任何一条失败，那不是挫折——而是这两分钟在发挥作用。
 
 ## 下一步去哪
 

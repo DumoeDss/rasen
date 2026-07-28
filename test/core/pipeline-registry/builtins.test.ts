@@ -72,10 +72,27 @@ describe('pipeline-registry/built-ins', () => {
     });
   }
 
-  // autopilot-gate-policy backward-compat regression: widening StageSchema.gate
-  // to accept 'vet' must not change the existing boolean gate stages of the
-  // three non-goal-loop built-ins (unaffected by this change — only the
-  // goal-loop define-goal stages flip to 'vet').
+  describe('full-feature retention tail (design D2)', () => {
+    it('runs retain between ship and archive with no post-archive retro stage', () => {
+      const pipeline = loadPipelineByName('full-feature');
+      const ids = pipeline.stages.map((s) => s.id);
+      expect(ids).toContain('retain');
+      expect(ids).not.toContain('retro');
+
+      const retain = pipeline.stages.find((s) => s.id === 'retain')!;
+      const archive = pipeline.stages.find((s) => s.id === 'archive')!;
+      expect(retain.skill).toBe('rasen-retain');
+      // retain runs after ship; archive is gated on retain completing (so archive
+      // cannot begin until the retention operation succeeds).
+      expect(retain.requires).toContain('ship');
+      expect(archive.requires).toContain('retain');
+      // archive no longer depends directly on ship (retain is interposed).
+      expect(archive.requires).not.toContain('ship');
+    });
+  });
+
+  // autopilot-gate-policy: the stage gate is a plain boolean; the existing
+  // boolean gate stages of the three non-goal-loop built-ins are unchanged.
   describe('backward-compat: existing gate: true stages are unchanged', () => {
     it('small-feature: propose/apply/ship remain gate: true', () => {
       const pipeline = loadPipelineByName('small-feature');
@@ -167,34 +184,27 @@ describe('pipeline-registry/built-ins', () => {
   // Per-pipeline tail divergence. goal-loop-core asserted each pipeline "has a
   // goal loop on iterate" but did not assert the structural tail differences
   // that make each pipeline homogeneous: measure/evaluate ship code (ship →
-  // archive, model: sonnet); research writes prose (report tail, no ship/archive).
+  // retain → archive, model: sonnet); research writes prose (report tail, no
+  // ship/retain/archive).
   describe('goal-loop per-pipeline tail structure', () => {
-    it('goal-loop-measure ends in ship -> archive, each model: sonnet', () => {
+    it('goal-loop-measure ends in ship -> retain -> archive, each model: sonnet', () => {
       const pipeline = loadPipelineByName('goal-loop-measure');
-      const stages = pipeline.stages;
-      const last = stages[stages.length - 1];
-      const secondLast = stages[stages.length - 2];
-      expect(secondLast.id).toBe('ship');
-      expect(secondLast.model).toBe('sonnet');
-      expect(last.id).toBe('archive');
-      expect(last.model).toBe('sonnet');
+      const tail = pipeline.stages.slice(-3);
+      expect(tail.map((stage) => stage.id)).toEqual(['ship', 'retain', 'archive']);
+      expect(tail.every((stage) => stage.model === 'sonnet')).toBe(true);
       // No report stage on a code-tail pipeline.
-      expect(stages.some(s => s.id === 'report')).toBe(false);
+      expect(pipeline.stages.some(s => s.id === 'report')).toBe(false);
     });
 
-    it('goal-loop-evaluate ends in ship -> archive, each model: sonnet', () => {
+    it('goal-loop-evaluate ends in ship -> retain -> archive, each model: sonnet', () => {
       const pipeline = loadPipelineByName('goal-loop-evaluate');
-      const stages = pipeline.stages;
-      const last = stages[stages.length - 1];
-      const secondLast = stages[stages.length - 2];
-      expect(secondLast.id).toBe('ship');
-      expect(secondLast.model).toBe('sonnet');
-      expect(last.id).toBe('archive');
-      expect(last.model).toBe('sonnet');
-      expect(stages.some(s => s.id === 'report')).toBe(false);
+      const tail = pipeline.stages.slice(-3);
+      expect(tail.map((stage) => stage.id)).toEqual(['ship', 'retain', 'archive']);
+      expect(tail.every((stage) => stage.model === 'sonnet')).toBe(true);
+      expect(pipeline.stages.some(s => s.id === 'report')).toBe(false);
     });
 
-    it('goal-loop-research ends in a single report stage (no ship/archive)', () => {
+    it('goal-loop-research ends in a single report stage (no ship/retain/archive)', () => {
       const pipeline = loadPipelineByName('goal-loop-research');
       const stages = pipeline.stages;
       const last = stages[stages.length - 1];
@@ -203,6 +213,7 @@ describe('pipeline-registry/built-ins', () => {
       // Research writes prose — there is no code to ship/archive.
       const ids = stages.map(s => s.id);
       expect(ids).not.toContain('ship');
+      expect(ids).not.toContain('retain');
       expect(ids).not.toContain('archive');
     });
 
@@ -230,18 +241,29 @@ describe('pipeline-registry/built-ins', () => {
     });
   });
 
-  // autopilot-gate-policy: define-goal is marked gate: 'vet' (never
-  // auto-approved by --no-gate) because it is where the human vets the
-  // LEAD-generated arbitrary-shell measure command before any round runs.
-  // ship stays gate: true (an ordinary, skippable gate).
-  describe('goal-loop define-goal gate is vet (autopilot-gate-policy)', () => {
+  // autopilot-gate-policy: define-goal is an ordinary gate: true (the vet type
+  // is retired). It pauses by default, where the human confirms the
+  // LEAD-generated arbitrary-shell measure command before any round runs; under
+  // an off base it can be auto-approved unless a per-stage instance restores the
+  // pause. No built-in stage declares a 'vet' gate. ship stays gate: true.
+  describe('goal-loop define-goal gate is true (autopilot-gate-policy)', () => {
     for (const name of GOAL_LOOP_NAMES) {
-      it(`${name}: define-goal is gate: 'vet'`, () => {
+      it(`${name}: define-goal is gate: true`, () => {
         const pipeline = loadPipelineByName(name);
         const defineGoal = pipeline.stages.find((s) => s.id === 'define-goal');
-        expect(defineGoal?.gate).toBe('vet');
+        expect(defineGoal?.gate).toBe(true);
       });
     }
+
+    it('no built-in stage declares a vet gate', () => {
+      for (const name of listPipelines()) {
+        const pipeline = loadPipelineByName(name);
+        for (const stage of pipeline.stages) {
+          expect(stage.gate).not.toBe('vet');
+          expect(typeof stage.gate).toBe('boolean');
+        }
+      }
+    });
 
     it("goal-loop-measure/evaluate: ship stays gate: true (skippable)", () => {
       for (const name of ['goal-loop-measure', 'goal-loop-evaluate'] as const) {

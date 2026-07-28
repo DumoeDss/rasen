@@ -26,6 +26,8 @@ import https from 'node:https';
 import * as fs from 'node:fs';
 import { getTelemetryConfig, updateTelemetryConfig } from './config.js';
 import { getGlobalConfigPath } from '../core/global-config.js';
+import { getCliLocale } from '../core/cli-locale.js';
+import { getLocaleCatalog } from '../locales/index.js';
 
 // Maintainer-owned Cloudflare Worker (fork-phase1-telemetry-backend). No API
 // key required — the Worker is unauthenticated by design.
@@ -212,9 +214,7 @@ export async function maybeShowTelemetryNotice(): Promise<void> {
 
     // Display notice on stderr so it never pollutes stdout (bare-spawn
     // text-mode commands parse stdout as command output, not JSON).
-    console.error(
-      'Note: Rasen sends anonymous usage stats (command, version, OS, Node version, and a random id) to its own Cloudflare Worker. Opt out: RASEN_TELEMETRY=0'
-    );
+    console.error(getLocaleCatalog(getCliLocale()).telemetry.notice);
 
     // Mark as seen
     await updateTelemetryConfig({ noticeSeen: true });

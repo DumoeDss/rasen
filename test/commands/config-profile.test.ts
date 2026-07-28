@@ -5,6 +5,15 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { execSync } from 'node:child_process';
 
+import { ALL_EXPERTS, ALL_WORKFLOWS } from '../../src/core/profiles.js';
+import { getExpertSkillDefinitions } from '../../src/core/workflow-registry/index.js';
+import { setStdoutRows } from '../helpers/stdout.js';
+
+// The picker's choice list is workflows + experts + 2 group Separators
+// (design.md D6: experts are selectable alongside workflows, shown as a
+// second labeled group).
+const PICKER_CHOICE_COUNT = ALL_WORKFLOWS.length + ALL_EXPERTS.length + 2;
+
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
   return {
@@ -13,11 +22,17 @@ vi.mock('node:child_process', async () => {
   };
 });
 
-vi.mock('@inquirer/prompts', () => ({
-  select: vi.fn(),
-  checkbox: vi.fn(),
-  confirm: vi.fn(),
-}));
+vi.mock('@inquirer/prompts', async () => {
+  const actual = await vi.importActual<typeof import('@inquirer/prompts')>('@inquirer/prompts');
+  return {
+    ...actual,
+    select: vi.fn(),
+    checkbox: vi.fn(),
+    confirm: vi.fn(),
+  };
+});
+
+
 
 async function runConfigCommand(args: string[]): Promise<void> {
   const { registerConfigCommand } = await import('../../src/commands/config.js');
@@ -44,8 +59,9 @@ describe('diffProfileState workflow formatting', () => {
     const { diffProfileState } = await import('../../src/commands/config.js');
 
     const diff = diffProfileState(
-      { profile: 'custom', delivery: 'both', workflows: ['propose', 'sync'] },
-      { profile: 'custom', delivery: 'both', workflows: ['propose'] },
+      { profile: 'custom', workflows: ['propose', 'sync'] },
+      { profile: 'custom', workflows: ['propose'] },
+      'en',
     );
 
     expect(diff.hasChanges).toBe(true);
@@ -56,8 +72,9 @@ describe('diffProfileState workflow formatting', () => {
     const { diffProfileState } = await import('../../src/commands/config.js');
 
     const diff = diffProfileState(
-      { profile: 'custom', delivery: 'both', workflows: ['propose', 'sync'] },
-      { profile: 'custom', delivery: 'both', workflows: ['propose', 'verify'] },
+      { profile: 'custom', workflows: ['propose', 'sync'] },
+      { profile: 'custom', workflows: ['propose', 'verify'] },
+      'en',
     );
 
     expect(diff.hasChanges).toBe(true);
@@ -65,20 +82,104 @@ describe('diffProfileState workflow formatting', () => {
   });
 });
 
-describe('deriveProfileFromWorkflowSelection', () => {
+describe('deriveProfileFromSelection', () => {
   it('returns custom for an empty workflow selection', async () => {
-    const { deriveProfileFromWorkflowSelection } = await import('../../src/commands/config.js');
-    expect(deriveProfileFromWorkflowSelection([])).toBe('custom');
+    const { deriveProfileFromSelection } = await import('../../src/commands/config.js');
+    expect(deriveProfileFromSelection([], 'off')).toBe('custom');
   });
 
   it('returns custom when selection is a superset of core workflows', async () => {
-    const { deriveProfileFromWorkflowSelection } = await import('../../src/commands/config.js');
-    expect(deriveProfileFromWorkflowSelection(['propose', 'explore', 'apply', 'sync', 'archive', 'new'])).toBe('custom');
+    const { deriveProfileFromSelection } = await import('../../src/commands/config.js');
+    expect(deriveProfileFromSelection(['propose', 'explore', 'apply', 'sync', 'archive', 'new'], 'off')).toBe('custom');
   });
 
-  it('returns core when selection has exactly core workflows in different order', async () => {
-    const { deriveProfileFromWorkflowSelection } = await import('../../src/commands/config.js');
-    expect(deriveProfileFromWorkflowSelection(['archive', 'auto-command', 'sync', 'apply', 'explore', 'propose', 'help'])).toBe('core');
+  it('returns custom when selection has exactly the core workflows but no quality-floor experts', async () => {
+    const { deriveProfileFromSelection } = await import('../../src/commands/config.js');
+    expect(deriveProfileFromSelection(['archive', 'auto-command', 'sync', 'apply', 'explore', 'propose', 'help'], 'off')).toBe('custom');
+  });
+
+  it('returns core when selection has exactly core workflows plus the quality-floor experts, in different order', async () => {
+    const { deriveProfileFromSelection } = await import('../../src/commands/config.js');
+    expect(deriveProfileFromSelection([
+      'archive', 'auto-command', 'sync', 'apply', 'explore', 'propose', 'help',
+      'design-review', 'benchmark', 'qa-only', 'qa', 'cso', 'review',
+    ], 'off')).toBe('core');
+  });
+
+  it('returns custom when core membership carries a non-off retention mode', async () => {
+    const { deriveProfileFromSelection } = await import('../../src/commands/config.js');
+    expect(deriveProfileFromSelection([
+      'archive', 'auto-command', 'sync', 'apply', 'explore', 'propose', 'help',
+      'design-review', 'benchmark', 'qa-only', 'qa', 'cso', 'review',
+    ], 'report')).toBe('custom');
+  });
+});
+
+describe('resolveCurrentProfileState — saved-name global profile (m4)', () => {
+  let tempDir: string;
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-resolve-current-profile-'));
+    originalEnv = { ...process.env };
+    process.env.RASEN_HOME = tempDir;
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('displays a saved-name global profile verbatim and resolves its actual workflows (never coerced to full)', async () => {
+    const { saveNamedProfile } = await import('../../src/core/named-profiles.js');
+    const { resolveCurrentProfileState } = await import('../../src/commands/config.js');
+    saveNamedProfile('my-set', { version: 1, workflows: ['propose', 'apply'] });
+
+    const state = resolveCurrentProfileState({ profile: 'my-set', expertSelectionExplicit: true });
+    // Name shown as-is, not the 'full' preset.
+    expect(state.profile).toBe('my-set');
+    // Workflows are the saved set, not full's catalog.
+    expect([...state.workflows].sort()).toEqual(['apply', 'propose']);
+  });
+
+  it('a reserved global profile still resolves to its preset set', async () => {
+    const { resolveCurrentProfileState } = await import('../../src/commands/config.js');
+    const state = resolveCurrentProfileState({ profile: 'core', expertSelectionExplicit: true });
+    expect(state.profile).toBe('core');
+    expect(state.workflows).toContain('propose');
+  });
+
+  it('resolves retention from the profile when no explicit value is stored (full → report, core → off)', async () => {
+    const { resolveCurrentProfileState } = await import('../../src/commands/config.js');
+    expect(resolveCurrentProfileState({ profile: 'full' }).retention).toBe('report');
+    expect(resolveCurrentProfileState({ profile: 'core' }).retention).toBe('off');
+  });
+
+  it('prefers an explicit retention value over the profile default', async () => {
+    const { resolveCurrentProfileState } = await import('../../src/commands/config.js');
+    const state = resolveCurrentProfileState({ profile: 'full', retention: 'codify' });
+    expect(state.retention).toBe('codify');
+  });
+
+  it('migrates a v1 custom selection carrying retro-command to report and drops the id', async () => {
+    const { resolveCurrentProfileState } = await import('../../src/commands/config.js');
+    const state = resolveCurrentProfileState({
+      profile: 'custom',
+      workflows: ['propose', 'retro-command', 'apply'],
+      expertSelectionExplicit: true,
+    });
+    expect(state.retention).toBe('report');
+    expect(state.workflows).not.toContain('retro-command');
+  });
+
+  it('migrates a v1 custom selection without retro-command to off', async () => {
+    const { resolveCurrentProfileState } = await import('../../src/commands/config.js');
+    const state = resolveCurrentProfileState({
+      profile: 'custom',
+      workflows: ['propose', 'apply'],
+      expertSelectionExplicit: true,
+    });
+    expect(state.retention).toBe('off');
   });
 });
 
@@ -87,7 +188,7 @@ describe('config profile interactive flow', () => {
   let originalEnv: NodeJS.ProcessEnv;
   let originalCwd: string;
   let originalTTY: boolean | undefined;
-  let originalExitCode: number | undefined;
+  let originalExitCode: typeof process.exitCode;
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
@@ -108,11 +209,35 @@ describe('config profile interactive flow', () => {
       'rasen-archive-change',
       'rasen-auto',
       'rasen-help',
+      // auto-command's workflow dependency installs the internal retention runner.
+      'rasen-retain',
     ];
     for (const dirName of coreSkillDirs) {
       const skillPath = path.join(projectDir, '.claude', 'skills', dirName, 'SKILL.md');
       fs.mkdirSync(path.dirname(skillPath), { recursive: true });
       fs.writeFileSync(skillPath, `name: ${dirName}\n`, 'utf-8');
+    }
+
+    // The retention runner's sidecars (report.md, codify.md) are part of its
+    // executable contract — hasToolProfileDrift requires all three files, so a
+    // fully synced project must have them alongside SKILL.md.
+    const retainDir = path.join(projectDir, '.claude', 'skills', 'rasen-retain');
+    fs.writeFileSync(path.join(retainDir, 'report.md'), '# report\n', 'utf-8');
+    fs.writeFileSync(path.join(retainDir, 'codify.md'), '# codify\n', 'utf-8');
+
+    // The temporary retro-compat wrapper (rasen-retro) is generated for every
+    // configured tool and must exist for drift detection to pass.
+    const retroSkillPath = path.join(projectDir, '.claude', 'skills', 'rasen-retro', 'SKILL.md');
+    fs.mkdirSync(path.dirname(retroSkillPath), { recursive: true });
+    fs.writeFileSync(retroSkillPath, 'name: rasen-retro\n', 'utf-8');
+
+    // Legacy (no explicit expert selection) resolves to CORE_WORKFLOWS +
+    // ALL_EXPERTS (design.md D4 non-regression fallback) — a project fully
+    // in sync also has every expert skill dir installed.
+    for (const expert of getExpertSkillDefinitions()) {
+      const skillPath = path.join(projectDir, '.claude', 'skills', expert.dirName, 'SKILL.md');
+      fs.mkdirSync(path.dirname(skillPath), { recursive: true });
+      fs.writeFileSync(skillPath, `name: ${expert.dirName}\n`, 'utf-8');
     }
 
     const coreCommands = ['propose', 'explore', 'apply', 'sync', 'archive', 'auto', 'help'];
@@ -141,7 +266,7 @@ describe('config profile interactive flow', () => {
 
     originalEnv = { ...process.env };
     originalCwd = process.cwd();
-    originalTTY = (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY;
+    originalTTY = (process.stdout as unknown as { isTTY?: boolean }).isTTY;
     originalExitCode = process.exitCode;
 
     // The global vitest safety net (vitest.setup.ts) sets RASEN_HOME, which
@@ -149,8 +274,9 @@ describe('config profile interactive flow', () => {
     // actually resolves into tempDir.
     delete process.env.RASEN_HOME;
     process.env.XDG_CONFIG_HOME = tempDir;
+    process.env.RASEN_LANG = 'en';
     process.chdir(tempDir);
-    (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = true;
+    (process.stdout as unknown as { isTTY?: boolean }).isTTY = true;
     process.exitCode = undefined;
 
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -161,7 +287,7 @@ describe('config profile interactive flow', () => {
   afterEach(() => {
     process.env = originalEnv;
     process.chdir(originalCwd);
-    (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = originalTTY;
+    (process.stdout as unknown as { isTTY?: boolean }).isTTY = originalTTY;
     process.exitCode = originalExitCode;
     fs.rmSync(tempDir, { recursive: true, force: true });
 
@@ -170,26 +296,11 @@ describe('config profile interactive flow', () => {
     vi.clearAllMocks();
   });
 
-  it('delivery-only action should not invoke workflow checkbox prompt', async () => {
-    const { saveGlobalConfig, getGlobalConfig } = await import('../../src/core/global-config.js');
-    const { select, checkbox } = await getPromptMocks();
-
-    saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
-    select.mockResolvedValueOnce('delivery');
-    select.mockResolvedValueOnce('skills');
-
-    await runConfigCommand(['profile']);
-
-    expect(checkbox).not.toHaveBeenCalled();
-    expect(select).toHaveBeenCalledTimes(2);
-    expect(getGlobalConfig().delivery).toBe('skills');
-  });
-
   it('action picker should use configure wording and describe each path', async () => {
     const { saveGlobalConfig } = await import('../../src/core/global-config.js');
     const { select } = await getPromptMocks();
 
-    saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
+    saveGlobalConfig({ featureFlags: {}, profile: 'core', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
     select.mockResolvedValueOnce('keep');
 
     await runConfigCommand(['profile']);
@@ -197,10 +308,6 @@ describe('config profile interactive flow', () => {
     const firstCall = select.mock.calls[0][0];
     expect(firstCall.message).toBe('What do you want to configure?');
     expect(firstCall.choices).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        value: 'delivery',
-        description: 'Change where workflows are installed',
-      }),
       expect.objectContaining({
         value: 'workflows',
         description: 'Change which workflow actions are available',
@@ -212,58 +319,60 @@ describe('config profile interactive flow', () => {
     ]));
   });
 
-  it('workflows-only action should not invoke delivery prompt', async () => {
-    const { saveGlobalConfig, getGlobalConfig } = await import('../../src/core/global-config.js');
-    const { ALL_WORKFLOWS } = await import('../../src/core/profiles.js');
-    const { select, checkbox } = await getPromptMocks();
-
-    saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
-    select.mockResolvedValueOnce('workflows');
-    checkbox.mockResolvedValueOnce(['propose', 'explore']);
-
-    await runConfigCommand(['profile']);
-
-    expect(select).toHaveBeenCalledTimes(1);
-    expect(checkbox).toHaveBeenCalledTimes(1);
-    const checkboxCall = checkbox.mock.calls[0][0];
-    expect(checkboxCall.pageSize).toBe(ALL_WORKFLOWS.length);
-    expect(checkboxCall.theme).toEqual({
-      icon: {
-        checked: '[x]',
-        unchecked: '[ ]',
-      },
-    });
-    const proposeChoice = checkboxCall.choices.find((choice: { value: string }) => choice.value === 'propose');
-    const onboardChoice = checkboxCall.choices.find((choice: { value: string }) => choice.value === 'onboard');
-    expect(proposeChoice.checked).toBe(true);
-    expect(onboardChoice.checked).toBe(false);
-    expect(getGlobalConfig().workflows).toEqual(['propose', 'explore']);
-  });
-
-  it('delivery picker should mark current option inline and offer only two choices', async () => {
+  it('the profile picker no longer offers a delivery action (retired)', async () => {
     const { saveGlobalConfig } = await import('../../src/core/global-config.js');
     const { select } = await getPromptMocks();
 
-    saveGlobalConfig({ featureFlags: {}, profile: 'custom', delivery: 'skills', workflows: ['explore'] });
-    select.mockResolvedValueOnce('delivery');
-    select.mockResolvedValueOnce('skills');
+    saveGlobalConfig({ featureFlags: {}, profile: 'core', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
+    select.mockResolvedValueOnce('keep');
 
     await runConfigCommand(['profile']);
 
-    expect(select).toHaveBeenCalledTimes(2);
-    const secondCall = select.mock.calls[1][0];
-    expect(secondCall.choices).toHaveLength(2);
-    expect(secondCall.choices).toEqual(expect.arrayContaining([
-      expect.objectContaining({ value: 'skills', name: 'Skills only [current]' }),
-      expect.objectContaining({ value: 'both', name: 'Both (skills + commands)' }),
-    ]));
+    const firstCall = select.mock.calls[0][0];
+    expect(firstCall.choices.some((choice: { value: string }) => choice.value === 'delivery')).toBe(false);
   });
 
-  it('workflow picker should use friendly names with descriptions', async () => {
+  it('workflows-only action should not invoke a delivery prompt (there is none)', async () => {
+    const { saveGlobalConfig, getGlobalConfig } = await import('../../src/core/global-config.js');
+    const { select, checkbox } = await getPromptMocks();
+    const restoreRows = setStdoutRows(24);
+
+    saveGlobalConfig({ featureFlags: {}, profile: 'core', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
+    select.mockResolvedValueOnce('workflows');
+    checkbox.mockResolvedValueOnce(['propose', 'explore']);
+    select.mockResolvedValueOnce('off');
+
+    try {
+      await runConfigCommand(['profile']);
+
+      // Two selects now: the action picker and the retention radio (delivery
+      // is retired; retention replaces it as the only non-checkbox choice).
+      expect(select).toHaveBeenCalledTimes(2);
+      expect(checkbox).toHaveBeenCalledTimes(1);
+      const checkboxCall = checkbox.mock.calls[0][0];
+      expect(checkboxCall.pageSize).toBe(19);
+      expect(checkboxCall.choices).toHaveLength(PICKER_CHOICE_COUNT);
+      expect(checkboxCall.theme).toEqual({
+        icon: {
+          checked: '[x]',
+          unchecked: '[ ]',
+        },
+      });
+      const proposeChoice = checkboxCall.choices.find((choice: { value: string }) => choice.value === 'propose');
+      const onboardChoice = checkboxCall.choices.find((choice: { value: string }) => choice.value === 'onboard');
+      expect(proposeChoice.checked).toBe(true);
+      expect(onboardChoice.checked).toBe(false);
+      expect(getGlobalConfig().workflows).toEqual(['propose', 'explore']);
+    } finally {
+      restoreRows();
+    }
+  });
+
+  it('workflow picker should align public workflow ids with friendly names and descriptions', async () => {
     const { saveGlobalConfig } = await import('../../src/core/global-config.js');
     const { select, checkbox } = await getPromptMocks();
 
-    saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
+    saveGlobalConfig({ featureFlags: {}, profile: 'core', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
     select.mockResolvedValueOnce('workflows');
     checkbox.mockResolvedValueOnce(['propose', 'explore', 'apply', 'sync', 'archive']);
 
@@ -271,31 +380,169 @@ describe('config profile interactive flow', () => {
 
     const checkboxCall = checkbox.mock.calls[0][0];
     expect(checkboxCall.message).toBe('Select workflows to make available:');
+    expect(checkboxCall.instructions).toBe(
+      'Space to toggle, A to select/clear all, Enter to confirm'
+    );
+    expect(checkboxCall.shortcuts).toEqual({ all: 'a' });
     expect(checkboxCall.choices).toEqual(expect.arrayContaining([
       expect.objectContaining({
         value: 'propose',
-        name: 'Propose change',
-        description: 'Create proposal, design, and tasks from a request',
+        name: 'propose         - Propose change',
+        description: 'Turn a request into a complete proposal, specs, design, and task list',
       }),
       expect.objectContaining({
         value: 'verify',
-        name: 'Verify change',
-        description: 'Run verification checks against a change',
+        name: 'verify          - Verify change',
+        description: 'Check that implementation matches the change artifacts before archiving',
       }),
     ]));
+    expect(checkboxCall.choices).toHaveLength(PICKER_CHOICE_COUNT);
+    expect(checkboxCall.choices).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        value: 'goal-command',
+        name: 'goal            - Run goal loop',
+        description: 'Orchestrate planning, iterations, and reporting for a long-running goal',
+      }),
+    ]));
+    expect(
+      checkboxCall.choices
+        .filter((choice: { value?: string }) => choice.value && (ALL_WORKFLOWS as readonly string[]).includes(choice.value))
+        .map((choice: { name: string }) => choice.name.indexOf(' - '))
+    ).toEqual(ALL_WORKFLOWS.map(() => 15));
+    expect(
+      checkboxCall.choices.find(
+        (choice: { value: string }) => choice.value === 'verify-enhanced-command'
+      )
+    ).toEqual(
+      expect.objectContaining({
+        name: 'verify-enhanced - Enhanced verification',
+      })
+    );
   });
 
-  it('selecting current values only should be a no-op and should not ask apply', async () => {
-    const { saveGlobalConfig, getGlobalConfigPath } = await import('../../src/core/global-config.js');
-    const { select, confirm } = await getPromptMocks();
+  it('workflow picker should localize every choice in Japanese', async () => {
+    const { saveGlobalConfig } = await import('../../src/core/global-config.js');
+    const { select, checkbox } = await getPromptMocks();
 
-    saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
+    process.env.RASEN_LANG = 'ja';
+    saveGlobalConfig({ featureFlags: {}, profile: 'core' });
+    select.mockResolvedValueOnce('workflows');
+    checkbox.mockResolvedValueOnce(['propose', 'explore', 'apply', 'sync', 'archive']);
+
+    await runConfigCommand(['profile']);
+
+    const actionCall = select.mock.calls[0][0];
+    expect(actionCall.message).toBe('何を設定しますか?');
+    expect(actionCall.choices).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: 'workflows', name: 'ワークフロー' }),
+      ])
+    );
+    const checkboxCall = checkbox.mock.calls[0][0];
+    expect(checkboxCall.message).toBe('利用可能にするワークフローを選択:');
+    expect(checkboxCall.instructions).toBe(
+      'Spaceで切り替え、Aですべて選択・解除、Enterで確定'
+    );
+    expect(checkboxCall.choices).toHaveLength(PICKER_CHOICE_COUNT);
+    expect(checkboxCall.choices).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        value: 'propose',
+        name: 'propose         - 変更を提案',
+        description: '依頼から変更提案、仕様、設計、タスクリストをまとめて作成します',
+      }),
+      expect.objectContaining({
+        value: 'goal-command',
+        name: 'goal            - 目標ループを実行',
+        description: '長期目標の計画、反復、結果報告をまとめて進行します',
+      }),
+    ]));
+    expect(
+      checkboxCall.choices
+        .filter((choice: { value?: string }) => choice.value && (ALL_WORKFLOWS as readonly string[]).includes(choice.value))
+        .map((choice: { name: string }) => choice.name.indexOf(' - '))
+    ).toEqual(ALL_WORKFLOWS.map(() => 15));
+  });
+
+  it('localizes the workflow picker and update result in Simplified Chinese', async () => {
+    const { saveGlobalConfig } = await import('../../src/core/global-config.js');
+    const { select, checkbox } = await getPromptMocks();
+
+    process.env.RASEN_LANG = 'zh-cn';
+    saveGlobalConfig({ featureFlags: {}, profile: 'core' });
+    select.mockResolvedValueOnce('workflows');
+    checkbox.mockResolvedValueOnce(['propose', 'explore', 'apply', 'sync', 'archive']);
+
+    await runConfigCommand(['profile']);
+
+    const actionCall = select.mock.calls[0][0];
+    expect(actionCall.message).toBe('要配置什么？');
+    expect(actionCall.choices).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: 'workflows', name: '工作流' }),
+      ])
+    );
+    const checkboxCall = checkbox.mock.calls[0][0];
+    expect(checkboxCall.message).toBe('选择要启用的工作流：');
+    expect(checkboxCall.instructions).toBe(
+      '按空格键切换，按 A 全选/清空，按 Enter 确认'
+    );
+    expect(checkboxCall.choices).toHaveLength(PICKER_CHOICE_COUNT);
+    expect(checkboxCall.choices).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        value: 'propose',
+        name: 'propose         - 提出变更',
+        description: '将请求转化为完整的提案、规格、设计和任务清单',
+      }),
+      expect.objectContaining({
+        value: 'goal-command',
+        name: 'goal            - 运行目标循环',
+        description: '为长期目标编排规划、迭代和报告',
+      }),
+    ]));
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('配置方案变更：'));
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      '配置已更新。请在项目中运行 `rasen update` 以应用。'
+    );
+  });
+
+  it('reports legacy delivery migration in Simplified Chinese from the interactive profile editor read', async () => {
+    const { getGlobalConfigPath } = await import('../../src/core/global-config.js');
+    const { select } = await getPromptMocks();
+    process.env.RASEN_LANG = 'zh-cn';
+    fs.mkdirSync(path.dirname(getGlobalConfigPath()), { recursive: true });
+    fs.writeFileSync(
+      getGlobalConfigPath(),
+      JSON.stringify({ featureFlags: {}, language: 'zh-cn', delivery: 'commands-first' }),
+      'utf-8'
+    );
+    select.mockResolvedValueOnce('keep');
+
+    await runConfigCommand(['profile']);
+
+    const diagnostics = consoleErrorSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(diagnostics).toContain("'delivery' 设置已被弃用");
+    expect(diagnostics).not.toContain('交付模式');
+    expect(JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8')).delivery).toBeUndefined();
+  });
+
+  it('selecting the same workflows should be a no-op and should not ask apply', async () => {
+    const { saveGlobalConfig, getGlobalConfigPath } = await import('../../src/core/global-config.js');
+    const { select, checkbox, confirm } = await getPromptMocks();
+
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'custom',
+      workflows: ['propose', 'explore', 'apply', 'sync', 'archive'],
+      expertSelectionExplicit: true,
+    });
     const configPath = getGlobalConfigPath();
     const beforeContent = fs.readFileSync(configPath, 'utf-8');
 
     fs.mkdirSync(path.join(tempDir, 'rasen'), { recursive: true });
-    select.mockResolvedValueOnce('delivery');
-    select.mockResolvedValueOnce('both');
+    select.mockResolvedValueOnce('workflows');
+    checkbox.mockResolvedValueOnce(['propose', 'explore', 'apply', 'sync', 'archive']);
+    // Retention unchanged (custom selection with no retro-command resolves to off).
+    select.mockResolvedValueOnce('off');
 
     await runConfigCommand(['profile']);
 
@@ -309,7 +556,7 @@ describe('config profile interactive flow', () => {
     const { saveGlobalConfig } = await import('../../src/core/global-config.js');
     const { select } = await getPromptMocks();
 
-    saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
+    saveGlobalConfig({ featureFlags: {}, profile: 'core', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
     setupDriftedProjectArtifacts(tempDir);
     select.mockResolvedValueOnce('keep');
 
@@ -323,7 +570,7 @@ describe('config profile interactive flow', () => {
     const { saveGlobalConfig } = await import('../../src/core/global-config.js');
     const { select } = await getPromptMocks();
 
-    saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
+    saveGlobalConfig({ featureFlags: {}, profile: 'core', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
     setupSyncedCoreBothArtifacts(tempDir);
     select.mockResolvedValueOnce('keep');
 
@@ -335,12 +582,18 @@ describe('config profile interactive flow', () => {
 
   it('effective no-op after prompts should warn when project files drift', async () => {
     const { saveGlobalConfig } = await import('../../src/core/global-config.js');
-    const { select, confirm } = await getPromptMocks();
+    const { select, checkbox, confirm } = await getPromptMocks();
 
-    saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'custom',
+      workflows: ['propose', 'explore', 'apply', 'sync', 'archive'],
+      expertSelectionExplicit: true,
+    });
     setupDriftedProjectArtifacts(tempDir);
-    select.mockResolvedValueOnce('delivery');
-    select.mockResolvedValueOnce('both');
+    select.mockResolvedValueOnce('workflows');
+    checkbox.mockResolvedValueOnce(['propose', 'explore', 'apply', 'sync', 'archive']);
+    select.mockResolvedValueOnce('off');
 
     await runConfigCommand(['profile']);
 
@@ -353,7 +606,7 @@ describe('config profile interactive flow', () => {
     const { saveGlobalConfig } = await import('../../src/core/global-config.js');
     const { select } = await getPromptMocks();
 
-    saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
+    saveGlobalConfig({ featureFlags: {}, profile: 'core', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
     setupSyncedCoreBothArtifacts(tempDir);
     addExtraVerifyWorkflowArtifacts(tempDir);
     select.mockResolvedValueOnce('keep');
@@ -366,18 +619,19 @@ describe('config profile interactive flow', () => {
 
   it('changed config should save and ask apply when inside project', async () => {
     const { saveGlobalConfig, getGlobalConfig } = await import('../../src/core/global-config.js');
-    const { select, confirm } = await getPromptMocks();
+    const { select, checkbox, confirm } = await getPromptMocks();
 
-    saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
+    saveGlobalConfig({ featureFlags: {}, profile: 'core', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
     fs.mkdirSync(path.join(tempDir, 'rasen'), { recursive: true });
 
-    select.mockResolvedValueOnce('delivery');
-    select.mockResolvedValueOnce('skills');
+    select.mockResolvedValueOnce('workflows');
+    checkbox.mockResolvedValueOnce(['propose', 'explore']);
+    select.mockResolvedValueOnce('off');
     confirm.mockResolvedValueOnce(false);
 
     await runConfigCommand(['profile']);
 
-    expect(getGlobalConfig().delivery).toBe('skills');
+    expect(getGlobalConfig().workflows).toEqual(['propose', 'explore']);
     expect(confirm).toHaveBeenCalledWith({
       message: 'Apply changes to this project now?',
       default: true,
@@ -386,38 +640,46 @@ describe('config profile interactive flow', () => {
 
   it('confirmed project apply should run rasen update in the project', async () => {
     const { saveGlobalConfig, getGlobalConfig } = await import('../../src/core/global-config.js');
-    const { select, confirm } = await getPromptMocks();
+    const { select, checkbox, confirm } = await getPromptMocks();
 
-    saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
+    saveGlobalConfig({ featureFlags: {}, profile: 'core', workflows: ['propose', 'explore', 'apply', 'sync', 'archive'] });
     fs.mkdirSync(path.join(tempDir, 'rasen'), { recursive: true });
 
-    select.mockResolvedValueOnce('delivery');
-    select.mockResolvedValueOnce('skills');
+    select.mockResolvedValueOnce('workflows');
+    checkbox.mockResolvedValueOnce(['propose', 'explore']);
+    select.mockResolvedValueOnce('off');
     confirm.mockResolvedValueOnce(true);
 
     await runConfigCommand(['profile']);
 
-    expect(getGlobalConfig().delivery).toBe('skills');
+    expect(getGlobalConfig().workflows).toEqual(['propose', 'explore']);
     // The apply path re-invokes the currently-running CLI binary (not `npx
     // openspec`) so a stale/broken local install cannot break the update.
     expect(execSync).toHaveBeenCalledWith(`"${process.execPath}" "${process.argv[1]}" update`, {
       stdio: 'inherit',
       cwd: fs.realpathSync(tempDir),
+      // windows-process-launch: the apply subprocess hides its console window.
+      windowsHide: true,
     });
   });
 
-  it('core preset should preserve delivery setting', async () => {
+  it('core preset resolves without any prompts (delivery is retired)', async () => {
     const { saveGlobalConfig, getGlobalConfig } = await import('../../src/core/global-config.js');
     const { select, checkbox, confirm } = await getPromptMocks();
 
-    saveGlobalConfig({ featureFlags: {}, profile: 'custom', delivery: 'skills', workflows: ['explore'] });
+    saveGlobalConfig({ featureFlags: {}, profile: 'custom', workflows: ['explore'] });
 
     await runConfigCommand(['profile', 'core']);
 
     const config = getGlobalConfig();
     expect(config.profile).toBe('core');
-    expect(config.delivery).toBe('skills');
-    expect(config.workflows).toEqual(['propose', 'explore', 'apply', 'sync', 'archive', 'auto-command', 'help']);
+    // `profile use core` is an explicit expert-aware write path (design.md
+    // D4): the core preset now names the quality-floor experts too.
+    expect(config.workflows).toEqual([
+      'propose', 'explore', 'apply', 'sync', 'archive', 'auto-command', 'help',
+      'review', 'cso', 'qa', 'qa-only', 'benchmark', 'design-review',
+    ]);
+    expect(config.expertSelectionExplicit).toBe(true);
     expect(select).not.toHaveBeenCalled();
     expect(checkbox).not.toHaveBeenCalled();
     expect(confirm).not.toHaveBeenCalled();

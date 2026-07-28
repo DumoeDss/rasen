@@ -165,6 +165,17 @@ describe('declared store fallback (3.2)', () => {
       expect(snapshot(path.join(tempDir, 'data'))).toEqual(dataBefore);
     }
 
+    const refusedNone = await runCLI(['init', '.', '--tools', 'none'], {
+      cwd: pointerRepo,
+      env,
+    });
+    expect(refusedNone.exitCode).toBe(1);
+    expect(refusedNone.stderr).toContain("externalized to store 'team-context'");
+    expect(snapshot(pointerRepo)).toEqual(before);
+    if (dataBefore) {
+      expect(snapshot(path.join(tempDir, 'data'))).toEqual(dataBefore);
+    }
+
     // Conversion: remove the line, rerun, get a normal local root.
     fs.writeFileSync(path.join(pointerRepo, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
     const converted = await runCLI(['init', '.', '--tools', 'none'], {
@@ -176,16 +187,48 @@ describe('declared store fallback (3.2)', () => {
     expect(fs.existsSync(path.join(pointerRepo, 'rasen', 'changes'))).toBe(true);
   });
 
+  it('installs an explicit tool through an alias of the exact pointer root', async () => {
+    const pointerAlias = path.join(tempDir, 'app-repo-alias');
+    fs.symlinkSync(
+      pointerRepo,
+      pointerAlias,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+    expect(path.resolve(pointerAlias)).not.toBe(fs.realpathSync.native(pointerAlias));
+    expect(fs.realpathSync.native(pointerAlias)).toBe(fs.realpathSync.native(pointerRepo));
+
+    const installed = await runCLI(['init', pointerAlias, '--tools', 'codex'], {
+      cwd: tempDir,
+      env,
+    });
+
+    expect(installed.exitCode).toBe(0);
+    expect(installed.stdout).toContain('Codex');
+    expect(
+      fs.existsSync(path.join(pointerRepo, '.codex', 'skills', 'rasen-explore', 'SKILL.md'))
+    ).toBe(true);
+    expect(
+      fs.readFileSync(path.join(pointerRepo, 'rasen', 'config.yaml'), 'utf-8')
+    ).toContain('store: team-context');
+    expect(fs.existsSync(path.join(pointerRepo, 'rasen', 'specs'))).toBe(false);
+    expect(fs.existsSync(path.join(pointerRepo, 'rasen', 'changes'))).toBe(false);
+    expect(fs.existsSync(path.join(pointerRepo, 'rasen', 'changes', 'archive'))).toBe(false);
+  });
+
   it('refuses init for malformed pointers and from pointer-repo subdirectories', async () => {
     // A broken declaration must not be buried under a scaffold.
     fs.writeFileSync(
       path.join(pointerRepo, 'rasen', 'config.yaml'),
       'store: [team-context]\n'
     );
-    const malformed = await runCLI(['init', '.'], { cwd: pointerRepo, env });
+    const malformed = await runCLI(['init', '.', '--tools', 'codex'], {
+      cwd: pointerRepo,
+      env,
+    });
     expect(malformed.exitCode).toBe(1);
     expect(malformed.stderr).toContain('Fix or remove the store: line');
     expect(fs.existsSync(path.join(pointerRepo, 'rasen', 'specs'))).toBe(false);
+    expect(fs.existsSync(path.join(pointerRepo, '.codex'))).toBe(false);
 
     // And a subdirectory of a pointer repo must not grow a nested root
     // that silently diverts work away from the declared store.
@@ -195,16 +238,20 @@ describe('declared store fallback (3.2)', () => {
     );
     const subdir = path.join(pointerRepo, 'packages', 'api');
     fs.mkdirSync(subdir, { recursive: true });
-    const nested = await runCLI(['init', '.'], { cwd: subdir, env });
+    const nested = await runCLI(['init', '.', '--tools', 'codex'], {
+      cwd: subdir,
+      env,
+    });
     expect(nested.exitCode).toBe(1);
     expect(nested.stderr).toContain("externalized to store 'team-context'");
     expect(fs.existsSync(path.join(subdir, 'rasen'))).toBe(false);
+    expect(fs.existsSync(path.join(subdir, '.codex'))).toBe(false);
   });
 
-  it('keeps real-root stdout byte-identical when a pointer is present, with one warning', async () => {
+  it('keeps real-root stdout byte-identical when a pointer is present, with one notice', async () => {
     const realRepo = path.join(tempDir, 'real-repo');
     createOpenSpecRoot(realRepo);
-    const runs: Record<string, { stdout: string; warnings: number }> = {};
+    const runs: Record<string, { stdout: string; notices: number }> = {};
 
     for (const [label, config] of [
       ['without', 'schema: spec-driven\n'],
@@ -215,12 +262,15 @@ describe('declared store fallback (3.2)', () => {
       expect(result.exitCode).toBe(0);
       runs[label] = {
         stdout: result.stdout,
-        warnings: (result.stderr.match(/the declaration is ignored/g) ?? []).length,
+        // team-context is registered, so the both-present pointer now emits the
+        // inheriting-store-config notice (store-config-inheritance), not the old
+        // ignored-pointer warning.
+        notices: (result.stderr.match(/configuration inherits from that store/g) ?? []).length,
       };
     }
 
     expect(runs.with.stdout).toBe(runs.without.stdout);
-    expect(runs.without.warnings).toBe(0);
-    expect(runs.with.warnings).toBe(1);
+    expect(runs.without.notices).toBe(0);
+    expect(runs.with.notices).toBe(1);
   });
 });

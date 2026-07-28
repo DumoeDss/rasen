@@ -46,6 +46,14 @@ Branch on \`workProduct\`:
 - Do ONE round's worth of work. Make your change, then return. Do not loop internally — the LEAD runs the gate and decides whether another round is needed.
 - If the gate was already satisfied last round, you would not have been dispatched; assume there is real work to do.
 
+## Fidelity — do not shrink the goal
+
+The goal fixed at define-goal is the goal the gate judges. Do NOT redefine success around a smaller or easier task, narrow the scope to what you have already achieved, or reinterpret the rubric down to something more convenient. If the full goal is genuinely out of reach, that is a **blocked report** (below), not a quietly-lowered bar. Work the actual goal every round.
+
+## Blocked reporting
+
+If you are genuinely stuck (cannot proceed toward the goal this round), report the blocker **plainly** in your return — state precisely what obstructs you and what you tried. Do NOT self-declare the gate satisfied or the goal unreachable to end the loop; the LEAD owns that decision. Expect to be re-dispatched to try a **materially different angle** (new approach, different tool, decompose the obstruction) — a first-round blocked report is not accepted as final; the same blocker must recur across rounds before the LEAD escalates it. So when you hit a wall, name it accurately and keep the door open for the next angle.
+
 ## Step H.3 self-handoff (when context fills)
 
 You cannot feel your own context usage. If you notice your earlier conversation has been replaced by a compaction summary, OR you have completed substantial work but more remains and you are losing recall of details you read earlier:

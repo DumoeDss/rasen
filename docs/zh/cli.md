@@ -1,13 +1,13 @@
 # CLI 参考手册
 
-OpenSpec CLI（`openspec`）提供了用于项目初始化、校验、状态检查和管理的终端命令。这些命令与 AI 斜杠命令（如 `/rasen:propose`）互为补充，后者参见[命令](commands.md)。
+rasen CLI（`rasen`）提供了用于项目初始化、校验、状态检查和管理的终端命令。这些命令与 AI 斜杠命令（如 `/rasen-propose`）互为补充，后者参见[命令](commands.md)。
 
 ## 概览
 
 | 类别 | 命令 | 用途 |
 |------|------|------|
-| **初始化** | `init`, `update` | 在项目中初始化和更新 OpenSpec |
-| **Store（独立 OpenSpec 仓库）** | `store setup`, `store register`, `store unregister`, `store remove`, `store list`, `store doctor` | 管理 store——你已注册的独立 OpenSpec 仓库 |
+| **初始化** | `init`, `update` | 在项目中初始化和更新 rasen |
+| **Store（独立 rasen 仓库）** | `store setup`, `store register`, `store unregister`, `store remove`, `store list`, `store doctor` | 管理 store——你已注册的独立 rasen 仓库 |
 | **健康检查** | `doctor` | 报告解析到的根及其引用关系的健康状况 |
 | **工作上下文** | `context` | 组装工作集（根 + 被引用的 store） |
 | **个人工作集** | `workset create`, `workset list`, `workset open`, `workset remove` | 在你的工具中保存并打开个人、本地的工作视图 |
@@ -15,6 +15,7 @@ OpenSpec CLI（`openspec`）提供了用于项目初始化、校验、状态检�
 | **校验** | `validate` | 检查变更和规格说明是否存在问题 |
 | **生命周期** | `archive` | 归档已完成的变更 |
 | **工作流** | `new change`, `status`, `instructions`, `templates`, `schemas` | 基于产物（artifact）的工作流支持 |
+| **工作流库** | `workflow list/show/which/init/validate/import/export/delete` | 管理面向整机的可安装工作流 |
 | **Schema** | `schema init`, `schema fork`, `schema validate`, `schema which` | 创建和管理自定义工作流 |
 | **配置** | `config` | 查看和修改设置 |
 | **工具** | `feedback`, `completion` | 反馈和 shell 集成 |
@@ -57,7 +58,7 @@ OpenSpec CLI（`openspec`）提供了用于项目初始化、校验、状态检�
 | `rasen store remove <id>` | 删除已注册的本地 store 文件夹 | `--yes --json` 非交互式删除 |
 | `rasen store list` | 浏览已注册的 store | `--json` 获取结构化的注册信息 |
 | `rasen store doctor` | 检查本地 store 配置 | `--json` 获取结构化诊断 |
-| `rasen new change <id>` | 创建仓库本地的变更脚手架 | `--json`，另可加 `--store <id>` 将已注册的 store 用作 OpenSpec 根 |
+| `rasen new change <id>` | 创建仓库本地的变更脚手架 | `--json`，另可加 `--store <id>` 将已注册的 store 用作 Rasen 根 |
 | `rasen workset create [name]` | 组合个人工作视图 | `--member <path> --json` 非交互式组合 |
 | `rasen workset list` | 浏览已保存的工作集 | `--json` 获取结构化视图 |
 | `rasen workset remove <name>` | 删除已保存的视图 | `--yes --json` 非交互式删除 |
@@ -80,7 +81,7 @@ OpenSpec CLI（`openspec`）提供了用于项目初始化、校验、状态检�
 
 ### `rasen init`
 
-在你的项目中初始化 OpenSpec。创建文件夹结构并配置 AI 工具集成。
+在你的项目中初始化 rasen。创建文件夹结构并配置 AI 工具集成。
 
 默认行为使用全局配置默认值：profile 为 `core`、delivery 为 `both`、workflows 为 `propose, explore, apply, sync, archive`。
 
@@ -100,9 +101,9 @@ rasen init [path] [options]
 |--------|-------------|
 | `--tools <list>` | 非交互式配置 AI 工具。使用 `all`、`none` 或逗号分隔列表 |
 | `--force` | 自动清理遗留文件，不提示 |
-| `--profile <profile>` | 为本次 init 覆盖全局 profile（`core` 或 `custom`） |
+| `--profile <profile>` | 安装配置方案并将其锁定到 `rasen/config.yaml`（`full`、`core`、已保存的配置方案名，或 `custom`） |
 
-`--profile custom` 使用全局配置中当前选中的 workflows（`rasen config profile`）。
+显式传入 `custom` 以外的 `--profile` 值时，该值会作为项目的**锁定配置方案**写入 `rasen/config.yaml` 的 `profile:` 键：之后的 `rasen update` 会持续按该配置方案（而非用户全局配置方案）解析此项目的工作流。`--profile custom` 仅本次运行使用全局配置中当前选中的 workflows（`rasen profile`），不会被持久化。
 
 **支持的工具 ID（`--tools`）：** `amazon-q`, `antigravity`, `auggie`, `bob`, `claude`, `cline`, `codex`, `forgecode`, `codebuddy`, `continue`, `costrict`, `crush`, `cursor`, `factory`, `gemini`, `github-copilot`, `iflow`, `junie`, `kilocode`, `kimi`, `kiro`, `lingma`, `vibe`, `opencode`, `pi`, `qoder`, `qwen`, `roocode`, `trae`, `windsurf`
 
@@ -123,8 +124,11 @@ rasen init --tools claude,cursor
 # 为所有支持的工具配置
 rasen init --tools all
 
-# 为本次运行覆盖 profile
+# 安装 core 配置方案并将项目锁定到它
 rasen init --profile core
+
+# 将项目锁定到已保存的命名配置方案
+rasen init --profile team-web
 
 # 跳过提示并自动清理遗留文件
 rasen init --force
@@ -133,14 +137,14 @@ rasen init --force
 **创建的内容：**
 
 ```
-openspec/
+rasen/
 ├── specs/              # 你的规格说明（事实来源）
 ├── changes/            # 提议的变更
 └── config.yaml         # 项目配置
 
 .claude/skills/         # Claude Code skills（选中 claude 时）
 .cursor/skills/         # Cursor skills（选中 cursor 时）
-.cursor/commands/       # Cursor OPSX 命令（delivery 为 both 时）
+.cursor/commands/       # Cursor rasen 命令（delivery 为 both 时）
 ... (其他工具配置)
 ```
 
@@ -148,7 +152,7 @@ openspec/
 
 ### `rasen update`
 
-升级 CLI 后更新 OpenSpec 指令文件。使用当前全局 profile、选中的 workflows 和 delivery 模式重新生成 AI 工具配置文件。
+升级 CLI 后更新 rasen 指令文件。使用当前全局 profile、选中的 workflows 和 delivery 模式重新生成 AI 工具配置文件。
 
 ```
 rasen update [path] [options]
@@ -170,21 +174,21 @@ rasen update [path] [options]
 
 ```bash
 # npm 升级后更新指令文件
-npm update @fission-ai/openspec
+npm update @atelierai/rasen
 rasen update
 ```
 
 ---
 
-## Store（独立 OpenSpec 仓库）
+## Store（独立 rasen 仓库）
 
 > **Beta。** Store 及其上的功能（引用、工作上下文、工作集）是新特性；命令名、flag、文件格式和 JSON 输出在不同版本之间可能变化。以问题为导向的完整介绍参见 [store 指南](stores-beta/user-guide.md)。
 
-Store 是你在这台机器上注册过的独立 OpenSpec 仓库——例如一个规划仓库或契约仓库。注册 store 后，常规命令（`list`、`show`、`status`、`validate`、`new change`、`archive`……）可通过 `--store <id>` 从任意位置在其中执行。
+Store 是你在这台机器上注册过的独立 rasen 仓库——例如一个规划仓库或契约仓库。注册 store 后，常规命令（`list`、`show`、`status`、`validate`、`new change`、`archive`……）可通过 `--store <id>` 从任意位置在其中执行。
 
 ### `rasen store setup`
 
-创建并注册一个本地 store。在终端中无参数运行时，OpenSpec 会引导用户完成 setup。Agent 和脚本应传入显式输入并使用 `--json`。
+创建并注册一个本地 store。在终端中无参数运行时，Rasen 会引导用户完成 setup。Agent 和脚本应传入显式输入并使用 `--json`。
 
 ```bash
 rasen store setup [id] [options]
@@ -194,21 +198,21 @@ rasen store setup [id] [options]
 
 | 选项 | 说明 |
 |--------|-------------|
-| `--path <path>` | store 所在文件夹（例如 `~/openspec/<id>`） |
+| `--path <path>` | store 所在文件夹（例如 `~/rasen/<id>`） |
 | `--remote <url>` | 将权威 remote 记录到新 store 的 `store.yaml` |
 | `--init-git` | 初始化 Git 仓库并创建初始提交（默认） |
 | `--no-init-git` | 跳过所有 Git 操作：不 init、无初始提交 |
 | `--json` | 输出 JSON |
 
-非交互式运行（`--json`、脚本、agent）必须同时传入 store id 和 `--path`。在交互式终端中，setup 会在一个可见的、用户拥有的位置（例如 `~/openspec/<id>`）通过可编辑的建议来提示位置；它绝不默认使用 OpenSpec 的托管数据目录。
+非交互式运行（`--json`、脚本、agent）必须同时传入 store id 和 `--path`。在交互式终端中，setup 会在一个可见的、用户拥有的位置（例如 `~/rasen/<id>`）通过可编辑的建议来提示位置；它绝不默认使用 rasen 的托管数据目录。
 
 示例：
 
 ```bash
 rasen store setup
 rasen store setup team-context
-rasen store setup team-context --path ~/openspec/team-context --no-init-git
-rasen store setup team-context --path ~/openspec/team-context --no-init-git --json
+rasen store setup team-context --path ~/rasen/team-context --no-init-git
+rasen store setup team-context --path ~/rasen/team-context --no-init-git --json
 ```
 
 ### `rasen store register`
@@ -224,7 +228,7 @@ rasen store register [path] [options]
 | 选项 | 说明 |
 |--------|-------------|
 | `--id <id>` | store id；默认取 store 元数据或文件夹名 |
-| `--yes` | 确认为健康的 OpenSpec 根创建 store 身份元数据 |
+| `--yes` | 确认为健康的 Rasen 根创建 store 身份元数据 |
 | `--json` | 输出 JSON |
 
 ### `rasen store unregister`
@@ -235,7 +239,7 @@ rasen store register [path] [options]
 rasen store unregister <id> [--json]
 ```
 
-当 store 已被移动、克隆到别处，或不应再在本机的 OpenSpec 中显示时，使用此命令。
+当 store 已被移动、克隆到别处，或不应再在本机的 rasen 中显示时，使用此命令。
 
 ### `rasen store remove`
 
@@ -245,7 +249,7 @@ rasen store unregister <id> [--json]
 rasen store remove <id> [--yes] [--json]
 ```
 
-在交互式终端中，`remove` 删除前会显示确切的文件夹。Agent、脚本和 JSON 调用方必须传 `--yes` 以确认删除。OpenSpec 拒绝删除不包含匹配 store 元数据的文件夹。
+在交互式终端中，`remove` 删除前会显示确切的文件夹。Agent、脚本和 JSON 调用方必须传 `--yes` 以确认删除。Rasen 拒绝删除不包含匹配 store 元数据的文件夹。
 
 ### `rasen store list`
 
@@ -285,11 +289,11 @@ references:
 Store 可以在其提交的身份文件中记录权威克隆源，这样上手流程绝不会卡在"注册该 store"这一步：
 
 ```bash
-rasen store setup team-context --path ~/openspec/team-context \
+rasen store setup team-context --path ~/rasen/team-context \
   --remote git@github.com:acme/team-context.git
 ```
 
-该 remote 会落入初始提交内的 `.openspec-store/store.yaml`，因此每次克隆天生就知道它。对于已存在的 store，手工编辑 `store.yaml` 并提交。`store doctor` 会显示记录的 remote（以及检出的 Git origin）；setup/register 的共享指引会点名它；register 还会把检出的 origin 记录到机器本地注册表中。
+该 remote 会落入初始提交内的 `.rasen-store/store.yaml`，因此每次克隆天生就知道它。对于已存在的 store，手工编辑 `store.yaml` 并提交。`store doctor` 会显示记录的 remote（以及检出的 Git origin）；setup/register 的共享指引会点名它；register 还会把检出的 origin 记录到机器本地注册表中。
 
 引用声明也可以携带克隆源，这样尚未拥有该 store 的队友就能得到一条完整、可直接粘贴的修复命令（`git clone <remote> <path> && rasen store register <path> --id <id>`）：
 
@@ -298,22 +302,30 @@ references:
   - { id: team-context, remote: "git@github.com:acme/team-context.git" }
 ```
 
-记录 remote 并不是同步：OpenSpec 绝不自行 clone、pull 或 push。
+记录 remote 并不是同步：rasen 绝不自行 clone、pull 或 push。
 
 ### 声明默认 store
 
 一个规划完全外置的仓库——没有本地 `rasen/specs/` 或 `rasen/changes/`——可以一次性声明其 store，而不必在每条命令上都加 `--store`：
 
 ```yaml
-# rasen/config.yaml（openspec/ 下唯一的文件）
+# rasen/config.yaml（rasen/ 下唯一的文件）
 store: team-context
 ```
 
-此后常规命令会自动解析到所声明的 store；根横幅和 JSON `root` 块会报告 `source: "declared"` 及 store id，打印的提示仍会带上 `--store <id>`。该声明是回退机制，绝非覆盖：显式的 `--store` 总是优先，而含有真实规划文件夹的目录会忽略该指针（并给出警告）。要把一个指针仓库转换为本地 OpenSpec 根，请删除 `store:` 行并运行 `rasen init`——声明存在时 init 会拒绝搭建脚手架。
+此后常规命令会自动解析到所声明的 store；根横幅和 JSON `root` 块会报告 `source: "declared"` 及 store id，打印的提示仍会带上 `--store <id>`。该声明是回退机制，绝非覆盖：显式的 `--store` 总是优先，而含有真实规划文件夹的目录会忽略该指针（并给出警告）。
+
+如果只想添加或刷新一个已适配工具，而不改变规划位置，请在指针仓库的确切根目录显式指定非空工具：
+
+```bash
+rasen init --tools codex
+```
+
+这只会安装所选工具的 Rasen 资产；它会保留 `store:` 声明，也不会创建本地 `rasen/specs/` 或 `rasen/changes/`。普通的 `rasen init` 仍会被拒绝；只有确实要把指针仓库转换为本地 Rasen 根时，才应先删除 `store:` 行，再运行 `rasen init`。
 
 ## Doctor（关系健康）
 
-一个只读问题，一处查看：OpenSpec 根是否健康？它引用的 store 在本机是否可用？
+一个只读问题，一处查看：Rasen 根是否健康？它引用的 store 在本机是否可用？
 
 ```bash
 rasen doctor [--store <id>] [--json]
@@ -323,7 +335,7 @@ rasen doctor [--store <id>] [--json]
 
 ## 工作上下文（组装好的集合）
 
-本次工作通过 OpenSpec 声明所关联的一切，集中于一个工作集：OpenSpec 根及其引用的 store。
+本次工作通过 rasen 声明所关联的一切，集中于一个工作集：Rasen 根及其引用的 store。
 
 ```bash
 rasen context [--store <id>] [--json] [--code-workspace <path> [--force]]
@@ -496,7 +508,7 @@ rasen validate [item-name] [options]
 | `--type <type>` | 名称有歧义时指定类型：`change` 或 `spec` |
 | `--strict` | 启用严格校验模式 |
 | `--json` | 输出为 JSON |
-| `--concurrency <n>` | 最大并行校验数（默认：6，或 `OPENSPEC_CONCURRENCY` 环境变量） |
+| `--concurrency <n>` | 最大并行校验数（默认：6，或 `RASEN_CONCURRENCY` 环境变量） |
 | `--no-interactive` | 禁用提示 |
 
 **示例：**
@@ -604,11 +616,11 @@ rasen archive update-ci-config --skip-specs
 
 ## 工作流命令
 
-这些命令支持基于产物的 OPSX 工作流。它们既适用于人类查看进度，也适用于 agent 确定下一步操作。
+这些命令支持制品工作流。它们既适用于人类查看进度，也适用于 agent 确定下一步操作。
 
 ### `rasen new change`
 
-在解析到的 OpenSpec 根中创建变更目录和可选的、纳入版本控制的元数据。
+在解析到的 Rasen 根中创建变更目录和可选的、纳入版本控制的元数据。
 
 ```bash
 rasen new change <name> [options]
@@ -621,7 +633,7 @@ rasen new change <name> [options]
 | `--description <text>` | 要添加到 `README.md` 的描述 |
 | `--goal <text>` | 随变更存储的可选 goal 元数据 |
 | `--schema <name>` | 要使用的工作流 schema |
-| `--store <id>` | 用作 OpenSpec 根的 store id（store 是你已注册的独立 OpenSpec 仓库） |
+| `--store <id>` | 用作 Rasen 根的 store id（store 是你已注册的独立 rasen 仓库） |
 | `--json` | 输出 JSON |
 
 示例：
@@ -775,10 +787,10 @@ rasen templates --json
 Schema: spec-driven
 
 Templates:
-  proposal  → ~/.openspec/schemas/spec-driven/templates/proposal.md
-  specs     → ~/.openspec/schemas/spec-driven/templates/specs.md
-  design    → ~/.openspec/schemas/spec-driven/templates/design.md
-  tasks     → ~/.openspec/schemas/spec-driven/templates/tasks.md
+  proposal  → ~/.rasen/schemas/spec-driven/templates/proposal.md
+  specs     → ~/.rasen/schemas/spec-driven/templates/specs.md
+  design    → ~/.rasen/schemas/spec-driven/templates/design.md
+  tasks     → ~/.rasen/schemas/spec-driven/templates/tasks.md
 ```
 
 ---
@@ -864,7 +876,7 @@ rasen schema init rapid \
 **创建的内容：**
 
 ```
-openspec/schemas/<name>/
+rasen/schemas/<name>/
 ├── schema.yaml           # schema 定义
 └── templates/
     ├── proposal.md       # 每个产物的模板
@@ -971,22 +983,130 @@ rasen schema which spec-driven
 
 ```
 spec-driven resolves from: package
-  Source: /usr/local/lib/node_modules/@fission-ai/openspec/schemas/spec-driven
+  Source: /usr/local/lib/node_modules/@atelierai/rasen/schemas/spec-driven
 ```
 
 **schema 优先级：**
 
-1. 项目：`openspec/schemas/<name>/`
-2. 用户：`~/.local/share/openspec/schemas/<name>/`
+1. 项目：`rasen/schemas/<name>/`
+2. 用户：`~/.rasen/schemas/<name>/`
 3. 包：内置 schema
 
 ---
 
 ## 配置命令
 
+### CLI 界面语言
+
+Rasen CLI 支持英语（`en`）、日语（`ja`）和简体中文（`zh-cn`）界面。机器全局 JSON 配置使用规范值 `language: "auto" | "en" | "ja" | "zh-cn"`；持久化设置只接受这些值，不会把 `zh-CN` 或 `zh_CN` 自动改写为 `zh-cn`。
+
+```bash
+# 持久化简体中文界面
+rasen config set language zh-cn
+
+# 仅为当前进程临时覆盖界面语言
+RASEN_LANG=zh-cn rasen --help
+```
+
+`RASEN_LANG=en|ja|zh-cn` 会临时覆盖已保存的设置。默认的 `auto` 模式在类 Unix 系统上依次检查 `LC_ALL`、`LC_MESSAGES` 和 `LANG`：解析为受支持语言环境的值直接生效；`C` 或 `POSIX`（可带编码后缀）表示显式请求非本地化输出，解析为英语；格式正确但不受支持的语言（如 `fr_FR.UTF-8`）回退到英语；不携带语言信息的值（如 `UTF-8`）会被跳过，由下一个变量决定。在 macOS 上，当所有变量都未能确定语言时（例如 GUI 启动的进程，或只导出 `LC_CTYPE=UTF-8` 的终端），CLI 会先读取操作系统配置的语言环境（`defaults read -g AppleLocale`，静默且每个进程最多一次），再回退到运行时系统语言环境；Windows 直接使用运行时系统语言环境。`zh-CN`、`zh_CN.UTF-8`、`zh-SG`、`zh-Hans` 和不带区域的 `zh` 会解析为 `zh-cn`。繁体中文语言环境 `zh-TW`、`zh-HK`、`zh-MO` 和 `zh-Hant` 暂不支持，并回退到英语。
+
+界面语言只控制 Rasen 自有的帮助、提示和人类可读输出，不决定 AI 生成的产物语言。产物语言应通过项目 `rasen/config.yaml` 的 `context` 指令设置，详见[多语言指南](multi-language.md)。更改已保存的界面语言后，请重新运行 `rasen completion install [shell]`；如果手动管理补全脚本，则重新运行 `rasen completion generate [shell]`，以刷新生成的命令说明。
+
+### `rasen workflow`
+
+管理面向整机（machine-wide）用户库中的可安装工作流。这些命令操作的是工作流定义本身，不是产物 schema，也不是编排 pipeline。
+
+```text
+rasen workflow list [--unused] [--all] [--json]
+rasen workflow show <id> [--json]
+rasen workflow which <id> [--json]
+rasen workflow init <id> --output <path> [--json]
+rasen workflow validate <id-or-path> [--json]
+rasen workflow import <path> [--json]
+rasen workflow export <id> <path> [--force] [--json]
+rasen workflow delete <id> [--yes] [--json]
+```
+
+| 子命令 | 说明 |
+|------------|-------------|
+| `list` | 按 kind 分组列出有效的内置/用户定义，以及无效的用户条目；`--unused` 仅供参考，只考虑可探测到的使用方；`--all` 会额外显示 internal 分组 |
+| `show <id>` | 显示身份信息、skill 元数据、声明的显示标题、依赖、文件、digest 以及已知的使用情况 |
+| `which <id>` | 显示某个 ID 是解析自内置目录还是用户目录 |
+| `init <id>` | 在必须为空的 `--output` 目录下创建最小草稿，不安装它 |
+| `validate <id-or-path>` | 静态校验一个已安装的 ID、一个未打包的草稿，或一个严格模式的 `.rasenpkg`，不执行脚本 |
+| `import <path>` | 校验、暂存、复校，然后原子化安装一个未打包的工作流或 `kind: workflow` 包 |
+| `export <id> <path>` | 将某个用户工作流及其所需的用户工作流依赖闭包导出为确定性的 `.rasenpkg`；内置工作流不可导出 |
+| `delete <id>` | 在使用情况预检和确认后，删除一个未被引用的用户工作流；内置工作流不可删除 |
+
+每个 JSON 成功响应都包含 `status: []`。失败时会输出一份 JSON 文档，其 `status` 条目携带稳定的 `severity`、`code`、`message` 字段。例如：
+
+```json
+{
+  "workflow": null,
+  "usage": [],
+  "status": [
+    {
+      "severity": "error",
+      "code": "workflow_not_found",
+      "message": "Workflow \"missing\" was not found"
+    }
+  ]
+}
+```
+
+`delete` 会扫描全局选中项、已保存的 profile、反向依赖、用户/当前项目的 pipeline，以及当前项目的产物管理台账。它无法证明没有其他未知项目在别处引用该工作流，因此即便删除成功，也会打印这一限制说明。关于清单（manifest）、包、digest、路径与资源限制的约定，参见[可安装工作流与 `.rasenpkg`](workflow-packages.md)。
+
+**kind 分类**：每个工作流定义都带有一个 `kind` —— `task`（可直接调用的内循环操作）、`driver`（消费 pipeline 的外循环引擎，例如 `auto-command`/`goal-command`），或 `internal`（仅由某个 driver 调用的子单元，例如 `goal-plan`/`goal-iterate`/`goal-report` 三件套）。面向人类的 `list` 表格会把条目分为 `task` 和 `driver` 两组，并默认隐藏 `internal`，除非传入 `--all`。`--json` 始终列出全部工作流（不分组），并带上各自的 `kind`——机器消费者无论是否传 `--all` 都能看到完整目录。用户工作流的 `workflow.yaml` 默认 `kind: task`，也可以选择声明 `kind: internal`；`driver` 保留给内置引擎使用。`kind` 只是呈现层元数据——它从不进入工作流的 digest，因此分类或重新分类一个工作流永远不会触发 drift-healing。
+
+### `rasen pipeline`
+
+检查、打包、安装并移除编排 pipeline——串联工作流的外循环 DAG（schema/workflow/pipeline 模型见[概念](concepts.md)）。Pipeline 按以下优先级从三层解析（从高到低）：project（`rasen/pipelines/<name>/pipeline.yaml`）、user（通过 `import` 安装，机器全局）、package（内置，随 rasen 发布）。
+
+```text
+rasen pipeline list [--json]
+rasen pipeline show <name> [--for-execution] [--json]
+rasen pipeline agents <name> [--planner|--implementer|--reviewer|--fixer|--shipper <runtime>] [--json]
+rasen pipeline classify <task> [--json]
+rasen pipeline resume <change> [--json]
+rasen pipeline init <name> --output <path> [--json]
+rasen pipeline save <name> --from <file> [--force] [--json]
+rasen pipeline validate <name-or-path> [--json]
+rasen pipeline import <path> [--force] [--json]
+rasen pipeline export <name> <path> [--force] [--json]
+rasen pipeline delete <name> [--yes] [--force] [--json]
+```
+
+全部十一个子命令都接受 `--store <id>` / `--project <id>`，其根解析方式与 `rasen validate` 完全一致。
+
+全部十一个子命令的帮助和 Rasen 自有的人类可读输出都支持英语、日语和简体中文。本地化只改变呈现：pipeline 与 stage ID、role/runtime/source 值、路径、JSON 字段与原始描述，以及分类器的关键词、`suggested`、`matched` 和 `basis` 语义都保持不变。项目和用户编写的名称与描述保留原文；只有包内置流水线（pipeline）的描述会在人类视图中本地化，其 JSON 描述仍保留原始值。
+
+| 子命令 | 说明 |
+|------------|-------------|
+| `list` | 列出可用 pipeline（project > user > package），含描述与 stage id |
+| `show <name>` | 显示某 pipeline 的 stage DAG、build order，以及解析后的逐 stage runtime/handoff/reuse 配置；`--for-execution` 还会校验当前 profile 下的 skill |
+| `agents <name>` | 显示或（写入项目级覆盖）设置逐角色的 Claude/Codex runtime |
+| `classify <task>` | 用建议性的关键词启发式方法为任务字符串推荐一个 pipeline |
+| `resume <change>` | 根据 run-state 显示某 change（或 portfolio）的下一个/剩余 stage |
+| `init <name>` | 在必须为空的 `--output` 目录下创建最小 `pipeline.yaml` 草稿，不安装它 |
+| `save <name>` | 校验 `--from` 指定的 JSON 或 YAML 定义，然后把规范化后的标准 YAML 安装到 user 层；`--force` 可替换已有 user pipeline，但永远不能覆盖内置 pipeline |
+| `validate <name-or-path>` | 对已安装的 pipeline 名、草稿目录，或 `kind: pipeline` 的 `.rasenpkg` 做结构性校验（解析、重复/环/parallel-group/decompose stage 检查）；不要求所引用的 skill 已安装 |
+| `import <path>` | 校验、暂存、复校 digest，然后把 `kind: pipeline` 包中的每个 pipeline 原子化安装进 user 层；`--force` 允许覆盖同名的已安装 pipeline |
+| `export <name> <path>` | 将一个已安装的 **user** pipeline 打包为确定性的 `.rasenpkg`；内置与项目本地 pipeline 不可导出 |
+| `delete <name>` | 在引用计数检查后删除一个未被引用的 user pipeline；内置 pipeline 不可删除 |
+
+**Pipeline 定义内容版本。** 规范化后的公开定义始终带顶层整数 `version: 1`。历史上没有 `version` 的定义仍可读取，并会归一化为 v1；任何显式的不支持版本或畸形值都会被拒绝，并在 `/version` 给出可操作的诊断，提示用户升级到兼容的 Rasen 版本。`show` 与管理 API 的 detail 返回规范化后的 v1 定义；`init` 与 `save` 输出标准 v1 YAML；`export` 只规范化包内的 `pipeline.yaml`，保留其他附属文件，也不会仅因读取或导出就改写已安装的源文件。包清单里的 `formatVersion` 是独立的 `.rasenpkg` 容器版本。
+
+Pipeline v1 保留现有的扁平 `requires` DAG，以及当前的 `stage.loop.kind: review-cycle` 和 `stage.loop.kind: goal` 声明。它们现在仍可读取，也是未来编译 Composite run plan 的有效源输入。目前两种 loop 都由 LEAD 编排 playbook 解释执行。Canvas 负责查看和编辑 Pipeline 定义；它不是程序化 Pipeline runner，也不会引入嵌套执行行为。
+
+`.rasenpkg` 携带一个 `kind` 判别字段——`workflow`、`profile`、或 `pipeline`——共享同一套包格式。`kind: pipeline` 包的 digest、事务性安装（暂存到临时目录 → 原子重命名，包内全部 pipeline 要么全装要么全不装）与文件限额规则，均与[可安装工作流与 `.rasenpkg`](workflow-packages.md)中 `kind: workflow` 的约定一致。每个包还携带一个可选的 `minRasenVersion`，在打包时由打包 CLI 自身版本戳入：较旧的 CLI 导入一个要求更新版本的包时，会收到清晰的升级提示，而不是含糊的 schema 错误。这个预检只对本次改动之后的 CLI 生效——早于此字段存在的已发布 CLI，遇到无法识别的包 `kind` 时仍会含糊拒绝，无法回补。
+
+`delete` 的引用计数守卫会拒绝删除被任一已安装工作流的 `requires.pipelines`、或另一个 pipeline 的 `decompose` stage 的 `childPipeline`（显式声明或默认的 `small-feature`）所引用的 pipeline，并列出每个引用方；`--force` 会绕过该守卫（但不会绕过对内置 pipeline 的禁止删除），并警告哪些引用方将变成悬空引用。
+
+内置 pipeline 中的 stage `skill:` 字段使用工作流目录名形式（`rasen-propose`、`rasen-review`）；`validate` 与包导入仍接受已退役的 skill 名冒号形式（`rasen:review`）以保持向后兼容，且不要求该 skill 在导入时已安装——缺失的 skill 会在执行期才被捕获。
+
 ### `rasen config`
 
-查看和修改全局 OpenSpec 配置。
+查看和修改全局 rasen 配置。
 
 ```
 rasen config <subcommand> [options]
@@ -1046,7 +1166,7 @@ rasen config profile core
 - 保持当前设置（退出）
 
 若保持当前设置，不会写入任何更改，也不会显示更新提示。
-若没有配置更改，但当前项目文件与你的全局 profile/delivery 不同步，OpenSpec 会显示警告并建议 `rasen update`。
+若没有配置更改，但当前项目文件与你的全局 profile/delivery 不同步，rasen 会显示警告并建议 `rasen update`。
 按 `Ctrl+C` 也会干净地取消该流程（无堆栈跟踪）并以退出码 `130` 退出。
 在工作流清单中，`[x]` 表示该工作流已在全局配置中选中。要将这些选择应用到项目文件，请运行 `rasen update`（或在项目内出现提示时选择 `Apply changes to this project now?`）。
 
@@ -1070,7 +1190,7 @@ rasen config profile
 
 ### `rasen feedback`
 
-提交关于 OpenSpec 的反馈。会创建一个 GitHub issue。
+提交关于 rasen 的反馈。会创建一个 GitHub issue。
 
 ```
 rasen feedback <message> [options]
@@ -1101,7 +1221,7 @@ rasen feedback "Add support for custom artifact types" \
 
 ### `rasen completion`
 
-管理 OpenSpec CLI 的 shell 补全。
+管理 rasen CLI 的 shell 补全。
 
 ```
 rasen completion <subcommand> [shell]
@@ -1127,7 +1247,7 @@ rasen completion install
 rasen completion install zsh
 
 # 生成脚本以供手动安装
-rasen completion generate bash > ~/.bash_completion.d/openspec
+rasen completion generate bash > ~/.bash_completion.d/rasen
 
 # 卸载
 rasen completion uninstall
@@ -1148,9 +1268,10 @@ rasen completion uninstall
 
 | 变量 | 说明 |
 |----------|-------------|
-| `OPENSPEC_TELEMETRY` | 设为 `0` 禁用遥测 |
+| `RASEN_TELEMETRY` | 设为 `0` 禁用遥测 |
 | `DO_NOT_TRACK` | 设为 `1` 禁用遥测（标准 DNT 信号） |
-| `OPENSPEC_CONCURRENCY` | 批量校验的默认并发数（默认：6） |
+| `RASEN_CONCURRENCY` | 批量校验的默认并发数（默认：6） |
+| `RASEN_LANG` | 临时覆盖已保存的 CLI 界面语言（`en`、`ja` 或 `zh-cn`） |
 | `EDITOR` 或 `VISUAL` | `rasen config edit` 使用的编辑器 |
 | `NO_COLOR` | 设置时禁用彩色输出 |
 
@@ -1158,7 +1279,7 @@ rasen completion uninstall
 
 ## 相关文档
 
-- [命令](commands.md) - AI 斜杠命令（`/rasen:propose`、`/rasen:apply` 等）
+- [命令](commands.md) - AI 斜杠命令（`/rasen-propose`、`/rasen-apply-change` 等）
 - [工作流](workflows.md) - 常见模式和各命令的适用时机
 - [自定义](customization.md) - 创建自定义 schema 和模板
 - [入门指南](getting-started.md) - 首次设置指南

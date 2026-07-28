@@ -12,37 +12,74 @@ import * as fs from 'fs';
 import { createRequire } from 'module';
 import { FileSystemUtils } from '../utils/file-system.js';
 import { ensureClaudeAgentTeams } from './claude-settings.js';
+import { reconcileEditBoundaryHooks } from './edit-boundary-hooks.js';
 import { transformToHyphenCommands } from '../utils/command-references.js';
 import { AI_TOOLS, OPENSPEC_DIR_NAME } from './config.js';
 import {
-  generateCommands,
-  CommandAdapterRegistry,
-  getLegacyCommandFilePath,
-  getCommandFileId,
+  getAllRetiredCommandFilePathCandidates,
   getCommandFilePathCandidates,
-} from './command-generation/index.js';
+} from './shared/retired-command-paths.js';
 import {
   getToolVersionStatus,
   getSkillTemplates,
-  getCommandContents,
   generateSkillContent,
   copySkillSidecars,
   getToolsWithSkillsDir,
   resolveToolSkillsRoot,
+  resolveConfiguredTools,
   type ToolVersionStatus,
 } from './shared/index.js';
 import {
   detectLegacyArtifacts,
   formatLegacyCoexistenceNotice,
+  cleanupLegacyEditBoundaryState,
+  pruneRetiredEditBoundarySkillDirs,
   pruneRetiredExpertSkillDirs,
+  pruneRetiredWorkflowSkillDirs,
+  pruneRetiredRetentionSkillDirs,
+  RETIRED_WORKFLOW_COMMAND_IDS,
 } from './legacy-cleanup.js';
+import {
+  getRetroCommandSkillTemplate,
+  RETRO_COMPAT_WRAPPER_DIR_NAME,
+} from './templates/skill-templates.js';
+import {
+  EffectiveLearnedSkillPlanningError,
+  resolveEffectiveLearnedSkillPlan,
+  resolveLearnedSkillExecutionContext,
+} from './learned-skills/index.js';
+import {
+  emptyLearnedReconcileResult,
+  learnedReconcileHasActivity,
+  mergeLearnedReconcileResult,
+  reconcileGlobalLearnedSkillsForTool,
+  reconcileProjectLearnedSkillsForTool,
+  type LearnedReconcileResult,
+} from './learned-skill-materialization.js';
+import { collectProjectLearnedStores } from './project-learned-skill-ledger.js';
+import {
+  learnedMaterializationMessage,
+  learnedMaterializationReport,
+} from './learned-materialization-locale.js';
 import { hasLegacyWorkspace } from './workspace-migration.js';
-import { getGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
-import { getProfileWorkflows, ALL_WORKFLOWS } from './profiles.js';
+import { getGlobalConfig, saveGlobalConfig, type GlobalConfig, type RepoMode } from './global-config.js';
+import {
+  getCurrentBuiltInWorkflowIds,
+  profileLockWarningToDiagnostic,
+  resolveProjectWorkflowSelection,
+  userWideProfileWarningToDiagnostic,
+} from './profiles.js';
+import { reportConfigDiagnostic } from './config-diagnostics.js';
+import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
+import { resolveProjectHome } from './project-home.js';
+import { hasExpertSelectionAck, writeExpertSelectionAck } from './expert-selection-state.js';
+import {
+  getBuiltInCatalogDefinitions,
+  loadWorkflowCatalog,
+} from './workflow-registry/index.js';
+import { syncWorkflowArtifactLedger } from './workflow-artifact-ledger.js';
 import { getAvailableTools } from './available-tools.js';
 import {
-  WORKFLOW_TO_SKILL_DIR,
-  getCommandConfiguredTools,
   getConfiguredToolsForProfileSync,
   getToolsNeedingProfileSync,
 } from './profile-sync-drift.js';
@@ -50,10 +87,38 @@ import {
   scanInstalledWorkflows as scanInstalledWorkflowsShared,
   migrateIfNeeded as migrateIfNeededShared,
 } from './migration.js';
+import { reconcileCodexProjectConfig, formatCodexConfigSummary, type CodexConfigReconcileResult } from './codex/index.js';
 
 const require = createRequire(import.meta.url);
 const { version: OPENSPEC_VERSION } = require('../../package.json');
 const OLD_CORE_WORKFLOWS = ['propose', 'explore', 'apply', 'archive'] as const;
+
+/**
+ * Returns tools that have at least one pre-retirement rasen command file on
+ * disk (via the frozen static path knowledge), so a project whose only
+ * artifact for a tool predates the command-surface retirement is still
+ * recognized as configured — update then cleans up its command files and
+ * installs skills, rather than treating it as unconfigured.
+ */
+function getCommandConfiguredTools(projectPath: string): string[] {
+  return AI_TOOLS
+    .filter((tool) => {
+      if (!tool.skillsDir) return false;
+      const toolDir = path.join(projectPath, tool.skillsDir);
+      try {
+        return fs.statSync(toolDir).isDirectory();
+      } catch {
+        return false;
+      }
+    })
+    .map((tool) => tool.value)
+    .filter((toolId) =>
+      getAllRetiredCommandFilePathCandidates(toolId).some((cmdPath) => {
+        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
+        return fs.existsSync(fullPath);
+      })
+    );
+}
 
 /**
  * Options for the update command.
@@ -61,6 +126,10 @@ const OLD_CORE_WORKFLOWS = ['propose', 'explore', 'apply', 'archive'] as const;
 export interface UpdateCommandOptions {
   /** Force update even when tools are up to date */
   force?: boolean;
+  /** Update every reachable, non-pinned registered project whose version is behind. */
+  allProjects?: boolean;
+  /** Skip multi-project registry consultation entirely (the pre-manifest behavior). */
+  onlyThis?: boolean;
 }
 
 /**
@@ -78,9 +147,13 @@ export function scanInstalledWorkflows(projectPath: string, toolIds: string[]): 
 
 export class UpdateCommand {
   private readonly force: boolean;
+  private readonly allProjects: boolean;
+  private readonly onlyThis: boolean;
 
   constructor(options: UpdateCommandOptions = {}) {
     this.force = options.force ?? false;
+    this.allProjects = options.allProjects ?? false;
+    this.onlyThis = options.onlyThis ?? false;
   }
 
   async execute(projectPath: string): Promise<void> {
@@ -105,25 +178,158 @@ export class UpdateCommand {
     const detectedTools = getAvailableTools(resolvedProjectPath);
     migrateIfNeededShared(resolvedProjectPath, detectedTools);
 
-    // 3. Read global config for profile/delivery
+    // 3. Read global config for profile
     const globalConfig = getGlobalConfig();
     const profile = globalConfig.profile ?? 'full';
-    const delivery: Delivery = globalConfig.delivery ?? 'both';
-    const profileWorkflows = getProfileWorkflows(profile, globalConfig.workflows);
-    const desiredWorkflows = profileWorkflows.filter((workflow): workflow is (typeof ALL_WORKFLOWS)[number] =>
-      (ALL_WORKFLOWS as readonly string[]).includes(workflow)
+
+    // The machine-wide marker can flip to `true` from an action against a
+    // completely different project (review-round Blocker fix). Expert
+    // pruning below is additionally gated on THIS project's own
+    // acknowledgment file (expert-selection-state.ts): a project that has
+    // never been through its own transition keeps resolving the legacy
+    // (all-experts) branch regardless of the global marker, so it can never
+    // lose an installed expert as a side effect of what happened elsewhere.
+    const globalMarkerExplicit = globalConfig.expertSelectionExplicit === true;
+    let projectHome: Awaited<ReturnType<typeof resolveProjectHome>> = null;
+    try {
+      projectHome = await resolveProjectHome(resolvedProjectPath, { ensure: false });
+    } catch {
+      projectHome = null;
+    }
+    const projectAcknowledged = projectHome !== null && hasExpertSelectionAck(projectHome.homeDir);
+    const expertSelectionExplicit = globalMarkerExplicit && projectAcknowledged;
+
+    if (globalMarkerExplicit && !projectAcknowledged) {
+      // First post-flip update for this specific project: stay on the safe
+      // legacy branch this run (handled by `expertSelectionExplicit` above
+      // being `false`), and record the acknowledgment so the *next* update
+      // on this same project is the one that applies profile-default
+      // narrowing.
+      try {
+        const home = projectHome ?? (await resolveProjectHome(resolvedProjectPath, { ensure: true }));
+        if (home) writeExpertSelectionAck(home.homeDir);
+      } catch {
+        // Best-effort; a failed write just means this project re-evaluates
+        // from the same safe starting point on its next update.
+      }
+    }
+
+    const catalog = loadWorkflowCatalog();
+    const {
+      ids: desiredWorkflows,
+      unknown: unknownProfileWorkflows,
+      mode: selectionMode,
+      lockedProfile,
+      lockWarning,
+      profileWarning,
+    } = resolveProjectWorkflowSelection(
+      catalog,
+      resolvedProjectPath,
+      profile,
+      globalConfig.workflows,
+      expertSelectionExplicit
     );
-    const shouldGenerateCommands = delivery === 'both';
+    if (selectionMode === 'override') {
+      console.log(
+        chalk.dim('Note: this space uses its own workflow selection (project override), not the user-wide profile.')
+      );
+    }
+    if (selectionMode === 'locked-profile' && lockedProfile !== undefined) {
+      console.log(
+        chalk.dim(`Note: this project is locked to profile '${lockedProfile}' (rasen/config.yaml), not the user-wide profile.`)
+      );
+    }
+    if (lockWarning) {
+      reportConfigDiagnostic(
+        profileLockWarningToDiagnostic(lockWarning),
+        createConfigDiagnosticReporter()
+      );
+    }
+    if (profileWarning) {
+      reportConfigDiagnostic(
+        userWideProfileWarningToDiagnostic(profileWarning),
+        createConfigDiagnosticReporter()
+      );
+    }
+    if (unknownProfileWorkflows.length > 0) {
+      console.log(
+        chalk.yellow(
+          `Warning: dropping unknown workflow id(s) from stored profile: ${unknownProfileWorkflows.join(', ')}`
+        )
+      );
+    }
+    // Surface built-in workflows the catalog gained after this selection was
+    // last saved (frozen `custom`/override selections lag; `full`/`core`
+    // resolve against the live catalog and never lag). Runs before the
+    // up-to-date short-circuit so an upgrade that adds a workflow is honest
+    // even when no tool otherwise needs an update. Never rewrites the stored
+    // selection.
+    this.surfaceNewBuiltInWorkflows(globalConfig, desiredWorkflows);
+
     const proactive = globalConfig.proactive ?? true;
     const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
+
+    // One-time (per run) non-regressive migration notice (design.md D4): an
+    // install that predates expert selection resolves all current experts under
+    // the legacy branch above, profile-independent — this only explains the
+    // shift, it never narrows the install itself. `update` never sets the
+    // marker; only the profile picker/`profile use`/`profile new`/`import`
+    // and a fresh `init` do, so this notice keeps firing on every legacy
+    // `update` until the user explicitly re-selects experts.
+    if (!expertSelectionExplicit) {
+      reportConfigDiagnostic(
+        {
+          key: 'expertSelectionMigration',
+          fallback:
+            "Note: experts are now individually selectable. All previously installed experts are kept for now — run `rasen profile` to choose which ones to install.",
+          output: 'warn',
+        },
+        createConfigDiagnosticReporter()
+      );
+    }
 
     // 4. Report (never remove or rewrite) legacy-namespace artifacts. update
     // refreshes only rasen-namespace artifacts; upstream/older-rasen `opsx`
     // command files and `openspec-*` skill dirs are left untouched (D4).
     await this.noticeLegacyArtifacts(resolvedProjectPath);
 
-    // 5. Find configured tools
-    const configuredTools = getConfiguredToolsForProfileSync(resolvedProjectPath);
+    // 5. Resolve configured tools through the authoritative `tools:`
+    // manifest in `rasen/config.yaml` (project-install-manifest spec). When
+    // the manifest is absent, this seeds it once from the on-disk union
+    // (getConfiguredToolsForProfileSync + leftover commands — the same union
+    // update used pre-manifest) and proceeds. The legacy on-disk detection
+    // path is preserved only as the migration fallback.
+    const commandConfiguredTools = getCommandConfiguredTools(resolvedProjectPath);
+    const { tools: configuredTools, seeded: toolsWereSeeded } =
+      resolveConfiguredTools(resolvedProjectPath, {
+        seedProvider: () => [
+          ...new Set([
+            ...getConfiguredToolsForProfileSync(resolvedProjectPath),
+            ...commandConfiguredTools,
+          ]),
+        ],
+      });
+    if (toolsWereSeeded && configuredTools.length > 0) {
+      console.log(chalk.dim(`Seeded tools: ${configuredTools.join(', ')}`));
+    }
+    const commandConfiguredSet = new Set(commandConfiguredTools);
+
+    // Runtime cleanup/reconciliation precedes every short circuit and does not
+    // depend on a retired skill being selected or installed.
+    for (const toolId of configuredTools) {
+      const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
+      if (!tool?.skillsDir) continue;
+      await pruneRetiredEditBoundarySkillDirs(
+        resolveToolSkillsRoot(tool, resolvedProjectPath)
+      );
+    }
+    await cleanupLegacyEditBoundaryState();
+    for (const result of reconcileEditBoundaryHooks(
+      resolvedProjectPath,
+      configuredTools
+    )) {
+      if (result.warning) console.log(chalk.yellow(`Warning: ${result.warning}`));
+    }
 
     if (configuredTools.length === 0) {
       console.log(chalk.yellow('No configured tools found.'));
@@ -131,9 +337,19 @@ export class UpdateCommand {
       return;
     }
 
+    // Reconcile the Codex project-local wait policy when Codex belongs to the
+    // authoritative configured-tool set (manifest, or the one-time migration
+    // seed which itself requires real Rasen artifacts — a stray `.codex/`
+    // directory stays advisory-only). Done before the up-to-date short-circuit
+    // so missing/stale/blocked policy is treated as update-required drift even
+    // when every generated skill is current (cli-update spec).
+    const codexConfig: CodexConfigReconcileResult | undefined = configuredTools.includes('codex')
+      ? await reconcileCodexProjectConfig(resolvedProjectPath)
+      : undefined;
+    const codexConfigNeedsAttention =
+      codexConfig !== undefined && codexConfig.outcome !== 'unchanged';
+
     // 6. Check version status for all configured tools
-    const commandConfiguredTools = getCommandConfiguredTools(resolvedProjectPath);
-    const commandConfiguredSet = new Set(commandConfiguredTools);
     const toolStatuses = configuredTools.map((toolId) => {
       const status = getToolVersionStatus(resolvedProjectPath, toolId, OPENSPEC_VERSION);
       if (!status.configured && commandConfiguredSet.has(toolId)) {
@@ -150,8 +366,8 @@ export class UpdateCommand {
     const toolsNeedingConfigSync = getToolsNeedingProfileSync(
       resolvedProjectPath,
       desiredWorkflows,
-      delivery,
-      configuredTools
+      configuredTools,
+      { expertSelectionExplicit }
     );
     const toolsToUpdateSet = new Set<string>([
       ...toolsNeedingVersionUpdate,
@@ -160,18 +376,47 @@ export class UpdateCommand {
     const toolsUpToDate = toolStatuses.filter((s) => !toolsToUpdateSet.has(s.toolId));
 
     // Prune expert-skill dirs orphaned by the rebrand (openspec-gstack-* →
-    // openspec-*) for every configured tool, before the up-to-date short-circuit.
-    // Installed dirs are not renamed in place, and the retired dirs are always
+    // openspec-*), skill/command artifacts left behind by retired built-in
+    // workflows (e.g. `ff` → `rasen-ff-change`), AND any rasen command file
+    // (the whole command surface is retired) for every configured tool,
+    // before the up-to-date short-circuit. Installed artifacts are not
+    // renamed or removed in place, and retired/stale artifacts are always
     // stale, so this must run even when no tool otherwise needs an update.
+    let removedCommandCount = 0;
     for (const toolId of configuredTools) {
       const tool = AI_TOOLS.find((t) => t.value === toolId);
       if (!tool?.skillsDir) continue;
       await pruneRetiredExpertSkillDirs(resolveToolSkillsRoot(tool, resolvedProjectPath));
+      await pruneRetiredWorkflowSkillDirs(resolveToolSkillsRoot(tool, resolvedProjectPath));
+      // Clean retired retention skill dirs by exact name, preserving the
+      // currently shipped `rasen-retro` compatibility wrapper.
+      await pruneRetiredRetentionSkillDirs(
+        resolveToolSkillsRoot(tool, resolvedProjectPath),
+        [RETRO_COMPAT_WRAPPER_DIR_NAME]
+      );
+      await this.pruneRetiredWorkflowCommandFiles(resolvedProjectPath, toolId);
+      removedCommandCount += await this.removeCommandFiles(resolvedProjectPath, toolId);
+    }
+    if (removedCommandCount > 0) {
+      console.log(chalk.dim(`Removed: ${removedCommandCount} command files (commands have been consolidated into skills)`));
     }
 
-    if (!this.force && toolsToUpdateSet.size === 0) {
-      // All tools are up to date
+    // Reconcile learned skills for every configured tool (idempotent). This is
+    // the learned-skill materialization action itself — it runs before the
+    // up-to-date short-circuit so a learned-only change is never reported as
+    // "Already up to date." It never onboards a new tool (operates only on the
+    // already-configured set) and never changes the profile/workflow selection.
+    const learned = await this.reconcileLearnedSkills(resolvedProjectPath, configuredTools);
+    const learnedActivity = learnedReconcileHasActivity(learned);
+
+    if (!this.force && toolsToUpdateSet.size === 0 && !learnedActivity && !codexConfigNeedsAttention) {
+      // All tools are up to date, no learned-skill materialization changed, and
+      // every manifest-configured Codex policy is current.
       this.displayUpToDateMessage(toolStatuses);
+      // A complete reconciliation that changed nothing still says so, in its
+      // own words. Silence here is what makes a user unsure whether their
+      // learned knowledge was considered at all.
+      this.displayLearnedSummary(learned);
 
       // Still check for new tool directories and extra workflows
       this.detectNewTools(resolvedProjectPath, configuredTools);
@@ -180,24 +425,28 @@ export class UpdateCommand {
       return;
     }
 
-    // 8. Display update plan
-    if (this.force) {
-      console.log(`Force updating ${configuredTools.length} tool(s): ${configuredTools.join(', ')}`);
-    } else {
-      this.displayUpdatePlan([...toolsToUpdateSet], statusByTool, toolsUpToDate);
-    }
-    console.log();
-
-    // 9. Determine what to generate based on delivery — skills are always installed
+    // 8. Skills are the only delivery surface now.
     const skillTemplates = getSkillTemplates(desiredWorkflows);
-    const commandContents = shouldGenerateCommands ? getCommandContents(desiredWorkflows) : [];
 
-    // 10. Update tools (all if force, otherwise only those needing update)
+    // 9. Tools whose workflow skills need (re)generation (all if force,
+    // otherwise only those needing update). A learned-only change leaves this
+    // empty — the workflow summary then stays empty while the learned summary
+    // reports the change (cli-update spec: learned-only reconciliation).
     const toolsToUpdate = this.force ? configuredTools : [...toolsToUpdateSet];
+
+    // Display the update plan only when workflow skills are being regenerated.
+    if (toolsToUpdate.length > 0) {
+      if (this.force) {
+        console.log(`Force updating ${configuredTools.length} tool(s): ${configuredTools.join(', ')}`);
+      } else {
+        this.displayUpdatePlan([...toolsToUpdateSet], statusByTool, toolsUpToDate);
+      }
+      console.log();
+    }
+
+    // 10. Update tools.
     const updatedTools: string[] = [];
     const failedTools: Array<{ name: string; error: string }> = [];
-    let removedCommandCount = 0;
-    let removedDeselectedCommandCount = 0;
     let removedDeselectedSkillCount = 0;
 
     for (const toolId of toolsToUpdate) {
@@ -209,21 +458,29 @@ export class UpdateCommand {
       try {
         const skillsDir = resolveToolSkillsRoot(tool, resolvedProjectPath);
 
+        // Chain transformers once per tool: embed config values, then
+        // tool-specific transforms (hyphen-based command references for
+        // OpenCode), mirroring init. Reused by every skill and the retro
+        // compatibility wrapper below.
+        const configTransform = (text: string) => text
+          .replace(/__OPENSPEC_PROACTIVE__/g, String(proactive))
+          .replace(/__OPENSPEC_REPO_MODE__/g, repoMode);
+        const toolTransform = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
+        const transformer = toolTransform
+          ? (text: string) => toolTransform(configTransform(text))
+          : configTransform;
+
         // Generate skill files (always installed regardless of delivery)
-        for (const { template, dirName, workflowId } of skillTemplates) {
+        for (const { template, dirName, workflowId, escapeFrontmatter } of skillTemplates) {
           const skillDir = path.join(skillsDir, dirName);
           const skillFile = path.join(skillDir, 'SKILL.md');
 
-          // Chain transformers: embed config values, then tool-specific transforms
-          // (hyphen-based command references for OpenCode), mirroring init.
-          const configTransform = (text: string) => text
-            .replace(/__OPENSPEC_PROACTIVE__/g, String(proactive))
-            .replace(/__OPENSPEC_REPO_MODE__/g, repoMode);
-          const toolTransform = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
-          const transformer = toolTransform
-            ? (text: string) => toolTransform(configTransform(text))
-            : configTransform;
-          const skillContent = generateSkillContent(template, OPENSPEC_VERSION, transformer);
+          const skillContent = generateSkillContent(
+            template,
+            OPENSPEC_VERSION,
+            transformer,
+            escapeFrontmatter
+          );
           await FileSystemUtils.writeFile(skillFile, skillContent);
 
           // Copy the skill's sidecar reference files so its relative-path
@@ -231,31 +488,14 @@ export class UpdateCommand {
           copySkillSidecars(workflowId, skillDir);
         }
 
+        // Refresh the temporary `rasen-retro` compatibility wrapper by its
+        // exact named identity. This overwrites the retired retro workflow's
+        // skill with the report-forcing wrapper during the migration window.
+        await this.generateRetroCompatWrapper(skillsDir, transformer);
+
         removedDeselectedSkillCount += await this.removeUnselectedSkillDirs(skillsDir, desiredWorkflows);
 
-        // Generate commands if delivery includes commands
-        if (shouldGenerateCommands) {
-          const adapter = CommandAdapterRegistry.get(tool.value);
-          if (adapter) {
-            const generatedCommands = generateCommands(commandContents, adapter);
-
-            for (const cmd of generatedCommands) {
-              const commandFile = path.isAbsolute(cmd.path) ? cmd.path : path.join(resolvedProjectPath, cmd.path);
-              await FileSystemUtils.writeFile(commandFile, cmd.fileContent);
-            }
-
-            removedDeselectedCommandCount += await this.removeUnselectedCommandFiles(
-              resolvedProjectPath,
-              toolId,
-              desiredWorkflows
-            );
-          }
-        }
-
-        // Delete command files if delivery is skills-only
-        if (!shouldGenerateCommands) {
-          removedCommandCount += await this.removeCommandFiles(resolvedProjectPath, toolId);
-        }
+        syncWorkflowArtifactLedger(resolvedProjectPath, toolId, desiredWorkflows);
 
         // Claude Code: enable agent-teams (Tier A orchestration) in project settings.
         if (tool.value === 'claude') {
@@ -281,14 +521,30 @@ export class UpdateCommand {
     if (failedTools.length > 0) {
       console.log(chalk.red(`✗ Failed: ${failedTools.map(f => `${f.name} (${f.error})`).join(', ')}`));
     }
-    if (removedCommandCount > 0) {
-      console.log(chalk.dim(`Removed: ${removedCommandCount} command files (delivery: skills)`));
-    }
-    if (removedDeselectedCommandCount > 0) {
-      console.log(chalk.dim(`Removed: ${removedDeselectedCommandCount} command files (deselected workflows)`));
-    }
     if (removedDeselectedSkillCount > 0) {
       console.log(chalk.dim(`Removed: ${removedDeselectedSkillCount} skill directories (deselected workflows)`));
+    }
+
+    // Learned-skill summary — reported separately from the workflow summary
+    // (created/updated/removed/skipped) so an empty learned category is never
+    // merged into the workflow counts.
+    this.displayLearnedSummary(learned);
+
+    // Codex project config (cli-update spec): report the managed wait-policy
+    // outcome separately from the workflow skill summary. The TOML file is
+    // never counted as a workflow or skill. Created/updated include a restart
+    // reminder; blocked/failed are actionable and never let the project read
+    // as already current.
+    if (codexConfig) {
+      for (const line of formatCodexConfigSummary(codexConfig)) {
+        const rendered =
+          line.tone === 'error'
+            ? chalk.red(`  ✗ ${line.text}`)
+            : line.tone === 'warn'
+              ? chalk.yellow(`  ⚠ ${line.text}`)
+              : chalk.white(`  ${line.text}`);
+        console.log(rendered);
+      }
     }
 
     // 12. Detect new tool directories not currently configured
@@ -306,6 +562,132 @@ export class UpdateCommand {
 
     console.log();
     console.log(chalk.dim('Restart your IDE for changes to take effect.'));
+
+    // 16. Version-cache refresh (project-install-manifest spec): AFTER the
+    // successful update summary, refresh the current project's registry
+    // entry with installedVersion/lastUpdated and mirror the manifest's
+    // tools list. Best-effort — a failure emits at most a warning and does
+    // not abort (skill files are already refreshed on disk). MUST run after
+    // the skill-generation loop, never before, so a failed update does not
+    // advance the cache.
+    await this.refreshProjectVersionCache(resolvedProjectPath, configuredTools);
+
+    // 17. Multi-project update offer (project-install-manifest spec): when
+    // --only-this is unset, consult the registry for other registered
+    // projects that are behind and offer to upgrade them.
+    if (!this.onlyThis) {
+      await this.offerMultiProjectUpdate(resolvedProjectPath);
+    }
+  }
+
+  /**
+   * Refreshes the current project's registry entry with the installed
+   * version, lastUpdated timestamp, and a mirror of the manifest tools.
+   * Best-effort: a failure emits at most a warning.
+   */
+  private async refreshProjectVersionCache(
+    projectPath: string,
+    configuredTools: readonly string[]
+  ): Promise<void> {
+    try {
+      const { touchProjectRegistry } = await import('./project-home.js');
+      await touchProjectRegistry(projectPath, {
+        tools: [...configuredTools],
+        installedVersion: OPENSPEC_VERSION,
+      });
+    } catch (error) {
+      // Best-effort; registry problems must never break a user command.
+      console.log(
+        chalk.yellow(
+          `Warning: could not refresh the project registry cache (${
+            error instanceof Error ? error.message : String(error)
+          }). The next 'rasen update' or registry self-heal will converge it.`
+        )
+      );
+    }
+  }
+
+  /**
+   * Offers a multi-project upgrade after the current project is updated.
+   * Consults the registry for other registered projects whose cached
+   * `installedVersion` is behind the current CLI version (or unknown), and
+   * presents an interactive prompt (all / select / skip, default skip) or
+   * proceeds silently with `--all-projects`. Skips entirely when
+   * non-interactive without `--all-projects`, or when nothing is behind.
+   */
+  private async offerMultiProjectUpdate(
+    currentProjectPath: string
+  ): Promise<void> {
+    try {
+      const { isInteractive } = await import('../utils/interactive.js');
+      const { enumerateBehindProjects, updateMultipleProjects, formatMultiProjectSummary } =
+        await import('./multi-project-update.js');
+
+      const behind = await enumerateBehindProjects(currentProjectPath, OPENSPEC_VERSION);
+      if (behind.length === 0) {
+        console.log(chalk.dim('All registered projects are current.'));
+        return;
+      }
+
+      const interactive = isInteractive();
+      const shouldUpdateAll = this.allProjects;
+
+      if (!interactive && !this.allProjects) {
+        // Non-interactive without --all-projects: skip the offer (no prompt,
+        // no registry consultation for updates).
+        return;
+      }
+
+      let targets = behind;
+      if (interactive && !shouldUpdateAll) {
+        const { select } = await import('@inquirer/prompts');
+        const choices = [
+          { name: 'Update all', value: 'all' },
+          { name: 'Select', value: 'select' },
+          { name: 'Skip', value: 'skip' },
+        ];
+        const answer = await select({
+          message: `Found ${behind.length} registered project(s) behind v${OPENSPEC_VERSION}. Update them?`,
+          choices,
+          default: 'skip',
+        });
+        if (answer === 'skip') return;
+        if (answer === 'select') {
+          const { checkbox } = await import('@inquirer/prompts');
+          const selected = await checkbox({
+            message: 'Select projects to update',
+            choices: behind.map((p) => ({
+              name: `${p.name} (${path.basename(p.projectRoot)})${
+                p.cachedVersion ? ` v${p.cachedVersion}` : ' (version unknown)'
+              }`,
+              value: p.projectRoot,
+            })),
+          });
+          if (selected.length === 0) return;
+          const selectedSet = new Set(selected);
+          targets = behind.filter((p) => selectedSet.has(p.projectRoot));
+        }
+      }
+
+      const results = await updateMultipleProjects(targets, { force: this.force });
+      const summary = formatMultiProjectSummary(results);
+      if (summary.length > 0) {
+        console.log();
+        console.log(chalk.bold('Multi-project update'));
+        for (const line of summary) {
+          console.log(line);
+        }
+      }
+    } catch (error) {
+      // Best-effort: multi-project failure never aborts the (already-successful) current update.
+      console.log(
+        chalk.yellow(
+          `Warning: multi-project update skipped (${
+            error instanceof Error ? error.message : String(error)
+          }).`
+        )
+      );
+    }
   }
 
   /**
@@ -380,7 +762,7 @@ export class UpdateCommand {
     const extraWorkflows = installedWorkflows.filter((w) => !profileSet.has(w));
 
     if (extraWorkflows.length > 0) {
-      console.log(chalk.dim(`Note: ${extraWorkflows.length} extra workflows not in profile (use \`rasen config profile\` to manage)`));
+      console.log(chalk.dim(`Note: ${extraWorkflows.length} extra workflows not in profile (use \`rasen profile\` to manage)`));
     }
   }
 
@@ -388,7 +770,7 @@ export class UpdateCommand {
    * Suggest opting back into core when a custom profile still matches the old
    * pre-sync core set. Keep custom profiles user-owned; do not mutate them.
    */
-  private displayOldCoreCustomProfileNote(profile: Profile, workflows?: readonly string[]): void {
+  private displayOldCoreCustomProfileNote(profile: string, workflows?: readonly string[]): void {
     if (profile !== 'custom' || !workflows) {
       return;
     }
@@ -403,23 +785,81 @@ export class UpdateCommand {
     }
 
     console.log(chalk.dim('Note: The core profile now includes sync. Your custom profile is preserving the old core workflow set.'));
-    console.log(chalk.dim('Run `rasen config profile core` and then `rasen update` to add sync.'));
+    console.log(chalk.dim('Run `rasen profile use core` and then `rasen update` to add sync.'));
   }
 
   /**
-   * Removes skill directories for workflows that are no longer selected in the active profile.
+   * Surfaces built-in workflows that are in the current catalog but absent
+   * from the resolved desired set because they were added after the stored
+   * selection was last saved — the honest-upgrade note (design.md D1/D2).
+   * Distinguishes a genuinely new workflow from a deliberate deselection via
+   * the `knownBuiltInWorkflows` baseline: only built-ins absent from that
+   * baseline are surfaced. A legacy config lacking the baseline is seeded
+   * silently on this run (no note), so no pre-existing omission is surprised
+   * onto the user. `full`/`core` selections already contain every built-in,
+   * so `surface` is naturally empty for them. Never mutates the stored
+   * selection — only the machine-managed baseline field.
+   */
+  private surfaceNewBuiltInWorkflows(
+    globalConfig: GlobalConfig,
+    desiredWorkflows: readonly string[]
+  ): void {
+    const currentBuiltInIds = getCurrentBuiltInWorkflowIds();
+    const baseline = globalConfig.knownBuiltInWorkflows;
+
+    if (baseline === undefined) {
+      // First `update` on a config that predates this behavior: record the
+      // currently-known built-ins without surfacing anything this run.
+      try {
+        saveGlobalConfig({ ...globalConfig, knownBuiltInWorkflows: currentBuiltInIds });
+      } catch {
+        // Best-effort: a failed seed just means this repeats next run (still
+        // no surprise, since the same seed-then-quiet path re-runs).
+      }
+      return;
+    }
+
+    const baselineSet = new Set(baseline);
+    const desiredSet = new Set(desiredWorkflows);
+    const surface = currentBuiltInIds.filter(
+      (id) => !baselineSet.has(id) && !desiredSet.has(id)
+    );
+    if (surface.length === 0) return;
+
+    reportConfigDiagnostic(
+      {
+        key: 'newBuiltInWorkflowsAvailable',
+        values: { workflows: surface.join(', ') },
+        fallback: `Note: new built-in workflow(s) available that your selection does not include: ${surface.join(
+          ', '
+        )}. Run \`rasen profile\` to add ${surface.length === 1 ? 'it' : 'them'}.`,
+        output: 'warn',
+      },
+      createConfigDiagnosticReporter()
+    );
+  }
+
+  /**
+   * Removes skill directories for built-in workflows OR experts that are no
+   * longer in the resolved desired set (D5: iterates
+   * `getBuiltInCatalogDefinitions()`, not the workflow-only
+   * `getBuiltInWorkflowDefinitions()`, so a deselected-and-unreferenced
+   * expert is pruned the same way a deselected workflow is). `desiredWorkflows`
+   * already includes every profile-default and closure-required expert (and,
+   * under the legacy migration marker, all current experts), so a protected expert is
+   * never removed here.
    * Returns the number of directories removed.
    */
   private async removeUnselectedSkillDirs(
     skillsDir: string,
-    desiredWorkflows: readonly (typeof ALL_WORKFLOWS)[number][]
+    desiredWorkflows: readonly string[]
   ): Promise<number> {
     const desiredSet = new Set(desiredWorkflows);
     let removed = 0;
 
-    for (const workflow of ALL_WORKFLOWS) {
-      if (desiredSet.has(workflow)) continue;
-      const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
+    for (const definition of getBuiltInCatalogDefinitions()) {
+      if (desiredSet.has(definition.id)) continue;
+      const dirName = definition.skill.dirName;
       if (!dirName) continue;
 
       const skillDir = path.join(skillsDir, dirName);
@@ -437,20 +877,20 @@ export class UpdateCommand {
   }
 
   /**
-   * Removes command files for workflows when delivery changed to skills-only.
-   * Returns the number of files removed.
+   * Removes command files left behind by retired built-in workflows (e.g.
+   * `ff`), resolving candidate paths for each id in
+   * `RETIRED_WORKFLOW_COMMAND_IDS` via the frozen static path knowledge.
+   * Scoped to exactly those ids; idempotent (a no-op when no such file
+   * exists).
    */
-  private async removeCommandFiles(
+  private async pruneRetiredWorkflowCommandFiles(
     projectPath: string,
     toolId: string,
   ): Promise<number> {
     let removed = 0;
 
-    const adapter = CommandAdapterRegistry.get(toolId);
-    if (!adapter) return 0;
-
-    for (const workflow of ALL_WORKFLOWS) {
-      for (const cmdPath of getCommandFilePathCandidates(adapter, workflow)) {
+    for (const commandId of RETIRED_WORKFLOW_COMMAND_IDS) {
+      for (const cmdPath of getCommandFilePathCandidates(toolId, commandId)) {
         const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
 
         try {
@@ -468,51 +908,156 @@ export class UpdateCommand {
   }
 
   /**
-   * Removes command files for workflows that are no longer selected in the active profile,
-   * plus legacy '-command'-suffixed files superseded by the short filenames.
-   * Returns the number of files removed.
+   * Unconditionally removes every rasen command file for a tool — all 19
+   * built-in command ids plus their `-command`/`opsx` legacy path variants
+   * — using only the frozen static path knowledge (D2/D3: never the deleted
+   * live command-generation registry, and never gated on workflow
+   * selection since commands no longer exist to select). Merges the former
+   * delivery-gated `removeCommandFiles` and selection-gated
+   * `removeUnselectedCommandFiles` into one unconditional cleanup. Returns
+   * the number of files removed.
    */
-  private async removeUnselectedCommandFiles(
+  private async removeCommandFiles(
     projectPath: string,
     toolId: string,
-    desiredWorkflows: readonly (typeof ALL_WORKFLOWS)[number][]
   ): Promise<number> {
     let removed = 0;
 
-    const adapter = CommandAdapterRegistry.get(toolId);
-    if (!adapter) return 0;
+    for (const cmdPath of getAllRetiredCommandFilePathCandidates(toolId)) {
+      const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
 
-    const desiredSet = new Set(desiredWorkflows);
-
-    for (const workflow of ALL_WORKFLOWS) {
-      const stalePaths: string[] = [];
-      if (!desiredSet.has(workflow)) {
-        stalePaths.push(adapter.getFilePath(getCommandFileId(workflow)));
-      }
-      // Legacy suffixed filenames are stale even for selected workflows —
-      // the current filename was just (re)generated alongside.
-      const legacyPath = getLegacyCommandFilePath(adapter, workflow);
-      if (legacyPath) {
-        stalePaths.push(legacyPath);
-      }
-
-      for (const cmdPath of stalePaths) {
-        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
-
-        try {
-          if (fs.existsSync(fullPath)) {
-            await fs.promises.unlink(fullPath);
-            removed++;
-          }
-        } catch {
-          // Ignore errors
+      try {
+        if (fs.existsSync(fullPath)) {
+          await fs.promises.unlink(fullPath);
+          removed++;
         }
+      } catch {
+        // Ignore errors
       }
     }
 
     return removed;
   }
 
+  /**
+   * Writes the temporary `rasen-retro` compatibility wrapper into a tool's
+   * skills root by its exact named identity ({@link RETRO_COMPAT_WRAPPER_DIR_NAME}),
+   * overwriting the retired retro workflow's skill with the report-forcing
+   * wrapper. The wrapper is outside the selectable workflow catalog.
+   */
+  private async generateRetroCompatWrapper(
+    skillsDir: string,
+    transformer: (text: string) => string
+  ): Promise<void> {
+    const content = generateSkillContent(
+      getRetroCommandSkillTemplate(),
+      OPENSPEC_VERSION,
+      transformer,
+      false
+    );
+    await FileSystemUtils.writeFile(
+      path.join(skillsDir, RETRO_COMPAT_WRAPPER_DIR_NAME, 'SKILL.md'),
+      content
+    );
+  }
+
+  /**
+   * Reconciles active learned skills into every already-configured tool,
+   * tracking exact ownership in the artifact ledgers. Never onboards a tool
+   * (operates only on `toolIds`, the configured set) and never changes the
+   * profile or workflow selection. Best-effort: a resolution or per-tool
+   * failure leaves the rest of update unaffected.
+   */
+  private async reconcileLearnedSkills(
+    projectPath: string,
+    toolIds: readonly string[]
+  ): Promise<LearnedReconcileResult> {
+    const aggregate = emptyLearnedReconcileResult();
+    try {
+      const execution = await resolveLearnedSkillExecutionContext({
+        launchDirectory: projectPath,
+        requestedScope: 'mixed',
+      });
+      const plan = await resolveEffectiveLearnedSkillPlan({
+        execution,
+        previousStores:
+          execution.owner.type === 'project'
+            ? collectProjectLearnedStores(execution.evaluationRoot ?? projectPath)
+            : [],
+      });
+
+      for (const toolId of toolIds) {
+        const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
+        if (!tool?.skillsDir) continue;
+        const skillsRoot = resolveToolSkillsRoot(tool, plan.evaluationRoot);
+        try {
+          const result =
+            tool.skillsHome === 'global'
+              ? reconcileGlobalLearnedSkillsForTool({
+                  toolId,
+                  toolLabel: tool.name,
+                  skillsRoot,
+                  globalRecords: plan.globalRecords,
+                  localRecords: plan.skills,
+                  plan,
+                  ...(execution.globalDataDir ? { globalDataDir: execution.globalDataDir } : {}),
+                })
+              : reconcileProjectLearnedSkillsForTool({
+                  toolId,
+                  toolLabel: tool.name,
+                  skillsRoot,
+                  plan,
+                });
+          mergeLearnedReconcileResult(aggregate, result);
+        } catch (error) {
+          aggregate.errors.push({
+            code: 'tool_reconcile_failed',
+            message: `${tool.name}: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
+      }
+    } catch (error) {
+      aggregate.errors.push({
+        code:
+          error instanceof EffectiveLearnedSkillPlanningError ? error.code : 'effective_plan_failed',
+        message: error instanceof Error ? error.message : String(error),
+        ...(error instanceof EffectiveLearnedSkillPlanningError && error.repair.length > 0
+          ? { repair: error.repair }
+          : {}),
+      });
+    }
+    return aggregate;
+  }
+
+  /**
+   * Reports the learned-skill reconciliation as a section separate from the
+   * workflow summary, so an empty learned category is never merged into the
+   * workflow counts. A COMPLETE reconciliation that changed nothing emits its
+   * own learned no-op rather than disappearing into the generic status.
+   */
+  private displayLearnedSummary(learned: LearnedReconcileResult): void {
+    if (!learnedReconcileHasActivity(learned) && !learned.noOp) return;
+    const parts: string[] = [];
+    if (learned.created.length > 0) parts.push(`created: ${learned.created.length}`);
+    if (learned.updated.length > 0) parts.push(`updated: ${learned.updated.length}`);
+    if (learned.migrated.length > 0) parts.push(`migrated: ${learned.migrated.length}`);
+    if (learned.removed.length > 0) parts.push(`removed: ${learned.removed.length}`);
+    if (learned.skipped.length > 0) parts.push(`skipped: ${learned.skipped.length}`);
+    if (learned.deduplicated.length > 0) parts.push(`deduplicated: ${learned.deduplicated.length}`);
+    if (learned.conflicts.length > 0) parts.push(`conflicts: ${learned.conflicts.length}`);
+    if (learned.unavailableStores.length > 0) {
+      parts.push(`unavailable stores: ${learned.unavailableStores.length}`);
+    }
+    if (learned.deferred.length > 0) parts.push(`deferred: ${learned.deferred.length}`);
+    if (parts.length > 0) {
+      console.log(
+        chalk.dim(learnedMaterializationMessage('summary', { details: parts.join(', ') }))
+      );
+    }
+    for (const line of learnedMaterializationReport(learned)) {
+      console.log(line.tone === 'warn' ? chalk.yellow(`  ⚠ ${line.text}`) : chalk.dim(line.text));
+    }
+  }
 
   /**
    * Prints a one-time coexistence notice when legacy-namespace command/skill

@@ -9,6 +9,21 @@ import {
   type ProjectRegistryState,
 } from './project-registry.js';
 import type { ThresholdValue } from './model-presets.js';
+import type { ProbeRuntime } from './runtime-adapters.js';
+import {
+  SUPPORTED_CLI_LOCALES,
+  resolveCliLocale,
+  type CliLanguage,
+  type CliLocale,
+} from '../utils/locale.js';
+import {
+  reportConfigDiagnostic,
+  type ConfigDiagnosticReporter,
+} from './config-diagnostics.js';
+import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
+import { isRetentionMode, type RetentionMode } from './retention.js';
+import type { DispatchRuntime } from './runtime-adapters.js';
+import { normalizeRetiredEditBoundaryExpertIds } from './retired-edit-boundary.js';
 
 // Constants
 export const GLOBAL_CONFIG_DIR_NAME = 'rasen';
@@ -24,43 +39,62 @@ const LEGACY_BRAND_DIR_NAME = 'openspec';
 
 // TypeScript types
 export type Profile = 'full' | 'core' | 'custom';
-export type Delivery = 'both' | 'skills';
-type LegacyDelivery = 'commands' | 'skills-first' | 'commands-first';
+export type Language = CliLanguage;
 export type RepoMode = 'solo' | 'collaborative';
 
-const LEGACY_DELIVERY_MAP: Record<LegacyDelivery, Delivery> = {
-  'skills-first': 'skills',
-  'commands': 'both',
-  'commands-first': 'both',
-};
-
-function isLegacyDelivery(value: unknown): value is LegacyDelivery {
-  return value === 'commands' || value === 'skills-first' || value === 'commands-first';
+function isLanguage(value: unknown): value is Language {
+  return value === 'auto' || SUPPORTED_CLI_LOCALES.some((locale) => locale === value);
 }
 
 /**
- * Normalizes a raw `delivery` value read from disk into the current 2-value
- * `Delivery` union. Recognized legacy values (`commands`, `skills-first`,
- * `commands-first`) map onto their consolidated equivalent; anything else
- * (unrecognized strings, undefined, garbage) falls back to the default
- * `'both'` without being treated as a legacy migration.
+ * Builds a locale-aware diagnostic reporter for `getGlobalConfig()`'s own
+ * internal diagnostics, given a locale already resolved from data in scope
+ * (never via `getCliLocale()`, which reads global config and would recreate
+ * the `global-config.ts` <-> `cli-locale.ts` recursion this function exists
+ * to avoid). Any failure constructing the reporter falls back to `undefined`
+ * so `reportConfigDiagnostic`'s existing English-fallback path takes over —
+ * a diagnostic must never be dropped because locale/catalog resolution
+ * failed.
  */
-export function normalizeDelivery(raw: unknown): { delivery: Delivery; legacy?: LegacyDelivery } {
-  if (raw === 'both' || raw === 'skills') {
-    return { delivery: raw };
+function safeDefaultReporter(locale: CliLocale): ConfigDiagnosticReporter | undefined {
+  try {
+    return createConfigDiagnosticReporter(locale);
+  } catch {
+    return undefined;
   }
-  if (isLegacyDelivery(raw)) {
-    return { delivery: LEGACY_DELIVERY_MAP[raw], legacy: raw };
-  }
-  return { delivery: DEFAULT_CONFIG.delivery! };
+}
+
+/**
+ * Detects a retired `delivery` config value. The `delivery` setting itself
+ * has been retired (skills are the only delivery surface now) — this is no
+ * longer value normalization, just presence detection: ANY stored `delivery`
+ * key, current (`both`/`skills`) or legacy (`commands`/`skills-first`/
+ * `commands-first`), is retired the same way. Reading one must never error.
+ */
+export function isRetiredDeliveryValue(raw: unknown): raw is unknown {
+  return raw !== undefined;
 }
 
 // TypeScript interfaces
 export interface GlobalConfig {
   featureFlags?: Record<string, boolean>;
-  profile?: Profile;
-  delivery?: Delivery;
+  /**
+   * The user-wide profile. Widened from the {@link Profile} union to accept a
+   * saved profile name (resolved by `resolveUserWideProfileBase`); the three
+   * reserved literals still carry their special meaning. The YAML/JSON parser
+   * already stores whatever string is on disk.
+   */
+  profile?: Profile | string;
   workflows?: string[];
+  /**
+   * The single retention mode the `rasen-retain` stage resolves to
+   * (`off` | `report` | `codify`) — the version-2 profile dimension. Absent on
+   * a v1 config; the effective value is then migrated from the workflow
+   * selection (a former `retro-command` selection maps to `report`). Written
+   * only by explicit profile writes, never fabricated on read.
+   */
+  retention?: RetentionMode;
+  language?: Language;
   proactive?: boolean;
   repoMode?: RepoMode;
   /** Workset opener rows (slice 7.1); hand-edited, validated on use. */
@@ -75,18 +109,113 @@ export interface GlobalConfig {
     anonymousId?: string;
     noticeSeen?: boolean;
   };
-  /** Context-handoff threshold; project config of the same name wins over this. */
+  /**
+   * Machine-managed migration marker for the expert install-semantics flip
+   * (concept-coherence 6b). Absent/`false` = legacy: every built-in expert
+   * continues to install regardless of profile, preserving pre-flip
+   * behavior exactly (design.md D4). Set to `true` only by explicit
+   * expert-aware write paths (the profile picker's `applyProfileState`,
+   * `profile use`, `profile new`/`import`, and fresh `init`) — `update`
+   * never sets it, so a project that is merely re-`update`d keeps every
+   * expert forever until the user opens the picker.
+   */
+  expertSelectionExplicit?: boolean;
+  /**
+   * Baseline of built-in *workflow* ids (catalog `kind !== 'expert'`,
+   * `source === 'built-in'`) known when the workflow selection was last
+   * saved. Written by the selection-persisting paths (`applyProfileState`,
+   * `profile use`/`import`, `init`, existing-user migration) and seeded
+   * silently by `update` on first read for legacy configs. `update` uses it
+   * to tell a workflow genuinely new to the catalog from one the user
+   * deliberately deselected: a frozen (`custom`/override) selection surfaces
+   * only built-ins absent from this baseline. Optional and additive — an
+   * older binary that lacks it reads without error.
+   */
+  knownBuiltInWorkflows?: string[];
+  /**
+   * Context-handoff threshold; project config of the same name wins over
+   * this. `roles` carries per-role overrides (planner/implementer/
+   * reviewer/fixer/shipper) mirroring the pipeline registry's
+   * `handoff.roles.<role>` shape — a role-specific value wins over the
+   * scalar `threshold` at this same (global) scope tier.
+   */
   handoff?: {
     threshold?: ThresholdValue;
+    roles?: {
+      planner?: ThresholdValue;
+      implementer?: ThresholdValue;
+      reviewer?: ThresholdValue;
+      fixer?: ThresholdValue;
+      shipper?: ThresholdValue;
+    };
   };
+  thresholds?: {
+    bindings?: Partial<Record<ProbeRuntime | 'default', string>>;
+  };
+  /**
+   * Machine-wide autopilot defaults; project config of the same name wins
+   * over this (see `resolveAutopilotGatePolicy`/`resolveAutopilotSelectionPolicy`
+   * in project-config.ts, which take this block as their `globalConfig` layer).
+   */
+  autopilot?: {
+    gates?: 'on' | 'off';
+    selection?: 'classify' | 'manual' | 'compose';
+  };
+  /**
+   * Machine-wide per-agent model defaults; project config of the same name
+   * wins over this. `default` is the base model for every role; `roles`
+   * overrides it per role (planner/implementer/reviewer/fixer/shipper).
+   * Model ids are free strings — never validated against an allow-list.
+   */
+  models?: {
+    default?: string;
+    roles?: {
+      planner?: string;
+      implementer?: string;
+      reviewer?: string;
+      fixer?: string;
+      shipper?: string;
+    };
+  };
+  /**
+   * UI-managed preferences. `pinnedSpaces` is the user's pinned planning
+   * spaces as `<type>:<id>` selectors, written from the web Spaces page (or
+   * `rasen config set`) — surviving a browser change and visible to the CLI.
+   */
+  ui?: {
+    pinnedSpaces?: string[];
+    /** Stable installed-theme id; availability is resolved by the UI theme service. */
+    theme?: string;
+    /** Preserve future UI-managed fields during load/save round trips. */
+    [key: string]: unknown;
+  };
+  /**
+   * Per-pipeline configuration overrides, keyed by pipeline name. The inner
+   * records mirror the `pipelines.<name>.{gates,models,handoff}.<stage>` and
+   * `pipelines.<name>.runtimes.<role>` config-key families (an unset instance
+   * is absent, never defaulted). `gates`/`models`/`handoff` are keyed by stage;
+   * `runtimes` is keyed by role. This `pipelines` block shares nothing with the
+   * `rasen/pipelines/` directory namespace — it is config data keyed by pipeline
+   * name, not stored pipeline definitions.
+   */
+  pipelines?: Record<
+    string,
+    {
+      gates?: Record<string, 'on' | 'off'>;
+      models?: Record<string, string>;
+      handoff?: Record<string, ThresholdValue>;
+      runtimes?: Record<string, DispatchRuntime>;
+    }
+  >;
 }
 
 const DEFAULT_CONFIG: GlobalConfig = {
   featureFlags: {},
   profile: 'full',
-  delivery: 'both',
+  language: 'auto',
   proactive: true,
   repoMode: 'collaborative',
+  ui: { theme: 'crt' },
 };
 
 export interface GlobalDataDirOptions {
@@ -202,17 +331,36 @@ export function getGlobalConfigPath(): string {
  * Returns default configuration if file doesn't exist or is invalid.
  * Merges loaded config with defaults to ensure new fields are available.
  */
-export function getGlobalConfig(): GlobalConfig {
-  const configPath = getGlobalConfigPath();
+export interface GetGlobalConfigOptions {
+  /** Receives locale-neutral diagnostics instead of writing legacy English output. */
+  reporter?: ConfigDiagnosticReporter;
+  /** Locale probing must not rewrite the file before the command can report a migration. */
+  persistMigrations?: boolean;
+}
 
-  try {
-    if (!fs.existsSync(configPath)) {
-      return { ...DEFAULT_CONFIG };
-    }
+export type GlobalConfigFileStatus = 'missing' | 'readable' | 'unreadable';
 
-    const content = fs.readFileSync(configPath, 'utf-8');
-    const parsed = JSON.parse(content);
+/**
+ * One coherent view of the global config file. `raw` and `config` always
+ * derive from the same file contents: `raw` preserves explicit values for
+ * source attribution, while `config` applies normal defaults and migrations.
+ */
+export interface GlobalConfigSnapshot {
+  status: GlobalConfigFileStatus;
+  raw: Record<string, unknown>;
+  config: GlobalConfig;
+}
 
+export type GlobalConfigFileReader = (configPath: string) => string;
+
+function defaultGlobalConfigFileReader(configPath: string): string {
+  return fs.readFileSync(configPath, 'utf-8');
+}
+
+function normalizeGlobalConfig(
+  parsed: Record<string, unknown>,
+  options: GetGlobalConfigOptions
+): GlobalConfig {
     // Merge with defaults (loaded values take precedence)
     const merged: GlobalConfig = {
       ...DEFAULT_CONFIG,
@@ -220,16 +368,35 @@ export function getGlobalConfig(): GlobalConfig {
       // Deep merge featureFlags
       featureFlags: {
         ...DEFAULT_CONFIG.featureFlags,
-        ...(parsed.featureFlags || {})
-      }
+        ...((parsed.featureFlags as Record<string, boolean> | undefined) || {})
+      },
+      // Additive defaults without discarding pinnedSpaces or future UI keys.
+      ui: {
+        ...DEFAULT_CONFIG.ui,
+        ...(parsed.ui || {}),
+      },
     };
+    // The `delivery` setting is retired; never surface it, current or legacy.
+    delete (merged as Record<string, unknown>).delivery;
 
     // Schema evolution: apply defaults for new fields if not present in loaded config
     if (parsed.profile === undefined) {
       merged.profile = DEFAULT_CONFIG.profile;
     }
-    if (parsed.delivery === undefined) {
-      merged.delivery = DEFAULT_CONFIG.delivery;
+    if (
+      Array.isArray(parsed.workflows) &&
+      parsed.workflows.every((value): value is string => typeof value === 'string')
+    ) {
+      merged.workflows = normalizeRetiredEditBoundaryExpertIds(parsed.workflows);
+    }
+    // Retention is never fabricated on read: an absent value stays absent so
+    // the effective-retention resolver can migrate it from the workflow
+    // selection; only an explicitly-stored invalid value is dropped.
+    if (parsed.retention !== undefined && !isRetentionMode(parsed.retention)) {
+      delete (merged as Record<string, unknown>).retention;
+    }
+    if (!isLanguage(parsed.language)) {
+      merged.language = DEFAULT_CONFIG.language;
     }
     if (parsed.proactive === undefined) {
       merged.proactive = DEFAULT_CONFIG.proactive;
@@ -238,32 +405,81 @@ export function getGlobalConfig(): GlobalConfig {
       merged.repoMode = DEFAULT_CONFIG.repoMode;
     }
 
-    // Legacy delivery values (commands / skills-first / commands-first) are
-    // consolidated into the 2-value system: map, notify once, and persist so
-    // subsequent reads see the new value directly (no notice repeats).
-    if (parsed.delivery !== undefined) {
-      const { delivery, legacy } = normalizeDelivery(parsed.delivery);
-      merged.delivery = delivery;
-      if (legacy) {
-        console.error(
-          `Note: delivery mode '${legacy}' has been consolidated into '${delivery}' (skills are always installed). Your config has been updated.`
-        );
+    // Retired `delivery` key: any stored value (current or legacy) is read
+    // without error, reported once, and stripped on next write — it is never
+    // treated as a live setting again.
+    if (isRetiredDeliveryValue(parsed.delivery)) {
+      reportConfigDiagnostic(
+        {
+          key: 'deliveryRetired',
+          values: { legacy: String(parsed.delivery) },
+          fallback: `Note: the 'delivery' setting has been retired (skills are the only delivery surface now). Removing '${String(parsed.delivery)}' from your config.`,
+          output: 'error',
+        },
+        options.reporter ?? safeDefaultReporter(resolveCliLocale({ language: merged.language }))
+      );
+      if (options.persistMigrations !== false) {
         try {
-          saveGlobalConfig({ ...merged, delivery });
+          const { delivery: _delivery, ...rest } = parsed;
+          saveGlobalConfig(rest as GlobalConfig);
         } catch {
           // Best-effort: persistence failure must not fail the read.
         }
       }
     }
 
-    return merged;
+  return merged;
+}
+
+function isMissingGlobalConfigError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'ENOENT'
+  );
+}
+
+/**
+ * Reads and parses the global file once, then derives both its raw and
+ * normalized representations from that in-memory value.
+ */
+export function readGlobalConfigSnapshot(
+  options: GetGlobalConfigOptions = {},
+  readFile: GlobalConfigFileReader = defaultGlobalConfigFileReader
+): GlobalConfigSnapshot {
+  const configPath = getGlobalConfigPath();
+
+  try {
+    const parsed = JSON.parse(readFile(configPath)) as Record<string, unknown>;
+    return {
+      status: 'readable',
+      raw: parsed,
+      config: normalizeGlobalConfig(parsed, options),
+    };
   } catch (error) {
-    // Log warning for parse errors, but not for missing files
+    // Log warning for parse errors, but not for missing files.
     if (error instanceof SyntaxError) {
-      console.error(`Warning: Invalid JSON in ${configPath}, using defaults`);
+      reportConfigDiagnostic(
+        {
+          key: 'invalidGlobalJson',
+          values: { path: configPath },
+          fallback: `Warning: Invalid JSON in ${configPath}, using defaults`,
+          output: 'error',
+        },
+        options.reporter ?? safeDefaultReporter(resolveCliLocale({}))
+      );
     }
-    return { ...DEFAULT_CONFIG };
+    return {
+      status: isMissingGlobalConfigError(error) ? 'missing' : 'unreadable',
+      raw: {},
+      config: { ...DEFAULT_CONFIG },
+    };
   }
+}
+
+export function getGlobalConfig(options: GetGlobalConfigOptions = {}): GlobalConfig {
+  return readGlobalConfigSnapshot(options).config;
 }
 
 /**

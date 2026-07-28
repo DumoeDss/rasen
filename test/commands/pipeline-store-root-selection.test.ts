@@ -6,7 +6,15 @@ import * as path from 'node:path';
 import { getGlobalDataDir, registerStore } from '../../src/core/index.js';
 import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
 
-const BUILTIN_NAMES = ['bug-fix', 'full-feature', 'small-feature'] as const;
+const BUILTIN_NAMES = [
+  'auto-decompose',
+  'bug-fix',
+  'full-feature',
+  'goal-loop-evaluate',
+  'goal-loop-measure',
+  'goal-loop-research',
+  'small-feature',
+] as const;
 
 // The pipeline command group resolves its root through the same store-selection
 // layer as `validate` — `--store <id>` operates on the registered store's root,
@@ -136,35 +144,205 @@ describe('pipeline command store root selection', () => {
     expect(listNames).toEqual(validateNames);
   });
 
-  it('agents writes the project override under the store root, where validate sees it', async () => {
+  it.each([
+    {
+      locale: 'en',
+      heading: 'Available pipelines:',
+      builtIn: 'Minimal bug-fix pipeline',
+      banner: 'Using Rasen root: team-context',
+    },
+    {
+      locale: 'ja',
+      heading: '利用可能なパイプライン:',
+      builtIn: '最小限のバグ修正パイプライン',
+      banner: '使用するRasenルート: team-context',
+    },
+    {
+      locale: 'zh-cn',
+      heading: '可用流水线：',
+      builtIn: '最简缺陷修复流水线',
+      banner: '使用 Rasen 根目录：team-context',
+    },
+  ] as const)(
+    'keeps --store root selection while localizing human output in $locale',
+    async ({ locale, heading, builtIn, banner }) => {
+      writeStorePipeline(
+        'store-authored',
+        [
+          'name: store-authored',
+          'description: Store-authored description',
+          'stages:',
+          '  - id: propose',
+          '    skill: rasen-propose',
+          '    role: planner',
+        ].join('\n')
+      );
+
+      const result = await runCLI(
+        ['pipeline', 'list', '--store', 'team-context'],
+        { cwd: appRepo, env: { ...env, RASEN_LANG: locale } }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain(heading);
+      expect(result.stdout).toContain(builtIn);
+      expect(result.stdout).toContain('Store-authored description');
+      expect(result.stdout).toContain('[project]');
+      expect(result.stderr).toContain(banner);
+      expect(result.stderr).toContain(storeRoot);
+      if (locale !== 'en') {
+        expect(result.stderr).not.toContain('Using Rasen root');
+      }
+      expect(fs.existsSync(path.join(appRepo, 'rasen'))).toBe(false);
+    },
+    30_000
+  );
+
+  it.each([
+    {
+      locale: 'ja',
+      banner: '使用するRasenルート: プロジェクト linked-project',
+    },
+    {
+      locale: 'zh-cn',
+      banner: '使用 Rasen 根目录：项目 linked-project',
+    },
+  ] as const)(
+    'localizes --project root selection in $locale',
+    async ({ locale, banner }) => {
+      const projectRoot = path.join(tempDir, `projects-${locale}`, 'linked-project');
+      createOpenSpecRoot(projectRoot);
+      const added = await runCLI(
+        [
+          'store',
+          'add-project',
+          projectRoot,
+          '--to',
+          'team-context',
+          '--as',
+          'linked-project',
+          '--json',
+        ],
+        { cwd: appRepo, env }
+      );
+      expect(added.exitCode).toBe(0);
+
+      const result = await runCLI(
+        ['pipeline', 'list', '--project', 'linked-project'],
+        { cwd: appRepo, env: { ...env, RASEN_LANG: locale } }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toContain(banner);
+      expect(result.stderr).toContain(fs.realpathSync.native(projectRoot));
+      expect(result.stderr).not.toContain('Using Rasen root');
+    },
+    30_000
+  );
+
+  it.each([
+    {
+      locale: 'ja',
+      // team-context IS registered, so a `store:` pointer beside local planning
+      // now emits the inheriting-store-config notice (store-config-inheritance).
+      notice: "でstore 'team-context'が指定されています。プランニングはローカルのまま、設定はそのstoreから継承されます。",
+    },
+    {
+      locale: 'zh-cn',
+      notice: " 声明了 Store 'team-context'：规划保持本地，配置从该 Store 继承。",
+    },
+  ] as const)(
+    'localizes the inheriting store notice and keeps JSON silent in $locale',
+    async ({ locale, notice }) => {
+      createOpenSpecRoot(appRepo);
+      const configPath = path.join(appRepo, 'rasen', 'config.yaml');
+      fs.writeFileSync(
+        configPath,
+        'schema: spec-driven\nstore: team-context\n',
+        'utf-8'
+      );
+      const localizedEnv = { ...env, RASEN_LANG: locale };
+
+      const human = await runCLI(['pipeline', 'list'], {
+        cwd: appRepo,
+        env: localizedEnv,
+      });
+      expect(human.exitCode).toBe(0);
+      expect(human.stderr).toContain(`${configPath}${notice}`);
+      // No English leakage, and the old ignored-pointer wording is gone.
+      expect(human.stderr).not.toContain('configuration inherits from that store');
+      expect(human.stderr).not.toContain('the declaration is ignored');
+
+      const json = await runCLI(['pipeline', 'list', '--json'], {
+        cwd: appRepo,
+        env: localizedEnv,
+      });
+      expect(json.exitCode).toBe(0);
+      expect(json.stderr).toBe('');
+      expect(parseJson(json).pipelines).toBeDefined();
+    },
+    30_000
+  );
+
+  it('agents writes a runtime config instance under the store root (no YAML copy)', async () => {
     const result = await runCLI(
       ['pipeline', 'agents', 'small-feature', '--planner', 'codex', '--store', 'team-context', '--json'],
-      { cwd: appRepo, env }
+      // Pin the host runtime the assertion already assumes: dispatchMode
+      // 'exec-bridge' is only correct under a Claude host. On CI (no
+      // CLAUDECODE/RASEN_AGENT_RUNTIME in the env) the host resolves to
+      // 'unknown' → legacy-fallback. Per-test pin, NOT global.
+      { cwd: appRepo, env: { ...env, RASEN_AGENT_RUNTIME: 'claude' } }
     );
     expect(result.exitCode).toBe(0);
     const json = parseJson(result);
-    expect(json.effectiveRoles.planner).toBe('codex');
+    // `--store` resolves the store's own root, whose config is written project-scope
+    // (the CLI-in-store-root asymmetry), so the source reports config-project.
+    expect(json.effectiveRoles.planner).toEqual({ runtime: 'codex', source: 'config-project', dispatchMode: 'exec-bridge' });
+    expect(json.configPath).toContain(path.join(storeRoot, 'rasen', 'config.yaml'));
 
-    // The override landed under the STORE root, not the cwd.
-    const overridePath = path.join(
-      storeRoot,
-      'rasen',
-      'pipelines',
-      'small-feature',
-      'pipeline.yaml'
-    );
-    expect(fs.existsSync(overridePath)).toBe(true);
+    // The instance landed in the STORE root's config, not a frozen pipeline copy,
+    // and not under the cwd.
+    const storeConfig = fs.readFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'utf-8');
+    expect(storeConfig).toContain('codex');
+    const overridePath = path.join(storeRoot, 'rasen', 'pipelines', 'small-feature', 'pipeline.yaml');
+    expect(fs.existsSync(overridePath)).toBe(false);
     expect(fs.existsSync(path.join(appRepo, 'rasen'))).toBe(false);
 
-    // A root-aware validate of the store sees the override as a valid pipeline.
+    // The store's built-in small-feature still validates (nothing was forked).
+    // Pin the host runtime: validate --pipelines checks dispatchability, and
+    // the config written above sets a `codex` planner that is non-dispatchable
+    // under an unknown host (CI has no CLAUDECODE/RASEN_AGENT_RUNTIME in env).
     const validate = await runCLI(
       ['validate', '--pipelines', '--store', 'team-context', '--json'],
-      { cwd: appRepo, env }
+      { cwd: appRepo, env: { ...env, RASEN_AGENT_RUNTIME: 'claude' } }
     );
     expect(validate.exitCode).toBe(0);
     const validateJson = parseJson(validate);
     const smallFeature = validateJson.items.find((i: any) => i.id === 'small-feature');
     expect(smallFeature).toBeDefined();
     expect(smallFeature.valid).toBe(true);
+  });
+
+  it('a pre-existing frozen pipeline copy still resolves with a project source badge (no migration)', async () => {
+    // A legacy frozen copy written by the OLD `agents` behavior stays untouched
+    // and keeps winning as the store's project-layer definition.
+    writeStorePipeline(
+      'small-feature',
+      'name: small-feature\ndescription: frozen\nagents:\n  planner: codex\nstages:\n  - id: propose\n    role: planner\n    skill: rasen-propose\n'
+    );
+    const show = await runCLI(
+      ['pipeline', 'show', 'small-feature', '--store', 'team-context', '--json'],
+      { cwd: appRepo, env }
+    );
+    expect(show.exitCode).toBe(0);
+    const shown = parseJson(show);
+    const propose = shown.stages.find((s: any) => s.id === 'propose');
+    // The frozen copy's declared agents.planner runtime resolves (source 'agent'),
+    // and the copy still exists — no automatic deletion or rewrite.
+    expect(propose.runtime).toBe('codex');
+    expect(propose.runtimeSource).toBe('agent');
+    expect(
+      fs.existsSync(path.join(storeRoot, 'rasen', 'pipelines', 'small-feature', 'pipeline.yaml'))
+    ).toBe(true);
   });
 });

@@ -28,6 +28,8 @@ import {
   getStatusIndicator,
   getStatusColor,
 } from './shared.js';
+import { formatNextWorkflowHint } from '../../core/workflow-chain.js';
+import { getCliLocale } from '../../core/cli-locale.js';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -202,5 +204,12 @@ export function printStatusText(
   if (status.isComplete) {
     console.log();
     console.log(chalk.green('All artifacts complete!'));
+  }
+
+  if (status.nextWorkflows.length > 0) {
+    console.log();
+    for (const step of status.nextWorkflows) {
+      console.log(formatNextWorkflowHint(step, getCliLocale()));
+    }
   }
 }

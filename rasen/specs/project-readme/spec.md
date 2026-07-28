@@ -25,7 +25,7 @@ The README SHALL state that rasen is forked from OpenSpec (MIT) by Fission-AI, i
 - **THEN** the README declares it is a fork of OpenSpec (MIT) by Fission-AI, independently maintained by Sayo, not affiliated with Fission-AI
 
 ### Requirement: Install instructions
-The README SHALL provide install guidance for the rasen package: the global install command `npm i -g @atelierai/rasen`, the Node.js `>=20.19.0` requirement, and the chrome-use prerequisites (Google Chrome, Node 22+, Chrome started with remote debugging, first-connection Allow prompt). Command examples SHALL use the `rasen` command, show the workspace it creates as `rasen/`, and show slash commands with the `rasen:` prefix. The README SHALL NOT instruct users to uninstall an existing OpenSpec installation.
+The README SHALL provide install guidance for the rasen package: the global install command `npm i -g @atelierai/rasen`, the Node.js `>=20.19.0` requirement, and the chrome-use prerequisites (Google Chrome, Node 22+, Chrome started with remote debugging, first-connection Allow prompt). Command examples SHALL use the `rasen` command, show the workspace it creates as `rasen/`, and show slash commands with the `rasen-` prefix. The README SHALL NOT instruct users to uninstall an existing OpenSpec installation.
 
 #### Scenario: Global install command
 - **WHEN** a visitor decides to install
@@ -40,14 +40,14 @@ The README SHALL provide install guidance for the rasen package: the global inst
 #### Scenario: CLI, workspace, and command naming are consistent
 - **WHEN** the README shows an initialization example
 - **THEN** it invokes the `rasen` command (e.g., `rasen init`)
-- **AND** refers to the created workspace directory as `rasen/` and to slash commands with the `rasen:` prefix
+- **AND** refers to the created workspace directory as `rasen/` and to slash commands with the `rasen-` prefix
 
 ### Requirement: Core capabilities overview
 The README SHALL give a concise overview of rasen's core capabilities: the spec-driven workflow, the rasen pipeline family, harness autonomous iteration, goal-loop, chrome-use, and handoff.
 
 #### Scenario: Capabilities enumerated
 - **WHEN** a reader skims for what rasen does
-- **THEN** the README describes the spec-driven workflow, the pipeline family, harness autonomous iteration (`/rasen:auto`), goal-driven iteration (`/rasen:goal`), chrome-use, and handoff/relay
+- **THEN** the README describes the spec-driven workflow, the pipeline family, harness autonomous iteration (`/rasen-auto`), goal-driven iteration (`/rasen-goal`), chrome-use, and handoff/relay
 
 ### Requirement: Telemetry disclosure and opt-out
 The README SHALL disclose the anonymous usage telemetry: that it sends only command name, version, an anonymous UUID, and OS/Node version (no paths, arguments, or project data), and how to opt out via `RASEN_TELEMETRY=0` or `DO_NOT_TRACK=1`, with automatic disable in CI.
@@ -74,7 +74,7 @@ The README SHALL note the MIT license with dual copyright (`OpenSpec Contributor
 - **AND** it does not display upstream `@fission-ai/openspec` npm, downloads, or stars badges
 
 ### Requirement: Coexistence with upstream OpenSpec documented
-The README SHALL state that rasen installs alongside upstream OpenSpec without conflict — distinct binary (`rasen`), distinct slash-command namespace (`/rasen:*`), distinct skill directories (`rasen-*`), and distinct workspace directory (`rasen/`) — and SHALL document `rasen migrate` as the copy-only path for adopting an existing `openspec/` workspace, noting the original directory is never modified.
+The README SHALL state that rasen installs alongside upstream OpenSpec without conflict — distinct binary (`rasen`), distinct slash-command namespace (`/rasen-*`), distinct skill directories (`rasen-*`), and distinct workspace directory (`rasen/`) — and SHALL document `rasen migrate` as the copy-only path for adopting an existing `openspec/` workspace, noting the original directory is never modified.
 
 #### Scenario: Coexistence stated
 - **WHEN** a reader who already uses OpenSpec evaluates rasen

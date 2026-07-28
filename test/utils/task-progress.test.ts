@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
-import { getTaskProgressForChange } from '../../src/utils/task-progress.js';
+import { getTaskProgressForChange, listTaskItemsForChange } from '../../src/utils/task-progress.js';
 import { resolveArtifactOutputs } from '../../src/core/artifact-graph/index.js';
 
 /**
@@ -164,5 +164,49 @@ describe('getTaskProgressForChange (#1202 tracked-tasks resolution)', () => {
 
     const progress = await getTaskProgressForChange(changesDir, 'notasks', projectRoot);
     expect(progress).toEqual({ total: 0, completed: 0 });
+  });
+});
+
+/**
+ * `listTaskItemsForChange` — the item-capturing sibling of
+ * `getTaskProgressForChange` (ui-space-redesign-task-detail): same tracked-tasks
+ * file resolution, but returns each `{ text, done }` item rather than a count.
+ */
+describe('listTaskItemsForChange', () => {
+  let projectRoot: string;
+  let changesDir: string;
+
+  beforeEach(async () => {
+    projectRoot = path.join(os.tmpdir(), `rasen-listtasks-${Date.now()}-${Math.round(performance.now())}`);
+    changesDir = path.join(projectRoot, 'rasen', 'changes');
+    await fs.mkdir(changesDir, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await fs.rm(projectRoot, { recursive: true, force: true });
+  });
+
+  it('parses each checkbox item with its text and done flag from a single top-level tasks.md', async () => {
+    const changeDir = path.join(changesDir, 'plain');
+    await fs.mkdir(changeDir, { recursive: true });
+    await fs.writeFile(
+      path.join(changeDir, 'tasks.md'),
+      '## Group\n\n- [x] 1.1 First thing\n- [ ] 1.2 Second thing\n* [X] 1.3 Third thing\nnot a task line\n',
+      'utf-8'
+    );
+
+    const items = await listTaskItemsForChange(changesDir, 'plain', projectRoot);
+    expect(items).toEqual([
+      { text: '1.1 First thing', done: true },
+      { text: '1.2 Second thing', done: false },
+      { text: '1.3 Third thing', done: true },
+    ]);
+  });
+
+  it('returns [] for a change with no tasks file (never throws)', async () => {
+    const changeDir = path.join(changesDir, 'empty');
+    await fs.mkdir(changeDir, { recursive: true });
+    const items = await listTaskItemsForChange(changesDir, 'empty', projectRoot);
+    expect(items).toEqual([]);
   });
 });

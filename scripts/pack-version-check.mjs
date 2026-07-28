@@ -11,9 +11,11 @@
 //   means an explicit build is not strictly necessary for the guard.
 
 import { execFileSync } from 'child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
+
+import { npmInvocationForPlatform } from './npm-command.mjs';
 
 function log(msg) {
   if (process.env.CI) return; // keep CI logs quiet by default
@@ -25,21 +27,32 @@ function run(cmd, args, opts = {}) {
 }
 
 function npmPack() {
+  const npm = npmInvocationForPlatform();
   try {
-    const jsonOut = run('npm', ['pack', '--json', '--silent']);
+    const jsonOut = run(npm.command, [...npm.argsPrefix, 'pack', '--json', '--silent']);
     const arr = JSON.parse(jsonOut);
     if (Array.isArray(arr) && arr.length > 0) {
       const last = arr[arr.length - 1];
       const file = (last && typeof last === 'object' && last.filename) || (typeof last === 'string' ? last : null);
-      if (file) return String(file).trim();
+      if (file) {
+        const reported = String(file).trim();
+        if (existsSync(reported)) return reported;
+
+        // npm 11 may report a scoped filename as `@scope/name-x.y.z.tgz`
+        // while writing the historical flattened `scope-name-x.y.z.tgz`.
+        const flattened = reported.replace(/^@/, '').replaceAll('/', '-');
+        if (existsSync(flattened)) return flattened;
+
+        return reported;
+      }
     }
     // Unexpected JSON shape or empty array; fallback to plain output
-    const out = run('npm', ['pack', '--silent']).trim();
+    const out = run(npm.command, [...npm.argsPrefix, 'pack', '--silent']).trim();
     const lines = out.split(/\r?\n/);
     return lines[lines.length - 1].trim();
   } catch (e) {
     // Fallback for environments not supporting --json
-    const out = run('npm', ['pack', '--silent']).trim();
+    const out = run(npm.command, [...npm.argsPrefix, 'pack', '--silent']).trim();
     const lines = out.split(/\r?\n/);
     return lines[lines.length - 1].trim();
   }
@@ -77,10 +90,15 @@ function main() {
     };
 
     // Install the tarball
-    run('npm', ['install', tgzPath, '--silent', '--no-audit', '--no-fund'], { cwd: work, env });
+    const npm = npmInvocationForPlatform();
+    run(
+      npm.command,
+      [...npm.argsPrefix, 'install', tgzPath, '--silent', '--no-audit', '--no-fund'],
+      { cwd: work, env },
+    );
 
     // Run the installed CLI via Node to avoid bin resolution/platform issues
-    const binRel = path.join('node_modules', 'rasen', 'bin', 'rasen.js');
+    const binRel = path.join('node_modules', ...pkg.name.split('/'), 'bin', 'rasen.js');
     const actual = run(process.execPath, [binRel, '--version'], { cwd: work }).trim();
 
     if (actual !== expected) {

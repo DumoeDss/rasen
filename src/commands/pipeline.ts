@@ -13,7 +13,18 @@
 
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { stringify as stringifyYaml } from 'yaml';
+import {
+  resolveFrozenExecutionBinding,
+  type ExecutionBindingFailure,
+  type ExecutionBindingResult,
+} from '../core/pipeline-registry/execution-binding.js';
+import { frozenExecutionRef } from '../core/learned-skills/context.js';
+import type { FrozenKnowledgeContext } from '../core/learned-skills/types.js';
+import {
+  isSessionContextError,
+  requireSessionRuntimeContext,
+  type RuntimeContext,
+} from '../core/session-runtime-context.js';
 import {
   AgentRuntimeSchema,
   StageRoleSchema,
@@ -21,7 +32,6 @@ import {
   listPipelines,
   listPipelinesWithInfo,
   PipelineGraph,
-  parsePipeline,
   readRunStateDetailed,
   resolveRunStateLocation,
   completedStages,
@@ -32,31 +42,64 @@ import {
   latestStageHandoffs,
   sessionHandoffGeneration,
   normalizeWorker,
-  readPortfolioState,
+  readPortfolioStateDetailed,
   resolvePortfolioStateLocation,
   runnableChildren,
   interruptedChildren,
   escalatedChildren,
+  arePortfolioChildrenComplete,
   isPortfolioComplete,
-  getProjectPipelinesDir,
   resolveChildPipelineName,
   mapLegacySkillId,
   resolveStageRuntimeConfig,
   resolveStageHandoffConfig,
   resolvePipelineReuseConfig,
-  normalizeAgentRuntimeConfig,
+  resolvePipelineExecutionPlan,
+  resolvePipelineRoleRuntimes,
+  resolvePipelineStageOverrides,
+  resolveMaskedStageGate,
+  validatePipelineForExecution,
   type AgentRuntime,
+  type PipelineExecutionOptions,
   type PipelineInfo,
   type PipelineYaml,
   type ResolvedStageHandoffConfig,
   type HandoffConfigLayers,
+  type ModelConfigLayers,
+  type ModelSource,
+  type RuntimeSource,
+  type StageConfigOverrides,
+  type PipelineStageOverrides,
+  type MaskedGateSource,
   type ResolvedReuseConfig,
+  type ResolvedRoleRuntime,
+  type ExecutionStageRuntime,
   type ThresholdValue,
+  type ThresholdResolutionContext,
   type RunStateWorker,
   type Stage,
   type StageRole,
 } from '../core/pipeline-registry/index.js';
-import { resolveHandoffThresholdLayers } from '../core/effective-config.js';
+import {
+  requireConfigStoreLayer,
+  resolveConfigStoreLayer,
+  resolveHandoffThresholdLayers,
+  resolveModelConfigLayers,
+  resolveThresholdBindingLayers,
+} from '../core/effective-config.js';
+import { loadThresholdSchemeSnapshot } from '../core/threshold-resolver.js';
+import { getGlobalConfig } from '../core/global-config.js';
+import {
+  readProjectConfig,
+  resolveAutopilotGatePolicy,
+  updateProjectConfigKey,
+  type ResolvedGatePolicy,
+} from '../core/project-config.js';
+import {
+  findWildcardDefinition,
+  validateConfigKeyPath,
+  validateConfigValue,
+} from '../core/config-keys.js';
 import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
 import { resolveChangeWorkDir } from '../core/change-work.js';
@@ -64,21 +107,34 @@ import {
   resolveRootForCommand,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
+import {
+  formatPipelineExecutionNotice,
+  formatPipelineRootSelectionNotice,
+  getPipelineMessages,
+  pipelineMessageError,
+  type PipelineMessages,
+} from './pipeline-messages.js';
+import {
+  detectHostRuntime,
+  resolveDispatchRoute,
+  type DetectedHostRuntime,
+  type DispatchMode,
+} from '../core/runtime-adapters.js';
 
 interface PipelineCommandOptions {
   json?: boolean;
+  forExecution?: boolean;
   store?: string;
   project?: string;
   storePath?: string;
-}
-
-interface PipelineAgentsOptions extends PipelineCommandOptions {
   planner?: string;
   implementer?: string;
   reviewer?: string;
   fixer?: string;
   shipper?: string;
 }
+
+type PipelineAgentsOptions = PipelineCommandOptions;
 
 const STAGE_ROLES: StageRole[] = ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'];
 
@@ -93,17 +149,24 @@ interface StageView {
   childPipeline: string | null;
   role: Stage['role'] | null;
   requires: string[];
-  gate: boolean | 'vet';
+  /** The stage's declared gate value (from the pipeline definition), unmasked. */
+  gate: boolean;
+  /** The effective gate after the mask (per-stage instance > autopilot.gates off > definition). */
+  effectiveGate: boolean;
+  /** The layer that decided the effective gate. */
+  gateSource: MaskedGateSource;
   loop: Stage['loop'] | null;
   parallelGroup: string | null;
   condition: string | null;
   leadReview: boolean;
   verifyPolicy: Stage['verifyPolicy'] | null;
-  runtime: 'claude' | 'codex';
-  runtimeSource: 'stage' | 'agent' | 'default';
+  runtime: AgentRuntime;
+  runtimeSource: RuntimeSource;
+  dispatchMode: DispatchMode;
   sessionReuse: Stage['sessionReuse'] | null;
   sandbox: Stage['sandbox'] | null;
   model: string | null;
+  modelSource: ModelSource;
   effort: string | null;
   handoff: ResolvedStageHandoffConfig;
 }
@@ -146,8 +209,13 @@ function matchesKeyword(keyword: string, lowercasedText: string): boolean {
  * view: a bare fraction as-is, the absolute `{ remainingTokens }` form as
  * `N tokens remaining`.
  */
-function formatThreshold(threshold: ThresholdValue): string {
-  return typeof threshold === 'number' ? String(threshold) : `${threshold.remainingTokens} tokens remaining`;
+function formatThreshold(
+  threshold: ThresholdValue,
+  messages: PipelineMessages
+): string {
+  return typeof threshold === 'number'
+    ? String(threshold)
+    : messages.format('thresholdTokensRemaining', { tokens: threshold.remainingTokens });
 }
 
 export class PipelineCommand {
@@ -162,7 +230,25 @@ export class PipelineCommand {
   private async resolveRoot(
     options: PipelineCommandOptions
   ): Promise<ResolvedOpenSpecRoot | null> {
-    return resolveRootForCommand(options, { json: options.json });
+    if (options.json) {
+      return resolveRootForCommand(options, { json: true, reporter: false });
+    }
+    return resolveRootForCommand(options, {
+      reporter: (notice) => console.error(formatPipelineRootSelectionNotice(notice)),
+    });
+  }
+
+  private executionOptions(
+    options: PipelineCommandOptions,
+    host: DetectedHostRuntime
+  ): PipelineExecutionOptions {
+    const roleRuntimeOverrides = this.runtimeUpdatesFromOptions(options);
+    if (options.json) return { reporter: false, host, roleRuntimeOverrides };
+    return {
+      reporter: (notice) => console.warn(formatPipelineExecutionNotice(notice)),
+      host,
+      roleRuntimeOverrides,
+    };
   }
 
   /**
@@ -178,12 +264,13 @@ export class PipelineCommand {
       return;
     }
 
+    const messages = getPipelineMessages();
     if (pipelines.length === 0) {
-      console.log('No pipelines found.');
+      console.log(messages.format('noPipelinesFound'));
       return;
     }
 
-    this.printPipelineTable(pipelines);
+    this.printPipelineTable(pipelines, messages);
   }
 
   /**
@@ -193,26 +280,80 @@ export class PipelineCommand {
     const root = await this.resolveRoot(options);
     if (!root) return;
     const projectRoot = root.path;
+    const host = detectHostRuntime();
+    const roleRuntimeOverrides = this.runtimeUpdatesFromOptions(options);
 
     let pipeline;
     try {
       pipeline = loadPipelineByName(name, projectRoot);
     } catch {
       const available = listPipelines(projectRoot);
-      const list = available.length > 0 ? available.join('\n  ') : '(none)';
-      throw new Error(`Pipeline '${name}' not found. Available pipelines:\n  ${list}`);
+      const messages = getPipelineMessages();
+      throw pipelineMessageError(
+        'pipelineNotFound',
+        {
+          name,
+          available: available.length > 0 ? available.join('\n  ') : messages.format('none'),
+        },
+        'pipeline_not_found'
+      );
+    }
+    if (options.forExecution) {
+      await validatePipelineForExecution(
+        pipeline,
+        projectRoot,
+        this.executionOptions(options, host)
+      );
     }
 
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
-    const configLayers = resolveHandoffThresholdLayers(projectRoot);
-    const stages: StageView[] = pipeline.stages.map((s) => this.toStageView(s, pipeline, configLayers));
-    const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline);
+    const storeLayer = await requireConfigStoreLayer(projectRoot);
+    const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
+    const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
+    const overrides = resolvePipelineStageOverrides(pipeline.name, {
+      projectRoot,
+      store: storeLayer,
+    });
+    const thresholdContext = this.thresholdContext(
+      pipeline,
+      overrides,
+      projectRoot,
+      storeLayer?.storeRoot,
+      host,
+      roleRuntimeOverrides
+    );
+    const executionStages = new Map(
+      resolvePipelineExecutionPlan(pipeline, {
+        host,
+        overrides,
+        modelLayers,
+        roleRuntimeOverrides,
+      }).stages.map((stage) => [stage.id, stage])
+    );
+    const basePolicy = this.resolveBaseGatePolicy(projectRoot, storeLayer?.storeRoot);
+    const stages: StageView[] = pipeline.stages.map((s) =>
+      this.toStageView(
+        s,
+        pipeline,
+        configLayers,
+        modelLayers,
+        overrides,
+        basePolicy,
+        thresholdContext,
+        host,
+        executionStages.get(s.id)
+      )
+    );
+    const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline, thresholdContext);
 
     const result = {
+      version: pipeline.version,
       name: pipeline.name,
       description: pipeline.description ?? '',
       agents: pipeline.agents ?? {},
+      hostRuntime: host.runtime,
+      hostRuntimeSource: host.source,
       reuse,
       buildOrder,
       stages,
@@ -227,15 +368,20 @@ export class PipelineCommand {
       return;
     }
 
-    this.printPipelineDetail(result, graph);
+    const source = listPipelinesWithInfo(projectRoot).find(
+      (info) => info.name === pipeline.name
+    )?.source;
+    this.printPipelineDetail(result, graph, source, getPipelineMessages());
   }
 
   /**
    * Show or update role-level Claude/Codex runtime defaults for a pipeline.
    *
-   * Updates are written as a project-local pipeline override, so package and
-   * user-level definitions stay untouched while registry precedence makes the
-   * new choices effective for this project.
+   * Updates persist as `pipelines.<name>.runtimes.<role>` configuration
+   * instances written to the resolved root's `rasen/config.yaml` (project-scope
+   * semantics; `--store <id>` resolves the store's own root and writes there) —
+   * NEVER a frozen pipeline-definition copy. Registry precedence makes the new
+   * choices effective; upstream changes to the built-in pipeline keep applying.
    */
   async agents(name: string, options: PipelineAgentsOptions = {}): Promise<void> {
     const root = await this.resolveRoot(options);
@@ -245,26 +391,52 @@ export class PipelineCommand {
     const pipeline = this.loadPipelineOrExplain(normalizedName, projectRoot);
     const updates = this.runtimeUpdatesFromOptions(options);
 
-    if (Object.keys(updates).length === 0) {
-      const result = this.toAgentsResult(normalizedName, pipeline, null, projectRoot);
-      if (options.json) {
-        console.log(JSON.stringify(result, null, 2));
-        return;
-      }
-      this.printAgentsDetail(result);
-      return;
+    let configPath: string | null = null;
+    if (Object.keys(updates).length > 0) {
+      configPath = this.writeRuntimeInstances(projectRoot, pipeline.name, updates);
     }
 
-    const updatedPipeline = this.applyAgentRuntimeUpdates(pipeline, updates);
-    const overridePath = this.writeProjectPipelineOverride(projectRoot, normalizedName, updatedPipeline);
-    const result = this.toAgentsResult(normalizedName, updatedPipeline, overridePath, projectRoot);
+    // Reads report the runtimes as RESOLVED from configuration (including the
+    // instances just written), not from a mutated pipeline object.
+    const result = await this.toAgentsResult(pipeline.name, pipeline, configPath, projectRoot);
 
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
       return;
     }
 
-    this.printAgentsDetail(result);
+    this.printAgentsDetail(result, getPipelineMessages());
+  }
+
+  /**
+   * Persists per-role runtime updates as `pipelines.<name>.runtimes.<role>`
+   * configuration instances at `projectRoot` through the standard config write
+   * path, validating each key/value against the registry family first. Returns
+   * the config file written to. Throws with the config write path's own guidance
+   * (e.g. a config-less root) — never writes a pipeline definition file.
+   */
+  private writeRuntimeInstances(
+    projectRoot: string,
+    name: string,
+    updates: Partial<Record<StageRole, AgentRuntime>>
+  ): string {
+    let configPath = '';
+    for (const role of STAGE_ROLES) {
+      const runtime = updates[role];
+      if (!runtime) continue;
+      const key = `pipelines.${name}.runtimes.${role}`;
+      const keyValidation = validateConfigKeyPath(key, 'project');
+      if (!keyValidation.valid) {
+        throw pipelineMessageError('invalidRuntime', { runtime, role });
+      }
+      const definition = findWildcardDefinition(key, 'project');
+      if (!definition || validateConfigValue(definition, runtime) !== null) {
+        throw pipelineMessageError('invalidRuntime', { runtime, role });
+      }
+      const written = updateProjectConfigKey(projectRoot, key, runtime);
+      configPath = written.configPath;
+    }
+    return configPath;
   }
 
   /**
@@ -306,17 +478,117 @@ export class PipelineCommand {
       return;
     }
 
-    console.log(`Suggested pipeline: ${suggested}`);
+    const messages = getPipelineMessages();
+    console.log(messages.format('suggestedPipeline', { pipeline: suggested }));
     if (matched.length > 0) {
-      console.log(`Matched indicators: ${matched.join(', ')}`);
+      console.log(messages.format('matchedIndicators', { indicators: matched.join(', ') }));
     } else {
-      console.log('Matched indicators: (none — defaulted to small-feature)');
+      console.log(messages.format('matchedIndicatorsDefault'));
     }
-    console.log(`Basis: ${basis}`);
-    console.log('This suggestion is advisory; you can override it with any available pipeline.');
+    console.log(messages.format('classificationBasis', { basis }));
+    console.log(messages.format('classificationAdvisory'));
     if (available.length > 0) {
-      console.log(`Available: ${available.join(', ')}`);
+      console.log(messages.format('availablePipelines', { pipelines: available.join(', ') }));
     }
+  }
+
+  /**
+   * The frozen-resume rule (unified-session-runtime-context design D4).
+   * A broken session context is reported as such rather than silently
+   * dropping to cwd derivation, which is exactly how a resume lands in the
+   * wrong clone.
+   */
+  private async resolveResumeExecution(
+    frozen: FrozenKnowledgeContext | undefined,
+    projectRoot: string,
+    options: PipelineCommandOptions
+  ): Promise<ExecutionBindingResult | { ok: false; reported: true }> {
+    let sessionContext: RuntimeContext | undefined;
+    try {
+      sessionContext = requireSessionRuntimeContext();
+    } catch (error) {
+      if (!isSessionContextError(error)) throw error;
+      const messages = getPipelineMessages();
+      const detail = messages.format('sessionContextBroken', {
+        path: error.broken.path,
+        detail: error.broken.message,
+      });
+      if (options.json) {
+        console.log(
+          JSON.stringify(
+            { error: 'session_context_broken', reason: error.broken.reason, message: detail },
+            null,
+            2
+          )
+        );
+      } else {
+        console.error(detail);
+      }
+      return { ok: false, reported: true };
+    }
+
+    return resolveFrozenExecutionBinding({
+      frozen: frozen === undefined ? undefined : frozenExecutionRef(frozen),
+      ...(sessionContext ? { sessionContext } : {}),
+      cwd: projectRoot,
+      ...(options.project !== undefined ? { explicitProjectId: options.project } : {}),
+    });
+  }
+
+  private reportExecutionBindingFailure(
+    failure: ExecutionBindingFailure,
+    changeName: string,
+    options: PipelineCommandOptions
+  ): void {
+    const messages = getPipelineMessages();
+    let detail: string;
+    switch (failure.code) {
+      case 'project_binding_selector_conflict':
+        detail = messages.format('executionBindingSelectorConflict', {
+          frozen: failure.frozenProjectId,
+          selector: failure.foundProjectId ?? '',
+        });
+        break;
+      case 'project_binding_ambiguous':
+        detail = messages.format('executionBindingAmbiguous', {
+          frozen: failure.frozenProjectId,
+          candidates: (failure.candidates ?? []).join(', '),
+        });
+        break;
+      case 'project_binding_missing':
+        detail = messages.format('executionBindingMissing', {
+          frozen: failure.frozenProjectId,
+        });
+        break;
+      default:
+        detail = messages.format('executionBindingMismatch', {
+          frozen: failure.frozenProjectId,
+          found: failure.foundProjectId ?? '',
+          checkout: failure.checkout ?? '',
+        });
+        break;
+    }
+    if (options.json) {
+      console.log(
+        JSON.stringify(
+          {
+            change: changeName,
+            error: failure.code,
+            frozenProjectId: failure.frozenProjectId,
+            ...(failure.foundProjectId !== undefined
+              ? { foundProjectId: failure.foundProjectId }
+              : {}),
+            ...(failure.checkout !== undefined ? { checkout: failure.checkout } : {}),
+            ...(failure.candidates !== undefined ? { candidates: failure.candidates } : {}),
+            message: detail,
+          },
+          null,
+          2
+        )
+      );
+      return;
+    }
+    console.error(detail);
   }
 
   /**
@@ -326,6 +598,7 @@ export class PipelineCommand {
     const root = await this.resolveRoot(options);
     if (!root) return;
     const projectRoot = root.path;
+    const host = detectHostRuntime();
     const changeName = await validateChangeExists(change, projectRoot, root.changesDir);
 
     const changeDir = path.join(root.changesDir, changeName);
@@ -337,10 +610,60 @@ export class PipelineCommand {
     // Portfolio parent? The portfolio record is authoritative — resume reports
     // the next runnable child(ren) from the dependency DAG rather than stages.
     // Sticky-legacy (design D4): workDir first, change dir fallback.
+    //
+    // Read DETAILED so a located-but-unreadable record is reported instead of
+    // being read as "this change was never split". That substitution is not
+    // cosmetic: it drops the parent to the stage-based branch below, where a
+    // decomposed parent's stage list can leave delivery as the only thing
+    // remaining — offering `ship` for work its children have not finished.
     const portfolioLocation = resolvePortfolioStateLocation(changeDir, workDir);
-    const portfolio = portfolioLocation ? readPortfolioState(portfolioLocation.dir) : null;
+    const portfolioRead = portfolioLocation
+      ? readPortfolioStateDetailed(portfolioLocation.dir)
+      : ({ kind: 'absent' } as const);
+    if (portfolioRead.kind === 'invalid' && portfolioLocation) {
+      const result = {
+        change: changeName,
+        isPortfolio: true as const,
+        hasRunState: false as const,
+        invalidPortfolioState: true as const,
+        portfolioStatePath: portfolioLocation.path,
+        complete: false as const,
+        pipeline: null,
+        next: null,
+        ready: [] as string[],
+        remaining: [] as string[],
+        note: getPipelineMessages('en').format('invalidPortfolioStateNote', {
+          path: portfolioLocation.path,
+          reason: portfolioRead.reason,
+        }),
+      };
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      const messages = getPipelineMessages();
+      console.log(messages.format('changeLabel', { change: changeName }));
+      console.log(messages.format('invalidPortfolioStateNote', {
+        path: portfolioLocation.path,
+        reason: portfolioRead.reason,
+      }));
+      return;
+    }
+    const portfolio = portfolioRead.kind === 'ok' ? portfolioRead.state : null;
     if (portfolio && portfolioLocation) {
       const isSatisfied = (s: string) => s === 'done' || s === 'skipped';
+      const remainingPipelineNames = new Set(
+        portfolio.children
+          .filter((child) => !isSatisfied(child.status))
+          .map((child) => child.pipeline)
+      );
+      for (const pipelineName of remainingPipelineNames) {
+        await validatePipelineForExecution(
+          loadPipelineByName(pipelineName, projectRoot),
+          projectRoot,
+          this.executionOptions(options, host)
+        );
+      }
       const runnable = runnableChildren(portfolio);
       // Interrupted (in_progress) and escalated children are NOT runnable, but
       // must be surfaced so resume never silently strands them: interrupted →
@@ -356,6 +679,19 @@ export class PipelineCommand {
       const remainingChildren = portfolio.children
         .filter(c => !isSatisfied(c.status))
         .map(c => c.id);
+      const childrenComplete = arePortfolioChildrenComplete(portfolio);
+      const deliveryTerminal =
+        portfolio.delivery.status === 'done' || portfolio.delivery.status === 'skipped';
+      const deliveryRunnable =
+        childrenComplete
+        && (portfolio.delivery.status === 'pending'
+          || portfolio.delivery.status === 'in_progress');
+      // Delivery-related fields (`next`, `remaining`, `delivery`, `childrenComplete`)
+      // surface ONLY once every child has finished — matching the first-parent
+      // portfolio output, which never let a portfolio with outstanding children
+      // frame delivery as the frontier. Omitting the keys entirely (vs. `null`)
+      // keeps them `undefined` in the JSON round-trip so a stale `next` can never
+      // reach a caller that never asked about delivery.
       const result = {
         change: changeName,
         isPortfolio: true as const,
@@ -373,29 +709,62 @@ export class PipelineCommand {
           pipeline: c.pipeline,
           dependsOn: c.dependsOn,
           status: c.status,
+          // Present only when the record used a word this reader does not
+          // know: the value AS WRITTEN, so the drift is visible here rather
+          // than only in the file. A clean record gains no new key.
+          ...(c.statusRaw !== undefined ? { statusRaw: c.statusRaw } : {}),
         })),
+        ...(childrenComplete
+          ? {
+              childrenComplete,
+              delivery: portfolio.delivery,
+              next: deliveryRunnable ? 'portfolio-delivery' : null,
+              remaining: deliveryTerminal ? [] : ['portfolio-delivery'],
+            }
+          : {}),
       };
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
         return;
       }
-      console.log(`Change: ${changeName} (portfolio of ${portfolio.children.length} children)`);
-      console.log(`Run-state read from: ${portfolioLocation.dir}`);
-      console.log(`Completed: ${completedChildren.length > 0 ? completedChildren.join(', ') : '(none)'}`);
-      console.log(`Runnable now: ${runnable.length > 0 ? runnable.join(', ') : '(none)'}`);
+      const messages = getPipelineMessages();
+      const none = messages.format('none');
+      console.log(messages.format('portfolioChange', {
+        change: changeName,
+        count: portfolio.children.length,
+      }));
+      console.log(messages.format('runStateReadFrom', { path: portfolioLocation.dir }));
+      console.log(messages.format('completed', {
+        stages: completedChildren.length > 0 ? completedChildren.join(', ') : none,
+      }));
+      console.log(messages.format('runnableNow', {
+        children: runnable.length > 0 ? runnable.join(', ') : none,
+      }));
       if (interrupted.length > 0) {
-        console.log(`Interrupted (warm-seed resume): ${interrupted.join(', ')}`);
+        console.log(messages.format('interrupted', { stages: interrupted.join(', ') }));
       }
       if (escalated.length > 0) {
-        console.log(`Escalated (needs attention): ${escalated.join(', ')}`);
+        console.log(messages.format('escalated', { stages: escalated.join(', ') }));
       }
       if (planner) {
-        const plannerId = planner.threadId ?? planner.agentId ?? planner.transcript ?? planner.role ?? 'recorded';
-        console.log(
-          `Planner (persistent, resumable): ${plannerId}`
-        );
+        const plannerId = planner.threadId
+          ?? planner.agentId
+          ?? planner.transcript
+          ?? planner.role
+          ?? messages.format('recorded');
+        console.log(messages.format('persistentPlanner', { planner: plannerId }));
       }
-      console.log(`Remaining: ${remainingChildren.length > 0 ? remainingChildren.join(', ') : '(none)'}`);
+      if (childrenComplete) {
+        console.log(messages.format('portfolioDelivery', {
+          status: portfolio.delivery.status,
+        }));
+        if (deliveryRunnable) {
+          console.log(messages.format('nextStage', { stage: 'portfolio-delivery' }));
+        }
+      }
+      console.log(messages.format('remaining', {
+        stages: remainingChildren.length > 0 ? remainingChildren.join(', ') : none,
+      }));
       return;
     }
 
@@ -420,14 +789,21 @@ export class PipelineCommand {
           completed: [] as string[],
           next: null,
           remaining: [] as string[],
-          note: `Run-state file at ${runStateLocation.path} is invalid: ${runStateRead.reason}`,
+          note: getPipelineMessages('en').format('invalidRunStateNote', {
+            path: runStateLocation.path,
+            reason: runStateRead.reason,
+          }),
         };
         if (options.json) {
           console.log(JSON.stringify(result, null, 2));
           return;
         }
-        console.log(`Change: ${changeName}`);
-        console.log(result.note);
+        const messages = getPipelineMessages();
+        console.log(messages.format('changeLabel', { change: changeName }));
+        console.log(messages.format('invalidRunStateNote', {
+          path: runStateLocation.path,
+          reason: runStateRead.reason,
+        }));
         return;
       }
       const result = {
@@ -437,27 +813,24 @@ export class PipelineCommand {
         completed: [] as string[],
         next: null,
         remaining: [] as string[],
-        note: 'No run-state (auto-run.json) found; run classification to select a pipeline.',
+        note: getPipelineMessages('en').format('noRunStateNote'),
       };
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
         return;
       }
-      console.log(`Change: ${changeName}`);
-      console.log(result.note);
+      const messages = getPipelineMessages();
+      console.log(messages.format('changeLabel', { change: changeName }));
+      console.log(messages.format('noRunStateNote'));
       return;
     }
 
     const pipeline = loadPipelineByName(runState.pipeline, projectRoot);
-    const graph = PipelineGraph.fromPipeline(pipeline);
-    const buildOrder = graph.getBuildOrder();
-    const completed = completedStages(runState);
-    const completedSet = new Set(completed);
-
     // A project-local or user-override pipeline authored before the rebrand can
-    // still name legacy `openspec-*`/`openspec:*` skill IDs that no installed
-    // skill answers to. Surface each stale stage skill with its rasen mapping so
-    // the resumer can fix the pipeline instead of dispatching a dead ID.
+    // still name legacy `openspec-*`/`openspec:*` or retired colon-form skill IDs
+    // that no installed skill answers to. Surface each stale stage skill with its
+    // rasen mapping so the resumer can rename the stage instead of dispatching a
+    // dead ID.
     const legacySkillHints = pipeline.stages
       .filter((stage) => stage.skill)
       .map((stage) => {
@@ -465,6 +838,31 @@ export class PipelineCommand {
         return mapped ? { stage: stage.id, from: stage.skill as string, to: mapped } : null;
       })
       .filter((hint): hint is { stage: string; from: string; to: string } => hint !== null);
+    // Retired legacy skill IDs are NOT valid execution IDs (design D3: `validate`
+    // and dispatch still reject them — the fallback is a hint, not acceptance).
+    // But resume must not dead-end on a stale pipeline: preflight a copy with each
+    // legacy stage skill resolved to its current target, so a genuinely-unknown
+    // skill still fails here while a pre-rebrand colon/openspec pipeline reaches
+    // the old→new hint surfaced in the result below.
+    const preflightPipeline =
+      legacySkillHints.length === 0
+        ? pipeline
+        : {
+            ...pipeline,
+            stages: pipeline.stages.map((stage) => {
+              const mapped = stage.skill ? mapLegacySkillId(stage.skill) : null;
+              return mapped ? { ...stage, skill: mapped } : stage;
+            }),
+          };
+    await validatePipelineForExecution(
+      preflightPipeline,
+      projectRoot,
+      this.executionOptions(options, host)
+    );
+    const graph = PipelineGraph.fromPipeline(pipeline);
+    const buildOrder = graph.getBuildOrder();
+    const completed = completedStages(runState);
+    const completedSet = new Set(completed);
     // getNextStages can return several ready stages (parallel frontier); report
     // the full set as `ready`, and keep `next` as its first member for callers
     // that want a single cursor.
@@ -506,6 +904,25 @@ export class PipelineCommand {
     // Computed before the result object so the --json and human surfaces see the
     // same set, and emitted ONLY when non-empty so clean runs gain no new keys.
     const workerHandleWarnings = stagesLackingDurableHandle(runState);
+
+    // Where does this run continue? The FROZEN identity says which project;
+    // the session context (or, failing that, this checkout) says where that
+    // project is on this machine; `--project` only cross-checks. A
+    // disagreement stops the resume instead of continuing in another clone —
+    // a resume into the wrong working tree produces a plausible-looking diff,
+    // which is far more expensive than an error.
+    const executionBinding = await this.resolveResumeExecution(
+      runState.knowledgeContext,
+      projectRoot,
+      options
+    );
+    if (!executionBinding.ok) {
+      if (!('reported' in executionBinding)) {
+        this.reportExecutionBindingFailure(executionBinding, changeName, options);
+      }
+      process.exitCode = 1;
+      return;
+    }
     let duplicateKeyWarnings: { path: string; key: string }[] = [];
     if (runStateLocation && fs.existsSync(runStateLocation.path)) {
       duplicateKeyWarnings = detectDuplicateKeys(fs.readFileSync(runStateLocation.path, 'utf-8'));
@@ -532,6 +949,12 @@ export class PipelineCommand {
       // before this capability existed carries no key, and the LEAD's
       // built-in default (gates on) still applies.
       ...(runState.gatePolicy ? { gatePolicy: runState.gatePolicy } : {}),
+      ...(runState.knowledgeContext
+        ? { knowledgeContext: runState.knowledgeContext }
+        : {}),
+      // Reported only when the run actually recorded an execution binding, so
+      // a pre-existing run's JSON gains no new key.
+      ...(executionBinding.kind === 'unrecorded' ? {} : { executionBinding }),
       // Handoff pointers are included only when present so existing callers see
       // no new keys unless a run actually recorded handoffs.
       ...(sessionHandoff ? { sessionHandoff } : {}),
@@ -549,53 +972,75 @@ export class PipelineCommand {
       return;
     }
 
+    const messages = getPipelineMessages();
+    const none = messages.format('none');
     const warmSeedable = Object.keys(workers);
-    console.log(`Change: ${changeName}`);
-    console.log(`Pipeline: ${runState.pipeline}`);
-    console.log(`Run-state read from: ${runStateLocation!.dir}`);
-    console.log(`Completed: ${completed.length > 0 ? completed.join(', ') : '(none)'}`);
-    console.log(`Next: ${next ?? '(complete)'}`);
-    console.log(`Remaining: ${remaining.length > 0 ? remaining.join(', ') : '(none)'}`);
+    console.log(messages.format('changeLabel', { change: changeName }));
+    console.log(messages.format('pipelineLabel', { name: runState.pipeline }));
+    console.log(messages.format('runStateReadFrom', { path: runStateLocation!.dir }));
+    if (executionBinding.kind === 'planning-only') {
+      console.log(messages.format('executionBindingPlanningOnly'));
+    } else if (executionBinding.kind === 'project') {
+      console.log(
+        messages.format('executionBinding', {
+          project: executionBinding.projectId,
+          path: executionBinding.root,
+        })
+      );
+    }
+    console.log(messages.format('completed', {
+      stages: completed.length > 0 ? completed.join(', ') : none,
+    }));
+    console.log(messages.format('nextStage', {
+      stage: next ?? messages.format('complete'),
+    }));
+    console.log(messages.format('remaining', {
+      stages: remaining.length > 0 ? remaining.join(', ') : none,
+    }));
     if (inProgressStages.length > 0) {
-      console.log(`Interrupted (warm-seed resume): ${inProgressStages.join(', ')}`);
+      console.log(messages.format('interrupted', { stages: inProgressStages.join(', ') }));
     }
     if (escalatedStages.length > 0) {
-      console.log(`Escalated (needs attention): ${escalatedStages.join(', ')}`);
+      console.log(messages.format('escalated', { stages: escalatedStages.join(', ') }));
     }
     if (openFindings.length > 0) {
-      console.log(`Open findings: ${openFindings.length} (resolve before ship)`);
+      console.log(messages.format('openFindings', { count: openFindings.length }));
     }
     if (legacySkillHints.length > 0) {
-      console.log(
-        `Legacy skill IDs in pipeline '${runState.pipeline}' (update the pipeline yaml):`
-      );
+      console.log(messages.format('legacySkillHeading', { pipeline: runState.pipeline }));
       for (const hint of legacySkillHints) {
-        console.log(`  stage ${hint.stage}: ${hint.from} -> ${hint.to}`);
+        console.log(messages.format('legacySkillEntry', hint));
       }
     }
-    for (const w of workerHandleWarnings) {
-      const recorded = w.keys.length > 0 ? w.keys.join(', ') : 'role-only / bare label';
-      console.log(
-        `Worker handle warning: stage '${w.stage}' worker has no durable handle (recorded: ${recorded}); record agentId/transcript on dispatch.`
-      );
+    for (const warning of workerHandleWarnings) {
+      const recorded = warning.keys.length > 0
+        ? warning.keys.join(', ')
+        : messages.format('bareWorkerLabel');
+      console.log(messages.format('workerHandleWarning', {
+        stage: warning.stage,
+        recorded,
+      }));
     }
-    for (const d of duplicateKeyWarnings) {
-      console.log(
-        `Duplicate run-state key: '${d.key}' repeated at ${d.path} (JSON.parse keeps the last value).`
-      );
+    for (const warning of duplicateKeyWarnings) {
+      console.log(messages.format('duplicateRunStateKey', {
+        key: warning.key,
+        path: warning.path,
+      }));
     }
     if (warmSeedable.length > 0) {
-      console.log(`Resume handles available (worker sessions/transcripts): ${warmSeedable.join(', ')}`);
+      console.log(messages.format('resumeHandles', { stages: warmSeedable.join(', ') }));
     }
     if (sessionHandoff) {
-      console.log(
-        `Session handoff (generation ${sessionHandoffGeneration(sessionHandoff)}): ${sessionHandoff.path}`
-      );
+      console.log(messages.format('sessionHandoff', {
+        generation: sessionHandoffGeneration(sessionHandoff),
+        path: sessionHandoff.path,
+      }));
     }
     if (runState.gatePolicy) {
-      console.log(
-        `Gate policy: ${runState.gatePolicy.effective} (${runState.gatePolicy.source})`
-      );
+      console.log(messages.format('gatePolicy', {
+        effective: runState.gatePolicy.effective,
+        source: runState.gatePolicy.source,
+      }));
     }
   }
 
@@ -608,8 +1053,15 @@ export class PipelineCommand {
       return loadPipelineByName(name, projectRoot);
     } catch {
       const available = listPipelines(projectRoot);
-      const list = available.length > 0 ? available.join('\n  ') : '(none)';
-      throw new Error(`Pipeline '${name}' not found. Available pipelines:\n  ${list}`);
+      const messages = getPipelineMessages();
+      throw pipelineMessageError(
+        'pipelineNotFound',
+        {
+          name,
+          available: available.length > 0 ? available.join('\n  ') : messages.format('none'),
+        },
+        'pipeline_not_found'
+      );
     }
   }
 
@@ -623,9 +1075,7 @@ export class PipelineCommand {
       const parsedRole = StageRoleSchema.parse(role);
       const parsedRuntime = AgentRuntimeSchema.safeParse(value);
       if (!parsedRuntime.success) {
-        throw new Error(
-          `Invalid runtime '${value}' for ${role}. Expected one of: claude, codex`
-        );
+        throw pipelineMessageError('invalidRuntime', { runtime: value, role });
       }
       updates[parsedRole] = parsedRuntime.data;
     }
@@ -633,87 +1083,110 @@ export class PipelineCommand {
     return updates;
   }
 
-  private applyAgentRuntimeUpdates(
+  private async toAgentsResult(
+    name: string,
     pipeline: PipelineYaml,
-    updates: Partial<Record<StageRole, AgentRuntime>>
-  ): PipelineYaml {
-    const agents: PipelineYaml['agents'] = { ...(pipeline.agents ?? {}) };
+    configPath: string | null,
+    projectRoot: string
+  ): Promise<{
+    name: string;
+    configPath: string | null;
+    agents: PipelineYaml['agents'];
+    hostRuntime: DetectedHostRuntime['runtime'];
+    hostRuntimeSource: DetectedHostRuntime['source'];
+    effectiveRoles: Record<StageRole, ResolvedRoleRuntime>;
+    stages: StageView[];
+  }> {
+    const host = detectHostRuntime();
+    const storeLayer = await requireConfigStoreLayer(projectRoot);
+    const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
+    const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
+    const overrides = resolvePipelineStageOverrides(name, { projectRoot, store: storeLayer });
+    const thresholdContext = this.thresholdContext(
+      pipeline,
+      overrides,
+      projectRoot,
+      storeLayer?.storeRoot,
+      host
+    );
+    const executionStages = new Map(
+      resolvePipelineExecutionPlan(pipeline, {
+        host,
+        overrides,
+        modelLayers,
+      }).stages.map((stage) => [stage.id, stage])
+    );
+    const basePolicy = this.resolveBaseGatePolicy(projectRoot, storeLayer?.storeRoot);
 
-    for (const role of STAGE_ROLES) {
-      const runtime = updates[role];
-      if (!runtime) continue;
-
-      const existing = pipeline.agents?.[role];
-      if (existing && typeof existing !== 'string') {
-        agents[role] = {
-          ...normalizeAgentRuntimeConfig(existing),
-          runtime,
-        };
-      } else {
-        agents[role] = runtime;
-      }
-    }
+    // Effective runtime per role: family instance (project > store > global) >
+    // pipeline declaration > detected host > legacy Claude compatibility.
+    const effectiveRoles = resolvePipelineRoleRuntimes(pipeline, overrides, host);
 
     return {
-      ...pipeline,
-      agents,
+      name,
+      configPath,
+      agents: pipeline.agents ?? {},
+      hostRuntime: host.runtime,
+      hostRuntimeSource: host.source,
+      effectiveRoles,
+      stages: pipeline.stages.map((s) =>
+        this.toStageView(
+          s,
+          pipeline,
+          configLayers,
+          modelLayers,
+          overrides,
+          basePolicy,
+          thresholdContext,
+          host,
+          executionStages.get(s.id)
+        )
+      ),
     };
   }
 
-  private writeProjectPipelineOverride(
-    projectRoot: string,
-    name: string,
-    pipeline: PipelineYaml
-  ): string {
-    const pipelineDir = path.join(getProjectPipelinesDir(projectRoot), name);
-    const pipelinePath = path.join(pipelineDir, 'pipeline.yaml');
-    const yaml = stringifyYaml(pipeline, { lineWidth: 0 });
-
-    // Parse before writing so a serialization bug never leaves an invalid
-    // override in front of the package/user pipeline.
-    parsePipeline(yaml);
-
-    fs.mkdirSync(pipelineDir, { recursive: true });
-    fs.writeFileSync(pipelinePath, yaml, 'utf-8');
-
-    return pipelinePath;
-  }
-
-  private toAgentsResult(
-    name: string,
-    pipeline: PipelineYaml,
-    overridePath: string | null,
-    projectRoot: string
-  ): {
-    name: string;
-    overridePath: string | null;
-    agents: PipelineYaml['agents'];
-    effectiveRoles: Record<StageRole, AgentRuntime>;
-    stages: StageView[];
-  } {
-    const effectiveRoles = Object.fromEntries(
-      STAGE_ROLES.map((role) => [
-        role,
-        normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime ?? 'claude',
-      ])
-    ) as Record<StageRole, AgentRuntime>;
-
-    const configLayers = resolveHandoffThresholdLayers(projectRoot);
+  /**
+   * The per-stage/per-role config top layer for one stage, drawn from the
+   * pipeline's resolved override maps: model/handoff by stage id, runtime by
+   * role. Absent maps (no config context) yield an all-undefined set, so the
+   * resolvers fall through to their existing chains byte-identically.
+   */
+  private stageConfigOverrides(
+    stage: Stage,
+    overrides?: PipelineStageOverrides
+  ): StageConfigOverrides {
+    if (!overrides) return {};
     return {
-      name,
-      overridePath,
-      agents: pipeline.agents ?? {},
-      effectiveRoles,
-      stages: pipeline.stages.map((s) => this.toStageView(s, pipeline, configLayers)),
+      model: overrides.models.get(stage.id),
+      handoff: overrides.handoff.get(stage.id),
+      runtime: stage.role ? overrides.runtimes.get(stage.role) : undefined,
     };
   }
 
   private toStageView(
     stage: Stage,
     pipeline: PipelineYaml,
-    configLayers?: HandoffConfigLayers
+    configLayers?: HandoffConfigLayers,
+    modelLayers?: ModelConfigLayers,
+    overrides?: PipelineStageOverrides,
+    basePolicy?: ResolvedGatePolicy,
+    thresholdContext?: ThresholdResolutionContext,
+    host: DetectedHostRuntime = { runtime: 'unknown', source: 'unknown' },
+    executionRuntime?: ExecutionStageRuntime
   ): StageView {
-    const runtime = resolveStageRuntimeConfig(stage, pipeline);
+    const stageOverrides = this.stageConfigOverrides(stage, overrides);
+    const runtime = executionRuntime ?? resolveStageRuntimeConfig(
+      stage,
+      pipeline,
+      modelLayers,
+      stageOverrides,
+      { host }
+    );
+    const effectiveStageRuntime = executionRuntime?.runtime ?? runtime.runtime;
+    // The mask needs a base policy; without one (no config context) fall back to
+    // the built-in "gates on" default so effective equals the declared gate.
+    const policy: ResolvedGatePolicy = basePolicy ?? { effective: 'on', source: 'default' };
+    const maskedGate = resolveMaskedStageGate(stage.gate, overrides?.gates.get(stage.id), policy);
     return {
       id: stage.id,
       kind: stage.kind,
@@ -724,122 +1197,272 @@ export class PipelineCommand {
       role: stage.role ?? null,
       requires: stage.requires,
       gate: stage.gate,
+      effectiveGate: maskedGate.effective,
+      gateSource: maskedGate.source,
       loop: stage.loop ?? null,
       parallelGroup: stage.parallelGroup ?? null,
       condition: stage.condition ?? null,
       leadReview: stage.leadReview,
       verifyPolicy: stage.verifyPolicy ?? null,
-      runtime: runtime.runtime,
-      runtimeSource: runtime.source,
+      runtime: effectiveStageRuntime,
+      runtimeSource: executionRuntime?.runtimeSource ?? runtime.runtimeSource,
+      dispatchMode: executionRuntime?.dispatchMode
+        ?? resolveDispatchRoute(host.runtime, effectiveStageRuntime).mode,
       sessionReuse: runtime.sessionReuse ?? null,
       sandbox: runtime.sandbox ?? null,
       model: runtime.model ?? null,
+      modelSource: runtime.modelSource,
       effort: runtime.effort ?? null,
-      handoff: resolveStageHandoffConfig(stage, pipeline, configLayers),
+      handoff: resolveStageHandoffConfig(
+        stage,
+        pipeline,
+        configLayers,
+        modelLayers,
+        stageOverrides,
+        { ...thresholdContext, host, stageRuntime: effectiveStageRuntime }
+      ),
     };
   }
 
-  private printPipelineTable(pipelines: PipelineInfo[]): void {
-    console.log('Available pipelines:');
+  private thresholdContext(
+    pipeline: PipelineYaml,
+    overrides: PipelineStageOverrides,
+    projectRoot: string,
+    storeRoot?: string | null,
+    host: DetectedHostRuntime = { runtime: 'unknown', source: 'unknown' },
+    roleRuntimeOverrides: Partial<Record<StageRole, AgentRuntime>> = {}
+  ): ThresholdResolutionContext {
+    const roleRuntimes = resolvePipelineRoleRuntimes(
+      pipeline,
+      overrides,
+      host,
+      roleRuntimeOverrides
+    );
+    const runtimes = Object.fromEntries(
+      STAGE_ROLES.map((role) => [role, roleRuntimes[role].runtime])
+    ) as Record<StageRole, AgentRuntime>;
+    return {
+      bindings: resolveThresholdBindingLayers(projectRoot, storeRoot),
+      schemes: loadThresholdSchemeSnapshot(),
+      runtimes,
+      host,
+    };
+  }
+
+  /**
+   * Resolves the effective `autopilot.gates` base policy for a root (the mask
+   * base). `noGateFlag` is false — `pipeline show`/`agents` are inspection, not
+   * a run — so the base resolves purely from project/store/global config.
+   */
+  private resolveBaseGatePolicy(
+    projectRoot: string,
+    storeRoot: string | null | undefined
+  ): ResolvedGatePolicy {
+    return resolveAutopilotGatePolicy(
+      readProjectConfig(projectRoot),
+      false,
+      getGlobalConfig(),
+      storeRoot ? readProjectConfig(storeRoot) : null
+    );
+  }
+
+  private printPipelineTable(
+    pipelines: PipelineInfo[],
+    messages: PipelineMessages
+  ): void {
+    console.log(messages.format('availablePipelinesHeading'));
     console.log();
-    for (const p of pipelines) {
-      console.log(`  ${p.name}  [${p.source}]`);
-      if (p.description) {
-        console.log(`    ${p.description.replace(/\s+/g, ' ').trim()}`);
+    for (const pipeline of pipelines) {
+      console.log(messages.format('pipelineTableEntry', {
+        name: pipeline.name,
+        source: pipeline.source,
+      }));
+      const description = messages.description(
+        pipeline.name,
+        pipeline.source,
+        pipeline.description
+      );
+      if (description) {
+        console.log(`    ${description.replace(/\s+/g, ' ').trim()}`);
       }
-      console.log(`    stages: ${p.stages.join(' -> ')}`);
+      console.log(messages.format('pipelineTableStages', {
+        stages: pipeline.stages.join(' -> '),
+      }));
       console.log();
     }
   }
 
   private printPipelineDetail(
     result: {
+      version: PipelineYaml['version'];
       name: string;
       description: string;
       agents?: PipelineYaml['agents'];
+      reuse: ResolvedReuseConfig;
       buildOrder: string[];
       stages: StageView[];
+      hostRuntime: DetectedHostRuntime['runtime'];
+      hostRuntimeSource: DetectedHostRuntime['source'];
       origin?: PipelineYaml['origin'];
     },
-    graph: PipelineGraph
+    graph: PipelineGraph,
+    source: PipelineInfo['source'] | undefined,
+    messages: PipelineMessages
   ): void {
-    console.log(`Pipeline: ${result.name}`);
-    if (result.description) {
-      console.log(result.description.replace(/\s+/g, ' ').trim());
+    this.printThresholdDiagnostics(result);
+    console.log(messages.format('pipelineLabel', { name: result.name }));
+    console.log(messages.format('definitionVersionLabel', { version: result.version }));
+    console.log(messages.format('hostRuntimeLabel', {
+      runtime: result.hostRuntime,
+      source: result.hostRuntimeSource,
+    }));
+    const description = source
+      ? messages.description(result.name, source, result.description)
+      : result.description;
+    if (description) {
+      console.log(description.replace(/\s+/g, ' ').trim());
     }
     if (result.origin) {
-      console.log(`Origin: ${result.origin}`);
+      console.log(messages.format('originLabel', { origin: result.origin }));
     }
     console.log();
-    console.log('Build order:');
+    console.log(messages.format('buildOrderHeading'));
     for (const id of result.buildOrder) {
       const stage = graph.getStage(id);
       if (!stage) continue;
       const meta: string[] = [];
-      if (stage.role) meta.push(`role=${stage.role}`);
-      if (stage.requires.length > 0) meta.push(`requires=[${stage.requires.join(', ')}]`);
-      if (stage.gate === 'vet') meta.push('gate(vet)');
-      else if (stage.gate) meta.push('gate');
+      if (stage.role) meta.push(messages.format('stageMetaRole', { role: stage.role }));
+      if (stage.requires.length > 0) {
+        meta.push(messages.format('stageMetaRequires', {
+          requires: stage.requires.join(', '),
+        }));
+      }
+      if (stage.gate) meta.push(messages.format('stageMetaGate'));
       if (stage.loop) {
         if (stage.loop.kind === 'review-cycle') {
-          meta.push(`loop=review-cycle(max ${stage.loop.maxRounds})`);
+          meta.push(messages.format('stageMetaReviewLoop', {
+            maximum: stage.loop.maxRounds,
+          }));
         } else {
-          meta.push(
-            `loop=goal[${stage.loop.gate.kind}](max ${stage.loop.maxRounds}, stall ${stage.loop.loopStallLimit})`
-          );
+          meta.push(messages.format('stageMetaGoalLoop', {
+            gate: stage.loop.gate.kind,
+            maximum: stage.loop.maxRounds,
+            stall: stage.loop.loopStallLimit,
+          }));
         }
       }
-      if (stage.parallelGroup) meta.push(`parallelGroup=${stage.parallelGroup}`);
-      if (stage.condition) meta.push(`condition=${stage.condition}`);
-      if (stage.leadReview) meta.push('leadReview');
-      if (stage.verifyPolicy) meta.push(`verifyPolicy=${stage.verifyPolicy}`);
-      const runtime = resolveStageRuntimeConfig(stage, {
-        name: result.name,
-        description: result.description,
-        agents: result.agents,
-        stages: [],
-      });
-      meta.push(`runtime=${runtime.runtime}${runtime.source === 'default' ? '' : `(${runtime.source})`}`);
-      if (runtime.sessionReuse) meta.push(`sessionReuse=${runtime.sessionReuse}`);
-      if (runtime.sandbox) meta.push(`sandbox=${runtime.sandbox}`);
-      const stageView = result.stages.find((s) => s.id === id);
-      if (stageView && stageView.handoff.source !== 'default') {
+      if (stage.parallelGroup) {
+        meta.push(messages.format('stageMetaParallelGroup', { group: stage.parallelGroup }));
+      }
+      if (stage.condition) {
+        meta.push(messages.format('stageMetaCondition', { condition: stage.condition }));
+      }
+      if (stage.leadReview) meta.push(messages.format('stageMetaLeadReview'));
+      if (stage.verifyPolicy) {
+        meta.push(messages.format('stageMetaVerifyPolicy', { policy: stage.verifyPolicy }));
+      }
+      // Read runtime fields from the stageView (resolved once in toStageView
+      // WITH the machine-config model layers) rather than re-resolving here
+      // layerlessly — a second resolveStageRuntimeConfig call without
+      // modelLayers would silently report a machine-config-blind model the
+      // day someone renders `model` from it.
+      const stageView = result.stages.find((candidate) => candidate.id === id);
+      if (stageView) {
         meta.push(
-          `handoff=${formatThreshold(stageView.handoff.threshold)}(${stageView.handoff.source})`
+          messages.format('stageMetaRuntimeSource', {
+            runtime: stageView.runtime,
+            source: stageView.runtimeSource,
+          })
         );
+        meta.push(messages.format('stageMetaDispatch', { mode: stageView.dispatchMode }));
+        if (stageView.sessionReuse) {
+          meta.push(messages.format('stageMetaSessionReuse', {
+            session: stageView.sessionReuse,
+          }));
+        }
+        if (stageView.sandbox) {
+          meta.push(messages.format('stageMetaSandbox', { sandbox: stageView.sandbox }));
+        }
+      }
+      if (stageView && stageView.handoff.source !== 'default') {
+        meta.push(messages.format('stageMetaHandoff', {
+          threshold: formatThreshold(stageView.handoff.threshold, messages),
+          source: stageView.handoff.source,
+        }));
       }
       const suffix = meta.length > 0 ? `  (${meta.join('; ')})` : '';
       // A decompose stage has no leaf skill; show its fan-out target instead.
-      const action =
-        stage.kind === 'decompose'
-          ? `decompose -> childPipeline=${resolveChildPipelineName(stage)}`
-          : stage.skill;
-      console.log(`  ${id} -> ${action}${suffix}`);
+      const action = stage.kind === 'decompose'
+        ? messages.format('stageActionDecompose', {
+            pipeline: resolveChildPipelineName(stage),
+          })
+        : (stage.skill ?? '');
+      console.log(messages.format('stageLine', { id, action, suffix }));
     }
   }
 
-  private printAgentsDetail(result: {
-    name: string;
-    overridePath: string | null;
-    effectiveRoles: Record<StageRole, AgentRuntime>;
+  private printThresholdDiagnostics(result: {
+    reuse: ResolvedReuseConfig;
     stages: StageView[];
   }): void {
-    console.log(`Pipeline: ${result.name}`);
-    if (result.overridePath) {
-      console.log(`Project override: ${result.overridePath}`);
+    const diagnostics = [
+      ...result.stages.flatMap((stage) => stage.handoff.diagnostics ?? []),
+      ...(result.reuse.diagnostics ?? []),
+    ];
+    const seen = new Set<string>();
+    for (const diagnostic of diagnostics) {
+      const key = [
+        diagnostic.code,
+        diagnostic.scope,
+        diagnostic.row,
+        diagnostic.scheme,
+      ].join('\0');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      console.warn(diagnostic.message);
+    }
+  }
+
+  private printAgentsDetail(
+    result: {
+      name: string;
+      configPath: string | null;
+      hostRuntime: DetectedHostRuntime['runtime'];
+      hostRuntimeSource: DetectedHostRuntime['source'];
+      effectiveRoles: Record<StageRole, ResolvedRoleRuntime>;
+      stages: StageView[];
+    },
+    messages: PipelineMessages
+  ): void {
+    console.log(messages.format('pipelineLabel', { name: result.name }));
+    console.log(messages.format('hostRuntimeLabel', {
+      runtime: result.hostRuntime,
+      source: result.hostRuntimeSource,
+    }));
+    if (result.configPath) {
+      console.log(messages.format('projectOverrideLabel', { path: result.configPath }));
     }
     console.log();
-    console.log('Role runtimes:');
+    console.log(messages.format('roleRuntimesHeading'));
     for (const role of STAGE_ROLES) {
-      console.log(`  ${role}: ${result.effectiveRoles[role]}`);
+      console.log(messages.format('agentRoleLine', {
+        role,
+        runtime: result.effectiveRoles[role].runtime,
+        source: result.effectiveRoles[role].source,
+        dispatch: result.effectiveRoles[role].dispatchMode,
+      }));
     }
     console.log();
-    console.log('Stages:');
+    console.log(messages.format('stagesHeading'));
     for (const stage of result.stages) {
-      const role = stage.role ?? '(none)';
-      const source = stage.runtimeSource === 'default' ? '' : ` (${stage.runtimeSource})`;
-      console.log(`  ${stage.id}: role=${role}; runtime=${stage.runtime}${source}`);
+      const role = stage.role ?? messages.format('none');
+      console.log(messages.format('agentStageLine', {
+        id: stage.id,
+        role,
+        runtime: stage.runtime,
+        source: stage.runtimeSource,
+        dispatch: stage.dispatchMode,
+      }));
     }
   }
 }
-

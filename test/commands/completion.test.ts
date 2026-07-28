@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
 import { CompletionCommand } from '../../src/commands/completion.js';
 import * as shellDetection from '../../src/utils/shell-detection.js';
 
@@ -15,15 +19,25 @@ vi.mock('../../src/core/completions/installers/zsh-installer.js', () => ({
       installedPath: '/home/user/.oh-my-zsh/completions/_rasen',
       isOhMyZsh: true,
       message: 'Completion script installed successfully for Oh My Zsh',
+      messageDescriptor: { key: 'installedForOhMyZsh' },
       instructions: [
         'Completion script installed to Oh My Zsh completions directory.',
         'Restart your shell or run: exec zsh',
         'Completions should activate automatically.',
       ],
+      instructionDescriptors: [
+        { key: 'installedOhMyZshDirectory' },
+        { key: 'restartZsh' },
+        { key: 'completionsActivateAutomatically' },
+      ],
     }),
     uninstall: vi.fn().mockResolvedValue({
       success: true,
       message: 'Completion script removed from /home/user/.oh-my-zsh/completions/_rasen',
+      messageDescriptor: {
+        key: 'removedFrom',
+        values: { path: '/home/user/.oh-my-zsh/completions/_rasen' },
+      },
     }),
   })),
 }));
@@ -32,8 +46,16 @@ describe('CompletionCommand', () => {
   let command: CompletionCommand;
   let consoleLogSpy: any;
   let consoleErrorSpy: any;
+  let tempDir: string;
+  let originalRasenHome: string | undefined;
+  let originalRasenLang: string | undefined;
 
   beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-completion-command-'));
+    originalRasenHome = process.env.RASEN_HOME;
+    originalRasenLang = process.env.RASEN_LANG;
+    process.env.RASEN_HOME = tempDir;
+    process.env.RASEN_LANG = 'en';
     command = new CompletionCommand();
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -41,9 +63,14 @@ describe('CompletionCommand', () => {
   });
 
   afterEach(() => {
+    if (originalRasenHome === undefined) delete process.env.RASEN_HOME;
+    else process.env.RASEN_HOME = originalRasenHome;
+    if (originalRasenLang === undefined) delete process.env.RASEN_LANG;
+    else process.env.RASEN_LANG = originalRasenLang;
     consoleLogSpy.mockRestore();
     consoleErrorSpy.mockRestore();
     vi.clearAllMocks();
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   describe('generate subcommand', () => {
@@ -66,6 +93,25 @@ describe('CompletionCommand', () => {
       expect(output).toContain('#compdef rasen');
     });
 
+    it('should generate Japanese command descriptions', async () => {
+      process.env.RASEN_LANG = 'ja';
+
+      await command.generate({ shell: 'zsh' });
+
+      const output = String(consoleLogSpy.mock.calls[0][0]);
+      expect(output).toContain('プロジェクトでRasenを初期化します');
+    });
+
+    it('should generate Simplified Chinese command descriptions', async () => {
+      process.env.RASEN_LANG = 'zh-cn';
+
+      await command.generate({ shell: 'zsh' });
+
+      const output = String(consoleLogSpy.mock.calls[0][0]);
+      expect(output).toContain('在项目中初始化 Rasen');
+      expect(output).not.toContain('Initialize Rasen in your project');
+    });
+
     it('should show error when shell cannot be auto-detected', async () => {
       vi.mocked(shellDetection.detectShell).mockReturnValue({ shell: undefined, detected: undefined });
 
@@ -73,6 +119,39 @@ describe('CompletionCommand', () => {
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         'Error: Could not auto-detect shell. Please specify shell explicitly.'
+      );
+      expect(process.exitCode).toBe(1);
+    });
+
+    it('should localize shell detection errors in Japanese', async () => {
+      process.env.RASEN_LANG = 'ja';
+      vi.mocked(shellDetection.detectShell).mockReturnValue({ shell: undefined, detected: undefined });
+
+      await command.generate({});
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'エラー: シェルを自動検出できません。シェルを明示的に指定してください。'
+      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        '対応済み: zsh, bash, fish, powershell'
+      );
+      expect(process.exitCode).toBe(1);
+    });
+
+    it('should localize shell detection errors in Simplified Chinese', async () => {
+      process.env.RASEN_LANG = 'zh-cn';
+      vi.mocked(shellDetection.detectShell).mockReturnValue({ shell: undefined, detected: undefined });
+
+      await command.generate({});
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        '错误：无法自动检测 shell。请显式指定 shell。'
+      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        '当前支持：zsh, bash, fish, powershell'
+      );
+      expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('Could not auto-detect shell')
       );
       expect(process.exitCode).toBe(1);
     });
@@ -150,6 +229,39 @@ describe('CompletionCommand', () => {
         expect.stringContaining('Restart your shell or run: exec zsh')
       );
     });
+
+    it('should localize installation results and instructions in Japanese', async () => {
+      process.env.RASEN_LANG = 'ja';
+
+      await command.install({ shell: 'zsh', verbose: true });
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Oh My Zsh用の補完スクリプトをインストールしました')
+      );
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('インストール先:')
+      );
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        'シェルを再起動するか、`exec zsh` を実行してください。'
+      );
+    });
+
+    it('should localize installation results and instructions in Simplified Chinese', async () => {
+      process.env.RASEN_LANG = 'zh-cn';
+
+      await command.install({ shell: 'zsh', verbose: true });
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('已成功安装 Oh My Zsh 补全脚本')
+      );
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('已安装到：/home/user/.oh-my-zsh/completions/_rasen')
+      );
+      expect(consoleLogSpy).toHaveBeenCalledWith('请重启 shell 或运行：exec zsh');
+      expect(consoleLogSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('Restart your shell')
+      );
+    });
   });
 
   describe('uninstall subcommand', () => {
@@ -190,6 +302,29 @@ describe('CompletionCommand', () => {
         "Error: Shell 'tcsh' is not supported yet. Currently supported: zsh, bash, fish, powershell"
       );
       expect(process.exitCode).toBe(1);
+    });
+
+    it('should localize uninstallation results in Japanese', async () => {
+      process.env.RASEN_LANG = 'ja';
+
+      await command.uninstall({ shell: 'zsh', yes: true });
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('/home/user/.oh-my-zsh/completions/_rasenから補完スクリプトを削除しました')
+      );
+    });
+
+    it('should localize uninstallation results in Simplified Chinese', async () => {
+      process.env.RASEN_LANG = 'zh-cn';
+
+      await command.uninstall({ shell: 'zsh', yes: true });
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('已从 /home/user/.oh-my-zsh/completions/_rasen 移除补全脚本')
+      );
+      expect(consoleLogSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('Completion script removed')
+      );
     });
   });
 
@@ -250,6 +385,49 @@ describe('CompletionCommand', () => {
 
       expect(consoleLogSpy).toHaveBeenCalledWith('spec-driven\tschema');
       expect(process.exitCode).toBe(0);
+    });
+
+    it('should output built-in profile names for shell completion', async () => {
+      await command.complete({ type: 'profiles' });
+
+      expect(consoleLogSpy).toHaveBeenCalledWith('full\tbuilt-in profile');
+      expect(consoleLogSpy).toHaveBeenCalledWith('core\tbuilt-in profile');
+      expect(process.exitCode).toBe(0);
+    });
+
+    it('should localize dynamic completion descriptions', async () => {
+      process.env.RASEN_LANG = 'ja';
+
+      await command.complete({ type: 'profiles' });
+
+      expect(consoleLogSpy).toHaveBeenCalledWith('full\t組み込みプロファイル');
+      expect(consoleLogSpy).toHaveBeenCalledWith('core\t組み込みプロファイル');
+    });
+
+    it('should localize dynamic completion descriptions in Simplified Chinese', async () => {
+      process.env.RASEN_LANG = 'zh-cn';
+
+      await command.complete({ type: 'profiles' });
+
+      expect(consoleLogSpy).toHaveBeenCalledWith('full\t内置 配置方案');
+      expect(consoleLogSpy).toHaveBeenCalledWith('core\t内置 配置方案');
+    });
+
+    it('lists profiles without reading global config at all (delivery is retired, no diagnostic path left)', async () => {
+      process.env.RASEN_LANG = 'zh-cn';
+      const configPath = path.join(tempDir, 'config.json');
+      fs.writeFileSync(
+        configPath,
+        JSON.stringify({ featureFlags: {}, language: 'zh-cn', delivery: 'commands-first' }),
+        'utf-8'
+      );
+
+      await command.complete({ type: 'profiles' });
+
+      // Profile completion no longer resolves delivery, so a retired stored
+      // value never surfaces a diagnostic here — and the file is untouched.
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+      expect(JSON.parse(fs.readFileSync(configPath, 'utf-8')).delivery).toBe('commands-first');
     });
   });
 

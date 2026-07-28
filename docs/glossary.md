@@ -32,21 +32,21 @@ Terms are grouped by topic, then alphabetized within each group.
 
 **Design (`design.md`).** The *how*: technical approach, architecture decisions, and the files you expect to touch. Optional for simple changes.
 
-**Tasks (`tasks.md`).** The implementation checklist, with checkboxes. The AI works through it during `/rasen:apply` and checks items off as it goes.
+**Tasks (`tasks.md`).** The implementation checklist, with checkboxes. The AI works through it during `/rasen-apply-change` and checks items off as it goes.
 
 ## The lifecycle
 
 **Archive.** The act of finishing a change. Its delta specs merge into the main specs, and the change folder moves to `rasen/changes/archive/YYYY-MM-DD-<name>/`. After archiving, your specs describe the new reality. See [Concepts](concepts.md#archive).
 
-**Sync.** Merging a change's delta specs into the main specs *without* archiving the change. Usually automatic (archive offers to do it), but available on its own as `/rasen:sync` for long-running changes. See [Commands](commands.md#rasensync).
+**Sync.** Merging a change's delta specs into the main specs *without* archiving the change. Usually automatic (archive offers to do it), but available on its own as `/rasen-sync-specs` for long-running changes. See [Commands](commands.md#rasensync).
 
 ## Workflow and commands
 
-**OPSX.** The current standard rasen workflow, built around fluid actions instead of rigid phases. Its slash commands all start with `/rasen:`. See [OPSX Workflow](opsx.md).
+**The artifact workflow.** The current standard rasen workflow, built around fluid actions instead of rigid phases. Its slash commands all start with `/rasen-`. Formerly called "OPSX," a retired codename. See [Artifact Workflow](artifact-workflow.md).
 
-**Slash command.** A command you type into your AI assistant's chat, like `/rasen:propose`. Slash commands drive the workflow. They are not terminal commands. See [How Commands Work](how-commands-work.md).
+**Slash command.** A command you type into your AI assistant's chat, like `/rasen-propose`. Slash commands drive the workflow. They are not terminal commands. See [How Commands Work](how-commands-work.md).
 
-**Explore (`/rasen:explore`).** The thinking-partner command. It reads your codebase, compares options, and clarifies a fuzzy idea into a concrete plan, creating no artifacts and writing no code. The recommended starting point whenever you have a problem but not yet a plan. See [Explore First](explore.md).
+**Explore (`/rasen-explore`).** The thinking-partner command. It reads your codebase, compares options, and clarifies a fuzzy idea into a concrete plan, creating no artifacts and writing no code. The recommended starting point whenever you have a problem but not yet a plan. See [Explore First](explore.md).
 
 **CLI.** The `rasen` program you run in your terminal. It sets up projects, lists and validates changes, opens the dashboard, and archives. The terminal half of rasen. See [CLI](cli.md).
 
@@ -57,6 +57,16 @@ Terms are grouped by topic, then alphabetized within each group.
 **Profile.** The set of slash commands installed in your project. **Full** (the default) installs every workflow. **Core** slims down to `propose`, `explore`, `apply`, `sync`, `archive`; **custom** is any subset you pick. Change it with `rasen config profile`.
 
 **Delivery.** Whether rasen also installs command files alongside skills (`both`, the default) or skills only (`skills`). Skills are always installed. Configured globally and applied with `rasen update`.
+
+**Installable workflow.** A user-wide, profile-selectable skill with an optional command, declared dependencies, and UTF-8 sidecars. It is distinct from an artifact schema and orchestration pipeline. Manage it with `rasen workflow`; see [Installable workflows and `.rasenpkg`](workflow-packages.md).
+
+**Workflow catalog.** The common indexed view of built-in and valid user workflows. A profile selects catalog IDs; required workflow dependencies expand into the effective selection.
+
+**`.rasenpkg`.** Rasen's strict canonical JSON envelope for a workflow or self-contained profile. It is deterministic and digest-checked but is not signed and does not prove trust or review.
+
+**Thin profile.** A YAML/JSON profile containing workflow IDs but no user-workflow source. It is portable only when every referenced user workflow is already installed; export requires explicit `--thin` when user workflows are selected.
+
+**Managed-artifact ledger.** The project file that records generated user-workflow files and source digests. It lets `update` detect drift and remove only unchanged files that Rasen previously generated.
 
 ## Customization
 

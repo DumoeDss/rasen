@@ -1,8 +1,9 @@
+version: 1
 name: full-feature
 description: >-
   Full feature delivery pipeline: office hours validation, proposal with lead
   review, apply, a parallel fan-out of conditional expert reviews, a review
-  cycle to drive fixes, then ship, archive, and retrospective.
+  cycle to drive fixes, then ship, retention, and archive.
 stages:
   - id: office-hours
     skill: rasen-office-hours-command
@@ -24,42 +25,42 @@ stages:
     gate: true
 
   - id: review
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: always
 
   - id: cso
-    skill: rasen:cso
+    skill: rasen-cso
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: security-relevant
 
   - id: benchmark
-    skill: rasen:benchmark
+    skill: rasen-benchmark
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: performance-sensitive
 
   - id: design-review
-    skill: rasen:design-review
+    skill: rasen-design-review
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: ui
 
   - id: qa
-    skill: rasen:qa
+    skill: rasen-qa
     role: reviewer
     requires: [apply]
     parallelGroup: experts
     condition: ui
 
   - id: qa-only
-    skill: rasen:qa-only
+    skill: rasen-qa-only
     role: reviewer
     requires: [apply]
     parallelGroup: experts
@@ -80,13 +81,14 @@ stages:
     gate: true
     model: sonnet
 
-  - id: archive
-    skill: rasen-archive-change
-    role: shipper
+  - id: retain
+    skill: rasen-retain
+    role: reviewer
     requires: [ship]
     model: sonnet
 
-  - id: retro
-    skill: rasen-retro
-    role: reviewer
-    requires: [archive]
+  - id: archive
+    skill: rasen-archive-change
+    role: shipper
+    requires: [retain]
+    model: sonnet

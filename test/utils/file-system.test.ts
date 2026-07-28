@@ -107,6 +107,27 @@ describe('FileSystemUtils', () => {
 
       nativeSpy.mockRestore();
     });
+
+    it('canonicalizes a missing descendant through its deepest existing ancestor', async () => {
+      const realParent = path.join(testDir, 'real-parent');
+      const aliasParent = path.join(testDir, 'alias-parent');
+      await fs.mkdir(realParent);
+      await fs.symlink(
+        realParent,
+        aliasParent,
+        process.platform === 'win32' ? 'junction' : 'dir'
+      );
+
+      const missing = path.join(aliasParent, 'future', 'artifact.json');
+
+      expect(FileSystemUtils.canonicalizeExistingPath(missing)).toBe(
+        path.join(
+          nodeFs.realpathSync.native(realParent),
+          'future',
+          'artifact.json'
+        )
+      );
+    });
   });
 
   describe('writeFile', () => {
@@ -267,6 +288,73 @@ describe('FileSystemUtils', () => {
       const filePath = path.join(fileInPath, 'nested', 'file.txt');
       const canWrite = await FileSystemUtils.canWriteFile(filePath);
       expect(canWrite).toBe(false);
+    });
+
+    it('should preserve diagnostics by default for malformed parent paths', async () => {
+      const fileInPath = path.join(testDir, 'blocking-file.txt');
+      await fs.writeFile(fileInPath, 'content');
+      const filePath = path.join(fileInPath, 'nested', 'file.txt');
+      const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+      try {
+        const canWrite = await FileSystemUtils.canWriteFile(filePath);
+
+        expect(canWrite).toBe(false);
+        // Design D4: the OS errno diverges here. POSIX's `fs.stat` through a
+        // file returns `ENOTDIR`, hitting `canWriteFile`'s generic-error
+        // branch (the full `filePath` in the message). Windows returns
+        // `ENOENT`, which walks the parent chain instead and reports the
+        // blocking *parent* component, not the full path — an equally valid
+        // diagnosis of the same condition, just worded differently; the
+        // return value (`false`) is already correct on both platforms, so
+        // this is a test-only assertion difference, no product change.
+        if (process.platform === 'win32') {
+          expect(debugSpy).toHaveBeenCalledWith(
+            expect.stringContaining(`Path component ${fileInPath} exists but is not a directory`)
+          );
+        } else {
+          expect(debugSpy).toHaveBeenCalledWith(
+            expect.stringContaining(
+              `Unable to determine write permissions for ${filePath}: ENOTDIR`
+            )
+          );
+        }
+      } finally {
+        debugSpy.mockRestore();
+      }
+    });
+
+    it('should suppress or redirect diagnostics when requested', async () => {
+      const fileInPath = path.join(testDir, 'blocking-file.txt');
+      await fs.writeFile(fileInPath, 'content');
+      const filePath = path.join(fileInPath, 'nested', 'file.txt');
+      const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+      const diagnostics: string[] = [];
+
+      try {
+        await expect(
+          FileSystemUtils.canWriteFile(filePath, { onDiagnostic: false })
+        ).resolves.toBe(false);
+        await expect(
+          FileSystemUtils.canWriteFile(filePath, {
+            onDiagnostic: (message) => diagnostics.push(message),
+          })
+        ).resolves.toBe(false);
+
+        expect(debugSpy).not.toHaveBeenCalled();
+        expect(diagnostics).toHaveLength(1);
+        // Design D4: Windows reports the blocking parent component
+        // (`fileInPath`), not the full `filePath` — see the test above.
+        if (process.platform === 'win32') {
+          expect(diagnostics[0]).toContain('Path component');
+          expect(diagnostics[0]).toContain(fileInPath);
+        } else {
+          expect(diagnostics[0]).toContain('Unable to determine write permissions');
+          expect(diagnostics[0]).toContain(filePath);
+        }
+      } finally {
+        debugSpy.mockRestore();
+      }
     });
 
     // Skip on Windows: creating symlinks requires elevated privileges or Developer Mode

@@ -163,3 +163,6 @@ opencode.json
 
 openspec/changes/**/auto-run.json
 openspec/changes/**/portfolio-run.json
+
+# token-audit generated output
+session-audit-*.json

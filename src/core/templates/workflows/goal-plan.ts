@@ -5,9 +5,10 @@
  * the goal (NL), the gate (measure XOR evaluate — chosen by task nature), the
  * work product (code | prose), and maxRounds. It does NOT produce
  * proposal/design/specs — a goal-loop is condition-driven, not document-driven.
- * The `gate: 'vet'` on the stage lets the user confirm a measure command (also
- * the safety valve for "measure.command is arbitrary shell") — it is the hard
- * autopilot-gate-policy carve-out, never auto-approved by `--no-gate`.
+ * The `gate: true` on the stage lets the user confirm a measure command (the
+ * safety valve for "measure.command is arbitrary shell") — it pauses by default,
+ * an ordinary gate now (autopilot-gate-policy), auto-approved under `--no-gate`
+ * or an `autopilot.gates: off` base unless a per-stage instance restores it.
  */
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
@@ -51,6 +52,13 @@ code | prose   # code = edit the codebase; prose = research + write a document (
 
 ## maxRounds
 <number>   # default 5; research/evaluate MAY set lower (e.g. 3)
+
+## blockedThreshold
+<number>   # optional; default 3 when omitted. Consecutive rounds the same
+           # implementer-reported blocker must recur before the loop escalates
+           # it as genuinely blocked (each intervening round retried from a
+           # different angle). Distinct from maxRounds and loopStallLimit. Lower
+           # it for a genuinely one-shot gate; raise it for a hard research task.
 \`\`\`
 
 ## Choosing the gate
@@ -61,13 +69,14 @@ Pick exactly ONE gate type by task nature — never both:
 
 ## measure.command safety
 
-\`measure.command\` is arbitrary shell. The define-goal stage carries \`gate: 'vet'\`, so the user confirms the command before any round runs — and, unlike an ordinary gate, this confirmation is NEVER auto-approved by \`--no-gate\` or an \`autopilot.gates: off\` project default (autopilot-gate-policy). Prefer commands that are read-only or idempotent. State the command plainly in goal-plan.md so the user can vet it at the gate. Do NOT add sandbox enforcement beyond that confirmation.
+\`measure.command\` is arbitrary shell. The define-goal stage carries \`gate: true\`, so under the default policy the user confirms the command before any round runs — but it is an ordinary gate now: under \`--no-gate\` or an \`autopilot.gates: off\` base it is auto-approved and the command runs unattended for up to \`maxRounds\`, unless \`pipelines.<name>.gates.define-goal: on\` restores the pause (autopilot-gate-policy). Prefer commands that are read-only or idempotent. State the command plainly in goal-plan.md so the user can review it at the gate. Do NOT add sandbox enforcement beyond that confirmation.
 
 ## Constraints
 
 - Exactly ONE gate (measure XOR evaluate). Do not combine.
 - The concrete \`command\`/\`threshold\` (measure) or \`goal\`/\`rubric\` (evaluate) live HERE — the pipeline YAML registers only the gate TYPE; the LEAD reads this file to inject them into \`iterate.loopConfig\`.
 - Keep the goal falsifiable: a future round must be able to tell satisfied from not-satisfied.
+- Fix the goal at its true scope. Do NOT frame success around a smaller or easier task than the user asked for — the goal you write here is the goal the gate judges every round, and the implementer is forbidden from shrinking it. State the full success condition, not a convenient subset.
 - This is a planning stage. Do NOT edit code or write the work product here — that is the implementer's job in the iterate stage.`;
 
 export function getGoalPlanSkillTemplate(): SkillTemplate {

@@ -120,7 +120,7 @@ Good interfaces make testing natural:
 
 export function getCodebaseDesignSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:codebase-design',
+    name: 'rasen-codebase-design',
     description: 'Codebase design methodology — design it twice, deepen module boundaries, and keep implementation aligned with the intended architecture',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

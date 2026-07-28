@@ -1,9 +1,118 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import path from 'path';
+import os from 'os';
+import {
+  createPipelinePackage,
+  encodePackage,
+  type PipelinePackageInput,
+} from '../../src/core/workflow-package/index.js';
 import { runCLI } from '../helpers/run-cli.js';
 
-const BUILTIN_NAMES = ['bug-fix', 'full-feature', 'small-feature'] as const;
+const BUILTIN_NAMES = [
+  'auto-decompose',
+  'bug-fix',
+  'full-feature',
+  'goal-loop-evaluate',
+  'goal-loop-measure',
+  'goal-loop-research',
+  'small-feature',
+] as const;
+const PIPELINE_LOCALES = ['en', 'ja', 'zh-cn'] as const;
+
+function packagedPipeline(
+  name: string,
+  stages: string[] = [
+    '  - id: implement',
+    '    skill: rasen-apply-change',
+    '    role: implementer',
+    '    requires: []',
+  ]
+): PipelinePackageInput {
+  return {
+    name,
+    files: [
+      {
+        path: 'pipeline.yaml',
+        content: [`name: ${name}`, 'stages:', ...stages, ''].join('\n'),
+      },
+    ],
+  };
+}
+
+async function writePipelinePackage(
+  destination: string,
+  inputs: PipelinePackageInput[]
+): Promise<void> {
+  const packageValue = createPipelinePackage(
+    inputs.map((input) => input.name),
+    inputs
+  );
+  await fs.writeFile(destination, encodePackage(packageValue));
+}
+
+const HUMAN_LOCALE_CASES = [
+  {
+    locale: 'en',
+    listHeading: 'Available pipelines:',
+    builtInDescription: 'Minimal bug-fix pipeline',
+    pipelineLabel: 'Pipeline: bug-fix',
+    roleRuntimes: 'Role runtimes:',
+    suggested: 'Suggested pipeline: bug-fix',
+    noRunState: 'No run-state (auto-run.json) found',
+    createdDraft: 'Created pipeline draft at',
+    valid: 'Pipeline is valid.',
+    invalid: 'Pipeline is invalid.',
+    imported: 'Imported pipeline(s) from',
+    exported: 'Exported pipeline',
+    confirmation: 'Deletion requires --yes in non-interactive mode',
+    deleted: 'Deleted pipeline',
+    referrerWarning: 'was still referenced by:',
+    collision: 'Pipeline "bug-fix" already exists',
+    destinationExists: 'Export destination already exists; use --force',
+    notFound: "Pipeline 'missing-pipeline' not found",
+  },
+  {
+    locale: 'ja',
+    listHeading: '利用可能なパイプライン:',
+    builtInDescription: '最小限のバグ修正パイプライン',
+    pipelineLabel: 'パイプライン: bug-fix',
+    roleRuntimes: '役割別runtime:',
+    suggested: '推奨パイプライン: bug-fix',
+    noRunState: '実行状態（auto-run.json）が見つかりません',
+    createdDraft: 'パイプラインドラフトを',
+    valid: 'パイプラインは有効です。',
+    invalid: 'パイプラインは無効です。',
+    imported: 'からパイプラインをimportしました',
+    exported: 'を',
+    confirmation: '非対話モードで削除するには--yesが必要です',
+    deleted: 'を削除しました。',
+    referrerWarning: 'まだ参照されていました:',
+    collision: 'パイプライン"bug-fix"は既に存在します',
+    destinationExists: 'export先が既に存在します',
+    notFound: "パイプライン'missing-pipeline'が見つかりません",
+  },
+  {
+    locale: 'zh-cn',
+    listHeading: '可用流水线：',
+    builtInDescription: '最简缺陷修复流水线',
+    pipelineLabel: '流水线：bug-fix',
+    roleRuntimes: '各角色运行时：',
+    suggested: '建议流水线：bug-fix',
+    noRunState: '未找到运行状态（auto-run.json）',
+    createdDraft: '创建流水线草稿',
+    valid: '流水线有效。',
+    invalid: '流水线无效。',
+    imported: '导入流水线',
+    exported: '导出到',
+    confirmation: '非交互模式下删除需要 --yes',
+    deleted: '已删除流水线',
+    referrerWarning: '仍被以下引用方引用',
+    collision: '流水线 "bug-fix" 已存在',
+    destinationExists: '导出目标已存在',
+    notFound: "未找到流水线 'missing-pipeline'",
+  },
+] as const;
 
 describe('pipeline command', () => {
   const projectRoot = process.cwd();
@@ -16,6 +125,409 @@ describe('pipeline command', () => {
 
   afterEach(async () => {
     await fs.rm(testDir, { recursive: true, force: true });
+  });
+
+  async function createIsolatedProposeOnlyHome(name: string): Promise<string> {
+    const home = path.join(testDir, name);
+    await fs.mkdir(home, { recursive: true });
+    await fs.writeFile(
+      path.join(home, 'config.json'),
+      JSON.stringify({ profile: 'custom', delivery: 'both', workflows: ['propose'] })
+    );
+    return home;
+  }
+
+  describe('localized human presentation', () => {
+    it.each(HUMAN_LOCALE_CASES)(
+      'localizes representative $locale paths across all ten subcommands',
+      async (expected) => {
+        const home = path.join(testDir, `.pipeline-locale-home-${expected.locale}`);
+        const env = { RASEN_HOME: home, RASEN_LANG: expected.locale };
+        const changeName = `locale-change-${expected.locale}`;
+        await fs.mkdir(path.join(changesDir, changeName), { recursive: true });
+
+        const list = await runCLI(['pipeline', 'list'], { cwd: testDir, env });
+        expect(list.exitCode).toBe(0);
+        expect(list.stdout).toContain(expected.listHeading);
+        expect(list.stdout).toContain(expected.builtInDescription);
+
+        const show = await runCLI(['pipeline', 'show', 'bug-fix'], { cwd: testDir, env });
+        expect(show.exitCode).toBe(0);
+        expect(show.stdout).toContain(expected.pipelineLabel);
+        expect(show.stdout).toContain(expected.builtInDescription);
+
+        const missing = await runCLI(
+          ['pipeline', 'show', 'missing-pipeline'],
+          { cwd: testDir, env }
+        );
+        expect(missing.exitCode).toBe(1);
+        expect(missing.stderr).toContain(expected.notFound);
+
+        const agents = await runCLI(
+          ['pipeline', 'agents', 'bug-fix'],
+          { cwd: testDir, env }
+        );
+        expect(agents.exitCode).toBe(0);
+        expect(agents.stdout).toContain(expected.roleRuntimes);
+
+        const classify = await runCLI(
+          ['pipeline', 'classify', 'fix the broken login'],
+          { cwd: testDir, env }
+        );
+        expect(classify.exitCode).toBe(0);
+        expect(classify.stdout).toContain(expected.suggested);
+        expect(classify.stdout).toContain('keyword');
+
+        const resume = await runCLI(
+          ['pipeline', 'resume', changeName],
+          { cwd: testDir, env }
+        );
+        expect(resume.exitCode).toBe(0);
+        expect(resume.stdout).toContain(expected.noRunState);
+
+        const draftName = `draft-${expected.locale}`;
+        const draftPath = path.join(testDir, draftName);
+        const init = await runCLI(
+          ['pipeline', 'init', draftName, '--output', draftPath],
+          { cwd: testDir, env }
+        );
+        expect(init.exitCode).toBe(0);
+        expect(init.stdout).toContain(expected.createdDraft);
+        expect(init.stdout).toContain(draftPath);
+
+        const collision = await runCLI(
+          ['pipeline', 'init', 'bug-fix', '--output', path.join(testDir, 'bug-fix')],
+          { cwd: testDir, env }
+        );
+        expect(collision.exitCode).toBe(1);
+        expect(collision.stderr).toContain(expected.collision);
+
+        const validation = await runCLI(
+          ['pipeline', 'validate', 'bug-fix'],
+          { cwd: testDir, env }
+        );
+        expect(validation.exitCode).toBe(0);
+        expect(validation.stdout).toContain(expected.valid);
+
+        const invalidDraft = path.join(testDir, `invalid-${expected.locale}`);
+        await fs.mkdir(invalidDraft, { recursive: true });
+        const invalidValidation = await runCLI(
+          ['pipeline', 'validate', invalidDraft],
+          { cwd: testDir, env }
+        );
+        expect(invalidValidation.exitCode).toBe(1);
+        expect(invalidValidation.stdout).toContain(expected.invalid);
+        expect(invalidValidation.stdout).toContain('pipeline_manifest_missing');
+
+        const pipelineName = `localized-${expected.locale}`;
+        const childName = `localized-child-${expected.locale}`;
+        const parentName = `localized-parent-${expected.locale}`;
+        const packagePath = path.join(testDir, `localized-${expected.locale}.rasenpkg`);
+        await writePipelinePackage(packagePath, [
+          packagedPipeline(pipelineName),
+          packagedPipeline(childName),
+          packagedPipeline(parentName, [
+            '  - id: fanout',
+            '    kind: decompose',
+            `    childPipeline: ${childName}`,
+            '    requires: []',
+          ]),
+        ]);
+
+        const imported = await runCLI(
+          ['pipeline', 'import', packagePath],
+          { cwd: testDir, env }
+        );
+        expect(imported.exitCode).toBe(0);
+        expect(imported.stdout).toContain(expected.imported);
+        expect(imported.stdout).toContain(pipelineName);
+
+        const exportPath = path.join(testDir, `export-${expected.locale}.rasenpkg`);
+        const exported = await runCLI(
+          ['pipeline', 'export', pipelineName, exportPath],
+          { cwd: testDir, env }
+        );
+        expect(exported.exitCode).toBe(0);
+        expect(exported.stdout).toContain(expected.exported);
+        expect(exported.stdout).toContain(exportPath);
+
+        const destinationExists = await runCLI(
+          ['pipeline', 'export', pipelineName, exportPath],
+          { cwd: testDir, env }
+        );
+        expect(destinationExists.exitCode).toBe(1);
+        expect(destinationExists.stderr).toContain(expected.destinationExists);
+
+        const confirmation = await runCLI(
+          ['pipeline', 'delete', pipelineName],
+          { cwd: testDir, env }
+        );
+        expect(confirmation.exitCode).toBe(1);
+        expect(confirmation.stderr).toContain(expected.confirmation);
+
+        const deleted = await runCLI(
+          ['pipeline', 'delete', pipelineName, '--yes'],
+          { cwd: testDir, env }
+        );
+        expect(deleted.exitCode).toBe(0);
+        expect(deleted.stdout).toContain(expected.deleted);
+
+        const forcedDelete = await runCLI(
+          ['pipeline', 'delete', childName, '--yes', '--force'],
+          { cwd: testDir, env }
+        );
+        expect(forcedDelete.exitCode).toBe(0);
+        expect(forcedDelete.stderr).toContain(expected.referrerWarning);
+        expect(forcedDelete.stderr).toContain(`decompose:${parentName}`);
+      },
+      60_000
+    );
+  });
+
+  describe('locale-neutral JSON contracts', () => {
+    it('keeps all ten subcommand payloads identical across locales', async () => {
+      async function collect(locale: (typeof PIPELINE_LOCALES)[number]) {
+        const root = path.join(testDir, `json-${locale}`);
+        const home = path.join(root, 'home');
+        const env = { RASEN_HOME: home, RASEN_LANG: locale };
+        const changeName = 'json-change';
+        await fs.mkdir(path.join(root, 'rasen', 'changes', changeName), {
+          recursive: true,
+        });
+
+        const packagePath = path.join(root, 'json-pipe.rasenpkg');
+        await writePipelinePackage(packagePath, [packagedPipeline('json-pipe')]);
+
+        const runJson = async (args: string[]) => {
+          const result = await runCLI(args, { cwd: root, env });
+          expect(result.exitCode, `${locale}: ${args.join(' ')}`).toBe(0);
+          expect(result.stderr, `${locale}: ${args.join(' ')}`).toBe('');
+          return JSON.parse(result.stdout.trim());
+        };
+
+        const payloads = {
+          list: await runJson(['pipeline', 'list', '--json']),
+          show: await runJson(['pipeline', 'show', 'bug-fix', '--json']),
+          agents: await runJson(['pipeline', 'agents', 'bug-fix', '--json']),
+          classify: await runJson([
+            'pipeline',
+            'classify',
+            'fix the broken login',
+            '--json',
+          ]),
+          resume: await runJson([
+            'pipeline',
+            'resume',
+            changeName,
+            '--json',
+          ]),
+          init: await runJson([
+            'pipeline',
+            'init',
+            'json-draft',
+            '--output',
+            path.join(root, 'json-draft'),
+            '--json',
+          ]),
+          validate: await runJson([
+            'pipeline',
+            'validate',
+            'bug-fix',
+            '--json',
+          ]),
+          import: await runJson([
+            'pipeline',
+            'import',
+            packagePath,
+            '--json',
+          ]),
+          export: await runJson([
+            'pipeline',
+            'export',
+            'json-pipe',
+            path.join(root, 'json-pipe-export.rasenpkg'),
+            '--json',
+          ]),
+          delete: await runJson([
+            'pipeline',
+            'delete',
+            'json-pipe',
+            '--yes',
+            '--json',
+          ]),
+        };
+
+        const normalizePaths = (value: unknown): unknown => {
+          if (typeof value === 'string') {
+            return value.split(root).join('<ROOT>');
+          }
+          if (Array.isArray(value)) return value.map(normalizePaths);
+          if (value && typeof value === 'object') {
+            return Object.fromEntries(
+              Object.entries(value).map(([key, nested]) => [key, normalizePaths(nested)])
+            );
+          }
+          return value;
+        };
+
+        return normalizePaths(payloads);
+      }
+
+      const [english, japanese, chinese] = await Promise.all(
+        PIPELINE_LOCALES.map((locale) => collect(locale))
+      );
+      expect(japanese).toEqual(english);
+      expect(chinese).toEqual(english);
+
+      const payloads = english as Record<string, any>;
+      const bugFixList = payloads.list.pipelines.find(
+        (pipeline: any) => pipeline.name === 'bug-fix'
+      );
+      expect(bugFixList).toMatchObject({
+        source: 'package',
+        description: expect.stringContaining('Minimal bug-fix pipeline'),
+      });
+      expect(payloads.show.description).toContain('Minimal bug-fix pipeline');
+      expect(Object.prototype.hasOwnProperty.call(payloads.show, 'source')).toBe(false);
+      expect(payloads.classify).toMatchObject({
+        suggested: 'bug-fix',
+        basis: 'keyword',
+      });
+      expect(payloads.classify.matched).toEqual(['fix', 'broken']);
+      expect(payloads.resume.note).toContain('No run-state');
+      expect(payloads.import.digests['json-pipe']).toMatch(/^sha256:[a-f0-9]{64}$/);
+      expect(payloads.export.pipeline.name).toBe('json-pipe');
+      expect(payloads.delete).toEqual({
+        deleted: 'json-pipe',
+        forcedReferrers: [],
+        status: [],
+      });
+    }, 60_000);
+
+    it('keeps forced-referrer delete JSON byte-stable and stderr-silent across locales', async () => {
+      async function collect(locale: (typeof PIPELINE_LOCALES)[number]) {
+        const root = path.join(testDir, `forced-delete-json-${locale}`);
+        const home = path.join(root, 'home');
+        const env = { RASEN_HOME: home, RASEN_LANG: locale };
+        await fs.mkdir(root, { recursive: true });
+        const packagePath = path.join(root, 'forced-delete.rasenpkg');
+        await writePipelinePackage(packagePath, [
+          packagedPipeline('json-child'),
+          packagedPipeline('json-parent', [
+            '  - id: fanout',
+            '    kind: decompose',
+            '    childPipeline: json-child',
+            '    requires: []',
+          ]),
+        ]);
+
+        const imported = await runCLI(
+          ['pipeline', 'import', packagePath, '--json'],
+          { cwd: root, env }
+        );
+        expect(imported.exitCode).toBe(0);
+        expect(imported.stderr).toBe('');
+
+        return runCLI(
+          [
+            'pipeline',
+            'delete',
+            'json-child',
+            '--yes',
+            '--force',
+            '--json',
+          ],
+          { cwd: root, env }
+        );
+      }
+
+      const results = await Promise.all(PIPELINE_LOCALES.map(collect));
+      const expected = `${JSON.stringify({
+        deleted: 'json-child',
+        forcedReferrers: ['decompose:json-parent'],
+        status: [],
+      }, null, 2)}\n`;
+
+      for (const result of results) {
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toBe(expected);
+        expect(result.stderr).toBe('');
+      }
+    }, 60_000);
+  });
+
+  describe('pipeline description content ownership', () => {
+    it.each([
+      { locale: 'ja', source: 'project' },
+      { locale: 'zh-cn', source: 'project' },
+      { locale: 'ja', source: 'user' },
+      { locale: 'zh-cn', source: 'user' },
+    ] as const)(
+      'preserves a same-name $source override under $locale',
+      async ({ locale, source }) => {
+        const home = path.join(testDir, `.ownership-home-${locale}-${source}`);
+        const baseDir = source === 'project'
+          ? path.join(testDir, 'rasen', 'pipelines')
+          : path.join(home, 'pipelines');
+        const pipelineDir = path.join(baseDir, 'bug-fix');
+        const authoredDescription = `Author-owned ${source} description / 用户原文`;
+        await fs.mkdir(pipelineDir, { recursive: true });
+        await fs.writeFile(
+          path.join(pipelineDir, 'pipeline.yaml'),
+          [
+            'name: bug-fix',
+            `description: ${authoredDescription}`,
+            'stages:',
+            '  - id: implement',
+            '    skill: rasen-apply-change',
+            '    role: implementer',
+            '    requires: []',
+            '',
+          ].join('\n'),
+          'utf-8'
+        );
+        const env = { RASEN_HOME: home, RASEN_LANG: locale };
+        const localizedBuiltIn = HUMAN_LOCALE_CASES.find(
+          (entry) => entry.locale === locale
+        )!.builtInDescription;
+
+        const list = await runCLI(['pipeline', 'list'], { cwd: testDir, env });
+        expect(list.exitCode).toBe(0);
+        expect(list.stdout).toContain(authoredDescription);
+        expect(list.stdout).not.toContain(localizedBuiltIn);
+
+        const show = await runCLI(['pipeline', 'show', 'bug-fix'], {
+          cwd: testDir,
+          env,
+        });
+        expect(show.exitCode).toBe(0);
+        expect(show.stdout).toContain(authoredDescription);
+        expect(show.stdout).not.toContain(localizedBuiltIn);
+
+        const listJson = await runCLI(
+          ['pipeline', 'list', '--json'],
+          { cwd: testDir, env }
+        );
+        const listed = JSON.parse(listJson.stdout).pipelines.find(
+          (pipeline: any) => pipeline.name === 'bug-fix'
+        );
+        expect(listed).toMatchObject({
+          name: 'bug-fix',
+          description: authoredDescription,
+          source,
+        });
+
+        const showJson = await runCLI(
+          ['pipeline', 'show', 'bug-fix', '--json'],
+          { cwd: testDir, env }
+        );
+        const shown = JSON.parse(showJson.stdout);
+        expect(shown.description).toBe(authoredDescription);
+        expect(Object.prototype.hasOwnProperty.call(shown, 'source')).toBe(false);
+        expect(Object.prototype.hasOwnProperty.call(shown, 'localizedDescription')).toBe(false);
+      },
+      30_000
+    );
   });
 
   describe('list', () => {
@@ -47,12 +559,142 @@ describe('pipeline command', () => {
   });
 
   describe('show', () => {
+    it('exposes normalized Pipeline definition v1 in JSON and human output', async () => {
+      const jsonResult = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
+        cwd: testDir,
+      });
+      const humanResult = await runCLI(['pipeline', 'show', 'bug-fix'], {
+        cwd: testDir,
+      });
+
+      expect(jsonResult.exitCode).toBe(0);
+      expect(JSON.parse(jsonResult.stdout.trim()).version).toBe(1);
+      expect(humanResult.exitCode).toBe(0);
+      expect(humanResult.stdout).toContain('Definition version: 1');
+    });
+
+    it('keeps the display JSON contract unchanged after a successful execution preflight', async () => {
+      const displayOnly = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
+        cwd: testDir,
+      });
+      const executable = await runCLI(
+        ['pipeline', 'show', 'bug-fix', '--for-execution', '--json'],
+        { cwd: testDir }
+      );
+
+      expect(displayOnly.exitCode).toBe(0);
+      expect(executable.exitCode).toBe(0);
+      expect(JSON.parse(executable.stdout.trim())).toEqual(
+        JSON.parse(displayOnly.stdout.trim())
+      );
+    });
+
+    it.each([
+      {
+        locale: 'ja',
+        warning: '警告: 保存済みプロファイルから不明なワークフローIDを除外します: ff',
+      },
+      {
+        locale: 'zh-cn',
+        warning: '警告：已从存储的配置方案中忽略未知工作流 ID：ff',
+      },
+    ] as const)(
+      'localizes stale-profile preflight warnings for show and resume in $locale',
+      async ({ locale, warning }) => {
+        const name = `stale-profile-${locale}`;
+        const pipelineDir = path.join(testDir, 'rasen', 'pipelines', name);
+        const changeName = `stale-profile-change-${locale}`;
+        const home = path.join(testDir, `.stale-profile-home-${locale}`);
+        await fs.mkdir(pipelineDir, { recursive: true });
+        await fs.mkdir(path.join(changesDir, changeName), { recursive: true });
+        await fs.mkdir(home, { recursive: true });
+        await fs.writeFile(
+          path.join(pipelineDir, 'pipeline.yaml'),
+          [
+            `name: ${name}`,
+            'stages:',
+            '  - id: propose',
+            '    skill: rasen-propose',
+            '    role: planner',
+            '',
+          ].join('\n'),
+          'utf-8'
+        );
+        await fs.writeFile(
+          path.join(changesDir, changeName, 'auto-run.json'),
+          JSON.stringify({ pipeline: name, completed: [] }),
+          'utf-8'
+        );
+        await fs.writeFile(
+          path.join(home, 'config.json'),
+          JSON.stringify({
+            profile: 'custom',
+            delivery: 'both',
+            workflows: ['propose', 'ff'],
+          }),
+          'utf-8'
+        );
+        const env = { RASEN_HOME: home, RASEN_LANG: locale };
+
+        const show = await runCLI(
+          ['pipeline', 'show', name, '--for-execution'],
+          { cwd: testDir, env }
+        );
+        expect(show.exitCode).toBe(0);
+        expect(show.stderr).toContain(warning);
+        expect(show.stderr).not.toContain('dropping unknown workflow');
+
+        const resume = await runCLI(
+          ['pipeline', 'resume', changeName],
+          { cwd: testDir, env }
+        );
+        expect(resume.exitCode).toBe(0);
+        expect(resume.stderr).toContain(warning);
+        expect(resume.stderr).not.toContain('dropping unknown workflow');
+
+        for (const args of [
+          ['pipeline', 'show', name, '--for-execution', '--json'],
+          ['pipeline', 'resume', changeName, '--json'],
+        ]) {
+          const json = await runCLI(args, { cwd: testDir, env });
+          expect(json.exitCode).toBe(0);
+          expect(json.stderr).toBe('');
+          expect(() => JSON.parse(json.stdout)).not.toThrow();
+        }
+      },
+      30_000
+    );
+
+    it('blocks a fresh executable DAG when the active profile disables a known skill', async () => {
+      const home = await createIsolatedProposeOnlyHome('.fresh-execution-home');
+
+      const displayOnly = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
+        cwd: testDir,
+        env: { RASEN_HOME: home },
+      });
+      expect(displayOnly.exitCode).toBe(0);
+
+      const executable = await runCLI(
+        ['pipeline', 'show', 'bug-fix', '--for-execution', '--json'],
+        { cwd: testDir, env: { RASEN_HOME: home } }
+      );
+      expect(executable.exitCode).toBe(1);
+      expect(executable.stderr).toMatch(/known but disabled skill/);
+      expect(executable.stderr).not.toMatch(/unknown skill/);
+      expect(executable.stdout).not.toMatch(/"buildOrder"/);
+    });
+
     it('returns the DAG, buildOrder, and full stage fields via --json', async () => {
-      const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], { cwd: testDir });
+      const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
+        cwd: testDir,
+        env: { CODEX_THREAD_ID: 'command-test-thread' },
+      });
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());
 
       expect(json.name).toBe('bug-fix');
+      expect(json.hostRuntime).toBe('codex');
+      expect(json.hostRuntimeSource).toBe('codex-thread-id');
       expect(typeof json.description).toBe('string');
       expect(Array.isArray(json.buildOrder)).toBe(true);
       expect(json.buildOrder[0]).toBe('propose');
@@ -72,6 +714,7 @@ describe('pipeline command', () => {
         'verifyPolicy',
         'runtime',
         'runtimeSource',
+        'dispatchMode',
         'sessionReuse',
         'sandbox',
         'model',
@@ -88,13 +731,150 @@ describe('pipeline command', () => {
         source: 'default',
       });
       expect(stage.id).toBe('propose');
+      expect(stage.runtime).toBe('codex');
+      expect(stage.runtimeSource).toBe('host');
+      expect(stage.dispatchMode).toBe('native');
       expect(stage.skill).toBe('rasen-propose');
       expect(stage.gate).toBe(true);
       // build order length equals stage count
       expect(json.buildOrder.length).toBe(json.stages.length);
     });
 
+    it('labels an unknown host as legacy fallback instead of native', async () => {
+      const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
+        cwd: testDir,
+        env: {
+          RASEN_AGENT_RUNTIME: '',
+          CODEX_THREAD_ID: '',
+          CODEX_SANDBOX: '',
+          CLAUDECODE: '',
+        },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.hostRuntime).toBe('unknown');
+      expect(json.hostRuntimeSource).toBe('unknown');
+      expect(json.stages[0]).toMatchObject({
+        runtime: 'claude',
+        runtimeSource: 'legacy-default',
+        dispatchMode: 'legacy-fallback',
+      });
+    });
+
+    it('threads run-local role flags through the final execution preflight and JSON plan', async () => {
+      const home = path.join(testDir, '.run-local-rescue-home');
+      await fs.mkdir(path.join(home, 'schemes'), { recursive: true });
+      await fs.writeFile(
+        path.join(home, 'schemes', 'codex-final.yaml'),
+        [
+          'handoff: 0.61',
+          'handoffRoles:',
+          '  planner: 0.62',
+          'reuse: 0.31',
+          'reuseRoles:',
+          '  planner: 0.32',
+          '',
+        ].join('\n'),
+        'utf-8'
+      );
+      await fs.writeFile(
+        path.join(home, 'config.json'),
+        JSON.stringify({ thresholds: { bindings: { codex: 'codex-final' } } }),
+        'utf-8'
+      );
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'run-local-rescue');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: run-local-rescue
+stages:
+  - id: propose
+    skill: rasen-propose
+    role: planner
+`,
+        'utf-8'
+      );
+      await fs.writeFile(
+        path.join(testDir, 'rasen', 'config.yaml'),
+        [
+          'schema: spec-driven',
+          'pipelines:',
+          '  run-local-rescue:',
+          '    runtimes:',
+          '      planner: claude',
+          '',
+        ].join('\n'),
+        'utf-8'
+      );
+      const env = {
+        CODEX_THREAD_ID: 'command-test-thread',
+        RASEN_HOME: home,
+      };
+
+      const unsupported = await runCLI(
+        ['pipeline', 'show', 'run-local-rescue', '--for-execution', '--json'],
+        { cwd: testDir, env }
+      );
+      expect(unsupported.exitCode).toBe(1);
+      expect(unsupported.stderr).toContain('Unsupported runtime route codex -> claude');
+
+      const rescued = await runCLI(
+        [
+          'pipeline',
+          'show',
+          'run-local-rescue',
+          '--for-execution',
+          '--planner',
+          'codex',
+          '--json',
+        ],
+        { cwd: testDir, env }
+      );
+      expect(rescued.exitCode).toBe(0);
+      const json = JSON.parse(rescued.stdout.trim());
+      expect(json.stages[0]).toMatchObject({
+        runtime: 'codex',
+        runtimeSource: 'invocation',
+        dispatchMode: 'native',
+        handoff: {
+          threshold: 0.62,
+          source: 'global-scheme-role',
+          binding: {
+            scope: 'global',
+            row: 'codex',
+            scheme: 'codex-final',
+          },
+        },
+      });
+      expect(json.reuse).toMatchObject({
+        roles: { planner: 0.32 },
+        sources: { roles: { planner: 'global-scheme-role' } },
+        bindings: {
+          roles: {
+            planner: {
+              scope: 'global',
+              row: 'codex',
+              scheme: 'codex-final',
+            },
+          },
+        },
+      });
+    });
+
     it('resolves role-level and stage-level Codex runtime choices via --json', async () => {
+      const home = path.join(testDir, '.stage-runtime-binding-home');
+      await fs.mkdir(path.join(home, 'schemes'), { recursive: true });
+      await fs.writeFile(
+        path.join(home, 'schemes', 'stage-codex.yaml'),
+        'handoff: 0.71\nhandoffRoles:\n  reviewer: 0.72\nreuse: 0.25\n',
+        'utf-8'
+      );
+      await fs.writeFile(
+        path.join(home, 'config.json'),
+        JSON.stringify({ thresholds: { bindings: { codex: 'stage-codex' } } }),
+        'utf-8'
+      );
       const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'codex-mix');
       await fs.mkdir(pipelineDir, { recursive: true });
       await fs.writeFile(
@@ -112,7 +892,7 @@ stages:
     skill: rasen-propose
     role: planner
   - id: verify
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     runtime: codex
     sessionReuse: review-thread
@@ -122,7 +902,13 @@ stages:
         'utf-8'
       );
 
-      const result = await runCLI(['pipeline', 'show', 'codex-mix', '--json'], { cwd: testDir });
+      const result = await runCLI(['pipeline', 'show', 'codex-mix', '--json'], {
+        cwd: testDir,
+        env: {
+          CODEX_THREAD_ID: 'command-test-thread',
+          RASEN_HOME: home,
+        },
+      });
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());
       const propose = json.stages.find((s: any) => s.id === 'propose');
@@ -130,10 +916,21 @@ stages:
 
       expect(propose.runtime).toBe('codex');
       expect(propose.runtimeSource).toBe('agent');
+      expect(propose.dispatchMode).toBe('native');
       expect(propose.sessionReuse).toBe('run-planner');
       expect(propose.sandbox).toBe('workspace-write');
       expect(verify.runtime).toBe('codex');
       expect(verify.runtimeSource).toBe('stage');
+      expect(verify.dispatchMode).toBe('native');
+      expect(verify.handoff).toMatchObject({
+        threshold: 0.72,
+        source: 'global-scheme-role',
+        binding: {
+          scope: 'global',
+          row: 'codex',
+          scheme: 'stage-codex',
+        },
+      });
       expect(verify.sessionReuse).toBe('review-thread');
       expect(verify.sandbox).toBe('read-only');
     });
@@ -158,7 +955,7 @@ stages:
     skill: rasen-apply-change
     role: implementer
   - id: verify
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [apply]
   - id: review-loop
@@ -216,7 +1013,7 @@ stages:
     skill: rasen-propose
     role: planner
   - id: review
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [propose]
   - id: fix
@@ -276,6 +1073,144 @@ stages:
       });
     });
 
+    it('loads one runtime-binding scheme snapshot for handoff and reuse', async () => {
+      const home = path.join(testDir, '.binding-home');
+      await fs.mkdir(path.join(home, 'schemes'), { recursive: true });
+      await fs.writeFile(
+        path.join(home, 'schemes', 'focused.yaml'),
+        'handoff: 0.55\nhandoffRoles:\n  reviewer: 0.6\nreuse: 0.2\nreuseRoles:\n  planner: 0.3\n',
+        'utf-8'
+      );
+      await fs.writeFile(
+        path.join(home, 'config.json'),
+        JSON.stringify({ thresholds: { bindings: { codex: 'focused' } } }),
+        'utf-8'
+      );
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'bound-show');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: bound-show
+agents:
+  planner: codex
+  reviewer: codex
+stages:
+  - id: plan
+    skill: rasen-propose
+    role: planner
+  - id: review
+    skill: rasen-review
+    role: reviewer
+    requires: [plan]
+`,
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'show', 'bound-show', '--json'], {
+        cwd: testDir,
+        env: { RASEN_HOME: home },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.stages.find((stage: any) => stage.id === 'review').handoff).toMatchObject({
+        threshold: 0.6,
+        source: 'global-scheme-role',
+        binding: { row: 'codex', scheme: 'focused' },
+      });
+      expect(json.reuse.roles.planner).toBe(0.3);
+      expect(json.reuse.sources.roles.planner).toBe('global-scheme-role');
+    });
+
+    it('reports dangling bindings and falls back without failing pipeline show', async () => {
+      const home = path.join(testDir, '.dangling-home');
+      await fs.mkdir(home, { recursive: true });
+      await fs.writeFile(
+        path.join(home, 'config.json'),
+        JSON.stringify({ thresholds: { bindings: { default: 'missing' } } }),
+        'utf-8'
+      );
+      const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
+        cwd: testDir,
+        env: { RASEN_HOME: home },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.stages[0].handoff.diagnostics).toEqual([
+        expect.objectContaining({ code: 'missing-scheme', scheme: 'missing' }),
+      ]);
+    });
+
+    it('text show deduplicates stage-handoff and reuse binding warnings while preserving fallback output', async () => {
+      const home = path.join(testDir, '.text-diagnostic-home');
+      await fs.mkdir(path.join(home, 'schemes'), { recursive: true });
+      await fs.writeFile(
+        path.join(home, 'schemes', 'broken.yaml'),
+        'handoff: [\n',
+        'utf-8'
+      );
+      await fs.writeFile(
+        path.join(home, 'schemes', 'focused.yaml'),
+        'handoff: 0.55\nreuse: 0.2\n',
+        'utf-8'
+      );
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'text-diagnostics');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        `
+name: text-diagnostics
+agents:
+  planner: claude
+  implementer: claude
+  reviewer: codex
+stages:
+  - id: review
+    skill: rasen-review
+    role: reviewer
+`,
+        'utf-8'
+      );
+
+      await fs.writeFile(
+        path.join(home, 'config.json'),
+        JSON.stringify({ thresholds: { bindings: { codex: 'broken' } } }),
+        'utf-8'
+      );
+      const stageWarning = await runCLI(['pipeline', 'show', 'text-diagnostics'], {
+        cwd: testDir,
+        env: { RASEN_HOME: home },
+      });
+      expect(stageWarning.exitCode).toBe(0);
+      expect(stageWarning.stdout).toContain('Pipeline: text-diagnostics');
+      expect(stageWarning.stdout).toContain('review');
+      expect(
+        stageWarning.stderr.match(
+          /Threshold binding global\.codex references invalid scheme "broken"/gu
+        )
+      ).toHaveLength(1);
+
+      await fs.writeFile(
+        path.join(home, 'config.json'),
+        JSON.stringify({
+          thresholds: { bindings: { codex: 'focused', default: 'missing-reuse' } },
+        }),
+        'utf-8'
+      );
+      const reuseWarning = await runCLI(['pipeline', 'show', 'text-diagnostics'], {
+        cwd: testDir,
+        env: { RASEN_HOME: home },
+      });
+      expect(reuseWarning.exitCode).toBe(0);
+      expect(reuseWarning.stdout).toContain('Pipeline: text-diagnostics');
+      expect(reuseWarning.stdout).toContain('review');
+      expect(
+        reuseWarning.stderr.match(
+          /Threshold binding global\.default references missing scheme "missing-reuse"/gu
+        )
+      ).toHaveLength(1);
+    });
+
     it('surfaces the resolved reuse config as built-in defaults when no block is declared', async () => {
       const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], { cwd: testDir });
       expect(result.exitCode).toBe(0);
@@ -314,7 +1249,7 @@ stages:
     skill: rasen-propose
     role: planner
   - id: review
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [propose]
   - id: fix
@@ -409,6 +1344,39 @@ stages:
       expect(humanResult.stdout).toContain('handoff=60000 tokens remaining(preset)');
     });
 
+    it('pipeline show --json reflects the machine-config model (config-page-coherence)', async () => {
+      const rasenHome = await fs.mkdtemp(path.join(os.tmpdir(), 'rasen-pipeline-model-home-'));
+      await fs.writeFile(
+        path.join(rasenHome, 'config.json'),
+        JSON.stringify({ models: { default: 'sonnet', roles: { reviewer: 'fable' } } }),
+        'utf-8'
+      );
+      await fs.mkdir(path.join(testDir, 'rasen'), { recursive: true });
+      await fs.writeFile(
+        path.join(testDir, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nmodels:\n  roles:\n    implementer: opus\n',
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
+        cwd: testDir,
+        env: { RASEN_HOME: rasenHome },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+
+      const reviewerStage = json.stages.find((s: any) => s.role === 'reviewer');
+      if (reviewerStage) {
+        expect(reviewerStage.model).toBe('fable');
+        expect(reviewerStage.modelSource).toBe('global-role');
+      }
+      const implementerStage = json.stages.find((s: any) => s.role === 'implementer');
+      if (implementerStage) {
+        expect(implementerStage.model).toBe('opus');
+        expect(implementerStage.modelSource).toBe('project-role');
+      }
+    });
+
     // Goal-loop `pipeline show` human-readable rendering. goal-loop-core
     // generalized the meta line (pipeline.ts) to emit the goal-loop gate label,
     // but shipped no command test for the string. These assert the exact format.
@@ -428,24 +1396,23 @@ stages:
       expect(result.stdout).not.toContain('loop=review-cycle');
     });
 
-    // autopilot-gate-policy: define-goal's gate widened from true to 'vet'.
-    // --json reports the exact string value; the human table surfaces it
-    // distinctly as `gate(vet)` so an operator can tell it apart from an
-    // ordinary skippable gate at a glance.
-    it("reports define-goal gate as 'vet' in --json and renders gate(vet) in human-readable show", async () => {
+    // autopilot-gate-policy: the vet type is retired — define-goal is an
+    // ordinary gate: true reported as a boolean in --json and rendered as the
+    // plain `gate` label in the human table (no `gate(vet)` variant remains).
+    it('reports define-goal gate as a boolean true in --json and renders the plain gate label', async () => {
       const jsonResult = await runCLI(['pipeline', 'show', 'goal-loop-measure', '--json'], {
         cwd: testDir,
       });
       expect(jsonResult.exitCode).toBe(0);
       const json = JSON.parse(jsonResult.stdout.trim());
       const defineGoal = json.stages.find((s: any) => s.id === 'define-goal');
-      expect(defineGoal.gate).toBe('vet');
+      expect(defineGoal.gate).toBe(true);
       const ship = json.stages.find((s: any) => s.id === 'ship');
       expect(ship.gate).toBe(true);
 
       const humanResult = await runCLI(['pipeline', 'show', 'goal-loop-measure'], { cwd: testDir });
       expect(humanResult.exitCode).toBe(0);
-      expect(humanResult.stdout).toContain('gate(vet)');
+      expect(humanResult.stdout).not.toContain('gate(vet)');
     });
 
     // Regression guard: the goal-loop generalization must not have changed the
@@ -460,25 +1427,51 @@ stages:
   });
 
   describe('agents', () => {
-    it('writes a project-local override and switches role runtimes', async () => {
+    // The re-pointed `agents` writes `pipelines.<name>.runtimes.<role>` config
+    // instances via the standard config write path, which requires an existing
+    // rasen/config.yaml — never a frozen pipeline.yaml copy.
+    async function writeProjectConfig(): Promise<void> {
+      await fs.writeFile(path.join(testDir, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+    }
+
+    it('writes runtime config instances (not a pipeline YAML copy) and switches role runtimes', async () => {
+      await writeProjectConfig();
       const result = await runCLI(
         ['pipeline', 'agents', 'small-feature', '--planner', 'codex', '--reviewer', 'codex', '--json'],
-        { cwd: testDir }
+        { cwd: testDir, env: { RASEN_AGENT_RUNTIME: 'claude' } }
       );
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());
 
       expect(json.name).toBe('small-feature');
-      expect(json.overridePath).toContain(path.join('rasen', 'pipelines', 'small-feature', 'pipeline.yaml'));
-      expect(json.agents.planner).toBe('codex');
-      expect(json.agents.reviewer).toBe('codex');
-      expect(json.effectiveRoles.planner).toBe('codex');
-      expect(json.effectiveRoles.implementer).toBe('claude');
+      expect(json.configPath).toContain(path.join('rasen', 'config.yaml'));
+      expect(json.hostRuntime).toBe('claude');
+      expect(json.effectiveRoles.planner).toEqual({
+        runtime: 'codex',
+        source: 'config-project',
+        dispatchMode: 'exec-bridge',
+      });
+      expect(json.effectiveRoles.reviewer).toEqual({
+        runtime: 'codex',
+        source: 'config-project',
+        dispatchMode: 'exec-bridge',
+      });
+      expect(json.effectiveRoles.implementer).toEqual({
+        runtime: 'claude',
+        source: 'host',
+        dispatchMode: 'native',
+      });
 
+      // Config instances were written, and NO pipeline definition file was created.
+      const configText = await fs.readFile(path.join(testDir, 'rasen', 'config.yaml'), 'utf-8');
+      expect(configText).toContain('codex');
       const overridePath = path.join(testDir, 'rasen', 'pipelines', 'small-feature', 'pipeline.yaml');
-      await expect(fs.stat(overridePath)).resolves.toBeDefined();
+      await expect(fs.stat(overridePath)).rejects.toBeDefined();
 
-      const show = await runCLI(['pipeline', 'show', 'small-feature', '--json'], { cwd: testDir });
+      const show = await runCLI(['pipeline', 'show', 'small-feature', '--json'], {
+        cwd: testDir,
+        env: { RASEN_AGENT_RUNTIME: 'claude' },
+      });
       expect(show.exitCode).toBe(0);
       const shown = JSON.parse(show.stdout.trim());
       const propose = shown.stages.find((s: any) => s.id === 'propose');
@@ -486,34 +1479,66 @@ stages:
       const apply = shown.stages.find((s: any) => s.id === 'apply');
 
       expect(propose.runtime).toBe('codex');
-      expect(propose.runtimeSource).toBe('agent');
+      expect(propose.runtimeSource).toBe('stage-override-project');
+      expect(propose.dispatchMode).toBe('exec-bridge');
       expect(verify.runtime).toBe('codex');
-      expect(verify.runtimeSource).toBe('agent');
+      expect(verify.runtimeSource).toBe('stage-override-project');
       expect(apply.runtime).toBe('claude');
-      expect(apply.runtimeSource).toBe('default');
+      expect(apply.runtimeSource).toBe('host');
+      expect(apply.dispatchMode).toBe('native');
+    });
+
+    it('unsetting the runtime instance reverts the role to its declaration/default', async () => {
+      await writeProjectConfig();
+      await runCLI(['pipeline', 'agents', 'small-feature', '--planner', 'codex', '--json'], { cwd: testDir });
+      // Remove the instance via `config unset` and confirm the role reverts.
+      const unset = await runCLI(
+        ['config', 'unset', 'pipelines.small-feature.runtimes.planner', '--scope', 'project'],
+        { cwd: testDir }
+      );
+      expect(unset.exitCode).toBe(0);
+      const result = await runCLI(['pipeline', 'agents', 'small-feature', '--json'], {
+        cwd: testDir,
+        env: {
+          RASEN_AGENT_RUNTIME: '',
+          CODEX_THREAD_ID: '',
+          CODEX_SANDBOX: '',
+          CLAUDECODE: '',
+        },
+      });
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.effectiveRoles.planner).toEqual({
+        runtime: 'claude',
+        source: 'legacy-default',
+        dispatchMode: 'legacy-fallback',
+      });
     });
 
     it('prints current effective role runtimes when no updates are passed', async () => {
-      const result = await runCLI(['pipeline', 'agents', 'bug-fix', '--json'], { cwd: testDir });
+      const result = await runCLI(['pipeline', 'agents', 'bug-fix', '--json'], {
+        cwd: testDir,
+        env: { CODEX_THREAD_ID: 'command-test-thread' },
+      });
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());
 
-      expect(json.overridePath).toBeNull();
+      expect(json.configPath).toBeNull();
+      expect(json.hostRuntime).toBe('codex');
       expect(json.effectiveRoles).toEqual({
-        planner: 'claude',
-        implementer: 'claude',
-        reviewer: 'claude',
-        fixer: 'claude',
-        shipper: 'claude',
+        planner: { runtime: 'codex', source: 'host', dispatchMode: 'native' },
+        implementer: { runtime: 'codex', source: 'host', dispatchMode: 'native' },
+        reviewer: { runtime: 'codex', source: 'host', dispatchMode: 'native' },
+        fixer: { runtime: 'codex', source: 'host', dispatchMode: 'native' },
+        shipper: { runtime: 'codex', source: 'host', dispatchMode: 'native' },
       });
     });
 
-    it('rejects invalid role runtime values', async () => {
-      const result = await runCLI(['pipeline', 'agents', 'small-feature', '--planner', 'gemini', '--json'], {
+    it.each(['zed', 'gemini'])('rejects non-dispatch role runtime %s', async (runtime) => {
+      const result = await runCLI(['pipeline', 'agents', 'small-feature', '--planner', runtime, '--json'], {
         cwd: testDir,
       });
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain("Invalid runtime 'gemini'");
+      expect(result.stderr).toContain(`Invalid runtime '${runtime}'`);
     });
   });
 
@@ -572,6 +1597,84 @@ stages:
   });
 
   describe('resume', () => {
+    it('blocks a resumed executable frontier when the active profile disables a known skill', async () => {
+      const home = await createIsolatedProposeOnlyHome('.resume-execution-home');
+      const changeDir = path.join(changesDir, 'disabled-resume');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'bug-fix', completed: ['propose'] }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'disabled-resume', '--json'], {
+        cwd: testDir,
+        env: { RASEN_HOME: home },
+      });
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toMatch(/known but disabled skill/);
+      expect(result.stderr).not.toMatch(/unknown skill/);
+      expect(result.stdout).not.toMatch(/"ready"/);
+    });
+
+    it('surfaces the old→new hint (not a bare unknown-skill error) when a resumed pipeline stage names a retired colon skill (B1)', async () => {
+      // Regression guard for the ADDED spec scenario "User pipeline authored with
+      // colon reference resumes with a hint": a pre-rebrand project pipeline stage
+      // references the retired colon identity `rasen:review`. Resume must not
+      // dead-end at preflight — it resolves the ref for validation and surfaces the
+      // old→new hint so the resumer renames the stage. The colon id stays an
+      // INVALID execution id (validate/dispatch still reject it — design D3: this
+      // is a hint, not silent acceptance).
+      const home = path.join(testDir, '.legacy-colon-home');
+      await fs.mkdir(home, { recursive: true });
+      await fs.writeFile(
+        path.join(home, 'config.json'),
+        JSON.stringify({ profile: 'full', delivery: 'both' })
+      );
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', 'legacy-colon-pipe');
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        [
+          'name: legacy-colon-pipe',
+          'stages:',
+          '  - id: propose',
+          '    skill: rasen-propose',
+          '  - id: review',
+          '    skill: rasen:review',
+          '',
+        ].join('\n'),
+        'utf-8'
+      );
+      const changeDir = path.join(changesDir, 'legacy-colon-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'legacy-colon-pipe', completed: ['propose'] }),
+        'utf-8'
+      );
+
+      const result = await runCLI(
+        ['pipeline', 'resume', 'legacy-colon-change', '--json'],
+        { cwd: testDir, env: { RASEN_HOME: home } }
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).not.toMatch(/unknown skill/);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.legacySkillHints).toEqual(
+        expect.arrayContaining([{ stage: 'review', from: 'rasen:review', to: 'rasen-review' }])
+      );
+
+      // The retired colon id remains an INVALID execution id: the execution
+      // preflight view still rejects it (D3 — hint, not silent acceptance).
+      const forExec = await runCLI(
+        ['pipeline', 'show', 'legacy-colon-pipe', '--for-execution', '--json'],
+        { cwd: testDir, env: { RASEN_HOME: home } }
+      );
+      expect(forExec.exitCode).toBe(1);
+      expect(forExec.stderr).toMatch(/rasen:review/);
+    });
+
     it('reports hasRunState:false when no auto-run.json exists', async () => {
       await fs.mkdir(path.join(changesDir, 'my-change'), { recursive: true });
       const result = await runCLI(['pipeline', 'resume', 'my-change', '--json'], { cwd: testDir });
@@ -654,6 +1757,35 @@ stages:
       expect(json.next).toBe('verify');
       expect(json.ready).toEqual(['verify']);
       expect(json.remaining).toEqual(['verify', 'ship', 'archive']);
+    });
+
+    it('surfaces frozen knowledgeContext for retain/codify resume routing', async () => {
+      const changeDir = path.join(changesDir, 'knowledge-context-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          completed: ['propose', 'apply'],
+          knowledgeContext: {
+            version: 1,
+            planningRoot: { type: 'store', id: 'team' },
+            owner: { type: 'project', id: 'web' },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(
+        ['pipeline', 'resume', 'knowledge-context-change', '--json'],
+        { cwd: testDir }
+      );
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout.trim()).knowledgeContext).toEqual({
+        version: 1,
+        planningRoot: { type: 'store', id: 'team' },
+        owner: { type: 'project', id: 'web' },
+      });
     });
 
     // autopilot-gate-policy: resume reads the recorded gate policy so a
@@ -1087,6 +2219,121 @@ stages:
       expect(json.planner).toBeNull(); // no persistent planner recorded
     });
 
+    it('reports an invalid portfolio without falling back to parent auto-run.json', async () => {
+      const changeDir = path.join(changesDir, 'invalid-portfolio');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'portfolio-run.json'),
+        JSON.stringify({
+          parent: 'invalid-portfolio',
+          children: [
+            {
+              id: 'invalid-portfolio-child',
+              pipeline: 'small-feature',
+              dependsOn: [],
+              status: 'done',
+              // A structurally invalid `prerequisites` (non-array) makes the
+              // portfolio genuinely invalid even after M4's status normalization
+              // restored tolerance for unrecognized status values.
+              prerequisites: 'not-an-array',
+            },
+          ],
+        }),
+        'utf-8'
+      );
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'auto-decompose',
+          stages: {
+            decompose: { status: 'done' },
+            ship: { status: 'pending' },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(
+        ['pipeline', 'resume', 'invalid-portfolio', '--json'],
+        { cwd: testDir }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json).toMatchObject({
+        change: 'invalid-portfolio',
+        isPortfolio: true,
+        hasRunState: false,
+        invalidPortfolioState: true,
+        pipeline: null,
+        next: null,
+        remaining: [],
+      });
+      expect(json.portfolioStatePath).toContain('portfolio-run.json');
+      expect(json.note).toContain('prerequisites');
+
+      const textResult = await runCLI(
+        ['pipeline', 'resume', 'invalid-portfolio'],
+        { cwd: testDir }
+      );
+      expect(textResult.exitCode).toBe(0);
+      expect(textResult.stdout).toContain('Invalid portfolio run-state');
+      expect(textResult.stdout).toContain('prerequisites');
+    });
+
+    it('resumes portfolio-level delivery after every child has completed', async () => {
+      const changeDir = path.join(changesDir, 'delivery-pending');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'portfolio-run.json'),
+        JSON.stringify({
+          parent: 'delivery-pending',
+          children: [
+            { id: 'child-a', pipeline: 'small-feature', dependsOn: [], status: 'done' },
+            { id: 'child-b', pipeline: 'small-feature', dependsOn: ['child-a'], status: 'skipped' },
+          ],
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(
+        ['pipeline', 'resume', 'delivery-pending', '--json'],
+        { cwd: testDir }
+      );
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout.trim())).toMatchObject({
+        isPortfolio: true,
+        childrenComplete: true,
+        delivery: { status: 'pending' },
+        complete: false,
+        next: 'portfolio-delivery',
+        remaining: ['portfolio-delivery'],
+      });
+
+      await fs.writeFile(
+        path.join(changeDir, 'portfolio-run.json'),
+        JSON.stringify({
+          parent: 'delivery-pending',
+          children: [
+            { id: 'child-a', pipeline: 'small-feature', dependsOn: [], status: 'done' },
+            { id: 'child-b', pipeline: 'small-feature', dependsOn: ['child-a'], status: 'skipped' },
+          ],
+          delivery: { status: 'done', mode: 'local' },
+        }),
+        'utf-8'
+      );
+      const complete = await runCLI(
+        ['pipeline', 'resume', 'delivery-pending', '--json'],
+        { cwd: testDir }
+      );
+      expect(JSON.parse(complete.stdout.trim())).toMatchObject({
+        childrenComplete: true,
+        delivery: { status: 'done', mode: 'local' },
+        complete: true,
+        next: null,
+        remaining: [],
+      });
+    });
+
     it('surfaces interrupted and escalated children, not just the runnable frontier (P3)', async () => {
       const changeDir = path.join(changesDir, 'portfolio-mixed');
       await fs.mkdir(changeDir, { recursive: true });
@@ -1113,6 +2360,211 @@ stages:
       expect(json.escalatedChildren).toEqual(['pm-c']); // human attention
       // Run-level persistent planner pointer surfaced for warm-seed reuse.
       expect(json.planner).toEqual({ role: 'planner', agentId: 'plan-9', transcript: 'agent-plan-9.jsonl' });
+    });
+
+    // The defect this group exists to remove: a paused portfolio offered
+    // `ship`. The trigger was upstream of stage counting — one out-of-enum
+    // child status made the whole portfolio record unreadable, the lenient
+    // reader returned null, and the parent lost its portfolio identity and
+    // fell through to the stage-based branch, which is the only place delivery
+    // could be reached.
+    it('still resolves as a portfolio when a child carries an out-of-enum status, and offers no delivery', async () => {
+      const changeDir = path.join(changesDir, 'portfolio-drifted');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'portfolio-run.json'),
+        JSON.stringify({
+          parent: 'portfolio-drifted',
+          children: [
+            { id: 'pd-a', pipeline: 'small-feature', dependsOn: [], status: 'done' },
+            { id: 'pd-b', pipeline: 'small-feature', dependsOn: [], status: 'skipped' },
+            // A word the reader has not learned. It must not disarm the guard.
+            { id: 'pd-f', pipeline: 'small-feature', dependsOn: [], status: 'propose-done' },
+          ],
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'portfolio-drifted', '--json'], {
+        cwd: testDir,
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.isPortfolio).toBe(true);
+      expect(json.complete).toBe(false);
+      expect(json.remainingChildren).toEqual(['pd-f']);
+      const drifted = json.children.find((c: { id: string }) => c.id === 'pd-f');
+      expect(drifted.status).toBe('unknown');
+      // The value AS WRITTEN is preserved and visible, not silently dropped.
+      expect(drifted.statusRaw).toBe('propose-done');
+      expect(
+        json.children.find((c: { id: string }) => c.id === 'pd-a').statusRaw
+      ).toBeUndefined();
+      // Delivery is not reachable from the portfolio answer at all.
+      expect(json.next).toBeUndefined();
+      expect(json.ready).toBeUndefined();
+      expect(json.remaining).toBeUndefined();
+    });
+
+    it('reports a genuinely unreadable portfolio record with path+reason and offers no next step', async () => {
+      const changeDir = path.join(changesDir, 'portfolio-unreadable');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'portfolio-run.json'), '{ not valid json', 'utf-8');
+      // A stage list that, taken alone, would leave only `ship`. If resume ever
+      // degrades to the stage frontier, this is what it would offer.
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          stages: {
+            propose: { status: 'done' },
+            apply: { status: 'done' },
+            verify: { status: 'done' },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'portfolio-unreadable', '--json'], {
+        cwd: testDir,
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.invalidPortfolioState).toBe(true);
+      expect(json.portfolioStatePath).toContain('portfolio-run.json');
+      expect(json.note).toContain('could not be read');
+      expect(json.next).toBeNull();
+      expect(json.ready).toEqual([]);
+      expect(json.remaining).toEqual([]);
+      // Specifically NOT the stage frontier the auto-run.json above would give.
+      expect(json.pipeline).toBeNull();
+
+      const textResult = await runCLI(['pipeline', 'resume', 'portfolio-unreadable'], {
+        cwd: testDir,
+      });
+      expect(textResult.exitCode).toBe(0);
+      expect(textResult.stdout).toContain('could not be read');
+      expect(textResult.stdout).not.toContain('Next: ship');
+    });
+
+    // Defense in depth: even with NO portfolio record at all, a parent whose
+    // stages are honestly marked `delegated` cannot present `ship` as its
+    // frontier.
+    it('counts delegated stages as outstanding and does not offer delivery, with no portfolio record', async () => {
+      const changeDir = path.join(changesDir, 'delegated-parent');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          stages: {
+            propose: { status: 'delegated' },
+            apply: { status: 'delegated' },
+            verify: { status: 'delegated' },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'delegated-parent', '--json'], {
+        cwd: testDir,
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.completed).toEqual([]);
+      expect(json.next).toBe('propose');
+      expect(json.remaining).toContain('propose');
+      expect(json.ready).not.toContain('ship');
+      expect(json.next).not.toBe('ship');
+    });
+
+    // B2 regression guard: delegated stages + a corrupt portfolio-run.json must
+    // report the invalid portfolio and NOT fall through to a stage-based resume
+    // that could offer delivery (ship). The stage list below would leave only
+    // `ship` if the stage frontier were used — exactly the defect B2 prevents.
+    it('reports an invalid portfolio and offers no delivery when delegated stages meet a corrupt portfolio record', async () => {
+      const changeDir = path.join(changesDir, 'delegated-corrupt-portfolio');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'bug-fix',
+          stages: {
+            propose: { status: 'delegated' },
+            apply: { status: 'delegated' },
+            verify: { status: 'delegated' },
+          },
+        }),
+        'utf-8'
+      );
+      await fs.writeFile(
+        path.join(changeDir, 'portfolio-run.json'),
+        '{ not valid json',
+        'utf-8'
+      );
+
+      const result = await runCLI(
+        ['pipeline', 'resume', 'delegated-corrupt-portfolio', '--json'],
+        { cwd: testDir }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.invalidPortfolioState).toBe(true);
+      expect(json.portfolioStatePath).toContain('portfolio-run.json');
+      expect(json.note).toContain('could not be read');
+      expect(json.next).toBeNull();
+      expect(json.ready).toEqual([]);
+      expect(json.remaining).toEqual([]);
+      // Specifically NOT the stage frontier the auto-run.json would give.
+      expect(json.pipeline).toBeNull();
+    });
+
+    it('resumes a change with no portfolio record from its own stages, exactly as before', async () => {
+      const changeDir = path.join(changesDir, 'undivided-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'bug-fix', completed: ['propose', 'apply'] }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'undivided-change', '--json'], {
+        cwd: testDir,
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.isPortfolio).toBeUndefined();
+      expect(json.invalidPortfolioState).toBeUndefined();
+      expect(json.pipeline).toBe('bug-fix');
+      expect(json.next).toBe('verify');
+      expect(json.remaining).toEqual(['verify', 'ship', 'archive']);
+    });
+
+    it('reports a portfolio whose children have all finished as complete', async () => {
+      const changeDir = path.join(changesDir, 'portfolio-finished');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'portfolio-run.json'),
+        JSON.stringify({
+          parent: 'portfolio-finished',
+          children: [
+            { id: 'pf-a', pipeline: 'small-feature', dependsOn: [], status: 'done' },
+            { id: 'pf-b', pipeline: 'small-feature', dependsOn: ['pf-a'], status: 'skipped' },
+          ],
+          delivery: { status: 'done' },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'portfolio-finished', '--json'], {
+        cwd: testDir,
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.isPortfolio).toBe(true);
+      expect(json.complete).toBe(true);
+      expect(json.remainingChildren).toEqual([]);
+      expect(json.runnableChildren).toEqual([]);
     });
   });
 

@@ -1,0 +1,151 @@
+# workflows-ui Specification
+
+## Purpose
+Provide a space-agnostic `/workflows` page in the management web UI for browsing and managing the user-wide installable workflow library — listing, detail, and CLI-backed mutation (init, validate, import, export, delete) — through the workflow-http-api endpoints, using the application's existing visual idioms.
+## Requirements
+### Requirement: A Workflows page lists the installable library in category sections
+
+The web UI SHALL provide a `/workflows` route — space-agnostic, carrying no space prefix, because the workflow library is user-wide — reachable from a header navigation entry that renders whether or not a planning space is resolved. The page SHALL present every catalog unit from the workflow listing endpoint in category sections, in the order: **driver**, **task**, **expert**. The driver section SHALL carry a disclosure, collapsed by default, that reveals the library's **internal** workflows — internal units are driver plumbing, so they live inside the driver section rather than as a fourth top-level section. A category with no workflows SHALL render no section, and the internal disclosure appears only when internal workflows exist. Each card SHALL show the workflow's id, its author-declared display title when the workflow declares one (falling back to the skill name when it declares none — the same fallback rule the CLI's own profile picker applies to the same field), source (built-in or user), an abbreviated digest, and the unused marker on user workflows the library detects no consumer for — the enclosing section conveys the workflow's category, so cards carry no category label of their own. Invalid user entries (when present) SHALL remain in their own section with their diagnostics. A workflow's dependency slots are shown in the detail view rather than on the card, because the listing endpoint mirrors `rasen workflow list --json`, which carries no dependency data. The page SHALL use the application's existing visual idioms without introducing a new visual language.
+
+#### Scenario: Library sectioned by category
+
+- **WHEN** the listing renders a library containing driver, task, and expert workflows
+- **THEN** the page shows a driver section, then a task section, then an expert section, and every workflow appears under the section matching its category
+
+#### Scenario: Internal workflows revealed on demand
+
+- **WHEN** the library contains internal workflows and the user expands the driver section's internal disclosure
+- **THEN** the internal workflows appear within the driver section, having been hidden while the disclosure was in its default collapsed state
+
+#### Scenario: Provenance stays visible inside a section
+
+- **WHEN** a category section contains both built-in and user workflows
+- **THEN** each card shows its source, and built-in cards visibly carry the lock marker
+
+#### Scenario: Empty categories render no section
+
+- **WHEN** the library contains no workflows of some category
+- **THEN** that category's section is absent rather than shown empty
+
+#### Scenario: Library visible from any space
+
+- **WHEN** the user activates the Workflows navigation entry from any space, or with no space resolved
+- **THEN** the UI navigates to `/workflows` and shows the same user-wide library in its category sections, with invalid entries visible when present
+
+#### Scenario: Unused workflows are marked
+
+- **WHEN** the listing contains a user workflow with no detected consumer
+- **THEN** its card visibly carries the unused marker
+
+#### Scenario: Card shows the declared title
+
+- **WHEN** a workflow's listing entry carries a non-null `title`
+- **THEN** its card shows the title in place of the skill name
+
+#### Scenario: Card falls back to the skill name
+
+- **WHEN** a workflow's listing entry carries a null `title`
+- **THEN** its card shows the skill name, exactly as before this field existed
+
+### Requirement: A workflow detail view shows the full definition and usage
+
+Selecting a workflow SHALL open a detail view presenting the full definition from the detail endpoint — identity, kind, source, digest, skill, the author-declared display title, category, and tags when the workflow declares them, the four `requires` slots, `recommends`, and the file inventory — together with the workflow's known usage referrers, each naming its consumer.
+
+#### Scenario: Detail shows dependencies and referrers
+
+- **WHEN** the user opens a workflow's detail view
+- **THEN** the four `requires` slots (workflows, skills, pipelines, schemas) and `recommends` are listed — this detail view is where a workflow's dependency summary lives — and every known usage referrer is shown with its consumer kind
+
+#### Scenario: Detail shows the declared title, category, and tags
+
+- **WHEN** the user opens the detail view of a workflow whose definition carries a non-null `title`, `category`, and `tags`
+- **THEN** the detail view shows the title, the category, and the tags
+
+#### Scenario: Detail omits fields the workflow does not declare
+
+- **WHEN** the user opens the detail view of a workflow whose definition carries a null `title`, `category`, or `tags`
+- **THEN** the detail view shows no row for the field(s) left null, consistent with how the rest of the panel omits what does not apply
+
+### Requirement: The library is managed from the page through the CLI-backed endpoints
+
+The page SHALL offer the library's management actions, each performed through the workflow endpoints and never by the browser touching the filesystem: **init** shall scaffold a new draft by entering an id and selecting an output directory through the shared server-local chooser/fallback control, with the created draft's path shown on success; **validate** shall validate an installed workflow id or a draft directory/package selected by path and render the diagnostics; **import** shall select a workflow directory or `.rasenpkg` file through that shared control and install it, reporting imported and reused ids; **export** shall select a destination directory through that shared control plus a filename, and when the destination already exists, surface the refusal and offer an explicit overwrite retry; **delete** shall remain for user workflows only, behind a confirmation dialog, with a referrer-guard refusal showing the CLI's message and a separately confirmed force option.
+
+For path actions, the visible selection SHALL be the submitted selection. The current fallback-browser directory SHALL be immediately usable as a workflow directory without a separate Use-this-folder action, native chooser unavailability or cancellation SHALL preserve the fallback, and a dirty typed path SHALL resolve or fail inline before the action runs. Every failure SHALL show the CLI's own error message verbatim. While a mutation is in flight the page SHALL prevent submitting another.
+
+#### Scenario: Import from a picked package
+
+- **WHEN** the user picks a `.rasenpkg` file through native choice or the fallback browser and confirms the import
+- **THEN** that visible package path is submitted, the workflow is installed, and the page reflects it without a reload while naming the imported ids
+
+#### Scenario: Import the current draft directory directly
+
+- **WHEN** the user browses to a workflow draft directory and activates Import
+- **THEN** that current directory is submitted without requiring a separate Use-this-folder action
+
+#### Scenario: Typed import path cannot diverge
+
+- **WHEN** the user browses one source, types a different absolute workflow path, and immediately activates Import
+- **THEN** only the typed path is resolved and submitted, or its inline error stops the import
+
+#### Scenario: Export refusal offers overwrite
+
+- **WHEN** the user selects a destination directory, supplies a filename, and export finds that destination already exists
+- **THEN** the CLI's refusal is shown and the user can explicitly retry with overwrite, which succeeds
+
+#### Scenario: Windows export uses the selected native directory
+
+- **WHEN** a Windows user selects a destination directory on a drive and supplies a package filename
+- **THEN** the displayed and submitted export destination uses the selected Windows path semantics without a hardcoded forward-slash join
+
+#### Scenario: Native choice falls back without blocking the action
+
+- **WHEN** a Workflow path chooser is unavailable or cancelled
+- **THEN** the current selection is preserved and the typed-path/server-browser control remains usable for the same action
+
+#### Scenario: Guarded delete surfaces referrers then allows force
+
+- **WHEN** the user confirms deletion of a workflow that is still referenced
+- **THEN** the refusal names the referrers, and only a second explicit force confirmation deletes it, showing the dangling referrers reported
+
+#### Scenario: Draft scaffold guides the next step
+
+- **WHEN** the user scaffolds a new draft via init
+- **THEN** the created draft path is shown with guidance to edit, validate, and import it
+
+### Requirement: Built-in workflows are locked in the UI
+
+Built-in workflows SHALL present no delete affordance — the lock is visible on the card and detail view rather than discovered through an error. Init, validate, and export remain available for built-ins where the CLI supports them; deletion is a user-workflow action only.
+
+#### Scenario: No delete affordance on built-ins
+
+- **WHEN** the user views a built-in workflow's card or detail view
+- **THEN** no delete control is offered, and the entry is visibly a locked built-in
+
+### Requirement: The page manages the library only
+
+The Workflows page SHALL NOT offer model, handoff, or gate controls — a workflow definition carries no such field, and per-stage runtime configuration belongs to the pipeline surface. The page SHALL NOT present pipelines as workflows or merge the two concepts. The page SHALL NOT offer per-space enablement or profile-membership editing — it is the library's viewing and management surface only (list, detail, init, import, validate, export, delete); selection lives on the Profiles page and each space's Config page.
+
+#### Scenario: No runtime controls on the workflow surface
+
+- **WHEN** the user explores a workflow's card and detail view
+- **THEN** no model, handoff, or gate setting is offered anywhere on the page
+
+#### Scenario: Library management actions remain complete
+
+- **WHEN** the user works the Workflows page after the responsibility split
+- **THEN** listing, detail, New draft, Import, Validate, Export, and Delete all remain available exactly as before
+
+### Requirement: Workflow cards share a uniform anatomy
+
+Workflow cards SHALL share one uniform anatomy: equal card sizes within a section's grid (content differences never producing ragged card heights in a row) and a fixed slot order — title and id, metadata badges, actions pinned to a consistent footer position, with library actions (export, delete) rendered as quiet footer actions. The sectioned card presentation (category sections, internal-plumbing disclosure, uniform cards with an optional corner-switch slot) SHALL be a single shared presentation used by both the Workflows page and the Profiles page, so the two surfaces cannot drift apart; on the Workflows page the switch slot stays empty.
+
+#### Scenario: Cards render uniformly despite differing content
+
+- **WHEN** a section's grid renders workflow cards whose titles, ids, and badges differ in length
+- **THEN** the cards in each row share equal heights with title, metadata, and actions in the same positions on every card
+
+#### Scenario: No enablement switches on the Workflows page
+
+- **WHEN** the user browses the Workflows page
+- **THEN** no card offers an enable/disable switch and no space picker is present
+

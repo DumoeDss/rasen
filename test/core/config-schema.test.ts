@@ -12,6 +12,20 @@ import {
 } from '../../src/core/config-schema.js';
 
 describe('config-schema', () => {
+  it('parses empty and explicit threshold binding maps without a fabricated default', () => {
+    expect(GlobalConfigSchema.parse({}).thresholds).toBeUndefined();
+    expect(
+      GlobalConfigSchema.parse({
+        thresholds: { bindings: { claude: 'focused', default: 'balanced' } },
+      }).thresholds?.bindings
+    ).toEqual({ claude: 'focused', default: 'balanced' });
+    expect(
+      GlobalConfigSchema.safeParse({
+        thresholds: { bindings: { zed: 'focused' } },
+      }).success
+    ).toBe(false);
+  });
+
   describe('getNestedValue', () => {
     it('should get a top-level value', () => {
       const obj = { foo: 'bar' };
@@ -357,12 +371,29 @@ describe('config-schema', () => {
     it('should provide defaults for missing featureFlags', () => {
       const result = GlobalConfigSchema.parse({});
       expect(result.featureFlags).toEqual({});
+      expect(result.language).toBe('auto');
+    });
+
+    it('accepts canonical language settings and rejects aliases or unsupported values', () => {
+      for (const language of ['auto', 'en', 'ja', 'zh-cn']) {
+        expect(GlobalConfigSchema.safeParse({ language }).success).toBe(true);
+      }
+      for (const language of ['zh-CN', 'zh_CN', 'zh-SG', 'zh-Hans', 'zh', 'fr']) {
+        expect(GlobalConfigSchema.safeParse({ language }).success).toBe(false);
+      }
+    });
+
+    it('round-trips keepalive.enabled booleans and rejects non-booleans', () => {
+      expect(GlobalConfigSchema.parse({ keepalive: { enabled: false } }).keepalive?.enabled).toBe(false);
+      expect(GlobalConfigSchema.parse({ keepalive: { enabled: true } }).keepalive?.enabled).toBe(true);
+      expect(GlobalConfigSchema.safeParse({ keepalive: { enabled: 'false' } }).success).toBe(false);
     });
   });
 
   describe('DEFAULT_CONFIG', () => {
     it('should have empty featureFlags', () => {
       expect(DEFAULT_CONFIG.featureFlags).toEqual({});
+      expect(DEFAULT_CONFIG.language).toBe('auto');
     });
   });
 });

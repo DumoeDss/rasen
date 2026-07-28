@@ -2,7 +2,12 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { FileSystemUtils } from '../../../utils/file-system.js';
-import { InstallationResult } from '../factory.js';
+import {
+  InstallationResult,
+  type InstallerMessageDescriptor,
+  type InstallerMessageReporter,
+  type UninstallationResult,
+} from '../factory.js';
 
 /**
  * Installer for Bash completion scripts.
@@ -125,7 +130,10 @@ export class BashInstaller {
    * @param completionsDir - Directory containing completion scripts
    * @returns true if configured successfully, false otherwise
    */
-  async configureBashrc(completionsDir: string): Promise<boolean> {
+  async configureBashrc(
+    completionsDir: string,
+    reporter?: InstallerMessageReporter
+  ): Promise<boolean> {
     // Check if auto-configuration is disabled
     if (process.env.RASEN_NO_AUTO_CONFIG === '1') {
       return false;
@@ -136,7 +144,9 @@ export class BashInstaller {
       const config = this.generateBashrcConfig(completionsDir);
 
       // Check write permissions
-      const canWrite = await FileSystemUtils.canWriteFile(bashrcPath);
+      const canWrite = await FileSystemUtils.canWriteFile(bashrcPath, {
+        onDiagnostic: false,
+      });
       if (!canWrite) {
         return false;
       }
@@ -153,7 +163,10 @@ export class BashInstaller {
       return true;
     } catch (error: any) {
       // Fail gracefully - don't break installation
-      console.debug(`Unable to configure .bashrc for completions: ${error.message}`);
+      reporter?.(
+        `Warning: Could not configure .bashrc for completions: ${error.message}`,
+        { key: 'unableConfigureBashrc', values: { detail: error.message } }
+      );
       return false;
     }
   }
@@ -164,7 +177,7 @@ export class BashInstaller {
    *
    * @returns true if removed successfully, false otherwise
    */
-  async removeBashrcConfig(): Promise<boolean> {
+  async removeBashrcConfig(reporter?: InstallerMessageReporter): Promise<boolean> {
     try {
       const bashrcPath = this.getBashrcPath();
 
@@ -222,7 +235,10 @@ export class BashInstaller {
       return true;
     } catch (error: any) {
       // Fail gracefully
-      console.debug(`Unable to remove .bashrc configuration: ${error.message}`);
+      reporter?.(
+        `Warning: Could not remove .bashrc completion configuration: ${error.message}`,
+        { key: 'unableRemoveBashrc', values: { detail: error.message } }
+      );
       return false;
     }
   }
@@ -254,6 +270,12 @@ export class BashInstaller {
   async install(completionScript: string): Promise<InstallationResult> {
     try {
       const targetPath = await this.getInstallationPath();
+      const warnings: string[] = [];
+      const warningDescriptors: Array<InstallerMessageDescriptor | null> = [];
+      const reportWarning: InstallerMessageReporter = (message, descriptor) => {
+        warnings.push(message);
+        warningDescriptors.push(descriptor);
+      };
 
       // Check for bash-completion package
       const hasBashCompletion = await this.isBashCompletionInstalled();
@@ -268,9 +290,14 @@ export class BashInstaller {
             success: true,
             installedPath: targetPath,
             message: 'Completion script is already installed (up to date)',
+            messageDescriptor: { key: 'alreadyInstalled' },
             instructions: [
               'The completion script is already installed and up to date.',
               'If completions are not working, try: exec bash',
+            ],
+            instructionDescriptors: [
+              { key: 'alreadyInstalledDetail' },
+              { key: 'tryExecBash' },
             ],
           };
         }
@@ -278,10 +305,18 @@ export class BashInstaller {
         isUpdate = true;
       } catch (error: any) {
         // File doesn't exist or can't be read, proceed with installation
-        console.debug(`Unable to read existing completion file at ${targetPath}: ${error.message}`);
+        if (error?.code !== 'ENOENT') {
+          reportWarning(
+            `Warning: Could not read existing completion file at ${targetPath}: ${error.message}`,
+            {
+              key: 'unableReadCompletionFile',
+              values: { path: targetPath, detail: error.message },
+            }
+          );
+        }
       }
 
-      if (!(await FileSystemUtils.canWriteFile(targetPath))) {
+      if (!(await FileSystemUtils.canWriteFile(targetPath, { onDiagnostic: false }))) {
         throw new Error(`Path is not writable: ${targetPath}`);
       }
 
@@ -296,13 +331,15 @@ export class BashInstaller {
       await fs.writeFile(targetPath, completionScript, 'utf-8');
 
       // Auto-configure .bashrc
-      const bashrcConfigured = await this.configureBashrc(targetDir);
+      const bashrcConfigured = await this.configureBashrc(targetDir, reportWarning);
 
       // Generate instructions if .bashrc wasn't auto-configured
       const instructions = bashrcConfigured ? undefined : this.generateInstructions(targetPath);
+      const instructionDescriptors = bashrcConfigured
+        ? undefined
+        : this.generateInstructionDescriptors();
 
       // Collect warnings
-      const warnings: string[] = [];
       if (!hasBashCompletion) {
         warnings.push(
           '⚠️  Warning: bash-completion package not detected',
@@ -314,18 +351,33 @@ export class BashInstaller {
           'Then add to your ~/.bash_profile:',
           '  [[ -r "/opt/homebrew/etc/profile.d/bash_completion.sh" ]] && . "/opt/homebrew/etc/profile.d/bash_completion.sh"'
         );
+        warningDescriptors.push(
+          { key: 'bashCompletionWarning' },
+          null,
+          { key: 'bashCompletionRequired' },
+          { key: 'installItWith' },
+          null,
+          null,
+          { key: 'addToBashProfile' },
+          null
+        );
       }
 
       // Determine appropriate message
       let message: string;
+      let messageDescriptor: InstallerMessageDescriptor;
       if (isUpdate) {
         message = backupPath
           ? 'Completion script updated successfully (previous version backed up)'
           : 'Completion script updated successfully';
+        messageDescriptor = { key: backupPath ? 'updatedWithBackup' : 'updated' };
       } else {
         message = bashrcConfigured
           ? 'Completion script installed and .bashrc configured successfully'
           : 'Completion script installed successfully for Bash';
+        messageDescriptor = {
+          key: bashrcConfigured ? 'installedAndConfiguredBashrc' : 'installedForBash',
+        };
       }
 
       return {
@@ -334,13 +386,20 @@ export class BashInstaller {
         backupPath,
         bashrcConfigured,
         message,
+        messageDescriptor,
         instructions,
+        instructionDescriptors,
         warnings: warnings.length > 0 ? warnings : undefined,
+        warningDescriptors: warningDescriptors.length > 0 ? warningDescriptors : undefined,
       };
     } catch (error) {
       return {
         success: false,
         message: `Failed to install completion script: ${error instanceof Error ? error.message : String(error)}`,
+        messageDescriptor: {
+          key: 'installFailed',
+          values: { detail: error instanceof Error ? error.message : String(error) },
+        },
       };
     }
   }
@@ -370,6 +429,23 @@ export class BashInstaller {
     ];
   }
 
+  private generateInstructionDescriptors(): Array<InstallerMessageDescriptor | null> {
+    return [
+      { key: 'installedSuccessfully' },
+      null,
+      { key: 'enableBashrc' },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      { key: 'restartBash' },
+    ];
+  }
+
   /**
    * Uninstall the completion script
    *
@@ -377,9 +453,15 @@ export class BashInstaller {
    * @param options.yes - Skip confirmation prompt (handled by command layer)
    * @returns Uninstallation result
    */
-  async uninstall(options?: { yes?: boolean }): Promise<{ success: boolean; message: string }> {
+  async uninstall(options?: { yes?: boolean }): Promise<UninstallationResult> {
     try {
       const targetPath = await this.getInstallationPath();
+      const warnings: string[] = [];
+      const warningDescriptors: InstallerMessageDescriptor[] = [];
+      const reportWarning: InstallerMessageReporter = (message, descriptor) => {
+        warnings.push(message);
+        warningDescriptors.push(descriptor);
+      };
 
       // Check if installed
       try {
@@ -388,6 +470,7 @@ export class BashInstaller {
         return {
           success: false,
           message: 'Completion script is not installed',
+          messageDescriptor: { key: 'notInstalled' },
         };
       }
 
@@ -395,16 +478,23 @@ export class BashInstaller {
       await fs.unlink(targetPath);
 
       // Remove .bashrc configuration
-      await this.removeBashrcConfig();
+      await this.removeBashrcConfig(reportWarning);
 
       return {
         success: true,
         message: 'Completion script uninstalled successfully',
+        messageDescriptor: { key: 'uninstalled' },
+        warnings: warnings.length > 0 ? warnings : undefined,
+        warningDescriptors: warningDescriptors.length > 0 ? warningDescriptors : undefined,
       };
     } catch (error) {
       return {
         success: false,
         message: `Failed to uninstall completion script: ${error instanceof Error ? error.message : String(error)}`,
+        messageDescriptor: {
+          key: 'uninstallFailed',
+          values: { detail: error instanceof Error ? error.message : String(error) },
+        },
       };
     }
   }

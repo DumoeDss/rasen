@@ -230,6 +230,12 @@ compdef _rasen rasen
         return "'*: :_rasen_complete_items'";
       case 'schema-name':
         return "'*: :_rasen_complete_schemas'";
+      case 'profile-name':
+        return "'*: :_rasen_complete_profiles'";
+      case 'saved-profile-name':
+        return "'*: :_rasen_complete_saved_profiles'";
+      case 'workflow-id':
+        return "'*: :_rasen_complete_workflows'";
       case 'path':
         return "'*:path:_files'";
       case 'shell':
@@ -285,6 +291,12 @@ compdef _rasen rasen
         return `'${index}${separator}${name}:_rasen_complete_items'`;
       case 'schema-name':
         return `'${index}${separator}${name}:_rasen_complete_schemas'`;
+      case 'profile-name':
+        return `'${index}${separator}${name}:_rasen_complete_profiles'`;
+      case 'saved-profile-name':
+        return `'${index}${separator}${name}:_rasen_complete_saved_profiles'`;
+      case 'workflow-id':
+        return `'${index}${separator}${name}:_rasen_complete_workflows'`;
       case 'path':
         return `'${index}${separator}${name}:_files'`;
       case 'shell':

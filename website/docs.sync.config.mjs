@@ -31,8 +31,9 @@ export const sections = [
       { source: 'overview.md', slug: 'overview', icon: 'Map' },
       { source: 'concepts.md', slug: 'core-concepts', icon: 'Boxes' },
       { source: 'workflows.md', slug: 'the-workflow', icon: 'Workflow' },
-      { source: 'opsx.md', slug: 'opsx', icon: 'GitBranch' },
+      { source: 'artifact-workflow.md', slug: 'artifact-workflow', icon: 'GitBranch' },
       { source: 'explore.md', slug: 'explore', icon: 'Compass' },
+      { source: 'retention-and-learned-skills.md', slug: 'retention-and-learned-skills', icon: 'Lightbulb' },
     ],
   },
   {
@@ -57,6 +58,7 @@ export const sections = [
     pages: [
       { source: 'commands.md', slug: 'reference/slash-commands', icon: 'SquareSlash' },
       { source: 'cli.md', slug: 'reference/cli', icon: 'SquareTerminal' },
+      { source: 'workflow-packages.md', slug: 'reference/workflow-packages', icon: 'PackageOpen' },
       { source: 'supported-tools.md', slug: 'reference/supported-tools', icon: 'Wrench' },
       { source: 'agent-contract.md', slug: 'reference/agents', icon: 'Bot' },
     ],

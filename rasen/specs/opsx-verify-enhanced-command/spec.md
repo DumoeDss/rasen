@@ -1,7 +1,7 @@
 # opsx-verify-enhanced-command Specification
 
 ## Purpose
-Provide the enhanced `/rasen:verify` command with auto-scaling verification depth (full / standard / light pipelines) and a verification report.
+Provide the enhanced `/rasen-verify-enhanced` command with auto-scaling verification depth (full / standard / light pipelines) and a verification report.
 
 ## Requirements
 ### Requirement: Verify-Enhanced Skill and Command Templates

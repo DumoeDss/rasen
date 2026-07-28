@@ -13,6 +13,7 @@ import { getSchemaDir, listSchemas } from '../../core/artifact-graph/index.js';
 import type { ReferenceIndexEntry } from '../../core/references.js';
 import { isRootSelectionError } from '../../core/root-selection.js';
 import { validateChangeName } from '../../utils/change-utils.js';
+import type { ResolvedNextStep } from '../../core/workflow-chain.js';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -50,6 +51,12 @@ export interface ApplyInstructions {
   references?: ReferenceIndexEntry[];
   /** Resolved external work directory for process ephemera (design D3); absent when unresolvable. */
   workDir?: string;
+  /**
+   * Runtime-resolved next workflow(s), filtered to the installed workflow
+   * set (design D1/D3/D4). Distinct from the artifact-authoring `nextSteps`
+   * string array on `ChangeStatus` — this carries `{ workflow, reason }`.
+   */
+  nextWorkflows: ResolvedNextStep[];
 }
 
 // -----------------------------------------------------------------------------

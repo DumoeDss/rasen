@@ -6,6 +6,7 @@ import { parse as parseYaml } from 'yaml';
 import {
   appendStoreReference,
   readProjectConfig,
+  readProjectConfigWithDiagnostics,
   validateConfigRules,
   suggestSchemas,
   ensureProjectIdInConfig,
@@ -13,7 +14,9 @@ import {
   resolveArchiveDestinationValue,
   resolveAutopilotGatePolicy,
   resolveAutopilotSelectionPolicy,
+  ProjectConfigSchema,
   updateProjectConfigKey,
+  updateProjectConfigKeys,
 } from '../../src/core/project-config.js';
 
 describe('project-config', () => {
@@ -30,7 +33,28 @@ describe('project-config', () => {
     consoleWarnSpy.mockRestore();
   });
 
+  it('round-trips keepalive.enabled in the project schema', () => {
+    const parsed = ProjectConfigSchema.parse({
+      schema: 'spec-driven',
+      keepalive: { enabled: false },
+    });
+    expect(parsed.keepalive?.enabled).toBe(false);
+    expect(
+      ProjectConfigSchema.safeParse({ schema: 'spec-driven', keepalive: { enabled: 'false' } }).success
+    ).toBe(false);
+  });
+
   describe('readProjectConfig', () => {
+    it('normalizes exact retired edit-boundary ids from a project override', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nworkflows:\n  - propose\n  - freeze\n  - review\n  - guard\n  - unfreeze\n'
+      );
+      expect(readProjectConfig(tempDir).workflows).toEqual(['propose', 'review']);
+    });
+
     describe('resilient parsing', () => {
       it('should parse complete valid config', () => {
         const configDir = path.join(tempDir, 'rasen');
@@ -626,6 +650,78 @@ rules:
     });
   });
 
+  describe('readProjectConfigWithDiagnostics', () => {
+    it('returns absent when no config file exists', () => {
+      const result = readProjectConfigWithDiagnostics(tempDir);
+      expect(result).toEqual({ status: 'absent' });
+    });
+
+    it('returns ok with parsed config for a valid file', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprojectId: abc123\n',
+        'utf-8'
+      );
+      const result = readProjectConfigWithDiagnostics(tempDir);
+      expect(result.status).toBe('ok');
+      if (result.status === 'ok') {
+        expect(result.config?.projectId).toBe('abc123');
+      }
+    });
+
+    it('returns unreadable with a diagnostic when YAML is malformed', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprojectId: [unclosed bracket\n',
+        'utf-8'
+      );
+      const result = readProjectConfigWithDiagnostics(tempDir);
+      expect(result.status).toBe('unreadable');
+      if (result.status === 'unreadable') {
+        expect(result.path).toContain('config.yaml');
+        expect(result.error).toBeTruthy();
+      }
+    });
+  });
+
+  describe('pipeline runtime parsing', () => {
+    it('keeps Claude/Codex and drops Zed/unknown runtime leaves', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        `schema: spec-driven
+pipelines:
+  runtime-test:
+    runtimes:
+      planner: claude
+      reviewer: codex
+      fixer: zed
+      shipper: unknown
+`
+      );
+
+      expect(readProjectConfig(tempDir)?.pipelines).toEqual({
+        'runtime-test': {
+          runtimes: {
+            planner: 'claude',
+            reviewer: 'codex',
+          },
+        },
+      });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("pipelines.runtime-test.runtimes.fixer")
+      );
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("pipelines.runtime-test.runtimes.shipper")
+      );
+    });
+  });
+
   describe('validateConfigRules', () => {
     it('should return no warnings for valid artifact IDs', () => {
       const rules = {
@@ -794,6 +890,79 @@ rules:
       const config = readProjectConfig(tempDir);
 
       expect(config).toEqual({ schema: 'spec-driven' });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('profile parsing', () => {
+    it('exposes a valid locked profile name', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprofile: team-web\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven', profile: 'team-web' });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('drops a non-string profile with a warning', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprofile: [not, a, string]\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven' });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid 'profile' field")
+      );
+    });
+
+    it('drops an empty-string profile with a warning', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprofile: ""\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven' });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid 'profile' field")
+      );
+    });
+
+    it('does not warn when profile is absent', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\n');
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven' });
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('parses an unknown profile name without error (resolution decides later)', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprofile: no-such-profile\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+
+      expect(config).toEqual({ schema: 'spec-driven', profile: 'no-such-profile' });
       expect(consoleWarnSpy).not.toHaveBeenCalled();
     });
   });
@@ -1134,13 +1303,13 @@ rules:
     it('honors an explicit config default of off', () => {
       expect(
         resolveAutopilotGatePolicy({ schema: 'spec-driven', autopilot: { gates: 'off' } }, false)
-      ).toEqual({ effective: 'off', source: 'config' });
+      ).toEqual({ effective: 'off', source: 'project' });
     });
 
     it('honors an explicit config default of on', () => {
       expect(
         resolveAutopilotGatePolicy({ schema: 'spec-driven', autopilot: { gates: 'on' } }, false)
-      ).toEqual({ effective: 'on', source: 'config' });
+      ).toEqual({ effective: 'on', source: 'project' });
     });
 
     it('the run flag overrides an on config default', () => {
@@ -1153,6 +1322,86 @@ rules:
       expect(resolveAutopilotGatePolicy(null, true)).toEqual({
         effective: 'off',
         source: 'flag',
+      });
+    });
+
+    it('honors a global default when no project value is set', () => {
+      expect(
+        resolveAutopilotGatePolicy(null, false, { autopilot: { gates: 'off' } })
+      ).toEqual({ effective: 'off', source: 'global' });
+    });
+
+    it('project value wins over global', () => {
+      expect(
+        resolveAutopilotGatePolicy(
+          { schema: 'spec-driven', autopilot: { gates: 'on' } },
+          false,
+          { autopilot: { gates: 'off' } }
+        )
+      ).toEqual({ effective: 'on', source: 'project' });
+    });
+
+    it('falls back to the built-in default when neither scope sets a value', () => {
+      expect(resolveAutopilotGatePolicy(null, false, {})).toEqual({
+        effective: 'on',
+        source: 'default',
+      });
+    });
+
+    it('the run flag wins over both project and global', () => {
+      expect(
+        resolveAutopilotGatePolicy(
+          { schema: 'spec-driven', autopilot: { gates: 'on' } },
+          true,
+          { autopilot: { gates: 'on' } }
+        )
+      ).toEqual({ effective: 'off', source: 'flag' });
+    });
+
+    it('honors a store default when no project value is set (store beats global)', () => {
+      expect(
+        resolveAutopilotGatePolicy(null, false, { autopilot: { gates: 'off' } }, {
+          schema: 'spec-driven',
+          autopilot: { gates: 'on' },
+        })
+      ).toEqual({ effective: 'on', source: 'store' });
+    });
+
+    it('project value wins over the store value', () => {
+      expect(
+        resolveAutopilotGatePolicy(
+          { schema: 'spec-driven', autopilot: { gates: 'on' } },
+          false,
+          null,
+          { schema: 'spec-driven', autopilot: { gates: 'off' } }
+        )
+      ).toEqual({ effective: 'on', source: 'project' });
+    });
+
+    it('the run flag wins over a store value', () => {
+      expect(
+        resolveAutopilotGatePolicy(null, true, null, {
+          schema: 'spec-driven',
+          autopilot: { gates: 'on' },
+        })
+      ).toEqual({ effective: 'off', source: 'flag' });
+    });
+
+    it('an invalid store value falls through to the global layer', () => {
+      expect(
+        resolveAutopilotGatePolicy(
+          null,
+          false,
+          { autopilot: { gates: 'off' } },
+          { schema: 'spec-driven', autopilot: { gates: 'bogus' as never } }
+        )
+      ).toEqual({ effective: 'off', source: 'global' });
+    });
+
+    it('an absent storeConfig behaves exactly as the three-argument form', () => {
+      expect(resolveAutopilotGatePolicy(null, false, { autopilot: { gates: 'off' } }, null)).toEqual({
+        effective: 'off',
+        source: 'global',
       });
     });
   });
@@ -1267,7 +1516,7 @@ rules:
           { schema: 'spec-driven', autopilot: { selection: 'classify' } },
           false
         )
-      ).toEqual({ effective: 'classify', source: 'config' });
+      ).toEqual({ effective: 'classify', source: 'project' });
     });
 
     it('honors an explicit config default of manual', () => {
@@ -1276,7 +1525,7 @@ rules:
           { schema: 'spec-driven', autopilot: { selection: 'manual' } },
           false
         )
-      ).toEqual({ effective: 'manual', source: 'config' });
+      ).toEqual({ effective: 'manual', source: 'project' });
     });
 
     it('the run flag overrides a manual config default', () => {
@@ -1301,7 +1550,7 @@ rules:
           { schema: 'spec-driven', autopilot: { selection: 'compose' } },
           false
         )
-      ).toEqual({ effective: 'compose', source: 'config' });
+      ).toEqual({ effective: 'compose', source: 'project' });
     });
 
     it('the --auto-compose flag resolves compose alone (no --auto-select)', () => {
@@ -1333,6 +1582,82 @@ rules:
         effective: 'classify',
         source: 'flag',
       });
+    });
+
+    it('honors a global default when no project value is set', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(null, false, false, { autopilot: { selection: 'classify' } })
+      ).toEqual({ effective: 'classify', source: 'global' });
+    });
+
+    it('project value wins over global', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'manual' } },
+          false,
+          false,
+          { autopilot: { selection: 'classify' } }
+        )
+      ).toEqual({ effective: 'manual', source: 'project' });
+    });
+
+    it('the run flag wins over both project and global', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'manual' } },
+          true,
+          false,
+          { autopilot: { selection: 'manual' } }
+        )
+      ).toEqual({ effective: 'classify', source: 'flag' });
+    });
+
+    it('honors a store default when no project value is set (store beats global)', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(null, false, false, { autopilot: { selection: 'classify' } }, {
+          schema: 'spec-driven',
+          autopilot: { selection: 'compose' },
+        })
+      ).toEqual({ effective: 'compose', source: 'store' });
+    });
+
+    it('project value wins over the store value', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          { schema: 'spec-driven', autopilot: { selection: 'manual' } },
+          false,
+          false,
+          null,
+          { schema: 'spec-driven', autopilot: { selection: 'classify' } }
+        )
+      ).toEqual({ effective: 'manual', source: 'project' });
+    });
+
+    it('the run flag wins over a store value', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(null, true, false, null, {
+          schema: 'spec-driven',
+          autopilot: { selection: 'manual' },
+        })
+      ).toEqual({ effective: 'classify', source: 'flag' });
+    });
+
+    it('an invalid store value falls through to the global layer', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(
+          null,
+          false,
+          false,
+          { autopilot: { selection: 'classify' } },
+          { schema: 'spec-driven', autopilot: { selection: 'bogus' as never } }
+        )
+      ).toEqual({ effective: 'classify', source: 'global' });
+    });
+
+    it('an absent storeConfig behaves exactly as the four-argument form', () => {
+      expect(
+        resolveAutopilotSelectionPolicy(null, false, false, { autopilot: { selection: 'classify' } }, null)
+      ).toEqual({ effective: 'classify', source: 'global' });
     });
   });
 
@@ -1582,6 +1907,38 @@ rules:
     });
   });
 
+  describe('threshold binding parsing', () => {
+    it('preserves explicit/default rows and syntactically valid dangling scheme names', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nthresholds:\n  bindings:\n    claude: missing-locally\n    default: balanced\n'
+      );
+
+      expect(readProjectConfig(tempDir)?.thresholds?.bindings).toEqual({
+        claude: 'missing-locally',
+        default: 'balanced',
+      });
+    });
+
+    it('does not invent a default row and drops audit-only runtime keys', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nthresholds:\n  bindings:\n    codex: focused\n    zed: focused\n'
+      );
+
+      expect(readProjectConfig(tempDir)?.thresholds?.bindings).toEqual({
+        codex: 'focused',
+      });
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('thresholds.bindings.zed')
+      );
+    });
+  });
+
   describe('updateProjectConfigKey', () => {
     function writeConfig(content: string): string {
       const configDir = path.join(tempDir, 'rasen');
@@ -1656,6 +2013,153 @@ rules:
 
     it('throws with guidance when no config file exists', () => {
       expect(() => updateProjectConfigKey(tempDir, 'autopilot.gates', 'off')).toThrow(/rasen init/);
+    });
+  });
+
+  describe('updateProjectConfigKeys (batched single write)', () => {
+    function writeConfig(content: string): string {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const configPath = path.join(configDir, 'config.yaml');
+      fs.writeFileSync(configPath, content);
+      return configPath;
+    }
+
+    it('sets one key and unsets another in a single write, preserving comments', () => {
+      // The set-profile shape: write the profile lock AND clear the workflows
+      // override together, so the two can never be left in a partial state.
+      const configPath = writeConfig(
+        '# keep me\nschema: spec-driven\nworkflows:\n  - review\n'
+      );
+
+      const result = updateProjectConfigKeys(tempDir, [
+        { keyPath: 'profile', value: 'core' },
+        { keyPath: 'workflows', value: undefined },
+      ]);
+
+      expect(result.existed).toBe(true); // the workflows override was removed
+      const raw = fs.readFileSync(configPath, 'utf-8');
+      expect(raw).toContain('# keep me');
+      // Both edits landed in the one document the caller wrote.
+      const config = readProjectConfig(tempDir);
+      expect(config?.profile).toBe('core');
+      expect(config?.workflows).toBeUndefined();
+    });
+
+    it('applies edits in order (a later edit to the same key wins)', () => {
+      writeConfig('schema: spec-driven\n');
+      updateProjectConfigKeys(tempDir, [
+        { keyPath: 'profile', value: 'full' },
+        { keyPath: 'profile', value: 'core' },
+      ]);
+      expect(readProjectConfig(tempDir)?.profile).toBe('core');
+    });
+
+    it('reports existed=false when no unset edit removed a present key', () => {
+      writeConfig('schema: spec-driven\n');
+      const result = updateProjectConfigKeys(tempDir, [
+        { keyPath: 'profile', value: 'core' },
+        { keyPath: 'workflows', value: undefined },
+      ]);
+      expect(result.existed).toBe(false);
+    });
+
+    it('throws with guidance when no config file exists', () => {
+      expect(() =>
+        updateProjectConfigKeys(tempDir, [{ keyPath: 'profile', value: 'core' }])
+      ).toThrow(/rasen init/);
+    });
+  });
+
+  describe('tools and update fields (project-install-manifest)', () => {
+    it('parses tools: [claude] to { tools: ["claude"] }', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\ntools:\n  - claude\n');
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.tools).toEqual(['claude']);
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('drops numeric entries from tools, keeping valid strings', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\ntools:\n  - claude\n  - 42\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.tools).toEqual(['claude']);
+      expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining("Some 'tools' entries are invalid"));
+    });
+
+    it('drops a non-array tools value with a warning', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\ntools: "claude"\n');
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.tools).toBeUndefined();
+      expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid 'tools' field"));
+    });
+
+    it('parses tools: [] (empty list) to { tools: [] }', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\ntools: []\n');
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.tools).toEqual([]);
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('parses update.pin: true', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nupdate:\n  pin: true\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.update?.pin).toBe(true);
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('drops a non-map update value with a warning', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\nupdate: "yes"\n');
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.update).toBeUndefined();
+      expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid 'update' field"));
+    });
+
+    it('drops a non-boolean update.pin with a warning', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nupdate:\n  pin: "yes"\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.update?.pin).toBeUndefined();
+      expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid 'update.pin' field"));
+    });
+
+    it('parses a config without tools or update keys cleanly', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\n');
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.tools).toBeUndefined();
+      expect(config?.update).toBeUndefined();
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
     });
   });
 });

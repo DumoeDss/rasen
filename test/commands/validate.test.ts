@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { runCLI } from '../helpers/run-cli.js';
+import { scaffoldWorkflow } from '../../src/core/workflow-library.js';
+import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
 describe('top-level validate command', () => {
   const projectRoot = process.cwd();
@@ -60,7 +62,7 @@ describe('top-level validate command', () => {
   });
 
   afterEach(async () => {
-    await fs.rm(testDir, { recursive: true, force: true });
+    await cleanupTempPathAsync(testDir);
   });
 
   it('prints a helpful hint when no args in non-interactive mode', async () => {
@@ -180,7 +182,7 @@ describe('top-level validate command', () => {
       expect(result.stdout + result.stderr).not.toContain('No items found to validate');
       expect(result.exitCode).toBe(0);
     } finally {
-      await fs.rm(isoRoot, { recursive: true, force: true });
+      await cleanupTempPathAsync(isoRoot);
     }
   });
 
@@ -222,7 +224,7 @@ describe('top-level validate command (pipelines)', () => {
   });
 
   afterEach(async () => {
-    await fs.rm(testDir, { recursive: true, force: true });
+    await cleanupTempPathAsync(testDir);
   });
 
   it('reports the three built-ins as valid with --type pipeline (bulk via --pipelines)', async () => {
@@ -305,5 +307,71 @@ describe('top-level validate command (pipelines)', () => {
     const item = json.items[0];
     expect(item.valid).toBe(false);
     expect(item.issues[0].message).toMatch(/unknown skill/);
+  });
+
+  it('reports a distinct error for a known workflow skill disabled by the profile', async () => {
+    await writeProjectPipeline(
+      'disabled-skill',
+      [
+        'name: disabled-skill',
+        'stages:',
+        '  - id: apply',
+        '    skill: rasen-apply-change',
+      ].join('\n')
+    );
+    const home = path.join(testDir, '.rasen-home');
+    await fs.mkdir(home, { recursive: true });
+    await fs.writeFile(
+      path.join(home, 'config.json'),
+      JSON.stringify({ profile: 'custom', delivery: 'both', workflows: ['propose'] })
+    );
+
+    const result = await runCLI(
+      ['validate', 'disabled-skill', '--type', 'pipeline', '--json'],
+      { cwd: testDir, env: { RASEN_HOME: home } }
+    );
+
+    expect(result.exitCode).toBe(1);
+    const json = JSON.parse(result.stdout.trim());
+    expect(json.items[0].issues[0].code).toBe('pipeline_skill_disabled');
+    expect(json.items[0].issues[0].message).toMatch(/known but disabled skill/);
+    expect(json.items[0].issues[0].message).not.toMatch(/unknown skill/);
+  });
+
+  it('enables required user workflow skills through dependency closure', async () => {
+    await writeProjectPipeline(
+      'dependency-skill',
+      [
+        'name: dependency-skill',
+        'stages:',
+        '  - id: base',
+        '    skill: rasen-pipeline-base',
+      ].join('\n')
+    );
+    const home = path.join(testDir, '.dependency-home');
+    const workflowsDir = path.join(home, 'workflows');
+    scaffoldWorkflow('pipeline-base', path.join(workflowsDir, 'pipeline-base'));
+    const rootDir = scaffoldWorkflow('pipeline-root', path.join(workflowsDir, 'pipeline-root'));
+    const rootManifest = path.join(rootDir, 'workflow.yaml');
+    await fs.writeFile(
+      rootManifest,
+      (await fs.readFile(rootManifest, 'utf8')).replace(
+        '  workflows: []',
+        '  workflows: [pipeline-base]'
+      )
+    );
+    await fs.writeFile(
+      path.join(home, 'config.json'),
+      JSON.stringify({ profile: 'custom', delivery: 'skills', workflows: ['pipeline-root'] })
+    );
+
+    const result = await runCLI(
+      ['validate', 'dependency-skill', '--type', 'pipeline', '--json'],
+      { cwd: testDir, env: { RASEN_HOME: home } }
+    );
+
+    expect(result.exitCode).toBe(0);
+    const json = JSON.parse(result.stdout.trim());
+    expect(json.items[0].valid).toBe(true);
   });
 });

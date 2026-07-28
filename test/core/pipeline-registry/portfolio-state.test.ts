@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import {
   parsePortfolioState,
   readPortfolioState,
+  readPortfolioStateDetailed,
   writePortfolioState,
   portfolioStatePath,
   runnableChildren,
@@ -56,6 +57,20 @@ describe('portfolio run-state', () => {
       );
       expect(s.children[0].dependsOn).toEqual([]);
       expect(s.children[0].status).toBe('pending');
+      expect(s.delivery).toEqual({ status: 'pending' });
+    });
+
+    it('migrates legacy delivery metadata without a status to pending', () => {
+      const state = parsePortfolioState(JSON.stringify({
+        parent: 'p',
+        children: [],
+        delivery: { mode: 'local', note: 'deliver once at parent level' },
+      }));
+      expect(state.delivery).toEqual({
+        status: 'pending',
+        mode: 'local',
+        note: 'deliver once at parent level',
+      });
     });
 
     it('keeps unknown passthrough fields', () => {
@@ -93,14 +108,58 @@ describe('portfolio run-state', () => {
       expect(readPortfolioState(dir)).toBeNull();
     });
 
+    it('readPortfolioStateDetailed distinguishes invalid content from absence', () => {
+      expect(readPortfolioStateDetailed(dir)).toEqual({ kind: 'absent' });
+      fs.writeFileSync(portfolioStatePath(dir), '{ broken', 'utf-8');
+      const result = readPortfolioStateDetailed(dir);
+      expect(result.kind).toBe('invalid');
+      if (result.kind === 'invalid') {
+        expect(result.reason).toContain('JSON');
+      }
+    });
+
+    it('migrates legacy prerequisites to canonical dependsOn before computing the frontier', () => {
+      const state = parsePortfolioState(JSON.stringify({
+        parent: 'p',
+        children: [
+          { id: 'D', pipeline: 'small-feature', prerequisites: [], status: 'done' },
+          { id: 'E', pipeline: 'small-feature', prerequisites: ['D'], status: 'pending' },
+          { id: 'F', pipeline: 'small-feature', prerequisites: ['E'], status: 'pending' },
+        ],
+      }));
+      expect(state.children.map(child => child.dependsOn)).toEqual([[], ['D'], ['E']]);
+      expect(runnableChildren(state)).toEqual(['E']);
+      expect(state.children[1]).not.toHaveProperty('prerequisites');
+    });
+
+    it('rejects conflicting canonical and legacy dependency fields', () => {
+      expect(() => parsePortfolioState(JSON.stringify({
+        parent: 'p',
+        children: [{
+          id: 'E',
+          pipeline: 'small-feature',
+          dependsOn: ['D'],
+          prerequisites: ['C'],
+        }],
+      }))).toThrow(/conflicting dependsOn and prerequisites/);
+    });
+
     it('throws on schema mismatch (missing parent)', () => {
       expect(() => parsePortfolioState('{"children":[]}')).toThrow(PortfolioStateValidationError);
     });
 
-    it('throws on an invalid child status', () => {
-      expect(() =>
-        parsePortfolioState('{"parent":"p","children":[{"id":"c","pipeline":"x","status":"nope"}]}')
-      ).toThrow(PortfolioStateValidationError);
+    it('preserves an unrecognized child status in statusRaw and types it unknown (M4: out-of-enum is not pending)', () => {
+      const state = parsePortfolioState('{"parent":"p","children":[{"id":"c","pipeline":"x","status":"nope"}]}');
+      expect(state.children[0].status).toBe('unknown');
+      expect(state.children[0].statusRaw).toBe('nope');
+    });
+
+    it('preserves delegated in statusRaw rather than rejecting it (typed unknown: delegated is a parent-stage status, not a child status)', () => {
+      const state = parsePortfolioState(
+        '{"parent":"p","children":[{"id":"c","pipeline":"x","status":"delegated"}]}'
+      );
+      expect(state.children[0].status).toBe('unknown');
+      expect(state.children[0].statusRaw).toBe('delegated');
     });
   });
 
@@ -260,14 +319,16 @@ describe('portfolio run-state', () => {
   });
 
   describe('isPortfolioComplete', () => {
-    it('is true only when every child is done or skipped', () => {
-      const s: PortfolioState = {
+    it('requires both terminal children and terminal portfolio delivery', () => {
+      const s = parsePortfolioState(JSON.stringify({
         parent: 'p',
         children: [
           { id: 'A', pipeline: 'small-feature', dependsOn: [], status: 'done' },
           { id: 'B', pipeline: 'small-feature', dependsOn: ['A'], status: 'skipped' },
         ],
-      };
+      }));
+      expect(isPortfolioComplete(s)).toBe(false);
+      s.delivery.status = 'done';
       expect(isPortfolioComplete(s)).toBe(true);
       s.children[1].status = 'pending';
       expect(isPortfolioComplete(s)).toBe(false);

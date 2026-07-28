@@ -1,6 +1,6 @@
 {
   "name": "@atelierai/rasen",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "AI-native system for spec-driven development",
   "keywords": [
     "rasen",
@@ -36,13 +36,14 @@
     "schemas",
     "skills",
     "pipelines",
+    "viewer",
     "scripts/postinstall.js",
     "!dist/**/*.test.js",
     "!dist/**/__tests__",
     "!dist/**/*.map"
   ],
   "scripts": {
-    "lint": "eslint src/",
+    "lint": "eslint src/ test/ vitest.config.ts vitest.setup.ts",
     "build": "node build.js",
     "dev": "tsc --watch",
     "dev:cli": "pnpm build && node bin/rasen.js",
@@ -54,7 +55,9 @@
     "prepare": "pnpm run build",
     "prepublishOnly": "pnpm run build",
     "postinstall": "node scripts/postinstall.js",
-    "check:pack-version": "node scripts/pack-version-check.mjs"
+    "check:pack-version": "node scripts/pack-version-check.mjs",
+    "check:paired-pack": "node scripts/paired-pack-check.mjs",
+    "check:release": "node scripts/release-contract.mjs"
   },
   "engines": {
     "node": ">=20.19.0"
@@ -71,12 +74,20 @@
   "dependencies": {
     "@inquirer/core": "^10.3.2",
     "@inquirer/prompts": "^7.10.1",
+    "canonicalize": "^3.0.0",
     "chalk": "^5.5.0",
+    "cli-width": "^4.1.0",
     "commander": "^14.0.0",
     "cross-spawn": "7.0.6",
     "fast-glob": "^3.3.3",
+    "fzstd": "^0.1.1",
+    "jsonc-parser": "^3.3.1",
+    "node-sqlite3-wasm": "^0.8.59",
     "ora": "^8.2.0",
-    "yaml": "^2.8.2",
+    "string-width": "^8.2.2",
+    "string-width-legacy": "npm:string-width@4.2.3",
+    "toml-eslint-parser": "^1.0.3",
+    "yaml": "^2.9.0",
     "zod": "^4.0.17"
   }
 }

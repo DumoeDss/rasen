@@ -15,22 +15,22 @@
   <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/%ED%95%9C%EA%B5%AD%EC%96%B4-4AF626?style=flat-square&labelColor=050505" /></a>
 </p>
 
-**Rasen**은 스펙 주도(spec-driven) 개발 워크플로 위에 자율 오케스트레이션 하니스를 얹은 도구입니다 — 당신이 스펙을 쓰면, 하니스가 change를 propose → apply → archive로 이끌며 작업이 끝날 때까지 스스로 반복합니다.
+**Rasen**은 자율 하니스입니다 — 코딩 에이전트의 내부 루프를 감싸는, 설계된 **외부 루프**입니다. 당신은 의도만 전달하면 됩니다 — 목표, 버그, 기능 요청 — 하니스가 스스로 제안 → 구현 → 리뷰 → 수정 → 배포 → 보관을 진행하며, 작업이 끝날 때까지 반복합니다. 소프트웨어 개발의 자동변속기: **코드가 아니라 아이디어를 다루세요.**
 
 ## 원이 아니라, 나선
 
 출발점으로 되돌아오는 루프는 그저 원일 뿐입니다. Rasen(螺旋, "나선")은 위로 올라가는 루프의 형태입니다. 그것이 이 도구의 전부이며, 실제 동작 방식과 그대로 맞물립니다:
 
-- **스펙이 원점입니다.** 모든 change는 코드를 쓰기 전에 `rasen/` 워크스페이스에 기록된 의도 — 제안, 요구사항, 설계, 작업 목록 — 에서 시작합니다. `/rasen:propose → apply → archive`.
+- **의도가 기원이다.** 모든 변경은 당신이 써야 하는 문서가 아니라, 당신이 원하는 것에서 시작한다 — 목표, 버그 리포트, 기능 요청. 하니스가 그것을 `rasen/` 워크스페이스에 기록하고 바로 작업에 들어간다: `/rasen-propose → apply → archive`. 그 과정에서 나오는 스펙은 파이프라인이 스스로 쌓아가는 작업 기억일 뿐, 당신에게 돌아오는 숙제가 아니다.
 - **루프가 형태입니다.** 작업은 한 번의 워터폴 통과가 아니라 주기로 진행됩니다. `rasen` 파이프라인 패밀리 — `small-feature`, `bug-fix`, `full-feature`, `auto-decompose` — 가 작업을 propose, implement, review, ship의 루프로 빚어냅니다.
-- **한 바퀴마다 상승합니다.** 하니스는 단순 반복이 아니라 전진합니다. `/rasen:auto`는 LEAD를 세워 역할이 분리된 서브에이전트, 스스로의 실수를 잡아내는 리뷰 사이클, 세션을 넘어 컨텍스트를 이어주는 handoff/릴레이를 오케스트레이션합니다 — 매 바퀴가 시작보다 높은 곳에서 끝나도록.
-- **돌파할 때까지.** `/rasen:goal`은 문서가 아니라 조건으로 나선을 닫습니다: 지표를 목표치까지 끌어올리고, 모듈을 루브릭 통과 수준으로 다듬고, 브리프에 답이 나올 때까지 리서치합니다 — gate가 충족될 때까지 modify → judge를 반복합니다.
+- **한 바퀴마다 상승합니다.** 하니스는 단순 반복이 아니라 전진합니다. `/rasen-auto`는 LEAD를 세워 역할이 분리된 서브에이전트, 스스로의 실수를 잡아내는 리뷰 사이클, 세션을 넘어 컨텍스트를 이어주는 handoff/릴레이를 오케스트레이션합니다 — 매 바퀴가 시작보다 높은 곳에서 끝나도록.
+- **돌파할 때까지.** `/rasen-goal`은 문서가 아니라 조건으로 나선을 닫습니다: 지표를 목표치까지 끌어올리고, 모듈을 루브릭 통과 수준으로 다듬고, 브리프에 답이 나올 때까지 리서치합니다 — gate가 충족될 때까지 modify → judge를 반복합니다.
 
-스펙은 출발점이고, 나선은 도달하는 방식입니다.
+의도가 출발점이고, 나선은 도달하는 방식입니다.
 
 ## 계보(Lineage)
 
-Rasen은 Fission-AI의 [OpenSpec](https://github.com/Fission-AI/OpenSpec)(MIT)에서 포크되었으며, [Sayo](https://github.com/DumoeDss)가 독립적으로 유지보수합니다. **Fission-AI와는 무관합니다**. 워크플로 시맨틱은 업스트림 **OpenSpec v1.5.0**과 정렬되어 있고 — `propose → apply → archive`의 spec/change 모델은 동일합니다 — 다만 rasen은 **독립된 네임스페이스**에서 동작합니다: `rasen` 바이너리, `/rasen:*` 슬래시 명령, `rasen-*` 스킬, 그리고 `rasen/` 워크스페이스. rasen은 그 위에 자율 오케스트레이션을 얹으며, 업스트림 `openspec/` 설치는 절대 건드리지 않습니다.
+Rasen은 Fission-AI의 [OpenSpec](https://github.com/Fission-AI/OpenSpec)(MIT)에서 포크되었으며, [Sayo](https://github.com/DumoeDss)가 독립적으로 유지보수합니다. **Fission-AI와는 무관합니다**. 워크플로 시맨틱은 업스트림 **OpenSpec v1.5.0**과 정렬되어 있고 — `propose → apply → archive`의 spec/change 모델은 동일합니다 — 다만 rasen은 **독립된 네임스페이스**에서 동작합니다: `rasen` 바이너리, `/rasen-*` 슬래시 명령, `rasen-*` 스킬, 그리고 `rasen/` 워크스페이스. rasen은 그 위에 자율 오케스트레이션을 얹으며, 업스트림 `openspec/` 설치는 절대 건드리지 않습니다.
 
 ## 설치
 
@@ -47,13 +47,29 @@ cd your-project
 rasen init
 ```
 
-`rasen init`은 `rasen/` 워크스페이스(specs와 changes)를 만들고, 당신의 AI 코딩 도구에 `/rasen:*` 슬래시 명령을 설치합니다.
+`rasen init`은 `rasen/` 워크스페이스(specs와 changes)를 만들고, 당신의 AI 코딩 도구에 `/rasen-*` 슬래시 명령을 설치합니다.
 
 업그레이드 후 AI 가이드를 갱신하고 최신 슬래시 명령을 받으려면:
 
 ```bash
 rasen update
 ```
+
+## Web UI
+
+CLI 곁에는 브라우저 기반 관리 플랫폼이 있습니다. CLI 옆에 UI 패키지를 설치한 뒤 실행하세요:
+
+```bash
+npm i -g @atelierai/rasen-ui
+rasen ui
+```
+
+`rasen ui`는 상주 백그라운드 데몬을 시작(또는 연결)하고 — 127.0.0.1에만 바인딩, 세션별 토큰 — 앱을 엽니다:
+
+- **Board** — 활성 change를 Task 단위로 라이프사이클 열에 배치. 스페이스 스위처로 모든 프로젝트와 store를 넘나듭니다.
+- **Sessions** — 브라우저에서 headless `/rasen-auto` / `/rasen-goal` 실행을 시작하고, 출력을 지켜보고, 클릭 한 번으로 종료. 터미널을 닫아도 살아 있습니다.
+- **파이프라인 캔버스** — 어떤 파이프라인이든 DAG로 보고, 스킬을 캔버스로 끌어와 새 파이프라인을 조립. 저장 전 서버 측 검증이 실행됩니다.
+- **Config / Workflows / Profiles** — 상속 출처가 보이는 계층형 설정, 스페이스별로 켜고 끌 수 있는 설치형 워크플로 라이브러리, 이름 있는 워크플로 프로파일.
 
 ## OpenSpec과의 공존
 
@@ -62,7 +78,7 @@ Rasen은 업스트림 OpenSpec과 충돌 없이 **나란히** 살도록 설계�
 | 인터페이스 | OpenSpec | Rasen |
 | --- | --- | --- |
 | 바이너리 | `openspec` | `rasen` |
-| 슬래시 명령 | `/opsx:*` | `/rasen:*` |
+| 슬래시 명령 | `/opsx:*` | `/rasen-*` |
 | 스킬 | `openspec-*` | `rasen-*` |
 | 워크스페이스 | `openspec/` | `rasen/` |
 
@@ -87,18 +103,21 @@ rasen migrate
 
 ## 무엇을 얻게 되나
 
-- **스펙 주도 워크플로** — 모든 change는 제안, specs, 설계, 작업 목록이 담긴 하나의 폴더입니다. 코드를 쓰기 전에 무엇을 만들지 합의합니다: `/rasen:propose → /rasen:apply → /rasen:archive`.
-- **`rasen` 파이프라인 패밀리** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose`가 데이터(YAML)로 제공됩니다; `rasen pipeline show|list|classify|resume`으로 확인하세요. 작업 유형 추가는 파일 하나 추가, 코드는 제로.
-- **`/rasen:auto` 오토파일럿** — 명령 하나로 에이전트가 **LEAD**가 되어 역할이 분리된 서브에이전트(planner / implementer / reviewer / fixer / shipper)를 파이프라인 전체에 걸쳐 오케스트레이션하고, gate에서만 멈춥니다.
-- **`/rasen:goal` 목표 주도 반복** — `/rasen:auto`의 자매 명령으로, "완료"가 문서가 아니라 조건인 작업을 위한 것입니다(Lighthouse를 90까지 올리기, 모듈을 루브릭 통과 수준으로 다듬기, 리서치해서 브리프 쓰기). LEAD가 작업을 measure / evaluate / research 백엔드로 분류하고, gate가 충족되거나 라운드 상한에 도달할 때까지 modify → judge를 반복합니다.
+- **의도 기반 워크플로우** — 무엇을 만들지 말하기만 하면 된다. 하니스가 작업하는 동안 제안서, 스펙, 설계, 작업 목록을 담은 폴더를 스스로 생성하고 유지한다 — 당신이 직접 쓸 필요가 없다: `/rasen-propose → /rasen-apply-change → /rasen-archive-change`.
+- **`rasen` 파이프라인 패밀리** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose`가 데이터(YAML)로 제공됩니다; `rasen pipeline show|list|classify|resume`으로 확인하고, `rasen pipeline import|export`로 설치형 패키지로 공유하거나, web UI의 파이프라인 캔버스에서 드래그 앤 드롭으로 직접 조립하세요. 작업 유형 추가는 파일 하나 추가, 코드는 제로.
+- **`rasen ui` 관리 플랫폼** — 로컬 web UI: 작업 보드, 터미널보다 오래 살아남는 감독형 headless 에이전트 세션, 파이프라인 캔버스, config/workflow/profile 관리. [Web UI](#web-ui) 참조.
+- **`/rasen-auto` 오토파일럿** — 명령 하나로 에이전트가 **LEAD**가 되어 역할이 분리된 서브에이전트(planner / implementer / reviewer / fixer / shipper)를 파이프라인 전체에 걸쳐 오케스트레이션하고, gate에서만 멈춥니다.
+- **`/rasen-goal` 목표 주도 반복** — `/rasen-auto`의 자매 명령으로, "완료"가 문서가 아니라 조건인 작업을 위한 것입니다(Lighthouse를 90까지 올리기, 모듈을 루브릭 통과 수준으로 다듬기, 리서치해서 브리프 쓰기). LEAD가 작업을 measure / evaluate / research 백엔드로 분류하고, gate가 충족되거나 라운드 상한에 도달할 때까지 modify → judge를 반복합니다.
 - **Auto-decompose** — 리뷰 가능한 diff 하나에 담기엔 너무 큰 작업을, 의존성 DAG와 보수적인 직렬/병렬 정책과 함께 독립적으로 배포 가능한 자식 change들로 분할합니다.
 - **chrome-use** — CDP로 실제 Chrome을 조작하는 전문가: 탐색, 클릭, 네트워크 캡처, JS 주입, cookie와 `localStorage` 읽기, 요청 대기 — 로그인이 필요한 페이지, SPA, 단순 fetch로는 닿지 않는 모든 것을 위해.
-- **컨텍스트 감지와 handoff** — `rasen agent context`가 실제 점유율을 측정하고; `/rasen:handoff`가 증류된 체크포인트를 기록하며; worker는 소프트 예산에서 스스로 교대하고, compact 복구 훅이 auto-compact 후 세션을 증류물에 다시 고정합니다 — 긴 작업이 컨텍스트 한계를 버텨내도록.
+- **컨텍스트 감지와 handoff** — `rasen agent context`가 실제 점유율을 측정하고; `/rasen-handoff`가 증류된 체크포인트를 기록하며; worker는 소프트 예산에서 스스로 교대하고, compact 복구 훅이 auto-compact 후 세션을 증류물에 다시 고정합니다 — 긴 작업이 컨텍스트 한계를 버텨내도록.
+- **프롬프트 캐시 킵얼라이브** — `rasen agent wait`는 유휴 worker를 킵얼라이브 비트에 정박시켜 5분짜리 프롬프트 캐시가 만료되지 않게 합니다 — implementer를 기다리는 reviewer가 다음 턴에 전체 컨텍스트 재작성 비용을 치르지 않습니다. 비트 길이는 `keepalive.beatSeconds`로 조절합니다.
+- **토큰 감사** — `rasen agent audit`는 세션의 토큰이 실제로 어디에 쓰였는지 보여줍니다: 에이전트별 소비, 캐시 churn과 그 원인, 번들 HTML 뷰어 포함. Claude Code 트랜스크립트와 Codex 롤아웃을 모두 지원하며, 완전 로컬 — 아무것도 업로드하지 않습니다.
 
 ## 실제 동작 예시
 
 ```text
-You: /rasen:explore
+You: /rasen-explore
 AI:  무엇을 탐색하시겠어요?
 You: 다크 모드를 넣고 싶은데 깔끔한 방법을 모르겠어.
 AI:  스타일링 구성을 살펴볼게요...
@@ -106,7 +125,7 @@ AI:  스타일링 구성을 살펴볼게요...
      시스템 설정 감지 포함. 새 의존성 없음. 범위를 정할까요?
 You: 좋아, 그렇게 하자.
 
-You: /rasen:propose add-dark-mode
+You: /rasen-propose add-dark-mode
 AI:  rasen/changes/add-dark-mode/ 생성됨
      ✓ proposal.md — 왜 하는지, 무엇이 바뀌는지
      ✓ specs/       — 요구사항과 시나리오
@@ -114,7 +133,7 @@ AI:  rasen/changes/add-dark-mode/ 생성됨
      ✓ tasks.md     — 구현 체크리스트
      구현 준비 완료!
 
-You: /rasen:apply
+You: /rasen-apply-change
 AI:  작업 실행 중...
      ✓ 1.1 테마 context 프로바이더 추가
      ✓ 1.2 토글 컴포넌트 생성
@@ -122,7 +141,7 @@ AI:  작업 실행 중...
      ✓ 2.2 localStorage 연결
      모든 작업 완료!
 
-You: /rasen:archive
+You: /rasen-archive-change
 AI:  rasen/changes/archive/2026-01-23-add-dark-mode/ 에 아카이브됨
      스펙 갱신 완료. 다음 기능을 맞이할 준비가 됐습니다.
 ```

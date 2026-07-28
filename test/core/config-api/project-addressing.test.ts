@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -7,8 +9,12 @@ import {
   resolveProjectSelector,
   resolveLaunchProjectRef,
 } from '../../../src/core/config-api/project-addressing.js';
-import { registerProject } from '../../../src/core/project-registry.js';
+import {
+  readProjectRegistryState,
+  registerProject,
+} from '../../../src/core/project-registry.js';
 import { FileSystemUtils } from '../../../src/utils/file-system.js';
+import { isolatedGitEnv } from '../../helpers/store-git.js';
 
 describe('project-addressing', () => {
   let globalDataDir: string;
@@ -70,6 +76,40 @@ describe('project-addressing', () => {
       await expect(
         resolveProjectSelector(path.join(os.tmpdir(), 'rasen-does-not-exist-xyz'))
       ).resolves.toBeNull();
+    });
+
+    it('resolves a worktree root path to the owning project with no side effects (worktree-aware-spaces D3)', async () => {
+      const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-addr-wt-main-'));
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(repoRoot) };
+      execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoRoot, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitExecEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      const worktreePath = path.join(path.dirname(repoRoot), `rasen-addr-wt-${randomUUID().slice(0, 8)}`);
+      execFileSync('git', ['worktree', 'add', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      const { entry, canonicalPath } = await registerProject({
+        projectRoot: repoRoot,
+        projectId: 'wt-owner',
+        mode: 'in-repo',
+      });
+
+      const before = JSON.stringify(await readProjectRegistryState());
+
+      const resolved = await resolveProjectSelector(worktreePath);
+      const canonicalWorktree = FileSystemUtils.canonicalizeExistingPath(worktreePath);
+      // The owning project's identity, answered from the worktree's own root.
+      expect(resolved).toEqual({
+        root: canonicalWorktree,
+        ref: { projectId: entry.projectId, name: entry.name, root: canonicalWorktree },
+      });
+      expect(resolved?.ref.projectId).toBe('wt-owner');
+      expect(canonicalWorktree).not.toBe(canonicalPath);
+      // Non-mutating: no registry entry, identity, or directory created.
+      expect(JSON.stringify(await readProjectRegistryState())).toBe(before);
+
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      fs.rmSync(repoRoot, { recursive: true, force: true });
     });
   });
 

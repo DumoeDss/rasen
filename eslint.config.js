@@ -2,8 +2,23 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    files: ['src/**/*.ts'],
+    files: [
+      'src/**/*.ts',
+      'test/**/*.ts',
+      'vitest.config.ts',
+      'vitest.setup.ts',
+    ],
     extends: [...tseslint.configs.recommended],
+    rules: {
+      // Disable rules that need broader cleanup - focus on critical issues only
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+      'no-empty': 'off',
+      'prefer-const': 'off',
+    },
+  },
+  {
+    files: ['src/**/*.ts'],
     rules: {
       // Prevent static imports of @inquirer modules to avoid pre-commit hook hangs.
       // These modules have side effects that can keep the Node.js event loop alive
@@ -21,11 +36,6 @@ export default tseslint.config(
           ],
         },
       ],
-      // Disable rules that need broader cleanup - focus on critical issues only
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unused-vars': 'off',
-      'no-empty': 'off',
-      'prefer-const': 'off',
     },
   },
   {

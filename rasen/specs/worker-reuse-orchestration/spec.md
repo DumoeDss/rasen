@@ -68,18 +68,36 @@ The playbook SHALL exclude the design-level fixer from reuse (its value is fresh
 
 ### Requirement: Reuse threshold vs handoff threshold selection rule
 
-The orchestration playbook SHALL state one general rule for which threshold governs a context-occupancy decision, and the warm-continue guard (Step H.2) SHALL inline-exempt cross-change re-staffing from the handoff threshold. A **mid-task relay** decision (keep going on the current task) SHALL compare occupancy to the **handoff** threshold (default 0.5). A **cross-change re-staffing** decision (take on a whole new child change — planner reuse per Step B.1.5, cross-child implementer reuse per Step G.1.3) SHALL compare occupancy to the **reuse** threshold (default 0.25, stricter). Step H.2 SHALL forward-reference B.1.5 / G.1.3 for these cases so the reuse threshold, not the handoff threshold, is applied to planner and cross-child reuse.
+The orchestration playbook SHALL state one general rule for which threshold governs a context-occupancy decision, and the warm-continue guard (Step H.2) SHALL inline-exempt cross-change re-staffing from the handoff threshold. A **mid-task relay** decision (keep going on the current task) SHALL compare occupancy to the resolved **handoff** threshold. A **cross-change re-staffing** decision (take on a whole new child change—planner reuse per Step B.1.5, cross-child implementer reuse per Step G.1.3) SHALL compare occupancy to the resolved **reuse** threshold. Step H.2 SHALL forward-reference B.1.5 / G.1.3 for these cases so the reuse threshold, not the handoff threshold, is applied to planner and cross-child reuse.
+
+For each reuse role, the playbook SHALL state the complete order: a scheme selected by that role's effective runtime binding (`reuseRoles[role]` before scheme scalar) > pipeline YAML reuse role/scalar > model preset > built-in default 0.25. Runtime binding candidates SHALL use explicit runtime project/store/global rows before default project/store/global rows, skipping missing/invalid schemes with a warning. It SHALL also state that the pipeline-level reuse `.threshold` has no role runtime and therefore considers only the default binding row before pipeline scalar and default. Reuse modes remain pipeline declaration then default. The LEAD SHALL use `resolvePipelineReuseConfig(pipeline)` as reported by `rasen pipeline show`, not duplicate this chain in orchestration logic.
 
 #### Scenario: planner reuse uses the reuse threshold, not the handoff threshold
 
 - **WHEN** the generated Step H.2 warm-continue guard is inspected
-- **THEN** it SHALL state that planner reuse and cross-child implementer reuse compare against the reuse threshold (default 0.25) per Step B.1.5 / G.1.3
-- **AND** SHALL NOT direct those cross-change decisions to the handoff threshold (default 0.5)
+- **THEN** it SHALL state that planner reuse and cross-child implementer reuse compare against the role's resolved reuse threshold per Step B.1.5 / Step G.1.3
+- **AND** SHALL NOT direct those cross-change decisions to the handoff threshold
 
 #### Scenario: general rule stated once
 
 - **WHEN** the generated playbook Step H preamble is inspected
 - **THEN** it SHALL distinguish a mid-task relay decision (handoff threshold) from a cross-change re-staffing decision (reuse threshold)
+
+#### Scenario: role reuse chain includes runtime-bound schemes
+
+- **WHEN** Step H's reuse guidance is inspected
+- **THEN** it SHALL place the actual role runtime's bound scheme before pipeline role/scalar, preset, and default
+- **AND** SHALL state scheme role override before scheme scalar
+
+#### Scenario: planner and implementer can resolve different bindings
+
+- **WHEN** planner effectively runs on Claude and implementer effectively runs on Codex
+- **THEN** the playbook SHALL direct each role to consume its independently resolved reuse threshold rather than applying one pipeline-wide runtime
+
+#### Scenario: top-level reuse uses only the default row
+
+- **WHEN** Step H describes `resolvePipelineReuseConfig(pipeline).threshold`
+- **THEN** it SHALL state that runtime-specific rows do not apply to that role-agnostic summary and only the default binding row precedes pipeline scalar and built-in default
 
 ### Requirement: Reuse threshold is an occupancy ceiling
 
@@ -90,3 +108,94 @@ The `ReuseThresholdSchema` documentation in `src/core/pipeline-registry/types.ts
 - **WHEN** `ReuseThresholdSchema`'s doc comment is inspected
 - **THEN** it SHALL describe the fraction form as an occupancy ceiling (max occupancy to take a new change, `pct ≤ threshold → reuse`), not required headroom
 - **AND** it SHALL describe the absolute form as a headroom floor (`remainingTokens >= N → reuse`)
+
+### Requirement: Apply implementer parks pending its first review verdict
+
+When a review or verify stage immediately follows apply and the apply implementer's context occupancy is at or above the playbook's context floor for parking (the same floor already used to decide whether a worker is cheap enough to just re-spawn), the LEAD SHALL dispatch that implementer to park (via the parked-worker keepalive mechanism) for the interval between finishing apply and receiving the first review verdict, rather than leaving it un-parked to idle until its prompt cache expires. When the first verdict is clean, the LEAD SHALL stand the parked implementer down through the normal stand-down protocol. When the first verdict routes a fix back to that implementer, the LEAD SHALL deliver it through the parked-worker signal-file channel and the implementer resumes as an active worker to perform the fix, rather than being cold-restarted.
+
+#### Scenario: High-context implementer parks through the review window
+
+- **WHEN** an apply implementer above the parking context floor finishes apply and a review stage begins
+- **THEN** the LEAD SHALL dispatch it to park pending the first review verdict instead of leaving it un-parked
+
+#### Scenario: Low-context implementer is not parked
+
+- **WHEN** an apply implementer below the parking context floor finishes apply
+- **THEN** the LEAD MAY leave it un-parked, since rebuilding its context from scratch is cheap
+
+#### Scenario: Clean first verdict stands the parked implementer down
+
+- **WHEN** a parked apply implementer's first review verdict is clean
+- **THEN** the LEAD SHALL stand it down through the normal stand-down protocol rather than keeping it parked further
+
+#### Scenario: A routed-back fix reaches the parked implementer via signal file, not SendMessage
+
+- **WHEN** a parked apply implementer's first review verdict routes a non-trivial fix back to it
+- **THEN** the LEAD SHALL deliver that fix through the parked-worker signal-file channel
+- **AND** SHALL NOT `SendMessage` the parked implementer directly, since mid-park delivery rebases its cache and defeats the purpose of parking it
+
+### Requirement: Keepalive reuse horizons
+The orchestration playbook SHALL assign every dispatched worker a reuse horizon at dispatch time, one of: `ONE_SHOT` (the default — the worker exits on DONE and never invokes `rasen agent wait`), `LOOP_BOUND` (review-cycle reviewer/fixer workers — the worker parks with `rasen agent wait` between loop rounds and stands down when the loop exits via review-clean or max-rounds), or `MILESTONE_BOUND` (the decompose planner — the worker parks between reuses and the LEAD writes a stand-down signal when the milestone is reached; for the decompose planner the milestone is the completion of the last child change's propose stage). Workers in wide fan-out stages (e.g. the verify expert fan-out) SHALL always be dispatched `ONE_SHOT`.
+
+#### Scenario: ONE_SHOT worker exits without keepalive
+- **WHEN** a ship worker completes its unit of work
+- **THEN** it reports DONE and exits without ever invoking `rasen agent wait`
+
+#### Scenario: LOOP_BOUND reviewer parks between rounds
+- **WHEN** a review-cycle reviewer finishes a review round while the fixer works
+- **THEN** the reviewer parks by invoking `rasen agent wait` in a loop, acting on each JSON outcome, and stands down (handoff, DONE, exit) when the review loop exits or the wait returns `standDown`
+
+#### Scenario: MILESTONE_BOUND planner stands down after the last propose
+- **WHEN** the last child change's propose stage completes in a decompose run
+- **THEN** the LEAD writes a `standDown` signal for the planner's role key, and the parked planner's next wait beat returns it
+
+#### Scenario: Fan-out workers are never kept alive
+- **WHEN** the verify stage fans out parallel expert workers
+- **THEN** every fanned-out worker is dispatched with the `ONE_SHOT` horizon
+
+### Requirement: Signal-file-only interaction with parked workers
+While a worker is parked in `rasen agent wait`, the LEAD SHALL interact with it exclusively by writing signal files (`kind: "resume"` with the instruction payload, or `kind: "standDown"`) using an atomic write (temp file then rename) to `<changeRoot>/signals/<role>.json`. The playbook SHALL forbid sending SendMessage to a parked worker (empirically a SendMessage delivery rebases the worker's conversation and invalidates its conversation-segment cache). SendMessage rules for workers in an active turn are unchanged.
+
+#### Scenario: Resume via signal file
+- **WHEN** the LEAD needs a parked LOOP_BOUND fixer to start the next fix round
+- **THEN** the LEAD writes a `resume` signal carrying the round instruction, and the fixer receives it as the wait invocation's JSON result
+
+#### Scenario: No SendMessage to parked workers
+- **WHEN** the playbook instructs the LEAD on resuming or stopping a parked worker
+- **THEN** the instructions require the signal-file channel and prohibit SendMessage for parked workers
+
+### Requirement: Stand-down protocol
+When a parked worker's wait returns `{ standDown: true }` for any reason (`beat-cap`, `lead-stand-down`, `runtime-not-gated`, `context-below-floor`), the worker SHALL follow the stand-down protocol: write or refresh its handoff distillate to the change directory, report DONE with its durable findings, and exit, freeing its concurrency slot. The LEAD SHALL treat a stood-down worker as retired and use cold-start seeding (dispatch brief plus handoff document) for any successor.
+
+#### Scenario: Worker stands down on beat cap
+- **WHEN** a parked reviewer's wait returns `{ standDown: true, reason: "beat-cap" }`
+- **THEN** the reviewer writes its handoff, reports DONE, and exits, and the LEAD seeds any later re-review from the handoff plus the on-disk review report rather than resuming the retired worker
+
+### Requirement: Parked-worker beat economy discipline
+
+The generated orchestration playbook (the shared template embedded in the autopilot, goal, and review-cycle skills) SHALL state the beat economy discipline for parked workers:
+
+1. **Timeout pairing in park dispatches**: every dispatch instruction that tells a worker to park via `rasen agent wait` SHALL, in the same instruction, require the wait call to be issued with an explicit shell tool `timeout` of 330000 milliseconds — a fixed constant covering the maximum configurable beat (280 seconds) plus margin — so a configured beat is never killed by the shell tool's default timeout.
+2. **Beat silence**: on receiving a `{beat}` outcome the worker SHALL emit no visible text and no deliberation — it immediately re-issues the identical wait call, so each continuation remains a pure tool-result extension of the cached prefix.
+3. **Prompt stand-down**: the LEAD SHALL write a `standDown` signal as soon as a parked worker is no longer needed; the beat cap SHALL be described as a stop-loss backstop, not the retirement mechanism.
+4. **Long-command warming**: the playbook's long-running-task discipline SHALL direct that commands expected to exceed roughly 2 minutes, or of unknown duration (test suites, builds), run via the shell tool's background mode with bounded foreground polling at intervals of at most 270 seconds — stating both rationales: background-completion notifications can be lost, and each foreground poll return refreshes the prompt cache — while short commands stay in the foreground. The polling interval bound SHALL be the fixed 270-second figure, not a value derived from the beat configuration.
+
+#### Scenario: Park dispatch pairs beat and timeout
+
+- **WHEN** the generated playbook's parked-worker keepalive section is inspected
+- **THEN** it requires park dispatch wording to name the explicit 330000 ms tool timeout together with the `rasen agent wait` call
+
+#### Scenario: Beat outcome is silent
+
+- **WHEN** the playbook describes handling of a `{beat, remaining}` outcome
+- **THEN** it requires the worker to re-issue the wait call immediately with no intervening prose or deliberation
+
+#### Scenario: Stand-down is prompt, cap is backstop
+
+- **WHEN** the playbook describes ending a park
+- **THEN** it directs the LEAD to write the `standDown` signal as soon as the worker is no longer needed and characterizes the beat cap as a stop-loss backstop
+
+#### Scenario: Long commands run backgrounded with bounded polling
+
+- **WHEN** the playbook's long-running-task discipline is inspected
+- **THEN** it directs commands over ~2 minutes or of unknown duration to background execution with foreground polling at intervals of at most 270 seconds, citing both the lost-notification and cache-refresh rationales, and keeps short commands in the foreground

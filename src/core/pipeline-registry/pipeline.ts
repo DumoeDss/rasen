@@ -1,9 +1,9 @@
 import * as fs from 'node:fs';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { PipelineYamlSchema, type PipelineYaml, type Stage } from './types.js';
 
 export class PipelineValidationError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly code = 'pipeline_invalid') {
     super(message);
     this.name = 'PipelineValidationError';
   }
@@ -54,13 +54,22 @@ export function parsePipeline(yamlContent: string): PipelineYaml {
 }
 
 /**
- * Enforces the quality floor on a LEAD-composed pipeline (autonomy-ladder
- * rung 2: composed pipelines): when `origin: composed`, the pipeline MUST
- * contain at least one stage with `role: 'reviewer'` (verification) and at
- * least one stage with `loop.kind: 'review-cycle'` (review loop) — the LEAD
- * never composes itself an inspection-free pipeline. Scoped to the marker so
- * human-authored pipelines (no `origin`, e.g. the built-in `bug-fix`, which
- * has no review-loop stage) are entirely unaffected.
+ * Emits the canonical YAML projection of an already validated Pipeline
+ * definition. Re-running the schema normalizer is intentional: every public
+ * writer (scaffold, save, export) gets the same defaults and content-version
+ * stamp instead of maintaining its own serialization rules.
+ */
+export function serializePipelineYaml(pipeline: PipelineYaml): string {
+  return stringifyYaml(PipelineYamlSchema.parse(pipeline));
+}
+
+/**
+ * Enforces the autopilot-composed quality floor (autonomy-ladder rung 2):
+ * `origin: 'composed'` pipelines MUST contain at least one stage with
+ * `role: 'reviewer'` (verification) and at least one stage with
+ * `loop.kind: 'review-cycle'` (review loop). `origin: 'ui'` records Canvas
+ * provenance only, so interactive authors can intentionally build lighter
+ * pipelines. Origin-free definitions are likewise unaffected.
  */
 function validateComposedPolicyFloor(pipeline: PipelineYaml): void {
   if (pipeline.origin !== 'composed') return;
@@ -68,14 +77,14 @@ function validateComposedPolicyFloor(pipeline: PipelineYaml): void {
   const hasReviewerStage = pipeline.stages.some(s => s.role === 'reviewer');
   if (!hasReviewerStage) {
     throw new PipelineValidationError(
-      `Composed pipeline '${pipeline.name}' is missing the quality-floor verification stage: at least one stage must declare role: 'reviewer'`
+      `Pipeline '${pipeline.name}' (origin: ${pipeline.origin}) is missing the quality-floor verification stage: at least one stage must declare role: 'reviewer'`
     );
   }
 
   const hasReviewCycleLoop = pipeline.stages.some(s => s.loop?.kind === 'review-cycle');
   if (!hasReviewCycleLoop) {
     throw new PipelineValidationError(
-      `Composed pipeline '${pipeline.name}' is missing the quality-floor review loop: at least one stage must declare loop.kind: 'review-cycle'`
+      `Pipeline '${pipeline.name}' (origin: ${pipeline.origin}) is missing the quality-floor review loop: at least one stage must declare loop.kind: 'review-cycle'`
     );
   }
 }
@@ -225,13 +234,14 @@ function validateParallelGroups(stages: Stage[]): void {
  * Validates that every stage's `skill` exists in the provided set of known
  * skill names. Kept as a SEPARATE function that accepts an injected set so it
  * is unit-testable without the skill registry; the CLI/validate layer wires
- * `new Set(getSkillTemplates().map(t => t.template.name))`.
+ * the full catalog separately from the active profile's effective selection.
  *
  * @throws PipelineValidationError if any stage references an unknown skill.
  */
 export function validatePipelineSkills(
   pipeline: PipelineYaml,
-  knownSkillNames: Set<string>
+  knownSkillNames: Set<string>,
+  enabledSkillNames: Set<string> = knownSkillNames
 ): void {
   for (const stage of pipeline.stages) {
     // decompose stages are LEAD-interpreted fan-out points, not leaf skill
@@ -239,8 +249,95 @@ export function validatePipelineSkills(
     if (stage.kind === 'decompose') continue;
     if (!stage.skill || !knownSkillNames.has(stage.skill)) {
       throw new PipelineValidationError(
-        `Stage '${stage.id}' references unknown skill: '${stage.skill ?? '(missing)'}'`
+        `Stage '${stage.id}' references unknown skill: '${stage.skill ?? '(missing)'}'`,
+        'pipeline_skill_unknown'
+      );
+    }
+    if (!enabledSkillNames.has(stage.skill)) {
+      throw new PipelineValidationError(
+        `Stage '${stage.id}' references known but disabled skill: '${stage.skill}'`,
+        'pipeline_skill_disabled'
       );
     }
   }
+}
+
+/** One issue reported by `validatePipelineDraft` (pipeline-definition-api). */
+export interface PipelineValidationIssue {
+  severity: 'error' | 'warning';
+  /** A JSON-pointer-ish locator into the definition, e.g. `/stages/2/skill`. Structural errors with no single field locus use `/stages` or `/`. */
+  path: string;
+  message: string;
+}
+
+/**
+ * In-process, issue-collecting dry-run of a draft pipeline definition
+ * (pipeline-definition-api `POST /api/v1/pipeline-validation`). Unlike
+ * `parsePipeline` (which throws on the FIRST failure), this collects EVERY
+ * discoverable issue: one Zod issue per schema violation (each with its own
+ * path), then each structural check below in its own try/catch (a structural
+ * check itself still only reports its first violation — the same behavior
+ * `parsePipeline` exhibits for that check — so `parsePipeline` rejecting a
+ * fixture always implies this collector reports at least one error over the
+ * same fixture, and vice versa), then a skill known/enabled issue per
+ * offending stage. Never throws on an invalid draft — invalidity is data.
+ */
+export function validatePipelineDraft(
+  definition: unknown,
+  skillSets: { knownSkillNames: Set<string>; enabledSkillNames: Set<string> }
+): PipelineValidationIssue[] {
+  const issues: PipelineValidationIssue[] = [];
+
+  const result = PipelineYamlSchema.safeParse(definition);
+  if (!result.success) {
+    for (const issue of result.error.issues) {
+      issues.push({
+        severity: 'error',
+        path: issue.path.length > 0 ? `/${issue.path.join('/')}` : '/',
+        message: issue.message,
+      });
+    }
+    return issues;
+  }
+
+  const pipeline = result.data;
+
+  const structuralChecks: (() => void)[] = [
+    () => validateNoDuplicateIds(pipeline.stages),
+    () => validateRequiresReferences(pipeline.stages),
+    () => validateNoCycles(pipeline.stages),
+    () => validateParallelGroups(pipeline.stages),
+    () => validateDecomposeStages(pipeline.stages),
+    () => validateComposedPolicyFloor(pipeline),
+  ];
+  for (const check of structuralChecks) {
+    try {
+      check();
+    } catch (error) {
+      if (!(error instanceof PipelineValidationError)) throw error;
+      issues.push({ severity: 'error', path: '/stages', message: error.message });
+    }
+  }
+
+  for (const [index, stage] of pipeline.stages.entries()) {
+    // decompose stages carry no `skill` to validate (see validatePipelineSkills).
+    if (stage.kind === 'decompose') continue;
+    if (!stage.skill || !skillSets.knownSkillNames.has(stage.skill)) {
+      issues.push({
+        severity: 'error',
+        path: `/stages/${index}/skill`,
+        message: `Stage '${stage.id}' references unknown skill: '${stage.skill ?? '(missing)'}'`,
+      });
+      continue;
+    }
+    if (!skillSets.enabledSkillNames.has(stage.skill)) {
+      issues.push({
+        severity: 'error',
+        path: `/stages/${index}/skill`,
+        message: `Stage '${stage.id}' references known but disabled skill: '${stage.skill}'`,
+      });
+    }
+  }
+
+  return issues;
 }

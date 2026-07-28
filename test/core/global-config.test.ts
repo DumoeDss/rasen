@@ -14,7 +14,8 @@ import {
   GLOBAL_CONFIG_DIR_NAME,
   GLOBAL_CONFIG_FILE_NAME
 } from '../../src/core/global-config.js';
-import type { Profile, Delivery } from '../../src/core/global-config.js';
+import type { Profile } from '../../src/core/global-config.js';
+import { GlobalConfigSchema } from '../../src/core/config-schema.js';
 import {
   getProjectHomeDir,
   getProjectRegistryPath,
@@ -64,6 +65,33 @@ describe('global-config', () => {
 
     it('should export correct file name', () => {
       expect(GLOBAL_CONFIG_FILE_NAME).toBe('config.json');
+    });
+  });
+
+  it('normalizes exact retired edit-boundary ids from the global selection', () => {
+    process.env.RASEN_HOME = tempDir;
+    saveGlobalConfig({
+      profile: 'custom',
+      workflows: ['propose', 'freeze', 'review', 'guard', 'unfreeze'],
+    });
+    expect(getGlobalConfig().workflows).toEqual(['propose', 'review']);
+  });
+
+  describe('pipeline runtime schema', () => {
+    it.each(['claude', 'codex'])('accepts dispatch runtime %s', (runtime) => {
+      expect(
+        GlobalConfigSchema.safeParse({
+          pipelines: { 'runtime-test': { runtimes: { reviewer: runtime } } },
+        }).success
+      ).toBe(true);
+    });
+
+    it.each(['zed', 'unknown'])('rejects non-dispatch runtime %s', (runtime) => {
+      expect(
+        GlobalConfigSchema.safeParse({
+          pipelines: { 'runtime-test': { runtimes: { reviewer: runtime } } },
+        }).success
+      ).toBe(false);
     });
   });
 
@@ -207,7 +235,14 @@ describe('global-config', () => {
 
       const config = getGlobalConfig();
 
-      expect(config).toEqual({ featureFlags: {}, profile: 'full', delivery: 'both', proactive: true, repoMode: 'collaborative' });
+      expect(config).toEqual({
+        featureFlags: {},
+        profile: 'full',
+        language: 'auto',
+        proactive: true,
+        repoMode: 'collaborative',
+        ui: { theme: 'crt' },
+      });
     });
 
     it('should not create directory when reading non-existent config', () => {
@@ -234,6 +269,30 @@ describe('global-config', () => {
       expect(config.featureFlags).toEqual({ testFlag: true, anotherFlag: false });
     });
 
+    it('round-trips knownBuiltInWorkflows through save and read', () => {
+      process.env.XDG_CONFIG_HOME = tempDir;
+      const baseline = ['propose', 'apply', 'audit'];
+
+      saveGlobalConfig({ featureFlags: {}, profile: 'custom', knownBuiltInWorkflows: baseline });
+      const config = getGlobalConfig();
+
+      expect(config.knownBuiltInWorkflows).toEqual(baseline);
+    });
+
+    it('reads a config lacking knownBuiltInWorkflows without error (field is optional)', () => {
+      process.env.XDG_CONFIG_HOME = tempDir;
+      const configDir = path.join(tempDir, 'rasen');
+      const configPath = path.join(configDir, 'config.json');
+
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify({ profile: 'custom', workflows: ['propose'] }));
+
+      const config = getGlobalConfig();
+
+      expect(config.knownBuiltInWorkflows).toBeUndefined();
+      expect(config.profile).toBe('custom');
+    });
+
     it('should return defaults for invalid JSON', () => {
       process.env.XDG_CONFIG_HOME = tempDir;
       const configDir = path.join(tempDir, 'rasen');
@@ -244,11 +303,23 @@ describe('global-config', () => {
 
       const config = getGlobalConfig();
 
-      expect(config).toEqual({ featureFlags: {}, profile: 'full', delivery: 'both', proactive: true, repoMode: 'collaborative' });
+      expect(config).toEqual({
+        featureFlags: {},
+        profile: 'full',
+        language: 'auto',
+        proactive: true,
+        repoMode: 'collaborative',
+        ui: { theme: 'crt' },
+      });
     });
 
     it('should log warning for invalid JSON', () => {
       process.env.XDG_CONFIG_HOME = tempDir;
+      // Pinned so this assertion is deterministic regardless of the host
+      // machine's OS locale (locale-diagnostic-reporter made this warning
+      // locale-aware by default; see the dedicated describe block below for
+      // non-English coverage).
+      process.env.RASEN_LANG = 'en';
       const configDir = path.join(tempDir, 'rasen');
       const configPath = path.join(configDir, 'config.json');
 
@@ -298,7 +369,7 @@ describe('global-config', () => {
     });
 
     describe('schema evolution', () => {
-      it('should add default profile and delivery when loading old config without them', () => {
+      it('should add default profile when loading old config without one', () => {
         process.env.XDG_CONFIG_HOME = tempDir;
         const configDir = path.join(tempDir, 'rasen');
         const configPath = path.join(configDir, 'config.json');
@@ -312,12 +383,12 @@ describe('global-config', () => {
         const config = getGlobalConfig();
 
         expect(config.profile).toBe('full');
-        expect(config.delivery).toBe('both');
+        expect(config.language).toBe('auto');
         expect(config.workflows).toBeUndefined();
         expect(config.featureFlags?.existingFlag).toBe(true);
       });
 
-      it('should preserve explicit profile and delivery values from config', () => {
+      it('should preserve explicit profile and workflows values from config', () => {
         process.env.XDG_CONFIG_HOME = tempDir;
         const configDir = path.join(tempDir, 'rasen');
         const configPath = path.join(configDir, 'config.json');
@@ -326,33 +397,47 @@ describe('global-config', () => {
         fs.writeFileSync(configPath, JSON.stringify({
           featureFlags: {},
           profile: 'custom',
-          delivery: 'skills',
           workflows: ['propose', 'review']
         }));
 
         const config = getGlobalConfig();
 
         expect(config.profile).toBe('custom');
-        expect(config.delivery).toBe('skills');
         expect(config.workflows).toEqual(['propose', 'review']);
       });
 
-      it('should round-trip new fields correctly', () => {
+      it('round-trips the exact canonical zh-cn language', () => {
         process.env.XDG_CONFIG_HOME = tempDir;
         const originalConfig = {
           featureFlags: { flag1: true },
           profile: 'custom' as Profile,
-          delivery: 'skills' as Delivery,
+          language: 'zh-cn' as const,
           workflows: ['propose']
         };
 
         saveGlobalConfig(originalConfig);
         const loadedConfig = getGlobalConfig();
+        const persistedConfig = JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8'));
 
         expect(loadedConfig.profile).toBe('custom');
-        expect(loadedConfig.delivery).toBe('skills');
+        expect(loadedConfig.language).toBe('zh-cn');
         expect(loadedConfig.workflows).toEqual(['propose']);
+        expect(persistedConfig.language).toBe('zh-cn');
       });
+
+      it.each(['zh-CN', 'zh_CN', 'zh-SG', 'zh-Hans', 'zh', 'fr'])(
+        'falls back to auto without rewriting unsupported persisted language %j',
+        (language) => {
+          process.env.XDG_CONFIG_HOME = tempDir;
+          const configDir = path.join(tempDir, 'rasen');
+          const configPath = path.join(configDir, 'config.json');
+          fs.mkdirSync(configDir, { recursive: true });
+          fs.writeFileSync(configPath, JSON.stringify({ language }));
+
+          expect(getGlobalConfig().language).toBe('auto');
+          expect(JSON.parse(fs.readFileSync(configPath, 'utf-8')).language).toBe(language);
+        }
+      );
 
       it('should default workflows to undefined when not in config', () => {
         process.env.XDG_CONFIG_HOME = tempDir;
@@ -362,8 +447,7 @@ describe('global-config', () => {
         fs.mkdirSync(configDir, { recursive: true });
         fs.writeFileSync(configPath, JSON.stringify({
           featureFlags: {},
-          profile: 'core',
-          delivery: 'both'
+          profile: 'core'
         }));
 
         const config = getGlobalConfig();
@@ -372,52 +456,92 @@ describe('global-config', () => {
       });
     });
 
-    describe('legacy delivery migration', () => {
-      const legacyMappings: Array<[string, Delivery]> = [
-        ['skills-first', 'skills'],
-        ['commands', 'both'],
-        ['commands-first', 'both'],
-      ];
+    describe('retired delivery setting', () => {
+      // The `delivery` dimension is retired entirely: ANY stored value —
+      // current (`both`/`skills`) or legacy (`commands`/`skills-first`/
+      // `commands-first`) — is read without error, never surfaced on the
+      // returned config, reported once, and stripped from the file on write.
+      const storedValues = ['both', 'skills', 'commands', 'skills-first', 'commands-first', 'bogus-value'];
 
-      for (const [legacy, mapped] of legacyMappings) {
-        it(`maps legacy delivery '${legacy}' to '${mapped}' with a one-time notice`, () => {
+      for (const stored of storedValues) {
+        it(`reads a stored delivery value of '${stored}' without error, strips it, and notices once`, () => {
           process.env.XDG_CONFIG_HOME = tempDir;
           const configDir = path.join(tempDir, 'rasen');
           const configPath = path.join(configDir, 'config.json');
           fs.mkdirSync(configDir, { recursive: true });
-          fs.writeFileSync(configPath, JSON.stringify({ featureFlags: {}, profile: 'full', delivery: legacy }));
+          fs.writeFileSync(configPath, JSON.stringify({ featureFlags: {}, profile: 'full', delivery: stored }));
 
           const config = getGlobalConfig();
-          expect(config.delivery).toBe(mapped);
-          expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(legacy));
-          expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(mapped));
+          expect((config as any).delivery).toBeUndefined();
+          expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(stored));
 
-          // Config file rewritten to the mapped value so the notice is genuinely one-time.
+          // Config file rewritten with the key stripped so the notice is genuinely one-time.
           const rewritten = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-          expect(rewritten.delivery).toBe(mapped);
+          expect(rewritten.delivery).toBeUndefined();
 
-          // Second read finds the already-mapped value and prints no notice.
+          // Second read finds no stored key and prints no notice.
           consoleErrorSpy.mockClear();
           const config2 = getGlobalConfig();
-          expect(config2.delivery).toBe(mapped);
+          expect((config2 as any).delivery).toBeUndefined();
           expect(consoleErrorSpy).not.toHaveBeenCalled();
         });
       }
+    });
 
-      it("falls back an unrecognized delivery value to 'both' without persisting", () => {
+    describe('locale-aware default diagnostics (locale-diagnostic-reporter)', () => {
+      it('renders the deliveryRetired notice in the config-stored language when no reporter is supplied', () => {
         process.env.XDG_CONFIG_HOME = tempDir;
         const configDir = path.join(tempDir, 'rasen');
         const configPath = path.join(configDir, 'config.json');
         fs.mkdirSync(configDir, { recursive: true });
-        fs.writeFileSync(configPath, JSON.stringify({ featureFlags: {}, profile: 'full', delivery: 'bogus-value' }));
+        fs.writeFileSync(
+          configPath,
+          JSON.stringify({ featureFlags: {}, profile: 'full', language: 'ja', delivery: 'both' })
+        );
 
-        const config = getGlobalConfig();
-        expect(config.delivery).toBe('both');
+        getGlobalConfig();
+
+        expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+        const message = consoleErrorSpy.mock.calls[0]?.[0] as string;
+        expect(message).toContain('both');
+        // Japanese catalog entry, not the English fallback text.
+        expect(message).not.toContain('has been retired');
+        expect(message).toContain('廃止されました');
+      });
+
+      it('renders the invalidGlobalJson warning per RASEN_LANG when no reporter is supplied and the file fails to parse', () => {
+        process.env.XDG_CONFIG_HOME = tempDir;
+        process.env.RASEN_LANG = 'ja';
+        const configDir = path.join(tempDir, 'rasen');
+        const configPath = path.join(configDir, 'config.json');
+        fs.mkdirSync(configDir, { recursive: true });
+        fs.writeFileSync(configPath, '{ invalid json }');
+
+        getGlobalConfig();
+
+        expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+        const message = consoleErrorSpy.mock.calls[0]?.[0] as string;
+        // Japanese catalog entry, not the English fallback text.
+        expect(message).not.toContain('Invalid JSON');
+        expect(message).toContain('のJSONが無効なため');
+      });
+
+      it('an explicit options.reporter still wins over the locale-aware default', () => {
+        process.env.XDG_CONFIG_HOME = tempDir;
+        const configDir = path.join(tempDir, 'rasen');
+        const configPath = path.join(configDir, 'config.json');
+        fs.mkdirSync(configDir, { recursive: true });
+        fs.writeFileSync(
+          configPath,
+          JSON.stringify({ featureFlags: {}, profile: 'full', language: 'ja', delivery: 'both' })
+        );
+
+        const seen: string[] = [];
+        getGlobalConfig({ reporter: (diagnostic) => seen.push(diagnostic.key) });
+
+        expect(seen).toEqual(['deliveryRetired']);
+        // The explicit reporter took over; no console.error from the default path.
         expect(consoleErrorSpy).not.toHaveBeenCalled();
-
-        // Garbage values are not treated as a legacy migration, so the file is untouched.
-        const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-        expect(onDisk.delivery).toBe('bogus-value');
       });
     });
   });

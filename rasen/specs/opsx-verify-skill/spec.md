@@ -1,26 +1,26 @@
 # opsx-verify-skill Specification
 
 ## Purpose
-Define `/rasen:verify` behavior for assessing implementation completeness, correctness, and coherence against change artifacts.
+Define `/rasen-verify-change` behavior for assessing implementation completeness, correctness, and coherence against change artifacts.
 
 ## Requirements
 ### Requirement: Verify Skill Invocation
-The system SHALL provide an `/rasen:verify` skill that validates implementation against change artifacts.
+The system SHALL provide an `/rasen-verify-change` skill that validates implementation against change artifacts.
 
 #### Scenario: Verify with change name provided
-- **WHEN** agent executes `/rasen:verify <change-name>`
+- **WHEN** agent executes `/rasen-verify-change <change-name>`
 - **THEN** the agent verifies implementation for that specific change
 - **AND** produces a verification report
 
 #### Scenario: Verify without change name
-- **WHEN** agent executes `/rasen:verify` without a change name
+- **WHEN** agent executes `/rasen-verify-change` without a change name
 - **THEN** the agent prompts user to select from available changes
 - **AND** shows only changes that have implementation tasks
 
 #### Scenario: Change has no tasks
 - **WHEN** selected change has no tasks.md or tasks are empty
 - **THEN** the agent reports "No tasks to verify"
-- **AND** suggests running `/rasen:continue` to create tasks
+- **AND** suggests running `/rasen-continue-change` to create tasks
 
 ### Requirement: Completeness Verification
 The agent SHALL verify that all required work has been completed.

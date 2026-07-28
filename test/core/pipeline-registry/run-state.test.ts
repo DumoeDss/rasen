@@ -8,7 +8,10 @@ import {
   readRunState,
   writeRunState,
   completedStages,
+  frozenRetentionMode,
+  RETAIN_STAGE_ID,
   normalizeWorker,
+  inferWorkerDispatchMode,
   stageWorkers,
   stagesWithStatus,
   stagesLackingDurableHandle,
@@ -79,6 +82,20 @@ describe('pipeline run-state', () => {
     it('a run-state with no gatePolicy leaves it undefined (older runs pre-date this field)', () => {
       const s = parseRunState('{"pipeline":"small-feature"}');
       expect(s.gatePolicy).toBeUndefined();
+    });
+
+    it('parses a gatePolicy recorded with source store', () => {
+      const s = parseRunState(
+        JSON.stringify({ pipeline: 'small-feature', gatePolicy: { effective: 'off', source: 'store' } })
+      );
+      expect(s.gatePolicy).toEqual({ effective: 'off', source: 'store' });
+    });
+
+    it('still accepts the legacy source value config from pre-store run-states', () => {
+      const s = parseRunState(
+        JSON.stringify({ pipeline: 'small-feature', gatePolicy: { effective: 'on', source: 'config' } })
+      );
+      expect(s.gatePolicy).toEqual({ effective: 'on', source: 'config' });
     });
 
     it('rejects an invalid gatePolicy.effective value', () => {
@@ -230,6 +247,20 @@ describe('pipeline run-state', () => {
       ).toThrow();
     });
 
+    it('rejects the audit-only Zed runtime on write', () => {
+      expect(() =>
+        writeRunState(dir, {
+          pipeline: 'small-feature',
+          stages: {
+            apply: {
+              status: 'done',
+              worker: { runtime: 'zed' as unknown as 'codex' },
+            },
+          },
+        } as RunState)
+      ).toThrow();
+    });
+
     it('rejects runtime: null', () => {
       expect(() =>
         writeRunState(dir, {
@@ -301,6 +332,21 @@ describe('pipeline run-state', () => {
     it('returns [] when neither stages nor completed is present', () => {
       expect(completedStages({ pipeline: 'bug-fix' })).toEqual([]);
     });
+
+    it('does not treat a parent stage delegated to portfolio children as complete (B2: work is outstanding until the portfolio children finish)', () => {
+      const state = parseRunState(JSON.stringify({
+        pipeline: 'auto-decompose',
+        stages: {
+          decompose: { status: 'done' },
+          apply: { status: 'delegated', note: 'owned by portfolio children' },
+          ship: { status: 'pending' },
+        },
+      }));
+      // B2: a delegated stage is NOT complete for resume/delivery decisions.
+      // Whether it is actually done is derived from portfolio child durable
+      // state, not from the delegated marker. completedStages reports done|skipped.
+      expect(completedStages(state).sort()).toEqual(['decompose']);
+    });
   });
 
   describe('worker (warm-seed pointer)', () => {
@@ -326,6 +372,78 @@ describe('pipeline run-state', () => {
       const w = s.stages?.verify.worker;
       expect(typeof w).toBe('object');
       expect((w as { transcript?: string }).transcript).toBe('/p/agent-abc123.jsonl');
+    });
+
+    it('keeps archived worker records without dispatchMode valid and unchanged', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'small-feature',
+          stages: {
+            apply: {
+              status: 'done',
+              worker: { runtime: 'codex', role: 'implementer', threadId: 'legacy-thread' },
+            },
+          },
+        })
+      );
+
+      expect(s.stages?.apply.worker).toEqual({
+        runtime: 'codex',
+        role: 'implementer',
+        threadId: 'legacy-thread',
+      });
+    });
+
+    it('round-trips canonical native and exec-bridge dispatch modes', () => {
+      writeRunState(dir, {
+        pipeline: 'small-feature',
+        stages: {
+          apply: {
+            status: 'done',
+            worker: {
+              runtime: 'codex',
+              dispatchMode: 'native',
+              role: 'implementer',
+              agentId: 'native-agent',
+            },
+          },
+          verify: {
+            status: 'done',
+            worker: {
+              runtime: 'codex',
+              dispatchMode: 'exec-bridge',
+              role: 'reviewer',
+              threadId: 'exec-thread',
+            },
+          },
+        },
+      });
+
+      const back = readRunState(dir);
+      expect(back?.stages?.apply.worker).toMatchObject({
+        dispatchMode: 'native',
+        agentId: 'native-agent',
+      });
+      expect(back?.stages?.verify.worker).toMatchObject({
+        dispatchMode: 'exec-bridge',
+        threadId: 'exec-thread',
+      });
+    });
+
+    it('infers legacy route handles conservatively without fabricating one', () => {
+      expect(
+        inferWorkerDispatchMode({ runtime: 'codex', threadId: 'exec-thread' })
+      ).toEqual({ dispatchMode: 'exec-bridge', inferred: true });
+      expect(
+        inferWorkerDispatchMode({ runtime: 'codex', agentId: 'native-agent' })
+      ).toEqual({ dispatchMode: 'native', inferred: true });
+
+      const ambiguous = inferWorkerDispatchMode({
+        runtime: 'codex',
+        transcript: 'rollout.jsonl',
+      });
+      expect(ambiguous.dispatchMode).toBeUndefined();
+      expect(ambiguous.warning).toContain('ambiguous');
     });
 
     it('accepts a Codex worker with threadId + turnId', () => {
@@ -663,7 +781,13 @@ describe('pipeline run-state', () => {
           kind: 'goal',
           // lte = smaller is better (latency/memory tuning). goal-loop-core
           // exercised gte only; this covers the lte branch.
-          gate: { kind: 'measure', command: './latency', threshold: 50, direction: 'lte' },
+          gate: {
+            kind: 'measure',
+            command: './latency',
+            threshold: 50,
+            direction: 'lte',
+            timeoutSec: 120,
+          },
           maxRounds: 5,
           loopStallLimit: 2,
           workProduct: 'code',
@@ -679,6 +803,53 @@ describe('pipeline run-state', () => {
       }
     });
 
+    it('round-trips a loopConfig carrying blockedThreshold, and one without it still parses (additive)', () => {
+      const withThreshold: RunState = {
+        pipeline: 'goal-loop-evaluate',
+        loopConfig: {
+          kind: 'goal',
+          gate: { kind: 'evaluate', goal: 'the refactor satisfies the rubric' },
+          maxRounds: 5,
+          loopStallLimit: 2,
+          blockedThreshold: 4,
+          workProduct: 'code',
+        },
+        loopProgress: {
+          kind: 'goal',
+          round: 2,
+          stallStreak: 0,
+          blockedStreak: 1,
+          historyRef: 'goal-run.json',
+        },
+      };
+      writeRunState(dir, withThreshold);
+      const back = readRunState(dir);
+      expect(back?.loopConfig?.kind).toBe('goal');
+      if (back?.loopConfig?.kind === 'goal') {
+        expect(back.loopConfig.blockedThreshold).toBe(4);
+      } else {
+        throw new Error('expected goal loopConfig to narrow');
+      }
+      expect(back?.loopProgress?.blockedStreak).toBe(1);
+
+      const withoutThreshold: RunState = {
+        pipeline: 'goal-loop-evaluate',
+        loopConfig: {
+          kind: 'goal',
+          gate: { kind: 'evaluate', goal: 'the refactor satisfies the rubric' },
+          maxRounds: 5,
+          loopStallLimit: 2,
+          workProduct: 'code',
+        },
+      };
+      writeRunState(dir, withoutThreshold);
+      const back2 = readRunState(dir);
+      expect(back2?.loopConfig?.kind).toBe('goal');
+      if (back2?.loopConfig?.kind === 'goal') {
+        expect(back2.loopConfig.blockedThreshold).toBeUndefined();
+      }
+    });
+
     it('round-trips a measure gate with a target (passed-count) stop condition', () => {
       const state: RunState = {
         pipeline: 'goal-loop-measure',
@@ -686,7 +857,13 @@ describe('pipeline run-state', () => {
           kind: 'goal',
           // target = passed-count stop condition (vs threshold). goal-loop-core
           // covered threshold only; this covers the target branch.
-          gate: { kind: 'measure', command: './tests --json', target: 10, direction: 'gte' },
+          gate: {
+            kind: 'measure',
+            command: './tests --json',
+            target: 10,
+            direction: 'gte',
+            timeoutSec: 120,
+          },
           maxRounds: 5,
           loopStallLimit: 2,
           workProduct: 'code',
@@ -889,6 +1066,268 @@ describe('pipeline run-state', () => {
       });
       // The omitted name-only propose worker is exactly what resume now warns on.
       expect(stagesLackingDurableHandle(s)).toContainEqual({ stage: 'propose', keys: ['name'] });
+    });
+  });
+
+  describe('retention (design D2)', () => {
+    it('accepts a versioned frozen knowledge context independently from retention', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'full-feature',
+          retention: 'report',
+          knowledgeContext: {
+            version: 1,
+            planningRoot: { type: 'store', id: 'team' },
+            owner: { type: 'project', id: 'web' },
+          },
+        })
+      );
+      expect(s.retention).toBe('report');
+      expect(s.knowledgeContext).toEqual({
+        version: 1,
+        planningRoot: { type: 'store', id: 'team' },
+        owner: { type: 'project', id: 'web' },
+      });
+    });
+
+    it('keeps every existing run-state without knowledgeContext readable', () => {
+      const s = parseRunState('{"pipeline":"full-feature","retention":"codify"}');
+      expect(s.knowledgeContext).toBeUndefined();
+    });
+
+    it('rejects absolute roots and unknown fields in frozen knowledge identity', () => {
+      expect(() =>
+        parseRunState(
+          JSON.stringify({
+            pipeline: 'full-feature',
+            knowledgeContext: {
+              version: 1,
+              planningRoot: { type: 'project', id: 'web', root: 'C:\\web' },
+              owner: { type: 'project', id: 'web' },
+            },
+          })
+        )
+      ).toThrow();
+    });
+
+    it('accepts and reads back a frozen retention mode', () => {
+      const s = parseRunState('{"pipeline":"full-feature","retention":"codify"}');
+      expect(s.retention).toBe('codify');
+      expect(frozenRetentionMode(s)).toBe('codify');
+    });
+
+    it('rejects an invalid retention value', () => {
+      expect(() => parseRunState('{"pipeline":"full-feature","retention":"always"}')).toThrow();
+    });
+
+    it('reports no frozen mode before the retain stage has run', () => {
+      const s = parseRunState('{"pipeline":"full-feature"}');
+      expect(frozenRetentionMode(s)).toBeUndefined();
+    });
+
+    it('migrates a completed legacy retro stage to a completed retain stage (report), never re-running', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'full-feature',
+          stages: {
+            ship: { status: 'done' },
+            archive: { status: 'done' },
+            retro: { status: 'done' },
+          },
+        })
+      );
+      expect(s.stages?.retro).toBeUndefined();
+      expect(s.stages?.[RETAIN_STAGE_ID]?.status).toBe('done');
+      expect(frozenRetentionMode(s)).toBe('report');
+      // A completed retain stays completed for resume (not re-run).
+      expect(completedStages(s)).toContain(RETAIN_STAGE_ID);
+    });
+
+    it('maps an incomplete legacy retro stage to retain in forced report mode', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'full-feature',
+          stages: {
+            ship: { status: 'done' },
+            retro: { status: 'in_progress' },
+          },
+        })
+      );
+      expect(s.stages?.retro).toBeUndefined();
+      expect(s.stages?.[RETAIN_STAGE_ID]?.status).toBe('in_progress');
+      expect(frozenRetentionMode(s)).toBe('report');
+      // An incomplete retain is not treated as completed.
+      expect(completedStages(s)).not.toContain(RETAIN_STAGE_ID);
+    });
+
+    it('does not infer retain from configuration when neither retro nor retain is recorded', () => {
+      const s = parseRunState(
+        JSON.stringify({ pipeline: 'full-feature', stages: { ship: { status: 'done' } } })
+      );
+      expect(s.stages?.[RETAIN_STAGE_ID]).toBeUndefined();
+      expect(frozenRetentionMode(s)).toBeUndefined();
+    });
+
+    it.each(['goal-loop-measure', 'goal-loop-evaluate'])(
+      'leaves retain unrecorded for a legacy %s run that has not archived',
+      (pipeline) => {
+        const s = parseRunState(
+          JSON.stringify({
+            pipeline,
+            retention: 'off',
+            stages: {
+              ship: { status: 'done' },
+              archive: { status: 'pending' },
+            },
+          })
+        );
+
+        expect(s.stages?.[RETAIN_STAGE_ID]).toBeUndefined();
+        expect(s.stages?.archive.status).toBe('pending');
+        expect(frozenRetentionMode(s)).toBe('off');
+      }
+    );
+
+    it.each(['goal-loop-measure', 'goal-loop-evaluate'])(
+      'records retain as legacy-completed for an archived legacy %s run',
+      (pipeline) => {
+        const s = parseRunState(
+          JSON.stringify({
+            pipeline,
+            stages: {
+              ship: { status: 'done' },
+              archive: { status: 'done' },
+            },
+          })
+        );
+
+        expect(s.stages?.[RETAIN_STAGE_ID]).toMatchObject({
+          status: 'skipped',
+          reason: 'legacy-completed',
+        });
+        expect(completedStages(s)).toContain(RETAIN_STAGE_ID);
+        expect(frozenRetentionMode(s)).toBeUndefined();
+      }
+    );
+
+    it.each(['goal-loop-measure', 'goal-loop-evaluate'])(
+      'treats a skipped archive as completed for legacy %s migration',
+      (pipeline) => {
+        const s = parseRunState(
+          JSON.stringify({
+            pipeline,
+            stages: {
+              ship: { status: 'done' },
+              archive: { status: 'skipped' },
+            },
+          })
+        );
+
+        expect(s.stages?.[RETAIN_STAGE_ID]).toMatchObject({
+          status: 'skipped',
+          reason: 'legacy-completed',
+        });
+        expect(completedStages(s)).toEqual(expect.arrayContaining([
+          'ship',
+          'archive',
+          RETAIN_STAGE_ID,
+        ]));
+      }
+    );
+
+    it.each(['goal-loop-measure', 'goal-loop-evaluate'])(
+      'materializes legacy %s completed[] state without reopening retention',
+      (pipeline) => {
+        const s = parseRunState(
+          JSON.stringify({
+            pipeline,
+            completed: ['define-goal', 'iterate', 'ship', 'archive'],
+          })
+        );
+
+        expect(s.stages?.[RETAIN_STAGE_ID]).toMatchObject({
+          status: 'skipped',
+          reason: 'legacy-completed',
+        });
+        expect(completedStages(s)).toEqual(expect.arrayContaining([
+          'define-goal',
+          'iterate',
+          'ship',
+          'archive',
+          RETAIN_STAGE_ID,
+        ]));
+      }
+    );
+
+    it.each([null, [], 'invalid'])(
+      'does not let completed[] migration hide malformed stages value %j',
+      (stages) => {
+        expect(() => parseRunState(JSON.stringify({
+          pipeline: 'goal-loop-measure',
+          completed: ['define-goal', 'iterate', 'ship', 'archive'],
+          stages,
+        }))).toThrow(RunStateValidationError);
+      }
+    );
+
+    it.each(['goal-loop-research', 'goal-loop-measure-v2', 'full-feature'])(
+      'does not apply the completed-goal migration to pipeline %s',
+      (pipeline) => {
+        const s = parseRunState(
+          JSON.stringify({
+            pipeline,
+            stages: {
+              ship: { status: 'done' },
+              archive: { status: 'done' },
+            },
+          })
+        );
+
+        expect(s.stages?.[RETAIN_STAGE_ID]).toBeUndefined();
+      }
+    );
+
+    it('does not overwrite an existing goal retain record', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'goal-loop-measure',
+          stages: {
+            ship: { status: 'done' },
+            retain: { status: 'done', note: 'already retained' },
+            archive: { status: 'done' },
+          },
+        })
+      );
+
+      expect(s.stages?.[RETAIN_STAGE_ID]).toEqual({
+        status: 'done',
+        note: 'already retained',
+      });
+    });
+
+    it('prefers an explicitly recorded retention over the legacy retro default', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'full-feature',
+          retention: 'codify',
+          stages: { retro: { status: 'in_progress' } },
+        })
+      );
+      expect(s.stages?.[RETAIN_STAGE_ID]?.status).toBe('in_progress');
+      // An explicit recorded mode is not overwritten by the report default.
+      expect(frozenRetentionMode(s)).toBe('codify');
+    });
+
+    it('leaves an already-migrated retain stage untouched', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'full-feature',
+          retention: 'off',
+          stages: { retain: { status: 'done' } },
+        })
+      );
+      expect(s.stages?.[RETAIN_STAGE_ID]?.status).toBe('done');
+      expect(frozenRetentionMode(s)).toBe('off');
     });
   });
 });

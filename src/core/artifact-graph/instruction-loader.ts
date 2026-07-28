@@ -15,11 +15,17 @@ import {
   type PlanningHomeSummary,
 } from '../change-status-policy.js';
 import { readProjectConfig, validateConfigRules, type ProjectConfig } from '../project-config.js';
+import {
+  requireSessionRuntimeContext,
+  type RuntimeContext,
+} from '../session-runtime-context.js';
 import type { ReferenceIndexEntry } from '../references.js';
 import type { PlanningHome } from '../planning-home.js';
 import type { ChangeMetadata } from '../change-metadata/index.js';
 import { parseTestPlan } from '../parsers/requirement-blocks.js';
 import type { Artifact, CompletedSet } from './types.js';
+import { resolveNextSteps, resolveInstalledWorkflowIds, type ResolvedNextStep } from '../workflow-chain.js';
+import { getCliLocale } from '../cli-locale.js';
 
 // Session-level cache for validation warnings (avoid repeating same warnings)
 const shownWarnings = new Set<string>();
@@ -157,6 +163,12 @@ export interface ChangeStatus {
   artifactPaths: Record<string, ArtifactPathSummary>;
   /** Plain-language next steps for users and agents */
   nextSteps: string[];
+  /**
+   * Runtime-resolved next workflow(s), filtered to the installed workflow
+   * set (design D1/D4). Distinct from `nextSteps` above (an artifact-
+   * authoring string array) — this carries `{ workflow, reason }`.
+   */
+  nextWorkflows: ResolvedNextStep[];
   /** Machine-readable action constraints for agents */
   actionContext: ActionContext;
   /** Whether all artifacts are complete */
@@ -437,8 +449,32 @@ function getUnlockedArtifacts(graph: ArtifactGraph, artifactId: string): string[
  */
 export function formatChangeStatus(
   context: ChangeContext,
-  options: { storeId?: string; storeType?: 'store' | 'project' } = {}
+  options: {
+    storeId?: string;
+    storeType?: 'store' | 'project';
+    /**
+     * Set `false` to skip `nextWorkflows` resolution (review round 1 m1):
+     * it costs two uncached fs reads (`getGlobalConfig`, `loadWorkflowCatalog`)
+     * that a caller discarding the field — e.g. the management-API board
+     * path, which loops this per active change — pays for nothing. Defaults
+     * to `true` so `rasen status` and every other existing caller keeps
+     * getting the field populated.
+     */
+    computeNextWorkflows?: boolean;
+    /**
+     * The session runtime context this command runs under. Defaults to the
+     * one the supervisor handed this process
+     * (unified-session-runtime-context D3/D4); pass it explicitly only in
+     * tests. A BROKEN context throws rather than resolving from the working
+     * directory, which is the whole point of recording it.
+     */
+    sessionContext?: RuntimeContext | undefined;
+  } = {}
 ): ChangeStatus {
+  const sessionContext =
+    options.sessionContext === undefined
+      ? requireSessionRuntimeContext()
+      : options.sessionContext;
   // Load schema to get apply phase configuration
   const schema = resolveSchema(context.schemaName, context.projectRoot);
   const applyRequires = schema.apply?.requires ?? schema.artifacts.map(a => a.id);
@@ -501,9 +537,36 @@ export function formatChangeStatus(
       ...(options.storeId ? { storeId: options.storeId } : {}),
       ...(options.storeType ? { storeType: options.storeType } : {}),
     }),
+    // Runtime-resolved next workflow(s) (design D4): status only observes
+    // artifact completion, not task state, so it maps onto `propose`'s
+    // chain edge rather than claiming a richer lifecycle position. Skipped
+    // (empty array) when the caller opts out via `computeNextWorkflows:
+    // false` (review round 1 m1) — the two fs reads behind
+    // `resolveInstalledWorkflowIds()` are wasted work for a caller that
+    // never reads the field.
+    nextWorkflows:
+      options.computeNextWorkflows === false
+        ? []
+        : resolveNextSteps(
+            'propose',
+            isComplete ? 'artifacts-complete' : 'artifacts-pending',
+            resolveInstalledWorkflowIds(),
+            getCliLocale()
+          ),
+    // The capability the agent is told about comes from what the SESSION
+    // recorded, not from what the working directory suggests. Without a
+    // session context this is exactly the pre-existing repo-local answer.
     actionContext: buildActionContext({
       projectRoot: context.projectRoot,
       artifactIds,
+      ...(sessionContext
+        ? {
+            session: {
+              planning: sessionContext.planning,
+              execution: sessionContext.execution,
+            },
+          }
+        : {}),
     }),
     artifacts: artifactStatuses,
   };

@@ -1,3 +1,4 @@
+version: 1
 name: goal-loop-research
 description: >-
   Goal-driven iteration for autoresearch-style research and writing. The
@@ -13,7 +14,7 @@ stages:
     skill: rasen-goal-plan
     role: planner
     requires: []
-    gate: vet
+    gate: true
 
   - id: iterate
     skill: rasen-goal-iterate

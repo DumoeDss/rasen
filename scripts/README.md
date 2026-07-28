@@ -1,6 +1,6 @@
-# OpenSpec Scripts
+# Rasen Scripts
 
-Utility scripts for OpenSpec maintenance and development.
+Utility scripts for Rasen maintenance and development.
 
 ## update-flake.sh
 
@@ -34,4 +34,37 @@ Post-installation script that runs after package installation.
 
 ## pack-version-check.mjs
 
-Validates package version consistency before publishing.
+Packs the CLI into a temporary project and verifies its installed
+`rasen --version` output matches the root package manifest.
+
+## release-contract.mjs
+
+Validates the 0.1.x lockstep release contract:
+
+- root CLI and `packages/ui` use the same canonical `X.Y.Z` version;
+- an optional `--tag rasen-vX.Y.Z` identifies that exact version;
+- `CHANGELOG.md` contains a bounded Rasen history and one matching release
+  section;
+- `--notes-output <path>` writes that curated section for the GitHub Release.
+
+`0.1.5.1` is not SemVer. During 0.1.x, a UI-only correction after 0.1.5
+advances both manifests to 0.1.6 and releases both packages from
+`rasen-v0.1.6`; the CLI may contain no functional change.
+
+## paired-pack-check.mjs
+
+Runs the CLI pack/version guard and packs the UI into a cross-platform
+temporary directory, requiring the shared version plus
+`package/dist/index.html`. Run after building the UI:
+
+```bash
+pnpm --dir packages/ui build
+pnpm check:paired-pack
+```
+
+The tag-triggered release workflow runs the lockstep guard, tests/builds both
+dependency graphs, uploads both tarballs with curated notes, then publishes
+the CLI followed by the UI when `NPM_TOKEN` is configured. npm cannot publish
+two packages atomically: if the UI publish fails after the CLI succeeds, the
+workflow fails and the exact GitHub Release artifacts are retained for
+operator recovery.

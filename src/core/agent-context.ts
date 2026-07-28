@@ -18,16 +18,34 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   readRolloutOccupancy,
+  RolloutOccupancyUnavailableError,
+  readRolloutSessionMeta,
   listRolloutFiles,
   resolveCodexHome,
   CODEX_CLI_VERSION_PREMISE,
 } from './codex/index.js';
 import { findRepoPlanningRootSync } from './planning-home.js';
-import { resolveHandoffThresholdLayers } from './effective-config.js';
+import {
+  requireConfigStoreLayer,
+  resolveHandoffThresholdLayers,
+  resolveThresholdBindingLayers,
+} from './effective-config.js';
 import { DEFAULT_HANDOFF_CONFIG, type ThresholdValue } from './pipeline-registry/types.js';
 import { resolveModelPreset } from './model-presets.js';
+import {
+  PROBE_RUNTIMES,
+  hasRuntimeCapability,
+  type ProbeRuntime,
+} from './runtime-adapters.js';
+import {
+  loadThresholdSchemeSnapshot,
+  resolveThreshold,
+  type ThresholdBindingMetadata,
+  type ThresholdDiagnostic,
+} from './threshold-resolver.js';
 
 export interface AgentContextResult {
+  runtime: ProbeRuntime;
   model: string;
   contextTokens: number;
   limit: number;
@@ -138,6 +156,7 @@ export function computeContextFromTranscript(
   const model = last.message.model ?? 'unknown';
   const limit = options.limit ?? resolveModelLimit(model);
   return {
+    runtime: 'claude',
     model,
     contextTokens,
     limit,
@@ -147,15 +166,16 @@ export function computeContextFromTranscript(
   };
 }
 
-export type TranscriptKind = 'claude' | 'codex';
+export type TranscriptKind = ProbeRuntime;
 
 /** codex-cli's own rollout filename convention — the same one `findRolloutPath` builds paths from. */
 const CODEX_ROLLOUT_BASENAME = /^rollout-.*\.jsonl$/;
 
 function validateRuntime(runtime: string | undefined): TranscriptKind | undefined {
   if (runtime === undefined) return undefined;
-  if (runtime === 'claude' || runtime === 'codex') return runtime;
-  throw new Error(`--runtime must be "claude" or "codex" (got "${runtime}").`);
+  if (hasRuntimeCapability(runtime, 'canProbeContext')) return runtime;
+  const expected = PROBE_RUNTIMES.map((candidate) => `"${candidate}"`).join(' or ');
+  throw new Error(`--runtime must be ${expected} (got "${runtime}").`);
 }
 
 /**
@@ -247,7 +267,7 @@ function readRolloutModel(rolloutPath: string): string {
 
 /**
  * Compute context occupancy from a Codex rollout via exec-core's
- * `readRolloutOccupancy` (last `token_count` event). A rollout with no
+ * `readRolloutOccupancy` (last valid current-context snapshot). A rollout with no
  * `token_count` event yet (`null`) is a normal "zero completed turns" state
  * — a young or just-killed worker, exactly the moment resume tooling probes
  * it — and reports SUCCESS with zero occupancy (design D3), asymmetric with
@@ -255,8 +275,8 @@ function readRolloutModel(rolloutPath: string): string {
  * input, not a young rollout). `limit` prefers an explicit override, else
  * the rollout's own inline `model_context_window` (exact, provider-sent — no
  * model-map lookup on this branch), else `0` when neither is known (honest:
- * no window was ever reported). Throws only when the file itself cannot be
- * read, matching the Claude branch's own unreadable-file behavior.
+ * no window was ever reported). Throws when the file cannot be read or its
+ * token-count stream has no usable current-context snapshot.
  */
 export function computeContextFromRollout(
   rolloutPath: string,
@@ -265,7 +285,10 @@ export function computeContextFromRollout(
   let occupancy: ReturnType<typeof readRolloutOccupancy>;
   try {
     occupancy = readRolloutOccupancy(rolloutPath);
-  } catch {
+  } catch (error) {
+    if (error instanceof RolloutOccupancyUnavailableError) {
+      throw error;
+    }
     throw new Error(
       `Cannot read Codex rollout: ${rolloutPath}. Pass a readable rollout jsonl with --transcript.`
     );
@@ -275,6 +298,7 @@ export function computeContextFromRollout(
   if (!occupancy) {
     const limit = options.limit ?? 0;
     return {
+      runtime: 'codex',
       model,
       contextTokens: 0,
       limit,
@@ -286,11 +310,12 @@ export function computeContextFromRollout(
 
   const limit = options.limit ?? occupancy.modelContextWindow;
   return {
+    runtime: 'codex',
     model,
-    contextTokens: occupancy.totalTokens,
+    contextTokens: occupancy.contextTokens,
     limit,
-    pct: limit > 0 ? roundPct(occupancy.totalTokens / limit) : 0,
-    remainingTokens: remainingTokens(limit, occupancy.totalTokens),
+    pct: limit > 0 ? roundPct(occupancy.contextTokens / limit) : 0,
+    remainingTokens: remainingTokens(limit, occupancy.contextTokens),
     transcript: rolloutPath,
   };
 }
@@ -361,35 +386,6 @@ export function findLatestMainTranscript(baseDir: string): string {
   return newest;
 }
 
-/** Parsed first line of a candidate rollout, or `undefined` when unreadable/malformed/not `session_meta`. */
-function readSessionMeta(rolloutPath: string): Record<string, unknown> | undefined {
-  let content: string;
-  try {
-    content = fs.readFileSync(rolloutPath, 'utf-8');
-  } catch {
-    return undefined;
-  }
-  let firstLine: string | undefined;
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed) {
-      firstLine = trimmed;
-      break;
-    }
-  }
-  if (!firstLine) return undefined;
-  let row: Record<string, unknown>;
-  try {
-    row = JSON.parse(firstLine) as Record<string, unknown>;
-  } catch {
-    return undefined;
-  }
-  if (row.type !== 'session_meta') return undefined;
-  const payload = row.payload;
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
-  return payload as Record<string, unknown>;
-}
-
 /**
  * Newest Codex rollout under `sessionsDir` whose recorded session `cwd`
  * (`session_meta.payload.cwd`, resolved) equals the resolved probe `cwd`,
@@ -408,7 +404,7 @@ export function findLatestRollout(sessionsDir: string, cwd: string): string {
   const candidates = listRolloutFiles(sessionsDir).sort((a, b) => b.mtimeMs - a.mtimeMs);
 
   for (const candidate of candidates) {
-    const meta = readSessionMeta(candidate.path);
+    const meta = readRolloutSessionMeta(candidate.path);
     if (!meta) continue;
     if (meta.forked_from_id !== undefined || meta.parent_thread_id !== undefined) continue;
     const metaCwd = meta.cwd;
@@ -462,11 +458,20 @@ export function resolveTranscriptPath(options: ProbeOptions, runtime?: Transcrip
   throw new Error('Specify a transcript to probe: pass --transcript <path> or --latest.');
 }
 
-export type HandoffThresholdSource = 'project' | 'global' | 'default';
+export type HandoffThresholdSource =
+  | 'project-scheme'
+  | 'store-scheme'
+  | 'global-scheme'
+  | 'project'
+  | 'store'
+  | 'global'
+  | 'default';
 
 export interface HandoffThresholdReport {
   threshold: ThresholdValue;
   thresholdSource: HandoffThresholdSource;
+  binding?: ThresholdBindingMetadata;
+  diagnostics?: ThresholdDiagnostic[];
   /**
    * True when the probe has crossed `threshold`: for a fraction, `pct >=
    * threshold`; for the absolute `{ remainingTokens }` form, `remainingTokens
@@ -479,45 +484,66 @@ export interface HandoffThresholdReport {
 /**
  * Resolves the configured context-handoff threshold for `rasen agent
  * context`: project config `handoff.threshold` (when `cwd` resolves inside a
- * Rasen project) else global config `handoff.threshold` else the built-in
- * default (0.5), and reports whether the probe has crossed it, in either
- * dual-form (D1/D2). Role-agnostic by design — a transcript probe has no
- * stage identity, so pipeline/stage/role overrides (which apply only to
+ * Rasen project) else the inherited store config `handoff.threshold` (when the
+ * project's configuration inherits from a store — see
+ * `store-config-inheritance`) else global config `handoff.threshold` else the
+ * built-in default (0.5), and reports whether the probe has crossed it, in
+ * either dual-form (D1/D2). Role-agnostic by design — a transcript probe has
+ * no stage identity, so pipeline/stage/role overrides (which apply only to
  * `resolveStageHandoffConfig`) do not apply here, and neither does the
  * model-preset layer (that is a stage/role-scoped suggestion, not a bare
  * probe's business). Shares `resolveHandoffThresholdLayers()`
  * (src/core/effective-config.ts) with the pipeline resolver so the two
- * consumers cannot drift on what "the configured threshold" means. Remains a
- * probe: callers must not treat `shouldHandoff` as a reason to change the
- * exit code.
+ * consumers cannot drift on what "the configured threshold" means. Async
+ * because resolving the store layer reads the store registry
+ * (`resolveConfigStoreLayer`). Remains a probe: callers must not treat
+ * `shouldHandoff` as a reason to change the exit code.
  */
-export function resolveHandoffThresholdReport(
+export async function resolveHandoffThresholdReport(
   pct: number,
   remainingTokens: number,
-  cwd: string = process.cwd()
-): HandoffThresholdReport {
+  runtimeOrCwd?: ProbeRuntime | string,
+  cwdArg?: string
+): Promise<HandoffThresholdReport> {
+  const runtime =
+    runtimeOrCwd === 'claude' || runtimeOrCwd === 'codex'
+      ? runtimeOrCwd
+      : undefined;
+  const cwd =
+    runtime === undefined
+      ? runtimeOrCwd ?? process.cwd()
+      : cwdArg ?? process.cwd();
   const projectRoot = findRepoPlanningRootSync(cwd);
-  const layers = resolveHandoffThresholdLayers(projectRoot);
+  const storeLayer = await requireConfigStoreLayer(projectRoot);
+  const layers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
 
-  let threshold: ThresholdValue;
-  let thresholdSource: HandoffThresholdSource;
-  if (layers.projectThreshold !== undefined) {
-    threshold = layers.projectThreshold;
-    thresholdSource = 'project';
-  } else if (layers.globalThreshold !== undefined) {
-    threshold = layers.globalThreshold;
-    thresholdSource = 'global';
-  } else {
-    threshold = DEFAULT_HANDOFF_CONFIG.threshold;
-    thresholdSource = 'default';
-  }
+  const selected = resolveThreshold({
+    family: 'handoff',
+    runtime,
+    bindings: resolveThresholdBindingLayers(projectRoot, storeLayer?.storeRoot),
+    schemes: loadThresholdSchemeSnapshot(),
+    nonBinding: {
+      project: { value: layers.projectThreshold, source: 'project' },
+      store: { value: layers.storeThreshold, source: 'store' },
+      global: { value: layers.globalThreshold, source: 'global' },
+      default: { value: DEFAULT_HANDOFF_CONFIG.threshold, source: 'default' },
+    },
+  });
+  const threshold = selected.threshold;
+  const thresholdSource = selected.source as HandoffThresholdSource;
 
   const shouldHandoff =
     typeof threshold === 'number'
       ? pct >= threshold
       : remainingTokens <= threshold.remainingTokens;
 
-  return { threshold, thresholdSource, shouldHandoff };
+  return {
+    threshold,
+    thresholdSource,
+    shouldHandoff,
+    ...(selected.binding ? { binding: selected.binding } : {}),
+    ...(selected.diagnostics.length > 0 ? { diagnostics: selected.diagnostics } : {}),
+  };
 }
 
 /**

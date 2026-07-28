@@ -11,6 +11,14 @@ import {
   findProjectRegistryEntry,
   readProjectRegistryState,
 } from '../project-registry.js';
+import { cachedResolveRegistrationRoot } from './piercing-cache.js';
+import {
+  resolveStoreBinding,
+  primaryRepair,
+  type StoreUnavailableReason,
+  type UnavailableStoreBinding,
+} from '../store/identity.js';
+import { isValidStoreUid } from '../store/identity-types.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import type { ProjectRef } from './wire-types.js';
 
@@ -20,10 +28,173 @@ export interface ResolvedProject {
 }
 
 /**
+ * A planning space resolved from a `?space=` / body `space` selector
+ * (planning-space-addressing design D1/D2): a project space (machine project
+ * registry) or a store space (machine store registry, store namespace). The
+ * `root` is always canonical (`FileSystemUtils.canonicalizeExistingPath`), so
+ * downstream root-equality comparisons are Windows-safe.
+ */
+export interface ResolvedSpace {
+  type: 'project' | 'store';
+  id: string;
+  name: string;
+  root: string;
+}
+
+export type SpaceSelectorResult =
+  | { ok: true; space: ResolvedSpace }
+  | { ok: false; status: number; code: string; message: string };
+
+type ParsedSpaceSelector =
+  | { ok: true; namespace: 'project' | 'store'; selector: string }
+  | { ok: false; status: 400; code: 'invalid_space'; message: string };
+
+const PROJECT_SPACE_PREFIX = 'project:';
+const STORE_SPACE_PREFIX = 'store:';
+
+/**
+ * Splits a `space` selector into its namespace and bare selector (design D1).
+ * The prefix is MANDATORY — a bare value is rejected (`invalid_space`) rather
+ * than guessed into a namespace, because a project and a store may legitimately
+ * share an id and guessing could silently address the wrong space.
+ */
+export function parseSpaceSelector(raw: string): ParsedSpaceSelector {
+  if (raw.startsWith(PROJECT_SPACE_PREFIX)) {
+    return { ok: true, namespace: 'project', selector: raw.slice(PROJECT_SPACE_PREFIX.length) };
+  }
+  if (raw.startsWith(STORE_SPACE_PREFIX)) {
+    return { ok: true, namespace: 'store', selector: raw.slice(STORE_SPACE_PREFIX.length) };
+  }
+  return {
+    ok: false,
+    status: 400,
+    code: 'invalid_space',
+    message: `Space selector "${raw}" must be prefixed with "project:" or "store:".`,
+  };
+}
+
+/**
+ * Maps an `unavailable` store binding onto this surface's existing result
+ * vocabulary (design D1): a store that is not registered here is a 404
+ * `space_not_found`; a store that is registered but cannot be used is a 409
+ * `space_unavailable`. The reason and its repair travel in the message, so an
+ * HTTP client sees exactly what the CLI reports.
+ */
+const SPACE_STATUS_BY_REASON: Record<StoreUnavailableReason, { status: number; code: string }> = {
+  'not-registered': { status: 404, code: 'space_not_found' },
+  'metadata-missing': { status: 409, code: 'space_unavailable' },
+  'uid-mismatch': { status: 409, code: 'space_unavailable' },
+  'root-unhealthy': { status: 409, code: 'space_unavailable' },
+  'alias-ambiguous': { status: 409, code: 'space_unavailable' },
+  'pointer-malformed': { status: 400, code: 'invalid_space' },
+};
+
+/**
+ * The ONE mapping from an `unavailable` binding to an HTTP result, shared by
+ * every config/space surface so a broken inheritance edge never reaches a
+ * client as a 500 with the structured reason and repair flattened into a
+ * stack trace.
+ */
+export function unavailableStoreHttpResult(
+  binding: UnavailableStoreBinding,
+  subject: string
+): { status: number; code: string; message: string } {
+  const mapped = SPACE_STATUS_BY_REASON[binding.reason];
+  const detail = binding.diagnostics[0]?.message ?? `Store "${subject}" is unavailable.`;
+  return {
+    status: mapped.status,
+    code: mapped.code,
+    message: `${detail} Next: ${primaryRepair(binding)}`,
+  };
+}
+
+function spaceResultFor(
+  selector: string,
+  binding: UnavailableStoreBinding
+): Extract<SpaceSelectorResult, { ok: false }> {
+  return { ok: false, ...unavailableStoreHttpResult(binding, selector) };
+}
+
+/**
+ * Resolves a `space` selector to a `ResolvedSpace` (design D1/D2). The
+ * `project:` namespace reuses `resolveProjectSelector` verbatim (the machine
+ * project registry — NOT the store registry's `project:` reference
+ * namespace). The `store:` namespace resolves the store-namespace registry
+ * entry and runs `inspectRegisteredStore` read-only. Never mutates: no
+ * registration, identity minting, or directory creation.
+ */
+export async function resolveSpaceSelector(raw: string): Promise<SpaceSelectorResult> {
+  const parsed = parseSpaceSelector(raw);
+  if (!parsed.ok) return parsed;
+
+  if (parsed.namespace === 'project') {
+    const resolved = await resolveProjectSelector(parsed.selector);
+    if (!resolved) {
+      return {
+        ok: false,
+        status: 404,
+        code: 'space_not_found',
+        message: `No registered project matches "${parsed.selector}" in the project namespace.`,
+      };
+    }
+    return {
+      ok: true,
+      space: { type: 'project', id: resolved.ref.projectId, name: resolved.ref.name, root: resolved.root },
+    };
+  }
+
+  // `store:<permanent identity>` addresses a Store exactly, which is the only
+  // way an HTTP client can name one of two Stores that share a display name —
+  // the same identity form the CLI's `--store` and lifecycle commands accept.
+  // The resolved space below already reports the Store's own id, never the
+  // selector, so this is purely an additional way in.
+  const binding = await resolveStoreBinding({
+    declaration: isValidStoreUid(parsed.selector)
+      ? { form: 'durable', uid: parsed.selector }
+      : { form: 'alias', id: parsed.selector },
+  });
+
+  if (binding.kind === 'absent') {
+    return {
+      ok: false,
+      status: 404,
+      code: 'space_not_found',
+      message: `No registered store matches "${parsed.selector}" in the store namespace.`,
+    };
+  }
+
+  if (binding.kind === 'unavailable') {
+    if (binding.reason === 'not-registered') {
+      return {
+        ok: false,
+        status: 404,
+        code: 'space_not_found',
+        message: `No registered store matches "${parsed.selector}" in the store namespace.`,
+      };
+    }
+    return spaceResultFor(parsed.selector, binding);
+  }
+
+  return {
+    ok: true,
+    space: {
+      type: 'store',
+      id: binding.store.id,
+      name: binding.store.id,
+      root: binding.store.root,
+    },
+  };
+}
+
+/**
  * Resolves an explicit `project` selector: exact `projectId` match in the
- * registry first, else a canonical-root-path match on the registry key.
- * Returns `null` when the selector matches nothing (callers respond
- * `project_not_found`).
+ * registry first, else a canonical-root-path match on the registry key, else a
+ * worktree-path fallback (worktree-aware-spaces D3) — a canonical path that is
+ * not itself a registry key but is a linked git worktree of a registered
+ * project resolves to that project's identity with the requested worktree path
+ * as the answering root. Returns `null` when the selector matches nothing
+ * (callers respond `project_not_found`). Non-mutating (git rev-parse only) —
+ * the "resolution has no side effects" contract is preserved.
  */
 export async function resolveProjectSelector(selector: string): Promise<ResolvedProject | null> {
   const state = await readProjectRegistryState();
@@ -42,8 +213,24 @@ export async function resolveProjectSelector(selector: string): Promise<Resolved
     return null;
   }
   const entry = state.projects[canonical];
-  if (!entry) return null;
-  return { root: canonical, ref: { projectId: entry.projectId, name: entry.name, root: canonical } };
+  if (entry) {
+    return { root: canonical, ref: { projectId: entry.projectId, name: entry.name, root: canonical } };
+  }
+
+  // Worktree-path fallback: the requested path is a linked worktree of a
+  // registered project. Answer from the worktree's own root with the owning
+  // project's identity, so a worktree's branch-local planning state is
+  // addressable without the worktree becoming a separate space.
+  // Cached (TTL + .git mtime invalidation): uncached, every board fetch
+  // against a worktree-root selector spawned two git rev-parse processes.
+  const pierced = await cachedResolveRegistrationRoot(canonical);
+  if (pierced !== canonical) {
+    const mainEntry = state.projects[pierced];
+    if (mainEntry) {
+      return { root: canonical, ref: { projectId: mainEntry.projectId, name: mainEntry.name, root: canonical } };
+    }
+  }
+  return null;
 }
 
 /**

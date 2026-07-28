@@ -4,15 +4,34 @@ import * as path from 'node:path';
 import { promisify } from 'node:util';
 
 import { StoreError } from './errors.js';
+import { redactRemote } from './remote.js';
 
 const fs = nodeFs.promises;
-const execFileAsync = promisify(execFile);
+const execFilePromise = promisify(execFile);
+
+/**
+ * Every git spawn goes through here so `windowsHide` is always set: the
+ * daemon is a console-less parent on Windows, and each console child (git)
+ * would otherwise flash a visible conhost window per probe — the space
+ * listing runs one inventory probe per project, so a board or Spaces load
+ * flashed a burst of windows. Same flag the daemon and session supervisor
+ * spawns already pass.
+ */
+function execFileAsync(
+  file: string,
+  args: string[],
+  options: { cwd?: string } = {}
+): Promise<{ stdout: string; stderr: string }> {
+  return execFilePromise(file, args, { ...options, windowsHide: true });
+}
 
 /**
  * Git mechanics for stores: repository detection, setup-time init and
- * commit, and the read-only facts doctor reports. Nothing here clones, pulls,
- * pushes, or syncs — setup-time `git init` plus one initial commit is the
- * entire write surface.
+ * commit, the read-only facts doctor reports, and `git clone` for bootstrap's
+ * obtain step. Nothing here pulls, pushes, or syncs — setup-time `git init`
+ * plus one initial commit is the entire setup write surface, and `clone` is
+ * the obtain step's surface, routed through the same `execFileAsync` wrapper
+ * as every other git spawn.
  */
 
 function isSpawnNotFoundError(error: unknown): boolean {
@@ -127,6 +146,51 @@ export async function commitStoreFiles(
   return true;
 }
 
+/**
+ * `git clone` for bootstrap's obtain step (design D7). The remote is an
+ * ARGUMENT VECTOR element, never a concatenated shell string — `execFile` does
+ * not invoke a shell, so a remote starting with `-` cannot be misread as a
+ * flag, and the `--` separator is defense-in-depth on top of that. The target
+ * is a resolved absolute path composed by the caller.
+ *
+ * Throws a `StoreError` with a `fix` on failure, matching the pattern
+ * `initGitRepository` and `commitStoreFiles` establish. ENOENT (git binary
+ * not installed) is reported distinctly from a clone failure, matching
+ * `assertGitCommitIdentity`'s `isSpawnNotFoundError` pattern.
+ */
+export async function cloneRepository(remote: string, target: string): Promise<void> {
+  try {
+    await execFileAsync('git', ['clone', '--', remote, target]);
+  } catch (error) {
+    if (isSpawnNotFoundError(error)) {
+      throw new StoreError(
+        'Git is not available, so the repository cannot be cloned.',
+        'store_git_unavailable',
+        {
+          target: 'store.git',
+          fix: 'Install Git, or obtain the repository manually and register it with rasen store register.',
+        }
+      );
+    }
+
+    // Defense-in-depth (M9): git's error output echoes the raw remote URL,
+    // which may carry credentials. Replace every occurrence of the raw remote
+    // with its redacted form BEFORE constructing the diagnostic, so even a
+    // future caller that bypasses cloneWithCleanupGuard's credential gate
+    // cannot leak credentials into the error surface.
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    const safeMessage = rawMessage.split(remote).join(redactRemote(remote));
+    throw new StoreError(
+      `Failed to clone the repository: ${safeMessage}`,
+      'store_clone_failed',
+      {
+        target: 'store.git',
+        fix: 'Verify the remote is reachable and you have access, or obtain the repository manually and register it with rasen store register.',
+      }
+    );
+  }
+}
+
 async function gitProbe(storeRoot: string, args: string[]): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync('git', ['-C', storeRoot, ...args]);
@@ -157,6 +221,19 @@ export async function gitHasUncommittedChanges(storeRoot: string): Promise<boole
 export async function gitHasRemote(storeRoot: string): Promise<boolean | null> {
   const stdout = await gitProbe(storeRoot, ['remote']);
   return stdout === null ? null : stdout.trim().length > 0;
+}
+
+/**
+ * The commit a repository currently sits on, or null when `repoRoot` is not a
+ * repository, git is unavailable, or HEAD has no commits yet. Read-only and
+ * network-free. Used as the base a two-repository membership mutation records
+ * and re-checks, so a non-git root DEGRADES to "no base" instead of blocking
+ * the mutation.
+ */
+export async function gitHeadCommit(repoRoot: string): Promise<string | null> {
+  const stdout = await gitProbe(repoRoot, ['rev-parse', 'HEAD']);
+  const commit = stdout?.trim();
+  return commit ? commit : null;
 }
 
 /**
@@ -284,4 +361,93 @@ export async function gitDir(repoPath: string): Promise<string | null> {
   const raw = stdout?.trim();
   if (!raw) return null;
   return path.isAbsolute(raw) ? raw : path.resolve(repoPath, raw);
+}
+
+/** One worktree of a repository, as reported by `git worktree list --porcelain` (worktree-aware-spaces D2). */
+export interface GitWorktreeEntry {
+  /** The worktree's absolute working-tree root, verbatim from git. */
+  root: string;
+  /** The checked-out commit sha, or null (a fresh worktree with no HEAD). */
+  head: string | null;
+  /** The checked-out branch's short name (`refs/heads/` stripped), or null when detached or bare. */
+  branch: string | null;
+  /** True for the main checkout — the FIRST porcelain entry (git lists it first). */
+  isMain: boolean;
+  locked: boolean;
+  prunable: boolean;
+}
+
+/**
+ * Parses `git worktree list --porcelain` output (worktree-aware-spaces D2).
+ * Records are blank-line-separated; each is a sequence of `label [value]`
+ * lines (`worktree <path>`, `HEAD <sha>`, `branch <ref>` | `detached`,
+ * `bare`, `locked [reason]`, `prunable [reason]`). The first record git
+ * emits is always the main checkout, so `isMain` is derived by position, not
+ * by any per-record flag. Exported for fixture-driven parser tests.
+ */
+export function parseWorktreePorcelain(stdout: string): GitWorktreeEntry[] {
+  const entries: GitWorktreeEntry[] = [];
+  let root: string | undefined;
+  let head: string | null = null;
+  let branch: string | null = null;
+  let locked = false;
+  let prunable = false;
+
+  const flush = () => {
+    if (root === undefined) return;
+    entries.push({ root, head, branch, isMain: entries.length === 0, locked, prunable });
+    root = undefined;
+    head = null;
+    branch = null;
+    locked = false;
+    prunable = false;
+  };
+
+  for (const rawLine of stdout.split('\n')) {
+    const line = rawLine.replace(/\r$/, '');
+    if (line.trim() === '') {
+      flush();
+      continue;
+    }
+    const spaceIdx = line.indexOf(' ');
+    const label = spaceIdx === -1 ? line : line.slice(0, spaceIdx);
+    const value = spaceIdx === -1 ? '' : line.slice(spaceIdx + 1);
+    switch (label) {
+      case 'worktree':
+        flush();
+        root = value;
+        break;
+      case 'HEAD':
+        head = value || null;
+        break;
+      case 'branch':
+        branch = value.replace(/^refs\/heads\//, '') || null;
+        break;
+      case 'detached':
+        branch = null;
+        break;
+      case 'locked':
+        locked = true;
+        break;
+      case 'prunable':
+        prunable = true;
+        break;
+      // `bare` and any future labels: ignored — the record still flushes.
+    }
+  }
+  flush();
+  return entries;
+}
+
+/**
+ * The live worktree inventory for `repoRoot`, derived from `git worktree list
+ * --porcelain` at read time (worktree-aware-spaces D2) — never persisted.
+ * Returns null on ANY failure (git unavailable, not a repository), matching
+ * the three-way posture of the other read-only probes; callers degrade to
+ * "no inventory" (an empty listing, not an error).
+ */
+export async function gitWorktreeList(repoRoot: string): Promise<GitWorktreeEntry[] | null> {
+  const stdout = await gitProbe(repoRoot, ['worktree', 'list', '--porcelain']);
+  if (stdout === null) return null;
+  return parseWorktreePorcelain(stdout);
 }

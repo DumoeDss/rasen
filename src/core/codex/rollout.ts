@@ -25,10 +25,6 @@ export interface FindRolloutPathOptions {
   timestamp?: Date;
 }
 
-function pad2(n: number): string {
-  return String(n).padStart(2, '0');
-}
-
 /**
  * `sessions/<YYYY>/<MM>/<DD>/rollout-<YYYY-MM-DDTHH-mm-ss>-<threadId>.jsonl`,
  * LOCAL-time-based. codex-cli names rollout files (and their date directory)
@@ -37,16 +33,9 @@ function pad2(n: number): string {
  * 57-17-....jsonl` has a first-row `timestamp` of `2026-07-12T06:57:17.275Z`
  * (UTC+8 skew), and E01 shows the same offset. Since the reader and the codex
  * process that wrote the file share a machine, local-to-local comparison is
- * the correct match.
+ * Resolution no longer depends on reconstructing this timestamp path: active
+ * and archived stores share one combined newest-first candidate order.
  */
-function deterministicRolloutPath(sessionsDir: string, threadId: string, timestamp: Date): string {
-  const year = String(timestamp.getFullYear());
-  const month = pad2(timestamp.getMonth() + 1);
-  const day = pad2(timestamp.getDate());
-  const ts = `${year}-${month}-${day}T${pad2(timestamp.getHours())}-${pad2(timestamp.getMinutes())}-${pad2(timestamp.getSeconds())}`;
-  return path.join(sessionsDir, year, month, day, `rollout-${ts}-${threadId}.jsonl`);
-}
-
 function safeReadDir(dir: string): fs.Dirent[] {
   try {
     return fs.readdirSync(dir, { withFileTypes: true });
@@ -57,7 +46,7 @@ function safeReadDir(dir: string): fs.Dirent[] {
 
 function newestMatch(matches: Array<{ path: string; mtimeMs: number }>): string | undefined {
   if (matches.length === 0) return undefined;
-  matches.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  matches.sort((a, b) => b.mtimeMs - a.mtimeMs || a.path.localeCompare(b.path));
   return matches[0].path;
 }
 
@@ -108,13 +97,6 @@ export function listRolloutFiles(sessionsDir: string): RolloutFileEntry[] {
  * Bounded newest-first scan of the fixed-depth `sessions/<Y>/<M>/<D>/` tree
  * for a file whose name contains `threadId`, built on {@link listRolloutFiles}.
  */
-function scanForRollout(sessionsDir: string, threadId: string): string | undefined {
-  const matches = listRolloutFiles(sessionsDir).filter((entry) =>
-    path.basename(entry.path).includes(threadId)
-  );
-  return newestMatch(matches);
-}
-
 /**
  * Flat-directory newest-first scan of `<codexHome>/archived_sessions/` for a
  * file whose name contains `threadId` — live-verified layout: unlike the
@@ -122,13 +104,13 @@ function scanForRollout(sessionsDir: string, threadId: string): string | undefin
  * flat directory (`docs/codex-parity/solutions/06`; confirmed on this
  * machine: `~/.codex/archived_sessions/rollout-<ts>-<id>.jsonl`).
  */
-function scanArchivedSessions(codexHome: string, threadId: string): string | undefined {
+function scanArchivedSessions(codexHome: string, threadId?: string): RolloutFileEntry[] {
   const archivedDir = path.join(codexHome, 'archived_sessions');
   const matches: Array<{ path: string; mtimeMs: number }> = [];
   for (const fileEntry of safeReadDir(archivedDir)) {
     if (!fileEntry.isFile()) continue;
     if (!fileEntry.name.endsWith('.jsonl')) continue;
-    if (!fileEntry.name.includes(threadId)) continue;
+    if (threadId && !fileEntry.name.includes(threadId)) continue;
     const full = path.join(archivedDir, fileEntry.name);
     try {
       matches.push({ path: full, mtimeMs: fs.statSync(full).mtimeMs });
@@ -136,7 +118,13 @@ function scanArchivedSessions(codexHome: string, threadId: string): string | und
       // File disappeared between readdir and stat; skip.
     }
   }
-  return newestMatch(matches);
+  return matches.sort((a, b) => b.mtimeMs - a.mtimeMs || a.path.localeCompare(b.path));
+}
+
+/** Active and archived rollouts under one deterministic newest-first policy. */
+export function listStoredRolloutFiles(codexHome: string): RolloutFileEntry[] {
+  return [...listRolloutFiles(path.join(codexHome, 'sessions')), ...scanArchivedSessions(codexHome)]
+    .sort((a, b) => b.mtimeMs - a.mtimeMs || a.path.localeCompare(b.path));
 }
 
 /**
@@ -149,17 +137,62 @@ function scanArchivedSessions(codexHome: string, threadId: string): string | und
  */
 export function findRolloutPath(threadId: string, options: FindRolloutPathOptions = {}): string | undefined {
   const codexHome = options.codexHome ?? resolveCodexHome();
-  const sessionsDir = path.join(codexHome, 'sessions');
+  const candidates = listStoredRolloutFiles(codexHome).filter((entry) =>
+    path.basename(entry.path).includes(threadId)
+  );
+  const exact = candidates.find((entry) => {
+    const meta = readRolloutSessionMeta(entry.path);
+    return meta?.session_id === threadId || meta?.id === threadId;
+  });
+  if (exact) return exact.path;
 
-  if (options.timestamp) {
-    const deterministic = deterministicRolloutPath(sessionsDir, threadId, options.timestamp);
-    if (fs.existsSync(deterministic)) return deterministic;
+  return newestMatch(candidates);
+}
+
+/**
+ * Parsed first line of a candidate rollout, or `undefined` when
+ * unreadable/malformed/not `session_meta`. Shared by `agent-context.ts`'s
+ * `findLatestRollout` (cwd/non-forked filtering) and
+ * `src/core/token-audit/discover-codex.ts`'s subagent-family BFS
+ * (`parent_thread_id` chain) — the one implementation of "read a rollout's
+ * session_meta first line" (design D5, relocated from `agent-context.ts`'s
+ * private `readSessionMeta`, behavior unchanged).
+ */
+export function readRolloutSessionMeta(rolloutPath: string): Record<string, unknown> | undefined {
+  // session_meta is the first non-empty JSONL row. Read a bounded prefix so
+  // discovery never materializes a multi-megabyte rollout merely for metadata.
+  const maxBytes = 1024 * 1024;
+  let descriptor: number | undefined;
+  let content: string;
+  try {
+    descriptor = fs.openSync(rolloutPath, 'r');
+    const buffer = Buffer.allocUnsafe(maxBytes);
+    const bytes = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
+    content = buffer.subarray(0, bytes).toString('utf8');
+  } catch {
+    return undefined;
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
   }
-
-  const active = scanForRollout(sessionsDir, threadId);
-  if (active) return active;
-
-  return scanArchivedSessions(codexHome, threadId);
+  let firstLine: string | undefined;
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed) {
+      firstLine = trimmed;
+      break;
+    }
+  }
+  if (!firstLine) return undefined;
+  let row: Record<string, unknown>;
+  try {
+    row = JSON.parse(firstLine) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+  if (row.type !== 'session_meta') return undefined;
+  const payload = row.payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
+  return payload as Record<string, unknown>;
 }
 
 function readJsonlLines(rolloutPath: string): Record<string, unknown>[] {
@@ -182,37 +215,63 @@ function readJsonlLines(rolloutPath: string): Record<string, unknown>[] {
 }
 
 export interface RolloutOccupancy {
+  /** Current context usage from `last_token_usage.total_tokens`. */
+  contextTokens: number;
+  /**
+   * @deprecated Use {@link contextTokens}. Retained for package API
+   * compatibility and reports the same current-context value; it never
+   * represents lifetime `total_token_usage`.
+   */
   totalTokens: number;
   modelContextWindow: number;
-  /** totalTokens / modelContextWindow. */
+  /** contextTokens / modelContextWindow. */
   pct: number;
 }
 
+/** A token-count stream exists, but its format cannot provide live occupancy. */
+export class RolloutOccupancyUnavailableError extends Error {
+  constructor(rolloutPath: string) {
+    super(
+      `Cannot determine current-context occupancy from Codex rollout: ${rolloutPath}. ` +
+      `Token-count events must contain numeric info.last_token_usage.total_tokens and ` +
+      `info.model_context_window values from a compatible Codex CLI.`
+    );
+    this.name = 'RolloutOccupancyUnavailableError';
+  }
+}
+
 /**
- * Read context occupancy from a rollout's LAST `token_count` event
- * (`docs/codex-parity/experiments/E03`: `.payload.info.total_token_usage.total_tokens`
- * and `.payload.info.model_context_window`). Returns `null` when the rollout
- * has no `token_count` line yet — a normal "zero completed turns" signal, NOT
- * an error (design D8).
+ * Read context occupancy from the last valid `token_count` snapshot:
+ * `.payload.info.last_token_usage.total_tokens` paired with
+ * `.payload.info.model_context_window`. Lifetime-cumulative
+ * `total_token_usage` is intentionally never an occupancy fallback.
+ * Returns `null` only when no token-count event exists (a normal zero-turn
+ * signal); an unusable token-count stream is a compatibility error.
  */
 export function readRolloutOccupancy(rolloutPath: string): RolloutOccupancy | null {
   const rows = readJsonlLines(rolloutPath);
   let last: RolloutOccupancy | null = null;
+  let sawTokenCount = false;
   for (const row of rows) {
     if (row.type !== 'event_msg') continue;
     const payload = row.payload as Record<string, unknown> | undefined;
     if (!payload || payload.type !== 'token_count') continue;
+    sawTokenCount = true;
     const info = payload.info as Record<string, unknown> | undefined;
-    const totalUsage = info?.total_token_usage as Record<string, unknown> | undefined;
-    const totalTokens = totalUsage?.total_tokens;
+    const lastUsage = info?.last_token_usage as Record<string, unknown> | undefined;
+    const contextTokens = lastUsage?.total_tokens;
     const modelContextWindow = info?.model_context_window;
-    if (typeof totalTokens === 'number' && typeof modelContextWindow === 'number') {
+    if (typeof contextTokens === 'number' && typeof modelContextWindow === 'number') {
       last = {
-        totalTokens,
+        contextTokens,
+        totalTokens: contextTokens,
         modelContextWindow,
-        pct: modelContextWindow > 0 ? totalTokens / modelContextWindow : 0,
+        pct: modelContextWindow > 0 ? contextTokens / modelContextWindow : 0,
       };
     }
+  }
+  if (sawTokenCount && !last) {
+    throw new RolloutOccupancyUnavailableError(rolloutPath);
   }
   return last;
 }

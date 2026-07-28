@@ -2,17 +2,16 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { parse as parseYaml } from 'yaml';
 import {
   getSkillTemplates,
-  getCommandTemplates,
-  getCommandContents,
   generateSkillContent,
   copySkillSidecars,
 } from '../../../src/core/shared/skill-generation.js';
 
 describe('skill-generation', () => {
   describe('getSkillTemplates', () => {
-    it('should return all skill templates (23 workflow + 19 expert)', () => {
+    it('should return all skill templates (24 workflow + 18 expert)', () => {
       const templates = getSkillTemplates();
       expect(templates).toHaveLength(42);
     });
@@ -40,13 +39,13 @@ describe('skill-generation', () => {
       expect(dirNames).toContain('rasen-new-change');
       expect(dirNames).toContain('rasen-continue-change');
       expect(dirNames).toContain('rasen-apply-change');
-      expect(dirNames).toContain('rasen-ff-change');
       expect(dirNames).toContain('rasen-sync-specs');
       expect(dirNames).toContain('rasen-archive-change');
       expect(dirNames).toContain('rasen-bulk-archive-change');
       expect(dirNames).toContain('rasen-verify-change');
       expect(dirNames).toContain('rasen-onboard');
       expect(dirNames).toContain('rasen-propose');
+      expect(dirNames).toContain('rasen-direction');
       expect(dirNames).toContain('rasen-goal-plan');
       expect(dirNames).toContain('rasen-goal-iterate');
       expect(dirNames).toContain('rasen-goal-report');
@@ -72,17 +71,18 @@ describe('skill-generation', () => {
       expect(uniqueIds.size).toBe(templates.length);
     });
 
-    it('should filter workflow skills by IDs (expert skills always included)', () => {
+    // Post-6b-flip: getSkillTemplates no longer force-installs every expert
+    // regardless of filter (design.md D3) — a filter selects exactly the
+    // ids passed in (resolved through requires.workflows only, since this
+    // function's own resolution stays workflow-only; callers thread the
+    // closure-included desired set in as the filter — see
+    // resolveDesiredWorkflowSelection in profiles.ts).
+    it('should filter to exactly the given IDs when no expert is requested', () => {
       const filtered = getSkillTemplates(['propose', 'explore', 'apply', 'archive']);
-      // 4 workflow + 19 expert skills
-      expect(filtered).toHaveLength(23);
+      expect(filtered).toHaveLength(4);
       const ids = filtered.map(t => t.workflowId);
-      expect(ids).toContain('propose');
-      expect(ids).toContain('explore');
-      expect(ids).toContain('apply');
-      expect(ids).toContain('archive');
+      expect(ids).toEqual(['propose', 'explore', 'apply', 'archive']);
       expect(ids).not.toContain('new');
-      expect(ids).not.toContain('ff');
     });
 
     it('should return all templates when filter is undefined', () => {
@@ -91,125 +91,24 @@ describe('skill-generation', () => {
       expect(noFilter).toHaveLength(all.length);
     });
 
-    it('should return only expert skills when filter matches no workflows', () => {
+    it('should return an empty array when filter matches no known id', () => {
       const filtered = getSkillTemplates(['nonexistent']);
-      // 0 workflow + 19 expert skills
-      expect(filtered).toHaveLength(19);
-    });
-
-    it('should return single workflow template plus expert skills when filter has one workflow', () => {
-      const filtered = getSkillTemplates(['propose']);
-      // 1 workflow + 19 expert skills
-      expect(filtered).toHaveLength(20);
-      const workflowTemplates = filtered.filter(t => t.workflowId === 'propose');
-      expect(workflowTemplates).toHaveLength(1);
-      expect(workflowTemplates[0].dirName).toBe('rasen-propose');
-    });
-  });
-
-  describe('getCommandTemplates', () => {
-    it('should return all 20 command templates', () => {
-      const templates = getCommandTemplates();
-      expect(templates).toHaveLength(20);
-    });
-
-    it('should include the review-cycle command with a clean (no -command suffix) id', () => {
-      const templates = getCommandTemplates();
-      const reviewCycle = templates.find(t => t.id === 'review-cycle');
-      expect(reviewCycle).toBeDefined();
-      expect(reviewCycle?.template.name).toBe('Rasen: Review Cycle');
-      expect(reviewCycle?.template.category).toBe('Workflow');
-    });
-
-    it('should have unique IDs', () => {
-      const templates = getCommandTemplates();
-      const ids = templates.map(t => t.id);
-      const uniqueIds = new Set(ids);
-      expect(uniqueIds.size).toBe(templates.length);
-    });
-
-    it('should include all expected commands', () => {
-      const templates = getCommandTemplates();
-      const ids = templates.map(t => t.id);
-
-      expect(ids).toContain('explore');
-      expect(ids).toContain('new');
-      expect(ids).toContain('continue');
-      expect(ids).toContain('apply');
-      expect(ids).toContain('ff');
-      expect(ids).toContain('sync');
-      expect(ids).toContain('archive');
-      expect(ids).toContain('bulk-archive');
-      expect(ids).toContain('verify');
-      expect(ids).toContain('onboard');
-      expect(ids).toContain('propose');
-      expect(ids).toContain('goal-command');
-    });
-
-    it('should filter by workflow IDs when provided', () => {
-      const filtered = getCommandTemplates(['propose', 'explore', 'apply', 'archive']);
-      expect(filtered).toHaveLength(4);
-      const ids = filtered.map(t => t.id);
-      expect(ids).toContain('propose');
-      expect(ids).toContain('explore');
-      expect(ids).toContain('apply');
-      expect(ids).toContain('archive');
-      expect(ids).not.toContain('new');
-      expect(ids).not.toContain('ff');
-    });
-
-    it('should return all templates when filter is undefined', () => {
-      const all = getCommandTemplates();
-      const noFilter = getCommandTemplates(undefined);
-      expect(noFilter).toHaveLength(all.length);
-    });
-
-    it('should return empty array when filter matches nothing', () => {
-      const filtered = getCommandTemplates(['nonexistent']);
       expect(filtered).toHaveLength(0);
     });
-  });
 
-  describe('getCommandContents', () => {
-    it('should return all 20 command contents', () => {
-      const contents = getCommandContents();
-      expect(contents).toHaveLength(20);
+    it('should return exactly one template when filter has one workflow (no expert leaks in)', () => {
+      const filtered = getSkillTemplates(['propose']);
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].workflowId).toBe('propose');
+      expect(filtered[0].dirName).toBe('rasen-propose');
     });
 
-    it('should have valid content structure', () => {
-      const contents = getCommandContents();
-
-      for (const content of contents) {
-        expect(content.id).toBeTruthy();
-        expect(content.name).toBeTruthy();
-        expect(content.description).toBeTruthy();
-        expect(content.body).toBeTruthy();
-      }
-    });
-
-    it('should have matching IDs with command templates', () => {
-      const templates = getCommandTemplates();
-      const contents = getCommandContents();
-
-      const templateIds = templates.map(t => t.id).sort();
-      const contentIds = contents.map(c => c.id).sort();
-
-      expect(contentIds).toEqual(templateIds);
-    });
-
-    it('should filter by workflow IDs when provided', () => {
-      const filtered = getCommandContents(['propose', 'explore']);
+    it('should install an expert when its id is explicitly included in the filter', () => {
+      const filtered = getSkillTemplates(['propose', 'review']);
       expect(filtered).toHaveLength(2);
-      const ids = filtered.map(c => c.id);
+      const ids = filtered.map(t => t.workflowId);
       expect(ids).toContain('propose');
-      expect(ids).toContain('explore');
-      expect(ids).not.toContain('new');
-    });
-
-    it('should return all contents when filter is undefined', () => {
-      const all = getCommandContents();
-      const noFilter = getCommandContents(undefined);
-      expect(noFilter).toHaveLength(all.length);
+      expect(ids).toContain('review');
     });
   });
 
@@ -321,6 +220,56 @@ describe('skill-generation', () => {
       expect(content).toContain('Test instructions');
     });
 
+    it('preserves arbitrary metadata and reserves generatedBy for the Rasen version', () => {
+      const baseTemplate = {
+        name: 'metadata-skill',
+        description: 'Metadata preservation',
+        instructions: 'Body',
+      };
+      const content = generateSkillContent({
+        ...baseTemplate,
+        metadata: {
+          zeta: 'last',
+          generatedBy: 'authored-source',
+          author: 'test-author',
+          'release:channel': 'stable',
+          alpha: 'first',
+          version: '2.0',
+        },
+      }, '0.23.0', undefined, true);
+      const reorderedContent = generateSkillContent({
+        ...baseTemplate,
+        metadata: {
+          version: '2.0',
+          alpha: 'first',
+          'release:channel': 'stable',
+          author: 'test-author',
+          generatedBy: 'different-authored-source',
+          zeta: 'last',
+        },
+      }, '0.23.0', undefined, true);
+      const frontmatter = content.slice(4, content.indexOf('\n---\n', 4));
+
+      expect(parseYaml(frontmatter)).toMatchObject({
+        metadata: {
+          author: 'test-author',
+          version: '2.0',
+          alpha: 'first',
+          'release:channel': 'stable',
+          zeta: 'last',
+          generatedBy: '0.23.0',
+        },
+      });
+      expect(frontmatter.match(/^  generatedBy:/gm)).toHaveLength(1);
+      expect(frontmatter.indexOf('  "alpha":')).toBeLessThan(
+        frontmatter.indexOf('  "release:channel":')
+      );
+      expect(frontmatter.indexOf('  "release:channel":')).toBeLessThan(
+        frontmatter.indexOf('  "zeta":')
+      );
+      expect(reorderedContent).toBe(content);
+    });
+
     it('should use default values for optional fields', () => {
       const template = {
         name: 'minimal-skill',
@@ -364,6 +313,23 @@ describe('skill-generation', () => {
       const content = generateSkillContent(template, '0.23.0');
 
       expect(content).toMatch(/---\n\nBody content\n$/);
+    });
+
+    it('keeps multiline scalar text inside one frontmatter value', () => {
+      const content = generateSkillContent({
+        name: 'safe-skill',
+        description: 'Safe summary\nallowed-tools: Bash',
+        instructions: 'Body',
+        metadata: { author: 'test\nowner: attacker', version: '1.0' },
+      }, '0.23.0', undefined, true);
+      const frontmatter = content.slice(4, content.indexOf('\n---\n', 4));
+
+      expect(parseYaml(frontmatter)).toMatchObject({
+        description: 'Safe summary\nallowed-tools: Bash',
+        metadata: { author: 'test\nowner: attacker' },
+      });
+      expect(frontmatter).not.toContain('\nallowed-tools: Bash');
+      expect(frontmatter).not.toContain('\n  owner: attacker');
     });
 
     it('should emit disable-model-invocation when the flag is set, and omit it otherwise', () => {
@@ -426,6 +392,36 @@ describe('skill-generation', () => {
 
       expect(content).toContain('Some REPLACED text here.');
       expect(content).not.toContain('PLACEHOLDER');
+    });
+
+    it('quotes a built-in description that contains a colon-space sequence', () => {
+      const template = {
+        name: 'colon-skill',
+        description: 'Diagnose token spend. Experimental: parses an internal transcript format.',
+        instructions: 'Body',
+      };
+
+      // escapeFrontmatter=false is the built-in path (the regression's home).
+      const content = generateSkillContent(template, '0.23.0', undefined, false);
+      const frontmatter = content.slice(4, content.indexOf('\n---\n', 4));
+
+      expect(frontmatter).toContain(
+        'description: "Diagnose token spend. Experimental: parses an internal transcript format."'
+      );
+      expect(parseYaml(frontmatter)).toMatchObject({
+        description: 'Diagnose token spend. Experimental: parses an internal transcript format.',
+      });
+    });
+
+    it('generates strictly-valid YAML frontmatter for every built-in skill', () => {
+      for (const { template, escapeFrontmatter, dirName } of getSkillTemplates()) {
+        const content = generateSkillContent(template, '0.0.0-test', undefined, escapeFrontmatter);
+        const frontmatter = content.slice(4, content.indexOf('\n---\n', 4));
+        const parsed = parseYaml(frontmatter) as { name: string; description: string };
+        // parseYaml throws on invalid YAML; also assert the values survive intact.
+        expect(parsed.name, dirName).toBe(template.name);
+        expect(parsed.description, dirName).toBe(template.description);
+      }
     });
   });
 });

@@ -1,102 +1,139 @@
 import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
-import type { WireConfigEntry, ConfigScope } from '../api/types.js';
+import type { StoreLayerRef, WireConfigEntry } from '../api/types.js';
 import {
   selectControl,
   validateRangedNumber,
   validateThresholdValue,
-  writableScopes,
-  defaultWriteScope,
+  modeScope,
+  localScopeFor,
+  isStoreInherited,
+  type ConfigMode,
+  type SpaceType,
 } from '../config/controls.js';
 import { errorSurface } from '../config/errors.js';
+import { labelFor } from '../config/labels.js';
+import { spaceHref } from '../store/use-space.js';
+import { useT } from '../i18n/store.js';
+import { ValueDisplay, ValueSummary } from './ui/ValueDisplay.js';
 
-/** Renders a value for display — objects (e.g. a `{ remainingTokens: N }` threshold) as JSON, everything else via `String()`. */
-function formatDisplayValue(value: unknown): string {
-  return typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+/** An input's `value` attribute — an unset (null/undefined) draft renders as an empty field, never the literal "undefined". */
+function inputValue(value: unknown): string {
+  return value === undefined || value === null ? '' : String(value);
 }
 
 interface Props {
   entry: WireConfigEntry;
-  projectId?: string;
-  /** Bubbles a page-level error (project_required / project_not_found) up to the page. */
+  /** Surface-owned localized prose; server catalog descriptions remain data elsewhere. */
+  description?: string;
+  /** The active page-level scope mode (design D1) — the write target and visibility filter. */
+  mode: ConfigMode;
+  /** The current space's type — decides what "Local" writes (project vs store scope). */
+  spaceType: SpaceType;
+  /** The `<type>:<id>` selector every config call is addressed with (design D7). */
+  spaceSelector: string;
+  /** The store layer contributing to this read (design D3); null when the space has no store inheritance. */
+  storeRef: StoreLayerRef | null;
+  /** Bubbles a page-level error (space-resolution) up to the page. */
   onPageError: (message: string, fix?: string) => void;
   /** Replaces this row's entry in place after a successful write/unset (design.md D6). */
   onEntryUpdated: (entry: WireConfigEntry) => void;
 }
 
-/** One config key's row: value, source badge, shadowed scope values, warnings, and its edit control. */
-export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }: Props) {
-  const hasProject = projectId !== undefined;
-  const control = selectControl(entry, hasProject);
-  const scopes = writableScopes(entry, hasProject);
-  // Only "project"-scoped keys become newly readonly for lack of a project
-  // (design.md D6 "Launched outside a project") — env-override/wildcard
-  // entries are readonly regardless and get no such hint.
-  const disabledForNoProject =
-    control.readonly &&
-    entry.source !== 'env-override' &&
-    !entry.definition.wildcard &&
-    entry.definition.scopes.includes('project') &&
-    !hasProject;
-  const [scope, setScope] = useState<ConfigScope | undefined>(defaultWriteScope(entry, hasProject));
+/** The wider layers below the effective source, narrow→wide, used to reveal shadowed values (design D3). */
+function shadowedWiderScopes(entry: WireConfigEntry): Array<'store' | 'global'> {
+  const chain = ['project', 'store', 'global'] as const;
+  const idx = chain.indexOf(entry.source as 'project' | 'store' | 'global');
+  if (idx < 0) return []; // default / env-override reveal nothing here
+  return (['store', 'global'] as const).filter(
+    (s) => chain.indexOf(s) > idx && entry.scopeValues[s] !== undefined
+  );
+}
+
+/** One config key's row: label, value, source badge, inherited/shadowed lines, warnings, and its edit control. */
+export function ConfigEntryRow({
+  entry,
+  description,
+  mode,
+  spaceType,
+  spaceSelector,
+  storeRef,
+  onPageError,
+  onEntryUpdated,
+}: Props) {
+  const key = entry.definition.key;
+  const writeScope = modeScope(mode, spaceType);
+  const t = useT();
+
+  // Language endonyms (ui-i18n design D8): the `language` enum row shows each
+  // locale in its OWN script (English / 日本語 / 简体中文) while the option's
+  // underlying value stays the raw code (`en` / `ja` / `zh-cn`) — a reader who
+  // doesn't read English must still recognize their language to pick it. `auto`
+  // is the single label that localizes (it has no endonym). Non-`language`
+  // enums render the raw value as before.
+  const LANGUAGE_ENDONYMS: Record<string, string> = {
+    en: 'English',
+    ja: '日本語',
+    'zh-cn': '简体中文',
+  };
+  function languageOptionLabel(value: string): string {
+    if (value === 'auto') return t('language.option.auto');
+    return LANGUAGE_ENDONYMS[value] ?? value;
+  }
+  // A store-inherited key is read-only with an "edit in store" link (design
+  // D3): the UI does not offer project-level overrides of store-set keys.
+  const storeInherited = isStoreInherited(entry, mode, spaceType) && storeRef !== null;
+  const control = storeInherited ? { kind: 'readonly' as const, readonly: true } : selectControl(entry, mode, spaceType);
+
   const [draft, setDraft] = useState<unknown>(entry.value);
   const [fieldError, setFieldError] = useState<{ message: string; fix?: string } | null>(null);
   const [pending, setPending] = useState(false);
 
-  const key = entry.definition.key;
-
   // Resync local edit state whenever the server hands back a fresh entry
-  // (write, unset, or a project switch re-fetch) — rows are keyed by
-  // `definition.key`, which never changes, so preact reuses the component
-  // instance and `draft`/`scope` would otherwise keep showing the value from
-  // before the write (design.md D6 "Unset returns a scope value to
-  // inherited").
+  // (write, unset, a space switch re-fetch, or a mode change) — rows are keyed
+  // by `definition.key`, which never changes, so preact reuses the component
+  // instance and `draft` would otherwise keep showing the value from before.
   useEffect(() => {
     setDraft(entry.value);
-    setScope(defaultWriteScope(entry, hasProject));
     setFieldError(null);
-  }, [entry, hasProject]);
+  }, [entry, mode]);
 
-  async function commit(value: unknown, writeScope: ConfigScope) {
+  async function commit(value: unknown) {
     setPending(true);
     setFieldError(null);
     try {
-      const result = await client.putKey(key, { scope: writeScope, value }, projectId);
+      const result = await client.putKey(key, { scope: writeScope, value }, spaceSelector);
       onEntryUpdated(result.entry);
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (errorSurface(err.code) === 'page') {
-          onPageError(err.message, err.fix);
-        } else {
-          setFieldError({ message: err.message, fix: err.fix });
-        }
-      } else {
-        setFieldError({ message: 'Unexpected error' });
-      }
+      surfaceError(err);
     } finally {
       setPending(false);
     }
   }
 
-  async function unset(writeScope: ConfigScope) {
+  async function unset() {
     setPending(true);
     setFieldError(null);
     try {
-      const result = await client.deleteKey(key, writeScope, projectId);
+      const result = await client.deleteKey(key, writeScope, spaceSelector);
       onEntryUpdated(result.entry);
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (errorSurface(err.code) === 'page') {
-          onPageError(err.message, err.fix);
-        } else {
-          setFieldError({ message: err.message, fix: err.fix });
-        }
-      } else {
-        setFieldError({ message: 'Unexpected error' });
-      }
+      surfaceError(err);
     } finally {
       setPending(false);
+    }
+  }
+
+  function surfaceError(err: unknown) {
+    if (err instanceof ApiError) {
+      if (errorSurface(err.code) === 'page') {
+        onPageError(err.message, err.fix);
+      } else {
+        setFieldError({ message: err.message, fix: err.fix });
+      }
+    } else {
+      setFieldError({ message: 'config.error.unexpected' });
     }
   }
 
@@ -104,13 +141,7 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
     if (control.readonly) {
       return (
         <span class="control control--readonly">
-          {formatDisplayValue(entry.value)}
-          {disabledForNoProject && (
-            <span class="config-entry__no-project-hint">
-              {' '}
-              — select a project above to edit
-            </span>
-          )}
+          <ValueDisplay value={entry.value} testid="config-value" />
         </span>
       );
     }
@@ -125,33 +156,46 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
             onChange={(e) => {
               const value = (e.target as HTMLInputElement).checked;
               setDraft(value);
-              if (scope) commit(value, scope);
+              commit(value);
             }}
           />
         );
-      case 'select':
+      case 'select': {
+        // A current value outside the active scope's domain (e.g. a saved
+        // profile deleted after being set, or a hand-edited value) stays
+        // visible as an annotated, non-reselectable option rather than snapping
+        // to a wrong value or vanishing (config-ui-package spec, design D3).
+        const current = inputValue(draft);
+        const options = control.enumValues ?? [];
+        const missing = current !== '' && !options.includes(current);
         return (
           <select
-            value={String(draft)}
+            value={current}
             disabled={pending}
             onChange={(e) => {
               const value = (e.target as HTMLSelectElement).value;
               setDraft(value);
-              if (scope) commit(value, scope);
+              commit(value);
             }}
           >
-            {control.enumValues?.map((v) => (
+            {missing && (
+              <option key={current} value={current} disabled>
+                {current} {t('config.select.not_found')}
+              </option>
+            )}
+            {options.map((v) => (
               <option key={v} value={v}>
-                {v}
+                {key === 'language' ? languageOptionLabel(v) : v}
               </option>
             ))}
           </select>
         );
+      }
       case 'ranged-number':
         return (
           <input
             type="number"
-            value={String(draft)}
+            value={inputValue(draft)}
             disabled={pending}
             onChange={(e) => {
               const raw = Number((e.target as HTMLInputElement).value);
@@ -161,7 +205,7 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
                 setFieldError({ message: localError });
                 return;
               }
-              if (scope) commit(raw, scope);
+              commit(raw);
             }}
           />
         );
@@ -192,10 +236,10 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
                   // number input to be edited (MIN-M3).
                   const value = Number.isNaN(fractionValue) ? 0.5 : fractionValue;
                   setDraft(value);
-                  if (scope) commit(value, scope);
+                  commit(value);
                 }}
               />
-              Fraction
+              {t('config.threshold.fraction')}
             </label>
             <label>
               <input
@@ -206,10 +250,10 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
                 onChange={() => {
                   const value = { remainingTokens: remainingSeed };
                   setDraft(value);
-                  if (scope) commit(value, scope);
+                  commit(value);
                 }}
               />
-              Remaining tokens
+              {t('config.threshold.remaining_tokens')}
             </label>
             {!isAbsolute ? (
               <input
@@ -225,7 +269,7 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
                     setFieldError({ message: localError });
                     return;
                   }
-                  if (scope) commit(raw, scope);
+                  commit(raw);
                 }}
               />
             ) : (
@@ -243,11 +287,35 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
                     setFieldError({ message: localError });
                     return;
                   }
-                  if (scope) commit(value, scope);
+                  commit(value);
                 }}
               />
             )}
           </div>
+        );
+      }
+      case 'model': {
+        // A datalist offers known model-preset ids as non-binding suggestions
+        // (design.md D6/D8) — the input never restricts the typed value to
+        // the list; an id matching none of them is still accepted as-is.
+        const listId = `${key}-model-suggestions`;
+        return (
+          <>
+            <input
+              type="text"
+              list={listId}
+              value={inputValue(draft)}
+              disabled={pending}
+              onChange={(e) => {
+                const value = (e.target as HTMLInputElement).value;
+                setDraft(value);
+                commit(value);
+              }}
+            />
+            <datalist id={listId}>
+              {control.modelSuggestions?.map((id) => <option key={id} value={id} />)}
+            </datalist>
+          </>
         );
       }
       case 'text':
@@ -255,25 +323,116 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
         return (
           <input
             type="text"
-            value={String(draft)}
+            value={inputValue(draft)}
             disabled={pending}
             onChange={(e) => {
               const value = (e.target as HTMLInputElement).value;
               setDraft(value);
-              if (scope) commit(value, scope);
+              commit(value);
             }}
           />
         );
     }
   }
 
+  function renderAnnotations() {
+    if (entry.source === 'env-override') {
+      return (
+        <p class="config-entry__shadowed">
+          {t('config.annotation.env_override')}
+          {entry.scopeValues.global !== undefined && (
+            <>
+              {' '}{t('config.annotation.value_global_prefix')}<ValueSummary value={entry.scopeValues.global} />)
+            </>
+          )}
+          {entry.scopeValues.store !== undefined && (
+            <>
+              {' '}{t('config.annotation.value_store_prefix')}<ValueSummary value={entry.scopeValues.store} />)
+            </>
+          )}
+          {entry.scopeValues.project !== undefined && (
+            <>
+              {' '}{t('config.annotation.value_project_prefix')}<ValueSummary value={entry.scopeValues.project} />)
+            </>
+          )}
+        </p>
+      );
+    }
+
+    const localScope = localScopeFor(spaceType);
+    const hasLocalValue = entry.scopeValues[localScope] !== undefined;
+    const multiScope = entry.definition.scopes.length > 1;
+
+    // Inherited-value line (design D3): in Local mode, a visible multi-scope
+    // key with no value at the local scope shows where its value comes from —
+    // the shadowed-value element inverted (the winning wider value shown under
+    // an absent local one).
+    if (mode === 'local' && multiScope && !hasLocalValue) {
+      if (entry.scopeValues.store !== undefined && storeRef) {
+        return (
+          <p class="config-entry__shadowed">
+            {t('config.annotation.inherited_store', { store: storeRef.id })}: <ValueSummary value={entry.scopeValues.store} />
+            {storeInherited && (
+              <>
+                {' '}
+                <a
+                  class="config-entry__store-edit"
+                  href={spaceHref(
+                    { type: 'store', id: storeRef.id, selector: `store:${storeRef.id}` },
+                    'config'
+                  )}
+                >
+                  {t('config.annotation.edit_in_store', { store: storeRef.id })}
+                </a>
+              </>
+            )}
+          </p>
+        );
+      }
+      if (entry.scopeValues.global !== undefined) {
+        return (
+          <p class="config-entry__shadowed">
+            {t('config.annotation.inherited_global')}: <ValueSummary value={entry.scopeValues.global} />
+          </p>
+        );
+      }
+      return (
+        <p class="config-entry__shadowed">
+          {t('config.annotation.inherited_default')}: <ValueDisplay value={entry.definition.defaultValue} />
+        </p>
+      );
+    }
+
+    // Shadowed reveal (design D3): a local value shadows wider layers — keep
+    // those values visible, now including a shadowed store value.
+    const shadowed = shadowedWiderScopes(entry);
+    if (shadowed.length > 0) {
+      return (
+        <>
+          {shadowed.map((s) => (
+            <p key={s} class="config-entry__shadowed">
+              {t('config.annotation.shadowed_prefix', {
+                scope: s === 'store' ? t('config.scope.store') : t('config.scope.global'),
+              })}: <ValueSummary value={entry.scopeValues[s]} />{t('config.annotation.shadowed_suffix', { source: entry.source })}
+            </p>
+          ))}
+        </>
+      );
+    }
+
+    return null;
+  }
+
   return (
     <div class="config-entry" data-key={key}>
       <div class="config-entry__header">
+        <span class="config-entry__label">{labelFor(key)}</span>
         <span class="config-entry__key">{key}</span>
         <span class={`config-entry__source config-entry__source--${entry.source}`}>{entry.source}</span>
       </div>
-      <p class="config-entry__description">{entry.definition.description}</p>
+      <p class="config-entry__description">
+        {description ?? entry.definition.description}
+      </p>
 
       {entry.warnings && entry.warnings.length > 0 && (
         <ul class="config-entry__warnings">
@@ -283,59 +442,22 @@ export function ConfigEntryRow({ entry, projectId, onPageError, onEntryUpdated }
         </ul>
       )}
 
-      {scopes.length > 1 && !control.readonly && (
-        <label class="config-entry__scope-choice">
-          Scope
-          <select
-            value={scope}
-            onChange={(e) => setScope((e.target as HTMLSelectElement).value as ConfigScope)}
-          >
-            {scopes.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
       {renderControl()}
 
-      {entry.source === 'project' &&
-        entry.scopeValues.global !== undefined &&
-        entry.scopeValues.project !== undefined && (
-          <p class="config-entry__shadowed">
-            Global value: {formatDisplayValue(entry.scopeValues.global)} (shadowed by project)
-          </p>
-        )}
-      {entry.source === 'env-override' && (
-        <p class="config-entry__shadowed">
-          Environment variable overrides every scope
-          {entry.scopeValues.global !== undefined
-            ? ` (global value: ${formatDisplayValue(entry.scopeValues.global)})`
-            : ''}
-          {entry.scopeValues.project !== undefined
-            ? ` (project value: ${formatDisplayValue(entry.scopeValues.project)})`
-            : ''}
-        </p>
-      )}
+      {renderAnnotations()}
 
       {fieldError && (
         <p class="config-entry__error">
-          {fieldError.message}
+          {t(fieldError.message)}
           {fieldError.fix ? ` — ${fieldError.fix}` : ''}
         </p>
       )}
 
-      {!control.readonly &&
-        scopes.map(
-          (s) =>
-            entry.scopeValues[s] !== undefined && (
-              <button key={s} type="button" disabled={pending} onClick={() => unset(s)}>
-                Unset {s} value
-              </button>
-            )
-        )}
+      {!control.readonly && entry.scopeValues[writeScope] !== undefined && (
+        <button type="button" disabled={pending} onClick={() => unset()}>
+          {t('config.unset', { scope: writeScope })}
+        </button>
+      )}
     </div>
   );
 }

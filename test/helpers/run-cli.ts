@@ -168,6 +168,7 @@ export async function runCLI(args: string[] = [], options: RunCLIOptions = {}): 
           XDG_CONFIG_HOME: isolatedConfigHome,
           XDG_DATA_HOME: isolatedConfigHome,
           RASEN_HOME: BLANK_RASEN_HOME,
+          RASEN_LANG: 'en',
           RASEN_TELEMETRY: '0',
           OPEN_SPEC_INTERACTIVE: '0',
         },

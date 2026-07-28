@@ -17,6 +17,7 @@ The `rasen/config.yaml` file is the easiest way to customize rasen for your team
 - **Set a default schema** - Skip `--schema` on every command
 - **Inject project context** - AI sees your tech stack, conventions, etc.
 - **Add per-artifact rules** - Custom rules for specific artifacts
+- **Lock a workflow profile** - Pin the project to `full`, `core`, or a saved named profile (`profile: <name>`, written by `rasen init --profile <name>`); `rasen update` then follows the lock instead of the user-wide profile — see [`rasen profile`](cli.md#rasen-profile)
 
 ### Quick Setup
 

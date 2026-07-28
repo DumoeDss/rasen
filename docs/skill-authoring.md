@@ -3,7 +3,7 @@
 # Skill Authoring Guide
 
 The writing standard for authoring and editing skills in this repo — the
-expert skills (`src/core/templates/experts/<name>.ts`) and the OpenSpec workflow
+expert skills (`src/core/templates/experts/<name>.ts`) and the rasen workflow
 skills. It is a repository document, not an installable skill: it has no
 template, no registration, and no effect on skill counts.
 

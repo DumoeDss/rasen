@@ -6,6 +6,7 @@ import { configListFixture } from '../fixtures/config-list.js';
 import { projectsListFixture } from '../fixtures/projects-list.js';
 import { healthFixture } from '../fixtures/health.js';
 import { errorsFixture } from '../fixtures/errors.js';
+import { sessionDetailFixture, sessionsListFixture } from '../fixtures/sessions-list.js';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -50,29 +51,81 @@ describe('api client', () => {
     expect(url).toBe('/api/v1/config/proactive');
   });
 
-  it('sets Content-Type: application/json on DELETE and puts scope in the query string', async () => {
+  it('sets Content-Type: application/json on DELETE and puts scope + space in the query string', async () => {
     (fetch as any).mockResolvedValueOnce(
-      jsonResponse(200, { entry: configListFixture.entries[1] })
+      jsonResponse(200, { entry: configListFixture.entries[1], store: null })
     );
-    await client.deleteKey('proactive', 'project', 'proj_abc123');
+    await client.deleteKey('proactive', 'project', 'project:proj_abc123');
     const [url, init] = (fetch as any).mock.calls[0];
     expect(init.method).toBe('DELETE');
     expect(init.headers['Content-Type']).toBe('application/json');
     expect(url).toContain('scope=project');
-    expect(url).toContain('project=proj_abc123');
+    // The config client moved wholesale onto ?space= (W2 design D7).
+    expect(url).toContain('space=project%3Aproj_abc123');
+    expect(url).not.toContain('project=proj_abc123');
   });
 
-  it('appends ?project= on reads when a project is given', async () => {
+  it('appends ?space= on config reads when a space selector is given (W2 design D7)', async () => {
     (fetch as any).mockResolvedValueOnce(jsonResponse(200, configListFixture));
-    await client.listConfig('proj_abc123');
+    await client.listConfig('project:proj_abc123');
     const [url] = (fetch as any).mock.calls[0];
-    expect(url).toBe('/api/v1/config?project=proj_abc123');
+    expect(url).toBe('/api/v1/config?space=project%3Aproj_abc123');
   });
 
   it('returns typed data for listProjects', async () => {
     (fetch as any).mockResolvedValueOnce(jsonResponse(200, projectsListFixture));
     const result = await client.listProjects();
     expect(result.projects).toHaveLength(2);
+  });
+
+  it('uses the typed theme catalog/import routes and sends raw JSON bytes', async () => {
+    (fetch as any)
+      .mockResolvedValueOnce(jsonResponse(200, { themes: [], skipped: [] }))
+      .mockResolvedValueOnce(jsonResponse(201, {
+        theme: {
+          schemaVersion: 1,
+          id: 'forest-paper',
+          name: 'Forest Paper',
+          mode: 'light',
+          tokens: { light: {} },
+          effects: [],
+        },
+      }));
+    expect(await client.listThemes()).toEqual({ themes: [], skipped: [] });
+    const document = '{"schemaVersion":1}';
+    expect((await client.importTheme(document)).theme.id).toBe('forest-paper');
+    const [url, init] = (fetch as any).mock.calls[1];
+    expect(url).toBe('/api/v1/themes/import');
+    expect(init.method).toBe('POST');
+    expect(init.headers['Content-Type']).toBe('application/json');
+    expect(init.body).toBe(document);
+  });
+
+  it('passes startup AbortSignals through config and theme catalog reads', async () => {
+    (fetch as any)
+      .mockResolvedValueOnce(jsonResponse(200, { entry: configListFixture.entries[0] }))
+      .mockResolvedValueOnce(jsonResponse(200, { themes: [], skipped: [] }));
+    const controller = new AbortController();
+    await Promise.all([
+      client.getKey('ui.theme', undefined, controller.signal),
+      client.listThemes(controller.signal),
+    ]);
+    expect((fetch as any).mock.calls[0][1].signal).toBe(controller.signal);
+    expect((fetch as any).mock.calls[1][1].signal).toBe(controller.signal);
+  });
+
+  it('preserves stable theme validation details on ApiError', async () => {
+    (fetch as any).mockResolvedValueOnce(jsonResponse(400, {
+      error: {
+        code: 'invalid_theme',
+        message: 'Theme manifest failed validation.',
+        details: [{ path: 'tokens.dark.canvas', code: 'invalid_token', message: 'Invalid color.' }],
+      },
+    }));
+    await expect(client.importTheme('{}')).rejects.toMatchObject({
+      code: 'invalid_theme',
+      details: [{ path: 'tokens.dark.canvas', code: 'invalid_token' }],
+    });
   });
 
   it('narrows a non-2xx body to ApiError with code/message/fix', async () => {
@@ -109,5 +162,171 @@ describe('api client', () => {
   it('falls back to a synthetic error when the body is not a valid error envelope', async () => {
     (fetch as any).mockResolvedValueOnce(new Response('not json', { status: 500 }));
     await expect(client.health()).rejects.toMatchObject({ code: 'unknown_error', status: 500 });
+  });
+
+  it('createChange POSTs json to /api/v1/changes and returns the created change', async () => {
+    (fetch as any).mockResolvedValueOnce(
+      jsonResponse(201, { change: { id: 'my-change', path: '/proj/rasen/changes/my-change', schema: 'spec-driven' } })
+    );
+    const result = await client.createChange({ name: 'my-change', description: 'A description' });
+
+    const [url, init] = (fetch as any).mock.calls[0];
+    expect(url).toBe('/api/v1/changes');
+    expect(init.method).toBe('POST');
+    expect(init.headers['Content-Type']).toBe('application/json');
+    expect(JSON.parse(init.body)).toEqual({ name: 'my-change', description: 'A description' });
+    expect(result.change.id).toBe('my-change');
+  });
+
+  it('createChange surfaces the CLI error verbatim, with cliExitCode/stderr, on a cli_error response', async () => {
+    (fetch as any).mockResolvedValueOnce(
+      jsonResponse(422, {
+        error: {
+          code: 'cli_error',
+          message: "Change 'my-change' already exists at /proj/rasen/changes/my-change",
+          cliExitCode: 1,
+          stderr: '',
+        },
+      })
+    );
+    await expect(client.createChange({ name: 'my-change', description: 'desc' })).rejects.toMatchObject({
+      code: 'cli_error',
+      message: "Change 'my-change' already exists at /proj/rasen/changes/my-change",
+    });
+  });
+
+  describe('sessions (slice3-sessions-ui design D6)', () => {
+    it('listSessions GETs /api/v1/sessions with auth and returns the shape-checked fixture', async () => {
+      (fetch as any).mockResolvedValueOnce(jsonResponse(200, sessionsListFixture));
+      const result = await client.listSessions();
+      const [url, init] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/sessions');
+      expect(init.method).toBeUndefined(); // default GET
+      expect(result.sessions).toHaveLength(sessionsListFixture.sessions.length);
+      expect(result.sessions[0]!.session.id).toBe('sess-live-with-progress');
+    });
+
+    it('getSession GETs /api/v1/sessions/:id and returns record + tails', async () => {
+      (fetch as any).mockResolvedValueOnce(jsonResponse(200, sessionDetailFixture));
+      const result = await client.getSession('sess-live-with-progress');
+      const [url] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/sessions/sess-live-with-progress');
+      expect(result.tails.stdout).toContain('building');
+    });
+
+    it('launchSession POSTs json to /api/v1/sessions with the request body', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(201, { session: sessionsListFixture.sessions[2]!.session })
+      );
+      const result = await client.launchSession({ kind: 'auto', task: 'do a thing' });
+      const [url, init] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/sessions');
+      expect(init.method).toBe('POST');
+      expect(init.headers['Content-Type']).toBe('application/json');
+      expect(JSON.parse(init.body)).toEqual({ kind: 'auto', task: 'do a thing' });
+      expect(result.session.id).toBe('sess-no-change');
+    });
+
+    it('killSession DELETEs /api/v1/sessions/:id and returns the patched record', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(202, {
+          session: { ...sessionsListFixture.sessions[0]!.session, state: 'exiting' },
+        })
+      );
+      const result = await client.killSession('sess-live-with-progress');
+      const [url, init] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/sessions/sess-live-with-progress');
+      expect(init.method).toBe('DELETE');
+      expect(result.session.state).toBe('exiting');
+    });
+
+    it('surfaces a 404 kill (session already gone) as an ApiError', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(404, { error: { code: 'not_found', message: 'Session not found.' } })
+      );
+      await expect(client.killSession('gone')).rejects.toMatchObject({ code: 'not_found', status: 404 });
+    });
+
+    it('surfaces server rejection envelopes verbatim on launch (agent_cli_unavailable)', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(503, {
+          error: { code: 'agent_cli_unavailable', message: 'No agent CLI could be resolved on this machine.' },
+        })
+      );
+      await expect(client.launchSession({ kind: 'auto', task: 'x' })).rejects.toMatchObject({
+        code: 'agent_cli_unavailable',
+      });
+    });
+  });
+
+  describe('space scoping (management-ui-shell design D6)', () => {
+    it('threads the space selector as ?space= on listChanges/listRuns/listSessions', async () => {
+      // A fresh Response per call — a Response body can only be read once.
+      (fetch as any).mockImplementation(() => Promise.resolve(jsonResponse(200, { changes: [], errors: [] })));
+      await client.listChanges('project:proj_abc123');
+      await client.listRuns('store:my-store');
+      await client.listSessions('project:proj_abc123');
+      const urls = (fetch as any).mock.calls.map((c: unknown[]) => c[0]);
+      // encodeURIComponent leaves the id verbatim but escapes the `:` separator.
+      expect(urls[0]).toBe('/api/v1/changes?space=project%3Aproj_abc123');
+      expect(urls[1]).toBe('/api/v1/runs?space=store%3Amy-store');
+      expect(urls[2]).toBe('/api/v1/sessions?space=project%3Aproj_abc123');
+    });
+
+    it('omits ?space= entirely when no selector is given (preserving the launch-project fallback)', async () => {
+      (fetch as any).mockImplementation(() => Promise.resolve(jsonResponse(200, { changes: [], errors: [] })));
+      await client.listChanges();
+      await client.listRuns();
+      await client.listSessions();
+      const urls = (fetch as any).mock.calls.map((c: unknown[]) => c[0]);
+      expect(urls[0]).toBe('/api/v1/changes');
+      expect(urls[1]).toBe('/api/v1/runs');
+      expect(urls[2]).toBe('/api/v1/sessions');
+    });
+
+    it('carries the space selector in the launchSession body, not the query', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(201, { session: sessionsListFixture.sessions[2]!.session })
+      );
+      await client.launchSession({ kind: 'auto', task: 'do a thing', space: 'store:my-store' });
+      const [url, init] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/sessions'); // no query
+      expect(JSON.parse(init.body)).toEqual({ kind: 'auto', task: 'do a thing', space: 'store:my-store' });
+    });
+
+    it('carries the runtime execution selector in the launchSession JSON body', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(201, { session: sessionsListFixture.sessions[2]!.session })
+      );
+      await client.launchSession({
+        kind: 'auto',
+        task: 'do a thing',
+        space: 'store:my-store',
+        execution: 'project:member-a',
+      });
+      const [url, init] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/sessions');
+      expect(JSON.parse(init.body)).toEqual({
+        kind: 'auto',
+        task: 'do a thing',
+        space: 'store:my-store',
+        execution: 'project:member-a',
+      });
+    });
+
+    it('keeps the opaque id byte-for-byte (mixed case / separators) inside the query', async () => {
+      (fetch as any).mockResolvedValueOnce(jsonResponse(200, { changes: [], errors: [] }));
+      await client.listChanges('project:Proj_Mixed-Case.v2');
+      const [url] = (fetch as any).mock.calls[0];
+      expect(url).toContain('Proj_Mixed-Case.v2'); // no lowercasing / canonicalization
+    });
+
+    it('listSpaces GETs /api/v1/spaces', async () => {
+      (fetch as any).mockResolvedValueOnce(jsonResponse(200, { spaces: [] }));
+      await client.listSpaces();
+      const [url, init] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/spaces');
+      expect(init.method).toBeUndefined();
+    });
   });
 });

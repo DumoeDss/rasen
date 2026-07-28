@@ -1,20 +1,19 @@
 # propose-workflow Specification
 
 ## Purpose
-Provide a single `propose` workflow that combines `new` and `ff` to create a change and its planning artifacts in one step.
-
+Provide a single `propose` workflow that creates a change and generates all its planning artifacts in one step.
 ## Requirements
 ### Requirement: Propose workflow creation
 The system SHALL provide a `propose` workflow that creates a change and generates all artifacts in one step.
 
 #### Scenario: Basic propose invocation
-- **WHEN** user invokes `/rasen:propose "add user authentication"`
+- **WHEN** user invokes `/rasen-propose "add user authentication"`
 - **THEN** the system SHALL create a change directory with kebab-case name
 - **THEN** the system SHALL create `.openspec.yaml` in the change directory (via `rasen new change`)
 - **THEN** the system SHALL generate all artifacts needed for implementation: proposal.md, design.md, specs/, tasks.md
 
 #### Scenario: Propose with existing change name
-- **WHEN** user invokes `/rasen:propose` with a name that already exists
+- **WHEN** user invokes `/rasen-propose` with a name that already exists
 - **THEN** the system SHALL ask if user wants to continue existing change or create new
 - **THEN** if "continue": the system SHALL resume artifact generation from last completed state
 - **THEN** if "create new": the system SHALL prompt for a new name
@@ -24,22 +23,24 @@ The system SHALL provide a `propose` workflow that creates a change and generate
 The `propose` workflow SHALL include explanatory output to help new users understand the process.
 
 #### Scenario: First-time user guidance
-- **WHEN** user invokes `/rasen:propose`
+- **WHEN** user invokes `/rasen-propose`
 - **THEN** the system SHALL explain what artifacts will be created (proposal.md, design.md, specs/, tasks.md)
-- **THEN** the system SHALL indicate next step (`/rasen:apply` to implement)
+- **THEN** the system SHALL indicate next step (`/rasen-apply-change` to implement)
 
 #### Scenario: Artifact creation progress
 - **WHEN** the system creates each artifact
 - **THEN** the system SHALL show progress (e.g., "✓ Created proposal.md")
 
-### Requirement: Propose workflow combines new and ff
-The `propose` workflow SHALL perform the same operations as running `new` followed by `ff`.
+### Requirement: Propose workflow creates the change and all artifacts
 
-#### Scenario: Equivalent to new + ff
-- **WHEN** user invokes `/rasen:propose "feature name"`
-- **THEN** the result SHALL be functionally equivalent to invoking `/rasen:new "feature-name"` followed by `/rasen:ff feature-name`
-- **THEN** the same directory structure and artifacts SHALL be created
-- **THEN** console output MAY differ (propose includes onboarding explanations)
+The `propose` workflow SHALL create the change and generate all artifacts required for implementation in one step, equivalent to creating the change (`new`) and then generating every remaining artifact in the schema's apply requirements.
+
+#### Scenario: Change and artifacts created in one step
+
+- **WHEN** user invokes `/rasen-propose "feature name"`
+- **THEN** the change directory SHALL be created
+- **AND** all artifacts required for implementation SHALL be generated
+- **THEN** console output MAY include onboarding explanations
 
 ### Requirement: Consume office-hours validation as input context
 

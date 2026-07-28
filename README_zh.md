@@ -15,22 +15,22 @@
   <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/%ED%95%9C%EA%B5%AD%EC%96%B4-9A9A98?style=flat-square" /></a>
 </p>
 
-**Rasen** 是一套规范驱动（spec-driven）的开发工作流，并在其之上叠加了一层自动驾驶编排 harness——你写下规范，harness 便驱动 change 走完 propose → apply → archive，自主迭代直到工作完成。
+**Rasen** 是一套自主引擎——在你的编码智能体的内循环之外，加装一条工程化的**外循环**。你只需提供意图——一个目标、一个 bug、一项功能——引擎便自行走完提出 → 实施 → 评审 → 修复 → 交付 → 归档，独立迭代直至完成。软件开发的自动挡：**掌控想法，而非代码。**
 
 ## 不是圆，是螺旋
 
 回到起点的循环只是一个圆。Rasen（螺旋）是一个不断上升的循环的形状。这就是全部理念，而它恰好映射到工具的实际运作方式：
 
-- **规范是原点。** 每个 change 都始于一份写下来的意图——提案、需求、设计、任务清单——在写任何代码之前先落在你的 `rasen/` 工作区里。`/rasen:propose → apply → archive`。
+- **意图是起点。** 每一次改动都始于你想要什么，而不是一份你必须写的文档——一个目标、一个 bug、一项功能需求。引擎把它记录进你的 `rasen/` 工作区，随即开始工作：`/rasen-propose → apply → archive`。过程中产出的规格是流水线自身积累的知识、它的工作记忆，而不是丢回给你的作业。
 - **循环是形态。** 工作以周期推进，而非一次瀑布式通过。`rasen` 流水线家族——`small-feature`、`bug-fix`、`full-feature`、`auto-decompose`——把一个任务塑造成 propose、implement、review、ship 的循环。
-- **每一圈都在上升。** harness 不只是重复，而是持续进步。`/rasen:auto` 拉起一个 LEAD，编排角色隔离的子 agent、一个能纠正自身错误的评审环，以及跨会话携带上下文的 handoff/接力——让每一圈都比上一圈更高。
-- **直到突破。** `/rasen:goal` 以条件而非文档来收束螺旋：把某个指标推到目标、把某个模块做到 rubric 洁净、把某个课题研究到 brief 被回答——重复 modify → judge 直到 gate 达成。
+- **每一圈都在上升。** harness 不只是重复，而是持续进步。`/rasen-auto` 拉起一个 LEAD，编排角色隔离的子 agent、一个能纠正自身错误的评审环，以及跨会话携带上下文的 handoff/接力——让每一圈都比上一圈更高。
+- **直到突破。** `/rasen-goal` 以条件而非文档来收束螺旋：把某个指标推到目标、把某个模块做到 rubric 洁净、把某个课题研究到 brief 被回答——重复 modify → judge 直到 gate 达成。
 
-规范是你的起点，螺旋是你抵达的方式。
+意图是你的起点，螺旋是你抵达的方式。
 
 ## 血统（Lineage）
 
-Rasen fork 自 [OpenSpec](https://github.com/Fission-AI/OpenSpec)（MIT，Fission-AI 出品），由 [Sayo](https://github.com/DumoeDss) 独立维护。它**与 Fission-AI 无从属关系**。其工作流语义与上游 **OpenSpec v1.5.0** 对齐——`propose → apply → archive` 的 spec/change 模型完全一致——但 rasen 运行在**独立的命名空间**中：`rasen` 二进制、`/rasen:*` 斜杠命令、`rasen-*` 技能，以及 `rasen/` 工作区。rasen 在其之上叠加自动驾驶编排，并且从不改动上游的 `openspec/` 安装。
+Rasen fork 自 [OpenSpec](https://github.com/Fission-AI/OpenSpec)（MIT，Fission-AI 出品），由 [Sayo](https://github.com/DumoeDss) 独立维护。它**与 Fission-AI 无从属关系**。其工作流语义与上游 **OpenSpec v1.5.0** 对齐——`propose → apply → archive` 的 spec/change 模型完全一致——但 rasen 运行在**独立的命名空间**中：`rasen` 二进制、`/rasen-*` 斜杠命令、`rasen-*` 技能，以及 `rasen/` 工作区。rasen 在其之上叠加自动驾驶编排，并且从不改动上游的 `openspec/` 安装。
 
 ## 安装
 
@@ -47,13 +47,29 @@ cd your-project
 rasen init
 ```
 
-`rasen init` 会创建一个 `rasen/` 工作区（specs 与 changes），并为你的 AI 编程工具安装 `/rasen:*` 斜杠命令。
+`rasen init` 会创建一个 `rasen/` 工作区（specs 与 changes），并为你的 AI 编程工具安装 `/rasen-*` 斜杠命令。
 
 升级后刷新 AI 指导并获取最新斜杠命令：
 
 ```bash
 rasen update
 ```
+
+## Web UI
+
+CLI 之外还有一个基于浏览器的管理平台。在 CLI 旁边安装 UI 包,然后启动:
+
+```bash
+npm i -g @atelierai/rasen-ui
+rasen ui
+```
+
+`rasen ui` 会启动(或接管)一个常驻后台 daemon——仅绑定 127.0.0.1,带每会话 token——并打开应用:
+
+- **Board** — 你的活跃 change 以 Task 为单位分布在生命周期列中,通过空间切换器覆盖所有项目与 store。
+- **Sessions** — 在浏览器里发起 headless 的 `/rasen-auto` / `/rasen-goal` 运行,查看输出、一键终止;关掉终端它们也继续存活。
+- **Pipeline 画布** — 以 DAG 形式查看任意流水线,并通过把技能拖上画布来组装新流水线,保存前有服务端校验。
+- **Config / Workflows / Profiles** — 可见继承来源的分层配置、支持按空间启停的可安装 workflow 库,以及命名的 workflow profile。
 
 ## 与 OpenSpec 共存
 
@@ -62,7 +78,7 @@ Rasen 被设计为可以与上游 OpenSpec **并存**而互不冲突。每一个
 | 界面 | OpenSpec | Rasen |
 | --- | --- | --- |
 | 二进制 | `openspec` | `rasen` |
-| 斜杠命令 | `/opsx:*` | `/rasen:*` |
+| 斜杠命令 | `/opsx:*` | `/rasen-*` |
 | 技能 | `openspec-*` | `rasen-*` |
 | 工作区 | `openspec/` | `rasen/` |
 
@@ -87,18 +103,21 @@ rasen migrate
 
 ## 你会得到什么
 
-- **规范驱动的工作流** — 每个 change 是一个文件夹，含提案、specs、设计和任务清单。在写代码之前先就要构建的内容达成共识：`/rasen:propose → /rasen:apply → /rasen:archive`。
-- **`rasen` 流水线家族** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` 以数据（YAML）形式提供；用 `rasen pipeline show|list|classify|resume` 查看。新增一种任务类型 = 加一个文件，零代码。
-- **`/rasen:auto` 自动驾驶** — 一条命令把 agent 变成 **LEAD**，通过角色隔离的子 agent（planner / implementer / reviewer / fixer / shipper）驱动整条流水线，仅在 gate 处暂停。
-- **`/rasen:goal` 目标驱动迭代** — `/rasen:auto` 的姊妹，用于"完成"是一个条件而非文档的任务（把 Lighthouse 推到 90、把模块做到 rubric 洁净、研究并写出 brief）。LEAD 把任务分类到 measure / evaluate / research 后端，并重复 modify → judge 直到 gate 满足或达到轮次上限。
+- **意图驱动的工作流** — 告诉它要构建什么。引擎会把它变成一个文件夹——提案、规格、设计、任务清单——在工作过程中自行生成并维护，你从不需要亲自动手写：`/rasen-propose → /rasen-apply-change → /rasen-archive-change`。
+- **`rasen` 流水线家族** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` 以数据（YAML）形式提供；用 `rasen pipeline show|list|classify|resume` 查看，用 `rasen pipeline import|export` 作为可安装包分享，或在 web UI 的流水线画布中拖拽组装你自己的流水线。新增一种任务类型 = 加一个文件，零代码。
+- **`rasen ui` 管理平台** — 本地 web UI：任务看板、可脱离终端存活的受监督 headless agent 会话、流水线画布，以及 config/workflow/profile 管理。见 [Web UI](#web-ui)。
+- **`/rasen-auto` 自动驾驶** — 一条命令把 agent 变成 **LEAD**，通过角色隔离的子 agent（planner / implementer / reviewer / fixer / shipper）驱动整条流水线，仅在 gate 处暂停。
+- **`/rasen-goal` 目标驱动迭代** — `/rasen-auto` 的姊妹，用于"完成"是一个条件而非文档的任务（把 Lighthouse 推到 90、把模块做到 rubric 洁净、研究并写出 brief）。LEAD 把任务分类到 measure / evaluate / research 后端，并重复 modify → judge 直到 gate 满足或达到轮次上限。
 - **Auto-decompose** — 当任务大到无法作为单个可评审 diff 时，拆分为多个可独立交付的子 change，附带依赖 DAG 与保守的串/并行策略。
 - **chrome-use** — 一个通过 CDP 驱动你真实 Chrome 的专家：导航、点击、抓包、注入 JS、读 cookie 和 `localStorage`、等待请求——面向需登录的页面、SPA，以及普通 fetch 触及不到的一切。
-- **上下文感知与交接** — `rasen agent context` 测量真实占用；`/rasen:handoff` 写一份蒸馏检查点；worker 在软预算下自我交接，一个 compact 恢复 hook 会在 auto-compact 后把会话重新锚定到蒸馏物，让长任务在上下文上限下存活。
+- **上下文感知与交接** — `rasen agent context` 测量真实占用；`/rasen-handoff` 写一份蒸馏检查点；worker 在软预算下自我交接，一个 compact 恢复 hook 会在 auto-compact 后把会话重新锚定到蒸馏物，让长任务在上下文上限下存活。
+- **Prompt 缓存保活** — `rasen agent wait` 让空闲 worker 停靠在保活心跳上，而不是任由其 5 分钟 prompt 缓存过期——等待 implementer 的 reviewer 不再在下一轮支付整个上下文的重写成本。心跳长度可通过 `keepalive.beatSeconds` 调节。
+- **Token 审计** — `rasen agent audit` 展示一个会话的 token 究竟花在了哪里：按 agent 的开销、缓存 churn 及其成因，附带 HTML 查看器。支持 Claude Code transcript 与 Codex rollout，完全本地——不上传任何数据。
 
 ## 实际演示
 
 ```text
-你: /rasen:explore
+你: /rasen-explore
 AI: 你想探索什么？
 你: 我想做暗色模式，但不确定怎么干净地实现。
 AI: 让我看看你的样式设置……
@@ -106,7 +125,7 @@ AI: 让我看看你的样式设置……
     加上系统偏好检测。不引入新依赖。要不要定下范围？
 你: 好，就这么做。
 
-你: /rasen:propose add-dark-mode
+你: /rasen-propose add-dark-mode
 AI: 已创建 rasen/changes/add-dark-mode/
     ✓ proposal.md — 为什么要做、有哪些变更
     ✓ specs/       — 需求和场景
@@ -114,7 +133,7 @@ AI: 已创建 rasen/changes/add-dark-mode/
     ✓ tasks.md     — 实施清单
     准备开始实施！
 
-你: /rasen:apply
+你: /rasen-apply-change
 AI: 正在执行任务...
     ✓ 1.1 添加主题上下文提供者
     ✓ 1.2 创建切换组件
@@ -122,7 +141,7 @@ AI: 正在执行任务...
     ✓ 2.2 接入 localStorage
     所有任务已完成！
 
-你: /rasen:archive
+你: /rasen-archive-change
 AI: 已归档至 rasen/changes/archive/2026-01-23-add-dark-mode/
     规范已更新。准备好迎接下一个功能。
 ```

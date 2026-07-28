@@ -14,16 +14,19 @@ import { nearestMatches } from '../utils/match.js';
 import {
   loadPipelineByName,
   listPipelines,
-  validatePipelineSkills,
-  validateDecomposeChildPipelines,
+  validatePipelineForExecution,
   PipelineValidationError,
 } from '../core/pipeline-registry/index.js';
 import { PipelineLoadError } from '../core/pipeline-registry/index.js';
-import { getSkillTemplates } from '../core/shared/skill-generation.js';
 
 type ItemType = 'change' | 'spec' | 'pipeline';
 
-type ValidationIssue = { level: 'ERROR' | 'WARNING' | 'INFO'; path: string; message: string };
+type ValidationIssue = {
+  level: 'ERROR' | 'WARNING' | 'INFO';
+  path: string;
+  message: string;
+  code?: string;
+};
 
 /**
  * Validates a single pipeline (by name) for structural integrity: parse + Zod
@@ -31,20 +34,24 @@ type ValidationIssue = { level: 'ERROR' | 'WARNING' | 'INFO'; path: string; mess
  * skill-existence against the known skill-template set. Returns the same shape
  * the change/spec validators produce so it slots into the shared result set.
  */
-function validatePipelineByName(
+async function validatePipelineByName(
   id: string,
   projectRoot: string
-): { valid: boolean; issues: ValidationIssue[] } {
+): Promise<{ valid: boolean; issues: ValidationIssue[] }> {
   const issues: ValidationIssue[] = [];
   try {
     // parse + Zod + structural validators (duplicate ids, requires refs,
     // cycles, parallel-group independence, decompose single/first) all run here.
     const pipeline = loadPipelineByName(id, projectRoot);
-    // skill-existence check against the known skill-template set.
-    const knownSkillNames = new Set(getSkillTemplates().map((t) => t.template.name));
-    validatePipelineSkills(pipeline, knownSkillNames);
-    // decompose childPipeline must resolve and be decompose-free (recursion guard).
-    validateDecomposeChildPipelines(pipeline, projectRoot);
+    // `validate --pipelines` checks structural + dispatch-ROUTE integrity, not
+    // whether the codex binary happens to be installed in this environment.
+    // The codex availability probe is a pre-EXECUTION concern (it runs in
+    // `pipeline run`'s preflight); surfacing it here makes every pipeline with
+    // a codex role report invalid on machines without codex installed, including
+    // CI — even though the pipeline definition itself is well-formed.  The
+    // probeCodex stub keeps route validation (unsupported routes still fail)
+    // while skipping the binary availability check.
+    await validatePipelineForExecution(pipeline, projectRoot, { probeCodex: () => true });
   } catch (error) {
     const message =
       error instanceof PipelineLoadError && error.cause
@@ -52,7 +59,12 @@ function validatePipelineByName(
         : error instanceof Error
           ? error.message
           : String(error);
-    issues.push({ level: 'ERROR', path: 'pipeline', message });
+    issues.push({
+      level: 'ERROR',
+      path: 'pipeline',
+      message,
+      ...(error instanceof PipelineValidationError ? { code: error.code } : {}),
+    });
   }
   return { valid: issues.length === 0, issues };
 }
@@ -262,7 +274,7 @@ export class ValidateCommand {
   private async validateByType(root: ResolvedOpenSpecRoot, type: ItemType, id: string, opts: { strict: boolean; json: boolean }): Promise<void> {
     if (type === 'pipeline') {
       const start = Date.now();
-      const report = validatePipelineByName(id, root.path);
+      const report = await validatePipelineByName(id, root.path);
       const durationMs = Date.now() - start;
       this.printReport('pipeline', id, report, durationMs, opts.json, root);
       process.exitCode = report.valid ? 0 : 1;
@@ -361,7 +373,7 @@ export class ValidateCommand {
     for (const id of pipelineIds) {
       queue.push(async () => {
         const start = Date.now();
-        const report = validatePipelineByName(id, root.path);
+        const report = await validatePipelineByName(id, root.path);
         const durationMs = Date.now() - start;
         return { id, type: 'pipeline' as const, valid: report.valid, issues: report.issues, durationMs };
       });

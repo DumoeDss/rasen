@@ -349,6 +349,23 @@ describe('BashGenerator', () => {
       expect(script).toContain('rasen __complete schemas 2>/dev/null');
     });
 
+    it('should handle positional arguments for profile names', () => {
+      const commands: CommandDefinition[] = [
+        {
+          name: 'profile-use',
+          description: 'Use a profile',
+          acceptsPositional: true,
+          positionalType: 'profile-name',
+          flags: [],
+        },
+      ];
+
+      const script = generator.generate(commands);
+
+      expect(script).toContain('_rasen_complete_profiles');
+      expect(script).toContain('rasen __complete profiles 2>/dev/null');
+    });
+
     it('should generate dynamic completion helper for changes', () => {
       const commands: CommandDefinition[] = [
         {

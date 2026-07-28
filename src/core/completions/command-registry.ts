@@ -19,7 +19,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       },
       {
         name: 'profile',
-        description: 'Override global config profile (full, core, or custom)',
+        description: 'Install and lock a profile in rasen/config.yaml (full, core, or a saved profile; custom applies once without locking)',
         takesValue: true,
         values: ['full', 'core', 'custom'],
       },
@@ -35,6 +35,14 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       {
         name: 'force',
         description: 'Force update even when tools are up to date',
+      },
+      {
+        name: 'all-projects',
+        description: 'Update every reachable, non-pinned registered project whose version is behind',
+      },
+      {
+        name: 'only-this',
+        description: 'Skip multi-project registry consultation (update only this project)',
       },
     ],
   },
@@ -156,11 +164,43 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     ],
   },
   {
+    name: 'home',
+    description: 'Manage machine-local project home state',
+    flags: [],
+    subcommands: [
+      {
+        name: 'prune',
+        description: 'List (default) or remove orphaned machine-home directories and stale registry entries',
+        flags: [
+          { name: 'apply', description: 'Delete the reported orphans (default is report-only)' },
+          COMMON_FLAGS.json,
+        ],
+      },
+    ],
+  },
+  {
     name: 'archive',
     description: 'Archive a completed change and update main specs',
     acceptsPositional: true,
     positionalType: 'change-id',
     positionals: [{ name: 'change-name', type: 'change-id', optional: true }],
+    subcommands: [
+      {
+        name: 'relocate',
+        description: 'Move existing archived changes to a destination and flip archive.destination together',
+        flags: [
+          {
+            name: 'to',
+            description: 'Target destination: in-repo, external, or store',
+            takesValue: true,
+            values: ['in-repo', 'external', 'store'],
+          },
+          { name: 'dry-run', description: 'Print the move plan and change nothing' },
+          { name: 'verify-hash', description: 'Verify moved files by content hash' },
+          COMMON_FLAGS.json,
+        ],
+      },
+    ],
     flags: [
       {
         name: 'yes',
@@ -263,6 +303,11 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             takesValue: true,
           },
           {
+            name: 'proposal',
+            description: 'Seed proposal.md with this text, making the change active immediately',
+            takesValue: true,
+          },
+          {
             name: 'goal',
             description: 'Optional goal metadata to store with the change',
             takesValue: true,
@@ -270,6 +315,11 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
           {
             name: 'schema',
             description: 'Workflow schema to use',
+            takesValue: true,
+          },
+          {
+            name: 'pipeline',
+            description: 'Pipeline to initialize run-state for',
             takesValue: true,
           },
           COMMON_FLAGS.json,
@@ -346,6 +396,54 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             description: 'Project store id override',
             takesValue: true,
           },
+          {
+            name: 'set-primary',
+            description: "Also record the target store as the project's planning store",
+          },
+          {
+            name: 'dry-run',
+            description: 'Report every file that would be written in each repository and change nothing',
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'migrate-membership',
+        description: "Convert a store's legacy membership data into per-project membership records",
+        acceptsPositional: true,
+        positionals: [{ name: 'store-id' }],
+        flags: [
+          {
+            name: 'dry-run',
+            description: 'Report the conversion plan and change nothing',
+          },
+          {
+            name: 'apply',
+            description: 'Write the records and remove the legacy adoption manifest',
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'upgrade-identity',
+        description:
+          "Give a store a permanent identity and record it in the registry and the project's declaration",
+        acceptsPositional: true,
+        positionals: [{ name: 'id' }],
+        flags: [
+          {
+            name: 'uid',
+            description: 'Disambiguate a name that matches more than one registered store',
+            takesValue: true,
+          },
+          {
+            name: 'dry-run',
+            description: 'Report every file that would be written and change nothing',
+          },
+          {
+            name: 'apply',
+            description: 'Write the plan',
+          },
           COMMON_FLAGS.json,
         ],
       },
@@ -376,6 +474,40 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             name: 'project-namespace',
             description: 'Target the project namespace for <id> instead of the store namespace',
           },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'adopt',
+        description: "Migrate an in-repo project's planning content into a store and convert the repo to a pointer",
+        acceptsPositional: true,
+        positionals: [{ name: 'path', type: 'path', optional: true }],
+        flags: [
+          { name: 'to', description: 'Target store to adopt into', takesValue: true },
+          {
+            name: 'archive',
+            description: 'Archive handling: move (default), leave, or external',
+            takesValue: true,
+            values: ['move', 'leave', 'external'],
+          },
+          { name: 'dry-run', description: 'Print the move plan and change nothing' },
+          { name: 'verify-hash', description: 'Verify moved files by content hash' },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'eject',
+        description: 'Restore a store-hosted project back to in-repo planning',
+        acceptsPositional: true,
+        positionals: [{ name: 'project-id' }],
+        flags: [
+          { name: 'from', description: 'Source store to eject from', takesValue: true },
+          { name: 'all', description: 'Manifest-less full copy back (with confirmation)' },
+          { name: 'yes', description: 'Consent for a manifest-less --all copy back in non-interactive mode' },
+          { name: 'force', description: 'Proceed past manifest drift, reporting gaps' },
+          { name: 'into', description: 'Repo path to restore into', takesValue: true },
+          { name: 'dry-run', description: 'Print the restore plan and change nothing' },
+          { name: 'verify-hash', description: 'Verify moved files by content hash' },
           COMMON_FLAGS.json,
         ],
       },
@@ -423,6 +555,44 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       {
         name: 'force',
         description: 'Overwrite an existing --code-workspace file',
+      },
+    ],
+  },
+  {
+    // store-bootstrap-obtain: apply mode now obtains declared Stores from
+    // their remotes. The check/dry-run flags remain read-only.
+    name: 'bootstrap',
+    description: 'Report what this machine still needs before this project works',
+    flags: [
+      {
+        name: 'check',
+        description: 'Check mode: report from local information only, contacting no network',
+      },
+      {
+        name: 'dry-run',
+        description:
+          'Preview mode: additionally resolve remotes and the exact location each repository would be placed at',
+      },
+      {
+        name: 'apply',
+        description:
+          'Apply mode: prepare repositories and knowledge, then offer each declared portable bundle as a separate confirmed import',
+      },
+      {
+        name: 'yes',
+        description:
+          'Confirm project-declared actions, including project-config bundle imports; Store-only bundles and Store projects still require an explicit choice',
+      },
+      COMMON_FLAGS.json,
+      {
+        name: 'path',
+        description: 'Location for one store or project, as <selector>=<dir>; repeatable',
+        takesValue: true,
+      },
+      {
+        name: 'into',
+        description: 'Parent directory a derived name would be placed under',
+        takesValue: true,
       },
     ],
   },
@@ -559,14 +729,422 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     ],
   },
   {
+    name: 'profile',
+    description: 'Manage reusable workflow profiles',
+    flags: [],
+    subcommands: [
+      {
+        name: 'new',
+        description: 'Create and use a named profile interactively',
+        acceptsPositional: true,
+        positionals: [{ name: 'name', optional: true }],
+        flags: [],
+      },
+      {
+        name: 'use',
+        description: 'Use a built-in or saved profile',
+        acceptsPositional: true,
+        positionalType: 'profile-name',
+        positionals: [{ name: 'name', type: 'profile-name', optional: true }],
+        flags: [],
+      },
+      {
+        name: 'update',
+        description: 'Edit a saved profile definition interactively',
+        acceptsPositional: true,
+        positionalType: 'saved-profile-name',
+        positionals: [{ name: 'name', type: 'saved-profile-name', optional: true }],
+        flags: [],
+      },
+      {
+        name: 'list',
+        description: 'List built-in and saved profiles',
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'delete',
+        description: 'Delete a saved profile',
+        acceptsPositional: true,
+        positionalType: 'saved-profile-name',
+        positionals: [{ name: 'name', type: 'saved-profile-name', optional: true }],
+        flags: [
+          {
+            name: 'yes',
+            short: 'y',
+            description: 'Skip confirmation',
+          },
+        ],
+      },
+      {
+        name: 'import',
+        description: 'Import a profile package, YAML, or JSON profile',
+        acceptsPositional: true,
+        positionalType: 'path',
+        positionals: [{ name: 'path', type: 'path' }],
+        flags: [
+          {
+            name: 'as',
+            description: 'Save the imported profile under a different name',
+            takesValue: true,
+          },
+          {
+            name: 'force',
+            description: 'Replace an existing profile with the same name',
+          },
+        ],
+      },
+      {
+        name: 'export',
+        description: 'Export current settings or a named profile',
+        acceptsPositional: true,
+        positionalType: 'path',
+        positionals: [{ name: 'path', type: 'path' }],
+        flags: [
+          {
+            name: 'profile',
+            description: 'Export a built-in or saved profile instead of current settings',
+            takesValue: true,
+          },
+          {
+            name: 'thin',
+            description: 'Export YAML or JSON without embedding user workflows',
+          },
+          {
+            name: 'force',
+            description: 'Overwrite an existing destination',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'knowledge',
+    description: 'Manage evidence-gated learned skills',
+    flags: [],
+    subcommands: [
+      {
+        name: 'bundle',
+        description: 'Manage portable project-knowledge bundles',
+        flags: [],
+        subcommands: [
+          {
+            name: 'export',
+            description: "Export a project's own learned knowledge to one portable file",
+            flags: [
+              {
+                name: 'project',
+                description: 'Select a project knowledge owner independently from the planning root',
+                takesValue: true,
+              },
+              {
+                name: 'to',
+                description: 'New destination file to create (never overwritten)',
+                takesValue: true,
+              },
+              {
+                name: 'to-store',
+                description:
+                  'Also place the bundle in a registered Store without granting ownership',
+                takesValue: true,
+              },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'import',
+            description: "Import a portable bundle as this project's own knowledge",
+            acceptsPositional: true,
+            positionalType: 'path',
+            positionals: [{ name: 'bundle', type: 'path' }],
+            flags: [
+              {
+                name: 'project',
+                description: 'Select a project knowledge owner independently from the planning root',
+                takesValue: true,
+              },
+              {
+                name: 'dry-run',
+                description:
+                  'Validate and classify the complete bundle without writing anything',
+              },
+              COMMON_FLAGS.json,
+            ],
+          },
+        ],
+      },
+      {
+        name: 'apply',
+        description: 'Apply a learned-skill candidate from an absolute JSON file',
+        flags: [
+          {
+            name: 'from',
+            description: 'Absolute path to a candidate JSON file',
+            takesValue: true,
+          },
+          {
+            name: 'approve-store',
+            description:
+              'Approve a store publication non-interactively, naming the store it applies to',
+            takesValue: true,
+          },
+          {
+            name: 'approve-global',
+            description: 'Approve a global create or promotion non-interactively',
+          },
+          {
+            name: 'project',
+            description: 'Select a project knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'store',
+            description: 'Select a store knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'run-state-dir',
+            description: 'Load frozen knowledge identity from the resolved directory containing auto-run.json',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'list',
+        description: 'List canonical learned skills',
+        flags: [
+          {
+            name: 'scope',
+            description: 'project, store, or global',
+            takesValue: true,
+            values: ['project', 'store', 'global'],
+          },
+          {
+            name: 'project',
+            description: 'Select a project knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'store',
+            description: 'Select a store knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'run-state-dir',
+            description: 'Load frozen knowledge identity from the resolved directory containing auto-run.json',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'effective',
+        description:
+          'Show what this project actually receives, its sources by permanent identity, and any conflicts',
+        flags: [
+          {
+            name: 'project',
+            description: 'Select a project knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'store',
+            description: 'Select a store knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'run-state-dir',
+            description: 'Load frozen knowledge identity from the resolved directory containing auto-run.json',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'migrate',
+        description:
+          "Move per-clone knowledge into this project's canonical home and re-key ownership records on permanent identity",
+        flags: [
+          {
+            name: 'dry-run',
+            description: 'Preview only: report what would change and write nothing',
+          },
+          {
+            name: 'project',
+            description: 'Select a project knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'store',
+            description: 'Select a store knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'run-state-dir',
+            description: 'Load frozen knowledge identity from the resolved directory containing auto-run.json',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'show',
+        description: 'Show a canonical learned skill',
+        acceptsPositional: true,
+        positionals: [{ name: 'id' }],
+        flags: [
+          {
+            name: 'scope',
+            description: 'project, store, or global',
+            takesValue: true,
+            values: ['project', 'store', 'global'],
+          },
+          {
+            name: 'project',
+            description: 'Select a project knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'store',
+            description: 'Select a store knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'run-state-dir',
+            description: 'Load frozen knowledge identity from the resolved directory containing auto-run.json',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'retire',
+        description: 'Retire a managed learned skill',
+        acceptsPositional: true,
+        positionals: [{ name: 'id' }],
+        flags: [
+          {
+            name: 'scope',
+            description: 'project, store, or global',
+            takesValue: true,
+            values: ['project', 'store', 'global'],
+          },
+          {
+            name: 'project',
+            description: 'Select a project knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'store',
+            description: 'Select a store knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'run-state-dir',
+            description: 'Load frozen knowledge identity from the resolved directory containing auto-run.json',
+            takesValue: true,
+          },
+          {
+            name: 'yes',
+            short: 'y',
+            description: 'Skip the confirmation prompt',
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+    ],
+  },
+  {
+    name: 'workflow',
+    description: 'Manage installable workflows in the user-wide library',
+    flags: [],
+    subcommands: [
+      {
+        name: 'list',
+        description: 'List built-in and user workflows',
+        flags: [
+          { name: 'unused', description: 'Show only user workflows with no detected consumers' },
+          { name: 'all', description: 'Also reveal internal workflows in the human table' },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'show',
+        description: 'Show an installable workflow definition and known usage',
+        acceptsPositional: true,
+        positionalType: 'workflow-id',
+        positionals: [{ name: 'id', type: 'workflow-id' }],
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'which',
+        description: 'Show where an installable workflow resolves from',
+        acceptsPositional: true,
+        positionalType: 'workflow-id',
+        positionals: [{ name: 'id', type: 'workflow-id' }],
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'init',
+        description: 'Create a minimal workflow draft without installing it',
+        acceptsPositional: true,
+        positionals: [{ name: 'id' }],
+        flags: [
+          { name: 'output', description: 'Empty workflow draft directory to create', takesValue: true },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'validate',
+        description: 'Validate an installed workflow, draft directory, or .rasenpkg',
+        acceptsPositional: true,
+        positionals: [{ name: 'id-or-path' }],
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'import',
+        description: 'Validate and atomically install a workflow directory or package',
+        acceptsPositional: true,
+        positionalType: 'path',
+        positionals: [{ name: 'path', type: 'path' }],
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'export',
+        description: 'Export a user workflow and its user dependencies as .rasenpkg',
+        acceptsPositional: true,
+        positionals: [
+          { name: 'id', type: 'workflow-id' },
+          { name: 'path', type: 'path' },
+        ],
+        flags: [
+          { name: 'force', description: 'Replace an existing destination file' },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'delete',
+        description: 'Delete an unreferenced user workflow',
+        acceptsPositional: true,
+        positionalType: 'workflow-id',
+        positionals: [{ name: 'id', type: 'workflow-id' }],
+        flags: [
+          { name: 'yes', short: 'y', description: 'Skip confirmation' },
+          { name: 'force', description: 'Bypass the referrer guard, deleting even a still-referenced workflow' },
+          COMMON_FLAGS.json,
+        ],
+      },
+    ],
+  },
+  {
     name: 'config',
-    description: 'View and modify global Rasen configuration',
+    description: 'View and modify global or project Rasen configuration',
     flags: [
       {
         name: 'scope',
-        description: 'Config scope (only "global" supported currently)',
+        description: 'Config scope: "global" (default) or "project"',
         takesValue: true,
-        values: ['global'],
+        values: ['global', 'project'],
       },
     ],
     subcommands: [
@@ -634,14 +1212,14 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       },
       {
         name: 'profile',
-        description: 'Configure workflow profile (interactive picker or preset shortcut)',
+        description: 'Compatibility alias for `rasen profile`',
         acceptsPositional: true,
         positionals: [{ name: 'preset', optional: true }],
         flags: [],
       },
       {
         name: 'ui',
-        description: 'Start the localhost config API + optional web UI',
+        description: '[Deprecated: use `rasen ui`] Start the localhost management server and open the config view',
         flags: [
           {
             name: 'no-open',
@@ -653,6 +1231,64 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             takesValue: true,
           },
         ],
+      },
+    ],
+  },
+  {
+    name: 'ui',
+    description: 'Start the Rasen management platform (board + config) on a localhost server',
+    flags: [
+      {
+        name: 'no-open',
+        description: 'Do not open the default browser',
+      },
+      {
+        name: 'port',
+        description: 'Pin the listen port (default: ephemeral; --no-daemon only)',
+        takesValue: true,
+      },
+      {
+        name: 'no-daemon',
+        description: 'Use a self-hosted foreground server instead of the resident daemon',
+      },
+    ],
+  },
+  {
+    name: 'daemon',
+    description: 'Manage the resident Rasen daemon (sessions survive terminal exits)',
+    flags: [],
+    subcommands: [
+      {
+        name: 'run',
+        description: 'Run the resident daemon in the foreground (debugging/advanced form)',
+        flags: [
+          {
+            name: 'port',
+            description: 'Pin the listen port (default: 8791, or RASEN_DAEMON_PORT)',
+            takesValue: true,
+          },
+        ],
+      },
+      {
+        name: 'start',
+        description: 'Start the resident daemon as a detached background process',
+        flags: [
+          {
+            name: 'port',
+            description: 'Pin the listen port (default: 8791, or RASEN_DAEMON_PORT)',
+            takesValue: true,
+          },
+        ],
+      },
+      {
+        name: 'stop',
+        description: 'Stop the resident daemon, reaping its live sessions',
+        flags: [],
+      },
+      {
+        name: 'status',
+        description: 'Report whether the resident daemon is running',
+        flags: [],
       },
     ],
   },
@@ -741,7 +1377,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
   },
   {
     name: 'pipeline',
-    description: 'Inspect orchestration pipelines (list, show, classify, resume)',
+    description: 'Inspect and manage orchestration pipelines',
     flags: [],
     subcommands: [
       {
@@ -754,7 +1390,40 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         description: 'Show a pipeline stage DAG and build order',
         acceptsPositional: true,
         positionals: [{ name: 'name' }],
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+        flags: [
+          {
+            name: 'for-execution',
+            description: 'Validate active-profile skills before returning the executable DAG',
+          },
+          {
+            name: 'planner',
+            description: 'Set planner runtime: claude or codex',
+            takesValue: true,
+          },
+          {
+            name: 'implementer',
+            description: 'Set implementer runtime: claude or codex',
+            takesValue: true,
+          },
+          {
+            name: 'reviewer',
+            description: 'Set reviewer runtime: claude or codex',
+            takesValue: true,
+          },
+          {
+            name: 'fixer',
+            description: 'Set fixer runtime: claude or codex',
+            takesValue: true,
+          },
+          {
+            name: 'shipper',
+            description: 'Set shipper runtime: claude or codex',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+        ],
       },
       {
         name: 'agents',
@@ -807,6 +1476,98 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         positionals: [{ name: 'change', type: 'change-id' }],
         flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
       },
+      {
+        name: 'init',
+        description: 'Create a minimal pipeline draft without installing it',
+        acceptsPositional: true,
+        positionals: [{ name: 'name' }],
+        flags: [
+          { name: 'output', description: 'Empty pipeline draft directory to create', takesValue: true },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+        ],
+      },
+      {
+        name: 'validate',
+        description: 'Validate an installed pipeline, draft directory, or .rasenpkg',
+        acceptsPositional: true,
+        positionals: [{ name: 'name-or-path' }],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+      },
+      {
+        name: 'import',
+        description: 'Validate and atomically install a pipeline .rasenpkg',
+        acceptsPositional: true,
+        positionalType: 'path',
+        positionals: [{ name: 'path', type: 'path' }],
+        flags: [
+          { name: 'force', description: 'Overwrite an already-installed pipeline of the same name' },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+        ],
+      },
+      {
+        name: 'export',
+        description: 'Export a user pipeline as .rasenpkg',
+        acceptsPositional: true,
+        positionals: [
+          { name: 'name' },
+          { name: 'path', type: 'path' },
+        ],
+        flags: [
+          { name: 'force', description: 'Replace an existing destination file' },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+        ],
+      },
+      {
+        name: 'delete',
+        description: 'Delete an unreferenced user pipeline',
+        acceptsPositional: true,
+        positionals: [{ name: 'name' }],
+        flags: [
+          { name: 'yes', short: 'y', description: 'Skip confirmation' },
+          { name: 'force', description: 'Bypass the referrer guard, deleting even a still-referenced pipeline' },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+        ],
+      },
+      {
+        name: 'save',
+        description: 'Validate and install a pipeline definition file as a user pipeline',
+        acceptsPositional: true,
+        positionals: [{ name: 'name' }],
+        flags: [
+          { name: 'from', description: 'Path to a JSON or YAML pipeline definition', takesValue: true },
+          { name: 'force', description: 'Overwrite an already-installed pipeline of the same name' },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+        ],
+      },
+    ],
+  },
+  {
+    name: 'scheme',
+    description: 'Inspect machine-level threshold schemes',
+    flags: [],
+    subcommands: [
+      {
+        name: 'list',
+        description: 'List threshold schemes',
+        flags: [COMMON_FLAGS.json],
+      },
+      {
+        name: 'show',
+        description: 'Show one threshold scheme',
+        acceptsPositional: true,
+        positionals: [{ name: 'name' }],
+        flags: [COMMON_FLAGS.json],
+      },
     ],
   },
   {
@@ -845,9 +1606,54 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
   },
   {
     name: 'agent',
-    description: 'Introspect agent runtime state (context)',
+    description: 'Inspect and control base agent runtime state',
     flags: [],
     subcommands: [
+      {
+        name: 'edit-boundary',
+        description: 'Control the checkout-scoped runtime edit boundary',
+        flags: [],
+        subcommands: [
+          {
+            name: 'set',
+            description: 'Set the checkout-scoped edit boundary to an existing directory',
+            acceptsPositional: true,
+            positionals: [{ name: 'directory' }],
+            flags: [
+              {
+                name: 'runtime',
+                description: 'Force runtime: claude, codex, or zed',
+                takesValue: true,
+              },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'status',
+            description: 'Show the active boundary and observed host enforcement',
+            flags: [
+              {
+                name: 'runtime',
+                description: 'Force runtime: claude, codex, or zed',
+                takesValue: true,
+              },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'clear',
+            description: 'Clear the checkout-scoped edit boundary',
+            flags: [
+              {
+                name: 'runtime',
+                description: 'Force runtime: claude, codex, or zed',
+                takesValue: true,
+              },
+              COMMON_FLAGS.json,
+            ],
+          },
+        ],
+      },
       {
         name: 'context',
         description: 'Report context-window occupancy of a transcript from its recorded usage',
@@ -877,6 +1683,76 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             takesValue: true,
           },
           COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'wait',
+        description: 'One cache-keepalive beat: block briefly polling the change\'s role signal file',
+        flags: [
+          {
+            name: 'change',
+            description: 'Change whose signals directory to poll',
+            takesValue: true,
+          },
+          {
+            name: 'role',
+            description: 'Role key identifying this worker\'s signal file (e.g. reviewer, impl-spaces)',
+            takesValue: true,
+          },
+          {
+            name: 'max-beats',
+            description: 'Override the default beat cap (12)',
+            takesValue: true,
+          },
+          {
+            name: 'context-tokens',
+            description: 'Self-reported context size; below the keepalive floor stands down immediately',
+            takesValue: true,
+          },
+          {
+            name: 'beat-seconds',
+            description: 'Beat duration in seconds. Resolution: flag > keepalive.beatSeconds config (default 270) > 100s fuse; max 300. Beats over the shell tool default timeout require raising that tool timeout.',
+            takesValue: true,
+          },
+        ],
+      },
+      {
+        name: 'audit',
+        description:
+          "Analyze a session's token spend from its Claude transcript, Codex rollout, or Zed thread database (experimental: parses internal, undocumented formats that may change with harness or Zed updates)",
+        acceptsPositional: true,
+        positionals: [{ name: 'sessionId|path', optional: true }],
+        flags: [
+          {
+            name: 'projects-dir',
+            description: 'Override the Claude projects directory a session id is resolved against',
+            takesValue: true,
+          },
+          {
+            name: 'out',
+            description: 'Write the report to this file instead of the default analytics directory',
+            takesValue: true,
+          },
+          {
+            name: 'runtime',
+            description: 'Force the runtime: "claude", "codex", or "zed" (Zed reads its local threads.db; experimental, format may change)',
+            takesValue: true,
+          },
+          {
+            name: 'match',
+            description: 'Zed only: resolve the session by its first user command instead of a thread id',
+            takesValue: true,
+          },
+          {
+            name: 'db',
+            description: "Zed only: override the threads.db path (default: Zed's per-OS location)",
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+          {
+            name: 'open',
+            description: 'Open the shipped viewer in your default browser, pre-loaded with the report',
+          },
         ],
       },
     ],

@@ -5,7 +5,7 @@ Defines the orchestration playbook's context-handoff protocol: every worker spaw
 
 ## Requirements
 ### Requirement: Worker handoff contract
-The orchestration playbook SHALL instruct every worker spawn prompt to carry a handoff clause: triggers (LEAD-supplied soft budget, the compaction marker as a hard trigger, self-assessment) and a structured return contract (`DONE` + summary, or `HANDOFF { path, reason, completed, remaining }` after writing the handoff document to `rasen/changes/<id>/handoff/`). The `DONE` return SHALL additionally carry a durable-findings clause — 1–3 lines of discoveries that remain true for future planning (not per-task chatter) — which the LEAD relays verbatim into the next planner's dispatch so implementation discoveries feed subsequent proposals.
+The orchestration playbook SHALL instruct every worker spawn prompt to carry a handoff clause: triggers (LEAD-supplied soft budget, the compaction marker as a hard trigger, self-assessment) and a structured return contract (`DONE` + summary, or `HANDOFF { path, reason, completed, remaining }` after writing the handoff document to `rasen/changes/<id>/handoff/`). The `DONE` return SHALL additionally carry a durable-findings clause — 1–3 lines of discoveries that remain true for future planning (not per-task chatter) — which the LEAD relays verbatim into the next planner's dispatch so implementation discoveries feed subsequent proposals. Every `DONE`/`HANDOFF` return SHALL be delivered to the LEAD via `SendMessage`, not solely as the worker's final plain-text turn output — a subagent's plain text alone is not reliably observed by the LEAD under the harness's background-agent delivery path, so the structured return contract is unmet until the LEAD actually receives it through that channel. Once a worker has delivered its `DONE`/`HANDOFF` return, it SHALL treat any inbound instruction that predates that return as expired: acknowledge it and remain idle rather than resuming work on the stage it already closed out. The LEAD, correspondingly, SHALL NOT send further work to a worker after accepting that worker's `HANDOFF`.
 
 #### Scenario: Worker self-handoff mid-stage
 - **WHEN** a worker returns a `HANDOFF` result
@@ -19,6 +19,16 @@ The orchestration playbook SHALL instruct every worker spawn prompt to carry a h
 #### Scenario: Durable findings relayed to the next planner
 - **WHEN** a worker returns `DONE` with a durable-findings clause
 - **THEN** the LEAD SHALL relay those findings verbatim into the dispatch of the planner that proposes a dependent or subsequent child change
+
+#### Scenario: Worker return delivered via SendMessage
+- **WHEN** a worker completes its unit of work and is ready to report `DONE` or `HANDOFF`
+- **THEN** the playbook SHALL direct it to deliver that return via `SendMessage` to the LEAD
+- **AND** SHALL state that returning only as the final plain-text turn output is insufficient, since the LEAD may never observe it
+
+#### Scenario: Stale pre-handoff instruction is ignored
+- **WHEN** a worker that has already returned `HANDOFF` or `DONE` receives an inbound instruction that was sent before that return
+- **THEN** the worker SHALL acknowledge the instruction and remain idle rather than resuming work
+- **AND** the LEAD SHALL NOT have sent that instruction in the first place once it has accepted the worker's `HANDOFF` — a retired worker receives no further dispatches
 
 ### Requirement: Relay caps with LEAD-first review
 The playbook SHALL bound handoff relays per stage by the resolved `maxRelays` and `stallLimit`, with the LEAD — not a human gate — performing the triggered review.
@@ -48,7 +58,7 @@ When a stage exhausts its strategy budget (relay reviews or review-loop rounds),
 - **AND** after the strategy budget is exhausted the stage SHALL be marked `escalated` and parked while independent work continues
 
 ### Requirement: LEAD session pre-flight probe
-The `/rasen:auto` entry SHALL probe the LEAD's own transcript (`rasen agent context --latest`) once before starting the pipeline and, when usage meets the session threshold, offer the user a choice — without blocking: (a) automatic session relay now (write the session handoff document, then launch a successor session per the session-relay protocol), (b) continue in the current session with auto-compact as the backstop, or (c) handle it manually. Below the threshold it proceeds silently.
+The `/rasen-auto` entry SHALL probe the LEAD's own transcript (`rasen agent context --latest`) once before starting the pipeline and, when usage meets the session threshold, offer the user a choice — without blocking: (a) automatic session relay now (write the session handoff document, then launch a successor session per the session-relay protocol), (b) continue in the current session with auto-compact as the backstop, or (c) handle it manually. Below the threshold it proceeds silently.
 
 #### Scenario: Entry probe above threshold
 - **WHEN** an auto run starts and the probe reports usage at or above the session threshold
@@ -66,10 +76,21 @@ The `/rasen:auto` entry SHALL probe the LEAD's own transcript (`rasen agent cont
 
 The orchestration playbook SHALL state how a resolved threshold of either form is compared against a probe. A fraction threshold `t` SHALL fire a handoff when the probe's `pct >= t` and SHALL permit reuse when `pct <= t` (unchanged behavior). An absolute threshold `{ remainingTokens: N }` SHALL fire a handoff when the probe's `remainingTokens <= N` and SHALL permit reuse when `remainingTokens >= N`. The playbook SHALL also state that a probe reporting `limit: 0` (no window known — e.g. a Codex rollout with zero completed turns) fires NEITHER form: a young rollout is by definition not near its limit.
 
+For mid-task handoff, Step H SHALL state the complete server resolution order: configured `pipelines.<name>.handoff.<stage>` instance > stage YAML handoff > runtime-bound scheme (`handoffRoles[actual role]` before scheme scalar) > pipeline YAML role/scalar > legacy project role/scalar > inherited-store role/scalar > global role/scalar > model preset > built-in default. It SHALL state that an explicit effective-runtime row is considered across project/store/global before the `default` row across those scopes, and a missing/invalid scheme warns and falls through. The LEAD SHALL consume the resolved values and metadata reported by `rasen pipeline show` or `rasen agent context` rather than reading scheme/config files and recreating precedence.
+
 #### Scenario: Playbook states both comparison rules
 - **WHEN** the orchestration playbook template's Step H threshold guidance is inspected
 - **THEN** it SHALL state the fraction rule (`pct >= t` hands off) and the absolute rule (`remainingTokens <= N` hands off; reuse requires `remainingTokens >= N`)
-- **AND** it SHALL state that the resolution order includes the model-preset layer between pipeline config and built-in defaults
+- **AND** it SHALL state the binding-aware resolution order with the model-preset layer between legacy machine config and built-in defaults
+
+#### Scenario: Explicit runtime row precedes default row
+- **WHEN** Step H describes how a bound handoff scheme is selected
+- **THEN** it SHALL place the actual worker runtime's project/store/global binding candidates before all project/store/global `default` candidates
+- **AND** SHALL direct dangling or invalid candidates to warn and fall through
+
+#### Scenario: Actual dispatched role and runtime drive the scheme
+- **WHEN** a loop stage dispatches a worker whose actual role or effective runtime differs from the stage's nominal role/runtime
+- **THEN** Step H SHALL direct resolution using the dispatched worker's actual role and effective runtime
 
 #### Scenario: Zero-limit probe fires no threshold
 - **WHEN** the playbook's guidance for interpreting a probe with `limit: 0` is inspected

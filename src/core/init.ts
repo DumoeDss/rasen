@@ -1,7 +1,7 @@
 /**
  * Init Command
  *
- * Sets up Rasen with Agent Skills and /rasen:* slash commands.
+ * Sets up Rasen with Agent Skills (invoked by their canonical rasen-* skill name).
  * This is the unified setup command that replaces both the old init and experimental commands.
  */
 
@@ -11,7 +11,7 @@ import ora from 'ora';
 import * as fs from 'fs';
 import { createRequire } from 'module';
 import { FileSystemUtils } from '../utils/file-system.js';
-import { classifyOpenSpecDir, storePointerProblem } from './project-config.js';
+import { classifyOpenSpecDir, storePointerProblem, updateProjectConfigKey } from './project-config.js';
 import { resolveProjectHome } from './project-home.js';
 import { findRepoPlanningRootSync } from './planning-home.js';
 import {
@@ -31,16 +31,19 @@ import { PALETTE } from './styles/palette.js';
 import { isInteractive } from '../utils/interactive.js';
 import { serializeConfig } from './config-prompts.js';
 import {
-  generateCommands,
-  CommandAdapterRegistry,
-  getLegacyCommandFilePath,
+  getAllRetiredCommandFilePathCandidates,
   getCommandFilePathCandidates,
-} from './command-generation/index.js';
+} from './shared/retired-command-paths.js';
 import {
   detectLegacyArtifacts,
   cleanupMarkerBlocks,
   formatLegacyCoexistenceNotice,
+  cleanupLegacyEditBoundaryState,
+  pruneRetiredEditBoundarySkillDirs,
   pruneRetiredExpertSkillDirs,
+  pruneRetiredWorkflowSkillDirs,
+  pruneRetiredRetentionSkillDirs,
+  RETIRED_WORKFLOW_COMMAND_IDS,
 } from './legacy-cleanup.js';
 import {
   SKILL_NAMES,
@@ -50,16 +53,58 @@ import {
   getToolSkillStatus,
   getToolStates,
   getSkillTemplates,
-  getCommandContents,
   generateSkillContent,
   copySkillSidecars,
   type ToolSkillStatus,
 } from './shared/index.js';
-import { getGlobalConfig, type Delivery, type Profile, type RepoMode } from './global-config.js';
-import { getProfileWorkflows, CORE_WORKFLOWS, ALL_WORKFLOWS } from './profiles.js';
+import {
+  getRetroCommandSkillTemplate,
+  RETRO_COMPAT_WRAPPER_DIR_NAME,
+} from './templates/skill-templates.js';
+import {
+  EffectiveLearnedSkillPlanningError,
+  resolveEffectiveLearnedSkillPlan,
+  resolveLearnedSkillExecutionContext,
+} from './learned-skills/index.js';
+import {
+  emptyLearnedReconcileResult,
+  learnedReconcileHasActivity,
+  mergeLearnedReconcileResult,
+  reconcileGlobalLearnedSkillsForTool,
+  reconcileProjectLearnedSkillsForTool,
+  type LearnedReconcileResult,
+} from './learned-skill-materialization.js';
+import { collectProjectLearnedStores } from './project-learned-skill-ledger.js';
+import { learnedMaterializationReport } from './learned-materialization-locale.js';
+import { getGlobalConfig, saveGlobalConfig, type Profile, type RepoMode } from './global-config.js';
+import { writeExpertSelectionAck } from './expert-selection-state.js';
+import {
+  getCurrentBuiltInWorkflowIds,
+  profileLockWarningToDiagnostic,
+  resolveDesiredWorkflowSelection,
+  resolveProjectWorkflowSelection,
+  CORE_WORKFLOWS,
+  type ResolveProjectWorkflowSelectionResult,
+} from './profiles.js';
+import {
+  listUserProfiles,
+  namedProfileExists,
+  resolveProfileDefinition,
+  validateUserProfileName,
+} from './named-profiles.js';
+import { reportConfigDiagnostic } from './config-diagnostics.js';
+import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
+import {
+  filterKnownWorkflowRoots,
+  loadWorkflowCatalog,
+  resolveEffectiveWorkflowInstallSelection,
+} from './workflow-registry/index.js';
+import { syncWorkflowArtifactLedger } from './workflow-artifact-ledger.js';
 import { getAvailableTools } from './available-tools.js';
 import { ensureClaudeAgentTeams } from './claude-settings.js';
+import { reconcileEditBoundaryHooks } from './edit-boundary-hooks.js';
 import { migrateIfNeeded } from './migration.js';
+import { reconcileCodexProjectConfig, formatCodexConfigSummary, type CodexConfigReconcileResult } from './codex/index.js';
 
 const require = createRequire(import.meta.url);
 const { version: OPENSPEC_VERSION } = require('../../package.json');
@@ -95,6 +140,8 @@ export class InitCommand {
   private readonly force: boolean;
   private readonly interactiveOption?: boolean;
   private readonly profileOverride?: string;
+  /** Memoized per-run selection — see {@link resolveActiveSelection}. */
+  private activeSelection?: ResolveProjectWorkflowSelectionResult;
 
   constructor(options: InitCommandOptions = {}) {
     this.toolsArg = options.tools;
@@ -119,6 +166,7 @@ export class InitCommand {
     // finds the nearest ancestor root (so pointer-repo subdirectories
     // refuse exactly where a normal command would resolve the pointer).
     const guardRoot = findRepoPlanningRootSync(projectPath);
+    let pointerToolOnlySelection: string[] | undefined;
     if (guardRoot) {
       const { hasPlanningShape, pointer } = classifyOpenSpecDir(guardRoot);
       if (!hasPlanningShape) {
@@ -130,10 +178,21 @@ export class InitCommand {
           );
         }
         if (pointer.value !== undefined) {
-          throw new Error(
-            `This repo's planning is externalized to store '${pointer.value}' (${pointer.filePath}). ` +
-              `Remove the store: line first to convert this repo to a local Rasen root.`
-          );
+          const targetsPointerRoot =
+            FileSystemUtils.canonicalizeExistingPath(projectPath) ===
+            FileSystemUtils.canonicalizeExistingPath(guardRoot);
+          if (targetsPointerRoot && this.toolsArg !== undefined) {
+            const explicitSelection = this.resolveToolsArg();
+            if (explicitSelection !== null && explicitSelection.length > 0) {
+              pointerToolOnlySelection = explicitSelection;
+            }
+          }
+          if (pointerToolOnlySelection === undefined) {
+            throw new Error(
+              `This repo's planning is externalized to store '${pointer.value}' (${pointer.filePath}). ` +
+                `Remove the store: line first to convert this repo to a local Rasen root.`
+            );
+          }
         }
       }
     }
@@ -167,27 +226,157 @@ export class InitCommand {
     const toolStates = getToolStates(projectPath);
 
     // Get tool selection (pass detected tools for pre-selection)
-    const selectedToolIds = await this.getSelectedTools(toolStates, extendMode, detectedTools, projectPath);
+    const selectedToolIds =
+      pointerToolOnlySelection ??
+      await this.getSelectedTools(toolStates, extendMode, detectedTools, projectPath);
 
     // Validate selected tools
     const validatedTools = this.validateTools(selectedToolIds, toolStates);
 
+    // Base-runtime reconciliation is independent of selected skills. Heal the
+    // exact retired directories for every previously configured or selected
+    // tool, remove obsolete state, and install supported host hooks before
+    // entering the skill generation loop.
+    const cleanupToolIds = new Set([
+      ...validatedTools.map((tool) => tool.value),
+      ...[...toolStates.entries()]
+        .filter(([, status]) => status.configured)
+        .map(([toolId]) => toolId),
+    ]);
+    for (const toolId of cleanupToolIds) {
+      const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
+      if (!tool?.skillsDir) continue;
+      await pruneRetiredEditBoundarySkillDirs(
+        resolveToolSkillsRoot(tool, projectPath)
+      );
+    }
+    await cleanupLegacyEditBoundaryState();
+    for (const result of reconcileEditBoundaryHooks(
+      projectPath,
+      validatedTools.map((tool) => tool.value)
+    )) {
+      if (result.warning) console.log(chalk.yellow(`Warning: ${result.warning}`));
+    }
+
+    // A fresh (non-extend) init is one of the explicit expert-aware write
+    // paths (design.md D4): it marks the machine as having explicit expert
+    // selection so the profile-default expert set governs from the start
+    // (matrix row 4/5), rather than silently inheriting the legacy
+    // all-experts fallback that exists only to protect installs that
+    // predate expert selection. Re-running init on an already-initialized
+    // project (extend mode) is left alone here, matching update semantics.
+    // This global write alone is not enough to make ANOTHER already-existing
+    // project narrow (review-round Blocker fix): `update`'s pruning also
+    // requires that specific project's own acknowledgment file, written
+    // below once THIS project's machine home is known.
+    if (!extendMode) {
+      const currentConfig = getGlobalConfig();
+      // A fresh init persists the selection, so it also seeds the
+      // known-built-in-workflows baseline — a subsequent `update` then
+      // surfaces only workflows the catalog gains after this point.
+      saveGlobalConfig({
+        ...currentConfig,
+        expertSelectionExplicit: true,
+        knownBuiltInWorkflows: getCurrentBuiltInWorkflowIds(),
+      });
+    }
+
+    // Resolve the complete catalog selection before creating project files.
+    // Missing or invalid selected user workflows therefore fail without a
+    // partially generated tool configuration.
+    const {
+      unknown: unknownEffectiveWorkflows,
+      mode: selectionMode,
+      lockedProfile,
+      lockWarning,
+    } = this.resolveActiveSelection(projectPath);
+    if (selectionMode === 'locked-profile' && this.profileOverride === undefined && lockedProfile !== undefined) {
+      console.log(
+        chalk.dim(`Note: this project is locked to profile '${lockedProfile}' (rasen/config.yaml), not the user-wide profile.`)
+      );
+    }
+    if (lockWarning) {
+      reportConfigDiagnostic(
+        profileLockWarningToDiagnostic(lockWarning),
+        createConfigDiagnosticReporter()
+      );
+    }
+    if (unknownEffectiveWorkflows.length > 0) {
+      console.log(
+        chalk.yellow(
+          `Warning: dropping unknown workflow id(s) from stored profile: ${unknownEffectiveWorkflows.join(', ')}`
+        )
+      );
+    }
+
     // Create directory structure and config
-    await this.createDirectoryStructure(openspecPath, extendMode);
+    if (pointerToolOnlySelection === undefined) {
+      await this.createDirectoryStructure(openspecPath, extendMode);
+    }
 
     // Generate skills and commands for each tool
     const results = await this.generateSkillsAndCommands(projectPath, validatedTools);
 
-    // Create config.yaml if needed
-    const configStatus = await this.createConfig(openspecPath, extendMode);
+    // When Codex is part of the validated selection, reconcile its project-local
+    // wait policy (`.codex/config.toml`) as part of configuring that tool. Never
+    // counts as a generated skill; a blocked/failed outcome is reported but does
+    // not abort init or affect other tools (cli-init spec).
+    const codexConfig =
+      validatedTools.some((tool) => tool.value === 'codex')
+        ? await reconcileCodexProjectConfig(projectPath)
+        : undefined;
+
+    // Create config.yaml if needed (and persist an explicit profile lock)
+    const configStatus =
+      pointerToolOnlySelection === undefined
+        ? await this.createConfig(openspecPath, extendMode, projectPath)
+        : 'exists';
+
+    // Persist the user's tool selection into `rasen/config.yaml`'s `tools:`
+    // key (project-install-manifest spec). Best-effort: a failure emits a
+    // warning and continues — the skill files are already written, and the
+    // next `rasen update` will seed the manifest through the migration path.
+    // Skipped for the pointer-only externalized-repo case (no local config
+    // to write into).
+    if (pointerToolOnlySelection === undefined) {
+      try {
+        updateProjectConfigKey(projectPath, 'tools', validatedTools.map((t) => t.value));
+      } catch (error) {
+        console.log(
+          chalk.yellow(
+            `Warning: could not persist tools: to ${WORKSPACE_DIR_NAME}/config.yaml (${
+              error instanceof Error ? error.message : String(error)
+            }). The next 'rasen update' will seed it from the installed skill files.`
+          )
+        );
+      }
+    }
 
     // Establish machine-home identity and registration (task 4.1). Best
     // effort: a registration failure never fails init - the repo-side
     // setup above has already completed.
     const machineHome = await this.registerMachineHome(projectPath);
 
+    // A fresh (non-extend) init has nothing pre-existing to lose, so it is
+    // safe to record THIS project's own expert-selection acknowledgment
+    // immediately (review-round Blocker fix, expert-selection-state.ts):
+    // its first `update` narrows straight away instead of taking the
+    // one-run legacy detour a project that never ran its own explicit
+    // action goes through.
+    if (!extendMode && 'homeDir' in machineHome) {
+      writeExpertSelectionAck(machineHome.homeDir);
+    }
+
+    // Materialize applicable learned skills into the tools just configured
+    // (after machine-home registration so the project store resolves). Learned
+    // ids never enter the profile or workflow selection.
+    const learned = await this.reconcileLearnedSkills(projectPath, [
+      ...results.createdTools,
+      ...results.refreshedTools,
+    ]);
+
     // Display success message
-    this.displaySuccessMessage(projectPath, validatedTools, results, configStatus, machineHome);
+    this.displaySuccessMessage(projectPath, validatedTools, results, configStatus, machineHome, learned, codexConfig);
   }
 
   /**
@@ -233,16 +422,78 @@ export class InitCommand {
     return isInteractive({ interactive: this.interactiveOption });
   }
 
-  private resolveProfileOverride(): Profile | undefined {
+  private resolveProfileOverride():
+    | { kind: 'builtin'; profile: Profile }
+    | { kind: 'named'; name: string }
+    | undefined {
     if (this.profileOverride === undefined) {
       return undefined;
     }
 
     if (this.profileOverride === 'full' || this.profileOverride === 'core' || this.profileOverride === 'custom') {
-      return this.profileOverride;
+      return { kind: 'builtin', profile: this.profileOverride };
     }
 
-    throw new Error(`Invalid profile "${this.profileOverride}". Available profiles: full, core, custom`);
+    // A saved named profile is accepted too (init-profile-lock spec). The
+    // write side validates strictly — a typo fails here, before any tool
+    // setup — while the read side (resolveProjectWorkflowSelection) stays
+    // tolerant for shared configs.
+    if (validateUserProfileName(this.profileOverride) === null && namedProfileExists(this.profileOverride)) {
+      return { kind: 'named', name: this.profileOverride };
+    }
+
+    const savedNames = listUserProfiles().map((profile) => profile.name);
+    const available = ['full', 'core', 'custom', ...savedNames].join(', ');
+    throw new Error(`Invalid profile "${this.profileOverride}". Available profiles: ${available}`);
+  }
+
+  /**
+   * The selection init installs, computed once per run (init-profile-lock
+   * spec): an explicit `--profile` value wins (a built-in resolves like the
+   * user-wide path, a saved name resolves its definition verbatim plus
+   * dependency closure); otherwise the shared per-project seam governs, so
+   * extend mode honors an existing `profile` lock in `rasen/config.yaml`
+   * while a fresh init (no config yet) resolves the user-wide profile
+   * exactly as before.
+   */
+  private resolveActiveSelection(projectPath: string): ResolveProjectWorkflowSelectionResult {
+    if (this.activeSelection) return this.activeSelection;
+
+    const globalConfig = getGlobalConfig();
+    const expertSelectionExplicit = globalConfig.expertSelectionExplicit === true;
+    const catalog = loadWorkflowCatalog();
+    const override = this.resolveProfileOverride();
+
+    let result: ResolveProjectWorkflowSelectionResult;
+    if (override === undefined) {
+      result = resolveProjectWorkflowSelection(
+        catalog,
+        projectPath,
+        globalConfig.profile ?? 'full',
+        globalConfig.workflows,
+        expertSelectionExplicit
+      );
+    } else if (override.kind === 'builtin') {
+      result = {
+        ...resolveDesiredWorkflowSelection(
+          catalog,
+          override.profile,
+          globalConfig.workflows,
+          expertSelectionExplicit
+        ),
+        mode: 'profile',
+      };
+    } else {
+      const definition = resolveProfileDefinition(override.name);
+      const { known, unknown } = filterKnownWorkflowRoots(catalog, definition.workflows);
+      const ids = resolveEffectiveWorkflowInstallSelection(catalog, known).map(
+        (workflowDefinition) => workflowDefinition.id
+      );
+      result = { ids, unknown, mode: 'locked-profile', lockedProfile: override.name };
+    }
+
+    this.activeSelection = result;
+    return result;
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -604,6 +855,130 @@ export class InitCommand {
   // SKILL & COMMAND GENERATION
   // ═══════════════════════════════════════════════════════════
 
+  /**
+   * Removes command files left behind by retired built-in workflows (e.g.
+   * `ff`), resolving candidate paths for each id in
+   * `RETIRED_WORKFLOW_COMMAND_IDS` via the frozen static path knowledge.
+   * Scoped to exactly those ids; idempotent (a no-op when no such file
+   * exists).
+   */
+  private async pruneRetiredWorkflowCommandFiles(
+    projectPath: string,
+    toolId: string,
+  ): Promise<void> {
+    for (const commandId of RETIRED_WORKFLOW_COMMAND_IDS) {
+      for (const cmdPath of getCommandFilePathCandidates(toolId, commandId)) {
+        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
+        try {
+          if (fs.existsSync(fullPath)) {
+            await fs.promises.unlink(fullPath);
+          }
+        } catch {
+          // Ignore errors
+        }
+      }
+    }
+  }
+
+  /**
+   * Writes the temporary `rasen-retro` compatibility wrapper into a tool's
+   * skills root by its exact named identity ({@link RETRO_COMPAT_WRAPPER_DIR_NAME}).
+   * The wrapper forces `rasen-retain` report mode and is user-invoked only; it
+   * is deliberately outside the selectable workflow catalog.
+   */
+  private async generateRetroCompatWrapper(
+    skillsDir: string,
+    transformer: (text: string) => string
+  ): Promise<void> {
+    const content = generateSkillContent(
+      getRetroCommandSkillTemplate(),
+      OPENSPEC_VERSION,
+      transformer,
+      false
+    );
+    await FileSystemUtils.writeFile(
+      path.join(skillsDir, RETRO_COMPAT_WRAPPER_DIR_NAME, 'SKILL.md'),
+      content
+    );
+  }
+
+  /**
+   * Resolves the active learned skills and materializes the applicable ones
+   * into each successfully configured tool, tracking exact ownership in the
+   * artifact ledgers. Learned-skill ids are NOT added to the profile or
+   * workflow selection. Best-effort: a resolution or per-tool failure is
+   * REPORTED (not swallowed) but never fails init — the repo-side setup has
+   * already completed. Mirrors `UpdateCommand.reconcileLearnedSkills` so init
+   * and update surface the same diagnostics for the same failure.
+   */
+  private async reconcileLearnedSkills(
+    projectPath: string,
+    tools: Array<{ value: string; name: string; skillsDir: string; wasConfigured: boolean }>
+  ): Promise<LearnedReconcileResult> {
+    const aggregate = emptyLearnedReconcileResult();
+    try {
+      const execution = await resolveLearnedSkillExecutionContext({
+        launchDirectory: projectPath,
+        requestedScope: 'mixed',
+      });
+      const plan = await resolveEffectiveLearnedSkillPlan({
+        execution,
+        previousStores:
+          execution.owner.type === 'project'
+            ? collectProjectLearnedStores(execution.evaluationRoot ?? projectPath)
+            : [],
+      });
+
+      for (const tool of tools) {
+        const toolDefinition = AI_TOOLS.find((candidate) => candidate.value === tool.value);
+        const skillsRoot = resolveToolSkillsRoot(
+          toolDefinition ?? {
+            name: tool.name,
+            value: tool.value,
+            available: true,
+            skillsDir: tool.skillsDir,
+          },
+          plan.evaluationRoot
+        );
+        try {
+          const result =
+            toolDefinition?.skillsHome === 'global'
+              ? reconcileGlobalLearnedSkillsForTool({
+                  toolId: tool.value,
+                  toolLabel: tool.name,
+                  skillsRoot,
+                  globalRecords: plan.globalRecords,
+                  localRecords: plan.skills,
+                  plan,
+                  ...(execution.globalDataDir ? { globalDataDir: execution.globalDataDir } : {}),
+                })
+              : reconcileProjectLearnedSkillsForTool({
+                  toolId: tool.value,
+                  toolLabel: tool.name,
+                  skillsRoot,
+                  plan,
+                });
+          mergeLearnedReconcileResult(aggregate, result);
+        } catch (error) {
+          aggregate.errors.push({
+            code: 'tool_reconcile_failed',
+            message: `${tool.name}: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
+      }
+    } catch (error) {
+      aggregate.errors.push({
+        code:
+          error instanceof EffectiveLearnedSkillPlanningError ? error.code : 'effective_plan_failed',
+        message: error instanceof Error ? error.message : String(error),
+        ...(error instanceof EffectiveLearnedSkillPlanningError && error.repair.length > 0
+          ? { repair: error.repair }
+          : {}),
+      });
+    }
+    return aggregate;
+  }
+
   private async generateSkillsAndCommands(
     projectPath: string,
     tools: Array<{ value: string; name: string; skillsDir: string; wasConfigured: boolean }>
@@ -620,18 +995,16 @@ export class InitCommand {
     const commandsSkipped: string[] = [];
     let removedCommandCount = 0;
 
-    // Read global config for profile and delivery settings (use --profile override if set)
+    // The memoized per-run selection (--profile override, an existing
+    // profile lock, or the user-wide profile — resolveActiveSelection).
+    // Unknown-id warnings were already printed when execute() first
+    // resolved it.
     const globalConfig = getGlobalConfig();
-    const profile: Profile = this.resolveProfileOverride() ?? globalConfig.profile ?? 'full';
-    const delivery: Delivery = globalConfig.delivery ?? 'both';
-    const workflows = getProfileWorkflows(profile, globalConfig.workflows);
+    const { ids: workflows } = this.resolveActiveSelection(projectPath);
     const proactive = globalConfig.proactive ?? true;
     const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
 
-    // Skills are always installed; only command generation is gated on delivery.
-    const shouldGenerateCommands = delivery === 'both';
     const skillTemplates = getSkillTemplates(workflows);
-    const commandContents = shouldGenerateCommands ? getCommandContents(workflows) : [];
 
     // Process each tool
     for (const tool of tools) {
@@ -650,22 +1023,39 @@ export class InitCommand {
         // openspec-*); installed dirs are not renamed in place.
         await pruneRetiredExpertSkillDirs(skillsDir);
 
+        // Prune skill/command artifacts left behind by retired built-in
+        // workflows (e.g. `ff` → `rasen-ff-change`); the registry-derived
+        // cleanup below can no longer reach a retired id.
+        await pruneRetiredWorkflowSkillDirs(skillsDir);
+        // Clean retired retention skill dirs by exact name, preserving the
+        // currently shipped `rasen-retro` compatibility wrapper.
+        await pruneRetiredRetentionSkillDirs(skillsDir, [RETRO_COMPAT_WRAPPER_DIR_NAME]);
+        await this.pruneRetiredWorkflowCommandFiles(projectPath, tool.value);
+
+        // Chain transformers once per tool: embed config values, then
+        // tool-specific transforms (hyphen-based command references for tools
+        // where filename = command name). Reused by every skill and the retro
+        // compatibility wrapper below.
+        const configTransform = (text: string) => text
+          .replace(/__OPENSPEC_PROACTIVE__/g, String(proactive))
+          .replace(/__OPENSPEC_REPO_MODE__/g, repoMode);
+        const toolTransform = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
+        const transformer = toolTransform
+          ? (text: string) => toolTransform(configTransform(text))
+          : configTransform;
+
         // Create skill directories and SKILL.md files
-        for (const { template, dirName, workflowId } of skillTemplates) {
+        for (const { template, dirName, workflowId, escapeFrontmatter } of skillTemplates) {
           const skillDir = path.join(skillsDir, dirName);
           const skillFile = path.join(skillDir, 'SKILL.md');
 
           // Generate SKILL.md content with YAML frontmatter including generatedBy
-          // Chain transformers: embed config values, then tool-specific transforms
-          // (hyphen-based command references for tools where filename = command name)
-          const configTransform = (text: string) => text
-            .replace(/__OPENSPEC_PROACTIVE__/g, String(proactive))
-            .replace(/__OPENSPEC_REPO_MODE__/g, repoMode);
-          const toolTransform = (tool.value === 'opencode' || tool.value === 'pi') ? transformToHyphenCommands : undefined;
-          const transformer = toolTransform
-            ? (text: string) => toolTransform(configTransform(text))
-            : configTransform;
-          const skillContent = generateSkillContent(template, OPENSPEC_VERSION, transformer);
+          const skillContent = generateSkillContent(
+            template,
+            OPENSPEC_VERSION,
+            transformer,
+            escapeFrontmatter
+          );
 
           // Write the skill file
           await FileSystemUtils.writeFile(skillFile, skillContent);
@@ -675,37 +1065,21 @@ export class InitCommand {
           copySkillSidecars(workflowId, skillDir);
         }
 
-        // Generate commands if delivery includes commands
-        if (shouldGenerateCommands) {
-          const adapter = CommandAdapterRegistry.get(tool.value);
-          if (adapter) {
-            const generatedCommands = generateCommands(commandContents, adapter);
+        // Generate the temporary `rasen-retro` compatibility wrapper by its
+        // exact named identity. It is NOT a selectable workflow (absent from
+        // the catalog), so it is materialized explicitly here rather than
+        // through the skill-template loop, and retired later by the same
+        // named identity — never a prefix scan.
+        await this.generateRetroCompatWrapper(skillsDir, transformer);
 
-            for (const cmd of generatedCommands) {
-              const commandFile = path.isAbsolute(cmd.path) ? cmd.path : path.join(projectPath, cmd.path);
-              await FileSystemUtils.writeFile(commandFile, cmd.fileContent);
-            }
+        // The command surface is retired: skills are the only delivery
+        // format now. A fresh init still opportunistically cleans up any
+        // rasen command files (all 19 built-in ids + legacy variants) so it
+        // leaves zero command files even on a project directory that
+        // carries stale ones from before the retirement.
+        removedCommandCount += await this.removeCommandFiles(projectPath, tool.value);
 
-            // Remove legacy '-command'-suffixed files replaced by the short names above
-            for (const content of commandContents) {
-              const legacyPath = getLegacyCommandFilePath(adapter, content.id);
-              if (!legacyPath) continue;
-              const fullPath = path.isAbsolute(legacyPath) ? legacyPath : path.join(projectPath, legacyPath);
-              try {
-                if (fs.existsSync(fullPath)) {
-                  await fs.promises.unlink(fullPath);
-                }
-              } catch {
-                // Ignore errors
-              }
-            }
-          } else {
-            commandsSkipped.push(tool.value);
-          }
-        }
-        if (!shouldGenerateCommands) {
-          removedCommandCount += await this.removeCommandFiles(projectPath, tool.value);
-        }
+        syncWorkflowArtifactLedger(projectPath, tool.value, workflows);
 
         // Claude Code: enable agent-teams (Tier A orchestration) in project settings.
         if (tool.value === 'claude') {
@@ -738,19 +1112,48 @@ export class InitCommand {
   // CONFIG FILE
   // ═══════════════════════════════════════════════════════════
 
-  private async createConfig(openspecPath: string, extendMode: boolean): Promise<'created' | 'exists' | 'skipped'> {
+  private async createConfig(
+    openspecPath: string,
+    extendMode: boolean,
+    projectPath: string
+  ): Promise<'created' | 'exists' | 'skipped'> {
     const configPath = path.join(openspecPath, 'config.yaml');
     const configYmlPath = path.join(openspecPath, 'config.yml');
     const configYamlExists = fs.existsSync(configPath);
     const configYmlExists = fs.existsSync(configYmlPath);
 
+    // An explicit --profile value other than `custom` is persisted as the
+    // project's locked profile (init-profile-lock spec). `custom` names the
+    // mutable global selection, so it stays a one-run choice.
+    const lockValue =
+      this.profileOverride !== undefined && this.profileOverride !== 'custom'
+        ? this.profileOverride
+        : undefined;
+
     if (configYamlExists || configYmlExists) {
+      if (lockValue !== undefined) {
+        try {
+          // Comment-preserving single-key write: every other key and the
+          // file's comments stay untouched.
+          updateProjectConfigKey(projectPath, 'profile', lockValue);
+        } catch (error) {
+          console.log(
+            chalk.yellow(
+              `Warning: could not persist the profile lock to ${WORKSPACE_DIR_NAME}/config.yaml: ${
+                error instanceof Error ? error.message : String(error)
+              }`
+            )
+          );
+        }
+      }
       return 'exists';
     }
 
-
     try {
-      const yamlContent = serializeConfig({ schema: DEFAULT_SCHEMA });
+      const yamlContent = serializeConfig({
+        schema: DEFAULT_SCHEMA,
+        ...(lockValue !== undefined ? { profile: lockValue } : {}),
+      });
       await FileSystemUtils.writeFile(configPath, yamlContent);
       return 'created';
     } catch {
@@ -773,7 +1176,9 @@ export class InitCommand {
       removedCommandCount: number;
     },
     configStatus: 'created' | 'exists' | 'skipped',
-    machineHome: { homeDir: string } | { warning: string }
+    machineHome: { homeDir: string } | { warning: string },
+    learned: LearnedReconcileResult,
+    codexConfig?: CodexConfigReconcileResult
   ): void {
     console.log();
     console.log(chalk.bold('Rasen Setup Complete'));
@@ -790,10 +1195,7 @@ export class InitCommand {
     // Show counts (respecting profile filter)
     const successfulTools = [...results.createdTools, ...results.refreshedTools];
     if (successfulTools.length > 0) {
-      const globalConfig = getGlobalConfig();
-      const profile: Profile = (this.profileOverride as Profile) ?? globalConfig.profile ?? 'full';
-      const delivery: Delivery = globalConfig.delivery ?? 'both';
-      const workflows = getProfileWorkflows(profile, globalConfig.workflows);
+      const { ids: workflows } = this.resolveActiveSelection(projectPath);
       // Tools with a machine-global skills home (Hermes) report their
       // resolved global location instead of the project-local `.hermes/`
       // label, so the user knows skills landed outside the project.
@@ -809,13 +1211,8 @@ export class InitCommand {
       // tool is project-local; a global entry already reads as a full path.
       const toolDirs = hasGlobalTool ? toolDirEntries.join(', ') : `${toolDirEntries.join(', ')}/`;
       const skillCount = getSkillTemplates(workflows).length;
-      const commandCount = delivery === 'both' ? getCommandContents(workflows).length : 0;
-      if (skillCount > 0 && commandCount > 0) {
-        console.log(`${skillCount} skills and ${commandCount} commands in ${toolDirs}`);
-      } else if (skillCount > 0) {
+      if (skillCount > 0) {
         console.log(`${skillCount} skills in ${toolDirs}`);
-      } else if (commandCount > 0) {
-        console.log(`${commandCount} commands in ${toolDirs}`);
       }
     }
 
@@ -824,12 +1221,8 @@ export class InitCommand {
       console.log(chalk.red(`Failed: ${results.failedTools.map((f) => `${f.name} (${f.error.message})`).join(', ')}`));
     }
 
-    // Show skipped commands
-    if (results.commandsSkipped.length > 0) {
-      console.log(chalk.dim(`Commands skipped for: ${results.commandsSkipped.join(', ')} (no adapter)`));
-    }
     if (results.removedCommandCount > 0) {
-      console.log(chalk.dim(`Removed: ${results.removedCommandCount} command files (delivery: skills)`));
+      console.log(chalk.dim(`Removed: ${results.removedCommandCount} command files (commands have been consolidated into skills)`));
     }
 
     // Config status
@@ -852,19 +1245,53 @@ export class InitCommand {
       console.log(chalk.yellow(`  ⚠ ${machineHome.warning}`));
     }
 
+    // Learned-skill materialization (reported separately from workflow skills):
+    // what was written, what was left alone, and anything deferred or blocked.
+    // Mirrors UpdateCommand.displayLearnedSummary via the shared
+    // learnedMaterializationReport helper so init and update print the same
+    // report for the same reconcile result.
+    if (learnedReconcileHasActivity(learned) || learned.noOp) {
+      const materialized = learned.created.length + learned.updated.length;
+      if (materialized > 0) {
+        console.log(`Learned skills: ${materialized} materialized`);
+      }
+      for (const line of learnedMaterializationReport(learned)) {
+        console.log(line.tone === 'warn' ? chalk.yellow(`  ⚠ ${line.text}`) : chalk.dim(line.text));
+      }
+    }
+
+    // Codex project config (cli-init spec): report the managed wait-policy
+    // outcome. Created/updated include a restart reminder; blocked/failed are
+    // actionable and ensure Codex is not silently reported as fully configured.
+    if (codexConfig) {
+      for (const line of formatCodexConfigSummary(codexConfig)) {
+        const rendered =
+          line.tone === 'error'
+            ? chalk.red(`  ✗ ${line.text}`)
+            : line.tone === 'warn'
+              ? chalk.yellow(`  ⚠ ${line.text}`)
+              : chalk.white(`  ${line.text}`);
+        console.log(rendered);
+      }
+    }
+
+    // Profile lock (init-profile-lock spec): an explicit --profile value
+    // other than `custom` was persisted into the project config above.
+    if (this.profileOverride !== undefined && this.profileOverride !== 'custom') {
+      console.log(`Profile: locked to '${this.profileOverride}' (${WORKSPACE_DIR_NAME}/config.yaml)`);
+    }
+
     // Getting started (task 7.6: show propose if in profile)
-    const globalCfg = getGlobalConfig();
-    const activeProfile: Profile = (this.profileOverride as Profile) ?? globalCfg.profile ?? 'full';
-    const activeWorkflows = [...getProfileWorkflows(activeProfile, globalCfg.workflows)];
+    const activeWorkflows = this.resolveActiveSelection(projectPath).ids;
     console.log();
     if (activeWorkflows.includes('propose')) {
       console.log(chalk.bold('Getting started:'));
-      console.log('  Start your first change: /rasen:propose "your idea"');
+      console.log('  Start your first change: run the rasen-propose skill with "your idea"');
     } else if (activeWorkflows.includes('new')) {
       console.log(chalk.bold('Getting started:'));
-      console.log('  Start your first change: /rasen:new "your idea"');
+      console.log('  Start your first change: run the rasen-new-change skill with "your idea"');
     } else {
-      console.log("Done. Run 'rasen config profile' to configure your workflows.");
+      console.log("Done. Run 'rasen profile' to configure your workflows.");
     }
 
     // Safety hook configuration hint
@@ -902,23 +1329,27 @@ export class InitCommand {
     }).start();
   }
 
+  /**
+   * Unconditionally removes every rasen command file for a tool — all 19
+   * built-in command ids plus their `-command`/`opsx` legacy path variants
+   * — using only the frozen static path knowledge (never the deleted live
+   * command-generation registry). The command surface is retired: a fresh
+   * `init` leaves zero rasen command files, and re-running it on an
+   * existing project cleans up any that predate the retirement.
+   */
   private async removeCommandFiles(projectPath: string, toolId: string): Promise<number> {
     let removed = 0;
-    const adapter = CommandAdapterRegistry.get(toolId);
-    if (!adapter) return 0;
 
-    for (const workflow of ALL_WORKFLOWS) {
-      for (const cmdPath of getCommandFilePathCandidates(adapter, workflow)) {
-        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
+    for (const cmdPath of getAllRetiredCommandFilePathCandidates(toolId)) {
+      const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
 
-        try {
-          if (fs.existsSync(fullPath)) {
-            await fs.promises.unlink(fullPath);
-            removed++;
-          }
-        } catch {
-          // Ignore errors
+      try {
+        if (fs.existsSync(fullPath)) {
+          await fs.promises.unlink(fullPath);
+          removed++;
         }
+      } catch {
+        // Ignore errors
       }
     }
 

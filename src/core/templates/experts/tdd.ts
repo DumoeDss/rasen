@@ -42,7 +42,7 @@ Ask: "What's the public interface, and which seams should we test?"
 
 export function getTddSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:tdd',
+    name: 'rasen-tdd',
     description: 'Test-driven development — red, green, refactor discipline with mocking guidance',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

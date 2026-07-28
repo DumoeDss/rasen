@@ -11,6 +11,12 @@ import ora from 'ora';
 import path from 'path';
 import { createChange, validateChangeName } from '../../utils/change-utils.js';
 import { formatChangeLocation } from '../../core/planning-home.js';
+import { resolveChangeWorkDir } from '../../core/change-work.js';
+import {
+  initializeRunState,
+  loadPipelineByName,
+  type PipelineYaml,
+} from '../../core/pipeline-registry/index.js';
 import {
   resolveRootForCommand,
   RootSelectionError,
@@ -29,6 +35,7 @@ import { printJson, statusFromError, validateSchemaExists } from './shared.js';
 
 export interface NewChangeOptions {
   description?: string;
+  proposal?: string;
   goal?: string;
   schema?: string;
   store?: string;
@@ -36,6 +43,7 @@ export interface NewChangeOptions {
   storePath?: string;
   initiative?: string;
   areas?: string;
+  pipeline?: string;
   json?: boolean;
 }
 
@@ -45,6 +53,8 @@ interface NewChangeOutput {
     path: string;
     metadataPath: string;
     schema: string;
+    pipeline?: string;
+    runStatePath?: string;
   };
   root: RootOutput;
 }
@@ -83,6 +93,10 @@ function printCreatedChangeHuman(
       : payload.change.path;
   console.log(`Created change '${payload.change.id}' at ${location}/`);
   console.log(`Schema: ${payload.change.schema}`);
+  if (payload.change.pipeline && payload.change.runStatePath) {
+    console.log(`Pipeline: ${payload.change.pipeline}`);
+    console.log(`Run-state: ${payload.change.runStatePath}`);
+  }
   console.log(`Next: ${withStoreFlag(root, `rasen status --change ${payload.change.id}`)}`);
 }
 
@@ -101,6 +115,14 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
 
     assertRemovedOptionsAbsent(options);
 
+    // An explicit but empty/whitespace-only --proposal is a user mistake,
+    // not "no proposal requested" (that's simply omitting the flag) — fail
+    // loudly rather than silently skipping proposal.md seeding, consistent
+    // with the server bridge's 400 on an empty description (review m2).
+    if (options.proposal !== undefined && options.proposal.trim().length === 0) {
+      throw new Error('--proposal must not be empty or whitespace-only.');
+    }
+
     const root = await resolveRootForCommand(options, {
       json: options.json,
       failurePayload: { change: null },
@@ -110,6 +132,11 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
     }
 
     const projectRoot = root.path;
+    // Resolve before creating anything so an invalid assignment is atomic:
+    // no orphan child directory is left behind on an unknown pipeline.
+    const pipeline: PipelineYaml | null = options.pipeline
+      ? loadPipelineByName(options.pipeline, projectRoot)
+      : null;
 
     // Validate schema if provided
     if (options.schema) {
@@ -137,12 +164,37 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
       await fs.writeFile(readmePath, `# ${name}\n\n${options.description}\n`, 'utf-8');
     }
 
+    // If proposal text provided, seed proposal.md so the change is immediately
+    // active (getActiveChangeIds requires proposal.md). Independent of
+    // --description, which only seeds README.md.
+    if (options.proposal) {
+      const { promises: fs } = await import('fs');
+      const proposalPath = path.join(result.changeDir, 'proposal.md');
+      await fs.writeFile(
+        proposalPath,
+        `# ${name}\n\n` +
+          `_Submission seed — created via \`--proposal\`; develop this into a full proposal._\n\n` +
+          `## Why\n\n${options.proposal}\n`,
+        'utf-8'
+      );
+    }
+
+    const initialized = pipeline
+      ? initializeRunState(
+          (await resolveChangeWorkDir(projectRoot, name, { ensure: true })) ?? result.changeDir,
+          pipeline
+        )
+      : null;
+
     const payload: NewChangeOutput = {
       change: {
         id: name,
         path: result.changeDir,
         metadataPath: path.join(result.changeDir, '.openspec.yaml'),
         schema: result.schema,
+        ...(pipeline && initialized
+          ? { pipeline: pipeline.name, runStatePath: initialized.path }
+          : {}),
       },
       root: toRootOutput(root),
     };

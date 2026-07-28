@@ -1,18 +1,18 @@
 # Autopilot 策略:gate、选型与组合式 pipeline
 
-`/rasen:auto` 有三条 **opt-in 策略轴**,控制 LEAD 的自主决定权限。三条全部默认关闭——不带 flag、不写配置时,autopilot 的行为与 [opsx-workflow-guide.md §2](opsx-workflow-guide.md#2-一条命令跑完整个工作流opsxauto) 所述完全一致:gate 停顿等确认、pipeline 缺省 `small-feature`、classify 仅作建议。
+`/rasen-auto` 有三条 **opt-in 策略轴**,控制 LEAD 的自主决定权限。三条全部默认关闭——不带 flag、不写配置时,autopilot 的行为与 [artifact-workflow-guide.md §2](artifact-workflow-guide.md#2-一键跑完整个工作流rasenauto) 所述完全一致:gate 停顿等确认、pipeline 缺省 `small-feature`、classify 仅作建议。
 
-| 策略轴 | 运行参数 | 配置键(`rasen/config.yaml`) | 取值 | 内建默认 |
+| 策略轴 | 运行参数 | 配置键(项目 `rasen/config.yaml` 与全局配置均可) | 取值 | 内建默认 |
 |---|---|---|---|---|
 | **Gate 策略** | `--no-gate` | `autopilot.gates` | `on` / `off` | `on`(gate 停顿) |
 | **选型策略** | `--auto-select` / `--auto-compose` | `autopilot.selection` | `classify` / `compose` / `manual` | `manual` |
 
-每条轴的优先级:**运行参数 > 配置默认 > 内建默认。** 配置值缺失或不可识别时回退内建默认并告警——绝不破坏配置解析,兄弟字段照常解析。
+每条轴的优先级:**运行参数 > 项目配置 > 全局配置 > 内建默认。** `autopilot.gates` 与 `autopilot.selection` 均可在项目与全局(机器级)两个作用域设置——项目值始终覆盖全局值。任一作用域的配置值缺失或不可识别时回退下一层并告警——绝不破坏配置解析,兄弟字段照常解析。
 
-解析后的策略在**运行开始时连同来源一起展示**(如 `Gate policy: off (--no-gate)` / `Selection policy: classify (config)`),opt-in 的运行绝不对自己的行为方式保持沉默。
+解析后的策略在**运行开始时连同来源一起展示**(如 `Gate policy: off (--no-gate)` / `Selection policy: classify (project)`),opt-in 的运行绝不对自己的行为方式保持沉默。
 
 ```
-/rasen:auto [--pipeline <name>] [--no-gate] [--auto-select] [--auto-compose]
+/rasen-auto [--pipeline <name>] [--no-gate] [--auto-select] [--auto-compose]
             [--review-plan] [--planner claude|codex] [... 其他角色参数] <任务>
 ```
 
@@ -20,7 +20,7 @@
 
 ## 1. Gate 策略 —— `--no-gate`
 
-默认情况下,标记 `gate: true` 的阶段会暂停运行:LEAD 总结已完成的工作,等你 Continue / Stop / 切手动。想让 autopilot 无人值守地跑完——而不是每次都说一遍"no gate / 跑完不用停"——传 `--no-gate`(或把 `autopilot.gates: off` 写成项目默认):
+默认情况下,标记 `gate: true` 的阶段会暂停运行:LEAD 总结已完成的工作,等你 Continue / Stop / 切手动。想让 autopilot 无人值守地跑完——而不是每次都说一遍"no gate / 跑完不用停"——传 `--no-gate`(或把 `autopilot.gates: off` 写成项目或全局默认):
 
 - **普通 gate 自动通过**:运行不停顿地越过每个 `gate: true` 阶段。
 - **没有任何静默跳过**:每个自动通过的 gate 都作为显式 gate 决定记入 run-state,并注明策略来源(如 `auto-approved (--no-gate)`)。审计轨迹显示该阶段由自动批准推进,而非人工 Continue。
@@ -51,7 +51,7 @@
 
 ### 显式选择永远最高
 
-`--pipeline <name>` 或开头的已知 pipeline 名(`/rasen:auto full-feature <任务>`)位于整条策略轴**之上**:存在显式选择时不咨询 classify,`--auto-select` / `--auto-compose` 均不生效。配置默认同样被显式选择压过。
+`--pipeline <name>` 或开头的已知 pipeline 名(`/rasen-auto full-feature <任务>`)位于整条策略轴**之上**:存在显式选择时不咨询 classify,`--auto-select` / `--auto-compose` 均不生效。配置默认同样被显式选择压过。
 
 ### 为什么没有置信度分数?
 
@@ -99,11 +99,11 @@ autopilot:
 完全无人值守的一发入魂,允许组合:
 
 ```
-/rasen:auto --no-gate --auto-compose 给 webhook API 实现限流
+/rasen-auto --no-gate --auto-compose 给 webhook API 实现限流
 ```
 
 无人值守运行仍会停下来的情形:**vet gate**(永远)、ship 时未解决的 **Blocker/Major 发现**(发现门不是停顿门——永不豁免)、以及编排阶梯的升级呈报(见 playbook 的 Step H)。
 
 兼容性保证:三条轴全在默认值时,行为与这些能力存在之前逐字节一致。
 
-延伸阅读:[opsx-workflow-guide.md §2](opsx-workflow-guide.md#2-一条命令跑完整个工作流opsxauto)(autopilot 章)、§2.6(手写自定义 pipeline——组合的手动同胞)、§9(goal 驱动迭代及其 vet 门的 `define-goal`)。
+延伸阅读:[artifact-workflow-guide.md §2](artifact-workflow-guide.md#2-一键跑完整个工作流rasenauto)(autopilot 章)、§2.6(手写自定义 pipeline——组合的手动同胞)、§9(goal 驱动迭代及其 vet 门的 `define-goal`)。

@@ -4,78 +4,16 @@
  * Shared utilities for generating skill and command files.
  */
 
-import { readdirSync, existsSync, mkdirSync, copyFileSync } from 'fs';
+import { readdirSync, existsSync, mkdirSync, copyFileSync, writeFileSync } from 'fs';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import type { SkillTemplate } from '../templates/skill-templates.js';
+import { quoteYamlValue, yamlScalar } from './yaml.js';
 import {
-  getExploreSkillTemplate,
-  getNewChangeSkillTemplate,
-  getContinueChangeSkillTemplate,
-  getApplyChangeSkillTemplate,
-  getFfChangeSkillTemplate,
-  getSyncSpecsSkillTemplate,
-  getArchiveChangeSkillTemplate,
-  getBulkArchiveChangeSkillTemplate,
-  getVerifyChangeSkillTemplate,
-  getOnboardSkillTemplate,
-  getHelpSkillTemplate,
-  getOpsxHelpCommandTemplate,
-  getOpsxProposeSkillTemplate,
-  getOpsxExploreCommandTemplate,
-  getOpsxNewCommandTemplate,
-  getOpsxContinueCommandTemplate,
-  getOpsxApplyCommandTemplate,
-  getOpsxFfCommandTemplate,
-  getOpsxSyncCommandTemplate,
-  getOpsxArchiveCommandTemplate,
-  getOpsxBulkArchiveCommandTemplate,
-  getOpsxVerifyCommandTemplate,
-  getOpsxOnboardCommandTemplate,
-  getOpsxProposeCommandTemplate,
-  // Rasen fusion workflow commands
-  getOfficeHoursCommandSkillTemplate,
-  getOpsxOfficeHoursCommandTemplate,
-  getVerifyEnhancedSkillTemplate,
-  getOpsxVerifyEnhancedCommandTemplate,
-  getShipCommandSkillTemplate,
-  getOpsxShipCommandTemplate,
-  getRetroCommandSkillTemplate,
-  getOpsxRetroCommandTemplate,
-  getAutoCommandSkillTemplate,
-  getOpsxAutoCommandTemplate,
-  getReviewCycleSkillTemplate,
-  getOpsxReviewCycleCommandTemplate,
-  getHandoffSkillTemplate,
-  getOpsxHandoffCommandTemplate,
-  // Goal-loop workflow skills + command
-  getGoalPlanSkillTemplate,
-  getGoalIterateSkillTemplate,
-  getGoalReportSkillTemplate,
-  getGoalCommandSkillTemplate,
-  getOpsxGoalCommandTemplate,
-  // Expert skill templates
-  getBenchmarkSkillTemplate,
-  getCarefulSkillTemplate,
-  getChromeUseSkillTemplate,
-  getCodebaseDesignSkillTemplate,
-  getCodexSkillTemplate,
-  getCsoSkillTemplate,
-  getDesignConsultationSkillTemplate,
-  getDesignReviewSkillTemplate,
-  getFreezeSkillTemplate,
-  getGuardSkillTemplate,
-  getInvestigateSkillTemplate,
-  getNavigatorSkillTemplate,
-  getOfficeHoursSkillTemplate,
-  getPrototypeSkillTemplate,
-  getQaOnlySkillTemplate,
-  getQaSkillTemplate,
-  getReviewSkillTemplate,
-  getTddSkillTemplate,
-  getUnfreezeSkillTemplate,
-  type SkillTemplate,
-} from '../templates/skill-templates.js';
-import type { CommandContent } from '../command-generation/index.js';
+  getExpertSkillDefinitions,
+  loadWorkflowCatalog,
+  resolveWorkflowSelection,
+} from '../workflow-registry/index.js';
 
 /**
  * Skill template with directory name and workflow ID mapping.
@@ -84,14 +22,8 @@ export interface SkillTemplateEntry {
   template: SkillTemplate;
   dirName: string;
   workflowId: string;
-}
-
-/**
- * Command template with ID mapping.
- */
-export interface CommandTemplateEntry {
-  template: ReturnType<typeof getOpsxExploreCommandTemplate>;
-  id: string;
+  /** User-authored frontmatter must be emitted as quoted YAML scalars. */
+  escapeFrontmatter: boolean;
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -149,133 +81,63 @@ function copySidecarTree(sourceDir: string, targetDir: string): void {
  * another skill's sidecars (qa-only shares the QA_METHODOLOGY block with qa,
  * which points at `templates/` and `references/` beside the SKILL.md).
  */
-const SIDECAR_SOURCE_ALIASES: Record<string, string> = {
-  'qa-only': 'qa',
-};
-
 export function copySkillSidecars(workflowId: string, targetSkillDir: string): void {
-  const sourceId = SIDECAR_SOURCE_ALIASES[workflowId] ?? workflowId;
-  const sourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'experts', sourceId);
-  if (!existsSync(sourceDir)) return;
+  const userDefinition = loadWorkflowCatalog().get(workflowId);
+  if (userDefinition?.source === 'user') {
+    for (const file of userDefinition.files) {
+      if (file.path === 'SKILL.md' || file.path === 'workflow.yaml') continue;
+      const target = join(targetSkillDir, ...file.path.split('/'));
+      mkdirSync(dirname(target), { recursive: true });
+      const executable = /^(?:scripts|bin)\//.test(file.path) || /\.(?:sh|mjs|js)$/.test(file.path);
+      writeFileSync(target, file.content, { encoding: 'utf8', mode: executable ? 0o700 : 0o600 });
+    }
+    return;
+  }
+  const sourceId =
+    getExpertSkillDefinitions().find((definition) => definition.id === workflowId)
+      ?.sidecarSourceId ?? workflowId;
+  const expertSourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'experts', sourceId);
+  if (existsSync(expertSourceDir)) {
+    copySidecarTree(expertSourceDir, targetSkillDir);
+  }
 
-  copySidecarTree(sourceDir, targetSkillDir);
+  // Built-in workflows may ship sidecars under `skills/workflows/<dirName>`
+  // (e.g. rasen-retain's report/codify branch bodies), keyed by the installed
+  // skill directory name rather than the workflow id.
+  const dirName = userDefinition?.skill.dirName;
+  if (dirName) {
+    const workflowSourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'workflows', dirName);
+    if (existsSync(workflowSourceDir)) {
+      copySidecarTree(workflowSourceDir, targetSkillDir);
+    }
+  }
 }
 
 /**
- * Gets skill templates with their directory names, optionally filtered by workflow IDs.
+ * Gets skill templates with their directory names, optionally filtered by
+ * workflow/expert IDs.
+ *
+ * Experts are catalog units like workflows (`kind: 'expert'`) and install
+ * according to the SAME filter — there is no more unconditional "always
+ * install every expert" branch (that was the pre-6b behavior). Callers that
+ * need experts installed (profile defaults, dependency closure) must include
+ * those expert ids in `workflowFilter` themselves — see the single
+ * desired-set resolver in `init.ts`/`update.ts`, which passes
+ * `resolveWorkflowSelection(..., { includeSkillDependencies: true })`'s
+ * result here.
  *
  * @param workflowFilter - If provided, only return templates whose workflowId is in this array
  */
 export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemplateEntry[] {
-  const workflowSkills: SkillTemplateEntry[] = [
-    { template: getExploreSkillTemplate(), dirName: 'rasen-explore', workflowId: 'explore' },
-    { template: getNewChangeSkillTemplate(), dirName: 'rasen-new-change', workflowId: 'new' },
-    { template: getContinueChangeSkillTemplate(), dirName: 'rasen-continue-change', workflowId: 'continue' },
-    { template: getApplyChangeSkillTemplate(), dirName: 'rasen-apply-change', workflowId: 'apply' },
-    { template: getFfChangeSkillTemplate(), dirName: 'rasen-ff-change', workflowId: 'ff' },
-    { template: getSyncSpecsSkillTemplate(), dirName: 'rasen-sync-specs', workflowId: 'sync' },
-    { template: getArchiveChangeSkillTemplate(), dirName: 'rasen-archive-change', workflowId: 'archive' },
-    { template: getBulkArchiveChangeSkillTemplate(), dirName: 'rasen-bulk-archive-change', workflowId: 'bulk-archive' },
-    { template: getVerifyChangeSkillTemplate(), dirName: 'rasen-verify-change', workflowId: 'verify' },
-    { template: getOnboardSkillTemplate(), dirName: 'rasen-onboard', workflowId: 'onboard' },
-    { template: getHelpSkillTemplate(), dirName: 'rasen-help', workflowId: 'help' },
-    { template: getOpsxProposeSkillTemplate(), dirName: 'rasen-propose', workflowId: 'propose' },
-    // Rasen fusion workflow commands
-    { template: getOfficeHoursCommandSkillTemplate(), dirName: 'rasen-office-hours-command', workflowId: 'office-hours-command' },
-    { template: getVerifyEnhancedSkillTemplate(), dirName: 'rasen-verify-enhanced', workflowId: 'verify-enhanced-command' },
-    { template: getShipCommandSkillTemplate(), dirName: 'rasen-ship', workflowId: 'ship-command' },
-    { template: getRetroCommandSkillTemplate(), dirName: 'rasen-retro', workflowId: 'retro-command' },
-    { template: getAutoCommandSkillTemplate(), dirName: 'rasen-auto', workflowId: 'auto-command' },
-    { template: getReviewCycleSkillTemplate(), dirName: 'rasen-review-cycle', workflowId: 'review-cycle' },
-    { template: getHandoffSkillTemplate(), dirName: 'rasen-handoff', workflowId: 'handoff' },
-    // Goal-loop workflow skills (stage skills + entry command)
-    { template: getGoalPlanSkillTemplate(), dirName: 'rasen-goal-plan', workflowId: 'goal-plan' },
-    { template: getGoalIterateSkillTemplate(), dirName: 'rasen-goal-iterate', workflowId: 'goal-iterate' },
-    { template: getGoalReportSkillTemplate(), dirName: 'rasen-goal-report', workflowId: 'goal-report' },
-    { template: getGoalCommandSkillTemplate(), dirName: 'rasen-goal', workflowId: 'goal-command' },
-  ];
-
-  // Expert skills are always installed regardless of workflowFilter
-  const expertSkills: SkillTemplateEntry[] = [
-    { template: getBenchmarkSkillTemplate(), dirName: 'rasen-benchmark', workflowId: 'benchmark' },
-    { template: getCarefulSkillTemplate(), dirName: 'rasen-careful', workflowId: 'careful' },
-    { template: getChromeUseSkillTemplate(), dirName: 'rasen-chrome-use', workflowId: 'chrome-use' },
-    { template: getCodebaseDesignSkillTemplate(), dirName: 'rasen-codebase-design', workflowId: 'codebase-design' },
-    { template: getCodexSkillTemplate(), dirName: 'rasen-codex', workflowId: 'codex' },
-    { template: getCsoSkillTemplate(), dirName: 'rasen-cso', workflowId: 'cso' },
-    { template: getDesignConsultationSkillTemplate(), dirName: 'rasen-design-consultation', workflowId: 'design-consultation' },
-    { template: getDesignReviewSkillTemplate(), dirName: 'rasen-design-review', workflowId: 'design-review' },
-    { template: getFreezeSkillTemplate(), dirName: 'rasen-freeze', workflowId: 'freeze' },
-    { template: getGuardSkillTemplate(), dirName: 'rasen-guard', workflowId: 'guard' },
-    { template: getInvestigateSkillTemplate(), dirName: 'rasen-investigate', workflowId: 'investigate' },
-    { template: getNavigatorSkillTemplate(), dirName: 'rasen-navigator', workflowId: 'navigator' },
-    { template: getOfficeHoursSkillTemplate(), dirName: 'rasen-office-hours', workflowId: 'office-hours' },
-    { template: getPrototypeSkillTemplate(), dirName: 'rasen-prototype', workflowId: 'prototype' },
-    { template: getQaSkillTemplate(), dirName: 'rasen-qa', workflowId: 'qa' },
-    { template: getQaOnlySkillTemplate(), dirName: 'rasen-qa-only', workflowId: 'qa-only' },
-    { template: getReviewSkillTemplate(), dirName: 'rasen-review', workflowId: 'review' },
-    { template: getTddSkillTemplate(), dirName: 'rasen-tdd', workflowId: 'tdd' },
-    { template: getUnfreezeSkillTemplate(), dirName: 'rasen-unfreeze', workflowId: 'unfreeze' },
-  ];
-
-  if (!workflowFilter) return [...workflowSkills, ...expertSkills];
-
-  // Only filter workflow skills; expert skills are always included
-  const filterSet = new Set(workflowFilter);
-  const filteredWorkflows = workflowSkills.filter(entry => filterSet.has(entry.workflowId));
-  return [...filteredWorkflows, ...expertSkills];
-}
-
-/**
- * Gets command templates with their IDs, optionally filtered by workflow IDs.
- *
- * @param workflowFilter - If provided, only return templates whose id is in this array
- */
-export function getCommandTemplates(workflowFilter?: readonly string[]): CommandTemplateEntry[] {
-  const all: CommandTemplateEntry[] = [
-    { template: getOpsxExploreCommandTemplate(), id: 'explore' },
-    { template: getOpsxNewCommandTemplate(), id: 'new' },
-    { template: getOpsxContinueCommandTemplate(), id: 'continue' },
-    { template: getOpsxApplyCommandTemplate(), id: 'apply' },
-    { template: getOpsxFfCommandTemplate(), id: 'ff' },
-    { template: getOpsxSyncCommandTemplate(), id: 'sync' },
-    { template: getOpsxArchiveCommandTemplate(), id: 'archive' },
-    { template: getOpsxBulkArchiveCommandTemplate(), id: 'bulk-archive' },
-    { template: getOpsxVerifyCommandTemplate(), id: 'verify' },
-    { template: getOpsxOnboardCommandTemplate(), id: 'onboard' },
-    { template: getOpsxHelpCommandTemplate(), id: 'help' },
-    { template: getOpsxProposeCommandTemplate(), id: 'propose' },
-    // Rasen fusion workflow commands
-    { template: getOpsxOfficeHoursCommandTemplate(), id: 'office-hours-command' },
-    { template: getOpsxVerifyEnhancedCommandTemplate(), id: 'verify-enhanced-command' },
-    { template: getOpsxShipCommandTemplate(), id: 'ship-command' },
-    { template: getOpsxRetroCommandTemplate(), id: 'retro-command' },
-    { template: getOpsxAutoCommandTemplate(), id: 'auto-command' },
-    { template: getOpsxReviewCycleCommandTemplate(), id: 'review-cycle' },
-    { template: getOpsxHandoffCommandTemplate(), id: 'handoff' },
-    { template: getOpsxGoalCommandTemplate(), id: 'goal-command' },
-  ];
-
-  if (!workflowFilter) return all;
-
-  const filterSet = new Set(workflowFilter);
-  return all.filter(entry => filterSet.has(entry.id));
-}
-
-/**
- * Converts command templates to CommandContent array, optionally filtered by workflow IDs.
- *
- * @param workflowFilter - If provided, only return contents whose id is in this array
- */
-export function getCommandContents(workflowFilter?: readonly string[]): CommandContent[] {
-  const commandTemplates = getCommandTemplates(workflowFilter);
-  return commandTemplates.map(({ template, id }) => ({
-    id,
-    name: template.name,
-    description: template.description,
-    category: template.category,
-    tags: template.tags,
-    body: template.content,
+  const catalog = loadWorkflowCatalog();
+  const definitions = workflowFilter
+    ? resolveWorkflowSelection(catalog, workflowFilter.filter((workflow) => catalog.has(workflow)))
+    : catalog.definitions;
+  return definitions.map((definition) => ({
+    template: definition.skill.template,
+    dirName: definition.skill.dirName,
+    workflowId: definition.id,
+    escapeFrontmatter: definition.source === 'user',
   }));
 }
 
@@ -283,13 +145,15 @@ export function getCommandContents(workflowFilter?: readonly string[]): CommandC
  * Generates skill file content with YAML frontmatter.
  *
  * @param template - The skill template
- * @param generatedByVersion - The Rasen version to embed in the file
+ * @param generatedByVersion - The Rasen version to embed in the file; this overrides any authored metadata.generatedBy value
  * @param transformInstructions - Optional callback to transform the instructions content
+ * @param escapeFrontmatter - Quote user-authored frontmatter scalars when true
  */
 export function generateSkillContent(
   template: SkillTemplate,
   generatedByVersion: string,
-  transformInstructions?: (instructions: string) => string
+  transformInstructions?: (instructions: string) => string,
+  escapeFrontmatter = false
 ): string {
   const instructions = transformInstructions
     ? transformInstructions(template.instructions)
@@ -298,16 +162,36 @@ export function generateSkillContent(
   const disableModelInvocationLine = template.disableModelInvocation
     ? 'disable-model-invocation: true\n'
     : '';
+  // User-authored frontmatter is always quoted (trusted-input policy for
+  // imported skills); built-in frontmatter is quoted only when a value is
+  // unsafe as a YAML plain scalar (e.g. contains a ": " sequence), keeping the
+  // common case unquoted and the output always valid YAML.
+  const scalar = (value: string): string => escapeFrontmatter ? quoteYamlValue(value) : yamlScalar(value);
+  const version = template.metadata?.version || '1.0';
+  const customMetadataLines = Object.entries(template.metadata ?? {})
+    .filter(([key]) => key !== 'author' && key !== 'version' && key !== 'generatedBy')
+    .sort(([left], [right]) => {
+      if (left < right) return -1;
+      if (left > right) return 1;
+      return 0;
+    })
+    .map(([key, value]) => {
+      const renderedKey = escapeFrontmatter ? quoteYamlValue(key) : key;
+      return `  ${renderedKey}: ${scalar(value)}`;
+    });
+  const customMetadataBlock = customMetadataLines.length > 0
+    ? `${customMetadataLines.join('\n')}\n`
+    : '';
 
   return `---
-name: ${template.name}
-description: ${template.description}
-${disableModelInvocationLine}license: ${template.license || 'MIT'}
-compatibility: ${template.compatibility || 'Requires rasen CLI.'}
+name: ${scalar(template.name)}
+description: ${scalar(template.description)}
+${disableModelInvocationLine}license: ${scalar(template.license || 'MIT')}
+compatibility: ${scalar(template.compatibility || 'Requires rasen CLI.')}
 metadata:
-  author: ${template.metadata?.author || 'rasen'}
-  version: "${template.metadata?.version || '1.0'}"
-  generatedBy: "${generatedByVersion}"
+  author: ${scalar(template.metadata?.author || 'rasen')}
+  version: ${escapeFrontmatter ? quoteYamlValue(version) : `"${version}"`}
+${customMetadataBlock}  generatedBy: ${escapeFrontmatter ? quoteYamlValue(generatedByVersion) : `"${generatedByVersion}"`}
 ---
 
 ${instructions}

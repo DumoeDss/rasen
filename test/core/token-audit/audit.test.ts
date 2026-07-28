@@ -1,0 +1,149 @@
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import {
+  AUDIT_REPORT_BASENAME_MAX_BYTES,
+  auditReportBasename,
+  runAudit,
+} from '../../../src/core/token-audit/audit.js';
+import type { ClaudeAuditResult } from '../../../src/core/token-audit/types.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CLAUDE_VALID_FIXTURE_DIR = path.join(__dirname, '..', '..', 'fixtures', 'token-audit', 'claude', 'valid');
+
+describe('auditReportBasename', () => {
+  it('keeps complete Codex UUIDv7 ids distinct when their first eight characters match', () => {
+    const first = '019f9cd1-4b08-7702-a1a0-673e11c69c6f';
+    const second = '019f9cd1-a18f-7063-91c4-913c6a9738fe';
+
+    expect(auditReportBasename('codex', first)).toBe(`session-audit-codex-${first}.json`);
+    expect(auditReportBasename('codex', second)).toBe(`session-audit-codex-${second}.json`);
+    expect(auditReportBasename('codex', first)).not.toBe(auditReportBasename('codex', second));
+  });
+
+  it('returns a stable name for the same canonical identity and separates runtimes', () => {
+    const sessionId = 'same-session-id';
+
+    expect(auditReportBasename('codex', sessionId)).toBe(auditReportBasename('codex', sessionId));
+    expect(auditReportBasename('codex', sessionId)).not.toBe(auditReportBasename('claude', sessionId));
+  });
+
+  it.each([
+    ['Windows-invalid', 'Session:One/Two?'],
+    ['overlong', 'a'.repeat(AUDIT_REPORT_BASENAME_MAX_BYTES)],
+  ])('uses a stable, bounded SHA-256 fallback for a %s session id', (_label, sessionId) => {
+    const basename = auditReportBasename('codex', sessionId);
+
+    expect(basename).toBe(auditReportBasename('codex', sessionId));
+    expect(basename).toMatch(/^session-audit-codex-sha256-[a-f0-9]{64}\.json$/);
+    expect(Buffer.byteLength(basename, 'utf8')).toBeLessThanOrEqual(AUDIT_REPORT_BASENAME_MAX_BYTES);
+    expect(basename).not.toMatch(/[<>:"/\\|?*]/);
+  });
+
+  it('keeps the readable and SHA-256 fallback namespaces disjoint', () => {
+    const unsafeBasename = auditReportBasename('codex', 'Session:One/Two?');
+    const reservedSessionId = unsafeBasename
+      .replace(/^session-audit-codex-/, '')
+      .replace(/\.json$/, '');
+    const reservedIdBasename = auditReportBasename('codex', reservedSessionId);
+
+    expect(reservedSessionId).toMatch(/^sha256-[a-f0-9]{64}$/);
+    expect(reservedIdBasename).not.toBe(unsafeBasename);
+    expect(reservedIdBasename).toMatch(/^session-audit-codex-sha256-[a-f0-9]{64}\.json$/);
+  });
+});
+
+describe('runAudit (Claude path)', () => {
+  let dataDir: string;
+
+  beforeEach(() => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-token-audit-data-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it('analyzes a session by explicit main-transcript path, applying dual TTL pricing across main + subagent', async () => {
+    const mainPath = path.join(CLAUDE_VALID_FIXTURE_DIR, 'c4a16986-fixture.jsonl');
+    const { result, outPath } = await runAudit(mainPath, { homedir: dataDir, outPath: path.join(dataDir, 'out.json') });
+    expect(outPath).toBe(path.join(dataDir, 'out.json'));
+    expect(fs.existsSync(outPath)).toBe(true);
+
+    const claudeResult = result as ClaudeAuditResult;
+    expect(claudeResult.schema).toBe('rasen-token-audit/2');
+    expect(claudeResult.session.runtime).toBe('claude');
+    expect(claudeResult.session.agentCount).toBe(2);
+
+    // main: requests A (deduped, out=15) + B (ttl-expiry churn)
+    // subagent: requests C (spawn) + D (hit)
+    expect(claudeResult.totals.requests).toBe(4);
+    expect(claudeResult.totals.outputTokens).toBe(15 + 5 + 3 + 2);
+    expect(claudeResult.totals.inputRaw).toBe(100 + 50 + 20 + 20);
+    expect(claudeResult.totals.cacheWrite).toBe(200 + 250 + 40 + 10);
+    expect(claudeResult.totals.cacheRead).toBe(0 + 0 + 0 + 44);
+
+    // billedInputEq: main = 150 + 2*450 + 0.1*0 = 1050; subagent = 40 + 1.25*50 + 0.1*44 = 106.9 -> 107
+    const mainAgent = claudeResult.agents.find((a) => a.kind === 'main')!;
+    const subAgent = claudeResult.agents.find((a) => a.kind === 'subagent')!;
+    expect(mainAgent.billedInputEq).toBe(1050);
+    expect(subAgent.billedInputEq).toBe(107);
+    expect(claudeResult.totals.billedInputEq).toBe(1050 + 107);
+
+    // churn: exactly one event, from main's ttl-expiry request
+    expect(claudeResult.totals.churn.events).toBe(1);
+    expect(claudeResult.totals.churn.tokens).toBe(250);
+    expect(claudeResult.totals.churn.byCause['ttl-expiry']).toEqual({ tokens: 250, events: 1 });
+
+    // activation order: main starts first
+    expect(claudeResult.agents[0].kind).toBe('main');
+    expect(claudeResult.agents[1].kind).toBe('subagent');
+    expect(subAgent.label).toBe('worker');
+  });
+
+  it('discovers and analyzes a session by id prefix under --projects-dir', async () => {
+    const { result } = await runAudit('c4a16986', {
+      projectsDir: CLAUDE_VALID_FIXTURE_DIR,
+      homedir: dataDir,
+      outPath: path.join(dataDir, 'out2.json'),
+    });
+    expect((result as ClaudeAuditResult).session.id).toBe('c4a16986-fixture');
+  });
+
+  it('rejects an ambiguous session id prefix, naming the matches', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-token-audit-ambiguous-'));
+    fs.writeFileSync(path.join(dir, 'abc11111.jsonl'), '', 'utf-8');
+    fs.writeFileSync(path.join(dir, 'abc22222.jsonl'), '', 'utf-8');
+    await expect(runAudit('abc', { projectsDir: dir, homedir: dataDir })).rejects.toThrow(/ambiguous/);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('rejects an unknown runtime with every audit-capable runtime in the error', async () => {
+    await expect(runAudit('session', { runtime: 'unknown', homedir: dataDir })).rejects.toThrow(
+      /--runtime must be "claude", "codex", or "zed"/
+    );
+  });
+
+  it('honors an explicit --out override over the default analytics path', async () => {
+    const mainPath = path.join(CLAUDE_VALID_FIXTURE_DIR, 'c4a16986-fixture.jsonl');
+    const explicitOut = path.join(dataDir, 'nested', 'custom-name.json');
+    const { outPath } = await runAudit(mainPath, { homedir: dataDir, outPath: explicitOut });
+    expect(outPath).toBe(explicitOut);
+    expect(fs.existsSync(explicitOut)).toBe(true);
+  });
+
+  it('resolves the default output path under <globalDataDir>/analytics using runtime and the complete session id', async () => {
+    const mainPath = path.join(CLAUDE_VALID_FIXTURE_DIR, 'c4a16986-fixture.jsonl');
+    const { outPath } = await runAudit(mainPath, { homedir: dataDir, env: {} });
+    const expected = path.join(
+      dataDir,
+      '.rasen',
+      'analytics',
+      'session-audit-claude-c4a16986-fixture.json'
+    );
+    expect(outPath).toBe(expected);
+    expect(fs.existsSync(expected)).toBe(true);
+  });
+});

@@ -11,7 +11,7 @@
 | 维度 | 状态 | 一句话 |
 |---|---|---|
 | 包与 CLI 身份 | ✅ 已完成 | npm 名 `@atelierai/rasen`（0.1.1，裸名被注册表相似名政策拒绝）、bin 仅 `rasen`、repo/homepage 指向 DumoeDss/rasen |
-| 命令命名空间 | ✅ 已完成 | 仅生成 `/rasen:*`；`opsx` 只存在于 legacy 检测/清理层 |
+| 命令命名空间 | ✅ 已完成 | 仅生成 `/rasen-*`；`opsx` 只存在于 legacy 检测/清理层 |
 | 工作区/存档位置 | ✅ 已完成 | `rasen/` 工作区、copy-only 迁移、archive 三轴配置已落地 |
 | machine-home | ✅ 已完成 | 机器数据根迁至 `~/.rasen`（`RASEN_HOME` > XDG 别名 > 默认，`global-config.ts:18,145`）；legacy 收养 copy-only + 碰撞安全（`cba4073`/`1c1735d`） |
 | 遥测 | ✅ 已完成 | endpoint `telemetry.rasen.io`（`src/telemetry/index.ts:30`）；TLS 实测上线；D1 聚合+面板 v2 已部署；垃圾遥测已清+合成探测约定（probe:/全零 UUID） |
@@ -31,8 +31,8 @@
 - `README.md:1` 品牌头 "Rasen — loops that ascend"；CLI 版本号从 package.json 动态读取。
 
 ### 2.2 命令命名空间（BREAKING 重命名 + 上游共存）
-- 当前代码**只生成 `/rasen:*`**（CHANGELOG 0.1.1 记录 BREAKING）；源码中 `opsx` 仅作为 `LEGACY_COMMAND_PREFIX` 存在于安装检测/清理路径（`command-file-id.ts`）。
-- 与上游共存：上游拥有 `openspec` CLI + `openspec-*` skills + `/opsx:*`；rasen 拥有 `rasen` + `rasen-*` + `/rasen:*`，同一项目互不相扰。init/update 不自动清理 legacy 产物（一次性共存提示）；清理仅在 `rasen migrate` 中做、需显式同意。
+- 当前代码**只生成 `/rasen-*`**（CHANGELOG 0.1.1 记录 BREAKING）；源码中 `opsx` 仅作为 `LEGACY_COMMAND_PREFIX` 存在于安装检测/清理路径（`command-file-id.ts`）。
+- 与上游共存：上游拥有 `openspec` CLI + `openspec-*` skills + `/opsx:*`；rasen 拥有 `rasen` + `rasen-*` + `/rasen-*`，同一项目互不相扰。init/update 不自动清理 legacy 产物（一次性共存提示）；清理仅在 `rasen migrate` 中做、需显式同意。
 - shell installer marker 已双族化：新块写 `# RASEN:*`、双族识别保升级/卸载路径（fix-brand-residuals F6）；四站点孤块去重 + 按消费方匹配严格度（fix-marker-orphan `ea5602c`）。
 - 故意保留的 back-compat 层：`.openspec.yaml` 元数据文件名、`format:'openspec'` 格式标识、legacy 检测字面量、`.openspec-store` copy-forward——确保 pre-rebrand 与上游布局可探测。
 
@@ -65,7 +65,7 @@
 
 ### 2.8 交付模式收敛（2026-07-10，delivery-modes 5→2，`b4e8ca5`/`00f6bea`）
 - 五值收敛为 `both`|`skills`（`config-schema.ts:18`），**skills 必装**；legacy `commands`/`skills-first`/`commands-first` migrate-on-read + 一次性提示（`:21-27`）。
-- 架构性副作用：编排型命令（`/rasen:auto`、`/rasen:review-cycle`、`/rasen:goal`）所依赖的 worker skills 在任何模式下都在——**原 DOC1"交付模式前提"文档缺口被整个取代，关闭**。
+- 架构性副作用：编排型命令（`/rasen-auto`、`/rasen-review-cycle`、`/rasen-goal`）所依赖的 worker skills 在任何模式下都在——**原 DOC1"交付模式前提"文档缺口被整个取代，关闭**。
 
 ### 2.9 goal 模板 deploy（`f0d3547`/`8130edc`）
 - profile 三注册表漏注册已修，review 3 轮闭合 4 接缝，各有必红回归测试。goal 未进 `CORE_WORKFLOWS`（opt-in，裁决在 change design）。
@@ -139,7 +139,7 @@ npm publish job、CI 三 OS 矩阵 + node24 腿、nix hash 新鲜度钉门、遥
 1. **共享工作树纪律**：多 session 并发在同一工作树，任何提交必须显式 `git commit -- <paths>` + `git show --stat` 复核（历史事故 4b37644）。
 2. **docs 回写按 change 流程走**：虽然 docs 不是 verify 对照物，但双语镜像同步和 K 类甄别（迁移指南必须保留 openspec 字样）需要审查闭环，建议沿用 worktree pipeline。
 3. **首个 tag 是 release workflow 的首次实跑**：publish-npm 只做过静态验证，打 tag 后盯全程；nix-flake-validate 可能因 hash 过期红一次，照日志回填即可。
-4. **CHANGELOG 0.1.1 对外承诺 `/rasen:*` 为唯一命令命名空间**；发布前确认 migration-guide 与 README 安装/迁移指引可执行（migration-guide 属 docs 回写 #2 的甄别范围）。
+4. **CHANGELOG 0.1.1 对外承诺 `/rasen-*` 为唯一命令命名空间**；发布前确认 migration-guide 与 README 安装/迁移指引可执行（migration-guide 属 docs 回写 #2 的甄别范围）。
 5. **版本号归用户管**（2026-07-10 明令）：当前 0.1.1，不擅自 bump；发布类改动一律版本无关。
 
 ---

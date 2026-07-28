@@ -337,7 +337,7 @@ describe('resolveOpenSpecRoot', () => {
       expect(root.path).toBe(otherRoot);
     });
 
-    it('never overrides a real root and warns once about the ignored pointer', async () => {
+    it('never overrides a real root and reports inheritance once for a registered store', async () => {
       await registerStore('team-context');
       const repo = mkdir('real-repo');
       createOpenSpecRoot(repo);
@@ -360,7 +360,94 @@ describe('resolveOpenSpecRoot', () => {
 
       expect(warnings).toHaveLength(1);
       expect(warnings[0]).toContain("declares store 'team-context'");
-      expect(warnings[0]).toContain('the declaration is ignored');
+      expect(warnings[0]).toContain('configuration inherits from that store');
+      expect(warnings[0]).not.toContain('the declaration is ignored');
+    });
+
+    it('stops the command when the declared store cannot be used on this machine', async () => {
+      const repo = mkdir('real-repo-unregistered');
+      createOpenSpecRoot(repo);
+      fs.writeFileSync(
+        path.join(repo, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nstore: not-registered\n'
+      );
+
+      const error = await expectRootSelectionError(
+        resolveOpenSpecRoot({ startPath: repo, globalDataDir }),
+        'no_registered_stores'
+      );
+      expect(error.message).toContain("Unknown store 'not-registered'");
+      expect(error.message).toContain('no network access and no writes');
+      // The fix field carries the pasteable whole-gap repair (design D1):
+      // `rasen bootstrap`, sourced from `primaryRepair(binding)`. The rich
+      // human guidance (--id, config-edit) stays in the message body.
+      expect(error.diagnostic.fix).toBe('rasen bootstrap');
+      expect(error.message).toContain('rasen store register');
+    });
+
+    it('reports rather than fails on the read-only diagnostic path', async () => {
+      const repo = mkdir('real-repo-unregistered-doctor');
+      createOpenSpecRoot(repo);
+      fs.writeFileSync(
+        path.join(repo, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nstore: not-registered\n'
+      );
+
+      const warnings: string[] = [];
+      const original = console.error;
+      console.error = (message: string) => warnings.push(String(message));
+      try {
+        const root = await resolveOpenSpecRoot({
+          startPath: repo,
+          globalDataDir,
+          allowUnavailableStore: true,
+        });
+        // The local root still wins; the notice reports why the declaration
+        // cannot be used, with its repair command.
+        expect(root.source).toBe('nearest');
+        expect(root.path).toBe(repo);
+      } finally {
+        console.error = original;
+      }
+
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("declares store 'not-registered'");
+      expect(warnings[0]).toContain('cannot be used on this machine');
+      expect(warnings[0]).toContain('Next: ');
+      expect(warnings[0]).not.toContain('configuration inherits from that store');
+    });
+
+    it('stays silent for a registered store root that itself declares a store pointer (no-transitivity)', async () => {
+      // A root that IS a registered store, with local planning shape, that also
+      // declares a `store:` pointer. resolveConfigStoreLayer returns null for it
+      // (rule 3 — a store root never inherits), so the notice must NOT claim
+      // inheritance; it stays silent (matching the resolver — design D5).
+      const storeRoot = await registerStore('team-context');
+      fs.writeFileSync(
+        path.join(storeRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nstore: team-context\n'
+      );
+
+      const warnings: string[] = [];
+      const original = console.error;
+      console.error = (message: string) => warnings.push(String(message));
+      let root;
+      try {
+        root = await resolveOpenSpecRoot({ startPath: storeRoot, globalDataDir });
+      } finally {
+        console.error = original;
+      }
+
+      expect(root.source).toBe('nearest');
+      expect(root.path).toBe(storeRoot);
+      // No inheriting notice (nor any other root-selection notice) is emitted.
+      expect(warnings).toEqual([]);
+
+      // The resolver agrees: a store's own root gets no inherited store layer.
+      const { resolveConfigStoreLayer } = await import('../../src/core/effective-config.js');
+      expect(await resolveConfigStoreLayer(storeRoot, { globalDataDir })).toEqual({
+        kind: 'absent',
+      });
     });
 
     it('keeps config-only directories without a pointer as plain roots', async () => {
@@ -675,6 +762,200 @@ describe('resolveOpenSpecRoot', () => {
 
         expect(withStoreFlag(root, 'rasen list')).toBe('rasen list --store elftia');
       });
+    });
+  });
+
+  describe('ambient skill-version-mismatch warning (delivery-reliability-version-guard)', () => {
+    const STALE_VERSION = '0.0.1-stale';
+
+    async function currentCliVersion(): Promise<string> {
+      const { version } = await import('../../package.json');
+      return version as string;
+    }
+
+    function writeStaleSkill(rootDir: string, version: string): void {
+      const skillDir = path.join(rootDir, '.claude', 'skills', 'rasen-explore');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        `---\nname: rasen-explore\nmetadata:\n  generatedBy: "${version}"\n---\n\nContent\n`
+      );
+    }
+
+    it('warns once on a mismatched project, then stays silent on a second command (debounce)', async () => {
+      const projectRoot = await registerStore('stale-project', { type: 'project' });
+      writeStaleSkill(projectRoot, STALE_VERSION);
+      // Mint the machine-local home so the debounce marker can be consulted.
+      const { resolveProjectHome } = await import('../../src/core/project-home.js');
+      await resolveProjectHome(projectRoot, { globalDataDir });
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await resolveRootForCommand(
+          { project: 'stale-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        expect(warnSpy.mock.calls[0]?.[0]).toContain(STALE_VERSION);
+
+        warnSpy.mockClear();
+        await resolveRootForCommand(
+          { project: 'stale-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('renders the mismatch warning in the resolved CLI locale (locale-diagnostic-reporter)', async () => {
+      const projectRoot = await registerStore('locale-stale-project', { type: 'project' });
+      writeStaleSkill(projectRoot, STALE_VERSION);
+      const { resolveProjectHome } = await import('../../src/core/project-home.js');
+      await resolveProjectHome(projectRoot, { globalDataDir });
+
+      const savedRasenLang = process.env.RASEN_LANG;
+      process.env.RASEN_LANG = 'ja';
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await resolveRootForCommand(
+          { project: 'locale-stale-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        const message = warnSpy.mock.calls[0]?.[0] as string;
+        expect(message).toContain(STALE_VERSION);
+        // Japanese catalog entry, not the English fallback string.
+        expect(message).not.toContain('the running CLI is');
+        expect(message).toContain('実行中の CLI');
+      } finally {
+        warnSpy.mockRestore();
+        if (savedRasenLang === undefined) {
+          delete process.env.RASEN_LANG;
+        } else {
+          process.env.RASEN_LANG = savedRasenLang;
+        }
+      }
+    });
+
+    it('does not warn when the installed stamp matches the running CLI', async () => {
+      const projectRoot = await registerStore('current-project', { type: 'project' });
+      writeStaleSkill(projectRoot, await currentCliVersion());
+      const { resolveProjectHome } = await import('../../src/core/project-home.js');
+      await resolveProjectHome(projectRoot, { globalDataDir });
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await resolveRootForCommand(
+          { project: 'current-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('suppresses the warning under --json output', async () => {
+      const projectRoot = await registerStore('json-project', { type: 'project' });
+      writeStaleSkill(projectRoot, STALE_VERSION);
+      const { resolveProjectHome } = await import('../../src/core/project-home.js');
+      await resolveProjectHome(projectRoot, { globalDataDir });
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const root = await resolveRootForCommand(
+          { project: 'json-project' },
+          { globalDataDir, json: true }
+        );
+        expect(root).not.toBeNull();
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('warns every time when the project has no machine-local home registered', async () => {
+      const projectRoot = await registerStore('unregistered-project', { type: 'project' });
+      writeStaleSkill(projectRoot, STALE_VERSION);
+      // Deliberately no resolveProjectHome call: this project has no machine home.
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await resolveRootForCommand(
+          { project: 'unregistered-project' },
+          { globalDataDir, reporter: false }
+        );
+        await resolveRootForCommand(
+          { project: 'unregistered-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(warnSpy).toHaveBeenCalledTimes(2);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('re-arms once the stamp version advances, even with a registered home', async () => {
+      const projectRoot = await registerStore('rearm-project', { type: 'project' });
+      writeStaleSkill(projectRoot, STALE_VERSION);
+      const { resolveProjectHome } = await import('../../src/core/project-home.js');
+      await resolveProjectHome(projectRoot, { globalDataDir });
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await resolveRootForCommand(
+          { project: 'rearm-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+
+        warnSpy.mockClear();
+        // Simulate `rasen update` re-stamping the skill with the current CLI version.
+        writeStaleSkill(projectRoot, await currentCliVersion());
+        await resolveRootForCommand(
+          { project: 'rearm-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('never fails or slows the command when the underlying lookup throws', async () => {
+      const projectRoot = await registerStore('throwing-project', { type: 'project' });
+      writeStaleSkill(projectRoot, STALE_VERSION);
+      // A projectId is required for resolveProjectHome's ensure:false probe
+      // to consult the (about-to-be-corrupted) machine-local project
+      // registry at all; without one it degrades to "no home" before ever
+      // reading that file, which would not exercise this failure mode.
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        `schema: spec-driven\nprojectId: ${randomUUID()}\n`
+      );
+
+      // Corrupts the machine-local project registry (not the store registry
+      // used for --project selection above) so resolveProjectHome's read
+      // throws inside checkSkillVersionGuard's try block — a realistic
+      // failure mode, not a mocked one.
+      const registryPath = path.join(globalDataDir, 'projects', 'registry.json');
+      fs.mkdirSync(path.dirname(registryPath), { recursive: true });
+      fs.writeFileSync(registryPath, '{not valid json');
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const root = await resolveRootForCommand(
+          { project: 'throwing-project' },
+          { globalDataDir, reporter: false }
+        );
+        expect(root).not.toBeNull();
+        expect(root?.path).toBe(projectRoot);
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
   });
 });

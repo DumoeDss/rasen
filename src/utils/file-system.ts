@@ -4,6 +4,11 @@ import path from 'path';
 const fs = nodeFs.promises;
 const { constants: fsConstants } = nodeFs;
 
+export interface CanWriteFileOptions {
+  /** Omit to retain console.debug diagnostics; pass false to suppress them. */
+  onDiagnostic?: false | ((message: string) => void);
+}
+
 function hasOwnerGroupOrOtherWriteBit(stats: nodeFs.Stats): boolean {
   return (stats.mode & 0o222) !== 0;
 }
@@ -125,19 +130,38 @@ export class FileSystemUtils {
   }
 
   /**
-   * Returns a canonical absolute path when the target exists.
-   * Falls back to path.resolve() so callers can still produce a stable absolute path.
+   * Returns a canonical absolute path. When the exact target does not exist,
+   * canonicalizes its deepest existing ancestor and appends the missing suffix
+   * so future paths keep the same identity spelling as their parent.
+   *
+   * Falls back to path.resolve() when the filesystem cannot be inspected for
+   * a reason other than a missing path.
    */
   static canonicalizeExistingPath(targetPath: string): string {
-    try {
-      // Prefer the native resolver so Windows short-path aliases are expanded.
-      return nodeFs.realpathSync.native(targetPath);
-    } catch {
+    const resolved = path.resolve(targetPath);
+    const missingSegments: string[] = [];
+    let candidate = resolved;
+
+    while (true) {
       try {
-        return nodeFs.realpathSync(targetPath);
+        // Prefer the native resolver so Windows short-path aliases are expanded.
+        return path.join(
+          nodeFs.realpathSync.native(candidate),
+          ...missingSegments
+        );
       } catch {
-        return path.resolve(targetPath);
+        try {
+          return path.join(nodeFs.realpathSync(candidate), ...missingSegments);
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code !== 'ENOENT' && code !== 'ENOTDIR') return resolved;
+        }
       }
+
+      const parent = path.dirname(candidate);
+      if (parent === candidate) return resolved;
+      missingSegments.unshift(path.basename(candidate));
+      candidate = parent;
     }
   }
 
@@ -189,7 +213,26 @@ export class FileSystemUtils {
    * @param dirPath Starting directory path
    * @returns The first existing directory path, or null if root is reached without finding one
    */
-  private static async findFirstExistingDirectory(dirPath: string): Promise<string | null> {
+  private static reportCanWriteDiagnostic(
+    message: string,
+    options: CanWriteFileOptions | undefined
+  ): void {
+    if (options?.onDiagnostic === false) {
+      return;
+    }
+
+    if (options?.onDiagnostic) {
+      options.onDiagnostic(message);
+      return;
+    }
+
+    console.debug(message);
+  }
+
+  private static async findFirstExistingDirectory(
+    dirPath: string,
+    options?: CanWriteFileOptions
+  ): Promise<string | null> {
     let currentDir = dirPath;
 
     while (true) {
@@ -199,7 +242,10 @@ export class FileSystemUtils {
           return currentDir;
         }
         // Path component exists but is not a directory (edge case)
-        console.debug(`Path component ${currentDir} exists but is not a directory`);
+        this.reportCanWriteDiagnostic(
+          `Path component ${currentDir} exists but is not a directory`,
+          options
+        );
         return null;
       } catch (error: any) {
         if (error.code === 'ENOENT') {
@@ -212,14 +258,20 @@ export class FileSystemUtils {
           currentDir = parentDir;
         } else {
           // Unexpected error (permissions, I/O error, etc.)
-          console.debug(`Error checking directory ${currentDir}: ${error.message}`);
+          this.reportCanWriteDiagnostic(
+            `Error checking directory ${currentDir}: ${error.message}`,
+            options
+          );
           return null;
         }
       }
     }
   }
 
-  static async canWriteFile(filePath: string): Promise<boolean> {
+  static async canWriteFile(
+    filePath: string,
+    options?: CanWriteFileOptions
+  ): Promise<boolean> {
     try {
       const stats = await fs.stat(filePath);
 
@@ -236,7 +288,7 @@ export class FileSystemUtils {
       if (error.code === 'ENOENT') {
         // File doesn't exist - find first existing parent directory and check its permissions
         const parentDir = path.dirname(filePath);
-        const existingDir = await this.findFirstExistingDirectory(parentDir);
+        const existingDir = await this.findFirstExistingDirectory(parentDir, options);
 
         if (existingDir === null) {
           // No existing parent directory found (edge case)
@@ -247,7 +299,10 @@ export class FileSystemUtils {
         return hasWritableModeAndAccess(existingDir);
       }
 
-      console.debug(`Unable to determine write permissions for ${filePath}: ${error.message}`);
+      this.reportCanWriteDiagnostic(
+        `Unable to determine write permissions for ${filePath}: ${error.message}`,
+        options
+      );
       return false;
     }
   }

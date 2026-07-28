@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { validateConfigKeyPath as registryValidateConfigKeyPath } from './config-keys.js';
 import type { ConfigScope } from './config-keys.js';
 import { thresholdSchema } from './pipeline-registry/types.js';
+import { RETENTION_MODES } from './retention.js';
+import { SUPPORTED_CLI_LOCALES } from '../utils/locale.js';
+import { DISPATCH_RUNTIMES, PROBE_RUNTIMES } from './runtime-adapters.js';
+import { ThresholdSchemeNameSchema } from './threshold-schemes.js';
 
 /**
  * Zod schema for global Rasen configuration.
@@ -18,20 +22,19 @@ export const GlobalConfigSchema = z
       .enum(['full', 'core', 'custom'])
       .optional()
       .default('full'),
-    delivery: z
-      .enum(['both', 'skills'])
-      .or(
-        z
-          .enum(['commands', 'skills-first', 'commands-first'])
-          .transform((legacy) =>
-            legacy === 'skills-first' ? ('skills' as const) : ('both' as const)
-          )
-      )
-      .optional()
-      .default('both'),
+    // The `delivery` setting is retired (skills are the only delivery
+    // surface now). No field is declared for it here — the schema's
+    // `.passthrough()` lets any stored value (current or legacy) pass
+    // through unvalidated so a read/write never errors on it; the actual
+    // one-time notice + strip-on-write lives in global-config.ts's
+    // `getGlobalConfig` (the read seam every caller goes through).
     workflows: z
       .array(z.string())
       .optional(),
+    // The single version-2 retention dimension. Only the exact canonical enum
+    // values are accepted (no alias normalization); absent on a v1 config.
+    retention: z.enum(RETENTION_MODES).optional(),
+    language: z.enum(['auto', ...SUPPORTED_CLI_LOCALES]).optional().default('auto'),
     proactive: z.boolean().optional(),
     repoMode: z.enum(['solo', 'collaborative']).optional(),
     telemetry: z
@@ -43,7 +46,96 @@ export const GlobalConfigSchema = z
     handoff: z
       .object({
         threshold: thresholdSchema('threshold').optional(),
+        roles: z
+          .object({
+            planner: thresholdSchema('threshold').optional(),
+            implementer: thresholdSchema('threshold').optional(),
+            reviewer: thresholdSchema('threshold').optional(),
+            fixer: thresholdSchema('threshold').optional(),
+            shipper: thresholdSchema('threshold').optional(),
+          })
+          .optional(),
       })
+      .optional(),
+    autopilot: z
+      .object({
+        gates: z.enum(['on', 'off']).optional(),
+        selection: z.enum(['classify', 'manual', 'compose']).optional(),
+      })
+      .optional(),
+    // Keepalive gate for `rasen agent wait` (cli-agent-wait spec): per-runtime
+    // enablement plus the context-size floor below which parking a worker is
+    // not worth a beat.
+    keepalive: z
+      .object({
+        enabled: z.boolean().optional(),
+        runtimes: z
+          .object({
+            claude: z.boolean().optional(),
+            codex: z.boolean().optional(),
+          })
+          .optional(),
+        contextFloor: z.number().int().nonnegative().optional(),
+        beatSeconds: z.number().int().min(90).max(280).optional(),
+      })
+      .optional(),
+    models: z
+      .object({
+        default: z.string().min(1).optional(),
+        roles: z
+          .object({
+            planner: z.string().min(1).optional(),
+            implementer: z.string().min(1).optional(),
+            reviewer: z.string().min(1).optional(),
+            fixer: z.string().min(1).optional(),
+            shipper: z.string().min(1).optional(),
+          })
+          .optional(),
+      })
+      .optional(),
+    thresholds: z
+      .object({
+        bindings: z
+          .record(z.string(), ThresholdSchemeNameSchema)
+          .refine(
+            (bindings) =>
+              Object.keys(bindings).every(
+                (runtime) => runtime === 'default' || PROBE_RUNTIMES.includes(runtime as never)
+              ),
+            { error: `binding runtime must be default or one of: ${PROBE_RUNTIMES.join(', ')}` }
+          )
+          .optional()
+          .default({}),
+      })
+      .optional(),
+    // UI-managed preferences. Typed (rather than left to passthrough) so the
+    // registry round-trip test for `ui.pinnedSpaces` stays meaningful; still
+    // `.passthrough()` so a future UI key does not need a schema bump to persist.
+    ui: z
+      .object({
+        pinnedSpaces: z.array(z.string()).optional(),
+        theme: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/).optional().default('crt'),
+      })
+      .passthrough()
+      .optional(),
+    // Per-pipeline, per-stage config overrides keyed by pipeline name — the
+    // storage side of the `pipelines.<name>.{gates,models,handoff}.<stage>`
+    // config-key families. Inner objects are `.passthrough()` so a hand-edited
+    // unknown sub-key never hard-fails a whole-config write (the resilient
+    // read path warns and drops it). Shares nothing with the `rasen/pipelines/`
+    // directory namespace.
+    pipelines: z
+      .record(
+        z.string(),
+        z
+          .object({
+            gates: z.record(z.string(), z.enum(['on', 'off'])).optional(),
+            models: z.record(z.string(), z.string().min(1)).optional(),
+            handoff: z.record(z.string(), thresholdSchema('threshold')).optional(),
+            runtimes: z.record(z.string(), z.enum(DISPATCH_RUNTIMES)).optional(),
+          })
+          .passthrough()
+      )
       .optional(),
   })
   .passthrough();
@@ -56,7 +148,8 @@ export type GlobalConfigType = z.infer<typeof GlobalConfigSchema>;
 export const DEFAULT_CONFIG: GlobalConfigType = {
   featureFlags: {},
   profile: 'full',
-  delivery: 'both',
+  language: 'auto',
+  ui: { theme: 'crt' },
 };
 
 /**

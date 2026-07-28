@@ -4,34 +4,41 @@
  * Compatibility facade that re-exports split workflow template modules.
  */
 
-export type { SkillTemplate, CommandTemplate } from './types.js';
+export type { SkillTemplate } from './types.js';
 
-export { getExploreSkillTemplate, getOpsxExploreCommandTemplate } from './workflows/explore.js';
-export { getNewChangeSkillTemplate, getOpsxNewCommandTemplate } from './workflows/new-change.js';
-export { getContinueChangeSkillTemplate, getOpsxContinueCommandTemplate } from './workflows/continue-change.js';
-export { getApplyChangeSkillTemplate, getOpsxApplyCommandTemplate } from './workflows/apply-change.js';
-export { getFfChangeSkillTemplate, getOpsxFfCommandTemplate } from './workflows/ff-change.js';
-export { getSyncSpecsSkillTemplate, getOpsxSyncCommandTemplate } from './workflows/sync-specs.js';
-export { getArchiveChangeSkillTemplate, getOpsxArchiveCommandTemplate } from './workflows/archive-change.js';
-export { getBulkArchiveChangeSkillTemplate, getOpsxBulkArchiveCommandTemplate } from './workflows/bulk-archive-change.js';
-export { getVerifyChangeSkillTemplate, getOpsxVerifyCommandTemplate } from './workflows/verify-change.js';
-export { getOnboardSkillTemplate, getOpsxOnboardCommandTemplate } from './workflows/onboard.js';
-export { getHelpSkillTemplate, getOpsxHelpCommandTemplate } from './workflows/help.js';
-export { getOpsxProposeSkillTemplate, getOpsxProposeCommandTemplate } from './workflows/propose.js';
+export { getExploreSkillTemplate } from './workflows/explore.js';
+export { getNewChangeSkillTemplate } from './workflows/new-change.js';
+export { getContinueChangeSkillTemplate } from './workflows/continue-change.js';
+export { getApplyChangeSkillTemplate } from './workflows/apply-change.js';
+export { getSyncSpecsSkillTemplate } from './workflows/sync-specs.js';
+export { getArchiveChangeSkillTemplate } from './workflows/archive-change.js';
+export { getBulkArchiveChangeSkillTemplate } from './workflows/bulk-archive-change.js';
+export { getVerifyChangeSkillTemplate } from './workflows/verify-change.js';
+export { getOnboardSkillTemplate } from './workflows/onboard.js';
+export { getHelpSkillTemplate } from './workflows/help.js';
+export { getDirectionSkillTemplate } from './workflows/direction.js';
+export { getOpsxProposeSkillTemplate } from './workflows/propose.js';
 export { getFeedbackSkillTemplate } from './workflows/feedback.js';
 
 // Rasen fusion workflow commands
-export { getOfficeHoursCommandSkillTemplate, getOpsxOfficeHoursCommandTemplate } from './workflows/office-hours.js';
-export { getVerifyEnhancedSkillTemplate, getOpsxVerifyEnhancedCommandTemplate } from './workflows/verify-enhanced.js';
-export { getShipCommandSkillTemplate, getOpsxShipCommandTemplate } from './workflows/ship.js';
-export { getRetroCommandSkillTemplate, getOpsxRetroCommandTemplate } from './workflows/retro.js';
-export { getAutoCommandSkillTemplate, getOpsxAutoCommandTemplate } from './workflows/auto.js';
-export { getReviewCycleSkillTemplate, getOpsxReviewCycleCommandTemplate } from './workflows/review-cycle.js';
-export { getHandoffSkillTemplate, getOpsxHandoffCommandTemplate } from './workflows/handoff.js';
+export { getOfficeHoursCommandSkillTemplate } from './workflows/office-hours.js';
+export { getVerifyEnhancedSkillTemplate } from './workflows/verify-enhanced.js';
+export { getShipCommandSkillTemplate } from './workflows/ship.js';
+export { getRetainCommandSkillTemplate } from './workflows/retain.js';
+// The retro export now returns the temporary user-invoked compatibility wrapper
+// (report-forcing, disable-model-invocation), not a selectable workflow.
+export {
+  getRetroCommandSkillTemplate,
+  RETRO_COMPAT_WRAPPER_DIR_NAME,
+} from './workflows/retro.js';
+export { getAutoCommandSkillTemplate } from './workflows/auto.js';
+export { getReviewCycleSkillTemplate } from './workflows/review-cycle.js';
+export { getHandoffSkillTemplate } from './workflows/handoff.js';
 export { getGoalPlanSkillTemplate } from './workflows/goal-plan.js';
 export { getGoalIterateSkillTemplate } from './workflows/goal-iterate.js';
 export { getGoalReportSkillTemplate } from './workflows/goal-report.js';
-export { getGoalCommandSkillTemplate, getOpsxGoalCommandTemplate } from './workflows/goal-command.js';
+export { getGoalCommandSkillTemplate } from './workflows/goal-command.js';
+export { getAuditSkillTemplate } from './workflows/audit.js';
 
 // Expert skill templates (inlined prompts)
 export {
@@ -43,8 +50,6 @@ export {
   getCsoSkillTemplate,
   getDesignConsultationSkillTemplate,
   getDesignReviewSkillTemplate,
-  getFreezeSkillTemplate,
-  getGuardSkillTemplate,
   getInvestigateSkillTemplate,
   getNavigatorSkillTemplate,
   getOfficeHoursSkillTemplate,
@@ -53,5 +58,6 @@ export {
   getQaSkillTemplate,
   getReviewSkillTemplate,
   getTddSkillTemplate,
-  getUnfreezeSkillTemplate,
+  getWorkflowAuthorSkillTemplate,
+  getWorkflowReviewSkillTemplate,
 } from './experts/index.js';

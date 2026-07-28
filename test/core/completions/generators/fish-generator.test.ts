@@ -311,6 +311,23 @@ describe('FishGenerator', () => {
       expect(script).toContain('rasen __complete schemas 2>/dev/null');
     });
 
+    it('should handle positional arguments for profile names', () => {
+      const commands: CommandDefinition[] = [
+        {
+          name: 'profile-use',
+          description: 'Use a profile',
+          acceptsPositional: true,
+          positionalType: 'profile-name',
+          flags: [],
+        },
+      ];
+
+      const script = generator.generate(commands);
+
+      expect(script).toContain('__fish_rasen_profiles');
+      expect(script).toContain('rasen __complete profiles 2>/dev/null');
+    });
+
     it('should generate dynamic completion helper for changes', () => {
       const commands: CommandDefinition[] = [
         {
@@ -442,6 +459,71 @@ describe('FishGenerator', () => {
 
       expect(script).toContain("'view'");
       expect(script).toContain("'Display dashboard'");
+    });
+  });
+
+  describe('filename completion scope', () => {
+    it('should disable the default filename fallback for rasen', () => {
+      const commands: CommandDefinition[] = [
+        {
+          name: 'init',
+          description: 'Initialize Rasen',
+          flags: [],
+        },
+      ];
+
+      const script = generator.generate(commands);
+      const lines = script.split('\n');
+
+      // A bare `complete -c rasen -f` (no condition, no action) turns off
+      // Fish's cwd filename fallback for the whole command.
+      expect(lines).toContain('complete -c rasen -f');
+    });
+
+    it('should force filename completion back on for path positionals', () => {
+      const commands: CommandDefinition[] = [
+        {
+          name: 'init',
+          description: 'Initialize Rasen',
+          acceptsPositional: true,
+          positionalType: 'path',
+          flags: [],
+        },
+      ];
+
+      const script = generator.generate(commands);
+      const lines = script.split('\n');
+
+      // The no-files directive is still present...
+      expect(lines).toContain('complete -c rasen -f');
+      // ...and the path positional re-enables files via -F under its condition.
+      const forceFilesLine = lines.find(
+        (line) => line.includes('__fish_rasen_using_subcommand init') && / -F$/.test(line)
+      );
+      expect(forceFilesLine).toBeDefined();
+    });
+
+    it('should not force files for non-path positionals', () => {
+      const commands: CommandDefinition[] = [
+        {
+          name: 'show',
+          description: 'Show an item',
+          acceptsPositional: true,
+          positionalType: 'change-or-spec-id',
+          flags: [],
+        },
+      ];
+
+      const script = generator.generate(commands);
+      const lines = script.split('\n');
+
+      // Dynamic ids are completed, and no -F force-files directive is emitted
+      // for this command (so files stay suppressed by the global -f).
+      expect(script).toContain('__fish_rasen_items');
+      const forceFilesLine = lines.find(
+        (line) => line.includes('__fish_rasen_using_subcommand show') && / -F$/.test(line)
+      );
+      expect(forceFilesLine).toBeUndefined();
     });
   });
 

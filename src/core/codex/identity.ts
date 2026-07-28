@@ -32,6 +32,12 @@ export interface BuildCodexWorkerRecordOptions {
   role?: string;
 }
 
+export interface BuildNativeCodexWorkerRecordOptions {
+  role?: string;
+  agentId?: string;
+  transcript?: string;
+}
+
 /**
  * Build a `runtime: 'codex'` run-state worker record from a completed
  * dispatch. Conforms to `RunStateWorkerSchema`; `turnId` is never set.
@@ -40,6 +46,7 @@ export function buildCodexWorkerRecord(options: BuildCodexWorkerRecordOptions): 
   const { effort } = clampLeafEffort(options.effort);
   const record: RunStateWorker = {
     runtime: 'codex',
+    dispatchMode: 'exec-bridge',
     threadId: options.threadId,
     model: options.model,
     sandbox: options.sandbox,
@@ -49,4 +56,17 @@ export function buildCodexWorkerRecord(options: BuildCodexWorkerRecordOptions): 
   if (options.rolloutPath) record.transcript = options.rolloutPath;
   if (options.role) record.role = options.role;
   return record;
+}
+
+/** Build the same-host native Codex shape using only handles the host returned. */
+export function buildNativeCodexWorkerRecord(
+  options: BuildNativeCodexWorkerRecordOptions
+): RunStateWorker {
+  return {
+    runtime: 'codex',
+    dispatchMode: 'native',
+    ...(options.role ? { role: options.role } : {}),
+    ...(options.agentId ? { agentId: options.agentId } : {}),
+    ...(options.transcript ? { transcript: options.transcript } : {}),
+  };
 }

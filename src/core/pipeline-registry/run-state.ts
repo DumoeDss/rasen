@@ -12,6 +12,23 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
 import { AgentRuntimeSandboxSchema, AgentRuntimeSchema } from './types.js';
+import { RETENTION_MODES, type RetentionMode } from '../retention.js';
+import { hasRuntimeCapability } from '../runtime-adapters.js';
+import {
+  FrozenKnowledgeContextSchema,
+  type FrozenExecutionRef,
+  type FrozenKnowledgeContext,
+} from '../learned-skills/index.js';
+
+/** Canonical retention stage id and the retired full-feature retro stage id. */
+export const RETAIN_STAGE_ID = 'retain';
+const LEGACY_RETRO_STAGE_ID = 'retro';
+const ARCHIVE_STAGE_ID = 'archive';
+const LEGACY_GOAL_PIPELINE_NAMES = new Set([
+  'goal-loop-measure',
+  'goal-loop-evaluate',
+]);
+const LEGACY_GOAL_COMPLETED_REASON = 'legacy-completed';
 
 export const RUN_STATE_FILENAME = 'auto-run.json';
 
@@ -21,6 +38,7 @@ export const StageStatusSchema = z.enum([
   'done',
   'skipped',
   'escalated',
+  'delegated',
 ]);
 export type StageStatus = z.infer<typeof StageStatusSchema>;
 
@@ -49,6 +67,7 @@ export type StageStatus = z.infer<typeof StageStatusSchema>;
  */
 export const RunStateWorkerSchema = z.object({
   runtime: AgentRuntimeSchema.optional(),
+  dispatchMode: z.enum(['native', 'exec-bridge', 'legacy-fallback']).optional(),
   role: z.string().optional(),
   agentId: z.string().optional(),
   transcript: z.string().optional(),
@@ -68,6 +87,41 @@ export const RunStateWorkerSchema = z.object({
   updatedAt: z.string().optional(),
 }).passthrough();
 export type RunStateWorker = z.infer<typeof RunStateWorkerSchema>;
+export type RunStateDispatchMode = NonNullable<RunStateWorker['dispatchMode']>;
+
+export interface WorkerDispatchInference {
+  dispatchMode?: RunStateDispatchMode;
+  inferred: boolean;
+  warning?: string;
+}
+
+/**
+ * Resolve lifecycle mechanics for archived worker records without inventing a
+ * handle. A Codex thread is the verified exec-bridge shape; agent handles are
+ * native. Transcript-only Codex records remain ambiguous and fall back to
+ * artifact/transcript reconstruction with a warning.
+ */
+export function inferWorkerDispatchMode(
+  worker: RunStateWorker
+): WorkerDispatchInference {
+  if (worker.dispatchMode) {
+    return { dispatchMode: worker.dispatchMode, inferred: false };
+  }
+  if (worker.runtime === 'codex' && worker.threadId) {
+    return { dispatchMode: 'exec-bridge', inferred: true };
+  }
+  if (worker.agentId) {
+    return { dispatchMode: 'native', inferred: true };
+  }
+  if (worker.runtime === 'claude' && worker.transcript) {
+    return { dispatchMode: 'native', inferred: true };
+  }
+  return {
+    inferred: true,
+    warning:
+      'Worker dispatch mode is ambiguous; use the recorded transcript/artifacts for conservative reconstruction.',
+  };
+}
 
 /**
  * A single mid-stage handoff: an exhausted worker distilled its state to a
@@ -102,7 +156,7 @@ export type RunStateStage = z.infer<typeof RunStateStageSchema>;
 
 /**
  * Session-level handoff pointer: written when a whole session (the LEAD)
- * distills its state via `/rasen:handoff` so a fresh session reads the
+ * distills its state via `/rasen-handoff` so a fresh session reads the
  * distillate before warm-seeding from raw transcripts. `n` is the relay
  * generation (1st handoff = 1); records without it are generation 1.
  */
@@ -132,17 +186,29 @@ export const RunStateSchema = z
     classification: z.string().optional(),
     tier: z.enum(['A', 'B', 'C']).optional(),
     // autopilot-gate-policy: the resolved gate policy for this run, recorded
-    // once at run start (precedence flag > autopilot.gates config > default
-    // on — see resolveAutopilotGatePolicy in project-config.ts) so `pipeline
-    // resume` can read it back without the user re-passing `--no-gate`.
-    // Absent on runs from before this capability existed (defaults to on).
+    // once at run start (precedence flag > project autopilot.gates > store
+    // autopilot.gates > global autopilot.gates > default on — see
+    // resolveAutopilotGatePolicy in project-config.ts) so `pipeline resume`
+    // can read it back without the user re-passing `--no-gate`. Absent on runs
+    // from before this capability existed (defaults to on). `source: 'store'`
+    // records a policy inherited from the project's store (store-config-scope).
+    // `source: 'config'` is a legacy value from before the global layer
+    // existed (pre-config-page-coherence runs) — still accepted here for
+    // backward compatibility with recorded run-state.
     gatePolicy: z
       .object({
         effective: z.enum(['on', 'off']),
-        source: z.enum(['flag', 'config', 'default']),
+        source: z.enum(['flag', 'project', 'store', 'global', 'config', 'default']),
       })
       .optional(),
     stages: z.record(z.string(), RunStateStageSchema).optional(),
+    // The retention mode frozen on first entry to the retain stage (design D2).
+    // Once recorded, resume prefers it over a later profile edit so a mid-run
+    // profile change never switches the retain branch.
+    retention: z.enum(RETENTION_MODES).optional(),
+    // Frozen independently from retention. It records typed portable identity
+    // only; canonical roots are re-resolved and revalidated on resume.
+    knowledgeContext: FrozenKnowledgeContextSchema.optional(),
     sessionHandoff: SessionHandoffSchema.optional(),
     completed: z.array(z.string()).optional(),
     rounds: z.number().int().nonnegative().optional(),
@@ -184,6 +250,9 @@ export const RunStateSchema = z
         ]),
         maxRounds: z.number().int().positive(),
         loopStallLimit: z.number().int().positive(),
+        // Optional so run-state written before this field still parses; the
+        // default (3) is applied by the registry schema at inject time.
+        blockedThreshold: z.number().int().positive().optional(),
         workProduct: z.enum(['code', 'prose']),
       })
       .optional(),
@@ -197,6 +266,10 @@ export const RunStateSchema = z
         measurePassed: z.boolean().optional(), // present when gate=measure
         evaluateSatisfied: z.boolean().optional(), // present when gate=evaluate
         stallStreak: z.number().int().nonnegative(),
+        // Consecutive rounds the same implementer-reported blocker has recurred
+        // (resets on progress or a materially different blocker). Optional so it
+        // survives worker relay without breaking pre-existing loopProgress caches.
+        blockedStreak: z.number().int().nonnegative().optional(),
         historyRef: z.string(), // -> goal-run.json
       })
       .optional(),
@@ -263,11 +336,97 @@ export function normalizeRunStateWorkerRecord(raw: unknown): unknown {
   // the runtimeRaw passthrough treatment.
   if (obj.runtime === null) {
     delete obj.runtime;
-  } else if (typeof obj.runtime === 'string' && obj.runtime !== 'claude' && obj.runtime !== 'codex') {
+  } else if (
+    typeof obj.runtime === 'string' &&
+    !hasRuntimeCapability(obj.runtime, 'canDispatch')
+  ) {
     obj.runtimeRaw = obj.runtime;
     delete obj.runtime;
   }
   return obj;
+}
+
+/**
+ * Migrates an in-flight legacy full-feature run whose tail was recorded against
+ * the retired post-archive `retro` stage (design D2): the `retro` stage entry is
+ * moved to `retain` (its status preserved — a completed legacy retro stays
+ * completed rather than re-running, an incomplete one resumes as retain), and
+ * the frozen retention mode is set to `report` (legacy retro was report
+ * behavior) unless an explicit `retention` is already recorded. Completion is
+ * NEVER inferred from configuration. No-op when there is no legacy `retro`
+ * stage or a `retain` stage already exists.
+ */
+function migrateLegacyRetroStage(
+  obj: Record<string, unknown>,
+  stages: Record<string, unknown>
+): void {
+  if (!(LEGACY_RETRO_STAGE_ID in stages) || RETAIN_STAGE_ID in stages) return;
+  stages[RETAIN_STAGE_ID] = stages[LEGACY_RETRO_STAGE_ID];
+  delete stages[LEGACY_RETRO_STAGE_ID];
+  if (obj.retention === undefined) obj.retention = 'report';
+}
+
+function stageIsComplete(stages: Record<string, unknown>, stageId: string): boolean {
+  const stage = stages[stageId];
+  if (typeof stage !== 'object' || stage === null || Array.isArray(stage)) return false;
+  const status = (stage as Record<string, unknown>).status;
+  return status === 'done' || status === 'skipped';
+}
+
+/**
+ * Preserves completion for pre-retain goal runs that already archived. Runs
+ * still awaiting archive need no mutation: with `ship` done, the upgraded DAG
+ * naturally exposes `retain` as their next frontier. This migration is bounded
+ * to the two changed built-in pipelines and exact stage identities; it never
+ * infers completion from retention configuration or learned-skill state.
+ */
+function migrateLegacyCompletedGoalTail(
+  obj: Record<string, unknown>,
+  stages: Record<string, unknown>
+): void {
+  if (
+    typeof obj.pipeline !== 'string' ||
+    !LEGACY_GOAL_PIPELINE_NAMES.has(obj.pipeline) ||
+    RETAIN_STAGE_ID in stages ||
+    !stageIsComplete(stages, ARCHIVE_STAGE_ID)
+  ) {
+    return;
+  }
+
+  stages[RETAIN_STAGE_ID] = {
+    status: 'skipped',
+    reason: LEGACY_GOAL_COMPLETED_REASON,
+  };
+}
+
+/**
+ * Migrates the older top-level `completed[]` form without losing its existing
+ * frontier. Once archive is complete, materialize equivalent stage records and
+ * the synthetic skipped retain record so `completedStages()` continues to see
+ * the whole run as complete and the legacy-completed reason remains auditable.
+ */
+function migrateLegacyCompletedGoalTailFromCompleted(
+  obj: Record<string, unknown>
+): void {
+  if (
+    typeof obj.pipeline !== 'string' ||
+    !LEGACY_GOAL_PIPELINE_NAMES.has(obj.pipeline) ||
+    !Array.isArray(obj.completed)
+  ) {
+    return;
+  }
+
+  const completed = obj.completed.filter((stageId): stageId is string => typeof stageId === 'string');
+  if (!completed.includes(ARCHIVE_STAGE_ID) || completed.includes(RETAIN_STAGE_ID)) return;
+
+  const stages: Record<string, unknown> = Object.fromEntries(
+    completed.map((stageId) => [stageId, { status: 'done' }])
+  );
+  stages[RETAIN_STAGE_ID] = {
+    status: 'skipped',
+    reason: LEGACY_GOAL_COMPLETED_REASON,
+  };
+  obj.stages = stages;
 }
 
 /** Normalize the raw run-state JSON's per-stage `worker` records before validation. */
@@ -284,7 +443,11 @@ function normalizeRunStateJson(json: unknown): unknown {
       }
       stages[id] = s;
     }
+    migrateLegacyRetroStage(obj, stages);
+    migrateLegacyCompletedGoalTail(obj, stages);
     obj.stages = stages;
+  } else if (obj.stages === undefined) {
+    migrateLegacyCompletedGoalTailFromCompleted(obj);
   }
   return obj;
 }
@@ -382,9 +545,41 @@ export function writeRunState(changeDir: string, state: RunState): void {
   fs.writeFileSync(runStatePath(changeDir), `${JSON.stringify(validated, null, 2)}\n`, 'utf-8');
 }
 
+export interface RunStatePipelineSeed {
+  name: string;
+  stages: readonly { id: string }[];
+}
+
+/**
+ * Initialize the durable state for a newly-created change assigned to a
+ * pipeline. This is the single writer seam used by portfolio child creation,
+ * so every child is resumable before its first stage starts.
+ */
+export function initializeRunState(
+  changeDir: string,
+  pipeline: RunStatePipelineSeed
+): { path: string; state: RunState } {
+  const destination = runStatePath(changeDir);
+  if (fs.existsSync(destination)) {
+    throw new Error(`Run-state already exists at ${destination}`);
+  }
+  const state: RunState = {
+    pipeline: pipeline.name,
+    stages: Object.fromEntries(
+      pipeline.stages.map(stage => [stage.id, { status: 'pending' as const }])
+    ),
+  };
+  writeRunState(changeDir, state);
+  return { path: destination, state };
+}
+
 /**
  * Stages that count as completed for resume purposes: when `stages` is present,
  * those with status done|skipped; otherwise the `completed` convenience array.
+ *
+ * `delegated` is NOT completed — work handed to children is outstanding until
+ * the children finish it, so a decomposed parent's stage list can never on its
+ * own leave delivery as the only thing remaining.
  */
 export function completedStages(state: RunState): string[] {
   if (state.stages) {
@@ -393,6 +588,35 @@ export function completedStages(state: RunState): string[] {
       .map(([id]) => id);
   }
   return state.completed ?? [];
+}
+
+/**
+ * The retention mode frozen for this run (design D2): the mode the retain stage
+ * recorded on first entry. Resume prefers this over the current profile so a
+ * mid-run profile edit never switches the retain branch. Undefined when no
+ * retain stage has run yet (the router then reads the active profile).
+ */
+export function frozenRetentionMode(state: RunState): RetentionMode | undefined {
+  return state.retention;
+}
+
+/** The typed learned-skill owner/planning identity frozen for retain/codify. */
+export function frozenKnowledgeContext(
+  state: RunState
+): FrozenKnowledgeContext | undefined {
+  return state.knowledgeContext;
+}
+
+/**
+ * The execution binding this run was frozen against, or undefined when it
+ * recorded none (a version 1 record, written before this existed).
+ */
+export function frozenExecutionBinding(
+  state: RunState
+): FrozenExecutionRef | undefined {
+  const frozen = state.knowledgeContext;
+  if (frozen === undefined || frozen.version === 1) return undefined;
+  return frozen.execution;
 }
 
 /**

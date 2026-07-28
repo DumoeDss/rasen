@@ -2,7 +2,12 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { FileSystemUtils, findAllMarkerBlocks } from '../../../utils/file-system.js';
-import { InstallationResult } from '../factory.js';
+import {
+  InstallationResult,
+  type InstallerMessageDescriptor,
+  type InstallerMessageReporter,
+  type UninstallationResult,
+} from '../factory.js';
 
 /**
  * Installer for PowerShell completion scripts.
@@ -173,7 +178,10 @@ export class PowerShellInstaller {
    * @param scriptPath - Path to the completion script
    * @returns true if configured successfully, false otherwise
    */
-  async configureProfile(scriptPath: string): Promise<boolean> {
+  async configureProfile(
+    scriptPath: string,
+    reporter?: InstallerMessageReporter
+  ): Promise<boolean> {
     const profilePaths = this.getAllProfilePaths();
     let anyConfigured = false;
 
@@ -191,7 +199,7 @@ export class PowerShellInstaller {
         }
 
         if (!profileExists) {
-          if (!(await FileSystemUtils.canWriteFile(profilePath))) {
+          if (!(await FileSystemUtils.canWriteFile(profilePath, { onDiagnostic: false }))) {
             throw new Error(`Path is not writable: ${profilePath}`);
           }
           await fs.mkdir(profileDir, { recursive: true });
@@ -211,7 +219,11 @@ export class PowerShellInstaller {
           if (err?.code === 'ENOENT') {
             // keep defaults
           } else {
-            console.warn(`Warning: Skipping ${profilePath}: ${err?.message ?? String(err)}`);
+            const detail = err?.message ?? String(err);
+            reporter?.(
+              `Warning: Skipping ${profilePath}: ${detail}`,
+              { key: 'skipPowerShellProfile', values: { path: profilePath, detail } }
+            );
             continue;
           }
         }
@@ -264,14 +276,21 @@ export class PowerShellInstaller {
           newContent = profileContent + ['', managedBlockLines, ''].join('\n');
         }
 
-        if (!(await FileSystemUtils.canWriteFile(profilePath))) {
+        if (!(await FileSystemUtils.canWriteFile(profilePath, { onDiagnostic: false }))) {
           throw new Error(`Path is not writable: ${profilePath}`);
         }
         await this.writeProfileFile(profilePath, newContent, fileEncoding, fileBom);
         anyConfigured = true;
       } catch (error) {
         // Continue to next profile if this one fails
-        console.warn(`Warning: Could not configure ${profilePath}: ${error}`);
+        const detail = String(error);
+        reporter?.(
+          `Warning: Could not configure ${profilePath}: ${detail}`,
+          {
+            key: 'unableConfigurePowerShellProfile',
+            values: { path: profilePath, detail },
+          }
+        );
       }
     }
 
@@ -284,7 +303,7 @@ export class PowerShellInstaller {
    *
    * @returns true if removed successfully, false otherwise
    */
-  async removeProfileConfig(): Promise<boolean> {
+  async removeProfileConfig(reporter?: InstallerMessageReporter): Promise<boolean> {
     const profilePaths = this.getAllProfilePaths();
     let anyRemoved = false;
 
@@ -303,7 +322,11 @@ export class PowerShellInstaller {
           if (err?.code === 'ENOENT') {
             continue; // Profile doesn't exist, nothing to remove
           }
-          console.warn(`Warning: Could not read ${profilePath}: ${err?.message ?? String(err)}`);
+          const detail = err?.message ?? String(err);
+          reporter?.(
+            `Warning: Could not read ${profilePath}: ${detail}`,
+            { key: 'unableReadPowerShellProfile', values: { path: profilePath, detail } }
+          );
           continue;
         }
 
@@ -343,13 +366,17 @@ export class PowerShellInstaller {
 
         const newContent = trimmedPieces.join('\n').trim() + '\n';
 
-        if (!(await FileSystemUtils.canWriteFile(profilePath))) {
+        if (!(await FileSystemUtils.canWriteFile(profilePath, { onDiagnostic: false }))) {
           throw new Error(`Path is not writable: ${profilePath}`);
         }
         await this.writeProfileFile(profilePath, newContent, fileEncoding, fileBom);
         anyRemoved = true;
       } catch (error) {
-        console.warn(`Warning: Could not clean ${profilePath}: ${error}`);
+        const detail = String(error);
+        reporter?.(
+          `Warning: Could not clean ${profilePath}: ${detail}`,
+          { key: 'unableCleanPowerShellProfile', values: { path: profilePath, detail } }
+        );
       }
     }
 
@@ -365,6 +392,12 @@ export class PowerShellInstaller {
   async install(completionScript: string): Promise<InstallationResult> {
     try {
       const targetPath = this.getInstallationPath();
+      const warnings: string[] = [];
+      const warningDescriptors: InstallerMessageDescriptor[] = [];
+      const reportWarning: InstallerMessageReporter = (message, descriptor) => {
+        warnings.push(message);
+        warningDescriptors.push(descriptor);
+      };
 
       // Check if already installed with same content
       let isUpdate = false;
@@ -376,9 +409,14 @@ export class PowerShellInstaller {
             success: true,
             installedPath: targetPath,
             message: 'Completion script is already installed (up to date)',
+            messageDescriptor: { key: 'alreadyInstalled' },
             instructions: [
               'The completion script is already installed and up to date.',
               'If completions are not working, try restarting PowerShell or run: . $PROFILE',
+            ],
+            instructionDescriptors: [
+              { key: 'alreadyInstalledDetail' },
+              { key: 'tryPowerShellReload' },
             ],
           };
         }
@@ -386,10 +424,18 @@ export class PowerShellInstaller {
         isUpdate = true;
       } catch (error: any) {
         // File doesn't exist or can't be read, proceed with installation
-        console.debug(`Unable to read existing completion file at ${targetPath}: ${error.message}`);
+        if (error?.code !== 'ENOENT') {
+          reportWarning(
+            `Warning: Could not read existing completion file at ${targetPath}: ${error.message}`,
+            {
+              key: 'unableReadCompletionFile',
+              values: { path: targetPath, detail: error.message },
+            }
+          );
+        }
       }
 
-      if (!(await FileSystemUtils.canWriteFile(targetPath))) {
+      if (!(await FileSystemUtils.canWriteFile(targetPath, { onDiagnostic: false }))) {
         throw new Error(`Path is not writable: ${targetPath}`);
       }
 
@@ -404,21 +450,31 @@ export class PowerShellInstaller {
       await fs.writeFile(targetPath, completionScript, 'utf-8');
 
       // Auto-configure PowerShell profile
-      const profileConfigured = await this.configureProfile(targetPath);
+      const profileConfigured = await this.configureProfile(targetPath, reportWarning);
 
       // Generate instructions if profile wasn't auto-configured
       const instructions = profileConfigured ? undefined : this.generateInstructions(targetPath);
+      const instructionDescriptors = profileConfigured
+        ? undefined
+        : this.generateInstructionDescriptors(this.getProfilePath());
 
       // Determine appropriate message
       let message: string;
+      let messageDescriptor: InstallerMessageDescriptor;
       if (isUpdate) {
         message = backupPath
           ? 'Completion script updated successfully (previous version backed up)'
           : 'Completion script updated successfully';
+        messageDescriptor = { key: backupPath ? 'updatedWithBackup' : 'updated' };
       } else {
         message = profileConfigured
           ? 'Completion script installed and PowerShell profile configured successfully'
           : 'Completion script installed successfully for PowerShell';
+        messageDescriptor = {
+          key: profileConfigured
+            ? 'installedAndConfiguredPowerShell'
+            : 'installedForPowerShell',
+        };
       }
 
       return {
@@ -427,12 +483,20 @@ export class PowerShellInstaller {
         backupPath,
         profileConfigured,
         message,
+        messageDescriptor,
         instructions,
+        instructionDescriptors,
+        warnings: warnings.length > 0 ? warnings : undefined,
+        warningDescriptors: warningDescriptors.length > 0 ? warningDescriptors : undefined,
       };
     } catch (error) {
       return {
         success: false,
         message: `Failed to install completion script: ${error instanceof Error ? error.message : String(error)}`,
+        messageDescriptor: {
+          key: 'installFailed',
+          values: { detail: error instanceof Error ? error.message : String(error) },
+        },
       };
     }
   }
@@ -460,6 +524,23 @@ export class PowerShellInstaller {
     ];
   }
 
+  private generateInstructionDescriptors(
+    profilePath: string
+  ): Array<InstallerMessageDescriptor | null> {
+    return [
+      { key: 'installedSuccessfully' },
+      null,
+      { key: 'enablePowerShellProfile', values: { path: profilePath } },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      { key: 'restartPowerShell' },
+    ];
+  }
+
   /**
    * Uninstall the completion script
    *
@@ -467,9 +548,15 @@ export class PowerShellInstaller {
    * @param options.yes - Skip confirmation prompt (handled by command layer)
    * @returns Uninstallation result
    */
-  async uninstall(options?: { yes?: boolean }): Promise<{ success: boolean; message: string }> {
+  async uninstall(options?: { yes?: boolean }): Promise<UninstallationResult> {
     try {
       const targetPath = this.getInstallationPath();
+      const warnings: string[] = [];
+      const warningDescriptors: InstallerMessageDescriptor[] = [];
+      const reportWarning: InstallerMessageReporter = (message, descriptor) => {
+        warnings.push(message);
+        warningDescriptors.push(descriptor);
+      };
 
       // Check if installed
       try {
@@ -478,11 +565,12 @@ export class PowerShellInstaller {
         return {
           success: false,
           message: 'Completion script is not installed',
+          messageDescriptor: { key: 'notInstalled' },
         };
       }
 
       const targetDir = path.dirname(targetPath);
-      if (!(await FileSystemUtils.canWriteFile(targetDir))) {
+      if (!(await FileSystemUtils.canWriteFile(targetDir, { onDiagnostic: false }))) {
         throw new Error(`Path is not writable: ${targetDir}`);
       }
 
@@ -490,16 +578,23 @@ export class PowerShellInstaller {
       await fs.unlink(targetPath);
 
       // Remove profile configuration
-      await this.removeProfileConfig();
+      await this.removeProfileConfig(reportWarning);
 
       return {
         success: true,
         message: 'Completion script uninstalled successfully',
+        messageDescriptor: { key: 'uninstalled' },
+        warnings: warnings.length > 0 ? warnings : undefined,
+        warningDescriptors: warningDescriptors.length > 0 ? warningDescriptors : undefined,
       };
     } catch (error) {
       return {
         success: false,
         message: `Failed to uninstall completion script: ${error instanceof Error ? error.message : String(error)}`,
+        messageDescriptor: {
+          key: 'uninstallFailed',
+          values: { detail: error instanceof Error ? error.message : String(error) },
+        },
       };
     }
   }

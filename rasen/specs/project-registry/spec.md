@@ -2,7 +2,6 @@
 
 ## Purpose
 Define the machine-wide project identity and home directory system: how a project acquires a stable `projectId`, how that identity is recorded in a machine-wide registry, and how each project's externalized machine home directory is resolved, shared across clones/worktrees, self-healed, and garbage-collected.
-
 ## Requirements
 ### Requirement: Stable project identity
 
@@ -52,11 +51,24 @@ Each registered project SHALL have a home directory `<global data dir>/projects/
 - **WHEN** the resolver is called in probe (non-ensuring) mode for a project with no identity
 - **THEN** it reports that no home exists and creates neither config changes, registry entries, nor directories
 
-### Requirement: Clones fork, worktrees share, moves rebind
+### Requirement: Clones fork, worktrees unify, moves rebind
 
-When a project path is registered whose `projectId` is already registered at another path, the system SHALL distinguish three cases: (1) the old path no longer exists — the entry is rebound to the new path keeping the same home (a moved repo keeps its state); (2) the new path is a git worktree of the same repository — the new path shares the existing home (worktrees share ephemera); (3) otherwise — the new path is an independent clone and receives a distinct home named with the first free integer suffix (`<name>-<shortHash>-2`, `-3`, …). When the relationship cannot be determined, the system SHALL prefer forking over sharing.
+Registration SHALL key a project's registry entry at its canonical root: for a path inside a git repository, the MAIN checkout's working-tree directory (the parent of `git rev-parse --git-common-dir`); for any other path, the path itself. Running Rasen in a linked worktree SHALL register or refresh the MAIN checkout's entry and SHALL NOT create a separate entry keyed at the worktree path. When the main checkout cannot be resolved or no longer exists on disk (deleted, bare repository, or git unavailable), the registering path itself SHALL be registered so work in a surviving worktree is never left without a home.
 
-When a NEW home directory is created (cases with no existing home to reuse), its human-readable `<name>` prefix SHALL derive from the MAIN repository — the parent directory of `git rev-parse --git-common-dir` — rather than from the registering path's basename, so that a worktree (e.g. `.claude/worktrees/<branch>`) registering before the main repo does not name the shared home after the worktree. When the registering path is not inside a git working tree, or the main-repo directory cannot be resolved, the `<name>` prefix SHALL fall back to the registering path's basename. The `<shortHash>` (derived from `projectId`) is unchanged, so identity and collision-freedom are unaffected; only the readable prefix is corrected.
+When a registered path with the same `projectId` exists elsewhere, the system SHALL still distinguish: (1) the old path no longer exists — the entry is rebound to the new canonical root keeping the same home (a moved repo keeps its state); (2) the new path is a git worktree of the same repository as a live same-id entry (reachable only through the fallback, e.g. the main checkout is gone) — the existing home is shared; (3) otherwise — an independent clone receives a distinct home named with the first free integer suffix. When the relationship cannot be determined, the system SHALL prefer forking over sharing. A newly created home's readable `<name>` prefix SHALL derive from the main repository directory when resolvable, else from the registering path's basename; the `<shortHash>` SHALL always derive from the `projectId`.
+
+When a registration write places an entry, it SHALL prune other entries carrying the same `projectId` whose paths are live linked worktrees of the placed entry's repository (guaranteed duplicates sharing the same home), so active projects converge to one entry without waiting for garbage collection.
+
+#### Scenario: Worktree registration refreshes the main entry
+
+- **WHEN** a Rasen command registers from a linked worktree of a repository whose main checkout is at `E:\Work\my-app`
+- **THEN** the registry entry is keyed at `E:\Work\my-app` with its display name derived from `my-app`
+- **AND** no entry keyed at the worktree path is created
+
+#### Scenario: Main checkout gone falls back to the worktree
+
+- **WHEN** a Rasen command registers from a linked worktree whose main checkout directory has been deleted
+- **THEN** the worktree path itself is registered so the work remains addressable
 
 #### Scenario: Moved repo keeps its home
 
@@ -68,20 +80,14 @@ When a NEW home directory is created (cases with no existing home to reuse), its
 - **WHEN** a second clone of a project (same `projectId`, both paths exist, not worktrees of one repo) is registered
 - **THEN** it receives its own home directory with an integer suffix while the first clone's home is untouched
 
-#### Scenario: Worktrees resolve to one home
+#### Scenario: Registration prunes sibling duplicates
 
-- **WHEN** a git worktree of an already-registered project is registered
-- **THEN** both paths map to the same home directory
-
-#### Scenario: Worktree-first registration names the home after the main repo
-
-- **WHEN** a git worktree (e.g. `.claude/worktrees/feature`) is the FIRST path to register a project whose main repository directory is `my-app`
-- **THEN** the newly created shared home's readable prefix SHALL derive from `my-app` (the main repo), not from the worktree directory name
-- **AND** the `<shortHash>` SHALL still derive from the `projectId`
+- **WHEN** a registration write places the main checkout's entry while a legacy entry keyed at one of its live linked worktrees (same `projectId`) still exists
+- **THEN** the legacy worktree entry is removed in the same write and the shared home directory is untouched
 
 ### Requirement: Registry self-healing
 
-On CLI runs that resolve a project root carrying a `projectId`, the system SHALL keep the registry consistent with reality — refreshing the entry when the path binding, name, or mode changed, and periodically updating `lastSeen` — without user action. Self-healing SHALL be best-effort: registry problems SHALL never fail or visibly slow the user's command. Self-healing SHALL NEVER rename, re-derive, or re-create an existing home directory: a registry entry's `home` is fixed once assigned, and refreshing an entry (including a path-exact update or a worktree share) SHALL reuse the existing `home` unchanged.
+On CLI runs that resolve a project root carrying a `projectId`, the system SHALL keep the registry consistent with reality — refreshing the entry when the path binding, name, or mode changed, and periodically updating `lastSeen` — without user action. Self-healing SHALL target the project's canonical root: a run inside a linked worktree refreshes the MAIN checkout's entry (deriving the entry's name and mode from the main checkout, never from the worktree's directory basename or branch state), falling back to the worktree path only when the main checkout cannot be resolved. Self-healing SHALL be best-effort: registry problems SHALL never fail or visibly slow the user's command. Self-healing SHALL NEVER rename, re-derive, or re-create an existing home directory: a registry entry's `home` is fixed once assigned, and refreshing an entry (including a path-exact update or a worktree share) SHALL reuse the existing `home` unchanged.
 
 #### Scenario: Self-heal survives a broken registry
 
@@ -99,9 +105,15 @@ On CLI runs that resolve a project root carrying a `projectId`, the system SHALL
 - **THEN** the entry's `home` directory name SHALL remain unchanged
 - **AND** no home directory SHALL be renamed or re-created
 
+#### Scenario: Self-heal from a worktree targets the main entry
+
+- **WHEN** a command runs inside a linked worktree of a registered project whose main checkout still exists
+- **THEN** self-healing refreshes the entry keyed at the main checkout
+- **AND** no entry keyed at the worktree path is created or refreshed
+
 ### Requirement: Doctor reports and garbage-collects registry rot
 
-`rasen doctor` SHALL report the current project's registry entry (or that it is unregistered) and list dangling entries — registered paths that no longer exist. Doctor SHALL remain read-only by default; `rasen doctor --gc` SHALL remove dangling entries and delete home directories that no remaining entry references. A home directory still referenced by any live entry SHALL never be deleted.
+`rasen doctor` SHALL report the current project's registry entry (or that it is unregistered) and list dangling entries — registered paths that no longer exist. Doctor SHALL also report worktree-duplicate entries: entries whose path is a linked worktree of a repository whose main checkout is itself registered with the same `projectId`. Doctor SHALL remain read-only by default; `rasen doctor --gc` SHALL remove dangling entries, collapse worktree-duplicate entries onto the main checkout's entry (deleting the duplicate when the main checkout is registered, rebinding it to the main checkout when that root exists on disk but is not yet registered), and delete home directories that no remaining entry references. A home directory still referenced by any live entry SHALL never be deleted.
 
 #### Scenario: Dangling entry reported
 
@@ -112,6 +124,17 @@ On CLI runs that resolve a project root carrying a `projectId`, the system SHALL
 
 - **WHEN** `rasen doctor --gc` runs while a worktree entry still references the same home as a dangling entry
 - **THEN** the dangling registry entry is removed but the shared home directory is kept
+
+#### Scenario: Worktree-duplicate entries reported
+
+- **WHEN** `rasen doctor` runs on a machine whose registry holds entries for both a main checkout and its linked worktrees under one `projectId`
+- **THEN** the report lists the worktree-keyed entries as duplicates and suggests `rasen doctor --gc`
+- **AND** no registry entry is modified
+
+#### Scenario: GC collapses worktree duplicates
+
+- **WHEN** `rasen doctor --gc` runs while entries exist for a registered main checkout and two of its live linked worktrees (same `projectId`, shared home)
+- **THEN** the worktree-keyed entries are removed, the main checkout's entry remains, and the shared home directory is kept
 
 ### Requirement: Doctor surfaces pending legacy ephemera with the migration hint
 
@@ -147,3 +170,55 @@ On CLI runs that resolve a project root carrying a `projectId`, the system SHALL
 
 - **WHEN** no old-scheme directory exists
 - **THEN** the machine-home section SHALL contain no relocation-related lines
+
+### Requirement: Registry entry caches installed tools and version
+
+Each registry entry SHALL carry optional `tools`, `installedVersion`, and `lastUpdated` cache fields, mirroring the project's `rasen/config.yaml` `tools:` manifest and the Rasen version stamped into generated skill `generatedBy` frontmatter. The fields SHALL be optional in the entry schema so that an older registry, or an entry written by an older binary, continues to load without error; an absent field SHALL be treated as "unknown" by readers, never as an error.
+
+The cache fields SHALL be refreshed by:
+- `rasen init`, after a successful run that wrote tools and stamped a version
+- `rasen update`, after a successful run that refreshed tools and re-stamped the version
+- the registry self-heal touch, which SHALL read the `generatedBy` frontmatter of one surviving skill file as ground truth for `installedVersion` when refreshing the entry, and SHALL mirror the project's `tools:` manifest when readable
+
+The cache fields SHALL never be the source of truth for the configured-tool set when `rasen/config.yaml` is readable: the project config is authoritative, and the registry cache exists only so multi-project scans can avoid opening every project's config. Readers SHALL prefer the project config when both are available and disagree, and SHALL treat the disagreement as a drift signal surfaced by `rasen doctor` rather than silently picking one.
+
+The registry's existing best-effort contract SHALL be preserved: a failed cache refresh SHALL never fail or visibly slow a user command, and a malformed or partially-written cache field SHALL be reparable by the next successful update or self-heal. Registration's existing invariants (a `home` is never renamed once assigned; path-exact / worktree-share / moved-repo / clone-fork dispositions are unchanged) SHALL remain intact when the new cache fields are added.
+
+#### Scenario: New fields tolerated by older binary
+
+- **WHEN** an older binary that does not know the `tools`, `installedVersion`, or `lastUpdated` fields reads a registry file containing them
+- **THEN** the registry SHALL still parse under that binary's schema (the fields are optional in the entry object, not unknown top-level keys)
+
+#### Scenario: Absent fields tolerated by newer binary
+
+- **WHEN** a newer binary reads a registry entry written by an older binary that lacks the new fields
+- **THEN** the entry SHALL load with the fields treated as absent
+- **AND** multi-project update SHALL treat the project's version as "unknown"
+
+#### Scenario: Self-heal refreshes version from skill frontmatter
+
+- **WHEN** the registry self-heal touch runs for a registered project that has at least one surviving skill file with a `generatedBy` field
+- **AND** the cached `installedVersion` is absent or older than the self-heal staleness threshold
+- **THEN** the touch SHALL refresh `installedVersion` from that field
+- **AND** the user's command SHALL not be visibly slowed by the refresh
+
+#### Scenario: Self-heal mirrors manifest when readable
+
+- **WHEN** the registry self-heal touch runs for a registered project whose `rasen/config.yaml` carries a readable `tools:` key
+- **THEN** the touch SHALL mirror that list into the entry's cached `tools` field
+- **AND** a reader comparing the cache to the project config SHALL see them agree
+
+#### Scenario: Registration preserves home-naming invariants with cache fields
+
+- **WHEN** `registerProject` runs with the new optional cache fields supplied
+- **THEN** the entry's `home` SHALL still be derived exactly as before (never renamed once assigned)
+- **AND** the path-exact / worktree-share / moved-repo / clone-fork dispositions SHALL be unchanged
+- **AND** cache fields supplied to the call SHALL be written on a fresh entry and preserved (not reset to undefined) on subsequent registrations when not supplied
+
+#### Scenario: Cache-vs-config drift surfaced by doctor
+
+- **WHEN** a project's `rasen/config.yaml` lists `tools: [claude]` and its registry entry caches `tools: [claude, codex]`
+- **THEN** `rasen doctor` SHALL report the drift as an advisory
+- **AND** SHALL NOT silently rewrite either side
+- **AND** SHALL suggest re-running `rasen init` or `rasen update` in that project to resync the cache
+

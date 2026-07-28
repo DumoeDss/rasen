@@ -5,15 +5,15 @@
  * pre-flight + classification, selects ONE backend goal-loop pipeline
  * (explicit override wins), then drives it via the SAME orchestration playbook.
  * The three backend pipelines are homogeneous (one gate type each):
- *  - goal-loop-measure  — measure gate, code iterate, ship -> archive
- *  - goal-loop-evaluate — evaluate gate, code iterate, ship -> archive
- *  - goal-loop-research — evaluate gate, prose/research iterate, report tail
- * This mirrors how \`/rasen:auto\` classifies among full/small/bug-fix today; it
+ *  - goal-loop-measure  — measure gate, code iterate, ship -> retain -> archive
+ *  - goal-loop-evaluate — evaluate gate, code iterate, ship -> retain -> archive
+ *  - goal-loop-research — evaluate gate, prose/research iterate, report-only tail
+ * This mirrors how \`rasen-auto\` classifies among full/small/bug-fix today; it
  * does NOT reimplement orchestration (it embeds the shared playbook).
  */
-import type { SkillTemplate, CommandTemplate } from '../types.js';
+import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
-import { ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
+import { GOAL_ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
 
 const GOAL_INSTRUCTIONS = `Goal-driven iteration — drive a task whose "done" is a condition (a measurable threshold or a quality judgment), not a code-change document. Repeat modify -> judge until the gate is satisfied or the round cap is hit.
 
@@ -23,15 +23,15 @@ You are the **LEAD**. You classify the task, select ONE backend goal-loop pipeli
 
 ## When to Use
 
-Use when: "drive this score to 90", "optimize p99 latency", "hit the lighthouse budget", "make this rubric-clean", "research and write a report on X". Use \`/rasen:auto\` for tasks whose product is a single reviewable code change (propose -> apply -> verify -> ship); use \`/rasen:goal\` when the product is a *condition* met by iteration.
+Use when: "drive this score to 90", "optimize p99 latency", "hit the lighthouse budget", "make this rubric-clean", "research and write a report on X". Use \`rasen-auto\` for tasks whose product is a single reviewable code change (propose -> apply -> verify -> ship); use \`rasen-goal\` when the product is a *condition* met by iteration.
 
 ## 0. Pre-flight context probe (once, non-blocking)
 
-Before anything else run \`rasen agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy. At or above the session handoff threshold (default 0.5; see the playbook's Step H), offer the user a three-way choice: (a) automatic relay now; (b) continue this session; (c) handle it manually via /rasen:handoff. Proceed on the user's say-so; below the threshold, proceed silently.
+Before anything else run \`rasen agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy. At or above the session handoff threshold (default 0.5; see the playbook's Step H), offer the user a three-way choice: (a) automatic relay now; (b) continue this session; (c) handle it manually via rasen-handoff. Proceed on the user's say-so; below the threshold, proceed silently.
 
 ## 1. Classify and select the backend pipeline (explicit wins)
 
-**Input**: \`/rasen:goal [measure|evaluate|research] [--pipeline goal-loop-<variant>] <task description>\`.
+**Input**: \`rasen-goal [measure|evaluate|research] [--pipeline goal-loop-<variant>] <task description>\`.
 
 Choose the pipeline in this order:
 1. **Explicit** — if the invocation has \`--pipeline <name>\`, OR its first token is one of \`measure\` / \`evaluate\` / \`research\` (a variant selector), use the matching \`goal-loop-<variant>\` pipeline. Strip the selector token; the rest is the task description.
@@ -44,9 +44,9 @@ Choose the pipeline in this order:
 DISPLAY the chosen pipeline and let the user change it before proceeding.
 
 Built-in goal-loop pipelines (see \`rasen pipeline list --json\`):
-- **goal-loop-measure** — define-goal -> iterate (measure gate) -> ship -> archive  _(quantifiable targets)_
-- **goal-loop-evaluate** — define-goal -> iterate (evaluate gate) -> ship -> archive  _(rubric/quality)_
-- **goal-loop-research** — define-goal -> iterate (evaluate gate) -> report  _(research/writing; prose work product, earlier relay)_
+- **goal-loop-measure** — define-goal -> iterate (measure gate) -> ship -> retain -> archive  _(quantifiable targets)_
+- **goal-loop-evaluate** — define-goal -> iterate (evaluate gate) -> ship -> retain -> archive  _(rubric/quality)_
+- **goal-loop-research** — define-goal -> iterate (evaluate gate) -> report only  _(research/writing; prose work product, earlier relay; no ship, retain, or archive)_
 
 ## 2. Fetch the selected pipeline's stage DAG
 
@@ -54,22 +54,24 @@ Built-in goal-loop pipelines (see \`rasen pipeline list --json\`):
 rasen pipeline show <name> --json   # -> { name, description, buildOrder, stages }
 \`\`\`
 
-Execute stages in \`buildOrder\`. The \`iterate\` stage carries a \`loop: { kind: goal, gate: {...} }\` — the LEAD interprets it via **Step L** of the playbook (single dispatch per round, warm-reused implementer, the gate, goal-run.json). The \`define-goal\` stage's \`gate: 'vet'\` lets the user confirm a measure command before any round runs — this is the hard safety carve-out (autopilot-gate-policy): unlike an ordinary \`gate: true\` stage, it is NEVER auto-approved, even under \`--no-gate\` or an \`autopilot.gates: off\` project default.
+Execute stages in \`buildOrder\`. The \`iterate\` stage carries a \`loop: { kind: goal, gate: {...} }\` — the LEAD interprets it via **Step L** of the playbook (single dispatch per round, warm-reused implementer, the gate, goal-run.json). The \`define-goal\` stage's \`gate: true\` lets the user confirm a measure command before any round runs — it pauses by default (autopilot-gate-policy). It is an ordinary gate now: under \`--no-gate\` or an \`autopilot.gates: off\` base it is auto-approved and the measure command runs unattended for up to \`maxRounds\`; to keep the pause for this stage under an \`off\` base, set \`pipelines.<name>.gates.define-goal: on\`.
 
 ## 3. Execute the pipeline as the LEAD
 
-${ORCHESTRATION_PLAYBOOK}
+${GOAL_ORCHESTRATION_PLAYBOOK}
 
 ## Termination Invariants (non-negotiable)
 
 - **maxRounds cap (default 5).** The loop is bounded. On exhaustion, proceed to the tail but mark \`outcome: maxRounds-exhausted\` — NEVER report success when the gate was never satisfied.
 - **author != verifier.** For an evaluate gate, a FRESH reviewer worker (≠ the implementer) judges each round. For a measure gate, the neutral command is the verifier. **Under Tier C** (no subagent), an evaluate gate degrades to a **second, freshly-reset single-context pass** seeded ONLY with goal + rubric + the artifact (NOT the implementation transcript), recorded as the Tier-C fallback; if that is impossible, goal-loop-evaluate is **unsupported under Tier C** — the implementer NEVER self-certifies the rubric (see playbook Step L).
+- **completion audit (evaluate gate).** The evaluate reviewer (and the Tier-C reset pass) judges by a completion AUDIT, not by failing to find remaining work: treat completion as **unproven** and verify it against the actual current state; derive concrete requirements from goal/rubric and demand **authoritative evidence** (files, command output, test results, runtime behavior) per requirement; treat uncertain or indirect evidence as **not achieved**; the audit must **prove** completion, not merely fail to find obvious remaining work; NEVER accept intent, partial progress, or memory as proof.
+- **blockedThreshold (default 3).** A blocked report is not accepted immediately: the SAME blocker must recur for \`blockedThreshold\` consecutive rounds (each re-dispatched to try a different angle; progress or a different blocker resets the streak) before the loop escalates via Step H.5/H.6 — distinct from loopStallLimit and maxRounds (see playbook Step L).
 - **loopStallLimit (default 2).** Consecutive no-progress rounds trigger the LEAD strategy review (Step H.5) — never silently burn rounds.
 - **Flat hierarchy.** The implementer NEVER spawns child subagents. Research is done inline by the implementer + Step H.3 relay.
 
 ## Resume
 
-On invocation for an existing change, read \`goal-run.json\` (the authoritative loop spine) and run \`rasen pipeline resume <change> --json\` to find the next incomplete stage. The goal-loop resume protocol (playbook Step L): last record satisfied -> tail; last record not-passed -> resume at lastRound+1; no record -> round 1.
+On invocation for an existing change, read \`goal-run.json\` (the authoritative loop spine) and run \`rasen pipeline resume <change> --json\` to find the next incomplete stage. The goal-loop resume protocol (playbook Step L): last record satisfied -> the declared tail (\`ship -> retain -> archive\` for measure/evaluate; report only for research); last record not-passed -> resume at lastRound+1; no record -> round 1.
 
 ## Output Format
 
@@ -81,7 +83,10 @@ Pipeline: goal-loop-<variant>      Gate: measure | evaluate      Tier: A | B | C
 ### Loop
 - [x] define-goal  — goal-plan.md (gate: <type>)
 - [ ] iterate      — round 2/5, last score 87 (threshold 90)
-- [ ] ship | report
+
+### Tail (show only the selected pipeline's tail)
+- [ ] ship -> retain -> archive  — measure/evaluate
+- [ ] report only                — research; no ship, retain, or archive
 
 ### Outcome
 satisfied | maxRounds-exhausted | in-progress
@@ -89,9 +94,9 @@ satisfied | maxRounds-exhausted | in-progress
 
 ## Guardrails
 
-- Always pause at the define-goal gate — it is \`gate: 'vet'\`, so never skip human confirmation of the goal + gate even under \`--no-gate\`: the **measure command** OR the **evaluate goal/rubric** (an evaluate/research run has no command, so confirming "the measure command" alone would read as vacuous — confirm whichever gate the plan actually carries).
+- Under the default gate policy, pause at the define-goal gate — confirm the goal + gate before any round runs: the **measure command** OR the **evaluate goal/rubric** (an evaluate/research run has no command, so confirming "the measure command" alone would read as vacuous — confirm whichever gate the plan actually carries). It is an ordinary \`gate: true\`: under \`--no-gate\` or \`autopilot.gates: off\` it auto-approves and the measure command runs unattended, unless \`pipelines.<name>.gates.define-goal: on\` restores the pause.
 - Save run-state + goal-run.json so the loop is resumable.
-- Enforce author != verifier (evaluate: fresh reviewer each round; measure: the command).
+- Enforce author != verifier (evaluate: fresh reviewer each round; measure: the command). For an evaluate gate, the reviewer must PROVE completion by the completion audit — authoritative evidence per requirement, uncertain evidence counts as not achieved — never wave a round through by not spotting remaining work.
 - If the loop stalls (loopStallLimit consecutive no-progress rounds), run the Step H.5 escalation ladder before interrupting a human.`;
 
 export function getGoalCommandSkillTemplate(): SkillTemplate {
@@ -103,16 +108,5 @@ export function getGoalCommandSkillTemplate(): SkillTemplate {
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },
-  };
-}
-
-export function getOpsxGoalCommandTemplate(): CommandTemplate {
-  return {
-    name: 'Rasen: Goal',
-    description:
-      'Goal-driven iteration — LEAD classifies and drives a measure | evaluate | research goal-loop pipeline to a gate condition or maxRounds',
-    category: 'Workflow',
-    tags: ['workflow', 'goal-loop', 'iteration', 'orchestration'],
-    content: GOAL_INSTRUCTIONS,
   };
 }

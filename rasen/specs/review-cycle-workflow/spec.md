@@ -1,7 +1,7 @@
 # review-cycle-workflow Specification
 
 ## Purpose
-Provide an iterative review → triage → fix → re-review loop (the `/rasen:review-cycle` skill and command) that delegates each pass to the review engine, enforces the author≠verifier invariant, escalates unresolved Blocker/Major findings instead of silently passing, runs tool-agnostically with an optional Claude acceleration path, ships opt-in, and shares the orchestration playbook.
+Provide an iterative review → triage → fix → re-review loop (the `/rasen-review-cycle` skill and command) that delegates each pass to the review engine, enforces the author≠verifier invariant, escalates unresolved Blocker/Major findings instead of silently passing, runs tool-agnostically with an optional Claude acceleration path, ships opt-in, and shares the orchestration playbook.
 ## Requirements
 ### Requirement: Review-Cycle Skill and Command Templates
 
@@ -11,7 +11,7 @@ The system SHALL provide a SkillTemplate and a CommandTemplate for the review-cy
 
 - **WHEN** the template file is loaded
 - **THEN** it SHALL export `getReviewCycleSkillTemplate()` returning a SkillTemplate named `rasen-review-cycle`
-- **AND** it SHALL export `getOpsxReviewCycleCommandTemplate()` returning a CommandTemplate for `/rasen:review-cycle`
+- **AND** it SHALL export `getOpsxReviewCycleCommandTemplate()` returning a CommandTemplate for `/rasen-review-cycle`
 - **AND** both templates SHALL follow the same pattern as existing workflow templates (e.g. `ship.ts`, `verify-enhanced.ts`)
 
 #### Scenario: Delegates to the review engine, does not fork it
@@ -138,15 +138,16 @@ The review-cycle workflow SHALL consume the shared `opsx-orchestration` playbook
 
 ### Requirement: Gate-Run Test Evidence Is Recorded for Ship
 
-The cycle report SHALL record test evidence consumable by the ship stage's evidence-based test gate: for the final clean round (and for every Tier C gate-run), the exact test/gate command(s) executed, their result, and the content tree fingerprint (`git rev-parse HEAD^{tree}`) of the git code state they ran against.
+The cycle report SHALL record test evidence consumable by the ship stage's evidence-based test gate: for the final clean round (and for every Tier C gate-run), the selected verification scope, why that scope covers the observed risk, the exact test/gate command(s) executed, their result, and the content tree fingerprint (`git rev-parse HEAD^{tree}`) of the git code state they ran against.
 
 #### Scenario: Final clean round records test evidence
 
 - **WHEN** a review cycle ends clean
-- **THEN** `review-cycle-report.md` SHALL record the test/gate command(s) of the final round, their passing result, and the content tree fingerprint (`git rev-parse HEAD^{tree}`) of the git state they ran against
+- **THEN** `review-cycle-report.md` SHALL record the selected scope and rationale, the test/gate command(s) of the final round, their passing result, and the content tree fingerprint (`git rev-parse HEAD^{tree}`) of the git state they ran against
 
 #### Scenario: Ship consumes the evidence
 
 - **WHEN** a later ship stage evaluates its evidence-based test gate
-- **THEN** the recorded content tree fingerprint SHALL be sufficient to decide whether the code state is unchanged since the last green run, by direct comparison against the ship-time tree fingerprint
+- **THEN** ship SHALL compare the recorded scope against its required verification scope and the recorded tree against the ship-time tree
+- **AND** SHALL reuse only the checks whose scope and tree both match
 

@@ -6,6 +6,7 @@
  * (design D10) — never reach into individual files under `src/core/codex/`.
  */
 export { resolveCodexHome, CODEX_CLI_VERSION_PREMISE } from './codex-home.js';
+export { probeCodexAvailability } from './availability.js';
 export {
   buildCodexExecInvocation,
   formatShellInvocation,
@@ -43,7 +44,10 @@ export {
   findRolloutPath,
   readRolloutOccupancy,
   readRolloutConversation,
+  readRolloutSessionMeta,
   listRolloutFiles,
+  listStoredRolloutFiles,
+  RolloutOccupancyUnavailableError,
   type FindRolloutPathOptions,
   type RolloutOccupancy,
   type RolloutConversation,
@@ -52,6 +56,16 @@ export {
   type RolloutFileEntry,
 } from './rollout.js';
 export { buildCodexWorkerRecord, type BuildCodexWorkerRecordOptions } from './identity.js';
+export {
+  resolveCodexConfigPath,
+  inspectCodexProjectConfig,
+  reconcileCodexProjectConfig,
+  type CodexConfigInspection,
+  type CodexConfigOutcome,
+  type CodexConfigReconcileResult,
+  type CodexConfigReportLine,
+  formatCodexConfigSummary,
+} from './project-config.js';
 export {
   detectThreadDeath,
   detectDeathInRows,

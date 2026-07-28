@@ -21,51 +21,49 @@ Pipeline definitions SHALL accept an optional `handoff` block at pipeline level 
 - **WHEN** a pipeline.yaml declares a bare-number `threshold` outside (0, 1], a `remainingTokens` that is not a positive integer, an unknown key inside a threshold object, or a non-positive `maxRelays`/`stallLimit`
 - **THEN** validation SHALL fail with an actionable message
 
-### Requirement: Handoff config resolution order
-The effective handoff config for a stage SHALL resolve as: stage-level `handoff` > pipeline `handoff.roles[<stage role>]` (threshold only) > pipeline `handoff` > project config `handoff.threshold` (threshold only) > global config `handoff.threshold` (threshold only) > model preset (threshold only — the suggested `handoffThreshold` of the preset matching the stage's resolved model) > built-in defaults (`threshold: 0.5`, `maxRelays: 3`, `stallLimit: 2`). The config layers and the preset layer tune only the threshold; `maxRelays` and `stallLimit` resolve from pipeline declarations or built-in defaults. Every threshold value at every layer (pipeline, role, stage, project config, global config, preset) SHALL accept the dual form: a bare number, ALWAYS a fraction of the context window in (0, 1], or the object `{ remainingTokens: <positive integer> }`, an absolute required-headroom threshold in tokens. The resolved config's source SHALL name the layer that supplied the resolved threshold specifically, in this same precedence order (`stage`, `role`, `pipeline`, `project-config`, `global-config`, `preset`, or `default`) — not merely a layer whose `handoff` block is non-empty.
+### Requirement: Per-stage configured thresholds top the handoff resolution order
 
-#### Scenario: Role threshold applies when stage has no override
-- **WHEN** a stage with `role: reviewer` has no stage-level `handoff` and the pipeline declares `handoff.roles.reviewer: 0.65`
-- **THEN** the resolved threshold for that stage SHALL be 0.65
-- **AND** its `maxRelays`/`stallLimit` SHALL come from the pipeline block or built-in defaults
+The effective handoff config for a stage SHALL resolve as: a `pipelines.<name>.handoff.<stage>` configuration instance first (threshold only; itself resolving project over store over global), then stage-level `handoff`, then a threshold scheme selected by the stage role's effective runtime (`handoffRoles[<stage role>]` before the scheme's `handoff` scalar), then pipeline `handoff.roles[<stage role>]` (threshold only), then pipeline `handoff`, then project config `handoff.roles[<stage role>]` (threshold only), project config `handoff.threshold` (threshold only), inherited store config `handoff.roles[<stage role>]` (threshold only), inherited store config `handoff.threshold` (threshold only), global config `handoff.roles[<stage role>]` (threshold only), global config `handoff.threshold` (threshold only), model preset (threshold only), and finally built-in defaults (`threshold: 0.5`, `maxRelays: 3`, `stallLimit: 2`).
 
-#### Scenario: Model preset applies when nothing is configured
-- **WHEN** neither the pipeline nor the stage declares any handoff threshold and the stage's resolved model matches a preset carrying a suggested handoff threshold
-- **THEN** the resolved threshold SHALL be the preset's suggested value
-- **AND** the resolved config's `source` SHALL be `preset`
-- **AND** `maxRelays`/`stallLimit` SHALL remain the built-in defaults
+Scheme selection SHALL consider the effective runtime's explicit binding at project, store, and global scope before the `default` binding at project, store, and global scope. A binding whose local scheme is missing or invalid SHALL warn and fall through to the next binding candidate; if no usable candidate remains, resolution SHALL continue at the pipeline role/scalar layer. Within each legacy machine config scope a role-specific threshold SHALL win over that scope's scalar, the scopes SHALL rank project > store > global entirely, and the store layer applies only under active inheritance (see `store-config-inheritance`).
 
-#### Scenario: Configured threshold overrides the preset
-- **WHEN** the pipeline declares any handoff threshold (stage, role, or pipeline level) for a stage whose model matches a preset
-- **THEN** the configured value SHALL win over the preset's suggested value
+The config layers, per-stage instance, selected scheme, and preset layer tune only the threshold; `maxRelays` and `stallLimit` resolve from pipeline declarations or built-in defaults. Every threshold value at every layer—including the per-stage instance and scheme—SHALL accept the dual form: a bare fraction of the context window in (0, 1], or `{ remainingTokens: <positive integer> }`. The resolved config's source SHALL name the supplying layer specifically, with the per-stage configured layer reported scope-qualified above the existing vocabulary (`stage`, `role`, `pipeline`, `project-role`, `project-config`, `store-role`, `store-config`, `global-role`, `global-config`, `preset`, `default`) and scheme values reported as scope-qualified scheme-role or scheme sources. Setting a per-stage instance or binding SHALL NOT write any pipeline definition file.
 
-#### Scenario: Defaults apply when nothing is configured
-- **WHEN** neither the pipeline nor the stage declares `handoff` and no config layer sets `handoff.threshold`
-- **THEN** the resolved config SHALL be the built-in defaults
+#### Scenario: Per-stage instance beats the stage-level handoff
 
-#### Scenario: Project config threshold applies below pipeline declarations
-- **WHEN** neither the pipeline nor the stage declares a handoff threshold
-- **AND** the project's `rasen/config.yaml` sets `handoff.threshold: 0.4`
-- **THEN** the resolved threshold SHALL be 0.4 with a source identifying the project config layer
-- **AND** `maxRelays`/`stallLimit` SHALL still resolve from pipeline declarations or built-in defaults
+- **WHEN** a stage declares `handoff: { threshold: 0.7 }` in its pipeline definition and `pipelines.<name>.handoff.<that stage>` is set to `0.5` at project scope
+- **THEN** the resolved threshold is 0.5 with a per-stage project source, `maxRelays`/`stallLimit` still come from the stage declaration or defaults, and the definition file is unmodified
 
-#### Scenario: Global config threshold is the project fallback
-- **WHEN** no pipeline, stage, or project config threshold is set
-- **AND** the global config sets `handoff.threshold: 0.65`
-- **THEN** the resolved threshold SHALL be 0.65 with a source identifying the global config layer
+#### Scenario: Per-stage instance accepts the absolute form
 
-#### Scenario: Pipeline declarations beat config layers
-- **WHEN** a pipeline declares `handoff.threshold: 0.7` and the project config sets `handoff.threshold: 0.4`
-- **THEN** the resolved threshold for its stages SHALL be 0.7
+- **WHEN** `pipelines.<name>.handoff.<stage>` is set to `{ "remainingTokens": 60000 }` at store scope with no project instance
+- **THEN** the resolved threshold is that absolute form with a per-stage store source
 
-#### Scenario: A config layer accepts the absolute threshold form
-- **WHEN** the project or global config sets `handoff.threshold: { remainingTokens: 45000 }`
-- **THEN** the resolved threshold SHALL be `{ remainingTokens: 45000 }` with a source identifying that config layer
+#### Scenario: Bound scheme sits below the stage override
 
-#### Scenario: A config layer beats the model-preset layer
-- **WHEN** neither the pipeline nor the stage declares a handoff threshold, the project or global config sets one, and the stage's resolved model also matches a preset carrying a suggested handoff threshold
-- **THEN** the resolved threshold SHALL come from the config layer, not the preset
-- **AND** the resolved config's source SHALL identify the config layer, not `preset`
+- **WHEN** a stage declares threshold 0.7, its role's effective runtime selects a scheme with `handoffRoles[role]: 0.6` and `handoff: 0.5`, and no configured per-stage instance exists
+- **THEN** the stage declaration supplies 0.7
+- **AND** removing the stage declaration causes the scheme role value 0.6 to supply the threshold with a scope-qualified scheme-role source
+
+#### Scenario: Bound scheme beats pipeline and legacy thresholds
+
+- **WHEN** a valid bound scheme supplies handoff 0.55, pipeline YAML supplies handoff 0.6, and project config supplies `handoff.threshold: 0.7`
+- **THEN** the scheme value 0.55 supplies the effective threshold
+
+#### Scenario: Dangling scheme continues below binding layers
+
+- **WHEN** every applicable binding references a missing or invalid scheme and pipeline YAML supplies a handoff threshold
+- **THEN** resolution reports the skipped binding references and uses the pipeline threshold
+
+#### Scenario: Chain below scheme selection remains compatible
+
+- **WHEN** no usable runtime or default binding exists for a stage
+- **THEN** resolution ranks configured stage instance > stage > pipeline role > pipeline > project role > project scalar > store role > store scalar > global role > global scalar > preset > default with the same values and sources as before
+
+#### Scenario: Chain below the top layer is unchanged
+
+- **WHEN** no per-stage instance exists for a stage
+- **THEN** resolution ranks stage > role > pipeline > project-role > project-config > store-role > store-config > global-role > global-config > preset > default byte-identically to before this capability, including every store-layer and no-store behavior
 
 ### Requirement: Run-state handoff records
 The run-state reader SHALL accept optional `sessionHandoff` (top level, including an optional generation number `n`) and per-stage `handoffs[]` records, and `rasen pipeline resume` SHALL report them.

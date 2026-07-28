@@ -8,6 +8,63 @@ import { promises as fs } from 'fs';
 import chalk from 'chalk';
 import { FileSystemUtils, removeMarkerBlock as removeMarkerBlockUtil } from '../utils/file-system.js';
 import { OPENSPEC_MARKERS } from './config.js';
+import { getGlobalDataDir, type GlobalDataDirOptions } from './global-config.js';
+import { RETIRED_EDIT_BOUNDARY_SKILL_DIRS } from './retired-edit-boundary.js';
+export {
+  RETIRED_EDIT_BOUNDARY_EXPERT_IDS,
+  RETIRED_EDIT_BOUNDARY_SKILL_DIRS,
+} from './retired-edit-boundary.js';
+
+export const LEGACY_EDIT_BOUNDARY_STATE_FILE = 'freeze-dir.txt';
+
+/**
+ * Remove only the three exact retired installed skill directories. Similar
+ * names and user-authored directories are preserved.
+ */
+export async function pruneRetiredEditBoundarySkillDirs(
+  skillsDir: string
+): Promise<string[]> {
+  const removed: string[] = [];
+  for (const dirName of RETIRED_EDIT_BOUNDARY_SKILL_DIRS) {
+    const dirPath = path.join(skillsDir, dirName);
+    try {
+      if (!(await fs.stat(dirPath)).isDirectory()) continue;
+      await fs.rm(dirPath, { recursive: true, force: true });
+      removed.push(dirName);
+    } catch {
+      // Missing/unreadable entries are best-effort no-ops.
+    }
+  }
+  return removed;
+}
+
+/**
+ * Remove the obsolete state file from recognized old roots without removing
+ * the containing directory or any sibling. CLAUDE_PLUGIN_DATA is considered
+ * only when explicitly present and distinct from Rasen's data root.
+ */
+export async function cleanupLegacyEditBoundaryState(
+  options: GlobalDataDirOptions = {}
+): Promise<string[]> {
+  const env = options.env ?? process.env;
+  const roots = new Set<string>([path.resolve(getGlobalDataDir(options))]);
+  if (env.CLAUDE_PLUGIN_DATA?.trim()) {
+    roots.add(path.resolve(env.CLAUDE_PLUGIN_DATA));
+  }
+  const removed: string[] = [];
+  for (const root of roots) {
+    const statePath = path.join(root, LEGACY_EDIT_BOUNDARY_STATE_FILE);
+    try {
+      const stat = await fs.stat(statePath);
+      if (!stat.isFile()) continue;
+      await fs.rm(statePath, { force: true });
+      removed.push(statePath);
+    } catch {
+      // Missing/unreadable entries are best-effort no-ops.
+    }
+  }
+  return removed;
+}
 
 /**
  * Retired installed-skill directory prefix left behind by the expert-skill
@@ -44,6 +101,113 @@ export async function pruneRetiredExpertSkillDirs(skillsDir: string): Promise<st
     try {
       await fs.rm(path.join(skillsDir, entry.name), { recursive: true, force: true });
       removed.push(entry.name);
+    } catch {
+      // Best-effort cleanup; ignore per-directory failures.
+    }
+  }
+
+  return removed;
+}
+
+/**
+ * Installed skill directory names left behind by retired built-in workflows.
+ * A retired workflow id is no longer in the registry, so the registry-derived
+ * deselection cleanup (`removeUnselectedSkillDirs`) can never reach its
+ * installed directory; {@link pruneRetiredWorkflowSkillDirs} removes it by
+ * exact name instead. Append here when a future built-in workflow is retired.
+ */
+export const RETIRED_WORKFLOW_SKILL_DIRS = ['rasen-ff-change'] as const;
+
+/**
+ * Command ids left behind by retired built-in workflows. Command file paths
+ * are adapter-specific, so the corresponding prune lives in `update.ts`
+ * (which already has the configured-tool + adapter context) rather than
+ * here; this constant is the shared list of ids it prunes.
+ */
+export const RETIRED_WORKFLOW_COMMAND_IDS = ['ff'] as const;
+
+/**
+ * Removes installed skill directories orphaned by a retired built-in
+ * workflow — those whose name exactly matches one of
+ * {@link RETIRED_WORKFLOW_SKILL_DIRS}. Scoped to exact names (not a prefix),
+ * so it can never remove a current skill directory. Idempotent: a no-op (no
+ * error) when the skills directory is absent or contains no such directory.
+ *
+ * @param skillsDir - Absolute path to a tool's installed skills directory
+ *   (e.g. `<project>/.claude/skills`)
+ * @returns The directory names that were removed
+ */
+export async function pruneRetiredWorkflowSkillDirs(skillsDir: string): Promise<string[]> {
+  const removed: string[] = [];
+
+  for (const dirName of RETIRED_WORKFLOW_SKILL_DIRS) {
+    const dirPath = path.join(skillsDir, dirName);
+    try {
+      const stat = await fs.stat(dirPath);
+      if (!stat.isDirectory()) continue;
+    } catch {
+      continue; // does not exist — nothing to prune
+    }
+    try {
+      await fs.rm(dirPath, { recursive: true, force: true });
+      removed.push(dirName);
+    } catch {
+      // Best-effort cleanup; ignore per-directory failures.
+    }
+  }
+
+  return removed;
+}
+
+/**
+ * Installed skill directory names left behind by RETIRED retention workflows
+ * whose migration window has ENDED — cleaned by exact name, never a prefix,
+ * glob, or regex.
+ *
+ * This set is intentionally EMPTY for the current migration window: the only
+ * retention artifact on disk is the temporary `rasen-retro` compatibility
+ * wrapper, which reuses the retired retro workflow's directory name and is
+ * refreshed (not removed) each init/update. It is distinguished by its exact
+ * named identity and passed as a preserve entry to
+ * {@link pruneRetiredRetentionSkillDirs}. When the wrapper's window ends, add
+ * its exact directory name here and stop generating it (design D1, migration
+ * step 9).
+ */
+export const RETIRED_RETENTION_SKILL_DIRS: readonly string[] = [];
+
+/**
+ * Removes installed skill directories orphaned by a retired retention workflow
+ * — those whose name exactly matches an entry in `dirNames` (default
+ * {@link RETIRED_RETENTION_SKILL_DIRS}) — while preserving any name in
+ * `preserve` (the currently shipped compatibility wrapper). Scoped to exact
+ * names, so it never removes a current skill or a similarly named directory.
+ * Idempotent; a no-op when the skills directory is absent.
+ *
+ * `dirNames` is overridable so the retirement mechanism can be exercised
+ * independently of the (currently empty) production set.
+ *
+ * @returns The directory names that were removed
+ */
+export async function pruneRetiredRetentionSkillDirs(
+  skillsDir: string,
+  preserve: readonly string[] = [],
+  dirNames: readonly string[] = RETIRED_RETENTION_SKILL_DIRS
+): Promise<string[]> {
+  const preserved = new Set(preserve);
+  const removed: string[] = [];
+
+  for (const dirName of dirNames) {
+    if (preserved.has(dirName)) continue;
+    const dirPath = path.join(skillsDir, dirName);
+    try {
+      const stat = await fs.stat(dirPath);
+      if (!stat.isDirectory()) continue;
+    } catch {
+      continue; // does not exist — nothing to prune
+    }
+    try {
+      await fs.rm(dirPath, { recursive: true, force: true });
+      removed.push(dirName);
     } catch {
       // Best-effort cleanup; ignore per-directory failures.
     }

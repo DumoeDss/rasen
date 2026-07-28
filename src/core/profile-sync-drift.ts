@@ -1,241 +1,210 @@
 import path from 'path';
 import * as fs from 'fs';
 import { AI_TOOLS } from './config.js';
-import type { Delivery } from './global-config.js';
-import { ALL_WORKFLOWS } from './profiles.js';
+import { getConfiguredTools, resolveToolSkillsRoot } from './shared/index.js';
 import {
-  CommandAdapterRegistry,
-  getCommandFileId,
-  getLegacyCommandFilePath,
-  getCommandFilePathCandidates,
-} from './command-generation/index.js';
-import { COMMAND_IDS, getConfiguredTools, resolveToolSkillsRoot } from './shared/index.js';
+  getBuiltInWorkflowDefinitions,
+  RETENTION_RUNNER_WORKFLOW_ID,
+} from './workflow-registry/index.js';
+import {
+  filterKnownWorkflowRoots,
+  loadWorkflowCatalog,
+  resolveEffectiveWorkflowInstallSelection,
+} from './workflow-registry/index.js';
+import {
+  hasWorkflowArtifactLedgerDrift,
+  readWorkflowArtifactLedger,
+} from './workflow-artifact-ledger.js';
+import { readProjectConfig } from './project-config.js';
+import { resolveLockedProfileBase } from './profiles.js';
+import { RETRO_COMPAT_WRAPPER_DIR_NAME } from './templates/skill-templates.js';
 
-type WorkflowId = (typeof ALL_WORKFLOWS)[number];
+type WorkflowId = string;
+
+const RETENTION_RUNNER_REQUIRED_FILES = ['SKILL.md', 'report.md', 'codify.md'] as const;
+
+/**
+ * Options shared by the drift entry points. `expertSelectionExplicit` is the
+ * same gate `update.ts` computes (global marker AND this project's own
+ * acknowledgment); it only matters when the project carries a resolvable
+ * built-in `profile` lock, whose expert set depends on the marker. Defaults
+ * to `false` — the safe legacy (all-experts) branch, matching how a project
+ * that has not acknowledged the expert-selection flip resolves.
+ */
+export interface ProfileDriftOptions {
+  expertSelectionExplicit?: boolean;
+}
 
 /**
  * Maps workflow IDs to their skill directory names.
  */
-export const WORKFLOW_TO_SKILL_DIR: Record<WorkflowId, string> = {
-  'explore': 'rasen-explore',
-  'new': 'rasen-new-change',
-  'continue': 'rasen-continue-change',
-  'apply': 'rasen-apply-change',
-  'ff': 'rasen-ff-change',
-  'sync': 'rasen-sync-specs',
-  'archive': 'rasen-archive-change',
-  'bulk-archive': 'rasen-bulk-archive-change',
-  'verify': 'rasen-verify-change',
-  'onboard': 'rasen-onboard',
-  'help': 'rasen-help',
-  'propose': 'rasen-propose',
-  // Rasen fusion workflow commands
-  'office-hours-command': 'rasen-office-hours-command',
-  'verify-enhanced-command': 'rasen-verify-enhanced',
-  'ship-command': 'rasen-ship',
-  'retro-command': 'rasen-retro',
-  'auto-command': 'rasen-auto',
-  // Iterative review loop (opt-in)
-  'review-cycle': 'rasen-review-cycle',
-  // Context handoff (opt-in)
-  'handoff': 'rasen-handoff',
-  // Goal-loop workflow family (opt-in)
-  'goal-plan': 'rasen-goal-plan',
-  'goal-iterate': 'rasen-goal-iterate',
-  'goal-report': 'rasen-goal-report',
-  'goal-command': 'rasen-goal',
-};
+export const WORKFLOW_TO_SKILL_DIR = Object.fromEntries(
+  getBuiltInWorkflowDefinitions().map((definition) => [definition.id, definition.skill.dirName])
+) as Record<WorkflowId, string>;
 
-function toKnownWorkflows(workflows: readonly string[]): WorkflowId[] {
-  return workflows.filter(
-    (workflow): workflow is WorkflowId =>
-      (ALL_WORKFLOWS as readonly string[]).includes(workflow)
+/**
+ * Resolves a desired workflow selection (raw or already closure-resolved)
+ * to its full dependency closure — the selection plus every expert a
+ * selected workflow's skill-dependency closure requires. A stored profile
+ * is intentionally not closure-expanded (`profiles` spec), while installed
+ * experts ARE closure-governed, so drift detection must reconcile the two
+ * by closing over the selection itself, using the same primitive the
+ * install/removal seam uses (`resolveDesiredWorkflowSelection` in
+ * `profiles.ts`). Idempotent for callers that already pass a
+ * closure-resolved set.
+ */
+function resolveClosureDesiredWorkflows(
+  workflows: readonly string[],
+  projectPath?: string,
+  options: ProfileDriftOptions = {}
+): WorkflowId[] {
+  // A project carrying its own `workflows` override (space-workflow-enablement)
+  // always wins the closure basis, regardless of what the caller passed in —
+  // this is what keeps drift detection from ever disagreeing with `update`'s
+  // per-project resolution (design.md D3) when a caller still passes the
+  // global/stored selection (e.g. the profile editor's un-expanded state).
+  // A resolvable `profile` lock is the next layer (init-profile-lock spec);
+  // an unresolvable lock falls through to the caller's selection, exactly
+  // like resolveProjectWorkflowSelection falls back to the user-wide profile.
+  const projectConfig = projectPath ? readProjectConfig(projectPath) : null;
+  const override = projectConfig?.workflows;
+  let base: readonly string[] | undefined = override;
+  const lockedProfile = projectConfig?.profile;
+  if (base === undefined && lockedProfile !== undefined) {
+    const lockBase = resolveLockedProfileBase(
+      lockedProfile,
+      options.expertSelectionExplicit === true
+    );
+    if (lockBase.ok) base = lockBase.workflows;
+  }
+  base ??= workflows;
+  const catalog = loadWorkflowCatalog();
+  const { known } = filterKnownWorkflowRoots(catalog, base);
+  return resolveEffectiveWorkflowInstallSelection(catalog, known).map(
+    (definition) => definition.id
   );
 }
 
 /**
- * Checks whether a tool has at least one generated Rasen command file.
- */
-export function toolHasAnyConfiguredCommand(projectPath: string, toolId: string): boolean {
-  const adapter = CommandAdapterRegistry.get(toolId);
-  if (!adapter) return false;
-
-  for (const commandId of COMMAND_IDS) {
-    for (const cmdPath of getCommandFilePathCandidates(adapter, commandId)) {
-      const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
-      if (fs.existsSync(fullPath)) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-/**
- * Returns tools with at least one generated command file on disk.
- */
-export function getCommandConfiguredTools(projectPath: string): string[] {
-  return AI_TOOLS
-    .filter((tool) => {
-      if (!tool.skillsDir) return false;
-      const toolDir = path.join(projectPath, tool.skillsDir);
-      try {
-        return fs.statSync(toolDir).isDirectory();
-      } catch {
-        return false;
-      }
-    })
-    .map((tool) => tool.value)
-    .filter((toolId) => toolHasAnyConfiguredCommand(projectPath, toolId));
-}
-
-/**
- * Returns tools that are configured via either skills or commands.
+ * Returns tools that are configured via skills (the only delivery surface
+ * now that the command surface is retired).
  */
 export function getConfiguredToolsForProfileSync(projectPath: string): string[] {
   const skillConfigured = getConfiguredTools(projectPath);
-  const commandConfigured = getCommandConfiguredTools(projectPath);
-  return [...new Set([...skillConfigured, ...commandConfigured])];
+  const exactSkillDirNames = [
+    ...loadWorkflowCatalog().definitions.map((definition) => definition.skill.dirName),
+    RETRO_COMPAT_WRAPPER_DIR_NAME,
+  ];
+  const catalogConfigured = AI_TOOLS
+    .filter((tool) => tool.skillsDir)
+    .filter((tool) => {
+      const skillsRoot = resolveToolSkillsRoot(tool, projectPath);
+      return exactSkillDirNames.some((dirName) =>
+        fs.existsSync(path.join(skillsRoot, dirName, 'SKILL.md'))
+      );
+    })
+    .map((tool) => tool.value);
+  let ledgerConfigured: string[] = [];
+  try {
+    ledgerConfigured = Object.keys(readWorkflowArtifactLedger(projectPath)?.tools ?? {});
+  } catch {
+    // An invalid ledger is reported as drift by the generation layer.
+  }
+  return [...new Set([...skillConfigured, ...catalogConfigured, ...ledgerConfigured])];
 }
 
 /**
- * Detects if a single tool has profile/delivery drift against the desired state.
+ * Detects if a single tool has profile drift against the desired state:
+ * required skills missing for selected workflows, or skill artifacts for
+ * workflows (or, since the expert install-semantics flip, experts) that
+ * were deselected from the current profile.
  *
- * This function covers:
- * - required artifacts missing for selected workflows
- * - artifacts that should not exist for the selected delivery mode
- * - artifacts for workflows that were deselected from the current profile
+ * `desiredWorkflows` is treated as a selection to be closed over
+ * internally: callers may pass either the raw stored selection (e.g. a
+ * profile's `state.workflows`) or an already closure-resolved set (e.g.
+ * `resolveDesiredWorkflowSelection`'s output, as `update.ts` passes) and
+ * get the same result — this function resolves the dependency closure
+ * itself via the same primitive the install path (`getSkillTemplates`) and
+ * the removal seam (`removeUnselectedSkillDirs`) use, so drift, install,
+ * and removal never disagree about experts.
  */
-export function hasToolProfileOrDeliveryDrift(
+export function hasToolProfileDrift(
   projectPath: string,
   toolId: string,
   desiredWorkflows: readonly string[],
-  delivery: Delivery
+  options: ProfileDriftOptions = {}
 ): boolean {
   const tool = AI_TOOLS.find((t) => t.value === toolId);
   if (!tool?.skillsDir) return false;
 
-  const knownDesiredWorkflows = toKnownWorkflows(desiredWorkflows);
+  const knownDesiredWorkflows = resolveClosureDesiredWorkflows(desiredWorkflows, projectPath, options);
   const desiredWorkflowSet = new Set<WorkflowId>(knownDesiredWorkflows);
+  const definitions = loadWorkflowCatalog().definitions;
+  const definitionById = new Map(definitions.map((definition) => [definition.id, definition]));
   const skillsDir = resolveToolSkillsRoot(tool, projectPath);
-  const adapter = CommandAdapterRegistry.get(toolId);
-  // Skills are always installed; only commands are gated on delivery.
-  const shouldGenerateCommands = delivery === 'both';
 
-  // Skills are forward-required for every selected workflow regardless of delivery.
+  // Skills are forward-required for every selected workflow. The retention
+  // runner's sidecars are part of its executable contract, so a partial
+  // runner must trigger ordinary regeneration just like a missing SKILL.md.
   for (const workflow of knownDesiredWorkflows) {
-    const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
-    const skillFile = path.join(skillsDir, dirName, 'SKILL.md');
-    if (!fs.existsSync(skillFile)) {
+    const dirName = definitionById.get(workflow)!.skill.dirName;
+    const requiredFiles = workflow === RETENTION_RUNNER_WORKFLOW_ID
+      ? RETENTION_RUNNER_REQUIRED_FILES
+      : ['SKILL.md'];
+    if (requiredFiles.some((fileName) => !fs.existsSync(path.join(skillsDir, dirName, fileName)))) {
       return true;
     }
   }
 
+  // The temporary retro wrapper is generated for every configured tool and
+  // must remain resolvable even though it is deliberately outside the catalog.
+  if (!fs.existsSync(path.join(skillsDir, RETRO_COMPAT_WRAPPER_DIR_NAME, 'SKILL.md'))) {
+    return true;
+  }
+
   // Deselecting workflows in a profile should trigger sync.
-  for (const workflow of ALL_WORKFLOWS) {
-    if (desiredWorkflowSet.has(workflow)) continue;
-    const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
+  for (const definition of definitions.filter((item) => item.source === 'built-in')) {
+    if (desiredWorkflowSet.has(definition.id)) continue;
+    const dirName = definition.skill.dirName;
     const skillDir = path.join(skillsDir, dirName);
     if (fs.existsSync(skillDir)) {
       return true;
     }
   }
 
-  if (shouldGenerateCommands && adapter) {
-    // Only workflows with a command template (e.g. goal-command) generate a
-    // command file. Skill-only workflows (e.g. goal-plan/iterate/report, the
-    // goal-loop's internal stage skills) have no command counterpart, so
-    // requiring one here would report drift forever.
-    for (const workflow of knownDesiredWorkflows) {
-      if (!(COMMAND_IDS as readonly string[]).includes(workflow)) continue;
-      const cmdPath = adapter.getFilePath(getCommandFileId(workflow));
-      const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
-      if (!fs.existsSync(fullPath)) {
-        return true;
-      }
-    }
-
-    for (const workflow of ALL_WORKFLOWS) {
-      // Deselecting workflows in a profile should trigger sync.
-      if (!desiredWorkflowSet.has(workflow)) {
-        const cmdPath = adapter.getFilePath(getCommandFileId(workflow));
-        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
-        if (fs.existsSync(fullPath)) {
-          return true;
-        }
-      }
-      // Lingering legacy '-command'-suffixed files should trigger sync.
-      const legacyPath = getLegacyCommandFilePath(adapter, workflow);
-      if (legacyPath) {
-        const fullPath = path.isAbsolute(legacyPath) ? legacyPath : path.join(projectPath, legacyPath);
-        if (fs.existsSync(fullPath)) {
-          return true;
-        }
-      }
-    }
-  } else if (!shouldGenerateCommands && adapter) {
-    for (const workflow of ALL_WORKFLOWS) {
-      for (const cmdPath of getCommandFilePathCandidates(adapter, workflow)) {
-        const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
-        if (fs.existsSync(fullPath)) {
-          return true;
-        }
-      }
-    }
-  }
-
   return false;
 }
 
 /**
- * Returns configured tools that currently need a profile/delivery sync.
+ * Returns configured tools that currently need a profile sync.
  */
 export function getToolsNeedingProfileSync(
   projectPath: string,
   desiredWorkflows: readonly string[],
-  delivery: Delivery,
-  configuredTools?: readonly string[]
+  configuredTools?: readonly string[],
+  options: ProfileDriftOptions = {}
 ): string[] {
   const tools = configuredTools ? [...new Set(configuredTools)] : getConfiguredToolsForProfileSync(projectPath);
   return tools.filter((toolId) =>
-    hasToolProfileOrDeliveryDrift(projectPath, toolId, desiredWorkflows, delivery)
+    hasToolProfileDrift(projectPath, toolId, desiredWorkflows, options) ||
+    hasWorkflowArtifactLedgerDrift(projectPath, [toolId], desiredWorkflows)
   );
 }
 
-function getInstalledWorkflowsForTool(
-  projectPath: string,
-  toolId: string,
-  options: { includeSkills: boolean; includeCommands: boolean }
-): WorkflowId[] {
+function getInstalledWorkflowsForTool(projectPath: string, toolId: string): WorkflowId[] {
   const tool = AI_TOOLS.find((t) => t.value === toolId);
   if (!tool?.skillsDir) return [];
 
   const installed = new Set<WorkflowId>();
   const skillsDir = resolveToolSkillsRoot(tool, projectPath);
+  const definitions = loadWorkflowCatalog().definitions;
 
-  if (options.includeSkills) {
-    for (const workflow of ALL_WORKFLOWS) {
-      const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
-      const skillFile = path.join(skillsDir, dirName, 'SKILL.md');
-      if (fs.existsSync(skillFile)) {
-        installed.add(workflow);
-      }
-    }
-  }
-
-  if (options.includeCommands) {
-    const adapter = CommandAdapterRegistry.get(toolId);
-    if (adapter) {
-      for (const workflow of ALL_WORKFLOWS) {
-        for (const cmdPath of getCommandFilePathCandidates(adapter, workflow)) {
-          const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
-          if (fs.existsSync(fullPath)) {
-            installed.add(workflow);
-            break;
-          }
-        }
-      }
+  for (const definition of definitions.filter((item) => item.source === 'built-in')) {
+    const workflow = definition.id;
+    const dirName = definition.skill.dirName;
+    const skillFile = path.join(skillsDir, dirName, 'SKILL.md');
+    if (fs.existsSync(skillFile)) {
+      installed.add(workflow);
     }
   }
 
@@ -243,24 +212,25 @@ function getInstalledWorkflowsForTool(
 }
 
 /**
- * Detects whether the current project has any profile/delivery drift.
+ * Detects whether the current project has any profile drift.
  */
 export function hasProjectConfigDrift(
   projectPath: string,
   desiredWorkflows: readonly string[],
-  delivery: Delivery
+  options: ProfileDriftOptions = {}
 ): boolean {
   const configuredTools = getConfiguredToolsForProfileSync(projectPath);
-  if (getToolsNeedingProfileSync(projectPath, desiredWorkflows, delivery, configuredTools).length > 0) {
+  if (hasWorkflowArtifactLedgerDrift(projectPath, configuredTools, desiredWorkflows)) {
+    return true;
+  }
+  if (getToolsNeedingProfileSync(projectPath, desiredWorkflows, configuredTools, options).length > 0) {
     return true;
   }
 
-  const desiredSet = new Set(toKnownWorkflows(desiredWorkflows));
-  const includeSkills = true;
-  const includeCommands = delivery === 'both';
+  const desiredSet = new Set(resolveClosureDesiredWorkflows(desiredWorkflows, projectPath, options));
 
   for (const toolId of configuredTools) {
-    const installed = getInstalledWorkflowsForTool(projectPath, toolId, { includeSkills, includeCommands });
+    const installed = getInstalledWorkflowsForTool(projectPath, toolId);
     if (installed.some((workflow) => !desiredSet.has(workflow))) {
       return true;
     }

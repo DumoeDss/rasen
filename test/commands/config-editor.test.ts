@@ -74,6 +74,7 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
     delete process.env.RASEN_TELEMETRY;
     delete process.env.DO_NOT_TRACK;
     delete process.env.CI;
+    process.env.RASEN_LANG = 'en';
     process.chdir(tempDir); // outside any Rasen project by default
     (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = true;
     process.exitCode = undefined;
@@ -122,7 +123,49 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
     expect(process.exitCode).not.toBe(130);
   });
 
-  it('the workflows row is a disabled pointer to `rasen config profile`', async () => {
+  it('localizes config groups and descriptions in Japanese', async () => {
+    const { select } = await getPromptMocks();
+    process.env.RASEN_LANG = 'ja';
+    select.mockResolvedValueOnce('__exit__');
+
+    await runConfigCommand([]);
+
+    const choices = await choicesFromCall(0);
+    const languageRow = choices.find((choice) => choice.value === 'language')!;
+    expect(languageRow.name).toContain('表示 / language = ja');
+    expect(languageRow.name).toContain('環境変数による上書き');
+    expect(languageRow.name).toContain('環境変数の値が優先されます');
+    expect(languageRow.description).toContain('対話プロンプトとCLIヘルプの言語');
+    expect(choices.find((choice) => choice.value === '__exit__')?.name).toBe('終了');
+    expect(select.mock.calls[0][0].message).toBe('編集する項目を選択:');
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Rasen設定'));
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Rasenプロジェクト外のため')
+    );
+  });
+
+  it('localizes config groups and descriptions in Simplified Chinese while preserving canonical keys and values', async () => {
+    const { select } = await getPromptMocks();
+    process.env.RASEN_LANG = 'zh-cn';
+    select.mockResolvedValueOnce('__exit__');
+
+    await runConfigCommand([]);
+
+    const choices = await choicesFromCall(0);
+    const languageRow = choices.find((choice) => choice.value === 'language')!;
+    expect(languageRow.name).toContain('外观 / language = zh-cn');
+    expect(languageRow.name).toContain('环境变量覆盖');
+    expect(languageRow.name).toContain('环境变量优先');
+    expect(languageRow.description).toContain('交互提示和 CLI 帮助所用的语言');
+    expect(choices.find((choice) => choice.value === '__exit__')?.name).toBe('退出');
+    expect(select.mock.calls[0][0].message).toBe('选择要编辑的键：');
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Rasen 配置'));
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('不在 Rasen 项目中')
+    );
+  });
+
+  it('the workflows row is a disabled pointer to `rasen profile`', async () => {
     const { select } = await getPromptMocks();
     select.mockResolvedValueOnce('__exit__');
 
@@ -131,23 +174,51 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
     const choices = await choicesFromCall(0);
     const workflowsRow = choices.find((c) => c.value === '__workflows__')!;
     expect(workflowsRow.disabled).toBeTruthy();
-    expect(String(workflowsRow.disabled)).toContain('rasen config profile');
+    expect(String(workflowsRow.disabled)).toContain('rasen profile');
   });
 
-  it('project-only keys are disabled outside a Rasen project', async () => {
+  it('the ui.pinnedSpaces row is a disabled pointer to the Spaces page', async () => {
     const { select } = await getPromptMocks();
     select.mockResolvedValueOnce('__exit__');
 
     await runConfigCommand([]);
 
     const choices = await choicesFromCall(0);
-    const gatesRow = choices.find((c) => c.value === 'autopilot.gates')!;
-    expect(gatesRow.disabled).toBeTruthy();
-    expect(String(gatesRow.disabled)).toContain('requires a Rasen project');
+    const pinnedRow = choices.find((c) => c.value === '__pinnedSpaces__')!;
+    expect(pinnedRow).toBeTruthy();
+    expect(pinnedRow.disabled).toBeTruthy();
+    expect(String(pinnedRow.disabled)).toContain('Spaces page');
+  });
+
+  it('project-only keys are disabled outside a Rasen project', async () => {
+    // config-page-coherence D3 promoted autopilot.gates to BOTH scopes, so it
+    // is never row-disabled anymore (it always has a settable global
+    // fallback) — archive.timing stays genuinely project-only and exercises
+    // the same `isProjectOnly` branch (config.ts:329-332) this test targets.
+    const { select } = await getPromptMocks();
+    select.mockResolvedValueOnce('__exit__');
+
+    await runConfigCommand([]);
+
+    const choices = await choicesFromCall(0);
+    const archiveRow = choices.find((c) => c.value === 'archive.timing')!;
+    expect(archiveRow.disabled).toBeTruthy();
+    expect(String(archiveRow.disabled)).toContain('requires a Rasen project');
   });
 
   it('project-only keys are editable inside a Rasen project (not disabled)', async () => {
     makeProject();
+    const { select } = await getPromptMocks();
+    select.mockResolvedValueOnce('__exit__');
+
+    await runConfigCommand([]);
+
+    const choices = await choicesFromCall(0);
+    const archiveRow = choices.find((c) => c.value === 'archive.timing')!;
+    expect(archiveRow.disabled).toBeFalsy();
+  });
+
+  it('the promoted autopilot.gates key is never row-disabled (settable at global scope even outside a project)', async () => {
     const { select } = await getPromptMocks();
     select.mockResolvedValueOnce('__exit__');
 
@@ -171,23 +242,28 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
     expect(telemetryRow.name).toContain('environment variable takes precedence');
   });
 
-  it('editing a single-scope project enum key (autopilot.gates) writes it and refreshes the view', async () => {
+  it('editing a both-scope project/global enum key (autopilot.gates) prompts for scope, writes it, and refreshes the view', async () => {
+    // config-page-coherence D3 promoted autopilot.gates to BOTH scopes, so
+    // inside a project the editor now inserts a scope prompt between the key
+    // pick and the enum-value prompt (editConfigEntry, config.ts:347) — one
+    // more select() call than the pre-change single-scope shape.
     const projectRoot = makeProject();
     const { select } = await getPromptMocks();
     select
       .mockResolvedValueOnce('autopilot.gates') // pick the key
-      .mockResolvedValueOnce('off') // enum value prompt (no scope prompt: single-scope key)
+      .mockResolvedValueOnce('project') // scope prompt (both-scope key, inside a project)
+      .mockResolvedValueOnce('off') // enum value prompt
       .mockResolvedValueOnce('__exit__'); // refreshed view, exit
 
     await runConfigCommand([]);
 
-    expect(select).toHaveBeenCalledTimes(3);
+    expect(select).toHaveBeenCalledTimes(4);
     expect(consoleLogSpy).toHaveBeenCalledWith('Set autopilot.gates = "off"');
     const raw = fs.readFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'utf-8');
     expect(raw).toMatch(/gates: off/);
 
     // The enum choices offered were exactly the registry's enumValues.
-    const enumChoices = (select.mock.calls[1][0] as { choices: { value: string }[] }).choices;
+    const enumChoices = (select.mock.calls[2][0] as { choices: { value: string }[] }).choices;
     expect(enumChoices.map((c) => c.value).sort()).toEqual(['off', 'on']);
   });
 

@@ -42,4 +42,31 @@ _rasen_complete_schemas() {
     schemas+=("$id:$desc")
   done < <(rasen __complete schemas 2>/dev/null)
   _describe "schema" schemas
+}
+
+# Use rasen __complete to get available profiles
+_rasen_complete_profiles() {
+  local -a profiles
+  while IFS=$'\\t' read -r id desc; do
+    profiles+=("$id:$desc")
+  done < <(rasen __complete profiles 2>/dev/null)
+  _describe "profile" profiles
+}
+
+# Use rasen __complete to get deletable saved profiles
+_rasen_complete_saved_profiles() {
+  local -a profiles
+  while IFS=$'\\t' read -r id desc; do
+    profiles+=("$id:$desc")
+  done < <(rasen __complete saved-profiles 2>/dev/null)
+  _describe "saved profile" profiles
+}
+
+# Use rasen __complete to get installable workflows
+_rasen_complete_workflows() {
+  local -a workflows
+  while IFS=$'\\t' read -r id desc; do
+    workflows+=("$id:$desc")
+  done < <(rasen __complete workflows 2>/dev/null)
+  _describe "installable workflow" workflows
 }`;

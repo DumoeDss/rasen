@@ -27,7 +27,7 @@ Before reviewing code quality, check: **did they build what was requested — no
 
 1. Read \`TODOS.md\` (if it exists). Read PR description (\`gh pr view --json body --jq .body 2>/dev/null || true\`).
    Read commit messages (\`git log origin/<base>..HEAD --oneline\`).
-   **If no PR exists:** rely on commit messages and TODOS.md for stated intent — this is the common case since /review runs before /rasen:ship creates the PR.
+   **If no PR exists:** rely on commit messages and TODOS.md for stated intent — this is the common case since /review runs before /rasen-ship creates the PR.
 2. Identify the **stated intent** — what was this branch supposed to accomplish?
 3. Run \`git diff origin/<base> --stat\` and compare the files changed against the stated intent.
 4. Evaluate with skepticism:
@@ -258,7 +258,7 @@ ${ADVERSARIAL_STEP}
 ## Important Rules
 
 - **Read the FULL diff before commenting.** Do not flag issues already addressed in the diff.
-- **Fix-first, not read-only (standalone mode).** AUTO-FIX items are applied directly; ASK items are only applied after user approval. In dispatched mode this is suppressed — report findings only (see Step 5). Never commit, push, or create PRs — that's /rasen:ship's job.
+- **Fix-first, not read-only (standalone mode).** AUTO-FIX items are applied directly; ASK items are only applied after user approval. In dispatched mode this is suppressed — report findings only (see Step 5). Never commit, push, or create PRs — that's /rasen-ship's job.
 - **Be terse.** One line problem, one line fix. No preamble.
 - **Only flag real problems.** Skip anything that's fine.
 - **Use Greptile reply templates from greptile-triage.md.** Every reply includes evidence. Never post vague replies.
@@ -266,7 +266,7 @@ ${ADVERSARIAL_STEP}
 
 export function getReviewSkillTemplate(): SkillTemplate {
   return {
-    name: 'rasen:review',
+    name: 'rasen-review',
     description: 'Pre-landing PR review — reviews the branch diff with full codebase context, severity-tagged findings, and a fix loop',
     instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },

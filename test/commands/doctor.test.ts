@@ -7,11 +7,12 @@ import { randomUUID } from 'node:crypto';
 
 import { getGlobalDataDir, registerStore } from '../../src/core/index.js';
 import { getProjectHomeDir, registerProject } from '../../src/core/project-registry.js';
-import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
+import { resolveProjectHome } from '../../src/core/project-home.js';
+import { runCLI, cliProjectRoot, type RunCLIResult } from '../helpers/run-cli.js';
 import { createOpenSpecRoot, writeSpec } from '../helpers/rasen-fixtures.js';
 import { isolatedGitEnv } from '../helpers/store-git.js';
 import { snapshotDirectory as snapshot } from '../helpers/fs-snapshot.js';
-import { cleanupTempPath } from '../helpers/temp-cleanup.js';
+import { cleanupTempPath, cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
 describe('rasen doctor (3.6)', () => {
   let tempDir: string;
@@ -34,8 +35,8 @@ describe('rasen doctor (3.6)', () => {
     await registerStore({ id: 'team-context', localPath: storeRoot, globalDataDir });
   });
 
-  afterEach(() => {
-    cleanupTempPath(tempDir);
+  afterEach(async () => {
+    await cleanupTempPathAsync(tempDir);
   });
 
   function parseJson(result: RunCLIResult): any {
@@ -73,9 +74,11 @@ describe('rasen doctor (3.6)', () => {
       healthy: true,
       status: [],
     });
+    // The fixture store predates permanent identities; doctor says so rather
+    // than pretending it has one, and reading it never adds one.
     expect(health.store).toEqual({
       id: 'team-context',
-      metadata: { present: true, valid: true },
+      metadata: { present: true, valid: true, legacy: true },
       status: [],
     });
     expect(health.references).toEqual([
@@ -164,16 +167,32 @@ describe('rasen doctor (3.6)', () => {
     expect(emptyHealth.references[0].status[0].code).toBe('reference_unresolved');
   });
 
-  it('surfaces both-shapes and inert-pointer wrong turns', async () => {
-    // Both shapes: a real root whose config declares a pointer.
+  it('surfaces the declared-store and inert-pointer wrong turns', async () => {
+    // A registered store root declaring ITSELF: no transitivity, so there is
+    // nothing to report — and nothing to warn is "ignored" either.
     fs.writeFileSync(
       path.join(storeRoot, 'rasen', 'config.yaml'),
       'schema: spec-driven\nstore: team-context\n'
     );
-    const bothShapes = await runCLI(['doctor', '--json'], { cwd: storeRoot, env });
-    expect(parseJson(bothShapes).status[0]).toEqual(
-      expect.objectContaining({ code: 'root_pointer_ignored' })
+    const selfDeclared = await runCLI(['doctor', '--json'], { cwd: storeRoot, env });
+    expect(parseJson(selfDeclared).status).toEqual([]);
+
+    // A planning root declaring a store that is not registered here: doctor
+    // keeps working (design D4's carve-out) and reports the reason + repair.
+    const memberRepo = mkdir('member-repo');
+    createOpenSpecRoot(memberRepo);
+    fs.writeFileSync(
+      path.join(memberRepo, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nstore: nowhere\n'
     );
+    const unavailable = await runCLI(['doctor', '--json'], { cwd: memberRepo, env });
+    // Keeps running, and still exits non-zero: a wrapper gating on doctor's
+    // status must not read "healthy" while the declared store is unusable.
+    expect(unavailable.exitCode).toBe(1);
+    const unavailableHealth = parseJson(unavailable);
+    expect(unavailableHealth.store.unavailable.reason).toBe('not-registered');
+    expect(unavailableHealth.store.status[0].code).toBe('store_bootstrap_required');
+
     fs.writeFileSync(path.join(storeRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
 
     // Inert pointer declarations, including from a subdirectory.
@@ -258,7 +277,9 @@ describe('rasen doctor (3.6)', () => {
       'schema: spec-driven\nstore: [broken]\n'
     );
     const result = await runCLI(['doctor', '--json'], { cwd: storeRoot, env });
-    expect(result.exitCode).toBe(0);
+    // An unreadable declaration is one of the six unavailable reasons, so
+    // doctor reports the full diagnosis AND exits non-zero.
+    expect(result.exitCode).toBe(1);
     expect(JSON.parse(result.stdout).status[0]).toEqual(
       expect.objectContaining({ code: 'root_pointer_invalid' })
     );
@@ -345,6 +366,52 @@ describe('rasen doctor (3.6)', () => {
       expect(afterGc.gc.removed_entries).toEqual([{ path: canonicalPath, home: entry.home }]);
       expect(afterGc.gc.removed_homes).toEqual([entry.home]);
       expect(fs.existsSync(getProjectHomeDir(entry.home, { globalDataDir }))).toBe(false);
+    });
+
+    it('reports worktree-duplicate entries with a --gc hint, and --gc collapses them keeping the shared home (worktree-aware-spaces D5)', async () => {
+      const repoRoot = path.join(tempDir, 'wt-dup-repo');
+      fs.mkdirSync(repoRoot, { recursive: true });
+      const gitEnv = { ...process.env, ...isolatedGitEnv(tempDir) };
+      execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoRoot, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitEnv, stdio: 'ignore' });
+
+      const worktreePath = path.join(tempDir, 'wt-dup-linked');
+      execFileSync('git', ['worktree', 'add', worktreePath], { cwd: repoRoot, env: gitEnv, stdio: 'ignore' });
+
+      const projectId = randomUUID();
+      const main = await registerProject({ projectRoot: repoRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+      const canonicalWt = fs.realpathSync.native(worktreePath);
+
+      // Seed a legacy worktree-keyed duplicate sharing the main entry's home.
+      const registryPath = path.join(globalDataDir, 'projects', 'registry.json');
+      const registry = JSON.parse(fs.readFileSync(registryPath, 'utf-8'));
+      registry.projects[canonicalWt] = { ...main.entry, name: 'wt-dup-linked', lastSeen: '2026-07-09T12:00:00.000Z' };
+      fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2) + '\n');
+
+      const human = await runCLI(['doctor', '--store', 'team-context'], { cwd: tempDir, env });
+      expect(human.stdout).toContain('Worktree-duplicate entries: 1');
+      expect(human.stdout).toContain(canonicalWt);
+      expect(human.stdout).toContain('rasen doctor --gc');
+
+      const jsonBefore = parseJson(
+        await runCLI(['doctor', '--json', '--store', 'team-context'], { cwd: tempDir, env })
+      );
+      expect(jsonBefore.machineHome.worktreeDuplicates).toEqual([
+        { path: canonicalWt, home: main.entry.home, mainRoot: main.canonicalPath },
+      ]);
+
+      const afterGc = parseJson(
+        await runCLI(['doctor', '--json', '--gc', '--store', 'team-context'], { cwd: tempDir, env })
+      );
+      expect(afterGc.machineHome.worktreeDuplicates).toEqual([]);
+      expect(afterGc.gc.removed_entries).toEqual([{ path: canonicalWt, home: main.entry.home }]);
+      // The shared home is referenced by the surviving main entry — kept.
+      expect(afterGc.gc.removed_homes).toEqual([]);
+      expect(fs.existsSync(getProjectHomeDir(main.entry.home, { globalDataDir }))).toBe(true);
+
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot, env: gitEnv, stdio: 'ignore' });
     });
 
     it('hints at migratable legacy ephemera for a registered project (migrate-legacy-ephemera 3.1)', async () => {
@@ -579,6 +646,186 @@ describe('rasen doctor (3.6)', () => {
       expect(
         fs.readFileSync(path.join(newRoot(), 'projects', 'already-there', 'marker.txt'), 'utf-8')
       ).toBe('current\n');
+    });
+  });
+
+  describe('skill-version mismatch finding (delivery-reliability-version-guard)', () => {
+    let projectRoot: string;
+
+    beforeEach(() => {
+      projectRoot = mkdir('mismatch-project');
+      createOpenSpecRoot(projectRoot);
+    });
+
+    function writeStaleSkill(version: string): void {
+      const skillDir = path.join(projectRoot, '.claude', 'skills', 'rasen-explore');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        `---\nname: rasen-explore\nmetadata:\n  generatedBy: "${version}"\n---\n\nContent\n`
+      );
+    }
+
+    it('reports the mismatch in human output with a Fix hint', async () => {
+      writeStaleSkill('0.0.1-stale');
+
+      const result = await runCLI(['doctor'], { cwd: projectRoot, env });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('0.0.1-stale');
+      expect(result.stdout).toContain('Fix: rasen update');
+    });
+
+    it('includes the mismatch in --json output', async () => {
+      writeStaleSkill('0.0.1-stale');
+
+      const result = await runCLI(['doctor', '--json'], { cwd: projectRoot, env });
+      const health = parseJson(result);
+      expect(health.status).toContainEqual(
+        expect.objectContaining({ code: 'skill_version_mismatch', fix: 'rasen update' })
+      );
+    });
+
+    it('reports nothing when the installed skills match the running CLI', async () => {
+      const { version } = JSON.parse(
+        fs.readFileSync(path.join(cliProjectRoot, 'package.json'), 'utf-8')
+      );
+      writeStaleSkill(version);
+
+      const human = await runCLI(['doctor'], { cwd: projectRoot, env });
+      expect(human.stdout).not.toContain('skill_version_mismatch');
+      expect(human.stdout).not.toContain('rasen update');
+
+      const json = await runCLI(['doctor', '--json'], { cwd: projectRoot, env });
+      const health = parseJson(json);
+      expect(health.status.some((entry: { code: string }) => entry.code === 'skill_version_mismatch')).toBe(
+        false
+      );
+    });
+
+    it('still reports the mismatch even after the ambient warning already fired and debounced', async () => {
+      writeStaleSkill('0.0.1-stale');
+      // Mint the machine-local home first so the ambient warning (a
+      // separate mechanism from this finding) actually has debounce state
+      // to consult; otherwise it would warn on every command instead.
+      await resolveProjectHome(projectRoot, { globalDataDir });
+
+      // First doctor run: this itself is a project-scoped command, so it
+      // also trips (and debounces) the ambient warning from
+      // resolveRootForCommand — independent of the health finding below.
+      const first = await runCLI(['doctor'], { cwd: projectRoot, env });
+      expect(first.stderr).toContain('0.0.1-stale');
+
+      const second = await runCLI(['doctor', '--json'], { cwd: projectRoot, env });
+      // The ambient warning is debounced (stderr silent this time)...
+      expect(second.stderr).not.toContain('0.0.1-stale');
+      // ...but doctor's own finding, re-derived independently, still fires.
+      const health = parseJson(second);
+      expect(health.status).toContainEqual(
+        expect.objectContaining({ code: 'skill_version_mismatch' })
+      );
+    });
+  });
+
+  describe('cache/config drift advisory (project-install-manifest M6)', () => {
+    let projectRoot: string;
+
+    beforeEach(() => {
+      projectRoot = mkdir('drift-project');
+      createOpenSpecRoot(projectRoot);
+    });
+
+    it('(M6a) matching tools produces no drift advisory', async () => {
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\ntools:\n  - claude\n'
+      );
+      await registerProject(
+        {
+          projectRoot,
+          projectId: 'drift-1',
+          mode: 'in-repo',
+          tools: ['claude'],
+          installedVersion: '0.1.7',
+        },
+        { globalDataDir }
+      );
+
+      const result = await runCLI(['doctor', '--json'], { cwd: projectRoot, env });
+      const health = parseJson(result);
+      expect(health.status.some((s: any) => s.code === 'cache_config_drift')).toBe(false);
+    });
+
+    it('(M6b) mismatched tools produces advisory, neither side rewritten', async () => {
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\ntools:\n  - claude\n'
+      );
+      await registerProject(
+        {
+          projectRoot,
+          projectId: 'drift-2',
+          mode: 'in-repo',
+          tools: ['codex'],
+          installedVersion: '0.1.7',
+        },
+        { globalDataDir }
+      );
+
+      const json = await runCLI(['doctor', '--json'], { cwd: projectRoot, env });
+      const health = parseJson(json);
+      expect(health.status).toContainEqual(
+        expect.objectContaining({ code: 'cache_config_drift' })
+      );
+
+      // Neither side is rewritten — verify via human output that the advisory
+      // message mentions the disagreement and suggests re-running init/update.
+      const human = await runCLI(['doctor'], { cwd: projectRoot, env });
+      expect(human.stdout).toContain('disagrees with the registry cache');
+      expect(human.stdout).toMatch(/resync|rasen (init|update)/i);
+
+      // Config still says claude (not rewritten by doctor).
+      const configAfter = fs.readFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'utf-8'
+      );
+      expect(configAfter).toContain('claude');
+    });
+
+    it('(M6c) pinned project is still listed in the registry section', async () => {
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nupdate:\n  pin: true\n'
+      );
+      await registerProject(
+        { projectRoot, projectId: 'pin-1', mode: 'in-repo', installedVersion: '0.1.7' },
+        { globalDataDir }
+      );
+
+      const result = await runCLI(['doctor', '--json'], { cwd: projectRoot, env });
+      const health = parseJson(result);
+      // The project's machine home entry is present (not hidden by pinning).
+      expect(health.machineHome).toBeDefined();
+      expect(health.machineHome.registered).toBe(true);
+      expect(health.machineHome.entry).toBeDefined();
+      expect(health.machineHome.entry.project_id).toBe('pin-1');
+    });
+
+    it('(M6d) missing installedVersion is surfaced as "version unknown"', async () => {
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\ntools:\n  - claude\n'
+      );
+      // Register WITHOUT installedVersion — version is unknown.
+      await registerProject(
+        { projectRoot, projectId: 'unk-ver-1', mode: 'in-repo', tools: ['claude'] },
+        { globalDataDir }
+      );
+
+      const result = await runCLI(['doctor', '--json'], { cwd: projectRoot, env });
+      const health = parseJson(result);
+      expect(health.status).toContainEqual(
+        expect.objectContaining({ code: 'cache_version_unknown' })
+      );
     });
   });
 });

@@ -1,6 +1,6 @@
 # 自定义
 
-OpenSpec 提供三个层级的自定义方式：
+rasen 提供三个层级的自定义方式：
 
 | 层级 | 功能 | 适用场景 |
 |------|------|----------|
@@ -12,7 +12,7 @@ OpenSpec 提供三个层级的自定义方式：
 
 ## 项目配置
 
-`rasen/config.yaml` 文件是为你的团队自定义 OpenSpec 最简单的方式。它可以：
+`rasen/config.yaml` 文件是为你的团队自定义 rasen 最简单的方式。它可以：
 
 - **设置默认 schema** - 无需每条命令都加 `--schema`
 - **注入项目上下文** - AI 可以了解你的技术栈、规范等
@@ -82,7 +82,7 @@ Tech stack: TypeScript, React, Node.js, PostgreSQL
 
 ### Schema 解析顺序
 
-当 OpenSpec 需要确定使用哪个 schema 时，会按以下顺序检查：
+当 rasen 需要确定使用哪个 schema 时，会按以下顺序检查：
 
 1. CLI 标志：`--schema <name>`
 2. 变更元数据（变更文件夹中的 `.openspec.yaml`）
@@ -93,11 +93,11 @@ Tech stack: TypeScript, React, Node.js, PostgreSQL
 
 ## 自定义 Schema
 
-当项目配置不够用时，可以创建自己的 schema，定义完全自定义的工作流。自定义 schema 位于项目的 `openspec/schemas/` 目录中，与代码一起进行版本控制。
+当项目配置不够用时，可以创建自己的 schema，定义完全自定义的工作流。自定义 schema 位于项目的 `rasen/schemas/` 目录中，与代码一起进行版本控制。
 
 ```text
 your-project/
-├── openspec/
+├── rasen/
 │   ├── config.yaml        # 项目配置
 │   ├── schemas/           # 自定义 schema 存放位置
 │   │   └── my-workflow/
@@ -115,12 +115,12 @@ your-project/
 rasen schema fork spec-driven my-workflow
 ```
 
-这会将整个 `spec-driven` schema 复制到 `openspec/schemas/my-workflow/`，你可以自由编辑。
+这会将整个 `spec-driven` schema 复制到 `rasen/schemas/my-workflow/`，你可以自由编辑。
 
 **你将获得：**
 
 ```text
-openspec/schemas/my-workflow/
+rasen/schemas/my-workflow/
 ├── schema.yaml           # 工作流定义
 └── templates/
     ├── proposal.md       # proposal 产物的模板
@@ -151,7 +151,7 @@ rasen schema init rapid \
 Schema 定义了工作流中的产物以及它们之间的依赖关系：
 
 ```yaml
-# openspec/schemas/my-workflow/schema.yaml
+# rasen/schemas/my-workflow/schema.yaml
 name: my-workflow
 version: 1
 description: My team's custom workflow
@@ -264,12 +264,12 @@ rasen schema which --all
 ```text
 Schema: my-workflow
 Source: project
-Path: /path/to/project/openspec/schemas/my-workflow
+Path: /path/to/project/rasen/schemas/my-workflow
 ```
 
 ---
 
-> **注意：** OpenSpec 还支持用户级别的 schema，位于 `~/.local/share/openspec/schemas/`，可以跨项目共享。但推荐使用项目级别的 schema（位于 `openspec/schemas/`），因为它们可以与代码一起进行版本控制。
+> **注意：** rasen 还支持用户级别的 schema，位于 `~/.rasen/schemas/`（可以用 `RASEN_HOME` 覆盖该位置），可以跨项目共享。但推荐使用项目级别的 schema（位于 `rasen/schemas/`），因为它们可以与代码一起进行版本控制。
 
 ---
 
@@ -280,7 +280,7 @@ Path: /path/to/project/openspec/schemas/my-workflow
 一个用于快速迭代的最小化工作流：
 
 ```yaml
-# openspec/schemas/rapid/schema.yaml
+# rasen/schemas/rapid/schema.yaml
 name: rapid
 version: 1
 description: Fast iteration with minimal overhead
@@ -339,13 +339,13 @@ rasen schema fork spec-driven with-review
 
 ## 社区 Schema
 
-OpenSpec 还支持通过独立仓库分发的、由社区维护的 schema。它们提供开箱即用的工作流，把 OpenSpec 与其他工具或系统集成，其机制类似于 [github/spec-kit 的社区扩展目录](https://github.com/github/spec-kit/tree/main/extensions)之于 spec-kit。
+rasen 还支持通过独立仓库分发的、由社区维护的 schema。它们提供开箱即用的工作流，把 rasen 与其他工具或系统集成，其机制类似于 [github/spec-kit 的社区扩展目录](https://github.com/github/spec-kit/tree/main/extensions)之于 spec-kit。
 
-社区 schema 并未被内置进 OpenSpec 核心——它们住在各自的仓库里，拥有各自的发布节奏。要使用其中一个，请把该 schema 包复制到你项目的 `openspec/schemas/<schema-name>/` 目录中（每个仓库的 README 里都有安装说明）。
+社区 schema 并未被内置进 rasen 核心——它们住在各自的仓库里，拥有各自的发布节奏。要使用其中一个，请把该 schema 包复制到你项目的 `rasen/schemas/<schema-name>/` 目录中（每个仓库的 README 里都有安装说明）。
 
 | Schema | 维护者 | 仓库 | 说明 |
 |--------|-----------|-----------|-------------|
-| `superpowers-bridge` | @JiangWay | [JiangWay/openspec-schemas](https://github.com/JiangWay/openspec-schemas/tree/main/superpowers-bridge) | 将 OpenSpec 的产物治理与 [obra/superpowers](https://github.com/obra/superpowers) 的执行技能（头脑风暴、编写计划、通过子代理做 TDD、代码审查、收尾）集成在一起。新增了一个以证据为先的 `retrospective` 产物，填补了 Superpowers 原生未覆盖的空白。 |
+| `superpowers-bridge` | @JiangWay | [JiangWay/openspec-schemas](https://github.com/JiangWay/openspec-schemas/tree/main/superpowers-bridge) | 将 rasen 的产物治理与 [obra/superpowers](https://github.com/obra/superpowers) 的执行技能（头脑风暴、编写计划、通过子代理做 TDD、代码审查、收尾）集成在一起。新增了一个以证据为先的 `retrospective` 产物，填补了 Superpowers 原生未覆盖的空白。 |
 
 > 想贡献一个社区 schema？开一个带仓库链接的 issue，或提交一个 PR 在这张表里添加一行。
 

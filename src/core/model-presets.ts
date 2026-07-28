@@ -15,7 +15,8 @@
  * fraction — the absolute form is ALWAYS the `{ remainingTokens }` object, so
  * no value is ambiguous.
  */
-export type ThresholdValue = number | { remainingTokens: number };
+import type { ThresholdValue } from './threshold-values.js';
+export type { ThresholdValue } from './threshold-values.js';
 
 export interface ModelPreset {
   /** Case-insensitive substrings; a model id matches if it contains any. */

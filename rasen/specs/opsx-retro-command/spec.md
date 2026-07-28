@@ -1,7 +1,7 @@
 # opsx-retro-command Specification
 
 ## Purpose
-Provide the `/rasen:retro` command — three retro scopes that read change-scoped artifacts and emit a retrospective report.
+Provide the `/rasen-retro` command — three retro scopes that read change-scoped artifacts and emit a retrospective report.
 
 ## Requirements
 ### Requirement: Retro Skill and Command Templates
@@ -23,17 +23,17 @@ The system SHALL provide a SkillTemplate and CommandTemplate for retro in `src/c
 
 ### Requirement: Three Retro Scopes
 
-The command SHALL support 3 scopes: change-scoped, general, and global. The general and global scopes SHALL run a self-contained git-analysis contract absorbed into the `/rasen:retro` workflow template and SHALL NOT delegate to a legacy `/retro` expert skill.
+The command SHALL support 3 scopes: change-scoped, general, and global. The general and global scopes SHALL run a self-contained git-analysis contract absorbed into the `/rasen-retro` workflow template and SHALL NOT delegate to a legacy `/retro` expert skill.
 
 #### Scenario: Change-scoped retro invocation
 
-- **WHEN** agent executes `/rasen:retro <change-name>`
+- **WHEN** agent executes `/rasen-retro <change-name>`
 - **THEN** the retro SHALL run in change-scoped mode
 - **AND** SHALL read artifacts from the specified change directory
 
 #### Scenario: General retro invocation
 
-- **WHEN** agent executes `/rasen:retro` without a change name
+- **WHEN** agent executes `/rasen-retro` without a change name
 - **AND** the user selects general scope
 - **THEN** the retro SHALL gather recent commit, author, and LOC data from git and compute metrics itself
 - **AND** SHALL produce insights based on commit patterns, frequency, code areas touched, and a per-author breakdown
@@ -41,7 +41,7 @@ The command SHALL support 3 scopes: change-scoped, general, and global. The gene
 
 #### Scenario: Global retro invocation
 
-- **WHEN** agent executes `/rasen:retro global`
+- **WHEN** agent executes `/rasen-retro global`
 - **THEN** the retro SHALL run cross-project analysis using its own git-analysis contract
 - **AND** SHALL produce insights spanning multiple repositories if available
 - **AND** SHALL complete without invoking any legacy `/retro` expert skill

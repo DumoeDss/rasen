@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   parsePipeline,
   validatePipelineSkills,
+  validatePipelineDraft,
   PipelineValidationError,
 } from '../../../src/core/pipeline-registry/pipeline.js';
 import {
@@ -10,6 +11,7 @@ import {
   resolvePipelineReuseConfig,
   DEFAULT_HANDOFF_CONFIG,
   DEFAULT_REUSE_CONFIG,
+  PIPELINE_DEFINITION_VERSION,
 } from '../../../src/core/pipeline-registry/types.js';
 
 describe('pipeline-registry/pipeline', () => {
@@ -34,6 +36,7 @@ stages:
 
       expect(pipeline.name).toBe('test-pipeline');
       expect(pipeline.description).toBe('A test pipeline');
+      expect(pipeline.version).toBe(PIPELINE_DEFINITION_VERSION);
       expect(pipeline.stages).toHaveLength(2);
       expect(pipeline.stages[0].id).toBe('propose');
       expect(pipeline.stages[0].role).toBe('planner');
@@ -61,12 +64,109 @@ stages:
       expect(stage.verifyPolicy).toBeUndefined();
     });
 
-    // autopilot-gate-policy: the stage gate widens from boolean to
-    // boolean | 'vet'. This is a DIFFERENT field from the goal-loop
-    // `loop.gate` measure/evaluate union tested below — do not confuse them.
-    describe('gate: boolean | vet (autopilot-gate-policy)', () => {
-      const stageYaml = (gate: string) => `
-name: gate-test
+    describe('Pipeline definition content version', () => {
+      const stages = [
+        {
+          id: 'implement',
+          skill: 'rasen-apply-change',
+          requires: [],
+        },
+      ];
+      const skillSets = {
+        knownSkillNames: new Set(['rasen-apply-change']),
+        enabledSkillNames: new Set(['rasen-apply-change']),
+      };
+
+      it('accepts explicit v1 and normalizes legacy unversioned YAML and JSON to v1', () => {
+        const explicit = parsePipeline(`
+version: 1
+name: explicit-v1
+stages:
+  - id: implement
+    skill: rasen-apply-change
+`);
+        const legacyYaml = parsePipeline(`
+name: legacy-yaml
+stages:
+  - id: implement
+    skill: rasen-apply-change
+`);
+        const legacyJson = parsePipeline(JSON.stringify({ name: 'legacy-json', stages }));
+
+        expect(explicit.version).toBe(PIPELINE_DEFINITION_VERSION);
+        expect(legacyYaml.version).toBe(PIPELINE_DEFINITION_VERSION);
+        expect(legacyJson.version).toBe(PIPELINE_DEFINITION_VERSION);
+      });
+
+      it.each([
+        { label: 'unsupported numeric', version: 2 },
+        { label: 'malformed string', version: '1' },
+        { label: 'malformed object', version: { major: 1 } },
+        { label: 'malformed null', version: null },
+      ])('fails closed on an explicit $label version in both validation paths', ({ version }) => {
+        const definition = { version, name: 'future-pipeline', stages };
+        let throwingMessage = '';
+        try {
+          parsePipeline(JSON.stringify(definition));
+        } catch (error) {
+          expect(error).toBeInstanceOf(PipelineValidationError);
+          throwingMessage = (error as Error).message;
+        }
+
+        const issues = validatePipelineDraft(definition, skillSets);
+        const versionIssue = issues.find((issue) => issue.path === '/version');
+        expect(versionIssue).toBeDefined();
+        expect(versionIssue?.message).toContain('received');
+        expect(versionIssue?.message).toContain('supported version is 1');
+        expect(versionIssue?.message).toContain('Upgrade to a compatible Rasen version');
+        expect(throwingMessage).toContain('/version');
+        expect(throwingMessage).toContain(versionIssue!.message);
+      });
+
+      it('keeps the v1 flat DAG and review-cycle/goal loop declarations readable', () => {
+        const pipeline = parsePipeline(`
+version: 1
+name: v1-loop-inputs
+stages:
+  - id: implement
+    skill: rasen-apply-change
+  - id: review
+    skill: rasen-review-cycle
+    requires: [implement]
+    loop:
+      kind: review-cycle
+  - id: iterate
+    skill: rasen-goal-iterate
+    requires: [review]
+    loop:
+      kind: goal
+      gate: { kind: evaluate }
+`);
+
+        expect(pipeline.stages.map((stage) => stage.requires)).toEqual([
+          [],
+          ['implement'],
+          ['review'],
+        ]);
+        expect(pipeline.stages[1].loop).toEqual({ kind: 'review-cycle', maxRounds: 3 });
+        expect(pipeline.stages[2].loop).toMatchObject({
+          kind: 'goal',
+          gate: { kind: 'evaluate' },
+          maxRounds: 5,
+          loopStallLimit: 2,
+          blockedThreshold: 3,
+          runArtifact: 'goal-run.json',
+        });
+      });
+    });
+
+    // autopilot-gate-policy: the stage gate is a plain boolean. This is a
+    // DIFFERENT field from the goal-loop `loop.gate` measure/evaluate union
+    // tested below — do not confuse them. The retired `gate: 'vet'` spelling
+    // is coerced to `true` by the legacy shim (see the coercion tests).
+    describe('gate: boolean (autopilot-gate-policy)', () => {
+      const stageYaml = (gate: string, name = 'gate-test') => `
+name: ${name}
 stages:
   - id: only
     skill: rasen-propose
@@ -83,11 +183,6 @@ stages:
         expect(pipeline.stages[0].gate).toBe(false);
       });
 
-      it("parses gate: 'vet'", () => {
-        const pipeline = parsePipeline(stageYaml('vet'));
-        expect(pipeline.stages[0].gate).toBe('vet');
-      });
-
       it('defaults to false when gate is omitted', () => {
         const yaml = `
 name: gate-omitted
@@ -101,6 +196,45 @@ stages:
 
       it('rejects an invalid gate value', () => {
         expect(() => parsePipeline(stageYaml('maybe'))).toThrow();
+      });
+    });
+
+    // autopilot-gate-policy "Legacy vet gate values read as ordinary gates":
+    // the retired `gate: 'vet'` type is no longer a distinct value; a user YAML
+    // still carrying it reads as `gate: true` with a single warning per pipeline
+    // per process, never a parse error, so existing libraries keep loading.
+    describe("legacy gate: 'vet' coercion (autopilot-gate-policy)", () => {
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      const vetYaml = (name: string) => `
+name: ${name}
+stages:
+  - id: define-goal
+    skill: rasen-goal-plan
+    gate: vet
+`;
+
+      it("coerces gate: 'vet' to true instead of erroring", () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const pipeline = parsePipeline(vetYaml('legacy-coerce-basic'));
+        expect(pipeline.stages[0].gate).toBe(true);
+      });
+
+      it('warns exactly once per pipeline per process even when loaded twice', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const yaml = vetYaml('legacy-coerce-once');
+        parsePipeline(yaml);
+        parsePipeline(yaml);
+        const vetWarnings = warn.mock.calls.filter(([msg]) =>
+          typeof msg === 'string' && msg.includes("gate: 'vet'")
+        );
+        expect(vetWarnings).toHaveLength(1);
+        // The warning names the pipeline, the stage, and the per-stage key.
+        expect(vetWarnings[0][0]).toContain('legacy-coerce-once');
+        expect(vetWarnings[0][0]).toContain('define-goal');
+        expect(vetWarnings[0][0]).toContain('pipelines.legacy-coerce-once.gates.define-goal');
       });
     });
 
@@ -174,6 +308,38 @@ stages:
         expect(loop.maxRounds).toBe(5);
         expect(loop.loopStallLimit).toBe(2);
         expect(loop.runArtifact).toBe('goal-run.json');
+      }
+    });
+
+    it('should default blockedThreshold to 3 when omitted and accept an explicit value', () => {
+      const defaulted = parsePipeline(`
+name: goal-blocked-default
+stages:
+  - id: iterate
+    skill: rasen-goal-iterate
+    loop:
+      kind: goal
+      gate: { kind: evaluate }
+`);
+      const defLoop = defaulted.stages[0].loop;
+      expect(defLoop?.kind).toBe('goal');
+      if (defLoop?.kind === 'goal') {
+        expect(defLoop.blockedThreshold).toBe(3);
+      }
+
+      const explicit = parsePipeline(`
+name: goal-blocked-explicit
+stages:
+  - id: iterate
+    skill: rasen-goal-iterate
+    loop:
+      kind: goal
+      gate: { kind: evaluate }
+      blockedThreshold: 5
+`);
+      const expLoop = explicit.stages[0].loop;
+      if (expLoop?.kind === 'goal') {
+        expect(expLoop.blockedThreshold).toBe(5);
       }
     });
 
@@ -256,7 +422,7 @@ stages:
   - id: a
     skill: rasen-propose
   - id: verify
-    skill: rasen:review
+    skill: rasen-review
     requires: [a]
     condition: always
     verifyPolicy: adaptive
@@ -284,7 +450,7 @@ stages:
     skill: rasen-propose
     role: planner
   - id: verify
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     runtime: codex
     sessionReuse: review-thread
@@ -310,15 +476,235 @@ stages:
       });
     });
 
-    it('should reject invalid runtime selection', () => {
-      const yaml = `
-name: bad-runtime
+    it('does not manufacture a Claude runtime for non-runtime role fields', () => {
+      const pipeline = parsePipeline(`
+name: host-inherited-role-fields
 agents:
-  planner: llama
+  planner:
+    model: gpt-5.6-sol
+  implementer:
+    sandbox: workspace-write
+  reviewer:
+    effort: high
+  fixer:
+    sessionReuse: review-thread
 stages:
   - id: propose
     skill: rasen-propose
     role: planner
+  - id: apply
+    skill: rasen-apply-change
+    role: implementer
+  - id: verify
+    skill: rasen-review
+    role: reviewer
+  - id: fix
+    skill: rasen-review-cycle
+    role: fixer
+`);
+      for (const role of ['planner', 'implementer', 'reviewer', 'fixer'] as const) {
+        expect(pipeline.agents?.[role]).not.toHaveProperty('runtime');
+        const stage = pipeline.stages.find((candidate) => candidate.role === role)!;
+        expect(
+          resolveStageRuntimeConfig(stage, pipeline, undefined, undefined, {
+            host: { runtime: 'codex', source: 'codex-thread-id' },
+          })
+        ).toMatchObject({ runtime: 'codex', runtimeSource: 'host', source: 'agent' });
+      }
+    });
+
+    it('resolves runtime field-wise across config, stage, role, host, and legacy fallback', () => {
+      const pipeline = parsePipeline(`
+name: runtime-precedence
+agents:
+  reviewer:
+    runtime: claude
+    model: opus
+stages:
+  - id: review
+    skill: rasen-review
+    role: reviewer
+    runtime: codex
+    model: gpt-5.6-sol
+  - id: inherit
+    skill: rasen-propose
+    role: planner
+    model: gpt-5.6-sol
+`);
+      const host = { host: { runtime: 'codex', source: 'codex-thread-id' } } as const;
+      expect(
+        resolveStageRuntimeConfig(pipeline.stages[0], pipeline, undefined, {
+          runtime: { value: 'claude', scope: 'project' },
+        }, host)
+      ).toMatchObject({ runtime: 'claude', runtimeSource: 'stage-override-project' });
+      expect(resolveStageRuntimeConfig(pipeline.stages[0], pipeline, undefined, undefined, host))
+        .toMatchObject({ runtime: 'codex', runtimeSource: 'stage' });
+      expect(resolveStageRuntimeConfig(pipeline.stages[1], pipeline, undefined, undefined, host))
+        .toMatchObject({ runtime: 'codex', runtimeSource: 'host', modelSource: 'stage' });
+      expect(resolveStageRuntimeConfig(pipeline.stages[1], pipeline))
+        .toMatchObject({ runtime: 'claude', runtimeSource: 'legacy-default' });
+    });
+
+    describe('per-role machine model config layers (config-page-coherence)', () => {
+      const noModelPipeline = parsePipeline(`
+name: model-layer-test
+stages:
+  - id: a
+    skill: rasen-review
+    role: reviewer
+`);
+      const reviewerStage = noModelPipeline.stages[0];
+
+      it('the global base model applies when nothing more specific is set', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          globalDefault: 'sonnet',
+        });
+        expect(result.model).toBe('sonnet');
+        expect(result.modelSource).toBe('global-default');
+      });
+
+      it('a per-role model beats the base within the same scope', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          globalDefault: 'sonnet',
+          globalRoles: { reviewer: 'fable' },
+        });
+        expect(result.model).toBe('fable');
+        expect(result.modelSource).toBe('global-role');
+
+        const implementerPipeline = parsePipeline(`
+name: model-layer-test-2
+stages:
+  - id: a
+    skill: rasen-apply-change
+    role: implementer
+`);
+        const nonReviewer = resolveStageRuntimeConfig(implementerPipeline.stages[0], implementerPipeline, {
+          globalDefault: 'sonnet',
+          globalRoles: { reviewer: 'fable' },
+        });
+        expect(nonReviewer.model).toBe('sonnet');
+        expect(nonReviewer.modelSource).toBe('global-default');
+      });
+
+      it('project model config beats global', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          globalRoles: { reviewer: 'sonnet' },
+          projectRoles: { reviewer: 'fable' },
+        });
+        expect(result.model).toBe('fable');
+        expect(result.modelSource).toBe('project-role');
+      });
+
+      it('the pipeline role default beats machine config', () => {
+        const pipeline = parsePipeline(`
+name: model-layer-pipeline-role
+agents:
+  reviewer:
+    model: opus
+stages:
+  - id: a
+    skill: rasen-review
+    role: reviewer
+`);
+        const result = resolveStageRuntimeConfig(pipeline.stages[0], pipeline, {
+          globalRoles: { reviewer: 'sonnet' },
+        });
+        expect(result.model).toBe('opus');
+        expect(result.modelSource).toBe('agent');
+      });
+
+      it('a stage-level model wins over everything', () => {
+        const pipeline = parsePipeline(`
+name: model-layer-stage-wins
+agents:
+  reviewer:
+    model: opus
+stages:
+  - id: a
+    skill: rasen-review
+    role: reviewer
+    model: haiku
+`);
+        const result = resolveStageRuntimeConfig(pipeline.stages[0], pipeline, {
+          globalRoles: { reviewer: 'sonnet' },
+          projectRoles: { reviewer: 'fable' },
+        });
+        expect(result.model).toBe('haiku');
+        expect(result.modelSource).toBe('stage');
+      });
+
+      it('an unrecognized model id resolves as-is (no preset)', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          projectDefault: 'not-a-real-model-xyz',
+        });
+        expect(result.model).toBe('not-a-real-model-xyz');
+        expect(result.modelSource).toBe('project-default');
+      });
+
+      it('resolves modelSource default when no layer sets a model', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline);
+        expect(result.model).toBeUndefined();
+        expect(result.modelSource).toBe('default');
+      });
+
+      it('the store base model applies below the project layer and above global', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          storeDefault: 'opus',
+          globalDefault: 'sonnet',
+        });
+        expect(result.model).toBe('opus');
+        expect(result.modelSource).toBe('store-default');
+      });
+
+      it('a store per-role model beats the store base and the global layer', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          storeDefault: 'sonnet',
+          storeRoles: { reviewer: 'fable' },
+          globalRoles: { reviewer: 'opus' },
+        });
+        expect(result.model).toBe('fable');
+        expect(result.modelSource).toBe('store-role');
+      });
+
+      it('project model config beats the store layer', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          storeRoles: { reviewer: 'sonnet' },
+          projectRoles: { reviewer: 'fable' },
+        });
+        expect(result.model).toBe('fable');
+        expect(result.modelSource).toBe('project-role');
+      });
+
+      it('absent store fields change nothing', () => {
+        const result = resolveStageRuntimeConfig(reviewerStage, noModelPipeline, {
+          globalDefault: 'sonnet',
+        });
+        expect(result.model).toBe('sonnet');
+        expect(result.modelSource).toBe('global-default');
+      });
+    });
+
+    it.each(['zed', 'llama'])('should reject non-dispatch role runtime %s', (runtime) => {
+      const yaml = `
+name: bad-runtime
+agents:
+  planner: ${runtime}
+stages:
+  - id: propose
+    skill: rasen-propose
+    role: planner
+`;
+      expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+    });
+
+    it.each(['zed', 'llama'])('should reject non-dispatch stage runtime %s', (runtime) => {
+      const yaml = `
+name: bad-stage-runtime
+stages:
+  - id: propose
+    skill: rasen-propose
+    role: planner
+    runtime: ${runtime}
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
     });
@@ -368,7 +754,7 @@ stages:
 name: bad-policy
 stages:
   - id: a
-    skill: rasen:review
+    skill: rasen-review
     verifyPolicy: extreme
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
@@ -446,7 +832,7 @@ stages:
     requires:
       - A
   - id: C
-    skill: rasen:review
+    skill: rasen-review
     requires:
       - B
 `;
@@ -468,11 +854,11 @@ stages:
   - id: root
     skill: rasen-apply-change
   - id: review
-    skill: rasen:review
+    skill: rasen-review
     requires: [root]
     parallelGroup: experts
   - id: cso
-    skill: rasen:cso
+    skill: rasen-cso
     requires: [root, review]
     parallelGroup: experts
 `;
@@ -487,11 +873,11 @@ stages:
   - id: root
     skill: rasen-apply-change
   - id: review
-    skill: rasen:review
+    skill: rasen-review
     requires: [root]
     parallelGroup: experts
   - id: cso
-    skill: rasen:cso
+    skill: rasen-cso
     requires: [root]
     parallelGroup: experts
 `;
@@ -506,28 +892,45 @@ stages:
   - id: a
     skill: rasen-propose
   - id: b
-    skill: rasen:review
+    skill: rasen-review
     requires: [a]
 `;
 
     it('should pass when all skills are known', () => {
       const pipeline = parsePipeline(yaml);
-      const known = new Set(['rasen-propose', 'rasen:review', 'extra']);
+      const known = new Set(['rasen-propose', 'rasen-review', 'extra']);
       expect(() => validatePipelineSkills(pipeline, known)).not.toThrow();
     });
 
     it('should throw when a stage references an unknown skill', () => {
       const pipeline = parsePipeline(yaml);
-      const known = new Set(['rasen-propose']); // missing rasen:review
+      const known = new Set(['rasen-propose']); // missing rasen-review
       expect(() => validatePipelineSkills(pipeline, known)).toThrow(PipelineValidationError);
       expect(() => validatePipelineSkills(pipeline, known)).toThrow(
-        /Stage 'b' references unknown skill: 'rasen:review'/
+        /Stage 'b' references unknown skill: 'rasen-review'/
       );
     });
 
     it('should throw against an empty known set', () => {
       const pipeline = parsePipeline(yaml);
       expect(() => validatePipelineSkills(pipeline, new Set())).toThrow(PipelineValidationError);
+    });
+
+    it('distinguishes a known but disabled skill from an unknown skill', () => {
+      const pipeline = parsePipeline(yaml);
+      const known = new Set(['rasen-propose', 'rasen-review']);
+      const enabled = new Set(['rasen-propose']);
+
+      try {
+        validatePipelineSkills(pipeline, known, enabled);
+        throw new Error('expected disabled skill validation to fail');
+      } catch (error) {
+        expect(error).toBeInstanceOf(PipelineValidationError);
+        expect(error).toMatchObject({ code: 'pipeline_skill_disabled' });
+        expect((error as Error).message).toMatch(
+          /Stage 'b' references known but disabled skill: 'rasen-review'/
+        );
+      }
     });
 
     it('should skip decompose stages (they carry no leaf skill)', () => {
@@ -543,6 +946,103 @@ stages:
 `);
       // decompose stage has no skill but must NOT trip the unknown-skill check
       expect(() => validatePipelineSkills(pipeline, new Set(['rasen-propose']))).not.toThrow();
+    });
+  });
+
+  describe('validatePipelineDraft (pipeline-definition-api: parse-chain-rejects ⇔ collector-reports-error)', () => {
+    const skillSets = {
+      knownSkillNames: new Set(['rasen-propose', 'rasen-apply-change', 'rasen-review']),
+      enabledSkillNames: new Set(['rasen-propose', 'rasen-apply-change', 'rasen-review']),
+    };
+
+    it('reports no error issues for a fixture parsePipeline accepts', () => {
+      const yaml = `
+name: draft-ok
+stages:
+  - id: a
+    skill: rasen-propose
+  - id: b
+    skill: rasen-review
+    requires: [a]
+`;
+      expect(() => parsePipeline(yaml)).not.toThrow();
+      const issues = validatePipelineDraft(
+        { name: 'draft-ok', stages: [{ id: 'a', skill: 'rasen-propose' }, { id: 'b', skill: 'rasen-review', requires: ['a'] }] },
+        skillSets
+      );
+      expect(issues.filter((i) => i.severity === 'error')).toHaveLength(0);
+    });
+
+    it('reports a Zod issue per schema violation, with its own path', () => {
+      const issues = validatePipelineDraft({ name: '', stages: [] }, skillSets);
+      expect(issues.length).toBeGreaterThanOrEqual(2);
+      for (const issue of issues) {
+        expect(issue.severity).toBe('error');
+        expect(issue.path.startsWith('/')).toBe(true);
+      }
+    });
+
+    it('collects a cycle issue AND an unknown-skill issue for the same draft (multi-issue, single pass)', () => {
+      const definition = {
+        name: 'draft-multi',
+        stages: [
+          { id: 'a', skill: 'no-such-skill', requires: ['b'] },
+          { id: 'b', skill: 'rasen-apply-change', requires: ['a'] },
+        ],
+      };
+      const issues = validatePipelineDraft(definition, skillSets);
+      expect(issues.some((i) => /[Cc]yclic/.test(i.message))).toBe(true);
+      expect(issues.some((i) => i.path === '/stages/0/skill' && /unknown skill/.test(i.message))).toBe(true);
+    });
+
+    it('locates a disabled-skill issue at its stage path', () => {
+      const definition = {
+        name: 'draft-disabled',
+        stages: [{ id: 'a', skill: 'rasen-review' }],
+      };
+      const issues = validatePipelineDraft(definition, {
+        knownSkillNames: new Set(['rasen-review']),
+        enabledSkillNames: new Set(),
+      });
+      expect(issues).toContainEqual(
+        expect.objectContaining({ severity: 'error', path: '/stages/0/skill' })
+      );
+    });
+
+    it('applies the quality floor only to composed drafts across parse and issue-collector paths', () => {
+      const floorFreeStages = [{ id: 'a', skill: 'rasen-propose' }];
+
+      const composedYaml = 'name: floor-check\norigin: composed\nstages:\n  - id: a\n    skill: rasen-propose\n';
+      expect(() => parsePipeline(composedYaml)).toThrow(/origin: composed/);
+      const composedIssues = validatePipelineDraft(
+        { name: 'floor-check', origin: 'composed', stages: floorFreeStages },
+        skillSets
+      );
+      expect(composedIssues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ severity: 'error', message: expect.stringMatching(/origin: composed/) }),
+        ])
+      );
+
+      for (const fixture of [
+        {
+          yaml: 'name: floor-check\norigin: ui\nstages:\n  - id: a\n    skill: rasen-propose\n',
+          definition: { name: 'floor-check', origin: 'ui', stages: floorFreeStages },
+        },
+        {
+          yaml: 'name: floor-check\nstages:\n  - id: a\n    skill: rasen-propose\n',
+          definition: { name: 'floor-check', stages: floorFreeStages },
+        },
+      ]) {
+        expect(() => parsePipeline(fixture.yaml)).not.toThrow();
+        expect(validatePipelineDraft(fixture.definition, skillSets)).toEqual([]);
+      }
+    });
+
+    it('never throws on an invalid draft — invalidity is data', () => {
+      expect(() =>
+        validatePipelineDraft({ name: 'a', stages: [{ id: 'x', requires: ['missing'] }] }, skillSets)
+      ).not.toThrow();
     });
   });
 
@@ -657,7 +1157,7 @@ stages:
     skill: rasen-apply-change
     role: implementer
   - id: verify
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [apply]
   - id: review-loop
@@ -684,7 +1184,7 @@ stages:
       kind: review-cycle
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
-      expect(() => parsePipeline(yaml)).toThrow(/reviewer/);
+      expect(() => parsePipeline(yaml)).toThrow(/origin: composed.*reviewer/);
     });
 
     it('rejects origin: composed missing a review-cycle loop stage', () => {
@@ -696,12 +1196,12 @@ stages:
     skill: rasen-apply-change
     role: implementer
   - id: verify
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [apply]
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
-      expect(() => parsePipeline(yaml)).toThrow(/review-cycle/);
+      expect(() => parsePipeline(yaml)).toThrow(/origin: composed.*review-cycle/);
     });
 
     it('leaves a pipeline WITHOUT origin unaffected even with no floor stages (bug-fix built-in shape)', () => {
@@ -734,6 +1234,30 @@ stages:
     skill: rasen-propose
 `;
       expect(() => parsePipeline(yaml)).toThrow(PipelineValidationError);
+      expect(() => parsePipeline(yaml)).toThrow(/origin/);
+      expect(validatePipelineDraft(
+        {
+          name: 'bad-origin',
+          origin: 'hand-authored',
+          stages: [{ id: 'a', skill: 'rasen-propose' }],
+        },
+        {
+          knownSkillNames: new Set(['rasen-propose']),
+          enabledSkillNames: new Set(['rasen-propose']),
+        }
+      )).toContainEqual(expect.objectContaining({ severity: 'error', path: '/origin' }));
+    });
+
+    it('treats origin: ui as provenance and accepts a floor-free definition', () => {
+      const pipeline = parsePipeline(`
+name: ui-floor-free
+origin: ui
+stages:
+  - id: apply
+    skill: rasen-apply-change
+    role: implementer
+`);
+      expect(pipeline.origin).toBe('ui');
     });
   });
 
@@ -779,7 +1303,7 @@ stages:
     skill: rasen-propose
     role: planner
   - id: review
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [propose]
     handoff:
@@ -864,7 +1388,7 @@ stages:
     skill: rasen-apply-change
     role: implementer
   - id: review
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     requires: [implement]
   - id: fix
@@ -1041,6 +1565,165 @@ stages:
           globalThreshold: 0.45,
         });
         expect(result.threshold).toBe(0.45);
+        expect(result.source).toBe('global-config');
+      });
+    });
+
+    describe('per-role config layers (config-page-coherence)', () => {
+      const reviewerStage = parsePipeline(`
+name: role-layer-test
+stages:
+  - id: a
+    skill: rasen-review
+    role: reviewer
+`).stages[0];
+      const reviewerPipeline = parsePipeline(`
+name: role-layer-test
+stages:
+  - id: a
+    skill: rasen-review
+    role: reviewer
+`);
+      const implementerStage = parsePipeline(`
+name: role-layer-test-2
+stages:
+  - id: a
+    skill: rasen-apply-change
+    role: implementer
+`).stages[0];
+      const implementerPipeline = parsePipeline(`
+name: role-layer-test-2
+stages:
+  - id: a
+    skill: rasen-apply-change
+    role: implementer
+`);
+
+      it('project per-role threshold beats the project scalar for a matching role', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          projectThreshold: 0.4,
+          projectRoles: { reviewer: 0.7 },
+        });
+        expect(result.threshold).toBe(0.7);
+        expect(result.source).toBe('project-role');
+      });
+
+      it('a non-matching role resolves to the project scalar', () => {
+        const result = resolveStageHandoffConfig(implementerStage, implementerPipeline, {
+          projectThreshold: 0.4,
+          projectRoles: { reviewer: 0.7 },
+        });
+        expect(result.threshold).toBe(0.4);
+        expect(result.source).toBe('project-config');
+      });
+
+      it('global per-role threshold beats the global scalar', () => {
+        const result = resolveStageHandoffConfig(implementerStage, implementerPipeline, {
+          globalThreshold: 0.6,
+          globalRoles: { implementer: 0.8 },
+        });
+        expect(result.threshold).toBe(0.8);
+        expect(result.source).toBe('global-role');
+      });
+
+      it('project role beats global role for the same role', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          projectRoles: { reviewer: 0.5 },
+          globalRoles: { reviewer: 0.9 },
+        });
+        expect(result.threshold).toBe(0.5);
+        expect(result.source).toBe('project-role');
+      });
+
+      it('project role beats the project scalar, which beats global role', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          projectThreshold: 0.4,
+          globalRoles: { reviewer: 0.9 },
+        });
+        expect(result.threshold).toBe(0.4);
+        expect(result.source).toBe('project-config');
+      });
+
+      it('a config layer role beats the model-preset layer', () => {
+        const pipeline = parsePipeline(`
+name: role-layer-beats-preset
+agents:
+  implementer:
+    model: gpt-5.6-sol
+stages:
+  - id: a
+    skill: rasen-apply-change
+    role: implementer
+`);
+        const result = resolveStageHandoffConfig(pipeline.stages[0], pipeline, {
+          globalRoles: { implementer: 0.42 },
+        });
+        expect(result.threshold).toBe(0.42);
+        expect(result.source).toBe('global-role');
+      });
+
+      it('accepts the absolute { remainingTokens } form for a per-role config layer', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          projectRoles: { reviewer: { remainingTokens: 40_000 } },
+        });
+        expect(result.threshold).toEqual({ remainingTokens: 40_000 });
+        expect(result.source).toBe('project-role');
+      });
+
+      it('the store config threshold applies below the project layer', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          storeThreshold: 0.45,
+        });
+        expect(result.threshold).toBe(0.45);
+        expect(result.source).toBe('store-config');
+      });
+
+      it('a store per-role threshold beats the store scalar', () => {
+        const reviewerResult = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          storeThreshold: 0.45,
+          storeRoles: { reviewer: 0.7 },
+        });
+        expect(reviewerResult.threshold).toBe(0.7);
+        expect(reviewerResult.source).toBe('store-role');
+
+        const nonReviewerResult = resolveStageHandoffConfig(implementerStage, implementerPipeline, {
+          storeThreshold: 0.45,
+          storeRoles: { reviewer: 0.7 },
+        });
+        expect(nonReviewerResult.threshold).toBe(0.45);
+        expect(nonReviewerResult.source).toBe('store-config');
+      });
+
+      it('the project layer beats the store layer entirely', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          projectThreshold: 0.4,
+          storeRoles: { reviewer: 0.7 },
+        });
+        expect(result.threshold).toBe(0.4);
+        expect(result.source).toBe('project-config');
+      });
+
+      it('the store layer beats the global layer', () => {
+        const result = resolveStageHandoffConfig(implementerStage, implementerPipeline, {
+          storeRoles: { implementer: 0.8 },
+          globalRoles: { implementer: 0.6 },
+        });
+        expect(result.threshold).toBe(0.8);
+        expect(result.source).toBe('store-role');
+      });
+
+      it('the store layer accepts the absolute { remainingTokens } form', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          storeThreshold: { remainingTokens: 45_000 },
+        });
+        expect(result.threshold).toEqual({ remainingTokens: 45_000 });
+        expect(result.source).toBe('store-config');
+      });
+
+      it('absent store fields never report a store source', () => {
+        const result = resolveStageHandoffConfig(reviewerStage, reviewerPipeline, {
+          globalThreshold: 0.65,
+        });
         expect(result.source).toBe('global-config');
       });
     });
@@ -1263,7 +1946,7 @@ handoff:
     reviewer: 0.65
 stages:
   - id: a
-    skill: rasen:review
+    skill: rasen-review
     role: reviewer
     handoff:
       maxRelays: 6

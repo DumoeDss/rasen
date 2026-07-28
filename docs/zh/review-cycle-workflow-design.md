@@ -3,7 +3,7 @@
 > 状态：设计草稿 · 日期：2026-05-29
 > 范围：为 OpenSpec 引入一条一等公民级别的**迭代式**实现后评审循环，弥合现有 `review`/`verify-enhanced`/`ship` 各个一次性环节之间的缺口。核心保持工具无关，并辅以一项 Claude Code agent-teams 加速能力。
 >
-> 这是一份设计文档（位于 `docs/`）。其写法使其可以被提升为一个 OpenSpec change（`rasen/changes/add-review-cycle-workflow/`）—— 参见 [§9 提升为 OpenSpec change](#9-promote-to-an-openspec-change)。
+> 这是一份设计文档（位于 `docs/`）。其写法使其可以被提升为一个 OpenSpec change（`openspec/changes/add-review-cycle-workflow/`）—— 参见 [§9 提升为 OpenSpec change](#9-promote-to-an-openspec-change)。
 
 ---
 
@@ -13,7 +13,7 @@ OpenSpec 的流程是 `propose → apply → archive`，而 OPSX 专家技能融
 
 - **规划期评审**由 propose 工作流对设计密集型 change 的方法论咨询（`/codebase-design`，条件式引用）覆盖；`schemas/spec-driven/schema.yaml` 不再携带任何 `enhance` 钩子（机制保留、当前无使用方）。
 - **一次性代码评审**以始终安装的专家技能 `openspec-review`（源：`src/core/templates/experts/review.ts`）形式存在。
-- **验证 / 交付**以融合命令（`verify-enhanced`、`ship`）形式存在 —— 参见进行中的 change `rasen/changes/add-opsx-fusion-commands/`。
+- **验证 / 交付**以融合命令（`verify-enhanced`、`ship`）形式存在 —— 参见进行中的 change `openspec/changes/add-opsx-fusion-commands/`。
 
 **缺失**的是一条一等公民级别的、在 `apply` 之后将这些环节串联起来的**迭代循环**：
 
@@ -27,7 +27,7 @@ OpenSpec 的流程是 `propose → apply → archive`，而 OPSX 专家技能融
 
 ## 2. 改动内容（概览）
 
-- **新增运行时工作流** `review-cycle`（`/rasen:review-cycle`，技能 `openspec-review-cycle`），通过现有的模板 → 适配器流水线为所有受支持的工具生成。
+- **新增运行时工作流** `review-cycle`（`/opsx:review-cycle`，技能 `openspec-review-cycle`），通过现有的模板 → 适配器流水线为所有受支持的工具生成。
 - 它负责编排：**review → triage → fix → re-review(Δ) → {pass | loop | escalate}**，将实际的评审判断委托给现有的 `openspec-review` 技能，将修复委托给实现该改动的 agent。
 - 将**作者 ≠ 验证者**不变量与一套**修复规模分级**（trivial / non-trivial / design-level）编码其中。
 - 可选的 **Claude Code 加速**：通过 `SendMessage` 恢复评审员 subagent，使其只复审增量；并为所有其他工具提供**优雅的、工具无关的降级方案**（针对增量的全新评审 + 一份共享的问题清单文件）。
@@ -106,7 +106,7 @@ OpenSpec 的流程是 `propose → apply → archive`，而 OPSX 专家技能融
 OpenSpec 面向约 24 个工具；`SendMessage`/agent-teams 是 **Claude-Code 专属**（由 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` 控制开关）。因此该循环以工具中立的方式规约，恢复机制只是一项*优化*：
 
 - **Claude Code，开关开启，同一会话内：** 工作流保留评审员 subagent 的 `agentId`；做 re-review(Δ) 时，**orchestrator/lead 通过 `SendMessage` 恢复该评审员**，只附带修复增量 + 对原始问题清单的引用。评审员保留其完整的先前上下文 → 既廉价、聚焦，又无需重新读取。（限制：只有 lead 才能发起 `SendMessage`，因此 coder↔reviewer 永远不会直接对话 —— orchestrator 是中枢。）
-- **跨会话（重启 / `--resume` 之后）—— transcript 暖播种：** `SendMessage` **仅在会话内有效**；上一会话的 worker 已不存在（`agentId` 是死句柄）。此时 lead 不再 `SendMessage`，而是把评审员的**持久 transcript**（`agent-<agentId>.jsonl`）读回，**暖播种**一个全新的同角色评审员——新 `agentId`，但带着前任的完整上下文，仍只复审增量。run-state 在每个 stage 记录 worker 的 `agentId` + `transcript` 指针正是为此；`rasen pipeline resume` 的 `workers` 字段把这些指针透出来。这才是平台允许范围内"真正恢复评审员"的最接近形态。
+- **跨会话（重启 / `--resume` 之后）—— transcript 暖播种：** `SendMessage` **仅在会话内有效**；上一会话的 worker 已不存在（`agentId` 是死句柄）。此时 lead 不再 `SendMessage`，而是把评审员的**持久 transcript**（`agent-<agentId>.jsonl`）读回，**暖播种**一个全新的同角色评审员——新 `agentId`，但带着前任的完整上下文，仍只复审增量。run-state 在每个 stage 记录 worker 的 `agentId` + `transcript` 指针正是为此；`openspec pipeline resume` 的 `workers` 字段把这些指针透出来。这才是平台允许范围内"真正恢复评审员"的最接近形态。
 - **任何其他工具，或开关关闭，或 transcript 已失效：** 降级 —— 运行一次**范围限定为增量的全新评审**，通过一份共享文件（如该 change 的 `review.md` / `FINDINGS.md`）传递原始问题清单。行为等价，只是代价更高。
 
 生成的 Claude 技能（`.claude/skills/openspec-review-cycle/SKILL.md`）记录恢复路径；通用技能正文记录降级路径。这一切以指令文本表达 —— **OpenSpec 核心中不含任何工具特定代码**，与适配器模型保持一致。
@@ -129,7 +129,7 @@ OpenSpec 面向约 24 个工具；`SendMessage`/agent-teams 是 **Claude-Code �
 4. **Profiles** `src/core/profiles.ts`：将 `'review-cycle'` 加入 `ALL_WORKFLOWS`。将其排除在 `CORE_WORKFLOWS` 之外（可选启用，与其他融合命令一致）。
 5. **复用而非重复评审引擎**：指令调用现有的 `openspec-review` 专家技能（始终安装）来做评审/复审判断；review-cycle 只负责*循环 + 分级 + 不变量 + 终止 + 恢复*。
 6. **适配器**：无需改动 —— 生成过程会自动向所有工具扇出；Claude 适配器会产出 `.claude/skills/openspec-review-cycle/SKILL.md` + `.claude/commands/opsx/review-cycle.md`。
-7. **可选的 schema 提示（独立、可选）**：一个分叉出的 schema `spec-driven-reviewed`，其 `apply.instruction` 将 `/rasen:review-cycle` 指向为推荐的下一步。**不要**修改核心的 `spec-driven` schema。这纯属建议性质；该工作流没有它也能运行。
+7. **可选的 schema 提示（独立、可选）**：一个分叉出的 schema `spec-driven-reviewed`，其 `apply.instruction` 将 `/opsx:review-cycle` 指向为推荐的下一步。**不要**修改核心的 `spec-driven` schema。这纯属建议性质；该工作流没有它也能运行。
 8. **文档**：实现后，向 `docs/commands.md` + `docs/workflows.md`（及 `docs/zh/` 镜像）添加面向用户的章节；本设计文档是其立论依据。
 
 ### 涉及的文件
@@ -143,7 +143,7 @@ OpenSpec 面向约 24 个工具；`SendMessage`/agent-teams 是 **Claude-Code �
 
 ## 7. 测试策略（遵循仓库惯例 —— vitest、临时文件系统、无快照）
 
-- **生成**：一个测试，验证 `getSkillTemplates()`/`getCommandTemplates()` 包含 `review-cycle`，并验证 `rasen init --tools claude`（输出到临时目录）会物化出 `.claude/skills/openspec-review-cycle/SKILL.md` + `.claude/commands/opsx/review-cycle.md`。
+- **生成**：一个测试，验证 `getSkillTemplates()`/`getCommandTemplates()` 包含 `review-cycle`，并验证 `openspec init --tools claude`（输出到临时目录）会物化出 `.claude/skills/openspec-review-cycle/SKILL.md` + `.claude/commands/opsx/review-cycle.md`。
 - **Profile 过滤**：`review-cycle` 在 expanded/custom 下存在，在 `core` 下缺失（它是可选启用的）。
 - **适配器扇出**：抽查另外 2–3 个工具适配器，确认它们同样产出该命令/技能。
 - **指令内容不变量**：生成的技能文本应包含作者≠验证者规则、最大轮次/上报条款，以及 Claude 恢复路径和工具无关降级路径**两者**。
@@ -156,18 +156,18 @@ OpenSpec 面向约 24 个工具；`SendMessage`/agent-teams 是 **Claude-Code �
 1. **Core 还是 expanded profile** —— 提议：expanded/可选启用。需与维护者确认（与融合命令先例一致）。
 2. **独立命令 还是 并入 `verify-enhanced`** —— `verify-enhanced` 已经会做一遍多阶段验证；`review-cycle` 应作为其同级兄弟，还是应将该循环并入 `verify-enhanced`？提议：**同级兄弟**（单一职责 = 迭代式修复循环），在 `verify-enhanced` 之前组合执行。需要拍板。
 3. **对于没有可寻址 subagent 的工具，如何表达"作者 ≠ 验证者"？** 对于没有独立评审员身份的工具，该不变量降级为"对增量的一次独立评审通过"+ orchestrator 的独立 gate 重跑。须明确记录这一降级。
-4. **默认最大轮次**（提议 3），以及它是否可通过 `rasen/config.yaml` 的 `rules` 配置。
+4. **默认最大轮次**（提议 3），以及它是否可通过 `openspec/config.yaml` 的 `rules` 配置。
 5. **与进行中的 `add-opsx-fusion-commands` change 的关系/排序** —— `review-cycle` 应被加*入*那个 change，还是在其之后作为自己独立的 change 落地？提议：作为依赖于融合 change 的独立 change（这样它复用的专家 `review` 技能届时已存在）。
 
 ---
 
 ## 9. 提升为 OpenSpec change
 
-OpenSpec 对自身做 dogfood（`rasen/changes/`）。要把这份设计变成一个被追踪的 change（这是维护者对此规模功能的惯例）：
+OpenSpec 对自身做 dogfood（`openspec/changes/`）。要把这份设计变成一个被追踪的 change（这是维护者对此规模功能的惯例）：
 
 ```bash
 cd <OpenSpec-code>
-rasen new change add-review-cycle-workflow      # or: /rasen:propose "add review-cycle iterative review→fix→re-review workflow"
+openspec new change add-review-cycle-workflow      # or: /opsx:propose "add review-cycle iterative review→fix→re-review workflow"
 ```
 
 然后填充：
@@ -201,7 +201,7 @@ The workflow SHALL be expressed tool-agnostically; on Claude Code with agent-tea
 - **AND** the loop's outcome is equivalent (only more expensive)
 ```
 
-通过常规的 `rasen validate` / `/rasen:apply` / `rasen archive` 流程进行验证 + 应用 + 归档。
+通过常规的 `openspec validate` / `/opsx:apply` / `openspec archive` 流程进行验证 + 应用 + 归档。
 
 ---
 
@@ -209,6 +209,6 @@ The workflow SHALL be expressed tool-agnostically; on Claude Code with agent-tea
 - Schema 模型：`schemas/spec-driven/schema.yaml`；图 `src/core/artifact-graph/graph.ts`，类型 `src/core/artifact-graph/types.ts`，加载器 `src/core/artifact-graph/instruction-loader.ts`。
 - 命令/技能流水线：`src/core/templates/workflows/*.ts`、`src/core/templates/skill-templates.ts`、`src/core/shared/skill-generation.ts`、`src/core/profiles.ts`，适配器 `src/core/command-generation/adapters/`。
 - 复用的评审引擎：`src/core/templates/experts/review.ts`（以 `openspec-review` 安装）。
-- 融合先例：`rasen/changes/add-opsx-fusion-commands/`（office-hours、verify-enhanced、ship、retro、auto + `hooks/safety-check.sh`）。
-- 文档惯例：`docs/concepts.md`、`docs/opsx.md`、`docs/commands.md`、`docs/workflows.md`、`docs/customization.md`（+ `docs/zh/`）。
+- 融合先例：`openspec/changes/add-opsx-fusion-commands/`（office-hours、verify-enhanced、ship、retro、auto + `hooks/safety-check.sh`）。
+- 文档惯例：`docs/concepts.md`、`docs/artifact-workflow.md`、`docs/commands.md`、`docs/workflows.md`、`docs/customization.md`（+ `docs/zh/`）。
 - 测试：`test/commands/*.test.ts`、`vitest.config.ts`。

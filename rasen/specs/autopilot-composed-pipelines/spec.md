@@ -1,7 +1,7 @@
 # autopilot-composed-pipelines Specification
 
 ## Purpose
-Governs the `compose` selection policy for `/rasen:auto` (`--auto-compose` flag or config): classify-first pipeline selection where, only when classification reports a `default` basis and no registered pipeline fits, the LEAD may assemble a pipeline from the known stage library — validated, `origin: composed`-marked, and registered as an ordinary project pipeline while guaranteeing the machine-enforced quality floor.
+Governs the `compose` selection policy for `/rasen-auto` (`--auto-compose` flag or config): classify-first pipeline selection where, only when classification reports a `default` basis and no registered pipeline fits, the LEAD may assemble a pipeline from the known stage library — validated, `origin: composed`-marked, and registered as an ordinary project pipeline while guaranteeing the machine-enforced quality floor.
 
 ## Requirements
 ### Requirement: Compose policy is classify-first and fires only when no registered pipeline fits
@@ -20,7 +20,7 @@ Under the `compose` selection policy, when no explicit pipeline selection is pre
 
 #### Scenario: Explicit selection makes composition inert
 
-- **WHEN** a user runs `/rasen:auto --auto-compose --pipeline full-feature <task>` or names a known pipeline as the first token
+- **WHEN** a user runs `/rasen-auto --auto-compose --pipeline full-feature <task>` or names a known pipeline as the first token
 - **THEN** the explicitly selected pipeline is used, classification is not consulted, and no composition occurs
 
 ### Requirement: Composed pipelines are registered project pipelines

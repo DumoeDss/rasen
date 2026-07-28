@@ -38,14 +38,19 @@ const FIXTURE_ROLLOUT = path.join(
   'sample-rollout.jsonl'
 );
 
-/** Build a Codex rollout jsonl from event_msg token_count payloads (last wins). */
-function tokenCountLine(totalTokens: number, modelContextWindow: number): string {
+/** Build a Codex token_count line with lifetime spend and current-context usage. */
+function tokenCountLine(
+  totalTokens: number,
+  modelContextWindow: number,
+  contextTokens: number = totalTokens
+): string {
   return JSON.stringify({
     type: 'event_msg',
     payload: {
       type: 'token_count',
       info: {
         total_token_usage: { total_tokens: totalTokens },
+        last_token_usage: { total_tokens: contextTokens },
         model_context_window: modelContextWindow,
       },
     },
@@ -536,12 +541,15 @@ describe('agent-context', () => {
       expect(detectTranscriptKind(p, 'codex')).toBe('codex');
     });
 
-    it('rejects an invalid --runtime value via probeAgentContext', () => {
+    it.each(['zed', 'bogus'])(
+      'rejects non-probe runtime %s with the accepted runtimes in the error',
+      (runtime) => {
       const p = writeTranscript('t.jsonl', [assistantLine('claude-opus-4-8', { input_tokens: 1 })]);
-      expect(() => probeAgentContext({ transcript: p, runtime: 'bogus' })).toThrow(
+      expect(() => probeAgentContext({ transcript: p, runtime })).toThrow(
         /--runtime must be "claude" or "codex"/
       );
-    });
+      }
+    );
 
     it('the rollout-*.jsonl filename convention selects codex with zero content I/O', () => {
       // A nonexistent file still detects codex from the name alone — proves no read happens.
@@ -573,38 +581,51 @@ describe('agent-context', () => {
   });
 
   describe('computeContextFromRollout', () => {
-    it('maps the last token_count event to the result shape', () => {
+    it('maps current context rather than cumulative spend to the result shape', () => {
       const p = writeTranscript('rollout-2026-01-01T00-00-00-abc.jsonl', [
         SESSION_META_LINE,
         turnContextLine('gpt-5.6-sol'),
-        tokenCountLine(12_885, 353_400),
+        tokenCountLine(164_620_250, 258_400, 40_556),
       ]);
       const r = computeContextFromRollout(p);
-      expect(r.contextTokens).toBe(12_885);
-      expect(r.limit).toBe(353_400);
+      expect(r.contextTokens).toBe(40_556);
+      expect(r.limit).toBe(258_400);
       expect(r.model).toBe('gpt-5.6-sol');
-      expect(r.pct).toBeCloseTo(12_885 / 353_400, 6);
-      expect(r.remainingTokens).toBe(353_400 - 12_885);
+      expect(r.pct).toBeCloseTo(40_556 / 258_400, 6);
+      expect(r.remainingTokens).toBe(258_400 - 40_556);
       expect(r.transcript).toBe(p);
     });
 
-    it('uses the LAST token_count event and the LAST turn_context model (last wins)', () => {
+    it('uses the last valid token_count snapshot and the last turn_context model', () => {
       const p = writeTranscript('rollout-2026-01-01T00-00-01-abc.jsonl', [
         SESSION_META_LINE,
         turnContextLine('gpt-5-earlier'),
-        tokenCountLine(100, 1_000),
+        tokenCountLine(400, 1_000, 100),
         turnContextLine('gpt-5.6-sol'),
-        tokenCountLine(500, 1_000),
+        tokenCountLine(900, 2_000, 500),
+        'not json',
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              total_token_usage: { total_tokens: 1_100 },
+              last_token_usage: {},
+              model_context_window: 3_000,
+            },
+          },
+        }),
       ]);
       const r = computeContextFromRollout(p);
       expect(r.contextTokens).toBe(500);
+      expect(r.limit).toBe(2_000);
       expect(r.model).toBe('gpt-5.6-sol');
     });
 
     it('honors an explicit limit override and recomputes pct', () => {
       const p = writeTranscript('rollout-2026-01-01T00-00-02-abc.jsonl', [
         SESSION_META_LINE,
-        tokenCountLine(500_000, 353_400),
+        tokenCountLine(1_500_000, 353_400, 500_000),
       ]);
       const r = computeContextFromRollout(p, { limit: 1_000_000 });
       expect(r.limit).toBe(1_000_000);
@@ -645,6 +666,27 @@ describe('agent-context', () => {
       expect(() => computeContextFromRollout(path.join(dir, 'rollout-nope.jsonl'))).toThrow(
         /Cannot read Codex rollout/
       );
+    });
+
+    it('fails actionably when token counts exist without current-context usage', () => {
+      const p = writeTranscript('rollout-2026-01-01T00-00-legacy.jsonl', [
+        SESSION_META_LINE,
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              total_token_usage: { total_tokens: 12_885 },
+              model_context_window: 353_400,
+            },
+          },
+        }),
+      ]);
+
+      expect(() => computeContextFromRollout(p)).toThrow(
+        /current-context.*last_token_usage\.total_tokens/i
+      );
+      expect(tryContextEstimate(p)).toBeUndefined();
     });
 
     it('reads the real captured rollout fixture end to end', () => {
@@ -736,7 +778,7 @@ describe('resolveHandoffThresholdReport', () => {
     const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-outside-'));
 
-    const result = resolveHandoffThresholdReport(0.3, 700_000, outsideDir);
+    const result = await resolveHandoffThresholdReport(0.3, 700_000, outsideDir);
 
     expect(result).toEqual({ threshold: 0.5, thresholdSource: 'default', shouldHandoff: false });
     fs.rmSync(outsideDir, { recursive: true, force: true });
@@ -747,7 +789,7 @@ describe('resolveHandoffThresholdReport', () => {
     const projectRoot = path.join(tempDir, 'project');
     writeProjectConfig(projectRoot, 'schema: spec-driven\nhandoff:\n  threshold: 0.6\n');
 
-    const result = resolveHandoffThresholdReport(0.62, 380_000, projectRoot);
+    const result = await resolveHandoffThresholdReport(0.62, 380_000, projectRoot);
 
     expect(result).toEqual({ threshold: 0.6, thresholdSource: 'project', shouldHandoff: true });
   });
@@ -759,7 +801,7 @@ describe('resolveHandoffThresholdReport', () => {
     const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-global-'));
 
-    const result = resolveHandoffThresholdReport(0.5, 500_000, outsideDir);
+    const result = await resolveHandoffThresholdReport(0.5, 500_000, outsideDir);
 
     expect(result).toEqual({ threshold: 0.65, thresholdSource: 'global', shouldHandoff: false });
     fs.rmSync(outsideDir, { recursive: true, force: true });
@@ -773,7 +815,7 @@ describe('resolveHandoffThresholdReport', () => {
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-global-abs-'));
 
     // Low pct but remainingTokens under the floor: should still fire.
-    const result = resolveHandoffThresholdReport(0.1, 50_000, outsideDir);
+    const result = await resolveHandoffThresholdReport(0.1, 50_000, outsideDir);
 
     expect(result).toEqual({
       threshold: { remainingTokens: 60_000 },
@@ -781,5 +823,37 @@ describe('resolveHandoffThresholdReport', () => {
       shouldHandoff: true,
     });
     fs.rmSync(outsideDir, { recursive: true, force: true });
+  });
+
+  it('reports the inherited store threshold when the project sets none', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-store-data-'));
+    process.env.XDG_DATA_HOME = dataDir;
+    const { registerStore, getGlobalDataDir } = await import('../../src/core/index.js');
+    // Register into the SAME machine data dir the production probe reads
+    // (resolveConfigStoreLayer -> listRegisteredStores() with no pathOptions).
+    const globalDataDir = getGlobalDataDir();
+
+    // A registered store declaring a handoff threshold.
+    const storeRoot = path.join(tempDir, 'ctx-store');
+    fs.mkdirSync(path.join(storeRoot, 'rasen', 'specs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(storeRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nhandoff:\n  threshold: 0.7\n'
+    );
+    await registerStore({ id: 'ctx-store', localPath: storeRoot, globalDataDir });
+
+    // A member project with local planning + `store:` pointer, no own threshold.
+    const projectRoot = path.join(tempDir, 'ctx-member');
+    fs.mkdirSync(path.join(projectRoot, 'rasen', 'specs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(projectRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nstore: ctx-store\n'
+    );
+
+    const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
+    const result = await resolveHandoffThresholdReport(0.72, 100_000, projectRoot);
+
+    expect(result).toEqual({ threshold: 0.7, thresholdSource: 'store', shouldHandoff: true });
+    fs.rmSync(dataDir, { recursive: true, force: true });
   });
 });
