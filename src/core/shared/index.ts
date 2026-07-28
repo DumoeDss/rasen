@@ -11,6 +11,7 @@ export {
   type CommandId,
   type ToolSkillStatus,
   type ToolVersionStatus,
+  type ResolvedConfiguredTools,
   getToolsWithSkillsDir,
   isKnownUnadaptedTool,
   resolveToolSkillsRoot,
@@ -20,6 +21,7 @@ export {
   getToolVersionStatus,
   getConfiguredTools,
   getAllToolVersionStatus,
+  resolveConfiguredTools,
 } from './tool-detection.js';
 
 export {

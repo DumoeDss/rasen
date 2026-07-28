@@ -26,7 +26,7 @@ import {
 } from '../../utils/task-progress.js';
 import type { ProjectHome } from '../project-home.js';
 import {
-  readPortfolioState,
+  readPortfolioStateDetailed,
   resolvePortfolioStateLocation,
 } from '../pipeline-registry/portfolio-state.js';
 import { buildChangeSummary, findPortfolioContainers, portfolioOf } from './changes.js';
@@ -160,13 +160,18 @@ export async function handleTaskDetail(
   }
 
   // Dependency DAG + portfolio status (design D1 step 4). Only a portfolio has
-  // a `portfolio-run.json`; an absent file degrades to empty deps, no error.
+  // a `portfolio-run.json`. An ABSENT file degrades to empty deps and no error;
+  // a file that is present but UNREADABLE is reported instead, so this surface
+  // never shows "no dependencies recorded" for a record it simply could not
+  // parse. Same distinction `/runs` makes about the same file.
   if (kind === 'portfolio') {
     const containerDir = path.join(changesDir, id);
     const location = resolvePortfolioStateLocation(containerDir, home ? home.workDir(id) : null);
-    const state = location ? readPortfolioState(location.dir) : null;
-    if (state) {
-      const byId = new Map(state.children.map((c) => [c.id, c]));
+    const read = location
+      ? readPortfolioStateDetailed(location.dir)
+      : ({ kind: 'absent' } as const);
+    if (read.kind === 'ok') {
+      const byId = new Map(read.state.children.map((c) => [c.id, c]));
       for (const child of children) {
         const record = byId.get(child.name);
         if (record) {
@@ -174,6 +179,11 @@ export async function handleTaskDetail(
           child.portfolioStatus = record.status;
         }
       }
+    } else if (read.kind === 'invalid' && location) {
+      errors.push({
+        name: id,
+        message: `Portfolio run-state at ${location.path} could not be read: ${read.reason}`,
+      });
     }
   }
 

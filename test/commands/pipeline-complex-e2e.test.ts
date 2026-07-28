@@ -93,8 +93,8 @@ async function buildBugFixPlan(projectRoot: string, runId: string): Promise<Runt
       role: 'stage',
       model: stage.model ? 'stage' : 'default',
       effort: 'default',
-      runtime: 'stage',
-      sandbox: 'stage',
+      runtime: 'host',
+      sandbox: 'default',
       gate: 'stage',
       sessionReuse: 'default',
       handoffTokenLimit: 'default',
@@ -309,7 +309,8 @@ async function driveToComplexVerify(
   storeRoot: string,
   changeId: string
 ): Promise<DrivenRun> {
-  const env = { XDG_DATA_HOME: dataDir };
+  // The in-process plan fixture intentionally freezes Codex.
+  const env = { XDG_DATA_HOME: dataDir, RASEN_AGENT_RUNTIME: 'codex' };
 
   // ---- LAUNCH ----
   const startResult = await runCLI(
@@ -484,7 +485,8 @@ describe('fresh-process complex-route E2E (15.4)', () => {
 
   it('suspends durably when adaptive verify reports complex; blocks ship; offers no uncertain resume', async () => {
     const changeId = 'e2e-complex-suspend';
-    const env = { XDG_DATA_HOME: dataDir };
+    // The in-process plan fixture intentionally freezes Codex.
+    const env = { XDG_DATA_HOME: dataDir, RASEN_AGENT_RUNTIME: 'codex' };
     const { runId, verifyActionId } = await driveToComplexVerify(testDir, dataDir, storeRoot, changeId);
 
     // ---- ASSERT: verify action is closed with complex route ----
@@ -585,7 +587,8 @@ describe('fresh-process complex-route E2E (15.4)', () => {
 
   it('escalates safely from the unsupported complex-route suspension', async () => {
     const changeId = 'e2e-complex-escalate';
-    const env = { XDG_DATA_HOME: dataDir };
+    // The in-process plan fixture intentionally freezes Codex.
+    const env = { XDG_DATA_HOME: dataDir, RASEN_AGENT_RUNTIME: 'codex' };
     const { runId } = await driveToComplexVerify(testDir, dataDir, storeRoot, changeId);
 
     // Status to get the expected version + allowed controls.
@@ -635,7 +638,8 @@ describe('fresh-process complex-route E2E (15.4)', () => {
 
   it('cancels safely from the unsupported complex-route suspension', async () => {
     const changeId = 'e2e-complex-cancel';
-    const env = { XDG_DATA_HOME: dataDir };
+    // The in-process plan fixture intentionally freezes Codex.
+    const env = { XDG_DATA_HOME: dataDir, RASEN_AGENT_RUNTIME: 'codex' };
     const { runId } = await driveToComplexVerify(testDir, dataDir, storeRoot, changeId);
 
     const statusResult = await runCLI(

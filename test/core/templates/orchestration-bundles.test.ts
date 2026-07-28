@@ -43,6 +43,16 @@ function stepHeading(step: string): string {
   return `### Step ${step} `;
 }
 
+function stepSection(playbook: string, step: string): string {
+  const start = playbook.indexOf(stepHeading(step));
+  expect(start, `missing Step ${step}`).toBeGreaterThanOrEqual(0);
+  const following = playbook.slice(start + stepHeading(step).length);
+  const next = following.search(/\n### Step [A-Z]/);
+  return next < 0
+    ? playbook.slice(start)
+    : playbook.slice(start, start + stepHeading(step).length + next);
+}
+
 function expectSteps(
   playbook: string,
   included: readonly string[],
@@ -222,6 +232,68 @@ describe('selective orchestration bundles', () => {
       expect(playbook).toContain(
         'design-level rework — send the problem back to the planner'
       );
+    }
+  });
+
+  it('branches Codex native, exec-bridge, and Claude-native worker lifecycles', () => {
+    for (const playbook of [
+      AUTO_ORCHESTRATION_PLAYBOOK,
+      GOAL_ORCHESTRATION_PLAYBOOK,
+      REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK,
+    ]) {
+      expect(playbook).toContain('`hostRuntime`');
+      expect(playbook).toContain('`dispatchMode`');
+      expect(playbook).toContain('`spawn_agent`');
+      expect(playbook).toContain('`followup_task`');
+      expect(playbook).toContain(
+        "worker's final `DONE` or `HANDOFF` response is delivered to the LEAD automatically"
+      );
+      expect(playbook).toContain('do NOT send a duplicate completion message');
+      expect(playbook).toContain('`wait_agent`');
+      expect(playbook).toContain('one long, barrier-sized event-driven wait');
+      expect(playbook).toContain('repeated 30- or 60-second polling cycles');
+
+      // Claude-native and external exec-bridge contracts remain complete.
+      expect(playbook).toContain('Task tool (subagent_type: "general-purpose"');
+      expect(playbook).toContain('via `SendMessage` to the LEAD');
+      expect(playbook).toContain('codex exec --json --output-schema');
+      expect(playbook).toContain('< /dev/null');
+      expect(playbook).toContain('codex exec resume <threadId>');
+      expect(playbook).toContain('Exec mode yields NO turn id');
+    }
+  });
+
+  it('keeps every review, goal, and resume continuation site dispatch-mode-aware', () => {
+    for (const playbook of [
+      AUTO_ORCHESTRATION_PLAYBOOK,
+      REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK,
+    ]) {
+      const reviewLoop = stepSection(playbook, 'E');
+      expect(reviewLoop).toContain('Claude-native uses `SendMessage` by agentId');
+      expect(reviewLoop).toContain('Codex-native uses `followup_task` by agent id');
+      expect(reviewLoop).toContain('exec-bridge uses `codex exec resume <threadId>`');
+    }
+
+    for (const playbook of [
+      AUTO_ORCHESTRATION_PLAYBOOK,
+      GOAL_ORCHESTRATION_PLAYBOOK,
+    ]) {
+      const goalLoop = stepSection(playbook, 'L');
+      expect(goalLoop).toContain('Claude-native uses `SendMessage` on the same implementer agentId');
+      expect(goalLoop).toContain('Codex-native uses `followup_task` on the same idle implementer agent');
+      expect(goalLoop).toContain('exec-bridge uses `codex exec resume <threadId>`');
+    }
+
+    for (const playbook of [
+      AUTO_ORCHESTRATION_PLAYBOOK,
+      GOAL_ORCHESTRATION_PLAYBOOK,
+      REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK,
+    ]) {
+      const resume = stepSection(playbook, 'F.1');
+      expect(resume).toContain('Claude-native `SendMessage`');
+      expect(resume).toContain('Codex-native `followup_task`');
+      expect(resume).toContain('exec-bridge resume by `threadId`');
+      expect(resume).toContain('never invent one');
     }
   });
 

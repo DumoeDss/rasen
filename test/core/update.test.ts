@@ -7,6 +7,13 @@ import { saveGlobalConfig } from '../../src/core/global-config.js';
 import type { GlobalConfig } from '../../src/core/global-config.js';
 import { ALL_WORKFLOWS, getCurrentBuiltInWorkflowIds } from '../../src/core/profiles.js';
 import { readNamedProfile, saveNamedProfile } from '../../src/core/named-profiles.js';
+import {
+  enumerateBehindProjects,
+  updateMultipleProjects,
+} from '../../src/core/multi-project-update.js';
+import { isInteractive } from '../../src/utils/interactive.js';
+import { select as inquirerSelect } from '@inquirer/prompts';
+import { registerProject } from '../../src/core/project-registry.js';
 import path from 'path';
 import fs from 'fs/promises';
 import fsSync from 'fs';
@@ -40,6 +47,41 @@ vi.mock('../../src/core/global-config.js', async (importOriginal) => {
     }),
   };
 });
+
+// Multi-project update mocks for integration tests (M5d/M5f/M5g/M5h).
+// Wraps real implementations in vi.fn() for call tracking; behavior is
+// unchanged unless a test explicitly overrides the implementation.
+const mpuActual = vi.hoisted(() => ({
+  enumerateBehindProjects: null as null | ((...args: any[]) => Promise<any[]>),
+  updateMultipleProjects: null as null | ((...args: any[]) => Promise<any[]>),
+  isInteractive: null as null | ((...args: any[]) => boolean),
+}));
+
+vi.mock('../../src/core/multi-project-update.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/core/multi-project-update.js')>();
+  mpuActual.enumerateBehindProjects = actual.enumerateBehindProjects;
+  mpuActual.updateMultipleProjects = actual.updateMultipleProjects;
+  return {
+    ...actual,
+    enumerateBehindProjects: vi.fn(actual.enumerateBehindProjects),
+    updateMultipleProjects: vi.fn(actual.updateMultipleProjects),
+  };
+});
+
+vi.mock('../../src/utils/interactive.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/utils/interactive.js')>();
+  mpuActual.isInteractive = actual.isInteractive;
+  return {
+    ...actual,
+    isInteractive: vi.fn(actual.isInteractive),
+  };
+});
+
+// Prevent real TTY prompts during tests (only reached in M5h interactive tests).
+vi.mock('@inquirer/prompts', () => ({
+  select: vi.fn(),
+  checkbox: vi.fn(),
+}));
 
 // Helper to set mock config for tests
 function setMockConfig(config: GlobalConfig) {
@@ -1876,5 +1918,461 @@ content
 
       warnSpy.mockRestore();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// project-install-manifest integration tests (M2, M4, M5 flag behavior)
+// ---------------------------------------------------------------------------
+
+describe('UpdateCommand manifest-honors-update (project-install-manifest M2)', () => {
+  let testDir: string;
+  let dataDir: string;
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(async () => {
+    testDir = path.join(os.tmpdir(), `rasen-manifest-${randomUUID()}`);
+    await fs.mkdir(path.join(testDir, 'rasen'), { recursive: true });
+    dataDir = path.join(os.tmpdir(), `rasen-manifest-data-${randomUUID()}`);
+    await fs.mkdir(dataDir, { recursive: true });
+    originalEnv = { ...process.env };
+    delete process.env.RASEN_HOME;
+    process.env.XDG_DATA_HOME = dataDir;
+    process.env.XDG_CONFIG_HOME = path.join(dataDir, 'config');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    process.env = originalEnv;
+    await fs.rm(testDir, { recursive: true, force: true });
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
+  function writeConfig(yaml: string): void {
+    fsSync.writeFileSync(path.join(testDir, 'rasen', 'config.yaml'), yaml);
+  }
+
+  function writeClaudeSkill(old = false): void {
+    const dir = path.join(testDir, '.claude', 'skills', 'rasen-explore');
+    fsSync.mkdirSync(dir, { recursive: true });
+    fsSync.writeFileSync(
+      path.join(dir, 'SKILL.md'),
+      old
+        ? '---\nname: rasen-explore (old)\n---\nOld content\n'
+        : '---\ngeneratedBy: "0.0.1"\nname: rasen-explore\n---\nOld\n'
+    );
+  }
+
+  function writeCodexSkill(): void {
+    const dir = path.join(testDir, '.codex', 'skills', 'rasen-propose');
+    fsSync.mkdirSync(dir, { recursive: true });
+    fsSync.writeFileSync(
+      path.join(dir, 'SKILL.md'),
+      '---\ngeneratedBy: "0.0.1"\nname: rasen-propose\n---\nStray\n'
+    );
+  }
+
+  function consoleText(): string {
+    return (console.log as ReturnType<typeof vi.fn>).mock.calls
+      .map((c) => c.join(' '))
+      .join('\n');
+  }
+
+  it('(M2a) manifest [claude] refreshes only Claude even with stray .codex skill', async () => {
+    writeConfig('schema: spec-driven\ntools:\n  - claude\n');
+    writeClaudeSkill(true);
+    writeCodexSkill(); // stray — should NOT be refreshed
+
+    await new UpdateCommand({ onlyThis: true }).execute(testDir);
+
+    const text = consoleText();
+    // Claude is updated.
+    expect(text).toMatch(/Updating.*claude/i);
+    // Codex is NOT in the update list.
+    expect(text).not.toMatch(/Updating.*codex/i);
+  });
+
+  it('(M2b) absent manifest seeds and prints seed message exactly once', async () => {
+    writeConfig('schema: spec-driven\n');
+    writeClaudeSkill(true);
+
+    await new UpdateCommand({ onlyThis: true }).execute(testDir);
+
+    const text = consoleText();
+    expect(text).toContain('Seeded tools: claude');
+    // The seed message appears exactly once.
+    expect(text.split('Seeded tools:').length - 1).toBe(1);
+  });
+
+  it('(M2c) empty manifest shows "No configured tools found." without scanning disk', async () => {
+    writeConfig('schema: spec-driven\ntools: []\n');
+    // Put a skill file on disk — it should NOT be detected because manifest is empty.
+    writeClaudeSkill(true);
+
+    await new UpdateCommand({ onlyThis: true }).execute(testDir);
+
+    const text = consoleText();
+    expect(text).toContain('No configured tools found');
+    expect(text).not.toMatch(/Updating.*tool/i);
+  });
+
+  it('(M2d) manifest [claude, codex] with .codex/skills/ deleted regenerates Codex', async () => {
+    writeConfig('schema: spec-driven\ntools:\n  - claude\n  - codex\n');
+    writeClaudeSkill(true);
+    // Deliberately do NOT create .codex/skills/ — manifest is authoritative.
+
+    await new UpdateCommand({ onlyThis: true }).execute(testDir);
+
+    const text = consoleText();
+    // Both tools are refreshed (manifest is authoritative, not disk state).
+    expect(text).toMatch(/Updating.*claude/i);
+    expect(text).toMatch(/Updating.*codex/i);
+  });
+
+  it('(M2e) second run after seeding does not re-seed (idempotent)', async () => {
+    writeConfig('schema: spec-driven\n');
+    writeClaudeSkill(true);
+
+    // First run: seeds.
+    await new UpdateCommand({ onlyThis: true }).execute(testDir);
+
+    vi.restoreAllMocks();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // Second run: manifest is present, should NOT re-seed.
+    await new UpdateCommand({ onlyThis: true }).execute(testDir);
+
+    const text = consoleText();
+    expect(text).not.toContain('Seeded tools:');
+  });
+});
+
+describe('UpdateCommand version-cache write (project-install-manifest M4)', () => {
+  let testDir: string;
+  let dataDir: string;
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(async () => {
+    testDir = path.join(os.tmpdir(), `rasen-vcache-${randomUUID()}`);
+    await fs.mkdir(path.join(testDir, 'rasen'), { recursive: true });
+    dataDir = path.join(os.tmpdir(), `rasen-vcache-data-${randomUUID()}`);
+    await fs.mkdir(dataDir, { recursive: true });
+    originalEnv = { ...process.env };
+    delete process.env.RASEN_HOME;
+    process.env.XDG_DATA_HOME = dataDir;
+    process.env.XDG_CONFIG_HOME = path.join(dataDir, 'config');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    process.env = originalEnv;
+    await fs.rm(testDir, { recursive: true, force: true });
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
+  it('(M4a) successful update writes installedVersion, lastUpdated, and tools to registry', async () => {
+    fsSync.writeFileSync(
+      path.join(testDir, 'rasen', 'config.yaml'),
+      'schema: spec-driven\ntools:\n  - claude\n'
+    );
+    const skillDir = path.join(testDir, '.claude', 'skills', 'rasen-explore');
+    fsSync.mkdirSync(skillDir, { recursive: true });
+    fsSync.writeFileSync(
+      path.join(skillDir, 'SKILL.md'),
+      '---\ngeneratedBy: "0.0.1"\nname: rasen-explore\n---\nOld\n'
+    );
+
+    await new UpdateCommand({ onlyThis: true }).execute(testDir);
+
+    const { readProjectRegistryState } = await import('../../src/core/project-registry.js');
+    const state = await readProjectRegistryState({});
+    expect(state).not.toBeNull();
+    const entries = Object.values(state!.projects);
+    expect(entries.length).toBeGreaterThanOrEqual(1);
+    const entry = entries.find((e) => e.installedVersion !== undefined);
+    expect(entry).toBeDefined();
+    expect(entry!.installedVersion).toBeDefined();
+    expect(entry!.lastUpdated).toBeDefined();
+    expect(entry!.tools).toEqual(['claude']);
+  });
+
+  it('(M4b) failed update leaves cache unchanged (MUST-NOT-advance-before-success)', async () => {
+    // Register the project first with an old cache.
+    const { resolveProjectHome, touchProjectRegistry } = await import(
+      '../../src/core/project-home.js'
+    );
+    const { readProjectRegistryState } = await import(
+      '../../src/core/project-registry.js'
+    );
+    fsSync.writeFileSync(
+      path.join(testDir, 'rasen', 'config.yaml'),
+      'schema: spec-driven\ntools:\n  - claude\n'
+    );
+    const home = await resolveProjectHome(testDir, {});
+    expect(home).not.toBeNull();
+
+    // Pre-seed an old installedVersion.
+    await touchProjectRegistry(testDir, { tools: ['claude'], installedVersion: '0.1.5' });
+
+    const stateBefore = await readProjectRegistryState({});
+    const entryBefore = Object.values(stateBefore!.projects).find(
+      (e) => e.installedVersion === '0.1.5'
+    );
+    expect(entryBefore).toBeDefined();
+
+    // Now break the project: remove rasen/ so execute() throws early.
+    await fs.rm(path.join(testDir, 'rasen'), { recursive: true, force: true });
+
+    await expect(new UpdateCommand({ onlyThis: true }).execute(testDir)).rejects.toThrow();
+
+    // Cache should be unchanged.
+    const stateAfter = await readProjectRegistryState({});
+    const entryAfter = Object.values(stateAfter!.projects).find((e) => e.projectId === entryBefore!.projectId);
+    expect(entryAfter!.installedVersion).toBe('0.1.5');
+  });
+});
+
+describe('UpdateCommand multi-project flags (project-install-manifest M5)', () => {
+  let testDir: string;
+  let dataDir: string;
+  let fixturesRoot: string;
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(async () => {
+    testDir = path.join(os.tmpdir(), `rasen-mp-flags-${randomUUID()}`);
+    await fs.mkdir(path.join(testDir, 'rasen'), { recursive: true });
+    dataDir = path.join(os.tmpdir(), `rasen-mp-flags-data-${randomUUID()}`);
+    await fs.mkdir(dataDir, { recursive: true });
+    fixturesRoot = path.join(os.tmpdir(), `rasen-mp-fix-${randomUUID()}`);
+    await fs.mkdir(fixturesRoot, { recursive: true });
+    originalEnv = { ...process.env };
+    delete process.env.RASEN_HOME;
+    process.env.XDG_DATA_HOME = dataDir;
+    process.env.XDG_CONFIG_HOME = path.join(dataDir, 'config');
+    process.env.OPEN_SPEC_INTERACTIVE = '0';
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // Reset multi-project mocks to passthrough after any prior override.
+    vi.mocked(enumerateBehindProjects).mockImplementation(
+      mpuActual.enumerateBehindProjects as typeof enumerateBehindProjects
+    );
+    vi.mocked(updateMultipleProjects).mockImplementation(
+      mpuActual.updateMultipleProjects as typeof updateMultipleProjects
+    );
+    vi.mocked(isInteractive).mockImplementation(
+      mpuActual.isInteractive as typeof isInteractive
+    );
+    vi.mocked(inquirerSelect).mockReset();
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    process.env = originalEnv;
+    await fs.rm(testDir, { recursive: true, force: true });
+    await fs.rm(dataDir, { recursive: true, force: true });
+    await fs.rm(fixturesRoot, { recursive: true, force: true });
+  });
+
+  // Set up the current project with a non-empty manifest and a stale Claude skill.
+  function setupCurrentProject(): void {
+    fsSync.writeFileSync(
+      path.join(testDir, 'rasen', 'config.yaml'),
+      'schema: spec-driven\ntools:\n  - claude\n'
+    );
+    const skillDir = path.join(testDir, '.claude', 'skills', 'rasen-explore');
+    fsSync.mkdirSync(skillDir, { recursive: true });
+    fsSync.writeFileSync(
+      path.join(skillDir, 'SKILL.md'),
+      '---\ngeneratedBy: "0.0.1"\nname: rasen-explore\n---\nOld\n'
+    );
+  }
+
+  // Create a behind-project directory with a stale Claude skill.
+  function makeBehindProjectDir(name: string, pinned = false): string {
+    const dir = path.join(fixturesRoot, name);
+    fsSync.mkdirSync(path.join(dir, 'rasen'), { recursive: true });
+    const pinYaml = pinned ? 'update:\n  pin: true\n' : '';
+    fsSync.writeFileSync(
+      path.join(dir, 'rasen', 'config.yaml'),
+      `schema: spec-driven\ntools:\n  - claude\n${pinYaml}`
+    );
+    const skillDir = path.join(dir, '.claude', 'skills', 'rasen-explore');
+    fsSync.mkdirSync(skillDir, { recursive: true });
+    fsSync.writeFileSync(
+      path.join(skillDir, 'SKILL.md'),
+      '---\ngeneratedBy: "0.0.1"\nname: rasen-explore\n---\nOld behind\n'
+    );
+    return dir;
+  }
+
+  // Register a project in the isolated registry. Does NOT pass globalDataDir:
+  // registerProject and enumerateBehindProjects (inside offerMultiProjectUpdate)
+  // must both resolve through getGlobalDataDir() (which reads XDG_DATA_HOME) so
+  // they agree on the same registry path.
+  async function registerBehind(
+    dir: string,
+    name: string,
+    options: { version?: string; tools?: string[] } = {}
+  ): Promise<void> {
+    await registerProject({
+      projectRoot: dir,
+      projectId: `mp-${name}-${randomUUID().slice(0, 8)}`,
+      mode: 'in-repo',
+      ...(options.version !== undefined ? { installedVersion: options.version } : {}),
+      ...(options.tools ? { tools: options.tools } : {}),
+    });
+  }
+
+  function consoleText(): string {
+    return (console.log as ReturnType<typeof vi.fn>).mock.calls
+      .map((c) => c.join(' '))
+      .join('\n');
+  }
+
+  // (M5d) --only-this must completely skip step 17 (offerMultiProjectUpdate).
+  // Non-vacuity: if the `if (!this.onlyThis)` guard at update.ts:517 is removed,
+  // offerMultiProjectUpdate runs and calls enumerateBehindProjects. The spy
+  // assertion `not.toHaveBeenCalled()` would then fail.
+  it('(M5d) --only-this does not consult the registry for multi-project', async () => {
+    setupCurrentProject();
+    // Set up a real behind project to prove the registry data exists.
+    const behind = makeBehindProjectDir('behind-d');
+    await registerBehind(behind, 'behind-d', { version: '0.0.1', tools: ['claude'] });
+
+    await new UpdateCommand({ onlyThis: true }).execute(testDir);
+
+    // The multi-project enumeration was never called (step 17 skipped entirely).
+    expect(enumerateBehindProjects).not.toHaveBeenCalled();
+    // No multi-project output whatsoever.
+    const text = consoleText();
+    expect(text).not.toContain('Multi-project update');
+    expect(text).not.toContain('All registered projects are current');
+    // The behind project's skill was NOT updated (still stale).
+    const behindSkill = fsSync.readFileSync(
+      path.join(behind, '.claude', 'skills', 'rasen-explore', 'SKILL.md'),
+      'utf-8'
+    );
+    expect(behindSkill).toContain('Old behind');
+  });
+
+  // (M5f) Non-interactive without --all-projects must skip the offer.
+  // Non-vacuity: if the `if (!interactive && !this.allProjects) { return; }` gate
+  // at update.ts:574 is removed, the code proceeds to updateMultipleProjects.
+  // The spy assertion `not.toHaveBeenCalled()` would then fail.
+  it('(M5f) non-interactive without --all-projects does not update other projects', async () => {
+    setupCurrentProject();
+    const behind = makeBehindProjectDir('behind-f');
+    await registerBehind(behind, 'behind-f', { version: '0.0.1', tools: ['claude'] });
+
+    // Non-interactive: OPEN_SPEC_INTERACTIVE=0 is set in beforeEach.
+    await new UpdateCommand().execute(testDir);
+
+    // The registry WAS consulted (enumerateBehindProjects ran).
+    expect(enumerateBehindProjects).toHaveBeenCalled();
+    // But no batch update happened.
+    expect(updateMultipleProjects).not.toHaveBeenCalled();
+    // No prompt was shown.
+    expect(inquirerSelect).not.toHaveBeenCalled();
+    // The behind project's skill was NOT updated.
+    const behindSkill = fsSync.readFileSync(
+      path.join(behind, '.claude', 'skills', 'rasen-explore', 'SKILL.md'),
+      'utf-8'
+    );
+    expect(behindSkill).toContain('Old behind');
+  });
+
+  // (M5g) --all-projects bypasses the prompt and updates all reachable non-pinned
+  // behind projects.
+  // Non-vacuity: if the --all-projects path stops triggering the batch (e.g. the
+  // gate at update.ts:574 always returns), updateMultipleProjects is never called
+  // and the reachable project's skill stays stale.
+  it('(M5g) --all-projects updates reachable non-pinned behind projects without prompting', async () => {
+    setupCurrentProject();
+    // Behind project 1: reachable, non-pinned, old version → should be updated.
+    const reachable = makeBehindProjectDir('reachable-g', false);
+    await registerBehind(reachable, 'reachable-g', { version: '0.0.1', tools: ['claude'] });
+    // Behind project 2: pinned → excluded by enumeration (update.pin: true).
+    const pinned = makeBehindProjectDir('pinned-g', true);
+    await registerBehind(pinned, 'pinned-g', { version: '0.0.1', tools: ['claude'] });
+    // Behind project 3: missing directory → excluded by enumeration.
+    const missingDir = path.join(fixturesRoot, 'missing-g');
+    await registerBehind(missingDir, 'missing-g', { version: '0.0.1', tools: ['claude'] });
+
+    await new UpdateCommand({ allProjects: true }).execute(testDir);
+
+    // No prompt was shown.
+    expect(inquirerSelect).not.toHaveBeenCalled();
+    // The batch update ran.
+    expect(updateMultipleProjects).toHaveBeenCalled();
+    // The reachable project's skill was refreshed (no longer stale).
+    const reachableSkill = fsSync.readFileSync(
+      path.join(reachable, '.claude', 'skills', 'rasen-explore', 'SKILL.md'),
+      'utf-8'
+    );
+    expect(reachableSkill).not.toContain('Old behind');
+    // The pinned project's skill was NOT updated (excluded by enumeration).
+    const pinnedSkill = fsSync.readFileSync(
+      path.join(pinned, '.claude', 'skills', 'rasen-explore', 'SKILL.md'),
+      'utf-8'
+    );
+    expect(pinnedSkill).toContain('Old behind');
+    // Multi-project summary was printed.
+    expect(consoleText()).toContain('Multi-project update');
+  });
+
+  // (M5h-1) Interactive prompt defaults to Skip — no projects updated.
+  // Non-vacuity: if the prompt is removed, inquirerSelect is never called.
+  it('(M5h-1) interactive prompt defaults to Skip (no projects updated)', async () => {
+    setupCurrentProject();
+    const behind = makeBehindProjectDir('behind-h1');
+    await registerBehind(behind, 'behind-h1', { version: '0.0.1', tools: ['claude'] });
+
+    // Override interactivity for this test.
+    vi.mocked(isInteractive).mockReturnValue(true);
+    vi.mocked(inquirerSelect).mockResolvedValue('skip');
+
+    await new UpdateCommand().execute(testDir);
+
+    // The prompt was shown.
+    expect(inquirerSelect).toHaveBeenCalled();
+    // No batch update happened (user chose Skip).
+    expect(updateMultipleProjects).not.toHaveBeenCalled();
+    // The behind project's skill was NOT updated.
+    const behindSkill = fsSync.readFileSync(
+      path.join(behind, '.claude', 'skills', 'rasen-explore', 'SKILL.md'),
+      'utf-8'
+    );
+    expect(behindSkill).toContain('Old behind');
+  });
+
+  // (M5h-2) Interactive prompt "Update all" updates reachable behind projects.
+  // Non-vacuity: if "Update all" stops triggering the batch, updateMultipleProjects
+  // is never called and the behind project's skill stays stale.
+  it('(M5h-2) interactive prompt "Update all" updates reachable behind projects', async () => {
+    setupCurrentProject();
+    const behind = makeBehindProjectDir('behind-h2');
+    await registerBehind(behind, 'behind-h2', { version: '0.0.1', tools: ['claude'] });
+
+    // Override interactivity for this test.
+    vi.mocked(isInteractive).mockReturnValue(true);
+    vi.mocked(inquirerSelect).mockResolvedValue('all');
+
+    await new UpdateCommand().execute(testDir);
+
+    // The prompt was shown.
+    expect(inquirerSelect).toHaveBeenCalled();
+    // The batch update ran.
+    expect(updateMultipleProjects).toHaveBeenCalled();
+    // The behind project's skill was refreshed.
+    const behindSkill = fsSync.readFileSync(
+      path.join(behind, '.claude', 'skills', 'rasen-explore', 'SKILL.md'),
+      'utf-8'
+    );
+    expect(behindSkill).not.toContain('Old behind');
   });
 });

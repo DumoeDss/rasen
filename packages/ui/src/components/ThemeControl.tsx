@@ -5,6 +5,7 @@ import type { WireConfigEntry } from '../api/types.js';
 import {
   activateTheme,
   clearThemeWarning,
+  DEFAULT_THEME,
   EDITORIAL_THEME,
   getThemeSnapshot,
   refreshThemeCatalog,
@@ -53,7 +54,7 @@ export function ThemeControl({
   }, []);
 
   const { catalog, activeTheme, warningCode } = getThemeSnapshot();
-  const configured = typeof entry.value === 'string' ? entry.value : 'editorial';
+  const configured = typeof entry.value === 'string' ? entry.value : DEFAULT_THEME.id;
   const unavailable = !catalog.some((theme) => theme.id === configured);
   const configuredTheme = catalog.find((theme) => theme.id === configured);
   const configuredDescription =

@@ -384,9 +384,44 @@ rasen archive add-jwt-auth
 | 启用更多命令 | `rasen config profile` → `rasen update` |
 ---
 
-## 8. Claude / Codex agent runtime 切换
+## 8. 宿主感知的 Claude / Codex worker runtime
 
-pipeline 现在支持把每个 role 单独切换到 `claude` 或 `codex`。可切换的 role 是：
+Rasen 在执行预检时只检测一次当前工具宿主；如果 pipeline 没有显式指定 runtime，就自动继承该宿主。也就是说，在 Codex 中运行时默认走 Codex 原生协作工具，在 Claude Code 中运行时默认走现有 Task/subagent 路径。可用下面的命令查看最终执行决策：
+
+```bash
+rasen pipeline show small-feature --for-execution --json
+```
+
+单次运行的 role 选择必须把相同参数传给这个最终执行计划命令：
+
+```bash
+rasen pipeline show small-feature --for-execution --planner codex --reviewer codex --json
+```
+
+输出顶层包含 `hostRuntime` / `hostRuntimeSource`，每个 stage 包含 `runtime`、`runtimeSource` 和 `dispatchMode`。单次调用覆盖显示为 `runtimeSource: invocation`，并在分发前完成宿主路由校验。
+
+显式选择仍然优先。runtime 解析顺序是：
+
+1. 单次调用的 role 覆盖；
+2. 持久化的 `pipelines.<name>.runtimes.<role>` 配置；
+3. stage 的 `runtime`；
+4. pipeline 的 `agents.<role>.runtime`；
+5. 检测到的宿主；
+6. 只有宿主无法识别时才使用旧版 Claude 兼容默认。
+
+当前发布的路由矩阵：
+
+| 宿主 | 目标 worker | `dispatchMode` | 行为 |
+|---|---|---|---|
+| Claude | Claude | `native` | Task/subagent + `SendMessage` |
+| Claude | Codex | `exec-bridge` | 非交互 `codex exec`；预检最多探测一次 Codex CLI |
+| Codex | Codex | `native` | Codex 原生协作工具；worker 的 final 会自动送达 LEAD |
+| Codex | Claude | `unsupported` | 预检失败；Rasen 不会悄悄改写显式 runtime |
+| unknown | 旧版兼容目标 | `legacy-fallback` | 非致命告警；可设置 `RASEN_AGENT_RUNTIME=claude|codex` 明确宿主 |
+
+Codex 原生编排把 `wait_agent` 当作依赖 join，而不是 heartbeat：只有没有其他独立工作可做且关键路径依赖结果时才等待；使用一次较长、事件驱动的 wait，不反复进行短轮询。`send_message` 只用于中间协调，worker 的最终 `DONE` / `HANDOFF` 已会自动送达 LEAD。
+
+每个 role 仍可单独切换到 `claude` 或 `codex`。可切换的 role 是：
 
 - `planner`
 - `implementer`
@@ -394,13 +429,15 @@ pipeline 现在支持把每个 role 单独切换到 `claude` 或 `codex`。可�
 - `fixer`
 - `shipper`
 
-临时切换用于单次 `/rasen-auto` 调用：
+在 **Claude 宿主**中临时切换单次 `/rasen-auto` 调用（Claude → Codex 可通过 exec bridge 路由）：
 
 ```text
 /rasen-auto --planner codex --reviewer codex --fixer claude <task>
 ```
 
-固化到某条 pipeline，用 CLI 写入项目本地覆盖：
+在 Codex 宿主中，任何 Claude worker 目标都不受支持；最终预检会直接拒绝，而不会悄悄替换成 Codex。
+
+要把某个 role 固化到 pipeline，用 CLI 写入配置覆盖：
 
 ```bash
 rasen pipeline agents small-feature --planner codex --reviewer codex
@@ -408,13 +445,13 @@ rasen pipeline agents small-feature --json
 rasen pipeline show small-feature --json
 ```
 
-这会创建或更新：
+这会在以下文件中创建或更新 pipeline runtime 配置族：
 
 ```text
-openspec/pipelines/small-feature/pipeline.yaml
+rasen/config.yaml
 ```
 
-解析优先级仍然是 `project > user > package`，所以内置 pipeline 不会被改动；当前项目会优先使用本地覆盖。要切回 Claude：
+配置层优先级是项目 > 继承的 store > 全局。内置 pipeline 定义不会被复制或修改。要显式切回 Claude：
 
 ```bash
 rasen pipeline agents small-feature --planner claude --reviewer claude
@@ -447,12 +484,13 @@ stages:
     sandbox: read-only
 ```
 
-会话恢复语义不同：
+run-state 会记录 `runtime` 和 `dispatchMode`，并且只记录所选路由真实返回的句柄：
 
-- Claude worker 记录 `agentId` / `transcript`，跨重启后用 transcript 暖播种新 worker。
-- Codex worker 记录 `threadId` / `turnId`，跨重启后优先用 `thread/resume(threadId)` 继续同一个 Codex thread。
+- Claude native 记录 `agentId`，以及宿主提供时的 `transcript`。
+- Codex native 记录原生协作工具返回的 `agentId`，绝不伪造 exec `threadId`。
+- Codex exec-bridge 记录 `threadId` 和 rollout `transcript`；exec 模式没有 `turnId`。
 
-`rasen pipeline resume <change> --json` 会把两类恢复句柄都放在 `workers` 中，并用 `runtime` 区分。
+缺少 `dispatchMode` 的旧记录仍可读取：Codex `threadId` 推断为 exec-bridge，原生 `agentId` 推断为 native；歧义记录会带告警保守降级，不会制造句柄。
 
 ---
 

@@ -232,7 +232,7 @@ describe('global-config', () => {
         language: 'auto',
         proactive: true,
         repoMode: 'collaborative',
-        ui: { theme: 'editorial' },
+        ui: { theme: 'crt' },
       });
     });
 
@@ -300,7 +300,7 @@ describe('global-config', () => {
         language: 'auto',
         proactive: true,
         repoMode: 'collaborative',
-        ui: { theme: 'editorial' },
+        ui: { theme: 'crt' },
       });
     });
 

@@ -7,6 +7,7 @@ import {
   readRolloutConversation,
   readRolloutOccupancy,
 } from '../../../src/core/codex/rollout.js';
+import { readRolloutOccupancy as readRolloutOccupancyFromPackageRoot } from '../../../src/index.js';
 
 let codexHome: string;
 
@@ -107,7 +108,7 @@ describe('findRolloutPath', () => {
 });
 
 describe('readRolloutOccupancy', () => {
-  it('reads totalTokens/modelContextWindow/pct from the LAST token_count event (E03)', () => {
+  it('uses the last current-context snapshot after compaction while cumulative spend keeps rising', () => {
     const rolloutPath = writeRollout('2026/07/12/rollout-e03.jsonl', [
       JSON.stringify({
         timestamp: '2026-07-12T06:29:48.065Z',
@@ -124,10 +125,16 @@ describe('readRolloutOccupancy', () => {
         payload: {
           type: 'token_count',
           info: {
-            total_token_usage: { total_tokens: 4000 },
-            model_context_window: 353400,
+            total_token_usage: { total_tokens: 160_000_000 },
+            last_token_usage: { total_tokens: 220_000 },
+            model_context_window: 258_400,
           },
         },
+      }),
+      JSON.stringify({
+        timestamp: '2026-07-12T06:29:51.000Z',
+        type: 'event_msg',
+        payload: { type: 'context_compacted' },
       }),
       JSON.stringify({
         timestamp: '2026-07-12T06:29:53.304Z',
@@ -135,18 +142,41 @@ describe('readRolloutOccupancy', () => {
         payload: {
           type: 'token_count',
           info: {
-            total_token_usage: { total_tokens: 8059 },
-            model_context_window: 353400,
+            total_token_usage: { total_tokens: 164_620_250 },
+            last_token_usage: { total_tokens: 40_556 },
+            model_context_window: 258_400,
           },
         },
       }),
     ]);
     const occupancy = readRolloutOccupancy(rolloutPath);
     expect(occupancy).toEqual({
-      totalTokens: 8059,
-      modelContextWindow: 353400,
-      pct: 8059 / 353400,
+      contextTokens: 40_556,
+      totalTokens: 40_556,
+      modelContextWindow: 258_400,
+      pct: 40_556 / 258_400,
     });
+  });
+
+  it('keeps the package-root totalTokens alias equal to current context, not lifetime spend', () => {
+    const rolloutPath = writeRollout('2026/07/12/rollout-public-api.jsonl', [
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { total_tokens: 164_620_250 },
+            last_token_usage: { total_tokens: 40_556 },
+            model_context_window: 258_400,
+          },
+        },
+      }),
+    ]);
+
+    const occupancy = readRolloutOccupancyFromPackageRoot(rolloutPath);
+    expect(occupancy?.contextTokens).toBe(40_556);
+    expect(occupancy?.totalTokens).toBe(occupancy?.contextTokens);
+    expect(occupancy?.totalTokens).not.toBe(164_620_250);
   });
 
   it('returns null (not an error) when the rollout has no token_count event yet', () => {
@@ -157,15 +187,68 @@ describe('readRolloutOccupancy', () => {
     expect(readRolloutOccupancy(rolloutPath)).toBeNull();
   });
 
-  it('tolerates malformed lines while still finding the last token_count event', () => {
+  it('keeps the last valid current-context snapshot across malformed and unusable records', () => {
     const rolloutPath = writeRollout('2026/07/12/rollout-malformed.jsonl', [
       'not json',
       JSON.stringify({
         type: 'event_msg',
-        payload: { type: 'token_count', info: { total_token_usage: { total_tokens: 100 }, model_context_window: 1000 } },
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { total_tokens: 900 },
+            last_token_usage: { total_tokens: 100 },
+            model_context_window: 1000,
+          },
+        },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { total_tokens: 1_200 },
+            last_token_usage: { total_tokens: 'unknown' },
+            model_context_window: 2_000,
+          },
+        },
       }),
     ]);
-    expect(readRolloutOccupancy(rolloutPath)).toEqual({ totalTokens: 100, modelContextWindow: 1000, pct: 0.1 });
+    expect(readRolloutOccupancy(rolloutPath)).toEqual({
+      contextTokens: 100,
+      totalTokens: 100,
+      modelContextWindow: 1000,
+      pct: 0.1,
+    });
+  });
+
+  it('fails actionably when token-count events contain no usable current-context snapshot', () => {
+    const rolloutPath = writeRollout('2026/07/12/rollout-legacy.jsonl', [
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { total_tokens: 8059 },
+            model_context_window: 353400,
+          },
+        },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { total_tokens: 9000 },
+            last_token_usage: { total_tokens: 'unknown' },
+            model_context_window: 353400,
+          },
+        },
+      }),
+    ]);
+
+    expect(() => readRolloutOccupancy(rolloutPath)).toThrow(
+      /current-context.*last_token_usage\.total_tokens/i
+    );
   });
 });
 

@@ -87,6 +87,9 @@ export function lowerRuntimePlanInput(
   const capabilityByPath = new Map(
     profile.capabilities.map((binding) => [binding.nodeId, binding] as const)
   );
+  const policyByPath = new Map(
+    profile.policy.stages.map((stage) => [stage.nodeId, stage] as const)
+  );
   const nodes: RuntimePlanNodeInput[] = pipeline.stages.map((stage) => {
     const path = `stage:${stage.id}`;
     const capability = capabilityByPath.get(path);
@@ -96,6 +99,13 @@ export function lowerRuntimePlanInput(
         `No capability binding for node ${path}.`
       );
     }
+    const policy = policyByPath.get(path);
+    if (policy === undefined) {
+      throw new RuntimePlanLowererError(
+        'lowerer_shape_mismatch',
+        `No effective policy for node ${path}.`
+      );
+    }
     const node: RuntimePlanNodeInput = {
       kind: 'atomic',
       hierarchicalPath: path,
@@ -103,7 +113,7 @@ export function lowerRuntimePlanInput(
       admissionKind: capability.actionKind,
       workspace: { access: capability.workspace.access },
       adaptiveVerify: stage.verifyPolicy === 'adaptive',
-      ...(stage.gate ? { gate: gateInput(stage.id, gatePolicy) } : {}),
+      ...(policy.gate ? { gate: gateInput(stage.id, gatePolicy) } : {}),
     };
     return node;
   });

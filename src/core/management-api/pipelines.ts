@@ -30,6 +30,7 @@ import {
   type CapabilityCatalogSnapshot,
   type DefinitionDiagnostic,
   type EffectiveStageInputs,
+  type PipelineExecutionOptions,
   type PipelineYaml,
   type PreparedDefinition,
   type StageRole,
@@ -52,6 +53,12 @@ import type {
   WireDefinitionPreparation,
   WirePipeline,
 } from './wire-types.js';
+import type { DetectedHostRuntime } from '../runtime-adapters.js';
+
+const MANAGEMENT_HOST: DetectedHostRuntime = {
+  runtime: 'unknown',
+  source: 'unknown',
+};
 
 function diagnosticForWire(
   diagnostic: DefinitionDiagnostic
@@ -67,12 +74,7 @@ function diagnosticForWire(
 
 async function resolvePreparationCatalog(
   projectRoot: string | undefined,
-  reporter:
-    | false
-    | ((notice: {
-        kind: 'unknown-profile-workflows';
-        workflowIds: string[];
-      }) => void) = false
+  reporter: PipelineExecutionOptions['reporter'] = false
 ): Promise<{
   catalog: CapabilityCatalogSnapshot;
   knownSkillNames: Set<string>;
@@ -151,12 +153,7 @@ export interface ManagementDefinitionPreparation {
 export async function preparePipelineDefinitionForManagement(
   definition: unknown,
   projectRoot?: string,
-  reporter:
-    | false
-    | ((notice: {
-        kind: 'unknown-profile-workflows';
-        workflowIds: string[];
-      }) => void) = false
+  reporter: PipelineExecutionOptions['reporter'] = false
 ): Promise<ManagementDefinitionPreparation> {
   const { catalog, knownSkillNames, enabledSkillNames } =
     await resolvePreparationCatalog(projectRoot, reporter);
@@ -304,11 +301,19 @@ export async function handleListPipelines(
     }
     const pipeline = prepared.authoredSource as PipelineYaml;
     const overrides = resolvePipelineStageOverrides(pipeline.name, bundle.effOptions);
-    const inputs: EffectiveStageInputs = { ...bundle.inputsBase, overrides };
+    const inputs: EffectiveStageInputs = {
+      ...bundle.inputsBase,
+      overrides,
+      host: MANAGEMENT_HOST,
+    };
     const effectiveStages = pipeline.stages.map((stage) =>
       resolveEffectiveStage(stage, pipeline, inputs)
     );
-    const resolvedRoleRuntimes = resolvePipelineRoleRuntimes(pipeline, overrides);
+    const resolvedRoleRuntimes = resolvePipelineRoleRuntimes(
+      pipeline,
+      overrides,
+      MANAGEMENT_HOST
+    );
     const runtimes = Object.fromEntries(
       Object.entries(resolvedRoleRuntimes).map(([role, resolved]) => [
         role,
@@ -463,13 +468,18 @@ export async function handlePipelineDetail(
       pipeline.name,
       bundle.effOptions
     );
-    const inputs: EffectiveStageInputs = { ...bundle.inputsBase, overrides };
+    const inputs: EffectiveStageInputs = {
+      ...bundle.inputsBase,
+      overrides,
+      host: MANAGEMENT_HOST,
+    };
     const effectiveStages = pipeline.stages.map((stage) =>
       resolveEffectiveStage(stage, pipeline, inputs)
     );
     const resolvedRoleRuntimes = resolvePipelineRoleRuntimes(
       pipeline,
-      overrides
+      overrides,
+      MANAGEMENT_HOST
     );
     const runtimes = Object.fromEntries(
       Object.entries(resolvedRoleRuntimes).map(([role, resolved]) => [
@@ -567,6 +577,7 @@ export async function handlePipelineValidation(
     definition,
     bundle.pipelineRoot,
     (notice) => {
+      if (notice.kind !== 'unknown-profile-workflows') return;
       warnings.push({
         severity: 'warning',
         path: '/',

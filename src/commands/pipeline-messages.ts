@@ -6,6 +6,7 @@ import {
 } from '../locales/index.js';
 import type { PipelineExecutionNotice } from '../core/pipeline-registry/execution-validation.js';
 import type { RootSelectionNotice } from '../core/root-selection.js';
+import type { StoreUnavailableReason } from '../core/store/identity.js';
 import type { CliLocale } from '../utils/locale.js';
 
 export const BUILT_IN_PIPELINE_IDS = [
@@ -28,17 +29,26 @@ export interface PipelineMessageValues {
   complete: undefined;
   recorded: undefined;
   bareWorkerLabel: undefined;
-  inheritingStoreConfigNotice: { path: string; store: string };
-  inactiveStorePointerWarning: { path: string; store: string };
+  inheritingStoreConfigByIdentityNotice: { path: string; store: string };
+  inheritingStoreConfigByAliasNotice: { path: string; store: string };
+  unavailableStoreDeclaration: { path: string; store: string; reason: string; repair: string };
+  storeReasonNotRegistered: undefined;
+  storeReasonMetadataMissing: undefined;
+  storeReasonUidMismatch: undefined;
+  storeReasonRootUnhealthy: undefined;
+  storeReasonAliasAmbiguous: undefined;
+  storeReasonPointerMalformed: undefined;
   selectedStoreRoot: { store: string; path: string };
   selectedProjectRoot: { project: string; path: string };
   staleProfileWorkflowsWarning: { workflows: string };
+  unknownHostRuntimeWarning: { override: string };
   noPipelinesFound: undefined;
   availablePipelinesHeading: undefined;
   pipelineTableEntry: { name: string; source: string };
   pipelineTableStages: { stages: string };
   pipelineLabel: { name: string };
   definitionVersionLabel: { version: number };
+  hostRuntimeLabel: { runtime: string; source: string };
   pipelineNotFound: { name: string; available: string };
   originLabel: { origin: string };
   buildOrderHeading: undefined;
@@ -54,6 +64,7 @@ export interface PipelineMessageValues {
   stageMetaVerifyPolicy: { policy: string };
   stageMetaRuntime: { runtime: string };
   stageMetaRuntimeSource: { runtime: string; source: string };
+  stageMetaDispatch: { mode: string };
   stageMetaSessionReuse: { session: string };
   stageMetaSandbox: { sandbox: string };
   stageMetaHandoff: { threshold: string; source: string };
@@ -62,8 +73,14 @@ export interface PipelineMessageValues {
   projectOverrideLabel: { path: string };
   roleRuntimesHeading: undefined;
   stagesHeading: undefined;
-  agentRoleLine: { role: string; runtime: string };
-  agentStageLine: { id: string; role: string; runtime: string; source: string };
+  agentRoleLine: { role: string; runtime: string; source: string; dispatch: string };
+  agentStageLine: {
+    id: string;
+    role: string;
+    runtime: string;
+    source: string;
+    dispatch: string;
+  };
   invalidRuntime: { runtime: string; role: string };
   suggestedPipeline: { pipeline: string };
   matchedIndicators: { indicators: string };
@@ -93,6 +110,13 @@ export interface PipelineMessageValues {
   resumeHandles: { stages: string };
   sessionHandoff: { generation: number; path: string };
   gatePolicy: { effective: string; source: string };
+  executionBinding: { project: string; path: string };
+  executionBindingPlanningOnly: undefined;
+  executionBindingMismatch: { frozen: string; found: string; checkout: string };
+  executionBindingSelectorConflict: { frozen: string; selector: string };
+  executionBindingAmbiguous: { frozen: string; candidates: string };
+  executionBindingMissing: { frozen: string };
+  sessionContextBroken: { path: string; detail: string };
   createdDraft: { path: string };
   pipelineValid: undefined;
   pipelineInvalid: undefined;
@@ -120,17 +144,26 @@ export const PIPELINE_MESSAGE_KEYS = [
   'complete',
   'recorded',
   'bareWorkerLabel',
-  'inheritingStoreConfigNotice',
-  'inactiveStorePointerWarning',
+  'inheritingStoreConfigByIdentityNotice',
+  'inheritingStoreConfigByAliasNotice',
+  'unavailableStoreDeclaration',
+  'storeReasonNotRegistered',
+  'storeReasonMetadataMissing',
+  'storeReasonUidMismatch',
+  'storeReasonRootUnhealthy',
+  'storeReasonAliasAmbiguous',
+  'storeReasonPointerMalformed',
   'selectedStoreRoot',
   'selectedProjectRoot',
   'staleProfileWorkflowsWarning',
+  'unknownHostRuntimeWarning',
   'noPipelinesFound',
   'availablePipelinesHeading',
   'pipelineTableEntry',
   'pipelineTableStages',
   'pipelineLabel',
   'definitionVersionLabel',
+  'hostRuntimeLabel',
   'pipelineNotFound',
   'originLabel',
   'buildOrderHeading',
@@ -146,6 +179,7 @@ export const PIPELINE_MESSAGE_KEYS = [
   'stageMetaVerifyPolicy',
   'stageMetaRuntime',
   'stageMetaRuntimeSource',
+  'stageMetaDispatch',
   'stageMetaSessionReuse',
   'stageMetaSandbox',
   'stageMetaHandoff',
@@ -185,6 +219,13 @@ export const PIPELINE_MESSAGE_KEYS = [
   'resumeHandles',
   'sessionHandoff',
   'gatePolicy',
+  'executionBinding',
+  'executionBindingPlanningOnly',
+  'executionBindingMismatch',
+  'executionBindingSelectorConflict',
+  'executionBindingAmbiguous',
+  'executionBindingMissing',
+  'sessionContextBroken',
   'createdDraft',
   'pipelineValid',
   'pipelineInvalid',
@@ -280,21 +321,35 @@ export function getPipelineMessages(
   return new PipelineMessages(locale, getLocaleCatalog(locale));
 }
 
+/** One localized phrase per unavailable reason (design D13's reason set). */
+const STORE_UNAVAILABLE_REASON_KEYS: Record<StoreUnavailableReason, PipelineMessageKey> = {
+  'not-registered': 'storeReasonNotRegistered',
+  'metadata-missing': 'storeReasonMetadataMissing',
+  'uid-mismatch': 'storeReasonUidMismatch',
+  'root-unhealthy': 'storeReasonRootUnhealthy',
+  'alias-ambiguous': 'storeReasonAliasAmbiguous',
+  'pointer-malformed': 'storeReasonPointerMalformed',
+};
+
 export function formatPipelineRootSelectionNotice(
   notice: RootSelectionNotice,
   locale: CliLocale = getCliLocale()
 ): string {
   const messages = getPipelineMessages(locale);
   if (notice.kind === 'inheriting-store-config') {
-    return messages.format('inheritingStoreConfigNotice', {
-      path: notice.filePath,
-      store: notice.storeId,
-    });
+    return messages.format(
+      notice.resolvedBy === 'uid'
+        ? 'inheritingStoreConfigByIdentityNotice'
+        : 'inheritingStoreConfigByAliasNotice',
+      { path: notice.filePath, store: notice.storeId }
+    );
   }
-  if (notice.kind === 'inactive-store-pointer') {
-    return messages.format('inactiveStorePointerWarning', {
+  if (notice.kind === 'unavailable-store-declaration') {
+    return messages.format('unavailableStoreDeclaration', {
       path: notice.filePath,
       store: notice.storeId,
+      reason: messages.formatDescriptor(STORE_UNAVAILABLE_REASON_KEYS[notice.reason]),
+      repair: notice.repair,
     });
   }
   if (notice.storeType === 'project') {
@@ -313,7 +368,11 @@ export function formatPipelineExecutionNotice(
   notice: PipelineExecutionNotice,
   locale: CliLocale = getCliLocale()
 ): string {
-  return getPipelineMessages(locale).format('staleProfileWorkflowsWarning', {
+  const messages = getPipelineMessages(locale);
+  if (notice.kind === 'unknown-host-runtime') {
+    return messages.format('unknownHostRuntimeWarning', { override: notice.override });
+  }
+  return messages.format('staleProfileWorkflowsWarning', {
     workflows: notice.workflowIds.join(', '),
   });
 }

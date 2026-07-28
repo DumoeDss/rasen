@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { runCLI } from '../helpers/run-cli.js';
 import { scaffoldWorkflow } from '../../src/core/workflow-library.js';
+import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
 describe('top-level validate command', () => {
   const projectRoot = process.cwd();
@@ -61,7 +62,7 @@ describe('top-level validate command', () => {
   });
 
   afterEach(async () => {
-    await fs.rm(testDir, { recursive: true, force: true });
+    await cleanupTempPathAsync(testDir);
   });
 
   it('prints a helpful hint when no args in non-interactive mode', async () => {
@@ -181,7 +182,7 @@ describe('top-level validate command', () => {
       expect(result.stdout + result.stderr).not.toContain('No items found to validate');
       expect(result.exitCode).toBe(0);
     } finally {
-      await fs.rm(isoRoot, { recursive: true, force: true });
+      await cleanupTempPathAsync(isoRoot);
     }
   });
 
@@ -223,7 +224,7 @@ describe('top-level validate command (pipelines)', () => {
   });
 
   afterEach(async () => {
-    await fs.rm(testDir, { recursive: true, force: true });
+    await cleanupTempPathAsync(testDir);
   });
 
   it('reports the three built-ins as valid with --type pipeline (bulk via --pipelines)', async () => {
@@ -259,6 +260,43 @@ describe('top-level validate command (pipelines)', () => {
     expect(json.items.length).toBeGreaterThanOrEqual(3);
     expect(json.items.every((i: any) => i.type === 'pipeline')).toBe(true);
     expect(json.summary.totals.failed).toBe(0);
+  });
+
+  it('checks a prepared Codex route without requiring the Codex binary during static validation', async () => {
+    await writeProjectPipeline(
+      'codex-static-validation',
+      [
+        'name: codex-static-validation',
+        'stages:',
+        '  - id: propose',
+        '    skill: rasen-propose',
+        '    role: planner',
+        '    runtime: codex',
+      ].join('\n')
+    );
+    const emptyPath = path.join(testDir, 'empty-path');
+    await fs.mkdir(emptyPath, { recursive: true });
+    const env = {
+      PATH: emptyPath,
+      RASEN_AGENT_RUNTIME: 'claude',
+    };
+
+    const validation = await runCLI(
+      ['validate', 'codex-static-validation', '--type', 'pipeline', '--json'],
+      { cwd: testDir, env }
+    );
+    expect(validation.exitCode).toBe(0);
+    expect(JSON.parse(validation.stdout).items[0]).toMatchObject({
+      id: 'codex-static-validation',
+      valid: true,
+    });
+
+    const execution = await runCLI(
+      ['pipeline', 'show', 'codex-static-validation', '--for-execution', '--json'],
+      { cwd: testDir, env }
+    );
+    expect(execution.exitCode).toBe(1);
+    expect(execution.stderr).toContain('requires the codex exec bridge');
   });
 
   it('reports valid:false for a pipeline with a dangling requires reference', async () => {

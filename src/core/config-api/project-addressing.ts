@@ -12,8 +12,13 @@ import {
   readProjectRegistryState,
 } from '../project-registry.js';
 import { cachedResolveRegistrationRoot } from './piercing-cache.js';
-import { listRegisteredStores } from '../store/registry.js';
-import { inspectRegisteredStore, type RegisteredStoreInspection } from '../root-selection.js';
+import {
+  resolveStoreBinding,
+  primaryRepair,
+  type StoreUnavailableReason,
+  type UnavailableStoreBinding,
+} from '../store/identity.js';
+import { isValidStoreUid } from '../store/identity-types.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import type { ProjectRef } from './wire-types.js';
 
@@ -68,20 +73,46 @@ export function parseSpaceSelector(raw: string): ParsedSpaceSelector {
   };
 }
 
-/** Human-readable reason for a store that is registered but fails read-only health inspection (design D1: 409 `space_unavailable`). */
-function storeInspectionReason(inspection: Exclude<RegisteredStoreInspection, { kind: 'ok' }>): string {
-  switch (inspection.kind) {
-    case 'metadata_error':
-      return `store identity metadata could not be read: ${
-        inspection.error instanceof Error ? inspection.error.message : String(inspection.error)
-      }`;
-    case 'metadata_missing':
-      return `store identity metadata is missing at ${inspection.metadataPath}`;
-    case 'metadata_id_mismatch':
-      return `store metadata id "${inspection.actualId}" does not match its registered id`;
-    case 'unhealthy_root':
-      return `store planning root is unhealthy: ${inspection.problems}`;
-  }
+/**
+ * Maps an `unavailable` store binding onto this surface's existing result
+ * vocabulary (design D1): a store that is not registered here is a 404
+ * `space_not_found`; a store that is registered but cannot be used is a 409
+ * `space_unavailable`. The reason and its repair travel in the message, so an
+ * HTTP client sees exactly what the CLI reports.
+ */
+const SPACE_STATUS_BY_REASON: Record<StoreUnavailableReason, { status: number; code: string }> = {
+  'not-registered': { status: 404, code: 'space_not_found' },
+  'metadata-missing': { status: 409, code: 'space_unavailable' },
+  'uid-mismatch': { status: 409, code: 'space_unavailable' },
+  'root-unhealthy': { status: 409, code: 'space_unavailable' },
+  'alias-ambiguous': { status: 409, code: 'space_unavailable' },
+  'pointer-malformed': { status: 400, code: 'invalid_space' },
+};
+
+/**
+ * The ONE mapping from an `unavailable` binding to an HTTP result, shared by
+ * every config/space surface so a broken inheritance edge never reaches a
+ * client as a 500 with the structured reason and repair flattened into a
+ * stack trace.
+ */
+export function unavailableStoreHttpResult(
+  binding: UnavailableStoreBinding,
+  subject: string
+): { status: number; code: string; message: string } {
+  const mapped = SPACE_STATUS_BY_REASON[binding.reason];
+  const detail = binding.diagnostics[0]?.message ?? `Store "${subject}" is unavailable.`;
+  return {
+    status: mapped.status,
+    code: mapped.code,
+    message: `${detail} Next: ${primaryRepair(binding)}`,
+  };
+}
+
+function spaceResultFor(
+  selector: string,
+  binding: UnavailableStoreBinding
+): Extract<SpaceSelectorResult, { ok: false }> {
+  return { ok: false, ...unavailableStoreHttpResult(binding, selector) };
 }
 
 /**
@@ -112,9 +143,18 @@ export async function resolveSpaceSelector(raw: string): Promise<SpaceSelectorRe
     };
   }
 
-  const stores = await listRegisteredStores();
-  const entry = stores.find((candidate) => candidate.type === 'store' && candidate.id === parsed.selector);
-  if (!entry) {
+  // `store:<permanent identity>` addresses a Store exactly, which is the only
+  // way an HTTP client can name one of two Stores that share a display name —
+  // the same identity form the CLI's `--store` and lifecycle commands accept.
+  // The resolved space below already reports the Store's own id, never the
+  // selector, so this is purely an additional way in.
+  const binding = await resolveStoreBinding({
+    declaration: isValidStoreUid(parsed.selector)
+      ? { form: 'durable', uid: parsed.selector }
+      : { form: 'alias', id: parsed.selector },
+  });
+
+  if (binding.kind === 'absent') {
     return {
       ok: false,
       status: 404,
@@ -123,19 +163,26 @@ export async function resolveSpaceSelector(raw: string): Promise<SpaceSelectorRe
     };
   }
 
-  const inspection = await inspectRegisteredStore(entry.id, entry.storeRoot);
-  if (inspection.kind !== 'ok') {
-    return {
-      ok: false,
-      status: 409,
-      code: 'space_unavailable',
-      message: `Store "${entry.id}" is unavailable: ${storeInspectionReason(inspection)}.`,
-    };
+  if (binding.kind === 'unavailable') {
+    if (binding.reason === 'not-registered') {
+      return {
+        ok: false,
+        status: 404,
+        code: 'space_not_found',
+        message: `No registered store matches "${parsed.selector}" in the store namespace.`,
+      };
+    }
+    return spaceResultFor(parsed.selector, binding);
   }
 
   return {
     ok: true,
-    space: { type: 'store', id: entry.id, name: entry.id, root: inspection.canonicalRoot },
+    space: {
+      type: 'store',
+      id: binding.store.id,
+      name: binding.store.id,
+      root: binding.store.root,
+    },
   };
 }
 

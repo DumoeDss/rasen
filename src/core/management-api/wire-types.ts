@@ -38,7 +38,7 @@ import type { WorkflowUsage, WorkflowValidationSummary } from '../workflow-libra
 export interface ProjectRef {
   projectId: string;
   name: string;
-  root: string;
+  root?: string;
 }
 
 /**
@@ -285,7 +285,7 @@ export interface SubmitChangeRequest {
 export interface SessionSpaceWire {
   type: 'project' | 'store';
   id: string;
-  root: string;
+  root?: string;
 }
 
 /** `POST /api/v1/changes` success response: the CLI-created change, as reported by its own `--json` output. */
@@ -704,7 +704,7 @@ export interface SessionActionResponse {
 export interface SpaceMember {
   projectId: string;
   name: string;
-  root: string;
+  root?: string;
 }
 
 /** An in-repo project space (design D6): a live machine-project-registry entry with `mode: 'in-repo'`. */
@@ -712,7 +712,7 @@ export interface ProjectSpaceEntry {
   type: 'project';
   id: string;
   name: string;
-  root: string;
+  root?: string;
   /**
    * The project's live worktree count (worktree-aware-spaces D3), derived from
    * `git worktree list` at read time and never persisted. Present only when the
@@ -727,7 +727,7 @@ export interface StoreSpaceEntry {
   type: 'store';
   id: string;
   name: string;
-  root: string;
+  root?: string;
   members: SpaceMember[];
 }
 
@@ -745,7 +745,7 @@ export interface SpacesResponse {
  */
 export interface SpaceWorktreeEntry {
   /** The worktree's absolute working-tree root. */
-  root: string;
+  root?: string;
   /** The checked-out branch's short name, or null when detached. */
   branch: string | null;
   /** True for the main checkout. */

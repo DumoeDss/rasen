@@ -5,7 +5,9 @@ import {
   DISPATCH_RUNTIMES,
   PROBE_RUNTIMES,
   RUNTIME_ADAPTERS,
+  detectHostRuntime,
   hasRuntimeCapability,
+  resolveDispatchRoute,
 } from '../../src/core/runtime-adapters.js';
 
 describe('runtime adapter registry', () => {
@@ -51,5 +53,65 @@ describe('runtime adapter registry', () => {
     expect(Object.isFrozen(PROBE_RUNTIMES)).toBe(true);
     expect(Object.isFrozen(AUDIT_RUNTIMES)).toBe(true);
     expect(Object.isFrozen(DISPATCH_RUNTIMES)).toBe(true);
+  });
+});
+
+describe('host runtime detection', () => {
+  it('detects unrestricted Codex from CODEX_THREAD_ID alone', () => {
+    expect(detectHostRuntime({ CODEX_THREAD_ID: 'thread-1' })).toEqual({
+      runtime: 'codex',
+      source: 'codex-thread-id',
+    });
+  });
+
+  it('lets Codex fingerprints outrank inherited Claude fingerprints', () => {
+    expect(
+      detectHostRuntime({
+        CODEX_THREAD_ID: 'thread-1',
+        CODEX_SANDBOX: 'danger-full-access',
+        CLAUDECODE: '1',
+      })
+    ).toEqual({ runtime: 'codex', source: 'codex-thread-id' });
+  });
+
+  it('lets a valid explicit override outrank fingerprints', () => {
+    expect(
+      detectHostRuntime({
+        RASEN_AGENT_RUNTIME: 'claude',
+        CODEX_THREAD_ID: 'thread-1',
+      })
+    ).toEqual({ runtime: 'claude', source: 'env-override' });
+  });
+
+  it('falls through an invalid override to real fingerprints', () => {
+    expect(
+      detectHostRuntime({
+        RASEN_AGENT_RUNTIME: 'gemini',
+        CODEX_SANDBOX: 'seatbelt',
+      })
+    ).toEqual({ runtime: 'codex', source: 'codex-sandbox' });
+  });
+
+  it('reports unknown host provenance without recognized fingerprints', () => {
+    expect(
+      detectHostRuntime({ CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1' })
+    ).toEqual({ runtime: 'unknown', source: 'unknown' });
+  });
+});
+
+describe('host x target dispatch routes', () => {
+  it.each([
+    ['claude', 'claude', 'native'],
+    ['claude', 'codex', 'exec-bridge'],
+    ['codex', 'claude', 'unsupported'],
+    ['codex', 'codex', 'native'],
+    ['unknown', 'claude', 'legacy-fallback'],
+    ['unknown', 'codex', 'legacy-fallback'],
+  ] as const)('resolves %s -> %s as %s', (host, target, mode) => {
+    expect(resolveDispatchRoute(host, target)).toMatchObject({
+      host,
+      target,
+      mode,
+    });
   });
 });

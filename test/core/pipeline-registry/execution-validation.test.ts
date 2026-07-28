@@ -18,6 +18,9 @@ import {
 // skill-presence/enablement checks pass and these tests exercise only the
 // runtime preflight added by this change.
 const KNOWN_SKILL = 'rasen-propose';
+const CLAUDE_HOST = { runtime: 'claude', source: 'claude-code' } as const;
+const CODEX_HOST = { runtime: 'codex', source: 'codex-thread-id' } as const;
+const UNKNOWN_HOST = { runtime: 'unknown', source: 'unknown' } as const;
 
 function pipeline(yaml: string) {
   return parsePipeline(yaml);
@@ -120,7 +123,7 @@ stages:
     runtime: codex
 `);
     const probeCodex = vi.fn(() => true);
-    await validatePipelineForExecution(p, undefined, { probeCodex });
+    await validatePipelineForExecution(p, undefined, { probeCodex, host: CLAUDE_HOST });
     expect(probeCodex).toHaveBeenCalledTimes(1);
   });
 
@@ -134,7 +137,7 @@ stages:
 `);
     const probeCodex = vi.fn(() => false);
     try {
-      await validatePipelineForExecution(p, undefined, { probeCodex });
+      await validatePipelineForExecution(p, undefined, { probeCodex, host: CLAUDE_HOST });
       expect.fail('expected validatePipelineForExecution to throw');
     } catch (error) {
       expect(error).toBeInstanceOf(PipelineValidationError);
@@ -170,7 +173,7 @@ stages:
 
     const probeCodex = vi.fn(() => false);
     await expect(
-      validatePipelineForExecution(p, projectRoot, { probeCodex })
+      validatePipelineForExecution(p, projectRoot, { probeCodex, host: CLAUDE_HOST })
     ).rejects.toThrow(PipelineValidationError);
     expect(probeCodex).toHaveBeenCalledTimes(1);
   });
@@ -186,7 +189,7 @@ stages:
     requires: [a]
 `);
     const probeCodex = vi.fn(() => false);
-    await validatePipelineForExecution(p, undefined, { probeCodex });
+    await validatePipelineForExecution(p, undefined, { probeCodex, host: CLAUDE_HOST });
     expect(probeCodex).not.toHaveBeenCalled();
   });
 
@@ -203,7 +206,7 @@ stages:
     requires: [a]
 `);
     const probeCodex = vi.fn(() => true);
-    await validatePipelineForExecution(p, undefined, { probeCodex });
+    await validatePipelineForExecution(p, undefined, { probeCodex, host: CLAUDE_HOST });
     expect(probeCodex).toHaveBeenCalledTimes(1);
   });
 
@@ -216,7 +219,114 @@ stages:
   - id: a
     skill: ${KNOWN_SKILL}
 `);
-    await validatePipelineForExecution(p);
+    await validatePipelineForExecution(p, undefined, { host: CLAUDE_HOST });
+  });
+
+  it('does not probe the external CLI for Codex-native stages', async () => {
+    const p = pipeline(`
+name: codex-native
+stages:
+  - id: a
+    skill: ${KNOWN_SKILL}
+`);
+    const probeCodex = vi.fn(() => false);
+    await validatePipelineForExecution(p, undefined, {
+      probeCodex,
+      host: CODEX_HOST,
+    });
+    expect(probeCodex).not.toHaveBeenCalled();
+  });
+
+  it('rejects Codex-host to Claude-target before dispatch with a stable code', async () => {
+    const p = pipeline(`
+name: unsupported-route
+stages:
+  - id: a
+    skill: ${KNOWN_SKILL}
+    role: planner
+    runtime: claude
+`);
+    const probeCodex = vi.fn(() => true);
+    await expect(
+      validatePipelineForExecution(p, undefined, { probeCodex, host: CODEX_HOST })
+    ).rejects.toMatchObject({ code: 'pipeline_runtime_route_unsupported' });
+    expect(probeCodex).not.toHaveBeenCalled();
+  });
+
+  it('keeps unknown-host compatibility and emits an actionable notice', async () => {
+    const p = pipeline(`
+name: unknown-host
+stages:
+  - id: a
+    skill: ${KNOWN_SKILL}
+`);
+    const notices: unknown[] = [];
+    await validatePipelineForExecution(p, undefined, {
+      host: UNKNOWN_HOST,
+      reporter: (notice) => notices.push(notice),
+    });
+    expect(notices).toContainEqual({
+      kind: 'unknown-host-runtime',
+      override: 'RASEN_AGENT_RUNTIME',
+    });
+  });
+
+  it('validates persisted per-role runtime instances instead of ignoring configuration', async () => {
+    const projectRoot = path.join(tempDir, 'configured-project');
+    fs.mkdirSync(path.join(projectRoot, 'rasen'), { recursive: true });
+    fs.writeFileSync(
+      path.join(projectRoot, 'rasen', 'config.yaml'),
+      [
+        'schema: spec-driven',
+        'pipelines:',
+        '  configured-preflight:',
+        '    runtimes:',
+        '      planner: claude',
+        '',
+      ].join('\n')
+    );
+    const p = pipeline(`
+name: configured-preflight
+stages:
+  - id: propose
+    skill: ${KNOWN_SKILL}
+    role: planner
+`);
+    await expect(
+      validatePipelineForExecution(p, projectRoot, { host: CODEX_HOST })
+    ).rejects.toMatchObject({ code: 'pipeline_runtime_route_unsupported' });
+  });
+
+  it('lets a run-local role override rescue a persisted unsupported route before rejection', async () => {
+    const projectRoot = path.join(tempDir, 'run-local-rescue-project');
+    fs.mkdirSync(path.join(projectRoot, 'rasen'), { recursive: true });
+    fs.writeFileSync(
+      path.join(projectRoot, 'rasen', 'config.yaml'),
+      [
+        'schema: spec-driven',
+        'pipelines:',
+        '  run-local-rescue:',
+        '    runtimes:',
+        '      planner: claude',
+        '',
+      ].join('\n')
+    );
+    const p = pipeline(`
+name: run-local-rescue
+stages:
+  - id: propose
+    skill: ${KNOWN_SKILL}
+    role: planner
+`);
+    const probeCodex = vi.fn(() => false);
+
+    await validatePipelineForExecution(p, projectRoot, {
+      host: CODEX_HOST,
+      roleRuntimeOverrides: { planner: 'codex' },
+      probeCodex,
+    });
+
+    expect(probeCodex).not.toHaveBeenCalled();
   });
 });
 
@@ -267,7 +377,7 @@ stages:
     skill: ${KNOWN_SKILL}
 `);
 
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       await validatePipelineForExecution(p);
       const warned = logSpy.mock.calls.some(([line]) =>

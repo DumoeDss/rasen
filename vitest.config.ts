@@ -40,8 +40,10 @@ export default defineConfig({
         'test/**'
       ]
     },
-    testTimeout: 10000,
-    hookTimeout: 10000,
+    // CLI-spawning tests slow down under CI parallel load (subprocess startup +
+    // FS contention); 10s was too tight and produced spurious timeouts there.
+    testTimeout: 30000,
+    hookTimeout: 30000,
     teardownTimeout: 3000
   }
 });

@@ -32,7 +32,7 @@ import { resolveProjectHome, type ProjectHome } from '../project-home.js';
 import { getActiveChangeIds } from '../../utils/item-discovery.js';
 import { readRunStateDetailed, resolveRunStateLocation } from '../pipeline-registry/run-state.js';
 import {
-  parsePortfolioState,
+  readPortfolioStateDetailed,
   resolvePortfolioStateLocation,
 } from '../pipeline-registry/portfolio-state.js';
 import type { RunState } from '../pipeline-registry/run-state.js';
@@ -557,17 +557,19 @@ function withOtherWorkspaceScope(view: ChangeRunView): ChangeRunView {
 // Legacy run-state handlers (unchanged from the original D5 implementation).
 // ---------------------------------------------------------------------------
 
+/**
+ * Locate the portfolio record, then read it through the shared detailed
+ * reader. The `ok | invalid | absent` read used to be duplicated here; it now
+ * lives once in `portfolio-state.ts` so every surface that needs to tell
+ * "unreadable" from "never split" gets the same answer.
+ */
 function readPortfolioDetailed(
   changeDir: string,
   workDir: string | null
 ): RunFileResult<PortfolioState> {
   const location = resolvePortfolioStateLocation(changeDir, workDir);
   if (!location) return { kind: 'absent' };
-  try {
-    return { kind: 'ok', state: parsePortfolioState(fs.readFileSync(location.path, 'utf-8')) };
-  } catch (err) {
-    return { kind: 'invalid', reason: err instanceof Error ? err.message : String(err) };
-  }
+  return readPortfolioStateDetailed(location.dir);
 }
 
 /**

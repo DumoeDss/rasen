@@ -126,6 +126,7 @@ describe('InitCommand', () => {
         'rasen-continue-change',
         'rasen-bulk-archive-change',
         'rasen-verify-change',
+        'rasen-direction',
       ];
 
       for (const skillName of expectedSkillNames) {
@@ -156,6 +157,7 @@ describe('InitCommand', () => {
         'rasen-continue-change',
         'rasen-bulk-archive-change',
         'rasen-verify-change',
+        'rasen-direction',
       ];
 
       for (const dirName of expectedSkillDirs) {
@@ -190,6 +192,7 @@ describe('InitCommand', () => {
         'rasen-continue-change',
         'rasen-bulk-archive-change',
         'rasen-verify-change',
+        'rasen-direction',
       ];
 
       for (const skillName of nonCoreSkillNames) {
@@ -206,6 +209,30 @@ describe('InitCommand', () => {
 
       const skillFile = path.join(testDir, '.codex', 'skills', 'rasen-explore', 'SKILL.md');
       expect(await fileExists(skillFile)).toBe(true);
+    });
+
+    it('should install Codex skills at an externalized repository root without creating local planning directories', async () => {
+      process.env.CODEX_HOME = path.join(testDir, '.codex-home');
+      const openspecPath = path.join(testDir, 'rasen');
+      const configPath = path.join(openspecPath, 'config.yaml');
+      await fs.mkdir(openspecPath, { recursive: true });
+      await fs.writeFile(configPath, 'store: team-context\n');
+
+      const initCommand = new InitCommand({
+        tools: 'codex',
+        force: true,
+        profile: 'core',
+      });
+      await initCommand.execute(await fs.realpath(testDir));
+
+      const skillFile = path.join(testDir, '.codex', 'skills', 'rasen-explore', 'SKILL.md');
+      expect(await fileExists(skillFile)).toBe(true);
+      const configContent = await fs.readFile(configPath, 'utf-8');
+      expect(configContent).toContain('store: team-context');
+      expect(configContent).not.toContain('profile:');
+      expect(await directoryExists(path.join(openspecPath, 'specs'))).toBe(false);
+      expect(await directoryExists(path.join(openspecPath, 'changes'))).toBe(false);
+      expect(await directoryExists(path.join(openspecPath, 'changes', 'archive'))).toBe(false);
     });
 
     it('should install Hermes skills to the resolved Hermes home, not project-local .hermes/', async () => {
@@ -1006,6 +1033,45 @@ describe('InitCommand machine-home registration', () => {
     expect(logged).not.toContain('Machine home:');
 
     await fs.rm(blockedDataDir, { force: true });
+  });
+
+  describe('tools manifest persistence (project-install-manifest)', () => {
+    it('writes tools: [claude] to config.yaml after init with --tools claude', async () => {
+      await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+
+      const configPath = path.join(testDir, 'rasen', 'config.yaml');
+      const content = await fs.readFile(configPath, 'utf-8');
+      expect(content).toMatch(/tools:/);
+      const { readProjectConfig } = await import('../../src/core/project-config.js');
+      const config = readProjectConfig(testDir);
+      expect(config?.tools).toEqual(['claude']);
+    });
+
+    it('writes tools: [claude, codex] after init with --tools claude,codex', async () => {
+      await new InitCommand({ tools: 'claude,codex', force: true }).execute(testDir);
+
+      const { readProjectConfig } = await import('../../src/core/project-config.js');
+      const config = readProjectConfig(testDir);
+      expect(config?.tools).toEqual(['claude', 'codex']);
+    });
+
+    it('writes tools: [] after init with --tools none', async () => {
+      await new InitCommand({ tools: 'none', force: true }).execute(testDir);
+
+      const { readProjectConfig } = await import('../../src/core/project-config.js');
+      const config = readProjectConfig(testDir);
+      expect(config?.tools).toEqual([]);
+    });
+
+    it('overwrites a prior tools: value on re-init (no union)', async () => {
+      await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+
+      await new InitCommand({ tools: 'codex', force: true }).execute(testDir);
+
+      const { readProjectConfig } = await import('../../src/core/project-config.js');
+      const config = readProjectConfig(testDir);
+      expect(config?.tools).toEqual(['codex']);
+    });
   });
 });
 

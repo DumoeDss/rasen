@@ -715,13 +715,17 @@ export function createManagementRouter(
         fix?: string
       ): void => {
         res.once('finish', () => {
-          const teardown = setTimeout(() => req.destroy(), 10);
+          // Graceful FIN so the client reads the JSON before EOF; a bare
+          // destroy() sends RST which races the client's read and can
+          // truncate the response body (observed as status 0 on the client).
+          req.socket?.end();
+          // Belt-and-suspenders: if the peer ignores the FIN, force-close the
+          // socket shortly. 100ms covers any socket that doesn't close cleanly
+          // on FIN alone (e.g., a peer that ignores half-close).
+          const teardown = setTimeout(() => req.socket?.destroy(), 100);
           teardown.unref();
         });
         sendError(res, status, code, message, fix);
-        // Terminate only after Node has flushed the response. Destroying the
-        // request synchronously can reset a slow client's socket before it
-        // receives the JSON error.
         // This handles both declared oversize rejection and a streamed body
         // crossing the cap without retaining the socket/request indefinitely.
       };

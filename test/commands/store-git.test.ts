@@ -371,6 +371,12 @@ describe('store git lifecycle', () => {
     const store = parseJson(doctor).stores[0];
     expect(store.git.has_commits).toBe(true);
     expect(store.status).toEqual([
+      // A store registered from an existing checkout has no permanent
+      // identity yet; doctor says so rather than minting one.
+      expect.objectContaining({
+        severity: 'info',
+        code: 'store_metadata_legacy',
+      }),
       expect.objectContaining({
         severity: 'warning',
         code: 'store_clone_fragile_directories',

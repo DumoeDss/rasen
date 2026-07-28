@@ -529,7 +529,7 @@ async function buildBugFixPlan(projectRoot: string, runId: string) {
     reuseRoundLimit: 1,
     provenance: {
       role: 'stage', model: stage.model ? 'stage' : 'default', effort: 'default',
-      runtime: 'stage', sandbox: 'stage', gate: 'stage', sessionReuse: 'default',
+      runtime: 'host', sandbox: 'default', gate: 'stage', sessionReuse: 'default',
       handoffTokenLimit: 'default', reuseRoundLimit: 'default',
     },
   }));
@@ -547,7 +547,27 @@ function commitGateWaits(
 ): void {
   const record = loadHeadRecord(storeRoot, runId);
   const reconciled = reconcile(plan, record);
-  if (!reconciled.ok) throw new Error(`reconcile failed: ${reconciled.failure.message}`);
+  if (!reconciled.ok) {
+    throw new Error(
+      `reconcile failed: ${reconciled.failure.message}\n` +
+      JSON.stringify({
+        plan: {
+          planDigest: plan.planDigest,
+          sourceRevisionDigest: plan.sourceRevisionDigest,
+          capabilityDigest: plan.capabilityDigest,
+          policyDigest: plan.policyDigest,
+          executionProfileDigest: plan.profileDigest,
+        },
+        record: {
+          planDigest: record.planDigest,
+          sourceRevisionDigest: record.sourceRevisionDigest,
+          capabilityDigest: record.capabilityDigest,
+          policyDigest: record.policyDigest,
+          executionProfileDigest: record.executionProfileDigest,
+        },
+      })
+    );
+  }
   for (const candidate of reconciled.actions) {
     if (candidate.kind !== 'await-gate') continue;
     const alreadyCommitted = record.waits.some((w) => w.waitId === candidate.waitId);
@@ -582,9 +602,44 @@ describe('trusted first-claim via fresh-process CLI (15.5)', () => {
     await fs.rm(testDir, { recursive: true, force: true });
   });
 
+  it('freezes the host-aware execution runtime into reconciler Actions', async () => {
+    const changeId = 'e2e-host-aware-runtime';
+    await fs.mkdir(path.join(testDir, 'rasen', 'changes', changeId), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(testDir, 'rasen', 'config.yaml'),
+      ['schema: spec-driven', 'autopilot:', '  gates: off', ''].join('\n')
+    );
+    const result = await runCLI(
+      ['pipeline', 'start', changeId, 'bug-fix', '--json'],
+      {
+        cwd: testDir,
+        env: {
+          XDG_DATA_HOME: dataDir,
+          RASEN_AGENT_RUNTIME: 'claude',
+        },
+        timeoutMs: 60_000,
+      }
+    );
+    expect(result.exitCode).toBe(0);
+
+    const runId = JSON.parse(result.stdout.trim()).runId as string;
+    const record = loadHeadRecord(storeRoot, runId);
+    const admitted = Object.values(record.actions);
+    expect(admitted).toHaveLength(1);
+    expect(admitted[0]!.action.kind).toBe('agent');
+    if (admitted[0]!.action.kind !== 'agent') {
+      throw new Error('Expected the first bug-fix Action to be an agent Action.');
+    }
+    expect(admitted[0]!.action.agent.runtime).toBe('claude');
+  });
+
   it('resume-run atomically grants the ready frontier; replay grants empty', async () => {
     const changeId = 'e2e-ackloss-firstclaim';
-    const env = { XDG_DATA_HOME: dataDir };
+    // The in-process plan fixture below intentionally freezes Codex; pin the
+    // CLI host to the same runtime so the test is independent of ambient CI.
+    const env = { XDG_DATA_HOME: dataDir, RASEN_AGENT_RUNTIME: 'codex' };
 
     // ---- LAUNCH ----
     const startResult = await runCLI(

@@ -12,7 +12,7 @@ describe('ui.theme global configuration', () => {
       ui: { pinnedSpaces: ['project:demo'], futurePreference: { enabled: true } },
     });
     expect(parsed.ui).toEqual({
-      theme: 'editorial',
+      theme: 'crt',
       pinnedSpaces: ['project:demo'],
       futurePreference: { enabled: true },
     });
@@ -23,7 +23,7 @@ describe('ui.theme global configuration', () => {
     expect(definition).toMatchObject({
       scopes: ['global'],
       type: 'string',
-      defaultValue: 'editorial',
+      defaultValue: 'crt',
       group: 'Appearance',
     });
     expect(validateConfigKeyPath('ui.theme', 'global').valid).toBe(true);

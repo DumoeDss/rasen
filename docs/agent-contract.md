@@ -54,7 +54,7 @@ Change: `{ "id", "title", "deltaCount", "deltas": [...], "root" }`. Spec: `{ "id
 `{ "items": [ { "id", "type": "change"|"spec", "valid", "issues": [ { "level", "path", "message", "line"?, "column"? } ], "durationMs" } ], "summary": { "totals": {items,passed,failed}, "byType": {...} }, "version": "1.0", "root" }`. Exit 1 when any item fails.
 
 ### 4.4 `status --json`
-`{ "changeName", "schemaName", "planningHome"?: { "kind", "root", "changesDir", "defaultSchema" }, "changeRoot", "artifactPaths": { "<id>": {outputPath, resolvedOutputPath, existingOutputPaths} }, "nextSteps": ["..."], "actionContext": { "mode": "repo-local", "sourceOfTruth": "repo", "planningArtifacts", "linkedContext", "allowedEditRoots", "requiresAffectedAreaSelection", "constraints" }, "isComplete", "applyRequires", "artifacts": [ {id, outputPath, status: "done"|"ready"|"blocked", missingDeps?} ], "root" }`. No active changes: `{ "changes": [], "message", "root" }`, exit 0.
+`{ "changeName", "schemaName", "planningHome"?: { "kind", "root", "changesDir", "defaultSchema" }, "changeRoot", "artifactPaths": { "<id>": {outputPath, resolvedOutputPath, existingOutputPaths} }, "nextSteps": ["..."], "actionContext": { "mode": "repo-local", "sourceOfTruth": "repo", "planningArtifacts", "linkedContext", "version": 1|2, "planningWriteRoots", "codeWriteRoots", "readRoots", "allowedEditRoots"?, "requiresAffectedAreaSelection", "constraints" }, "isComplete", "applyRequires", "artifacts": [ {id, outputPath, status: "done"|"ready"|"blocked", missingDeps?} ], "root" }`. No active changes: `{ "changes": [], "message", "root" }`, exit 0.
 
 ### 4.5 `instructions <artifact> --json`
 `{ "changeName", "artifactId", "schemaName", "changeDir", "planningHome"?, "outputPath", "resolvedOutputPath", "existingOutputPaths", "description", "instruction"?, "context"?, "rules"?, "references"?: ReferenceIndexEntry[], "template", "dependencies": [{id,done,path,description}], "unlocks", "root" }`.
@@ -78,6 +78,77 @@ Success: `{ "archive": { "change", "archivedAs": "YYYY-MM-DD-name", "path", "spe
 
 ### 4.11 `store ... --json`
 setup/register: `{ "store": {id, root, metadata_path?}, "registry": {path, registered, already_registered}, "git": {is_repository, initialized, committed}, "created_files": [], "status": [] }`. unregister/remove: `{ "store", "registry": {path, removed}, "files": {deleted, deleted_path, left_on_disk}, "status": [] }`. list: `{ "stores": [{id, root}], "status": [] }`. doctor: `{ "stores": [ { id, root, metadata_path?, openspec_root: {...healthy, status}, metadata: {present, valid, id?, remote}, git: {is_repository, has_commits, has_uncommitted_changes, has_remote, origin_url}, status } ], "status": [] }` (`null` = unknown/not probed). Health findings exit 0; failures exit 1 with the matching null-shape. Prompt cancellation exits 130.
+
+### 4.11a Store membership
+
+**Membership is roster and eligibility only.** It says which projects belong to
+a store and whether each one plans in it, shares knowledge with it, or both. It
+does **not** determine, imply, or stand in for the decision of where a change is
+implemented — no agent may read `roles.planning` (or any future role) as an
+instruction about where to do work. Where a project plans is its own `store:`
+declaration; where a change is implemented is a separate question this contract
+does not answer.
+
+Authority is the store's own record, one file per member project:
+`<store>/.rasen-store/projects/<projectId>.yaml`, keyed by the project's
+permanent identity. The project's `storeMemberships:` list is a **locator only**
+and never confers membership; a hint that disagrees with the record is drift.
+
+`doctor --json` carries `membership: { project_id?, stores: [ { uid?, id?,
+sources: ["hint"|"record"], roles?: {planning, knowledge}, provenance?,
+unavailable?: {reason, repair} } ] }`. A declared store that is not available on
+this machine appears with `unavailable` set — **never omitted**. Absent from the
+list must not be read as "not a member".
+
+`store add-project --json` carries `membership` (per-repository `store_writes` /
+`project_writes`, `repair_needed`, `suggested_commits`) and `planning_binding`
+(`requested`, `changed`, `refused`, `already_bound`, `bound_to`,
+`requested_store`, `rebind_command`) as two SEPARATE blocks, because they are
+two separate relations. `store migrate-membership --json` carries
+`{ store, applied, converted[], unresolved[], store_writes, legacy_manifest_removed, legacy_manifest_path, suggested_commits, status }`.
+
+No membership command stages, commits, pushes, fetches, or pulls. Each renders a
+path-scoped commit suggestion per repository for the user to run.
+
+### 4.11b Session runtime context and the action context
+
+A supervised session records what it resolved — the planning space, the project
+it works on, and the exact checkout of that project on this machine — and hands
+its child process `RASEN_SESSION_CONTEXT`, the **absolute path** to a
+machine-local `sessions/<sessionId>/context.json` under the global data dir.
+The path, never the document. The file carries
+`{ version, sessionId, planning: {type:'project'|'store', …, root}, execution:
+{kind:'planning-only'} | {kind:'project', projectId, root, home?} }`.
+A file that is missing, unparseable, or names a different session is REPORTED;
+no reader falls back to deriving context from the working directory.
+
+Context resolution order for a first command: an explicit selector, then the
+session context, then the working directory and its nearest pointer. A resumed
+frozen run uses a different rule: the frozen identity is the authority for WHICH
+project, the session context (or the current checkout) is only the local
+locator, and an explicit selector only cross-checks. A frozen/checkout
+disagreement FAILS and never continues in another clone.
+
+**The action context is a capability, and agents consume it as one.** It states
+separately `planningWriteRoots` (the planning directories, never a repository
+root), `codeWriteRoots` (exactly the session's own checkout — never another
+member checkout of the same store), and `readRoots`, plus `constraints`.
+No user home directory appears in any of the three lists. Making a root visible
+to the agent process (`--add-dir`) is process visibility, NOT authorization: a
+root that is readable by the process is not writable by the work unless it
+appears in a write list.
+
+`version` identifies the contract. Version 1 additionally carries
+`allowedEditRoots`, the compatibility view for the older single-list form, and
+it appears only when the newer capability projects into it without granting
+anything the older form would not have granted — the projection can narrow,
+never widen. When it cannot (a store-planning session with a project checkout
+needs two roots), `version` is 2 and `allowedEditRoots` is ABSENT; a consumer
+that knows only the older form must stop rather than proceed.
+
+A planning-only session reports `"codeWriteRoots": []` — empty as a stated
+fact — and its constraints say that no code write root is available and that no
+project-scoped materialization occurs.
 
 ### 4.12 `schemas --json` / `templates --json`
 `schemas`: bare array `[ {name, description, artifacts, source} ]`. `templates`: keyed object `{ "<artifactId>": {path, source} }`. Both cwd-based, no root/status keys.
@@ -112,10 +183,25 @@ setup/register: `{ "store": {id, root, metadata_path?}, "registry": {path, regis
 `reference_invalid_id`, `reference_registry_unreadable`, `reference_unresolved`, `reference_root_unhealthy`, `reference_index_truncated`.
 
 ### Relationships (warning; doctor; context keeps only the registry one)
-`relationship_registry_unreadable`, `root_pointer_ignored`, `root_pointer_invalid`, `pointer_declarations_inert`.
+`relationship_registry_unreadable`, `root_pointer_invalid`, `pointer_declarations_inert`.
+
+### Store membership (doctor and `store doctor`; read-only)
+`store_project_record_missing` (error), `project_membership_locator_missing` (warning), `project_membership_unverified` (warning), `shared_metadata_contains_local_path` (warning), `store_project_record_key_mismatch` (error), `store_legacy_reference_unresolved` (warning), `project_identity_unrecordable` (error), `store_membership_legacy_manifest` (warning), `store_membership_roles_inferred` (info), `project_planning_binding_refused` (warning, `store add-project --set-primary`). Human and JSON render the same code, message, and repair. Pass-through from a refused write: `invalid_store_project_record`, `store_project_record_unverified`, `membership_base_commit_moved`, `eject_destination_required`, `migrate_membership_verify_failed`.
 
 ### Archive (JSON mode)
 `archive_change_name_required`, `archive_change_not_found`, `archive_validation_failed`, `archive_confirmation_required`, `archive_tasks_incomplete`, `archive_spec_update_failed`, `archive_spec_validation_failed`, `archive_target_exists`, `archive_error`.
+
+### Session runtime context and frozen resume
+`project_binding_mismatch` (error; the frozen project is not the project the
+session executes in — fails closed, never falls back to another clone),
+`project_binding_ambiguous` (error; several registered checkouts carry the
+frozen project's identity, all listed), `project_binding_missing` (error; no
+checkout of the frozen project on this machine),
+`project_binding_selector_conflict` (error; an explicit selector named a
+different project than the frozen one — a selector cross-checks, it cannot
+retarget), `session_context_broken` (error; the file `RASEN_SESSION_CONTEXT`
+points at is missing, unparseable, of an unknown version, or names a different
+session).
 
 ### Context writes
 `context_file_exists`, `context_output_dir_missing`.

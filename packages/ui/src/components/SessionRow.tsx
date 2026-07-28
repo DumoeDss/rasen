@@ -17,6 +17,9 @@ const STAGE_GLYPHS: Record<StageStatus, string> = {
   in_progress: '◐',
   done: '●',
   skipped: '—',
+  // Handed to child changes: outstanding work, so it reads as unfinished
+  // rather than borrowing `skipped`'s settled dash.
+  delegated: '⇢',
   escalated: '⚠',
 };
 

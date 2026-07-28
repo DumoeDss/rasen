@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source srcset="assets/rasen-logo-dark.svg" media="(prefers-color-scheme: dark)">
+    <source srcset="assets/rasen-logo-light.svg" media="(prefers-color-scheme: light)">
+    <img src="assets/rasen-logo-light.svg" alt="Rasen logo" height="160">
+  </picture>
+</p>
+
 <h1 align="center">Rasen — loops that ascend</h1>
 
 <p align="center"><strong>「不是循环，是螺旋」</strong></p>

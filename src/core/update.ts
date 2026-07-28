@@ -25,6 +25,7 @@ import {
   copySkillSidecars,
   getToolsWithSkillsDir,
   resolveToolSkillsRoot,
+  resolveConfiguredTools,
   type ToolVersionStatus,
 } from './shared/index.js';
 import {
@@ -40,17 +41,23 @@ import {
   RETRO_COMPAT_WRAPPER_DIR_NAME,
 } from './templates/skill-templates.js';
 import {
+  EffectiveLearnedSkillPlanningError,
+  resolveEffectiveLearnedSkillPlan,
   resolveLearnedSkillExecutionContext,
-  resolveLearnedSkills,
-  type ResolvedLearnedSkillSet,
 } from './learned-skills/index.js';
 import {
+  emptyLearnedReconcileResult,
   learnedReconcileHasActivity,
   mergeLearnedReconcileResult,
   reconcileGlobalLearnedSkillsForTool,
   reconcileProjectLearnedSkillsForTool,
   type LearnedReconcileResult,
 } from './learned-skill-materialization.js';
+import { collectProjectLearnedStores } from './project-learned-skill-ledger.js';
+import {
+  learnedMaterializationMessage,
+  learnedMaterializationReport,
+} from './learned-materialization-locale.js';
 import { hasLegacyWorkspace } from './workspace-migration.js';
 import { getGlobalConfig, saveGlobalConfig, type GlobalConfig, type RepoMode } from './global-config.js';
 import {
@@ -115,6 +122,10 @@ function getCommandConfiguredTools(projectPath: string): string[] {
 export interface UpdateCommandOptions {
   /** Force update even when tools are up to date */
   force?: boolean;
+  /** Update every reachable, non-pinned registered project whose version is behind. */
+  allProjects?: boolean;
+  /** Skip multi-project registry consultation entirely (the pre-manifest behavior). */
+  onlyThis?: boolean;
 }
 
 /**
@@ -132,9 +143,13 @@ export function scanInstalledWorkflows(projectPath: string, toolIds: string[]): 
 
 export class UpdateCommand {
   private readonly force: boolean;
+  private readonly allProjects: boolean;
+  private readonly onlyThis: boolean;
 
   constructor(options: UpdateCommandOptions = {}) {
     this.force = options.force ?? false;
+    this.allProjects = options.allProjects ?? false;
+    this.onlyThis = options.onlyThis ?? false;
   }
 
   async execute(projectPath: string): Promise<void> {
@@ -274,15 +289,26 @@ export class UpdateCommand {
     // command files and `openspec-*` skill dirs are left untouched (D4).
     await this.noticeLegacyArtifacts(resolvedProjectPath);
 
-    // 5. Find configured tools. Union in tools configured only via a
-    // pre-retirement command file (skills-based detection alone would miss
-    // a commands-only install) so it is still recognized and its stale
-    // command files cleaned up rather than treated as unconfigured.
+    // 5. Resolve configured tools through the authoritative `tools:`
+    // manifest in `rasen/config.yaml` (project-install-manifest spec). When
+    // the manifest is absent, this seeds it once from the on-disk union
+    // (getConfiguredToolsForProfileSync + leftover commands — the same union
+    // update used pre-manifest) and proceeds. The legacy on-disk detection
+    // path is preserved only as the migration fallback.
     const commandConfiguredTools = getCommandConfiguredTools(resolvedProjectPath);
+    const { tools: configuredTools, seeded: toolsWereSeeded } =
+      resolveConfiguredTools(resolvedProjectPath, {
+        seedProvider: () => [
+          ...new Set([
+            ...getConfiguredToolsForProfileSync(resolvedProjectPath),
+            ...commandConfiguredTools,
+          ]),
+        ],
+      });
+    if (toolsWereSeeded && configuredTools.length > 0) {
+      console.log(chalk.dim(`Seeded tools: ${configuredTools.join(', ')}`));
+    }
     const commandConfiguredSet = new Set(commandConfiguredTools);
-    const configuredTools = [
-      ...new Set([...getConfiguredToolsForProfileSync(resolvedProjectPath), ...commandConfiguredTools]),
-    ];
 
     if (configuredTools.length === 0) {
       console.log(chalk.yellow('No configured tools found.'));
@@ -353,6 +379,10 @@ export class UpdateCommand {
     if (!this.force && toolsToUpdateSet.size === 0 && !learnedActivity) {
       // All tools are up to date and no learned-skill materialization changed.
       this.displayUpToDateMessage(toolStatuses);
+      // A complete reconciliation that changed nothing still says so, in its
+      // own words. Silence here is what makes a user unsure whether their
+      // learned knowledge was considered at all.
+      this.displayLearnedSummary(learned);
 
       // Still check for new tool directories and extra workflows
       this.detectNewTools(resolvedProjectPath, configuredTools);
@@ -481,6 +511,132 @@ export class UpdateCommand {
 
     console.log();
     console.log(chalk.dim('Restart your IDE for changes to take effect.'));
+
+    // 16. Version-cache refresh (project-install-manifest spec): AFTER the
+    // successful update summary, refresh the current project's registry
+    // entry with installedVersion/lastUpdated and mirror the manifest's
+    // tools list. Best-effort — a failure emits at most a warning and does
+    // not abort (skill files are already refreshed on disk). MUST run after
+    // the skill-generation loop, never before, so a failed update does not
+    // advance the cache.
+    await this.refreshProjectVersionCache(resolvedProjectPath, configuredTools);
+
+    // 17. Multi-project update offer (project-install-manifest spec): when
+    // --only-this is unset, consult the registry for other registered
+    // projects that are behind and offer to upgrade them.
+    if (!this.onlyThis) {
+      await this.offerMultiProjectUpdate(resolvedProjectPath);
+    }
+  }
+
+  /**
+   * Refreshes the current project's registry entry with the installed
+   * version, lastUpdated timestamp, and a mirror of the manifest tools.
+   * Best-effort: a failure emits at most a warning.
+   */
+  private async refreshProjectVersionCache(
+    projectPath: string,
+    configuredTools: readonly string[]
+  ): Promise<void> {
+    try {
+      const { touchProjectRegistry } = await import('./project-home.js');
+      await touchProjectRegistry(projectPath, {
+        tools: [...configuredTools],
+        installedVersion: OPENSPEC_VERSION,
+      });
+    } catch (error) {
+      // Best-effort; registry problems must never break a user command.
+      console.log(
+        chalk.yellow(
+          `Warning: could not refresh the project registry cache (${
+            error instanceof Error ? error.message : String(error)
+          }). The next 'rasen update' or registry self-heal will converge it.`
+        )
+      );
+    }
+  }
+
+  /**
+   * Offers a multi-project upgrade after the current project is updated.
+   * Consults the registry for other registered projects whose cached
+   * `installedVersion` is behind the current CLI version (or unknown), and
+   * presents an interactive prompt (all / select / skip, default skip) or
+   * proceeds silently with `--all-projects`. Skips entirely when
+   * non-interactive without `--all-projects`, or when nothing is behind.
+   */
+  private async offerMultiProjectUpdate(
+    currentProjectPath: string
+  ): Promise<void> {
+    try {
+      const { isInteractive } = await import('../utils/interactive.js');
+      const { enumerateBehindProjects, updateMultipleProjects, formatMultiProjectSummary } =
+        await import('./multi-project-update.js');
+
+      const behind = await enumerateBehindProjects(currentProjectPath, OPENSPEC_VERSION);
+      if (behind.length === 0) {
+        console.log(chalk.dim('All registered projects are current.'));
+        return;
+      }
+
+      const interactive = isInteractive();
+      const shouldUpdateAll = this.allProjects;
+
+      if (!interactive && !this.allProjects) {
+        // Non-interactive without --all-projects: skip the offer (no prompt,
+        // no registry consultation for updates).
+        return;
+      }
+
+      let targets = behind;
+      if (interactive && !shouldUpdateAll) {
+        const { select } = await import('@inquirer/prompts');
+        const choices = [
+          { name: 'Update all', value: 'all' },
+          { name: 'Select', value: 'select' },
+          { name: 'Skip', value: 'skip' },
+        ];
+        const answer = await select({
+          message: `Found ${behind.length} registered project(s) behind v${OPENSPEC_VERSION}. Update them?`,
+          choices,
+          default: 'skip',
+        });
+        if (answer === 'skip') return;
+        if (answer === 'select') {
+          const { checkbox } = await import('@inquirer/prompts');
+          const selected = await checkbox({
+            message: 'Select projects to update',
+            choices: behind.map((p) => ({
+              name: `${p.name} (${path.basename(p.projectRoot)})${
+                p.cachedVersion ? ` v${p.cachedVersion}` : ' (version unknown)'
+              }`,
+              value: p.projectRoot,
+            })),
+          });
+          if (selected.length === 0) return;
+          const selectedSet = new Set(selected);
+          targets = behind.filter((p) => selectedSet.has(p.projectRoot));
+        }
+      }
+
+      const results = await updateMultipleProjects(targets, { force: this.force });
+      const summary = formatMultiProjectSummary(results);
+      if (summary.length > 0) {
+        console.log();
+        console.log(chalk.bold('Multi-project update'));
+        for (const line of summary) {
+          console.log(line);
+        }
+      }
+    } catch (error) {
+      // Best-effort: multi-project failure never aborts the (already-successful) current update.
+      console.log(
+        chalk.yellow(
+          `Warning: multi-project update skipped (${
+            error instanceof Error ? error.message : String(error)
+          }).`
+        )
+      );
+    }
   }
 
   /**
@@ -765,64 +921,90 @@ export class UpdateCommand {
     projectPath: string,
     toolIds: readonly string[]
   ): Promise<LearnedReconcileResult> {
-    const aggregate: LearnedReconcileResult = { created: [], updated: [], removed: [], skipped: [] };
-    let resolved: ResolvedLearnedSkillSet;
+    const aggregate = emptyLearnedReconcileResult();
     try {
       const execution = await resolveLearnedSkillExecutionContext({
         launchDirectory: projectPath,
         requestedScope: 'mixed',
       });
-      resolved = await resolveLearnedSkills({ execution });
-    } catch {
-      return aggregate;
-    }
+      const plan = await resolveEffectiveLearnedSkillPlan({
+        execution,
+        previousStores:
+          execution.owner.type === 'project'
+            ? collectProjectLearnedStores(execution.evaluationRoot ?? projectPath)
+            : [],
+      });
 
-    for (const toolId of toolIds) {
-      const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
-      if (!tool?.skillsDir) continue;
-      const skillsRoot = resolveToolSkillsRoot(tool, projectPath);
-      try {
-        const result =
-          tool.skillsHome === 'global'
-            ? reconcileGlobalLearnedSkillsForTool({
-                toolId,
-                toolLabel: tool.name,
-                skillsRoot,
-                resolved,
-              })
-            : reconcileProjectLearnedSkillsForTool({
-                projectRoot: projectPath,
-                toolId,
-                toolLabel: tool.name,
-                skillsRoot,
-                resolved,
-              });
-        mergeLearnedReconcileResult(aggregate, result);
-      } catch {
-        // Best-effort per tool.
+      for (const toolId of toolIds) {
+        const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
+        if (!tool?.skillsDir) continue;
+        const skillsRoot = resolveToolSkillsRoot(tool, plan.evaluationRoot);
+        try {
+          const result =
+            tool.skillsHome === 'global'
+              ? reconcileGlobalLearnedSkillsForTool({
+                  toolId,
+                  toolLabel: tool.name,
+                  skillsRoot,
+                  globalRecords: plan.globalRecords,
+                  localRecords: plan.skills,
+                  plan,
+                  ...(execution.globalDataDir ? { globalDataDir: execution.globalDataDir } : {}),
+                })
+              : reconcileProjectLearnedSkillsForTool({
+                  toolId,
+                  toolLabel: tool.name,
+                  skillsRoot,
+                  plan,
+                });
+          mergeLearnedReconcileResult(aggregate, result);
+        } catch (error) {
+          aggregate.errors.push({
+            code: 'tool_reconcile_failed',
+            message: `${tool.name}: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
       }
+    } catch (error) {
+      aggregate.errors.push({
+        code:
+          error instanceof EffectiveLearnedSkillPlanningError ? error.code : 'effective_plan_failed',
+        message: error instanceof Error ? error.message : String(error),
+        ...(error instanceof EffectiveLearnedSkillPlanningError && error.repair.length > 0
+          ? { repair: error.repair }
+          : {}),
+      });
     }
     return aggregate;
   }
 
   /**
-   * Reports the learned-skill reconciliation result as a section separate from
-   * the workflow summary (created/updated/removed/skipped), so an empty learned
-   * category is never merged into the workflow counts. Prints nothing when
-   * there was no learned activity at all.
+   * Reports the learned-skill reconciliation as a section separate from the
+   * workflow summary, so an empty learned category is never merged into the
+   * workflow counts. A COMPLETE reconciliation that changed nothing emits its
+   * own learned no-op rather than disappearing into the generic status.
    */
   private displayLearnedSummary(learned: LearnedReconcileResult): void {
-    if (!learnedReconcileHasActivity(learned)) return;
+    if (!learnedReconcileHasActivity(learned) && !learned.noOp) return;
     const parts: string[] = [];
     if (learned.created.length > 0) parts.push(`created: ${learned.created.length}`);
     if (learned.updated.length > 0) parts.push(`updated: ${learned.updated.length}`);
+    if (learned.migrated.length > 0) parts.push(`migrated: ${learned.migrated.length}`);
     if (learned.removed.length > 0) parts.push(`removed: ${learned.removed.length}`);
     if (learned.skipped.length > 0) parts.push(`skipped: ${learned.skipped.length}`);
-    if (parts.length > 0) {
-      console.log(chalk.dim(`Learned skills — ${parts.join(', ')}`));
+    if (learned.deduplicated.length > 0) parts.push(`deduplicated: ${learned.deduplicated.length}`);
+    if (learned.conflicts.length > 0) parts.push(`conflicts: ${learned.conflicts.length}`);
+    if (learned.unavailableStores.length > 0) {
+      parts.push(`unavailable stores: ${learned.unavailableStores.length}`);
     }
-    for (const skip of learned.skipped) {
-      console.log(chalk.yellow(`  ⚠ ${skip.message}`));
+    if (learned.deferred.length > 0) parts.push(`deferred: ${learned.deferred.length}`);
+    if (parts.length > 0) {
+      console.log(
+        chalk.dim(learnedMaterializationMessage('summary', { details: parts.join(', ') }))
+      );
+    }
+    for (const line of learnedMaterializationReport(learned)) {
+      console.log(line.tone === 'warn' ? chalk.yellow(`  ⚠ ${line.text}`) : chalk.dim(line.text));
     }
   }
 

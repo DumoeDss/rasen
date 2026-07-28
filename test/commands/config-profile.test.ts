@@ -218,6 +218,19 @@ describe('config profile interactive flow', () => {
       fs.writeFileSync(skillPath, `name: ${dirName}\n`, 'utf-8');
     }
 
+    // The retention runner's sidecars (report.md, codify.md) are part of its
+    // executable contract — hasToolProfileDrift requires all three files, so a
+    // fully synced project must have them alongside SKILL.md.
+    const retainDir = path.join(projectDir, '.claude', 'skills', 'rasen-retain');
+    fs.writeFileSync(path.join(retainDir, 'report.md'), '# report\n', 'utf-8');
+    fs.writeFileSync(path.join(retainDir, 'codify.md'), '# codify\n', 'utf-8');
+
+    // The temporary retro-compat wrapper (rasen-retro) is generated for every
+    // configured tool and must exist for drift detection to pass.
+    const retroSkillPath = path.join(projectDir, '.claude', 'skills', 'rasen-retro', 'SKILL.md');
+    fs.mkdirSync(path.dirname(retroSkillPath), { recursive: true });
+    fs.writeFileSync(retroSkillPath, 'name: rasen-retro\n', 'utf-8');
+
     // Legacy (no explicit expert selection) resolves to CORE_WORKFLOWS +
     // ALL_EXPERTS (design.md D4 non-regression fallback) — a project fully
     // in sync also has every expert skill dir installed.

@@ -11,6 +11,7 @@ import {
   frozenRetentionMode,
   RETAIN_STAGE_ID,
   normalizeWorker,
+  inferWorkerDispatchMode,
   stageWorkers,
   stagesWithStatus,
   stagesLackingDurableHandle,
@@ -332,7 +333,7 @@ describe('pipeline run-state', () => {
       expect(completedStages({ pipeline: 'bug-fix' })).toEqual([]);
     });
 
-    it('treats a parent stage delegated to portfolio children as complete', () => {
+    it('does not treat a parent stage delegated to portfolio children as complete (B2: work is outstanding until the portfolio children finish)', () => {
       const state = parseRunState(JSON.stringify({
         pipeline: 'auto-decompose',
         stages: {
@@ -341,7 +342,10 @@ describe('pipeline run-state', () => {
           ship: { status: 'pending' },
         },
       }));
-      expect(completedStages(state).sort()).toEqual(['apply', 'decompose']);
+      // B2: a delegated stage is NOT complete for resume/delivery decisions.
+      // Whether it is actually done is derived from portfolio child durable
+      // state, not from the delegated marker. completedStages reports done|skipped.
+      expect(completedStages(state).sort()).toEqual(['decompose']);
     });
   });
 
@@ -368,6 +372,78 @@ describe('pipeline run-state', () => {
       const w = s.stages?.verify.worker;
       expect(typeof w).toBe('object');
       expect((w as { transcript?: string }).transcript).toBe('/p/agent-abc123.jsonl');
+    });
+
+    it('keeps archived worker records without dispatchMode valid and unchanged', () => {
+      const s = parseRunState(
+        JSON.stringify({
+          pipeline: 'small-feature',
+          stages: {
+            apply: {
+              status: 'done',
+              worker: { runtime: 'codex', role: 'implementer', threadId: 'legacy-thread' },
+            },
+          },
+        })
+      );
+
+      expect(s.stages?.apply.worker).toEqual({
+        runtime: 'codex',
+        role: 'implementer',
+        threadId: 'legacy-thread',
+      });
+    });
+
+    it('round-trips canonical native and exec-bridge dispatch modes', () => {
+      writeRunState(dir, {
+        pipeline: 'small-feature',
+        stages: {
+          apply: {
+            status: 'done',
+            worker: {
+              runtime: 'codex',
+              dispatchMode: 'native',
+              role: 'implementer',
+              agentId: 'native-agent',
+            },
+          },
+          verify: {
+            status: 'done',
+            worker: {
+              runtime: 'codex',
+              dispatchMode: 'exec-bridge',
+              role: 'reviewer',
+              threadId: 'exec-thread',
+            },
+          },
+        },
+      });
+
+      const back = readRunState(dir);
+      expect(back?.stages?.apply.worker).toMatchObject({
+        dispatchMode: 'native',
+        agentId: 'native-agent',
+      });
+      expect(back?.stages?.verify.worker).toMatchObject({
+        dispatchMode: 'exec-bridge',
+        threadId: 'exec-thread',
+      });
+    });
+
+    it('infers legacy route handles conservatively without fabricating one', () => {
+      expect(
+        inferWorkerDispatchMode({ runtime: 'codex', threadId: 'exec-thread' })
+      ).toEqual({ dispatchMode: 'exec-bridge', inferred: true });
+      expect(
+        inferWorkerDispatchMode({ runtime: 'codex', agentId: 'native-agent' })
+      ).toEqual({ dispatchMode: 'native', inferred: true });
+
+      const ambiguous = inferWorkerDispatchMode({
+        runtime: 'codex',
+        transcript: 'rollout.jsonl',
+      });
+      expect(ambiguous.dispatchMode).toBeUndefined();
+      expect(ambiguous.warning).toContain('ambiguous');
     });
 
     it('accepts a Codex worker with threadId + turnId', () => {

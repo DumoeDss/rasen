@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  DurableKnowledgeOwnerRefSchema,
   LearnedSkillCandidateSchema,
   LearnedSkillManifestSchema,
+  compareDurableOwners,
+  durableOwnerKey,
+  sameDurableOwner,
   checkLearnedSkillId,
   dedupeEvidence,
   digestContent,
@@ -157,5 +161,95 @@ describe('evidence dedup and provenance', () => {
     expect(digestContent('hello')).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(digestContent('hello')).toBe(digestContent('hello'));
     expect(digestContent('a')).not.toBe(digestContent('b'));
+  });
+});
+
+describe('durable owners and versioned records', () => {
+  const UID_A = '11111111-1111-4111-8111-111111111111';
+  const UID_B = '22222222-2222-4222-8222-222222222222';
+
+  it('keys a store on its permanent identity, never on its display name', () => {
+    const renamed = { type: 'store' as const, uid: UID_A, id: 'renamed' };
+    const original = { type: 'store' as const, uid: UID_A, id: 'team' };
+    expect(durableOwnerKey(renamed)).toBe(durableOwnerKey(original));
+    expect(sameDurableOwner(renamed, original)).toBe(true);
+
+    // Two stores that share a display name are two owners, not one.
+    const namesake = { type: 'store' as const, uid: UID_B, id: 'team' };
+    expect(sameDurableOwner(original, namesake)).toBe(false);
+    expect(durableOwnerKey(original)).not.toBe(durableOwnerKey(namesake));
+  });
+
+  it('orders owners identically before and after a rename', () => {
+    const before = [
+      { type: 'store' as const, uid: UID_B, id: 'aardvark' },
+      { type: 'store' as const, uid: UID_A, id: 'zebra' },
+    ];
+    const after = [
+      { type: 'store' as const, uid: UID_B, id: 'zebra' },
+      { type: 'store' as const, uid: UID_A, id: 'aardvark' },
+    ];
+    const order = (owners: typeof before): string[] =>
+      [...owners].sort(compareDurableOwners).map(durableOwnerKey);
+    // An alphabetical tie-break on a renameable field would swap these.
+    expect(order(before)).toEqual(order(after));
+  });
+
+  it('accepts a store owner only with a permanent identity', () => {
+    expect(
+      DurableKnowledgeOwnerRefSchema.safeParse({ type: 'store', uid: UID_A, id: 'team' }).success
+    ).toBe(true);
+    // A display name alone is not an owner a record may be keyed on.
+    expect(DurableKnowledgeOwnerRefSchema.safeParse({ type: 'store', id: 'team' }).success).toBe(
+      false
+    );
+    // Strict: an unknown key is an error, not a tolerated field.
+    expect(
+      DurableKnowledgeOwnerRefSchema.safeParse({ type: 'store', uid: UID_A, root: '/tmp/store' })
+        .success
+    ).toBe(false);
+  });
+
+  it('parses both manifest versions and rejects a mismatched owner', () => {
+    const common = {
+      id: 'go-sql-transaction-locking',
+      knowledgeKey: 'go-sql-tx-locking',
+      status: 'active',
+      generatedBy: 'rasen-learned-skill',
+      contentDigest: DIGEST,
+      description: 'Lock rows in a transaction.',
+      applicability: { mode: 'all', markers: ['go.mod'] },
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    expect(
+      LearnedSkillManifestSchema.safeParse({
+        version: 1,
+        ...common,
+        scope: 'project',
+        evidence: [evidence('p1')],
+      }).success
+    ).toBe(true);
+    expect(
+      LearnedSkillManifestSchema.safeParse({
+        version: 2,
+        ...common,
+        scope: 'store',
+        owner: { type: 'store', uid: UID_A, id: 'team' },
+        evidence: [{ owner: { type: 'project', projectId: 'p1' }, change: 'c', artifact: 'review', digest: DIGEST }],
+        sources: [{ owner: { type: 'project', projectId: 'p1' }, id: 'go-sql-transaction-locking', knowledgeKey: 'go-sql-tx-locking' }],
+      }).success
+    ).toBe(true);
+    // The declared owner must be the same class as the declared scope.
+    expect(
+      LearnedSkillManifestSchema.safeParse({
+        version: 2,
+        ...common,
+        scope: 'store',
+        owner: { type: 'project', projectId: 'p1' },
+        evidence: [],
+        sources: [],
+      }).success
+    ).toBe(false);
   });
 });

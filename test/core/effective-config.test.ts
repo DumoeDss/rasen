@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 
 import {
+  requireConfigStoreLayer,
   resolveConfigStoreLayer,
   resolveEffectiveConfig,
   resolveEffectiveConfigWithMetadata,
@@ -598,44 +599,75 @@ describe('effective-config', () => {
         path.join(tempDir, 'member-proj'),
         'schema: spec-driven\nstore: team-store\n'
       );
-      const layer = await resolveConfigStoreLayer(projectRoot, { globalDataDir });
-      expect(layer?.storeId).toBe('team-store');
-      expect(layer?.storeRoot).toBeTruthy();
+      const resolution = await resolveConfigStoreLayer(projectRoot, { globalDataDir });
+      expect(resolution.kind).toBe('resolved');
+      if (resolution.kind !== 'resolved') return;
+      expect(resolution.layer.storeId).toBe('team-store');
+      expect(resolution.layer.storeRoot).toBeTruthy();
+      expect(resolution.layer.resolvedBy).toBe('alias');
     });
 
-    it('returns null for a pointer with no local planning shape', async () => {
+    it('resolves absent for a pointer with no local planning shape', async () => {
       await registerStoreAt('team-store');
       const pointerDir = path.join(tempDir, 'pointer-only');
       fs.mkdirSync(path.join(pointerDir, 'rasen'), { recursive: true });
       fs.writeFileSync(path.join(pointerDir, 'rasen', 'config.yaml'), 'store: team-store\n');
-      expect(await resolveConfigStoreLayer(pointerDir, { globalDataDir })).toBeNull();
+      expect(await resolveConfigStoreLayer(pointerDir, { globalDataDir })).toEqual({
+        kind: 'absent',
+      });
     });
 
-    it('returns null when there is no pointer', async () => {
+    it('resolves absent when there is no pointer', async () => {
       const projectRoot = createPlanningRoot(
         path.join(tempDir, 'no-pointer'),
         'schema: spec-driven\n'
       );
-      expect(await resolveConfigStoreLayer(projectRoot, { globalDataDir })).toBeNull();
+      expect(await resolveConfigStoreLayer(projectRoot, { globalDataDir })).toEqual({
+        kind: 'absent',
+      });
     });
 
-    it('returns null for an unregistered store', async () => {
+    it('reports an unregistered store as unavailable, never as absent', async () => {
       const projectRoot = createPlanningRoot(
         path.join(tempDir, 'unregistered-member'),
         'schema: spec-driven\nstore: nowhere\n'
       );
-      expect(await resolveConfigStoreLayer(projectRoot, { globalDataDir })).toBeNull();
+      const resolution = await resolveConfigStoreLayer(projectRoot, { globalDataDir });
+      expect(resolution.kind).toBe('unavailable');
+      if (resolution.kind !== 'unavailable') return;
+      expect(resolution.binding.reason).toBe('not-registered');
+      // Bootstrap is the whole-gap repair, named first (design D1).
+      expect(resolution.binding.repair[0]).toBe('rasen bootstrap');
     });
 
-    it('returns null for a malformed pointer', async () => {
+    it('reports a malformed pointer as unavailable, never as absent', async () => {
       const projectRoot = createPlanningRoot(
         path.join(tempDir, 'malformed-member'),
         'schema: spec-driven\nstore: [a, b]\n'
       );
-      expect(await resolveConfigStoreLayer(projectRoot, { globalDataDir })).toBeNull();
+      const resolution = await resolveConfigStoreLayer(projectRoot, { globalDataDir });
+      expect(resolution.kind).toBe('unavailable');
+      if (resolution.kind !== 'unavailable') return;
+      expect(resolution.binding.reason).toBe('pointer-malformed');
     });
 
-    it('returns null when the root IS a registered store with its own store field (no transitivity)', async () => {
+    it('does NOT report global/default values for a project whose store is unavailable', async () => {
+      const projectRoot = createPlanningRoot(
+        path.join(tempDir, 'fail-closed-member'),
+        'schema: spec-driven\nstore: nowhere\n'
+      );
+      const resolution = await resolveConfigStoreLayer(projectRoot, { globalDataDir });
+      // Handing the tri-state straight to the merge fails closed rather than
+      // resolving as though the project had declared no store.
+      expect(() => resolveEffectiveConfig({ projectRoot, store: resolution })).toThrow(
+        /not registered on this machine/i
+      );
+      await expect(
+        requireConfigStoreLayer(projectRoot, { globalDataDir })
+      ).rejects.toThrow(/not registered on this machine/i);
+    });
+
+    it('resolves absent when the root IS a registered store with its own store field (no transitivity)', async () => {
       const storeARoot = createPlanningRoot(
         path.join(tempDir, 'stores', 'store-a'),
         'schema: spec-driven\nstore: store-b\n'
@@ -643,12 +675,16 @@ describe('effective-config', () => {
       await registerStore({ id: 'store-a', localPath: storeARoot, globalDataDir });
       await registerStoreAt('store-b');
       // Resolving store-a's OWN root: its `store: store-b` field is ignored.
-      expect(await resolveConfigStoreLayer(storeARoot, { globalDataDir })).toBeNull();
+      expect(await resolveConfigStoreLayer(storeARoot, { globalDataDir })).toEqual({
+        kind: 'absent',
+      });
     });
 
-    it('returns null when no projectRoot is given', async () => {
-      expect(await resolveConfigStoreLayer(null, { globalDataDir })).toBeNull();
-      expect(await resolveConfigStoreLayer(undefined, { globalDataDir })).toBeNull();
+    it('resolves absent when no projectRoot is given', async () => {
+      expect(await resolveConfigStoreLayer(null, { globalDataDir })).toEqual({ kind: 'absent' });
+      expect(await resolveConfigStoreLayer(undefined, { globalDataDir })).toEqual({
+        kind: 'absent',
+      });
     });
   });
 });

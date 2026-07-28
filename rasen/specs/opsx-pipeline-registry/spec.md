@@ -337,19 +337,83 @@ The effective model for a stage SHALL resolve with precedence: a `pipelines.<nam
 - **WHEN** a per-stage instance determines a stage's effective model and the user runs `rasen pipeline show <name> --json`
 - **THEN** that stage's reported model is the instance value with a source identifying the per-stage configured layer and its scope
 
+### Requirement: Effective stage runtime resolves independently from other stage fields
+
+The effective runtime for a stage SHALL resolve independently from model, sandbox, effort, and session-reuse fields. Runtime precedence SHALL be: the per-role runtime configuration instance (project over store over global), then an explicit stage runtime, then an explicit pipeline `agents.<role>.runtime`, then the detected LEAD host, then the legacy Claude fallback when the host is unknown. A declaration that configures only a non-runtime field SHALL NOT count as an explicit runtime source.
+
+#### Scenario: Model-only stage inherits the Codex host
+
+- **WHEN** a stage declares `model` but no runtime and the detected LEAD host is Codex
+- **THEN** the stage resolves runtime `codex` with runtime source `host`
+- **AND** its model retains the stage model source
+
+#### Scenario: Model-only role object does not manufacture Claude
+
+- **WHEN** `agents.reviewer` is an object containing a model or lifecycle field but no `runtime`
+- **AND** no higher runtime configuration instance or stage runtime exists
+- **THEN** reviewer stages inherit the detected host
+- **AND** do not treat the object’s omitted runtime as an explicit Claude declaration
+
+#### Scenario: Explicit runtime layers retain precedence
+
+- **WHEN** a configured role runtime, stage runtime, pipeline role runtime, and host default provide different values
+- **THEN** the configured role runtime wins over the stage runtime
+- **AND** the stage runtime wins over the pipeline role runtime
+- **AND** every explicit layer wins over host inheritance
+
+#### Scenario: Unknown host uses the annotated legacy default
+
+- **WHEN** no explicit runtime layer exists and host detection returns unknown
+- **THEN** the stage resolves runtime `claude`
+- **AND** reports runtime source `legacy-default`
+
+### Requirement: Pipeline execution inspection reports host and dispatch provenance
+
+`rasen pipeline show` and `rasen pipeline agents` SHALL report the detected host runtime and its source, and SHALL report each resolved stage runtime with its independent runtime source and dispatch mode. JSON output SHALL use stable locale-neutral values; human output SHALL present the same facts in the active locale. These fields SHALL be additive to the existing pipeline output.
+
+#### Scenario: Codex-native default is observable
+
+- **WHEN** a Codex-hosted user inspects a pipeline stage with no explicit runtime
+- **THEN** output reports host runtime `codex` with its detection source
+- **AND** the stage reports runtime `codex`, runtime source `host`, and dispatch mode `native`
+
+#### Scenario: Cross-runtime bridge is observable
+
+- **WHEN** a Claude-hosted pipeline stage explicitly resolves to Codex
+- **THEN** the stage reports runtime `codex`
+- **AND** reports its explicit runtime source and dispatch mode `exec-bridge`
+
+#### Scenario: Unknown host is not presented as native
+
+- **WHEN** pipeline inspection runs outside a recognized host
+- **THEN** output reports host runtime `unknown`
+- **AND** implicit stages report runtime source `legacy-default` and dispatch mode `legacy-fallback`
+
+#### Scenario: Existing JSON consumers keep established fields
+
+- **WHEN** a client ignores host and dispatch provenance fields
+- **THEN** every pre-existing pipeline and stage field retains its established type and meaning
+
 ### Requirement: Per-role runtime updates persist as configuration, not pipeline copies
 
-`rasen pipeline agents <name>` SHALL keep its command surface (per-role runtime flags, `--json`, root selection) while persisting per-role runtime updates as `pipelines.<name>.runtimes.<role>` configuration instances written to the resolved root's configuration through the standard config write path — it SHALL NOT write a pipeline definition file. The effective runtime for a role SHALL resolve: the per-role runtime family instance (project over store over global) first, then the pipeline's declared `agents.<role>.runtime`, then the default runtime. Reads SHALL report each role's resolved runtime with the layer that supplied it. A pipeline definition copy previously frozen into a project by the old behavior SHALL remain untouched and SHALL keep resolving as that project's definition (the project layer of pipeline resolution) — the inspection surface's source badge makes the frozen copy visible, and removing it is the user's explicit action, never an automatic migration.
+`rasen pipeline agents <name>` SHALL keep its command surface (per-role runtime flags, `--json`, root selection) while persisting per-role runtime updates as `pipelines.<name>.runtimes.<role>` configuration instances written to the resolved root's configuration through the standard config write path — it SHALL NOT write a pipeline definition file. The effective runtime for a role SHALL resolve: the per-role runtime family instance (project over store over global) first, then an explicit pipeline `agents.<role>.runtime`, then the detected host runtime, then the legacy Claude fallback when the host is unknown. Reads SHALL report each role's resolved runtime with the layer that supplied it and its host × target dispatch mode. A pipeline definition copy previously frozen into a project by the old behavior SHALL remain untouched and SHALL keep resolving as that project's definition (the project layer of pipeline resolution) — the inspection surface's source badge makes the frozen copy visible, and removing it is the user's explicit action, never an automatic migration.
 
 #### Scenario: Setting a runtime writes config, not YAML
 
 - **WHEN** the user runs `rasen pipeline agents small-feature --reviewer codex` in a project
 - **THEN** a `pipelines.small-feature.runtimes.reviewer` instance is written to the project's configuration, no `pipeline.yaml` is created or modified, and subsequent upstream changes to the built-in pipeline keep applying in that project
 
-#### Scenario: Runtime chain resolves config over declaration
+#### Scenario: Runtime chain resolves config over declaration and host
 
-- **WHEN** a pipeline declares `agents.reviewer.runtime: claude` and the project sets the reviewer runtime instance to `codex`
-- **THEN** the reviewer-role stages resolve to `codex` with a config-layer source, and unsetting the instance reverts to the declaration
+- **WHEN** a pipeline declares `agents.reviewer.runtime: claude`, the detected host is Codex, and the project sets the reviewer runtime instance to `codex`
+- **THEN** reviewer-role stages resolve to `codex` with a config-layer source
+- **AND** unsetting the instance reverts to the explicit Claude declaration rather than the host
+
+#### Scenario: Undeclared role runtime inherits the host
+
+- **WHEN** no runtime configuration instance or explicit pipeline role runtime exists
+- **THEN** the role resolves to the detected host with a host source
+- **AND** an unknown host resolves to the visibly labelled legacy default
 
 #### Scenario: Existing frozen copies stay visible, not silently migrated
 
@@ -412,31 +476,48 @@ A `.rasenpkg` package MAY declare an optional `minRasenVersion`. When decoding a
 
 ### Requirement: Runtime preflight probes agent-runtime availability
 
-Before a pipeline is dispatched for execution, the execution preflight SHALL resolve each stage's effective agent runtime — using the precedence stage runtime, then the pipeline's per-role runtime, then the default — across all stages, including the stages of any decompose child pipeline. When any resolved effective runtime is `codex`, the preflight SHALL probe the codex CLI's availability at most once per invocation through an injectable prober, and SHALL fail before dispatch if codex is required but unavailable. The failure message SHALL name both remedies: overriding the affected role to the default runtime, or installing the codex CLI. When no stage resolves to `codex`, the preflight SHALL NOT probe and SHALL NOT fail on runtime-availability grounds.
+Before a pipeline is dispatched for execution, the execution preflight SHALL detect the LEAD host once, resolve every stage's effective target runtime with all configured runtime layers, and resolve the host × target dispatch mode across all stages, including stages of any decompose child pipeline. A known `unsupported` route SHALL fail before dispatch with an actionable error naming the host, target, affected stage or role, and a supported override. When any route is `exec-bridge`, the preflight SHALL probe Codex CLI availability at most once per invocation through an injectable prober and SHALL fail before dispatch if the bridge is required but unavailable. Codex-native stages SHALL NOT require or probe the external Codex CLI. An unknown host SHALL retain the legacy fallback with an actionable diagnostic rather than being represented as a verified native route.
 
-#### Scenario: Codex required but unavailable fails before dispatch
+#### Scenario: Claude-to-Codex bridge unavailable fails before dispatch
 
-- **WHEN** a pipeline has a stage whose effective runtime resolves to `codex`
-- **AND** the codex CLI is unavailable
-- **THEN** the execution preflight SHALL fail before dispatch
-- **AND** the error SHALL name both remedies (override the role to the default runtime, or install codex)
+- **WHEN** a Claude-hosted pipeline has a stage whose effective runtime resolves to Codex
+- **AND** the Codex CLI is unavailable
+- **THEN** execution preflight fails before dispatch
+- **AND** the error names both remedies: use a supported runtime override or install the Codex CLI
 
-#### Scenario: Decompose child runtime is covered
+#### Scenario: Codex-native pipeline does not probe the CLI
 
-- **WHEN** a decompose stage's child pipeline has a stage whose effective runtime resolves to `codex`
-- **AND** the codex CLI is unavailable
-- **THEN** the execution preflight SHALL fail before dispatch
+- **WHEN** the host is Codex and one or more stages inherit or explicitly select Codex
+- **THEN** each such stage resolves dispatch mode `native`
+- **AND** the Codex CLI availability prober is not called
 
-#### Scenario: Pure-default pipeline does not probe
+#### Scenario: Known unsupported route fails early
 
-- **WHEN** no stage in the pipeline or its decompose children resolves to `codex`
-- **THEN** the preflight SHALL NOT probe codex availability
-- **AND** it SHALL NOT fail on runtime-availability grounds
+- **WHEN** the host is Codex and an explicit runtime layer selects Claude for a stage
+- **THEN** execution preflight fails before any worker starts
+- **AND** the error identifies the unsupported Codex→Claude pair and explains that removing or changing the explicit runtime allows a supported route
 
-#### Scenario: Probe is injectable and runs at most once
+#### Scenario: Configured runtime instances participate in preflight
 
-- **WHEN** the preflight runs with an injected availability prober over a pipeline containing several `codex` stages
-- **THEN** the prober SHALL be consulted at most once for that invocation
+- **WHEN** project, store, or global runtime configuration changes a role's effective target
+- **THEN** preflight validates the route for that configured target
+- **AND** it does not validate a different target obtained by ignoring configuration
+
+#### Scenario: Decompose child routes are covered
+
+- **WHEN** a decompose child pipeline contains an exec-bridge or unsupported route after effective runtime resolution
+- **THEN** the parent execution preflight applies the same availability or rejection rule before fan-out
+
+#### Scenario: Bridge probe is injectable and runs at most once
+
+- **WHEN** the preflight runs with an injected availability prober over a pipeline containing several `exec-bridge` stages
+- **THEN** the prober is consulted at most once for that invocation
+
+#### Scenario: Unknown host keeps compatibility with a diagnostic
+
+- **WHEN** host detection returns unknown
+- **THEN** execution retains the legacy runtime/bridge behavior
+- **AND** reports how to select a deterministic host with `RASEN_AGENT_RUNTIME`
 
 ### Requirement: Pipeline human presentation is localized
 
@@ -500,4 +581,129 @@ Pipeline JSON payloads, registry values, raw descriptions, raw diagnostics, and 
 - **WHEN** a package-layer built-in pipeline is shown with `--json` under Japanese or Simplified Chinese
 - **THEN** its description SHALL remain the raw package-authored value used by the existing JSON contract
 - **AND** localized human presentation metadata SHALL NOT alter the serialized shape
+
+### Requirement: A decomposed parent's remaining work is answered from its portfolio record
+
+When a change was split into child changes, `rasen pipeline resume` SHALL answer
+from that change's portfolio record and report the children that can be worked on
+next, rather than from the parent's own stage list. A parent that still has any
+child which has not reached a finished state SHALL NOT be reported as ready to
+deliver, and SHALL NOT present delivery as its next step or as available work,
+regardless of what its own stage list says. Delivery SHALL become available only
+once every child has reached a finished state, and a change recorded as split
+while listing no children at all SHALL NOT be reported as complete — a record
+naming nothing that finished is not evidence that anything did.
+
+#### Scenario: A split change listing no children is not complete
+
+- **WHEN** a change is recorded as split into children but its portfolio lists none
+- **THEN** it SHALL NOT be reported as complete
+- **AND** delivery SHALL NOT be offered
+
+#### Scenario: A parent with children remaining never offers delivery
+
+- **WHEN** a user resumes a parent change whose portfolio still lists children that have not finished
+- **THEN** the next step SHALL be the child work that remains
+- **AND** delivery SHALL NOT appear as the next step or as available work
+
+#### Scenario: A parent whose children have all finished can deliver
+
+- **WHEN** a user resumes a parent change and every child in its portfolio has reached a finished state
+- **THEN** the portfolio SHALL be reported as complete
+- **AND** delivery SHALL be available
+
+#### Scenario: A parent's own stage list cannot overrule its children
+
+- **WHEN** a parent change's own stage list shows nothing outstanding but its portfolio still lists unfinished children
+- **THEN** the children SHALL decide the answer
+- **AND** delivery SHALL NOT be offered
+
+### Requirement: An unreadable portfolio record is reported, never read as absent
+
+`rasen pipeline resume` SHALL report a portfolio record it located but cannot
+read — malformed, or failing validation after normalization — distinctly from the
+case where a change has no portfolio record at all, so the failure is diagnosable
+instead of masquerading as "this change was never split". A change whose
+portfolio record cannot be read SHALL NOT be answered as though it were an
+ordinary undivided change, because that substitution can present delivery as the
+next step for work that is not finished. The report SHALL name the record's
+location and the reason it could not be read, and SHALL offer no next step until
+the record is repaired.
+
+#### Scenario: An unreadable portfolio record is reported with its reason
+
+- **WHEN** a user resumes a change whose portfolio record is present but cannot be read
+- **THEN** the result SHALL state that the portfolio record is unreadable
+- **AND** SHALL name the record's location and the reason it could not be read
+
+#### Scenario: An unreadable portfolio record never offers a next step
+
+- **WHEN** a user resumes a change whose portfolio record is present but cannot be read
+- **THEN** no next step SHALL be offered, and delivery in particular SHALL NOT be offered
+- **AND** the change SHALL NOT be answered as though it had never been split
+
+#### Scenario: A change that was never split is unaffected
+
+- **WHEN** a user resumes a change that has no portfolio record at all
+- **THEN** the answer SHALL come from that change's own stages exactly as before
+- **AND** nothing SHALL be reported as unreadable
+
+### Requirement: Work handed to children is recorded as delegated, not skipped
+
+A parent SHALL be able to record that a stage was handed to its children, as a
+state distinct from a stage that was deliberately not needed. Delegated work
+SHALL count as outstanding, so a parent that delegated its work is never mistaken
+for one that finished it. A stage recorded as deliberately not needed SHALL keep
+counting as settled, and records written before this distinction existed SHALL
+keep being readable and keep their current meaning.
+
+#### Scenario: Delegated work keeps a parent unfinished
+
+- **WHEN** a parent records stages as delegated to its children
+- **THEN** those stages SHALL count as outstanding work
+- **AND** the parent SHALL NOT be reported as having finished them
+
+#### Scenario: Deliberately skipped work still counts as settled
+
+- **WHEN** a stage is recorded as deliberately not needed
+- **THEN** it SHALL count as settled, exactly as before
+
+#### Scenario: Existing records keep their meaning
+
+- **WHEN** a record written before delegation could be expressed is read
+- **THEN** it SHALL be readable
+- **AND** its stages SHALL keep the meaning they had when written
+
+### Requirement: Child progress covers proposed work, and an unrecognized state counts as unfinished
+
+A child's recorded progress SHALL be able to say that its proposal is complete
+while its implementation has not started, and that state SHALL count as
+unfinished. A child progress state the system does not recognize SHALL be
+preserved as recorded and treated as unfinished, and SHALL NOT cause the
+portfolio it belongs to to become unreadable or to be treated as absent. An
+unrecognized state SHALL never be able to make a portfolio appear complete.
+
+#### Scenario: A proposed child keeps the portfolio unfinished
+
+- **WHEN** a child's progress records that its proposal is complete but its implementation has not started
+- **THEN** that child SHALL count as unfinished
+- **AND** the portfolio SHALL NOT be reported as complete
+
+#### Scenario: An unrecognized child state is kept and counted as unfinished
+
+- **WHEN** a portfolio record describes a child's progress in a way the system does not recognize
+- **THEN** the recorded value SHALL be preserved as written
+- **AND** that child SHALL count as unfinished
+
+#### Scenario: An unrecognized child state does not hide the portfolio
+
+- **WHEN** a portfolio record describes a child's progress in a way the system does not recognize
+- **THEN** the portfolio SHALL still be recognized as a portfolio
+- **AND** the change SHALL NOT be answered as though it had never been split
+
+#### Scenario: An unrecognized child state cannot complete a portfolio
+
+- **WHEN** every other child has finished and one child carries an unrecognized progress state
+- **THEN** the portfolio SHALL NOT be reported as complete
+- **AND** delivery SHALL NOT be offered
 

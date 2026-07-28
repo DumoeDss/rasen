@@ -478,6 +478,75 @@ stages:
       });
     });
 
+    it('does not manufacture a Claude runtime for non-runtime role fields', () => {
+      const pipeline = parsePipeline(`
+name: host-inherited-role-fields
+agents:
+  planner:
+    model: gpt-5.6-sol
+  implementer:
+    sandbox: workspace-write
+  reviewer:
+    effort: high
+  fixer:
+    sessionReuse: review-thread
+stages:
+  - id: propose
+    skill: rasen-propose
+    role: planner
+  - id: apply
+    skill: rasen-apply-change
+    role: implementer
+  - id: verify
+    skill: rasen-review
+    role: reviewer
+  - id: fix
+    skill: rasen-review-cycle
+    role: fixer
+`);
+      for (const role of ['planner', 'implementer', 'reviewer', 'fixer'] as const) {
+        expect(pipeline.agents?.[role]).not.toHaveProperty('runtime');
+        const stage = pipeline.stages.find((candidate) => candidate.role === role)!;
+        expect(
+          resolveStageRuntimeConfig(stage, pipeline, undefined, undefined, {
+            host: { runtime: 'codex', source: 'codex-thread-id' },
+          })
+        ).toMatchObject({ runtime: 'codex', runtimeSource: 'host', source: 'agent' });
+      }
+    });
+
+    it('resolves runtime field-wise across config, stage, role, host, and legacy fallback', () => {
+      const pipeline = parsePipeline(`
+name: runtime-precedence
+agents:
+  reviewer:
+    runtime: claude
+    model: opus
+stages:
+  - id: review
+    skill: rasen-review
+    role: reviewer
+    runtime: codex
+    model: gpt-5.6-sol
+  - id: inherit
+    skill: rasen-propose
+    role: planner
+    model: gpt-5.6-sol
+`);
+      const host = { host: { runtime: 'codex', source: 'codex-thread-id' } } as const;
+      expect(
+        resolveStageRuntimeConfig(pipeline.stages[0], pipeline, undefined, {
+          runtime: { value: 'claude', scope: 'project' },
+        }, host)
+      ).toMatchObject({ runtime: 'claude', runtimeSource: 'stage-override-project' });
+      expect(resolveStageRuntimeConfig(pipeline.stages[0], pipeline, undefined, undefined, host))
+        .toMatchObject({ runtime: 'codex', runtimeSource: 'stage' });
+      expect(resolveStageRuntimeConfig(pipeline.stages[1], pipeline, undefined, undefined, host))
+        .toMatchObject({ runtime: 'codex', runtimeSource: 'host', modelSource: 'stage' });
+      expect(resolveStageRuntimeConfig(pipeline.stages[1], pipeline))
+        .toMatchObject({ runtime: 'claude', runtimeSource: 'legacy-default' });
+    });
+
     describe('per-role machine model config layers (config-page-coherence)', () => {
       const noModelPipeline = parsePipeline(`
 name: model-layer-test

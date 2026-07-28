@@ -5,8 +5,18 @@
  * place and the error messages name the limit.
  */
 
-/** Canonical store subdirectory under a machine home / the global data dir. */
+/** Canonical catalog subdirectory under a machine home / the global data dir. */
 export const LEARNED_SKILLS_DIR_NAME = 'learned-skills';
+
+/**
+ * A Store's catalog lives beside its planning content, inside the Store's own
+ * repository: `<store>/rasen/learned-skills/<id>`. Named segments rather than a
+ * path literal, so every composition goes through `path.join()`.
+ */
+export const STORE_LEARNED_SKILLS_SEGMENTS: readonly string[] = [
+  'rasen',
+  LEARNED_SKILLS_DIR_NAME,
+];
 
 /** The strict managed manifest filename inside a canonical learned-skill dir. */
 export const LEARNED_SKILL_MANIFEST_FILE = 'learned-skill.yaml';
@@ -14,11 +24,18 @@ export const LEARNED_SKILL_MANIFEST_FILE = 'learned-skill.yaml';
 /** The canonical generated skill body filename. */
 export const LEARNED_SKILL_CONTENT_FILE = 'SKILL.md';
 
-/** Current manifest schema version. */
-export const LEARNED_SKILL_MANIFEST_VERSION = 1 as const;
+/**
+ * Manifest schema versions. Version 1 stays readable and is still WRITTEN for
+ * project/global records with no store-typed provenance — a read never
+ * migrates a file, and a newer shape appears only when a mutation the user
+ * performed actually needs it.
+ */
+export const LEARNED_SKILL_MANIFEST_VERSION = 2 as const;
+export const LEARNED_SKILL_MANIFEST_V1_VERSION = 1 as const;
 
-/** Current candidate (knowledge apply input) schema version. */
-export const LEARNED_SKILL_CANDIDATE_VERSION = 1 as const;
+/** Current candidate (knowledge apply input) schema version; version 1 still parses. */
+export const LEARNED_SKILL_CANDIDATE_VERSION = 2 as const;
+export const LEARNED_SKILL_CANDIDATE_V1_VERSION = 1 as const;
 
 /**
  * Ownership marker written to `generatedBy`. Only a canonical manifest carrying
@@ -85,5 +102,24 @@ export const LEARNED_SKILL_CONTENT_BUDGET = 8 * 1024;
 export const LEARNED_SKILL_ACTIVE_DESCRIPTION_BUDGET = 4 * 1024;
 export const LEARNED_SKILL_MAX_EVIDENCE_ENTRIES = 16;
 
-/** Distinct stable project IDs required before a global create/promotion is allowed. */
-export const LEARNED_SKILL_GLOBAL_PROMOTION_MIN_PROJECTS = 2;
+/**
+ * Distinct stable owners required before knowledge may be published into a
+ * Store or promoted beyond one. "More than one project" is the whole point:
+ * one project's experience is a project learned skill.
+ */
+export const LEARNED_SKILL_PROMOTION_MIN_SOURCES = 2;
+/** Historical alias for the global gate, kept so existing callers still read. */
+export const LEARNED_SKILL_GLOBAL_PROMOTION_MIN_PROJECTS =
+  LEARNED_SKILL_PROMOTION_MIN_SOURCES;
+
+/**
+ * Machine-local staging names used by the persistence layer.
+ *
+ * The lock directory lives under the machine data dir and NEVER inside a
+ * Store's repository: a lock file written beside a Store's catalog would be an
+ * untracked file appearing in the user's `git status` every time knowledge is
+ * read or written.
+ */
+export const LEARNED_SKILL_LOCKS_DIR_NAME = 'learned-skill-locks';
+export const LEARNED_SKILL_STAGING_PREFIX = '.rasen-learned-skill-staging-';
+export const LEARNED_SKILL_BACKUP_PREFIX = '.rasen-learned-skill-backup-';

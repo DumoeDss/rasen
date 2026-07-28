@@ -91,8 +91,8 @@ async function buildBugFixPlan(projectRoot: string, runId: string): Promise<Runt
       role: 'stage',
       model: stage.model ? 'stage' : 'default',
       effort: 'default',
-      runtime: 'stage',
-      sandbox: 'stage',
+      runtime: 'host',
+      sandbox: 'default',
       gate: 'stage',
       sessionReuse: 'default',
       handoffTokenLimit: 'default',
@@ -306,7 +306,8 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
 
   it('drives a bug-fix Run from launch through Gate, action completion, and Run progression via fresh CLI processes', async () => {
     const changeId = 'e2e-bugfix';
-    const env = { XDG_DATA_HOME: dataDir };
+    // The in-process plan fixture intentionally freezes Codex.
+    const env = { XDG_DATA_HOME: dataDir, RASEN_AGENT_RUNTIME: 'codex' };
 
     // ---- 1. LAUNCH: pipeline start ----
     // Creates the Run on the filesystem store. The first stage (propose) is
@@ -471,7 +472,8 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     // record version. This is the core guarantee that makes the multi-spawn
     // lifecycle possible.
     const changeId = 'e2e-crossproc';
-    const env = { XDG_DATA_HOME: dataDir };
+    // The in-process plan fixture intentionally freezes Codex.
+    const env = { XDG_DATA_HOME: dataDir, RASEN_AGENT_RUNTIME: 'codex' };
 
     const startResult = await runCLI(
       ['pipeline', 'start', changeId, 'bug-fix', '--json'],

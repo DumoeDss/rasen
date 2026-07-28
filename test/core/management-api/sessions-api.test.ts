@@ -52,6 +52,23 @@ function req(
   });
 }
 
+async function waitForSession(
+  port: number,
+  id: string,
+  headers: Record<string, string>,
+  predicate: (body: any) => boolean,
+  timeoutMs = 5_000
+): Promise<HttpResult> {
+  const deadline = Date.now() + timeoutMs;
+  let last: HttpResult | undefined;
+  while (Date.now() < deadline) {
+    last = await req(port, { method: 'GET', path: `/api/v1/sessions/${id}`, headers });
+    if (last.status === 200 && predicate(last.json())) return last;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Session ${id} did not reach the expected state within ${timeoutMs}ms; last response: ${last?.body ?? '<none>'}`);
+}
+
 describe('sessions API (session-supervision design D1/D4)', () => {
   let tempConfigHome: string;
   let projectRoot: string;
@@ -303,9 +320,12 @@ describe('sessions API (session-supervision design D1/D4)', () => {
         body: JSON.stringify({ kind: 'auto', task: 'MODE=stream-then-exit x' }),
       });
       const id = (launchRes.json() as any).session.id;
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      const res = await req(h.port, { method: 'GET', path: `/api/v1/sessions/${id}`, headers: authed() });
+      const res = await waitForSession(
+        h.port,
+        id,
+        authed(),
+        (body) => typeof body.tails?.stdout === 'string' && body.tails.stdout.includes('thinking_tokens')
+      );
       expect(res.status).toBe(200);
       const body = res.json() as any;
       expect(body.session.id).toBe(id);
@@ -360,7 +380,7 @@ describe('sessions API (session-supervision design D1/D4)', () => {
         body: JSON.stringify({ kind: 'auto', task: 'MODE=fast-exit x' }),
       });
       const id = (launchRes.json() as any).session.id;
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await waitForSession(h.port, id, authed(), (body) => body.session?.state === 'exited');
 
       const delRes = await req(h.port, { method: 'DELETE', path: `/api/v1/sessions/${id}`, headers: authed() });
       expect(delRes.status).toBe(200);

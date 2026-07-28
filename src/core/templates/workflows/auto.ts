@@ -64,10 +64,10 @@ Built-in pipelines (see \`rasen pipeline list --json\`):
 Load the chosen pipeline's stages from the registry — do NOT hard-code them:
 
 \`\`\`bash
-rasen pipeline show <name> --for-execution --json   # -> validated executable { name, description, buildOrder, stages }
+rasen pipeline show <name> --for-execution --json <same role flags from this invocation>
 \`\`\`
 
-\`--for-execution\` is mandatory on this auto path: it resolves the active profile and rejects unknown or known-but-disabled stage skills before the LEAD can dispatch the returned DAG. Plain \`pipeline show\` remains a display-only structural inspection.
+\`--for-execution\` is mandatory on this auto path: forward every role flag from the \`rasen-auto\` invocation onto this command. It resolves the active profile, applies those run-local choices to the final execution plan, and rejects disabled skills or unsupported final host routes before the LEAD can dispatch the returned DAG. Plain \`pipeline show\` remains a display-only structural inspection.
 
 Execute stages in \`buildOrder\`. Each stage carries the metadata the LEAD interprets via the playbook in section 3: **id**, **kind** (\`standard\` | \`decompose\`), **skill** (the Rasen skill the worker invokes; absent for a decompose stage), **childPipeline** (decompose only — the pipeline each child change runs), **role** (worker isolation), **requires** (DAG edges), **gate** (human pause after), **loop** (bounded review->fix), **parallelGroup** (concurrent fan-out — e.g. a \`verify\` stage's experts), **condition** (run only if met; mutually exclusive conditions like ui / non-ui pick exactly one), **leadReview** (LEAD checks the output for drift — section 4), **verifyPolicy** (section 5).
 
@@ -79,7 +79,7 @@ Before running stages, display the effective runtime table and let the user chan
 planner=claude|codex  implementer=claude|codex  reviewer=claude|codex  fixer=claude|codex  shipper=claude|codex
 \`\`\`
 
-The user may freely mix runtimes. Example: Codex planner + Codex reviewer + Claude implementer/fixer. Pipeline stages may also set \`runtime\`, \`sessionReuse\`, \`sandbox\`, \`model\`, and \`effort\`; invocation role flags override those defaults for this run. The effective **model** for a stage additionally falls through machine config below the pipeline's own role default: stage \`model\` > pipeline \`agents.<role>.model\` > project config \`models.roles.<role>\` > project config \`models.default\` > global config \`models.roles.<role>\` > global config \`models.default\` > the runtime's own default. \`rasen pipeline show <name> --json\` already resolves this whole chain — read the stage's \`model\`/\`modelSource\` from there rather than re-deriving it.
+The user may mix runtimes only where the detected host's route matrix supports the result. On a Claude host, for example, Codex planner/reviewer plus Claude implementer/fixer is supported through the Codex exec bridge; on a Codex host, a Claude worker target is unsupported and the mandatory preflight rejects it. Pipeline stages may also set \`runtime\`, \`sessionReuse\`, \`sandbox\`, \`model\`, and \`effort\`; invocation role flags override those defaults for this run because they were forwarded into the final execution-plan command above. The effective **model** for a stage additionally falls through machine config below the pipeline's own role default: stage \`model\` > pipeline \`agents.<role>.model\` > project config \`models.roles.<role>\` > project config \`models.default\` > global config \`models.roles.<role>\` > global config \`models.default\` > the runtime's own default. \`rasen pipeline show <name> --json\` already resolves this whole chain — read the stage's \`model\`/\`modelSource\` from there rather than re-deriving it.
 
 ## 3. Execute the pipeline as the LEAD
 
