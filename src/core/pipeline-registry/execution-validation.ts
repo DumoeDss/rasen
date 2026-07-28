@@ -128,22 +128,24 @@ export interface ResolvePipelineExecutionSkillSetsOptions
 }
 
 export interface PreparedDefinitionExecutionSelection {
-  readonly mode: 'legacy';
+  readonly mode: 'legacy' | 'reconciler';
   readonly pipeline: PipelineYaml;
 }
 
 /**
  * Definition-aware launch selection. A compiled plan is not itself runtime
- * ownership: this slice can select only the existing prompt-owned legacy path.
- * Valid v2 definitions therefore fail here with the stable capability reason
- * before any legacy or partial reconciler dispatcher can be reached.
+ * ownership: this slice selects between the legacy prompt-owned path (v1
+ * definitions without ReviewCycle) and the reconciler path (v1 definitions
+ * whose normalized form has a ReviewCycle BoundedLoop, plus authored v2).
+ * Definitions with no runtime owner fail here with the stable capability
+ * reason before any legacy or reconciler dispatcher can be reached.
  */
 export function preflightPreparedDefinitionExecution(
   prepared: PreparedDefinition
 ): PreparedDefinitionExecutionSelection {
   if (
     !prepared.capability.executable ||
-    prepared.capability.executionMode !== 'legacy' ||
+    prepared.capability.executionMode === 'unavailable' ||
     prepared.authoredVersion !== 1
   ) {
     const reason =
@@ -155,7 +157,7 @@ export function preflightPreparedDefinitionExecution(
   }
 
   return {
-    mode: 'legacy',
+    mode: prepared.capability.executionMode === 'reconciler' ? 'reconciler' : 'legacy',
     pipeline: prepared.authoredSource as PipelineYaml,
   };
 }

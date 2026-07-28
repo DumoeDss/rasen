@@ -316,7 +316,7 @@ describe('one reconciler support analyzer', () => {
       },
     });
     const unsupported = analyzeReconcilerSupport(prepare(), v1StyleProfile);
-    expect(unsupported.availableEngines).toEqual(['legacy']);
+    expect(unsupported.availableEngines).toEqual(['legacy', 'reconciler']);
     expect(unsupported.reconcilerSupport).toEqual(
       expect.objectContaining({
         supported: false,

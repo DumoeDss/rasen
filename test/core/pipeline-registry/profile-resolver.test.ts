@@ -13,7 +13,7 @@ const BUG_FIX = {
   stages: [
     { id: 'propose', skill: 'rasen-propose', role: 'planner', requires: [], gate: true },
     { id: 'apply', skill: 'rasen-apply-change', role: 'implementer', requires: ['propose'], gate: true },
-    { id: 'verify', skill: 'rasen-review', role: 'reviewer', requires: ['apply'], verifyPolicy: 'adaptive' },
+    { id: 'verify', skill: 'rasen-review', role: 'reviewer', requires: ['apply'] },
     { id: 'ship', skill: 'rasen-ship', role: 'shipper', requires: ['verify'], gate: true },
     { id: 'archive', skill: 'rasen-archive-change', role: 'shipper', requires: ['ship'] },
   ],
