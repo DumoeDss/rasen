@@ -386,9 +386,44 @@ rasen archive add-jwt-auth
 | Enable more commands | `rasen config profile` → `rasen update` |
 ---
 
-## 8. Claude / Codex agent runtime switching
+## 8. Host-aware Claude / Codex worker runtimes
 
-The pipeline now supports switching each role individually to `claude` or `codex`. The switchable roles are:
+Rasen detects the current tool host once at execution preflight and uses that host as the default worker runtime when a pipeline does not explicitly select one. A Codex-hosted run therefore uses Codex-native collaboration by default; a Claude-hosted run uses the existing Claude Task/subagent path. Inspect the resolved decision with:
+
+```bash
+rasen pipeline show small-feature --for-execution --json
+```
+
+For a run-local choice, pass the same role flags to this mandatory final-plan command:
+
+```bash
+rasen pipeline show small-feature --for-execution --planner codex --reviewer codex --json
+```
+
+The output reports top-level `hostRuntime` / `hostRuntimeSource` and, for every stage, `runtime`, `runtimeSource`, and `dispatchMode`. Invocation choices appear with `runtimeSource: invocation` and are route-validated before dispatch.
+
+Explicit choices keep their authority. Runtime precedence is:
+
+1. per-invocation role override;
+2. persisted `pipelines.<name>.runtimes.<role>` config;
+3. stage `runtime`;
+4. pipeline `agents.<role>.runtime`;
+5. detected host;
+6. legacy Claude fallback only when the host cannot be identified.
+
+The shipped route matrix is:
+
+| Host | Target worker | Dispatch mode | Behavior |
+|---|---|---|---|
+| Claude | Claude | `native` | Task/subagent + `SendMessage` |
+| Claude | Codex | `exec-bridge` | non-interactive `codex exec`; Codex CLI is preflighted once |
+| Codex | Codex | `native` | Codex collaboration tools; final worker results are delivered automatically |
+| Codex | Claude | `unsupported` | preflight fails; Rasen does not silently change the requested runtime |
+| Unknown | compatible legacy target | `legacy-fallback` | non-fatal warning; set `RASEN_AGENT_RUNTIME=claude|codex` to disambiguate |
+
+Codex-native orchestration treats `wait_agent` as a dependency join, not a heartbeat: wait only when no independent work remains, use one long event-driven wait, and do not repeat short polling waits. `send_message` is for intermediate coordination; a native worker's final `DONE` / `HANDOFF` response is already delivered to the lead.
+
+Each role can still be switched individually to `claude` or `codex`. The switchable roles are:
 
 - `planner`
 - `implementer`
@@ -396,13 +431,15 @@ The pipeline now supports switching each role individually to `claude` or `codex
 - `fixer`
 - `shipper`
 
-Temporary switch for a single `/rasen-auto` invocation:
+Temporary switch for a single `/rasen-auto` invocation on a **Claude host** (where Claude → Codex is supported through the exec bridge):
 
 ```text
 /rasen-auto --planner codex --reviewer codex --fixer claude <task>
 ```
 
-To pin to a pipeline, use the CLI to write a project-local override:
+On a Codex host, selecting any Claude worker is unsupported and the final preflight rejects the run instead of silently substituting Codex.
+
+To pin a role for a pipeline, write a config override:
 
 ```bash
 rasen pipeline agents small-feature --planner codex --reviewer codex
@@ -410,13 +447,13 @@ rasen pipeline agents small-feature --json
 rasen pipeline show small-feature --json
 ```
 
-This creates or updates:
+This creates or updates the pipeline runtime family in:
 
 ```text
-openspec/pipelines/small-feature/pipeline.yaml
+rasen/config.yaml
 ```
 
-The resolution priority is still `project > user > package`, so built-in pipelines are not modified; the current project will prefer the local override. To switch back to Claude:
+The config layer priority is project > inherited store > global. Built-in pipeline definitions are not copied or modified. To switch back to Claude explicitly:
 
 ```bash
 rasen pipeline agents small-feature --planner claude --reviewer claude
@@ -449,12 +486,13 @@ stages:
     sandbox: read-only
 ```
 
-Session-resume semantics differ:
+Run-state records both `runtime` and `dispatchMode`, plus only the handles the selected route actually returned:
 
-- A Claude worker records `agentId` / `transcript`, and after a restart warm-seeds a new worker from the transcript.
-- A Codex worker records `threadId` / `turnId`, and after a restart prefers `thread/resume(threadId)` to continue the same Codex thread.
+- Claude native records `agentId` and, when available, `transcript`.
+- Codex native records its returned native `agentId`; it never fabricates an exec `threadId`.
+- Codex exec-bridge records `threadId` and rollout `transcript`; exec mode has no `turnId`.
 
-`rasen pipeline resume <change> --json` puts both kinds of resume handles in `workers`, distinguished by `runtime`.
+Archived records without `dispatchMode` remain readable. A Codex `threadId` implies exec-bridge, a native `agentId` implies native dispatch, and ambiguous records fall back conservatively with a warning.
 
 ---
 

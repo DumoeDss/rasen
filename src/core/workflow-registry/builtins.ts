@@ -13,6 +13,7 @@ import {
   getGoalReportSkillTemplate,
   getHandoffSkillTemplate,
   getHelpSkillTemplate,
+  getDirectionSkillTemplate,
   getNewChangeSkillTemplate,
   getOfficeHoursCommandSkillTemplate,
   getOnboardSkillTemplate,
@@ -50,6 +51,7 @@ export const BUILT_IN_WORKFLOW_IDS = [
   'verify',
   'onboard',
   'help',
+  'direction',
   'office-hours-command',
   'verify-enhanced-command',
   'ship-command',
@@ -101,6 +103,7 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
   { id: 'verify', dirName: 'rasen-verify-change', skill: getVerifyChangeSkillTemplate },
   { id: 'onboard', dirName: 'rasen-onboard', skill: getOnboardSkillTemplate },
   { id: 'help', dirName: 'rasen-help', skill: getHelpSkillTemplate },
+  { id: 'direction', dirName: 'rasen-direction', skill: getDirectionSkillTemplate },
   { id: 'office-hours-command', dirName: 'rasen-office-hours-command', skill: getOfficeHoursCommandSkillTemplate },
   {
     id: 'verify-enhanced-command',

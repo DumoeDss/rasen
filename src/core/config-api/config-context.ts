@@ -9,7 +9,7 @@
  * consumers.
  */
 import {
-  isRegisteredStoreRoot,
+  requireConfigStoreLayer,
   resolveConfigStoreLayer,
   resolveHandoffThresholdLayers,
   resolveModelConfigLayers,
@@ -20,9 +20,13 @@ import {
 import { loadThresholdSchemeSnapshot } from '../threshold-resolver.js';
 import { readProjectConfig, resolveAutopilotGatePolicy } from '../project-config.js';
 import { getGlobalConfig } from '../global-config.js';
-import { listRegisteredStores } from '../store/registry.js';
+import { findRegisteredStoreAtRoot } from '../store/identity.js';
 import type { EffectiveStageInputs } from '../pipeline-registry/index.js';
-import { resolveProjectSelector, resolveSpaceSelector } from './project-addressing.js';
+import {
+  resolveProjectSelector,
+  resolveSpaceSelector,
+  unavailableStoreHttpResult,
+} from './project-addressing.js';
 import type { ConfigApiContext } from './router.js';
 import type { ProjectRef, StoreLayerRef } from './wire-types.js';
 
@@ -83,17 +87,13 @@ export type ConfigContextResult = { ok: true; context: ConfigContext } | Project
  * its declared store layer.
  */
 export async function resolveRootConfigContext(root: string): Promise<ConfigContext> {
-  const stores = await listRegisteredStores();
-  const registeredStore = stores.find(
-    (candidate) =>
-      candidate.type === 'store' && isRegisteredStoreRoot(root, [candidate])
-  );
+  const registeredStore = await findRegisteredStoreAtRoot(root);
 
   if (registeredStore) {
     return {
       kind: 'store',
       storeId: registeredStore.id,
-      storeRoot: registeredStore.storeRoot,
+      storeRoot: registeredStore.root,
     };
   }
 
@@ -101,8 +101,29 @@ export async function resolveRootConfigContext(root: string): Promise<ConfigCont
     kind: 'project',
     root,
     ref: null,
-    storeLayer: await resolveConfigStoreLayer(root),
+    storeLayer: await requireConfigStoreLayer(root),
   };
+}
+
+/**
+ * The store layer a project context inherits, as an HTTP-shaped result. An
+ * unavailable binding is a MAPPED status carrying the reason and repair (the
+ * same map `resolveSpaceSelector` uses) — never a thrown error that the
+ * router's catch-all would flatten into a 500 `internal_error`.
+ */
+async function projectStoreLayer(
+  root: string | undefined,
+  subject: string
+): Promise<{ ok: true; layer: StoreConfigLayer | null } | ProjectContextErr> {
+  const resolution = await resolveConfigStoreLayer(root);
+  switch (resolution.kind) {
+    case 'absent':
+      return { ok: true, layer: null };
+    case 'resolved':
+      return { ok: true, layer: resolution.layer };
+    case 'unavailable':
+      return { ok: false, ...unavailableStoreHttpResult(resolution.binding, subject) };
+  }
 }
 
 /**
@@ -141,22 +162,24 @@ export async function resolveConfigContext(
     if (space.type === 'store') {
       return { ok: true, context: { kind: 'store', storeId: space.id, storeRoot: space.root } };
     }
-    const storeLayer = await resolveConfigStoreLayer(space.root);
+    const spaceLayer = await projectStoreLayer(space.root, space.id);
+    if (!spaceLayer.ok) return spaceLayer;
     return {
       ok: true,
       context: {
         kind: 'project',
         root: space.root,
         ref: { projectId: space.id, name: space.name, root: space.root },
-        storeLayer,
+        storeLayer: spaceLayer.layer,
       },
     };
   }
 
   const projectCtx = await resolveProjectContext(projectSelector, context);
   if (!projectCtx.ok) return projectCtx;
-  const storeLayer = await resolveConfigStoreLayer(projectCtx.root);
-  return { ok: true, context: { kind: 'project', root: projectCtx.root, ref: projectCtx.ref, storeLayer } };
+  const layer = await projectStoreLayer(projectCtx.root, projectCtx.ref?.projectId ?? 'this project');
+  if (!layer.ok) return layer;
+  return { ok: true, context: { kind: 'project', root: projectCtx.root, ref: projectCtx.ref, storeLayer: layer.layer } };
 }
 
 /**

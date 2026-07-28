@@ -56,6 +56,39 @@ async function flushMicrotasks(times = 6): Promise<void> {
   }
 }
 
+/**
+ * Polls `check` until it stops throwing, flushing microtasks inside `act()`
+ * on each iteration. The fixed-count `flushMicrotasks` is insufficient for
+ * Preact's async re-render chain (state update → effect → fetch promise →
+ * state update → re-render) under jsdom + CI load. Wrapping each flush in
+ * `act()` is essential — Preact only applies state updates when the `act`
+ * callback's promise settles, so a bare `setTimeout`-based poll (like vitest's
+ * `vi.waitFor`) deadlocks inside an `act` block.
+ */
+async function waitForState(
+  check: () => void,
+  { timeoutMs = 1000 }: { timeoutMs?: number } = {}
+): Promise<void> {
+  const start = Date.now();
+  let lastError: unknown;
+  for (;;) {
+    try {
+      check();
+      return;
+    } catch (e) {
+      /* condition not yet met, capture the latest expect() diff for diagnostics */
+      lastError = e;
+    }
+    if (Date.now() - start > timeoutMs) {
+      const detail = lastError instanceof Error ? `: ${lastError.message}` : '';
+      throw new Error(`waitForState timed out after ${timeoutMs}ms${detail}`);
+    }
+    await act(async () => {
+      await flushMicrotasks();
+    });
+  }
+}
+
 async function mount(container: HTMLElement) {
   await act(async () => {
     render(<BoardPage />, container);
@@ -239,8 +272,13 @@ describe('BoardPage', () => {
         fillAndSubmitDialog(container, 'submitted-change', 'A real submission');
         await flushMicrotasks();
       });
-      await act(async () => {
-        await flushMicrotasks();
+      // The post-submit chain (handleChangeCreated → setRefreshNonce → useEffect
+      // → listChanges → setChanges) needs more than a fixed flushMicrotasks
+      // count under jsdom + CI load — poll for the expected UI state, flushing
+      // microtasks inside act() on each iteration.
+      await waitForState(() => {
+        expect(container.querySelector('.new-change-dialog')).toBeNull();
+        expect(container.textContent).toContain('submitted-change');
       });
 
       expect(container.querySelector('.new-change-dialog')).toBeNull();
@@ -279,6 +317,12 @@ describe('BoardPage', () => {
       await act(async () => {
         fillAndSubmitDialog(container, 'dup-change', 'Duplicate attempt');
         await flushMicrotasks();
+      });
+      // Poll for the error message to appear — the fetch rejection handler
+      // runs on a microtask chain that a fixed flushMicrotasks count can't
+      // reliably cover under CI load.
+      await waitForState(() => {
+        expect(container.textContent).toContain("Change 'dup-change' already exists");
       });
 
       expect(container.querySelector('.new-change-dialog')).not.toBeNull();

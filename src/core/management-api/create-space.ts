@@ -248,13 +248,13 @@ function findSpace(
   if (validated.kind === 'project') {
     const canonicalTarget = canonicalizeOrResolve(validated.targetPath);
     return spaces.find(
-      (s) => s.type === 'project' && canonicalizeOrResolve(s.root) === canonicalTarget
+      (s) => s.type === 'project' && s.root !== undefined && canonicalizeOrResolve(s.root) === canonicalTarget
     );
   }
   const canonicalTarget = canonicalizeOrResolve(validated.targetPath);
   if (validated.operation === 'store-setup') {
     return spaces.find(
-      (s) => s.type === 'store' && canonicalizeOrResolve(s.root) === canonicalTarget
+      (s) => s.type === 'store' && s.root !== undefined && canonicalizeOrResolve(s.root) === canonicalTarget
     );
   }
   const wantedId = storeIdFromStdout ?? validated.id;
@@ -262,7 +262,7 @@ function findSpace(
     const byId = spaces.find((s) => s.type === 'store' && s.id === wantedId);
     if (byId) return byId;
   }
-  return spaces.find((s) => s.type === 'store' && canonicalizeOrResolve(s.root) === canonicalTarget);
+  return spaces.find((s) => s.type === 'store' && s.root !== undefined && canonicalizeOrResolve(s.root) === canonicalTarget);
 }
 
 /**

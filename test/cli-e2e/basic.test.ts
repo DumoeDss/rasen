@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { tmpdir } from 'os';
 import { runCLI, cliProjectRoot } from '../helpers/run-cli.js';
+import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 import { AI_TOOLS } from '../../src/core/config.js';
 import { COMMAND_REGISTRY } from '../../src/core/completions/command-registry.js';
 import { localizeCommandRegistry } from '../../src/core/completions/description-localization.js';
@@ -46,7 +47,7 @@ function expectJsonOnlyOutput(result: Awaited<ReturnType<typeof runCLI>>) {
 }
 
 afterAll(async () => {
-  await Promise.all(tempRoots.map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  await Promise.all(tempRoots.map((dir) => cleanupTempPathAsync(dir)));
 });
 
 describe('openspec CLI e2e basics', () => {

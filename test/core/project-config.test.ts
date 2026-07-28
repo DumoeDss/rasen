@@ -6,6 +6,7 @@ import { parse as parseYaml } from 'yaml';
 import {
   appendStoreReference,
   readProjectConfig,
+  readProjectConfigWithDiagnostics,
   validateConfigRules,
   suggestSchemas,
   ensureProjectIdInConfig,
@@ -636,6 +637,44 @@ rules:
           'Follow {variable} naming',
         ]);
       });
+    });
+  });
+
+  describe('readProjectConfigWithDiagnostics', () => {
+    it('returns absent when no config file exists', () => {
+      const result = readProjectConfigWithDiagnostics(tempDir);
+      expect(result).toEqual({ status: 'absent' });
+    });
+
+    it('returns ok with parsed config for a valid file', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprojectId: abc123\n',
+        'utf-8'
+      );
+      const result = readProjectConfigWithDiagnostics(tempDir);
+      expect(result.status).toBe('ok');
+      if (result.status === 'ok') {
+        expect(result.config?.projectId).toBe('abc123');
+      }
+    });
+
+    it('returns unreadable with a diagnostic when YAML is malformed', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nprojectId: [unclosed bracket\n',
+        'utf-8'
+      );
+      const result = readProjectConfigWithDiagnostics(tempDir);
+      expect(result.status).toBe('unreadable');
+      if (result.status === 'unreadable') {
+        expect(result.path).toContain('config.yaml');
+        expect(result.error).toBeTruthy();
+      }
     });
   });
 
@@ -2019,6 +2058,98 @@ pipelines:
       expect(() =>
         updateProjectConfigKeys(tempDir, [{ keyPath: 'profile', value: 'core' }])
       ).toThrow(/rasen init/);
+    });
+  });
+
+  describe('tools and update fields (project-install-manifest)', () => {
+    it('parses tools: [claude] to { tools: ["claude"] }', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\ntools:\n  - claude\n');
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.tools).toEqual(['claude']);
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('drops numeric entries from tools, keeping valid strings', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\ntools:\n  - claude\n  - 42\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.tools).toEqual(['claude']);
+      expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining("Some 'tools' entries are invalid"));
+    });
+
+    it('drops a non-array tools value with a warning', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\ntools: "claude"\n');
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.tools).toBeUndefined();
+      expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid 'tools' field"));
+    });
+
+    it('parses tools: [] (empty list) to { tools: [] }', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\ntools: []\n');
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.tools).toEqual([]);
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('parses update.pin: true', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nupdate:\n  pin: true\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.update?.pin).toBe(true);
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('drops a non-map update value with a warning', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\nupdate: "yes"\n');
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.update).toBeUndefined();
+      expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid 'update' field"));
+    });
+
+    it('drops a non-boolean update.pin with a warning', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nupdate:\n  pin: "yes"\n'
+      );
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.update?.pin).toBeUndefined();
+      expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid 'update.pin' field"));
+    });
+
+    it('parses a config without tools or update keys cleanly', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\n');
+
+      const config = readProjectConfig(tempDir);
+      expect(config?.tools).toBeUndefined();
+      expect(config?.update).toBeUndefined();
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
     });
   });
 });

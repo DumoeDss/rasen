@@ -148,18 +148,18 @@ describe('portfolio run-state', () => {
       expect(() => parsePortfolioState('{"children":[]}')).toThrow(PortfolioStateValidationError);
     });
 
-    it('throws on an invalid child status', () => {
-      expect(() =>
-        parsePortfolioState('{"parent":"p","children":[{"id":"c","pipeline":"x","status":"nope"}]}')
-      ).toThrow(PortfolioStateValidationError);
+    it('preserves an unrecognized child status in statusRaw and types it unknown (M4: out-of-enum is not pending)', () => {
+      const state = parsePortfolioState('{"parent":"p","children":[{"id":"c","pipeline":"x","status":"nope"}]}');
+      expect(state.children[0].status).toBe('unknown');
+      expect(state.children[0].statusRaw).toBe('nope');
     });
 
-    it('does not accept parent-only delegated as a child lifecycle status', () => {
-      expect(() =>
-        parsePortfolioState(
-          '{"parent":"p","children":[{"id":"c","pipeline":"x","status":"delegated"}]}'
-        )
-      ).toThrow(PortfolioStateValidationError);
+    it('preserves delegated in statusRaw rather than rejecting it (typed unknown: delegated is a parent-stage status, not a child status)', () => {
+      const state = parsePortfolioState(
+        '{"parent":"p","children":[{"id":"c","pipeline":"x","status":"delegated"}]}'
+      );
+      expect(state.children[0].status).toBe('unknown');
+      expect(state.children[0].statusRaw).toBe('delegated');
     });
   });
 

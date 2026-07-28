@@ -1,0 +1,9 @@
+version: 1
+id: direction-workflow
+status: active
+targetState: target-state.md
+roadmap: roadmap.md
+activeSlice: slices/phase-1-skill
+lastReconciled:
+  at: 2026-07-26T21:36:22+08:00
+  revision: 3e8d1d389cc6612c2bbd8c051cbf8b256189fe03

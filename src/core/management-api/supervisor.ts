@@ -21,7 +21,14 @@ import { createRequire } from 'node:module';
 import * as path from 'node:path';
 
 import { killProcessTree } from './kill-tree.js';
-import type { SessionKind, SessionRecord, SessionRegistry, SessionSpace, TerminationReason } from './session-registry.js';
+import {
+  buildRuntimeContext,
+  removeSessionRuntimeContext,
+  writeSessionRuntimeContext,
+  RASEN_SESSION_CONTEXT_ENV,
+  type SessionContextPathOptions,
+} from '../session-runtime-context.js';
+import type { SessionExecution, SessionKind, SessionRecord, SessionRegistry, SessionSpace, TerminationReason } from './session-registry.js';
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -44,6 +51,12 @@ export interface LaunchInput {
   changeName?: string;
   /** Frozen planning-space attribution for this session (design D3). */
   space?: SessionSpace;
+  /**
+   * What this session works on, resolved at launch
+   * (unified-session-runtime-context D2). Recorded on the session and written
+   * into the session-local context file the child process is pointed at.
+   */
+  execution?: SessionExecution;
   timeoutMs: number;
   noOutputTimeoutMs: number;
 }
@@ -90,6 +103,12 @@ export interface CreateSessionSupervisorOptions {
   resolveAgentCli: () => Promise<string | null>;
   maxConcurrent?: number;
   killGraceMs?: number;
+  /**
+   * Where session-local context files live. Defaults to the machine data
+   * directory; injectable so a test can point at its own temp root without
+   * mutating process-wide environment.
+   */
+  sessionContextPaths?: SessionContextPathOptions;
 }
 
 function appendTail(current: string, chunk: string): string {
@@ -207,6 +226,7 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
   const { registry, resolveAgentCli } = options;
   const maxConcurrent = options.maxConcurrent ?? DEFAULT_MAX_CONCURRENT;
   const killGraceMs = options.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
+  const sessionContextPaths = options.sessionContextPaths ?? {};
 
   const active = new Map<string, ActiveEntry>();
   const tails = new Map<string, SessionTails>();
@@ -217,6 +237,22 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
   // that window spawns a session `shutdownAll` never observed, orphaning it
   // even on a *clean* exit.
   let draining = false;
+
+  /**
+   * Drops a finished session's context file, plus those of any records the
+   * same `finalize` call pruned past the retention cap (task 4.3). The prune
+   * is the backstop: a session whose own cleanup was interrupted still loses
+   * its context directory when its record leaves the registry. Removal is
+   * best-effort — a leftover directory is inert because its session id no
+   * longer resolves, and a failed unlink must never fail a finished session.
+   */
+  function releaseSessionContext(sessionId: string, prunedIds: readonly string[]): void {
+    removeSessionRuntimeContext(sessionId, sessionContextPaths);
+    for (const prunedId of prunedIds) {
+      if (prunedId === sessionId) continue;
+      removeSessionRuntimeContext(prunedId, sessionContextPaths);
+    }
+  }
 
   async function launch(input: LaunchInput): Promise<LaunchResult> {
     if (draining) {
@@ -279,8 +315,31 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
       cwd: input.cwd,
       ...(input.changeName !== undefined ? { changeName: input.changeName } : {}),
       ...(input.space !== undefined ? { space: input.space } : {}),
+      ...(input.execution !== undefined ? { execution: input.execution } : {}),
     });
     tails.set(record.id, { stdout: '', stderr: '' });
+
+    // Written BEFORE spawn, temp + rename, so the agent can never observe a
+    // partial document (design D3, task 4.1). The child is handed the PATH —
+    // never the JSON: the document would otherwise land in the process table,
+    // every `ps` listing, and any log that dumps the environment, besides
+    // hitting cmd.exe quoting and command-line length limits on Windows.
+    // A write failure is not fatal: the session still launches and every
+    // reader falls through to the pre-existing cwd derivation, which is the
+    // documented "no session context" arm rather than a broken one.
+    let contextFilePath: string | undefined;
+    const runtimeContext = buildRuntimeContext({
+      sessionId: record.id,
+      ...(input.space !== undefined ? { space: input.space } : {}),
+      ...(input.execution !== undefined ? { execution: input.execution } : {}),
+    });
+    if (runtimeContext) {
+      try {
+        contextFilePath = writeSessionRuntimeContext(runtimeContext, sessionContextPaths);
+      } catch {
+        contextFilePath = undefined;
+      }
+    }
 
     const promptToken = `${input.skill} ${input.task}`;
     const argv = [
@@ -297,7 +356,9 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
     try {
       child = spawnAgentCli(claudeBin, argv, {
         cwd: input.cwd,
-        env: process.env,
+        env: contextFilePath
+          ? { ...process.env, [RASEN_SESSION_CONTEXT_ENV]: contextFilePath }
+          : process.env,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: !IS_WINDOWS,
         windowsHide: IS_WINDOWS,
@@ -311,6 +372,7 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
       // leaks one entry per occurrence.
       const prunedIds = registry.finalize(record.id, 'spawn-error', null, null);
       for (const prunedId of prunedIds) tails.delete(prunedId);
+      releaseSessionContext(record.id, prunedIds);
       return { ok: false, status: 503, code: 'agent_cli_unavailable', message: err instanceof Error ? err.message : String(err) };
     }
 
@@ -407,6 +469,7 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
       active.delete(record.id);
       const prunedIds = registry.finalize(record.id, entry.terminationReason ?? 'spawn-error', null, null);
       for (const prunedId of prunedIds) tails.delete(prunedId);
+      releaseSessionContext(record.id, prunedIds);
       resolveClosed();
     });
 
@@ -428,6 +491,7 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
       // MAX_EXITED_RECORDS.
       const prunedIds = registry.finalize(record.id, reason, code, signal);
       for (const prunedId of prunedIds) tails.delete(prunedId);
+      releaseSessionContext(record.id, prunedIds);
       resolveClosed();
     });
 

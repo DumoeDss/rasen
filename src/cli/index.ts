@@ -27,6 +27,7 @@ import { PipelineLibraryCommand } from '../commands/pipeline-library.js';
 import { formatPipelineError } from '../commands/pipeline-messages.js';
 import { AgentCommand } from '../commands/agent.js';
 import { registerStoreCommand } from '../commands/store.js';
+import { registerBootstrapCommand } from '../commands/bootstrap.js';
 import {
   registerArchiveRelocateSubcommand,
   registerHomeCommand,
@@ -229,9 +230,15 @@ program
   .command('update [path]')
   .description('Update Rasen instruction files')
   .option('--force', 'Force update even when tools are up to date')
-  .action(async (targetPath = '.', options?: { force?: boolean }) => {
+  .option('--all-projects', 'Update every reachable, non-pinned registered project whose version is behind')
+  .option('--only-this', 'Skip multi-project registry consultation (update only this project)')
+  .action(async (targetPath = '.', options?: { force?: boolean; allProjects?: boolean; onlyThis?: boolean }) => {
     try {
-      const updateCommand = new UpdateCommand({ force: options?.force });
+      const updateCommand = new UpdateCommand({
+        force: options?.force,
+        allProjects: options?.allProjects,
+        onlyThis: options?.onlyThis,
+      });
       await updateCommand.execute(targetPath);
     } catch (error) {
       failWithError(error);
@@ -381,6 +388,7 @@ registerSchemeCommand(program);
 registerKnowledgeCommand(program);
 registerSchemaCommand(program);
 registerStoreCommand(program);
+registerBootstrapCommand(program);
 registerDoctorCommand(program);
 registerContextCommand(program);
 registerWorksetCommand(program);
@@ -648,11 +656,27 @@ pipelineCmd
   .command('show <name>')
   .description('Show a pipeline stage DAG and build order')
   .option('--for-execution', 'Validate active-profile skills before returning the executable DAG')
+  .option('--planner <runtime>', 'Set planner runtime: claude or codex')
+  .option('--implementer <runtime>', 'Set implementer runtime: claude or codex')
+  .option('--reviewer <runtime>', 'Set reviewer runtime: claude or codex')
+  .option('--fixer <runtime>', 'Set fixer runtime: claude or codex')
+  .option('--shipper <runtime>', 'Set shipper runtime: claude or codex')
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
   .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
-  .action(async (name: string, options?: { json?: boolean; forExecution?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (name: string, options?: {
+    planner?: string;
+    implementer?: string;
+    reviewer?: string;
+    fixer?: string;
+    shipper?: string;
+    json?: boolean;
+    forExecution?: boolean;
+    store?: string;
+    project?: string;
+    storePath?: string;
+  }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.show(name, options);

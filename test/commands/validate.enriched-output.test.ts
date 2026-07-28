@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
 describe('validate command enriched human output', () => {
   const projectRoot = process.cwd();
@@ -15,7 +16,7 @@ describe('validate command enriched human output', () => {
   });
 
   afterEach(async () => {
-    await fs.rm(testDir, { recursive: true, force: true });
+    await cleanupTempPathAsync(testDir);
   });
 
   it('prints Next steps footer and guidance on invalid change', async () => {

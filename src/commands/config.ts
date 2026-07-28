@@ -27,7 +27,7 @@ import {
   type ConfigScope,
 } from '../core/config-keys.js';
 import {
-  resolveConfigStoreLayer,
+  requireConfigStoreLayer,
   resolveEffectiveConfig,
   type EffectiveConfigEntry,
 } from '../core/effective-config.js';
@@ -40,7 +40,7 @@ import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
 import { CORE_WORKFLOWS, ALL_WORKFLOWS, getCurrentBuiltInWorkflowIds } from '../core/profiles.js';
 import { resolveCurrentProfileState } from './profile-editor.js';
-import { isPromptCancellationError } from './shared-output.js';
+import { emitFailure, isPromptCancellationError } from './shared-output.js';
 import { runUiLaunch } from './ui-launch.js';
 import { runLegacyConfigProfileCommand } from './profile.js';
 import {
@@ -140,11 +140,19 @@ function formatSetDisplayValue(value: unknown): string {
   return String(value);
 }
 
-/** Non-TTY no-arg `rasen config`: the effective view, one line per registered key, then exit 0. */
-async function printEffectiveConfigView(): Promise<void> {
+/**
+ * Non-TTY no-arg `rasen config`: the effective view, one line per registered
+ * key, then exit 0. `machineScope` (an explicit `--scope global`) resolves no
+ * project layer at all, so no store layer applies and a project whose declared
+ * store is unavailable can still read its machine configuration — design D4's
+ * carve-out.
+ */
+async function printEffectiveConfigView(machineScope: boolean): Promise<void> {
   const locale = getCliLocale();
   const ui = getConfigEditorMessages(locale);
-  const planningRoot = findRepoPlanningRootSync(process.cwd()) ?? undefined;
+  const planningRoot = machineScope
+    ? undefined
+    : (findRepoPlanningRootSync(process.cwd()) ?? undefined);
   const contextOptions = planningRoot
     ? contextResolveOptions(await resolveRootConfigContext(planningRoot))
     : {};
@@ -374,15 +382,20 @@ function maybeEmitRelocateHint(projectRoot: string, value: string): void {
  * source, grouped by area (design D6). Refreshes (re-resolves) after each
  * write and continues until Exit; Ctrl+C exits cleanly with code 130.
  */
-async function runInteractiveConfigEditor(): Promise<void> {
+async function runInteractiveConfigEditor(machineScope: boolean): Promise<void> {
   const inquirer = await import('@inquirer/prompts');
   const { select, Separator } = inquirer;
   const chalk = (await import('chalk')).default;
   const locale = getCliLocale();
   const ui = getConfigEditorMessages(locale);
 
-  const projectRoot = findRepoPlanningRootSync(process.cwd()) ?? undefined;
-  const storeLayer = await resolveConfigStoreLayer(projectRoot);
+  // An explicit `--scope global` resolves no project layer, so no store layer
+  // applies (design D4's carve-out); the editor then shows machine scope only
+  // and disables the project-only rows exactly as it does outside a project.
+  const projectRoot = machineScope
+    ? undefined
+    : (findRepoPlanningRootSync(process.cwd()) ?? undefined);
+  const storeLayer = machineScope ? null : await requireConfigStoreLayer(projectRoot);
 
   try {
     for (;;) {
@@ -463,14 +476,25 @@ export function registerConfigCommand(program: Command): void {
     .option('--scope <scope>', 'Config scope: "global" (default) or "project"')
     .action(async (options: { scope?: string }, command: Command) => {
       // No-arg invocation: interactive full-view editor (TTY) or the
-      // effective-config listing (non-TTY). `--scope` is not meaningful here
-      // (the editor shows both scopes at once) but still validated.
+      // effective-config listing (non-TTY). With no `--scope` the view spans
+      // both scopes (and therefore resolves the project layer); an EXPLICIT
+      // `--scope global` is machine scope, which resolves no project layer at
+      // all — the same carve-out `config list --scope global` already honors.
       if (resolveScope(command) === undefined) return;
+      const machineScope =
+        (command.optsWithGlobals() as { scope?: string }).scope === 'global';
 
-      if (process.stdout.isTTY) {
-        await runInteractiveConfigEditor();
-      } else {
-        await printEffectiveConfigView();
+      try {
+        if (process.stdout.isTTY) {
+          await runInteractiveConfigEditor(machineScope);
+        } else {
+          await printEffectiveConfigView(machineScope);
+        }
+      } catch (error) {
+        // Where this command DOES resolve a project layer it fails closed —
+        // but through the standard Error:/Fix: rendering every other surface
+        // uses, never as an unhandled rejection dumping a Node stack trace.
+        emitFailure(false, {}, error, 'config_command_failed');
       }
     });
 

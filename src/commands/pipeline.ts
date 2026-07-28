@@ -14,6 +14,18 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import {
+  resolveFrozenExecutionBinding,
+  type ExecutionBindingFailure,
+  type ExecutionBindingResult,
+} from '../core/pipeline-registry/execution-binding.js';
+import { frozenExecutionRef } from '../core/learned-skills/context.js';
+import type { FrozenKnowledgeContext } from '../core/learned-skills/types.js';
+import {
+  isSessionContextError,
+  requireSessionRuntimeContext,
+  type RuntimeContext,
+} from '../core/session-runtime-context.js';
+import {
   AgentRuntimeSchema,
   StageRoleSchema,
   loadPipelineByName,
@@ -42,6 +54,7 @@ import {
   resolveStageRuntimeConfig,
   resolveStageHandoffConfig,
   resolvePipelineReuseConfig,
+  resolvePipelineExecutionPlan,
   resolvePipelineRoleRuntimes,
   resolvePipelineStageOverrides,
   resolveMaskedStageGate,
@@ -60,6 +73,7 @@ import {
   type MaskedGateSource,
   type ResolvedReuseConfig,
   type ResolvedRoleRuntime,
+  type ExecutionStageRuntime,
   type ThresholdValue,
   type ThresholdResolutionContext,
   type RunStateWorker,
@@ -67,6 +81,7 @@ import {
   type StageRole,
 } from '../core/pipeline-registry/index.js';
 import {
+  requireConfigStoreLayer,
   resolveConfigStoreLayer,
   resolveHandoffThresholdLayers,
   resolveModelConfigLayers,
@@ -99,6 +114,12 @@ import {
   pipelineMessageError,
   type PipelineMessages,
 } from './pipeline-messages.js';
+import {
+  detectHostRuntime,
+  resolveDispatchRoute,
+  type DetectedHostRuntime,
+  type DispatchMode,
+} from '../core/runtime-adapters.js';
 
 interface PipelineCommandOptions {
   json?: boolean;
@@ -106,15 +127,14 @@ interface PipelineCommandOptions {
   store?: string;
   project?: string;
   storePath?: string;
-}
-
-interface PipelineAgentsOptions extends PipelineCommandOptions {
   planner?: string;
   implementer?: string;
   reviewer?: string;
   fixer?: string;
   shipper?: string;
 }
+
+type PipelineAgentsOptions = PipelineCommandOptions;
 
 const STAGE_ROLES: StageRole[] = ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'];
 
@@ -142,6 +162,7 @@ interface StageView {
   verifyPolicy: Stage['verifyPolicy'] | null;
   runtime: AgentRuntime;
   runtimeSource: RuntimeSource;
+  dispatchMode: DispatchMode;
   sessionReuse: Stage['sessionReuse'] | null;
   sandbox: Stage['sandbox'] | null;
   model: string | null;
@@ -217,10 +238,16 @@ export class PipelineCommand {
     });
   }
 
-  private executionOptions(options: PipelineCommandOptions): PipelineExecutionOptions {
-    if (options.json) return { reporter: false };
+  private executionOptions(
+    options: PipelineCommandOptions,
+    host: DetectedHostRuntime
+  ): PipelineExecutionOptions {
+    const roleRuntimeOverrides = this.runtimeUpdatesFromOptions(options);
+    if (options.json) return { reporter: false, host, roleRuntimeOverrides };
     return {
       reporter: (notice) => console.warn(formatPipelineExecutionNotice(notice)),
+      host,
+      roleRuntimeOverrides,
     };
   }
 
@@ -253,6 +280,8 @@ export class PipelineCommand {
     const root = await this.resolveRoot(options);
     if (!root) return;
     const projectRoot = root.path;
+    const host = detectHostRuntime();
+    const roleRuntimeOverrides = this.runtimeUpdatesFromOptions(options);
 
     let pipeline;
     try {
@@ -273,13 +302,13 @@ export class PipelineCommand {
       await validatePipelineForExecution(
         pipeline,
         projectRoot,
-        this.executionOptions(options)
+        this.executionOptions(options, host)
       );
     }
 
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
-    const storeLayer = await resolveConfigStoreLayer(projectRoot);
+    const storeLayer = await requireConfigStoreLayer(projectRoot);
     const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
     const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
     const overrides = resolvePipelineStageOverrides(pipeline.name, {
@@ -290,7 +319,17 @@ export class PipelineCommand {
       pipeline,
       overrides,
       projectRoot,
-      storeLayer?.storeRoot
+      storeLayer?.storeRoot,
+      host,
+      roleRuntimeOverrides
+    );
+    const executionStages = new Map(
+      resolvePipelineExecutionPlan(pipeline, {
+        host,
+        overrides,
+        modelLayers,
+        roleRuntimeOverrides,
+      }).stages.map((stage) => [stage.id, stage])
     );
     const basePolicy = this.resolveBaseGatePolicy(projectRoot, storeLayer?.storeRoot);
     const stages: StageView[] = pipeline.stages.map((s) =>
@@ -301,7 +340,9 @@ export class PipelineCommand {
         modelLayers,
         overrides,
         basePolicy,
-        thresholdContext
+        thresholdContext,
+        host,
+        executionStages.get(s.id)
       )
     );
     const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline, thresholdContext);
@@ -311,6 +352,8 @@ export class PipelineCommand {
       name: pipeline.name,
       description: pipeline.description ?? '',
       agents: pipeline.agents ?? {},
+      hostRuntime: host.runtime,
+      hostRuntimeSource: host.source,
       reuse,
       buildOrder,
       stages,
@@ -450,12 +493,112 @@ export class PipelineCommand {
   }
 
   /**
+   * The frozen-resume rule (unified-session-runtime-context design D4).
+   * A broken session context is reported as such rather than silently
+   * dropping to cwd derivation, which is exactly how a resume lands in the
+   * wrong clone.
+   */
+  private async resolveResumeExecution(
+    frozen: FrozenKnowledgeContext | undefined,
+    projectRoot: string,
+    options: PipelineCommandOptions
+  ): Promise<ExecutionBindingResult | { ok: false; reported: true }> {
+    let sessionContext: RuntimeContext | undefined;
+    try {
+      sessionContext = requireSessionRuntimeContext();
+    } catch (error) {
+      if (!isSessionContextError(error)) throw error;
+      const messages = getPipelineMessages();
+      const detail = messages.format('sessionContextBroken', {
+        path: error.broken.path,
+        detail: error.broken.message,
+      });
+      if (options.json) {
+        console.log(
+          JSON.stringify(
+            { error: 'session_context_broken', reason: error.broken.reason, message: detail },
+            null,
+            2
+          )
+        );
+      } else {
+        console.error(detail);
+      }
+      return { ok: false, reported: true };
+    }
+
+    return resolveFrozenExecutionBinding({
+      frozen: frozen === undefined ? undefined : frozenExecutionRef(frozen),
+      ...(sessionContext ? { sessionContext } : {}),
+      cwd: projectRoot,
+      ...(options.project !== undefined ? { explicitProjectId: options.project } : {}),
+    });
+  }
+
+  private reportExecutionBindingFailure(
+    failure: ExecutionBindingFailure,
+    changeName: string,
+    options: PipelineCommandOptions
+  ): void {
+    const messages = getPipelineMessages();
+    let detail: string;
+    switch (failure.code) {
+      case 'project_binding_selector_conflict':
+        detail = messages.format('executionBindingSelectorConflict', {
+          frozen: failure.frozenProjectId,
+          selector: failure.foundProjectId ?? '',
+        });
+        break;
+      case 'project_binding_ambiguous':
+        detail = messages.format('executionBindingAmbiguous', {
+          frozen: failure.frozenProjectId,
+          candidates: (failure.candidates ?? []).join(', '),
+        });
+        break;
+      case 'project_binding_missing':
+        detail = messages.format('executionBindingMissing', {
+          frozen: failure.frozenProjectId,
+        });
+        break;
+      default:
+        detail = messages.format('executionBindingMismatch', {
+          frozen: failure.frozenProjectId,
+          found: failure.foundProjectId ?? '',
+          checkout: failure.checkout ?? '',
+        });
+        break;
+    }
+    if (options.json) {
+      console.log(
+        JSON.stringify(
+          {
+            change: changeName,
+            error: failure.code,
+            frozenProjectId: failure.frozenProjectId,
+            ...(failure.foundProjectId !== undefined
+              ? { foundProjectId: failure.foundProjectId }
+              : {}),
+            ...(failure.checkout !== undefined ? { checkout: failure.checkout } : {}),
+            ...(failure.candidates !== undefined ? { candidates: failure.candidates } : {}),
+            message: detail,
+          },
+          null,
+          2
+        )
+      );
+      return;
+    }
+    console.error(detail);
+  }
+
+  /**
    * Resume a change: compute next/remaining stages from its run-state file.
    */
   async resume(change: string | undefined, options: PipelineCommandOptions = {}): Promise<void> {
     const root = await this.resolveRoot(options);
     if (!root) return;
     const projectRoot = root.path;
+    const host = detectHostRuntime();
     const changeName = await validateChangeExists(change, projectRoot, root.changesDir);
 
     const changeDir = path.join(root.changesDir, changeName);
@@ -467,6 +610,12 @@ export class PipelineCommand {
     // Portfolio parent? The portfolio record is authoritative — resume reports
     // the next runnable child(ren) from the dependency DAG rather than stages.
     // Sticky-legacy (design D4): workDir first, change dir fallback.
+    //
+    // Read DETAILED so a located-but-unreadable record is reported instead of
+    // being read as "this change was never split". That substitution is not
+    // cosmetic: it drops the parent to the stage-based branch below, where a
+    // decomposed parent's stage list can leave delivery as the only thing
+    // remaining — offering `ship` for work its children have not finished.
     const portfolioLocation = resolvePortfolioStateLocation(changeDir, workDir);
     const portfolioRead = portfolioLocation
       ? readPortfolioStateDetailed(portfolioLocation.dir)
@@ -478,8 +627,10 @@ export class PipelineCommand {
         hasRunState: false as const,
         invalidPortfolioState: true as const,
         portfolioStatePath: portfolioLocation.path,
+        complete: false as const,
         pipeline: null,
         next: null,
+        ready: [] as string[],
         remaining: [] as string[],
         note: getPipelineMessages('en').format('invalidPortfolioStateNote', {
           path: portfolioLocation.path,
@@ -510,7 +661,7 @@ export class PipelineCommand {
         await validatePipelineForExecution(
           loadPipelineByName(pipelineName, projectRoot),
           projectRoot,
-          this.executionOptions(options)
+          this.executionOptions(options, host)
         );
       }
       const runnable = runnableChildren(portfolio);
@@ -535,16 +686,18 @@ export class PipelineCommand {
         childrenComplete
         && (portfolio.delivery.status === 'pending'
           || portfolio.delivery.status === 'in_progress');
+      // Delivery-related fields (`next`, `remaining`, `delivery`, `childrenComplete`)
+      // surface ONLY once every child has finished — matching the first-parent
+      // portfolio output, which never let a portfolio with outstanding children
+      // frame delivery as the frontier. Omitting the keys entirely (vs. `null`)
+      // keeps them `undefined` in the JSON round-trip so a stale `next` can never
+      // reach a caller that never asked about delivery.
       const result = {
         change: changeName,
         isPortfolio: true as const,
         hasRunState: true as const,
         runStateDir: portfolioLocation.dir,
         complete: isPortfolioComplete(portfolio),
-        childrenComplete,
-        delivery: portfolio.delivery,
-        next: deliveryRunnable ? 'portfolio-delivery' : null,
-        remaining: deliveryTerminal ? [] : ['portfolio-delivery'],
         completedChildren,
         runnableChildren: runnable,
         interruptedChildren: interrupted,
@@ -556,7 +709,19 @@ export class PipelineCommand {
           pipeline: c.pipeline,
           dependsOn: c.dependsOn,
           status: c.status,
+          // Present only when the record used a word this reader does not
+          // know: the value AS WRITTEN, so the drift is visible here rather
+          // than only in the file. A clean record gains no new key.
+          ...(c.statusRaw !== undefined ? { statusRaw: c.statusRaw } : {}),
         })),
+        ...(childrenComplete
+          ? {
+              childrenComplete,
+              delivery: portfolio.delivery,
+              next: deliveryRunnable ? 'portfolio-delivery' : null,
+              remaining: deliveryTerminal ? [] : ['portfolio-delivery'],
+            }
+          : {}),
       };
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
@@ -589,11 +754,13 @@ export class PipelineCommand {
           ?? messages.format('recorded');
         console.log(messages.format('persistentPlanner', { planner: plannerId }));
       }
-      console.log(messages.format('portfolioDelivery', {
-        status: portfolio.delivery.status,
-      }));
-      if (deliveryRunnable) {
-        console.log(messages.format('nextStage', { stage: 'portfolio-delivery' }));
+      if (childrenComplete) {
+        console.log(messages.format('portfolioDelivery', {
+          status: portfolio.delivery.status,
+        }));
+        if (deliveryRunnable) {
+          console.log(messages.format('nextStage', { stage: 'portfolio-delivery' }));
+        }
       }
       console.log(messages.format('remaining', {
         stages: remainingChildren.length > 0 ? remainingChildren.join(', ') : none,
@@ -690,7 +857,7 @@ export class PipelineCommand {
     await validatePipelineForExecution(
       preflightPipeline,
       projectRoot,
-      this.executionOptions(options)
+      this.executionOptions(options, host)
     );
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
@@ -737,6 +904,25 @@ export class PipelineCommand {
     // Computed before the result object so the --json and human surfaces see the
     // same set, and emitted ONLY when non-empty so clean runs gain no new keys.
     const workerHandleWarnings = stagesLackingDurableHandle(runState);
+
+    // Where does this run continue? The FROZEN identity says which project;
+    // the session context (or, failing that, this checkout) says where that
+    // project is on this machine; `--project` only cross-checks. A
+    // disagreement stops the resume instead of continuing in another clone —
+    // a resume into the wrong working tree produces a plausible-looking diff,
+    // which is far more expensive than an error.
+    const executionBinding = await this.resolveResumeExecution(
+      runState.knowledgeContext,
+      projectRoot,
+      options
+    );
+    if (!executionBinding.ok) {
+      if (!('reported' in executionBinding)) {
+        this.reportExecutionBindingFailure(executionBinding, changeName, options);
+      }
+      process.exitCode = 1;
+      return;
+    }
     let duplicateKeyWarnings: { path: string; key: string }[] = [];
     if (runStateLocation && fs.existsSync(runStateLocation.path)) {
       duplicateKeyWarnings = detectDuplicateKeys(fs.readFileSync(runStateLocation.path, 'utf-8'));
@@ -766,6 +952,9 @@ export class PipelineCommand {
       ...(runState.knowledgeContext
         ? { knowledgeContext: runState.knowledgeContext }
         : {}),
+      // Reported only when the run actually recorded an execution binding, so
+      // a pre-existing run's JSON gains no new key.
+      ...(executionBinding.kind === 'unrecorded' ? {} : { executionBinding }),
       // Handoff pointers are included only when present so existing callers see
       // no new keys unless a run actually recorded handoffs.
       ...(sessionHandoff ? { sessionHandoff } : {}),
@@ -789,6 +978,16 @@ export class PipelineCommand {
     console.log(messages.format('changeLabel', { change: changeName }));
     console.log(messages.format('pipelineLabel', { name: runState.pipeline }));
     console.log(messages.format('runStateReadFrom', { path: runStateLocation!.dir }));
+    if (executionBinding.kind === 'planning-only') {
+      console.log(messages.format('executionBindingPlanningOnly'));
+    } else if (executionBinding.kind === 'project') {
+      console.log(
+        messages.format('executionBinding', {
+          project: executionBinding.projectId,
+          path: executionBinding.root,
+        })
+      );
+    }
     console.log(messages.format('completed', {
       stages: completed.length > 0 ? completed.join(', ') : none,
     }));
@@ -893,10 +1092,13 @@ export class PipelineCommand {
     name: string;
     configPath: string | null;
     agents: PipelineYaml['agents'];
+    hostRuntime: DetectedHostRuntime['runtime'];
+    hostRuntimeSource: DetectedHostRuntime['source'];
     effectiveRoles: Record<StageRole, ResolvedRoleRuntime>;
     stages: StageView[];
   }> {
-    const storeLayer = await resolveConfigStoreLayer(projectRoot);
+    const host = detectHostRuntime();
+    const storeLayer = await requireConfigStoreLayer(projectRoot);
     const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
     const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
     const overrides = resolvePipelineStageOverrides(name, { projectRoot, store: storeLayer });
@@ -904,18 +1106,28 @@ export class PipelineCommand {
       pipeline,
       overrides,
       projectRoot,
-      storeLayer?.storeRoot
+      storeLayer?.storeRoot,
+      host
+    );
+    const executionStages = new Map(
+      resolvePipelineExecutionPlan(pipeline, {
+        host,
+        overrides,
+        modelLayers,
+      }).stages.map((stage) => [stage.id, stage])
     );
     const basePolicy = this.resolveBaseGatePolicy(projectRoot, storeLayer?.storeRoot);
 
     // Effective runtime per role: family instance (project > store > global) >
-    // pipeline `agents.<role>.runtime` declaration > default (claude).
-    const effectiveRoles = resolvePipelineRoleRuntimes(pipeline, overrides);
+    // pipeline declaration > detected host > legacy Claude compatibility.
+    const effectiveRoles = resolvePipelineRoleRuntimes(pipeline, overrides, host);
 
     return {
       name,
       configPath,
       agents: pipeline.agents ?? {},
+      hostRuntime: host.runtime,
+      hostRuntimeSource: host.source,
       effectiveRoles,
       stages: pipeline.stages.map((s) =>
         this.toStageView(
@@ -925,7 +1137,9 @@ export class PipelineCommand {
           modelLayers,
           overrides,
           basePolicy,
-          thresholdContext
+          thresholdContext,
+          host,
+          executionStages.get(s.id)
         )
       ),
     };
@@ -956,10 +1170,19 @@ export class PipelineCommand {
     modelLayers?: ModelConfigLayers,
     overrides?: PipelineStageOverrides,
     basePolicy?: ResolvedGatePolicy,
-    thresholdContext?: ThresholdResolutionContext
+    thresholdContext?: ThresholdResolutionContext,
+    host: DetectedHostRuntime = { runtime: 'unknown', source: 'unknown' },
+    executionRuntime?: ExecutionStageRuntime
   ): StageView {
     const stageOverrides = this.stageConfigOverrides(stage, overrides);
-    const runtime = resolveStageRuntimeConfig(stage, pipeline, modelLayers, stageOverrides);
+    const runtime = executionRuntime ?? resolveStageRuntimeConfig(
+      stage,
+      pipeline,
+      modelLayers,
+      stageOverrides,
+      { host }
+    );
+    const effectiveStageRuntime = executionRuntime?.runtime ?? runtime.runtime;
     // The mask needs a base policy; without one (no config context) fall back to
     // the built-in "gates on" default so effective equals the declared gate.
     const policy: ResolvedGatePolicy = basePolicy ?? { effective: 'on', source: 'default' };
@@ -981,8 +1204,10 @@ export class PipelineCommand {
       condition: stage.condition ?? null,
       leadReview: stage.leadReview,
       verifyPolicy: stage.verifyPolicy ?? null,
-      runtime: runtime.runtime,
-      runtimeSource: runtime.runtimeSource,
+      runtime: effectiveStageRuntime,
+      runtimeSource: executionRuntime?.runtimeSource ?? runtime.runtimeSource,
+      dispatchMode: executionRuntime?.dispatchMode
+        ?? resolveDispatchRoute(host.runtime, effectiveStageRuntime).mode,
       sessionReuse: runtime.sessionReuse ?? null,
       sandbox: runtime.sandbox ?? null,
       model: runtime.model ?? null,
@@ -994,7 +1219,7 @@ export class PipelineCommand {
         configLayers,
         modelLayers,
         stageOverrides,
-        thresholdContext
+        { ...thresholdContext, host, stageRuntime: effectiveStageRuntime }
       ),
     };
   }
@@ -1003,9 +1228,16 @@ export class PipelineCommand {
     pipeline: PipelineYaml,
     overrides: PipelineStageOverrides,
     projectRoot: string,
-    storeRoot?: string | null
+    storeRoot?: string | null,
+    host: DetectedHostRuntime = { runtime: 'unknown', source: 'unknown' },
+    roleRuntimeOverrides: Partial<Record<StageRole, AgentRuntime>> = {}
   ): ThresholdResolutionContext {
-    const roleRuntimes = resolvePipelineRoleRuntimes(pipeline, overrides);
+    const roleRuntimes = resolvePipelineRoleRuntimes(
+      pipeline,
+      overrides,
+      host,
+      roleRuntimeOverrides
+    );
     const runtimes = Object.fromEntries(
       STAGE_ROLES.map((role) => [role, roleRuntimes[role].runtime])
     ) as Record<StageRole, AgentRuntime>;
@@ -1013,6 +1245,7 @@ export class PipelineCommand {
       bindings: resolveThresholdBindingLayers(projectRoot, storeRoot),
       schemes: loadThresholdSchemeSnapshot(),
       runtimes,
+      host,
     };
   }
 
@@ -1068,6 +1301,8 @@ export class PipelineCommand {
       reuse: ResolvedReuseConfig;
       buildOrder: string[];
       stages: StageView[];
+      hostRuntime: DetectedHostRuntime['runtime'];
+      hostRuntimeSource: DetectedHostRuntime['source'];
       origin?: PipelineYaml['origin'];
     },
     graph: PipelineGraph,
@@ -1077,6 +1312,10 @@ export class PipelineCommand {
     this.printThresholdDiagnostics(result);
     console.log(messages.format('pipelineLabel', { name: result.name }));
     console.log(messages.format('definitionVersionLabel', { version: result.version }));
+    console.log(messages.format('hostRuntimeLabel', {
+      runtime: result.hostRuntime,
+      source: result.hostRuntimeSource,
+    }));
     const description = source
       ? messages.description(result.name, source, result.description)
       : result.description;
@@ -1130,13 +1369,12 @@ export class PipelineCommand {
       const stageView = result.stages.find((candidate) => candidate.id === id);
       if (stageView) {
         meta.push(
-          stageView.runtimeSource === 'default'
-            ? messages.format('stageMetaRuntime', { runtime: stageView.runtime })
-            : messages.format('stageMetaRuntimeSource', {
-                runtime: stageView.runtime,
-                source: stageView.runtimeSource,
-              })
+          messages.format('stageMetaRuntimeSource', {
+            runtime: stageView.runtime,
+            source: stageView.runtimeSource,
+          })
         );
+        meta.push(messages.format('stageMetaDispatch', { mode: stageView.dispatchMode }));
         if (stageView.sessionReuse) {
           meta.push(messages.format('stageMetaSessionReuse', {
             session: stageView.sessionReuse,
@@ -1189,12 +1427,18 @@ export class PipelineCommand {
     result: {
       name: string;
       configPath: string | null;
+      hostRuntime: DetectedHostRuntime['runtime'];
+      hostRuntimeSource: DetectedHostRuntime['source'];
       effectiveRoles: Record<StageRole, ResolvedRoleRuntime>;
       stages: StageView[];
     },
     messages: PipelineMessages
   ): void {
     console.log(messages.format('pipelineLabel', { name: result.name }));
+    console.log(messages.format('hostRuntimeLabel', {
+      runtime: result.hostRuntime,
+      source: result.hostRuntimeSource,
+    }));
     if (result.configPath) {
       console.log(messages.format('projectOverrideLabel', { path: result.configPath }));
     }
@@ -1204,18 +1448,20 @@ export class PipelineCommand {
       console.log(messages.format('agentRoleLine', {
         role,
         runtime: result.effectiveRoles[role].runtime,
+        source: result.effectiveRoles[role].source,
+        dispatch: result.effectiveRoles[role].dispatchMode,
       }));
     }
     console.log();
     console.log(messages.format('stagesHeading'));
     for (const stage of result.stages) {
       const role = stage.role ?? messages.format('none');
-      const source = stage.runtimeSource === 'default' ? '' : ` (${stage.runtimeSource})`;
       console.log(messages.format('agentStageLine', {
         id: stage.id,
         role,
         runtime: stage.runtime,
-        source,
+        source: stage.runtimeSource,
+        dispatch: stage.dispatchMode,
       }));
     }
   }

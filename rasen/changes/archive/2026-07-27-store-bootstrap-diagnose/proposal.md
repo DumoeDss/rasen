@@ -1,0 +1,41 @@
+## Why
+
+Everything this release built is declarative: a project records which Store it plans in, which Stores it belongs to, and how to reach each one. On the machine where that was set up it all resolves. On a fresh machine it resolves to nothing — the declarations are correct, but no Store has been cloned, nothing is registered, and no local binding exists.
+
+Right now the user is told what is broken one failure at a time. Run a command, get told a Store is not available. Register it. Run again, get told a second Store is missing. Register that. Run again, get told the current checkout is not registered. There is no way to ask "what does this machine need before this project works?" and get the whole answer at once.
+
+This change answers the question. It reads what the project and the Stores declare, works out everything missing on this machine, and reports the complete result. It does not carry the repair out — obtaining, registering, and writing declarations are the following change. Diagnosis is worth having on its own, it is the half a user can safely run before trusting the tool with their network or their disk, and it is the half every acting flow will be built on top of.
+
+## What Changes
+
+- **One command answers "what does this machine still need?"** `rasen bootstrap` reads the project's identity, its planning Store declaration, and its Store membership hints, works out which Stores are expected, and reports the state of each: already available and verified, present on this machine but not registered, absent but obtainable from a recorded remote, or absent with no way to locate it. The whole result comes back in one run, ending in exactly one of three named states — complete, degraded, or blocked. Bootstrap does not search the disk: a Store is reported as present but unregistered when the user names a location holding it, and is otherwise reported as absent.
+- **A machine whose own state is unreadable is reported, not crashed on.** An unparseable Store registry or a corrupt Store identity file is the broken-machine case this command exists to describe, so it comes back as `blocked` naming the file and the repair — in human and JSON alike — rather than as a stack trace.
+- **Two read-only modes, specified as two different promises.** Check mode reads local information only and contacts no network at all. Preview mode additionally resolves remotes and the exact location a repository would be placed at. Neither creates a directory, runs a version-control operation, or writes a registration or a declaration. They are not collapsed into one "safe mode" flag, because they are not one promise.
+- **A Store's own record of the project is reported, or reported as unverifiable.** When a declared Store is available here, bootstrap reports whether that Store's records include this project. When the record could not be READ — the Store is not on this machine, or it is here and the record will not parse — it says the membership cannot be verified from this machine and names what would make it verifiable. It never treats an unreachable Store as an empty one, never treats an unreadable record as an absent one, and never guesses. It also prints no state-changing repair on an unknown: a command that would rewrite what a Store records is offered only against an answer bootstrap actually established.
+- **Starting from a Store checkout lists the projects it holds.** Each recorded project is reported as already present on this machine, as obtainable from a recorded remote, as neither — a project the Store records but nothing here can locate is said to be exactly that, not quietly called obtainable — or as undetermined, when a registered project's own identity cannot be read. A run that could not read one of the Store's records is never reported as complete. Nothing is obtained, because this change obtains nothing at all.
+- **A previewed location is chosen by stated rules and reported honestly.** An explicitly supplied path wins; otherwise a supplied parent directory plus a safe name derived from the source; otherwise bootstrap reports that a location must be supplied. A location that already has contents, or that already holds a checkout, is reported as refused rather than named as if it would work. A path recorded by another machine never influences the answer.
+- **Every command bootstrap prints can be pasted and will work.** When a Store's display name matches more than one Store on this machine, the printed command names the permanent identity instead. Bootstrap knows the arity at the moment it prints, because it just resolved every Store. Where preview has settled the exact location, the printed command carries it — quoted when it needs quoting — rather than the placeholder the resolver alone could offer; where no location is settled, the placeholder stays, because naming a path bootstrap has not chosen would be worse than a template.
+- **Acting is deliberately absent, and the command surface says so.** `rasen bootstrap` requires an explicit mode; invoking it with no mode reports which modes exist rather than doing something. No flag that would obtain, register, or write is defined, so none is promised.
+
+Out of scope for this change and belonging to the following one: registering the current checkout, obtaining and registering a Store or a project, preparing the project's local knowledge location, cleaning up a failed retrieval, idempotence of repeated applies, writing durable Store declarations, and rewriting the failure text of ordinary commands to name bootstrap as their repair. Out of scope for this release: moving knowledge between machines as an explicit bundle, and resuming an in-flight run on another machine.
+
+## Capabilities
+
+### New Capabilities
+- `store-bootstrap`: reporting what a machine still needs before a project works — what bootstrap reads, how it classifies each expected Store, the report's three end states, the separation between checking and previewing, the project-first and Store-first reporting flows, how a previewed location is chosen, and the rule that every printed command resolves unambiguously.
+
+### Modified Capabilities
+
+None. Every requirement is added against a new capability, so this change is order-independent with respect to the rest of the portfolio.
+
+Deliberately not modified: `store-identity`, which already requires every unavailable-Store failure to carry a copy-pasteable repair — this change satisfies that contract rather than amending it. Likewise untouched: `cli-completion` (registering a command is an implementation task), `project-registry`, and `store-project-membership` (this change reads through their existing behavior and writes nothing).
+
+## Impact
+
+- **Machine-local state**: none. This change writes nothing anywhere, under any mode, on any path.
+- **Project repository**: none. No declaration is written.
+- **Code**: a new `src/core/store/bootstrap.ts` (the state machine and report shape), a new `src/commands/bootstrap.ts` with its messages module, an entry in `src/core/completions/command-registry.ts`, and the command's registration in `src/cli/index.ts`. Existing modules are read from, with one exception: `src/core/store/membership.ts`'s private `candidateKey` becomes the exported `projectStoreCandidateKey`, unchanged in body, so the project's planning declaration merges into the candidate listing on *the same* identity key rather than a second one that could drift. `test/core/store/identity-boundaries.test.ts` gains both new files in its Phase A list and one justified display-alias allowlist entry.
+- **Commands**: the new `rasen bootstrap`, in check and preview modes only.
+- **Docs and locales**: `docs/cli.md`, JSON examples for a complete, a degraded, and a blocked result, and the `en` / `zh-cn` / `ja` CLI locale bundles.
+- **Compatibility**: purely additive. Nothing previously written becomes unreadable, and a machine that already resolves everything reports exactly that.
+- **Depends on** the landed Store identity resolver (`resolveStoreBinding` and its tri-state), the landed Store membership records (`resolveProjectMembership`, `listProjectStoreCandidates`, `listStoreMembers`), and the landed project knowledge location — all verified present before this was written.

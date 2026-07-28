@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { resolveProjectHome } from '../../../src/core/project-home.js';
+import { resolveProjectKnowledgeHome } from '../../../src/core/project-knowledge-home.js';
 import {
   commitLearnedSkillPlan,
   listCanonicalLearnedSkills,
@@ -11,9 +12,52 @@ import {
   planLearnedSkillMutation,
   resolveLearnedSkills,
   LEARNED_SKILL_CONTENT_BUDGET,
+  LEARNED_SKILL_BACKUP_PREFIX,
+  LEARNED_SKILL_MANIFEST_FILE,
   type EvidenceReference,
   type LearnedSkillContext,
 } from '../../../src/core/learned-skills/index.js';
+
+// --- B3 fault injection: intercept fs.rmSync for backup-cleanup failure ---
+// vi.spyOn cannot patch ESM namespace exports, so we use vi.mock with a
+// hoisted toggle. When enabled, recursive rmSync on a backup-prefixed path
+// simulates a partial delete (removes one child file, then throws EBUSY).
+const { backupFail } = vi.hoisted(() => ({ backupFail: { enabled: false } }));
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  const { join } = await import('node:path');
+  return {
+    ...actual,
+    rmSync: ((target: fs.PathLike, options?: fs.RmOptions) => {
+      const p = typeof target === 'string' ? target : target.toString();
+      if (
+        backupFail.enabled &&
+        options?.recursive &&
+        p.includes(LEARNED_SKILL_BACKUP_PREFIX)
+      ) {
+        // Simulate a partial delete: remove a non-manifest child (so the
+        // backup remains identifiable for sweepMutationDebris), then throw.
+        // readdirSync order is platform-dependent, so we explicitly skip the
+        // manifest rather than relying on sort order.
+        try {
+          const entries = actual.readdirSync(p);
+          const victim = entries.find((e) => e.name !== LEARNED_SKILL_MANIFEST_FILE);
+          if (victim) {
+            actual.rmSync(join(p, victim.name), { force: true });
+          }
+        } catch {
+          // already damaged
+        }
+        const err: NodeJS.ErrnoException = new Error(
+          'EBUSY: resource busy or locked (simulated partial delete)'
+        );
+        err.code = 'EBUSY';
+        throw err;
+      }
+      return actual.rmSync(target, options);
+    }) as typeof fs.rmSync,
+  };
+});
 
 const DIGEST = `sha256:${'a'.repeat(64)}`;
 const evidence = (projectId: string, change = 'add-thing', artifact = 'proposal'): EvidenceReference => ({
@@ -169,7 +213,13 @@ describe('learned-skill core mutation and resolution', () => {
 
   it('refuses to overwrite a human-authored collision and leaves it byte-identical', async () => {
     const home = await resolveProjectHome(projectRoot, { globalDataDir, ensure: false });
-    const humanDir = path.join(home!.homeDir, 'learned-skills', ID);
+    // The catalog is keyed on the project's IDENTITY, not on this clone's
+    // machine home — a collision has to be planted where the record would
+    // actually be written.
+    const humanDir = path.join(
+      resolveProjectKnowledgeHome(home!.projectId, { globalDataDir }).catalogDir,
+      ID
+    );
     fs.mkdirSync(humanDir, { recursive: true });
     fs.writeFileSync(path.join(humanDir, 'SKILL.md'), 'human authored, do not touch\n');
     const before = fs.readFileSync(path.join(humanDir, 'SKILL.md'), 'utf-8');
@@ -220,9 +270,22 @@ describe('learned-skill core mutation and resolution', () => {
       evidence: [evidence(projectId)],
     };
 
+    // Promotion draws on EXACT managed records, so each contributing project
+    // must actually own one — a projectId in an array is a claim, not evidence.
+    await commitLearnedSkillPlan(
+      await planLearnedSkillMutation(upsertRequest(projectId), context),
+      context
+    );
+
     const oneProject = await planLearnedSkillMutation(globalBase, context);
     expect(oneProject.action).toBe('blocked');
     expect(oneProject.block?.code).toBe('global_evidence_insufficient');
+
+    const secondContext = { projectRoot: second.root, globalDataDir };
+    await commitLearnedSkillPlan(
+      await planLearnedSkillMutation(upsertRequest(second.projectId), secondContext),
+      secondContext
+    );
 
     const twoProjects = {
       ...globalBase,
@@ -244,11 +307,295 @@ describe('learned-skill core mutation and resolution', () => {
     fs.rmSync(second.root, { recursive: true, force: true });
   });
 
+  /**
+   * The rename pair is not atomic against process DEATH — the restore path
+   * covers a thrown error only. These reconstruct the exact on-disk states a
+   * SIGKILL leaves and assert the next mutation recovers them, because a
+   * catalog inside the user's Store repository otherwise keeps the debris in
+   * `git status` forever and, in one window, keeps the record's only copy in it.
+   */
+  describe('debris a killed mutation left behind', () => {
+    /** The state a kill between `record -> backup` and `staging -> record` leaves. */
+    function simulateKillMidSwap(directory: string): { backup: string; staging: string } {
+      const parent = path.dirname(directory);
+      const base = path.basename(directory);
+      const backup = path.join(parent, `.rasen-learned-skill-backup-${base}-4242-abcdef`);
+      const staging = path.join(parent, `.rasen-learned-skill-staging-${base}-4242-abcdef`);
+      fs.renameSync(directory, backup);
+      fs.mkdirSync(staging, { recursive: true });
+      fs.writeFileSync(path.join(staging, 'SKILL.md'), 'half-written\n');
+      return { backup, staging };
+    }
+
+    it('restores the record the kill left under a backup name, and clears the staging debris', async () => {
+      const created = await commitLearnedSkillPlan(
+        await planLearnedSkillMutation(upsertRequest(projectId), context),
+        context
+      );
+      const directory = created.directory!;
+      const before = fs.readFileSync(path.join(directory, 'SKILL.md'), 'utf-8');
+      const { backup, staging } = simulateKillMidSwap(directory);
+      // Precondition: the record is GONE and its only copy is the backup —
+      // which is why a blind sweep of backups would be data loss, not tidying.
+      expect(fs.existsSync(directory)).toBe(false);
+
+      const next = await planLearnedSkillMutation(
+        { ...upsertRequest(projectId), evidence: [evidence(projectId, 'later-change')] },
+        context
+      );
+      await commitLearnedSkillPlan(next, context);
+
+      expect(fs.existsSync(staging)).toBe(false);
+      expect(fs.existsSync(backup)).toBe(false);
+      expect(fs.existsSync(directory)).toBe(true);
+      expect(fs.readFileSync(path.join(directory, 'SKILL.md'), 'utf-8')).toBe(before);
+      // Nothing named like debris survives to reach the user's `git status`.
+      expect(
+        fs.readdirSync(path.dirname(directory)).filter((name) => name.startsWith('.rasen-learned-skill-'))
+      ).toEqual([]);
+    });
+
+    it('removes a backup whose record is already back in place, keeping the record', async () => {
+      const created = await commitLearnedSkillPlan(
+        await planLearnedSkillMutation(upsertRequest(projectId), context),
+        context
+      );
+      const directory = created.directory!;
+      const body = fs.readFileSync(path.join(directory, 'SKILL.md'), 'utf-8');
+      // The state a kill AFTER the swap leaves: record present, backup stale.
+      const backup = path.join(
+        path.dirname(directory),
+        `.rasen-learned-skill-backup-${path.basename(directory)}-4242-abcdef`
+      );
+      fs.cpSync(directory, backup, { recursive: true });
+
+      await commitLearnedSkillPlan(
+        await planLearnedSkillMutation(
+          { ...upsertRequest(projectId), evidence: [evidence(projectId, 'later-change')] },
+          context
+        ),
+        context
+      );
+
+      expect(fs.existsSync(backup)).toBe(false);
+      expect(fs.existsSync(directory)).toBe(true);
+      expect(fs.readFileSync(path.join(directory, 'SKILL.md'), 'utf-8')).toBe(body);
+    });
+
+    it('leaves a debris directory it cannot identify strictly alone', async () => {
+      const created = await commitLearnedSkillPlan(
+        await planLearnedSkillMutation(upsertRequest(projectId), context),
+        context
+      );
+      const unidentifiable = path.join(
+        path.dirname(created.directory!),
+        '.rasen-learned-skill-backup-mystery-1-x'
+      );
+      fs.mkdirSync(unidentifiable, { recursive: true });
+      fs.writeFileSync(path.join(unidentifiable, 'SKILL.md'), 'no manifest here\n');
+
+      await commitLearnedSkillPlan(
+        await planLearnedSkillMutation(
+          { ...upsertRequest(projectId), evidence: [evidence(projectId, 'later-change')] },
+          context
+        ),
+        context
+      );
+
+      // Nothing may delete a directory whose contents it cannot identify.
+      expect(fs.readFileSync(path.join(unidentifiable, 'SKILL.md'), 'utf-8')).toBe('no manifest here\n');
+    });
+  });
+
   it('matches path-exists applicability with platform-native existence checks', () => {
     fs.writeFileSync(path.join(projectRoot, 'go.mod'), 'module example\n');
     expect(matchesApplicability({ mode: 'all', markers: ['go.mod'] }, projectRoot)).toBe(true);
     expect(matchesApplicability({ mode: 'all', markers: ['go.mod', 'missing'] }, projectRoot)).toBe(false);
     expect(matchesApplicability({ mode: 'any', markers: ['go.mod', 'missing'] }, projectRoot)).toBe(true);
     expect(matchesApplicability({ mode: 'any', markers: ['nope', 'missing'] }, projectRoot)).toBe(false);
+  });
+
+  // --- B2 regression: mixed-protocol contention ---
+
+  it('does NOT evict a live owner-aware lock held for >30s (B2 mixed-protocol)', async () => {
+    // Plan a mutation to discover the lockPath.
+    const plan = await planLearnedSkillMutation(upsertRequest(projectId), context);
+    expect(plan.commit).toBeDefined();
+    const lockPath = plan.commit!.lockPath;
+
+    // Pre-populate the lock with a LIVE PID (this process) and set its
+    // mtime 31 seconds in the past — simulating a >30s hold by a slow
+    // knowledge-bundle import. Pre-fix (legacy acquireFileLock with 30s
+    // mtime threshold), this lock would be evicted and the mutation would
+    // succeed. Post-fix (acquireOwnerAwareFileLock), the live PID
+    // prevents eviction and the mutation times out.
+    const liveToken = [
+      `pid: ${process.pid}`,
+      `bornAt: ${new Date().toISOString()}`,
+      'holder: knowledge-bundle-import',
+      'nonce: dddddddddddddddddddddddddddddddd',
+      '',
+    ].join('\n');
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, liveToken, 'utf-8');
+    const oldTime = new Date(Date.now() - 31_000);
+    fs.utimesSync(lockPath, oldTime, oldTime);
+
+    // The mutation must NOT evict the live lock — it must wait and time out.
+    // Use a 1s deadline (via context.lockDeadlineMs) so the test proves
+    // non-eviction quickly instead of waiting the full 5s default.
+    await expect(
+      commitLearnedSkillPlan(plan, { ...context, lockDeadlineMs: 1000 })
+    ).rejects.toThrow('busy or unwritable');
+
+    // The live lock is untouched — not evicted.
+    expect(fs.readFileSync(lockPath, 'utf-8')).toBe(liveToken);
+  }, 10_000);
+
+  // --- B3 regression: backup-cleanup failure must not cause data loss ---
+
+  it('retains the new record when a rewrite backup cleanup partially fails (B3 site 1)', async () => {
+    // Create the initial record.
+    const created = await commitLearnedSkillPlan(
+      await planLearnedSkillMutation(upsertRequest(projectId), context),
+      context
+    );
+    const directory = created.directory!;
+    const oldBody = fs.readFileSync(path.join(directory, 'SKILL.md'), 'utf-8');
+    expect(created.degraded).toBeUndefined();
+
+    // Rewrite with a different evidence chain so the plan is not a no-op.
+    const rewritePlan = await planLearnedSkillMutation(
+      { ...upsertRequest(projectId), evidence: [evidence(projectId, 'b3-rewrite-change')] },
+      context
+    );
+
+    backupFail.enabled = true;
+    let result;
+    try {
+      result = await commitLearnedSkillPlan(rewritePlan, context);
+    } finally {
+      backupFail.enabled = false;
+    }
+
+    // The new record is intact and readable.
+    expect(result.outcome).toBe('rewritten');
+    expect(fs.existsSync(directory)).toBe(true);
+    const newBody = fs.readFileSync(path.join(directory, 'SKILL.md'), 'utf-8');
+    expect(newBody).toBe(oldBody); // content unchanged (same instructions), but manifest evidence differs
+
+    // The degraded warning is reported.
+    expect(result.degraded).toBeDefined();
+    expect(result.degraded).toContain('debris');
+
+    // The partially-deleted backup was NOT restored over the new record:
+    // the new record's manifest is still intact (the backup's was destroyed).
+    expect(fs.existsSync(path.join(directory, LEARNED_SKILL_MANIFEST_FILE))).toBe(true);
+
+    // Backup debris exists in the catalog directory (inert, temp-prefixed).
+    const debris = fs
+      .readdirSync(path.dirname(directory))
+      .filter((name) => name.startsWith(LEARNED_SKILL_BACKUP_PREFIX));
+    expect(debris.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('retains the new record when a rename backup cleanup partially fails (B3 site 2)', async () => {
+    // Create the initial record under the original ID.
+    const created = await commitLearnedSkillPlan(
+      await planLearnedSkillMutation(upsertRequest(projectId), context),
+      context
+    );
+    const store = path.dirname(created.directory!);
+    const fromDir = path.join(store, ID);
+
+    // Plan a rename to a new ID.
+    const renamePlan = await planLearnedSkillMutation(
+      { operation: 'rename', scope: 'project', fromId: ID, toId: 'go-sql-row-locking-b3' },
+      context
+    );
+
+    backupFail.enabled = true;
+    let result;
+    try {
+      result = await commitLearnedSkillPlan(renamePlan, context);
+    } finally {
+      backupFail.enabled = false;
+    }
+
+    // The rename succeeded — the new record is published.
+    expect(result.outcome).toBe('renamed');
+    expect(result.degraded).toBeDefined();
+    expect(result.degraded).toContain('debris');
+
+    const newDir = path.join(store, 'go-sql-row-locking-b3');
+    expect(fs.existsSync(newDir)).toBe(true);
+    expect(fs.existsSync(path.join(newDir, 'SKILL.md'))).toBe(true);
+    expect(fs.existsSync(path.join(newDir, LEARNED_SKILL_MANIFEST_FILE))).toBe(true);
+
+    // The old directory was NOT restored — it was moved aside for cleanup.
+    expect(fs.existsSync(fromDir)).toBe(false);
+
+    // Backup debris exists in the catalog directory (inert, temp-prefixed).
+    const debris = fs
+      .readdirSync(store)
+      .filter((name) => name.startsWith(LEARNED_SKILL_BACKUP_PREFIX));
+    expect(debris.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('reports no degraded warning on a clean rewrite (B3 happy path)', async () => {
+    await commitLearnedSkillPlan(
+      await planLearnedSkillMutation(upsertRequest(projectId), context),
+      context
+    );
+
+    const result = await commitLearnedSkillPlan(
+      await planLearnedSkillMutation(
+        { ...upsertRequest(projectId), evidence: [evidence(projectId, 'clean-rewrite')] },
+        context
+      ),
+      context
+    );
+
+    expect(result.outcome).toBe('rewritten');
+    expect(result.degraded).toBeUndefined();
+  });
+
+  it('sweeps leftover backup debris on the next mutation (B3 self-healing)', async () => {
+    // Create + rewrite with an injected cleanup failure to leave debris.
+    await commitLearnedSkillPlan(
+      await planLearnedSkillMutation(upsertRequest(projectId), context),
+      context
+    );
+    const rewritePlan = await planLearnedSkillMutation(
+      { ...upsertRequest(projectId), evidence: [evidence(projectId, 'debris-leaving-change')] },
+      context
+    );
+    backupFail.enabled = true;
+    try {
+      await commitLearnedSkillPlan(rewritePlan, context);
+    } finally {
+      backupFail.enabled = false;
+    }
+
+    // Debris exists after the failed cleanup.
+    const catalogDir = path.dirname(rewritePlan.commit!.directory);
+    const debrisBefore = fs
+      .readdirSync(catalogDir)
+      .filter((name) => name.startsWith(LEARNED_SKILL_BACKUP_PREFIX));
+    expect(debrisBefore.length).toBeGreaterThanOrEqual(1);
+
+    // The next mutation's sweep cleans it up.
+    await commitLearnedSkillPlan(
+      await planLearnedSkillMutation(
+        { ...upsertRequest(projectId), evidence: [evidence(projectId, 'sweep-change')] },
+        context
+      ),
+      context
+    );
+
+    const debrisAfter = fs
+      .readdirSync(catalogDir)
+      .filter((name) => name.startsWith(LEARNED_SKILL_BACKUP_PREFIX));
+    expect(debrisAfter).toEqual([]);
   });
 });

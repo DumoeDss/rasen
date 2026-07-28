@@ -60,17 +60,20 @@ import {
   RETRO_COMPAT_WRAPPER_DIR_NAME,
 } from './templates/skill-templates.js';
 import {
+  EffectiveLearnedSkillPlanningError,
+  resolveEffectiveLearnedSkillPlan,
   resolveLearnedSkillExecutionContext,
-  resolveLearnedSkills,
-  type ResolvedLearnedSkillSet,
 } from './learned-skills/index.js';
 import {
+  emptyLearnedReconcileResult,
   learnedReconcileHasActivity,
   mergeLearnedReconcileResult,
   reconcileGlobalLearnedSkillsForTool,
   reconcileProjectLearnedSkillsForTool,
   type LearnedReconcileResult,
 } from './learned-skill-materialization.js';
+import { collectProjectLearnedStores } from './project-learned-skill-ledger.js';
+import { learnedMaterializationReport } from './learned-materialization-locale.js';
 import { getGlobalConfig, saveGlobalConfig, type Profile, type RepoMode } from './global-config.js';
 import { writeExpertSelectionAck } from './expert-selection-state.js';
 import {
@@ -159,6 +162,7 @@ export class InitCommand {
     // finds the nearest ancestor root (so pointer-repo subdirectories
     // refuse exactly where a normal command would resolve the pointer).
     const guardRoot = findRepoPlanningRootSync(projectPath);
+    let pointerToolOnlySelection: string[] | undefined;
     if (guardRoot) {
       const { hasPlanningShape, pointer } = classifyOpenSpecDir(guardRoot);
       if (!hasPlanningShape) {
@@ -170,10 +174,21 @@ export class InitCommand {
           );
         }
         if (pointer.value !== undefined) {
-          throw new Error(
-            `This repo's planning is externalized to store '${pointer.value}' (${pointer.filePath}). ` +
-              `Remove the store: line first to convert this repo to a local Rasen root.`
-          );
+          const targetsPointerRoot =
+            FileSystemUtils.canonicalizeExistingPath(projectPath) ===
+            FileSystemUtils.canonicalizeExistingPath(guardRoot);
+          if (targetsPointerRoot && this.toolsArg !== undefined) {
+            const explicitSelection = this.resolveToolsArg();
+            if (explicitSelection !== null && explicitSelection.length > 0) {
+              pointerToolOnlySelection = explicitSelection;
+            }
+          }
+          if (pointerToolOnlySelection === undefined) {
+            throw new Error(
+              `This repo's planning is externalized to store '${pointer.value}' (${pointer.filePath}). ` +
+                `Remove the store: line first to convert this repo to a local Rasen root.`
+            );
+          }
         }
       }
     }
@@ -207,7 +222,9 @@ export class InitCommand {
     const toolStates = getToolStates(projectPath);
 
     // Get tool selection (pass detected tools for pre-selection)
-    const selectedToolIds = await this.getSelectedTools(toolStates, extendMode, detectedTools, projectPath);
+    const selectedToolIds =
+      pointerToolOnlySelection ??
+      await this.getSelectedTools(toolStates, extendMode, detectedTools, projectPath);
 
     // Validate selected tools
     const validatedTools = this.validateTools(selectedToolIds, toolStates);
@@ -264,13 +281,38 @@ export class InitCommand {
     }
 
     // Create directory structure and config
-    await this.createDirectoryStructure(openspecPath, extendMode);
+    if (pointerToolOnlySelection === undefined) {
+      await this.createDirectoryStructure(openspecPath, extendMode);
+    }
 
     // Generate skills and commands for each tool
     const results = await this.generateSkillsAndCommands(projectPath, validatedTools);
 
     // Create config.yaml if needed (and persist an explicit profile lock)
-    const configStatus = await this.createConfig(openspecPath, extendMode, projectPath);
+    const configStatus =
+      pointerToolOnlySelection === undefined
+        ? await this.createConfig(openspecPath, extendMode, projectPath)
+        : 'exists';
+
+    // Persist the user's tool selection into `rasen/config.yaml`'s `tools:`
+    // key (project-install-manifest spec). Best-effort: a failure emits a
+    // warning and continues — the skill files are already written, and the
+    // next `rasen update` will seed the manifest through the migration path.
+    // Skipped for the pointer-only externalized-repo case (no local config
+    // to write into).
+    if (pointerToolOnlySelection === undefined) {
+      try {
+        updateProjectConfigKey(projectPath, 'tools', validatedTools.map((t) => t.value));
+      } catch (error) {
+        console.log(
+          chalk.yellow(
+            `Warning: could not persist tools: to ${WORKSPACE_DIR_NAME}/config.yaml (${
+              error instanceof Error ? error.message : String(error)
+            }). The next 'rasen update' will seed it from the installed skill files.`
+          )
+        );
+      }
+    }
 
     // Establish machine-home identity and registration (task 4.1). Best
     // effort: a registration failure never fails init - the repo-side
@@ -826,51 +868,75 @@ export class InitCommand {
    * Resolves the active learned skills and materializes the applicable ones
    * into each successfully configured tool, tracking exact ownership in the
    * artifact ledgers. Learned-skill ids are NOT added to the profile or
-   * workflow selection. Best-effort: a resolution or per-tool failure never
-   * fails init — the repo-side setup has already completed.
+   * workflow selection. Best-effort: a resolution or per-tool failure is
+   * REPORTED (not swallowed) but never fails init — the repo-side setup has
+   * already completed. Mirrors `UpdateCommand.reconcileLearnedSkills` so init
+   * and update surface the same diagnostics for the same failure.
    */
   private async reconcileLearnedSkills(
     projectPath: string,
     tools: Array<{ value: string; name: string; skillsDir: string; wasConfigured: boolean }>
   ): Promise<LearnedReconcileResult> {
-    const aggregate: LearnedReconcileResult = { created: [], updated: [], removed: [], skipped: [] };
-    let resolved: ResolvedLearnedSkillSet;
+    const aggregate = emptyLearnedReconcileResult();
     try {
       const execution = await resolveLearnedSkillExecutionContext({
         launchDirectory: projectPath,
         requestedScope: 'mixed',
       });
-      resolved = await resolveLearnedSkills({ execution });
-    } catch {
-      return aggregate;
-    }
+      const plan = await resolveEffectiveLearnedSkillPlan({
+        execution,
+        previousStores:
+          execution.owner.type === 'project'
+            ? collectProjectLearnedStores(execution.evaluationRoot ?? projectPath)
+            : [],
+      });
 
-    for (const tool of tools) {
-      const toolDefinition = AI_TOOLS.find((candidate) => candidate.value === tool.value);
-      const skillsRoot = resolveToolSkillsRoot(
-        toolDefinition ?? { name: tool.name, value: tool.value, available: true, skillsDir: tool.skillsDir },
-        projectPath
-      );
-      try {
-        const result =
-          toolDefinition?.skillsHome === 'global'
-            ? reconcileGlobalLearnedSkillsForTool({
-                toolId: tool.value,
-                toolLabel: tool.name,
-                skillsRoot,
-                resolved,
-              })
-            : reconcileProjectLearnedSkillsForTool({
-                projectRoot: projectPath,
-                toolId: tool.value,
-                toolLabel: tool.name,
-                skillsRoot,
-                resolved,
-              });
-        mergeLearnedReconcileResult(aggregate, result);
-      } catch {
-        // Best-effort per tool.
+      for (const tool of tools) {
+        const toolDefinition = AI_TOOLS.find((candidate) => candidate.value === tool.value);
+        const skillsRoot = resolveToolSkillsRoot(
+          toolDefinition ?? {
+            name: tool.name,
+            value: tool.value,
+            available: true,
+            skillsDir: tool.skillsDir,
+          },
+          plan.evaluationRoot
+        );
+        try {
+          const result =
+            toolDefinition?.skillsHome === 'global'
+              ? reconcileGlobalLearnedSkillsForTool({
+                  toolId: tool.value,
+                  toolLabel: tool.name,
+                  skillsRoot,
+                  globalRecords: plan.globalRecords,
+                  localRecords: plan.skills,
+                  plan,
+                  ...(execution.globalDataDir ? { globalDataDir: execution.globalDataDir } : {}),
+                })
+              : reconcileProjectLearnedSkillsForTool({
+                  toolId: tool.value,
+                  toolLabel: tool.name,
+                  skillsRoot,
+                  plan,
+                });
+          mergeLearnedReconcileResult(aggregate, result);
+        } catch (error) {
+          aggregate.errors.push({
+            code: 'tool_reconcile_failed',
+            message: `${tool.name}: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
       }
+    } catch (error) {
+      aggregate.errors.push({
+        code:
+          error instanceof EffectiveLearnedSkillPlanningError ? error.code : 'effective_plan_failed',
+        message: error instanceof Error ? error.message : String(error),
+        ...(error instanceof EffectiveLearnedSkillPlanningError && error.repair.length > 0
+          ? { repair: error.repair }
+          : {}),
+      });
     }
     return aggregate;
   }
@@ -1140,14 +1206,18 @@ export class InitCommand {
       console.log(chalk.yellow(`  ⚠ ${machineHome.warning}`));
     }
 
-    // Learned-skill materialization (reported separately from workflow skills).
-    if (learnedReconcileHasActivity(learned)) {
+    // Learned-skill materialization (reported separately from workflow skills):
+    // what was written, what was left alone, and anything deferred or blocked.
+    // Mirrors UpdateCommand.displayLearnedSummary via the shared
+    // learnedMaterializationReport helper so init and update print the same
+    // report for the same reconcile result.
+    if (learnedReconcileHasActivity(learned) || learned.noOp) {
       const materialized = learned.created.length + learned.updated.length;
       if (materialized > 0) {
         console.log(`Learned skills: ${materialized} materialized`);
       }
-      for (const skip of learned.skipped) {
-        console.log(chalk.yellow(`  ⚠ ${skip.message}`));
+      for (const line of learnedMaterializationReport(learned)) {
+        console.log(line.tone === 'warn' ? chalk.yellow(`  ⚠ ${line.text}`) : chalk.dim(line.text));
       }
     }
 

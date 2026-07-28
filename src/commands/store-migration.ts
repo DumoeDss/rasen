@@ -7,7 +7,7 @@
  */
 import { Command } from 'commander';
 
-import { asErrorMessage, printJson } from './shared-output.js';
+import { asErrorMessage, emitFailure, printJson } from './shared-output.js';
 import { StoreError } from '../core/store/index.js';
 import {
   adoptProject,
@@ -236,11 +236,11 @@ export async function runEject(projectId: string | undefined, options: EjectOpti
     }
     printEjectHuman(result);
   } catch (error) {
-    if (options.json) {
-      failJson(error, 'eject_error');
-      return;
-    }
-    throw error;
+    // Rendered through the shared failure contract in BOTH modes. Rethrowing
+    // in human mode printed a raw Node stack naming `dist/` paths for ordinary
+    // input mistakes (a missing `--from`, a manifest that is not there), which
+    // buried the diagnostic's own message and its Fix line.
+    emitFailure(options.json, {}, error, 'eject_error');
   }
 }
 

@@ -25,6 +25,7 @@ export {
   DEFAULT_CHILD_PIPELINE,
   DEFAULT_HANDOFF_CONFIG,
   DEFAULT_REUSE_CONFIG,
+  UNKNOWN_HOST_RUNTIME,
   type Stage,
   type StageRole,
   type AgentRuntime,
@@ -38,6 +39,7 @@ export {
   type ModelConfigLayers,
   type ModelSource,
   type RuntimeSource,
+  type RuntimeResolutionContext,
   type StageOverride,
   type StageOverrideScope,
   type StageConfigOverrides,
@@ -79,6 +81,7 @@ export {
   resolveMaskedStageGate,
   resolveEffectiveStage,
   resolvePipelineRoleRuntimes,
+  resolvePipelineExecutionPlan,
   stageConfigOverridesFor,
   type PipelineStageOverrides,
   type MaskedStageGate,
@@ -87,6 +90,9 @@ export {
   type EffectiveStageInputs,
   type ResolvedRoleRuntime,
   type RoleRuntimeSource,
+  type ExecutionStageRuntime,
+  type PipelineExecutionPlan,
+  type PipelineExecutionPlanInputs,
 } from './stage-overrides.js';
 
 // Graph operations
@@ -119,9 +125,12 @@ export {
   resolveRunStateLocation,
   completedStages,
   frozenRetentionMode,
+  frozenKnowledgeContext,
+  frozenExecutionBinding,
   RETAIN_STAGE_ID,
   normalizeWorker,
   normalizeRunStateWorkerRecord,
+  inferWorkerDispatchMode,
   stageWorkers,
   stagesWithStatus,
   stagesLackingDurableHandle,
@@ -131,6 +140,8 @@ export {
   type RunState,
   type RunStateStage,
   type RunStateWorker,
+  type RunStateDispatchMode,
+  type WorkerDispatchInference,
   type StageStatus,
   type StageHandoffRecord,
   type SessionHandoff,
@@ -138,6 +149,16 @@ export {
   type RunStateReadResult,
   type RunStatePipelineSeed,
 } from './run-state.js';
+
+// Frozen-resume execution binding (unified-session-runtime-context D4)
+export {
+  resolveFrozenExecutionBinding,
+  checkoutsMatch,
+  type ExecutionBindingErrorCode,
+  type ExecutionBindingFailure,
+  type ExecutionBindingResult,
+  type ResolveFrozenExecutionInput,
+} from './execution-binding.js';
 
 // Pipeline resolution
 export {
@@ -182,9 +203,9 @@ export {
   type PortfolioState,
   type PortfolioChild,
   type PortfolioChildStatus,
+  type PortfolioStateReadResult,
   type PortfolioDelivery,
   type PortfolioDeliveryStatus,
   type ChildExecutionMode,
   type PortfolioStateLocation,
-  type PortfolioStateReadResult,
 } from './portfolio-state.js';

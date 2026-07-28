@@ -11,8 +11,16 @@
  */
 import { pathIsDirectory } from '../file-state.js';
 import { readStorePointer } from '../project-config.js';
+import { storeBindingDeclarationFrom } from '../effective-config.js';
 import { readProjectRegistryState, type ProjectRegistryEntryState } from '../project-registry.js';
+// Enumeration, not by-id lookup: this handler lists EVERY registered store,
+// which the identity boundary permits (the ban targets resolving one store by
+// its display name). Recorded deliberately rather than left implicit — child C
+// rewrites this file's resolution and decides whether to retire the import.
 import { listRegisteredStores } from '../store/registry.js';
+import { resolveStoreBinding } from '../store/identity.js';
+import type { ResolvedStoreRef } from '../store/identity-types.js';
+import { listStoreMembers } from '../store/membership.js';
 import { cachedGitWorktreeList } from '../store/worktree-inventory-cache.js';
 import { getActiveChangeIds } from '../../utils/item-discovery.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
@@ -109,30 +117,100 @@ export async function handleSpaces(): Promise<SpacesResponse> {
   );
   spaces.push(...projectSpaces);
 
+  // Each pointer repo's own declaration, resolved ONCE through the shared
+  // identity resolver rather than compared per store.
+  //
+  // Comparing the declared display alias is what this used to do, and it was
+  // wrong twice over: a declaration that records only the store's permanent
+  // identity carries no alias at all (so its repo silently vanished from the
+  // store's members), and an alias shared by two stores matched both. The
+  // resolver answers which store the declaration actually names.
+  const pointerMembers: Array<{
+    root: string;
+    entry: ProjectRegistryEntryState;
+    store: ResolvedStoreRef;
+  }> = [];
+  for (const [root, entry] of memberCandidates) {
+    if (!(await pathIsDirectory(root))) continue;
+    const binding = await resolveStoreBinding({
+      declaration: storeBindingDeclarationFrom(readStorePointer(root)),
+      projectRoot: root,
+    });
+    if (binding.kind !== 'resolved') continue;
+    pointerMembers.push({ root, entry, store: binding.store });
+  }
+
+  // Every live checkout on this machine, by project identity — how a member
+  // the store RECORDS acquires a root when it has one. Not restricted to
+  // pointer repos: a project can be a store's member while planning elsewhere,
+  // which is exactly what separating membership from planning binding buys.
+  const liveCheckouts = new Map<string, { root: string; name: string }>();
+  for (const [root, entry] of projectEntries) {
+    if (liveCheckouts.has(entry.projectId)) continue;
+    if (!(await pathIsDirectory(root))) continue;
+    liveCheckouts.set(entry.projectId, { root, name: entry.name });
+  }
+
   for (const store of stores) {
     if (!(await pathIsDirectory(store.storeRoot))) continue;
 
-    const members: SpaceMember[] = [];
-    for (const [root, entry] of memberCandidates) {
-      if (!(await pathIsDirectory(root))) continue;
-      // Authority is the member repo's current `store:` declaration, read
-      // fresh (design D4): a repo whose pointer no longer names this store is
-      // excluded even though its registry entry still marks it a pointer repo.
-      if (readStorePointer(root).value === store.id) {
-        members.push({ projectId: entry.projectId, name: entry.name, root });
-      }
+    const storeRef: ResolvedStoreRef = {
+      type: 'store',
+      id: store.id,
+      root: canonicalizeOrResolve(store.storeRoot),
+      ...(store.uid !== undefined ? { uid: store.uid } : {}),
+    };
+
+    // Members are the UNION of two sources, presented once per project
+    // identity: the pointer-derived entries (kept, so a store with no records
+    // yet does not suddenly list zero members) and the store's own membership
+    // records (so a recorded member shows up even when its repo points
+    // elsewhere). Both halves are read-only.
+    const byProjectId = new Map<string, SpaceMember>();
+
+    for (const candidate of pointerMembers) {
+      if (!sameStore(candidate.store, storeRef)) continue;
+      byProjectId.set(candidate.entry.projectId, {
+        projectId: candidate.entry.projectId,
+        name: candidate.entry.name,
+        root: candidate.root,
+      });
+    }
+
+    const listing = await listStoreMembers(storeRef).catch(() => null);
+    for (const member of listing?.members ?? []) {
+      if (byProjectId.has(member.projectId)) continue;
+      const checkout = liveCheckouts.get(member.projectId);
+      byProjectId.set(member.projectId, {
+        projectId: member.projectId,
+        name: member.id ?? checkout?.name ?? member.projectId,
+        // A recorded member with no live checkout here is listed WITHOUT a
+        // root: omitting it would hide a real membership, and inventing a path
+        // would be worse.
+        ...(checkout ? { root: checkout.root } : {}),
+      });
     }
 
     spaces.push({
       type: 'store',
       id: store.id,
       name: store.id,
-      root: canonicalizeOrResolve(store.storeRoot),
-      members,
+      root: storeRef.root,
+      members: [...byProjectId.values()],
     });
   }
 
   return { spaces };
+}
+
+/** Identity first, canonical root second — never the renameable display name. */
+function sameStore(left: ResolvedStoreRef, right: ResolvedStoreRef): boolean {
+  if (left.uid !== undefined && right.uid !== undefined) {
+    return left.uid.trim().toLowerCase() === right.uid.trim().toLowerCase();
+  }
+  const a = canonicalizeOrResolve(left.root);
+  const b = canonicalizeOrResolve(right.root);
+  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
 }
 
 /**

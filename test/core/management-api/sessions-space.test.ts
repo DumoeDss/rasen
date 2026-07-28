@@ -10,6 +10,7 @@ import type { ManagementApiContext } from '../../../src/core/management-api/rout
 import { registerProject } from '../../../src/core/project-registry.js';
 import { registerStore } from '../../../src/core/store/registry.js';
 import { getStoreMetadataPath } from '../../../src/core/store/foundation.js';
+import { writeStoreProjectRecord } from '../../../src/core/store/project-records.js';
 import { FileSystemUtils } from '../../../src/utils/file-system.js';
 import { fakeClaudeBin } from '../../helpers/fake-claude-bin.js';
 import { createOpenSpecRoot } from '../../helpers/rasen-fixtures.js';
@@ -163,6 +164,11 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
       { projectRoot: memberRoot, projectId: 'member-project-id', mode: 'store' },
       { globalDataDir: dataDir }
     );
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId: 'member-project-id',
+      roles: { planning: true, knowledge: true },
+    });
 
     const h = await startServer();
     const res = await launchSession(h.port, {
@@ -198,6 +204,11 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
       { projectRoot: cloneB, projectId: 'shared-clone-id', mode: 'store' },
       { globalDataDir: dataDir }
     );
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId: 'shared-clone-id',
+      roles: { planning: true, knowledge: true },
+    });
 
     const h = await startServer();
     const res = await launchSession(h.port, {
@@ -235,6 +246,11 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
       { projectRoot: mainRoot, projectId: 'worktree-member-id', mode: 'store' },
       { globalDataDir: dataDir }
     );
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId: 'worktree-member-id',
+      roles: { planning: true, knowledge: true },
+    });
 
     const h = await startServer();
     const res = await launchSession(h.port, {
@@ -289,7 +305,12 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
     });
 
     expect(res.status).toBe(409);
-    expect((res.json() as any).error.code).toBe('execution_unavailable');
+    // The stale pointer names a Store that is not this one and resolves to
+    // nothing, and the selected Store holds no membership record for the
+    // project — so neither authority vouches for it
+    // (unified-session-runtime-context D6). The failure now names the missing
+    // membership instead of a generic unavailability.
+    expect((res.json() as any).error.code).toBe('execution_not_member');
     const listRes = await req(h.port, { method: 'GET', path: '/api/v1/sessions', headers: authed() });
     expect((listRes.json() as any).sessions).toEqual([]);
   });
@@ -310,6 +331,11 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
       { projectRoot: memberRoot, projectId: 'joined-member-id', mode: 'store' },
       { globalDataDir: dataDir }
     );
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId: 'joined-member-id',
+      roles: { planning: true, knowledge: true },
+    });
 
     const h = await startServer();
     const launched = (await launchSession(h.port, {

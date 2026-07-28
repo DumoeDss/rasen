@@ -215,37 +215,63 @@ function readJsonlLines(rolloutPath: string): Record<string, unknown>[] {
 }
 
 export interface RolloutOccupancy {
+  /** Current context usage from `last_token_usage.total_tokens`. */
+  contextTokens: number;
+  /**
+   * @deprecated Use {@link contextTokens}. Retained for package API
+   * compatibility and reports the same current-context value; it never
+   * represents lifetime `total_token_usage`.
+   */
   totalTokens: number;
   modelContextWindow: number;
-  /** totalTokens / modelContextWindow. */
+  /** contextTokens / modelContextWindow. */
   pct: number;
 }
 
+/** A token-count stream exists, but its format cannot provide live occupancy. */
+export class RolloutOccupancyUnavailableError extends Error {
+  constructor(rolloutPath: string) {
+    super(
+      `Cannot determine current-context occupancy from Codex rollout: ${rolloutPath}. ` +
+      `Token-count events must contain numeric info.last_token_usage.total_tokens and ` +
+      `info.model_context_window values from a compatible Codex CLI.`
+    );
+    this.name = 'RolloutOccupancyUnavailableError';
+  }
+}
+
 /**
- * Read context occupancy from a rollout's LAST `token_count` event
- * (`docs/codex-parity/experiments/E03`: `.payload.info.total_token_usage.total_tokens`
- * and `.payload.info.model_context_window`). Returns `null` when the rollout
- * has no `token_count` line yet — a normal "zero completed turns" signal, NOT
- * an error (design D8).
+ * Read context occupancy from the last valid `token_count` snapshot:
+ * `.payload.info.last_token_usage.total_tokens` paired with
+ * `.payload.info.model_context_window`. Lifetime-cumulative
+ * `total_token_usage` is intentionally never an occupancy fallback.
+ * Returns `null` only when no token-count event exists (a normal zero-turn
+ * signal); an unusable token-count stream is a compatibility error.
  */
 export function readRolloutOccupancy(rolloutPath: string): RolloutOccupancy | null {
   const rows = readJsonlLines(rolloutPath);
   let last: RolloutOccupancy | null = null;
+  let sawTokenCount = false;
   for (const row of rows) {
     if (row.type !== 'event_msg') continue;
     const payload = row.payload as Record<string, unknown> | undefined;
     if (!payload || payload.type !== 'token_count') continue;
+    sawTokenCount = true;
     const info = payload.info as Record<string, unknown> | undefined;
-    const totalUsage = info?.total_token_usage as Record<string, unknown> | undefined;
-    const totalTokens = totalUsage?.total_tokens;
+    const lastUsage = info?.last_token_usage as Record<string, unknown> | undefined;
+    const contextTokens = lastUsage?.total_tokens;
     const modelContextWindow = info?.model_context_window;
-    if (typeof totalTokens === 'number' && typeof modelContextWindow === 'number') {
+    if (typeof contextTokens === 'number' && typeof modelContextWindow === 'number') {
       last = {
-        totalTokens,
+        contextTokens,
+        totalTokens: contextTokens,
         modelContextWindow,
-        pct: modelContextWindow > 0 ? totalTokens / modelContextWindow : 0,
+        pct: modelContextWindow > 0 ? contextTokens / modelContextWindow : 0,
       };
     }
+  }
+  if (sawTokenCount && !last) {
+    throw new RolloutOccupancyUnavailableError(rolloutPath);
   }
   return last;
 }

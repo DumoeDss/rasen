@@ -22,9 +22,25 @@ import {
   type GlobalConfigFileReader,
   type GlobalConfigFileStatus,
 } from './global-config.js';
-import { classifyOpenSpecDir, readProjectConfig, type ProjectConfig } from './project-config.js';
-import { listRegisteredStores, type RegisteredStoreEntry } from './store/registry.js';
+import {
+  classifyOpenSpecDir,
+  readProjectConfig,
+  storePointerProblem,
+  type ProjectConfig,
+  type StorePointerRead,
+} from './project-config.js';
+import type { RegisteredStoreEntry } from './store/registry.js';
 import type { StorePathOptions } from './store/foundation.js';
+import { StoreError } from './store/errors.js';
+import {
+  assertNeverStoreBinding,
+  describeUnavailableStore,
+  primaryRepair,
+  resolveStoreBinding,
+  type ResolvedStoreBinding,
+  type StoreBindingDeclaration,
+  type UnavailableStoreBinding,
+} from './store/identity.js';
 import { isTelemetryEnvDisabled } from '../telemetry/index.js';
 import {
   thresholdSchema,
@@ -52,6 +68,10 @@ export interface StoreConfigLayer {
   storeId: string;
   /** Canonical store root; its own `rasen/config.yaml` is the store layer. */
   storeRoot: string;
+  /** The store's permanent identity; absent for a store that has none yet. */
+  storeUid?: string;
+  /** Whether the permanent identity or the display alias did the resolving. */
+  resolvedBy?: 'uid' | 'alias';
 }
 
 /** Canonicalizes an existing path; falls back to `path.resolve` for a path not on disk. */
@@ -82,18 +102,62 @@ export function isRegisteredStoreRoot(
 }
 
 /**
+ * Bridges the on-disk declaration shape (`readStorePointer`) to the resolver's
+ * declaration input, so the resolver stays free of a project-config dependency
+ * and the two can never disagree on what a declaration means.
+ */
+export function storeBindingDeclarationFrom(
+  pointer: StorePointerRead
+): StoreBindingDeclaration {
+  switch (pointer.shape) {
+    case 'absent':
+      return { form: 'absent' };
+    case 'alias':
+      return { form: 'alias', id: pointer.value as string };
+    case 'durable': {
+      const durable = pointer.durable as { uid: string; id?: string; remote?: string };
+      return {
+        form: 'durable',
+        uid: durable.uid,
+        ...(durable.id !== undefined ? { id: durable.id } : {}),
+        ...(durable.remote !== undefined ? { remote: durable.remote } : {}),
+      };
+    }
+    case 'malformed':
+      return {
+        form: 'malformed',
+        problem: storePointerProblem(pointer.malformed ?? 'non_string'),
+        filePath: pointer.filePath,
+      };
+  }
+}
+
+/**
+ * The tri-state a project's configuration inheritance edge resolves to. There
+ * is deliberately no nullable form: `absent` (the project declares no store)
+ * is the ONLY state that legitimately resolves with no store layer, and
+ * `unavailable` can never be collapsed into it.
+ */
+export type ConfigStoreLayerResolution =
+  | { kind: 'absent' }
+  | { kind: 'resolved'; layer: StoreConfigLayer; binding: ResolvedStoreBinding }
+  | { kind: 'unavailable'; binding: UnavailableStoreBinding };
+
+/**
  * Resolves the single store layer a project's configuration inherits from
- * (design D1 of the store-config-scope change), or null when no inheritance
- * edge is active. Rules, in order:
- *  1. No `projectRoot` -> null.
- *  2. `classifyOpenSpecDir(projectRoot)`: no local planning shape, no
- *     `store:` pointer, or a malformed pointer -> null (a config-only pointer
- *     repo needs no store layer — its root already resolves TO the store).
- *  3. `projectRoot` is itself a registered store's root -> null. This makes
- *     the no-transitivity rule mechanical (a store's own `store:` field is
- *     ignored) and kills the self-pointing edge case.
- *  4. The pointer names a registered store -> `{ storeId, storeRoot }`
- *     (canonical); an unregistered store -> null (inheritance inactive).
+ * (design D1 of the store-config-scope change). Rules, in order:
+ *  1. No `projectRoot` -> `absent`.
+ *  2. `classifyOpenSpecDir(projectRoot)`: no local planning shape -> `absent`
+ *     (a config-only pointer repo needs no store layer — its root already
+ *     resolves TO the store), no `store:` declaration -> `absent`.
+ *  3. `projectRoot` is itself a registered store's root -> `absent`. This
+ *     makes the no-transitivity rule mechanical (a store's own `store:` field
+ *     is ignored) and kills the self-pointing edge case.
+ *  4. Otherwise the shared identity resolver decides: `resolved` with the
+ *     canonical store root, or `unavailable` with its reason and repair.
+ *
+ * A declared store that cannot be used is NEVER folded into "no store layer" —
+ * that fall-through is the bug this shape exists to make unrepresentable.
  *
  * Async because the store registry read is async; the sync layer resolvers
  * take the resolved store root/config as a parameter rather than repeating
@@ -104,27 +168,66 @@ export function isRegisteredStoreRoot(
 export async function resolveConfigStoreLayer(
   projectRoot: string | null | undefined,
   pathOptions: StorePathOptions = {}
-): Promise<StoreConfigLayer | null> {
-  if (!projectRoot) return null;
+): Promise<ConfigStoreLayerResolution> {
+  if (!projectRoot) return { kind: 'absent' };
 
   const { hasPlanningShape, pointer } = classifyOpenSpecDir(projectRoot);
-  if (!hasPlanningShape) return null;
-  if (pointer.malformed !== undefined || pointer.value === undefined) return null;
+  if (!hasPlanningShape) return { kind: 'absent' };
 
-  const stores = await listRegisteredStores(pathOptions);
+  const binding = await resolveStoreBinding({
+    declaration: storeBindingDeclarationFrom(pointer),
+    projectRoot,
+    ...pathOptions,
+  });
 
-  // No-transitivity: a root that IS a registered store never inherits from
-  // its own `store:` declaration.
-  if (isRegisteredStoreRoot(projectRoot, stores)) {
-    return null;
+  if (binding.kind === 'absent') return { kind: 'absent' };
+  if (binding.kind === 'unavailable') return { kind: 'unavailable', binding };
+
+  return {
+    kind: 'resolved',
+    binding,
+    layer: {
+      storeId: binding.store.id,
+      storeRoot: binding.store.root,
+      ...(binding.store.uid !== undefined ? { storeUid: binding.store.uid } : {}),
+      resolvedBy: binding.resolvedBy,
+    },
+  };
+}
+
+/** The fail-closed error every non-diagnostic surface raises for a broken edge. */
+export function unavailableStoreError(binding: UnavailableStoreBinding): StoreError {
+  return new StoreError(describeUnavailableStore(binding), binding.diagnostics[0]?.code ?? 'store_unavailable', {
+    target: binding.diagnostics[0]?.target ?? 'store.pointer',
+    fix: primaryRepair(binding),
+  });
+}
+
+/**
+ * Fail-closed adapter for every surface that must NOT proceed on a broken
+ * inheritance edge (design D4). Returns the layer, or null when the project
+ * genuinely declares no store; throws otherwise. The read-only diagnostic
+ * surfaces (`rasen doctor`, `rasen store doctor`, `rasen store list`,
+ * `rasen config --scope global`, `rasen init`'s pointer guard) deliberately do
+ * not call this — they are how a user learns the edge is broken.
+ */
+export async function requireConfigStoreLayer(
+  projectRoot: string | null | undefined,
+  pathOptions: StorePathOptions = {}
+): Promise<StoreConfigLayer | null> {
+  const resolution = await resolveConfigStoreLayer(projectRoot, pathOptions);
+  switch (resolution.kind) {
+    case 'absent':
+      return null;
+    case 'resolved':
+      return resolution.layer;
+    case 'unavailable':
+      throw unavailableStoreError(resolution.binding);
+    default:
+      // A future resolution kind must be handled explicitly here, not fall
+      // silently into "no store layer" — the bug this shape exists to kill.
+      return assertNeverStoreBinding(resolution);
   }
-
-  const store = stores.find(
-    (candidate) => candidate.type === 'store' && candidate.id === pointer.value
-  );
-  if (!store) return null;
-
-  return { storeId: store.id, storeRoot: canonicalizeOrResolve(store.storeRoot) };
 }
 
 export interface EffectiveConfigEntry {
@@ -150,8 +253,12 @@ export interface ResolveEffectiveConfigOptions {
    * The active store inheritance layer (design D1/D3): for a project context,
    * the store it inherits from; for a store space, the store itself (with no
    * `projectRoot`). Omitted or null means no store layer contributes.
+   *
+   * A `ConfigStoreLayerResolution` is also accepted so a caller can hand the
+   * tri-state straight through; an `unavailable` one throws rather than
+   * resolving as though the project had no store.
    */
-  store?: StoreConfigLayer | null;
+  store?: StoreConfigLayer | ConfigStoreLayerResolution | null;
   /** Optional locale-aware diagnostic sink supplied by a presentation layer. */
   reporter?: ConfigDiagnosticReporter;
   /**
@@ -209,10 +316,32 @@ export interface EffectiveConfigIo {
  * (`options.store` set with no `projectRoot`), the store's own config occupies
  * the store layer and the project layer is empty (design D3).
  */
+/**
+ * Normalizes the `store` option. An `unavailable` tri-state throws here rather
+ * than degrading to "no store layer" — the guard is on the merge itself, so a
+ * caller that forgets to fail closed still cannot report global/default values
+ * for a project whose declared store is broken.
+ */
+export function toStoreConfigLayer(
+  store: StoreConfigLayer | ConfigStoreLayerResolution | null | undefined
+): StoreConfigLayer | null {
+  if (!store) return null;
+  if (!('kind' in store)) return store;
+  switch (store.kind) {
+    case 'absent':
+      return null;
+    case 'resolved':
+      return store.layer;
+    case 'unavailable':
+      throw unavailableStoreError(store.binding);
+  }
+}
+
 export function resolveEffectiveConfigWithMetadata(
   options: ResolveEffectiveConfigOptions = {},
   io: EffectiveConfigIo = {}
 ): EffectiveConfigResolution {
+  const storeLayer = toStoreConfigLayer(options.store);
   const globalSnapshot = readGlobalConfigSnapshot(
     { reporter: options.reporter },
     io.readGlobalConfigFile
@@ -226,8 +355,8 @@ export function resolveEffectiveConfigWithMetadata(
   // The store layer is the store's own `rasen/config.yaml`, read once and
   // already resiliently validated by `readProjectConfig` (design D2) — no
   // re-validation pass, unlike the raw global JSON read.
-  const storeConfig: ProjectConfig | null = options.store
-    ? readProjectConfig(options.store.storeRoot, { reporter: options.reporter })
+  const storeConfig: ProjectConfig | null = storeLayer
+    ? readProjectConfig(storeLayer.storeRoot, { reporter: options.reporter })
     : null;
   const storeConfigRecord = storeConfig as unknown as Record<string, unknown> | null;
 

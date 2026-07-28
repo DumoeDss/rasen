@@ -18,6 +18,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   readRolloutOccupancy,
+  RolloutOccupancyUnavailableError,
   readRolloutSessionMeta,
   listRolloutFiles,
   resolveCodexHome,
@@ -25,7 +26,7 @@ import {
 } from './codex/index.js';
 import { findRepoPlanningRootSync } from './planning-home.js';
 import {
-  resolveConfigStoreLayer,
+  requireConfigStoreLayer,
   resolveHandoffThresholdLayers,
   resolveThresholdBindingLayers,
 } from './effective-config.js';
@@ -266,7 +267,7 @@ function readRolloutModel(rolloutPath: string): string {
 
 /**
  * Compute context occupancy from a Codex rollout via exec-core's
- * `readRolloutOccupancy` (last `token_count` event). A rollout with no
+ * `readRolloutOccupancy` (last valid current-context snapshot). A rollout with no
  * `token_count` event yet (`null`) is a normal "zero completed turns" state
  * — a young or just-killed worker, exactly the moment resume tooling probes
  * it — and reports SUCCESS with zero occupancy (design D3), asymmetric with
@@ -274,8 +275,8 @@ function readRolloutModel(rolloutPath: string): string {
  * input, not a young rollout). `limit` prefers an explicit override, else
  * the rollout's own inline `model_context_window` (exact, provider-sent — no
  * model-map lookup on this branch), else `0` when neither is known (honest:
- * no window was ever reported). Throws only when the file itself cannot be
- * read, matching the Claude branch's own unreadable-file behavior.
+ * no window was ever reported). Throws when the file cannot be read or its
+ * token-count stream has no usable current-context snapshot.
  */
 export function computeContextFromRollout(
   rolloutPath: string,
@@ -284,7 +285,10 @@ export function computeContextFromRollout(
   let occupancy: ReturnType<typeof readRolloutOccupancy>;
   try {
     occupancy = readRolloutOccupancy(rolloutPath);
-  } catch {
+  } catch (error) {
+    if (error instanceof RolloutOccupancyUnavailableError) {
+      throw error;
+    }
     throw new Error(
       `Cannot read Codex rollout: ${rolloutPath}. Pass a readable rollout jsonl with --transcript.`
     );
@@ -308,10 +312,10 @@ export function computeContextFromRollout(
   return {
     runtime: 'codex',
     model,
-    contextTokens: occupancy.totalTokens,
+    contextTokens: occupancy.contextTokens,
     limit,
-    pct: limit > 0 ? roundPct(occupancy.totalTokens / limit) : 0,
-    remainingTokens: remainingTokens(limit, occupancy.totalTokens),
+    pct: limit > 0 ? roundPct(occupancy.contextTokens / limit) : 0,
+    remainingTokens: remainingTokens(limit, occupancy.contextTokens),
     transcript: rolloutPath,
   };
 }
@@ -510,7 +514,7 @@ export async function resolveHandoffThresholdReport(
       ? runtimeOrCwd ?? process.cwd()
       : cwdArg ?? process.cwd();
   const projectRoot = findRepoPlanningRootSync(cwd);
-  const storeLayer = await resolveConfigStoreLayer(projectRoot);
+  const storeLayer = await requireConfigStoreLayer(projectRoot);
   const layers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
 
   const selected = resolveThreshold({

@@ -9,8 +9,157 @@
  */
 import { makeStoreDiagnostic, type StoreDiagnostic } from './store/errors.js';
 import { sanitizeInline, type ReferenceIndexEntry } from './references.js';
-import { storePointerProblem } from './project-config.js';
+import { storePointerProblem, type StorePointerProblem, type StorePointerShape } from './project-config.js';
+import { redactOptionalRemote } from './store/remote.js';
+import { storeRemoteDivergence } from './store/identity-diagnostics.js';
+import type { StoreUnavailableReason } from './store/identity.js';
+import type { ProjectMembershipHealth } from './store/membership.js';
 import { toRootOutput, type ResolvedOpenSpecRoot } from './root-selection.js';
+
+/**
+ * The Store section of the relationship report: the resolved identity, how the
+ * project declared it, and every identity diagnostic. Present both for a
+ * Store-backed root and for a project whose declared Store could not be used —
+ * a declared-but-unavailable Store is reported, never rendered as absent.
+ */
+export interface RelationshipStoreHealth {
+  id: string;
+  /** The Store's permanent identity; absent for legacy metadata. */
+  uid?: string;
+  metadata: {
+    present: boolean;
+    valid: boolean;
+    remote?: string;
+    uid?: string;
+    /** True when the metadata predates permanent identities. */
+    legacy?: boolean;
+  };
+  origin_url?: string;
+  /** How this project declared the Store, when it was reached by declaration. */
+  pointer?: {
+    shape: StorePointerShape;
+    declared_id?: string;
+    declared_uid?: string;
+    resolved_by?: 'uid' | 'alias';
+  };
+  /** Set when the declared Store cannot be used on this machine. */
+  unavailable?: {
+    reason: StoreUnavailableReason;
+    repair: string[];
+  };
+  status: StoreDiagnostic[];
+}
+
+/**
+ * One eligible Store for this project, and how it was discovered.
+ *
+ * `sources` is the union rule made visible: `hint` means the project declares
+ * a locator for it, `record` means a Store available here records this project
+ * as a member, and both means the two agree. A Store that is declared but not
+ * available here appears with `unavailable` set — never omitted, because
+ * "absent from the list" must not be readable as "not a member".
+ */
+export interface MembershipStoreHealth {
+  uid?: string;
+  id?: string;
+  sources: Array<'hint' | 'record'>;
+  roles?: { planning: boolean; knowledge: boolean };
+  /** Which source answered: a current record or a legacy shape. */
+  provenance?: string;
+  unavailable?: {
+    reason: StoreUnavailableReason;
+    repair: string[];
+  };
+}
+
+/**
+ * Membership as roster and eligibility only. Nothing here decides where a
+ * change is implemented — that is a different question with a different
+ * answer, and conflating the two is what this section exists to stop.
+ *
+ * `diagnostics` carries every membership finding the provider produced, each
+ * with its stable code and its copy-pasteable repair. It is the section's own
+ * field rather than a projection into the roster rows, because findings exist
+ * that name no Store at all (an unrecordable project identity) and findings
+ * that name a Store which is not in the roster (the planning Store with no
+ * record). Dropping it is what made the whole requirement unimplemented once.
+ */
+export interface MembershipHealth {
+  project_id?: string;
+  stores: MembershipStoreHealth[];
+  diagnostics: StoreDiagnostic[];
+}
+
+/**
+ * The provider's findings, mapped to the report shape ONCE. Both doctors call
+ * this and both render from `membershipHumanLines` below, so "human and JSON
+ * report the same codes and the same repair commands" holds by construction
+ * rather than by two renderers being kept in step by hand.
+ */
+export function toMembershipHealth(membership: ProjectMembershipHealth): MembershipHealth {
+  return {
+    ...(membership.projectId !== undefined ? { project_id: membership.projectId } : {}),
+    stores: membership.candidates.map((candidate) => ({
+      ...(candidate.uid !== undefined ? { uid: candidate.uid } : {}),
+      ...(candidate.id !== undefined ? { id: candidate.id } : {}),
+      sources: candidate.sources,
+      ...(candidate.membership ? { roles: candidate.membership.roles } : {}),
+      ...(candidate.membership ? { provenance: candidate.membership.provenance } : {}),
+      ...(candidate.unavailable ? { unavailable: candidate.unavailable } : {}),
+    })),
+    diagnostics: membership.diagnostics,
+  };
+}
+
+/**
+ * The membership section as human lines, indented under `indent`. Returned as
+ * data rather than printed so the two command surfaces share one rendering and
+ * cannot drift apart in wording, codes, or repairs.
+ */
+export function membershipHumanLines(
+  membership: MembershipHealth,
+  indent = '  '
+): string[] {
+  const lines: string[] = [];
+  if (membership.stores.length === 0) {
+    lines.push(`${indent}(this project belongs to no store)`);
+  } else {
+    lines.push(`${indent}Project identity: ${membership.project_id ?? '(not assigned yet)'}`);
+    for (const store of membership.stores) {
+      const name = store.id ?? store.uid ?? '(unnamed store)';
+      const via = store.sources.join(' + ');
+      if (store.unavailable) {
+        lines.push(
+          `${indent}- ${name}: declared (${via}), not available on this machine — ${store.unavailable.reason}`
+        );
+        for (const repair of store.unavailable.repair) {
+          lines.push(`${indent}      Next: ${repair}`);
+        }
+        continue;
+      }
+      const roles = store.roles
+        ? `planning=${store.roles.planning ? 'yes' : 'no'}, knowledge=${store.roles.knowledge ? 'yes' : 'no'}`
+        : 'no membership record';
+      lines.push(
+        `${indent}- ${name}: ${roles} (via ${via}${store.provenance ? `, from ${store.provenance}` : ''})`
+      );
+    }
+  }
+
+  // The findings, with the same code, message, and repair the JSON carries.
+  // A membership that reports a roster and swallows its findings is the state
+  // that makes a half-written two-repository mutation undiagnosable.
+  if (membership.diagnostics.length === 0) {
+    lines.push(`${indent}Findings: none`);
+    return lines;
+  }
+  lines.push(`${indent}Findings:`);
+  for (const finding of membership.diagnostics) {
+    lines.push(`${indent}  - [${finding.severity}] ${finding.code}: ${finding.message}`);
+    if (finding.fix) lines.push(`${indent}    Fix: ${finding.fix}`);
+  }
+  return lines;
+}
 
 export interface RelationshipHealth {
   root: {
@@ -20,15 +169,73 @@ export interface RelationshipHealth {
     healthy: boolean;
     status: StoreDiagnostic[];
   };
-  store: {
-    id: string;
-    metadata: { present: boolean; valid: boolean; remote?: string };
-    origin_url?: string;
-    status: StoreDiagnostic[];
-  } | null;
+  store: RelationshipStoreHealth | null;
   references: ReferenceIndexEntry[];
+  /** Store membership for this project; empty when it belongs to none. */
+  membership: MembershipHealth;
   machineHome: MachineHomeHealth;
+  /**
+   * Bootstrap readiness: one read-only answer to "is this machine ready for
+   * this project, and if not, what does it need?" Composed from the same facts
+   * `rasen bootstrap --check` reports, so the two agree by construction
+   * (store-bootstrap-repair-text design D4/D5). F4 (knowledge-bundle-prepare)
+   * extends the INPUT with a `knowledgeBundlePrepared` field; the output shape
+   * does not change.
+   */
+  bootstrapReadiness: BootstrapReadiness;
   status: StoreDiagnostic[];
+}
+
+// ---------------------------------------------------------------------------
+// Bootstrap readiness (store-bootstrap-repair-text, design D4/D5)
+// ---------------------------------------------------------------------------
+
+/**
+ * The per-check facts the readiness composer needs, gathered by the caller
+ * (doctor's `gatherHealth`) from inputs it already assembled. Pure data — this
+ * module performs no I/O, so the read-only guarantee lives with the caller.
+ *
+ * F4 (knowledge-bundle-prepare-integration) extends this input with one
+ * optional field:
+ *
+ *   knowledgeBundlePrepared?: boolean;
+ *
+ * The composer then adds one check to its derivation; the output shape does
+ * not change.
+ */
+export interface BootstrapReadinessInput {
+  /** The planning Store's resolution state. */
+  storeBinding: {
+    resolved: boolean;
+    /** Present when the Store did not resolve. */
+    reason?: StoreUnavailableReason;
+    /**
+     * True when the declaration or Store metadata carries a clone source.
+     * When the Store is `not-registered` and has no remote, bootstrap can
+     * register but cannot obtain — the state is `blocked`.
+     */
+    hasRemote?: boolean;
+  };
+  /** Whether the planning Store records this project as a member. */
+  membership: {
+    confirmed: boolean;
+  };
+  /** Whether the current checkout is registered in the machine home. */
+  machineHomeRegistered: boolean;
+}
+
+export interface BootstrapReadinessFinding {
+  /** A stable code for programmatic consumers and locale parity. */
+  code: string;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  /** A copy-pasteable repair command. */
+  repair: string;
+}
+
+export interface BootstrapReadiness {
+  state: 'complete' | 'degraded' | 'blocked';
+  findings: BootstrapReadinessFinding[];
 }
 
 export interface MachineHomeHealth {
@@ -85,17 +292,40 @@ export interface InspectRelationshipsInput {
   /** Store facts for store-backed roots (explicit or declared). */
   storeFacts?: {
     id: string;
+    uid?: string;
     metadataPresent: boolean;
     metadataValid: boolean;
+    metadataLegacy?: boolean;
     canonicalRemote?: string;
     originUrl?: string;
   };
+  /**
+   * The project's Store declaration as resolved by the shared identity
+   * resolver — pure data gathered by the caller, composed here. Present for a
+   * planning-shaped root that declares a Store, whether or not it resolved.
+   */
+  storeBinding?: {
+    shape: StorePointerShape;
+    filePath?: string | null;
+    declaredId?: string;
+    declaredUid?: string;
+    resolvedBy?: 'uid' | 'alias';
+    resolvedId?: string;
+    resolvedUid?: string;
+    reason?: StoreUnavailableReason;
+    repair?: string[];
+    diagnostics?: StoreDiagnostic[];
+  };
   referenceEntries: ReferenceIndexEntry[];
+  /**
+   * Membership facts the caller gathered from the membership provider. Pure
+   * data, composed here — this module performs no I/O, so the read-only
+   * guarantee lives with the caller that did the reading.
+   */
+  membership?: MembershipHealth;
   registryUnreadable: boolean;
-  /** A real root whose config also declares a store: pointer (3.2). */
-  bothShapesPointer?: { value: string; filePath: string };
   /** A real root whose store: pointer value is malformed (3.2). */
-  malformedPointer?: { filePath: string; reason: 'unparseable' | 'non_string' };
+  malformedPointer?: { filePath: string; reason: StorePointerProblem };
   /** Reference declarations in a pointer directory's own config are inert. */
   inertPointerDeclarations?: { filePath: string; fields: string[] };
   /** This project's machine-registry entry (probe-only; never mutated here). */
@@ -119,10 +349,40 @@ export interface InspectRelationshipsInput {
    * warning already fired earlier in the same session.
    */
   skillVersionMismatch?: { stampVersion: string; cliVersion: string };
+  /**
+   * Bootstrap-readiness facts (store-bootstrap-repair-text design D4/D5).
+   * When absent, the readiness section defaults to `complete` — a caller that
+   * has no planning Store (a Store-rooted run, or a project that declares
+   * none) has no bootstrap gap to report.
+   */
+  bootstrapReadiness?: BootstrapReadinessInput;
+  /**
+   * Cache-vs-config tools drift (project-install-manifest spec): present
+   * when the project's authoritative `tools:` manifest and the registry
+   * entry's cached `tools` mirror disagree. Advisory only — doctor never
+   * rewrites either side.
+   */
+  cacheDrift?: { configTools: string[]; cacheTools: string[] };
+  /**
+   * True when the registry entry has no cached `installedVersion` — surfaced
+   * as "version unknown" without an error.
+   */
+  cacheVersionUnknown?: boolean;
 }
 
 function warning(code: string, message: string, fix: string): StoreDiagnostic {
   return makeStoreDiagnostic('warning', code, message, { target: 'relationships', fix });
+}
+
+function pointerReport(
+  binding: NonNullable<InspectRelationshipsInput['storeBinding']>
+): NonNullable<RelationshipStoreHealth['pointer']> {
+  return {
+    shape: binding.shape,
+    ...(binding.declaredId ? { declared_id: binding.declaredId } : {}),
+    ...(binding.declaredUid ? { declared_uid: binding.declaredUid } : {}),
+    ...(binding.resolvedBy ? { resolved_by: binding.resolvedBy } : {}),
+  };
 }
 
 export function inspectRelationships(input: InspectRelationshipsInput): RelationshipHealth {
@@ -134,16 +394,6 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
         'relationship_registry_unreadable',
         'The store registry is unreadable; reference health cannot be checked.',
         'Run: rasen store doctor'
-      )
-    );
-  }
-
-  if (input.bothShapesPointer) {
-    status.push(
-      warning(
-        'root_pointer_ignored',
-        `${input.bothShapesPointer.filePath} declares store '${input.bothShapesPointer.value}', but this directory is a real Rasen root; the declaration is ignored.`,
-        `Remove the store: line from ${input.bothShapesPointer.filePath}, or move the planning files into the store.`
       )
     );
   }
@@ -168,6 +418,29 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
     );
   }
 
+  if (input.cacheDrift) {
+    const configList = input.cacheDrift.configTools.join(', ');
+    const cacheList = input.cacheDrift.cacheTools.join(', ');
+    status.push(
+      warning(
+        'cache_config_drift',
+        `The project's tools manifest (${configList}) disagrees with the registry cache (${cacheList}).`,
+        'Run `rasen init` or `rasen update` in this project to resync the cache.'
+      )
+    );
+  }
+
+  if (input.cacheVersionUnknown) {
+    status.push(
+      makeStoreDiagnostic(
+        'info',
+        'cache_version_unknown',
+        'The registry has no cached installedVersion for this project (version unknown).',
+        { target: 'project.registry' }
+      )
+    );
+  }
+
   if (input.inertPointerDeclarations && input.inertPointerDeclarations.fields.length > 0) {
     status.push(
       warning(
@@ -178,35 +451,55 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
     );
   }
 
-  // Store section: metadata facts + the divergence info note.
+  // Store section: identity, declaration shape, metadata facts, and every
+  // identity diagnostic. Remotes are rendered through the shared redaction
+  // renderer so a credential-bearing value never reaches any surface.
+  const binding = input.storeBinding;
   let store: RelationshipHealth['store'] = null;
+
   if (input.storeFacts) {
-    const storeStatus: StoreDiagnostic[] = [];
-    if (
-      input.storeFacts.canonicalRemote &&
-      input.storeFacts.originUrl &&
-      input.storeFacts.canonicalRemote !== input.storeFacts.originUrl
-    ) {
+    const storeStatus: StoreDiagnostic[] = [...(binding?.diagnostics ?? [])];
+    const canonicalRemote = redactOptionalRemote(input.storeFacts.canonicalRemote);
+    const originUrl = redactOptionalRemote(input.storeFacts.originUrl);
+
+    // Compared RAW, rendered redacted (the factory redacts): two remotes that
+    // differ only in an embedded credential redact to the same string, so
+    // comparing the redacted forms would suppress a genuine divergence.
+    const rawCanonical = input.storeFacts.canonicalRemote;
+    const rawOrigin = input.storeFacts.originUrl;
+    if (rawCanonical && rawOrigin && rawCanonical !== rawOrigin) {
       storeStatus.push(
-        makeStoreDiagnostic(
-          'info',
-          'store_remote_divergence',
-          `The store.yaml remote (${sanitizeInline(input.storeFacts.canonicalRemote, 200)}) differs from the checkout's origin (${sanitizeInline(input.storeFacts.originUrl, 200)}).`,
-          { target: 'store.metadata' }
-        )
+        storeRemoteDivergence({
+          recorded: sanitizeInline(rawCanonical, 200),
+          observed: sanitizeInline(rawOrigin, 200),
+        })
       );
     }
+
     store = {
       id: input.storeFacts.id,
+      ...(input.storeFacts.uid ? { uid: input.storeFacts.uid } : {}),
       metadata: {
         present: input.storeFacts.metadataPresent,
         valid: input.storeFacts.metadataValid,
-        ...(input.storeFacts.canonicalRemote
-          ? { remote: input.storeFacts.canonicalRemote }
-          : {}),
+        ...(canonicalRemote ? { remote: canonicalRemote } : {}),
+        ...(input.storeFacts.uid ? { uid: input.storeFacts.uid } : {}),
+        ...(input.storeFacts.metadataLegacy ? { legacy: true } : {}),
       },
-      ...(input.storeFacts.originUrl ? { origin_url: input.storeFacts.originUrl } : {}),
+      ...(originUrl ? { origin_url: originUrl } : {}),
+      ...(binding ? { pointer: pointerReport(binding) } : {}),
       status: storeStatus,
+    };
+  } else if (binding && binding.reason !== undefined) {
+    // A declared Store that could not be used is REPORTED, never rendered as
+    // though the project had declared none.
+    store = {
+      id: binding.declaredId ?? binding.declaredUid ?? '(unnamed store)',
+      ...(binding.declaredUid ? { uid: binding.declaredUid } : {}),
+      metadata: { present: false, valid: false },
+      pointer: pointerReport(binding),
+      unavailable: { reason: binding.reason, repair: binding.repair ?? [] },
+      status: binding.diagnostics ?? [],
     };
   }
 
@@ -255,7 +548,98 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
     },
     store,
     references: input.referenceEntries,
+    membership: input.membership ?? { stores: [], diagnostics: [] },
     machineHome,
+    bootstrapReadiness: composeBootstrapReadiness(input.bootstrapReadiness),
     status,
   };
+}
+
+/**
+ * The bootstrap-readiness composer (design D4/D5). Pure composition over the
+ * per-check facts the caller gathered — no I/O. Derives a three-state result
+ * and a findings array, each finding carrying a stable code and a
+ * copy-pasteable repair.
+ *
+ * `complete` only when the Store resolves, membership is confirmed, and the
+ * checkout is registered. `blocked` when the Store is `not-registered` with no
+ * remote (bootstrap can register but cannot obtain). `degraded` otherwise —
+ * including identity-level failures, which produce NO bootstrap finding (the
+ * existing doctor findings cover them; bootstrap cannot repair them).
+ */
+function composeBootstrapReadiness(
+  input: BootstrapReadinessInput | undefined
+): BootstrapReadiness {
+  if (input === undefined) {
+    return { state: 'complete', findings: [] };
+  }
+
+  const findings: BootstrapReadinessFinding[] = [];
+
+  // 1. Store binding — only `not-registered` produces a bootstrap finding.
+  //    Identity-level reasons (uid-mismatch, root-unhealthy, etc.) are NOT
+  //    bootstrap gaps: bootstrap cannot repair them, and doctor's existing
+  //    Store-section findings already name them.
+  if (!input.storeBinding.resolved && input.storeBinding.reason === 'not-registered') {
+    if (!input.storeBinding.hasRemote) {
+      findings.push({
+        code: 'bootstrap_store_missing_no_remote',
+        severity: 'error',
+        message:
+          'A declared Store is not registered on this machine and has no recorded remote. Bootstrap can register it if the checkout is local, but cannot obtain it from nowhere.',
+        repair: 'rasen bootstrap',
+      });
+    } else {
+      findings.push({
+        code: 'bootstrap_store_missing',
+        severity: 'error',
+        message:
+          'A declared Store is not registered on this machine. Bootstrap can clone it from the recorded remote and register it.',
+        repair: 'rasen bootstrap',
+      });
+    }
+  }
+
+  // 2. Membership — only checked when the Store resolved. An unavailable
+  //    Store's membership is unverifiable, not "not recorded."
+  if (input.storeBinding.resolved && !input.membership.confirmed) {
+    findings.push({
+      code: 'bootstrap_membership_not_confirmed',
+      severity: 'warning',
+      message:
+        'The planning Store does not record this project as a member. Bootstrap records the membership when it runs.',
+      repair: 'rasen bootstrap',
+    });
+  }
+
+  // 3. Machine home registration.
+  if (!input.machineHomeRegistered) {
+    findings.push({
+      code: 'bootstrap_machine_home_not_registered',
+      severity: 'warning',
+      message:
+        'This project checkout is not registered in the machine home. Bootstrap registers it when it runs.',
+      repair: 'rasen bootstrap',
+    });
+  }
+
+  // State: the FACTS decide, not the findings count. An identity-level
+  // failure (no bootstrap finding, but Store not resolved) is `degraded`.
+  const allPresent =
+    input.storeBinding.resolved &&
+    input.membership.confirmed &&
+    input.machineHomeRegistered;
+
+  const storeBlocked =
+    !input.storeBinding.resolved &&
+    input.storeBinding.reason === 'not-registered' &&
+    !input.storeBinding.hasRemote;
+
+  const state: BootstrapReadiness['state'] = allPresent
+    ? 'complete'
+    : storeBlocked
+      ? 'blocked'
+      : 'degraded';
+
+  return { state, findings };
 }

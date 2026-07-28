@@ -34,14 +34,16 @@ describe('profiles', () => {
   });
 
   describe('ALL_WORKFLOWS', () => {
-    it('should contain all 22 selectable workflows (11 base + 4 Rasen fusion + review-cycle + handoff + 4 goal-loop + audit; retro retired, retain internal)', () => {
-      expect(ALL_WORKFLOWS).toHaveLength(22);
+    it('should contain all 23 selectable workflows (11 base + Direction + 4 Rasen fusion + review-cycle + handoff + 4 goal-loop + audit; retro retired, retain internal)', () => {
+      expect(ALL_WORKFLOWS).toHaveLength(23);
     });
 
     it('should contain expected workflow IDs', () => {
       const expected = [
         'propose', 'explore', 'new', 'continue', 'apply',
         'sync', 'archive', 'bulk-archive', 'verify', 'onboard', 'help',
+        // Optional long-horizon governance
+        'direction',
         // Rasen fusion workflow commands
         'office-hours-command', 'verify-enhanced-command', 'ship-command',
         'auto-command',
@@ -65,6 +67,15 @@ describe('profiles', () => {
     it('should NOT include review-cycle in CORE_WORKFLOWS (opt-in only)', () => {
       expect(ALL_WORKFLOWS).toContain('review-cycle');
       expect([...CORE_WORKFLOWS]).not.toContain('review-cycle');
+    });
+
+    it('should include Direction in full/custom selection but NOT in CORE_WORKFLOWS', () => {
+      expect(ALL_WORKFLOWS).toContain('direction');
+      expect([...getProfileWorkflows('full')]).toContain('direction');
+      expect(
+        getProfileWorkflows('custom', ['direction'], { expertSelectionExplicit: true })
+      ).toEqual(['direction']);
+      expect([...CORE_WORKFLOWS]).not.toContain('direction');
     });
 
     it('should include the goal-loop workflow family but NOT in CORE_WORKFLOWS (opt-in only)', () => {

@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 
 import { probeCodexAvailability } from '../codex/index.js';
+import { resolveConfigStoreLayer } from '../effective-config.js';
 import { getGlobalConfig } from '../global-config.js';
 import { resolveDesiredWorkflowSelection } from '../profiles.js';
 import { resolveProjectHome } from '../project-home.js';
@@ -12,13 +13,26 @@ import {
   resolveChildPipelineName,
   validateDecomposeChildPipelines,
 } from './resolver.js';
-import { resolveStageRuntimeConfig } from './types.js';
-import type { PipelineYaml } from './types.js';
+import {
+  resolvePipelineExecutionPlan,
+  resolvePipelineStageOverrides,
+  type PipelineExecutionPlan,
+} from './stage-overrides.js';
+import {
+  detectHostRuntime,
+  type DetectedHostRuntime,
+} from '../runtime-adapters.js';
+import type { AgentRuntime, PipelineYaml, StageRole } from './types.js';
 
-export type PipelineExecutionNotice = {
-  kind: 'unknown-profile-workflows';
-  workflowIds: string[];
-};
+export type PipelineExecutionNotice =
+  | {
+      kind: 'unknown-profile-workflows';
+      workflowIds: string[];
+    }
+  | {
+      kind: 'unknown-host-runtime';
+      override: 'RASEN_AGENT_RUNTIME';
+    };
 
 export type PipelineExecutionReporter = (notice: PipelineExecutionNotice) => void;
 
@@ -30,6 +44,13 @@ export interface PipelineExecutionOptions {
    * `validatePipelineForExecution` invocation.
    */
   probeCodex?: () => boolean;
+  /** Injected once-detected LEAD host. */
+  host?: DetectedHostRuntime;
+  /** Test seam used only when `host` is not supplied. */
+  detectHost?: () => DetectedHostRuntime;
+  /** Run-local role choices. These participate in the final execution-plan
+   * route preflight and top persisted config without mutating it. */
+  roleRuntimeOverrides?: Partial<Record<StageRole, AgentRuntime>>;
   /** Human preflight notices. `false` suppresses them; omitted preserves the
    * legacy English console output for non-pipeline callers. */
   reporter?: PipelineExecutionReporter | false;
@@ -45,26 +66,38 @@ function reportPipelineExecutionNotice(
     return;
   }
 
-  console.log(
-    chalk.yellow(
-      `Warning: dropping unknown workflow id(s) from stored profile: ${notice.workflowIds.join(', ')}`
-    )
-  );
+  const message =
+    notice.kind === 'unknown-profile-workflows'
+      ? `Warning: dropping unknown workflow id(s) from stored profile: ${notice.workflowIds.join(', ')}`
+      : 'Warning: the LEAD host runtime is unknown; using the legacy compatibility route. ' +
+        `Set ${notice.override}=claude|codex for deterministic dispatch.`;
+  // Warnings/notices go to stderr so they never corrupt `--json` stdout (the
+  // CLI-spawning tests JSON.parse stdout; a stdout warning broke them on CI,
+  // where RASEN_AGENT_RUNTIME is unset and this notice fires).
+  console.error(chalk.yellow(message));
 }
 
-/** Whether any stage of `pipeline` resolves its effective runtime to `codex`. */
-function pipelineRequiresCodex(pipeline: PipelineYaml): boolean {
-  return pipeline.stages.some(
-    (stage) => resolveStageRuntimeConfig(stage, pipeline).runtime === 'codex'
+function throwRuntimeUnavailable(plan: PipelineExecutionPlan): never {
+  const bridged = plan.stages.find(
+    (stage) =>
+      stage.dispatchMode === 'exec-bridge' ||
+      (stage.dispatchMode === 'legacy-fallback' && stage.runtime === 'codex')
   );
-}
-
-function throwRuntimeUnavailable(): never {
   throw new PipelineValidationError(
-    'This pipeline requires the codex CLI runtime, but codex is not available. ' +
+    `Stage "${bridged?.id ?? '<unknown>'}" requires the codex exec bridge, but codex is not available. ` +
       'Override the affected role to claude (e.g. `rasen pipeline agents <name> --<role> claude`, ' +
       'or a stage-level `runtime: claude` in the pipeline.yaml), or install the codex CLI.',
     'pipeline_runtime_unavailable'
+  );
+}
+
+function throwUnsupportedRoute(plan: PipelineExecutionPlan): never {
+  const stage = plan.stages.find((candidate) => candidate.dispatchMode === 'unsupported');
+  throw new PipelineValidationError(
+    `Unsupported runtime route ${plan.hostRuntime} -> ${stage?.runtime ?? '<unknown>'} ` +
+      `for stage "${stage?.id ?? '<unknown>'}"${stage?.role ? ` (role ${stage.role})` : ''}. ` +
+      'Remove or change the explicit runtime override to inherit the host, or run this workflow from a supported host.',
+    'pipeline_runtime_route_unsupported'
   );
 }
 
@@ -145,16 +178,12 @@ export async function resolvePipelineExecutionSkillSets(
  * Validate a pipeline immediately before execution. Decompose child pipelines
  * are part of the selected execution plan, so validate their skills too.
  *
- * After the skill checks, resolves every stage's effective agent runtime
- * (stage `runtime` > pipeline `agents.<role>` > default `claude`) across the
- * pipeline AND its decompose children (the same single-level recursion the
- * skill checks above already perform — decompose children are themselves
- * decompose-free, per the registry's recursion guard). If any stage
- * resolves to `codex`, the codex CLI's availability is probed at most once
- * (memoized) via `options.probeCodex` (default: the real
- * `probeCodexAvailability`); when codex is required but unavailable, this
- * throws before dispatch naming both remedies. A pipeline where no stage
- * resolves to `codex` never probes and never fails on runtime grounds.
+ * After the skill checks, resolves one host-aware runtime/dispatch plan across
+ * the pipeline AND its decompose children. Unsupported routes fail before
+ * dispatch, after run-local role overrides have topped persisted configuration
+ * in that final plan. The Codex CLI is probed at most once only when an
+ * exec-bridge (or unknown-host legacy Codex target) needs it; Codex-native
+ * stages never probe the external CLI.
  */
 export async function validatePipelineForExecution(
   pipeline: PipelineYaml,
@@ -168,21 +197,53 @@ export async function validatePipelineForExecution(
   validatePipelineSkills(pipeline, knownSkillNames, enabledSkillNames);
   validateDecomposeChildPipelines(pipeline, projectRoot);
 
-  let requiresCodex = pipelineRequiresCodex(pipeline);
+  const host =
+    options?.host ??
+    options?.detectHost?.() ??
+    detectHostRuntime();
+  if (host.runtime === 'unknown') {
+    reportPipelineExecutionNotice(options?.reporter, {
+      kind: 'unknown-host-runtime',
+      override: 'RASEN_AGENT_RUNTIME',
+    });
+  }
+
+  const storeLayer = projectRoot ? await resolveConfigStoreLayer(projectRoot) : null;
+  const resolvePlan = (candidate: PipelineYaml): PipelineExecutionPlan =>
+    resolvePipelineExecutionPlan(candidate, {
+      host,
+      roleRuntimeOverrides: options?.roleRuntimeOverrides,
+      overrides: resolvePipelineStageOverrides(candidate.name, {
+        projectRoot,
+        store: storeLayer,
+      }),
+    });
+  const plans = [resolvePlan(pipeline)];
 
   for (const stage of pipeline.stages) {
     if (stage.kind !== 'decompose') continue;
     const child = loadPipelineByName(resolveChildPipelineName(stage), projectRoot);
     validatePipelineSkills(child, knownSkillNames, enabledSkillNames);
-    requiresCodex = requiresCodex || pipelineRequiresCodex(child);
+    plans.push(resolvePlan(child));
   }
 
-  if (!requiresCodex) {
-    return;
+  for (const plan of plans) {
+    if (plan.stages.some((stage) => stage.dispatchMode === 'unsupported')) {
+      throwUnsupportedRoute(plan);
+    }
   }
 
-  const probeCodex = options?.probeCodex ?? probeCodexAvailability;
-  if (!probeCodex()) {
-    throwRuntimeUnavailable();
+  const bridgePlan = plans.find((plan) =>
+    plan.stages.some(
+      (stage) =>
+        stage.dispatchMode === 'exec-bridge' ||
+        (stage.dispatchMode === 'legacy-fallback' && stage.runtime === 'codex')
+    )
+  );
+  if (bridgePlan) {
+    const probeCodex = options?.probeCodex ?? probeCodexAvailability;
+    if (!probeCodex()) {
+      throwRuntimeUnavailable(bridgePlan);
+    }
   }
 }

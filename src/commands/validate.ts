@@ -43,7 +43,15 @@ async function validatePipelineByName(
     // parse + Zod + structural validators (duplicate ids, requires refs,
     // cycles, parallel-group independence, decompose single/first) all run here.
     const pipeline = loadPipelineByName(id, projectRoot);
-    await validatePipelineForExecution(pipeline, projectRoot);
+    // `validate --pipelines` checks structural + dispatch-ROUTE integrity, not
+    // whether the codex binary happens to be installed in this environment.
+    // The codex availability probe is a pre-EXECUTION concern (it runs in
+    // `pipeline run`'s preflight); surfacing it here makes every pipeline with
+    // a codex role report invalid on machines without codex installed, including
+    // CI — even though the pipeline definition itself is well-formed.  The
+    // probeCodex stub keeps route validation (unsupported routes still fail)
+    // while skipping the binary availability check.
+    await validatePipelineForExecution(pipeline, projectRoot, { probeCodex: () => true });
   } catch (error) {
     const message =
       error instanceof PipelineLoadError && error.cause

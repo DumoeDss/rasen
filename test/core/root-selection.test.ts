@@ -364,8 +364,29 @@ describe('resolveOpenSpecRoot', () => {
       expect(warnings[0]).not.toContain('the declaration is ignored');
     });
 
-    it('warns that the pointer is inactive when the named store is unregistered', async () => {
+    it('stops the command when the declared store cannot be used on this machine', async () => {
       const repo = mkdir('real-repo-unregistered');
+      createOpenSpecRoot(repo);
+      fs.writeFileSync(
+        path.join(repo, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nstore: not-registered\n'
+      );
+
+      const error = await expectRootSelectionError(
+        resolveOpenSpecRoot({ startPath: repo, globalDataDir }),
+        'no_registered_stores'
+      );
+      expect(error.message).toContain("Unknown store 'not-registered'");
+      expect(error.message).toContain('no network access and no writes');
+      // The fix field carries the pasteable whole-gap repair (design D1):
+      // `rasen bootstrap`, sourced from `primaryRepair(binding)`. The rich
+      // human guidance (--id, config-edit) stays in the message body.
+      expect(error.diagnostic.fix).toBe('rasen bootstrap');
+      expect(error.message).toContain('rasen store register');
+    });
+
+    it('reports rather than fails on the read-only diagnostic path', async () => {
+      const repo = mkdir('real-repo-unregistered-doctor');
       createOpenSpecRoot(repo);
       fs.writeFileSync(
         path.join(repo, 'rasen', 'config.yaml'),
@@ -376,8 +397,13 @@ describe('resolveOpenSpecRoot', () => {
       const original = console.error;
       console.error = (message: string) => warnings.push(String(message));
       try {
-        const root = await resolveOpenSpecRoot({ startPath: repo, globalDataDir });
-        // The local root still wins; only the notice reflects inactivity.
+        const root = await resolveOpenSpecRoot({
+          startPath: repo,
+          globalDataDir,
+          allowUnavailableStore: true,
+        });
+        // The local root still wins; the notice reports why the declaration
+        // cannot be used, with its repair command.
         expect(root.source).toBe('nearest');
         expect(root.path).toBe(repo);
       } finally {
@@ -386,7 +412,8 @@ describe('resolveOpenSpecRoot', () => {
 
       expect(warnings).toHaveLength(1);
       expect(warnings[0]).toContain("declares store 'not-registered'");
-      expect(warnings[0]).toContain('no such store is registered');
+      expect(warnings[0]).toContain('cannot be used on this machine');
+      expect(warnings[0]).toContain('Next: ');
       expect(warnings[0]).not.toContain('configuration inherits from that store');
     });
 
@@ -418,7 +445,9 @@ describe('resolveOpenSpecRoot', () => {
 
       // The resolver agrees: a store's own root gets no inherited store layer.
       const { resolveConfigStoreLayer } = await import('../../src/core/effective-config.js');
-      expect(await resolveConfigStoreLayer(storeRoot, { globalDataDir })).toBeNull();
+      expect(await resolveConfigStoreLayer(storeRoot, { globalDataDir })).toEqual({
+        kind: 'absent',
+      });
     });
 
     it('keeps config-only directories without a pointer as plain roots', async () => {

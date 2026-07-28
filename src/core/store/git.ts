@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { promisify } from 'node:util';
 
 import { StoreError } from './errors.js';
+import { redactRemote } from './remote.js';
 
 const fs = nodeFs.promises;
 const execFilePromise = promisify(execFile);
@@ -26,9 +27,11 @@ function execFileAsync(
 
 /**
  * Git mechanics for stores: repository detection, setup-time init and
- * commit, and the read-only facts doctor reports. Nothing here clones, pulls,
- * pushes, or syncs — setup-time `git init` plus one initial commit is the
- * entire write surface.
+ * commit, the read-only facts doctor reports, and `git clone` for bootstrap's
+ * obtain step. Nothing here pulls, pushes, or syncs — setup-time `git init`
+ * plus one initial commit is the entire setup write surface, and `clone` is
+ * the obtain step's surface, routed through the same `execFileAsync` wrapper
+ * as every other git spawn.
  */
 
 function isSpawnNotFoundError(error: unknown): boolean {
@@ -143,6 +146,51 @@ export async function commitStoreFiles(
   return true;
 }
 
+/**
+ * `git clone` for bootstrap's obtain step (design D7). The remote is an
+ * ARGUMENT VECTOR element, never a concatenated shell string — `execFile` does
+ * not invoke a shell, so a remote starting with `-` cannot be misread as a
+ * flag, and the `--` separator is defense-in-depth on top of that. The target
+ * is a resolved absolute path composed by the caller.
+ *
+ * Throws a `StoreError` with a `fix` on failure, matching the pattern
+ * `initGitRepository` and `commitStoreFiles` establish. ENOENT (git binary
+ * not installed) is reported distinctly from a clone failure, matching
+ * `assertGitCommitIdentity`'s `isSpawnNotFoundError` pattern.
+ */
+export async function cloneRepository(remote: string, target: string): Promise<void> {
+  try {
+    await execFileAsync('git', ['clone', '--', remote, target]);
+  } catch (error) {
+    if (isSpawnNotFoundError(error)) {
+      throw new StoreError(
+        'Git is not available, so the repository cannot be cloned.',
+        'store_git_unavailable',
+        {
+          target: 'store.git',
+          fix: 'Install Git, or obtain the repository manually and register it with rasen store register.',
+        }
+      );
+    }
+
+    // Defense-in-depth (M9): git's error output echoes the raw remote URL,
+    // which may carry credentials. Replace every occurrence of the raw remote
+    // with its redacted form BEFORE constructing the diagnostic, so even a
+    // future caller that bypasses cloneWithCleanupGuard's credential gate
+    // cannot leak credentials into the error surface.
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    const safeMessage = rawMessage.split(remote).join(redactRemote(remote));
+    throw new StoreError(
+      `Failed to clone the repository: ${safeMessage}`,
+      'store_clone_failed',
+      {
+        target: 'store.git',
+        fix: 'Verify the remote is reachable and you have access, or obtain the repository manually and register it with rasen store register.',
+      }
+    );
+  }
+}
+
 async function gitProbe(storeRoot: string, args: string[]): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync('git', ['-C', storeRoot, ...args]);
@@ -173,6 +221,19 @@ export async function gitHasUncommittedChanges(storeRoot: string): Promise<boole
 export async function gitHasRemote(storeRoot: string): Promise<boolean | null> {
   const stdout = await gitProbe(storeRoot, ['remote']);
   return stdout === null ? null : stdout.trim().length > 0;
+}
+
+/**
+ * The commit a repository currently sits on, or null when `repoRoot` is not a
+ * repository, git is unavailable, or HEAD has no commits yet. Read-only and
+ * network-free. Used as the base a two-repository membership mutation records
+ * and re-checks, so a non-git root DEGRADES to "no base" instead of blocking
+ * the mutation.
+ */
+export async function gitHeadCommit(repoRoot: string): Promise<string | null> {
+  const stdout = await gitProbe(repoRoot, ['rev-parse', 'HEAD']);
+  const commit = stdout?.trim();
+  return commit ? commit : null;
 }
 
 /**
