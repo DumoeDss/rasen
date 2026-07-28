@@ -20,9 +20,7 @@ invoked by name (e.g., `/office-hours`).
 | `/qa-only` | Same as /qa but report only — no code changes. |
 | `/browse` | Headless browser — real Chromium, real clicks, ~100ms/command. |
 | `/careful` | Warn before destructive commands (rm -rf, DROP TABLE, force-push). |
-| `/freeze` | Lock edits to one directory. Hard block, not just a warning. |
-| `/guard` | Activate both careful + freeze at once. |
-| `/unfreeze` | Remove directory edit restrictions. |
+| `rasen agent edit-boundary set\|status\|clear` | Checkout-scoped runtime boundary; read status for hard/soft/unsupported enforcement. |
 | `/codebase-design` | Deep-module vocabulary (seam / depth / adapter / leverage) and the deletion test. |
 | `/tdd` | Test-driven development that produces tests worth keeping: seams, red→green, anti-patterns. |
 | `/prototype` | Throwaway code that answers one design question — a LOGIC or UI branch. |
@@ -41,4 +39,4 @@ pnpm build               # compile TypeScript (also builds the skill payloads)
 - Expert skill prose lives inline in `src/core/templates/experts/<name>.ts`; shared blocks are TypeScript constants in `src/core/templates/experts/_shared.ts`. Edit those directly — there is no `.tmpl` step.
 - Freshness is pinned by the parity golden-master in `test/core/templates/skill-templates-parity.test.ts`.
 - The browse binary provides headless browser access. Use `$B <command>` in skills.
-- Safety skills (careful, freeze, guard) use inline advisory prose — always confirm before destructive operations.
+- `careful` uses inline advisory prose — always confirm before destructive operations. The base edit-boundary runtime is separate and must never be described more strongly than its reported enforcement.

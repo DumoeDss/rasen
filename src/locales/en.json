@@ -696,14 +696,6 @@
           "name": "Design Review",
           "description": "Browser-based design audit grading visual hierarchy, typography, color, and responsiveness"
         },
-        "freeze": {
-          "name": "Freeze",
-          "description": "Restrict edits to a directory so writes outside the frozen scope are rejected"
-        },
-        "guard": {
-          "name": "Guard",
-          "description": "Full safety mode — destructive-command guardrails plus an edit boundary in one switch"
-        },
         "investigate": {
           "name": "Investigate",
           "description": "Reproduce, isolate, and root-cause a bug with evidence before attempting any fix"
@@ -735,10 +727,6 @@
         "tdd": {
           "name": "TDD",
           "description": "Red, green, refactor discipline with mocking guidance"
-        },
-        "unfreeze": {
-          "name": "Unfreeze",
-          "description": "Lift the edit restriction set by freeze or guard"
         },
         "workflow-author": {
           "name": "Workflow Author",

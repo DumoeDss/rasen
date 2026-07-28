@@ -38,6 +38,8 @@ import {
   detectLegacyArtifacts,
   cleanupMarkerBlocks,
   formatLegacyCoexistenceNotice,
+  cleanupLegacyEditBoundaryState,
+  pruneRetiredEditBoundarySkillDirs,
   pruneRetiredExpertSkillDirs,
   pruneRetiredWorkflowSkillDirs,
   pruneRetiredRetentionSkillDirs,
@@ -100,6 +102,7 @@ import {
 import { syncWorkflowArtifactLedger } from './workflow-artifact-ledger.js';
 import { getAvailableTools } from './available-tools.js';
 import { ensureClaudeAgentTeams } from './claude-settings.js';
+import { reconcileEditBoundaryHooks } from './edit-boundary-hooks.js';
 import { migrateIfNeeded } from './migration.js';
 
 const require = createRequire(import.meta.url);
@@ -228,6 +231,31 @@ export class InitCommand {
 
     // Validate selected tools
     const validatedTools = this.validateTools(selectedToolIds, toolStates);
+
+    // Base-runtime reconciliation is independent of selected skills. Heal the
+    // exact retired directories for every previously configured or selected
+    // tool, remove obsolete state, and install supported host hooks before
+    // entering the skill generation loop.
+    const cleanupToolIds = new Set([
+      ...validatedTools.map((tool) => tool.value),
+      ...[...toolStates.entries()]
+        .filter(([, status]) => status.configured)
+        .map(([toolId]) => toolId),
+    ]);
+    for (const toolId of cleanupToolIds) {
+      const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
+      if (!tool?.skillsDir) continue;
+      await pruneRetiredEditBoundarySkillDirs(
+        resolveToolSkillsRoot(tool, projectPath)
+      );
+    }
+    await cleanupLegacyEditBoundaryState();
+    for (const result of reconcileEditBoundaryHooks(
+      projectPath,
+      validatedTools.map((tool) => tool.value)
+    )) {
+      if (result.warning) console.log(chalk.yellow(`Warning: ${result.warning}`));
+    }
 
     // A fresh (non-extend) init is one of the explicit expert-aware write
     // paths (design.md D4): it marks the machine as having explicit expert

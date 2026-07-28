@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import { createRequire } from 'module';
 import { FileSystemUtils } from '../utils/file-system.js';
 import { ensureClaudeAgentTeams } from './claude-settings.js';
+import { reconcileEditBoundaryHooks } from './edit-boundary-hooks.js';
 import { transformToHyphenCommands } from '../utils/command-references.js';
 import { AI_TOOLS, OPENSPEC_DIR_NAME } from './config.js';
 import {
@@ -31,6 +32,8 @@ import {
 import {
   detectLegacyArtifacts,
   formatLegacyCoexistenceNotice,
+  cleanupLegacyEditBoundaryState,
+  pruneRetiredEditBoundarySkillDirs,
   pruneRetiredExpertSkillDirs,
   pruneRetiredWorkflowSkillDirs,
   pruneRetiredRetentionSkillDirs,
@@ -266,7 +269,7 @@ export class UpdateCommand {
     const repoMode: RepoMode = globalConfig.repoMode ?? 'collaborative';
 
     // One-time (per run) non-regressive migration notice (design.md D4): an
-    // install that predates expert selection resolves ALL 21 experts under
+    // install that predates expert selection resolves all current experts under
     // the legacy branch above, profile-independent — this only explains the
     // shift, it never narrows the install itself. `update` never sets the
     // marker; only the profile picker/`profile use`/`profile new`/`import`
@@ -309,6 +312,23 @@ export class UpdateCommand {
       console.log(chalk.dim(`Seeded tools: ${configuredTools.join(', ')}`));
     }
     const commandConfiguredSet = new Set(commandConfiguredTools);
+
+    // Runtime cleanup/reconciliation precedes every short circuit and does not
+    // depend on a retired skill being selected or installed.
+    for (const toolId of configuredTools) {
+      const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
+      if (!tool?.skillsDir) continue;
+      await pruneRetiredEditBoundarySkillDirs(
+        resolveToolSkillsRoot(tool, resolvedProjectPath)
+      );
+    }
+    await cleanupLegacyEditBoundaryState();
+    for (const result of reconcileEditBoundaryHooks(
+      resolvedProjectPath,
+      configuredTools
+    )) {
+      if (result.warning) console.log(chalk.yellow(`Warning: ${result.warning}`));
+    }
 
     if (configuredTools.length === 0) {
       console.log(chalk.yellow('No configured tools found.'));
@@ -795,7 +815,7 @@ export class UpdateCommand {
    * `getBuiltInWorkflowDefinitions()`, so a deselected-and-unreferenced
    * expert is pruned the same way a deselected workflow is). `desiredWorkflows`
    * already includes every profile-default and closure-required expert (and,
-   * under the legacy migration marker, all 21), so a protected expert is
+   * under the legacy migration marker, all current experts), so a protected expert is
    * never removed here.
    * Returns the number of directories removed.
    */

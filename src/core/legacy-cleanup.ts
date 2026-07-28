@@ -8,6 +8,63 @@ import { promises as fs } from 'fs';
 import chalk from 'chalk';
 import { FileSystemUtils, removeMarkerBlock as removeMarkerBlockUtil } from '../utils/file-system.js';
 import { OPENSPEC_MARKERS } from './config.js';
+import { getGlobalDataDir, type GlobalDataDirOptions } from './global-config.js';
+import { RETIRED_EDIT_BOUNDARY_SKILL_DIRS } from './retired-edit-boundary.js';
+export {
+  RETIRED_EDIT_BOUNDARY_EXPERT_IDS,
+  RETIRED_EDIT_BOUNDARY_SKILL_DIRS,
+} from './retired-edit-boundary.js';
+
+export const LEGACY_EDIT_BOUNDARY_STATE_FILE = 'freeze-dir.txt';
+
+/**
+ * Remove only the three exact retired installed skill directories. Similar
+ * names and user-authored directories are preserved.
+ */
+export async function pruneRetiredEditBoundarySkillDirs(
+  skillsDir: string
+): Promise<string[]> {
+  const removed: string[] = [];
+  for (const dirName of RETIRED_EDIT_BOUNDARY_SKILL_DIRS) {
+    const dirPath = path.join(skillsDir, dirName);
+    try {
+      if (!(await fs.stat(dirPath)).isDirectory()) continue;
+      await fs.rm(dirPath, { recursive: true, force: true });
+      removed.push(dirName);
+    } catch {
+      // Missing/unreadable entries are best-effort no-ops.
+    }
+  }
+  return removed;
+}
+
+/**
+ * Remove the obsolete state file from recognized old roots without removing
+ * the containing directory or any sibling. CLAUDE_PLUGIN_DATA is considered
+ * only when explicitly present and distinct from Rasen's data root.
+ */
+export async function cleanupLegacyEditBoundaryState(
+  options: GlobalDataDirOptions = {}
+): Promise<string[]> {
+  const env = options.env ?? process.env;
+  const roots = new Set<string>([path.resolve(getGlobalDataDir(options))]);
+  if (env.CLAUDE_PLUGIN_DATA?.trim()) {
+    roots.add(path.resolve(env.CLAUDE_PLUGIN_DATA));
+  }
+  const removed: string[] = [];
+  for (const root of roots) {
+    const statePath = path.join(root, LEGACY_EDIT_BOUNDARY_STATE_FILE);
+    try {
+      const stat = await fs.stat(statePath);
+      if (!stat.isFile()) continue;
+      await fs.rm(statePath, { force: true });
+      removed.push(statePath);
+    } catch {
+      // Missing/unreadable entries are best-effort no-ops.
+    }
+  }
+  return removed;
+}
 
 /**
  * Retired installed-skill directory prefix left behind by the expert-skill

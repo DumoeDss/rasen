@@ -50,8 +50,6 @@ export {
   getCsoSkillTemplate,
   getDesignConsultationSkillTemplate,
   getDesignReviewSkillTemplate,
-  getFreezeSkillTemplate,
-  getGuardSkillTemplate,
   getInvestigateSkillTemplate,
   getNavigatorSkillTemplate,
   getOfficeHoursSkillTemplate,
@@ -60,7 +58,6 @@ export {
   getQaSkillTemplate,
   getReviewSkillTemplate,
   getTddSkillTemplate,
-  getUnfreezeSkillTemplate,
   getWorkflowAuthorSkillTemplate,
   getWorkflowReviewSkillTemplate,
 } from './experts/index.js';
