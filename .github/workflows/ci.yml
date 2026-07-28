@@ -102,10 +102,6 @@ jobs:
       - name: Run tests
         env:
           VITEST_MAX_WORKERS: ${{ matrix.vitest_workers }}
-          # Deterministic agent runtime on CI: claude host -> codex workers route
-          # via exec-bridge. Without this the host is unknown and dispatch falls
-          # back to legacy + emits a notice (which broke dispatch assertions).
-          RASEN_AGENT_RUNTIME: claude
         run: pnpm test
 
       - name: Run focused Windows server-local path and UI path tests
