@@ -57,6 +57,16 @@ export {
 } from './rollout.js';
 export { buildCodexWorkerRecord, type BuildCodexWorkerRecordOptions } from './identity.js';
 export {
+  resolveCodexConfigPath,
+  inspectCodexProjectConfig,
+  reconcileCodexProjectConfig,
+  type CodexConfigInspection,
+  type CodexConfigOutcome,
+  type CodexConfigReconcileResult,
+  type CodexConfigReportLine,
+  formatCodexConfigSummary,
+} from './project-config.js';
+export {
   detectThreadDeath,
   detectDeathInRows,
   CODEX_REVIVAL_NOTICE,

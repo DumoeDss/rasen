@@ -104,6 +104,7 @@ import { getAvailableTools } from './available-tools.js';
 import { ensureClaudeAgentTeams } from './claude-settings.js';
 import { reconcileEditBoundaryHooks } from './edit-boundary-hooks.js';
 import { migrateIfNeeded } from './migration.js';
+import { reconcileCodexProjectConfig, formatCodexConfigSummary, type CodexConfigReconcileResult } from './codex/index.js';
 
 const require = createRequire(import.meta.url);
 const { version: OPENSPEC_VERSION } = require('../../package.json');
@@ -316,6 +317,15 @@ export class InitCommand {
     // Generate skills and commands for each tool
     const results = await this.generateSkillsAndCommands(projectPath, validatedTools);
 
+    // When Codex is part of the validated selection, reconcile its project-local
+    // wait policy (`.codex/config.toml`) as part of configuring that tool. Never
+    // counts as a generated skill; a blocked/failed outcome is reported but does
+    // not abort init or affect other tools (cli-init spec).
+    const codexConfig =
+      validatedTools.some((tool) => tool.value === 'codex')
+        ? await reconcileCodexProjectConfig(projectPath)
+        : undefined;
+
     // Create config.yaml if needed (and persist an explicit profile lock)
     const configStatus =
       pointerToolOnlySelection === undefined
@@ -366,7 +376,7 @@ export class InitCommand {
     ]);
 
     // Display success message
-    this.displaySuccessMessage(projectPath, validatedTools, results, configStatus, machineHome, learned);
+    this.displaySuccessMessage(projectPath, validatedTools, results, configStatus, machineHome, learned, codexConfig);
   }
 
   /**
@@ -1167,7 +1177,8 @@ export class InitCommand {
     },
     configStatus: 'created' | 'exists' | 'skipped',
     machineHome: { homeDir: string } | { warning: string },
-    learned: LearnedReconcileResult
+    learned: LearnedReconcileResult,
+    codexConfig?: CodexConfigReconcileResult
   ): void {
     console.log();
     console.log(chalk.bold('Rasen Setup Complete'));
@@ -1246,6 +1257,21 @@ export class InitCommand {
       }
       for (const line of learnedMaterializationReport(learned)) {
         console.log(line.tone === 'warn' ? chalk.yellow(`  ⚠ ${line.text}`) : chalk.dim(line.text));
+      }
+    }
+
+    // Codex project config (cli-init spec): report the managed wait-policy
+    // outcome. Created/updated include a restart reminder; blocked/failed are
+    // actionable and ensure Codex is not silently reported as fully configured.
+    if (codexConfig) {
+      for (const line of formatCodexConfigSummary(codexConfig)) {
+        const rendered =
+          line.tone === 'error'
+            ? chalk.red(`  ✗ ${line.text}`)
+            : line.tone === 'warn'
+              ? chalk.yellow(`  ⚠ ${line.text}`)
+              : chalk.white(`  ${line.text}`);
+        console.log(rendered);
       }
     }
 
