@@ -24,4 +24,3 @@ A read of a project membership record SHALL treat only ENOENT (file does not exi
 - **WHEN** the Store's project records directory exists but cannot be enumerated due to an I/O error
 - **THEN** the listing does not return an empty record set
 - **AND** the error is reported with the directory path and the error code
-

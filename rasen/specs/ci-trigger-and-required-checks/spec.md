@@ -38,4 +38,3 @@ The CI workflow SHALL run `git diff --check` on the PR's own diff to catch trail
 
 - **WHEN** a PR diff contains trailing whitespace or blank lines at end of file
 - **THEN** the CI lint job fails with a `git diff --check` error naming the file and line
-

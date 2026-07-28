@@ -35,4 +35,3 @@ After a multi-record import is interrupted by process kill or power loss, the ne
 - **WHEN** no transaction marker exists from a previous import
 - **THEN** no degraded consistency diagnostic is produced
 - **AND** the import proceeds normally
-

@@ -62,4 +62,3 @@ When a remote is rendered in any human-readable output, JSON field, clone-failur
 
 - **WHEN** a remote with no credentials (no userinfo secret, no query, no fragment) is rendered
 - **THEN** the remote appears verbatim in the output
-

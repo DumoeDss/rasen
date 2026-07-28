@@ -19,4 +19,3 @@ Every multi-child acceptance portfolio SHALL ship an evidence reconciliation art
 - **WHEN** a reviewer reads the evidence reconciliation artifact
 - **THEN** every path referenced in the artifact exists on disk or in the PR diff
 - **AND** every test verdict is backed by an actual test run, not a self-reported assertion
-

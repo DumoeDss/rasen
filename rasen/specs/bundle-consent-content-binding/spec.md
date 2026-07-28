@@ -23,4 +23,3 @@ When bootstrap previews a knowledge bundle for user consent, the system SHALL ca
 - **WHEN** a bundle path is a symlink and the symlink target is changed between preview and apply
 - **THEN** the identity check detects the change through file stat differences
 - **AND** the import is refused
-

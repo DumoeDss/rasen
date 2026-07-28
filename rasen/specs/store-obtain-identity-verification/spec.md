@@ -20,4 +20,3 @@ When a Store is obtained by alias-only declaration (no permanent UID), the syste
 - **WHEN** a project declares alias `my-store` and the cloned remote's metadata identifies as `my-store`
 - **THEN** the checkout is published and registered normally
 - **AND** bootstrap reports the entry as obtained
-

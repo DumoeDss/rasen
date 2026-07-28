@@ -23,4 +23,3 @@ Project identity SHALL be compared using its normalized form (trim + lowercase) 
 
 - **WHEN** a project identity with surrounding whitespace is compared against the same identity without whitespace
 - **THEN** they are recognized as the same project
-

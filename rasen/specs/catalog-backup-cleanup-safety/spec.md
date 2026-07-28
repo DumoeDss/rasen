@@ -26,4 +26,3 @@ When a learned-skill catalog mutation publishes a new record successfully and th
 - **WHEN** backup debris from a prior cleanup failure exists in the catalog directory
 - **THEN** the next mutation's debris sweep discovers and removes it before proceeding
 - **AND** the debris does not interfere with catalog reads
-

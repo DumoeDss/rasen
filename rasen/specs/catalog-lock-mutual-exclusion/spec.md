@@ -51,4 +51,3 @@ Every writer that serializes access to the same project knowledge catalog lock p
 - **WHEN** a learned-skill mutation and a knowledge-bundle import target the same project knowledge catalog
 - **THEN** both operations acquire their lock through the same owner-aware protocol
 - **AND** neither operation's lock-acquisition logic uses a wall-clock age heuristic to declare the other's lock stale
-

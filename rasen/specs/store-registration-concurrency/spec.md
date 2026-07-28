@@ -19,4 +19,3 @@ Two registrations targeting the same canonical Store root path — even under di
 - **WHEN** a registration fails after writing identity metadata, and another registration has already committed a registry entry that depends on that metadata
 - **THEN** the failed registration's cleanup verifies whether the current metadata content still belongs to its own transaction before deleting
 - **AND** if the metadata was overwritten by another registration, it is not deleted
-

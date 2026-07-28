@@ -18,4 +18,3 @@ Every operation that reads a project membership record, modifies it, and writes 
 - **WHEN** a `migrate-membership --apply` writes a converted record, and a concurrent `store add-project` has already written a role to that record
 - **THEN** the migration acquires the shared lock per record, re-reads the current record inside it, and merges rather than overwriting
 - **AND** the concurrent add-project's role survives the migration
-

@@ -24,4 +24,3 @@ A knowledge bundle export SHALL verify that the temporary file's identity still 
 - **WHEN** the export runs on a filesystem where file inodes are always zero (Windows NTFS)
 - **THEN** the identity check is supplemented by a content comparison of the destination against the written bytes
 - **AND** a mismatch is detected and reported as a failure
-

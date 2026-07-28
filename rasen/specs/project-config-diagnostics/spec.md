@@ -36,4 +36,3 @@ A portability check that refuses machine-specific paths SHALL reject single-back
 
 - **WHEN** a store membership hint value is a permanent identity or a credential-free remote URL
 - **THEN** the portability check accepts it
-
