@@ -449,8 +449,8 @@ describe('config command --scope project and promoted keys', () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    tempDir = fs.realpathSync(
-      fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'rasen-config-scope-test-'))
+    tempDir = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-config-scope-test-'))
     );
     projectDir = path.join(tempDir, 'project');
     fs.mkdirSync(path.join(projectDir, 'rasen'), { recursive: true });

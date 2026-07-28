@@ -84,3 +84,65 @@ The single delta also satisfies the spec-driven schema's requirement that every 
 - **[Risk] The `AuditReportRepository.read` error-wrap hides genuine bugs behind `audit_not_found`.** → Mitigation: the existing `safeDirectReportPath` pre-check still throws its own specific `AuditServiceError` for traversal attempts (preserving that message); only the `readDirectReport` IO-failure path is normalized. A genuine bug (e.g., ENOENT from a missing directory) was already being re-wrapped as 404 when it came back as `AuditServiceError` from `readDirectReport`'s post-open checks — this fix just extends the same treatment to non-AuditServiceError throws.
 - **[Risk] The `RASEN_AGENT_RUNTIME: 'claude'` env pin in the codex test could mask a future regression where exec-bridge breaks under a real Codex host.** → Mitigation: the test's intent is specifically "under a Claude host, codex routes via exec-bridge"; a Codex-host regression needs its own test with `RASEN_AGENT_RUNTIME: 'codex'`. The pin makes the test honest about which host it's testing.
 - **[Risk] The UI `waitFor` helper could introduce a new class of flake (timeout-based waits that mask real failures).** → Mitigation: use a 1000ms ceiling (well under vitest's default testTimeout); poll every ~10ms; fail loudly on timeout with the actual vs. expected textContent.
+
+## Cross-platform stabilization follow-up
+
+### D7: Canonicalize a future path through its deepest existing ancestor
+
+`FileSystemUtils.canonicalizeExistingPath()` currently realpaths the exact target
+or falls back directly to `path.resolve()`. For a target such as
+`<existing aliased parent>/future-child`, that creates two spellings inside one
+operation: existing roots are canonical but the future child keeps the lexical
+alias. The helper will walk upward only for `ENOENT`/`ENOTDIR`, realpath the
+deepest existing ancestor, and append the missing suffix. Other realpath errors
+retain the current lexical fallback.
+
+This is the shared product seam. It expands Windows 8.3 aliases and macOS
+`/var -> /private/var` before a future bootstrap destination is reported, without
+hard-coding either platform spelling.
+
+### D8: Test path identities start from a canonical fixture root
+
+Tests that compare or look up filesystem identities must derive all descendants
+from `fs.realpathSync.native(fs.mkdtempSync(...))`. This follows
+`test/AGENTS.md`: the product may canonicalize an existing path at any identity
+boundary, so an expected value built from raw `os.tmpdir()` is not a stable
+identity. User-visible lexical-path tests remain unchanged.
+
+### D9: Model ownership mismatch without an unsupported Windows pathname swap
+
+Windows may deny unlink/recreate while the original descriptor is open. The
+owner-lock token test will mutate through its already-owned descriptor, which
+directly exercises the release-time token mismatch guard. Knowledge-bundle
+tests will use the injected ownership predicate on Windows and retain the real
+unlink/recreate attack on platforms that support it. Production cleanup and
+publication code is unchanged by this test-only portability adjustment.
+
+### D10: Isolate runtime fingerprints and wait for observable process state
+
+Codex hosts export `CODEX_THREAD_ID`, and runtime detection gives that signal
+precedence over `CLAUDECODE`. Tests that model a Claude host must clear every
+runtime fingerprint before setting the one they intend to exercise. Session
+supervisor and HTTP tests must poll records or output tails until the expected
+event arrives instead of sleeping for a fixed number of milliseconds. The
+polls retain a hard deadline, so a real missing event still fails promptly.
+
+Windows process startup also crosses a `cmd.exe` shim. The streaming watchdog
+fixture therefore receives a test-only startup allowance large enough for its
+first byte under parallel load. The production timeout defaults are unchanged.
+
+### D11: Split the Windows suite by Vitest shard
+
+The complete root suite takes about 17 minutes 48 seconds on a Windows host,
+before package installation and build overhead. The cost is distributed across
+many real CLI, Git, filesystem, and process-tree integration tests rather than
+one hung test. Raising the job timeout alone would preserve that wall-clock
+latency.
+
+CI will run three Vitest shards on separate Windows runners, each with two
+workers. A measured `1/2` shard still took 17 minutes 59 seconds because
+Vitest's hash split placed more expensive CLI files on that side, leaving too
+little margin. Three shards reduce the impact of that uneven weighting. The
+focused Windows UI/path check runs only on shard 1 to avoid duplication. A
+20-minute per-shard timeout remains as infrastructure headroom, while expected
+wall time is governed by the slowest third rather than the full suite.

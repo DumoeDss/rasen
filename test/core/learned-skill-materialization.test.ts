@@ -40,7 +40,9 @@ describe('learned-skill materialization', () => {
   let skillsRoot: string;
 
   async function makeProject(): Promise<{ root: string; projectId: string }> {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-lsm-proj-'));
+    const root = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-lsm-proj-'))
+    );
     fs.mkdirSync(path.join(root, 'rasen'), { recursive: true });
     fs.writeFileSync(path.join(root, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
     const home = await resolveProjectHome(root, { globalDataDir });
@@ -71,7 +73,9 @@ describe('learned-skill materialization', () => {
   });
 
   beforeEach(async () => {
-    globalDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-lsm-gdd-'));
+    globalDataDir = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-lsm-gdd-'))
+    );
     const project = await makeProject();
     projectRoot = project.root;
     projectId = project.projectId;
@@ -264,7 +268,9 @@ describe('learned-skill materialization', () => {
   });
 
   it('resolves nothing for an unregistered project without a machine home', async () => {
-    const unregistered = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-lsm-unreg-'));
+    const unregistered = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-lsm-unreg-'))
+    );
     fs.mkdirSync(path.join(unregistered, 'rasen'), { recursive: true });
     fs.writeFileSync(path.join(unregistered, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
     try {
@@ -318,7 +324,9 @@ describe('learned-skill materialization', () => {
     }
 
     beforeEach(() => {
-      hermesSkills = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-lsm-hermes-'));
+      hermesSkills = fs.realpathSync.native(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-lsm-hermes-'))
+      );
     });
 
     afterEach(() => {
@@ -391,7 +399,9 @@ describe('learned-skill materialization', () => {
 
   describe('retired retention skill-dir cleanup', () => {
     it('removes an exact retired dir while preserving the current compatibility wrapper', async () => {
-      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-lsm-retro-'));
+      const root = fs.realpathSync.native(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-lsm-retro-'))
+      );
       try {
         fs.mkdirSync(path.join(root, 'rasen-retro'), { recursive: true });
         fs.writeFileSync(path.join(root, 'rasen-retro', 'SKILL.md'), 'wrapper\n');

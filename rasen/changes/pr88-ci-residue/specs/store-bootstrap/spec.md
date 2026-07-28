@@ -13,6 +13,13 @@ Bootstrap SHALL choose where to place an obtained repository in this order: an e
 - **WHEN** no explicit path is supplied but a parent directory is
 - **THEN** the repository is placed in that parent under a safe name derived from its source
 
+#### Scenario: A future target keeps the identity of its existing parent
+
+- **WHEN** the selected target does not exist yet
+- **AND** its existing parent is reached through an operating-system path alias
+- **THEN** the reported target uses the parent's canonical filesystem identity
+- **AND** later checks of the created target resolve to that same identity
+
 #### Scenario: A non-empty directory is refused
 
 - **WHEN** the chosen target directory already has contents that predate this obtain call

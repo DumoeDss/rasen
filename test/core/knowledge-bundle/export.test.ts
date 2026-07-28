@@ -522,8 +522,13 @@ describe('project knowledge bundle export', () => {
               return stagingDirectory;
             },
             pathOwnsOpenFile: () => {
-              fs.unlinkSync(staging);
-              fs.writeFileSync(staging, foreignBytes, { flag: 'wx' });
+              // Windows keeps the owned descriptor open and can correctly
+              // reject unlink/recreate with EPERM. The injected predicate is
+              // the portable seam; retain the real pathname swap elsewhere.
+              if (process.platform !== 'win32') {
+                fs.unlinkSync(staging);
+                fs.writeFileSync(staging, foreignBytes, { flag: 'wx' });
+              }
               return false;
             },
             removeOwnedFile: (target) => {
@@ -542,7 +547,11 @@ describe('project knowledge bundle export', () => {
 
     expect(removalAttempts).toEqual([]);
     expect(fs.existsSync(destination)).toBe(false);
-    expect(fs.readFileSync(staging)).toEqual(foreignBytes);
+    if (process.platform === 'win32') {
+      expect(readKnowledgeBundle(staging).projectId).toBe(PROJECT_ID);
+    } else {
+      expect(fs.readFileSync(staging)).toEqual(foreignBytes);
+    }
   });
 
   it('preserves a foreign staging replacement detected before cleanup', async () => {
@@ -569,8 +578,10 @@ describe('project knowledge bundle export', () => {
           pathOwnsOpenFile: () => {
             ownershipChecks += 1;
             if (ownershipChecks === 3) {
-              fs.unlinkSync(staging);
-              fs.writeFileSync(staging, foreignBytes, { flag: 'wx' });
+              if (process.platform !== 'win32') {
+                fs.unlinkSync(staging);
+                fs.writeFileSync(staging, foreignBytes, { flag: 'wx' });
+              }
               return false;
             }
             return true;
@@ -587,7 +598,11 @@ describe('project knowledge bundle export', () => {
     expect(ownershipChecks).toBe(3);
     expect(removalAttempts).toEqual([]);
     expect(readKnowledgeBundle(destination).projectId).toBe(PROJECT_ID);
-    expect(fs.readFileSync(staging)).toEqual(foreignBytes);
+    if (process.platform === 'win32') {
+      expect(readKnowledgeBundle(staging).projectId).toBe(PROJECT_ID);
+    } else {
+      expect(fs.readFileSync(staging)).toEqual(foreignBytes);
+    }
     expect(fs.existsSync(staging)).toBe(true);
   });
 

@@ -43,7 +43,7 @@ jobs:
   test_matrix:
     name: Test (${{ matrix.label }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: ${{ matrix.timeout_minutes }}
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
@@ -54,21 +54,43 @@ jobs:
             label: linux-bash
             node: '20.19.0'
             vitest_workers: 4
+            timeout_minutes: 15
+            vitest_shard: ''
           - os: macos-latest
             shell: bash
             label: macos-bash
             node: '20.19.0'
             vitest_workers: 4
+            timeout_minutes: 15
+            vitest_shard: ''
           - os: windows-latest
             shell: pwsh
-            label: windows-pwsh
+            label: windows-pwsh-shard-1
             node: '20.19.0'
             vitest_workers: 2
+            timeout_minutes: 20
+            vitest_shard: '1/3'
+          - os: windows-latest
+            shell: pwsh
+            label: windows-pwsh-shard-2
+            node: '20.19.0'
+            vitest_workers: 2
+            timeout_minutes: 20
+            vitest_shard: '2/3'
+          - os: windows-latest
+            shell: pwsh
+            label: windows-pwsh-shard-3
+            node: '20.19.0'
+            vitest_workers: 2
+            timeout_minutes: 20
+            vitest_shard: '3/3'
           - os: ubuntu-latest
             shell: bash
             label: linux-bash-node24
             node: '24.x'
             vitest_workers: 4
+            timeout_minutes: 15
+            vitest_shard: ''
 
     defaults:
       run:
@@ -100,12 +122,19 @@ jobs:
         run: pnpm run build
 
       - name: Run tests
+        if: matrix.vitest_shard == ''
         env:
           VITEST_MAX_WORKERS: ${{ matrix.vitest_workers }}
         run: pnpm test
 
+      - name: Run tests (shard ${{ matrix.vitest_shard }})
+        if: matrix.vitest_shard != ''
+        env:
+          VITEST_MAX_WORKERS: ${{ matrix.vitest_workers }}
+        run: pnpm run test -- --shard=${{ matrix.vitest_shard }}
+
       - name: Run focused Windows server-local path and UI path tests
-        if: matrix.label == 'windows-pwsh'
+        if: matrix.label == 'windows-pwsh-shard-1'
         run: |
           pnpm --dir packages/ui install --frozen-lockfile
           pnpm exec vitest run test/core/management-api/local-path-resolver.test.ts test/core/management-api/local-path-chooser.test.ts test/core/management-api/create-space.test.ts
