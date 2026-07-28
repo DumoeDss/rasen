@@ -190,8 +190,9 @@ Verdict: the component is correct (`handleChangeCreated` â†’ `setRefreshNonce` â
 - [x] 10.1 Rebuild `dist/`, then run the focused macOS/Windows residue set.
 - [x] 10.2 Run `pnpm run typecheck` (or `pnpm exec tsc --noEmit`) and the
   exhaustive root test suite.
-- [ ] 10.3 Trigger CI from the fix branch and confirm linux-bash,
-  linux-bash-node24, macos-bash, and windows-pwsh are green.
+- [x] 10.3 Trigger CI from the fix branch and confirm linux-bash,
+  linux-bash-node24, macos-bash, and all three windows-pwsh partitions are
+  green. Run 30350757805 completed successfully.
 
 ## 11. Full-suite runtime and timing isolation
 
@@ -219,4 +220,6 @@ Verdict: the component is correct (`handleChangeCreated` â†’ `setRefreshNonce` â
 - [x] 12.3 Confirm `vitest list --filesOnly` produces exhaustive,
   non-overlapping partitions (105/104/104 files; 313 unique; 0 duplicates),
   then run all three below the CI timeout (7m31s, 7m23s, 7m05s).
-- [ ] 12.4 Push the fix branch and confirm both Windows shard jobs are green.
+- [x] 12.4 Push the fix branch and confirm all three Windows partition jobs are
+  green. Their test steps completed in 5m13s, 5m01s, and 4m59s; total job
+  durations were 6m30s, 6m06s, and 6m12s.
