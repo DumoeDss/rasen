@@ -1,9 +1,18 @@
 import type {
+  JsonValue,
   NodeId,
   WaitId,
 } from '../contracts.js';
 import type { CanonicalRunRecord, CommittedAction } from './record.js';
-import type { RuntimePlan, RuntimePlanAtomicNode } from './runtime-plan.js';
+import type {
+  RuntimePlan,
+  RuntimePlanAtomicNode,
+  RuntimePlanBoundedLoopNode,
+} from './runtime-plan.js';
+import {
+  projectReviewCycleProgress,
+  type ReviewCycleProgress,
+} from './review-cycle-runtime.js';
 import {
   createCanonicalWait,
   type CanonicalWait,
@@ -24,6 +33,19 @@ export type ReconcilerNextAction =
        * `none` admits never touch the registry.
        */
       access: 'none' | 'read' | 'write';
+      /**
+       * Optional structured input for the action. For ReviewCycle
+       * bounded-loop admits this carries `{ round, phase, openFindingIds }`
+       * so the facade can build an action with the correct capability
+       * binding and agent brief context.
+       */
+      input?: Readonly<{ reviewCycle?: Readonly<{ loopPath: string; round: number; phase: string; openFindingIds: readonly string[] }> }>;
+      /**
+       * The profile path for this admit's capability binding. Set for
+       * bounded-loop phase admits so the facade can build the correct
+       * action without a separate plan lookup.
+       */
+      readonly profilePath?: string;
     }>
   | Readonly<{
       kind: 'await-gate';
@@ -118,6 +140,9 @@ export function reconcile(
   const atomicNodes = plan.nodes.filter(
     (node): node is RuntimePlanAtomicNode => node.kind === 'atomic'
   );
+  const boundedLoopNodes = plan.nodes.filter(
+    (node): node is RuntimePlanBoundedLoopNode => node.kind === 'bounded-loop'
+  );
   const succeeded = new Set<NodeId>();
   for (const node of atomicNodes) {
     if (nodeSucceeded(record, node)) {
@@ -125,11 +150,53 @@ export function reconcile(
     }
   }
 
-  // Pass 2: classify each node against the precomputed succeeded set. Admit
-  // candidates are collected and then passed through workspace-compatible
+  // Pass 1b: bounded-loop outcomes → succeeded set update. A clean
+  // bounded-loop contributes its nodeId to the succeeded set so that
+  // downstream atomic nodes (ship, archive) whose requires includes the
+  // bounded-loop can proceed. An exhausted bounded-loop emits an escalate
+  // candidate. This pass runs BEFORE the atomic classification pass so
+  // downstream nodes see the updated succeeded set.
+  const actions: ReconcilerNextAction[] = [];
+  const boundedLoopAdmitCandidates: BoundedLoopAdmitCandidate[] = [];
+  for (const loop of boundedLoopNodes) {
+    if (!loop.requires.every((required) => succeeded.has(required))) {
+      continue;
+    }
+    const progress = projectReviewCycleProgress(plan, loop, record);
+    switch (progress.kind) {
+      case 'clean':
+        succeeded.add(loop.nodeId);
+        break;
+      case 'exhausted':
+        actions.push({
+          kind: 'escalate',
+          code: loop.outcomes.exhausted,
+        });
+        break;
+      case 'ready':
+        boundedLoopAdmitCandidates.push({
+          nodeId: progress.next.nodeId,
+          occurrence: occurrenceForBoundedLoop(record, progress.next.nodeId),
+          admissionKind: progress.next.admissionKind,
+          access: progress.next.workspace.access,
+          loop,
+          descriptor: progress.next,
+          openFindingIds: progress.state.openFindingIds,
+          loopPath: loop.hierarchicalPath,
+        });
+        break;
+      case 'waiting':
+      case 'failed':
+        // An action is already active (waiting) or committed-failed (failed);
+        // no fresh candidate — surface via projection.
+        break;
+    }
+  }
+
+  // Pass 2: classify each atomic node against the precomputed succeeded set.
+  // Admit candidates are collected and then passed through workspace-compatible
   // selection (Step settle); non-admit candidates (Gate, suspend, escalate)
   // are emitted directly in the plan's stable topological order.
-  const actions: ReconcilerNextAction[] = [];
   const admitCandidates: AdmissionCandidate[] = [];
   for (const node of atomicNodes) {
     const disposition = dispositionFor(plan, record, node, succeeded);
@@ -194,9 +261,55 @@ export function reconcile(
     actions.push({
       kind: 'await-workspace',
       workspaceInstanceId: record.workspaceInstanceId,
-      // Blocked candidates are provably never access:'none' (the selection
+      // Blocked candidates are provably never access:'none' ( the selection
       // always admits access-none work), so the access narrows to read|write.
       intents: selection.blocked.map((candidate) => ({
+        nodeId: candidate.nodeId,
+        occurrence: candidate.occurrence,
+        access: candidate.access as 'read' | 'write',
+      })),
+    });
+  }
+
+  // Bounded-loop admit candidates: emit admits for ready ReviewCycle phases.
+  // These participate in the same workspace-compatible selection as atomic
+  // candidates. Each admit carries the reviewCycle input payload so the facade
+  // can build an action with the correct capability binding.
+  const boundedLoopSelection = selectCompatibleAdmissions(
+    boundedLoopAdmitCandidates.map((c) => ({
+      nodeId: c.nodeId,
+      occurrence: c.occurrence,
+      admissionKind: c.admissionKind,
+      access: c.access,
+    })),
+    lock
+  );
+  for (const candidate of boundedLoopSelection.admitted) {
+    const original = boundedLoopAdmitCandidates.find(
+      (c) => c.nodeId === candidate.nodeId
+    )!;
+    actions.push({
+      kind: 'admit',
+      nodeId: candidate.nodeId,
+      occurrence: candidate.occurrence,
+      admissionKind: candidate.admissionKind,
+      access: candidate.access,
+      profilePath: original.descriptor.profilePath,
+      input: {
+        reviewCycle: {
+          loopPath: original.loopPath,
+          round: original.descriptor.round,
+          phase: original.descriptor.phase,
+          openFindingIds: [...original.openFindingIds],
+        },
+      },
+    });
+  }
+  if (boundedLoopSelection.blocked.length > 0) {
+    actions.push({
+      kind: 'await-workspace',
+      workspaceInstanceId: record.workspaceInstanceId,
+      intents: boundedLoopSelection.blocked.map((candidate) => ({
         nodeId: candidate.nodeId,
         occurrence: candidate.occurrence,
         access: candidate.access as 'read' | 'write',
@@ -220,6 +333,22 @@ interface AdmissionCandidate {
   readonly occurrence: number;
   readonly admissionKind: ReconcilerAdmissionKind;
   readonly access: 'none' | 'read' | 'write';
+}
+
+interface BoundedLoopAdmitCandidate {
+  readonly nodeId: NodeId;
+  readonly occurrence: number;
+  readonly admissionKind: ReconcilerAdmissionKind;
+  readonly access: 'none' | 'read' | 'write';
+  readonly loop: RuntimePlanBoundedLoopNode;
+  readonly descriptor: Readonly<{
+    readonly round: number;
+    readonly phase: string;
+    readonly nodeId: NodeId;
+    readonly profilePath: string;
+  }>;
+  readonly openFindingIds: readonly string[];
+  readonly loopPath: string;
 }
 
 interface WorkspaceLock {
@@ -363,6 +492,24 @@ function occurrenceFor(
 ): number {
   const invocations = new Set(
     actionsForNode(record, node.nodeId).map(
+      (committed) => committed.action.invocationId
+    )
+  );
+  return invocations.size;
+}
+
+/**
+ * Count prior invocations for a bounded-loop phase nodeId. Each ReviewCycle
+ * phase invocation gets its own nodeId (derived from the hierarchical path),
+ * so the occurrence is typically 0 for the first admit of that exact phase
+ * in that exact round.
+ */
+function occurrenceForBoundedLoop(
+  record: CanonicalRunRecord,
+  nodeId: NodeId
+): number {
+  const invocations = new Set(
+    actionsForNode(record, nodeId).map(
       (committed) => committed.action.invocationId
     )
   );
@@ -519,6 +666,13 @@ function finishCandidate(
   if (record.terminal !== undefined) {
     return null;
   }
+  // Collect all non-finish node IDs (atomic + bounded-loop) that must be in
+  // the succeeded set before the Run can finish. A bounded-loop with remaining
+  // work (ready/waiting/failed) blocks finish — only clean contributes to the
+  // succeeded set; exhausted emits escalate before finish is evaluated.
+  const requiredNodes = plan.nodes.filter(
+    (node) => node.kind === 'atomic' || node.kind === 'bounded-loop'
+  );
   if (plan.finishNode !== undefined) {
     if (plan.finishNode.requires.every((required) => succeeded.has(required))) {
       return { kind: 'finish', outcome: plan.finishNode.outcome };
@@ -526,10 +680,7 @@ function finishCandidate(
     return null;
   }
   if (plan.implicitFinishOutcome !== undefined) {
-    const atomicNodes = plan.nodes.filter(
-      (node): node is RuntimePlanAtomicNode => node.kind === 'atomic'
-    );
-    if (atomicNodes.every((node) => succeeded.has(node.nodeId))) {
+    if (requiredNodes.every((node) => succeeded.has(node.nodeId))) {
       return { kind: 'finish', outcome: plan.implicitFinishOutcome };
     }
   }

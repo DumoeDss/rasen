@@ -70,7 +70,7 @@ function plan(maxIterations = 3): RuntimePlan {
         },
         outcomes: {
           clean: 'clean',
-          exhausted: 'exhausted',
+          exhausted: 'review_cycle_exhausted',
         },
       },
     ],

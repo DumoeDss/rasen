@@ -24,6 +24,7 @@ import { verifyCompletion } from './completion.js';
 import { createCanonicalWait, type CanonicalWait } from './waits.js';
 import { deriveInvocationId } from './identity.js';
 import type { WorkspaceReservationRegistry } from './reservations.js';
+import { validateReviewCycleCompletion } from './review-cycle-runtime.js';
 
 export interface RuntimeDeps {
   readonly store: RunStore;
@@ -37,6 +38,8 @@ export interface RuntimeDeps {
     readonly nodeId: string;
     readonly occurrence: number;
     readonly admissionKind: 'agent' | 'command' | 'host';
+    readonly profilePath?: string;
+    readonly input?: import('../contracts.js').JsonValue;
   }) => RunAction;
   /**
    * Optional mutation guard invoked before every mutating operation
@@ -190,6 +193,12 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
             nodeId: candidate.nodeId,
             occurrence: candidate.occurrence,
             admissionKind: candidate.admissionKind,
+            ...(candidate.profilePath !== undefined
+              ? { profilePath: candidate.profilePath }
+              : {}),
+            ...(candidate.input !== undefined
+              ? { input: candidate.input as import('../contracts.js').JsonValue }
+              : {}),
           });
           // Cross-Run reservation check. The reconciler has already decided
           // this candidate is admissible within THIS Run; the registry is the
@@ -435,6 +444,11 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
           'facade complete failed: only domain-action-result completions are supported by this facade path.'
         );
       }
+      // Pre-commit ReviewCycle validation (D3): validate the completion against
+      // the exact mechanically expected phase BEFORE committing. Malformed
+      // results, same-actor fixer+verifier, and open Blocker/Major findings
+      // fail closed without Record mutation.
+      validateReviewCycleCompletion(deps.plan, record, request);
       const commitStimulus: RunStimulus = {
         kind: 'commit-action-result',
         actionId: request.actionId,
@@ -442,6 +456,8 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         receiptDigest: request.receiptDigest as never,
         result: request.result,
         evidence: request.evidence,
+        actor: request.actor,
+        actorAttestation: request.actorAttestation,
       };
       // Apply the commit to an intermediate Record purely to discover the
       // candidate batch the completion unblocks; the final write folds the
