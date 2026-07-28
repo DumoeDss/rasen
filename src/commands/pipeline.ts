@@ -72,6 +72,7 @@ import {
   prepareRuntimeContext,
   decodeCompletion,
   decodeControl,
+  ChangeRunRuntimeError,
   type ChangePipelineRuntime,
   type CompleteRunAction,
   type ChangeRunControlRequest,
@@ -95,6 +96,8 @@ import {
   InputReaderError,
 } from '../core/change-run/internal/input-reader.js';
 import { getGlobalDataDir } from '../core/global-config.js';
+import { WORKSPACE_DIR_NAME } from '../core/config.js';
+import { resolveProjectHome } from '../core/project-home.js';
 import { statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import {
@@ -770,6 +773,61 @@ export class PipelineCommand {
   }
 
   /**
+   * Reject mutations (`complete`/`control`) on a Run whose source Change has
+   * been archived (task 15.7 Gap D). An archived Change's directory has been
+   * moved from `rasen/changes/<changeId>/` to an archive alias under the
+   * project home's archive axis. The Run Record persists and remains exactly
+   * inspectable (reads are never blocked), but mutations are rejected because
+   * the Change instance is no longer the active incarnation — a same-name
+   * recreate produces a DISTINCT ChangeInstance, and the OLD Run belongs to the
+   * archived generation.
+   *
+   * This mirrors the filesystem-based `resolveSourceState` logic used by the
+   * management list handler (`management-api/runs.ts`): `active` when the
+   * change directory still exists; `archived` when a `*-<changeId>` directory
+   * exists under `<home>/archive/`; `missing` otherwise. Only `archived` is
+   * rejected here — `missing` (manual move) does not block mutations.
+   */
+  private async assertChangeNotArchived(
+    changeId: string,
+    projectRoot: string
+  ): Promise<void> {
+    const changeDir = path.join(
+      projectRoot,
+      WORKSPACE_DIR_NAME,
+      'changes',
+      changeId
+    );
+    if (fs.existsSync(changeDir)) return; // active — mutation allowed
+
+    // Check if the change has been archived.
+    try {
+      const home = await resolveProjectHome(projectRoot, { ensure: false });
+      if (home) {
+        const archiveDir = home.archiveDir;
+        if (fs.existsSync(archiveDir)) {
+          const entries = fs.readdirSync(archiveDir, { withFileTypes: true });
+          for (const entry of entries) {
+            // Archived directories are named `YYYY-MM-DD-<changeId>`.
+            if (entry.isDirectory() && entry.name.endsWith(`-${changeId}`)) {
+              throw new ChangeRunRuntimeError(
+                'change_instance_inactive',
+                `Change "${changeId}" is archived (${entry.name}). ` +
+                  'Mutations (complete/control) on its Runs are rejected. ' +
+                  'The Run remains inspectable via `pipeline status`.'
+              );
+            }
+          }
+        }
+      }
+    } catch (err) {
+      // Re-throw the guard error; swallow resolution failures (fail-open for
+      // unrecognized errors — only a confirmed archive blocks the mutation).
+      if (err instanceof ChangeRunRuntimeError) throw err;
+    }
+  }
+
+  /**
    * Read a bounded JSON payload from a file path or `-` (stdin). Applies the
    * same bounded no-follow reader as the kernel (task 12.6): symlinks,
    * non-regular files, oversized bodies, and malformed JSON are rejected with
@@ -929,6 +987,7 @@ export class PipelineCommand {
     options: PipelineCommandOptions = {}
   ): Promise<void> {
     const resolved = await this.resolveRuntimeForRun(changeId, runId, options);
+    await this.assertChangeNotArchived(changeId, resolved.projectRoot);
     const body = this.readBoundedPayload(from) as {
       completion?: unknown;
       uploads?: unknown;
@@ -985,6 +1044,7 @@ export class PipelineCommand {
     options: PipelineCommandOptions = {}
   ): Promise<void> {
     const resolved = await this.resolveRuntimeForRun(changeId, runId, options);
+    await this.assertChangeNotArchived(changeId, resolved.projectRoot);
     const body = this.readBoundedPayload(from) as {
       control?: unknown;
       uploads?: unknown;

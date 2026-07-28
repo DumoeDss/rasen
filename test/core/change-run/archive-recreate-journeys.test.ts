@@ -46,9 +46,6 @@
  *    start` alone. The distinct-instance semantics ARE correct at the
  *    association-registry level (proven below) and await the engine-ownership
  *    integration to enforce them end-to-end.
- *  - The facade does not reject mutation (complete/control) of a Run whose
- *    ChangeInstance is archived. The design §10 bilateral guard is the intended
- *    enforcement point; it is not yet integrated into `facade-runtime.ts`.
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
@@ -71,6 +68,9 @@ import {
   type PhysicalIdentity,
 } from '../../../src/core/change-run/internal/identity.js';
 import { createFilesystemRunStore } from '../../../src/core/change-run/internal/run-store-fs.js';
+import { createInMemoryRunStore } from '../../../src/core/change-run/internal/run-store.js';
+import { createChangePipelineRuntime } from '../../../src/core/change-run/internal/facade-runtime.js';
+import { ChangeRunRuntimeError } from '../../../src/core/change-run/facade.js';
 import { projectRunView } from '../../../src/core/change-run/internal/projector.js';
 import {
   createCanonicalRunRecord,
@@ -757,6 +757,131 @@ describe('archive → recreate journeys — linked-worktree isolation (15.7d)', 
     if (!controlB.ok) {
       expect(controlB.status).toBe(403);
       expect(controlB.code).toBe('workspace_scope_mismatch');
+    }
+  });
+});
+
+// ===========================================================================
+// (e) Archived-Run mutation rejection: complete/control rejected, reads OK
+// ===========================================================================
+
+describe('archive → recreate journeys — archived-Run mutation rejection (15.7e)', () => {
+  /**
+   * After archive → same-name recreate, an OLD Run's mutation (complete/control)
+   * MUST FAIL — the OLD Run belongs to the archived ChangeInstance generation,
+   * not the new active one. The facade enforces this via an optional
+   * `assertMutationAllowed` guard callback; the CLI wires it with a
+   * filesystem-based archive check (`assertChangeNotArchived`). This test
+   * exercises the facade's guard directly.
+   *
+   * Invariants proven:
+   *  - `complete` on an archived Run → ChangeRunRuntimeError(change_instance_inactive)
+   *  - `control` on an archived Run → ChangeRunRuntimeError(change_instance_inactive)
+   *  - `inspect` on an archived Run → still succeeds (reads are NEVER blocked)
+   *  - `complete`/`control` on an ACTIVE Run → guard passes (no false rejection)
+   */
+  const runId = branded<RunId>(`run:${'e'.repeat(64)}`);
+  const changeId = 'archived-mutation-change';
+
+  function buildArchivedGuardFacade(archivedChangeIds: ReadonlySet<string>) {
+    const plan = linearPlan(runId);
+    const store = createInMemoryRunStore();
+    const initial = createCanonicalRunRecord({
+      runId,
+      runOrdinal: 1,
+      change: {
+        planningSpaceId: branded<PlanningSpaceId>(`planning-space:${'a'.repeat(64)}`),
+        projectId: 'test-project',
+        changeId,
+        instanceId: branded<ChangeInstanceId>(`change-instance:${'b'.repeat(64)}`),
+      },
+      workspaceInstanceId: branded<WorkspaceInstanceId>(`workspace-instance:${'c'.repeat(64)}`),
+      pipeline: plan.pipeline,
+      launchRequestDigest: FIXTURE_DIGESTS.launchRequestDigest,
+      planDigest: plan.planDigest,
+      sourceRevisionDigest: plan.sourceRevisionDigest,
+      capabilityDigest: plan.capabilityDigest,
+      policyDigest: plan.policyDigest,
+      executionProfileDigest: plan.profileDigest,
+      initialWorkspaceRevision: FIXTURE_WORKSPACE_REVISION,
+      inputs: {},
+      limits: FIXTURE_LIMITS,
+    });
+    store.create(runId, initial);
+
+    return createChangePipelineRuntime({
+      store,
+      plan,
+      initialRecord: initial,
+      buildAction: () => {
+        throw new Error('buildAction should not be called in this test');
+      },
+      assertMutationAllowed: (record) => {
+        if (archivedChangeIds.has(record.change.changeId)) {
+          throw new ChangeRunRuntimeError(
+            'change_instance_inactive',
+            `Change "${record.change.changeId}" is archived; mutation rejected.`
+          );
+        }
+      },
+    });
+  }
+
+  it('complete on an archived Run is rejected with change_instance_inactive', async () => {
+    const runtime = buildArchivedGuardFacade(new Set([changeId]));
+    try {
+      // The guard fires before action lookup, so a minimal request suffices.
+      await runtime.complete(
+        { actionId: 'nonexistent' } as never,
+        { deliveryMode: 'grant' }
+      );
+      expect.unreachable('complete should have been rejected');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ChangeRunRuntimeError);
+      expect((err as ChangeRunRuntimeError).code).toBe('change_instance_inactive');
+      expect((err as ChangeRunRuntimeError).name).toBe('ChangeRunRuntimeError');
+    }
+  });
+
+  it('control on an archived Run is rejected with change_instance_inactive', async () => {
+    const runtime = buildArchivedGuardFacade(new Set([changeId]));
+    try {
+      // The guard fires before the reducer, so a minimal request suffices.
+      await runtime.control(
+        { kind: 'cancel' } as never,
+        { deliveryMode: 'grant' }
+      );
+      expect.unreachable('control should have been rejected');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ChangeRunRuntimeError);
+      expect((err as ChangeRunRuntimeError).code).toBe('change_instance_inactive');
+    }
+  });
+
+  it('inspect on an archived Run still succeeds (reads are never blocked)', async () => {
+    const runtime = buildArchivedGuardFacade(new Set([changeId]));
+    const view = await runtime.inspect({
+      change: { projectRoot: '/test', changeId },
+      runId,
+    });
+    expect(view.runId).toBe(runId);
+    expect(view.change.changeId).toBe(changeId);
+  });
+
+  it('complete on an ACTIVE Run passes the guard (no false rejection)', async () => {
+    // Empty archived set — the change is active, guard must NOT throw.
+    const runtime = buildArchivedGuardFacade(new Set());
+    try {
+      // complete will fail with a DIFFERENT error (action not admitted),
+      // proving the guard passed and the method continued to normal logic.
+      await runtime.complete(
+        { actionId: 'nonexistent' } as never,
+        { deliveryMode: 'grant' }
+      );
+      expect.unreachable('complete should have failed on missing action');
+    } catch (err) {
+      // The error must NOT be change_instance_inactive — the guard passed.
+      expect(err).not.toBeInstanceOf(ChangeRunRuntimeError);
     }
   });
 });

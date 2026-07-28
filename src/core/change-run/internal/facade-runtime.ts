@@ -34,6 +34,19 @@ export interface RuntimeDeps {
     readonly occurrence: number;
     readonly admissionKind: 'agent' | 'command' | 'host';
   }) => RunAction;
+  /**
+   * Optional mutation guard invoked before every mutating operation
+   * (`complete`, `control`). The guard receives the current head Record and
+   * may throw a {@link ChangeRunRuntimeError} (e.g. code
+   * `change_instance_inactive`) to reject the mutation. `start`, `resume`, and
+   * `inspect` are NOT guarded — a Run remains exactly inspectable and resumable
+   * even after its source Change is archived (design §10/§15).
+   *
+   * When omitted (e.g. the frozen `runtime-context.ts` wiring path), the facade
+   * performs no archive check itself; callers that need the guard must enforce
+   * it before the facade call (the CLI `complete`/`control` commands do this).
+   */
+  readonly assertMutationAllowed?: (record: CanonicalRunRecord) => void;
 }
 
 function asPromise<T>(value: T): Promise<T> {
@@ -262,6 +275,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
     },
     complete(request: CompleteRunAction, _context: RuntimeMutationContext) {
       const record = deps.store.load(deps.plan.runId);
+      deps.assertMutationAllowed?.(record);
       const committed = record.actions[request.actionId];
       if (committed === undefined) {
         throw new Error(`facade complete failed: action ${request.actionId} is not admitted.`);
@@ -296,6 +310,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
     },
     control(request: ChangeRunControlRequest, _context: RuntimeMutationContext) {
       const record = deps.store.load(deps.plan.runId);
+      deps.assertMutationAllowed?.(record);
       const result = reduceCanonicalRunRecord(record, request as unknown as RunStimulus);
       if (!result.ok) {
         throw new Error(`facade control failed: ${result.failure.message}`);
