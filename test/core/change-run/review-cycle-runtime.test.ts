@@ -424,3 +424,234 @@ describe('ReviewCycle canonical Runtime', () => {
     });
   });
 });
+
+describe('ReviewCycle failure-first guards', () => {
+  it('rejects a malformed review result before Record mutation', async () => {
+    const harness = createHarness();
+    const reviewer = actor('a', 'reviewer');
+    const started = await harness.runtime.start(
+      {
+        change: { projectRoot: '/root', changeId: 'fixture-change' },
+        pipeline: harness.plan.pipeline,
+        launchRequestId: branded(`launch:${'3'.repeat(64)}`),
+      },
+      { deliveryMode: 'grant' }
+    );
+    const review = expectOneAction(started);
+    const recordBefore = harness.store.load(harness.plan.runId);
+
+    await expect(
+      complete(harness, review, reviewer, {
+        contract: 'wrong-contract',
+        outcome: 'clean',
+        findings: [],
+      } as never)
+    ).rejects.toMatchObject({ code: 'malformed_review_cycle_result' });
+
+    // Record was not mutated.
+    expect(harness.store.load(harness.plan.runId)).toBe(recordBefore);
+  });
+
+  it('rejects same-actor fixer + verifier re-review before Record mutation', async () => {
+    const harness = createHarness();
+    const reviewer = actor('a', 'reviewer');
+    const triager = actor('e', 'triager');
+    const fixer = actor('f', 'fixer');
+
+    let action = expectOneAction(
+      await harness.runtime.start(
+        {
+          change: { projectRoot: '/root', changeId: 'fixture-change' },
+          pipeline: harness.plan.pipeline,
+          launchRequestId: branded(`launch:${'4'.repeat(64)}`),
+        },
+        { deliveryMode: 'grant' }
+      )
+    );
+    action = expectOneAction(
+      await complete(harness, action, reviewer, {
+        contract: 'review-cycle/review-result/1',
+        outcome: 'findings',
+        findings: [
+          {
+            id: 'F-1',
+            severity: 'major',
+            claim: 'Broken.',
+            evidence: [evidence(action, 'f')],
+            status: 'open',
+          },
+        ],
+      })
+    );
+    action = expectOneAction(
+      await complete(harness, action, triager, {
+        contract: 'review-cycle/triage-result/1',
+        decisions: [
+          {
+            findingId: 'F-1',
+            disposition: 'route_fixer',
+            rationale: 'Fix required.',
+          },
+        ],
+      })
+    );
+    action = expectOneAction(
+      await complete(harness, action, fixer, {
+        contract: 'review-cycle/fix-result/1',
+        findingIds: ['F-1'],
+        beforeTree: digest('1'),
+        afterTree: digest('2'),
+        delta: evidence(action, '3'),
+        tests: [],
+      })
+    );
+    // Re-review with the SAME actor as fixer → must be rejected.
+    const recordBefore = harness.store.load(harness.plan.runId);
+    await expect(
+      complete(harness, action, fixer, {
+        contract: 'review-cycle/verification-result/1',
+        verifications: [
+          {
+            findingId: 'F-1',
+            verdict: 'resolved',
+            evidence: [evidence(action, '5')],
+          },
+        ],
+      })
+    ).rejects.toMatchObject({ code: 'review_cycle_actor_separation' });
+    expect(harness.store.load(harness.plan.runId)).toBe(recordBefore);
+  });
+
+  it('rejects a clean review while open Major findings exist (ship guard)', async () => {
+    const harness = createHarness();
+    const reviewer = actor('a', 'reviewer');
+    const triager = actor('e', 'triager');
+    const fixer = actor('f', 'fixer');
+    const verifier = actor('7', 'verifier');
+
+    // First round: find a Major, triage, fix, re-review resolved.
+    let action = expectOneAction(
+      await harness.runtime.start(
+        {
+          change: { projectRoot: '/root', changeId: 'fixture-change' },
+          pipeline: harness.plan.pipeline,
+          launchRequestId: branded(`launch:${'5'.repeat(64)}`),
+        },
+        { deliveryMode: 'grant' }
+      )
+    );
+    // Round 1 review → findings.
+    action = expectOneAction(
+      await complete(harness, action, reviewer, {
+        contract: 'review-cycle/review-result/1',
+        outcome: 'findings',
+        findings: [
+          {
+            id: 'F-1',
+            severity: 'major',
+            claim: 'Broken.',
+            evidence: [evidence(action, 'f')],
+            status: 'open',
+          },
+        ],
+      })
+    );
+    action = expectOneAction(
+      await complete(harness, action, triager, {
+        contract: 'review-cycle/triage-result/1',
+        decisions: [
+          {
+            findingId: 'F-1',
+            disposition: 'route_fixer',
+            rationale: 'Fix.',
+          },
+        ],
+      })
+    );
+    action = expectOneAction(
+      await complete(harness, action, fixer, {
+        contract: 'review-cycle/fix-result/1',
+        findingIds: ['F-1'],
+        beforeTree: digest('1'),
+        afterTree: digest('2'),
+        delta: evidence(action, '3'),
+        tests: [],
+      })
+    );
+    // Re-review: F-1 still open → round 2.
+    action = expectOneAction(
+      await complete(harness, action, verifier, {
+        contract: 'review-cycle/verification-result/1',
+        verifications: [
+          {
+            findingId: 'F-1',
+            verdict: 'still_open',
+            evidence: [evidence(action, '4')],
+          },
+        ],
+      })
+    );
+    // Round 2 review: try to claim clean while F-1 is still open.
+    await expect(
+      complete(harness, action, reviewer, {
+        contract: 'review-cycle/review-result/1',
+        outcome: 'clean',
+        findings: [],
+      })
+    ).rejects.toMatchObject({ code: 'review_cycle_ship_guard' });
+  });
+
+  it('rejects a malformed triage result (missing open finding disposition) before commit', async () => {
+    const harness = createHarness();
+    const reviewer = actor('a', 'reviewer');
+    const triager = actor('e', 'triager');
+
+    let action = expectOneAction(
+      await harness.runtime.start(
+        {
+          change: { projectRoot: '/root', changeId: 'fixture-change' },
+          pipeline: harness.plan.pipeline,
+          launchRequestId: branded(`launch:${'6'.repeat(64)}`),
+        },
+        { deliveryMode: 'grant' }
+      )
+    );
+    action = expectOneAction(
+      await complete(harness, action, reviewer, {
+        contract: 'review-cycle/review-result/1',
+        outcome: 'findings',
+        findings: [
+          {
+            id: 'F-1',
+            severity: 'major',
+            claim: 'Broken.',
+            evidence: [evidence(action, 'f')],
+            status: 'open',
+          },
+          {
+            id: 'F-2',
+            severity: 'minor',
+            claim: 'Typo.',
+            evidence: [evidence(action, '7')],
+            status: 'open',
+          },
+        ],
+      })
+    );
+    // Triage that omits F-2 disposition → must be rejected.
+    const recordBefore = harness.store.load(harness.plan.runId);
+    await expect(
+      complete(harness, action, triager, {
+        contract: 'review-cycle/triage-result/1',
+        decisions: [
+          {
+            findingId: 'F-1',
+            disposition: 'route_fixer',
+            rationale: 'Fix F-1.',
+          },
+        ],
+      })
+    ).rejects.toMatchObject({ code: 'malformed_review_cycle_result' });
+    expect(harness.store.load(harness.plan.runId)).toBe(recordBefore);
+  });
+});
