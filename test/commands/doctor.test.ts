@@ -12,7 +12,7 @@ import { runCLI, cliProjectRoot, type RunCLIResult } from '../helpers/run-cli.js
 import { createOpenSpecRoot, writeSpec } from '../helpers/rasen-fixtures.js';
 import { isolatedGitEnv } from '../helpers/store-git.js';
 import { snapshotDirectory as snapshot } from '../helpers/fs-snapshot.js';
-import { cleanupTempPath } from '../helpers/temp-cleanup.js';
+import { cleanupTempPath, cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
 describe('rasen doctor (3.6)', () => {
   let tempDir: string;
@@ -35,8 +35,8 @@ describe('rasen doctor (3.6)', () => {
     await registerStore({ id: 'team-context', localPath: storeRoot, globalDataDir });
   });
 
-  afterEach(() => {
-    cleanupTempPath(tempDir);
+  afterEach(async () => {
+    await cleanupTempPathAsync(tempDir);
   });
 
   function parseJson(result: RunCLIResult): any {
@@ -702,6 +702,109 @@ describe('rasen doctor (3.6)', () => {
       const health = parseJson(second);
       expect(health.status).toContainEqual(
         expect.objectContaining({ code: 'skill_version_mismatch' })
+      );
+    });
+  });
+
+  describe('cache/config drift advisory (project-install-manifest M6)', () => {
+    let projectRoot: string;
+
+    beforeEach(() => {
+      projectRoot = mkdir('drift-project');
+      createOpenSpecRoot(projectRoot);
+    });
+
+    it('(M6a) matching tools produces no drift advisory', async () => {
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\ntools:\n  - claude\n'
+      );
+      await registerProject(
+        {
+          projectRoot,
+          projectId: 'drift-1',
+          mode: 'in-repo',
+          tools: ['claude'],
+          installedVersion: '0.1.7',
+        },
+        { globalDataDir }
+      );
+
+      const result = await runCLI(['doctor', '--json'], { cwd: projectRoot, env });
+      const health = parseJson(result);
+      expect(health.status.some((s: any) => s.code === 'cache_config_drift')).toBe(false);
+    });
+
+    it('(M6b) mismatched tools produces advisory, neither side rewritten', async () => {
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\ntools:\n  - claude\n'
+      );
+      await registerProject(
+        {
+          projectRoot,
+          projectId: 'drift-2',
+          mode: 'in-repo',
+          tools: ['codex'],
+          installedVersion: '0.1.7',
+        },
+        { globalDataDir }
+      );
+
+      const json = await runCLI(['doctor', '--json'], { cwd: projectRoot, env });
+      const health = parseJson(json);
+      expect(health.status).toContainEqual(
+        expect.objectContaining({ code: 'cache_config_drift' })
+      );
+
+      // Neither side is rewritten — verify via human output that the advisory
+      // message mentions the disagreement and suggests re-running init/update.
+      const human = await runCLI(['doctor'], { cwd: projectRoot, env });
+      expect(human.stdout).toContain('disagrees with the registry cache');
+      expect(human.stdout).toMatch(/resync|rasen (init|update)/i);
+
+      // Config still says claude (not rewritten by doctor).
+      const configAfter = fs.readFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'utf-8'
+      );
+      expect(configAfter).toContain('claude');
+    });
+
+    it('(M6c) pinned project is still listed in the registry section', async () => {
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nupdate:\n  pin: true\n'
+      );
+      await registerProject(
+        { projectRoot, projectId: 'pin-1', mode: 'in-repo', installedVersion: '0.1.7' },
+        { globalDataDir }
+      );
+
+      const result = await runCLI(['doctor', '--json'], { cwd: projectRoot, env });
+      const health = parseJson(result);
+      // The project's machine home entry is present (not hidden by pinning).
+      expect(health.machineHome).toBeDefined();
+      expect(health.machineHome.registered).toBe(true);
+      expect(health.machineHome.entry).toBeDefined();
+      expect(health.machineHome.entry.project_id).toBe('pin-1');
+    });
+
+    it('(M6d) missing installedVersion is surfaced as "version unknown"', async () => {
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\ntools:\n  - claude\n'
+      );
+      // Register WITHOUT installedVersion — version is unknown.
+      await registerProject(
+        { projectRoot, projectId: 'unk-ver-1', mode: 'in-repo', tools: ['claude'] },
+        { globalDataDir }
+      );
+
+      const result = await runCLI(['doctor', '--json'], { cwd: projectRoot, env });
+      const health = parseJson(result);
+      expect(health.status).toContainEqual(
+        expect.objectContaining({ code: 'cache_version_unknown' })
       );
     });
   });

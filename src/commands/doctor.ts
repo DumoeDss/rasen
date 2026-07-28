@@ -141,6 +141,33 @@ async function gatherHealth(
       } catch {
         // Swallowed; the hint is simply omitted.
       }
+
+      // Cache-vs-config drift advisory (project-install-manifest spec):
+      // compare the project's authoritative `tools:` manifest in config.yaml
+      // against the registry entry's cached `tools` mirror. When they
+      // disagree, surface an advisory — never rewrite either side from
+      // doctor. Re-running `rasen init` or `rasen update` in the drifted
+      // project resyncs the cache.
+      try {
+        const projectConfig = readProjectConfig(root.path);
+        if (projectConfig?.tools && machineHomeEntry.entry.tools) {
+          const configTools = [...projectConfig.tools].sort();
+          const cacheTools = [...machineHomeEntry.entry.tools].sort();
+          const drift = JSON.stringify(configTools) !== JSON.stringify(cacheTools);
+          if (drift) {
+            input.cacheDrift = {
+              configTools: projectConfig.tools,
+              cacheTools: machineHomeEntry.entry.tools,
+            };
+          }
+        }
+        // Surface a missing installedVersion as "version unknown" (advisory).
+        if (machineHomeEntry.entry.installedVersion === undefined) {
+          input.cacheVersionUnknown = true;
+        }
+      } catch {
+        // Swallowed; the advisory is simply omitted.
+      }
     }
     const danglingProjectEntries = await findDanglingProjectEntries();
     input.danglingProjectEntries = danglingProjectEntries.map((dangling) => ({
