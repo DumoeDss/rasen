@@ -23,6 +23,7 @@ import {
 import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
 import { isRetentionMode, type RetentionMode } from './retention.js';
 import type { DispatchRuntime } from './runtime-adapters.js';
+import { normalizeRetiredEditBoundaryExpertIds } from './retired-edit-boundary.js';
 
 // Constants
 export const GLOBAL_CONFIG_DIR_NAME = 'rasen';
@@ -381,6 +382,12 @@ function normalizeGlobalConfig(
     // Schema evolution: apply defaults for new fields if not present in loaded config
     if (parsed.profile === undefined) {
       merged.profile = DEFAULT_CONFIG.profile;
+    }
+    if (
+      Array.isArray(parsed.workflows) &&
+      parsed.workflows.every((value): value is string => typeof value === 'string')
+    ) {
+      merged.workflows = normalizeRetiredEditBoundaryExpertIds(parsed.workflows);
     }
     // Retention is never fabricated on read: an absent value stays absent so
     // the effective-retention resolver can migrate it from the workflow

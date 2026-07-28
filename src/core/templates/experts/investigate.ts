@@ -1,6 +1,6 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE_DIALOGUE } from './_shared.js';
+import { EDIT_BOUNDARY_GUIDANCE, PREAMBLE_DIALOGUE } from './_shared.js';
 
 const BODY = `
 ${PREAMBLE_DIALOGUE}
@@ -67,26 +67,24 @@ Do not proceed until you have reproduced **and** minimised.
 
 ## Scope Lock
 
-With a minimised repro in hand you know the affected module — lock edits to it to prevent scope creep.
+With a minimised repro in hand you know the affected module. Identify the
+narrowest directory containing the affected files and use the base runtime:
 
 \`\`\`bash
-[ -x "\${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh" ] && echo "FREEZE_AVAILABLE" || echo "FREEZE_UNAVAILABLE"
+rasen agent edit-boundary set "<detected-directory>"
+rasen agent edit-boundary status --json
 \`\`\`
 
-**If FREEZE_AVAILABLE:** Identify the narrowest directory containing the affected files. Write it to the freeze state file:
+Substitute the actual directory (for example \`src/auth/\`) and inspect the
+returned status before describing protection. On \`hard\`, say only that
+covered structured write tools are rejected outside the directory. On
+\`soft\`, cooperate with the scope and explicitly say the host does not
+guarantee denial. On \`unsupported\`, state that edits remain unrestricted and
+do not claim a lock. When debugging is complete, run
+\`rasen agent edit-boundary clear\`. If the bug spans the whole checkout or the
+scope is genuinely unclear, skip setting a boundary and note why.
 
-\`\`\`bash
-STATE_DIR="\${CLAUDE_PLUGIN_DATA:-$HOME/.rasen}"
-mkdir -p "$STATE_DIR"
-echo "<detected-directory>/" > "$STATE_DIR/freeze-dir.txt"
-echo "Debug scope locked to: <detected-directory>/"
-\`\`\`
-
-Substitute \`<detected-directory>\` with the actual directory path (e.g., \`src/auth/\`). Tell the user: "Edits restricted to \`<dir>/\` for this debug session. This prevents changes to unrelated code. Run \`/unfreeze\` to remove the restriction."
-
-If the bug spans the entire repo or the scope is genuinely unclear, skip the lock and note why.
-
-**If FREEZE_UNAVAILABLE:** Skip scope lock. Edits are unrestricted.
+${EDIT_BOUNDARY_GUIDANCE}
 
 ---
 

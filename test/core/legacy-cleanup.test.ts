@@ -14,6 +14,9 @@ import {
   formatProjectMdMigrationHint,
   getToolsFromLegacyArtifacts,
   pruneRetiredExpertSkillDirs,
+  pruneRetiredEditBoundarySkillDirs,
+  cleanupLegacyEditBoundaryState,
+  RETIRED_EDIT_BOUNDARY_SKILL_DIRS,
   RETIRED_EXPERT_SKILL_PREFIX,
   LEGACY_CONFIG_FILES,
   LEGACY_SLASH_COMMAND_PATHS,
@@ -32,6 +35,75 @@ describe('legacy-cleanup', () => {
 
   afterEach(async () => {
     await fs.rm(testDir, { recursive: true, force: true });
+  });
+
+  describe('retired runtime edit-boundary artifacts', () => {
+    it('prunes only the three exact retired skill directories', async () => {
+      const skillsRoot = path.join(testDir, '.claude', 'skills');
+      for (const dirName of RETIRED_EDIT_BOUNDARY_SKILL_DIRS) {
+        await fs.mkdir(path.join(skillsRoot, dirName), { recursive: true });
+      }
+      for (const dirName of [
+        'rasen-freezer',
+        'my-rasen-guard',
+        'rasen-unfreeze-custom',
+      ]) {
+        await fs.mkdir(path.join(skillsRoot, dirName), { recursive: true });
+      }
+
+      expect(await pruneRetiredEditBoundarySkillDirs(skillsRoot)).toEqual([
+        ...RETIRED_EDIT_BOUNDARY_SKILL_DIRS,
+      ]);
+      expect(await pruneRetiredEditBoundarySkillDirs(skillsRoot)).toEqual([]);
+      expect((await fs.readdir(skillsRoot)).sort()).toEqual(
+        ['my-rasen-guard', 'rasen-freezer', 'rasen-unfreeze-custom'].sort()
+      );
+    });
+
+    it('removes only recognized legacy state files with and without plugin data', async () => {
+      const machineRoot = path.join(testDir, 'machine');
+      const pluginRoot = path.join(testDir, 'plugin-data');
+      await fs.mkdir(machineRoot, { recursive: true });
+      await fs.mkdir(pluginRoot, { recursive: true });
+      await fs.writeFile(path.join(machineRoot, 'freeze-dir.txt'), 'src');
+      await fs.writeFile(path.join(machineRoot, 'keep.txt'), 'keep');
+      await fs.writeFile(path.join(pluginRoot, 'freeze-dir.txt'), 'src');
+      await fs.writeFile(path.join(pluginRoot, 'keep.txt'), 'keep');
+
+      const removed = await cleanupLegacyEditBoundaryState({
+        env: {
+          RASEN_HOME: machineRoot,
+          CLAUDE_PLUGIN_DATA: pluginRoot,
+        },
+      });
+      expect(removed.sort()).toEqual(
+        [
+          path.join(machineRoot, 'freeze-dir.txt'),
+          path.join(pluginRoot, 'freeze-dir.txt'),
+        ].sort()
+      );
+      expect(await fs.readFile(path.join(machineRoot, 'keep.txt'), 'utf-8')).toBe(
+        'keep'
+      );
+      expect(await fs.readFile(path.join(pluginRoot, 'keep.txt'), 'utf-8')).toBe(
+        'keep'
+      );
+      expect(
+        await cleanupLegacyEditBoundaryState({
+          env: {
+            RASEN_HOME: machineRoot,
+            CLAUDE_PLUGIN_DATA: pluginRoot,
+          },
+        })
+      ).toEqual([]);
+
+      await fs.writeFile(path.join(machineRoot, 'freeze-dir.txt'), 'src');
+      expect(
+        await cleanupLegacyEditBoundaryState({
+          env: { RASEN_HOME: machineRoot },
+        })
+      ).toEqual([path.join(machineRoot, 'freeze-dir.txt')]);
+    });
   });
 
   describe('hasOpenSpecMarkers', () => {

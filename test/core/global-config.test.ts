@@ -68,6 +68,15 @@ describe('global-config', () => {
     });
   });
 
+  it('normalizes exact retired edit-boundary ids from the global selection', () => {
+    process.env.RASEN_HOME = tempDir;
+    saveGlobalConfig({
+      profile: 'custom',
+      workflows: ['propose', 'freeze', 'review', 'guard', 'unfreeze'],
+    });
+    expect(getGlobalConfig().workflows).toEqual(['propose', 'review']);
+  });
+
   describe('pipeline runtime schema', () => {
     it.each(['claude', 'codex'])('accepts dispatch runtime %s', (runtime) => {
       expect(

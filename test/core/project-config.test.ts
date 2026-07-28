@@ -45,6 +45,16 @@ describe('project-config', () => {
   });
 
   describe('readProjectConfig', () => {
+    it('normalizes exact retired edit-boundary ids from a project override', () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.yaml'),
+        'schema: spec-driven\nworkflows:\n  - propose\n  - freeze\n  - review\n  - guard\n  - unfreeze\n'
+      );
+      expect(readProjectConfig(tempDir).workflows).toEqual(['propose', 'review']);
+    });
+
     describe('resilient parsing', () => {
       it('should parse complete valid config', () => {
         const configDir = path.join(tempDir, 'rasen');
