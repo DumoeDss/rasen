@@ -553,13 +553,22 @@ export function analyzeReconcilerSupport(
   const profileDigest =
     profile?.profileDigest ??
     domainDigest('reconciler-support-profile/1', prepared.plan.digest);
+  // Detect v1 definitions whose normalized form supports v2 ReviewCycle.
+  const hasV2ReviewCycle = prepared.definition.root.nodes.some(
+    (node) =>
+      node.kind === 'BoundedLoop' &&
+      node.exits.clean?.action === 'exit' &&
+      node.exits.needs_fix?.action === 'continue'
+  );
   const unsupported = (
     reason: ReconcilerSupportAnalysis['reconcilerSupport']['reason']
   ): ReconcilerSupportAnalysis =>
     deepFreeze({
       availableEngines:
         prepared.authoredVersion === 1
-          ? ['legacy']
+          ? hasV2ReviewCycle
+            ? ['legacy', 'reconciler']
+            : ['legacy']
           : prepared.capability.executionMode === 'reconciler'
             ? ['reconciler']
             : [],
@@ -608,12 +617,6 @@ export function analyzeReconcilerSupport(
   // BoundedLoop are analyzed via the v2 path. The capability bindings must
   // include both root AtomicStage paths (`root:<nodeId>`) and BoundedLoop body
   // phase paths (`declaration:<bodyId>/node:<phaseId>`).
-  const hasV2ReviewCycle = prepared.definition.root.nodes.some(
-    (node) =>
-      node.kind === 'BoundedLoop' &&
-      node.exits.clean?.action === 'exit' &&
-      node.exits.needs_fix?.action === 'continue'
-  );
   if (hasV2ReviewCycle) {
     if (profile === null) {
       return unsupported('execution_profile_unavailable');
