@@ -86,6 +86,7 @@
     "ora": "^8.2.0",
     "string-width": "^8.2.2",
     "string-width-legacy": "npm:string-width@4.2.3",
+    "toml-eslint-parser": "^1.0.3",
     "yaml": "^2.9.0",
     "zod": "^4.0.17"
   }
