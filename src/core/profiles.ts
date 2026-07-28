@@ -86,7 +86,7 @@ export interface GetProfileWorkflowsOptions {
    * Machine-managed migration marker (`GlobalConfig.expertSelectionExplicit`).
    * `false`/absent (legacy — never explicitly re-selected through the
    * flipped picker): the expert dimension resolves to `ALL_EXPERTS`,
-   * profile-independent, so every existing install keeps all 21 experts.
+   * profile-independent, so every existing install keeps all current experts.
    * `true`: the profile's default expert set (below) governs.
    */
   expertSelectionExplicit?: boolean;

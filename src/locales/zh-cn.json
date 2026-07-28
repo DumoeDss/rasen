@@ -696,14 +696,6 @@
           "name": "设计审查",
           "description": "通过浏览器审计视觉层级、字体、色彩和响应式表现"
         },
-        "freeze": {
-          "name": "冻结",
-          "description": "将编辑限制在一个目录内，拒绝对冻结范围之外的写入"
-        },
-        "guard": {
-          "name": "防护",
-          "description": "一键启用完整安全模式：破坏性命令防护与编辑边界"
-        },
         "investigate": {
           "name": "调查",
           "description": "在尝试修复前，用证据复现、隔离并找到缺陷根因"
@@ -735,10 +727,6 @@
         "tdd": {
           "name": "TDD",
           "description": "遵循红、绿、重构纪律，并提供模拟指导"
-        },
-        "unfreeze": {
-          "name": "解除冻结",
-          "description": "解除 freeze 或 guard 设置的编辑限制"
         },
         "workflow-author": {
           "name": "工作流编写",

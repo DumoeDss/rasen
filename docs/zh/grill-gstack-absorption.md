@@ -91,9 +91,9 @@ OPSX（OpenSpec 的融合工作流层）已经把 **grill**（Matt Pocock 的技
 
 **编辑安全家**
 - `careful` —— 破坏性命令前警告（rm -rf / DROP TABLE / force-push）。`apply` 引用。
-- `guard` —— careful + freeze 一起开。
-- `freeze` —— 硬锁编辑到一个目录。
-- `unfreeze` —— 解除目录锁。
+- **历史记录（已退役）：**上游目录曾有三个独立的目录边界命令。当前
+  Rasen 使用 `rasen agent edit-boundary set|status|clear`，并报告
+  `hard|soft|unsupported`；旧命令已不可用。
 
 > 名册从早期的 30（含平行生命周期专家）→ 20（移除平行生命周期）→ **19**（移除 domain-modeling）。当前稳定在 19。
 
@@ -181,7 +181,8 @@ gstack `/ship` 假设「feature 分支从 main 分叉、PR 回 main」，所以�
 ### 5.1 故意保留（功能性）
 
 - **孤儿清理前缀常量**：`src/core/legacy-cleanup.ts` 的 `RETIRED_EXPERT_SKILL_PREFIX = 'openspec-gstack-'`。`init`/`update` 用它精确匹配并删除改名遗留的旧安装目录（`openspec-gstack-*`），带 near-miss 测试防止误伤 `openspec-*`。改了它，孤儿就清不掉。
-- **freeze 家族的运行时状态目录**：`freeze`/`guard`/`investigate`/`unfreeze` 把锁状态写在 `${CLAUDE_PLUGIN_DATA:-$HOME/.gstack}`。改路径会让用户机器上已有的 freeze 锁失效。属运行时状态目录，不在去品牌范围。
+- **历史运行时状态：**上游边界命令曾写入插件本地状态。当前 Rasen
+  会清理该过时状态，并在基础机器数据目录中保存按检出范围隔离的记录。
 - **review 引擎的文件格式标记**：`_shared.ts` 里 `## GSTACK REVIEW REPORT` 是评审报告写进 plan 文件的固定 section 名（稳定字符串标识）。改名是文件格式变更。
 - **design-sketch 临时文件前缀**：`_shared.ts` 的 `/tmp/gstack-sketch-*.html/png`。纯 temp 命名，下游技能按这个路径引用截图。
 
@@ -192,7 +193,7 @@ gstack `/ship` 假设「feature 分支从 main 分叉、PR 回 main」，所以�
 ### 5.3 历史性注释/prose（可清不清）
 
 - `skill-generation.ts:48`、`skill-templates.ts:31` 的 `// from gstack` / `// migrated from gstack` 注释——溯源说明，无害。
-- `guard.ts:12`「by the gstack setup script」、`verify-enhanced.ts:5`「with gstack expert reviews」——过时注释。
+- 这些旧命令模板中的过时注释已随模板退役而删除。
 - `retro.ts:80`「Do NOT persist gstack-style `.context/retros/*.json`」——这是在告诉 agent **别做**旧的 gstack 行为，"gstack-style" 是对旧行为的描述，留着合理。
 - `docs/` 里 `review-cycle-workflow-design.md`、handoff 文档中的 "OPSX/gstack 融合工作" 叙述——历史叙述，保留。
 - `CHANGELOG.md` 中的 gstack 提及——历史发布记录，**刻意不改**（改了等于伪造历史）。

@@ -84,6 +84,25 @@ describe('named profiles', () => {
     expect(fs.existsSync(getNamedProfilesDir())).toBe(false);
   });
 
+  it('normalizes only exact retired edit-boundary ids in a legacy named profile', () => {
+    expect(
+      parseProfileDefinition({
+        version: 1,
+        workflows: ['propose', 'freeze', 'review', 'guard', 'unfreeze'],
+      })
+    ).toEqual({
+      version: 2,
+      workflows: ['propose', 'review'],
+      retention: 'off',
+    });
+    expect(() =>
+      parseProfileDefinition({
+        version: 1,
+        workflows: ['propose', 'freeze-extra'],
+      })
+    ).toThrow('Unknown workflow ID "freeze-extra"');
+  });
+
   it('M1: accepts an expert id as a valid profile member', () => {
     const definition = parseProfileDefinition({
       version: 1,

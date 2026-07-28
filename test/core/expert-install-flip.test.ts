@@ -87,7 +87,7 @@ describe('expert install-set matrix (6b)', () => {
     await fs.rm(dataTempDir, { recursive: true, force: true });
   });
 
-  it('row 1: existing full install, update — legacy marker resolves to all 21 experts, none removed', async () => {
+  it('row 1: existing full install, update — legacy marker resolves to all current experts, none removed', async () => {
     saveGlobalConfig({ featureFlags: {}, profile: 'full', delivery: 'both' });
     await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
     expect(await installedExpertIds(testDir)).toEqual([...ALL_EXPERTS].sort());
@@ -101,7 +101,7 @@ describe('expert install-set matrix (6b)', () => {
     expect(getGlobalConfig().expertSelectionExplicit).not.toBe(true);
   });
 
-  it('row 2: existing core install (legacy, marker absent), update — all 21 experts, key non-regression', async () => {
+  it('row 2: existing core install (legacy, marker absent), update — all current experts, key non-regression', async () => {
     saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both' });
     await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
     // Fresh init is an explicit-write path; simulate a genuinely legacy
@@ -113,7 +113,7 @@ describe('expert install-set matrix (6b)', () => {
     expect(await installedExpertIds(testDir)).toEqual([...ALL_EXPERTS].sort());
   });
 
-  it('row 3: existing custom install (legacy, marker absent, no expert ids), update — all 21 experts, key non-regression', async () => {
+  it('row 3: existing custom install (legacy, marker absent, no expert ids), update — all current experts, key non-regression', async () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
@@ -148,7 +148,7 @@ describe('expert install-set matrix (6b)', () => {
     expect(await installedExpertIds(testDir)).toEqual([...ALL_EXPERTS].sort());
   });
 
-  it('row 4/D2: fresh init, default full — marker set by init, WF(full)+all21', async () => {
+  it('row 4/D2: fresh init, default full — marker set by init, WF(full)+all current experts', async () => {
     await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
 
     expect(getGlobalConfig().expertSelectionExplicit).toBe(true);
@@ -193,7 +193,7 @@ describe('expert install-set matrix (6b)', () => {
   });
 
   it('row 9: post-flip picker unchecking a non-floor, unreferenced expert (tdd) prunes it on update', async () => {
-    // Start from a full install (marker set by fresh init: WF(full)+all21).
+    // Start from a full install (marker set by fresh init: all current experts).
     await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
     expect(await installedExpertIds(testDir)).toContain('tdd');
 
@@ -211,11 +211,11 @@ describe('expert install-set matrix (6b)', () => {
     await new UpdateCommand({ force: true }).execute(testDir);
 
     expect(await installedExpertIds(testDir)).not.toContain('tdd');
-    expect(await installedExpertIds(testDir)).toHaveLength(20);
+    expect(await installedExpertIds(testDir)).toHaveLength(ALL_EXPERTS.length - 1);
   });
 
   it('cross-project regression (review-round Blocker fix): an unrelated project B\'s fresh init must never prune project A, which has no explicit expert-selection acknowledgment of its own', async () => {
-    // Project A: a genuinely legacy install (marker absent), all 21 experts on disk.
+    // Project A: a genuinely legacy install (marker absent), all current experts on disk.
     saveGlobalConfig({ featureFlags: {}, profile: 'core', delivery: 'both' });
     await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
     saveGlobalConfig({ ...getGlobalConfig(), expertSelectionExplicit: undefined });
@@ -225,7 +225,7 @@ describe('expert install-set matrix (6b)', () => {
     await clearExpertSelectionAck(testDir);
     // With the marker reset, a plain legacy `update` installs every missing
     // expert (mirroring rows 2/14's already-established baseline) — the
-    // "already has all 21 experts on disk" starting point a genuinely
+    // "already has all current experts on disk" starting point a genuinely
     // pre-flip install would have. This update must not (and does not)
     // write A's ack: the marker is not explicit at this point.
     await new UpdateCommand({ force: true }).execute(testDir);

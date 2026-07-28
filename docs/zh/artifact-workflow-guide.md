@@ -247,7 +247,7 @@ Agent 感知不到自己的上下文占用——它只能**测量**。`rasen age
 ### 3.8 专家技能（始终安装，按需调用）
 不论 profile 如何，`rasen init` 都会装上一组专家技能（生成为 `openspec-*`），可在验证/规划阶段单独调用：
 
-`/review`（代码评审）、`/qa` `/qa-only`（QA）、`/cso`（安全）、`/benchmark`（性能）、`/design-review` `/design-consultation`（设计/视觉）、`/investigate` `/careful` `/guard`（排查/谨慎/护栏）、`/freeze` `/unfreeze`、`/codex`、`/setup-browser-cookies` 等。
+`/review`（代码评审）、`/qa` `/qa-only`（QA）、`/cso`（安全）、`/benchmark`（性能）、`/design-review` `/design-consultation`（设计/视觉）、`/investigate` `/careful`（排查/破坏性命令确认）、`/codex`、`/setup-browser-cookies` 等。检出范围内的编辑边界属于基础运行时：`rasen agent edit-boundary set|status|clear`；必须读取 `status` 并区分 `hard`、`soft` 和 `unsupported`。
 
 ---
 
