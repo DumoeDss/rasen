@@ -1587,6 +1587,32 @@ export interface RootDagViewSection {
   allowedControls: readonly AllowedControl[];
 }
 
+/** A review-cycle/1 section projected from a Run with a BoundedLoop (additive). */
+export interface ReviewCycleFinding {
+  id: string;
+  severity: string;
+  status: string;
+  claim: string;
+  location?: string;
+}
+
+export interface ReviewCycleViewSection {
+  kind: 'review-cycle';
+  version: 1;
+  loopPath: string;
+  round: number;
+  phase: 'review' | 'triage' | 'fix' | 're-review';
+  outcome?: 'clean' | 'exhausted';
+  findings: ReviewCycleFinding[];
+  actors: {
+    fixer?: { identityDigest: string; kind: string; [key: string]: unknown };
+    verifier?: { identityDigest: string; kind: string; [key: string]: unknown };
+    lastActor?: { identityDigest: string; kind: string; [key: string]: unknown };
+  };
+  waitReason?: string;
+  maxRounds: number;
+}
+
 /** An additive unknown section (tolerated, not rendered by name). */
 export interface AdditiveViewSection {
   kind: string;
@@ -1594,7 +1620,7 @@ export interface AdditiveViewSection {
   [key: string]: unknown;
 }
 
-export type ChangeRunViewSection = RootDagViewSection | AdditiveViewSection;
+export type ChangeRunViewSection = RootDagViewSection | ReviewCycleViewSection | AdditiveViewSection;
 
 /** Drift state reported by the server's comparison-only DriftObserver. */
 export interface DriftView {
@@ -1640,6 +1666,20 @@ export function getRootDagSection(view: ChangeRunView): RootDagViewSection | nul
   for (const section of view.sections) {
     if (section.kind === 'root-dag' && section.version === 1) {
       return section as RootDagViewSection;
+    }
+  }
+  return null;
+}
+
+/**
+ * Extracts the review-cycle/1 section from a ChangeRunView. Returns null when
+ * the view has no review-cycle section (Runs without a BoundedLoop, or views
+ * projected without the plan — e.g. the management API which has no plan).
+ */
+export function getReviewCycleSection(view: ChangeRunView): ReviewCycleViewSection | null {
+  for (const section of view.sections) {
+    if (section.kind === 'review-cycle' && section.version === 1) {
+      return section as ReviewCycleViewSection;
     }
   }
   return null;

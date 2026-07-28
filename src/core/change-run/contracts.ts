@@ -515,8 +515,41 @@ const RootDagViewSectionSchema = z.strictObject({
 export type RootDagViewSection = Readonly<
   z.infer<typeof RootDagViewSectionSchema>
 >;
+
+const ReviewCycleFindingSchema = z.strictObject({
+  id: z.string().min(1).max(256),
+  severity: z.string().min(1).max(64),
+  status: z.string().min(1).max(64),
+  claim: z.string().min(1).max(4096),
+  location: z.string().min(1).max(1024).optional(),
+});
+
+const ReviewCycleActorsSchema = z
+  .strictObject({
+    fixer: ActorRefSchema.optional(),
+    verifier: ActorRefSchema.optional(),
+    lastActor: ActorRefSchema.optional(),
+  });
+
+const ReviewCycleViewSectionSchema = z.strictObject({
+  kind: z.literal('review-cycle'),
+  version: z.literal(1),
+  loopPath: z.string().min(1).max(512),
+  round: SafeIntegerSchema,
+  phase: z.enum(['review', 'triage', 'fix', 're-review']),
+  outcome: z.enum(['clean', 'exhausted']).optional(),
+  findings: z.array(ReviewCycleFindingSchema),
+  actors: ReviewCycleActorsSchema,
+  waitReason: z.string().min(1).max(256).optional(),
+  maxRounds: SafeIntegerSchema,
+});
+
+export type ReviewCycleViewSection = Readonly<
+  z.infer<typeof ReviewCycleViewSectionSchema>
+>;
 export type ChangeRunViewSection =
   | RootDagViewSection
+  | ReviewCycleViewSection
   | Readonly<Record<string, unknown>>;
 
 const DriftStateSchema = z.enum(['unchanged', 'changed', 'unavailable']);
@@ -859,6 +892,14 @@ export function decodeChangeRunView(value: unknown): ChangeRunView {
       (section as { kind?: unknown }).kind === 'root-dag'
     ) {
       return decode(RootDagViewSectionSchema, section);
+    }
+    if (
+      section !== null &&
+      typeof section === 'object' &&
+      'kind' in section &&
+      (section as { kind?: unknown }).kind === 'review-cycle'
+    ) {
+      return decode(ReviewCycleViewSectionSchema, section);
     }
     const additive = z
       .object({

@@ -829,6 +829,60 @@ export class PipelineCommand {
   }
 
   /**
+   * Human-readable rendering of a Run's current view (task 8.3). Shows the
+   * run status, committed actions, active waits, and — when present — the
+   * review-cycle section (round, phase, outcome, findings, actors).
+   */
+  private printRunStatusHuman(runId: string, view: unknown): void {
+    const v = view as {
+      status: string;
+      sections: Array<Record<string, unknown>>;
+    };
+    console.log(`Run: ${runId}`);
+    console.log(`Status: ${v.status}`);
+    // Render the review-cycle section when present.
+    const rc = v.sections.find(
+      (s) => s.kind === 'review-cycle'
+    ) as
+      | {
+          kind: 'review-cycle';
+          round: number;
+          phase: string;
+          outcome?: string;
+          findings: Array<{ id: string; severity: string; status: string }>;
+          actors: { fixer?: unknown; verifier?: unknown; lastActor?: unknown };
+          waitReason?: string;
+          maxRounds: number;
+          loopPath: string;
+        }
+      | undefined;
+    if (rc) {
+      console.log();
+      console.log('Review Cycle:');
+      console.log(`  Round: ${rc.round} / ${rc.maxRounds}`);
+      console.log(`  Phase: ${rc.phase}`);
+      if (rc.outcome) {
+        console.log(`  Outcome: ${rc.outcome}`);
+      }
+      if (rc.waitReason) {
+        console.log(`  Wait: ${rc.waitReason}`);
+      }
+      if (rc.findings.length > 0) {
+        console.log(`  Findings (${rc.findings.length}):`);
+        for (const f of rc.findings) {
+          console.log(`    [${f.severity}] ${f.id}: ${f.status}`);
+        }
+      }
+      const actorKinds = Object.entries(rc.actors)
+        .filter(([, val]) => val !== undefined)
+        .map(([key]) => key);
+      if (actorKinds.length > 0) {
+        console.log(`  Actors: ${actorKinds.join(', ')}`);
+      }
+    }
+  }
+
+  /**
    * Start (or reuse) a reconciler-engine Run for a change under a pipeline
    * (task 12.1/12.2).
    */
@@ -892,6 +946,10 @@ export class PipelineCommand {
       change: { projectRoot, changeId },
       runId: runId as never,
     });
+    if (!options.json) {
+      this.printRunStatusHuman(runId, view);
+      return;
+    }
     this.printRunReceipt(options, { runId, status: view.status, view });
   }
 

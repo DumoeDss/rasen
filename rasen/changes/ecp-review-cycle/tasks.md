@@ -51,10 +51,10 @@
 ## 8. Projection Parity — Review-Cycle View Section (Acceptance #10)
 
 - [x] 8.1 Add a `review-cycle/1` section type to the projector (`src/core/change-run/internal/projector.ts`): when the plan contains a bounded-loop, call `projectReviewCycleProgress` and emit the section with round, phase, outcome, findings, actors, waitReason, maxRounds
-- [ ] 8.2 Extend `ChangeRunViewSection` in `contracts.ts` to include the `review-cycle` section schema (additive — alongside the existing `root-dag` section)
-- [ ] 8.3 Update CLI `pipeline status` (`src/commands/pipeline.ts`) to render the review-cycle section data (round, phase, findings, actors) from the `ChangeRunView`
-- [ ] 8.4 Verify Management API `GET /api/v1/runs` and `GET /api/v1/runs/<changeId>/<runId>` return the review-cycle section from the same `projectRunView` call (no separate projection)
-- [ ] 8.5 Write a parity test that CLI, Management API, and Operations consume the same fixture's `ChangeRunView` and all see the same review-cycle section data
+- [x] 8.2 Extend `ChangeRunViewSection` in `contracts.ts` to include the `review-cycle` section schema (additive — alongside the existing `root-dag` section)
+- [x] 8.3 Update CLI `pipeline status` (`src/commands/pipeline.ts`) to render the review-cycle section data (round, phase, findings, actors) from the `ChangeRunView`
+- [x] 8.4 Verify Management API `GET /api/v1/runs` and `GET /api/v1/runs/<changeId>/<runId>` return the review-cycle section from the same `projectRunView` call (no separate projection)
+- [x] 8.5 Write a parity test that CLI, Management API, and Operations consume the same fixture's `ChangeRunView` and all see the same review-cycle section data
 
 ## 9. Canvas Constrained View and Safe Config (Acceptance #11)
 
