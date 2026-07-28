@@ -262,15 +262,21 @@ describe('command completion registry', () => {
     // distinct inspection surface, carved out separately in the guidance.
     expect(pipelineStore.sort()).toEqual([
       'pipeline agents',
+      'pipeline cancel',
       'pipeline classify',
+      'pipeline complete',
+      'pipeline control',
       'pipeline delete',
       'pipeline export',
       'pipeline import',
       'pipeline init',
       'pipeline list',
       'pipeline resume',
+      'pipeline resume-run',
       'pipeline save',
       'pipeline show',
+      'pipeline start',
+      'pipeline status',
       'pipeline validate',
     ]);
 

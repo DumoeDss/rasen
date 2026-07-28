@@ -2155,8 +2155,12 @@ export class PipelineCommand {
     const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, {
       reporter: this.executionOptions(options).reporter,
     });
-    return (
-      await registry.selectForExecution(name, this.executionOptions(options))
+    // `pipeline agents` is a configuration/read surface, not a launch. Keep
+    // Definition preparation and the stable v1 adapter boundary, but do not
+    // probe target binaries or require the current active profile to be able to
+    // execute the pipeline merely to inspect or change its runtime defaults.
+    return preflightPreparedDefinitionExecution(
+      registry.load(name).prepared
     ).pipeline;
   }
 

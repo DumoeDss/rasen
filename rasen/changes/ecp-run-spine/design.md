@@ -525,7 +525,7 @@ worktree as top-level `workspace.scope: "other"` with no mutation controls and
 all receipt action grants empty. Every
 resume/complete/control/host mutation re-proves that the selected project root
 has the stored `WorkspaceInstanceId` and ChangeInstance binding; mismatch is
-`workspace_scope_mismatch` with zero writes. This slice has no cross-workspace
+`workspace-scope-mismatch` with zero writes. This slice has no cross-workspace
 administrative mutation.
 
 Internally, focused tests may call:
@@ -1186,8 +1186,8 @@ submodule, bounded `rev-parse`/`diff-index` and `ls-files --others
 untracked content; its index is also checked for nested gitlink mode. Any
 internal staged/unstaged/untracked/mode/symlink dirtiness, nested submodule,
 uninitialized/unreadable state, race, timeout, or output budget excess fails
-typed (`workspace_submodule_dirty` or
-`workspace_submodule_unsupported`). This slice does not recursively digest a
+typed (`workspace-submodule-dirty` or
+`workspace-submodule-unsupported`). This slice does not recursively digest a
 dirty submodule, so unchanged submodule HEAD can never hide inner mutations.
 
 Observation is read-only and bounded by manifest path/byte limits. It takes two

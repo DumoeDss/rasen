@@ -1847,7 +1847,14 @@ stages:
       await writeProjectConfig();
       const result = await runCLI(
         ['pipeline', 'agents', 'small-feature', '--planner', 'codex', '--reviewer', 'codex', '--json'],
-        { cwd: testDir, env: { RASEN_AGENT_RUNTIME: 'claude' } }
+        {
+          cwd: testDir,
+          env: {
+            RASEN_AGENT_RUNTIME: 'claude',
+            // Configuration must not require the target runtime binary.
+            PATH: '',
+          },
+        }
       );
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());

@@ -336,7 +336,7 @@ function admitControlRequest(
       return {
         ok: false,
         status: 403,
-        code: 'workspace_scope_mismatch',
+        code: 'workspace-scope-mismatch',
         message: `Run ${runId} belongs to a different workspace. Control is rejected from this workspace.`,
       };
     }

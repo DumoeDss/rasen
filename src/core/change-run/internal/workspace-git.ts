@@ -11,8 +11,8 @@ import {
 } from './workspace.js';
 
 export type WorkspaceGitErrorCode =
-  | 'workspace_git_unavailable'
-  | 'workspace_observation_unsupported';
+  | 'workspace-git-unavailable'
+  | 'workspace-observation-unsupported';
 
 export class WorkspaceGitError extends Error {
   constructor(
@@ -31,10 +31,11 @@ function git(repoPath: string, args: readonly string[]): string {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       maxBuffer: 16 * 1024 * 1024,
+      windowsHide: true,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new WorkspaceGitError('workspace_git_unavailable', message);
+    throw new WorkspaceGitError('workspace-git-unavailable', message);
   }
 }
 

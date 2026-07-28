@@ -57,7 +57,7 @@ export type ChangeRunRuntimeErrorCode =
   | 'record_version_conflict'
   | 'wait_identity_conflict'
   | 'receipt_conflict'
-  | 'workspace_scope_mismatch'
+  | 'workspace-scope-mismatch'
   | 'change_instance_inactive'
   | 'engine_owner_conflict'
   | 'legacy_owner_unknown'

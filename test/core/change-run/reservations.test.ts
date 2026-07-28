@@ -50,9 +50,9 @@ describe('cross-Run workspace reservation registry (8.5/8.6)', () => {
     const registry = createWorkspaceReservationRegistry();
     expect(registry.reserve(entry(run('1'), act('1'), 'write'))).toBeNull();
     const readerConflict = registry.reserve(entry(run('2'), act('2'), 'read'));
-    expect(readerConflict?.code).toBe('workspace_reservation_writer_held');
+    expect(readerConflict?.code).toBe('workspace-reservation-writer-held');
     const writerConflict = registry.reserve(entry(run('3'), act('3'), 'write'));
-    expect(writerConflict?.code).toBe('workspace_reservation_writer_held');
+    expect(writerConflict?.code).toBe('workspace-reservation-writer-held');
     expect(registry.snapshot(WS)).toHaveLength(1);
   });
 
@@ -60,7 +60,7 @@ describe('cross-Run workspace reservation registry (8.5/8.6)', () => {
     const registry = createWorkspaceReservationRegistry();
     registry.reserve(entry(run('1'), act('1'), 'read'));
     const conflict = registry.reserve(entry(run('2'), act('2'), 'write'));
-    expect(conflict?.code).toBe('workspace_reservation_writer_blocked');
+    expect(conflict?.code).toBe('workspace-reservation-writer-blocked');
   });
 
   it('re-arming the same Run/Action does not self-conflict', () => {

@@ -35,7 +35,7 @@
  *      still reachable; no crash.
  *  (d) linked-worktree list/control isolation: Runs from another worktree are
  *      filtered from the list, projected read-only (`scope: other`, no controls),
- *      and POST control is rejected with `workspace_scope_mismatch`.
+ *      and POST control is rejected with `workspace-scope-mismatch`.
  *
  * Kernel integration gaps surfaced by this test (flagged for LEAD, NOT fixed
  * here per the frozen-kernel constraint):
@@ -725,7 +725,7 @@ describe('archive → recreate journeys — linked-worktree isolation (15.7d)', 
       expect(detailA.view.workspace.scope).toBe('current');
     }
 
-    // --- CONTROL from worktree B: rejected with workspace_scope_mismatch ---
+    // --- CONTROL from worktree B: rejected with workspace-scope-mismatch ---
     const controlBody = {
       control: {
         format: 'change-run-control/1',
@@ -756,7 +756,7 @@ describe('archive → recreate journeys — linked-worktree isolation (15.7d)', 
     expect(controlB.ok).toBe(false);
     if (!controlB.ok) {
       expect(controlB.status).toBe(403);
-      expect(controlB.code).toBe('workspace_scope_mismatch');
+      expect(controlB.code).toBe('workspace-scope-mismatch');
     }
   });
 });

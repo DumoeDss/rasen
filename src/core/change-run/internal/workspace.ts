@@ -62,9 +62,9 @@ export interface WorkspaceManifest {
 }
 
 export type WorkspaceErrorCode =
-  | 'workspace_path_normalization'
-  | 'workspace_submodule_dirty'
-  | 'workspace_submodule_unsupported';
+  | 'workspace-path-normalization'
+  | 'workspace-submodule-dirty'
+  | 'workspace-submodule-unsupported';
 
 export class WorkspaceError extends Error {
   constructor(
@@ -205,7 +205,7 @@ function headRevision(head: WorkspaceHead): WorkspaceRevision['head'] {
  * workspace manifest. Each clean submodule contributes its superproject
  * gitlink plus checked-out commit; any inner dirtiness, nested submodule,
  * uninitialized/unreadable state, race, or budget excess fails typed
- * (workspace_submodule_dirty / workspace_submodule_unsupported) rather than
+ * (workspace-submodule-dirty / workspace-submodule-unsupported) rather than
  * being folded into a digest that could hide mutation.
  */
 export function deriveWorkspaceRevision(
@@ -214,13 +214,13 @@ export function deriveWorkspaceRevision(
   for (const submodule of manifest.submodules) {
     if (!submodule.supported) {
       throw new WorkspaceError(
-        'workspace_submodule_unsupported',
+        'workspace-submodule-unsupported',
         `Submodule ${submodule.path} is uninitialized, unreadable, racing, or over budget.`
       );
     }
     if (!submodule.innerClean) {
       throw new WorkspaceError(
-        'workspace_submodule_dirty',
+        'workspace-submodule-dirty',
         `Submodule ${submodule.path} has internal staged/unstaged/untracked or nested dirtiness.`
       );
     }

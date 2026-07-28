@@ -149,7 +149,7 @@ describe('submodule cleanliness (8.2a)', () => {
     expect(() => deriveWorkspaceRevision(manifest)).not.toThrow();
   });
 
-  it('fails workspace_submodule_dirty when a submodule has inner dirtiness', () => {
+  it('fails workspace-submodule-dirty when a submodule has inner dirtiness', () => {
     const manifest = cleanManifest(undefined, {
       submodules: [
         {
@@ -164,7 +164,7 @@ describe('submodule cleanliness (8.2a)', () => {
     expect(() => deriveWorkspaceRevision(manifest)).toThrowError(WorkspaceError);
   });
 
-  it('fails workspace_submodule_unsupported for an uninitialized/unreadable submodule', () => {
+  it('fails workspace-submodule-unsupported for an uninitialized/unreadable submodule', () => {
     const manifest = cleanManifest(undefined, {
       submodules: [
         { path: 'vendor/lib', gitlinkCommit: digest('g'), innerClean: false, supported: false },

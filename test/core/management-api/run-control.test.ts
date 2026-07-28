@@ -423,7 +423,7 @@ describe('POST /api/v1/runs/<changeId>/<runId> control bridge (task 13.7/13.8)',
       expect(spawner.calls.length).toBe(0);
     });
 
-    it('rejects a workspace mismatch with 403 workspace_scope_mismatch', async () => {
+    it('rejects a workspace mismatch with 403 workspace-scope-mismatch', async () => {
       // Create a second project root that derives a different workspaceInstanceId.
       const otherRoot = fs.mkdtempSync(path.join(baseTempDir, 'other-'));
       const spawner = createFakeSpawner(() => ({ exitCode: 0, stdout: '', stderr: '', timedOut: false }));
@@ -435,7 +435,7 @@ describe('POST /api/v1/runs/<changeId>/<runId> control bridge (task 13.7/13.8)',
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.status).toBe(403);
-        expect(result.code).toBe('workspace_scope_mismatch');
+        expect(result.code).toBe('workspace-scope-mismatch');
       }
       expect(spawner.calls.length).toBe(0);
     });

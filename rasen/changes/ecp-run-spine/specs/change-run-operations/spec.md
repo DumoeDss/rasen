@@ -158,7 +158,7 @@ reconciler ownership.
 - **WHEN** an exact Run belongs to another WorkspaceInstanceId in the same
   PlanningSpace
 - **THEN** detail may show it read-only as other, default list omits it, and
-  control fails `workspace_scope_mismatch`
+  control fails `workspace-scope-mismatch`
 - **AND** top-level `workspace.scope` is `other`, `allowedControls` and receipt
   action grants are empty
 

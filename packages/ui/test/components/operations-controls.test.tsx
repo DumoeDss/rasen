@@ -487,11 +487,11 @@ describe('OperationsSection control submit (14.5/14.6)', () => {
     expect(container.querySelector('[data-testid="ops-control-error"]')).toBeNull();
   });
 
-  it('on a 403 workspace_scope_mismatch, shows the server error inline and does not crash', async () => {
+  it('on a 403 workspace-scope-mismatch, shows the server error inline and does not crash', async () => {
     vi.mocked(client.postRunControl).mockRejectedValueOnce(
       new ApiError(403, {
         error: {
-          code: 'workspace_scope_mismatch',
+          code: 'workspace-scope-mismatch',
           message: 'Run belongs to a different workspace. Control is rejected from this workspace.',
         },
       })
@@ -508,7 +508,7 @@ describe('OperationsSection control submit (14.5/14.6)', () => {
 
     const error = container.querySelector('[data-testid="ops-control-error"]');
     expect(error).not.toBeNull();
-    expect(error!.getAttribute('data-error-code')).toBe('workspace_scope_mismatch');
+    expect(error!.getAttribute('data-error-code')).toBe('workspace-scope-mismatch');
     expect(error!.textContent).toContain('different workspace');
 
     // The view is unchanged (no optimistic mutation, no refetch on 403).

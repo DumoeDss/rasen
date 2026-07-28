@@ -1016,7 +1016,7 @@ describe('15.6 — workspace before/after/delta evidence rejects stale writers',
     // A writer is excluded while readers are held.
     const writer: ReservationEntry = { ...read1, runId: 'run:3' as RunId, actionId: 'action:w1' as ActionId, access: 'write' };
     const conflict = registry.reserve(writer);
-    expect(conflict?.code).toBe('workspace_reservation_writer_blocked');
+    expect(conflict?.code).toBe('workspace-reservation-writer-blocked');
   });
 });
 
@@ -1470,7 +1470,7 @@ describe('15.6 — reservation-delta recovery at every boundary', () => {
     const ws = 'workspace-instance:shared';
     expect(registry.reserve(entryFor('run:1', 'action:w1', 'write', ws))).toBeNull();
     const conflict = registry.reserve(entryFor('run:2', 'action:w2', 'write', ws));
-    expect(conflict?.code).toBe('workspace_reservation_writer_held');
+    expect(conflict?.code).toBe('workspace-reservation-writer-held');
     expect(conflict?.conflictingRunId).toBe('run:1' as RunId);
   });
 });

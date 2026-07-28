@@ -537,7 +537,7 @@ Unexpected workspace state SHALL enter a typed workspace-drift wait.
 
 - **WHEN** a submodule gitlink/HEAD is unchanged but its index, tracked bytes,
   modes, symlinks, or untracked content is dirty
-- **THEN** WorkspaceObserver fails `workspace_submodule_dirty` and admits no
+- **THEN** WorkspaceObserver fails `workspace-submodule-dirty` and admits no
   workspace Action
 - **AND** nested, uninitialized, unreadable, racing, or over-budget submodules
   fail typed rather than being recursively or partially interpreted
@@ -649,7 +649,7 @@ Unexpected workspace state SHALL enter a typed workspace-drift wait.
 - **WHEN** a selected project root resolves another WorkspaceInstanceId or
   ChangeInstanceId than the exact stored Run
 - **THEN** resume, complete, control, and host dispatch fail
-  `workspace_scope_mismatch` with zero writes
+  `workspace-scope-mismatch` with zero writes
 - **AND** exact read-only inspect may show top-level `workspace.scope: other`
   with no controls or receipt Action grants
 

@@ -149,7 +149,7 @@ SHALL remain admitted_undelivered until trusted CLI resume first-claims them.
 - **WHEN** an exact Run belongs to another WorkspaceInstanceId in the same
   PlanningSpace
 - **THEN** GET marks `workspace.scope: other`, exposes no controls, and POST
-  fails `workspace_scope_mismatch` without spawning
+  fails `workspace-scope-mismatch` without spawning
 
 #### Scenario: Detail is read only
 

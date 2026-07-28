@@ -17,8 +17,8 @@ export interface ReservationEntry {
 }
 
 export type ReservationConflictCode =
-  | 'workspace_reservation_writer_held'
-  | 'workspace_reservation_writer_blocked';
+  | 'workspace-reservation-writer-held'
+  | 'workspace-reservation-writer-blocked';
 
 export interface ReservationConflict {
   readonly code: ReservationConflictCode;
@@ -71,7 +71,7 @@ export function createWorkspaceReservationRegistry(): WorkspaceReservationRegist
         }
         if (existing.access === 'write') {
           return Object.freeze({
-            code: 'workspace_reservation_writer_held' as const,
+            code: 'workspace-reservation-writer-held' as const,
             workspaceInstanceId: entry.workspaceInstanceId,
             conflictingRunId: existing.runId,
             conflictingActionId: existing.actionId,
@@ -79,7 +79,7 @@ export function createWorkspaceReservationRegistry(): WorkspaceReservationRegist
         }
         if (entry.access === 'write') {
           return Object.freeze({
-            code: 'workspace_reservation_writer_blocked' as const,
+            code: 'workspace-reservation-writer-blocked' as const,
             workspaceInstanceId: entry.workspaceInstanceId,
             conflictingRunId: existing.runId,
             conflictingActionId: existing.actionId,
