@@ -68,7 +68,7 @@
 - [x] 10.1 Rewrite the skill instructions in `src/core/templates/workflows/review-cycle.ts`: remove prompt-owned round counter, phase sequencing, max-rounds enforcement, author!=verifier checking, and escalation ladder logic
 - [x] 10.2 Add instructions for launching the canonical Run (`rasen pipeline start` / `rasen pipeline resume`), projecting progress from `ChangeRunView` review-cycle section, and composing per-phase agent briefs from canonical state
 - [x] 10.3 Verify the skill still delegates each review pass to `rasen-review` and still composes the orchestration brief for role-isolated dispatch
-- [ ] 10.4 Write a test verifying the skill instructions do NOT contain prompt-owned mechanical state (round counter variable, phase transition logic, max-rounds checking code)
+- [x] 10.4 Write a test verifying the skill instructions do NOT contain prompt-owned mechanical state (round counter variable, phase transition logic, max-rounds checking code)
 
 ## 11. Real Dogfood (Acceptance #8)
 
