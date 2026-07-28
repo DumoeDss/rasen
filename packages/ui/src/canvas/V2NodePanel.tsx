@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'preact/hooks';
 import type {
   PipelineCatalogResponse,
+  WireBoundedLoopNode,
   WireDefinitionNode,
 } from '../api/types.js';
 import { isV2EditableNodeKind } from './draft.js';
+
+/** The canonical 4-phase ReviewCycle body this Canvas slice supports. */
+const REVIEW_CYCLE_PHASES = ['review', 'triage', 'fix', 're-review'] as const;
 
 function listValue(values: readonly string[]): string {
   return values.join(',');
@@ -196,8 +200,103 @@ export function V2NodePanel({
               />
             </label>
           )}
+
+          {node.kind === 'BoundedLoop' && (
+            <BoundedLoopDetails
+              node={node as WireBoundedLoopNode}
+              onPatch={onPatch}
+            />
+          )}
         </>
       )}
     </aside>
+  );
+}
+
+/**
+ * BoundedLoop detail renderer (task 9.1/9.3): shows the body phases, exit
+ * outcomes, and a configurable maxRounds scalar. Shape editing (add/remove/
+ * reorder phases) is NOT enabled — the 4-phase ReviewCycle body is read-only.
+ */
+function BoundedLoopDetails({
+  node,
+  onPatch,
+}: {
+  node: WireBoundedLoopNode;
+  onPatch: (patch: Partial<WireDefinitionNode>) => boolean | void;
+}) {
+  const currentMaxRounds = node.limits.maxIterations;
+  const [roundsDraft, setRoundsDraft] = useState(String(currentMaxRounds));
+
+  const exitEntries = Object.entries(node.exits);
+  const cleanExit = exitEntries.find(([, v]) => v.action === 'continue');
+  const exhaustedExit = exitEntries.find(([, v]) => v.action === 'exit');
+
+  const commitRounds = () => {
+    const parsed = parseInt(roundsDraft, 10);
+    if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 100) {
+      onPatch({
+        limits: { ...node.limits, maxIterations: parsed },
+      });
+    } else {
+      setRoundsDraft(String(currentMaxRounds));
+    }
+  };
+
+  return (
+    <div
+      class="stage-panel__bounded-loop"
+      data-testid="v2-node-panel-bounded-loop"
+    >
+      <div class="stage-panel__field">
+        <span>Body kind</span>
+        <strong>Review Cycle (4 phases)</strong>
+      </div>
+      <div
+        class="stage-panel__bounded-loop-phases"
+        data-testid="v2-node-panel-phases"
+      >
+        <span>Phases (read-only):</span>
+        <ol>
+          {REVIEW_CYCLE_PHASES.map((phase) => (
+            <li key={phase}>{phase}</li>
+          ))}
+        </ol>
+      </div>
+      <label class="stage-panel__field">
+        <span>Max rounds</span>
+        <input
+          type="number"
+          min={1}
+          max={100}
+          data-testid="v2-node-panel-max-rounds"
+          value={roundsDraft}
+          onInput={(event) =>
+            setRoundsDraft((event.target as HTMLInputElement).value)
+          }
+          onBlur={commitRounds}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              (event.currentTarget as HTMLInputElement).blur();
+            }
+          }}
+        />
+      </label>
+      <div class="stage-panel__field">
+        <span>Exits</span>
+        <div class="stage-panel__exits">
+          {cleanExit && (
+            <span class="stage-panel__exit stage-panel__exit--clean">
+              {cleanExit[0]}: continue
+            </span>
+          )}
+          {exhaustedExit && (
+            <span class="stage-panel__exit stage-panel__exit--exhausted">
+              {exhaustedExit[0]}: {(exhaustedExit[1] as { outcome: string }).outcome}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

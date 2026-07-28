@@ -58,10 +58,10 @@
 
 ## 9. Canvas Constrained View and Safe Config (Acceptance #11)
 
-- [ ] 9.1 Update `packages/ui/src/canvas/V2NodePanel.tsx` to display BoundedLoop body details: 4 phases (review/triage/fix/re-review), max rounds, clean/exhausted exit outcomes
-- [ ] 9.2 Update `packages/ui/src/canvas/StageNode.tsx` BoundedLoop card badge to show "Review Cycle" instead of generic "Preserved"
-- [ ] 9.3 Expose maxRounds as a configurable scalar in the detail panel (saved to the pipeline YAML's `loop.maxRounds`); do NOT enable shape editing (no add/remove/reorder phases)
-- [ ] 9.4 Verify the Canvas reflects execution support status correctly: a definition with a BoundedLoop and complete capability bindings shows as reconciler-supported; a definition missing capability bindings shows as not supported and does NOT present a Run action
+- [x] 9.1 Update `packages/ui/src/canvas/V2NodePanel.tsx` to display BoundedLoop body details: 4 phases (review/triage/fix/re-review), max rounds, clean/exhausted exit outcomes
+- [x] 9.2 Update `packages/ui/src/canvas/StageNode.tsx` BoundedLoop card badge to show "Review Cycle" instead of generic "Preserved"
+- [x] 9.3 Expose maxRounds as a configurable scalar in the detail panel (saved to the pipeline YAML's `loop.maxRounds`); do NOT enable shape editing (no add/remove/reorder phases)
+- [x] 9.4 Verify the Canvas reflects execution support status correctly: a definition with a BoundedLoop and complete capability bindings shows as reconciler-supported; a definition missing capability bindings shows as not supported and does NOT present a Run action
 
 ## 10. rasen-review-cycle Thin Launcher (Acceptance #12)
 

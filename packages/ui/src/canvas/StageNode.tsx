@@ -72,7 +72,15 @@ export function StageNode({ data }: NodeProps<StageFlowNode>) {
           </span>
         </div>
         {skill && <span class="stage-node__skill">{skill}</span>}
-        {!editorSupported && (
+        {definitionKind === 'BoundedLoop' && (
+          <span
+            class="stage-node__badge stage-node__badge--review-cycle"
+            data-testid="stage-node-badge-review-cycle"
+          >
+            Review Cycle
+          </span>
+        )}
+        {!editorSupported && definitionKind !== 'BoundedLoop' && (
           <span class="stage-node__unsupported" data-testid="stage-node-unsupported">
             Preserved · editing arrives in a later slice
           </span>
