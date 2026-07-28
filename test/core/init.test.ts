@@ -63,7 +63,7 @@ describe('InitCommand', () => {
   });
 
   describe('hook configuration hints', () => {
-    it('prints safety + compact-recovery hook snippets without touching .claude/settings.json', async () => {
+    it('prints optional hook snippets and installs the base runtime edit-boundary hook', async () => {
       await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
 
       const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
@@ -75,13 +75,24 @@ describe('InitCommand', () => {
       expect(logged).toContain('"matcher": "compact"');
       expect(logged).toContain('hooks/compact-recovery.sh');
 
-      // Instructions only — init must never write the hook config itself.
-      // (settings.json may exist for the agent-teams env flag, but no hooks key.)
       const settingsPath = path.join(testDir, '.claude', 'settings.json');
-      if (await fileExists(settingsPath)) {
-        const settings = JSON.parse(await fs.readFile(settingsPath, 'utf-8'));
-        expect(settings.hooks).toBeUndefined();
-      }
+      expect(await fileExists(settingsPath)).toBe(true);
+      const settings = JSON.parse(await fs.readFile(settingsPath, 'utf-8'));
+      expect(settings.hooks?.PreToolUse).toEqual(
+        expect.arrayContaining([
+          {
+            matcher: 'Edit|Write',
+            hooks: [
+              {
+                type: 'command',
+                command: 'rasen agent edit-boundary check --runtime claude',
+                timeout: 10,
+                statusMessage: 'Checking Rasen edit boundary',
+              },
+            ],
+          },
+        ])
+      );
     });
   });
 
