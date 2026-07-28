@@ -26,7 +26,14 @@ describe('checkout-scoped edit boundary', () => {
   };
 
   beforeEach(() => {
-    fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-edit-boundary-'));
+    // Canonicalize the temp fixture with the native realpath resolver so the
+    // project path matches the edit-boundary code's own canonicalization
+    // (FileSystemUtils.canonicalizeExistingPath uses realpathSync.native),
+    // which expands Windows short-path aliases (RUNNER~1) and macOS /tmp →
+    // /private/tmp. Without this, path assertions diverge on CI runners.
+    fixture = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-edit-boundary-'))
+    );
     project = path.join(fixture, 'project with spaces');
     dataHome = path.join(fixture, 'machine-data');
     fs.mkdirSync(path.join(project, '.git'), { recursive: true });

@@ -1097,6 +1097,12 @@
     "helpCommand": "指定したコマンドのヘルプを表示します"
   },
   "commandDescriptions": {
+    "Clear the checkout-scoped edit boundary": "チェックアウトスコープの編集境界をクリアします",
+    "Control the checkout-scoped runtime edit boundary": "チェックアウトスコープの実行時編集境界を制御します",
+    "Force runtime: claude, codex, or zed": "ランタイムを強制: claude、codex、または zed",
+    "Inspect and control base agent runtime state": "ベースエージェントの実行時状態を検査・制御します",
+    "Set the checkout-scoped edit boundary to an existing directory": "チェックアウトスコープの編集境界を既存のディレクトリに設定します",
+    "Show the active boundary and observed host enforcement": "アクティブな境界と観測されたホスト強制を表示します",
     "Select a project knowledge owner independently from the planning root": "計画ルートとは独立してプロジェクトの知識所有者を選択します",
     "Load frozen knowledge identity from the resolved directory containing auto-run.json": "auto-run.json を含む解決済みディレクトリから固定された知識 ID を読み込みます",
     "Select a store knowledge owner independently from the planning root": "計画ルートとは独立してストアの知識所有者を選択します",
