@@ -73,6 +73,7 @@ import {
   decodeCompletion,
   decodeControl,
   ChangeRunRuntimeError,
+  createAssociationLedgerStore,
   type ChangePipelineRuntime,
   type CompleteRunAction,
   type ChangeRunControlRequest,
@@ -556,26 +557,129 @@ export class PipelineCommand {
     }
 
     const home = getGlobalDataDir();
-    const planningSpaceHome = `project-${createHash('sha256')
-      .update(projectRoot)
-      .digest('hex')
-      .slice(0, 12)}`;
-    const planningSpaceId = derivePlanningSpaceId(planningSpaceHome) as never;
-    const st = statSync(projectRoot, { bigint: true });
-    const physical = readPhysicalIdentity({
-      device: st.dev,
-      ino: st.ino,
-      birthtimeMs: st.birthtimeMs,
-    });
-    const changeInstanceId = deriveChangeInstanceId(
-      planningSpaceId,
-      changeId,
-      physical
-    ) as never;
-    const workspaceInstanceId = deriveWorkspaceInstanceId(
-      planningSpaceId,
-      physical
-    ) as never;
+    const changeDir = path.join(
+      projectRoot,
+      WORKSPACE_DIR_NAME,
+      'changes',
+      changeId
+    );
+    const alias = `changes/${changeId}`;
+
+    // --- Identity derivation ------------------------------------------------
+    // Primary path: the association registry (Change directory's physical
+    // identity via the persisted ledger). Fallback path: the legacy
+    // project-root stat + path-hash (for unregistered projects with no
+    // rasen config.yaml, preserving pre-registry behavior).
+    let planningSpaceId: ReturnType<typeof derivePlanningSpaceId>;
+    let projectId: string;
+    let changeInstanceId: ReturnType<typeof deriveChangeInstanceId>;
+    let workspaceInstanceId: ReturnType<typeof deriveWorkspaceInstanceId>;
+    // Hoisted so resolveSourceState (M2) can close over it — undefined in the
+    // fallback path (unregistered project).
+    let ledgerStore: ReturnType<typeof createAssociationLedgerStore> | undefined;
+
+    let projectHome = await resolveProjectHome(projectRoot, { ensure: true }).catch(() => null);
+    if (!projectHome) {
+      // Fallback: legacy identity derivation for unregistered projects.
+      projectHome = null;
+      const planningSpaceHome = `project-${createHash('sha256')
+        .update(projectRoot)
+        .digest('hex')
+        .slice(0, 12)}`;
+      planningSpaceId = derivePlanningSpaceId(planningSpaceHome);
+      projectId = `project:${createHash('sha256')
+        .update(projectRoot)
+        .digest('hex')
+        .slice(0, 12)}`;
+      const st = statSync(projectRoot, { bigint: true });
+      const physical = readPhysicalIdentity({
+        device: st.dev,
+        ino: st.ino,
+        birthtimeMs: st.birthtimeMs,
+      });
+      changeInstanceId = deriveChangeInstanceId(
+        planningSpaceId,
+        changeId,
+        physical
+      );
+      workspaceInstanceId = deriveWorkspaceInstanceId(planningSpaceId, physical);
+    } else {
+      // Primary: registry-based identity from the Change directory's physical
+      // identity. Archiving and recreating the same Change name produces a new
+      // directory → new identity → new Run.
+      planningSpaceId = derivePlanningSpaceId(projectHome.name);
+      projectId = projectHome.projectId;
+      ledgerStore = createAssociationLedgerStore({
+        homeDir: projectHome.homeDir,
+        planningSpaceId,
+        projectId,
+      });
+
+      if (fs.existsSync(changeDir)) {
+        // Active Change: stat the Change directory and bind via the registry.
+        const st = statSync(changeDir, { bigint: true });
+        const physical = readPhysicalIdentity({
+          device: st.dev,
+          ino: st.ino,
+          birthtimeMs: st.birthtimeMs,
+        });
+
+        // Ambiguity check (m1): runs in BOTH branches (changeDir exists and
+        // not-exist) so a deleted Change dir with ≥2 archived generations
+        // surfaces launch_instance_ambiguous (not invalid_run_request).
+        this.assertLaunchUnambiguous(ledgerStore, changeId);
+
+        const bound = ledgerStore.bindActive(changeId, alias, physical);
+        changeInstanceId = bound.association.instanceId as never;
+        workspaceInstanceId = deriveWorkspaceInstanceId(
+          planningSpaceId,
+          physical
+        ) as never;
+      } else {
+        // No active Change directory (archived or missing source). Look up the
+        // historical association to recover the ChangeInstanceId.
+        // Ambiguity check (m1): also runs here — a deleted Change dir with ≥2
+        // archived generations surfaces launch_instance_ambiguous.
+        this.assertLaunchUnambiguous(ledgerStore, changeId);
+
+        const association = ledgerStore.resolveAssociationByAlias(alias);
+        if (association) {
+          changeInstanceId = association.instanceId as never;
+        } else if (runIdOverride) {
+          // No association found but the caller specified --run; derive a
+          // placeholder identity for Record-shape compatibility (the RunStore
+          // loads by runId, not by changeInstanceId). Covers pre-registry Runs.
+          const st = statSync(projectRoot, { bigint: true });
+          const fallbackPhysical = readPhysicalIdentity({
+            device: st.dev,
+            ino: st.ino,
+            birthtimeMs: st.birthtimeMs,
+          });
+          changeInstanceId = deriveChangeInstanceId(
+            planningSpaceId,
+            changeId,
+            fallbackPhysical
+          ) as never;
+        } else {
+          throw new ChangeRunRuntimeError(
+            'invalid_run_request',
+            `No active Change directory for "${changeId}" and no association found in the registry. ` +
+              'Create the Change directory or supply --run to target a historical Run.'
+          );
+        }
+        const st = statSync(projectRoot, { bigint: true });
+        const fallbackPhysical = readPhysicalIdentity({
+          device: st.dev,
+          ino: st.ino,
+          birthtimeMs: st.birthtimeMs,
+        });
+        workspaceInstanceId = deriveWorkspaceInstanceId(
+          planningSpaceId,
+          fallbackPhysical
+        ) as never;
+      }
+    }
+
     const launchKey = `cli-start-${changeId}`;
     const runId = (runIdOverride ?? deriveRunId(
       planningSpaceId,
@@ -586,10 +690,6 @@ export class PipelineCommand {
     const launchRequestDigest = `sha256:${createHash('sha256')
       .update(launchKey)
       .digest('hex')}` as never;
-    const projectId = `project:${createHash('sha256')
-      .update(projectRoot)
-      .digest('hex')
-      .slice(0, 12)}`;
 
     const ctx = prepareRuntimeContext({
       projectRoot,
@@ -603,6 +703,20 @@ export class PipelineCommand {
       projectId,
       launchRequestDigest,
       storeRoot: `${home}/runs`,
+      // M2: resolve the registry's source state so `pipeline status` on an
+      // archived Run reports sourceState: 'archived'. Falls back to 'active'
+      // when no ledger is available (unregistered project / pre-registry Run).
+      resolveSourceState: ledgerStore
+        ? (record) => {
+            const association = ledgerStore!.resolveAssociationByInstanceId(
+              record.change.instanceId
+            );
+            if (association) {
+              return association.state === 'active' ? 'active' : 'archived';
+            }
+            return 'active';
+          }
+        : undefined,
     });
     return { ctx, pipeline, runId, projectRoot, projectId, launchKey };
   }
@@ -773,24 +887,63 @@ export class PipelineCommand {
   }
 
   /**
+   * Ambiguity guard (m1): if no active association exists for the changeId and
+   * more than one archived generation is present, throw
+   * `launch_instance_ambiguous` with the candidate list. This prevents silently
+   * picking one archived generation when the user should supply `--run` to
+   * disambiguate. Runs in BOTH the changeDir-exists and changeDir-not-exist
+   * branches of `resolveRuntime`.
+   */
+  private assertLaunchUnambiguous(
+    ledgerStore: ReturnType<typeof createAssociationLedgerStore>,
+    changeId: string
+  ): void {
+    const ledger = ledgerStore.load();
+    const latest = ledger.revisions.at(-1)?.associations ?? [];
+    const hasActive = latest.some(
+      (a) => a.changeId === changeId && a.state === 'active'
+    );
+    if (hasActive) return;
+    const archived = latest.filter(
+      (a) => a.changeId === changeId && a.state === 'archived'
+    );
+    if (archived.length > 1) {
+      const candidates = archived
+        .map((a) => `(${a.instanceId})`)
+        .join(', ');
+      throw new ChangeRunRuntimeError(
+        'launch_instance_ambiguous',
+        `Multiple historical Change instances exist for "${changeId}" (${archived.length} archived generations). ` +
+          'Supply an exact --run to disambiguate. ' +
+          `Candidates: ${candidates}`
+      );
+    }
+  }
+
+  /**
    * Reject mutations (`complete`/`control`) on a Run whose source Change has
-   * been archived (task 15.7 Gap D). An archived Change's directory has been
-   * moved from `rasen/changes/<changeId>/` to an archive alias under the
-   * project home's archive axis. The Run Record persists and remains exactly
-   * inspectable (reads are never blocked), but mutations are rejected because
-   * the Change instance is no longer the active incarnation — a same-name
-   * recreate produces a DISTINCT ChangeInstance, and the OLD Run belongs to the
-   * archived generation.
+   * been archived. The registry is the authoritative source of truth: the
+   * Run Record's stored `changeInstanceId` (the immutable identity from when
+   * the Run was created) is looked up in the association ledger by INSTANCE
+   * ID — not by textual alias. After archive + same-name recreate, the alias
+   * resolves to the NEW active association, but the OLD Run's stored instance
+   * ID resolves to the ARCHIVED one. This is the B1 fix: the check must be
+   * instance-scoped.
    *
-   * This mirrors the filesystem-based `resolveSourceState` logic used by the
-   * management list handler (`management-api/runs.ts`): `active` when the
-   * change directory still exists; `archived` when a `*-<changeId>` directory
-   * exists under `<home>/archive/`; `missing` otherwise. Only `archived` is
-   * rejected here — `missing` (manual move) does not block mutations.
+   * The filesystem heuristic (an active `rasen/changes/<id>/` directory vs an
+   * archived `<home>/archive/*-<id>/` directory) remains as a fallback for
+   * cases the registry cannot resolve (unregistered project, missing ledger,
+   * manually-moved source, or a pre-registry Run with no stored instanceId
+   * match in the ledger).
+   *
+   * The registry SHALL be authoritative; the filesystem SHALL NOT override a
+   * registry refusal. A corrupt/missing registry never widens the mutation
+   * surface beyond the filesystem fallback.
    */
   private async assertChangeNotArchived(
     changeId: string,
-    projectRoot: string
+    projectRoot: string,
+    runId?: string
   ): Promise<void> {
     const changeDir = path.join(
       projectRoot,
@@ -798,9 +951,66 @@ export class PipelineCommand {
       'changes',
       changeId
     );
+
+    // First try the registry (authoritative path) — instance-scoped lookup.
+    try {
+      const projectHome = await resolveProjectHome(projectRoot, { ensure: false });
+      if (projectHome) {
+        const planningSpaceId = derivePlanningSpaceId(projectHome.name) as never;
+        const ledgerStore = createAssociationLedgerStore({
+          homeDir: projectHome.homeDir,
+          planningSpaceId,
+          projectId: projectHome.projectId,
+        });
+
+        // Instance-scoped lookup (B1): if the caller supplied a runId, load
+        // the Run Record, read its STORED changeInstanceId, and look THAT up
+        // in the ledger. This prevents a same-name recreate from making the
+        // alias resolve to the new active association while the OLD Run is
+        // being mutated.
+        let association;
+        if (runId) {
+          const storeRoot = `${getGlobalDataDir()}/runs`;
+          const runStore = createFilesystemRunStore(storeRoot);
+          if (runStore.has(runId as never)) {
+            const record = runStore.load(runId as never);
+            const storedInstanceId = record.change.instanceId;
+            association = ledgerStore.resolveAssociationByInstanceId(storedInstanceId);
+          }
+        }
+
+        // Fall back to alias-based lookup if the instance-scoped path did not
+        // resolve (e.g. pre-registry Run with no matching instanceId, or no
+        // runId supplied).
+        if (!association) {
+          const alias = `changes/${changeId}`;
+          association = ledgerStore.resolveAssociationByAlias(alias);
+        }
+
+        if (association) {
+          if (association.state === 'archived') {
+            const archiveAliases = association.archiveAliases.join(', ');
+            throw new ChangeRunRuntimeError(
+              'change_instance_inactive',
+              `Change "${changeId}" is archived (${archiveAliases}). ` +
+                'Mutations (complete/control) on its Runs are rejected via the association registry. ' +
+                'The Run remains inspectable via `pipeline status`.'
+            );
+          }
+          // Registry says active — mutation allowed.
+          if (association.state === 'active') return;
+          // state === 'missing' — fall through to filesystem heuristic.
+        }
+        // No association found — fall through to filesystem heuristic.
+      }
+    } catch (err) {
+      // Re-throw the guard error; swallow resolution/registry failures.
+      if (err instanceof ChangeRunRuntimeError) throw err;
+    }
+
+    // Filesystem fallback (Gap D behavior preserved for unregistered cases).
     if (fs.existsSync(changeDir)) return; // active — mutation allowed
 
-    // Check if the change has been archived.
     try {
       const home = await resolveProjectHome(projectRoot, { ensure: false });
       if (home) {
@@ -808,7 +1018,6 @@ export class PipelineCommand {
         if (fs.existsSync(archiveDir)) {
           const entries = fs.readdirSync(archiveDir, { withFileTypes: true });
           for (const entry of entries) {
-            // Archived directories are named `YYYY-MM-DD-<changeId>`.
             if (entry.isDirectory() && entry.name.endsWith(`-${changeId}`)) {
               throw new ChangeRunRuntimeError(
                 'change_instance_inactive',
@@ -821,8 +1030,6 @@ export class PipelineCommand {
         }
       }
     } catch (err) {
-      // Re-throw the guard error; swallow resolution failures (fail-open for
-      // unrecognized errors — only a confirmed archive blocks the mutation).
       if (err instanceof ChangeRunRuntimeError) throw err;
     }
   }
@@ -987,7 +1194,7 @@ export class PipelineCommand {
     options: PipelineCommandOptions = {}
   ): Promise<void> {
     const resolved = await this.resolveRuntimeForRun(changeId, runId, options);
-    await this.assertChangeNotArchived(changeId, resolved.projectRoot);
+    await this.assertChangeNotArchived(changeId, resolved.projectRoot, runId);
     const body = this.readBoundedPayload(from) as {
       completion?: unknown;
       uploads?: unknown;
@@ -1044,7 +1251,7 @@ export class PipelineCommand {
     options: PipelineCommandOptions = {}
   ): Promise<void> {
     const resolved = await this.resolveRuntimeForRun(changeId, runId, options);
-    await this.assertChangeNotArchived(changeId, resolved.projectRoot);
+    await this.assertChangeNotArchived(changeId, resolved.projectRoot, runId);
     const body = this.readBoundedPayload(from) as {
       control?: unknown;
       uploads?: unknown;

@@ -36,6 +36,12 @@ export interface RuntimeContextInput {
   readonly storeRoot: string;
   readonly limits?: CanonicalRecordLimits;
   readonly inputs?: Readonly<Record<string, unknown>>;
+  /**
+   * Optional callback that resolves the association registry's source state
+   * for a Run's ChangeInstance (M2). When provided, `pipeline status` on an
+   * archived Run reports `sourceState: 'archived'`.
+   */
+  readonly resolveSourceState?: (record: CanonicalRunRecord) => 'active' | 'archived' | 'missing';
 }
 
 export interface RuntimeContext {
@@ -135,6 +141,7 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
     plan,
     initialRecord,
     buildAction,
+    resolveSourceState: input.resolveSourceState,
   });
 
   return Object.freeze({ plan, facade, store, initialRecord });

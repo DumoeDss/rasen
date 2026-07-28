@@ -249,7 +249,7 @@ function findHeadRecord(dirPath: string): { file: string; version: number } | nu
  * Returns either a projected Run or a per-entry error. Never throws — a
  * corrupt/oversized/gapped Record is isolated as `{ error }`.
  */
-function tryProjectRun(dirPath: string): { ok: true; run: ProjectedRun } | { ok: false; error: { code: string; message: string }; dirName: string } {
+function tryProjectRun(dirPath: string, sourceState?: 'active' | 'archived' | 'missing'): { ok: true; run: ProjectedRun } | { ok: false; error: { code: string; message: string }; dirName: string } {
   const dirName = path.basename(dirPath);
   const head = findHeadRecord(dirPath);
   if (head === null) {
@@ -281,7 +281,7 @@ function tryProjectRun(dirPath: string): { ok: true; run: ProjectedRun } | { ok:
   }
   let view: ChangeRunView;
   try {
-    view = projectRunView(record);
+    view = projectRunView(record, sourceState);
   } catch (err) {
     return { ok: false, dirName, error: { code: 'run_store_corrupt', message: `Projection failed: ${err instanceof Error ? err.message : String(err)}` } };
   }
@@ -471,7 +471,14 @@ export async function handleRunDetail(
   const dirName = runId.replace(/[^a-z0-9]/gi, '_');
   const dirPath = path.join(storeRoot, dirName);
 
-  const result = tryProjectRun(dirPath);
+  // M2: resolve the source state so the detail view reflects the real
+  // registry/filesystem state (e.g. 'archived' for an archived Run). Only
+  // pass when we have a root or home to resolve from — when both are absent,
+  // the projector default 'active' is the safe pre-existing behavior.
+  const resolvedSourceState = (root || home)
+    ? resolveSourceState(changeId, root, home)
+    : undefined;
+  const result = tryProjectRun(dirPath, resolvedSourceState);
   if (!result.ok) {
     return { ok: false, status: 404, code: result.error.code, message: result.error.message };
   }
