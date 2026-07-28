@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import {
+  canonicalizeEditTarget,
   clearEditBoundary,
   editHookOutput,
   evaluateEditHook,
@@ -53,12 +54,12 @@ describe('checkout-scoped edit boundary', () => {
 
     const first = setEditBoundary('src', options());
     expect(first).toMatchObject({ active: true, changed: true });
-    expect(first.boundary).toBe(fs.realpathSync(path.join(project, 'src')));
+    expect(first.boundary).toBe(canonicalizeEditTarget(path.join(project, 'src')));
 
     const second = setEditBoundary(path.join('src', 'nested'), options());
     expect(second).toMatchObject({ active: true, changed: true });
     expect(readEditBoundaryState(project, options()).record?.boundary).toBe(
-      fs.realpathSync(path.join(project, 'src', 'nested'))
+      canonicalizeEditTarget(path.join(project, 'src', 'nested'))
     );
     expect(
       fs
@@ -161,8 +162,10 @@ describe('checkout-scoped edit boundary', () => {
   });
 
   it('follows symlink identity and nearest-existing ancestors for new targets', () => {
+    const outsideReal = path.join(fixture, 'outside-real');
     const outside = path.join(fixture, 'outside');
-    fs.mkdirSync(outside);
+    fs.mkdirSync(outsideReal);
+    fs.symlinkSync(outsideReal, outside, process.platform === 'win32' ? 'junction' : 'dir');
     const link = path.join(project, 'src', 'escape');
     fs.symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
     setEditBoundary('src', options());
@@ -177,7 +180,7 @@ describe('checkout-scoped edit boundary', () => {
     );
     expect(outsideEvaluation).toMatchObject({
       decision: 'deny',
-      outsideTargets: [path.join(outside, 'new', 'file.ts')],
+      outsideTargets: [canonicalizeEditTarget(path.join(outside, 'new', 'file.ts'))],
     });
 
     const insideEvaluation = evaluateEditHook(
@@ -218,7 +221,7 @@ describe('checkout-scoped edit boundary', () => {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
         permissionDecisionReason: expect.stringContaining(
-          fs.realpathSync(path.join(project, 'src'))
+          canonicalizeEditTarget(path.join(project, 'src'))
         ),
       },
     });

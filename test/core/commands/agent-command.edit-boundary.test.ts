@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { AgentCommand } from '../../../src/commands/agent.js';
+import { canonicalizeEditTarget } from '../../../src/core/edit-boundary.js';
 import { ensureClaudeEditBoundaryHook } from '../../../src/core/edit-boundary-hooks.js';
 
 describe('AgentCommand edit-boundary', () => {
@@ -44,7 +45,7 @@ describe('AgentCommand edit-boundary', () => {
       runtime: 'claude',
       runtimeSource: 'cli-option',
       enforcement: 'hard',
-      boundary: fs.realpathSync(path.join(project, 'src')),
+      boundary: canonicalizeEditTarget(path.join(project, 'src')),
     });
     expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toEqual(set);
     expect(fs.existsSync(path.join(project, '.claude', 'skills'))).toBe(false);
