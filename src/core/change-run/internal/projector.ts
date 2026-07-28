@@ -6,8 +6,10 @@ import type {
   CanonicalRunRecord,
   CommittedAction,
 } from './record.js';
+import type { RuntimePlan, RuntimePlanBoundedLoopNode } from './runtime-plan.js';
 import type { CanonicalWait } from './waits.js';
 import { canonicalJson } from './identity.js';
+import { projectReviewCycleProgress } from './review-cycle-runtime.js';
 
 function actionView(committed: CommittedAction) {
   const action = committed.action;
@@ -117,7 +119,8 @@ function allowedControlsFor(
  */
 export function projectRunView(
   record: CanonicalRunRecord,
-  sourceState: 'active' | 'archived' | 'missing' = 'active'
+  sourceState: 'active' | 'archived' | 'missing' = 'active',
+  plan?: RuntimePlan
 ): ChangeRunView {
   const isTerminal = record.terminal !== undefined;
   const root = isTerminal
@@ -182,6 +185,68 @@ export function projectRunView(
       policy: 'unchanged',
       workspace: 'unchanged',
     },
-    sections: [root],
+    sections: buildSections(root, plan, record),
   } as ChangeRunView;
+}
+
+/**
+ * Build the view sections: root-dag always, review-cycle when the plan
+ * contains a bounded-loop. Both derive from the same canonical Record.
+ */
+function buildSections(
+  root: unknown,
+  plan: RuntimePlan | undefined,
+  record: CanonicalRunRecord
+): readonly unknown[] {
+  const sections: unknown[] = [root];
+  if (plan !== undefined) {
+    const loop = plan.nodes.find(
+      (node): node is RuntimePlanBoundedLoopNode => node.kind === 'bounded-loop'
+    );
+    if (loop !== undefined) {
+      const progress = projectReviewCycleProgress(plan, loop, record);
+      sections.push(buildReviewCycleSection(loop, progress));
+    }
+  }
+  return Object.freeze(sections);
+}
+
+function buildReviewCycleSection(
+  loop: RuntimePlanBoundedLoopNode,
+  progress: ReturnType<typeof projectReviewCycleProgress>
+): unknown {
+  const state = progress.state;
+  const phase = 'next' in progress ? progress.next.phase : state.phase;
+  const round = 'next' in progress ? progress.next.round : state.round;
+  return Object.freeze({
+    kind: 'review-cycle',
+    version: 1,
+    loopPath: loop.hierarchicalPath,
+    round,
+    phase,
+    outcome: state.outcome,
+    findings: state.findings.map((f) => ({
+      id: f.id,
+      severity: f.severity,
+      status: f.status,
+      claim: f.claim,
+      ...(f.location !== undefined ? { location: f.location } : {}),
+    })),
+    actors: {
+      ...(state.fixerActor !== undefined
+        ? { fixer: state.fixerActor }
+        : {}),
+      ...(state.verifierActor !== undefined
+        ? { verifier: state.verifierActor }
+        : {}),
+      ...(state.lastActor !== undefined ? { lastActor: state.lastActor } : {}),
+    },
+    waitReason:
+      progress.kind === 'waiting'
+        ? 'action-active'
+        : progress.kind === 'failed'
+          ? 'committed-failure'
+          : undefined,
+    maxRounds: loop.maxIterations,
+  });
 }

@@ -88,13 +88,14 @@ function receipt(
   record: CanonicalRunRecord,
   disposition: ChangeRunReceipt['disposition'],
   actions: readonly RunAction[],
-  resolveSourceState?: (record: CanonicalRunRecord) => 'active' | 'archived' | 'missing'
+  resolveSourceState?: (record: CanonicalRunRecord) => 'active' | 'archived' | 'missing',
+  plan?: RuntimePlan
 ): ChangeRunReceipt {
   const sourceState = resolveSourceState?.(record) ?? 'active';
   return Object.freeze({
     format: 'change-run-receipt/1',
     disposition,
-    view: projectRunView(record, sourceState),
+    view: projectRunView(record, sourceState, plan),
     actions: Object.freeze([...actions]),
   }) as ChangeRunReceipt;
 }
@@ -388,7 +389,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
     start(_request, context: RuntimeMutationContext) {
       if (deps.store.has(deps.plan.runId)) {
         const record = deps.store.load(deps.plan.runId);
-        return asPromise(receipt(record, 'reused', [], deps.resolveSourceState));
+        return asPromise(receipt(record, 'reused', [], deps.resolveSourceState, deps.plan));
       }
       const reconciled = reconcile(deps.plan, deps.initialRecord);
       if (!reconciled.ok) {
@@ -400,7 +401,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         context.deliveryMode
       );
       deps.store.create(deps.plan.runId, settled.record);
-      return asPromise(receipt(settled.record, 'created', settled.granted, deps.resolveSourceState));
+      return asPromise(receipt(settled.record, 'created', settled.granted, deps.resolveSourceState, deps.plan));
     },
     resume(_request, context: RuntimeMutationContext) {
       const record = deps.store.load(deps.plan.runId);
@@ -425,7 +426,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
               ? 'waiting'
               : 'advanced';
       return asPromise(
-        receipt(settled.record, disposition, settled.granted, deps.resolveSourceState)
+        receipt(settled.record, disposition, settled.granted, deps.resolveSourceState, deps.plan)
       );
     },
     complete(request: CompleteRunAction, context: RuntimeMutationContext) {
@@ -519,12 +520,12 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
             : finalRecord.waits.length > 0
               ? 'waiting'
               : 'advanced';
-      return asPromise(receipt(finalRecord, disposition, collected.granted, deps.resolveSourceState));
+      return asPromise(receipt(finalRecord, disposition, collected.granted, deps.resolveSourceState, deps.plan));
     },
     inspect(_ref: ExactChangeRunRef) {
       const record = deps.store.load(deps.plan.runId);
       const sourceState = deps.resolveSourceState?.(record) ?? 'active';
-      return asPromise(projectRunView(record, sourceState));
+      return asPromise(projectRunView(record, sourceState, deps.plan));
     },
     control(request: ChangeRunControlRequest, _context: RuntimeMutationContext) {
       const record = deps.store.load(deps.plan.runId);
@@ -534,7 +535,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         throw new Error(`facade control failed: ${result.failure.message}`);
       }
       deps.store.commit(deps.plan.runId, result.record);
-      return asPromise(receipt(result.record, 'advanced', [], deps.resolveSourceState));
+      return asPromise(receipt(result.record, 'advanced', [], deps.resolveSourceState, deps.plan));
     },
   };
 }
