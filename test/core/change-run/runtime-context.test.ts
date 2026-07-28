@@ -44,6 +44,23 @@ function git(cwd: string, args: readonly string[]): void {
   execFileSync('git', args, { cwd, stdio: 'ignore' });
 }
 
+/**
+ * v2-compatible profile entries. The normalized bug-fix definition has:
+ *  - 4 root AtomicStage nodes (propose, apply, ship, archive) at `root:stage:<id>`
+ *  - 4 ReviewCycle body phases (review, triage, fix, re-review) at
+ *    `declaration:review-cycle-body:verify/node:verify:<phase>`
+ */
+const V2_NODES = [
+  { path: 'root:stage:propose', skill: 'rasen-propose', role: 'planner', gate: true, access: 'read' as const, model: 'default' as const },
+  { path: 'root:stage:apply', skill: 'rasen-apply-change', role: 'implementer', gate: true, access: 'write' as const, model: 'default' as const },
+  { path: 'root:stage:ship', skill: 'rasen-ship', role: 'shipper', gate: true, access: 'write' as const, model: 'sonnet' as const },
+  { path: 'root:stage:archive', skill: 'rasen-archive-change', role: 'shipper', gate: false, access: 'write' as const, model: 'sonnet' as const },
+  { path: 'declaration:review-cycle-body:verify/node:verify:review', skill: 'rasen-review', role: 'reviewer', gate: false, access: 'read' as const, model: 'default' as const },
+  { path: 'declaration:review-cycle-body:verify/node:verify:triage', skill: 'rasen-review', role: 'reviewer', gate: false, access: 'read' as const, model: 'default' as const },
+  { path: 'declaration:review-cycle-body:verify/node:verify:fix', skill: 'rasen-review', role: 'implementer', gate: false, access: 'write' as const, model: 'default' as const },
+  { path: 'declaration:review-cycle-body:verify/node:verify:re-review', skill: 'rasen-review', role: 'reviewer', gate: false, access: 'read' as const, model: 'default' as const },
+] as const;
+
 function profileFor(prepared: { authoredSource: { stages: { id: string; skill: string }[] } }) {
   return createRuntimeExecutionProfile({
     sourceRevision: {
@@ -53,35 +70,35 @@ function profileFor(prepared: { authoredSource: { stages: { id: string; skill: s
       authoredContentDigest: `sha256:${'1'.repeat(64)}`,
       semanticDigest: `sha256:${'2'.repeat(64)}`,
     },
-    capabilities: prepared.authoredSource.stages.map((stage) => ({
-      nodeId: `stage:${stage.id}`,
-      authoredCapability: { id: `skill:${stage.skill}`, version: 'legacy' },
-      contract: { id: stage.skill, version: '1', digest: `sha256:${'3'.repeat(64)}` },
+    capabilities: V2_NODES.map((node) => ({
+      nodeId: node.path,
+      authoredCapability: { id: `skill:${node.skill}`, version: 'legacy' },
+      contract: { id: node.skill, version: '1', digest: `sha256:${'3'.repeat(64)}` },
       actionKind: 'agent' as const,
-      resultContract: { id: `${stage.skill}-result`, version: '1', digest: `sha256:${'4'.repeat(64)}` },
-      evidenceContract: { id: `${stage.skill}-evidence`, version: '1', digest: `sha256:${'5'.repeat(64)}` },
+      resultContract: { id: `${node.skill}-result`, version: '1', digest: `sha256:${'4'.repeat(64)}` },
+      evidenceContract: { id: `${node.skill}-evidence`, version: '1', digest: `sha256:${'5'.repeat(64)}` },
       recovery: 'suspend-if-ambiguous' as const,
       workspace: {
-        access: (stage.id === 'propose' || stage.id === 'verify' ? 'read' : 'write') as 'read' | 'write',
+        access: node.access,
         resources: ['worktree'],
       },
       effects: [
         { slot: 'workspace', kind: 'workspace' as const, resource: 'worktree', recovery: 'suspend-if-ambiguous' as const },
       ],
-      adapter: { id: `adapter:${stage.skill}`, version: '1', contentDigest: `sha256:${'6'.repeat(64)}` },
+      adapter: { id: `adapter:${node.skill}`, version: '1', contentDigest: `sha256:${'6'.repeat(64)}` },
     })),
     policy: {
       format: 'effective-run-policy/1',
       maxAttempts: 3,
       maxActions: 64,
-      stages: prepared.authoredSource.stages.map((stage) => ({
-        nodeId: `stage:${stage.id}`,
-        role: BUG_FIX.stages.find((s) => s.id === stage.id)!.role,
-        model: BUG_FIX.stages.find((s) => s.id === stage.id)!.model ?? 'default',
+      stages: V2_NODES.map((node) => ({
+        nodeId: node.path,
+        role: node.role,
+        model: node.model,
         effort: 'default',
         runtime: 'codex',
-        sandbox: stage.id === 'propose' || stage.id === 'verify' ? ('read-only' as const) : ('workspace-write' as const),
-        gate: BUG_FIX.stages.find((s) => s.id === stage.id)!.gate ?? false,
+        sandbox: node.access === 'read' ? ('read-only' as const) : ('workspace-write' as const),
+        gate: node.gate,
         sessionReuse: 'never' as const,
         handoffTokenLimit: 10_000,
         reuseRoundLimit: 1,

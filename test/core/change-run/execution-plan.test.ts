@@ -82,35 +82,51 @@ function sourceRevision(
   } as const;
 }
 
+/**
+ * v2-compatible profile entries. The normalized bug-fix definition has:
+ *  - 4 root AtomicStage nodes (propose, apply, ship, archive) at `root:stage:<id>`
+ *  - 4 ReviewCycle body phases (review, triage, fix, re-review) at
+ *    `declaration:review-cycle-body:verify/node:verify:<phase>`
+ */
+const V2_PROFILE_NODES = [
+  { path: 'root:stage:propose', skill: 'rasen-propose', role: 'planner', gate: true, access: 'read' as const, model: 'default' as const },
+  { path: 'root:stage:apply', skill: 'rasen-apply-change', role: 'implementer', gate: true, access: 'write' as const, model: 'default' as const },
+  { path: 'root:stage:ship', skill: 'rasen-ship', role: 'shipper', gate: true, access: 'write' as const, model: 'sonnet' as const },
+  { path: 'root:stage:archive', skill: 'rasen-archive-change', role: 'shipper', gate: false, access: 'write' as const, model: 'sonnet' as const },
+  { path: 'declaration:review-cycle-body:verify/node:verify:review', skill: 'rasen-review', role: 'reviewer', gate: false, access: 'read' as const, model: 'default' as const },
+  { path: 'declaration:review-cycle-body:verify/node:verify:triage', skill: 'rasen-review', role: 'reviewer', gate: false, access: 'read' as const, model: 'default' as const },
+  { path: 'declaration:review-cycle-body:verify/node:verify:fix', skill: 'rasen-review', role: 'implementer', gate: false, access: 'write' as const, model: 'default' as const },
+  { path: 'declaration:review-cycle-body:verify/node:verify:re-review', skill: 'rasen-review', role: 'reviewer', gate: false, access: 'read' as const, model: 'default' as const },
+] as const;
+
 function profile() {
   return createRuntimeExecutionProfile({
     sourceRevision: sourceRevision(),
-    capabilities: BUG_FIX.stages.map((stage) => ({
-      nodeId: `stage:${stage.id}`,
+    capabilities: V2_PROFILE_NODES.map((node) => ({
+      nodeId: node.path,
       authoredCapability: {
-        id: `skill:${stage.skill}`,
+        id: `skill:${node.skill}`,
         version: 'legacy',
       },
       contract: {
-        id: stage.skill,
+        id: node.skill,
         version: '1',
         digest: `sha256:${'3'.repeat(64)}`,
       },
       actionKind: 'agent',
       resultContract: {
-        id: `${stage.skill}-result`,
+        id: `${node.skill}-result`,
         version: '1',
         digest: `sha256:${'4'.repeat(64)}`,
       },
       evidenceContract: {
-        id: `${stage.skill}-evidence`,
+        id: `${node.skill}-evidence`,
         version: '1',
         digest: `sha256:${'5'.repeat(64)}`,
       },
       recovery: 'suspend-if-ambiguous',
       workspace: {
-        access:
-          stage.id === 'propose' || stage.id === 'verify' ? 'read' : 'write',
+        access: node.access,
         resources: ['worktree'],
       },
       effects: [
@@ -122,7 +138,7 @@ function profile() {
         },
       ],
       adapter: {
-        id: `adapter:${stage.skill}`,
+        id: `adapter:${node.skill}`,
         version: '1',
         contentDigest: `sha256:${'6'.repeat(64)}`,
       },
@@ -131,23 +147,20 @@ function profile() {
       format: 'effective-run-policy/1',
       maxAttempts: 3,
       maxActions: 64,
-      stages: BUG_FIX.stages.map((stage) => ({
-        nodeId: `stage:${stage.id}`,
-        role: stage.role,
-        model: stage.model ?? 'default',
+      stages: V2_PROFILE_NODES.map((node) => ({
+        nodeId: node.path,
+        role: node.role,
+        model: node.model,
         effort: 'default',
         runtime: 'codex',
-        sandbox:
-          stage.id === 'propose' || stage.id === 'verify'
-            ? 'read-only'
-            : 'workspace-write',
-        gate: stage.gate ?? false,
+        sandbox: node.access === 'read' ? 'read-only' : 'workspace-write',
+        gate: node.gate,
         sessionReuse: 'never',
         handoffTokenLimit: 10_000,
         reuseRoundLimit: 1,
         provenance: {
           role: 'stage',
-          model: stage.model ? 'stage' : 'default',
+          model: node.model === 'default' ? 'default' : 'stage',
           effort: 'default',
           runtime: 'stage',
           sandbox: 'stage',
@@ -206,8 +219,8 @@ describe('runtime execution profile sealing', () => {
 
     expect(opened.profile).toEqual(frozenProfile);
     expect(opened.profile.sourceRevision).not.toHaveProperty('path');
-    expect(opened.profile.capabilities).toHaveLength(5);
-    expect(opened.profile.policy.stages).toHaveLength(5);
+    expect(opened.profile.capabilities).toHaveLength(8);
+    expect(opened.profile.policy.stages).toHaveLength(8);
     expect(opened.profileDigest).toBe(frozenProfile.profileDigest);
     expect(Object.isFrozen(opened.profile)).toBe(true);
   });
@@ -247,23 +260,62 @@ describe('runtime execution profile sealing', () => {
 });
 
 describe('one reconciler support analyzer', () => {
-  it('supports only the exact validated root-DAG bug-fix profile', () => {
+  it('supports only the exact validated v2 ReviewCycle bug-fix profile', () => {
     const supported = analyzeReconcilerSupport(prepare(), profile());
     expect(supported).toEqual({
       availableEngines: ['legacy', 'reconciler'],
       reconcilerSupport: {
         supported: true,
-        reason: 'supported_root_dag_bug_fix',
+        reason: 'supported_v2_review_cycle',
         profileDigest: profile().profileDigest,
       },
     });
 
-    const sameNameWrongShape = structuredClone(BUG_FIX);
-    sameNameWrongShape.stages[2]!.skill = 'rasen-apply-change';
-    const unsupported = analyzeReconcilerSupport(
-      prepare(sameNameWrongShape),
-      profile()
-    );
+    // A v1-style profile with stage:* paths does not match the v2 ReviewCycle
+    // normalized definition shape — the capability nodeIds differ.
+    const v1StyleProfile = createRuntimeExecutionProfile({
+      sourceRevision: sourceRevision(),
+      capabilities: BUG_FIX.stages.map((stage) => ({
+        nodeId: `stage:${stage.id}`,
+        authoredCapability: { id: `skill:${stage.skill}`, version: 'legacy' },
+        contract: { id: stage.skill, version: '1', digest: `sha256:${'3'.repeat(64)}` },
+        actionKind: 'agent' as const,
+        resultContract: { id: `${stage.skill}-result`, version: '1', digest: `sha256:${'4'.repeat(64)}` },
+        evidenceContract: { id: `${stage.skill}-evidence`, version: '1', digest: `sha256:${'5'.repeat(64)}` },
+        recovery: 'suspend-if-ambiguous' as const,
+        workspace: {
+          access: (stage.id === 'propose' || stage.id === 'verify' ? 'read' : 'write') as 'read' | 'write',
+          resources: ['worktree'],
+        },
+        effects: [
+          { slot: 'workspace', kind: 'workspace' as const, resource: 'worktree', recovery: 'suspend-if-ambiguous' as const },
+        ],
+        adapter: { id: `adapter:${stage.skill}`, version: '1', contentDigest: `sha256:${'6'.repeat(64)}` },
+      })),
+      policy: {
+        format: 'effective-run-policy/1',
+        maxAttempts: 3,
+        maxActions: 64,
+        stages: BUG_FIX.stages.map((stage) => ({
+          nodeId: `stage:${stage.id}`,
+          role: stage.role,
+          model: stage.model ?? 'default',
+          effort: 'default',
+          runtime: 'codex',
+          sandbox: stage.id === 'propose' || stage.id === 'verify' ? ('read-only' as const) : ('workspace-write' as const),
+          gate: stage.gate ?? false,
+          sessionReuse: 'never' as const,
+          handoffTokenLimit: 10_000,
+          reuseRoundLimit: 1,
+          provenance: {
+            role: 'stage', model: 'default', effort: 'default', runtime: 'stage',
+            sandbox: 'stage', gate: 'stage', sessionReuse: 'default',
+            handoffTokenLimit: 'default', reuseRoundLimit: 'default',
+          },
+        })),
+      },
+    });
+    const unsupported = analyzeReconcilerSupport(prepare(), v1StyleProfile);
     expect(unsupported.availableEngines).toEqual(['legacy']);
     expect(unsupported.reconcilerSupport).toEqual(
       expect.objectContaining({
@@ -274,10 +326,14 @@ describe('one reconciler support analyzer', () => {
   });
 
   it('rejects Composite/Loop/FanOut/Join and v2 before Run creation', () => {
-    const loop = structuredClone(BUG_FIX);
-    loop.stages[2]!.loop = { kind: 'review-cycle', maxRounds: 3 };
+    // Remove verifyPolicy: 'adaptive' (which normalizes to a supported
+    // ReviewCycle BoundedLoop) and add a goal loop instead — this produces
+    // a legacy-loop BoundedLoop that is rejected as unsupported semantics.
+    const goal = structuredClone(BUG_FIX);
+    delete goal.stages[2]!.verifyPolicy;
+    goal.stages[2]!.loop = { kind: 'goal', maxRounds: 3, gate: { kind: 'measure' } };
     expect(
-      analyzeReconcilerSupport(prepare(loop), profile()).reconcilerSupport
+      analyzeReconcilerSupport(prepare(goal), profile()).reconcilerSupport
     ).toEqual(
       expect.objectContaining({
         supported: false,
