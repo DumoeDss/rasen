@@ -283,3 +283,8 @@ settle path in `facade-runtime.ts`.
   into `run-store-fs.ts` so the design §9.6 staging+fsync+rename durability is actually deployed.
   (The 15.6 fault journeys prove the `publishAtomic` CONTRACT on real fs; they don't prove the
   production store uses it.)
+  **RESOLVED (Gap C fix):** `run-store-fs.ts` `publish()` now calls `publishAtomic` with a
+  real-fs `FILESYSTEM_PLUMBING` (stage `<target>.staging` → fsync → atomic rename). Crash-
+  durable. Residual: no parent-DIRECTORY fsync after rename (a property of the approved 9.5/9.6
+  `publishAtomic` contract scope, not introduced here — full POSIX durability needs a dir fsync,
+  a future hardening). The store's `^record-v(\d+)\.json$` head filter ignores the staging sibling.
