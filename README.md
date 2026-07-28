@@ -12,7 +12,6 @@
 
 <p align="center">
   <a href="https://github.com/DumoeDss/rasen/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/DumoeDss/rasen/actions/workflows/ci.yml/badge.svg" /></a>
-  <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" /></a>
   <a href="https://rasen.io/docs/"><img alt="Docs" src="https://img.shields.io/badge/docs-rasen.io-4AF626?style=flat-square&labelColor=050505" /></a>
 </p>
 
@@ -36,9 +35,32 @@ A loop that returns to where it started is just a circle. Rasen (螺旋, "spiral
 
 Intent is where you start. The spiral is how you get there.
 
-## Lineage
+## See it in action
 
-Rasen is forked from [OpenSpec](https://github.com/Fission-AI/OpenSpec) (MIT) by Fission-AI, and is independently maintained by [Sayo](https://github.com/DumoeDss). It is **not affiliated with Fission-AI**. Its workflow semantics are aligned with upstream **OpenSpec v1.5.0** — the `propose → apply → archive` spec/change model is the same — but rasen runs in **independent namespaces**: the `rasen` binary, `/rasen-*` slash commands, `rasen-*` skills, and a `rasen/` workspace. rasen layers autonomous orchestration on top and never touches an upstream `openspec/` install.
+```text
+You: /rasen-auto full-feature I want dark mode but I'm not sure how to do it cleanly.
+AI:  Pipeline: full-feature (explicit)
+     First stage: office-hours. Let's pressure-test the design.
+AI:  First load-bearing fork: one shared token layer, or theme logic
+     repeated inside components? I recommend CSS variables: less drift.
+     Choose the shared token layer?
+You: Yes — use one shared token layer.
+AI:  Next fork: follow the system theme by default, with a saved manual
+     override? I recommend yes; it stays predictable and dependency-free.
+     Approve that direction?
+You: Yes — approved.
+AI:  Design approved. Wrote the office-hours design document.
+     ✓ office-hours — direction approved and recorded
+     LEAD continued the full-feature pipeline with role-isolated workers.
+     ✓ propose — intent captured as change artifacts
+     ✓ apply — dark mode implemented
+     ✓ expert reviews — review, design review, and QA passed
+     ✓ review-cycle — one finding fixed; re-review clean
+     ✓ ship — delivery recorded
+     ✓ retain — durable lessons evaluated
+     ✓ archive — specs synced
+     Done. Dark mode is shipped.
+```
 
 ## Install
 
@@ -63,6 +85,19 @@ To refresh AI guidance and pick up the latest slash commands after upgrading:
 rasen update
 ```
 
+## What you get
+
+- **Intent-driven workflow** — tell it what to build. The harness turns that into a folder — proposal, spec, design, task list — generating and maintaining it as it works, so you never have to write it yourself: `/rasen-propose → /rasen-apply-change → /rasen-archive-change`.
+- **`rasen` pipeline family** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` ship as data (YAML); inspect them with `rasen pipeline show|list|classify|resume`, share them as installable packages (`rasen pipeline import|export`), or assemble your own by drag-and-drop in the web UI's pipeline canvas. Adding a task type is adding one file, zero code.
+- **`rasen ui` management platform** — a local web UI: task board, supervised headless agent sessions that outlive your terminal, the pipeline canvas, and config/workflow/profile management. See [Web UI](#web-ui).
+- **`/rasen-auto` autopilot** — one command turns the agent into a **LEAD** that orchestrates role-isolated subagents (planner / implementer / reviewer / fixer / shipper) through the pipeline, pausing only at gates.
+- **`/rasen-goal` goal-driven iteration** — a sibling to `/rasen-auto` for tasks whose "done" is a condition, not a document (drive Lighthouse to 90, make a module rubric-clean, research and write a brief). The LEAD classifies the task into a measure / evaluate / research backend and repeats modify → judge until the gate is satisfied or the round cap is hit.
+- **Auto-decompose** — a task too large for one reviewable diff is split into independently-deliverable child changes with a dependency DAG and a conservative serial/parallel policy.
+- **chrome-use** — an expert that drives your real Chrome via CDP: navigate, click, capture network traffic, inject JS, read cookies and `localStorage`, wait on requests — for logged-in pages, SPAs, and anything a plain fetch can't reach.
+- **Context sensing & handoff** — `rasen agent context` measures real occupancy; `/rasen-handoff` writes a distillate checkpoint; workers self-hand-off at soft budgets, and a compact-recovery hook re-anchors on the distillate after an auto-compact, so long runs survive context limits.
+- **Prompt-cache keepalive** — `rasen agent wait` parks an idle worker on a keepalive beat instead of letting its 5-minute prompt cache expire, so a reviewer waiting on an implementer doesn't pay a full-context rewrite on its next turn. Beat length is tunable via `keepalive.beatSeconds`.
+- **Token audit** — `rasen agent audit` shows where a session's tokens actually went: per-agent spend, cache churn and its causes, with a bundled HTML viewer. Works on Claude Code transcripts and Codex rollouts, fully local — nothing is uploaded.
+
 ## Web UI
 
 The CLI has a browser-based management platform beside it. Install the UI package next to the CLI, then launch:
@@ -78,6 +113,16 @@ rasen ui
 - **Sessions** — launch headless `/rasen-auto` / `/rasen-goal` runs from the browser, watch their output, kill them with a click; they survive closing the terminal.
 - **Pipeline canvas** — view any pipeline as a DAG, and assemble new ones by dragging skills onto the canvas, with server-side validation before save.
 - **Config / Workflows / Profiles** — layered configuration with visible inheritance, the installable-workflow library with per-space toggles, and named workflow profiles.
+
+### Web UI in 0.1.5
+
+**Pipeline Canvas** — edit the stage graph, validate dependencies, and tune role, runtime, model, and handoff settings.
+
+![Rasen 0.1.5 Pipeline Canvas](assets/webui/rasen-ui-0.1.5-pipeline-canvas.png)
+
+**Session Audit** — compare token totals and cache composition, then trace agents and cache-churn events across the timeline.
+
+![Rasen 0.1.5 Session Audit](assets/webui/rasen-ui-0.1.5-session-audit.png)
 
 ## Coexistence with OpenSpec
 
@@ -100,60 +145,6 @@ rasen migrate
 
 `rasen migrate` is **copy-only**: it copies `openspec/{specs,changes,config.yaml}` into `rasen/`, skipping anything that already exists. Your original `openspec/` directory is **never modified or deleted** — you can keep using OpenSpec against it unchanged.
 
-### chrome-use prerequisites
-
-The `chrome-use` expert drives your everyday Chrome over the Chrome DevTools Protocol. To use it you need:
-
-- **Google Chrome** installed.
-- **Node.js 22 or newer** (the CDP proxy tooling requires it).
-- Chrome started with remote debugging enabled — open `chrome://inspect/#remote-debugging` (or launch Chrome with `--remote-debugging-port`).
-- On the **first CDP connection**, Chrome shows an **"Allow"** permission popup — approve it to let the tooling attach.
-
-## What you get
-
-- **Intent-driven workflow** — tell it what to build. The harness turns that into a folder — proposal, spec, design, task list — generating and maintaining it as it works, so you never have to write it yourself: `/rasen-propose → /rasen-apply-change → /rasen-archive-change`.
-- **`rasen` pipeline family** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` ship as data (YAML); inspect them with `rasen pipeline show|list|classify|resume`, share them as installable packages (`rasen pipeline import|export`), or assemble your own by drag-and-drop in the web UI's pipeline canvas. Adding a task type is adding one file, zero code.
-- **`rasen ui` management platform** — a local web UI: task board, supervised headless agent sessions that outlive your terminal, the pipeline canvas, and config/workflow/profile management. See [Web UI](#web-ui).
-- **`/rasen-auto` autopilot** — one command turns the agent into a **LEAD** that orchestrates role-isolated subagents (planner / implementer / reviewer / fixer / shipper) through the pipeline, pausing only at gates.
-- **`/rasen-goal` goal-driven iteration** — a sibling to `/rasen-auto` for tasks whose "done" is a condition, not a document (drive Lighthouse to 90, make a module rubric-clean, research and write a brief). The LEAD classifies the task into a measure / evaluate / research backend and repeats modify → judge until the gate is satisfied or the round cap is hit.
-- **Auto-decompose** — a task too large for one reviewable diff is split into independently-deliverable child changes with a dependency DAG and a conservative serial/parallel policy.
-- **chrome-use** — an expert that drives your real Chrome via CDP: navigate, click, capture network traffic, inject JS, read cookies and `localStorage`, wait on requests — for logged-in pages, SPAs, and anything a plain fetch can't reach.
-- **Context sensing & handoff** — `rasen agent context` measures real occupancy; `/rasen-handoff` writes a distillate checkpoint; workers self-hand-off at soft budgets, and a compact-recovery hook re-anchors on the distillate after an auto-compact, so long runs survive context limits.
-- **Prompt-cache keepalive** — `rasen agent wait` parks an idle worker on a keepalive beat instead of letting its 5-minute prompt cache expire, so a reviewer waiting on an implementer doesn't pay a full-context rewrite on its next turn. Beat length is tunable via `keepalive.beatSeconds`.
-- **Token audit** — `rasen agent audit` shows where a session's tokens actually went: per-agent spend, cache churn and its causes, with a bundled HTML viewer. Works on Claude Code transcripts and Codex rollouts, fully local — nothing is uploaded.
-
-## See it in action
-
-```text
-You: /rasen-explore
-AI:  What would you like to explore?
-You: I want dark mode but I'm not sure how to do it cleanly.
-AI:  Let me look at your styling setup...
-     Cleanest path here: CSS variables + a small theme context,
-     with system-preference detection. No new dependencies. Scope it?
-You: Yes, let's do it.
-
-You: /rasen-propose add-dark-mode
-AI:  Created rasen/changes/add-dark-mode/
-     ✓ proposal.md — why we're doing this, what's changing
-     ✓ specs/       — requirements and scenarios
-     ✓ design.md    — technical approach
-     ✓ tasks.md     — implementation checklist
-     Ready for implementation!
-
-You: /rasen-apply-change
-AI:  Implementing tasks...
-     ✓ 1.1 Add theme context provider
-     ✓ 1.2 Create toggle component
-     ✓ 2.1 Add CSS variables
-     ✓ 2.2 Wire up localStorage
-     All tasks complete!
-
-You: /rasen-archive-change
-AI:  Archived to rasen/changes/archive/2026-01-23-add-dark-mode/
-     Specs updated. Ready for the next feature.
-```
-
 ## Telemetry & privacy
 
 Rasen collects anonymous usage telemetry to understand which commands are used. It sends **only** the command name, the rasen version, an anonymous UUID, and your OS and Node version — **no paths, arguments, or project data**, ever.
@@ -168,12 +159,10 @@ export DO_NOT_TRACK=1
 
 Telemetry is also **automatically disabled in CI**.
 
-## License
-
-MIT — Copyright (c) 2024 OpenSpec Contributors and Copyright (c) 2026 Sayo. See [LICENSE](./LICENSE).
-
-Issues and feedback: [github.com/DumoeDss/rasen](https://github.com/DumoeDss/rasen).
-
 ## Community
 
-Rasen is shared and discussed on [LINUX DO](https://linux.do) — a community we're glad to be part of.
+<p>
+  <a href="https://discord.gg/JbWScy4y9K">
+    <img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join Rasen on Discord">
+  </a>
+</p>

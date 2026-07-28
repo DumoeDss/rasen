@@ -4,7 +4,6 @@
 
 <p align="center">
   <a href="https://github.com/DumoeDss/rasen/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/DumoeDss/rasen/actions/workflows/ci.yml/badge.svg" /></a>
-  <a href="./LICENSE"><img alt="ライセンス: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" /></a>
   <a href="https://rasen.io/ja/docs/"><img alt="ドキュメント" src="https://img.shields.io/badge/docs-rasen.io-4AF626?style=flat-square&labelColor=050505" /></a>
 </p>
 
@@ -28,9 +27,32 @@
 
 意図が出発点。螺旋が、そこへ至る道です。
 
-## 系譜（Lineage）
+## 動作イメージ
 
-Rasen は Fission-AI による [OpenSpec](https://github.com/Fission-AI/OpenSpec)（MIT）のフォークであり、[Sayo](https://github.com/DumoeDss) が独立してメンテナンスしています。**Fission-AI とは無関係です**。ワークフローのセマンティクスは上流 **OpenSpec v1.5.0** に整合しており——`propose → apply → archive` の spec/change モデルは同一です——ただし rasen は**独立した名前空間**で動作します：`rasen` バイナリ、`/rasen-*` スラッシュコマンド、`rasen-*` スキル、そして `rasen/` ワークスペース。rasen はその上に自律オーケストレーションを重ね、上流の `openspec/` インストールには決して触れません。
+```text
+あなた: /rasen-auto full-feature ダークモードを追加したいのですが、きれいに実装する方法がまだ分かりません。
+AI:  パイプライン：full-feature（明示指定）
+     最初のステージ：office-hours。まず設計を検証します。
+AI:  最初の重要な分岐：共有 token レイヤーを1つ使うか、
+     各コンポーネントにテーマロジックを重複させるか。CSS 変数ならずれを抑えられます。
+     共有 token レイヤーを選びますか？
+あなた: はい——共有 token レイヤーを使います。
+AI:  次の分岐：既定ではシステムテーマに従い、手動設定は保存しますか？
+     この方法を推奨します。予測可能で、依存も増えません。
+     この方針で進めますか？
+あなた: はい——承認します。
+AI:  設計を承認し、office-hours の設計ドキュメントを作成しました。
+     ✓ office-hours — 方針を承認して記録
+     LEAD が役割を分離したワーカーで full-feature パイプラインを続行しました。
+     ✓ propose — 意図を change アーティファクトとして整理
+     ✓ apply — ダークモードを実装
+     ✓ expert reviews — コード、デザイン、QA の各レビューを通過
+     ✓ review-cycle — 指摘を1件修正し、再レビューを通過
+     ✓ ship — デリバリーを記録
+     ✓ retain — 再利用できる知見を評価
+     ✓ archive — spec を同期
+     完了。ダークモードをリリースしました。
+```
 
 ## インストール
 
@@ -55,6 +77,19 @@ rasen init
 rasen update
 ```
 
+## 得られるもの
+
+- **意図駆動ワークフロー** — 作りたいものを伝えるだけ。基盤が提案・仕様・設計・タスクリストを含む1つのフォルダを、作業しながら自分で生成・維持する——あなた自身が書く必要はない：`/rasen-propose → /rasen-apply-change → /rasen-archive-change`。
+- **`rasen` パイプラインファミリー** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` がデータ（YAML）として同梱；`rasen pipeline show|list|classify|resume` で確認、`rasen pipeline import|export` でインストール可能パッケージとして共有、あるいは web UI のパイプラインキャンバスでドラッグ＆ドロップして自作できます。タスクタイプの追加はファイル 1 つの追加、コードはゼロ。
+- **`rasen ui` 管理プラットフォーム** — ローカルの web UI：タスクボード、ターミナルを閉じても生き続ける監視付き headless エージェントセッション、パイプラインキャンバス、config / workflow / profile の管理。[Web UI](#web-ui) を参照。
+- **`/rasen-auto` オートパイロット** — 1 つのコマンドでエージェントが **LEAD** となり、役割分離されたサブエージェント（planner / implementer / reviewer / fixer / shipper）をパイプラインに沿ってオーケストレーションし、gate でのみ停止します。
+- **`/rasen-goal` ゴール駆動反復** — `/rasen-auto` の姉妹コマンド。「完了」がドキュメントではなく条件であるタスク向け（Lighthouse を 90 まで上げる、モジュールをルーブリック合格まで磨く、リサーチしてブリーフを書く）。LEAD がタスクを measure / evaluate / research バックエンドに分類し、gate を満たすかラウンド上限に達するまで modify → judge を繰り返します。
+- **Auto-decompose** — 1 つのレビュー可能な diff に収まらない大きなタスクを、依存 DAG と保守的な直列／並列ポリシー付きで、独立してデリバリー可能な子 change に分割します。
+- **chrome-use** — CDP 経由で実際の Chrome を操作するエキスパート：ナビゲート、クリック、ネットワークキャプチャ、JS 注入、cookie と `localStorage` の読み取り、リクエスト待機——ログインが必要なページ、SPA、素の fetch では届かないあらゆるものに。
+- **コンテキスト感知と handoff** — `rasen agent context` が実際の占有率を測定；`/rasen-handoff` が蒸留チェックポイントを書き出し；worker はソフト予算で自己交代し、compact 復帰フックが auto-compact 後にセッションを蒸留物へ再アンカーします——長時間の実行がコンテキスト上限を生き延びるように。
+- **プロンプトキャッシュ・キープアライブ** — `rasen agent wait` はアイドル状態の worker をキープアライブ・ビートに停留させ、5 分のプロンプトキャッシュ TTL を失効させません——implementer を待つ reviewer が、次のターンでコンテキスト全体の書き直しコストを払わずに済みます。ビート長は `keepalive.beatSeconds` で調整可能。
+- **トークン監査** — `rasen agent audit` はセッションのトークンが実際にどこへ消えたかを表示：エージェントごとの消費、キャッシュ churn とその原因、同梱の HTML ビューア付き。Claude Code トランスクリプトと Codex ロールアウトの両方に対応し、完全ローカル——何もアップロードしません。
+
 ## Web UI
 
 CLI の隣にはブラウザベースの管理プラットフォームがあります。CLI と並べて UI パッケージをインストールし、起動してください：
@@ -70,6 +105,16 @@ rasen ui
 - **Sessions** — ブラウザから headless の `/rasen-auto` / `/rasen-goal` 実行を起動し、出力を眺め、ワンクリックで停止。ターミナルを閉じても生き続けます。
 - **パイプラインキャンバス** — 任意のパイプラインを DAG として表示し、スキルをキャンバスへドラッグして新しいパイプラインを組み立て。保存前にサーバー側バリデーションが走ります。
 - **Config / Workflows / Profiles** — 継承元が見える階層化設定、スペースごとに有効・無効を切り替えられるインストール可能ワークフローライブラリ、名前付きワークフロープロファイル。
+
+### 0.1.5 Web UI
+
+**Pipeline Canvas** — ステージグラフを編集し、依存関係を検証して、ロール、ランタイム、モデル、ハンドオフ設定を調整します。
+
+![Rasen 0.1.5 パイプラインキャンバス](assets/webui/rasen-ui-0.1.5-pipeline-canvas.png)
+
+**Session Audit** — token 合計とキャッシュ構成を比較し、エージェントとキャッシュ churn をタイムラインで追跡します。
+
+![Rasen 0.1.5 セッション監査](assets/webui/rasen-ui-0.1.5-session-audit.png)
 
 ## OpenSpec との共存
 
@@ -92,60 +137,6 @@ rasen migrate
 
 `rasen migrate` は**コピーのみ（copy-only）**です：`openspec/{specs,changes,config.yaml}` を `rasen/` にコピーし、既に存在するものはスキップします。元の `openspec/` ディレクトリは**決して変更・削除されません**——OpenSpec でそのまま使い続けられます。
 
-### chrome-use の前提条件
-
-`chrome-use` エキスパートは Chrome DevTools Protocol 経由で、あなたが日常使っている Chrome を操作します。利用には以下が必要です：
-
-- **Google Chrome** がインストール済みであること。
-- **Node.js 22 以降**（CDP プロキシツールチェーンの要件）。
-- リモートデバッグを有効にして Chrome を起動——`chrome://inspect/#remote-debugging` を開く（または `--remote-debugging-port` 付きで Chrome を起動）。
-- **初回の CDP 接続**時、Chrome に **"Allow"** の許可ポップアップが表示されます——承認してツールの接続を許可してください。
-
-## 得られるもの
-
-- **意図駆動ワークフロー** — 作りたいものを伝えるだけ。基盤が提案・仕様・設計・タスクリストを含む1つのフォルダを、作業しながら自分で生成・維持する——あなた自身が書く必要はない：`/rasen-propose → /rasen-apply-change → /rasen-archive-change`。
-- **`rasen` パイプラインファミリー** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` がデータ（YAML）として同梱；`rasen pipeline show|list|classify|resume` で確認、`rasen pipeline import|export` でインストール可能パッケージとして共有、あるいは web UI のパイプラインキャンバスでドラッグ＆ドロップして自作できます。タスクタイプの追加はファイル 1 つの追加、コードはゼロ。
-- **`rasen ui` 管理プラットフォーム** — ローカルの web UI：タスクボード、ターミナルを閉じても生き続ける監視付き headless エージェントセッション、パイプラインキャンバス、config / workflow / profile の管理。[Web UI](#web-ui) を参照。
-- **`/rasen-auto` オートパイロット** — 1 つのコマンドでエージェントが **LEAD** となり、役割分離されたサブエージェント（planner / implementer / reviewer / fixer / shipper）をパイプラインに沿ってオーケストレーションし、gate でのみ停止します。
-- **`/rasen-goal` ゴール駆動反復** — `/rasen-auto` の姉妹コマンド。「完了」がドキュメントではなく条件であるタスク向け（Lighthouse を 90 まで上げる、モジュールをルーブリック合格まで磨く、リサーチしてブリーフを書く）。LEAD がタスクを measure / evaluate / research バックエンドに分類し、gate を満たすかラウンド上限に達するまで modify → judge を繰り返します。
-- **Auto-decompose** — 1 つのレビュー可能な diff に収まらない大きなタスクを、依存 DAG と保守的な直列／並列ポリシー付きで、独立してデリバリー可能な子 change に分割します。
-- **chrome-use** — CDP 経由で実際の Chrome を操作するエキスパート：ナビゲート、クリック、ネットワークキャプチャ、JS 注入、cookie と `localStorage` の読み取り、リクエスト待機——ログインが必要なページ、SPA、素の fetch では届かないあらゆるものに。
-- **コンテキスト感知と handoff** — `rasen agent context` が実際の占有率を測定；`/rasen-handoff` が蒸留チェックポイントを書き出し；worker はソフト予算で自己交代し、compact 復帰フックが auto-compact 後にセッションを蒸留物へ再アンカーします——長時間の実行がコンテキスト上限を生き延びるように。
-- **プロンプトキャッシュ・キープアライブ** — `rasen agent wait` はアイドル状態の worker をキープアライブ・ビートに停留させ、5 分のプロンプトキャッシュ TTL を失効させません——implementer を待つ reviewer が、次のターンでコンテキスト全体の書き直しコストを払わずに済みます。ビート長は `keepalive.beatSeconds` で調整可能。
-- **トークン監査** — `rasen agent audit` はセッションのトークンが実際にどこへ消えたかを表示：エージェントごとの消費、キャッシュ churn とその原因、同梱の HTML ビューア付き。Claude Code トランスクリプトと Codex ロールアウトの両方に対応し、完全ローカル——何もアップロードしません。
-
-## 動作イメージ
-
-```text
-You: /rasen-explore
-AI:  何を探索しますか？
-You: ダークモードを入れたいけど、きれいなやり方が分からない。
-AI:  スタイリング構成を見てみます……
-     最もクリーンな道：CSS 変数 + 小さなテーマ context、
-     システム設定の検出付き。新しい依存はなし。スコープを決めますか？
-You: うん、それでいこう。
-
-You: /rasen-propose add-dark-mode
-AI:  rasen/changes/add-dark-mode/ を作成しました
-     ✓ proposal.md — なぜやるのか、何が変わるのか
-     ✓ specs/       — 要件とシナリオ
-     ✓ design.md    — 技術アプローチ
-     ✓ tasks.md     — 実装チェックリスト
-     実装の準備ができました！
-
-You: /rasen-apply-change
-AI:  タスクを実行中...
-     ✓ 1.1 テーマ context プロバイダを追加
-     ✓ 1.2 トグルコンポーネントを作成
-     ✓ 2.1 CSS 変数を追加
-     ✓ 2.2 localStorage を接続
-     すべてのタスクが完了！
-
-You: /rasen-archive-change
-AI:  rasen/changes/archive/2026-01-23-add-dark-mode/ にアーカイブしました
-     スペックを更新済み。次の機能の準備ができています。
-```
-
 ## テレメトリとプライバシー
 
 Rasen は、どのコマンドが使われているかを把握するために匿名の利用テレメトリを収集します。送信されるのは**コマンド名、rasen のバージョン、匿名 UUID、OS と Node のバージョンのみ**——**パス、引数、プロジェクトデータは一切送信されません**。
@@ -160,8 +151,10 @@ export DO_NOT_TRACK=1
 
 CI 環境ではテレメトリは**自動的に無効化**されます。
 
-## ライセンス
+## コミュニティ
 
-MIT — Copyright (c) 2024 OpenSpec Contributors および Copyright (c) 2026 Sayo。[LICENSE](./LICENSE) を参照。
-
-Issue とフィードバック：[github.com/DumoeDss/rasen](https://github.com/DumoeDss/rasen)。
+<p>
+  <a href="https://discord.gg/JbWScy4y9K">
+    <img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Rasen Discord に参加">
+  </a>
+</p>
