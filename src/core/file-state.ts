@@ -248,6 +248,13 @@ function pidIsAlive(pid: number): boolean {
   }
 }
 
+function isTransientWindowsLockOpenError(error: unknown): boolean {
+  if (process.platform !== 'win32') return false;
+  return ['EPERM', 'EACCES', 'EBUSY'].some((code) =>
+    isNodeErrorCode(error, code)
+  );
+}
+
 export async function acquireOwnerAwareFileLock(
   options: OwnerAwareFileLockOptions
 ): Promise<OwnerAwareFileLockHandle> {
@@ -285,6 +292,19 @@ export async function acquireOwnerAwareFileLock(
       }
     } catch (error) {
       if (!isNodeErrorCode(error, 'EEXIST')) {
+        // Windows can report sharing violations as EPERM/EACCES/EBUSY while
+        // another contender is renaming, deleting, or still closing the lock.
+        // The directory write preflight already ruled out the common
+        // permission failure, so retry these transient codes within the same
+        // bounded deadline instead of misreporting contention as
+        // create-failed.
+        if (isTransientWindowsLockOpenError(error)) {
+          if (Date.now() >= deadline) {
+            throw errorFor('timeout', { lockPath });
+          }
+          await sleep(Math.max(1, pollMs));
+          continue;
+        }
         throw errorFor('create-failed', { lockPath, cause: error });
       }
 
