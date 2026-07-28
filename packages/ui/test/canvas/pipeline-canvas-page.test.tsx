@@ -28,31 +28,108 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
 interface MockNode {
   id: string;
   type?: string;
+  data?: {
+    definitionKind?: string;
+    editorSupported?: boolean;
+    inputPorts?: { id: string; type?: string }[];
+    outputPorts?: { id: string; type?: string }[];
+    issueSeverity?: string;
+  };
+  deletable?: boolean;
+  connectable?: boolean;
+}
+
+interface MockEdge {
+  id: string;
+  data?: { issueSeverity?: string };
 }
 
 vi.mock('@xyflow/react', () => ({
   ReactFlow: (props: {
     nodes: MockNode[];
+    edges: MockEdge[];
     onNodeClick?: (e: unknown, n: MockNode) => void;
     onPaneClick?: () => void;
+    onConnect?: (connection: {
+      source: string;
+      sourceHandle: string;
+      target: string;
+      targetHandle: string;
+    }) => void;
+    onNodesChange?: (changes: { type: 'remove'; id: string }[]) => void;
+    onEdgesChange?: (changes: { type: 'remove'; id: string }[]) => void;
     proOptions?: { hideAttribution?: boolean };
   }) => (
     <div data-testid="mock-reactflow-wrapper" data-hide-attribution={String(props.proOptions?.hideAttribution)}>
       <div data-testid="mock-reactflow">{props.nodes.map((n) => n.id).join(',')}</div>
+      <div data-testid="mock-reactflow-edges">
+        {props.edges.map((edge) => (
+          <span
+            key={edge.id}
+            data-testid="mock-edge"
+            data-edge-id={edge.id}
+            data-issue={edge.data?.issueSeverity}
+          >
+            {edge.id}
+            <button
+              type="button"
+              data-testid="mock-edge-remove"
+              data-edge-id={edge.id}
+              onClick={() => props.onEdgesChange?.([{ type: 'remove', id: edge.id }])}
+            >
+              remove {edge.id}
+            </button>
+          </span>
+        ))}
+      </div>
       <div data-testid="mock-reactflow-controls">
         {props.nodes
           .filter((n) => n.type === 'stage')
           .map((n) => (
-            <button
+            <span
               key={n.id}
-              type="button"
-              data-testid="mock-node-click"
+              data-testid="mock-node"
               data-node-id={n.id}
-              onClick={() => props.onNodeClick?.(null, n)}
+              data-definition-kind={n.data?.definitionKind}
+              data-editor-supported={String(n.data?.editorSupported)}
+              data-input-ports={JSON.stringify(n.data?.inputPorts ?? [])}
+              data-output-ports={JSON.stringify(n.data?.outputPorts ?? [])}
+              data-issue={n.data?.issueSeverity}
+              data-deletable={String(n.deletable)}
+              data-connectable={String(n.connectable)}
             >
-              select {n.id}
-            </button>
+              <button
+                type="button"
+                data-testid="mock-node-click"
+                data-node-id={n.id}
+                onClick={() => props.onNodeClick?.(null, n)}
+              >
+                select {n.id}
+              </button>
+              <button
+                type="button"
+                data-testid="mock-node-remove"
+                data-node-id={n.id}
+                onClick={() => props.onNodesChange?.([{ type: 'remove', id: n.id }])}
+              >
+                remove {n.id}
+              </button>
+            </span>
           ))}
+        <button
+          type="button"
+          data-testid="mock-connect-atomic-gate"
+          onClick={() =>
+            props.onConnect?.({
+              source: 'atomic',
+              sourceHandle: 'done',
+              target: 'gate',
+              targetHandle: 'input',
+            })
+          }
+        >
+          connect atomic to gate
+        </button>
         <button type="button" data-testid="mock-pane-click" onClick={() => props.onPaneClick?.()}>
           pane
         </button>
@@ -73,6 +150,7 @@ vi.mock('@xyflow/react', () => ({
 
 import { LocationProvider, Router, Route } from 'preact-iso';
 import { PipelineCanvasPage } from '../../src/canvas/PipelineCanvasPage.js';
+import { V2NodePanel } from '../../src/canvas/V2NodePanel.js';
 import * as client from '../../src/api/client.js';
 import { ApiError } from '../../src/api/client.js';
 import { pipelineDetailFixture } from '../fixtures/pipelines.js';
@@ -101,6 +179,125 @@ const catalogFixture: PipelineCatalogResponse = {
   gate: { default: false },
   handoff: { fractionRange: [0, 1], remainingTokensGt: 0 },
 };
+
+const v2CatalogFixture = {
+  ...catalogFixture,
+  skills: catalogFixture.skills.map((skill, index) => ({
+    ...skill,
+    capability: {
+      id: `skill:${skill.id}`,
+      version: index === 0 ? 'digest-propose' : 'digest-apply',
+      inputs: index === 0 ? [{ name: 'brief', type: 'artifact/text' }] : [],
+      artifacts: index === 0 ? [] : [{ name: 'patch', type: 'artifact/text' }],
+      outcomes: ['done'],
+    },
+  })),
+} as PipelineCatalogResponse;
+
+const v2Definition = {
+  version: 2 as const,
+  id: 'definition:v2-canvas',
+  sourceId: 'source:v2-canvas',
+  name: 'v2-canvas',
+  description: 'Definition v2 Canvas fixture',
+  inputs: [],
+  artifacts: [],
+  outcomes: ['done', 'rejected'],
+  declarations: [
+    {
+      id: 'composite:review',
+      kind: 'Composite' as const,
+      provenance: 'custom' as const,
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      graph: { nodes: [], connections: [] },
+    },
+  ],
+  root: {
+    nodes: [
+      {
+        id: 'atomic',
+        kind: 'AtomicStage' as const,
+        capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+        retained: { authorNote: 'keep me' },
+      },
+      {
+        id: 'gate',
+        kind: 'Gate' as const,
+        outcomes: ['approved', 'rejected'],
+        retained: { branchNote: 'keep gate metadata' },
+      },
+      {
+        id: 'choice',
+        kind: 'Choice' as const,
+        outcomes: ['fast', 'careful'],
+        retained: { branchNote: 'keep choice metadata' },
+      },
+      { id: 'finish', kind: 'Finish' as const, outcome: 'done' },
+      {
+        id: 'composite',
+        kind: 'CompositeRef' as const,
+        declarationId: 'composite:review',
+        retained: { later: true },
+      },
+      {
+        id: 'loop',
+        kind: 'BoundedLoop' as const,
+        body: 'composite:review',
+        limits: { maxIterations: 2 },
+        exits: { done: { action: 'exit' as const, outcome: 'done' } },
+      },
+      { id: 'fanout', kind: 'FanOut' as const, branches: ['a', 'b'] },
+      { id: 'join', kind: 'Join' as const, inputs: ['a', 'b'] },
+    ],
+    connections: [
+      {
+        id: 'atomic:done->gate:input',
+        from: { node: 'atomic', port: 'done' },
+        to: { node: 'gate', port: 'input' },
+      },
+    ],
+  },
+};
+
+const v2Preparation = {
+  authoredVersion: 2 as const,
+  normalizedVersion: 2 as const,
+  definitionValid: true,
+  diagnostics: [],
+  digests: {
+    source: 'source-digest',
+    capability: 'capability-digest',
+    plan: 'plan-digest',
+  },
+  planAvailable: true,
+  executable: false,
+  executionMode: 'unavailable' as const,
+  unavailableReason: 'ecp_v2_runtime_unavailable',
+};
+
+const v2EditableDetail = {
+  ...pipelineDetailFixture,
+  pipeline: {
+    ...pipelineDetailFixture.pipeline,
+    name: 'v2-canvas',
+    description: 'Definition v2 Canvas fixture',
+    provenance: 'user' as const,
+    sourceLayer: 'user' as const,
+    stages: [],
+    authoredVersion: 2 as const,
+    normalizedVersion: 2 as const,
+    definitionValid: true,
+    planAvailable: true,
+    executable: false,
+    executionMode: 'unavailable' as const,
+    unavailableReason: 'ecp_v2_runtime_unavailable',
+  },
+  definition: v2Definition,
+  preparation: v2Preparation,
+  editable: true,
+} as PipelineDetailResponse;
 
 async function flushMicrotasks(times = 12): Promise<void> {
   for (let i = 0; i < times; i++) await Promise.resolve();
@@ -378,7 +575,8 @@ describe('PipelineCanvasPage — edit mode', () => {
       await setValueAndFlush(thresholdInput, rawValue, 'input');
       await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
 
-      const savedStage = savedDefinition!.stages.find((stage) => stage.id === 'propose')!;
+      if (savedDefinition?.version !== 1) throw new Error('expected v1 definition');
+      const savedStage = savedDefinition.stages.find((stage) => stage.id === 'propose')!;
       expect(savedStage.handoff?.threshold).toEqual(expected);
       expect(client.putKey).not.toHaveBeenCalled();
       expect(client.deleteKey).not.toHaveBeenCalled();
@@ -892,5 +1090,689 @@ describe('PipelineCanvasPage — edit mode', () => {
     await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-discard"]'));
     expect(container.querySelector('[data-testid="pipeline-canvas-edit"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="pipeline-canvas-dirty-chip"]')).toBeNull();
+  });
+
+  it('renders the closed v2 vocabulary with exact typed handles and preserves unsupported kinds as read-only cards', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    for (const kind of [
+      'AtomicStage',
+      'Gate',
+      'Choice',
+      'Finish',
+      'CompositeRef',
+      'BoundedLoop',
+      'FanOut',
+      'Join',
+    ]) {
+      expect(
+        container.querySelector(`[data-testid="mock-node"][data-definition-kind="${kind}"]`)
+      ).not.toBeNull();
+    }
+
+    const atomic = container.querySelector('[data-testid="mock-node"][data-node-id="atomic"]')!;
+    expect(JSON.parse(atomic.getAttribute('data-output-ports')!)).toEqual([
+      { id: 'patch', type: 'artifact/text' },
+      { id: 'done', type: 'outcome/done' },
+    ]);
+    const gate = container.querySelector('[data-testid="mock-node"][data-node-id="gate"]')!;
+    expect(JSON.parse(gate.getAttribute('data-output-ports')!)).toEqual([
+      { id: 'approved', type: 'outcome/approved' },
+      { id: 'rejected', type: 'outcome/rejected' },
+    ]);
+
+    for (const id of ['composite', 'loop', 'fanout', 'join']) {
+      const card = container.querySelector(`[data-testid="mock-node"][data-node-id="${id}"]`)!;
+      expect(card.getAttribute('data-editor-supported')).toBe('false');
+      expect(card.getAttribute('data-deletable')).toBe('false');
+      expect(card.getAttribute('data-connectable')).toBe('false');
+    }
+  });
+
+  it('creates, selects, edits, renames, and deletes only the enabled v2 root node kinds', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    for (const kind of ['AtomicStage', 'Gate', 'Choice', 'Finish']) {
+      await clickAndFlush(container.querySelector(`[data-testid="v2-palette-add-${kind}"]`));
+    }
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+      'atomic-stage'
+    );
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+      'gate-2'
+    );
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+      'choice-2'
+    );
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+      'finish-2'
+    );
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="gate"]')
+    );
+    expect(container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')).toBe(
+      'gate'
+    );
+    const renamedId = container.querySelector(
+      '[data-testid="v2-node-panel-id"]'
+    ) as HTMLInputElement;
+    renamedId.focus();
+    await setValueAndFlush(renamedId, 'approval-gate', 'input');
+    await act(async () => {
+      renamedId.blur();
+      await flushMicrotasks();
+    });
+    const outcomes = container.querySelector(
+      '[data-testid="v2-node-panel-outcomes"]'
+    ) as HTMLInputElement;
+    await setValueAndFlush(
+      outcomes,
+      'approved,rejected,escalated',
+      'input'
+    );
+    await act(async () => {
+      outcomes.blur();
+      await flushMicrotasks();
+    });
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+      'approval-gate'
+    );
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-remove"][data-node-id="composite"]')
+    );
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+      'composite'
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-remove"][data-node-id="choice"]')
+    );
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).not.toContain(
+      'choice,'
+    );
+  });
+
+  it('keeps the v2 stable-id editor focused across multiple keystrokes and commits the rename on blur', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="mock-node-click"][data-node-id="gate"]'
+      )
+    );
+
+    const idInput = container.querySelector(
+      '[data-testid="v2-node-panel-id"]'
+    ) as HTMLInputElement;
+    idInput.focus();
+    expect(document.activeElement).toBe(idInput);
+
+    await setValueAndFlush(idInput, 'approval', 'input');
+    expect(document.activeElement).toBe(idInput);
+    expect(
+      container.querySelector('[data-testid="v2-node-panel-id"]')
+    ).toBe(idInput);
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+      'gate'
+    );
+
+    await setValueAndFlush(idInput, 'choice', 'input');
+    expect(document.activeElement).toBe(idInput);
+    expect(
+      container.querySelector('[data-testid="v2-node-panel-id"]')
+    ).toBe(idInput);
+
+    await act(async () => {
+      idInput.blur();
+      await flushMicrotasks();
+    });
+    expect(idInput.value).toBe('gate');
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+      'gate'
+    );
+
+    idInput.focus();
+    await setValueAndFlush(idInput, 'approval', 'input');
+    expect(document.activeElement).toBe(idInput);
+    await setValueAndFlush(idInput, 'approval-gate', 'input');
+    expect(document.activeElement).toBe(idInput);
+    await act(async () => {
+      idInput.blur();
+      await flushMicrotasks();
+    });
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+      'approval-gate'
+    );
+  });
+
+  it('keeps a raw Gate outcomes draft across input events and commits canonical outcomes on blur', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({
+      valid: true,
+      issues: [],
+      preparation: v2Preparation,
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="mock-node-click"][data-node-id="gate"]'
+      )
+    );
+
+    const outcomesInput = container.querySelector(
+      '[data-testid="v2-node-panel-outcomes"]'
+    ) as HTMLInputElement;
+    outcomesInput.focus();
+    expect(document.activeElement).toBe(outcomesInput);
+
+    await setValueAndFlush(outcomesInput, 'approved,', 'input');
+    expect(outcomesInput.value).toBe('approved,');
+    expect(document.activeElement).toBe(outcomesInput);
+    expect(
+      container.querySelector('[data-testid="v2-node-panel-outcomes"]')
+    ).toBe(outcomesInput);
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="gate"]')
+        ?.getAttribute('data-output-ports')
+    ).toBe(
+      JSON.stringify([
+        { id: 'approved', type: 'outcome/approved' },
+        { id: 'rejected', type: 'outcome/rejected' },
+      ])
+    );
+
+    await setValueAndFlush(outcomesInput, 'approved,e', 'input');
+    expect(outcomesInput.value).toBe('approved,e');
+    expect(document.activeElement).toBe(outcomesInput);
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="gate"]')
+        ?.getAttribute('data-output-ports')
+    ).toContain('rejected');
+
+    await setValueAndFlush(
+      outcomesInput,
+      ' approved , escalated , approved , , ',
+      'input'
+    );
+    await act(async () => {
+      outcomesInput.blur();
+      await flushMicrotasks();
+    });
+
+    expect(outcomesInput.value).toBe('approved,escalated');
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="gate"]')
+        ?.getAttribute('data-output-ports')
+    ).toBe(
+      JSON.stringify([
+        { id: 'approved', type: 'outcome/approved' },
+        { id: 'escalated', type: 'outcome/escalated' },
+      ])
+    );
+    expect(
+      container.querySelector(
+        '[data-testid="mock-edge"][data-edge-id="atomic:done->gate:input"]'
+      )
+    ).not.toBeNull();
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="pipeline-canvas-validate"]')
+    );
+    const submittedDefinition = vi.mocked(client.validatePipeline).mock
+      .calls[0][0] as typeof v2Definition;
+    expect(
+      submittedDefinition.root.nodes.find((node) => node.id === 'gate')
+    ).toMatchObject({
+      id: 'gate',
+      kind: 'Gate',
+      outcomes: ['approved', 'escalated'],
+      retained: { branchNote: 'keep gate metadata' },
+    });
+    expect(submittedDefinition.root.connections).toEqual(
+      v2Definition.root.connections
+    );
+  });
+
+  it('keeps a raw Choice outcomes draft across input events and commits on Enter without changing selection', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="mock-node-click"][data-node-id="choice"]'
+      )
+    );
+
+    const outcomesInput = container.querySelector(
+      '[data-testid="v2-node-panel-outcomes"]'
+    ) as HTMLInputElement;
+    outcomesInput.focus();
+    await setValueAndFlush(outcomesInput, 'fast,', 'input');
+    expect(outcomesInput.value).toBe('fast,');
+    expect(document.activeElement).toBe(outcomesInput);
+    expect(
+      container.querySelector('[data-testid="v2-node-panel-outcomes"]')
+    ).toBe(outcomesInput);
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="choice"]')
+        ?.getAttribute('data-output-ports')
+    ).toContain('careful');
+
+    await setValueAndFlush(outcomesInput, 'fast,s', 'input');
+    expect(outcomesInput.value).toBe('fast,s');
+    expect(document.activeElement).toBe(outcomesInput);
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="choice"]')
+        ?.getAttribute('data-output-ports')
+    ).toContain('careful');
+
+    await setValueAndFlush(
+      outcomesInput,
+      ' fast , slow , fast , , ',
+      'input'
+    );
+    await act(async () => {
+      outcomesInput.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+      );
+      await flushMicrotasks();
+    });
+    expect(outcomesInput.value).toBe('fast,slow');
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="choice"]')
+        ?.getAttribute('data-output-ports')
+    ).toBe(
+      JSON.stringify([
+        { id: 'fast', type: 'outcome/fast' },
+        { id: 'slow', type: 'outcome/slow' },
+      ])
+    );
+    expect(
+      container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute(
+        'data-node'
+      )
+    ).toBe('choice');
+
+    outcomesInput.focus();
+    await setValueAndFlush(outcomesInput, ', , ', 'input');
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="choice"]')
+        ?.getAttribute('data-output-ports')
+    ).toContain('slow');
+    await act(async () => {
+      outcomesInput.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+      );
+      await flushMicrotasks();
+    });
+    expect(outcomesInput.value).toBe('');
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="choice"]')
+        ?.getAttribute('data-output-ports')
+    ).toBe('[]');
+
+    outcomesInput.focus();
+    await setValueAndFlush(outcomesInput, 'uncommitted,', 'input');
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="mock-node-click"][data-node-id="gate"]'
+      )
+    );
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="mock-node-click"][data-node-id="choice"]'
+      )
+    );
+    expect(
+      (
+        container.querySelector(
+          '[data-testid="v2-node-panel-outcomes"]'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('');
+  });
+
+  it('preserves an outcomes draft across unrelated rerenders and resyncs rejected or authoritative node values', async () => {
+    const onPatch = vi.fn(() => false);
+    const choiceNode = {
+      id: 'choice',
+      kind: 'Choice' as const,
+      outcomes: ['fast', 'careful'],
+      retained: { revision: 1 },
+    };
+    const renderPanel = async (node: typeof choiceNode) => {
+      await act(async () => {
+        render(
+          <V2NodePanel
+            node={node}
+            catalog={v2CatalogFixture}
+            fieldIssues={{}}
+            onRename={vi.fn()}
+            onPatch={onPatch}
+            onClose={vi.fn()}
+          />,
+          container
+        );
+        await flushMicrotasks();
+      });
+    };
+
+    await renderPanel(choiceNode);
+    const outcomesInput = container.querySelector(
+      '[data-testid="v2-node-panel-outcomes"]'
+    ) as HTMLInputElement;
+    outcomesInput.focus();
+    await setValueAndFlush(outcomesInput, 'fast,', 'input');
+    await renderPanel({
+      ...choiceNode,
+      retained: { revision: 2 },
+    });
+    expect(
+      container.querySelector('[data-testid="v2-node-panel-outcomes"]')
+    ).toBe(outcomesInput);
+    expect(outcomesInput.value).toBe('fast,');
+    expect(document.activeElement).toBe(outcomesInput);
+    expect(onPatch).not.toHaveBeenCalled();
+
+    await setValueAndFlush(outcomesInput, 'fast,slow', 'input');
+    await act(async () => {
+      outcomesInput.blur();
+      await flushMicrotasks();
+    });
+    expect(onPatch).toHaveBeenCalledWith({ outcomes: ['fast', 'slow'] });
+    expect(outcomesInput.value).toBe('fast,careful');
+
+    await renderPanel({
+      ...choiceNode,
+      outcomes: ['external', 'updated'],
+      retained: { revision: 3 },
+    });
+    expect(
+      (
+        container.querySelector(
+          '[data-testid="v2-node-panel-outcomes"]'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('external,updated');
+
+    await renderPanel({
+      ...choiceNode,
+      id: 'other-choice',
+      outcomes: ['other'],
+      retained: { revision: 4 },
+    });
+    expect(
+      (
+        container.querySelector(
+          '[data-testid="v2-node-panel-outcomes"]'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('other');
+  });
+
+  it('commits and removes typed v2 connections through the Definition draft', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="mock-edge-remove"][data-edge-id="atomic:done->gate:input"]'
+      )
+    );
+    expect(container.querySelectorAll('[data-testid="mock-edge"]')).toHaveLength(0);
+
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-atomic-gate"]'));
+    const edge = container.querySelector('[data-testid="mock-edge"]');
+    expect(edge?.getAttribute('data-edge-id')).toBe('atomic:done->gate:input');
+  });
+
+  it('maps authoritative v2 diagnostics to edges and consuming nodes while retaining full unmapped paths', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValueOnce({
+      valid: false,
+      issues: [
+        {
+          severity: 'error',
+          code: 'PORT_MISMATCH',
+          path: '/root/connections/0/to/port',
+          message: 'Typed port mismatch.',
+        },
+        {
+          severity: 'warning',
+          code: 'DECLARATION_WARNING',
+          path: '/declarations/0/outcomes/0',
+          message: 'Declaration warning.',
+        },
+      ],
+      preparation: {
+        ...v2Preparation,
+        definitionValid: false,
+        diagnostics: [],
+        planAvailable: false,
+      },
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+
+    expect(
+      container.querySelector(
+        '[data-testid="mock-edge"][data-edge-id="atomic:done->gate:input"]'
+      )?.getAttribute('data-issue')
+    ).toBe('error');
+    const portIssue = container.querySelector(
+      '[data-testid="issues-drawer-item"][data-path="/root/connections/0/to/port"]'
+    );
+    expect(portIssue).not.toBeNull();
+    await clickAndFlush(portIssue!.querySelector('[data-testid="issues-drawer-select"]'));
+    expect(container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')).toBe(
+      'gate'
+    );
+    expect(
+      container.querySelector(
+        '[data-testid="issues-drawer-item"][data-path="/declarations/0/outcomes/0"] [data-testid="issues-drawer-unmapped"]'
+      )?.textContent
+    ).toContain('/declarations/0/outcomes/0');
+  });
+
+  it('locates a server duplicate-outcome diagnostic and guards the invalid v2 detail read-only', async () => {
+    const duplicateDetail = {
+      ...v2EditableDetail,
+      pipeline: {
+        ...v2EditableDetail.pipeline,
+        name: 'duplicate-choice',
+        definitionValid: false,
+        planAvailable: false,
+      },
+      definition: {
+        ...v2Definition,
+        name: 'duplicate-choice',
+        outcomes: ['fast'],
+        root: {
+          nodes: [
+            {
+              id: 'choice',
+              kind: 'Choice',
+              outcomes: ['fast', 'fast'],
+            },
+          ],
+          connections: [],
+        },
+      },
+      preparation: {
+        ...v2Preparation,
+        definitionValid: false,
+        diagnostics: [
+          {
+            severity: 'error' as const,
+            code: 'DUPLICATE_ID',
+            path: '/root/nodes/0/outcomes/1',
+            message: "Duplicate Choice outcomes identity 'fast'.",
+            related: [
+              {
+                path: '/root/nodes/0/outcomes/0',
+                message: 'The first Choice outcomes with this identity is here.',
+              },
+            ],
+          },
+        ],
+        planAvailable: false,
+      },
+      editable: true,
+    } as unknown as PipelineDetailResponse;
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(duplicateDetail);
+
+    await mountAt(container, '/p/proj_x/pipelines/duplicate-choice');
+
+    const choice = container.querySelector(
+      '[data-testid="mock-node"][data-node-id="choice"]'
+    );
+    expect(choice?.getAttribute('data-connectable')).toBe('false');
+    expect(choice?.getAttribute('data-deletable')).toBe('false');
+    const duplicateIssue = container.querySelector(
+      '[data-testid="issues-drawer-item"][data-path="/root/nodes/0/outcomes/1"]'
+    );
+    expect(duplicateIssue?.textContent).toContain(
+      "Duplicate Choice outcomes identity 'fast'."
+    );
+    expect(
+      duplicateIssue?.querySelector('[data-testid="issues-drawer-select"]')
+        ?.textContent
+    ).toContain('choice');
+    expect(
+      (
+        container.querySelector(
+          '[data-testid="pipeline-canvas-edit"]'
+        ) as HTMLButtonElement
+      ).disabled
+    ).toBe(true);
+    expect(container.querySelector('[data-testid="pipeline-canvas-save"]')).toBeNull();
+  });
+
+  it('renders an invalid Choice detail as a guarded read-only graph with its initial server diagnostic', async () => {
+    const invalidDetail = {
+      ...v2EditableDetail,
+      pipeline: {
+        ...v2EditableDetail.pipeline,
+        name: 'invalid-choice',
+        definitionValid: false,
+        planAvailable: false,
+      },
+      definition: {
+        ...v2Definition,
+        name: 'invalid-choice',
+        root: {
+          nodes: [{ id: 'choice', kind: 'Choice' }],
+          connections: [],
+        },
+      },
+      preparation: {
+        ...v2Preparation,
+        definitionValid: false,
+        diagnostics: [
+          {
+            severity: 'error' as const,
+            code: 'INVALID_SOURCE',
+            path: '/root/nodes/0/outcomes',
+            message: 'Choice outcomes must be an array.',
+          },
+        ],
+        planAvailable: false,
+      },
+      editable: true,
+    } as unknown as PipelineDetailResponse;
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(invalidDetail);
+
+    await mountAt(container, '/p/proj_x/pipelines/invalid-choice');
+
+    expect(
+      container.querySelector('[data-testid="mock-reactflow"]')?.textContent
+    ).toContain('choice');
+    const choice = container.querySelector(
+      '[data-testid="mock-node"][data-node-id="choice"]'
+    );
+    expect(choice?.getAttribute('data-output-ports')).toBe('[]');
+    expect(choice?.getAttribute('data-connectable')).toBe('false');
+    expect(choice?.getAttribute('data-deletable')).toBe('false');
+
+    const edit = container.querySelector(
+      '[data-testid="pipeline-canvas-edit"]'
+    ) as HTMLButtonElement;
+    expect(edit.disabled).toBe(true);
+    expect(container.querySelector('[data-testid="pipeline-canvas-run"]')).toBeNull();
+    expect(
+      container.querySelector(
+        '[data-testid="issues-drawer-item"][data-path="/root/nodes/0/outcomes"]'
+      )?.textContent
+    ).toContain('/root/nodes/0/outcomes');
+  });
+
+  it('separates v2 validity, plan availability, and executability; allows save/export but disables Run with the server reason', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({
+      valid: true,
+      issues: [],
+      preparation: v2Preparation,
+    });
+    vi.mocked(client.mutatePipeline).mockResolvedValue({
+      pipeline: { name: 'v2-canvas', path: 'C:\\exports\\v2-canvas.rasenpkg' },
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+
+    expect(container.querySelector('[data-testid="pipeline-canvas-state-valid"]')?.textContent).toContain(
+      'Valid'
+    );
+    expect(container.querySelector('[data-testid="pipeline-canvas-state-plan"]')?.textContent).toContain(
+      'Plan available'
+    );
+    expect(
+      container.querySelector('[data-testid="pipeline-canvas-state-executable"]')?.textContent
+    ).toContain('Not executable');
+    expect((container.querySelector('[data-testid="pipeline-canvas-save"]') as HTMLButtonElement).disabled).toBe(
+      false
+    );
+    const run = container.querySelector('[data-testid="pipeline-canvas-run"]') as HTMLButtonElement;
+    expect(run.disabled).toBe(true);
+    expect(run.textContent).toContain('ecp_v2_runtime_unavailable');
+    expect(container.querySelector('[data-testid^="operations-"]')).toBeNull();
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-export"]'));
+    await setValueAndFlush(
+      container.querySelector('[data-testid="pipeline-canvas-export-path"]'),
+      'C:\\exports\\v2-canvas.rasenpkg',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-export-submit"]'));
+    expect(client.mutatePipeline).toHaveBeenCalledWith({
+      op: 'export',
+      name: 'v2-canvas',
+      path: 'C:\\exports\\v2-canvas.rasenpkg',
+    });
   });
 });

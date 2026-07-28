@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { stringify as stringifyYaml } from 'yaml';
 
 import {
   acquireFileLock,
@@ -16,11 +17,16 @@ import {
   serializePipelineYaml,
   validatePipelineSkills,
 } from './pipeline-registry/pipeline.js';
+import {
+  EcpDefinitionModule,
+  createProductionCapabilityCatalogSnapshot,
+  type PreparedDefinition,
+} from './pipeline-registry/definition.js';
 import { resolvePipelineExecutionSkillSets } from './pipeline-registry/execution-validation.js';
+import { freezeProductionPreparedPipelineRegistry } from './pipeline-registry/prepared-registry.js';
 import {
   getUserPipelinesDir,
   listPipelinesWithInfo,
-  loadPipelineByName,
   resolveChildPipelineName,
 } from './pipeline-registry/resolver.js';
 import {
@@ -57,6 +63,31 @@ export class PipelineLibraryError extends Error {
     super(message);
     this.name = 'PipelineLibraryError';
   }
+}
+
+interface PipelinePreparationPolicyOptions {
+  /** Trusted host policy; forbidden takes precedence over installed/enabled. */
+  forbiddenSkillNames?: ReadonlySet<string>;
+}
+
+function definitionPreparationError(
+  error: {
+    diagnostics: readonly { code: string; path: string; message: string }[];
+  }
+): PipelineLibraryError {
+  const first = error.diagnostics[0];
+  return new PipelineLibraryError(
+    error.diagnostics
+      .map((diagnostic) => `${diagnostic.path}: ${diagnostic.message}`)
+      .join('; '),
+    first?.code ?? 'pipeline_invalid'
+  );
+}
+
+function serializePreparedDefinition(prepared: PreparedDefinition): string {
+  return prepared.authoredVersion === 1
+    ? serializePipelineYaml(prepared.authoredSource as PipelineYaml)
+    : stringifyYaml(prepared.authoredSource);
 }
 
 function pipelinesLockError(kind: FileLockErrorKind, info: FileLockErrorInfo): PipelineLibraryError {
@@ -210,15 +241,21 @@ function addPipelineUsage(
  *    or defaulted to `DEFAULT_CHILD_PIPELINE`).
  * Mirrors `createWorkflowUsageContext`'s shape for the analogous guard.
  */
-export function createPipelineUsageContext(options: PipelineUsageOptions = {}): PipelineUsageContext {
+export async function createPipelineUsageContext(
+  options: PipelineUsageOptions = {}
+): Promise<PipelineUsageContext> {
   const projectRoot =
     options.projectRoot ?? findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
-  const pipelineInfos = listPipelinesWithInfo(projectRoot);
+  const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, {
+    reporter: false,
+    workflowRegistryOptions: options,
+  });
+  const pipelineInfos = registry.list();
   const usageByPipelineName = new Map<string, PipelineUsage[]>(
     pipelineInfos.map((info) => [info.name, []])
   );
 
-  const catalog = loadWorkflowCatalog(options);
+  const catalog = registry.workflowCatalog;
   for (const definition of catalog.definitions) {
     for (const name of new Set(definition.requires.pipelines)) {
       addPipelineUsage(usageByPipelineName, name, {
@@ -233,7 +270,9 @@ export function createPipelineUsageContext(options: PipelineUsageOptions = {}): 
   for (const info of pipelineInfos) {
     let pipeline: PipelineYaml;
     try {
-      pipeline = loadPipelineByName(info.name, projectRoot);
+      const resolution = registry.load(info.name);
+      if (resolution.prepared.authoredVersion !== 1) continue;
+      pipeline = resolution.prepared.authoredSource as PipelineYaml;
     } catch {
       continue;
     }
@@ -251,12 +290,12 @@ export function createPipelineUsageContext(options: PipelineUsageOptions = {}): 
   return { byPipelineName: usageByPipelineName };
 }
 
-export function scanPipelineUsage(
+export async function scanPipelineUsage(
   name: string,
   options: PipelineUsageOptions = {},
   context?: PipelineUsageContext
-): PipelineUsage[] {
-  const resolvedContext = context ?? createPipelineUsageContext(options);
+): Promise<PipelineUsage[]> {
+  const resolvedContext = context ?? (await createPipelineUsageContext(options));
   return [...(resolvedContext.byPipelineName.get(name) ?? [])];
 }
 
@@ -323,10 +362,10 @@ export interface PipelineValidationSummary {
  * package split. Installed-name lookups DO additionally resolve decompose
  * children through the registry, since those must already be resolvable.
  */
-export function validatePipelineInput(
+export async function validatePipelineInput(
   nameOrPath: string,
   options: PipelineUsageOptions = {}
-): PipelineValidationSummary {
+): Promise<PipelineValidationSummary> {
   const resolved = path.resolve(nameOrPath);
   const projectRoot =
     options.projectRoot ?? findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
@@ -345,8 +384,21 @@ export function validatePipelineInput(
         };
       }
       try {
-        const pipeline = parsePipeline(fs.readFileSync(pipelinePath, 'utf8'));
-        return { valid: true, kind: 'directory', name: pipeline.name, diagnostics: [] };
+        const registry = await freezeProductionPreparedPipelineRegistry(
+          projectRoot,
+          { reporter: false, workflowRegistryOptions: options }
+        );
+        const prepared = EcpDefinitionModule.prepare(
+          fs.readFileSync(pipelinePath, 'utf8'),
+          registry.catalog
+        );
+        if (!prepared.ok) throw prepared.error;
+        return {
+          valid: true,
+          kind: 'directory',
+          name: prepared.value.authoredSource.name,
+          diagnostics: [],
+        };
       } catch (error) {
         return {
           valid: false,
@@ -383,8 +435,17 @@ export function validatePipelineInput(
   }
 
   try {
-    const pipeline = loadPipelineByName(nameOrPath, projectRoot);
-    return { valid: true, kind: 'installed', name: pipeline.name, diagnostics: [] };
+    const registry = await freezeProductionPreparedPipelineRegistry(
+      projectRoot,
+      { reporter: false, workflowRegistryOptions: options }
+    );
+    const resolution = registry.load(nameOrPath);
+    return {
+      valid: true,
+      kind: 'installed',
+      name: resolution.prepared.authoredSource.name,
+      diagnostics: [],
+    };
   } catch (error) {
     return {
       valid: false,
@@ -546,11 +607,15 @@ export async function importPipelinePackage(
  * built-in/project exclusion — since built-in pipelines already ship with
  * rasen and project-local pipelines are file-based, not package-installed.
  */
-export function exportPipeline(
+export async function exportPipeline(
   name: string,
   destination: string,
-  options: WorkflowRegistryOptions & { projectRoot?: string; overwrite?: boolean } = {}
-): string {
+  options: WorkflowRegistryOptions &
+    PipelinePreparationPolicyOptions & {
+      projectRoot?: string;
+      overwrite?: boolean;
+    } = {}
+): Promise<string> {
   // Registry enumeration intentionally omits invalid manifests. Validate the
   // identifier before any path construction so an addressable user manifest
   // can still report its real parse/version error without reopening the
@@ -578,10 +643,31 @@ export function exportPipeline(
       'pipeline_not_found'
     );
   }
-  const pipeline = parsePipeline(fs.readFileSync(userManifest, 'utf8'));
+  const authoredText = fs.readFileSync(userManifest, 'utf8');
+  const workflowCatalog = loadWorkflowCatalog(options);
+  const { knownSkillNames, enabledSkillNames } = await resolvePipelineExecutionSkillSets(
+    projectRoot,
+    { reporter: false, workflowCatalog }
+  );
+  const catalog = createProductionCapabilityCatalogSnapshot(
+    workflowCatalog.definitions,
+    enabledSkillNames,
+    options.forbiddenSkillNames
+  );
+  const prepared = EcpDefinitionModule.prepare(authoredText, catalog);
+  if (!prepared.ok) {
+    throw definitionPreparationError(prepared.error);
+  }
+  if (prepared.value.authoredVersion === 1) {
+    validatePipelineSkills(
+      prepared.value.authoredSource as PipelineYaml,
+      knownSkillNames,
+      enabledSkillNames
+    );
+  }
   const files = readDirectoryFiles(pipelineDir).map((file) => {
     if (file.path !== 'pipeline.yaml') return file;
-    const content = serializePipelineYaml(pipeline);
+    const content = serializePreparedDefinition(prepared.value);
     return {
       ...file,
       content,
@@ -589,7 +675,7 @@ export function exportPipeline(
     };
   });
   const packageValue = createPipelinePackage([name], [{ name, files }]);
-  const bytes = encodePackage(packageValue);
+  const bytes = encodePackage(packageValue, { capabilityCatalog: catalog });
   writeFileAtomically(destination, bytes, options.overwrite === true);
   return path.resolve(destination);
 }
@@ -661,8 +747,15 @@ export async function deletePipeline(
       );
     }
 
-    const usageContext = createPipelineUsageContext({ ...options, projectRoot });
-    const usage = scanPipelineUsage(name, { ...options, projectRoot }, usageContext);
+    const usageContext = await createPipelineUsageContext({
+      ...options,
+      projectRoot,
+    });
+    const usage = await scanPipelineUsage(
+      name,
+      { ...options, projectRoot },
+      usageContext
+    );
     const forcedReferrers = usage.map((item) => `${item.kind}:${item.consumer}`);
     if (usage.length > 0 && !options.force) {
       throw new PipelineLibraryError(`Pipeline "${name}" is still referenced`, 'pipeline_in_use', {
@@ -691,6 +784,63 @@ export interface SavePipelineResult {
   created: boolean;
 }
 
+interface PipelineSaveTargetState {
+  readonly info:
+    | ReturnType<typeof listPipelinesWithInfo>[number]
+    | undefined;
+  readonly userManifestExisted: boolean;
+}
+
+function resolvePipelineSaveTarget(
+  name: string,
+  projectRoot: string,
+  force: boolean
+): PipelineSaveTargetState {
+  const existingUserManifest = path.join(
+    getUserPipelinesDir(),
+    name,
+    'pipeline.yaml'
+  );
+  const userManifestExisted = fs.existsSync(existingUserManifest);
+  if (userManifestExisted && !force) {
+    throw new PipelineLibraryError(
+      `Pipeline "${name}" already exists; use --force to overwrite`,
+      'pipeline_already_exists'
+    );
+  }
+
+  const info = listPipelinesWithInfo(projectRoot).find(
+    (entry) => entry.name === name
+  );
+  if (info?.source === 'package') {
+    throw new PipelineLibraryError(
+      `Pipeline "${name}" is a built-in pipeline and cannot be overwritten by save`,
+      'pipeline_builtin_protected'
+    );
+  }
+  if (info?.source === 'user' && !force) {
+    throw new PipelineLibraryError(
+      `Pipeline "${name}" already exists; use --force to overwrite`,
+      'pipeline_already_exists'
+    );
+  }
+  return { info, userManifestExisted };
+}
+
+/**
+ * Checks only save-target ownership/conflict policy. The management bridge
+ * shares this guard with the CLI-backed writer so a known no-force conflict can
+ * be rejected without paying for a child process; the CLI still repeats the
+ * guard to close races before writing.
+ */
+export function assertPipelineSaveTargetAvailable(
+  name: string,
+  projectRoot: string,
+  force = false
+): void {
+  resolvePipelineSaveTarget(name, projectRoot, force);
+}
+
 /**
  * Installs a pipeline definition (read from `fromFile`, JSON or YAML — `yaml`'s
  * parser accepts both) as the named USER pipeline (pipeline-definition-api).
@@ -705,26 +855,22 @@ export interface SavePipelineResult {
 export async function savePipeline(
   name: string,
   fromFile: string,
-  options: WorkflowRegistryOptions & { projectRoot?: string; force?: boolean } = {}
+  options: WorkflowRegistryOptions &
+    PipelinePreparationPolicyOptions & {
+      projectRoot?: string;
+      force?: boolean;
+    } = {}
 ): Promise<SavePipelineResult> {
   if (!isPortableWorkflowId(name)) {
     throw new PipelineLibraryError(`Pipeline name "${name}" is not portable`, 'pipeline_id_invalid');
   }
 
   const projectRoot = options.projectRoot ?? findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
-  const info = listPipelinesWithInfo(projectRoot).find((entry) => entry.name === name);
-  if (info?.source === 'package') {
-    throw new PipelineLibraryError(
-      `Pipeline "${name}" is a built-in pipeline and cannot be overwritten by save`,
-      'pipeline_builtin_protected'
-    );
-  }
-  if (info?.source === 'user' && !options.force) {
-    throw new PipelineLibraryError(
-      `Pipeline "${name}" already exists; use --force to overwrite`,
-      'pipeline_already_exists'
-    );
-  }
+  resolvePipelineSaveTarget(
+    name,
+    projectRoot,
+    options.force === true
+  );
 
   const resolvedFrom = path.resolve(fromFile);
   let content: string;
@@ -741,22 +887,55 @@ export async function savePipeline(
   // parallel groups, decompose constraints, origin-scoped quality floor) —
   // throws PipelineValidationError on the first violation, exactly like every
   // other pipeline load.
-  const pipeline = parsePipeline(content);
-
-  const { knownSkillNames, enabledSkillNames } = await resolvePipelineExecutionSkillSets(
-    projectRoot,
-    { reporter: false }
+  const workflowCatalog = loadWorkflowCatalog(options);
+  const { knownSkillNames, enabledSkillNames } =
+    await resolvePipelineExecutionSkillSets(projectRoot, {
+      reporter: false,
+      workflowCatalog,
+    });
+  const catalog = createProductionCapabilityCatalogSnapshot(
+    workflowCatalog.definitions,
+    enabledSkillNames,
+    options.forbiddenSkillNames
   );
-  validatePipelineSkills(pipeline, knownSkillNames, enabledSkillNames);
-
+  const prepared = EcpDefinitionModule.prepare(content, catalog);
+  if (!prepared.ok) {
+    throw definitionPreparationError(prepared.error);
+  }
+  if (prepared.value.authoredSource.name !== name) {
+    throw new PipelineLibraryError(
+      `Definition name "${prepared.value.authoredSource.name}" does not match save target "${name}"`,
+      'pipeline_name_mismatch'
+    );
+  }
+  if (prepared.value.authoredVersion === 1) {
+    validatePipelineSkills(
+      prepared.value.authoredSource as PipelineYaml,
+      knownSkillNames,
+      enabledSkillNames
+    );
+  }
   return withPipelinesLock(() => {
+    // The optimistic guard above preserves the management/CLI fast path, but
+    // only this recheck is authoritative. The machine-wide file lock makes
+    // the no-force conflict decision and the following write one atomic
+    // cross-process operation.
+    const { info, userManifestExisted } = resolvePipelineSaveTarget(
+      name,
+      projectRoot,
+      options.force === true
+    );
     const targetDir = path.join(getUserPipelinesDir(), name);
     fs.mkdirSync(targetDir, { recursive: true, mode: 0o700 });
     const targetFile = path.join(targetDir, 'pipeline.yaml');
-    fs.writeFileSync(targetFile, serializePipelineYaml(pipeline), {
+    fs.writeFileSync(targetFile, serializePreparedDefinition(prepared.value), {
       encoding: 'utf8',
       mode: 0o600,
     });
-    return { name, path: targetFile, created: !info };
+    return {
+      name,
+      path: targetFile,
+      created: !info && !userManifestExisted,
+    };
   });
 }

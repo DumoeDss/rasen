@@ -8,6 +8,9 @@ import type { RunState } from '../pipeline-registry/run-state.js';
 import type { PortfolioChildStatus } from '../pipeline-registry/portfolio-state.js';
 import type { PortfolioState } from '../pipeline-registry/portfolio-state.js';
 import type {
+  DefinitionArtifact,
+  DefinitionPort,
+  DefinitionSourceV2,
   PipelineYaml,
   StageRole,
   ThresholdValue,
@@ -115,9 +118,18 @@ export interface WirePipeline {
   provenance: 'built-in' | 'user';
   sourceLayer: 'project' | 'user' | 'package';
   /** Pipeline-wide role runtimes; stage declarations intentionally do not affect these. */
-  roleRuntimes: Record<StageRole, WireEffectiveValue<DispatchRuntime>>;
-  effectiveReuse: WireEffectiveReuse;
+  roleRuntimes?: Record<StageRole, WireEffectiveValue<DispatchRuntime>>;
+  effectiveReuse?: WireEffectiveReuse;
   stages: WirePipelineStage[];
+  authoredVersion: number;
+  normalizedVersion: 2;
+  definitionValid: boolean;
+  planAvailable: boolean;
+  executable: boolean;
+  executionMode: 'legacy' | 'unavailable';
+  unavailableReason?: string;
+  /** Present when the authoritative winning source failed preparation. */
+  diagnostics?: PipelineValidationIssue[];
 }
 
 // -----------------------------------------------------------------------
@@ -172,12 +184,31 @@ export type PipelineMutationRequest =
  * YAML-accepted field is silently dropped — round-tripping this value through
  * `save` and back through `detail` yields a semantically identical pipeline.
  */
-export type WirePipelineDefinition = PipelineYaml;
+export type WirePipelineDefinition = PipelineYaml | DefinitionSourceV2;
+
+/** Public preparation metadata; the opaque compiled plan is intentionally absent. */
+export interface WireDefinitionPreparation {
+  /** Submitted content version; unsupported future versions remain observable. */
+  authoredVersion: number;
+  normalizedVersion: 2;
+  definitionValid: boolean;
+  diagnostics: PipelineValidationIssue[];
+  digests?: {
+    source: string;
+    capability: string;
+    plan: string;
+  };
+  planAvailable: boolean;
+  executable: boolean;
+  executionMode: 'legacy' | 'unavailable';
+  unavailableReason?: string;
+}
 
 /** `GET /api/v1/pipelines/<name>` response (pipeline-definition-api). */
 export interface PipelineDetailResponse {
   pipeline: WirePipeline;
   definition: WirePipelineDefinition;
+  preparation: WireDefinitionPreparation;
   /** `false` for built-in (package-provenance) pipelines, which are still returned read-only as save-as templates. */
   editable: boolean;
 }
@@ -191,15 +222,18 @@ export interface PipelineValidationRequest {
 /** One issue reported by draft validation — `severity: 'error'` makes the draft invalid; `'warning'` does not. */
 export interface PipelineValidationIssue {
   severity: 'error' | 'warning';
+  code?: string;
   /** A JSON-pointer-ish locator into the definition, e.g. `/stages/2/skill`. */
   path: string;
   message: string;
+  related?: { path: string; message: string }[];
 }
 
 /** `POST /api/v1/pipeline-validation` response — 200 for both a valid and an invalid draft. */
 export interface PipelineValidationResponse {
   valid: boolean;
   issues: PipelineValidationIssue[];
+  preparation: WireDefinitionPreparation;
 }
 
 /** One skill in the pipeline-catalog vocabulary. */
@@ -208,6 +242,17 @@ export interface PipelineCatalogSkill {
   description: string;
   /** Whether the skill is enabled in the active profile selection (a disabled skill is still listed, greyed out in the palette). */
   enabled: boolean;
+  /**
+   * Exact trusted Definition capability revision. Optional so older catalog
+   * fixtures and v1-only clients remain source-compatible.
+   */
+  capability?: {
+    id: string;
+    version: string;
+    inputs: readonly DefinitionPort[];
+    artifacts: readonly DefinitionArtifact[];
+    outcomes: readonly string[];
+  };
 }
 
 /** `GET /api/v1/pipeline-catalog` response: the assembly vocabulary for the pipeline canvas. */
@@ -385,6 +430,45 @@ export type ChangeRunEntry =
 
 export interface RunsResponse {
   runs: ChangeRunEntry[];
+  /**
+   * Reconciler-engine Run summaries from the machine-home store, projected
+   * through the shared Change-run projector (task 13.2). Additive to legacy
+   * `runs`; absent when the store root does not exist (pre-reconciler install).
+   */
+  reconcilerRuns?: ReconcilerRunSummary[];
+  /**
+   * Opaque stable cursor for the next page of reconciler summaries (task
+   * 13.3/13.4). Absent when there are no more entries.
+   */
+  nextCursor?: string;
+  /** Whether more reconciler summaries remain beyond this page. */
+  hasMore?: boolean;
+}
+
+/**
+ * One reconciler-engine Run summary in the runs list (task 13.2). Derived
+ * from the canonical machine-home Record through the shared projector; never
+ * from a secondary index. Includes exact Run identity, frozen engine, status,
+ * Record version, and a waits-or-terminal summary.
+ */
+export interface ReconcilerRunSummary {
+  runId: string;
+  changeId: string;
+  planningSpaceId: string;
+  engine: 'reconciler';
+  recordVersion: number;
+  status: string;
+  sourceState: 'active' | 'archived' | 'missing';
+  /** Number of active waits (non-terminal Runs). */
+  waits?: number;
+  /** Terminal outcome summary (terminal Runs). */
+  terminal?: unknown;
+  /**
+   * Present when the Run's Record ledger is corrupt, gapped, oversized, or
+   * otherwise unreadable. The Run is reported as an individual error without
+   * hiding unrelated Runs or falling back to an earlier revision.
+   */
+  error?: { code: string; message: string };
 }
 
 // -----------------------------------------------------------------------

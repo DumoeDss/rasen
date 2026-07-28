@@ -686,6 +686,128 @@ pipelineCmd
   });
 
 pipelineCmd
+  .command('start <change> <pipeline>')
+  .description('Start (or reuse) a reconciler-engine Run for a change under a pipeline')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (
+    change: string,
+    pipeline: string,
+    options?: { json?: boolean; store?: string; project?: string; storePath?: string }
+  ) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.start(change, pipeline, options);
+    } catch (error) {
+      failPipelineAction(error);
+    }
+  });
+
+pipelineCmd
+  .command('status <change> <pipeline>')
+  .description('Print a reconciler-engine Run view for a change')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (
+    change: string,
+    pipeline: string,
+    options?: { json?: boolean; store?: string; project?: string; storePath?: string }
+  ) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.status(change, pipeline, options);
+    } catch (error) {
+      failPipelineAction(error);
+    }
+  });
+
+pipelineCmd
+  .command('resume-run <change> <pipeline>')
+  .description('Resume a reconciler-engine Run: grant the ready frontier')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (
+    change: string,
+    pipeline: string,
+    options?: { json?: boolean; store?: string; project?: string; storePath?: string }
+  ) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.resumeRun(change, pipeline, options);
+    } catch (error) {
+      failPipelineAction(error);
+    }
+  });
+
+pipelineCmd
+  .command('cancel <change> <pipeline>')
+  .description('Cancel a reconciler-engine Run for a change')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (
+    change: string,
+    pipeline: string,
+    options?: { json?: boolean; store?: string; project?: string; storePath?: string }
+  ) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.cancelRun(change, pipeline, options);
+    } catch (error) {
+      failPipelineAction(error);
+    }
+  });
+
+pipelineCmd
+  .command('complete <change>')
+  .description('Complete a reconciler-engine Run action from a receipt body')
+  .requiredOption('--run <runId>', 'Exact Run ID')
+  .requiredOption('--from <path>', 'Receipt body (file path or - for stdin)')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (
+    change: string,
+    options: { run: string; from: string; json?: boolean; store?: string; project?: string; storePath?: string }
+  ) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.complete(change, options.run, options.from, options);
+    } catch (error) {
+      failPipelineAction(error);
+    }
+  });
+
+pipelineCmd
+  .command('control <change>')
+  .description('Submit a typed control request for a reconciler-engine Run')
+  .requiredOption('--run <runId>', 'Exact Run ID')
+  .requiredOption('--from <path>', 'Control body (file path or - for stdin)')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (
+    change: string,
+    options: { run: string; from: string; json?: boolean; store?: string; project?: string; storePath?: string }
+  ) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.control(change, options.run, options.from, options);
+    } catch (error) {
+      failPipelineAction(error);
+    }
+  });
+
+pipelineCmd
   .command('agents <name>')
   .description('Show or set per-role Claude/Codex runtimes for a pipeline')
   .option('--planner <runtime>', 'Set planner runtime: claude or codex')

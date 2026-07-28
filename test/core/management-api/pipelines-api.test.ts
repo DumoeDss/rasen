@@ -12,8 +12,17 @@ import type {
 } from '../../../src/core/management-api/wire-types.js';
 import type { DispatchRuntime } from '../../../src/core/runtime-adapters.js';
 import { getGlobalDataDir } from '../../../src/core/index.js';
+import {
+  createCapabilityCatalogSnapshot,
+  EcpDefinitionModule,
+} from '../../../src/core/pipeline-registry/index.js';
 import { registerStore } from '../../../src/core/store/registry.js';
+import {
+  decodePackage,
+  type PipelinePackage,
+} from '../../../src/core/workflow-package/index.js';
 import { runCLI } from '../../helpers/run-cli.js';
+import { definitionIssuePathTarget } from '../../../packages/ui/src/canvas/draft.js';
 
 const TOKEN = 'test-token-pipelines-abc123';
 
@@ -123,6 +132,49 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
     );
   }
 
+  function v2Definition(name = 'definition-v2') {
+    return {
+      version: 2 as const,
+      id: `definition:${name}`,
+      sourceId: `fixture:${name}`,
+      name,
+      description: 'Complete Definition v2 fixture',
+      inputs: [{ name: 'request', type: 'text/plain', required: true }],
+      artifacts: [{ name: 'report', type: 'artifact/report' }],
+      outcomes: ['done'],
+      declarations: [
+        {
+          id: 'preserved-body',
+          kind: 'Composite' as const,
+          provenance: 'custom' as const,
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+          graph: {
+            nodes: [{ id: 'body-finish', kind: 'Finish' as const, outcome: 'done' }],
+            connections: [],
+          },
+          extensionMetadata: { keep: true },
+        },
+      ],
+      root: {
+        nodes: [{ id: 'finish', kind: 'Finish' as const, outcome: 'done' }],
+        connections: [],
+      },
+      limits: { maxActions: 4, budget: 4 },
+      extensionMetadata: { keep: 'exactly' },
+    };
+  }
+
+  function writeV2Pipeline(name = 'definition-v2', root = projectRoot): void {
+    const directory = path.join(root, 'rasen', 'pipelines', name);
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(
+      path.join(directory, 'pipeline.yaml'),
+      JSON.stringify(v2Definition(name), null, 2)
+    );
+  }
+
   async function makeStore(id: string, configContent: string): Promise<string> {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), `rasen-pipelines-api-store-${id}-`));
     fs.mkdirSync(path.join(root, 'rasen', 'specs'), { recursive: true });
@@ -175,6 +227,58 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
   });
 
   describe('pipelines inventory (pipeline-http-api)', () => {
+    it('keeps an invalid project winner visible with diagnostics instead of falling through', async () => {
+      const name = 'invalid-winner';
+      const userDirectory = path.join(
+        tempConfigHome,
+        'rasen',
+        'pipelines',
+        name
+      );
+      fs.mkdirSync(userDirectory, { recursive: true });
+      fs.writeFileSync(
+        path.join(userDirectory, 'pipeline.yaml'),
+        `name: ${name}\nstages:\n  - id: apply\n    skill: rasen-apply-change\n`
+      );
+      const projectDirectory = path.join(
+        projectRoot,
+        'rasen',
+        'pipelines',
+        name
+      );
+      fs.mkdirSync(projectDirectory, { recursive: true });
+      fs.writeFileSync(
+        path.join(projectDirectory, 'pipeline.yaml'),
+        `version: 99\nname: ${name}\n`
+      );
+      const h = await startServer();
+
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/pipelines',
+        headers: authed(),
+      });
+
+      expect(res.status).toBe(200);
+      const winners = res
+        .json()
+        .pipelines.filter((pipeline: any) => pipeline.name === name);
+      expect(winners).toHaveLength(1);
+      expect(winners[0]).toMatchObject({
+        sourceLayer: 'project',
+        authoredVersion: 99,
+        definitionValid: false,
+        planAvailable: false,
+        executable: false,
+        diagnostics: [
+          expect.objectContaining({
+            code: 'UNSUPPORTED_VERSION',
+            path: '/version',
+          }),
+        ],
+      });
+    });
+
     it('returns declared + effective per-stage metadata, provenance, with boolean gates', async () => {
       const h = await startServer();
       const res = await req(h.port, { method: 'GET', path: '/api/v1/pipelines', headers: authed() });
@@ -825,6 +929,58 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
   });
 
   describe('pipeline detail (pipeline-definition-api)', () => {
+    it('returns the invalid winning source and preparation diagnostics instead of 404', async () => {
+      const name = 'invalid-detail-winner';
+      const projectDirectory = path.join(
+        projectRoot,
+        'rasen',
+        'pipelines',
+        name
+      );
+      fs.mkdirSync(projectDirectory, { recursive: true });
+      fs.writeFileSync(
+        path.join(projectDirectory, 'pipeline.yaml'),
+        JSON.stringify({
+          ...v2Definition(name),
+          root: {
+            nodes: [{ id: 'choice', kind: 'Choice' }],
+            connections: [],
+          },
+        })
+      );
+      const h = await startServer();
+
+      const res = await req(h.port, {
+        method: 'GET',
+        path: `/api/v1/pipelines/${name}`,
+        headers: authed(),
+      });
+
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(body.definition).toMatchObject({ version: 2, name });
+      expect(body.pipeline).toMatchObject({
+        name,
+        sourceLayer: 'project',
+        definitionValid: false,
+        planAvailable: false,
+        executable: false,
+      });
+      expect(body.preparation).toMatchObject({
+        authoredVersion: 2,
+        normalizedVersion: 2,
+        definitionValid: false,
+        diagnostics: [
+          expect.objectContaining({
+            code: 'INVALID_SOURCE',
+            path: '/root/nodes/0/outcomes',
+          }),
+        ],
+        planAvailable: false,
+        executable: false,
+      });
+    });
+
     it('returns both views plus editable for a user pipeline', async () => {
       const h = await startServer();
       const userDir = path.join(tempConfigHome, 'rasen', 'pipelines', 'my-pipe');
@@ -840,6 +996,63 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
       expect(body.definition.version).toBe(1);
       expect(body.definition.stages[0].id).toBe('implement');
       expect(body.editable).toBe(true);
+      expect(body.preparation).toMatchObject({
+        authoredVersion: 1,
+        normalizedVersion: 2,
+        definitionValid: true,
+        planAvailable: true,
+        executable: true,
+        executionMode: 'legacy',
+      });
+      expect(body.preparation.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: 'LEGACY_NORMALIZED', severity: 'warning' }),
+        ])
+      );
+      expect(body.preparation.digests).toMatchObject({
+        source: expect.any(String),
+        capability: expect.any(String),
+        plan: expect.any(String),
+      });
+      expect(body).not.toHaveProperty('plan');
+      expect(body.preparation).not.toHaveProperty('plan');
+    });
+
+    it('returns the complete v2 definition and preparation capability without plan internals', async () => {
+      writeV2Pipeline();
+      const h = await startServer();
+
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/pipelines/definition-v2',
+        headers: authed(),
+      });
+
+      expect(res.status).toBe(200);
+      const body = res.json() as any;
+      expect(body.definition).toEqual(v2Definition());
+      expect(body.pipeline).toMatchObject({
+        name: 'definition-v2',
+        sourceLayer: 'project',
+        authoredVersion: 2,
+        definitionValid: true,
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable',
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      });
+      expect(body.preparation).toMatchObject({
+        authoredVersion: 2,
+        normalizedVersion: 2,
+        definitionValid: true,
+        diagnostics: [],
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable',
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      });
+      expect(body.preparation.digests.plan).toEqual(expect.any(String));
+      expect(JSON.stringify(body)).not.toContain('"payload"');
     });
 
     it('404s an unknown name, 400s a malformed name', async () => {
@@ -891,6 +1104,15 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
       expect(Array.isArray(body.skills)).toBe(true);
       expect(body.skills.length).toBeGreaterThan(0);
       expect(body.skills[0]).toHaveProperty('enabled');
+      for (const skill of body.skills) {
+        expect(skill.capability).toEqual({
+          id: `skill:${skill.id}`,
+          version: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+        });
+      }
       expect(body.gate.default).toBe(false);
       expect(body.handoff.fractionRange).toEqual([0, 1]);
     });
@@ -944,7 +1166,7 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
         path: '/api/v1/pipeline-validation',
         headers: authed({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
-          definition: { ...validDefinition(), version: 2 },
+          definition: { ...validDefinition(), version: 99 },
         }),
       });
 
@@ -955,9 +1177,10 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
         expect.arrayContaining([
           expect.objectContaining({
             severity: 'error',
+            code: 'UNSUPPORTED_VERSION',
             path: '/version',
             message: expect.stringMatching(
-              /received 2.*supported version is 1.*Upgrade to a compatible Rasen version/
+              /received 99.*supported versions are 1 and 2.*upgrade/
             ),
           }),
         ])
@@ -1054,7 +1277,13 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
       const body = res.json() as any;
       expect(body.valid).toBe(false);
       expect(body.issues.length).toBeGreaterThanOrEqual(2);
-      expect(body.issues.some((i: any) => /[Cc]yclic/.test(i.message))).toBe(true);
+      expect(body.issues).toContainEqual(
+        expect.objectContaining({
+          code: 'GRAPH_CYCLE',
+          path: '/stages/1/requires/0',
+          message: 'Cyclic dependency detected: a → b → a',
+        })
+      );
       expect(body.issues.some((i: any) => i.path === '/stages/0/skill')).toBe(true);
     });
 
@@ -1102,6 +1331,289 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
   });
 
   describe('save op (POST /api/v1/pipelines, pipeline-definition-api)', () => {
+    it('preserves v2 meaning through validate, save, detail, and package export', async () => {
+      const h = await startServer();
+      const definition = v2Definition('api-v2-roundtrip');
+      const corePreparation = EcpDefinitionModule.prepare(
+        definition,
+        createCapabilityCatalogSnapshot([])
+      );
+      expect(corePreparation.ok).toBe(true);
+      if (!corePreparation.ok) throw corePreparation.error;
+      const validation = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipeline-validation',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ definition }),
+      });
+      const validationBody = validation.json() as any;
+      expect(validationBody.valid).toBe(true);
+      expect(validationBody.preparation.digests).toEqual(
+        corePreparation.value.digests
+      );
+
+      const save = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          op: 'save',
+          name: 'api-v2-roundtrip',
+          definition,
+        }),
+      });
+      expect(save.status).toBe(201);
+      expect((save.json() as any).preparation.digests.plan).toBe(
+        validationBody.preparation.digests.plan
+      );
+
+      const detail = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/pipelines/api-v2-roundtrip',
+        headers: authed(),
+      });
+      expect(detail.status).toBe(200);
+      const detailBody = detail.json() as any;
+      expect(detailBody.definition).toEqual(definition);
+      expect(detailBody.preparation.digests.plan).toBe(
+        validationBody.preparation.digests.plan
+      );
+
+      const destination = path.join(
+        projectRoot,
+        'exports',
+        'api-v2-roundtrip.rasenpkg'
+      );
+      const exported = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          op: 'export',
+          name: 'api-v2-roundtrip',
+          path: destination,
+        }),
+      });
+      expect(exported.status).toBe(200);
+      const packageValue = decodePackage(
+        fs.readFileSync(destination),
+        'pipeline'
+      ) as PipelinePackage;
+      const manifest = packageValue.pipelines[0]!.files.find(
+        (file) => file.path === 'pipeline.yaml'
+      )!;
+      expect(manifest.content).toContain('extensionMetadata');
+      const exportedPreparation = EcpDefinitionModule.prepare(
+        manifest.content,
+        createCapabilityCatalogSnapshot([])
+      );
+      expect(exportedPreparation.ok).toBe(true);
+      if (exportedPreparation.ok) {
+        expect(exportedPreparation.value.digests).toEqual(
+          corePreparation.value.digests
+        );
+      }
+      expect(path.resolve(destination)).toBe(destination);
+    });
+
+    it('returns the exact validation diagnostics and never writes an invalid v2 draft', async () => {
+      const h = await startServer();
+      const definition = {
+        ...v2Definition('invalid-v2'),
+        root: {
+          nodes: [
+            {
+              id: 'first-gate',
+              kind: 'Gate' as const,
+              outcomes: ['continue'],
+            },
+            {
+              id: 'second-gate',
+              kind: 'Gate' as const,
+              outcomes: ['continue'],
+            },
+          ],
+          connections: [
+            {
+              id: 'first-to-second',
+              from: { node: 'first-gate', port: 'continue' },
+              to: { node: 'second-gate', port: 'input' },
+            },
+            {
+              id: 'second-to-first',
+              from: { node: 'second-gate', port: 'continue' },
+              to: { node: 'first-gate', port: 'input' },
+            },
+          ],
+        },
+      };
+      const corePreparation = EcpDefinitionModule.prepare(
+        definition,
+        createCapabilityCatalogSnapshot([])
+      );
+      expect(corePreparation.ok).toBe(false);
+      if (corePreparation.ok) throw new Error('Expected the cycle fixture to fail.');
+      const validation = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipeline-validation',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ definition }),
+      });
+      expect(validation.status).toBe(200);
+      const validationBody = validation.json() as any;
+      expect(validationBody.valid).toBe(false);
+      expect(validationBody.preparation.diagnostics).toEqual(
+        corePreparation.error.diagnostics
+      );
+      const cycleIssue = validationBody.preparation.diagnostics.find(
+        (issue: { code?: string }) => issue.code === 'GRAPH_CYCLE'
+      );
+      expect(cycleIssue).toBeDefined();
+      expect(definitionIssuePathTarget(definition, cycleIssue.path)).toEqual({
+        kind: 'connection',
+        index: 0,
+        id: 'first-to-second',
+      });
+
+      const save = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ op: 'save', name: 'invalid-v2', definition }),
+      });
+
+      expect(save.status).toBe(422);
+      expect((save.json() as any).error.diagnostics).toEqual(
+        validationBody.preparation.diagnostics
+      );
+      expect(
+        fs.existsSync(
+          path.join(tempConfigHome, 'rasen', 'pipelines', 'invalid-v2')
+        )
+      ).toBe(false);
+    });
+
+    it('keeps duplicate contract diagnostics identical across validate and blocked save', async () => {
+      const h = await startServer();
+      const base = v2Definition('duplicate-contract-v2');
+      const definition = {
+        ...base,
+        inputs: [
+          { name: 'request', type: 'text/plain', required: true },
+          { name: 'request', type: 'application/json', required: true },
+        ],
+        declarations: [
+          {
+            ...base.declarations[0],
+            outcomes: ['done', 'done'],
+          },
+        ],
+      };
+      const corePreparation = EcpDefinitionModule.prepare(
+        definition,
+        createCapabilityCatalogSnapshot([])
+      );
+      expect(corePreparation.ok).toBe(false);
+      if (corePreparation.ok) {
+        throw new Error('Expected duplicate authored contracts to fail.');
+      }
+
+      const validation = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipeline-validation',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ definition }),
+      });
+      expect(validation.status).toBe(200);
+      const validationBody = validation.json() as any;
+      expect(validationBody.valid).toBe(false);
+      expect(validationBody.preparation.diagnostics).toEqual(
+        corePreparation.error.diagnostics
+      );
+      expect(validationBody.preparation.diagnostics).toEqual([
+        expect.objectContaining({
+          code: 'DUPLICATE_ID',
+          path: '/declarations/0/outcomes/1',
+          related: [
+            expect.objectContaining({
+              path: '/declarations/0/outcomes/0',
+            }),
+          ],
+        }),
+        expect.objectContaining({
+          code: 'DUPLICATE_ID',
+          path: '/inputs/1/name',
+          related: [
+            expect.objectContaining({
+              path: '/inputs/0/name',
+            }),
+          ],
+        }),
+      ]);
+
+      const save = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          op: 'save',
+          name: 'duplicate-contract-v2',
+          definition,
+        }),
+      });
+      expect(save.status).toBe(422);
+      expect((save.json() as any).error.diagnostics).toEqual(
+        validationBody.preparation.diagnostics
+      );
+      expect(
+        fs.existsSync(
+          path.join(
+            tempConfigHome,
+            'rasen',
+            'pipelines',
+            'duplicate-contract-v2'
+          )
+        )
+      ).toBe(false);
+    });
+
+    it('keeps preparation warnings visible on validation and successful save', async () => {
+      const h = await startServer();
+      const definition = {
+        version: 1,
+        name: 'warning-visible',
+        stages: [{ id: 'implement', skill: 'rasen-apply-change' }],
+      };
+      const validation = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipeline-validation',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ definition }),
+      });
+      expect((validation.json() as any).issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: 'LEGACY_NORMALIZED' }),
+        ])
+      );
+
+      const save = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/pipelines',
+        headers: authed({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          op: 'save',
+          name: 'warning-visible',
+          definition,
+        }),
+      });
+      expect(save.status).toBe(201);
+      expect((save.json() as any).preparation.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: 'LEGACY_NORMALIZED' }),
+        ])
+      );
+    });
+
     it('creates a new user pipeline with 201, then detail round-trips it', async () => {
       const h = await startServer();
       const definition = {

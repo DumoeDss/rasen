@@ -4,7 +4,15 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 
 import { parsePipeline, PipelineValidationError } from '../../../src/core/pipeline-registry/pipeline.js';
-import { validatePipelineForExecution } from '../../../src/core/pipeline-registry/execution-validation.js';
+import {
+  preflightPreparedDefinitionExecution,
+  validatePipelineForExecution,
+} from '../../../src/core/pipeline-registry/execution-validation.js';
+import {
+  EcpDefinitionModule,
+  createCapabilityCatalogSnapshot,
+  type PreparedDefinition,
+} from '../../../src/core/pipeline-registry/definition.js';
 
 // A real, always-enabled core skill (see builtins.ts) so the pre-existing
 // skill-presence/enablement checks pass and these tests exercise only the
@@ -23,6 +31,69 @@ function writePipeline(dir: string, name: string, content: string): void {
   fs.mkdirSync(pipelineDir, { recursive: true });
   fs.writeFileSync(path.join(pipelineDir, 'pipeline.yaml'), content);
 }
+
+function prepareForExecution(source: unknown): PreparedDefinition {
+  const result = EcpDefinitionModule.prepare(
+    source,
+    createCapabilityCatalogSnapshot([])
+  );
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw result.error;
+  return result.value;
+}
+
+describe('pipeline-registry prepared Definition launch guard', () => {
+  it('keeps a valid v2 plan visible but refuses every launch path with the stable server reason', () => {
+    const prepared = prepareForExecution({
+      version: 2,
+      id: 'not-yet-executable',
+      sourceId: 'fixture:not-yet-executable',
+      name: 'not-yet-executable',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [{ id: 'finish', kind: 'Finish', outcome: 'done' }],
+        connections: [],
+      },
+    });
+
+    expect(prepared.capability).toEqual({
+      definitionValid: true,
+      planAvailable: true,
+      executable: false,
+      executionMode: 'unavailable',
+      unavailableReason: 'ecp_v2_runtime_unavailable',
+    });
+    expect(() => preflightPreparedDefinitionExecution(prepared)).toThrow(
+      expect.objectContaining({
+        code: 'ecp_v2_runtime_unavailable',
+      })
+    );
+  });
+
+  it('returns only the explicit legacy execution selection for authored v1', () => {
+    const prepared = prepareForExecution({
+      version: 1,
+      name: 'legacy-still-owned',
+      stages: [{ id: 'apply', skill: KNOWN_SKILL }],
+    });
+
+    expect(prepared.capability).toEqual({
+      definitionValid: true,
+      planAvailable: true,
+      executable: true,
+      executionMode: 'legacy',
+    });
+    const selection = preflightPreparedDefinitionExecution(prepared);
+    expect(selection).toEqual({
+      mode: 'legacy',
+      pipeline: prepared.authoredSource,
+    });
+    expect(selection).not.toHaveProperty('reconciler');
+  });
+});
 
 describe('pipeline-registry/execution-validation runtime preflight', () => {
   // Project-local pipeline files only — the machine-root global config stays

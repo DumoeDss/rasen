@@ -1,5 +1,5 @@
 import { promises as fs } from 'fs';
-import { readFileSync, existsSync, writeFileSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, statSync } from 'fs';
 import path from 'path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -8,6 +8,9 @@ import { getTaskProgressForChange, formatTaskStatus } from '../utils/task-progre
 import { Validator } from './validation/validator.js';
 import { readProjectConfig, resolveArchiveTiming, type ArchiveDestination } from './project-config.js';
 import { resolveChangeWorkDir, resolveArchiveDestination } from './change-work.js';
+import { resolveProjectHome } from './project-home.js';
+import { derivePlanningSpaceId, readPhysicalIdentity } from '../core/change-run/internal/identity.js';
+import { createAssociationLedgerStore } from '../core/change-run/internal/association-ledger-store.js';
 import chalk from 'chalk';
 import {
   emitStoreRootBanner,
@@ -806,9 +809,58 @@ export class ArchiveCommand {
     // Create archive directory if needed
     await fs.mkdir(targetArchiveDir, { recursive: true });
 
+    // Stat the Change directory BEFORE the move to capture its pre-archive
+    // physical identity. Same-volume rename (the in-repo case) preserves
+    // inode/device; cross-volume copy (external) produces a new identity, but
+    // the PRE-MOVE identity is what the active association was bound to.
+    let preMovePhysical: ReturnType<typeof readPhysicalIdentity> | undefined;
+    try {
+      const st = statSync(changeDir, { bigint: true });
+      preMovePhysical = readPhysicalIdentity({
+        device: st.dev,
+        ino: st.ino,
+        birthtimeMs: st.birthtimeMs,
+      });
+    } catch {
+      /* best-effort — registry no-op if stat fails */
+    }
+
     // Move change to archive (uses copy+remove on EPERM/EXDEV, e.g. Windows
     // — required for `external`, which may cross filesystems/drives)
     await moveDirectory(changeDir, archivePath);
+
+    // Record the archive in the association registry (design §3 archive
+    // wiring). If no active association exists (pre-registry Change or
+    // unregistered project), this is a no-op on the registry — the
+    // filesystem relocate still completes. Errors are swallowed because
+    // registry bookkeeping is enhancement, not a gate on archive.
+    if (preMovePhysical) {
+      try {
+        const projectHome = await resolveProjectHome(root.path, { ensure: false });
+        if (projectHome) {
+          const planningSpaceId = derivePlanningSpaceId(projectHome.name) as never;
+          const ledgerStore = createAssociationLedgerStore({
+            homeDir: projectHome.homeDir,
+            planningSpaceId,
+            projectId: projectHome.projectId,
+          });
+          const alias = `changes/${changeName}`;
+          const archiveAlias = `changes/archive/${archiveName}`;
+          const active = ledgerStore.resolveActiveAssociation(changeName);
+          if (active) {
+            ledgerStore.archive({
+              changeId: changeName,
+              instanceId: active.instanceId,
+              activeAlias: alias,
+              archiveAlias,
+              physicalIdentity: preMovePhysical,
+            });
+          }
+        }
+      } catch {
+        /* registry bookkeeping is best-effort; archive still succeeds */
+      }
+    }
 
     // Quality capture: scan archived directory for quality artifact files
     // (path-agnostic — runs against wherever the directory landed)

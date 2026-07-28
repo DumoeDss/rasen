@@ -8,19 +8,33 @@ import { describe, expect, it } from 'vitest';
 import {
   addRequire,
   addStage,
+  addV2Connection,
+  addV2Node,
+  definitionIssuePathTarget,
   isDirty,
+  isV2EditableNodeKind,
   issuePathTarget,
   removeRequire,
   removeStage,
+  removeV2Connection,
+  removeV2Node,
   renameStage,
+  renameV2Node,
   stageIdFor,
   updateStageFields,
   updateStageHandoffThreshold,
+  updateV2NodeFields,
+  v2ConnectionIdFor,
+  v2NodeIdFor,
   wouldCreateCycle,
 } from '../../src/canvas/draft.js';
-import type { WirePipelineDefinition } from '../../src/api/types.js';
+import type {
+  WirePipelineDefinition,
+  WirePipelineDefinitionV1,
+  WirePipelineDefinitionV2,
+} from '../../src/api/types.js';
 
-function baseDef(): WirePipelineDefinition {
+function baseDef(): WirePipelineDefinitionV1 {
   return {
     version: 1,
     name: 'demo',
@@ -222,7 +236,7 @@ describe('updateStageHandoffThreshold', () => {
 describe('isDirty', () => {
   it('is false for a structurally identical draft regardless of key order', () => {
     const def = baseDef();
-    const reordered: WirePipelineDefinition = {
+    const reordered: WirePipelineDefinitionV1 = {
       version: def.version,
       stages: def.stages.map((s) => ({ ...s })),
       description: def.description,
@@ -261,5 +275,240 @@ describe('addStage', () => {
     const next = addStage(def, stage);
     expect(next.stages).toHaveLength(4);
     expect(next.stages[3]).toEqual(stage);
+  });
+});
+
+describe('version 2 definition draft preservation', () => {
+  it('edits one exposed root-node field without losing declarations or unexposed fields', () => {
+    const def = {
+      version: 2 as const,
+      id: 'definition:v2-draft',
+      sourceId: 'fixture:v2-draft',
+      name: 'v2-draft',
+      inputs: [{ name: 'request', type: 'text/plain', required: true }],
+      artifacts: [{ name: 'report', type: 'artifact/report' }],
+      outcomes: ['done', 'failed'],
+      declarations: [
+        {
+          id: 'body',
+          kind: 'Composite' as const,
+          provenance: 'custom' as const,
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+          graph: {
+            nodes: [{ id: 'body-finish', kind: 'Finish' as const, outcome: 'done' }],
+            connections: [],
+          },
+          unexposed: { preserve: true },
+        },
+      ],
+      root: {
+        nodes: [
+          {
+            id: 'finish',
+            kind: 'Finish' as const,
+            outcome: 'done',
+            position: { x: 10, y: 20 },
+            unexposed: { preserve: 'node' },
+          },
+        ],
+        connections: [],
+        unexposed: { preserve: 'graph' },
+      },
+      limits: { maxActions: 4, budget: 4 },
+      unexposed: { preserve: 'definition' },
+    } satisfies WirePipelineDefinition;
+
+    const next = updateV2NodeFields(def, 'finish', { outcome: 'failed' });
+
+    expect(next.root.nodes[0]).toEqual({
+      ...def.root.nodes[0],
+      outcome: 'failed',
+    });
+    expect(next.declarations).toEqual(def.declarations);
+    expect(next.root.unexposed).toEqual(def.root.unexposed);
+    expect(next.unexposed).toEqual(def.unexposed);
+    expect(JSON.parse(JSON.stringify(next))).toEqual(next);
+  });
+});
+
+function v2Def(): WirePipelineDefinitionV2 {
+  return {
+    version: 2,
+    id: 'definition:v2-canvas',
+    sourceId: 'fixture:v2-canvas',
+    name: 'v2-canvas',
+    inputs: [{ name: 'request', type: 'text/plain', required: true }],
+    artifacts: [],
+    outcomes: ['done', 'failed'],
+    declarations: [],
+    root: {
+      nodes: [
+        {
+          id: 'produce',
+          kind: 'AtomicStage',
+          capability: { id: 'skill:produce', version: 'sha256:produce' },
+          hidden: { preserve: true },
+        },
+        { id: 'gate', kind: 'Gate', outcomes: ['approved', 'rejected'] },
+        { id: 'finish', kind: 'Finish', outcome: 'done' },
+      ],
+      connections: [],
+      hidden: { preserve: 'root' },
+    },
+    hidden: { preserve: 'definition' },
+  };
+}
+
+describe('version 2 root graph reducer', () => {
+  it('creates every enabled root kind with stable unique ids and authored defaults', () => {
+    let def = v2Def();
+    const atomicId = v2NodeIdFor('AtomicStage', def);
+    expect(atomicId).toBe('atomic-stage');
+    def = addV2Node(def, {
+      id: atomicId,
+      kind: 'AtomicStage',
+      capability: { id: 'skill:consume', version: 'sha256:consume' },
+    });
+    const choiceId = v2NodeIdFor('Choice', def);
+    def = addV2Node(def, { id: choiceId, kind: 'Choice', outcomes: ['matched', 'skipped'] });
+    const gateId = v2NodeIdFor('Gate', def);
+    def = addV2Node(def, { id: gateId, kind: 'Gate', outcomes: ['approved', 'rejected'] });
+    const finishId = v2NodeIdFor('Finish', def);
+    def = addV2Node(def, { id: finishId, kind: 'Finish', outcome: 'failed' });
+
+    expect(def.root.nodes.slice(-4)).toEqual([
+      {
+        id: 'atomic-stage',
+        kind: 'AtomicStage',
+        capability: { id: 'skill:consume', version: 'sha256:consume' },
+      },
+      { id: 'choice', kind: 'Choice', outcomes: ['matched', 'skipped'] },
+      { id: 'gate-2', kind: 'Gate', outcomes: ['approved', 'rejected'] },
+      { id: 'finish-2', kind: 'Finish', outcome: 'failed' },
+    ]);
+    expect(v2NodeIdFor('Gate', def)).toBe('gate-3');
+    expect(def.hidden).toEqual({ preserve: 'definition' });
+    expect(def.root.hidden).toEqual({ preserve: 'root' });
+  });
+
+  it('connects typed ports with a stable identity, rewrites endpoints on rename, and cleans edges on delete', () => {
+    let def = v2Def();
+    def = addV2Node(def, {
+      id: 'consume',
+      kind: 'AtomicStage',
+      capability: { id: 'skill:consume', version: 'sha256:consume' },
+    });
+    const id = v2ConnectionIdFor(def, {
+      source: 'produce',
+      sourcePort: 'patch',
+      target: 'consume',
+      targetPort: 'patch',
+    });
+    expect(id).toBe('produce:patch->consume:patch');
+    def = addV2Connection(def, {
+      id,
+      from: { node: 'produce', port: 'patch' },
+      to: { node: 'consume', port: 'patch' },
+    });
+    expect(def.root.connections[0]).toEqual({
+      id: 'produce:patch->consume:patch',
+      from: { node: 'produce', port: 'patch' },
+      to: { node: 'consume', port: 'patch' },
+    });
+    expect(
+      v2ConnectionIdFor(def, {
+        source: 'produce',
+        sourcePort: 'patch',
+        target: 'consume',
+        targetPort: 'patch',
+      })
+    ).toBe('produce:patch->consume:patch-2');
+
+    def = renameV2Node(def, 'consume', 'verify');
+    expect(def.root.connections[0].to.node).toBe('verify');
+    expect(def.root.nodes.find((node) => node.id === 'produce')?.hidden).toEqual({
+      preserve: true,
+    });
+
+    def = removeV2Connection(def, id);
+    expect(def.root.connections).toEqual([]);
+    def = addV2Connection(def, {
+      id: 'finish-edge',
+      from: { node: 'produce', port: 'done' },
+      to: { node: 'finish', port: 'in' },
+    });
+    def = removeV2Node(def, 'finish');
+    expect(def.root.nodes.some((node) => node.id === 'finish')).toBe(false);
+    expect(def.root.connections).toEqual([]);
+  });
+
+  it('recognizes the four enabled kinds and preserves known later-slice kinds byte-for-byte', () => {
+    expect(['AtomicStage', 'Gate', 'Choice', 'Finish'].every(isV2EditableNodeKind)).toBe(true);
+    expect(['CompositeRef', 'BoundedLoop', 'FanOut', 'Join'].some(isV2EditableNodeKind)).toBe(false);
+
+    const def = v2Def();
+    def.root.nodes.push(
+      {
+        id: 'composite',
+        kind: 'CompositeRef',
+        declarationId: 'review-body',
+        futurePayload: { preserve: ['all', 'fields'] },
+      },
+      {
+        id: 'fan',
+        kind: 'FanOut',
+        branches: ['a', 'b'],
+        futurePayload: { preserve: true },
+      }
+    );
+    const beforeUnsupported = structuredClone(def.root.nodes.slice(-2));
+    const next = updateV2NodeFields(def, 'finish', { outcome: 'failed' });
+
+    expect(next.root.nodes.slice(-2)).toEqual(beforeUnsupported);
+  });
+});
+
+describe('definitionIssuePathTarget', () => {
+  it('maps v2 root node paths to the node and nested property', () => {
+    expect(definitionIssuePathTarget(v2Def(), '/root/nodes/1/outcomes/0')).toEqual({
+      kind: 'node',
+      index: 1,
+      id: 'gate',
+      field: 'outcomes/0',
+    });
+  });
+
+  it('maps v2 root connection paths to the edge and endpoint property', () => {
+    const def = v2Def();
+    def.root.connections.push({
+      id: 'typed-edge',
+      from: { node: 'produce', port: 'patch' },
+      to: { node: 'gate', port: 'in' },
+    });
+    expect(definitionIssuePathTarget(def, '/root/connections/0/to/port')).toEqual({
+      kind: 'connection',
+      index: 0,
+      id: 'typed-edge',
+      field: 'to/port',
+    });
+  });
+
+  it('retains declaration-level, definition-level, malformed, and out-of-range paths as unmapped', () => {
+    const def = v2Def();
+    expect(definitionIssuePathTarget(def, '/declarations/0/graph/nodes/0')).toBeNull();
+    expect(definitionIssuePathTarget(def, '/limits/budget')).toBeNull();
+    expect(definitionIssuePathTarget(def, '/root/nodes/99/id')).toBeNull();
+    expect(definitionIssuePathTarget(def, '/root/connections/nope')).toBeNull();
+  });
+
+  it('keeps the existing v1 locator behavior through the shared entry point', () => {
+    expect(definitionIssuePathTarget(baseDef(), '/stages/1/handoff/threshold')).toEqual({
+      kind: 'node',
+      index: 1,
+      id: 'b',
+      field: 'handoff/threshold',
+    });
   });
 });

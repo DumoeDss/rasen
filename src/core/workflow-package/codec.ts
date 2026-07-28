@@ -1,7 +1,17 @@
 import { TextDecoder } from 'node:util';
 
-import { PipelineValidationError, parsePipeline } from '../pipeline-registry/pipeline.js';
+import {
+  PipelineValidationError,
+  parsePipeline,
+  parsePipelineSourceDocument,
+} from '../pipeline-registry/pipeline.js';
+import {
+  EcpDefinitionModule,
+  createProductionCapabilityCatalogSnapshot,
+  type CapabilityCatalogSnapshot,
+} from '../pipeline-registry/definition.js';
 import { BUILT_IN_WORKFLOW_IDS } from '../workflow-registry/builtins.js';
+import { loadWorkflowCatalog } from '../workflow-registry/registry.js';
 import { parseWorkflowManifest } from '../workflow-registry/manifest.js';
 import type { WorkflowDefinition } from '../workflow-registry/types.js';
 import {
@@ -223,8 +233,16 @@ function assertPackageByteLimit(bytes: Uint8Array): void {
   }
 }
 
-export function encodePackage(packageValue: RasenPackage): Buffer {
-  validatePackageDomain(packageValue);
+export interface PackageCodecOptions {
+  /** Frozen capability meaning already used to admit packaged Definitions. */
+  readonly capabilityCatalog?: CapabilityCatalogSnapshot;
+}
+
+export function encodePackage(
+  packageValue: RasenPackage,
+  options: PackageCodecOptions = {}
+): Buffer {
+  validatePackageDomain(packageValue, options);
   const bytes = canonicalBytes(packageValue);
   assertPackageByteLimit(bytes);
   return bytes;
@@ -371,7 +389,10 @@ function validateEmbeddedWorkflowClosure(
  * here — they may be installed separately; execution-time preflight (a
  * separate, deferred concern) is where a missing skill blocks a run.
  */
-function validatePipelinePackageDomain(packageValue: PipelinePackage): void {
+function validatePipelinePackageDomain(
+  packageValue: PipelinePackage,
+  options: PackageCodecOptions = {}
+): void {
   if (packageValue.pipelines.length === 0) {
     failPreflight('package_pipelines_empty', 'Pipeline package must contain at least one pipeline');
   }
@@ -443,9 +464,46 @@ function validatePipelinePackageDomain(packageValue: PipelinePackage): void {
       );
     }
     const manifestFile = pipeline.files.find((file) => file.path === 'pipeline.yaml')!;
-    let parsed: ReturnType<typeof parsePipeline>;
+    let parsedName: string;
     try {
-      parsed = parsePipeline(manifestFile.content);
+      const source = parsePipelineSourceDocument(manifestFile.content);
+      if (
+        source !== null &&
+        typeof source === 'object' &&
+        !Array.isArray(source) &&
+        (source as { version?: unknown }).version === 2
+      ) {
+        const catalog =
+          options.capabilityCatalog ??
+          (() => {
+            const workflowCatalog = loadWorkflowCatalog();
+            const allSkillNames = new Set(
+              workflowCatalog.definitions.map(
+                (definition) => definition.skill.template.name
+              )
+            );
+            return createProductionCapabilityCatalogSnapshot(
+              workflowCatalog.definitions,
+              allSkillNames
+            );
+          })();
+        const prepared = EcpDefinitionModule.prepare(
+          manifestFile.content,
+          catalog
+        );
+        if (!prepared.ok) {
+          const first = prepared.error.diagnostics[0];
+          failPreflight(
+            first?.code ?? 'packaged_pipeline_invalid',
+            `Pipeline "${pipeline.name}" contains an invalid pipeline.yaml: ${prepared.error.diagnostics
+              .map((diagnostic) => `${diagnostic.path}: ${diagnostic.message}`)
+              .join('; ')}`
+          );
+        }
+        parsedName = prepared.value.authoredSource.name;
+      } else {
+        parsedName = parsePipeline(manifestFile.content).name;
+      }
     } catch (error) {
       failPreflight(
         error instanceof PipelineValidationError ? error.code : 'packaged_pipeline_invalid',
@@ -454,10 +512,10 @@ function validatePipelinePackageDomain(packageValue: PipelinePackage): void {
         }`
       );
     }
-    if (parsed.name !== pipeline.name) {
+    if (parsedName !== pipeline.name) {
       failPreflight(
         'packaged_pipeline_name_mismatch',
-        `Pipeline "${pipeline.name}" contains pipeline name "${parsed.name}"`
+        `Pipeline "${pipeline.name}" contains pipeline name "${parsedName}"`
       );
     }
     const expectedPipelineDigest = computePackagedPipelineDigest(pipeline.name, pipeline.files);
@@ -484,9 +542,12 @@ function validatePipelinePackageDomain(packageValue: PipelinePackage): void {
   }
 }
 
-function validatePackageDomain(packageValue: RasenPackage): void {
+function validatePackageDomain(
+  packageValue: RasenPackage,
+  options: PackageCodecOptions = {}
+): void {
   if (packageValue.kind === 'pipeline') {
-    validatePipelinePackageDomain(packageValue);
+    validatePipelinePackageDomain(packageValue, options);
     validateNormalizedArrayOrder(packageValue);
     const { packageDigest, ...packageWithoutDigest } = packageValue;
     const expectedPackageDigest = computePackageDigest(

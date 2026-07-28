@@ -262,6 +262,43 @@ describe('top-level validate command (pipelines)', () => {
     expect(json.summary.totals.failed).toBe(0);
   });
 
+  it('checks a prepared Codex route without requiring the Codex binary during static validation', async () => {
+    await writeProjectPipeline(
+      'codex-static-validation',
+      [
+        'name: codex-static-validation',
+        'stages:',
+        '  - id: propose',
+        '    skill: rasen-propose',
+        '    role: planner',
+        '    runtime: codex',
+      ].join('\n')
+    );
+    const emptyPath = path.join(testDir, 'empty-path');
+    await fs.mkdir(emptyPath, { recursive: true });
+    const env = {
+      PATH: emptyPath,
+      RASEN_AGENT_RUNTIME: 'claude',
+    };
+
+    const validation = await runCLI(
+      ['validate', 'codex-static-validation', '--type', 'pipeline', '--json'],
+      { cwd: testDir, env }
+    );
+    expect(validation.exitCode).toBe(0);
+    expect(JSON.parse(validation.stdout).items[0]).toMatchObject({
+      id: 'codex-static-validation',
+      valid: true,
+    });
+
+    const execution = await runCLI(
+      ['pipeline', 'show', 'codex-static-validation', '--for-execution', '--json'],
+      { cwd: testDir, env }
+    );
+    expect(execution.exitCode).toBe(1);
+    expect(execution.stderr).toContain('requires the codex exec bridge');
+  });
+
   it('reports valid:false for a pipeline with a dangling requires reference', async () => {
     await writeProjectPipeline(
       'broken-deps',

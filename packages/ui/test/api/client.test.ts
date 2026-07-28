@@ -7,6 +7,7 @@ import { projectsListFixture } from '../fixtures/projects-list.js';
 import { healthFixture } from '../fixtures/health.js';
 import { errorsFixture } from '../fixtures/errors.js';
 import { sessionDetailFixture, sessionsListFixture } from '../fixtures/sessions-list.js';
+import type { PipelineDetailResponse } from '../../src/api/types.js';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -23,6 +24,71 @@ describe('api client', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('preserves the full discriminated v2 Definition and preparation capability contract', async () => {
+    const detail: PipelineDetailResponse = {
+      pipeline: {
+        name: 'v2-client-contract',
+        description: 'v2',
+        provenance: 'user',
+        sourceLayer: 'project',
+        stages: [],
+        authoredVersion: 2,
+        normalizedVersion: 2,
+        definitionValid: true,
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable',
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      definition: {
+        version: 2,
+        id: 'definition:v2-client-contract',
+        sourceId: 'fixture:v2-client-contract',
+        name: 'v2-client-contract',
+        inputs: [],
+        artifacts: [],
+        outcomes: ['done'],
+        declarations: [],
+        root: {
+          nodes: [{ id: 'finish', kind: 'Finish', outcome: 'done' }],
+          connections: [],
+        },
+        unexposed: { preserve: true },
+      },
+      preparation: {
+        authoredVersion: 2,
+        normalizedVersion: 2,
+        definitionValid: true,
+        diagnostics: [],
+        digests: {
+          source: 'source-digest',
+          capability: 'capability-digest',
+          plan: 'plan-digest',
+        },
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable',
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      editable: true,
+    };
+    (fetch as any).mockResolvedValueOnce(jsonResponse(200, detail));
+
+    const result = await client.getPipelineDetail(
+      'v2-client-contract',
+      'project:proj_abc123'
+    );
+
+    expect(result).toEqual(detail);
+    expect(result.definition.version).toBe(2);
+    expect(result.preparation).toMatchObject({
+      planAvailable: true,
+      executable: false,
+      unavailableReason: 'ecp_v2_runtime_unavailable',
+    });
+    expect(JSON.stringify(result)).not.toContain('"payload"');
   });
 
   it('injects no Authorization header when no token is set', async () => {
@@ -327,6 +393,168 @@ describe('api client', () => {
       const [url, init] = (fetch as any).mock.calls[0];
       expect(url).toBe('/api/v1/spaces');
       expect(init.method).toBeUndefined();
+    });
+  });
+
+  describe('reconciler runs (14.1/14.2)', () => {
+    it('listRuns threads cursor and limit for reconciler pagination', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(200, { runs: [], reconcilerRuns: [], hasMore: false })
+      );
+      await client.listRuns('project:test', { cursor: 'abc123', limit: 50 });
+      const [url] = (fetch as any).mock.calls[0];
+      expect(url).toContain('space=project%3Atest');
+      expect(url).toContain('cursor=abc123');
+      expect(url).toContain('limit=50');
+    });
+
+    it('listRuns omits cursor/limit when not provided (backward-compatible)', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(200, { runs: [], reconcilerRuns: [], hasMore: false })
+      );
+      await client.listRuns('project:test');
+      const [url] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/runs?space=project%3Atest');
+    });
+
+    it('getRunDetail GETs the exact run detail route with percent-encoded ids', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(200, {
+          format: 'change-run-view/1',
+          engine: 'reconciler',
+          runId: 'run:abc',
+          change: {
+            planningSpaceId: 'ps:1',
+            projectId: 'p',
+            changeId: 'my-change',
+            instanceId: 'ci:1',
+          },
+          recordVersion: 1,
+          status: 'running',
+          sourceState: 'active',
+          workspace: { instanceId: 'wi:1', scope: 'current' },
+          drift: {
+            definition: 'unchanged',
+            sourceRevision: { provenance: 'unchanged', content: 'unchanged', semantic: 'unchanged' },
+            capability: 'unchanged',
+            policy: 'unchanged',
+            workspace: 'unchanged',
+          },
+          sections: [],
+        })
+      );
+      const view = await client.getRunDetail('my-change', 'run:abc', 'project:test');
+      const [url] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/runs/my-change/run%3Aabc?space=project%3Atest');
+      expect(view.format).toBe('change-run-view/1');
+      expect(view.engine).toBe('reconciler');
+    });
+
+    it('getRunDetail omits space query when no selector is given', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(200, {
+          format: 'change-run-view/1',
+          engine: 'reconciler',
+          runId: 'run:abc',
+          change: { planningSpaceId: 'ps:1', projectId: 'p', changeId: 'c', instanceId: 'ci:1' },
+          recordVersion: 1,
+          status: 'running',
+          sourceState: 'active',
+          workspace: { instanceId: 'wi:1', scope: 'current' },
+          drift: {
+            definition: 'unchanged',
+            sourceRevision: { provenance: 'unchanged', content: 'unchanged', semantic: 'unchanged' },
+            capability: 'unchanged',
+            policy: 'unchanged',
+            workspace: 'unchanged',
+          },
+          sections: [],
+        })
+      );
+      await client.getRunDetail('c', 'run:abc');
+      const [url] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/runs/c/run%3Aabc');
+    });
+
+    it('postRunControl POSTs the control body with auth + json + space selector (14.5/14.6)', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(200, {
+          view: {
+            format: 'change-run-view/1',
+            engine: 'reconciler',
+            runId: 'run:abc',
+            change: { planningSpaceId: 'ps:1', projectId: 'p', changeId: 'my-change', instanceId: 'ci:1' },
+            recordVersion: 2,
+            status: 'running',
+            sourceState: 'active',
+            workspace: { instanceId: 'wi:1', scope: 'current' },
+            drift: {
+              definition: 'unchanged',
+              sourceRevision: { provenance: 'unchanged', content: 'unchanged', semantic: 'unchanged' },
+              capability: 'unchanged',
+              policy: 'unchanged',
+              workspace: 'unchanged',
+            },
+            sections: [],
+          },
+          disposition: 'advanced',
+          actions: [],
+        })
+      );
+      const result = await client.postRunControl(
+        'my-change',
+        'run:abc',
+        {
+          control: {
+            format: 'change-run-control/1',
+            ref: {
+              change: { projectRoot: 'project:test', changeId: 'my-change' },
+              runId: 'run:abc',
+            },
+            expectedRecordVersion: 1,
+            command: { kind: 'resume', waitId: 'wait:def' },
+          },
+        },
+        'project:test'
+      );
+
+      const [url, init] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/runs/my-change/run%3Aabc?space=project%3Atest');
+      expect(init.method).toBe('POST');
+      expect(init.headers['Content-Type']).toBe('application/json');
+      const parsed = JSON.parse(init.body);
+      expect(parsed.control.format).toBe('change-run-control/1');
+      expect(parsed.control.expectedRecordVersion).toBe(1);
+      expect(parsed.control.command).toEqual({ kind: 'resume', waitId: 'wait:def' });
+      // The sealed response carries the committed view + empty actions.
+      expect(result.disposition).toBe('advanced');
+      expect(result.actions).toEqual([]);
+      expect(result.view.recordVersion).toBe(2);
+    });
+
+    it('postRunControl surfaces a 409 record_version_conflict as an ApiError (caller refetches)', async () => {
+      (fetch as any).mockResolvedValueOnce(
+        jsonResponse(409, {
+          error: {
+            code: 'record_version_conflict',
+            message: 'expectedRecordVersion 1 does not match the current Record version 3.',
+          },
+        })
+      );
+      await expect(
+        client.postRunControl(
+          'c',
+          'run:abc',
+          {
+            control: {
+              format: 'change-run-control/1',
+              ref: { change: { projectRoot: 'c', changeId: 'c' }, runId: 'run:abc' },
+              expectedRecordVersion: 1,
+              command: { kind: 'cancel' },
+            },
+          }
+        )
+      ).rejects.toMatchObject({ code: 'record_version_conflict', status: 409 });
     });
   });
 });

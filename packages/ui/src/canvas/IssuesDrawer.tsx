@@ -1,5 +1,5 @@
 import type { PipelineValidationIssue, WirePipelineDefinition } from '../api/types.js';
-import { issuePathTarget } from './draft.js';
+import { definitionIssuePathTarget } from './draft.js';
 
 /**
  * The validation issues drawer (pipeline-canvas-edit design D5): every issue
@@ -40,17 +40,46 @@ export function IssuesDrawer({
       </div>
       <ul class="issues-drawer__list">
         {issues.map((issue, i) => {
-          const target = issuePathTarget(issue.path, draft.stages.length);
-          const stageId = target ? draft.stages[target.stageIndex]?.id : undefined;
+          const target = definitionIssuePathTarget(draft, issue.path);
+          const root =
+            draft.version === 2 &&
+            draft.root !== null &&
+            typeof draft.root === 'object' &&
+            !Array.isArray(draft.root)
+              ? (draft.root as {
+                  connections?: {
+                    to?: { node?: unknown };
+                  }[];
+                })
+              : {};
+          const connections = Array.isArray(root.connections)
+            ? root.connections
+            : [];
+          const consumingNode =
+            target?.kind === 'connection'
+              ? connections[target.index]?.to?.node
+              : undefined;
+          const stageId =
+            target?.kind === 'node'
+              ? target.id
+              : typeof consumingNode === 'string'
+                ? consumingNode
+                : undefined;
           return (
             <li
               key={`${issue.path}-${i}`}
               class={`issues-drawer__item issues-drawer__item--${issue.severity}`}
               data-testid="issues-drawer-item"
               data-severity={issue.severity}
+              data-path={issue.path}
             >
               <span class="issues-drawer__severity">{issue.severity}</span>
               <span class="issues-drawer__message">{issue.message}</span>
+              {stageId && (
+                <span class="issues-drawer__path" data-testid="issues-drawer-path">
+                  {issue.path || '(pipeline)'}
+                </span>
+              )}
               {stageId ? (
                 <button
                   type="button"

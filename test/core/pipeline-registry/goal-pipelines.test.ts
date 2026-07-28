@@ -111,10 +111,15 @@ describe('goal pipeline retention tail', () => {
 
     it('reports the canonical disabled-skill diagnostic through execution preflight', async () => {
       await withGoalProfile(async () => {
-        const pipeline = loadPipelineByName(pipelineName);
-        const retain = pipeline.stages.find((stage) => stage.id === 'retain');
-        if (!retain) throw new Error('expected retain stage');
-        retain.skill = 'rasen-tdd';
+        const base = loadPipelineByName(pipelineName);
+        // Parsed pipelines are deep-frozen (intentional immutability) — derive a
+        // copy with the retain skill changed rather than mutating the loaded stage.
+        const pipeline = {
+          ...base,
+          stages: base.stages.map((stage) =>
+            stage.id === 'retain' ? { ...stage, skill: 'rasen-tdd' } : stage
+          ),
+        };
 
         try {
           await validatePipelineForExecution(pipeline);
@@ -128,10 +133,15 @@ describe('goal pipeline retention tail', () => {
 
     it('reports the canonical unknown-skill diagnostic through execution preflight', async () => {
       await withGoalProfile(async () => {
-        const pipeline = loadPipelineByName(pipelineName);
-        const retain = pipeline.stages.find((stage) => stage.id === 'retain');
-        if (!retain) throw new Error('expected retain stage');
-        retain.skill = 'rasen-missing';
+        const base = loadPipelineByName(pipelineName);
+        // Parsed pipelines are deep-frozen (intentional immutability) — derive a
+        // copy with the retain skill changed rather than mutating the loaded stage.
+        const pipeline = {
+          ...base,
+          stages: base.stages.map((stage) =>
+            stage.id === 'retain' ? { ...stage, skill: 'rasen-missing' } : stage
+          ),
+        };
 
         try {
           await validatePipelineForExecution(pipeline);
