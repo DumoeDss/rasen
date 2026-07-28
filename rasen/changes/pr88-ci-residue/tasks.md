@@ -209,6 +209,10 @@ Verdict: the component is correct (`handleChangeCreated` â†’ `setRefreshNonce` â
   `supervisor` 24/24, and `sessions-api` 21/21 pass.
 - [x] 11.6 Replace the token-audit parser test's raw Windows cleanup with the
   repository's bounded async retry helper after CI reproduced `ENOTEMPTY`.
+- [x] 11.7 Treat Windows `EPERM`/`EACCES`/`EBUSY` from owner-aware lock
+  creation as bounded transient contention after PR CI reproduced the
+  concurrent-stealer race; add a deterministic sharing-violation regression
+  and run the original race test 10/10 successfully.
 
 ## 12. Windows CI wall-clock
 
