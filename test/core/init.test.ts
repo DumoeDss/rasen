@@ -1034,6 +1034,45 @@ describe('InitCommand machine-home registration', () => {
 
     await fs.rm(blockedDataDir, { force: true });
   });
+
+  describe('tools manifest persistence (project-install-manifest)', () => {
+    it('writes tools: [claude] to config.yaml after init with --tools claude', async () => {
+      await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+
+      const configPath = path.join(testDir, 'rasen', 'config.yaml');
+      const content = await fs.readFile(configPath, 'utf-8');
+      expect(content).toMatch(/tools:/);
+      const { readProjectConfig } = await import('../../src/core/project-config.js');
+      const config = readProjectConfig(testDir);
+      expect(config?.tools).toEqual(['claude']);
+    });
+
+    it('writes tools: [claude, codex] after init with --tools claude,codex', async () => {
+      await new InitCommand({ tools: 'claude,codex', force: true }).execute(testDir);
+
+      const { readProjectConfig } = await import('../../src/core/project-config.js');
+      const config = readProjectConfig(testDir);
+      expect(config?.tools).toEqual(['claude', 'codex']);
+    });
+
+    it('writes tools: [] after init with --tools none', async () => {
+      await new InitCommand({ tools: 'none', force: true }).execute(testDir);
+
+      const { readProjectConfig } = await import('../../src/core/project-config.js');
+      const config = readProjectConfig(testDir);
+      expect(config?.tools).toEqual([]);
+    });
+
+    it('overwrites a prior tools: value on re-init (no union)', async () => {
+      await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+
+      await new InitCommand({ tools: 'codex', force: true }).execute(testDir);
+
+      const { readProjectConfig } = await import('../../src/core/project-config.js');
+      const config = readProjectConfig(testDir);
+      expect(config?.tools).toEqual(['codex']);
+    });
+  });
 });
 
 async function fileExists(filePath: string): Promise<boolean> {
