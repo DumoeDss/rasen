@@ -1,4 +1,6 @@
 import type {
+  ActionId,
+  AttemptId,
   ChangeRunControlRequest,
   ChangeRunReceipt,
   ChangeRunView,
@@ -9,6 +11,7 @@ import type {
 import type { ChangePipelineRuntime, RuntimeMutationContext } from '../facade.js';
 import type { RuntimePlan } from './runtime-plan.js';
 import type { CanonicalRunRecord } from './record.js';
+import { digestCanonicalRunRecord } from './record.js';
 import type { RunStore } from './run-store.js';
 import {
   reduceCanonicalRunRecord,
@@ -20,6 +23,7 @@ import { projectRunView } from './projector.js';
 import { verifyCompletion } from './completion.js';
 import { createCanonicalWait, type CanonicalWait } from './waits.js';
 import { deriveInvocationId } from './identity.js';
+import type { WorkspaceReservationRegistry } from './reservations.js';
 
 export interface RuntimeDeps {
   readonly store: RunStore;
@@ -47,6 +51,21 @@ export interface RuntimeDeps {
    * it before the facade call (the CLI `complete`/`control` commands do this).
    */
   readonly assertMutationAllowed?: (record: CanonicalRunRecord) => void;
+  /**
+   * Optional cross-Run workspace reservation registry. When wired, the facade
+   * consults it before admitting any workspace-touching Action
+   * (`access: 'read' | 'write'`). A reservation conflict converts the admit
+   * into a blocked intent that enters a durable `workspace-reservation` wait,
+   * so two Runs wanting the same WorkspaceInstanceId are serialized without
+   * the pure reconciler ever seeing another Run's Record. The same registry
+   * instance MUST be shared by every Run facade targeting one workspace.
+   *
+   * When omitted, the facade admits workspace candidates as the reconciler
+   * selects them (single-Run semantics); intra-Run contention still produces
+   * `await-workspace` candidates that the facade commits as
+   * `workspace-reservation` waits.
+   */
+  readonly reservationRegistry?: WorkspaceReservationRegistry;
 }
 
 function asPromise<T>(value: T): Promise<T> {
@@ -111,34 +130,47 @@ function capabilityUnavailableWait(
  */
 export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRuntime {
   /**
-   * Settle the FULL reconciler candidate batch into one Record revision.
+   * Collect the stimuli that settle a reconciler candidate batch against
+   * `workingRecord`, WITHOUT applying them. `complete` uses this to fold the
+   * settle stimuli into the SAME `reduceCandidateBatch` as its
+   * `commit-action-result` stimulus, so the store's `head + 1` invariant
+   * holds: the whole completion + settle is ONE Record revision.
    *
-   * Per design §5.6: "start, resume, complete, and control settle the
-   * candidate Record to its next quiescent point and commit once." The
-   * previous implementation (grantAdmits) filtered for 'admit' candidates
-   * only, dropping await-gate / suspend / finish / escalate / cancel — so a
-   * Run reaching a gate or a capability-unavailable suspension could never
-   * commit the durable wait, leaving the Run stuck without a WaitId for the
-   * control path to target.
-   *
-   * This settle maps every reconciler candidate to its stimulus and commits
-   * them atomically via reduceCandidateBatch. The returned `granted` list
-   * carries ONLY grant-mode admit actions (await-gate / suspend commit waits,
-   * they do not grant executable actions) so HTTP/CLI receipts never carry
-   * non-admit actions.
-   *
-   * deliveryMode semantics (§5.6): `grant` commits admits as `granted` and
-   * returns them; `defer` commits admits as `admitted_undelivered` (the
-   * management/browser path) and returns `actions: []`. Both modes commit
-   * all durable waits and terminal transitions.
+   * The `workingRecord` is the Record the caller has already advanced past
+   * any pre-stimuli (for `complete`, the post-`commit-action-result` Record).
+   * Pre-stimuli identity is carried in `resumingWaitIds` so the wait-creation
+   * pass does not re-derive a WaitId that the same batch is about to resume.
    */
-  const settleCandidates = (
-    record: CanonicalRunRecord,
+  const collectSettleStimuli = (
+    workingRecord: CanonicalRunRecord,
     candidates: readonly ReconcilerNextAction[],
-    deliveryMode: 'grant' | 'defer'
-  ): { record: CanonicalRunRecord; granted: readonly RunAction[] } => {
+    deliveryMode: 'grant' | 'defer',
+    incomingResumingWaitIds: ReadonlySet<string> = new Set()
+  ): { readonly stimuli: readonly RunStimulus[]; readonly granted: readonly RunAction[] } => {
     const stimuli: RunStimulus[] = [];
     const grantedActions: RunAction[] = [];
+    const blockedIntents: Array<{
+      readonly nodeId: string;
+      readonly invocationId: string;
+      readonly occurrence: number;
+      readonly access: 'read' | 'write';
+    }> = [];
+    // Track which workspace-reservation waits this batch is resuming (pre-pass
+    // + incoming); the wait-creation pass must not re-derive a WaitId that the
+    // same batch is about to resume.
+    const resumingWaitIds = new Set<string>(incomingResumingWaitIds);
+
+    // Pre-pass: release workspace-reservation waits whose workspace is now free.
+    if (deps.reservationRegistry !== undefined) {
+      for (const wait of workingRecord.waits) {
+        if (wait.kind !== 'workspace-reservation') continue;
+        if (deps.reservationRegistry.isBusy(wait.workspaceInstanceId)) {
+          continue;
+        }
+        stimuli.push({ kind: 'resume-wait', waitId: wait.waitId });
+        resumingWaitIds.add(wait.waitId as string);
+      }
+    }
 
     for (const candidate of candidates) {
       switch (candidate.kind) {
@@ -148,6 +180,38 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
             occurrence: candidate.occurrence,
             admissionKind: candidate.admissionKind,
           });
+          // Cross-Run reservation check. The reconciler has already decided
+          // this candidate is admissible within THIS Run; the registry is the
+          // only signal that another Run holds the workspace lease.
+          if (
+            deps.reservationRegistry !== undefined &&
+            (candidate.access === 'read' || candidate.access === 'write')
+          ) {
+            const conflict = deps.reservationRegistry.reserve({
+              workspaceInstanceId: workingRecord.workspaceInstanceId,
+              runId: deps.plan.runId,
+              actionId: action.actionId as ActionId,
+              attemptId: action.attemptId as AttemptId,
+              access: candidate.access,
+              recordDigest: digestCanonicalRunRecord(workingRecord),
+              recordVersion: workingRecord.recordVersion,
+              state: 'pending',
+            });
+            if (conflict !== null) {
+              // The registry rejected the reservation; the candidate stays
+              // un-admitted and enters the blocked-intent wait below. Discard
+              // the built action — a fresh one (same deterministic identity)
+              // is built when the workspace frees and the candidate is
+              // re-emitted.
+              blockedIntents.push({
+                nodeId: candidate.nodeId,
+                invocationId: action.invocationId,
+                occurrence: candidate.occurrence,
+                access: candidate.access,
+              });
+              break;
+            }
+          }
           stimuli.push({
             kind: 'admit-action',
             action,
@@ -181,7 +245,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         }
         case 'suspend-unsupported': {
           const wait = capabilityUnavailableWait(
-            record,
+            workingRecord,
             candidate.nodeId,
             candidate.code
           );
@@ -210,23 +274,94 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
               : {}),
           });
           break;
-        case 'await-workspace':
-          // Workspace-reservation waits require attemptId/actionId for each
-          // blocked intent, which don't exist until the action is admitted.
-          // The blocked admits are simply not emitted; the Run stays running
-          // until the contention resolves. This is a known remaining gap.
+        case 'await-workspace': {
+          // Intra-Run workspace contention: the reconciler's
+          // selectCompatibleAdmissions blocked these ready candidates behind
+          // an already-admitted writer in the same Run. Map each to the same
+          // stable local candidate identity the wait records.
+          for (const intent of candidate.intents) {
+            blockedIntents.push({
+              nodeId: intent.nodeId,
+              invocationId: deriveInvocationId(
+                deps.plan.runId,
+                intent.nodeId,
+                intent.occurrence
+              ),
+              occurrence: intent.occurrence,
+              access: intent.access,
+            });
+          }
           break;
+        }
       }
     }
 
-    if (stimuli.length === 0) {
+    // Wait pass: blocked intents (cross-Run registry-denied OR intra-Run
+    // await-workspace) enter one durable workspace-reservation wait. Skip
+    // when an identical wait is already in the Record — the WaitId is a pure
+    // function of (runId, workspaceInstanceId, sorted intents), so an
+    // unchanged blocked state re-derives the same WaitId and the settle is a
+    // no-op for that wait (no version churn, per the
+    // "retryable and non-churning" scenario).
+    if (blockedIntents.length > 0) {
+      const wait = createCanonicalWait(deps.plan.runId, {
+        kind: 'workspace-reservation',
+        workspaceInstanceId: workingRecord.workspaceInstanceId,
+        intents: blockedIntents.map((intent) => ({
+          nodeId: intent.nodeId,
+          invocationId: intent.invocationId,
+          occurrence: intent.occurrence,
+          access: intent.access,
+        })),
+      });
+      const alreadyCommitted = workingRecord.waits.some(
+        (existing) => existing.waitId === wait.waitId
+      );
+      const beingResumed = resumingWaitIds.has(wait.waitId as string);
+      if (!alreadyCommitted && !beingResumed) {
+        stimuli.push({ kind: 'suspend', wait });
+      }
+    }
+
+    return { stimuli, granted: grantedActions };
+  };
+
+  /**
+   * Settle the FULL reconciler candidate batch into one Record revision.
+   *
+   * Per design §5.6: "start, resume, complete, and control settle the
+   * candidate Record to its next quiescent point and commit once." The
+   * previous implementation (grantAdmits) filtered for 'admit' candidates
+   * only, dropping await-gate / suspend / finish / escalate / cancel — so a
+   * Run reaching a gate or a capability-unavailable suspension could never
+   * commit the durable wait, leaving the Run stuck without a WaitId for the
+   * control path to target.
+   *
+   * This settle maps every reconciler candidate to its stimulus and commits
+   * them atomically via reduceCandidateBatch. The returned `granted` list
+   * carries ONLY grant-mode admit actions (await-gate / suspend commit waits,
+   * they do not grant executable actions) so HTTP/CLI receipts never carry
+   * non-admit actions.
+   *
+   * deliveryMode semantics (��5.6): `grant` commits admits as `granted` and
+   * returns them; `defer` commits admits as `admitted_undelivered` (the
+   * management/browser path) and returns `actions: []`. Both modes commit
+   * all durable waits and terminal transitions.
+   */
+  const settleCandidates = (
+    record: CanonicalRunRecord,
+    candidates: readonly ReconcilerNextAction[],
+    deliveryMode: 'grant' | 'defer'
+  ): { record: CanonicalRunRecord; granted: readonly RunAction[] } => {
+    const collected = collectSettleStimuli(record, candidates, deliveryMode);
+    if (collected.stimuli.length === 0) {
       return { record, granted: [] };
     }
-    const result = reduceCandidateBatch(record, stimuli);
+    const result = reduceCandidateBatch(record, collected.stimuli);
     if (!result.ok) {
       throw new Error(`facade settle failed: ${result.failure.message}`);
     }
-    return { record: result.record, granted: grantedActions };
+    return { record: result.record, granted: collected.granted };
   };
 
   return {
@@ -273,7 +408,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         receipt(settled.record, disposition, settled.granted)
       );
     },
-    complete(request: CompleteRunAction, _context: RuntimeMutationContext) {
+    complete(request: CompleteRunAction, context: RuntimeMutationContext) {
       const record = deps.store.load(deps.plan.runId);
       deps.assertMutationAllowed?.(record);
       const committed = record.actions[request.actionId];
@@ -289,7 +424,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
           'facade complete failed: only domain-action-result completions are supported by this facade path.'
         );
       }
-      const stimulus: RunStimulus = {
+      const commitStimulus: RunStimulus = {
         kind: 'commit-action-result',
         actionId: request.actionId,
         status: request.status,
@@ -297,12 +432,67 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         result: request.result,
         evidence: request.evidence,
       };
-      const result = reduceCanonicalRunRecord(record, stimulus);
-      if (!result.ok) {
-        throw new Error(`facade complete failed: ${result.failure.message}`);
+      // Apply the commit to an intermediate Record purely to discover the
+      // candidate batch the completion unblocks; the final write folds the
+      // commit stimulus and the settle stimuli into ONE reduceCandidateBatch
+      // over the original Record so the store's head+1 invariant holds (the
+      // whole completion + settle is one Record revision, per design §5.6).
+      const intermediate = reduceCanonicalRunRecord(record, commitStimulus);
+      if (!intermediate.ok) {
+        throw new Error(`facade complete failed: ${intermediate.failure.message}`);
       }
-      deps.store.commit(deps.plan.runId, result.record);
-      return asPromise(receipt(result.record, 'advanced', []));
+      // Release the workspace reservation this Action held (if any) BEFORE
+      // collecting settle stimuli, so the post-complete settle can admit a
+      // blocked candidate from this or another Run against the same
+      // workspace. `release` is idempotent (a no-op for Actions that were
+      // never reserved: access-none admits, or Actions admitted without a
+      // wired registry).
+      if (deps.reservationRegistry !== undefined) {
+        deps.reservationRegistry.release(
+          deps.plan.runId,
+          request.actionId as ActionId
+        );
+      }
+      const reconciled = reconcile(deps.plan, intermediate.record);
+      if (!reconciled.ok) {
+        // Reconcile failure after a verified completion is a fatal invariant
+        // breach — persist the committed result so the Run is not silently
+        // rolled back, then surface the error.
+        deps.store.commit(deps.plan.runId, intermediate.record);
+        throw new Error(
+          `facade complete reconcile failed: ${reconciled.failure.message}`
+        );
+      }
+      const collected = collectSettleStimuli(
+        intermediate.record,
+        reconciled.actions,
+        context.deliveryMode
+      );
+      // Fold the commit + settle into one batch over the ORIGINAL Record.
+      const batchStimuli =
+        collected.stimuli.length === 0
+          ? [commitStimulus]
+          : [commitStimulus, ...collected.stimuli];
+      const result = reduceCandidateBatch(record, batchStimuli);
+      if (!result.ok) {
+        // If the combined batch fails (a typed invariant the separate steps
+        // did not catch), fall back to committing the intermediate
+        // commit-action-result alone so the completion is not lost, then
+        // surface the settle failure.
+        deps.store.commit(deps.plan.runId, intermediate.record);
+        throw new Error(`facade complete settle failed: ${result.failure.message}`);
+      }
+      const finalRecord = result.record;
+      deps.store.commit(deps.plan.runId, finalRecord);
+      const disposition: ChangeRunReceipt['disposition'] =
+        finalRecord.terminal !== undefined
+          ? 'terminal'
+          : collected.granted.length > 0
+            ? 'advanced'
+            : finalRecord.waits.length > 0
+              ? 'waiting'
+              : 'advanced';
+      return asPromise(receipt(finalRecord, disposition, collected.granted));
     },
     inspect(_ref: ExactChangeRunRef) {
       const record = deps.store.load(deps.plan.runId);

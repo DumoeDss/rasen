@@ -18,6 +18,12 @@ export type ReconcilerNextAction =
       nodeId: NodeId;
       occurrence: number;
       admissionKind: ReconcilerAdmissionKind;
+      /**
+       * The candidate's workspace access. The facade consults the
+       * cross-Run reservation registry only for `read`/`write` admits;
+       * `none` admits never touch the registry.
+       */
+      access: 'none' | 'read' | 'write';
     }>
   | Readonly<{
       kind: 'await-gate';
@@ -181,6 +187,7 @@ export function reconcile(
       nodeId: candidate.nodeId,
       occurrence: candidate.occurrence,
       admissionKind: candidate.admissionKind,
+      access: candidate.access,
     });
   }
   if (selection.blocked.length > 0) {

@@ -136,14 +136,18 @@ const WaitSchema = z.discriminatedUnion('kind', [
     kind: z.literal('workspace-reservation'),
     waitId: WaitIdSchema,
     workspaceInstanceId: WorkspaceInstanceIdSchema,
+    // Intent carries only the stable local candidate identity (NodeId +
+    // InvocationId + occurrence + access). The conflicting Run's identity
+    // and any not-yet-admitted ActionId/AttemptId are deliberately absent:
+    // a workspace-reservation wait records candidates the reconciler has
+    // NOT admitted, so those identities do not exist yet, and the spec
+    // forbids leaking the other Run's identity across the workspace lease.
     intents: z
       .array(
         z.strictObject({
           nodeId: NodeIdSchema,
           invocationId: InvocationIdSchema,
           occurrence: SafeIntegerSchema,
-          attemptId: AttemptIdSchema,
-          actionId: ActionIdSchema,
           access: z.enum(['read', 'write']),
         })
       )

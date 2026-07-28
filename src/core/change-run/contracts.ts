@@ -425,8 +425,6 @@ const WaitViewSchema = z.discriminatedUnion('kind', [
         nodeId: NodeIdSchema,
         invocationId: InvocationIdSchema,
         occurrence: SafeIntegerSchema,
-        attemptId: AttemptIdSchema,
-        actionId: ActionIdSchema,
         access: z.enum(['read', 'write']),
       })
     ),

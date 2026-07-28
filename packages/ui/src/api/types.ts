@@ -1427,7 +1427,7 @@ export type WaitView =
   | { waitId: string; kind: 'uncertain-effect'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[] }
   | { waitId: string; kind: 'capability-unavailable'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; code: string }
   | { waitId: string; kind: 'workspace-drift'; workspaceInstanceId: string; expected: WorkspaceRevision; observed: WorkspaceRevision }
-  | { waitId: string; kind: 'workspace-reservation'; workspaceInstanceId: string; intents: { nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; access: 'read' | 'write' }[] };
+  | { waitId: string; kind: 'workspace-reservation'; workspaceInstanceId: string; intents: { nodeId: string; invocationId: string; occurrence: number; access: 'read' | 'write' }[] };
 
 /** A terminal outcome projected from a completed/escalated/failed/cancelled Run. */
 export type TerminalView =

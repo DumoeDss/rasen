@@ -8,19 +8,18 @@
  *
  * Drives a real bug-fix Run through FRESH CLI processes
  * (`node dist/cli/index.js pipeline start/status/resume-run/control`),
- * interrupted at every quiescent point. Two operations have NO CLI command and
- * are performed in-process against the filesystem store (documented
- * kernel-internal gaps, same pattern as 15.3):
- *   - Gate-wait commitment (`await-gate` stimulus).
- *   - Effect observation (`observe-effect` stimulus).
+ * interrupted at every quiescent point. Effect observation has NO CLI command
+ * and is performed in-process against the filesystem store (documented
+ * kernel-internal path, same pattern as 15.3).
  *
  * What the complex route means: the verify stage has `verifyPolicy: 'adaptive'`.
  * When the verify action completes with `result.route === 'complex'`, the
  * reconciler classifies the node as `suspending-unsupported` and emits a
  * `suspend-unsupported` candidate with code `review_cycle_capability_unavailable`.
- * The facade's `grantAdmits` only processes `admit` candidates, so no further
- * action (especially ship) is ever granted. The Run is durably stuck — only
- * escalate and cancel can move it forward.
+ * The facade's complete-time settle commits the capability-unavailable wait in
+ * the same revision as the verify completion, so no further action (especially
+ * ship) is ever granted. The Run is durably stuck — only escalate and cancel
+ * can move it forward.
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { promises as fs, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -377,14 +376,11 @@ async function driveToComplexVerify(
   );
 
   // ---- APPLY: gate → decide → resume(grant) → observe → complete ----
-  // After propose completes, the apply gate becomes pending. The facade's
-  // complete does NOT settle (known limitation: complete commits only the
-  // commit-action-result stimulus). A resume-run call settles and commits
-  // the apply gate wait through the real CLI path.
-  await runCLI(
-    ['pipeline', 'resume-run', changeId, 'bug-fix', '--json'],
-    { cwd: testDir, env, timeoutMs: 60_000 }
-  );
+  // After propose completes, the facade's complete settles and commits the
+  // apply gate wait in the SAME revision (design §5.6 — complete, like
+  // start/resume/control, settles to the next quiescent point). No separate
+  // resume-run is required between the propose completion and the apply
+  // gate decision.
 
   status = await runCLI(
     ['pipeline', 'status', changeId, 'bug-fix', '--json'],
@@ -427,20 +423,15 @@ async function driveToComplexVerify(
   );
   completionFile = path.join(testDir, 'complete-apply.json');
   writeFileSync(completionFile, JSON.stringify(applyCompletion));
-  await runCLI(
+  const applyCompleteResult = await runCLI(
     ['pipeline', 'complete', changeId, '--run', runId, '--from', completionFile, '--json'],
     { cwd: testDir, env, timeoutMs: 60_000 }
   );
-
-  // ---- VERIFY: resume(grant) → observe → complete with complex route ----
-  // verify has NO gate; once apply succeeded, resume-run grants verify directly.
-  const verifyResume = await runCLI(
-    ['pipeline', 'resume-run', changeId, 'bug-fix', '--json'],
-    { cwd: testDir, env, timeoutMs: 60_000 }
-  );
-  const verifyResumeJson = JSON.parse(verifyResume.stdout.trim());
-  expect(verifyResumeJson.actions.length).toBe(1);
-  expect(verifyResumeJson.actions[0].kind).toBe('agent');
+  expect(applyCompleteResult.exitCode).toBe(0);
+  // ---- VERIFY: the apply-complete settle grants verify in the SAME revision
+  // (verify has no gate; once apply succeeds, the complete-time settle admits
+  // and grants verify — no separate resume-run is needed). The verify action
+  // is discoverable via the on-disk store regardless of the CLI output shape.
 
   observeAdmittedEffects(storeRoot, runId);
 
@@ -526,36 +517,21 @@ describe('fresh-process complex-route E2E (15.4)', () => {
     expect(verifyInView).toBeDefined();
     expect(verifyInView.deliveryState).toBe('closed');
 
-    // ---- ASSERT: pre-resume state — complete does not settle (known
-    // limitation: the facade's complete commits only the commit-action-result
-    // stimulus without reconciling for downstream waits). No wait is committed
-    // yet; the capability-unavailable wait enters the Record on the next
-    // resume-run settle.
+    // ---- ASSERT: the verify-complete settle ALREADY committed the durable
+    // capability-unavailable wait (design §5.6: complete settles to the next
+    // quiescent point in one revision). No separate resume-run is required
+    // to commit the wait — it enters the Record through the real CLI complete
+    // path. The wait is bound to the already-closed verify action.
     // ----
-    expect(root.waits).toEqual([]);
+    expect(root.waits.length).toBe(1);
+    expect(root.waits[0].kind).toBe('capability-unavailable');
 
     const controlKinds = root.allowedControls.map((c: { kind: string }) => c.kind);
+    expect(controlKinds).toContain('resume');
     expect(controlKinds).toContain('escalate');
     expect(controlKinds).toContain('cancel');
     // No decision control — no gate to decide.
     expect(controlKinds).not.toContain('decision');
-
-    // ---- ASSERT: resume-run settles and commits the durable
-    // capability-unavailable wait (the facade settle maps the reconciler's
-    // suspend-unsupported candidate to a suspend stimulus and commits it).
-    // The wait is bound to the already-closed verify action — the reducer
-    // allows capability-unavailable on closed actions.
-    // ----
-    const resumeResult = await runCLI(
-      ['pipeline', 'resume-run', changeId, 'bug-fix', '--json'],
-      { cwd: testDir, env, timeoutMs: 60_000 }
-    );
-    expect(resumeResult.exitCode).toBe(0);
-    const resumeJson = JSON.parse(resumeResult.stdout.trim());
-    // No executable actions granted (ship is blocked by the unsupported route).
-    expect(resumeJson.actions).toEqual([]);
-    // Disposition is 'waiting' — the wait is now committed.
-    expect(resumeJson.disposition).toBe('waiting');
 
     // ---- ASSERT: the durable capability-unavailable wait IS committed ----
     const suspendedRecord = loadHeadRecord(storeRoot, runId);
@@ -580,8 +556,8 @@ describe('fresh-process complex-route E2E (15.4)', () => {
 
     // ---- ASSERT: the Run remains non-terminal (durable suspension) ----
     expect(suspendedRecord.terminal).toBeUndefined();
-    expect(resumeJson.status).not.toBe('escalated');
-    expect(resumeJson.status).not.toBe('cancelled');
+    expect(statusJson.view.status).not.toBe('escalated');
+    expect(statusJson.view.status).not.toBe('cancelled');
 
     // ---- CROSS-PROCESS DURABILITY: a completely fresh status call sees the
     // suspended state (verify closed, no ship, capability-unavailable wait

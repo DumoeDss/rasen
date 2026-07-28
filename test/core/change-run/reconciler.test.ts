@@ -186,6 +186,7 @@ describe('reconcile root-DAG semantics (5.3)', () => {
       nodeId: nodeIdFor(plan, VERIFY),
       occurrence: 0,
       admissionKind: 'agent',
+      access: 'read',
     });
 
     const record = succeedNode(plan, afterApply, VERIFY, { route: 'simple' });

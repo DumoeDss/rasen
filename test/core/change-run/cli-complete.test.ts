@@ -302,10 +302,11 @@ describe('CLI complete handler (12.5/12.6)', () => {
     );
     const result = JSON.parse(output);
     expect(result.runId).toBe(rt.plan.runId);
-    expect(result.disposition).toBe('advanced');
-    // After completing the only action, the implicit root finish fires and the
-    // run reaches a terminal state (completed).
-    expect(['completed', 'running']).toContain(result.status);
+    // After completing the only action, the complete-time settle fires the
+    // implicit root finish and the run reaches a terminal state (completed)
+    // in the SAME revision as the completion (design §5.6).
+    expect(result.disposition).toBe('terminal');
+    expect(result.status).toBe('completed');
   });
 
   it('rejects a symlink receipt body (no-follow)', async () => {

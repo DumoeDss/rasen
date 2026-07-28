@@ -5,17 +5,12 @@
  * (`node dist/cli/index.js pipeline start/status/control/resume-run/complete`),
  * interrupted at every quiescent point with a `status` snapshot.
  *
- * Two operations have NO CLI command and are performed in-process against the
- * filesystem store (the documented kernel-internal path — the planning context
- * notes: "effect observation is an internal kernel operation, NOT a CLI
- * command path" and gate-wait commitment is equally kernel-internal because
- * the facade's `grantAdmits` only processes `admit` candidates, never
- * `await-gate` candidates):
- *   - Gate-wait commitment: `await-gate` stimulus (reconciler identifies the
- *     candidate; the facade does not commit it).
- *   - Effect observation: `observe-effect` stimulus (required before a
- *     successful `commit-action-result`; the reducer rejects otherwise with
- *     `illegal_transition`).
+ * Effect observation has NO CLI command and is performed in-process against
+ * the filesystem store (the documented kernel-internal path — the planning
+ * context notes: "effect observation is an internal kernel operation, NOT a
+ * CLI command path"). It is required before a successful
+ * `commit-action-result`; the reducer rejects otherwise with
+ * `illegal_transition`.
  *
  * Every other step is a real `runCLI` spawn. This is NOT a kernel-only
  * in-memory exercise: it crosses the real CLI binary (argument parsing →
@@ -34,11 +29,8 @@ import { runCLI } from '../helpers/run-cli.js';
 import { freezeProductionPreparedPipelineRegistry } from '../../src/core/pipeline-registry/prepared-registry.js';
 import { resolveRuntimeExecutionProfile } from '../../src/core/pipeline-registry/profile-resolver.js';
 import { lowerRuntimePlan } from '../../src/core/change-run/internal/lowerer.js';
-import { reconcile } from '../../src/core/change-run/internal/reconciler.js';
 import { reduceCanonicalRunRecord } from '../../src/core/change-run/internal/reducer.js';
 import { decodeCanonicalRunRecord } from '../../src/core/change-run/internal/record.js';
-import { createCanonicalWait } from '../../src/core/change-run/internal/waits.js';
-import { deriveInvocationId } from '../../src/core/change-run/internal/identity.js';
 import { computeCompletionReceiptDigest } from '../../src/core/change-run/internal/completion.js';
 import { buildAgentActor } from '../../src/core/change-run/internal/actors.js';
 import { buildEvidenceRef } from '../../src/core/change-run/internal/evidence.js';
@@ -165,32 +157,6 @@ function applyStimulusToStore(
   );
   writeFileSync(newPath, JSON.stringify(result.record, null, 2));
   return result.record;
-}
-
-/**
- * Commit every gate wait the reconciler identifies for the current Record.
- * The facade's `grantAdmits` only processes `admit` candidates; gate-wait
- * candidates are kernel-internal and must be committed separately.
- */
-function commitGateWaits(storeRoot: string, plan: RuntimePlan, runId: string): void {
-  const record = loadHeadRecord(storeRoot, runId);
-  const reconciled = reconcile(plan, record);
-  if (!reconciled.ok) throw new Error(`reconcile failed: ${reconciled.failure.message}`);
-  for (const candidate of reconciled.actions) {
-    if (candidate.kind !== 'await-gate') continue;
-    // Check if this wait is already committed (idempotent).
-    const alreadyCommitted = record.waits.some((w) => w.waitId === candidate.waitId);
-    if (alreadyCommitted) continue;
-    const wait = createCanonicalWait(branded(runId), {
-      kind: 'gate',
-      nodeId: candidate.nodeId,
-      invocationId: deriveInvocationId(branded(runId), candidate.nodeId, 0),
-      occurrence: 0,
-      gateId: candidate.gateId,
-      decisionIds: [...candidate.decisionIds],
-    });
-    applyStimulusToStore(storeRoot, runId, { kind: 'await-gate', wait });
-  }
 }
 
 /**
@@ -468,9 +434,15 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     );
     expect(completeResult.exitCode).toBe(0);
     const completeJson = JSON.parse(completeResult.stdout.trim());
-    expect(completeJson.disposition).toBe('advanced');
+    // The complete-time settle commits the apply-gate wait in the same
+    // revision — disposition is 'waiting' (no actions granted, one wait).
+    expect(completeJson.disposition).toBe('waiting');
 
     // ---- 8. QUIESCENT POINT #3: pipeline status (action completed, Run progressed) ----
+    // The facade's complete settles the candidate batch in the SAME revision
+    // as the commit-action-result (design §5.6). The next stage's Gate (the
+    // apply gate) is committed by the complete call itself — no separate
+    // resume-run is needed to see it.
     const status4 = await runCLI(
       ['pipeline', 'status', changeId, 'bug-fix', '--json'],
       { cwd: testDir, env, timeoutMs: 60_000 }
@@ -484,8 +456,11 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     );
     expect(proposeAction).toBeDefined();
     expect(proposeAction.deliveryState).toBe('closed');
-    // The Run has progressed: record version advanced, status may be running
-    // or waiting (depending on whether the next gate has been committed).
+    // The Run has progressed to the apply gate — the complete-time settle
+    // committed the apply-gate wait in one step.
+    expect(status4Json.view.status).toBe('waiting');
+    expect(root4.waits.length).toBe(1);
+    expect(root4.waits[0].kind).toBe('gate');
     expect(status4Json.view.recordVersion).toBeGreaterThan(expectedVersion);
   }, 300_000); // 5-minute timeout for multi-spawn E2E
 
