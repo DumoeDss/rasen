@@ -75,13 +75,15 @@ describe('InitCommand', () => {
       expect(logged).toContain('"matcher": "compact"');
       expect(logged).toContain('hooks/compact-recovery.sh');
 
-      // Instructions only — init must never write the hook config itself.
-      // (settings.json may exist for the agent-teams env flag, but no hooks key.)
+      // The managed runtime edit-boundary hook IS written to settings.json
+      // (runtime-edit-boundary feature); the instruction-only snippets above
+      // are never auto-written alongside it.
       const settingsPath = path.join(testDir, '.claude', 'settings.json');
-      if (await fileExists(settingsPath)) {
-        const settings = JSON.parse(await fs.readFile(settingsPath, 'utf-8'));
-        expect(settings.hooks).toBeUndefined();
-      }
+      const settings = JSON.parse(await fs.readFile(settingsPath, 'utf-8'));
+      const writtenHooks = JSON.stringify(settings.hooks ?? {});
+      expect(writtenHooks).toContain('edit-boundary check');
+      expect(writtenHooks).not.toContain('safety-check');
+      expect(writtenHooks).not.toContain('compact-recovery');
     });
   });
 

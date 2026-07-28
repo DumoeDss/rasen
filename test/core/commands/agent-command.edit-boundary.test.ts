@@ -13,7 +13,12 @@ describe('AgentCommand edit-boundary', () => {
   let log: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agent-boundary-'));
+    // Canonicalize the temp fixture with the native realpath resolver (matches
+    // the edit-boundary code's canonicalizeExistingPath) so paths align on CI
+    // runners where the temp dir has an OS alias (Windows RUNNER~1, macOS /tmp).
+    fixture = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agent-boundary-'))
+    );
     project = path.join(fixture, 'project');
     fs.mkdirSync(path.join(project, '.git'), { recursive: true });
     fs.mkdirSync(path.join(project, 'src'), { recursive: true });

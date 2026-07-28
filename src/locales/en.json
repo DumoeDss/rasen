@@ -1097,6 +1097,12 @@
     "helpCommand": "display help for command"
   },
   "commandDescriptions": {
+    "Clear the checkout-scoped edit boundary": "Clear the checkout-scoped edit boundary",
+    "Control the checkout-scoped runtime edit boundary": "Control the checkout-scoped runtime edit boundary",
+    "Force runtime: claude, codex, or zed": "Force runtime: claude, codex, or zed",
+    "Inspect and control base agent runtime state": "Inspect and control base agent runtime state",
+    "Set the checkout-scoped edit boundary to an existing directory": "Set the checkout-scoped edit boundary to an existing directory",
+    "Show the active boundary and observed host enforcement": "Show the active boundary and observed host enforcement",
     "Select a project knowledge owner independently from the planning root": "Select a project knowledge owner independently from the planning root",
     "Load frozen knowledge identity from the resolved directory containing auto-run.json": "Load frozen knowledge identity from the resolved directory containing auto-run.json",
     "Select a store knowledge owner independently from the planning root": "Select a store knowledge owner independently from the planning root",

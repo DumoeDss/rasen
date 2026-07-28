@@ -1097,6 +1097,12 @@
     "helpCommand": "显示指定命令的帮助"
   },
   "commandDescriptions": {
+    "Clear the checkout-scoped edit boundary": "清除检出范围的编辑边界",
+    "Control the checkout-scoped runtime edit boundary": "控制检出范围的运行时编辑边界",
+    "Force runtime: claude, codex, or zed": "强制运行时：claude、codex 或 zed",
+    "Inspect and control base agent runtime state": "检查并控制基础代理运行时状态",
+    "Set the checkout-scoped edit boundary to an existing directory": "将检出范围的编辑边界设置为现有目录",
+    "Show the active boundary and observed host enforcement": "显示活动边界及观测到的宿主强制情况",
     "Select a project knowledge owner independently from the planning root": "独立于规划根目录选择项目知识所有者",
     "Load frozen knowledge identity from the resolved directory containing auto-run.json": "从包含 auto-run.json 的已解析目录加载冻结的知识身份",
     "Select a store knowledge owner independently from the planning root": "独立于规划根目录选择 Store 知识所有者",
