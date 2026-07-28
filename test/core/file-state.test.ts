@@ -316,9 +316,11 @@ describe('owner-aware file lock', () => {
       'nonce: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       '',
     ].join('\n');
-    // Delete and rewrite to simulate the steal-and-recreate path.
-    fs.unlinkSync(lockPath);
-    fs.writeFileSync(lockPath, replacementToken, 'utf-8');
+    // Mutate through the descriptor we already own. Windows may correctly
+    // reject unlink/recreate while that descriptor is open; the release guard
+    // under test is the token mismatch, independent of how it arose.
+    await handle.fd.truncate(0);
+    await handle.fd.write(replacementToken, 0, 'utf-8');
 
     await releaseOwnerAwareFileLock(handle);
 

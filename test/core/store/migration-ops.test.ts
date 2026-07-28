@@ -67,7 +67,9 @@ describe('store migration ops', () => {
   let savedRasenHome: string | undefined;
 
   beforeEach(async () => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-migration-ops-'));
+    tempDir = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-migration-ops-'))
+    );
     savedXdg = process.env.XDG_DATA_HOME;
     savedRasenHome = process.env.RASEN_HOME;
     // RASEN_HOME (if set on the dev machine) wins over XDG_DATA_HOME and would

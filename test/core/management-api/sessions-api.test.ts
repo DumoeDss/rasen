@@ -11,19 +11,6 @@ import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
 
 const TOKEN = 'test-token-sessions-abc123';
 
-const IS_WINDOWS = process.platform === 'win32';
-/**
- * Windows-only evidence-gated buffer (design D5, mirrors
- * supervisor.test.ts's `KILL_SETTLE_BUFFER_MS`): a local timing probe
- * measured a single `taskkill /F /T` invocation at roughly 550-650ms
- * end-to-end on this machine, and Windows' graceful (non-`/F`) `taskkill`
- * phase is a documented near-no-op against a plain console process — every
- * Windows kill effectively waits out the full grace window before the
- * forced escalation actually lands. POSIX keeps every wait exactly as
- * tuned (buffer is 0).
- */
-const KILL_SETTLE_BUFFER_MS = IS_WINDOWS ? 1800 : 0;
-
 interface HttpResult {
   status: number;
   headers: http.IncomingHttpHeaders;
@@ -52,6 +39,24 @@ function req(
   });
 }
 
+async function waitFor<T>(
+  description: string,
+  probe: () => T | Promise<T>,
+  predicate: (value: T) => boolean,
+  timeoutMs = 7000
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  let latest = await probe();
+  while (!predicate(latest)) {
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for ${description}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    latest = await probe();
+  }
+  return latest;
+}
+
 describe('sessions API (session-supervision design D1/D4)', () => {
   let tempConfigHome: string;
   let projectRoot: string;
@@ -70,7 +75,10 @@ describe('sessions API (session-supervision design D1/D4)', () => {
       uiAssetsDir: null,
       ...overrides,
     };
-    handle = await startManagementServer({ context, sessions });
+    handle = await startManagementServer({
+      context,
+      sessions: { sessionKillGraceMs: 100, ...sessions },
+    });
     return handle;
   }
 
@@ -131,7 +139,6 @@ describe('sessions API (session-supervision design D1/D4)', () => {
 
       // Clean up.
       await req(h.port, { method: 'DELETE', path: `/api/v1/sessions/${body.session.id}`, headers: authed() });
-      await new Promise((resolve) => setTimeout(resolve, 300));
     }, 10_000);
 
     it('400s an invalid kind and spawns nothing', async () => {
@@ -196,7 +203,6 @@ describe('sessions API (session-supervision design D1/D4)', () => {
       for (const id of ids) {
         await req(h.port, { method: 'DELETE', path: `/api/v1/sessions/${id}`, headers: authed() });
       }
-      await new Promise((resolve) => setTimeout(resolve, 400));
     }, 10_000);
 
     it('503s agent_cli_unavailable when no agent CLI resolves', async () => {
@@ -226,7 +232,6 @@ describe('sessions API (session-supervision design D1/D4)', () => {
       });
       expect(res.headers['access-control-allow-origin']).toBeUndefined();
       const id = (res.json() as any).session.id;
-      await new Promise((resolve) => setTimeout(resolve, 300));
       await req(h.port, { method: 'DELETE', path: `/api/v1/sessions/${id}`, headers: authed() });
     });
   });
@@ -264,7 +269,6 @@ describe('sessions API (session-supervision design D1/D4)', () => {
       expect(entry.runState.autoRun.state.pipeline).toBe('small-feature');
 
       await req(h.port, { method: 'DELETE', path: `/api/v1/sessions/${id}`, headers: authed() });
-      await new Promise((resolve) => setTimeout(resolve, 300));
     }, 10_000);
 
     it('reports runState absent for a session with no changeName', async () => {
@@ -303,11 +307,15 @@ describe('sessions API (session-supervision design D1/D4)', () => {
         body: JSON.stringify({ kind: 'auto', task: 'MODE=stream-then-exit x' }),
       });
       const id = (launchRes.json() as any).session.id;
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      const res = await req(h.port, { method: 'GET', path: `/api/v1/sessions/${id}`, headers: authed() });
-      expect(res.status).toBe(200);
-      const body = res.json() as any;
+      const body = await waitFor(
+        'the session output tail',
+        async () => {
+          const res = await req(h.port, { method: 'GET', path: `/api/v1/sessions/${id}`, headers: authed() });
+          expect(res.status).toBe(200);
+          return res.json() as any;
+        },
+        (candidate) => candidate.tails.stdout.includes('thinking_tokens')
+      );
       expect(body.session.id).toBe(id);
       expect(typeof body.tails.stdout).toBe('string');
       expect(body.tails.stdout).toContain('thinking_tokens');
@@ -343,10 +351,14 @@ describe('sessions API (session-supervision design D1/D4)', () => {
       expect(delRes.status).toBe(202);
       expect((delRes.json() as any).session.state).toBe('exiting');
 
-      await new Promise((resolve) => setTimeout(resolve, 400 + KILL_SETTLE_BUFFER_MS));
-
-      const listRes = await req(h.port, { method: 'GET', path: '/api/v1/sessions', headers: authed() });
-      const entry = (listRes.json() as any).sessions.find((e: any) => e.session.id === id);
+      const entry = await waitFor(
+        'the killed session to exit',
+        async () => {
+          const listRes = await req(h.port, { method: 'GET', path: '/api/v1/sessions', headers: authed() });
+          return (listRes.json() as any).sessions.find((candidate: any) => candidate.session.id === id);
+        },
+        (candidate) => candidate?.session.state === 'exited'
+      );
       expect(entry.session.state).toBe('exited');
       expect(entry.session.terminationReason).toBe('killed');
     }, 10_000);
@@ -360,7 +372,14 @@ describe('sessions API (session-supervision design D1/D4)', () => {
         body: JSON.stringify({ kind: 'auto', task: 'MODE=fast-exit x' }),
       });
       const id = (launchRes.json() as any).session.id;
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await waitFor(
+        'the fast session to exit',
+        async () => {
+          const res = await req(h.port, { method: 'GET', path: `/api/v1/sessions/${id}`, headers: authed() });
+          return res.json() as any;
+        },
+        (candidate) => candidate.session.state === 'exited'
+      );
 
       const delRes = await req(h.port, { method: 'DELETE', path: `/api/v1/sessions/${id}`, headers: authed() });
       expect(delRes.status).toBe(200);

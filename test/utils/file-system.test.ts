@@ -107,6 +107,27 @@ describe('FileSystemUtils', () => {
 
       nativeSpy.mockRestore();
     });
+
+    it('canonicalizes a missing descendant through its deepest existing ancestor', async () => {
+      const realParent = path.join(testDir, 'real-parent');
+      const aliasParent = path.join(testDir, 'alias-parent');
+      await fs.mkdir(realParent);
+      await fs.symlink(
+        realParent,
+        aliasParent,
+        process.platform === 'win32' ? 'junction' : 'dir'
+      );
+
+      const missing = path.join(aliasParent, 'future', 'artifact.json');
+
+      expect(FileSystemUtils.canonicalizeExistingPath(missing)).toBe(
+        path.join(
+          nodeFs.realpathSync.native(realParent),
+          'future',
+          'artifact.json'
+        )
+      );
+    });
   });
 
   describe('writeFile', () => {

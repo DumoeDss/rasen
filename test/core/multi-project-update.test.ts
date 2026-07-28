@@ -26,8 +26,12 @@ describe('multi-project-update', () => {
   let fixturesRoot: string;
 
   beforeEach(() => {
-    globalDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-mpu-gdd-'));
-    fixturesRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-mpu-fix-'));
+    globalDataDir = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-mpu-gdd-'))
+    );
+    fixturesRoot = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-mpu-fix-'))
+    );
   });
 
   afterEach(() => {
@@ -193,8 +197,12 @@ describe('multi-project-update', () => {
     let gitEnv: NodeJS.ProcessEnv;
 
     beforeEach(() => {
-      gdd = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-mpu-pierce-gdd-'));
-      repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-mpu-pierce-repo-'));
+      gdd = fs.realpathSync.native(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-mpu-pierce-gdd-'))
+      );
+      repoRoot = fs.realpathSync.native(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-mpu-pierce-repo-'))
+      );
       gitEnv = { ...process.env, ...isolatedGitEnv(gdd) };
       fs.mkdirSync(path.join(repoRoot, 'rasen'), { recursive: true });
       fs.writeFileSync(
@@ -249,8 +257,12 @@ describe('multi-project-update', () => {
     let gdd: string;
 
     beforeEach(() => {
-      fixturesRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-mpu-exec-'));
-      gdd = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-mpu-exec-gdd-'));
+      fixturesRoot = fs.realpathSync.native(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-mpu-exec-'))
+      );
+      gdd = fs.realpathSync.native(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-mpu-exec-gdd-'))
+      );
     });
 
     afterEach(() => {

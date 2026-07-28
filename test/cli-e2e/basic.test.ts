@@ -230,7 +230,7 @@ describe('openspec CLI e2e basics', () => {
   it('localizes pipeline human output while preserving machine and user values', async () => {
     const home = await prepareIsolatedHome();
     const options = {
-      env: { RASEN_HOME: home, RASEN_LANG: 'zh-cn' },
+      env: { RASEN_HOME: home, RASEN_LANG: 'zh-cn', RASEN_AGENT_RUNTIME: 'claude' },
     };
     const [listResult, showResult, classifyResult, missingResult] = await Promise.all([
       runCLI(['pipeline', 'list'], options),

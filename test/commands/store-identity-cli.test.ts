@@ -22,7 +22,9 @@ describe('store identity CLI surface', () => {
   }, 180_000);
 
   beforeEach(async () => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-identity-cli-'));
+    tempDir = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-identity-cli-'))
+    );
     machineHome = path.join(tempDir, 'machine');
     fs.mkdirSync(machineHome, { recursive: true });
 

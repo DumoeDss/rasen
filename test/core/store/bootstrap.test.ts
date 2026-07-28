@@ -293,7 +293,9 @@ describe('previewed location selection', () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-bootstrap-loc-'));
+    tempDir = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-bootstrap-loc-'))
+    );
   });
 
   afterEach(() => {
@@ -440,7 +442,9 @@ describe('bootstrap report', () => {
   let savedRasenHome: string | undefined;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-bootstrap-'));
+    tempDir = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-bootstrap-'))
+    );
     savedXdg = process.env.XDG_DATA_HOME;
     savedRasenHome = process.env.RASEN_HOME;
     delete process.env.RASEN_HOME;
@@ -1460,7 +1464,9 @@ describe('bootstrap runs no version-control operation', () => {
     // dependency would be recorded — not just one written in these two files.
     childProcessCalls.length = 0;
 
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-bootstrap-spawn-'));
+    const tempDir = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-bootstrap-spawn-'))
+    );
     const savedXdg = process.env.XDG_DATA_HOME;
     const savedHome = process.env.RASEN_HOME;
     try {
@@ -1525,7 +1531,9 @@ describe('bootstrap apply mode', () => {
   let savedRasenHome: string | undefined;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-bootstrap-apply-'));
+    tempDir = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-bootstrap-apply-'))
+    );
     savedXdg = process.env.XDG_DATA_HOME;
     savedRasenHome = process.env.RASEN_HOME;
     delete process.env.RASEN_HOME;
