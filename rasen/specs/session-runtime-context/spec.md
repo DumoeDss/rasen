@@ -286,3 +286,4 @@ SHALL be available in each language the interface supports.
 
 - **WHEN** the interface is displayed in any language it supports
 - **THEN** the wording for a member without a local checkout, and the wording for a Store whose members have no checkout here, SHALL both be available in that language
+

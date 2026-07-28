@@ -24,7 +24,7 @@ insufficient round. This artifact establishes the round-2 baseline instead.
 | 4 | `pr88-af-store-identity-concurrency` | B5, B6, M3, M4 | `ce303361`, `0baaa5b3` | 0B/0M/1m (M3-1 sameOwner → fixed in `0baaa5b3`) | 102 pass / 1 POSIX-skip | [review-report](../../rasen/changes/pr88-af-store-identity-concurrency/work/review-report.md) |
 | 5 | `pr88-af-bootstrap-obtain` | B7, M1 | `af9ae2b3` | r1: 0B/0M/2m → r2: CLEAN (m1 SHA-256 content-digest resolved) | 57 pass (44 obtain + 13 bundle-import) | [review-report](../../rasen/changes/pr88-af-bootstrap-obtain/work/review-report.md) |
 | 6 | `pr88-af-bundle-transactions` | B8, M2 | `010c0947` | r1: 0B/1M/5m/1t → r2: CLEAN | 66 pass / 1 skip | [review-report](../../rasen/changes/pr88-af-bundle-transactions/work/review-report.md) |
-| 7 | `pr88-af-evidence-chain` | M5, Minor 1–5 | (this child) | — | — | — |
+| 7 | `pr88-af-evidence-chain` | M5, Minor 1–5 | `7d7c6f9e` | CLEAN (0B/0M/0m/0t) | 167 pass (150 project-config + 17 store-memberships) | [review-report](../../rasen/changes/pr88-af-evidence-chain/work/review-report.md) |
 | 8 | `pr88-af-ci-required-gate` | M7, M6 | `9caabf5f` | CLEAN (0B/0M/0m/0t) | 42 pass (25 basic + 17 validate) | [review-report](../../rasen/changes/pr88-af-ci-required-gate/work/review-report.md) |
 
 ### How each claim is verified
