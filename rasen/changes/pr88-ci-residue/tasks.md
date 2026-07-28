@@ -206,14 +206,17 @@ Verdict: the component is correct (`handleChangeCreated` â†’ `setRefreshNonce` â
   allowance and use a short test-only kill grace in the sessions API suite.
 - [x] 11.5 Run the three affected files and confirm `agent-wait` 28/28,
   `supervisor` 24/24, and `sessions-api` 21/21 pass.
+- [x] 11.6 Replace the token-audit parser test's raw Windows cleanup with the
+  repository's bounded async retry helper after CI reproduced `ENOTEMPTY`.
 
 ## 12. Windows CI wall-clock
 
-- [x] 12.1 Replace the single Windows matrix row with three Vitest shards,
-  retaining two workers per runner and running the additional focused
-  Windows/UI checks only once.
+- [x] 12.1 Replace the single Windows matrix row with three deterministic file
+  partitions, retaining two workers per runner and running the additional
+  focused Windows/UI checks only once.
 - [x] 12.2 Give Windows shards a 20-minute infrastructure cushion while keeping
   the other matrix rows at 15 minutes.
-- [x] 12.3 Run all three shards and confirm each completes below its CI timeout
-  (1/3: 7m52s, 2/3: 8m32s, 3/3: 6m42s).
+- [x] 12.3 Confirm `vitest list --filesOnly` produces exhaustive,
+  non-overlapping partitions (105/104/104 files; 313 unique; 0 duplicates),
+  then run all three below the CI timeout (7m31s, 7m23s, 7m05s).
 - [ ] 12.4 Push the fix branch and confirm both Windows shard jobs are green.

@@ -139,10 +139,18 @@ many real CLI, Git, filesystem, and process-tree integration tests rather than
 one hung test. Raising the job timeout alone would preserve that wall-clock
 latency.
 
-CI will run three Vitest shards on separate Windows runners, each with two
-workers. A measured `1/2` shard still took 17 minutes 59 seconds because
-Vitest's hash split placed more expensive CLI files on that side, leaving too
-little margin. Three shards reduce the impact of that uneven weighting. The
-focused Windows UI/path check runs only on shard 1 to avoid duplication. A
-20-minute per-shard timeout remains as infrastructure headroom, while expected
-wall time is governed by the slowest third rather than the full suite.
+CI will run three deterministic file partitions on separate Windows runners,
+each with two workers. Vitest's built-in `--shard` appeared to accept the CLI
+option but did not partition this project's unfiltered full scan: every job
+reported all 313 files and 5,584 tests. `vitest.config.ts` therefore resolves
+`VITEST_FILE_PARTITION=<index>/<count>` into an exact-file include list. Files
+are greedily assigned under fixed capacities using coarse durations measured
+from a representative Windows CI run; source size is the stable fallback for
+files outside that slow-file table. This guarantees exhaustive, non-overlapping
+partitions with file counts differing by at most one, while spreading the
+CLI-heavy integration files that dominate Windows wall time. Stale weights can
+reduce balance but cannot change coverage.
+
+The focused Windows UI/path check runs only on partition 1 to avoid duplication.
+A 20-minute per-partition timeout remains as infrastructure headroom, while
+expected wall time is governed by the slowest third rather than the full suite.

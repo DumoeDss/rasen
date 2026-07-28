@@ -54,5 +54,6 @@ normal wall time: a local full run took 17 minutes 48 seconds, with time spread
 across real CLI subprocess, Git, filesystem, and process-tree integration
 tests. The follow-up isolates ambient `CODEX_THREAD_ID`, replaces fixed session
 sleeps with bounded event polling, and splits Windows Vitest execution into
-three CI shards. This shortens wall time without weakening coverage; the higher
-20-minute shard timeout is only a safety margin.
+three deterministic CI file partitions. This shortens wall time without
+weakening coverage; the higher 20-minute partition timeout is only a safety
+margin.
