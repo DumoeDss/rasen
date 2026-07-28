@@ -2,19 +2,19 @@
 
 > 状态：方向研究已定稿；`0.1.5` 格式兼容切片已实现并合并；`0.1.6` 定位为
 > Executable Composite Pipelines，后续仍需通过正式 Change proposal/spec/design
-> 接受实现规格  
-> 日期：2026-07-26  
+> 接受实现规格<br>
+> 日期：2026-07-26<br>
 > 修订：2026-07-26，范围从 review-cycle 个案扩展到 auto、goal、review-cycle
-> 的统一 Pipeline 模型，并增加发布切片建议  
+> 的统一 Pipeline 模型，并增加发布切片建议<br>
 > 方向修订：2026-07-26，不再把语义统一拆分到 `0.1.6`/`0.1.7`；`0.1.6`
 > 从第一天建立完整但受约束的 Change-level 执行骨架，并在同一版本内依次接入
 > root DAG、ReviewCycle、GoalLoop、auto/goal/review-cycle 入口和 Change-level
-> built-in Pipelines  
+> built-in Pipelines<br>
 > 最终定稿：2026-07-26，将 Definition v2、Canvas、受约束的 Custom Composite、
 > Compiler/Reconciler、canonical Run Record 与 Change-run Operations 视为同一
-> 产品范式的不可拆闭环，全部纳入 `0.1.6`  
+> 产品范式的不可拆闭环，全部纳入 `0.1.6`<br>
 > 实施回写：2026-07-26，记录 Pipeline 内容格式 v1、两轮独立评审、安全修复、
-> PR #79 合并，以及 PR #80 完成 spec 同步与 Change 归档  
+> PR #79 合并，以及 PR #80 完成 spec 同步与 Change 归档<br>
 > 范围：当前 Rasen Pipeline/Canvas、`rasen-auto`、`rasen-goal`、
 > `rasen-review-cycle`、`GrokBuild.SKILL.md`，以及 `north-star.md` 对这些研究的
 > 再次校准
@@ -330,17 +330,17 @@ Pipeline runtime 看到的仍是一个原子 stage。也就是说：
 
 这会产生四类成熟度缺口：
 
-1. **控制流不够确定**  
+1. **控制流不够确定**<br>
    轮次、退出、策略重试、worker 重用和升级依赖 LEAD 正确理解提示词。
 
-2. **状态粒度过粗**  
+2. **状态粒度过粗**<br>
    resume 只能看到 `review-loop` 的整体状态，无法自然回答当前是第几轮、
    正在 fix 还是 re-review、哪一个 finding 尚未闭合。
 
-3. **证据是报告，不是运行契约**  
+3. **证据是报告，不是运行契约**<br>
    `review-cycle-report.md` 很有价值，但 Markdown 不应承担下一状态计算。
 
-4. **Canvas 声明与真实行为不等价**  
+4. **Canvas 声明与真实行为不等价**<br>
    Canvas 展示一个节点，实际运行却是多个角色、多轮调用和多个退出分支。
 
 ## 4. 推荐对象模型：顶层 DAG + 有界 Composite Loop
@@ -1881,40 +1881,40 @@ Operations dogfood 证明公共抽象不稳定，应在 `0.1.6` 内修正 contra
 第一步“先解决正在发布的 contract”已经完成。接下来不是继续往 `0.1.5` 追加
 runner，而是以已合并的 v1 contract 为输入启动独立的 `0.1.6` Change：
 
-1. **已完成：修订并归档 `pipeline-definition-api` Change。**  
+1. **已完成：修订并归档 `pipeline-definition-api` Change。**<br>
    `WirePipelineDefinition = PipelineYaml` 的 round-trip 现在拥有 v1、未知版本
    fail-closed 与 legacy normalization contract；主 specs 已同步。
 
-2. **为 `0.1.6` 锁定 ECP 四平面最小闭包。**  
+2. **为 `0.1.6` 锁定 ECP 四平面最小闭包。**<br>
    定义 Pipeline Definition v2、Canvas authoring、受约束 Custom Composite、
    `ChangeRunPlan`、Reconciler、canonical Run Record、effect adapter/commit
    与 Change-run Operations 的共同 contract；不设计任意 workflow language。
 
-3. **先决定唯一状态所有权和兼容方式。**  
+3. **先决定唯一状态所有权和兼容方式。**<br>
    新 Run 启动时冻结 `engine: legacy | reconciler`；旧 Run 永不跨 engine
    resume；新 Run 的 `auto-run.json`、`goal-run.json` 和 Markdown 只允许作为
    projection。
 
-4. **创建一个 umbrella `0.1.6` Change 与多个可独立评审的端到端 Change。**  
+4. **创建一个 umbrella `0.1.6` Change 与多个可独立评审的端到端 Change。**<br>
    umbrella proposal/spec/design 锁定统一 contract；实施按 Definition/Canvas/
    Operations skeleton、`bug-fix` spine、ReviewCycle、GoalLoop、full-feature、
    Custom Composite/launcher 收敛拆分，避免一个 big-bang PR；每个 Change 都必须
    同时覆盖受影响的 authoring、runtime 和 observation surface。
 
-5. **先锁定 contract/reducer 与跨平面 parity 测试矩阵。**  
+5. **先锁定 contract/reducer 与跨平面 parity 测试矩阵。**<br>
    覆盖 v1/v2 round-trip、Canvas/server validation、plan digest、root ready
    frontier、Gate、parallel barrier、clean、next-round、exhausted、stalled、
    blocked、cancelled、crash-before/after-commit 与 Operations projection，再接
    真实 Agent/command adapter。
 
-6. **从 `bug-fix` 开始立即端到端 dogfood，再逐层增加原语。**  
+6. **从 `bug-fix` 开始立即端到端 dogfood，再逐层增加原语。**<br>
    每条接入都必须同时留下可 round-trip 的 Definition/Canvas 证据、compiled
    plan、真实 Run Record、恢复证据和 Operations 投影；`small-feature` 证明
    ReviewCycle，goal pipelines 证明第二类 BoundedLoop，`full-feature` 证明
    condition/FanOut/Join，最后用 Custom Composite 证明公开抽象不是 built-in
    特例。
 
-7. **最后收敛入口并完成产品闭环，不最后才补产品面。**  
+7. **最后收敛入口并完成产品闭环，不最后才补产品面。**<br>
    当底层 Pipeline 已被证明后，把 `rasen-auto`、`rasen-goal` 和 standalone
    `rasen-review-cycle` 收缩成薄 launcher/preset/adapter；`0.1.6` 发布前完成
    Canvas/Operations/Custom Composite 的全量退出条件。compatibility fallback
