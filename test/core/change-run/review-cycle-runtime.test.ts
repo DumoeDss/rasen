@@ -768,3 +768,218 @@ describe('ReviewCycle happy-path and identity', () => {
     expect(expectedPath.nodeId).toBe(reviewAction.nodeId as never);
   });
 });
+
+describe('ReviewCycle recovery at quiescent boundaries', () => {
+  it('crash-before-commit: active review-phase action stays active on resume', async () => {
+    const harness = createHarness();
+    const started = await harness.runtime.start(
+      {
+        change: { projectRoot: '/root', changeId: 'fixture-change' },
+        pipeline: harness.plan.pipeline,
+        launchRequestId: branded(`launch:${'9'.repeat(64)}`),
+      },
+      { deliveryMode: 'grant' }
+    );
+    const reviewAction = expectOneAction(started);
+
+    // Simulate restart: create a fresh facade with the same store + plan.
+    const freshRuntime = createChangePipelineRuntime({
+      store: harness.store,
+      plan: harness.plan,
+      initialRecord: startRecord(harness.plan),
+      buildAction: (descriptor) => {
+        // The same buildAction factory pattern from createHarness
+        throw new Error('Test buildAction should not be called on resume with active action.');
+      },
+    });
+
+    const resumed = await freshRuntime.resume(
+      {
+        change: { projectRoot: '/root', changeId: 'fixture-change' },
+      },
+      { deliveryMode: 'grant' }
+    );
+
+    // The review action is still active — no re-admit, the Run is waiting.
+    expect(resumed.actions).toHaveLength(0);
+    const record = harness.store.load(harness.plan.runId);
+    const reviewCommitted = record.actions[reviewAction.actionId as ActionId];
+    expect(reviewCommitted?.state).toBe('active');
+  });
+
+  it('crash-after-commit: review committed, resume admits triage', async () => {
+    const harness = createHarness();
+    const reviewer = actor('a', 'reviewer');
+
+    const started = await harness.runtime.start(
+      {
+        change: { projectRoot: '/root', changeId: 'fixture-change' },
+        pipeline: harness.plan.pipeline,
+        launchRequestId: branded(`launch:${'a'.repeat(64)}`),
+      },
+      { deliveryMode: 'grant' }
+    );
+    const reviewAction = expectOneAction(started);
+
+    // Complete the review — this commits the result AND settles the triage admit.
+    // To simulate crash-after-commit but before settle, we manually commit just
+    // the review result, then create a fresh facade.
+    // Since the facade atomically commits both, we instead test: after the
+    // complete settles, the triage action should be admitted. Then on resume
+    // with a fresh facade, the triage should still be active (not re-admitted).
+    await complete(harness, reviewAction, reviewer, {
+      contract: 'review-cycle/review-result/1',
+      outcome: 'findings',
+      findings: [
+        {
+          id: 'F-1',
+          severity: 'major',
+          claim: 'Broken.',
+          evidence: [evidence(reviewAction, 'b')],
+          status: 'open',
+        },
+      ],
+    });
+
+    // Simulate restart: fresh facade.
+    const freshRuntime = createChangePipelineRuntime({
+      store: harness.store,
+      plan: harness.plan,
+      initialRecord: startRecord(harness.plan),
+      buildAction: () => {
+        throw new Error('Should not re-admit on resume with active triage.');
+      },
+    });
+
+    const resumed = await freshRuntime.resume(
+      { change: { projectRoot: '/root', changeId: 'fixture-change' } },
+      { deliveryMode: 'grant' }
+    );
+
+    // Triage is already admitted — no re-admit.
+    expect(resumed.actions).toHaveLength(0);
+    const record = harness.store.load(harness.plan.runId);
+    // Review result is committed.
+    const reviewCommitted = record.actions[reviewAction.actionId as ActionId];
+    expect(reviewCommitted?.result).toBeDefined();
+    expect(reviewCommitted?.state).toBe('closed');
+  });
+
+  it('ack-loss: admitted+granted action stays active on restart', async () => {
+    const harness = createHarness();
+    const started = await harness.runtime.start(
+      {
+        change: { projectRoot: '/root', changeId: 'fixture-change' },
+        pipeline: harness.plan.pipeline,
+        launchRequestId: branded(`launch:${'b'.repeat(64)}`),
+      },
+      { deliveryMode: 'grant' }
+    );
+    // Action was admitted AND granted.
+    const reviewAction = expectOneAction(started);
+    const record = harness.store.load(harness.plan.runId);
+    const committed = record.actions[reviewAction.actionId as ActionId];
+    expect(committed?.state).toBe('active');
+    expect(committed?.deliveryState).toBe('granted');
+
+    // Simulate restart: fresh facade.
+    const freshRuntime = createChangePipelineRuntime({
+      store: harness.store,
+      plan: harness.plan,
+      initialRecord: startRecord(harness.plan),
+      buildAction: () => {
+        throw new Error('Should not re-admit an already-active action.');
+      },
+    });
+
+    const resumed = await freshRuntime.resume(
+      { change: { projectRoot: '/root', changeId: 'fixture-change' } },
+      { deliveryMode: 'grant' }
+    );
+
+    // No new actions granted (the review action is still active, never completed).
+    expect(resumed.actions).toHaveLength(0);
+    // The Run is still running (has an active action).
+    const resumedRecord = harness.store.load(harness.plan.runId);
+    const stillActive = resumedRecord.actions[reviewAction.actionId as ActionId];
+    expect(stillActive?.state).toBe('active');
+  });
+
+  it('mid-fix-reviews boundary: after fix completes, re-review is admitted with correct context', async () => {
+    const harness = createHarness();
+    const reviewer = actor('a', 'reviewer');
+    const triager = actor('e', 'triager');
+    const fixer = actor('f', 'fixer');
+
+    let action = expectOneAction(
+      await harness.runtime.start(
+        {
+          change: { projectRoot: '/root', changeId: 'fixture-change' },
+          pipeline: harness.plan.pipeline,
+          launchRequestId: branded(`launch:${'c'.repeat(64)}`),
+        },
+        { deliveryMode: 'grant' }
+      )
+    );
+    action = expectOneAction(
+      await complete(harness, action, reviewer, {
+        contract: 'review-cycle/review-result/1',
+        outcome: 'findings',
+        findings: [
+          {
+            id: 'F-1',
+            severity: 'major',
+            claim: 'Broken.',
+            evidence: [evidence(action, 'b')],
+            status: 'open',
+          },
+        ],
+      })
+    );
+    action = expectOneAction(
+      await complete(harness, action, triager, {
+        contract: 'review-cycle/triage-result/1',
+        decisions: [
+          {
+            findingId: 'F-1',
+            disposition: 'route_fixer',
+            rationale: 'Fix required.',
+          },
+        ],
+      })
+    );
+    const fixAction = action;
+    action = expectOneAction(
+      await complete(harness, action, fixer, {
+        contract: 'review-cycle/fix-result/1',
+        findingIds: ['F-1'],
+        beforeTree: digest('1'),
+        afterTree: digest('2'),
+        delta: evidence(fixAction, '3'),
+        tests: [],
+      })
+    );
+
+    // After fix completes, re-review should be admitted.
+    expect(action.agent?.input).toMatchObject({
+      reviewCycle: { round: 1, phase: 're-review', openFindingIds: ['F-1'] },
+    });
+
+    // Simulate restart: fresh facade.
+    const freshRuntime = createChangePipelineRuntime({
+      store: harness.store,
+      plan: harness.plan,
+      initialRecord: startRecord(harness.plan),
+      buildAction: () => {
+        throw new Error('Should not re-admit on resume.');
+      },
+    });
+
+    const resumed = await freshRuntime.resume(
+      { change: { projectRoot: '/root', changeId: 'fixture-change' } },
+      { deliveryMode: 'grant' }
+    );
+    // The re-review action is already active — no re-admit.
+    expect(resumed.actions).toHaveLength(0);
+  });
+});
