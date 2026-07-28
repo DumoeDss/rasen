@@ -243,73 +243,60 @@ export function reconcile(
     }
   }
 
-  // Workspace-compatible admission selection. access:none candidates always
-  // join the batch; read/write candidates compete for the single workspace
-  // lease under the design's deterministic rules.
+  // Workspace-compatible admission selection. Atomic and bounded-loop
+  // candidates are merged into a SINGLE selection call so the workspace lock
+  // invariant is enforced across both — preventing two concurrent writers
+  // from being admitted simultaneously in a mixed plan (Minor-2 fix).
   const lock = activeWorkspaceLock(record);
-  const selection = selectCompatibleAdmissions(admitCandidates, lock);
-  for (const candidate of selection.admitted) {
-    actions.push({
-      kind: 'admit',
-      nodeId: candidate.nodeId,
-      occurrence: candidate.occurrence,
-      admissionKind: candidate.admissionKind,
-      access: candidate.access,
-    });
-  }
-  if (selection.blocked.length > 0) {
-    actions.push({
-      kind: 'await-workspace',
-      workspaceInstanceId: record.workspaceInstanceId,
-      // Blocked candidates are provably never access:'none' ( the selection
-      // always admits access-none work), so the access narrows to read|write.
-      intents: selection.blocked.map((candidate) => ({
-        nodeId: candidate.nodeId,
-        occurrence: candidate.occurrence,
-        access: candidate.access as 'read' | 'write',
-      })),
-    });
-  }
-
-  // Bounded-loop admit candidates: emit admits for ready ReviewCycle phases.
-  // These participate in the same workspace-compatible selection as atomic
-  // candidates. Each admit carries the reviewCycle input payload so the facade
-  // can build an action with the correct capability binding.
-  const boundedLoopSelection = selectCompatibleAdmissions(
-    boundedLoopAdmitCandidates.map((c) => ({
+  const mergedCandidates: AdmissionCandidate[] = [
+    ...admitCandidates,
+    ...boundedLoopAdmitCandidates.map((c) => ({
       nodeId: c.nodeId,
       occurrence: c.occurrence,
       admissionKind: c.admissionKind,
       access: c.access,
     })),
-    lock
-  );
-  for (const candidate of boundedLoopSelection.admitted) {
-    const original = boundedLoopAdmitCandidates.find(
+  ];
+  const selection = selectCompatibleAdmissions(mergedCandidates, lock);
+  for (const candidate of selection.admitted) {
+    // Check if this is a bounded-loop candidate (needs the reviewCycle payload).
+    const boundedLoopOriginal = boundedLoopAdmitCandidates.find(
       (c) => c.nodeId === candidate.nodeId
-    )!;
-    actions.push({
-      kind: 'admit',
-      nodeId: candidate.nodeId,
-      occurrence: candidate.occurrence,
-      admissionKind: candidate.admissionKind,
-      access: candidate.access,
-      profilePath: original.descriptor.profilePath,
-      input: {
-        reviewCycle: {
-          loopPath: original.loopPath,
-          round: original.descriptor.round,
-          phase: original.descriptor.phase,
-          openFindingIds: [...original.openFindingIds],
+    );
+    if (boundedLoopOriginal !== undefined) {
+      actions.push({
+        kind: 'admit',
+        nodeId: candidate.nodeId,
+        occurrence: candidate.occurrence,
+        admissionKind: candidate.admissionKind,
+        access: candidate.access,
+        profilePath: boundedLoopOriginal.descriptor.profilePath,
+        input: {
+          reviewCycle: {
+            loopPath: boundedLoopOriginal.loopPath,
+            round: boundedLoopOriginal.descriptor.round,
+            phase: boundedLoopOriginal.descriptor.phase,
+            openFindingIds: [...boundedLoopOriginal.openFindingIds],
+          },
         },
-      },
-    });
+      });
+    } else {
+      actions.push({
+        kind: 'admit',
+        nodeId: candidate.nodeId,
+        occurrence: candidate.occurrence,
+        admissionKind: candidate.admissionKind,
+        access: candidate.access,
+      });
+    }
   }
-  if (boundedLoopSelection.blocked.length > 0) {
+  if (selection.blocked.length > 0) {
     actions.push({
       kind: 'await-workspace',
       workspaceInstanceId: record.workspaceInstanceId,
-      intents: boundedLoopSelection.blocked.map((candidate) => ({
+      // Blocked candidates are provably never access:'none' (the selection
+      // always admits access-none work), so the access narrows to read|write.
+      intents: selection.blocked.map((candidate) => ({
         nodeId: candidate.nodeId,
         occurrence: candidate.occurrence,
         access: candidate.access as 'read' | 'write',

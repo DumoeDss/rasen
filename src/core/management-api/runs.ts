@@ -55,6 +55,7 @@ import {
 } from '../change-run/internal/identity.js';
 import { projectRunView } from '../change-run/internal/projector.js';
 import { decodeCanonicalRunRecord, type CanonicalRunRecord } from '../change-run/internal/record.js';
+import type { RuntimePlan } from '../change-run/internal/runtime-plan.js';
 import type {
   ChangeRunView,
   RootDagViewSection,
@@ -281,7 +282,18 @@ function tryProjectRun(dirPath: string, sourceState?: 'active' | 'archived' | 'm
   }
   let view: ChangeRunView;
   try {
-    view = projectRunView(record, sourceState);
+    // Load the persisted RuntimePlan so the review-cycle section is projected
+    // (Major-2: management API emits the same review-cycle section as CLI).
+    const planFile = path.join(dirPath, 'plan.json');
+    let plan: RuntimePlan | undefined;
+    try {
+      if (fs.existsSync(planFile)) {
+        plan = JSON.parse(fs.readFileSync(planFile, 'utf-8')) as RuntimePlan;
+      }
+    } catch {
+      // Plan file is absent or corrupt — project without it (additive section).
+    }
+    view = projectRunView(record, sourceState, plan);
   } catch (err) {
     return { ok: false, dirName, error: { code: 'run_store_corrupt', message: `Projection failed: ${err instanceof Error ? err.message : String(err)}` } };
   }

@@ -6,13 +6,11 @@
  *  (a) pure projection `projectRunView(record, state, plan)` — the baseline
  *  (b) CLI `status` JSON output via PipelineCommand (test-injected runtime)
  *
- * The management API plane (`handleRunDetail`) calls `projectRunView(record,
- * sourceState)` WITHOUT the plan parameter — it has no access to the sealed
- * RuntimePlan from the filesystem store alone. The review-cycle section is
- * additive (emitted only when the plan is passed). This test asserts that the
- * management API uses the SAME projection function (verified by the identical
- * root-dag section) and documents that the review-cycle section requires the
- * plan to be passed — a future enhancement.
+ * The management API plane (`handleRunDetail`) loads the sealed RuntimePlan
+ * from `plan.json` persisted alongside the Record, so it projects the SAME
+ * review-cycle section as the CLI. This test asserts full three-way parity:
+ * projection baseline, CLI status, and management API all emit identical
+ * review-cycle sections.
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -210,7 +208,7 @@ describe('review-cycle section parity (8.5)', () => {
     expect(cliRoot).toEqual(projectedRoot);
   });
 
-  it('management API projects root-dag but review-cycle requires plan (additive)', async () => {
+  it('management API projects the same review-cycle section when plan is persisted (Major-2)', async () => {
     const plan = reviewCyclePlan(3);
     const record: CanonicalRunRecord = startRecord(plan);
 
@@ -223,6 +221,11 @@ describe('review-cycle section parity (8.5)', () => {
     writeFileSync(
       path.join(runDir, `record-v${record.recordVersion}.json`),
       JSON.stringify(record, null, 2)
+    );
+    // Persist the plan alongside the Record (Major-2 fix).
+    writeFileSync(
+      path.join(runDir, 'plan.json'),
+      JSON.stringify(plan, null, 2)
     );
     const detail = await handleRunDetail(
       'fixture-change',
@@ -237,14 +240,14 @@ describe('review-cycle section parity (8.5)', () => {
       (s) => s.kind === 'root-dag'
     );
     expect(mgmtRoot).toBeDefined();
-    // The review-cycle section is absent because the plan is not passed.
-    // This documents the additive nature: the management API uses the SAME
-    // projectRunView call, but without the plan parameter the section is
-    // omitted. When the plan becomes available (future enhancement), the
-    // section will be projected identically.
+    // Major-2 fix: the review-cycle section IS now present because the plan
+    // is persisted alongside the Record and loaded by the management API.
     const mgmtRC = detail.view.sections.find(
       (s) => s.kind === 'review-cycle'
     );
-    expect(mgmtRC).toBeUndefined();
+    expect(mgmtRC).toBeDefined();
+    // The section must match the baseline projection.
+    const baselineView = projectRunView(record, 'active', plan);
+    expect(reviewCycleFields(detail.view)).toEqual(reviewCycleFields(baselineView));
   });
 });

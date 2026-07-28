@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   ChangeRunContractError,
+  decodeActorRef,
   decodeEvidenceRef,
   decodeRunAction,
   decodeWorkspaceRevision,
@@ -508,6 +509,11 @@ function parseCommittedAction(value: unknown): CommittedAction {
                   actorAttestation: decodeEvidenceRef(
                     parsed.data.result.actorAttestation
                   ),
+                }),
+            ...(parsed.data.result.actor === undefined
+              ? {}
+              : {
+                  actor: decodeActorRef(parsed.data.result.actor),
                 }),
           },
         }),

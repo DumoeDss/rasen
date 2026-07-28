@@ -24,7 +24,8 @@ import { verifyCompletion } from './completion.js';
 import { createCanonicalWait, type CanonicalWait } from './waits.js';
 import { deriveInvocationId } from './identity.js';
 import type { WorkspaceReservationRegistry } from './reservations.js';
-import { validateReviewCycleCompletion } from './review-cycle-runtime.js';
+import { validateReviewCycleCompletion, projectReviewCycleProgress } from './review-cycle-runtime.js';
+import { assertReviewCycleMayShip } from './review-cycle.js';
 
 export interface RuntimeDeps {
   readonly store: RunStore;
@@ -401,6 +402,10 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         context.deliveryMode
       );
       deps.store.create(deps.plan.runId, settled.record);
+      // Persist the sealed RuntimePlan alongside the Record so read paths
+      // (management API, operations) can project the review-cycle section
+      // without access to the launch context (Major-2).
+      deps.store.writePlan?.(deps.plan.runId, deps.plan);
       return asPromise(receipt(settled.record, 'created', settled.granted, deps.resolveSourceState, deps.plan));
     },
     resume(_request, context: RuntimeMutationContext) {
@@ -511,6 +516,27 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         throw new Error(`facade complete settle failed: ${result.failure.message}`);
       }
       const finalRecord = result.record;
+      // Defense-in-depth ship guard (Minor-3): when the plan has a bounded-loop
+      // and the Run reaches a SUCCESSFUL terminal state, assert the ReviewCycle
+      // state is clean before committing. Escalated/exhausted terminals are NOT
+      // guarded here — the escalation IS the rejection. This is an explicit
+      // guard mandated by the spec, in addition to the DAG dependency.
+      const boundedLoop = deps.plan.nodes.find(
+        (node) => node.kind === 'bounded-loop'
+      );
+      if (
+        boundedLoop !== undefined &&
+        boundedLoop.kind === 'bounded-loop' &&
+        finalRecord.terminal !== undefined &&
+        finalRecord.status === 'completed'
+      ) {
+        const progress = projectReviewCycleProgress(
+          deps.plan,
+          boundedLoop,
+          finalRecord
+        );
+        assertReviewCycleMayShip(progress.state);
+      }
       deps.store.commit(deps.plan.runId, finalRecord);
       const disposition: ChangeRunReceipt['disposition'] =
         finalRecord.terminal !== undefined
