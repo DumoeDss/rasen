@@ -623,7 +623,7 @@ function PipelineSection({
   const stageRoles = new Set(
     pipeline.stages.flatMap((stage) => (stage.role ? [stage.role] : []))
   );
-  const roleRuntimes = Object.entries(pipeline.roleRuntimes).filter(([role]) =>
+  const roleRuntimes = Object.entries(pipeline.roleRuntimes ?? {}).filter(([role]) =>
     stageRoles.has(role)
   );
 

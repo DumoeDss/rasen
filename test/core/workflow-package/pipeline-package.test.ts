@@ -121,7 +121,7 @@ describe('.rasenpkg pipeline kind', () => {
       ],
     };
     const packageValue = createPipelinePackage(['broken'], [broken]);
-    expectPackageError(() => encodePackage(packageValue), 'pipeline_invalid');
+    expectPackageError(() => encodePackage(packageValue), 'DUPLICATE_ID');
   });
 
   it('rejects a pipeline.yaml whose declared name does not match its packaged name', () => {

@@ -19,7 +19,85 @@ function formatHandoff(value: unknown): string {
 }
 
 export function StageNode({ data }: NodeProps<StageFlowNode>) {
-  const { id, role, skill, effectiveGate, effectiveModel, effectiveHandoff, effectiveRuntime, issueSeverity } = data;
+  const {
+    id,
+    role,
+    skill,
+    effectiveGate,
+    effectiveModel,
+    effectiveHandoff,
+    effectiveRuntime,
+    issueSeverity,
+    definitionVersion,
+    definitionKind,
+    editorSupported,
+    inputPorts = [],
+    outputPorts = [],
+  } = data;
+
+  if (definitionVersion === 2 && definitionKind) {
+    return (
+      <div
+        class={`stage-node stage-node--v2${editorSupported ? '' : ' stage-node--unsupported'}${
+          issueSeverity ? ` stage-node--issue-${issueSeverity}` : ''
+        }`}
+        data-testid="stage-node"
+        data-stage={id}
+        data-definition-kind={definitionKind}
+        data-editor-supported={String(editorSupported)}
+        data-issue={issueSeverity ?? undefined}
+      >
+        {inputPorts.map((port, index) => (
+          <Handle
+            key={`input:${port.id}`}
+            id={port.id}
+            type="target"
+            position={Position.Left}
+            class="stage-node__handle"
+            style={{ top: `${((index + 1) / (inputPorts.length + 1)) * 100}%` }}
+          />
+        ))}
+        {issueSeverity && (
+          <span
+            class={`stage-node__issue-badge stage-node__issue-badge--${issueSeverity}`}
+            data-testid="stage-node-issue-badge"
+          >
+            {issueSeverity === 'error' ? '!' : 'warning'}
+          </span>
+        )}
+        <div class="stage-node__header">
+          <span class="stage-node__id">{id}</span>
+          <span class="stage-node__kind" data-testid="stage-node-kind">
+            {definitionKind}
+          </span>
+        </div>
+        {skill && <span class="stage-node__skill">{skill}</span>}
+        {!editorSupported && (
+          <span class="stage-node__unsupported" data-testid="stage-node-unsupported">
+            Preserved · editing arrives in a later slice
+          </span>
+        )}
+        <div class="stage-node__ports" data-testid="stage-node-ports">
+          {inputPorts.length > 0 && (
+            <span>in: {inputPorts.map((port) => port.id).join(', ')}</span>
+          )}
+          {outputPorts.length > 0 && (
+            <span>out: {outputPorts.map((port) => port.id).join(', ')}</span>
+          )}
+        </div>
+        {outputPorts.map((port, index) => (
+          <Handle
+            key={`output:${port.id}`}
+            id={port.id}
+            type="source"
+            position={Position.Right}
+            class="stage-node__handle"
+            style={{ top: `${((index + 1) / (outputPorts.length + 1)) * 100}%` }}
+          />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div

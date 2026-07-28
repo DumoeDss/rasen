@@ -3,6 +3,7 @@ import { useRoute } from 'preact-iso';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import type {
+  RunsResponse,
   SessionListEntry,
   SpaceMember,
   TaskChildDetail,
@@ -12,6 +13,7 @@ import { deriveColumn, sessionsForTask, sessionStage } from '../board/columns.js
 import type { BoardColumn } from '../board/columns.js';
 import { SessionRow } from './SessionRow.js';
 import { LaunchSessionDialog } from './LaunchSessionDialog.js';
+import { OperationsSection } from './OperationsSection.js';
 import { renderInlineCode } from './ui/inline-code.js';
 import { spaceHref, useSpace } from '../store/use-space.js';
 import { useT } from '../i18n/store.js';
@@ -166,6 +168,7 @@ export function TaskDetailPage() {
 
   const [detail, setDetail] = useState<TaskDetailResponse | null>(null);
   const [sessions, setSessions] = useState<SessionListEntry[]>([]);
+  const [runsResponse, setRunsResponse] = useState<RunsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [pageError, setPageError] = useState<{ message: string; fix?: string } | null>(null);
@@ -187,11 +190,16 @@ export function TaskDetailPage() {
         setNotFound(false);
         setPageError(null);
       }
-      Promise.all([client.getTaskDetail(taskId, selector), client.listSessions(selector)])
-        .then(([detailRes, sessionsRes]) => {
+      Promise.all([
+        client.getTaskDetail(taskId, selector),
+        client.listSessions(selector),
+        client.listRuns(selector),
+      ])
+        .then(([detailRes, sessionsRes, runsRes]) => {
           if (cancelled) return;
           setDetail(detailRes);
           setSessions(sessionsRes.sessions);
+          setRunsResponse(runsRes);
           setNotFound(false);
           setPageError(null);
         })
@@ -379,6 +387,15 @@ export function TaskDetailPage() {
           )}
         </section>
       </div>
+
+      {/* Operations section (design.md §14): reconciler-engine Runs for this
+          Task's children, projected from server truth. Placed after the
+          children/sessions columns and before the Launch dialog. */}
+      <OperationsSection
+        runsResponse={runsResponse}
+        selector={selector}
+        childNames={children.map((c) => c.name)}
+      />
 
       {dialogOpen && (
         <LaunchSessionDialog

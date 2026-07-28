@@ -1568,6 +1568,18 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   font-size: var(--text-xs); color: var(--meta);
 }
 .stage-node__handle { background: var(--border-strong); }
+.stage-node--v2 { min-height: 92px; }
+.stage-node--unsupported {
+  border-style: dashed; background: var(--surface-muted); color: var(--muted);
+}
+.stage-node__kind {
+  font-size: var(--text-xs); color: var(--accent); font-weight: 700;
+}
+.stage-node__unsupported { font-size: var(--text-xs); color: var(--muted); }
+.stage-node__ports {
+  display: flex; flex-direction: column; gap: 2px; font-size: var(--text-xs);
+  color: var(--meta); font-family: var(--font-mono);
+}
 
 .stage-group {
   border: 1px dashed var(--border-strong); border-radius: var(--radius-lg);
@@ -1596,6 +1608,13 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .pipeline-canvas__dirty-chip {
   font-size: var(--text-xs); font-weight: 600; color: var(--warn-fg);
   background: var(--surface-muted); border-radius: var(--radius-pill); padding: 2px var(--space-2);
+}
+.pipeline-canvas__capability-states {
+  display: inline-flex; gap: var(--space-1); font-size: var(--text-xs);
+}
+.pipeline-canvas__capability-states > span {
+  border: 1px solid var(--border); border-radius: var(--radius-pill);
+  padding: 2px var(--space-2); white-space: nowrap;
 }
 .pipeline-canvas__description-input {
   flex: 1; min-width: 160px; font-size: var(--text-sm); padding: var(--space-1) var(--space-2);

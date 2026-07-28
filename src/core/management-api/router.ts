@@ -11,10 +11,17 @@ import type * as http from 'node:http';
 import type { ConfigApiContext } from '../config-api/router.js';
 import { resolveSpaceSelector } from '../config-api/project-addressing.js';
 import type { ProjectHome } from '../project-home.js';
+import {
+  getProjectRegistryPath,
+  parseProjectRegistryState,
+} from '../project-registry.js';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { handleChanges } from './changes.js';
 import { handleArchive } from './archive.js';
-import { handleRuns } from './runs.js';
+import { handleRuns, handleRunDetail } from './runs.js';
+import { handleRunControl, createProductionRunControlSpawner, type RunControlSpawner } from './run-control.js';
 import { handleTaskDetail } from './task-detail.js';
 import {
   handleGetSession,
@@ -60,10 +67,47 @@ import {
 } from '../token-audit/management.js';
 import { hasRuntimeCapability } from '../runtime-adapters.js';
 
+/**
+ * Extended resolution for the runs endpoints, which additionally accept a
+ * `planning:<PlanningSpaceId>` selector that bypasses root resolution (design
+ * §13). When `planningSpaceId` is set, the handler filters by PlanningSpaceId
+ * match instead of by derived WorkspaceInstanceId.
+ */
+type RunsSpaceResolution =
+  | { ok: true; root: string | undefined; planningSpaceId?: string }
+  | { ok: false; status: number; code: string; message: string; candidates?: string[] };
+
 /** Resolution of a request's optional `space` selector to a planning-space root (planning-space-addressing design D2). */
 type RequestSpaceResolution =
   | { ok: true; root: string | undefined }
   | { ok: false; status: number; code: string; message: string };
+
+/**
+ * Checks whether a `project:<projectId>` selector matches multiple registered
+ * independent clones (design §13: duplicate clone homes →
+ * `project_selector_ambiguous`). Returns candidate PlanningSpaceIds when
+ * ambiguous so the client can disambiguate with `planning:<id>`.
+ */
+function checkProjectAmbiguity(projectId: string): { ambiguous: boolean; candidates: string[] } {
+  const registryPath = getProjectRegistryPath();
+  if (!existsSync(registryPath)) return { ambiguous: false, candidates: [] };
+  let state;
+  try {
+    state = parseProjectRegistryState(readFileSync(registryPath, 'utf-8'));
+  } catch {
+    return { ambiguous: false, candidates: [] };
+  }
+  const matchingRoots = Object.entries(state.projects)
+    .filter(([, entry]) => entry.projectId === projectId)
+    .map(([root]) => root);
+  if (matchingRoots.length <= 1) return { ambiguous: false, candidates: [] };
+  // Derive the PlanningSpaceId for each matching root (same chain as CLI).
+  const candidates = matchingRoots.map((root) => {
+    const home = `project-${createHash('sha256').update(root).digest('hex').slice(0, 12)}`;
+    return `planning-space:${createHash('sha256').update('planning-space/1' + home).digest('hex')}`;
+  });
+  return { ambiguous: true, candidates };
+}
 
 function canonicalizeOrResolve(target: string): string {
   try {
@@ -83,6 +127,13 @@ export interface ManagementRouterOptions {
   sessionKillGraceMs?: number;
   /** Test/daemon override for native runtime homes and the Rasen machine-data directory. */
   audit?: AuditManagementOptions;
+  /**
+   * Test-only override for the POST run-control bridge's spawn seam (task
+   * 13.7/13.8). Production passes nothing — the router creates the real
+   * subprocess spawner. Tests inject a fake that asserts argv + returns a
+   * canned receipt.
+   */
+  runControlSpawner?: RunControlSpawner;
 }
 
 export interface ManagementRouterHandle {
@@ -202,6 +253,35 @@ function matchAuditIdPath(pathname: string): string | null {
   }
 }
 
+const RUN_DETAIL_PATH_PREFIX = '/api/v1/runs/';
+
+/**
+ * Matches `/api/v1/runs/<changeId>/<runId>` exactly two segments deep (design
+ * §13), returning the percent-decoded `{ changeId, runId }` pair. The bare
+ * collection `/api/v1/runs` (no trailing slash) never matches this prefix.
+ * A deeper suffix (`/api/v1/runs/<changeId>/<runId>/extra`) returns null and
+ * falls through to the rest of the server's routing — it was never a "runs
+ * detail path" to begin with. Each segment is independently percent-decoded;
+ * a malformed escape sequence rejects the match (null), not a 400.
+ */
+function matchRunDetailPath(pathname: string): { changeId: string; runId: string } | null {
+  if (!pathname.startsWith(RUN_DETAIL_PATH_PREFIX)) return null;
+  const rest = pathname.slice(RUN_DETAIL_PATH_PREFIX.length);
+  const slashIndex = rest.indexOf('/');
+  if (slashIndex <= 0) return null; // missing changeId or runId
+  const rawChangeId = rest.slice(0, slashIndex);
+  const rawRunId = rest.slice(slashIndex + 1);
+  if (rawRunId.length === 0 || rawRunId.includes('/')) return null;
+  try {
+    return {
+      changeId: decodeURIComponent(rawChangeId),
+      runId: decodeURIComponent(rawRunId),
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Session ids are server-minted `randomUUID()` values (design D2) — any RFC 4122 textual form is accepted, not just v4, since the format check exists to reject junk, not to pin a version. */
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -245,6 +325,10 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
     // The detail contract is GET-only (pipeline-definition-api spec): PUT,
     // DELETE, and POST on `/api/v1/pipelines/<name>` are all rejected 405.
     return method === 'GET';
+  }
+  if (matchRunDetailPath(pathname) !== null) {
+    // GET detail (task 13.5/13.6) and POST control (task 13.7/13.8).
+    return method === 'GET' || method === 'POST';
   }
   if (pathname === '/api/v1/pipeline-validation') {
     // POST-only: GET/PUT/DELETE are rejected 405 (pipeline-definition-api spec).
@@ -370,7 +454,8 @@ export function isManagementPath(pathname: string): boolean {
     matchTaskIdPath(stripped) !== null ||
     matchWorkflowIdPath(stripped) !== null ||
     matchPipelineIdPath(stripped) !== null ||
-    matchAuditIdPath(stripped) !== null
+    matchAuditIdPath(stripped) !== null ||
+    matchRunDetailPath(stripped) !== null
   );
 }
 
@@ -425,6 +510,9 @@ export function createManagementRouter(
   // whitelist. GET /api/v1/pipelines is this router's own read handler; POST
   // rides this bridge.
   const submitPipeline = createPipelineSubmitter(context);
+  // The POST run-control bridge's spawn seam (task 13.7/13.8): production uses
+  // the real subprocess spawner; tests inject a fake through options.
+  const runControlSpawner = options.runControlSpawner ?? createProductionRunControlSpawner();
   const audits = new AuditManagementService(options.audit);
 
   // One supervisor per server instance (design D4/task 2.4): its own
@@ -449,6 +537,37 @@ export function createManagementRouter(
     const resolved = await resolveSpaceSelector(selector);
     if (!resolved.ok) return resolved;
     return { ok: true, root: resolved.space.root };
+  };
+
+  /**
+   * Runs-specific space resolution (design §13). Extends the standard resolver
+   * with two runs-only behaviors:
+   * 1. `planning:<PlanningSpaceId>` — bypasses registry resolution and returns
+   *    the exact PlanningSpaceId for Run filtering (no root needed).
+   * 2. `project:<projectId>` — checks for duplicate clone homes before
+   *    delegating; returns `project_selector_ambiguous` with candidate
+   *    PlanningSpaceIds when multiple homes share the projectId.
+   */
+  const resolveRunsSpace = async (selector: string | undefined): Promise<RunsSpaceResolution> => {
+    if (selector?.startsWith('planning:')) {
+      return { ok: true, root: undefined, planningSpaceId: selector.slice('planning:'.length) };
+    }
+    if (selector?.startsWith('project:')) {
+      const projectId = selector.slice('project:'.length);
+      const ambiguity = checkProjectAmbiguity(projectId);
+      if (ambiguity.ambiguous) {
+        return {
+          ok: false,
+          status: 409,
+          code: 'project_selector_ambiguous',
+          message: `projectId ${projectId} maps to multiple registered homes. Use space=planning:<PlanningSpaceId> to select one.`,
+          candidates: ambiguity.candidates,
+        };
+      }
+    }
+    const resolved = await resolveRequestSpace(selector);
+    if (!resolved.ok) return resolved;
+    return { ok: true, root: resolved.root };
   };
 
   const handle = async (req: http.IncomingMessage, res: http.ServerResponse, rawPathname: string): Promise<void> => {
@@ -918,7 +1037,7 @@ export function createManagementRouter(
     }
 
     if (pathname === '/api/v1/workflow-dependencies' && req.method === 'GET') {
-      const result = handleWorkflowDependenciesRead();
+      const result = await handleWorkflowDependenciesRead();
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
@@ -977,6 +1096,12 @@ export function createManagementRouter(
               message: result.message,
               ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
               ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+              ...(result.diagnostics !== undefined
+                ? { diagnostics: result.diagnostics }
+                : {}),
+              ...(result.preparation !== undefined
+                ? { preparation: result.preparation }
+                : {}),
             },
           })
         );
@@ -1106,21 +1231,122 @@ export function createManagementRouter(
       return;
     }
 
-    if (pathname === '/api/v1/runs') {
-      const space = await resolveRequestSpace(spaceSelector);
+    // Exact Run detail: `/api/v1/runs/<changeId>/<runId>` (task 13.5/13.6 GET,
+    // 13.7/13.8 POST). Checked before the bare collection route so the more
+    // specific path wins.
+    const runDetail = matchRunDetailPath(pathname);
+    if (runDetail !== null && req.method === 'POST') {
+      const space = await resolveRunsSpace(spaceSelector);
       if (!space.ok) {
-        sendError(res, space.status, space.code, space.message);
+        if (space.code === 'project_selector_ambiguous') {
+          sendJson(res, space.status, {
+            error: { code: space.code, message: space.message },
+            ...(space.candidates ? { candidates: space.candidates } : {}),
+          });
+        } else {
+          sendError(res, space.status, space.code, space.message);
+        }
+        return;
+      }
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const home = space.root ? await resolveHomeForRoot(space.root) : null;
+      const result = await handleRunControl(
+        runDetail.changeId,
+        runDetail.runId,
+        space.root,
+        home,
+        body.value,
+        runControlSpawner
+      );
+      if (!result.ok) {
+        res.writeHead(result.status, JSON_HEADERS);
+        res.end(
+          JSON.stringify({
+            error: {
+              code: result.code,
+              message: result.message,
+              ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
+              ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+            },
+          })
+        );
+        return;
+      }
+      sendJson(res, result.status, result.response);
+      return;
+    }
+
+    if (runDetail !== null && req.method === 'GET') {
+      const space = await resolveRunsSpace(spaceSelector);
+      if (!space.ok) {
+        if (space.code === 'project_selector_ambiguous') {
+          sendJson(res, space.status, {
+            error: { code: space.code, message: space.message },
+            ...(space.candidates ? { candidates: space.candidates } : {}),
+          });
+        } else {
+          sendError(res, space.status, space.code, space.message);
+        }
+        return;
+      }
+      const home = space.root ? await resolveHomeForRoot(space.root) : null;
+      const result = await handleRunDetail(runDetail.changeId, runDetail.runId, space.root, home);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.view);
+      return;
+    }
+
+    if (pathname === '/api/v1/runs') {
+      const space = await resolveRunsSpace(spaceSelector);
+      if (!space.ok) {
+        if (space.code === 'project_selector_ambiguous') {
+          sendJson(res, space.status, {
+            error: { code: space.code, message: space.message },
+            ...(space.candidates ? { candidates: space.candidates } : {}),
+          });
+        } else {
+          sendError(res, space.status, space.code, space.message);
+        }
+        return;
+      }
+      // When a planningSpaceId override is set (planning: selector), there is
+      // no root — legacy runs are empty and source state defaults to missing.
+      if (space.planningSpaceId && !space.root) {
+        const rawLimit = url.searchParams.get('limit');
+        const limit = rawLimit !== null ? Number(rawLimit) : undefined;
+        const cursor = url.searchParams.get('cursor') ?? undefined;
+        const runsResponse = await handleRuns('', null, {
+          ...(cursor !== undefined ? { cursor } : {}),
+          ...(limit !== undefined && Number.isFinite(limit) ? { limit } : {}),
+          planningSpaceId: space.planningSpaceId,
+        });
+        sendJson(res, 200, runsResponse);
         return;
       }
       // No resolvable root (no selector and no launch project) means no
       // changes could exist to report runs for — an empty listing, not an
       // error (unlike `/changes`, which requires a resolvable project).
       if (!space.root) {
-        sendJson(res, 200, { runs: [] });
+        sendJson(res, 200, { runs: [], reconcilerRuns: [], hasMore: false });
         return;
       }
       const home = await resolveHomeForRoot(space.root);
-      const runsResponse = await handleRuns(space.root, home);
+      // Pagination options from the query string (task 13.3/13.4).
+      const rawLimit = url.searchParams.get('limit');
+      const limit = rawLimit !== null ? Number(rawLimit) : undefined;
+      const cursor = url.searchParams.get('cursor') ?? undefined;
+      const runsResponse = await handleRuns(space.root, home, {
+        ...(cursor !== undefined ? { cursor } : {}),
+        ...(limit !== undefined && Number.isFinite(limit) ? { limit } : {}),
+      });
       sendJson(res, 200, runsResponse);
       return;
     }

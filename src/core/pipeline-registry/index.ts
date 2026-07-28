@@ -61,18 +61,62 @@ export {
 export {
   loadPipeline,
   parsePipeline,
+  parsePipelineSourceDocument,
   serializePipelineYaml,
+  validatePreparedLegacyPipeline,
+  validatePreparedLegacyPipelineDraft,
+  collectLegacyPipelineSkillIssues,
   validatePipelineSkills,
   validatePipelineDraft,
   PipelineValidationError,
+  pipelineValidationErrorFromDefinitionReadError,
   type PipelineValidationIssue,
 } from './pipeline.js';
+
+// Executable Composite Pipeline Definition v2 preparation. This is the one
+// authoritative semantic seam shared by registry, management, and Canvas.
 export {
+  EcpDefinitionModule,
+  ECP_DEFINITION_VERSION,
+  ECP_NODE_KINDS,
+  CHANGE_RUN_PLAN_VERSION,
+  CAPABILITY_CATALOG_VERSION,
+  V2_RUNTIME_UNAVAILABLE_REASON,
+  DefinitionReadError,
+  createCapabilityCatalogSnapshot,
+  createProductionCapabilityCatalogSnapshot,
+  orderDefinitionDiagnostics,
+  type DefinitionSource,
+  type DefinitionSourceV2,
+  type DefinitionPort,
+  type DefinitionArtifact,
+  type DefinitionNode,
+  type DefinitionGraph,
+  type DefinitionConnection,
+  type CompositeDeclaration,
+  type DefinitionDiagnostic,
+  type DefinitionDiagnosticCode,
+  type CapabilityDescriptor,
+  type CapabilityCatalogSnapshot,
+  type ProductionCapabilityDefinition,
+  type ChangeRunPlan,
+  type PreparedDefinition,
+  type DefinitionPreparationResult,
+} from './definition.js';
+export {
+  preflightPreparedDefinitionExecution,
   resolvePipelineExecutionSkillSets,
   validatePipelineForExecution,
+  type PreparedDefinitionExecutionSelection,
   type PipelineExecutionSkillSets,
   type PipelineExecutionOptions,
 } from './execution-validation.js';
+export {
+  freezeProductionPreparedPipelineRegistry,
+  type FreezePreparedPipelineRegistryOptions,
+  type PreparedPipelineExecution,
+  type ProductionPreparedPipelineRegistry,
+} from './prepared-registry.js';
 
 // Per-pipeline stage-override resolver + gate mask (config top layer)
 export {
@@ -163,6 +207,7 @@ export {
 // Pipeline resolution
 export {
   loadPipelineByName,
+  loadPreparedPipelineByName,
   resolvePipelinePath,
   listPipelines,
   listPipelinesWithInfo,
@@ -174,6 +219,9 @@ export {
   validateDecomposeChildPipelines,
   PipelineLoadError,
   type PipelineInfo,
+  type PipelineSourceLayer,
+  type PipelinePreparationOptions,
+  type PreparedPipelineResolution,
 } from './resolver.js';
 
 // Legacy skill-ID recognition (resume old->new hinting)

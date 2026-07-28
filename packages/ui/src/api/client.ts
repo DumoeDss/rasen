@@ -11,6 +11,7 @@ import type {
   AuditRuntime,
   AuditSessionsResponse,
   ArchiveResponse,
+  ChangeRunView,
   ChangesResponse,
   ConfigScope,
   ChooseLocalPathRequest,
@@ -33,6 +34,8 @@ import type {
   ProfileListResponse,
   ProfileMutationRequest,
   ProfileMutationResponse,
+  RunControlRequestBody,
+  RunControlResponseBody,
   RunsResponse,
   ResolveLocalPathResponse,
   SessionActionResponse,
@@ -316,9 +319,76 @@ export function listChanges(space?: string): Promise<ChangesResponse> {
   return request<ChangesResponse>(`/api/v1/changes${spaceQuery(space)}`);
 }
 
-/** Per-change run state for the current planning space (design.md D6); no selector = launch-project fallback. */
-export function listRuns(space?: string): Promise<RunsResponse> {
-  return request<RunsResponse>(`/api/v1/runs${spaceQuery(space)}`);
+/**
+ * Per-change run state for the current planning space (design.md D6); no
+ * selector = launch-project fallback. The response is additive: legacy
+ * `runs` (per-change auto-run/portfolio/goal-run state) PLUS reconciler-engine
+ * Run summaries from the machine-home store, projected through the shared
+ * projector. The reconciler list is cursor-paginated (task 13.3/13.4); pass
+ * `cursor` from a prior page's `nextCursor` to fetch the next page.
+ *
+ * The UI consumes server truth — it never derives status/waits/terminal
+ * client-side.
+ */
+export function listRuns(
+  space?: string,
+  opts?: { cursor?: string; limit?: number }
+): Promise<RunsResponse> {
+  const params = new URLSearchParams();
+  if (space) params.set('space', space);
+  if (opts?.cursor) params.set('cursor', opts.cursor);
+  if (opts?.limit !== undefined && Number.isFinite(opts.limit)) {
+    params.set('limit', String(opts.limit));
+  }
+  const query = params.toString();
+  return request<RunsResponse>(query ? `/api/v1/runs?${query}` : '/api/v1/runs');
+}
+
+/**
+ * Exact Run detail: `GET /api/v1/runs/<changeId>/<runId>` (task 13.5/13.6).
+ * The server projects the Run through the shared projector (read-only
+ * `inspect`, `ensure: false` — never mints identity). A Run from a different
+ * worktree is projected read-only with `workspace.scope: 'other'` and no
+ * controls or granted Actions. The UI renders what the server projects — it
+ * never re-derives frontier/waits/terminal/drift client-side.
+ */
+export function getRunDetail(
+  changeId: string,
+  runId: string,
+  space?: string
+): Promise<ChangeRunView> {
+  const encoded = `/api/v1/runs/${encodeURIComponent(changeId)}/${encodeURIComponent(runId)}`;
+  return request<ChangeRunView>(space ? `${encoded}${spaceQuery(space)}` : encoded);
+}
+
+/**
+ * Submit a Run control decision: `POST /api/v1/runs/<changeId>/<runId>` (task
+ * 14.5/14.6, design §13/§14). The server's pre-spawn admission validates the
+ * body, workspace scope, terminal/engine state, and `expectedRecordVersion`;
+ * spawns the CLI subprocess to apply the decision atomically; and returns the
+ * sealed response — the committed view + an EMPTY action list (defer-sealed:
+ * the first atomic grant happens on a later trusted CLI `resume-run`, never
+ * over HTTP). Browser response loss/replay therefore cannot turn an
+ * unconsumed admission into an uncertain already-delivered effect.
+ *
+ * The caller builds the body from projected `allowedControls` + the displayed
+ * `recordVersion` and replaces its local view from `response.view` on success
+ * — it NEVER optimistically mutates. On a 409 `record_version_conflict` the
+ * caller MUST refetch committed truth via {@link getRunDetail} and re-render
+ * from the server projection; other non-2xx statuses surface as {@link ApiError}.
+ */
+export function postRunControl(
+  changeId: string,
+  runId: string,
+  body: RunControlRequestBody,
+  space?: string
+): Promise<RunControlResponseBody> {
+  const encoded = `/api/v1/runs/${encodeURIComponent(changeId)}/${encodeURIComponent(runId)}`;
+  return request<RunControlResponseBody>(space ? `${encoded}${spaceQuery(space)}` : encoded, {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
 }
 
 /** The archived changes for the current planning space (ui-space-redesign-archive-page design D1/D6); no selector = launch-project fallback. */

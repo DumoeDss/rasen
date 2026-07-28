@@ -28,9 +28,10 @@ import {
 import {
   AgentRuntimeSchema,
   StageRoleSchema,
-  loadPipelineByName,
+  normalizeAgentRuntimeConfig,
+  freezeProductionPreparedPipelineRegistry,
+  preflightPreparedDefinitionExecution,
   listPipelines,
-  listPipelinesWithInfo,
   PipelineGraph,
   readRunStateDetailed,
   resolveRunStateLocation,
@@ -80,6 +81,41 @@ import {
   type Stage,
   type StageRole,
 } from '../core/pipeline-registry/index.js';
+import { analyzeReconcilerSupport } from '../core/pipeline-registry/execution-plan-internal.js';
+import { resolveRuntimeExecutionProfile } from '../core/pipeline-registry/profile-resolver.js';
+import {
+  prepareRuntimeContext,
+  decodeCompletion,
+  decodeControl,
+  ChangeRunRuntimeError,
+  createAssociationLedgerStore,
+  type ChangePipelineRuntime,
+  type CompleteRunAction,
+  type ChangeRunControlRequest,
+  type EvidenceRef,
+  type Digest,
+} from '../core/change-run/index.js';
+import {
+  deriveChangeInstanceId,
+  derivePlanningSpaceId,
+  deriveRunId,
+  deriveWorkspaceInstanceId,
+  readPhysicalIdentity,
+} from '../core/change-run/internal/identity.js';
+import { createFilesystemRunStore } from '../core/change-run/internal/run-store-fs.js';
+import {
+  createBoundedEvidenceStore,
+  computeEvidenceContentDigest,
+} from '../core/change-run/internal/evidence.js';
+import {
+  readBoundedJson,
+  InputReaderError,
+} from '../core/change-run/internal/input-reader.js';
+import { getGlobalDataDir } from '../core/global-config.js';
+import { WORKSPACE_DIR_NAME } from '../core/config.js';
+import { resolveProjectHome } from '../core/project-home.js';
+import { statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import {
   requireConfigStoreLayer,
   resolveConfigStoreLayer,
@@ -133,6 +169,34 @@ interface PipelineCommandOptions {
   fixer?: string;
   shipper?: string;
 }
+
+/**
+ * The resolved runtime context for an engine-aware Run command (start/status/
+ * resume-run/cancel/complete/control). All engine-aware commands share this
+ * shape from {@link PipelineCommand.resolveRuntime}.
+ */
+interface ResolvedRuntime {
+  ctx: ReturnType<typeof prepareRuntimeContext>;
+  pipeline: PipelineYaml;
+  runId: string;
+  projectRoot: string;
+  projectId: string;
+  launchKey: string;
+}
+
+/**
+ * Test-injected resolver for the --run-based commands (complete/control).
+ * In production this is undefined; the default filesystem-backed resolution
+ * loads the Record by runId to recover the pipeline name and re-prepares the
+ * definition + profile. Tests inject a pre-built in-memory context so the CLI
+ * parsing/validation/upload-staging/formatting layer can be exercised without
+ * spawning a real project setup.
+ */
+type RuntimeForRunResolver = (
+  changeId: string,
+  runId: string,
+  options: PipelineCommandOptions
+) => Promise<ResolvedRuntime>;
 
 type PipelineAgentsOptions = PipelineCommandOptions;
 
@@ -220,6 +284,17 @@ function formatThreshold(
 
 export class PipelineCommand {
   /**
+   * @param runtimeForRunOverride Optional test-injected resolver for the
+   *   --run-based commands (complete/control). When set, bypasses the default
+   *   filesystem-backed Run resolution (open store → load record → recover
+   *   pipeline name → re-prepare definition + profile). Production callers
+   *   never pass this — the default path is the real CLI surface.
+   */
+  constructor(
+    private readonly runtimeForRunOverride?: RuntimeForRunResolver
+  ) {}
+
+  /**
    * Resolve the Rasen root through the shared root-selection layer, exactly
    * as `rasen validate` does: `--store <id>` selects a registered store,
    * otherwise the nearest ancestor root wins with an implicit-root fallback.
@@ -240,7 +315,7 @@ export class PipelineCommand {
 
   private executionOptions(
     options: PipelineCommandOptions,
-    host: DetectedHostRuntime
+    host: DetectedHostRuntime = detectHostRuntime()
   ): PipelineExecutionOptions {
     const roleRuntimeOverrides = this.runtimeUpdatesFromOptions(options);
     if (options.json) return { reporter: false, host, roleRuntimeOverrides };
@@ -257,7 +332,10 @@ export class PipelineCommand {
   async list(options: PipelineCommandOptions = {}): Promise<void> {
     const root = await this.resolveRoot(options);
     if (!root) return;
-    const pipelines = listPipelinesWithInfo(root.path);
+    const registry = await freezeProductionPreparedPipelineRegistry(root.path, {
+      reporter: this.executionOptions(options).reporter,
+    });
+    const pipelines = registry.list().map((info) => this.publicPipelineInfo(info));
 
     if (options.json) {
       console.log(JSON.stringify({ pipelines }, null, 2));
@@ -283,11 +361,9 @@ export class PipelineCommand {
     const host = detectHostRuntime();
     const roleRuntimeOverrides = this.runtimeUpdatesFromOptions(options);
 
-    let pipeline;
-    try {
-      pipeline = loadPipelineByName(name, projectRoot);
-    } catch {
-      const available = listPipelines(projectRoot);
+    const available = listPipelines(projectRoot);
+    const normalizedName = name.replace(/\.ya?ml$/, '');
+    if (!available.includes(normalizedName)) {
       const messages = getPipelineMessages();
       throw pipelineMessageError(
         'pipelineNotFound',
@@ -298,14 +374,74 @@ export class PipelineCommand {
         'pipeline_not_found'
       );
     }
-    if (options.forExecution) {
-      await validatePipelineForExecution(
-        pipeline,
-        projectRoot,
-        this.executionOptions(options, host)
-      );
+    const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, {
+      reporter: this.executionOptions(options, host).reporter,
+    });
+    const info = registry.list().find((entry) => entry.name === normalizedName);
+    if (info && info.definitionValid === false && !options.forExecution) {
+      const result = {
+        version: info.authoredVersion,
+        name: info.name,
+        description: info.description,
+        definition: info.authoredDefinition ?? {},
+        source: info.source,
+        preparation: {
+          authoredVersion: info.authoredVersion,
+          normalizedVersion: 2,
+          definitionValid: false,
+          diagnostics: info.diagnostics ?? [],
+          planAvailable: false,
+          executable: false,
+          executionMode: 'unavailable',
+        },
+      };
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(JSON.stringify(result, null, 2));
+      return;
     }
 
+    const executionSelection = options.forExecution
+      ? await registry.selectForExecution(
+          normalizedName,
+          this.executionOptions(options, host)
+        )
+      : undefined;
+    const resolution =
+      executionSelection?.resolution ?? registry.load(normalizedName);
+    if (resolution.prepared.authoredVersion === 2 && !options.forExecution) {
+      const prepared = resolution.prepared;
+      const result = {
+        version: 2,
+        name: prepared.authoredSource.name,
+        description: prepared.authoredSource.description ?? '',
+        definition: prepared.authoredSource,
+        source: resolution.source,
+        preparation: {
+          authoredVersion: prepared.authoredVersion,
+          normalizedVersion: prepared.normalizedVersion,
+          definitionValid: prepared.capability.definitionValid,
+          diagnostics: prepared.warnings,
+          digests: prepared.digests,
+          planAvailable: prepared.capability.planAvailable,
+          executable: prepared.capability.executable,
+          executionMode: prepared.capability.executionMode,
+          unavailableReason: prepared.capability.unavailableReason,
+        },
+      };
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    const pipeline =
+      executionSelection?.pipeline ??
+      (resolution.prepared.authoredSource as PipelineYaml);
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
     const storeLayer = await requireConfigStoreLayer(projectRoot);
@@ -347,6 +483,12 @@ export class PipelineCommand {
     );
     const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline, thresholdContext);
 
+    // Engine support analysis (task 12.8): availableEngines/reconcilerSupport
+    // are additive fields shared with `pipeline start`, management detail, and
+    // Canvas. Without a launch-time execution profile, a supported root-DAG
+    // reports legacy availability and execution_profile_unavailable.
+    const support = analyzeReconcilerSupport(resolution.prepared, null);
+
     const result = {
       version: pipeline.version,
       name: pipeline.name,
@@ -357,6 +499,8 @@ export class PipelineCommand {
       reuse,
       buildOrder,
       stages,
+      availableEngines: support.availableEngines,
+      reconcilerSupport: support.reconcilerSupport,
       // Provenance marker (autonomy-ladder rung 2: composed pipelines) —
       // included only when declared so a human-authored pipeline's JSON shape
       // is unchanged.
@@ -368,11 +512,942 @@ export class PipelineCommand {
       return;
     }
 
-    const source = listPipelinesWithInfo(projectRoot).find(
-      (info) => info.name === pipeline.name
-    )?.source;
+    const source = registry.list().find((entry) => entry.name === pipeline.name)?.source;
     this.printPipelineDetail(result, graph, source, getPipelineMessages());
   }
+
+  /**
+   * Start (or reuse) a reconciler-engine Run for a change under a pipeline
+   * (task 12.1/12.2). Freezes the prepared Definition + capability catalog +
+   * effective policy into a sealed RuntimeExecutionProfile, derives the Run
+   * identity from the workspace's physical identity, assembles the runtime
+   * facade, and creates the Run on the immutable filesystem store. Output is
+   * the ChangeRunReceipt (view + disposition + granted actions).
+   */
+  /**
+   * Resolve the runtime context for a change under a pipeline (shared by the
+   * engine-aware run commands). Freezes the prepared Definition + capability
+   * catalog + effective policy into a sealed profile, derives the Run identity
+   * from the workspace's physical identity, and assembles the facade against
+   * the immutable filesystem store.
+   */
+  private async resolveRuntime(
+    changeId: string,
+    pipelineName: string,
+    options: PipelineCommandOptions,
+    runIdOverride?: string
+  ): Promise<ResolvedRuntime> {
+    const root = await this.resolveRoot(options);
+    if (!root) throw new Error('No Rasen root resolved.');
+    const projectRoot = root.path;
+    const host = detectHostRuntime();
+    const roleRuntimeOverrides = this.runtimeUpdatesFromOptions(options);
+
+    const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, {
+      reporter: false,
+    });
+    const execution = await registry.selectForExecution(
+      pipelineName.replace(/\.ya?ml$/, ''),
+      this.executionOptions(options, host)
+    );
+    const prepared = execution.resolution.prepared;
+    const pipeline = prepared.authoredSource as PipelineYaml;
+    const storeLayer = await requireConfigStoreLayer(projectRoot);
+    const modelLayers = resolveModelConfigLayers(
+      projectRoot,
+      storeLayer?.storeRoot
+    );
+    const overrides = resolvePipelineStageOverrides(pipeline.name, {
+      projectRoot,
+      store: storeLayer,
+    });
+    const executionStages = new Map(
+      resolvePipelineExecutionPlan(pipeline, {
+        host,
+        overrides,
+        modelLayers,
+        roleRuntimeOverrides,
+      }).stages.map((stage) => [stage.id, stage])
+    );
+    const baseGatePolicy = this.resolveBaseGatePolicy(
+      projectRoot,
+      storeLayer?.storeRoot
+    );
+
+    const sourceRevision = {
+      layer: execution.resolution.source,
+      kind: 'pipeline-yaml',
+      sourceId: `${execution.resolution.source}:${pipeline.name}`,
+      authoredContentDigest: `sha256:${prepared.digests.source}` as never,
+      semanticDigest: `sha256:${prepared.digests.source}` as never,
+    };
+    const policyStages = pipeline.stages.map((stage) => {
+      const resolved = executionStages.get(stage.id);
+      if (!resolved) {
+        throw new Error(
+          `Execution plan omitted stage "${stage.id}" from pipeline "${pipeline.name}".`
+        );
+      }
+      const roleDefault = stage.role
+        ? normalizeAgentRuntimeConfig(pipeline.agents?.[stage.role])
+        : undefined;
+      const sourceFor = (
+        stageValue: unknown,
+        roleValue: unknown
+      ): 'stage' | 'agent' | 'default' =>
+        stageValue !== undefined
+          ? 'stage'
+          : roleValue !== undefined
+            ? 'agent'
+            : 'default';
+      const sandbox =
+        resolved.sandbox ??
+        (stage.verifyPolicy === 'adaptive' || stage.id === 'verify'
+          ? ('read-only' as const)
+          : ('workspace-write' as const));
+      const gate = resolveMaskedStageGate(
+        stage.gate,
+        overrides.gates.get(stage.id),
+        baseGatePolicy
+      );
+      return {
+        nodeId: `stage:${stage.id}`,
+        role: stage.role ?? 'implementer',
+        model: resolved.model ?? 'default',
+        effort: resolved.effort ?? 'default',
+        runtime: resolved.runtime,
+        sandbox,
+        gate: gate.effective,
+        sessionReuse:
+          resolved.sessionReuse === undefined || resolved.sessionReuse === 'none'
+            ? ('never' as const)
+            : ('same-invocation' as const),
+        handoffTokenLimit: 10_000,
+        reuseRoundLimit: 1,
+        provenance: {
+          role: stage.role ? 'stage' : 'default',
+          model: resolved.modelSource,
+          effort: sourceFor(stage.effort, roleDefault?.effort),
+          runtime: resolved.runtimeSource,
+          sandbox: sourceFor(stage.sandbox, roleDefault?.sandbox),
+          gate: gate.source,
+          sessionReuse: sourceFor(
+            stage.sessionReuse,
+            roleDefault?.sessionReuse
+          ),
+          handoffTokenLimit: 'default',
+          reuseRoundLimit: 'default',
+        },
+      };
+    });
+    const profile = resolveRuntimeExecutionProfile(
+      prepared,
+      registry.catalog,
+      policyStages,
+      sourceRevision,
+      { maxAttempts: 3, maxActions: 64 }
+    );
+    const support = analyzeReconcilerSupport(prepared, profile);
+    if (!support.reconcilerSupport.supported) {
+      throw pipelineMessageError(
+        'pipelineNotFound',
+        { name: pipelineName, available: support.reconcilerSupport.reason },
+        'unsupported_pipeline_shape'
+      );
+    }
+
+    const home = getGlobalDataDir();
+    const changeDir = path.join(
+      projectRoot,
+      WORKSPACE_DIR_NAME,
+      'changes',
+      changeId
+    );
+    const alias = `changes/${changeId}`;
+
+    // --- Identity derivation ------------------------------------------------
+    // Primary path: the association registry (Change directory's physical
+    // identity via the persisted ledger). Fallback path: the legacy
+    // project-root stat + path-hash (for unregistered projects with no
+    // rasen config.yaml, preserving pre-registry behavior).
+    let planningSpaceId: ReturnType<typeof derivePlanningSpaceId>;
+    let projectId: string;
+    let changeInstanceId: ReturnType<typeof deriveChangeInstanceId>;
+    let workspaceInstanceId: ReturnType<typeof deriveWorkspaceInstanceId>;
+    // Hoisted so resolveSourceState (M2) can close over it — undefined in the
+    // fallback path (unregistered project).
+    let ledgerStore: ReturnType<typeof createAssociationLedgerStore> | undefined;
+
+    let projectHome = await resolveProjectHome(projectRoot, { ensure: true }).catch(() => null);
+    if (!projectHome) {
+      // Fallback: legacy identity derivation for unregistered projects.
+      projectHome = null;
+      const planningSpaceHome = `project-${createHash('sha256')
+        .update(projectRoot)
+        .digest('hex')
+        .slice(0, 12)}`;
+      planningSpaceId = derivePlanningSpaceId(planningSpaceHome);
+      projectId = `project:${createHash('sha256')
+        .update(projectRoot)
+        .digest('hex')
+        .slice(0, 12)}`;
+      const st = statSync(projectRoot, { bigint: true });
+      const physical = readPhysicalIdentity({
+        device: st.dev,
+        ino: st.ino,
+        birthtimeMs: st.birthtimeMs,
+      });
+      changeInstanceId = deriveChangeInstanceId(
+        planningSpaceId,
+        changeId,
+        physical
+      );
+      workspaceInstanceId = deriveWorkspaceInstanceId(planningSpaceId, physical);
+    } else {
+      // Primary: registry-based identity from the Change directory's physical
+      // identity. Archiving and recreating the same Change name produces a new
+      // directory → new identity → new Run.
+      planningSpaceId = derivePlanningSpaceId(projectHome.name);
+      projectId = projectHome.projectId;
+      ledgerStore = createAssociationLedgerStore({
+        homeDir: projectHome.homeDir,
+        planningSpaceId,
+        projectId,
+      });
+
+      if (fs.existsSync(changeDir)) {
+        // Active Change: stat the Change directory and bind via the registry.
+        const st = statSync(changeDir, { bigint: true });
+        const physical = readPhysicalIdentity({
+          device: st.dev,
+          ino: st.ino,
+          birthtimeMs: st.birthtimeMs,
+        });
+
+        // Ambiguity check (m1): runs in BOTH branches (changeDir exists and
+        // not-exist) so a deleted Change dir with ≥2 archived generations
+        // surfaces launch_instance_ambiguous (not invalid_run_request).
+        this.assertLaunchUnambiguous(ledgerStore, changeId);
+
+        const bound = ledgerStore.bindActive(changeId, alias, physical);
+        changeInstanceId = bound.association.instanceId as never;
+        workspaceInstanceId = deriveWorkspaceInstanceId(
+          planningSpaceId,
+          physical
+        ) as never;
+      } else {
+        // No active Change directory (archived or missing source). Look up the
+        // historical association to recover the ChangeInstanceId.
+        // Ambiguity check (m1): also runs here — a deleted Change dir with ≥2
+        // archived generations surfaces launch_instance_ambiguous.
+        this.assertLaunchUnambiguous(ledgerStore, changeId);
+
+        const association = ledgerStore.resolveAssociationByAlias(alias);
+        if (association) {
+          changeInstanceId = association.instanceId as never;
+        } else if (runIdOverride) {
+          // No association found but the caller specified --run; derive a
+          // placeholder identity for Record-shape compatibility (the RunStore
+          // loads by runId, not by changeInstanceId). Covers pre-registry Runs.
+          const st = statSync(projectRoot, { bigint: true });
+          const fallbackPhysical = readPhysicalIdentity({
+            device: st.dev,
+            ino: st.ino,
+            birthtimeMs: st.birthtimeMs,
+          });
+          changeInstanceId = deriveChangeInstanceId(
+            planningSpaceId,
+            changeId,
+            fallbackPhysical
+          ) as never;
+        } else {
+          throw new ChangeRunRuntimeError(
+            'invalid_run_request',
+            `No active Change directory for "${changeId}" and no association found in the registry. ` +
+              'Create the Change directory or supply --run to target a historical Run.'
+          );
+        }
+        const st = statSync(projectRoot, { bigint: true });
+        const fallbackPhysical = readPhysicalIdentity({
+          device: st.dev,
+          ino: st.ino,
+          birthtimeMs: st.birthtimeMs,
+        });
+        workspaceInstanceId = deriveWorkspaceInstanceId(
+          planningSpaceId,
+          fallbackPhysical
+        ) as never;
+      }
+    }
+
+    const launchKey = `cli-start-${changeId}`;
+    const runId = (runIdOverride ?? deriveRunId(
+      planningSpaceId,
+      changeInstanceId,
+      changeId,
+      launchKey
+    )) as never;
+    const launchRequestDigest = `sha256:${createHash('sha256')
+      .update(launchKey)
+      .digest('hex')}` as never;
+
+    const ctx = prepareRuntimeContext({
+      projectRoot,
+      prepared,
+      profile,
+      runId,
+      planningSpaceId,
+      workspaceInstanceId,
+      changeInstanceId,
+      changeId,
+      projectId,
+      launchRequestDigest,
+      storeRoot: `${home}/runs`,
+      // M2: resolve the registry's source state so `pipeline status` on an
+      // archived Run reports sourceState: 'archived'. Falls back to 'active'
+      // when no ledger is available (unregistered project / pre-registry Run).
+      resolveSourceState: ledgerStore
+        ? (record) => {
+            const association = ledgerStore!.resolveAssociationByInstanceId(
+              record.change.instanceId
+            );
+            if (association) {
+              return association.state === 'active' ? 'active' : 'archived';
+            }
+            return 'active';
+          }
+        : undefined,
+    });
+    return { ctx, pipeline, runId, projectRoot, projectId, launchKey };
+  }
+
+  private printRunReceipt(
+    options: PipelineCommandOptions,
+    payload: unknown
+  ): void {
+    console.log(JSON.stringify(payload, null, 2));
+  }
+
+  /**
+   * Start (or reuse) a reconciler-engine Run for a change under a pipeline
+   * (task 12.1/12.2).
+   */
+  async start(
+    changeId: string,
+    pipelineName: string,
+    options: PipelineCommandOptions = {}
+  ): Promise<void> {
+    const { ctx, pipeline, runId, projectRoot, projectId, launchKey } =
+      await this.resolveRuntime(changeId, pipelineName, options);
+    const receipt = await ctx.facade.start(
+      {
+        change: { projectRoot, changeId },
+        pipeline: pipeline.name,
+        launchRequestId: launchKey as never,
+        engine: 'reconciler',
+      },
+      { deliveryMode: 'grant' }
+    );
+    this.printRunReceipt(options, {
+      runId,
+      change: { projectRoot, changeId, projectId },
+      pipeline: pipeline.name,
+      engine: 'reconciler',
+      disposition: receipt.disposition,
+      status: receipt.view.status,
+      actions: receipt.actions.map((action) => ({
+        actionId: action.actionId,
+        nodeId: action.nodeId,
+        kind: action.kind,
+      })),
+    });
+  }
+
+  /**
+   * Print a Run's current view (task 12.3/12.4 inspect).
+   *
+   * Supports the same test-injection override as `complete`/`control`
+   * (task 15.1): when `runtimeForRunOverride` is set (tests only — production
+   * never passes it), the heavy root-selection + registry-freeze chain is
+   * bypassed so cross-plane parity can be asserted against an in-memory fixture
+   * without spawning a process. The view itself still flows through the same
+   * `facade.inspect` → `projectRunView(record)` path either way.
+   */
+  async status(
+    changeId: string,
+    pipelineName: string,
+    options: PipelineCommandOptions = {}
+  ): Promise<void> {
+    const { ctx, runId, projectRoot } = this.runtimeForRunOverride
+      ? await this.runtimeForRunOverride(changeId, pipelineName as never, options)
+      : await this.resolveRuntime(changeId, pipelineName, options);
+    if (!ctx.store.has(runId as never)) {
+      throw pipelineMessageError(
+        'pipelineNotFound',
+        { name: changeId, available: 'no_run' },
+        'run_not_found'
+      );
+    }
+    const view = await ctx.facade.inspect({
+      change: { projectRoot, changeId },
+      runId: runId as never,
+    });
+    this.printRunReceipt(options, { runId, status: view.status, view });
+  }
+
+  /**
+   * Resume a Run: grant the ready frontier (task 12.3/12.4).
+   */
+  async resumeRun(
+    changeId: string,
+    pipelineName: string,
+    options: PipelineCommandOptions = {}
+  ): Promise<void> {
+    const { ctx, pipeline, runId, projectRoot, launchKey } =
+      await this.resolveRuntime(changeId, pipelineName, options);
+    const receipt = await ctx.facade.resume(
+      { change: { projectRoot, changeId }, runId: runId as never },
+      { deliveryMode: 'grant' }
+    );
+    this.printRunReceipt(options, {
+      runId,
+      pipeline: pipeline.name,
+      disposition: receipt.disposition,
+      status: receipt.view.status,
+      actions: receipt.actions.map((action) => ({
+        actionId: action.actionId,
+        nodeId: action.nodeId,
+        kind: action.kind,
+      })),
+    });
+    void launchKey;
+  }
+
+  /**
+   * Cancel a Run (task 12.3/12.4 control).
+   */
+  async cancelRun(
+    changeId: string,
+    pipelineName: string,
+    options: PipelineCommandOptions = {}
+  ): Promise<void> {
+    const { ctx, runId, projectRoot } = await this.resolveRuntime(
+      changeId,
+      pipelineName,
+      options
+    );
+    const receipt = await ctx.facade.control(
+      { kind: 'cancel', change: { projectRoot, changeId }, runId: runId as never } as never,
+      { deliveryMode: 'grant' }
+    );
+    this.printRunReceipt(options, { runId, disposition: receipt.disposition, status: receipt.view.status });
+  }
+
+  // -------------------------------------------------------------------------
+  // Engine-aware complete / control (tasks 12.5 / 12.6 / 7.9)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Resolve the runtime context for a --run-based command (complete/control).
+   * Opens the filesystem RunStore, loads the Record by the exact runId to
+   * recover the pipeline name, then delegates to {@link resolveRuntime} with
+   * the runId override so the plan's runId matches the stored Record.
+   * Test-injected resolvers bypass this path entirely.
+   */
+  private async resolveRuntimeForRun(
+    changeId: string,
+    runId: string,
+    options: PipelineCommandOptions
+  ): Promise<ResolvedRuntime> {
+    if (this.runtimeForRunOverride) {
+      return this.runtimeForRunOverride(changeId, runId, options);
+    }
+
+    const root = await this.resolveRoot(options);
+    if (!root) throw new Error('No Rasen root resolved.');
+
+    const home = getGlobalDataDir();
+    const storeRoot = `${home}/runs`;
+    const store = createFilesystemRunStore(storeRoot);
+    if (!store.has(runId as never)) {
+      throw pipelineMessageError(
+        'pipelineNotFound',
+        { name: runId, available: 'no_run' },
+        'run_not_found'
+      );
+    }
+    const record = store.load(runId as never);
+    const pipelineName = record.pipeline;
+
+    // Re-prepare the definition + profile using the recovered pipeline name,
+    // overriding the derived runId with the exact --run value. The identities
+    // (planningSpaceId, changeInstanceId, workspaceInstanceId) are derived from
+    // the physical workspace and remain stable across re-preparation.
+    return this.resolveRuntime(changeId, pipelineName, options, runId);
+  }
+
+  /**
+   * Ambiguity guard (m1): if no active association exists for the changeId and
+   * more than one archived generation is present, throw
+   * `launch_instance_ambiguous` with the candidate list. This prevents silently
+   * picking one archived generation when the user should supply `--run` to
+   * disambiguate. Runs in BOTH the changeDir-exists and changeDir-not-exist
+   * branches of `resolveRuntime`.
+   */
+  private assertLaunchUnambiguous(
+    ledgerStore: ReturnType<typeof createAssociationLedgerStore>,
+    changeId: string
+  ): void {
+    const ledger = ledgerStore.load();
+    const latest = ledger.revisions.at(-1)?.associations ?? [];
+    const hasActive = latest.some(
+      (a) => a.changeId === changeId && a.state === 'active'
+    );
+    if (hasActive) return;
+    const archived = latest.filter(
+      (a) => a.changeId === changeId && a.state === 'archived'
+    );
+    if (archived.length > 1) {
+      const candidates = archived
+        .map((a) => `(${a.instanceId})`)
+        .join(', ');
+      throw new ChangeRunRuntimeError(
+        'launch_instance_ambiguous',
+        `Multiple historical Change instances exist for "${changeId}" (${archived.length} archived generations). ` +
+          'Supply an exact --run to disambiguate. ' +
+          `Candidates: ${candidates}`
+      );
+    }
+  }
+
+  /**
+   * Reject mutations (`complete`/`control`) on a Run whose source Change has
+   * been archived. The registry is the authoritative source of truth: the
+   * Run Record's stored `changeInstanceId` (the immutable identity from when
+   * the Run was created) is looked up in the association ledger by INSTANCE
+   * ID — not by textual alias. After archive + same-name recreate, the alias
+   * resolves to the NEW active association, but the OLD Run's stored instance
+   * ID resolves to the ARCHIVED one. This is the B1 fix: the check must be
+   * instance-scoped.
+   *
+   * The filesystem heuristic (an active `rasen/changes/<id>/` directory vs an
+   * archived `<home>/archive/*-<id>/` directory) remains as a fallback for
+   * cases the registry cannot resolve (unregistered project, missing ledger,
+   * manually-moved source, or a pre-registry Run with no stored instanceId
+   * match in the ledger).
+   *
+   * The registry SHALL be authoritative; the filesystem SHALL NOT override a
+   * registry refusal. A corrupt/missing registry never widens the mutation
+   * surface beyond the filesystem fallback.
+   */
+  private async assertChangeNotArchived(
+    changeId: string,
+    projectRoot: string,
+    runId?: string
+  ): Promise<void> {
+    const changeDir = path.join(
+      projectRoot,
+      WORKSPACE_DIR_NAME,
+      'changes',
+      changeId
+    );
+
+    // First try the registry (authoritative path) — instance-scoped lookup.
+    try {
+      const projectHome = await resolveProjectHome(projectRoot, { ensure: false });
+      if (projectHome) {
+        const planningSpaceId = derivePlanningSpaceId(projectHome.name) as never;
+        const ledgerStore = createAssociationLedgerStore({
+          homeDir: projectHome.homeDir,
+          planningSpaceId,
+          projectId: projectHome.projectId,
+        });
+
+        // Instance-scoped lookup (B1): if the caller supplied a runId, load
+        // the Run Record, read its STORED changeInstanceId, and look THAT up
+        // in the ledger. This prevents a same-name recreate from making the
+        // alias resolve to the new active association while the OLD Run is
+        // being mutated.
+        let association;
+        if (runId) {
+          const storeRoot = `${getGlobalDataDir()}/runs`;
+          const runStore = createFilesystemRunStore(storeRoot);
+          if (runStore.has(runId as never)) {
+            const record = runStore.load(runId as never);
+            const storedInstanceId = record.change.instanceId;
+            association = ledgerStore.resolveAssociationByInstanceId(storedInstanceId);
+          }
+        }
+
+        // Fall back to alias-based lookup if the instance-scoped path did not
+        // resolve (e.g. pre-registry Run with no matching instanceId, or no
+        // runId supplied).
+        if (!association) {
+          const alias = `changes/${changeId}`;
+          association = ledgerStore.resolveAssociationByAlias(alias);
+        }
+
+        if (association) {
+          if (association.state === 'archived') {
+            const archiveAliases = association.archiveAliases.join(', ');
+            throw new ChangeRunRuntimeError(
+              'change_instance_inactive',
+              `Change "${changeId}" is archived (${archiveAliases}). ` +
+                'Mutations (complete/control) on its Runs are rejected via the association registry. ' +
+                'The Run remains inspectable via `pipeline status`.'
+            );
+          }
+          // Registry says active — mutation allowed.
+          if (association.state === 'active') return;
+          // state === 'missing' — fall through to filesystem heuristic.
+        }
+        // No association found — fall through to filesystem heuristic.
+      }
+    } catch (err) {
+      // Re-throw the guard error; swallow resolution/registry failures.
+      if (err instanceof ChangeRunRuntimeError) throw err;
+    }
+
+    // Filesystem fallback (Gap D behavior preserved for unregistered cases).
+    if (fs.existsSync(changeDir)) return; // active — mutation allowed
+
+    try {
+      const home = await resolveProjectHome(projectRoot, { ensure: false });
+      if (home) {
+        const archiveDir = home.archiveDir;
+        if (fs.existsSync(archiveDir)) {
+          const entries = fs.readdirSync(archiveDir, { withFileTypes: true });
+          for (const entry of entries) {
+            if (entry.isDirectory() && entry.name.endsWith(`-${changeId}`)) {
+              throw new ChangeRunRuntimeError(
+                'change_instance_inactive',
+                `Change "${changeId}" is archived (${entry.name}). ` +
+                  'Mutations (complete/control) on its Runs are rejected. ' +
+                  'The Run remains inspectable via `pipeline status`.'
+              );
+            }
+          }
+        }
+      }
+    } catch (err) {
+      if (err instanceof ChangeRunRuntimeError) throw err;
+    }
+  }
+
+  /**
+   * Read a bounded JSON payload from a file path or `-` (stdin). Applies the
+   * same bounded no-follow reader as the kernel (task 12.6): symlinks,
+   * non-regular files, oversized bodies, and malformed JSON are rejected with
+   * stable typed errors before any staging or facade call.
+   */
+  private readBoundedPayload(from: string, maxBytes = 1024 * 1024): unknown {
+    if (from === '-') {
+      let buf: Buffer;
+      try {
+        buf = fs.readFileSync(0);
+      } catch {
+        throw new InputReaderError('input_not_found', 'Could not read from stdin.');
+      }
+      if (buf.byteLength > maxBytes) {
+        throw new InputReaderError(
+          'input_too_large',
+          `Input exceeds ${maxBytes} bytes.`
+        );
+      }
+      try {
+        return JSON.parse(buf.toString('utf8'));
+      } catch {
+        throw new InputReaderError('input_malformed', 'Input is not valid JSON.');
+      }
+    }
+    return readBoundedJson(from, maxBytes);
+  }
+
+  /**
+   * Stage trusted-host transport uploads through a bounded content-addressed
+   * HostEvidenceWriter BEFORE the facade receives any refs (task 7.9). Only
+   * refs (contentDigest + identity) enter the receipt bytes — never raw
+   * content. Every EvidenceRef in the completion must have its content staged;
+   * orphaned uploads (not referenced by any ref) are rejected so arbitrary
+   * content cannot be injected into the evidence store.
+   *
+   * Returns the bounded store handle so tests can inspect what was staged.
+   */
+  private stageTransportUploads(
+    uploads: ReadonlyArray<{ contentDigest: string; contentBase64: string }>,
+    requiredDigests: ReadonlySet<string>
+  ): ReturnType<typeof createBoundedEvidenceStore> {
+    const store = createBoundedEvidenceStore({
+      maxRunBytes: 64 * 1024 * 1024,
+      maxEntries: 64,
+    });
+
+    const stagedDigests = new Set<string>();
+    for (const upload of uploads) {
+      const content = Buffer.from(upload.contentBase64, 'base64');
+      const actualDigest = computeEvidenceContentDigest(
+        new Uint8Array(content)
+      );
+      if (actualDigest !== upload.contentDigest) {
+        throw new InputReaderError(
+          'input_malformed',
+          `Upload contentDigest mismatch: claimed ${upload.contentDigest}, actual ${actualDigest}.`
+        );
+      }
+      store.stage(new Uint8Array(content));
+      stagedDigests.add(upload.contentDigest);
+    }
+
+    // Every EvidenceRef must have staged content — no ref enters the facade
+    // without its raw bytes proven against the claimed digest.
+    for (const digest of requiredDigests) {
+      if (!stagedDigests.has(digest)) {
+        throw new InputReaderError(
+          'input_malformed',
+          `Evidence ref contentDigest ${digest} has no staged upload content.`
+        );
+      }
+    }
+    // Orphaned uploads cannot advance: content uploaded but not referenced by
+    // any EvidenceRef is rejected (prevents evidence-store injection).
+    for (const digest of stagedDigests) {
+      if (!requiredDigests.has(digest)) {
+        throw new InputReaderError(
+          'input_malformed',
+          `Orphaned upload ${digest} is not referenced by any evidence ref.`
+        );
+      }
+    }
+    return store;
+  }
+
+  /**
+   * Collect every contentDigest from EvidenceRefs in a completion envelope.
+   * These are the digests that MUST have staged upload content before the
+   * facade sees the refs.
+   */
+  private collectRequiredDigests(completion: CompleteRunAction): Set<string> {
+    const digests = new Set<string>();
+    digests.add(completion.actorAttestation.contentDigest);
+    for (const ref of completion.evidence) {
+      digests.add(ref.contentDigest);
+    }
+    return digests;
+  }
+
+  /**
+   * Validate and parse the uploads array from a submission body. Each entry
+   * must be an object with string `contentDigest` and `contentBase64` fields.
+   */
+  private parseUploads(
+    raw: unknown
+  ): Array<{ contentDigest: string; contentBase64: string }> {
+    if (!Array.isArray(raw)) return [];
+    const uploads: Array<{ contentDigest: string; contentBase64: string }> = [];
+    for (let i = 0; i < raw.length; i++) {
+      const entry = raw[i];
+      if (entry === null || typeof entry !== 'object') {
+        throw new InputReaderError(
+          'input_malformed',
+          `Upload entry ${i} must be an object.`
+        );
+      }
+      const e = entry as Record<string, unknown>;
+      if (
+        typeof e.contentDigest !== 'string' ||
+        typeof e.contentBase64 !== 'string'
+      ) {
+        throw new InputReaderError(
+          'input_malformed',
+          `Upload entry ${i} must have string contentDigest and contentBase64.`
+        );
+      }
+      uploads.push({
+        contentDigest: e.contentDigest,
+        contentBase64: e.contentBase64,
+      });
+    }
+    return uploads;
+  }
+
+  /**
+   * Complete a Run action from a receipt body (task 12.5/12.6).
+   *
+   * `rasen pipeline complete <change> --run <runId> --from <receipt.json|->`
+   *
+   * Reads a bounded JSON body from a file or stdin, stages trusted-host
+   * transport uploads through HostEvidenceWriter BEFORE the facade receives
+   * refs (only refs/digests enter receipt bytes — never raw content), then
+   * calls `facade.complete(...)`. The body is a submission wrapper:
+   *
+   * ```json
+   * {
+   *   "completion": { ...change-run-completion/1 envelope... },
+   *   "uploads": [{ "contentDigest": "sha256:...", "contentBase64": "..." }]
+   * }
+   * ```
+   */
+  async complete(
+    changeId: string,
+    runId: string,
+    from: string,
+    options: PipelineCommandOptions = {}
+  ): Promise<void> {
+    const resolved = await this.resolveRuntimeForRun(changeId, runId, options);
+    await this.assertChangeNotArchived(changeId, resolved.projectRoot, runId);
+    const body = this.readBoundedPayload(from) as {
+      completion?: unknown;
+      uploads?: unknown;
+    };
+    if (
+      body === null ||
+      typeof body !== 'object' ||
+      body.completion === undefined
+    ) {
+      throw new InputReaderError(
+        'input_malformed',
+        'Body must be an object with a "completion" field.'
+      );
+    }
+    const uploads = this.parseUploads(body.uploads);
+    // Decode the completion through the strict contract schema — unknown
+    // fields, wrong types, and missing required fields all fail here.
+    const completion = decodeCompletion(body.completion);
+    const requiredDigests = this.collectRequiredDigests(completion);
+    // Stage uploads through HostEvidenceWriter before the facade sees refs.
+    this.stageTransportUploads(uploads, requiredDigests);
+    const receipt = await resolved.ctx.facade.complete(completion, {
+      deliveryMode: 'grant',
+    });
+    this.printRunReceipt(options, {
+      runId,
+      disposition: receipt.disposition,
+      status: receipt.view.status,
+    });
+  }
+
+  /**
+   * Submit a typed control request from a body (task 12.5/12.6).
+   *
+   * `rasen pipeline control <change> --run <runId> --from <control.json|->`
+   *
+   * The body is a submission wrapper:
+   *
+   * ```json
+   * {
+   *   "control": { ...change-run-control/1 request... },
+   *   "uploads": [{ "contentDigest": "sha256:...", "contentBase64": "..." }]
+   * }
+   * ```
+   *
+   * Transport uploads are staged through HostEvidenceWriter when the control
+   * command carries EvidenceRefs (e.g. accept-workspace-revision, decision).
+   * `cancel` is typed sugar over this path.
+   */
+  async control(
+    changeId: string,
+    runId: string,
+    from: string,
+    options: PipelineCommandOptions = {}
+  ): Promise<void> {
+    const resolved = await this.resolveRuntimeForRun(changeId, runId, options);
+    await this.assertChangeNotArchived(changeId, resolved.projectRoot, runId);
+    const body = this.readBoundedPayload(from) as {
+      control?: unknown;
+      uploads?: unknown;
+    };
+    if (
+      body === null ||
+      typeof body !== 'object' ||
+      body.control === undefined
+    ) {
+      throw new InputReaderError(
+        'input_malformed',
+        'Body must be an object with a "control" field.'
+      );
+    }
+    const uploads = this.parseUploads(body.uploads);
+    const control = decodeControl(body.control);
+    // Collect required digests from any EvidenceRefs the command carries.
+    const requiredDigests = this.collectRequiredDigestsFromControl(control);
+    if (requiredDigests.size > 0 || uploads.length > 0) {
+      this.stageTransportUploads(uploads, requiredDigests);
+    }
+    // The facade's control method casts the request as a RunStimulus (the
+    // reducer expects a top-level `kind`, not the control envelope's nested
+    // `command.kind`). Convert the decoded control request to the matching
+    // stimulus shape. This mirrors how cancelRun already passes a stimulus-
+    // shaped object via `as never`.
+    const stimulus = this.controlRequestToStimulus(control);
+    const receipt = await resolved.ctx.facade.control(stimulus as never, {
+      deliveryMode: 'grant',
+    });
+    this.printRunReceipt(options, {
+      runId,
+      disposition: receipt.disposition,
+      status: receipt.view.status,
+    });
+  }
+
+  /**
+   * Collect content digests from EvidenceRefs embedded in a control request's
+   * command (decision/accept-workspace-revision may carry evidence).
+   */
+  private collectRequiredDigestsFromControl(
+    control: ChangeRunControlRequest
+  ): Set<string> {
+    const digests = new Set<string>();
+    const cmd = control.command;
+    if (cmd.kind === 'decision' && cmd.evidence) {
+      for (const ref of cmd.evidence) {
+        digests.add(ref.contentDigest);
+      }
+    }
+    if (cmd.kind === 'accept-workspace-revision') {
+      for (const ref of cmd.evidence) {
+        digests.add(ref.contentDigest);
+      }
+    }
+    return digests;
+  }
+
+  /**
+   * Convert a decoded ChangeRunControlRequest into the RunStimulus shape the
+   * reducer expects (top-level `kind`, not nested `command.kind`). The facade's
+   * control method casts its argument as a RunStimulus, so the command must be
+   * flattened before the call. This mirrors how `cancelRun` already constructs
+   * a stimulus-shaped object inline.
+   */
+  private controlRequestToStimulus(
+    control: ChangeRunControlRequest
+  ): Readonly<Record<string, unknown>> {
+    const cmd = control.command;
+    switch (cmd.kind) {
+      case 'cancel':
+        return { kind: 'cancel', ...(cmd.reason ? { reason: cmd.reason } : {}) };
+      case 'escalate':
+        // The escalate stimulus requires a `code`; the control command only
+        // carries a human `reason`. Use a stable default code.
+        return { kind: 'escalate', code: 'user_escalated', reason: cmd.reason };
+      case 'resume':
+        return { kind: 'resume-wait', waitId: cmd.waitId };
+      case 'decision':
+        return {
+          kind: 'decide-gate',
+          waitId: cmd.waitId,
+          decisionId: cmd.decisionId,
+          outcome: cmd.outcome,
+        };
+      case 'accept-workspace-revision':
+        return {
+          kind: 'accept-workspace-revision',
+          waitId: cmd.waitId,
+          revision: cmd.revision,
+          evidence: cmd.evidence,
+        };
+    }
+  }
+
 
   /**
    * Show or update role-level Claude/Codex runtime defaults for a pipeline.
@@ -388,7 +1463,11 @@ export class PipelineCommand {
     if (!root) return;
     const projectRoot = root.path;
     const normalizedName = name.replace(/\.ya?ml$/, '');
-    const pipeline = this.loadPipelineOrExplain(normalizedName, projectRoot);
+    const pipeline = await this.loadPipelineOrExplain(
+      normalizedName,
+      projectRoot,
+      options
+    );
     const updates = this.runtimeUpdatesFromOptions(options);
 
     let configPath: string | null = null;
@@ -599,6 +1678,9 @@ export class PipelineCommand {
     if (!root) return;
     const projectRoot = root.path;
     const host = detectHostRuntime();
+    const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, {
+      reporter: this.executionOptions(options, host).reporter,
+    });
     const changeName = await validateChangeExists(change, projectRoot, root.changesDir);
 
     const changeDir = path.join(root.changesDir, changeName);
@@ -658,9 +1740,8 @@ export class PipelineCommand {
           .map((child) => child.pipeline)
       );
       for (const pipelineName of remainingPipelineNames) {
-        await validatePipelineForExecution(
-          loadPipelineByName(pipelineName, projectRoot),
-          projectRoot,
+        await registry.selectForExecution(
+          pipelineName,
           this.executionOptions(options, host)
         );
       }
@@ -825,7 +1906,9 @@ export class PipelineCommand {
       return;
     }
 
-    const pipeline = loadPipelineByName(runState.pipeline, projectRoot);
+    const pipeline = preflightPreparedDefinitionExecution(
+      registry.load(runState.pipeline).prepared
+    ).pipeline;
     // A project-local or user-override pipeline authored before the rebrand can
     // still name legacy `openspec-*`/`openspec:*` or retired colon-form skill IDs
     // that no installed skill answers to. Surface each stale stage skill with its
@@ -857,7 +1940,11 @@ export class PipelineCommand {
     await validatePipelineForExecution(
       preflightPipeline,
       projectRoot,
-      this.executionOptions(options, host)
+      {
+        ...this.executionOptions(options, host),
+        skillSets: registry.skillSets,
+        loadPrepared: registry.load,
+      }
     );
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
@@ -1048,11 +2135,13 @@ export class PipelineCommand {
   // Internal helpers
   // ---------------------------------------------------------------------------
 
-  private loadPipelineOrExplain(name: string, projectRoot: string): PipelineYaml {
-    try {
-      return loadPipelineByName(name, projectRoot);
-    } catch {
-      const available = listPipelines(projectRoot);
+  private async loadPipelineOrExplain(
+    name: string,
+    projectRoot: string,
+    options: PipelineCommandOptions
+  ): Promise<PipelineYaml> {
+    const available = listPipelines(projectRoot);
+    if (!available.includes(name)) {
       const messages = getPipelineMessages();
       throw pipelineMessageError(
         'pipelineNotFound',
@@ -1063,6 +2152,27 @@ export class PipelineCommand {
         'pipeline_not_found'
       );
     }
+    const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, {
+      reporter: this.executionOptions(options).reporter,
+    });
+    // `pipeline agents` is a configuration/read surface, not a launch. Keep
+    // Definition preparation and the stable v1 adapter boundary, but do not
+    // probe target binaries or require the current active profile to be able to
+    // execute the pipeline merely to inspect or change its runtime defaults.
+    return preflightPreparedDefinitionExecution(
+      registry.load(name).prepared
+    ).pipeline;
+  }
+
+  private publicPipelineInfo(info: PipelineInfo): PipelineInfo {
+    const {
+      prepared: _prepared,
+      authoredText: _authoredText,
+      authoredDefinition: _authoredDefinition,
+      pipelinePath: _pipelinePath,
+      ...publicInfo
+    } = info;
+    return publicInfo;
   }
 
   private runtimeUpdatesFromOptions(options: PipelineAgentsOptions): Partial<Record<StageRole, AgentRuntime>> {

@@ -22,6 +22,7 @@
  * fails to load or a skill with no owning catalog unit is skipped silently.
  */
 import { loadPipelineByName, resolveChildPipelineName } from '../pipeline-registry/resolver.js';
+import type { PipelineYaml } from '../pipeline-registry/types.js';
 import type { WorkflowCatalog } from './catalog.js';
 import { portablePathCollisionKey } from './path-policy.js';
 
@@ -71,14 +72,15 @@ function collectPipelineOwners(
   strong: Set<string>,
   weak: Set<string>,
   visited: Set<string>,
-  projectRoot: string | undefined
+  projectRoot: string | undefined,
+  loadPipeline: (name: string, projectRoot?: string) => PipelineYaml
 ): void {
   if (visited.has(pipelineName)) return;
   visited.add(pipelineName);
 
   let pipeline;
   try {
-    pipeline = loadPipelineByName(pipelineName, projectRoot);
+    pipeline = loadPipeline(pipelineName, projectRoot);
   } catch {
     return; // advisory graph: a broken/missing pipeline contributes nothing
   }
@@ -99,7 +101,8 @@ function collectPipelineOwners(
         strong,
         weak,
         visited,
-        projectRoot
+        projectRoot,
+        loadPipeline
       );
     }
   }
@@ -110,7 +113,8 @@ function directEdges(
   id: string,
   catalog: WorkflowCatalog,
   ownerByKey: Map<string, string>,
-  projectRoot: string | undefined
+  projectRoot: string | undefined,
+  loadPipeline: Parameters<typeof collectPipelineOwners>[7]
 ): { strong: Set<string>; weak: Set<string> } {
   const definition = catalog.get(id)!;
   const strong = new Set<string>();
@@ -125,7 +129,16 @@ function directEdges(
   }
   const visited = new Set<string>();
   for (const pipelineName of definition.requires.pipelines) {
-    collectPipelineOwners(pipelineName, id, ownerByKey, strong, weak, visited, projectRoot);
+    collectPipelineOwners(
+      pipelineName,
+      id,
+      ownerByKey,
+      strong,
+      weak,
+      visited,
+      projectRoot,
+      loadPipeline
+    );
   }
 
   // A unit that is strongly required is never merely a weak enhancer of the
@@ -143,14 +156,24 @@ function directEdges(
  */
 export function computeWorkflowDependencyGraph(
   catalog: WorkflowCatalog,
-  projectRoot?: string
+  projectRoot?: string,
+  options: {
+    loadPipeline?: Parameters<typeof collectPipelineOwners>[7];
+  } = {}
 ): WorkflowDependencyGraph {
   const ownerByKey = buildSkillOwnerMap(catalog);
+  const loadPipeline = options.loadPipeline ?? loadPipelineByName;
 
   const directStrong = new Map<string, Set<string>>();
   const directWeak = new Map<string, Set<string>>();
   for (const definition of catalog.definitions) {
-    const { strong, weak } = directEdges(definition.id, catalog, ownerByKey, projectRoot);
+    const { strong, weak } = directEdges(
+      definition.id,
+      catalog,
+      ownerByKey,
+      projectRoot,
+      loadPipeline
+    );
     directStrong.set(definition.id, strong);
     directWeak.set(definition.id, weak);
   }

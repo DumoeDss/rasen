@@ -17,6 +17,7 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
     getTaskDetail: vi.fn(),
     listSessions: vi.fn(),
     listSpaces: vi.fn(),
+    listRuns: vi.fn(),
     launchSession: vi.fn(),
     getSession: vi.fn(),
     killSession: vi.fn(),
@@ -77,6 +78,7 @@ describe('TaskDetailPage', () => {
     document.body.appendChild(container);
     vi.mocked(client.listSessions).mockResolvedValue({ sessions: [] });
     vi.mocked(client.listSpaces).mockResolvedValue({ spaces: [] });
+    vi.mocked(client.listRuns).mockResolvedValue({ runs: [], hasMore: false });
   });
 
   afterEach(() => {
@@ -353,5 +355,37 @@ describe('TaskDetailPage', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('renders an Operations section when reconciler Runs exist for a child change', async () => {
+    vi.mocked(client.getTaskDetail).mockResolvedValue(portfolioTaskDetailFixture);
+    vi.mocked(client.listRuns).mockResolvedValue({
+      runs: [],
+      reconcilerRuns: [
+        {
+          runId: 'run:' + 'a'.repeat(64),
+          changeId: 'ui-redesign-api',
+          planningSpaceId: 'planning-space:' + 'b'.repeat(64),
+          engine: 'reconciler',
+          recordVersion: 2,
+          status: 'running',
+          sourceState: 'active',
+          waits: 0,
+        },
+      ],
+      hasMore: false,
+    });
+    await mountAt(container, '/p/proj_x/task/ui-redesign');
+
+    // The Operations section is present (design.md §14).
+    const ops = container.querySelector('[data-testid="operations-section"]');
+    expect(ops).not.toBeNull();
+
+    // The Run is grouped under its matching child change.
+    const group = ops!.querySelector('[data-testid="operations-group"][data-change="ui-redesign-api"]');
+    expect(group).not.toBeNull();
+
+    // listRuns was called with the page's space selector.
+    expect(client.listRuns).toHaveBeenCalledWith('project:proj_x');
   });
 });

@@ -6,10 +6,15 @@ import { getGlobalConfig } from '../global-config.js';
 import { resolveDesiredWorkflowSelection } from '../profiles.js';
 import { resolveProjectHome } from '../project-home.js';
 import { hasExpertSelectionAck } from '../expert-selection-state.js';
-import { loadWorkflowCatalog } from '../workflow-registry/index.js';
+import {
+  loadWorkflowCatalog,
+  type WorkflowCatalog,
+  type WorkflowRegistryOptions,
+} from '../workflow-registry/index.js';
 import { PipelineValidationError, validatePipelineSkills } from './pipeline.js';
 import {
   loadPipelineByName,
+  type PreparedPipelineResolution,
   resolveChildPipelineName,
   validateDecomposeChildPipelines,
 } from './resolver.js';
@@ -23,6 +28,7 @@ import {
   type DetectedHostRuntime,
 } from '../runtime-adapters.js';
 import type { AgentRuntime, PipelineYaml, StageRole } from './types.js';
+import type { PreparedDefinition } from './definition.js';
 
 export type PipelineExecutionNotice =
   | {
@@ -54,6 +60,13 @@ export interface PipelineExecutionOptions {
   /** Human preflight notices. `false` suppresses them; omitted preserves the
    * legacy English console output for non-pipeline callers. */
   reporter?: PipelineExecutionReporter | false;
+  /**
+   * A caller-owned frozen preparation operation. Product launch paths provide
+   * these together so capability admission, child resolution, and runtime
+   * validation all observe one catalog snapshot.
+   */
+  skillSets?: PipelineExecutionSkillSets;
+  loadPrepared?: (name: string) => PreparedPipelineResolution;
 }
 
 function reportPipelineExecutionNotice(
@@ -106,6 +119,47 @@ export interface PipelineExecutionSkillSets {
   enabledSkillNames: Set<string>;
 }
 
+export interface ResolvePipelineExecutionSkillSetsOptions
+  extends Pick<PipelineExecutionOptions, 'reporter'> {
+  /** Already-frozen catalog for this product operation. */
+  workflowCatalog?: WorkflowCatalog;
+  /** Used only when no frozen catalog was supplied. */
+  workflowRegistryOptions?: WorkflowRegistryOptions;
+}
+
+export interface PreparedDefinitionExecutionSelection {
+  readonly mode: 'legacy';
+  readonly pipeline: PipelineYaml;
+}
+
+/**
+ * Definition-aware launch selection. A compiled plan is not itself runtime
+ * ownership: this slice can select only the existing prompt-owned legacy path.
+ * Valid v2 definitions therefore fail here with the stable capability reason
+ * before any legacy or partial reconciler dispatcher can be reached.
+ */
+export function preflightPreparedDefinitionExecution(
+  prepared: PreparedDefinition
+): PreparedDefinitionExecutionSelection {
+  if (
+    !prepared.capability.executable ||
+    prepared.capability.executionMode !== 'legacy' ||
+    prepared.authoredVersion !== 1
+  ) {
+    const reason =
+      prepared.capability.unavailableReason ?? 'pipeline_runtime_unavailable';
+    throw new PipelineValidationError(
+      `Pipeline Definition version ${prepared.authoredVersion} has a valid plan, but no complete runtime owner is available (${reason}).`,
+      reason
+    );
+  }
+
+  return {
+    mode: 'legacy',
+    pipeline: prepared.authoredSource as PipelineYaml,
+  };
+}
+
 /**
  * Resolve the machine's known skills and active-profile-installed skills
  * once per preflight. Uses the same `resolveDesiredWorkflowSelection`
@@ -133,9 +187,11 @@ export interface PipelineExecutionSkillSets {
  */
 export async function resolvePipelineExecutionSkillSets(
   projectRoot?: string,
-  options: Pick<PipelineExecutionOptions, 'reporter'> = {}
+  options: ResolvePipelineExecutionSkillSetsOptions = {}
 ): Promise<PipelineExecutionSkillSets> {
-  const catalog = loadWorkflowCatalog();
+  const catalog =
+    options.workflowCatalog ??
+    loadWorkflowCatalog(options.workflowRegistryOptions);
   const knownSkillNames = new Set(catalog.definitions.map((definition) => definition.skill.template.name));
   const config = getGlobalConfig();
   const globalMarkerExplicit = config.expertSelectionExplicit === true;
@@ -190,12 +246,19 @@ export async function validatePipelineForExecution(
   projectRoot?: string,
   options?: PipelineExecutionOptions
 ): Promise<void> {
-  const { knownSkillNames, enabledSkillNames } = await resolvePipelineExecutionSkillSets(
-    projectRoot,
-    { reporter: options?.reporter }
-  );
+  const { knownSkillNames, enabledSkillNames } =
+    options?.skillSets ??
+    (await resolvePipelineExecutionSkillSets(projectRoot, {
+      reporter: options?.reporter,
+    }));
   validatePipelineSkills(pipeline, knownSkillNames, enabledSkillNames);
-  validateDecomposeChildPipelines(pipeline, projectRoot);
+  const loadChild = options?.loadPrepared
+    ? (name: string): PipelineYaml =>
+        preflightPreparedDefinitionExecution(
+          options.loadPrepared!(name).prepared
+        ).pipeline
+    : undefined;
+  validateDecomposeChildPipelines(pipeline, projectRoot, loadChild);
 
   const host =
     options?.host ??
@@ -222,7 +285,9 @@ export async function validatePipelineForExecution(
 
   for (const stage of pipeline.stages) {
     if (stage.kind !== 'decompose') continue;
-    const child = loadPipelineByName(resolveChildPipelineName(stage), projectRoot);
+    const child = loadChild
+      ? loadChild(resolveChildPipelineName(stage))
+      : loadPipelineByName(resolveChildPipelineName(stage), projectRoot);
     validatePipelineSkills(child, knownSkillNames, enabledSkillNames);
     plans.push(resolvePlan(child));
   }

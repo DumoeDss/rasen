@@ -64,7 +64,7 @@ function thresholdRoleEntries<R extends ThresholdRole>(
 function uniqueDiagnostics(pipelines: WirePipeline[]): ThresholdDiagnostic[] {
   const all = pipelines.flatMap((pipeline) => [
     ...pipeline.stages.flatMap((stage) => stage.effectiveHandoff.diagnostics ?? []),
-    ...(pipeline.effectiveReuse.diagnostics ?? []),
+    ...(pipeline.effectiveReuse?.diagnostics ?? []),
   ]);
   return all.filter(
     (diagnostic, index) =>

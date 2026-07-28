@@ -1477,6 +1477,80 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
       },
       {
+        name: 'start',
+        description: 'Start (or reuse) a reconciler-engine Run for a change under a pipeline',
+        acceptsPositional: true,
+        positionals: [
+          { name: 'change', type: 'change-id' },
+          { name: 'pipeline' },
+        ],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+      },
+      {
+        name: 'status',
+        description: 'Print a reconciler-engine Run view for a change',
+        acceptsPositional: true,
+        positionals: [
+          { name: 'change', type: 'change-id' },
+          { name: 'pipeline' },
+        ],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+      },
+      {
+        name: 'resume-run',
+        description: 'Resume a reconciler-engine Run: grant the ready frontier',
+        acceptsPositional: true,
+        positionals: [
+          { name: 'change', type: 'change-id' },
+          { name: 'pipeline' },
+        ],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+      },
+      {
+        name: 'cancel',
+        description: 'Cancel a reconciler-engine Run for a change',
+        acceptsPositional: true,
+        positionals: [
+          { name: 'change', type: 'change-id' },
+          { name: 'pipeline' },
+        ],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+      },
+      {
+        name: 'complete',
+        description: 'Complete a reconciler-engine Run action from a receipt body',
+        acceptsPositional: true,
+        positionals: [{ name: 'change', type: 'change-id' }],
+        flags: [
+          { name: 'run', description: 'Exact Run ID', takesValue: true },
+          {
+            name: 'from',
+            description: 'Receipt body (file path or - for stdin)',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+        ],
+      },
+      {
+        name: 'control',
+        description: 'Submit a typed control request for a reconciler-engine Run',
+        acceptsPositional: true,
+        positionals: [{ name: 'change', type: 'change-id' }],
+        flags: [
+          { name: 'run', description: 'Exact Run ID', takesValue: true },
+          {
+            name: 'from',
+            description: 'Control body (file path or - for stdin)',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+        ],
+      },
+      {
         name: 'init',
         description: 'Create a minimal pipeline draft without installing it',
         acceptsPositional: true,

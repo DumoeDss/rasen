@@ -8,11 +8,14 @@
 import dagre from 'dagre';
 import type { Edge, Node } from '@xyflow/react';
 import type {
+  PipelineCatalogResponse,
   PipelineDetailResponse,
   ThresholdValue,
+  WireDefinitionNode,
   WireEffectiveValue,
   WirePipelineDefinition,
 } from '../api/types.js';
+import { isV2EditableNodeKind } from './draft.js';
 
 export const NODE_WIDTH = 200;
 export const NODE_HEIGHT = 92;
@@ -32,8 +35,18 @@ export interface StageCardData extends Record<string, unknown> {
   effectiveModel: WireEffectiveValue<string | null>;
   effectiveHandoff: WireEffectiveValue<ThresholdValue>;
   effectiveRuntime: WireEffectiveValue<'claude' | 'codex'>;
+  definitionVersion?: 1 | 2;
+  definitionKind?: WireDefinitionNode['kind'];
+  editorSupported?: boolean;
+  inputPorts?: DefinitionHandleDescriptor[];
+  outputPorts?: DefinitionHandleDescriptor[];
   /** Set in edit mode from the latest validation response (pipeline-canvas-edit design D5); absent in view mode. */
   issueSeverity?: 'error' | 'warning';
+}
+
+export interface DefinitionHandleDescriptor {
+  id: string;
+  type?: string;
 }
 
 /** Data for a `parallelGroup` container node. */
@@ -50,6 +63,255 @@ export interface UnpositionedStage {
   id: string;
   parallelGroup?: string;
   data: StageCardData;
+  draggable?: boolean;
+  connectable?: boolean;
+  deletable?: boolean;
+}
+
+function v2NodeCardData(
+  node: unknown,
+  graph: unknown,
+  catalog?: PipelineCatalogResponse | null
+): StageCardData {
+  const record =
+    node !== null && typeof node === 'object' && !Array.isArray(node)
+      ? (node as Record<string, unknown>)
+      : {};
+  const id = typeof record.id === 'string' ? record.id : 'invalid-node';
+  const kind = typeof record.kind === 'string' ? record.kind : 'Invalid';
+  const capabilityRecord =
+    record.capability !== null &&
+    typeof record.capability === 'object' &&
+    !Array.isArray(record.capability)
+      ? (record.capability as Record<string, unknown>)
+      : {};
+  const capabilityId =
+    typeof capabilityRecord.id === 'string' ? capabilityRecord.id : undefined;
+  const capabilityVersion =
+    typeof capabilityRecord.version === 'string'
+      ? capabilityRecord.version
+      : undefined;
+  const graphRecord =
+    graph !== null && typeof graph === 'object' && !Array.isArray(graph)
+      ? (graph as Record<string, unknown>)
+      : {};
+  const connections = Array.isArray(graphRecord.connections)
+    ? graphRecord.connections
+    : [];
+  const capability =
+    kind === 'AtomicStage' && capabilityId && capabilityVersion
+      ? catalog?.skills
+          .map((skill) => skill.capability)
+          .find(
+            (candidate) =>
+              candidate?.id === capabilityId &&
+              candidate.version === capabilityVersion
+          )
+      : undefined;
+  const inputPorts: DefinitionHandleDescriptor[] =
+    kind === 'AtomicStage'
+      ? (capability?.inputs ?? []).map((port) => ({
+          id: port.name,
+          type: port.type,
+        }))
+      : kind === 'Gate' || kind === 'Choice' || kind === 'Finish'
+        ? Array.from(
+            new Set(
+              connections
+                .map((connection) =>
+                  connection !== null &&
+                  typeof connection === 'object' &&
+                  !Array.isArray(connection)
+                    ? (connection as Record<string, unknown>)
+                    : null
+                )
+                .filter((connection) => {
+                  const to = connection?.to;
+                  return (
+                    to !== null &&
+                    typeof to === 'object' &&
+                    !Array.isArray(to) &&
+                    (to as Record<string, unknown>).node === id
+                  );
+                })
+                .map((connection) => {
+                  const to = connection!.to as Record<string, unknown>;
+                  return typeof to.port === 'string' ? to.port : '';
+                })
+                .filter(Boolean)
+                .concat('input')
+            )
+          ).map((id) => ({ id }))
+        : [];
+  const outputPorts: DefinitionHandleDescriptor[] =
+    kind === 'AtomicStage'
+      ? [
+          ...(capability?.artifacts ?? []).map((artifact) => ({
+            id: artifact.name,
+            type: artifact.type,
+          })),
+          ...(capability?.outcomes ?? []).map((outcome) => ({
+            id: outcome,
+            type: `outcome/${outcome}`,
+          })),
+        ]
+      : kind === 'Gate' || kind === 'Choice'
+        ? (Array.isArray(record.outcomes)
+            ? record.outcomes.filter(
+                (outcome): outcome is string => typeof outcome === 'string'
+              )
+            : []
+          ).map((outcome) => ({
+            id: outcome,
+            type: `outcome/${outcome}`,
+          }))
+        : [];
+  const editorSupported = isV2EditableNodeKind(kind);
+  const definitionKind = [
+    'AtomicStage',
+    'CompositeRef',
+    'BoundedLoop',
+    'Choice',
+    'FanOut',
+    'Join',
+    'Gate',
+    'Finish',
+  ].includes(kind)
+    ? (kind as WireDefinitionNode['kind'])
+    : undefined;
+  return {
+    id,
+    role: null,
+    skill: kind === 'AtomicStage' ? capabilityId ?? 'Invalid AtomicStage' : kind,
+    effectiveGate: { value: kind === 'Gate', source: 'definition' },
+    effectiveModel: { value: null, source: 'definition' },
+    effectiveHandoff: { value: 0.5, source: 'default' },
+    effectiveRuntime: { value: 'claude', source: 'definition' },
+    definitionVersion: 2,
+    ...(definitionKind ? { definitionKind } : {}),
+    editorSupported,
+    inputPorts,
+    outputPorts,
+  };
+}
+
+function v2GraphParts(definition: unknown): {
+  graph: Record<string, unknown>;
+  nodes: unknown[];
+  connections: unknown[];
+} {
+  const definitionRecord =
+    definition !== null &&
+    typeof definition === 'object' &&
+    !Array.isArray(definition)
+      ? (definition as Record<string, unknown>)
+      : {};
+  const graph =
+    definitionRecord.root !== null &&
+    typeof definitionRecord.root === 'object' &&
+    !Array.isArray(definitionRecord.root)
+      ? (definitionRecord.root as Record<string, unknown>)
+      : {};
+  return {
+    graph,
+    nodes: Array.isArray(graph.nodes) ? graph.nodes : [],
+    connections: Array.isArray(graph.connections)
+      ? graph.connections
+      : [],
+  };
+}
+
+function projectedV2Node(
+  node: unknown,
+  index: number
+): { id: string; kind: string; value: unknown } {
+  const record =
+    node !== null && typeof node === 'object' && !Array.isArray(node)
+      ? (node as Record<string, unknown>)
+      : {};
+  return {
+    id:
+      typeof record.id === 'string' && record.id.length > 0
+        ? record.id
+        : `invalid-node-${index}`,
+    kind: typeof record.kind === 'string' ? record.kind : 'Invalid',
+    value: { ...record, id: typeof record.id === 'string' ? record.id : `invalid-node-${index}` },
+  };
+}
+
+function projectedV2Connection(
+  connection: unknown,
+  index: number
+): Edge | null {
+  if (
+    connection === null ||
+    typeof connection !== 'object' ||
+    Array.isArray(connection)
+  ) {
+    return null;
+  }
+  const record = connection as Record<string, unknown>;
+  const from =
+    record.from !== null &&
+    typeof record.from === 'object' &&
+    !Array.isArray(record.from)
+      ? (record.from as Record<string, unknown>)
+      : {};
+  const to =
+    record.to !== null &&
+    typeof record.to === 'object' &&
+    !Array.isArray(record.to)
+      ? (record.to as Record<string, unknown>)
+      : {};
+  if (typeof from.node !== 'string' || typeof to.node !== 'string') {
+    return null;
+  }
+  return {
+    id:
+      typeof record.id === 'string' && record.id.length > 0
+        ? record.id
+        : `invalid-connection-${index}`,
+    source: from.node,
+    target: to.node,
+    ...(typeof from.port === 'string' ? { sourceHandle: from.port } : {}),
+    ...(typeof to.port === 'string' ? { targetHandle: to.port } : {}),
+  };
+}
+
+function isSafelyEditableV2Node(node: unknown): boolean {
+  if (node === null || typeof node !== 'object' || Array.isArray(node)) {
+    return false;
+  }
+  const record = node as Record<string, unknown>;
+  if (typeof record.id !== 'string' || typeof record.kind !== 'string') {
+    return false;
+  }
+  switch (record.kind) {
+    case 'AtomicStage': {
+      if (
+        record.capability === null ||
+        typeof record.capability !== 'object' ||
+        Array.isArray(record.capability)
+      ) {
+        return false;
+      }
+      const capability = record.capability as Record<string, unknown>;
+      return (
+        typeof capability.id === 'string' &&
+        typeof capability.version === 'string'
+      );
+    }
+    case 'Gate':
+    case 'Choice':
+      return (
+        Array.isArray(record.outcomes) &&
+        record.outcomes.every((outcome) => typeof outcome === 'string')
+      );
+    case 'Finish':
+      return typeof record.outcome === 'string';
+    default:
+      return false;
+  }
 }
 
 /**
@@ -64,6 +326,26 @@ export function definitionToGraph(
   detail: PipelineDetailResponse
 ): { nodes: UnpositionedStage[]; edges: Edge[] } {
   const resolvedById = new Map(detail.pipeline.stages.map((stage) => [stage.id, stage]));
+  if (detail.definition.version === 2) {
+    const definition = detail.definition;
+    const { graph, nodes: rawNodes, connections: rawConnections } =
+      v2GraphParts(definition);
+    return {
+      nodes: rawNodes.map((node, index) => {
+        const projected = projectedV2Node(node, index);
+        return {
+        id: projected.id,
+        data: v2NodeCardData(projected.value, graph),
+        draggable: false,
+        connectable: false,
+        deletable: false,
+      };
+      }),
+      edges: rawConnections
+        .map(projectedV2Connection)
+        .filter((edge): edge is Edge => edge !== null),
+    };
+  }
 
   const nodes: UnpositionedStage[] = detail.definition.stages.map((stage) => {
     const resolved = resolvedById.get(stage.id);
@@ -98,7 +380,39 @@ export function definitionToGraph(
  * resolve yet; the properties panel is where these fields are actually
  * edited, this is only the card's at-a-glance badge data.
  */
-export function draftToGraph(def: WirePipelineDefinition): { nodes: UnpositionedStage[]; edges: Edge[] } {
+export function draftToGraph(
+  def: WirePipelineDefinition,
+  catalog?: PipelineCatalogResponse | null
+): { nodes: UnpositionedStage[]; edges: Edge[] } {
+  if (def.version === 2) {
+    const { graph, nodes: rawNodes, connections: rawConnections } =
+      v2GraphParts(def);
+    return {
+      nodes: rawNodes.map((node, index) => {
+        const projected = projectedV2Node(node, index);
+        const safelyEditable = isSafelyEditableV2Node(projected.value);
+        return {
+        id: projected.id,
+        data: {
+          ...v2NodeCardData(projected.value, graph, catalog),
+          effectiveGate: {
+            value: projected.kind === 'Gate',
+            source: 'draft',
+          },
+          effectiveModel: { value: null, source: 'draft' },
+          effectiveHandoff: { value: 0.5, source: 'draft' },
+          effectiveRuntime: { value: 'claude', source: 'draft' },
+        },
+        draggable: safelyEditable,
+        connectable: safelyEditable,
+        deletable: safelyEditable,
+      };
+      }),
+      edges: rawConnections
+        .map(projectedV2Connection)
+        .filter((edge): edge is Edge => edge !== null),
+    };
+  }
   const nodes: UnpositionedStage[] = def.stages.map((stage) => {
     const data: StageCardData = {
       id: stage.id,
@@ -193,8 +507,9 @@ export function layoutGraph(nodes: UnpositionedStage[], edges: Edge[]): Pipeline
       type: 'stage',
       position,
       data: node.data,
-      draggable: false,
-      connectable: false,
+      draggable: node.draggable ?? false,
+      connectable: node.connectable ?? false,
+      deletable: node.deletable,
     };
     if (node.parallelGroup) {
       stageNode.parentId = `group:${node.parallelGroup}`;
