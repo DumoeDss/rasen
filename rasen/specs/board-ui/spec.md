@@ -245,4 +245,3 @@ The board's worktrees panel SHALL present its worktrees as one visually structur
 
 - **WHEN** one worktree is the main checkout with no live sessions and another is a linked worktree with live sessions
 - **THEN** each chip shows only its applicable facts while both chips keep the same height and segment order
-

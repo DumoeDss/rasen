@@ -75,4 +75,3 @@ Any `rasen` CLI command or `/rasen-*` command the concept document presents as c
 - **WHEN** the concept document names a `rasen` or `/rasen-*` command as current behavior
 - **THEN** that command SHALL exist in the shipped CLI
 - **AND** any not-yet-shipped capability the document mentions SHALL be marked as design direction rather than current behavior
-

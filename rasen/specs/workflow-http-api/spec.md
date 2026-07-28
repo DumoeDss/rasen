@@ -183,4 +183,3 @@ The management API SHALL offer an authenticated read that serves, for every work
 
 - **WHEN** the catalog contains a workflow whose required pipeline is missing, or a pipeline stage naming a skill no catalog unit owns
 - **THEN** the read succeeds, that reference contributes nothing, and every resolvable edge is still served
-

@@ -189,4 +189,3 @@ describe('built-in workflow catalog', () => {
     }
   });
 });
-

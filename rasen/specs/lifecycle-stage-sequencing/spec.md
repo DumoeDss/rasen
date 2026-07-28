@@ -24,4 +24,3 @@ The generated continue workflow skill SHALL, on all-artifacts-complete, direct t
 - **THEN** the completion message SHALL relay the CLI's `nextWorkflows` as the next action
 - **AND** SHALL NOT contain a hardcoded `/rasen-apply-change` reference
 - **AND** SHALL NOT offer archive as an immediate co-equal option before implementation
-

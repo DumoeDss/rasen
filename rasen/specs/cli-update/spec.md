@@ -445,4 +445,3 @@ After a successful `rasen update` that refreshed the current project's tools, th
 - **THEN** the command SHALL emit a best-effort warning at most
 - **AND** SHALL exit successfully because the skill files on disk are already refreshed
 - **AND** the next registry self-heal touch SHALL converge the cache from the on-disk `generatedBy` frontmatter
-

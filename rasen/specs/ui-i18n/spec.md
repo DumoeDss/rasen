@@ -170,4 +170,3 @@ Missing theme strings SHALL retain the existing English fallback behavior.
 
 - **WHEN** a theme message key is absent from the active non-English catalog
 - **THEN** the English message is shown rather than a blank or raw key
-

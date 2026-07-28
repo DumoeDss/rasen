@@ -61,4 +61,3 @@ The `daemon` command group and every new flag SHALL be listed in `rasen --help`,
 #### Scenario: Completions and locales cover the daemon group
 - **WHEN** the completions registry and both locale files are inspected after this change
 - **THEN** `daemon start`, `daemon stop`, `daemon status`, `daemon run`, and their flags are present in the registry and have entries in both `en` and `ja` locales
-

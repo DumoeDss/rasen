@@ -68,4 +68,3 @@ iteration to `rasen-goal`.
   rubric, or research report
 - **THEN** help SHALL route to `rasen-goal`
 - **AND** it SHALL distinguish that bounded loop from Direction Target State
-

@@ -66,4 +66,3 @@ Every non-interactive child process the tool starts on Windows — including the
 
 - **WHEN** the test suite runs against a source tree containing a child-process call site that neither hides the console window nor is on the interactive allowlist
 - **THEN** the guard test fails naming the offending site
-

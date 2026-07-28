@@ -116,4 +116,3 @@ export function preflightJson(text: string): JsonPreflightIssue[] {
 
   return issues;
 }
-

@@ -115,4 +115,3 @@ A project SHALL be excludable from multi-project update prompts by setting `upda
 - **WHEN** the user runs `rasen update` directly inside a project whose `rasen/config.yaml` has `update.pin: true`
 - **THEN** the project SHALL be updated normally
 - **AND** `update.pin` SHALL NOT change the behavior of a direct in-project update
-

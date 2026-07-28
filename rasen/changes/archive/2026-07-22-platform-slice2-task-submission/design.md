@@ -38,7 +38,7 @@ The whitelist for slice 2 is a single named operation, `create-change`, realized
 [node, <cli-entry>, 'new', 'change', <name>, '--proposal', <description>, '--json']
 ```
 
-Admission rule for the whitelist (this is the slice 2/3 boundary, stated so slice 3 must argue against it explicitly): a command is eligible only if it (a) terminates deterministically in bounded time with no LLM or network dependency, (b) leaves no resident process or session behind, and (c) has its result observable through the existing read endpoints. 
+Admission rule for the whitelist (this is the slice 2/3 boundary, stated so slice 3 must argue against it explicitly): a command is eligible only if it (a) terminates deterministically in bounded time with no LLM or network dependency, (b) leaves no resident process or session behind, and (c) has its result observable through the existing read endpoints.
 
 - `rasen new change` — passes all three; it IS the minimal loop.
 - `auto`/`goal` runs — fail (a) and (b): they spawn LLM agent sessions that run for minutes-to-hours and need monitoring, kill, and adopt-or-spawn semantics. That lifecycle is the definition of slice 3's session supervision; admitting them here would ship unsupervised long-running processes with no way to observe or stop them — worse than not shipping them.

@@ -11,4 +11,3 @@ export function canonicalJson(value: unknown): string {
 export function canonicalBytes(value: unknown): Buffer {
   return Buffer.from(canonicalJson(value), 'utf8');
 }
-

@@ -96,4 +96,3 @@ The per-space enablement read SHALL report, alongside the existing mode (user-wi
 
 - **WHEN** a client reads enablement state for a space with no profile lock
 - **THEN** the response carries no lock name
-
