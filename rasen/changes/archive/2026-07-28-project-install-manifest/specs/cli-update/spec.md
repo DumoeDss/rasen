@@ -22,7 +22,7 @@ The existing new-tool-detection advisory SHALL continue to surface tool director
 - **AND** SHALL proceed to refresh both tools as configured
 - **AND** a subsequent `rasen update` SHALL NOT re-seed (the manifest is now present)
 
-#### Scenario: Commands-only legacy install recognized during migration
+#### Scenario: Commands-only installation
 
 - **WHEN** the user runs `rasen update` in a project whose `rasen/config.yaml` has no `tools:` key
 - **AND** a tool has leftover Rasen command files but no Rasen skill files
