@@ -5,6 +5,7 @@ import {
   decodeEvidenceRef,
   decodeRunAction,
   decodeWorkspaceRevision,
+  type ActorRef,
   type AttemptId,
   type Digest,
   type EffectId,
@@ -50,6 +51,8 @@ export type RunStimulus =
       receiptDigest: Digest;
       result: JsonValue;
       evidence: readonly EvidenceRef[];
+      actor?: ActorRef;
+      actorAttestation?: EvidenceRef;
     }>
   | Readonly<{
       kind: 'observe-effect';
@@ -131,6 +134,8 @@ const StimulusSchema = z.discriminatedUnion('kind', [
     receiptDigest: DigestSchema,
     result: z.json(),
     evidence: z.array(z.unknown()).max(64),
+    actor: z.unknown().optional(),
+    actorAttestation: z.unknown().optional(),
   }),
   z.strictObject({
     kind: z.literal('observe-effect'),
@@ -229,6 +234,17 @@ export function decodeRunStimulus(
         wait: decodeCanonicalWait(stimulus.wait, record.runId),
       };
     case 'commit-action-result':
+      return {
+        ...stimulus,
+        evidence: parseEvidence(stimulus.evidence),
+        ...(stimulus.actorAttestation === undefined
+          ? {}
+          : {
+              actorAttestation: decodeEvidenceRef(
+                stimulus.actorAttestation as unknown
+              ),
+            }),
+      } as RunStimulus;
     case 'observe-effect':
     case 'observe-infrastructure':
       return {
@@ -719,6 +735,10 @@ export function reduceCanonicalRunRecord(
           receiptDigest: stimulus.receiptDigest,
           result: stimulus.result,
           evidence: stimulus.evidence,
+          ...(stimulus.actor === undefined ? {} : { actor: stimulus.actor }),
+          ...(stimulus.actorAttestation === undefined
+            ? {}
+            : { actorAttestation: stimulus.actorAttestation }),
         },
       };
       if (stimulus.status === 'blocked') {
