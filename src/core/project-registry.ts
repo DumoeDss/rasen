@@ -49,6 +49,27 @@ export interface ProjectRegistryEntryState {
   home: string;
   /** ISO-8601 timestamp, refreshed by self-healing. */
   lastSeen: string;
+  /**
+   * Optional cache of the project's authoritative `tools:` manifest from
+   * `rasen/config.yaml` (project-install-manifest spec). Best-effort mirror;
+   * never the source of truth. Readers prefer the project config when they
+   * disagree.
+   */
+  tools?: string[];
+  /**
+   * Optional cache of the Rasen version this project's skills were last
+   * refreshed to (project-install-manifest spec). Stamped by `rasen update`
+   * and converged by the self-heal touch from `generatedBy` frontmatter.
+   * Absent means "version unknown."
+   */
+  installedVersion?: string;
+  /**
+   * Optional ISO-8601 timestamp of the most recent cache refresh
+   * (project-install-manifest spec). Distinct from `lastSeen`: `lastSeen`
+   * tracks any self-heal refresh; `lastUpdated` tracks the version/tools
+   * cache write specifically.
+   */
+  lastUpdated?: string;
 }
 
 export interface ProjectRegistryState {
@@ -83,6 +104,11 @@ const ProjectRegistryEntrySchema = z.object({
   mode: z.enum(['in-repo', 'store']),
   home: z.string().min(1),
   lastSeen: z.string().min(1),
+  // Cache fields (project-install-manifest spec). Optional so older
+  // registries parse, and `.strict()` still accepts them when present.
+  tools: z.array(z.string()).optional(),
+  installedVersion: z.string().optional(),
+  lastUpdated: z.string().optional(),
 }).strict();
 
 const ProjectRegistryStateSchema = z.object({
@@ -276,6 +302,17 @@ export interface RegisterProjectInput {
   projectRoot: string;
   projectId: string;
   mode: ProjectMode;
+  /**
+   * Optional cache fields (project-install-manifest spec). When supplied on
+   * a fresh entry, they are written. When omitted on a path-exact / worktree-
+   * share / moved-repo disposition, the existing entry's cached values are
+   * preserved (never reset to undefined). Cache fields never affect home
+   * naming, the home-never-renamed invariant, or path-exact/worktree/move
+   * dispositions.
+   */
+  tools?: string[];
+  installedVersion?: string;
+  lastUpdated?: string;
 }
 
 export interface RegisterProjectResult {
@@ -308,8 +345,33 @@ export async function registerProject(
   await updateProjectRegistryState(async (current) => {
     const projects: Record<string, ProjectRegistryEntryState> = { ...(current?.projects ?? {}) };
 
-    async function place(home: string, projectId: string): Promise<void> {
-      resolvedEntry = { projectId, name, mode: input.mode, home, lastSeen: now() };
+    /**
+     * Places an entry at `canonicalPath`. The cache fields
+     * (`tools`/`installedVersion`/`lastUpdated`) follow these rules:
+     * - When `input` supplies them, they are written onto the entry.
+     * - When `input` omits them and a `previousEntry` is supplied, the
+     *   previous entry's cache fields are preserved (never reset).
+     * - On a fresh entry (no previous), omitted cache fields stay absent.
+     */
+    async function place(
+      home: string,
+      projectId: string,
+      previousEntry?: ProjectRegistryEntryState
+    ): Promise<void> {
+      const base: Pick<ProjectRegistryEntryState, 'projectId' | 'name' | 'mode' | 'home' | 'lastSeen'> =
+        { projectId, name, mode: input.mode, home, lastSeen: now() };
+      resolvedEntry = {
+        ...base,
+        ...(previousEntry?.tools !== undefined ? { tools: previousEntry.tools } : {}),
+        ...(previousEntry?.installedVersion !== undefined
+          ? { installedVersion: previousEntry.installedVersion }
+          : {}),
+        ...(previousEntry?.lastUpdated !== undefined ? { lastUpdated: previousEntry.lastUpdated } : {}),
+      };
+      // Caller-supplied cache fields override preserved ones.
+      if (input.tools !== undefined) resolvedEntry.tools = input.tools;
+      if (input.installedVersion !== undefined) resolvedEntry.installedVersion = input.installedVersion;
+      if (input.lastUpdated !== undefined) resolvedEntry.lastUpdated = input.lastUpdated;
       projects[canonicalPath] = resolvedEntry;
       await FileSystemUtils.createDirectory(getProjectHomeDir(home, options));
       // Prune sibling worktree duplicates (D5): any OTHER same-projectId entry
@@ -339,7 +401,7 @@ export async function registerProject(
     // 1. Path-exact match: update in place. home/projectId never change.
     const existingAtPath = projects[canonicalPath];
     if (existingAtPath) {
-      await place(existingAtPath.home, existingAtPath.projectId);
+      await place(existingAtPath.home, existingAtPath.projectId, existingAtPath);
       return { version: 1, projects };
     }
 
@@ -358,7 +420,7 @@ export async function registerProject(
     // accidentally consume a moved-repo candidate.
     for (const [otherPath, entry] of sameIdEntries) {
       if (await isGitWorktreeSibling(canonicalPath, otherPath)) {
-        await place(entry.home, entry.projectId);
+        await place(entry.home, entry.projectId, entry);
         return { version: 1, projects };
       }
     }
@@ -368,7 +430,7 @@ export async function registerProject(
     for (const [oldPath, entry] of sameIdEntries) {
       if (!(await pathIsDirectory(oldPath))) {
         delete projects[oldPath];
-        await place(entry.home, entry.projectId);
+        await place(entry.home, entry.projectId, entry);
         return { version: 1, projects };
       }
     }

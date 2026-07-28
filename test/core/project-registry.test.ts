@@ -1100,4 +1100,107 @@ describe('project-registry', () => {
       expect(state!.projects[first.canonicalPath]?.projectId).toBe(upperId);
     });
   });
+
+  describe('cache fields (project-install-manifest)', () => {
+    it('round-trips the new cache fields through serialize/parse', () => {
+      const state: ProjectRegistryState = {
+        version: 1,
+        projects: {
+          '/repos/my-app': {
+            projectId: 'abc-123',
+            name: 'my-app',
+            mode: 'in-repo',
+            home: 'my-app-a1b2c3d4',
+            lastSeen: '2026-07-09T12:00:00.000Z',
+            tools: ['claude', 'codex'],
+            installedVersion: '0.1.7',
+            lastUpdated: '2026-07-28T12:00:00.000Z',
+          },
+        },
+      };
+
+      const serialized = serializeProjectRegistryState(state);
+      expect(parseProjectRegistryState(serialized)).toEqual(state);
+    });
+
+    it('parses a legacy entry (without cache fields) under the new schema', () => {
+      const legacyJson = JSON.stringify({
+        version: 1,
+        projects: {
+          '/repos/old': {
+            projectId: 'old-1',
+            name: 'old',
+            mode: 'in-repo',
+            home: 'old-deadbeef',
+            lastSeen: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      });
+      const parsed = parseProjectRegistryState(legacyJson);
+      expect(parsed.projects['/repos/old'].tools).toBeUndefined();
+      expect(parsed.projects['/repos/old'].installedVersion).toBeUndefined();
+      expect(parsed.projects['/repos/old'].lastUpdated).toBeUndefined();
+    });
+
+    it('.strict() still rejects genuinely unknown keys', () => {
+      expect(() =>
+        parseProjectRegistryState(
+          JSON.stringify({
+            version: 1,
+            projects: {
+              '/x': {
+                projectId: 'a',
+                name: 'x',
+                mode: 'in-repo',
+                home: 'x-1',
+                lastSeen: '2026-01-01T00:00:00.000Z',
+                color: 'red',
+              },
+            },
+          })
+        )
+      ).toThrow(/Invalid project registry state/u);
+    });
+
+    it('registerProject with tools + installedVersion writes them on a fresh entry', async () => {
+      const dir = makeProjectDir('cache-fresh');
+      const { entry } = await registerProject(
+        {
+          projectRoot: dir,
+          projectId: 'cache-fresh-1',
+          mode: 'in-repo',
+          tools: ['claude'],
+          installedVersion: '0.1.7',
+        },
+        { globalDataDir }
+      );
+      expect(entry.tools).toEqual(['claude']);
+      expect(entry.installedVersion).toBe('0.1.7');
+    });
+
+    it('registerProject on a path-exact entry WITHOUT cache fields preserves the existing values', async () => {
+      const dir = makeProjectDir('cache-preserve');
+      // First registration: supplies cache fields.
+      const first = await registerProject(
+        {
+          projectRoot: dir,
+          projectId: 'cache-preserve-1',
+          mode: 'in-repo',
+          tools: ['claude', 'codex'],
+          installedVersion: '0.1.5',
+        },
+        { globalDataDir }
+      );
+      expect(first.entry.tools).toEqual(['claude', 'codex']);
+      expect(first.entry.installedVersion).toBe('0.1.5');
+
+      // Second registration: does NOT supply cache fields — should preserve.
+      const second = await registerProject(
+        { projectRoot: dir, projectId: 'cache-preserve-1', mode: 'in-repo' },
+        { globalDataDir }
+      );
+      expect(second.entry.tools).toEqual(['claude', 'codex']);
+      expect(second.entry.installedVersion).toBe('0.1.5');
+    });
+  });
 });

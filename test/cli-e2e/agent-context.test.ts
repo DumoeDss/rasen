@@ -5,14 +5,19 @@ import * as path from 'node:path';
 
 import { runCLI } from '../helpers/run-cli.js';
 
-/** Build a Codex rollout jsonl from event_msg token_count payloads (last wins). */
-function tokenCountLine(totalTokens: number, modelContextWindow: number): string {
+/** Build a Codex token_count line with lifetime spend and current-context usage. */
+function tokenCountLine(
+  totalTokens: number,
+  modelContextWindow: number,
+  contextTokens: number = totalTokens
+): string {
   return JSON.stringify({
     type: 'event_msg',
     payload: {
       type: 'token_count',
       info: {
         total_token_usage: { total_tokens: totalTokens },
+        last_token_usage: { total_tokens: contextTokens },
         model_context_window: modelContextWindow,
       },
     },
@@ -44,7 +49,7 @@ describe('CLI: agent context --latest --runtime codex', () => {
     fs.rmSync(codexHome, { recursive: true, force: true });
   });
 
-  it('discovers and reports real occupancy from the newest matching rollout', async () => {
+  it('reports current occupancy after cumulative/current divergence and compaction', async () => {
     const rolloutPath = path.join(
       codexHome,
       'sessions',
@@ -56,7 +61,13 @@ describe('CLI: agent context --latest --runtime codex', () => {
     fs.mkdirSync(path.dirname(rolloutPath), { recursive: true });
     fs.writeFileSync(
       rolloutPath,
-      [sessionMeta(projectDir), turnContextLine('gpt-5.6-sol'), tokenCountLine(1_234, 100_000)].join('\n') + '\n',
+      [
+        sessionMeta(projectDir),
+        turnContextLine('gpt-5.6-sol'),
+        tokenCountLine(160_000_000, 258_400, 220_000),
+        JSON.stringify({ type: 'event_msg', payload: { type: 'context_compacted' } }),
+        tokenCountLine(164_620_250, 258_400, 40_556),
+      ].join('\n') + '\n',
       'utf-8'
     );
 
@@ -68,10 +79,49 @@ describe('CLI: agent context --latest --runtime codex', () => {
     expect(result.exitCode).toBe(0);
     const parsed = JSON.parse(result.stdout.trim());
     expect(parsed.available).toBe(true);
-    expect(parsed.contextTokens).toBe(1_234);
-    expect(parsed.limit).toBe(100_000);
+    expect(parsed.contextTokens).toBe(40_556);
+    expect(parsed.limit).toBe(258_400);
     expect(parsed.model).toBe('gpt-5.6-sol');
     expect(parsed.transcript).toBe(rolloutPath);
+  });
+
+  it('exits non-zero without fabricating occupancy for a matching unsupported rollout', async () => {
+    const rolloutPath = path.join(
+      codexHome,
+      'sessions',
+      '2026',
+      '07',
+      '12',
+      'rollout-2026-07-12T09-05-00-legacy.jsonl'
+    );
+    fs.mkdirSync(path.dirname(rolloutPath), { recursive: true });
+    fs.writeFileSync(
+      rolloutPath,
+      [
+        sessionMeta(projectDir),
+        turnContextLine('gpt-5.6-sol'),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              total_token_usage: { total_tokens: 164_620_250 },
+              model_context_window: 258_400,
+            },
+          },
+        }),
+      ].join('\n') + '\n',
+      'utf-8'
+    );
+
+    const result = await runCLI(['agent', 'context', '--latest', '--runtime', 'codex', '--json'], {
+      cwd: projectDir,
+      env: { CODEX_HOME: codexHome },
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toMatch(/current-context.*last_token_usage\.total_tokens/i);
+    expect(result.stdout).not.toContain('"contextTokens"');
   });
 
   it('reports the unavailable shape and exits 0 when no rollout matches', async () => {

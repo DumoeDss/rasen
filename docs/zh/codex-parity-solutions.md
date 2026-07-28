@@ -118,12 +118,14 @@ codex exec resume <thread-id> --json -o <out-file> "<new message>"
 {"type":"event_msg","payload":{"type":"token_count","info":{
   "total_token_usage":{"input_tokens":8053,"cached_input_tokens":7680,"output_tokens":6,
     "reasoning_output_tokens":0,"total_tokens":8059},
-  "last_token_usage":{...同形，仅本轮...},
+  "last_token_usage":{...同形，当前上下文快照...},
   "model_context_window":353400
 }}}
 ```
 
-**精确配方**：打开 rollout 文件，找*最后一条* `payload.type=="token_count"` 行，计算 `pct = payload.info.total_token_usage.total_tokens / payload.info.model_context_window`。Claude 侧的 `agent-context.ts` 要从最后一条 `message.usage` 求和 `input + cache_read + cache_creation`，还得另查模型→窗口对照表；**Codex 把 context window 内联在同一事件里**，完全不需要外部查表。`task_started` 事件也独立携带 `model_context_window`，可作冗余交叉核验。
+`total_token_usage.total_tokens` 是跨请求、跨压缩持续增长的生命周期累计开销，适合 token audit，但不是当前占用。
+
+**精确配方**：打开 rollout 文件，找*最后一条有效的* `payload.type=="token_count"` 行，读取成对的数值字段 `payload.info.last_token_usage.total_tokens` 和 `payload.info.model_context_window`，计算 `pct = payload.info.last_token_usage.total_tokens / payload.info.model_context_window`。压缩后当前上下文值可以下降，同时累计开销继续上升。Claude 侧的 `agent-context.ts` 要从最后一条 `message.usage` 求和 `input + cache_read + cache_creation`，还得另查模型→窗口对照表；**Codex 把 context window 内联在同一事件里**，完全不需要外部查表。`task_started` 事件也独立携带 `model_context_window`，可作冗余交叉核验。
 
 app-server 驱动的 LEAD（第 12 节）零轮询即得同样数据——推送通知 `thread/tokenUsage/updated`：`{threadId, turnId, tokenUsage: {total: {...}, last: {...}, modelContextWindow}}`（E07，字段名 camelCase，形状相同）。
 
@@ -131,7 +133,7 @@ app-server 驱动的 LEAD（第 12 节）零轮询即得同样数据——推送
 
 **恢复/身份句柄**：用 thread id 定位 rollout 文件（glob `~/.codex/sessions/**/*<thread_id>*.jsonl`，或直接读 app-server `thread/start`/`thread/resume` 响应的 `path` 字段——E07 确认该字段有值）。
 
-**已观测失败模式**：无——这是 provider 直发的信号，比 Claude 的客户端计算更可靠。一个注意点：`token_count` 事件只保证在至少一个完成轮次之后出现；零完成轮次的 thread（例如任何 `turn.completed` 之前被杀，见第 4 节）还没有 `token_count` 行——**把"找不到 token_count 事件"当作"占用 0%"处理，不是错误**。
+**兼容性边界**：这是 provider 直发的信号。`token_count` 事件只保证在至少一个完成轮次之后出现；零完成轮次的 thread（例如任何 `turn.completed` 之前被杀，见第 4 节）还没有 `token_count` 行——**把"找不到 token_count 事件"当作"占用 0%"处理，不是错误**。但如果 rollout 已含 `token_count` 事件，却没有数值型 `last_token_usage.total_tokens` 与 `model_context_window` 配对，则属于不支持的旧版或漂移格式：应明确报错，不能回退到累计开销或伪造 0%。
 
 ### 6. 跨会话恢复（transcript 暖种子，Step F.1）
 
@@ -396,7 +398,7 @@ Codex 0.144.1 自带原生多 agent 系统（`spawn_agent`/`wait_agent`/`followu
 
 ### rollout JSONL `token_count` 自带 `model_context_window` → 占用探针直读
 
-占用探针在 Codex 上不需要任何模型→窗口对照表：rollout JSONL 最后一条 `token_count` 事件同时携带 `total_token_usage.total_tokens` 和 `model_context_window`，一次除法得占用比；app-server 场景下 `thread/tokenUsage/updated` 推送同样数据、零轮询。rasen 现有阈值（0.5/0.25/0.35）直接沿用。唯一注意点：零完成轮次的 thread 还没有 `token_count` 行——按 0% 处理，不是错误（第 5 节）。
+占用探针在 Codex 上不需要任何模型→窗口对照表：读取 rollout JSONL 最后一条有效 `token_count` 事件中成对的 `last_token_usage.total_tokens` 和 `model_context_window`，一次除法得当前占用比；`total_token_usage.total_tokens` 仅表示生命周期累计开销。app-server 场景下 `thread/tokenUsage/updated` 推送同样数据、零轮询。rasen 现有阈值（0.5/0.25/0.35）直接沿用。零完成轮次的 thread 还没有 `token_count` 行——按 0% 处理，不是错误；已有 `token_count` 却没有可用当前快照时则明确报错（第 5 节）。
 
 ---
 

@@ -294,6 +294,26 @@ export class InitCommand {
         ? await this.createConfig(openspecPath, extendMode, projectPath)
         : 'exists';
 
+    // Persist the user's tool selection into `rasen/config.yaml`'s `tools:`
+    // key (project-install-manifest spec). Best-effort: a failure emits a
+    // warning and continues — the skill files are already written, and the
+    // next `rasen update` will seed the manifest through the migration path.
+    // Skipped for the pointer-only externalized-repo case (no local config
+    // to write into).
+    if (pointerToolOnlySelection === undefined) {
+      try {
+        updateProjectConfigKey(projectPath, 'tools', validatedTools.map((t) => t.value));
+      } catch (error) {
+        console.log(
+          chalk.yellow(
+            `Warning: could not persist tools: to ${WORKSPACE_DIR_NAME}/config.yaml (${
+              error instanceof Error ? error.message : String(error)
+            }). The next 'rasen update' will seed it from the installed skill files.`
+          )
+        );
+      }
+    }
+
     // Establish machine-home identity and registration (task 4.1). Best
     // effort: a registration failure never fails init - the repo-side
     // setup above has already completed.

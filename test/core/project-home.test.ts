@@ -234,6 +234,129 @@ describe('touchProjectRegistry (self-healing)', () => {
   });
 });
 
+describe('touchProjectRegistry cache self-heal (project-install-manifest)', () => {
+  let projectRoot: string;
+  let globalDataDir: string;
+
+  beforeEach(() => {
+    projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-cache-sh-'));
+    globalDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-cache-sh-gdd-'));
+    fs.mkdirSync(path.join(projectRoot, 'rasen'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+  });
+
+  afterEach(() => {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+    fs.rmSync(globalDataDir, { recursive: true, force: true });
+  });
+
+  async function backdateLastSeen(hours: number): Promise<void> {
+    const canonicalPath = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+    const state = await readProjectRegistryState({ globalDataDir });
+    const staleTimestamp = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+    await writeProjectRegistryState(
+      {
+        version: 1,
+        projects: {
+          ...state!.projects,
+          [canonicalPath]: { ...state!.projects[canonicalPath], lastSeen: staleTimestamp },
+        },
+      },
+      { globalDataDir }
+    );
+  }
+
+  function writeSkillFile(tool: string, skillName: string, version: string | null): void {
+    const skillDir = path.join(projectRoot, tool, 'skills', skillName);
+    fs.mkdirSync(skillDir, { recursive: true });
+    const content =
+      version === null
+        ? 'no frontmatter here\n'
+        : `---\ngeneratedBy: "${version}"\n---\n`;
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), content);
+  }
+
+  it('writes installedVersion from a skill stamp when cache is stale', async () => {
+    await resolveProjectHome(projectRoot, { globalDataDir });
+    writeSkillFile('.claude', 'rasen-propose', '0.1.7');
+    await backdateLastSeen(25);
+
+    await touchProjectRegistry(projectRoot, { globalDataDir });
+
+    const canonicalPath = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+    const state = await readProjectRegistryState({ globalDataDir });
+    expect(state?.projects[canonicalPath]?.installedVersion).toBe('0.1.7');
+  });
+
+  it('leaves installedVersion absent when no skill files exist', async () => {
+    await resolveProjectHome(projectRoot, { globalDataDir });
+    await backdateLastSeen(25);
+
+    await touchProjectRegistry(projectRoot, { globalDataDir });
+
+    const canonicalPath = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+    const state = await readProjectRegistryState({ globalDataDir });
+    expect(state?.projects[canonicalPath]?.installedVersion).toBeUndefined();
+  });
+
+  it('does not throw when SKILL.md has no frontmatter (corrupt)', async () => {
+    await resolveProjectHome(projectRoot, { globalDataDir });
+    writeSkillFile('.claude', 'rasen-propose', null);
+    await backdateLastSeen(25);
+
+    await expect(touchProjectRegistry(projectRoot, { globalDataDir })).resolves.toBeUndefined();
+  });
+
+  it('mirrors tools: [claude] from config into the cache', async () => {
+    // Write config BEFORE resolveProjectHome so the projectId minted by
+    // resolveProjectHome is added to a config that already has `tools:`.
+    fs.writeFileSync(
+      path.join(projectRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\ntools:\n  - claude\n'
+    );
+    await resolveProjectHome(projectRoot, { globalDataDir });
+    await backdateLastSeen(25);
+
+    await touchProjectRegistry(projectRoot, { globalDataDir });
+
+    const canonicalPath = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+    const state = await readProjectRegistryState({ globalDataDir });
+    expect(state?.projects[canonicalPath]?.tools).toEqual(['claude']);
+  });
+
+  it('re-reads generatedBy when the cache is stale (>24h)', async () => {
+    await resolveProjectHome(projectRoot, { globalDataDir });
+    writeSkillFile('.claude', 'rasen-propose', '0.1.7');
+    await backdateLastSeen(25);
+
+    await touchProjectRegistry(projectRoot, { globalDataDir });
+
+    const canonicalPath = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+    const state = await readProjectRegistryState({ globalDataDir });
+    expect(state?.projects[canonicalPath]?.installedVersion).toBe('0.1.7');
+  });
+
+  it('does not re-read when the cache is fresh (<24h)', async () => {
+    await resolveProjectHome(projectRoot, { globalDataDir });
+    // Entry just created: lastSeen is now (fresh). Write a skill file with a
+    // version that should NOT be picked up because the staleness gate fires.
+    writeSkillFile('.claude', 'rasen-propose', '0.1.7');
+
+    const registryPath = getProjectRegistryPath({ globalDataDir });
+    const beforeMtime = fs.statSync(registryPath).mtimeMs;
+
+    await touchProjectRegistry(projectRoot, { globalDataDir });
+
+    // Registry file was not rewritten (entry current + fresh → no write).
+    const afterMtime = fs.statSync(registryPath).mtimeMs;
+    expect(afterMtime).toBe(beforeMtime);
+
+    const canonicalPath = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+    const state = await readProjectRegistryState({ globalDataDir });
+    expect(state?.projects[canonicalPath]?.installedVersion).toBeUndefined();
+  });
+});
+
 describe('worktree piercing for probe and self-heal (worktree-aware-spaces D1)', () => {
   let repoRoot: string;
   let worktreePath: string;

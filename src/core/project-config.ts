@@ -277,6 +277,34 @@ export const ProjectConfigSchema = z.object({
     )
     .optional()
     .describe('Per-pipeline config overrides keyed by pipeline name'),
+
+  // Optional: the project's authoritative tool-selection manifest
+  // (project-install-manifest spec). When present, this list is the sole
+  // source of the project's configured tools — on-disk artifact detection
+  // cannot add to or remove from it. Each entry MUST be a non-empty tool id
+  // string (matching the `value` field of an `AI_TOOLS` entry). An empty
+  // array is valid and means "no tools configured."
+  tools: z
+    .array(z.string().min(1))
+    .optional()
+    .describe(
+      "Authoritative list of tool ids the user selected at 'rasen init' (empty array = no tools configured)"
+    ),
+
+  // Optional: update behavior configuration. Extensible - future update
+  // fields join this same map. Only `pin` is parsed today; `pin: true`
+  // excludes the project from multi-project update prompts and `--all-projects`.
+  update: z
+    .object({
+      pin: z
+        .boolean()
+        .optional()
+        .describe(
+          'When true, this project is never offered or touched by multi-project update (direct update is unaffected)'
+        ),
+    })
+    .optional()
+    .describe('Update behavior configuration (multi-project opt-out, etc.)'),
 });
 
 /** Valid `archive.timing` values. */
@@ -1000,6 +1028,76 @@ function parseProjectConfigContent(
           {
             key: 'invalidProfile',
             fallback: `Invalid 'profile' field in config (must be a non-empty profile name string)`,
+          },
+          reporter
+        );
+      }
+    }
+
+    // Parse tools field: an optional array of non-empty tool id strings
+    // (project-install-manifest spec). Non-array -> whole field dropped
+    // with a warning. A non-string or empty-string entry -> that entry is
+    // dropped with a warning, valid siblings survive. An empty array is
+    // valid and means "no tools configured."
+    if (raw.tools !== undefined) {
+      if (Array.isArray(raw.tools)) {
+        const tools: string[] = [];
+        let droppedEntries = false;
+        for (const entry of raw.tools) {
+          if (typeof entry === 'string' && entry.length > 0) {
+            tools.push(entry);
+          } else {
+            droppedEntries = true;
+          }
+        }
+        config.tools = tools;
+        if (droppedEntries) {
+          warnConfig(
+            {
+              key: 'invalidToolsEntries',
+              fallback: `Some 'tools' entries are invalid (must be non-empty strings); ignoring them`,
+            },
+            reporter
+          );
+        }
+      } else {
+        warnConfig(
+          {
+            key: 'invalidTools',
+            fallback: `Invalid 'tools' field in config (must be an array of tool id strings)`,
+          },
+          reporter
+        );
+      }
+    }
+
+    // Parse update field: an optional map with an optional `pin` boolean
+    // field (project-install-manifest spec). Non-map -> whole block
+    // dropped with a warning. An invalid `pin` -> that field dropped with
+    // a warning, siblings (future fields) still parse.
+    if (raw.update !== undefined) {
+      if (raw.update && typeof raw.update === 'object' && !Array.isArray(raw.update)) {
+        const updateRaw = raw.update as Record<string, unknown>;
+        const update: ProjectConfig['update'] = {};
+        if (updateRaw.pin !== undefined) {
+          if (typeof updateRaw.pin === 'boolean') {
+            update.pin = updateRaw.pin;
+          } else {
+            warnConfig(
+              {
+                key: 'invalidUpdatePin',
+                fallback: `Invalid 'update.pin' field in config (must be a boolean)`,
+              },
+              reporter
+            );
+          }
+        }
+        config.update = update;
+      } else {
+        warnConfig(
+          {
+            key: 'invalidUpdate',
+            fallback: `Invalid 'update' field in config (must be an object)`,
           },
           reporter
         );

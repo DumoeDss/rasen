@@ -47,6 +47,7 @@ export {
   readRolloutSessionMeta,
   listRolloutFiles,
   listStoredRolloutFiles,
+  RolloutOccupancyUnavailableError,
   type FindRolloutPathOptions,
   type RolloutOccupancy,
   type RolloutConversation,

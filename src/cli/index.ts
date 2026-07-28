@@ -230,9 +230,15 @@ program
   .command('update [path]')
   .description('Update Rasen instruction files')
   .option('--force', 'Force update even when tools are up to date')
-  .action(async (targetPath = '.', options?: { force?: boolean }) => {
+  .option('--all-projects', 'Update every reachable, non-pinned registered project whose version is behind')
+  .option('--only-this', 'Skip multi-project registry consultation (update only this project)')
+  .action(async (targetPath = '.', options?: { force?: boolean; allProjects?: boolean; onlyThis?: boolean }) => {
     try {
-      const updateCommand = new UpdateCommand({ force: options?.force });
+      const updateCommand = new UpdateCommand({
+        force: options?.force,
+        allProjects: options?.allProjects,
+        onlyThis: options?.onlyThis,
+      });
       await updateCommand.execute(targetPath);
     } catch (error) {
       failWithError(error);
