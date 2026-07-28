@@ -17,6 +17,10 @@ import { createChangePipelineRuntime } from '../../../src/core/change-run/intern
 import { createInMemoryRunStore } from '../../../src/core/change-run/internal/run-store.js';
 import { createRuntimePlan } from '../../../src/core/change-run/internal/runtime-plan.js';
 import type { RuntimePlan } from '../../../src/core/change-run/internal/runtime-plan.js';
+import {
+  projectReviewCycleProgress,
+  reviewCycleInvocation,
+} from '../../../src/core/change-run/internal/review-cycle-runtime.js';
 import { startRecord } from './reconciler-fixture.js';
 
 const branded = <T>(value: string): T => value as T;
@@ -653,5 +657,114 @@ describe('ReviewCycle failure-first guards', () => {
       })
     ).rejects.toMatchObject({ code: 'malformed_review_cycle_result' });
     expect(harness.store.load(harness.plan.runId)).toBe(recordBefore);
+  });
+});
+
+describe('ReviewCycle happy-path and identity', () => {
+  it('finishes clean on round-1 review with no findings', async () => {
+    const harness = createHarness();
+    const reviewer = actor('a', 'reviewer');
+
+    const started = await harness.runtime.start(
+      {
+        change: { projectRoot: '/root', changeId: 'fixture-change' },
+        pipeline: harness.plan.pipeline,
+        launchRequestId: branded(`launch:${'7'.repeat(64)}`),
+      },
+      { deliveryMode: 'grant' }
+    );
+    const review = expectOneAction(started);
+
+    const finished = await complete(harness, review, reviewer, {
+      contract: 'review-cycle/review-result/1',
+      outcome: 'clean',
+      findings: [],
+    });
+
+    // A clean round-1 review should immediately complete the Run.
+    expect(finished.disposition).toBe('terminal');
+    expect(finished.view.status).toBe('completed');
+    expect(harness.store.load(harness.plan.runId).terminal).toMatchObject({
+      kind: 'completed',
+    });
+  });
+
+  it('reconstructs round, phase, finding, actor, evidence from the canonical Record alone', async () => {
+    const harness = createHarness();
+    const reviewer = actor('a', 'reviewer');
+    const triager = actor('e', 'triager');
+    const fixer = actor('f', 'fixer');
+    const verifier = actor('7', 'verifier');
+
+    const started = await harness.runtime.start(
+      {
+        change: { projectRoot: '/root', changeId: 'fixture-change' },
+        pipeline: harness.plan.pipeline,
+        launchRequestId: branded(`launch:${'8'.repeat(64)}`),
+      },
+      { deliveryMode: 'grant' }
+    );
+    const reviewAction = expectOneAction(started);
+
+    await complete(harness, reviewAction, reviewer, {
+      contract: 'review-cycle/review-result/1',
+      outcome: 'findings',
+      findings: [
+        {
+          id: 'F-1',
+          severity: 'major',
+          claim: 'Invariant broken.',
+          evidence: [evidence(reviewAction, 'b')],
+          status: 'open',
+        },
+      ],
+    });
+
+    // After the review, the Record should carry committed actor truth.
+    const record = harness.store.load(harness.plan.runId);
+    const boundedLoop = harness.plan.nodes.find(
+      (node) => node.kind === 'bounded-loop'
+    )!;
+    if (boundedLoop.kind !== 'bounded-loop') return;
+
+    const progress = projectReviewCycleProgress(harness.plan, boundedLoop, record);
+    // After review completes, the reconciler admits triage. The progress
+    // should be 'waiting' (triage action is active) or 'ready' if not yet
+    // admitted.
+    expect(['waiting', 'ready']).toContain(progress.kind);
+    if (progress.kind !== 'waiting' && progress.kind !== 'ready') return;
+
+    // The next expected phase should be triage, round 1.
+    expect(progress.next.round).toBe(1);
+    expect(progress.next.phase).toBe('triage');
+
+    // The committed review result should carry actor + attestation.
+    const reviewCommitted = Object.values(record.actions).find(
+      (entry) => entry.action.nodeId === reviewAction.nodeId
+    );
+    expect(reviewCommitted?.result).toBeDefined();
+    expect(reviewCommitted?.result?.actor?.identityDigest).toBe(
+      reviewer.identityDigest
+    );
+    expect(reviewCommitted?.result?.actorAttestation).toBeDefined();
+
+    // Findings should be reconstructable from the committed results.
+    const reviewResult = reviewCommitted?.result?.result as Readonly<{
+      findings?: readonly { id: string; severity: string }[];
+    }>;
+    expect(reviewResult?.findings).toHaveLength(1);
+    expect(reviewResult?.findings?.[0]?.id).toBe('F-1');
+    expect(reviewResult?.findings?.[0]?.severity).toBe('major');
+
+    // Verify the hierarchical identity path is deterministic.
+    const expectedPath = reviewCycleInvocation(
+      harness.plan,
+      boundedLoop,
+      1,
+      boundedLoop.body.phases.find((p) => p.phase === 'review')!
+    );
+    expect(expectedPath.round).toBe(1);
+    expect(expectedPath.phase).toBe('review');
+    expect(expectedPath.nodeId).toBe(reviewAction.nodeId as never);
   });
 });
