@@ -21,6 +21,7 @@ import {
   hasRuntimeCapability,
   type DispatchRuntime,
 } from './runtime-adapters.js';
+import { normalizeRetiredEditBoundaryExpertIds } from './retired-edit-boundary.js';
 import {
   ThresholdSchemeNameSchema,
   validateThresholdSchemeName,
@@ -1003,7 +1004,9 @@ function parseProjectConfigContent(
     if (raw.workflows !== undefined) {
       const workflowsResult = z.array(z.string()).safeParse(raw.workflows);
       if (workflowsResult.success) {
-        config.workflows = workflowsResult.data;
+        config.workflows = normalizeRetiredEditBoundaryExpertIds(
+          workflowsResult.data
+        );
       } else {
         warnConfig(
           {

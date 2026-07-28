@@ -696,14 +696,6 @@
           "name": "デザインレビュー",
           "description": "ブラウザベースでビジュアル階層・タイポグラフィ・色・レスポンシブ対応を採点します"
         },
-        "freeze": {
-          "name": "フリーズ",
-          "description": "編集をディレクトリに制限し、範囲外への書き込みを拒否します"
-        },
-        "guard": {
-          "name": "ガード",
-          "description": "破壊的コマンドのガードレールと編集境界を一括で有効化するフルセーフモードです"
-        },
         "investigate": {
           "name": "調査",
           "description": "修正を試みる前に、証拠に基づきバグを再現・切り分け・根本原因特定します"
@@ -735,10 +727,6 @@
         "tdd": {
           "name": "TDD",
           "description": "モックの指針を伴うレッド・グリーン・リファクタの規律です"
-        },
-        "unfreeze": {
-          "name": "アンフリーズ",
-          "description": "freezeまたはguardで設定した編集制限を解除します"
         },
         "workflow-author": {
           "name": "ワークフロー作成",
@@ -1207,6 +1195,12 @@
     "Initialize Rasen in your project": "プロジェクトでRasenを初期化します",
     "Install and lock a profile in rasen/config.yaml (full, core, or a saved profile; custom applies once without locking)": "プロファイルをインストールして rasen/config.yaml にロックします（full、core、または保存済みプロファイル。custom は一回限りでロックされません）",
     "Initialize a Git repository in the store": "store内にGitリポジトリを初期化します",
+    "Inspect and control base agent runtime state": "基本エージェントのランタイム状態を確認・制御します",
+    "Control the checkout-scoped runtime edit boundary": "チェックアウト単位のランタイム編集境界を制御します",
+    "Set the checkout-scoped edit boundary to an existing directory": "チェックアウト単位の編集境界を既存ディレクトリに設定します",
+    "Force runtime: claude, codex, or zed": "ランタイムをclaude、codex、zedのいずれかに指定します",
+    "Show the active boundary and observed host enforcement": "有効な境界と検出されたホスト強制レベルを表示します",
+    "Clear the checkout-scoped edit boundary": "チェックアウト単位の編集境界を解除します",
     "Inspect and manage orchestration pipelines": "オーケストレーションパイプラインを確認・管理します",
     "Start (or reuse) a reconciler-engine Run for a change under a pipeline": "変更のパイプラインでreconciler-engine Runを開始（または再利用）します",
     "Print a reconciler-engine Run view for a change": "変更のreconciler-engine Runビューを出力します",

@@ -1,6 +1,6 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE_LITE } from './_shared.js';
+import { EDIT_BOUNDARY_GUIDANCE, PREAMBLE_LITE } from './_shared.js';
 
 const BODY = `
 <!-- adapted from mattpocock/skills (MIT, Copyright Matt Pocock) -->
@@ -59,12 +59,15 @@ Off the main flow — reach for each by name when its situation comes up.
 - **\`rasen-codex\`** — hand a task to Codex for an independent second opinion or a parallel implementation.
 - **\`rasen-chrome-use\`** — drives your real Chrome over the DevTools Protocol (real login state, real clicks) for scripted page interaction, DOM snapshots, and network capture.
 
-**Security family** — guarding edits during risky work.
+**Safety controls** — use these during risky work.
 
 - **\`rasen-careful\`** — warn before destructive commands (rm -rf, DROP TABLE, force-push).
-- **\`rasen-freeze\`** — hard-lock edits to one directory.
-- **\`rasen-guard\`** — activate \`rasen-careful\` + \`rasen-freeze\` together.
-- **\`rasen-unfreeze\`** — remove the directory lock.
+- **\`rasen agent edit-boundary set|status|clear\`** — checkout-scoped edit
+  boundary in the base runtime. Read status: \`hard\` denies only covered
+  structured writes, \`soft\` requires cooperation, and \`unsupported\` leaves
+  edits unrestricted.
+
+${EDIT_BOUNDARY_GUIDANCE}
 `;
 
 export function getNavigatorSkillTemplate(): SkillTemplate {

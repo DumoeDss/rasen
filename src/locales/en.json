@@ -696,14 +696,6 @@
           "name": "Design Review",
           "description": "Browser-based design audit grading visual hierarchy, typography, color, and responsiveness"
         },
-        "freeze": {
-          "name": "Freeze",
-          "description": "Restrict edits to a directory so writes outside the frozen scope are rejected"
-        },
-        "guard": {
-          "name": "Guard",
-          "description": "Full safety mode — destructive-command guardrails plus an edit boundary in one switch"
-        },
         "investigate": {
           "name": "Investigate",
           "description": "Reproduce, isolate, and root-cause a bug with evidence before attempting any fix"
@@ -735,10 +727,6 @@
         "tdd": {
           "name": "TDD",
           "description": "Red, green, refactor discipline with mocking guidance"
-        },
-        "unfreeze": {
-          "name": "Unfreeze",
-          "description": "Lift the edit restriction set by freeze or guard"
         },
         "workflow-author": {
           "name": "Workflow Author",
@@ -1207,6 +1195,12 @@
     "Initialize Rasen in your project": "Initialize Rasen in your project",
     "Install and lock a profile in rasen/config.yaml (full, core, or a saved profile; custom applies once without locking)": "Install and lock a profile in rasen/config.yaml (full, core, or a saved profile; custom applies once without locking)",
     "Initialize a Git repository in the store": "Initialize a Git repository in the store",
+    "Inspect and control base agent runtime state": "Inspect and control base agent runtime state",
+    "Control the checkout-scoped runtime edit boundary": "Control the checkout-scoped runtime edit boundary",
+    "Set the checkout-scoped edit boundary to an existing directory": "Set the checkout-scoped edit boundary to an existing directory",
+    "Force runtime: claude, codex, or zed": "Force runtime: claude, codex, or zed",
+    "Show the active boundary and observed host enforcement": "Show the active boundary and observed host enforcement",
+    "Clear the checkout-scoped edit boundary": "Clear the checkout-scoped edit boundary",
     "Inspect and manage orchestration pipelines": "Inspect and manage orchestration pipelines",
     "Start (or reuse) a reconciler-engine Run for a change under a pipeline": "Start (or reuse) a reconciler-engine Run for a change under a pipeline",
     "Print a reconciler-engine Run view for a change": "Print a reconciler-engine Run view for a change",

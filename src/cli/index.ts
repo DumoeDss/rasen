@@ -955,7 +955,69 @@ pipelineCmd
 // Agent command group: introspect an agent's own runtime state
 const agentCmd = program
   .command('agent')
-  .description('Introspect agent runtime state (context)');
+  .description('Inspect and control base agent runtime state');
+
+const editBoundaryCmd = agentCmd
+  .command('edit-boundary')
+  .description('Control the checkout-scoped runtime edit boundary');
+
+editBoundaryCmd
+  .command('set <directory>')
+  .description('Set the checkout-scoped edit boundary to an existing directory')
+  .option('--runtime <runtime>', 'Force runtime: claude, codex, or zed')
+  .option('--json', 'Output stable JSON')
+  .action(async (directory: string, options: { runtime?: string; json?: boolean }) => {
+    try {
+      const result = await new AgentCommand().editBoundarySet(directory, options);
+      if (result.error) process.exitCode = 1;
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exitCode = 1;
+    }
+  });
+
+editBoundaryCmd
+  .command('status')
+  .description('Show the active boundary and observed host enforcement')
+  .option('--runtime <runtime>', 'Force runtime: claude, codex, or zed')
+  .option('--json', 'Output stable JSON')
+  .action(async (options: { runtime?: string; json?: boolean }) => {
+    try {
+      await new AgentCommand().editBoundaryStatus(options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exitCode = 1;
+    }
+  });
+
+editBoundaryCmd
+  .command('clear')
+  .description('Clear the checkout-scoped edit boundary')
+  .option('--runtime <runtime>', 'Force runtime: claude, codex, or zed')
+  .option('--json', 'Output stable JSON')
+  .action(async (options: { runtime?: string; json?: boolean }) => {
+    try {
+      await new AgentCommand().editBoundaryClear(options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exitCode = 1;
+    }
+  });
+
+editBoundaryCmd
+  .command('check', { hidden: true })
+  .option('--runtime <runtime>', 'Hook runtime')
+  .action(async (options: { runtime?: string }) => {
+    try {
+      await new AgentCommand().editBoundaryCheck(options);
+    } catch {
+      // Hooks fail open: a checker failure must never be reported as hard
+      // protection or turn a parse/configuration error into a denial.
+    }
+  });
 
 agentCmd
   .command('context')

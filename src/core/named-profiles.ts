@@ -35,6 +35,10 @@ import {
   resolveWorkflowSelection,
   type WorkflowRegistryOptions,
 } from './workflow-registry/index.js';
+import {
+  isRetiredEditBoundaryExpertId,
+  normalizeRetiredEditBoundaryExpertIds,
+} from './retired-edit-boundary.js';
 
 /** The current profile-definition version written on every normalized save/export. */
 export const PROFILE_DEFINITION_VERSION = 2 as const;
@@ -84,7 +88,12 @@ function validateProfileMembership(
   for (const workflow of definition.workflows) {
     // The retired retro id is tolerated on read (a v1 selection may carry it)
     // and stripped during normalization — never a membership error.
-    if (workflow === RETIRED_RETRO_WORKFLOW_ID) continue;
+    if (
+      workflow === RETIRED_RETRO_WORKFLOW_ID ||
+      isRetiredEditBoundaryExpertId(workflow)
+    ) {
+      continue;
+    }
     if (!catalog.has(workflow)) return `Unknown workflow ID "${workflow}"`;
     if (seen.has(workflow)) {
       return `Duplicate workflow ID "${workflow}"`;
@@ -197,8 +206,10 @@ export function normalizeProfileDefinition(
   const retention: RetentionMode = isRetentionMode(definition.retention)
     ? definition.retention
     : resolveMigratedRetention(definition.workflows);
-  const withoutRetired = definition.workflows.filter(
-    (workflow) => workflow !== RETIRED_RETRO_WORKFLOW_ID
+  const withoutRetired = normalizeRetiredEditBoundaryExpertIds(
+    definition.workflows.filter(
+      (workflow) => workflow !== RETIRED_RETRO_WORKFLOW_ID
+    )
   );
   // A snapshot lists exactly the chosen ids; the internal retention runner is
   // never a profile member, so drop it even though `auto-command`'s

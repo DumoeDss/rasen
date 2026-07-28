@@ -92,9 +92,10 @@ Sources live in `src/core/templates/experts/<name>.ts` (one getter each), sideca
 
 **Edit-safety family**
 - `careful` — warns before destructive commands (rm -rf / DROP TABLE / force-push). Referenced by `apply`.
-- `guard` — careful + freeze turned on together.
-- `freeze` — hard-locks edits to one directory.
-- `unfreeze` — releases the directory lock.
+- **Historical (retired):** the absorbed upstream catalog once carried three
+  separate directory-boundary commands. Current Rasen uses
+  `rasen agent edit-boundary set|status|clear` and reports
+  `hard|soft|unsupported`; the old commands are not available.
 
 > The roster went from 30 early on (including parallel lifecycle experts) → 20 (parallel lifecycle removed) → **19** (domain-modeling removed). Currently stable at 19.
 
@@ -182,7 +183,9 @@ De-branding targets the **skill-identity layer**. The internal-code layer still 
 ### 5.1 Deliberately retained (functional)
 
 - **Orphan-cleanup prefix constant**: `RETIRED_EXPERT_SKILL_PREFIX = 'openspec-gstack-'` in `src/core/legacy-cleanup.ts`. `init`/`update` uses it to exact-match and delete the old install directories left behind by the rename (`openspec-gstack-*`), with a near-miss test to avoid collateral damage to `openspec-*`. Change it and the orphans won't be cleaned up.
-- **Runtime state directory for the freeze family**: `freeze`/`guard`/`investigate`/`unfreeze` write lock state to `${CLAUDE_PLUGIN_DATA:-$HOME/.gstack}`. Changing the path would invalidate freeze locks already on users' machines. This is a runtime state directory, out of scope for de-branding.
+- **Historical runtime state:** the absorbed upstream boundary commands wrote
+  plugin-local state. Current Rasen removes that obsolete state and stores
+  checkout-scoped records under its base machine-data directory.
 - **The review engine's file-format marker**: `## GSTACK REVIEW REPORT` in `_shared.ts` is the fixed section name the review report writes into the plan file (a stable string identifier). Renaming it is a file-format change.
 - **design-sketch temp-file prefix**: `/tmp/gstack-sketch-*.html/png` in `_shared.ts`. Pure temp naming; downstream skills reference screenshots by this path.
 
@@ -193,7 +196,8 @@ De-branding targets the **skill-identity layer**. The internal-code layer still 
 ### 5.3 Historical comments/prose (clearable but not required)
 
 - `// from gstack` / `// migrated from gstack` comments in `skill-generation.ts:48`, `skill-templates.ts:31` — provenance notes, harmless.
-- "by the gstack setup script" in `guard.ts:12`, "with gstack expert reviews" in `verify-enhanced.ts:5` — stale comments.
+- Historical stale comments from the absorbed command templates were removed
+  when those templates were retired.
 - "Do NOT persist gstack-style `.context/retros/*.json`" in `retro.ts:80` — this is telling the agent **not** to do the old gstack behavior; "gstack-style" describes the old behavior, so keeping it is reasonable.
 - The "OPSX/gstack fusion work" narrative in `docs/` — in `review-cycle-workflow-design.md`, handoff documents — historical narrative, retained.
 - gstack mentions in `CHANGELOG.md` — historical release records, **deliberately not changed** (changing them would amount to forging history).

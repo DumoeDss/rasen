@@ -45,11 +45,11 @@ describe('built-in workflow catalog', () => {
     expect(catalog.getBySkillName('rasen-apply-change')).toBe(apply);
   });
 
-  it('folds the 21 experts into the built-in catalog as kind:expert members', () => {
+  it('folds the 18 experts into the built-in catalog as kind:expert members', () => {
     const workflowIds = new Set(getBuiltInWorkflowDefinitions().map((definition) => definition.id));
     const experts = getBuiltInExpertDefinitions();
 
-    expect(experts).toHaveLength(21);
+    expect(experts).toHaveLength(18);
     expect(experts.every((expert) => expert.kind === 'expert')).toBe(true);
     expect(experts.every((expert) => expert.source === 'built-in')).toBe(true);
     expect(experts.every((expert) => expert.files.length === 0)).toBe(true);

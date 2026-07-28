@@ -1680,9 +1680,54 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
   },
   {
     name: 'agent',
-    description: 'Introspect agent runtime state (context)',
+    description: 'Inspect and control base agent runtime state',
     flags: [],
     subcommands: [
+      {
+        name: 'edit-boundary',
+        description: 'Control the checkout-scoped runtime edit boundary',
+        flags: [],
+        subcommands: [
+          {
+            name: 'set',
+            description: 'Set the checkout-scoped edit boundary to an existing directory',
+            acceptsPositional: true,
+            positionals: [{ name: 'directory' }],
+            flags: [
+              {
+                name: 'runtime',
+                description: 'Force runtime: claude, codex, or zed',
+                takesValue: true,
+              },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'status',
+            description: 'Show the active boundary and observed host enforcement',
+            flags: [
+              {
+                name: 'runtime',
+                description: 'Force runtime: claude, codex, or zed',
+                takesValue: true,
+              },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'clear',
+            description: 'Clear the checkout-scoped edit boundary',
+            flags: [
+              {
+                name: 'runtime',
+                description: 'Force runtime: claude, codex, or zed',
+                takesValue: true,
+              },
+              COMMON_FLAGS.json,
+            ],
+          },
+        ],
+      },
       {
         name: 'context',
         description: 'Report context-window occupancy of a transcript from its recorded usage',
