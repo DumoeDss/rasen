@@ -287,7 +287,11 @@ describe('pipeline command store root selection', () => {
   it('agents writes a runtime config instance under the store root (no YAML copy)', async () => {
     const result = await runCLI(
       ['pipeline', 'agents', 'small-feature', '--planner', 'codex', '--store', 'team-context', '--json'],
-      { cwd: appRepo, env }
+      // Pin the host runtime the assertion already assumes: dispatchMode
+      // 'exec-bridge' is only correct under a Claude host. On CI (no
+      // CLAUDECODE/RASEN_AGENT_RUNTIME in the env) the host resolves to
+      // 'unknown' → legacy-fallback. Per-test pin, NOT global.
+      { cwd: appRepo, env: { ...env, RASEN_AGENT_RUNTIME: 'claude' } }
     );
     expect(result.exitCode).toBe(0);
     const json = parseJson(result);

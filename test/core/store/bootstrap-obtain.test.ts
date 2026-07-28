@@ -23,6 +23,7 @@ import {
   getStoreRegistryPath,
   readOptionalStoreMetadataState,
   storeMetadataUid,
+  updateStoreRegistryState,
   writeStoreMetadataState,
 } from '../../../src/core/store/foundation.js';
 import { mintStoreUid } from '../../../src/core/store/identity-types.js';
@@ -533,13 +534,19 @@ describe('Store-first apply flow (design D4)', () => {
 
   it('registers the Store checkout during apply', async () => {
     const store = await makeRegisteredStore('my-store');
-    // Unregister it first so apply has something to do.
-    const reg = fs.readFileSync(getStoreRegistryPath({ globalDataDir }), 'utf-8');
-    const updated = reg.replace(
-      new RegExp(`.*${store.root}.*\\n?`, 'g'),
-      ''
+    // Unregister it first so apply has something to do. Use the proper
+    // registry mutation seam instead of regex text manipulation — the old
+    // regex matched only the local_path line on Linux (forward slashes),
+    // leaving a malformed entry that failed the Zod schema.
+    await updateStoreRegistryState(
+      (state) => {
+        if (!state) return { version: 2, stores: {} };
+        const next = { ...state, stores: { ...state.stores } };
+        delete next.stores[store.id];
+        return next;
+      },
+      { globalDataDir }
     );
-    fs.writeFileSync(getStoreRegistryPath({ globalDataDir }), updated, 'utf-8');
 
     const report = await buildBootstrapReport({
       cwd: store.root,
