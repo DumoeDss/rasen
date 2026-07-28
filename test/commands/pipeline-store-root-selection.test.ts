@@ -309,9 +309,12 @@ describe('pipeline command store root selection', () => {
     expect(fs.existsSync(path.join(appRepo, 'rasen'))).toBe(false);
 
     // The store's built-in small-feature still validates (nothing was forked).
+    // Pin the host runtime: validate --pipelines checks dispatchability, and
+    // the config written above sets a `codex` planner that is non-dispatchable
+    // under an unknown host (CI has no CLAUDECODE/RASEN_AGENT_RUNTIME in env).
     const validate = await runCLI(
       ['validate', '--pipelines', '--store', 'team-context', '--json'],
-      { cwd: appRepo, env }
+      { cwd: appRepo, env: { ...env, RASEN_AGENT_RUNTIME: 'claude' } }
     );
     expect(validate.exitCode).toBe(0);
     const validateJson = parseJson(validate);

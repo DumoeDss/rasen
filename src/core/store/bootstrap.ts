@@ -1768,15 +1768,6 @@ async function obtainAbsentStore(
   // target. This is the SAME function preview uses — E3 adds the enforcement
   // that a non-`usable` result prevents the clone.
   const suppliedPath = suppliedPathFor(input.paths, [entry.id, entry.uid, entry.selector]);
-  // Snapshot whether the user-supplied target already existed. If it was
-  // absent at the start of this call but selectBootstrapLocation refuses
-  // with `existing-checkout`, another process published between our snapshot
-  // and the location probe — that's a lost race (obtain-failed), not a
-  // refusal to clobber pre-existing user content (not-acted).
-  const targetExistedAtStart =
-    suppliedPath !== undefined && suppliedPath.length > 0
-      ? fs.existsSync(suppliedPath)
-      : false;
   const location = selectBootstrapLocation({
     ...(suppliedPath !== undefined ? { suppliedPath } : {}),
     ...(input.into !== undefined ? { parentDirectory: input.into } : {}),
@@ -1787,32 +1778,32 @@ async function obtainAbsentStore(
   });
 
   if (location.kind === 'refused') {
-    // A pre-existing target (snapshot saw content) is a genuine refusal to
-    // clobber user data. An absent-at-snapshot target that is now refused
-    // means another racer published first — a lost race, not a refusal.
-    entry.action = targetExistedAtStart ? 'not-acted' : 'obtain-failed';
-    if (targetExistedAtStart) {
-      // Genuine refusal — pre-existing user content we won't clobber.
-      entry.diagnostics.push({
-        severity: 'warning',
-        code: 'bootstrap_obtain_target_refused',
-        message:
-          location.because === 'not-empty'
-            ? `The target directory ${location.path} already has contents, so the Store was not cloned there.`
-            : location.because === 'existing-checkout'
-              ? `The target directory ${location.path} already holds a checkout, so the Store was not cloned there.`
-              : `The target directory ${location.path} could not be read, so the Store was not cloned there.`,
-        target: 'store.root',
-        fix: `Choose a different location with --path <selector>=<dir> or --into <dir>.`,
-      });
-    } else {
-      // Lost race — target was absent at snapshot but another process published
-      // a checkout before our location probe refused. No staging directory was
-      // created (the clone never started; the location was refused before the
-      // clone), so do NOT reference a staging path. The user should RETRY — the
-      // checkout is now present — not relocate. Tone mirrors the publish-loser
-      // diagnostic (bootstrap_obtain_publish_lost_race) but without the staging
-      // directory that path owns.
+    // Key off the refusal REASON, not a pre-call filesystem snapshot. A
+    // snapshot is timing-dependent: under scheduling delays the winner can
+    // publish between the loser's snapshot and its location probe, making the
+    // loser see a pre-existing target (not-acted) instead of a lost race
+    // (obtain-failed). The because field is deterministic regardless of
+    // scheduling.
+    //
+    // `existing-checkout` (holdsCheckout === true: a .git or Store metadata
+    // dir is present) means a checkout is already there. In the obtain flow
+    // that means a concurrent racer won (or the target is already satisfied)
+    // — this attempt did not clone, so it is a failed obtain, not a refusal
+    // to clobber user content. The user should RETRY (the checkout is now
+    // present) rather than relocate.
+    //
+    // `not-empty` / `unreadable` means genuine user content or an unreadable
+    // directory we refuse to clobber — not-acted, with the refusal repair
+    // pointing the user at a different location.
+    const lostRace = location.because === 'existing-checkout';
+    entry.action = lostRace ? 'obtain-failed' : 'not-acted';
+    if (lostRace) {
+      // Lost race — a checkout is already at the target. No staging directory
+      // was created (the clone never started; the location was refused before
+      // the clone), so do NOT reference a staging path. The user should RETRY
+      // — the checkout is now present — not relocate. Tone mirrors the
+      // publish-loser diagnostic (bootstrap_obtain_publish_lost_race) but
+      // without the staging directory that path owns.
       entry.diagnostics.push({
         severity: 'warning',
         code: 'bootstrap_obtain_lost_race',
@@ -1820,8 +1811,20 @@ async function obtainAbsentStore(
         target: 'store.root',
         fix: `Retry the obtain — the checkout is now present at ${location.path}.`,
       });
+    } else {
+      // Genuine refusal — pre-existing user content we won't clobber.
+      entry.diagnostics.push({
+        severity: 'warning',
+        code: 'bootstrap_obtain_target_refused',
+        message:
+          location.because === 'not-empty'
+            ? `The target directory ${location.path} already has contents, so the Store was not cloned there.`
+            : `The target directory ${location.path} could not be read, so the Store was not cloned there.`,
+        target: 'store.root',
+        fix: `Choose a different location with --path <selector>=<dir> or --into <dir>.`,
+      });
     }
-    return targetExistedAtStart ? 'not-acted' : 'obtain-failed';
+    return lostRace ? 'obtain-failed' : 'not-acted';
   }
 
   if (location.kind === 'required') {
