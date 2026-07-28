@@ -44,17 +44,17 @@
 - [x] 7.1 Extend `normalizeV1` in `src/core/pipeline-registry/definition.ts` to detect stages with `loop.kind === 'review-cycle'` and produce a `BoundedLoop` root node + `CompositeDeclaration` with 4 AtomicStage phases (review, triage, fix, re-review) instead of an AtomicStage
 - [x] 7.2 Extend `normalizeV1` to detect stages with `verifyPolicy: 'adaptive'` and absorb the verify into a BoundedLoop ReviewCycle body (same 4-phase declaration, verify capability becomes review phase capability)
 - [x] 7.3 Extend `lowerV2ReviewCyclePlanInput` in `src/core/change-run/internal/lowerer.ts` to handle `AtomicStage` root nodes alongside BoundedLoop and Finish (lower them with the same logic as the v1 path)
-- [x] 7.4 Write a test that `bug-fix` pipeline YAML normalizes to a v2 definition with a BoundedLoop and lowers to a valid mixed plan (atomic propose/apply + bounded-loop + atomic ship/archive)
-- [x] 7.5 Write a test that `small-feature` pipeline YAML normalizes to a v2 definition with the same BoundedLoop body shape and lowers correctly
-- [x] 7.6 Verify `analyzeReconcilerSupport` returns `supported: true, reason: 'supported_v2_review_cycle'` for both migrated built-ins
+- [x] 7.4 Write a test that `bug-fix` pipeline YAML normalizes to a v2 definition with a BoundedLoop and lowers to a valid mixed plan (atomic propose/apply + bounded-loop + atomic ship/archive) — **fix(ecp-review-cycle): Major-1 `808fe02f`**
+- [x] 7.5 Write a test that `small-feature` pipeline YAML normalizes to a v2 definition with the same BoundedLoop body shape and lowers correctly — **fix(ecp-review-cycle): Major-1 `808fe02f`**
+- [x] 7.6 Verify `analyzeReconcilerSupport` returns `supported: true, reason: 'supported_v2_review_cycle'` for both migrated built-ins — **verified: `pipeline show bug-fix --json` reports `availableEngines: ['legacy','reconciler']`**
 
 ## 8. Projection Parity — Review-Cycle View Section (Acceptance #10)
 
 - [x] 8.1 Add a `review-cycle/1` section type to the projector (`src/core/change-run/internal/projector.ts`): when the plan contains a bounded-loop, call `projectReviewCycleProgress` and emit the section with round, phase, outcome, findings, actors, waitReason, maxRounds
 - [x] 8.2 Extend `ChangeRunViewSection` in `contracts.ts` to include the `review-cycle` section schema (additive — alongside the existing `root-dag` section)
 - [x] 8.3 Update CLI `pipeline status` (`src/commands/pipeline.ts`) to render the review-cycle section data (round, phase, findings, actors) from the `ChangeRunView`
-- [x] 8.4 Verify Management API `GET /api/v1/runs` and `GET /api/v1/runs/<changeId>/<runId>` return the review-cycle section from the same `projectRunView` call (no separate projection)
-- [x] 8.5 Write a parity test that CLI, Management API, and Operations consume the same fixture's `ChangeRunView` and all see the same review-cycle section data
+- [x] 8.4 Verify Management API `GET /api/v1/runs` and `GET /api/v1/runs/<changeId>/<runId>` return the review-cycle section from the same `projectRunView` call (no separate projection) — **fix(ecp-review-cycle): Major-2 `31f7f91e` persists plan to `plan.json`; management API loads it**
+- [x] 8.5 Write a parity test that CLI, Management API, and Operations consume the same fixture's `ChangeRunView` and all see the same review-cycle section data — **fix(ecp-review-cycle): `31f7f91e` updated parity test to assert section IS present**
 
 ## 9. Canvas Constrained View and Safe Config (Acceptance #11)
 
@@ -72,8 +72,8 @@
 
 ## 11. Real Dogfood (Acceptance #8)
 
-- [x] 11.1 Run a real local Change through the ReviewCycle: start a Run, have the review phase produce a real Major finding, complete triage/fix with a different actor, complete re-review with an independent verifier, reach clean
-- [x] 11.2 Record the dogfood evidence: revision (`git rev-parse HEAD`), RunId, ActionId for each phase, actor identities, evidence refs, and the final `ChangeRunView` projection
+- [ ] 11.1 Run a real local Change through the ReviewCycle: start a Run, have the review phase produce a real Major finding, complete triage/fix with a different actor, complete re-review with an independent verifier, reach clean — **PARTIAL: REAL CLI Run started (`run:0e97...`), plan persisted, status shows review-cycle section. Full phase cycle not driven (requires agent execution).**
+- [ ] 11.2 Record the dogfood evidence: revision (`git rev-parse HEAD`), RunId, ActionId for each phase, actor identities, evidence refs, and the final `ChangeRunView` projection — **partial: RunId and first ActionId recorded; per-phase ActionIds for triage/fix/re-review not obtained**
 - [x] 11.3 Write the dogfood result to the slice `result.md` at `rasen/work/issue-centered-automation-platform/executable-composite-pipelines/slices/review-cycle-vertical-closure/result.md`
 
 ## 12. Regression and Cross-Platform Verification
