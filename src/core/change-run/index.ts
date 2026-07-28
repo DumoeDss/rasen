@@ -55,3 +55,9 @@ export {
   type RuntimeContext,
   type RuntimeContextInput,
 } from './internal/runtime-context.js';
+
+export {
+  createAssociationLedgerStore,
+  type AssociationLedgerStore,
+  type CreateAssociationLedgerStoreOptions,
+} from './internal/association-ledger-store.js';

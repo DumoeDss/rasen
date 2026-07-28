@@ -107,8 +107,18 @@ function allowedControlsFor(
  * waits, terminal outcome, and the current workspace revision. The ready
  * frontier itself is produced by the reconciler; this projector reports the
  * committed state and the safe controls derivable from it.
+ *
+ * `sourceState` reflects the association registry's authoritative state for
+ * this Run's ChangeInstance: 'active' (default when no registry is consulted),
+ * 'archived' (the Change directory was archived), or 'missing' (registry has
+ * no binding for the current physical directory). Callers that have the
+ * registry resolved (e.g. the CLI `status` command) pass the real value;
+ * callers without registry access get the safe default 'active'.
  */
-export function projectRunView(record: CanonicalRunRecord): ChangeRunView {
+export function projectRunView(
+  record: CanonicalRunRecord,
+  sourceState: 'active' | 'archived' | 'missing' = 'active'
+): ChangeRunView {
   const isTerminal = record.terminal !== undefined;
   const root = isTerminal
     ? {
@@ -156,7 +166,7 @@ export function projectRunView(record: CanonicalRunRecord): ChangeRunView {
     change: record.change,
     recordVersion: record.recordVersion,
     status: record.status,
-    sourceState: 'active',
+    sourceState,
     workspace: {
       instanceId: record.workspaceInstanceId,
       scope: 'current',

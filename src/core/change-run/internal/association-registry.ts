@@ -271,3 +271,19 @@ export function findAssociationByAlias(
       association.archiveAliases.includes(alias)
   );
 }
+
+/**
+ * Find an association by its immutable {@link ChangeInstanceId}. This is the
+ * instance-scoped lookup used by mutation guards (e.g. `assertChangeNotArchived`)
+ * that must not be fooled by a same-name recreate: after archive + recreate,
+ * the textual alias resolves to the NEW active association, but the OLD Run's
+ * stored `changeInstanceId` resolves to the archived one.
+ */
+export function findAssociationByInstanceId(
+  ledger: AssociationLedger,
+  instanceId: ChangeInstanceId
+): ChangeAssociation | undefined {
+  return latestAssociations(ledger).find(
+    (association) => association.instanceId === instanceId
+  );
+}

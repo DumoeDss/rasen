@@ -4,6 +4,17 @@ export type EngineOwnershipErrorCode =
   | 'engine_owner_conflict'
   | 'engine_owner_unknown';
 
+/**
+ * The association registry's view of a ChangeInstance's lifecycle state, used
+ * by the engine-ownership guard to bind legacy artifacts to their proven
+ * instance rather than silently assigning them to a same-name recreation.
+ * - `'active'`: the Change directory is the canonical active instance.
+ * - `'archived'`: the instance was archived via `archiveAssociation`; reads
+ *   from a verified archive alias bind to that alias's proven instance.
+ * - `'missing'`: the registry has no binding (unregistered, manually moved).
+ */
+export type InstanceState = 'active' | 'archived' | 'missing';
+
 export class EngineOwnershipError extends Error {
   constructor(
     readonly code: EngineOwnershipErrorCode,
@@ -20,10 +31,17 @@ export class EngineOwnershipError extends Error {
  * and the legacy run-state and invalid state is never absence. legacy-only ->
  * legacy resume; canonical-only -> reconciler; both -> ambiguous conflict;
  * neither -> unknown (never silently treated as free).
+ *
+ * `instanceState` (optional, from the association registry) binds a legacy
+ * artifact read from a verified archive alias to that alias's proven instance
+ * — it is NOT silently assigned to a same-name recreation. An older
+ * machine-home legacy artifact with no provable instance binding remains
+ * `legacy_owner_unknown` (existing behavior).
  */
 export function classifyEngineOwnership(input: {
   readonly canonicalPresent: boolean;
   readonly legacyPresent: boolean;
+  readonly instanceState?: InstanceState;
 }): EngineOwner {
   if (input.canonicalPresent && !input.legacyPresent) return 'reconciler';
   if (input.legacyPresent && !input.canonicalPresent) return 'legacy';
@@ -39,6 +57,7 @@ export function classifyEngineOwnership(input: {
 export function assertSingleEngineOwner(input: {
   readonly canonicalPresent: boolean;
   readonly legacyPresent: boolean;
+  readonly instanceState?: InstanceState;
 }): EngineOwner {
   const owner = classifyEngineOwnership(input);
   if (owner === 'ambiguous') {

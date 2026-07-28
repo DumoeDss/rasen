@@ -66,6 +66,15 @@ export interface RuntimeDeps {
    * `workspace-reservation` waits.
    */
   readonly reservationRegistry?: WorkspaceReservationRegistry;
+  /**
+   * Optional callback that resolves the association registry's authoritative
+   * source state for a Run's ChangeInstance (M2). When provided, the facade
+   * passes the resolved state to `projectRunView`, so `pipeline status` on an
+   * archived Run reports `sourceState: 'archived'` instead of the default
+   * `'active'`. When omitted, the projector defaults to `'active'` (the safe
+   * default for pre-registry Runs and test fixtures).
+   */
+  readonly resolveSourceState?: (record: CanonicalRunRecord) => 'active' | 'archived' | 'missing';
 }
 
 function asPromise<T>(value: T): Promise<T> {
@@ -75,12 +84,14 @@ function asPromise<T>(value: T): Promise<T> {
 function receipt(
   record: CanonicalRunRecord,
   disposition: ChangeRunReceipt['disposition'],
-  actions: readonly RunAction[]
+  actions: readonly RunAction[],
+  resolveSourceState?: (record: CanonicalRunRecord) => 'active' | 'archived' | 'missing'
 ): ChangeRunReceipt {
+  const sourceState = resolveSourceState?.(record) ?? 'active';
   return Object.freeze({
     format: 'change-run-receipt/1',
     disposition,
-    view: projectRunView(record),
+    view: projectRunView(record, sourceState),
     actions: Object.freeze([...actions]),
   }) as ChangeRunReceipt;
 }
@@ -368,7 +379,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
     start(_request, context: RuntimeMutationContext) {
       if (deps.store.has(deps.plan.runId)) {
         const record = deps.store.load(deps.plan.runId);
-        return asPromise(receipt(record, 'reused', []));
+        return asPromise(receipt(record, 'reused', [], deps.resolveSourceState));
       }
       const reconciled = reconcile(deps.plan, deps.initialRecord);
       if (!reconciled.ok) {
@@ -380,7 +391,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         context.deliveryMode
       );
       deps.store.create(deps.plan.runId, settled.record);
-      return asPromise(receipt(settled.record, 'created', settled.granted));
+      return asPromise(receipt(settled.record, 'created', settled.granted, deps.resolveSourceState));
     },
     resume(_request, context: RuntimeMutationContext) {
       const record = deps.store.load(deps.plan.runId);
@@ -405,7 +416,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
               ? 'waiting'
               : 'advanced';
       return asPromise(
-        receipt(settled.record, disposition, settled.granted)
+        receipt(settled.record, disposition, settled.granted, deps.resolveSourceState)
       );
     },
     complete(request: CompleteRunAction, context: RuntimeMutationContext) {
@@ -492,11 +503,12 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
             : finalRecord.waits.length > 0
               ? 'waiting'
               : 'advanced';
-      return asPromise(receipt(finalRecord, disposition, collected.granted));
+      return asPromise(receipt(finalRecord, disposition, collected.granted, deps.resolveSourceState));
     },
     inspect(_ref: ExactChangeRunRef) {
       const record = deps.store.load(deps.plan.runId);
-      return asPromise(projectRunView(record));
+      const sourceState = deps.resolveSourceState?.(record) ?? 'active';
+      return asPromise(projectRunView(record, sourceState));
     },
     control(request: ChangeRunControlRequest, _context: RuntimeMutationContext) {
       const record = deps.store.load(deps.plan.runId);
@@ -506,7 +518,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         throw new Error(`facade control failed: ${result.failure.message}`);
       }
       deps.store.commit(deps.plan.runId, result.record);
-      return asPromise(receipt(result.record, 'advanced', []));
+      return asPromise(receipt(result.record, 'advanced', [], deps.resolveSourceState));
     },
   };
 }
