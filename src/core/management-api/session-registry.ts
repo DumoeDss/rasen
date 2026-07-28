@@ -6,6 +6,10 @@
  * registry state by holding a reference to an internal record.
  */
 import { randomUUID } from 'node:crypto';
+// Type-only (erased at build): the runtime execution vocabulary is declared
+// once in `session-runtime-context.ts` rather than redeclared here, and a
+// type-only import adds nothing to this module's runtime graph.
+import type { RuntimeExecutionRef } from '../session-runtime-context.js';
 
 export type SessionKind = 'auto' | 'goal';
 
@@ -33,6 +37,18 @@ export interface SessionSpace {
   root: string;
 }
 
+/**
+ * What a session works on, frozen at launch (unified-session-runtime-context
+ * design D2). Planning-only is the explicit `{ kind: 'planning-only' }` arm,
+ * never an omitted field — "this session changes no project code" is a fact
+ * the record states, not one a reader infers from a gap.
+ *
+ * The field itself stays optional on `SessionRecord` only for records created
+ * before this capability existed (and by tests that construct a record
+ * directly); every launch through `resolveSessionLaunchContext` sets it.
+ */
+export type SessionExecution = RuntimeExecutionRef;
+
 export interface SessionRecord {
   id: string;
   kind: SessionKind;
@@ -40,6 +56,8 @@ export interface SessionRecord {
   cwd: string;
   /** Planning space this session belongs to (design D3), frozen at launch. Absent when the cwd yields no derivable space. */
   space?: SessionSpace;
+  /** Execution identity + local checkout binding, frozen at launch. */
+  execution?: SessionExecution;
   pid?: number;
   /** The claude CLI's own session id, parsed best-effort from the stream-json `init` event — observability only, never the registry key. */
   agentSessionId?: string;
@@ -64,6 +82,7 @@ export interface SessionRegistry {
     cwd: string;
     changeName?: string;
     space?: SessionSpace;
+    execution?: SessionExecution;
   }): SessionRecord;
   get(id: string): SessionRecord | undefined;
   list(): SessionRecord[];
@@ -86,8 +105,18 @@ export interface SessionRegistry {
   ): string[];
 }
 
+/**
+ * Copy-on-read. The nested `space` and `execution` refs are cloned too: a
+ * shallow spread would hand every caller the SAME object, so one caller
+ * mutating `record.execution.root` would silently retarget the session for
+ * everyone else holding a "copy".
+ */
 function copy(record: SessionRecord): SessionRecord {
-  return { ...record };
+  return {
+    ...record,
+    ...(record.space !== undefined ? { space: { ...record.space } } : {}),
+    ...(record.execution !== undefined ? { execution: { ...record.execution } } : {}),
+  };
 }
 
 export function createSessionRegistry(): SessionRegistry {
@@ -123,6 +152,7 @@ export function createSessionRegistry(): SessionRegistry {
         lastOutputAt: now,
         ...(input.changeName !== undefined ? { changeName: input.changeName } : {}),
         ...(input.space !== undefined ? { space: input.space } : {}),
+        ...(input.execution !== undefined ? { execution: input.execution } : {}),
       };
       records.set(record.id, record);
       return copy(record);

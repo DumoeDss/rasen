@@ -144,7 +144,7 @@ describe('cross-platform npm execution', () => {
     const windows = npmInvocationForPlatform('win32', 'C:\\node\\node.exe');
     expect(windows.command).toBe('C:\\node\\node.exe');
     expect(windows.argsPrefix).toEqual([
-      path.join('C:\\node', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+      path.win32.join('C:\\node', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
     ]);
     expect(npmInvocationForPlatform('linux', '/usr/bin/node')).toEqual({
       command: 'npm',

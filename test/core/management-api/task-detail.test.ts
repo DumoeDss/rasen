@@ -161,6 +161,31 @@ describe('management-api task-detail handler (design D1)', () => {
     }
   });
 
+  // "Present but unreadable" is not "never split". Degrading it to the absent
+  // branch would render an unparseable record as "no dependencies recorded",
+  // which reads as a fact about the portfolio rather than a failure to read it.
+  it('reports an unreadable portfolio-run.json instead of degrading to absent', async () => {
+    writeChange(projectRoot, 'redesign', {
+      'planning-context.md': '# Planning\n',
+      'portfolio-run.json': '{ not valid json',
+    });
+    writeChange(projectRoot, 'redesign-api', { 'proposal.md': PROPOSAL });
+
+    const result = await handleTaskDetail(projectRoot, null, 'redesign');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reported = result.response.errors.find((e) => e.name === 'redesign');
+    expect(reported).toBeDefined();
+    expect(reported!.message).toContain('portfolio-run.json');
+    expect(reported!.message).toContain('could not be read');
+    // The children still render — the failure is reported, not fatal.
+    expect(result.response.children.map((c) => c.name)).toContain('redesign-api');
+    for (const child of result.response.children) {
+      expect(child.portfolioStatus).toBeUndefined();
+    }
+  });
+
   it('reports a portfolio whose children are all archived', async () => {
     writeChange(projectRoot, 'redesign', { 'planning-context.md': '# Planning\n' });
     writeArchived(projectRoot, '2026-02-02-redesign-api', { 'proposal.md': PROPOSAL });

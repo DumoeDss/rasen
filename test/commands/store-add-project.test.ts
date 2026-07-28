@@ -74,7 +74,7 @@ describe('store add-project', () => {
     expect(targetConfig).toContain('my-project');
   });
 
-  it('is non-destructive to the project repo (byte-for-byte rasen/ snapshot)', async () => {
+  it('touches nothing under the project rasen/ except the appended membership hint', async () => {
     await registerTargetStore();
     const projectRoot = makeProject('my-project', 'billing');
     const before = snapshot(path.join(projectRoot, 'rasen'));
@@ -86,10 +86,28 @@ describe('store add-project', () => {
     );
 
     expect(result.exitCode).toBe(0);
-    expect(snapshot(path.join(projectRoot, 'rasen'))).toEqual(before);
-    expect(fs.readFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'utf-8')).toBe(
-      projectConfigBefore
+
+    // The one amended clause (project-keyed-store-membership): `rasen/config.yaml`
+    // gains the membership locator hint — and the project identity that hint's
+    // record is keyed by, when the project did not carry one yet. Everything
+    // else under rasen/ is byte-for-byte what it was.
+    const after = snapshot(path.join(projectRoot, 'rasen'));
+    const changed = [...after.keys()].filter((key) => after.get(key) !== before.get(key));
+    expect(changed).toEqual(['config.yaml']);
+    expect([...after.keys()].sort()).toEqual([...before.keys()].sort());
+
+    const projectConfigAfter = fs.readFileSync(
+      path.join(projectRoot, 'rasen', 'config.yaml'),
+      'utf-8'
     );
+    // Every pre-existing line survives, in order.
+    for (const line of projectConfigBefore.split('\n').filter((entry) => entry.trim().length > 0)) {
+      expect(projectConfigAfter).toContain(line);
+    }
+    expect(projectConfigAfter).toContain('storeMemberships:');
+    expect(projectConfigAfter).toContain('team-context');
+    // The project's own config never gains a referenced-store entry.
+    expect(projectConfigAfter).not.toContain('references:');
   });
 
   it('re-running is a no-op that reports already-registered / reference-already-present', async () => {

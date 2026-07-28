@@ -128,6 +128,9 @@
   "dialog.launch.members_loading": "正在加载当前 Store 成员…",
   "dialog.launch.members_error": "无法加载 Store 成员。请重试以刷新可用的执行项目。",
   "dialog.launch.members_empty": "此 Store 当前没有成员项目。请选择仅规划或取消。",
+  "dialog.launch.members_no_checkout": "此 Store 的成员项目在本机没有检出，因此都无法在这里开展工作。请克隆其中一个，或选择仅规划。",
+  "dialog.launch.member_no_checkout": "本机不存在该项目的检出。",
+  "dialog.launch.planning_no_code": "仅规划的会话不能写入代码。",
   "dialog.launch.execution_required": "请选择成员项目或仅规划。",
 
   "archive.loading": "正在加载归档…",

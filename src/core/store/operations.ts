@@ -5,11 +5,20 @@ import * as path from 'node:path';
 import { promisify } from 'node:util';
 
 import { FileSystemUtils } from '../../utils/file-system.js';
+import { WORKSPACE_DIR_NAME } from '../config.js';
 import {
   appendStoreReference,
   classifyOpenSpecDir,
+  describeStoreDeclaration,
+  ensureProjectIdInConfig,
+  hasStoreDeclaration,
+  readProjectConfig,
+  readStorePointer,
+  resolveConfigFilePath,
   storePointerProblem,
+  updateProjectConfigKey,
 } from '../project-config.js';
+import { storeBindingDeclarationFrom } from '../effective-config.js';
 import {
   ANCHORED_WORKSPACE_DIRS,
   DIRECTORY_ANCHOR_FILE_NAME,
@@ -22,21 +31,59 @@ import {
 } from '../workspace-root.js';
 import {
   STORE_METADATA_DIR_NAME,
+  findRegistryEntryKeys,
   getStoreMetadataDir,
   getStoreMetadataPath,
   getStoreRegistryPath,
   listStoreRegistryEntries,
   readStoreRegistryState,
   readOptionalStoreMetadataState,
-  registryKeyFor,
   resolveGitStoreBackendConfig,
+  storeMetadataUid,
   validateStoreId,
+  validateStoreSelector,
   writeStoreMetadataState,
   type RegistryEntryType,
   type StoreGitBackendConfig,
   type StorePathOptions,
+  type StoreRegistryEntry,
   type StoreRegistryState,
 } from './foundation.js';
+import {
+  isAllDigitAlias,
+  isValidStoreUid,
+  mintStoreUid,
+  storeUidsMatch,
+} from './identity-types.js';
+import {
+  describeStore,
+  storeAliasAmbiguous,
+  storeAliasNumeric,
+  storeAliasRepeated,
+  storeMetadataLegacy,
+  storeRegistryRekeyBlocked,
+  storeRemoteDivergence,
+} from './identity-diagnostics.js';
+import {
+  assertCredentialFreeRemote,
+  redactOptionalRemote,
+  remoteCarriesCredentials,
+} from './remote.js';
+import { resolveStoreBinding } from './identity.js';
+import type { ResolvedStoreRef } from './identity-types.js';
+import {
+  applyMembershipMutation,
+  listStoreMembers,
+  planMembershipMutation,
+  unambiguousStoreSelector,
+  type MembershipRepair,
+} from './membership.js';
+import {
+  getStoreProjectRecordsDir,
+  type StoreProjectRoles,
+} from './project-records.js';
+import type { SuggestedGitCommand } from './migration.js';
+import { writeDurablePointer } from './upgrade-identity.js';
 import { StoreError, type StoreDiagnostic, makeStoreDiagnostic } from './errors.js';
 import {
   assertGitCommitIdentity,
@@ -78,6 +125,8 @@ export interface StoreInfo {
   id: string;
   root: string;
   metadataPath?: string;
+  /** The store's permanent identity; absent for legacy metadata. */
+  uid?: string;
 }
 
 export interface StoreMutationResult {
@@ -119,6 +168,14 @@ export interface StoreListEntry extends StoreInfo {
   type: RegistryEntryType;
 }
 
+/** Registry-entry shape shared by the list and doctor surfaces. */
+export interface StoreRegistryRow {
+  id: string;
+  type: RegistryEntryType;
+  uid?: string;
+  backend: StoreGitBackendConfig;
+}
+
 export interface StoreListResult {
   stores: StoreListEntry[];
 }
@@ -135,7 +192,11 @@ export interface StoreInspection extends StoreInfo {
     present: boolean | null;
     valid: boolean | null;
     id?: string;
-    /** Canonical clone source from store.yaml; null when absent. */
+    /** The store's permanent identity; absent for legacy metadata. */
+    uid?: string;
+    /** True when the metadata predates permanent identities. */
+    legacy?: boolean;
+    /** Canonical clone source from store.yaml, redacted; null when absent. */
     remote: string | null;
   };
   git: {
@@ -158,7 +219,7 @@ export interface SetupStoreInput {
   remote?: string;
 }
 
-export interface RegisterExistingStoreInput {
+export interface RegisterExistingStoreInput extends StorePathOptions {
   path?: string;
   id?: string;
   allowCreateIdentity?: boolean;
@@ -172,6 +233,76 @@ export interface StoreAddProjectInput {
   /** Explicit project store id override (design D2); ignored when the
    *  project already carries `.rasen-store/store.yaml`. */
   id?: string;
+  /**
+   * Record the target Store as the project's PLANNING store as well as adding
+   * it to the roster.
+   *
+   * Opt-in and default-off, and never inferred — not from another flag, not
+   * from the project's state, not from this being the project's only
+   * membership. Membership and planning binding are different relations, and
+   * silently rebinding where a project plans would re-merge the two this
+   * change exists to separate. When a DIFFERENT Store is already bound the
+   * command refuses rather than overwriting; the refusal is scoped to the
+   * pointer, so the membership this invocation established still stands.
+   */
+  setPrimary?: boolean;
+  /**
+   * Roles this membership asserts, overriding the ones `add-project` derives
+   * for itself. Exists for COMPOSING callers only — `store adopt` runs
+   * add-project's registration and reference work, but an adoption proves
+   * planning membership and proves nothing about knowledge (design D2).
+   *
+   * Without this, adopt inherited add-project's `knowledge: true`, roles were
+   * OR-widened on write, and a plain adopt durably recorded a knowledge role
+   * nobody established. The OR-widening rule is right — every command here
+   * adds a role and none removes one — so the composition is what had to
+   * change. The `add-project` CLI never passes it.
+   */
+  roles?: StoreProjectRoles;
+  /** Report every file that would be written, in each repository, and write nothing. */
+  dryRun?: boolean;
+}
+
+/** What the `--set-primary` opt-in did, reported separately from membership. */
+export interface StoreAddProjectPlanningBinding {
+  /** True when the user asked for the binding at all. */
+  requested: boolean;
+  /** True when this run wrote the project's planning Store. */
+  changed: boolean;
+  /** True when a different Store was already bound and the write was refused. */
+  refused: boolean;
+  /** True when the project already planned in the target Store. */
+  alreadyBound: boolean;
+  /** The Store the project plans in now (or still plans in, after a refusal). */
+  boundTo?: string;
+  /**
+   * Permanent identity of `boundTo`, when it resolved. Two Stores are allowed
+   * to share a display name, so a refusal that names only the name reads
+   * "plans in 'team-store', not 'team-store'" — which tells the user nothing.
+   * Both sides carry their identity so the message can tell them apart.
+   */
+  boundToUid?: string;
+  /** The Store the user asked to bind. */
+  requestedStore: string;
+  /** Permanent identity of `requestedStore`, when it has one. */
+  requestedStoreUid?: string;
+  /** Printed on a refusal: the command that rebinds deliberately. */
+  rebindCommand?: string;
+}
+
+/** The membership half of the result, reported per repository. */
+export interface StoreAddProjectMembership {
+  projectId: string | null;
+  roles: StoreProjectRoles;
+  projectBaseCommit: string | null;
+  storeBaseCommit: string | null;
+  /** Absolute paths written (or, in a preview, that would be written). */
+  projectWrites: string[];
+  storeWrites: string[];
+  recordWritten: boolean;
+  hintWritten: boolean;
+  repairNeeded: MembershipRepair[];
+  suggestedCommits: SuggestedGitCommand[];
 }
 
 export interface StoreAddProjectResult {
@@ -189,6 +320,10 @@ export interface StoreAddProjectResult {
     referenceAdded: boolean;
     referenceAlreadyPresent: boolean;
   };
+  membership: StoreAddProjectMembership;
+  planningBinding: StoreAddProjectPlanningBinding;
+  /** True when this run previewed only and wrote nothing. */
+  dryRun: boolean;
   diagnostics: StoreDiagnostic[];
 }
 
@@ -201,6 +336,13 @@ export interface CleanupStoreInput extends StorePathOptions {
 export interface PreparedStoreCleanup extends StoreInfo, StorePathOptions {
   backend: StoreGitBackendConfig;
   type: RegistryEntryType;
+  /**
+   * What the user named — a display alias or a permanent identity. Carried
+   * through to the removal so it resolves the SAME entry: a display alias that
+   * matches two Stores resolves here only because an identity was given, and
+   * re-resolving by the entry's alias afterwards would be ambiguous again.
+   */
+  selector: string;
 }
 
 export interface PreparedStoreSetup {
@@ -293,9 +435,9 @@ function assertNotConfigOnlyPointerRoot(storeRoot: string): void {
     );
   }
 
-  if (pointer.value !== undefined) {
+  if (hasStoreDeclaration(pointer)) {
     throw new StoreError(
-      `This repo's planning is externalized to store '${pointer.value}' (${pointer.filePath}); it is not itself a store root.`,
+      `This repo's planning is externalized to store '${describeStoreDeclaration(pointer)}' (${pointer.filePath}); it is not itself a store root.`,
       'store_root_pointer_declared',
       {
         target: 'store.pointer',
@@ -440,12 +582,10 @@ function isRegisteredAtPath(
   storeRoot: string,
   type: RegistryEntryType = 'store'
 ): boolean {
-  const entry = registry?.stores?.[registryKeyFor(type, id)];
-  if (!entry) return false;
-
-  return (
-    normalizeRegistryPathForComparison(getStoreRootForBackend(entry.backend)) ===
-    normalizeRegistryPathForComparison(storeRoot)
+  return findRegistryEntryKeys(registry, type, id).some(
+    (match) =>
+      normalizeRegistryPathForComparison(getStoreRootForBackend(match.entry.backend)) ===
+      normalizeRegistryPathForComparison(storeRoot)
   );
 }
 
@@ -456,7 +596,8 @@ function mutationPayload(
   createdFiles: string[],
   registry: { registered: boolean; alreadyRegistered: boolean },
   diagnostics: StoreDiagnostic[] = [],
-  remotes?: { canonical?: string; observed?: string }
+  remotes?: { canonical?: string; observed?: string },
+  pathOptions: StorePathOptions = {}
 ): StoreMutationResult {
   return {
     store: {
@@ -466,7 +607,7 @@ function mutationPayload(
     },
     ...(remotes && (remotes.canonical || remotes.observed) ? { remotes } : {}),
     registryCommit: {
-      path: getStoreRegistryPath(),
+      path: getStoreRegistryPath(pathOptions),
       registered: registry.registered,
       alreadyRegistered: registry.alreadyRegistered,
     },
@@ -521,6 +662,8 @@ async function prepareSetupPlan(
       fix: 'Pass a clone URL: --remote <url>.',
     });
   }
+  // Rejected before any directory is touched, and never echoed back in full.
+  assertCredentialFreeRemote(input.remote);
   const storeRoot = resolveSetupRoot(id, input.path);
   const kind = await pathKind(storeRoot);
 
@@ -659,6 +802,7 @@ export async function setupPreparedStore(
   let createdPaths: CreatedPathLedgerEntry[] = [];
   let gitInitialized = false;
   let committed = false;
+  let mintedUid: string | undefined;
 
   // Reruns for an already-registered store stay strict no-ops: no anchor
   // retrofit, no git init, no new commit, no identity requirement. Only an
@@ -698,8 +842,12 @@ export async function setupPreparedStore(
     if (!existingMetadata) {
       const metadataDir = getStoreMetadataDir(storeRoot);
       const metadataDirMissing = (await pathKind(metadataDir)) === 'missing';
+      // Creating a store mints its permanent identity — once, automatically,
+      // and never from user input (design D2's only v2 metadata writer).
+      mintedUid = mintStoreUid();
       await writeStoreMetadataState(storeRoot, {
-        version: 1,
+        version: 2,
+        uid: mintedUid,
         id,
         ...(prepared.remote !== undefined ? { remote: prepared.remote } : {}),
       });
@@ -737,9 +885,15 @@ export async function setupPreparedStore(
       backend,
       writeMetadataIfMissing: false,
     });
-    const diagnostics = registered.alreadyRegistered && createdFiles.length === 0
-      ? [alreadyRegisteredDiagnostic(id)]
-      : [];
+    const diagnostics: StoreDiagnostic[] = [...registered.diagnostics];
+    if (registered.alreadyRegistered && createdFiles.length === 0) {
+      diagnostics.push(alreadyRegisteredDiagnostic(id));
+    }
+    // A newly assigned all-digit alias warns; aliases already on disk stay
+    // quiet, because the resolution behavior is unchanged either way (D10).
+    if (mintedUid !== undefined && isAllDigitAlias(id)) {
+      diagnostics.push(storeAliasNumeric({ id }));
+    }
 
     const canonical = prepared.remote ?? existingMetadata?.remote;
     return mutationPayload(id, registered.storeRoot, {
@@ -792,6 +946,8 @@ export async function setupStore(
 export async function registerExistingStore(
   input: RegisterExistingStoreInput
 ): Promise<StoreMutationResult> {
+  const pathOptions: StorePathOptions =
+    input.globalDataDir !== undefined ? { globalDataDir: input.globalDataDir } : {};
   const storeRoot = resolveRegisterRoot(input.path);
   const kind = await pathKind(storeRoot);
 
@@ -849,9 +1005,9 @@ export async function registerExistingStore(
   if (metadata && explicitId !== undefined && metadata.id !== explicitId) {
     // The fix must account for whether the metadata id is already registered,
     // so following it never lands on the already-registered error.
-    const currentRegistry = await readStoreRegistryState();
+    const currentRegistry = await readStoreRegistryState(pathOptions);
     const registeredElsewhere =
-      currentRegistry?.stores?.[registryKeyFor(type, metadata.id)] !== undefined &&
+      findRegistryEntryKeys(currentRegistry, type, metadata.id).length > 0 &&
       !isRegisteredAtPath(currentRegistry, metadata.id, storeRoot, type);
 
     throw new StoreError(
@@ -879,8 +1035,34 @@ export async function registerExistingStore(
   }
 
   const backend = await resolveBackendWithObservedOrigin(storeRoot);
-  const registry = await readStoreRegistryState();
-  assertNoRegisteredStoreConflict(registry, type, id, backend);
+  const registry = await readStoreRegistryState(pathOptions);
+  // The checkout's own permanent identity decides what collides: with it, a
+  // repeated display name is no longer a conflict (two stores may share one —
+  // resolving it is what reports ambiguity), while a SECOND checkout of the
+  // same identity still is. Without passing it, that whole rule was
+  // unreachable and a repeated alias was refused outright.
+  //
+  // The bound on legacy data is by construction: `entry.uid` is populated only
+  // from a v2 (identity-keyed) registry key, so in a v1 registry every
+  // `entry.uid` is undefined, the carve-out cannot fire, and a repeated alias
+  // stays refused — which it must, because a v1 registry keys by alias and
+  // writing a second entry under that key would silently drop the incumbent.
+  const checkoutUid = storeMetadataUid(metadata);
+  assertNoRegisteredStoreConflict(registry, type, id, backend, checkoutUid);
+  // The other half of that rule: a registration the identities made legal is
+  // still a registration that made the display name ambiguous, and the user
+  // learns it HERE rather than later from an unrelated command that refuses to
+  // resolve the name (store-project-namespace: "SHALL succeed and SHALL warn").
+  const aliasTwins =
+    checkoutUid === undefined || registry === null
+      ? []
+      : listStoreRegistryEntries(registry).filter(
+          (entry) =>
+            entry.type === 'store' &&
+            entry.id === id &&
+            entry.uid !== undefined &&
+            !storeUidsMatch(entry.uid, checkoutUid)
+        );
   const createdFiles: string[] = [];
   const isRepository = await isGitRepositoryAtRoot(storeRoot);
 
@@ -889,13 +1071,25 @@ export async function registerExistingStore(
     backend,
     writeMetadataIfMissing: true,
     type,
+    ...pathOptions,
   });
   if (registered.metadataCreated) {
     createdFiles.push('.rasen-store/store.yaml');
   }
-  const diagnostics = registered.alreadyRegistered && createdFiles.length === 0
-    ? [alreadyRegisteredDiagnostic(id, type)]
-    : [];
+  const diagnostics: StoreDiagnostic[] = [...registered.diagnostics];
+  if (registered.alreadyRegistered && createdFiles.length === 0) {
+    diagnostics.push(alreadyRegisteredDiagnostic(id, type));
+  }
+  // The newly-assigned-alias warning (design D10) fires from
+  // `commitStoreRegistration`, which is the one place that knows whether this
+  // run created the identity file — and it travels here in
+  // `registered.diagnostics`. There is no second condition to check: when the
+  // metadata is absent, registration writes it and `metadataCreated` is true.
+  if (aliasTwins.length > 0 && checkoutUid !== undefined && registered.registryUpdated) {
+    diagnostics.push(
+      storeAliasRepeated({ id, uid: checkoutUid, matches: aliasTwins.length + 1 })
+    );
+  }
 
   // Register never commits; converted roots are the user's repo to commit.
   return mutationPayload(id, registered.storeRoot, {
@@ -908,7 +1102,7 @@ export async function registerExistingStore(
   }, diagnostics, {
     ...(metadata?.remote ? { canonical: metadata.remote } : {}),
     ...(backend.remote ? { observed: backend.remote } : {}),
-  });
+  }, pathOptions);
 }
 
 /**
@@ -945,11 +1139,16 @@ export async function storeAddProject(
       (error.diagnostic.code === 'store_not_found' || error.diagnostic.code === 'no_store_registry')
     ) {
       throw new StoreError(
+        // Nothing resolved, so naming what the user typed is the honest
+        // report — but the repair must fit what they typed: a permanent
+        // identity cannot be handed to `store setup`, which MINTS one.
         `Target store '${input.targetStoreId}' is not registered on this machine.`,
         'store_add_project_target_not_found',
         {
           target: 'store.id',
-          fix: `Create it first: rasen store setup ${input.targetStoreId}, then rerun.`,
+          fix: isValidStoreUid(input.targetStoreId)
+            ? `Register the checkout that carries that identity: rasen store register <path>, then rerun.`
+            : `Create it first: rasen store setup ${input.targetStoreId}, then rerun.`,
         }
       );
     }
@@ -971,6 +1170,32 @@ export async function storeAddProject(
     );
   }
 
+  const storeRef: ResolvedStoreRef = {
+    type: 'store',
+    id: targetStore.id,
+    root: targetStore.storeRoot,
+    ...(targetStore.uid !== undefined ? { uid: targetStore.uid } : {}),
+  };
+  const storeRemote = await credentialFreeRemoteOf(targetStore.storeRoot);
+  const registryEntries = listStoreRegistryEntries(
+    (await readStoreRegistryState({})) ?? { version: 1, stores: {} }
+  );
+
+  // A preview resolves and reports; it registers nothing, mints no project
+  // identity, and writes to neither repository.
+  if (input.dryRun) {
+    return previewAddProject({
+      projectRoot,
+      resolvedProjectId,
+      storeRef,
+      storeRemote,
+      targetStore,
+      setPrimary: input.setPrimary === true,
+      ...(input.roles ? { roles: input.roles } : {}),
+      registryEntries,
+    });
+  }
+
   const registration = await registerExistingStore({
     path: projectRoot,
     ...(input.id !== undefined ? { id: input.id } : {}),
@@ -981,6 +1206,64 @@ export async function storeAddProject(
   const { configPath, changed } = appendStoreReference(targetStore.storeRoot, registration.store.id, {
     type: 'project',
   });
+
+  // The membership record is keyed by the project's permanent identity, so the
+  // identity has to exist before the record can. This is the established lazy
+  // mint (append-only, re-read and validated, reverted on failure) — the same
+  // one every command that needs a project identity already uses.
+  const projectId = await ensureProjectIdInConfig(registration.store.root);
+
+  // Planning membership is asserted only when it is TRUE: the user opted in,
+  // or the project already plans in this Store. `add-project` alone never
+  // makes a project plan anywhere, so it never claims that it does. A
+  // composing caller states its own roles instead of inheriting these.
+  const alreadyPlansHere = await declarationNamesStore(registration.store.root, storeRef);
+  const roles: StoreProjectRoles = input.roles ?? {
+    planning: input.setPrimary === true || alreadyPlansHere,
+    knowledge: true,
+  };
+
+  const projectRemote = await credentialFreeRemoteOf(registration.store.root);
+  const mutation = await applyMembershipMutation({
+    projectRoot: registration.store.root,
+    projectId,
+    projectDisplayId: registration.store.id,
+    ...(projectRemote !== undefined ? { projectRemote } : {}),
+    store: storeRef,
+    ...(storeRemote !== undefined ? { storeRemote } : {}),
+    roles,
+  });
+
+  const planningBinding = await resolvePlanningBinding({
+    projectRoot: registration.store.root,
+    store: storeRef,
+    requested: input.setPrimary === true,
+    registryEntries,
+  });
+
+  const diagnostics: StoreDiagnostic[] = [...registration.diagnostics];
+  if (planningBinding.refused) {
+    diagnostics.push(
+      makeStoreDiagnostic(
+        'warning',
+        'project_planning_binding_refused',
+        // Both sides carry their permanent identity: two Stores may legitimately
+        // share a display name, and a refusal naming only the name reads
+        // "plans in 'team-store', not 'team-store'".
+        `Project ${registration.store.id} already plans in store ${describeStore({
+          id: planningBinding.boundTo,
+          ...(planningBinding.boundToUid !== undefined ? { uid: planningBinding.boundToUid } : {}),
+        })}; --set-primary refused to rebind it to ${describeStore({
+          id: storeRef.id,
+          ...(storeRef.uid !== undefined ? { uid: storeRef.uid } : {}),
+        })}. Nothing was overwritten: the planning store is exactly as it was, and the membership record and locator hint this command wrote still stand — they are a different relation.`,
+        {
+          target: 'store.pointer',
+          fix: planningBinding.rebindCommand ?? 'rasen store doctor',
+        }
+      )
+    );
+  }
 
   return {
     project: {
@@ -996,7 +1279,235 @@ export async function storeAddProject(
       referenceAdded: changed,
       referenceAlreadyPresent: !changed,
     },
-    diagnostics: registration.diagnostics,
+    membership: {
+      projectId,
+      roles,
+      projectBaseCommit: mutation.projectBaseCommit,
+      storeBaseCommit: mutation.storeBaseCommit,
+      projectWrites: mutation.projectWrites,
+      storeWrites: mutation.storeWrites,
+      recordWritten: mutation.storeRecordWritten,
+      hintWritten: mutation.projectHintWritten,
+      repairNeeded: mutation.repairNeeded,
+      suggestedCommits: mutation.suggestedCommits,
+    },
+    planningBinding,
+    dryRun: false,
+    diagnostics,
+  };
+}
+
+/** The Store's or the project's recorded origin, when it embeds no credential. */
+async function credentialFreeRemoteOf(root: string): Promise<string | undefined> {
+  const metadata = await readStoreMetadataForOperation(root).catch(() => null);
+  const recorded = metadata?.remote;
+  if (recorded !== undefined && !remoteCarriesCredentials(recorded)) return recorded;
+  const origin = await gitOriginUrl(root);
+  if (origin !== null && !remoteCarriesCredentials(origin)) return origin;
+  return undefined;
+}
+
+/**
+ * True when the project's CURRENT planning declaration already names this
+ * Store. Goes through the shared resolver: the declared display alias is
+ * undefined for a declaration that records only the permanent identity, so
+ * comparing names would answer "no" for exactly the declarations this change
+ * encourages.
+ */
+async function declarationNamesStore(
+  projectRoot: string,
+  store: ResolvedStoreRef
+): Promise<boolean> {
+  const pointer = readStorePointer(projectRoot);
+  if (!hasStoreDeclaration(pointer)) return false;
+  const binding = await resolveStoreBinding({
+    declaration: storeBindingDeclarationFrom(pointer),
+    projectRoot,
+  });
+  if (binding.kind !== 'resolved') return false;
+  return sameStore(binding.store, store);
+}
+
+function sameStore(left: ResolvedStoreRef, right: ResolvedStoreRef): boolean {
+  if (left.uid !== undefined && right.uid !== undefined) {
+    return storeUidsMatch(left.uid, right.uid);
+  }
+  return (
+    normalizeRegistryPathForComparison(left.root) ===
+    normalizeRegistryPathForComparison(right.root)
+  );
+}
+
+/**
+ * The `--set-primary` write path (design D12), in three outcomes and no
+ * fourth: no planning Store -> record it; the target already bound -> a no-op
+ * that rewrites nothing; a DIFFERENT Store bound -> refuse, naming what is
+ * bound, what was asked for, and the command that rebinds deliberately.
+ *
+ * A refusal never touches the pointer and never rolls back the membership the
+ * same invocation established — they are different relations, and the
+ * membership is correct regardless of where the project plans.
+ */
+async function resolvePlanningBinding(input: {
+  projectRoot: string;
+  store: ResolvedStoreRef;
+  requested: boolean;
+  registryEntries: readonly StoreRegistryEntry[];
+}): Promise<StoreAddProjectPlanningBinding> {
+  const requestedStore = input.store.id;
+  const base: StoreAddProjectPlanningBinding = {
+    requested: input.requested,
+    changed: false,
+    refused: false,
+    alreadyBound: false,
+    requestedStore,
+    ...(input.store.uid !== undefined ? { requestedStoreUid: input.store.uid } : {}),
+  };
+
+  const pointer = readStorePointer(input.projectRoot);
+  const declared = describeStoreDeclaration(pointer);
+
+  if (!input.requested) {
+    // Never inferred: with the flag absent no planning Store is written under
+    // any circumstance, whatever the project's state.
+    return { ...base, ...(declared !== undefined ? { boundTo: declared } : {}) };
+  }
+
+  if (!hasStoreDeclaration(pointer)) {
+    await writePlanningBinding(input.projectRoot, input.store);
+    return { ...base, changed: true, boundTo: requestedStore };
+  }
+
+  const binding = await resolveStoreBinding({
+    declaration: storeBindingDeclarationFrom(pointer),
+    projectRoot: input.projectRoot,
+  });
+
+  if (binding.kind === 'resolved' && sameStore(binding.store, input.store)) {
+    return {
+      ...base,
+      alreadyBound: true,
+      boundTo: binding.store.id,
+      ...(binding.store.uid !== undefined ? { boundToUid: binding.store.uid } : {}),
+    };
+  }
+
+  // Anything else — a different Store, or one that cannot be resolved here —
+  // is refused. Overwriting a declaration whose target cannot be read would
+  // discard a binding nobody has verified is wrong.
+  const bound = binding.kind === 'resolved' ? binding.store.id : (declared ?? '(unresolvable)');
+  const boundUid = binding.kind === 'resolved' ? binding.store.uid : undefined;
+  const selector = unambiguousStoreSelector(input.store, input.registryEntries);
+  return {
+    ...base,
+    refused: true,
+    boundTo: bound,
+    ...(boundUid !== undefined ? { boundToUid: boundUid } : {}),
+    rebindCommand: `rasen store upgrade-identity ${selector} --apply`,
+  };
+}
+
+/**
+ * Records the planning Store through the SAME durable writer
+ * `store upgrade-identity --apply` and `store adopt` use. A Store that
+ * predates permanent identities has none to record and keeps the legacy
+ * display-name form, which `store_pointer_legacy` then offers to upgrade.
+ */
+async function writePlanningBinding(
+  projectRoot: string,
+  store: ResolvedStoreRef
+): Promise<void> {
+  const configPath = resolveConfigFilePath(projectRoot);
+  if (store.uid === undefined || configPath === null) {
+    updateProjectConfigKey(projectRoot, 'store', store.id);
+    return;
+  }
+  const remote = await credentialFreeRemoteOf(store.root);
+  await writeDurablePointer(configPath, {
+    uid: store.uid,
+    id: store.id,
+    ...(remote !== undefined ? { remote } : {}),
+  });
+}
+
+/** The preview: every file each repository would gain, and nothing written. */
+async function previewAddProject(input: {
+  projectRoot: string;
+  resolvedProjectId: string;
+  storeRef: ResolvedStoreRef;
+  storeRemote: string | undefined;
+  targetStore: { id: string; storeRoot: string };
+  setPrimary: boolean;
+  roles?: StoreProjectRoles;
+  registryEntries: readonly StoreRegistryEntry[];
+}): Promise<StoreAddProjectResult> {
+  const projectId = readProjectConfig(input.projectRoot)?.projectId ?? null;
+  // The preview must report the roles the apply would write, override included.
+  const roles: StoreProjectRoles = input.roles ?? { planning: input.setPrimary, knowledge: true };
+  const configPath =
+    resolveConfigFilePath(input.targetStore.storeRoot) ??
+    path.join(input.targetStore.storeRoot, WORKSPACE_DIR_NAME, 'config.yaml');
+
+  const plan =
+    projectId === null
+      ? null
+      : await planMembershipMutation({
+          projectRoot: input.projectRoot,
+          projectId,
+          projectDisplayId: input.resolvedProjectId,
+          store: input.storeRef,
+          ...(input.storeRemote !== undefined ? { storeRemote: input.storeRemote } : {}),
+          roles,
+        });
+
+  // With no project identity yet the record's name is not knowable without
+  // minting one, which a preview must not do. Report the shape instead of
+  // inventing a filename.
+  const storeWrites = plan?.storeWrites ?? [
+    path.join(getStoreProjectRecordsDir(input.storeRef.root), '<projectId>.yaml'),
+  ];
+  const projectWrites = plan?.projectWrites ?? [
+    path.join(input.projectRoot, WORKSPACE_DIR_NAME, 'config.yaml'),
+  ];
+
+  const planningBinding = await resolvePlanningBinding({
+    projectRoot: input.projectRoot,
+    store: input.storeRef,
+    // A preview never writes, so it resolves the outcome without the flag's
+    // write path; `requested` below still reports what the user asked for.
+    requested: false,
+    registryEntries: input.registryEntries,
+  });
+
+  return {
+    project: {
+      id: input.resolvedProjectId,
+      root: input.projectRoot,
+      metadataCreated: false,
+      alreadyRegistered: false,
+    },
+    target: {
+      id: input.targetStore.id,
+      root: input.targetStore.storeRoot,
+      configPath,
+      referenceAdded: false,
+      referenceAlreadyPresent: false,
+    },
+    membership: {
+      projectId,
+      roles,
+      projectBaseCommit: plan?.projectBaseCommit ?? null,
+      storeBaseCommit: plan?.storeBaseCommit ?? null,
+      projectWrites,
+      storeWrites,
+      recordWritten: false,
+      hintWritten: false,
+      repairNeeded: plan?.repairNeeded ?? [],
+      suggestedCommits: [],
+    },
+    planningBinding: { ...planningBinding, requested: input.setPrimary },
+    dryRun: true,
+    diagnostics: [],
   };
 }
 
@@ -1011,10 +1522,10 @@ function cleanupStoreOutput(id: string, storeRoot: string): StoreInfo {
 export async function prepareStoreCleanup(
   input: CleanupStoreInput
 ): Promise<PreparedStoreCleanup> {
-  const id = validateStoreId(input.id);
+  const selector = validateStoreSelector(input.id);
   const type = input.type ?? 'store';
   const entry = await getRegisteredStore({
-    id,
+    id: selector,
     type,
     globalDataDir: input.globalDataDir,
   });
@@ -1023,6 +1534,7 @@ export async function prepareStoreCleanup(
     ...cleanupStoreOutput(entry.id, entry.storeRoot),
     backend: entry.backend,
     type,
+    selector,
     ...(input.globalDataDir ? { globalDataDir: input.globalDataDir } : {}),
   };
 }
@@ -1032,7 +1544,9 @@ export async function unregisterStore(
 ): Promise<StoreCleanupResult> {
   const target = await prepareStoreCleanup(input);
   const removed = await unregisterStoreRegistration({
-    id: target.id,
+    // The selector, not the resolved alias: with two Stores sharing a display
+    // name, re-resolving by the alias here would be ambiguous again.
+    id: target.selector,
     type: target.type,
     expectedBackend: target.backend,
     globalDataDir: target.globalDataDir,
@@ -1048,8 +1562,13 @@ export async function unregisterStore(
       deleted: false,
       leftOnDisk: removed.storeRoot,
     },
-    diagnostics: [],
+    diagnostics: rekeyBlockedDiagnostics(removed.rekeyBlockedBy),
   };
+}
+
+/** The pending-identity-upgrade report every registry mutation shares (D7). */
+function rekeyBlockedDiagnostics(blockedBy: string[]): StoreDiagnostic[] {
+  return blockedBy.length > 0 ? [storeRegistryRekeyBlocked({ blockedBy })] : [];
 }
 
 async function assertSafeToDeleteStoreRoot(storeRoot: string, id: string): Promise<{
@@ -1103,6 +1622,8 @@ export async function removeStore(
 ): Promise<StoreCleanupResult> {
   const id = validateStoreId(target.id);
   const diagnostics: StoreDiagnostic[] = [];
+  // Assigned from the unregistration below; declared here so the pending
+  // identity upgrades join the same diagnostics list the file deletion uses.
   let deleted = false;
 
   // Order matters: the registry entry goes first, the files second. A
@@ -1110,7 +1631,9 @@ export async function removeStore(
   // order would leave a phantom registration pointing at nothing.
   let rootMissing = false;
   const removed = await unregisterStoreRegistration({
-    id,
+    // Resolved by whatever the user named (see `unregisterStore`); the
+    // metadata-id safety check below still uses the resolved display name.
+    id: target.selector,
     type: target.type,
     expectedBackend: target.backend,
     globalDataDir: target.globalDataDir,
@@ -1146,6 +1669,10 @@ export async function removeStore(
     }
   }
 
+  // Last, so an existing first finding (the missing root, a failed deletion)
+  // stays first: this one is an advisory about the registry's key form.
+  diagnostics.push(...rekeyBlockedDiagnostics(removed.rekeyBlockedBy));
+
   return {
     store: cleanupStoreOutput(removed.id, removed.storeRoot),
     registryCommit: {
@@ -1168,6 +1695,7 @@ export async function listStores(): Promise<StoreListResult> {
       id: entry.id,
       type: entry.type,
       root: entry.storeRoot,
+      ...(entry.uid !== undefined ? { uid: entry.uid } : {}),
     })),
   };
 }
@@ -1193,11 +1721,7 @@ function doctorStatusForError(
   );
 }
 
-async function inspectStore(entry: {
-  id: string;
-  type: RegistryEntryType;
-  backend: StoreGitBackendConfig;
-}): Promise<StoreInspection> {
+async function inspectStore(entry: StoreRegistryRow): Promise<StoreInspection> {
   const root = getStoreRootForBackend(entry.backend);
   const metadataPath = getStoreMetadataPath(root);
   const diagnostics: StoreDiagnostic[] = [];
@@ -1240,6 +1764,10 @@ async function inspectStore(entry: {
     openspecRoot = await inspectOpenSpecRoot(root);
     diagnostics.push(...openspecRoot.diagnostics);
 
+    // The RAW recorded remote, kept beside the redacted one that is displayed:
+    // two remotes differing only in an embedded credential redact to the same
+    // string, so comparing the redacted forms would suppress a real divergence.
+    let recordedRemote: string | undefined;
     try {
       const parsed = await readOptionalStoreMetadataState(root);
       if (!parsed) {
@@ -1254,7 +1782,13 @@ async function inspectStore(entry: {
           }
         ));
       } else if (parsed.id !== entry.id) {
-        metadata = { present: true, valid: false, id: parsed.id, remote: null };
+        metadata = {
+          present: true,
+          valid: false,
+          id: parsed.id,
+          remote: null,
+          ...(storeMetadataUid(parsed) !== undefined ? { uid: storeMetadataUid(parsed) } : {}),
+        };
         diagnostics.push(makeStoreDiagnostic(
           'error',
           'store_metadata_id_mismatch',
@@ -1265,12 +1799,20 @@ async function inspectStore(entry: {
           }
         ));
       } else {
+        const parsedUid = storeMetadataUid(parsed);
+        recordedRemote = parsed.remote;
         metadata = {
           present: true,
           valid: true,
           id: parsed.id,
-          remote: parsed.remote ?? null,
+          ...(parsedUid !== undefined ? { uid: parsedUid } : { legacy: true }),
+          remote: redactOptionalRemote(parsed.remote) ?? null,
         };
+        if (parsedUid === undefined) {
+          diagnostics.push(
+            storeMetadataLegacy({ id: parsed.id, metadataPath })
+          );
+        }
       }
     } catch (error) {
       metadata = { present: true, valid: false, remote: null };
@@ -1296,7 +1838,19 @@ async function inspectStore(entry: {
       git.hasCommits = await gitHasCommits(root);
       git.hasUncommittedChanges = await gitHasUncommittedChanges(root);
       git.hasRemote = await gitHasRemote(root);
-      git.originUrl = await gitOriginUrl(root);
+      const observedRemote = await gitOriginUrl(root);
+      git.originUrl = redactOptionalRemote(observedRemote) ?? null;
+
+      // The recorded clone source and the checkout's actual origin disagreeing
+      // is information, not a fault — reported here so `store doctor` and
+      // `rasen doctor` say the same thing about the same store. Compared RAW,
+      // rendered redacted: comparing the redacted forms would hide a real
+      // divergence between two remotes that differ only in a credential.
+      if (recordedRemote && observedRemote && recordedRemote !== observedRemote) {
+        diagnostics.push(
+          storeRemoteDivergence({ recorded: recordedRemote, observed: observedRemote })
+        );
+      }
 
       if (git.hasCommits === false) {
         diagnostics.push(makeStoreDiagnostic(
@@ -1336,6 +1890,7 @@ async function inspectStore(entry: {
   return {
     id: entry.id,
     type: entry.type,
+    ...(entry.uid !== undefined ? { uid: entry.uid } : {}),
     root,
     metadataPath,
     openspecRoot,
@@ -1356,7 +1911,10 @@ export async function doctorStores(
   id?: string,
   type?: RegistryEntryType
 ): Promise<StoreDoctorResult> {
-  const selectedId = id !== undefined ? validateStoreId(id) : undefined;
+  const selectedId = id !== undefined ? validateStoreSelector(id) : undefined;
+  // Diagnosing one of two Stores that share a display name is only possible by
+  // naming its permanent identity, so this surface accepts one too.
+  const selectsByUid = selectedId !== undefined && isValidStoreUid(selectedId);
   const registry = await readStoreRegistryState();
 
   if (!registry) {
@@ -1372,7 +1930,12 @@ export async function doctorStores(
 
   const entries = listStoreRegistryEntries(registry);
   const selected = entries.filter((entry) => {
-    if (selectedId !== undefined && entry.id !== selectedId) return false;
+    if (selectedId !== undefined) {
+      const matches = selectsByUid
+        ? entry.type === 'store' && storeUidsMatch(entry.uid, selectedId)
+        : entry.id === selectedId;
+      if (!matches) return false;
+    }
     if (type !== undefined && entry.type !== type) return false;
     return true;
   });
@@ -1393,10 +1956,61 @@ export async function doctorStores(
     });
   }
 
-  return {
-    stores: await Promise.all(selected.map(inspectStore)),
-    diagnostics: [],
-  };
+  const inspected = await Promise.all(selected.map(inspectStore));
+
+  // Two stores sharing a display alias is legitimate once identities can tell
+  // them apart, but naming that alias is ambiguous — doctor says so.
+  const aliasCounts = new Map<string, number>();
+  for (const store of inspected) {
+    if (store.type !== 'store') continue;
+    aliasCounts.set(store.id, (aliasCounts.get(store.id) ?? 0) + 1);
+  }
+  const diagnostics: StoreDiagnostic[] = [];
+  for (const [alias, count] of aliasCounts) {
+    if (count < 2) continue;
+    diagnostics.push(
+      storeAliasAmbiguous({
+        id: alias,
+        candidates: inspected
+          .filter((store) => store.type === 'store' && store.id === alias)
+          .map((store) => ({
+            ...(store.uid !== undefined ? { uid: store.uid } : {}),
+            id: store.id,
+            root: store.root,
+          })),
+      })
+    );
+  }
+
+  // Store-side membership health: a record whose filename and identity
+  // disagree, a legacy reference that cannot be mapped here, and legacy
+  // adoption data still awaiting conversion. Read-only — the provider writes
+  // nothing on any path, including for a store carrying only legacy data.
+  for (const store of inspected) {
+    if (store.type !== 'store') continue;
+    if (!store.openspecRoot.healthy) continue;
+    const listing = await listStoreMembers(
+      {
+        type: 'store',
+        id: store.id,
+        root: store.root,
+        ...(store.uid !== undefined ? { uid: store.uid } : {}),
+      },
+      {}
+    ).catch(() => null);
+    if (listing) {
+      diagnostics.push(...listing.diagnostics);
+      for (const member of listing.members) {
+        for (const diagnostic of member.diagnostics) {
+          if (diagnostic.code === 'shared_metadata_contains_local_path') {
+            diagnostics.push(diagnostic);
+          }
+        }
+      }
+    }
+  }
+
+  return { stores: inspected, diagnostics };
 }
 
 export function normalizeStorePathForComparison(targetPath: string): string {

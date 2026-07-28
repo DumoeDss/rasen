@@ -72,13 +72,24 @@ export function inRepoArchiveDir(root: string): string {
 
 export const ADOPTIONS_MANIFEST_FILE_NAME = 'adoptions.yaml';
 
+/**
+ * LEGACY ownership entry, superseded by the per-project membership record at
+ * `<store>/.rasen-store/projects/<projectId>.yaml`. Still fully readable so an
+ * un-migrated Store keeps working; never written by any command.
+ */
 export interface AdoptionEntry {
   /** Spec directory names adopted from the source into the store. */
   specs: string[];
   /** Active change directory names adopted from the source into the store. */
   changes: string[];
-  /** Absolute source repo path at adoption time (portable record only). */
-  sourcePath: string;
+  /**
+   * READ-COMPAT ONLY. An absolute path from the machine that ran the adoption,
+   * committed into a shared repository — wrong on every other machine, which
+   * is why it is no longer written and why NOTHING reads it for behavior. Its
+   * presence raises `shared_metadata_contains_local_path`; eject resolves its
+   * destination explicitly instead (see `store-eject`).
+   */
+  sourcePath?: string;
   /** ISO-8601 timestamp of the adoption. */
   timestamp: string;
 }
@@ -93,7 +104,9 @@ const AdoptionEntrySchema = z
   .object({
     specs: z.array(z.string()),
     changes: z.array(z.string()),
-    sourcePath: z.string().min(1),
+    // Optional on READ so existing files still parse; the writer below never
+    // emits it and no command consults it.
+    sourcePath: z.string().min(1).optional(),
     timestamp: z.string().min(1),
   })
   .strict();
@@ -162,7 +175,13 @@ async function writeAdoptionsManifest(
   );
 }
 
-/** Inserts or replaces a project's adoption entry, preserving other entries. */
+/**
+ * Inserts or replaces a project's adoption entry, preserving other entries.
+ *
+ * LEGACY WRITER — no production caller remains: `store adopt` records
+ * ownership in the per-project membership record instead. It survives so the
+ * migration and its tests can construct the pre-record data they convert.
+ */
 export async function upsertAdoptionEntry(
   storeRoot: string,
   projectId: string,
@@ -171,6 +190,21 @@ export async function upsertAdoptionEntry(
   const manifest = (await readAdoptionsManifest(storeRoot)) ?? { version: 1, adoptions: {} };
   manifest.adoptions[projectId] = entry;
   await writeAdoptionsManifest(storeRoot, manifest);
+}
+
+/**
+ * Removes the legacy manifest FILE once its content has been converted into
+ * per-project records and read back. Deleting rather than renaming is
+ * deliberate: any archived copy would keep the machine-absolute `sourcePath`
+ * in git, which is the thing being removed. Nothing is lost — the facts move
+ * into the records and the file itself stays recoverable from the Store's git
+ * history. Returns true when a file was removed.
+ */
+export async function deleteAdoptionsManifest(storeRoot: string): Promise<boolean> {
+  const manifestPath = getAdoptionsManifestPath(storeRoot);
+  if (!(await pathIsFile(manifestPath))) return false;
+  await fs.rm(manifestPath, { force: true });
+  return true;
 }
 
 /** Removes a project's adoption entry. No-op when absent. */

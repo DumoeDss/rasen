@@ -490,11 +490,14 @@ export class AuditReportRepository {
     try {
       const { report, stat } = readDirectReport(full);
       return { descriptor: descriptorFor(id, report, stat.mtimeMs), report };
-    } catch (error) {
-      if (error instanceof AuditServiceError) {
-        throw new AuditServiceError(404, 'audit_not_found', 'No valid saved audit report matches that id.');
-      }
-      throw error;
+    } catch {
+      // Wrap ALL errors as audit_not_found. On Linux, `readDirectReport`'s
+      // O_NOFOLLOW open of a symlink throws a raw ELOOP (not AuditServiceError);
+      // other low-level IO errors (EACCES, EIO) should also be normalized. The
+      // `safeDirectReportPath` pre-check above still throws its own specific
+      // AuditServiceError for traversal attempts BEFORE this catch, so that
+      // message is preserved.
+      throw new AuditServiceError(404, 'audit_not_found', 'No valid saved audit report matches that id.');
     }
   }
 

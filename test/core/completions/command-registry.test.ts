@@ -329,9 +329,17 @@ describe('command completion registry', () => {
 
     walk(program, '');
 
-    // Every --store-bearing command also carries --project, and vice versa —
-    // never a lopsided flag surface between the two namespaces.
-    expect(projectCommands.sort()).toEqual(storeCommands.sort());
+    // Every owner/root selector command stays paired except the deliberate
+    // portable-bundle seams: a project bundle can contain only the project's
+    // own records, while Store transport is selected by export's separate
+    // --to-store route rather than by an owner/root selector.
+    const projectOnly = ['knowledge bundle export', 'knowledge bundle import'];
+    expect(
+      projectCommands.filter((commandPath) => !projectOnly.includes(commandPath)).sort()
+    ).toEqual(storeCommands.sort());
+    expect(
+      projectCommands.filter((commandPath) => projectOnly.includes(commandPath)).sort()
+    ).toEqual(projectOnly);
     expect(STORE_SELECTION_GUIDANCE).toContain('--project <id>');
     expect(STORE_SELECTION_GUIDANCE).toContain('mutually exclusive');
   });
@@ -387,6 +395,8 @@ describe('command completion registry', () => {
       'setup',
       'register',
       'add-project',
+      'migrate-membership',
+      'upgrade-identity',
       'unregister',
       'remove',
       'adopt',

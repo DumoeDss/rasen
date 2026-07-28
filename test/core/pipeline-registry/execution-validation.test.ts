@@ -306,7 +306,7 @@ stages:
     skill: ${KNOWN_SKILL}
 `);
 
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       await validatePipelineForExecution(p);
       const warned = logSpy.mock.calls.some(([line]) =>

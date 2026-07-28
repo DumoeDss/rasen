@@ -125,6 +125,8 @@ export {
   resolveRunStateLocation,
   completedStages,
   frozenRetentionMode,
+  frozenKnowledgeContext,
+  frozenExecutionBinding,
   RETAIN_STAGE_ID,
   normalizeWorker,
   normalizeRunStateWorkerRecord,
@@ -147,6 +149,16 @@ export {
   type RunStateReadResult,
   type RunStatePipelineSeed,
 } from './run-state.js';
+
+// Frozen-resume execution binding (unified-session-runtime-context D4)
+export {
+  resolveFrozenExecutionBinding,
+  checkoutsMatch,
+  type ExecutionBindingErrorCode,
+  type ExecutionBindingFailure,
+  type ExecutionBindingResult,
+  type ResolveFrozenExecutionInput,
+} from './execution-binding.js';
 
 // Pipeline resolution
 export {
@@ -191,9 +203,9 @@ export {
   type PortfolioState,
   type PortfolioChild,
   type PortfolioChildStatus,
+  type PortfolioStateReadResult,
   type PortfolioDelivery,
   type PortfolioDeliveryStatus,
   type ChildExecutionMode,
   type PortfolioStateLocation,
-  type PortfolioStateReadResult,
 } from './portfolio-state.js';

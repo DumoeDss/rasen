@@ -7,6 +7,11 @@ import { execFileSync } from 'node:child_process';
 import { resolveSessionLaunchContext } from '../../../src/core/management-api/session-launch-context.js';
 import { registerProject } from '../../../src/core/project-registry.js';
 import { registerStore } from '../../../src/core/store/registry.js';
+import {
+  getStoreProjectRecordPath,
+  writeStoreProjectRecord,
+} from '../../../src/core/store/project-records.js';
+import { upgradeStoreIdentity } from '../../../src/core/store/upgrade-identity.js';
 import { FileSystemUtils } from '../../../src/utils/file-system.js';
 import { createOpenSpecRoot } from '../../helpers/rasen-fixtures.js';
 import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
@@ -62,7 +67,8 @@ describe('resolveSessionLaunchContext', () => {
         },
         cwd: FileSystemUtils.canonicalizeExistingPath(projectRoot),
         attachedRoots: [],
-        executionProject: {
+        execution: {
+          kind: 'project',
           projectId: 'project-a-id',
           root: FileSystemUtils.canonicalizeExistingPath(projectRoot),
         },
@@ -81,6 +87,11 @@ describe('resolveSessionLaunchContext', () => {
       { projectRoot: memberRoot, projectId: 'member-a-id', mode: 'store' },
       { globalDataDir: dataDir }
     );
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId: 'member-a-id',
+      roles: { planning: true, knowledge: true },
+    });
 
     const result = await resolveSessionLaunchContext({
       space: 'store:team-store',
@@ -98,7 +109,8 @@ describe('resolveSessionLaunchContext', () => {
         },
         cwd: FileSystemUtils.canonicalizeExistingPath(memberRoot),
         attachedRoots: [FileSystemUtils.canonicalizeExistingPath(storeRoot)],
-        executionProject: {
+        execution: {
+          kind: 'project',
           projectId: 'member-a-id',
           root: FileSystemUtils.canonicalizeExistingPath(memberRoot),
         },
@@ -110,6 +122,11 @@ describe('resolveSessionLaunchContext', () => {
     const storeRoot = path.join(tempDir, 'clone-store');
     createOpenSpecRoot(storeRoot);
     await registerStore({ id: 'clone-store', localPath: storeRoot, globalDataDir: dataDir });
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId: 'shared-clone-id',
+      roles: { planning: true, knowledge: true },
+    });
 
     const cloneA = path.join(tempDir, 'clone-a');
     const cloneB = path.join(tempDir, 'clone-b');
@@ -134,7 +151,8 @@ describe('resolveSessionLaunchContext', () => {
       ok: true,
       context: {
         cwd: FileSystemUtils.canonicalizeExistingPath(cloneB),
-        executionProject: {
+        execution: {
+          kind: 'project',
           projectId: 'shared-clone-id',
           root: FileSystemUtils.canonicalizeExistingPath(cloneB),
         },
@@ -181,6 +199,9 @@ describe('resolveSessionLaunchContext', () => {
         planningSpace: { type: 'store', id: 'planning-store', root: canonicalStoreRoot },
         cwd: canonicalStoreRoot,
         attachedRoots: [],
+        // Recorded as an explicit fact, not by omission: this session works on
+        // no project and therefore has no code write root at all.
+        execution: { kind: 'planning-only' },
       },
     });
   });
@@ -257,7 +278,13 @@ describe('resolveSessionLaunchContext', () => {
     });
   });
 
-  it('rejects a live registered project whose registry mode is not Store membership', async () => {
+  // Registry `mode` is no longer consulted (unified-session-runtime-context
+  // D6): membership is decided by the Store's own record alone; the project's
+  // declaration is a locator and does not vouch. An ordinary in-repo project
+  // that the Store has not recorded is rejected — the failure names the
+  // missing membership and the command that adds it, instead of a registry
+  // flag the user cannot see.
+  it('rejects a project neither the Store record nor its own declaration vouches for', async () => {
     const storeRoot = path.join(tempDir, 'non-member-store');
     createOpenSpecRoot(storeRoot);
     await registerStore({ id: 'non-member-store', localPath: storeRoot, globalDataDir: dataDir });
@@ -278,12 +305,12 @@ describe('resolveSessionLaunchContext', () => {
     expect(result).toMatchObject({
       ok: false,
       status: 409,
-      code: 'execution_unavailable',
-      message: expect.stringContaining('not a current live member'),
+      code: 'execution_not_member',
+      message: expect.stringContaining('rasen store add-project'),
     });
   });
 
-  it('rejects a Store registry member whose current pointer names a different Store', async () => {
+  it('rejects a project whose declaration names an unusable Store and which has no membership record', async () => {
     const storeRoot = path.join(tempDir, 'selected-store');
     createOpenSpecRoot(storeRoot);
     await registerStore({ id: 'selected-store', localPath: storeRoot, globalDataDir: dataDir });
@@ -304,9 +331,284 @@ describe('resolveSessionLaunchContext', () => {
     expect(result).toMatchObject({
       ok: false,
       status: 409,
-      code: 'execution_unavailable',
-      message: expect.stringContaining('not a current live member'),
+      code: 'execution_not_member',
+      message: expect.stringContaining('stale-member-id'),
     });
+  });
+
+  // Pre-0.1.5 this was the OR-arm's ACCEPTING case: a declaration alone could
+  // vouch. The Store record is now the sole authority, so the same fixture is
+  // the legacy-migration rejection shape — the declaration names THIS Store
+  // but no record exists, and the diagnostic carries the migration marker and
+  // the copy-pasteable repair command.
+  it('rejects a project whose declaration names this Store but has no membership record, with a migration repair', async () => {
+    const storeRoot = path.join(tempDir, 'declared-store');
+    createOpenSpecRoot(storeRoot);
+    await registerStore({ id: 'declared-store', localPath: storeRoot, globalDataDir: dataDir });
+
+    const projectRoot = path.join(tempDir, 'declared-member');
+    createPointerProject(projectRoot, 'declared-member-id', 'declared-store');
+    await registerProject(
+      { projectRoot, projectId: 'declared-member-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+
+    // No record is written: this is the shape of every declaration-only
+    // install that has not yet migrated to the Store-record authority.
+    expect(fs.existsSync(getStoreProjectRecordPath(storeRoot, 'declared-member-id'))).toBe(false);
+
+    const result = await resolveSessionLaunchContext({
+      space: 'store:declared-store',
+      execution: 'project:declared-member-id',
+      launchProject: null,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 409,
+      code: 'execution_not_member',
+      message: expect.stringContaining('legacy declaration-only install'),
+    });
+    expect(result.ok === false && result.message).toContain(
+      'rasen store add-project declared-member-id --store declared-store'
+    );
+    // Rejection must not have written a record either — this seam is read-only.
+    expect(fs.existsSync(getStoreProjectRecordPath(storeRoot, 'declared-member-id'))).toBe(false);
+  });
+
+  it('rejects a uid-only durable declaration when the Store record is missing, with a migration repair', async () => {
+    const storeRoot = path.join(tempDir, 'durable-store');
+    createOpenSpecRoot(storeRoot);
+    await registerStore({ id: 'durable-store', localPath: storeRoot, globalDataDir: dataDir });
+
+    const projectRoot = path.join(tempDir, 'durable-member');
+    createPointerProject(projectRoot, 'durable-member-id', 'durable-store');
+    await registerProject(
+      { projectRoot, projectId: 'durable-member-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+
+    // Mints the Store's permanent identity and rewrites the declaration into
+    // the durable (uid-only) form. Pre-0.1.5 this was the OR-arm accepting:
+    // a RESOLVED-ROOT comparison matched even with no display alias. Now the
+    // declaration cannot vouch at all, and the same fixture is the legacy-
+    // migration rejection shape — the durable declaration resolves to THIS
+    // Store but no record exists.
+    await upgradeStoreIdentity({
+      id: 'durable-store',
+      apply: true,
+      projectRoot,
+      globalDataDir: dataDir,
+    });
+    expect(fs.readFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'utf-8')).toContain(
+      'uid:'
+    );
+    expect(fs.existsSync(getStoreProjectRecordPath(storeRoot, 'durable-member-id'))).toBe(false);
+
+    const result = await resolveSessionLaunchContext({
+      space: 'store:durable-store',
+      execution: 'project:durable-member-id',
+      launchProject: null,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 409,
+      code: 'execution_not_member',
+      message: expect.stringContaining('legacy declaration-only install'),
+    });
+    expect(result.ok === false && result.message).toContain(
+      'rasen store add-project durable-member-id --store durable-store'
+    );
+  });
+
+  it('the rejection distinguishes a declaration pointing here from one pointing elsewhere or absent', async () => {
+    // Three Store-scoped sessions, each against a project with NO Store record.
+    // Only the case where the declaration resolves to THIS Store carries the
+    // legacy-migration marker; the other two get the plain missing-record
+    // message with the "declaration does not name this Store" clarification.
+    const hereStoreRoot = path.join(tempDir, 'here-store');
+    const otherStoreRoot = path.join(tempDir, 'other-store');
+    createOpenSpecRoot(hereStoreRoot);
+    createOpenSpecRoot(otherStoreRoot);
+    await registerStore({ id: 'here-store', localPath: hereStoreRoot, globalDataDir: dataDir });
+    await registerStore({ id: 'other-store', localPath: otherStoreRoot, globalDataDir: dataDir });
+
+    // (A) Declaration names THIS Store, no record → legacy-migration marker.
+    const declaredHere = path.join(tempDir, 'declared-here');
+    createPointerProject(declaredHere, 'declared-here-id', 'here-store');
+    await registerProject(
+      { projectRoot: declaredHere, projectId: 'declared-here-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+    const resultA = await resolveSessionLaunchContext({
+      space: 'store:here-store',
+      execution: 'project:declared-here-id',
+      launchProject: null,
+    });
+    expect(resultA).toMatchObject({ ok: false, code: 'execution_not_member' });
+    expect(resultA.ok === false && resultA.message).toContain('legacy declaration-only install');
+
+    // (B) Declaration names a DIFFERENT Store → plain message, no marker.
+    const declaredElse = path.join(tempDir, 'declared-else');
+    createPointerProject(declaredElse, 'declared-else-id', 'other-store');
+    await registerProject(
+      { projectRoot: declaredElse, projectId: 'declared-else-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+    const resultB = await resolveSessionLaunchContext({
+      space: 'store:here-store',
+      execution: 'project:declared-else-id',
+      launchProject: null,
+    });
+    expect(resultB).toMatchObject({ ok: false, code: 'execution_not_member' });
+    expect(resultB.ok === false && resultB.message).not.toContain('legacy declaration-only install');
+    expect(resultB.ok === false && resultB.message).toContain('does not name this Store');
+
+    // (C) No declaration at all → plain message, no marker.
+    const noDeclaration = path.join(tempDir, 'no-declaration');
+    createOpenSpecRoot(noDeclaration);
+    await registerProject(
+      { projectRoot: noDeclaration, projectId: 'no-decl-id', mode: 'in-repo' },
+      { globalDataDir: dataDir }
+    );
+    const resultC = await resolveSessionLaunchContext({
+      space: 'store:here-store',
+      execution: 'project:no-decl-id',
+      launchProject: null,
+    });
+    expect(resultC).toMatchObject({ ok: false, code: 'execution_not_member' });
+    expect(resultC.ok === false && resultC.message).not.toContain('legacy declaration-only install');
+    expect(resultC.ok === false && resultC.message).toContain('does not name this Store');
+  });
+
+  it('accepts a project whose Store record and declaration both agree on this Store', async () => {
+    // The post-migration shape: both the Store record and the declaration
+    // point at the same Store. This is what the previous OR-arm tests collapse
+    // into once the record is established.
+    const storeRoot = path.join(tempDir, 'agreed-store');
+    createOpenSpecRoot(storeRoot);
+    await registerStore({ id: 'agreed-store', localPath: storeRoot, globalDataDir: dataDir });
+
+    const projectRoot = path.join(tempDir, 'agreed-member');
+    createPointerProject(projectRoot, 'agreed-id', 'agreed-store');
+    await registerProject(
+      { projectRoot, projectId: 'agreed-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId: 'agreed-id',
+      roles: { planning: true, knowledge: true },
+    });
+
+    const result = await resolveSessionLaunchContext({
+      space: 'store:agreed-store',
+      execution: 'project:agreed-id',
+      launchProject: null,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      context: {
+        planningSpace: {
+          type: 'store',
+          id: 'agreed-store',
+          root: FileSystemUtils.canonicalizeExistingPath(storeRoot),
+        },
+        execution: {
+          kind: 'project',
+          projectId: 'agreed-id',
+          root: FileSystemUtils.canonicalizeExistingPath(projectRoot),
+        },
+      },
+    });
+  });
+
+  it('accepts a project whose own planning Store is a DIFFERENT Store when the Store records it', async () => {
+    // The scenario the whole planning/membership split exists for: the session
+    // pins planning explicitly, so the project's own default planning Store is
+    // irrelevant to whether it may be worked on here.
+    const planningStoreRoot = path.join(tempDir, 'session-store');
+    createOpenSpecRoot(planningStoreRoot);
+    await registerStore({ id: 'session-store', localPath: planningStoreRoot, globalDataDir: dataDir });
+
+    const otherStoreRoot = path.join(tempDir, 'home-store');
+    createOpenSpecRoot(otherStoreRoot);
+    await registerStore({ id: 'home-store', localPath: otherStoreRoot, globalDataDir: dataDir });
+
+    const projectRoot = path.join(tempDir, 'plans-elsewhere');
+    createPointerProject(projectRoot, 'plans-elsewhere-id', 'home-store');
+    await registerProject(
+      { projectRoot, projectId: 'plans-elsewhere-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+    await writeStoreProjectRecord(planningStoreRoot, {
+      version: 1,
+      projectId: 'plans-elsewhere-id',
+      roles: { planning: false, knowledge: true },
+    });
+
+    const result = await resolveSessionLaunchContext({
+      space: 'store:session-store',
+      execution: 'project:plans-elsewhere-id',
+      launchProject: null,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      context: {
+        planningSpace: {
+          type: 'store',
+          id: 'session-store',
+          root: FileSystemUtils.canonicalizeExistingPath(planningStoreRoot),
+        },
+        execution: {
+          kind: 'project',
+          projectId: 'plans-elsewhere-id',
+          root: FileSystemUtils.canonicalizeExistingPath(projectRoot),
+        },
+      },
+    });
+  });
+
+  it('rejects a checkout whose own recorded identity is a different project', async () => {
+    const storeRoot = path.join(tempDir, 'identity-store');
+    createOpenSpecRoot(storeRoot);
+    await registerStore({ id: 'identity-store', localPath: storeRoot, globalDataDir: dataDir });
+
+    const projectRoot = path.join(tempDir, 'wrong-identity');
+    createPointerProject(projectRoot, 'registered-id', 'identity-store');
+    await registerProject(
+      { projectRoot, projectId: 'registered-id', mode: 'store' },
+      { globalDataDir: dataDir }
+    );
+    // The checkout is re-pointed at a different project AFTER registration —
+    // exactly the "this is not the clone you think it is" case.
+    createPointerProject(projectRoot, 'someone-elses-id', 'identity-store');
+
+    const result = await resolveSessionLaunchContext({
+      space: 'store:identity-store',
+      execution: 'project:registered-id',
+      launchProject: null,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 409,
+      code: 'execution_identity_mismatch',
+      message: expect.stringContaining('someone-elses-id'),
+    });
+  });
+
+  it('stops the launch when the planning Store cannot be resolved on this machine', async () => {
+    const result = await resolveSessionLaunchContext({
+      space: 'store:never-registered-store',
+      execution: 'project:whatever',
+      launchProject: null,
+    });
+
+    expect(result).toMatchObject({ ok: false, status: 404, code: 'space_not_found' });
   });
 
   it('rejects a registered member whose root is no longer live', async () => {
@@ -332,7 +634,7 @@ describe('resolveSessionLaunchContext', () => {
       ok: false,
       status: 409,
       code: 'execution_unavailable',
-      message: expect.stringContaining('not a current live member'),
+      message: expect.stringContaining('not available at its registered root'),
     });
   });
 
@@ -362,6 +664,11 @@ describe('resolveSessionLaunchContext', () => {
     const storeRoot = path.join(tempDir, 'worktree-store');
     createOpenSpecRoot(storeRoot);
     await registerStore({ id: 'worktree-store', localPath: storeRoot, globalDataDir: dataDir });
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId: 'member-worktree-id',
+      roles: { planning: true, knowledge: true },
+    });
 
     const mainRoot = path.join(tempDir, 'member-main');
     const worktreeRoot = path.join(tempDir, 'member-worktree');
@@ -388,7 +695,8 @@ describe('resolveSessionLaunchContext', () => {
       context: {
         cwd: FileSystemUtils.canonicalizeExistingPath(worktreeRoot),
         attachedRoots: [FileSystemUtils.canonicalizeExistingPath(storeRoot)],
-        executionProject: {
+        execution: {
+          kind: 'project',
           projectId: 'member-worktree-id',
           root: FileSystemUtils.canonicalizeExistingPath(worktreeRoot),
         },
@@ -429,7 +737,8 @@ describe('resolveSessionLaunchContext', () => {
         },
         cwd: FileSystemUtils.canonicalizeExistingPath(projectRoot),
         attachedRoots: [FileSystemUtils.canonicalizeExistingPath(storeRoot)],
-        executionProject: {
+        execution: {
+          kind: 'project',
           projectId: 'fallback-member-id',
           root: FileSystemUtils.canonicalizeExistingPath(projectRoot),
         },
@@ -454,7 +763,8 @@ describe('resolveSessionLaunchContext', () => {
       context: {
         cwd: FileSystemUtils.canonicalizeExistingPath(projectRoot),
         attachedRoots: [],
-        executionProject: {
+        execution: {
+          kind: 'project',
           projectId: '',
           root: FileSystemUtils.canonicalizeExistingPath(projectRoot),
         },
@@ -468,6 +778,11 @@ describe('resolveSessionLaunchContext', () => {
       const storeRoot = path.join(tempDir, 'windows-store');
       createOpenSpecRoot(storeRoot);
       await registerStore({ id: 'windows-store', localPath: storeRoot, globalDataDir: dataDir });
+      await writeStoreProjectRecord(storeRoot, {
+        version: 1,
+        projectId: 'windows-member-id',
+        roles: { planning: true, knowledge: true },
+      });
 
       const projectRoot = path.join(tempDir, 'windows-member');
       createPointerProject(projectRoot, 'windows-member-id', 'windows-store');
@@ -487,7 +802,8 @@ describe('resolveSessionLaunchContext', () => {
         ok: true,
         context: {
           cwd: FileSystemUtils.canonicalizeExistingPath(projectRoot),
-          executionProject: {
+          execution: {
+            kind: 'project',
             projectId: 'windows-member-id',
             root: FileSystemUtils.canonicalizeExistingPath(projectRoot),
           },

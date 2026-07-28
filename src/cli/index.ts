@@ -27,6 +27,7 @@ import { PipelineLibraryCommand } from '../commands/pipeline-library.js';
 import { formatPipelineError } from '../commands/pipeline-messages.js';
 import { AgentCommand } from '../commands/agent.js';
 import { registerStoreCommand } from '../commands/store.js';
+import { registerBootstrapCommand } from '../commands/bootstrap.js';
 import {
   registerArchiveRelocateSubcommand,
   registerHomeCommand,
@@ -387,6 +388,7 @@ registerSchemeCommand(program);
 registerKnowledgeCommand(program);
 registerSchemaCommand(program);
 registerStoreCommand(program);
+registerBootstrapCommand(program);
 registerDoctorCommand(program);
 registerContextCommand(program);
 registerWorksetCommand(program);
@@ -654,11 +656,11 @@ pipelineCmd
   .command('show <name>')
   .description('Show a pipeline stage DAG and build order')
   .option('--for-execution', 'Validate active-profile skills before returning the executable DAG')
-  .option('--planner <runtime>', 'Override planner runtime for this run: claude or codex')
-  .option('--implementer <runtime>', 'Override implementer runtime for this run: claude or codex')
-  .option('--reviewer <runtime>', 'Override reviewer runtime for this run: claude or codex')
-  .option('--fixer <runtime>', 'Override fixer runtime for this run: claude or codex')
-  .option('--shipper <runtime>', 'Override shipper runtime for this run: claude or codex')
+  .option('--planner <runtime>', 'Set planner runtime: claude or codex')
+  .option('--implementer <runtime>', 'Set implementer runtime: claude or codex')
+  .option('--reviewer <runtime>', 'Set reviewer runtime: claude or codex')
+  .option('--fixer <runtime>', 'Set fixer runtime: claude or codex')
+  .option('--shipper <runtime>', 'Set shipper runtime: claude or codex')
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
   .option('--project <id>', PROJECT_OPTION_DESCRIPTION)

@@ -61,6 +61,35 @@ describe('project-home', () => {
     expect(fs.existsSync(home!.archiveDir)).toBe(false);
   });
 
+  it('derives store mode from a declaration that records only the permanent identity', async () => {
+    // A durable declaration may carry no display alias at all. Deriving the
+    // mode from the alias would call this repo `in-repo` — and then persist
+    // that wrong value into the machine project registry, where a later reader
+    // treats the repo as if it planned locally.
+    fs.writeFileSync(
+      path.join(projectRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nstore:\n  uid: 9d7a6f8d-6b8e-4f6a-b5c4-2e31fd3525c7\n'
+    );
+
+    const home = await resolveProjectHome(projectRoot, { globalDataDir });
+
+    expect(home!.mode).toBe('store');
+    const canonicalPath = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+    const state = await readProjectRegistryState({ globalDataDir });
+    expect(state?.projects[canonicalPath]?.mode).toBe('store');
+  });
+
+  it('still derives store mode from the older single-name declaration', async () => {
+    fs.writeFileSync(
+      path.join(projectRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nstore: team-store\n'
+    );
+
+    const home = await resolveProjectHome(projectRoot, { globalDataDir });
+
+    expect(home!.mode).toBe('store');
+  });
+
   it('archivedWorkDir is distinct from workDir for a same-base-name pair', async () => {
     const home = await resolveProjectHome(projectRoot, { globalDataDir });
 

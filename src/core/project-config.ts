@@ -7,6 +7,12 @@ import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'y
 import { z } from 'zod';
 
 import { withProjectRegistryLock, type ProjectPathOptions } from './project-registry.js';
+import {
+  makeLockErrorFactory,
+  machineLockPath,
+  writeFileAtomically,
+  withOwnerAwareFileLock,
+} from './file-state.js';
 import { isKebabId } from './id.js';
 import { thresholdSchema, type ThresholdValue } from './pipeline-registry/types.js';
 import {
@@ -24,6 +30,7 @@ import {
   type ConfigDiagnostic,
   type ConfigDiagnosticReporter,
 } from './config-diagnostics.js';
+import { isValidStoreUid, type StorePointerV2 } from './store/identity-types.js';
 
 /**
  * Zod schema for project configuration.
@@ -80,12 +87,33 @@ export const ProjectConfigSchema = z.object({
     .optional()
     .describe('Store id used as the Rasen root when no local planning shape exists'),
 
+  // In-memory normalization of the durable `store: { uid, id?, remote? }`
+  // declaration. Never written from here — the config file keeps whichever
+  // form the user (or `store upgrade-identity`) put there.
+  storeDeclaration: z
+    .object({
+      uid: z.string(),
+      id: z.string().optional(),
+      remote: z.string().optional(),
+    })
+    .optional()
+    .describe('Durable store declaration: permanent identity, display alias, credential-free remote'),
+
   // Optional: stable machine-local project identity (opaque string; any
   // non-empty JS string is accepted, minted as a UUID by init/first use).
   projectId: z
     .string()
     .optional()
     .describe('Stable project identity used by the machine-wide project registry'),
+
+  // Optional: a portable project-knowledge bundle deliberately declared by
+  // this project. It is a locator only and is resolved by machine preparation
+  // relative to the project root.
+  knowledgeBundle: z
+    .string()
+    .min(1)
+    .optional()
+    .describe('Project-root-relative portable project-knowledge bundle locator'),
 
   // Optional: a per-space workflow selection override (space-workflow-enablement
   // spec). When present, this list (plus its dependency closure) is the
@@ -303,8 +331,50 @@ export interface DeclarationEntry {
   type?: 'store' | 'project';
 }
 
+/** The config key holding the project's Store membership locator hints. */
+export const STORE_MEMBERSHIPS_FIELD = 'storeMemberships';
+
+/**
+ * A project-side locator for a Store the project belongs to.
+ *
+ * A HINT and never authority: the Store's own
+ * `.rasen-store/projects/<projectId>.yaml` record decides membership, and a
+ * hint that disagrees with it is reported as drift rather than believed. Its
+ * job is discovery — a fresh clone of the project, on a machine that has never
+ * seen these Stores, can still say which Stores it belongs to and how to
+ * obtain each one.
+ *
+ * Nothing machine-specific ever enters it: permanent identity, display alias,
+ * and a credential-free remote, and no filesystem path on any platform.
+ */
+export interface StoreMembershipHint {
+  /** The Store's permanent identity. Absent only for a legacy-identity Store. */
+  uid?: string;
+  /** Display alias, for reading and for naming a Store that has no identity yet. */
+  id?: string;
+  /** Credential-free clone source. */
+  remote?: string;
+}
+
+/**
+ * De-duplication key: the permanent identity when there is one, else the
+ * display alias. Two hints for one Store must collapse even when one of them
+ * predates the Store's identity.
+ */
+export function storeMembershipHintKey(hint: StoreMembershipHint): string {
+  return hint.uid !== undefined
+    ? `uid:${hint.uid.trim().toLowerCase()}`
+    : `id:${(hint.id ?? '').trim().toLowerCase()}`;
+}
+
+/** The alias, else the identity — never an empty string. */
+export function describeStoreMembershipHint(hint: StoreMembershipHint): string {
+  return hint.id ?? hint.uid ?? '(unnamed store)';
+}
+
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema> & {
   references?: DeclarationEntry[];
+  storeMemberships?: StoreMembershipHint[];
 };
 
 /**
@@ -412,6 +482,131 @@ function parseDeclarationList(
 }
 
 /**
+ * Resilient parser for `storeMemberships:` — the SAME drop-with-a-warning
+ * discipline `references:` uses, and deliberately not a strict schema.
+ *
+ * That is correct precisely BECAUSE these are locators: losing one hint costs
+ * a diagnostic and a rediscovery, while a strict schema would reject the whole
+ * file over one bad entry and take every other hint with it. Authority lives
+ * in the Store's own record, where strictness belongs.
+ *
+ * Accepts a bare string (a permanent identity, else a display alias) and the
+ * `{uid?, id?, remote?}` map. Entries de-duplicate on permanent identity —
+ * falling back to the display alias for a Store that has none — keeping the
+ * first position, with a later duplicate filling a field the first left empty.
+ * An entry carrying no identity survives with a warning naming the upgrade
+ * path: it still locates the Store by name today, and dropping it would lose
+ * the only record that the membership exists at all.
+ */
+function parseStoreMembershipList(
+  raw: unknown,
+  reporter?: ConfigDiagnosticReporter
+): StoreMembershipHint[] | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(raw)) {
+    warnConfig(
+      {
+        key: 'invalidStoreMemberships',
+        fallback: `Invalid '${STORE_MEMBERSHIPS_FIELD}' field in config (must be an array of store references)`,
+      },
+      reporter
+    );
+    return undefined;
+  }
+
+  const byKey = new Map<string, StoreMembershipHint>();
+  let dropped = false;
+  let identityless = false;
+
+  for (const entry of raw) {
+    let hint: StoreMembershipHint | null = null;
+
+    if (typeof entry === 'string') {
+      const value = entry.trim();
+      if (isValidStoreUid(value)) {
+        hint = { uid: value };
+      } else if (isKebabId(value)) {
+        hint = { id: value };
+      }
+    } else if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      const candidate = entry as Record<string, unknown>;
+      const uid =
+        typeof candidate.uid === 'string' && isValidStoreUid(candidate.uid)
+          ? candidate.uid.trim()
+          : undefined;
+      const id =
+        typeof candidate.id === 'string' && candidate.id.length > 0 && isKebabId(candidate.id)
+          ? candidate.id
+          : undefined;
+      const remote =
+        typeof candidate.remote === 'string' && candidate.remote.length > 0
+          ? candidate.remote
+          : undefined;
+
+      if (uid !== undefined || id !== undefined) {
+        hint = {
+          ...(uid !== undefined ? { uid } : {}),
+          ...(id !== undefined ? { id } : {}),
+          ...(remote !== undefined ? { remote } : {}),
+        };
+      }
+      // A field this parser could not read (a malformed uid, a non-kebab id,
+      // an empty remote) is reported alongside a wholly unreadable entry: in
+      // both cases something the user wrote is not being used.
+      if (
+        hint !== null &&
+        ((candidate.uid !== undefined && uid === undefined) ||
+          (candidate.id !== undefined && id === undefined) ||
+          (candidate.remote !== undefined && remote === undefined))
+      ) {
+        dropped = true;
+      }
+    }
+
+    if (!hint) {
+      dropped = true;
+      continue;
+    }
+    if (hint.uid === undefined) {
+      identityless = true;
+    }
+
+    const key = storeMembershipHintKey(hint);
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, hint);
+      continue;
+    }
+    if (existing.id === undefined && hint.id !== undefined) existing.id = hint.id;
+    if (existing.remote === undefined && hint.remote !== undefined) existing.remote = hint.remote;
+    if (existing.uid === undefined && hint.uid !== undefined) existing.uid = hint.uid;
+  }
+
+  if (dropped) {
+    warnConfig(
+      {
+        key: 'invalidStoreMembershipEntries',
+        fallback: `Some '${STORE_MEMBERSHIPS_FIELD}' entries are invalid; ignoring the unusable entries and fields`,
+      },
+      reporter
+    );
+  }
+  if (identityless) {
+    warnConfig(
+      {
+        key: 'storeMembershipsWithoutIdentity',
+        fallback: `Some '${STORE_MEMBERSHIPS_FIELD}' entries name a store only by display name; run 'rasen store upgrade-identity <store> --apply' so the hint survives a rename`,
+      },
+      reporter
+    );
+  }
+
+  return byKey.size > 0 ? [...byKey.values()] : undefined;
+}
+
+/**
  * Resilient parser for the `pipelines:` block (a map keyed by pipeline name of
  * `gates`/`models`/`handoff` per-stage records). Mirrors the field-by-field
  * drop-with-warning discipline of the blocks above: a non-map pipeline entry,
@@ -509,31 +704,52 @@ export const MAX_CONTEXT_SIZE = 50 * 1024; // 50KB hard limit, shared with the r
  * @param projectRoot - The root directory of the project (where `openspec/` lives)
  * @returns Parsed config or null if file doesn't exist
  */
-export function readProjectConfig(
+/**
+ * Discriminated result of reading a project config file, so callers can
+ * distinguish "no config file present" from "config file exists but is
+ * unparseable." The absent state is the ordinary "no config" signal; the
+ * unreadable state carries a diagnostic so a caller never silently treats a
+ * corrupt config as a project with no identity.
+ */
+export type ProjectConfigReadResult =
+  | { status: 'absent' }
+  | { status: 'ok'; config: ProjectConfig | null }
+  | { status: 'unreadable'; path: string; error: string };
+
+export function readProjectConfigWithDiagnostics(
   projectRoot: string,
   options: { reporter?: ConfigDiagnosticReporter } = {}
-): ProjectConfig | null {
+): ProjectConfigReadResult {
   const configPath = resolveConfigFilePath(projectRoot);
   if (configPath === null) {
-    return null; // No config is OK
+    return { status: 'absent' };
   }
 
   try {
     const content = readFileSync(configPath, 'utf-8');
-    return parseProjectConfigContent(content, projectRoot, options.reporter);
+    const config = parseProjectConfigContent(content, projectRoot, options.reporter);
+    return { status: 'ok', config };
   } catch (error) {
-    const configPath = configPathForWarnings(projectRoot);
+    const warnPath = configPathForWarnings(projectRoot);
     const detail = error instanceof Error ? error.message.split('\n')[0] : String(error);
     warnConfig(
       {
         key: 'projectParseFailed',
-        values: { path: configPath, detail },
-        fallback: `Warning: could not parse ${configPath} (${detail}); ignoring it.`,
+        values: { path: warnPath, detail },
+        fallback: `Warning: could not parse ${warnPath} (${detail}); ignoring it.`,
       },
       options.reporter
     );
-    return null;
+    return { status: 'unreadable', path: configPath, error: detail };
   }
+}
+
+export function readProjectConfig(
+  projectRoot: string,
+  options: { reporter?: ConfigDiagnosticReporter } = {}
+): ProjectConfig | null {
+  const result = readProjectConfigWithDiagnostics(projectRoot, options);
+  return result.status === 'ok' ? result.config : null;
 }
 
 /**
@@ -709,12 +925,27 @@ function parseProjectConfigContent(
       config.references = references;
     }
 
-    // Parse store pointer field: a string, or dropped with a warning.
+    // Store membership locator hints. Parsed like `references:` and for the
+    // same reason — they are hints, so one bad entry costs a diagnostic, not
+    // the whole list.
+    const storeMemberships = parseStoreMembershipList(raw[STORE_MEMBERSHIPS_FIELD], reporter);
+    if (storeMemberships) {
+      config.storeMemberships = storeMemberships;
+    }
+
+    // Parse store declaration: the legacy id string, the durable
+    // `{ uid, id?, remote? }` form, or dropped with a warning.
     // (Root resolution does NOT use this parse — it uses readStorePointer
-    // below, which errors on malformed pointers instead of dropping.)
+    // below, which errors on malformed declarations instead of dropping.)
     if (raw.store !== undefined) {
+      const durable = parseDurableStoreDeclaration(raw.store);
       if (typeof raw.store === 'string') {
         config.store = raw.store;
+      } else if (durable) {
+        config.storeDeclaration = durable;
+        if (durable.id !== undefined) {
+          config.store = durable.id;
+        }
       } else {
         const configPath = configPathForWarnings(projectRoot);
         warnConfig(
@@ -738,6 +969,28 @@ function parseProjectConfigContent(
           {
             key: 'invalidProjectId',
             fallback: `Invalid 'projectId' field in config (must be string)`,
+          },
+          reporter
+        );
+      }
+    }
+
+    // Parse the portable knowledge-bundle declaration independently. A bad
+    // locator drops only this field; every valid sibling remains usable.
+    if (raw.knowledgeBundle !== undefined) {
+      if (
+        typeof raw.knowledgeBundle === 'string' &&
+        raw.knowledgeBundle.trim().length > 0
+      ) {
+        config.knowledgeBundle = raw.knowledgeBundle;
+      } else if (reporter !== undefined) {
+        // Bundle-aware callers collect this into their structured result. A
+        // generic config read must not emit an out-of-band English warning
+        // that can corrupt localized or JSON command output.
+        warnConfig(
+          {
+            key: 'invalidKnowledgeBundle',
+            fallback: `Invalid 'knowledgeBundle' field in config (must be a non-empty string)`,
           },
           reporter
         );
@@ -1284,28 +1537,80 @@ export function suggestSchemas(
 // Store pointer (declared default store)
 // -----------------------------------------------------------------------------
 
+/**
+ * Normalizes a `store:` value in the durable object form, or null when it is
+ * not one. Shared by the resilient parser and the targeted pointer read so the
+ * two can never disagree on what counts as a usable declaration.
+ */
+function parseDurableStoreDeclaration(value: unknown): StorePointerV2 | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (!isValidStoreUid(raw.uid)) return null;
+
+  const id = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : undefined;
+  const remote = typeof raw.remote === 'string' && raw.remote.length > 0 ? raw.remote : undefined;
+
+  return {
+    uid: raw.uid,
+    ...(id !== undefined ? { id } : {}),
+    ...(remote !== undefined ? { remote } : {}),
+  };
+}
+
+/** How a project declared its Store, before any resolution is attempted. */
+export type StorePointerShape = 'absent' | 'alias' | 'durable' | 'malformed';
+
+export type StorePointerProblem = 'unparseable' | 'non_string' | 'invalid_object';
+
 export interface StorePointerRead {
-  /** The declared store id, when present and a string. */
+  /** Discriminates the declaration form actually found on disk. */
+  shape: StorePointerShape;
+  /**
+   * The declared display alias: the whole value for the legacy string form,
+   * and the `id` field for the durable object form. Absent for a durable
+   * declaration that records only a permanent identity.
+   */
   value?: string;
+  /** The durable declaration, when the `store:` value is the object form. */
+  durable?: StorePointerV2;
   /** Set when the pointer cannot be trusted: the config file could not be
-   * read as YAML, or the store key is present but not a string. An empty
+   * read as YAML, the store key is neither a string nor a store declaration,
+   * or the declaration carries no usable permanent identity. An empty
    * or comments-only config is NOT malformed - it simply has no pointer. */
-  malformed?: 'unparseable' | 'non_string';
+  malformed?: StorePointerProblem;
   /** Absolute path of the config file actually read, or null when none exists. */
   filePath: string | null;
 }
 
+function readDurableStorePointer(
+  raw: Record<string, unknown>,
+  configPath: string
+): StorePointerRead {
+  const durable = parseDurableStoreDeclaration(raw);
+  if (!durable) {
+    return { shape: 'malformed', malformed: 'invalid_object', filePath: configPath };
+  }
+
+  return {
+    shape: 'durable',
+    ...(durable.id !== undefined ? { value: durable.id } : {}),
+    durable,
+    filePath: configPath,
+  };
+}
+
 /**
- * Warning-silent targeted read of the `store:` pointer. Used by root
+ * Warning-silent targeted read of the `store:` declaration. Used by root
  * resolution (which must not re-emit the resilient parser's field
  * warnings) and by `rasen init`'s pointer guard. Unlike
  * `readProjectConfig`, a malformed value is REPORTED, not dropped —
- * a dropped pointer would silently flip where work lands.
+ * a dropped pointer would silently flip where work lands. Both the legacy
+ * single-name form and the durable `{ uid, id?, remote? }` form are read.
  */
 export function readStorePointer(projectRoot: string): StorePointerRead {
   const configPath = resolveConfigFilePath(projectRoot);
   if (configPath === null) {
-    return { filePath: null };
+    return { shape: 'absent', filePath: null };
   }
 
   try {
@@ -1314,18 +1619,21 @@ export function readStorePointer(projectRoot: string): StorePointerRead {
     // they are imperfect, not malformed (readProjectConfig owns the
     // field warnings for those).
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      return { filePath: configPath };
+      return { shape: 'absent', filePath: configPath };
     }
     const value = (raw as Record<string, unknown>).store;
     if (value === undefined) {
-      return { filePath: configPath };
+      return { shape: 'absent', filePath: configPath };
     }
     if (typeof value === 'string') {
-      return { value, filePath: configPath };
+      return { shape: 'alias', value, filePath: configPath };
     }
-    return { malformed: 'non_string', filePath: configPath };
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      return readDurableStorePointer(value as Record<string, unknown>, configPath);
+    }
+    return { shape: 'malformed', malformed: 'non_string', filePath: configPath };
   } catch {
-    return { malformed: 'unparseable', filePath: configPath };
+    return { shape: 'malformed', malformed: 'unparseable', filePath: configPath };
   }
 }
 
@@ -1339,11 +1647,32 @@ export function resolveConfigFilePath(projectRoot: string): string | null {
   return existsSync(ymlPath) ? ymlPath : null;
 }
 
+/**
+ * True when the config declares a store in ANY usable form. Every guard that
+ * asks "is this repo's planning externalized?" MUST go through this — checking
+ * `value` alone silently misses a durable declaration that records only the
+ * permanent identity.
+ */
+export function hasStoreDeclaration(pointer: StorePointerRead): boolean {
+  return pointer.shape === 'alias' || pointer.shape === 'durable';
+}
+
+/** The store a declaration names, for display: its alias, else its identity. */
+export function describeStoreDeclaration(pointer: StorePointerRead): string | undefined {
+  if (!hasStoreDeclaration(pointer)) return undefined;
+  return pointer.value ?? pointer.durable?.uid;
+}
+
 /** Human rendering of a malformed pointer reason, shared by every surface. */
-export function storePointerProblem(reason: 'unparseable' | 'non_string'): string {
-  return reason === 'unparseable'
-    ? 'the config file could not be read as YAML'
-    : 'the store key must be a single store id string';
+export function storePointerProblem(reason: StorePointerProblem): string {
+  switch (reason) {
+    case 'unparseable':
+      return 'the config file could not be read as YAML';
+    case 'invalid_object':
+      return 'the store declaration must carry a well-formed permanent store identity as uid';
+    case 'non_string':
+      return 'the store key must be a single store id string';
+  }
 }
 
 export interface OpenSpecDirClassification {
@@ -1799,6 +2128,165 @@ export function appendStoreReference(
   writeFileSync(configPath, stringifyYaml(rawConfig), 'utf-8');
 
   return { configPath, changed: true };
+}
+
+// -----------------------------------------------------------------------------
+// Store membership hints (store add-project / store adopt)
+// -----------------------------------------------------------------------------
+
+export interface AppendStoreMembershipHintResult {
+  configPath: string;
+  /** False when an equivalent hint was already present; nothing was written. */
+  changed: boolean;
+  /** The hint list as it stands after the append. */
+  hints: StoreMembershipHint[];
+}
+
+/** Renders a hint back to raw YAML, carrying only portable fields. */
+function membershipHintToRaw(hint: StoreMembershipHint): Record<string, unknown> {
+  return {
+    ...(hint.uid !== undefined ? { uid: hint.uid } : {}),
+    ...(hint.id !== undefined ? { id: hint.id } : {}),
+    ...(hint.remote !== undefined ? { remote: hint.remote } : {}),
+  };
+}
+
+/**
+ * Refuses anything that looks like a location on this machine. The hint list
+ * is committed and shared, so a path here would be wrong on every other
+ * machine — and `path.isAbsolute` alone answers only for the CURRENT platform,
+ * which is not the platform the file will be read on.
+ */
+function assertPortableHintValue(field: string, value: string): void {
+  // path.isAbsolute catches the CURRENT platform's absolute forms;
+  // path.win32.isAbsolute catches Windows forms regardless of platform
+  // (drive-letter paths, UNC, POSIX-style root). A leading backslash covers
+  // single-backslash root-relative (\Users\...), UNC (\\server\share),
+  // device namespace (\\?\C:\...), and NT-namespace (\??\C:\...) forms.
+  // /??/ is the POSIX-slash NT-namespace variant. All are machine-specific.
+  if (
+    path.isAbsolute(value) ||
+    path.win32.isAbsolute(value) ||
+    value.startsWith('\\') ||
+    value.startsWith('/??/')
+  ) {
+    throw new Error(
+      `Refusing to write a filesystem path into a store membership hint (${field}: ${value}). Membership hints are shared through git and carry only a permanent identity, a display name, and a credential-free remote.`
+    );
+  }
+}
+
+/**
+ * Appends one Store membership hint to the project's config, preserving every
+ * other field AND the file's comments (`parseDocument`, not a schema-typed
+ * rewrite). De-duplicates on the Store's permanent identity, falling back to
+ * its display alias for a Store that has none, and fills a field an existing
+ * hint left empty rather than adding a second entry for the same Store.
+ *
+ * Written atomically: temp file in the same directory, then rename, so an
+ * interrupted write never leaves a half-written config behind.
+ *
+ * Throws when the project has no config file — that is a repair the caller
+ * reports, never a file this function invents (a config carrying nothing but
+ * `storeMemberships` would not be a Rasen project).
+ */
+/**
+ * Lock-error factory for the project-side membership hint append. Same shape
+ * as the registry / membership-record factories. The lock lives in
+ * `os.tmpdir()` (never inside the project git repo) so concurrent rasen
+ * commands appending hints for DIFFERENT Stores serialize against each other
+ * instead of one silently clobbering the other's non-overlapping append.
+ */
+const projectMembershipHintLockError = makeLockErrorFactory({
+  createSubject: 'the project membership hint lock file',
+  busyMessage: 'The project membership hint list is busy.',
+  code: 'project_membership_hint_busy',
+  target: 'project.config',
+});
+
+export async function appendStoreMembershipHint(
+  projectRoot: string,
+  hint: StoreMembershipHint
+): Promise<AppendStoreMembershipHintResult> {
+  if (hint.uid === undefined && hint.id === undefined) {
+    throw new Error(
+      'A store membership hint must name the store by permanent identity or display name.'
+    );
+  }
+  if (hint.remote !== undefined) assertPortableHintValue('remote', hint.remote);
+  if (hint.id !== undefined) assertPortableHintValue('id', hint.id);
+
+  const configPath = resolveConfigFilePath(projectRoot);
+  if (configPath === null) {
+    throw new Error(
+      `No rasen/config.yaml found at ${path.join(projectRoot, WORKSPACE_DIR_NAME)}; run 'rasen init' in the project before recording store membership.`
+    );
+  }
+
+  // Wrap the read-modify-write so a concurrent append for a DIFFERENT Store
+  // sees this write and adds its own next to it. The lock is keyed by the
+  // absolute config path and lives under `os.tmpdir()`; it is never committable.
+  return withOwnerAwareFileLock(
+    {
+      lockPath: machineLockPath(path.resolve(configPath)),
+      errorFor: projectMembershipHintLockError,
+      holder: 'project-membership-hint',
+    },
+    async () => {
+      // Re-read INSIDE the lock so we see any append a concurrent caller
+      // committed just before we acquired. The snapshot taken before the
+      // lock was the root cause of the lost-write bug.
+      const existing = readProjectConfig(projectRoot)?.storeMemberships ?? [];
+      const key = storeMembershipHintKey(hint);
+      const match = existing.find((entry) => storeMembershipHintKey(entry) === key);
+
+      if (match) {
+        const merged: StoreMembershipHint = {
+          ...match,
+          ...(match.uid === undefined && hint.uid !== undefined ? { uid: hint.uid } : {}),
+          ...(match.id === undefined && hint.id !== undefined ? { id: hint.id } : {}),
+          ...(match.remote === undefined && hint.remote !== undefined ? { remote: hint.remote } : {}),
+        };
+        if (
+          merged.uid === match.uid &&
+          merged.id === match.id &&
+          merged.remote === match.remote
+        ) {
+          return { configPath, changed: false, hints: existing };
+        }
+        const hints = existing.map((entry) =>
+          storeMembershipHintKey(entry) === key ? merged : entry
+        );
+        await writeStoreMembershipHints(configPath, hints);
+        return { configPath, changed: true, hints };
+      }
+
+      const hints = [...existing, hint];
+      await writeStoreMembershipHints(configPath, hints);
+      return { configPath, changed: true, hints };
+    }
+  );
+}
+
+async function writeStoreMembershipHints(
+  configPath: string,
+  hints: StoreMembershipHint[]
+): Promise<void> {
+  const doc = parseDocument(readFileSync(configPath, 'utf-8'));
+  doc.setIn([STORE_MEMBERSHIPS_FIELD], hints.map(membershipHintToRaw));
+  const nextContent = String(doc);
+
+  try {
+    parseYaml(nextContent);
+  } catch (error) {
+    throw new Error(
+      `Writing "${STORE_MEMBERSHIPS_FIELD}" would produce invalid YAML in ${configPath}; the file was not modified (${
+        error instanceof Error ? error.message.split('\n')[0] : String(error)
+      }).`
+    );
+  }
+
+  await writeFileAtomically(configPath, nextContent);
 }
 
 /** Extracts a valid string `projectId` field from raw config content, or undefined. */

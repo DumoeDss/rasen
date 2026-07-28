@@ -333,7 +333,7 @@ describe('pipeline run-state', () => {
       expect(completedStages({ pipeline: 'bug-fix' })).toEqual([]);
     });
 
-    it('treats a parent stage delegated to portfolio children as complete', () => {
+    it('does not treat a parent stage delegated to portfolio children as complete (B2: work is outstanding until the portfolio children finish)', () => {
       const state = parseRunState(JSON.stringify({
         pipeline: 'auto-decompose',
         stages: {
@@ -342,7 +342,10 @@ describe('pipeline run-state', () => {
           ship: { status: 'pending' },
         },
       }));
-      expect(completedStages(state).sort()).toEqual(['apply', 'decompose']);
+      // B2: a delegated stage is NOT complete for resume/delivery decisions.
+      // Whether it is actually done is derived from portfolio child durable
+      // state, not from the delegated marker. completedStages reports done|skipped.
+      expect(completedStages(state).sort()).toEqual(['decompose']);
     });
   });
 

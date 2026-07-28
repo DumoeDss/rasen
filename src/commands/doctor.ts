@@ -10,7 +10,12 @@ import {
   resolveRootForCommand,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
-import { readOptionalStoreMetadataState } from '../core/store/foundation.js';
+import {
+  readOptionalStoreMetadataState,
+  storeMetadataUid,
+} from '../core/store/foundation.js';
+import { resolveStoreBinding, type StoreUnavailableReason } from '../core/store/identity.js';
+import { storeBindingDeclarationFrom } from '../core/effective-config.js';
 import { gitOriginUrl, isGitRepositoryAtRoot } from '../core/store/git.js';
 import {
   classifyOpenSpecDir,
@@ -29,9 +34,10 @@ import { countMigratableEphemera } from '../core/work-migration.js';
 import { checkMachineRootRelocation } from '../core/global-config.js';
 import { StoreError } from '../core/store/errors.js';
 import { diagnoseMigrationDrift } from '../core/store/migration-ops.js';
-import { gatherRelationshipData } from './shared-gather.js';
+import { gatherProjectMembership, gatherRelationshipData } from './shared-gather.js';
 import {
   inspectRelationships,
+  membershipHumanLines,
   type InspectRelationshipsInput,
   type RelationshipHealth,
 } from '../core/relationship-health.js';
@@ -59,6 +65,12 @@ async function gatherHealth(
   } = data;
   const registryUnreadable = registrySnapshot.unreadable;
 
+  // Bootstrap-readiness facts (design D4): hoisted so the gather at the end of
+  // this function can compose them without re-reading the declaration.
+  let planningStoreResolved = false;
+  let planningStoreReason: StoreUnavailableReason | undefined;
+  let planningStoreHasRemote = false;
+
   const input: InspectRelationshipsInput = {
     root,
     rootHealthy: rootInspection.healthy,
@@ -74,29 +86,93 @@ async function gatherHealth(
   // failure, not a health finding).
   if (root.storeId) {
     const metadata = await readOptionalStoreMetadataState(root.path).catch(() => null);
+    const uid = storeMetadataUid(metadata);
     // git -C walks UP the tree: probing a non-repo store nested inside
     // another repo would record the ENCLOSING repo's origin.
     const originUrl = (await isGitRepositoryAtRoot(root.path)) ? await gitOriginUrl(root.path) : null;
     input.storeFacts = {
       id: root.storeId,
+      ...(uid ? { uid } : {}),
       metadataPresent: metadata !== null,
       metadataValid: metadata !== null,
+      ...(metadata !== null && uid === undefined ? { metadataLegacy: true } : {}),
       ...(metadata?.remote ? { canonicalRemote: metadata.remote } : {}),
       ...(originUrl ? { originUrl } : {}),
     };
   }
 
-  // The 3.2 both-shapes wrong turn, structured — including a malformed
-  // pointer value, which the resolver is silent about on planning-shaped
-  // roots.
+  // Store identity diagnosis (design D4's read-only carve-out): doctor keeps
+  // working precisely in the states that stop every other command — it is how
+  // a user finds out what is wrong. The SHARED resolver answers, so doctor
+  // can never disagree with the commands it diagnoses, and it writes nothing,
+  // clones nothing, and registers nothing.
   if (root.source === 'nearest') {
     const { hasPlanningShape, pointer } = classifyOpenSpecDir(root.path);
     if (hasPlanningShape && pointer.filePath) {
-      if (pointer.value !== undefined) {
-        input.bothShapesPointer = { value: pointer.value, filePath: pointer.filePath };
-      } else if (pointer.malformed) {
+      if (pointer.malformed) {
         input.malformedPointer = { filePath: pointer.filePath, reason: pointer.malformed };
       }
+
+      const declaration = storeBindingDeclarationFrom(pointer);
+      if (declaration.form !== 'absent') {
+        const binding = await resolveStoreBinding({ declaration, projectRoot: root.path });
+        // Record the facts the bootstrap-readiness composer needs (design D4).
+        planningStoreResolved = binding.kind === 'resolved';
+        if (binding.kind === 'unavailable') {
+          planningStoreReason = binding.reason;
+        }
+        if (declaration.form === 'durable' && declaration.remote !== undefined) {
+          planningStoreHasRemote = true;
+        }
+        input.storeBinding = {
+          shape: pointer.shape,
+          filePath: pointer.filePath,
+          ...(pointer.value !== undefined ? { declaredId: pointer.value } : {}),
+          ...(pointer.durable?.uid ? { declaredUid: pointer.durable.uid } : {}),
+          ...(binding.kind === 'resolved'
+            ? {
+                resolvedBy: binding.resolvedBy,
+                resolvedId: binding.store.id,
+                ...(binding.store.uid ? { resolvedUid: binding.store.uid } : {}),
+                diagnostics: binding.diagnostics,
+              }
+            : {}),
+          ...(binding.kind === 'unavailable'
+            ? { reason: binding.reason, repair: binding.repair, diagnostics: binding.diagnostics }
+            : {}),
+        };
+
+        if (binding.kind === 'resolved') {
+          const storeMetadata = await readOptionalStoreMetadataState(binding.store.root).catch(
+            () => null
+          );
+          input.storeFacts = {
+            id: binding.store.id,
+            ...(binding.store.uid ? { uid: binding.store.uid } : {}),
+            metadataPresent: storeMetadata !== null,
+            metadataValid: storeMetadata !== null,
+            ...(binding.store.uid ? {} : { metadataLegacy: true }),
+            ...(storeMetadata?.remote ? { canonicalRemote: storeMetadata.remote } : {}),
+          };
+        }
+      }
+    }
+  }
+
+  // Membership: the roster relation AND its findings, gathered read-only from
+  // the single provider and composed into the report. Reported for the
+  // resolved planning root — never for a store root, which is the other side
+  // of the relation.
+  if (root.source !== 'store') {
+    const membershipRoot = root.source === 'declared'
+      ? (findRepoPlanningRootSync(process.cwd()) ?? root.path)
+      : root.path;
+    // The planning Store is resolved and handed in by the shared gather, or
+    // the "your planning Store has no record for this project" finding — the
+    // only error-severity one — could never be produced.
+    const membership = await gatherProjectMembership(membershipRoot);
+    if (membership) {
+      input.membership = membership;
     }
   }
 
@@ -217,6 +293,25 @@ async function gatherHealth(
     // Swallowed; the finding is simply omitted.
   }
 
+  // Bootstrap readiness (design D4): composed from the facts gathered above —
+  // no new reads. The planning Store's resolution, the membership roster, and
+  // the machine-home entry are all present by now. Only populated when a
+  // planning Store was probed (root.source === 'nearest' with a declaration);
+  // otherwise the readiness defaults to `complete`.
+  if (root.source === 'nearest') {
+    const membershipConfirmed =
+      input.membership?.stores.some((store) => store.roles?.planning === true) ?? false;
+    input.bootstrapReadiness = {
+      storeBinding: {
+        resolved: planningStoreResolved,
+        ...(planningStoreReason !== undefined ? { reason: planningStoreReason } : {}),
+        ...(planningStoreHasRemote ? { hasRemote: true } : {}),
+      },
+      membership: { confirmed: membershipConfirmed },
+      machineHomeRegistered: input.machineHomeEntry !== undefined,
+    };
+  }
+
   return {
     health: inspectRelationships(input),
     declaredReferenceCount: projectConfig?.references?.length ?? 0,
@@ -291,8 +386,38 @@ function printHumanHealth(health: RelationshipHealth, declaredReferenceCount: nu
   console.log(`  Location: ${health.root.path}`);
   console.log(`  Rasen root: ${health.root.healthy ? 'ok' : 'unhealthy'}`);
   if (health.store) {
-    const metadataNote = health.store.metadata.valid ? 'metadata ok' : 'metadata invalid';
-    console.log(`  Store: ${health.store.id} (${metadataNote})`);
+    // A declared store that could not be resolved has no metadata to judge and
+    // no identity to read: saying "metadata invalid" and "none yet (legacy
+    // metadata)" about it would report two things that were never looked at.
+    if (health.store.unavailable) {
+      console.log(`  Store: ${health.store.id} (declared, not available on this machine)`);
+      console.log(
+        `  Store identity: ${health.store.uid ?? 'not recorded in the declaration'}`
+      );
+    } else {
+      const metadataNote = health.store.metadata.valid ? 'metadata ok' : 'metadata invalid';
+      console.log(`  Store: ${health.store.id} (${metadataNote})`);
+      console.log(
+        `  Store identity: ${health.store.uid ?? 'none yet (legacy metadata)'}`
+      );
+    }
+    if (health.store.pointer) {
+      const resolvedBy =
+        health.store.pointer.resolved_by === 'uid'
+          ? 'resolved by permanent identity'
+          : health.store.pointer.resolved_by === 'alias'
+            ? 'resolved by display name'
+            : 'not resolved';
+      console.log(
+        `  Declaration: ${health.store.pointer.shape} (${resolvedBy})`
+      );
+    }
+    if (health.store.unavailable) {
+      console.log(`  Declared store unavailable: ${health.store.unavailable.reason}`);
+      for (const repair of health.store.unavailable.repair) {
+        console.log(`    Next: ${repair}`);
+      }
+    }
   }
   printDiagnosticLines('  ', [...health.root.status, ...(health.store?.status ?? [])]);
 
@@ -309,6 +434,18 @@ function printHumanHealth(health: RelationshipHealth, declaredReferenceCount: nu
     (entry) => `${entry.store_id}: ok${entry.root ? ` (${entry.root})` : ''}`,
     (entry) => entry.store_id
   );
+
+  // Membership: roster and eligibility only. The wording says so on every run,
+  // because the whole point of separating it from the planning binding above
+  // is that a reader must not take one for the other.
+  console.log('');
+  console.log('Store membership (roster and eligibility only; it does not decide where work is done)');
+  // Rendered from the SAME structure the `--json` payload carries, through the
+  // shared line builder, so the two modes cannot report different codes or
+  // different repairs.
+  for (const line of membershipHumanLines(health.membership)) {
+    console.log(line);
+  }
 
   console.log('');
   console.log('Machine home');
@@ -355,6 +492,31 @@ function printHumanHealth(health: RelationshipHealth, declaredReferenceCount: nu
     console.log(`    Fix: run the CLI again to retry automatically, or copy manually: cp -r "${pending.path}" "${pending.target}"`);
   }
 
+  // Bootstrap readiness (design D4): one read-only answer to "is this machine
+  // ready, and if not, what does it need?" Composed from the same facts
+  // `rasen bootstrap --check` reports, so the two agree by construction.
+  // Rendered after the sections it composes FROM (Store, membership, machine
+  // home) so a reader sees the underlying facts before the summary.
+  console.log('');
+  console.log('Bootstrap readiness');
+  const readiness = health.bootstrapReadiness;
+  console.log(`  State: ${readiness.state}`);
+  if (readiness.findings.length === 0) {
+    if (readiness.state === 'complete') {
+      console.log('  This machine is ready. No bootstrap action needed.');
+    } else {
+      // Degraded/blocked with zero bootstrap findings: the gap is not one
+      // bootstrap closes (e.g. an identity-level failure). The Store section
+      // above carries the detail.
+      console.log('  The gap is not one bootstrap can close; see the Store section above.');
+    }
+  } else {
+    for (const finding of readiness.findings) {
+      console.log(`  - [${finding.severity}] ${finding.message}`);
+      console.log(`    Repair: ${finding.repair}`);
+    }
+  }
+
   for (const entry of health.status) {
     console.log('');
     console.log(`Note: ${entry.message}`);
@@ -386,7 +548,14 @@ export function registerDoctorCommand(program: Command): void {
       try {
         const root = await resolveRootForCommand(
           { store: options.store, project: options.project, storePath: options.storePath },
-          { json: options.json, failurePayload: FAILURE_PAYLOAD, allowImplicitRoot: false }
+          {
+            json: options.json,
+            failurePayload: FAILURE_PAYLOAD,
+            allowImplicitRoot: false,
+            // Doctor is the surface that REPORTS a broken store declaration,
+            // so it must not be stopped by one (design D4).
+            allowUnavailableStore: true,
+          }
         );
         if (!root) {
           return;
@@ -404,6 +573,15 @@ export function registerDoctorCommand(program: Command): void {
         // mismatch. Surfaced here so top-level doctor aggregates the same
         // checks `store doctor` reports. Best-effort — never breaks doctor.
         const migrationDrift = await diagnoseMigrationDrift(root.path).catch(() => []);
+
+        // Doctor keeps RUNNING on a broken store declaration (design D4's
+        // carve-out) but must not report success: a wrapper or CI step gating
+        // on this exit status would otherwise read "healthy" in exactly the
+        // state this command exists to make loud. Set before either output
+        // mode, so human and --json agree.
+        if (health.store?.unavailable) {
+          process.exitCode = 1;
+        }
 
         if (options.json) {
           const base = gcResult ? { ...health, gc: formatGcResult(gcResult) } : { ...health };

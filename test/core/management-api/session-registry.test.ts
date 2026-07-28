@@ -115,4 +115,53 @@ describe('session-registry (design D2)', () => {
     expect(registry.get(exitedIds[0])).toBeUndefined();
     expect(registry.get(exitedIds[exitedIds.length - 1])).toBeDefined();
   });
+
+  it('records the execution binding alongside the planning space', () => {
+    const registry = createSessionRegistry();
+    const record = registry.create({
+      kind: 'auto',
+      task: 't',
+      cwd: '/repo',
+      space: { type: 'store', id: 'team-store', root: '/store' },
+      execution: { kind: 'project', projectId: 'p1', root: '/repo' },
+    });
+
+    expect(registry.get(record.id)?.execution).toEqual({
+      kind: 'project',
+      projectId: 'p1',
+      root: '/repo',
+    });
+  });
+
+  it('records planning-only as an explicit kind, not an absent field', () => {
+    const registry = createSessionRegistry();
+    const record = registry.create({
+      kind: 'auto',
+      task: 't',
+      cwd: '/store',
+      space: { type: 'store', id: 'team-store', root: '/store' },
+      execution: { kind: 'planning-only' },
+    });
+
+    expect(registry.get(record.id)?.execution).toEqual({ kind: 'planning-only' });
+  });
+
+  it('copies the nested space and execution refs on read', () => {
+    const registry = createSessionRegistry();
+    const record = registry.create({
+      kind: 'auto',
+      task: 't',
+      cwd: '/repo',
+      space: { type: 'store', id: 'team-store', root: '/store' },
+      execution: { kind: 'project', projectId: 'p1', root: '/repo' },
+    });
+
+    // Mutating a "copy" must not retarget the session for the next reader.
+    const first = registry.get(record.id)!;
+    (first.execution as { root: string }).root = '/somewhere-else';
+    (first.space as { root: string }).root = '/other-store';
+
+    expect(registry.get(record.id)?.execution).toMatchObject({ root: '/repo' });
+    expect(registry.get(record.id)?.space).toMatchObject({ root: '/store' });
+  });
 });

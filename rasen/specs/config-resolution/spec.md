@@ -2,12 +2,10 @@
 
 ## Purpose
 Defines an in-process resolution function that merges configuration layers (environment override, project config, global config, built-in defaults) into per-key effective values with source metadata, reusable by CLI and non-CLI consumers alike.
-
 ## Requirements
-
 ### Requirement: Effective configuration resolution across global, store, and project layers
 
-The system SHALL provide an in-process resolution function (`resolveEffectiveConfig()` in `src/core/`) that merges configuration layers into per-key effective values with source metadata. For each registered configuration key it SHALL report the effective value, the source layer that produced it (`default`, `global`, `store`, `project`, or `env-override`), and the raw per-layer values (`global`, `store`, `project`). Precedence per key SHALL be: environment override > project config (when the key is project-scoped and a project root is available) > store config (when the key is store-scoped and a store layer is active — see `store-config-inheritance`) > global config > built-in default. A layer SHALL contribute to a key only when the key's registry scopes include that layer's scope.
+The system SHALL provide an in-process resolution function (`resolveEffectiveConfig()` in `src/core/`) that merges configuration layers into per-key effective values with source metadata. For each registered configuration key it SHALL report the effective value, the source layer that produced it (`default`, `global`, `store`, `project`, or `env-override`), and the raw per-layer values (`global`, `store`, `project`). Precedence per key SHALL be: environment override > project config (when the key is project-scoped and a project root is available) > store config (when the key is store-scoped and a store layer is active — see `store-config-inheritance`) > global config > built-in default. A layer SHALL contribute to a key only when the key's registry scopes include that layer's scope. Absence of a store layer SHALL mean the project declares no store; a project that declares a store which cannot be resolved SHALL NOT resolve as though it had no store layer — resolution SHALL instead report the expected store, the reason it is unavailable, and a repair command.
 
 #### Scenario: Default value when nothing is configured
 
@@ -32,8 +30,9 @@ The system SHALL provide an in-process resolution function (`resolveEffectiveCon
 
 #### Scenario: No store layer without an inheritance edge
 
-- **WHEN** resolution runs for a project that declares no `store:` pointer (or whose pointer is inactive)
+- **WHEN** resolution runs for a project that declares no `store:` pointer at all
 - **THEN** every key resolves exactly as before this capability existed, and no raw store-layer value is reported
+- **AND** a project whose declared store cannot be resolved does NOT take this path — it is reported as unavailable with its reason and repair command instead
 
 #### Scenario: Resolution addresses a store root directly
 

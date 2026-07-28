@@ -12,6 +12,7 @@ import { saveGlobalConfig } from '../../src/core/global-config.js';
 import { resolveProjectHome } from '../../src/core/project-home.js';
 import { listCanonicalLearnedSkills } from '../../src/core/learned-skills/index.js';
 import { readWorkflowArtifactLedger } from '../../src/core/workflow-artifact-ledger.js';
+import { readProjectLearnedLedger } from '../../src/core/project-learned-skill-ledger.js';
 
 vi.mock('@inquirer/prompts', async () => {
   const actual = await vi.importActual<typeof import('@inquirer/prompts')>('@inquirer/prompts');
@@ -29,6 +30,7 @@ const ID = 'go-sql-transaction-locking';
 describe('retention codify end-to-end', () => {
   let home: string;
   let projectRoot: string;
+  let projectId: string;
   let originalEnv: NodeJS.ProcessEnv;
   let originalCwd: string;
   let originalTTY: boolean | undefined;
@@ -74,7 +76,9 @@ describe('retention codify end-to-end', () => {
     description: 'Lock rows in a transaction with SELECT ... FOR UPDATE.',
     instructions: '## When\nConcurrent updates.\n## Steps\nUse FOR UPDATE.\n## Done\nNo lost update.',
     applicability: { mode: 'all', markers: ['go.mod'] },
-    evidence: [{ projectId: 'project-a', change: 'add-locking', artifact: 'review', digest: DIGEST }],
+    // The owning project's real identity: a project record's provenance is
+    // checked against its authoritative owner rather than taken on trust.
+    evidence: [{ projectId, change: 'add-locking', artifact: 'review', digest: DIGEST }],
     ...overrides,
   });
 
@@ -97,7 +101,7 @@ describe('retention codify end-to-end', () => {
     fs.mkdirSync(path.join(projectRoot, 'rasen', 'changes'), { recursive: true });
     fs.writeFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
     fs.writeFileSync(path.join(projectRoot, 'go.mod'), 'module example\n');
-    await resolveProjectHome(projectRoot);
+    projectId = (await resolveProjectHome(projectRoot))!.projectId;
     // Active codify profile authorizes project-scoped mutations.
     saveGlobalConfig({ featureFlags: {}, profile: 'custom', workflows: ['apply'], retention: 'codify' });
 
@@ -145,9 +149,11 @@ describe('retention codify end-to-end', () => {
     const content = fs.readFileSync(materializedSkill(), 'utf-8');
     expect(content).toContain('generatedBy: "rasen-learned-skill"');
 
-    const ledger = readWorkflowArtifactLedger(projectRoot)!;
-    expect(ledger.tools.claude.learned?.[ID]?.skillScope).toBe('project');
-    expect(ledger.workflows).not.toContain(ID);
+    // Ownership is recorded durably, and the learned id never enters the
+    // workflow ledger's own list.
+    const entry = readProjectLearnedLedger(projectRoot)?.tools.claude?.learned?.[ID];
+    expect(entry?.effectiveScope).toBe('project');
+    expect(readWorkflowArtifactLedger(projectRoot)?.workflows ?? []).not.toContain(ID);
   });
 
   it('does not persist prompt-like evidence verbatim and does not let it escalate scope', async () => {
@@ -158,7 +164,7 @@ describe('retention codify end-to-end', () => {
       writeCandidate(
         projectCandidate({
           evidence: [
-            { projectId: 'project-a', change: 'add-locking', artifact: injection, digest: DIGEST },
+            { projectId, change: 'add-locking', artifact: injection, digest: DIGEST },
           ],
         })
       ),
@@ -221,7 +227,8 @@ describe('retention codify end-to-end', () => {
     await new UpdateCommand({}).execute(projectRoot);
 
     expect(fs.readFileSync(materializedSkill(), 'utf-8')).toBe(humanBody);
-    // The collision was not claimed as Rasen-owned in the ledger.
+    // The collision was not claimed as Rasen-owned in either ledger.
+    expect(readProjectLearnedLedger(projectRoot)?.tools.claude?.learned?.[ID]).toBeUndefined();
     expect(readWorkflowArtifactLedger(projectRoot)?.tools.claude?.learned?.[ID]).toBeUndefined();
   });
 });

@@ -17,6 +17,7 @@ import {
 } from './file-state.js';
 import { formatZodIssues } from './zod-issues.js';
 import { StoreError } from './store/errors.js';
+import { normalizeProjectIdentity } from './store/project-records.js';
 
 const fs = nodeFs.promises;
 
@@ -379,9 +380,18 @@ export async function registerProject(
       // so active projects converge to one entry without waiting for gc. A
       // worktree path already gone from disk is not a live sibling here; it
       // stays a dangling entry for gc (matches the "live" wording in D5).
+      // Identity is normalized on BOTH sides: an uppercase entry from a
+      // pre-normalization registry and a lowercase placed projectId are the
+      // same project, and leaving the case-different duplicate alive would
+      // resurrect a stale entry until gc (the sameIdEntries filter above
+      // already recognizes them as same-project via the same normalization).
       for (const otherPath of Object.keys(projects)) {
         if (otherPath === canonicalPath) continue;
-        if (projects[otherPath].projectId !== projectId) continue;
+        if (
+          normalizeProjectIdentity(projects[otherPath].projectId) !==
+          normalizeProjectIdentity(projectId)
+        )
+          continue;
         if (await isGitWorktreeSibling(canonicalPath, otherPath)) {
           delete projects[otherPath];
         }
@@ -396,7 +406,8 @@ export async function registerProject(
     }
 
     const sameIdEntries = Object.entries(projects).filter(
-      ([, entry]) => entry.projectId === input.projectId
+      ([, entry]) =>
+        normalizeProjectIdentity(entry.projectId) === normalizeProjectIdentity(input.projectId)
     );
 
     // 2a. Worktree share: an entry with the same projectId whose path still
@@ -524,7 +535,10 @@ export async function findWorktreeDuplicateEntries(
     const pierced = await resolveRegistrationRoot(entryPath);
     if (pierced === entryPath) continue;
     const mainEntry = state.projects[pierced];
-    if (mainEntry && mainEntry.projectId === entry.projectId) {
+    if (
+      mainEntry &&
+      normalizeProjectIdentity(mainEntry.projectId) === normalizeProjectIdentity(entry.projectId)
+    ) {
       duplicates.push({ path: entryPath, entry, mainRoot: pierced });
     }
   }
@@ -603,7 +617,9 @@ export async function gcProjectRegistry(
       if (pierced === entryPath) continue;
       const mainEntry = projects[pierced];
       if (mainEntry) {
-        if (mainEntry.projectId === entry.projectId) {
+        if (
+          normalizeProjectIdentity(mainEntry.projectId) === normalizeProjectIdentity(entry.projectId)
+        ) {
           collapsedRemoved.push({ path: entryPath, entry });
           delete projects[entryPath];
         }

@@ -332,4 +332,96 @@ describe('LaunchSessionDialog Store execution selection', () => {
       'Member A is no longer attached to team-store. Choose another execution target.'
     );
   });
+
+  describe('members with no checkout on this machine', () => {
+    // A Store may record a member whose checkout does not exist here
+    // (`store-project-membership`): it is listed with identity and name and
+    // NO root. `project:${undefined}` is a selector the server rejects, so
+    // such a member must never be offered as a choice.
+    const ROOTLESS: SpaceMember = { projectId: 'member-c', name: 'Member C' };
+
+    it('never renders a project:undefined selector for a rootless member', () => {
+      mount([MEMBERS[0]!, ROOTLESS]);
+      expect(container.innerHTML).not.toContain('project:undefined');
+      expect(
+        container.querySelector('input[name="execution"][value="project:undefined"]')
+      ).toBeNull();
+    });
+
+    it('lists the rootless member but leaves it unselectable', () => {
+      mount([MEMBERS[0]!, ROOTLESS]);
+      expect(container.textContent).toContain('Member C');
+      const disabled = Array.from(
+        container.querySelectorAll('input[name="execution"]')
+      ).filter((input) => (input as HTMLInputElement).disabled);
+      expect(disabled).toHaveLength(1);
+    });
+
+    it('auto-selects the sole LAUNCHABLE member when the other has no checkout', () => {
+      mount([MEMBERS[0]!, ROOTLESS]);
+      const checked = container.querySelector(
+        'input[name="execution"]:checked'
+      ) as HTMLInputElement | null;
+      expect(checked?.value).toBe('project:/projects/a');
+    });
+
+    it('gates the launch when every member is rootless', () => {
+      mount([ROOTLESS]);
+      expect(container.querySelector('input[name="execution"]:checked')).toBeNull();
+      expect(
+        (container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled
+      ).toBe(true);
+    });
+
+    // Three situations, three answers. A disabled row with no wording reads as
+    // a bug; and "no member has a checkout here" is a different problem, with a
+    // different fix, from "this Store has no members".
+    it('says on the row itself why a member with no checkout cannot be chosen', () => {
+      mount([MEMBERS[0]!, ROOTLESS]);
+      const disabledRow = container.querySelector('label[aria-disabled="true"]');
+      expect(disabledRow).not.toBeNull();
+      expect(disabledRow!.textContent).toContain('Member C');
+      expect(disabledRow!.textContent).toContain('No checkout of this project exists on this machine');
+      expect(
+        (disabledRow!.querySelector('input[name="execution"]') as HTMLInputElement).disabled
+      ).toBe(true);
+    });
+
+    it('states that no member has a checkout here, without claiming the Store has no members', () => {
+      mount([ROOTLESS]);
+      const text = container.textContent ?? '';
+      expect(text).toContain('have no checkout on this machine');
+      expect(text).not.toContain('has no current member projects');
+    });
+
+    it('keeps the no-members message reserved for a Store with genuinely no members', () => {
+      mount([]);
+      const text = container.textContent ?? '';
+      expect(text).toContain('has no current member projects');
+      expect(text).not.toContain('have no checkout on this machine');
+    });
+
+    it('leaves a member that has a checkout selectable (no regression)', async () => {
+      mount([MEMBERS[0]!, ROOTLESS]);
+      const selectable = container.querySelector(
+        'input[name="execution"][value="project:/projects/a"]'
+      ) as HTMLInputElement;
+      expect(selectable.disabled).toBe(false);
+      await act(async () => {
+        selectable.click();
+        await flushMicrotasks();
+      });
+      expect(selectable.checked).toBe(true);
+      expect(
+        (container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled
+      ).toBe(false);
+    });
+  });
+
+  it('states the limit of a planning-only grant where the grant is chosen', () => {
+    mount(MEMBERS);
+    const planningRow = container.querySelector('.launch-session-dialog__planning-only');
+    expect(planningRow).not.toBeNull();
+    expect(planningRow!.textContent).toContain('may write no code');
+  });
 });

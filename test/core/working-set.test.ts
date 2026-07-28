@@ -61,7 +61,7 @@ describe('working-set assembly (4.1)', () => {
     const workingSet = assembleWorkingSet({
       root,
       referenceEntries: [],
-      topLevelStatus: [warn('root_pointer_ignored'), warn('relationship_registry_unreadable')],
+      topLevelStatus: [warn('root_pointer_invalid'), warn('relationship_registry_unreadable')],
     });
     expect(workingSet.status.map((entry) => entry.code)).toEqual([
       'relationship_registry_unreadable',

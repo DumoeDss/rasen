@@ -1,5 +1,10 @@
 import { FileSystemUtils } from '../utils/file-system.js';
-import { classifyOpenSpecDir, ensureProjectIdInConfig, readProjectConfig } from './project-config.js';
+import {
+  classifyOpenSpecDir,
+  ensureProjectIdInConfig,
+  hasStoreDeclaration,
+  readProjectConfig,
+} from './project-config.js';
 import {
   deriveProjectDisplayName,
   getProjectHomeDir,
@@ -83,7 +88,11 @@ function buildProjectHome(
  */
 function deriveProjectMode(projectRoot: string): ProjectMode {
   const { hasPlanningShape, pointer } = classifyOpenSpecDir(projectRoot);
-  return !hasPlanningShape && pointer.value !== undefined ? 'store' : 'in-repo';
+  // `hasStoreDeclaration`, never `pointer.value`: a durable declaration may
+  // record only the permanent identity, and checking the display alias alone
+  // would derive `in-repo` for it — a wrong value that then persists into the
+  // machine project registry.
+  return !hasPlanningShape && hasStoreDeclaration(pointer) ? 'store' : 'in-repo';
 }
 
 /**

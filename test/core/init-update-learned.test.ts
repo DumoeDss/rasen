@@ -9,15 +9,38 @@ import { UpdateCommand } from '../../src/core/update.js';
 import {
   commitLearnedSkillPlan,
   planLearnedSkillMutation,
+  EffectiveLearnedSkillPlanningError,
   type LearnedSkillMutationRequest,
 } from '../../src/core/learned-skills/index.js';
 import { readWorkflowArtifactLedger } from '../../src/core/workflow-artifact-ledger.js';
+import { readProjectLearnedLedger } from '../../src/core/project-learned-skill-ledger.js';
+import { resolveProjectHome } from '../../src/core/project-home.js';
 
-const { confirmMock, showWelcomeScreenMock, searchableMultiSelectMock } = vi.hoisted(() => ({
+const { confirmMock, showWelcomeScreenMock, searchableMultiSelectMock, planErrorMock } = vi.hoisted(() => ({
   confirmMock: vi.fn(),
   showWelcomeScreenMock: vi.fn().mockResolvedValue(undefined),
   searchableMultiSelectMock: vi.fn(),
+  /**
+   * M3 merge-regression test hook: when set, the mocked
+   * `resolveEffectiveLearnedSkillPlan` throws this error instead of delegating
+   * to the real resolver. Both InitCommand and UpdateCommand MUST report the
+   * error message (the merge resolution swallowed it in init.ts).
+   */
+  planErrorMock: {
+    error: null as EffectiveLearnedSkillPlanningError | null,
+  },
 }));
+
+vi.mock('../../src/core/learned-skills/index.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../src/core/learned-skills/index.js')>();
+  return {
+    ...original,
+    resolveEffectiveLearnedSkillPlan: vi.fn(async (...args: Parameters<typeof original.resolveEffectiveLearnedSkillPlan>) => {
+      if (planErrorMock.error) throw planErrorMock.error;
+      return original.resolveEffectiveLearnedSkillPlan(...args);
+    }),
+  };
+});
 
 vi.mock('@inquirer/prompts', () => ({ confirm: confirmMock }));
 vi.mock('../../src/ui/welcome-screen.js', () => ({ showWelcomeScreen: showWelcomeScreenMock }));
@@ -30,6 +53,9 @@ function loggedOutput(): string {
 }
 
 async function commitProjectSkill(projectRoot: string): Promise<void> {
+  // Evidence has to name the project that actually owns it: a project record's
+  // provenance is checked against its authoritative owner, not taken on trust.
+  const home = await resolveProjectHome(projectRoot);
   const request: LearnedSkillMutationRequest = {
     operation: 'upsert',
     scope: 'project',
@@ -38,7 +64,14 @@ async function commitProjectSkill(projectRoot: string): Promise<void> {
     description: 'Route diagnostics through the locale catalogs.',
     instructions: '## When\nEditing i18n routing.\n## Steps\nAdd every locale key.\n## Done\nParity test passes.',
     applicability: { mode: 'all', markers: ['package.json'] },
-    evidence: [{ projectId: 'p', change: 'add-thing', artifact: 'proposal', digest: `sha256:${'a'.repeat(64)}` }],
+    evidence: [
+      {
+        projectId: home!.projectId,
+        change: 'add-thing',
+        artifact: 'proposal',
+        digest: `sha256:${'a'.repeat(64)}`,
+      },
+    ],
   };
   const context = { projectRoot };
   const result = await commitLearnedSkillPlan(await planLearnedSkillMutation(request, context), context);
@@ -61,6 +94,9 @@ describe('init/update learned-skill wiring', () => {
     process.env.XDG_CONFIG_HOME = configTempDir;
     dataTempDir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'rasen-iul-data-'));
     process.env.XDG_DATA_HOME = dataTempDir;
+    // Learned-skill reporting is localized, so an English literal assertion has
+    // to pin the locale rather than inherit whatever this machine is set to.
+    process.env.RASEN_LANG = 'en';
     // The applicability marker every fixture skill keys off.
     await fs.writeFile(path.join(testDir, 'package.json'), '{}\n');
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -98,10 +134,14 @@ describe('init/update learned-skill wiring', () => {
 
     const materialized = path.join(testDir, '.claude', 'skills', LEARNED_ID, 'SKILL.md');
     expect(fsSync.existsSync(materialized)).toBe(true);
-    const ledger = readWorkflowArtifactLedger(testDir)!;
-    expect(ledger.tools.claude.learned?.[LEARNED_ID]?.skillScope).toBe('project');
-    // Learned ids never enter the workflow list.
-    expect(ledger.workflows).not.toContain(LEARNED_ID);
+    // Ownership lives in the learned record, keyed on durable identity.
+    const entry = readProjectLearnedLedger(testDir)?.tools.claude?.learned?.[LEARNED_ID];
+    expect(entry?.effectiveScope).toBe('project');
+    expect(entry?.sources[0]?.owner.type).toBe('project');
+    // Learned ids never enter the workflow list, and the workflow ledger no
+    // longer carries a learned section at all.
+    expect(readWorkflowArtifactLedger(testDir)?.workflows ?? []).not.toContain(LEARNED_ID);
+    expect(readWorkflowArtifactLedger(testDir)?.tools.claude?.learned).toBeUndefined();
   });
 
   it('reports a learned-only reconciliation without saying "Already up to date"', async () => {
@@ -136,5 +176,39 @@ describe('init/update learned-skill wiring', () => {
     expect(fsSync.existsSync(materialized)).toBe(false);
     // A core workflow skill is still present.
     expect(fsSync.existsSync(path.join(testDir, '.claude', 'skills', 'rasen-apply-change', 'SKILL.md'))).toBe(true);
+  });
+
+  // M3 merge-regression guard: the merge commit a884f5e4 rewrote init.ts's
+  // reconcileLearnedSkills to swallow ALL exceptions (bare `catch {}`) and
+  // dropped the `previousStores` / `globalDataDir` propagation that update.ts
+  // kept. A user debugging a missing skill would get NO explanation from
+  // `rasen init` while `rasen update` correctly reported the same failure.
+  // This test mocks resolveEffectiveLearnedSkillPlan to throw, runs BOTH
+  // commands against the same project, and asserts the error message appears
+  // in both outputs — proving init and update report identically.
+  it('init and update both report a learned-skill planning failure (M3 merge regression)', async () => {
+    // First init succeeds with real resolution (planErrorMock.error is null).
+    await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+
+    // Now inject a planning failure for BOTH commands.
+    const ERROR_MESSAGE = 'TEST_PLANNING_FAILURE_M3_MERGE_REGRESSION';
+    planErrorMock.error = new EffectiveLearnedSkillPlanningError(
+      ERROR_MESSAGE,
+      'project_catalog_unavailable',
+      ['rasen init --force']
+    );
+    try {
+      (console.log as ReturnType<typeof vi.fn>).mockClear();
+      await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+      const initOutput = loggedOutput();
+      expect(initOutput).toContain(ERROR_MESSAGE);
+
+      (console.log as ReturnType<typeof vi.fn>).mockClear();
+      await new UpdateCommand({}).execute(testDir);
+      const updateOutput = loggedOutput();
+      expect(updateOutput).toContain(ERROR_MESSAGE);
+    } finally {
+      planErrorMock.error = null;
+    }
   });
 });

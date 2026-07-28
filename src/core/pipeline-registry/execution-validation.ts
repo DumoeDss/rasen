@@ -71,7 +71,10 @@ function reportPipelineExecutionNotice(
       ? `Warning: dropping unknown workflow id(s) from stored profile: ${notice.workflowIds.join(', ')}`
       : 'Warning: the LEAD host runtime is unknown; using the legacy compatibility route. ' +
         `Set ${notice.override}=claude|codex for deterministic dispatch.`;
-  console.log(chalk.yellow(message));
+  // Warnings/notices go to stderr so they never corrupt `--json` stdout (the
+  // CLI-spawning tests JSON.parse stdout; a stdout warning broke them on CI,
+  // where RASEN_AGENT_RUNTIME is unset and this notice fires).
+  console.error(chalk.yellow(message));
 }
 
 function throwRuntimeUnavailable(plan: PipelineExecutionPlan): never {

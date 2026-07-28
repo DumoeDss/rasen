@@ -6,6 +6,7 @@ import * as path from 'node:path';
 
 import {
   getGlobalDataDir,
+  listStoreRegistryEntries,
   readStoreRegistryState,
   parseStoreMetadataState,
   serializeStoreMetadataState,
@@ -47,8 +48,13 @@ describe('store canonical remote (3.3)', () => {
   }
 
   async function registryRemote(id: string): Promise<string | undefined> {
+    // The registry may be keyed by permanent identity; look the entry up the
+    // way every consumer does rather than assuming the key form.
     const registry = await readStoreRegistryState({ globalDataDir });
-    const entry = registry?.stores?.[id];
+    if (!registry) return undefined;
+    const entry = listStoreRegistryEntries(registry).find(
+      (candidate) => candidate.type === 'store' && candidate.id === id
+    );
     return entry && entry.backend.type === 'git' ? entry.backend.remote : undefined;
   }
 
@@ -130,15 +136,20 @@ describe('store canonical remote (3.3)', () => {
       );
     });
 
-    it('produces byte-identical store.yaml without --remote', async () => {
+    it('records only the minted identity and the name when --remote is absent', async () => {
       const storeRoot = path.join(tempDir, 'plain-context');
       await runCLI(['store', 'setup', 'plain-context', '--path', storeRoot, '--json'], {
         cwd: tempDir,
         env,
       });
-      expect(
-        fs.readFileSync(path.join(storeRoot, '.rasen-store', 'store.yaml'), 'utf-8')
-      ).toBe('version: 1\nid: plain-context\n');
+      const written = fs.readFileSync(
+        path.join(storeRoot, '.rasen-store', 'store.yaml'),
+        'utf-8'
+      );
+      expect(written).toMatch(
+        /^version: 2\nuid: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\nid: plain-context\n$/iu
+      );
+      expect(written).not.toContain('remote:');
     });
 
     it('records the remote without a commit under --no-init-git', async () => {
@@ -451,11 +462,24 @@ describe('store canonical remote (3.3)', () => {
       const store = parseJson(json).stores[0];
       expect(store.metadata.remote).toBe(canonical);
       expect(store.git.origin_url).toBe(TEST_NET_URL);
-      expect(store.status).toEqual([]);
+      // Both remotes are reported; their divergence is an info note, and the
+      // store registered from an existing checkout has no identity yet.
+      expect(store.status.map((entry: { code: string }) => entry.code)).toEqual([
+        'store_metadata_legacy',
+        'store_remote_divergence',
+      ]);
+      expect(
+        store.status.every((entry: { severity: string }) => entry.severity === 'info')
+      ).toBe(true);
 
       const human = await runCLI(['store', 'doctor', 'doc-context'], { cwd: tempDir, env });
+      // The canonical remote is what the Remote line shows; the observed
+      // origin appears only inside the divergence note, which names both.
       expect(human.stdout).toContain(`  Remote: ${canonical}`);
-      expect(human.stdout).not.toContain(TEST_NET_URL);
+      expect(human.stdout).toContain(
+        `The store.yaml remote (${canonical}) differs from the checkout's origin (${TEST_NET_URL}).`
+      );
+      expect(human.stdout).not.toContain(`  Remote: ${TEST_NET_URL}`);
 
       // The remote-bearing store.yaml resolves normally with --store.
       const list = await runCLI(['list', '--json', '--store', 'doc-context'], {

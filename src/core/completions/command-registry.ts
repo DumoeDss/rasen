@@ -36,6 +36,14 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         name: 'force',
         description: 'Force update even when tools are up to date',
       },
+      {
+        name: 'all-projects',
+        description: 'Update every reachable, non-pinned registered project whose version is behind',
+      },
+      {
+        name: 'only-this',
+        description: 'Skip multi-project registry consultation (update only this project)',
+      },
     ],
   },
   {
@@ -388,6 +396,54 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
             description: 'Project store id override',
             takesValue: true,
           },
+          {
+            name: 'set-primary',
+            description: "Also record the target store as the project's planning store",
+          },
+          {
+            name: 'dry-run',
+            description: 'Report every file that would be written in each repository and change nothing',
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'migrate-membership',
+        description: "Convert a store's legacy membership data into per-project membership records",
+        acceptsPositional: true,
+        positionals: [{ name: 'store-id' }],
+        flags: [
+          {
+            name: 'dry-run',
+            description: 'Report the conversion plan and change nothing',
+          },
+          {
+            name: 'apply',
+            description: 'Write the records and remove the legacy adoption manifest',
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'upgrade-identity',
+        description:
+          "Give a store a permanent identity and record it in the registry and the project's declaration",
+        acceptsPositional: true,
+        positionals: [{ name: 'id' }],
+        flags: [
+          {
+            name: 'uid',
+            description: 'Disambiguate a name that matches more than one registered store',
+            takesValue: true,
+          },
+          {
+            name: 'dry-run',
+            description: 'Report every file that would be written and change nothing',
+          },
+          {
+            name: 'apply',
+            description: 'Write the plan',
+          },
           COMMON_FLAGS.json,
         ],
       },
@@ -499,6 +555,44 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       {
         name: 'force',
         description: 'Overwrite an existing --code-workspace file',
+      },
+    ],
+  },
+  {
+    // store-bootstrap-obtain: apply mode now obtains declared Stores from
+    // their remotes. The check/dry-run flags remain read-only.
+    name: 'bootstrap',
+    description: 'Report what this machine still needs before this project works',
+    flags: [
+      {
+        name: 'check',
+        description: 'Check mode: report from local information only, contacting no network',
+      },
+      {
+        name: 'dry-run',
+        description:
+          'Preview mode: additionally resolve remotes and the exact location each repository would be placed at',
+      },
+      {
+        name: 'apply',
+        description:
+          'Apply mode: prepare repositories and knowledge, then offer each declared portable bundle as a separate confirmed import',
+      },
+      {
+        name: 'yes',
+        description:
+          'Confirm project-declared actions, including project-config bundle imports; Store-only bundles and Store projects still require an explicit choice',
+      },
+      COMMON_FLAGS.json,
+      {
+        name: 'path',
+        description: 'Location for one store or project, as <selector>=<dir>; repeatable',
+        takesValue: true,
+      },
+      {
+        name: 'into',
+        description: 'Parent directory a derived name would be placed under',
+        takesValue: true,
       },
     ],
   },
@@ -729,12 +823,68 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     flags: [],
     subcommands: [
       {
+        name: 'bundle',
+        description: 'Manage portable project-knowledge bundles',
+        flags: [],
+        subcommands: [
+          {
+            name: 'export',
+            description: "Export a project's own learned knowledge to one portable file",
+            flags: [
+              {
+                name: 'project',
+                description: 'Select a project knowledge owner independently from the planning root',
+                takesValue: true,
+              },
+              {
+                name: 'to',
+                description: 'New destination file to create (never overwritten)',
+                takesValue: true,
+              },
+              {
+                name: 'to-store',
+                description:
+                  'Also place the bundle in a registered Store without granting ownership',
+                takesValue: true,
+              },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'import',
+            description: "Import a portable bundle as this project's own knowledge",
+            acceptsPositional: true,
+            positionalType: 'path',
+            positionals: [{ name: 'bundle', type: 'path' }],
+            flags: [
+              {
+                name: 'project',
+                description: 'Select a project knowledge owner independently from the planning root',
+                takesValue: true,
+              },
+              {
+                name: 'dry-run',
+                description:
+                  'Validate and classify the complete bundle without writing anything',
+              },
+              COMMON_FLAGS.json,
+            ],
+          },
+        ],
+      },
+      {
         name: 'apply',
         description: 'Apply a learned-skill candidate from an absolute JSON file',
         flags: [
           {
             name: 'from',
             description: 'Absolute path to a candidate JSON file',
+            takesValue: true,
+          },
+          {
+            name: 'approve-store',
+            description:
+              'Approve a store publication non-interactively, naming the store it applies to',
             takesValue: true,
           },
           {
@@ -765,9 +915,59 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         flags: [
           {
             name: 'scope',
-            description: 'project or global',
+            description: 'project, store, or global',
             takesValue: true,
-            values: ['project', 'global'],
+            values: ['project', 'store', 'global'],
+          },
+          {
+            name: 'project',
+            description: 'Select a project knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'store',
+            description: 'Select a store knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'run-state-dir',
+            description: 'Load frozen knowledge identity from the resolved directory containing auto-run.json',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'effective',
+        description:
+          'Show what this project actually receives, its sources by permanent identity, and any conflicts',
+        flags: [
+          {
+            name: 'project',
+            description: 'Select a project knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'store',
+            description: 'Select a store knowledge owner independently from the planning root',
+            takesValue: true,
+          },
+          {
+            name: 'run-state-dir',
+            description: 'Load frozen knowledge identity from the resolved directory containing auto-run.json',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'migrate',
+        description:
+          "Move per-clone knowledge into this project's canonical home and re-key ownership records on permanent identity",
+        flags: [
+          {
+            name: 'dry-run',
+            description: 'Preview only: report what would change and write nothing',
           },
           {
             name: 'project',
@@ -795,9 +995,9 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         flags: [
           {
             name: 'scope',
-            description: 'project or global',
+            description: 'project, store, or global',
             takesValue: true,
-            values: ['project', 'global'],
+            values: ['project', 'store', 'global'],
           },
           {
             name: 'project',
@@ -825,9 +1025,9 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         flags: [
           {
             name: 'scope',
-            description: 'project or global',
+            description: 'project, store, or global',
             takesValue: true,
-            values: ['project', 'global'],
+            values: ['project', 'store', 'global'],
           },
           {
             name: 'project',
@@ -1194,6 +1394,31 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
           {
             name: 'for-execution',
             description: 'Validate active-profile skills before returning the executable DAG',
+          },
+          {
+            name: 'planner',
+            description: 'Set planner runtime: claude or codex',
+            takesValue: true,
+          },
+          {
+            name: 'implementer',
+            description: 'Set implementer runtime: claude or codex',
+            takesValue: true,
+          },
+          {
+            name: 'reviewer',
+            description: 'Set reviewer runtime: claude or codex',
+            takesValue: true,
+          },
+          {
+            name: 'fixer',
+            description: 'Set fixer runtime: claude or codex',
+            takesValue: true,
+          },
+          {
+            name: 'shipper',
+            description: 'Set shipper runtime: claude or codex',
+            takesValue: true,
           },
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
