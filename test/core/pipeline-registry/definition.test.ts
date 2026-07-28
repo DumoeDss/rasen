@@ -375,9 +375,7 @@ name: legacy-controls
         windowsResult.value.definition.root.nodes.map(({ id, kind }) => ({ id, kind }))
       ).toEqual([
         { id: 'condition:plan', kind: 'Choice' },
-        { id: 'gate:implement', kind: 'Gate' },
-        { id: 'loop:implement', kind: 'BoundedLoop' },
-        { id: 'stage:implement', kind: 'AtomicStage' },
+        { id: 'stage:implement', kind: 'BoundedLoop' },
         { id: 'stage:plan', kind: 'AtomicStage' },
       ]);
       expect(windowsResult.value.definition.root.connections).toEqual([

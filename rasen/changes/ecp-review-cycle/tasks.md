@@ -14,10 +14,10 @@
 
 ## 3. Failure-First Guard Tests (Acceptance #3, #4, #5)
 
-- [ ] 3.1 Write a test that submits a malformed review result (wrong contract string, missing required fields) and asserts rejection with `malformed_review_cycle_result` before Record mutation
-- [ ] 3.2 Write a test that submits a same-actor fixer + verifier re-review and asserts rejection with `review_cycle_actor_separation` before Record mutation
-- [ ] 3.3 Write a test that submits a clean review result while an open Major finding exists and asserts the ReviewCycle does not reach `clean` (ship guard)
-- [ ] 3.4 Write a test that a malformed triage result (missing open finding disposition) is rejected before commit
+- [x] 3.1 Write a test that submits a malformed review result (wrong contract string, missing required fields) and asserts rejection with `malformed_review_cycle_result` before Record mutation
+- [x] 3.2 Write a test that submits a same-actor fixer + verifier re-review and asserts rejection with `review_cycle_actor_separation` before Record mutation
+- [x] 3.3 Write a test that submits a clean review result while an open Major finding exists and asserts the ReviewCycle does not reach `clean` (ship guard)
+- [x] 3.4 Write a test that a malformed triage result (missing open finding disposition) is rejected before commit
 
 ## 4. Pre-Commit Validation Wiring (Acceptance #3, #4)
 
@@ -78,8 +78,8 @@
 
 ## 12. Regression and Cross-Platform Verification
 
-- [ ] 12.1 Run `npx vitest run test/core/change-run/` — verify all 328 prior passing tests still pass plus the new tests (target: 0 regressions)
-- [ ] 12.2 Run `npx tsc --noEmit` — verify zero type errors (the 3 prior errors in `review-cycle-runtime.ts` are fixed)
-- [ ] 12.3 Run `npx vitest run` (full suite) — verify no regressions across the entire test suite
-- [ ] 12.4 Verify Windows CI path handling: all new code uses `path.join()` / `path.resolve()` for file paths, no hardcoded separators
-- [ ] 12.5 Run the UI build (`pnpm --filter @atelierai/rasen-ui build`) — verify Canvas changes compile without errors
+- [x] 12.1 Run `npx vitest run test/core/change-run/` — verify all 328 prior passing tests still pass plus the new tests (target: 0 regressions)
+- [x] 12.2 Run `npx tsc --noEmit` — verify zero type errors (the 3 prior errors in `review-cycle-runtime.ts` are fixed)
+- [x] 12.3 Run `npx vitest run` (full suite) — verify no regressions across the entire test suite
+- [x] 12.4 Verify Windows CI path handling: all new code uses `path.join()` / `path.resolve()` for file paths, no hardcoded separators
+- [x] 12.5 Run the UI build (`pnpm --filter @atelierai/rasen-ui build`) — verify Canvas changes compile without errors
