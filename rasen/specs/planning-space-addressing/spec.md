@@ -145,4 +145,3 @@ The management API SHALL provide `GET /api/v1/spaces/worktrees` answering for a 
 
 - **WHEN** multiple inventory reads for one space arrive within the server's short freshness window and no worktree was added or removed
 - **THEN** they are answered from one underlying git probe, and a worktree added or removed during the window is still reflected on the very next read
-

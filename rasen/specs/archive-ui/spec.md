@@ -69,4 +69,3 @@ The board's Done column SHALL show only a bounded number of the most recent done
 
 - **WHEN** the Done column is truncated
 - **THEN** the Planning, Ready, and In Progress columns still show all of their Tasks
-

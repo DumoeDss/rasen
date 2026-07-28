@@ -148,4 +148,3 @@ Workflow cards SHALL share one uniform anatomy: equal card sizes within a sectio
 
 - **WHEN** the user browses the Workflows page
 - **THEN** no card offers an enable/disable switch and no space picker is present
-

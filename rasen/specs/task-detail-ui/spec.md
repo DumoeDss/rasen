@@ -157,4 +157,3 @@ The sessions column's toolbar SHALL present launching a run as the column's prim
 
 - **WHEN** the user views the sessions column of a Task detail page
 - **THEN** the launch-run action renders as the primary action, the refresh action renders as a quiet action, and the two are visibly separated
-

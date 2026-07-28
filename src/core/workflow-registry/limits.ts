@@ -4,4 +4,3 @@ export const WORKFLOW_LIMITS = {
   maxEntries: 256,
   maxPathBytes: 240,
 } as const;
-

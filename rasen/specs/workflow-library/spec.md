@@ -328,4 +328,3 @@ When a stored workflow selection read from global config (a `custom` profile's w
 - **THEN** the unknown id SHALL be dropped from the resolved selection
 - **AND** a warning naming the dropped id SHALL be emitted
 - **AND** resolution SHALL succeed for the remaining known ids
-

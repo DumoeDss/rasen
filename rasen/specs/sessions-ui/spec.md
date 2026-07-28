@@ -61,4 +61,3 @@ All sessions traffic SHALL go through the UI package's single fetch seam with th
 #### Scenario: UI-package-only footprint
 - **WHEN** this change's modified files are enumerated
 - **THEN** every path is inside the UI package
-

@@ -138,4 +138,3 @@ The management UI shell SHALL expose an Audit navigation entry at the global `/a
 #### Scenario: Audit navigation is read-only to workspace selection
 - **WHEN** the user enters or leaves `/audit`
 - **THEN** navigation changes only the URL/view and issues no workspace/configuration write
-

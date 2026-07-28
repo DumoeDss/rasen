@@ -86,4 +86,3 @@ export interface InvalidWorkflowRecord {
   sourcePath: string;
   diagnostics: WorkflowDiagnostic[];
 }
-

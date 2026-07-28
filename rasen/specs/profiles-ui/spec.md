@@ -102,4 +102,3 @@ An editable profile's membership editor SHALL offer two bulk actions: Select all
 
 - **WHEN** the user views a built-in or broken profile
 - **THEN** neither Select all nor Invert is offered
-

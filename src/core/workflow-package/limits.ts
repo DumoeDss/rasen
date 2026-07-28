@@ -8,4 +8,3 @@ export const WORKFLOW_PACKAGE_LIMITS = {
   maxJsonDepth: 32,
   maxJsonProperties: 4096,
 } as const;
-

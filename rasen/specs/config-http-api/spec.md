@@ -216,4 +216,3 @@ For an enum key whose allowed values differ by scope, each serialized config ent
 
 - **WHEN** a client reads an enum key whose values do not vary by scope
 - **THEN** the entry serializes exactly as before this capability was added
-

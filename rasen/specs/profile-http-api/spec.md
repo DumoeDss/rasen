@@ -45,4 +45,3 @@ The management API SHALL offer authenticated mutations to create a new saved pro
 
 - **WHEN** a client deletes a saved profile that some space's configuration locks
 - **THEN** the delete succeeds, and that space's next apply falls back to the user-wide profile with the existing unresolvable-lock warning, exactly as after a CLI delete
-

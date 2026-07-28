@@ -221,4 +221,3 @@ The registry's existing best-effort contract SHALL be preserved: a failed cache 
 - **THEN** `rasen doctor` SHALL report the drift as an advisory
 - **AND** SHALL NOT silently rewrite either side
 - **AND** SHALL suggest re-running `rasen init` or `rasen update` in that project to resync the cache
-
