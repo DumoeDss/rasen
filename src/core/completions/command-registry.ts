@@ -36,6 +36,14 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         name: 'force',
         description: 'Force update even when tools are up to date',
       },
+      {
+        name: 'all-projects',
+        description: 'Update every reachable, non-pinned registered project whose version is behind',
+      },
+      {
+        name: 'only-this',
+        description: 'Skip multi-project registry consultation (update only this project)',
+      },
     ],
   },
   {

@@ -164,6 +164,7 @@ const INNOCENT_VALUE_RECEIVERS: Record<string, string> = {
   'src/core/init.ts::t': 'detected external tool (loop binding)',
   'src/core/init.ts::td': 'detected external tool (loop binding)',
   'src/core/init.ts::candidate': 'candidate external tool path',
+  'src/core/project-home.ts::t': 'AI_TOOLS.find loop binding (t.value === toolId), not a store declaration',
   'src/core/project-config.ts::edit': 'a config edit descriptor',
   'src/core/effective-config.ts::envOverride': 'an environment-variable override entry',
 };
