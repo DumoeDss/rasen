@@ -50,7 +50,9 @@ describe('store identity', () => {
   let dataDir: string;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-store-identity-'));
+    tempDir = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-store-identity-'))
+    );
     dataDir = path.join(tempDir, 'machine-data');
     fs.mkdirSync(dataDir, { recursive: true });
   });

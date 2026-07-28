@@ -27,7 +27,15 @@ let logs: string[];
 let logSpy: ReturnType<typeof vi.spyOn>;
 const savedEnv: Record<string, string | undefined> = {};
 
-const ENV_KEYS = ['RASEN_HOME', 'RASEN_AGENT_RUNTIME', 'CLAUDECODE', 'CODEX_SANDBOX', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME'];
+const ENV_KEYS = [
+  'RASEN_HOME',
+  'RASEN_AGENT_RUNTIME',
+  'CLAUDECODE',
+  'CODEX_THREAD_ID',
+  'CODEX_SANDBOX',
+  'XDG_CONFIG_HOME',
+  'XDG_DATA_HOME',
+];
 
 function lastOutcome(): Record<string, unknown> {
   expect(logs.length).toBeGreaterThan(0);

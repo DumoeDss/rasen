@@ -64,7 +64,9 @@ describe('membership across add-project, adopt, eject, and the migration', () =>
   let savedRasenHome: string | undefined;
 
   beforeEach(async () => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-membership-ops-'));
+    tempDir = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-membership-ops-'))
+    );
     savedXdg = process.env.XDG_DATA_HOME;
     savedRasenHome = process.env.RASEN_HOME;
     delete process.env.RASEN_HOME;

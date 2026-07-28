@@ -130,19 +130,38 @@ export class FileSystemUtils {
   }
 
   /**
-   * Returns a canonical absolute path when the target exists.
-   * Falls back to path.resolve() so callers can still produce a stable absolute path.
+   * Returns a canonical absolute path. When the exact target does not exist,
+   * canonicalizes its deepest existing ancestor and appends the missing suffix
+   * so future paths keep the same identity spelling as their parent.
+   *
+   * Falls back to path.resolve() when the filesystem cannot be inspected for
+   * a reason other than a missing path.
    */
   static canonicalizeExistingPath(targetPath: string): string {
-    try {
-      // Prefer the native resolver so Windows short-path aliases are expanded.
-      return nodeFs.realpathSync.native(targetPath);
-    } catch {
+    const resolved = path.resolve(targetPath);
+    const missingSegments: string[] = [];
+    let candidate = resolved;
+
+    while (true) {
       try {
-        return nodeFs.realpathSync(targetPath);
+        // Prefer the native resolver so Windows short-path aliases are expanded.
+        return path.join(
+          nodeFs.realpathSync.native(candidate),
+          ...missingSegments
+        );
       } catch {
-        return path.resolve(targetPath);
+        try {
+          return path.join(nodeFs.realpathSync(candidate), ...missingSegments);
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code !== 'ENOENT' && code !== 'ENOTDIR') return resolved;
+        }
       }
+
+      const parent = path.dirname(candidate);
+      if (parent === candidate) return resolved;
+      missingSegments.unshift(path.basename(candidate));
+      candidate = parent;
     }
   }
 

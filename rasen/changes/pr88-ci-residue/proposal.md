@@ -29,3 +29,31 @@ PR #88's acceptance review (condition #6: "3 consecutive green CI") is blocked b
 - No spec deltas: each behavior change is a tightening that the failing test already encodes (the tests are the source of truth for the contract). No new or modified capabilities.
 - Cross-platform: all paths use `path.join()`/`path.resolve()`; no hardcoded slashes; Windows CI (`windows-pwsh`) stays green. The `req.socket.end()` fix is platform-neutral (Node TCP). The `O_NOFOLLOW` + error-wrap fix closes the Linux symlink gap while preserving the Windows `lstat` fallback already in `readDirectReport`. The race-loser snapshot uses `fs.existsSync` (cross-platform).
 - Constraints honored: no global `RASEN_AGENT_RUNTIME`; no round-2 revert; the audits-api test already encodes the early-rejection contract (no spec change needed).
+
+## Cross-platform stabilization follow-up
+
+After PR #88 became Linux-green and was merged into `dev/0.1.5`, the same full
+suite exposed a second residue class on macOS and Windows:
+
+- canonical paths for existing directories use macOS `/private/var` and Windows
+  long-name spellings, while future descendants and several test fixtures kept
+  the lexical `/var` or 8.3 short-name spelling;
+- three ownership-race tests attempted to unlink and recreate a pathname while
+  the original file descriptor remained open, an operation Windows can reject
+  with `EPERM` even though the production guard is working as intended.
+
+This follow-up makes future descendants inherit the canonical spelling of their
+deepest existing ancestor, canonicalizes path-identity fixtures before deriving
+expectations, and expresses ownership mismatch tests through portable seams.
+It does not strip platform prefixes or special-case a runner username: the same
+identity rule applies to symlinks, junctions, macOS temporary-directory aliases,
+and Windows short/long paths.
+
+The Windows run also proved that the 15-minute job ceiling is below the suite's
+normal wall time: a local full run took 17 minutes 48 seconds, with time spread
+across real CLI subprocess, Git, filesystem, and process-tree integration
+tests. The follow-up isolates ambient `CODEX_THREAD_ID`, replaces fixed session
+sleeps with bounded event polling, and splits Windows Vitest execution into
+three deterministic CI file partitions. This shortens wall time without
+weakening coverage; the higher 20-minute partition timeout is only a safety
+margin.
