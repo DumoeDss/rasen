@@ -10,7 +10,6 @@ import {
   createCanonicalWait,
   decodeCanonicalWait,
 } from '../../../src/core/change-run/internal/waits.js';
-import { deriveAttemptId } from '../../../src/core/change-run/internal/identity.js';
 import {
   makeRecordAction,
   recordIds,
@@ -110,7 +109,6 @@ describe('canonical Change Run Record', () => {
     });
     expect(gateA.waitId).not.toBe(gateB.waitId);
 
-    const nextAttempt = deriveAttemptId(recordIds.invocationId, 1);
     const reservationA = createCanonicalWait(recordIds.runId, {
       kind: 'workspace-reservation',
       workspaceInstanceId: recordIds.workspaceInstanceId,
@@ -119,16 +117,12 @@ describe('canonical Change Run Record', () => {
           nodeId: recordIds.nodeId,
           invocationId: recordIds.invocationId,
           occurrence: 1,
-          attemptId: nextAttempt,
-          actionId: recordIds.actionId,
           access: 'read',
         },
         {
           nodeId: recordIds.nodeId,
           invocationId: recordIds.invocationId,
           occurrence: 0,
-          attemptId: recordIds.attemptId,
-          actionId: recordIds.actionId,
           access: 'write',
         },
       ],
