@@ -26,6 +26,7 @@ import { deriveInvocationId } from './identity.js';
 import type { WorkspaceReservationRegistry } from './reservations.js';
 import { validateReviewCycleCompletion, projectReviewCycleProgress } from './review-cycle-runtime.js';
 import { assertReviewCycleMayShip } from './review-cycle.js';
+import { projectCompositeBodyProgress } from './composite-runtime.js';
 
 export interface RuntimeDeps {
   readonly store: RunStore;
@@ -527,6 +528,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       if (
         boundedLoop !== undefined &&
         boundedLoop.kind === 'bounded-loop' &&
+        boundedLoop.body.kind === 'review-cycle' &&
         finalRecord.terminal !== undefined &&
         finalRecord.status === 'completed'
       ) {

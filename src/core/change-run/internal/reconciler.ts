@@ -14,6 +14,10 @@ import {
   type ReviewCycleProgress,
 } from './review-cycle-runtime.js';
 import {
+  projectCompositeBodyProgress,
+  type CompositeBodyProgress,
+} from './composite-runtime.js';
+import {
   createCanonicalWait,
   type CanonicalWait,
 } from './waits.js';
@@ -162,34 +166,72 @@ export function reconcile(
     if (!loop.requires.every((required) => succeeded.has(required))) {
       continue;
     }
-    const progress = projectReviewCycleProgress(plan, loop, record);
-    switch (progress.kind) {
-      case 'clean':
-        succeeded.add(loop.nodeId);
-        break;
-      case 'exhausted':
-        actions.push({
-          kind: 'escalate',
-          code: loop.outcomes.exhausted,
-        });
-        break;
-      case 'ready':
-        boundedLoopAdmitCandidates.push({
-          nodeId: progress.next.nodeId,
-          occurrence: occurrenceForBoundedLoop(record, progress.next.nodeId),
-          admissionKind: progress.next.admissionKind,
-          access: progress.next.workspace.access,
-          loop,
-          descriptor: progress.next,
-          openFindingIds: progress.state.openFindingIds,
-          loopPath: loop.hierarchicalPath,
-        });
-        break;
-      case 'waiting':
-      case 'failed':
-        // An action is already active (waiting) or committed-failed (failed);
-        // no fresh candidate — surface via projection.
-        break;
+    if (loop.body.kind === 'review-cycle') {
+      const progress = projectReviewCycleProgress(plan, loop, record);
+      switch (progress.kind) {
+        case 'clean':
+          succeeded.add(loop.nodeId);
+          break;
+        case 'exhausted':
+          actions.push({
+            kind: 'escalate',
+            code: loop.outcomes.exhausted,
+          });
+          break;
+        case 'ready':
+          boundedLoopAdmitCandidates.push({
+            nodeId: progress.next.nodeId,
+            occurrence: occurrenceForBoundedLoop(record, progress.next.nodeId),
+            admissionKind: progress.next.admissionKind,
+            access: progress.next.workspace.access,
+            loop,
+            bodyKind: 'review-cycle',
+            descriptor: progress.next,
+            openFindingIds: progress.state.openFindingIds,
+            loopPath: loop.hierarchicalPath,
+          });
+          break;
+        case 'waiting':
+        case 'failed':
+          // An action is already active (waiting) or committed-failed (failed);
+          // no fresh candidate — surface via projection.
+          break;
+      }
+    } else {
+      // Composite body kind (ECP-2).
+      const progress = projectCompositeBodyProgress(plan, loop, record);
+      switch (progress.kind) {
+        case 'clean':
+          succeeded.add(loop.nodeId);
+          break;
+        case 'exhausted':
+          actions.push({
+            kind: 'escalate',
+            code: loop.outcomes.exhausted,
+          });
+          break;
+        case 'ready':
+          boundedLoopAdmitCandidates.push({
+            nodeId: progress.next.nodeId,
+            occurrence: occurrenceForBoundedLoop(record, progress.next.nodeId),
+            admissionKind: progress.next.stage.admissionKind,
+            access: progress.next.stage.workspace.access,
+            loop,
+            bodyKind: 'composite',
+            descriptor: {
+              round: progress.next.round,
+              phase: progress.next.stage.hierarchicalPath,
+              nodeId: progress.next.nodeId,
+              profilePath: progress.next.stage.profilePath,
+            },
+            openFindingIds: [],
+            loopPath: loop.hierarchicalPath,
+          });
+          break;
+        case 'waiting':
+        case 'failed':
+          break;
+      }
     }
   }
 
@@ -267,22 +309,34 @@ export function reconcile(
       (c) => c.nodeId === candidate.nodeId
     );
     if (boundedLoopOriginal !== undefined) {
-      actions.push({
-        kind: 'admit',
-        nodeId: candidate.nodeId,
-        occurrence: candidate.occurrence,
-        admissionKind: candidate.admissionKind,
-        access: candidate.access,
-        profilePath: boundedLoopOriginal.descriptor.profilePath,
-        input: {
-          reviewCycle: {
-            loopPath: boundedLoopOriginal.loopPath,
-            round: boundedLoopOriginal.descriptor.round,
-            phase: boundedLoopOriginal.descriptor.phase,
-            openFindingIds: [...boundedLoopOriginal.openFindingIds],
+      if (boundedLoopOriginal.bodyKind === 'review-cycle') {
+        actions.push({
+          kind: 'admit',
+          nodeId: candidate.nodeId,
+          occurrence: candidate.occurrence,
+          admissionKind: candidate.admissionKind,
+          access: candidate.access,
+          profilePath: boundedLoopOriginal.descriptor.profilePath,
+          input: {
+            reviewCycle: {
+              loopPath: boundedLoopOriginal.loopPath,
+              round: boundedLoopOriginal.descriptor.round,
+              phase: boundedLoopOriginal.descriptor.phase,
+              openFindingIds: [...boundedLoopOriginal.openFindingIds],
+            },
           },
-        },
-      });
+        });
+      } else {
+        // Composite-body admit: carry the profile path and composite payload.
+        actions.push({
+          kind: 'admit',
+          nodeId: candidate.nodeId,
+          occurrence: candidate.occurrence,
+          admissionKind: candidate.admissionKind,
+          access: candidate.access,
+          profilePath: boundedLoopOriginal.descriptor.profilePath,
+        });
+      }
     } else {
       actions.push({
         kind: 'admit',
@@ -335,6 +389,7 @@ interface BoundedLoopAdmitCandidate {
   readonly admissionKind: ReconcilerAdmissionKind;
   readonly access: 'none' | 'read' | 'write';
   readonly loop: RuntimePlanBoundedLoopNode;
+  readonly bodyKind: 'review-cycle' | 'composite';
   readonly descriptor: Readonly<{
     readonly round: number;
     readonly phase: string;

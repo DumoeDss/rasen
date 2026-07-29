@@ -27,18 +27,18 @@
 
 ## 4. Composite-body progress projection
 
-- [ ] 4.1 Create `composite-runtime.ts` with `projectCompositeBodyProgress(plan, loop, record)`: iterate body stages per iteration in topological order, check committed action state, determine ready/waiting/failed/clean/exhausted
-- [ ] 4.2 Implement body-outcome derivation: when all body stages in an iteration have succeeded results, derive the body's terminal outcome from the body's Finish node or terminal stages' declared outcomes
-- [ ] 4.3 Implement loop-exit mapping: map the body outcome to the loop's exit mapping; exit → terminal with exit outcome; continue → next iteration; maxIterations reached without exit → exhausted
-- [ ] 4.4 Implement next-ready-stage computation: the topologically earliest body stage with satisfied dependencies and no committed succeeded action is the admit candidate
-- [ ] 4.5 Return the same `ready | waiting | failed | clean | exhausted` result shape as `projectReviewCycleProgress` so the reconciler's switch logic is shared
-- [ ] 4.6 Write unit tests for projectCompositeBodyProgress: first stage ready on start; waiting when stage active; clean when exit outcome produced; exhausted at maxIterations; failed when a body stage fails
+- [x] 4.1 Create `composite-runtime.ts` with `projectCompositeBodyProgress(plan, loop, record)`: iterate body stages per iteration in topological order, check committed action state, determine ready/waiting/failed/clean/exhausted
+- [x] 4.2 Implement body-outcome derivation: when all body stages in an iteration have succeeded results, derive the body's terminal outcome from the body's Finish node or terminal stages' declared outcomes
+- [x] 4.3 Implement loop-exit mapping: map the body outcome to the loop's exit mapping; exit → terminal with exit outcome; continue → next iteration; maxIterations reached without exit → exhausted
+- [x] 4.4 Implement next-ready-stage computation: the topologically earliest body stage with satisfied dependencies and no committed succeeded action is the admit candidate
+- [x] 4.5 Return the same `ready | waiting | failed | clean | exhausted` result shape as `projectReviewCycleProgress` so the reconciler's switch logic is shared
+- [x] 4.6 Write unit tests for projectCompositeBodyProgress: first stage ready on start; waiting when stage active; clean when exit outcome produced; exhausted at maxIterations; failed when a body stage fails
 
 ## 5. Reconciler composite-body pass
 
-- [ ] 5.1 Add `loop.body.kind` branch in the bounded-loop pass of `reconcile()`: call `projectCompositeBodyProgress` for `'composite'` bodies, `projectReviewCycleProgress` for `'review-cycle'` bodies
-- [ ] 5.2 Ensure the composite-body admit candidate carries the correct nodeId, occurrence, admissionKind, workspace access, and a `composite` payload (loopPath, round, stagePath) for the facade
-- [ ] 5.3 Write reconciler tests: composite-body loop first-stage admitted; mid-iteration waiting; exit outcome triggers succeeded-set add; exhausted triggers escalate; mixed plan (atomic + composite-body bounded-loop + finish) completes in order
+- [x] 5.1 Add `loop.body.kind` branch in the bounded-loop pass of `reconcile()`: call `projectCompositeBodyProgress` for `'composite'` bodies, `projectReviewCycleProgress` for `'review-cycle'` bodies
+- [x] 5.2 Ensure the composite-body admit candidate carries the correct nodeId, occurrence, admissionKind, workspace access, and a `composite` payload (loopPath, round, stagePath) for the facade
+- [x] 5.3 Write reconciler tests: composite-body loop first-stage admitted; mid-iteration waiting; exit outcome triggers succeeded-set add; exhausted triggers escalate; mixed plan (atomic + composite-body bounded-loop + finish) completes in order
 
 ## 6. Prepare-time gate generalization
 
