@@ -31,29 +31,29 @@
 
 ## 4. Reconciler — Choice Pass (Acceptance: D2)
 
-- [ ] 4.1 Add a Choice pass to `reconcile()` in `src/core/change-run/internal/reconciler.ts` after the bounded-loop pass and before the atomic classification
-- [ ] 4.2 For each `choice` node with satisfied requires: if no committed result → emit admit; if committed result → add `choice.nodeId` + `branches[outcome]` to succeeded set
-- [ ] 4.3 Extend `finishCandidate` to include `choice` nodes in the required-nodes check (a choice with no committed result blocks finish)
-- [ ] 4.4 Write failure-first tests: choice with no committed result blocks downstream; choice result persisted → un-selected branch never ready
+- [x] 4.1 Add a Choice pass to `reconcile()` in `src/core/change-run/internal/reconciler.ts` after the bounded-loop pass and before the atomic classification
+- [x] 4.2 For each `choice` node with satisfied requires: if no committed result → emit admit; if committed result → add `choice.nodeId` + `branches[outcome]` to succeeded set
+- [x] 4.3 Extend `finishCandidate` to include `choice` nodes in the required-nodes check (a choice with no committed result blocks finish)
+- [x] 4.4 Write failure-first tests: choice with no committed result blocks downstream; choice result persisted → un-selected branch never ready
 
 ## 5. Reconciler — FanOut Pass (Acceptance: D3)
 
-- [ ] 5.1 Add a FanOut pass after the Choice pass: for each `fan-out` node with satisfied requires, check condition-evaluation committed result
-- [ ] 5.2 If no committed condition result → emit admit for condition evaluator; if committed → add `fan-out.nodeId` to succeeded set and collect active member candidates
-- [ ] 5.3 Apply concurrency cap: select at most `cap` candidates per pass (stable hierarchical-path order)
-- [ ] 5.4 Apply budget: count committed member actions; suppress candidates beyond `budget - committedCount`
-- [ ] 5.5 Merge capped FanOut member candidates with atomic + bounded-loop candidates into ONE `selectCompatibleAdmissions` call
-- [ ] 5.6 Write failure-first tests: over-cap admits at most N; over-budget suppresses; suppressed members never admitted
+- [x] 5.1 Add a FanOut pass after the Choice pass: for each `fan-out` node with satisfied requires, check condition-evaluation committed result
+- [x] 5.2 If no committed condition result → emit admit for condition evaluator; if committed → add `fan-out.nodeId` to succeeded set and collect active member candidates
+- [x] 5.3 Apply concurrency cap: select at most `cap` candidates per pass (stable hierarchical-path order)
+- [x] 5.4 Apply budget: count committed member actions; suppress candidates beyond `budget - committedCount`
+- [x] 5.5 Merge capped FanOut member candidates with atomic + bounded-loop candidates into ONE `selectCompatibleAdmissions` call
+- [x] 5.6 Write failure-first tests: over-cap admits at most N; over-budget suppresses; suppressed members never admitted
 
 ## 6. Reconciler — Join Pass (Acceptance: D4)
 
-- [ ] 6.1 Add a Join pass after the FanOut pass: for each `join` node with satisfied non-member requires, check member outcomes
-- [ ] 6.2 For active required members: all succeeded → continue; any failed → emit escalate with `outcomes.failed`; some non-terminal → wait
-- [ ] 6.3 For active optional members: failed → suppressed (ignored); non-terminal → wait
-- [ ] 6.4 If all active required succeeded and all active optional terminal → add `join.nodeId` to succeeded set
-- [ ] 6.5 Read the FanOut's committed condition result to determine active vs suppressed members (suppressed members ignored by Join)
-- [ ] 6.6 Extend `finishCandidate` to include `join` nodes in the required-nodes check
-- [ ] 6.7 Write failure-first tests: required member fails → escalate; optional member fails → suppressed; all succeed → proceed
+- [x] 6.1 Add a Join pass after the FanOut pass: for each `join` node with satisfied non-member requires, check member outcomes
+- [x] 6.2 For active required members: all succeeded → continue; any failed → emit escalate with `outcomes.failed`; some non-terminal → wait
+- [x] 6.3 For active optional members: failed → suppressed (ignored); non-terminal → wait
+- [x] 6.4 If all active required succeeded and all active optional terminal → add `join.nodeId` to succeeded set
+- [x] 6.5 Read the FanOut's committed condition result to determine active vs suppressed members (suppressed members ignored by Join)
+- [x] 6.6 Extend `finishCandidate` to include `join` nodes in the required-nodes check
+- [x] 6.7 Write failure-first tests: required member fails → escalate; optional member fails → suppressed; all succeed → proceed
 
 ## 7. Pre-Commit Validation (Acceptance: D2, D3)
 

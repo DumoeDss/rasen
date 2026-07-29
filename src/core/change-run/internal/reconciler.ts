@@ -8,6 +8,9 @@ import type {
   RuntimePlan,
   RuntimePlanAtomicNode,
   RuntimePlanBoundedLoopNode,
+  RuntimePlanChoiceNode,
+  RuntimePlanFanOutNode,
+  RuntimePlanJoinNode,
 } from './runtime-plan.js';
 import {
   projectReviewCycleProgress,
@@ -50,6 +53,7 @@ export type ReconcilerNextAction =
       input?: Readonly<{
         reviewCycle?: Readonly<{ loopPath: string; round: number; phase: string; openFindingIds: readonly string[] }>;
         goalCycle?: Readonly<{ loopPath: string; round: number; phase: string }>;
+        fanOutCondition?: Readonly<{ fanOutPath: string }>;
       }>;
       /**
        * The profile path for this admit's capability binding. Set for
@@ -153,6 +157,15 @@ export function reconcile(
   );
   const boundedLoopNodes = plan.nodes.filter(
     (node): node is RuntimePlanBoundedLoopNode => node.kind === 'bounded-loop'
+  );
+  const choiceNodes = plan.nodes.filter(
+    (node): node is RuntimePlanChoiceNode => node.kind === 'choice'
+  );
+  const fanOutNodes = plan.nodes.filter(
+    (node): node is RuntimePlanFanOutNode => node.kind === 'fan-out'
+  );
+  const joinNodes = plan.nodes.filter(
+    (node): node is RuntimePlanJoinNode => node.kind === 'join'
   );
   const succeeded = new Set<NodeId>();
   for (const node of atomicNodes) {
@@ -276,12 +289,189 @@ export function reconcile(
     }
   }
 
+  // Pass 1c (ECP-4 Choice): evaluate choice nodes. If a committed result
+  // exists, the selected branch path is added to the succeeded set so
+  // downstream nodes on that branch become ready. Un-selected branches
+  // never enter the succeeded set. If no committed result exists, the
+  // choice emits an admit candidate for its condition evaluator.
+  const fanOutMemberCandidates: FanOutMemberCandidate[] = [];
+  for (const choice of choiceNodes) {
+    if (!choice.requires.every((req) => succeeded.has(req))) continue;
+    const committed = committedResultForNode(record, choice.nodeId);
+    if (committed !== null) {
+      const outcome = (committed as Readonly<{ outcome?: unknown }>).outcome;
+      succeeded.add(choice.nodeId);
+      if (typeof outcome === 'string' && choice.branches[outcome] !== undefined) {
+        const branchPath = choice.branches[outcome]!;
+        const branchNodeId = plan.nodes.find(
+          (n) => n.hierarchicalPath === branchPath
+        )?.nodeId;
+        if (branchNodeId !== undefined) {
+          succeeded.add(branchNodeId);
+        }
+      }
+    } else {
+      // Emit admit for the choice condition evaluator.
+      actions.push({
+        kind: 'admit',
+        nodeId: choice.nodeId,
+        occurrence: occurrenceForNodeId(record, choice.nodeId),
+        admissionKind: choice.admissionKind,
+        access: choice.workspace.access,
+        profilePath: choice.profilePath,
+      });
+    }
+  }
+
+  // Pass 1d (ECP-4 FanOut): evaluate fan-out nodes. If the condition is
+  // committed, add the fan-out to the succeeded set and collect active
+  // member candidates (respecting concurrency cap and budget).
+  for (const fanOut of fanOutNodes) {
+    if (!fanOut.requires.every((req) => succeeded.has(req))) continue;
+    const conditionResult = committedResultForNode(record, fanOut.nodeId);
+    if (conditionResult === null) {
+      // Emit admit for the condition evaluator.
+      actions.push({
+        kind: 'admit',
+        nodeId: fanOut.nodeId,
+        occurrence: occurrenceForNodeId(record, fanOut.nodeId),
+        admissionKind: fanOut.admissionKind,
+        access: fanOut.workspace.access,
+        profilePath: fanOut.profilePath,
+        input: { fanOutCondition: { fanOutPath: fanOut.hierarchicalPath } },
+      });
+      continue;
+    }
+    // Condition committed — add fan-out to succeeded set.
+    succeeded.add(fanOut.nodeId);
+    // Read active members from the condition result.
+    const activeMembers = readActiveMembers(conditionResult, fanOut);
+    // Check for required members suppressed by the condition (plan violation).
+    for (const member of fanOut.members) {
+      if (member.required && !activeMembers.has(member.hierarchicalPath)) {
+        actions.push({
+          kind: 'escalate',
+          code: 'fan_out_required_member_suppressed',
+          reason: `Required member ${member.hierarchicalPath} was suppressed by the FanOut condition evaluator.`,
+        });
+      }
+    }
+    // Collect non-terminal active member candidates.
+    const candidates: FanOutMemberCandidate[] = [];
+    for (const member of fanOut.members) {
+      if (!activeMembers.has(member.hierarchicalPath)) continue;
+      // Find the atomic node for this member.
+      const memberNode = atomicNodes.find(
+        (n) => n.nodeId === member.nodeId
+      );
+      if (memberNode === undefined) continue;
+      // Skip if already terminal (committed succeeded/failed).
+      const state = effectiveActionResult(record, memberNode);
+      if (state !== null) continue; // terminal or active — skip
+      candidates.push({
+        nodeId: member.nodeId,
+        hierarchicalPath: member.hierarchicalPath,
+        required: member.required,
+        condition: member.condition,
+        fanOutNodeId: fanOut.nodeId,
+      });
+    }
+    // Sort by hierarchical path for stable ordering.
+    candidates.sort((a, b) =>
+      a.hierarchicalPath < b.hierarchicalPath ? -1 : a.hierarchicalPath > b.hierarchicalPath ? 1 : 0
+    );
+    // Apply budget: count committed member actions.
+    let committedCount = 0;
+    for (const member of fanOut.members) {
+      const memberNode = atomicNodes.find((n) => n.nodeId === member.nodeId);
+      if (memberNode === undefined) continue;
+      const state = effectiveActionResult(record, memberNode);
+      if (state !== null) committedCount++;
+    }
+    const availableSlots = Math.max(0, fanOut.budget - committedCount);
+    const cap = Math.min(fanOut.concurrencyCap, availableSlots, candidates.length);
+    for (let i = 0; i < cap; i++) {
+      fanOutMemberCandidates.push(candidates[i]!);
+    }
+  }
+
+  // Pass 1e (ECP-4 Join): evaluate join nodes after FanOut pass so the
+  // fan-out is in the succeeded set. The Join reads committed member
+  // results and derives its state purely from the Record.
+  for (const join of joinNodes) {
+    // Only check non-member requires (upstream deps like the FanOut node).
+    // Member status is checked directly below.
+    const memberNodeIds = new Set<NodeId>([
+      ...join.requiredMembers,
+      ...join.optionalMembers,
+    ]);
+    const nonMemberRequires = join.requires.filter((req) => !memberNodeIds.has(req));
+    if (!nonMemberRequires.every((req) => succeeded.has(req))) continue;
+    // Find the FanOut that feeds this Join.
+    const fanOut = fanOutNodes.find(
+      (fo) => fo.joinNodeId === join.nodeId
+    );
+    if (fanOut === undefined) continue;
+    // Read active members from the FanOut condition result.
+    const conditionResult = committedResultForNode(record, fanOut.nodeId);
+    if (conditionResult === null) continue; // FanOut not resolved yet
+    const activeMembers = readActiveMembers(conditionResult, fanOut);
+    // Check active required members.
+    let allRequiredSucceeded = true;
+    let anyRequiredFailed = false;
+    let anyNonTerminal = false;
+    for (const memberNodeId of join.requiredMembers) {
+      const memberPath = fanOut.members.find((m) => m.nodeId === memberNodeId)?.hierarchicalPath;
+      if (memberPath === undefined || !activeMembers.has(memberPath)) continue;
+      const memberNode = atomicNodes.find((n) => n.nodeId === memberNodeId);
+      if (memberNode === undefined) continue;
+      const state = effectiveActionResult(record, memberNode);
+      if (state === null) { anyNonTerminal = true; continue; }
+      if (state.status === 'succeeded') continue;
+      if (state.status === 'failed') { anyRequiredFailed = true; continue; }
+      anyNonTerminal = true; // active or blocked
+    }
+    if (anyRequiredFailed) {
+      actions.push({ kind: 'escalate', code: join.outcomes.failed });
+      continue;
+    }
+    // Check active optional members.
+    for (const memberNodeId of join.optionalMembers) {
+      const memberPath = fanOut.members.find((m) => m.nodeId === memberNodeId)?.hierarchicalPath;
+      if (memberPath === undefined || !activeMembers.has(memberPath)) continue;
+      const memberNode = atomicNodes.find((n) => n.nodeId === memberNodeId);
+      if (memberNode === undefined) continue;
+      const state = effectiveActionResult(record, memberNode);
+      if (state === null) { anyNonTerminal = true; continue; }
+      // Optional failed → suppressed (ignored). succeeded → ok.
+    }
+    if (!anyNonTerminal && allRequiredSucceeded) {
+      succeeded.add(join.nodeId);
+    }
+  }
+
   // Pass 2: classify each atomic node against the precomputed succeeded set.
   // Admit candidates are collected and then passed through workspace-compatible
   // selection (Step settle); non-admit candidates (Gate, suspend, escalate)
   // are emitted directly in the plan's stable topological order.
+  // ECP-4: fan-out member atomic nodes are handled by the FanOut pass, not here.
   const admitCandidates: AdmissionCandidate[] = [];
   for (const node of atomicNodes) {
+    // Skip fan-out members — they are admitted via the FanOut pass.
+    if (node.fanOut !== undefined) {
+      // Check if this member should be admitted via FanOut pass.
+      const isCandidate = fanOutMemberCandidates.some((c) => c.nodeId === node.nodeId);
+      if (isCandidate) {
+        admitCandidates.push({
+          nodeId: node.nodeId,
+          occurrence: occurrenceFor(record, node),
+          admissionKind: node.admissionKind,
+          access: node.workspace.access,
+          ...(node.profilePath !== undefined ? { profilePath: node.profilePath } : {}),
+        });
+      }
+      continue;
+    }
     const disposition = dispositionFor(plan, record, node, succeeded);
     switch (disposition.status) {
       case 'pending':
@@ -455,6 +645,75 @@ interface BoundedLoopAdmitCandidate {
   }>;
   readonly openFindingIds: readonly string[];
   readonly loopPath: string;
+}
+
+interface FanOutMemberCandidate {
+  readonly nodeId: NodeId;
+  readonly hierarchicalPath: string;
+  readonly required: boolean;
+  readonly condition: string;
+  readonly fanOutNodeId: NodeId;
+}
+
+/**
+ * Read the committed domain result for a specific nodeId from the Record.
+ * Returns the result object if the action has a committed result, null otherwise.
+ */
+function committedResultForNode(
+  record: CanonicalRunRecord,
+  nodeId: NodeId
+): JsonValue | null {
+  const actions = Object.values(record.actions).filter(
+    (committed) => committed.action.nodeId === nodeId && committed.result !== undefined
+  );
+  if (actions.length === 0) return null;
+  const withResult = actions[actions.length - 1];
+  return withResult?.result?.result ?? null;
+}
+
+/**
+ * Read the active member hierarchical paths from a FanOut condition result.
+ */
+function readActiveMembers(
+  conditionResult: JsonValue,
+  fanOut: RuntimePlanFanOutNode
+): Set<string> {
+  const result = new Set<string>();
+  if (
+    conditionResult !== null &&
+    typeof conditionResult === 'object' &&
+    !Array.isArray(conditionResult) &&
+    'activeMembers' in conditionResult
+  ) {
+    const activeMembers = (conditionResult as Readonly<{ activeMembers?: unknown }>).activeMembers;
+    if (Array.isArray(activeMembers)) {
+      for (const member of activeMembers) {
+        if (typeof member === 'string') result.add(member);
+      }
+    }
+  } else {
+    // If the condition result doesn't have activeMembers (e.g. simple result),
+    // assume ALL members are active (the condition evaluator approved all).
+    for (const member of fanOut.members) {
+      result.add(member.hierarchicalPath);
+    }
+  }
+  return result;
+}
+
+/**
+ * Count prior invocations for a nodeId (for choice/fan-out condition evaluators).
+ */
+function occurrenceForNodeId(
+  record: CanonicalRunRecord,
+  nodeId: NodeId
+): number {
+  const invocations = new Set(
+    actionsForNode(record, nodeId).map(
+      (committed) => committed.action.invocationId
+    )
+  );
+  return invocations.size;
 }
 
 interface WorkspaceLock {
@@ -772,12 +1031,16 @@ function finishCandidate(
   if (record.terminal !== undefined) {
     return null;
   }
-  // Collect all non-finish node IDs (atomic + bounded-loop) that must be in
-  // the succeeded set before the Run can finish. A bounded-loop with remaining
-  // work (ready/waiting/failed) blocks finish — only clean contributes to the
-  // succeeded set; exhausted emits escalate before finish is evaluated.
+  // Collect all non-finish node IDs that must be in the succeeded set before
+  // the Run can finish. ECP-4: FanOut member atomic nodes (with `fanOut` tag)
+  // are excluded — their gate is the Join node, not individual atomic success.
   const requiredNodes = plan.nodes.filter(
-    (node) => node.kind === 'atomic' || node.kind === 'bounded-loop'
+    (node) =>
+      (node.kind === 'atomic' && node.fanOut === undefined) ||
+      node.kind === 'bounded-loop' ||
+      node.kind === 'choice' ||
+      node.kind === 'fan-out' ||
+      node.kind === 'join'
   );
   if (plan.finishNode !== undefined) {
     if (plan.finishNode.requires.every((required) => succeeded.has(required))) {
