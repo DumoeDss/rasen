@@ -121,6 +121,7 @@ function eventsFromRecord(
   loop: RuntimePlanBoundedLoopNode,
   record: CanonicalRunRecord
 ): readonly ReviewCycleEvent[] {
+  if (loop.body.kind !== 'review-cycle') return Object.freeze([]);
   const events: ReviewCycleEvent[] = [];
   for (let round = 1; round <= loop.maxIterations; round += 1) {
     for (const phase of loop.body.phases) {
@@ -138,6 +139,12 @@ function phaseFor(
   loop: RuntimePlanBoundedLoopNode,
   phase: ReviewCyclePhase
 ): RuntimePlanReviewCyclePhase {
+  if (loop.body.kind !== 'review-cycle') {
+    throw new ReviewCycleDomainError(
+      'invalid_review_cycle_transition',
+      `Expected review-cycle body but got ${loop.body.kind}.`
+    );
+  }
   const found = loop.body.phases.find((candidate) => candidate.phase === phase);
   if (found === undefined) {
     throw new ReviewCycleDomainError(
@@ -186,6 +193,7 @@ export function locateReviewCycleInvocation(
 ): ReviewCycleInvocationDescriptor | null {
   for (const node of plan.nodes) {
     if (node.kind !== 'bounded-loop') continue;
+    if (node.body.kind !== 'review-cycle') continue;
     for (let round = 1; round <= node.maxIterations; round += 1) {
       for (const phase of node.body.phases) {
         const descriptor = reviewCycleInvocation(plan, node, round, phase);

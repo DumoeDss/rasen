@@ -44,13 +44,29 @@ export interface RuntimePlanReviewCycleBody {
   readonly phases: readonly RuntimePlanReviewCyclePhase[];
 }
 
+export interface RuntimePlanCompositeStage {
+  readonly nodeId: NodeId;
+  readonly hierarchicalPath: string;
+  readonly profilePath: string;
+  readonly admissionKind: RuntimePlanAdmissionKind;
+  readonly workspace: RuntimePlanWorkspace;
+  readonly requires: readonly NodeId[]; // body-internal dependencies
+}
+
+export interface RuntimePlanCompositeBody {
+  readonly kind: 'composite';
+  readonly declarationId: string;
+  readonly stages: readonly RuntimePlanCompositeStage[];
+  readonly outcomes: Readonly<Record<string, string>>; // body outcome → loop exit outcome
+}
+
 export interface RuntimePlanBoundedLoopNode {
   readonly kind: 'bounded-loop';
   readonly nodeId: NodeId;
   readonly hierarchicalPath: string;
   readonly requires: readonly NodeId[];
   readonly maxIterations: number;
-  readonly body: RuntimePlanReviewCycleBody;
+  readonly body: RuntimePlanReviewCycleBody | RuntimePlanCompositeBody;
   readonly outcomes: Readonly<{
     clean: string;
     exhausted: string;
@@ -102,6 +118,21 @@ export interface RuntimePlanReviewCycleBodyInput {
   readonly phases: readonly RuntimePlanReviewCyclePhaseInput[];
 }
 
+export interface RuntimePlanCompositeStageInput {
+  readonly hierarchicalPath: string;
+  readonly profilePath: string;
+  readonly admissionKind: RuntimePlanAdmissionKind;
+  readonly workspace?: Readonly<{ access?: RuntimePlanWorkspaceAccess }>;
+  readonly requires: readonly string[]; // body-internal hierarchical paths
+}
+
+export interface RuntimePlanCompositeBodyInput {
+  readonly kind: 'composite';
+  readonly declarationId: string;
+  readonly stages: readonly RuntimePlanCompositeStageInput[];
+  readonly outcomes: Readonly<Record<string, string>>;
+}
+
 export interface RuntimePlanNodeInput {
   readonly kind: 'atomic' | 'bounded-loop' | 'finish';
   readonly hierarchicalPath: string;
@@ -112,7 +143,7 @@ export interface RuntimePlanNodeInput {
   readonly gate?: RuntimePlanGateInput;
   readonly outcome?: string;
   readonly maxIterations?: number;
-  readonly body?: RuntimePlanReviewCycleBodyInput;
+  readonly body?: RuntimePlanReviewCycleBodyInput | RuntimePlanCompositeBodyInput;
   readonly outcomes?: Readonly<{
     clean: string;
     exhausted: string;
@@ -314,6 +345,36 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
       } as RuntimePlanAtomicNode;
     }
     if (node.kind === 'bounded-loop') {
+      const body = node.body!;
+      if (body.kind === 'review-cycle') {
+        return {
+          kind: 'bounded-loop',
+          nodeId,
+          hierarchicalPath: node.hierarchicalPath,
+          requires,
+          maxIterations: node.maxIterations!,
+          body: {
+            kind: 'review-cycle',
+            phases: body.phases.map((phase) => ({
+              phase: phase.phase,
+              profilePath: phase.profilePath,
+              admissionKind: phase.admissionKind,
+              workspace: {
+                access: phase.workspace?.access ?? 'write',
+              },
+            })),
+          },
+          outcomes: {
+            clean: node.outcomes!.clean,
+            exhausted: node.outcomes!.exhausted,
+          },
+        } as RuntimePlanBoundedLoopNode;
+      }
+      // composite body kind
+      const bodyPathToNodeId = new Map<string, NodeId>();
+      for (const stage of body.stages) {
+        bodyPathToNodeId.set(stage.hierarchicalPath, deriveNodeId(input.runId, stage.hierarchicalPath));
+      }
       return {
         kind: 'bounded-loop',
         nodeId,
@@ -321,15 +382,19 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
         requires,
         maxIterations: node.maxIterations!,
         body: {
-          kind: 'review-cycle',
-          phases: node.body!.phases.map((phase) => ({
-            phase: phase.phase,
-            profilePath: phase.profilePath,
-            admissionKind: phase.admissionKind,
+          kind: 'composite',
+          declarationId: body.declarationId,
+          stages: body.stages.map((stage) => ({
+            nodeId: bodyPathToNodeId.get(stage.hierarchicalPath)!,
+            hierarchicalPath: stage.hierarchicalPath,
+            profilePath: stage.profilePath,
+            admissionKind: stage.admissionKind,
             workspace: {
-              access: phase.workspace?.access ?? 'write',
+              access: stage.workspace?.access ?? 'write',
             },
+            requires: stage.requires.map((path) => bodyPathToNodeId.get(path)!),
           })),
+          outcomes: { ...body.outcomes },
         },
         outcomes: {
           clean: node.outcomes!.clean,
@@ -395,14 +460,45 @@ function validateBoundedLoop(
       `Bounded loop ${path} maxIterations must be between 1 and 100.`
     );
   }
-  if (node.body?.kind !== 'review-cycle') {
+  if (node.body?.kind === 'review-cycle') {
+    validateReviewCycleBody(path, node);
+  } else if (node.body?.kind === 'composite') {
+    validateCompositeBody(path, node);
+  } else {
     reject(
       'unsupported_runtime_plan',
       `Bounded loop ${path} uses an unsupported body kind.`
     );
   }
+  if (
+    node.outcomes === undefined ||
+    node.outcomes.clean.length === 0 ||
+    node.outcomes.exhausted.length === 0
+  ) {
+    reject(
+      'invalid_runtime_plan',
+      `Bounded loop ${path} must declare clean and exhausted outcomes.`
+    );
+  }
+  if (
+    node.admissionKind !== undefined ||
+    node.gate !== undefined ||
+    node.outcome !== undefined
+  ) {
+    reject(
+      'invalid_runtime_plan',
+      `Bounded loop ${path} must not declare atomic, gate, or finish fields.`
+    );
+  }
+}
+
+function validateReviewCycleBody(
+  path: string,
+  node: RuntimePlanNodeInput
+): void {
+  const body = node.body as RuntimePlanReviewCycleBodyInput;
   const expected = ['review', 'triage', 'fix', 're-review'] as const;
-  const actual = node.body.phases.map((phase) => phase.phase);
+  const actual = body.phases.map((phase) => phase.phase);
   if (
     actual.length !== expected.length ||
     actual.some((phase, index) => phase !== expected[index])
@@ -413,7 +509,7 @@ function validateBoundedLoop(
     );
   }
   const profilePaths = new Set<string>();
-  for (const phase of node.body.phases) {
+  for (const phase of body.phases) {
     if (
       phase.profilePath.length === 0 ||
       phase.profilePath.length > 1024 ||
@@ -437,25 +533,89 @@ function validateBoundedLoop(
       );
     }
   }
-  if (
-    node.outcomes === undefined ||
-    node.outcomes.clean.length === 0 ||
-    node.outcomes.exhausted.length === 0
-  ) {
+}
+
+function validateCompositeBody(
+  path: string,
+  node: RuntimePlanNodeInput
+): void {
+  const body = node.body as RuntimePlanCompositeBodyInput;
+  if (body.stages.length === 0) {
     reject(
       'invalid_runtime_plan',
-      `Bounded loop ${path} must declare clean and exhausted outcomes.`
+      `Composite body ${path} must declare at least one stage.`
     );
   }
-  if (
-    node.admissionKind !== undefined ||
-    node.gate !== undefined ||
-    node.outcome !== undefined
-  ) {
+  const stagePaths = new Set<string>();
+  for (const stage of body.stages) {
+    if (
+      stage.hierarchicalPath.length === 0 ||
+      stage.hierarchicalPath.length > 1024 ||
+      stage.hierarchicalPath.includes('\\')
+    ) {
+      reject(
+        'invalid_runtime_plan',
+        `Composite body stage path ${JSON.stringify(stage.hierarchicalPath)} is malformed.`
+      );
+    }
+    if (stagePaths.has(stage.hierarchicalPath)) {
+      reject(
+        'invalid_runtime_plan',
+        `Composite body stage path ${JSON.stringify(stage.hierarchicalPath)} is declared more than once.`
+      );
+    }
+    stagePaths.add(stage.hierarchicalPath);
+    if (
+      stage.profilePath.length === 0 ||
+      stage.profilePath.length > 1024 ||
+      stage.profilePath.includes('\\')
+    ) {
+      reject(
+        'invalid_runtime_plan',
+        `Composite body stage profile path ${JSON.stringify(stage.profilePath)} is malformed.`
+      );
+    }
+    if (
+      stage.admissionKind !== 'agent' &&
+      stage.admissionKind !== 'command' &&
+      stage.admissionKind !== 'host'
+    ) {
+      reject(
+        'invalid_runtime_plan',
+        `Composite body stage ${stage.hierarchicalPath} must declare a supported admission kind.`
+      );
+    }
+  }
+  // Acyclic body-internal dependency check.
+  const bodyOrder = topologicalOrder(
+    body.stages.map((s) => s.hierarchicalPath),
+    body.stages.map((s) => [...s.requires])
+  );
+  if (bodyOrder.length !== body.stages.length) {
     reject(
       'invalid_runtime_plan',
-      `Bounded loop ${path} must not declare atomic, gate, or finish fields.`
+      `Composite body ${path} internal dependency graph must be acyclic.`
     );
+  }
+  // Validate body-internal requires reference known stage paths.
+  for (const stage of body.stages) {
+    for (const required of stage.requires) {
+      if (!stagePaths.has(required)) {
+        reject(
+          'invalid_runtime_plan',
+          `Composite body stage ${stage.hierarchicalPath} requires unknown body stage ${JSON.stringify(required)}.`
+        );
+      }
+    }
+  }
+  // Outcome keys must be non-empty.
+  for (const key of Object.keys(body.outcomes)) {
+    if (key.length === 0) {
+      reject(
+        'invalid_runtime_plan',
+        `Composite body ${path} must not declare empty outcome keys.`
+      );
+    }
   }
 }
 
