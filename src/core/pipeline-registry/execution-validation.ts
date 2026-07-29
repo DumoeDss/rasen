@@ -145,8 +145,7 @@ export function preflightPreparedDefinitionExecution(
 ): PreparedDefinitionExecutionSelection {
   if (
     !prepared.capability.executable ||
-    prepared.capability.executionMode === 'unavailable' ||
-    prepared.authoredVersion !== 1
+    prepared.capability.executionMode === 'unavailable'
   ) {
     const reason =
       prepared.capability.unavailableReason ?? 'pipeline_runtime_unavailable';
@@ -154,6 +153,16 @@ export function preflightPreparedDefinitionExecution(
       `Pipeline Definition version ${prepared.authoredVersion} has a valid plan, but no complete runtime owner is available (${reason}).`,
       reason
     );
+  }
+
+  // v2-authored definitions have no legacy PipelineYaml representation.
+  // They are fully validated during EcpDefinitionModule.prepare and execute
+  // exclusively through the reconciler runtime.
+  if (prepared.authoredVersion === 2) {
+    return {
+      mode: 'reconciler',
+      pipeline: null as unknown as PipelineYaml,
+    };
   }
 
   return {
