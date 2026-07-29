@@ -16,6 +16,13 @@ function listValue(values: readonly string[]): string {
   return values.join(',');
 }
 
+/** Narrow an untyped wire-node field to a string list before rendering it. */
+function stringList(value: unknown): readonly string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
 function parseList(value: string): string[] {
   return Array.from(
     new Set(
@@ -521,7 +528,7 @@ function DeclarationSummary({
  */
 function FanOutDetails({ node }: { node: WireDefinitionNode }) {
   const branches = listValue(
-    (node as Readonly<{ branches?: unknown }>).branches
+    stringList((node as Readonly<{ branches?: unknown }>).branches)
   );
   const cap = (node as Readonly<{ concurrencyCap?: unknown }>).concurrencyCap;
   const budget = (node as Readonly<{ budget?: unknown }>).budget;
@@ -563,7 +570,7 @@ function FanOutDetails({ node }: { node: WireDefinitionNode }) {
  */
 function JoinDetails({ node }: { node: WireDefinitionNode }) {
   const inputs = listValue(
-    (node as Readonly<{ inputs?: unknown }>).inputs
+    stringList((node as Readonly<{ inputs?: unknown }>).inputs)
   );
   const requiredMembers = (node as Readonly<{ requiredMembers?: readonly string[] }>).requiredMembers;
   const optionalMembers = (node as Readonly<{ optionalMembers?: readonly string[] }>).optionalMembers;

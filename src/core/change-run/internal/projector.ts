@@ -408,6 +408,63 @@ function buildGoalSection(
 }
 
 /**
+ * ECP-4: the `parallel/1` section a Run view exposes for a FanOut/Join pair.
+ * Consumed by the CLI `pipeline status` renderer, the Management API, and the
+ * Operations UI — all three read the SAME projection, so the shape is typed
+ * here rather than left as `unknown`.
+ */
+export type ParallelMemberStatus =
+  | 'waiting'
+  | 'suppressed'
+  | 'ready'
+  | 'running'
+  | 'succeeded'
+  | 'failed';
+
+export type ParallelJoinState =
+  | 'not-reached'
+  | 'waiting'
+  | 'proceeding'
+  | 'failed';
+
+export interface ParallelMemberView {
+  readonly path: string;
+  readonly status: ParallelMemberStatus;
+  readonly required: boolean;
+  readonly condition: string;
+}
+
+export interface ParallelSectionView {
+  readonly kind: 'parallel';
+  readonly version: 1;
+  readonly fanOutPath: string;
+  readonly joinPath: string | undefined;
+  readonly members: readonly ParallelMemberView[];
+  readonly joinState: ParallelJoinState;
+  readonly concurrencyCap: number;
+  readonly budget: Readonly<{ used: number; max: number }>;
+  readonly activeCount: number;
+  readonly succeededCount: number;
+  readonly failedCount: number;
+  readonly keyBlockers: readonly string[];
+}
+
+/** ECP-4: the `choice/1` section a Run view exposes for a Choice node. */
+export interface ChoiceBranchView {
+  readonly outcome: string;
+  readonly path: string;
+  readonly active: boolean;
+}
+
+export interface ChoiceSectionView {
+  readonly kind: 'choice';
+  readonly version: 1;
+  readonly choicePath: string;
+  readonly outcome: string | undefined;
+  readonly branches: readonly ChoiceBranchView[];
+}
+
+/**
  * ECP-4: Build a `parallel/1` section when the plan contains a fan-out node.
  * Iterates fan-out members, reads committed action states, derives member
  * statuses, computes join state, budget usage, and key blockers.
@@ -415,7 +472,7 @@ function buildGoalSection(
 function buildParallelSection(
   plan: RuntimePlan,
   record: CanonicalRunRecord
-): unknown | null {
+): ParallelSectionView | null {
   const fanOut = plan.nodes.find(
     (node): node is RuntimePlanFanOutNode => node.kind === 'fan-out'
   );
@@ -446,7 +503,7 @@ function buildParallelSection(
     const action = memberNode !== undefined
       ? Object.values(record.actions).find((a) => a.action.nodeId === member.nodeId)
       : undefined;
-    let status: string;
+    let status: ParallelMemberStatus;
     if (!conditionCommitted) {
       status = 'waiting';
     } else if (!activeMembers.has(member.hierarchicalPath)) {
@@ -470,7 +527,7 @@ function buildParallelSection(
     };
   });
   // Determine join state.
-  let joinState = 'not-reached';
+  let joinState: ParallelJoinState = 'not-reached';
   if (join !== undefined && conditionCommitted) {
     const succeeded = memberStatuses.filter((m) => m.status === 'succeeded');
     const failed = memberStatuses.filter((m) => m.status === 'failed');
@@ -496,7 +553,7 @@ function buildParallelSection(
       keyBlockers.push(`required member '${m.path}' failed`);
     }
   }
-  return Object.freeze({
+  const section: ParallelSectionView = {
     kind: 'parallel',
     version: 1,
     fanOutPath: fanOut.hierarchicalPath,
@@ -509,7 +566,8 @@ function buildParallelSection(
     succeededCount: memberStatuses.filter((m) => m.status === 'succeeded').length,
     failedCount: memberStatuses.filter((m) => m.status === 'failed').length,
     keyBlockers,
-  });
+  };
+  return Object.freeze(section);
 }
 
 /**
@@ -518,7 +576,7 @@ function buildParallelSection(
 function buildChoiceSection(
   plan: RuntimePlan,
   record: CanonicalRunRecord
-): unknown | null {
+): ChoiceSectionView | null {
   const choice = plan.nodes.find(
     (node): node is RuntimePlanChoiceNode => node.kind === 'choice'
   );
@@ -539,11 +597,12 @@ function buildChoiceSection(
     path: choice.branches[o] ?? '',
     active: outcome === o,
   }));
-  return Object.freeze({
+  const section: ChoiceSectionView = {
     kind: 'choice',
     version: 1,
     choicePath: choice.hierarchicalPath,
     outcome,
     branches,
-  });
+  };
+  return Object.freeze(section);
 }
