@@ -892,11 +892,26 @@ function lowerV2ReviewCyclePlanInput(
         joinNodeId?: string;
         members?: ReadonlyArray<{ id: string; hierarchicalPath: string; required: boolean; condition: string }>;
       };
-      const memberList = fanOutMeta.members ?? node.branches.map((id) => ({
-        id,
-        hierarchicalPath: `stage:${id}`,
-        required: true,
-        condition: 'always',
+      // Member paths must be the FULL plan paths (`root:stage:<id>`) — the
+      // same string the member atomic node is lowered under. createRuntimePlan
+      // resolves `fanOut.members[].nodeId` through the plan's path→nodeId map,
+      // and the reconciler/facade/projector all match active members by this
+      // path. The v1 normalizer stores them unprefixed (`stage:<id>`), so
+      // normalize once here; without this the member nodeIds resolve to
+      // undefined and NO member is ever admitted (the FanOut silently stalls
+      // with every member stuck at `ready`).
+      const memberList = (
+        fanOutMeta.members ?? node.branches.map((id) => ({
+          id,
+          hierarchicalPath: `stage:${id}`,
+          required: true,
+          condition: 'always',
+        }))
+      ).map((member) => ({
+        ...member,
+        hierarchicalPath: member.hierarchicalPath.startsWith('root:')
+          ? member.hierarchicalPath
+          : `root:${member.hierarchicalPath}`,
       }));
       const joinNodeId = fanOutMeta.joinNodeId ?? `join:${node.id.replace('fanout:', '')}-join`;
       nodes.push({
@@ -919,7 +934,7 @@ function lowerV2ReviewCyclePlanInput(
       });
       // Also lower each member as an atomic node with fanOutTag
       for (const member of memberList) {
-        const memberPath = `root:${member.hierarchicalPath}`;
+        const memberPath = member.hierarchicalPath;
         const capability = capabilityByPath.get(memberPath);
         if (capability === undefined) {
           throw new RuntimePlanLowererError(
@@ -999,10 +1014,16 @@ export function lowerRuntimePlanInput(
   // contains a BoundedLoop, regardless of authoredVersion. This makes v1
   // built-in pipelines (bug-fix, small-feature) whose normalized form includes
   // a ReviewCycle BoundedLoop lower as mixed atomic + bounded-loop plans.
-  const hasBoundedLoop = prepared.definition.root.nodes.some(
-    (node) => node.kind === 'BoundedLoop'
+  // ECP-4: also route through v2 when FanOut/Join nodes are present, so that
+  // v1 pipelines with parallelGroup are correctly lowered with FanOut/Join
+  // structure instead of being silently flattened by the v1 lowerer.
+  const requiresV2Lowering = prepared.definition.root.nodes.some(
+    (node) =>
+      node.kind === 'BoundedLoop' ||
+      node.kind === 'FanOut' ||
+      node.kind === 'Join'
   );
-  if (prepared.authoredVersion === 2 || hasBoundedLoop) {
+  if (prepared.authoredVersion === 2 || requiresV2Lowering) {
     return lowerV2ReviewCyclePlanInput(prepared, profile, runId);
   }
   const pipeline = prepared.authoredSource as PipelineYaml;

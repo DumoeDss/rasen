@@ -617,12 +617,25 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
           `Fan-out node ${node.hierarchicalPath} references unknown join node ${JSON.stringify(joinPath)}.`
         );
       }
-      const members = fi.members.map((m) => ({
-        nodeId: pathToNodeId.get(m.hierarchicalPath)!,
-        hierarchicalPath: m.hierarchicalPath,
-        required: m.required,
-        condition: m.condition,
-      }));
+      const members = fi.members.map((m) => {
+        const memberId = pathToNodeId.get(m.hierarchicalPath);
+        if (memberId === undefined) {
+          // Without this check an unresolved member path silently produces
+          // `nodeId: undefined`, and the reconciler's FanOut pass finds no
+          // matching atomic node — the fan-out stalls forever with every
+          // member reported `ready` and nothing admitted.
+          reject(
+            'invalid_runtime_plan',
+            `Fan-out node ${node.hierarchicalPath} references unknown member node ${JSON.stringify(m.hierarchicalPath)}.`
+          );
+        }
+        return {
+          nodeId: memberId!,
+          hierarchicalPath: m.hierarchicalPath,
+          required: m.required,
+          condition: m.condition,
+        };
+      });
       return {
         kind: 'fan-out',
         nodeId,
@@ -640,13 +653,23 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
     // join
     {
       const ji = node.join!;
+      const resolveJoinMember = (path: string): NodeId => {
+        const memberId = pathToNodeId.get(path);
+        if (memberId === undefined) {
+          reject(
+            'invalid_runtime_plan',
+            `Join node ${node.hierarchicalPath} references unknown member node ${JSON.stringify(path)}.`
+          );
+        }
+        return memberId!;
+      };
       return {
         kind: 'join',
         nodeId,
         hierarchicalPath: node.hierarchicalPath,
         requires,
-        requiredMembers: ji.requiredMembers.map((p) => pathToNodeId.get(p)!),
-        optionalMembers: ji.optionalMembers.map((p) => pathToNodeId.get(p)!),
+        requiredMembers: ji.requiredMembers.map(resolveJoinMember),
+        optionalMembers: ji.optionalMembers.map(resolveJoinMember),
         outcomes: { proceed: ji.outcomes.proceed, failed: ji.outcomes.failed },
       } as RuntimePlanJoinNode;
     }
