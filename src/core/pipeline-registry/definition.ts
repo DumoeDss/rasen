@@ -2302,8 +2302,16 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
         };
       });
     })
-    .concat(groupConnections)
-    .sort((left, right) => compareCanonicalStrings(left.id, right.id));
+    .concat(groupConnections);
+
+  // Deduplicate by connection id: multiple group members sharing the same
+  // upstream (e.g. 6 expert stages all requiring `apply`) produce identical
+  // upstream→FanOut connections; downstream stages requiring multiple group
+  // members produce identical Join→stage connections. Dedup keeps the
+  // connection list canonical.
+  const dedupConnections = [
+    ...new Map(connections.map((conn) => [conn.id, conn])).values(),
+  ].sort((left, right) => compareCanonicalStrings(left.id, right.id));
 
   return {
     version: ECP_DEFINITION_VERSION,
@@ -2317,7 +2325,7 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
     declarations,
     root: {
       nodes,
-      connections,
+      connections: dedupConnections,
     },
     legacyRuntime: {
       owner: 'prompt-owned-v1',

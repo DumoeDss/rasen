@@ -592,6 +592,28 @@ function lowerV2ReviewCyclePlanInput(
     return expanded;
   };
 
+  // ECP-4: Pre-scan for FanOut member stage IDs. The v1 normalizer keeps
+  // AtomicStage root nodes for parallelGroup members alongside the FanOut
+  // node that references them. Without this skip, both the standalone
+  // AtomicStage and the FanOut member atomic node produce identical
+  // hierarchicalPaths (e.g. root:stage:review) and createRuntimePlan
+  // rejects the duplicate. FanOut members must be lowered ONLY as FanOut
+  // member atomic nodes (with fanOutTag), never as standalone root nodes.
+  const fanOutMemberNodeIds = new Set<string>();
+  for (const scanNode of definition.root.nodes) {
+    if (scanNode.kind !== 'FanOut') continue;
+    const scanMeta = scanNode as FanOutNode & {
+      members?: ReadonlyArray<{ id: string; hierarchicalPath: string }>;
+    };
+    const memberList = scanMeta.members ?? scanNode.branches.map((id) => ({
+      id,
+      hierarchicalPath: `stage:${id}`,
+    }));
+    for (const member of memberList) {
+      fanOutMemberNodeIds.add(member.hierarchicalPath);
+    }
+  }
+
   const nodes: RuntimePlanNodeInput[] = [];
 
   for (const node of definition.root.nodes) {
@@ -665,6 +687,11 @@ function lowerV2ReviewCyclePlanInput(
       }
     }
     if (node.kind === 'AtomicStage') {
+      // ECP-4: Skip AtomicStages that are FanOut members — they are lowered
+      // as FanOut member atomic nodes (with member hierarchical path and
+      // fanOutTag) when the FanOut node is processed below, not as standalone
+      // root:stage:<id> atomic nodes. This prevents duplicate hierarchicalPaths.
+      if (fanOutMemberNodeIds.has(node.id)) continue;
       const path = `root:${node.id}`;
       const capability = capabilityByPath.get(path);
       const policy = policyByPath.get(path);
