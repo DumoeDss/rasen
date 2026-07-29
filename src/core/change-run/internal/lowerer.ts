@@ -160,6 +160,107 @@ function reviewCycleBody(
 }
 
 /**
+ * Detect whether a BoundedLoop's declaration body is ReviewCycle-shaped
+ * (4 AtomicStage nodes tagged with reviewCyclePhase in the canonical order).
+ */
+function isReviewCycleShaped(
+  definition: DefinitionSourceV2,
+  loop: BoundedLoopNode
+): boolean {
+  const declaration = definition.declarations.find(
+    (candidate) => candidate.id === loop.body
+  );
+  if (declaration === undefined) return false;
+  const phases = declaration.graph.nodes
+    .map((bodyNode) =>
+      bodyNode.kind === 'AtomicStage'
+        ? bodyNode.reviewCyclePhase
+        : undefined
+    )
+    .filter((phase): phase is string => typeof phase === 'string')
+    .sort();
+  return (
+    phases.length === 4 &&
+    JSON.stringify(phases) ===
+      JSON.stringify(['fix', 're-review', 'review', 'triage'])
+  );
+}
+
+/**
+ * Lower a BoundedLoop with a non-ReviewCycle composite body. The body
+ * declaration's AtomicStages are collected in topological order as
+ * RuntimePlanCompositeStageInput entries, and the loop's exits are translated
+ * into the body outcomes map.
+ */
+function compositeLoopBody(
+  definition: DefinitionSourceV2,
+  loop: BoundedLoopNode,
+  capabilityByPath: Map<string, RuntimeExecutionProfile['capabilities'][number]>,
+  policyByPath: Map<string, RuntimeExecutionProfile['policy']['stages'][number]>
+): Readonly<{
+  declaration: CompositeDeclaration;
+  stages: readonly Readonly<{
+    hierarchicalPath: string;
+    profilePath: string;
+    admissionKind: 'agent' | 'command' | 'host';
+    workspace: Readonly<{ access: 'none' | 'read' | 'write' }>;
+    requires: readonly string[];
+  }>[];
+  bodyOutcomes: Readonly<Record<string, string>>;
+}> {
+  const declaration = definition.declarations.find(
+    (candidate) => candidate.id === loop.body
+  );
+  if (declaration === undefined) {
+    throw new RuntimePlanLowererError(
+      'lowerer_shape_mismatch',
+      `BoundedLoop ${loop.id} references missing body ${loop.body}.`
+    );
+  }
+  const body = compositeDeclarationBody(definition, declaration);
+  const loopPrefix = `root:${loop.id}`;
+  const stages = body.stages.map((stage) => {
+    const hierarchicalPath = `${loopPrefix}/${stage.node.id}`;
+    const profilePath = stage.profilePath;
+    const capability = capabilityByPath.get(profilePath);
+    const policy = policyByPath.get(profilePath);
+    if (capability === undefined) {
+      throw new RuntimePlanLowererError(
+        'lowerer_shape_mismatch',
+        `No frozen capability/policy binding exists for ${profilePath}.`
+      );
+    }
+    if (policy === undefined) {
+      throw new RuntimePlanLowererError(
+        'lowerer_shape_mismatch',
+        `No effective policy for ${profilePath}.`
+      );
+    }
+    return {
+      hierarchicalPath,
+      profilePath,
+      admissionKind: capability.actionKind,
+      workspace: { access: capability.workspace.access },
+      requires: stage.bodyRequires.map((dep) => `${loopPrefix}/${dep}`),
+    };
+  });
+
+  // Build the body outcomes map from the loop's exits.
+  // An exit with action: 'exit' maps the body outcome to the exit outcome.
+  // An exit with action: 'continue' maps to itself (loop continues).
+  const bodyOutcomes: Record<string, string> = {};
+  for (const [bodyOutcome, exit] of Object.entries(loop.exits)) {
+    if (exit.action === 'exit') {
+      bodyOutcomes[bodyOutcome] = exit.outcome;
+    } else {
+      bodyOutcomes[bodyOutcome] = 'continue';
+    }
+  }
+
+  return { declaration, stages, bodyOutcomes };
+}
+
+/**
  * Collect the AtomicStage body from a CompositeDeclaration, validate it is a
  * flat DAG (no nested CompositeRef/BoundedLoop/Choice/FanOut/Join), and return
  * the stages in topological order with their body-internal dependencies.
@@ -401,12 +502,22 @@ function lowerV2ReviewCyclePlanInput(
       continue;
     }
     if (node.kind === 'BoundedLoop') {
-      // Only ReviewCycle-shaped BoundedLoops are lowered. Legacy loops (from
-      // non-review-cycle v1 stages) are skipped.
-      const cleanExit = node.exits.clean;
-      const continueExit = node.exits.needs_fix;
-      if (cleanExit?.action !== 'exit' || continueExit?.action !== 'continue') {
-        continue;
+      // ReviewCycle-shaped and composite-body BoundedLoops are lowered.
+      // Legacy loops (non-ReviewCycle v1 stages without a declaration body)
+      // are skipped.
+      const isRC = isReviewCycleShaped(definition, node);
+      if (isRC) {
+        const cleanExit = node.exits.clean;
+        const continueExit = node.exits.needs_fix;
+        if (cleanExit?.action !== 'exit' || continueExit?.action !== 'continue') {
+          continue;
+        }
+      } else {
+        // Composite-body loop: must have a resolvable declaration body.
+        const declaration = definition.declarations.find(
+          (d) => d.id === node.body
+        );
+        if (declaration === undefined) continue;
       }
     }
     if (node.kind === 'AtomicStage') {
@@ -439,48 +550,85 @@ function lowerV2ReviewCyclePlanInput(
       continue;
     }
     if (node.kind === 'BoundedLoop') {
-      const body = reviewCycleBody(definition, node);
-      const cleanExit = node.exits.clean;
-      const continueExit = node.exits.needs_fix;
-      if (
-        cleanExit?.action !== 'exit' ||
-        continueExit?.action !== 'continue'
-      ) {
-        throw new RuntimePlanLowererError(
-          'lowerer_shape_mismatch',
-          `ReviewCycle loop ${node.id} must exit on clean and continue on needs_fix.`
-        );
-      }
-      const phases = body.phases.map((entry) => {
-        const capability = capabilityByPath.get(entry.profilePath);
-        const policy = policyByPath.get(entry.profilePath);
-        if (capability === undefined || policy === undefined) {
+      if (isReviewCycleShaped(definition, node)) {
+        // ReviewCycle body path (ECP-1, unchanged).
+        const body = reviewCycleBody(definition, node);
+        const cleanExit = node.exits.clean;
+        const continueExit = node.exits.needs_fix;
+        if (
+          cleanExit?.action !== 'exit' ||
+          continueExit?.action !== 'continue'
+        ) {
           throw new RuntimePlanLowererError(
             'lowerer_shape_mismatch',
-            `No frozen capability/policy binding exists for ${entry.profilePath}.`
+            `ReviewCycle loop ${node.id} must exit on clean and continue on needs_fix.`
           );
         }
-        return {
-          phase: entry.phase,
-          profilePath: entry.profilePath,
-          admissionKind: capability.actionKind,
-          workspace: { access: capability.workspace.access },
-        };
-      });
-      nodes.push({
-        kind: 'bounded-loop',
-        hierarchicalPath: `root:${node.id}`,
-        requires: resolveRequires(node.id),
-        maxIterations: node.limits.maxIterations,
-        body: { kind: 'review-cycle', phases },
-        outcomes: {
-          clean: cleanExit.outcome,
-          exhausted:
-            typeof node.exhaustedOutcome === 'string'
-              ? node.exhaustedOutcome
-              : 'exhausted',
-        },
-      });
+        const phases = body.phases.map((entry) => {
+          const capability = capabilityByPath.get(entry.profilePath);
+          const policy = policyByPath.get(entry.profilePath);
+          if (capability === undefined || policy === undefined) {
+            throw new RuntimePlanLowererError(
+              'lowerer_shape_mismatch',
+              `No frozen capability/policy binding exists for ${entry.profilePath}.`
+            );
+          }
+          return {
+            phase: entry.phase,
+            profilePath: entry.profilePath,
+            admissionKind: capability.actionKind,
+            workspace: { access: capability.workspace.access },
+          };
+        });
+        nodes.push({
+          kind: 'bounded-loop',
+          hierarchicalPath: `root:${node.id}`,
+          requires: resolveRequires(node.id),
+          maxIterations: node.limits.maxIterations,
+          body: { kind: 'review-cycle', phases },
+          outcomes: {
+            clean: cleanExit.outcome,
+            exhausted:
+              typeof node.exhaustedOutcome === 'string'
+                ? node.exhaustedOutcome
+                : 'exhausted',
+          },
+        });
+      } else {
+        // Composite body path (ECP-2).
+        const composite = compositeLoopBody(
+          definition,
+          node,
+          capabilityByPath,
+          policyByPath
+        );
+        nodes.push({
+          kind: 'bounded-loop',
+          hierarchicalPath: `root:${node.id}`,
+          requires: resolveRequires(node.id),
+          maxIterations: node.limits.maxIterations,
+          body: {
+            kind: 'composite',
+            declarationId: composite.declaration.id,
+            stages: composite.stages,
+            outcomes: composite.bodyOutcomes,
+          },
+          outcomes: {
+            clean:
+              node.exits[Object.keys(node.exits).find(
+                (k) => node.exits[k]?.action === 'exit'
+              )!]?.action === 'exit'
+                ? (node.exits[Object.keys(node.exits).find(
+                    (k) => node.exits[k]?.action === 'exit'
+                  )!] as { action: 'exit'; outcome: string }).outcome
+                : 'success',
+            exhausted:
+              typeof node.exhaustedOutcome === 'string'
+                ? node.exhaustedOutcome
+                : 'exhausted',
+          },
+        });
+      }
       continue;
     }
     if (node.kind === 'Finish') {

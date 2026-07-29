@@ -324,3 +324,148 @@ describe('lowerer — CompositeRef inlining', () => {
     });
   });
 });
+
+// ===== Group 3: composite-body BoundedLoop =====
+
+function loopDefinition(): DefinitionSourceV2 {
+  return {
+    version: 2,
+    id: 'test:composite-loop',
+    sourceId: 'package:composite-loop',
+    name: 'composite-loop',
+    inputs: [],
+    artifacts: [],
+    outcomes: ['success'],
+    declarations: [
+      {
+        id: 'loop-body',
+        kind: 'Composite',
+        provenance: 'custom',
+        inputs: [],
+        artifacts: [],
+        outcomes: ['done'],
+        graph: {
+          nodes: [
+            { id: 'step-a', kind: 'AtomicStage', capability: { id: SKILL_PROPOSE, version: '1' } },
+            { id: 'step-b', kind: 'AtomicStage', capability: { id: SKILL_APPLY, version: '1' } },
+          ],
+          connections: [
+            { id: 'ab', from: { node: 'step-a', port: 'done' }, to: { node: 'step-b', port: 'input' } },
+          ],
+        },
+      },
+    ],
+    root: {
+      nodes: [
+        {
+          id: 'my-loop',
+          kind: 'BoundedLoop',
+          body: 'loop-body',
+          limits: { maxIterations: 3 },
+          exits: {
+            done: { action: 'exit', outcome: 'success' },
+          },
+        },
+        { id: 'finish', kind: 'Finish', outcome: 'success' },
+      ],
+      connections: [
+        { id: 'loop-finish', from: { node: 'my-loop', port: 'success' }, to: { node: 'finish', port: 'start' } },
+      ],
+    },
+  };
+}
+
+function loopCapabilityBindings(
+  prepared: PreparedDefinition
+): readonly RuntimeCapabilityBinding[] {
+  const bindings: RuntimeCapabilityBinding[] = [];
+  for (const node of prepared.definition.root.nodes) {
+    if (node.kind !== 'BoundedLoop') continue;
+    const declaration = prepared.definition.declarations.find(
+      (d) => d.id === node.body
+    );
+    if (!declaration) continue;
+    for (const bodyNode of declaration.graph.nodes) {
+      if (bodyNode.kind !== 'AtomicStage') continue;
+      bindings.push(makeBinding(`declaration:${declaration.id}/node:${bodyNode.id}`));
+    }
+  }
+  return bindings;
+}
+
+function loopPolicyStages(prepared: PreparedDefinition) {
+  const stages = [];
+  for (const node of prepared.definition.root.nodes) {
+    if (node.kind !== 'BoundedLoop') continue;
+    const declaration = prepared.definition.declarations.find(
+      (d) => d.id === node.body
+    );
+    if (!declaration) continue;
+    for (const bodyNode of declaration.graph.nodes) {
+      if (bodyNode.kind !== 'AtomicStage') continue;
+      stages.push(makePolicyStage(`declaration:${declaration.id}/node:${bodyNode.id}`));
+    }
+  }
+  return stages;
+}
+
+function prepareLoop(source: DefinitionSourceV2 = loopDefinition()): PreparedDefinition {
+  const result = EcpDefinitionModule.prepare(source, createCapabilityCatalogSnapshot(catalogDescriptors()));
+  if (!result.ok) {
+    const err = result.error as { diagnostics?: Array<{ code: string; message: string; path: string }> };
+    if (err?.diagnostics) {
+      for (const d of err.diagnostics) {
+        console.error(`DIAG [${d.code}] ${d.path}: ${d.message}`);
+      }
+    }
+  }
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw result.error;
+  return result.value;
+}
+
+function lowerLoopInput(prepared: PreparedDefinition) {
+  return lowerRuntimePlanInput(
+    prepared,
+    {
+      sourceRevision: {
+        layer: 'package',
+        kind: 'pipeline-yaml',
+        sourceId: 'package:composite-loop',
+        authoredContentDigest: sha('1'),
+        semanticDigest: sha('2'),
+      },
+      capabilities: [...loopCapabilityBindings(prepared)],
+      policy: {
+        format: 'effective-run-policy/1' as const,
+        maxAttempts: 12,
+        maxActions: 64,
+        stages: loopPolicyStages(prepared),
+      },
+      capabilityProfileDigest: sha('7'),
+      policyDigest: sha('8'),
+      profileDigest: sha('9'),
+    },
+    runId
+  );
+}
+
+describe('lowerer — composite-body BoundedLoop', () => {
+  it('produces a composite-body bounded-loop node for non-ReviewCycle body', () => {
+    const prepared = prepareLoop();
+    const input = lowerLoopInput(prepared);
+    const loopNodes = input.nodes.filter((n) => n.kind === 'bounded-loop');
+    expect(loopNodes).toHaveLength(1);
+    const loop = loopNodes[0]!;
+    expect(loop.body).toMatchObject({ kind: 'composite', declarationId: 'loop-body' });
+    expect(loop.body.kind).toBe('composite');
+    if (loop.body.kind !== 'composite') return;
+    expect(loop.body.stages).toHaveLength(2);
+    expect(loop.body.stages[0]!.hierarchicalPath).toBe('root:my-loop/step-a');
+    expect(loop.body.stages[1]!.hierarchicalPath).toBe('root:my-loop/step-b');
+    expect(loop.body.stages[1]!.requires).toHaveLength(1);
+    expect(loop.body.stages[1]!.requires[0]).toBe('root:my-loop/step-a');
+    expect(loop.body.outcomes).toEqual({ done: 'success' });
+    expect(loop.maxIterations).toBe(3);
+  });
+});

@@ -19,11 +19,11 @@
 
 ## 3. Lowerer — composite-body BoundedLoop
 
-- [ ] 3.1 Extend `reviewCycleBody()` detection: if the declaration body is NOT ReviewCycle-shaped (lacks 4 `reviewCyclePhase` AtomicStages), route to a new `compositeLoopBody()` helper instead
-- [ ] 3.2 Implement `compositeLoopBody()`: collect body AtomicStages in topological order, produce `RuntimePlanCompositeStageInput` entries with profilePath `declaration:<id>/node:<stage-id>`, resolve exit mapping from loop.exits to body outcomes
-- [ ] 3.3 Push a `bounded-loop` `RuntimePlanNodeInput` with `body.kind === 'composite'` and the resolved stages/outcomes
-- [ ] 3.4 Write lowerer test: a BoundedLoop with a non-ReviewCycle declaration body (2 AtomicStages + Finish) produces a composite-body bounded-loop node
-- [ ] 3.5 Write lowerer test: a BoundedLoop with ReviewCycle-shaped body still produces a review-cycle body node (ECP-1 regression guard)
+- [x] 3.1 Extend `reviewCycleBody()` detection: if the declaration body is NOT ReviewCycle-shaped (lacks 4 `reviewCyclePhase` AtomicStages), route to a new `compositeLoopBody()` helper instead
+- [x] 3.2 Implement `compositeLoopBody()`: collect body AtomicStages in topological order, produce `RuntimePlanCompositeStageInput` entries with profilePath `declaration:<id>/node:<stage-id>`, resolve exit mapping from loop.exits to body outcomes
+- [x] 3.3 Push a `bounded-loop` `RuntimePlanNodeInput` with `body.kind === 'composite'` and the resolved stages/outcomes
+- [x] 3.4 Write lowerer test: a BoundedLoop with a non-ReviewCycle declaration body (2 AtomicStages + Finish) produces a composite-body bounded-loop node
+- [x] 3.5 Write lowerer test: a BoundedLoop with ReviewCycle-shaped body still produces a review-cycle body node (ECP-1 regression guard)
 
 ## 4. Composite-body progress projection
 
