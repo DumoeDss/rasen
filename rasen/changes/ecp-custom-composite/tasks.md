@@ -50,9 +50,9 @@
 
 ## 7. Static validation for custom-authored shapes
 
-- [ ] 7.1 Write failure-first prepare tests proving existing validators fire on Canvas-authored custom shapes: COMPOSITE_RECURSION (A→B→A), NESTED_LOOP (BoundedLoop in body), GRAPH_CYCLE (cyclic body connection), MISSING_EXIT (unmapped body outcome), PORT_MISMATCH (type mismatch in body connection), CAPABILITY_MISSING (unknown capability in body AtomicStage)
-- [ ] 7.2 Write happy-path prepare test: a valid custom composite definition (CompositeRef + declaration + 3-stage body) prepares successfully with `executionMode: 'reconciler'`
-- [ ] 7.3 Write prepare test: a composite-body BoundedLoop with unreachable exit (exit names an outcome the body cannot produce) is rejected with UNREACHABLE_EXIT
+- [x] 7.1 Write failure-first prepare tests proving existing validators fire on Canvas-authored custom shapes: COMPOSITE_RECURSION (A→B→A), NESTED_LOOP (BoundedLoop in body), GRAPH_CYCLE (cyclic body connection), MISSING_EXIT (unmapped body outcome), PORT_MISMATCH (type mismatch in body connection), CAPABILITY_MISSING (unknown capability in body AtomicStage)
+- [x] 7.2 Write happy-path prepare test: a valid custom composite definition (CompositeRef + declaration + 3-stage body) prepares successfully with `executionMode: 'reconciler'`
+- [x] 7.3 Write prepare test: a composite-body BoundedLoop with unreachable exit (exit names an outcome the body cannot produce) is rejected with UNREACHABLE_EXIT
 
 ## 8. Canvas authoring — editable kinds and declaration CRUD
 
@@ -80,26 +80,26 @@
 
 ## 11. Isomorphism — built-in vs custom fixture pair
 
-- [ ] 11.1 Create test fixture `test-linear-builtin`: a v1 pipeline with 3 stages (propose → apply → ship) that normalizes to root-level AtomicStages
-- [ ] 11.2 Create test fixture `test-linear-custom`: a v2 definition with a CompositeDeclaration wrapping the same 3 AtomicStages, referenced from root via CompositeRef
-- [ ] 11.3 Write isomorphism test: both fixtures prepare, lower, and produce runtime plans with equivalent structure (same atomic node count, same dependency graph shape, same finish outcome)
-- [ ] 11.4 Write isomorphism test: for the same Record state, both plans produce the same reconcile() admit candidates (same nodeIds modulo hierarchical path, same admission kind)
-- [ ] 11.5 Write isomorphism test: both plans project the same root-dag section structure
+- [x] 11.1 Create test fixture `test-linear-builtin`: a v1 pipeline with 3 stages (propose → apply → ship) that normalizes to root-level AtomicStages
+- [x] 11.2 Create test fixture `test-linear-custom`: a v2 definition with a CompositeDeclaration wrapping the same 3 AtomicStages, referenced from root via CompositeRef
+- [x] 11.3 Write isomorphism test: both fixtures prepare, lower, and produce runtime plans with equivalent structure (same atomic node count, same dependency graph shape, same finish outcome)
+- [x] 11.4 Write isomorphism test: for the same Record state, both plans produce the same reconcile() admit candidates (same nodeIds modulo hierarchical path, same admission kind)
+- [x] 11.5 Write isomorphism test: both plans project the same root-dag section structure
 
 ## 12. Export/import round-trip — digest stability
 
-- [ ] 12.1 Construct a `DefinitionSourceV2` with a custom CompositeDeclaration including `canvas`, `position`, `provenance`, `sourcePath` metadata
-- [ ] 12.2 Compute `semanticCanonicalizeDefinition(definition)` → digest A
-- [ ] 12.3 Simulate export (JSON serialize) → re-import (JSON parse) → re-prepare → compute `semanticCanonicalizeDefinition` → digest B
-- [ ] 12.4 Assert digest A === digest B; assert `canvas`/`position`/`provenance`/`sourcePath` are absent from both canonical forms
-- [ ] 12.5 Write round-trip test with a BoundedLoop + custom declaration body (verify loop exits and limits survive round-trip)
+- [x] 12.1 Construct a `DefinitionSourceV2` with a custom CompositeDeclaration including `canvas`, `position`, `provenance`, `sourcePath` metadata
+- [x] 12.2 Compute `semanticCanonicalizeDefinition(definition)` → digest A
+- [x] 12.3 Simulate export (JSON serialize) → re-import (JSON parse) → re-prepare → compute `semanticCanonicalizeDefinition` → digest B
+- [x] 12.4 Assert digest A === digest B; assert `canvas`/`position`/`provenance`/`sourcePath` are absent from both canonical forms
+- [x] 12.5 Write round-trip test with a BoundedLoop + custom declaration body (verify loop exits and limits survive round-trip)
 
 ## 13. Recovery — composite body stage fault injection
 
-- [ ] 13.1 Write crash-before-commit test: composite body stage A admitted, crash before completion committed → resume → A still active, B not admitted
-- [ ] 13.2 Write crash-after-commit test: composite body stage A completion committed, crash before B admitted → resume → B admitted, A not re-admitted
-- [ ] 13.3 Write mid-composite recovery test: 3-stage composite body, stages A+B committed, crash → resume → C admitted, A and B in succeeded set
-- [ ] 13.4 Write composite-body BoundedLoop recovery test: iteration 1 stage A committed, crash → resume → iteration 1 continues with stage B; iteration boundary recovery (all stages in iteration 1 done, crash → resume → iteration 2 stage A admitted)
+- [x] 13.1 Write crash-before-commit test: composite body stage A admitted, crash before completion committed → resume → A still active, B not admitted
+- [x] 13.2 Write crash-after-commit test: composite body stage A completion committed, crash before B admitted → resume → B admitted, A not re-admitted
+- [x] 13.3 Write mid-composite recovery test: 3-stage composite body, stages A+B committed, crash → resume → C admitted, A and B in succeeded set
+- [x] 13.4 Write composite-body BoundedLoop recovery test: iteration 1 stage A committed, crash → resume → iteration 1 continues with stage B; iteration boundary recovery (all stages in iteration 1 done, crash → resume → iteration 2 stage A admitted)
 
 ## 14. Real dogfood
 
