@@ -1,25 +1,20 @@
 /**
- * Goal Rasen Workflow Command
+ * Goal Rasen Workflow Command (ECP-3: thinned launcher)
  *
  * Single user-facing entry for goal-driven iteration. The LEAD runs the
  * pre-flight + classification, selects ONE backend goal-loop pipeline
- * (explicit override wins), then drives it via the SAME orchestration playbook.
- * The three backend pipelines are homogeneous (one gate type each):
- *  - goal-loop-measure  — measure gate, code iterate, ship -> retain -> archive
- *  - goal-loop-evaluate — evaluate gate, code iterate, ship -> retain -> archive
- *  - goal-loop-research — evaluate gate, prose/research iterate, report-only tail
- * This mirrors how \`rasen-auto\` classifies among full/small/bug-fix today; it
- * does NOT reimplement orchestration (it embeds the shared playbook).
+ * (explicit override wins), then launches a canonical reconciler-engine Run.
+ * The reconciler owns the loop mechanics (rounds, phases, stall, exhaustion);
+ * this launcher does NOT own mechanical state.
  */
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
-import { GOAL_ORCHESTRATION_PLAYBOOK } from './_orchestration.js';
 
-const GOAL_INSTRUCTIONS = `Goal-driven iteration — drive a task whose "done" is a condition (a measurable threshold or a quality judgment), not a code-change document. Repeat modify -> judge until the gate is satisfied or the round cap is hit.
+const GOAL_INSTRUCTIONS = `Goal-driven iteration — drive a task whose "done" is a condition (a measurable threshold or a quality judgment), not a code-change document. The reconciler-engine Run owns the loop mechanics; you classify, launch, and report.
 
 ${STORE_SELECTION_GUIDANCE}
 
-You are the **LEAD**. You classify the task, select ONE backend goal-loop pipeline, and drive it by orchestrating role-isolated subagents. You pause at gates and the user can switch to manual at any time.
+You are the **LEAD**. You classify the task, select ONE backend goal-loop pipeline, launch a canonical Run, and drive it by orchestrating role-isolated subagents through \`rasen pipeline resume\`. You pause at gates and the user can switch to manual at any time.
 
 ## When to Use
 
@@ -27,7 +22,7 @@ Use when: "drive this score to 90", "optimize p99 latency", "hit the lighthouse 
 
 ## 0. Pre-flight context probe (once, non-blocking)
 
-Before anything else run \`rasen agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy. At or above the session handoff threshold (default 0.5; see the playbook's Step H), offer the user a three-way choice: (a) automatic relay now; (b) continue this session; (c) handle it manually via rasen-handoff. Proceed on the user's say-so; below the threshold, proceed silently.
+Before anything else run \`rasen agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy. At or above the session handoff threshold (default 0.5), offer the user a three-way choice: (a) automatic relay now; (b) continue this session; (c) handle it manually via rasen-handoff. Proceed on the user's say-so; below the threshold, proceed silently.
 
 ## 1. Classify and select the backend pipeline (explicit wins)
 
@@ -48,39 +43,57 @@ Built-in goal-loop pipelines (see \`rasen pipeline list --json\`):
 - **goal-loop-evaluate** — define-goal -> iterate (evaluate gate) -> ship -> retain -> archive  _(rubric/quality)_
 - **goal-loop-research** — define-goal -> iterate (evaluate gate) -> report only  _(research/writing; prose work product, earlier relay; no ship, retain, or archive)_
 
-## 2. Fetch the selected pipeline's stage DAG
+## 2. Launch the canonical Run
 
 \`\`\`bash
-rasen pipeline show <name> --json   # -> { name, description, buildOrder, stages }
+rasen pipeline start <change> goal-loop-<variant> --json
 \`\`\`
 
-Execute stages in \`buildOrder\`. The \`iterate\` stage carries a \`loop: { kind: goal, gate: {...} }\` — the LEAD interprets it via **Step L** of the playbook (single dispatch per round, warm-reused implementer, the gate, goal-run.json). The \`define-goal\` stage's \`gate: true\` lets the user confirm a measure command before any round runs — it pauses by default (autopilot-gate-policy). It is an ordinary gate now: under \`--no-gate\` or an \`autopilot.gates: off\` base it is auto-approved and the measure command runs unattended for up to \`maxRounds\`; to keep the pause for this stage under an \`off\` base, set \`pipelines.<name>.gates.define-goal: on\`.
+This creates a reconciler-engine Run. The reconciler owns the loop mechanics: rounds, work→judge phases, stall detection, maxRounds cap, and termination (satisfied/exhausted). The \`goal-run.json\` file is a derived compatibility projection — it CANNOT back-drive the Run.
 
-## 3. Execute the pipeline as the LEAD
+## 3. Drive the Run (resume frontier)
 
-${GOAL_ORCHESTRATION_PLAYBOOK}
+At each quiescent boundary:
 
-## Termination Invariants (non-negotiable)
+\`\`\`bash
+rasen pipeline resume-run <change> goal-loop-<variant> --json   # grants the ready frontier
+rasen pipeline status <change> goal-loop-<variant> --json        # read the goal section
+\`\`\`
 
-- **maxRounds cap (default 5).** The loop is bounded. On exhaustion, proceed to the tail but mark \`outcome: maxRounds-exhausted\` — NEVER report success when the gate was never satisfied.
-- **author != verifier.** For an evaluate gate, a FRESH reviewer worker (≠ the implementer) judges each round. For a measure gate, the neutral command is the verifier. **Under Tier C** (no subagent), an evaluate gate degrades to a **second, freshly-reset single-context pass** seeded ONLY with goal + rubric + the artifact (NOT the implementation transcript), recorded as the Tier-C fallback; if that is impossible, goal-loop-evaluate is **unsupported under Tier C** — the implementer NEVER self-certifies the rubric (see playbook Step L).
-- **completion audit (evaluate gate).** The evaluate reviewer (and the Tier-C reset pass) judges by a completion AUDIT, not by failing to find remaining work: treat completion as **unproven** and verify it against the actual current state; derive concrete requirements from goal/rubric and demand **authoritative evidence** (files, command output, test results, runtime behavior) per requirement; treat uncertain or indirect evidence as **not achieved**; the audit must **prove** completion, not merely fail to find obvious remaining work; NEVER accept intent, partial progress, or memory as proof.
-- **blockedThreshold (default 3).** A blocked report is not accepted immediately: the SAME blocker must recur for \`blockedThreshold\` consecutive rounds (each re-dispatched to try a different angle; progress or a different blocker resets the streak) before the loop escalates via Step H.5/H.6 — distinct from loopStallLimit and maxRounds (see playbook Step L).
-- **loopStallLimit (default 2).** Consecutive no-progress rounds trigger the LEAD strategy review (Step H.5) — never silently burn rounds.
-- **Flat hierarchy.** The implementer NEVER spawns child subagents. Research is done inline by the implementer + Step H.3 relay.
+The status output includes a \`goal\` section with: \`variant\`, \`round\`, \`phase\` (work|judge), \`outcome\` (satisfied|exhausted|undefined), \`lastScore\`, \`lastGaps\`, \`stallStreak\`, \`budget\` (used/max), and \`waitReason\`.
+
+Read the goal section to report progress instead of owning loop state. The canonical Record + projector is the authoritative spine.
+
+## 4. Complete actions
+
+For each granted action, dispatch the appropriate role-isolated subagent (implementer for work phase, reviewer for judge phase). The worker and judge MUST be different agents (the reconciler enforces actor separation at commit time — a same-actor judge will be rejected).
+
+Use \`rasen pipeline complete <change>\` with the action receipt to commit each phase result.
+
+## Termination
+
+The reconciler handles termination:
+- **satisfied**: goal-cycle outcome is \`satisfied\` → the bounded-loop succeeds → downstream stages (ship/archive or report) proceed.
+- **exhausted**: maxRounds reached without satisfaction → the Run escalates with \`goal_cycle_exhausted\`.
+
+On exhaustion, mark the outcome honestly — NEVER report success when the gate was never satisfied.
 
 ## Resume
 
-On invocation for an existing change, read \`goal-run.json\` (the authoritative loop spine) and run \`rasen pipeline resume <change> --json\` to find the next incomplete stage. The goal-loop resume protocol (playbook Step L): last record satisfied -> the declared tail (\`ship -> retain -> archive\` for measure/evaluate; report only for research); last record not-passed -> resume at lastRound+1; no record -> round 1.
+\`\`\`bash
+rasen pipeline resume-run <change> goal-loop-<variant> --json
+\`\`\`
+
+The reconciler replays all committed events from the canonical Record. The next ready action is deterministic — same nodeId, same phase, same round. Completed actions are never re-admitted. Score, gaps, and stall state are fully reconstructable from the plan + Record.
 
 ## Output Format
 
 \`\`\`
 ## Goal: <change-name>
 
-Pipeline: goal-loop-<variant>      Gate: measure | evaluate      Tier: A | B | C
+Pipeline: goal-loop-<variant>      Gate: measure | evaluate
 
-### Loop
+### Loop (from goal/1 section)
 - [x] define-goal  — goal-plan.md (gate: <type>)
 - [ ] iterate      — round 2/5, last score 87 (threshold 90)
 
@@ -94,16 +107,15 @@ satisfied | maxRounds-exhausted | in-progress
 
 ## Guardrails
 
-- Under the default gate policy, pause at the define-goal gate — confirm the goal + gate before any round runs: the **measure command** OR the **evaluate goal/rubric** (an evaluate/research run has no command, so confirming "the measure command" alone would read as vacuous — confirm whichever gate the plan actually carries). It is an ordinary \`gate: true\`: under \`--no-gate\` or \`autopilot.gates: off\` it auto-approves and the measure command runs unattended, unless \`pipelines.<name>.gates.define-goal: on\` restores the pause.
-- Save run-state + goal-run.json so the loop is resumable.
-- Enforce author != verifier (evaluate: fresh reviewer each round; measure: the command). For an evaluate gate, the reviewer must PROVE completion by the completion audit — authoritative evidence per requirement, uncertain evidence counts as not achieved — never wave a round through by not spotting remaining work.
-- If the loop stalls (loopStallLimit consecutive no-progress rounds), run the Step H.5 escalation ladder before interrupting a human.`;
+- Under the default gate policy, pause at the define-goal gate — confirm the goal + gate before any round runs.
+- The reconciler enforces actor separation (worker ≠ judge) and stall detection — you do NOT track these manually.
+- Save nothing mechanical — the canonical Record is the authoritative spine. \`goal-run.json\` is a read-only projection.`;
 
 export function getGoalCommandSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen-goal',
     description:
-      'Goal-driven iteration entry — the LEAD classifies the task (measure | evaluate | research), selects one backend goal-loop pipeline, and drives it via the shared orchestration playbook. Repeats modify -> judge until a gate is satisfied or maxRounds is hit.',
+      'Goal-driven iteration entry — the LEAD classifies the task (measure | evaluate | research), selects one backend goal-loop pipeline, and launches a canonical reconciler-engine Run. The reconciler owns loop mechanics (rounds, phases, stall, exhaustion).',
     instructions: GOAL_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
