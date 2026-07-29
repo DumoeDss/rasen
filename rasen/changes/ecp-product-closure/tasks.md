@@ -29,7 +29,7 @@
 - [x] 3.5 Rewrite the run-state contract in the playbook (Step F) per design D3: reconciler-engine `auto-run.json` carries engine + operational bookkeeping (workers, gate-policy freeze, retention mode, strategyAttempts, session-relay generation) and labeled projections only; mechanical facts are read from the canonical view; legacy runs unchanged
 - [x] 3.6 Rewrite auto's Resume section: reconciler-engine runs resume from the canonical frontier (`pipeline resume-run`); `pipeline resume` artifact heuristics remain legacy-only; never resume under a different engine than the owner
 - [x] 3.7 Update the affected template-consuming specs' wording only where tasks 3.1–3.6 changed behavior (delta specs in this change already carry it); run the template checks (`pnpm exec tsx scripts/skill-check.ts` or the repo's template parity test) and fix drift
-  - Ran the repo's template parity tests (`npx vitest run test/core/templates/` — 58/58 green after regenerating the two golden hashes for `rasen-auto` and `rasen-review-cycle`). NOTE: `scripts/skill-check.ts` is pre-broken on this branch — it imports the deleted `test/helpers/skill-parser` (removed in `8d6ae877`, unrelated to this change) and cannot run.
+  - Ran the repo's template parity tests (`npx vitest run test/core/templates/` — 58/58 green after regenerating the golden hashes). **Count corrected (ECP-5 review finding):** section 3's template work regenerated **three skills** — `rasen-auto` and `rasen-review-cycle` in `06131648`, and **`rasen-goal` in `11dd2381`**, which this note omitted entirely — and **six values**, because each skill has an entry in BOTH `EXPECTED_FUNCTION_HASHES` and `EXPECTED_GENERATED_SKILL_CONTENT_HASHES`. Both numbers are written out because "three" alone would have been wrong the other way. `58/58` is left standing as the observation it was at the time; the suite is **59** at the integrated HEAD, after task 7.7 added a case. NOTE: `scripts/skill-check.ts` is pre-broken on this branch — it imports the deleted `test/helpers/skill-parser` (removed in `8d6ae877`, unrelated to this change) and cannot run.
 - [x] 3.8 Discharge ECP-3 task 9.3: after 3.1–3.6, annotate `rasen/changes/ecp-goal-loop/tasks.md` 9.3 as discharged by this change (tick with a pointer note naming this change and the evidence tasks), not a bare tick
 - [x] 3.9 Discharge ECP-3 task 9.4 with evidence: record in the evidence ledger the grep results showing `goal-iterate.ts`/`goal-report.ts` read `sections[].kind === 'goal'` and treat `goal-run.json` as projection-only (`grep -n "goal-run.json" src/core/templates/workflows/*.ts` shows only projection-language references); then annotate ECP-3 tasks.md 9.4 the same way as 9.3
 
@@ -71,6 +71,42 @@ Delivered in commit `b5e9fcd0`; ECP-2's ledger is annotated by task 5A.5.
 - [x] 5A.4 Tests in `packages/ui/test/canvas/pipeline-canvas-page.test.tsx`, in the shape ECP-2's own task 8.7 names: create declaration → reference from root → save round-trip (asserted on the **posted definition**, not the DOM); delete-referenced-declaration blocked; duplicate id rejected; body palette constrained (all five forbidden kinds asserted absent). Plus a **discriminating probe** — a declaration referenced ONLY by a `BoundedLoop` body. Mutation-verified: re-implementing the reference check in the panel over `CompositeRef` nodes alone turns exactly that probe red while the doubly-referenced case stays green, so the coherent fixture could not have caught the orphaning bug
 - [x] 5A.5 Annotate `rasen/changes/ecp-custom-composite/tasks.md` 8.5 and 8.6 — they are ticked `[x]` and were false. Do NOT untick silently and do NOT bare-tick: use the annotation-with-pointer convention this change uses for ECP-3's 13.1–13.4, citing commit `b5e9fcd0` and task 5A.4's tests as the evidence that they are NOW true
 - [x] 5A.6 Record the consequence for task 7.6: a Custom Composite can now genuinely be **Canvas-authored**, so the dogfood matrix can produce that evidence instead of recording it unmet. (Before this, "author one via Canvas if not" was impossible and 7.6 could only ever have been closed as programmatic.)
+
+## 5B. Canvas body-graph authoring — USER-APPROVED SCOPE ADDITION (closes ECP-2 8.2, verify-pass F1)
+
+The `draft.ts` caller sweep that section 5A's census lesson prompted found the
+zero-caller signature a **third** time. `addBodyConnection`/`removeBodyConnection`
+had zero callers anywhere, and `updateBodyStage` — ticked by name in ECP-2 task
+8.2 — did not exist in the repo at all. So `executable-custom-composite`'s
+"Requirement: Canvas edits composite body stages" (`spec.md:102-117`) was
+unreachable in three respects: the **edit** verb, "connects it to an existing
+body stage", and "#### Scenario: Body connection creating a cycle is rejected".
+
+Why the user chose **build** over recording the residual (the option taken for
+the FanOut/Join "configurable scalars" wording): that residual was a display
+nicety, whereas this one silently turns a Canvas-authored multi-stage body into
+a **parallel fan-out instead of a sequence** — the reconciler admits
+disconnected stages concurrently. That is a wrong pipeline, not a missing
+affordance, and it would have been evidenced as an honest-looking dogfood cell.
+
+**Affordance choice — (a) form-based connector, chosen deliberately.** The spec
+says the user "draws a connection" but does not pin a mechanism; what it pins is
+observable and satisfied either way — an edge gets created, and cycles are
+refused by the same rules as root connections. The alternative, (b) a real
+React Flow sub-canvas with drag-to-connect, buys only the widget at the cost of
+a second flow instance with its own layout, selection model, handles and bug
+surface, inside a closure slice whose stated constraint is not to grow. **If (b)
+is ever wanted, none of this work is wasted:** the model, the cycle rule and all
+four probes are identical — only `BodyConnections` in `DeclarationsPanel.tsx`
+would be replaced.
+
+- [x] 5B.1 Extract the cycle rule into ONE implementation: `reachesThrough` over a bare adjacency map, with `wouldCreateCycle` (root, v1 `requires` / v2 connections) and the new `bodyWouldCreateCycle` (one declaration's body graph) both delegating to it. This IS the compliance, not tidiness — `spec.md:104` requires that "Body connections SHALL be validated against the **same** DAG-cycle rules as root connections", which a second copy would break while satisfying the words
+- [x] 5B.2 Add `updateBodyStage` (the spec's "edit" verb; ECP-2 8.2 ticked it by name and it never existed): edits a body AtomicStage's id and/or capability, and a **rename rewrites both endpoints of every incident body connection**, mirroring `renameV2Node`. Patching the node alone would leave edges pointing at an id the graph no longer has — a silently disconnected body, the same failure class F1 exists to close
+- [x] 5B.3 Wire `addBodyConnection`/`removeBodyConnection` (zero callers before this) through `PipelineCanvasPage` handlers to a `BodyConnections` affordance in the declaration editor: from/to stage selects, Connect, and a connection list with Remove. **Every refusal stays in the model** — unknown declaration, unknown endpoint stage, duplicate edge, cycle — and the panel surfaces the throw, exactly as the delete reference guard and the F3 blank-id fix do. The target select deliberately does NOT hide illegal targets: a filter would be a second, invisible implementation of the cycle rule
+- [x] 5B.4 Model tests in `packages/ui/test/canvas/draft.test.ts`: cycle refusal (including self-edge), unknown-stage and duplicate-edge refusal, rename-rewrites-connections, capability edit leaves the graph intact, blank/duplicate/unknown edit refusal. Plus the **cross-declaration isolation probe** — `b→a` is a cycle in declaration X (which has `a→b`) and legal in declaration Y (same stages, no edges); a pooled check or one reading `root.connections` refuses both, and a single-declaration fixture distinguishes neither
+- [x] 5B.5 End-to-end tests in `packages/ui/test/canvas/pipeline-canvas-page.test.tsx` against the real `PipelineCanvasPage`, in ECP-2 task 8.7's shape: author a **connected** two-stage body and assert the edge reaches the **POSTed definition** (the discriminating pair — a "body has 2 stages" assertion passes for the broken product too); cycle rejected with the model's diagnostic and the edge not added; rename carries its connection; connection removal leaves its stages. All four probes mutation-verified, each mutation **grepped to confirm it landed** before trusting the colour
+- [x] 5B.6 Annotate ECP-2 `tasks.md` 8.2 with the annotation-with-pointer convention, naming plainly that it ticked a symbol which exists nowhere in the repo and that the connection functions had zero callers — not unticked, not bare-ticked
+- [x] 5B.7 Record the consequence for task 7.6 (Section 7 territory, not this one): the Canvas-authored dogfood should now exercise a multi-stage **connected** body, and its evidence must cite the **prepared plan showing sequential ordering**, not stage count. Sequential-versus-fan-out is the observable that separates correct authoring from the broken path; "the body has N stages" is true of both and therefore evidences nothing
 
 ## 6. Product wording, capability discovery, docs
 
@@ -133,7 +169,7 @@ Delivered in commit `b5e9fcd0`; ECP-2's ledger is annotated by task 5A.5.
   - Every check in section 9 ran natively on Windows 11 (`win32`, Node 24.14.0), including the whole `test/core/change-run/` suite and four real fresh-process CLI dogfood scripts. ECP-3 tasks 13.1-13.4 are annotated in `rasen/changes/ecp-goal-loop/tasks.md` with a pointer to ledger Section 9 — annotation with evidence, never a bare tick.
 - [x] 9.5 Run the release-contract checks: `node scripts/release-contract.mjs`, `node scripts/pack-version-check.mjs`, `node scripts/paired-pack-check.mjs` (lockstep CLI=UI) — green at the current 0.1.5 versions; record that the 0.1.6 bump is the user's release-time action (version discipline: report, never bump)
   - `release-contract.mjs` -> `verified lockstep release contract 0.1.5`; `pack-version-check.mjs` -> OK; `paired-pack-check.mjs` -> `verified paired CLI/UI packages 0.1.5`. Versions stay **0.1.5** in-repo; the 0.1.6 bump is the **user's** release-time action, reported not performed.
-    **Operational finding:** the two pack checks remove and rebuild `dist/`, so they are not safe to run beside the test suite on this repo — that is what invalidated the first full-suite attempt (task 9.2).
+    **Operational finding, widened after the engine reviewer lost two runs to the same trap:** the safe rule is **no root vitest, no build, and nothing triggering `prepare`, concurrently with any of the others** — my original "pack-checks only" reading was too narrow. Root `vitest.setup.ts`'s globalSetup calls `ensureCliBuilt()`, which launches a full `pnpm run build` when `dist/cli/index.js` is missing, and `build.js` opens with `rmSync('dist')` — so once any build has deleted `dist`, the next root vitest invocation becomes a second `dist` destroyer, even one with no `dist` dependency in its test bodies. Mechanism, diagnostic signature and durable-fix recommendations are in the ledger.
 - [x] 9.6 Verify no stray artifacts: `git status` clean except intended files; `packages/ui/package-lock.json` untouched (user-parked); no edits under `rasen/changes/ecp-*` siblings beyond the two annotation tasks (3.8, 3.9, 9.4)
   - `git status` carries only this change's intended files; `packages/ui/package-lock.json` remains untracked and untouched; sibling change directories are edited only by the annotation tasks (ECP-2 5A.5, ECP-3 3.8/3.9/9.4). `pack-version-check.mjs` leaves a gitignored `.tgz` in the repo root — deleted after the check. Dogfood temp directories are removed by the scripts and verified absent.
 

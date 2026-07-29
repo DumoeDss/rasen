@@ -381,7 +381,7 @@ kernel-internal step with no CLI command).
 
 | Pipeline | Provenance | RunId | Engine owner | Terminal | Evidence |
 |---|---|---|---|---|---|
-| `bug-fix` (ReviewCycle finding→fix→independent re-review) | built-in v1 | `run:b19dbb95d53084bc…` | reconciler | loop `clean`, ship admitted | `dogfood-review-cycle.mjs`. F1 (major) → triage → fix (`fixerA`) → **same-actor re-review REFUSED** → independent `verifierA` → `clean`; 3 distinct actor identityDigests. ECP-1's original evidence for this cell is `run:b23b2cce16d90495…` |
+| `bug-fix` (ReviewCycle finding→fix→independent re-review) | built-in v1 | `run:b19dbb95d53084bc…` [^rc] | reconciler | loop `clean`, ship admitted | `dogfood-review-cycle.mjs`. F1 (major) → triage → fix (`fixerA`) → **same-actor re-review REFUSED** → independent `verifierA` → `clean`; 3 distinct actor identityDigests. ECP-1's original evidence for this cell is `run:b23b2cce16d90495…` |
 | `small-feature` | built-in v1 | `run:0c9d9cb29cf7795e…` | reconciler (`default`) | **`completed`** | **NEW** — task 7.4, scenario A. 9 actions; review-cycle round 1/3 `clean`, F1 (major) `resolved`; per-stage ActionIds in the script's dump |
 | `goal-loop-measure` (satisfied) | built-in v1 | `run:c72075a3ca58bcef…` | reconciler | `satisfied` @ round 2 (score 90) | `dogfood-goal-cycle.mjs` scenario 1 |
 | `goal-loop-measure` (exhausted) | built-in v1 | `run:ff989fea4cb212f5…` | reconciler | `escalated` / `exhausted` @ round 5 (score 35) | `dogfood-goal-cycle.mjs` scenario 2 |
@@ -393,6 +393,19 @@ kernel-internal step with no CLI command).
 | `full-feature` (required member fails) | built-in v1 | `run:28d29eddc30ed5c1…` | reconciler | **`escalated`**, terminal `experts-failed` | `dogfood-full-feature.mjs` scenario B2 — the Join refuses to proceed and the Run never reaches the review loop |
 | `ecp5-canvas-composite` | **Canvas-authored v2** | `run:3c50063bea7fed8e…` | reconciler (`default`) | **`completed`** | **NEW** — task 7.6, scenario C. See "the Canvas-authored cell" below |
 | `small-feature` via the converged Step E protocol | built-in v1 | `run:0ad1efbe057dcfac…` | reconciler | **`completed`** | **NEW** — task 7.7, scenario D. 10 `resume-run` cycles, 9 `review-cycle` section reads, full transcript in the script's dump |
+
+[^rc]: **Exact-tree provenance for this one cell.** `run:b19dbb95…` came from the
+**second** invocation of `dogfood-review-cycle.mjs`. The first, `run:19ec03cd…`,
+ran at the same repo HEAD and was discarded because the script printed a
+spurious WARNING on a *passing* guarantee — it asserted the raw
+`actor_separation` token, which the CLI stopped emitting once the refusal became
+a localized product message. The one-line assertion fix was **uncommitted** when
+`b19dbb95` was produced and landed in `50e80bd9`. So "produced at `11ce4d69`" is
+true of the repo HEAD and not of the exact working tree, which differed by that
+one assertion in a dogfood script — it changes what the script *reports*, never
+what the Run *does*. Recorded because the alternative is a provenance claim that
+does not survive someone checking it, which is the only thing an evidence ledger
+is for.
 
 ### Task 7.6 — the Canvas-authored cell, and what ECP-2's evidence actually was
 
@@ -503,7 +516,7 @@ one concrete pointer. **No condition is marked satisfied without one.**
 
 | # | Exit condition (verbatim, §15.4) | Verdict | Evidence |
 |---|---|---|---|
-| 1 | v1 定义兼容读取/编译，v2 definition 经 Canvas save/detail/export round-trip 后语义不变 | **MET** | v1 read/compile: `test/core/change-run/lowerer.test.ts`; `test/core/pipeline-registry/v1-parallel-only-lowering.test.ts` (v1 parallel-only now compiles through the same v2 path — ECP-5 §2). v2 round-trip: `packages/ui/test/canvas/pipeline-canvas-page.test.tsx` → "creates a declaration, references it from the root, and saves the round-trip" (asserted on the POSTed definition, not the DOM). End-to-end, through the real save path: dogfood scenario C — Canvas POST → `pipeline save` → `pipeline show` (`supported_v2_executable`) → Run `run:f1304f3da73f5ecc…` `completed`, i.e. the saved definition kept its semantics all the way to execution |
+| 1 | v1 定义兼容读取/编译，v2 definition 经 Canvas save/detail/export round-trip 后语义不变 | **MET** | v1 read/compile: `test/core/change-run/lowerer.test.ts`; `test/core/pipeline-registry/v1-parallel-only-lowering.test.ts` (v1 parallel-only now compiles through the same v2 path — ECP-5 §2). v2 round-trip: `packages/ui/test/canvas/pipeline-canvas-page.test.tsx` → "creates a declaration, references it from the root, and saves the round-trip" (asserted on the POSTed definition, not the DOM). End-to-end, through the real save path: dogfood scenario C — Canvas POST → `pipeline save` → `pipeline show` (`supported_v2_executable`) → Run `run:3c50063bea7fed8e…` `completed`, i.e. the saved definition kept its semantics all the way to execution |
 | 2 | Canvas 可以创建、引用、展开和校验受约束 Custom Composite | **MET** | Create + reference: `packages/ui/src/canvas/DeclarationsPanel.tsx`, commit `b5e9fcd0` (ECP-5 task 5A) — before it, `addDeclaration`/`removeDeclaration`/`addBodyStage` had **zero callers in `packages/ui/src`** and ECP-2 tasks 8.5/8.6 were false ticks, now annotated. Constrained: `V2_BODY_PALETTE_KINDS` (`draft.ts`) is `AtomicStage` only; `pipeline-canvas-page.test.tsx` asserts all five forbidden kinds absent. Expand (drill-down): ECP-2 commit `95bd1c53` composite-body progress projection. Validate: ECP-2 task 7.1 prepare-time validators (recursion, nested loop, cycle, missing exit, port mismatch, capability missing). Real: scenario C |
 | 3 | `bug-fix`、`small-feature`、三个 goal pipelines、`full-feature` 与至少一个 Canvas-authored Custom Composite 均可完成真实 Run | **MET** | The dogfood matrix above — twelve cells, every RunId produced at `11ce4d69`. The three cells that had no real Run before this slice (`small-feature`, a whole-pipeline `goal-loop-evaluate`, a Canvas-authored composite) are `run:0c9d9cb2…`, `run:25d59a28…`, `run:3c50063b…` |
 | 4 | 同一 immutable plan + committed record 始终得到同一 next action | **MET** | `test/core/change-run/reconciler.test.ts` → describe "reconcile determinism (5.1)" (shuffled insertion order, poisoned clock/random/env/filesystem, replay). `fault-journeys.test.ts` → "different launch keys produce distinct deterministic RunIds (no global key index)" and the launch-binding immutability case. `ecp-composite-parity.test.ts` extends it across composite invocation |
@@ -679,16 +692,56 @@ The lint warning is `test/core/change-run/facade-settle-completeness.test.ts:139
 (`ecp-settle-completeness`), not by this change. Reported rather than
 opportunistically fixed: it is another change's file and another change's line.
 
-### The invalidated first attempt, recorded rather than deleted
+### The `dist/` concurrency trap — the rule, the mechanism, and the signature
 
-The first full-suite run reported **235 failed / 36 files**. That run is
-**invalid** and its numbers appear nowhere above. Cause: `pack-version-check.mjs`
-and `paired-pack-check.mjs` were run concurrently with it, and both **remove and
-rebuild `dist/`** — while several hundred tests spawn `node dist/cli/index.js`.
-Recorded because the failure mode is worth knowing: on this repo the release
-checks are not safe to run beside the suite, and a catastrophic-looking FAIL
-count from a concurrent run is a tooling artifact, not a regression. The clean
-re-run above followed a fresh `pnpm build` with nothing else touching `dist/`.
+Two runs in this change were destroyed by it, mine and the engine reviewer's,
+and each took a different wrong route to the diagnosis. The rule that actually
+holds:
+
+> **Never run a root vitest invocation, a build, or anything triggering the
+> `prepare` hook concurrently with any of the others.** Not "pack-checks are
+> unsafe beside the suite" — that was my first, too-narrow reading — and not
+> "builds are unsafe beside the suite" either. Any two of the three collide.
+
+**Mechanism** (verified from source, not inferred):
+
+```
+vitest.config.ts:128        globalSetup: './vitest.setup.ts'
+vitest.setup.ts:40          await ensureCliBuilt()
+test/helpers/run-cli.ts:136 if (!existsSync(cliEntry)) → runCommand('pnpm', ['run','build'])
+build.js:19                 rmSync('dist', { recursive: true, force: true })
+```
+
+The consequence is the part neither of us predicted: **once any build has
+deleted `dist`, the next root vitest invocation becomes a second `dist`
+destroyer** — because its globalSetup finds `dist/cli/index.js` missing and
+launches its own full build, which opens by removing `dist` again. This is true
+even of a suite with no `dist` dependency in its test bodies. I told the LEAD
+`test/core/templates/` was safe on exactly that reasoning; it is safe alone and
+unsafe when raced, and the harness is why.
+
+Two concurrent builds both report success. The surviving `dist` is the union
+minus whatever the other side's `rm` caught mid-emit.
+
+**Diagnostic signature** — worth more than either route we took, because it is
+recognisable in seconds:
+
+- `dist/` missing individual emitted files while others are present
+- `node dist/cli/index.js --version` failing with `ERR_MODULE_NOT_FOUND`
+- mass failures that **error-exit in ~200ms**, not timeouts
+
+That last point is what separates it from the ordinary Windows CLI-spawn flake,
+which presents as *timeouts* (30s/60s) plus `EBUSY`/`EPERM` on temp cleanup. A
+run showing hundreds of instant error-exits is a poisoned `dist`; a run showing a
+handful of slow timeouts is the flake. My first attempt reported **235 failed /
+36 files** and the reviewer's **571**; both are tooling artifacts and neither
+appears anywhere as evidence.
+
+**Durable fixes — recommendations for a future change, NOT done here:** have
+`build.js` emit to a temp directory and rename into place, so a partial build is
+never observable; and/or have `ensureCliBuilt` take a lock file so concurrent
+callers serialize instead of racing. Both are repo-infrastructure changes with
+their own blast radius, and a closure slice is the wrong place for them.
 
 ### `scripts/skill-check.ts` — NOT repaired, and why
 

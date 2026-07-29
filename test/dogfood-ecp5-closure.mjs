@@ -516,7 +516,7 @@ async function scenarioCanvasComposite() {
   //    discovery back — the Canvas's own EngineSupportPanel reads the same
   //    analysis from the management endpoint.
   const saveRes = runCLI(['pipeline', 'save', pipelineName, '--from', exportPath, '--json'], ctx.testDir, ctx.env);
-  if (saveRes.exitCode !== 0) throw new Error(`pipeline save FAILED: ${saveRes.stderr.slice(0, 800)}`);
+  if (saveRes.exitCode !== 0) throw new Error(`pipeline save FAILED: ${(saveRes.stderr + saveRes.stdout).slice(0, 1200)}`);
   const showRes = runCLI(['pipeline', 'show', pipelineName, '--json'], ctx.testDir, ctx.env);
   if (showRes.exitCode !== 0) throw new Error(`pipeline show FAILED: ${showRes.stderr.slice(0, 800)}`);
   const shown = JSON.parse(showRes.stdout.trim());
@@ -525,6 +525,39 @@ async function scenarioCanvasComposite() {
   // 4. Run it.
   const { h, receipt } = start(ctx, changeId, pipelineName);
   console.log(`   RunId: ${h.runId}`);
+
+  // --- The assertions that make this cell mean something (task 7.6) ---------
+  //
+  // Stage COUNT evidences nothing: a two-stage body with no edge is a
+  // DIFFERENT pipeline, because the reconciler admits disconnected stages
+  // concurrently. Sequential-versus-fan-out is the observable that separates
+  // correct authoring from the broken path, so this cell asserts ORDERING.
+
+  // (1) Structural — the persisted plan carries the dependency.
+  const plan = loadPlan(h.runId, h.storeRoot);
+  const bodyNodes = plan.nodes.filter((node) =>
+    node.hierarchicalPath.startsWith('root:composite-ref/')
+  );
+  const byPath = new Map(bodyNodes.map((node) => [node.hierarchicalPath, node]));
+  const first = byPath.get('root:composite-ref/stage');
+  const second = byPath.get('root:composite-ref/stage-2');
+  const ordering = {
+    bodyNodeCount: bodyNodes.length,
+    firstRequires: first ? [...first.requires] : null,
+    secondRequires: second ? [...second.requires] : null,
+    secondRequiresFirst: Boolean(first && second && second.requires.includes(first.nodeId)),
+    firstRequiresSecond: Boolean(first && second && first.requires.includes(second.nodeId)),
+  };
+  console.log(`   plan ordering: stage-2 requires stage = ${ordering.secondRequiresFirst}`);
+
+  // (2) Behavioural — the reconciler's OWN answer, and the one that settles it.
+  //     A connected body puts exactly ONE action on the first frontier; the
+  //     disconnected shape puts both there at once. Read BEFORE completing
+  //     anything, which is why this scenario does not call driveToTerminal
+  //     until after the snapshot.
+  const firstFrontier = h.frontier().map((f) => f.path).sort();
+  console.log(`   first frontier: ${JSON.stringify(firstFrontier)}`);
+
   const view = driveToTerminal(h);
 
   const out = {
@@ -538,6 +571,8 @@ async function scenarioCanvasComposite() {
     availableEngines: shown.availableEngines,
     status: view.status,
     terminal: view.terminal ?? null,
+    bodyOrdering: ordering,
+    firstFrontier,
     actionIdsByPath: h.ledger,
     actionCount: Object.keys(h.record().actions).length,
   };

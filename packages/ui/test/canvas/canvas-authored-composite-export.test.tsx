@@ -207,6 +207,24 @@ describe('ECP-5 task 7.6: a Custom Composite authored through the Canvas', () =>
     });
   }
 
+  /** Selects use Preact's native `change`, not `input`. */
+  async function setSelect(selector: string, value: string): Promise<void> {
+    const el = container.querySelector(selector) as HTMLSelectElement | null;
+    expect(el, `missing select: ${selector}`).not.toBeNull();
+    await act(async () => {
+      el!.value = value;
+      el!.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+    });
+  }
+
+  /** Connect two body stages through the real affordance (F1, `7f2fc33d`). */
+  async function connectBody(from: string, to: string): Promise<void> {
+    await setSelect('[data-testid="declaration-connection-from"]', from);
+    await setSelect('[data-testid="declaration-connection-to"]', to);
+    await click('[data-testid="declaration-connection-add"]');
+  }
+
   it('authors a declaration with two body stages, references it from the root, and exports what save POSTs', async () => {
     vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
     vi.mocked(client.getPipelineCatalog).mockResolvedValue(catalogFixture);
@@ -230,6 +248,43 @@ describe('ECP-5 task 7.6: a Custom Composite authored through the Canvas', () =>
       container.querySelectorAll('[data-testid="declaration-body-stage"]')
     ).toHaveLength(2);
 
+    // 2a. CONNECT them — the F1 affordance (`7f2fc33d`), and the reason this
+    //     export exists in its current form. Stage count is NOT the observable:
+    //     a two-stage body with no edge is a DIFFERENT pipeline, because the
+    //     reconciler admits disconnected stages concurrently. Sequential vs
+    //     fan-out is what separates correct authoring from the broken path, and
+    //     only an edge produces the sequential one.
+    await connectBody('stage', 'stage-2');
+    const edges = Array.from(
+      container.querySelectorAll('[data-testid="declaration-body-connection"]')
+    );
+    expect(edges).toHaveLength(1);
+    expect(edges[0]!.getAttribute('data-from')).toBe('stage');
+    expect(edges[0]!.getAttribute('data-to')).toBe('stage-2');
+
+    // 2b. CYCLE PROBE — the closing edge `stage-2 → stage`. F1 puts the rule in
+    //     the model and deliberately does NOT filter illegal targets out of the
+    //     select, on the grounds that a filter would be a second, invisible copy
+    //     of the cycle rule. So the cycle is *selectable* and refused on submit:
+    //     this probe therefore tests that the CANVAS refuses, which is a
+    //     different claim from "the validator is reachable" — see the ledger.
+    //     Asserting the toast is ABSENT first is what makes the probe
+    //     discriminating: a toast left over from an earlier action would let
+    //     this pass without the refusal ever happening.
+    expect(
+      container.querySelector('[data-testid="pipeline-canvas-toast"]'),
+      'a toast was already showing — the cycle assertion below would be vacuous'
+    ).toBeNull();
+    await connectBody('stage-2', 'stage');
+    const toast = container.querySelector('[data-testid="pipeline-canvas-toast"]');
+    expect(toast, 'the cycle refusal surfaced no diagnostic').not.toBeNull();
+    expect(toast!.textContent?.toLowerCase()).toContain('cycle');
+    // …and the refusal left the graph alone. A diagnostic beside a mutated
+    // graph would be the worst of both.
+    expect(
+      container.querySelectorAll('[data-testid="declaration-body-connection"]')
+    ).toHaveLength(1);
+
     // 3. Reference it from the root graph via a CompositeRef.
     await click('[data-testid="v2-palette-add-CompositeRef"]');
 
@@ -252,7 +307,10 @@ describe('ECP-5 task 7.6: a Custom Composite authored through the Canvas', () =>
       declarations: {
         id: string;
         provenance: string;
-        graph: { nodes: { kind: string; capability: { id: string; version: string } }[] };
+        graph: {
+          nodes: { id: string; kind: string; capability: { id: string; version: string } }[];
+          connections: { from: { node: string }; to: { node: string } }[];
+        };
       }[];
       root: { nodes: { kind: string; declarationId?: string }[] };
     };
@@ -268,6 +326,11 @@ describe('ECP-5 task 7.6: a Custom Composite authored through the Canvas', () =>
       'AtomicStage',
       'AtomicStage',
     ]);
+    // The EDGE reaches the POSTed definition — the discriminating assertion.
+    // Everything above this line is equally true of a disconnected body.
+    expect(declaration.graph.connections).toHaveLength(1);
+    expect(declaration.graph.connections[0]!.from.node).toBe('stage');
+    expect(declaration.graph.connections[0]!.to.node).toBe('stage-2');
     // Each body stage carries the capability the SERVER's catalog served.
     for (const node of declaration.graph.nodes) {
       expect(node.capability.id).toBe(CATALOG_ENTRY.id);
