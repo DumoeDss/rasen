@@ -2049,7 +2049,9 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
     // BoundedLoop with a 2-phase goal-cycle body (work → judge), enabling
     // reconciler execution. The variant is derived from the gate type
     // (measure → measure, evaluate → evaluate) and pipeline name
-    // (goal-loop-research → research).
+    // (goal-loop-research → research), then stored as an explicit
+    // goalCycleVariant tag on the BoundedLoop node so downstream layers
+    // (lowerer) do not need to re-derive it from the pipeline name.
     if (stage.loop?.kind === 'goal') {
       const goalLoop = stage.loop;
       const bodyId = `goal-cycle-body:${stage.id}`;
@@ -2110,6 +2112,10 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
         exhaustedOutcome: 'goal_cycle_exhausted',
         legacyRuntimeOwner: 'prompt-owned-v1',
         legacy: normalizedLegacyStage,
+        // Explicit variant tag so downstream layers (lowerer) do not need to
+        // re-derive the variant from the pipeline name. The pipeline-name
+        // fallback in the lowerer is kept only for backward compatibility.
+        goalCycleVariant: variant,
       });
       continue;
     }

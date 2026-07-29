@@ -216,17 +216,21 @@ function goalCycleBody(
       `BoundedLoop ${loop.id} references missing body ${loop.body}.`
     );
   }
-  // Detect variant from the BoundedLoop node's legacy stage loop data or
-  // pipeline name. The legacy stage carries the original loop:{kind:goal,
-  // gate:{kind:measure|evaluate}} declaration.
+  // Detect variant from the BoundedLoop node's explicit goalCycleVariant tag
+  // (set during normalization in definition.ts). Fall back to pipeline-name
+  // and gate-kind detection for backward compatibility with older plans that
+  // predate the explicit tag.
+  const nodeVariant = (loop as unknown as Readonly<{ goalCycleVariant?: unknown }>).goalCycleVariant;
   const legacyStage = (loop as unknown as Readonly<{ legacy?: Readonly<{ loop?: Readonly<{ kind?: string; gate?: Readonly<{ kind?: string }> }> }> }>).legacy;
   const legacyLoop = legacyStage?.loop;
-  const isResearch = pipelineName === 'goal-loop-research';
-  const variant: 'measure' | 'evaluate' | 'research' = isResearch
-    ? 'research'
-    : legacyLoop?.gate?.kind === 'measure'
-      ? 'measure'
-      : 'evaluate';
+  const variant: 'measure' | 'evaluate' | 'research' =
+    nodeVariant === 'research' || nodeVariant === 'measure' || nodeVariant === 'evaluate'
+      ? (nodeVariant as 'measure' | 'evaluate' | 'research')
+      : pipelineName === 'goal-loop-research'
+        ? 'research'
+        : legacyLoop?.gate?.kind === 'measure'
+          ? 'measure'
+          : 'evaluate';
 
   const phaseEntries = declaration.graph.nodes.map((node) => {
     if (node.kind !== 'AtomicStage') {
