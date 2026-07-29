@@ -86,9 +86,9 @@
 ## 12. Real CLI Run evidence (ECP-3 exit evidence)
 
 - [x] 12.1 Build dist before CLI tests (the recurring lesson — stale dist runs old JS)
-- [ ] 12.2 Run a real CLI `goal-loop-measure` Run through multiple rounds → satisfied termination; capture RunId, ActionId, actor, evidence
-- [ ] 12.3 Run a real CLI `goal-loop-research` Run through multiple rounds → report tail; capture RunId
-- [ ] 12.4 Run a real CLI goal-loop Run to exhaustion (maxRounds) → escalated terminal; verify goal-run.json projection
+- [x] 12.2 Run a real CLI `goal-loop-measure` Run through multiple rounds → satisfied termination; capture RunId, ActionId, actor, evidence
+- [x] 12.3 Run a real CLI `goal-loop-research` Run through multiple rounds → report tail; capture RunId
+- [x] 12.4 Run a real CLI goal-loop Run to exhaustion (maxRounds) → escalated terminal; verify goal-run.json projection
 - [x] 12.5 Verify all cross-layer gates: `analyzeReconcilerSupport` includes goal body stages, `preflightPreparedDefinitionExecution` passes, `resolveRuntime`/v2-cast works, `resolveRuntimeExecutionProfile` succeeds, `lowerRuntimePlan` produces goal-cycle body, `buildAction` constructs the correct action
 - [x] 12.6 Verify CLI `pipeline status` projects the goal/1 section with variant, round, score, budget
 
