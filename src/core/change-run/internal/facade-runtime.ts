@@ -588,6 +588,22 @@ export { asPromise };
 export type { ChangeRunView };
 
 /**
+ * ECP-4: a JSON object (not null, not an array). Both evaluator validators
+ * previously used this shape as a PRECONDITION for validating at all, which
+ * meant any non-object result bypassed validation and committed.
+ */
+function isPlainJsonObject(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Human-readable shape name for an evaluator-result rejection message. */
+function describeJsonShape(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'an array';
+  return `a ${typeof value}`;
+}
+
+/**
  * ECP-4: validate a choice condition evaluator completion. The result must
  * contain a valid `outcome` string matching one of the choice's declared
  * outcomes.
@@ -607,14 +623,24 @@ function validateChoiceCompletion(
     if (action === undefined) continue;
     if (action.action.actionId !== request.actionId) continue;
     // This completion targets a choice node — validate the result.
-    if (request.kind === 'domain-action-result' && request.result && typeof request.result === 'object' && !Array.isArray(request.result)) {
+    // A failed/blocked evaluator legitimately carries no selection; only a
+    // SUCCEEDED completion must name a valid outcome.
+    if (request.kind === 'domain-action-result' && request.status === 'succeeded') {
+      if (!isPlainJsonObject(request.result)) {
+        // Guarding only the object shape used to SKIP validation entirely, so
+        // a string result committed and left the Run permanently stalled with
+        // no branch selected and no diagnostic.
+        throw new Error(
+          `Choice completion for ${node.hierarchicalPath} must be an object carrying an outcome; received ${describeJsonShape(request.result)}.`
+        );
+      }
       const outcome = (request.result as Readonly<{ outcome?: unknown }>).outcome;
       if (typeof outcome !== 'string' || !node.outcomes.includes(outcome)) {
         throw new Error(
           `Choice completion for ${node.hierarchicalPath} has invalid outcome ${JSON.stringify(outcome)}.`
         );
-        }
       }
+    }
     break;
   }
 }
@@ -638,7 +664,13 @@ function validateFanOutConditionCompletion(
     if (action === undefined) continue;
     if (action.action.actionId !== request.actionId) continue;
     // This completion targets a fan-out condition — validate the result.
-    if (request.kind === 'domain-action-result' && request.result && typeof request.result === 'object' && !Array.isArray(request.result)) {
+    // A failed/blocked evaluator legitimately carries no member selection.
+    if (request.kind === 'domain-action-result' && request.status === 'succeeded') {
+      if (!isPlainJsonObject(request.result)) {
+        throw new Error(
+          `FanOut condition completion for ${node.hierarchicalPath} must be an object carrying activeMembers; received ${describeJsonShape(request.result)}.`
+        );
+      }
       const result = request.result as Readonly<{ activeMembers?: unknown; inactiveMembers?: unknown }>;
       if (!Array.isArray(result.activeMembers)) {
         throw new Error(
