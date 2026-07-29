@@ -368,14 +368,16 @@ export function reconcile(
     if (committedChoiceOutcome(record, choice) !== null) {
       succeeded.add(choice.nodeId);
     } else {
-      const attempts = occurrenceForNodeId(record, choice.nodeId);
-      if (attempts >= MAX_EVALUATOR_ATTEMPTS) {
+      const attempts = evaluatorAttempts(record, choice.nodeId);
+      // An attempt is still in flight — it may yet resolve. No verdict is due.
+      if (attempts.active) continue;
+      if (attempts.committed >= MAX_EVALUATOR_ATTEMPTS) {
         // Escalate with a code that names the node and the cause, instead of
         // retrying into a generic budget-exhausted terminal.
         actions.push({
           kind: 'escalate',
           code: 'choice_evaluator_unresolved',
-          reason: `Choice evaluator ${choice.hierarchicalPath} did not commit a declared outcome in ${attempts} attempts.`,
+          reason: `Choice evaluator ${choice.hierarchicalPath} did not commit a declared outcome in ${attempts.committed} attempts.`,
         });
         continue;
       }
@@ -383,7 +385,7 @@ export function reconcile(
       actions.push({
         kind: 'admit',
         nodeId: choice.nodeId,
-        occurrence: attempts,
+        occurrence: occurrenceForNodeId(record, choice.nodeId),
         admissionKind: choice.admissionKind,
         access: choice.workspace.access,
         profilePath: choice.profilePath,
@@ -399,12 +401,14 @@ export function reconcile(
     if (!fanOut.requires.every((req) => succeeded.has(req))) continue;
     const conditionResult = succeededResultForNode(record, fanOut.nodeId);
     if (conditionResult === null) {
-      const attempts = occurrenceForNodeId(record, fanOut.nodeId);
-      if (attempts >= MAX_EVALUATOR_ATTEMPTS) {
+      const attempts = evaluatorAttempts(record, fanOut.nodeId);
+      // An attempt is still in flight — it may yet resolve. No verdict is due.
+      if (attempts.active) continue;
+      if (attempts.committed >= MAX_EVALUATOR_ATTEMPTS) {
         actions.push({
           kind: 'escalate',
           code: 'fan_out_condition_unresolved',
-          reason: `FanOut condition evaluator ${fanOut.hierarchicalPath} did not commit a member decision in ${attempts} attempts.`,
+          reason: `FanOut condition evaluator ${fanOut.hierarchicalPath} did not commit a member decision in ${attempts.committed} attempts.`,
         });
         continue;
       }
@@ -412,7 +416,7 @@ export function reconcile(
       actions.push({
         kind: 'admit',
         nodeId: fanOut.nodeId,
-        occurrence: attempts,
+        occurrence: occurrenceForNodeId(record, fanOut.nodeId),
         admissionKind: fanOut.admissionKind,
         access: fanOut.workspace.access,
         profilePath: fanOut.profilePath,
@@ -937,6 +941,31 @@ function readActiveMembers(
     }
   }
   return result;
+}
+
+/**
+ * ECP-4: an orchestration evaluator's attempt state, for the retry cap.
+ *
+ * `occurrenceForNodeId` counts EVERY invocation including one still in flight,
+ * so using it as the cap counter escalated while the final permitted attempt
+ * was still running — terminating a Run that was about to resolve and throwing
+ * away live paid work. The cap must count only attempts that have actually
+ * come back, and no verdict at all is due while one is active.
+ */
+function evaluatorAttempts(
+  record: CanonicalRunRecord,
+  nodeId: NodeId
+): Readonly<{ active: boolean; committed: number }> {
+  const actions = actionsForNode(record, nodeId);
+  const committed = new Set(
+    actions
+      .filter((action) => action.result !== undefined)
+      .map((action) => action.action.invocationId)
+  );
+  return {
+    active: actions.some((action) => action.state === 'active'),
+    committed: committed.size,
+  };
 }
 
 /**
