@@ -256,8 +256,10 @@ export const RunStateSchema = z
         workProduct: z.enum(['code', 'prose']),
       })
       .optional(),
-    // Goal-loop: best-effort derived cache. The AUTHORITATIVE per-round record
-    // is goal-run.json (historyRef); this is a convenience for the resume fast path.
+    // Goal-loop: best-effort derived cache for legacy V1 Runs. For
+    // reconciler-engine Runs, the authoritative goal state is the canonical
+    // Record projected through `projectRunView` → goal/1 section. The
+    // historyRef (goal-run.json) is a compat projection for legacy display.
     loopProgress: z
       .object({
         kind: z.literal('goal'),

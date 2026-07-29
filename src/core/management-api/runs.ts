@@ -598,6 +598,13 @@ export function resolveGoalRunPath(changeDir: string, workDir: string | null): s
   return fs.existsSync(legacyPath) ? legacyPath : null;
 }
 
+/**
+ * Legacy compat reader for `goal-run.json`. Reconciler-engine Runs do NOT
+ * use this file to drive the Run — their goal state is projected from the
+ * canonical Record through `projectRunView` → goal/1 section (see
+ * `discoverReconcilerRuns`). This reader remains for listing/display of
+ * legacy V1 Runs that still write `goal-run.json` as their run-state.
+ */
 function readGoalRunDetailed(changeDir: string, workDir: string | null): RunFileResult<GoalRunRaw> {
   const filePath = resolveGoalRunPath(changeDir, workDir);
   if (!filePath) return { kind: 'absent' };

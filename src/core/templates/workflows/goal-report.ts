@@ -2,10 +2,10 @@
  * Goal-Report Skill Template (the `report` tail of the goal-loop-research
  * pipeline).
  *
- * Shipper role, research pipeline ONLY. Summarizes `goal-run.json` (rounds,
- * scores/satisfaction, outcome) into a final report artifact. No code to ship.
- * It MUST surface maxRounds-exhausted honestly — never report success when the
- * gate was never satisfied.
+ * Shipper role, research pipeline ONLY. Summarizes the canonical Run view
+ * (rounds, scores/satisfaction, outcome) into a final report artifact. No code
+ * to ship. It MUST surface maxRounds-exhausted honestly — never report success
+ * when the gate was never satisfied.
  */
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
@@ -18,7 +18,7 @@ You are the **shipper** for the report stage of a goal-loop-research run. There 
 
 ## Input
 
-- \`goal-run.json\` (authoritative) — the per-round records: \`{round, score?, measurePassed?, evaluateSatisfied?, detail?, gaps?, error?, gitTreeFingerprint}\`. This is process ephemera (design \`change-work-dir\`): find it in the change's work directory (\`workDir\` from \`rasen status --change <n> --json\`, or the resolved location the LEAD's dispatch prompt names); fall back to the change directory when \`workDir\` is absent or the file already lives there (sticky-legacy).
+- The canonical Run view (authoritative) — run \`rasen pipeline status --change <name> --json\` and read the \`sections[].kind === 'goal'\` entry. This section carries \`variant\`, \`round\`, \`phase\`, \`outcome\` ('satisfied' | 'exhausted' | undefined), \`lastScore\`, \`lastGaps\`, \`stallStreak\`, and \`budget\`. The canonical Record is the sole source of truth — do not consult \`goal-run.json\` for Run state.
 - \`goal-plan.md\` — the original goal and gate.
 - The work-product artifact (the document the implementer researched/wrote across rounds).
 
@@ -27,14 +27,14 @@ You are the **shipper** for the report stage of a goal-loop-research run. There 
 Write a final report (e.g. \`report.md\` or the artifact named in goal-plan.md) to the change directory containing:
 
 - **Goal** — the success criterion, verbatim from goal-plan.md.
-- **Outcome** — \`satisfied\` if the last recorded round's gate was satisfied; \`maxRounds-exhausted\` if the cap was hit without satisfaction. NEVER report success when the gate was never satisfied — surface the shortfall honestly.
-- **Rounds** — a compact table: round number, the gate judgment (score/measurePassed or evaluateSatisfied + gaps), and any error. Include the gitTreeFingerprint where relevant.
+- **Outcome** — \`satisfied\` if the Run's goal section \`outcome\` is \`satisfied\`; \`maxRounds-exhausted\` if \`outcome\` is \`exhausted\`. NEVER report success when the gate was never satisfied — surface the shortfall honestly.
+- **Rounds** — summarize the progression: final round, phase, score/gaps from the goal section.
 - **Final state of the work product** — what was produced and where it lives.
-- **Open gaps** — unresolved gaps from the final round, if any.
+- **Open gaps** — unresolved gaps from the final round (\`lastGaps\` in the goal section), if any.
 
 ## Constraints
 
-- Read \`goal-run.json\` (from the work directory per the Input section above) as the source of truth; do not infer outcomes from the work product alone.
+- Read the canonical Run view (\`rasen pipeline status --change <name> --json\` → goal section) as the source of truth; do not infer outcomes from the work product alone or from the legacy \`goal-run.json\` file.
 - If the implementer's last round was a HANDOFF (no gate record yet), say so — do not guess whether it would have passed.
 - This stage does NOT run another gate round or edit the work product. It reports.`;
 
@@ -42,7 +42,7 @@ export function getGoalReportSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen-goal-report',
     description:
-      'Goal-loop report tail (shipper role, research pipeline only) — summarizes goal-run.json into a final report artifact. No code to ship; surfaces maxRounds-exhausted honestly.',
+      'Goal-loop report tail (shipper role, research pipeline only) — summarizes the canonical Run view into a final report artifact. No code to ship; surfaces maxRounds-exhausted honestly.',
     instructions: GOAL_REPORT_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',

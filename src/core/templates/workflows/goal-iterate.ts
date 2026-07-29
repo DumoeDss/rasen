@@ -25,7 +25,7 @@ You NEVER spawn child subagents. The LEAD is the sole orchestrator — it dispat
 ## Input
 
 - \`goal-plan.md\` (always) — the goal, the gate config, the work product.
-- Prior round's judgment (round N>1) — \`{score/gaps, measurePassed/evaluateSatisfied, detail}\` for the previous round, from \`goal-run.json\`. Use the gaps/score to steer THIS round's changes.
+- Prior round's judgment (round N>1) — the LEAD seeds you with the prior round's score/gaps from the canonical Run view (\`rasen pipeline status --change <name> --json\` → \`sections[].kind === 'goal'\`). The goal section carries \`round\`, \`phase\`, \`variant\`, \`lastScore\`, \`lastGaps\`, \`stallStreak\`, \`outcome\`. Use the gaps/score to steer THIS round's changes.
 - \`loopConfig\` in run-state — the concrete gate config the LEAD injected (command/threshold for measure; goal/rubric for evaluate).
 
 ## Work-product-aware dispatch
@@ -61,7 +61,7 @@ You cannot feel your own context usage. If you notice your earlier conversation 
 - Write \`<workDir>/handoff/implementer-<n>.md\` (the resolved work directory from the LEAD's dispatch, per playbook Step F; fallback: \`rasen/changes/<name>/handoff/implementer-<n>.md\`) per the rasen-handoff template.
 - Return \`HANDOFF { path, reason: compaction|budget|self-assessment, completed: [...], remaining: [...] }\` instead of \`DONE\`.
 
-The LEAD warm-seeds a successor from your handoff document and the loop continues; \`goal-run.json\` is the spine that survives the relay.
+The LEAD warm-seeds a successor from your handoff document and the loop continues; the canonical Run Record is the spine that survives the relay.
 
 ## On DONE — durable findings
 
@@ -70,7 +70,7 @@ The normal \`DONE\` return additionally carries 1–3 lines of durable findings:
 ## What you do NOT do
 
 - Do NOT spawn subagents (flat hierarchy).
-- Do NOT write run-state or goal-run.json — the LEAD does all accounting (single-writer invariant).
+- Do NOT write run-state or goal-run.json — the LEAD and the reconciler-engine Run do all accounting (single-writer invariant). The canonical Record is the sole source of truth.
 - Do NOT declare the gate satisfied yourself — that is the gate's job (the measure command, or a fresh reviewer). You report what you changed; the gate reports whether it passed.`;
 
 export function getGoalIterateSkillTemplate(): SkillTemplate {
