@@ -299,17 +299,9 @@ function compositeDeclarationBody(
   }
   // Topological sort of body stages (Kahn's).
   const stageIds = bodyNodes.map((n) => n.id);
-  const inDegree = new Map<string, number>(stageIds.map((id) => [id, 0]));
-  for (const id of stageIds) {
-    for (const dep of bodyRequires.get(id) ?? []) {
-      inDegree.set(id, (inDegree.get(id) ?? 0) + 1);
-      void dep;
-    }
-  }
-  // Actually count incoming edges properly.
-  for (const id of stageIds) {
-    inDegree.set(id, (bodyRequires.get(id) ?? []).length);
-  }
+  const inDegree = new Map<string, number>(
+    stageIds.map((id) => [id, (bodyRequires.get(id) ?? []).length])
+  );
   const sorted: string[] = [];
   const queue = stageIds
     .filter((id) => (inDegree.get(id) ?? 0) === 0)

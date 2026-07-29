@@ -177,7 +177,7 @@ interface PipelineCommandOptions {
  */
 interface ResolvedRuntime {
   ctx: ReturnType<typeof prepareRuntimeContext>;
-  pipeline: PipelineYaml;
+  pipelineName: string;
   runId: string;
   projectRoot: string;
   projectId: string;
@@ -551,24 +551,37 @@ export class PipelineCommand {
       this.executionOptions(options, host)
     );
     const prepared = execution.resolution.prepared;
-    const pipeline = prepared.authoredSource as PipelineYaml;
+    const isV2Authored = prepared.authoredVersion === 2;
     const storeLayer = await requireConfigStoreLayer(projectRoot);
     const modelLayers = resolveModelConfigLayers(
       projectRoot,
       storeLayer?.storeRoot
     );
-    const overrides = resolvePipelineStageOverrides(pipeline.name, {
+
+    // v2-authored definitions have no v1 PipelineYaml source — the policy
+    // stages are synthesized internally by resolveRuntimeExecutionProfile
+    // (remapPolicyStagesForV2Authored).  Skip the v1-specific pipeline
+    // processing entirely for v2.
+    const sourceDisplayName = isV2Authored
+      ? pipelineName
+      : (prepared.authoredSource as PipelineYaml).name;
+    const overrides = resolvePipelineStageOverrides(sourceDisplayName, {
       projectRoot,
       store: storeLayer,
     });
-    const executionStages = new Map(
-      resolvePipelineExecutionPlan(pipeline, {
-        host,
-        overrides,
-        modelLayers,
-        roleRuntimeOverrides,
-      }).stages.map((stage) => [stage.id, stage])
-    );
+    const executionStages = isV2Authored
+      ? new Map<string, ReturnType<typeof resolvePipelineExecutionPlan>['stages'][number]>()
+      : new Map(
+          resolvePipelineExecutionPlan(
+            prepared.authoredSource as PipelineYaml,
+            {
+              host,
+              overrides,
+              modelLayers,
+              roleRuntimeOverrides,
+            }
+          ).stages.map((stage) => [stage.id, stage])
+        );
     const baseGatePolicy = this.resolveBaseGatePolicy(
       projectRoot,
       storeLayer?.storeRoot
@@ -577,19 +590,22 @@ export class PipelineCommand {
     const sourceRevision = {
       layer: execution.resolution.source,
       kind: 'pipeline-yaml',
-      sourceId: `${execution.resolution.source}:${pipeline.name}`,
+      sourceId: `${execution.resolution.source}:${sourceDisplayName}`,
       authoredContentDigest: `sha256:${prepared.digests.source}` as never,
       semanticDigest: `sha256:${prepared.digests.source}` as never,
     };
-    const policyStages = pipeline.stages.map((stage) => {
+    const policyStages = isV2Authored
+      ? []
+      : (prepared.authoredSource as PipelineYaml).stages.map((stage) => {
       const resolved = executionStages.get(stage.id);
       if (!resolved) {
         throw new Error(
-          `Execution plan omitted stage "${stage.id}" from pipeline "${pipeline.name}".`
+          `Execution plan omitted stage "${stage.id}" from pipeline "${sourceDisplayName}".`
         );
       }
+      const v1Pipeline = prepared.authoredSource as PipelineYaml;
       const roleDefault = stage.role
-        ? normalizeAgentRuntimeConfig(pipeline.agents?.[stage.role])
+        ? normalizeAgentRuntimeConfig(v1Pipeline.agents?.[stage.role])
         : undefined;
       const sourceFor = (
         stageValue: unknown,
@@ -818,7 +834,7 @@ export class PipelineCommand {
           }
         : undefined,
     });
-    return { ctx, pipeline, runId, projectRoot, projectId, launchKey };
+    return { ctx, pipelineName: sourceDisplayName, runId, projectRoot, projectId, launchKey };
   }
 
   private printRunReceipt(
@@ -891,12 +907,12 @@ export class PipelineCommand {
     pipelineName: string,
     options: PipelineCommandOptions = {}
   ): Promise<void> {
-    const { ctx, pipeline, runId, projectRoot, projectId, launchKey } =
+    const { ctx, pipelineName: resolvedPipelineName, runId, projectRoot, projectId, launchKey } =
       await this.resolveRuntime(changeId, pipelineName, options);
     const receipt = await ctx.facade.start(
       {
         change: { projectRoot, changeId },
-        pipeline: pipeline.name,
+        pipeline: resolvedPipelineName,
         launchRequestId: launchKey as never,
         engine: 'reconciler',
       },
@@ -905,7 +921,7 @@ export class PipelineCommand {
     this.printRunReceipt(options, {
       runId,
       change: { projectRoot, changeId, projectId },
-      pipeline: pipeline.name,
+      pipeline: resolvedPipelineName,
       engine: 'reconciler',
       disposition: receipt.disposition,
       status: receipt.view.status,
@@ -961,7 +977,7 @@ export class PipelineCommand {
     pipelineName: string,
     options: PipelineCommandOptions = {}
   ): Promise<void> {
-    const { ctx, pipeline, runId, projectRoot, launchKey } =
+    const { ctx, pipelineName: resolvedPipelineName, runId, projectRoot, launchKey } =
       await this.resolveRuntime(changeId, pipelineName, options);
     const receipt = await ctx.facade.resume(
       { change: { projectRoot, changeId }, runId: runId as never },
@@ -969,7 +985,7 @@ export class PipelineCommand {
     );
     this.printRunReceipt(options, {
       runId,
-      pipeline: pipeline.name,
+      pipeline: resolvedPipelineName,
       disposition: receipt.disposition,
       status: receipt.view.status,
       actions: receipt.actions.map((action) => ({

@@ -213,12 +213,14 @@ export function projectCompositeBodyProgress(
       succeededThisRound.add(perRoundPath);
     }
 
-    // All body stages in this iteration succeeded. Derive the outcome.
-    // The body outcome is determined by the body's declared outcomes.
-    // We use the first exit mapping that has an 'exit' action as the
-    // terminal outcome. For simplicity, we assume the body always produces
-    // its single declared outcome (the design assumes a constrained body).
-    const bodyOutcome = Object.keys(body.outcomes)[0] ?? 'done';
+    // All body stages in this iteration succeeded. Derive the body outcome
+    // from the exit mapping: prefer the first outcome that maps to an 'exit'
+    // action (the success/terminal path). If none exit, fall back to the
+    // first declared outcome (which maps to 'continue').
+    const exitOutcome = Object.entries(body.outcomes).find(
+      ([, exitAction]) => exitAction !== 'continue'
+    );
+    const bodyOutcome = (exitOutcome?.[0] ?? Object.keys(body.outcomes)[0]) ?? 'done';
     const exitMapping = body.outcomes[bodyOutcome];
 
     if (exitMapping !== undefined && exitMapping !== 'continue') {

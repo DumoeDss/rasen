@@ -246,8 +246,7 @@ function buildCompositeSection(
         stage.hierarchicalPath
       );
       const action = Object.values(record.actions).find(
-        (a) => a.action.nodeId === stage.nodeId ||
-        a.action.nodeId.toString().includes(stage.hierarchicalPath.split('/').pop()!)
+        (a) => a.action.nodeId === stage.nodeId
       );
       return {
         path: stage.hierarchicalPath,

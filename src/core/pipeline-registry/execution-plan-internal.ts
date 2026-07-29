@@ -502,6 +502,7 @@ export interface ReconcilerSupportAnalysis {
     reason:
       | 'supported_root_dag_bug_fix'
       | 'supported_v2_review_cycle'
+      | 'supported_v2_executable'
       | 'unsupported_definition_version'
       | 'unsupported_pipeline_shape'
       | 'unsupported_pipeline_semantics'
@@ -582,19 +583,36 @@ export function analyzeReconcilerSupport(
     if (profile === null) {
       return unsupported('execution_profile_unavailable');
     }
-    const expectedNodeIds = prepared.definition.declarations
+    // ECP-2: include root AtomicStages and ALL declaration body AtomicStages
+    // referenced by root-level CompositeRef/BoundedLoop nodes — not just
+    // ReviewCyclePhase-tagged ones — so Custom Composite definitions are
+    // admitted.  Only declarations actually referenced from root contribute
+    // (matching resolveCapabilityBindings).
+    const referencedDeclarationIds = new Set<string>();
+    for (const rootNode of prepared.definition.root.nodes) {
+      if (rootNode.kind === 'CompositeRef') {
+        referencedDeclarationIds.add(rootNode.declarationId);
+      } else if (rootNode.kind === 'BoundedLoop') {
+        referencedDeclarationIds.add(rootNode.body);
+      }
+    }
+    const expectedRootIds = prepared.definition.root.nodes
+      .filter((node) => node.kind === 'AtomicStage')
+      .map((node) => `root:${node.id}`);
+    const expectedBodyIds = prepared.definition.declarations
+      .filter((declaration) =>
+        referencedDeclarationIds.has(declaration.id)
+      )
       .flatMap((declaration) =>
         declaration.graph.nodes
-          .filter(
-            (node) =>
-              node.kind === 'AtomicStage' &&
-              typeof node.reviewCyclePhase === 'string'
-          )
+          .filter((node) => node.kind === 'AtomicStage')
           .map(
             (node) => `declaration:${declaration.id}/node:${node.id}`
           )
-      )
-      .sort(compareStrings);
+      );
+    const expectedNodeIds = [...expectedRootIds, ...expectedBodyIds].sort(
+      compareStrings
+    );
     if (
       expectedNodeIds.length === 0 ||
       JSON.stringify(profile.capabilities.map((binding) => binding.nodeId)) !==
@@ -606,7 +624,7 @@ export function analyzeReconcilerSupport(
       availableEngines: ['reconciler'],
       reconcilerSupport: {
         supported: true,
-        reason: 'supported_v2_review_cycle',
+        reason: 'supported_v2_executable',
         profileDigest: profile.profileDigest,
       },
     });

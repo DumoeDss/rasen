@@ -654,7 +654,7 @@ describe('runtime plan lowerer (3.2)', () => {
       availableEngines: ['reconciler'],
       reconcilerSupport: {
         supported: true,
-        reason: 'supported_v2_review_cycle',
+        reason: 'supported_v2_executable',
       },
     });
     const plan = lowerRuntimePlan(prepared, profile, runId);

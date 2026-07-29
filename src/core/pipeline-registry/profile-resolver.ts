@@ -281,7 +281,7 @@ function resolveV2AuthoredCapabilityBindings(
         }
         const skillDigest = descriptor.version as Digest;
         const skillName = skillId.startsWith('skill:') ? skillId.slice('skill:'.length) : skillId;
-        const access = typeof bodyNode.reviewCyclePhase === 'string' && bodyNode.reviewCyclePhase === 'fix' ? 'write' : 'write';
+        const access = typeof bodyNode.reviewCyclePhase === 'string' && bodyNode.reviewCyclePhase === 'fix' ? 'write' : 'read';
         bindings.push(buildBinding(path, skillName, descriptor.version, skillDigest, access));
       }
     }
