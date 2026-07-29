@@ -51,6 +51,8 @@ rasen pipeline start <change> goal-loop-<variant> --json
 
 This creates a reconciler-engine Run. The reconciler owns the loop mechanics: rounds, work→judge phases, stall detection, maxRounds cap, and termination (satisfied/exhausted). The \`goal-run.json\` file is a derived compatibility projection — it CANNOT back-drive the Run.
 
+**Engine policy applies here too.** \`rasen pipeline start\` resolves the engine from \`--engine\` over \`runs.engine\` (project > store > global) over the default \`auto\`. Goal loops REQUIRE the reconciler, so a project that has turned the reconciler off (\`runs.engine: legacy\`) gets a typed \`engine_disabled_by_config\` refusal naming the deciding layer — report that as the cause rather than retrying, since there is no legacy goal-loop path to fall back to. Pass \`--engine reconciler\` only when the user explicitly wants to override a configured policy for this one launch.
+
 ## 3. Drive the Run (resume frontier)
 
 At each quiescent boundary:

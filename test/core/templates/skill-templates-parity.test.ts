@@ -79,7 +79,7 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getGoalPlanSkillTemplate: 'a208b3e314b42d24c3c2ee29942447f8dce980ccf5c1639c41d02f7ffed11246',
   getGoalIterateSkillTemplate: 'cdb8642cea83540c267e6ec7163678c410902c633bad1a6278c82e3ac9fdc933',
   getGoalReportSkillTemplate: '1ae653c5e7202ce8409af1396e8a7ea062576c373e5a28e49cb39d171f2175d2',
-  getGoalCommandSkillTemplate: '75c38f2a24b0df72de7830d432f55d997231e6b5b2dcad3ebff5b36a8d5446b0',
+  getGoalCommandSkillTemplate: '8526e1ce67580236b2e93da3f188e9890a8157f26d130b5f6561cde7108069b7',
   getHelpSkillTemplate: '5687c5f8f751747c904a72bb634d9243abb56846cf7e55dc7e0a61c55a57a29d',
   getDirectionSkillTemplate: '2a832922740ad3051eeb5a3787b8df64a4fc61169ed4374acd2c2f306c1a2e38',
   // Expert skill templates (inlined; see expert-template-inlining)
@@ -126,7 +126,7 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-goal-plan': '44e93a0c8c739c8a69f729540789a9fdfbbdd5b0760d11ff3b87ab0b2f3293d9',
   'rasen-goal-iterate': '683358c6c61b6307e52cde1d7ecd45a89784d067999c4a788707d66c5fdac654',
   'rasen-goal-report': 'b4a03f4240078b0f77079d0b77be98e83e4440f0498005a714bb915251cb0e47',
-  'rasen-goal': '4867fc4bbc470a3b812bc7830c6a4e8515d1d4f2d4fc24193c5afa74459c953a',
+  'rasen-goal': '41b9092acc248d03e428dfe7b73dcba4ffcae28dc84b54909c0075730a55fae0',
   'rasen-help': '89567c931c01472b83ec72e0040db6be5cabfc5979a800af53d9259cc351a4bc',
   'rasen-direction': 'd82020fddf7d8cf4d6e8baeb4f83de442218b98c72138a8527319758c816a93f',
   // Expert skills (inlined; see expert-template-inlining)
