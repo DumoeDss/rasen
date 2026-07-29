@@ -459,6 +459,9 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       // fail closed without Record mutation.
       validateReviewCycleCompletion(deps.plan, record, request);
       validateGoalCycleCompletion(deps.plan, record, request);
+      // ECP-4: validate choice/fan-out condition results before committing.
+      validateChoiceCompletion(deps.plan, record, request);
+      validateFanOutConditionCompletion(deps.plan, record, request);
       const commitStimulus: RunStimulus = {
         kind: 'commit-action-result',
         actionId: request.actionId,
@@ -583,3 +586,75 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
 
 export { asPromise };
 export type { ChangeRunView };
+
+/**
+ * ECP-4: validate a choice condition evaluator completion. The result must
+ * contain a valid `outcome` string matching one of the choice's declared
+ * outcomes.
+ */
+function validateChoiceCompletion(
+  plan: RuntimePlan,
+  record: CanonicalRunRecord,
+  request: CompleteRunAction
+): void {
+  // Find choice nodes whose nodeId matches the completed action.
+  const choiceNodes = plan.nodes.filter((n) => n.kind === 'choice');
+  for (const node of choiceNodes) {
+    if (node.kind !== 'choice') continue;
+    const action = Object.values(record.actions).find(
+      (a) => a.action.nodeId === node.nodeId && a.state === 'active'
+    );
+    if (action === undefined) continue;
+    if (action.action.actionId !== request.actionId) continue;
+    // This completion targets a choice node — validate the result.
+    if (request.kind === 'domain-action-result' && request.result && typeof request.result === 'object' && !Array.isArray(request.result)) {
+      const outcome = (request.result as Readonly<{ outcome?: unknown }>).outcome;
+      if (typeof outcome !== 'string' || !node.outcomes.includes(outcome)) {
+        throw new Error(
+          `Choice completion for ${node.hierarchicalPath} has invalid outcome ${JSON.stringify(outcome)}.`
+        );
+        }
+      }
+    break;
+  }
+}
+
+/**
+ * ECP-4: validate a FanOut condition evaluator completion. The result must
+ * contain `activeMembers` and `inactiveMembers` arrays, and all required
+ * members must be in `activeMembers`.
+ */
+function validateFanOutConditionCompletion(
+  plan: RuntimePlan,
+  record: CanonicalRunRecord,
+  request: CompleteRunAction
+): void {
+  const fanOutNodes = plan.nodes.filter((n) => n.kind === 'fan-out');
+  for (const node of fanOutNodes) {
+    if (node.kind !== 'fan-out') continue;
+    const action = Object.values(record.actions).find(
+      (a) => a.action.nodeId === node.nodeId && a.state === 'active'
+    );
+    if (action === undefined) continue;
+    if (action.action.actionId !== request.actionId) continue;
+    // This completion targets a fan-out condition — validate the result.
+    if (request.kind === 'domain-action-result' && request.result && typeof request.result === 'object' && !Array.isArray(request.result)) {
+      const result = request.result as Readonly<{ activeMembers?: unknown; inactiveMembers?: unknown }>;
+      if (!Array.isArray(result.activeMembers)) {
+        throw new Error(
+          `FanOut condition completion for ${node.hierarchicalPath} must include activeMembers array.`
+        );
+      }
+      // Required members must be in activeMembers.
+      const activeSet = new Set(result.activeMembers as readonly unknown[]);
+      for (const member of node.members) {
+        if (member.required && !activeSet.has(member.hierarchicalPath)) {
+          throw new Error(
+            `FanOut condition for ${node.hierarchicalPath} suppressed required member ${member.hierarchicalPath}.`
+          );
+        }
+      }
+    }
+    break;
+  }
+}

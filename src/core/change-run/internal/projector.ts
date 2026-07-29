@@ -6,7 +6,7 @@ import type {
   CanonicalRunRecord,
   CommittedAction,
 } from './record.js';
-import type { RuntimePlan, RuntimePlanBoundedLoopNode } from './runtime-plan.js';
+import type { RuntimePlan, RuntimePlanBoundedLoopNode, RuntimePlanFanOutNode, RuntimePlanChoiceNode } from './runtime-plan.js';
 import type { CanonicalWait } from './waits.js';
 import { canonicalJson } from './identity.js';
 import { projectReviewCycleProgress } from './review-cycle-runtime.js';
@@ -223,6 +223,16 @@ function buildSections(
     if (compositeSection !== null) {
       sections.push(compositeSection);
     }
+    // ECP-4: emit parallel/1 section when the plan contains a fan-out node.
+    const parallelSection = buildParallelSection(plan, record);
+    if (parallelSection !== null) {
+      sections.push(parallelSection);
+    }
+    // ECP-4: emit choice/1 section when the plan contains a choice node.
+    const choiceSection = buildChoiceSection(plan, record);
+    if (choiceSection !== null) {
+      sections.push(choiceSection);
+    }
   }
   return Object.freeze(sections);
 }
@@ -394,5 +404,146 @@ function buildGoalSection(
         : progress.kind === 'failed'
           ? 'committed-failure'
           : undefined,
+  });
+}
+
+/**
+ * ECP-4: Build a `parallel/1` section when the plan contains a fan-out node.
+ * Iterates fan-out members, reads committed action states, derives member
+ * statuses, computes join state, budget usage, and key blockers.
+ */
+function buildParallelSection(
+  plan: RuntimePlan,
+  record: CanonicalRunRecord
+): unknown | null {
+  const fanOut = plan.nodes.find(
+    (node): node is RuntimePlanFanOutNode => node.kind === 'fan-out'
+  );
+  if (fanOut === undefined) return null;
+  const join = plan.nodes.find((node) => node.kind === 'join');
+  // Read the fan-out condition result to determine active members.
+  let activeMembers: Set<string>;
+  let conditionCommitted = false;
+  const conditionAction = Object.values(record.actions).find(
+    (a) => a.action.nodeId === fanOut.nodeId && a.result !== undefined
+  );
+  if (conditionAction?.result?.result && typeof conditionAction.result.result === 'object' && !Array.isArray(conditionAction.result.result)) {
+    const result = conditionAction.result.result as Readonly<{ activeMembers?: unknown }>;
+    if (Array.isArray(result.activeMembers)) {
+      activeMembers = new Set(result.activeMembers as readonly unknown[] as string[]);
+      conditionCommitted = true;
+    } else {
+      activeMembers = new Set(fanOut.members.map((m) => m.hierarchicalPath));
+    }
+  } else {
+    activeMembers = new Set(fanOut.members.map((m) => m.hierarchicalPath));
+  }
+  // Derive member statuses.
+  const memberStatuses = fanOut.members.map((member) => {
+    const memberNode = plan.nodes.find(
+      (n) => n.kind === 'atomic' && n.nodeId === member.nodeId
+    );
+    const action = memberNode !== undefined
+      ? Object.values(record.actions).find((a) => a.action.nodeId === member.nodeId)
+      : undefined;
+    let status: string;
+    if (!conditionCommitted) {
+      status = 'waiting';
+    } else if (!activeMembers.has(member.hierarchicalPath)) {
+      status = 'suppressed';
+    } else if (action === undefined) {
+      status = 'ready';
+    } else if (action.state === 'active') {
+      status = 'running';
+    } else if (action.result?.status === 'succeeded') {
+      status = 'succeeded';
+    } else if (action.result?.status === 'failed') {
+      status = 'failed';
+    } else {
+      status = 'ready';
+    }
+    return {
+      path: member.hierarchicalPath,
+      status,
+      required: member.required,
+      condition: member.condition,
+    };
+  });
+  // Determine join state.
+  let joinState = 'not-reached';
+  if (join !== undefined && conditionCommitted) {
+    const succeeded = memberStatuses.filter((m) => m.status === 'succeeded');
+    const failed = memberStatuses.filter((m) => m.status === 'failed');
+    const requiredFailed = failed.some((m) => m.required);
+    const allRequiredSucceeded = memberStatuses
+      .filter((m) => m.required && m.status !== 'suppressed')
+      .every((m) => m.status === 'succeeded');
+    if (requiredFailed) {
+      joinState = 'failed';
+    } else if (allRequiredSucceeded) {
+      joinState = 'proceeding';
+    } else {
+      joinState = 'waiting';
+    }
+  }
+  // Compute budget usage.
+  const committedCount = memberStatuses.filter(
+    (m) => m.status === 'succeeded' || m.status === 'failed'
+  ).length;
+  const keyBlockers: string[] = [];
+  for (const m of memberStatuses) {
+    if (m.status === 'failed' && m.required) {
+      keyBlockers.push(`required member '${m.path}' failed`);
+    }
+  }
+  return Object.freeze({
+    kind: 'parallel',
+    version: 1,
+    fanOutPath: fanOut.hierarchicalPath,
+    joinPath: join?.hierarchicalPath,
+    members: memberStatuses,
+    joinState,
+    concurrencyCap: fanOut.concurrencyCap,
+    budget: { used: committedCount, max: fanOut.budget },
+    activeCount: memberStatuses.filter((m) => m.status === 'running' || m.status === 'ready').length,
+    succeededCount: memberStatuses.filter((m) => m.status === 'succeeded').length,
+    failedCount: memberStatuses.filter((m) => m.status === 'failed').length,
+    keyBlockers,
+  });
+}
+
+/**
+ * ECP-4: Build a `choice/1` section when the plan contains a choice node.
+ */
+function buildChoiceSection(
+  plan: RuntimePlan,
+  record: CanonicalRunRecord
+): unknown | null {
+  const choice = plan.nodes.find(
+    (node): node is RuntimePlanChoiceNode => node.kind === 'choice'
+  );
+  if (choice === undefined) return null;
+  // Read the committed choice result.
+  const choiceAction = Object.values(record.actions).find(
+    (a) => a.action.nodeId === choice.nodeId && a.result !== undefined
+  );
+  let outcome: string | undefined;
+  if (choiceAction?.result?.result && typeof choiceAction.result.result === 'object' && !Array.isArray(choiceAction.result.result)) {
+    const result = choiceAction.result.result as Readonly<{ outcome?: unknown }>;
+    if (typeof result.outcome === 'string') {
+      outcome = result.outcome;
+    }
+  }
+  const branches = choice.outcomes.map((o) => ({
+    outcome: o,
+    path: choice.branches[o] ?? '',
+    active: outcome === o,
+  }));
+  return Object.freeze({
+    kind: 'choice',
+    version: 1,
+    choicePath: choice.hierarchicalPath,
+    outcome,
+    branches,
   });
 }

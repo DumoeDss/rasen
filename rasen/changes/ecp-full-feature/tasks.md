@@ -57,19 +57,19 @@
 
 ## 7. Pre-Commit Validation (Acceptance: D2, D3)
 
-- [ ] 7.1 Add `validateChoiceCompletion(plan, record, request)` in `facade-runtime.ts`: verify the result has a valid `outcome` field matching one of the choice's declared outcomes
-- [ ] 7.2 Add `validateFanOutConditionCompletion(plan, record, request)`: verify the result has `activeMembers` and `inactiveMembers` arrays referencing valid member paths; required members must be in `activeMembers`
-- [ ] 7.3 Call both validators in `facade-runtime.ts` `complete()` after `verifyCompletion` and before commit
-- [ ] 7.4 Write tests: malformed choice result (bad outcome) rejected; malformed fan-out result (missing activeMembers, required member suppressed) rejected
+- [x] 7.1 Add `validateChoiceCompletion(plan, record, request)` in `facade-runtime.ts`: verify the result has a valid `outcome` field matching one of the choice's declared outcomes
+- [x] 7.2 Add `validateFanOutConditionCompletion(plan, record, request)`: verify the result has `activeMembers` and `inactiveMembers` arrays referencing valid member paths; required members must be in `activeMembers`
+- [x] 7.3 Call both validators in `facade-runtime.ts` `complete()` after `verifyCompletion` and before commit
+- [x] 7.4 Write tests: malformed choice result (bad outcome) rejected; malformed fan-out result (missing activeMembers, required member suppressed) rejected
 
 ## 8. Projection — parallel/1 and choice/1 Sections (Acceptance: D7)
 
-- [ ] 8.1 Add `buildParallelSection(plan, record)` to `src/core/change-run/internal/projector.ts`: iterate fan-out members, read committed action states, derive member statuses, compute join state, budget usage, key blockers
-- [ ] 8.2 Add `buildChoiceSection(plan, record)`: read choice committed result, show selected outcome and active/inactive branches
-- [ ] 8.3 Wire both sections into `buildSections()` alongside existing root-dag/review-cycle/goal/composite sections
-- [ ] 8.4 Update CLI `pipeline status` to render parallel/choice section data from `ChangeRunView`
-- [ ] 8.5 Verify Management API returns parallel/choice sections from the same `projectRunView` call
-- [ ] 8.6 Write parity test: CLI, Management API, and Operations consume same fixture and see same parallel/choice sections
+- [x] 8.1 Add `buildParallelSection(plan, record)` to `src/core/change-run/internal/projector.ts`: iterate fan-out members, read committed action states, derive member statuses, compute join state, budget usage, key blockers
+- [x] 8.2 Add `buildChoiceSection(plan, record)`: read choice committed result, show selected outcome and active/inactive branches
+- [x] 8.3 Wire both sections into `buildSections()` alongside existing root-dag/review-cycle/goal/composite sections
+- [x] 8.4 Update CLI `pipeline status` to render parallel/choice section data from `ChangeRunView`
+- [x] 8.5 Verify Management API returns parallel/choice sections from the same `projectRunView` call
+- [x] 8.6 Write parity test: CLI, Management API, and Operations consume same fixture and see same parallel/choice sections
 
 ## 9. Canvas — Parallel Authoring (Acceptance: D8)
 
@@ -81,10 +81,10 @@
 
 ## 10. analyzeReconcilerSupport — FanOut/Join Capability Bindings (Acceptance: D6)
 
-- [ ] 10.1 Extend `analyzeReconcilerSupport` in `src/core/pipeline-registry/definition.ts` to recognize FanOut/Join/Choice root nodes
-- [ ] 10.2 Include FanOut condition evaluator, member atomic nodes, and choice evaluator in the expected capability bindings
-- [ ] 10.3 Report `supported_v2_parallel` when all FanOut/Join/Choice bindings are present
-- [ ] 10.4 Write test: `pipeline show full-feature --json` reports `availableEngines` including `'reconciler'`
+- [x] 10.1 Extend `analyzeReconcilerSupport` in `src/core/pipeline-registry/definition.ts` to recognize FanOut/Join/Choice root nodes
+- [x] 10.2 Include FanOut condition evaluator, member atomic nodes, and choice evaluator in the expected capability bindings
+- [x] 10.3 Report `supported_v2_parallel` when all FanOut/Join/Choice bindings are present
+- [x] 10.4 Write test: `pipeline show full-feature --json` reports `availableEngines` including `'reconciler'`
 
 ## 11. Failure-First Tests (Acceptance: exit evidence)
 

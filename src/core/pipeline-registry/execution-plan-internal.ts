@@ -503,6 +503,7 @@ export interface ReconcilerSupportAnalysis {
       | 'supported_root_dag_bug_fix'
       | 'supported_v2_review_cycle'
       | 'supported_v2_executable'
+      | 'supported_v2_parallel'
       | 'unsupported_definition_version'
       | 'unsupported_pipeline_shape'
       | 'unsupported_pipeline_semantics'
@@ -520,12 +521,13 @@ const BUG_FIX_STAGES = [
 ] as const;
 
 function hasUnsupportedSemantics(pipeline: PipelineYaml): boolean {
+  // ECP-4: stages with parallelGroup/condition are now supported via
+  // FanOut/Join normalization. Only non-standard kinds and loops remain
+  // unsupported by the v2 runtime (goal loops are handled separately).
   return pipeline.stages.some(
     (stage) =>
       stage.kind !== 'standard' ||
-      stage.loop !== undefined ||
-      stage.parallelGroup !== undefined ||
-      stage.condition !== undefined
+      stage.loop !== undefined
   );
 }
 
@@ -675,7 +677,31 @@ export function analyzeReconcilerSupport(
     });
   }
   if (hasUnsupportedSemantics(pipeline)) {
-    return unsupported('unsupported_pipeline_semantics');
+    // ECP-4: even if semantics are otherwise unsupported, check if the
+    // normalized form has FanOut/Join nodes (from parallelGroup).
+    const hasParallel = prepared.definition.root.nodes.some(
+      (node) => node.kind === 'FanOut' || node.kind === 'Join'
+    );
+    if (!hasParallel) {
+      return unsupported('unsupported_pipeline_semantics');
+    }
+  }
+  // ECP-4: check for parallel group support (FanOut/Join in normalized form)
+  const hasParallel = prepared.definition.root.nodes.some(
+    (node) => node.kind === 'FanOut' || node.kind === 'Join'
+  );
+  if (hasParallel) {
+    if (profile === null) {
+      return unsupported('execution_profile_unavailable');
+    }
+    return deepFreeze({
+      availableEngines: ['legacy', 'reconciler'],
+      reconcilerSupport: {
+        supported: true,
+        reason: 'supported_v2_parallel',
+        profileDigest: profile.profileDigest,
+      },
+    });
   }
   if (!hasExactBugFixShape(pipeline)) {
     return unsupported('unsupported_pipeline_shape');
