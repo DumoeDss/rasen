@@ -4,6 +4,8 @@ import { ApiError } from '../api/client.js';
 import type {
   AllowedControl,
   ChangeRunView,
+  ChoiceViewSection,
+  ParallelViewSection,
   ReconcilerRunSummary,
   RunControlRequestBody,
   RunsResponse,
@@ -11,7 +13,7 @@ import type {
   UiControlCommand,
   WaitView,
 } from '../api/types.js';
-import { getRootDagSection } from '../api/types.js';
+import { getChoiceSection, getParallelSection, getRootDagSection } from '../api/types.js';
 
 /**
  * Operations section for Task detail (design.md §14 of `ecp-run-spine`).
@@ -21,7 +23,10 @@ import { getRootDagSection } from '../api/types.js';
  * route; renders the server-projected core and `root-dag/1` frontier, active
  * invocations, domain-blocked/infrastructure/workspace/uncertain wait reasons,
  * terminal reason, source state, and definition/capability/policy/workspace
- * drift.
+ * drift. When the Run's plan carries a FanOut or a Choice, the server-projected
+ * `parallel/1` and `choice/1` sections render alongside it (ECP-4 task 8.6) —
+ * this is the Operations plane of the parallel-frontier promise, next to the
+ * CLI `pipeline status` and Management API planes.
  *
  * The UI CONSUMES server truth — it never re-derives frontier/status/waits/
  * terminal/drift client-side. Other-worktree Runs (`workspace.scope: 'other'`)
@@ -121,6 +126,130 @@ function TerminalReason({ terminal }: { terminal: TerminalView }) {
     <p class="ops-run__terminal" data-testid="ops-run-terminal" data-terminal-kind={terminal.kind}>
       {label}
     </p>
+  );
+}
+
+/**
+ * Renders the server-projected `parallel/1` section: every fan-out member with
+ * its status, required/optional role and condition; the Join barrier state;
+ * budget usage against the declared budget; and the member frontier as the
+ * projector reports it (`activeCount` — the UI does not recompute which members
+ * are in flight, exactly as it does not recompute the root-DAG frontier).
+ */
+function ParallelSection({ section }: { section: ParallelViewSection }) {
+  const fanOut = shortId(section.fanOutPath, 32);
+  return (
+    <div
+      class="ops-run__parallel"
+      data-testid="ops-run-parallel"
+      data-join-state={section.joinState}
+    >
+      <span class="ops-run__section-label">
+        Parallel ({section.members.length} member{section.members.length === 1 ? '' : 's'})
+      </span>
+      <dl class="ops-run__parallel-meta">
+        <dt>Fan-out</dt>
+        <dd title={section.fanOutPath} data-testid="ops-parallel-fan-out">{fanOut.label}</dd>
+        <dt>Join</dt>
+        <dd>
+          <span
+            class={`ops-run__join-state ops-run__join-state--${section.joinState}`}
+            data-testid="ops-parallel-join-state"
+          >
+            {section.joinState}
+          </span>
+          {section.joinPath !== undefined && (
+            <span
+              class="ops-run__parallel-join-path"
+              title={section.joinPath}
+              data-testid="ops-parallel-join-path"
+            >
+              {shortId(section.joinPath, 32).label}
+            </span>
+          )}
+        </dd>
+        <dt>Budget</dt>
+        <dd data-testid="ops-parallel-budget">
+          {section.budget.used}/{section.budget.max}
+        </dd>
+        <dt>Cap</dt>
+        <dd data-testid="ops-parallel-cap">{section.concurrencyCap}</dd>
+        <dt>Frontier</dt>
+        <dd data-testid="ops-parallel-counts">
+          {section.activeCount} active · {section.succeededCount} succeeded ·{' '}
+          {section.failedCount} failed
+        </dd>
+      </dl>
+
+      <ul class="ops-run__parallel-list">
+        {section.members.map((member) => (
+          <li
+            key={member.path}
+            class={`ops-run__parallel-member ops-run__parallel-member--${member.status}`}
+            data-testid="ops-parallel-member"
+            data-member-status={member.status}
+            data-member-required={member.required ? 'true' : 'false'}
+            title={`${member.path}\ncondition: ${member.condition}`}
+          >
+            <span class="ops-run__parallel-member-path">{shortId(member.path, 32).label}</span>
+            <span class="ops-run__parallel-member-status">{member.status}</span>
+            <span class="ops-run__parallel-member-role">
+              {member.required ? 'required' : 'optional'}
+            </span>
+            <span class="ops-run__parallel-member-condition">{member.condition}</span>
+          </li>
+        ))}
+      </ul>
+
+      {section.keyBlockers.length > 0 && (
+        <ul class="ops-run__parallel-blockers" data-testid="ops-parallel-blockers">
+          {section.keyBlockers.map((blocker) => (
+            <li key={blocker} class="ops-run__parallel-blocker" data-testid="ops-parallel-blocker">
+              {blocker}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Renders the server-projected `choice/1` section: the selected outcome (or
+ * that none is committed yet) and every declared branch marked active or
+ * inactive exactly as the projector marked it.
+ */
+function ChoiceSection({ section }: { section: ChoiceViewSection }) {
+  return (
+    <div class="ops-run__choice" data-testid="ops-run-choice" data-outcome={section.outcome}>
+      <span class="ops-run__section-label">Choice</span>
+      <dl class="ops-run__choice-meta">
+        <dt>Node</dt>
+        <dd title={section.choicePath} data-testid="ops-choice-path">
+          {shortId(section.choicePath, 32).label}
+        </dd>
+        <dt>Outcome</dt>
+        <dd data-testid="ops-choice-outcome">{section.outcome ?? 'awaiting decision'}</dd>
+      </dl>
+      <ul class="ops-run__choice-list">
+        {section.branches.map((branch) => (
+          <li
+            key={branch.outcome}
+            class={`ops-run__choice-branch ops-run__choice-branch--${branch.active ? 'active' : 'inactive'}`}
+            data-testid="ops-choice-branch"
+            data-outcome={branch.outcome}
+            data-active={branch.active ? 'true' : 'false'}
+            title={branch.path}
+          >
+            <span class="ops-run__choice-branch-outcome">{branch.outcome}</span>
+            <span class="ops-run__choice-branch-path">{shortId(branch.path, 32).label}</span>
+            <span class="ops-run__choice-branch-state">
+              {branch.active ? 'active' : 'inactive'}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -445,6 +574,8 @@ function RunDetailBody({
   onViewReplaced: (view: ChangeRunView) => void;
 }) {
   const root = getRootDagSection(view);
+  const parallel = getParallelSection(view);
+  const choice = getChoiceSection(view);
   const isOther = view.workspace.scope === 'other';
   const runIdShort = shortId(view.runId);
 
@@ -563,6 +694,12 @@ function RunDetailBody({
 
       {/* Terminal — only on terminal Runs (mutually exclusive with actions/waits). */}
       {root.terminal && <TerminalReason terminal={root.terminal} />}
+
+      {/* parallel/1 and choice/1 — additive sections the server projects only
+          when the Run's plan carries a FanOut or a Choice node (ECP-4). Absent
+          sections render nothing, exactly like an empty frontier. */}
+      {parallel && <ParallelSection section={parallel} />}
+      {choice && <ChoiceSection section={choice} />}
 
       {/* Drift — definition/capability/policy/workspace/source comparison. */}
       <div class="ops-run__drift" data-testid="ops-run-drift">

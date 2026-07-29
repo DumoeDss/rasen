@@ -1613,6 +1613,72 @@ export interface ReviewCycleViewSection {
   maxRounds: number;
 }
 
+// --- ECP-4 parallel/1 and choice/1 sections ---
+//
+// Mirror of the server-projected `parallel/1` and `choice/1` sections. Source
+// of truth: `src/core/change-run/internal/projector.ts` in the root package
+// (`ParallelSectionView`, `ParallelMemberView`, `ParallelMemberStatus`,
+// `ParallelJoinState`, `ChoiceSectionView`, `ChoiceBranchView`). The CLI
+// `pipeline status` renderer, the Management API, and this UI all read the
+// SAME projection — the UI derives no member status, join state, budget usage,
+// or branch activation client-side.
+//
+// `joinPath`/`outcome` are `string | undefined` on the server type; over the
+// wire an undefined value means the key is absent, so they are mirrored as
+// optional properties.
+
+/** A fan-out member's projected status within a `parallel/1` section. */
+export type ParallelMemberStatus =
+  | 'waiting'
+  | 'suppressed'
+  | 'ready'
+  | 'running'
+  | 'succeeded'
+  | 'failed';
+
+/** The projected state of the Join barrier closing a fan-out. */
+export type ParallelJoinState = 'not-reached' | 'waiting' | 'proceeding' | 'failed';
+
+/** One fan-out member as projected by the server. */
+export interface ParallelMemberView {
+  path: string;
+  status: ParallelMemberStatus;
+  required: boolean;
+  condition: string;
+}
+
+/** A parallel/1 section projected from a Run whose plan has a FanOut node. */
+export interface ParallelViewSection {
+  kind: 'parallel';
+  version: 1;
+  fanOutPath: string;
+  joinPath?: string;
+  members: readonly ParallelMemberView[];
+  joinState: ParallelJoinState;
+  concurrencyCap: number;
+  budget: { used: number; max: number };
+  activeCount: number;
+  succeededCount: number;
+  failedCount: number;
+  keyBlockers: readonly string[];
+}
+
+/** One choice branch as projected by the server. */
+export interface ChoiceBranchView {
+  outcome: string;
+  path: string;
+  active: boolean;
+}
+
+/** A choice/1 section projected from a Run whose plan has a Choice node. */
+export interface ChoiceViewSection {
+  kind: 'choice';
+  version: 1;
+  choicePath: string;
+  outcome?: string;
+  branches: readonly ChoiceBranchView[];
+}
+
 /** An additive unknown section (tolerated, not rendered by name). */
 export interface AdditiveViewSection {
   kind: string;
@@ -1620,7 +1686,12 @@ export interface AdditiveViewSection {
   [key: string]: unknown;
 }
 
-export type ChangeRunViewSection = RootDagViewSection | ReviewCycleViewSection | AdditiveViewSection;
+export type ChangeRunViewSection =
+  | RootDagViewSection
+  | ReviewCycleViewSection
+  | ParallelViewSection
+  | ChoiceViewSection
+  | AdditiveViewSection;
 
 /** Drift state reported by the server's comparison-only DriftObserver. */
 export interface DriftView {
@@ -1680,6 +1751,35 @@ export function getReviewCycleSection(view: ChangeRunView): ReviewCycleViewSecti
   for (const section of view.sections) {
     if (section.kind === 'review-cycle' && section.version === 1) {
       return section as ReviewCycleViewSection;
+    }
+  }
+  return null;
+}
+
+/**
+ * Extracts the parallel/1 section from a ChangeRunView. Returns null when the
+ * view has no parallel section (Runs whose plan has no FanOut node, or views
+ * projected without the plan — the projector emits the section only when it
+ * was given a RuntimePlan).
+ */
+export function getParallelSection(view: ChangeRunView): ParallelViewSection | null {
+  for (const section of view.sections) {
+    if (section.kind === 'parallel' && section.version === 1) {
+      return section as ParallelViewSection;
+    }
+  }
+  return null;
+}
+
+/**
+ * Extracts the choice/1 section from a ChangeRunView. Returns null when the
+ * view has no choice section (Runs whose plan has no Choice node, or views
+ * projected without the plan).
+ */
+export function getChoiceSection(view: ChangeRunView): ChoiceViewSection | null {
+  for (const section of view.sections) {
+    if (section.kind === 'choice' && section.version === 1) {
+      return section as ChoiceViewSection;
     }
   }
   return null;
