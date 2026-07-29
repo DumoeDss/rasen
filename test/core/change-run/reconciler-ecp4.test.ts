@@ -440,3 +440,145 @@ describe('reconciler ECP-4: failure-first tests', () => {
     expect(admits.length).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ECP-4 Choice branch gating (N1). The spec requires that un-selected branches
+// never become eligible, that the Run can finish without executing them, and
+// that a branch enters the succeeded set only by committing its own Action.
+// The reviewer's probes in reviewer-choice-semantics.test.ts cover the three
+// headline violations; these cover the transitive and malformed-result edges.
+// ---------------------------------------------------------------------------
+
+describe('reconciler ECP-4: choice branch exclusion (N1)', () => {
+  /** simple/complex branches, each with one downstream node of its own. */
+  function branchedChoicePlanInput(): RuntimePlanInput {
+    return ecp4PlanInput([
+      {
+        kind: 'choice',
+        hierarchicalPath: 'root:my-choice',
+        requires: [],
+        admissionKind: 'agent',
+        workspace: { access: 'none' },
+        choice: {
+          outcomes: ['simple', 'complex'],
+          branches: { simple: 'root:simple-path', complex: 'root:complex-path' },
+        },
+      },
+      {
+        kind: 'atomic',
+        hierarchicalPath: 'root:simple-path',
+        requires: ['root:my-choice'],
+        admissionKind: 'agent',
+        workspace: { access: 'none' },
+      },
+      {
+        kind: 'atomic',
+        hierarchicalPath: 'root:complex-path',
+        requires: ['root:my-choice'],
+        admissionKind: 'agent',
+        workspace: { access: 'none' },
+      },
+      {
+        kind: 'atomic',
+        hierarchicalPath: 'root:after-complex',
+        requires: ['root:complex-path'],
+        admissionKind: 'agent',
+        workspace: { access: 'none' },
+      },
+    ]);
+  }
+
+  function admittedPaths(plan: RuntimePlan, actions: readonly { kind: string; nodeId?: unknown }[]) {
+    return actions
+      .filter((a) => a.kind === 'admit')
+      .map((a) => plan.nodes.find((n) => n.nodeId === a.nodeId)?.hierarchicalPath);
+  }
+
+  it('excludes the WHOLE rejected branch subtree, not just its entry node', () => {
+    const plan = createRuntimePlan(branchedChoicePlanInput());
+    let record = startRecord(plan);
+    record = commitNode(plan, record, 'root:my-choice', { outcome: 'simple' });
+    record = commitNode(plan, record, 'root:simple-path');
+
+    const result = reconcile(plan, record);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const paths = admittedPaths(plan, result.actions);
+    expect(paths).not.toContain('root:complex-path');
+    // `after-complex` is downstream of the rejected entry — excluding only the
+    // entry node would leave it permanently blocking the implicit finish.
+    expect(paths).not.toContain('root:after-complex');
+    expect(result.actions.some((a) => a.kind === 'finish')).toBe(true);
+  });
+
+  it('does NOT exclude a convergence node reachable from both branches', () => {
+    const plan = createRuntimePlan(
+      ecp4PlanInput([
+        {
+          kind: 'choice',
+          hierarchicalPath: 'root:my-choice',
+          requires: [],
+          admissionKind: 'agent',
+          workspace: { access: 'none' },
+          choice: {
+            outcomes: ['simple', 'complex'],
+            branches: { simple: 'root:simple-path', complex: 'root:complex-path' },
+          },
+        },
+        {
+          kind: 'atomic',
+          hierarchicalPath: 'root:simple-path',
+          requires: ['root:my-choice'],
+          admissionKind: 'agent',
+          workspace: { access: 'none' },
+        },
+        {
+          kind: 'atomic',
+          hierarchicalPath: 'root:complex-path',
+          requires: ['root:my-choice'],
+          admissionKind: 'agent',
+          workspace: { access: 'none' },
+        },
+        {
+          // Reachable from BOTH entries — an authored rejoin point. It must
+          // stay gated by its own requires, not silently excluded.
+          kind: 'atomic',
+          hierarchicalPath: 'root:rejoin',
+          requires: ['root:simple-path', 'root:complex-path'],
+          admissionKind: 'agent',
+          workspace: { access: 'none' },
+        },
+      ])
+    );
+    let record = startRecord(plan);
+    record = commitNode(plan, record, 'root:my-choice', { outcome: 'simple' });
+    record = commitNode(plan, record, 'root:simple-path');
+
+    const result = reconcile(plan, record);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const rejoin = plan.nodes.find((n) => n.hierarchicalPath === 'root:rejoin')!;
+    // Not excluded — but still not ready, because it also requires the
+    // rejected branch. No admit, and no finish either.
+    expect(admittedPaths(plan, result.actions)).not.toContain('root:rejoin');
+    expect(result.actions.some((a) => a.kind === 'finish')).toBe(false);
+    expect(rejoin).toBeDefined();
+  });
+
+  it('treats an undeclared outcome as no selection and re-admits the evaluator', () => {
+    const plan = createRuntimePlan(branchedChoicePlanInput());
+    let record = startRecord(plan);
+    // 'medium' is not in outcomes — the facade rejects this, but the kernel
+    // must not depend on that: an unrecognised result previously marked the
+    // choice succeeded and unblocked EVERY branch at once.
+    record = commitNode(plan, record, 'root:my-choice', { outcome: 'medium' });
+
+    const result = reconcile(plan, record);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const paths = admittedPaths(plan, result.actions);
+    expect(paths).not.toContain('root:simple-path');
+    expect(paths).not.toContain('root:complex-path');
+    expect(paths).toContain('root:my-choice');
+  });
+});

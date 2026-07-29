@@ -174,6 +174,11 @@ export function reconcile(
     }
   }
 
+  // ECP-4: nodes on a branch the choice rejected are permanently ineligible.
+  // Computed once from committed Record truth (the selection never changes),
+  // then honoured by every pass below and by `finishCandidate`.
+  const excludedByChoice = choiceBranchExclusions(plan, record, choiceNodes);
+
   // ECP-4: derive the transitive succeeded-set closure over the NON-atomic node
   // kinds before any candidate pass runs. The candidate passes below execute in
   // a fixed order (bounded-loop, choice, fan-out, join), so a node whose
@@ -187,33 +192,30 @@ export function reconcile(
   for (let round = 0; round <= plan.nodes.length; round += 1) {
     const sizeBefore = succeeded.size;
     for (const loop of boundedLoopNodes) {
-      if (succeeded.has(loop.nodeId)) continue;
+      if (succeeded.has(loop.nodeId) || excludedByChoice.has(loop.nodeId)) continue;
       if (!loop.requires.every((required) => succeeded.has(required))) continue;
       if (boundedLoopIsClean(plan, loop, record)) succeeded.add(loop.nodeId);
     }
     for (const choice of choiceNodes) {
-      if (succeeded.has(choice.nodeId)) continue;
+      if (succeeded.has(choice.nodeId) || excludedByChoice.has(choice.nodeId)) continue;
       if (!choice.requires.every((req) => succeeded.has(req))) continue;
-      const committed = committedResultForNode(record, choice.nodeId);
-      if (committed === null) continue;
+      if (committedChoiceOutcome(record, choice) === null) continue;
+      // Only the choice node itself succeeds here. The SELECTED branch node is
+      // deliberately NOT added: it is an ordinary plan node that earns its
+      // succeeded status by committing its own Action. Marking it succeeded on
+      // selection let everything downstream of it run before the branch had
+      // executed at all.
       succeeded.add(choice.nodeId);
-      const outcome = (committed as Readonly<{ outcome?: unknown }>).outcome;
-      if (typeof outcome === 'string' && choice.branches[outcome] !== undefined) {
-        const branchNodeId = plan.nodes.find(
-          (n) => n.hierarchicalPath === choice.branches[outcome]!
-        )?.nodeId;
-        if (branchNodeId !== undefined) succeeded.add(branchNodeId);
-      }
     }
     for (const fanOut of fanOutNodes) {
-      if (succeeded.has(fanOut.nodeId)) continue;
+      if (succeeded.has(fanOut.nodeId) || excludedByChoice.has(fanOut.nodeId)) continue;
       if (!fanOut.requires.every((req) => succeeded.has(req))) continue;
       if (committedResultForNode(record, fanOut.nodeId) !== null) {
         succeeded.add(fanOut.nodeId);
       }
     }
     for (const join of joinNodes) {
-      if (succeeded.has(join.nodeId)) continue;
+      if (succeeded.has(join.nodeId) || excludedByChoice.has(join.nodeId)) continue;
       const fanOut = fanOutNodes.find((fo) => fo.joinNodeId === join.nodeId);
       if (fanOut === undefined) continue;
       if (!joinNonMemberRequiresSatisfied(join, succeeded)) continue;
@@ -233,6 +235,7 @@ export function reconcile(
   const actions: ReconcilerNextAction[] = [];
   const boundedLoopAdmitCandidates: BoundedLoopAdmitCandidate[] = [];
   for (const loop of boundedLoopNodes) {
+    if (excludedByChoice.has(loop.nodeId)) continue;
     if (!loop.requires.every((required) => succeeded.has(required))) {
       continue;
     }
@@ -339,27 +342,17 @@ export function reconcile(
     }
   }
 
-  // Pass 1c (ECP-4 Choice): evaluate choice nodes. If a committed result
-  // exists, the selected branch path is added to the succeeded set so
-  // downstream nodes on that branch become ready. Un-selected branches
-  // never enter the succeeded set. If no committed result exists, the
-  // choice emits an admit candidate for its condition evaluator.
+  // Pass 1c (ECP-4 Choice): evaluate choice nodes. A committed result puts the
+  // choice itself in the succeeded set, which unblocks the SELECTED branch node
+  // for admission (its `requires` names the choice). Rejected branches are in
+  // `excludedByChoice` and are skipped by every pass below. If no committed
+  // result exists, the choice emits an admit for its condition evaluator.
   const fanOutMemberCandidates: FanOutMemberCandidate[] = [];
   for (const choice of choiceNodes) {
+    if (excludedByChoice.has(choice.nodeId)) continue;
     if (!choice.requires.every((req) => succeeded.has(req))) continue;
-    const committed = committedResultForNode(record, choice.nodeId);
-    if (committed !== null) {
-      const outcome = (committed as Readonly<{ outcome?: unknown }>).outcome;
+    if (committedChoiceOutcome(record, choice) !== null) {
       succeeded.add(choice.nodeId);
-      if (typeof outcome === 'string' && choice.branches[outcome] !== undefined) {
-        const branchPath = choice.branches[outcome]!;
-        const branchNodeId = plan.nodes.find(
-          (n) => n.hierarchicalPath === branchPath
-        )?.nodeId;
-        if (branchNodeId !== undefined) {
-          succeeded.add(branchNodeId);
-        }
-      }
     } else {
       // Emit admit for the choice condition evaluator.
       actions.push({
@@ -377,6 +370,7 @@ export function reconcile(
   // committed, add the fan-out to the succeeded set and collect active
   // member candidates (respecting concurrency cap and budget).
   for (const fanOut of fanOutNodes) {
+    if (excludedByChoice.has(fanOut.nodeId)) continue;
     if (!fanOut.requires.every((req) => succeeded.has(req))) continue;
     const conditionResult = committedResultForNode(record, fanOut.nodeId);
     if (conditionResult === null) {
@@ -449,6 +443,7 @@ export function reconcile(
   // fan-out is in the succeeded set. The Join reads committed member
   // results and derives its state purely from the Record.
   for (const join of joinNodes) {
+    if (excludedByChoice.has(join.nodeId)) continue;
     // Only check non-member requires (upstream deps like the FanOut node).
     // Member status is checked inside evaluateJoin.
     if (!joinNonMemberRequiresSatisfied(join, succeeded)) continue;
@@ -474,6 +469,8 @@ export function reconcile(
   // ECP-4: fan-out member atomic nodes are handled by the FanOut pass, not here.
   const admitCandidates: AdmissionCandidate[] = [];
   for (const node of atomicNodes) {
+    // ECP-4: a node on a rejected choice branch is never eligible.
+    if (excludedByChoice.has(node.nodeId)) continue;
     // Skip fan-out members — they are admitted via the FanOut pass.
     if (node.fanOut !== undefined) {
       // Check if this member should be admitted via FanOut pass.
@@ -628,7 +625,7 @@ export function reconcile(
     });
   }
 
-  const finish = finishCandidate(plan, record, succeeded);
+  const finish = finishCandidate(plan, record, succeeded, excludedByChoice);
   if (finish !== null) {
     actions.push(finish);
   }
@@ -686,6 +683,99 @@ function committedResultForNode(
   if (actions.length === 0) return null;
   const withResult = actions[actions.length - 1];
   return withResult?.result?.result ?? null;
+}
+
+/**
+ * ECP-4: the outcome a choice has actually committed, or `null` when it has
+ * not resolved.
+ *
+ * A committed result only counts as a selection when it names one of the
+ * choice's DECLARED outcomes. The facade rejects malformed evaluator results
+ * (`validateChoiceCompletion`), but the kernel must not depend on that: an
+ * unrecognised result previously still marked the choice succeeded, which
+ * unblocked EVERY branch at once. Treating it as unresolved instead re-admits
+ * the evaluator (bounded by the sealed attempt limit).
+ */
+function committedChoiceOutcome(
+  record: CanonicalRunRecord,
+  choice: RuntimePlanChoiceNode
+): string | null {
+  const committed = committedResultForNode(record, choice.nodeId);
+  if (committed === null) return null;
+  const outcome = (committed as Readonly<{ outcome?: unknown }>).outcome;
+  return typeof outcome === 'string' && choice.outcomes.includes(outcome)
+    ? outcome
+    : null;
+}
+
+/**
+ * ECP-4: the nodes that belong to a choice branch the choice did NOT select.
+ *
+ * `choice.branches` maps each outcome to the hierarchical path of that
+ * branch's entry node; a branch is that entry node plus everything
+ * transitively downstream of it. Once the choice commits an outcome, every
+ * node reachable ONLY from a rejected entry is permanently ineligible — it
+ * must never be admitted, and it must not hold the implicit finish hostage.
+ *
+ * Without this, `finishCandidate` waits forever on the rejected branch, so a
+ * choice Run can only "complete" by ALSO executing the branch it rejected.
+ *
+ * Nodes reachable from BOTH the selected and a rejected entry (a convergence
+ * point authored after the branches rejoin) are NOT excluded: they stay gated
+ * by their own `requires` like any other node.
+ */
+function choiceBranchExclusions(
+  plan: RuntimePlan,
+  record: CanonicalRunRecord,
+  choiceNodes: readonly RuntimePlanChoiceNode[]
+): ReadonlySet<NodeId> {
+  const excluded = new Set<NodeId>();
+  if (choiceNodes.length === 0) return excluded;
+  const nodeIdByPath = new Map(
+    plan.nodes.map((node) => [node.hierarchicalPath, node.nodeId] as const)
+  );
+  const dependents = new Map<NodeId, NodeId[]>();
+  for (const node of plan.nodes) {
+    for (const required of node.requires) {
+      const existing = dependents.get(required);
+      if (existing === undefined) dependents.set(required, [node.nodeId]);
+      else existing.push(node.nodeId);
+    }
+  }
+  const reachableFrom = (entries: readonly NodeId[]): Set<NodeId> => {
+    const seen = new Set<NodeId>();
+    const queue = [...entries];
+    while (queue.length > 0) {
+      const current = queue.pop()!;
+      if (seen.has(current)) continue;
+      seen.add(current);
+      for (const next of dependents.get(current) ?? []) queue.push(next);
+    }
+    return seen;
+  };
+
+  for (const choice of choiceNodes) {
+    // Nothing is rejected until the evaluator commits a declared outcome;
+    // before that every branch is blocked by its `requires` on the choice.
+    const outcome = committedChoiceOutcome(record, choice);
+    if (outcome === null) continue;
+    const rejectedEntries: NodeId[] = [];
+    for (const [branchOutcome, branchPath] of Object.entries(choice.branches)) {
+      if (branchOutcome === outcome) continue;
+      const rejectedId = nodeIdByPath.get(branchPath);
+      if (rejectedId !== undefined) rejectedEntries.push(rejectedId);
+    }
+    if (rejectedEntries.length === 0) continue;
+    const selectedPath = choice.branches[outcome];
+    const selectedId =
+      selectedPath === undefined ? undefined : nodeIdByPath.get(selectedPath);
+    const selectedSubtree =
+      selectedId === undefined ? new Set<NodeId>() : reachableFrom([selectedId]);
+    for (const nodeId of reachableFrom(rejectedEntries)) {
+      if (!selectedSubtree.has(nodeId)) excluded.add(nodeId);
+    }
+  }
+  return excluded;
 }
 
 /**
@@ -1130,7 +1220,8 @@ function awaitGateFor(
 function finishCandidate(
   plan: RuntimePlan,
   record: CanonicalRunRecord,
-  succeeded: ReadonlySet<NodeId>
+  succeeded: ReadonlySet<NodeId>,
+  excludedByChoice: ReadonlySet<NodeId>
 ): ReconcilerNextAction | null {
   if (record.terminal !== undefined) {
     return null;
@@ -1138,13 +1229,16 @@ function finishCandidate(
   // Collect all non-finish node IDs that must be in the succeeded set before
   // the Run can finish. ECP-4: FanOut member atomic nodes (with `fanOut` tag)
   // are excluded — their gate is the Join node, not individual atomic success.
+  // ECP-4: nodes on a rejected choice branch are excluded too — otherwise the
+  // Run can only finish by ALSO executing the branch the choice rejected.
   const requiredNodes = plan.nodes.filter(
     (node) =>
-      (node.kind === 'atomic' && node.fanOut === undefined) ||
-      node.kind === 'bounded-loop' ||
-      node.kind === 'choice' ||
-      node.kind === 'fan-out' ||
-      node.kind === 'join'
+      !excludedByChoice.has(node.nodeId) &&
+      ((node.kind === 'atomic' && node.fanOut === undefined) ||
+        node.kind === 'bounded-loop' ||
+        node.kind === 'choice' ||
+        node.kind === 'fan-out' ||
+        node.kind === 'join')
   );
   if (plan.finishNode !== undefined) {
     if (plan.finishNode.requires.every((required) => succeeded.has(required))) {
