@@ -266,7 +266,14 @@ console.log('\n=== re-review (SAME-ACTOR ATTEMPT — should fail) ===');
     const file = path.join(testDir, 'c-rereview-same-actor.json');
     writeFileSync(file, JSON.stringify(body));
     const sameActorRes = runCLI(['pipeline', 'complete', changeId, '--run', runId, '--from', file, '--json']);
-    if (sameActorRes.exitCode !== 0 && sameActorRes.stderr.includes('actor_separation')) {
+    // ECP-5 (task 7.3): this asserted the raw `actor_separation` token, which
+    // the CLI stopped printing once the refusal became a localized product
+    // message. The rejection still happened every time; only the assertion
+    // went stale, so this script reported WARNING on a passing guarantee.
+    const rejected = sameActorRes.exitCode !== 0 &&
+      (sameActorRes.stderr.includes('actor_separation') ||
+        sameActorRes.stderr.includes('cannot verify their own'));
+    if (rejected) {
       console.log('  SAME-ACTOR REJECTION CONFIRMED: fixer cannot verify own fix');
     } else {
       console.log('  WARNING: same-actor attempt exitCode:', sameActorRes.exitCode, 'stderr:', sameActorRes.stderr.slice(0, 200));
