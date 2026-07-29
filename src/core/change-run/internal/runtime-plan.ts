@@ -39,6 +39,13 @@ export interface RuntimePlanAtomicNode {
    * correct binding.
    */
   readonly profilePath?: string;
+  /**
+   * ECP-4: when this atomic node is a FanOut member, this tag identifies the
+   * owning FanOut node and whether the member is required (condition: always)
+   * or optional (conditional). The reconciler's FanOut pass uses this to
+   * filter candidates before the merged workspace-lock selection.
+   */
+  readonly fanOut?: Readonly<{ nodeId: NodeId; required: boolean }>;
 }
 
 export interface RuntimePlanReviewCyclePhase {
@@ -106,10 +113,59 @@ export interface RuntimePlanFinishNode {
   readonly outcome: string;
 }
 
+// ─── ECP-4: Choice / FanOut / Join runtime plan nodes ───
+
+export interface RuntimePlanChoiceNode {
+  readonly kind: 'choice';
+  readonly nodeId: NodeId;
+  readonly hierarchicalPath: string;
+  readonly requires: readonly NodeId[];
+  readonly profilePath: string;
+  readonly admissionKind: RuntimePlanAdmissionKind;
+  readonly workspace: RuntimePlanWorkspace;
+  readonly outcomes: readonly string[];
+  /** outcome → branch hierarchical path added to succeeded set when selected */
+  readonly branches: Readonly<Record<string, string>>;
+}
+
+export interface RuntimePlanFanOutMember {
+  readonly nodeId: NodeId;
+  readonly hierarchicalPath: string;
+  readonly required: boolean;
+  readonly condition: string; // 'always' | 'security-relevant' | ...
+}
+
+export interface RuntimePlanFanOutNode {
+  readonly kind: 'fan-out';
+  readonly nodeId: NodeId;
+  readonly hierarchicalPath: string;
+  readonly requires: readonly NodeId[];
+  readonly profilePath: string; // condition evaluator capability
+  readonly admissionKind: RuntimePlanAdmissionKind;
+  readonly workspace: RuntimePlanWorkspace;
+  readonly members: readonly RuntimePlanFanOutMember[];
+  readonly concurrencyCap: number;
+  readonly budget: number;
+  readonly joinNodeId: NodeId;
+}
+
+export interface RuntimePlanJoinNode {
+  readonly kind: 'join';
+  readonly nodeId: NodeId;
+  readonly hierarchicalPath: string;
+  readonly requires: readonly NodeId[];
+  readonly requiredMembers: readonly NodeId[];
+  readonly optionalMembers: readonly NodeId[];
+  readonly outcomes: Readonly<{ proceed: string; failed: string }>;
+}
+
 export type RuntimePlanNode =
   | RuntimePlanAtomicNode
   | RuntimePlanBoundedLoopNode
-  | RuntimePlanFinishNode;
+  | RuntimePlanFinishNode
+  | RuntimePlanChoiceNode
+  | RuntimePlanFanOutNode
+  | RuntimePlanJoinNode;
 
 export interface RuntimePlan {
   readonly format: 'change-run-runtime-plan/1';
@@ -171,8 +227,33 @@ export interface RuntimePlanGoalCycleBodyInput {
   readonly phases: readonly RuntimePlanGoalCyclePhaseInput[];
 }
 
+export interface RuntimePlanChoiceInput {
+  readonly outcomes: readonly string[];
+  /** outcome → branch hierarchical path */
+  readonly branches: Readonly<Record<string, string>>;
+}
+
+export interface RuntimePlanFanOutMemberInput {
+  readonly hierarchicalPath: string;
+  readonly required: boolean;
+  readonly condition: string;
+}
+
+export interface RuntimePlanFanOutInput {
+  readonly members: readonly RuntimePlanFanOutMemberInput[];
+  readonly concurrencyCap: number;
+  readonly budget: number;
+  readonly joinNodeId: string;
+}
+
+export interface RuntimePlanJoinInput {
+  readonly requiredMembers: readonly string[];
+  readonly optionalMembers: readonly string[];
+  readonly outcomes: Readonly<{ proceed: string; failed: string }>;
+}
+
 export interface RuntimePlanNodeInput {
-  readonly kind: 'atomic' | 'bounded-loop' | 'finish';
+  readonly kind: 'atomic' | 'bounded-loop' | 'finish' | 'choice' | 'fan-out' | 'join';
   readonly hierarchicalPath: string;
   readonly requires: readonly string[];
   readonly admissionKind?: RuntimePlanAdmissionKind;
@@ -195,6 +276,15 @@ export interface RuntimePlanNodeInput {
    * declaration-body profile path.
    */
   readonly profilePath?: string;
+  // ─── ECP-4 fields ───
+  readonly choice?: RuntimePlanChoiceInput;
+  readonly fanOut?: RuntimePlanFanOutInput;
+  readonly join?: RuntimePlanJoinInput;
+  /**
+   * ECP-4: when this atomic node is a FanOut member, this tag identifies the
+   * owning FanOut node and whether the member is required.
+   */
+  readonly fanOutTag?: Readonly<{ nodeId: string; required: boolean }>;
 }
 
 export interface RuntimePlanInput {
@@ -292,14 +382,15 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
     );
   }
 
-  // Reject any unsupported semantic kind up front. Today only atomic/finish are
-  // representable in RuntimePlanNodeInput, but the guard keeps the contract
-  // explicit if the input union ever widens before the reconciler does.
+  // Reject any unsupported semantic kind up front.
   for (const node of input.nodes) {
     if (
       node.kind !== 'atomic' &&
       node.kind !== 'bounded-loop' &&
-      node.kind !== 'finish'
+      node.kind !== 'finish' &&
+      node.kind !== 'choice' &&
+      node.kind !== 'fan-out' &&
+      node.kind !== 'join'
     ) {
       reject(
         'unsupported_runtime_plan',
@@ -345,6 +436,15 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
         );
       }
     }
+    if (node.kind === 'choice') {
+      validateChoice(node.hierarchicalPath, node);
+    }
+    if (node.kind === 'fan-out') {
+      validateFanOut(node.hierarchicalPath, node);
+    }
+    if (node.kind === 'join') {
+      validateJoin(node.hierarchicalPath, node);
+    }
   }
 
   // Resolve dependency paths to NodeIds and reject dangling references.
@@ -389,6 +489,14 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
                 gateId: node.gate.gateId,
                 decisionIds: [...node.gate.decisionIds],
                 outcomes: { ...node.gate.outcomes },
+              },
+            }),
+        ...(node.fanOutTag === undefined
+          ? {}
+          : {
+              fanOut: {
+                nodeId: pathToNodeId.get(node.fanOutTag.nodeId)!,
+                required: node.fanOutTag.required,
               },
             }),
       } as RuntimePlanAtomicNode;
@@ -476,13 +584,72 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
         },
       } as RuntimePlanBoundedLoopNode;
     }
-    return {
-      kind: 'finish',
-      nodeId,
-      hierarchicalPath: node.hierarchicalPath,
-      requires,
-      outcome: node.outcome!,
-    } as RuntimePlanFinishNode;
+    if (node.kind === 'finish') {
+      return {
+        kind: 'finish',
+        nodeId,
+        hierarchicalPath: node.hierarchicalPath,
+        requires,
+        outcome: node.outcome!,
+      } as RuntimePlanFinishNode;
+    }
+    if (node.kind === 'choice') {
+      const ci = node.choice!;
+      return {
+        kind: 'choice',
+        nodeId,
+        hierarchicalPath: node.hierarchicalPath,
+        requires,
+        profilePath: node.profilePath ?? node.hierarchicalPath,
+        admissionKind: node.admissionKind ?? 'agent',
+        workspace: { access: node.workspace?.access ?? 'none' },
+        outcomes: [...ci.outcomes],
+        branches: { ...ci.branches },
+      } as RuntimePlanChoiceNode;
+    }
+    if (node.kind === 'fan-out') {
+      const fi = node.fanOut!;
+      const joinPath = fi.joinNodeId;
+      const joinId = pathToNodeId.get(joinPath);
+      if (joinId === undefined) {
+        reject(
+          'invalid_runtime_plan',
+          `Fan-out node ${node.hierarchicalPath} references unknown join node ${JSON.stringify(joinPath)}.`
+        );
+      }
+      const members = fi.members.map((m) => ({
+        nodeId: pathToNodeId.get(m.hierarchicalPath)!,
+        hierarchicalPath: m.hierarchicalPath,
+        required: m.required,
+        condition: m.condition,
+      }));
+      return {
+        kind: 'fan-out',
+        nodeId,
+        hierarchicalPath: node.hierarchicalPath,
+        requires,
+        profilePath: node.profilePath ?? node.hierarchicalPath,
+        admissionKind: node.admissionKind ?? 'agent',
+        workspace: { access: node.workspace?.access ?? 'none' },
+        members,
+        concurrencyCap: fi.concurrencyCap,
+        budget: fi.budget,
+        joinNodeId: joinId!,
+      } as RuntimePlanFanOutNode;
+    }
+    // join
+    {
+      const ji = node.join!;
+      return {
+        kind: 'join',
+        nodeId,
+        hierarchicalPath: node.hierarchicalPath,
+        requires,
+        requiredMembers: ji.requiredMembers.map((p) => pathToNodeId.get(p)!),
+        optionalMembers: ji.optionalMembers.map((p) => pathToNodeId.get(p)!),
+        outcomes: { proceed: ji.outcomes.proceed, failed: ji.outcomes.failed },
+      } as RuntimePlanJoinNode;
+    }
   });
 
   // Stable topological order: dependencies precede dependents so the reconciler
@@ -517,6 +684,115 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
       : { implicitFinishOutcome: input.implicitFinishOutcome }),
     ...(finishNode === undefined ? {} : { finishNode }),
   } as RuntimePlan);
+}
+
+function validateChoice(
+  path: string,
+  node: RuntimePlanNodeInput
+): void {
+  const ci = node.choice;
+  if (ci === undefined) {
+    reject('invalid_runtime_plan', `Choice node ${path} must declare choice metadata.`);
+  }
+  if (ci!.outcomes.length < 2) {
+    reject('invalid_runtime_plan', `Choice node ${path} must declare at least 2 outcomes.`);
+  }
+  for (const outcome of ci!.outcomes) {
+    const branch = ci!.branches[outcome];
+    if (branch === undefined || branch.length === 0) {
+      reject(
+        'invalid_runtime_plan',
+        `Choice node ${path} outcome ${JSON.stringify(outcome)} must map to a non-empty branch path.`
+      );
+    }
+  }
+  if (
+    node.admissionKind !== undefined &&
+    node.admissionKind !== 'agent' &&
+    node.admissionKind !== 'command' &&
+    node.admissionKind !== 'host'
+  ) {
+    reject('invalid_runtime_plan', `Choice node ${path} must declare a supported admission kind.`);
+  }
+  if (node.gate !== undefined || node.outcome !== undefined || node.body !== undefined) {
+    reject('invalid_runtime_plan', `Choice node ${path} must not declare gate, outcome, or body fields.`);
+  }
+}
+
+function validateFanOut(
+  path: string,
+  node: RuntimePlanNodeInput
+): void {
+  const fi = node.fanOut;
+  if (fi === undefined) {
+    reject('invalid_runtime_plan', `Fan-out node ${path} must declare fanOut metadata.`);
+  }
+  if (fi!.members.length < 1) {
+    reject('invalid_runtime_plan', `Fan-out node ${path} must declare at least 1 member.`);
+  }
+  if (
+    !Number.isSafeInteger(fi!.concurrencyCap) ||
+    fi!.concurrencyCap < 1 ||
+    fi!.concurrencyCap > 32
+  ) {
+    reject('invalid_runtime_plan', `Fan-out node ${path} concurrencyCap must be between 1 and 32.`);
+  }
+  const requiredCount = fi!.members.filter((m) => m.required).length;
+  if (!Number.isSafeInteger(fi!.budget) || fi!.budget < requiredCount) {
+    reject(
+      'invalid_runtime_plan',
+      `Fan-out node ${path} budget (${fi!.budget}) must be >= required member count (${requiredCount}).`
+    );
+  }
+  if (fi!.joinNodeId.length === 0) {
+    reject('invalid_runtime_plan', `Fan-out node ${path} must reference a join node.`);
+  }
+  // Check member hierarchical paths for duplicates.
+  const memberPaths = new Set<string>();
+  for (const member of fi!.members) {
+    if (member.hierarchicalPath.length === 0 || member.hierarchicalPath.includes('\\')) {
+      reject(
+        'invalid_runtime_plan',
+        `Fan-out node ${path} member path ${JSON.stringify(member.hierarchicalPath)} is malformed.`
+      );
+    }
+    if (memberPaths.has(member.hierarchicalPath)) {
+      reject(
+        'invalid_runtime_plan',
+        `Fan-out node ${path} member path ${JSON.stringify(member.hierarchicalPath)} is declared more than once.`
+      );
+    }
+    memberPaths.add(member.hierarchicalPath);
+  }
+  if (node.gate !== undefined || node.outcome !== undefined || node.body !== undefined) {
+    reject('invalid_runtime_plan', `Fan-out node ${path} must not declare gate, outcome, or body fields.`);
+  }
+}
+
+function validateJoin(
+  path: string,
+  node: RuntimePlanNodeInput
+): void {
+  const ji = node.join;
+  if (ji === undefined) {
+    reject('invalid_runtime_plan', `Join node ${path} must declare join metadata.`);
+  }
+  if (ji!.outcomes.proceed.length === 0 || ji!.outcomes.failed.length === 0) {
+    reject('invalid_runtime_plan', `Join node ${path} must declare non-empty proceed and failed outcomes.`);
+  }
+  // Check required/optional are disjoint.
+  const requiredSet = new Set(ji!.requiredMembers);
+  for (const opt of ji!.optionalMembers) {
+    if (requiredSet.has(opt)) {
+      reject(
+        'invalid_runtime_plan',
+        `Join node ${path} has ${JSON.stringify(opt)} in both required and optional members.`
+      );
+    }
+  }
+  if (node.gate !== undefined || node.outcome !== undefined || node.body !== undefined) {
+    reject('invalid_runtime_plan', `Join node ${path} must not declare gate, outcome, or body fields.`);
+  }
 }
 
 function validateBoundedLoop(
