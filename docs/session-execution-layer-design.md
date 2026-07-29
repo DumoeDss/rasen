@@ -158,6 +158,26 @@ touch 时钟不能挂在 launcher 上——launcher 是 LLM 会话，50 分钟�
 预计不再复用                     → 立即 retire（默认 finalTurn=true，趁 warm 写 handoff）
 ```
 
+### 6.3 implementer 边界策略（review-cycle 的等待问题）
+
+关键观察：**等待边界同时是上下文价值边界**——implementer 完成 apply 时，其上下文大部分是探索噪音，对 fix 轮是死重；且大上下文 warm worker 的每请求读成本本身更贵（审计 §6.5：320k reviewer 跑 82 请求比 42k successor 多花 ~230 万 input-eq）。review-cycle 的多轮存活者是 reviewer/fixer（pipeline 本有的角色分裂），不是 implementer。默认策略：
+
+```text
+implementer：subagent 档实现（1.25× 写）→ DONE 时趁 warm 写 durable findings
+             + working-set manifest → 退出。不保温。
+             （唯一例外：首 verdict 预计 ~15-25 分钟内回 → subagent+beat 短暂 park，现行机制）
+reviewer / fixer：session 档（多 episode、轮间空闲、读多写少），fixer 冷启动从
+             findings + manifest + diff 定向播种（起步 ~80k 而非继承 600k）
+```
+
+**collection-heavy 例外**（如 C#/C++ 单文件数十至数百 KB、相关性密集，working set ≈ 全上下文，蒸馏不掉）：
+
+1. **dispatch 时机选档**——档位不可中途切换（换档 = 全量 2×C 重写），planner 按任务画像预判：`C_workingset > ~0.6 × C_implementer` 或 fix 轮需要实现者脑内状态 → implementer 从一开始走 session 档，0.75×C 写溢价当保险费（stage 配置显式逃生门）；
+2. **working-set manifest 无论如何都做**——handoff 附机器可读清单（文件路径 + 行区间 + 相关性理由），successor 重收集从"重新探索"降为"定向读切片"（大文件读 findings 指向的区间而非整文件）；
+3. **重收集只付一次**——session 档 fixer 收集后跨全部 fix 轮保温摊薄，真实对比是 `0.75×C_impl` vs `1.25×C_ws 一次性`。
+
+collection-heavy 任务同时逼近上下文窗口上限（`handoffTokenLimit` 契约字段管辖）——保温不解决窗口耗尽，manifest 层不可省。
+
 承载位置：pipeline stage 配置。`types.ts:40-45` 已有 `sessionReuse: none|stage|run-planner|review-thread`——本层落地时把 stage 级 tier 显式化（如 `sessionTier: inline|independent|auto`，`auto` 按上表），具体 schema 演进等 ECP-4 契约冻结后定，避免与其改动冲突。
 
 ## 7. Session Registry
