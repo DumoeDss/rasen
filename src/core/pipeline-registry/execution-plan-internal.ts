@@ -7,6 +7,7 @@ import type {
   ChangeRunPlan,
   PreparedDefinition,
 } from './definition.js';
+import { orchestrationEvaluatorCapabilityFor } from './definition.js';
 import {
   planValueDigest,
   type DefinitionPlanPayload,
@@ -598,8 +599,16 @@ export function analyzeReconcilerSupport(
         referencedDeclarationIds.add(rootNode.body);
       }
     }
+    // ECP-4: FanOut/Choice evaluator nodes carry a synthetic capability
+    // binding (`parallel-dispatch` / `choice-select`), so they belong in the
+    // expected set — otherwise the strict shape check below rejects every
+    // definition with a parallel section.
     const expectedRootIds = prepared.definition.root.nodes
-      .filter((node) => node.kind === 'AtomicStage')
+      .filter(
+        (node) =>
+          node.kind === 'AtomicStage' ||
+          orchestrationEvaluatorCapabilityFor(node) !== null
+      )
       .map((node) => `root:${node.id}`);
     const expectedBodyIds = prepared.definition.declarations
       .filter((declaration) =>
@@ -641,8 +650,15 @@ export function analyzeReconcilerSupport(
     if (profile === null) {
       return unsupported('execution_profile_unavailable');
     }
+    // ECP-4: a v1 pipeline can have BOTH a ReviewCycle BoundedLoop and a
+    // parallelGroup (full-feature does), so this branch must also expect the
+    // synthetic FanOut evaluator binding.
     const expectedRootIds = prepared.definition.root.nodes
-      .filter((node) => node.kind === 'AtomicStage')
+      .filter(
+        (node) =>
+          node.kind === 'AtomicStage' ||
+          orchestrationEvaluatorCapabilityFor(node) !== null
+      )
       .map((node) => `root:${node.id}`);
     const expectedBodyIds = prepared.definition.declarations.flatMap(
       (declaration) =>

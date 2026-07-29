@@ -6,6 +6,7 @@ import type {
   CompositeDeclaration,
 } from './definition.js';
 import type { CapabilityCatalogSnapshot } from './definition.js';
+import { orchestrationEvaluatorCapabilityFor } from './definition.js';
 import type {
   EffectiveRunPolicy,
   RuntimeCapabilityBinding,
@@ -13,6 +14,7 @@ import type {
   RuntimeExecutionProfileInput,
 } from './execution-plan-internal.js';
 import { createRuntimeExecutionProfile } from './execution-plan-internal.js';
+import { domainDigest } from '../change-run/internal/identity.js';
 
 /**
  * Resolve a prepared v1 Definition's stages into frozen RuntimeCapabilityBindings
@@ -122,6 +124,13 @@ function resolveV2MigrationCapabilityBindings(
   const bindings: RuntimeCapabilityBinding[] = [];
 
   for (const node of prepared.definition.root.nodes) {
+    // ECP-4: FanOut condition evaluators need a synthetic binding; legacy
+    // Gate/Choice metadata carriers do not.
+    const evaluator = orchestrationEvaluatorCapabilityFor(node);
+    if (evaluator !== null) {
+      bindings.push(buildEvaluatorBinding(`root:${node.id}`, evaluator));
+      continue;
+    }
     if (node.kind === 'Gate' || node.kind === 'Choice') continue;
 
     if (node.kind === 'AtomicStage') {
@@ -176,6 +185,76 @@ function resolveV2MigrationCapabilityBindings(
   }
 
   return bindings;
+}
+
+/**
+ * ECP-4: bind a synthetic orchestration-evaluator capability. The FanOut
+ * condition evaluator (`parallel-dispatch`) and the v2-authored Choice
+ * evaluator (`choice-select`) are produced by normalization/authoring, not by
+ * an authored stage, so no production catalog descriptor backs them. Without a
+ * binding the reconciler admits the evaluator and the facade's action builder
+ * throws `No capability/policy binding for root:<node>` at the first FanOut —
+ * i.e. plan creation succeeds and the real CLI Run dies mid-flight.
+ *
+ * The digest is derived deterministically from the capability name and the
+ * node path, so the sealed profile digest stays stable across launches of the
+ * same definition.
+ */
+function buildEvaluatorBinding(
+  path: string,
+  capabilityName: 'parallel-dispatch' | 'choice-select'
+): RuntimeCapabilityBinding {
+  const digest = domainDigest(
+    'ecp4-orchestration-evaluator/1',
+    capabilityName,
+    path
+  );
+  return {
+    nodeId: path,
+    authoredCapability: { id: `capability:${capabilityName}`, version: '1' },
+    contract: { id: capabilityName, version: '1', digest },
+    actionKind: 'agent',
+    resultContract: { id: `${capabilityName}-result`, version: '1', digest },
+    evidenceContract: { id: `${capabilityName}-evidence`, version: '1', digest },
+    recovery: 'suspend-if-ambiguous',
+    // The evaluator only reads committed Record state to decide which members
+    // (or which branch) are active. It never touches the worktree, so it takes
+    // no workspace reservation and declares no effects — matching the
+    // `workspace: { access: 'none' }` the lowerer gives the plan node.
+    workspace: { access: 'none', resources: [] },
+    effects: [],
+    adapter: { id: `adapter:${capabilityName}`, version: '1', contentDigest: digest },
+  };
+}
+
+/** Policy stage for a synthetic orchestration evaluator (read-only, no gate). */
+function synthesizeEvaluatorPolicyStage(
+  nodeId: string,
+  capabilityName: 'parallel-dispatch' | 'choice-select'
+): EffectiveRunPolicy['stages'][number] {
+  return {
+    nodeId,
+    role: capabilityName === 'parallel-dispatch' ? 'dispatcher' : 'planner',
+    model: 'default',
+    effort: 'default',
+    runtime: 'codex',
+    sandbox: 'read-only',
+    gate: false,
+    sessionReuse: 'never',
+    handoffTokenLimit: 10_000,
+    reuseRoundLimit: 1,
+    provenance: {
+      role: 'definition',
+      model: 'default',
+      effort: 'default',
+      runtime: 'default',
+      sandbox: 'definition',
+      gate: 'default',
+      sessionReuse: 'default',
+      handoffTokenLimit: 'default',
+      reuseRoundLimit: 'default',
+    },
+  };
 }
 
 function inferAccess(node: AtomicStageNode): 'read' | 'write' {
@@ -233,6 +312,14 @@ function resolveV2AuthoredCapabilityBindings(
   const bindings: RuntimeCapabilityBinding[] = [];
 
   for (const node of definition.root.nodes) {
+    // ECP-4: FanOut/Choice evaluators get a synthetic binding (see
+    // buildEvaluatorBinding) — no authored stage backs them.
+    const evaluator = orchestrationEvaluatorCapabilityFor(node);
+    if (evaluator !== null) {
+      bindings.push(buildEvaluatorBinding(`root:${node.id}`, evaluator));
+      continue;
+    }
+
     if (node.kind === 'AtomicStage') {
       const path = `root:${node.id}`;
       const skillId = node.capability.id;
@@ -305,6 +392,12 @@ function remapPolicyStagesForV2Authored(
   const stages: EffectiveRunPolicy['stages'][number][] = [];
 
   for (const node of definition.root.nodes) {
+    // ECP-4: mirror the synthetic evaluator capability bindings.
+    const evaluator = orchestrationEvaluatorCapabilityFor(node);
+    if (evaluator !== null) {
+      stages.push(synthesizeEvaluatorPolicyStage(`root:${node.id}`, evaluator));
+      continue;
+    }
     if (node.kind === 'AtomicStage') {
       stages.push(synthesizeReviewCyclePolicyStage(`root:${node.id}`, 'review'));
     }
@@ -393,6 +486,13 @@ function remapPolicyStagesForV2(
   const remapped: EffectiveRunPolicy['stages'][number][] = [];
 
   for (const node of prepared.definition.root.nodes) {
+    // ECP-4: keep the policy stages aligned with the capability bindings —
+    // both are looked up by hierarchical path when an Action is built.
+    const evaluator = orchestrationEvaluatorCapabilityFor(node);
+    if (evaluator !== null) {
+      remapped.push(synthesizeEvaluatorPolicyStage(`root:${node.id}`, evaluator));
+      continue;
+    }
     if (node.kind === 'Gate' || node.kind === 'Choice') continue;
 
     if (node.kind === 'AtomicStage') {

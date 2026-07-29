@@ -86,6 +86,38 @@ export type DefinitionNode =
   | GateNode
   | FinishNode;
 
+export type OrchestrationEvaluatorCapability =
+  | 'parallel-dispatch'
+  | 'choice-select';
+
+/**
+ * ECP-4: the synthetic capability name for root nodes the reconciler admits an
+ * *evaluator* Action for, or `null` when the node is not one. The FanOut
+ * condition evaluator (`parallel-dispatch`) and the v2-authored Choice
+ * evaluator (`choice-select`) need a capability/policy binding in the
+ * execution profile even though no authored stage backs them; the profile
+ * resolver synthesizes one.
+ *
+ * `Choice` nodes produced by v1 `condition:` normalization carry
+ * `legacyRuntimeOwner` and are metadata carriers only — the lowerer skips
+ * them, so they must NOT get a binding. `Join` nodes are never admitted (the
+ * Join pass derives its state from committed member results), so they are
+ * excluded too.
+ *
+ * Returns a nullable name rather than a type predicate on purpose: a legacy
+ * `Choice` node is still a `ChoiceNode`, so narrowing on a predicate would
+ * wrongly tell the compiler no `Choice` survives the check.
+ */
+export function orchestrationEvaluatorCapabilityFor(
+  node: DefinitionNode
+): OrchestrationEvaluatorCapability | null {
+  if (node.kind === 'FanOut') return 'parallel-dispatch';
+  if (node.kind !== 'Choice') return null;
+  const legacyOwner = (node as Readonly<{ legacyRuntimeOwner?: unknown }>)
+    .legacyRuntimeOwner;
+  return legacyOwner === undefined ? 'choice-select' : null;
+}
+
 export interface DefinitionConnection {
   id: string;
   from: Readonly<{ node: string; port: string }>;
