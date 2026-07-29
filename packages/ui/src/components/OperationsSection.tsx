@@ -823,6 +823,13 @@ function RunDetailBody({
         <dd>
           <span class={`ops-run__status ${statusClass(view.status)}`} data-testid="ops-run-status">{view.status}</span>
         </dd>
+        {/* ECP-5 (task 6.2): the Run's ENGINE OWNER. Carried on the view since
+            run-spine and rendered by no plane until now. Server token —
+            verbatim, never translated, so CLI/API/Operations read alike. */}
+        <dt>{t('operations.detail.engine')}</dt>
+        <dd>
+          <span class="ops-run__engine" data-testid="ops-run-engine">{view.engine}</span>
+        </dd>
         <dt>{t('operations.detail.record')}</dt>
         <dd>{t('operations.detail.record_version', { version: view.recordVersion })}</dd>
         <dt>{t('operations.detail.source')}</dt>

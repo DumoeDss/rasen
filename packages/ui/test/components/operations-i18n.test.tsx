@@ -243,6 +243,9 @@ describe('Operations plane localization (ECP-5 4.2)', () => {
     // …and for the run's own core state.
     expect(text(container, 'ops-run-status')).toBe('running');
     expect(text(container, 'ops-run-source-state')).toBe('active');
+    // ECP-5 (task 6.2): the engine owner joins that set — `pipeline status`
+    // prints the same token, so translating it here would split the planes.
+    expect(text(container, 'ops-run-engine')).toBe('reconciler');
   });
 
   it('keeps every locale key-complete for the plane, so no label falls back to English', () => {

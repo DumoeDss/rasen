@@ -462,6 +462,7 @@
   "operations.detail.no_root_section": "此视图没有 root-dag 分区。",
   "operations.detail.run": "Run",
   "operations.detail.status": "状态",
+  "operations.detail.engine": "引擎",
   "operations.detail.record": "记录",
   "operations.detail.record_version": "v{version}",
   "operations.detail.source": "来源",

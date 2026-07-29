@@ -462,6 +462,7 @@
   "operations.detail.no_root_section": "このビューには root-dag セクションがありません。",
   "operations.detail.run": "Run",
   "operations.detail.status": "ステータス",
+  "operations.detail.engine": "エンジン",
   "operations.detail.record": "レコード",
   "operations.detail.record_version": "v{version}",
   "operations.detail.source": "ソース",

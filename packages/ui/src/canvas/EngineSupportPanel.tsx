@@ -1,4 +1,4 @@
-import type { WirePipeline } from '../api/types.js';
+import type { ReconcilerSupportReason, WirePipeline } from '../api/types.js';
 
 /**
  * Engine support panel (task 14.7/14.8 of `ecp-run-spine`). Renders the
@@ -15,32 +15,30 @@ import type { WirePipeline } from '../api/types.js';
  * disabled. This panel surfaces the reason verbatim from the server.
  */
 
-/** Human-readable label for a reconciler-support reason code. */
+/**
+ * Human-readable label for a reconciler-support reason code.
+ *
+ * ECP-5 (task 6.1): the record is keyed by `ReconcilerSupportReason`, so a
+ * reason added to the server union and mirrored here without copy is a TYPE
+ * ERROR rather than a raw code leaking into the panel. The two entries this
+ * used to carry for reasons the analyzer never emits
+ * (`unsupported_capability`, `unsupported_verify_policy`) are gone with the
+ * mirror drift they belonged to; the `default` arm stays as the forward-compat
+ * escape for a newer server.
+ */
+const REASON_LABELS: Record<ReconcilerSupportReason, string> = {
+  supported_root_dag_bug_fix: 'Supported: root-DAG bug-fix',
+  supported_v2_review_cycle: 'Supported: v2 ReviewCycle',
+  supported_v2_executable: 'Supported: v2 executable',
+  supported_v2_parallel: 'Supported: v2 parallel (FanOut/Join)',
+  unsupported_definition_version: 'Unsupported: definition version',
+  unsupported_pipeline_shape: 'Unsupported: pipeline shape',
+  unsupported_pipeline_semantics: 'Unsupported: pipeline semantics',
+  execution_profile_unavailable: 'Unavailable: execution profile',
+};
+
 function reasonLabel(reason: string): string {
-  switch (reason) {
-    case 'supported_root_dag_bug_fix':
-      return 'Supported: root-DAG bug-fix';
-    case 'supported_v2_review_cycle':
-      return 'Supported: v2 ReviewCycle';
-    case 'supported_v2_executable':
-      return 'Supported: v2 executable';
-    case 'supported_v2_parallel':
-      return 'Supported: v2 parallel (FanOut/Join)';
-    case 'unsupported_definition_version':
-      return 'Unsupported: definition version';
-    case 'unsupported_pipeline_shape':
-      return 'Unsupported: pipeline shape';
-    case 'unsupported_pipeline_semantics':
-      return 'Unsupported: pipeline semantics';
-    case 'execution_profile_unavailable':
-      return 'Unavailable: execution profile';
-    case 'unsupported_capability':
-      return 'Unsupported: capability';
-    case 'unsupported_verify_policy':
-      return 'Unsupported: verify policy';
-    default:
-      return reason;
-  }
+  return REASON_LABELS[reason as ReconcilerSupportReason] ?? reason;
 }
 
 /**

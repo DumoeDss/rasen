@@ -499,6 +499,47 @@ export function observeRuntimeDrift(
   });
 }
 
+/**
+ * The projection of a RuntimeExecutionProfile that engine-support analysis
+ * actually reads: the resolved capability node IDs (compared against the
+ * expected set for the definition's execution shape) and a digest to report.
+ *
+ * ECP-5 (task 6.1): `RuntimeExecutionProfile` satisfies this structurally, so
+ * the launch call site is unchanged — but DISCOVERY call sites (`pipeline
+ * show`, the management pipeline-detail endpoint, and therefore the Canvas
+ * `EngineSupportPanel`) have no Run and cannot freeze a launch profile. They
+ * used to pass `null`, which made every pipeline report
+ * `execution_profile_unavailable` and left `supported_*` unreachable from any
+ * read plane. They now pass a discovery projection
+ * (`resolveDiscoveryReconcilerSupportProfile`), which resolves the same
+ * bindings from the same catalog without sealing a profile.
+ */
+export interface ReconcilerSupportProfile {
+  readonly profileDigest: Digest;
+  readonly capabilities: readonly { readonly nodeId: string }[];
+}
+
+/**
+ * The profile's capability node IDs, SORTED — the order every expected-node-ID
+ * set below is built in.
+ *
+ * ECP-5 (task 6.1): a sealed launch profile arrives pre-sorted by
+ * `normalizeProfileInput`, so the comparisons below silently depended on that
+ * normalization having happened. A discovery profile resolves the same
+ * bindings without sealing anything, and its natural (definition) order made
+ * every supported pipeline report `unsupported_pipeline_shape` — a false
+ * NEGATIVE produced purely by ordering. Sorting here makes the analyzer
+ * independent of how its input was built, which is the property the three
+ * comparisons always assumed.
+ */
+function supportProfileNodeIds(
+  profile: ReconcilerSupportProfile
+): readonly string[] {
+  return profile.capabilities
+    .map((binding) => binding.nodeId)
+    .sort(compareStrings);
+}
+
 export interface ReconcilerSupportAnalysis {
   readonly availableEngines: readonly ('legacy' | 'reconciler')[];
   readonly reconcilerSupport: Readonly<{
@@ -601,7 +642,7 @@ function expectedV2MigrationNodeIds(
 
 export function analyzeReconcilerSupport(
   prepared: PreparedDefinition,
-  profile: RuntimeExecutionProfile | null
+  profile: ReconcilerSupportProfile | null
 ): ReconcilerSupportAnalysis {
   const profileDigest =
     profile?.profileDigest ??
@@ -681,7 +722,7 @@ export function analyzeReconcilerSupport(
     );
     if (
       expectedNodeIds.length === 0 ||
-      JSON.stringify(profile.capabilities.map((binding) => binding.nodeId)) !==
+      JSON.stringify(supportProfileNodeIds(profile)) !==
         JSON.stringify(expectedNodeIds)
     ) {
       return unsupported('unsupported_pipeline_shape');
@@ -711,7 +752,7 @@ export function analyzeReconcilerSupport(
     const expectedNodeIds = expectedV2MigrationNodeIds(prepared);
     if (
       expectedNodeIds.length === 0 ||
-      JSON.stringify(profile.capabilities.map((binding) => binding.nodeId)) !==
+      JSON.stringify(supportProfileNodeIds(profile)) !==
         JSON.stringify(expectedNodeIds)
     ) {
       return unsupported('unsupported_pipeline_shape');
@@ -743,7 +784,7 @@ export function analyzeReconcilerSupport(
     compareStrings
   );
   if (
-    JSON.stringify(profile.capabilities.map((binding) => binding.nodeId)) !==
+    JSON.stringify(supportProfileNodeIds(profile)) !==
     JSON.stringify(expectedNodeIds)
   ) {
     return unsupported('unsupported_pipeline_shape');

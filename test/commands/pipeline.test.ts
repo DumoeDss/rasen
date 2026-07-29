@@ -393,12 +393,22 @@ describe('pipeline command', () => {
       // Engine support analysis (task 12.8): additive fields shared with start,
       // management detail, and Canvas. bug-fix normalizes to a v2 ReviewCycle
       // BoundedLoop (D4 migration), so both legacy and reconciler engines are
-      // available. `show` has no launch-time profile, so reconciler support
-      // remains unsupported at display time.
+      // available.
+      //
+      // ECP-5 (task 6.1): this used to assert `supported: false` /
+      // `execution_profile_unavailable` with the comment "`show` has no
+      // launch-time profile, so reconciler support remains unsupported at
+      // display time" — which encoded the DEFECT as the contract. `show`
+      // passed `profile: null`, so every pipeline reported that reason
+      // whatever its shape, and `executable-parallel-pipelines` scenario 1
+      // ("`rasen pipeline show` SHALL report `availableEngines` including
+      // `reconciler` with reason `supported_v2_parallel`") was unsatisfiable.
+      // `show` now resolves a DISCOVERY profile — the same bindings the launch
+      // profile resolves — so the reason is the definition's real shape.
       expect(payloads.show.availableEngines).toEqual(['legacy', 'reconciler']);
       expect(payloads.show.reconcilerSupport).toMatchObject({
-        supported: false,
-        reason: 'execution_profile_unavailable',
+        supported: true,
+        reason: 'supported_v2_review_cycle',
       });
       expect(payloads.classify).toMatchObject({
         suggested: 'bug-fix',

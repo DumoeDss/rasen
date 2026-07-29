@@ -251,6 +251,13 @@ describe('UI cross-plane parity (15.1)', () => {
       'active'
     );
     expect(container.querySelector('[data-testid="ops-run-scope"]')!.textContent).toBe('current');
+    // ECP-5 (task 6.2): the Run's ENGINE OWNER. This test's title has always
+    // promised "without ... omitting any" — and `engine` was omitted, present
+    // on the fixture view and rendered by no plane, since run-spine. Server
+    // token, so verbatim.
+    expect(container.querySelector('[data-testid="ops-run-engine"]')!.textContent).toBe(
+      'reconciler'
+    );
 
     // Canonical runId rendered (full value in title attribute).
     expect(container.querySelector('[data-testid="ops-run-id"]')!.getAttribute('title')).toBe(

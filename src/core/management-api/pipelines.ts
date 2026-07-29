@@ -36,6 +36,7 @@ import {
   type StageRole,
 } from '../pipeline-registry/index.js';
 import { analyzeReconcilerSupport } from '../pipeline-registry/execution-plan-internal.js';
+import { resolveDiscoveryReconcilerSupportProfile } from '../pipeline-registry/profile-resolver.js';
 import { isPortableWorkflowId, loadWorkflowCatalog } from '../workflow-registry/index.js';
 import {
   resolveConfigContext,
@@ -526,7 +527,15 @@ export async function handlePipelineDetail(
     };
   }
 
-  const support = analyzeReconcilerSupport(prepared, null);
+  // ECP-5 (task 6.1): the Canvas `EngineSupportPanel` renders whatever this
+  // endpoint reports. Passing `null` here made it report
+  // `execution_profile_unavailable` for EVERY pipeline — a panel that shipped,
+  // was unit-tested, and could never display a supported verdict. Discovery
+  // resolves the same capability bindings the launch profile resolves.
+  const support = analyzeReconcilerSupport(
+    prepared,
+    resolveDiscoveryReconcilerSupportProfile(prepared, registry.catalog)
+  );
   const response = {
     pipeline: {
       ...resolvedView,

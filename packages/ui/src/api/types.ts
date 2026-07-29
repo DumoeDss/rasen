@@ -1792,15 +1792,22 @@ export function getChoiceSection(view: ChangeRunView): ChoiceViewSection | null 
 // (`ReconcilerSupportAnalysis`). The UI renders these verbatim — it never
 // guesses engine support from the pipeline name.
 
+// ECP-5 (task 6.1): this mirror had DRIFTED from the server union it claims to
+// mirror — it was missing `supported_v2_executable` (ECP-2) and
+// `supported_v2_parallel` (ECP-4), and carried two reasons
+// (`unsupported_capability`, `unsupported_verify_policy`) the analyzer has
+// never emitted. Both halves of the drift were invisible while every read
+// plane reported `execution_profile_unavailable`. Kept key-for-key with
+// `ReconcilerSupportAnalysis['reconcilerSupport']['reason']`.
 export type ReconcilerSupportReason =
   | 'supported_root_dag_bug_fix'
   | 'supported_v2_review_cycle'
+  | 'supported_v2_executable'
+  | 'supported_v2_parallel'
   | 'unsupported_definition_version'
   | 'unsupported_pipeline_shape'
   | 'unsupported_pipeline_semantics'
-  | 'execution_profile_unavailable'
-  | 'unsupported_capability'
-  | 'unsupported_verify_policy';
+  | 'execution_profile_unavailable';
 
 /** Additive availableEngines/reconcilerSupport on pipeline detail (14.7/14.8). */
 export interface PipelineEngineSupport {

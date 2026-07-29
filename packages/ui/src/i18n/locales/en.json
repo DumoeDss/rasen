@@ -462,6 +462,7 @@
   "operations.detail.no_root_section": "No root-dag section in this view.",
   "operations.detail.run": "Run",
   "operations.detail.status": "Status",
+  "operations.detail.engine": "Engine",
   "operations.detail.record": "Record",
   "operations.detail.record_version": "v{version}",
   "operations.detail.source": "Source",

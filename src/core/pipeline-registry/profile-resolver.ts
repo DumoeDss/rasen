@@ -12,6 +12,7 @@ import {
 } from './definition.js';
 import type {
   EffectiveRunPolicy,
+  ReconcilerSupportProfile,
   RuntimeCapabilityBinding,
   RuntimeExecutionProfile,
   RuntimeExecutionProfileInput,
@@ -471,6 +472,53 @@ export function resolveRuntimeExecutionProfile(
       stages: [...finalPolicyStages],
     },
   });
+}
+
+/**
+ * Resolve the DISCOVERY projection of a prepared definition's execution
+ * profile — the capability bindings engine-support analysis compares against
+ * the expected node-ID set, plus the discovery digest.
+ *
+ * ECP-5 (task 6.1). Read planes have no Run: `pipeline show` and the
+ * management pipeline-detail endpoint cannot seal a launch profile (that needs
+ * a source revision and the run's frozen policy), so they used to pass `null`
+ * to `analyzeReconcilerSupport` — which short-circuits to
+ * `execution_profile_unavailable` for EVERY pipeline. The effect was that no
+ * read plane could ever report a `supported_*` reason, including the
+ * `supported_v2_parallel` that `executable-parallel-pipelines` scenario 1
+ * requires `rasen pipeline show` to report.
+ *
+ * The support verdict depends only on the resolved capability node IDs, which
+ * are a pure function of `(prepared, catalog)` — policy stages and the source
+ * revision feed the sealed profile's digests, never the verdict. So discovery
+ * resolves exactly those bindings, through the SAME `resolveCapabilityBindings`
+ * the launch profile uses (never a second implementation), and reports the
+ * DISCOVERY digest — deliberately the same synthetic marker
+ * `analyzeReconcilerSupport` already used for a null profile, so a digest read
+ * from a read plane can never be mistaken for the profile a Run froze.
+ *
+ * Returns `null` — i.e. `execution_profile_unavailable`, fail-closed — when the
+ * bindings cannot be resolved at all (a capability missing from the catalog),
+ * which is the same verdict discovery gave before and is strictly more truthful
+ * than a partial binding set.
+ */
+export function resolveDiscoveryReconcilerSupportProfile(
+  prepared: PreparedDefinition,
+  catalog: CapabilityCatalogSnapshot
+): ReconcilerSupportProfile | null {
+  let capabilities: readonly RuntimeCapabilityBinding[];
+  try {
+    capabilities = resolveCapabilityBindings(prepared, catalog);
+  } catch {
+    return null;
+  }
+  return {
+    profileDigest: domainDigest(
+      'reconciler-support-profile/1',
+      prepared.plan.digest
+    ),
+    capabilities,
+  };
 }
 
 /**

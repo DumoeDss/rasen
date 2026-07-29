@@ -82,8 +82,14 @@ import {
   type Stage,
   type StageRole,
 } from '../core/pipeline-registry/index.js';
-import { analyzeReconcilerSupport } from '../core/pipeline-registry/execution-plan-internal.js';
-import { resolveRuntimeExecutionProfile } from '../core/pipeline-registry/profile-resolver.js';
+import {
+  analyzeReconcilerSupport,
+  type ReconcilerSupportAnalysis,
+} from '../core/pipeline-registry/execution-plan-internal.js';
+import {
+  resolveDiscoveryReconcilerSupportProfile,
+  resolveRuntimeExecutionProfile,
+} from '../core/pipeline-registry/profile-resolver.js';
 import {
   prepareRuntimeContext,
   decodeCompletion,
@@ -157,6 +163,7 @@ import {
   formatPipelineRootSelectionNotice,
   getPipelineMessages,
   pipelineMessageError,
+  RECONCILER_SUPPORT_REASON_KEYS,
   type PipelineMessages,
 } from './pipeline-messages.js';
 import {
@@ -424,12 +431,22 @@ export class PipelineCommand {
       executionSelection?.resolution ?? registry.load(normalizedName);
     if (resolution.prepared.authoredVersion === 2 && !options.forExecution) {
       const prepared = resolution.prepared;
+      // ECP-5 (task 6.1): a v2-authored definition — a Canvas-authored Custom
+      // Composite — returns here, and used to carry NO engine-support fields
+      // at all, so capability discovery was silent for exactly the shapes
+      // ECP-2 shipped. Report the same analysis the v1 path reports.
+      const v2Support = analyzeReconcilerSupport(
+        prepared,
+        resolveDiscoveryReconcilerSupportProfile(prepared, registry.catalog)
+      );
       const result = {
         version: 2,
         name: prepared.authoredSource.name,
         description: prepared.authoredSource.description ?? '',
         definition: prepared.authoredSource,
         source: resolution.source,
+        availableEngines: v2Support.availableEngines,
+        reconcilerSupport: v2Support.reconcilerSupport,
         preparation: {
           authoredVersion: prepared.authoredVersion,
           normalizedVersion: prepared.normalizedVersion,
@@ -496,9 +513,21 @@ export class PipelineCommand {
 
     // Engine support analysis (task 12.8): availableEngines/reconcilerSupport
     // are additive fields shared with `pipeline start`, management detail, and
-    // Canvas. Without a launch-time execution profile, a supported root-DAG
-    // reports legacy availability and execution_profile_unavailable.
-    const support = analyzeReconcilerSupport(resolution.prepared, null);
+    // Canvas.
+    //
+    // ECP-5 (task 6.1): this used to pass `null`, so EVERY pipeline reported
+    // `execution_profile_unavailable` and no `supported_*` reason was
+    // reachable from `show` — including the `supported_v2_parallel` that
+    // `executable-parallel-pipelines` scenario 1 requires it to report. It now
+    // passes the DISCOVERY profile: the same capability bindings the launch
+    // profile resolves, from the same catalog, without sealing a Run's profile.
+    const support = analyzeReconcilerSupport(
+      resolution.prepared,
+      resolveDiscoveryReconcilerSupportProfile(
+        resolution.prepared,
+        registry.catalog
+      )
+    );
 
     // ECP-5 (D1/task 1.5): the resolved engine policy for this pipeline, so a
     // launcher can read the effective engine and its deciding layer from the
@@ -1057,10 +1086,19 @@ export class PipelineCommand {
   private printRunStatusHuman(runId: string, view: unknown): void {
     const v = view as {
       status: string;
+      engine?: string;
       sections: Array<Record<string, unknown>>;
     };
     console.log(`Run: ${runId}`);
     console.log(`Status: ${v.status}`);
+    // ECP-5 (task 6.2): the ENGINE OWNER of this Run. `ChangeRunView` has
+    // carried `engine` since run-spine, but no run-facing human surface
+    // printed it — so "one Run has one engine owner" was invisible to the one
+    // person who has to act on it. Rendered verbatim: it is a server token the
+    // CLI, the API and Operations all print identically.
+    if (v.engine) {
+      console.log(`Engine: ${v.engine}`);
+    }
     // Render the review-cycle section when present.
     const rc = v.sections.find(
       (s) => s.kind === 'review-cycle'
@@ -2763,6 +2801,13 @@ export class PipelineCommand {
       hostRuntime: DetectedHostRuntime['runtime'];
       hostRuntimeSource: DetectedHostRuntime['source'];
       origin?: PipelineYaml['origin'];
+      availableEngines: ReconcilerSupportAnalysis['availableEngines'];
+      reconcilerSupport: ReconcilerSupportAnalysis['reconcilerSupport'];
+      enginePolicy: {
+        configured: string;
+        source: string;
+        effectiveEngine: string;
+      };
     },
     graph: PipelineGraph,
     source: PipelineInfo['source'] | undefined,
@@ -2858,6 +2903,39 @@ export class PipelineCommand {
         : (stage.skill ?? '');
       console.log(messages.format('stageLine', { id, action, suffix }));
     }
+    // ECP-5 (task 6.2 / 6.1): the human `pipeline show` used to render the
+    // engine analysis nowhere — `--json` carried it and the terminal did not,
+    // so the only product surface for engine selection was a JSON field. Every
+    // reason renders as product copy beside its code (the same token the API
+    // and the Canvas print).
+    console.log();
+    console.log(messages.format('engineSupportHeading'));
+    console.log(
+      messages.format('engineSupportEngines', {
+        engines:
+          result.availableEngines.length > 0
+            ? result.availableEngines.join(', ')
+            : messages.format('none'),
+      })
+    );
+    const reasonCopy = messages.formatDescriptor(
+      RECONCILER_SUPPORT_REASON_KEYS[result.reconcilerSupport.reason]
+    );
+    console.log(
+      messages.format(
+        result.reconcilerSupport.supported
+          ? 'engineSupportSupported'
+          : 'engineSupportUnsupported',
+        { reason: result.reconcilerSupport.reason, copy: reasonCopy }
+      )
+    );
+    console.log(
+      messages.format('enginePolicyLine', {
+        configured: result.enginePolicy.configured,
+        source: result.enginePolicy.source,
+        effective: result.enginePolicy.effectiveEngine,
+      })
+    );
   }
 
   private printThresholdDiagnostics(result: {

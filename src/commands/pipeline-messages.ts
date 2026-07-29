@@ -4,6 +4,7 @@ import {
   getLocaleCatalog,
   type LocaleCatalog,
 } from '../locales/index.js';
+import type { ReconcilerSupportAnalysis } from '../core/pipeline-registry/execution-plan-internal.js';
 import type { PipelineExecutionNotice } from '../core/pipeline-registry/execution-validation.js';
 import type { RootSelectionNotice } from '../core/root-selection.js';
 import type { StoreUnavailableReason } from '../core/store/identity.js';
@@ -52,6 +53,23 @@ export interface PipelineMessageValues {
   pipelineNotFound: { name: string; available: string };
   originLabel: { origin: string };
   buildOrderHeading: undefined;
+  // ECP-5 (task 6.1): engine support rendered as PRODUCT LANGUAGE in the human
+  // `pipeline show` output. Every reason the analyzer can emit has copy here;
+  // the reason CODE stays beside the copy because the CLI, the management API
+  // and the Canvas all print the same token.
+  engineSupportHeading: undefined;
+  engineSupportEngines: { engines: string };
+  engineSupportSupported: { reason: string; copy: string };
+  engineSupportUnsupported: { reason: string; copy: string };
+  enginePolicyLine: { configured: string; source: string; effective: string };
+  engineReasonSupportedRootDagBugFix: undefined;
+  engineReasonSupportedV2ReviewCycle: undefined;
+  engineReasonSupportedV2Executable: undefined;
+  engineReasonSupportedV2Parallel: undefined;
+  engineReasonUnsupportedDefinitionVersion: undefined;
+  engineReasonUnsupportedPipelineShape: undefined;
+  engineReasonUnsupportedPipelineSemantics: undefined;
+  engineReasonExecutionProfileUnavailable: undefined;
   thresholdTokensRemaining: { tokens: number };
   stageMetaRole: { role: string };
   stageMetaRequires: { requires: string };
@@ -171,6 +189,19 @@ export const PIPELINE_MESSAGE_KEYS = [
   'pipelineNotFound',
   'originLabel',
   'buildOrderHeading',
+  'engineSupportHeading',
+  'engineSupportEngines',
+  'engineSupportSupported',
+  'engineSupportUnsupported',
+  'enginePolicyLine',
+  'engineReasonSupportedRootDagBugFix',
+  'engineReasonSupportedV2ReviewCycle',
+  'engineReasonSupportedV2Executable',
+  'engineReasonSupportedV2Parallel',
+  'engineReasonUnsupportedDefinitionVersion',
+  'engineReasonUnsupportedPipelineShape',
+  'engineReasonUnsupportedPipelineSemantics',
+  'engineReasonExecutionProfileUnavailable',
   'thresholdTokensRemaining',
   'stageMetaRole',
   'stageMetaRequires',
@@ -333,6 +364,26 @@ export function getPipelineMessages(
 ): PipelineMessages {
   return new PipelineMessages(locale, getLocaleCatalog(locale));
 }
+
+/**
+ * ECP-5 (task 6.1): the reason-code -> product-copy table. EVERY reason
+ * `resolveReconcilerSupport` can emit has an entry — the record is keyed by the
+ * analyzer's own union, so adding a reason there without copy here is a type
+ * error rather than a silently-raw code in the product surface.
+ */
+export const RECONCILER_SUPPORT_REASON_KEYS: Record<
+  ReconcilerSupportAnalysis['reconcilerSupport']['reason'],
+  PipelineMessageKey
+> = {
+  supported_root_dag_bug_fix: 'engineReasonSupportedRootDagBugFix',
+  supported_v2_review_cycle: 'engineReasonSupportedV2ReviewCycle',
+  supported_v2_executable: 'engineReasonSupportedV2Executable',
+  supported_v2_parallel: 'engineReasonSupportedV2Parallel',
+  unsupported_definition_version: 'engineReasonUnsupportedDefinitionVersion',
+  unsupported_pipeline_shape: 'engineReasonUnsupportedPipelineShape',
+  unsupported_pipeline_semantics: 'engineReasonUnsupportedPipelineSemantics',
+  execution_profile_unavailable: 'engineReasonExecutionProfileUnavailable',
+};
 
 /** One localized phrase per unavailable reason (design D13's reason set). */
 const STORE_UNAVAILABLE_REASON_KEYS: Record<StoreUnavailableReason, PipelineMessageKey> = {

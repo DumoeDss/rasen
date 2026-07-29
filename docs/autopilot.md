@@ -1,20 +1,47 @@
-# Autopilot Policies: Gates, Selection, and Composed Pipelines
+# Autopilot Policies: Engine, Gates, Selection, and Composed Pipelines
 
-`/rasen-auto` has three **opt-in policy axes** that control how much the LEAD decides on its own. All three default to OFF — with no flags and no config, autopilot behaves exactly as documented in [artifact-workflow-guide.md §2](artifact-workflow-guide.md#2-run-the-entire-workflow-with-one-command-rasenauto): gates pause, the pipeline defaults to `small-feature`, classification is advisory-only.
+`/rasen-auto` has two **opt-in policy axes** that control how much the LEAD decides on its own, plus one **always-resolved** axis (the Run engine) that decides *who owns mechanical progression*. All three default to OFF — with no flags and no config, autopilot behaves exactly as documented in [artifact-workflow-guide.md §2](artifact-workflow-guide.md#2-run-the-entire-workflow-with-one-command-rasenauto): gates pause, the pipeline defaults to `small-feature`, classification is advisory-only.
 
 | Axis | Run flag | Config key (project `rasen/config.yaml` AND global config) | Values | Built-in default |
 |---|---|---|---|---|
 | **Gate policy** | `--no-gate` | `autopilot.gates` | `on` / `off` | `on` (gates pause) |
 | **Selection policy** | `--auto-select` / `--auto-compose` | `autopilot.selection` | `classify` / `compose` / `manual` | `manual` |
+| **Run engine** | `--engine <reconciler|legacy>` (on `rasen pipeline start`) | `runs.engine` (project / Store / global) | `auto` / `reconciler` / `legacy` | `auto` |
 
-Precedence on every axis: **run flag > project config > global config > built-in default.** Both `autopilot.gates` and `autopilot.selection` are settable at BOTH the project and the global (machine-wide) scope — project always wins over global. An absent or unrecognized config value at either scope falls back to the next layer with a warning — it never breaks config parsing, and sibling fields still parse.
+Precedence on every axis: **run flag > project config > global config > built-in default** (the engine axis additionally has a Store layer between project and global: **flag > project > Store > global > default**). Both `autopilot.gates` and `autopilot.selection` are settable at BOTH the project and the global (machine-wide) scope — project always wins over global. An absent or unrecognized config value at either scope falls back to the next layer with a warning — it never breaks config parsing, and sibling fields still parse.
 
-The resolved policies are **displayed at run start with their source** (e.g. `Gate policy: off (--no-gate)` / `Selection policy: classify (project)`), so an opted-in run is never silent about how it will behave.
+The resolved policies are **displayed at run start with their source** (e.g. `Gate policy: off (--no-gate)` / `Selection policy: classify (project)` / `Engine: reconciler (auto)`), so a run is never silent about how it will behave.
 
 ```
 /rasen-auto [--pipeline <name>] [--no-gate] [--auto-select] [--auto-compose]
             [--review-plan] [--planner claude|codex] [... other role flags] <task>
 ```
+
+---
+
+## 0. Run engine — `runs.engine` / `--engine`
+
+The engine decides **who owns mechanical progression**: the canonical reconciler Run, or the LEAD reading its own `auto-run.json`. Unlike the other two axes it is not opt-in — every run resolves an engine, and `auto` (the default) means *the reconciler wherever it is supported*.
+
+- **`auto` (default)** — the **reconciler** engine when capability discovery reports the pipeline supported; otherwise the **legacy** playbook path, with the support reason displayed so the fallback is never silent.
+- **`reconciler`** — forced. If the pipeline is unsupported, `rasen pipeline start` fails with the support reason and **no Run is created under either engine**. There is no silent substitution: you asked for the engine by name.
+- **`legacy`** — the reconciler off-switch. `rasen pipeline start` refuses with `engine_disabled_by_config` naming the deciding config layer, and launchers run the legacy playbook branch instead.
+
+`rasen pipeline show <name> --json` reports the whole resolution already computed — `enginePolicy: { configured, source, effectiveEngine }` beside `availableEngines` and `reconcilerSupport: { supported, reason, profileDigest }`. Autopilot reads it from there rather than re-deriving the precedence chain, exactly as it reads `effectiveGate` rather than re-masking gates. The human `pipeline show` output renders the same analysis as product copy.
+
+### What changes under the reconciler engine
+
+The canonical Run owns round counting, the `maxRounds` cap, phase order, actor separation, result validation, and the clean/escalated outcome — each with a real rejection path in the Record. Autopilot's Step E therefore **drives** the Run (`pipeline start` -> `pipeline resume-run` -> dispatch one worker per granted action -> `pipeline complete`) and reads progress from the run view's `review-cycle` section. It keeps no second copy of any of those rules. Selection, launch, worker staffing, briefing, relays, and honest reporting stay the LEAD's.
+
+Under the legacy engine, the full LEAD-owned Step E protocol runs exactly as before. One playbook with one engine branch — not two documents.
+
+### The run-state boundary
+
+For a **legacy-engine** run, `auto-run.json` is the authoritative record of progression, unchanged.
+
+For a **reconciler-engine** run it is bounded to what the kernel does not model: the engine and its deciding source, worker handles and transcripts, the gate-policy freeze, the retention mode, `strategyAttempts`, and the session-relay generation. Stage status, rounds, phases, findings and outcomes are read from the canonical run view; anything mirrored into run-state is a **labeled projection** and is never read back to make a decision the Run owns. `goal-run.json` and generated Markdown reports are compatibility projections by the same rule.
+
+Resume follows ownership: a reconciler-engine run resumes from the canonical frontier (`rasen pipeline resume-run`), while `rasen pipeline resume`'s artifact heuristic remains the legacy-engine resume surface. A run is never resumed under a different engine than the one that owns it.
 
 ---
 
@@ -91,6 +118,8 @@ Project config for a hands-off default posture:
 
 ```yaml
 # rasen/config.yaml
+runs:
+  engine: auto      # reconciler where supported, legacy otherwise (the default)
 autopilot:
   gates: off        # ordinary gates auto-approve (vet gates still pause)
   selection: classify  # adopt the classify suggestion; use `compose` to also allow composition
@@ -104,6 +133,6 @@ Fully unattended one-shot, composition allowed:
 
 What still stops an unattended run: **vet gates** (always), open **Blocker/Major findings** at ship (the finding gate is not a pause gate — it is never waived), and escalations from the orchestration ladder (see the playbook's Step H).
 
-Compatibility guarantee: with all three axes at their defaults, behavior is byte-identical to before these capabilities existed.
+Compatibility guarantee: with all axes at their defaults, behavior is byte-identical to before these capabilities existed — `runs.engine: auto` resolves to exactly the engine `pipeline start` already used.
 
 Related reading: [artifact-workflow-guide.md §2](artifact-workflow-guide.md#2-run-the-entire-workflow-with-one-command-rasenauto) (the autopilot chapter), §2.6 (writing custom pipelines by hand — composition's manual sibling), §9 (goal-driven iteration and its vet-gated `define-goal`).
