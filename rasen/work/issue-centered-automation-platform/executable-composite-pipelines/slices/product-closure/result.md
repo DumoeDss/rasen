@@ -361,9 +361,12 @@ isolated `XDG_DATA_HOME`. The stale-`dist` trap has produced false verdicts on
 this project before; the global `rasen` binary points at a different checkout
 and is never used here.
 
-**Revision.** Every RunId below was produced at **`11ce4d69`** — the whole
-matrix is anchored to one revision, re-run after the section-7 fixes rather than
-carried over from earlier attempts. Four scripts, all `node <script>.mjs`
+**Revision.** Every RunId below was produced at **`3b33d5be`** — the whole
+matrix is anchored to one revision. It has been re-run in full **twice**: once
+after the section-7 fixes, and again after `3b33d5be` fixed the Blocker that
+task 7.6 found (below). Re-running everything rather than patching the one
+changed cell is the point: a matrix whose rows come from different trees is not
+a matrix, and the header would be false as written. Four scripts, all `node <script>.mjs`
 against the freshly built `dist/`:
 
 | Script | Cells |
@@ -381,31 +384,31 @@ kernel-internal step with no CLI command).
 
 | Pipeline | Provenance | RunId | Engine owner | Terminal | Evidence |
 |---|---|---|---|---|---|
-| `bug-fix` (ReviewCycle finding→fix→independent re-review) | built-in v1 | `run:b19dbb95d53084bc…` [^rc] | reconciler | loop `clean`, ship admitted | `dogfood-review-cycle.mjs`. F1 (major) → triage → fix (`fixerA`) → **same-actor re-review REFUSED** → independent `verifierA` → `clean`; 3 distinct actor identityDigests. ECP-1's original evidence for this cell is `run:b23b2cce16d90495…` |
-| `small-feature` | built-in v1 | `run:0c9d9cb29cf7795e…` | reconciler (`default`) | **`completed`** | **NEW** — task 7.4, scenario A. 9 actions; review-cycle round 1/3 `clean`, F1 (major) `resolved`; per-stage ActionIds in the script's dump |
-| `goal-loop-measure` (satisfied) | built-in v1 | `run:c72075a3ca58bcef…` | reconciler | `satisfied` @ round 2 (score 90) | `dogfood-goal-cycle.mjs` scenario 1 |
-| `goal-loop-measure` (exhausted) | built-in v1 | `run:ff989fea4cb212f5…` | reconciler | `escalated` / `exhausted` @ round 5 (score 35) | `dogfood-goal-cycle.mjs` scenario 2 |
-| `goal-loop-evaluate` (loop only) | built-in v1 | `run:9fb8b770b6531587…` | reconciler | `satisfied` @ round 1 | `dogfood-goal-cycle.mjs` scenario 3 |
-| `goal-loop-research` | built-in v1 | `run:ea8b5f3bf6459cd5…` | reconciler | `completed` (report tail) | `dogfood-goal-cycle.mjs` scenario 4 |
-| `goal-loop-evaluate` (whole pipeline) | built-in v1 | `run:25d59a28f2ef44a7…` | reconciler (`default`) | **`completed`** | **NEW** — task 7.5, scenario B. define-goal → work → evaluate judge (`satisfied`, `gaps: []`, one rubric criterion) → ship → retain → archive. The pre-existing scenario 3 above stops at the loop's own termination; this one carries the Run to a terminal |
-| `full-feature` (Choice/FanOut/Join + review loop) | built-in v1 | `run:c8474be7bcb69522…` | reconciler | **`completed`**, terminal `full-feature-completed` | `dogfood-full-feature.mjs` scenario A; `pipeline status` during the FanOut phase captured (ECP-4 task 13.5) |
-| `full-feature` (optional member fails) | built-in v1 | `run:cca8a3c49600980a…` | reconciler | join `proceeding`, Run continues | `dogfood-full-feature.mjs` scenario B1 — an optional member's failure is suppressed |
-| `full-feature` (required member fails) | built-in v1 | `run:28d29eddc30ed5c1…` | reconciler | **`escalated`**, terminal `experts-failed` | `dogfood-full-feature.mjs` scenario B2 — the Join refuses to proceed and the Run never reaches the review loop |
-| `ecp5-canvas-composite` | **Canvas-authored v2** | `run:3c50063bea7fed8e…` | reconciler (`default`) | **`completed`** | **NEW** — task 7.6, scenario C. See "the Canvas-authored cell" below |
-| `small-feature` via the converged Step E protocol | built-in v1 | `run:0ad1efbe057dcfac…` | reconciler | **`completed`** | **NEW** — task 7.7, scenario D. 10 `resume-run` cycles, 9 `review-cycle` section reads, full transcript in the script's dump |
+| `bug-fix` (ReviewCycle finding→fix→independent re-review) | built-in v1 | `run:dbbd559244c6bad3…` [^rc] | reconciler | loop `clean`, ship admitted | `dogfood-review-cycle.mjs`. F1 (major) → triage → fix (`fixerA`) → **same-actor re-review REFUSED** → independent `verifierA` → `clean`; 3 distinct actor identityDigests. ECP-1's original evidence for this cell is `run:b23b2cce16d90495…` |
+| `small-feature` | built-in v1 | `run:308c9ca2d42f576a…` | reconciler (`default`) | **`completed`** | **NEW** — task 7.4, scenario A. 9 actions; review-cycle round 1/3 `clean`, F1 (major) `resolved`; per-stage ActionIds in the script's dump |
+| `goal-loop-measure` (satisfied) | built-in v1 | `run:81b0934e9137dc65…` | reconciler | `satisfied` @ round 2 (score 90) | `dogfood-goal-cycle.mjs` scenario 1 |
+| `goal-loop-measure` (exhausted) | built-in v1 | `run:163d87c69b3c4c33…` | reconciler | `escalated` / `exhausted` @ round 5 (score 35) | `dogfood-goal-cycle.mjs` scenario 2 |
+| `goal-loop-evaluate` (loop only) | built-in v1 | `run:1b8e7a48276711b5…` | reconciler | `satisfied` @ round 1 | `dogfood-goal-cycle.mjs` scenario 3 |
+| `goal-loop-research` | built-in v1 | `run:c3583225fa8b5b8f…` | reconciler | `completed` (report tail) | `dogfood-goal-cycle.mjs` scenario 4 |
+| `goal-loop-evaluate` (whole pipeline) | built-in v1 | `run:92156d532e5c2762…` | reconciler (`default`) | **`completed`** | **NEW** — task 7.5, scenario B. define-goal → work → evaluate judge (`satisfied`, `gaps: []`, one rubric criterion) → ship → retain → archive. The pre-existing scenario 3 above stops at the loop's own termination; this one carries the Run to a terminal |
+| `full-feature` (Choice/FanOut/Join + review loop) | built-in v1 | `run:1b411c04dac999a7…` | reconciler | **`completed`**, terminal `full-feature-completed` | `dogfood-full-feature.mjs` scenario A; `pipeline status` during the FanOut phase captured (ECP-4 task 13.5) |
+| `full-feature` (optional member fails) | built-in v1 | `run:bfcff510425f9f3a…` | reconciler | join `proceeding`, Run continues | `dogfood-full-feature.mjs` scenario B1 — an optional member's failure is suppressed |
+| `full-feature` (required member fails) | built-in v1 | `run:aca40facf224bc24…` | reconciler | **`escalated`**, terminal `experts-failed` | `dogfood-full-feature.mjs` scenario B2 — the Join refuses to proceed and the Run never reaches the review loop |
+| `ecp5-canvas-composite` | **Canvas-authored v2, CONNECTED body** | `run:07ef84266520254b…` | reconciler (`default`) | **`completed`** | **NEW** — task 7.6, scenario C. Two body stages in a **sequential** chain, authored through the Canvas. See "the Canvas-authored cell" below |
+| `small-feature` via the converged Step E protocol | built-in v1 | `run:fbcebfe852884e77…` | reconciler | **`completed`** | **NEW** — task 7.7, scenario D. 10 `resume-run` cycles, 9 `review-cycle` section reads, full transcript in the script's dump |
 
-[^rc]: **Exact-tree provenance for this one cell.** `run:b19dbb95…` came from the
-**second** invocation of `dogfood-review-cycle.mjs`. The first, `run:19ec03cd…`,
-ran at the same repo HEAD and was discarded because the script printed a
-spurious WARNING on a *passing* guarantee — it asserted the raw
-`actor_separation` token, which the CLI stopped emitting once the refusal became
-a localized product message. The one-line assertion fix was **uncommitted** when
-`b19dbb95` was produced and landed in `50e80bd9`. So "produced at `11ce4d69`" is
-true of the repo HEAD and not of the exact working tree, which differed by that
-one assertion in a dogfood script — it changes what the script *reports*, never
-what the Run *does*. Recorded because the alternative is a provenance claim that
-does not survive someone checking it, which is the only thing an evidence ledger
-is for.
+[^rc]: **Exact-tree provenance — the caveat is now moot, kept as provenance.**
+At the previous revision this cell was `run:b19dbb95…`, from the **second**
+invocation of `dogfood-review-cycle.mjs`; the first, `run:19ec03cd…`, was
+discarded because the script printed a spurious WARNING on a *passing*
+guarantee — it asserted the raw `actor_separation` token, which the CLI stopped
+emitting once the refusal became a localized product message. That assertion fix
+was **uncommitted** when `b19dbb95` was produced, so "produced at `11ce4d69`" was
+true of the repo HEAD and not of the exact working tree. **That no longer
+applies**: the fix landed in `50e80bd9`, and the current cell
+(`run:dbbd559244c6bad3…`) came from a clean tree at `3b33d5be` with the script
+already committed. Kept because a ledger that silently deletes a caveat once it
+stops applying teaches its readers that caveats disappear on their own.
 
 ### Task 7.6 — the Canvas-authored cell, and what ECP-2's evidence actually was
 
@@ -441,9 +444,110 @@ The cell is now produced end to end:
 4. `rasen pipeline show --json` reports
    `{"supported":true,"reason":"supported_v2_executable","profileDigest":"sha256:e0d7168bdb248980…"}`
    — a verdict that was itself unreachable before section 6.
-5. `rasen pipeline start` → both body stages admitted
-   (`root:composite-ref/stage-2`, `root:composite-ref/stage`) → **`completed`**
-   (`run:3c50063bea7fed8e…`).
+5. `rasen pipeline start` → **`completed`** (`run:07ef84266520254b…`).
+
+#### The cell asserts ORDERING, not stage count — and why that distinction is the whole cell
+
+A two-stage body with no edge between the stages is a **different pipeline**:
+the reconciler admits disconnected stages **concurrently**. So "the body has two
+stages" is equally true of correct authoring and of the broken kind, and
+evidences neither. Sequential-versus-fan-out is the only observable that
+separates them, and this cell asserts it twice:
+
+| # | Assertion | Result at `3b33d5be` |
+|---|---|---|
+| 1 | **Structural** — the persisted plan carries the dependency | `stage-2.requires = [node:6c2817dc…]` (the `stage` node), `stage.requires = []`. Directional, not merely non-empty: `firstRequiresSecond: false` |
+| 2 | **Behavioural** — the reconciler's own answer | `first frontier: ["root:composite-ref/stage"]` — **exactly one** action, read BEFORE any completion |
+| 3 | **The falsifying contrast** | The pre-fix cell (`run:3c50063b…`, disconnected body) put **both** stages on the first frontier and completed them back to back. Same stage count, different pipeline |
+
+Assertion 2 is the one that settles it. Assertion 1 reads the artifact; assertion
+2 is what the engine actually did with it, and it is the assertion that would
+have caught the disconnected body even if the plan had looked right.
+
+The authored edge, verbatim from the Canvas's own save POST:
+
+```json
+{ "id": "stage:done->stage-2:input",
+  "from": { "node": "stage", "port": "done" },
+  "to":   { "node": "stage-2", "port": "input" } }
+```
+
+#### What this cell cost, and what it found
+
+The first attempt at it **failed**, and the failure was the point. `pipeline
+save` refused the Canvas's own output:
+
+```
+PORT_MISMATCH  /declarations/0/graph/connections/0/to/port:
+Node 'stage-2' has no declared input port 'input'.
+```
+
+Root cause: `contractForNode` built an AtomicStage's input map from
+`portMap(descriptor.inputs)`, and **none of the 42 production capability
+descriptors declares any input** — the synthetic control contract fired only for
+a *missing* descriptor at `version: 'legacy'`, i.e. the v1-normalization path.
+So no Canvas-authored connection into an AtomicStage backed by a real capability
+could ever save, and renaming the port would not have helped, because a found
+descriptor yields an empty input map for **any** port name. The root connector
+was affected identically — this was never an F1 regression, but a pre-existing
+hole that F1's new affordance made reachable in a second place.
+
+Fixed in `3b33d5be` by admitting the shared `CONTROL_INPUT_PORTS`
+(`['input','in','start']`) for a found descriptor that declares no typed inputs
+— the closed set Choice, Gate, FanOut and Finish already accepted, of which the
+AtomicStage legacy branch's `'start'`-only was the narrower outlier. Scoped so a
+descriptor that *does* declare typed ports keeps exactly those, and `'inpt'`
+still fails `PORT_MISMATCH`.
+
+**The cell could have been made green without the fix**, by feeding the Canvas a
+fabricated catalog entry with declared ports — as ECP-2's and F1's own fixtures
+do, which is why the hole survived them. That would have produced passing
+evidence for something the product cannot do. The red reproduction was kept
+instead and became the fix's acceptance test.
+
+#### The cycle probe — what it demonstrates, stated exactly
+
+Authoring the closing edge `stage-2 → stage` through the same affordance is
+**refused by the Canvas**: the model throws, the panel surfaces the diagnostic
+(`pipeline-canvas-toast`, text containing `cycle`), and the graph is unchanged —
+still exactly one connection. The probe asserts **no toast was showing
+beforehand**, without which a leftover toast from an earlier action would let it
+pass while the refusal never happened.
+
+**What this claims, precisely: the Canvas refuses to author a cycle.** It does
+**not** demonstrate that the server's cycle validator is reachable — F1 puts the
+rule in the model, so a cyclic body cannot get past the Canvas to find out. Those
+are different sentences and the difference is the point of the probe.
+
+The server-side backstop is separate and already proven:
+`test/core/change-run/ecp-composite-validation.test.ts:178` → "rejects cyclic
+body connection with `GRAPH_CYCLE`", on a body graph with `a→b` and `b→a` behind
+a `CompositeRef`, via `tryPrepare`.
+
+**Together they cover every input path — by composing two proven links, not by
+one end-to-end test:**
+
+1. ECP-2's test proves *prepare refuses a cyclic body*, on a programmatically
+   built definition.
+2. This cell's success path proves *a Canvas definition saved through
+   `pipeline save` reaches prepare* — `pipeline show` reports a real support
+   verdict afterwards, which is only computable if prepare ran.
+
+So "a cyclic body arriving through save is refused" follows from (1) and (2). The
+composition is sound because both links sit on the same call path and prepare's
+validator set is not conditional on the caller — stated so a reader can check the
+composition rather than take it. It is a composition; it is not a direct
+end-to-end proof, and this ledger does not claim one.
+
+No complementary check was added. A third test would reach the same validator
+through a third door and cover nothing.
+
+#### `profileDigest` changed, and that is correct
+
+`sha256:e0d7168b…` → **`sha256:de2b441d5d61d55b…`**. A connected body is a
+different definition, so it is a different plan and a different profile. The
+engine reviewer reproduced the OLD value byte-identically during its audit, so
+this reads as a regression to anyone who remembers it. It is not one.
 
 The authored definition is reproduced verbatim in the scenario-C dump of
 `node test/dogfood-ecp5-closure.mjs`.
@@ -516,13 +620,13 @@ one concrete pointer. **No condition is marked satisfied without one.**
 
 | # | Exit condition (verbatim, §15.4) | Verdict | Evidence |
 |---|---|---|---|
-| 1 | v1 定义兼容读取/编译，v2 definition 经 Canvas save/detail/export round-trip 后语义不变 | **MET** | v1 read/compile: `test/core/change-run/lowerer.test.ts`; `test/core/pipeline-registry/v1-parallel-only-lowering.test.ts` (v1 parallel-only now compiles through the same v2 path — ECP-5 §2). v2 round-trip: `packages/ui/test/canvas/pipeline-canvas-page.test.tsx` → "creates a declaration, references it from the root, and saves the round-trip" (asserted on the POSTed definition, not the DOM). End-to-end, through the real save path: dogfood scenario C — Canvas POST → `pipeline save` → `pipeline show` (`supported_v2_executable`) → Run `run:3c50063bea7fed8e…` `completed`, i.e. the saved definition kept its semantics all the way to execution |
+| 1 | v1 定义兼容读取/编译，v2 definition 经 Canvas save/detail/export round-trip 后语义不变 | **MET** | v1 read/compile: `test/core/change-run/lowerer.test.ts`; `test/core/pipeline-registry/v1-parallel-only-lowering.test.ts` (v1 parallel-only now compiles through the same v2 path — ECP-5 §2). v2 round-trip: `packages/ui/test/canvas/pipeline-canvas-page.test.tsx` → "creates a declaration, references it from the root, and saves the round-trip" (asserted on the POSTed definition, not the DOM). End-to-end, through the real save path: dogfood scenario C — Canvas POST → `pipeline save` → `pipeline show` (`supported_v2_executable`) → Run `run:07ef84266520254b…` `completed`, i.e. the saved definition kept its semantics all the way to execution |
 | 2 | Canvas 可以创建、引用、展开和校验受约束 Custom Composite | **MET** | Create + reference: `packages/ui/src/canvas/DeclarationsPanel.tsx`, commit `b5e9fcd0` (ECP-5 task 5A) — before it, `addDeclaration`/`removeDeclaration`/`addBodyStage` had **zero callers in `packages/ui/src`** and ECP-2 tasks 8.5/8.6 were false ticks, now annotated. Constrained: `V2_BODY_PALETTE_KINDS` (`draft.ts`) is `AtomicStage` only; `pipeline-canvas-page.test.tsx` asserts all five forbidden kinds absent. Expand (drill-down): ECP-2 commit `95bd1c53` composite-body progress projection. Validate: ECP-2 task 7.1 prepare-time validators (recursion, nested loop, cycle, missing exit, port mismatch, capability missing). Real: scenario C |
-| 3 | `bug-fix`、`small-feature`、三个 goal pipelines、`full-feature` 与至少一个 Canvas-authored Custom Composite 均可完成真实 Run | **MET** | The dogfood matrix above — twelve cells, every RunId produced at `11ce4d69`. The three cells that had no real Run before this slice (`small-feature`, a whole-pipeline `goal-loop-evaluate`, a Canvas-authored composite) are `run:0c9d9cb2…`, `run:25d59a28…`, `run:3c50063b…` |
+| 3 | `bug-fix`、`small-feature`、三个 goal pipelines、`full-feature` 与至少一个 Canvas-authored Custom Composite 均可完成真实 Run | **MET** | The dogfood matrix above — twelve cells, every RunId produced at `3b33d5be`. The three cells that had no real Run before this slice (`small-feature`, a whole-pipeline `goal-loop-evaluate`, a Canvas-authored composite) are `run:308c9ca2…`, `run:92156d53…`, `run:07ef8426…` — the last of them a **connected** two-stage body, which task 7.6 could not produce until `3b33d5be` |
 | 4 | 同一 immutable plan + committed record 始终得到同一 next action | **MET** | `test/core/change-run/reconciler.test.ts` → describe "reconcile determinism (5.1)" (shuffled insertion order, poisoned clock/random/env/filesystem, replay). `fault-journeys.test.ts` → "different launch keys produce distinct deterministic RunIds (no global key index)" and the launch-binding immutability case. `ecp-composite-parity.test.ts` extends it across composite invocation |
 | 5 | root stage 与 Composite invocation 的 crash-before/after-commit 故障注入均可恢复 | **MET** | `fault-journeys.test.ts` 50/50 — pre-publish, after-stage-before-fsync, after-fsync-before-publish, post-publish, O_EXCL race, post-commit/pre-projection, conflicting receipt, corrupt/gapped/duplicate revision fail-closed. `ack-loss-journeys.test.ts` 12/12. `archive-recreate-journeys.test.ts` 13/13. Composite invocation specifically: `ecp-composite-dogfood.test.ts` recovery path (resume after start with the body stage still active) |
-| 6 | ReviewCycle 至少真实经历一次 finding -> fix -> independent re-review | **MET** | `run:b19dbb95d53084bc…` at this HEAD: F1 (major) → triage `fix_inline` → fix by `fixerA` → same-actor re-review **refused** ("The fixer cannot verify their own ReviewCycle fix.") → independent `verifierA` → `clean`; three distinct actor identityDigests. ECP-1's original run was `run:b23b2cce16d90495…`. Reproduced twice more here: scenarios A (`run:0c9d9cb2…`) and D (`run:0ad1efbe…`), each with four distinct phase actors |
-| 7 | GoalLoopMeasure 与 GoalLoopEvaluate 都完成真实迭代并证明公共 loop lifecycle | **MET** | Measure: `run:c72075a3…` (fail round 1 → pass round 2 → `satisfied`) and `run:ff989fea…` (5 rounds → `exhausted`/`escalated`). Evaluate: `run:9fb8b770…` (loop `satisfied`) and `run:25d59a28…` — work → evaluate judge (`satisfied`, `gaps: []`) → ship → retain → archive → `completed`. Same loop lifecycle both variants: same `goal` section, same phase actor separation (the dogfood's first attempt was **rejected** with "The worker cannot judge their own GoalCycle work" — the shared guarantee firing) |
+| 6 | ReviewCycle 至少真实经历一次 finding -> fix -> independent re-review | **MET** | `run:dbbd559244c6bad3…` at this HEAD: F1 (major) → triage `fix_inline` → fix by `fixerA` → same-actor re-review **refused** ("The fixer cannot verify their own ReviewCycle fix.") → independent `verifierA` → `clean`; three distinct actor identityDigests. ECP-1's original run was `run:b23b2cce16d90495…`. Reproduced twice more here: scenarios A (`run:308c9ca2…`) and D (`run:fbcebfe8…`), each with four distinct phase actors |
+| 7 | GoalLoopMeasure 与 GoalLoopEvaluate 都完成真实迭代并证明公共 loop lifecycle | **MET** | Measure: `run:81b0934e…` (fail round 1 → pass round 2 → `satisfied`) and `run:163d87c6…` (5 rounds → `exhausted`/`escalated`). Evaluate: `run:1b8e7a48…` (loop `satisfied`) and `run:92156d53…` — work → evaluate judge (`satisfied`, `gaps: []`) → ship → retain → archive → `completed`. Same loop lifecycle both variants: same `goal` section, same phase actor separation (the dogfood's first attempt was **rejected** with "The worker cannot judge their own GoalCycle work" — the shared guarantee firing) |
 | 8 | open Major 永远不能进入 ship | **MET** | `test/core/change-run/review-cycle.test.ts` and `review-cycle-runtime.test.ts` (`assertReviewCycleMayShip`); `facade-settle-completeness.test.ts` (settle cannot declare clean with an open Blocker/Major). Kernel-anchored in the UI too: `ui-constants-provenance.test.ts` → "the escalated fixture really is the kernel refusing to call an open Major clean" |
 | 9 | 所有完成判断绑定 actor、tree、delta/result 和 evidence | **MET** | `test/core/change-run/completion.test.ts` + `cli-complete.test.ts` (strict `change-run-completion/1` decode; unknown fields, missing fields, orphaned uploads, digest mismatch, symlink body, oversize body all rejected before the facade). The fix-result contract carries `beforeTree`/`afterTree`/`delta`/`tests`; every dogfood completion in this slice carries actor + attestation + evidence refs, and the CLI rejects any that does not |
 | 10 | `rasen-auto`、`rasen-goal`、`rasen-review-cycle` 不再拥有独立机械推进规则 | **MET** | `test/core/templates/orchestration-bundles.test.ts` → "deletes the prompt-owned duplicates of kernel-enforced rules" (`grep -c "Default cap: 3" _orchestration.ts` → 0) and the four "do not …" assertions on the reconciler branch, each with named replacement evidence (§3 table above). `rasen-goal` converged in ECP-3 (task 9.4 evidence, §3); `rasen-review-cycle` in ECP-1; `rasen-auto` in this slice. Proven end to end by scenario D driving the whole pipeline through the canonical Run |
@@ -540,7 +644,7 @@ Two things this table deliberately does NOT claim:
   a seventh false tick in this portfolio: that file passed for the entire period
   in which the guard had no production caller.
 - The `bug-fix` and `full-feature` rows carry RunIds produced **here**, at
-  `11ce4d69`, rather than ECP-1's and ECP-4's originals. Citing a sibling's
+  `3b33d5be`, rather than ECP-1's and ECP-4's originals. Citing a sibling's
   RunId would have evidenced that slice's tree, not the integrated one; the
   originals are named beside the new ones so provenance is not lost.
 
@@ -601,7 +705,9 @@ execution layer as out of 0.1.6 scope.
 ### Task 8.3 — the anti-false-tick grep sweep
 
 Every grep-falsifiable claim in sections 1–6, re-run in one pass at
-`11ce4d69`. Command outputs verbatim:
+`3b33d5be` — the same revision the whole dogfood matrix is anchored to, and
+re-run again after the Blocker fix. All twelve still hold. Command outputs
+verbatim:
 
 ```
 $ grep -c "runs.engine" src/core/config-keys.ts src/core/config-schema.ts
@@ -658,22 +764,40 @@ src/core/templates/workflows/review-cycle.ts:0            <- the phantom flag, g
 
 ## Section 9 — Release checks on the integrated HEAD (discharges ECP-3 13.1–13.4)
 
-All at `11ce4d69`, natively on Windows 11 (`win32`, Node 24.14.0) — which is
-what makes this also the cross-platform evidence, not a separate exercise.
+All at `3b33d5be`, natively on Windows 11 (`win32`, Node 24.14.0) — which is
+what makes this also the cross-platform evidence, not a separate exercise. Every
+check re-run after the Blocker fix; nothing carried over from the earlier
+revision.
 
 | Check | Result |
 |---|---|
 | `pnpm build` | clean |
 | root `npx tsc --noEmit` | **0 errors** |
 | `packages/ui` `npx tsc --noEmit` | **0 errors** |
-| root `npx vitest run` | **393 files · 6357 passed · 6 failed · 33 skipped** — every failure attributed below |
-| `packages/ui` `npx vitest run` | **56 files · 592 passed · 0 failed** |
+| root `npx vitest run` | **393 files · 6364 passed · 1 failed · 33 skipped** |
+| `packages/ui` `npx vitest run` | **56 files · 604 passed · 0 failed** |
 | `pnpm lint` (`eslint src/ test/ vitest.config.ts vitest.setup.ts`) | **0 errors**, 1 pre-existing warning |
 | `node scripts/release-contract.mjs` | `verified lockstep release contract 0.1.5` |
 | `node scripts/pack-version-check.mjs` | `pack-version-check: OK` |
 | `node scripts/paired-pack-check.mjs` | `verified paired CLI/UI packages 0.1.5` |
 
-### The 6 root failures, enumerated per file with attribution
+### The one root failure — and what happened to the other five
+
+**At `3b33d5be`, running alone, the suite reports a single failure**:
+`test/core/token-audit/zed/audit.test.ts` — pre-existing, unrelated, and
+environment-dependent (this machine has a Zed database at the default location,
+so the test's "absent" precondition does not hold). Verified by checking that
+test out at `2fcd5438`, before this change, and reproducing it identically.
+
+The four Windows CLI-spawn flakes recorded below did **not** recur, and the
+`command-registry` regression was fixed. The flakes not recurring is the
+expected consequence of having the machine to myself: they are contention
+artifacts, which is exactly what the isolated re-runs said. That earlier
+attribution is preserved rather than deleted — it is what the evidence looked
+like at the time, and this run is the stronger confirmation of it, not a
+replacement for it.
+
+### The 6 root failures at the previous revision, enumerated per file with attribution
 
 Never extrapolated from a truncated tail — the full log was captured to a file
 and the FAIL lines enumerated from it. Each suspect was then re-run **in
@@ -742,6 +866,42 @@ appears anywhere as evidence.
 never observable; and/or have `ensureCliBuilt` take a lock file so concurrent
 callers serialize instead of racing. Both are repo-infrastructure changes with
 their own blast radius, and a closure slice is the wrong place for them.
+
+### The other silent-write trap: an edit anchor that no longer matches
+
+Same failure class, different surface, and it belongs beside the rule above
+because both are cases where a convention *looks* like protection and only an
+assertion actually is.
+
+Three writers shared an uncommitted `tasks.md` across this slice. The
+narrow-pathspec convention protects the **commit** — it stops you sweeping
+someone else's staged file into yours. **Nothing protects the edit.** An edit
+anchored on a string another writer may also be touching can silently drop their
+version if the anchor moved, and git cannot help: with uncommitted content there
+is nothing to conflict against, so a careless overwrite *loses* work rather than
+failing.
+
+The control is to read fresh and **assert the anchor matched exactly once**
+before replacing. Both failure directions matter, for different reasons:
+
+| Count | Meaning | Behaviour |
+|---|---|---|
+| `0` | the anchor moved | **Fails loudly.** Annoying, never dangerous |
+| `> 1` | the anchor is ambiguous | a naive `replace` edits **every** occurrence, silently — and it is invisible in diff review, because each individual hunk looks correct |
+
+So the assertion is `== 1`, not `>= 1`; the equality is what catches the silent
+case. Anyone copying the pattern as "assert it matched" gets the loud protection
+and not the quiet one. This is also why every edit in this change is a targeted
+in-place replacement rather than a regeneration — a script that reconstructs a
+file from a template has no anchor to assert and destroys concurrent work by
+construction. It caught a real error while this very section was being written:
+a malformed literal in the edit script tripped the `== 1` assert and the file was
+never touched.
+
+It is the same discipline as a mutation test that silently no-ops because the
+pattern did not match: the tool reports success, the operation did nothing (or
+too much), and only an explicit count distinguishes them. Write-side and
+mutation-side, one rule.
 
 ### `scripts/skill-check.ts` — NOT repaired, and why
 
