@@ -126,7 +126,15 @@ reconciler ──next action──▶ launcher / runtime
 - **KC2**：跨 cwd resume 硬报错 exit 1——registry 记录并校验 cwd（已在设计内）；
 - SessionEnd/Stop hooks 无头模式正常触发（1.5s 预算）——registry 更新可由 hook 异步触发；不支持自定义 session id。
 
-**P1 入口残余验证**（继承报告"残余缺口"）：① 常驻进程 >35 分钟留存未证——**65 分钟 KC6 复跑是 P1 开工前置**（决定 §6.1 touch 在 live 宿主下是否还需要）；② KC5 丢轮次 n=1，单飞锁实现时补重复试验。
+**P1 入口残余验证——已全部关闭（2026-07-29 深夜第二轮探针，live 进程 worktree cwd，haiku）**：
+
+| 验证项 | 结果 |
+|---|---|
+| live 进程 55 分钟留存 | **HIT**（read 98,052 / write 467 = 99.5%），且空闲期间 worktree 存在 untracked 变化——**repo 变化免疫同步实证** |
+| live 进程 65 分钟留存 | **MISS-rewrite**——1h TTL 上界对 live 进程成立，touch 只在预计空闲 >~55 分钟时需要（§6.2 原策略数字不变） |
+| MISS 重写后 5 分钟 | **HIT**——live 进程重写一次后温链立即恢复（daemon respawn/TTL 穿透后的恢复语义） |
+| fork HIT 率 | **0/2**：距 bootstrap 9 秒、repo 未变也 MISS——`--fork-session` 必然重渲染前缀，无热缓存继承（§6.3 已改写） |
+| KC5 重复试验 | 复现且**非确定性**：4 条并发 resume 丢 1 条，双方均计费均报 success、无任何报错——恢复路径单飞锁必须严格自建，不得依赖 CLI 任何行为 |
 
 约束（探针 KC 对应）：
 
@@ -202,7 +210,7 @@ reviewer / fixer：session 档（多 episode、轮间空闲、读多写少），
 1. **dispatch 时机选档**——档位不可中途切换（换档 = 全量 2×C 重写），planner 按任务画像预判：`C_workingset > ~0.6 × C_implementer` 或 fix 轮需要实现者脑内状态 → implementer 从一开始走 session 档，0.75×C 写溢价当保险费（stage 配置显式逃生门）；
 2. **working-set manifest 无论如何都做**——handoff 附机器可读清单（文件路径 + 行区间 + 相关性理由），successor 重收集从"重新探索"降为"定向读切片"（大文件读 findings 指向的区间而非整文件）；
 3. **重收集只付一次**——session 档 fixer 收集后跨全部 fix 轮保温摊薄，真实对比是 `0.75×C_impl` vs `1.25×C_ws 一次性`。
-4. **`--fork-session` 继承（官方能力，2026-07-29 调研确认）**——session 档 implementer 完成后 fork 其会话给 fixer：fork 复制历史、前缀字节相同，fixer 以 0.1×C 读继承全部收集成果（vs 1.25×C_ws 重收集），且获得独立 session 身份。边界：design-level fixer 按 `worker-reuse-orchestration` spec 仍须 fresh eyes，fork 只用于机械修复轮；reviewer 永不 fork 自 implementer（评审独立性污染）。**P0 定稿附加约束**：fork 走 resume 路径，在 repo cwd 下受前缀重渲染不稳定影响（§5.1）——fork 应在源会话完成后**立即**执行（分钟级窗口内注入块大概率未变），或接受一次重写作为继承成本上限；P1 实测 fork 的 HIT 率后再定默认。
+4. **`--fork-session` 继承（第二轮探针后改写）**——实测 fork **无热缓存继承**（距 bootstrap 9 秒、repo 未变仍 MISS，0/2）：fork 必然重渲染前缀。fork 的真实定位是"**付一次全量重写（~2×C_impl 写费）换完整上下文继承 + 零重探索请求**"，与 manifest 播种的 fresh fixer 同台比价：fork 省重探索的请求/输出成本，manifest 省无关上下文的重写成本。working set ≈ 全上下文（蒸馏不掉）时 fork 占优，否则 manifest 占优。边界不变：design-level fixer 须 fresh eyes；reviewer 永不 fork 自 implementer。
 
 collection-heavy 任务同时逼近上下文窗口上限（`handoffTokenLimit` 契约字段管辖）——保温不解决窗口耗尽，manifest 层不可省。
 
@@ -271,6 +279,9 @@ rasen agent audit --run <runId>
 > 2. **KC1a 根因定案为 cwd 前缀不稳定**：repo cwd 的 resume 重渲染注入的 ~7.3k 项目上下文块（含 git 状态相关成分——主链 5 次 HIT/MISS 与本 worktree 的 commit 时间窗完美相关；另含未定位的其他可变成分——repo 静止的对照仍 MISS）；scratchpad cwd 8 战全胜证明留存本身 ≥40 分钟。TTL/容量淘汰假设双双出局；
 > 3. KC1c FAIL（touch 两腿皆冷）随根因重释：不是 touch 机制无效，是 resume 路径前缀不稳定——touch 在 live 宿主下经 stdin 注入不受此影响；
 > 4. 遗留验证（P1 入口）：65 分钟 KC6 复跑（>35 分钟留存）、KC5 重复试验、fork HIT 率实测。
+>
+> **P0 第二轮（同日深夜收官，主会话直跑 + haiku subagent 操作员）**：上述三项全部关闭，结果见 §5.1 表——live 进程 55 分钟 HIT（含 repo 变化免疫实证）/65 分钟 MISS（1h TTL 上界）/重写后 5 分钟温链恢复；fork 无热继承（0/2，§6.3 已改写）；KC5 非确定性丢轮次复现。**touch 策略回归 §6.2 原始数字（~50 分钟 cadence、仅 >55 分钟空闲场景），P0 全部验证事项就此完结，P1 可开工（等 ECP 排期）。**
+> 运维教训（第二轮又复现两次）：subagent 后台闲等的完成通知会丢——数据须落盘、收割不依赖通知，正是本设计 registry/journal 的立论；探针脚本的日志写入（Add-Content）可能撞瞬时文件锁导致脚本早退，结果文件先于日志落盘的顺序救了数据，P1 实现里 registry 写入须 retry-on-lock。
 
 **P1 — SessionHost + registry + daemon touch scheduler（探针通过后；可与 ECP-4 后期并行的独立模块）**
 新模块（建议 `src/core/session-host/`）+ `rasen session exec|list|retire` CLI + daemon 内的 touch scheduler（§6.1 机械执行器）+ 单测。不碰 `change-run/`（只读契约类型），与 ECP-4 无文件冲突。
