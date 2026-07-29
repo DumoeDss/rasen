@@ -162,14 +162,6 @@
     "selectProjectsPrompt": "选择要获取的项目（空格选择，回车确认）："
   },
   "knowledge": {
-    "commandDescription": "管理有证据门槛的学习技能",
-    "applyDescription": "从绝对路径的 JSON 文件应用学习技能候选",
-    "listDescription": "列出规范的学习技能",
-    "showDescription": "显示规范的学习技能",
-    "retireDescription": "退役受管的学习技能",
-    "projectSelectorDescription": "独立于规划根目录选择项目知识所有者",
-    "storeSelectorDescription": "独立于规划根目录选择 Store 知识所有者",
-    "runStateDirDescription": "从包含 auto-run.json 的已解析目录加载冻结的知识身份",
     "contextSummary": "知识所有者：{owner}；规划根目录：{planningRoot}。",
     "candidatePathRequired": "需要候选文件。请传入 --from <绝对路径的JSON文件>。",
     "candidatePathMustBeAbsolute": "候选路径必须是绝对路径：{path}",
@@ -223,17 +215,6 @@
     "retireRequiresConfirmation": "退役需要确认。要非交互式退役请传入 --yes。",
     "retireCancelled": "已取消退役。",
     "cancelled": "已取消。",
-    "effectiveDescription": "显示本项目实际获得的知识：解析结果、按永久身份记录的来源、冲突与降级状态",
-    "migrateDescription": "把按 clone 分散的知识迁入项目的规范位置，并将归属记录改按永久身份记账",
-    "dryRunDescription": "仅预览：报告将要发生的变化，不写入任何内容",
-    "bundleDescription": "管理可移植的项目知识 bundle",
-    "bundleExportDescription": "把项目自身的学习知识导出为一个可移植文件",
-    "bundleImportDescription": "把可移植 bundle 导入为本项目自身的知识",
-    "bundleImportPathDescription": "要完整验证并导入的可移植 bundle 文件",
-    "bundleImportDryRunDescription": "完整验证并分类 bundle，但不写入任何内容",
-    "bundleDestinationDescription": "要新建的目标文件（绝不覆盖）",
-    "bundleStoreDestinationDescription": "同时把 bundle 放入已注册的 Store，但不授予所有权",
-    "bundleJsonDescription": "输出为 JSON",
     "bundleExportSucceeded": "已把项目 {project} 的 {records} 条项目知识导出到 {destination}。",
     "bundleStoreExportSucceeded": "已把同一 bundle 放入 Store {store} 的 {destination}。",
     "bundleStoreCommitFile": "需要提交的文件：{file}",
@@ -1110,6 +1091,19 @@
       "helpCommand": "显示指定命令的帮助",
       "versionOption": "输出版本号"
     },
+    "compatibilityCommands": {
+      "experimental": {
+        "description": "init 的别名（已弃用）",
+        "options": {
+          "tool": {
+            "description": "目标 AI 工具（映射到 --tools）"
+          },
+          "no-interactive": {
+            "description": "禁用交互式提示"
+          }
+        }
+      }
+    },
     "root": {
       "description": "面向规范驱动开发的 AI 原生系统",
       "options": {
@@ -1652,7 +1646,7 @@
               "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
             },
             "gc": {
-              "description": "移除机器主目录注册表中的悬空条目及其孤立主目录"
+              "description": "移除机器主目录注册表中的悬空条目及其孤立主目录——这也会删除这些主目录中的所有外部归档（archive-destination 的 'external' 归档与主目录共享生命周期；Git 历史记录仍是持久记录）"
             }
           }
         },
@@ -1814,6 +1808,11 @@
                 },
                 "import": {
                   "description": "把可移植 bundle 导入为本项目自身的知识",
+                  "positionals": {
+                    "bundle": {
+                      "description": "要完整验证并导入的可移植 bundle 文件"
+                    }
+                  },
                   "options": {
                     "project": {
                       "description": "独立于规划根目录选择项目知识所有者"

@@ -1,9 +1,11 @@
-import { DEFAULT_SCHEMA } from '../../commands/workflow/shared.js';
 import { getLocaleCatalog } from '../../locales/index.js';
 import type { CliLocale } from '../../utils/locale.js';
-import { WORKSPACE_DIR_NAME } from '../config.js';
+import { DEFAULT_SCHEMA, WORKSPACE_DIR_NAME } from '../config.js';
 import { getToolsWithSkillsDir } from '../shared/index.js';
-import { COMMAND_REGISTRY } from './command-registry.js';
+import {
+  COMMAND_REGISTRY,
+  COMPATIBILITY_COMMAND_REGISTRY,
+} from './command-registry.js';
 import type {
   CliPresentationFacts,
   CommandDefinition,
@@ -12,17 +14,20 @@ import type {
   ResolvedCliPresentation,
   ResolvedCommandDefinition,
   ResolvedFlagDefinition,
+  ResolvedPositionalDefinition,
 } from './types.js';
 import { CliPresentationError } from './types.js';
 
 interface CliCatalogNode {
   description?: string;
   options?: Record<string, CliCatalogNode>;
+  positionals?: Record<string, CliCatalogNode>;
   commands?: Record<string, CliCatalogNode>;
 }
 
 interface CliCatalog {
   chrome: Record<keyof ResolvedCliChrome, string>;
+  compatibilityCommands: Record<string, CliCatalogNode>;
   root: CliCatalogNode;
 }
 
@@ -32,6 +37,19 @@ export interface ResolveCliPresentationOptions {
 }
 
 const PLACEHOLDER_PATTERN = /\{([A-Za-z][A-Za-z0-9]*)\}/gu;
+const CLI_CHROME_KEY_MAP = {
+  usageTitle: true,
+  argumentsTitle: true,
+  optionsTitle: true,
+  globalOptionsTitle: true,
+  commandsTitle: true,
+  helpOption: true,
+  helpCommand: true,
+  versionOption: true,
+} as const satisfies Record<keyof ResolvedCliChrome, true>;
+const CLI_CHROME_KEYS = Object.keys(
+  CLI_CHROME_KEY_MAP,
+) as (keyof ResolvedCliChrome)[];
 
 function semanticError(
   code: ConstructorParameters<typeof CliPresentationError>[0],
@@ -177,6 +195,31 @@ function resolveOption(
   };
 }
 
+function resolvePositional(
+  definition: ResolvedPositionalDefinition,
+  englishNode: CliCatalogNode | undefined,
+  selectedNode: CliCatalogNode | undefined,
+  semanticPath: string,
+  facts: Readonly<Record<string, string>>,
+): ResolvedPositionalDefinition {
+  if (
+    englishNode?.description === undefined &&
+    selectedNode?.description === undefined
+  ) {
+    return { ...definition };
+  }
+
+  return {
+    ...definition,
+    description: resolveCopy(
+      englishNode?.description,
+      selectedNode?.description,
+      `${semanticPath}.description`,
+      facts,
+    ),
+  };
+}
+
 function resolveCommand(
   definition: CommandDefinition,
   englishNode: CliCatalogNode | undefined,
@@ -193,6 +236,15 @@ function resolveCommand(
       facts,
     ),
   );
+  const positionals = definition.positionals?.map((positional) =>
+    resolvePositional(
+      positional,
+      englishNode?.positionals?.[positional.name],
+      selectedNode?.positionals?.[positional.name],
+      `${semanticPath}.positionals.${positional.name}`,
+      facts,
+    ),
+  );
   const subcommands = definition.subcommands?.map((command) =>
     resolveCommand(
       command,
@@ -204,6 +256,7 @@ function resolveCommand(
   );
   const {
     flags: _flags,
+    positionals: _positionals,
     subcommands: _subcommands,
     ...structure
   } = definition;
@@ -217,6 +270,7 @@ function resolveCommand(
       facts,
     ),
     flags,
+    ...(positionals ? { positionals } : {}),
     ...(subcommands ? { subcommands } : {}),
   };
 }
@@ -282,7 +336,7 @@ export function resolveCliPresentation({
   const selectedCatalog = getLocaleCatalog(locale).cli as CliCatalog;
   const facts = presentationFacts(factOverrides);
   const chrome = Object.fromEntries(
-    (Object.keys(englishCatalog.chrome) as (keyof ResolvedCliChrome)[]).map((key) => [
+    CLI_CHROME_KEYS.map((key) => [
       key,
       resolveCopy(
         englishCatalog.chrome[key],
@@ -299,10 +353,20 @@ export function resolveCliPresentation({
     'cli.root',
     facts,
   );
+  const compatibilityCommands = COMPATIBILITY_COMMAND_REGISTRY.map((command) =>
+    resolveCommand(
+      command,
+      englishCatalog.compatibilityCommands?.[command.name],
+      selectedCatalog.compatibilityCommands?.[command.name],
+      `cli.compatibilityCommands.${command.name}`,
+      facts,
+    ),
+  );
 
   return deepFreeze({
     chrome,
     root,
+    compatibilityCommands,
     completionCommands: projectAliases(root.subcommands ?? []),
   });
 }

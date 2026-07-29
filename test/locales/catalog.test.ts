@@ -14,7 +14,10 @@ import { formatLocaleMessage, getLocaleCatalog } from '../../src/locales/index.j
 import { INSTALLER_MESSAGE_KEYS } from '../../src/core/completions/factory.js';
 import { CONFIG_DIAGNOSTIC_KEYS } from '../../src/core/config-diagnostics.js';
 import { SUPPORTED_CLI_LOCALES } from '../../src/utils/locale.js';
-import { COMMAND_REGISTRY } from '../../src/core/completions/command-registry.js';
+import {
+  COMMAND_REGISTRY,
+  COMPATIBILITY_COMMAND_REGISTRY,
+} from '../../src/core/completions/command-registry.js';
 import type { CommandDefinition } from '../../src/core/completions/types.js';
 
 function collectLeafStrings(
@@ -73,6 +76,7 @@ describe('locale catalogs', () => {
       catalogNode: {
         description?: string;
         options?: Record<string, { description?: string }>;
+        positionals?: Record<string, { description?: string }>;
         commands?: Record<string, unknown>;
       },
       semanticPath: string,
@@ -83,6 +87,15 @@ describe('locale catalogs', () => {
           catalogNode.options?.[option.name]?.description,
           `${semanticPath}.options.${option.name}.description`,
         ).toBeTruthy();
+      }
+      for (const positional of definition.positionals ?? []) {
+        const description = catalogNode.positionals?.[positional.name]?.description;
+        if (description !== undefined) {
+          expect(
+            description,
+            `${semanticPath}.positionals.${positional.name}.description`,
+          ).toBeTruthy();
+        }
       }
       for (const command of definition.subcommands ?? []) {
         const child = catalogNode.commands?.[command.name] as
@@ -103,6 +116,25 @@ describe('locale catalogs', () => {
         getLocaleCatalog(locale).cli.root,
         `${locale}: cli.root`,
       );
+      for (const compatibilityCommand of COMPATIBILITY_COMMAND_REGISTRY) {
+        assertCoverage(
+          compatibilityCommand,
+          getLocaleCatalog(locale).cli.compatibilityCommands[
+            compatibilityCommand.name
+          ],
+          `${locale}: cli.compatibilityCommands.${compatibilityCommand.name}`,
+        );
+      }
+    }
+  });
+
+  it('preserves the destructive doctor gc warning in every locale', () => {
+    for (const locale of SUPPORTED_CLI_LOCALES) {
+      const warning =
+        getLocaleCatalog(locale).cli.root.commands.doctor.options.gc.description;
+      expect(warning, locale).toContain('archive-destination');
+      expect(warning, locale).toContain("'external'");
+      expect(warning, locale).toMatch(/git/iu);
     }
   });
 

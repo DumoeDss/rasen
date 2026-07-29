@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 import { FileSystemUtils } from '../utils/file-system.js';
-import { WORKSPACE_DIR_NAME } from './config.js';
+import { DEFAULT_SCHEMA, WORKSPACE_DIR_NAME } from './config.js';
 import { serializeConfig } from './config-prompts.js';
 import {
   makeStoreDiagnostic,
@@ -16,7 +16,7 @@ export const WORKSPACE_CONFIG_YML = `${WORKSPACE_DIR_NAME}/config.yml`;
 export const WORKSPACE_SPECS_DIR = `${WORKSPACE_DIR_NAME}/specs`;
 export const WORKSPACE_CHANGES_DIR = `${WORKSPACE_DIR_NAME}/changes`;
 export const WORKSPACE_ARCHIVE_DIR = `${WORKSPACE_DIR_NAME}/changes/archive`;
-export const DEFAULT_OPENSPEC_SCHEMA = 'spec-driven';
+export const DEFAULT_OPENSPEC_SCHEMA = DEFAULT_SCHEMA;
 export const DIRECTORY_ANCHOR_FILE_NAME = '.gitkeep';
 
 // Git cannot track empty directories, so setup anchors otherwise-empty

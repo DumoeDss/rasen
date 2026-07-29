@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createProgram } from '../src/cli/index.js';
+import type { ResolvedPositionalDefinition } from '../src/index.js';
 import { getLocaleCatalog } from '../src/locales/index.js';
 import type { CliLocale } from '../src/utils/locale.js';
 
@@ -9,6 +10,11 @@ const facts = {
   defaultSchema: 'spec-driven',
   workspaceDir: 'rasen',
 } as const;
+const exportedPositionalType: ResolvedPositionalDefinition = {
+  name: 'bundle',
+  type: 'path',
+  description: 'Bundle path',
+};
 
 function help(locale: CliLocale, commandName?: string): string {
   const program = createProgram({ locale, facts });
@@ -21,6 +27,10 @@ function help(locale: CliLocale, commandName?: string): string {
 }
 
 describe('localized Commander program factory', () => {
+  it('exports the resolved positional presentation type', () => {
+    expect(exportedPositionalType.description).toBe('Bundle path');
+  });
+
   it('renders root and nested help in every supported locale', () => {
     const expectations = {
       en: ['Usage:', 'Commands:'],
@@ -69,6 +79,13 @@ describe('localized Commander program factory', () => {
     expect(versionOption?.description).toBe('バージョン番号を表示します');
   });
 
+  it('does not append Commander-owned English metadata to localized option copy', () => {
+    const japanese = createProgram({ locale: 'ja', facts });
+    const list = japanese.commands.find((command) => command.name() === 'list');
+
+    expect(list?.helpInformation()).not.toContain('(default:');
+  });
+
   it('renders runtime facts around unchanged machine tokens', () => {
     const japanese = createProgram({
       locale: 'ja',
@@ -88,5 +105,70 @@ describe('localized Commander program factory', () => {
     expect(init?.helpInformation()).toContain('claude, codex');
     expect(templates?.helpInformation()).toContain('custom-schema');
     expect(setup?.helpInformation()).toContain('~/custom-workspace/<id>');
+  });
+
+  it('reuses the program presentation snapshot for completion actions', async () => {
+    const originalLanguage = process.env.RASEN_LANG;
+    const originalTelemetry = process.env.RASEN_TELEMETRY;
+    process.env.RASEN_LANG = 'en';
+    process.env.RASEN_TELEMETRY = '0';
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      const program = createProgram({
+        locale: 'ja',
+        facts: {
+          availableToolIds: ['custom-tool'],
+          defaultSchema: 'custom-schema',
+          workspaceDir: 'custom-workspace',
+        },
+      });
+      await program.parseAsync([
+        'node',
+        'rasen',
+        'completion',
+        'generate',
+        'fish',
+      ]);
+      const script = log.mock.calls
+        .flat()
+        .map(String)
+        .find((message) => message.includes('# Fish completion script'));
+
+      expect(script).toContain('プロジェクトでRasenを初期化します');
+      expect(script).toContain('custom-tool');
+      expect(script).not.toContain('Initialize Rasen in your project');
+    } finally {
+      log.mockRestore();
+      if (originalLanguage === undefined) delete process.env.RASEN_LANG;
+      else process.env.RASEN_LANG = originalLanguage;
+      if (originalTelemetry === undefined) delete process.env.RASEN_TELEMETRY;
+      else process.env.RASEN_TELEMETRY = originalTelemetry;
+    }
+  });
+
+  it('preserves the knowledge bundle positional help description', () => {
+    const program = createProgram({ locale: 'en', facts });
+    const knowledge = program.commands.find((command) => command.name() === 'knowledge');
+    const bundle = knowledge?.commands.find((command) => command.name() === 'bundle');
+    const importCommand = bundle?.commands.find((command) => command.name() === 'import');
+
+    expect(importCommand?.helpInformation()).toContain('Arguments:');
+    expect(importCommand?.helpInformation()).toContain(
+      'Portable bundle file to validate and import',
+    );
+  });
+
+  it('preserves direct help for the hidden experimental compatibility command', () => {
+    const program = createProgram({ locale: 'ja', facts });
+    const experimental = program.commands.find(
+      (command) => command.name() === 'experimental',
+    );
+    const output = experimental?.helpInformation();
+
+    expect(output).toContain('使用法:');
+    expect(output).toContain('init のエイリアスです（非推奨）');
+    expect(output).toContain('対象AIツール（--toolsに対応）');
+    expect(output).toContain('対話プロンプトを無効にします');
   });
 });

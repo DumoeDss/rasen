@@ -11,5 +11,6 @@ export {
   type ResolvedCliPresentation,
   type ResolvedCommandDefinition,
   type ResolvedFlagDefinition,
+  type ResolvedPositionalDefinition,
 } from './core/completions/types.js';
 export * from './core/index.js';

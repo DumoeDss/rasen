@@ -1461,3 +1461,18 @@ export const COMMAND_REGISTRY: CommandDefinition = {
   flags: [{ name: 'no-color' }],
   subcommands: COMMANDS,
 };
+
+export const COMPATIBILITY_COMMAND_REGISTRY: readonly CommandDefinition[] = [
+  {
+    name: 'experimental',
+    flags: [
+      {
+        name: 'tool',
+        takesValue: true,
+      },
+      {
+        name: 'no-interactive',
+      },
+    ],
+  },
+];

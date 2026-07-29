@@ -23,6 +23,7 @@ import {
 import { transformToHyphenCommands } from '../utils/command-references.js';
 import {
   AI_TOOLS,
+  DEFAULT_SCHEMA,
   OPENSPEC_DIR_NAME,
   WORKSPACE_DIR_NAME,
   AIToolOption,
@@ -108,12 +109,6 @@ import { reconcileCodexProjectConfig, formatCodexConfigSummary, type CodexConfig
 
 const require = createRequire(import.meta.url);
 const { version: OPENSPEC_VERSION } = require('../../package.json');
-
-// -----------------------------------------------------------------------------
-// Constants
-// -----------------------------------------------------------------------------
-
-const DEFAULT_SCHEMA = 'spec-driven';
 
 const PROGRESS_SPINNER = {
   interval: 80,

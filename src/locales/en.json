@@ -162,14 +162,6 @@
     "selectProjectsPrompt": "Select projects to obtain (Space to select, Enter to confirm):"
   },
   "knowledge": {
-    "commandDescription": "Manage evidence-gated learned skills",
-    "applyDescription": "Apply a learned-skill candidate from an absolute JSON file",
-    "listDescription": "List canonical learned skills",
-    "showDescription": "Show a canonical learned skill",
-    "retireDescription": "Retire a managed learned skill",
-    "projectSelectorDescription": "Select a project knowledge owner independently from the planning root",
-    "storeSelectorDescription": "Select a store knowledge owner independently from the planning root",
-    "runStateDirDescription": "Load frozen knowledge identity from the resolved directory containing auto-run.json",
     "contextSummary": "Knowledge owner: {owner}; planning root: {planningRoot}.",
     "candidatePathRequired": "A candidate file is required. Pass --from <absolute-json-file>.",
     "candidatePathMustBeAbsolute": "Candidate path must be absolute: {path}",
@@ -223,17 +215,6 @@
     "retireRequiresConfirmation": "Retirement requires confirmation. Pass --yes to retire non-interactively.",
     "retireCancelled": "Retirement cancelled.",
     "cancelled": "Cancelled.",
-    "effectiveDescription": "Show what this project actually receives: the resolved set, its sources by permanent identity, conflicts, and degraded states",
-    "migrateDescription": "Move per-clone knowledge into this project's canonical home and re-key ownership records on permanent identity",
-    "dryRunDescription": "Preview only: report what would change and write nothing",
-    "bundleDescription": "Manage portable project-knowledge bundles",
-    "bundleExportDescription": "Export a project's own learned knowledge to one portable file",
-    "bundleImportDescription": "Import a portable bundle as this project's own knowledge",
-    "bundleImportPathDescription": "Portable bundle file to validate and import",
-    "bundleImportDryRunDescription": "Validate and classify the complete bundle without writing anything",
-    "bundleDestinationDescription": "New destination file to create (never overwritten)",
-    "bundleStoreDestinationDescription": "Also place the bundle in a registered Store without granting ownership",
-    "bundleJsonDescription": "Output as JSON",
     "bundleExportSucceeded": "Exported {records} project-knowledge record(s) for {project} to {destination}.",
     "bundleStoreExportSucceeded": "Placed the same bundle in Store {store} at {destination}.",
     "bundleStoreCommitFile": "File to commit: {file}",
@@ -1110,6 +1091,19 @@
       "helpCommand": "display help for command",
       "versionOption": "output the version number"
     },
+    "compatibilityCommands": {
+      "experimental": {
+        "description": "Alias for init (deprecated)",
+        "options": {
+          "tool": {
+            "description": "Target AI tool (maps to --tools)"
+          },
+          "no-interactive": {
+            "description": "Disable interactive prompts"
+          }
+        }
+      }
+    },
     "root": {
       "description": "AI-native system for spec-driven development",
       "options": {
@@ -1814,6 +1808,11 @@
                 },
                 "import": {
                   "description": "Import a portable bundle as this project's own knowledge",
+                  "positionals": {
+                    "bundle": {
+                      "description": "Portable bundle file to validate and import"
+                    }
+                  },
                   "options": {
                     "project": {
                       "description": "Select a project knowledge owner independently from the planning root"

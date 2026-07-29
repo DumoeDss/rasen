@@ -7,6 +7,7 @@ import { resolveCliPresentation } from '../../../src/core/completions/cli-presen
 import {
   CliPresentationError,
   type CommandDefinition,
+  type ResolvedCliPresentation,
 } from '../../../src/core/completions/types.js';
 import { getLocaleCatalog } from '../../../src/locales/index.js';
 import { SUPPORTED_CLI_LOCALES } from '../../../src/utils/locale.js';
@@ -118,6 +119,23 @@ describe.sequential('CLI presentation resolution', () => {
     );
   });
 
+  it('rejects a missing required English chrome slot', () => {
+    const chrome = getLocaleCatalog('en').cli.chrome as {
+      helpOption?: string;
+    };
+    const original = chrome.helpOption;
+    delete chrome.helpOption;
+    restorations.push(() => {
+      chrome.helpOption = original;
+    });
+
+    expectPresentationError(
+      () => resolveCliPresentation({ locale: 'en', facts }),
+      'missing-english-copy',
+      'cli.chrome.helpOption',
+    );
+  });
+
   it('rejects placeholder mismatch and unresolved placeholders', () => {
     const target = initTools('ja');
     const original = target.description;
@@ -215,5 +233,31 @@ describe.sequential('CLI presentation resolution', () => {
     );
     expect(program.description()).toBe('');
     expect(program.options.find((option) => option.long === '--no-color')?.description).toBe('');
+  });
+
+  it('checks the generated version option before applying any copy', () => {
+    const resolved = resolveCliPresentation({ locale: 'en', facts });
+    const presentation: ResolvedCliPresentation = {
+      chrome: resolved.chrome,
+      root: {
+        name: 'rasen',
+        description: 'Resolved root',
+        flags: [{ name: 'no-color', description: 'Resolved option' }],
+      },
+      compatibilityCommands: [],
+      completionCommands: [],
+    };
+    const program = new Command()
+      .name('rasen')
+      .description('')
+      .option('--no-color', '');
+
+    expectPresentationError(
+      () => applyCliPresentation(program, presentation),
+      'commander-structure-mismatch',
+      'cli.chrome.versionOption',
+    );
+    expect(program.description()).toBe('');
+    expect(program.options[0].description).toBe('');
   });
 });

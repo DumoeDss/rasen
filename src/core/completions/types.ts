@@ -64,10 +64,15 @@ export interface ResolvedFlagDefinition extends FlagDefinition {
   description: string;
 }
 
+export interface ResolvedPositionalDefinition extends PositionalDefinition {
+  description?: string;
+}
+
 export interface ResolvedCommandDefinition
-  extends Omit<CommandDefinition, 'flags' | 'subcommands'> {
+  extends Omit<CommandDefinition, 'flags' | 'positionals' | 'subcommands'> {
   description: string;
   flags: readonly ResolvedFlagDefinition[];
+  positionals?: readonly ResolvedPositionalDefinition[];
   subcommands?: readonly ResolvedCommandDefinition[];
 }
 
@@ -88,6 +93,7 @@ export interface ResolvedCliChrome {
 export interface ResolvedCliPresentation {
   chrome: Readonly<ResolvedCliChrome>;
   root: Readonly<ResolvedCommandDefinition>;
+  compatibilityCommands: readonly Readonly<ResolvedCommandDefinition>[];
   completionCommands: readonly Readonly<ResolvedCommandDefinition>[];
 }
 

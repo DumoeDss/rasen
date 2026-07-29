@@ -1592,10 +1592,7 @@ export async function bundleImportCommand(
   }
 }
 
-function addOwnerSelectorOptions(
-  command: Command,
-  messages: KnowledgeMessages
-): Command {
+function addOwnerSelectorOptions(command: Command): Command {
   return command
     .option(
       '--project <id>',
@@ -1612,7 +1609,6 @@ function addOwnerSelectorOptions(
 }
 
 export function registerKnowledgeCommand(program: Command): void {
-  const messages = getKnowledgeMessages();
   const knowledge = program.command('knowledge').description('');
 
   const bundle = knowledge
@@ -1650,7 +1646,7 @@ export function registerKnowledgeCommand(program: Command): void {
       ''
     )
     .option('--approve-global', '')
-    .option('--json', ''), messages)
+    .option('--json', ''))
     .action(async (options: {
       from?: string;
       approveGlobal?: boolean;
@@ -1667,7 +1663,7 @@ export function registerKnowledgeCommand(program: Command): void {
     .command('list')
     .description('')
     .option('--scope <scope>', '')
-    .option('--json', ''), messages)
+    .option('--json', ''))
     .action(async (options: { scope?: string; project?: string; store?: string; runStateDir?: string; json?: boolean }) => {
       await runKnowledgeAction(() => listCommand(options), options.json);
     });
@@ -1676,7 +1672,7 @@ export function registerKnowledgeCommand(program: Command): void {
     .command('show <id>')
     .description('')
     .option('--scope <scope>', '')
-    .option('--json', ''), messages)
+    .option('--json', ''))
     .action(async (
       id: string,
       options: { scope?: string; project?: string; store?: string; runStateDir?: string; json?: boolean }
@@ -1687,7 +1683,7 @@ export function registerKnowledgeCommand(program: Command): void {
   addOwnerSelectorOptions(knowledge
     .command('effective')
     .description('')
-    .option('--json', ''), messages)
+    .option('--json', ''))
     .action(async (options: {
       project?: string;
       store?: string;
@@ -1701,7 +1697,7 @@ export function registerKnowledgeCommand(program: Command): void {
     .command('migrate')
     .description('')
     .option('--dry-run', '')
-    .option('--json', ''), messages)
+    .option('--json', ''))
     .action(async (options: {
       dryRun?: boolean;
       project?: string;
@@ -1717,7 +1713,7 @@ export function registerKnowledgeCommand(program: Command): void {
     .description('')
     .option('--scope <scope>', '')
     .option('-y, --yes', '')
-    .option('--json', ''), messages)
+    .option('--json', ''))
     .action(async (
       id: string,
       options: {

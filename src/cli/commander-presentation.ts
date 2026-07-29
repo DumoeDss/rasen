@@ -1,7 +1,6 @@
-import type { Command, Option } from 'commander';
+import type { Argument, Command, Option } from 'commander';
 
 import type {
-  CommandDefinition,
   ResolvedCliChrome,
   ResolvedCliPresentation,
   ResolvedCommandDefinition,
@@ -15,6 +14,10 @@ interface PresentationPlan {
   optionPairs: readonly {
     option: Option;
     presentation: ResolvedFlagDefinition;
+  }[];
+  positionalPairs: readonly {
+    argument: Argument;
+    description: string;
   }[];
 }
 
@@ -85,9 +88,9 @@ function sameOptionalValues(
 
 function assertPositionals(
   command: Command,
-  definition: CommandDefinition,
+  definition: ResolvedCommandDefinition,
   semanticPath: string,
-): void {
+): PresentationPlan['positionalPairs'] {
   const expected = definition.positionals ?? [];
   const actual = command.registeredArguments;
   if (expected.length !== actual.length) {
@@ -103,6 +106,11 @@ function assertPositionals(
       mismatch(`${semanticPath}.positionals.${positional.name}`, 'positional argument differs');
     }
   }
+  return expected.flatMap((positional, index) =>
+    positional.description === undefined
+      ? []
+      : [{ argument: actual[index], description: positional.description }],
+  );
 }
 
 function preflightCommand(
@@ -135,7 +143,7 @@ function preflightCommand(
     assertOption(option, flag, `${semanticPath}.options.${flag.name}`);
     return { option, presentation: flag };
   });
-  assertPositionals(command, presentation, semanticPath);
+  const positionalPairs = assertPositionals(command, presentation, semanticPath);
 
   const children = visibleCommands(command);
   const presentedChildren = presentation.subcommands ?? [];
@@ -158,7 +166,7 @@ function preflightCommand(
     );
   }
 
-  plans.push({ command, presentation, optionPairs });
+  plans.push({ command, presentation, optionPairs, positionalPairs });
 }
 
 function configureChrome(command: Command, chrome: ResolvedCliChrome): void {
@@ -172,6 +180,7 @@ function configureChrome(command: Command, chrome: ResolvedCliChrome): void {
   command.helpOption('-h, --help', chrome.helpOption);
   command.configureHelp({
     styleTitle: (title: string) => titleMap[title] ?? title,
+    optionDescription: (option: Option) => option.description,
   });
   if (visibleCommands(command).length > 0) {
     command.helpCommand('help [command]', chrome.helpCommand);
@@ -184,18 +193,44 @@ export function applyCliPresentation(
 ): void {
   const plans: PresentationPlan[] = [];
   preflightCommand(program, presentation.root, 'cli.root', plans);
-
-  for (const { command, presentation: commandPresentation, optionPairs } of plans) {
-    command.description(commandPresentation.description);
-    for (const { option, presentation: optionPresentation } of optionPairs) {
-      option.description = optionPresentation.description;
+  for (const compatibilityPresentation of presentation.compatibilityCommands) {
+    const command = program.commands.find(
+      (candidate) => candidate.name() === compatibilityPresentation.name,
+    );
+    if (!command) {
+      mismatch(
+        `cli.compatibilityCommands.${compatibilityPresentation.name}`,
+        `missing command ${compatibilityPresentation.name}`,
+      );
     }
-    configureChrome(command, presentation.chrome);
+    preflightCommand(
+      command,
+      compatibilityPresentation,
+      `cli.compatibilityCommands.${compatibilityPresentation.name}`,
+      plans,
+    );
   }
 
   const versionOption = program.options.find((option) => option.long === '--version');
   if (!versionOption) {
     mismatch('cli.chrome.versionOption', 'missing generated version option');
   }
+
+  for (const {
+    command,
+    presentation: commandPresentation,
+    optionPairs,
+    positionalPairs,
+  } of plans) {
+    command.description(commandPresentation.description);
+    for (const { option, presentation: optionPresentation } of optionPairs) {
+      option.description = optionPresentation.description;
+    }
+    for (const { argument, description } of positionalPairs) {
+      argument.description = description;
+    }
+    configureChrome(command, presentation.chrome);
+  }
+
   versionOption.description = presentation.chrome.versionOption;
 }

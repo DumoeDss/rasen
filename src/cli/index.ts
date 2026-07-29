@@ -54,7 +54,10 @@ import { adoptLegacyMachineData } from '../core/global-config.js';
 import { isInteractive } from '../utils/interactive.js';
 import { getCliLocale } from '../core/cli-locale.js';
 import { resolveCliPresentation } from '../core/completions/cli-presentation.js';
-import type { CliPresentationFacts } from '../core/completions/types.js';
+import type {
+  CliPresentationFacts,
+  ResolvedCliPresentation,
+} from '../core/completions/types.js';
 import type { CliLocale } from '../utils/locale.js';
 import { applyCliPresentation } from './commander-presentation.js';
 
@@ -121,8 +124,18 @@ export function getCommandPath(command: Command): string {
   return names.join(':') || 'rasen';
 }
 
-function buildUnlocalizedProgram(): Command {
+interface ProgramPresentationContext {
+  locale: CliLocale;
+  presentation: ResolvedCliPresentation;
+}
+
+function buildUnlocalizedProgram({
+  locale,
+  presentation,
+}: ProgramPresentationContext): Command {
 const program = new Command();
+const createCompletionCommand = (): CompletionCommand =>
+  new CompletionCommand({ locale, presentation });
 
 program
   .name('rasen')
@@ -471,7 +484,7 @@ completionCmd
   .description('')
   .action(async (shell?: string) => {
     try {
-      const completionCommand = new CompletionCommand();
+      const completionCommand = createCompletionCommand();
       await completionCommand.generate({ shell });
     } catch (error) {
       failWithError(error);
@@ -485,7 +498,7 @@ completionCmd
   .option('--verbose', '')
   .action(async (shell?: string, options?: { verbose?: boolean }) => {
     try {
-      const completionCommand = new CompletionCommand();
+      const completionCommand = createCompletionCommand();
       await completionCommand.install({ shell, verbose: options?.verbose });
     } catch (error) {
       failWithError(error);
@@ -499,7 +512,7 @@ completionCmd
   .option('-y, --yes', '')
   .action(async (shell?: string, options?: { yes?: boolean }) => {
     try {
-      const completionCommand = new CompletionCommand();
+      const completionCommand = createCompletionCommand();
       await completionCommand.uninstall({ shell, yes: options?.yes });
     } catch (error) {
       failWithError(error);
@@ -513,7 +526,7 @@ program
   .description('')
   .action(async (type: string) => {
     try {
-      const completionCommand = new CompletionCommand();
+      const completionCommand = createCompletionCommand();
       await completionCommand.complete({ type });
     } catch (error) {
       // Silently fail for graceful shell completion experience
@@ -983,8 +996,11 @@ export interface CreateProgramOptions {
 }
 
 export function createProgram(options: CreateProgramOptions): Command {
-  const program = buildUnlocalizedProgram();
   const presentation = resolveCliPresentation(options);
+  const program = buildUnlocalizedProgram({
+    locale: options.locale,
+    presentation,
+  });
   applyCliPresentation(program, presentation);
   return program;
 }
