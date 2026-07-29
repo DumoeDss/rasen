@@ -703,6 +703,53 @@ for (const [name, fn] of [
 console.log('\n=== RESULTS (full) ===');
 console.log(JSON.stringify(results, null, 2));
 
+// ---------------------------------------------------------------------------
+// Gate on the OBSERVED BEHAVIOUR, not merely on "nothing threw". As the
+// durable 13.3-13.5 regression net, a scenario that runs to completion with
+// the wrong outcome (Join proceeding on a failed required member, a restart
+// re-admitting a completed member) must fail the script — otherwise the flags
+// below are decoration and the net has holes.
+// ---------------------------------------------------------------------------
+const assertions = [
+  ['A: parallel-success Run reaches completed',
+    results.parallelSuccess?.finalStatus === 'completed'],
+  ['A: terminal outcome is full-feature-completed',
+    results.parallelSuccess?.terminal?.outcome === 'full-feature-completed'],
+  ['A: Join proceeds with all 6 members succeeded',
+    results.parallelSuccess?.joinResolution?.joinState === 'proceeding' &&
+    results.parallelSuccess?.joinResolution?.succeededCount === 6 &&
+    results.parallelSuccess?.joinResolution?.failedCount === 0],
+  ['A: status during FanOut shows the parallel section with a member frontier',
+    results.parallelSuccess?.duringFanOut?.parallelSection?.kind === 'parallel' &&
+    (results.parallelSuccess?.duringFanOut?.frontier?.length ?? 0) > 0],
+  ['A: FanOut admits no more than the concurrency cap at once',
+    (results.parallelSuccess?.duringFanOut?.frontier?.length ?? 0) <=
+      (results.parallelSuccess?.duringFanOut?.parallelSection?.concurrencyCap ?? 0)],
+  ['A: review-loop ran a full findings round',
+    JSON.stringify(
+      (results.parallelSuccess?.reviewLoopPhases ?? []).map((p) => p.phase)
+    ) === JSON.stringify(['review', 'triage', 'fix', 're-review'])],
+  ['B1: optional member failure is suppressed and the Join proceeds',
+    results.optionalFailure?.joinState === 'proceeding' &&
+    results.optionalFailure?.joinProceeded === true],
+  ['B2: required member failure escalates the Run',
+    results.requiredFailure?.status === 'escalated' &&
+    results.requiredFailure?.joinState === 'failed'],
+  ['B2: the review-loop never starts after a required-member failure',
+    results.requiredFailure?.reviewLoopStarted === false],
+  ['C: restart keeps the frontier and action count stable',
+    results.restartIdempotency?.frontierStable === true &&
+    results.restartIdempotency?.actionCountStable === true],
+  ['C: a completed member is not re-admitted on restart',
+    results.restartIdempotency?.completedMemberReAdmitted === false],
+];
+
+const violations = assertions.filter(([, ok]) => ok !== true).map(([label]) => label);
+console.log('\n=== BEHAVIOURAL ASSERTIONS ===');
+for (const [label, ok] of assertions) {
+  console.log(`  ${ok === true ? 'PASS' : 'FAIL'}  ${label}`);
+}
+
 console.log('\n=== FINAL ===');
 console.log(JSON.stringify({
   parallelSuccess: results.parallelSuccess?.outcome ?? 'error',
@@ -713,6 +760,11 @@ console.log(JSON.stringify({
   restart_frontierStable: results.restartIdempotency?.frontierStable,
   restart_completedMemberReAdmitted: results.restartIdempotency?.completedMemberReAdmitted,
   scenarioErrors: failures,
+  assertionsChecked: assertions.length,
+  assertionViolations: violations,
 }, null, 2));
 
-process.exit(failures === 0 ? 0 : 1);
+if (violations.length > 0) {
+  console.error(`\nDOGFOOD FAILED: ${violations.length} behavioural assertion(s) violated.`);
+}
+process.exit(failures === 0 && violations.length === 0 ? 0 : 1);
