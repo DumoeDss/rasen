@@ -367,3 +367,76 @@ describe('reconciler ECP-4: Choice pass', () => {
     expect(admittedPaths).not.toContain('root:complex-path');
   });
 });
+
+describe('reconciler ECP-4: failure-first tests', () => {
+  it('FanOut condition suppresses required member → escalate', () => {
+    const members = [
+      { id: 'a', required: true, condition: 'always' },
+      { id: 'b', required: false, condition: 'always' },
+    ];
+    const plan = createRuntimePlan(fanOutPlanInput({ cap: 2, budget: 2, members }));
+    let record = startRecord(plan);
+    // Condition result suppresses the required member 'a'
+    record = commitNode(plan, record, 'root:experts', {
+      activeMembers: ['root:experts/b'],  // 'a' is NOT active
+      inactiveMembers: ['root:experts/a'],
+      rationale: {},
+    });
+
+    const result = reconcile(plan, record);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const escalates = result.actions.filter((a) => a.kind === 'escalate');
+    expect(escalates.some((e) => e.kind === 'escalate' && e.code === 'fan_out_required_member_suppressed')).toBe(true);
+  });
+
+  it('restart ready-set determinism: same plan+Record → same candidates', () => {
+    const members = [
+      { id: 'a', required: true, condition: 'always' },
+      { id: 'b', required: false, condition: 'always' },
+      { id: 'c', required: false, condition: 'always' },
+    ];
+    const plan = createRuntimePlan(fanOutPlanInput({ cap: 2, budget: 3, members }));
+    let record = startRecord(plan);
+    record = commitNode(plan, record, 'root:experts', {
+      activeMembers: members.map((m) => `root:experts/${m.id}`),
+      inactiveMembers: [],
+      rationale: {},
+    });
+
+    const result1 = reconcile(plan, record);
+    const result2 = reconcile(plan, record);
+    expect(result1.ok).toBe(true);
+    expect(result2.ok).toBe(true);
+    if (!result1.ok || !result2.ok) return;
+    // Both reconciles should produce identical action lists
+    expect(JSON.stringify(result1.actions)).toBe(JSON.stringify(result2.actions));
+  });
+
+  it('restart after member completion: completed members not re-admitted', () => {
+    const members = [
+      { id: 'a', required: true, condition: 'always' },
+      { id: 'b', required: false, condition: 'always' },
+    ];
+    const plan = createRuntimePlan(fanOutPlanInput({ cap: 2, budget: 2, members }));
+    let record = startRecord(plan);
+    record = commitNode(plan, record, 'root:experts', {
+      activeMembers: members.map((m) => `root:experts/${m.id}`),
+      inactiveMembers: [],
+      rationale: {},
+    });
+    // Both members committed
+    record = commitNode(plan, record, 'root:experts/a', { ok: true });
+    record = commitNode(plan, record, 'root:experts/b', { ok: true });
+
+    const result = reconcile(plan, record);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Should emit finish (join satisfied, all members done)
+    const finish = result.actions.find((a) => a.kind === 'finish');
+    expect(finish).toBeDefined();
+    // No admits for completed members
+    const admits = result.actions.filter((a) => a.kind === 'admit');
+    expect(admits.length).toBe(0);
+  });
+});

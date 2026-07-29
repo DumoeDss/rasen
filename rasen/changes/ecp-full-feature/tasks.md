@@ -88,33 +88,33 @@
 
 ## 11. Failure-First Tests (Acceptance: exit evidence)
 
-- [ ] 11.1 Test: required FanOut member fails → Join emits escalate → Run does not complete
-- [ ] 11.2 Test: optional FanOut member fails → Join suppresses → Run proceeds if required succeeded
-- [ ] 11.3 Test: concurrency cap=2 with 4 active members → at most 2 admitted per pass
-- [ ] 11.4 Test: budget=3 with 5 active members → only 3 admitted, remaining suppressed
-- [ ] 11.5 Test: FanOut condition result marks required member as inactive → reconciler emits escalate (`fan_out_required_member_suppressed`)
-- [ ] 11.6 Test: Choice selects 'simple' → 'complex' branch nodes never become ready
+- [x] 11.1 Test: required FanOut member fails → Join emits escalate → Run does not complete
+- [x] 11.2 Test: optional FanOut member fails → Join suppresses → Run proceeds if required succeeded
+- [x] 11.3 Test: concurrency cap=2 with 4 active members → at most 2 admitted per pass
+- [x] 11.4 Test: budget=3 with 5 active members → only 3 admitted, remaining suppressed
+- [x] 11.5 Test: FanOut condition result marks required member as inactive → reconciler emits escalate (`fan_out_required_member_suppressed`)
+- [x] 11.6 Test: Choice selects 'simple' → 'complex' branch nodes never become ready
 
 ## 12. Recovery and Idempotency Tests (Acceptance: exit evidence)
 
-- [ ] 12.1 Crash before FanOut condition commit: restart → re-admit condition evaluator (same nodeId), no members admitted
-- [ ] 12.2 Crash after FanOut condition commit: restart → read activeMembers from Record → admit remaining members
-- [ ] 12.3 Crash mid-member-execution: 2/5 members committed → restart → completed members not re-admitted, remaining admitted up to cap
-- [ ] 12.4 Join idempotency: members with committed results → restart → Join derives same state from Record, no re-evaluation
-- [ ] 12.5 Ready-set determinism: same plan + Record → same active member set, same capped admission order
+- [x] 12.1 Crash before FanOut condition commit: restart → re-admit condition evaluator (same nodeId), no members admitted
+- [x] 12.2 Crash after FanOut condition commit: restart → read activeMembers from Record → admit remaining members
+- [x] 12.3 Crash mid-member-execution: 2/5 members committed → restart → completed members not re-admitted, remaining admitted up to cap
+- [x] 12.4 Join idempotency: members with committed results → restart → Join derives same state from Record, no re-evaluation
+- [x] 12.5 Ready-set determinism: same plan + Record → same active member set, same capped admission order
 
 ## 13. full-feature Migration and Dogfood (Acceptance: exit evidence)
 
-- [ ] 13.1 Write test: `full-feature` v1 YAML normalizes to v2 with FanOut(6 members) + Join + BoundedLoop
-- [ ] 13.2 Write test: lowered plan has correct topology (atomic + fan-out + members + join + bounded-loop + atomic)
+- [x] 13.1 Write test: `full-feature` v1 YAML normalizes to v2 with FanOut(6 members) + Join + BoundedLoop
+- [x] 13.2 Write test: lowered plan has correct topology (atomic + fan-out + members + join + bounded-loop + atomic)
 - [ ] 13.3 Run a real CLI `full-feature` Run: office-hours → propose → apply → FanOut → Join → review-loop → ship → retain → archive → completed
 - [ ] 13.4 Record dogfood evidence: revision, RunId, ActionIds for FanOut condition + members, Join resolution, parallel section projection
 - [ ] 13.5 Verify `pipeline status` during FanOut phase shows parallel/1 section with member frontier
 
 ## 14. Regression and Cross-Platform Verification
 
-- [ ] 14.1 Run `npx vitest run test/core/change-run/` — zero regressions in existing 973+ tests
-- [ ] 14.2 Run `npx tsc --noEmit` — zero type errors
-- [ ] 14.3 Run `npx vitest run` (full suite) — no new failures beyond pre-existing Windows flakes
-- [ ] 14.4 Verify Windows path handling: all new code uses `path.join()` / `path.resolve()`, no hardcoded separators
-- [ ] 14.5 Run `pnpm --filter @atelierai/rasen-ui build` — Canvas changes compile without errors
+- [x] 14.1 Run `npx vitest run test/core/change-run/` — zero regressions in existing 973+ tests
+- [x] 14.2 Run `npx tsc --noEmit` — zero type errors
+- [x] 14.3 Run `npx vitest run` (full suite) — no new failures beyond pre-existing Windows flakes
+- [x] 14.4 Verify Windows path handling: all new code uses `path.join()` / `path.resolve()`, no hardcoded separators
+- [x] 14.5 Run `pnpm --filter @atelierai/rasen-ui build` — Canvas changes compile without errors
