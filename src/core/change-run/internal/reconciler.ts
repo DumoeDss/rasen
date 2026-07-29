@@ -174,6 +174,56 @@ export function reconcile(
     }
   }
 
+  // ECP-4: derive the transitive succeeded-set closure over the NON-atomic node
+  // kinds before any candidate pass runs. The candidate passes below execute in
+  // a fixed order (bounded-loop, choice, fan-out, join), so a node whose
+  // `requires` is satisfied only by a LATER pass would never become ready:
+  // full-feature's `review-loop` BoundedLoop requires the Join, but the Join
+  // only enters the succeeded set in pass 1e — after the bounded-loop pass has
+  // already skipped it. That is a permanent stall, not a one-tick delay,
+  // because `reconcile` is pure and recomputes the same order every call.
+  // Iterating to a fixed point makes readiness independent of pass order; the
+  // `succeeded.add` calls in the passes below then become idempotent no-ops.
+  for (let round = 0; round <= plan.nodes.length; round += 1) {
+    const sizeBefore = succeeded.size;
+    for (const loop of boundedLoopNodes) {
+      if (succeeded.has(loop.nodeId)) continue;
+      if (!loop.requires.every((required) => succeeded.has(required))) continue;
+      if (boundedLoopIsClean(plan, loop, record)) succeeded.add(loop.nodeId);
+    }
+    for (const choice of choiceNodes) {
+      if (succeeded.has(choice.nodeId)) continue;
+      if (!choice.requires.every((req) => succeeded.has(req))) continue;
+      const committed = committedResultForNode(record, choice.nodeId);
+      if (committed === null) continue;
+      succeeded.add(choice.nodeId);
+      const outcome = (committed as Readonly<{ outcome?: unknown }>).outcome;
+      if (typeof outcome === 'string' && choice.branches[outcome] !== undefined) {
+        const branchNodeId = plan.nodes.find(
+          (n) => n.hierarchicalPath === choice.branches[outcome]!
+        )?.nodeId;
+        if (branchNodeId !== undefined) succeeded.add(branchNodeId);
+      }
+    }
+    for (const fanOut of fanOutNodes) {
+      if (succeeded.has(fanOut.nodeId)) continue;
+      if (!fanOut.requires.every((req) => succeeded.has(req))) continue;
+      if (committedResultForNode(record, fanOut.nodeId) !== null) {
+        succeeded.add(fanOut.nodeId);
+      }
+    }
+    for (const join of joinNodes) {
+      if (succeeded.has(join.nodeId)) continue;
+      const fanOut = fanOutNodes.find((fo) => fo.joinNodeId === join.nodeId);
+      if (fanOut === undefined) continue;
+      if (!joinNonMemberRequiresSatisfied(join, succeeded)) continue;
+      if (evaluateJoin(record, join, fanOut, atomicNodes) === 'proceed') {
+        succeeded.add(join.nodeId);
+      }
+    }
+    if (succeeded.size === sizeBefore) break;
+  }
+
   // Pass 1b: bounded-loop outcomes → succeeded set update. A clean
   // bounded-loop contributes its nodeId to the succeeded set so that
   // downstream atomic nodes (ship, archive) whose requires includes the
@@ -400,52 +450,19 @@ export function reconcile(
   // results and derives its state purely from the Record.
   for (const join of joinNodes) {
     // Only check non-member requires (upstream deps like the FanOut node).
-    // Member status is checked directly below.
-    const memberNodeIds = new Set<NodeId>([
-      ...join.requiredMembers,
-      ...join.optionalMembers,
-    ]);
-    const nonMemberRequires = join.requires.filter((req) => !memberNodeIds.has(req));
-    if (!nonMemberRequires.every((req) => succeeded.has(req))) continue;
+    // Member status is checked inside evaluateJoin.
+    if (!joinNonMemberRequiresSatisfied(join, succeeded)) continue;
     // Find the FanOut that feeds this Join.
     const fanOut = fanOutNodes.find(
       (fo) => fo.joinNodeId === join.nodeId
     );
     if (fanOut === undefined) continue;
-    // Read active members from the FanOut condition result.
-    const conditionResult = committedResultForNode(record, fanOut.nodeId);
-    if (conditionResult === null) continue; // FanOut not resolved yet
-    const activeMembers = readActiveMembers(conditionResult, fanOut);
-    // Check active required members.
-    let allRequiredSucceeded = true;
-    let anyRequiredFailed = false;
-    let anyNonTerminal = false;
-    for (const memberNodeId of join.requiredMembers) {
-      const memberPath = fanOut.members.find((m) => m.nodeId === memberNodeId)?.hierarchicalPath;
-      if (memberPath === undefined || !activeMembers.has(memberPath)) continue;
-      const memberNode = atomicNodes.find((n) => n.nodeId === memberNodeId);
-      if (memberNode === undefined) continue;
-      const state = effectiveActionResult(record, memberNode);
-      if (state === null) { anyNonTerminal = true; continue; }
-      if (state.status === 'succeeded') continue;
-      if (state.status === 'failed') { anyRequiredFailed = true; continue; }
-      anyNonTerminal = true; // active or blocked
-    }
-    if (anyRequiredFailed) {
+    const verdict = evaluateJoin(record, join, fanOut, atomicNodes);
+    if (verdict === 'failed') {
       actions.push({ kind: 'escalate', code: join.outcomes.failed });
       continue;
     }
-    // Check active optional members.
-    for (const memberNodeId of join.optionalMembers) {
-      const memberPath = fanOut.members.find((m) => m.nodeId === memberNodeId)?.hierarchicalPath;
-      if (memberPath === undefined || !activeMembers.has(memberPath)) continue;
-      const memberNode = atomicNodes.find((n) => n.nodeId === memberNodeId);
-      if (memberNode === undefined) continue;
-      const state = effectiveActionResult(record, memberNode);
-      if (state === null) { anyNonTerminal = true; continue; }
-      // Optional failed → suppressed (ignored). succeeded → ok.
-    }
-    if (!anyNonTerminal && allRequiredSucceeded) {
+    if (verdict === 'proceed') {
       succeeded.add(join.nodeId);
     }
   }
@@ -669,6 +686,93 @@ function committedResultForNode(
   if (actions.length === 0) return null;
   const withResult = actions[actions.length - 1];
   return withResult?.result?.result ?? null;
+}
+
+/**
+ * ECP-4: a Join's non-member `requires` (upstream deps such as the FanOut node)
+ * must be in the succeeded set before the Join is evaluated. Member readiness
+ * is derived separately by {@link evaluateJoin}.
+ */
+function joinNonMemberRequiresSatisfied(
+  join: RuntimePlanJoinNode,
+  succeeded: ReadonlySet<NodeId>
+): boolean {
+  const memberNodeIds = new Set<NodeId>([
+    ...join.requiredMembers,
+    ...join.optionalMembers,
+  ]);
+  return join.requires
+    .filter((req) => !memberNodeIds.has(req))
+    .every((req) => succeeded.has(req));
+}
+
+/**
+ * ECP-4: derive a Join's verdict purely from the Record.
+ *
+ * - `failed`   — an ACTIVE required member committed a failed result.
+ * - `waiting`  — the FanOut condition is not committed yet, or some active
+ *                member has no terminal result.
+ * - `proceed`  — every active required member succeeded and every active
+ *                optional member is terminal (a failed optional is suppressed).
+ *
+ * Shared by the succeeded-set closure and the Join candidate pass so the two
+ * can never disagree about when the barrier opens.
+ */
+function evaluateJoin(
+  record: CanonicalRunRecord,
+  join: RuntimePlanJoinNode,
+  fanOut: RuntimePlanFanOutNode,
+  atomicNodes: readonly RuntimePlanAtomicNode[]
+): 'failed' | 'waiting' | 'proceed' {
+  const conditionResult = committedResultForNode(record, fanOut.nodeId);
+  if (conditionResult === null) return 'waiting';
+  const activeMembers = readActiveMembers(conditionResult, fanOut);
+  const memberState = (memberNodeId: NodeId) => {
+    const memberPath = fanOut.members.find(
+      (m) => m.nodeId === memberNodeId
+    )?.hierarchicalPath;
+    if (memberPath === undefined || !activeMembers.has(memberPath)) {
+      return 'inactive' as const;
+    }
+    const memberNode = atomicNodes.find((n) => n.nodeId === memberNodeId);
+    if (memberNode === undefined) return 'inactive' as const;
+    const state = effectiveActionResult(record, memberNode);
+    if (state === null) return 'non-terminal' as const;
+    if (state.status === 'succeeded') return 'succeeded' as const;
+    if (state.status === 'failed') return 'failed' as const;
+    return 'non-terminal' as const; // active or blocked
+  };
+
+  let anyNonTerminal = false;
+  for (const memberNodeId of join.requiredMembers) {
+    const state = memberState(memberNodeId);
+    if (state === 'failed') return 'failed';
+    if (state === 'non-terminal') anyNonTerminal = true;
+  }
+  for (const memberNodeId of join.optionalMembers) {
+    // A failed optional member is suppressed, not fatal.
+    if (memberState(memberNodeId) === 'non-terminal') anyNonTerminal = true;
+  }
+  return anyNonTerminal ? 'waiting' : 'proceed';
+}
+
+/**
+ * ECP-4: whether a bounded loop has reached its clean/satisfied terminal.
+ * Mirrors the bounded-loop candidate pass so the succeeded-set closure and the
+ * pass agree.
+ */
+function boundedLoopIsClean(
+  plan: RuntimePlan,
+  loop: RuntimePlanBoundedLoopNode,
+  record: CanonicalRunRecord
+): boolean {
+  if (loop.body.kind === 'review-cycle') {
+    return projectReviewCycleProgress(plan, loop, record).kind === 'clean';
+  }
+  if (loop.body.kind === 'goal-cycle') {
+    return projectGoalCycleProgress(plan, loop, record).kind === 'satisfied';
+  }
+  return projectCompositeBodyProgress(plan, loop, record).kind === 'clean';
 }
 
 /**
