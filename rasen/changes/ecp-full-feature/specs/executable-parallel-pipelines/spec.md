@@ -2,7 +2,7 @@
 
 ### Requirement: Reconciler executes choice nodes with persisted selection
 
-The deterministic reconciler SHALL recognize `choice` plan nodes, admit the condition evaluator when the choice's dependencies are satisfied, and upon commit of the evaluator's result, add ONLY the selected branch's path to the succeeded set. Un-selected branches SHALL never become eligible for admission. The selection SHALL be persisted in the canonical Record as a committed domain result, ensuring deterministic replay on restart.
+The deterministic reconciler SHALL recognize `choice` plan nodes and admit the condition evaluator when the choice's dependencies are satisfied. Upon commit of an evaluator result naming one of the choice's DECLARED outcomes, the reconciler SHALL add the choice's own nodeId to the succeeded set — which makes the selected branch's entry node eligible for admission — and SHALL treat every node reachable only from a rejected branch entry as permanently ineligible. Un-selected branches SHALL never become eligible for admission, SHALL never be admitted after the selected branch completes, and SHALL NOT block the Run's implicit finish. The selected branch is an ordinary plan node: it enters the succeeded set by committing its OWN Action, never by being selected, so nodes downstream of it SHALL NOT become ready until the branch itself has completed. A committed result that does not name a declared outcome SHALL NOT count as a selection. The selection SHALL be persisted in the canonical Record as a committed domain result, ensuring deterministic replay on restart.
 
 #### Scenario: Choice admitted when dependencies satisfied
 
@@ -16,8 +16,17 @@ The deterministic reconciler SHALL recognize `choice` plan nodes, admit the cond
 - **WHEN** the choice's condition evaluator completes with `{ outcome: 'complex' }`
 - **AND** the result is committed to the Record
 - **THEN** the reconciler SHALL add the choice's nodeId to the succeeded set
-- **AND** SHALL add `branches['complex']` to the succeeded set
-- **AND** SHALL NOT add any other branch path to the succeeded set
+- **AND** SHALL emit an admit candidate for `branches['complex']`
+- **AND** SHALL NOT emit an admit candidate for any other branch path
+- **AND** SHALL NOT add any branch path to the succeeded set — a branch enters the succeeded set only by committing its own Action
+
+#### Scenario: Downstream of the selected branch waits for the branch itself
+
+- **WHEN** the committed choice result selected `'simple'`
+- **AND** a node requires `branches['simple']`
+- **AND** the selected branch has no committed result yet
+- **THEN** the downstream node SHALL NOT become ready
+- **AND** the reconciler SHALL NOT emit an admit candidate for it
 
 #### Scenario: Un-selected branch never executes
 
@@ -25,6 +34,34 @@ The deterministic reconciler SHALL recognize `choice` plan nodes, admit the cond
 - **AND** the committed choice result selected `'complex'`
 - **THEN** the downstream node SHALL NOT become ready
 - **AND** the reconciler SHALL NOT emit an admit candidate for it
+
+#### Scenario: Un-selected branch stays ineligible after the selected branch completes
+
+- **WHEN** the committed choice result selected `'simple'`
+- **AND** the selected branch has committed a succeeded result
+- **AND** no workspace lock is held
+- **THEN** the reconciler SHALL NOT emit an admit candidate for `branches['complex']`
+- **AND** every node reachable only from `branches['complex']` SHALL remain ineligible
+
+#### Scenario: Rejected branch does not block the implicit finish
+
+- **WHEN** the committed choice result selected `'simple'`
+- **AND** every node NOT reachable only from a rejected branch entry has succeeded
+- **THEN** the reconciler SHALL emit a `finish` candidate with the plan's implicit finish outcome
+- **AND** the Run SHALL reach its terminal outcome WITHOUT executing the rejected branch
+
+#### Scenario: Convergence node after the branches rejoin is not excluded
+
+- **WHEN** a node is reachable from BOTH the selected and a rejected branch entry
+- **THEN** the reconciler SHALL NOT treat it as an excluded branch node
+- **AND** it SHALL remain gated by its own `requires` like any other node
+
+#### Scenario: Malformed choice result is not a selection
+
+- **WHEN** the choice's committed result does not name one of the choice's declared outcomes
+- **THEN** the reconciler SHALL NOT add the choice's nodeId to the succeeded set
+- **AND** SHALL NOT mark any branch ineligible
+- **AND** SHALL re-admit the choice's condition evaluator
 
 #### Scenario: Choice selection deterministic on restart
 
@@ -74,7 +111,7 @@ The deterministic reconciler SHALL recognize `fan-out` plan nodes, admit the con
 
 ### Requirement: Reconciler executes join nodes with required/optional/fail-closed semantics
 
-The deterministic reconciler SHALL recognize `join` plan nodes as barriers over fan-out member outcomes. The Join SHALL proceed (add to succeeded set) when all active required members have succeeded and all active optional members are terminal. The Join SHALL fail closed (emit escalate) when any active required member has a non-succeeded terminal state. The Join SHALL suppress (ignore) optional member failures.
+The deterministic reconciler SHALL recognize `join` plan nodes as barriers over fan-out member outcomes. The Join SHALL proceed (add to succeeded set) when all active required members have succeeded and all active optional members are terminal. The Join SHALL fail closed (emit escalate) when any active required member has a non-succeeded terminal state. The Join SHALL suppress (ignore) optional member failures. An active member — required OR optional — whose Action is admitted, granted, or blocked but not yet committed counts as NON-terminal, so the Join SHALL wait for it rather than proceeding while it is still in flight.
 
 #### Scenario: Join proceeds when all required succeed
 
@@ -103,6 +140,14 @@ The deterministic reconciler SHALL recognize `join` plan nodes as barriers over 
 - **THEN** the reconciler SHALL NOT add the join to the succeeded set
 - **AND** SHALL NOT emit an escalate candidate
 - **AND** the Run classification SHALL be `running` or `waiting`
+
+#### Scenario: Join waits for an in-flight OPTIONAL member
+
+- **WHEN** all active required members have committed succeeded results
+- **AND** an active optional member has an admitted-but-uncommitted action
+- **THEN** the reconciler SHALL NOT add the join to the succeeded set
+- **AND** SHALL NOT emit an escalate candidate
+- **AND** the join SHALL proceed only once that optional member reaches a terminal state
 
 #### Scenario: Join idempotent on restart
 
