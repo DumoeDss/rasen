@@ -35,7 +35,7 @@ Rasen SHALL resolve which engine owns a NEW Run from an explicit policy — the 
 
 ### Requirement: Run-state declares its engine and ownership conflicts are refused from disk
 
-Run-state written for a reconciler-engine run SHALL declare `engine: reconciler` at run start, marking the artifact as operational bookkeeping beside the canonical Run rather than a competing progression record. Rasen SHALL determine a change's engine owner from what is actually on disk, bound to the change instance (never to a name or alias): a canonical Run Record, and the change's run-state artifact — where run-state without a reconciler declaration (including all run-state written before this capability existed, and any run-state that cannot be read) SHALL count as legacy-owner state, and derived projections (`goal-run.json`, generated reports) SHALL never count as an ownership signal. When legacy-owner state and a canonical Run coexist, launching a new canonical Run and every canonical mutation SHALL be refused with an actionable `engine_owner_conflict` error that names both artifacts and the operator's resolution options; Rasen SHALL NOT auto-adopt, rewrite, or delete either side to resolve the conflict.
+Run-state written for a reconciler-engine run SHALL declare `engine: reconciler` at run start, marking the artifact as operational bookkeeping beside the canonical Run rather than a competing progression record. Rasen SHALL determine a change's engine owner from what is actually on disk, bound to the change instance (never to a name or alias): a canonical Run Record, and the change's run-state artifact — where run-state without a reconciler declaration (including all run-state written before this capability existed, and any run-state that cannot be read) SHALL count as legacy-owner state, and derived projections (`goal-run.json`, generated reports) SHALL never count as an ownership signal. When legacy-owner state exists, launching a new canonical Run SHALL be refused — including when no canonical Run exists yet, because allowing that launch would create a Run born unable to advance — and when legacy-owner state and a canonical Run coexist, every canonical mutation except cancellation SHALL be refused, in each case with an actionable `engine_owner_conflict` error that names the artifacts and the operator's resolution options. Cancelling the canonical Run SHALL remain available so the refusal's own documented resolution is always reachable, and read-only status SHALL remain unguarded. Rasen SHALL NOT auto-adopt, rewrite, or delete either side to resolve the conflict.
 
 #### Scenario: Declared bookkeeping beside the canonical Run is not a conflict
 
@@ -46,8 +46,21 @@ Run-state written for a reconciler-engine run SHALL declare `engine: reconciler`
 #### Scenario: Pre-existing run-state beside a canonical Run blocks mutation
 
 - **WHEN** a change has run-state with no engine declaration (written before this capability) and a canonical Run Record
-- **THEN** `rasen pipeline start` and every canonical mutation SHALL refuse with `engine_owner_conflict`, naming the run-state artifact and the Run
+- **THEN** `rasen pipeline start` and every canonical mutation except cancellation SHALL refuse with `engine_owner_conflict`, naming the run-state artifact and the Run
 - **AND** neither artifact SHALL be modified, adopted, or deleted by the refusal
+
+#### Scenario: Launching on a legacy-only change refuses rather than creating a stuck Run
+
+- **WHEN** a change has legacy-owner run-state (no engine declaration, or `engine: legacy`) and no canonical Run Record
+- **THEN** `rasen pipeline start` SHALL refuse with `engine_owner_conflict`, naming the legacy artifact and the resolution options
+- **AND** the run-state SHALL NOT be modified
+- **AND** legacy resume for that change SHALL remain available unchanged
+
+#### Scenario: Cancellation stays available as the escape hatch
+
+- **WHEN** a change is in the dual-owner conflict state (legacy-owner run-state beside a canonical Run)
+- **THEN** cancelling the canonical Run SHALL proceed despite the conflict
+- **AND** the refusal error for other mutations SHALL name cancellation as a resolution option
 
 #### Scenario: Projections never create a conflict
 
@@ -63,3 +76,31 @@ Run-state written for a reconciler-engine run SHALL declare `engine: reconciler`
 
 - **WHEN** a change is archived and a new change with the same name is created and run
 - **THEN** the archived instance's artifacts SHALL NOT create an ownership conflict for the new instance's Run
+
+### Requirement: Recorded session guidance is placeholder until a slice defines its authoritative source
+
+Committed agent actions carry a session block (`reuse`, `handoffTokenLimit`, `reuseRoundLimit`) whose values are recorded for forward compatibility, not enforced by 0.1.6. Because 0.1.6 provides no configuration or authoring surface for `handoffTokenLimit` or `reuseRoundLimit`, every value recorded for those two fields under the 0.1.6 contract is a placeholder: a future reader SHALL NOT treat them as an operator's or author's choice, SHALL NOT enforce them against a session (in particular, enforcing the recorded `reuseRoundLimit: 1` would forbid reviewer reuse across review rounds — the primary reuse pattern), and SHALL derive real limits from its own slice's authoritative source when one exists. A synthesized stage's `sessionReuse` follows its provenance: a value implied by the node's nature (a one-shot evaluator cannot reuse a session) SHALL carry `definition` provenance and is authoritative; a value nobody chose SHALL carry `default` provenance and is a placeholder. Authored session-reuse intent SHALL be preserved with full fidelity: when a pipeline authors a reuse scope (`none`, `stage`, `run-planner`, `review-thread`), the recorded session block SHALL carry the authored scope verbatim in an additive `sessionReuseAuthored` field beside the two-value `reuse` contract, and resolution SHALL NOT erase the distinction between authored scopes; the field is absent when nothing was authored.
+
+#### Scenario: Recorded limits are not enforced as chosen values
+
+- **WHEN** a future reader consumes a 0.1.6-era Record whose agent actions carry `handoffTokenLimit` or `reuseRoundLimit`
+- **THEN** it SHALL treat those values as placeholders, not as configured or authored constraints
+- **AND** SHALL obtain real limits from the slice that first defines their authoritative source
+
+#### Scenario: Authored reuse scope survives resolution verbatim
+
+- **WHEN** a pipeline stage authors `sessionReuse: review-thread`
+- **THEN** the effective stage and the committed action's session block SHALL carry `sessionReuseAuthored: review-thread` alongside the flattened `reuse` value
+- **AND** authored `stage`, `run-planner`, and `review-thread` SHALL remain distinguishable in the Record
+
+#### Scenario: Unauthored reuse records no fabricated intent
+
+- **WHEN** a stage authors no `sessionReuse` (or the stage is synthesized)
+- **THEN** the session block SHALL omit `sessionReuseAuthored`
+- **AND** existing Records and digests SHALL be unaffected by the field's introduction
+
+#### Scenario: One-shot evaluator non-reuse is definitional, not defaulted
+
+- **WHEN** a synthetic orchestration evaluator stage (parallel dispatch or choice select) is synthesized
+- **THEN** its `sessionReuse: never` SHALL carry `definition` provenance
+- **AND** a reader MAY rely on it as an intentional contract value

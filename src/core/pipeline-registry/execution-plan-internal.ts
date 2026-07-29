@@ -255,6 +255,26 @@ const EffectiveRunPolicySchema = z.strictObject({
       sandbox: z.enum(['read-only', 'workspace-write']),
       gate: z.boolean(),
       sessionReuse: z.enum(['never', 'same-invocation']),
+      /**
+       * ECP-5 (D9): the AUTHORED reuse scope, verbatim, beside the two-value
+       * `sessionReuse` contract above.
+       *
+       * Resolution flattens four authored scopes onto two contract values, so
+       * `stage`, `run-planner`, and `review-thread` all become
+       * `same-invocation` and become indistinguishable in the Record. Unlike
+       * `handoffTokenLimit`/`reuseRoundLimit` — values NOBODY chose, which a
+       * contract-level rule can protect retroactively — this destroys intent an
+       * author DID express, and no future rule can recover what was never
+       * recorded. It has to be captured at write time.
+       *
+       * Optional and undefined-dropped: absent when nothing was authored or the
+       * stage is synthesized, so every existing profile digest is unchanged.
+       * Nothing reads it in 0.1.6; the Session execution layer is its first
+       * reader.
+       */
+      sessionReuseAuthored: z
+        .enum(['none', 'stage', 'run-planner', 'review-thread'])
+        .optional(),
       handoffTokenLimit: z.number().int().nonnegative().safe(),
       reuseRoundLimit: z.number().int().nonnegative().safe(),
       provenance: PolicyProvenanceSchema,

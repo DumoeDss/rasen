@@ -861,6 +861,26 @@ export class PipelineCommand {
           resolved.sessionReuse === undefined || resolved.sessionReuse === 'none'
             ? ('never' as const)
             : ('same-invocation' as const),
+        // ECP-5 (D9): the flattening above collapses four authored scopes onto
+        // two contract values, so `stage`, `run-planner`, and `review-thread`
+        // all read back as `same-invocation`. Record the authored scope
+        // verbatim beside it — omitted when the author wrote nothing, so no
+        // intent is fabricated and existing digests are untouched. This also
+        // makes the provenance pair self-describing: an authored
+        // `review-thread` records `reuse: 'same-invocation'` with provenance
+        // `'stage'`, which without this field claims the author chose a value
+        // the author never wrote.
+        ...(resolved.sessionReuse !== undefined
+          ? { sessionReuseAuthored: resolved.sessionReuse }
+          : {}),
+        // PLACEHOLDER — see the `ecp-change-run-runtime` requirement
+        // "Recorded session guidance is placeholder until a slice defines its
+        // authoritative source". 0.1.6 has no config key or authoring surface
+        // for either value, so the `'default'` provenance below is the truthful
+        // stamp: nobody chose these. Do NOT "fix" them by picking a bigger
+        // number — that re-commits the same defect at a different magnitude and
+        // churns every policy digest for zero behavior change. The real values
+        // are the Session execution layer's design output.
         handoffTokenLimit: 10_000,
         reuseRoundLimit: 1,
         provenance: {

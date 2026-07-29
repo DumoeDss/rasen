@@ -240,7 +240,17 @@ function synthesizeEvaluatorPolicyStage(
     runtime: 'codex',
     sandbox: 'read-only',
     gate: false,
+    // ECP-5 (D9): DEFINITIONAL, not defaulted — a one-shot condition/choice
+    // evaluation has no session worth reusing, so `never` is implied by the
+    // node's nature rather than chosen for lack of a better value. The
+    // `definition` provenance below is what lifts it out of the placeholder
+    // rule: a reader MAY rely on this one as an intentional contract value.
+    // No `sessionReuseAuthored` — nothing was authored for a synthetic node.
     sessionReuse: 'never',
+    // PLACEHOLDER — "Recorded session guidance is placeholder until a slice
+    // defines its authoritative source" (`ecp-change-run-runtime`). Unchosen
+    // values with truthful `'default'` provenance; the Session execution layer
+    // owns the real numbers. Do not re-set them here.
     handoffTokenLimit: 10_000,
     reuseRoundLimit: 1,
     provenance: {
@@ -250,7 +260,7 @@ function synthesizeEvaluatorPolicyStage(
       runtime: 'default',
       sandbox: 'definition',
       gate: 'default',
-      sessionReuse: 'default',
+      sessionReuse: 'definition',
       handoffTokenLimit: 'default',
       reuseRoundLimit: 'default',
     },
@@ -608,7 +618,18 @@ function synthesizeReviewCyclePolicyStage(
     runtime: 'codex',
     sandbox: isFix ? 'workspace-write' : 'read-only',
     gate: false,
+    // ECP-5 (D9): PLACEHOLDER, and deliberately left as one. `never` is the
+    // conservative value (a reader honoring it loses efficiency, never
+    // correctness) and the `'default'` provenance below is truthful — nobody
+    // chose it. Hardcoding `'review-thread'` here would be ECP-5 designing
+    // reuse semantics that belong to the Session execution layer; that slice
+    // restores these phases' reuse from the authored `sessionReuseAuthored`.
     sessionReuse: 'never',
+    // PLACEHOLDER — "Recorded session guidance is placeholder until a slice
+    // defines its authoritative source" (`ecp-change-run-runtime`). Note that
+    // enforcing the recorded `reuseRoundLimit: 1` would forbid reviewer reuse
+    // ACROSS review rounds — the primary reuse pattern — so this placeholder is
+    // not merely unchosen, it is directionally wrong as policy. Do not re-set.
     handoffTokenLimit: 10_000,
     reuseRoundLimit: 1,
     provenance: {
@@ -636,7 +657,13 @@ function synthesizeDefaultPolicyStage(
     runtime: 'codex',
     sandbox: 'workspace-write',
     gate: false,
+    // ECP-5 (D9): PLACEHOLDER with truthful `'default'` provenance — the
+    // conservative value for a stage nothing was authored for. Unlike the
+    // evaluator's `never`, this one is not implied by the node's nature.
     sessionReuse: 'never',
+    // PLACEHOLDER — "Recorded session guidance is placeholder until a slice
+    // defines its authoritative source" (`ecp-change-run-runtime`). Unchosen;
+    // the Session execution layer owns the real numbers. Do not re-set.
     handoffTokenLimit: 10_000,
     reuseRoundLimit: 1,
     provenance: {
