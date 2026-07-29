@@ -20,6 +20,10 @@ import {
   getReviewCycleSection,
   getRootDagSection,
 } from '../api/types.js';
+import { useT } from '../i18n/store.js';
+
+/** The translator signature `useT()` returns, threaded into leaf renderers. */
+type Translate = (key: string, values?: Record<string, string | number>) => string;
 
 /**
  * Operations section for Task detail (design.md §14 of `ecp-run-spine`).
@@ -51,6 +55,15 @@ import {
  * badge (it requires EvidenceRefs the browser cannot produce). Agent/
  * command/host `complete` is a trusted CLI/host seam and is never offered
  * as a browser form.
+ *
+ * LOCALIZATION (ECP-5). Every string the UI itself authors comes from the
+ * `operations.*` catalog namespace in all three shipped locales. Values the
+ * SERVER projected — status, phase, outcome, severity, finding status, join
+ * state, member status, wait/terminal codes, ids and digests — are rendered
+ * verbatim and are never translated: they are the kernel's vocabulary, the
+ * same tokens the CLI and the Management API print, and the cross-plane parity
+ * suites assert them character-for-character. Translating one would make the
+ * Operations plane disagree with the other two planes about what the Run says.
  */
 
 /** Shortens an ID for display while preserving the full ID in a title attribute. */
@@ -76,35 +89,57 @@ function groupByChange(
   return map;
 }
 
-/** Renders a wait reason from the server-projected wait variant. */
-function WaitReason({ wait }: { wait: WaitView }) {
+/**
+ * Renders a wait reason from the server-projected wait variant. The sentence
+ * frame is localized; the codes it carries (`reasonCode`, `code`, `gateId`,
+ * `decisionIds`) are server vocabulary and interpolate verbatim.
+ */
+function WaitReason({ wait, t }: { wait: WaitView; t: Translate }) {
   const id = shortId(wait.waitId);
   let label: string;
   switch (wait.kind) {
     case 'gate':
-      label = `Gate ${wait.gateId} awaiting decision (${wait.decisionIds.join(' | ')})`;
+      label = t('operations.wait.gate', {
+        gate: wait.gateId,
+        decisions: wait.decisionIds.join(' | '),
+      });
       break;
     case 'domain-blocked':
-      label = `Domain blocked: ${wait.reasonCode}`;
+      label = t('operations.wait.domain_blocked', { code: wait.reasonCode });
       break;
     case 'infrastructure':
-      label = `Infrastructure: ${wait.code}${wait.retryable ? ' (retryable)' : ''}`;
+      label = wait.retryable
+        ? t('operations.wait.infrastructure_retryable', { code: wait.code })
+        : t('operations.wait.infrastructure', { code: wait.code });
       break;
     case 'uncertain-effect':
-      label = 'Uncertain effect — awaiting strong observation';
+      label = t('operations.wait.uncertain_effect');
       break;
     case 'capability-unavailable':
-      label = `Capability unavailable: ${wait.code}`;
+      label = t('operations.wait.capability_unavailable', { code: wait.code });
       break;
     case 'workspace-drift':
-      label = 'Workspace drift — observed revision differs from expected';
+      label = t('operations.wait.workspace_drift');
       break;
     case 'workspace-reservation':
-      label = `Workspace reserved (${wait.intents.length} intent${wait.intents.length === 1 ? '' : 's'})`;
+      label = t(
+        wait.intents.length === 1
+          ? 'operations.wait.workspace_reservation.one'
+          : 'operations.wait.workspace_reservation.other',
+        { count: wait.intents.length }
+      );
       break;
   }
   return (
-    <li class="ops-wait" data-testid="ops-wait" data-wait-kind={wait.kind} title={`WaitId: ${id.full}`}>
+    <li
+      class="ops-wait"
+      data-testid="ops-wait"
+      data-wait-kind={wait.kind}
+      // Identifier tooltips name WIRE FIELDS (`WaitId`, `RunId`, `NodeId`, …)
+      // and stay untranslated across the plane, exactly like the ids they
+      // carry — a field name is not prose.
+      title={`WaitId: ${id.full}`}
+    >
       <span class="ops-wait__id">{id.label}</span>
       <span class="ops-wait__reason">{label}</span>
     </li>
@@ -112,20 +147,29 @@ function WaitReason({ wait }: { wait: WaitView }) {
 }
 
 /** Renders a terminal outcome from the server projection. */
-function TerminalReason({ terminal }: { terminal: TerminalView }) {
+function TerminalReason({ terminal, t }: { terminal: TerminalView; t: Translate }) {
   let label: string;
   switch (terminal.kind) {
     case 'completed':
-      label = `Completed — outcome: ${terminal.outcome}`;
+      label = t('operations.terminal.completed', { outcome: terminal.outcome });
       break;
     case 'escalated':
-      label = `Escalated: ${terminal.code}${terminal.reason ? ` — ${terminal.reason}` : ''}`;
+      label = terminal.reason
+        ? t('operations.terminal.escalated_reason', {
+            code: terminal.code,
+            reason: terminal.reason,
+          })
+        : t('operations.terminal.escalated', { code: terminal.code });
       break;
     case 'failed':
-      label = `Failed: ${terminal.code}${terminal.reason ? ` — ${terminal.reason}` : ''}`;
+      label = terminal.reason
+        ? t('operations.terminal.failed_reason', { code: terminal.code, reason: terminal.reason })
+        : t('operations.terminal.failed', { code: terminal.code });
       break;
     case 'cancelled':
-      label = `Cancelled${terminal.reason ? ` — ${terminal.reason}` : ''}`;
+      label = terminal.reason
+        ? t('operations.terminal.cancelled_reason', { reason: terminal.reason })
+        : t('operations.terminal.cancelled');
       break;
   }
   return (
@@ -142,7 +186,7 @@ function TerminalReason({ terminal }: { terminal: TerminalView }) {
  * projector reports it (`activeCount` — the UI does not recompute which members
  * are in flight, exactly as it does not recompute the root-DAG frontier).
  */
-function ParallelSection({ section }: { section: ParallelViewSection }) {
+function ParallelSection({ section, t }: { section: ParallelViewSection; t: Translate }) {
   const fanOut = shortId(section.fanOutPath, 32);
   return (
     <div
@@ -151,12 +195,17 @@ function ParallelSection({ section }: { section: ParallelViewSection }) {
       data-join-state={section.joinState}
     >
       <span class="ops-run__section-label">
-        Parallel ({section.members.length} member{section.members.length === 1 ? '' : 's'})
+        {t(
+          section.members.length === 1
+            ? 'operations.parallel.title.one'
+            : 'operations.parallel.title.other',
+          { count: section.members.length }
+        )}
       </span>
       <dl class="ops-run__parallel-meta">
-        <dt>Fan-out</dt>
+        <dt>{t('operations.parallel.fan_out')}</dt>
         <dd title={section.fanOutPath} data-testid="ops-parallel-fan-out">{fanOut.label}</dd>
-        <dt>Join</dt>
+        <dt>{t('operations.parallel.join')}</dt>
         <dd>
           <span
             class={`ops-run__join-state ops-run__join-state--${section.joinState}`}
@@ -174,16 +223,21 @@ function ParallelSection({ section }: { section: ParallelViewSection }) {
             </span>
           )}
         </dd>
-        <dt>Budget</dt>
+        <dt>{t('operations.parallel.budget')}</dt>
         <dd data-testid="ops-parallel-budget">
           {section.budget.used}/{section.budget.max}
         </dd>
-        <dt>Cap</dt>
+        <dt>{t('operations.parallel.cap')}</dt>
         <dd data-testid="ops-parallel-cap">{section.concurrencyCap}</dd>
-        <dt>Frontier</dt>
+        <dt>{t('operations.parallel.frontier')}</dt>
+        {/* The projector's own counts, interpolated into a localized frame —
+            the UI does not recompute which members are in flight. */}
         <dd data-testid="ops-parallel-counts">
-          {section.activeCount} active · {section.succeededCount} succeeded ·{' '}
-          {section.failedCount} failed
+          {t('operations.parallel.counts', {
+            active: section.activeCount,
+            succeeded: section.succeededCount,
+            failed: section.failedCount,
+          })}
         </dd>
       </dl>
 
@@ -200,7 +254,9 @@ function ParallelSection({ section }: { section: ParallelViewSection }) {
             <span class="ops-run__parallel-member-path">{shortId(member.path, 32).label}</span>
             <span class="ops-run__parallel-member-status">{member.status}</span>
             <span class="ops-run__parallel-member-role">
-              {member.required ? 'required' : 'optional'}
+              {member.required
+                ? t('operations.parallel.required')
+                : t('operations.parallel.optional')}
             </span>
             <span class="ops-run__parallel-member-condition">{member.condition}</span>
           </li>
@@ -225,17 +281,21 @@ function ParallelSection({ section }: { section: ParallelViewSection }) {
  * that none is committed yet) and every declared branch marked active or
  * inactive exactly as the projector marked it.
  */
-function ChoiceSection({ section }: { section: ChoiceViewSection }) {
+function ChoiceSection({ section, t }: { section: ChoiceViewSection; t: Translate }) {
   return (
     <div class="ops-run__choice" data-testid="ops-run-choice" data-outcome={section.outcome}>
-      <span class="ops-run__section-label">Choice</span>
+      <span class="ops-run__section-label">{t('operations.choice.title')}</span>
       <dl class="ops-run__choice-meta">
-        <dt>Node</dt>
+        <dt>{t('operations.choice.node')}</dt>
         <dd title={section.choicePath} data-testid="ops-choice-path">
           {shortId(section.choicePath, 32).label}
         </dd>
-        <dt>Outcome</dt>
-        <dd data-testid="ops-choice-outcome">{section.outcome ?? 'awaiting decision'}</dd>
+        <dt>{t('operations.choice.outcome')}</dt>
+        {/* The committed outcome is server vocabulary and renders verbatim;
+            only the "nothing committed yet" placeholder is UI copy. */}
+        <dd data-testid="ops-choice-outcome">
+          {section.outcome ?? t('operations.choice.awaiting')}
+        </dd>
       </dl>
       <ul class="ops-run__choice-list">
         {section.branches.map((branch) => (
@@ -250,7 +310,7 @@ function ChoiceSection({ section }: { section: ChoiceViewSection }) {
             <span class="ops-run__choice-branch-outcome">{branch.outcome}</span>
             <span class="ops-run__choice-branch-path">{shortId(branch.path, 32).label}</span>
             <span class="ops-run__choice-branch-state">
-              {branch.active ? 'active' : 'inactive'}
+              {branch.active ? t('operations.choice.active') : t('operations.choice.inactive')}
             </span>
           </li>
         ))}
@@ -261,6 +321,23 @@ function ChoiceSection({ section }: { section: ChoiceViewSection }) {
 
 /** One projected ReviewCycle actor slot (fixer / verifier / last actor). */
 type ReviewCycleActor = NonNullable<ReviewCycleViewSection['actors']['fixer']>;
+
+/**
+ * Localized label for an actor slot. Written as a switch over LITERAL catalog
+ * keys rather than an interpolated `t(\`…${slot}\`)`, so the catalog test's
+ * used-key scan can see them — a key it cannot see is a key a typo can break
+ * silently.
+ */
+function actorSlotLabel(slot: string, t: Translate): string {
+  switch (slot) {
+    case 'fixer':
+      return t('operations.review_cycle.actor.fixer');
+    case 'verifier':
+      return t('operations.review_cycle.actor.verifier');
+    default:
+      return t('operations.review_cycle.actor.last');
+  }
+}
 
 /**
  * Renders the server-projected `review-cycle/1` section: the bounded loop's
@@ -280,7 +357,13 @@ type ReviewCycleActor = NonNullable<ReviewCycleViewSection['actors']['fixer']>;
  * recomputed any of them would be a second owner of mechanical progression —
  * exactly what this slice exists to delete.
  */
-function ReviewCycleSection({ section }: { section: ReviewCycleViewSection }) {
+function ReviewCycleSection({
+  section,
+  t,
+}: {
+  section: ReviewCycleViewSection;
+  t: Translate;
+}) {
   const loop = shortId(section.loopPath, 32);
   const actors: readonly [string, ReviewCycleActor][] = (
     [
@@ -298,30 +381,38 @@ function ReviewCycleSection({ section }: { section: ReviewCycleViewSection }) {
       data-outcome={section.outcome}
     >
       <span class="ops-run__section-label">
-        Review cycle ({section.findings.length} finding
-        {section.findings.length === 1 ? '' : 's'})
+        {t(
+          section.findings.length === 1
+            ? 'operations.review_cycle.title.one'
+            : 'operations.review_cycle.title.other',
+          { count: section.findings.length }
+        )}
       </span>
       <dl class="ops-run__review-cycle-meta">
-        <dt>Loop</dt>
+        <dt>{t('operations.review_cycle.loop')}</dt>
         <dd title={section.loopPath} data-testid="ops-review-cycle-loop">
           {loop.label}
         </dd>
-        <dt>Round</dt>
+        <dt>{t('operations.review_cycle.round')}</dt>
         {/* The projected round against the projected cap — the bounded-loop
             reducer owns both; the UI never counts rounds itself. */}
         <dd data-testid="ops-review-cycle-round">
           {section.round}/{section.maxRounds}
         </dd>
-        <dt>Phase</dt>
+        <dt>{t('operations.review_cycle.phase')}</dt>
+        {/* Phase, outcome and waitReason are kernel tokens — rendered verbatim
+            so this plane says exactly what `pipeline status` says. */}
         <dd data-testid="ops-review-cycle-phase">{section.phase}</dd>
-        <dt>Outcome</dt>
+        <dt>{t('operations.review_cycle.outcome')}</dt>
         {/* Absent outcome means the loop has not terminated. It is NOT derived
             from the findings — the kernel's ship guard is the only authority
             on whether a cycle may be called clean. */}
-        <dd data-testid="ops-review-cycle-outcome">{section.outcome ?? 'in progress'}</dd>
+        <dd data-testid="ops-review-cycle-outcome">
+          {section.outcome ?? t('operations.review_cycle.in_progress')}
+        </dd>
         {section.waitReason !== undefined && (
           <>
-            <dt>Wait</dt>
+            <dt>{t('operations.review_cycle.wait')}</dt>
             <dd data-testid="ops-review-cycle-wait">{section.waitReason}</dd>
           </>
         )}
@@ -365,7 +456,9 @@ function ReviewCycleSection({ section }: { section: ReviewCycleViewSection }) {
                 data-actor-identity={actor.identityDigest}
                 title={`${slot}: ${actor.identityDigest}`}
               >
-                <span class="ops-run__review-cycle-actor-slot">{slot}</span>
+                <span class="ops-run__review-cycle-actor-slot">
+                  {actorSlotLabel(slot, t)}
+                </span>
                 <span class="ops-run__review-cycle-actor-kind">{actor.kind}</span>
                 <span class="ops-run__review-cycle-actor-identity">{identity.label}</span>
               </li>
@@ -446,12 +539,14 @@ function ControlsSection({
   runId,
   selector,
   onViewReplaced,
+  t,
 }: {
   view: ChangeRunView;
   changeId: string;
   runId: string;
   selector?: string;
   onViewReplaced: (view: ChangeRunView) => void;
+  t: Translate;
 }) {
   const root = getRootDagSection(view);
   // Local UI state — keyed off runId by the parent so it resets on Run switch.
@@ -505,13 +600,15 @@ function ControlsSection({
         } catch {
           setError({
             code: 'refetch_failed',
-            message: 'The Run was modified by another caller and the refresh failed.',
+            message: t('operations.control.error.refetch_failed'),
           });
         }
       } else if (err instanceof ApiError) {
+        // The server's own message — already localized by the server or
+        // deliberately verbatim; the UI does not restate it.
         setError({ code: err.code, message: err.message });
       } else {
-        setError({ code: 'unknown', message: 'Failed to submit control.' });
+        setError({ code: 'unknown', message: t('operations.control.error.unknown') });
       }
     } finally {
       setInFlight(false);
@@ -532,7 +629,10 @@ function ControlsSection({
                 title={`waitId: ${control.waitId}\ndecisionId: ${control.decisionId}`}
               >
                 <span class="ops-control__label">
-                  decision {control.decisionId} ({shortId(control.waitId).label})
+                  {t('operations.control.decision', {
+                    decision: control.decisionId,
+                    wait: shortId(control.waitId).label,
+                  })}
                 </span>
                 <span class="ops-control__outcomes">
                   {control.outcomes.map((outcome) => (
@@ -567,7 +667,9 @@ function ControlsSection({
                 data-control-kind="resume"
                 title={`waitId: ${control.waitId}`}
               >
-                <span class="ops-control__label">resume ({shortId(control.waitId).label})</span>
+                <span class="ops-control__label">
+                  {t('operations.control.resume', { wait: shortId(control.waitId).label })}
+                </span>
                 <button
                   type="button"
                   class="ops-control__submit"
@@ -575,7 +677,7 @@ function ControlsSection({
                   disabled={inFlight}
                   onClick={() => submit({ kind: 'resume', waitId: control.waitId })}
                 >
-                  Resume
+                  {t('operations.control.resume_action')}
                 </button>
               </div>
             );
@@ -587,12 +689,12 @@ function ControlsSection({
                 data-testid="ops-control"
                 data-control-kind="escalate"
               >
-                <span class="ops-control__label">escalate</span>
+                <span class="ops-control__label">{t('operations.control.escalate')}</span>
                 <input
                   type="text"
                   class="ops-control__reason"
                   data-testid="ops-control-escalate-reason"
-                  placeholder="reason (required)"
+                  placeholder={t('operations.control.escalate_reason_placeholder')}
                   value={escalateReason}
                   disabled={inFlight}
                   onInput={(e) => setEscalateReason((e.target as HTMLInputElement).value)}
@@ -606,7 +708,7 @@ function ControlsSection({
                   disabled={inFlight || escalateReason.trim().length === 0}
                   onClick={() => submit({ kind: 'escalate', reason: escalateReason.trim() })}
                 >
-                  Escalate
+                  {t('operations.control.escalate_action')}
                 </button>
               </div>
             );
@@ -621,7 +723,7 @@ function ControlsSection({
                 data-testid="ops-control"
                 data-control-kind="cancel"
               >
-                <span class="ops-control__label">cancel</span>
+                <span class="ops-control__label">{t('operations.control.cancel')}</span>
                 {!pendingCancel ? (
                   <button
                     type="button"
@@ -630,7 +732,7 @@ function ControlsSection({
                     disabled={inFlight}
                     onClick={() => setPendingCancel(true)}
                   >
-                    Cancel Run
+                    {t('operations.control.cancel_action')}
                   </button>
                 ) : (
                   <span class="ops-control__confirm">
@@ -641,7 +743,7 @@ function ControlsSection({
                       disabled={inFlight}
                       onClick={() => submit({ kind: 'cancel' })}
                     >
-                      Confirm cancel
+                      {t('operations.control.cancel_confirm')}
                     </button>
                     <button
                       type="button"
@@ -650,7 +752,7 @@ function ControlsSection({
                       disabled={inFlight}
                       onClick={() => setPendingCancel(false)}
                     >
-                      Dismiss
+                      {t('operations.control.cancel_dismiss')}
                     </button>
                   </span>
                 )}
@@ -690,12 +792,14 @@ function RunDetailBody({
   runId,
   selector,
   onViewReplaced,
+  t,
 }: {
   view: ChangeRunView;
   changeId: string;
   runId: string;
   selector?: string;
   onViewReplaced: (view: ChangeRunView) => void;
+  t: Translate;
 }) {
   const root = getRootDagSection(view);
   const reviewCycle = getReviewCycleSection(view);
@@ -705,24 +809,25 @@ function RunDetailBody({
   const runIdShort = shortId(view.runId);
 
   if (!root) {
-    return <p class="ops-run__no-section">No root-dag section in this view.</p>;
+    return <p class="ops-run__no-section">{t('operations.detail.no_root_section')}</p>;
   }
 
   return (
     <div class="ops-run__body" data-testid="ops-run-detail-body">
       {/* Core identity row — full IDs in title attributes for copy. */}
       <dl class="ops-run__meta">
-        <dt>Run</dt>
+        <dt>{t('operations.detail.run')}</dt>
         <dd title={view.runId} data-testid="ops-run-id">{runIdShort.label}</dd>
-        <dt>Status</dt>
+        <dt>{t('operations.detail.status')}</dt>
+        {/* status / sourceState / scope are server tokens — verbatim. */}
         <dd>
           <span class={`ops-run__status ${statusClass(view.status)}`} data-testid="ops-run-status">{view.status}</span>
         </dd>
-        <dt>Record</dt>
-        <dd>v{view.recordVersion}</dd>
-        <dt>Source</dt>
+        <dt>{t('operations.detail.record')}</dt>
+        <dd>{t('operations.detail.record_version', { version: view.recordVersion })}</dd>
+        <dt>{t('operations.detail.source')}</dt>
         <dd data-testid="ops-run-source-state">{view.sourceState}</dd>
-        <dt>Workspace</dt>
+        <dt>{t('operations.detail.workspace')}</dt>
         <dd>
           <span
             class={`ops-run__scope ops-run__scope--${view.workspace.scope}`}
@@ -731,8 +836,11 @@ function RunDetailBody({
             {view.workspace.scope}
           </span>
           {isOther && (
-            <span class="ops-run__readonly-notice" title="Other-worktree Run — read-only, no controls">
-              read-only
+            <span
+              class="ops-run__readonly-notice"
+              title={t('operations.detail.readonly_title')}
+            >
+              {t('operations.detail.readonly')}
             </span>
           )}
         </dd>
@@ -741,7 +849,7 @@ function RunDetailBody({
       {/* root-dag/1 frontier — the server-projected ready nodes. */}
       {root.frontier.length > 0 && (
         <div class="ops-run__frontier" data-testid="ops-run-frontier">
-          <span class="ops-run__section-label">Frontier</span>
+          <span class="ops-run__section-label">{t('operations.detail.frontier')}</span>
           <ul class="ops-run__frontier-list">
             {root.frontier.map((nodeId) => {
               const short = shortId(nodeId);
@@ -758,7 +866,7 @@ function RunDetailBody({
       {/* Active invocations — server-projected, with action/effect bindings. */}
       {root.activeInvocations.length > 0 && (
         <div class="ops-run__invocations" data-testid="ops-run-invocations">
-          <span class="ops-run__section-label">Active invocations</span>
+          <span class="ops-run__section-label">{t('operations.detail.invocations')}</span>
           <ul class="ops-run__invocation-list">
             {root.activeInvocations.map((inv) => {
               const invShort = shortId(inv.invocationId);
@@ -771,7 +879,12 @@ function RunDetailBody({
                 >
                   <span class="ops-run__invocation-id">{invShort.label}</span>
                   <span class="ops-run__invocation-actions">
-                    {inv.actionIds.length} action{inv.actionIds.length === 1 ? '' : 's'}
+                    {t(
+                      inv.actionIds.length === 1
+                        ? 'operations.detail.action_count.one'
+                        : 'operations.detail.action_count.other',
+                      { count: inv.actionIds.length }
+                    )}
                   </span>
                 </li>
               );
@@ -783,7 +896,9 @@ function RunDetailBody({
       {/* Actions — diagnostic delivery states from the projection. */}
       {root.actions.length > 0 && (
         <div class="ops-run__actions" data-testid="ops-run-actions">
-          <span class="ops-run__section-label">Actions ({root.actions.length})</span>
+          <span class="ops-run__section-label">
+            {t('operations.detail.actions', { count: root.actions.length })}
+          </span>
           <ul class="ops-run__action-list">
             {root.actions.map((action) => {
               const actShort = shortId(action.actionId);
@@ -808,44 +923,48 @@ function RunDetailBody({
       {/* Waits — the server-projected blocked reasons. */}
       {root.waits.length > 0 && (
         <div class="ops-run__waits" data-testid="ops-run-waits">
-          <span class="ops-run__section-label">Waits ({root.waits.length})</span>
+          <span class="ops-run__section-label">
+            {t('operations.detail.waits', { count: root.waits.length })}
+          </span>
           <ul class="ops-run__wait-list">
             {root.waits.map((wait) => (
-              <WaitReason key={wait.waitId} wait={wait} />
+              <WaitReason key={wait.waitId} wait={wait} t={t} />
             ))}
           </ul>
         </div>
       )}
 
       {/* Terminal — only on terminal Runs (mutually exclusive with actions/waits). */}
-      {root.terminal && <TerminalReason terminal={root.terminal} />}
+      {root.terminal && <TerminalReason terminal={root.terminal} t={t} />}
 
       {/* review-cycle/1, parallel/1 and choice/1 — additive sections the server
           projects only when the Run's plan carries a review-cycle BoundedLoop
           (ECP-1), a FanOut or a Choice node (ECP-4). Absent sections render
           nothing, exactly like an empty frontier. */}
-      {reviewCycle && <ReviewCycleSection section={reviewCycle} />}
-      {parallel && <ParallelSection section={parallel} />}
-      {choice && <ChoiceSection section={choice} />}
+      {reviewCycle && <ReviewCycleSection section={reviewCycle} t={t} />}
+      {parallel && <ParallelSection section={parallel} t={t} />}
+      {choice && <ChoiceSection section={choice} t={t} />}
 
-      {/* Drift — definition/capability/policy/workspace/source comparison. */}
+      {/* Drift — definition/capability/policy/workspace/source comparison. The
+          facet names are localized; the observer's verdict on each
+          (unchanged/changed/unavailable) is server vocabulary. */}
       <div class="ops-run__drift" data-testid="ops-run-drift">
-        <span class="ops-run__section-label">Drift</span>
+        <span class="ops-run__section-label">{t('operations.drift.title')}</span>
         <div class="ops-run__drift-grid">
           <span class={`ops-run__drift-cell ops-run__drift-cell--${view.drift.definition}`}>
-            definition: {view.drift.definition}
+            {t('operations.drift.definition')}: {view.drift.definition}
           </span>
           <span class={`ops-run__drift-cell ops-run__drift-cell--${view.drift.capability}`}>
-            capability: {view.drift.capability}
+            {t('operations.drift.capability')}: {view.drift.capability}
           </span>
           <span class={`ops-run__drift-cell ops-run__drift-cell--${view.drift.policy}`}>
-            policy: {view.drift.policy}
+            {t('operations.drift.policy')}: {view.drift.policy}
           </span>
           <span class={`ops-run__drift-cell ops-run__drift-cell--${view.drift.workspace}`}>
-            workspace: {view.drift.workspace}
+            {t('operations.drift.workspace')}: {view.drift.workspace}
           </span>
           <span class={`ops-run__drift-cell ops-run__drift-cell--${view.drift.sourceRevision.semantic}`}>
-            source: {view.drift.sourceRevision.semantic}
+            {t('operations.drift.source')}: {view.drift.sourceRevision.semantic}
           </span>
         </div>
       </div>
@@ -858,7 +977,7 @@ function RunDetailBody({
           for them (same conditional as actions/waits above). */}
       {root.allowedControls.length > 0 && (
         <div class="ops-run__controls" data-testid="ops-run-controls">
-          <span class="ops-run__section-label">Allowed controls</span>
+          <span class="ops-run__section-label">{t('operations.control.title')}</span>
           <ControlsSection
             key={runId}
             view={view}
@@ -866,6 +985,7 @@ function RunDetailBody({
             runId={runId}
             selector={selector}
             onViewReplaced={onViewReplaced}
+            t={t}
           />
         </div>
       )}
@@ -878,10 +998,12 @@ function RunSummaryRow({
   summary,
   isSelected,
   onSelect,
+  t,
 }: {
   summary: ReconcilerRunSummary;
   isSelected: boolean;
   onSelect: (runId: string) => void;
+  t: Translate;
 }) {
   const runIdShort = shortId(summary.runId);
   const hasError = !!summary.error;
@@ -899,7 +1021,7 @@ function RunSummaryRow({
         <span class="ops-summary-row__id">{runIdShort.label}</span>
         {hasError ? (
           <span class={`ops-run__status ops-run__status--error`} data-testid="ops-summary-error">
-            error: {summary.error!.code}
+            {t('operations.summary.error', { code: summary.error!.code })}
           </span>
         ) : (
           <span class={`ops-run__status ${statusClass(summary.status)}`}>
@@ -908,12 +1030,23 @@ function RunSummaryRow({
         )}
         <span class="ops-summary-row__source">{summary.sourceState}</span>
         {summary.waits !== undefined && summary.waits > 0 && (
-          <span class="ops-summary-row__waits">{summary.waits} wait{summary.waits === 1 ? '' : 's'}</span>
+          <span class="ops-summary-row__waits">
+            {t(
+              summary.waits === 1
+                ? 'operations.summary.wait_count.one'
+                : 'operations.summary.wait_count.other',
+              { count: summary.waits }
+            )}
+          </span>
         )}
         {summary.terminal !== undefined && (
-          <span class="ops-summary-row__terminal" data-testid="ops-summary-terminal">terminal</span>
+          <span class="ops-summary-row__terminal" data-testid="ops-summary-terminal">
+            {t('operations.summary.terminal')}
+          </span>
         )}
-        <span class="ops-summary-row__version">v{summary.recordVersion}</span>
+        <span class="ops-summary-row__version">
+          {t('operations.detail.record_version', { version: summary.recordVersion })}
+        </span>
       </button>
     </li>
   );
@@ -931,6 +1064,7 @@ function RunDetailPanel({
   selector?: string;
   onClose: () => void;
 }) {
+  const t = useT();
   const [view, setView] = useState<ChangeRunView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -949,7 +1083,7 @@ function RunDetailPanel({
       .catch((err) => {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 401) return;
-        setError(err instanceof ApiError ? err.message : 'Failed to load Run detail.');
+        setError(err instanceof ApiError ? err.message : t('operations.detail.load_error'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -963,13 +1097,13 @@ function RunDetailPanel({
     <div class="ops-run-detail" data-testid="ops-run-detail" data-run-id={runId}>
       <div class="ops-run-detail__header">
         <h4 class="ops-run-detail__title">
-          Run detail — <code title={runId}>{shortId(runId).label}</code>
+          {t('operations.detail.title')} <code title={runId}>{shortId(runId).label}</code>
         </h4>
         <button type="button" class="btn--ghost" data-testid="ops-run-detail-close" onClick={onClose}>
-          Close
+          {t('operations.detail.close')}
         </button>
       </div>
-      {loading && <p class="ops-run-detail__loading">Loading…</p>}
+      {loading && <p class="ops-run-detail__loading">{t('operations.detail.loading')}</p>}
       {error && (
         <p class="ops-run-detail__error" role="alert" data-testid="ops-run-detail-error">
           {error}
@@ -982,6 +1116,7 @@ function RunDetailPanel({
           runId={runId}
           selector={selector}
           onViewReplaced={setView}
+          t={t}
         />
       )}
     </div>
@@ -1004,6 +1139,7 @@ export function OperationsSection({
   /** The Task's child change names — used to group runs by child. */
   childNames: readonly string[];
 }) {
+  const t = useT();
   const [selectedRun, setSelectedRun] = useState<{ changeId: string; runId: string } | null>(null);
 
   const reconcilerRuns = runsResponse?.reconcilerRuns ?? [];
@@ -1027,7 +1163,7 @@ export function OperationsSection({
 
   return (
     <section class="task-detail__operations" aria-label="Operations" data-testid="operations-section">
-      <h3 class="operations-section__title">Operations</h3>
+      <h3 class="operations-section__title">{t('operations.title')}</h3>
 
       {childGroups.map(([changeId, summaries]) => (
         <div
@@ -1048,6 +1184,7 @@ export function OperationsSection({
                 onSelect={(runId) =>
                   setSelectedRun({ changeId, runId })
                 }
+                t={t}
               />
             ))}
           </ul>
@@ -1056,7 +1193,7 @@ export function OperationsSection({
 
       {otherGroups.length > 0 && (
         <div class="operations-section__group operations-section__group--other" data-testid="operations-group-other">
-          <h4 class="operations-section__group-title">Other changes</h4>
+          <h4 class="operations-section__group-title">{t('operations.group_other')}</h4>
           <ul class="operations-section__run-list">
             {otherGroups.flatMap(([, summaries]) =>
               summaries.map((s) => (
@@ -1067,6 +1204,7 @@ export function OperationsSection({
                   onSelect={(runId) =>
                     setSelectedRun({ changeId: s.changeId, runId })
                   }
+                  t={t}
                 />
               ))
             )}
@@ -1077,7 +1215,7 @@ export function OperationsSection({
       {/* "Load more" pagination — uses the server's opaque cursor. */}
       {runsResponse?.hasMore && runsResponse.nextCursor && (
         <p class="operations-section__pagination" data-testid="operations-pagination">
-          More Runs available (cursor: <code>{runsResponse.nextCursor.slice(0, 16)}…</code>)
+          {t('operations.pagination')} <code>{runsResponse.nextCursor.slice(0, 16)}…</code>
         </p>
       )}
 
