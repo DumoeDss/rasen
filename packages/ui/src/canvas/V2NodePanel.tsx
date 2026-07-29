@@ -221,6 +221,14 @@ export function V2NodePanel({
               onPatch={onPatch}
             />
           )}
+
+          {node.kind === 'FanOut' && (
+            <FanOutDetails node={node} />
+          )}
+
+          {node.kind === 'Join' && (
+            <JoinDetails node={node} />
+          )}
         </>
       )}
     </aside>
@@ -503,6 +511,90 @@ function DeclarationSummary({
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * ECP-4 FanOut detail renderer: shows member list with required badges,
+ * concurrency cap, and budget scalars (read-only display).
+ */
+function FanOutDetails({ node }: { node: WireDefinitionNode }) {
+  const branches = listValue(
+    (node as Readonly<{ branches?: unknown }>).branches
+  );
+  const cap = (node as Readonly<{ concurrencyCap?: unknown }>).concurrencyCap;
+  const budget = (node as Readonly<{ budget?: unknown }>).budget;
+  const members = (node as Readonly<{ members?: ReadonlyArray<{ id: string; required: boolean; condition: string }> }>).members;
+  return (
+    <div class="stage-panel__section" data-testid="v2-node-panel-fanout">
+      <h4 class="stage-panel__section-title">Parallel Members</h4>
+      {members !== undefined ? (
+        <ul class="stage-panel__member-list">
+          {members.map((m) => (
+            <li key={m.id} class="stage-panel__member-item">
+              <span class="stage-panel__member-id">{m.id}</span>
+              {m.required && (
+                <span class="stage-panel__badge stage-panel__badge--required">required</span>
+              )}
+              <span class="stage-panel__member-condition">{m.condition}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="stage-panel__muted">{branches}</p>
+      )}
+      <div class="stage-panel__scalars">
+        <label class="stage-panel__scalar">
+          <span>Concurrency cap</span>
+          <output>{String(cap ?? 3)}</output>
+        </label>
+        <label class="stage-panel__scalar">
+          <span>Budget</span>
+          <output>{String(budget ?? '—')}</output>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ECP-4 Join detail renderer: shows required/optional members and outcomes.
+ */
+function JoinDetails({ node }: { node: WireDefinitionNode }) {
+  const inputs = listValue(
+    (node as Readonly<{ inputs?: unknown }>).inputs
+  );
+  const requiredMembers = (node as Readonly<{ requiredMembers?: readonly string[] }>).requiredMembers;
+  const optionalMembers = (node as Readonly<{ optionalMembers?: readonly string[] }>).optionalMembers;
+  const outcomes = (node as Readonly<{ outcomes?: Readonly<{ proceed: string; failed: string }> }>).outcomes;
+  return (
+    <div class="stage-panel__section" data-testid="v2-node-panel-join">
+      <h4 class="stage-panel__section-title">Barrier Members</h4>
+      {requiredMembers !== undefined && optionalMembers !== undefined ? (
+        <ul class="stage-panel__member-list">
+          {requiredMembers.map((m) => (
+            <li key={m} class="stage-panel__member-item">
+              <span class="stage-panel__member-id">{m}</span>
+              <span class="stage-panel__badge stage-panel__badge--required">required</span>
+            </li>
+          ))}
+          {optionalMembers.map((m) => (
+            <li key={m} class="stage-panel__member-item">
+              <span class="stage-panel__member-id">{m}</span>
+              <span class="stage-panel__badge stage-panel__badge--optional">optional</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="stage-panel__muted">{inputs}</p>
+      )}
+      {outcomes !== undefined && (
+        <div class="stage-panel__outcomes">
+          <span>proceed: {outcomes.proceed}</span>
+          <span>failed: {outcomes.failed}</span>
+        </div>
+      )}
     </div>
   );
 }

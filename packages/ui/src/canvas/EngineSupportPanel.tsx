@@ -22,6 +22,10 @@ function reasonLabel(reason: string): string {
       return 'Supported: root-DAG bug-fix';
     case 'supported_v2_review_cycle':
       return 'Supported: v2 ReviewCycle';
+    case 'supported_v2_executable':
+      return 'Supported: v2 executable';
+    case 'supported_v2_parallel':
+      return 'Supported: v2 parallel (FanOut/Join)';
     case 'unsupported_definition_version':
       return 'Unsupported: definition version';
     case 'unsupported_pipeline_shape':

@@ -88,6 +88,30 @@ export function StageNode({ data }: NodeProps<StageFlowNode>) {
             Composite
           </span>
         )}
+        {definitionKind === 'FanOut' && (
+          <span
+            class="stage-node__badge stage-node__badge--fanout"
+            data-testid="stage-node-badge-fanout"
+          >
+            Parallel
+          </span>
+        )}
+        {definitionKind === 'Join' && (
+          <span
+            class="stage-node__badge stage-node__badge--join"
+            data-testid="stage-node-badge-join"
+          >
+            Barrier
+          </span>
+        )}
+        {definitionKind === 'Choice' && !editorSupported && (
+          <span
+            class="stage-node__badge stage-node__badge--choice"
+            data-testid="stage-node-badge-choice"
+          >
+            Conditional
+          </span>
+        )}
         {!editorSupported && definitionKind !== 'BoundedLoop' && (
           <span class="stage-node__unsupported" data-testid="stage-node-unsupported">
             Preserved · editing arrives in a later slice

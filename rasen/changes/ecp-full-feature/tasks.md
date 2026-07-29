@@ -73,11 +73,11 @@
 
 ## 9. Canvas — Parallel Authoring (Acceptance: D8)
 
-- [ ] 9.1 Update `packages/ui/src/canvas/V2NodePanel.tsx`: FanOut panel (members list with required badges + conditions, concurrency cap scalar, budget scalar), Join panel (required/optional members, outcomes), Choice panel (outcomes list, branch mapping)
-- [ ] 9.2 Update `packages/ui/src/canvas/StageNode.tsx`: FanOut badge "Parallel (N members)", Join badge "Barrier", Choice badge "Conditional"
-- [ ] 9.3 Add legality validation: concurrency cap in [1, 32], budget >= required member count; over-budget → Canvas shows error and does not mark runnable
-- [ ] 9.4 Update `EngineSupportPanel` to reflect `supported_v2_parallel` execution mode
-- [ ] 9.5 Write Canvas test: FanOut/Join/Choice panels render correctly; over-budget shape rejected
+- [x] 9.1 Update `packages/ui/src/canvas/V2NodePanel.tsx`: FanOut panel (members list with required badges + conditions, concurrency cap scalar, budget scalar), Join panel (required/optional members, outcomes), Choice panel (outcomes list, branch mapping)
+- [x] 9.2 Update `packages/ui/src/canvas/StageNode.tsx`: FanOut badge "Parallel (N members)", Join badge "Barrier", Choice badge "Conditional"
+- [x] 9.3 Add legality validation: concurrency cap in [1, 32], budget >= required member count; over-budget → Canvas shows error and does not mark runnable
+- [x] 9.4 Update `EngineSupportPanel` to reflect `supported_v2_parallel` execution mode
+- [x] 9.5 Write Canvas test: FanOut/Join/Choice panels render correctly; over-budget shape rejected
 
 ## 10. analyzeReconcilerSupport — FanOut/Join Capability Bindings (Acceptance: D6)
 
