@@ -710,6 +710,27 @@ export function analyzeReconcilerSupport(
     if (profile === null) {
       return unsupported('execution_profile_unavailable');
     }
+    // Task 10.3 promises `supported_v2_parallel` only "when all FanOut/Join/
+    // Choice bindings are present". Without this check a parallel-only
+    // pipeline with an incomplete binding set reports supported and then dies
+    // mid-Run at admission with `No capability/policy binding` — the exact
+    // failure mode the synthetic evaluator binding fixed on the review-cycle
+    // branch, which applies the same strict comparison.
+    const expectedNodeIds = prepared.definition.root.nodes
+      .filter(
+        (node) =>
+          node.kind === 'AtomicStage' ||
+          orchestrationEvaluatorCapabilityFor(node) !== null
+      )
+      .map((node) => `root:${node.id}`)
+      .sort(compareStrings);
+    if (
+      expectedNodeIds.length === 0 ||
+      JSON.stringify(profile.capabilities.map((binding) => binding.nodeId)) !==
+        JSON.stringify(expectedNodeIds)
+    ) {
+      return unsupported('unsupported_pipeline_shape');
+    }
     return deepFreeze({
       availableEngines: ['legacy', 'reconciler'],
       reconcilerSupport: {

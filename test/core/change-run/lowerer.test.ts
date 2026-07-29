@@ -1170,6 +1170,11 @@ describe('ECP-4 lowerer: FanOut member paths resolve to plan nodes', () => {
 
 describe('ECP-4 analyzeReconcilerSupport: parallel bindings (m2 / task 10.4)', () => {
   it('reports supported_v2_parallel for a parallelGroup pipeline with no ReviewCycle', () => {
+    // NOTE: the profile here is hand-built with v2 (`root:`) paths. The
+    // PRODUCTION resolver only takes the v2-migration path when the normalized
+    // definition has a ReviewCycle BoundedLoop, so a real parallel-only v1
+    // pipeline is still bound at `stage:<id>` paths and cannot lower. This
+    // asserts the analyzer contract, not end-to-end parallel-only support.
     const prepared = prepare(PARALLEL_ONLY);
     const support = analyzeReconcilerSupport(prepared, parallelV2Profile(prepared));
     expect(support.reconcilerSupport).toMatchObject({
@@ -1177,6 +1182,19 @@ describe('ECP-4 analyzeReconcilerSupport: parallel bindings (m2 / task 10.4)', (
       reason: 'supported_v2_parallel',
     });
     expect(support.availableEngines).toContain('reconciler');
+  });
+
+  it('rejects a parallel-only profile missing the FanOut evaluator binding (N4)', () => {
+    // Task 10.3 promises supported_v2_parallel only "when all FanOut/Join/
+    // Choice bindings are present". Before this check the branch returned
+    // supported whenever ANY profile existed, so an incomplete binding set
+    // reported supported and then died mid-Run at admission.
+    const prepared = prepare(PARALLEL_ONLY);
+    const withoutEvaluator = parallelV2Profile(prepared, { includeEvaluators: false });
+    expect(analyzeReconcilerSupport(prepared, withoutEvaluator).reconcilerSupport).toMatchObject({
+      supported: false,
+      reason: 'unsupported_pipeline_shape',
+    });
   });
 
   it('reports reconciler available for a parallelGroup + ReviewCycle pipeline', () => {
