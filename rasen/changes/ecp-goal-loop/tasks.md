@@ -6,8 +6,8 @@
 - [x] 1.4 Implement `GoalCycleState` interface (round, phase, outcome, variant, lastScore, lastSatisfied, lastGaps, stallStreak, eventCount, lastActor, judgeActor, workerActor)
 - [x] 1.5 Implement `applyGoalCycleEvent(state, event, maxIterations)` — pure transition function: work→judge advance, judge→satisfied or judge→next-round-work, stall streak increment, round cap to exhausted
 - [x] 1.6 Implement `initialGoalCycleState(variant)`, `reduceGoalCycleEvents(events, maxIterations, variant)`, `GoalCycleDomainError` class
-- [ ] 1.7 Write failure-first unit tests: malformed work result rejected, malformed judge result per variant rejected, wrong-variant result rejected, zero-delta work increments stall, same-actor work+judge rejected by reducer
-- [ ] 1.8 Write happy-path unit tests: measure satisfied (score ≥ threshold), evaluate satisfied (gaps empty), research satisfied, exhausted at maxIterations, multi-round progression with score tracking
+- [x] 1.7 Write failure-first unit tests: malformed work result rejected, malformed judge result per variant rejected, wrong-variant result rejected, zero-delta work increments stall, same-actor work+judge rejected by reducer
+- [x] 1.8 Write happy-path unit tests: measure satisfied (score ≥ threshold), evaluate satisfied (gaps empty), research satisfied, exhausted at maxIterations, multi-round progression with score tracking
 
 ## 2. Runtime plan types (runtime-plan.ts)
 
@@ -25,7 +25,7 @@
 - [x] 3.3 Implement `projectGoalCycleProgress(plan, loop, record)` — returns `GoalCycleProgress` (ready|waiting|failed|satisfied|exhausted)
 - [x] 3.4 Implement `locateGoalCycleInvocation(plan, nodeId)` — find descriptor for a given nodeId
 - [x] 3.5 Implement `validateGoalCycleCompletion(plan, record, request)` — pre-commit validation: correct phase, valid result, same-actor rejection
-- [ ] 3.6 Write unit tests for projectGoalCycleProgress: empty record → ready round 1 work, after work commit → ready judge, after judge not-satisfied → ready next round work, after judge satisfied → satisfied, at cap → exhausted
+- [x] 3.6 Write unit tests for projectGoalCycleProgress: empty record → ready round 1 work, after work commit → ready judge, after judge not-satisfied → ready next round work, after judge satisfied → satisfied, at cap → exhausted
 
 ## 4. Reconciler integration
 
@@ -42,7 +42,7 @@
 - [x] 5.3 Extend the definition normalizer to detect v1 `loop: { kind: goal }` stages and produce a BoundedLoop + CompositeDeclaration with 2 AtomicStages (work tagged `goalCyclePhase: 'work'`, judge tagged `goalCyclePhase: 'judge'`)
 - [x] 5.4 Set the variant from `loop.gate.kind` (measure→measure, evaluate→evaluate); detect research variant from pipeline name or `workProduct: prose` declaration
 - [x] 5.5 Extend `analyzeReconcilerSupport` to include goal-cycle body stages in expected capability bindings (parallel to review-cycle phases and composite stages)
-- [ ] 5.6 Write lowerer tests: v1 goal-loop-measure YAML → v2 plan with goal-cycle body; v1 goal-loop-research → research variant + report-only tail
+- [x] 5.6 Write lowerer tests: v1 goal-loop-measure YAML → v2 plan with goal-cycle body; v1 goal-loop-research → research variant + report-only tail
 
 ## 6. Projection (goal/1 section)
 
@@ -58,23 +58,23 @@
 
 ## 8. Built-in pipeline migration
 
-- [ ] 8.1 Verify all three goal-loop v1 YAMLs normalize to v2 BoundedLoop + goal-cycle body (test via the normalizer)
-- [ ] 8.2 Verify goal-loop-measure produces: define-goal → goal-loop(measure) → ship → retain → archive
-- [ ] 8.3 Verify goal-loop-research produces: define-goal → goal-loop(research) → report (no ship/archive)
-- [ ] 8.4 Verify legacy engine path is unaffected: v1 YAML stages are still read correctly for non-reconciler Runs
+- [x] 8.1 Verify all three goal-loop v1 YAMLs normalize to v2 BoundedLoop + goal-cycle body (test via the normalizer)
+- [x] 8.2 Verify goal-loop-measure produces: define-goal → goal-loop(measure) → ship → retain → archive
+- [x] 8.3 Verify goal-loop-research produces: define-goal → goal-loop(research) → report (no ship/archive)
+- [x] 8.4 Verify legacy engine path is unaffected: v1 YAML stages are still read correctly for non-reconciler Runs
 
 ## 9. Thin launchers
 
-- [ ] 9.1 Rewrite `goal-command.ts` (`rasen-goal`): keep variant classification + goal-plan.md reading + `rasen pipeline start`/`resume`/`status` as primary interface; remove round counter, phase sequencing, maxRounds enforcement, stall tracking, goal-run.json writing, author≠verifier checking, strategy ladder
-- [ ] 9.2 Update `_orchestration.ts`: remove Step L goal-loop mechanical state (round counting, gate dispatch, goal-run.json append, stall/blocked tracking); the playbook no longer owns goal-loop mechanics
+- [x] 9.1 Rewrite `goal-command.ts` (`rasen-goal`): keep variant classification + goal-plan.md reading + `rasen pipeline start`/`resume`/`status` as primary interface; remove round counter, phase sequencing, maxRounds enforcement, stall tracking, goal-run.json writing, author≠verifier checking, strategy ladder
+- [x] 9.2 Update `_orchestration.ts`: remove Step L goal-loop mechanical state (round counting, gate dispatch, goal-run.json append, stall/blocked tracking); the playbook no longer owns goal-loop mechanics
 - [ ] 9.3 Update `auto.ts` (`rasen-auto`): remove goal-loop mechanical references; auto thins to selection/launch only
 - [ ] 9.4 Update `goal-iterate.ts` and `goal-report.ts` skills to read from `ChangeRunView` goal section instead of `goal-run.json`
 
 ## 10. goal-run.json demotion
 
-- [ ] 10.1 Write a projection function `projectGoalRunJson(record, plan)` that derives the legacy per-round record array from committed goal-cycle events
+- [x] 10.1 Write a projection function `projectGoalRunJson(record, plan)` that derives the legacy per-round record array from committed goal-cycle events
 - [ ] 10.2 Rewire `readGoalRunDetailed()` in management API to project from the Record for reconciler-engine Runs (fallback to file read for legacy Runs)
-- [ ] 10.3 Verify new Runs do not read `goal-run.json` on resume (assert in tests)
+- [x] 10.3 Verify new Runs do not read `goal-run.json` on resume (assert in tests)
 
 ## 11. Recovery fault-injection tests
 
@@ -85,12 +85,12 @@
 
 ## 12. Real CLI Run evidence (ECP-3 exit evidence)
 
-- [ ] 12.1 Build dist before CLI tests (the recurring lesson — stale dist runs old JS)
+- [x] 12.1 Build dist before CLI tests (the recurring lesson — stale dist runs old JS)
 - [ ] 12.2 Run a real CLI `goal-loop-measure` Run through multiple rounds → satisfied termination; capture RunId, ActionId, actor, evidence
 - [ ] 12.3 Run a real CLI `goal-loop-research` Run through multiple rounds → report tail; capture RunId
 - [ ] 12.4 Run a real CLI goal-loop Run to exhaustion (maxRounds) → escalated terminal; verify goal-run.json projection
-- [ ] 12.5 Verify all cross-layer gates: `analyzeReconcilerSupport` includes goal body stages, `preflightPreparedDefinitionExecution` passes, `resolveRuntime`/v2-cast works, `resolveRuntimeExecutionProfile` succeeds, `lowerRuntimePlan` produces goal-cycle body, `buildAction` constructs the correct action
-- [ ] 12.6 Verify CLI `pipeline status` projects the goal/1 section with variant, round, score, budget
+- [x] 12.5 Verify all cross-layer gates: `analyzeReconcilerSupport` includes goal body stages, `preflightPreparedDefinitionExecution` passes, `resolveRuntime`/v2-cast works, `resolveRuntimeExecutionProfile` succeeds, `lowerRuntimePlan` produces goal-cycle body, `buildAction` constructs the correct action
+- [x] 12.6 Verify CLI `pipeline status` projects the goal/1 section with variant, round, score, budget
 
 ## 13. Full suite and type safety
 
