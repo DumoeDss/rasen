@@ -56,21 +56,21 @@
 
 ## 8. Canvas authoring — editable kinds and declaration CRUD
 
-- [ ] 8.1 Expand `V2_EDITABLE_NODE_KINDS` in `draft.ts` to include `CompositeRef` and `BoundedLoop`
-- [ ] 8.2 Add draft functions: `addDeclaration`, `updateDeclaration`, `removeDeclaration` (with reference guard), `addBodyStage`, `removeBodyStage`, `updateBodyStage`, `addBodyConnection`, `removeBodyConnection`
-- [ ] 8.3 Extend `V2NodePanel.tsx` with a CompositeRef panel: declaration dropdown (lists custom declarations), inputs/artifacts/outcomes summary, "open declaration" affordance
-- [ ] 8.4 Extend BoundedLoopDetails in `V2NodePanel.tsx`: for non-ReviewCycle bodies, show body stages list, exit mapping editor (outcome → continue/exit dropdown), and maxIterations
-- [ ] 8.5 Add a declaration editor sub-panel: inputs list (add/remove/rename name+type), artifacts list, outcomes list, body graph navigator
-- [ ] 8.6 Constrain the body palette: when editing a declaration body, only AtomicStage is available (CompositeRef, BoundedLoop, Choice, FanOut, Join hidden from palette)
-- [ ] 8.7 Write Canvas unit tests: create declaration → reference from root → save round-trip; delete referenced declaration blocked; body palette constraint enforced
+- [x] 8.1 Expand `V2_EDITABLE_NODE_KINDS` in `draft.ts` to include `CompositeRef` and `BoundedLoop`
+- [x] 8.2 Add draft functions: `addDeclaration`, `updateDeclaration`, `removeDeclaration` (with reference guard), `addBodyStage`, `removeBodyStage`, `updateBodyStage`, `addBodyConnection`, `removeBodyConnection`
+- [x] 8.3 Extend `V2NodePanel.tsx` with a CompositeRef panel: declaration dropdown (lists custom declarations), inputs/artifacts/outcomes summary, "open declaration" affordance
+- [x] 8.4 Extend BoundedLoopDetails in `V2NodePanel.tsx`: for non-ReviewCycle bodies, show body stages list, exit mapping editor (outcome → continue/exit dropdown), and maxIterations
+- [x] 8.5 Add a declaration editor sub-panel: inputs list (add/remove/rename name+type), artifacts list, outcomes list, body graph navigator
+- [x] 8.6 Constrain the body palette: when editing a declaration body, only AtomicStage is available (CompositeRef, BoundedLoop, Choice, FanOut, Join hidden from palette)
+- [x] 8.7 Write Canvas unit tests: create declaration → reference from root → save round-trip; delete referenced declaration blocked; body palette constraint enforced
 
 ## 9. Canvas — fold/expand and port mapping
 
-- [ ] 9.1 Add fold/expand toggle to CompositeRef nodes in `layout.ts`: folded renders single card with declaration name + outcome ports; expanded renders body stages inline within bounding box
-- [ ] 9.2 Store fold state as a display preference in the node's `canvas` metadata (non-semantic, stripped by `semanticCanonicalizeDefinition`)
-- [ ] 9.3 Add port-mapping display in V2NodePanel when CompositeRef is selected: show root-level connection → declaration input/artifact/outcome port mapping
-- [ ] 9.4 Add Canvas connection guard: validate that connections touching a CompositeRef match the declaration's port contract (mirror of server-side `validateTypedPorts`)
-- [ ] 9.5 Write Canvas tests: fold/expand toggles display without altering definition; port mapping shows correct ports; invalid connection rejected with feedback
+- [x] 9.1 Add fold/expand toggle to CompositeRef nodes in `layout.ts`: folded renders single card with declaration name + outcome ports; expanded renders body stages inline within bounding box
+- [x] 9.2 Store fold state as a display preference in the node's `canvas` metadata (non-semantic, stripped by `semanticCanonicalizeDefinition`)
+- [x] 9.3 Add port-mapping display in V2NodePanel when CompositeRef is selected: show root-level connection → declaration input/artifact/outcome port mapping
+- [x] 9.4 Add Canvas connection guard: validate that connections touching a CompositeRef match the declaration's port contract (mirror of server-side `validateTypedPorts`)
+- [x] 9.5 Write Canvas tests: fold/expand toggles display without altering definition; port mapping shows correct ports; invalid connection rejected with feedback
 
 ## 10. Projection — composite drill-down section
 

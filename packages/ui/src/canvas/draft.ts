@@ -8,6 +8,7 @@
  */
 import type {
   ThresholdValue,
+  WireCompositeDeclaration,
   WireDefinitionConnection,
   WireDefinitionNode,
   WirePipelineDefinition,
@@ -241,13 +242,15 @@ export function updateV2NodeFields(
   };
 }
 
-export type V2EditableNodeKind = 'AtomicStage' | 'Gate' | 'Choice' | 'Finish';
+export type V2EditableNodeKind = 'AtomicStage' | 'Gate' | 'Choice' | 'Finish' | 'CompositeRef' | 'BoundedLoop';
 
 const V2_EDITABLE_NODE_KINDS = new Set<WireDefinitionNode['kind']>([
   'AtomicStage',
   'Gate',
   'Choice',
   'Finish',
+  'CompositeRef',
+  'BoundedLoop',
 ]);
 
 /** The deliberately bounded v2 vocabulary this Canvas slice may mutate. */
@@ -524,5 +527,180 @@ export function definitionIssuePathTarget(
     index,
     id,
     ...(connectionMatch[2] ? { field: connectionMatch[2] } : {}),
+  };
+}
+
+// ===== Composite Declaration CRUD (ECP-2) =====
+
+/**
+ * Check whether a declaration id is unique within the definition.
+ */
+export function isDeclarationIdUnique(
+  def: WirePipelineDefinitionV2,
+  id: string
+): boolean {
+  return !def.declarations.some((d) => d.id === id);
+}
+
+/**
+ * Create a new CompositeDeclaration with provenance 'custom'.
+ */
+export function addDeclaration(
+  def: WirePipelineDefinitionV2,
+  id: string
+): WirePipelineDefinitionV2 {
+  if (!isDeclarationIdUnique(def, id)) {
+    throw new Error(`Declaration id '${id}' already exists.`);
+  }
+  const declaration = {
+    id,
+    kind: 'Composite' as const,
+    provenance: 'custom' as const,
+    inputs: [],
+    artifacts: [],
+    outcomes: ['done'],
+    graph: { nodes: [], connections: [] },
+  };
+  return {
+    ...def,
+    declarations: [...def.declarations, declaration],
+  };
+}
+
+/**
+ * Update a declaration's scalar fields (inputs, artifacts, outcomes).
+ */
+export function updateDeclaration(
+  def: WirePipelineDefinitionV2,
+  id: string,
+  patch: Partial<{
+    inputs: WireCompositeDeclaration['inputs'];
+    artifacts: WireCompositeDeclaration['artifacts'];
+    outcomes: string[];
+  }>
+): WirePipelineDefinitionV2 {
+  return {
+    ...def,
+    declarations: def.declarations.map((d) =>
+      d.id === id ? { ...d, ...patch } : d
+    ),
+  };
+}
+
+/**
+ * Remove a declaration. Rejects if the declaration is still referenced by a
+ * root-level CompositeRef or BoundedLoop node.
+ */
+export function removeDeclaration(
+  def: WirePipelineDefinitionV2,
+  id: string
+): WirePipelineDefinitionV2 {
+  const referenced = def.root.nodes.some(
+    (node) =>
+      (node.kind === 'CompositeRef' && node.declarationId === id) ||
+      (node.kind === 'BoundedLoop' && node.body === id)
+  );
+  if (referenced) {
+    throw new Error(`Declaration '${id}' is still referenced by root nodes.`);
+  }
+  return {
+    ...def,
+    declarations: def.declarations.filter((d) => d.id !== id),
+  };
+}
+
+/**
+ * Add an AtomicStage node to a declaration's body graph.
+ * The body palette is constrained to AtomicStage only.
+ */
+export function addBodyStage(
+  def: WirePipelineDefinitionV2,
+  declarationId: string,
+  stage: { id: string; capability: { id: string; version: string } }
+): WirePipelineDefinitionV2 {
+  return {
+    ...def,
+    declarations: def.declarations.map((d) => {
+      if (d.id !== declarationId) return d;
+      const node = { kind: 'AtomicStage' as const, ...stage };
+      return {
+        ...d,
+        graph: {
+          ...d.graph,
+          nodes: [...d.graph.nodes, node],
+        },
+      };
+    }),
+  };
+}
+
+/**
+ * Remove a body stage and all incident body connections.
+ */
+export function removeBodyStage(
+  def: WirePipelineDefinitionV2,
+  declarationId: string,
+  stageId: string
+): WirePipelineDefinitionV2 {
+  return {
+    ...def,
+    declarations: def.declarations.map((d) => {
+      if (d.id !== declarationId) return d;
+      return {
+        ...d,
+        graph: {
+          nodes: d.graph.nodes.filter((n) => n.id !== stageId),
+          connections: d.graph.connections.filter(
+            (c) => c.from.node !== stageId && c.to.node !== stageId
+          ),
+        },
+      };
+    }),
+  };
+}
+
+/**
+ * Add a connection within a declaration body graph.
+ */
+export function addBodyConnection(
+  def: WirePipelineDefinitionV2,
+  declarationId: string,
+  connection: { id: string; from: { node: string; port: string }; to: { node: string; port: string } }
+): WirePipelineDefinitionV2 {
+  return {
+    ...def,
+    declarations: def.declarations.map((d) => {
+      if (d.id !== declarationId) return d;
+      return {
+        ...d,
+        graph: {
+          ...d.graph,
+          connections: [...d.graph.connections, connection],
+        },
+      };
+    }),
+  };
+}
+
+/**
+ * Remove a body connection.
+ */
+export function removeBodyConnection(
+  def: WirePipelineDefinitionV2,
+  declarationId: string,
+  connectionId: string
+): WirePipelineDefinitionV2 {
+  return {
+    ...def,
+    declarations: def.declarations.map((d) => {
+      if (d.id !== declarationId) return d;
+      return {
+        ...d,
+        graph: {
+          ...d.graph,
+          connections: d.graph.connections.filter((c) => c.id !== connectionId),
+        },
+      };
+    }),
   };
 }

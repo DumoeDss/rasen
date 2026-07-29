@@ -6,6 +6,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  addBodyConnection,
+  addBodyStage,
+  addDeclaration,
   addRequire,
   addStage,
   addV2Connection,
@@ -14,6 +17,9 @@ import {
   isDirty,
   isV2EditableNodeKind,
   issuePathTarget,
+  removeBodyConnection,
+  removeBodyStage,
+  removeDeclaration,
   removeRequire,
   removeStage,
   removeV2Connection,
@@ -445,8 +451,8 @@ describe('version 2 root graph reducer', () => {
   });
 
   it('recognizes the four enabled kinds and preserves known later-slice kinds byte-for-byte', () => {
-    expect(['AtomicStage', 'Gate', 'Choice', 'Finish'].every(isV2EditableNodeKind)).toBe(true);
-    expect(['CompositeRef', 'BoundedLoop', 'FanOut', 'Join'].some(isV2EditableNodeKind)).toBe(false);
+    expect(['AtomicStage', 'Gate', 'Choice', 'Finish', 'CompositeRef', 'BoundedLoop'].every(isV2EditableNodeKind)).toBe(true);
+    expect(['FanOut', 'Join'].some(isV2EditableNodeKind)).toBe(false);
 
     const def = v2Def();
     def.root.nodes.push(
@@ -510,5 +516,97 @@ describe('definitionIssuePathTarget', () => {
       id: 'b',
       field: 'handoff/threshold',
     });
+  });
+});
+
+// ===== ECP-2: Composite declaration CRUD =====
+
+describe('Composite declaration CRUD', () => {
+  function emptyV2(): WirePipelineDefinitionV2 {
+    return {
+      version: 2,
+      id: 'test',
+      sourceId: 'test',
+      name: 'test',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: { nodes: [], connections: [] },
+    };
+  }
+
+  it('creates a declaration → references from root → round-trip', () => {
+    let def = emptyV2();
+    def = addDeclaration(def, 'my-comp');
+    expect(def.declarations).toHaveLength(1);
+    expect(def.declarations[0]!.id).toBe('my-comp');
+    expect(def.declarations[0]!.provenance).toBe('custom');
+    expect(def.declarations[0]!.outcomes).toEqual(['done']);
+
+    // Reference from root.
+    def = addV2Node(def, {
+      id: 'ref-1',
+      kind: 'CompositeRef',
+      declarationId: 'my-comp',
+    } as never);
+    expect(def.root.nodes).toHaveLength(1);
+    expect(def.root.nodes[0]!.kind).toBe('CompositeRef');
+  });
+
+  it('rejects duplicate declaration id', () => {
+    let def = emptyV2();
+    def = addDeclaration(def, 'dup');
+    expect(() => addDeclaration(def, 'dup')).toThrow(/already exists/);
+  });
+
+  it('blocks deleting a referenced declaration', () => {
+    let def = emptyV2();
+    def = addDeclaration(def, 'used');
+    def = addV2Node(def, {
+      id: 'ref-1',
+      kind: 'CompositeRef',
+      declarationId: 'used',
+    } as never);
+    expect(() => removeDeclaration(def, 'used')).toThrow(/still referenced/);
+  });
+
+  it('allows deleting an unreferenced declaration', () => {
+    let def = emptyV2();
+    def = addDeclaration(def, 'unused');
+    def = removeDeclaration(def, 'unused');
+    expect(def.declarations).toHaveLength(0);
+  });
+
+  it('adds and removes body stages', () => {
+    let def = emptyV2();
+    def = addDeclaration(def, 'comp');
+    def = addBodyStage(def, 'comp', {
+      id: 'step-a',
+      capability: { id: 'skill:test', version: '1' },
+    });
+    def = addBodyStage(def, 'comp', {
+      id: 'step-b',
+      capability: { id: 'skill:test2', version: '1' },
+    });
+    expect(def.declarations[0]!.graph.nodes).toHaveLength(2);
+    def = removeBodyStage(def, 'comp', 'step-a');
+    expect(def.declarations[0]!.graph.nodes).toHaveLength(1);
+    expect(def.declarations[0]!.graph.nodes[0]!.id).toBe('step-b');
+  });
+
+  it('adds and removes body connections', () => {
+    let def = emptyV2();
+    def = addDeclaration(def, 'comp');
+    def = addBodyStage(def, 'comp', { id: 'a', capability: { id: 'x', version: '1' } });
+    def = addBodyStage(def, 'comp', { id: 'b', capability: { id: 'y', version: '1' } });
+    def = addBodyConnection(def, 'comp', {
+      id: 'ab',
+      from: { node: 'a', port: 'done' },
+      to: { node: 'b', port: 'input' },
+    });
+    expect(def.declarations[0]!.graph.connections).toHaveLength(1);
+    def = removeBodyConnection(def, 'comp', 'ab');
+    expect(def.declarations[0]!.graph.connections).toHaveLength(0);
   });
 });
