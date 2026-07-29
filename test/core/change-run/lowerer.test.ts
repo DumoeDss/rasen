@@ -23,7 +23,10 @@ import type {
   RunId,
   WorkspaceInstanceId,
 } from '../../../src/core/change-run/index.js';
-import type { RuntimePlan } from '../../../src/core/change-run/internal/runtime-plan.js';
+import {
+  createRuntimePlan,
+  type RuntimePlan,
+} from '../../../src/core/change-run/internal/runtime-plan.js';
 
 const BUG_FIX = {
   version: 1,
@@ -802,10 +805,22 @@ const PARALLEL_FEATURE = {
  * Handles root AtomicStages (including FanOut members), FanOut/Join nodes,
  * and the ReviewCycle BoundedLoop body phases.
  */
-function parallelV2Profile(prepared: PreparedDefinition) {
+function parallelV2Profile(
+  prepared: PreparedDefinition,
+  options: { includeEvaluators?: boolean } = {}
+) {
+  const includeEvaluators = options.includeEvaluators ?? true;
   const reviewSkill = 'rasen-review';
   const rootStages = (prepared.definition.root.nodes)
     .filter((n): n is typeof n & { kind: 'AtomicStage' } => n.kind === 'AtomicStage');
+  // ECP-4: the FanOut condition evaluator is a synthetic orchestration node —
+  // production seals a `parallel-dispatch` binding for it. Mirror that here so
+  // the fixture profile matches what analyzeReconcilerSupport expects.
+  const evaluatorPaths = includeEvaluators
+    ? prepared.definition.root.nodes
+        .filter((n) => n.kind === 'FanOut')
+        .map((n) => `root:${n.id}`)
+    : [];
   const bodyDecl = prepared.definition.declarations.find(
     (d) => d.id === 'review-cycle-body:review-loop'
   );
@@ -815,14 +830,27 @@ function parallelV2Profile(prepared: PreparedDefinition) {
 
   const allPaths = [
     ...rootStages.map((n) => `root:${n.id}`),
+    ...evaluatorPaths,
     ...bodyPhases.map((n) => `declaration:${bodyDecl!.id}/node:${n.id}`),
   ];
+  // Stage metadata comes from the prepared source, so this helper works for any
+  // v1 parallelGroup fixture (not just PARALLEL_FEATURE).
+  const sourceStages = (
+    prepared.authoredSource as {
+      stages: readonly Readonly<{
+        id: string;
+        skill?: string;
+        role?: string;
+        gate?: boolean;
+      }>[];
+    }
+  ).stages;
 
   const gateFor = (path: string): boolean => {
     const node = rootStages.find((n) => `root:${n.id}` === path);
     if (!node) return false;
     const legacyStageId = (node as { legacyStageId?: string }).legacyStageId;
-    return PARALLEL_FEATURE.stages.find((s) => s.id === legacyStageId)?.gate ?? false;
+    return sourceStages.find((stage) => stage.id === legacyStageId)?.gate ?? false;
   };
 
   const accessFor = (path: string): 'read' | 'write' => {
@@ -831,7 +859,7 @@ function parallelV2Profile(prepared: PreparedDefinition) {
     }
     const node = rootStages.find((n) => `root:${n.id}` === path);
     const legacyStageId = (node as { legacyStageId?: string })?.legacyStageId;
-    const stageDef = PARALLEL_FEATURE.stages.find((s) => s.id === legacyStageId);
+    const stageDef = sourceStages.find((stage) => stage.id === legacyStageId);
     return stageDef?.role === 'reviewer' ? 'read' : 'write';
   };
 
@@ -839,7 +867,7 @@ function parallelV2Profile(prepared: PreparedDefinition) {
     if (path.includes('declaration:')) return reviewSkill;
     const node = rootStages.find((n) => `root:${n.id}` === path);
     const legacyStageId = (node as { legacyStageId?: string })?.legacyStageId;
-    return PARALLEL_FEATURE.stages.find((s) => s.id === legacyStageId)?.skill ?? 'default';
+    return sourceStages.find((stage) => stage.id === legacyStageId)?.skill ?? 'default';
   };
 
   const roleFor = (path: string): string => {
@@ -848,7 +876,7 @@ function parallelV2Profile(prepared: PreparedDefinition) {
     }
     const node = rootStages.find((n) => `root:${n.id}` === path);
     const legacyStageId = (node as { legacyStageId?: string })?.legacyStageId;
-    return PARALLEL_FEATURE.stages.find((s) => s.id === legacyStageId)?.role ?? 'implementer';
+    return sourceStages.find((stage) => stage.id === legacyStageId)?.role ?? 'implementer';
   };
 
   return createRuntimeExecutionProfile({
@@ -1044,5 +1072,133 @@ describe('ECP-4 lowerer: FanOut/Join lowering via normalizer (M1)', () => {
       (c) => c.from.node === 'join:experts-join' && c.to.node === 'stage:review-loop'
     );
     expect(joinToReviewLoop).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ECP-4: FanOut member path resolution + analyzeReconcilerSupport (m2)
+//
+// The bugs these guard were only visible through the REAL CLI:
+//   - member paths lowered without the `root:` prefix resolve to
+//     `nodeId: undefined`, so the FanOut silently stalls (nothing admitted);
+//   - the FanOut condition evaluator has no authored skill, so without a
+//     synthetic `parallel-dispatch` binding the facade throws
+//     "No capability/policy binding for root:fanout:experts" mid-Run.
+// ---------------------------------------------------------------------------
+
+/** parallelGroup with NO ReviewCycle loop — reaches the supported_v2_parallel branch. */
+const PARALLEL_ONLY = {
+  version: 1,
+  name: 'parallel-only',
+  description: 'parallelGroup fixture without a review cycle',
+  stages: [
+    { id: 'prepare', skill: 'rasen-propose', role: 'planner', requires: [] },
+    {
+      id: 'review', skill: 'rasen-review', role: 'reviewer', requires: ['prepare'],
+      parallelGroup: 'experts', condition: 'always',
+    },
+    {
+      id: 'security', skill: 'rasen-cso', role: 'reviewer', requires: ['prepare'],
+      parallelGroup: 'experts', condition: 'security-relevant',
+    },
+    {
+      id: 'ship', skill: 'rasen-ship', role: 'shipper',
+      requires: ['review', 'security'], model: 'sonnet',
+    },
+  ],
+} as const;
+
+describe('ECP-4 lowerer: FanOut member paths resolve to plan nodes', () => {
+  it('lowers member paths as FULL plan paths that map to the member atomic nodes', () => {
+    const prepared = prepare(PARALLEL_FEATURE);
+    const plan = lowerRuntimePlan(prepared, parallelV2Profile(prepared), runId);
+
+    const fanOut = plan.nodes.find((n) => n.kind === 'fan-out')!;
+    if (fanOut.kind !== 'fan-out') return;
+    // Member paths must carry the `root:` prefix. Without it createRuntimePlan
+    // cannot resolve them and every member nodeId comes back undefined.
+    expect(fanOut.members.map((m) => m.hierarchicalPath).sort()).toEqual([
+      'root:stage:performance',
+      'root:stage:review',
+      'root:stage:security',
+    ]);
+
+    // Every member nodeId must be a real atomic node in the plan.
+    const atomicByNodeId = new Map(
+      plan.nodes.filter((n) => n.kind === 'atomic').map((n) => [n.nodeId, n] as const)
+    );
+    for (const member of fanOut.members) {
+      expect(member.nodeId).toBeDefined();
+      const memberNode = atomicByNodeId.get(member.nodeId);
+      expect(memberNode).toBeDefined();
+      expect(memberNode!.hierarchicalPath).toBe(member.hierarchicalPath);
+    }
+
+    // The Join's required/optional members must reference the same nodeIds.
+    const join = plan.nodes.find((n) => n.kind === 'join')!;
+    if (join.kind !== 'join') return;
+    const memberNodeIds = new Set(fanOut.members.map((m) => m.nodeId));
+    for (const nodeId of [...join.requiredMembers, ...join.optionalMembers]) {
+      expect(memberNodeIds.has(nodeId)).toBe(true);
+    }
+  });
+
+  it('rejects a fan-out whose member path is not a plan node', () => {
+    const prepared = prepare(PARALLEL_FEATURE);
+    const profile = parallelV2Profile(prepared);
+    const input = lowerRuntimePlanInput(prepared, profile, runId);
+    const broken = {
+      ...input,
+      nodes: input.nodes.map((node) =>
+        node.kind === 'fan-out'
+          ? {
+              ...node,
+              fanOut: {
+                ...node.fanOut!,
+                members: node.fanOut!.members.map((m) => ({
+                  ...m,
+                  hierarchicalPath: m.hierarchicalPath.replace('root:', ''),
+                })),
+              },
+            }
+          : node
+      ),
+    };
+    expect(() => createRuntimePlan(broken)).toThrow(/unknown member node/);
+  });
+});
+
+describe('ECP-4 analyzeReconcilerSupport: parallel bindings (m2 / task 10.4)', () => {
+  it('reports supported_v2_parallel for a parallelGroup pipeline with no ReviewCycle', () => {
+    const prepared = prepare(PARALLEL_ONLY);
+    const support = analyzeReconcilerSupport(prepared, parallelV2Profile(prepared));
+    expect(support.reconcilerSupport).toMatchObject({
+      supported: true,
+      reason: 'supported_v2_parallel',
+    });
+    expect(support.availableEngines).toContain('reconciler');
+  });
+
+  it('reports reconciler available for a parallelGroup + ReviewCycle pipeline', () => {
+    // full-feature has BOTH, so the ReviewCycle branch wins the reason — but
+    // the reconciler must still be an available engine (task 10.4).
+    const prepared = prepare(PARALLEL_FEATURE);
+    const support = analyzeReconcilerSupport(prepared, parallelV2Profile(prepared));
+    expect(support.reconcilerSupport.supported).toBe(true);
+    expect(support.availableEngines).toContain('reconciler');
+  });
+
+  it('expects a capability binding for the FanOut evaluator (real-CLI regression)', () => {
+    // A profile that omits the synthetic `parallel-dispatch` binding must be
+    // rejected as a shape mismatch BEFORE a Run starts. Without this the Run
+    // starts fine and dies at the first FanOut admission with
+    // "No capability/policy binding for root:fanout:experts".
+    const prepared = prepare(PARALLEL_FEATURE);
+    const withoutEvaluator = parallelV2Profile(prepared, { includeEvaluators: false });
+    const support = analyzeReconcilerSupport(prepared, withoutEvaluator);
+    expect(support.reconcilerSupport).toMatchObject({
+      supported: false,
+      reason: 'unsupported_pipeline_shape',
+    });
   });
 });

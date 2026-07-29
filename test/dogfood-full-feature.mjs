@@ -1,18 +1,25 @@
 /**
- * Dogfood: drive a real full-feature Run through Choice → FanOut → Join via CLI.
+ * Dogfood: drive a real `full-feature` Run through Choice/FanOut/Join via the
+ * REAL CLI (ECP-4 tasks 13.3-13.5).
  *
  * Mirrors test/dogfood-review-cycle.mjs and test/dogfood-goal-cycle.mjs.
  *
  * Scenarios:
- *   1. Parallel success: all required members complete → Join proceeds
- *   2. Partial failure: optional member fails → suppressed, Join proceeds;
- *      required member fails → Join fails closed / escalate
- *   3. Restart idempotency: restart mid-Join → same frontier, completed
- *      members NOT re-admitted, Join not re-evaluated
+ *   A. Parallel success — office-hours -> propose -> apply -> FanOut condition
+ *      -> 6 members -> Join -> review-loop (findings round) -> ship -> retain
+ *      -> archive -> completed. Captures a `pipeline status` snapshot DURING
+ *      the FanOut phase (task 13.5).
+ *   B1. Partial failure, OPTIONAL member fails -> suppressed, Join proceeds.
+ *   B2. Partial failure, REQUIRED member fails -> Join escalates, Run does not
+ *       reach the review-loop.
+ *   C. Restart idempotency — reconcile again mid-FanOut: same frontier,
+ *      completed members are NOT re-admitted, Join is not re-evaluated.
  *
  * Effect observation is a kernel-internal step (no CLI command) performed by
  * directly applying observe-effect stimuli to the record store — exactly the
  * same pattern as the existing dogfood scripts.
+ *
+ * Run with:  node test/dogfood-full-feature.mjs      (after `node build.js`)
  */
 import { execSync } from 'child_process';
 import { promises as fs, readFileSync, writeFileSync, readdirSync } from 'node:fs';
@@ -39,6 +46,19 @@ const {
 } = await import(distUrl('dist/core/change-run/internal/reducer.js'));
 
 const cliEntry = path.join(projectRoot, 'dist', 'cli', 'index.js');
+const PIPELINE = 'full-feature';
+const FANOUT_PATH = 'root:fanout:experts';
+const JOIN_PATH = 'root:join:experts-join';
+const REVIEW_LOOP_PATH = 'root:stage:review-loop';
+/** Member hierarchical paths — the FULL plan paths the FanOut node carries. */
+const MEMBERS = [
+  'root:stage:review',        // condition: always   -> REQUIRED
+  'root:stage:cso',           // condition: security-relevant
+  'root:stage:benchmark',     // condition: performance-sensitive
+  'root:stage:design-review', // condition: ui
+  'root:stage:qa',            // condition: ui
+  'root:stage:qa-only',       // condition: non-ui
+];
 
 // ---------------------------------------------------------------------------
 // Shared helpers (mirrors dogfood-review-cycle.mjs)
@@ -47,7 +67,7 @@ const cliEntry = path.join(projectRoot, 'dist', 'cli', 'index.js');
 function runCLI(args, testDir, env) {
   try {
     const out = execSync(`node "${cliEntry}" ${args.join(' ')}`, {
-      cwd: testDir, env, encoding: 'utf-8', timeout: 60000,
+      cwd: testDir, env, encoding: 'utf-8', timeout: 120000,
     });
     return { exitCode: 0, stdout: out, stderr: '' };
   } catch (e) {
@@ -59,18 +79,33 @@ function runCLI(args, testDir, env) {
   }
 }
 
+function runDir(runId, storeRoot) {
+  return path.join(storeRoot, runId.replace(/[^a-z0-9]/gi, '_'));
+}
+
+function loadPlan(runId, storeRoot) {
+  return JSON.parse(readFileSync(path.join(runDir(runId, storeRoot), 'plan.json'), 'utf-8'));
+}
+
+/** nodeId -> hierarchicalPath, read from the persisted plan. */
+function pathByNodeId(runId, storeRoot) {
+  const map = new Map();
+  for (const node of loadPlan(runId, storeRoot).nodes) {
+    map.set(node.nodeId, node.hierarchicalPath);
+  }
+  return map;
+}
+
 function loadHeadRecord(runId, storeRoot) {
-  const dirName = runId.replace(/[^a-z0-9]/gi, '_');
-  const runDir = path.join(storeRoot, dirName);
-  const files = readdirSync(runDir);
+  const dir = runDir(runId, storeRoot);
   let best = -1;
-  for (const f of files) {
+  for (const f of readdirSync(dir)) {
     const m = /^record-v(\d+)\.json$/.exec(f);
     if (m) { const v = +m[1]; if (v > best) best = v; }
   }
   if (best === -1) throw new Error(`No record for ${runId}`);
   return decodeCanonicalRunRecord(
-    JSON.parse(readFileSync(path.join(runDir, `record-v${best}.json`), 'utf-8'))
+    JSON.parse(readFileSync(path.join(dir, `record-v${best}.json`), 'utf-8'))
   );
 }
 
@@ -78,8 +113,7 @@ function applyStimulus(runId, stimulus, storeRoot) {
   const record = loadHeadRecord(runId, storeRoot);
   const result = reduceCanonicalRunRecord(record, stimulus);
   if (!result.ok) throw new Error(`stimulus ${stimulus.kind} failed: ${result.failure.message}`);
-  const dirName = runId.replace(/[^a-z0-9]/gi, '_');
-  const newPath = path.join(storeRoot, dirName, `record-v${result.record.recordVersion}.json`);
+  const newPath = path.join(runDir(runId, storeRoot), `record-v${result.record.recordVersion}.json`);
   writeFileSync(newPath, JSON.stringify(result.record, null, 2));
   return result.record;
 }
@@ -108,13 +142,12 @@ const actorCache = {};
 function makeActor(prefix) {
   if (actorCache[prefix]) return actorCache[prefix];
   const hex = (s) => createHash('sha256').update(s).digest('hex');
-  const principal = `sha256:${hex(prefix)}`;
-  const session = `sha256:${hex(prefix + '-session')}`;
   const actor = buildAgentActor({
     role: prefix.startsWith('fix') ? 'implementer' : 'reviewer',
     provider: 'anthropic', runtime: 'claude',
-    principalIdentityDigest: principal, sessionIdentityDigest: session,
-    adapter: { id: `adapter:${prefix}`, version: '1', artifactDigest: session },
+    principalIdentityDigest: `sha256:${hex(prefix)}`,
+    sessionIdentityDigest: `sha256:${hex(prefix + '-session')}`,
+    adapter: { id: `adapter:${prefix}`, version: '1', artifactDigest: `sha256:${hex(prefix + '-session')}` },
   });
   actorCache[prefix] = actor;
   return actor;
@@ -123,7 +156,7 @@ function makeActor(prefix) {
 const okContent = Buffer.from('{"result":"ok"}');
 const okDigest = `sha256:${createHash('sha256').update(okContent).digest('hex')}`;
 
-function buildEvRef(record, runId, changeId, actionId, actorPrefix) {
+function evRef(record, runId, changeId, actionId, actorPrefix) {
   const actor = makeActor(actorPrefix);
   return buildEvidenceRef({
     content: okContent, mediaType: 'application/json',
@@ -138,11 +171,11 @@ function buildEvRef(record, runId, changeId, actionId, actorPrefix) {
   });
 }
 
-function buildCompletion(record, runId, changeId, actionId, invocationId, result, actorPrefix, testDir) {
+function buildCompletion(record, runId, changeId, actionId, invocationId, result, actorPrefix, testDir, status = 'succeeded') {
   const actor = makeActor(actorPrefix);
   const attContent = Buffer.from('{"signed":true}');
   const attDigest = `sha256:${createHash('sha256').update(attContent).digest('hex')}`;
-  const evRef = buildEvRef(record, runId, changeId, actionId, actorPrefix);
+  const evidenceRef = evRef(record, runId, changeId, actionId, actorPrefix);
   const attRef = buildEvidenceRef({
     content: attContent, mediaType: 'application/json',
     observationKind: 'actor-attestation',
@@ -157,12 +190,11 @@ function buildCompletion(record, runId, changeId, actionId, invocationId, result
   const base = {
     format: 'change-run-completion/1', kind: 'domain-action-result',
     change: { projectRoot: testDir, changeId }, runId, actionId, invocationId,
-    actor, actorAttestation: attRef, evidence: [evRef],
-    status: 'succeeded', result,
+    actor, actorAttestation: attRef, evidence: [evidenceRef],
+    status, result,
   };
-  const receiptDigest = computeCompletionReceiptDigest(base);
   return {
-    completion: { ...base, receiptDigest },
+    completion: { ...base, receiptDigest: computeCompletionReceiptDigest(base) },
     uploads: [
       { contentDigest: okDigest, contentBase64: okContent.toString('base64') },
       { contentDigest: attDigest, contentBase64: attContent.toString('base64') },
@@ -170,20 +202,16 @@ function buildCompletion(record, runId, changeId, actionId, invocationId, result
   };
 }
 
-function getActive(record) {
-  return Object.values(record.actions).find((a) => a.state === 'active');
-}
-
-function getActiveActions(record) {
+function activeActions(record) {
   return Object.values(record.actions).filter((a) => a.state === 'active');
 }
 
 // ---------------------------------------------------------------------------
-// Test harness
+// Run driver
 // ---------------------------------------------------------------------------
 
 async function setupTestDir(label) {
-  const testDir = path.join(projectRoot, `test-dogfood-full-feature-${label}-tmp`);
+  const testDir = path.join(projectRoot, `test-dogfood-ff-${label}-tmp`);
   const dataDir = path.join(testDir, 'global-data');
   const storeRoot = path.join(dataDir, 'rasen', 'runs');
   await fs.rm(testDir, { recursive: true, force: true });
@@ -193,248 +221,461 @@ async function setupTestDir(label) {
   return { testDir, dataDir, storeRoot, env };
 }
 
-function completeAction(runId, changeId, testDir, storeRoot, env, actorPrefix, resultFactory, label) {
-  observeEffects(runId, storeRoot);
-  const record = loadHeadRecord(runId, storeRoot);
-  const active = getActive(record);
-  if (!active) {
-    console.error(`  [${label}] No active action!`);
-    return { ok: false, record };
+/**
+ * A Run harness bound to one test directory. Holds the actionId ledger the
+ * dogfood evidence is built from.
+ */
+class RunHarness {
+  constructor(ctx, changeId, runId) {
+    Object.assign(this, ctx);
+    this.changeId = changeId;
+    this.runId = runId;
+    this.paths = pathByNodeId(runId, this.storeRoot);
+    /** hierarchicalPath -> ordered actionIds committed for it. */
+    this.ledger = {};
   }
-  const actionId = active.action.actionId;
-  const invocationId = active.action.invocationId;
-  const result = typeof resultFactory === 'function'
-    ? resultFactory(record, actionId)
-    : resultFactory;
-  const body = buildCompletion(record, runId, changeId, actionId, invocationId, result, actorPrefix, testDir);
-  const file = path.join(testDir, `c-${label}.json`);
-  writeFileSync(file, JSON.stringify(body));
-  const res = runCLI(['pipeline', 'complete', changeId, '--run', runId, '--from', file, '--json'], testDir, env);
+
+  status() {
+    const res = runCLI(['pipeline', 'status', this.changeId, PIPELINE, '--json'], this.testDir, this.env);
+    if (res.exitCode !== 0) throw new Error(`status failed: ${res.stderr.slice(0, 400)}`);
+    return JSON.parse(res.stdout.trim());
+  }
+
+  section(kind) {
+    return this.status().view.sections?.find((s) => s.kind === kind);
+  }
+
+  record() {
+    return loadHeadRecord(this.runId, this.storeRoot);
+  }
+
+  pathOf(action) {
+    const direct = this.paths.get(action.action.nodeId);
+    if (direct !== undefined) return direct;
+    // BoundedLoop phase actions carry a body-phase nodeId that is NOT a root
+    // plan node; the admit payload (under `agent.input`) names the loop.
+    const input = action.action.agent?.input ?? {};
+    const loopPath = input.reviewCycle?.loopPath ?? input.goalCycle?.loopPath;
+    if (typeof loopPath === 'string') return loopPath;
+    return `unknown(${action.action.nodeId.slice(0, 16)})`;
+  }
+
+  /** Active actions annotated with their hierarchical path. */
+  frontier() {
+    return activeActions(this.record()).map((a) => ({
+      actionId: a.action.actionId,
+      invocationId: a.action.invocationId,
+      path: this.pathOf(a),
+    }));
+  }
+
+  /** Complete ONE specific active action. Returns { ok, actionId, error }. */
+  complete(target, result, actorPrefix, label, status = 'succeeded') {
+    observeEffects(this.runId, this.storeRoot);
+    const record = this.record();
+    const active = activeActions(record).find((a) => a.action.actionId === target.actionId);
+    if (!active) return { ok: false, error: `action ${label} no longer active` };
+    const actionId = active.action.actionId;
+    const body = buildCompletion(
+      record, this.runId, this.changeId, actionId, active.action.invocationId,
+      typeof result === 'function' ? result(record, actionId) : result,
+      actorPrefix, this.testDir, status
+    );
+    const file = path.join(this.testDir, `c-${label.replace(/[^a-z0-9-]/gi, '_')}.json`);
+    writeFileSync(file, JSON.stringify(body));
+    const res = runCLI(
+      ['pipeline', 'complete', this.changeId, '--run', this.runId, '--from', file, '--json'],
+      this.testDir, this.env
+    );
+    if (res.exitCode !== 0) {
+      return { ok: false, actionId, error: res.stderr.slice(0, 600) };
+    }
+    const p = target.path;
+    (this.ledger[p] ??= []).push(actionId);
+    return { ok: true, actionId };
+  }
+
+  /** Complete every currently-active action whose path matches `predicate`. */
+  completeMatching(predicate, resultFor, actorFor, labelFor, statusFor) {
+    const done = [];
+    let guard = 0;
+    for (;;) {
+      if (guard++ > 40) throw new Error('completeMatching guard tripped');
+      const target = this.frontier().find((f) => predicate(f.path) && !done.some((d) => d.actionId === f.actionId));
+      if (!target) break;
+      const res = this.complete(
+        target, resultFor(target.path), actorFor(target.path), labelFor(target.path),
+        statusFor ? statusFor(target.path) : 'succeeded'
+      );
+      done.push({ path: target.path, actionId: target.actionId, ok: res.ok, error: res.error });
+      if (!res.ok) break;
+    }
+    return done;
+  }
+}
+
+function startRun(ctx, changeId) {
+  const res = runCLI(['pipeline', 'start', changeId, PIPELINE, '--json'], ctx.testDir, ctx.env);
   if (res.exitCode !== 0) {
-    console.error(`  [${label}] FAILED:`, res.stderr.slice(0, 400));
-    return { ok: false, record };
+    throw new Error(`pipeline start ${PIPELINE} FAILED: ${res.stderr.slice(0, 800)}`);
   }
-  return { ok: true, actionId };
+  const parsed = JSON.parse(res.stdout.trim());
+  return { harness: new RunHarness(ctx, changeId, parsed.runId), start: parsed };
 }
 
-function genericResult(label) {
-  return { ok: true, label };
+const genericResult = (label) => ({ ok: true, stage: label });
+
+function fanOutResult(active) {
+  return {
+    activeMembers: active,
+    inactiveMembers: MEMBERS.filter((m) => !active.includes(m)),
+    rationale: Object.fromEntries(MEMBERS.map((m) => [m, active.includes(m) ? 'selected' : 'not applicable'])),
+  };
 }
 
-// ---------------------------------------------------------------------------
-// Scenario 1: Attempt to start full-feature (expected to fail at plan creation)
-// ---------------------------------------------------------------------------
-
-async function scenarioAttemptStart() {
-  console.log('\n=== Scenario 0: Attempt to start full-feature pipeline ===');
-  const { testDir, storeRoot, env } = await setupTestDir('start-attempt');
-  const changeId = 'dogfood-ff-start';
-  const pipeline = 'full-feature';
-
-  const res = runCLI(['pipeline', 'start', changeId, pipeline, '--json'], testDir, env);
-  if (res.exitCode !== 0) {
-    console.log('  START FAILED (expected — duplicate node path bug):');
-    console.log('  stderr:', res.stderr.slice(0, 500));
-    await fs.rm(testDir, { recursive: true, force: true });
-    return {
-      pipeline,
-      outcome: 'start-failed',
-      error: res.stderr.slice(0, 500),
-      blocker: 'duplicate_hierarchical_path_in_lowerer',
-    };
+/** Drive the three lead-in gate stages. */
+function driveLeadIn(h) {
+  const seq = [
+    ['root:stage:office-hours', 'planner', 'office-hours'],
+    ['root:stage:propose', 'planner', 'propose'],
+    ['root:stage:apply', 'implementer', 'apply'],
+  ];
+  for (const [wantPath, actor, label] of seq) {
+    const target = h.frontier().find((f) => f.path === wantPath);
+    if (!target) throw new Error(`expected ${wantPath} on the frontier, saw ${JSON.stringify(h.frontier())}`);
+    const res = h.complete(target, genericResult(label), actor, label);
+    if (!res.ok) throw new Error(`${label} completion failed: ${res.error}`);
   }
+}
 
-  // If it somehow succeeds, record the RunId
-  const runId = JSON.parse(res.stdout.trim()).runId;
-  console.log('  RunId:', runId);
-  await fs.rm(testDir, { recursive: true, force: true });
-  return { pipeline, outcome: 'started', runId };
+/** Drive one full ReviewCycle round: review(findings) -> triage -> fix -> re-review(clean). */
+function driveReviewLoop(h) {
+  const phases = [];
+  let guard = 0;
+  for (;;) {
+    if (guard++ > 12) throw new Error('review-loop guard tripped');
+    const target = h.frontier().find((f) => f.path === REVIEW_LOOP_PATH);
+    if (!target) {
+      const rcNow = h.section('review-cycle');
+      const st = h.status();
+      if (st.view.status !== 'completed' && !h.frontier().some((f) => f.path.startsWith('root:stage:'))) {
+        console.log('  review-loop stalled:', JSON.stringify({
+          status: st.view.status,
+          reviewCycle: rcNow,
+          frontier: h.frontier(),
+          transitions: h.record().transitions.slice(-6).map((t) => ({ kind: t.kind, ...(t.code ? { code: t.code } : {}), ...(t.reason ? { reason: t.reason } : {}) })),
+        }, null, 2));
+      }
+      break;
+    }
+    const rc = h.section('review-cycle');
+    const phase = rc?.phase ?? 'review';
+    const round = rc?.round ?? 1;
+    phases.push({ round, phase, actionId: target.actionId });
+    let result;
+    let actor;
+    if (phase === 'review') {
+      // Round 1 raises a Major finding so the loop genuinely cycles.
+      result = round === 1
+        ? (record, actionId) => ({
+            contract: 'review-cycle/review-result/1',
+            outcome: 'findings',
+            findings: [{
+              id: 'F1', severity: 'major',
+              claim: 'Dogfood: parallel expert output not covered by a regression test',
+              evidence: [evRef(record, h.runId, h.changeId, actionId, 'reviewerA')],
+              status: 'open',
+            }],
+          })
+        : { contract: 'review-cycle/review-result/1', outcome: 'clean', findings: [] };
+      actor = 'reviewerA';
+    } else if (phase === 'triage') {
+      result = {
+        contract: 'review-cycle/triage-result/1',
+        decisions: [{ findingId: 'F1', disposition: 'fix_inline', rationale: 'Fix inline with test coverage' }],
+      };
+      actor = 'triageA';
+    } else if (phase === 'fix') {
+      result = (record, actionId) => ({
+        contract: 'review-cycle/fix-result/1',
+        findingIds: ['F1'],
+        beforeTree: `sha256:${'a'.repeat(64)}`,
+        afterTree: `sha256:${'b'.repeat(64)}`,
+        delta: evRef(record, h.runId, h.changeId, actionId, 'fixerA'),
+        tests: [evRef(record, h.runId, h.changeId, actionId, 'fixerA')],
+      });
+      actor = 'fixerA';
+    } else {
+      result = (record, actionId) => ({
+        contract: 'review-cycle/verification-result/1',
+        verifications: [{
+          findingId: 'F1', verdict: 'resolved',
+          evidence: [evRef(record, h.runId, h.changeId, actionId, 'verifierA')],
+        }],
+      });
+      actor = 'verifierA';
+    }
+    const res = h.complete(target, result, actor, `rc-r${round}-${phase}`);
+    if (!res.ok) throw new Error(`review-loop ${phase} failed: ${res.error}`);
+  }
+  return phases;
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 2: Parallel success (if start works)
-// This scenario documents the EXPECTED behavior once the Blocker is fixed.
+// Scenario A: parallel success -> full chain to `completed`
 // ---------------------------------------------------------------------------
 
 async function scenarioParallelSuccess() {
-  console.log('\n=== Scenario 1: Parallel success (all required complete → Join proceeds) ===');
-  const { testDir, storeRoot, env } = await setupTestDir('parallel-success');
-  const changeId = 'dogfood-ff-parallel';
-  const pipeline = 'full-feature';
+  console.log('\n=== Scenario A: parallel success (all 6 members) -> completed ===');
+  const ctx = await setupTestDir('parallel-success');
+  const { harness: h, start } = startRun(ctx, 'dogfood-ff-parallel');
+  console.log('  RunId:', h.runId);
+  console.log('  engine:', start.engine, '| planDigest:', loadPlan(h.runId, h.storeRoot).planDigest);
 
-  const startRes = runCLI(['pipeline', 'start', changeId, pipeline, '--json'], testDir, env);
-  if (startRes.exitCode !== 0) {
-    console.log('  START FAILED — skipping scenario:');
-    console.log('  ', startRes.stderr.slice(0, 300));
-    await fs.rm(testDir, { recursive: true, force: true });
-    return { outcome: 'skipped', reason: 'start_failed', error: startRes.stderr.slice(0, 300) };
-  }
-  const runId = JSON.parse(startRes.stdout.trim()).runId;
-  console.log('  RunId:', runId);
+  driveLeadIn(h);
 
-  // Complete gate stages: office-hours → propose → apply
-  console.log('  Phase: office-hours');
-  completeAction(runId, changeId, testDir, storeRoot, env, 'planner', genericResult('office-hours'), 'oh');
+  // --- FanOut condition evaluator ---
+  const condTarget = h.frontier().find((f) => f.path === FANOUT_PATH);
+  if (!condTarget) throw new Error(`FanOut condition not on frontier: ${JSON.stringify(h.frontier())}`);
+  const condRes = h.complete(condTarget, fanOutResult(MEMBERS), 'dispatcher', 'fanout-condition');
+  if (!condRes.ok) throw new Error(`FanOut condition failed: ${condRes.error}`);
+  console.log('  FanOut condition actionId:', condRes.actionId);
 
-  console.log('  Phase: propose');
-  completeAction(runId, changeId, testDir, storeRoot, env, 'planner', genericResult('propose'), 'propose');
+  // --- Task 13.5: `pipeline status` DURING the FanOut phase ---
+  const midStatus = h.status();
+  const midParallel = midStatus.view.sections.find((s) => s.kind === 'parallel');
+  const midFrontier = h.frontier();
+  console.log('  [13.5] status during FanOut:', midStatus.view.status);
+  console.log('  [13.5] parallel section:', JSON.stringify({
+    fanOutPath: midParallel?.fanOutPath,
+    joinPath: midParallel?.joinPath,
+    joinState: midParallel?.joinState,
+    concurrencyCap: midParallel?.concurrencyCap,
+    budget: midParallel?.budget,
+    activeCount: midParallel?.activeCount,
+    members: midParallel?.members?.map((m) => ({ path: m.path, status: m.status, required: m.required })),
+  }, null, 2));
+  console.log('  [13.5] member frontier:', JSON.stringify(midFrontier.map((f) => f.path)));
 
-  console.log('  Phase: apply');
-  completeAction(runId, changeId, testDir, storeRoot, env, 'implementer', genericResult('apply'), 'apply');
-
-  // FanOut condition evaluator should be admitted next
-  console.log('  Phase: FanOut condition evaluator');
-  const record = loadHeadRecord(runId, storeRoot);
-  const active = getActive(record);
-  if (!active) {
-    console.log('  No active action after apply — checking status');
-    const statusRes = runCLI(['pipeline', 'status', changeId, pipeline, '--json'], testDir, env);
-    console.log('  Status:', JSON.parse(statusRes.stdout.trim()).view.status);
-    await fs.rm(testDir, { recursive: true, force: true });
-    return { outcome: 'no_active_after_apply', runId };
-  }
-
-  // Complete FanOut condition — activate all members
-  completeAction(runId, changeId, testDir, storeRoot, env, 'dispatcher', {
-    activeMembers: [
-      'root:stage:review', 'root:stage:cso', 'root:stage:benchmark',
-      'root:stage:design-review', 'root:stage:qa', 'root:stage:qa-only',
-    ],
-    inactiveMembers: [],
-    rationale: {},
-  }, 'fanout-cond');
-
-  // Complete all parallel members
-  const members = ['review', 'cso', 'benchmark', 'design-review', 'qa', 'qa-only'];
-  for (const member of members) {
-    console.log(`  Phase: member ${member}`);
-    const res = completeAction(runId, changeId, testDir, storeRoot, env, `expert-${member}`,
-      genericResult(member), `member-${member}`);
-    if (!res.ok) {
-      console.log(`  Member ${member} failed — may be due to cap/budget`);
-    }
+  // --- Complete all members (the reconciler admits them in cap-sized waves) ---
+  const memberLedger = h.completeMatching(
+    (p) => MEMBERS.includes(p),
+    (p) => genericResult(p),
+    (p) => `expert-${p.split(':').pop()}`,
+    (p) => `member-${p.split(':').pop()}`
+  );
+  console.log('  members completed:', memberLedger.length, memberLedger.every((m) => m.ok) ? 'ALL OK' : 'SOME FAILED');
+  for (const m of memberLedger) {
+    console.log(`    ${m.path.padEnd(28)} ${m.ok ? 'OK' : 'FAIL ' + m.error} ${m.actionId?.slice(0, 22)}`);
   }
 
-  // Check if Join proceeded
-  const statusRes = runCLI(['pipeline', 'status', changeId, pipeline, '--json'], testDir, env);
-  const statusJson = JSON.parse(statusRes.stdout.trim());
-  const parallelSection = statusJson.view.sections?.find((s) => s.kind === 'parallel');
-  console.log('  Status:', statusJson.view.status);
-  if (parallelSection) {
-    console.log('  JoinState:', parallelSection.joinState);
-    console.log('  Members:', JSON.stringify(parallelSection.members?.map((m) => ({ path: m.path, status: m.status })), null, 2));
-  }
+  const postJoin = h.status();
+  const postParallel = postJoin.view.sections.find((s) => s.kind === 'parallel');
+  console.log('  Join resolution:', JSON.stringify({
+    joinState: postParallel?.joinState,
+    succeededCount: postParallel?.succeededCount,
+    failedCount: postParallel?.failedCount,
+    budget: postParallel?.budget,
+  }));
 
-  await fs.rm(testDir, { recursive: true, force: true });
-  return { outcome: 'parallel-success-attempted', runId, joinState: parallelSection?.joinState };
+  // --- review-loop ---
+  const rcPhases = driveReviewLoop(h);
+  console.log('  review-loop phases:', JSON.stringify(rcPhases.map((p) => `r${p.round}:${p.phase}`)));
+
+  // --- ship -> retain -> archive ---
+  const tail = h.completeMatching(
+    (p) => ['root:stage:ship', 'root:stage:retain', 'root:stage:archive'].includes(p),
+    (p) => genericResult(p),
+    () => 'shipper',
+    (p) => p.split(':').pop()
+  );
+  for (const t of tail) console.log(`    ${t.path.padEnd(28)} ${t.ok ? 'OK' : 'FAIL ' + t.error}`);
+
+  const final = h.status();
+  const finalRecord = h.record();
+  // The terminal outcome lives on the Record; the view nests it in root-dag.
+  console.log('  FINAL status:', final.view.status, '| terminal:', JSON.stringify(finalRecord.terminal));
+  console.log('  action count:', Object.keys(finalRecord.actions).length);
+
+  const out = {
+    runId: h.runId,
+    planDigest: loadPlan(h.runId, h.storeRoot).planDigest,
+    sourceRevisionDigest: loadPlan(h.runId, h.storeRoot).sourceRevisionDigest,
+    finalStatus: final.view.status,
+    terminal: finalRecord.terminal ?? null,
+    recordVersion: finalRecord.recordVersion,
+    actionCount: Object.keys(finalRecord.actions).length,
+    fanOutConditionActionId: condRes.actionId,
+    ledger: h.ledger,
+    duringFanOut: {
+      status: midStatus.view.status,
+      parallelSection: midParallel,
+      frontier: midFrontier.map((f) => f.path),
+    },
+    joinResolution: {
+      joinState: postParallel?.joinState,
+      succeededCount: postParallel?.succeededCount,
+      failedCount: postParallel?.failedCount,
+      budget: postParallel?.budget,
+    },
+    reviewLoopPhases: rcPhases.map((p) => ({ round: p.round, phase: p.phase, actionId: p.actionId })),
+    outcome: final.view.status === 'completed' ? 'completed' : `ended-${final.view.status}`,
+  };
+  await fs.rm(ctx.testDir, { recursive: true, force: true });
+  return out;
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 3: Partial failure (optional fails → suppressed; required fails → escalate)
+// Scenario B1: optional member fails -> suppressed, Join proceeds
 // ---------------------------------------------------------------------------
 
-async function scenarioPartialFailure() {
-  console.log('\n=== Scenario 2: Partial failure (optional suppressed, required escalate) ===');
-  const { testDir, storeRoot, env } = await setupTestDir('partial-failure');
-  const changeId = 'dogfood-ff-partial';
-  const pipeline = 'full-feature';
+async function scenarioOptionalFailure() {
+  console.log('\n=== Scenario B1: OPTIONAL member fails -> suppressed, Join proceeds ===');
+  const ctx = await setupTestDir('optional-failure');
+  const { harness: h } = startRun(ctx, 'dogfood-ff-optional');
+  console.log('  RunId:', h.runId);
+  driveLeadIn(h);
 
-  const startRes = runCLI(['pipeline', 'start', changeId, pipeline, '--json'], testDir, env);
-  if (startRes.exitCode !== 0) {
-    console.log('  START FAILED — skipping scenario');
-    await fs.rm(testDir, { recursive: true, force: true });
-    return { outcome: 'skipped', reason: 'start_failed' };
-  }
-  const runId = JSON.parse(startRes.stdout.trim()).runId;
-  console.log('  RunId:', runId);
+  // Activate the required member plus one optional member.
+  const active = ['root:stage:review', 'root:stage:cso'];
+  const condTarget = h.frontier().find((f) => f.path === FANOUT_PATH);
+  const condRes = h.complete(condTarget, fanOutResult(active), 'dispatcher', 'fanout-condition');
+  if (!condRes.ok) throw new Error(`FanOut condition failed: ${condRes.error}`);
 
-  // Complete gates
-  completeAction(runId, changeId, testDir, storeRoot, env, 'planner', genericResult('oh'), 'oh');
-  completeAction(runId, changeId, testDir, storeRoot, env, 'planner', genericResult('propose'), 'propose');
-  completeAction(runId, changeId, testDir, storeRoot, env, 'implementer', genericResult('apply'), 'apply');
+  // Required member succeeds, optional member FAILS.
+  const csoTarget = h.frontier().find((f) => f.path === 'root:stage:cso');
+  const csoRes = h.complete(csoTarget, { error: 'cso check failed' }, 'expert-cso', 'cso-fail', 'failed');
+  console.log('  optional cso completion(status=failed):', csoRes.ok ? 'accepted' : `rejected: ${csoRes.error}`);
 
-  // FanOut condition — activate only required + one optional
-  completeAction(runId, changeId, testDir, storeRoot, env, 'dispatcher', {
-    activeMembers: ['root:stage:review', 'root:stage:cso'],
-    inactiveMembers: ['root:stage:benchmark', 'root:stage:design-review', 'root:stage:qa', 'root:stage:qa-only'],
-    rationale: {},
-  }, 'fanout-cond');
+  const reviewTarget = h.frontier().find((f) => f.path === 'root:stage:review');
+  const reviewRes = h.complete(reviewTarget, genericResult('review'), 'expert-review', 'review-ok');
+  console.log('  required review completion:', reviewRes.ok ? 'OK' : `FAIL ${reviewRes.error}`);
 
-  // Complete required member (review) successfully
-  console.log('  Completing required member: review (succeed)');
-  completeAction(runId, changeId, testDir, storeRoot, env, 'expert-review', genericResult('review'), 'review');
+  const status = h.status();
+  const parallel = status.view.sections.find((s) => s.kind === 'parallel');
+  const frontier = h.frontier();
+  console.log('  status:', status.view.status, '| joinState:', parallel?.joinState);
+  console.log('  members:', JSON.stringify(parallel?.members?.map((m) => `${m.path}=${m.status}`)));
+  console.log('  frontier after Join:', JSON.stringify(frontier.map((f) => f.path)));
 
-  // Fail optional member (cso)
-  console.log('  Completing optional member: cso (FAIL)');
-  const failRes = completeAction(runId, changeId, testDir, storeRoot, env, 'expert-cso',
-    { error: 'cso check failed' }, 'cso-fail');
-
-  const statusRes = runCLI(['pipeline', 'status', changeId, pipeline, '--json'], testDir, env);
-  const statusJson = JSON.parse(statusRes.stdout.trim());
-  const parallelSection = statusJson.view.sections?.find((s) => s.kind === 'parallel');
-  console.log('  Status:', statusJson.view.status);
-  if (parallelSection) {
-    console.log('  JoinState:', parallelSection.joinState);
-  }
-
-  await fs.rm(testDir, { recursive: true, force: true });
-  return { outcome: 'partial-failure-attempted', runId, joinState: parallelSection?.joinState };
+  const out = {
+    runId: h.runId,
+    optionalFailAccepted: csoRes.ok,
+    requiredOk: reviewRes.ok,
+    status: status.view.status,
+    joinState: parallel?.joinState,
+    failedCount: parallel?.failedCount,
+    succeededCount: parallel?.succeededCount,
+    members: parallel?.members?.map((m) => ({ path: m.path, status: m.status, required: m.required })),
+    frontierAfterJoin: frontier.map((f) => f.path),
+    joinProceeded: frontier.some((f) => f.path === REVIEW_LOOP_PATH),
+    ledger: h.ledger,
+  };
+  await fs.rm(ctx.testDir, { recursive: true, force: true });
+  return out;
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 4: Restart idempotency (mid-Join → same frontier)
+// Scenario B2: required member fails -> Join escalates
+// ---------------------------------------------------------------------------
+
+async function scenarioRequiredFailure() {
+  console.log('\n=== Scenario B2: REQUIRED member fails -> Join escalates ===');
+  const ctx = await setupTestDir('required-failure');
+  const { harness: h } = startRun(ctx, 'dogfood-ff-required');
+  console.log('  RunId:', h.runId);
+  driveLeadIn(h);
+
+  const condTarget = h.frontier().find((f) => f.path === FANOUT_PATH);
+  const condRes = h.complete(condTarget, fanOutResult(['root:stage:review', 'root:stage:qa']), 'dispatcher', 'fanout-condition');
+  if (!condRes.ok) throw new Error(`FanOut condition failed: ${condRes.error}`);
+
+  // Optional qa succeeds; REQUIRED review fails.
+  const qaTarget = h.frontier().find((f) => f.path === 'root:stage:qa');
+  h.complete(qaTarget, genericResult('qa'), 'expert-qa', 'qa-ok');
+
+  const reviewTarget = h.frontier().find((f) => f.path === 'root:stage:review');
+  const reviewRes = h.complete(reviewTarget, { error: 'review found a blocker' }, 'expert-review', 'review-fail', 'failed');
+  console.log('  required review completion(status=failed):', reviewRes.ok ? 'accepted' : `rejected: ${reviewRes.error}`);
+
+  const status = h.status();
+  const parallel = status.view.sections.find((s) => s.kind === 'parallel');
+  const frontier = h.frontier();
+  console.log('  status:', status.view.status, '| terminal:', JSON.stringify(h.record().terminal));
+  console.log('  joinState:', parallel?.joinState, '| keyBlockers:', JSON.stringify(parallel?.keyBlockers));
+  console.log('  frontier:', JSON.stringify(frontier.map((f) => f.path)));
+
+  // The REQUIRED-member failure must NOT let the review-loop start.
+  const out = {
+    runId: h.runId,
+    status: status.view.status,
+    terminal: h.record().terminal ?? null,
+    joinState: parallel?.joinState,
+    failedCount: parallel?.failedCount,
+    keyBlockers: parallel?.keyBlockers,
+    frontier: frontier.map((f) => f.path),
+    reviewLoopStarted: frontier.some((f) => f.path === REVIEW_LOOP_PATH),
+    ledger: h.ledger,
+  };
+  await fs.rm(ctx.testDir, { recursive: true, force: true });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Scenario C: restart idempotency mid-FanOut
 // ---------------------------------------------------------------------------
 
 async function scenarioRestartIdempotency() {
-  console.log('\n=== Scenario 3: Restart idempotency (mid-Join → same frontier) ===');
-  const { testDir, storeRoot, env } = await setupTestDir('restart');
-  const changeId = 'dogfood-ff-restart';
-  const pipeline = 'full-feature';
+  console.log('\n=== Scenario C: restart idempotency mid-FanOut ===');
+  const ctx = await setupTestDir('restart');
+  const { harness: h } = startRun(ctx, 'dogfood-ff-restart');
+  console.log('  RunId:', h.runId);
+  driveLeadIn(h);
 
-  const startRes = runCLI(['pipeline', 'start', changeId, pipeline, '--json'], testDir, env);
-  if (startRes.exitCode !== 0) {
-    console.log('  START FAILED — skipping scenario');
-    await fs.rm(testDir, { recursive: true, force: true });
-    return { outcome: 'skipped', reason: 'start_failed' };
-  }
-  const runId = JSON.parse(startRes.stdout.trim()).runId;
-  console.log('  RunId:', runId);
+  const condTarget = h.frontier().find((f) => f.path === FANOUT_PATH);
+  h.complete(condTarget, fanOutResult(MEMBERS), 'dispatcher', 'fanout-condition');
 
-  // Get to FanOut phase
-  completeAction(runId, changeId, testDir, storeRoot, env, 'planner', genericResult('oh'), 'oh');
-  completeAction(runId, changeId, testDir, storeRoot, env, 'planner', genericResult('propose'), 'propose');
-  completeAction(runId, changeId, testDir, storeRoot, env, 'implementer', genericResult('apply'), 'apply');
-  completeAction(runId, changeId, testDir, storeRoot, env, 'dispatcher', {
-    activeMembers: ['root:stage:review', 'root:stage:cso'],
-    inactiveMembers: [],
-    rationale: {},
-  }, 'fanout-cond');
+  // Complete exactly ONE member, leaving the FanOut mid-flight.
+  const first = h.frontier().find((f) => MEMBERS.includes(f.path));
+  if (!first) throw new Error(`no FanOut member on the frontier: ${JSON.stringify(h.frontier())}`);
+  const firstRes = h.complete(first, genericResult(first.path), `expert-${first.path.split(':').pop()}`, 'member-first');
+  console.log('  completed member:', first.path, firstRes.ok ? 'OK' : `FAIL ${firstRes.error}`);
 
-  // Complete only one member
-  console.log('  Completing member: review (succeed)');
-  completeAction(runId, changeId, testDir, storeRoot, env, 'expert-review', genericResult('review'), 'review');
-
-  // Simulate restart: just re-run reconcile (which the CLI does on status check)
-  console.log('  Simulating restart (status check = re-reconcile)');
-  const beforeRecord = loadHeadRecord(runId, storeRoot);
-  const statusRes = runCLI(['pipeline', 'status', changeId, pipeline, '--json'], testDir, env);
-  const afterRecord = loadHeadRecord(runId, storeRoot);
-
-  // Verify no new actions were admitted (completed member not re-admitted)
+  const beforeRecord = h.record();
+  const beforeFrontier = h.frontier().map((f) => f.path).sort();
   const beforeActions = Object.keys(beforeRecord.actions).length;
+
+  // "Restart": a fresh CLI process re-reconciles from the persisted Record.
+  const resumeA = runCLI(['pipeline', 'resume-run', h.changeId, PIPELINE, '--json'], h.testDir, h.env);
+  const resumeB = runCLI(['pipeline', 'resume-run', h.changeId, PIPELINE, '--json'], h.testDir, h.env);
+  console.log('  resume-run exit codes:', resumeA.exitCode, resumeB.exitCode);
+
+  const afterRecord = h.record();
+  const afterFrontier = h.frontier().map((f) => f.path).sort();
   const afterActions = Object.keys(afterRecord.actions).length;
-  console.log(`  Actions before: ${beforeActions}, after: ${afterActions}`);
 
-  const statusJson = JSON.parse(statusRes.stdout.trim());
-  const parallelSection = statusJson.view.sections?.find((s) => s.kind === 'parallel');
-  if (parallelSection) {
-    const reviewMember = parallelSection.members?.find((m) => m.path?.includes('review'));
-    console.log('  Review member status:', reviewMember?.status);
-    console.log('  JoinState:', parallelSection.joinState);
-  }
+  const completedPath = first.path;
+  const reAdmitted = afterFrontier.includes(completedPath);
+  const parallel = h.status().view.sections.find((s) => s.kind === 'parallel');
 
-  await fs.rm(testDir, { recursive: true, force: true });
-  return { outcome: 'restart-attempted', runId, beforeActions, afterActions };
+  console.log(`  actions before=${beforeActions} after=${afterActions}`);
+  console.log('  frontier before:', JSON.stringify(beforeFrontier));
+  console.log('  frontier after :', JSON.stringify(afterFrontier));
+  console.log('  completed member re-admitted:', reAdmitted);
+
+  const out = {
+    runId: h.runId,
+    completedMember: completedPath,
+    beforeActions, afterActions,
+    frontierStable: JSON.stringify(beforeFrontier) === JSON.stringify(afterFrontier),
+    actionCountStable: beforeActions === afterActions,
+    completedMemberReAdmitted: reAdmitted,
+    joinState: parallel?.joinState,
+    memberStatuses: parallel?.members?.map((m) => `${m.path}=${m.status}`),
+    ledger: h.ledger,
+  };
+  await fs.rm(ctx.testDir, { recursive: true, force: true });
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -442,30 +683,36 @@ async function scenarioRestartIdempotency() {
 // ---------------------------------------------------------------------------
 
 const results = {};
+let failures = 0;
 
-// Scenario 0: Attempt to start (will fail with the Blocker)
-const r0 = await scenarioAttemptStart();
-results.startAttempt = r0;
-console.log('\n  RESULT:', r0.outcome, r0.blocker ?? '');
+for (const [name, fn] of [
+  ['parallelSuccess', scenarioParallelSuccess],
+  ['optionalFailure', scenarioOptionalFailure],
+  ['requiredFailure', scenarioRequiredFailure],
+  ['restartIdempotency', scenarioRestartIdempotency],
+]) {
+  try {
+    results[name] = await fn();
+  } catch (e) {
+    failures += 1;
+    results[name] = { error: String(e?.stack ?? e).slice(0, 2000) };
+    console.error(`  SCENARIO ${name} THREW:`, String(e?.message ?? e).slice(0, 600));
+  }
+}
 
-// Scenarios 1-3: These will be skipped if start fails
-const r1 = await scenarioParallelSuccess();
-results.parallelSuccess = r1;
-
-const r2 = await scenarioPartialFailure();
-results.partialFailure = r2;
-
-const r3 = await scenarioRestartIdempotency();
-results.restartIdempotency = r3;
-
-console.log('\n=== RESULTS ===');
+console.log('\n=== RESULTS (full) ===');
 console.log(JSON.stringify(results, null, 2));
 
 console.log('\n=== FINAL ===');
 console.log(JSON.stringify({
-  startAttempt: r0.outcome,
-  blocker: r0.blocker,
-  parallelSuccess: r1.outcome,
-  partialFailure: r2.outcome,
-  restartIdempotency: r3.outcome,
+  parallelSuccess: results.parallelSuccess?.outcome ?? 'error',
+  parallelSuccessRunId: results.parallelSuccess?.runId,
+  optionalFailure_joinProceeded: results.optionalFailure?.joinProceeded,
+  requiredFailure_reviewLoopStarted: results.requiredFailure?.reviewLoopStarted,
+  requiredFailure_status: results.requiredFailure?.status,
+  restart_frontierStable: results.restartIdempotency?.frontierStable,
+  restart_completedMemberReAdmitted: results.restartIdempotency?.completedMemberReAdmitted,
+  scenarioErrors: failures,
 }, null, 2));
+
+process.exit(failures === 0 ? 0 : 1);
