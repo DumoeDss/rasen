@@ -1225,6 +1225,7 @@
     "Clear the checkout-scoped edit boundary": "清除检出范围内的编辑边界",
     "Inspect and manage orchestration pipelines": "检查和管理编排流水线",
     "Start (or reuse) a reconciler-engine Run for a change under a pipeline": "在流水线下为变更启动（或复用）reconciler 引擎 Run",
+    "Engine for this launch: auto (default), reconciler, or legacy. Wins over the runs.engine config; legacy refuses to create a canonical Run.": "本次启动使用的引擎：auto（默认）、reconciler 或 legacy。优先于 runs.engine 配置；legacy 将拒绝创建规范 Run。",
     "Print a reconciler-engine Run view for a change": "输出变更的 reconciler 引擎 Run 视图",
     "Resume a reconciler-engine Run: grant the ready frontier": "恢复 reconciler 引擎 Run 并授予就绪前沿",
     "Cancel a reconciler-engine Run for a change": "取消变更的 reconciler 引擎 Run",

@@ -412,7 +412,11 @@ describe('selective orchestration bundles', () => {
         expect(stepE).toContain('#### E.1 — Reconciler engine');
         expect(stepE).toContain('pipeline resume-run');
         expect(stepE).toContain('rasen pipeline start <change> <pipeline> --json');
-        expect(stepE).toContain('rasen pipeline complete <change> --action-id <id> --json');
+        // ECP-5 (task 7.7): this asserted the phantom `--action-id` flag,
+        // so the guard test itself carried the defect. The real invocation:
+        expect(stepE).toContain(
+          'rasen pipeline complete <change> --run <runId> --from <receipt.json> --json'
+        );
         // Progress is READ from the canonical section, not tallied.
         expect(stepE).toContain('`review-cycle` section');
         expect(stepE).toContain('rasen pipeline status <change> <pipeline> --json');
@@ -475,6 +479,37 @@ describe('selective orchestration bundles', () => {
         // Staffing distinct workers is still the LEAD's — the Record can
         // reject a same-actor commit but cannot put a different worker on it.
         expect(reconcilerBranch).toContain('Staffing distinct workers remains YOURS');
+      }
+    });
+
+    it('names commands that actually exist on the CLI', () => {
+      // ECP-5 (task 7.7), found by the dogfood: the converged Step E told the
+      // LEAD to run `rasen pipeline complete <change>` with a per-action flag. There
+      // IS no `--action-id` flag — `complete` takes `--run <runId> --from
+      // <body>`, with the actionId inside the completion — so a LEAD following
+      // the converged path literally failed at step 3. A prompt that names a
+      // nonexistent invocation is a product defect, not a wording nit; it is
+      // the same class as the deletions above, one level down.
+      for (const playbook of [
+        AUTO_ORCHESTRATION_PLAYBOOK,
+        GOAL_ORCHESTRATION_PLAYBOOK,
+        REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK,
+        ORCHESTRATION_PLAYBOOK,
+      ]) {
+        expect(playbook).not.toContain('--action-id');
+      }
+      for (const playbook of reviewLoopBundles) {
+        const stepE = stepSection(playbook, 'E');
+        const reconcilerBranch = stepE.slice(
+          stepE.indexOf('#### E.1'),
+          stepE.indexOf('#### E.2')
+        );
+        expect(reconcilerBranch).toContain(
+          'rasen pipeline complete <change> --run <runId> --from <receipt.json> --json'
+        );
+        // …and it says where the next action actually comes from, since
+        // `resume-run` correctly reports zero in a healthy sequential drive.
+        expect(reconcilerBranch).toContain('RECOVERY seam');
       }
     });
 

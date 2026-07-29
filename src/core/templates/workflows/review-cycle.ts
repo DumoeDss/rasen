@@ -73,10 +73,10 @@ The reconciler enforces author != verifier; you do not check it yourself.
 Submit each phase result to the canonical Run:
 
 \`\`\`
-rasen pipeline complete <change-name> bug-fix --action-id <id> --json
+rasen pipeline complete <change-name> --run <runId> --from <receipt.json> --json
 \`\`\`
 
-Include the result contract (\`review-cycle/review-result/1\`, \`triage-result/1\`, \`fix-result/1\`, \`verification-result/1\`), the actor identity, and the attestation evidence. The reconciler validates the result before committing — malformed results, same-actor verification, and open Blocker/Major findings are rejected before the Record mutates.
+The receipt body is \`{ "completion": <change-run-completion/1>, "uploads": [...] }\`; the \`actionId\` and \`runId\` live inside the completion, and \`--from -\` reads it from stdin. Include the result contract (\`review-cycle/review-result/1\`, \`triage-result/1\`, \`fix-result/1\`, \`verification-result/1\`), the actor identity, and the attestation evidence. The reconciler validates the result before committing — malformed results, same-actor verification, and open Blocker/Major findings are rejected before the Record mutates.
 
 ## 6. Drive to completion
 

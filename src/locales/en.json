@@ -1225,6 +1225,7 @@
     "Clear the checkout-scoped edit boundary": "Clear the checkout-scoped edit boundary",
     "Inspect and manage orchestration pipelines": "Inspect and manage orchestration pipelines",
     "Start (or reuse) a reconciler-engine Run for a change under a pipeline": "Start (or reuse) a reconciler-engine Run for a change under a pipeline",
+    "Engine for this launch: auto (default), reconciler, or legacy. Wins over the runs.engine config; legacy refuses to create a canonical Run.": "Engine for this launch: auto (default), reconciler, or legacy. Wins over the runs.engine config; legacy refuses to create a canonical Run.",
     "Print a reconciler-engine Run view for a change": "Print a reconciler-engine Run view for a change",
     "Resume a reconciler-engine Run: grant the ready frontier": "Resume a reconciler-engine Run: grant the ready frontier",
     "Cancel a reconciler-engine Run for a change": "Cancel a reconciler-engine Run for a change",

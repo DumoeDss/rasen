@@ -1225,6 +1225,7 @@
     "Clear the checkout-scoped edit boundary": "チェックアウト単位の編集境界を解除します",
     "Inspect and manage orchestration pipelines": "オーケストレーションパイプラインを確認・管理します",
     "Start (or reuse) a reconciler-engine Run for a change under a pipeline": "変更のパイプラインでreconciler-engine Runを開始（または再利用）します",
+    "Engine for this launch: auto (default), reconciler, or legacy. Wins over the runs.engine config; legacy refuses to create a canonical Run.": "この起動で使うエンジン: auto（既定）、reconciler、legacy。runs.engine 設定より優先され、legacy は正規 Run の作成を拒否します。",
     "Print a reconciler-engine Run view for a change": "変更のreconciler-engine Runビューを出力します",
     "Resume a reconciler-engine Run: grant the ready frontier": "reconciler-engine Runを再開し、ready frontierを許可します",
     "Cancel a reconciler-engine Run for a change": "変更のreconciler-engine Runをキャンセルします",

@@ -1713,10 +1713,22 @@ export class PipelineCommand {
     const receipt = await resolved.ctx.facade.complete(completion, {
       deliveryMode: 'grant',
     });
+    // ECP-5 (task 7.7, found by the dogfood): `complete` settles to quiescence
+    // and GRANTS the next ready actions under `deliveryMode: 'grant'` — but the
+    // receipt dropped them, unlike `start` and `resume-run`, which both report
+    // `actions`. That made the converged Step E loop unfollowable at its own
+    // seam: `complete` swallowed the grant, and the `resume-run` that follows
+    // it correctly reports zero (nothing is left ungranted), so a LEAD reading
+    // only receipts saw no next action and could read the Run as finished.
     this.printRunReceipt(options, {
       runId,
       disposition: receipt.disposition,
       status: receipt.view.status,
+      actions: receipt.actions.map((action) => ({
+        actionId: action.actionId,
+        nodeId: action.nodeId,
+        kind: action.kind,
+      })),
     });
   }
 
