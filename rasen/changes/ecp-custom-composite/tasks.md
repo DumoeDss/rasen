@@ -74,9 +74,9 @@
 
 ## 10. Projection — composite drill-down section
 
-- [ ] 10.1 Add `buildCompositeSection()` to `projector.ts`: iterate inlined composite body nodeIds, read committed action state, produce `composite/1` section with stages (path, status, capability, actor), declarationId, compositePath, outcome, and optional loop fields (round, maxIterations)
-- [ ] 10.2 Extend `buildSections()` to call `buildCompositeSection` when the plan contains inlined composite nodes (detect via hierarchical path containing a CompositeRef or composite-body BoundedLoop prefix)
-- [ ] 10.3 Write projector tests: composite section shows body stage states correctly; loop fields present for composite-body BoundedLoop; section absent for pure ReviewCycle plan; terminal Run shows empty stages
+- [x] 10.1 Add `buildCompositeSection()` to `projector.ts`: iterate inlined composite body nodeIds, read committed action state, produce `composite/1` section with stages (path, status, capability, actor), declarationId, compositePath, outcome, and optional loop fields (round, maxIterations)
+- [x] 10.2 Extend `buildSections()` to call `buildCompositeSection` when the plan contains inlined composite nodes (detect via hierarchical path containing a CompositeRef or composite-body BoundedLoop prefix)
+- [x] 10.3 Write projector tests: composite section shows body stage states correctly; loop fields present for composite-body BoundedLoop; section absent for pure ReviewCycle plan; terminal Run shows empty stages
 
 ## 11. Isomorphism — built-in vs custom fixture pair
 

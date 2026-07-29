@@ -10,6 +10,7 @@ import type { RuntimePlan, RuntimePlanBoundedLoopNode } from './runtime-plan.js'
 import type { CanonicalWait } from './waits.js';
 import { canonicalJson } from './identity.js';
 import { projectReviewCycleProgress } from './review-cycle-runtime.js';
+import { projectCompositeBodyProgress, compositeBodyStagePath } from './composite-runtime.js';
 
 function actionView(committed: CommittedAction) {
   const action = committed.action;
@@ -203,12 +204,110 @@ function buildSections(
     const loop = plan.nodes.find(
       (node): node is RuntimePlanBoundedLoopNode => node.kind === 'bounded-loop'
     );
-    if (loop !== undefined) {
+    if (loop !== undefined && loop.body.kind === 'review-cycle') {
       const progress = projectReviewCycleProgress(plan, loop, record);
       sections.push(buildReviewCycleSection(loop, progress));
     }
+    // Emit composite drill-down for composite-body loops or inlined CompositeRef nodes.
+    const compositeSection = buildCompositeSection(plan, record);
+    if (compositeSection !== null) {
+      sections.push(compositeSection);
+    }
   }
   return Object.freeze(sections);
+}
+
+/**
+ * Build a `composite/1` section when the plan contains inlined composite nodes.
+ * For composite-body BoundedLoop nodes, iterate the body stages and derive
+ * their per-round status from committed actions. For CompositeRef-inlined
+ * atomic nodes, detect them by hierarchical paths containing a `/` after
+ * `root:` (the inlined body stage separator).
+ */
+function buildCompositeSection(
+  plan: RuntimePlan,
+  record: CanonicalRunRecord
+): unknown | null {
+  // Check for composite-body BoundedLoop.
+  const compositeLoop = plan.nodes.find(
+    (node): node is RuntimePlanBoundedLoopNode =>
+      node.kind === 'bounded-loop' && node.body.kind === 'composite'
+  );
+  if (compositeLoop !== undefined && compositeLoop.body.kind === 'composite') {
+    const progress = projectCompositeBodyProgress(plan, compositeLoop, record);
+    const body = compositeLoop.body;
+    const stages = body.stages.map((stage) => {
+      const round = progress.kind === 'ready' || progress.kind === 'waiting' || progress.kind === 'failed'
+        ? progress.next.round
+        : 1;
+      const perRoundPath = compositeBodyStagePath(
+        compositeLoop.hierarchicalPath,
+        round,
+        stage.hierarchicalPath
+      );
+      const action = Object.values(record.actions).find(
+        (a) => a.action.nodeId === stage.nodeId ||
+        a.action.nodeId.toString().includes(stage.hierarchicalPath.split('/').pop()!)
+      );
+      return {
+        path: stage.hierarchicalPath,
+        status: action === undefined ? 'pending' : action.state === 'active' ? 'active' : action.result?.status ?? 'pending',
+        capability: { id: stage.profilePath },
+      };
+    });
+    return Object.freeze({
+      kind: 'composite',
+      version: 1,
+      compositePath: compositeLoop.hierarchicalPath,
+      declarationId: body.declarationId,
+      stages,
+      outcome: progress.kind === 'clean' ? progress.outcome : undefined,
+      ...(progress.kind === 'ready' || progress.kind === 'waiting' || progress.kind === 'failed'
+        ? { round: progress.next.round, maxIterations: compositeLoop.maxIterations }
+        : { round: 1, maxIterations: compositeLoop.maxIterations }),
+    });
+  }
+
+  // Check for CompositeRef-inlined atomic nodes (paths with root:<id>/<stage> pattern).
+  const inlinedNodes = plan.nodes.filter(
+    (node): node is typeof node =>
+      node.kind === 'atomic' &&
+      node.hierarchicalPath.startsWith('root:') &&
+      node.hierarchicalPath.includes('/')
+  );
+  if (inlinedNodes.length === 0) return null;
+
+  // Group inlined nodes by their CompositeRef prefix.
+  const groups = new Map<string, typeof inlinedNodes>();
+  for (const node of inlinedNodes) {
+    const prefix = node.hierarchicalPath.split('/')[0]!;
+    const existing = groups.get(prefix) ?? [];
+    existing.push(node);
+    groups.set(prefix, existing);
+  }
+
+  // Build sections for the first group (simple: one composite per section).
+  const [compositePath, groupNodes] = [...groups.entries()][0]!;
+  const stages = groupNodes.map((node) => {
+    if (node.kind !== 'atomic') return null;
+    const action = Object.values(record.actions).find(
+      (a) => a.action.nodeId === node.nodeId
+    );
+    return {
+      path: node.hierarchicalPath,
+      status: action === undefined ? 'pending' : action.state === 'active' ? 'active' : action.result?.status ?? 'pending',
+      capability: { id: node.profilePath ?? node.hierarchicalPath },
+    };
+  }).filter((s): s is NonNullable<typeof s> => s !== null);
+
+  return Object.freeze({
+    kind: 'composite',
+    version: 1,
+    compositePath,
+    declarationId: 'custom',
+    stages,
+    outcome: undefined,
+  });
 }
 
 function buildReviewCycleSection(
