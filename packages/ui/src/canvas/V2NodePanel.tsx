@@ -2,7 +2,10 @@ import { useEffect, useState } from 'preact/hooks';
 import type {
   PipelineCatalogResponse,
   WireBoundedLoopNode,
+  WireCompositeDeclaration,
+  WireCompositeRefNode,
   WireDefinitionNode,
+  WirePipelineDefinitionV2,
 } from '../api/types.js';
 import { isV2EditableNodeKind } from './draft.js';
 
@@ -27,6 +30,7 @@ function parseList(value: string): string[] {
 export function V2NodePanel({
   node,
   catalog,
+  definition,
   fieldIssues,
   onRename,
   onPatch,
@@ -34,6 +38,7 @@ export function V2NodePanel({
 }: {
   node: WireDefinitionNode;
   catalog: PipelineCatalogResponse | null;
+  definition?: WirePipelineDefinitionV2 | null;
   fieldIssues: Record<string, 'error' | 'warning'>;
   onRename: (id: string) => void;
   onPatch: (patch: Partial<WireDefinitionNode>) => boolean | void;
@@ -204,6 +209,15 @@ export function V2NodePanel({
           {node.kind === 'BoundedLoop' && (
             <BoundedLoopDetails
               node={node as WireBoundedLoopNode}
+              definition={definition}
+              onPatch={onPatch}
+            />
+          )}
+
+          {node.kind === 'CompositeRef' && (
+            <CompositeRefDetails
+              node={node as WireCompositeRefNode}
+              definition={definition}
               onPatch={onPatch}
             />
           )}
@@ -218,11 +232,19 @@ export function V2NodePanel({
  * outcomes, and a configurable maxRounds scalar. Shape editing (add/remove/
  * reorder phases) is NOT enabled — the 4-phase ReviewCycle body is read-only.
  */
+/**
+ * BoundedLoop detail renderer: shows the body phases/stages, exit outcomes,
+ * and a configurable maxRounds scalar. For ReviewCycle bodies the 4 phases
+ * are listed read-only. For non-ReviewCycle (composite) bodies, the body
+ * declaration's stages are listed read-only.
+ */
 function BoundedLoopDetails({
   node,
+  definition,
   onPatch,
 }: {
   node: WireBoundedLoopNode;
+  definition?: WirePipelineDefinitionV2 | null;
   onPatch: (patch: Partial<WireDefinitionNode>) => boolean | void;
 }) {
   const currentMaxRounds = node.limits.maxIterations;
@@ -243,6 +265,20 @@ function BoundedLoopDetails({
     }
   };
 
+  // Look up the declaration to determine body kind.
+  const declaration = (definition?.declarations ?? []).find(
+    (d) => d.id === node.body
+  );
+  const bodyNodes = (declaration?.graph?.nodes ?? []) as Array<{
+    id: string;
+    kind: string;
+    reviewCyclePhase?: string;
+    capability?: { id: string };
+  }>;
+  const isReviewCycle = bodyNodes.some(
+    (n) => typeof n.reviewCyclePhase === 'string'
+  );
+
   return (
     <div
       class="stage-panel__bounded-loop"
@@ -250,18 +286,34 @@ function BoundedLoopDetails({
     >
       <div class="stage-panel__field">
         <span>Body kind</span>
-        <strong>Review Cycle (4 phases)</strong>
+        <strong>{isReviewCycle ? 'Review Cycle (4 phases)' : 'Composite'}</strong>
       </div>
       <div
         class="stage-panel__bounded-loop-phases"
         data-testid="v2-node-panel-phases"
       >
-        <span>Phases (read-only):</span>
-        <ol>
-          {REVIEW_CYCLE_PHASES.map((phase) => (
-            <li key={phase}>{phase}</li>
-          ))}
-        </ol>
+        {isReviewCycle ? (
+          <>
+            <span>Phases (read-only):</span>
+            <ol>
+              {REVIEW_CYCLE_PHASES.map((phase) => (
+                <li key={phase}>{phase}</li>
+              ))}
+            </ol>
+          </>
+        ) : (
+          <>
+            <span>Body stages (read-only):</span>
+            <ol>
+              {bodyNodes.map((n) => (
+                <li key={n.id}>
+                  {n.id}
+                  {n.capability ? ` (${n.capability.id})` : ''}
+                </li>
+              ))}
+            </ol>
+          </>
+        )}
       </div>
       <label class="stage-panel__field">
         <span>Max rounds</span>
@@ -295,6 +347,160 @@ function BoundedLoopDetails({
               {exhaustedExit[0]}: {(exhaustedExit[1] as { outcome: string }).outcome}
             </span>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * CompositeRef detail renderer (design D5): shows the referenced declaration
+ * (editable via dropdown), the declaration's contract (inputs/artifacts/
+ * outcomes read-only summary), the body stages list, and the port mapping
+ * between root-level connections and the declaration's declared ports.
+ */
+function CompositeRefDetails({
+  node,
+  definition,
+  onPatch,
+}: {
+  node: WireCompositeRefNode;
+  definition?: WirePipelineDefinitionV2 | null;
+  onPatch: (patch: Partial<WireDefinitionNode>) => boolean | void;
+}) {
+  const declarations = definition?.declarations ?? [];
+  const selectedDeclaration = declarations.find(
+    (d) => d.id === node.declarationId
+  );
+
+  return (
+    <div
+      class="stage-panel__composite-ref"
+      data-testid="v2-node-panel-composite-ref"
+    >
+      <label class="stage-panel__field">
+        <span>Declaration</span>
+        <select
+          data-testid="v2-node-panel-declaration"
+          value={node.declarationId}
+          onChange={(event) => {
+            const value = (event.target as HTMLSelectElement).value;
+            onPatch({ declarationId: value });
+          }}
+        >
+          {declarations.length === 0 && (
+            <option value="">(no declarations)</option>
+          )}
+          {declarations.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.id}
+              {d.provenance === 'built-in' ? ' (built-in)' : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {selectedDeclaration && (
+        <DeclarationSummary declaration={selectedDeclaration} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Read-only declaration contract summary: inputs, artifacts, outcomes, and
+ * body stage list. Also shows the port mapping surface.
+ */
+function DeclarationSummary({
+  declaration,
+}: {
+  declaration: WireCompositeDeclaration;
+}) {
+  const inputs = declaration.inputs ?? [];
+  const artifacts = declaration.artifacts ?? [];
+  const outcomes = declaration.outcomes ?? [];
+  const bodyNodes = (declaration.graph?.nodes ?? []) as Array<{
+    id: string;
+    kind: string;
+    capability?: { id: string };
+  }>;
+  const bodyConnections = declaration.graph?.connections ?? [];
+
+  return (
+    <div
+      class="stage-panel__declaration-summary"
+      data-testid="v2-node-panel-declaration-summary"
+    >
+      {inputs.length > 0 && (
+        <div class="stage-panel__field">
+          <span>Inputs</span>
+          <ul class="stage-panel__port-list">
+            {inputs.map((port) => (
+              <li key={port.name}>
+                {port.name}: {port.type}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {artifacts.length > 0 && (
+        <div class="stage-panel__field">
+          <span>Artifacts</span>
+          <ul class="stage-panel__port-list">
+            {artifacts.map((art) => (
+              <li key={art.name}>
+                {art.name}: {art.type}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div class="stage-panel__field">
+        <span>Outcomes</span>
+        <div class="stage-panel__outcomes-list">
+          {outcomes.join(', ') || '(none)'}
+        </div>
+      </div>
+      <div class="stage-panel__field">
+        <span>Body stages ({bodyNodes.length})</span>
+        <ol class="stage-panel__body-stages">
+          {bodyNodes.map((n) => (
+            <li key={n.id} data-testid="v2-node-panel-body-stage">
+              {n.id} ({n.kind})
+              {n.capability ? ` → ${n.capability.id}` : ''}
+            </li>
+          ))}
+        </ol>
+      </div>
+      {bodyConnections.length > 0 && (
+        <div class="stage-panel__field">
+          <span>Body connections ({bodyConnections.length})</span>
+          <ul class="stage-panel__port-list">
+            {bodyConnections.map((c, i) => (
+              <li key={i}>
+                {c.from.node}:{c.from.port} → {c.to.node}:{c.to.port}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div class="stage-panel__field stage-panel__port-mapping">
+        <span>Port mapping</span>
+        <div class="stage-panel__port-mapping-grid" data-testid="v2-node-panel-port-mapping">
+          {inputs.map((port) => (
+            <div key={`in:${port.name}`} class="stage-panel__port-mapping-row">
+              <span class="stage-panel__port-mapping-root">root:{port.name}</span>
+              <span class="stage-panel__port-mapping-arrow">→</span>
+              <span class="stage-panel__port-mapping-decl">{port.name}</span>
+            </div>
+          ))}
+          {outcomes.map((outcome) => (
+            <div key={`out:${outcome}`} class="stage-panel__port-mapping-row">
+              <span class="stage-panel__port-mapping-decl">{outcome}</span>
+              <span class="stage-panel__port-mapping-arrow">→</span>
+              <span class="stage-panel__port-mapping-root">root:{outcome}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>

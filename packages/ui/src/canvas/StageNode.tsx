@@ -80,6 +80,14 @@ export function StageNode({ data }: NodeProps<StageFlowNode>) {
             Review Cycle
           </span>
         )}
+        {definitionKind === 'CompositeRef' && (
+          <span
+            class="stage-node__badge stage-node__badge--composite"
+            data-testid="stage-node-badge-composite"
+          >
+            Composite
+          </span>
+        )}
         {!editorSupported && definitionKind !== 'BoundedLoop' && (
           <span class="stage-node__unsupported" data-testid="stage-node-unsupported">
             Preserved · editing arrives in a later slice

@@ -1380,6 +1380,7 @@ export function PipelineCanvasPage() {
             key={selectedV2Node.id}
             node={selectedV2Node}
             catalog={catalog}
+            definition={draft?.version === 2 ? draft : null}
             fieldIssues={selectedV2NodeFieldIssues}
             onRename={renameSelectedV2Node}
             onPatch={(patch) => patchV2Node(selectedV2Node.id, patch)}
