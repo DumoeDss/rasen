@@ -409,6 +409,7 @@
   "pipelines.canvas.handoff.fraction_hint": "{minimum} より大きく {maximum} 以下の割合を入力してください。",
   "pipelines.canvas.handoff.remaining_hint": "残りトークンを {minimum} 以上で入力してください。",
 
+  "operations.aria": "オペレーション",
   "operations.title": "オペレーション",
   "operations.group_other": "その他の変更",
   "operations.pagination": "さらに Run があります — カーソル",

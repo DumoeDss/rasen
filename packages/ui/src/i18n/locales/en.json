@@ -409,6 +409,7 @@
   "pipelines.canvas.handoff.fraction_hint": "Enter a fraction greater than {minimum} and at most {maximum}.",
   "pipelines.canvas.handoff.remaining_hint": "Enter at least {minimum} remaining tokens.",
 
+  "operations.aria": "Operations",
   "operations.title": "Operations",
   "operations.group_other": "Other changes",
   "operations.pagination": "More Runs available — cursor",

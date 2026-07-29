@@ -409,6 +409,7 @@
   "pipelines.canvas.handoff.fraction_hint": "请输入大于 {minimum} 且不超过 {maximum} 的比例。",
   "pipelines.canvas.handoff.remaining_hint": "请输入至少 {minimum} 个剩余 token。",
 
+  "operations.aria": "运维",
   "operations.title": "运维",
   "operations.group_other": "其他变更",
   "operations.pagination": "还有更多 Run — 游标",

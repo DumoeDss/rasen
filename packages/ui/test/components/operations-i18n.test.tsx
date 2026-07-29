@@ -174,6 +174,17 @@ describe('Operations plane localization (ECP-5 4.2)', () => {
     expect(container.querySelector('.operations-section__title')!.textContent).toBe(
       translate('zh-cn', 'operations.title')
     );
+    // Accessibility attributes count as chrome: a hardcoded aria-label is
+    // invisible to a visual pass but is exactly what a screen-reader user
+    // hears, and the repo localizes aria-labels everywhere else.
+    expect(
+      container.querySelector('[data-testid="operations-section"]')!.getAttribute('aria-label')
+    ).toBe(translate('zh-cn', 'operations.aria'));
+    // The actor slot label is UI copy, so the tooltip that repeats it moves
+    // with the locale too — the span and its title must not disagree.
+    expect(
+      container.querySelector('[data-testid="ops-review-cycle-actor"]')!.getAttribute('title')
+    ).toContain(translate('zh-cn', 'operations.review_cycle.actor.fixer'));
     expect(text(container, 'ops-run-detail-close')).toBe(
       translate('zh-cn', 'operations.detail.close')
     );

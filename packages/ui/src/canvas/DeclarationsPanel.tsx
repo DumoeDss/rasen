@@ -80,10 +80,10 @@ export function DeclarationsPanel({
         <button
           type="button"
           data-testid="declaration-create"
-          // A blank id cannot be a declaration id; uniqueness is the model's
-          // call (`addDeclaration` throws) and is surfaced as a toast, not
-          // pre-judged here — one owner of the rule.
-          disabled={newId.trim().length === 0}
+          // Blankness and uniqueness are BOTH the model's call
+          // (`addDeclaration` throws for either) and are surfaced as toasts,
+          // exactly like the reference guard on delete. The panel pre-judges
+          // nothing — one owner per rule.
           onClick={() => {
             onCreate(newId.trim());
             setNewId('');

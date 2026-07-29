@@ -603,11 +603,20 @@ export function isDeclarationIdUnique(
 
 /**
  * Create a new CompositeDeclaration with provenance 'custom'.
+ *
+ * Both refusals live HERE, not in the panel: a declaration id must be
+ * non-blank and unique. The Canvas surfaces whatever this throws, so there is
+ * exactly one owner of "is this a legal declaration id" — a panel that
+ * pre-judged either rule would be a second implementation of it, which is the
+ * failure mode this slice exists to delete.
  */
 export function addDeclaration(
   def: WirePipelineDefinitionV2,
   id: string
 ): WirePipelineDefinitionV2 {
+  if (id.trim().length === 0) {
+    throw new Error('A declaration id cannot be blank.');
+  }
   if (!isDeclarationIdUnique(def, id)) {
     throw new Error(`Declaration id '${id}' already exists.`);
   }

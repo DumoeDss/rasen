@@ -560,6 +560,16 @@ describe('Composite declaration CRUD', () => {
     expect(() => addDeclaration(def, 'dup')).toThrow(/already exists/);
   });
 
+  it('rejects a blank declaration id in the MODEL, not just the panel', () => {
+    // The blank-id rule used to live only in `DeclarationsPanel`'s disabled
+    // state — the inverse of the one-owner discipline every other refusal in
+    // that panel follows. Any caller, not just the button, must be refused.
+    const def = emptyV2();
+    expect(() => addDeclaration(def, '')).toThrow(/cannot be blank/);
+    expect(() => addDeclaration(def, '   ')).toThrow(/cannot be blank/);
+    expect(def.declarations).toHaveLength(0);
+  });
+
   it('blocks deleting a referenced declaration', () => {
     let def = emptyV2();
     def = addDeclaration(def, 'used');

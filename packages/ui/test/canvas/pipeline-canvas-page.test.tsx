@@ -1445,6 +1445,30 @@ describe('PipelineCanvasPage — edit mode', () => {
     ).toBeNull();
   });
 
+  it('surfaces the model diagnostic for a blank declaration id', async () => {
+    // The panel used to refuse a blank id itself, via a `disabled` button —
+    // the only rule in `DeclarationsPanel` it owned rather than delegating.
+    // Now `addDeclaration` throws for blank exactly as it does for duplicate,
+    // and the panel surfaces both the same way.
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    const before = container.querySelectorAll('[data-testid="declaration-row"]').length;
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-new-id"]'),
+      '   ',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-create"]'));
+
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'cannot be blank'
+    );
+    expect(container.querySelectorAll('[data-testid="declaration-row"]')).toHaveLength(before);
+  });
+
   it('rejects a duplicate declaration id with the model diagnostic', async () => {
     vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
     vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);

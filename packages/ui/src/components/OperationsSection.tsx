@@ -454,7 +454,11 @@ function ReviewCycleSection({
                 data-actor-slot={slot}
                 data-actor-kind={actor.kind}
                 data-actor-identity={actor.identityDigest}
-                title={`${slot}: ${actor.identityDigest}`}
+                // The slot name here is UI copy, not a wire field (`lastActor`
+                // is displayed as "last"), so it follows the visible label
+                // rather than the untranslated-identifier rule — otherwise the
+                // tooltip and the span beside it disagree about one string.
+                title={`${actorSlotLabel(slot, t)}: ${actor.identityDigest}`}
               >
                 <span class="ops-run__review-cycle-actor-slot">
                   {actorSlotLabel(slot, t)}
@@ -1169,7 +1173,11 @@ export function OperationsSection({
   }
 
   return (
-    <section class="task-detail__operations" aria-label="Operations" data-testid="operations-section">
+    <section
+      class="task-detail__operations"
+      aria-label={t('operations.aria')}
+      data-testid="operations-section"
+    >
       <h3 class="operations-section__title">{t('operations.title')}</h3>
 
       {childGroups.map(([changeId, summaries]) => (
