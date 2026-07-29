@@ -205,7 +205,14 @@ rasen agent audit --run <runId>
 ## 9. 分阶段计划与验收
 
 **P0 — KC 探针（进行中，已外包）**
-`docs/experiments/session-cache-probe.md`。KC1a 任一非 HIT = kill：冻结 P1+，转评估 Agent SDK 宿主（v1 §4.3 对照表仍有效）。KC2/KC4 结果直接改写 §5/§7 的 cwd 校验与身份链设计。
+`docs/experiments/session-cache-probe.md`。KC2/KC4 结果直接改写 §5/§7 的 cwd 校验与身份链设计。
+
+> **P0 中期发现（2026-07-29，探针未收工）**：KC1a FAIL——`-p` 会话 12 分钟 HIT、30 分钟 MISS，写入全为 ephemeral_1h 计费档。交叉验证：同账号交互式会话当天 18.6–39.9 分钟 gap 全 HIT，4 天前审计的交互式 MAIN 36.5–58.3 分钟全 HIT。结论修正：
+> 1. **1h 是计费档 + 上限，不是留存保证**；无头会话的孤立条目实测留存落在 (12, 30) 分钟（二分定位中），交互会话明显更长（疑似客户端侧 warming ping）。
+> 2. **原 kill 路由「转评估 Agent SDK 宿主」作废**——缓存是服务端按前缀键控、宿主无关的，SDK streaming 会继承同样的留存行为。真正的杠杆是 §6.1 daemon touch 的 cadence：从 55 分钟改为「实测 T_eff − 余量」（预计 ~15 分钟级）。
+> 3. 死的是"55 分钟免费空闲"参数，不是架构；§6 经济模型待二分/KC1c 收工后按 T_eff 重算，MISS 惩罚不对称（2×C vs 1.25×C）会把路由阈值整体推向 subagent。
+> 4. KC2 已定：跨 cwd resume 硬报错 → registry 必须记录并校验 cwd。KC4 已定：session_id 恒定不换 → `sessionIdChain` 简化为单 id + 防御性链。KC5 已定：并发 resume 双方计费但一方回合被静默丢弃 → 单飞锁必须在 CLI 之上自行实现（已在 §5 设计内）。
+> 5. **排期解耦**：ECP-5 不等本层；本层在经济学重算为正后，再于 direction 校准排为 ECP-5 后切片。
 
 **P1 — SessionHost + registry + daemon touch scheduler（探针通过后；可与 ECP-4 后期并行的独立模块）**
 新模块（建议 `src/core/session-host/`）+ `rasen session exec|list|retire` CLI + daemon 内的 touch scheduler（§6.1 机械执行器）+ 单测。不碰 `change-run/`（只读契约类型），与 ECP-4 无文件冲突。
@@ -224,7 +231,7 @@ rasen agent audit --run <runId>
 
 | # | 风险/问题 | 处置 |
 |---|---|---|
-| R1 | KC1 不成立（resume 不 HIT） | P0 kill gate；SDK 宿主备胎 |
+| R1 | 无头会话实际留存远短于 1h 计费档（P0 已证实） | touch cadence 按实测 T_eff 定（§9 P0 中期发现）；SDK 宿主**不是**备胎（宿主无关）；经济学重算后可能收窄 session tier 的适用面 |
 | R2 | ECP-4 改动 agent action 契约形状 | §4/§6 接线与 schema 留白到契约冻结；P1 只依赖 `session.reuse` 语义存在 |
 | R3 | 每 worker 独立配额消耗、并行 session 上限 | P2 限 ≤2 个 session worker；registry 容量上限配置 |
 | R4 | Claude CLI 升级改变 `-p/--resume/stream-json` 行为 | 探针脚本可重跑作为回归；audit 有 format-drift 处理先例 |
