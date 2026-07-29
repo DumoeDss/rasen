@@ -107,9 +107,9 @@
 
 - [x] 13.1 Write test: `full-feature` v1 YAML normalizes to v2 with FanOut(6 members) + Join + BoundedLoop
 - [x] 13.2 Write test: lowered plan has correct topology (atomic + fan-out + members + join + bounded-loop + atomic)
-- [ ] 13.3 Run a real CLI `full-feature` Run: office-hours → propose → apply → FanOut → Join → review-loop → ship → retain → archive → completed
-- [ ] 13.4 Record dogfood evidence: revision, RunId, ActionIds for FanOut condition + members, Join resolution, parallel section projection
-- [ ] 13.5 Verify `pipeline status` during FanOut phase shows parallel/1 section with member frontier
+- [x] 13.3 Run a real CLI `full-feature` Run: office-hours → propose → apply → FanOut → Join → review-loop → ship → retain → archive → completed
+- [x] 13.4 Record dogfood evidence: revision, RunId, ActionIds for FanOut condition + members, Join resolution, parallel section projection
+- [x] 13.5 Verify `pipeline status` during FanOut phase shows parallel/1 section with member frontier
 
 ## 14. Regression and Cross-Platform Verification
 
