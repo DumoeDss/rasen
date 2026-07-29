@@ -7,13 +7,19 @@ import type {
   ChoiceViewSection,
   ParallelViewSection,
   ReconcilerRunSummary,
+  ReviewCycleViewSection,
   RunControlRequestBody,
   RunsResponse,
   TerminalView,
   UiControlCommand,
   WaitView,
 } from '../api/types.js';
-import { getChoiceSection, getParallelSection, getRootDagSection } from '../api/types.js';
+import {
+  getChoiceSection,
+  getParallelSection,
+  getReviewCycleSection,
+  getRootDagSection,
+} from '../api/types.js';
 
 /**
  * Operations section for Task detail (design.md §14 of `ecp-run-spine`).
@@ -249,6 +255,124 @@ function ChoiceSection({ section }: { section: ChoiceViewSection }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** One projected ReviewCycle actor slot (fixer / verifier / last actor). */
+type ReviewCycleActor = NonNullable<ReviewCycleViewSection['actors']['fixer']>;
+
+/**
+ * Renders the server-projected `review-cycle/1` section: the bounded loop's
+ * round against its cap, the phase the kernel expects next, the terminal
+ * outcome when the loop reached one, every finding with the severity and
+ * status the kernel holds, the bound actors, and the projected wait reason.
+ *
+ * This is the Operations plane of ECP-1's cross-plane promise — the CLI
+ * (`pipeline status`) and the Management API already render the SAME section
+ * from the SAME projector, and this component closes the third plane.
+ *
+ * Nothing here is re-derived. In particular the UI does NOT decide whether the
+ * cycle is clean by inspecting findings, does not count rounds from the
+ * findings or actors, and does not infer "waiting" from the phase: the round
+ * cap, the clean/exhausted determination, the author-≠-verifier rule and the
+ * wait reason are all kernel judgements carried on the section. A UI that
+ * recomputed any of them would be a second owner of mechanical progression —
+ * exactly what this slice exists to delete.
+ */
+function ReviewCycleSection({ section }: { section: ReviewCycleViewSection }) {
+  const loop = shortId(section.loopPath, 32);
+  const actors: readonly [string, ReviewCycleActor][] = (
+    [
+      ['fixer', section.actors.fixer],
+      ['verifier', section.actors.verifier],
+      ['last', section.actors.lastActor],
+    ] as [string, ReviewCycleActor | undefined][]
+  ).flatMap(([slot, actor]) => (actor === undefined ? [] : [[slot, actor] as [string, ReviewCycleActor]]));
+
+  return (
+    <div
+      class="ops-run__review-cycle"
+      data-testid="ops-run-review-cycle"
+      data-phase={section.phase}
+      data-outcome={section.outcome}
+    >
+      <span class="ops-run__section-label">
+        Review cycle ({section.findings.length} finding
+        {section.findings.length === 1 ? '' : 's'})
+      </span>
+      <dl class="ops-run__review-cycle-meta">
+        <dt>Loop</dt>
+        <dd title={section.loopPath} data-testid="ops-review-cycle-loop">
+          {loop.label}
+        </dd>
+        <dt>Round</dt>
+        {/* The projected round against the projected cap — the bounded-loop
+            reducer owns both; the UI never counts rounds itself. */}
+        <dd data-testid="ops-review-cycle-round">
+          {section.round}/{section.maxRounds}
+        </dd>
+        <dt>Phase</dt>
+        <dd data-testid="ops-review-cycle-phase">{section.phase}</dd>
+        <dt>Outcome</dt>
+        {/* Absent outcome means the loop has not terminated. It is NOT derived
+            from the findings — the kernel's ship guard is the only authority
+            on whether a cycle may be called clean. */}
+        <dd data-testid="ops-review-cycle-outcome">{section.outcome ?? 'in progress'}</dd>
+        {section.waitReason !== undefined && (
+          <>
+            <dt>Wait</dt>
+            <dd data-testid="ops-review-cycle-wait">{section.waitReason}</dd>
+          </>
+        )}
+      </dl>
+
+      {section.findings.length > 0 && (
+        <ul class="ops-run__review-cycle-findings">
+          {section.findings.map((finding) => (
+            <li
+              key={finding.id}
+              class={`ops-run__review-cycle-finding ops-run__review-cycle-finding--${finding.status}`}
+              data-testid="ops-review-cycle-finding"
+              data-finding-id={finding.id}
+              data-severity={finding.severity}
+              data-status={finding.status}
+              title={finding.location ?? finding.id}
+            >
+              <span class="ops-run__review-cycle-finding-id">{finding.id}</span>
+              <span class="ops-run__review-cycle-finding-severity">{finding.severity}</span>
+              <span class="ops-run__review-cycle-finding-status">{finding.status}</span>
+              <span class="ops-run__review-cycle-finding-claim">{finding.claim}</span>
+              {finding.location !== undefined && (
+                <span class="ops-run__review-cycle-finding-location">{finding.location}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {actors.length > 0 && (
+        <ul class="ops-run__review-cycle-actors" data-testid="ops-review-cycle-actors">
+          {actors.map(([slot, actor]) => {
+            const identity = shortId(actor.identityDigest, 16);
+            return (
+              <li
+                key={slot}
+                class={`ops-run__review-cycle-actor ops-run__review-cycle-actor--${slot}`}
+                data-testid="ops-review-cycle-actor"
+                data-actor-slot={slot}
+                data-actor-kind={actor.kind}
+                data-actor-identity={actor.identityDigest}
+                title={`${slot}: ${actor.identityDigest}`}
+              >
+                <span class="ops-run__review-cycle-actor-slot">{slot}</span>
+                <span class="ops-run__review-cycle-actor-kind">{actor.kind}</span>
+                <span class="ops-run__review-cycle-actor-identity">{identity.label}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
@@ -574,6 +698,7 @@ function RunDetailBody({
   onViewReplaced: (view: ChangeRunView) => void;
 }) {
   const root = getRootDagSection(view);
+  const reviewCycle = getReviewCycleSection(view);
   const parallel = getParallelSection(view);
   const choice = getChoiceSection(view);
   const isOther = view.workspace.scope === 'other';
@@ -695,9 +820,11 @@ function RunDetailBody({
       {/* Terminal — only on terminal Runs (mutually exclusive with actions/waits). */}
       {root.terminal && <TerminalReason terminal={root.terminal} />}
 
-      {/* parallel/1 and choice/1 — additive sections the server projects only
-          when the Run's plan carries a FanOut or a Choice node (ECP-4). Absent
-          sections render nothing, exactly like an empty frontier. */}
+      {/* review-cycle/1, parallel/1 and choice/1 — additive sections the server
+          projects only when the Run's plan carries a review-cycle BoundedLoop
+          (ECP-1), a FanOut or a Choice node (ECP-4). Absent sections render
+          nothing, exactly like an empty frontier. */}
+      {reviewCycle && <ReviewCycleSection section={reviewCycle} />}
       {parallel && <ParallelSection section={parallel} />}
       {choice && <ChoiceSection section={choice} />}
 

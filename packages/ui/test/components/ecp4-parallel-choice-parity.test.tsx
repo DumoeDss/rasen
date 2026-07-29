@@ -10,33 +10,17 @@
  * plane — Operations — is asserted here, against the SAME fixture, by
  * rendering the REAL `OperationsSection` component and reading its DOM.
  *
- * PROVENANCE of the canonical section constants below. They are the verbatim
- * `projectRunView(record, 'active', plan)` output for the fixtures that the
- * node-side test builds, not values invented for this file:
+ * PROVENANCE of the canonical section constants (ECP-5 task 4.3). They used to
+ * be hand-copied into this file, which made the parity relation circular: the
+ * only thing pinning them to reality was a reviewer probe that duplicated them
+ * a third time. They now live in ONE data module,
+ * `../fixtures/canonical-sections.js`, and the node-side
+ * `test/core/change-run/ui-constants-provenance.test.ts` deep-equals every one
+ * of them against the REAL projector's output for its documented fixture. So
+ * these constants are the kernel's answer, and this file asserts the DOM
+ * against the kernel rather than against another copy of itself.
  *
- *   parallel — `parallelPlan()` (FanOut `root:experts`, concurrencyCap 2,
- *     budget 3, members review/required/always, cso/optional/security-relevant,
- *     benchmark/optional/performance-sensitive; Join `root:experts-join`) with
- *     the fan-out condition committed
- *     `{ activeMembers: [review, cso], inactiveMembers: [benchmark] }` and
- *     `root:experts/review` committed succeeded. This is exactly the Record of
- *     the node-side test "CLI and management API see the same parallel/1
- *     section as the pure projection".
- *
- *   parallelFailed — the same plan with `root:experts/review` committed FAILED
- *     and `root:experts/cso` committed succeeded; the node-side unit test
- *     "reports joinState=failed and names the required member as a key blocker"
- *     asserts this state's joinState/failedCount/keyBlockers.
- *
- *   choice — `choicePlan()` (Choice `root:pick`, outcomes simple|complex) with
- *     `root:pick` committed `{ outcome: 'simple' }`. This is the Record of the
- *     node-side test "CLI and management API see the same choice/1 section as
- *     the pure projection".
- *
- *   choiceUndecided — the same plan with nothing committed; note `outcome` is
- *     ABSENT (the projector emits `undefined`, which JSON drops on the wire).
- *
- * The assertions below drive the DOM from these objects rather than from
+ * The assertions below drive the DOM from those objects rather than from
  * re-typed literals, so the UI cannot silently disagree with the fixture: if
  * the component renders a status/count/branch flag it computed itself instead
  * of the projected one, the comparison fails.
@@ -55,6 +39,12 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
 
 import { OperationsSection } from '../../src/components/OperationsSection.js';
 import * as client from '../../src/api/client.js';
+import {
+  CANONICAL_CHOICE,
+  CANONICAL_CHOICE_UNDECIDED,
+  CANONICAL_PARALLEL,
+  CANONICAL_PARALLEL_FAILED,
+} from '../fixtures/canonical-sections.js';
 import type {
   ChangeRunView,
   ChangeRunViewSection,
@@ -70,84 +60,6 @@ const CANONICAL_PLANNING_SPACE = 'planning-space:' + '1'.repeat(64);
 const CANONICAL_WORKSPACE_INSTANCE = 'workspace-instance:' + '3'.repeat(64);
 const CANONICAL_CHANGE_INSTANCE = 'change-instance:' + '2'.repeat(64);
 const CANONICAL_WORKSPACE_DIGEST = 'sha256:' + 'c'.repeat(64);
-
-/** Fan-out condition committed, required member succeeded → join proceeding. */
-const CANONICAL_PARALLEL: ParallelViewSection = {
-  kind: 'parallel',
-  version: 1,
-  fanOutPath: 'root:experts',
-  joinPath: 'root:experts-join',
-  members: [
-    { path: 'root:experts/review', status: 'succeeded', required: true, condition: 'always' },
-    { path: 'root:experts/cso', status: 'ready', required: false, condition: 'security-relevant' },
-    {
-      path: 'root:experts/benchmark',
-      status: 'suppressed',
-      required: false,
-      condition: 'performance-sensitive',
-    },
-  ],
-  joinState: 'proceeding',
-  concurrencyCap: 2,
-  budget: { used: 1, max: 3 },
-  activeCount: 1,
-  succeededCount: 1,
-  failedCount: 0,
-  keyBlockers: [],
-};
-
-/** Required member committed FAILED → join failed, with a named key blocker. */
-const CANONICAL_PARALLEL_FAILED: ParallelViewSection = {
-  kind: 'parallel',
-  version: 1,
-  fanOutPath: 'root:experts',
-  joinPath: 'root:experts-join',
-  members: [
-    { path: 'root:experts/review', status: 'failed', required: true, condition: 'always' },
-    {
-      path: 'root:experts/cso',
-      status: 'succeeded',
-      required: false,
-      condition: 'security-relevant',
-    },
-    {
-      path: 'root:experts/benchmark',
-      status: 'suppressed',
-      required: false,
-      condition: 'performance-sensitive',
-    },
-  ],
-  joinState: 'failed',
-  concurrencyCap: 2,
-  budget: { used: 2, max: 3 },
-  activeCount: 0,
-  succeededCount: 1,
-  failedCount: 1,
-  keyBlockers: ["required member 'root:experts/review' failed"],
-};
-
-/** Choice committed `simple` → exactly that branch active. */
-const CANONICAL_CHOICE: ChoiceViewSection = {
-  kind: 'choice',
-  version: 1,
-  choicePath: 'root:pick',
-  outcome: 'simple',
-  branches: [
-    { outcome: 'simple', path: 'root:simple-path', active: true },
-    { outcome: 'complex', path: 'root:complex-path', active: false },
-  ],
-};
-
-/** Nothing committed → `outcome` absent on the wire, no branch active. */
-const CANONICAL_CHOICE_UNDECIDED: ChoiceViewSection = {
-  kind: 'choice',
-  version: 1,
-  choicePath: 'root:pick',
-  branches: [
-    { outcome: 'simple', path: 'root:simple-path', active: false },
-    { outcome: 'complex', path: 'root:complex-path', active: false },
-  ],
-};
 
 /**
  * The root-dag/1 section the projector always emits alongside the additive
