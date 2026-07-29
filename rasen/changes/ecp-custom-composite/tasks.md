@@ -103,15 +103,15 @@
 
 ## 14. Real dogfood
 
-- [ ] 14.1 Author a non-built-in Custom Composite in the Canvas (or construct programmatically): a declaration with 2-3 AtomicStage body stages referencing real capabilities, referenced from root via CompositeRef
-- [ ] 14.2 Run the custom composite against a real Change via the reconciler; record success path (all stages complete → Run completes)
-- [ ] 14.3 Record failure path (one body stage fails → Run does not reach completed terminal)
-- [ ] 14.4 Record recovery path (interrupt mid-body-stage → resume → completes from correct point)
-- [ ] 14.5 Capture evidence: revision, RunId, ActionId, actor, evidence refs for all three paths
+- [x] 14.1 Author a non-built-in Custom Composite in the Canvas (or construct programmatically): a declaration with 2-3 AtomicStage body stages referencing real capabilities, referenced from root via CompositeRef
+- [x] 14.2 Run the custom composite against a real Change via the reconciler; record success path (all stages complete → Run completes)
+- [x] 14.3 Record failure path (one body stage fails → Run does not reach completed terminal)
+- [x] 14.4 Record recovery path (interrupt mid-body-stage → resume → completes from correct point)
+- [x] 14.5 Capture evidence: revision, RunId, ActionId, actor, evidence refs for all three paths
 
 ## 15. Full suite and type safety
 
-- [ ] 15.1 Run `pnpm tsc --noEmit` — zero errors
-- [ ] 15.2 Run full test suite — all existing tests green (ECP-1 regression)
-- [ ] 15.3 Run `pnpm build` — build succeeds
-- [ ] 15.4 Verify CLI reads `dist/` for dogfood (build before CLI tests)
+- [x] 15.1 Run `pnpm tsc --noEmit` — zero errors
+- [x] 15.2 Run full test suite — all existing tests green (ECP-1 regression)
+- [x] 15.3 Run `pnpm build` — build succeeds
+- [x] 15.4 Verify CLI reads `dist/` for dogfood (build before CLI tests)
