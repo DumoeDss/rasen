@@ -10,7 +10,7 @@ import {
   analyzeReconcilerSupport,
   createRuntimeExecutionProfile,
 } from '../../../src/core/pipeline-registry/execution-plan-internal.js';
-import { lowerRuntimePlan } from '../../../src/core/change-run/internal/lowerer.js';
+import { lowerRuntimePlan, lowerRuntimePlanInput } from '../../../src/core/change-run/internal/lowerer.js';
 import { reconcile } from '../../../src/core/change-run/internal/reconciler.js';
 import {
   createCanonicalRunRecord,
@@ -754,5 +754,295 @@ describe('runtime plan lowerer (3.2)', () => {
     // Reconciler accepts the plan.
     const result = reconcile(plan, startRecord(plan));
     expect(result.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ECP-4: Choice/FanOut/Join lowerer tests (M1 — would have caught B1)
+// These tests exercise the FULL normalizer→lowerer→createRuntimePlan path
+// with v1 parallelGroup stages, proving no duplicate hierarchicalPaths.
+// ---------------------------------------------------------------------------
+
+const PARALLEL_FEATURE = {
+  version: 1,
+  name: 'parallel-test',
+  description: 'fixture with parallelGroup for lowerer tests',
+  stages: [
+    { id: 'prepare', skill: 'rasen-propose', role: 'planner', requires: [], gate: true },
+    { id: 'execute', skill: 'rasen-apply-change', role: 'implementer', requires: ['prepare'], gate: true },
+    // Parallel group members (all require 'execute')
+    {
+      id: 'review', skill: 'rasen-review', role: 'reviewer', requires: ['execute'],
+      parallelGroup: 'experts', condition: 'always',
+    },
+    {
+      id: 'security', skill: 'rasen-cso', role: 'reviewer', requires: ['execute'],
+      parallelGroup: 'experts', condition: 'security-relevant',
+    },
+    {
+      id: 'performance', skill: 'rasen-benchmark', role: 'reviewer', requires: ['execute'],
+      parallelGroup: 'experts', condition: 'performance-sensitive',
+    },
+    // Review cycle after parallel (forces v2 lowerer routing)
+    {
+      id: 'review-loop', skill: 'rasen-review-cycle', role: 'fixer',
+      requires: ['review', 'security', 'performance'],
+      loop: { kind: 'review-cycle' as const, maxRounds: 3 },
+    },
+    // Ship
+    {
+      id: 'ship', skill: 'rasen-ship', role: 'shipper',
+      requires: ['review-loop'], gate: true, model: 'sonnet',
+    },
+  ],
+} as const;
+
+/**
+ * Build a v2-compatible execution profile for the parallel-test pipeline.
+ * Handles root AtomicStages (including FanOut members), FanOut/Join nodes,
+ * and the ReviewCycle BoundedLoop body phases.
+ */
+function parallelV2Profile(prepared: PreparedDefinition) {
+  const reviewSkill = 'rasen-review';
+  const rootStages = (prepared.definition.root.nodes)
+    .filter((n): n is typeof n & { kind: 'AtomicStage' } => n.kind === 'AtomicStage');
+  const bodyDecl = prepared.definition.declarations.find(
+    (d) => d.id === 'review-cycle-body:review-loop'
+  );
+  const bodyPhases = bodyDecl
+    ? bodyDecl.graph.nodes.filter((n): n is typeof n & { kind: 'AtomicStage' } => n.kind === 'AtomicStage')
+    : [];
+
+  const allPaths = [
+    ...rootStages.map((n) => `root:${n.id}`),
+    ...bodyPhases.map((n) => `declaration:${bodyDecl!.id}/node:${n.id}`),
+  ];
+
+  const gateFor = (path: string): boolean => {
+    const node = rootStages.find((n) => `root:${n.id}` === path);
+    if (!node) return false;
+    const legacyStageId = (node as { legacyStageId?: string }).legacyStageId;
+    return PARALLEL_FEATURE.stages.find((s) => s.id === legacyStageId)?.gate ?? false;
+  };
+
+  const accessFor = (path: string): 'read' | 'write' => {
+    if (path.includes('declaration:')) {
+      return path.includes(':fix') ? 'write' : 'read';
+    }
+    const node = rootStages.find((n) => `root:${n.id}` === path);
+    const legacyStageId = (node as { legacyStageId?: string })?.legacyStageId;
+    const stageDef = PARALLEL_FEATURE.stages.find((s) => s.id === legacyStageId);
+    return stageDef?.role === 'reviewer' ? 'read' : 'write';
+  };
+
+  const skillFor = (path: string): string => {
+    if (path.includes('declaration:')) return reviewSkill;
+    const node = rootStages.find((n) => `root:${n.id}` === path);
+    const legacyStageId = (node as { legacyStageId?: string })?.legacyStageId;
+    return PARALLEL_FEATURE.stages.find((s) => s.id === legacyStageId)?.skill ?? 'default';
+  };
+
+  const roleFor = (path: string): string => {
+    if (path.includes('declaration:')) {
+      return path.includes(':fix') ? 'implementer' : 'reviewer';
+    }
+    const node = rootStages.find((n) => `root:${n.id}` === path);
+    const legacyStageId = (node as { legacyStageId?: string })?.legacyStageId;
+    return PARALLEL_FEATURE.stages.find((s) => s.id === legacyStageId)?.role ?? 'implementer';
+  };
+
+  return createRuntimeExecutionProfile({
+    sourceRevision: {
+      layer: 'package',
+      kind: 'pipeline-yaml',
+      sourceId: 'package:parallel-test',
+      authoredContentDigest: `sha256:${'1'.repeat(64)}`,
+      semanticDigest: `sha256:${'2'.repeat(64)}`,
+    },
+    capabilities: allPaths.map((path) => {
+      const skill = skillFor(path);
+      return {
+        nodeId: path,
+        authoredCapability: { id: `skill:${skill}`, version: 'legacy' },
+        contract: { id: skill, version: '1', digest: `sha256:${'3'.repeat(64)}` },
+        actionKind: 'agent' as const,
+        resultContract: { id: `${skill}-result`, version: '1', digest: `sha256:${'4'.repeat(64)}` },
+        evidenceContract: { id: `${skill}-evidence`, version: '1', digest: `sha256:${'5'.repeat(64)}` },
+        recovery: 'suspend-if-ambiguous' as const,
+        workspace: { access: accessFor(path), resources: ['worktree'] },
+        effects: [{
+          slot: 'workspace', kind: 'workspace' as const,
+          resource: 'worktree', recovery: 'suspend-if-ambiguous' as const,
+        }],
+        adapter: { id: `adapter:${skill}`, version: '1', contentDigest: `sha256:${'6'.repeat(64)}` },
+      };
+    }),
+    policy: {
+      format: 'effective-run-policy/1',
+      maxAttempts: 3,
+      maxActions: 64,
+      stages: allPaths.map((path) => ({
+        nodeId: path,
+        role: roleFor(path),
+        model: 'default',
+        effort: 'default',
+        runtime: 'codex',
+        sandbox: accessFor(path) === 'read' ? 'read-only' as const : 'workspace-write' as const,
+        gate: gateFor(path),
+        sessionReuse: 'never' as const,
+        handoffTokenLimit: 10_000,
+        reuseRoundLimit: 1,
+        provenance: {
+          role: 'stage', model: 'default', effort: 'default', runtime: 'stage',
+          sandbox: 'stage', gate: 'stage', sessionReuse: 'default',
+          handoffTokenLimit: 'default', reuseRoundLimit: 'default',
+        },
+      })),
+    },
+  });
+}
+
+describe('ECP-4 lowerer: FanOut/Join lowering via normalizer (M1)', () => {
+  // Use lowerRuntimePlanInput (not lowerRuntimePlan) for topology checks:
+  // RuntimePlanInput keeps string requires and fanOutTag; createRuntimePlan
+  // transforms them to NodeId and fanOut.
+  function lowerInput(prepared: PreparedDefinition) {
+    return lowerRuntimePlanInput(prepared, parallelV2Profile(prepared), runId);
+  }
+
+  it('v1 parallelGroup normalizes+lowers with NO duplicate hierarchical paths (B1 regression)', () => {
+    const prepared = prepare(PARALLEL_FEATURE);
+    // Before B1 fix, this would throw:
+    //   "Node hierarchical path 'root:stage:review' is declared more than once."
+    const input = lowerInput(prepared);
+
+    // Verify NO duplicate hierarchical paths
+    const paths = input.nodes.map((n) => n.hierarchicalPath);
+    expect(new Set(paths).size).toBe(paths.length);
+  });
+
+  it('FanOut members lowered with member paths and fanOutTag, not as standalone atomics', () => {
+    const prepared = prepare(PARALLEL_FEATURE);
+    const input = lowerInput(prepared);
+
+    // The plan input should have:
+    // - 3 standalone root atomics: prepare, execute, ship
+    // - 1 bounded-loop: review-loop
+    // - 1 fan-out node: fanout:experts
+    // - 3 fanOut member atomics: review, security, performance (with fanOutTag)
+    // - 1 join node: join:experts-join
+    const atomicNodes = input.nodes.filter((n) => n.kind === 'atomic');
+    const fanOutNodes = input.nodes.filter((n) => n.kind === 'fan-out');
+    const joinNodes = input.nodes.filter((n) => n.kind === 'join');
+    const loopNodes = input.nodes.filter((n) => n.kind === 'bounded-loop');
+
+    // Standalone atomics (NOT FanOut members — no fanOutTag)
+    const standalone = atomicNodes.filter((n) => n.fanOutTag === undefined);
+    expect(standalone.map((n) => n.hierarchicalPath).sort()).toEqual([
+      'root:stage:execute',
+      'root:stage:prepare',
+      'root:stage:ship',
+    ]);
+
+    // FanOut members (WITH fanOutTag)
+    const memberAtomics = atomicNodes.filter((n) => n.fanOutTag !== undefined);
+    expect(memberAtomics.map((n) => n.hierarchicalPath).sort()).toEqual([
+      'root:stage:performance',
+      'root:stage:review',
+      'root:stage:security',
+    ]);
+    // Each member should have fanOutTag pointing to the FanOut node
+    for (const member of memberAtomics) {
+      expect(member.fanOutTag).toBeDefined();
+      expect(member.fanOutTag!.nodeId).toBe('root:fanout:experts');
+    }
+
+    // Exactly one FanOut and one Join
+    expect(fanOutNodes).toHaveLength(1);
+    expect(fanOutNodes[0]!.hierarchicalPath).toBe('root:fanout:experts');
+    expect(joinNodes).toHaveLength(1);
+    expect(joinNodes[0]!.hierarchicalPath).toBe('root:join:experts-join');
+
+    // One bounded-loop (review-loop)
+    expect(loopNodes).toHaveLength(1);
+    expect(loopNodes[0]!.hierarchicalPath).toBe('root:stage:review-loop');
+  });
+
+  it('FanOut node requires the upstream stage, Join requires the members', () => {
+    const prepared = prepare(PARALLEL_FEATURE);
+    const input = lowerInput(prepared);
+
+    const fanOut = input.nodes.find((n) => n.kind === 'fan-out')!;
+    // FanOut requires the upstream stage (all members required 'execute')
+    expect(fanOut.requires).toContain('root:stage:execute');
+
+    const join = input.nodes.find((n) => n.kind === 'join')!;
+    // Join requires the member paths
+    expect([...join.requires].sort()).toEqual([
+      'root:stage:performance',
+      'root:stage:review',
+      'root:stage:security',
+    ]);
+    // Join node has correct required/optional member split
+    // review has condition: 'always' → required
+    // security has condition: 'security-relevant' → optional
+    // performance has condition: 'performance-sensitive' → optional
+    expect(join.join!.requiredMembers).toEqual(['root:stage:review']);
+    expect([...join.join!.optionalMembers].sort()).toEqual([
+      'root:stage:performance',
+      'root:stage:security',
+    ]);
+  });
+
+  it('post-parallel review-loop requires the Join node, not individual members', () => {
+    const prepared = prepare(PARALLEL_FEATURE);
+    const input = lowerInput(prepared);
+
+    const reviewLoop = input.nodes.find(
+      (n) => n.kind === 'bounded-loop' && n.hierarchicalPath === 'root:stage:review-loop'
+    );
+    expect(reviewLoop).toBeDefined();
+    // review-loop should require the Join, not individual group members
+    expect(reviewLoop!.requires).toContain('root:join:experts-join');
+    // Should NOT require individual members
+    expect(reviewLoop!.requires).not.toContain('root:stage:review');
+    expect(reviewLoop!.requires).not.toContain('root:stage:security');
+    expect(reviewLoop!.requires).not.toContain('root:stage:performance');
+  });
+
+  it('reconciler accepts the lowered plan and starts from the prepare Gate', () => {
+    const prepared = prepare(PARALLEL_FEATURE);
+    const profile = parallelV2Profile(prepared);
+    // lowerRuntimePlan calls createRuntimePlan — exercises the FULL path
+    const plan = lowerRuntimePlan(prepared, profile, runId);
+
+    const result = reconcile(plan, startRecord(plan));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The first action should be an await-gate on root:stage:prepare
+    expect(result.actions).toEqual([
+      expect.objectContaining({
+        kind: 'await-gate',
+        gateId: 'stage:prepare-gate',
+      }),
+    ]);
+  });
+
+  it('normalizer deduplicates upstream→FanOut connections (m1)', () => {
+    const prepared = prepare(PARALLEL_FEATURE);
+    // All 3 group members require 'execute'. The normalizer should produce
+    // exactly ONE connection from stage:execute to fanout:experts (not 3).
+    const fanOutIncoming = prepared.definition.root.connections.filter(
+      (c) => c.to.node === 'fanout:experts' && c.from.node === 'stage:execute'
+    );
+    expect(fanOutIncoming).toHaveLength(1);
+
+    // review-loop requires 3 group members, but all map to the same Join.
+    // There should be exactly ONE connection from join:experts-join to
+    // stage:review-loop (not 3).
+    const joinToReviewLoop = prepared.definition.root.connections.filter(
+      (c) => c.from.node === 'join:experts-join' && c.to.node === 'stage:review-loop'
+    );
+    expect(joinToReviewLoop).toHaveLength(1);
   });
 });
