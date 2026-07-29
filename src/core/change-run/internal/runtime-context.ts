@@ -61,6 +61,51 @@ const DEFAULT_LIMITS: CanonicalRecordLimits = Object.freeze({
 });
 
 /**
+ * The number of Actions a plan needs to reach its terminal outcome, in the
+ * worst case: one per admittable node, plus `maxIterations x phases` for each
+ * bounded loop. Join nodes are never admitted (the Join pass derives its state
+ * from committed member results) and Finish is not an Action.
+ */
+function expectedActionCount(plan: RuntimePlan): number {
+  let expected = 0;
+  for (const node of plan.nodes) {
+    if (node.kind === 'join' || node.kind === 'finish') continue;
+    if (node.kind !== 'bounded-loop') {
+      expected += 1;
+      continue;
+    }
+    const bodySize =
+      node.body.kind === 'composite'
+        ? node.body.stages.length
+        : node.body.phases.length;
+    expected += node.maxIterations * Math.max(1, bodySize);
+  }
+  return expected;
+}
+
+/**
+ * Size the sealed Record limits to the plan.
+ *
+ * `counters.attempts` is a RUN-WIDE count of distinct attemptIds, so a fixed
+ * `maxAttempts: 12` caps the whole Run at 12 Actions regardless of
+ * `maxActions`. `full-feature` needs 17 (3 lead-in + fan-out condition + 6
+ * members + 4 review-cycle phases + ship/retain/archive), so under the flat
+ * default it escalated with `execution_budget_exhausted` mid review-cycle —
+ * a Run that can never complete. Deriving the ceiling from the plan (with 2x
+ * headroom for retries) keeps the guardrail meaningful for small pipelines
+ * while letting large ones finish. Limits only ever grow relative to the
+ * flat defaults; they are never lowered.
+ */
+function deriveLimits(plan: RuntimePlan): CanonicalRecordLimits {
+  const headroom = expectedActionCount(plan) * 2;
+  return Object.freeze({
+    ...DEFAULT_LIMITS,
+    maxAttempts: Math.max(DEFAULT_LIMITS.maxAttempts, headroom),
+    maxActions: Math.max(DEFAULT_LIMITS.maxActions, headroom),
+  });
+}
+
+/**
  * Assemble the runtime context the CLI/management entry points drive (task
  * 10.2 launch wiring). Lowers the prepared Definition+Profile into the
  * reconciler's RuntimePlan, observes the live workspace, constructs the
@@ -93,7 +138,7 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
     executionProfileDigest: plan.profileDigest,
     initialWorkspaceRevision: workspaceRevision,
     inputs: (input.inputs ?? {}) as Readonly<Record<string, JsonValue>>,
-    limits: input.limits ?? DEFAULT_LIMITS,
+    limits: input.limits ?? deriveLimits(plan),
   });
 
   const store = createFilesystemRunStore(input.storeRoot);
