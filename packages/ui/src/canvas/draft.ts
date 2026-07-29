@@ -161,37 +161,38 @@ export function renameStage<T extends WirePipelineDefinition>(
 
 /** Forward adjacency over `requires`: node -> the stages that require it. */
 function buildAdjacency(def: WirePipelineDefinition): Map<string, string[]> {
+  if (!isV1Definition(def)) return connectionAdjacency(def.root.connections);
   const adjacency = new Map<string, string[]>();
-  if (isV1Definition(def)) {
-    for (const stage of def.stages) {
-      for (const req of stage.requires) {
-        const arr = adjacency.get(req) ?? [];
-        arr.push(stage.id);
-        adjacency.set(req, arr);
-      }
-    }
-  } else {
-    for (const connection of def.root.connections) {
-      const arr = adjacency.get(connection.from.node) ?? [];
-      arr.push(connection.to.node);
-      adjacency.set(connection.from.node, arr);
+  for (const stage of def.stages) {
+    for (const req of stage.requires) {
+      const arr = adjacency.get(req) ?? [];
+      arr.push(stage.id);
+      adjacency.set(req, arr);
     }
   }
   return adjacency;
 }
 
 /**
- * Whether connecting `from -> to` (i.e. `to` requiring `from`) would close a
- * dependency cycle, checked by reachability: if `to` can already reach `from`
- * via existing `requires` edges, adding the new edge closes a loop. Same
- * algorithm as the React Flow demo (`rasen/office-hours/canvas-demos/
- * react-flow/src/App.jsx`) parameterized over the draft's `requires` graph
- * instead of raw edges. A convenience client-side fast-path only — the
- * server's dry-run validation remains authoritative.
+ * THE cycle rule, over a bare forward-adjacency map: would adding `from -> to`
+ * close a loop? True when `to` can already reach `from`.
+ *
+ * This is the one implementation. `wouldCreateCycle` (v1 `requires` and v2
+ * root connections) and {@link bodyWouldCreateCycle} (a declaration's body
+ * graph) both delegate here, because `executable-custom-composite` does not
+ * merely ask for a cycle check on body connections — it requires that "Body
+ * connections SHALL be validated against the SAME DAG-cycle rules as root
+ * connections". A second copy would satisfy the words and break the sentence.
+ *
+ * A convenience client-side fast-path only — the server's dry-run validation
+ * remains authoritative (it emits the `GRAPH_CYCLE` diagnostic).
  */
-export function wouldCreateCycle(def: WirePipelineDefinition, from: string, to: string): boolean {
+function reachesThrough(
+  adjacency: ReadonlyMap<string, readonly string[]>,
+  from: string,
+  to: string
+): boolean {
   if (from === to) return true;
-  const adjacency = buildAdjacency(def);
   const stack: string[] = [to];
   const visited = new Set<string>();
   while (stack.length > 0) {
@@ -202,6 +203,48 @@ export function wouldCreateCycle(def: WirePipelineDefinition, from: string, to: 
     stack.push(...(adjacency.get(node) ?? []));
   }
   return false;
+}
+
+/** Forward adjacency over a typed connection list (root or declaration body). */
+function connectionAdjacency(
+  connections: readonly { from: { node: string }; to: { node: string } }[]
+): Map<string, string[]> {
+  const adjacency = new Map<string, string[]>();
+  for (const connection of connections) {
+    const arr = adjacency.get(connection.from.node) ?? [];
+    arr.push(connection.to.node);
+    adjacency.set(connection.from.node, arr);
+  }
+  return adjacency;
+}
+
+/**
+ * Whether connecting `from -> to` (i.e. `to` requiring `from`) would close a
+ * dependency cycle in the ROOT graph, checked by reachability over the draft's
+ * `requires` (v1) or typed connection (v2) edges.
+ */
+export function wouldCreateCycle(def: WirePipelineDefinition, from: string, to: string): boolean {
+  return reachesThrough(buildAdjacency(def), from, to);
+}
+
+/**
+ * The same rule applied to ONE declaration's body graph. Scoped deliberately:
+ * a body cycle is a property of that declaration's own connections, never of
+ * the root graph and never of a sibling declaration's — pooling them would
+ * refuse legal edges and is exactly what the cross-declaration probe pins.
+ */
+export function bodyWouldCreateCycle(
+  def: WirePipelineDefinitionV2,
+  declarationId: string,
+  from: string,
+  to: string
+): boolean {
+  const declaration = (def.declarations ?? []).find((d) => d.id === declarationId);
+  const connections = (declaration?.graph?.connections ?? []) as readonly {
+    from: { node: string };
+    to: { node: string };
+  }[];
+  return reachesThrough(connectionAdjacency(connections), from, to);
 }
 
 /**
@@ -703,6 +746,69 @@ export function addBodyStage(
 }
 
 /**
+ * Edit one body AtomicStage — the "edit" verb of `executable-custom-composite`
+ * ("The Canvas SHALL allow the user to add, remove, and edit AtomicStage nodes
+ * within a custom declaration's body graph"). ECP-2's task 8.2 listed this
+ * function by name; it never existed.
+ *
+ * A rename REWRITES both endpoints of every incident body connection, mirroring
+ * what `renameV2Node` already does for the root graph. Patching the node alone
+ * would leave edges pointing at an id that no longer exists — a silently
+ * disconnected body, which is the very failure this slice is closing.
+ */
+export function updateBodyStage(
+  def: WirePipelineDefinitionV2,
+  declarationId: string,
+  stageId: string,
+  patch: Partial<{ id: string; capability: { id: string; version: string } }>
+): WirePipelineDefinitionV2 {
+  const declaration = (def.declarations ?? []).find((d) => d.id === declarationId);
+  if (declaration === undefined) {
+    throw new Error(`Declaration '${declarationId}' does not exist.`);
+  }
+  const nodes = (declaration.graph?.nodes ?? []) as readonly { id: string }[];
+  if (!nodes.some((node) => node.id === stageId)) {
+    throw new Error(`Body stage '${stageId}' does not exist in '${declarationId}'.`);
+  }
+  const nextId = patch.id?.trim();
+  if (patch.id !== undefined && (nextId === undefined || nextId.length === 0)) {
+    throw new Error('A body stage id cannot be blank.');
+  }
+  if (nextId !== undefined && nextId !== stageId && nodes.some((node) => node.id === nextId)) {
+    throw new Error(`Body stage id '${nextId}' already exists in '${declarationId}'.`);
+  }
+  const renamed = nextId !== undefined && nextId !== stageId ? nextId : stageId;
+  return {
+    ...def,
+    declarations: def.declarations.map((d) => {
+      if (d.id !== declarationId) return d;
+      return {
+        ...d,
+        graph: {
+          ...d.graph,
+          nodes: d.graph.nodes.map((node) =>
+            (node as { id: string }).id === stageId
+              ? { ...node, ...patch, id: renamed }
+              : node
+          ),
+          connections: d.graph.connections.map((connection) => ({
+            ...connection,
+            from:
+              connection.from.node === stageId
+                ? { ...connection.from, node: renamed }
+                : connection.from,
+            to:
+              connection.to.node === stageId
+                ? { ...connection.to, node: renamed }
+                : connection.to,
+          })),
+        },
+      };
+    }),
+  };
+}
+
+/**
  * Remove a body stage and all incident body connections.
  */
 export function removeBodyStage(
@@ -728,13 +834,69 @@ export function removeBodyStage(
 }
 
 /**
+ * Generates a stable, graph-local id for a body connection, uniquified against
+ * that declaration's existing connection ids. Mirrors `v2ConnectionIdFor`'s
+ * scheme for the root graph.
+ */
+export function bodyConnectionIdFor(
+  def: WirePipelineDefinitionV2,
+  declarationId: string,
+  endpoints: V2ConnectionEndpoints
+): string {
+  const base =
+    `${endpoints.source}:${endpoints.sourcePort}` +
+    `->${endpoints.target}:${endpoints.targetPort}`;
+  const declaration = (def.declarations ?? []).find((d) => d.id === declarationId);
+  const existing = new Set(
+    (declaration?.graph?.connections ?? []).map((connection) => connection.id)
+  );
+  if (!existing.has(base)) return base;
+  let suffix = 2;
+  while (existing.has(`${base}-${suffix}`)) suffix += 1;
+  return `${base}-${suffix}`;
+}
+
+/**
  * Add a connection within a declaration body graph.
+ *
+ * EVERY refusal lives here, not in the affordance: unknown declaration,
+ * unknown endpoint stage, duplicate edge, and — per the spec — a connection
+ * that would close a cycle, judged by {@link bodyWouldCreateCycle}, i.e. the
+ * same rule the root graph uses. The Canvas surfaces whatever this throws, so
+ * a panel can never disagree with the model about what is legal.
  */
 export function addBodyConnection(
   def: WirePipelineDefinitionV2,
   declarationId: string,
   connection: { id: string; from: { node: string; port: string }; to: { node: string; port: string } }
 ): WirePipelineDefinitionV2 {
+  const declaration = (def.declarations ?? []).find((d) => d.id === declarationId);
+  if (declaration === undefined) {
+    throw new Error(`Declaration '${declarationId}' does not exist.`);
+  }
+  const nodeIds = new Set(
+    ((declaration.graph?.nodes ?? []) as readonly { id: string }[]).map((node) => node.id)
+  );
+  for (const endpoint of [connection.from.node, connection.to.node]) {
+    if (!nodeIds.has(endpoint)) {
+      throw new Error(`Body stage '${endpoint}' does not exist in '${declarationId}'.`);
+    }
+  }
+  const duplicate = (declaration.graph?.connections ?? []).some(
+    (existing) =>
+      existing.from.node === connection.from.node &&
+      existing.to.node === connection.to.node
+  );
+  if (duplicate) {
+    throw new Error(
+      `'${connection.from.node}' is already connected to '${connection.to.node}'.`
+    );
+  }
+  if (bodyWouldCreateCycle(def, declarationId, connection.from.node, connection.to.node)) {
+    throw new Error(
+      `Connecting '${connection.from.node}' to '${connection.to.node}' would create a cycle.`
+    );
+  }
   return {
     ...def,
     declarations: def.declarations.map((d) => {

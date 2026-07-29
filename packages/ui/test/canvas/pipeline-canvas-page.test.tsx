@@ -1445,6 +1445,201 @@ describe('PipelineCanvasPage — edit mode', () => {
     ).toBeNull();
   });
 
+  it('authors a CONNECTED multi-stage body and saves the connection with it', async () => {
+    // DISCRIMINATING PROBE (ECP-5 F1). Until body-connection authoring existed,
+    // a Canvas-authored multi-stage body could only ever be DISCONNECTED
+    // stages — which the reconciler admits in parallel, a materially different
+    // pipeline than the sequence the author intended. A test that asserts only
+    // "the body has 2 stages" passes for both; this asserts the EDGE reaches
+    // the posted definition, which only the connected authoring can produce.
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-new-id"]'),
+      'seq',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-create"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
+
+    const stageIds = Array.from(
+      container.querySelectorAll('[data-testid="declaration-body-stage"]')
+    ).map((node) => node.getAttribute('data-stage-id')!);
+    expect(stageIds).toHaveLength(2);
+
+    // "**AND** connects it to an existing body stage".
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-connection-from"]'),
+      stageIds[0]!
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-connection-to"]'),
+      stageIds[1]!
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-connection-add"]'));
+
+    const edge = container.querySelector('[data-testid="declaration-body-connection"]');
+    expect(edge).not.toBeNull();
+    expect(edge!.getAttribute('data-from')).toBe(stageIds[0]);
+    expect(edge!.getAttribute('data-to')).toBe(stageIds[1]);
+
+    // "**AND** saves ... **THEN** the prepared definition SHALL include the
+    // new stage in the declaration's body graph" — asserted on the POSTed body.
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    vi.mocked(client.mutatePipeline).mockResolvedValueOnce({
+      pipeline: { name: 'v2-canvas', path: '/pipelines/v2-canvas' },
+      created: false,
+    });
+    vi.mocked(client.getPipelineDetail).mockResolvedValueOnce(v2EditableDetail);
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+    const posted = vi.mocked(client.mutatePipeline).mock.calls.at(-1)![0] as {
+      definition: {
+        declarations: {
+          id: string;
+          graph: {
+            nodes: { id: string }[];
+            connections: { from: { node: string }; to: { node: string } }[];
+          };
+        }[];
+      };
+    };
+    const saved = posted.definition.declarations.find((d) => d.id === 'seq')!;
+    expect(saved.graph.nodes.map((n) => n.id)).toEqual(stageIds);
+    expect(saved.graph.connections).toHaveLength(1);
+    expect(saved.graph.connections[0]!.from.node).toBe(stageIds[0]);
+    expect(saved.graph.connections[0]!.to.node).toBe(stageIds[1]);
+  });
+
+  it('rejects a body connection that would create a cycle, with the model diagnostic', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-new-id"]'),
+      'cyc',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-create"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
+    const stageIds = Array.from(
+      container.querySelectorAll('[data-testid="declaration-body-stage"]')
+    ).map((node) => node.getAttribute('data-stage-id')!);
+
+    async function connect(from: string, to: string) {
+      await setValueAndFlush(
+        container.querySelector('[data-testid="declaration-connection-from"]'),
+        from
+      );
+      await setValueAndFlush(
+        container.querySelector('[data-testid="declaration-connection-to"]'),
+        to
+      );
+      await clickAndFlush(container.querySelector('[data-testid="declaration-connection-add"]'));
+    }
+
+    await connect(stageIds[0]!, stageIds[1]!);
+    expect(container.querySelectorAll('[data-testid="declaration-body-connection"]')).toHaveLength(1);
+
+    // "**WHEN** the user draws a connection in the declaration body that would
+    // create a cycle — **THEN** the Canvas SHALL reject the connection."
+    await connect(stageIds[1]!, stageIds[0]!);
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'would create a cycle'
+    );
+    // The rejection is the MODEL's, surfaced here — the edge is not added.
+    expect(container.querySelectorAll('[data-testid="declaration-body-connection"]')).toHaveLength(1);
+  });
+
+  it('renames a body stage and carries its connection with it', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-new-id"]'),
+      'ren',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-create"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
+    const stageIds = Array.from(
+      container.querySelectorAll('[data-testid="declaration-body-stage"]')
+    ).map((node) => node.getAttribute('data-stage-id')!);
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-connection-from"]'),
+      stageIds[0]!
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-connection-to"]'),
+      stageIds[1]!
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-connection-add"]'));
+
+    // The spec's "edit" verb, exercised through the affordance.
+    const idInput = container.querySelector(
+      `[data-testid="declaration-body-stage-id"][data-stage-id="${stageIds[0]}"]`
+    ) as HTMLInputElement;
+    idInput.focus();
+    await setValueAndFlush(idInput, 'compile', 'input');
+    await act(async () => {
+      idInput.blur();
+      await flushMicrotasks();
+    });
+
+    expect(
+      container.querySelector('[data-testid="declaration-body-stage"][data-stage-id="compile"]')
+    ).not.toBeNull();
+    // The edge followed the rename rather than dangling at the old id.
+    const edge = container.querySelector('[data-testid="declaration-body-connection"]')!;
+    expect(edge.getAttribute('data-from')).toBe('compile');
+    expect(edge.getAttribute('data-to')).toBe(stageIds[1]);
+  });
+
+  it('removes a body connection without removing its stages', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-new-id"]'),
+      'drop',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-create"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
+    const stageIds = Array.from(
+      container.querySelectorAll('[data-testid="declaration-body-stage"]')
+    ).map((node) => node.getAttribute('data-stage-id')!);
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-connection-from"]'),
+      stageIds[0]!
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-connection-to"]'),
+      stageIds[1]!
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-connection-add"]'));
+    expect(container.querySelectorAll('[data-testid="declaration-body-connection"]')).toHaveLength(1);
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="declaration-body-connection-remove"]')
+    );
+    expect(container.querySelectorAll('[data-testid="declaration-body-connection"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-testid="declaration-body-stage"]')).toHaveLength(2);
+  });
+
   it('surfaces the model diagnostic for a blank declaration id', async () => {
     // The panel used to refuse a blank id itself, via a `disabled` button —
     // the only rule in `DeclarationsPanel` it owned rather than delegating.

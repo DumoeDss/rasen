@@ -10,6 +10,8 @@ import {
   addBodyStage,
   addDeclaration,
   addRequire,
+  bodyWouldCreateCycle,
+  updateBodyStage,
   addStage,
   addV2Connection,
   addV2Node,
@@ -618,5 +620,119 @@ describe('Composite declaration CRUD', () => {
     expect(def.declarations[0]!.graph.connections).toHaveLength(1);
     def = removeBodyConnection(def, 'comp', 'ab');
     expect(def.declarations[0]!.graph.connections).toHaveLength(0);
+  });
+
+  // --- ECP-2 "Canvas edits composite body stages", delivered by ECP-5 -----
+
+  /** A declaration with two body stages and, optionally, an `a -> b` edge. */
+  function withBody(id: string, connected: boolean) {
+    let def = emptyV2();
+    def = addDeclaration(def, id);
+    def = addBodyStage(def, id, { id: 'a', capability: { id: 'x', version: '1' } });
+    def = addBodyStage(def, id, { id: 'b', capability: { id: 'y', version: '1' } });
+    if (connected) {
+      def = addBodyConnection(def, id, {
+        id: 'ab',
+        from: { node: 'a', port: 'done' },
+        to: { node: 'b', port: 'input' },
+      });
+    }
+    return def;
+  }
+
+  it('refuses a body connection that would close a cycle', () => {
+    // "#### Scenario: Body connection creating a cycle is rejected".
+    const def = withBody('comp', true);
+    expect(() =>
+      addBodyConnection(def, 'comp', {
+        id: 'ba',
+        from: { node: 'b', port: 'done' },
+        to: { node: 'a', port: 'input' },
+      })
+    ).toThrow(/would create a cycle/);
+    // Self-edges are cycles too.
+    expect(() =>
+      addBodyConnection(def, 'comp', {
+        id: 'aa',
+        from: { node: 'a', port: 'done' },
+        to: { node: 'a', port: 'input' },
+      })
+    ).toThrow(/would create a cycle/);
+  });
+
+  it('scopes the body cycle rule to ONE declaration', () => {
+    // DISCRIMINATING PROBE. `b -> a` is a cycle in X (which has `a -> b`) and
+    // perfectly legal in Y (which has the same two stages and no edges). An
+    // implementation that pooled all declarations' connections, or that read
+    // `root.connections`, refuses BOTH — and a single-declaration fixture
+    // cannot tell either wrong implementation from the right one.
+    let def = withBody('x', true);
+    def = addDeclaration(def, 'y');
+    def = addBodyStage(def, 'y', { id: 'a', capability: { id: 'x', version: '1' } });
+    def = addBodyStage(def, 'y', { id: 'b', capability: { id: 'y', version: '1' } });
+
+    expect(bodyWouldCreateCycle(def, 'x', 'b', 'a')).toBe(true);
+    expect(bodyWouldCreateCycle(def, 'y', 'b', 'a')).toBe(false);
+
+    const next = addBodyConnection(def, 'y', {
+      id: 'ba',
+      from: { node: 'b', port: 'done' },
+      to: { node: 'a', port: 'input' },
+    });
+    expect(next.declarations.find((d) => d.id === 'y')!.graph.connections).toHaveLength(1);
+    // …and X is untouched by Y's edit.
+    expect(next.declarations.find((d) => d.id === 'x')!.graph.connections).toHaveLength(1);
+  });
+
+  it('refuses a body connection to an unknown stage or a duplicate edge', () => {
+    const def = withBody('comp', true);
+    expect(() =>
+      addBodyConnection(def, 'comp', {
+        id: 'ac',
+        from: { node: 'a', port: 'done' },
+        to: { node: 'ghost', port: 'input' },
+      })
+    ).toThrow(/does not exist/);
+    expect(() =>
+      addBodyConnection(def, 'comp', {
+        id: 'ab-again',
+        from: { node: 'a', port: 'done' },
+        to: { node: 'b', port: 'input' },
+      })
+    ).toThrow(/already connected/);
+  });
+
+  it('renaming a body stage rewrites its incident connections', () => {
+    // DISCRIMINATING PROBE. A `updateBodyStage` that patches only the node
+    // leaves the edge pointing at an id the graph no longer contains — a
+    // silently disconnected body, the same failure class F1 exists to close.
+    const def = updateBodyStage(withBody('comp', true), 'comp', 'a', { id: 'apply' });
+    const declaration = def.declarations[0]!;
+    expect((declaration.graph.nodes as { id: string }[]).map((n) => n.id)).toEqual([
+      'apply',
+      'b',
+    ]);
+    expect(declaration.graph.connections).toHaveLength(1);
+    expect(declaration.graph.connections[0]!.from.node).toBe('apply');
+    expect(declaration.graph.connections[0]!.to.node).toBe('b');
+    // Ports are untouched by a rename.
+    expect(declaration.graph.connections[0]!.from.port).toBe('done');
+  });
+
+  it('edits a body stage capability without disturbing the graph', () => {
+    const def = updateBodyStage(withBody('comp', true), 'comp', 'b', {
+      capability: { id: 'z', version: '2' },
+    });
+    const node = (def.declarations[0]!.graph.nodes as { id: string; capability: { id: string } }[])
+      .find((n) => n.id === 'b')!;
+    expect(node.capability).toEqual({ id: 'z', version: '2' });
+    expect(def.declarations[0]!.graph.connections).toHaveLength(1);
+  });
+
+  it('refuses a blank, duplicate, or unknown body stage edit', () => {
+    const def = withBody('comp', true);
+    expect(() => updateBodyStage(def, 'comp', 'a', { id: '  ' })).toThrow(/cannot be blank/);
+    expect(() => updateBodyStage(def, 'comp', 'a', { id: 'b' })).toThrow(/already exists/);
+    expect(() => updateBodyStage(def, 'comp', 'ghost', { id: 'c' })).toThrow(/does not exist/);
   });
 });

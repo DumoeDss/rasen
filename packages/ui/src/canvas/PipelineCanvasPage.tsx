@@ -34,6 +34,7 @@ import { useSpace, spaceHref } from '../store/use-space.js';
 import { definitionToGraph, draftToGraph, layoutGraph, type PipelineFlowNode } from './layout.js';
 import { stageNodeTypes } from './StageNode.js';
 import {
+  addBodyConnection,
   addBodyStage,
   addDeclaration,
   addRequire,
@@ -44,8 +45,10 @@ import {
   isDirty,
   isV2EditableNodeKind,
   issuePathTarget,
+  bodyConnectionIdFor,
   loopBodyDeclaration,
   referenceableDeclaration,
+  removeBodyConnection,
   removeBodyStage,
   removeDeclaration,
   removeRequire,
@@ -55,6 +58,7 @@ import {
   renameStage,
   renameV2Node,
   stageIdFor,
+  updateBodyStage,
   updateDeclaration,
   updateStageFields,
   updateStageHandoffThreshold,
@@ -836,6 +840,61 @@ export function PipelineCanvasPage() {
     markDraftChanged();
   }
 
+  function patchBodyStage(
+    declarationId: string,
+    stageId: string,
+    patch: Parameters<typeof updateBodyStage>[3]
+  ) {
+    if (!draft || draft.version !== 2) return;
+    let nextDraft;
+    try {
+      nextDraft = updateBodyStage(draft, declarationId, stageId, patch);
+    } catch (error) {
+      // Blank / duplicate body stage id — the model's rule, surfaced verbatim.
+      showToast(error instanceof Error ? error.message : 'Could not edit the body stage.');
+      return;
+    }
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
+  }
+
+  function createBodyConnection(declarationId: string, from: string, to: string) {
+    if (!draft || draft.version !== 2) return;
+    // Ports follow the AtomicStage convention the root graph uses; the model
+    // owns every legality question (unknown stage, duplicate edge, cycle).
+    const endpoints = {
+      source: from,
+      sourcePort: 'done',
+      target: to,
+      targetPort: 'input',
+    };
+    let nextDraft;
+    try {
+      nextDraft = addBodyConnection(draft, declarationId, {
+        id: bodyConnectionIdFor(draft, declarationId, endpoints),
+        from: { node: from, port: endpoints.sourcePort },
+        to: { node: to, port: endpoints.targetPort },
+      });
+    } catch (error) {
+      // "#### Scenario: Body connection creating a cycle is rejected" — the
+      // Canvas rejects it, and the server's GRAPH_CYCLE confirms on prepare.
+      showToast(error instanceof Error ? error.message : 'Could not add the connection.');
+      return;
+    }
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
+  }
+
+  function deleteBodyConnection(declarationId: string, connectionId: string) {
+    if (!draft || draft.version !== 2) return;
+    const nextDraft = removeBodyConnection(draft, declarationId, connectionId);
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
+  }
+
   function patchV2Node(
     id: string,
     patch: Partial<WireDefinitionNode>
@@ -1435,6 +1494,9 @@ export function PipelineCanvasPage() {
             onPatch={patchDeclaration}
             onAddBodyStage={createBodyStage}
             onRemoveBodyStage={deleteBodyStage}
+            onPatchBodyStage={patchBodyStage}
+            onAddBodyConnection={createBodyConnection}
+            onRemoveBodyConnection={deleteBodyConnection}
           />
         )}
 

@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import type {
   WireCompositeDeclaration,
   WireDefinitionArtifact,
@@ -42,6 +42,9 @@ export function DeclarationsPanel({
   onPatch,
   onAddBodyStage,
   onRemoveBodyStage,
+  onPatchBodyStage,
+  onAddBodyConnection,
+  onRemoveBodyConnection,
 }: {
   definition: WirePipelineDefinitionV2;
   selectedId: string | null;
@@ -60,6 +63,13 @@ export function DeclarationsPanel({
   ) => void;
   onAddBodyStage: (declarationId: string) => void;
   onRemoveBodyStage: (declarationId: string, stageId: string) => void;
+  onPatchBodyStage: (
+    declarationId: string,
+    stageId: string,
+    patch: Partial<{ id: string; capability: { id: string; version: string } }>
+  ) => void;
+  onAddBodyConnection: (declarationId: string, from: string, to: string) => void;
+  onRemoveBodyConnection: (declarationId: string, connectionId: string) => void;
 }) {
   const [newId, setNewId] = useState('');
   const declarations = definition.declarations ?? [];
@@ -142,6 +152,11 @@ export function DeclarationsPanel({
           onPatch={(patch) => onPatch(selected.id, patch)}
           onAddBodyStage={() => onAddBodyStage(selected.id)}
           onRemoveBodyStage={(stageId) => onRemoveBodyStage(selected.id, stageId)}
+          onPatchBodyStage={(stageId, patch) => onPatchBodyStage(selected.id, stageId, patch)}
+          onAddBodyConnection={(from, to) => onAddBodyConnection(selected.id, from, to)}
+          onRemoveBodyConnection={(connectionId) =>
+            onRemoveBodyConnection(selected.id, connectionId)
+          }
         />
       )}
     </aside>
@@ -264,6 +279,138 @@ function PortListEditor({
 }
 
 /**
+ * Editable stable id for one body stage. Commit-on-blur, and the authoritative
+ * value is restored if the model rejects the rename (blank, duplicate) — the
+ * same contract `V2NodePanel`'s root id editor follows.
+ */
+function BodyStageIdField({
+  stageId,
+  onCommit,
+}: {
+  stageId: string;
+  onCommit: (next: string) => void;
+}) {
+  const [draft, setDraft] = useState(stageId);
+  useEffect(() => {
+    setDraft(stageId);
+  }, [stageId]);
+  return (
+    <input
+      type="text"
+      class="declaration-editor__body-stage-id"
+      data-testid="declaration-body-stage-id"
+      data-stage-id={stageId}
+      value={draft}
+      onInput={(event) => setDraft((event.target as HTMLInputElement).value)}
+      onBlur={() => {
+        const next = draft.trim();
+        if (next && next !== stageId) onCommit(next);
+        // A rejected rename leaves the prop unchanged; restore it rather than
+        // leaving the input showing an id the definition does not have.
+        setDraft(stageId);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') (event.currentTarget as HTMLInputElement).blur();
+      }}
+    />
+  );
+}
+
+/**
+ * Body connection authoring: pick a source and a target body stage, add the
+ * edge, or remove an existing one.
+ *
+ * This deliberately does NOT pre-filter the target list to "stages that would
+ * not create a cycle". Legality is the model's judgement — `addBodyConnection`
+ * refuses unknown stages, duplicate edges and cycles, and the page surfaces
+ * that refusal. A select box that quietly hid illegal targets would be a
+ * second implementation of the cycle rule, and the one the user could not see.
+ */
+function BodyConnections({
+  stageIds,
+  connections,
+  onAdd,
+  onRemove,
+}: {
+  stageIds: readonly string[];
+  connections: readonly {
+    id: string;
+    from: { node: string; port: string };
+    to: { node: string; port: string };
+  }[];
+  onAdd: (from: string, to: string) => void;
+  onRemove: (connectionId: string) => void;
+}) {
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const options = ['', ...stageIds];
+
+  return (
+    <div class="declaration-editor__connections" data-testid="declaration-connections">
+      <span>Body connections ({connections.length})</span>
+      <ul class="declaration-editor__connection-list">
+        {connections.map((connection) => (
+          <li
+            key={connection.id}
+            data-testid="declaration-body-connection"
+            data-connection-id={connection.id}
+            data-from={connection.from.node}
+            data-to={connection.to.node}
+          >
+            <span class="declaration-editor__connection-label">
+              {connection.from.node} → {connection.to.node}
+            </span>
+            <button
+              type="button"
+              data-testid="declaration-body-connection-remove"
+              data-connection-id={connection.id}
+              onClick={() => onRemove(connection.id)}
+            >
+              Remove
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div class="declaration-editor__connection-add">
+        <select
+          data-testid="declaration-connection-from"
+          value={from}
+          onChange={(event) => setFrom((event.target as HTMLSelectElement).value)}
+        >
+          {options.map((id) => (
+            <option key={`from-${id}`} value={id}>
+              {id || 'from…'}
+            </option>
+          ))}
+        </select>
+        <select
+          data-testid="declaration-connection-to"
+          value={to}
+          onChange={(event) => setTo((event.target as HTMLSelectElement).value)}
+        >
+          {options.map((id) => (
+            <option key={`to-${id}`} value={id}>
+              {id || 'to…'}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          data-testid="declaration-connection-add"
+          // Only "both endpoints chosen" is a UI concern — you cannot submit a
+          // form with empty selects. Everything about whether the EDGE is legal
+          // belongs to the model.
+          disabled={from === '' || to === ''}
+          onClick={() => onAdd(from, to)}
+        >
+          Connect
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * The declaration editor sub-panel: contract fields (inputs, artifacts,
  * outcomes) plus the body graph navigator and its constrained palette.
  */
@@ -273,6 +420,9 @@ function DeclarationEditor({
   onPatch,
   onAddBodyStage,
   onRemoveBodyStage,
+  onPatchBodyStage,
+  onAddBodyConnection,
+  onRemoveBodyConnection,
 }: {
   declaration: WireCompositeDeclaration;
   capabilityAvailable: boolean;
@@ -285,6 +435,12 @@ function DeclarationEditor({
   ) => void;
   onAddBodyStage: () => void;
   onRemoveBodyStage: (stageId: string) => void;
+  onPatchBodyStage: (
+    stageId: string,
+    patch: Partial<{ id: string; capability: { id: string; version: string } }>
+  ) => void;
+  onAddBodyConnection: (from: string, to: string) => void;
+  onRemoveBodyConnection: (connectionId: string) => void;
 }) {
   const inputs = declaration.inputs ?? [];
   const artifacts = declaration.artifacts ?? [];
@@ -293,6 +449,11 @@ function DeclarationEditor({
     id: string;
     kind: string;
     capability?: { id: string; version: string };
+  }>;
+  const bodyConnections = (declaration.graph?.connections ?? []) as ReadonlyArray<{
+    id: string;
+    from: { node: string; port: string };
+    to: { node: string; port: string };
   }>;
 
   return (
@@ -333,7 +494,14 @@ function DeclarationEditor({
               data-stage-id={node.id}
               data-stage-kind={node.kind}
             >
-              <span class="declaration-editor__body-stage-id">{node.id}</span>
+              {/* The spec's "edit" verb. Committed on blur like every other id
+                  editor in this canvas, so an intermediate keystroke never
+                  reaches the model; a rename rewrites incident connections
+                  inside `updateBodyStage`, not here. */}
+              <BodyStageIdField
+                stageId={node.id}
+                onCommit={(next) => onPatchBodyStage(node.id, { id: next })}
+              />
               <span class="declaration-editor__body-stage-kind">{node.kind}</span>
               {node.capability && (
                 <span class="declaration-editor__body-stage-capability">
@@ -351,6 +519,18 @@ function DeclarationEditor({
             </li>
           ))}
         </ol>
+
+        {/* Body connections — the half of "Canvas edits composite body stages"
+            that had no affordance: "connects it to an existing body stage" and
+            "draws a connection ... cycle rejected". Without this a
+            Canvas-authored multi-stage body is disconnected stages, which the
+            reconciler admits in PARALLEL — a different pipeline than authored. */}
+        <BodyConnections
+          stageIds={bodyNodes.map((node) => node.id)}
+          connections={bodyConnections}
+          onAdd={onAddBodyConnection}
+          onRemove={onRemoveBodyConnection}
+        />
         <div class="declaration-editor__body-palette" data-testid="declaration-body-palette">
           {V2_BODY_PALETTE_KINDS.map((kind) => (
             <button
