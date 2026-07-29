@@ -10,6 +10,7 @@ import type { RuntimePlan, RuntimePlanBoundedLoopNode } from './runtime-plan.js'
 import type { CanonicalWait } from './waits.js';
 import { canonicalJson } from './identity.js';
 import { projectReviewCycleProgress } from './review-cycle-runtime.js';
+import { projectGoalCycleProgress, type GoalCycleProgress } from './goal-cycle-runtime.js';
 import { projectCompositeBodyProgress, compositeBodyStagePath } from './composite-runtime.js';
 
 function actionView(committed: CommittedAction) {
@@ -208,6 +209,15 @@ function buildSections(
       const progress = projectReviewCycleProgress(plan, loop, record);
       sections.push(buildReviewCycleSection(loop, progress));
     }
+    // Emit goal/1 section for goal-cycle body bounded-loops.
+    const goalLoop = plan.nodes.find(
+      (node): node is RuntimePlanBoundedLoopNode =>
+        node.kind === 'bounded-loop' && node.body.kind === 'goal-cycle'
+    );
+    if (goalLoop !== undefined && goalLoop.body.kind === 'goal-cycle') {
+      const progress = projectGoalCycleProgress(plan, goalLoop, record);
+      sections.push(buildGoalSection(goalLoop, progress));
+    }
     // Emit composite drill-down for composite-body loops or inlined CompositeRef nodes.
     const compositeSection = buildCompositeSection(plan, record);
     if (compositeSection !== null) {
@@ -346,5 +356,43 @@ function buildReviewCycleSection(
           ? 'committed-failure'
           : undefined,
     maxRounds: loop.maxIterations,
+  });
+}
+
+/**
+ * Build a `goal/1` section for a goal-cycle bounded-loop. Mirrors the
+ * review-cycle section shape but carries goal-specific fields: variant,
+ * score, gaps, stall streak, and budget.
+ */
+function buildGoalSection(
+  loop: RuntimePlanBoundedLoopNode,
+  progress: GoalCycleProgress
+): unknown {
+  const state = progress.state;
+  const phase = 'next' in progress ? progress.next.phase : state.phase;
+  const round = 'next' in progress ? progress.next.round : state.round;
+  const variant =
+    loop.body.kind === 'goal-cycle' ? loop.body.variant : 'measure';
+  return Object.freeze({
+    kind: 'goal',
+    version: 1,
+    loopPath: loop.hierarchicalPath,
+    variant,
+    round,
+    phase,
+    outcome: state.outcome,
+    ...(state.lastScore !== undefined ? { lastScore: state.lastScore } : {}),
+    lastGaps: state.lastGaps,
+    stallStreak: state.stallStreak,
+    budget: {
+      used: state.eventCount,
+      max: loop.maxIterations * 2, // 2 phases per round
+    },
+    waitReason:
+      progress.kind === 'waiting'
+        ? 'action-active'
+        : progress.kind === 'failed'
+          ? 'committed-failure'
+          : undefined,
   });
 }

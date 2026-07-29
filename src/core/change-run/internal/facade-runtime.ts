@@ -25,7 +25,9 @@ import { createCanonicalWait, type CanonicalWait } from './waits.js';
 import { deriveInvocationId } from './identity.js';
 import type { WorkspaceReservationRegistry } from './reservations.js';
 import { validateReviewCycleCompletion, projectReviewCycleProgress } from './review-cycle-runtime.js';
+import { validateGoalCycleCompletion, projectGoalCycleProgress } from './goal-cycle-runtime.js';
 import { assertReviewCycleMayShip } from './review-cycle.js';
+import { assertGoalCycleMayShip } from './goal-cycle.js';
 import { projectCompositeBodyProgress } from './composite-runtime.js';
 
 export interface RuntimeDeps {
@@ -456,6 +458,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       // results, same-actor fixer+verifier, and open Blocker/Major findings
       // fail closed without Record mutation.
       validateReviewCycleCompletion(deps.plan, record, request);
+      validateGoalCycleCompletion(deps.plan, record, request);
       const commitStimulus: RunStimulus = {
         kind: 'commit-action-result',
         actionId: request.actionId,
@@ -528,16 +531,26 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       if (
         boundedLoop !== undefined &&
         boundedLoop.kind === 'bounded-loop' &&
-        boundedLoop.body.kind === 'review-cycle' &&
+        (boundedLoop.body.kind === 'review-cycle' ||
+          boundedLoop.body.kind === 'goal-cycle') &&
         finalRecord.terminal !== undefined &&
         finalRecord.status === 'completed'
       ) {
-        const progress = projectReviewCycleProgress(
-          deps.plan,
-          boundedLoop,
-          finalRecord
-        );
-        assertReviewCycleMayShip(progress.state);
+        if (boundedLoop.body.kind === 'review-cycle') {
+          const progress = projectReviewCycleProgress(
+            deps.plan,
+            boundedLoop,
+            finalRecord
+          );
+          assertReviewCycleMayShip(progress.state);
+        } else {
+          const progress = projectGoalCycleProgress(
+            deps.plan,
+            boundedLoop,
+            finalRecord
+          );
+          assertGoalCycleMayShip(progress.state);
+        }
       }
       deps.store.commit(deps.plan.runId, finalRecord);
       const disposition: ChangeRunReceipt['disposition'] =

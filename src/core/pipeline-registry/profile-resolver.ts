@@ -162,8 +162,12 @@ function resolveV2MigrationCapabilityBindings(
         }
         const skillDigest = descriptor.version as Digest;
         const skillName = skillId.startsWith('skill:') ? skillId.slice('skill:'.length) : skillId;
-        const phase = typeof phaseNode.reviewCyclePhase === 'string' ? phaseNode.reviewCyclePhase : 'review';
-        bindings.push(buildBinding(path, skillName, descriptor.version, skillDigest, phase === 'fix' ? 'write' : 'read'));
+        const rcPhase = typeof phaseNode.reviewCyclePhase === 'string' ? phaseNode.reviewCyclePhase : null;
+        const gcPhase = typeof (phaseNode as unknown as Readonly<{ goalCyclePhase?: unknown }>).goalCyclePhase === 'string'
+          ? (phaseNode as unknown as Readonly<{ goalCyclePhase: string }>).goalCyclePhase
+          : null;
+        const isWrite = rcPhase === 'fix' || gcPhase === 'work';
+        bindings.push(buildBinding(path, skillName, descriptor.version, skillDigest, isWrite ? 'write' : 'read'));
       }
       continue;
     }
@@ -410,7 +414,13 @@ function remapPolicyStagesForV2(
       if (declaration === undefined) continue;
       for (const phaseNode of declaration.graph.nodes) {
         if (phaseNode.kind !== 'AtomicStage') continue;
-        const phase = typeof phaseNode.reviewCyclePhase === 'string' ? phaseNode.reviewCyclePhase : 'review';
+        const rcPhase = typeof phaseNode.reviewCyclePhase === 'string' ? phaseNode.reviewCyclePhase : null;
+        const gcPhase = typeof (phaseNode as unknown as Readonly<{ goalCyclePhase?: unknown }>).goalCyclePhase === 'string'
+          ? (phaseNode as unknown as Readonly<{ goalCyclePhase: string }>).goalCyclePhase
+          : null;
+        // Map goal-cycle phases to the same roles as review-cycle phases.
+        // work → fix (implementer/write), judge → review (reviewer/read).
+        const phase = rcPhase ?? (gcPhase === 'work' ? 'fix' : gcPhase === 'judge' ? 'review' : 'review');
         const path = `declaration:${declaration.id}/node:${phaseNode.id}`;
         remapped.push(synthesizeReviewCyclePolicyStage(path, phase));
       }

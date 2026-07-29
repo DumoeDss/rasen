@@ -70,6 +70,8 @@ const REVIEW_CYCLE_PHASES = [
   're-review',
 ] as const;
 
+const GOAL_CYCLE_PHASES = ['work', 'judge'] as const;
+
 function incomingRequirements(
   definition: DefinitionSourceV2,
   nodeId: string
@@ -157,6 +159,139 @@ function reviewCycleBody(
     }
   }
   return { declaration, phases };
+}
+
+/**
+ * Detect whether a BoundedLoop's declaration body is goal-cycle-shaped
+ * (2 AtomicStage nodes tagged with goalCyclePhase: work, judge).
+ */
+function isGoalCycleShaped(
+  definition: DefinitionSourceV2,
+  loop: BoundedLoopNode
+): boolean {
+  const declaration = definition.declarations.find(
+    (candidate) => candidate.id === loop.body
+  );
+  if (declaration === undefined) return false;
+  const phases = declaration.graph.nodes
+    .map((bodyNode) =>
+      bodyNode.kind === 'AtomicStage'
+        ? (bodyNode as Readonly<{ goalCyclePhase?: unknown }>).goalCyclePhase
+        : undefined
+    )
+    .filter((phase): phase is string => typeof phase === 'string')
+    .sort();
+  return (
+    phases.length === 2 &&
+    JSON.stringify(phases) === JSON.stringify(['judge', 'work'])
+  );
+}
+
+/**
+ * Lower a goal-cycle BoundedLoop: produces the variant + 2 phases (work, judge)
+ * with their capability/policy bindings.
+ */
+function goalCycleBody(
+  definition: DefinitionSourceV2,
+  loop: BoundedLoopNode,
+  capabilityByPath: Map<string, RuntimeExecutionProfile['capabilities'][number]>,
+  policyByPath: Map<string, RuntimeExecutionProfile['policy']['stages'][number]>,
+  pipelineName: string
+): Readonly<{
+  declaration: CompositeDeclaration;
+  variant: 'measure' | 'evaluate' | 'research';
+  phases: readonly Readonly<{
+    phase: (typeof GOAL_CYCLE_PHASES)[number];
+    profilePath: string;
+    admissionKind: 'agent' | 'command' | 'host';
+    workspace: Readonly<{ access: 'none' | 'read' | 'write' }>;
+  }>[];
+}> {
+  const declaration = definition.declarations.find(
+    (candidate) => candidate.id === loop.body
+  );
+  if (declaration === undefined) {
+    throw new RuntimePlanLowererError(
+      'lowerer_shape_mismatch',
+      `BoundedLoop ${loop.id} references missing body ${loop.body}.`
+    );
+  }
+  // Detect variant from the legacy loop declaration or pipeline name.
+  const legacyLoop = (declaration as Readonly<{ legacyLoop?: Readonly<{ kind?: string; gate?: Readonly<{ kind?: string }> }> }>).legacyLoop;
+  const isResearch = pipelineName === 'goal-loop-research';
+  const variant: 'measure' | 'evaluate' | 'research' = isResearch
+    ? 'research'
+    : legacyLoop?.gate?.kind === 'measure'
+      ? 'measure'
+      : 'evaluate';
+
+  const phaseEntries = declaration.graph.nodes.map((node) => {
+    if (node.kind !== 'AtomicStage') {
+      throw new RuntimePlanLowererError(
+        'lowerer_shape_mismatch',
+        `GoalCycle body ${declaration.id} may contain only AtomicStage phases.`
+      );
+    }
+    const phase = (node as Readonly<{ goalCyclePhase?: unknown }>).goalCyclePhase;
+    if (
+      typeof phase !== 'string' ||
+      !(GOAL_CYCLE_PHASES as readonly string[]).includes(phase)
+    ) {
+      throw new RuntimePlanLowererError(
+        'lowerer_shape_mismatch',
+        `GoalCycle body node ${node.id} must declare one goalCyclePhase.`
+      );
+    }
+    return {
+      phase: phase as (typeof GOAL_CYCLE_PHASES)[number],
+      node,
+      profilePath: `declaration:${declaration.id}/node:${node.id}`,
+    };
+  });
+  phaseEntries.sort(
+    (left, right) =>
+      GOAL_CYCLE_PHASES.indexOf(left.phase) -
+      GOAL_CYCLE_PHASES.indexOf(right.phase)
+  );
+  if (
+    phaseEntries.length !== GOAL_CYCLE_PHASES.length ||
+    phaseEntries.some((entry, index) => entry.phase !== GOAL_CYCLE_PHASES[index])
+  ) {
+    throw new RuntimePlanLowererError(
+      'lowerer_shape_mismatch',
+      `GoalCycle body ${declaration.id} must declare each phase (work, judge) exactly once.`
+    );
+  }
+  // Validate the work→judge connection exists.
+  const workNode = phaseEntries.find((p) => p.phase === 'work')!.node.id;
+  const judgeNode = phaseEntries.find((p) => p.phase === 'judge')!.node.id;
+  const hasConnection = declaration.graph.connections.some(
+    (conn) => conn.from.node === workNode && conn.to.node === judgeNode
+  );
+  if (!hasConnection) {
+    throw new RuntimePlanLowererError(
+      'lowerer_shape_mismatch',
+      `GoalCycle body ${declaration.id} must connect work to judge.`
+    );
+  }
+
+  const phases = phaseEntries.map((entry) => {
+    const capability = capabilityByPath.get(entry.profilePath);
+    const policy = policyByPath.get(entry.profilePath);
+    if (capability === undefined || policy === undefined) {
+      throw new RuntimePlanLowererError(
+        'lowerer_shape_mismatch',
+        `No frozen capability/policy binding exists for ${entry.profilePath}.`
+      );
+    }
+    return {
+      phase: entry.phase,
+      profilePath: entry.profilePath,
+      admissionKind: capability.actionKind,
+      workspace: { access: capability.workspace.access },
+    };
+  });
+  return { declaration, variant, phases };
 }
 
 /**
@@ -494,11 +629,12 @@ function lowerV2ReviewCyclePlanInput(
       continue;
     }
     if (node.kind === 'BoundedLoop') {
-      // ReviewCycle-shaped and composite-body BoundedLoops are lowered.
-      // Legacy loops (non-ReviewCycle v1 stages without a declaration body)
-      // are skipped.
+      // ReviewCycle, goal-cycle, and composite-body BoundedLoops are lowered.
+      // Legacy loops (non-ReviewCycle/goal-cycle v1 stages without a declaration
+      // body) are skipped.
       const isRC = isReviewCycleShaped(definition, node);
-      if (isRC) {
+      const isGC = isGoalCycleShaped(definition, node);
+      if (isRC || isGC) {
         const cleanExit = node.exits.clean;
         const continueExit = node.exits.needs_fix;
         if (cleanExit?.action !== 'exit' || continueExit?.action !== 'continue') {
@@ -578,6 +714,49 @@ function lowerV2ReviewCyclePlanInput(
           requires: resolveRequires(node.id),
           maxIterations: node.limits.maxIterations,
           body: { kind: 'review-cycle', phases },
+          outcomes: {
+            clean: cleanExit.outcome,
+            exhausted:
+              typeof node.exhaustedOutcome === 'string'
+                ? node.exhaustedOutcome
+                : 'exhausted',
+          },
+        });
+      } else if (isGoalCycleShaped(definition, node)) {
+        // Goal-cycle body path (ECP-3).
+        const goal = goalCycleBody(
+          definition,
+          node,
+          capabilityByPath,
+          policyByPath,
+          definition.name
+        );
+        const cleanExit = node.exits.clean;
+        const continueExit = node.exits.needs_fix;
+        if (
+          cleanExit?.action !== 'exit' ||
+          continueExit?.action !== 'continue'
+        ) {
+          throw new RuntimePlanLowererError(
+            'lowerer_shape_mismatch',
+            `GoalCycle loop ${node.id} must exit on clean and continue on needs_fix.`
+          );
+        }
+        nodes.push({
+          kind: 'bounded-loop',
+          hierarchicalPath: `root:${node.id}`,
+          requires: resolveRequires(node.id),
+          maxIterations: node.limits.maxIterations,
+          body: {
+            kind: 'goal-cycle',
+            variant: goal.variant,
+            phases: goal.phases.map((phase) => ({
+              phase: phase.phase,
+              profilePath: phase.profilePath,
+              admissionKind: phase.admissionKind,
+              workspace: { access: phase.workspace.access },
+            })),
+          },
           outcomes: {
             clean: cleanExit.outcome,
             exhausted:

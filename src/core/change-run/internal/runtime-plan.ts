@@ -69,13 +69,29 @@ export interface RuntimePlanCompositeBody {
   readonly outcomes: Readonly<Record<string, string>>; // body outcome → loop exit outcome
 }
 
+export interface RuntimePlanGoalCyclePhase {
+  readonly phase: 'work' | 'judge';
+  readonly profilePath: string;
+  readonly admissionKind: RuntimePlanAdmissionKind;
+  readonly workspace: RuntimePlanWorkspace;
+}
+
+export interface RuntimePlanGoalCycleBody {
+  readonly kind: 'goal-cycle';
+  readonly variant: 'measure' | 'evaluate' | 'research';
+  readonly phases: readonly RuntimePlanGoalCyclePhase[];
+}
+
 export interface RuntimePlanBoundedLoopNode {
   readonly kind: 'bounded-loop';
   readonly nodeId: NodeId;
   readonly hierarchicalPath: string;
   readonly requires: readonly NodeId[];
   readonly maxIterations: number;
-  readonly body: RuntimePlanReviewCycleBody | RuntimePlanCompositeBody;
+  readonly body:
+    | RuntimePlanReviewCycleBody
+    | RuntimePlanCompositeBody
+    | RuntimePlanGoalCycleBody;
   readonly outcomes: Readonly<{
     clean: string;
     exhausted: string;
@@ -142,6 +158,19 @@ export interface RuntimePlanCompositeBodyInput {
   readonly outcomes: Readonly<Record<string, string>>;
 }
 
+export interface RuntimePlanGoalCyclePhaseInput {
+  readonly phase: 'work' | 'judge';
+  readonly profilePath: string;
+  readonly admissionKind: RuntimePlanAdmissionKind;
+  readonly workspace?: Readonly<{ access?: RuntimePlanWorkspaceAccess }>;
+}
+
+export interface RuntimePlanGoalCycleBodyInput {
+  readonly kind: 'goal-cycle';
+  readonly variant: 'measure' | 'evaluate' | 'research';
+  readonly phases: readonly RuntimePlanGoalCyclePhaseInput[];
+}
+
 export interface RuntimePlanNodeInput {
   readonly kind: 'atomic' | 'bounded-loop' | 'finish';
   readonly hierarchicalPath: string;
@@ -152,7 +181,10 @@ export interface RuntimePlanNodeInput {
   readonly gate?: RuntimePlanGateInput;
   readonly outcome?: string;
   readonly maxIterations?: number;
-  readonly body?: RuntimePlanReviewCycleBodyInput | RuntimePlanCompositeBodyInput;
+  readonly body?:
+    | RuntimePlanReviewCycleBodyInput
+    | RuntimePlanCompositeBodyInput
+    | RuntimePlanGoalCycleBodyInput;
   readonly outcomes?: Readonly<{
     clean: string;
     exhausted: string;
@@ -387,6 +419,31 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
           },
         } as RuntimePlanBoundedLoopNode;
       }
+      if (body.kind === 'goal-cycle') {
+        return {
+          kind: 'bounded-loop',
+          nodeId,
+          hierarchicalPath: node.hierarchicalPath,
+          requires,
+          maxIterations: node.maxIterations!,
+          body: {
+            kind: 'goal-cycle',
+            variant: body.variant,
+            phases: body.phases.map((phase) => ({
+              phase: phase.phase,
+              profilePath: phase.profilePath,
+              admissionKind: phase.admissionKind,
+              workspace: {
+                access: phase.workspace?.access ?? 'write',
+              },
+            })),
+          },
+          outcomes: {
+            clean: node.outcomes!.clean,
+            exhausted: node.outcomes!.exhausted,
+          },
+        } as RuntimePlanBoundedLoopNode;
+      }
       // composite body kind
       const bodyPathToNodeId = new Map<string, NodeId>();
       for (const stage of body.stages) {
@@ -481,6 +538,8 @@ function validateBoundedLoop(
     validateReviewCycleBody(path, node);
   } else if (node.body?.kind === 'composite') {
     validateCompositeBody(path, node);
+  } else if (node.body?.kind === 'goal-cycle') {
+    validateGoalCycleBody(path, node);
   } else {
     reject(
       'unsupported_runtime_plan',
@@ -631,6 +690,59 @@ function validateCompositeBody(
       reject(
         'invalid_runtime_plan',
         `Composite body ${path} must not declare empty outcome keys.`
+      );
+    }
+  }
+}
+
+function validateGoalCycleBody(
+  path: string,
+  node: RuntimePlanNodeInput
+): void {
+  const body = node.body as RuntimePlanGoalCycleBodyInput;
+  if (
+    body.variant !== 'measure' &&
+    body.variant !== 'evaluate' &&
+    body.variant !== 'research'
+  ) {
+    reject(
+      'invalid_runtime_plan',
+      `GoalCycle body ${path} variant must be measure, evaluate, or research.`
+    );
+  }
+  const expected = ['work', 'judge'] as const;
+  const actual = body.phases.map((phase) => phase.phase);
+  if (
+    actual.length !== expected.length ||
+    actual.some((phase, index) => phase !== expected[index])
+  ) {
+    reject(
+      'invalid_runtime_plan',
+      `GoalCycle body ${path} must declare work, judge in order.`
+    );
+  }
+  const profilePaths = new Set<string>();
+  for (const phase of body.phases) {
+    if (
+      phase.profilePath.length === 0 ||
+      phase.profilePath.length > 1024 ||
+      phase.profilePath.includes('\\') ||
+      profilePaths.has(phase.profilePath)
+    ) {
+      reject(
+        'invalid_runtime_plan',
+        `GoalCycle phase profile path ${JSON.stringify(phase.profilePath)} is malformed or duplicated.`
+      );
+    }
+    profilePaths.add(phase.profilePath);
+    if (
+      phase.admissionKind !== 'agent' &&
+      phase.admissionKind !== 'command' &&
+      phase.admissionKind !== 'host'
+    ) {
+      reject(
+        'invalid_runtime_plan',
+        `GoalCycle phase ${phase.phase} must declare a supported admission kind.`
       );
     }
   }

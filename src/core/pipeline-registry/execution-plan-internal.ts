@@ -648,7 +648,8 @@ export function analyzeReconcilerSupport(
           .filter(
             (node) =>
               node.kind === 'AtomicStage' &&
-              typeof node.reviewCyclePhase === 'string'
+              (typeof node.reviewCyclePhase === 'string' ||
+                typeof node.goalCyclePhase === 'string')
           )
           .map(
             (node) => `declaration:${declaration.id}/node:${node.id}`

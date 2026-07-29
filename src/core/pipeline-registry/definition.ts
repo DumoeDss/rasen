@@ -2045,6 +2045,75 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
       continue;
     }
 
+    // ECP-3 migration: stages with loop.kind === 'goal' produce a v2
+    // BoundedLoop with a 2-phase goal-cycle body (work → judge), enabling
+    // reconciler execution. The variant is derived from the gate type
+    // (measure → measure, evaluate → evaluate) and pipeline name
+    // (goal-loop-research → research).
+    if (stage.loop?.kind === 'goal') {
+      const goalLoop = stage.loop;
+      const bodyId = `goal-cycle-body:${stage.id}`;
+      const maxIterations = goalLoop.maxRounds;
+      const gateKind = goalLoop.gate?.kind;
+      // Detect research variant from pipeline name.
+      const isResearch = pipeline.name === 'goal-loop-research';
+      const variant = isResearch
+        ? 'research'
+        : gateKind === 'measure'
+          ? 'measure'
+          : 'evaluate';
+      const iterateCapability = { id: 'skill:rasen-goal-iterate', version: 'legacy' };
+
+      declarations.push({
+        id: bodyId,
+        kind: 'Composite',
+        provenance: 'built-in',
+        inputs: [],
+        artifacts: [],
+        outcomes: ['clean', 'needs_fix'],
+        graph: {
+          nodes: [
+            {
+              id: `${stage.id}:work`,
+              kind: 'AtomicStage',
+              capability: iterateCapability,
+              goalCyclePhase: 'work',
+              legacyStageId: stage.id,
+              legacyRuntimeOwner: 'prompt-owned-v1',
+            },
+            {
+              id: `${stage.id}:judge`,
+              kind: 'AtomicStage',
+              capability: iterateCapability,
+              goalCyclePhase: 'judge',
+              legacyRuntimeOwner: 'prompt-owned-v1',
+            },
+          ],
+          connections: [
+            {
+              id: `${stage.id}:work-to-judge`,
+              from: { node: `${stage.id}:work`, port: 'done' },
+              to: { node: `${stage.id}:judge`, port: 'start' },
+            },
+          ],
+        },
+      });
+      nodes.push({
+        id: `stage:${stage.id}`,
+        kind: 'BoundedLoop',
+        body: bodyId,
+        limits: { maxIterations },
+        exits: {
+          clean: { action: 'exit', outcome: 'clean' },
+          needs_fix: { action: 'continue' },
+        },
+        exhaustedOutcome: 'goal_cycle_exhausted',
+        legacyRuntimeOwner: 'prompt-owned-v1',
+        legacy: normalizedLegacyStage,
+      });
+      continue;
+    }
+
     nodes.push({
       id: `stage:${stage.id}`,
       kind: 'AtomicStage',
@@ -2102,9 +2171,6 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
         body: bodyId,
         limits: {
           maxIterations: stage.loop.maxRounds,
-          ...(stage.loop.kind === 'goal'
-            ? { budget: stage.loop.maxRounds }
-            : {}),
         },
         exits: {
           done: { action: 'exit', outcome: 'done' },
