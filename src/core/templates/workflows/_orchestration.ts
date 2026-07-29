@@ -575,7 +575,11 @@ function renderGoalLoop(
 ): string {
   let rendered = source;
 
-  if (!features.portfolio) {
+  // The thin Step L (ECP-3) no longer contains these review-cycle comparison
+  // phrases or decomposition references. These replacements are only relevant
+  // for the legacy full-length Step L text; skip them gracefully when the
+  // target string is absent.
+  if (!features.portfolio && rendered.includes('decompose the obstruction')) {
     rendered = replaceExactlyOnce(
       rendered,
       'new approach, different tool, decompose the obstruction',
@@ -584,7 +588,7 @@ function renderGoalLoop(
     );
   }
 
-  if (!features.reviewLoop) {
+  if (!features.reviewLoop && rendered.includes('isomorphic to review-cycle')) {
     rendered = replaceExactlyOnce(
       rendered,
       ' — not a review-clean diff. It is isomorphic to review-cycle\'s single-dispatch-per-round shape:',
