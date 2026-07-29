@@ -364,6 +364,8 @@ const V2_NODE_ID_BASE: Record<V2EditableNodeKind, string> = {
   Gate: 'gate',
   Choice: 'choice',
   Finish: 'finish',
+  CompositeRef: 'composite-ref',
+  BoundedLoop: 'bounded-loop',
 };
 
 /** Generates a stable, human-readable, graph-local identity for a new v2 node. */

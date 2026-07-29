@@ -692,6 +692,33 @@ export function PipelineCanvasPage() {
       node = { id, kind, outcomes: ['approved', 'rejected'] };
     } else if (kind === 'Choice') {
       node = { id, kind, outcomes: ['default'] };
+    } else if (kind === 'CompositeRef') {
+      const declaration = (draft.declarations ?? []).find(
+        (d) => d.provenance !== 'built-in' || d.graph.nodes.length > 0
+      );
+      if (!declaration) {
+        showToast('No declaration available to reference.');
+        return;
+      }
+      node = { id, kind, declarationId: declaration.id };
+    } else if (kind === 'BoundedLoop') {
+      const declaration = (draft.declarations ?? []).find(
+        (d) => d.graph.nodes.length > 0
+      );
+      if (!declaration) {
+        showToast('No declaration available for loop body.');
+        return;
+      }
+      node = {
+        id,
+        kind,
+        body: declaration.id,
+        limits: { maxIterations: 3 },
+        exits: {
+          clean: { action: 'exit', outcome: draft.outcomes[0] ?? 'done' },
+          needs_fix: { action: 'continue' },
+        },
+      };
     } else {
       node = {
         id,
