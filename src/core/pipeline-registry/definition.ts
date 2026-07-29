@@ -1883,6 +1883,8 @@ function supportsV2ExecutableRuntime(
     if (node.kind === 'AtomicStage') continue;
     if (node.kind === 'Gate') continue;
     if (node.kind === 'Choice') continue;
+    if (node.kind === 'FanOut') { compositeOrLoop += 1; continue; }
+    if (node.kind === 'Join') continue;
     if (node.kind === 'CompositeRef') {
       // A CompositeRef is executable if its declaration body contains only
       // AtomicStage nodes (flat DAG).
@@ -2189,14 +2191,118 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
 
   nodes.sort((left, right) => compareCanonicalStrings(left.id, right.id));
   declarations.sort((left, right) => compareCanonicalStrings(left.id, right.id));
+
+  // ECP-4: detect v1 parallelGroup on stages and produce FanOut/Join v2 nodes.
+  const groupMap = new Map<string, typeof stages>();
+  for (const stage of stages) {
+    const group = (stage as Readonly<{ parallelGroup?: string }>).parallelGroup;
+    if (group === undefined) continue;
+    const existing = groupMap.get(group) ?? [];
+    existing.push(stage);
+    groupMap.set(group, existing);
+  }
+  // FanOut/Join nodes and connections produced by groups
+  const groupConnections: DefinitionConnection[] = [];
+
+  for (const [groupName, groupStages] of groupMap) {
+    const memberIds = groupStages.map((s) => s.id).sort(compareCanonicalStrings);
+    const joinId = `${groupName}-join`;
+    const memberMeta = groupStages.map((s) => {
+      const condition = (s as Readonly<{ condition?: string }>).condition ?? 'always';
+      return {
+        id: s.id,
+        required: condition === 'always',
+        condition,
+      };
+    });
+    const requiredMembers = memberMeta.filter((m) => m.required).map((m) => `stage:${m.id}`);
+    const optionalMembers = memberMeta.filter((m) => !m.required).map((m) => `stage:${m.id}`);
+
+    // FanOut node
+    const fanOutNode: DefinitionNode = {
+      id: `fanout:${groupName}`,
+      kind: 'FanOut',
+      branches: memberIds,
+      // ECP-4 metadata for the lowerer
+      concurrencyCap: 3,
+      budget: memberIds.length,
+      joinNodeId: `join:${joinId}`,
+      members: memberMeta.map((m) => ({
+        id: m.id,
+        hierarchicalPath: `stage:${m.id}`,
+        required: m.required,
+        condition: m.condition,
+      })),
+    };
+    nodes.push(fanOutNode);
+
+    // Join node
+    const joinNode: DefinitionNode = {
+      id: `join:${joinId}`,
+      kind: 'Join',
+      inputs: memberIds.map((id) => `stage:${id}`),
+      requiredMembers,
+      optionalMembers,
+      outcomes: { proceed: `${groupName}-done`, failed: `${groupName}-failed` },
+    };
+    nodes.push(joinNode);
+
+    // Connect FanOut → members (each member requires the FanOut)
+    for (const memberId of memberIds) {
+      groupConnections.push({
+        id: `fanout:${groupName}->stage:${memberId}`,
+        from: { node: `fanout:${groupName}`, port: 'dispatch' },
+        to: { node: `stage:${memberId}`, port: 'start' },
+      });
+    }
+    // Connect members → Join
+    for (const memberId of memberIds) {
+      groupConnections.push({
+        id: `stage:${memberId}->join:${joinId}`,
+        from: { node: `stage:${memberId}`, port: 'done' },
+        to: { node: `join:${joinId}`, port: 'input' },
+      });
+    }
+  }
+
+  // Rewrite downstream connections: a stage that requires a group member now
+  // requires the Join instead. Also, group members' upstream requires connect
+  // to the FanOut node instead of individual upstream stages.
+  const groupMemberIds = new Set<string>();
+  for (const [, groupStages] of groupMap) {
+    for (const s of groupStages) groupMemberIds.add(s.id);
+  }
+
   const connections = stages
-    .flatMap((stage) =>
-      [...stage.requires].sort(compareCanonicalStrings).map((required) => ({
-        id: `stage:${required}->stage:${stage.id}`,
-        from: { node: `stage:${required}`, port: 'done' },
-        to: { node: `stage:${stage.id}`, port: 'start' },
-      }))
-    )
+    .flatMap((stage) => {
+      // Skip group members — their connections are generated above
+      if (groupMemberIds.has(stage.id)) {
+        // Member requires point to FanOut (already connected)
+        // But we still need to connect upstream deps to the FanOut
+        return [...stage.requires].sort(compareCanonicalStrings).map((required) => ({
+          id: `stage:${required}->fanout:${(stage as Readonly<{ parallelGroup?: string }>).parallelGroup}`,
+          from: { node: `stage:${required}`, port: 'done' },
+          to: { node: `fanout:${(stage as Readonly<{ parallelGroup?: string }>).parallelGroup}`, port: 'start' },
+        }));
+      }
+      // Non-member stages: if they require a group member, rewrite to Join
+      return [...stage.requires].sort(compareCanonicalStrings).map((required) => {
+        if (groupMemberIds.has(required)) {
+          const groupName = stages.find((s) => s.id === required)?.parallelGroup;
+          return {
+            id: `join:${groupName}-join->stage:${stage.id}`,
+            from: { node: `join:${groupName}-join`, port: 'done' },
+            to: { node: `stage:${stage.id}`, port: 'start' },
+          };
+        }
+        return {
+          id: `stage:${required}->stage:${stage.id}`,
+          from: { node: `stage:${required}`, port: 'done' },
+          to: { node: `stage:${stage.id}`, port: 'start' },
+        };
+      });
+    })
+    .concat(groupConnections)
     .sort((left, right) => compareCanonicalStrings(left.id, right.id));
 
   return {

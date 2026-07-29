@@ -4,7 +4,10 @@ import type {
   BoundedLoopNode,
   CompositeDeclaration,
   CompositeRefNode,
+  DefinitionNode,
   DefinitionSourceV2,
+  FanOutNode,
+  JoinNode,
 } from '../../pipeline-registry/definition.js';
 import type { RuntimeExecutionProfile } from '../../pipeline-registry/execution-plan-internal.js';
 import type { PipelineYaml } from '../../pipeline-registry/types.js';
@@ -592,11 +595,17 @@ function lowerV2ReviewCyclePlanInput(
   const nodes: RuntimePlanNodeInput[] = [];
 
   for (const node of definition.root.nodes) {
-    // Skip v1-normalization structural artifacts. Gate/Choice nodes are
+    // Skip v1-normalization structural artifacts. Gate nodes are
     // metadata carriers — gate logic is encoded in the AtomicStage's policy
-    // gate field, and Choice is handled at the execution layer. Legacy-loop
-    // BoundedLoop nodes (non-ReviewCycle) are not supported by the v2 runtime.
-    if (node.kind === 'Gate' || node.kind === 'Choice') continue;
+    // gate field. Legacy-loop BoundedLoop nodes (non-ReviewCycle) are not
+    // supported by the v2 runtime.
+    if (node.kind === 'Gate') continue;
+    // ECP-4: Choice nodes from v1 condition normalization are metadata only.
+    // Choice nodes authored in v2 or from parallelGroup normalization are
+    // handled below.
+    if (node.kind === 'Choice' && (node as Readonly<{ legacyRuntimeOwner?: unknown }>).legacyRuntimeOwner !== undefined) {
+      continue;
+    }
     if (node.kind === 'CompositeRef') {
       // CompositeRef is inlined into atomic nodes — not emitted as a node.
       const inlined = compositeRefBody(definition, node);
@@ -818,9 +827,120 @@ function lowerV2ReviewCyclePlanInput(
       });
       continue;
     }
+    // ECP-4: Choice nodes (v2 authored — not legacy condition metadata)
+    if (node.kind === 'Choice') {
+      const outcomes = node.outcomes;
+      // Build branch mapping: outcome → downstream path
+      const branches: Record<string, string> = {};
+      for (const outcome of outcomes) {
+        // Find connections from this Choice node with a port matching the outcome
+        const targetConn = definition.root.connections.find(
+          (conn) =>
+            conn.from.node === node.id &&
+            (conn.from.port === outcome || conn.from.port === `outcome:${outcome}`)
+        );
+        if (targetConn) {
+          branches[outcome] = `root:${targetConn.to.node}`;
+        } else {
+          // Fallback: use the outcome as a path suffix
+          branches[outcome] = `root:${node.id}/${outcome}`;
+        }
+      }
+      nodes.push({
+        kind: 'choice',
+        hierarchicalPath: `root:${node.id}`,
+        requires: resolveRequires(node.id),
+        admissionKind: 'agent',
+        workspace: { access: 'none' },
+        profilePath: `root:${node.id}`,
+        choice: { outcomes, branches },
+      });
+      continue;
+    }
+    // ECP-4: FanOut nodes
+    if (node.kind === 'FanOut') {
+      const fanOutMeta = node as FanOutNode & {
+        concurrencyCap?: number;
+        budget?: number;
+        joinNodeId?: string;
+        members?: ReadonlyArray<{ id: string; hierarchicalPath: string; required: boolean; condition: string }>;
+      };
+      const memberList = fanOutMeta.members ?? node.branches.map((id) => ({
+        id,
+        hierarchicalPath: `stage:${id}`,
+        required: true,
+        condition: 'always',
+      }));
+      const joinNodeId = fanOutMeta.joinNodeId ?? `join:${node.id.replace('fanout:', '')}-join`;
+      nodes.push({
+        kind: 'fan-out',
+        hierarchicalPath: `root:${node.id}`,
+        requires: resolveRequires(node.id),
+        admissionKind: 'agent',
+        workspace: { access: 'none' },
+        profilePath: `root:${node.id}`,
+        fanOut: {
+          members: memberList.map((m) => ({
+            hierarchicalPath: m.hierarchicalPath,
+            required: m.required,
+            condition: m.condition,
+          })),
+          concurrencyCap: fanOutMeta.concurrencyCap ?? 3,
+          budget: fanOutMeta.budget ?? memberList.length,
+          joinNodeId: `root:${joinNodeId}`,
+        },
+      });
+      // Also lower each member as an atomic node with fanOutTag
+      for (const member of memberList) {
+        const memberPath = `root:${member.hierarchicalPath}`;
+        const capability = capabilityByPath.get(memberPath);
+        if (capability === undefined) {
+          throw new RuntimePlanLowererError(
+            'lowerer_shape_mismatch',
+            `No frozen capability binding exists for ${memberPath}.`
+          );
+        }
+        nodes.push({
+          kind: 'atomic',
+          hierarchicalPath: memberPath,
+          requires: [`root:${node.id}`],
+          admissionKind: capability.actionKind,
+          workspace: { access: capability.workspace.access },
+          adaptiveVerify: false,
+          profilePath: memberPath,
+          fanOutTag: { nodeId: `root:${node.id}`, required: member.required },
+        });
+      }
+      continue;
+    }
+    // ECP-4: Join nodes
+    if (node.kind === 'Join') {
+      const joinMeta = node as JoinNode & {
+        requiredMembers?: readonly string[];
+        optionalMembers?: readonly string[];
+        outcomes?: Readonly<{ proceed: string; failed: string }>;
+      };
+      const requiredMembers = joinMeta.requiredMembers ?? [];
+      const optionalMembers = joinMeta.optionalMembers ?? node.inputs;
+      const outcomes = joinMeta.outcomes ?? { proceed: 'join-done', failed: 'join-failed' };
+      // Resolve member hierarchical paths (prepend root:)
+      const resolveMemberPaths = (members: readonly string[]) =>
+        members.map((m) => m.startsWith('root:') ? m : `root:${m}`);
+      nodes.push({
+        kind: 'join',
+        hierarchicalPath: `root:${node.id}`,
+        requires: resolveRequires(node.id),
+        join: {
+          requiredMembers: resolveMemberPaths([...requiredMembers]),
+          optionalMembers: resolveMemberPaths([...optionalMembers]),
+          outcomes,
+        },
+      });
+      continue;
+    }
     throw new RuntimePlanLowererError(
       'lowerer_shape_mismatch',
-      `Authored v2 ReviewCycle runtime does not yet support root node kind ${node.kind}.`
+      `Authored v2 runtime does not yet support root node kind ${(node as DefinitionNode).kind}.`
     );
   }
   const hasFinish = nodes.some((node) => node.kind === 'finish');

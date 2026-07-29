@@ -14,20 +14,20 @@
 
 ## 2. Lowerer — Choice/FanOut/Join Lowering (Acceptance: D5, D6)
 
-- [ ] 2.1 Extend `lowerV2ReviewCyclePlanInput` in `src/core/change-run/internal/lowerer.ts` with a `Choice` root node branch: resolve outcome → branch path mapping from definition connections, produce `choice` RuntimePlanNodeInput
-- [ ] 2.2 Add a `FanOut` root node branch: produce `fan-out` RuntimePlanNodeInput + member `atomic` RuntimePlanNodeInput entries (each with `fanOut` tag, `hierarchicalPath: root:<fan-out-id>/<member-id>`, `requires: [root:<fan-out-id>]`)
-- [ ] 2.3 Add a `Join` root node branch: split inputs into `requiredMembers`/`optionalMembers` by cross-referencing FanOut member metadata, produce `join` RuntimePlanNodeInput
-- [ ] 2.4 Extend the `resolveRequires` helper to expand FanOut/Join node references for downstream dependencies (downstream of Join requires Join path; downstream of Choice branch requires the branch path)
-- [ ] 2.5 Write lowerer tests: v2 definition with Choice/FanOut/Join lowers to valid runtime plan with correct topology
+- [x] 2.1 Extend `lowerV2ReviewCyclePlanInput` in `src/core/change-run/internal/lowerer.ts` with a `Choice` root node branch: resolve outcome → branch path mapping from definition connections, produce `choice` RuntimePlanNodeInput
+- [x] 2.2 Add a `FanOut` root node branch: produce `fan-out` RuntimePlanNodeInput + member `atomic` RuntimePlanNodeInput entries (each with `fanOut` tag, `hierarchicalPath: root:<fan-out-id>/<member-id>`, `requires: [root:<fan-out-id>]`)
+- [x] 2.3 Add a `Join` root node branch: split inputs into `requiredMembers`/`optionalMembers` by cross-referencing FanOut member metadata, produce `join` RuntimePlanNodeInput
+- [x] 2.4 Extend the `resolveRequires` helper to expand FanOut/Join node references for downstream dependencies (downstream of Join requires Join path; downstream of Choice branch requires the branch path)
+- [x] 2.5 Write lowerer tests: v2 definition with Choice/FanOut/Join lowers to valid runtime plan with correct topology
 
 ## 3. Normalizer — v1 parallelGroup → v2 FanOut/Join (Acceptance: D6)
 
-- [ ] 3.1 Extend `normalizeV1` in `src/core/pipeline-registry/definition.ts` to detect `parallelGroup` on v1 stages
-- [ ] 3.2 For each group: produce `FanOut` root node, member `AtomicStage` root nodes (with `required` based on `condition`), and `Join` root node
-- [ ] 3.3 Map downstream `requires` from individual group-member references to the Join node
-- [ ] 3.4 Add a synthetic `parallel-dispatch` capability for the FanOut condition evaluator
-- [ ] 3.5 Write normalizer tests: `full-feature` v1 YAML normalizes to v2 with correct FanOut/Join/member structure; `condition: always` → required; other conditions → optional
-- [ ] 3.6 Verify `bug-fix` and `small-feature` normalization is unaffected (no `parallelGroup`)
+- [x] 3.1 Extend `normalizeV1` in `src/core/pipeline-registry/definition.ts` to detect `parallelGroup` on v1 stages
+- [x] 3.2 For each group: produce `FanOut` root node, member `AtomicStage` root nodes (with `required` based on `condition`), and `Join` root node
+- [x] 3.3 Map downstream `requires` from individual group-member references to the Join node
+- [x] 3.4 Add a synthetic `parallel-dispatch` capability for the FanOut condition evaluator
+- [x] 3.5 Write normalizer tests: `full-feature` v1 YAML normalizes to v2 with correct FanOut/Join/member structure; `condition: always` → required; other conditions → optional
+- [x] 3.6 Verify `bug-fix` and `small-feature` normalization is unaffected (no `parallelGroup`)
 
 ## 4. Reconciler — Choice Pass (Acceptance: D2)
 
