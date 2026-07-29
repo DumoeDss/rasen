@@ -109,16 +109,24 @@ reconciler ──next action──▶ launcher / runtime
 | `touch(sessionRef)` | `wake` 的固定短消息特例，成本 ≈ 0.1×C；决策规则见 §6 |
 | `retire(sessionRef, {finalTurn})` | finalTurn=true：末回合让 session 写 handoff distillate 再标记 retired（趁 warm 退休）；false：直接标记（已冷透时不花唤醒钱）。retired 为终态，`wake` 结构化拒绝 |
 
-### 5.1 宿主变体（官方文档调研后新增，2026-07-29）
+### 5.1 宿主形态（P0 探针定稿，2026-07-29；证据见 `docs/experiments/session-cache-probe-results.md`）
 
-官方无头模式支持 `--input-format stream-json`：**单进程多轮**——进程常驻、消息经 stdin 排队、顺序执行、`stream-json` 输出含逐轮 usage。这提供第二种宿主形态：
+**主宿主 = `stream-json` 常驻进程；`resume-cli` 降级为崩溃恢复路径。** 探针裁决：
 
-| hostKind | 形态 | 何时选 |
+| hostKind | 形态 | P0 裁决 |
 |---|---|---|
-| `resume-cli`（基线） | 每次唤醒一个 `-p --resume` 新进程，空闲零进程 | 留存行为与进程存活无关时的最简形态 |
-| `stream-json`（候选） | 每 worker 一个常驻 `claude -p --input-format stream-json` 进程 | 若探针证实"存活进程享受交互式级留存"（KC6，待测），则直接消解 KC1a 问题、touch 可能全免；且进程内串行天然解决 KC5 并发 |
+| `stream-json`（**主**） | 每 worker 一个常驻 `claude -p --input-format stream-json --output-format stream-json` 进程，消息经 stdin 排队 | **KC6 PASS**：在杀死 resume-cli 的同一 worktree cwd 下，空闲 35 分钟 HIT 99.5–99.9%（haiku 与 sonnet 一致）。存活进程的历史上下文冻结在会话内、不重渲染 |
+| `resume-cli`（恢复路径） | `-p --resume` 一发即走 | **KC1a/KC1c FAIL**：repo cwd 下 resume 会重渲染 cwd 注入的项目上下文块（~7.3k），该块含 git 状态相关**及未定位的其他可变成分**（repo 静止的对照仍 MISS），前缀在 21.7k–26k 边界断开、其后全量重写。scratchpad cwd 下 15–40 分钟 8 战全胜——机制是前缀不稳定，不是 TTL/容量 |
 
-两者共享 registry/journal/退休语义，`hostKind` 已是 registry 字段。另：SessionEnd/Stop hooks 在无头模式正常触发（1.5s 预算）——registry 更新可由 hook 异步触发，减少对 stdout 解析的依赖。不支持自定义 session id（registry 记系统生成 id）。
+推论与配套事实（探针实测）：
+
+- **进程存活成为缓存资产的一部分**：worker 进程必须由 daemon 持有 stdin/stdout（父进程死 → EOF → 进程退出）。进程死亡的恢复 = `resume-cli` respawn，付一次重渲染 rebase（有界、audit 可见），随后回到 live 形态；
+- **KC5 并发**：CLI 层无任何并发保护（并发双方都计费、一方回合被静默丢弃）——stream-json 主宿主下消息经单一 stdin 天然串行，resume-cli 恢复路径仍须单飞锁；
+- **KC4**：session_id 全程不换（跨 7 次 resume）——registry 记单 id，`sessionIdChain` 简化为防御性字段；
+- **KC2**：跨 cwd resume 硬报错 exit 1——registry 记录并校验 cwd（已在设计内）；
+- SessionEnd/Stop hooks 无头模式正常触发（1.5s 预算）——registry 更新可由 hook 异步触发；不支持自定义 session id。
+
+**P1 入口残余验证**（继承报告"残余缺口"）：① 常驻进程 >35 分钟留存未证——**65 分钟 KC6 复跑是 P1 开工前置**（决定 §6.1 touch 在 live 宿主下是否还需要）；② KC5 丢轮次 n=1，单飞锁实现时补重复试验。
 
 约束（探针 KC 对应）：
 
@@ -137,6 +145,8 @@ reconciler ──next action──▶ launcher / runtime
 首次生命周期 break-even ≈ 0.75C / 0.1C ≈ 7.5 次保温 ≈ 34–36 分钟空闲
 ```
 
+> **P0 定稿后的适用性**：上述原始模型对 **stream-json 主宿主完整成立**（live 进程空闲零成本、35 分钟实证 HIT、touch 仅 >55 分钟场景待 65 分钟复跑确认）——KC1a 曾引发的"~15 分钟 touch cadence、break-even 恶化到 45–50 分钟"重算**只适用于 resume-cli 恢复路径**，不再是主线经济学。
+
 决策输入与规则（内核世界的重述）：
 
 | 条件 | tier |
@@ -148,7 +158,13 @@ reconciler ──next action──▶ launcher / runtime
 | 轮间空闲 ≤ 30 分钟且单轮写入量大（implementer/fixer 型） | inline-subagent（2× 写系数作用于全部增量写入，重写型角色在 session 档持续更贵） |
 | 30–35 分钟灰区 | 读多写少角色（reviewer/planner 型）→ session；否则 subagent |
 
-### 6.1 touch 的策略/执行分离：daemon 作为 touch 执行器
+### 6.1 daemon：从 touch 定时器升级为进程托管者（P0 定稿后角色扩大）
+
+stream-json 主宿主使 daemon 从"可选的 touch 优化器"变为 **live worker 的进程托管者**：持有各 worker 进程的 stdin/stdout 管道、注入消息、收割 result 事件、崩溃时按 resume-cli 路径 respawn（付一次有界 rebase）。touch 在 live 宿主下的必要性取决于 65 分钟 KC6 复跑：若 live 进程留存贯穿 1h TTL，touch 仅在预计空闲 >55 分钟时需要（经 stdin 注入固定短消息即可，实现成本趋零）。
+
+优雅降级重述：daemon 死亡 → worker 进程收到 EOF 退出 → registry 仍持有 sessionId/cwd → 任意 driver 经 resume respawn，付一次重渲染 rebase 后回到 live 形态。**正确性永不依赖 daemon 存活，只有缓存效率依赖。**
+
+以下 touch 策略/执行分离机制保留（适用于 resume-cli 恢复路径及 >55 分钟场景）：
 
 touch 时钟不能挂在 launcher 上——launcher 是 LLM 会话，50 分钟标记到达时它可能正闲置或已退出；用不可靠的时钟保精确的 TTL 窗口是自相矛盾。方案是把**判断**与**执行**分开：
 
@@ -186,7 +202,7 @@ reviewer / fixer：session 档（多 episode、轮间空闲、读多写少），
 1. **dispatch 时机选档**——档位不可中途切换（换档 = 全量 2×C 重写），planner 按任务画像预判：`C_workingset > ~0.6 × C_implementer` 或 fix 轮需要实现者脑内状态 → implementer 从一开始走 session 档，0.75×C 写溢价当保险费（stage 配置显式逃生门）；
 2. **working-set manifest 无论如何都做**——handoff 附机器可读清单（文件路径 + 行区间 + 相关性理由），successor 重收集从"重新探索"降为"定向读切片"（大文件读 findings 指向的区间而非整文件）；
 3. **重收集只付一次**——session 档 fixer 收集后跨全部 fix 轮保温摊薄，真实对比是 `0.75×C_impl` vs `1.25×C_ws 一次性`。
-4. **`--fork-session` 继承（官方能力，2026-07-29 调研确认）**——session 档 implementer 完成后 fork 其会话给 fixer：fork 复制历史、前缀字节相同，**T_eff 内 fork 首请求命中原会话缓存条目**，fixer 以 0.1×C 读继承全部收集成果（vs 1.25×C_ws 重收集），且获得独立 session 身份。是 collection-heavy 场景的最优解。边界：design-level fixer 按 `worker-reuse-orchestration` spec 仍须 fresh eyes，fork 只用于机械修复轮；reviewer 永不 fork 自 implementer（评审独立性污染）。
+4. **`--fork-session` 继承（官方能力，2026-07-29 调研确认）**——session 档 implementer 完成后 fork 其会话给 fixer：fork 复制历史、前缀字节相同，fixer 以 0.1×C 读继承全部收集成果（vs 1.25×C_ws 重收集），且获得独立 session 身份。边界：design-level fixer 按 `worker-reuse-orchestration` spec 仍须 fresh eyes，fork 只用于机械修复轮；reviewer 永不 fork 自 implementer（评审独立性污染）。**P0 定稿附加约束**：fork 走 resume 路径，在 repo cwd 下受前缀重渲染不稳定影响（§5.1）——fork 应在源会话完成后**立即**执行（分钟级窗口内注入块大概率未变），或接受一次重写作为继承成本上限；P1 实测 fork 的 HIT 率后再定默认。
 
 collection-heavy 任务同时逼近上下文窗口上限（`handoffTokenLimit` 契约字段管辖）——保温不解决窗口耗尽，manifest 层不可省。
 
@@ -206,8 +222,9 @@ collection-heavy 任务同时逼近上下文窗口上限（`handoffTokenLimit` �
       "sessionKey": "reviewer@invocation-…",
       "role": "reviewer",
       "nodeId": "…", "invocationId": "…",
-      "hostKind": "resume-cli",
-      "sessionIdChain": ["sid-1", "sid-2"],
+      "hostKind": "stream-json",
+      "sessionId": "sid-1",
+      "pid": 12345,
       "cwd": "…", "model": "…",
       "state": "active|idle|retired",
       "dispatchedAt": "…", "lastRequestAt": "…",
@@ -220,8 +237,8 @@ collection-heavy 任务同时逼近上下文窗口上限（`handoffTokenLimit` �
 }
 ```
 
-- 单写者 = rasen CLI（SessionHost 操作的副作用），lockfile + 原子 rename；
-- `sessionIdChain` 承接 KC4 结果（resume 若每次换 id，链是审计聚合的关键）；
+- 单写者 = rasen CLI/daemon（SessionHost 操作的副作用），lockfile + 原子 rename；
+- `sessionId` 单值即可（KC4 定案：resume 不换 id）；`pid` 记录 live 进程句柄，respawn 时更新；
 - `wakes[]` 是轻量投递台账，替代 v1 的独立 mailbox journal——**正式的执行证据走内核的 record/evidence 通道**（契约里 agent action 已要求 `resultContractDigest`/`evidenceContractDigest`），registry 不做第二套真相，只存内核契约不覆盖的宿主层事实（缓存时钟、身份链、生命周期）。
 
 ## 8. audit --run
@@ -248,6 +265,12 @@ rasen agent audit --run <runId>
 > 6. **官方文档调研确认（同日）**：1h 档官方措辞即"尽力而为、可逐出、无存活保证"——KC1a 解读获背书；客户端保温行为文档零记载（机制仍未知）。新增待测假设：
 >    - **KC6（高价值）**：常驻 `claude -p --input-format stream-json` 进程空闲 30–40 分钟后经 stdin 发消息是否 HIT——若"存活进程 = 交互式级留存"成立，宿主换 `stream-json` 形态（§5.1），touch 可能全免；
 >    - **KC7（低优先）**：`claude --bg` 会话的留存行为（supervisor 或有未记载保温；无编程消息 API，暂不作宿主）。
+>
+> **P0 定稿（同日 20:06 收官，完整回报见 `docs/experiments/session-cache-probe-results.md`，25 次计费调用 $3.53）**：
+> 1. **KC6 PASS（双模型档位）**：worktree cwd 下常驻 stream-json 进程空闲 35 分钟 HIT 99.5–99.9% → **主宿主定为 stream-json**（§5.1），resume-cli 降级为恢复路径；
+> 2. **KC1a 根因定案为 cwd 前缀不稳定**：repo cwd 的 resume 重渲染注入的 ~7.3k 项目上下文块（含 git 状态相关成分——主链 5 次 HIT/MISS 与本 worktree 的 commit 时间窗完美相关；另含未定位的其他可变成分——repo 静止的对照仍 MISS）；scratchpad cwd 8 战全胜证明留存本身 ≥40 分钟。TTL/容量淘汰假设双双出局；
+> 3. KC1c FAIL（touch 两腿皆冷）随根因重释：不是 touch 机制无效，是 resume 路径前缀不稳定——touch 在 live 宿主下经 stdin 注入不受此影响；
+> 4. 遗留验证（P1 入口）：65 分钟 KC6 复跑（>35 分钟留存）、KC5 重复试验、fork HIT 率实测。
 
 **P1 — SessionHost + registry + daemon touch scheduler（探针通过后；可与 ECP-4 后期并行的独立模块）**
 新模块（建议 `src/core/session-host/`）+ `rasen session exec|list|retire` CLI + daemon 内的 touch scheduler（§6.1 机械执行器）+ 单测。不碰 `change-run/`（只读契约类型），与 ECP-4 无文件冲突。
@@ -266,13 +289,13 @@ rasen agent audit --run <runId>
 
 | # | 风险/问题 | 处置 |
 |---|---|---|
-| R1 | 无头会话实际留存远短于 1h 计费档（P0 已证实） | touch cadence 按实测 T_eff 定（§9 P0 中期发现）；SDK 宿主**不是**备胎（宿主无关）；经济学重算后可能收窄 session tier 的适用面 |
+| R1 | repo cwd 下 resume 前缀不稳定（P0 定案：重渲染的项目上下文块，含未定位可变成分） | 主宿主 stream-json 免疫（§5.1）；resume 仅作恢复路径并把一次 rebase 计入恢复成本；不投入定位/修复该块（CLI 内部行为，版本间可漂移） |
 | R2 | ECP-4 改动 agent action 契约形状 | §4/§6 接线与 schema 留白到契约冻结；P1 只依赖 `session.reuse` 语义存在 |
 | R3 | 每 worker 独立配额消耗、并行 session 上限 | P2 限 ≤2 个 session worker；registry 容量上限配置 |
 | R4 | Claude CLI 升级改变 `-p/--resume/stream-json` 行为 | 探针脚本可重跑作为回归；audit 有 format-drift 处理先例 |
 | R5 | session 上下文膨胀触发 compaction（1h TTL 不解决增长） | 复用 `handoffTokenLimit` 契约字段：超限 retire+handoff |
 | R6 | `--dangerously-skip-permissions` 无人值守面 | 与 supervisor/relay 同险级；workspace.access=read 的角色可叠加 edit-boundary |
 | Q1 | 完整 wake/exec 由 launcher 调还是未来 daemon 调（runtime 宿主问题） | **touch 执行已定 daemon（§6.1）**；完整 agent action 执行的宿主 ECP-4 后与接线设计一并定；SessionHost 对调用方无假设 |
-| R7 | daemon 生命周期不可靠（用户进程非服务，可能未运行/被关） | §6.1 优雅降级：无 daemon 只损失 touch 优化，正确性不受影响；audit 用 staleAt 区分"策略停"与"daemon 缺席" |
+| R7 | daemon 生命周期不可靠（用户进程非服务，可能未运行/被关），而 live worker 进程依赖 daemon 持有管道 | §6.1 降级：daemon 死 → worker 进程 EOF 退出 → registry 持 sessionId/cwd → resume respawn 付一次有界 rebase 后回到 live 形态；**正确性永不依赖 daemon，只有缓存效率依赖** |
 | Q2 | `sessionKey` 与内核 `sessionIdentityDigest` 的对应关系 | P2 接线时对齐，registry 记录 digest 反引 |
 | Q3 | 0.1.6 侧是否单独做 `rasen agent signal` 止血 | 独立小 PR，用户按 0.1.6 存续期决定，不入本设计 |
