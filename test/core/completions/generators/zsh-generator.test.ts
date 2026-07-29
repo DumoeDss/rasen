@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ZshGenerator } from '../../../../src/core/completions/generators/zsh-generator.js';
-import { CommandDefinition } from '../../../../src/core/completions/types.js';
+import { ResolvedCommandDefinition } from '../../../../src/core/completions/types.js';
 
 describe('ZshGenerator', () => {
   let generator: ZshGenerator;
@@ -21,7 +21,7 @@ describe('ZshGenerator', () => {
 
   describe('generate', () => {
     it('should generate valid zsh completion script with header', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'init',
           description: 'Initialize Rasen',
@@ -37,7 +37,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should include all commands in the command list', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'init',
           description: 'Initialize Rasen',
@@ -63,7 +63,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should generate command completion functions', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'init',
           description: 'Initialize Rasen',
@@ -83,7 +83,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should handle commands with flags', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'validate',
           description: 'Validate specs',
@@ -109,7 +109,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should handle flags with short options', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'show',
           description: 'Show a spec',
@@ -131,7 +131,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should handle flags that take values', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'validate',
           description: 'Validate specs',
@@ -140,7 +140,7 @@ describe('ZshGenerator', () => {
               name: 'type',
               description: 'Specify item type',
               takesValue: true,
-              values: ['change', 'spec'],
+              completionValues: ['change', 'spec'],
             },
           ],
         },
@@ -154,7 +154,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should handle flags with takesValue but no specific values', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'validate',
           description: 'Validate specs',
@@ -176,7 +176,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should handle commands with subcommands', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'change',
           description: 'Manage changes',
@@ -205,7 +205,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should handle positional arguments for change-id', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'archive',
           description: 'Archive a change',
@@ -221,7 +221,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should handle positional arguments for spec-id', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'show-spec',
           description: 'Show a spec',
@@ -237,7 +237,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should handle positional arguments for change-or-spec-id', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'show',
           description: 'Show an item',
@@ -253,7 +253,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should handle positional arguments for paths', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'init',
           description: 'Initialize Rasen',
@@ -269,7 +269,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should handle positional arguments for schema names', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'schema',
           description: 'Manage schemas',
@@ -286,7 +286,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should handle positional arguments for profile names', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'profile-use',
           description: 'Use a profile',
@@ -303,7 +303,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should emit optional indexed positional arguments with double-colon syntax', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'workspace',
           description: 'Manage workspaces',
@@ -330,7 +330,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should escape special characters in descriptions', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'test',
           description: "Test with 'quotes' and [brackets] and back\\slash and colon:",
@@ -352,7 +352,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should sanitize command names with hyphens for function names', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'my-command',
           description: 'A hyphenated command',
@@ -366,7 +366,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should handle complex nested subcommands with flags', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'spec',
           description: 'Manage specs',
@@ -402,7 +402,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should generate script that ends with compdef registration', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'init',
           description: 'Initialize',
@@ -416,7 +416,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should handle empty command list', () => {
-      const commands: CommandDefinition[] = [];
+      const commands: ResolvedCommandDefinition[] = [];
 
       const script = generator.generate(commands);
 
@@ -425,7 +425,7 @@ describe('ZshGenerator', () => {
     });
 
     it('should handle commands with no flags', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'view',
           description: 'Display dashboard',

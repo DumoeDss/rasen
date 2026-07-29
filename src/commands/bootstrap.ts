@@ -37,7 +37,6 @@ import {
 } from '../core/store/bootstrap.js';
 import type { StoreDiagnostic } from '../core/store/errors.js';
 import {
-  BOOTSTRAP_DESCRIPTIONS,
   getBootstrapMessages,
   type BootstrapMessages,
 } from './bootstrap-messages.js';
@@ -593,18 +592,18 @@ export async function runBootstrapCommand(
 export function registerBootstrapCommand(program: Command): void {
   program
     .command('bootstrap')
-    .description(BOOTSTRAP_DESCRIPTIONS.command)
-    .option('--check', BOOTSTRAP_DESCRIPTIONS.check)
-    .option('--dry-run', BOOTSTRAP_DESCRIPTIONS.dryRun)
-    .option('--apply', BOOTSTRAP_DESCRIPTIONS.apply)
-    .option('--yes', BOOTSTRAP_DESCRIPTIONS.yes)
-    .option('--json', BOOTSTRAP_DESCRIPTIONS.json)
+    .description('')
+    .option('--check', '')
+    .option('--dry-run', '')
+    .option('--apply', '')
+    .option('--yes', '')
+    .option('--json', '')
     .option(
       '--path <selector=dir>',
-      BOOTSTRAP_DESCRIPTIONS.path,
+      '',
       (value: string, previous: string[] = []) => [...previous, value]
     )
-    .option('--into <dir>', BOOTSTRAP_DESCRIPTIONS.into)
+    .option('--into <dir>', '')
     .action(async (options: BootstrapCommandOptions) => {
       // Every mature command in this repo guards its own body (see
       // `registerDoctorCommand`, `StoreCommand.register`) because Commander

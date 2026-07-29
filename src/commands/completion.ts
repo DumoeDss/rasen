@@ -1,7 +1,6 @@
 import ora from 'ora';
 import { CompletionFactory } from '../core/completions/factory.js';
-import { COMMAND_REGISTRY } from '../core/completions/command-registry.js';
-import { localizeCommandRegistry } from '../core/completions/description-localization.js';
+import { resolveCliPresentation } from '../core/completions/cli-presentation.js';
 import { getCliLocale } from '../core/cli-locale.js';
 import { detectShell, SupportedShell } from '../utils/shell-detection.js';
 import { CompletionProvider } from '../core/completions/completion-provider.js';
@@ -124,8 +123,10 @@ export class CompletionCommand {
    * Generate completion script for a specific shell
    */
   private async generateForShell(shell: SupportedShell): Promise<void> {
+    const locale = getCliLocale();
+    const presentation = resolveCliPresentation({ locale });
     const generator = CompletionFactory.createGenerator(shell);
-    const script = generator.generate(localizeCommandRegistry(COMMAND_REGISTRY, getCliLocale()));
+    const script = generator.generate(presentation.completionCommands);
     console.log(script);
   }
 
@@ -135,6 +136,7 @@ export class CompletionCommand {
   private async installForShell(shell: SupportedShell, verbose: boolean): Promise<void> {
     const locale = getCliLocale();
     const ui = getCompletionUiMessages(locale);
+    const presentation = resolveCliPresentation({ locale });
     const generator = CompletionFactory.createGenerator(shell);
     const installer = CompletionFactory.createInstaller(shell);
 
@@ -142,7 +144,7 @@ export class CompletionCommand {
 
     try {
       // Generate the completion script
-      const script = generator.generate(localizeCommandRegistry(COMMAND_REGISTRY, getCliLocale()));
+      const script = generator.generate(presentation.completionCommands);
 
       // Install it
       const result = await installer.install(script);

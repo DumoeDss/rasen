@@ -11,10 +11,11 @@ import {
 import { getPackagePipelinesDir } from '../../src/core/pipeline-registry/index.js';
 import { ALL_EXPERTS, ALL_WORKFLOWS } from '../../src/core/profiles.js';
 import { formatLocaleMessage, getLocaleCatalog } from '../../src/locales/index.js';
-import { ROOT_OPTION_DESCRIPTIONS } from '../../src/cli/help-localization.js';
 import { INSTALLER_MESSAGE_KEYS } from '../../src/core/completions/factory.js';
 import { CONFIG_DIAGNOSTIC_KEYS } from '../../src/core/config-diagnostics.js';
 import { SUPPORTED_CLI_LOCALES } from '../../src/utils/locale.js';
+import { COMMAND_REGISTRY } from '../../src/core/completions/command-registry.js';
+import type { CommandDefinition } from '../../src/core/completions/types.js';
 
 function collectLeafStrings(
   value: unknown,
@@ -54,6 +55,54 @@ describe('locale catalogs', () => {
           placeholders(template)
         );
       }
+    }
+  });
+
+  it('keeps every CLI presentation leaf non-empty', () => {
+    for (const locale of SUPPORTED_CLI_LOCALES) {
+      const leaves = collectLeafStrings(getLocaleCatalog(locale).cli);
+      for (const [key, value] of leaves) {
+        expect(value.trim(), `${locale}: cli.${key}`).not.toBe('');
+      }
+    }
+  });
+
+  it('covers the root-inclusive registry with semantic catalog entries', () => {
+    function assertCoverage(
+      definition: CommandDefinition,
+      catalogNode: {
+        description?: string;
+        options?: Record<string, { description?: string }>;
+        commands?: Record<string, unknown>;
+      },
+      semanticPath: string,
+    ): void {
+      expect(catalogNode.description, `${semanticPath}.description`).toBeTruthy();
+      for (const option of definition.flags) {
+        expect(
+          catalogNode.options?.[option.name]?.description,
+          `${semanticPath}.options.${option.name}.description`,
+        ).toBeTruthy();
+      }
+      for (const command of definition.subcommands ?? []) {
+        const child = catalogNode.commands?.[command.name] as
+          | Parameters<typeof assertCoverage>[1]
+          | undefined;
+        expect(child, `${semanticPath}.commands.${command.name}`).toBeDefined();
+        assertCoverage(
+          command,
+          child as Parameters<typeof assertCoverage>[1],
+          `${semanticPath}.commands.${command.name}`,
+        );
+      }
+    }
+
+    for (const locale of SUPPORTED_CLI_LOCALES) {
+      assertCoverage(
+        COMMAND_REGISTRY,
+        getLocaleCatalog(locale).cli.root,
+        `${locale}: cli.root`,
+      );
     }
   });
 
@@ -172,26 +221,28 @@ describe('locale catalogs', () => {
     );
   });
 
-  it('defines Simplified Chinese Commander help labels', () => {
-    expect(getLocaleCatalog('zh-cn').help).toEqual({
-      titles: {
-        'Usage:': '用法：',
-        'Arguments:': '参数：',
-        'Options:': '选项：',
-        'Global Options:': '全局选项：',
-        'Commands:': '命令：',
-      },
+  it('defines Simplified Chinese Commander chrome', () => {
+    expect(getLocaleCatalog('zh-cn').cli.chrome).toEqual({
+      usageTitle: '用法：',
+      argumentsTitle: '参数：',
+      optionsTitle: '选项：',
+      globalOptionsTitle: '全局选项：',
+      commandsTitle: '命令：',
       helpOption: '显示命令帮助',
       helpCommand: '显示指定命令的帮助',
+      versionOption: '输出版本号',
     });
   });
 
-  it('defines translations for every visible root option description', () => {
+  it('keeps shared root-selector wording equal where it is a product invariant', () => {
     for (const locale of SUPPORTED_CLI_LOCALES) {
-      const descriptions = getLocaleCatalog(locale).commandDescriptions as Record<string, string>;
-      for (const description of ROOT_OPTION_DESCRIPTIONS) {
-        expect(descriptions[description], `${locale}: ${description}`).toBeTruthy();
-      }
+      const commands = getLocaleCatalog(locale).cli.root.commands;
+      expect(commands.list.options.store.description, locale).toBe(
+        commands.validate.options.store.description,
+      );
+      expect(commands.list.options.project.description, locale).toBe(
+        commands.validate.options.project.description,
+      );
     }
   });
 

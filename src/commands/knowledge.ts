@@ -1599,58 +1599,58 @@ function addOwnerSelectorOptions(
   return command
     .option(
       '--project <id>',
-      messages.projectSelectorDescription
+      ''
     )
     .option(
       '--store <id>',
-      messages.storeSelectorDescription
+      ''
     )
     .option(
       '--run-state-dir <path>',
-      messages.runStateDirDescription
+      ''
     );
 }
 
 export function registerKnowledgeCommand(program: Command): void {
   const messages = getKnowledgeMessages();
-  const knowledge = program.command('knowledge').description(messages.commandDescription);
+  const knowledge = program.command('knowledge').description('');
 
   const bundle = knowledge
     .command('bundle')
-    .description(messages.bundleDescription);
+    .description('');
 
   bundle
     .command('export')
-    .description(messages.bundleExportDescription)
-    .requiredOption('--project <id-or-root>', messages.projectSelectorDescription)
-    .requiredOption('--to <path>', messages.bundleDestinationDescription)
-    .option('--to-store <store>', messages.bundleStoreDestinationDescription)
-    .option('--json', messages.bundleJsonDescription)
+    .description('')
+    .requiredOption('--project <id-or-root>', '')
+    .requiredOption('--to <path>', '')
+    .option('--to-store <store>', '')
+    .option('--json', '')
     .action(async (options: BundleExportOptions) => {
       await bundleExportCommand(options);
     });
 
   bundle
     .command('import')
-    .description(messages.bundleImportDescription)
-    .argument('<bundle>', messages.bundleImportPathDescription)
-    .requiredOption('--project <id-or-root>', messages.projectSelectorDescription)
-    .option('--dry-run', messages.bundleImportDryRunDescription)
-    .option('--json', messages.bundleJsonDescription)
+    .description('')
+    .argument('<bundle>', '')
+    .requiredOption('--project <id-or-root>', '')
+    .option('--dry-run', '')
+    .option('--json', '')
     .action(async (bundlePath: string, options: Omit<BundleImportOptions, 'bundle'>) => {
       await bundleImportCommand({ ...options, bundle: bundlePath });
     });
 
   addOwnerSelectorOptions(knowledge
     .command('apply')
-    .description(messages.applyDescription)
-    .requiredOption('--from <path>', 'Absolute path to a candidate JSON file')
+    .description('')
+    .requiredOption('--from <path>', '')
     .option(
       '--approve-store <store>',
-      'Approve a store publication non-interactively, naming the store it applies to'
+      ''
     )
-    .option('--approve-global', 'Approve a global create or promotion non-interactively')
-    .option('--json', 'Output as JSON'), messages)
+    .option('--approve-global', '')
+    .option('--json', ''), messages)
     .action(async (options: {
       from?: string;
       approveGlobal?: boolean;
@@ -1665,18 +1665,18 @@ export function registerKnowledgeCommand(program: Command): void {
 
   addOwnerSelectorOptions(knowledge
     .command('list')
-    .description(messages.listDescription)
-    .option('--scope <scope>', 'project, store, or global')
-    .option('--json', 'Output as JSON'), messages)
+    .description('')
+    .option('--scope <scope>', '')
+    .option('--json', ''), messages)
     .action(async (options: { scope?: string; project?: string; store?: string; runStateDir?: string; json?: boolean }) => {
       await runKnowledgeAction(() => listCommand(options), options.json);
     });
 
   addOwnerSelectorOptions(knowledge
     .command('show <id>')
-    .description(messages.showDescription)
-    .option('--scope <scope>', 'project, store, or global')
-    .option('--json', 'Output as JSON'), messages)
+    .description('')
+    .option('--scope <scope>', '')
+    .option('--json', ''), messages)
     .action(async (
       id: string,
       options: { scope?: string; project?: string; store?: string; runStateDir?: string; json?: boolean }
@@ -1686,8 +1686,8 @@ export function registerKnowledgeCommand(program: Command): void {
 
   addOwnerSelectorOptions(knowledge
     .command('effective')
-    .description(messages.effectiveDescription)
-    .option('--json', 'Output as JSON'), messages)
+    .description('')
+    .option('--json', ''), messages)
     .action(async (options: {
       project?: string;
       store?: string;
@@ -1699,9 +1699,9 @@ export function registerKnowledgeCommand(program: Command): void {
 
   addOwnerSelectorOptions(knowledge
     .command('migrate')
-    .description(messages.migrateDescription)
-    .option('--dry-run', messages.dryRunDescription)
-    .option('--json', 'Output as JSON'), messages)
+    .description('')
+    .option('--dry-run', '')
+    .option('--json', ''), messages)
     .action(async (options: {
       dryRun?: boolean;
       project?: string;
@@ -1714,10 +1714,10 @@ export function registerKnowledgeCommand(program: Command): void {
 
   addOwnerSelectorOptions(knowledge
     .command('retire <id>')
-    .description(messages.retireDescription)
-    .option('--scope <scope>', 'project, store, or global')
-    .option('-y, --yes', 'Skip the confirmation prompt')
-    .option('--json', 'Output as JSON'), messages)
+    .description('')
+    .option('--scope <scope>', '')
+    .option('-y, --yes', '')
+    .option('--json', ''), messages)
     .action(async (
       id: string,
       options: {

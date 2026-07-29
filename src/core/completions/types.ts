@@ -1,33 +1,23 @@
-import { SupportedShell } from '../../utils/shell-detection.js';
+import type { SupportedShell } from '../../utils/shell-detection.js';
 
 /**
- * Definition of a command-line flag/option
+ * Machine-facing definition of a command-line option.
  */
 export interface FlagDefinition {
-  /**
-   * Flag name without dashes (e.g., "json", "strict", "no-interactive")
-   */
+  /** Long option name without leading dashes. */
   name: string;
 
-  /**
-   * Short flag name without dash (e.g., "y" for "-y")
-   */
+  /** Short option name without a leading dash. */
   short?: string;
 
-  /**
-   * Human-readable description of what the flag does
-   */
-  description: string;
-
-  /**
-   * Whether the flag takes an argument value
-   */
+  /** Whether the option takes an argument value. */
   takesValue?: boolean;
 
-  /**
-   * Possible values for the flag (for completion suggestions)
-   */
-  values?: string[];
+  /** Values accepted by the command parser, when Commander enforces choices. */
+  acceptedValues?: readonly string[];
+
+  /** Static values offered by shell completion. */
+  completionValues?: readonly string[];
 }
 
 export type PositionalType =
@@ -42,88 +32,98 @@ export type PositionalType =
   | 'workflow-id';
 
 /**
- * Definition of a positional argument.
+ * Machine-facing definition of a positional argument.
  */
 export interface PositionalDefinition {
-  /**
-   * Positional name used in generated shell metadata.
-   */
   name: string;
-
-  /**
-   * Type of positional argument for dynamic completion.
-   */
   type?: PositionalType;
-
-  /**
-   * Whether this positional is optional in the CLI syntax.
-   */
   optional?: boolean;
 }
 
 /**
- * Definition of a CLI command
+ * Machine-facing definition of a canonical CLI command.
  */
 export interface CommandDefinition {
-  /**
-   * Command name (e.g., "init", "validate", "show")
-   */
   name: string;
-
-  /**
-   * Human-readable description of the command
-   */
-  description: string;
-
-  /**
-   * Flags/options supported by this command
-   */
-  flags: FlagDefinition[];
-
-  /**
-   * Subcommands (e.g., "change show", "spec validate")
-   */
-  subcommands?: CommandDefinition[];
-
-  /**
-   * Whether this command accepts a positional argument (e.g., item name, path)
-   */
+  aliases?: readonly string[];
+  flags: readonly FlagDefinition[];
+  subcommands?: readonly CommandDefinition[];
   acceptsPositional?: boolean;
-
-  /**
-   * Type of positional argument for dynamic completion
-   * - 'change-id': Complete with active change IDs
-   * - 'spec-id': Complete with spec IDs
-   * - 'change-or-spec-id': Complete with both changes and specs
-   * - 'path': Complete with file paths
-   * - 'shell': Complete with supported shell names
-   * - 'schema-name': Complete with available schema names
-   * - 'profile-name': Complete with built-in and saved profile names
-   * - 'saved-profile-name': Complete with deletable saved profile names
-   * - undefined: No specific completion
-   */
   positionalType?: PositionalType;
-
-  /**
-   * Ordered positional arguments when a command accepts more than one.
-   */
-  positionals?: PositionalDefinition[];
+  positionals?: readonly PositionalDefinition[];
 }
 
 /**
- * Interface for shell-specific completion script generators
+ * Root-inclusive machine-facing CLI structure.
+ */
+export interface CliStructure {
+  root: CommandDefinition;
+}
+
+export interface ResolvedFlagDefinition extends FlagDefinition {
+  description: string;
+}
+
+export interface ResolvedCommandDefinition
+  extends Omit<CommandDefinition, 'flags' | 'subcommands'> {
+  description: string;
+  flags: readonly ResolvedFlagDefinition[];
+  subcommands?: readonly ResolvedCommandDefinition[];
+}
+
+export interface ResolvedCliChrome {
+  usageTitle: string;
+  argumentsTitle: string;
+  optionsTitle: string;
+  globalOptionsTitle: string;
+  commandsTitle: string;
+  helpOption: string;
+  helpCommand: string;
+  versionOption: string;
+}
+
+/**
+ * Fully localized, immutable input shared by Commander and completion renderers.
+ */
+export interface ResolvedCliPresentation {
+  chrome: Readonly<ResolvedCliChrome>;
+  root: Readonly<ResolvedCommandDefinition>;
+  completionCommands: readonly Readonly<ResolvedCommandDefinition>[];
+}
+
+export interface CliPresentationFacts {
+  availableToolIds: readonly string[];
+  defaultSchema: string;
+  workspaceDir: string;
+}
+
+export type CliPresentationErrorCode =
+  | 'missing-english-copy'
+  | 'empty-copy'
+  | 'placeholder-mismatch'
+  | 'missing-runtime-fact'
+  | 'unresolved-placeholder'
+  | 'duplicate-command'
+  | 'duplicate-option'
+  | 'alias-collision'
+  | 'commander-structure-mismatch';
+
+export class CliPresentationError extends Error {
+  constructor(
+    public readonly code: CliPresentationErrorCode,
+    public readonly semanticPath: string,
+    message: string,
+    public readonly placeholder?: string,
+  ) {
+    super(`${message} (${semanticPath})`);
+    this.name = 'CliPresentationError';
+  }
+}
+
+/**
+ * Interface for shell-specific completion script generators.
  */
 export interface CompletionGenerator {
-  /**
-   * The shell type this generator targets
-   */
   readonly shell: SupportedShell;
-
-  /**
-   * Generate the completion script content
-   *
-   * @param commands - Command definitions to generate completions for
-   * @returns The shell-specific completion script as a string
-   */
-  generate(commands: CommandDefinition[]): string;
+  generate(commands: readonly ResolvedCommandDefinition[]): string;
 }

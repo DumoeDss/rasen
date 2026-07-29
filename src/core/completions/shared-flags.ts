@@ -6,36 +6,27 @@ import type { FlagDefinition } from './types.js';
 export const COMMON_FLAGS = {
   json: {
     name: 'json',
-    description: 'Output as JSON',
   } as FlagDefinition,
   jsonValidation: {
     name: 'json',
-    description: 'Output validation results as JSON',
   } as FlagDefinition,
   strict: {
     name: 'strict',
-    description: 'Enable strict validation mode',
   } as FlagDefinition,
   noInteractive: {
     name: 'no-interactive',
-    description: 'Disable interactive prompts',
   } as FlagDefinition,
   type: {
     name: 'type',
-    description: 'Specify item type when ambiguous',
     takesValue: true,
-    values: ['change', 'spec'],
+    completionValues: ['change', 'spec'],
   } as FlagDefinition,
   store: {
     name: 'store',
-    description:
-      "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)",
     takesValue: true,
   } as FlagDefinition,
   project: {
     name: 'project',
-    description:
-      "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store.",
     takesValue: true,
   } as FlagDefinition,
 } as const;
