@@ -33,7 +33,7 @@
 - [x] 4.2 Extend `BoundedLoopAdmitCandidate.bodyKind` to include `'goal-cycle'`
 - [x] 4.3 Extend the admit payload builder for goal-cycle candidates: carry `{ loopPath, round, phase, variant }` in the input
 - [x] 4.4 Verify finishCandidate already handles goal-cycle (satisfied contributes to succeeded set; remaining work blocks finish)
-- [ ] 4.5 Write reconciler integration tests: goal-cycle plan + empty record → work admit; after work+judge commit satisfied → finish eligible; after exhausted → escalate
+- [x] 4.5 Write reconciler integration tests: goal-cycle plan + empty record → work admit; after work+judge commit satisfied → finish eligible; after exhausted → escalate
 
 ## 5. Lowerer and definition normalization
 
@@ -48,13 +48,13 @@
 
 - [x] 6.1 Implement `buildGoalSection(loop, progress, record)` — emit `{ kind: 'goal', version: 1, loopPath, variant, round, phase, outcome, lastScore?, lastGaps, stallStreak, budget, waitReason }`
 - [x] 6.2 Wire `buildSections` in `projector.ts` to detect goal-cycle bounded-loops and emit the goal section alongside root-dag
-- [ ] 6.3 Write projection tests: goal section shape for in-progress Run (round 2, judge phase, lastScore), terminal satisfied Run, terminal exhausted Run
+- [x] 6.3 Write projection tests: goal section shape for in-progress Run (round 2, judge phase, lastScore), terminal satisfied Run, terminal exhausted Run
 
 ## 7. Facade pre-commit validation
 
 - [x] 7.1 Wire `validateGoalCycleCompletion` into `facade-runtime.ts` `complete()` method, called after `verifyCompletion` but before the commit stimulus — parallel to `validateReviewCycleCompletion`
 - [x] 7.2 Add defense-in-depth completion guard for goal-cycle bounded-loops: when a goal-cycle Run reaches a completed terminal, assert the goal-cycle outcome is `satisfied` (parallel to `assertReviewCycleMayShip`)
-- [ ] 7.3 Write facade tests: malformed goal result rejected before commit, same-actor work+judge rejected, valid progression commits and advances to next phase
+- [x] 7.3 Write facade tests: malformed goal result rejected before commit, same-actor work+judge rejected, valid progression commits and advances to next phase
 
 ## 8. Built-in pipeline migration
 
@@ -73,15 +73,15 @@
 ## 10. goal-run.json demotion
 
 - [x] 10.1 Write a projection function `projectGoalRunJson(record, plan)` that derives the legacy per-round record array from committed goal-cycle events
-- [ ] 10.2 Rewire `readGoalRunDetailed()` in management API to project from the Record for reconciler-engine Runs (fallback to file read for legacy Runs)
+- [x] 10.2 Rewire `readGoalRunDetailed()` in management API to project from the Record for reconciler-engine Runs (fallback to file read for legacy Runs)
 - [x] 10.3 Verify new Runs do not read `goal-run.json` on resume (assert in tests)
 
 ## 11. Recovery fault-injection tests
 
-- [ ] 11.1 Crash-before-commit: work-phase completion never committed → action stays active → resume re-admits nothing, same action is still active
-- [ ] 11.2 Crash-after-commit: work-phase completion committed but settle didn't run → resume calls reconcile() which sees committed result and admits judge
-- [ ] 11.3 Crash-after-judge-commit: judge committed (not satisfied) but next-round work not admitted → resume admits next-round work
-- [ ] 11.4 Ack loss: judge action granted but agent never started → action stays active → resume surfaces the wait
+- [x] 11.1 Crash-before-commit: work-phase completion never committed → action stays active → resume re-admits nothing, same action is still active
+- [x] 11.2 Crash-after-commit: work-phase completion committed but settle didn't run → resume calls reconcile() which sees committed result and admits judge
+- [x] 11.3 Crash-after-judge-commit: judge committed (not satisfied) but next-round work not admitted → resume admits next-round work
+- [x] 11.4 Ack loss: judge action granted but agent never started → action stays active → resume surfaces the wait
 
 ## 12. Real CLI Run evidence (ECP-3 exit evidence)
 
