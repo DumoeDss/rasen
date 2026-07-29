@@ -537,7 +537,9 @@
       "deletionRequiresYes": "非交互模式下删除需要 --yes",
       "deletionCancelled": "删除已取消",
       "engineDisabledByConfig": "engine_disabled_by_config: 配置已禁用调和器引擎（runs.engine: legacy，决定层：{layer}），因此未创建规范 Run。请在旧引擎上运行此变更，或将 runs.engine 设为 auto 或 reconciler 以重新启用。",
-      "engineUnsupportedForPipeline": "engine_unsupported: 流水线 \"{name}\" 不支持调和器引擎（{reason}）；引擎由 {source} 选定。未在任何引擎下创建 Run。"
+      "engineUnsupportedForPipeline": "engine_unsupported: 流水线 \"{name}\" 不支持调和器引擎（{reason}）；引擎由 {source} 选定。未在任何引擎下创建 Run。",
+      "engineOwnerConflict": "engine_owner_conflict: 该变更同时被两个引擎主张所有权，因此规范操作已被拒绝，未修改任何内容。旧引擎 run-state：{runState}（{reason}）。规范 Run：{run}。请自行解决 — 完成或取消规范 Run（先 `rasen pipeline status`，再 `rasen pipeline cancel`），或将旧引擎的 run-state 文件移走。Rasen 不会替你采纳、改写或删除任何一方。",
+      "engineOwnedByLegacy": "engine_owner_conflict: 该变更由旧引擎所有，因此未创建规范 Run。旧引擎 run-state：{runState}（{reason}）。请继续在旧引擎上运行（`rasen pipeline resume <change>`）；若确实要将该变更迁到调和器，请先将该 run-state 文件移走。Rasen 不会替你采纳、改写或删除它。"
     },
     "errors": {
       "pipeline_not_found": "未找到该流水线。",
@@ -563,6 +565,7 @@
       "pipeline_registry_busy": "流水线注册表正忙。",
       "engine_disabled_by_config": "配置已禁用调和器引擎。",
       "engine_unsupported": "该流水线不支持所选引擎。",
+      "engine_owner_conflict": "该变更被多个引擎主张所有权。",
       "pipeline_command_error": "流水线操作失败（{code}）。"
     }
   },

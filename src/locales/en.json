@@ -537,7 +537,9 @@
       "deletionRequiresYes": "Deletion requires --yes in non-interactive mode",
       "deletionCancelled": "Deletion cancelled",
       "engineDisabledByConfig": "engine_disabled_by_config: the reconciler engine is disabled by configuration (runs.engine: legacy, decided by the {layer} layer), so no canonical Run was created. Run this change on the legacy engine, or set runs.engine to auto or reconciler to re-enable it.",
-      "engineUnsupportedForPipeline": "engine_unsupported: pipeline \"{name}\" does not support the reconciler engine ({reason}); the engine was selected by {source}. No Run was created under either engine."
+      "engineUnsupportedForPipeline": "engine_unsupported: pipeline \"{name}\" does not support the reconciler engine ({reason}); the engine was selected by {source}. No Run was created under either engine.",
+      "engineOwnerConflict": "engine_owner_conflict: this change is claimed by BOTH engines, so the canonical operation was refused and nothing was modified. Legacy run-state: {runState} ({reason}). Canonical Run: {run}. Resolve it yourself — either finish or cancel the canonical Run (`rasen pipeline status`, then `rasen pipeline cancel`), or retire the legacy run-state artifact (move it aside). Rasen will not adopt, rewrite, or delete either side for you.",
+      "engineOwnedByLegacy": "engine_owner_conflict: this change is owned by the legacy engine, so no canonical Run was created. Legacy run-state: {runState} ({reason}). Either continue on the legacy engine (`rasen pipeline resume <change>`), or retire that run-state artifact first if you intend to move this change onto the reconciler. Rasen will not adopt, rewrite, or delete it for you."
     },
     "errors": {
       "pipeline_not_found": "The pipeline was not found.",
@@ -563,6 +565,7 @@
       "pipeline_registry_busy": "The pipeline registry is busy.",
       "engine_disabled_by_config": "The reconciler engine is disabled by configuration.",
       "engine_unsupported": "The pipeline does not support the selected engine.",
+      "engine_owner_conflict": "The change is claimed by more than one engine.",
       "pipeline_command_error": "Pipeline operation failed ({code})."
     }
   },

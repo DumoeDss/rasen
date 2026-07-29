@@ -136,6 +136,8 @@ export interface PipelineMessageValues {
   deletionCancelled: undefined;
   engineDisabledByConfig: { layer: string };
   engineUnsupportedForPipeline: { name: string; reason: string; source: string };
+  engineOwnerConflict: { runState: string; run: string; reason: string };
+  engineOwnedByLegacy: { runState: string; reason: string };
 }
 
 export const PIPELINE_MESSAGE_KEYS = [
@@ -247,6 +249,8 @@ export const PIPELINE_MESSAGE_KEYS = [
   'deletionCancelled',
   'engineDisabledByConfig',
   'engineUnsupportedForPipeline',
+  'engineOwnerConflict',
+  'engineOwnedByLegacy',
 ] as const satisfies readonly (keyof PipelineMessageValues)[];
 
 export type PipelineMessageKey = (typeof PIPELINE_MESSAGE_KEYS)[number];
@@ -277,6 +281,7 @@ export const PIPELINE_ERROR_KEYS = [
   // and the forced/auto unsupported failure.
   'engine_disabled_by_config',
   'engine_unsupported',
+  'engine_owner_conflict',
   'pipeline_command_error',
 ] as const;
 

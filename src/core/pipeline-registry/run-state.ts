@@ -557,6 +557,62 @@ export function resolveRunStateLocation(
   return null;
 }
 
+/**
+ * ECP-5 (design D8): whether a change's run-state artifact constitutes
+ * LEGACY-OWNER state for the bilateral engine-ownership guard.
+ *
+ * `present: false` means the artifact is absent, or present and declaring
+ * `engine.effective: 'reconciler'` — i.e. D3 bookkeeping beside a canonical
+ * Run, which is explicitly NOT a competing progression record.
+ *
+ * `present: true` carries WHY, because the refusal message has to be
+ * actionable:
+ * - `undeclared` — run-state with no `engine` declaration. Truthful, not a
+ *   heuristic: only pre-convergence LEADs, which owned mechanical progression
+ *   themselves, ever wrote engine-less run-state. Converged runs declare their
+ *   engine at run start, so no new run can enter this class.
+ * - `declared-legacy` — run-state declaring `engine.effective: 'legacy'`.
+ * - `unreadable` — the artifact exists but cannot be parsed. Fail-closed: an
+ *   unreadable artifact is never presumed to be harmless bookkeeping.
+ *
+ * Derived projections (`goal-run.json`, generated reports) are deliberately
+ * NOT inputs here — they are read-only derivations by construction, and
+ * counting them would make every reconciler-engine goal Run instantly
+ * ambiguous.
+ */
+export type LegacyOwnerSignal =
+  | Readonly<{ present: false }>
+  | Readonly<{
+      present: true;
+      path: string;
+      reason: 'undeclared' | 'declared-legacy' | 'unreadable';
+    }>;
+
+export function resolveLegacyOwnerSignal(
+  changeDir: string,
+  workDir?: string | null
+): LegacyOwnerSignal {
+  const location = resolveRunStateLocation(changeDir, workDir);
+  if (location === null) return Object.freeze({ present: false });
+
+  const read = readRunStateDetailed(location.dir);
+  if (read.kind === 'absent') return Object.freeze({ present: false });
+  if (read.kind === 'invalid') {
+    return Object.freeze({
+      present: true,
+      path: location.path,
+      reason: 'unreadable' as const,
+    });
+  }
+  const declared = read.state.engine?.effective;
+  if (declared === 'reconciler') return Object.freeze({ present: false });
+  return Object.freeze({
+    present: true,
+    path: location.path,
+    reason: declared === 'legacy' ? ('declared-legacy' as const) : ('undeclared' as const),
+  });
+}
+
 /** Validate, then write run-state to the change directory (pretty JSON). */
 export function writeRunState(changeDir: string, state: RunState): void {
   const validated = RunStateSchema.parse(state);

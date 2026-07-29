@@ -167,6 +167,7 @@ export {
   writeRunState,
   initializeRunState,
   resolveRunStateLocation,
+  resolveLegacyOwnerSignal,
   completedStages,
   frozenRetentionMode,
   frozenKnowledgeContext,
@@ -191,6 +192,7 @@ export {
   type SessionHandoff,
   type RunStateLocation,
   type RunStateReadResult,
+  type LegacyOwnerSignal,
   type RunStatePipelineSeed,
 } from './run-state.js';
 

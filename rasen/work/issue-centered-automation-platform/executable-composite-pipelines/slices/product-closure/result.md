@@ -24,7 +24,57 @@ absence here is the honest state, not an omission.
 D1. Every row above except the resolver-precedence one is a real fresh-process
 `node dist/cli/index.js` run against the built `dist/`.
 
-### OPEN — task 1.7 (bilateral engine-ownership guard is NOT wired)
+### Tasks 1.7 / 1.8 — the bilateral engine-ownership guard, wired (design D8)
+
+The guard is no longer dead code. Verification grep:
+
+```
+$ grep -rn "assertSingleEngineOwner\|classifyEngineOwnership" src/
+src/commands/pipeline.ts:108:  assertSingleEngineOwner,
+src/commands/pipeline.ts:109:  classifyEngineOwnership,
+src/commands/pipeline.ts:639:      return assertSingleEngineOwner({      <- mutation seams
+src/commands/pipeline.ts:708:    const owner = classifyEngineOwnership({  <- launch seam
+src/core/change-run/internal/engine-ownership.ts:41: (definition)
+src/core/change-run/internal/engine-ownership.ts:57: (definition)
+```
+
+| Claim | Evidence |
+|---|---|
+| Discriminator is the run-state `engine` DECLARATION, not file presence | `resolveLegacyOwnerSignal` (`src/core/pipeline-registry/run-state.ts`): absent field → `undeclared`, `'legacy'` → `declared-legacy`, `'reconciler'` → not present (D3 bookkeeping), unparseable → `unreadable` (fail-closed) |
+| Declared bookkeeping beside a Record is NOT a conflict | `test/core/change-run/engine-ownership-wiring.test.ts` → "lets canonical mutations proceed when run-state declares engine: reconciler" |
+| Engine-less run-state beside a Record blocks start + every mutation | same file → "refuses every canonical mutation when engine-less run-state sits beside a Record" (`resume-run`, `complete`, `control`, and `start`) |
+| **Both artifacts byte-identical after a refusal** | same test: sha256 of the run-state file and of every Record file compared before/after all four refusals |
+| Projections never create a conflict | same file → "never treats a derived goal-run.json as an ownership signal" (`goal-run.json` + a generated report beside a Record) |
+| Unreadable run-state fails closed, and is not repaired | same file → "fails closed when run-state cannot be parsed" (refusal + digest unchanged) |
+| Ownership is instance-bound across archive + same-name recreate | same file → "binds ownership to the change instance across archive + same-name recreate". Holds by construction: `canonicalPresent` is `store.has(runId)` and `runId` derives from the association registry's ChangeInstanceId, so a recreated Change gets a different Run identity (the Gap-E lesson — the earlier guard looked up by alias and let an old Run through) |
+| The runtime never writes/rewrites/deletes run-state to resolve a conflict | no write path exists in `resolveEngineOwner` / `assertCanonicalLaunchAllowed`; proven by the byte-identical assertions above |
+
+**`pipeline cancel` is deliberately NOT guarded.** The refusal message names two
+resolutions, one of which is cancelling the canonical Run; guarding cancel would
+make that escape hatch unreachable and deadlock the change. Cancel only ever
+ENDS the canonical claim, so it cannot deepen a conflict.
+
+**Behavior-change audit (the proposal's fail-closed call-out).** Two paths
+change, both refusals, both previously unchecked:
+
+1. **Dual state** (legacy-owner run-state + canonical Record) → `start`,
+   `resume-run`, `complete`, `control` refuse. This is exactly what the
+   proposal's BREAKING line describes.
+2. **Legacy-only** (legacy-owner run-state, no Record) → `pipeline start`
+   refuses. Required by D8 ("refuses when legacy-owner state exists" — the
+   run-spine "already owned by the other engine" case). **This is a
+   single-owner state whose behavior changes, which the current BREAKING
+   wording ("no valid single-owner state changes behavior") does not cover —
+   flagged for the planner.** Permitting it instead would be strictly worse:
+   `start` would create a Record, making the change dual, and every subsequent
+   mutation would then refuse — a Run that is born unable to advance.
+
+Nothing else changes: legacy `pipeline resume` is untouched (covered by
+"leaves engine-less run-state alone on the legacy resume path"), `pipeline
+status` is read-only and unguarded, and a canonical-only change behaves
+exactly as before.
+
+### Superseded — the original task 1.7 finding (kept for provenance)
 
 `assertSingleEngineOwner` / `classifyEngineOwnership`
 (`src/core/change-run/internal/engine-ownership.ts`) have **zero production
@@ -36,14 +86,16 @@ solely by `test/core/change-run/engine-ownership.test.ts`, which exercises the
 pure function.
 
 The design (D1) states the guard blocks bilateral mutation as EXISTING
-behavior. It does not. Wiring it was deliberately not attempted here because the
-obvious wiring contradicts this same change's design D3: under D3 a
-reconciler-engine run legitimately keeps an `auto-run.json` of operational
-bookkeeping beside its canonical Record, so a guard reading
-`canonicalPresent && legacyPresent -> refuse` would block every converged run.
-A correct guard needs a discriminator — the run-state `engine` field this change
-introduces in playbook Step F is the natural candidate — and no artifact
-specifies it. Raise before implementing.
+behavior. It did not. Wiring was deliberately not attempted at that point
+because the obvious wiring contradicts design D3: under D3 a reconciler-engine
+run legitimately keeps an `auto-run.json` of operational bookkeeping beside its
+canonical Record, so a guard reading `canonicalPresent && legacyPresent ->
+refuse` would block every converged run.
+
+**Resolved by design D8**, which adopted the nominated discriminator (the
+run-state `engine` declaration introduced in playbook Step F) and specified the
+seams. See "Tasks 1.7 / 1.8 — the bilateral engine-ownership guard, wired"
+above for the implementation and its evidence.
 
 ## Section 2 — One v2-migration predicate (Candidate 2)
 

@@ -35,6 +35,7 @@ import {
   PipelineGraph,
   readRunStateDetailed,
   resolveRunStateLocation,
+  resolveLegacyOwnerSignal,
   completedStages,
   stageWorkers,
   stagesWithStatus,
@@ -103,6 +104,12 @@ import {
   readPhysicalIdentity,
 } from '../core/change-run/internal/identity.js';
 import { createFilesystemRunStore } from '../core/change-run/internal/run-store-fs.js';
+import {
+  assertSingleEngineOwner,
+  classifyEngineOwnership,
+  EngineOwnershipError,
+  type EngineOwner,
+} from '../core/change-run/internal/engine-ownership.js';
 import {
   createBoundedEvidenceStore,
   computeEvidenceContentDigest,
@@ -581,6 +588,136 @@ export class PipelineCommand {
     );
   }
 
+  /**
+   * ECP-5 (design D8): the bilateral engine-ownership guard, wired.
+   *
+   * `assertSingleEngineOwner` shipped with `ecp-run-spine` and had ZERO
+   * production callers until this slice — the guard existed and "blocks
+   * mutation" was aspirational. These are its production call sites.
+   *
+   * The discriminator is the run-state `engine` declaration, NOT the mere
+   * presence of `auto-run.json`: under design D3 a reconciler-engine run
+   * legitimately keeps run-state bookkeeping beside its canonical Record, so
+   * a presence-only guard would refuse every converged run.
+   *
+   * `canonicalPresent` is instance-scoped by construction: `runId` derives
+   * from the association registry's ChangeInstanceId, so an archived Change
+   * and a same-name recreation yield different Run identities and the old
+   * instance's Record can never be found for the new one (the Gap-E lesson —
+   * a mutation guard that looked up by alias let an old Run through after a
+   * recreate).
+   *
+   * Returns the resolved owner, or `'none'` when neither side exists yet (a
+   * fresh change) — the caller's own creation / not-found path owns that case,
+   * and reporting `engine_owner_unknown` there would be noise, not safety.
+   *
+   * This function NEVER writes, rewrites, or deletes run-state: refusing IS
+   * the behavior. Self-healing here would destroy the evidence the operator
+   * needs to decide which side to keep.
+   */
+  private async resolveEngineOwner(
+    changeId: string,
+    projectRoot: string,
+    runId: string,
+    store: Pick<ReturnType<typeof createFilesystemRunStore>, 'has'>
+  ): Promise<EngineOwner | 'none'> {
+    const changeDir = path.join(
+      projectRoot,
+      WORKSPACE_DIR_NAME,
+      'changes',
+      changeId
+    );
+    const workDir = await resolveChangeWorkDir(projectRoot, changeId, {
+      ensure: false,
+    });
+    const legacy = resolveLegacyOwnerSignal(changeDir, workDir);
+    const canonicalPresent = store.has(runId as never);
+
+    if (!canonicalPresent && !legacy.present) return 'none';
+
+    try {
+      return assertSingleEngineOwner({
+        canonicalPresent,
+        legacyPresent: legacy.present,
+      });
+    } catch (error) {
+      if (
+        error instanceof EngineOwnershipError &&
+        error.code === 'engine_owner_conflict' &&
+        legacy.present
+      ) {
+        throw pipelineMessageError(
+          'engineOwnerConflict',
+          { runState: legacy.path, run: runId, reason: legacy.reason },
+          'engine_owner_conflict'
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Refuse a canonical mutation when the change is claimed by both engines.
+   * Used by `resume-run` (which admits Actions, so it mutates), `complete`,
+   * and `control`.
+   */
+  private async assertCanonicalMutationAllowed(
+    changeId: string,
+    projectRoot: string,
+    runId: string,
+    store: Pick<ReturnType<typeof createFilesystemRunStore>, 'has'>
+  ): Promise<void> {
+    await this.resolveEngineOwner(changeId, projectRoot, runId, store);
+  }
+
+  /**
+   * ECP-5 (D8): the LAUNCH seam of the engine-ownership guard.
+   *
+   * Runs before `resolveRuntime`, so a refusal binds nothing in the
+   * association registry and leaves no Record — the legacy signal is pure
+   * filesystem and needs no Run identity to compute.
+   *
+   * The canonical side is deliberately not queried here, and the classifier is
+   * asked with `canonicalPresent: false`. That is an UNDER-SPECIFIED query, not
+   * a false claim about the world, and its answer is stable either way: with a
+   * legacy artifact present the owner is `legacy` (a canonical launch would
+   * re-home a legacy-owned change) and, were a Record also present, it would be
+   * `ambiguous` (a conflict). Both refuse, so the decision cannot differ — and
+   * refusing here is what stops the ambiguity from being MANUFACTURED by this
+   * very launch.
+   *
+   * Nothing is adopted, rewritten, or deleted; the operator decides which side
+   * to keep.
+   */
+  private async assertCanonicalLaunchAllowed(
+    changeId: string,
+    projectRoot: string
+  ): Promise<void> {
+    const changeDir = path.join(
+      projectRoot,
+      WORKSPACE_DIR_NAME,
+      'changes',
+      changeId
+    );
+    const workDir = await resolveChangeWorkDir(projectRoot, changeId, {
+      ensure: false,
+    });
+    const legacy = resolveLegacyOwnerSignal(changeDir, workDir);
+    if (!legacy.present) return;
+
+    const owner = classifyEngineOwnership({
+      canonicalPresent: false,
+      legacyPresent: true,
+    });
+    if (owner === 'legacy') {
+      throw pipelineMessageError(
+        'engineOwnedByLegacy',
+        { runState: legacy.path, reason: legacy.reason },
+        'engine_owner_conflict'
+      );
+    }
+  }
+
   private async resolveRuntime(
     changeId: string,
     pipelineName: string,
@@ -995,6 +1132,11 @@ export class PipelineCommand {
       );
     }
 
+    // ECP-5 (D8): the engine-ownership guard's launch seam. Runs BEFORE
+    // `resolveRuntime`, which binds the Change instance in the association
+    // registry, so a refusal leaves nothing behind at all.
+    await this.assertCanonicalLaunchAllowed(changeId, policyRoot.path);
+
     const { ctx, pipelineName: resolvedPipelineName, runId, projectRoot, projectId, launchKey } =
       await this.resolveRuntime(
         changeId,
@@ -1078,6 +1220,14 @@ export class PipelineCommand {
   ): Promise<void> {
     const { ctx, pipelineName: resolvedPipelineName, runId, projectRoot, launchKey } =
       await this.resolveRuntime(changeId, pipelineName, options);
+    // ECP-5 (D8): resume-run ADMITS Actions, so it mutates — it rechecks
+    // ownership like any other canonical mutation.
+    await this.assertCanonicalMutationAllowed(
+      changeId,
+      projectRoot,
+      runId,
+      ctx.store
+    );
     const receipt = await ctx.facade.resume(
       { change: { projectRoot, changeId }, runId: runId as never },
       { deliveryMode: 'grant' }
@@ -1098,6 +1248,12 @@ export class PipelineCommand {
 
   /**
    * Cancel a Run (task 12.3/12.4 control).
+   *
+   * ECP-5 (D8): deliberately NOT behind the engine-ownership guard. Cancelling
+   * the canonical Run is one of the two resolutions the conflict refusal tells
+   * the operator to take; guarding it would make the documented escape hatch
+   * unreachable and deadlock the change. Cancel only ever ENDS the canonical
+   * claim, so it can never deepen an ownership conflict.
    */
   async cancelRun(
     changeId: string,
@@ -1468,6 +1624,13 @@ export class PipelineCommand {
   ): Promise<void> {
     const resolved = await this.resolveRuntimeForRun(changeId, runId, options);
     await this.assertChangeNotArchived(changeId, resolved.projectRoot, runId);
+    // ECP-5 (D8): a committed result is a canonical mutation.
+    await this.assertCanonicalMutationAllowed(
+      changeId,
+      resolved.projectRoot,
+      runId,
+      resolved.ctx.store
+    );
     const body = this.readBoundedPayload(from) as {
       completion?: unknown;
       uploads?: unknown;
@@ -1525,6 +1688,13 @@ export class PipelineCommand {
   ): Promise<void> {
     const resolved = await this.resolveRuntimeForRun(changeId, runId, options);
     await this.assertChangeNotArchived(changeId, resolved.projectRoot, runId);
+    // ECP-5 (D8): a control command mutates the Record.
+    await this.assertCanonicalMutationAllowed(
+      changeId,
+      resolved.projectRoot,
+      runId,
+      resolved.ctx.store
+    );
     const body = this.readBoundedPayload(from) as {
       control?: unknown;
       uploads?: unknown;

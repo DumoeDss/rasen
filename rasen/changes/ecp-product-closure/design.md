@@ -39,7 +39,7 @@ Constraints: no new runtime model; children ship local; another session's uncomm
 
 Why CLI-enforced: a prompt can be asked to honor config but cannot be *proven* to; the refusal in `pipeline start` is testable and closes the only door that creates canonical Runs. `rasen-auto` additionally reads the same resolution to decide which playbook branch to run, and displays `Engine: reconciler (auto)` at launch alongside the existing gate/selection policy lines (same precedent: `autopilot.gates`, `autopilot.selection`). Alternative considered — an `autopilot.engine` key: rejected because the engine also governs the standalone launcher and `rasen-goal`, which are not autopilot.
 
-Legacy recovery policy (restated, unchanged): a change with only legacy run-state resumes legacy forever; ambiguous bilateral state blocks mutation via the existing `assertSingleEngineOwner` guard; nothing in this change migrates a Run across engines.
+Legacy recovery policy (restated, unchanged): a change with only legacy run-state resumes legacy forever; nothing in this change migrates a Run across engines. Ambiguous bilateral state blocks mutation via the engine-ownership guard — which this slice must first WIRE: `assertSingleEngineOwner` shipped in ecp-run-spine as a function with unit tests and zero production callers, so the blocking behavior did not exist until D8's wiring (see D8 for the discriminator that makes wiring compatible with D3).
 
 ### D2. Step E convergence mirrors Step L; deletion is scoped to duplicates with named replacements
 
@@ -70,6 +70,23 @@ The rule either way: no assertion is changed to "whatever the code does today" w
 ### D7. Evidence ledger and dogfood matrix live with the portfolio's research artifacts
 
 `rasen/work/issue-centered-automation-platform/executable-composite-pipelines/slices/product-closure/result.md` (ECP-1's `result.md` convention): a table of all 14 §15.4 exit conditions with per-condition evidence pointers (test file, RunId, doc section, or commit), and the dogfood matrix (pipeline × RunId × engine × terminal state × evidence refs). Missing cells are produced by real fresh-process CLI Runs against built `dist/` (stale-dist lesson): `small-feature`, `goal-loop-evaluate`, and — if ECP-2's evidence proves programmatic — one Canvas-authored Custom Composite Run. Cited cells keep their original RunIds plus a note that the integrated-HEAD full suite covers their regression surface.
+
+### D8. The engine-ownership guard is wired with a declared-engine discriminator
+
+**Fact found at task 1.7 (implementer, verified):** `assertSingleEngineOwner` / `classifyEngineOwnership` (`src/core/change-run/internal/engine-ownership.ts`) have zero production callers — ecp-run-spine shipped the function and its unit tests but never the wiring, so the bilateral guard was dead code and "blocks mutation" was aspirational. Naive wiring (`canonicalPresent && legacyPresent → refuse`) is also wrong: it would refuse every D3-converged run, because a reconciler-engine run legitimately keeps `auto-run.json` bookkeeping beside its canonical Record.
+
+**Discriminator — run-state declares its engine; undeclared run-state is a legacy owner:**
+- `canonicalPresent`: a canonical Run Record for the change **instance** in the RunStore — association-registry-bound, never name/alias-scoped (Gap-E lesson).
+- `legacyPresent`: the change's run-state artifact (`auto-run.json` at its resolved workDir / sticky change-dir location) exists AND does not declare `engine.effective: 'reconciler'` (the optional `engine` field in `src/core/pipeline-registry/run-state.ts`). Absent declaration → legacy owner — this is the truthful reading, not a heuristic: only pre-convergence LEADs, which owned mechanical progression, ever wrote engine-less run-state. `engine.effective: 'legacy'` → legacy owner. `'reconciler'` → D3 bookkeeping, not an owner. Unreadable/unparseable run-state → counts as legacy-present (fail-closed: an unreadable artifact is never presumed harmless bookkeeping).
+- **Never ownership inputs:** `goal-run.json`, Markdown reports, and every labeled projection — they are read-only derivations by construction (`projectGoalRunJson`); counting them would make every ECP-3 reconciler goal Run instantly ambiguous.
+
+**Seams (the production callers this slice adds):** `pipeline start` computes the discriminator before creating a Record and refuses `engine_owner_conflict` when legacy-owner state exists (run-spine's "already owned by the other engine" scenario, finally enforced); `complete`, `control`, and `resume-run` recheck and refuse on ambiguity (resume-run admits actions, so it mutates). The refusal message is actionable: it names the run-state path and the Run, and states the operator's two resolutions (finish/cancel the canonical Run, or retire the legacy artifact). The runtime never writes, rewrites, or deletes run-state to resolve a conflict — single-writer stays with the LEAD.
+
+**Migration (pre-existing engine-less `auto-run.json` — the case that will occur in the wild):** alone → legacy owner, legacy resume unchanged (policy never re-homes a run). Beside a canonical Record → ambiguous: launch and every canonical mutation refuse until the operator resolves; never auto-adopted, never rewritten. Converged runs always declare `engine` at run start (Step F / opsx-orchestration delta), so no new run enters the ambiguous class by construction.
+
+**Why declared-engine over content-sniffing** (inferring ownership from mechanical fields being present): the declaration is one closed schema field — cheap to compute, trivially testable, stable under run-state evolution. Content-sniffing would re-derive the D3 boundary from file shape — a second implementation of the very boundary it polices.
+
+This wired guard plus the launch-time freeze is the mechanism the evidence ledger cites for exit condition 11 ("one Run has one engine owner and one canonical state"); an unwired assertion could not have evidenced it.
 
 ## Risks / Trade-offs
 
