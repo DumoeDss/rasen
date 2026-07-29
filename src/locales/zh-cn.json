@@ -535,7 +535,9 @@
       "destinationExists": "导出目标已存在；请使用 --force",
       "exportCancelled": "导出已取消",
       "deletionRequiresYes": "非交互模式下删除需要 --yes",
-      "deletionCancelled": "删除已取消"
+      "deletionCancelled": "删除已取消",
+      "engineDisabledByConfig": "engine_disabled_by_config: 配置已禁用调和器引擎（runs.engine: legacy，决定层：{layer}），因此未创建规范 Run。请在旧引擎上运行此变更，或将 runs.engine 设为 auto 或 reconciler 以重新启用。",
+      "engineUnsupportedForPipeline": "engine_unsupported: 流水线 \"{name}\" 不支持调和器引擎（{reason}）；引擎由 {source} 选定。未在任何引擎下创建 Run。"
     },
     "errors": {
       "pipeline_not_found": "未找到该流水线。",
@@ -559,6 +561,8 @@
       "package_changed": "读取流水线包时，包内容发生了变化。",
       "staged_digest_mismatch": "暂存流水线的摘要校验失败。",
       "pipeline_registry_busy": "流水线注册表正忙。",
+      "engine_disabled_by_config": "配置已禁用调和器引擎。",
+      "engine_unsupported": "该流水线不支持所选引擎。",
       "pipeline_command_error": "流水线操作失败（{code}）。"
     }
   },
@@ -988,6 +992,8 @@
       "invalidAutopilotGates": "配置中的 'autopilot.gates' 字段无效（必须是 'on' 或 'off'）",
       "invalidAutopilotSelection": "配置中的 'autopilot.selection' 字段无效（必须是 'classify'、'manual' 或 'compose'）",
       "invalidAutopilot": "配置中的 'autopilot' 字段无效（必须是对象）",
+      "invalidRunsEngine": "配置中的 'runs.engine' 字段无效（必须是 'auto'、'reconciler' 或 'legacy'）",
+      "invalidRuns": "配置中的 'runs' 字段无效（必须是对象）",
       "invalidHandoffThreshold": "配置中的 'handoff.threshold' 字段无效（必须是 (0, 1] 内的数字，或对象 { remainingTokens: <positive integer> }）",
       "invalidHandoff": "配置中的 'handoff' 字段无效（必须是对象）",
       "expertSelectionMigration": "提示：现在可以单独选择专家。暂时保留以前安装的所有专家——请运行 `rasen profile` 选择要安装的专家。",

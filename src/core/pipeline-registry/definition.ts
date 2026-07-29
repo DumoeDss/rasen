@@ -266,6 +266,36 @@ export type DefinitionPreparationResult =
   | Readonly<{ ok: true; value: PreparedDefinition }>
   | Readonly<{ ok: false; error: DefinitionReadError }>;
 
+/**
+ * ECP-5 (D4): the ONE rule for "does this definition execute through the v2
+ * hierarchical path?". A definition needs v2 lowering when it was authored at
+ * v2, or when its NORMALIZED root carries a construct the v1 flat lowerer
+ * cannot express — a `BoundedLoop` (ReviewCycle/GoalLoop migration) or a
+ * `FanOut`/`Join` pair (`parallelGroup` normalization).
+ *
+ * Before this existed, three layers each carried their own inline copy and they
+ * disagreed: the lowerer routed any FanOut/Join-bearing definition through the
+ * v2 lowerer (which looks bindings up by `root:<nodeId>`), while capability
+ * binding resolution only produced `root:<nodeId>` bindings when a ReviewCycle
+ * BoundedLoop was present — so a v1 pipeline whose ONLY v2 construct was a
+ * `parallelGroup` got flat `stage:<id>` bindings the v2 lowerer could not find.
+ * Support analysis then reported `unsupported_pipeline_shape`, making
+ * `supported_v2_parallel` unreachable for exactly the v1 audience it was built
+ * for. Every consumer resolves the question here so the three layers can never
+ * disagree again.
+ */
+export function definitionRequiresV2Lowering(
+  prepared: PreparedDefinition
+): boolean {
+  if (prepared.authoredVersion === 2) return true;
+  return prepared.definition.root.nodes.some(
+    (node) =>
+      node.kind === 'BoundedLoop' ||
+      node.kind === 'FanOut' ||
+      node.kind === 'Join'
+  );
+}
+
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
     Object.freeze(value);

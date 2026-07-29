@@ -535,7 +535,9 @@
       "destinationExists": "export先が既に存在します。置き換えるには--forceを指定してください",
       "exportCancelled": "exportをキャンセルしました",
       "deletionRequiresYes": "非対話モードで削除するには--yesが必要です",
-      "deletionCancelled": "削除をキャンセルしました"
+      "deletionCancelled": "削除をキャンセルしました",
+      "engineDisabledByConfig": "engine_disabled_by_config: 設定によりリコンサイラエンジンが無効化されています（runs.engine: legacy、決定レイヤー: {layer}）。正規 Run は作成されませんでした。このチェンジはレガシーエンジンで実行するか、runs.engine を auto または reconciler に設定して再度有効化してください。",
+      "engineUnsupportedForPipeline": "engine_unsupported: パイプライン「{name}」はリコンサイラエンジンをサポートしていません（{reason}）。エンジンの選択元: {source}。どちらのエンジンでも Run は作成されませんでした。"
     },
     "errors": {
       "pipeline_not_found": "パイプラインが見つかりません。",
@@ -559,6 +561,8 @@
       "package_changed": "読み取り中にパイプラインpackageが変更されました。",
       "staged_digest_mismatch": "stagingしたパイプラインのダイジェスト検証に失敗しました。",
       "pipeline_registry_busy": "パイプラインレジストリが使用中です。",
+      "engine_disabled_by_config": "設定によりリコンサイラエンジンが無効化されています。",
+      "engine_unsupported": "このパイプラインは選択されたエンジンをサポートしていません。",
       "pipeline_command_error": "パイプライン操作に失敗しました（{code}）。"
     }
   },
@@ -988,6 +992,8 @@
       "invalidAutopilotGates": "設定の'autopilot.gates'フィールドが無効です（'on'または'off'を指定してください）",
       "invalidAutopilotSelection": "設定の'autopilot.selection'フィールドが無効です（'classify'、'manual'、または'compose'を指定してください）",
       "invalidAutopilot": "設定の'autopilot'フィールドが無効です（オブジェクトを指定してください）",
+      "invalidRunsEngine": "設定の'runs.engine'フィールドが無効です（'auto'、'reconciler'、または'legacy'を指定してください）",
+      "invalidRuns": "設定の'runs'フィールドが無効です（オブジェクトを指定してください）",
       "invalidHandoffThreshold": "設定の'handoff.threshold'フィールドが無効です（(0, 1]の数値、または{ remainingTokens: <正の整数> }を指定してください）",
       "invalidHandoff": "設定の'handoff'フィールドが無効です（オブジェクトを指定してください）",
       "expertSelectionMigration": "注: エキスパートを個別に選択できるようになりました。これまでインストール済みのエキスパートは当面すべて維持されます — インストールするものを選ぶには `rasen profile` を実行してください。",

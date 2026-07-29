@@ -6,7 +6,10 @@ import type {
   CompositeDeclaration,
 } from './definition.js';
 import type { CapabilityCatalogSnapshot } from './definition.js';
-import { orchestrationEvaluatorCapabilityFor } from './definition.js';
+import {
+  definitionRequiresV2Lowering,
+  orchestrationEvaluatorCapabilityFor,
+} from './definition.js';
 import type {
   EffectiveRunPolicy,
   RuntimeCapabilityBinding,
@@ -26,10 +29,11 @@ import { domainDigest } from '../change-run/internal/identity.js';
  * binding is therefore faithful to the installed skill content without any
  * ad-hoc hashing here.
  *
- * When the normalized definition contains a ReviewCycle BoundedLoop (D4
- * migration for `bug-fix` and `small-feature`), bindings are synthesized for
- * the v2 hierarchical paths (`root:<nodeId>` and `declaration:<bodyId>/node:<phase>`)
- * so the v2 lowerer and reconciler can drive the ReviewCycle body.
+ * When the normalized definition needs v2 lowering (`definitionRequiresV2Lowering`
+ * — a ReviewCycle BoundedLoop for `bug-fix`/`small-feature`, or a FanOut/Join
+ * pair from `parallelGroup`), bindings are synthesized for the v2 hierarchical
+ * paths (`root:<nodeId>` and `declaration:<bodyId>/node:<phase>`) so the v2
+ * lowerer and reconciler can drive them.
  */
 export function resolveCapabilityBindings(
   prepared: PreparedDefinition,
@@ -41,11 +45,14 @@ export function resolveCapabilityBindings(
     return resolveV2AuthoredCapabilityBindings(prepared, catalog);
   }
 
-  // D4 migration: when the normalized definition has a ReviewCycle BoundedLoop,
-  // produce v2 hierarchical-path bindings for both root AtomicStage nodes and
-  // BoundedLoop body phases. This makes v1 built-ins route through the same
-  // ReviewCycle body as authored v2 definitions.
-  if (hasReviewCycleBoundedLoop(prepared)) {
+  // ECP-5 (D4): a v1 definition whose NORMALIZED form carries any v2 construct
+  // — a ReviewCycle BoundedLoop, or a FanOut/Join pair from `parallelGroup` —
+  // is lowered through the v2 lowerer, which resolves bindings by `root:<id>`.
+  // The binding resolver therefore asks the SAME shared predicate the lowerer
+  // asks. Before this, a parallel-only v1 definition got flat `stage:<id>`
+  // bindings the v2 lowerer could not find (`supported_v2_parallel` was
+  // production-unreachable).
+  if (definitionRequiresV2Lowering(prepared)) {
     return resolveV2MigrationCapabilityBindings(prepared, catalog);
   }
 
@@ -95,24 +102,16 @@ export function resolveCapabilityBindings(
 }
 
 /**
- * Detect whether the normalized definition contains a ReviewCycle-shaped
- * BoundedLoop (exits.clean + exits.needs_fix). Used to switch between the
- * v1 atomic profile path and the v2 ReviewCycle migration path.
- */
-function hasReviewCycleBoundedLoop(prepared: PreparedDefinition): boolean {
-  return prepared.definition.root.nodes.some(
-    (node) =>
-      node.kind === 'BoundedLoop' &&
-      node.exits.clean?.action === 'exit' &&
-      node.exits.needs_fix?.action === 'continue'
-  );
-}
-
-/**
  * Resolve v2 hierarchical-path capability bindings for a v1 definition whose
- * normalized form contains a ReviewCycle BoundedLoop. Produces:
- *  - `root:<nodeId>` bindings for root AtomicStage nodes
+ * normalized form carries a v2 construct (see `definitionRequiresV2Lowering`).
+ * Produces:
+ *  - `root:<nodeId>` bindings for root AtomicStage nodes — including the
+ *    members of a normalized `parallelGroup`, which are root AtomicStages
+ *  - `root:<fanOutId>` synthetic evaluator bindings for FanOut nodes
  *  - `declaration:<bodyId>/node:<phaseId>` bindings for BoundedLoop body phases
+ *
+ * `Join` nodes deliberately get no binding: the Join pass derives its state
+ * from committed member results and is never admitted as an Action.
  */
 function resolveV2MigrationCapabilityBindings(
   prepared: PreparedDefinition,
@@ -440,8 +439,8 @@ function remapPolicyStagesForV2Authored(
  * caller supplies the policy stages (from the existing effective-stage
  * metadata resolver) and the path-independent source revision.
  *
- * When the definition has a ReviewCycle BoundedLoop (D4 migration), the policy
- * stages are remapped to v2 hierarchical paths so they align with the v2
+ * When the definition needs v2 lowering (`definitionRequiresV2Lowering`), the
+ * policy stages are remapped to v2 hierarchical paths so they align with the v2
  * capability bindings and lowerer.
  */
 export function resolveRuntimeExecutionProfile(
@@ -453,9 +452,12 @@ export function resolveRuntimeExecutionProfile(
 ): RuntimeExecutionProfile {
   const capabilities = resolveCapabilityBindings(prepared, catalog);
   // ECP-2: v2 authored definitions need their own policy stage mapping.
+  // ECP-5 (D4): the v1 remap is gated by the SAME shared predicate as the
+  // bindings above, so policy stages and capability bindings are always keyed
+  // alike — an Action is built by looking BOTH up under one hierarchical path.
   const finalPolicyStages = prepared.authoredVersion === 2
     ? remapPolicyStagesForV2Authored(prepared)
-    : hasReviewCycleBoundedLoop(prepared)
+    : definitionRequiresV2Lowering(prepared)
       ? remapPolicyStagesForV2(prepared, policyStages)
       : [...policyStages];
 
@@ -473,10 +475,12 @@ export function resolveRuntimeExecutionProfile(
 
 /**
  * Remap v1 policy stages (keyed by `stage:<id>`) to v2 hierarchical paths
- * (`root:stage:<id>` for root AtomicStages, `declaration:<bodyId>/node:<phaseId>`
- * for BoundedLoop body phases). Stages absorbed into a BoundedLoop (verify/
- * review-loop) are dropped; their ReviewCycle body phases get fresh policy
- * stages synthesized from the declaration.
+ * (`root:stage:<id>` for root AtomicStages — including normalized
+ * `parallelGroup` members — `root:<fanOutId>` for FanOut evaluators, and
+ * `declaration:<bodyId>/node:<phaseId>` for BoundedLoop body phases). Stages
+ * absorbed into a BoundedLoop (verify/review-loop) are dropped; their
+ * ReviewCycle body phases get fresh policy stages synthesized from the
+ * declaration. `Join` nodes get no policy stage — they are never admitted.
  */
 function remapPolicyStagesForV2(
   prepared: PreparedDefinition,

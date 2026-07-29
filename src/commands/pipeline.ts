@@ -128,7 +128,9 @@ import { getGlobalConfig } from '../core/global-config.js';
 import {
   readProjectConfig,
   resolveAutopilotGatePolicy,
+  resolveRunsEnginePolicy,
   updateProjectConfigKey,
+  type ResolvedEnginePolicy,
   type ResolvedGatePolicy,
 } from '../core/project-config.js';
 import {
@@ -168,6 +170,8 @@ interface PipelineCommandOptions {
   reviewer?: string;
   fixer?: string;
   shipper?: string;
+  /** ECP-5 `--engine <auto|reconciler|legacy>` — wins over `runs.engine` config. */
+  engine?: string;
 }
 
 /**
@@ -489,6 +493,16 @@ export class PipelineCommand {
     // reports legacy availability and execution_profile_unavailable.
     const support = analyzeReconcilerSupport(resolution.prepared, null);
 
+    // ECP-5 (D1/task 1.5): the resolved engine policy for this pipeline, so a
+    // launcher can read the effective engine and its deciding layer from the
+    // same payload it already reads gates and thresholds from — rather than
+    // re-deriving the precedence chain in prompt text.
+    const enginePolicy = this.resolveEnginePolicy(
+      projectRoot,
+      storeLayer?.storeRoot,
+      options
+    );
+
     const result = {
       version: pipeline.version,
       name: pipeline.name,
@@ -501,6 +515,21 @@ export class PipelineCommand {
       stages,
       availableEngines: support.availableEngines,
       reconcilerSupport: support.reconcilerSupport,
+      enginePolicy: {
+        configured: enginePolicy.effective,
+        source: enginePolicy.source,
+        // What `pipeline start` would do right now for this pipeline. `auto`
+        // resolves against the pipeline's reported engine availability;
+        // `legacy` is the off-switch and refuses to create a canonical Run.
+        effectiveEngine:
+          enginePolicy.effective === 'legacy'
+            ? 'legacy'
+            : enginePolicy.effective === 'reconciler'
+              ? 'reconciler'
+              : support.availableEngines.includes('reconciler')
+                ? 'reconciler'
+                : 'legacy',
+      },
       // Provenance marker (autonomy-ladder rung 2: composed pipelines) —
       // included only when declared so a human-authored pipeline's JSON shape
       // is unchanged.
@@ -531,11 +560,39 @@ export class PipelineCommand {
    * from the workspace's physical identity, and assembles the facade against
    * the immutable filesystem store.
    */
+  /**
+   * ECP-5 (D1): resolve the effective Run engine policy for a root — the
+   * `--engine` flag over `runs.engine` at project, then store, then global,
+   * then the built-in `auto`. Enforcement lives in the CLI rather than in a
+   * prompt because a prompt can be asked to honor config but cannot be PROVEN
+   * to; `pipeline start` is the only door that creates canonical Runs, so the
+   * refusal there is what makes the off-switch real.
+   */
+  private resolveEnginePolicy(
+    projectRoot: string,
+    storeRoot: string | null | undefined,
+    options: PipelineCommandOptions
+  ): ResolvedEnginePolicy {
+    return resolveRunsEnginePolicy(
+      readProjectConfig(projectRoot),
+      options.engine,
+      getGlobalConfig(),
+      storeRoot ? readProjectConfig(storeRoot) : null
+    );
+  }
+
   private async resolveRuntime(
     changeId: string,
     pipelineName: string,
     options: PipelineCommandOptions,
-    runIdOverride?: string
+    runIdOverride?: string,
+    /**
+     * ECP-5: the launch-time engine selection, supplied only by `start`.
+     * Engine policy applies at LAUNCH only — status/resume-run/cancel/complete
+     * of an existing Run must never be re-homed by a config change, so they
+     * pass nothing and the support failure reports no deciding source.
+     */
+    engineSelection?: ResolvedEnginePolicy
   ): Promise<ResolvedRuntime> {
     const root = await this.resolveRoot(options);
     if (!root) throw new Error('No Rasen root resolved.');
@@ -665,10 +722,21 @@ export class PipelineCommand {
     );
     const support = analyzeReconcilerSupport(prepared, profile);
     if (!support.reconcilerSupport.supported) {
+      // ECP-5 (D1): fail with the SUPPORT REASON and — at launch — the layer
+      // that chose the engine. An explicit `reconciler` never silently falls
+      // back to legacy: the user asked for the engine by name. Under `auto`
+      // this is equally a refusal to create a canonical Run for a pipeline the
+      // reconciler cannot own; the caller routes to the legacy path.
       throw pipelineMessageError(
-        'pipelineNotFound',
-        { name: pipelineName, available: support.reconcilerSupport.reason },
-        'unsupported_pipeline_shape'
+        'engineUnsupportedForPipeline',
+        {
+          name: pipelineName,
+          reason: support.reconcilerSupport.reason,
+          source: engineSelection
+            ? `${engineSelection.effective} (${engineSelection.source})`
+            : 'the run\'s recorded engine',
+        },
+        'engine_unsupported'
       );
     }
 
@@ -907,8 +975,34 @@ export class PipelineCommand {
     pipelineName: string,
     options: PipelineCommandOptions = {}
   ): Promise<void> {
+    // ECP-5 (D1): resolve and ENFORCE the engine policy before anything that
+    // could touch disk. An explicit `legacy` must leave no trace — no Run
+    // Record, and no association-registry binding either — so the refusal
+    // happens ahead of `resolveRuntime`, which binds the Change instance.
+    const policyRoot = await this.resolveRoot(options);
+    if (!policyRoot) throw new Error('No Rasen root resolved.');
+    const policyStoreLayer = await requireConfigStoreLayer(policyRoot.path);
+    const engineSelection = this.resolveEnginePolicy(
+      policyRoot.path,
+      policyStoreLayer?.storeRoot,
+      options
+    );
+    if (engineSelection.effective === 'legacy') {
+      throw pipelineMessageError(
+        'engineDisabledByConfig',
+        { layer: engineSelection.source },
+        'engine_disabled_by_config'
+      );
+    }
+
     const { ctx, pipelineName: resolvedPipelineName, runId, projectRoot, projectId, launchKey } =
-      await this.resolveRuntime(changeId, pipelineName, options);
+      await this.resolveRuntime(
+        changeId,
+        pipelineName,
+        options,
+        undefined,
+        engineSelection
+      );
     const receipt = await ctx.facade.start(
       {
         change: { projectRoot, changeId },
@@ -923,6 +1017,11 @@ export class PipelineCommand {
       change: { projectRoot, changeId, projectId },
       pipeline: resolvedPipelineName,
       engine: 'reconciler',
+      // The deciding layer, not just the outcome: `auto` and an explicit
+      // `--engine reconciler` produce the same engine for very different
+      // reasons, and the launcher displays which one applied.
+      engineSource: engineSelection.source,
+      enginePolicy: engineSelection.effective,
       disposition: receipt.disposition,
       status: receipt.view.status,
       actions: receipt.actions.map((action) => ({

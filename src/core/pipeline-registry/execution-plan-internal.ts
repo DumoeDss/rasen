@@ -7,7 +7,10 @@ import type {
   ChangeRunPlan,
   PreparedDefinition,
 } from './definition.js';
-import { orchestrationEvaluatorCapabilityFor } from './definition.js';
+import {
+  definitionRequiresV2Lowering,
+  orchestrationEvaluatorCapabilityFor,
+} from './definition.js';
 import {
   planValueDigest,
   type DefinitionPlanPayload,
@@ -550,6 +553,52 @@ function hasExactBugFixShape(pipeline: PipelineYaml): boolean {
   });
 }
 
+/**
+ * ECP-5 (D4): the capability-binding node IDs a v1 definition that needs v2
+ * lowering is EXPECTED to carry. This mirrors `resolveV2MigrationCapabilityBindings`
+ * node-for-node — root AtomicStages (including normalized `parallelGroup`
+ * members) and FanOut/Choice evaluators bind under `root:<id>`; a
+ * ReviewCycle-shaped BoundedLoop binds every AtomicStage of its body
+ * declaration; Gate, legacy Choice, Join, and Finish bind nothing.
+ *
+ * It exists so the strict comparison below and the binding resolver derive the
+ * expected set from ONE rule. The two inline copies this replaces disagreed
+ * about body-node selection, and their divergence is what made
+ * `supported_v2_parallel` unreachable for v1 parallel-only pipelines.
+ */
+function expectedV2MigrationNodeIds(
+  prepared: PreparedDefinition
+): readonly string[] {
+  const ids: string[] = [];
+  for (const node of prepared.definition.root.nodes) {
+    if (orchestrationEvaluatorCapabilityFor(node) !== null) {
+      ids.push(`root:${node.id}`);
+      continue;
+    }
+    if (node.kind === 'AtomicStage') {
+      ids.push(`root:${node.id}`);
+      continue;
+    }
+    if (node.kind === 'BoundedLoop') {
+      if (
+        node.exits.clean?.action !== 'exit' ||
+        node.exits.needs_fix?.action !== 'continue'
+      ) {
+        continue;
+      }
+      const declaration = prepared.definition.declarations.find(
+        (candidate) => candidate.id === node.body
+      );
+      if (declaration === undefined) continue;
+      for (const phaseNode of declaration.graph.nodes) {
+        if (phaseNode.kind !== 'AtomicStage') continue;
+        ids.push(`declaration:${declaration.id}/node:${phaseNode.id}`);
+      }
+    }
+  }
+  return ids.sort(compareStrings);
+}
+
 export function analyzeReconcilerSupport(
   prepared: PreparedDefinition,
   profile: RuntimeExecutionProfile | null
@@ -564,13 +613,19 @@ export function analyzeReconcilerSupport(
       node.exits.clean?.action === 'exit' &&
       node.exits.needs_fix?.action === 'continue'
   );
+  // ECP-5 (D4): the ONE rule that also routes lowering and binding resolution.
+  // A v1 definition whose only v2 construct is `parallelGroup` reaches the v2
+  // branch here for the first time — previously it fell to the flat bug-fix
+  // check and reported `unsupported_pipeline_shape` against `root:<id>`
+  // bindings it could never have produced.
+  const requiresV2 = definitionRequiresV2Lowering(prepared);
   const unsupported = (
     reason: ReconcilerSupportAnalysis['reconcilerSupport']['reason']
   ): ReconcilerSupportAnalysis =>
     deepFreeze({
       availableEngines:
         prepared.authoredVersion === 1
-          ? hasV2ReviewCycle
+          ? requiresV2
             ? ['legacy', 'reconciler']
             : ['legacy']
           : prepared.capability.executionMode === 'reconciler'
@@ -642,40 +697,18 @@ export function analyzeReconcilerSupport(
   }
   const pipeline = prepared.authoredSource as PipelineYaml;
 
-  // D4 migration: v1 definitions whose normalized form contains a ReviewCycle
-  // BoundedLoop are analyzed via the v2 path. The capability bindings must
-  // include both root AtomicStage paths (`root:<nodeId>`) and BoundedLoop body
-  // phase paths (`declaration:<bodyId>/node:<phaseId>`).
-  if (hasV2ReviewCycle) {
+  // ECP-5 (D4): ONE v2 branch for every v1 definition the v2 lowerer owns —
+  // a ReviewCycle/GoalLoop BoundedLoop, a normalized `parallelGroup`, or both.
+  // The expected binding set is derived by the shared helper that mirrors the
+  // binding resolver, and the strict comparison stays fail-closed: an
+  // incomplete binding set reports `unsupported_pipeline_shape` BEFORE any Run
+  // is created rather than dying mid-Run at admission with
+  // `No capability/policy binding`.
+  if (requiresV2) {
     if (profile === null) {
       return unsupported('execution_profile_unavailable');
     }
-    // ECP-4: a v1 pipeline can have BOTH a ReviewCycle BoundedLoop and a
-    // parallelGroup (full-feature does), so this branch must also expect the
-    // synthetic FanOut evaluator binding.
-    const expectedRootIds = prepared.definition.root.nodes
-      .filter(
-        (node) =>
-          node.kind === 'AtomicStage' ||
-          orchestrationEvaluatorCapabilityFor(node) !== null
-      )
-      .map((node) => `root:${node.id}`);
-    const expectedBodyIds = prepared.definition.declarations.flatMap(
-      (declaration) =>
-        declaration.graph.nodes
-          .filter(
-            (node) =>
-              node.kind === 'AtomicStage' &&
-              (typeof node.reviewCyclePhase === 'string' ||
-                typeof node.goalCyclePhase === 'string')
-          )
-          .map(
-            (node) => `declaration:${declaration.id}/node:${node.id}`
-          )
-    );
-    const expectedNodeIds = [...expectedRootIds, ...expectedBodyIds].sort(
-      compareStrings
-    );
+    const expectedNodeIds = expectedV2MigrationNodeIds(prepared);
     if (
       expectedNodeIds.length === 0 ||
       JSON.stringify(profile.capabilities.map((binding) => binding.nodeId)) !==
@@ -687,58 +720,18 @@ export function analyzeReconcilerSupport(
       availableEngines: ['legacy', 'reconciler'],
       reconcilerSupport: {
         supported: true,
-        reason: 'supported_v2_review_cycle',
+        // A loop-bearing definition keeps its ReviewCycle reason even when it
+        // ALSO fans out (full-feature does both); a definition whose only v2
+        // construct is `parallelGroup` reports the parallel reason.
+        reason: hasV2ReviewCycle
+          ? 'supported_v2_review_cycle'
+          : 'supported_v2_parallel',
         profileDigest: profile.profileDigest,
       },
     });
   }
   if (hasUnsupportedSemantics(pipeline)) {
-    // ECP-4: even if semantics are otherwise unsupported, check if the
-    // normalized form has FanOut/Join nodes (from parallelGroup).
-    const hasParallel = prepared.definition.root.nodes.some(
-      (node) => node.kind === 'FanOut' || node.kind === 'Join'
-    );
-    if (!hasParallel) {
-      return unsupported('unsupported_pipeline_semantics');
-    }
-  }
-  // ECP-4: check for parallel group support (FanOut/Join in normalized form)
-  const hasParallel = prepared.definition.root.nodes.some(
-    (node) => node.kind === 'FanOut' || node.kind === 'Join'
-  );
-  if (hasParallel) {
-    if (profile === null) {
-      return unsupported('execution_profile_unavailable');
-    }
-    // Task 10.3 promises `supported_v2_parallel` only "when all FanOut/Join/
-    // Choice bindings are present". Without this check a parallel-only
-    // pipeline with an incomplete binding set reports supported and then dies
-    // mid-Run at admission with `No capability/policy binding` — the exact
-    // failure mode the synthetic evaluator binding fixed on the review-cycle
-    // branch, which applies the same strict comparison.
-    const expectedNodeIds = prepared.definition.root.nodes
-      .filter(
-        (node) =>
-          node.kind === 'AtomicStage' ||
-          orchestrationEvaluatorCapabilityFor(node) !== null
-      )
-      .map((node) => `root:${node.id}`)
-      .sort(compareStrings);
-    if (
-      expectedNodeIds.length === 0 ||
-      JSON.stringify(profile.capabilities.map((binding) => binding.nodeId)) !==
-        JSON.stringify(expectedNodeIds)
-    ) {
-      return unsupported('unsupported_pipeline_shape');
-    }
-    return deepFreeze({
-      availableEngines: ['legacy', 'reconciler'],
-      reconcilerSupport: {
-        supported: true,
-        reason: 'supported_v2_parallel',
-        profileDigest: profile.profileDigest,
-      },
-    });
+    return unsupported('unsupported_pipeline_semantics');
   }
   if (!hasExactBugFixShape(pipeline)) {
     return unsupported('unsupported_pipeline_shape');

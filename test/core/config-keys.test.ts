@@ -346,7 +346,7 @@ describe('config-keys registry', () => {
   });
 
   describe('scope assignment', () => {
-      it('assigns exactly 10 global-only, 4 global+project, 3 store+project, and 14 all-three keys', () => {
+      it('assigns exactly 10 global-only, 4 global+project, 3 store+project, and 15 all-three keys', () => {
       const nonWildcard = CONFIG_KEY_REGISTRY.filter((def) => !def.wildcard);
       const sorted = (def: (typeof nonWildcard)[number]) => [...def.scopes].sort().join(',');
       const globalOnly = nonWildcard.filter((def) => sorted(def) === 'global');
@@ -374,7 +374,10 @@ describe('config-keys registry', () => {
           'workflows',
         ]);
       expect(storeProject.length).toBe(3);
-      expect(allThree.length).toBe(14);
+      // 15 = 14 plus `runs.engine` (ECP-5 engine selection policy: the
+      // `ecp-change-run-runtime` delta requires it to resolve project > store
+      // > global, so it MUST carry all three scopes).
+      expect(allThree.length).toBe(15);
       // Six wildcard families: featureFlags, four pipelines families, and
       // runtime threshold bindings.
       const wildcards = CONFIG_KEY_REGISTRY.filter((def) => def.wildcard);

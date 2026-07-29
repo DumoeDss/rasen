@@ -535,7 +535,9 @@
       "destinationExists": "Export destination already exists; use --force",
       "exportCancelled": "Export cancelled",
       "deletionRequiresYes": "Deletion requires --yes in non-interactive mode",
-      "deletionCancelled": "Deletion cancelled"
+      "deletionCancelled": "Deletion cancelled",
+      "engineDisabledByConfig": "engine_disabled_by_config: the reconciler engine is disabled by configuration (runs.engine: legacy, decided by the {layer} layer), so no canonical Run was created. Run this change on the legacy engine, or set runs.engine to auto or reconciler to re-enable it.",
+      "engineUnsupportedForPipeline": "engine_unsupported: pipeline \"{name}\" does not support the reconciler engine ({reason}); the engine was selected by {source}. No Run was created under either engine."
     },
     "errors": {
       "pipeline_not_found": "The pipeline was not found.",
@@ -559,6 +561,8 @@
       "package_changed": "The pipeline package changed while it was being read.",
       "staged_digest_mismatch": "The staged pipeline failed digest validation.",
       "pipeline_registry_busy": "The pipeline registry is busy.",
+      "engine_disabled_by_config": "The reconciler engine is disabled by configuration.",
+      "engine_unsupported": "The pipeline does not support the selected engine.",
       "pipeline_command_error": "Pipeline operation failed ({code})."
     }
   },
@@ -988,6 +992,8 @@
       "invalidAutopilotGates": "Invalid 'autopilot.gates' field in config (must be 'on' or 'off')",
       "invalidAutopilotSelection": "Invalid 'autopilot.selection' field in config (must be 'classify', 'manual', or 'compose')",
       "invalidAutopilot": "Invalid 'autopilot' field in config (must be an object)",
+      "invalidRunsEngine": "Invalid 'runs.engine' field in config (must be 'auto', 'reconciler', or 'legacy')",
+      "invalidRuns": "Invalid 'runs' field in config (must be an object)",
       "invalidHandoffThreshold": "Invalid 'handoff.threshold' field in config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> })",
       "invalidHandoff": "Invalid 'handoff' field in config (must be an object)",
       "expertSelectionMigration": "Note: experts are now individually selectable. All previously installed experts are kept for now — run `rasen profile` to choose which ones to install.",

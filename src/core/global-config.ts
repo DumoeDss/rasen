@@ -162,6 +162,14 @@ export interface GlobalConfig {
     selection?: 'classify' | 'manual' | 'compose';
   };
   /**
+   * Machine-wide Run engine policy (ECP-5); project and store config of the
+   * same name win over this (see `resolveRunsEnginePolicy` in
+   * project-config.ts, which takes this block as its `globalConfig` layer).
+   */
+  runs?: {
+    engine?: 'auto' | 'reconciler' | 'legacy';
+  };
+  /**
    * Machine-wide per-agent model defaults; project config of the same name
    * wins over this. `default` is the base model for every role; `roles`
    * overrides it per role (planner/implementer/reviewer/fixer/shipper).

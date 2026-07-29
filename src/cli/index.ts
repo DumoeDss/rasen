@@ -689,13 +689,23 @@ pipelineCmd
   .command('start <change> <pipeline>')
   .description('Start (or reuse) a reconciler-engine Run for a change under a pipeline')
   .option('--json', 'Output as JSON')
+  .option(
+    '--engine <engine>',
+    'Engine for this launch: auto (default), reconciler, or legacy. Wins over the runs.engine config; legacy refuses to create a canonical Run.'
+  )
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
   .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
   .action(async (
     change: string,
     pipeline: string,
-    options?: { json?: boolean; store?: string; project?: string; storePath?: string }
+    options?: {
+      json?: boolean;
+      engine?: string;
+      store?: string;
+      project?: string;
+      storePath?: string;
+    }
   ) => {
     try {
       const pipelineCommand = new PipelineCommand();

@@ -1,4 +1,5 @@
 import type { PreparedDefinition } from '../../pipeline-registry/definition.js';
+import { definitionRequiresV2Lowering } from '../../pipeline-registry/definition.js';
 import type {
   AtomicStageNode,
   BoundedLoopNode,
@@ -1010,20 +1011,11 @@ export function lowerRuntimePlanInput(
   runId: RunId,
   gatePolicy: LoweredGatePolicy = DEFAULT_LOWERED_GATE_POLICY
 ): RuntimePlanInput {
-  // D4 migration: route through the v2 lowerer when the normalized definition
-  // contains a BoundedLoop, regardless of authoredVersion. This makes v1
-  // built-in pipelines (bug-fix, small-feature) whose normalized form includes
-  // a ReviewCycle BoundedLoop lower as mixed atomic + bounded-loop plans.
-  // ECP-4: also route through v2 when FanOut/Join nodes are present, so that
-  // v1 pipelines with parallelGroup are correctly lowered with FanOut/Join
-  // structure instead of being silently flattened by the v1 lowerer.
-  const requiresV2Lowering = prepared.definition.root.nodes.some(
-    (node) =>
-      node.kind === 'BoundedLoop' ||
-      node.kind === 'FanOut' ||
-      node.kind === 'Join'
-  );
-  if (prepared.authoredVersion === 2 || requiresV2Lowering) {
+  // ECP-5 (D4): route through the v2 lowerer per the ONE shared predicate the
+  // binding resolver and support analysis also consume — the inline copy that
+  // used to live here is exactly what let those three layers disagree about a
+  // v1 parallel-only definition's execution shape.
+  if (definitionRequiresV2Lowering(prepared)) {
     return lowerV2ReviewCyclePlanInput(prepared, profile, runId);
   }
   const pipeline = prepared.authoredSource as PipelineYaml;

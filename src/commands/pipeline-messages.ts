@@ -134,6 +134,8 @@ export interface PipelineMessageValues {
   exportCancelled: undefined;
   deletionRequiresYes: undefined;
   deletionCancelled: undefined;
+  engineDisabledByConfig: { layer: string };
+  engineUnsupportedForPipeline: { name: string; reason: string; source: string };
 }
 
 export const PIPELINE_MESSAGE_KEYS = [
@@ -243,6 +245,8 @@ export const PIPELINE_MESSAGE_KEYS = [
   'exportCancelled',
   'deletionRequiresYes',
   'deletionCancelled',
+  'engineDisabledByConfig',
+  'engineUnsupportedForPipeline',
 ] as const satisfies readonly (keyof PipelineMessageValues)[];
 
 export type PipelineMessageKey = (typeof PIPELINE_MESSAGE_KEYS)[number];
@@ -269,6 +273,10 @@ export const PIPELINE_ERROR_KEYS = [
   'package_changed',
   'staged_digest_mismatch',
   'pipeline_registry_busy',
+  // ECP-5 engine selection policy: the reconciler off-switch's typed refusal
+  // and the forced/auto unsupported failure.
+  'engine_disabled_by_config',
+  'engine_unsupported',
   'pipeline_command_error',
 ] as const;
 
