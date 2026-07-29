@@ -363,6 +363,18 @@ function isSafelyEditableV2Node(node: unknown): boolean {
       );
     case 'Finish':
       return typeof record.outcome === 'string';
+    // CompositeRef and BoundedLoop joined the editable vocabulary in ECP-2
+    // (`executable-custom-composite`: reference a declaration from the root
+    // graph, and "The Canvas SHALL allow the user to delete a `CompositeRef`
+    // node from the root graph"). This predicate is the WELL-FORMEDNESS guard
+    // — it must not double as a second vocabulary gate, or a node the editor
+    // reports as supported is one React Flow refuses to delete or connect.
+    case 'CompositeRef':
+      return typeof record.declarationId === 'string';
+    case 'BoundedLoop':
+      return typeof record.body === 'string';
+    // Everything else — FanOut, Join, and any kind a later slice introduces —
+    // stays a read-only card.
     default:
       return false;
   }

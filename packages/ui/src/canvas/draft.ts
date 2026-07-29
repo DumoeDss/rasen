@@ -260,6 +260,36 @@ export function isV2EditableNodeKind(
   return V2_EDITABLE_NODE_KINDS.has(kind as WireDefinitionNode['kind']);
 }
 
+/**
+ * The declaration a root-level `CompositeRef` may reference, if any: a custom
+ * declaration, or a built-in one that actually carries a body graph.
+ *
+ * Exported so the palette's availability and the insertion itself read the SAME
+ * rule — a palette that decided this for itself would be a second
+ * implementation of "can a CompositeRef be inserted right now", and the two
+ * would drift.
+ */
+export function referenceableDeclaration(
+  def: WirePipelineDefinitionV2
+): WireCompositeDeclaration | undefined {
+  return (def.declarations ?? []).find(
+    (declaration) =>
+      declaration.provenance !== 'built-in' || declaration.graph.nodes.length > 0
+  );
+}
+
+/**
+ * The declaration a root-level `BoundedLoop` may use as its body, if any. A
+ * loop needs a real body graph, so an empty declaration does not qualify.
+ */
+export function loopBodyDeclaration(
+  def: WirePipelineDefinitionV2
+): WireCompositeDeclaration | undefined {
+  return (def.declarations ?? []).find(
+    (declaration) => declaration.graph.nodes.length > 0
+  );
+}
+
 /** Appends one authored v2 root node without touching declarations or graph extensions. */
 export function addV2Node(
   def: WirePipelineDefinitionV2,

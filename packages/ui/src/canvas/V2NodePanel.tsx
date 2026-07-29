@@ -116,6 +116,16 @@ export function V2NodePanel({
             This known Definition kind is preserved exactly and is read-only in
             this editor slice.
           </p>
+          {/* ECP-4's `executable-parallel-pipelines` delta ("Canvas provides
+              parallel authoring with legality feedback") promises that
+              selecting a FanOut shows its member list with required badges and
+              conditions, and its concurrency cap and budget. FanOut/Join are
+              deliberately NOT root-authorable (`isV2EditableNodeKind` excludes
+              them, pinned by `draft.test.ts`), so the detail renderers belong
+              on the read-only side — gating them behind `supported` made the
+              shipped promise unreachable in production. */}
+          {node.kind === 'FanOut' && <FanOutDetails node={node} />}
+          {node.kind === 'Join' && <JoinDetails node={node} />}
           <pre class="stage-panel__json">{JSON.stringify(node, null, 2)}</pre>
         </>
       ) : (
@@ -229,13 +239,8 @@ export function V2NodePanel({
             />
           )}
 
-          {node.kind === 'FanOut' && (
-            <FanOutDetails node={node} />
-          )}
-
-          {node.kind === 'Join' && (
-            <JoinDetails node={node} />
-          )}
+          {/* FanOut/Join are never `supported`; their read-only detail
+              renderers live in the branch above. */}
         </>
       )}
     </aside>

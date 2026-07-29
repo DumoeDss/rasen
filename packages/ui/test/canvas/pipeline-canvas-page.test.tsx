@@ -1124,12 +1124,59 @@ describe('PipelineCanvasPage — edit mode', () => {
       { id: 'rejected', type: 'outcome/rejected' },
     ]);
 
-    for (const id of ['composite', 'loop', 'fanout', 'join']) {
+    // ECP-2 moved CompositeRef and BoundedLoop INTO the editable vocabulary:
+    // `executable-custom-composite` delta, "Canvas creates and references a
+    // Custom Composite declaration" — "The user SHALL be able to reference the
+    // declaration from the root graph via a `CompositeRef` node or embed it in
+    // a `BoundedLoop`" — and "Canvas deletes a CompositeRef or declaration" —
+    // "The Canvas SHALL allow the user to delete a `CompositeRef` node from the
+    // root graph". Commit 60bfeaa9 added both to `V2_EDITABLE_NODE_KINDS` and
+    // updated `draft.test.ts`, but this expectation kept the pre-ECP-2 answer.
+    for (const id of ['composite', 'loop']) {
+      const card = container.querySelector(`[data-testid="mock-node"][data-node-id="${id}"]`)!;
+      expect(card.getAttribute('data-editor-supported')).toBe('true');
+      expect(card.getAttribute('data-deletable')).toBe('true');
+      expect(card.getAttribute('data-connectable')).toBe('true');
+    }
+
+    // FanOut/Join stay read-only cards. ECP-4's `executable-parallel-pipelines`
+    // delta, "Canvas provides parallel authoring with legality feedback",
+    // promises that the Canvas DISPLAYS them with their structural details and
+    // validates their legality — it does not promise root-graph authoring, and
+    // `draft.test.ts` pins `['FanOut','Join'].some(isV2EditableNodeKind)` false.
+    for (const id of ['fanout', 'join']) {
       const card = container.querySelector(`[data-testid="mock-node"][data-node-id="${id}"]`)!;
       expect(card.getAttribute('data-editor-supported')).toBe('false');
       expect(card.getAttribute('data-deletable')).toBe('false');
       expect(card.getAttribute('data-connectable')).toBe('false');
     }
+  });
+
+  it('shows the FanOut and Join structural details on the read-only panel', async () => {
+    // The other half of ECP-4's Canvas requirement: "#### Scenario: FanOut
+    // panel shows members and limits — WHEN a FanOut node is selected in the
+    // Canvas — THEN the panel SHALL show the member list ... AND SHALL show
+    // concurrency cap and budget". The renderers shipped with ECP-4 but were
+    // gated behind the editable-kind check, so no selection could ever reach
+    // them; this pins them to the read-only panel where FanOut/Join land.
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="fanout"]')
+    );
+    expect(container.querySelector('[data-testid="v2-node-panel-unsupported"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="v2-node-panel-fanout"]')).not.toBeNull();
+    // No editable stable-id field: display does not imply authoring.
+    expect(container.querySelector('[data-testid="v2-node-panel-id"]')).toBeNull();
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="join"]')
+    );
+    expect(container.querySelector('[data-testid="v2-node-panel-join"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="v2-node-panel-id"]')).toBeNull();
   });
 
   it('creates, selects, edits, renames, and deletes only the enabled v2 root node kinds', async () => {
@@ -1185,11 +1232,24 @@ describe('PipelineCanvasPage — edit mode', () => {
       'approval-gate'
     );
 
+    // A CompositeRef IS deletable — ECP-2 `executable-custom-composite`,
+    // "Requirement: Canvas deletes a CompositeRef or declaration": "The Canvas
+    // SHALL allow the user to delete a `CompositeRef` node from the root
+    // graph." This assertion previously encoded the pre-ECP-2 refusal.
     await clickAndFlush(
       container.querySelector('[data-testid="mock-node-remove"][data-node-id="composite"]')
     );
-    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).not.toContain(
       'composite'
+    );
+    // A FanOut is NOT deletable — the editable vocabulary still excludes it
+    // (ECP-4 promises display + legality feedback, not root authoring), so the
+    // removal is refused and the node survives.
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-remove"][data-node-id="fanout"]')
+    );
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+      'fanout'
     );
     await clickAndFlush(
       container.querySelector('[data-testid="mock-node-remove"][data-node-id="choice"]')
@@ -1197,6 +1257,38 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).not.toContain(
       'choice,'
     );
+  });
+
+  it('inserts a CompositeRef from the root palette and disables the kinds the draft cannot accept', async () => {
+    // ECP-2 `executable-custom-composite`, "Canvas creates and references a
+    // Custom Composite declaration": "The user SHALL be able to reference the
+    // declaration from the root graph via a `CompositeRef` node." The insertion
+    // branch shipped in `addV2RootNode`, but the palette exposed only the four
+    // pre-ECP-2 kinds, so no affordance could reach it.
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-add-CompositeRef"]'));
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+      'composite-ref'
+    );
+    // The new node references the fixture's custom declaration, and the panel
+    // opens on it.
+    expect(container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')).toBe(
+      'composite-ref'
+    );
+
+    // The fixture's only declaration has an empty body graph, so a BoundedLoop
+    // has nothing to loop over: the palette reports it unavailable rather than
+    // offering a click that can only toast. FanOut/Join are not offered at all.
+    expect(
+      (container.querySelector('[data-testid="v2-palette-add-BoundedLoop"]') as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
+    expect(container.querySelector('[data-testid="v2-palette-add-FanOut"]')).toBeNull();
+    expect(container.querySelector('[data-testid="v2-palette-add-Join"]')).toBeNull();
   });
 
   it('keeps the v2 stable-id editor focused across multiple keystrokes and commits the rename on blur', async () => {

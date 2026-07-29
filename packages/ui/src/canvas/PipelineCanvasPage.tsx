@@ -42,6 +42,8 @@ import {
   isDirty,
   isV2EditableNodeKind,
   issuePathTarget,
+  loopBodyDeclaration,
+  referenceableDeclaration,
   removeRequire,
   removeStage,
   removeV2Connection,
@@ -693,18 +695,14 @@ export function PipelineCanvasPage() {
     } else if (kind === 'Choice') {
       node = { id, kind, outcomes: ['default'] };
     } else if (kind === 'CompositeRef') {
-      const declaration = (draft.declarations ?? []).find(
-        (d) => d.provenance !== 'built-in' || d.graph.nodes.length > 0
-      );
+      const declaration = referenceableDeclaration(draft);
       if (!declaration) {
         showToast('No declaration available to reference.');
         return;
       }
       node = { id, kind, declarationId: declaration.id };
     } else if (kind === 'BoundedLoop') {
-      const declaration = (draft.declarations ?? []).find(
-        (d) => d.graph.nodes.length > 0
-      );
+      const declaration = loopBodyDeclaration(draft);
       if (!declaration) {
         showToast('No declaration available for loop body.');
         return;
@@ -1303,6 +1301,16 @@ export function PipelineCanvasPage() {
             skills={catalog?.skills ?? null}
             loading={catalogLoading}
             definitionVersion={draft?.version ?? 1}
+            // Same rule the insertion uses, read once — a CompositeRef needs a
+            // referenceable declaration and a BoundedLoop needs one with a body.
+            disabledKinds={
+              draft?.version === 2
+                ? [
+                    ...(referenceableDeclaration(draft) ? [] : (['CompositeRef'] as const)),
+                    ...(loopBodyDeclaration(draft) ? [] : (['BoundedLoop'] as const)),
+                  ]
+                : undefined
+            }
             onAddV2Node={addV2RootNode}
           />
         )}
