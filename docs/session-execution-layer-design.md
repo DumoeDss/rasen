@@ -109,6 +109,17 @@ reconciler ──next action──▶ launcher / runtime
 | `touch(sessionRef)` | `wake` 的固定短消息特例，成本 ≈ 0.1×C；决策规则见 §6 |
 | `retire(sessionRef, {finalTurn})` | finalTurn=true：末回合让 session 写 handoff distillate 再标记 retired（趁 warm 退休）；false：直接标记（已冷透时不花唤醒钱）。retired 为终态，`wake` 结构化拒绝 |
 
+### 5.1 宿主变体（官方文档调研后新增，2026-07-29）
+
+官方无头模式支持 `--input-format stream-json`：**单进程多轮**——进程常驻、消息经 stdin 排队、顺序执行、`stream-json` 输出含逐轮 usage。这提供第二种宿主形态：
+
+| hostKind | 形态 | 何时选 |
+|---|---|---|
+| `resume-cli`（基线） | 每次唤醒一个 `-p --resume` 新进程，空闲零进程 | 留存行为与进程存活无关时的最简形态 |
+| `stream-json`（候选） | 每 worker 一个常驻 `claude -p --input-format stream-json` 进程 | 若探针证实"存活进程享受交互式级留存"（KC6，待测），则直接消解 KC1a 问题、touch 可能全免；且进程内串行天然解决 KC5 并发 |
+
+两者共享 registry/journal/退休语义，`hostKind` 已是 registry 字段。另：SessionEnd/Stop hooks 在无头模式正常触发（1.5s 预算）——registry 更新可由 hook 异步触发，减少对 stdout 解析的依赖。不支持自定义 session id（registry 记系统生成 id）。
+
 约束（探针 KC 对应）：
 
 - 所有 create/wake 以 argv 数组 spawn，prompt 走文件/stdin，杜绝 shell quoting（前科：审计 §8.6 的信号写入失败）；
@@ -175,6 +186,7 @@ reviewer / fixer：session 档（多 episode、轮间空闲、读多写少），
 1. **dispatch 时机选档**——档位不可中途切换（换档 = 全量 2×C 重写），planner 按任务画像预判：`C_workingset > ~0.6 × C_implementer` 或 fix 轮需要实现者脑内状态 → implementer 从一开始走 session 档，0.75×C 写溢价当保险费（stage 配置显式逃生门）；
 2. **working-set manifest 无论如何都做**——handoff 附机器可读清单（文件路径 + 行区间 + 相关性理由），successor 重收集从"重新探索"降为"定向读切片"（大文件读 findings 指向的区间而非整文件）；
 3. **重收集只付一次**——session 档 fixer 收集后跨全部 fix 轮保温摊薄，真实对比是 `0.75×C_impl` vs `1.25×C_ws 一次性`。
+4. **`--fork-session` 继承（官方能力，2026-07-29 调研确认）**——session 档 implementer 完成后 fork 其会话给 fixer：fork 复制历史、前缀字节相同，**T_eff 内 fork 首请求命中原会话缓存条目**，fixer 以 0.1×C 读继承全部收集成果（vs 1.25×C_ws 重收集），且获得独立 session 身份。是 collection-heavy 场景的最优解。边界：design-level fixer 按 `worker-reuse-orchestration` spec 仍须 fresh eyes，fork 只用于机械修复轮；reviewer 永不 fork 自 implementer（评审独立性污染）。
 
 collection-heavy 任务同时逼近上下文窗口上限（`handoffTokenLimit` 契约字段管辖）——保温不解决窗口耗尽，manifest 层不可省。
 
@@ -233,6 +245,9 @@ rasen agent audit --run <runId>
 > 3. 死的是"55 分钟免费空闲"参数，不是架构；§6 经济模型待二分/KC1c 收工后按 T_eff 重算，MISS 惩罚不对称（2×C vs 1.25×C）会把路由阈值整体推向 subagent。
 > 4. KC2 已定：跨 cwd resume 硬报错 → registry 必须记录并校验 cwd。KC4 已定：session_id 恒定不换 → `sessionIdChain` 简化为单 id + 防御性链。KC5 已定：并发 resume 双方计费但一方回合被静默丢弃 → 单飞锁必须在 CLI 之上自行实现（已在 §5 设计内）。
 > 5. **排期解耦**：ECP-5 不等本层；本层在经济学重算为正后，再于 direction 校准排为 ECP-5 后切片。
+> 6. **官方文档调研确认（同日）**：1h 档官方措辞即"尽力而为、可逐出、无存活保证"——KC1a 解读获背书；客户端保温行为文档零记载（机制仍未知）。新增待测假设：
+>    - **KC6（高价值）**：常驻 `claude -p --input-format stream-json` 进程空闲 30–40 分钟后经 stdin 发消息是否 HIT——若"存活进程 = 交互式级留存"成立，宿主换 `stream-json` 形态（§5.1），touch 可能全免；
+>    - **KC7（低优先）**：`claude --bg` 会话的留存行为（supervisor 或有未记载保温；无编程消息 API，暂不作宿主）。
 
 **P1 — SessionHost + registry + daemon touch scheduler（探针通过后；可与 ECP-4 后期并行的独立模块）**
 新模块（建议 `src/core/session-host/`）+ `rasen session exec|list|retire` CLI + daemon 内的 touch scheduler（§6.1 机械执行器）+ 单测。不碰 `change-run/`（只读契约类型），与 ECP-4 无文件冲突。
