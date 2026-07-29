@@ -42,7 +42,10 @@ $global:OutputEncoding = [System.Text.Encoding]::UTF8
 
 # Keep the machine awake for the duration of the probe (no global power-setting change).
 Add-Type -Namespace Probe -Name Power -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint esFlags);'
-[void][Probe.Power]::SetThreadExecutionState([uint32]0x80000003) # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+# NB: PS 5.1 parses 0x80000003 as a negative Int32, so [uint32] cast throws; convert from hex text.
+$ES_CONTINUOUS = [Convert]::ToUInt32('80000000', 16)
+$ES_KEEPAWAKE = [Convert]::ToUInt32('80000003', 16)
+[void][Probe.Power]::SetThreadExecutionState($ES_KEEPAWAKE) # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
 
 function Invoke-ClaudeArgs([string]$OutFile, [string[]]$CliArgs) {
   Log ('call -> {0}: claude {1}' -f $OutFile, ($CliArgs -join ' '))
@@ -186,5 +189,5 @@ try {
   Log 'PROBE COMPLETE. Next: manual KC3 / KC2 / optional KC5 per session-cache-probe.md, then fill the report template.'
 }
 finally {
-  [void][Probe.Power]::SetThreadExecutionState([uint32]0x80000000) # ES_CONTINUOUS only (release)
+  [void][Probe.Power]::SetThreadExecutionState($ES_CONTINUOUS) # ES_CONTINUOUS only (release)
 }

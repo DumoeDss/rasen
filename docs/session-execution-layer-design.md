@@ -124,11 +124,25 @@ reconciler ──next action──▶ launcher / runtime
 | 轮间空闲 ≤ 30 分钟且单轮写入量大（implementer/fixer 型） | inline-subagent（2× 写系数作用于全部增量写入，重写型角色在 session 档持续更贵） |
 | 30–35 分钟灰区 | 读多写少角色（reviewer/planner 型）→ session；否则 subagent |
 
-touch/retire 决策（idle 的 session）：
+### 6.1 touch 的策略/执行分离：daemon 作为 touch 执行器
+
+touch 时钟不能挂在 launcher 上——launcher 是 LLM 会话，50 分钟标记到达时它可能正闲置或已退出；用不可靠的时钟保精确的 TTL 窗口是自相矛盾。方案是把**判断**与**执行**分开：
+
+- **策略（kernel/launcher 写，转 idle 时落 registry）**：`touchPolicy: { mode: auto|never, deadlineAt, maxTouches, deadlineAction: stop|retire-silent }`。deadline 来自 run 状态知识（如"review 轮修复的 ETA + 缓冲"），是唯一需要判断的部分。
+- **执行（rasen daemon 机械执行）**：daemon scheduler 周期扫描各 run 的 registry，对满足
+  `state=idle ∧ mode=auto ∧ now < deadlineAt ∧ touchesUsed < maxTouches ∧ (now − lastRequestAt) ≥ 50min`
+  的 session 发 touch（走 §5 同一 `wake` 路径与单飞锁；锁被真实 wake 持有时直接跳过——真实唤醒本身就刷新了 TTL）。执行前重读 `lastRequestAt` 防竞态；每次 touch 记入 `wakes[]`（kind=touch）供 audit 对账。
+- **deadline 到期**：`stop` = 停止 touch、标注 `staleAt`（下次真实 wake 自付 MISS）；`retire-silent` = 机械置 retired（等价 `retire(finalTurn=false)`，不花末回合）。需要写 handoff 的退休仍归 kernel/launcher 判断。
+- **休眠恢复**：daemon 醒来后重扫，对 `gap > 60min` 的 session **不 touch**（缓存已冷，touch = 花全额重写换不确定的复用，决策权交回 kernel），只标注 cold。
+- **优雅降级**：daemon 未运行时一切照常，只是 idle > 60 分钟的 session 在下次唤醒付一次 MISS 重写——成本有界、audit 可见，不构成正确性问题。touch 是优化不是依赖。
+
+这同时强化了 tier 路由 R3 的语义：worker 的保温不再依赖任何 LLM 会话存活。
+
+### 6.2 其余 touch/retire 决策（kernel/launcher 侧）
 
 ```text
-now − lastRequestAt 接近 50 分钟 且 预计 ~110 分钟内仍复用 → touch（每次续命 ~55 分钟）
-预计不再复用 / 超过 2 个 touch 周期仍无 ETA               → retire（默认 finalTurn=true，趁 warm 写 handoff）
+转 idle 时预计 ~110 分钟内仍复用 → touchPolicy.mode=auto + 设 deadlineAt/maxTouches（默认 2）
+预计不再复用                     → 立即 retire（默认 finalTurn=true，趁 warm 写 handoff）
 ```
 
 承载位置：pipeline stage 配置。`types.ts:40-45` 已有 `sessionReuse: none|stage|run-planner|review-thread`——本层落地时把 stage 级 tier 显式化（如 `sessionTier: inline|independent|auto`，`auto` 按上表），具体 schema 演进等 ECP-4 契约冻结后定，避免与其改动冲突。
@@ -152,6 +166,8 @@ now − lastRequestAt 接近 50 分钟 且 预计 ~110 分钟内仍复用 → to
       "cwd": "…", "model": "…",
       "state": "active|idle|retired",
       "dispatchedAt": "…", "lastRequestAt": "…",
+      "touchPolicy": { "mode": "auto", "deadlineAt": "…", "maxTouches": 2, "touchesUsed": 0, "deadlineAction": "stop" },
+      "staleAt": null,
       "retiredAt": null, "retireReason": null, "handoffPath": null,
       "wakes": [{ "messageId": "…", "at": "…", "gapSeconds": 0, "resultRef": "…" }]
     }
@@ -178,9 +194,9 @@ rasen agent audit --run <runId>
 **P0 — KC 探针（进行中，已外包）**
 `docs/experiments/session-cache-probe.md`。KC1a 任一非 HIT = kill：冻结 P1+，转评估 Agent SDK 宿主（v1 §4.3 对照表仍有效）。KC2/KC4 结果直接改写 §5/§7 的 cwd 校验与身份链设计。
 
-**P1 — SessionHost + registry（探针通过后；可与 ECP-4 后期并行的独立模块）**
-新模块（建议 `src/core/session-host/`）+ `rasen session exec|list|retire` CLI + 单测。不碰 `change-run/`（只读契约类型），与 ECP-4 无文件冲突。
-门槛：真实 create→wake×N→touch→retire 链全绿；并发 wake 拒绝；retired 拒绝唤醒；registry 与 transcript 事实一致。
+**P1 — SessionHost + registry + daemon touch scheduler（探针通过后；可与 ECP-4 后期并行的独立模块）**
+新模块（建议 `src/core/session-host/`）+ `rasen session exec|list|retire` CLI + daemon 内的 touch scheduler（§6.1 机械执行器）+ 单测。不碰 `change-run/`（只读契约类型），与 ECP-4 无文件冲突。
+门槛：真实 create→wake×N→touch→retire 链全绿；并发 wake 拒绝；retired 拒绝唤醒；registry 与 transcript 事实一致；daemon 在真实 50 分钟窗口自动 touch 续命且 deadline 后停止（KC1c 的自动化复现）；daemon 关闭时全链路仍正确（仅多付 MISS）。
 
 **P2 — ReviewCycle dogfood 接线（ECP-4 收口、契约冻结后）**
 补 §4 留白的接线设计；ReviewCycle 的 reviewer stage 以 `same-invocation` 复用真实跑一个 change。
@@ -201,6 +217,7 @@ rasen agent audit --run <runId>
 | R4 | Claude CLI 升级改变 `-p/--resume/stream-json` 行为 | 探针脚本可重跑作为回归；audit 有 format-drift 处理先例 |
 | R5 | session 上下文膨胀触发 compaction（1h TTL 不解决增长） | 复用 `handoffTokenLimit` 契约字段：超限 retire+handoff |
 | R6 | `--dangerously-skip-permissions` 无人值守面 | 与 supervisor/relay 同险级；workspace.access=read 的角色可叠加 edit-boundary |
-| Q1 | executor 由 launcher 调还是未来 daemon 调（runtime 宿主问题） | ECP-4 后与接线设计一并定；SessionHost 对调用方无假设 |
+| Q1 | 完整 wake/exec 由 launcher 调还是未来 daemon 调（runtime 宿主问题） | **touch 执行已定 daemon（§6.1）**；完整 agent action 执行的宿主 ECP-4 后与接线设计一并定；SessionHost 对调用方无假设 |
+| R7 | daemon 生命周期不可靠（用户进程非服务，可能未运行/被关） | §6.1 优雅降级：无 daemon 只损失 touch 优化，正确性不受影响；audit 用 staleAt 区分"策略停"与"daemon 缺席" |
 | Q2 | `sessionKey` 与内核 `sessionIdentityDigest` 的对应关系 | P2 接线时对齐，registry 记录 digest 反引 |
 | Q3 | 0.1.6 侧是否单独做 `rasen agent signal` 止血 | 独立小 PR，用户按 0.1.6 存续期决定，不入本设计 |
