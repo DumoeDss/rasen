@@ -166,7 +166,7 @@ A \`goal\` loop drives a task whose "done" is a *condition* — a measurable thr
 
 **Each round (drive via the reconciler).** At each quiescent boundary:
 1. \`rasen pipeline resume-run <change> goal-loop-<variant> --json\` — grants the ready frontier (work phase or judge phase).
-2. For a **work phase** action: dispatch the implementer (warm-reused when possible; Step H.3 relay on context fill). The implementer NEVER spawns child subagents.
+2. For a **work phase** action: dispatch the implementer — warm-reused across ALL rounds (the SAME worker). After the Step H.2 warm-continue guard, continue through the recorded route: Claude-native uses \`SendMessage\` on the same implementer agentId; Codex-native uses \`followup_task\` on the same idle implementer agent; exec-bridge uses \`codex exec resume <threadId>\`. The implementer NEVER spawns child subagents.
 3. For a **judge phase** action: dispatch a **FRESH reviewer worker** (≠ the implementer — the reconciler enforces actor separation at commit time). The reviewer applies the completion-audit discipline (below).
 4. \`rasen pipeline complete <change>\` with the action receipt to commit each phase result.
 
@@ -174,7 +174,7 @@ A \`goal\` loop drives a task whose "done" is a *condition* — a measurable thr
 
 **The judge's completion-audit contract (evaluate gate).** The reviewer decides satisfaction by a completion AUDIT, not by failing to notice remaining work: treat completion as **unproven**; derive concrete requirements from goal/rubric and demand **authoritative evidence** per requirement; treat uncertain evidence as **not achieved**; NEVER accept intent, partial progress, or memory as proof. Unproven requirements become \`gaps\`.
 
-**Termination (reconciler-owned).** Gate satisfied → the bounded-loop succeeds → downstream stages proceed. \`maxRounds\` exhausted → the Run escalates with \`goal_cycle_exhausted\`. The LEAD reports the outcome honestly.
+**Termination (reconciler-owned).** Gate satisfied → the bounded-loop succeeds → downstream stages (ship → retain → archive for code-producing pipelines, or report only for research) proceed. \`maxRounds\` exhausted → the Run escalates with \`goal_cycle_exhausted\`. The LEAD reports the outcome honestly.
 
 **Resume.** \`rasen pipeline resume-run <change> goal-loop-<variant> --json\`. The reconciler replays committed events from the canonical Record — the next ready action is deterministic. \`goal-run.json\` is a derived compatibility projection, NOT the authoritative spine.
 
