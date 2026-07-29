@@ -81,6 +81,19 @@ reconciler ──next action──▶ launcher / runtime
               registry 更新（sessionId 链 / lastRequestAt / state）
 ```
 
+### 4.1 启动面与 driver 兼容性（硬约束）
+
+主流程控制权在 reconciler（程序控制），但**启动与驱动必须继续支持从 code CLI 交互会话发起**（当前用户路径）。这是 ECP 自身的目标态（roadmap §0.3-4：`rasen-auto` 等入口保留为 thin launcher；ECP-5：CLI、API、Canvas 三面一致），Session 执行层不得破坏：
+
+| driver | 形态 | 说明 |
+|---|---|---|
+| Claude Code 交互会话（当前路径） | 用户 `/rasen:auto` 等 skill 入口 → 会话成为 launcher：循环调 `rasen` CLI 取下一 action 并执行，兼任进度叙述与人工 gate 界面 | inline-subagent tier 就跑在该会话内（Task 工具）；independent-session 由 SessionHost spawn 子进程 |
+| Codex CLI 交互会话 | 同上（skill 入口 + CLI 调用） | inline tier 映射为 codex 原生 subagent 或降级为 independent-session；**SessionHost 是纯 CLI 子进程 spawn，Codex launcher 也能持有 Claude worker session**——现行路由矩阵的 Codex→Claude `unsupported` 死路被打通 |
+| 裸终端 / 脚本 | 直接 `rasen pipeline run/resume` | 无 LLM launcher；inline tier 不可用，全部走 independent-session |
+| daemon / API / Canvas（后续） | supervisor 已有 headless spawn 先例 | 增量启动面，不替代上述路径 |
+
+支撑这一约束的正是本设计的状态归属：run 状态在内核持久层、worker 在独立 session、touch 在 daemon——**driver 可插拔可更换**。用户关闭 Claude Code 窗口后，新会话或裸终端 `rasen pipeline resume` 接着驱动，worker 不重启、缓存不掉（launcher 死亡只是换 driver，不是 run 中断）。SessionHost/registry 对调用方无 driver 类型假设（Q1 的另一半）。
+
 接线细节（executor 由谁调用、result 如何进 reconciler 的 record/settle 路径）**刻意留白**：ECP-4 正在改 `change-run` 的 contracts/lowerer/reconciler，等其落定后按当时的 facade-runtime 形态补一节接线设计，避免现在写一份马上过时的胶水规范。本设计先把**契约消费者侧**（SessionHost、registry、audit）的形状定死——这些不依赖 ECP-4 的改动面。
 
 ## 5. SessionHost（resume-cli 宿主）
