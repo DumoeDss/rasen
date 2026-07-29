@@ -408,6 +408,42 @@ function buildGoalSection(
 }
 
 /**
+ * ECP-4: the SUCCEEDED evaluator result the projection should display, or
+ * `undefined` when the evaluator has not resolved.
+ *
+ * Two defects lived here. The reader took the FIRST result-bearing attempt
+ * while the kernel takes the LAST, and it ignored completion status entirely.
+ * Both matter now that unresolved evaluators are RETRIED: after a
+ * failed-then-retried-successfully evaluator — an ordinary path precisely
+ * because the retry cap exists — the projection kept reading the failed first
+ * attempt forever, showing members `waiting` and joinState `not-reached` while
+ * the Run was actually executing. It also displayed a crashed evaluator's
+ * partial output as a real selection.
+ *
+ * Mirrors `succeededResultForNode` in the reconciler on purpose: the display
+ * plane must answer "what did this evaluator decide" exactly as the kernel
+ * does. All three parity planes share this one reader, which is why a parity
+ * suite alone can never catch a divergence here.
+ */
+function succeededEvaluatorResult(
+  record: CanonicalRunRecord,
+  nodeId: string
+): Readonly<Record<string, unknown>> | undefined {
+  const committed = Object.values(record.actions).filter(
+    (action) =>
+      action.action.nodeId === nodeId &&
+      action.result !== undefined &&
+      action.result.status === 'succeeded'
+  );
+  const last = committed[committed.length - 1];
+  const value = last?.result?.result;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Readonly<Record<string, unknown>>;
+}
+
+/**
  * ECP-4: the `parallel/1` section a Run view exposes for a FanOut/Join pair.
  * Consumed by the CLI `pipeline status` renderer, the Management API, and the
  * Operations UI — all three read the SAME projection, so the shape is typed
@@ -478,20 +514,13 @@ function buildParallelSection(
   );
   if (fanOut === undefined) return null;
   const join = plan.nodes.find((node) => node.kind === 'join');
-  // Read the fan-out condition result to determine active members.
+  // Read the SUCCEEDED fan-out condition result to determine active members.
   let activeMembers: Set<string>;
   let conditionCommitted = false;
-  const conditionAction = Object.values(record.actions).find(
-    (a) => a.action.nodeId === fanOut.nodeId && a.result !== undefined
-  );
-  if (conditionAction?.result?.result && typeof conditionAction.result.result === 'object' && !Array.isArray(conditionAction.result.result)) {
-    const result = conditionAction.result.result as Readonly<{ activeMembers?: unknown }>;
-    if (Array.isArray(result.activeMembers)) {
-      activeMembers = new Set(result.activeMembers as readonly unknown[] as string[]);
-      conditionCommitted = true;
-    } else {
-      activeMembers = new Set(fanOut.members.map((m) => m.hierarchicalPath));
-    }
+  const conditionResult = succeededEvaluatorResult(record, fanOut.nodeId);
+  if (conditionResult !== undefined && Array.isArray(conditionResult.activeMembers)) {
+    activeMembers = new Set(conditionResult.activeMembers as readonly string[]);
+    conditionCommitted = true;
   } else {
     activeMembers = new Set(fanOut.members.map((m) => m.hierarchicalPath));
   }
@@ -581,17 +610,10 @@ function buildChoiceSection(
     (node): node is RuntimePlanChoiceNode => node.kind === 'choice'
   );
   if (choice === undefined) return null;
-  // Read the committed choice result.
-  const choiceAction = Object.values(record.actions).find(
-    (a) => a.action.nodeId === choice.nodeId && a.result !== undefined
-  );
-  let outcome: string | undefined;
-  if (choiceAction?.result?.result && typeof choiceAction.result.result === 'object' && !Array.isArray(choiceAction.result.result)) {
-    const result = choiceAction.result.result as Readonly<{ outcome?: unknown }>;
-    if (typeof result.outcome === 'string') {
-      outcome = result.outcome;
-    }
-  }
+  // Read the SUCCEEDED choice result.
+  const choiceResult = succeededEvaluatorResult(record, choice.nodeId);
+  const selected = choiceResult?.outcome;
+  const outcome = typeof selected === 'string' ? selected : undefined;
   const branches = choice.outcomes.map((o) => ({
     outcome: o,
     path: choice.branches[o] ?? '',
