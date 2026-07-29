@@ -54,6 +54,7 @@ import {
   readPhysicalIdentity,
 } from '../change-run/internal/identity.js';
 import { projectRunView } from '../change-run/internal/projector.js';
+import { projectGoalRunJson, type GoalRunRoundRecord } from '../change-run/internal/goal-cycle-runtime.js';
 import { decodeCanonicalRunRecord, type CanonicalRunRecord } from '../change-run/internal/record.js';
 import type { RuntimePlan } from '../change-run/internal/runtime-plan.js';
 import type {
@@ -199,6 +200,8 @@ interface ProjectedRun {
   runId: string;
   record: CanonicalRunRecord;
   view: ChangeRunView;
+  /** Derived goal-run round records projected from the canonical Record (task 10.2). */
+  goalRunRounds: readonly GoalRunRoundRecord[];
 }
 
 /**
@@ -281,6 +284,7 @@ function tryProjectRun(dirPath: string, sourceState?: 'active' | 'archived' | 'm
     return { ok: false, dirName, error: { code, message: err instanceof Error ? err.message : String(err) } };
   }
   let view: ChangeRunView;
+  let goalRunRounds: readonly GoalRunRoundRecord[] = [];
   try {
     // Load the persisted RuntimePlan so the review-cycle section is projected
     // (Major-2: management API emits the same review-cycle section as CLI).
@@ -294,10 +298,21 @@ function tryProjectRun(dirPath: string, sourceState?: 'active' | 'archived' | 'm
       // Plan file is absent or corrupt — project without it (additive section).
     }
     view = projectRunView(record, sourceState, plan);
+    // Project legacy goal-run.json rounds from the canonical Record (task 10.2).
+    // This makes goal-run.json a genuine derived projection rather than a file
+    // the management API reads independently. When no plan is available or the
+    // Run has no goal-cycle body, the result is an empty array.
+    if (plan !== undefined) {
+      try {
+        goalRunRounds = projectGoalRunJson(plan, record);
+      } catch {
+        // Degrade to empty — goal-run projection is additive, non-critical.
+      }
+    }
   } catch (err) {
     return { ok: false, dirName, error: { code: 'run_store_corrupt', message: `Projection failed: ${err instanceof Error ? err.message : String(err)}` } };
   }
-  return { ok: true, run: { runId: record.runId as string, record, view } };
+  return { ok: true, run: { runId: record.runId as string, record, view, goalRunRounds } };
 }
 
 /**
@@ -445,10 +460,11 @@ async function discoverReconcilerRuns(
 // ---------------------------------------------------------------------------
 
 /**
- * The read-only detail result — either the projected view or a typed error.
+ * The read-only detail result — either the projected view (with derived
+ * goal-run rounds when the Run has a goal-cycle body) or a typed error.
  */
 export type RunDetailResult =
-  | { ok: true; view: ChangeRunView }
+  | { ok: true; view: ChangeRunView; goalRunRounds?: readonly GoalRunRoundRecord[] }
   | { ok: false; status: number; code: string; message: string };
 
 /**
@@ -521,8 +537,14 @@ export async function handleRunDetail(
   }
 
   // Current-workspace projection: the view is deeply equal to what CLI status
-  // would emit via facade.inspect → projectRunView(record).
-  return { ok: true, view };
+  // would emit via facade.inspect → projectRunView(record). Include the
+  // derived goal-run rounds projection when available (task 10.2).
+  const { goalRunRounds } = result.run;
+  return {
+    ok: true,
+    view,
+    ...(goalRunRounds.length > 0 ? { goalRunRounds } : {}),
+  };
 }
 
 /**
@@ -599,11 +621,13 @@ export function resolveGoalRunPath(changeDir: string, workDir: string | null): s
 }
 
 /**
- * Legacy compat reader for `goal-run.json`. Reconciler-engine Runs do NOT
- * use this file to drive the Run — their goal state is projected from the
- * canonical Record through `projectRunView` → goal/1 section (see
- * `discoverReconcilerRuns`). This reader remains for listing/display of
- * legacy V1 Runs that still write `goal-run.json` as their run-state.
+ * Legacy compat reader for `goal-run.json`. For reconciler-engine Runs,
+ * the goal-run data is projected from the canonical Record via
+ * `projectGoalRunJson` (wired in `tryProjectRun` above and exposed through
+ * `handleRunDetail`). This legacy reader remains ONLY for pre-reconciler
+ * V1 Runs that still write `goal-run.json` as their primary run-state.
+ * Resume never reads this file to drive a Run — the reconciler replays
+ * committed events from the canonical Record.
  */
 function readGoalRunDetailed(changeDir: string, workDir: string | null): RunFileResult<GoalRunRaw> {
   const filePath = resolveGoalRunPath(changeDir, workDir);
