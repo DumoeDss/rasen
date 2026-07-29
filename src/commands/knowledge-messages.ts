@@ -8,14 +8,6 @@ import type { CliLocale } from '../utils/locale.js';
  * core block detail is passed through as data.
  */
 export interface KnowledgeMessages {
-  commandDescription: string;
-  applyDescription: string;
-  listDescription: string;
-  showDescription: string;
-  retireDescription: string;
-  projectSelectorDescription: string;
-  storeSelectorDescription: string;
-  runStateDirDescription: string;
   contextSummary: (owner: string, planningRoot: string) => string;
   candidatePathRequired: string;
   candidatePathMustBeAbsolute: (path: string) => string;
@@ -69,17 +61,6 @@ export interface KnowledgeMessages {
   retireRequiresConfirmation: string;
   retireCancelled: string;
   cancelled: string;
-  effectiveDescription: string;
-  migrateDescription: string;
-  dryRunDescription: string;
-  bundleDescription: string;
-  bundleExportDescription: string;
-  bundleImportDescription: string;
-  bundleImportPathDescription: string;
-  bundleImportDryRunDescription: string;
-  bundleDestinationDescription: string;
-  bundleStoreDestinationDescription: string;
-  bundleJsonDescription: string;
   bundleExportSucceeded: (project: string, records: number, destination: string) => string;
   bundleStoreExportSucceeded: (store: string, destination: string) => string;
   bundleStoreCommitFile: (file: string) => string;
@@ -206,14 +187,6 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
   const format = (template: string, values: Record<string, string | number>): string =>
     formatLocaleMessage(template, values);
   return {
-    commandDescription: raw.commandDescription,
-    applyDescription: raw.applyDescription,
-    listDescription: raw.listDescription,
-    showDescription: raw.showDescription,
-    retireDescription: raw.retireDescription,
-    projectSelectorDescription: raw.projectSelectorDescription,
-    storeSelectorDescription: raw.storeSelectorDescription,
-    runStateDirDescription: raw.runStateDirDescription,
     contextSummary: (owner, planningRoot) =>
       format(raw.contextSummary, { owner, planningRoot }),
     candidatePathRequired: raw.candidatePathRequired,
@@ -272,17 +245,6 @@ export function getKnowledgeMessages(locale: CliLocale = getCliLocale()): Knowle
     retireRequiresConfirmation: raw.retireRequiresConfirmation,
     retireCancelled: raw.retireCancelled,
     cancelled: raw.cancelled,
-    effectiveDescription: raw.effectiveDescription,
-    migrateDescription: raw.migrateDescription,
-    dryRunDescription: raw.dryRunDescription,
-    bundleDescription: raw.bundleDescription,
-    bundleExportDescription: raw.bundleExportDescription,
-    bundleImportDescription: raw.bundleImportDescription,
-    bundleImportPathDescription: raw.bundleImportPathDescription,
-    bundleImportDryRunDescription: raw.bundleImportDryRunDescription,
-    bundleDestinationDescription: raw.bundleDestinationDescription,
-    bundleStoreDestinationDescription: raw.bundleStoreDestinationDescription,
-    bundleJsonDescription: raw.bundleJsonDescription,
     bundleExportSucceeded: (project, records, destination) =>
       format(raw.bundleExportSucceeded, { project, records, destination }),
     bundleStoreExportSucceeded: (store, destination) =>

@@ -1,7 +1,7 @@
 import {
   CompletionGenerator,
-  CommandDefinition,
-  FlagDefinition,
+  ResolvedCommandDefinition,
+  ResolvedFlagDefinition,
   PositionalDefinition,
 } from '../types.js';
 import { BASH_DYNAMIC_HELPERS } from '../templates/bash-templates.js';
@@ -19,7 +19,7 @@ export class BashGenerator implements CompletionGenerator {
    * @param commands - Command definitions to generate completions for
    * @returns Bash completion script as a string
    */
-  generate(commands: CommandDefinition[]): string {
+  generate(commands: readonly ResolvedCommandDefinition[]): string {
     // Build command list for top-level completions
     const commandList = commands.map(c => this.escapeCommandName(c.name)).join(' ');
 
@@ -83,7 +83,7 @@ complete -F _rasen_completion rasen
   /**
    * Generate completion case logic for a command
    */
-  private generateCommandCase(cmd: CommandDefinition, indent: string): string[] {
+  private generateCommandCase(cmd: ResolvedCommandDefinition, indent: string): string[] {
     const lines: string[] = [];
 
     // Handle subcommands
@@ -131,7 +131,7 @@ complete -F _rasen_completion rasen
    * Generate argument completion (flags and positional arguments)
    */
   private generateArgumentCompletion(
-    cmd: CommandDefinition,
+    cmd: ResolvedCommandDefinition,
     indent: string,
     firstPositionalWordIndex: number
   ): string[] {
@@ -209,8 +209,8 @@ complete -F _rasen_completion rasen
   }
 
   private generateIndexedPositionalCompletion(
-    positionals: PositionalDefinition[],
-    flags: FlagDefinition[],
+    positionals: readonly PositionalDefinition[],
+    flags: readonly ResolvedFlagDefinition[],
     firstPositionalWordIndex: number,
     indent: string
   ): string[] {
@@ -259,7 +259,7 @@ complete -F _rasen_completion rasen
     return lines;
   }
 
-  private generateValueFlagCases(flags: FlagDefinition[]): string[] {
+  private generateValueFlagCases(flags: readonly ResolvedFlagDefinition[]): string[] {
     return flags
       .filter((flag) => flag.takesValue)
       .flatMap((flag) => [

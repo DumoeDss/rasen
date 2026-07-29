@@ -43,6 +43,17 @@ vi.mock('../../src/core/completions/installers/zsh-installer.js', () => ({
 }));
 
 describe('CompletionCommand', () => {
+  it('rejects a partially injected presentation snapshot', () => {
+    expect(
+      () =>
+        new CompletionCommand({
+          locale: 'en',
+        } as never),
+    ).toThrow(
+      'CompletionCommand locale and presentation must be provided together',
+    );
+  });
+
   let command: CompletionCommand;
   let consoleLogSpy: any;
   let consoleErrorSpy: any;

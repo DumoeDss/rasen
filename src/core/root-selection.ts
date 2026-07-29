@@ -1,4 +1,4 @@
-import { WORKSPACE_DIR_NAME } from './config.js';
+import { DEFAULT_SCHEMA, WORKSPACE_DIR_NAME } from './config.js';
 /**
  * Shared Rasen root resolution for normal commands.
  *
@@ -91,7 +91,7 @@ export interface ResolvedOpenSpecRoot {
   changesDir: string;
   specsDir: string;
   archiveDir: string;
-  defaultSchema: 'spec-driven';
+  defaultSchema: typeof DEFAULT_SCHEMA;
   source: OpenSpecRootSource;
   storeId?: string;
   /** Set alongside storeId; the namespace the id was resolved from. */
@@ -220,7 +220,7 @@ function makeRoot(
     changesDir: path.join(rootPath, WORKSPACE_DIR_NAME, 'changes'),
     specsDir: path.join(rootPath, WORKSPACE_DIR_NAME, 'specs'),
     archiveDir: path.join(rootPath, WORKSPACE_DIR_NAME, 'changes', 'archive'),
-    defaultSchema: 'spec-driven',
+    defaultSchema: DEFAULT_SCHEMA,
     source,
     ...(storeId ? { storeId, storeType: storeType ?? 'store' } : {}),
   };

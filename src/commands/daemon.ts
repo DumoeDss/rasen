@@ -328,34 +328,34 @@ async function runDaemonStop(): Promise<void> {
 }
 
 export function registerDaemonCommand(program: Command): void {
-  const daemon = program.command('daemon').description('Manage the resident Rasen daemon (sessions survive terminal exits)');
+  const daemon = program.command('daemon').description('');
 
   daemon
     .command('run')
-    .description('Run the resident daemon in the foreground (debugging/advanced form)')
-    .option('--port <n>', 'Pin the listen port (default: 8791, or RASEN_DAEMON_PORT)')
+    .description('')
+    .option('--port <n>', '')
     .action(async (options: { port?: string }) => {
       await runDaemonRun(options);
     });
 
   daemon
     .command('start')
-    .description('Start the resident daemon as a detached background process')
-    .option('--port <n>', 'Pin the listen port (default: 8791, or RASEN_DAEMON_PORT)')
+    .description('')
+    .option('--port <n>', '')
     .action(async (options: { port?: string }) => {
       await runDaemonStart(options);
     });
 
   daemon
     .command('stop')
-    .description('Stop the resident daemon, reaping its live sessions')
+    .description('')
     .action(async () => {
       await runDaemonStop();
     });
 
   daemon
     .command('status')
-    .description('Report whether the resident daemon is running')
+    .description('')
     .action(async () => {
       await runDaemonStatus();
     });

@@ -429,11 +429,11 @@ function printHomePruneHuman(result: HomePruneResult): void {
 export function registerArchiveRelocateSubcommand(archiveCommand: Command): void {
   archiveCommand
     .command('relocate')
-    .description('Move existing archived changes to a destination and flip archive.destination together')
-    .requiredOption('--to <dest>', 'Target destination: in-repo, external, or store')
-    .option('--dry-run', 'Print the move plan and change nothing')
-    .option('--verify-hash', 'Verify moved files by content hash, not just size')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .requiredOption('--to <dest>', '')
+    .option('--dry-run', '')
+    .option('--verify-hash', '')
+    .option('--json', '')
     .action(async (options: RelocateOptions) => {
       await runRelocate(options);
     });
@@ -441,12 +441,12 @@ export function registerArchiveRelocateSubcommand(archiveCommand: Command): void
 
 /** Registers the `home` command group (`home prune`). */
 export function registerHomeCommand(program: Command): void {
-  const home = program.command('home').description('Manage machine-local project home state');
+  const home = program.command('home').description('');
   home
     .command('prune')
-    .description('List (default) or remove orphaned machine-home directories and stale registry entries')
-    .option('--apply', 'Delete the reported orphans (default is report-only)')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--apply', '')
+    .option('--json', '')
     .action(async (options: HomePruneOptions) => {
       await runHomePrune(options);
     });

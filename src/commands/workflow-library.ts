@@ -63,14 +63,14 @@ async function runWorkflowAction(
 export function registerWorkflowLibraryCommand(program: Command): void {
   const workflow = program
     .command('workflow')
-    .description('Manage installable workflows in the user-wide library');
+    .description('');
 
   workflow
     .command('list')
-    .description('List built-in and user workflows')
-    .option('--unused', 'Show only user workflows with no detected consumers')
-    .option('--all', 'Also reveal internal workflows in the human table')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--unused', '')
+    .option('--all', '')
+    .option('--json', '')
     .action(async (options: { unused?: boolean; all?: boolean; json?: boolean }) => {
       await runWorkflowAction(options, { workflows: [], diagnostics: [] }, () => {
         const messages = getWorkflowUiMessages();
@@ -148,8 +148,8 @@ export function registerWorkflowLibraryCommand(program: Command): void {
 
   workflow
     .command('show <id>')
-    .description('Show an installable workflow definition and known usage')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--json', '')
     .action(async (id: string, options: JsonOption) => {
       await runWorkflowAction(options, { workflow: null, usage: [] }, () => {
         const messages = getWorkflowUiMessages();
@@ -176,8 +176,8 @@ export function registerWorkflowLibraryCommand(program: Command): void {
 
   workflow
     .command('which <id>')
-    .description('Show where an installable workflow resolves from')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--json', '')
     .action(async (id: string, options: JsonOption) => {
       await runWorkflowAction(options, { workflow: null }, () => {
         const definition = loadWorkflowCatalog().get(id);
@@ -198,9 +198,9 @@ export function registerWorkflowLibraryCommand(program: Command): void {
 
   workflow
     .command('init <id>')
-    .description('Create a minimal workflow draft without installing it')
-    .requiredOption('--output <path>', 'Empty workflow draft directory to create')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .requiredOption('--output <path>', '')
+    .option('--json', '')
     .action(async (id: string, options: JsonOption & { output: string }) => {
       await runWorkflowAction(options, { workflow: null }, () => {
         const messages = getWorkflowUiMessages();
@@ -217,8 +217,8 @@ export function registerWorkflowLibraryCommand(program: Command): void {
 
   workflow
     .command('validate <id-or-path>')
-    .description('Validate an installed workflow, draft directory, or .rasenpkg')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--json', '')
     .action(async (idOrPath: string, options: JsonOption) => {
       await runWorkflowAction(options, { validation: null }, () => {
         const messages = getWorkflowUiMessages();
@@ -241,8 +241,8 @@ export function registerWorkflowLibraryCommand(program: Command): void {
 
   workflow
     .command('import <path>')
-    .description('Validate and atomically install a workflow directory or package')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--json', '')
     .action(async (sourcePath: string, options: JsonOption) => {
       await runWorkflowAction(options, { imported: [], reused: [], roots: [] }, async () => {
         const messages = getWorkflowUiMessages();
@@ -258,9 +258,9 @@ export function registerWorkflowLibraryCommand(program: Command): void {
 
   workflow
     .command('export <id> <path>')
-    .description('Export a user workflow and its user dependencies as .rasenpkg')
-    .option('--force', 'Replace an existing destination file')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--force', '')
+    .option('--json', '')
     .action(async (id: string, destination: string, options: JsonOption & { force?: boolean }) => {
       await runWorkflowAction(options, { workflow: null }, async () => {
         const messages = getWorkflowUiMessages();
@@ -282,10 +282,10 @@ export function registerWorkflowLibraryCommand(program: Command): void {
 
   workflow
     .command('delete <id>')
-    .description('Delete an unreferenced user workflow')
-    .option('-y, --yes', 'Skip confirmation')
-    .option('--force', 'Bypass the referrer guard, deleting even a still-referenced workflow')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('-y, --yes', '')
+    .option('--force', '')
+    .option('--json', '')
     .action(async (id: string, options: JsonOption & { yes?: boolean; force?: boolean }) => {
       await runWorkflowAction(options, { deleted: null, forcedReferrers: [] }, async () => {
         const messages = getWorkflowUiMessages();

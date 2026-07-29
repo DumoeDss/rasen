@@ -162,14 +162,6 @@
     "selectProjectsPrompt": "Select projects to obtain (Space to select, Enter to confirm):"
   },
   "knowledge": {
-    "commandDescription": "Manage evidence-gated learned skills",
-    "applyDescription": "Apply a learned-skill candidate from an absolute JSON file",
-    "listDescription": "List canonical learned skills",
-    "showDescription": "Show a canonical learned skill",
-    "retireDescription": "Retire a managed learned skill",
-    "projectSelectorDescription": "Select a project knowledge owner independently from the planning root",
-    "storeSelectorDescription": "Select a store knowledge owner independently from the planning root",
-    "runStateDirDescription": "Load frozen knowledge identity from the resolved directory containing auto-run.json",
     "contextSummary": "Knowledge owner: {owner}; planning root: {planningRoot}.",
     "candidatePathRequired": "A candidate file is required. Pass --from <absolute-json-file>.",
     "candidatePathMustBeAbsolute": "Candidate path must be absolute: {path}",
@@ -223,17 +215,6 @@
     "retireRequiresConfirmation": "Retirement requires confirmation. Pass --yes to retire non-interactively.",
     "retireCancelled": "Retirement cancelled.",
     "cancelled": "Cancelled.",
-    "effectiveDescription": "Show what this project actually receives: the resolved set, its sources by permanent identity, conflicts, and degraded states",
-    "migrateDescription": "Move per-clone knowledge into this project's canonical home and re-key ownership records on permanent identity",
-    "dryRunDescription": "Preview only: report what would change and write nothing",
-    "bundleDescription": "Manage portable project-knowledge bundles",
-    "bundleExportDescription": "Export a project's own learned knowledge to one portable file",
-    "bundleImportDescription": "Import a portable bundle as this project's own knowledge",
-    "bundleImportPathDescription": "Portable bundle file to validate and import",
-    "bundleImportDryRunDescription": "Validate and classify the complete bundle without writing anything",
-    "bundleDestinationDescription": "New destination file to create (never overwritten)",
-    "bundleStoreDestinationDescription": "Also place the bundle in a registered Store without granting ownership",
-    "bundleJsonDescription": "Output as JSON",
     "bundleExportSucceeded": "Exported {records} project-knowledge record(s) for {project} to {destination}.",
     "bundleStoreExportSucceeded": "Placed the same bundle in Store {store} at {destination}.",
     "bundleStoreCommitFile": "File to commit: {file}",
@@ -499,9 +480,8 @@
       "persistentPlanner": "Planner (persistent, resumable): {planner}",
       "portfolioDelivery": "Portfolio delivery: {status}",
       "remaining": "Remaining: {stages}",
-      "invalidPortfolioStateNote": "Portfolio run-state file at {path} is invalid: {reason}",
-      "invalidRunStateNote": "Run-state file at {path} is invalid: {reason}",
       "invalidPortfolioStateNote": "Portfolio run-state file at {path} could not be read: {reason}. This change was split into children, so it is not resumed as an undivided change; repair the record before resuming.",
+      "invalidRunStateNote": "Run-state file at {path} is invalid: {reason}",
       "noRunStateNote": "No run-state (auto-run.json) found; run classification to select a pipeline.",
       "nextStage": "Next: {stage}",
       "openFindings": "Open findings: {count} (resolve before ship)",
@@ -1085,305 +1065,6 @@
       "unableReadCompletionFile": "Warning: Could not read existing completion file at {path}: {detail}"
     }
   },
-  "help": {
-    "titles": {
-      "Usage:": "Usage:",
-      "Arguments:": "Arguments:",
-      "Options:": "Options:",
-      "Global Options:": "Global Options:",
-      "Commands:": "Commands:"
-    },
-    "helpOption": "display help for command",
-    "helpCommand": "display help for command"
-  },
-  "commandDescriptions": {
-    "Clear the checkout-scoped edit boundary": "Clear the checkout-scoped edit boundary",
-    "Control the checkout-scoped runtime edit boundary": "Control the checkout-scoped runtime edit boundary",
-    "Force runtime: claude, codex, or zed": "Force runtime: claude, codex, or zed",
-    "Inspect and control base agent runtime state": "Inspect and control base agent runtime state",
-    "Set the checkout-scoped edit boundary to an existing directory": "Set the checkout-scoped edit boundary to an existing directory",
-    "Show the active boundary and observed host enforcement": "Show the active boundary and observed host enforcement",
-    "Select a project knowledge owner independently from the planning root": "Select a project knowledge owner independently from the planning root",
-    "Load frozen knowledge identity from the resolved directory containing auto-run.json": "Load frozen knowledge identity from the resolved directory containing auto-run.json",
-    "Select a store knowledge owner independently from the planning root": "Select a store knowledge owner independently from the planning root",
-    "Manage evidence-gated learned skills": "Manage evidence-gated learned skills",
-    "Manage portable project-knowledge bundles": "Manage portable project-knowledge bundles",
-    "Export a project's own learned knowledge to one portable file": "Export a project's own learned knowledge to one portable file",
-    "Import a portable bundle as this project's own knowledge": "Import a portable bundle as this project's own knowledge",
-    "Validate and classify the complete bundle without writing anything": "Validate and classify the complete bundle without writing anything",
-    "New destination file to create (never overwritten)": "New destination file to create (never overwritten)",
-    "Also place the bundle in a registered Store without granting ownership": "Also place the bundle in a registered Store without granting ownership",
-    "Apply a learned-skill candidate from an absolute JSON file": "Apply a learned-skill candidate from an absolute JSON file",
-    "List canonical learned skills": "List canonical learned skills",
-    "Show a canonical learned skill": "Show a canonical learned skill",
-    "Retire a managed learned skill": "Retire a managed learned skill",
-    "Absolute path to a candidate JSON file": "Absolute path to a candidate JSON file",
-    "Approve a global create or promotion non-interactively": "Approve a global create or promotion non-interactively",
-    "project or global": "project or global",
-    "Skip the confirmation prompt": "Skip the confirmation prompt",
-    "AI-native system for spec-driven development": "AI-native system for spec-driven development",
-    "Alias for --deltas-only (deprecated, change-specific)": "Alias for --deltas-only (deprecated, change-specific)",
-    "Allow setting unknown keys": "Allow setting unknown keys",
-    "Also move git-tracked ephemera, leaving the deletions uncommitted": "Also move git-tracked ephemera, leaving the deletions uncommitted",
-    "Also reveal internal workflows in the human table": "Also reveal internal workflows in the human table",
-    "Also write a VS Code workspace file for the set": "Also write a VS Code workspace file for the set",
-    "Analyze a session's token spend from its Claude transcript, Codex rollout, or Zed thread database (experimental: parses internal, undocumented formats that may change with harness or Zed updates)": "Analyze a session's token spend from its Claude transcript, Codex rollout, or Zed thread database (experimental: parses internal, undocumented formats that may change with harness or Zed updates)",
-    "Force the runtime: \"claude\", \"codex\", or \"zed\" (Zed reads its local threads.db; experimental, format may change)": "Force the runtime: \"claude\", \"codex\", or \"zed\" (Zed reads its local threads.db; experimental, format may change)",
-    "Zed only: resolve the session by its first user command instead of a thread id": "Zed only: resolve the session by its first user command instead of a thread id",
-    "Zed only: override the threads.db path (default: Zed's per-OS location)": "Zed only: override the threads.db path (default: Zed's per-OS location)",
-    "Archive a completed change and update main specs": "Archive a completed change and update main specs",
-    "Archive handling: move (default), leave, or external": "Archive handling: move (default), leave, or external",
-    "Auto-cleanup legacy files without prompting": "Auto-cleanup legacy files without prompting",
-    "Beat duration in seconds. Resolution: flag > keepalive.beatSeconds config (default 270) > 100s fuse; max 300. Beats over the shell tool default timeout require raising that tool timeout.": "Beat duration in seconds. Resolution: flag > keepalive.beatSeconds config (default 270) > 100s fuse; max 300. Beats over the shell tool default timeout require raising that tool timeout.",
-    "Bypass the referrer guard, deleting even a still-referenced pipeline": "Bypass the referrer guard, deleting even a still-referenced pipeline",
-    "Bypass the referrer guard, deleting even a still-referenced workflow": "Bypass the referrer guard, deleting even a still-referenced workflow",
-    "Canonical clone source recorded in store.yaml": "Canonical clone source recorded in store.yaml",
-    "Change name": "Change name",
-    "Change name to show status for": "Change name to show status for",
-    "Change whose signals directory to poll": "Change whose signals directory to poll",
-    "Check local store registration and metadata": "Check local store registration and metadata",
-    "Comma-separated artifact IDs": "Comma-separated artifact IDs",
-    "Compatibility alias for `rasen profile`": "Compatibility alias for `rasen profile`",
-    "Compose and save a named working view of folders you choose": "Compose and save a named working view of folders you choose",
-    "Compose, keep, and open personal working views (purely local)": "Compose, keep, and open personal working views (purely local)",
-    "Config scope: \"global\" (default) or \"project\"": "Config scope: \"global\" (default) or \"project\"",
-    "Configure AI tools non-interactively (e.g., \"all\", \"none\", or comma-separated tool IDs)": "Configure AI tools non-interactively (e.g., \"all\", \"none\", or comma-separated tool IDs)",
-    "Confirm a 'prune' destination's permanent deletion (separate from --yes)": "Confirm a 'prune' destination's permanent deletion (separate from --yes)",
-    "Confirm creating store identity metadata": "Confirm creating store identity metadata",
-    "Confirm local store folder deletion": "Confirm local store folder deletion",
-    "Confirm removal non-interactively": "Confirm removal non-interactively",
-    "Consent for a manifest-less --all copy back in non-interactive mode": "Consent for a manifest-less --all copy back in non-interactive mode",
-    "Copy a legacy openspec/ workspace into rasen/ (copy-only; originals untouched)": "Copy a legacy openspec/ workspace into rasen/ (copy-only; originals untouched)",
-    "Copy an existing schema to project for customization": "Copy an existing schema to project for customization",
-    "Create a minimal pipeline draft without installing it": "Create a minimal pipeline draft without installing it",
-    "Create a minimal workflow draft without installing it": "Create a minimal workflow draft without installing it",
-    "Create a new change directory": "Create a new change directory",
-    "Create a new project-local schema": "Create a new project-local schema",
-    "Create and manage stores - standalone Rasen repos you register on this machine": "Create and manage stores - standalone Rasen repos you register on this machine",
-    "Create and use a named profile interactively": "Create and use a named profile interactively",
-    "Create new items": "Create new items",
-    "Create or register a local store": "Create or register a local store",
-    "Delete a saved profile": "Delete a saved profile",
-    "Delete a saved workset (member folders are never touched)": "Delete a saved workset (member folders are never touched)",
-    "Delete an unreferenced user pipeline": "Delete an unreferenced user pipeline",
-    "Delete an unreferenced user workflow": "Delete an unreferenced user workflow",
-    "Delete the reported orphans (default is report-only)": "Delete the reported orphans (default is report-only)",
-    "Description to add to README.md": "Description to add to README.md",
-    "Detailed description for the feedback": "Detailed description for the feedback",
-    "Directory to use for the store": "Directory to use for the store",
-    "Disable color output": "Disable color output",
-    "Disable interactive prompts": "Disable interactive prompts",
-    "Display an interactive dashboard of specs and changes": "Display an interactive dashboard of specs and changes",
-    "Display artifact completion status for a change": "Display artifact completion status for a change",
-    "Do not open the default browser": "Do not open the default browser",
-    "Do not prompt (skips optional marker-block cleanup)": "Do not prompt (skips optional marker-block cleanup)",
-    "Do not prompt to set as default": "Do not prompt to set as default",
-    "Edit a saved profile definition interactively": "Edit a saved profile definition interactively",
-    "Empty pipeline draft directory to create": "Empty pipeline draft directory to create",
-    "Empty workflow draft directory to create": "Empty workflow draft directory to create",
-    "Enable strict validation mode": "Enable strict validation mode",
-    "Exclude scenario content (JSON only, spec-specific)": "Exclude scenario content (JSON only, spec-specific)",
-    "Export YAML or JSON without embedding user workflows": "Export YAML or JSON without embedding user workflows",
-    "Export a built-in or saved profile instead of current settings": "Export a built-in or saved profile instead of current settings",
-    "Export a user pipeline as .rasenpkg": "Export a user pipeline as .rasenpkg",
-    "Export a user workflow and its user dependencies as .rasenpkg": "Export a user workflow and its user dependencies as .rasenpkg",
-    "Export current settings or a named profile": "Export current settings or a named profile",
-    "Force detection to \"claude\" or \"codex\" instead of sniffing the file": "Force detection to \"claude\" or \"codex\" instead of sniffing the file",
-    "Force update even when tools are up to date": "Force update even when tools are up to date",
-    "Update every reachable, non-pinned registered project whose version is behind": "Update every reachable, non-pinned registered project whose version is behind",
-    "Skip multi-project registry consultation (update only this project)": "Skip multi-project registry consultation (update only this project)",
-    "Force value to be stored as string": "Force value to be stored as string",
-    "Forget a local store registration and delete its local folder": "Forget a local store registration and delete its local folder",
-    "Forget a local store registration without deleting files": "Forget a local store registration without deleting files",
-    "Generate completion script for a shell (outputs to stdout)": "Generate completion script for a shell (outputs to stdout)",
-    "Get a specific value (raw, scriptable)": "Get a specific value (raw, scriptable)",
-    "Import a profile package, YAML, or JSON profile": "Import a profile package, YAML, or JSON profile",
-    "Initialize Rasen in your project": "Initialize Rasen in your project",
-    "Install and lock a profile in rasen/config.yaml (full, core, or a saved profile; custom applies once without locking)": "Install and lock a profile in rasen/config.yaml (full, core, or a saved profile; custom applies once without locking)",
-    "Initialize a Git repository in the store": "Initialize a Git repository in the store",
-    "Inspect and manage orchestration pipelines": "Inspect and manage orchestration pipelines",
-    "Inspect machine-level threshold schemes": "Inspect machine-level threshold schemes",
-    "Install completion script for a shell": "Install completion script for a shell",
-    "Introspect agent runtime state (context)": "Introspect agent runtime state (context)",
-    "Limit to the project namespace entry for [id]": "Limit to the project namespace entry for [id]",
-    "List (default) or remove orphaned machine-home directories and stale registry entries": "List (default) or remove orphaned machine-home directories and stale registry entries",
-    "List all schemas with their resolution sources": "List all schemas with their resolution sources",
-    "List available pipelines (project > user > package)": "List available pipelines (project > user > package)",
-    "List available workflow schemas with descriptions": "List available workflow schemas with descriptions",
-    "List built-in and saved profiles": "List built-in and saved profiles",
-    "List built-in and user workflows": "List built-in and user workflows",
-    "List changes explicitly (default)": "List changes explicitly (default)",
-    "List items (changes by default, or specs with --specs)": "List items (changes by default, or specs with --specs)",
-    "List registered stores": "List registered stores",
-    "List threshold schemes": "List threshold schemes",
-    "List specs instead of changes": "List specs instead of changes",
-    "Machine-home work-directory maintenance (migrate legacy in-repo ephemera)": "Machine-home work-directory maintenance (migrate legacy in-repo ephemera)",
-    "Manage installable workflows in the user-wide library": "Manage installable workflows in the user-wide library",
-    "Manage machine-local project home state": "Manage machine-local project home state",
-    "Manage reusable workflow profiles": "Manage reusable workflow profiles",
-    "Manage shell completions for Rasen CLI": "Manage shell completions for Rasen CLI",
-    "Manage the resident Rasen daemon (sessions survive terminal exits)": "Manage the resident Rasen daemon (sessions survive terminal exits)",
-    "Manage workflow schemas": "Manage workflow schemas",
-    "Manifest-less full copy back (with confirmation)": "Manifest-less full copy back (with confirmation)",
-    "Max concurrent validations (defaults to env RASEN_CONCURRENCY or 6)": "Max concurrent validations (defaults to env RASEN_CONCURRENCY or 6)",
-    "Member folder as <path> or <name>=<path>; repeatable, first is the primary": "Member folder as <path> or <name>=<path>; repeatable, first is the primary",
-    "Migrate an in-repo project's planning content into a store and convert the repo to a pointer": "Migrate an in-repo project's planning content into a store and convert the repo to a pointer",
-    "Migrate legacy in-repo process ephemera (run-state, handoff, reports, ship-log) into the machine home": "Migrate legacy in-repo process ephemera (run-state, handoff, reports, ship-log) into the machine home",
-    "Move existing archived changes to a destination and flip archive.destination together": "Move existing archived changes to a destination and flip archive.destination together",
-    "One cache-keepalive beat: block briefly polling the change's role signal file": "One cache-keepalive beat: block briefly polling the change's role signal file",
-    "Open a saved workset in your tool (editor window or agent session)": "Open a saved workset in your tool (editor window or agent session)",
-    "Open config in $EDITOR": "Open config in $EDITOR",
-    "Open the shipped viewer in your default browser, pre-loaded with the report": "Open the shipped viewer in your default browser, pre-loaded with the report",
-    "Open with this tool just this once": "Open with this tool just this once",
-    "Optional goal metadata to store with the change": "Optional goal metadata to store with the change",
-    "Pipeline to initialize run-state for": "Pipeline to initialize run-state for",
-    "Output as JSON": "Output as JSON",
-    "Output as JSON (non-interactive)": "Output as JSON (non-interactive)",
-    "Output as JSON (non-interactive; requires --yes to execute)": "Output as JSON (non-interactive; requires --yes to execute)",
-    "Output enriched instructions for creating an artifact or applying tasks": "Output enriched instructions for creating an artifact or applying tasks",
-    "Output validation results as JSON": "Output validation results as JSON",
-    "Override the Claude projects directory a session id is resolved against": "Override the Claude projects directory a session id is resolved against",
-    "Override the Claude projects directory used by --latest": "Override the Claude projects directory used by --latest",
-    "Override the default beat cap (12)": "Override the default beat cap (12)",
-    "Override the resolved context-window limit": "Override the resolved context-window limit",
-    "Overwrite an already-installed pipeline of the same name": "Overwrite an already-installed pipeline of the same name",
-    "Overwrite an existing --code-workspace file": "Overwrite an existing --code-workspace file",
-    "Overwrite an existing destination": "Overwrite an existing destination",
-    "Overwrite existing destination": "Overwrite existing destination",
-    "Overwrite existing schema": "Overwrite existing schema",
-    "Path to a Claude Code transcript or Codex rollout jsonl": "Path to a Claude Code transcript or Codex rollout jsonl",
-    "Path to a JSON or YAML pipeline definition": "Path to a JSON or YAML pipeline definition",
-    "Pin the listen port (default: 8791, or RASEN_DAEMON_PORT)": "Pin the listen port (default: 8791, or RASEN_DAEMON_PORT)",
-    "Pin the listen port (default: ephemeral)": "Pin the listen port (default: ephemeral)",
-    "Pin the listen port (default: ephemeral; --no-daemon only)": "Pin the listen port (default: ephemeral; --no-daemon only)",
-    "Preferred tool to open this workset with": "Preferred tool to open this workset with",
-    "Preview only; never move files": "Preview only; never move files",
-    "Print the move plan and change nothing": "Print the move plan and change nothing",
-    "Print the restore plan and change nothing": "Print the restore plan and change nothing",
-    "Print the working context for the resolved Rasen root": "Print the working context for the resolved Rasen root",
-    "Proceed past manifest drift, reporting gaps": "Proceed past manifest drift, reporting gaps",
-    "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store.": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store.",
-    "Project store id override": "Project store id override",
-    "Register an existing store directory": "Register an existing store directory",
-    "Register an in-repo project into the project namespace and add it to a target store's references": "Register an in-repo project into the project namespace and add it to a target store's references",
-    "Remove a key (revert to default)": "Remove a key (revert to default)",
-    "Remove dangling machine-home registry entries and their orphaned home directories": "Remove dangling machine-home registry entries and their orphaned home directories",
-    "Replace an existing destination file": "Replace an existing destination file",
-    "Replace an existing profile with the same name": "Replace an existing profile with the same name",
-    "Repo path to restore into": "Repo path to restore into",
-    "Report context-window occupancy of a transcript from its recorded usage": "Report context-window occupancy of a transcript from its recorded usage",
-    "Report relationship health for the resolved Rasen root": "Report relationship health for the resolved Rasen root",
-    "Report whether the resident daemon is running": "Report whether the resident daemon is running",
-    "Reset all configuration (required)": "Reset all configuration (required)",
-    "Reset configuration to defaults": "Reset configuration to defaults",
-    "Restore a store-hosted project back to in-repo planning": "Restore a store-hosted project back to in-repo planning",
-    "Role key identifying this worker's signal file (e.g. reviewer, impl-spaces)": "Role key identifying this worker's signal file (e.g. reviewer, impl-spaces)",
-    "Run the resident daemon in the foreground (debugging/advanced form)": "Run the resident daemon in the foreground (debugging/advanced form)",
-    "Save the imported profile under a different name": "Save the imported profile under a different name",
-    "Schema description": "Schema description",
-    "Schema override": "Schema override",
-    "Schema to use": "Schema to use",
-    "Scope to one active or archived change": "Scope to one active or archived change",
-    "Seed proposal.md with this text, making the change active immediately": "Seed proposal.md with this text, making the change active immediately",
-    "Self-reported context size; below the keepalive floor stands down immediately": "Self-reported context size; below the keepalive floor stands down immediately",
-    "Set a value (auto-coerce types)": "Set a value (auto-coerce types)",
-    "Set as project default schema": "Set as project default schema",
-    "Set fixer runtime: claude or codex": "Set fixer runtime: claude or codex",
-    "Set implementer runtime: claude or codex": "Set implementer runtime: claude or codex",
-    "Set planner runtime: claude or codex": "Set planner runtime: claude or codex",
-    "Set reviewer runtime: claude or codex": "Set reviewer runtime: claude or codex",
-    "Set shipper runtime: claude or codex": "Set shipper runtime: claude or codex",
-    "Show a change or spec": "Show a change or spec",
-    "Show a change's pipeline run-state (next/remaining stages)": "Show a change's pipeline run-state (next/remaining stages)",
-    "Show a pipeline stage DAG and build order": "Show a pipeline stage DAG and build order",
-    "Show one threshold scheme": "Show one threshold scheme",
-    "Show all current settings": "Show all current settings",
-    "Show an installable workflow definition and known usage": "Show an installable workflow definition and known usage",
-    "Show config file location": "Show config file location",
-    "Show detailed installation output": "Show detailed installation output",
-    "Show detailed validation steps": "Show detailed validation steps",
-    "Show id and title with counts": "Show id and title with counts",
-    "Show only deltas (JSON only, change-specific)": "Show only deltas (JSON only, change-specific)",
-    "Show only requirements, exclude scenarios (JSON only, spec-specific)": "Show only requirements, exclude scenarios (JSON only, spec-specific)",
-    "Show only user workflows with no detected consumers": "Show only user workflows with no detected consumers",
-    "Show or set per-role Claude/Codex runtimes for a pipeline": "Show or set per-role Claude/Codex runtimes for a pipeline",
-    "Show resolved template paths for all artifacts in a schema": "Show resolved template paths for all artifacts in a schema",
-    "Show saved worksets with their members": "Show saved worksets with their members",
-    "Show specific requirement by ID (JSON only, spec-specific)": "Show specific requirement by ID (JSON only, spec-specific)",
-    "Show where a schema resolves from": "Show where a schema resolves from",
-    "Show where an installable workflow resolves from": "Show where an installable workflow resolves from",
-    "Skip Git repository initialization": "Skip Git repository initialization",
-    "Skip confirmation": "Skip confirmation",
-    "Skip confirmation prompts": "Skip confirmation prompts",
-    "Skip spec update operations": "Skip spec update operations",
-    "Skip the confirmation prompt (required to execute in --json mode)": "Skip the confirmation prompt (required to execute in --json mode)",
-    "Skip validation (not recommended)": "Skip validation (not recommended)",
-    "Sort order: \"recent\" (default) or \"name\"": "Sort order: \"recent\" (default) or \"name\"",
-    "Source store to eject from": "Source store to eject from",
-    "Specify item type when ambiguous": "Specify item type when ambiguous",
-    "Start the Rasen management platform (board + config) on a localhost server": "Start the Rasen management platform (board + config) on a localhost server",
-    "Start the localhost config API + optional web UI": "Start the localhost config API + optional web UI",
-    "Start the resident daemon as a detached background process": "Start the resident daemon as a detached background process",
-    "Stop the resident daemon, reaping its live sessions": "Stop the resident daemon, reaping its live sessions",
-    "Store id": "Store id",
-    "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)",
-    "Submit feedback about Rasen": "Submit feedback about Rasen",
-    "Suggest a pipeline for a task (advisory keyword heuristic)": "Suggest a pipeline for a task (advisory keyword heuristic)",
-    "Target destination: in-repo, external, or store": "Target destination: in-repo, external, or store",
-    "Target store to add the project to": "Target store to add the project to",
-    "Target store to adopt into": "Target store to adopt into",
-    "Target the project namespace for <id> instead of the store namespace": "Target the project namespace for <id> instead of the store namespace",
-    "Uninstall completion script for a shell": "Uninstall completion script for a shell",
-    "Update Rasen instruction files": "Update Rasen instruction files",
-    "Use a built-in or saved profile": "Use a built-in or saved profile",
-    "Use a self-hosted foreground server instead of the resident daemon": "Use a self-hosted foreground server instead of the resident daemon",
-    "Use the newest main-session transcript for the current directory": "Use the newest main-session transcript for the current directory",
-    "Validate a schema structure and templates": "Validate a schema structure and templates",
-    "Validate active-profile skills before returning the executable DAG": "Validate active-profile skills before returning the executable DAG",
-    "Validate all changes": "Validate all changes",
-    "Validate all changes and specs": "Validate all changes and specs",
-    "Validate all pipelines": "Validate all pipelines",
-    "Validate all specs": "Validate all specs",
-    "Validate an installed pipeline, draft directory, or .rasenpkg": "Validate an installed pipeline, draft directory, or .rasenpkg",
-    "Validate an installed workflow, draft directory, or .rasenpkg": "Validate an installed workflow, draft directory, or .rasenpkg",
-    "Validate and atomically install a pipeline .rasenpkg": "Validate and atomically install a pipeline .rasenpkg",
-    "Validate and atomically install a workflow directory or package": "Validate and atomically install a workflow directory or package",
-    "Validate and install a pipeline definition file as a user pipeline": "Validate and install a pipeline definition file as a user pipeline",
-    "Validate changes and specs": "Validate changes and specs",
-    "Verify moved files by content hash": "Verify moved files by content hash",
-    "View and modify global or project Rasen configuration": "View and modify global or project Rasen configuration",
-    "Workflow schema to use": "Workflow schema to use",
-    "Write the report to this file instead of the default analytics directory": "Write the report to this file instead of the default analytics directory",
-    "[Deprecated: use `rasen ui`] Start the localhost management server and open the config view": "[Deprecated: use `rasen ui`] Start the localhost management server and open the config view",
-    "display help for command": "display help for command",
-    "output the version number": "output the version number",
-    "Give a store a permanent identity and record it in the registry and the project's declaration": "Give a store a permanent identity and record it in the registry and the project's declaration",
-    "Disambiguate a name that matches more than one registered store": "Disambiguate a name that matches more than one registered store",
-    "Report every file that would be written and change nothing": "Report every file that would be written and change nothing",
-    "Write the plan": "Write the plan",
-    "Also record the target store as the project's planning store": "Also record the target store as the project's planning store",
-    "Report every file that would be written in each repository and change nothing": "Report every file that would be written in each repository and change nothing",
-    "Convert a store's legacy membership data into per-project membership records": "Convert a store's legacy membership data into per-project membership records",
-    "Report the conversion plan and change nothing": "Report the conversion plan and change nothing",
-    "Write the records and remove the legacy adoption manifest": "Write the records and remove the legacy adoption manifest",
-    "project, store, or global": "project, store, or global",
-    "Approve a store publication non-interactively, naming the store it applies to": "Approve a store publication non-interactively, naming the store it applies to",
-    "Show what this project actually receives, its sources by permanent identity, and any conflicts": "Show what this project actually receives, its sources by permanent identity, and any conflicts",
-    "Move per-clone knowledge into this project's canonical home and re-key ownership records on permanent identity": "Move per-clone knowledge into this project's canonical home and re-key ownership records on permanent identity",
-    "Preview only: report what would change and write nothing": "Preview only: report what would change and write nothing",
-    "Report what this machine still needs before this project works": "Report what this machine still needs before this project works",
-    "Check mode: report from local information only, contacting no network": "Check mode: report from local information only, contacting no network",
-    "Preview mode: additionally resolve remotes and the exact location each repository would be placed at": "Preview mode: additionally resolve remotes and the exact location each repository would be placed at",
-    "Location for one store or project, as <selector>=<dir>; repeatable": "Location for one store or project, as <selector>=<dir>; repeatable",
-    "Parent directory a derived name would be placed under": "Parent directory a derived name would be placed under",
-    "Apply mode: register the current checkout, register present-unregistered Stores, obtain declared Stores from their remotes, prepare the knowledge location, and write the durable declaration": "Apply mode: register the current checkout, register present-unregistered Stores, obtain declared Stores from their remotes, prepare the knowledge location, and write the durable declaration",
-    "Skip confirmation prompts for the project-declared Stores (apply mode only; does not obtain a Store's projects from a Store checkout)": "Skip confirmation prompts for the project-declared Stores (apply mode only; does not obtain a Store's projects from a Store checkout)",
-    "Apply mode: prepare repositories and knowledge, then offer each declared portable bundle as a separate confirmed import": "Apply mode: prepare repositories and knowledge, then offer each declared portable bundle as a separate confirmed import",
-    "Confirm project-declared actions, including project-config bundle imports; Store-only bundles and Store projects still require an explicit choice": "Confirm project-declared actions, including project-config bundle imports; Store-only bundles and Store projects still require an explicit choice"
-  },
-  "commandDescriptionTemplates": {
-    "toolsPrefix": "Configure AI tools non-interactively. Use \"all\", \"none\", or a comma-separated list of: {ids}"
-  },
   "telemetry": {
     "notice": "Note: Rasen sends anonymous usage stats (command, version, OS, Node version, and a random id) to its own Cloudflare Worker. Opt out: RASEN_TELEMETRY=0"
   },
@@ -1398,5 +1079,1509 @@
       "skipAhead": "{original} is not installed, so {workflow} is next."
     },
     "hint": "Next: {workflow} — {reason}"
+  },
+  "cli": {
+    "chrome": {
+      "usageTitle": "Usage:",
+      "argumentsTitle": "Arguments:",
+      "optionsTitle": "Options:",
+      "globalOptionsTitle": "Global Options:",
+      "commandsTitle": "Commands:",
+      "helpOption": "display help for command",
+      "helpCommand": "display help for command",
+      "versionOption": "output the version number"
+    },
+    "compatibilityCommands": {
+      "experimental": {
+        "description": "Alias for init (deprecated)",
+        "options": {
+          "tool": {
+            "description": "Target AI tool (maps to --tools)"
+          },
+          "no-interactive": {
+            "description": "Disable interactive prompts"
+          }
+        }
+      }
+    },
+    "root": {
+      "description": "AI-native system for spec-driven development",
+      "options": {
+        "no-color": {
+          "description": "Disable color output"
+        }
+      },
+      "commands": {
+        "init": {
+          "description": "Initialize Rasen in your project",
+          "options": {
+            "tools": {
+              "description": "Configure AI tools non-interactively. Use \"all\", \"none\", or a comma-separated list of: {ids}"
+            },
+            "force": {
+              "description": "Auto-cleanup legacy files without prompting"
+            },
+            "profile": {
+              "description": "Install and lock a profile in {workspaceDir}/config.yaml (full, core, or a saved profile; custom applies once without locking)"
+            }
+          }
+        },
+        "update": {
+          "description": "Update Rasen instruction files",
+          "options": {
+            "force": {
+              "description": "Force update even when tools are up to date"
+            },
+            "all-projects": {
+              "description": "Update every reachable, non-pinned registered project whose version is behind"
+            },
+            "only-this": {
+              "description": "Skip multi-project registry consultation (update only this project)"
+            }
+          }
+        },
+        "migrate": {
+          "description": "Copy a legacy openspec/ workspace into {workspaceDir}/ (copy-only; originals untouched)",
+          "options": {
+            "no-interactive": {
+              "description": "Do not prompt (skips optional marker-block cleanup)"
+            }
+          }
+        },
+        "list": {
+          "description": "List items (changes by default). Use --specs to list specs.",
+          "options": {
+            "specs": {
+              "description": "List specs instead of changes"
+            },
+            "changes": {
+              "description": "List changes explicitly (default)"
+            },
+            "sort": {
+              "description": "Sort order: \"recent\" (default) or \"name\""
+            },
+            "long": {
+              "description": "Show id and title with counts"
+            },
+            "json": {
+              "description": "Output as JSON (for programmatic use)"
+            },
+            "store": {
+              "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+            },
+            "project": {
+              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+            }
+          }
+        },
+        "view": {
+          "description": "Display an interactive dashboard of specs and changes"
+        },
+        "validate": {
+          "description": "Validate changes, specs, and pipelines",
+          "options": {
+            "all": {
+              "description": "Validate all changes, specs, and pipelines"
+            },
+            "changes": {
+              "description": "Validate all changes"
+            },
+            "specs": {
+              "description": "Validate all specs"
+            },
+            "pipelines": {
+              "description": "Validate all pipelines"
+            },
+            "type": {
+              "description": "Specify item type when ambiguous: change|spec|pipeline"
+            },
+            "strict": {
+              "description": "Enable strict validation mode"
+            },
+            "json": {
+              "description": "Output validation results as JSON"
+            },
+            "concurrency": {
+              "description": "Max concurrent validations (defaults to env RASEN_CONCURRENCY or 6)"
+            },
+            "no-interactive": {
+              "description": "Disable interactive prompts"
+            },
+            "store": {
+              "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+            },
+            "project": {
+              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+            }
+          }
+        },
+        "show": {
+          "description": "Show a change or spec",
+          "options": {
+            "json": {
+              "description": "Output as JSON"
+            },
+            "type": {
+              "description": "Specify item type when ambiguous: change|spec"
+            },
+            "no-interactive": {
+              "description": "Disable interactive prompts"
+            },
+            "deltas-only": {
+              "description": "Show only deltas (JSON only, change)"
+            },
+            "requirements-only": {
+              "description": "Alias for --deltas-only (deprecated, change)"
+            },
+            "requirements": {
+              "description": "JSON only: Show only requirements (exclude scenarios)"
+            },
+            "no-scenarios": {
+              "description": "JSON only: Exclude scenario content"
+            },
+            "requirement": {
+              "description": "JSON only: Show specific requirement by ID (1-based)"
+            },
+            "store": {
+              "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+            },
+            "project": {
+              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+            }
+          }
+        },
+        "home": {
+          "description": "Manage machine-local project home state",
+          "commands": {
+            "prune": {
+              "description": "List (default) or remove orphaned machine-home directories and stale registry entries",
+              "options": {
+                "apply": {
+                  "description": "Delete the reported orphans (default is report-only)"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            }
+          }
+        },
+        "archive": {
+          "description": "Archive a completed change and update main specs",
+          "options": {
+            "yes": {
+              "description": "Skip confirmation prompts"
+            },
+            "confirm-prune": {
+              "description": "Confirm a 'prune' destination's permanent deletion (separate from --yes; required in addition to it)"
+            },
+            "skip-specs": {
+              "description": "Skip spec update operations (useful for infrastructure, tooling, or doc-only changes)"
+            },
+            "no-validate": {
+              "description": "Skip validation (not recommended, requires confirmation)"
+            },
+            "json": {
+              "description": "Output as JSON (non-interactive)"
+            },
+            "store": {
+              "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+            },
+            "project": {
+              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+            }
+          },
+          "commands": {
+            "relocate": {
+              "description": "Move existing archived changes to a destination and flip archive.destination together",
+              "options": {
+                "to": {
+                  "description": "Target destination: in-repo, external, or store"
+                },
+                "dry-run": {
+                  "description": "Print the move plan and change nothing"
+                },
+                "verify-hash": {
+                  "description": "Verify moved files by content hash, not just size"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            }
+          }
+        },
+        "status": {
+          "description": "Display artifact completion status for a change",
+          "options": {
+            "change": {
+              "description": "Change name to show status for"
+            },
+            "schema": {
+              "description": "Schema override (auto-detected from config.yaml)"
+            },
+            "json": {
+              "description": "Output as JSON"
+            },
+            "store": {
+              "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+            },
+            "project": {
+              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+            }
+          }
+        },
+        "instructions": {
+          "description": "Output enriched instructions for creating an artifact or applying tasks",
+          "options": {
+            "change": {
+              "description": "Change name"
+            },
+            "schema": {
+              "description": "Schema override (auto-detected from config.yaml)"
+            },
+            "json": {
+              "description": "Output as JSON"
+            },
+            "store": {
+              "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+            },
+            "project": {
+              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+            }
+          }
+        },
+        "templates": {
+          "description": "Show resolved template paths for all artifacts in a schema",
+          "options": {
+            "schema": {
+              "description": "Schema to use (default: {defaultSchema})"
+            },
+            "json": {
+              "description": "Output as JSON mapping artifact IDs to template paths"
+            }
+          }
+        },
+        "schemas": {
+          "description": "List available workflow schemas with descriptions",
+          "options": {
+            "json": {
+              "description": "Output as JSON (for agent use)"
+            }
+          }
+        },
+        "new": {
+          "description": "Create new items",
+          "commands": {
+            "change": {
+              "description": "Create a new change directory",
+              "options": {
+                "description": {
+                  "description": "Description to add to README.md"
+                },
+                "proposal": {
+                  "description": "Seed proposal.md with this text, making the change active immediately"
+                },
+                "goal": {
+                  "description": "Optional goal metadata to store with the change"
+                },
+                "schema": {
+                  "description": "Workflow schema to use (default: {defaultSchema})"
+                },
+                "pipeline": {
+                  "description": "Pipeline to initialize run-state for"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "store": {
+                  "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+                },
+                "project": {
+                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                }
+              }
+            }
+          }
+        },
+        "store": {
+          "description": "Create and manage stores - standalone Rasen repos you register on this machine",
+          "commands": {
+            "setup": {
+              "description": "Create and register a local store",
+              "options": {
+                "path": {
+                  "description": "Folder where the store should live (for example ~/{workspaceDir}/<id>)"
+                },
+                "init-git": {
+                  "description": "Initialize a Git repository with an initial commit (default)"
+                },
+                "no-init-git": {
+                  "description": "Skip every Git action: no init, no initial commit"
+                },
+                "remote": {
+                  "description": "Canonical clone source recorded in store.yaml"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "register": {
+              "description": "Register an existing local store",
+              "options": {
+                "id": {
+                  "description": "Store id; defaults to metadata or folder name"
+                },
+                "yes": {
+                  "description": "Confirm creating store identity metadata for a healthy Rasen root"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "add-project": {
+              "description": "Register an in-repo project into the project namespace and add it to a target store's references",
+              "options": {
+                "to": {
+                  "description": "Target store to add the project to (must already be registered)"
+                },
+                "as": {
+                  "description": "Project store id override (ignored if the project is already a store)"
+                },
+                "set-primary": {
+                  "description": "Also record the target store as the project's planning store; refuses when a different store is already bound"
+                },
+                "dry-run": {
+                  "description": "Report every file that would be written in each repository and change nothing"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "migrate-membership": {
+              "description": "Convert a store's legacy membership data into per-project membership records",
+              "options": {
+                "dry-run": {
+                  "description": "Report the conversion plan and change nothing (default)"
+                },
+                "apply": {
+                  "description": "Write the records and remove the legacy adoption manifest once they read back"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "upgrade-identity": {
+              "description": "Give a store a permanent identity and record it in the registry and the project's declaration",
+              "options": {
+                "uid": {
+                  "description": "Disambiguate a name that matches more than one registered store"
+                },
+                "dry-run": {
+                  "description": "Report every file that would be written and change nothing (default)"
+                },
+                "apply": {
+                  "description": "Write the plan"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "unregister": {
+              "description": "Forget a local store registration without deleting files",
+              "options": {
+                "project-namespace": {
+                  "description": "Target the project namespace for <id> instead of the store namespace"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "remove": {
+              "description": "Forget a local store registration and delete its local folder",
+              "options": {
+                "yes": {
+                  "description": "Confirm local store folder deletion"
+                },
+                "project-namespace": {
+                  "description": "Target the project namespace for <id> instead of the store namespace"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "adopt": {
+              "description": "Migrate an in-repo project's planning content into a store and convert the repo to a pointer",
+              "options": {
+                "to": {
+                  "description": "Target store to adopt the project into (must already be registered)"
+                },
+                "archive": {
+                  "description": "Archive handling: move (default), leave, or external"
+                },
+                "dry-run": {
+                  "description": "Print the full move plan and change nothing"
+                },
+                "verify-hash": {
+                  "description": "Verify moved files by content hash, not just size"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "eject": {
+              "description": "Restore a store-hosted project back to in-repo planning using the adoption manifest",
+              "options": {
+                "from": {
+                  "description": "Source store to eject from (must already be registered)"
+                },
+                "all": {
+                  "description": "Manifest-less fallback: copy the entire store planning content back (with confirmation)"
+                },
+                "yes": {
+                  "description": "Explicit consent for a manifest-less --all copy back in non-interactive/JSON mode"
+                },
+                "force": {
+                  "description": "Proceed past manifest drift, reporting the missing content"
+                },
+                "into": {
+                  "description": "Repo path to restore into (else the current checkout when its project identity matches, else the single registered live checkout)"
+                },
+                "dry-run": {
+                  "description": "Print the restore plan and change nothing"
+                },
+                "verify-hash": {
+                  "description": "Verify moved files by content hash, not just size"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "list": {
+              "description": "List locally registered stores",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "doctor": {
+              "description": "Check local store registration and metadata",
+              "options": {
+                "project-namespace": {
+                  "description": "Limit to the project namespace entry for [id]"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            }
+          }
+        },
+        "context": {
+          "description": "Print the working context for the resolved Rasen root",
+          "options": {
+            "json": {
+              "description": "Output the agent brief as JSON"
+            },
+            "store": {
+              "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+            },
+            "project": {
+              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+            },
+            "code-workspace": {
+              "description": "Also write a VS Code workspace file for the set"
+            },
+            "force": {
+              "description": "Overwrite an existing --code-workspace file"
+            }
+          }
+        },
+        "bootstrap": {
+          "description": "Report what this machine still needs before this project works",
+          "options": {
+            "check": {
+              "description": "Check mode: report from local information only, contacting no network"
+            },
+            "dry-run": {
+              "description": "Preview mode: additionally resolve remotes and the exact location each repository would be placed at"
+            },
+            "apply": {
+              "description": "Apply mode: prepare repositories and knowledge, then offer each declared portable bundle as a separate confirmed import"
+            },
+            "yes": {
+              "description": "Confirm project-declared actions, including project-config bundle imports; Store-only bundles and Store projects still require an explicit choice"
+            },
+            "json": {
+              "description": "Output as JSON"
+            },
+            "path": {
+              "description": "Location for one store or project, as <selector>=<dir>; repeatable"
+            },
+            "into": {
+              "description": "Parent directory a derived name would be placed under"
+            }
+          }
+        },
+        "doctor": {
+          "description": "Report relationship health for the resolved Rasen root",
+          "options": {
+            "json": {
+              "description": "Output as JSON"
+            },
+            "store": {
+              "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+            },
+            "project": {
+              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+            },
+            "gc": {
+              "description": "Remove dangling machine-home registry entries and their orphaned home directories — this deletes ANY external archives inside those homes too (archive-destination's 'external' archives share the home's lifecycle; git history remains the durable record)"
+            }
+          }
+        },
+        "workset": {
+          "description": "Compose, keep, and open personal working views (purely local)",
+          "commands": {
+            "create": {
+              "description": "Compose and save a named working view of folders you choose",
+              "options": {
+                "member": {
+                  "description": "Member folder as <path> or <name>=<path>; repeatable, first is the primary"
+                },
+                "tool": {
+                  "description": "Preferred tool to open this workset with"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "list": {
+              "description": "Show saved worksets with their members",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "open": {
+              "description": "Open a saved workset in your tool (editor window or agent session)",
+              "options": {
+                "tool": {
+                  "description": "Open with this tool just this once"
+                }
+              }
+            },
+            "remove": {
+              "description": "Delete a saved workset (member folders are never touched)",
+              "options": {
+                "yes": {
+                  "description": "Confirm removal non-interactively"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            }
+          }
+        },
+        "feedback": {
+          "description": "Submit feedback about Rasen",
+          "options": {
+            "body": {
+              "description": "Detailed description for the feedback"
+            }
+          }
+        },
+        "completion": {
+          "description": "Manage shell completions for Rasen CLI",
+          "commands": {
+            "generate": {
+              "description": "Generate completion script for a shell (outputs to stdout)"
+            },
+            "install": {
+              "description": "Install completion script for a shell",
+              "options": {
+                "verbose": {
+                  "description": "Show detailed installation output"
+                }
+              }
+            },
+            "uninstall": {
+              "description": "Uninstall completion script for a shell",
+              "options": {
+                "yes": {
+                  "description": "Skip confirmation prompts"
+                }
+              }
+            }
+          }
+        },
+        "profile": {
+          "description": "Manage reusable workflow profiles",
+          "commands": {
+            "new": {
+              "description": "Create and use a named profile interactively"
+            },
+            "use": {
+              "description": "Use a built-in or saved profile"
+            },
+            "update": {
+              "description": "Edit a saved profile definition interactively"
+            },
+            "list": {
+              "description": "List built-in and saved profiles",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "delete": {
+              "description": "Delete a saved profile",
+              "options": {
+                "yes": {
+                  "description": "Skip confirmation"
+                }
+              }
+            },
+            "import": {
+              "description": "Import a profile package, YAML, or JSON profile",
+              "options": {
+                "as": {
+                  "description": "Save the imported profile under a different name"
+                },
+                "force": {
+                  "description": "Replace an existing profile with the same name"
+                }
+              }
+            },
+            "export": {
+              "description": "Export current settings or a named profile",
+              "options": {
+                "profile": {
+                  "description": "Export a built-in or saved profile instead of current settings"
+                },
+                "thin": {
+                  "description": "Export YAML or JSON without embedding user workflows"
+                },
+                "force": {
+                  "description": "Overwrite an existing destination"
+                }
+              }
+            }
+          }
+        },
+        "knowledge": {
+          "description": "Manage evidence-gated learned skills",
+          "commands": {
+            "bundle": {
+              "description": "Manage portable project-knowledge bundles",
+              "commands": {
+                "export": {
+                  "description": "Export a project's own learned knowledge to one portable file",
+                  "options": {
+                    "project": {
+                      "description": "Select a project knowledge owner independently from the planning root"
+                    },
+                    "to": {
+                      "description": "New destination file to create (never overwritten)"
+                    },
+                    "to-store": {
+                      "description": "Also place the bundle in a registered Store without granting ownership"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "import": {
+                  "description": "Import a portable bundle as this project's own knowledge",
+                  "positionals": {
+                    "bundle": {
+                      "description": "Portable bundle file to validate and import"
+                    }
+                  },
+                  "options": {
+                    "project": {
+                      "description": "Select a project knowledge owner independently from the planning root"
+                    },
+                    "dry-run": {
+                      "description": "Validate and classify the complete bundle without writing anything"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                }
+              }
+            },
+            "apply": {
+              "description": "Apply a learned-skill candidate from an absolute JSON file",
+              "options": {
+                "from": {
+                  "description": "Absolute path to a candidate JSON file"
+                },
+                "approve-store": {
+                  "description": "Approve a store publication non-interactively, naming the store it applies to"
+                },
+                "approve-global": {
+                  "description": "Approve a global create or promotion non-interactively"
+                },
+                "project": {
+                  "description": "Select a project knowledge owner independently from the planning root"
+                },
+                "store": {
+                  "description": "Select a store knowledge owner independently from the planning root"
+                },
+                "run-state-dir": {
+                  "description": "Load frozen knowledge identity from the resolved directory containing auto-run.json"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "list": {
+              "description": "List canonical learned skills",
+              "options": {
+                "scope": {
+                  "description": "project, store, or global"
+                },
+                "project": {
+                  "description": "Select a project knowledge owner independently from the planning root"
+                },
+                "store": {
+                  "description": "Select a store knowledge owner independently from the planning root"
+                },
+                "run-state-dir": {
+                  "description": "Load frozen knowledge identity from the resolved directory containing auto-run.json"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "effective": {
+              "description": "Show what this project actually receives: the resolved set, its sources by permanent identity, conflicts, and degraded states",
+              "options": {
+                "project": {
+                  "description": "Select a project knowledge owner independently from the planning root"
+                },
+                "store": {
+                  "description": "Select a store knowledge owner independently from the planning root"
+                },
+                "run-state-dir": {
+                  "description": "Load frozen knowledge identity from the resolved directory containing auto-run.json"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "migrate": {
+              "description": "Move per-clone knowledge into this project's canonical home and re-key ownership records on permanent identity",
+              "options": {
+                "dry-run": {
+                  "description": "Preview only: report what would change and write nothing"
+                },
+                "project": {
+                  "description": "Select a project knowledge owner independently from the planning root"
+                },
+                "store": {
+                  "description": "Select a store knowledge owner independently from the planning root"
+                },
+                "run-state-dir": {
+                  "description": "Load frozen knowledge identity from the resolved directory containing auto-run.json"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "show": {
+              "description": "Show a canonical learned skill",
+              "options": {
+                "scope": {
+                  "description": "project, store, or global"
+                },
+                "project": {
+                  "description": "Select a project knowledge owner independently from the planning root"
+                },
+                "store": {
+                  "description": "Select a store knowledge owner independently from the planning root"
+                },
+                "run-state-dir": {
+                  "description": "Load frozen knowledge identity from the resolved directory containing auto-run.json"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "retire": {
+              "description": "Retire a managed learned skill",
+              "options": {
+                "scope": {
+                  "description": "project, store, or global"
+                },
+                "project": {
+                  "description": "Select a project knowledge owner independently from the planning root"
+                },
+                "store": {
+                  "description": "Select a store knowledge owner independently from the planning root"
+                },
+                "run-state-dir": {
+                  "description": "Load frozen knowledge identity from the resolved directory containing auto-run.json"
+                },
+                "yes": {
+                  "description": "Skip the confirmation prompt"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            }
+          }
+        },
+        "workflow": {
+          "description": "Manage installable workflows in the user-wide library",
+          "commands": {
+            "list": {
+              "description": "List built-in and user workflows",
+              "options": {
+                "unused": {
+                  "description": "Show only user workflows with no detected consumers"
+                },
+                "all": {
+                  "description": "Also reveal internal workflows in the human table"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "show": {
+              "description": "Show an installable workflow definition and known usage",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "which": {
+              "description": "Show where an installable workflow resolves from",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "init": {
+              "description": "Create a minimal workflow draft without installing it",
+              "options": {
+                "output": {
+                  "description": "Empty workflow draft directory to create"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "validate": {
+              "description": "Validate an installed workflow, draft directory, or .rasenpkg",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "import": {
+              "description": "Validate and atomically install a workflow directory or package",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "export": {
+              "description": "Export a user workflow and its user dependencies as .rasenpkg",
+              "options": {
+                "force": {
+                  "description": "Replace an existing destination file"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "delete": {
+              "description": "Delete an unreferenced user workflow",
+              "options": {
+                "yes": {
+                  "description": "Skip confirmation"
+                },
+                "force": {
+                  "description": "Bypass the referrer guard, deleting even a still-referenced workflow"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            }
+          }
+        },
+        "config": {
+          "description": "View and modify global or project Rasen configuration",
+          "options": {
+            "scope": {
+              "description": "Config scope: \"global\" (default) or \"project\""
+            }
+          },
+          "commands": {
+            "path": {
+              "description": "Show config file location"
+            },
+            "list": {
+              "description": "Show all current settings",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "get": {
+              "description": "Get a specific value (raw, scriptable)"
+            },
+            "set": {
+              "description": "Set a value (auto-coerce types), validated against the config-key registry",
+              "options": {
+                "string": {
+                  "description": "Force value to be stored as string"
+                },
+                "allow-unknown": {
+                  "description": "Allow setting unknown keys (global scope only)"
+                }
+              }
+            },
+            "unset": {
+              "description": "Remove a key (revert to default)"
+            },
+            "reset": {
+              "description": "Reset configuration to defaults (global scope only)",
+              "options": {
+                "all": {
+                  "description": "Reset all configuration (required)"
+                },
+                "yes": {
+                  "description": "Skip confirmation prompts"
+                }
+              }
+            },
+            "edit": {
+              "description": "Open config in $EDITOR (global scope only)"
+            },
+            "profile": {
+              "description": "Compatibility alias for `rasen profile`"
+            },
+            "ui": {
+              "description": "[Deprecated: use `rasen ui`] Start the localhost management server and open the config view",
+              "options": {
+                "no-open": {
+                  "description": "Do not open the default browser"
+                },
+                "port": {
+                  "description": "Pin the listen port (default: ephemeral)"
+                }
+              }
+            }
+          }
+        },
+        "ui": {
+          "description": "Start the Rasen management platform (board + config) on a localhost server",
+          "options": {
+            "no-open": {
+              "description": "Do not open the default browser"
+            },
+            "port": {
+              "description": "Pin the listen port (default: ephemeral; --no-daemon only)"
+            },
+            "no-daemon": {
+              "description": "Use a self-hosted foreground server instead of the resident daemon"
+            }
+          }
+        },
+        "daemon": {
+          "description": "Manage the resident Rasen daemon (sessions survive terminal exits)",
+          "commands": {
+            "run": {
+              "description": "Run the resident daemon in the foreground (debugging/advanced form)",
+              "options": {
+                "port": {
+                  "description": "Pin the listen port (default: 8791, or RASEN_DAEMON_PORT)"
+                }
+              }
+            },
+            "start": {
+              "description": "Start the resident daemon as a detached background process",
+              "options": {
+                "port": {
+                  "description": "Pin the listen port (default: 8791, or RASEN_DAEMON_PORT)"
+                }
+              }
+            },
+            "stop": {
+              "description": "Stop the resident daemon, reaping its live sessions"
+            },
+            "status": {
+              "description": "Report whether the resident daemon is running"
+            }
+          }
+        },
+        "schema": {
+          "description": "Manage workflow schemas [experimental]",
+          "commands": {
+            "which": {
+              "description": "Show where a schema resolves from",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "all": {
+                  "description": "List all schemas with their resolution sources"
+                }
+              }
+            },
+            "validate": {
+              "description": "Validate a schema structure and templates",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "verbose": {
+                  "description": "Show detailed validation steps"
+                }
+              }
+            },
+            "fork": {
+              "description": "Copy an existing schema to project for customization",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "force": {
+                  "description": "Overwrite existing destination"
+                }
+              }
+            },
+            "init": {
+              "description": "Create a new project-local schema",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "description": {
+                  "description": "Schema description"
+                },
+                "artifacts": {
+                  "description": "Comma-separated artifact IDs (proposal,specs,design,tasks)"
+                },
+                "default": {
+                  "description": "Set as project default schema"
+                },
+                "no-default": {
+                  "description": "Do not prompt to set as default"
+                },
+                "force": {
+                  "description": "Overwrite existing schema"
+                }
+              }
+            }
+          }
+        },
+        "pipeline": {
+          "description": "Inspect and manage orchestration pipelines",
+          "commands": {
+            "list": {
+              "description": "List available pipelines (project > user > package)",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "store": {
+                  "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+                },
+                "project": {
+                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                }
+              }
+            },
+            "show": {
+              "description": "Show a pipeline stage DAG and build order",
+              "options": {
+                "for-execution": {
+                  "description": "Validate active-profile skills before returning the executable DAG"
+                },
+                "planner": {
+                  "description": "Set planner runtime: claude or codex"
+                },
+                "implementer": {
+                  "description": "Set implementer runtime: claude or codex"
+                },
+                "reviewer": {
+                  "description": "Set reviewer runtime: claude or codex"
+                },
+                "fixer": {
+                  "description": "Set fixer runtime: claude or codex"
+                },
+                "shipper": {
+                  "description": "Set shipper runtime: claude or codex"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "store": {
+                  "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+                },
+                "project": {
+                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                }
+              }
+            },
+            "agents": {
+              "description": "Show or set per-role Claude/Codex runtimes for a pipeline",
+              "options": {
+                "planner": {
+                  "description": "Set planner runtime: claude or codex"
+                },
+                "implementer": {
+                  "description": "Set implementer runtime: claude or codex"
+                },
+                "reviewer": {
+                  "description": "Set reviewer runtime: claude or codex"
+                },
+                "fixer": {
+                  "description": "Set fixer runtime: claude or codex"
+                },
+                "shipper": {
+                  "description": "Set shipper runtime: claude or codex"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "store": {
+                  "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+                },
+                "project": {
+                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                }
+              }
+            },
+            "classify": {
+              "description": "Suggest a pipeline for a task (advisory keyword heuristic)",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "store": {
+                  "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+                },
+                "project": {
+                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                }
+              }
+            },
+            "resume": {
+              "description": "Show a change's pipeline run-state (next/remaining stages)",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "store": {
+                  "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+                },
+                "project": {
+                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                }
+              }
+            },
+            "init": {
+              "description": "Create a minimal pipeline draft without installing it",
+              "options": {
+                "output": {
+                  "description": "Empty pipeline draft directory to create"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "store": {
+                  "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+                },
+                "project": {
+                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                }
+              }
+            },
+            "validate": {
+              "description": "Validate an installed pipeline, draft directory, or .rasenpkg",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "store": {
+                  "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+                },
+                "project": {
+                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                }
+              }
+            },
+            "import": {
+              "description": "Validate and atomically install a pipeline .rasenpkg",
+              "options": {
+                "force": {
+                  "description": "Overwrite an already-installed pipeline of the same name"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "store": {
+                  "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+                },
+                "project": {
+                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                }
+              }
+            },
+            "export": {
+              "description": "Export a user pipeline as .rasenpkg",
+              "options": {
+                "force": {
+                  "description": "Replace an existing destination file"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "store": {
+                  "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+                },
+                "project": {
+                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                }
+              }
+            },
+            "delete": {
+              "description": "Delete an unreferenced user pipeline",
+              "options": {
+                "yes": {
+                  "description": "Skip confirmation"
+                },
+                "force": {
+                  "description": "Bypass the referrer guard, deleting even a still-referenced pipeline"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "store": {
+                  "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+                },
+                "project": {
+                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                }
+              }
+            },
+            "save": {
+              "description": "Validate and install a pipeline definition file as a user pipeline",
+              "options": {
+                "from": {
+                  "description": "Path to a JSON or YAML pipeline definition"
+                },
+                "force": {
+                  "description": "Overwrite an already-installed user pipeline of the same name"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "store": {
+                  "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+                },
+                "project": {
+                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                }
+              }
+            }
+          }
+        },
+        "scheme": {
+          "description": "Inspect machine-level threshold schemes",
+          "commands": {
+            "list": {
+              "description": "List threshold schemes",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "show": {
+              "description": "Show one threshold scheme",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            }
+          }
+        },
+        "work": {
+          "description": "Machine-home work-directory maintenance (migrate legacy in-repo ephemera)",
+          "commands": {
+            "migrate": {
+              "description": "Migrate legacy in-repo process ephemera (run-state, handoff, reports, ship-log) into the machine home",
+              "options": {
+                "change": {
+                  "description": "Scope to one active or archived change"
+                },
+                "dry-run": {
+                  "description": "Preview only; never move files"
+                },
+                "include-tracked": {
+                  "description": "Also move git-tracked ephemera, leaving the deletions uncommitted"
+                },
+                "json": {
+                  "description": "Output as JSON (non-interactive; requires --yes to execute)"
+                },
+                "yes": {
+                  "description": "Skip the confirmation prompt (required to execute in --json mode)"
+                }
+              }
+            }
+          }
+        },
+        "agent": {
+          "description": "Inspect and control base agent runtime state",
+          "commands": {
+            "edit-boundary": {
+              "description": "Control the checkout-scoped runtime edit boundary",
+              "commands": {
+                "set": {
+                  "description": "Set the checkout-scoped edit boundary to an existing directory",
+                  "options": {
+                    "runtime": {
+                      "description": "Force runtime: claude, codex, or zed"
+                    },
+                    "json": {
+                      "description": "Output stable JSON"
+                    }
+                  }
+                },
+                "status": {
+                  "description": "Show the active boundary and observed host enforcement",
+                  "options": {
+                    "runtime": {
+                      "description": "Force runtime: claude, codex, or zed"
+                    },
+                    "json": {
+                      "description": "Output stable JSON"
+                    }
+                  }
+                },
+                "clear": {
+                  "description": "Clear the checkout-scoped edit boundary",
+                  "options": {
+                    "runtime": {
+                      "description": "Force runtime: claude, codex, or zed"
+                    },
+                    "json": {
+                      "description": "Output stable JSON"
+                    }
+                  }
+                }
+              }
+            },
+            "context": {
+              "description": "Report context-window occupancy of a transcript from its recorded usage",
+              "options": {
+                "transcript": {
+                  "description": "Path to a Claude Code transcript or Codex rollout jsonl"
+                },
+                "latest": {
+                  "description": "Use the newest main-session transcript for the current directory"
+                },
+                "dir": {
+                  "description": "Override the Claude projects directory used by --latest"
+                },
+                "limit": {
+                  "description": "Override the resolved context-window limit"
+                },
+                "runtime": {
+                  "description": "Force detection to \"claude\" or \"codex\" instead of sniffing the file"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "wait": {
+              "description": "One cache-keepalive beat: block briefly polling the change's role signal file",
+              "options": {
+                "change": {
+                  "description": "Change whose signals directory to poll"
+                },
+                "role": {
+                  "description": "Role key identifying this worker's signal file (e.g. reviewer, impl-spaces)"
+                },
+                "max-beats": {
+                  "description": "Override the default beat cap (12)"
+                },
+                "context-tokens": {
+                  "description": "Self-reported context size; below the keepalive floor stands down immediately"
+                },
+                "beat-seconds": {
+                  "description": "Beat duration in seconds. Resolution: flag > keepalive.beatSeconds config (default 270) > 100s fuse; max 300. Beats over the shell tool default timeout require raising that tool timeout."
+                }
+              }
+            },
+            "audit": {
+              "description": "Analyze a session's token spend from its Claude transcript, Codex rollout, or Zed thread database (experimental: parses internal, undocumented formats that may change with harness or Zed updates)",
+              "options": {
+                "projects-dir": {
+                  "description": "Override the Claude projects directory a session id is resolved against"
+                },
+                "out": {
+                  "description": "Write the report to this file instead of the default analytics directory"
+                },
+                "runtime": {
+                  "description": "Force the runtime: \"claude\", \"codex\", or \"zed\" (Zed reads its local threads.db; experimental, format may change)"
+                },
+                "match": {
+                  "description": "Zed only: resolve the session by its first user command instead of a thread id"
+                },
+                "db": {
+                  "description": "Zed only: override the threads.db path (default: Zed's per-OS location)"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "open": {
+                  "description": "Open the shipped viewer in your default browser, pre-loaded with the report"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }

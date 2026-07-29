@@ -1,250 +1,220 @@
 import { describe, expect, it } from 'vitest';
 import type { Command } from 'commander';
 
+import { createProgram, getCommandPath } from '../../../src/cli/index.js';
 import { COMMAND_REGISTRY } from '../../../src/core/completions/command-registry.js';
-import { COMMON_FLAGS } from '../../../src/core/completions/shared-flags.js';
-import { STORE_SELECTION_GUIDANCE } from '../../../src/core/templates/workflows/store-selection.js';
-import { getCommandPath, program } from '../../../src/cli/index.js';
-import { getKnowledgeMessages } from '../../../src/commands/knowledge-messages.js';
-import {
-  hasLocalizedDescription,
-  localizeCommandRegistry,
-  localizeDescription,
-} from '../../../src/core/completions/description-localization.js';
-import { formatLocaleMessage, getLocaleCatalog } from '../../../src/locales/index.js';
-import { SUPPORTED_CLI_LOCALES } from '../../../src/utils/locale.js';
+import { resolveCliPresentation } from '../../../src/core/completions/cli-presentation.js';
 import type {
   CommandDefinition,
   FlagDefinition,
   PositionalDefinition,
 } from '../../../src/core/completions/types.js';
+import { STORE_SELECTION_GUIDANCE } from '../../../src/core/templates/workflows/store-selection.js';
 
-function command(name: string) {
-  return COMMAND_REGISTRY.find((entry) => entry.name === name);
+const facts = {
+  availableToolIds: ['claude', 'codex'],
+  defaultSchema: 'spec-driven',
+  workspaceDir: 'rasen',
+} as const;
+
+function program(): Command {
+  return createProgram({ locale: 'en', facts });
 }
 
-describe('command completion registry', () => {
-  function registryChildren(commandList: CommandDefinition[] | undefined): Map<string, CommandDefinition> {
-    return new Map((commandList ?? []).map((entry) => [entry.name, entry]));
+function command(...path: string[]): CommandDefinition | undefined {
+  let current: CommandDefinition | undefined = COMMAND_REGISTRY;
+  for (const name of path) {
+    current = current.subcommands?.find((entry) => entry.name === name);
   }
+  return current;
+}
 
-  function visibleChildCommands(command: Command): Command[] {
-    return command.commands.filter((child) => !(child as unknown as { _hidden?: boolean })._hidden);
-  }
+function visibleChildCommands(parent: Command): Command[] {
+  return parent.commands.filter(
+    (child) =>
+      !(child as unknown as { _hidden?: boolean })._hidden &&
+      child.name() !== 'help',
+  );
+}
 
-  function commandAliases(command: Command): string[] {
-    return command.aliases();
-  }
+function normalizeName(name: string): string {
+  return name.replace(/[^a-z0-9]/giu, '').toLowerCase();
+}
 
-  interface FlagShape {
-    name: string;
-    short?: string;
-    takesValue?: true;
-  }
+interface FlagShape {
+  name: string;
+  short?: string;
+  takesValue?: true;
+  acceptedValues?: readonly string[];
+}
 
-  interface PositionalShape {
-    name: string;
-    optional?: true;
-  }
+function flagShape(flag: FlagDefinition): FlagShape {
+  return {
+    name: flag.name,
+    ...(flag.short ? { short: flag.short } : {}),
+    ...(flag.takesValue ? { takesValue: true as const } : {}),
+    ...(flag.acceptedValues ? { acceptedValues: flag.acceptedValues } : {}),
+  };
+}
 
-  function normalizeName(name: string): string {
-    return name.replace(/[^a-z0-9]/giu, '').toLowerCase();
-  }
+function commanderFlagShapes(parent: Command): FlagShape[] {
+  return parent.options
+    .filter((option) => !option.hidden && option.long !== '--version')
+    .map((option) => ({
+      name: option.long.replace(/^--/u, ''),
+      ...(option.short ? { short: option.short.replace(/^-/, '') } : {}),
+      ...(option.required || option.optional ? { takesValue: true as const } : {}),
+      ...(option.argChoices ? { acceptedValues: option.argChoices } : {}),
+    }));
+}
 
-  function toFlagShape(flag: FlagDefinition): FlagShape {
-    return {
-      name: flag.name,
-      ...(flag.short ? { short: flag.short } : {}),
-      ...(flag.takesValue ? { takesValue: true as const } : {}),
-    };
-  }
+function sortedFlags(flags: readonly FlagShape[]): FlagShape[] {
+  return [...flags].sort((left, right) => left.name.localeCompare(right.name));
+}
 
-  function toCommanderFlagShape(command: Command): FlagShape[] {
-    return command.options
-      .filter((option) => !option.hidden)
-      .map((option) => ({
-        name: option.long.replace(/^--/u, ''),
-        ...(option.short ? { short: option.short.replace(/^-/, '') } : {}),
-        ...(option.required || option.optional ? { takesValue: true as const } : {}),
-      }));
-  }
+function positionalShape(positional: PositionalDefinition): {
+  name: string;
+  optional?: true;
+} {
+  return {
+    name: normalizeName(positional.name),
+    ...(positional.optional ? { optional: true as const } : {}),
+  };
+}
 
-  function sortedFlags(flags: FlagShape[]): FlagShape[] {
-    return [...flags].sort((left, right) => left.name.localeCompare(right.name));
-  }
-
-  function toPositionalShape(positional: PositionalDefinition): PositionalShape {
-    return {
-      name: normalizeName(positional.name),
-      ...(positional.optional ? { optional: true as const } : {}),
-    };
-  }
-
-  function toCommanderPositionalShapes(command: Command): PositionalShape[] {
-    return command.registeredArguments.map((argument) => ({
+function assertCommandParity(
+  actual: Command,
+  expected: CommandDefinition,
+  semanticPath: string,
+): void {
+  expect(actual.name(), `${semanticPath} name`).toBe(expected.name);
+  expect([...actual.aliases()].sort(), `${semanticPath} aliases`).toEqual(
+    [...(expected.aliases ?? [])].sort(),
+  );
+  expect(
+    sortedFlags(commanderFlagShapes(actual)),
+    `${semanticPath} options`,
+  ).toEqual(sortedFlags(expected.flags.map(flagShape)));
+  expect(
+    actual.registeredArguments.map((argument) => ({
       name: normalizeName(argument.name()),
       ...(argument.required ? {} : { optional: true as const }),
-    }));
-  }
+    })),
+    `${semanticPath} positionals`,
+  ).toEqual((expected.positionals ?? []).map(positionalShape));
 
-  function assertPositionalParity(
-    commandPath: string,
-    command: Command,
-    entry: CommandDefinition
-  ): void {
-    const commandPositionals = toCommanderPositionalShapes(command);
-
-    if (commandPositionals.length === 0) {
-      expect(entry.acceptsPositional ?? false, `${commandPath} accepts positional`).toBe(false);
-      expect(entry.positionals ?? [], `${commandPath} positionals`).toEqual([]);
-      return;
-    }
-
-    expect(entry.acceptsPositional, `${commandPath} accepts positional`).toBe(true);
-    expect(
-      (entry.positionals ?? []).map(toPositionalShape),
-      `${commandPath} positionals`
-    ).toEqual(commandPositionals);
-  }
-
-  function assertCommandShape(
-    commandPath: string,
-    command: Command,
-    entry: CommandDefinition
-  ): void {
-    expect(sortedFlags(entry.flags.map(toFlagShape)), `${commandPath} flags`).toEqual(
-      sortedFlags(toCommanderFlagShape(command))
+  const actualChildren = visibleChildCommands(actual);
+  const expectedChildren = expected.subcommands ?? [];
+  expect(
+    actualChildren.map((child) => child.name()).sort(),
+    `${semanticPath} commands`,
+  ).toEqual(expectedChildren.map((child) => child.name).sort());
+  for (const childDefinition of expectedChildren) {
+    const child = actualChildren.find(
+      (candidate) => candidate.name() === childDefinition.name,
     );
-    assertPositionalParity(commandPath, command, entry);
-  }
-
-  function assertRegistryParity(
-    command: Command,
-    registry: CommandDefinition[],
-    parentPath = ''
-  ): void {
-    const registryByName = registryChildren(registry);
-
-    for (const child of visibleChildCommands(command)) {
-      const commandPath = parentPath ? `${parentPath} ${child.name()}` : child.name();
-      const names = [child.name(), ...commandAliases(child)];
-      for (const name of names) {
-        expect(registryByName.has(name), `missing completion entry for ${commandPath} alias ${name}`).toBe(true);
-      }
-
-      const entry = registryByName.get(child.name());
-      if (!entry) {
-        continue;
-      }
-
-      assertCommandShape(commandPath, child, entry);
-
-      for (const alias of commandAliases(child)) {
-        const aliasEntry = registryByName.get(alias);
-        expect(aliasEntry, `${commandPath} alias ${alias}`).toBeDefined();
-        if (aliasEntry) {
-          assertCommandShape(`${commandPath} alias ${alias}`, child, aliasEntry);
-        }
-      }
-
-      assertRegistryParity(child, entry.subcommands ?? [], commandPath);
-    }
-  }
-
-  it('matches visible Commander command flags and aliases', () => {
-    assertRegistryParity(program, COMMAND_REGISTRY);
-  });
-
-  it('has descriptions for every command and flag in every supported locale', () => {
-    function assertLocalized(
-      definitions: CommandDefinition[],
-      locale: (typeof SUPPORTED_CLI_LOCALES)[number]
-    ): void {
-      for (const definition of definitions) {
-        expect(
-          hasLocalizedDescription(definition.description, locale),
-          `missing ${locale} command description: ${definition.name} / ${definition.description}`
-        ).toBe(true);
-        for (const flag of definition.flags) {
-          expect(
-            hasLocalizedDescription(flag.description, locale),
-            `missing ${locale} flag description: ${definition.name} --${flag.name} / ${flag.description}`
-          ).toBe(true);
-        }
-        assertLocalized(definition.subcommands ?? [], locale);
-      }
-    }
-
-    for (const locale of SUPPORTED_CLI_LOCALES) {
-      assertLocalized(COMMAND_REGISTRY, locale);
-    }
-  });
-
-  it('creates a localized completion registry without changing command structure', () => {
-    const expectedProfileDescriptions = {
-      en: 'Manage reusable workflow profiles',
-      ja: '再利用可能なワークフロープロファイルを管理します',
-      'zh-cn': '管理可复用的工作流配置方案',
-    } as const;
-
-    for (const locale of SUPPORTED_CLI_LOCALES) {
-      const localized = localizeCommandRegistry(COMMAND_REGISTRY, locale);
-      expect(localized.map((entry) => entry.name), locale).toEqual(
-        COMMAND_REGISTRY.map((entry) => entry.name)
-      );
-      expect(localized.find((entry) => entry.name === 'profile')?.description).toBe(
-        expectedProfileDescriptions[locale]
-      );
-    }
-  });
-
-  it('localizes dynamic tool descriptions in every supported locale', () => {
-    const ids = 'claude, codex';
-    const source = formatLocaleMessage(
-      getLocaleCatalog('en').commandDescriptionTemplates.toolsPrefix,
-      { ids }
+    expect(child, `${semanticPath}.${childDefinition.name}`).toBeDefined();
+    assertCommandParity(
+      child as Command,
+      childDefinition,
+      `${semanticPath}.commands.${childDefinition.name}`,
     );
+  }
+}
 
-    for (const locale of SUPPORTED_CLI_LOCALES) {
-      expect(localizeDescription(source, locale), locale).toBe(
-        formatLocaleMessage(getLocaleCatalog(locale).commandDescriptionTemplates.toolsPrefix, {
-          ids,
-        })
-      );
-    }
+describe('root-inclusive CLI structure', () => {
+  it('matches the complete visible Commander structure', () => {
+    assertCommandParity(program(), COMMAND_REGISTRY, 'cli.root');
   });
 
-  it('uses the root-selector description except on knowledge-owner selectors', () => {
-    const expected = COMMON_FLAGS.store.description;
-    const knowledgeExpected = getKnowledgeMessages().storeSelectorDescription;
+  it('keeps simple aliases on canonical commands', () => {
+    const store = command('store');
+    expect(store?.subcommands?.map((entry) => entry.name)).toEqual([
+      'setup',
+      'register',
+      'add-project',
+      'migrate-membership',
+      'upgrade-identity',
+      'unregister',
+      'remove',
+      'adopt',
+      'eject',
+      'list',
+      'doctor',
+    ]);
+    expect(command('store', 'list')?.aliases).toEqual(['ls']);
+    expect(command('workset', 'list')?.aliases).toEqual(['ls']);
+
+    const presentation = resolveCliPresentation({ locale: 'ja', facts });
+    const storePresentation = presentation.root.subcommands?.find(
+      (entry) => entry.name === 'store',
+    );
+    const canonical = storePresentation?.subcommands?.find(
+      (entry) => entry.name === 'list',
+    );
+    const projected = presentation.completionCommands
+      .find((entry) => entry.name === 'store')
+      ?.subcommands?.find((entry) => entry.name === 'ls');
+    expect(projected?.description).toBe(canonical?.description);
+  });
+
+  it('keeps hidden compatibility commands out of the public structure', () => {
+    const rootNames = COMMAND_REGISTRY.subcommands?.map((entry) => entry.name);
+    expect(rootNames).not.toContain('experimental');
+    expect(rootNames).not.toContain('__complete');
+    expect(command('profile')?.subcommands?.map((entry) => entry.name)).not.toContain(
+      'check',
+    );
+  });
+
+  it('keeps accepted values separate from completion-only values', () => {
+    const type = command('validate')?.flags.find((flag) => flag.name === 'type');
+    expect(type?.acceptedValues).toBeUndefined();
+    expect(type?.completionValues).toEqual(['change', 'spec']);
+  });
+
+  it('tracks top-level workflow commands and machine-facing flags', () => {
+    for (const name of ['status', 'instructions', 'templates', 'schemas', 'new']) {
+      expect(command(name), `${name} command`).toBeDefined();
+    }
+    expect(command('set')).toBeUndefined();
+    expect(command('new', 'change')?.flags.map((flag) => flag.name)).toEqual([
+      'description',
+      'proposal',
+      'goal',
+      'schema',
+      'pipeline',
+      'json',
+      'store',
+      'project',
+    ]);
+  });
+
+  it('keeps store-selection options paired and guidance complete', () => {
     const seen: string[] = [];
+    const lifecycle: string[] = [];
+    const pipeline: string[] = [];
 
-    function walk(command: Command, parentPath: string): void {
-      for (const child of command.commands) {
-        const commandPath = parentPath ? `${parentPath} ${child.name()}` : child.name();
-        const storeOption = child.options.find((option) => option.long === '--store');
-        if (storeOption) {
+    function walk(definition: CommandDefinition, parentPath: string): void {
+      for (const child of definition.subcommands ?? []) {
+        const commandPath = parentPath
+          ? `${parentPath} ${child.name}`
+          : child.name;
+        const flagNames = child.flags.map((flag) => flag.name);
+        if (flagNames.includes('store')) {
           seen.push(commandPath);
-          expect(storeOption.description, `${commandPath} --store description`).toBe(
-            commandPath.startsWith('knowledge ') ? knowledgeExpected : expected
-          );
+          expect(flagNames, `${commandPath} --project`).toContain('project');
+          if (commandPath.startsWith('pipeline ')) {
+            pipeline.push(commandPath);
+          } else if (!commandPath.startsWith('knowledge ')) {
+            lifecycle.push(commandPath);
+          }
         }
         walk(child, commandPath);
       }
     }
 
-    walk(program, '');
-
-    // Two --store surfaces resolve through the same root-selection layer and
-    // both use the shared description (asserted above): the normal lifecycle
-    // commands, and the pipeline inspection group. Only the lifecycle set is
-    // enumerated in the agent-facing store-selection guidance.
-    const lifecycle = seen.filter(
-      (commandPath) =>
-        !commandPath.startsWith('pipeline ') && !commandPath.startsWith('knowledge ')
-    );
-    const pipelineStore = seen.filter((commandPath) => commandPath.startsWith('pipeline '));
-
+    walk(COMMAND_REGISTRY, '');
     expect(lifecycle.sort()).toEqual([
       'archive',
       'context',
@@ -256,11 +226,7 @@ describe('command completion registry', () => {
       'status',
       'validate',
     ]);
-
-    // The pipeline command group resolves its root identically to validate, so
-    // every subcommand accepts --store (rasen-pipeline-registry spec). It is a
-    // distinct inspection surface, carved out separately in the guidance.
-    expect(pipelineStore.sort()).toEqual([
+    expect(pipeline.sort()).toEqual([
       'pipeline agents',
       'pipeline classify',
       'pipeline delete',
@@ -274,20 +240,7 @@ describe('command completion registry', () => {
       'pipeline validate',
     ]);
 
-    // The store-selection guidance interpolated into every generated skill
-    // must name every --store-capable command — both the lifecycle set and the
-    // pipeline inspection group. Drift here means agents are taught a stale flag
-    // surface (the M1 finding: the guidance once denied pipeline --store).
-    //
-    // The pipeline LIBRARY verbs (init/validate/import/export/delete —
-    // concept-coherence-pipeline-library) are deliberately excluded from this
-    // completeness check: STORE_SELECTION_GUIDANCE is interpolated into ~45
-    // skill templates whose generated content is pinned by
-    // skill-templates-parity.test.ts, so it is out of scope for this change.
-    // They still carry --store/--project (asserted above via pipelineStore)
-    // for CLI symmetry with the inspection group; only the guidance TEXT is
-    // deferred to a future docs/skill-template pass.
-    const pipelineLibraryVerbs = new Set([
+    const deferredLibraryVerbs = new Set([
       'pipeline init',
       'pipeline validate',
       'pipeline import',
@@ -296,130 +249,22 @@ describe('command completion registry', () => {
       'pipeline save',
     ]);
     for (const commandPath of seen) {
-      if (commandPath.startsWith('knowledge ')) continue;
-      if (pipelineLibraryVerbs.has(commandPath)) continue;
+      if (
+        commandPath.startsWith('knowledge ') ||
+        deferredLibraryVerbs.has(commandPath)
+      ) {
+        continue;
+      }
       expect(STORE_SELECTION_GUIDANCE, `guidance names ${commandPath}`).toContain(
-        `\`${commandPath}\``
+        `\`${commandPath}\``,
       );
     }
   });
 
-  it('advertises --project in parity with --store on every --store-bearing command (store-project-namespace)', () => {
-    const expectedProject = COMMON_FLAGS.project.description;
-    const knowledgeExpected = getKnowledgeMessages().projectSelectorDescription;
-    const storeCommands: string[] = [];
-    const projectCommands: string[] = [];
-
-    function walk(command: Command, parentPath: string): void {
-      for (const child of command.commands) {
-        const commandPath = parentPath ? `${parentPath} ${child.name()}` : child.name();
-        if (child.options.some((option) => option.long === '--store')) {
-          storeCommands.push(commandPath);
-        }
-        const projectOption = child.options.find((option) => option.long === '--project');
-        if (projectOption) {
-          projectCommands.push(commandPath);
-          expect(projectOption.description, `${commandPath} --project description`).toBe(
-            commandPath.startsWith('knowledge ') ? knowledgeExpected : expectedProject
-          );
-        }
-        walk(child, commandPath);
-      }
-    }
-
-    walk(program, '');
-
-    // Every owner/root selector command stays paired except the deliberate
-    // portable-bundle seams: a project bundle can contain only the project's
-    // own records, while Store transport is selected by export's separate
-    // --to-store route rather than by an owner/root selector.
-    const projectOnly = ['knowledge bundle export', 'knowledge bundle import'];
-    expect(
-      projectCommands.filter((commandPath) => !projectOnly.includes(commandPath)).sort()
-    ).toEqual(storeCommands.sort());
-    expect(
-      projectCommands.filter((commandPath) => projectOnly.includes(commandPath)).sort()
-    ).toEqual(projectOnly);
-    expect(STORE_SELECTION_GUIDANCE).toContain('--project <id>');
-    expect(STORE_SELECTION_GUIDANCE).toContain('mutually exclusive');
-  });
-
-  it('tracks store subcommands under the store: telemetry path', () => {
-    const storeGroup = program.commands.find((child) => child.name() === 'store');
-    expect(storeGroup).toBeDefined();
-    const setup = storeGroup?.commands.find((child) => child.name() === 'setup');
-    expect(setup).toBeDefined();
+  it('tracks store subcommands under the store telemetry path', () => {
+    const root = program();
+    const store = root.commands.find((child) => child.name() === 'store');
+    const setup = store?.commands.find((child) => child.name() === 'setup');
     expect(getCommandPath(setup as Command)).toBe('store:setup');
-  });
-
-  it('tracks top-level workflow commands', () => {
-    for (const name of ['status', 'instructions', 'templates', 'schemas', 'new']) {
-      expect(command(name), `${name} command`).toBeDefined();
-    }
-
-    expect(command('set'), 'set command should be removed').toBeUndefined();
-
-    const newChange = command('new')?.subcommands?.find((entry) => entry.name === 'change');
-    expect(newChange?.flags.map((flag) => flag.name)).toEqual([
-      'description',
-      'proposal',
-      'goal',
-      'schema',
-      'pipeline',
-      'json',
-      'store',
-      'project',
-    ]);
-
-    const storeFlag = newChange?.flags.find((flag) => flag.name === 'store');
-    expect(storeFlag?.description).toContain('Rasen root');
-    expect(newChange?.flags.map((flag) => flag.name)).not.toContain('initiative');
-    expect(newChange?.flags.map((flag) => flag.name)).not.toContain('areas');
-    expect(newChange?.flags.map((flag) => flag.name)).not.toContain('store-path');
-  });
-
-  it('advertises --store on the supported root-selection commands', () => {
-    for (const name of ['list', 'show', 'validate', 'archive', 'status', 'instructions']) {
-      const entry = command(name);
-      const store = entry?.flags.find((flag) => flag.name === 'store');
-      expect(store, `${name} --store flag`).toBeDefined();
-      expect(store?.description).toContain('Rasen root');
-      expect(entry?.flags.map((flag) => flag.name)).not.toContain('store-path');
-    }
-  });
-
-  it('tracks store commands and aliases', () => {
-    const store = command('store');
-
-    expect(store?.subcommands?.map((entry) => entry.name)).toEqual([
-      'setup',
-      'register',
-      'add-project',
-      'migrate-membership',
-      'upgrade-identity',
-      'unregister',
-      'remove',
-      'adopt',
-      'eject',
-      'list',
-      'ls',
-      'doctor',
-    ]);
-
-    const setup = store?.subcommands?.find((entry) => entry.name === 'setup');
-    expect(setup?.flags.map((flag) => flag.name)).toEqual([
-      'path',
-      'init-git',
-      'no-init-git',
-      'remote',
-      'json',
-    ]);
-
-    const remove = store?.subcommands?.find((entry) => entry.name === 'remove');
-    expect(remove?.flags.map((flag) => flag.name)).toEqual([
-      'yes',
-      'project-namespace',
-      'json',
-    ]);
   });
 });

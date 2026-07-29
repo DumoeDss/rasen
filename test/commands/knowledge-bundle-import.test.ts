@@ -691,7 +691,7 @@ describe('rasen knowledge bundle import command', () => {
   });
 
   it('registers the import positional and only its three supported flags', () => {
-    const knowledge = COMMAND_REGISTRY.find((entry) => entry.name === 'knowledge');
+    const knowledge = COMMAND_REGISTRY.subcommands?.find((entry) => entry.name === 'knowledge');
     const bundle = knowledge?.subcommands?.find((entry) => entry.name === 'bundle');
     const imported = bundle?.subcommands?.find((entry) => entry.name === 'import');
 

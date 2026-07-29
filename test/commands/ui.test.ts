@@ -110,15 +110,21 @@ describe('ui command', () => {
 
   it('is listed in --help as the management platform entry point (management-ui-command spec)', async () => {
     const { registerUiCommand } = await import('../../src/commands/ui.js');
+    const { resolveCliPresentation } = await import(
+      '../../src/core/completions/cli-presentation.js'
+    );
     const program = new Command();
     registerUiCommand(program);
     const uiCommand = program.commands.find((c) => c.name() === 'ui');
+    const uiPresentation = resolveCliPresentation({
+      locale: 'en',
+    }).root.subcommands?.find((command) => command.name === 'ui');
     expect(uiCommand).toBeDefined();
     // Commander's own hidden flag, the mechanism `--help` respects — must
     // be unset now that `rasen ui` is public.
     expect((uiCommand as unknown as { _hidden?: boolean })._hidden).toBeFalsy();
     expect(program.helpInformation()).toContain(' ui ');
-    expect(uiCommand!.description()).toMatch(/management platform/i);
+    expect(uiPresentation?.description).toMatch(/management platform/i);
   });
 
   describe('default (adopt-or-spawn) form', () => {

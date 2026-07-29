@@ -1,4 +1,8 @@
-import { LEGACY_WORKSPACE_DIR_NAME, WORKSPACE_DIR_NAME } from './config.js';
+import {
+  DEFAULT_SCHEMA,
+  LEGACY_WORKSPACE_DIR_NAME,
+  WORKSPACE_DIR_NAME,
+} from './config.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -17,8 +21,6 @@ export interface ResolvePlanningHomeOptions {
   startPath?: string;
   allowImplicitRepoRoot?: boolean;
 }
-
-const REPO_DEFAULT_SCHEMA = 'spec-driven';
 
 function pathExistsAsDirectory(candidatePath: string): boolean {
   try {
@@ -91,7 +93,7 @@ function repoPlanningHome(repoRoot: string): PlanningHome {
     kind: 'repo',
     root: repoRoot,
     changesDir: path.join(repoRoot, WORKSPACE_DIR_NAME, 'changes'),
-    defaultSchema: REPO_DEFAULT_SCHEMA,
+    defaultSchema: DEFAULT_SCHEMA,
   };
 }
 

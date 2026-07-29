@@ -14,7 +14,6 @@ import {
   type RunWorkMigrationResult,
   type WorkMigrationReport,
 } from '../core/work-migration.js';
-import { COMMAND_REGISTRY } from '../core/completions/command-registry.js';
 import { emitFailure, printJson } from './shared-output.js';
 
 interface WorkMigrateOptions {
@@ -265,25 +264,16 @@ async function runMigrate(options: WorkMigrateOptions): Promise<void> {
 }
 
 export function registerWorkCommand(program: Command): void {
-  const groupDescription =
-    COMMAND_REGISTRY.find((entry) => entry.name === 'work')?.description ??
-    'Machine-home work-directory maintenance';
-  const workCmd = program.command('work').description(groupDescription);
-
-  const migrateDescription =
-    COMMAND_REGISTRY.find((entry) => entry.name === 'work')?.subcommands?.find(
-      (entry) => entry.name === 'migrate'
-    )?.description ??
-    'Migrate legacy in-repo process ephemera into the machine home';
+  const workCmd = program.command('work').description('');
 
   workCmd
     .command('migrate')
-    .description(migrateDescription)
-    .option('--change <name>', 'Scope to one active or archived change')
-    .option('--dry-run', 'Preview only; never move files')
-    .option('--include-tracked', 'Also move git-tracked ephemera, leaving the deletions uncommitted')
-    .option('--json', 'Output as JSON (non-interactive; requires --yes to execute)')
-    .option('--yes', 'Skip the confirmation prompt (required to execute in --json mode)')
+    .description('')
+    .option('--change <name>', '')
+    .option('--dry-run', '')
+    .option('--include-tracked', '')
+    .option('--json', '')
+    .option('--yes', '')
     .action(async (options: WorkMigrateOptions) => {
       await runMigrate(options);
     });
