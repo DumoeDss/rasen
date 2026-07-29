@@ -2,7 +2,7 @@
 
 ### Requirement: Reconciler executes choice nodes with persisted selection
 
-The deterministic reconciler SHALL recognize `choice` plan nodes and admit the condition evaluator when the choice's dependencies are satisfied. Upon commit of an evaluator result naming one of the choice's DECLARED outcomes, the reconciler SHALL add the choice's own nodeId to the succeeded set — which makes the selected branch's entry node eligible for admission — and SHALL treat every node reachable only from a rejected branch entry as permanently ineligible. Un-selected branches SHALL never become eligible for admission, SHALL never be admitted after the selected branch completes, and SHALL NOT block the Run's implicit finish. The selected branch is an ordinary plan node: it enters the succeeded set by committing its OWN Action, never by being selected, so nodes downstream of it SHALL NOT become ready until the branch itself has completed. A committed result that does not name a declared outcome SHALL NOT count as a selection. The selection SHALL be persisted in the canonical Record as a committed domain result, ensuring deterministic replay on restart.
+The deterministic reconciler SHALL recognize `choice` plan nodes and admit the condition evaluator when the choice's dependencies are satisfied. Upon commit of a SUCCEEDED evaluator result naming one of the choice's DECLARED outcomes, the reconciler SHALL add the choice's own nodeId to the succeeded set — which makes the selected branch's entry node eligible for admission — and SHALL treat every node reachable only from a rejected branch entry as permanently ineligible. Un-selected branches SHALL never become eligible for admission, SHALL never be admitted after the selected branch completes, and SHALL NOT block the Run's implicit finish. Because exactly one branch is ever selected, a plan in which any node transitively depends on two branch entries of the same choice can never satisfy that node's `requires`; such a plan SHALL be rejected when the runtime plan is created, so the unsatisfiable shape can never reach a Run. The selected branch is an ordinary plan node: it enters the succeeded set by committing its OWN Action, never by being selected, so nodes downstream of it SHALL NOT become ready until the branch itself has completed. A committed result SHALL NOT count as a selection unless its completion status is `succeeded` AND it names a declared outcome — a failed evaluator may still carry partial output naming an outcome, and honouring it would let a crashed evaluation drive execution. An evaluator that remains unresolved SHALL be re-admitted at most a bounded number of times, after which the reconciler SHALL escalate with a code naming the evaluator rather than retrying until the sealed attempt budget is exhausted. The selection SHALL be persisted in the canonical Record as a committed domain result, ensuring deterministic replay on restart.
 
 #### Scenario: Choice admitted when dependencies satisfied
 
@@ -50,11 +50,17 @@ The deterministic reconciler SHALL recognize `choice` plan nodes and admit the c
 - **THEN** the reconciler SHALL emit a `finish` candidate with the plan's implicit finish outcome
 - **AND** the Run SHALL reach its terminal outcome WITHOUT executing the rejected branch
 
-#### Scenario: Convergence node after the branches rejoin is not excluded
+#### Scenario: Plan with a rejoin node depending on both branches is rejected
 
-- **WHEN** a node is reachable from BOTH the selected and a rejected branch entry
-- **THEN** the reconciler SHALL NOT treat it as an excluded branch node
-- **AND** it SHALL remain gated by its own `requires` like any other node
+- **WHEN** a runtime plan is created in which a node transitively depends on two branch entries of the SAME choice
+- **THEN** `createRuntimePlan` SHALL reject the plan as `invalid_runtime_plan`
+- **AND** the message SHALL name the offending node and the choice
+- **AND** no Run SHALL be created for that plan
+
+#### Scenario: Branches that never rejoin are accepted
+
+- **WHEN** each branch of a choice has its own downstream nodes and they never converge
+- **THEN** `createRuntimePlan` SHALL accept the plan
 
 #### Scenario: Malformed choice result is not a selection
 
@@ -62,6 +68,19 @@ The deterministic reconciler SHALL recognize `choice` plan nodes and admit the c
 - **THEN** the reconciler SHALL NOT add the choice's nodeId to the succeeded set
 - **AND** SHALL NOT mark any branch ineligible
 - **AND** SHALL re-admit the choice's condition evaluator
+
+#### Scenario: FAILED choice evaluator is not a selection
+
+- **WHEN** the choice's condition evaluator completes with status `failed`
+- **AND** its result nonetheless names a declared outcome
+- **THEN** the reconciler SHALL NOT add the choice's nodeId to the succeeded set
+- **AND** SHALL NOT emit an admit candidate for any branch
+
+#### Scenario: Unresolved choice evaluator escalates rather than retrying forever
+
+- **WHEN** the choice's condition evaluator has been dispatched the maximum permitted number of times without committing a succeeded declared outcome
+- **THEN** the reconciler SHALL NOT emit a further admit candidate for it
+- **AND** SHALL emit an escalate candidate whose code identifies an unresolved choice evaluator
 
 #### Scenario: Choice selection deterministic on restart
 
@@ -72,7 +91,7 @@ The deterministic reconciler SHALL recognize `choice` plan nodes and admit the c
 
 ### Requirement: Reconciler executes fan-out nodes with concurrency cap and budget
 
-The deterministic reconciler SHALL recognize `fan-out` plan nodes, admit the condition evaluator to determine active members, and admit active member nodes subject to a concurrency cap and budget. The concurrency cap limits how many members are admitted per reconcile pass. The budget limits total member admissions across the Run lifetime. Member candidates SHALL pass through the same `selectCompatibleAdmissions` as atomic and bounded-loop candidates, preserving the single-writer-per-workspace lock invariant.
+The deterministic reconciler SHALL recognize `fan-out` plan nodes, admit the condition evaluator to determine active members, and admit active member nodes subject to a concurrency cap and budget. Only a SUCCEEDED condition completion determines the active member set: a failed evaluator SHALL leave the fan-out unresolved rather than falling back to treating every member as active, and SHALL be re-admitted at most a bounded number of times before the reconciler escalates with a code naming the unresolved evaluator. The concurrency cap limits how many members are admitted per reconcile pass. The budget limits total member admissions across the Run lifetime. Member candidates SHALL pass through the same `selectCompatibleAdmissions` as atomic and bounded-loop candidates, preserving the single-writer-per-workspace lock invariant.
 
 #### Scenario: FanOut condition evaluator admitted first
 
@@ -80,6 +99,19 @@ The deterministic reconciler SHALL recognize `fan-out` plan nodes, admit the con
 - **AND** no committed condition result exists
 - **THEN** the reconciler SHALL emit exactly one `admit` for the fan-out's condition evaluator
 - **AND** member nodes SHALL NOT be admitted until the condition result is committed
+
+#### Scenario: FAILED condition evaluator dispatches no members
+
+- **WHEN** the fan-out's condition evaluator completes with status `failed`
+- **THEN** the reconciler SHALL NOT add the fan-out's nodeId to the succeeded set
+- **AND** SHALL NOT treat the absent member decision as "all members active"
+- **AND** SHALL NOT emit an admit candidate for any member
+
+#### Scenario: Unresolved condition evaluator escalates rather than retrying forever
+
+- **WHEN** the fan-out's condition evaluator has been dispatched the maximum permitted number of times without committing a succeeded member decision
+- **THEN** the reconciler SHALL NOT emit a further admit candidate for it
+- **AND** SHALL emit an escalate candidate whose code identifies an unresolved fan-out condition evaluator
 
 #### Scenario: Active members admitted under concurrency cap
 
