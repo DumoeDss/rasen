@@ -3,6 +3,7 @@ import type {
   AtomicStageNode,
   BoundedLoopNode,
   CompositeDeclaration,
+  CompositeRefNode,
   DefinitionSourceV2,
 } from '../../pipeline-registry/definition.js';
 import type { RuntimeExecutionProfile } from '../../pipeline-registry/execution-plan-internal.js';
@@ -158,6 +159,161 @@ function reviewCycleBody(
   return { declaration, phases };
 }
 
+/**
+ * Collect the AtomicStage body from a CompositeDeclaration, validate it is a
+ * flat DAG (no nested CompositeRef/BoundedLoop/Choice/FanOut/Join), and return
+ * the stages in topological order with their body-internal dependencies.
+ */
+function compositeDeclarationBody(
+  definition: DefinitionSourceV2,
+  declaration: CompositeDeclaration
+): Readonly<{
+  stages: readonly Readonly<{
+    node: AtomicStageNode;
+    profilePath: string;
+    bodyRequires: readonly string[];
+  }>[];
+}> {
+  const bodyNodes = declaration.graph.nodes;
+  // Validate flat AtomicStage-only DAG.
+  for (const bodyNode of bodyNodes) {
+    if (bodyNode.kind !== 'AtomicStage') {
+      throw new RuntimePlanLowererError(
+        'lowerer_shape_mismatch',
+        `Composite declaration ${declaration.id} body may contain only AtomicStage nodes (found ${bodyNode.kind}).`
+      );
+    }
+  }
+  // Collect body-internal dependencies per stage.
+  const bodyConnections = declaration.graph.connections;
+  const bodyRequires = new Map<string, string[]>();
+  for (const stage of bodyNodes) {
+    bodyRequires.set(stage.id, []);
+  }
+  for (const conn of bodyConnections) {
+    const toList = bodyRequires.get(conn.to.node);
+    if (toList !== undefined) {
+      toList.push(conn.from.node);
+    }
+  }
+  // Topological sort of body stages (Kahn's).
+  const stageIds = bodyNodes.map((n) => n.id);
+  const inDegree = new Map<string, number>(stageIds.map((id) => [id, 0]));
+  for (const id of stageIds) {
+    for (const dep of bodyRequires.get(id) ?? []) {
+      inDegree.set(id, (inDegree.get(id) ?? 0) + 1);
+      void dep;
+    }
+  }
+  // Actually count incoming edges properly.
+  for (const id of stageIds) {
+    inDegree.set(id, (bodyRequires.get(id) ?? []).length);
+  }
+  const sorted: string[] = [];
+  const queue = stageIds
+    .filter((id) => (inDegree.get(id) ?? 0) === 0)
+    .sort();
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    sorted.push(id);
+    // Find stages that depend on this one.
+    const dependents = stageIds
+      .filter((other) => (bodyRequires.get(other) ?? []).includes(id))
+      .sort();
+    for (const dep of dependents) {
+      const deg = (inDegree.get(dep) ?? 1) - 1;
+      inDegree.set(dep, deg);
+      if (deg === 0) {
+        // Insert in sorted position.
+        const insertAt = queue.findIndex((q) => q > dep);
+        if (insertAt === -1) queue.push(dep);
+        else queue.splice(insertAt, 0, dep);
+      }
+    }
+  }
+  if (sorted.length !== stageIds.length) {
+    throw new RuntimePlanLowererError(
+      'lowerer_shape_mismatch',
+      `Composite declaration ${declaration.id} body contains a cycle.`
+    );
+  }
+  const stages = sorted.map((id) => {
+    const node = bodyNodes.find((n) => n.id === id) as AtomicStageNode;
+    return {
+      node,
+      profilePath: `declaration:${declaration.id}/node:${id}`,
+      bodyRequires: [...(bodyRequires.get(id) ?? [])].sort(),
+    };
+  });
+  return { stages };
+}
+
+/**
+ * Inline a root-level CompositeRef node into atomic RuntimePlanNodeInput
+ * entries. Each body AtomicStage becomes an atomic node with a hierarchical
+ * path `root:<refId>/<stageId>`. Entry stages (no incoming body connections)
+ * inherit the CompositeRef's root-level requires. Terminal stages (no outgoing
+ * body connections) are recorded so root-level dependents can map to them.
+ */
+function compositeRefBody(
+  definition: DefinitionSourceV2,
+  ref: CompositeRefNode
+): Readonly<{
+  nodes: readonly RuntimePlanNodeInput[];
+  terminalPaths: readonly string[];
+}> {
+  const declaration = definition.declarations.find(
+    (candidate) => candidate.id === ref.declarationId
+  );
+  if (declaration === undefined) {
+    throw new RuntimePlanLowererError(
+      'lowerer_shape_mismatch',
+      `CompositeRef ${ref.id} references missing declaration ${ref.declarationId}.`
+    );
+  }
+  const { stages } = compositeDeclarationBody(definition, declaration);
+  const rootRequires = incomingRequirements(definition, ref.id);
+  const prefix = `root:${ref.id}`;
+  // Determine entry stages (no body-internal incoming connections).
+  const entryStageIds = new Set(
+    stages.filter((s) => s.bodyRequires.length === 0).map((s) => s.node.id)
+  );
+  // Determine terminal stages (not consumed by another body stage connection).
+  const consumedStageIds = new Set<string>();
+  for (const stage of stages) {
+    for (const dep of stage.bodyRequires) {
+      consumedStageIds.add(dep);
+    }
+  }
+  const terminalStageIds = stages
+    .filter((s) => !consumedStageIds.has(s.node.id))
+    .map((s) => s.node.id);
+
+  const nodes: readonly Readonly<{
+    kind: 'atomic';
+    hierarchicalPath: string;
+    requires: readonly string[];
+    profilePath: string;
+  }>[] = stages.map((stage) => {
+    const hierarchicalPath = `${prefix}/${stage.node.id}`;
+    const requires =
+      stage.bodyRequires.length > 0
+        ? stage.bodyRequires.map((dep) => `${prefix}/${dep}`)
+        : entryStageIds.has(stage.node.id)
+          ? [...rootRequires]
+          : [];
+    return {
+      kind: 'atomic' as const,
+      hierarchicalPath,
+      requires,
+      profilePath: stage.profilePath,
+    };
+  });
+
+  const terminalPaths = terminalStageIds.map((id) => `${prefix}/${id}`);
+  return { nodes, terminalPaths };
+}
+
 function lowerV2ReviewCyclePlanInput(
   prepared: PreparedDefinition,
   profile: RuntimeExecutionProfile,
@@ -170,6 +326,34 @@ function lowerV2ReviewCyclePlanInput(
   const policyByPath = new Map(
     profile.policy.stages.map((stage) => [stage.nodeId, stage] as const)
   );
+
+  // Pre-pass: collect CompositeRef terminal paths so root-level dependents can
+  // map `root:<composite-ref-id>` requires to the terminal body stage paths.
+  const compositeTerminalPaths = new Map<string, readonly string[]>();
+  for (const node of definition.root.nodes) {
+    if (node.kind !== 'CompositeRef') continue;
+    const inlined = compositeRefBody(definition, node);
+    compositeTerminalPaths.set(`root:${node.id}`, inlined.terminalPaths);
+  }
+
+  /**
+   * Resolve a root node's incoming requirements, expanding any CompositeRef
+   * reference to its terminal body stage paths.
+   */
+  const resolveRequires = (nodeId: string): string[] => {
+    const rawReqs = incomingRequirements(definition, nodeId);
+    const expanded: string[] = [];
+    for (const req of rawReqs) {
+      const terminals = compositeTerminalPaths.get(req);
+      if (terminals !== undefined) {
+        expanded.push(...terminals);
+      } else {
+        expanded.push(req);
+      }
+    }
+    return expanded;
+  };
+
   const nodes: RuntimePlanNodeInput[] = [];
 
   for (const node of definition.root.nodes) {
@@ -178,6 +362,44 @@ function lowerV2ReviewCyclePlanInput(
     // gate field, and Choice is handled at the execution layer. Legacy-loop
     // BoundedLoop nodes (non-ReviewCycle) are not supported by the v2 runtime.
     if (node.kind === 'Gate' || node.kind === 'Choice') continue;
+    if (node.kind === 'CompositeRef') {
+      // CompositeRef is inlined into atomic nodes — not emitted as a node.
+      const inlined = compositeRefBody(definition, node);
+      for (const bodyNode of inlined.nodes) {
+        // Capability/policy bindings are keyed by the declaration profile
+        // path, not the hierarchical path. The inlined atomic node carries
+        // both: hierarchicalPath for the runtime plan DAG, profilePath for
+        // the capability/policy lookup.
+        const profilePath = bodyNode.profilePath!;
+        const capability = capabilityByPath.get(profilePath);
+        const policy = policyByPath.get(profilePath);
+        if (capability === undefined) {
+          throw new RuntimePlanLowererError(
+            'lowerer_shape_mismatch',
+            `No frozen capability binding exists for ${profilePath}.`
+          );
+        }
+        if (policy === undefined) {
+          throw new RuntimePlanLowererError(
+            'lowerer_shape_mismatch',
+            `No effective policy for ${profilePath}.`
+          );
+        }
+        nodes.push({
+          kind: 'atomic',
+          hierarchicalPath: bodyNode.hierarchicalPath,
+          requires: bodyNode.requires,
+          admissionKind: capability.actionKind,
+          workspace: { access: capability.workspace.access },
+          adaptiveVerify: false,
+          profilePath,
+          ...(policy.gate
+            ? { gate: gateInput(bodyNode.hierarchicalPath, DEFAULT_LOWERED_GATE_POLICY) }
+            : {}),
+        });
+      }
+      continue;
+    }
     if (node.kind === 'BoundedLoop') {
       // Only ReviewCycle-shaped BoundedLoops are lowered. Legacy loops (from
       // non-review-cycle v1 stages) are skipped.
@@ -206,7 +428,7 @@ function lowerV2ReviewCyclePlanInput(
       nodes.push({
         kind: 'atomic',
         hierarchicalPath: path,
-        requires: incomingRequirements(definition, node.id),
+        requires: resolveRequires(node.id),
         admissionKind: capability.actionKind,
         workspace: { access: capability.workspace.access },
         adaptiveVerify: false,
@@ -248,7 +470,7 @@ function lowerV2ReviewCyclePlanInput(
       nodes.push({
         kind: 'bounded-loop',
         hierarchicalPath: `root:${node.id}`,
-        requires: incomingRequirements(definition, node.id),
+        requires: resolveRequires(node.id),
         maxIterations: node.limits.maxIterations,
         body: { kind: 'review-cycle', phases },
         outcomes: {
@@ -265,7 +487,7 @@ function lowerV2ReviewCyclePlanInput(
       nodes.push({
         kind: 'finish',
         hierarchicalPath: `root:${node.id}`,
-        requires: incomingRequirements(definition, node.id),
+        requires: resolveRequires(node.id),
         outcome: node.outcome,
       });
       continue;

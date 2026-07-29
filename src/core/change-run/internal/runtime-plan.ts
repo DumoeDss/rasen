@@ -30,6 +30,15 @@ export interface RuntimePlanAtomicNode {
   readonly workspace: RuntimePlanWorkspace;
   readonly adaptiveVerify: boolean;
   readonly gate?: RuntimePlanGate;
+  /**
+   * The profile path for this node's capability binding. For root-level
+   * AtomicStages this equals the hierarchicalPath. For inlined CompositeRef
+   * body stages this is the declaration-body profile path
+   * (`declaration:<id>/node:<stageId>`), which is what the capability binding
+   * is keyed by. The reconciler and buildAction use this to look up the
+   * correct binding.
+   */
+  readonly profilePath?: string;
 }
 
 export interface RuntimePlanReviewCyclePhase {
@@ -148,6 +157,12 @@ export interface RuntimePlanNodeInput {
     clean: string;
     exhausted: string;
   }>;
+  /**
+   * The capability binding profile path. For root atomic nodes this defaults
+   * to the hierarchicalPath. For inlined CompositeRef body stages this is the
+   * declaration-body profile path.
+   */
+  readonly profilePath?: string;
 }
 
 export interface RuntimePlanInput {
@@ -323,6 +338,7 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
     const requires = node.requires.map((path) => pathToNodeId.get(path)!);
     const nodeId = pathToNodeId.get(node.hierarchicalPath)!;
     if (node.kind === 'atomic') {
+      const profilePath = (node as Readonly<{ profilePath?: string }>).profilePath;
       return {
         kind: 'atomic',
         nodeId,
@@ -333,6 +349,7 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
           access: node.workspace?.access ?? 'write',
         },
         adaptiveVerify: node.adaptiveVerify === true,
+        ...(profilePath !== undefined ? { profilePath } : {}),
         ...(node.gate === undefined
           ? {}
           : {

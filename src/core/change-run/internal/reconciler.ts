@@ -216,6 +216,9 @@ export function reconcile(
           occurrence: occurrenceFor(record, node),
           admissionKind: node.admissionKind,
           access: node.workspace.access,
+          ...(node.profilePath !== undefined
+            ? { profilePath: node.profilePath }
+            : {}),
         });
         break;
       case 'gate-pending':
@@ -287,6 +290,9 @@ export function reconcile(
         occurrence: candidate.occurrence,
         admissionKind: candidate.admissionKind,
         access: candidate.access,
+        ...(candidate.profilePath !== undefined
+          ? { profilePath: candidate.profilePath }
+          : {}),
       });
     }
   }
@@ -320,6 +326,7 @@ interface AdmissionCandidate {
   readonly occurrence: number;
   readonly admissionKind: ReconcilerAdmissionKind;
   readonly access: 'none' | 'read' | 'write';
+  readonly profilePath?: string;
 }
 
 interface BoundedLoopAdmitCandidate {

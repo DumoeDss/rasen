@@ -10,12 +10,12 @@
 
 ## 2. Lowerer — CompositeRef inlining
 
-- [ ] 2.1 Add `compositeRefBody()` helper in `lowerer.ts`: resolve declaration, validate body is AtomicStage-only flat DAG, collect body stages with hierarchical paths (`root:<ref-id>/<stage-id>`)
-- [ ] 2.2 Implement entry-stage mapping: body stages with no incoming body-internal connections inherit the CompositeRef's root-level `requires`; body-internal connections translate `from.node`/`to.node` to hierarchical paths
-- [ ] 2.3 Implement exit-stage mapping: the body's terminal stages (whose outcome ports are not consumed by another body stage) satisfy the CompositeRef's root-level dependents — lower these terminal stages' paths as the dependency for root nodes that `requires` the CompositeRef
-- [ ] 2.4 Add a `CompositeRef` branch to `lowerV2ReviewCyclePlanInput()` that calls the inlining helpers and pushes atomic `RuntimePlanNodeInput` entries
-- [ ] 2.5 Write failure-first lowerer tests: CompositeRef referencing missing declaration rejected; body containing non-AtomicStage node rejected; body with cyclic connections rejected; missing frozen capability binding for a body stage rejected
-- [ ] 2.6 Write happy-path lowerer test: a CompositeRef with a 3-stage body produces 3 atomic RuntimePlanNodeInput entries with correct hierarchical paths and dependency mappings
+- [x] 2.1 Add `compositeRefBody()` helper in `lowerer.ts`: resolve declaration, validate body is AtomicStage-only flat DAG, collect body stages with hierarchical paths (`root:<ref-id>/<stage-id>`)
+- [x] 2.2 Implement entry-stage mapping: body stages with no incoming body-internal connections inherit the CompositeRef's root-level `requires`; body-internal connections translate `from.node`/`to.node` to hierarchical paths
+- [x] 2.3 Implement exit-stage mapping: the body's terminal stages (whose outcome ports are not consumed by another body stage) satisfy the CompositeRef's root-level dependents — lower these terminal stages' paths as the dependency for root nodes that `requires` the CompositeRef
+- [x] 2.4 Add a `CompositeRef` branch to `lowerV2ReviewCyclePlanInput()` that calls the inlining helpers and pushes atomic `RuntimePlanNodeInput` entries
+- [x] 2.5 Write failure-first lowerer tests: CompositeRef referencing missing declaration rejected; body containing non-AtomicStage node rejected; body with cyclic connections rejected; missing frozen capability binding for a body stage rejected
+- [x] 2.6 Write happy-path lowerer test: a CompositeRef with a 3-stage body produces 3 atomic RuntimePlanNodeInput entries with correct hierarchical paths and dependency mappings
 
 ## 3. Lowerer — composite-body BoundedLoop
 
