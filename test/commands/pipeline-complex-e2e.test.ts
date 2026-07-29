@@ -1,10 +1,8 @@
 /**
- * Fresh-process complex-route E2E (task 15.4 of `ecp-run-spine`).
+ * Fresh-process ReviewCycle blocking E2E (task 15.4 of `ecp-run-spine`).
  *
- * Proves the durable unsupported ReviewCycle wait when an adaptive verify
- * stage reports a complex route. The Run must NOT fall through to ship, must
- * NOT offer a human an uncertain resume, and MUST support safe escalate and
- * cancel paths.
+ * Proves that a bug-fix Run with an open ReviewCycle finding blocks ship,
+ * remains durably non-terminal, and supports safe escalate and cancel paths.
  *
  * Drives a real bug-fix Run through FRESH CLI processes
  * (`node dist/cli/index.js pipeline start/status/resume-run/control`),
@@ -12,14 +10,12 @@
  * and is performed in-process against the filesystem store (documented
  * kernel-internal path, same pattern as 15.3).
  *
- * What the complex route means: the verify stage has `verifyPolicy: 'adaptive'`.
- * When the verify action completes with `result.route === 'complex'`, the
- * reconciler classifies the node as `suspending-unsupported` and emits a
- * `suspend-unsupported` candidate with code `review_cycle_capability_unavailable`.
- * The facade's complete-time settle commits the capability-unavailable wait in
- * the same revision as the verify completion, so no further action (especially
- * ship) is ever granted. The Run is durably stuck — only escalate and cancel
- * can move it forward.
+ * With the D4 migration, bug-fix's verify stage is a ReviewCycle BoundedLoop
+ * (not an adaptive atomic verify). After the apply phase completes, the
+ * reconciler admits the review-cycle review phase. The test completes the
+ * review with a Major finding, which blocks ship (bounded-loop not clean)
+ * and admits the triage phase. The Run is durably stuck at triage — only
+ * escalate and cancel can move it forward.
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { promises as fs, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -288,14 +284,14 @@ function buildCompletionBody(
 }
 
 // ---------------------------------------------------------------------------
-// Shared setup: drive a bug-fix Run through propose + apply + verify(complex)
+// Shared setup: drive a bug-fix Run through propose + apply + review(findings)
 // ---------------------------------------------------------------------------
 
 interface DrivenRun {
   runId: string;
   expectedVersion: number;
-  verifyActionId: string;
-  verifyInvocationId: string;
+  reviewActionId: string;
+  reviewInvocationId: string;
 }
 
 /**
@@ -429,43 +425,78 @@ async function driveToComplexVerify(
     { cwd: testDir, env, timeoutMs: 60_000 }
   );
   expect(applyCompleteResult.exitCode).toBe(0);
-  // ---- VERIFY: the apply-complete settle grants verify in the SAME revision
-  // (verify has no gate; once apply succeeds, the complete-time settle admits
-  // and grants verify — no separate resume-run is needed). The verify action
-  // is discoverable via the on-disk store regardless of the CLI output shape.
+  // ---- REVIEW: the apply-complete settle grants the ReviewCycle review
+  // phase in the SAME revision. Once apply succeeds, the reconciler admits
+  // the bounded-loop's review phase; the facade builds and grants the review
+  // action. The review action is discoverable via the on-disk store.
 
   observeAdmittedEffects(storeRoot, runId);
 
   record = loadHeadRecord(storeRoot, runId);
-  const verifyAction = Object.values(record.actions).find(
+  const reviewAction = Object.values(record.actions).find(
     (a) => a.state === 'active'
   )!;
-  const verifyActionId = verifyAction.action.actionId;
-  const verifyInvocationId = verifyAction.action.invocationId;
+  const reviewActionId = reviewAction.action.actionId;
+  const reviewInvocationId = reviewAction.action.invocationId;
 
-  // Complete verify with a COMPLEX route — this triggers the unsupported
-  // ReviewCycle suspension.
-  const verifyCompletion = buildCompletionBody(
+  // Complete the review phase with a Major finding. This blocks ship
+  // (bounded-loop not clean) and admits the triage phase in the same settle.
+  // Reuse the completion's own evidence content for the finding evidence so
+  // the upload validation passes (the CLI only scans top-level evidence refs
+  // for upload matching).
+  const findingEvidenceRef = buildEvidenceRef({
+    content: new TextEncoder().encode('{"result":"ok"}'),
+    mediaType: 'application/json',
+    observationKind: 'completion-evidence',
+    producer: {
+      id: 'e2e-producer',
+      version: '1',
+      identityDigest: branded<Digest>(`sha256:${'a1'.repeat(32)}`),
+    },
+    binding: {
+      planningSpaceId: record.change.planningSpaceId,
+      changeInstanceId: record.change.instanceId,
+      projectId: record.change.projectId,
+      changeId,
+      runId: branded(runId),
+      actionId: branded(reviewActionId),
+      schema: 'evidence/1',
+    },
+  });
+  const reviewResult: JsonValue = {
+    contract: 'review-cycle/review-result/1',
+    outcome: 'findings',
+    findings: [
+      {
+        id: 'F1',
+        severity: 'major',
+        claim: 'E2E: ship must be blocked while ReviewCycle has open findings',
+        evidence: [findingEvidenceRef],
+        status: 'open',
+      },
+    ],
+  };
+  const reviewCompletion = buildCompletionBody(
     record, runId, changeId, testDir,
-    verifyActionId, verifyInvocationId,
-    { route: 'complex' } as JsonValue
+    reviewActionId, reviewInvocationId,
+    reviewResult
   );
-  completionFile = path.join(testDir, 'complete-verify-complex.json');
-  writeFileSync(completionFile, JSON.stringify(verifyCompletion));
-  const verifyCompleteResult = await runCLI(
+  completionFile = path.join(testDir, 'complete-review-findings.json');
+  writeFileSync(completionFile, JSON.stringify(reviewCompletion));
+  const reviewCompleteResult = await runCLI(
     ['pipeline', 'complete', changeId, '--run', runId, '--from', completionFile, '--json'],
     { cwd: testDir, env, timeoutMs: 60_000 }
   );
-  expect(verifyCompleteResult.exitCode).toBe(0);
+  expect(reviewCompleteResult.exitCode).toBe(0);
 
-  return { runId, expectedVersion, verifyActionId, verifyInvocationId };
+  return { runId, expectedVersion, reviewActionId, reviewInvocationId };
 }
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('fresh-process complex-route E2E (15.4)', () => {
+describe('fresh-process ReviewCycle blocking E2E (15.4)', () => {
   const projectRoot = process.cwd();
   let testDir: string;
   let dataDir: string;
@@ -483,24 +514,26 @@ describe('fresh-process complex-route E2E (15.4)', () => {
     await fs.rm(testDir, { recursive: true, force: true });
   });
 
-  it('suspends durably when adaptive verify reports complex; blocks ship; offers no uncertain resume', async () => {
-    const changeId = 'e2e-complex-suspend';
-    // The in-process plan fixture intentionally freezes Codex.
+  it('blocks ship durably when ReviewCycle reports findings; supports safe escalate and cancel', async () => {
+    const changeId = 'e2e-review-block';
     const env = { XDG_DATA_HOME: dataDir, RASEN_AGENT_RUNTIME: 'codex' };
-    const { runId, verifyActionId } = await driveToComplexVerify(testDir, dataDir, storeRoot, changeId);
+    const { runId, reviewActionId } = await driveToComplexVerify(testDir, dataDir, storeRoot, changeId);
 
-    // ---- ASSERT: verify action is closed with complex route ----
+    // ---- ASSERT: review action is closed with findings result ----
     const record = loadHeadRecord(storeRoot, runId);
-    const verifyCommitted = record.actions[verifyActionId];
-    expect(verifyCommitted).toBeDefined();
-    expect(verifyCommitted.deliveryState).toBe('closed');
-    expect(verifyCommitted.result?.result).toEqual({ route: 'complex' });
+    const reviewCommitted = record.actions[reviewActionId];
+    expect(reviewCommitted).toBeDefined();
+    expect(reviewCommitted.deliveryState).toBe('closed');
+    expect(reviewCommitted.result?.result).toMatchObject({
+      contract: 'review-cycle/review-result/1',
+      outcome: 'findings',
+    });
 
     // ---- ASSERT: no ship action was ever admitted ----
-    // After propose + apply + verify, the Record has exactly 3 actions.
-    // Ship requires verify to succeed via simple route; with a complex route
+    // After propose + apply + review + triage, the Record has exactly 4
+    // actions. Ship requires the bounded-loop to be clean; with open findings
     // it is never admitted by the reconciler.
-    expect(Object.keys(record.actions).length).toBe(3);
+    expect(Object.keys(record.actions).length).toBe(4);
 
     // ---- QUIESCENT POINT: status via fresh CLI process ----
     const statusResult = await runCLI(
@@ -511,59 +544,31 @@ describe('fresh-process complex-route E2E (15.4)', () => {
     const statusJson = JSON.parse(statusResult.stdout.trim());
     const root = statusJson.view.sections[0];
 
-    // No 4th (ship) action in the projected view.
-    expect(root.actions.length).toBe(3);
+    // No 5th (ship) action in the projected view.
+    expect(root.actions.length).toBe(4);
 
-    // Verify is present and closed (found by its known actionId).
-    const verifyInView = root.actions.find((a: { actionId: string }) => a.actionId === verifyActionId);
-    expect(verifyInView).toBeDefined();
-    expect(verifyInView.deliveryState).toBe('closed');
+    // Review is present and closed (found by its known actionId).
+    const reviewInView = root.actions.find((a: { actionId: string }) => a.actionId === reviewActionId);
+    expect(reviewInView).toBeDefined();
+    expect(reviewInView.deliveryState).toBe('closed');
 
-    // ---- ASSERT: the verify-complete settle ALREADY committed the durable
-    // capability-unavailable wait (design §5.6: complete settles to the next
-    // quiescent point in one revision). No separate resume-run is required
-    // to commit the wait — it enters the Record through the real CLI complete
-    // path. The wait is bound to the already-closed verify action.
+    // ---- ASSERT: no waits — the Run is running (triage active), not suspended
     // ----
-    expect(root.waits.length).toBe(1);
-    expect(root.waits[0].kind).toBe('capability-unavailable');
+    expect(root.waits.length).toBe(0);
 
     const controlKinds = root.allowedControls.map((c: { kind: string }) => c.kind);
-    expect(controlKinds).toContain('resume');
     expect(controlKinds).toContain('escalate');
     expect(controlKinds).toContain('cancel');
     // No decision control — no gate to decide.
     expect(controlKinds).not.toContain('decision');
 
-    // ---- ASSERT: the durable capability-unavailable wait IS committed ----
-    const suspendedRecord = loadHeadRecord(storeRoot, runId);
-    const capWait = suspendedRecord.waits.find((w) => w.kind === 'capability-unavailable');
-    expect(capWait).toBeDefined();
-    expect(capWait.code).toBe('review_cycle_capability_unavailable');
-    // The wait is bound to the verify action.
-    expect(capWait.actionId).toBe(verifyActionId);
-
-    // ---- ASSERT: the Run reaches stable suspended-unsupported status ----
-    // (not 'running'-stuck). The reconciler sees the capability-unavailable
-    // wait and classifies the verify node as suspended-unsupported — it does
-    // NOT re-emit suspend-unsupported because the wait already exists.
-    const suspendedPlan = await buildBugFixPlan(testDir, runId);
-    const suspendedRerun = reconcile(suspendedPlan, suspendedRecord);
-    expect(suspendedRerun.ok).toBe(true);
-    if (suspendedRerun.ok) {
-      expect(
-        suspendedRerun.actions.some((a) => a.kind === 'suspend-unsupported')
-      ).toBe(false);
-    }
-
-    // ---- ASSERT: the Run remains non-terminal (durable suspension) ----
-    expect(suspendedRecord.terminal).toBeUndefined();
+    // ---- ASSERT: the Run remains non-terminal (durable blocking) ----
+    expect(record.terminal).toBeUndefined();
     expect(statusJson.view.status).not.toBe('escalated');
     expect(statusJson.view.status).not.toBe('cancelled');
 
     // ---- CROSS-PROCESS DURABILITY: a completely fresh status call sees the
-    // suspended state (verify closed, no ship, capability-unavailable wait
-    // committed, no terminal).
+    // blocked state (review closed, triage active, no ship, no terminal).
     // ----
     const status2Result = await runCLI(
       ['pipeline', 'status', changeId, 'bug-fix', '--json'],
@@ -572,22 +577,13 @@ describe('fresh-process complex-route E2E (15.4)', () => {
     expect(status2Result.exitCode).toBe(0);
     const status2Json = JSON.parse(status2Result.stdout.trim());
     const root2 = status2Json.view.sections[0];
-    // Still exactly 3 actions — no ship admitted across processes.
-    expect(root2.actions.length).toBe(3);
-    // The durable wait survives across processes.
-    expect(root2.waits.length).toBe(1);
-    expect(root2.waits[0].kind).toBe('capability-unavailable');
-    // Resume control is now available (capability-unavailable is resumable).
-    const controlKinds2 = root2.allowedControls.map((c: { kind: string }) => c.kind);
-    expect(controlKinds2).toContain('resume');
-    expect(controlKinds2).toContain('escalate');
-    expect(controlKinds2).toContain('cancel');
+    // Still exactly 4 actions — no ship admitted across processes.
+    expect(root2.actions.length).toBe(4);
     expect(status2Json.view.terminal).toBeUndefined();
   }, 600_000); // 10-minute timeout for multi-spawn E2E
 
-  it('escalates safely from the unsupported complex-route suspension', async () => {
-    const changeId = 'e2e-complex-escalate';
-    // The in-process plan fixture intentionally freezes Codex.
+  it('escalates safely from the ReviewCycle blocking state', async () => {
+    const changeId = 'e2e-review-escalate';
     const env = { XDG_DATA_HOME: dataDir, RASEN_AGENT_RUNTIME: 'codex' };
     const { runId } = await driveToComplexVerify(testDir, dataDir, storeRoot, changeId);
 
@@ -605,7 +601,7 @@ describe('fresh-process complex-route E2E (15.4)', () => {
         format: 'change-run-control/1',
         ref: { change: { projectRoot: testDir, changeId }, runId },
         expectedRecordVersion: expectedVersion,
-        command: { kind: 'escalate', reason: 'complex route unsupported' },
+        command: { kind: 'escalate', reason: 'ReviewCycle blocked — escalating' },
       },
     };
     const controlFile = path.join(testDir, 'control-escalate.json');
@@ -629,16 +625,15 @@ describe('fresh-process complex-route E2E (15.4)', () => {
     // No ship action was ever admitted — check the on-disk Record (terminal
     // views hide all actions, so the count must come from the store).
     const finalRecord = loadHeadRecord(storeRoot, runId);
-    expect(Object.keys(finalRecord.actions).length).toBe(3);
+    expect(Object.keys(finalRecord.actions).length).toBe(4);
 
     // A terminal Run has no allowed controls.
     const root = finalJson.view.sections[0];
     expect(root.allowedControls).toEqual([]);
   }, 600_000);
 
-  it('cancels safely from the unsupported complex-route suspension', async () => {
-    const changeId = 'e2e-complex-cancel';
-    // The in-process plan fixture intentionally freezes Codex.
+  it('cancels safely from the ReviewCycle blocking state', async () => {
+    const changeId = 'e2e-review-cancel';
     const env = { XDG_DATA_HOME: dataDir, RASEN_AGENT_RUNTIME: 'codex' };
     const { runId } = await driveToComplexVerify(testDir, dataDir, storeRoot, changeId);
 
@@ -676,7 +671,7 @@ describe('fresh-process complex-route E2E (15.4)', () => {
 
     // No ship action was ever admitted — check the on-disk Record.
     const finalRecord = loadHeadRecord(storeRoot, runId);
-    expect(Object.keys(finalRecord.actions).length).toBe(3);
+    expect(Object.keys(finalRecord.actions).length).toBe(4);
 
     const root = finalJson.view.sections[0];
     expect(root.allowedControls).toEqual([]);

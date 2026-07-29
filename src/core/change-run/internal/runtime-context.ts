@@ -108,15 +108,23 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
     nodeId: string;
     occurrence: number;
     admissionKind: 'agent' | 'command' | 'host';
+    profilePath?: string;
+    input?: JsonValue;
   }): RunAction => {
-    const node = plan.nodes.find((entry) => entry.nodeId === descriptor.nodeId);
-    if (node === undefined || node.kind !== 'atomic') {
-      throw new Error(`No atomic plan node for ${descriptor.nodeId}`);
+    // Bounded-loop phase admits (review-cycle) carry a profilePath to look
+    // up the capability/stage binding directly — no plan-node lookup needed.
+    // Atomic admits look up the plan node by nodeId to get hierarchicalPath.
+    const hierarchicalPath =
+      descriptor.profilePath ??
+      plan.nodes.find((entry) => entry.nodeId === descriptor.nodeId)
+        ?.hierarchicalPath;
+    if (hierarchicalPath === undefined) {
+      throw new Error(`No plan node or profile path for ${descriptor.nodeId}`);
     }
-    const capability = capabilityByPath.get(node.hierarchicalPath);
-    const stage = stageByPath.get(node.hierarchicalPath);
+    const capability = capabilityByPath.get(hierarchicalPath);
+    const stage = stageByPath.get(hierarchicalPath);
     if (capability === undefined || stage === undefined) {
-      throw new Error(`No capability/policy binding for ${node.hierarchicalPath}`);
+      throw new Error(`No capability/policy binding for ${hierarchicalPath}`);
     }
     return buildAgentAction(
       {
@@ -132,7 +140,11 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
         attemptOrdinal: 0,
         expectedBeforeWorkspace: workspaceRevision,
       },
-      { input: { change: input.changeId } as never }
+      {
+        input: (descriptor.input ?? {
+          change: input.changeId,
+        }) as never,
+      }
     );
   };
 
