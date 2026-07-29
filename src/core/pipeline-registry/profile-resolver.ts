@@ -34,7 +34,9 @@ export function resolveCapabilityBindings(
   catalog: CapabilityCatalogSnapshot
 ): readonly RuntimeCapabilityBinding[] {
   if (prepared.authoredVersion !== 1) {
-    throw new Error('Capability resolution supports only v1 authored definitions.');
+    // ECP-2: resolve capability bindings for v2 authored definitions with
+    // CompositeRef and composite-body BoundedLoop nodes.
+    return resolveV2AuthoredCapabilityBindings(prepared, catalog);
   }
 
   // D4 migration: when the normalized definition has a ReviewCycle BoundedLoop,
@@ -211,6 +213,130 @@ function buildBinding(
 }
 
 /**
+ * ECP-2: Resolve capability bindings for a v2 authored definition with
+ * CompositeRef, BoundedLoop, and root-level AtomicStage nodes.
+ * Generates `root:<id>` bindings for root AtomicStages and
+ * `declaration:<declId>/node:<stageId>` bindings for declaration body stages.
+ */
+function resolveV2AuthoredCapabilityBindings(
+  prepared: PreparedDefinition,
+  catalog: CapabilityCatalogSnapshot
+): readonly RuntimeCapabilityBinding[] {
+  const descriptorById = new Map(
+    catalog.descriptors.map((descriptor) => [descriptor.id, descriptor] as const)
+  );
+  const definition = prepared.definition;
+  const bindings: RuntimeCapabilityBinding[] = [];
+
+  for (const node of definition.root.nodes) {
+    if (node.kind === 'AtomicStage') {
+      const path = `root:${node.id}`;
+      const skillId = node.capability.id;
+      const descriptor = descriptorById.get(skillId);
+      if (descriptor === undefined) {
+        throw new Error(
+          `Capability descriptor for ${skillId} is not in the production catalog.`
+        );
+      }
+      const skillDigest = descriptor.version as Digest;
+      const skillName = skillId.startsWith('skill:') ? skillId.slice('skill:'.length) : skillId;
+      bindings.push(buildBinding(path, skillName, descriptor.version, skillDigest, 'write'));
+    }
+
+    if (node.kind === 'CompositeRef') {
+      const declaration = definition.declarations.find(
+        (d) => d.id === node.declarationId
+      );
+      if (declaration === undefined) continue;
+      for (const bodyNode of declaration.graph.nodes) {
+        if (bodyNode.kind !== 'AtomicStage') continue;
+        const path = `declaration:${declaration.id}/node:${bodyNode.id}`;
+        const skillId = bodyNode.capability.id;
+        const descriptor = descriptorById.get(skillId);
+        if (descriptor === undefined) {
+          throw new Error(
+            `Capability descriptor for ${skillId} is not in the production catalog.`
+          );
+        }
+        const skillDigest = descriptor.version as Digest;
+        const skillName = skillId.startsWith('skill:') ? skillId.slice('skill:'.length) : skillId;
+        bindings.push(buildBinding(path, skillName, descriptor.version, skillDigest, 'write'));
+      }
+    }
+
+    if (node.kind === 'BoundedLoop') {
+      const declaration = definition.declarations.find(
+        (d) => d.id === node.body
+      );
+      if (declaration === undefined) continue;
+      for (const bodyNode of declaration.graph.nodes) {
+        if (bodyNode.kind !== 'AtomicStage') continue;
+        const path = `declaration:${declaration.id}/node:${bodyNode.id}`;
+        const skillId = bodyNode.capability.id;
+        const descriptor = descriptorById.get(skillId);
+        if (descriptor === undefined) {
+          throw new Error(
+            `Capability descriptor for ${skillId} is not in the production catalog.`
+          );
+        }
+        const skillDigest = descriptor.version as Digest;
+        const skillName = skillId.startsWith('skill:') ? skillId.slice('skill:'.length) : skillId;
+        const access = typeof bodyNode.reviewCyclePhase === 'string' && bodyNode.reviewCyclePhase === 'fix' ? 'write' : 'write';
+        bindings.push(buildBinding(path, skillName, descriptor.version, skillDigest, access));
+      }
+    }
+  }
+
+  return bindings;
+}
+
+/**
+ * Remap policy stages for a v2 authored definition. Generates one policy stage
+ * per capability binding path.
+ */
+function remapPolicyStagesForV2Authored(
+  prepared: PreparedDefinition
+): readonly EffectiveRunPolicy['stages'][number][] {
+  const definition = prepared.definition;
+  const stages: EffectiveRunPolicy['stages'][number][] = [];
+
+  for (const node of definition.root.nodes) {
+    if (node.kind === 'AtomicStage') {
+      stages.push(synthesizeReviewCyclePolicyStage(`root:${node.id}`, 'review'));
+    }
+    if (node.kind === 'CompositeRef') {
+      const declaration = definition.declarations.find(
+        (d) => d.id === node.declarationId
+      );
+      if (declaration === undefined) continue;
+      for (const bodyNode of declaration.graph.nodes) {
+        if (bodyNode.kind !== 'AtomicStage') continue;
+        stages.push(synthesizeReviewCyclePolicyStage(
+          `declaration:${declaration.id}/node:${bodyNode.id}`,
+          'fix'
+        ));
+      }
+    }
+    if (node.kind === 'BoundedLoop') {
+      const declaration = definition.declarations.find(
+        (d) => d.id === node.body
+      );
+      if (declaration === undefined) continue;
+      for (const bodyNode of declaration.graph.nodes) {
+        if (bodyNode.kind !== 'AtomicStage') continue;
+        const phase = typeof bodyNode.reviewCyclePhase === 'string' ? bodyNode.reviewCyclePhase : 'fix';
+        stages.push(synthesizeReviewCyclePolicyStage(
+          `declaration:${declaration.id}/node:${bodyNode.id}`,
+          phase
+        ));
+      }
+    }
+  }
+
+  return stages;
+}
+
+/**
  * Build a full sealed {@link RuntimeExecutionProfile} for a new launch (task
  * 3.4): resolve capability bindings from the authoritative catalog and freeze
  * them together with the effective policy stages and the source revision. The
@@ -229,9 +355,12 @@ export function resolveRuntimeExecutionProfile(
   limits: Readonly<{ maxAttempts: number; maxActions: number }>
 ): RuntimeExecutionProfile {
   const capabilities = resolveCapabilityBindings(prepared, catalog);
-  const finalPolicyStages = hasReviewCycleBoundedLoop(prepared)
-    ? remapPolicyStagesForV2(prepared, policyStages)
-    : [...policyStages];
+  // ECP-2: v2 authored definitions need their own policy stage mapping.
+  const finalPolicyStages = prepared.authoredVersion === 2
+    ? remapPolicyStagesForV2Authored(prepared)
+    : hasReviewCycleBoundedLoop(prepared)
+      ? remapPolicyStagesForV2(prepared, policyStages)
+      : [...policyStages];
 
   return createRuntimeExecutionProfile({
     sourceRevision,
