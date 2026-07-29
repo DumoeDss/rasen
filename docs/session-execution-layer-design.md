@@ -94,7 +94,29 @@ reconciler ──next action──▶ launcher / runtime
 
 支撑这一约束的正是本设计的状态归属：run 状态在内核持久层、worker 在独立 session、touch 在 daemon——**driver 可插拔可更换**。用户关闭 Claude Code 窗口后，新会话或裸终端 `rasen pipeline resume` 接着驱动，worker 不重启、缓存不掉（launcher 死亡只是换 driver，不是 run 中断）。SessionHost/registry 对调用方无 driver 类型假设（Q1 的另一半）。
 
-接线细节（executor 由谁调用、result 如何进 reconciler 的 record/settle 路径）**刻意留白**：ECP-4 正在改 `change-run` 的 contracts/lowerer/reconciler，等其落定后按当时的 facade-runtime 形态补一节接线设计，避免现在写一份马上过时的胶水规范。本设计先把**契约消费者侧**（SessionHost、registry、audit）的形状定死——这些不依赖 ECP-4 的改动面。
+### 4.2 接线定案（2026-07-29 深夜对表 feat/ecp-review-cycle @ `2fa693d8`，ECP-4 已收口、ECP-5 进行中）
+
+契约核对结果：**agent action 的 `session` 块、`ActorRef.sessionIdentityDigest`、`workspace.access` 与本设计依据的形态逐字段零变化**（`contracts.ts:196-208,122,185-190`）。执行现实核对结果：**"执行 agent action"目前没有任何代码实现**——内核经 `facade.ts:14` 的 `deliveryMode: 'grant'|'defer'` 显式外包（grant 把可执行 payload 交给调用者、内核不执行；defer 封印 HTTP 面永不携带可执行 payload），实际由 launcher 会话按 playbook 用自身 Task/SendMessage 完成。Session 执行层填的是**从未存在过的空位**，不替换任何 runner。
+
+接线形状（P2 实现）：
+
+```text
+launcher/daemon ── rasen pipeline resume-run <change> <pipeline> --json ──▶ receipt（grant：含 agent action 全量）
+        │  对每个 kind:'agent' 的 admitted action：
+        ▼
+rasen session exec --action <receipt 中的 action>      # 本设计的 executor 入口
+        │  tier 决策（§6）→ SessionHost create/wake → 收割 result
+        ▼
+completion JSON（actor digest 由 executor 计算；真实 sessionId 记入本层 registry，Record 不改）
+        │
+rasen pipeline complete <change> --run <id> --from <receipt.json>
+```
+
+daemon 侧驱动遵循 ECP-5 确立的 `run-control.ts` 桥接约定：服务端绝不 in-process 改 Record——pre-spawn 校验后 spawn 本地 CLI 子命令、解析其 JSON receipt。
+
+**P1 模块落点修正**：不从零建 `src/core/session-host/`——`management-api/supervisor.ts` 已有 headless `claude` spawn、pid 管理、tree-kill、并发槽、Windows `.cmd` 转义（一次性 `-p`、stdin ignore）；`session-registry.ts` 是内存 registry 且注释预留了 daemon 独立构造。P1 = 给 supervisor 增加 stream-json stdin 多轮 + resume 宿主模式，并把 session registry 持久化（§7 schema），而非新起炉灶。
+
+**与 ECP-5 的唯一实质协调点**：ECP-5 的 `opsx-orchestration` delta spec 刚把 worker 句柄/session-relay generation 的所有权划给 run-state + playbook（prompt-owned）。本层落地（P2）必须显式 delta 修订该 spec 及 playbook Step A/B.1/B.4/H.2，把"agent action 的执行与 session 生命周期"的所有权移交 executor+registry；不得绕过。ECP-5 task 6.3（重写 `docs/architecture/executable-composite-pipelines.md`，该文档当前零 "session" 命中）是插入本层章节的天然时机。
 
 ## 5. SessionHost（resume-cli 宿主）
 
@@ -214,7 +236,7 @@ reviewer / fixer：session 档（多 episode、轮间空闲、读多写少），
 
 collection-heavy 任务同时逼近上下文窗口上限（`handoffTokenLimit` 契约字段管辖）——保温不解决窗口耗尽，manifest 层不可省。
 
-承载位置：pipeline stage 配置。`types.ts:40-45` 已有 `sessionReuse: none|stage|run-planner|review-thread`——本层落地时把 stage 级 tier 显式化（如 `sessionTier: inline|independent|auto`，`auto` 按上表），具体 schema 演进等 ECP-4 契约冻结后定，避免与其改动冲突。
+承载位置（对表后定案）：**不新增 `sessionTier` 字段**——authored 层的四值 `sessionReuse: none|stage|run-planner|review-thread`（`types.ts:40-46`）恰好携带 tier 所需语义（`review-thread` → session 档多轮、`run-planner` → session 档 MILESTONE、`stage` → 短复用倾向 subagent、`none` → inline one-shot）。问题在下降链路：`pipeline.ts:843-846` 把三个非 none 值**全部压平成 `same-invocation`**，语义在契约层丢失。P2 上游前置：在 `EffectiveRunPolicy.stages` 保真 authored 值（如增 `sessionReuseAuthored` 字段），executor 据此路由；契约 `session.reuse` 二值保持不变。
 
 ## 7. Session Registry
 
@@ -287,9 +309,16 @@ rasen agent audit --run <runId>
 新模块（建议 `src/core/session-host/`）+ `rasen session exec|list|retire` CLI + daemon 内的 touch scheduler（§6.1 机械执行器）+ 单测。不碰 `change-run/`（只读契约类型），与 ECP-4 无文件冲突。
 门槛：真实 create→wake×N→touch→retire 链全绿；并发 wake 拒绝；retired 拒绝唤醒；registry 与 transcript 事实一致；daemon 在真实 50 分钟窗口自动 touch 续命且 deadline 后停止（KC1c 的自动化复现）；daemon 关闭时全链路仍正确（仅多付 MISS）。
 
-**P2 — ReviewCycle dogfood 接线（ECP-4 收口、契约冻结后）**
-补 §4 留白的接线设计；ReviewCycle 的 reviewer stage 以 `same-invocation` 复用真实跑一个 change。
+**P2 — ReviewCycle dogfood 接线（接线已在 §4.2 定案；开工前有上游前置）**
+ReviewCycle 的 reviewer stage 以 `same-invocation` 复用真实跑一个 change。
 门槛：reviewer 跨轮唤醒 HIT 100%；review-loop 全程 reviewer 零 TTL 重写（对照审计基线：该场景 15 次短中 gap TTL 是最大可治理项）；崩溃后从 registry+内核状态恢复不重跑。
+
+**P2 上游前置（对表发现，须在 ECP 侧或随本层修复）**：
+1. `handoffTokenLimit: 10_000` / `reuseRoundLimit: 1` 在 profile/pipeline 层全部硬编码、provenance 恒 `'default'`、无配置层可改（`profile-resolver.ts:243-244,564-565,592-593,612,640`；`pipeline.ts:835-836`）——三字段当前是**孤儿**（零读取方、CLI 不透出），executor 是第一个读取方，行为化前必须重定默认值并开配置口（10k 阈值会让任何 agent 回合立刻触发 handoff；round limit 1 会禁掉 reviewer 多轮复用——恰是本层头号场景）；
+2. 合成 stage（evaluator/review-cycle/default）硬写 `sessionReuse: 'never'`（`profile-resolver.ts:243,611,639`）——ReviewCycle 合成路径的复用被契约关死，须改为尊重 authored 值；
+3. 四值→二值映射保真（§6 承载位置段）；
+4. `opsx-orchestration` spec 所有权边界修订 + playbook Step A/B.1/B.4/H.2 移交（§4.2）。
+以上 1–3 是既存 Record 的**休眠占位值**——发布前不修，行为化时旧 Record 里的 10_000/1/never 将成为既成事实约束。
 
 **P3 — audit --run + 经济性 A/B**
 同规模 run 对照 9e36259d 基线。门槛：eligible 场景 TTL 重写 ↓≥70%；tier 全场净 input-eq 明确为正；`wakes[]` 与 usage 对账误差 0。
@@ -306,7 +335,9 @@ rasen agent audit --run <runId>
 | R4 | Claude CLI 升级改变 `-p/--resume/stream-json` 行为 | 探针脚本可重跑作为回归；audit 有 format-drift 处理先例 |
 | R5 | session 上下文膨胀触发 compaction（1h TTL 不解决增长） | 复用 `handoffTokenLimit` 契约字段：超限 retire+handoff |
 | R6 | `--dangerously-skip-permissions` 无人值守面 | 与 supervisor/relay 同险级；workspace.access=read 的角色可叠加 edit-boundary |
-| Q1 | 完整 wake/exec 由 launcher 调还是未来 daemon 调（runtime 宿主问题） | **touch 执行已定 daemon（§6.1）**；完整 agent action 执行的宿主 ECP-4 后与接线设计一并定；SessionHost 对调用方无假设 |
+| Q1 | ~~完整 wake/exec 的宿主~~ | **已关闭（§4.2）**：launcher 与 daemon 皆可经 `rasen session exec` 驱动；daemon 侧遵循 run-control 桥接约定 |
+| Q2b | `sessionIdentityDigest` 对应关系 | **已核实**：它是提交方自报的 actor 身份摘要输入（`actors.ts:54-56`，防伪靠重算校验，不绑真实 session）——executor 生成 completion 时计算 digest，真实 claude sessionId 只入本层 registry，Record 契约不动 |
+| R8 | workspace.access 已被内核强制为**并发调度锁**（writer 独占/readers 共存/跨 run reservation，`reconciler.ts:997-1074`），但零文件级执行（与 edit-boundary 无联动，access 由 `inferAccess` 按 role 推断） | §9 的 single-writer 假设获内核背书；worker 文件级只读加固仍走 bootstrap 禁令 + edit-boundary（R6 既有方案） |
 | R7 | daemon 生命周期不可靠（用户进程非服务，可能未运行/被关），而 live worker 进程依赖 daemon 持有管道 | §6.1 降级：daemon 死 → worker 进程 EOF 退出 → registry 持 sessionId/cwd → resume respawn 付一次有界 rebase 后回到 live 形态；**正确性永不依赖 daemon，只有缓存效率依赖** |
 | Q2 | `sessionKey` 与内核 `sessionIdentityDigest` 的对应关系 | P2 接线时对齐，registry 记录 digest 反引 |
 | Q3 | 0.1.6 侧是否单独做 `rasen agent signal` 止血 | 独立小 PR，用户按 0.1.6 存续期决定，不入本设计 |
