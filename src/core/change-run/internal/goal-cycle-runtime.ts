@@ -16,6 +16,7 @@ import {
   type GoalCyclePhase,
   type GoalCycleState,
   type GoalCycleVariant,
+  type GoalCycleDomainResult,
 } from './goal-cycle.js';
 import type {
   RuntimePlan,
@@ -291,4 +292,104 @@ export function validateGoalCycleCompletion(
     },
     descriptor.loop.maxIterations
   );
+}
+
+// ---------------------------------------------------------------------------
+// goal-run.json compatibility projection (D10)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-round record entry for the legacy goal-run.json format. This is a
+ * compatibility projection — the authoritative spine is the canonical Record.
+ */
+export interface GoalRunRoundRecord {
+  readonly round: number;
+  readonly score?: number;
+  readonly measurePassed?: boolean;
+  readonly evaluateSatisfied?: boolean;
+  readonly detail?: string;
+  readonly gaps?: readonly string[];
+  readonly gitTreeFingerprint?: string;
+}
+
+/**
+ * Derive the legacy per-round record array from committed goal-cycle events.
+ * This is a READ-ONLY projection — it cannot back-drive a new Run.
+ * Reconciler-engine Runs reconstruct state entirely from plan + Record.
+ */
+export function projectGoalRunJson(
+  plan: RuntimePlan,
+  record: CanonicalRunRecord
+): readonly GoalRunRoundRecord[] {
+  // Find the goal-cycle bounded-loop in the plan.
+  const loop = plan.nodes.find(
+    (node): node is RuntimePlanBoundedLoopNode =>
+      node.kind === 'bounded-loop' && node.body.kind === 'goal-cycle'
+  );
+  if (loop === undefined) return Object.freeze([]);
+
+  // Iterate rounds, collecting work+judge results.
+  const rounds: GoalRunRoundRecord[] = [];
+  for (let round = 1; round <= loop.maxIterations; round += 1) {
+    const roundRecord = projectGoalRunRound(plan, loop, record, round);
+    if (roundRecord !== null) rounds.push(roundRecord);
+  }
+  return Object.freeze(rounds);
+}
+
+function projectGoalRunRound(
+  plan: RuntimePlan,
+  loop: RuntimePlanBoundedLoopNode,
+  record: CanonicalRunRecord,
+  round: number
+): GoalRunRoundRecord | null {
+  if (loop.body.kind !== 'goal-cycle') return null;
+  let hasWork = false;
+  let hasJudge = false;
+  let score: number | undefined;
+  let measurePassed: boolean | undefined;
+  let evaluateSatisfied: boolean | undefined;
+  let detail: string | undefined;
+  let gaps: string[] | undefined;
+  let gitTreeFingerprint: string | undefined;
+
+  for (const phase of loop.body.phases) {
+    const descriptor = goalCycleInvocation(plan, loop, round, phase);
+    const action = actionForNode(record, descriptor.nodeId);
+    if (action === undefined || action.result === undefined) continue;
+    if (action.result.status !== 'succeeded') continue;
+
+    if (phase.phase === 'work') {
+      hasWork = true;
+      // Extract tree fingerprint from the work result if present.
+      const result = action.result.result as Readonly<Record<string, unknown>>;
+      if (typeof result.afterTree === 'string') {
+        gitTreeFingerprint = result.afterTree;
+      }
+    } else if (phase.phase === 'judge') {
+      hasJudge = true;
+      const result = action.result.result as Readonly<Record<string, unknown>>;
+      if (typeof result.score === 'number') score = result.score;
+      if (typeof result.passed === 'boolean') measurePassed = result.passed;
+      if (typeof result.satisfied === 'boolean') evaluateSatisfied = result.satisfied;
+      if (typeof result.detail === 'string') detail = result.detail;
+      if (Array.isArray(result.gaps)) {
+        gaps = (result.gaps as unknown[]).filter(
+          (g): g is string => typeof g === 'string'
+        );
+      }
+    }
+  }
+
+  if (!hasWork && !hasJudge) return null;
+
+  return Object.freeze({
+    round,
+    ...(score !== undefined ? { score } : {}),
+    ...(measurePassed !== undefined ? { measurePassed } : {}),
+    ...(evaluateSatisfied !== undefined ? { evaluateSatisfied } : {}),
+    ...(detail !== undefined ? { detail } : {}),
+    ...(gaps !== undefined ? { gaps: Object.freeze(gaps) } : {}),
+    ...(gitTreeFingerprint !== undefined ? { gitTreeFingerprint } : {}),
+  });
 }
