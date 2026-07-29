@@ -216,8 +216,11 @@ function goalCycleBody(
       `BoundedLoop ${loop.id} references missing body ${loop.body}.`
     );
   }
-  // Detect variant from the legacy loop declaration or pipeline name.
-  const legacyLoop = (declaration as Readonly<{ legacyLoop?: Readonly<{ kind?: string; gate?: Readonly<{ kind?: string }> }> }>).legacyLoop;
+  // Detect variant from the BoundedLoop node's legacy stage loop data or
+  // pipeline name. The legacy stage carries the original loop:{kind:goal,
+  // gate:{kind:measure|evaluate}} declaration.
+  const legacyStage = (loop as unknown as Readonly<{ legacy?: Readonly<{ loop?: Readonly<{ kind?: string; gate?: Readonly<{ kind?: string }> }> }> }>).legacy;
+  const legacyLoop = legacyStage?.loop;
   const isResearch = pipelineName === 'goal-loop-research';
   const variant: 'measure' | 'evaluate' | 'research' = isResearch
     ? 'research'
