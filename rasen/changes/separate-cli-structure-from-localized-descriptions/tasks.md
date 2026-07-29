@@ -49,5 +49,5 @@
 - [x] 7.2 Run focused locale, registry, completion-generator, completion-command, and CLI help tests for English, Japanese, and Simplified Chinese.
 - [x] 7.3 Run `pnpm exec tsc --noEmit && pnpm lint` and resolve diagnostics introduced by the refactor.
 - [x] 7.4 Run the complete suite with `env -u ZSH pnpm test` and confirm machine-readable CLI contracts remain unchanged.
-- [ ] 7.5 Verify path-bearing and default-workspace help values on Windows CI, and confirm shell scripts preserve machine path and identifier tokens across supported platforms.
+- [x] 7.5 Verify path-bearing and default-workspace help values on Windows CI, and confirm shell scripts preserve machine path and identifier tokens across supported platforms.
 - [x] 7.6 Run `npm pack --dry-run --json` and confirm the published package contains all three updated locale catalogs and the new public type surface.
