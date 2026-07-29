@@ -101,6 +101,12 @@
 纵向主轴是**写路径**（plan → facade → Record）。底部四个方框是**读/控制平面**，全都消费同一
 份投影后的 view。
 
+**内核授予，调用方执行。** 内核在 `deliveryMode: 'grant'` 下把一个 admit 变成一个已授予的
+`RunAction` 并交给调用方 —— 它**不**运行 agent、不开 session、不管 worker 生命周期。谁真的去
+执行那个 action、用哪个 runtime、复用还是新开会话，全部在 Run owner 之外：0.1.6 里由 LEAD
+（playbook Step B/C）承担，独立的 **session execution layer 是后续切片**。committed action 里
+的 `session` 块因此是为那一层预留的记录位，不是本版本的行为契约（见 §7 的占位说明）。
+
 ---
 
 ## 3. 核心概念
@@ -274,6 +280,12 @@ waits.ts               WaitId 分配 · variant 编解码器 · workspace-reserv
   篡改/重贴标签/TOCTOU/缺失全部 fail closed。
 - **确定性（Determinism）** —— reconciler 在打乱插入顺序、毒化的时钟/随机/env/文件系统以及
   replay 下均确定性。稳定的 identity/顺序。
+- **会话字段是占位（Session fields are placeholders）** —— committed action 的
+  `session.handoffTokenLimit` / `session.reuseRoundLimit` 在 0.1.6 里**没有任何配置或创作入口**，
+  因此每一个 0.1.6 时代 Record 记下的值按定义都是占位值：未来的读者**不得**把它们当作操作者或
+  作者的选择，也**不得**据以约束 session（尤其 `reuseRoundLimit: 1` 一旦被执行，会禁止评审者跨
+  轮复用 —— 恰恰是主要的复用形态）。作者真正表达过的复用意图以附加字段 `sessionReuseAuthored`
+  原样保留。真实取值是 session execution layer 那一层的设计产出。
 
 ---
 
@@ -372,6 +384,10 @@ legacy owner 与规范 Record 并存时，`pipeline start` 以及 `complete` / `
 - `auto-decompose` 的 reconciler 执行 —— capability discovery 对它 fail-closed 报
   `execution_profile_unavailable`，属 0.2.0 的 portfolio 编排领域。
 - nested loop、递归 Composite call、任意控制流脚本、分布式调度（研究文档 §15.3 非目标）。
+- **session execution layer** —— 已授予 action 的实际执行、session 复用语义
+  （`review-thread` / `stage` / `run-planner`）、以及 `handoffTokenLimit` /
+  `reuseRoundLimit` 的真实取值与配置入口。0.1.6 只**记录**这些字段并声明其为占位（§7），
+  执行仍由调用方承担。
 
 ---
 

@@ -531,6 +531,47 @@ Two things this table deliberately does NOT claim:
   RunId would have evidenced that slice's tree, not the integrated one; the
   originals are named beside the new ones so provenance is not lost.
 
+### What the ledger deliberately does NOT rest on: the session contract
+
+Design D9 rules that the committed agent action's `session.handoffTokenLimit`
+and `session.reuseRoundLimit` are **placeholders** — 0.1.6 ships no config key
+and no authoring surface for either, so every value a 0.1.6-era Record carries
+for them is unchosen by definition. The `ecp-change-run-runtime` delta says so
+at the contract level ("Recorded session guidance is placeholder until a slice
+defines its authoritative source").
+
+**No exit condition above cites them, and none needs to.** Stated rather than
+left to be discovered, because an absence a reader has to verify for themselves
+is weaker evidence than a claim they can falsify. The falsifiable form: no row
+of the 14-condition table, and no row of the dogfood matrix, contains
+`session`, `handoffTokenLimit`, `reuseRoundLimit`, or `reuse`. Before this
+subsection existed, the only match anywhere in this file was Section 3's
+worker-lifecycle prose ("worker lifecycle, warm reuse, briefing, Tier
+fallbacks …") — orchestration-playbook text about the LEAD's own worker
+handling, not a session-contract claim.
+
+Where session-adjacent behaviour genuinely bears on a condition, it is the part
+D9 rules **authoritative**, and the ledger cites only that:
+
+- Condition 9 ("完成判断绑定 actor、tree、delta/result 和 evidence") rests on the
+  completion contract's strict decode and the actor/attestation/evidence
+  bindings — none of which reads the session block.
+- Condition 10 ("三个入口不再拥有独立机械推进规则") rests on the deleted
+  prompt-owned rules and their named kernel replacements. Worker lifecycle,
+  warm reuse and relays are **retained** as the LEAD's, engine-neutral, by
+  design D2 — so they are explicitly NOT evidence that mechanical ownership
+  moved, and are not cited as such.
+- The one session value D9 rules authoritative — the synthetic evaluator's
+  `sessionReuse: 'never'` with `definition` provenance, because a one-shot
+  evaluation has no session to reuse — is evidenced by
+  `test/core/pipeline-registry/session-contract-fidelity.test.ts` (task 10.4)
+  and is not load-bearing for any §15.4 condition either.
+
+The forward-pointer is recorded in the architecture doc rather than only here:
+§2 states that the kernel GRANTS and the caller EXECUTES (`deliveryMode:
+'grant'`), §7 carries the placeholder guarantee, and §10 lists the session
+execution layer as out of 0.1.6 scope.
+
 ### Task 8.2 — Slice E closure list (research doc §11, lines 1477–1487)
 
 | Slice E item | Disposition |
