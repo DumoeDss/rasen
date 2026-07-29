@@ -1532,12 +1532,27 @@ function contractForNode(
       );
       if (!descriptor && node.capability.version === 'legacy') {
         return {
-          inputs: new Map([['start', CONTROL_PORT_TYPE]]),
+          inputs: controlInputs(),
           outputs: new Map([['done', CONTROL_PORT_TYPE]]),
         };
       }
+      // A capability that declares NO typed inputs is joined by control flow,
+      // exactly like a Gate, Choice, FanOut, or Finish — so it accepts the same
+      // conventional control ports those node kinds already accept
+      // (`CONTROL_INPUT_PORTS`). Without this, no authored connection could ever
+      // target an AtomicStage backed by a real capability: every production
+      // descriptor is built with `inputs: []`
+      // (`createProductionCapabilityCatalogSnapshot`), so `portMap` produced an
+      // empty set and the connection validator rejected the edge with
+      // PORT_MISMATCH — in the root graph and in every declaration body alike.
+      //
+      // Scoped deliberately to the EMPTY case: a descriptor that does declare
+      // typed inputs keeps exactly its declared ports, so widening here cannot
+      // loosen validation for typed capabilities when they arrive.
+      const declaredInputs = descriptor ? portMap(descriptor.inputs) : new Map();
       return {
-        inputs: descriptor ? portMap(descriptor.inputs) : new Map(),
+        inputs:
+          descriptor && declaredInputs.size === 0 ? controlInputs() : declaredInputs,
         outputs: descriptor
           ? new Map([
               ...portMap(descriptor.artifacts),

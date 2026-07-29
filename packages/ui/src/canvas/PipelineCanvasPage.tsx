@@ -91,6 +91,21 @@ interface ExportState {
 }
 
 /**
+ * The conventional control ports an authored connection uses when neither
+ * endpoint declares a typed one — which is every capability today, since
+ * production descriptors declare no inputs and a single `done` outcome.
+ *
+ * These MUST stay inside the kernel's accepted sets, or a saved definition is
+ * rejected with PORT_MISMATCH: `CONTROL_TARGET_PORT` must be one of the
+ * `CONTROL_INPUT_PORTS` (`input` | `in` | `start`) and `CONTROL_SOURCE_PORT`
+ * must name a declared outcome — both in
+ * `src/core/pipeline-registry/definition.ts`. Root and body authoring share
+ * them so one convention reaches the validator from both paths.
+ */
+const CONTROL_SOURCE_PORT = 'done';
+const CONTROL_TARGET_PORT = 'input';
+
+/**
  * The pipeline graph route (`/p/:projectId/pipelines/:name`,
  * `/s/:storeId/pipelines/:name`). View mode is child 3's exact read-only
  * behavior; edit mode (pipeline-canvas-edit) turns the same route into the
@@ -549,11 +564,17 @@ export function PipelineCanvasPage() {
         );
         return;
       }
+      // `StageNode`'s handles carry no `id`, so React Flow reports null for
+      // both. Fall back to the conventional control ports the kernel accepts
+      // for a capability with no typed inputs (`CONTROL_INPUT_PORTS` /
+      // the `done` outcome) — the same pair `createBodyConnection` uses, so
+      // root and body authoring emit one convention. A handle that DOES carry
+      // an id still wins, for when typed ports arrive.
       const endpoints = {
         source: connection.source,
-        sourcePort: connection.sourceHandle,
+        sourcePort: connection.sourceHandle ?? CONTROL_SOURCE_PORT,
         target: connection.target,
-        targetPort: connection.targetHandle,
+        targetPort: connection.targetHandle ?? CONTROL_TARGET_PORT,
       };
       const nextDraft = addV2Connection(draft, {
         id: v2ConnectionIdFor(draft, endpoints),
@@ -865,9 +886,9 @@ export function PipelineCanvasPage() {
     // owns every legality question (unknown stage, duplicate edge, cycle).
     const endpoints = {
       source: from,
-      sourcePort: 'done',
+      sourcePort: CONTROL_SOURCE_PORT,
       target: to,
-      targetPort: 'input',
+      targetPort: CONTROL_TARGET_PORT,
     };
     let nextDraft;
     try {

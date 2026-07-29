@@ -632,6 +632,146 @@ describe('trusted capability catalog admission', () => {
     ]);
   });
 
+  /**
+   * ECP-5 Blocker regression. EVERY production descriptor is built with
+   * `inputs: []` and `outcomes: ['done']`
+   * (`createProductionCapabilityCatalogSnapshot`), so before the fix an
+   * AtomicStage backed by a real capability had NO declared input port and any
+   * authored connection targeting it was refused with PORT_MISMATCH — root
+   * graph and declaration body alike. That made Canvas-authored v2 connections
+   * unsaveable in production while the fixture-catalog tests (which declare
+   * ports no real skill declares) stayed green.
+   *
+   * A capability with no typed inputs is joined by control flow, exactly like a
+   * Gate or FanOut, so it accepts the same `CONTROL_INPUT_PORTS`.
+   */
+  it('admits a control-port connection between capabilities that declare no inputs', () => {
+    const productionShaped = createCapabilityCatalogSnapshot([
+      {
+        id: 'skill:rasen-apply-change',
+        version: 'sha256:abc',
+        availability: 'enabled',
+        // Exactly what the production adapter emits for every skill.
+        inputs: [],
+        artifacts: [],
+        outcomes: ['done'],
+        limits: {},
+      },
+    ]);
+    const stageNode = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:rasen-apply-change', version: 'sha256:abc' },
+    });
+
+    // Every conventional control port name the kernel accepts — the Canvas
+    // emits `input`; `in` and `start` are the documented aliases.
+    for (const port of ['input', 'in', 'start']) {
+      const source: DefinitionSourceV2 = {
+        version: 2,
+        id: 'control-ports',
+        sourceId: 'fixture:control-ports',
+        name: 'control-ports',
+        inputs: [],
+        artifacts: [],
+        outcomes: ['done'],
+        declarations: [],
+        root: {
+          nodes: [stageNode('stage'), stageNode('stage-2')],
+          connections: [
+            {
+              id: 'stage-to-stage-2',
+              from: { node: 'stage', port: 'done' },
+              to: { node: 'stage-2', port },
+            },
+          ],
+        },
+      };
+      const result = EcpDefinitionModule.prepare(source, productionShaped);
+      expect(result.ok, `port '${port}' should be admitted`).toBe(true);
+    }
+
+    // The widening is scoped to the no-typed-inputs case: an unknown port name
+    // is still refused, so the rule this validation exists to provide holds.
+    const bogus: DefinitionSourceV2 = {
+      version: 2,
+      id: 'control-ports-bogus',
+      sourceId: 'fixture:control-ports',
+      name: 'control-ports-bogus',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [stageNode('stage'), stageNode('stage-2')],
+        connections: [
+          {
+            id: 'stage-to-stage-2',
+            from: { node: 'stage', port: 'done' },
+            to: { node: 'stage-2', port: 'inpt' },
+          },
+        ],
+      },
+    };
+    const rejected = EcpDefinitionModule.prepare(bogus, productionShaped);
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) {
+      expect(rejected.error.diagnostics).toEqual([
+        expect.objectContaining({ code: 'PORT_MISMATCH' }),
+      ]);
+    }
+  });
+
+  it('keeps a typed capability restricted to its declared input ports', () => {
+    // The other half of the scoping: a descriptor that DOES declare inputs must
+    // NOT gain control ports, or the widening would loosen validation for the
+    // typed capabilities it was carefully kept away from.
+    const typedCatalog = createCapabilityCatalogSnapshot([
+      {
+        id: 'skill:typed',
+        version: '1.0.0',
+        availability: 'enabled',
+        inputs: [{ name: 'patch', type: 'ecp/control' }],
+        artifacts: [],
+        outcomes: ['done'],
+        limits: {},
+      },
+    ]);
+    const stageNode = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:typed', version: '1.0.0' },
+    });
+    const source: DefinitionSourceV2 = {
+      version: 2,
+      id: 'typed-inputs',
+      sourceId: 'fixture:typed-inputs',
+      name: 'typed-inputs',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [stageNode('stage'), stageNode('stage-2')],
+        connections: [
+          {
+            id: 'stage-to-stage-2',
+            from: { node: 'stage', port: 'done' },
+            // `input` is a CONTROL port, not one this descriptor declares.
+            to: { node: 'stage-2', port: 'input' },
+          },
+        ],
+      },
+    };
+    const result = EcpDefinitionModule.prepare(source, typedCatalog);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.diagnostics).toEqual([
+        expect.objectContaining({ code: 'PORT_MISMATCH' }),
+      ]);
+    }
+  });
+
   it('reports typed producer and consumer port incompatibility with both endpoints', () => {
     const source: DefinitionSourceV2 = {
       version: 2,
