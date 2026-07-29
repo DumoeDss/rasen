@@ -67,8 +67,10 @@
 
 - [x] 9.1 Rewrite `goal-command.ts` (`rasen-goal`): keep variant classification + goal-plan.md reading + `rasen pipeline start`/`resume`/`status` as primary interface; remove round counter, phase sequencing, maxRounds enforcement, stall tracking, goal-run.json writing, author≠verifier checking, strategy ladder
 - [x] 9.2 Update `_orchestration.ts`: remove Step L goal-loop mechanical state (round counting, gate dispatch, goal-run.json append, stall/blocked tracking); the playbook no longer owns goal-loop mechanics
-- [ ] 9.3 Update `auto.ts` (`rasen-auto`): remove goal-loop mechanical references; auto thins to selection/launch only
-- [ ] 9.4 Update `goal-iterate.ts` and `goal-report.ts` skills to read from `ChangeRunView` goal section instead of `goal-run.json`
+- [x] 9.3 Update `auto.ts` (`rasen-auto`): remove goal-loop mechanical references; auto thins to selection/launch only
+  - **Discharged by `ecp-product-closure` (ECP-5), tasks 3.1-3.6.** `auto.ts` gained the engine-resolution step (0.7) and an engine-aware Resume; `_orchestration.ts` Step E split into E.1 (canonical Run) / E.2 (legacy path). Evidence: `rasen/work/issue-centered-automation-platform/executable-composite-pipelines/slices/product-closure/result.md` (Section 3), guarded by `test/core/templates/orchestration-bundles.test.ts` and `test/commands/auto.test.ts`.
+- [x] 9.4 Update `goal-iterate.ts` and `goal-report.ts` skills to read from `ChangeRunView` goal section instead of `goal-run.json`
+  - **Verified substantively true by `ecp-product-closure` (ECP-5), task 3.9** - not re-implemented. Both templates read `sections[].kind === 'goal'`, and every `goal-run.json` reference in `src/core/templates/workflows/*.ts` is projection language or a bare artifact name. Grep evidence: `rasen/work/issue-centered-automation-platform/executable-composite-pipelines/slices/product-closure/result.md` ("ECP-3 task 9.4").
 
 ## 10. goal-run.json demotion
 

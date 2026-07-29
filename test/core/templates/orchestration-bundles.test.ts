@@ -392,6 +392,115 @@ describe('selective orchestration bundles', () => {
     }
   });
 
+  /**
+   * ECP-5 Section 3 — Step E convergence. Step E used to OWN the review->fix
+   * mechanics in prompt text (round counting, the cap, actor separation, clean
+   * determination) while `src/core/change-run` enforced the same rules with real
+   * rejection paths. These tests pin the split: a reconciler-engine branch that
+   * drives the canonical Run, and a legacy-engine branch that keeps every
+   * legacy mechanic, explicitly labeled.
+   */
+  describe('ECP-5: Step E engine convergence', () => {
+    const reviewLoopBundles = [
+      AUTO_ORCHESTRATION_PLAYBOOK,
+      REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK,
+    ];
+
+    it('drives the reconciler branch through the canonical Run', () => {
+      for (const playbook of reviewLoopBundles) {
+        const stepE = stepSection(playbook, 'E');
+        expect(stepE).toContain('#### E.1 — Reconciler engine');
+        expect(stepE).toContain('pipeline resume-run');
+        expect(stepE).toContain('rasen pipeline start <change> <pipeline> --json');
+        expect(stepE).toContain('rasen pipeline complete <change> --action-id <id> --json');
+        // Progress is READ from the canonical section, not tallied.
+        expect(stepE).toContain('`review-cycle` section');
+        expect(stepE).toContain('rasen pipeline status <change> <pipeline> --json');
+      }
+    });
+
+    it('keeps the legacy branch complete and explicitly labeled', () => {
+      for (const playbook of reviewLoopBundles) {
+        const stepE = stepSection(playbook, 'E');
+        expect(stepE).toContain('#### E.2 — Legacy engine');
+        expect(stepE).toContain('**This is the legacy-engine path.**');
+        // Every legacy mechanic survives: a run whose engine is legacy has no
+        // canonical Run to own them, so deleting them would break it outright.
+        expect(stepE).toContain('**Review**');
+        expect(stepE).toContain('**Triage by fix size**');
+        expect(stepE).toContain('**Fix** via the routed actor');
+        expect(stepE).toContain('**Re-review the delta with a non-author**');
+        expect(stepE).toContain('**Loop or terminate**');
+        expect(stepE).toContain(
+          'A finding is resolved ONLY after a non-author confirms it'
+        );
+        expect(stepE).toContain(
+          'Never report clean while a Blocker or Major finding is open'
+        );
+        // The reconciler branch is stated BEFORE the legacy one.
+        expect(stepE.indexOf('#### E.1')).toBeLessThan(stepE.indexOf('#### E.2'));
+      }
+    });
+
+    it('deletes the prompt-owned duplicates of kernel-enforced rules', () => {
+      for (const playbook of [
+        AUTO_ORCHESTRATION_PLAYBOOK,
+        GOAL_ORCHESTRATION_PLAYBOOK,
+        REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK,
+      ]) {
+        // The round-cap DEFAULT is no longer owned by prompt text; the number
+        // lives in the pipeline definition and the Step H counter table.
+        // Replacement evidence: test/core/change-run/review-cycle.test.ts.
+        expect(playbook).not.toContain('Default cap: 3');
+      }
+      for (const playbook of reviewLoopBundles) {
+        const stepE = stepSection(playbook, 'E');
+        // Under the reconciler engine the LEAD keeps no second copy of any
+        // rule the Record already rejects. Replacement evidence, in order:
+        // review-cycle.test.ts (cap), facade-settle-completeness.test.ts
+        // (clean/ship guard), review-cycle-runtime.test.ts (same-actor
+        // rejection), facade-runtime.test.ts (pre-commit validation).
+        const reconcilerBranch = stepE.slice(
+          stepE.indexOf('#### E.1'),
+          stepE.indexOf('#### E.2')
+        );
+        expect(reconcilerBranch).toContain('do not count rounds');
+        expect(reconcilerBranch).toContain('do not decide clean');
+        expect(reconcilerBranch).toContain(
+          'do not check author != verifier as a verdict'
+        );
+        expect(reconcilerBranch).toContain(
+          'do not judge whether a returned result is well-formed'
+        );
+        // Staffing distinct workers is still the LEAD's — the Record can
+        // reject a same-actor commit but cannot put a different worker on it.
+        expect(reconcilerBranch).toContain('Staffing distinct workers remains YOURS');
+      }
+    });
+
+    it('bounds reconciler-engine run-state to bookkeeping and labeled projections', () => {
+      for (const playbook of [
+        AUTO_ORCHESTRATION_PLAYBOOK,
+        GOAL_ORCHESTRATION_PLAYBOOK,
+        REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK,
+      ]) {
+        const stepF = stepSection(playbook, 'F');
+        expect(stepF).toContain('**Run-state boundary by engine.**');
+        expect(stepF).toContain('AUTHORITATIVE record of progression');
+        expect(stepF).toContain(
+          'MUST NEVER be read back to make a progression decision the Run owns'
+        );
+        expect(stepF).toContain("engine: { effective: 'reconciler'|'legacy'");
+
+        // Resume honors the owning engine and never re-homes a Run.
+        const resume = stepSection(playbook, 'F.1');
+        expect(resume).toContain('Resume under the OWNING engine');
+        expect(resume).toContain('rasen pipeline resume-run <change> <pipeline> --json');
+        expect(resume).toContain('never override the frontier');
+      }
+    });
+  });
+
   it('pins the run-start keepalive policy and eligible dispatch boundary', () => {
     for (const playbook of [
       AUTO_ORCHESTRATION_PLAYBOOK,

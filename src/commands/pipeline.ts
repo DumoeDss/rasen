@@ -2209,6 +2209,12 @@ export class PipelineCommand {
       // before this capability existed carries no key, and the LEAD's
       // built-in default (gates on) still applies.
       ...(runState.gatePolicy ? { gatePolicy: runState.gatePolicy } : {}),
+      // ECP-5: the engine that owns this run, recorded at run start. A resumer
+      // must know which run-state contract it is reading BEFORE it interprets
+      // a single progression field. Included only when present — a run recorded
+      // before this capability existed carries no key, and the resumer infers
+      // the owner from what is on disk instead.
+      ...(runState.engine ? { engine: runState.engine } : {}),
       ...(runState.knowledgeContext
         ? { knowledgeContext: runState.knowledgeContext }
         : {}),

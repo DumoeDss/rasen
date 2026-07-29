@@ -201,6 +201,23 @@ export const RunStateSchema = z
         source: z.enum(['flag', 'project', 'store', 'global', 'config', 'default']),
       })
       .optional(),
+    // ECP-5: the engine that OWNS this run, recorded once at run start
+    // (`--engine` flag > project/store/global `runs.engine` > default `auto`,
+    // gated by the pipeline's engine support — see resolveRunsEnginePolicy).
+    // Resume reads it back to know WHICH run-state contract it is reading:
+    // under `legacy` this file is the authoritative progression record; under
+    // `reconciler` it is bounded to bookkeeping the canonical Run does not
+    // model, and every mechanical field below is a labeled projection that must
+    // never drive a progression decision the Run owns. Absent on runs recorded
+    // before this capability existed — infer the owner from what is on disk
+    // (a canonical Run for the change, or only legacy run-state), never from
+    // current config, since config can change after the fact.
+    engine: z
+      .object({
+        effective: z.enum(['reconciler', 'legacy']),
+        source: z.enum(['flag', 'project', 'store', 'global', 'default']),
+      })
+      .optional(),
     stages: z.record(z.string(), RunStateStageSchema).optional(),
     // The retention mode frozen on first entry to the retain stage (design D2).
     // Once recorded, resume prefers it over a later profile edit so a mid-run
