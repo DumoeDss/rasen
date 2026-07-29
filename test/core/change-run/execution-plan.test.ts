@@ -326,9 +326,10 @@ describe('one reconciler support analyzer', () => {
   });
 
   it('rejects Composite/Loop/FanOut/Join and v2 before Run creation', () => {
-    // Remove verifyPolicy: 'adaptive' (which normalizes to a supported
-    // ReviewCycle BoundedLoop) and add a goal loop instead — this produces
-    // a legacy-loop BoundedLoop that is rejected as unsupported semantics.
+    // ECP-3: goal loops now normalize to v2 BoundedLoop + goal-cycle body.
+    // The goal-loop is detected as a v2 shape (hasV2ReviewCycle), but the
+    // fixture profile lacks the declaration:goal-cycle-body phase bindings,
+    // so analyzeReconcilerSupport rejects it as unsupported_pipeline_shape.
     const goal = structuredClone(BUG_FIX);
     delete goal.stages[2]!.verifyPolicy;
     goal.stages[2]!.loop = { kind: 'goal', maxRounds: 3, gate: { kind: 'measure' } };
@@ -337,7 +338,7 @@ describe('one reconciler support analyzer', () => {
     ).toEqual(
       expect.objectContaining({
         supported: false,
-        reason: 'unsupported_pipeline_semantics',
+        reason: 'unsupported_pipeline_shape',
       })
     );
   });
