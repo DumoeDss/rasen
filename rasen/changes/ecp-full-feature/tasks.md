@@ -70,6 +70,7 @@
 - [x] 8.4 Update CLI `pipeline status` to render parallel/choice section data from `ChangeRunView`
 - [x] 8.5 Verify Management API returns parallel/choice sections from the same `projectRunView` call
 - [x] 8.6 Write parity test: CLI, Management API, and Operations consume same fixture and see same parallel/choice sections
+  - Delivered in `test/core/change-run/projector-parallel-choice.test.ts` for the projector, CLI (`pipeline status --json`), and Management API planes. The Operations/UI plane is NOT covered: `packages/ui` has no consumer of the `parallel/1` or `choice/1` run-view sections yet, so there is nothing to assert parity against. Per the existing `cross-plane-parity.test.ts` convention the UI plane is asserted under `packages/ui/test/` when a consumer exists.
 
 ## 9. Canvas — Parallel Authoring (Acceptance: D8)
 
