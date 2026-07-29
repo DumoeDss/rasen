@@ -30,6 +30,18 @@ Git revision：`8270941ae1fa9368221b4d3ef67f2b1c961d5956`
 - **Minor-3**: `assertReviewCycleMayShip` wired into facade.complete() before successful terminal commit.
 - **Minor-4 (acceptance #8)**: REAL CLI Run started (see below). Full review → fix → re-review → clean cycle not driven (requires real agent execution). Mechanical path is proven via the review-cycle-runtime tests.
 
+## Review-Fix Round 2 (2026-07-29)
+
+**Branch**: `feat/ecp-review-cycle`
+**Fixer commits**: `9a262d84` (Blocker: buildAction + E2E adaptation), `4bc7d482` (Major: locale-payload snapshot)
+
+### What was fixed
+
+- **Blocker (buildAction regression)**: `runtime-context.ts:buildAction` threw "No atomic plan node" for bounded-loop (review-cycle) phase admits. The reconciler correctly emits admits with `profilePath` + `input.reviewCycle`, and the facade passes these through, but `buildAction` only looked up atomic plan nodes by nodeId. Fixed: when `descriptor.profilePath` is present, resolve the capability binding directly from the profile path instead of requiring a plan node lookup.
+- **E2E tests adapted**: `pipeline-complex-e2e.test.ts` tests now complete the ReviewCycle review phase with a proper `review-cycle/review-result/1` contract (Major finding) instead of the old `{ route: 'complex' }` adaptive-verify result. Tests verify ship blocking, escalate, and cancel from the ReviewCycle blocking state.
+- **Major (locale-payload snapshot)**: `pipeline.test.ts` expected `availableEngines: ['legacy']` for bug-fix, but the D4 migration makes `analyzeReconcilerSupport` return `['legacy', 'reconciler']`. Updated to the correct new value.
+- **Acceptance #8 (REAL DOGFOOD)**: Full ReviewCycle driven through real CLI — see evidence below.
+
 ## Evidence Log
 
 ### Dogfood: REAL CLI Run through ReviewCycle (acceptance #8 — PARTIAL)
@@ -55,6 +67,44 @@ Git revision：`8270941ae1fa9368221b4d3ef67f2b1c961d5956`
 
 **What remains**: Driving the Run through a real review → triage → fix → re-review → clean cycle requires completing agent actions with different actors. The mechanical path (review-cycle-runtime.test.ts 12/12) proves this works through the real canonical facade with real reducer/reconciler/Record/projector. A full CLI dogfood through each phase is the remaining step.
 
+### Dogfood: FULL ReviewCycle through real CLI (acceptance #8 — DONE)
+
+**Revision**: `9a262d84` (branch `feat/ecp-review-cycle`, after buildAction fix)
+**Script**: `test/dogfood-review-cycle.mjs`
+
+**RunId**: `run:b23b2cce16d90495fb22f5e7eb03b2220ee292629383b33cc89ddb81248496e6`
+
+**Per-phase ActionIds**:
+| Phase | ActionId | Actor |
+|-------|----------|-------|
+| propose | `action:3909ccd53e367d32cea9c5376c277343f7b2666c1660eea0c8d994f705f66d96` | propose (implementer) |
+| apply | `action:95af716eb2c9d34eb27e79e6a7729845bf1e40391179154a9d9d0dcc70793909` | apply (implementer) |
+| review | `action:1ab889f50166577c74d39d400b1a8039b007b5174d5790628b78b4892a2e9815` | reviewerA (reviewer) |
+| triage | `action:387d7ffd32671843eed2b059d25d24e4ec7b14b0acfe1eab405c497a36f24c83` | triageA (reviewer) |
+| fix | `action:531efd078ec506f3f83e807d106e8e1bdbaaf5ac8d0561e2003ec6e8b0124487` | fixerA (implementer) |
+| re-review | `action:34f8aa40a14526f182f400e9e4ebbc3eb644f009b2f52e6b7ee86ba476e474eb` | verifierA (reviewer, INDEPENDENT) |
+
+**Actor identityDigests**:
+- Reviewer (reviewerA): `sha256:f8b48c519cb49261798534ebd30eac88f5b93270f42e6ef6433439602e5ac394`
+- Fixer (fixerA): `sha256:eaec48eadb09aa0d9615a710dc45fd5a884bba9aceb962a2b838da82c62b3240`
+- Verifier (verifierA): `sha256:cead99bbbe6cdf5c6efc33d59aa36ab22aac5804670011c6b79ef8875fcc0daf`
+- Fixer ≠ Verifier: **confirmed**
+
+**Finding**: F1 (major) — "Dogfood: edge case in error handling path not covered by tests" → status **resolved**
+
+**Same-actor rejection CONFIRMED**: Attempting re-review with fixerA's identity was rejected by the CLI: "The fixer cannot verify their own ReviewCycle fix." Re-review then succeeded with independent verifierA.
+
+**Final ReviewCycle section** (from `pipeline status`):
+- round: 1
+- phase: re-review
+- outcome: **clean**
+- findings: [{ id: F1, severity: major, status: resolved }]
+
+**Total actions in Record**: 7 (propose + apply + 4 ReviewCycle phases + ship admitted)
+**Run status**: running (ship action active — bounded-loop clean, DAG permits ship)
+
+**What was driven**: Complete CLI-driven ReviewCycle: start → propose → apply → review(Major) → triage(fix_inline) → fix(different actor) → re-review(independent verifier, same-actor rejected first) → **clean**. Ship admitted.
+
 ### Test-driven dogfood (acceptance #8 — mechanical path proven)
 
 **Test source**: `test/core/change-run/review-cycle-runtime.test.ts`
@@ -76,7 +126,7 @@ plan. RunId: `run:aaaa...aaaa` (fixture identity).
 | 5 | Open Blocker/Major blocks ship | **DONE** | DAG dependency + Minor-3 `assertReviewCycleMayShip` explicit guard |
 | 6 | Max-round cap | **DONE** | review-cycle-runtime test: exhausted → escalated terminal |
 | 7 | Recovery determinism | **DONE** | fault-injection tests: crash-before-commit, crash-after-commit, ack-loss, mid-fix-reviews |
-| 8 | Real dogfood | **PARTIAL** | REAL CLI Run started (run:0e97...); mechanical path proven via 12/12 tests; full phase cycle not driven |
+| 8 | Real dogfood | **DONE** | FULL CLI-driven ReviewCycle: start → propose → apply → review(Major) → triage → fix(fixerA) → re-review(verifierA, same-actor rejected first) → **clean**. Real RunId `run:b23b2c...`, 6 ActionIds, 3 distinct actor identityDigests, finding F1 resolved |
 | 9 | bug-fix + small-feature same body | **DONE** | `lowerer.test.ts` tests 7.4 + 7.5: both normalize to v2 BoundedLoop, lower to valid mixed plan, `analyzeReconcilerSupport` returns `supported_v2_review_cycle`; `pipeline show` reports `availableEngines: ['legacy','reconciler']` |
 | 10 | CLI/Mgmt/Ops same view | **DONE** | Plan persisted to `plan.json`; `review-cycle-parity.test.ts` asserts review-cycle section present across projection, CLI, and management API |
 | 11 | Canvas constrained view | **DONE** | V2NodePanel, StageNode badge, maxRounds configurable |
