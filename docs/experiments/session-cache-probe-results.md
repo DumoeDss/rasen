@@ -1,4 +1,7 @@
-# Session 缓存探针结果（KC1–KC6）
+# Session 缓存探针结果（KC1–KC6，两轮）
+
+> 第一轮：2026-07-29 16:35–20:06（另一 session 执行，本文主体）。
+> 第二轮：同日 20:27–22:14（主会话直跑 + 2 个 haiku subagent 操作员），见文末「第二轮」章——**第一轮的全部残余缺口已关闭**。
 
 - claude 版本：`2.1.220`；执行日期：2026-07-29（本地时区，UTC+8）；执行窗口 16:35 – 20:06
 - model：**haiku**（协议默认 sonnet；按用户指示改用 haiku。KC6 双档位跑了 haiku + sonnet，见 §KC6）
@@ -106,12 +109,12 @@
 
 ---
 
-## 残余缺口（下一轮该补的）
+## 残余缺口（第二轮处置结果）
 
-1. **>35 分钟的常驻进程留存未验证。** KC6 只证到 35 分钟，而设计的动机场景是 >55 分钟乃至 1 小时。**需要一次 65 分钟的 KC6 复跑**才能支撑原目标。
-2. **worktree 一发即走的 MISS 只在 haiku 上测过**（cwdrepo 臂也是 haiku）。sonnet 的一发即走 worktree 30 分钟从未测。KC6 显示进程存活效应与档位无关，但一发即走侧的档位无关性属推断而非实测。
-3. **7,326 token 项目上下文块中的易变字段未定位**，因此「是否可修」仍未知。
-4. KC5 的丢轮次是否与时序/负载相关未做重复试验（n=1）。
+1. **>35 分钟的常驻进程留存** → **已关闭**：第二轮实测 55 分钟 HIT / 65 分钟 MISS / 重写后 5 分钟恢复 HIT（见「第二轮」§R2.1）。
+2. **worktree 一发即走的 sonnet 档未测** → **搁置不补**：设计已把 resume-cli 降为恢复路径，该数据点不再承重。
+3. **7,326 token 易变字段未定位** → **决策为不修**（设计 R1：CLI 内部行为、版本间可漂移；主宿主 stream-json 免疫），另第二轮 fork 探针提供了新证据：fork 在 repo 未变、9 秒内也 MISS——该块含 session 身份相关成分（见 §R2.2）。
+4. **KC5 n=1** → **已关闭**：第二轮复跑 2 轮共 4 条并发，丢 1 条且**非确定性**（§R2.3）。
 
 ---
 
@@ -122,3 +125,69 @@
 - 新增未在协议内的探针：cwd 对照、68k/95k 规模对照、KC6 双臂。脚本在会话 scratchpad 目录：`ttl-bisect.ps1`、`resume-chain.ps1`、`kc1c-touch.ps1`、`kc6-stream.ps1`。
 - **PowerShell 坑**：`powershell.exe -File script.ps1 -Arr a b` 会把 `b` 当位置参数报错；`-Arr "a,b"` 会被当成**单个字符串**（`-GapsSeconds "1800,2400"` 被强转成 `18002400` 秒去 `Start-Sleep`）。两种写法都跑歪，其中后者不报错只跑错。必须用 `-Command` + 真正的 `@(...)` 字面量。
 - 二分探针从 scratchpad 目录启动，使其 transcript 落入不同的 `~/.claude/projects/` 目录，避免污染主链 KC4 普查——此举意外成为定位 cwd 根因的关键。
+
+---
+
+# 第二轮（2026-07-29 20:27–22:14）
+
+- 执行方式：主会话编写脚本并直接托管，2 个 haiku subagent 作操作员；被测 claude 调用全部 `--model haiku`，cwd 均为 worktree（第一轮杀死 resume-cli 的同一目录）
+- 脚本：会话 scratchpad 的 `kc6-65.ps1`（常驻 stream-json 臂，参数化复用）与 `fork-kc5.ps1`
+- 输出（全部保留）：`%USERPROFILE%\.rasen\probe\kc6-65min\`（原臂）、`kc6-65b\`（并行臂）、`fork-kc5\`
+- 费用：11 次计费调用，未逐一汇总（各结果 JSON 含 `total_cost_usd` 可复算），量级 ~$1.5；单次 98k 温读实测 $0.2296
+
+## R2.1 KC6 长留存（常驻 stream-json 进程，两臂）
+
+**原臂**（session `bb39885f`，bootstrap 20:27:55，ctx=98,503）：bootstrap 后立即在 worktree 放置 untracked marker（repo 变化刺激），空闲 55 分钟。
+
+**并行臂**（session `c2153592`，bootstrap 21:04:03，ctx=98,747；应用户建议与原臂并行以省 65 分钟墙钟）：bootstrap 后直接空闲 65 分钟，MISS 后 5 分钟补测。
+
+| 臂 | 空闲 | verdict | read / write | 时刻 |
+|---|---|---|---|---|
+| 原臂 | 55 分钟（全程带 untracked 变化） | **HIT**（99.5%） | 98,052 / 467（全 ephemeral_1h） | 21:23:02 |
+| 并行臂 | 65 分钟 | **MISS-rewrite** | 21,736 / 77,027 | 22:09:11 |
+| 并行臂 | MISS 后 5 分钟 | **HIT** | 98,763 / 77 | 22:14:14 |
+
+三条结论：
+
+1. **live 进程留存贯穿到 55 分钟**，1 小时 TTL 上界在 65 分钟处兑现——touch 只在预计空闲 >~55 分钟时需要，设计 §6.2 的 ~50 分钟 cadence 数字成立；
+2. **repo 变化免疫实证**：原臂 55 分钟空闲全程 worktree 存在 untracked 变化仍 HIT——live 进程的历史上下文冻结在会话内，不重渲染；
+3. **重写后温链立即恢复**：TTL 穿透付一次重写后，5 分钟补测即回 99.9% HIT——daemon respawn / TTL 穿透后的恢复语义确认。
+
+## R2.2 fork-session HIT 率（session `722854fa`，ctx=98,497）
+
+| 步骤 | 距源会话 | repo 状态 | verdict | read / write | 新 session |
+|---|---|---|---|---|---|
+| fork-immediate | **9 秒** | 未变 | **MISS-rewrite** | 21,736 / 76,782 | `2acdc676` |
+| fork-after-repochange | 24 秒 | untracked marker | **MISS-rewrite** | 21,736 / 76,793 | `a1e123d5` |
+
+**fork 无热缓存继承（0/2）**：即使 repo 未变、距 bootstrap 仅 9 秒，fork 的前缀也在同一 21,736 边界断开——注入块的重渲染含 session 身份相关成分（新 session id → 新字节），与时间、repo 状态无关。设计含义：fork 的定位从「免费继承热缓存」改写为「付一次全量重写换完整上下文继承 + 零重探索请求」（设计 §6.3 已改）。这同时是第一轮「易变字段」的新证据：该块并非只随 git 状态变。
+
+## R2.3 KC5 重复试验（同 session `722854fa`）
+
+两轮、每轮 2 条并发 `-p --resume`（Start-Job 并行）：
+
+| 轮 | 返回 | 健康检查（会话记得谁） |
+|---|---|---|
+| round 1（CONC-A1 / CONC-B1） | 2/2 success | A1 ✓，**B1 被静默丢弃** |
+| round 2（CONC-A2 / CONC-B2） | 2/2 success | A2 ✓，B2 ✓ |
+
+**丢轮次是非确定性的**（4 条丢 1 条）：不是「必丢一个」也不是「必都保留」，时序相关；双方均计费、均报 `success`、无任何报错。恢复路径的单飞锁必须严格自建，不得依赖 CLI 任何行为兜底。
+
+## R2.4 执行偏离与踩坑
+
+- **原臂脚本早退**：55 分钟唤醒的结果文件 21:23:02 落盘成功后、写日志（`Add-Content`）前脚本异常退出（疑瞬时文件锁），`finally` 清理了子进程，原臂的第二个 65 分钟样本未执行——由并行臂覆盖（65 分钟 n=1）。**教训：结果文件先于日志落盘的写序救了数据；P1 的 registry 写入须 retry-on-lock。**
+- **subagent 完成通知丢失 ×2**：两个操作员 subagent 的后台任务完成通知都丢了，靠主会话直接读盘收割。与第一轮监视器教训同源：**数据落盘、收割不依赖通知**——正是 Session 执行层 registry/journal 的立论。
+- **并行臂输出文件标签错位**：`kc6-65b\` 复用脚本参数（`-Gap1Seconds 3900 -Gap2Seconds 300`），文件名 `02-wake-55min-result.json` 实为 65 分钟 gap、`03-wake-65min-result.json` 实为 5 分钟补测；以本节表格与 `log.txt` 时间戳为准。
+- **marker 文件两臂共名**：`.probe-live-marker.tmp` 被两臂共用——原臂 21:23 的 finally 删除了它，等于并行臂 65 分钟空闲窗内 repo 又变了一次（21:23 删除事件）。对结论无影响（该臂 MISS 由 TTL 主导，且 live 进程本就免疫 repo 变化），但如需复跑应给每臂独立 marker 名。
+
+## R2.5 汇总判定（两轮合并后的最终证据状态）
+
+| 命题 | 状态 | 证据 |
+|---|---|---|
+| live stream-json 进程 = 主宿主可行 | **成立** | 35 分钟（双档位）+ 55 分钟（含 repo 变化）HIT |
+| 1h TTL 上界 | **成立** | 65 分钟 MISS（n=1，与预期一致） |
+| 重写后恢复 | **成立** | 5 分钟补测 HIT |
+| resume-cli 在 repo cwd 前缀不稳定 | **成立** | 第一轮 3+1 次 MISS + fork 0/2 |
+| fork 热继承 | **不成立** | 0/2，9 秒内也 MISS |
+| CLI 并发保护 | **不存在** | 非确定性静默丢轮次 |
+| touch 必要窗口 | **仅 >55 分钟空闲** | 55 HIT / 65 MISS 夹逼 |
