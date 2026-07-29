@@ -649,6 +649,35 @@ checks are not safe to run beside the suite, and a catastrophic-looking FAIL
 count from a concurrent run is a tooling artifact, not a regression. The clean
 re-run above followed a fresh `pnpm build` with nothing else touching `dist/`.
 
+### `scripts/skill-check.ts` — NOT repaired, and why
+
+Task 3.7 offered it as one way to run the template checks, and the engine worker
+found it **pre-broken on this branch**: it imports `test/helpers/skill-parser`,
+deleted in `8d6ae877` (unrelated to ECP-5), so it cannot run at all.
+
+Section 9's release checks do not require it, and it is not repaired here.
+The evidence:
+
+- It appears in **no** CI workflow (`.github/workflows/ci.yml` never mentions
+  it) and in **no** `package.json` script.
+- It is written for **Bun**, not Node — `import.meta.dir` is a Bun API.
+- `docs/grill-gstack-absorption.md` records that the
+  "bun/gen-skill-docs/skill-check toolchain" was **deleted** and the freshness
+  gate "unified on a parity hash". That parity hash is
+  `test/core/templates/skill-templates-parity.test.ts`, which runs in the suite,
+  gates every template payload and generated skill file, and is what caught this
+  change's template edits (two golden hashes regenerated).
+- Its only remaining references are archived `rasen/specs/*` requirements from
+  the gstack-absorption era.
+
+So it is an orphan of a retired toolchain whose replacement is green. Repairing
+it would resurrect a second, Bun-only freshness gate beside the one that
+actually runs — the "accidental second implementation" this slice exists to
+stop. **Recommendation, not enacted here:** delete it, as a separate change with
+the archived specs' requirements updated alongside. Deleting a script on the way
+past, inside a closure slice, is exactly the kind of silent scope creep this
+ledger is supposed to make visible.
+
 ### Versions (task 9.5)
 
 In-repo versions stay **0.1.5** — CLI `package.json`, `packages/ui/package.json`,
