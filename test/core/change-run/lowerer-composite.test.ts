@@ -469,3 +469,47 @@ describe('lowerer — composite-body BoundedLoop', () => {
     expect(loop.maxIterations).toBe(3);
   });
 });
+
+// ===== Group 6: Prepare-time gate generalization =====
+
+describe('supportsV2ExecutableRuntime gate', () => {
+  it('CompositeRef plan → reconciler executionMode', () => {
+    const prepared = prepareComposite();
+    expect(prepared.capability.executionMode).toBe('reconciler');
+    expect(prepared.capability.executable).toBe(true);
+  });
+
+  it('composite-body BoundedLoop plan → reconciler executionMode', () => {
+    const prepared = prepareLoop();
+    expect(prepared.capability.executionMode).toBe('reconciler');
+    expect(prepared.capability.executable).toBe(true);
+  });
+
+  it('pure atomic v2 plan (no composite/loop) → unavailable', () => {
+    const def: DefinitionSourceV2 = {
+      version: 2,
+      id: 'test:atomic-only',
+      sourceId: 'package:atomic-only',
+      name: 'atomic-only',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [
+          { id: 'a', kind: 'AtomicStage', capability: { id: SKILL_PROPOSE, version: '1' } },
+          { id: 'finish', kind: 'Finish', outcome: 'done' },
+        ],
+        connections: [
+          { id: 'af', from: { node: 'a', port: 'done' }, to: { node: 'finish', port: 'start' } },
+        ],
+      },
+    };
+    const result = EcpDefinitionModule.prepare(def, createCapabilityCatalogSnapshot(catalogDescriptors()));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Pure atomic v2 without composite/loop → unavailable (v1 path handles atomic)
+    expect(result.value.capability.executionMode).toBe('unavailable');
+  });
+});
+

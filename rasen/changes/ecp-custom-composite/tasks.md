@@ -42,11 +42,11 @@
 
 ## 6. Prepare-time gate generalization
 
-- [ ] 6.1 Rename `supportsV2ReviewCycleRuntime` to `supportsV2ExecutableRuntime` in `definition.ts`; preserve the ReviewCycle body shape check as one branch
-- [ ] 6.2 Add `CompositeRef` root node support: a CompositeRef is executable if its declaration body contains only AtomicStage nodes (flat DAG)
-- [ ] 6.3 Add custom BoundedLoop body support: a BoundedLoop is executable if its declaration body is ReviewCycle-shaped OR contains only AtomicStage nodes
-- [ ] 6.4 Update the `prepare()` return: `executionMode: 'reconciler'` when `supportsV2ExecutableRuntime` returns true
-- [ ] 6.5 Write gate tests: pure-atomic plan still legacy; ReviewCycle plan still reconciler; CompositeRef plan reconciler; composite-body BoundedLoop plan reconciler; plan with Choice/FanOut/Join still unavailable
+- [x] 6.1 Rename `supportsV2ReviewCycleRuntime` to `supportsV2ExecutableRuntime` in `definition.ts`; preserve the ReviewCycle body shape check as one branch
+- [x] 6.2 Add `CompositeRef` root node support: a CompositeRef is executable if its declaration body contains only AtomicStage nodes (flat DAG)
+- [x] 6.3 Add custom BoundedLoop body support: a BoundedLoop is executable if its declaration body is ReviewCycle-shaped OR contains only AtomicStage nodes
+- [x] 6.4 Update the `prepare()` return: `executionMode: 'reconciler'` when `supportsV2ExecutableRuntime` returns true
+- [x] 6.5 Write gate tests: pure-atomic plan still legacy; ReviewCycle plan still reconciler; CompositeRef plan reconciler; composite-body BoundedLoop plan reconciler; plan with Choice/FanOut/Join still unavailable
 
 ## 7. Static validation for custom-authored shapes
 

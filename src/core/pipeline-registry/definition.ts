@@ -1867,29 +1867,43 @@ function relevantCapabilityDescriptors(
   );
 }
 
-function supportsV2ReviewCycleRuntime(
+/**
+ * Determine whether a v2 definition is executable via the v2 reconciler runtime.
+ * Admits plans with root-level AtomicStage, Gate, Choice, Finish, CompositeRef,
+ * and BoundedLoop nodes. CompositeRef declarations must have AtomicStage-only
+ * bodies. BoundedLoop declarations must be either ReviewCycle-shaped or have
+ * AtomicStage-only bodies (composite body kind).
+ */
+function supportsV2ExecutableRuntime(
   definition: DefinitionSourceV2
 ): boolean {
-  let loops = 0;
+  let compositeOrLoop = 0;
   for (const node of definition.root.nodes) {
     if (node.kind === 'Finish') continue;
-    // Mixed plans allow AtomicStage (regular stages) alongside BoundedLoop
-    // (ReviewCycle). Other node kinds are not supported by the v2 reconciler.
     if (node.kind === 'AtomicStage') continue;
     if (node.kind === 'Gate') continue;
     if (node.kind === 'Choice') continue;
-    if (node.kind !== 'BoundedLoop') return false;
-    loops += 1;
-    if (
-      node.exits.clean?.action !== 'exit' ||
-      node.exits.needs_fix?.action !== 'continue'
-    ) {
-      return false;
+    if (node.kind === 'CompositeRef') {
+      // A CompositeRef is executable if its declaration body contains only
+      // AtomicStage nodes (flat DAG).
+      const declaration = definition.declarations.find(
+        (candidate) => candidate.id === node.declarationId
+      );
+      if (declaration === undefined) return false;
+      const hasNonAtomic = declaration.graph.nodes.some(
+        (bodyNode) => bodyNode.kind !== 'AtomicStage'
+      );
+      if (hasNonAtomic) return false;
+      compositeOrLoop += 1;
+      continue;
     }
+    if (node.kind !== 'BoundedLoop') return false;
+    compositeOrLoop += 1;
     const declaration = definition.declarations.find(
       (candidate) => candidate.id === node.body
     );
     if (declaration === undefined) return false;
+    // Check if ReviewCycle-shaped.
     const phases = declaration.graph.nodes
       .map((bodyNode) =>
         bodyNode.kind === 'AtomicStage'
@@ -1898,15 +1912,28 @@ function supportsV2ReviewCycleRuntime(
       )
       .filter((phase): phase is string => typeof phase === 'string')
       .sort();
-    if (
-      phases.length !== 4 ||
-      JSON.stringify(phases) !==
-        JSON.stringify(['fix', 're-review', 'review', 'triage'])
-    ) {
-      return false;
+    const isReviewCycleShaped =
+      phases.length === 4 &&
+      JSON.stringify(phases) ===
+        JSON.stringify(['fix', 're-review', 'review', 'triage']);
+    if (isReviewCycleShaped) {
+      // ReviewCycle loop: must exit on clean and continue on needs_fix.
+      if (
+        node.exits.clean?.action !== 'exit' ||
+        node.exits.needs_fix?.action !== 'continue'
+      ) {
+        return false;
+      }
+    } else {
+      // Composite body: declaration must contain only AtomicStage nodes.
+      const hasNonAtomic = declaration.graph.nodes.some(
+        (bodyNode) => bodyNode.kind !== 'AtomicStage'
+      );
+      if (hasNonAtomic) return false;
     }
+    compositeOrLoop += 1;
   }
-  return loops > 0;
+  return compositeOrLoop > 0;
 }
 
 function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
@@ -2255,7 +2282,7 @@ function prepare(source: DefinitionSource, catalog: CapabilityCatalogSnapshot): 
   // ReviewCycle BoundedLoop is executable via the reconciler. This makes
   // `bug-fix` (verifyPolicy: 'adaptive') and `small-feature` (review-loop)
   // route through the same ReviewCycle body as authored v2 definitions.
-  const v2ReviewCycleExecutable = supportsV2ReviewCycleRuntime(frozenDefinition);
+  const v2Executable = supportsV2ExecutableRuntime(frozenDefinition);
 
   return deepFreeze({
     ok: true,
@@ -2271,7 +2298,7 @@ function prepare(source: DefinitionSource, catalog: CapabilityCatalogSnapshot): 
         capability: sealedPlan.capabilityDigest,
         plan: sealedPlan.planDigest,
       },
-      capability: v2ReviewCycleExecutable
+      capability: v2Executable
         ? {
             definitionValid: true,
             planAvailable: true,
