@@ -1259,6 +1259,248 @@ describe('PipelineCanvasPage — edit mode', () => {
     );
   });
 
+  // --- ECP-2 tasks 8.5/8.6, delivered by ECP-5 (user-approved scope) -------
+  //
+  // `executable-custom-composite` requires the Canvas to CREATE a
+  // `CompositeDeclaration`, edit its contract, add/remove body AtomicStages,
+  // constrain the body palette, and refuse to delete a referenced declaration.
+  // The pure model shipped in `draft.ts` with ZERO callers in `src`, so every
+  // one of those requirements was unreachable. These cover the affordance,
+  // in the shape ECP-2's own task 8.7 names.
+
+  it('creates a declaration, references it from the root, and saves the round-trip', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    // "The Canvas SHALL allow the user to create a new `CompositeDeclaration`
+    // with a unique id, provenance `custom` …"
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-new-id"]'),
+      'my-composite',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-create"]'));
+
+    const row = container.querySelector(
+      '[data-testid="declaration-row"][data-declaration-id="my-composite"]'
+    );
+    expect(row).not.toBeNull();
+    expect(row!.getAttribute('data-provenance')).toBe('custom');
+    // Creating opens the editor on the new declaration.
+    expect(
+      container.querySelector('[data-testid="declaration-editor"]')!.getAttribute('data-declaration-id')
+    ).toBe('my-composite');
+
+    // Contract editing: "Canvas edits composite declaration scalar fields".
+    await clickAndFlush(container.querySelector('[data-testid="declaration-input-add"]'));
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-input-name"]'),
+      'brief',
+      'input'
+    );
+    const outcomesInput = container.querySelector(
+      '[data-testid="declaration-outcomes"]'
+    ) as HTMLInputElement;
+    outcomesInput.focus();
+    await setValueAndFlush(outcomesInput, 'done,needs_fix', 'input');
+    await act(async () => {
+      outcomesInput.blur();
+      await flushMicrotasks();
+    });
+
+    // Body stage: "Canvas edits composite body stages" (AtomicStage only).
+    await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
+    const stages = Array.from(
+      container.querySelectorAll('[data-testid="declaration-body-stage"]')
+    );
+    expect(stages).toHaveLength(1);
+    expect(stages[0]!.getAttribute('data-stage-kind')).toBe('AtomicStage');
+
+    // Reference it from the root graph, then save and read the posted body.
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-add-CompositeRef"]'));
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    vi.mocked(client.mutatePipeline).mockResolvedValueOnce({
+      pipeline: { name: 'v2-canvas', path: '/pipelines/v2-canvas' },
+      created: false,
+    });
+    vi.mocked(client.getPipelineDetail).mockResolvedValueOnce(v2EditableDetail);
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+    const posted = vi.mocked(client.mutatePipeline).mock.calls.at(-1)![0] as {
+      definition: {
+        declarations: { id: string; provenance: string; outcomes: string[]; inputs: { name: string }[]; graph: { nodes: { kind: string }[] } }[];
+        root: { nodes: { id: string; kind: string; declarationId?: string }[] };
+      };
+    };
+    const saved = posted.definition.declarations.find((d) => d.id === 'my-composite');
+    expect(saved).toBeDefined();
+    expect(saved!.provenance).toBe('custom');
+    expect(saved!.outcomes).toEqual(['done', 'needs_fix']);
+    expect(saved!.inputs.map((port) => port.name)).toEqual(['brief']);
+    expect(saved!.graph.nodes.map((node) => node.kind)).toEqual(['AtomicStage']);
+    // …and the root references it, closing "create declaration -> reference
+    // from root -> save round-trip".
+    expect(
+      posted.definition.root.nodes.some((node) => node.kind === 'CompositeRef')
+    ).toBe(true);
+  });
+
+  it('refuses to delete a declaration a root node still references, and allows it once unreferenced', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    // The fixture's `composite:review` is referenced by BOTH the `composite`
+    // CompositeRef and the `loop` BoundedLoop. "The Canvas SHALL NOT allow
+    // deleting a declaration that is still referenced by a root-level
+    // `CompositeRef` or `BoundedLoop`."
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="declaration-delete"][data-declaration-id="composite:review"]'
+      )
+    );
+    expect(
+      container.querySelector(
+        '[data-testid="declaration-row"][data-declaration-id="composite:review"]'
+      )
+    ).not.toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'still referenced'
+    );
+
+    // An unreferenced declaration deletes cleanly — proving the refusal above
+    // is the reference guard and not a blanket "delete does nothing".
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-new-id"]'),
+      'unused',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-create"]'));
+    expect(
+      container.querySelector('[data-testid="declaration-row"][data-declaration-id="unused"]')
+    ).not.toBeNull();
+    await clickAndFlush(
+      container.querySelector('[data-testid="declaration-delete"][data-declaration-id="unused"]')
+    );
+    expect(
+      container.querySelector('[data-testid="declaration-row"][data-declaration-id="unused"]')
+    ).toBeNull();
+  });
+
+  it('refuses to delete a declaration referenced ONLY by a BoundedLoop body', async () => {
+    // DISCRIMINATING PROBE. With a declaration referenced by both a
+    // CompositeRef and a BoundedLoop (the fixture's `composite:review`), a
+    // panel that re-implemented the reference check by scanning only
+    // CompositeRef nodes is indistinguishable from one that delegates to
+    // `removeDeclaration`. Here the ONLY reference is a BoundedLoop `body`, so
+    // the naive check allows the delete and orphans the loop's body — the
+    // spec's "still referenced by a root-level `CompositeRef` **or**
+    // `BoundedLoop`" is what forbids it.
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-new-id"]'),
+      'looped',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-create"]'));
+    // A loop body needs real stages; this also makes `looped` the only
+    // declaration a BoundedLoop can bind (the fixture's is empty).
+    await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-add-BoundedLoop"]'));
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+      'bounded-loop'
+    );
+    // No CompositeRef was added — the only edge to `looped` is the loop body.
+    expect(
+      container.querySelector('[data-testid="mock-node"][data-node-id="composite-ref"]')
+    ).toBeNull();
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="declaration-delete"][data-declaration-id="looped"]')
+    );
+    expect(
+      container.querySelector('[data-testid="declaration-row"][data-declaration-id="looped"]')
+    ).not.toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'still referenced'
+    );
+
+    // Drop the loop and the same delete now succeeds — the refusal tracked the
+    // reference, not the declaration.
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-remove"][data-node-id="bounded-loop"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="declaration-delete"][data-declaration-id="looped"]')
+    );
+    expect(
+      container.querySelector('[data-testid="declaration-row"][data-declaration-id="looped"]')
+    ).toBeNull();
+  });
+
+  it('rejects a duplicate declaration id with the model diagnostic', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    // "#### Scenario: Duplicate declaration id rejected".
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-new-id"]'),
+      'composite:review',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-create"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'already exists'
+    );
+    expect(
+      container.querySelectorAll(
+        '[data-testid="declaration-row"][data-declaration-id="composite:review"]'
+      )
+    ).toHaveLength(1);
+  });
+
+  it('constrains the body palette to AtomicStage only', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="declaration-select"][data-declaration-id="composite:review"]'
+      )
+    );
+
+    // ECP-2 task 8.6 / "Canvas edits composite body stages": "The body palette
+    // SHALL be constrained to `AtomicStage` only — `CompositeRef`,
+    // `BoundedLoop`, `Choice`, `FanOut`, and `Join` SHALL NOT be available in
+    // the body palette."
+    expect(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]')).not.toBeNull();
+    for (const kind of ['CompositeRef', 'BoundedLoop', 'Choice', 'FanOut', 'Join', 'Gate', 'Finish']) {
+      expect(
+        container.querySelector(`[data-testid="v2-body-palette-add-${kind}"]`),
+        `body palette must not offer ${kind}`
+      ).toBeNull();
+    }
+    // The body palette is a strict subset of the root palette, which still
+    // offers the kinds the ROOT graph may hold.
+    expect(container.querySelector('[data-testid="v2-palette-add-CompositeRef"]')).not.toBeNull();
+
+    // Removing the stage again keeps the navigator honest.
+    await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
+    expect(container.querySelectorAll('[data-testid="declaration-body-stage"]')).toHaveLength(1);
+    await clickAndFlush(container.querySelector('[data-testid="declaration-body-stage-remove"]'));
+    expect(container.querySelectorAll('[data-testid="declaration-body-stage"]')).toHaveLength(0);
+  });
+
   it('inserts a CompositeRef from the root palette and disables the kinds the draft cannot accept', async () => {
     // ECP-2 `executable-custom-composite`, "Canvas creates and references a
     // Custom Composite declaration": "The user SHALL be able to reference the

@@ -1,27 +1,8 @@
 import type { PipelineCatalogSkill } from '../api/types.js';
-import type { V2EditableNodeKind } from './draft.js';
+import { V2_ROOT_PALETTE_KINDS, type V2EditableNodeKind } from './draft.js';
 
 /** The DnD payload MIME type carrying a dragged skill's catalog entry. */
 export const PALETTE_DND_TYPE = 'application/rasen-pipeline-skill';
-
-/**
- * The v2 root palette: exactly the node kinds the editor may mutate, i.e. the
- * members of `V2_EDITABLE_NODE_KINDS`. `CompositeRef` and `BoundedLoop` joined
- * that set in ECP-2 (`executable-custom-composite`: "The user SHALL be able to
- * reference the declaration from the root graph via a `CompositeRef` node or
- * embed it in a `BoundedLoop`") and `addV2RootNode` gained branches for both,
- * but the palette was not extended — so the only affordance that could reach
- * those branches did not exist. FanOut/Join are deliberately absent: ECP-4
- * promises display and legality feedback for them, not root authoring.
- */
-const V2_PALETTE_KINDS = [
-  'AtomicStage',
-  'Gate',
-  'Choice',
-  'Finish',
-  'CompositeRef',
-  'BoundedLoop',
-] as const satisfies readonly V2EditableNodeKind[];
 
 /**
  * The assembly palette. Version 1 keeps the established draggable skill
@@ -62,7 +43,7 @@ export function PalettePanel({
       )}
       {definitionVersion === 2 && (
         <div class="palette-panel__list" data-testid="v2-palette">
-          {V2_PALETTE_KINDS.map((kind) => {
+          {V2_ROOT_PALETTE_KINDS.map((kind) => {
             const disabled =
               (kind === 'AtomicStage' &&
                 !(skills ?? []).some(

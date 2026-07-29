@@ -261,6 +261,33 @@ export function isV2EditableNodeKind(
 }
 
 /**
+ * The kinds the ROOT palette offers — the editable vocabulary, in display
+ * order. FanOut/Join are absent: ECP-4 promises display and legality feedback
+ * for them, not root authoring.
+ */
+export const V2_ROOT_PALETTE_KINDS: readonly V2EditableNodeKind[] = [
+  'AtomicStage',
+  'Gate',
+  'Choice',
+  'Finish',
+  'CompositeRef',
+  'BoundedLoop',
+];
+
+/**
+ * The kinds a DECLARATION BODY palette offers (ECP-2 task 8.6): `AtomicStage`
+ * only — "`CompositeRef`, `BoundedLoop`, `Choice`, `FanOut`, and `Join` SHALL
+ * NOT be available in the body palette" (`executable-custom-composite`,
+ * "Requirement: Canvas edits composite body stages"). `addBodyStage` enforces
+ * the same rule structurally by only ever writing an `AtomicStage`.
+ *
+ * Both palette vocabularies live HERE, beside `V2_EDITABLE_NODE_KINDS`, so
+ * "which kinds may appear where" has one home. This portfolio has already paid
+ * for four independent encodings of that question drifting apart.
+ */
+export const V2_BODY_PALETTE_KINDS: readonly V2EditableNodeKind[] = ['AtomicStage'];
+
+/**
  * The declaration a root-level `CompositeRef` may reference, if any: a custom
  * declaration, or a built-in one that actually carries a body graph.
  *
