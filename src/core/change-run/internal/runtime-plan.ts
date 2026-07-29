@@ -331,6 +331,73 @@ function reject(code: RuntimePlanErrorCode, message: string): never {
 }
 
 /**
+ * ECP-4: reject a plan in which any node transitively depends on TWO branch
+ * entries of the SAME choice.
+ *
+ * `requires` is AND semantics, and exactly one branch of a choice is ever
+ * selected — the rest become permanently ineligible. So a rejoin node
+ * downstream of both branches can never have all its requires satisfied. It is
+ * deliberately NOT excluded by `choiceBranchExclusions` (excluding it would
+ * silently drop authored work), which leaves it unadmittable AND still counted
+ * by the implicit-finish check: the Run stalls at `waiting` forever, with no
+ * escalate and no diagnostic. That is the worst possible failure mode.
+ *
+ * This is a purely static property of the plan — no Record is involved, and
+ * the verdict cannot change as a Run progresses — so it is rejected at build
+ * time, where the message can name the offending node and `pipeline start`
+ * fails outright. The alternative (escalating at runtime) would re-derive the
+ * same static fact on every reconcile and only surface after a Run was created.
+ * Same reasoning as rejecting unresolvable fan-out/join member paths.
+ */
+function validateNoChoiceBranchConvergence(input: RuntimePlanInput): void {
+  const choices = input.nodes.filter((node) => node.kind === 'choice');
+  if (choices.length === 0) return;
+
+  const dependents = new Map<string, string[]>();
+  for (const node of input.nodes) {
+    for (const required of node.requires) {
+      const existing = dependents.get(required);
+      if (existing === undefined) dependents.set(required, [node.hierarchicalPath]);
+      else existing.push(node.hierarchicalPath);
+    }
+  }
+  const reachableFrom = (entry: string): Set<string> => {
+    const seen = new Set<string>();
+    const queue = [entry];
+    while (queue.length > 0) {
+      const current = queue.pop()!;
+      if (seen.has(current)) continue;
+      seen.add(current);
+      for (const next of dependents.get(current) ?? []) queue.push(next);
+    }
+    return seen;
+  };
+
+  for (const choice of choices) {
+    const branches = choice.choice?.branches ?? {};
+    const entries = [...new Set(Object.values(branches))];
+    if (entries.length < 2) continue;
+    // reachedBy: node path -> the branch entries that transitively reach it.
+    const reachedBy = new Map<string, string[]>();
+    for (const entry of entries) {
+      for (const reached of reachableFrom(entry)) {
+        const existing = reachedBy.get(reached);
+        if (existing === undefined) reachedBy.set(reached, [entry]);
+        else existing.push(entry);
+      }
+    }
+    for (const [path, viaEntries] of reachedBy) {
+      if (viaEntries.length < 2) continue;
+      const sorted = [...viaEntries].sort();
+      reject(
+        'invalid_runtime_plan',
+        `Node ${JSON.stringify(path)} depends on ${sorted.length} branches of choice ${JSON.stringify(choice.hierarchicalPath)} (${sorted.map((e) => JSON.stringify(e)).join(', ')}). Only one branch is ever selected, so its requires can never all be satisfied and the Run would stall without finishing.`
+      );
+    }
+  }
+}
+
+/**
  * Build and validate the private frozen runtime plan the pure reconciler
  * consumes. This is an internal seam: only the lowerer (task 3.2) and the
  * reconciler read it, and it never leaves this package.
@@ -446,6 +513,8 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
       validateJoin(node.hierarchicalPath, node);
     }
   }
+
+  validateNoChoiceBranchConvergence(input);
 
   // Resolve dependency paths to NodeIds and reject dangling references.
   const pathToNodeId = new Map<string, NodeId>();

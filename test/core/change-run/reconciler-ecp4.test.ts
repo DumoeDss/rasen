@@ -511,8 +511,174 @@ describe('reconciler ECP-4: choice branch exclusion (N1)', () => {
     expect(result.actions.some((a) => a.kind === 'finish')).toBe(true);
   });
 
-  it('does NOT exclude a convergence node reachable from both branches', () => {
-    const plan = createRuntimePlan(
+  it('rejects a plan whose rejoin node depends on BOTH branches (R2-M1)', () => {
+    // `requires` is AND semantics and only one branch is ever selected, so a
+    // rejoin node downstream of both can never have all its requires satisfied.
+    // Leaving it in the plan produced the worst failure mode available: not
+    // excluded, so never admitted; still counted by the implicit-finish check,
+    // so the Run stalled at `waiting` forever with no escalate and no
+    // diagnostic. Rejected at build time instead — it is a static property of
+    // the plan, so `pipeline start` fails with the node named.
+    expect(() =>
+      createRuntimePlan(
+        ecp4PlanInput([
+          {
+            kind: 'choice',
+            hierarchicalPath: 'root:my-choice',
+            requires: [],
+            admissionKind: 'agent',
+            workspace: { access: 'none' },
+            choice: {
+              outcomes: ['simple', 'complex'],
+              branches: { simple: 'root:simple-path', complex: 'root:complex-path' },
+            },
+          },
+          {
+            kind: 'atomic',
+            hierarchicalPath: 'root:simple-path',
+            requires: ['root:my-choice'],
+            admissionKind: 'agent',
+            workspace: { access: 'none' },
+          },
+          {
+            kind: 'atomic',
+            hierarchicalPath: 'root:complex-path',
+            requires: ['root:my-choice'],
+            admissionKind: 'agent',
+            workspace: { access: 'none' },
+          },
+          {
+            kind: 'atomic',
+            hierarchicalPath: 'root:rejoin',
+            requires: ['root:simple-path', 'root:complex-path'],
+            admissionKind: 'agent',
+            workspace: { access: 'none' },
+          },
+        ])
+      )
+    ).toThrow(/"root:rejoin" depends on 2 branches of choice "root:my-choice"/);
+  });
+
+  it('rejects a TRANSITIVE rejoin two hops below both branches', () => {
+    // The convergence need not be a direct dependent of the branch entries.
+    expect(() =>
+      createRuntimePlan(
+        ecp4PlanInput([
+          {
+            kind: 'choice',
+            hierarchicalPath: 'root:my-choice',
+            requires: [],
+            admissionKind: 'agent',
+            workspace: { access: 'none' },
+            choice: {
+              outcomes: ['simple', 'complex'],
+              branches: { simple: 'root:simple-path', complex: 'root:complex-path' },
+            },
+          },
+          {
+            kind: 'atomic',
+            hierarchicalPath: 'root:simple-path',
+            requires: ['root:my-choice'],
+            admissionKind: 'agent',
+            workspace: { access: 'none' },
+          },
+          {
+            kind: 'atomic',
+            hierarchicalPath: 'root:after-simple',
+            requires: ['root:simple-path'],
+            admissionKind: 'agent',
+            workspace: { access: 'none' },
+          },
+          {
+            kind: 'atomic',
+            hierarchicalPath: 'root:complex-path',
+            requires: ['root:my-choice'],
+            admissionKind: 'agent',
+            workspace: { access: 'none' },
+          },
+          {
+            kind: 'atomic',
+            hierarchicalPath: 'root:rejoin',
+            requires: ['root:after-simple', 'root:complex-path'],
+            admissionKind: 'agent',
+            workspace: { access: 'none' },
+          },
+        ])
+      )
+    ).toThrow(/"root:rejoin" depends on 2 branches/);
+  });
+
+  it('accepts branches that never rejoin', () => {
+    // The rejection must not fire on the ordinary shape: each branch has its
+    // own downstream and they never converge.
+    expect(() =>
+      createRuntimePlan(
+        ecp4PlanInput([
+          {
+            kind: 'choice',
+            hierarchicalPath: 'root:my-choice',
+            requires: [],
+            admissionKind: 'agent',
+            workspace: { access: 'none' },
+            choice: {
+              outcomes: ['simple', 'complex'],
+              branches: { simple: 'root:simple-path', complex: 'root:complex-path' },
+            },
+          },
+          {
+            kind: 'atomic',
+            hierarchicalPath: 'root:simple-path',
+            requires: ['root:my-choice'],
+            admissionKind: 'agent',
+            workspace: { access: 'none' },
+          },
+          {
+            kind: 'atomic',
+            hierarchicalPath: 'root:after-simple',
+            requires: ['root:simple-path'],
+            admissionKind: 'agent',
+            workspace: { access: 'none' },
+          },
+          {
+            kind: 'atomic',
+            hierarchicalPath: 'root:complex-path',
+            requires: ['root:my-choice'],
+            admissionKind: 'agent',
+            workspace: { access: 'none' },
+          },
+        ])
+      )
+    ).not.toThrow();
+  });
+
+  it('treats an undeclared outcome as no selection and re-admits the evaluator', () => {
+    const plan = createRuntimePlan(branchedChoicePlanInput());
+    let record = startRecord(plan);
+    // 'medium' is not in outcomes — the facade rejects this, but the kernel
+    // must not depend on that: an unrecognised result previously marked the
+    // choice succeeded and unblocked EVERY branch at once.
+    record = commitNode(plan, record, 'root:my-choice', { outcome: 'medium' });
+
+    const result = reconcile(plan, record);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const paths = admittedPaths(plan, result.actions);
+    expect(paths).not.toContain('root:simple-path');
+    expect(paths).not.toContain('root:complex-path');
+    expect(paths).toContain('root:my-choice');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ECP-4 evaluator retry cap (R2-m1). An unresolved evaluator is re-admitted so
+// a transient failure can recover, but only a bounded number of times — an
+// uncapped loop spends paid agent dispatches until the sealed attempt budget
+// dies and reports a generic `execution_budget_exhausted` naming nothing.
+// ---------------------------------------------------------------------------
+
+describe('reconciler ECP-4: evaluator retry cap (R2-m1)', () => {
+  function soloChoicePlan(): RuntimePlan {
+    return createRuntimePlan(
       ecp4PlanInput([
         {
           kind: 'choice',
@@ -539,46 +705,102 @@ describe('reconciler ECP-4: choice branch exclusion (N1)', () => {
           admissionKind: 'agent',
           workspace: { access: 'none' },
         },
-        {
-          // Reachable from BOTH entries — an authored rejoin point. It must
-          // stay gated by its own requires, not silently excluded.
-          kind: 'atomic',
-          hierarchicalPath: 'root:rejoin',
-          requires: ['root:simple-path', 'root:complex-path'],
-          admissionKind: 'agent',
-          workspace: { access: 'none' },
-        },
       ])
     );
-    let record = startRecord(plan);
-    record = commitNode(plan, record, 'root:my-choice', { outcome: 'simple' });
-    record = commitNode(plan, record, 'root:simple-path');
+  }
 
+  function soloFanOutPlan(): RuntimePlan {
+    return createRuntimePlan(
+      fanOutPlanInput({
+        cap: 2,
+        budget: 2,
+        members: [
+          { id: 'a', required: true, condition: 'always' },
+          { id: 'b', required: false, condition: 'ui' },
+        ],
+      })
+    );
+  }
+
+  /** Commit N successive FAILED results for one evaluator node. */
+  function failEvaluator(
+    plan: RuntimePlan,
+    record: CanonicalRunRecord,
+    path: string,
+    times: number
+  ): CanonicalRunRecord {
+    let next = record;
+    for (let occurrence = 0; occurrence < times; occurrence += 1) {
+      const action = agentAction(plan, path, occurrence);
+      next = apply(plan, next, {
+        kind: 'admit-action',
+        action,
+        attemptOrdinal: 0,
+        deliveryMode: 'grant',
+      });
+      next = apply(plan, next, {
+        kind: 'observe-effect',
+        actionId: action.actionId,
+        effectId: action.effects[0]!.effectId,
+        status: 'succeeded',
+        receiptDigest: fixtureDigests.receiptDigest,
+        observation: { ok: true } as JsonValue,
+        evidence: evidenceFor(plan, action.actionId),
+      });
+      next = apply(plan, next, {
+        kind: 'commit-action-result',
+        actionId: action.actionId,
+        status: 'failed',
+        receiptDigest: fixtureDigests.receiptDigest,
+        result: { error: 'evaluator crashed' },
+        evidence: evidenceFor(plan, action.actionId),
+      });
+    }
+    return next;
+  }
+
+  it('re-admits a choice evaluator that failed once', () => {
+    const plan = soloChoicePlan();
+    const record = failEvaluator(plan, startRecord(plan), 'root:my-choice', 1);
     const result = reconcile(plan, record);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const rejoin = plan.nodes.find((n) => n.hierarchicalPath === 'root:rejoin')!;
-    // Not excluded — but still not ready, because it also requires the
-    // rejected branch. No admit, and no finish either.
-    expect(admittedPaths(plan, result.actions)).not.toContain('root:rejoin');
-    expect(result.actions.some((a) => a.kind === 'finish')).toBe(false);
-    expect(rejoin).toBeDefined();
+    const choiceNode = plan.nodes.find((n) => n.kind === 'choice')!;
+    expect(
+      result.actions.some((a) => a.kind === 'admit' && a.nodeId === choiceNode.nodeId)
+    ).toBe(true);
+    expect(result.actions.some((a) => a.kind === 'escalate')).toBe(false);
   });
 
-  it('treats an undeclared outcome as no selection and re-admits the evaluator', () => {
-    const plan = createRuntimePlan(branchedChoicePlanInput());
-    let record = startRecord(plan);
-    // 'medium' is not in outcomes — the facade rejects this, but the kernel
-    // must not depend on that: an unrecognised result previously marked the
-    // choice succeeded and unblocked EVERY branch at once.
-    record = commitNode(plan, record, 'root:my-choice', { outcome: 'medium' });
-
+  it('escalates with a named code once the choice evaluator hits the cap', () => {
+    const plan = soloChoicePlan();
+    const record = failEvaluator(plan, startRecord(plan), 'root:my-choice', 3);
     const result = reconcile(plan, record);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const paths = admittedPaths(plan, result.actions);
-    expect(paths).not.toContain('root:simple-path');
-    expect(paths).not.toContain('root:complex-path');
-    expect(paths).toContain('root:my-choice');
+    const choiceNode = plan.nodes.find((n) => n.kind === 'choice')!;
+    expect(
+      result.actions.some((a) => a.kind === 'admit' && a.nodeId === choiceNode.nodeId)
+    ).toBe(false);
+    const escalate = result.actions.find((a) => a.kind === 'escalate');
+    expect(escalate).toMatchObject({ code: 'choice_evaluator_unresolved' });
+    expect((escalate as { reason?: string }).reason).toContain('root:my-choice');
+  });
+
+  it('escalates with a named code once the fan-out condition hits the cap', () => {
+    const plan = soloFanOutPlan();
+    const record = failEvaluator(plan, startRecord(plan), 'root:experts', 3);
+    const result = reconcile(plan, record);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const fanOutNode = plan.nodes.find((n) => n.kind === 'fan-out')!;
+    expect(
+      result.actions.some((a) => a.kind === 'admit' && a.nodeId === fanOutNode.nodeId)
+    ).toBe(false);
+    const escalate = result.actions.find(
+      (a) => a.kind === 'escalate' && a.code === 'fan_out_condition_unresolved'
+    );
+    expect(escalate).toBeDefined();
+    expect((escalate as { reason?: string }).reason).toContain('root:experts');
   });
 });
