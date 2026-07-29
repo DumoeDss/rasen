@@ -121,6 +121,20 @@ type NodeDisposition =
   | Readonly<{ status: 'suspending-unsupported'; code: string }>;
 
 /**
+ * ECP-4: how many times an orchestration evaluator (Choice condition, FanOut
+ * condition) may be dispatched before the Run escalates.
+ *
+ * An unresolved evaluator — one that failed, or committed a result naming no
+ * declared outcome — is re-admitted so a transient failure can recover. Without
+ * a cap that retry loop runs until the sealed attempt budget dies, spending up
+ * to ~2x plan-size PAID agent dispatches and reporting a generic
+ * `execution_budget_exhausted` that names neither the node nor the cause.
+ * Atomic nodes are not retried at all; a small cap keeps evaluators close to
+ * that discipline while tolerating one bad dispatch.
+ */
+const MAX_EVALUATOR_ATTEMPTS = 3;
+
+/**
  * Pure deterministic control kernel for an Executable Composite Pipeline Run.
  *
  * `reconcile(plan, record)` reads only the frozen plan and the committed
@@ -210,7 +224,7 @@ export function reconcile(
     for (const fanOut of fanOutNodes) {
       if (succeeded.has(fanOut.nodeId) || excludedByChoice.has(fanOut.nodeId)) continue;
       if (!fanOut.requires.every((req) => succeeded.has(req))) continue;
-      if (committedResultForNode(record, fanOut.nodeId) !== null) {
+      if (succeededResultForNode(record, fanOut.nodeId) !== null) {
         succeeded.add(fanOut.nodeId);
       }
     }
@@ -354,11 +368,22 @@ export function reconcile(
     if (committedChoiceOutcome(record, choice) !== null) {
       succeeded.add(choice.nodeId);
     } else {
+      const attempts = occurrenceForNodeId(record, choice.nodeId);
+      if (attempts >= MAX_EVALUATOR_ATTEMPTS) {
+        // Escalate with a code that names the node and the cause, instead of
+        // retrying into a generic budget-exhausted terminal.
+        actions.push({
+          kind: 'escalate',
+          code: 'choice_evaluator_unresolved',
+          reason: `Choice evaluator ${choice.hierarchicalPath} did not commit a declared outcome in ${attempts} attempts.`,
+        });
+        continue;
+      }
       // Emit admit for the choice condition evaluator.
       actions.push({
         kind: 'admit',
         nodeId: choice.nodeId,
-        occurrence: occurrenceForNodeId(record, choice.nodeId),
+        occurrence: attempts,
         admissionKind: choice.admissionKind,
         access: choice.workspace.access,
         profilePath: choice.profilePath,
@@ -372,13 +397,22 @@ export function reconcile(
   for (const fanOut of fanOutNodes) {
     if (excludedByChoice.has(fanOut.nodeId)) continue;
     if (!fanOut.requires.every((req) => succeeded.has(req))) continue;
-    const conditionResult = committedResultForNode(record, fanOut.nodeId);
+    const conditionResult = succeededResultForNode(record, fanOut.nodeId);
     if (conditionResult === null) {
+      const attempts = occurrenceForNodeId(record, fanOut.nodeId);
+      if (attempts >= MAX_EVALUATOR_ATTEMPTS) {
+        actions.push({
+          kind: 'escalate',
+          code: 'fan_out_condition_unresolved',
+          reason: `FanOut condition evaluator ${fanOut.hierarchicalPath} did not commit a member decision in ${attempts} attempts.`,
+        });
+        continue;
+      }
       // Emit admit for the condition evaluator.
       actions.push({
         kind: 'admit',
         nodeId: fanOut.nodeId,
-        occurrence: occurrenceForNodeId(record, fanOut.nodeId),
+        occurrence: attempts,
         admissionKind: fanOut.admissionKind,
         access: fanOut.workspace.access,
         profilePath: fanOut.profilePath,
@@ -670,15 +704,25 @@ interface FanOutMemberCandidate {
 }
 
 /**
- * Read the committed domain result for a specific nodeId from the Record.
- * Returns the result object if the action has a committed result, null otherwise.
+ * ECP-4: read the SUCCEEDED domain result for an evaluator nodeId.
+ *
+ * Status matters. A failed evaluator can still carry partial output — a choice
+ * that crashed mid-analysis may leave `{ outcome: 'simple', error: ... }`, and
+ * a fan-out condition that crashed leaves no member decision at all. Reading
+ * those status-blind meant a FAILED choice selected a branch, and a FAILED
+ * fan-out dispatched every member through `readActiveMembers`' all-active
+ * fallback. Only a succeeded completion is a decision; anything else leaves the
+ * evaluator unresolved.
  */
-function committedResultForNode(
+function succeededResultForNode(
   record: CanonicalRunRecord,
   nodeId: NodeId
 ): JsonValue | null {
   const actions = Object.values(record.actions).filter(
-    (committed) => committed.action.nodeId === nodeId && committed.result !== undefined
+    (committed) =>
+      committed.action.nodeId === nodeId &&
+      committed.result !== undefined &&
+      committed.result.status === 'succeeded'
   );
   if (actions.length === 0) return null;
   const withResult = actions[actions.length - 1];
@@ -700,7 +744,7 @@ function committedChoiceOutcome(
   record: CanonicalRunRecord,
   choice: RuntimePlanChoiceNode
 ): string | null {
-  const committed = committedResultForNode(record, choice.nodeId);
+  const committed = succeededResultForNode(record, choice.nodeId);
   if (committed === null) return null;
   const outcome = (committed as Readonly<{ outcome?: unknown }>).outcome;
   return typeof outcome === 'string' && choice.outcomes.includes(outcome)
@@ -814,7 +858,7 @@ function evaluateJoin(
   fanOut: RuntimePlanFanOutNode,
   atomicNodes: readonly RuntimePlanAtomicNode[]
 ): 'failed' | 'waiting' | 'proceed' {
-  const conditionResult = committedResultForNode(record, fanOut.nodeId);
+  const conditionResult = succeededResultForNode(record, fanOut.nodeId);
   if (conditionResult === null) return 'waiting';
   const activeMembers = readActiveMembers(conditionResult, fanOut);
   const memberState = (memberNodeId: NodeId) => {
