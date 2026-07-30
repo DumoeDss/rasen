@@ -198,6 +198,8 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
         value: 'claude',
         source: 'legacy-default',
       });
+      expect(propose.dispatchMode).toBe('legacy-fallback');
+      expect(propose.bridge).toBeNull();
       expect(propose.effectiveModel).toHaveProperty('source');
       expect(propose.effectiveHandoff).toHaveProperty('source');
 

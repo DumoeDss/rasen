@@ -487,9 +487,10 @@
       "openFindings": "Open findings: {count} (resolve before ship)",
       "legacySkillHeading": "Legacy skill IDs in pipeline '{pipeline}' (update the pipeline yaml):",
       "legacySkillEntry": "  stage {stage}: {from} -> {to}",
-      "workerHandleWarning": "Worker handle warning: stage '{stage}' worker has no durable handle (recorded: {recorded}); record agentId/transcript on dispatch.",
+      "workerHandleWarning": "Worker handle warning: stage '{stage}' worker has no durable handle (recorded: {recorded}); record agentId/sessionId/transcript/threadId on dispatch.",
       "duplicateRunStateKey": "Duplicate run-state key: '{key}' repeated at {path} (JSON.parse keeps the last value).",
       "resumeHandles": "Resume handles available (worker sessions/transcripts): {stages}",
+      "resumeClaudeSession": "Claude bridge session for stage '{stage}': {sessionId} (cwd: {cwd})",
       "sessionHandoff": "Session handoff (generation {generation}): {path}",
       "gatePolicy": "Gate policy: {effective} ({source})",
       "executionBinding": "Execution checkout: {project} ({path})",
@@ -2508,6 +2509,21 @@
                     }
                   }
                 }
+              }
+            },
+            "dispatch": {
+              "description": "Dispatch a structured Claude print-mode worker",
+              "options": {
+                "runtime": { "description": "Worker runtime (claude)" },
+                "prompt-file": { "description": "UTF-8 file containing the complete worker prompt" },
+                "contract": { "description": "Structured result contract: leaf or evaluate" },
+                "sandbox": { "description": "Worker permissions: read-only or workspace-write" },
+                "model": { "description": "Claude model override" },
+                "effort": { "description": "Claude effort: low, medium, high, xhigh, or max" },
+                "cwd": { "description": "Worker working directory" },
+                "timeout-ms": { "description": "Bounded worker timeout in milliseconds" },
+                "resume": { "description": "Exact Claude session ID to resume" },
+                "json": { "description": "Output one machine-readable receipt" }
               }
             },
             "context": {

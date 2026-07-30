@@ -7,7 +7,7 @@ import {
   encodePackage,
   type PipelinePackageInput,
 } from '../../src/core/workflow-package/index.js';
-import { runCLI } from '../helpers/run-cli.js';
+import { cliProjectRoot, runCLI } from '../helpers/run-cli.js';
 
 const BUILTIN_NAMES = [
   'auto-decompose',
@@ -715,6 +715,7 @@ describe('pipeline command', () => {
         'runtime',
         'runtimeSource',
         'dispatchMode',
+        'bridge',
         'sessionReuse',
         'sandbox',
         'model',
@@ -812,12 +813,29 @@ stages:
         RASEN_HOME: home,
       };
 
-      const unsupported = await runCLI(
+      const bridged = await runCLI(
         ['pipeline', 'show', 'run-local-rescue', '--for-execution', '--json'],
-        { cwd: testDir, env }
+        {
+          cwd: testDir,
+          env: {
+            ...env,
+            RASEN_CLAUDE_BIN: path.join(
+              cliProjectRoot,
+              'test',
+              'fixtures',
+              'claude',
+              process.platform === 'win32' ? 'fake-claude.cmd' : 'fake-claude.mjs'
+            ),
+          },
+        }
       );
-      expect(unsupported.exitCode).toBe(1);
-      expect(unsupported.stderr).toContain('Unsupported runtime route codex -> claude');
+      expect(bridged.exitCode).toBe(0);
+      const bridgedJson = JSON.parse(bridged.stdout.trim());
+      expect(bridgedJson.stages[0]).toMatchObject({
+        runtime: 'claude',
+        dispatchMode: 'exec-bridge',
+        bridge: 'claude-print',
+      });
 
       const rescued = await runCLI(
         [
@@ -1450,11 +1468,13 @@ stages:
         runtime: 'codex',
         source: 'config-project',
         dispatchMode: 'exec-bridge',
+        bridge: 'codex-exec',
       });
       expect(json.effectiveRoles.reviewer).toEqual({
         runtime: 'codex',
         source: 'config-project',
         dispatchMode: 'exec-bridge',
+        bridge: 'codex-exec',
       });
       expect(json.effectiveRoles.implementer).toEqual({
         runtime: 'claude',
@@ -1928,6 +1948,53 @@ stages:
           sandbox: 'workspace-write',
         },
       });
+    });
+
+    it('surfaces an exact Claude bridge sessionId/cwd in JSON and human resume output', async () => {
+      const changeDir = path.join(changesDir, 'claude-session-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'small-feature',
+          stages: {
+            propose: {
+              status: 'done',
+              worker: {
+                runtime: 'claude',
+                dispatchMode: 'exec-bridge',
+                role: 'planner',
+                sessionId: 'claude-session-propose-1',
+                cwd: testDir,
+                sandbox: 'workspace-write',
+              },
+            },
+          },
+        }),
+        'utf-8'
+      );
+
+      const jsonResult = await runCLI(
+        ['pipeline', 'resume', 'claude-session-change', '--json'],
+        { cwd: testDir }
+      );
+      expect(jsonResult.exitCode).toBe(0);
+      const json = JSON.parse(jsonResult.stdout.trim());
+      expect(json.workers.propose).toMatchObject({
+        runtime: 'claude',
+        dispatchMode: 'exec-bridge',
+        sessionId: 'claude-session-propose-1',
+        cwd: testDir,
+      });
+      expect(Object.prototype.hasOwnProperty.call(json, 'workerHandleWarnings')).toBe(false);
+
+      const textResult = await runCLI(
+        ['pipeline', 'resume', 'claude-session-change'],
+        { cwd: testDir }
+      );
+      expect(textResult.exitCode).toBe(0);
+      expect(textResult.stdout).toContain('claude-session-propose-1');
+      expect(textResult.stdout).toContain(testDir);
     });
 
     it('surfaces interrupted/escalated stages and open findings (P3)', async () => {

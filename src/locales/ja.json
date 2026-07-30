@@ -487,9 +487,10 @@
       "openFindings": "未解決の指摘: {count}件（リリース前に解消してください）",
       "legacySkillHeading": "パイプライン'{pipeline}'に旧スキルIDがあります（pipeline yamlを更新してください）:",
       "legacySkillEntry": "  ステージ{stage}: {from} -> {to}",
-      "workerHandleWarning": "ワーカーハンドル警告: ステージ'{stage}'のワーカーに永続ハンドルがありません（記録: {recorded}）。dispatch時にagentId/transcriptを記録してください。",
+      "workerHandleWarning": "ワーカーハンドル警告: ステージ'{stage}'のワーカーに永続ハンドルがありません（記録: {recorded}）。dispatch時にagentId/sessionId/transcript/threadIdを記録してください。",
       "duplicateRunStateKey": "実行状態キーの重複: '{key}'が{path}で重複しています（JSON.parseは最後の値を保持します）。",
       "resumeHandles": "利用可能な再開ハンドル（ワーカーセッション/transcript）: {stages}",
+      "resumeClaudeSession": "ステージ'{stage}'のClaudeブリッジセッション: {sessionId} (cwd: {cwd})",
       "sessionHandoff": "セッションhandoff（世代{generation}）: {path}",
       "gatePolicy": "ゲートポリシー: {effective}（{source}）",
       "executionBinding": "実行チェックアウト: {project} ({path})",
@@ -2508,6 +2509,21 @@
                     }
                   }
                 }
+              }
+            },
+            "dispatch": {
+              "description": "構造化された Claude print-mode worker をディスパッチ",
+              "options": {
+                "runtime": { "description": "ワーカー runtime（claude）" },
+                "prompt-file": { "description": "完全なワーカープロンプトを含む UTF-8 ファイル" },
+                "contract": { "description": "構造化結果契約: leaf または evaluate" },
+                "sandbox": { "description": "権限: read-only または workspace-write" },
+                "model": { "description": "Claude model override" },
+                "effort": { "description": "Claude effort: low, medium, high, xhigh, max" },
+                "cwd": { "description": "ワーカーの作業ディレクトリ" },
+                "timeout-ms": { "description": "タイムアウト（ミリ秒）" },
+                "resume": { "description": "再開する正確な Claude session ID" },
+                "json": { "description": "機械可読 receipt を1件出力" }
               }
             },
             "context": {

@@ -88,6 +88,9 @@ describe('auto workflow (orchestrated autopilot)', () => {
       expect(skillText).toContain('planner=claude|codex');
       expect(skillText).toContain('runtime');
       expect(skillText).toContain('threadId');
+      expect(skillText).toContain('sessionId');
+      expect(skillText).toContain('claude-print');
+      expect(skillText).toContain('rasen agent dispatch --runtime claude');
       expect(skillText).toContain('Codex');
     });
 
