@@ -12,7 +12,7 @@ import * as fs from 'fs';
 import { createRequire } from 'module';
 import { FileSystemUtils } from '../utils/file-system.js';
 import { ensureClaudeAgentTeams } from './claude-settings.js';
-import { reconcileEditBoundaryHooks } from './edit-boundary-hooks.js';
+import { cleanupRetiredEditBoundaryArtifacts } from './retired-edit-boundary.js';
 import { transformToHyphenCommands } from '../utils/command-references.js';
 import { AI_TOOLS, OPENSPEC_DIR_NAME } from './config.js';
 import {
@@ -314,7 +314,7 @@ export class UpdateCommand {
     }
     const commandConfiguredSet = new Set(commandConfiguredTools);
 
-    // Runtime cleanup/reconciliation precedes every short circuit and does not
+    // Retired-boundary cleanup precedes every short circuit and does not
     // depend on a retired skill being selected or installed.
     for (const toolId of configuredTools) {
       const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
@@ -324,11 +324,10 @@ export class UpdateCommand {
       );
     }
     await cleanupLegacyEditBoundaryState();
-    for (const result of reconcileEditBoundaryHooks(
-      resolvedProjectPath,
-      configuredTools
-    )) {
-      if (result.warning) console.log(chalk.yellow(`Warning: ${result.warning}`));
+    const retiredBoundaryCleanup =
+      cleanupRetiredEditBoundaryArtifacts(resolvedProjectPath);
+    for (const warning of retiredBoundaryCleanup.warnings) {
+      console.log(chalk.yellow(`Warning: ${warning}`));
     }
 
     if (configuredTools.length === 0) {

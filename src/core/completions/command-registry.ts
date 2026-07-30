@@ -1415,44 +1415,6 @@ const COMMANDS: readonly CommandDefinition[] = [
     flags: [],
     subcommands: [
       {
-        name: 'edit-boundary',
-        flags: [],
-        subcommands: [
-          {
-            name: 'set',
-            acceptsPositional: true,
-            positionals: [{ name: 'directory' }],
-            flags: [
-              {
-                name: 'runtime',
-                takesValue: true,
-              },
-              COMMON_FLAGS.json,
-            ],
-          },
-          {
-            name: 'status',
-            flags: [
-              {
-                name: 'runtime',
-                takesValue: true,
-              },
-              COMMON_FLAGS.json,
-            ],
-          },
-          {
-            name: 'clear',
-            flags: [
-              {
-                name: 'runtime',
-                takesValue: true,
-              },
-              COMMON_FLAGS.json,
-            ],
-          },
-        ],
-      },
-      {
         name: 'context',
         flags: [
           {

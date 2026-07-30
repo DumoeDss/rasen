@@ -6,9 +6,10 @@ import * as path from 'node:path';
 import { InitCommand } from '../../src/core/init.js';
 import { UpdateCommand } from '../../src/core/update.js';
 import {
-  EDIT_BOUNDARY_HOOK_STATUS,
-  inspectEditBoundaryHook,
-} from '../../src/core/edit-boundary-hooks.js';
+  RETIRED_CLAUDE_EDIT_BOUNDARY_HANDLER,
+  RETIRED_CODEX_EDIT_BOUNDARY_HANDLER,
+  retiredEditBoundaryStateFileName,
+} from '../../src/core/retired-edit-boundary.js';
 
 describe('init/update edit-boundary lifecycle', () => {
   let fixture: string;
@@ -31,7 +32,7 @@ describe('init/update edit-boundary lifecycle', () => {
     fs.rmSync(fixture, { recursive: true, force: true });
   });
 
-  it('init reconciles Claude/Codex hooks without retired skills and is idempotent', async () => {
+  it('fresh init leaves Claude/Codex without a Rasen edit-boundary hook', async () => {
     const init = new InitCommand({
       tools: 'claude,codex',
       profile: 'core',
@@ -39,8 +40,14 @@ describe('init/update edit-boundary lifecycle', () => {
     });
     await init.execute(project);
 
-    expect(inspectEditBoundaryHook(project, 'claude').enforcement).toBe('hard');
-    expect(inspectEditBoundaryHook(project, 'codex').enforcement).toBe('soft');
+    const claudeSettingsPath = path.join(project, '.claude', 'settings.json');
+    const codexHooksPath = path.join(project, '.codex', 'hooks.json');
+    if (fs.existsSync(claudeSettingsPath)) {
+      expect(fs.readFileSync(claudeSettingsPath, 'utf-8')).not.toContain(
+        RETIRED_CLAUDE_EDIT_BOUNDARY_HANDLER.command
+      );
+    }
+    expect(fs.existsSync(codexHooksPath)).toBe(false);
     for (const dirName of ['rasen-freeze', 'rasen-guard', 'rasen-unfreeze']) {
       expect(fs.existsSync(path.join(project, '.claude', 'skills', dirName))).toBe(
         false
@@ -50,24 +57,19 @@ describe('init/update edit-boundary lifecycle', () => {
       );
     }
 
-    const claudeBefore = fs.readFileSync(
-      path.join(project, '.claude', 'settings.json'),
-      'utf-8'
-    );
-    const codexBefore = fs.readFileSync(
-      path.join(project, '.codex', 'hooks.json'),
-      'utf-8'
-    );
+    const claudeBefore = fs.existsSync(claudeSettingsPath)
+      ? fs.readFileSync(claudeSettingsPath, 'utf-8')
+      : null;
     await init.execute(project);
     expect(
-      fs.readFileSync(path.join(project, '.claude', 'settings.json'), 'utf-8')
+      fs.existsSync(claudeSettingsPath)
+        ? fs.readFileSync(claudeSettingsPath, 'utf-8')
+        : null
     ).toBe(claudeBefore);
-    expect(
-      fs.readFileSync(path.join(project, '.codex', 'hooks.json'), 'utf-8')
-    ).toBe(codexBefore);
+    expect(fs.existsSync(codexHooksPath)).toBe(false);
   });
 
-  it('update heals exact retired directories and state before its up-to-date return', async () => {
+  it('one update heals both retired generations without recreating hooks', async () => {
     await new InitCommand({
       tools: 'claude,codex',
       profile: 'core',
@@ -86,6 +88,61 @@ describe('init/update edit-boundary lifecycle', () => {
     fs.writeFileSync(statePath, 'src');
     fs.writeFileSync(path.join(process.env.RASEN_HOME!, 'keep.txt'), 'keep');
 
+    const userHandler = { type: 'command', command: 'echo user' };
+    const claudeSettingsPath = path.join(project, '.claude', 'settings.json');
+    const claudeSettings = fs.existsSync(claudeSettingsPath)
+      ? JSON.parse(fs.readFileSync(claudeSettingsPath, 'utf-8'))
+      : {};
+    claudeSettings.hooks = {
+      ...(claudeSettings.hooks ?? {}),
+      PreToolUse: [
+        { matcher: 'Bash', hooks: [userHandler] },
+        {
+          matcher: 'Edit|Write',
+          hooks: [RETIRED_CLAUDE_EDIT_BOUNDARY_HANDLER],
+        },
+      ],
+    };
+    fs.mkdirSync(path.dirname(claudeSettingsPath), { recursive: true });
+    fs.writeFileSync(claudeSettingsPath, JSON.stringify(claudeSettings));
+
+    const codexHooksPath = path.join(project, '.codex', 'hooks.json');
+    fs.mkdirSync(path.dirname(codexHooksPath), { recursive: true });
+    fs.writeFileSync(
+      codexHooksPath,
+      JSON.stringify({
+        keep: true,
+        hooks: {
+          PreToolUse: [
+            { matcher: 'Bash', hooks: [userHandler] },
+            {
+              matcher: 'apply_patch|Edit|Write',
+              hooks: [RETIRED_CODEX_EDIT_BOUNDARY_HANDLER],
+            },
+          ],
+        },
+      })
+    );
+
+    const runtimeStateDir = path.join(
+      process.env.RASEN_HOME!,
+      'runtime',
+      'edit-boundaries'
+    );
+    const runtimeStateName = retiredEditBoundaryStateFileName(path.resolve(project));
+    fs.mkdirSync(runtimeStateDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(runtimeStateDir, runtimeStateName),
+      JSON.stringify({
+        version: 1,
+        root: path.resolve(project),
+        boundary: path.resolve(project),
+        setByRuntime: 'codex',
+        setByEnforcement: 'soft',
+        updatedAt: new Date(0).toISOString(),
+      })
+    );
+
     await new UpdateCommand({ onlyThis: true }).execute(project);
 
     for (const toolDir of ['.claude', '.codex']) {
@@ -99,10 +156,73 @@ describe('init/update edit-boundary lifecycle', () => {
     expect(fs.readFileSync(path.join(process.env.RASEN_HOME!, 'keep.txt'), 'utf-8')).toBe(
       'keep'
     );
-    expect(
-      fs.readFileSync(path.join(project, '.claude', 'settings.json'), 'utf-8')
-    ).toContain(EDIT_BOUNDARY_HOOK_STATUS);
+    expect(fs.existsSync(path.join(runtimeStateDir, runtimeStateName))).toBe(false);
+    expect(JSON.parse(fs.readFileSync(claudeSettingsPath, 'utf-8')).hooks.PreToolUse)
+      .toEqual([{ matcher: 'Bash', hooks: [userHandler] }]);
+    expect(JSON.parse(fs.readFileSync(codexHooksPath, 'utf-8'))).toEqual({
+      keep: true,
+      hooks: {
+        PreToolUse: [{ matcher: 'Bash', hooks: [userHandler] }],
+      },
+    });
+
+    const claudeAfter = fs.readFileSync(claudeSettingsPath, 'utf-8');
+    const codexAfter = fs.readFileSync(codexHooksPath, 'utf-8');
+    await new UpdateCommand({ onlyThis: true }).execute(project);
+    expect(fs.readFileSync(claudeSettingsPath, 'utf-8')).toBe(claudeAfter);
+    expect(fs.readFileSync(codexHooksPath, 'utf-8')).toBe(codexAfter);
   });
+
+  it.each([
+    [
+      'claude',
+      '.claude',
+      'settings.json',
+      'Edit|Write',
+      RETIRED_CLAUDE_EDIT_BOUNDARY_HANDLER,
+    ],
+    [
+      'codex',
+      '.codex',
+      'hooks.json',
+      'apply_patch|Edit|Write',
+      RETIRED_CODEX_EDIT_BOUNDARY_HANDLER,
+    ],
+  ] as const)(
+    'update smoke-cleans an exact %s hook while preserving an unrelated handler',
+    async (tool, toolDir, configFile, matcher, retiredHandler) => {
+      await new InitCommand({
+        tools: tool,
+        profile: 'core',
+        interactive: false,
+      }).execute(project);
+      const configPath = path.join(project, toolDir, configFile);
+      const existing = fs.existsSync(configPath)
+        ? JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+        : {};
+      const userGroup = {
+        matcher: 'Bash',
+        hooks: [{ type: 'command', command: 'echo user' }],
+      };
+      existing.hooks = {
+        ...(existing.hooks ?? {}),
+        PreToolUse: [
+          userGroup,
+          { matcher, hooks: [retiredHandler] },
+        ],
+      };
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify(existing));
+
+      await new UpdateCommand({ onlyThis: true }).execute(project);
+
+      const cleaned = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      expect(cleaned.hooks.PreToolUse).toEqual([userGroup]);
+      const after = fs.readFileSync(configPath, 'utf-8');
+      await new UpdateCommand({ onlyThis: true }).execute(project);
+      expect(fs.readFileSync(configPath, 'utf-8')).toBe(after);
+    }
+  );
 
   it('does not install a false hook for an unsupported configured tool', async () => {
     process.env.HERMES_HOME = path.join(fixture, 'hermes-home');
