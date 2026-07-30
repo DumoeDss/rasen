@@ -30,11 +30,18 @@ The `rasen-review-cycle` skill SHALL act as a thin launcher of the canonical Rev
 
 A finding SHALL be marked resolved only when a non-author confirms the fix against the original finding. The actor-separation invariant SHALL be enforced structurally by the canonical reducer before commit, not by prompt convention. The reducer SHALL reject a re-review completion whose actor identity matches the fixer's actor identity.
 
-#### Scenario: Structural non-author confirmation enforced by reducer
+#### Scenario: Structural non-author confirmation
 
 - **WHEN** the same actor (by `identityDigest`) submits both the fix-phase result and the re-review-phase result
 - **THEN** the canonical reducer SHALL reject the re-review completion with code `review_cycle_actor_separation`
 - **AND** the rejection SHALL occur before the result is committed to the Record
+- **AND** under the multi-agent path the worker that re-reviews a fix SHALL still be a different worker (different context) than the one that authored the fix
+
+#### Scenario: Trivial inline fix uses the equivalent non-author check
+
+- **WHEN** a trivial fix is applied inline by the LEAD
+- **THEN** an independent gate-run (tests/lint/build) plus a diff-read of the exact change SHALL serve as the equivalent non-author check
+- **AND** that check MUST be recorded in the cycle report / run-state
 
 #### Scenario: Skill projects actor information from the Record
 
@@ -64,16 +71,18 @@ The canonical reconciler SHALL enforce a max-rounds cap on the ReviewCycle bound
 
 The canonical Record SHALL carry all ReviewCycle evidence (findings, fix deltas, verification results, actor attestations) in the committed `CommittedDomainResult` fields. The skill's cycle report SHALL be a projection of the canonical Record, not an independent evidence store. The ship stage SHALL consume evidence from the same Record.
 
-#### Scenario: Evidence reconstructable from the Record
+#### Scenario: Final clean round records test evidence
 
 - **WHEN** a ReviewCycle Run completes
 - **THEN** every finding, fix delta, verification result, and actor attestation SHALL be reconstructable from the committed actions in the canonical Record
+- **AND** the selected verification scope, its rationale, the exact test/gate command(s) of the final round, their result, and the content tree fingerprint (`git rev-parse HEAD^{tree}`) they ran against SHALL be among that committed evidence
 - **AND** the skill's cycle report SHALL derive its content from the Record via the `ChangeRunView` projection
 
-#### Scenario: Ship consumes evidence from the Record
+#### Scenario: Ship consumes the evidence
 
 - **WHEN** a later ship stage evaluates its evidence-based test gate
 - **THEN** ship SHALL read the ReviewCycle evidence from the canonical Record's committed domain results
+- **AND** SHALL compare the recorded scope against its required verification scope and the recorded tree against the ship-time tree, reusing only the checks whose scope and tree both match
 - **AND** SHALL NOT depend on a separate `review-cycle-report.md` file for mechanical state
 
 ## ADDED Requirements

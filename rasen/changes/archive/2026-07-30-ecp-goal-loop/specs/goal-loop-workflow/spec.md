@@ -22,9 +22,22 @@ A stage with `loop.kind: goal` SHALL repeat a work→judge cycle driven by the d
 - **THEN** the reconciler SHALL emit an admit candidate for the judge phase of the same round
 - **AND** the skill/prompt SHALL NOT independently decide which phase runs next
 
+#### Scenario: Implementer is warm-reused across rounds
+
+- **WHEN** successive rounds of a goal-loop stage execute within a live session
+- **THEN** the LEAD SHALL dispatch the same implementer worker for each round (warm continuation)
+- **AND** SHALL NOT spawn a fresh implementer per round
+- **AND** when the implementer's context fills it SHALL follow the standard worker self-handoff (write a handoff document, return `HANDOFF`), after which the LEAD warm-seeds a successor and the loop continues
+
 ### Requirement: Goal-Loop Progress and Stall Detection
 
-A round "progresses" when (measure: the score moved favorably versus the prior round — `gte` increased or `lte` decreased) or (evaluate: the gap-set shrank or the gate became newly satisfied). Round 1 SHALL count as progress. Consecutive non-progressing rounds SHALL increment a stall streak tracked in the goal-cycle domain reducer state. The stall streak SHALL be reconstructable from the frozen plan and committed Record alone.
+A round "progresses" when (measure: the score moved favorably versus the prior round — `gte` increased or `lte` decreased) or (evaluate: the gap-set shrank or the gate became newly satisfied). Round 1 SHALL count as progress. Consecutive non-progressing rounds SHALL increment a stall streak tracked in the goal-cycle domain reducer state. The stall streak SHALL be reconstructable from the frozen plan and committed Record alone. Moving the streak into the reducer SHALL NOT remove the acting rule it exists to serve: `loopStallLimit` (default 2, gate-neutral) consecutive non-progressing rounds SHALL still trigger a LEAD strategy review — warm-seed a fresh implementer with a different approach, or escalate — rather than silently burning further rounds.
+
+#### Scenario: Stall streak triggers strategy review
+
+- **WHEN** `loopStallLimit` consecutive rounds fail to progress
+- **THEN** the LEAD SHALL initiate a strategy review (re-prompt with a different approach, or escalate)
+- **AND** SHALL NOT silently continue burning rounds up to `maxRounds`
 
 #### Scenario: Stall streak tracked in domain reducer
 
@@ -60,6 +73,11 @@ Resume of an interrupted goal-loop Run SHALL be driven entirely by the frozen pl
 - **THEN** the system SHALL reconstruct round, phase, score, and stall streak from plan + Record
 - **AND** SHALL NOT read `goal-run.json` to determine the next action
 
+#### Scenario: Resume with no round record starts round one
+
+- **WHEN** a goal-loop is resumed but no round has been committed yet (the define-goal stage completed but the iterate stage died before its first gate)
+- **THEN** round 1 SHALL be dispatched — the reconciler emitting the round-1 work admit candidate for a reconciler-engine Run, the LEAD dispatching round 1 on the legacy path
+
 ### Requirement: Authoritative Round Record in goal-run.json
 
 The canonical Record SHALL be the authoritative loop spine. Each committed goal-cycle event (work result, judge result) SHALL be recorded as a committed action in the canonical Record. The legacy `goal-run.json` file SHALL be a compatibility projection derived from the Record, NOT an independent authoritative source. A new Run SHALL NOT be back-driven by `goal-run.json`. The management API read path SHALL project per-round records from the Record into the legacy `{round, score?, measurePassed?, evaluateSatisfied?, gaps?}` shape for backward compatibility.
@@ -76,3 +94,14 @@ The canonical Record SHALL be the authoritative loop spine. Each committed goal-
 - **THEN** the response SHALL include per-round records derived from the canonical Record
 - **AND** the projection SHALL match the legacy shape
 - **AND** the projection SHALL NOT be writable or back-drive the Run
+
+#### Scenario: Round record appended after each gate
+
+- **WHEN** a goal-loop round's gate completes (satisfied, not-passed, or error)
+- **THEN** a record carrying the round number, the gate result, and the git tree fingerprint SHALL be available in the run artifact's resolved location — appended directly on the legacy path, derived from the canonical Record on the reconciler path
+- **AND** the record SHALL be readable by a successor worker after relay
+
+#### Scenario: Legacy run continues in place
+
+- **WHEN** a goal-loop resumes and its run artifact already exists in the change directory
+- **THEN** subsequent round records SHALL continue to resolve to that file (sticky-legacy), keeping one spine rather than splitting across two locations
