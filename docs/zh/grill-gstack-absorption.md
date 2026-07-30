@@ -91,9 +91,10 @@ OPSX（OpenSpec 的融合工作流层）已经把 **grill**（Matt Pocock 的技
 
 **编辑安全家**
 - `careful` —— 破坏性命令前警告（rm -rf / DROP TABLE / force-push）。`apply` 引用。
-- **历史记录（已退役）：**上游目录曾有三个独立的目录边界命令。当前
-  Rasen 使用 `rasen agent edit-boundary set|status|clear`，并报告
-  `hard|soft|unsupported`；旧命令已不可用。
+- **历史记录（已退役）：**上游目录曾有三个独立的目录边界命令，
+  Rasen 也曾短暂用运行时编辑边界命令替代它们；这两代方案均已废止。
+  当前工作流声明有证据支持的受影响区域并审计实际变更文件集合；
+  需要执行隔离时使用受管 sandbox/workspace 策略。
 
 > 名册从早期的 30（含平行生命周期专家）→ 20（移除平行生命周期）→ **19**（移除 domain-modeling）。当前稳定在 19。
 

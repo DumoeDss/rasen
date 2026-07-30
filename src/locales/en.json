@@ -2473,44 +2473,6 @@
         "agent": {
           "description": "Inspect and control base agent runtime state",
           "commands": {
-            "edit-boundary": {
-              "description": "Control the checkout-scoped runtime edit boundary",
-              "commands": {
-                "set": {
-                  "description": "Set the checkout-scoped edit boundary to an existing directory",
-                  "options": {
-                    "runtime": {
-                      "description": "Force runtime: claude, codex, or zed"
-                    },
-                    "json": {
-                      "description": "Output stable JSON"
-                    }
-                  }
-                },
-                "status": {
-                  "description": "Show the active boundary and observed host enforcement",
-                  "options": {
-                    "runtime": {
-                      "description": "Force runtime: claude, codex, or zed"
-                    },
-                    "json": {
-                      "description": "Output stable JSON"
-                    }
-                  }
-                },
-                "clear": {
-                  "description": "Clear the checkout-scoped edit boundary",
-                  "options": {
-                    "runtime": {
-                      "description": "Force runtime: claude, codex, or zed"
-                    },
-                    "json": {
-                      "description": "Output stable JSON"
-                    }
-                  }
-                }
-              }
-            },
             "dispatch": {
               "description": "Dispatch a structured Claude print-mode worker",
               "options": {
