@@ -1,8 +1,24 @@
 # change-work-dir Specification Delta
 
-## MODIFIED Requirements
+## REMOVED Requirements
 
 ### Requirement: Migration completes the sticky-legacy lifecycle
+
+Migrating a legacy ephemeron moves it from the change directory to the machine-home work location, after which the work-directory copy is the ONLY copy among the legacy locations: readers following the resolution chain (ephemera directory first, then the work directory, then the change directory — per the `file-placement` capability's sticky-legacy chain) SHALL find migrated state exactly as they find born-legacy state, with no reader changes required, and sticky-legacy writers SHALL keep updating a migrated file in place. Migration SHALL never create a state where one file exists in two locations.
+
+#### Scenario: Resume reads migrated run-state
+
+- **WHEN** a change's `auto-run.json` was migrated to its work directory and `rasen pipeline resume <change>` runs
+- **THEN** resume SHALL read the migrated run-state (`hasRunState: true`) and report the work directory as its source
+
+#### Scenario: Post-migration writes go external
+
+- **WHEN** a workflow appends to a migrated change's run-state after migration
+- **THEN** the writes SHALL target the file where it lives (the work directory), never a second copy elsewhere
+
+## ADDED Requirements
+
+### Requirement: Migration completes the terminal-relocation lifecycle
 
 Migrating a legacy ephemeron moves it FROM the machine-home work location TO the terminal file-placement location defined by the `file-placement` capability (evidence files to `<changeRoot>/evidence/`, handoff to `<changeRoot>/handoff/`, run-state to `<executionRoot>/.rasen/changes/<c>/ephemera/`). After migration, the terminal-location copy is the ONLY copy: readers following the resolution chain (terminal location first, then the legacy work directory, then the change directory — per the `file-placement` capability's sticky-legacy chain) SHALL find migrated state exactly as they find born-terminal state, with no reader changes required. Migration SHALL never create a state where one file exists in two locations. For an archived change, run-state is discarded (it has no recovery semantics post-archive) and listed in the migration report rather than migrated.
 
