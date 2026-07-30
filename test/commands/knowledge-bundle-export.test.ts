@@ -491,7 +491,7 @@ describe('rasen knowledge bundle export command', () => {
   });
 
   it('preserves export and registers import separately in the completion surface', () => {
-    const knowledge = COMMAND_REGISTRY.find((entry) => entry.name === 'knowledge');
+    const knowledge = COMMAND_REGISTRY.subcommands?.find((entry) => entry.name === 'knowledge');
     const bundle = knowledge?.subcommands?.find((entry) => entry.name === 'bundle');
     const commands = bundle?.subcommands?.map((entry) => entry.name);
     const flags = bundle?.subcommands?.[0]?.flags.map((flag) => flag.name);

@@ -6,6 +6,7 @@ export const LEGACY_WORKSPACE_DIR_NAME = 'openspec';
 export const COMMAND_PREFIX = 'rasen';
 export const LEGACY_COMMAND_PREFIX = 'opsx';
 export const SKILL_PREFIX = 'rasen';
+export const DEFAULT_SCHEMA = 'spec-driven';
 
 // Back-compat alias: existing code refers to OPENSPEC_DIR_NAME as the workspace
 // directory name. It now points at the rasen workspace.

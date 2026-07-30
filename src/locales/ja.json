@@ -162,14 +162,6 @@
     "selectProjectsPrompt": "取得するプロジェクトを選択（スペースで選択、Enterで確認）："
   },
   "knowledge": {
-    "commandDescription": "証跡ゲート付きの学習スキルを管理します",
-    "applyDescription": "絶対パスの JSON ファイルから学習スキル候補を適用します",
-    "listDescription": "正規の学習スキルを一覧表示します",
-    "showDescription": "正規の学習スキルを表示します",
-    "retireDescription": "管理対象の学習スキルを廃止します",
-    "projectSelectorDescription": "計画ルートとは独立してプロジェクトの知識所有者を選択します",
-    "storeSelectorDescription": "計画ルートとは独立してストアの知識所有者を選択します",
-    "runStateDirDescription": "auto-run.json を含む解決済みディレクトリから固定された知識 ID を読み込みます",
     "contextSummary": "知識所有者: {owner}; 計画ルート: {planningRoot}。",
     "candidatePathRequired": "候補ファイルが必要です。--from <絶対パスのJSONファイル> を指定してください。",
     "candidatePathMustBeAbsolute": "候補パスは絶対パスである必要があります: {path}",
@@ -223,17 +215,6 @@
     "retireRequiresConfirmation": "廃止には確認が必要です。非対話で廃止するには --yes を指定してください。",
     "retireCancelled": "廃止をキャンセルしました。",
     "cancelled": "キャンセルしました。",
-    "effectiveDescription": "このプロジェクトが実際に受け取る知識を表示します：解決結果、恒久 ID による出所、競合、劣化状態",
-    "migrateDescription": "クローンごとに散らばった知識をプロジェクトの正規の場所へ移し、所有記録を恒久 ID で記録し直します",
-    "dryRunDescription": "プレビューのみ：変更内容を報告し、何も書き込みません",
-    "bundleDescription": "移植可能なプロジェクト知識バンドルを管理します",
-    "bundleExportDescription": "プロジェクト自身の学習知識を1つの移植可能なファイルへエクスポートします",
-    "bundleImportDescription": "移植可能なバンドルをこのプロジェクト自身の知識としてインポートします",
-    "bundleImportPathDescription": "完全に検証してインポートする移植可能なバンドルファイル",
-    "bundleImportDryRunDescription": "何も書き込まず、バンドル全体を検証して分類します",
-    "bundleDestinationDescription": "新しく作成する宛先ファイル（上書きしません）",
-    "bundleStoreDestinationDescription": "所有権を与えず、登録済み Store にもバンドルを配置します",
-    "bundleJsonDescription": "JSONで出力します",
     "bundleExportSucceeded": "{project} のプロジェクト知識 {records} 件を {destination} へエクスポートしました。",
     "bundleStoreExportSucceeded": "同じバンドルを Store {store} の {destination} に配置しました。",
     "bundleStoreCommitFile": "コミットするファイル: {file}",
@@ -512,9 +493,8 @@
       "persistentPlanner": "プランナー（永続・再開可能）: {planner}",
       "portfolioDelivery": "portfolio配信: {status}",
       "remaining": "残り: {stages}",
-      "invalidPortfolioStateNote": "{path}のportfolio実行状態ファイルは無効です: {reason}",
-      "invalidRunStateNote": "{path}の実行状態ファイルは無効です: {reason}",
       "invalidPortfolioStateNote": "{path}のportfolio実行状態ファイルを読み取れませんでした: {reason}。この変更は子変更に分割されているため、分割されていない変更としては再開しません。再開する前に記録を修復してください。",
+      "invalidRunStateNote": "{path}の実行状態ファイルは無効です: {reason}",
       "noRunStateNote": "実行状態（auto-run.json）が見つかりません。分類を実行してパイプラインを選択してください。",
       "nextStage": "次: {stage}",
       "openFindings": "未解決の指摘: {count}件（リリース前に解消してください）",
@@ -1107,315 +1087,6 @@
       "unableReadCompletionFile": "警告: {path}の既存補完ファイルを読み込めませんでした: {detail}"
     }
   },
-  "help": {
-    "titles": {
-      "Usage:": "使用法:",
-      "Arguments:": "引数:",
-      "Options:": "オプション:",
-      "Global Options:": "グローバルオプション:",
-      "Commands:": "コマンド:"
-    },
-    "helpOption": "コマンドのヘルプを表示します",
-    "helpCommand": "指定したコマンドのヘルプを表示します"
-  },
-  "commandDescriptions": {
-    "Select a project knowledge owner independently from the planning root": "計画ルートとは独立してプロジェクトの知識所有者を選択します",
-    "Load frozen knowledge identity from the resolved directory containing auto-run.json": "auto-run.json を含む解決済みディレクトリから固定された知識 ID を読み込みます",
-    "Select a store knowledge owner independently from the planning root": "計画ルートとは独立してストアの知識所有者を選択します",
-    "Manage evidence-gated learned skills": "証跡ゲート付きの学習スキルを管理します",
-    "Manage portable project-knowledge bundles": "移植可能なプロジェクト知識バンドルを管理します",
-    "Export a project's own learned knowledge to one portable file": "プロジェクト自身の学習知識を1つの移植可能なファイルへエクスポートします",
-    "Import a portable bundle as this project's own knowledge": "移植可能なバンドルをこのプロジェクト自身の知識としてインポートします",
-    "Validate and classify the complete bundle without writing anything": "何も書き込まず、バンドル全体を検証して分類します",
-    "New destination file to create (never overwritten)": "新しく作成する宛先ファイル（上書きしません）",
-    "Also place the bundle in a registered Store without granting ownership": "所有権を与えず、登録済み Store にもバンドルを配置します",
-    "Apply a learned-skill candidate from an absolute JSON file": "絶対パスの JSON ファイルから学習スキル候補を適用します",
-    "List canonical learned skills": "正規の学習スキルを一覧表示します",
-    "Show a canonical learned skill": "正規の学習スキルを表示します",
-    "Retire a managed learned skill": "管理対象の学習スキルを廃止します",
-    "Absolute path to a candidate JSON file": "候補 JSON ファイルの絶対パス",
-    "Approve a global create or promotion non-interactively": "グローバルの作成・昇格を非対話で承認します",
-    "project or global": "project または global",
-    "Skip the confirmation prompt": "確認プロンプトをスキップします",
-    "AI-native system for spec-driven development": "仕様駆動開発のためのAIネイティブシステム",
-    "Alias for --deltas-only (deprecated, change-specific)": "--deltas-only の別名（非推奨、変更専用）",
-    "Allow setting unknown keys": "未知のキーの設定を許可します",
-    "Also move git-tracked ephemera, leaving the deletions uncommitted": "Git管理中の一時成果物も移動し、削除は未コミットのまま残します",
-    "Also reveal internal workflows in the human table": "内部ワークフローも人間向け表に表示します",
-    "Also write a VS Code workspace file for the set": "このセットのVS Codeワークスペースファイルも作成します",
-    "Analyze a session's token spend from its Claude transcript, Codex rollout, or Zed thread database (experimental: parses internal, undocumented formats that may change with harness or Zed updates)": "Claudeのtranscript、Codexのrollout、またはZedのスレッドデータベースからセッションのトークン消費量を分析します（実験的機能：内部の非公開形式を解析するため、harnessやZedの更新で動作しなくなる可能性があります）",
-    "Force the runtime: \"claude\", \"codex\", or \"zed\" (Zed reads its local threads.db; experimental, format may change)": "ランタイムを \"claude\"・\"codex\"・\"zed\" のいずれかに強制します（Zedはローカルの threads.db を読み取ります。実験的機能で、形式は変わる可能性があります）",
-    "Zed only: resolve the session by its first user command instead of a thread id": "Zed専用：スレッドidではなく最初のユーザーコマンドでセッションを特定します",
-    "Zed only: override the threads.db path (default: Zed's per-OS location)": "Zed専用：threads.db のパスを上書きします（既定はZedのOSごとの場所）",
-    "Archive a completed change and update main specs": "完了した変更をアーカイブし、メイン仕様を更新します",
-    "Archive handling: move (default), leave, or external": "アーカイブの扱い: move（デフォルト）、leave、または external",
-    "Auto-cleanup legacy files without prompting": "確認せずに旧形式のファイルを自動整理します",
-    "Beat duration in seconds. Resolution: flag > keepalive.beatSeconds config (default 270) > 100s fuse; max 300. Beats over the shell tool default timeout require raising that tool timeout.": "ビート時間（秒）。解決順序：フラグ > keepalive.beatSeconds 設定（デフォルト 270）> 100 秒フューズ。最大 300。シェルツールのデフォルトタイムアウトを超えるビートは、そのツールタイムアウトの引き上げが必要です。",
-    "Bypass the referrer guard, deleting even a still-referenced pipeline": "参照ガードを無視し、まだ参照されているパイプラインでも削除します",
-    "Bypass the referrer guard, deleting even a still-referenced workflow": "参照ガードを無視し、まだ参照されているワークフローでも削除します",
-    "Canonical clone source recorded in store.yaml": "store.yamlに記録する正式なclone元です",
-    "Change name": "変更名です",
-    "Change name to show status for": "状態を表示する変更名です",
-    "Change whose signals directory to poll": "signalsディレクトリをポーリングするchange",
-    "Check local store registration and metadata": "ローカルstoreの登録とメタデータを確認します",
-    "Comma-separated artifact IDs": "カンマ区切りの成果物IDです",
-    "Compatibility alias for `rasen profile`": "`rasen profile` の互換エイリアスです",
-    "Compose and save a named working view of folders you choose": "選択したフォルダーを名前付き作業ビューとして構成・保存します",
-    "Compose, keep, and open personal working views (purely local)": "個人用の作業ビューを構成・保存・表示します（ローカル限定）",
-    "Config scope: \"global\" (default) or \"project\"": "設定スコープです: \"global\"（既定）または \"project\"",
-    "Configure AI tools non-interactively (e.g., \"all\", \"none\", or comma-separated tool IDs)": "AIツールを非対話で設定します（例: \"all\"、\"none\"、カンマ区切りのツールID）",
-    "Confirm a 'prune' destination's permanent deletion (separate from --yes)": "'prune' 保存先の完全削除を確認します（--yesとは別）",
-    "Confirm creating store identity metadata": "store識別メタデータの作成を確認します",
-    "Confirm local store folder deletion": "ローカルstoreフォルダーの削除を確認します",
-    "Confirm removal non-interactively": "非対話で削除を承認します",
-    "Consent for a manifest-less --all copy back in non-interactive mode": "非対話モードでマニフェストなしの --all コピーバックへの同意",
-    "Copy a legacy openspec/ workspace into rasen/ (copy-only; originals untouched)": "旧openspec/ワークスペースをrasen/へコピーします（原本は変更しません）",
-    "Copy an existing schema to project for customization": "既存スキーマをカスタマイズ用にプロジェクトへコピーします",
-    "Create a minimal pipeline draft without installing it": "インストールせず最小パイプラインドラフトを作成します",
-    "Create a minimal workflow draft without installing it": "インストールせず最小ワークフロードラフトを作成します",
-    "Create a new change directory": "新しい変更ディレクトリを作成します",
-    "Create a new project-local schema": "プロジェクト固有の新しいスキーマを作成します",
-    "Create and manage stores - standalone Rasen repos you register on this machine": "このマシンへ登録する独立Rasenリポジトリ（store）を作成・管理します",
-    "Create and use a named profile interactively": "名前付きプロファイルを対話的に作成して使用します",
-    "Create new items": "新しい項目を作成します",
-    "Create or register a local store": "ローカルstoreを作成または登録します",
-    "Delete a saved profile": "保存済みプロファイルを削除します",
-    "Delete a saved workset (member folders are never touched)": "保存済みworksetを削除します（メンバーフォルダーは変更しません）",
-    "Delete an unreferenced user pipeline": "参照されていないユーザーパイプラインを削除します",
-    "Delete an unreferenced user workflow": "参照されていないユーザーワークフローを削除します",
-    "Delete the reported orphans (default is report-only)": "報告された孤立項目を削除します（デフォルトは報告のみ）",
-    "Description to add to README.md": "README.mdへ追加する説明です",
-    "Detailed description for the feedback": "フィードバックの詳しい説明です",
-    "Directory to use for the store": "storeとして使用するディレクトリです",
-    "Disable color output": "カラー出力を無効にします",
-    "Disable interactive prompts": "対話プロンプトを無効にします",
-    "Display an interactive dashboard of specs and changes": "仕様と変更の対話ダッシュボードを表示します",
-    "Display artifact completion status for a change": "変更に含まれる成果物の完了状態を表示します",
-    "Do not open the default browser": "既定のブラウザを開きません",
-    "Do not prompt (skips optional marker-block cleanup)": "確認を行いません（任意のマーカーブロック整理を省略）",
-    "Do not prompt to set as default": "既定値に設定するか確認しません",
-    "Edit a saved profile definition interactively": "保存済みプロファイル定義を対話的に編集します",
-    "Empty pipeline draft directory to create": "作成する空のパイプラインドラフトディレクトリです",
-    "Empty workflow draft directory to create": "作成する空のワークフロードラフトディレクトリです",
-    "Enable strict validation mode": "厳格な検証モードを有効にします",
-    "Exclude scenario content (JSON only, spec-specific)": "シナリオ内容を除外します（JSONのみ、仕様専用）",
-    "Export YAML or JSON without embedding user workflows": "user workflowを埋め込まずYAMLまたはJSONとしてexportします",
-    "Export a built-in or saved profile instead of current settings": "現在設定ではなく組み込みまたは保存済みプロファイルをexportします",
-    "Export a user pipeline as .rasenpkg": "ユーザーパイプラインを.rasenpkgとしてexportします",
-    "Export a user workflow and its user dependencies as .rasenpkg": "ユーザーワークフローとそのユーザー依存を.rasenpkgとしてexportします",
-    "Export current settings or a named profile": "現在設定または名前付きプロファイルをexportします",
-    "Force detection to \"claude\" or \"codex\" instead of sniffing the file": "ファイル判定を使わず \"claude\" または \"codex\" を指定します",
-    "Force update even when tools are up to date": "ツールが最新でも強制更新します",
-    "Update every reachable, non-pinned registered project whose version is behind": "バージョンが古い、アクセス可能で固定されていないすべての登録プロジェクトを更新",
-    "Skip multi-project registry consultation (update only this project)": "マルチプロジェクトレジストリ参照をスキップ（このプロジェクトのみ更新）",
-    "Force value to be stored as string": "値を文字列として保存します",
-    "Forget a local store registration and delete its local folder": "ローカルstoreの登録とフォルダーを削除します",
-    "Forget a local store registration without deleting files": "ファイルを削除せずローカルstoreの登録を解除します",
-    "Generate completion script for a shell (outputs to stdout)": "shell補完スクリプトを生成します（標準出力へ出力）",
-    "Get a specific value (raw, scriptable)": "指定した値を取得します（raw、スクリプト向け）",
-    "Import a profile package, YAML, or JSON profile": "profile package、YAML、またはJSONプロファイルをimportします",
-    "Initialize Rasen in your project": "プロジェクトでRasenを初期化します",
-    "Install and lock a profile in rasen/config.yaml (full, core, or a saved profile; custom applies once without locking)": "プロファイルをインストールして rasen/config.yaml にロックします（full、core、または保存済みプロファイル。custom は一回限りでロックされません）",
-    "Initialize a Git repository in the store": "store内にGitリポジトリを初期化します",
-    "Inspect and control base agent runtime state": "基本エージェントのランタイム状態を確認・制御します",
-    "Control the checkout-scoped runtime edit boundary": "チェックアウト単位のランタイム編集境界を制御します",
-    "Set the checkout-scoped edit boundary to an existing directory": "チェックアウト単位の編集境界を既存ディレクトリに設定します",
-    "Force runtime: claude, codex, or zed": "ランタイムをclaude、codex、zedのいずれかに指定します",
-    "Show the active boundary and observed host enforcement": "有効な境界と検出されたホスト強制レベルを表示します",
-    "Clear the checkout-scoped edit boundary": "チェックアウト単位の編集境界を解除します",
-    "Inspect and manage orchestration pipelines": "オーケストレーションパイプラインを確認・管理します",
-    "Start (or reuse) a reconciler-engine Run for a change under a pipeline": "変更のパイプラインでreconciler-engine Runを開始（または再利用）します",
-    "Engine for this launch: auto (default), reconciler, or legacy. Wins over the runs.engine config; legacy refuses to create a canonical Run.": "この起動で使うエンジン: auto（既定）、reconciler、legacy。runs.engine 設定より優先され、legacy は正規 Run の作成を拒否します。",
-    "Print a reconciler-engine Run view for a change": "変更のreconciler-engine Runビューを出力します",
-    "Resume a reconciler-engine Run: grant the ready frontier": "reconciler-engine Runを再開し、ready frontierを許可します",
-    "Cancel a reconciler-engine Run for a change": "変更のreconciler-engine Runをキャンセルします",
-    "Complete a reconciler-engine Run action from a receipt body": "receipt bodyからreconciler-engine Runのactionを完了します",
-    "Submit a typed control request for a reconciler-engine Run": "reconciler-engine Runへ型付きcontrol requestを送信します",
-    "Exact Run ID": "正確なRun ID",
-    "Receipt body (file path or - for stdin)": "receipt body（ファイルパス、またはstdinには-）",
-    "Control body (file path or - for stdin)": "control body（ファイルパス、またはstdinには-）",
-    "Inspect machine-level threshold schemes": "マシンレベルのしきい値スキームを確認します",
-    "Install completion script for a shell": "shell補完スクリプトをインストールします",
-    "Introspect agent runtime state (context)": "エージェントの実行状態（context）を確認します",
-    "Limit to the project namespace entry for [id]": "[id] のproject名前空間エントリだけを対象にします",
-    "List (default) or remove orphaned machine-home directories and stale registry entries": "孤立したマシンホームディレクトリと古いレジストリエントリを一覧表示（デフォルト）または削除します",
-    "List all schemas with their resolution sources": "全スキーマと解決元を一覧表示します",
-    "List available pipelines (project > user > package)": "利用可能なパイプラインを一覧表示します（project > user > package）",
-    "List available workflow schemas with descriptions": "利用可能なワークフロースキーマと説明を一覧表示します",
-    "List built-in and saved profiles": "組み込み・保存済みプロファイルを一覧表示します",
-    "List built-in and user workflows": "組み込み・ユーザーワークフローを一覧表示します",
-    "List changes explicitly (default)": "変更を明示的に一覧表示します（既定）",
-    "List items (changes by default, or specs with --specs)": "項目を一覧表示します（既定は変更、--specsで仕様）",
-    "List registered stores": "登録済みstoreを一覧表示します",
-    "List threshold schemes": "しきい値スキームを一覧表示します",
-    "List specs instead of changes": "変更ではなく仕様を一覧表示します",
-    "Machine-home work-directory maintenance (migrate legacy in-repo ephemera)": "machine homeの作業ディレクトリを保守します（旧リポジトリ内一時成果物を移行）",
-    "Manage installable workflows in the user-wide library": "ユーザー共通ライブラリのインストール可能ワークフローを管理します",
-    "Manage machine-local project home state": "マシンローカルのプロジェクトホーム状態を管理します",
-    "Manage reusable workflow profiles": "再利用可能なワークフロープロファイルを管理します",
-    "Manage shell completions for Rasen CLI": "Rasen CLIのshell補完を管理します",
-    "Manage the resident Rasen daemon (sessions survive terminal exits)": "常駐Rasenデーモンを管理します（セッションはターミナル終了後も継続します）",
-    "Manage workflow schemas": "ワークフロースキーマを管理します",
-    "Manifest-less full copy back (with confirmation)": "マニフェストなしで全体をコピーして戻します（確認あり）",
-    "Max concurrent validations (defaults to env RASEN_CONCURRENCY or 6)": "検証の最大同時実行数です（RASEN_CONCURRENCYまたは6が既定）",
-    "Member folder as <path> or <name>=<path>; repeatable, first is the primary": "メンバーフォルダーを <path> または <name>=<path> で指定します（複数可、最初がprimary）",
-    "Migrate an in-repo project's planning content into a store and convert the repo to a pointer": "リポジトリ内プロジェクトの計画内容をストアへ移行し、リポジトリをポインターに変換します",
-    "Migrate legacy in-repo process ephemera (run-state, handoff, reports, ship-log) into the machine home": "旧リポジトリ内の一時成果物（run-state、handoff、reports、ship-log）をmachine homeへ移行します",
-    "Move existing archived changes to a destination and flip archive.destination together": "既存のアーカイブ済み変更を移動し、archive.destination を同時に切り替えます",
-    "One cache-keepalive beat: block briefly polling the change's role signal file": "キャッシュ維持ビート1回：changeのロールシグナルファイルを短時間ブロッキングポーリングします",
-    "Open a saved workset in your tool (editor window or agent session)": "保存済みworksetをツールで開きます（エディターウィンドウまたはエージェントセッション）",
-    "Open config in $EDITOR": "$EDITORで設定を開きます",
-    "Open the shipped viewer in your default browser, pre-loaded with the report": "生成したレポートを読み込んだ状態で、同梱のviewerをデフォルトブラウザで開きます",
-    "Open with this tool just this once": "今回だけこのツールで開きます",
-    "Optional goal metadata to store with the change": "変更と一緒に保存する任意の目標メタデータです",
-    "Pipeline to initialize run-state for": "実行状態を初期化するパイプラインです",
-    "Output as JSON": "JSONで出力します",
-    "Output as JSON (non-interactive)": "JSONで出力します（非対話）",
-    "Output as JSON (non-interactive; requires --yes to execute)": "JSONで出力します（非対話、実行には--yesが必要）",
-    "Output enriched instructions for creating an artifact or applying tasks": "成果物作成またはタスク実装用の詳細な指示を出力します",
-    "Output validation results as JSON": "検証結果をJSONで出力します",
-    "Override the Claude projects directory a session id is resolved against": "session idの解決に使うClaude projectsディレクトリを上書きします",
-    "Override the Claude projects directory used by --latest": "--latestが使用するClaude projectsディレクトリを上書きします",
-    "Override the default beat cap (12)": "デフォルトのビート上限（12）を上書きします",
-    "Override the resolved context-window limit": "解決済みcontext window上限を上書きします",
-    "Overwrite an already-installed pipeline of the same name": "同名のインストール済みパイプラインを上書きします",
-    "Overwrite an existing --code-workspace file": "既存の--code-workspaceファイルを上書きします",
-    "Overwrite an existing destination": "既存の出力先を上書きします",
-    "Overwrite existing destination": "既存の出力先を上書きします",
-    "Overwrite existing schema": "既存のスキーマを上書きします",
-    "Path to a Claude Code transcript or Codex rollout jsonl": "Claude Code transcriptまたはCodex rollout jsonlへのパスです",
-    "Path to a JSON or YAML pipeline definition": "JSONまたはYAML形式のパイプライン定義へのパス",
-    "Pin the listen port (default: 8791, or RASEN_DAEMON_PORT)": "listen portを固定します（既定は8791、またはRASEN_DAEMON_PORT）",
-    "Pin the listen port (default: ephemeral)": "listen portを固定します（既定は自動割り当て）",
-    "Pin the listen port (default: ephemeral; --no-daemon only)": "listen portを固定します（既定は自動割り当て、--no-daemon時のみ有効）",
-    "Preferred tool to open this workset with": "このworksetを開く既定ツールです",
-    "Preview only; never move files": "プレビューのみ行い、ファイルを移動しません",
-    "Print the move plan and change nothing": "移動計画を表示し、何も変更しません",
-    "Print the restore plan and change nothing": "復元計画を表示し、何も変更しません",
-    "Print the working context for the resolved Rasen root": "解決したRasen rootの作業コンテキストを表示します",
-    "Proceed past manifest drift, reporting gaps": "マニフェストの不一致を報告しつつ続行します",
-    "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store.": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）",
-    "Project store id override": "projectのstore IDを上書きします",
-    "Register an existing store directory": "既存のstoreディレクトリを登録します",
-    "Register an in-repo project into the project namespace and add it to a target store's references": "リポジトリ内projectをproject名前空間へ登録し、対象storeの参照へ追加します",
-    "Remove a key (revert to default)": "キーを削除して既定値へ戻します",
-    "Remove dangling machine-home registry entries and their orphaned home directories": "参照切れのmachine-home登録と孤立したhomeディレクトリを削除します",
-    "Replace an existing destination file": "既存の出力先ファイルを置き換えます",
-    "Replace an existing profile with the same name": "同名の既存プロファイルを置き換えます",
-    "Repo path to restore into": "復元先のリポジトリパス",
-    "Report context-window occupancy of a transcript from its recorded usage": "記録済み使用量からtranscriptのcontext window使用率を報告します",
-    "Report relationship health for the resolved Rasen root": "解決したRasen rootの関係性の状態を報告します",
-    "Report whether the resident daemon is running": "常駐デーモンが実行中かどうかを報告します",
-    "Reset all configuration (required)": "すべての設定を初期化します（必須）",
-    "Reset configuration to defaults": "設定を既定値へ戻します",
-    "Restore a store-hosted project back to in-repo planning": "ストアでホストされたプロジェクトをリポジトリ内計画へ復元します",
-    "Role key identifying this worker's signal file (e.g. reviewer, impl-spaces)": "このworkerのシグナルファイルを識別するロールキー（例: reviewer、impl-spaces）",
-    "Run the resident daemon in the foreground (debugging/advanced form)": "常駐デーモンをフォアグラウンドで実行します（デバッグ・上級者向け）",
-    "Save the imported profile under a different name": "importしたプロファイルを別名で保存します",
-    "Schema description": "スキーマの説明です",
-    "Schema override": "スキーマを上書きします",
-    "Schema to use": "使用するスキーマです",
-    "Scope to one active or archived change": "1件の進行中またはアーカイブ済み変更だけを対象にします",
-    "Seed proposal.md with this text, making the change active immediately": "このテキストでproposal.mdを種付けし、changeを即座にアクティブにします",
-    "Self-reported context size; below the keepalive floor stands down immediately": "自己申告のコンテキストサイズ。keepalive下限未満なら即時スタンドダウンします",
-    "Set a value (auto-coerce types)": "値を設定します（型を自動変換）",
-    "Set as project default schema": "プロジェクトの既定スキーマに設定します",
-    "Set fixer runtime: claude or codex": "fixerのruntimeを設定します: claude または codex",
-    "Set implementer runtime: claude or codex": "implementerのruntimeを設定します: claude または codex",
-    "Set planner runtime: claude or codex": "plannerのruntimeを設定します: claude または codex",
-    "Set reviewer runtime: claude or codex": "reviewerのruntimeを設定します: claude または codex",
-    "Set shipper runtime: claude or codex": "shipperのruntimeを設定します: claude または codex",
-    "Show a change or spec": "変更または仕様を表示します",
-    "Show a change's pipeline run-state (next/remaining stages)": "変更のパイプライン実行状態（次/残りのstage）を表示します",
-    "Show a pipeline stage DAG and build order": "パイプラインstageのDAGとbuild順を表示します",
-    "Show one threshold scheme": "しきい値スキームを表示します",
-    "Show all current settings": "現在の全設定を表示します",
-    "Show an installable workflow definition and known usage": "インストール可能ワークフローの定義と既知の利用元を表示します",
-    "Show config file location": "設定ファイルの場所を表示します",
-    "Show detailed installation output": "詳しいインストール内容を表示します",
-    "Show detailed validation steps": "詳しい検証手順を表示します",
-    "Show id and title with counts": "ID、タイトル、件数を表示します",
-    "Show only deltas (JSON only, change-specific)": "差分だけを表示します（JSONのみ、変更専用）",
-    "Show only requirements, exclude scenarios (JSON only, spec-specific)": "シナリオを除き要件だけを表示します（JSONのみ、仕様専用）",
-    "Show only user workflows with no detected consumers": "検出可能な利用元がないユーザーワークフローだけを表示します",
-    "Show or set per-role Claude/Codex runtimes for a pipeline": "パイプラインのrole別Claude/Codex runtimeを表示・設定します",
-    "Show resolved template paths for all artifacts in a schema": "スキーマ内の全成果物について解決済みテンプレートパスを表示します",
-    "Show saved worksets with their members": "保存済みworksetとメンバーを表示します",
-    "Show specific requirement by ID (JSON only, spec-specific)": "IDで指定した要件を表示します（JSONのみ、仕様専用）",
-    "Show where a schema resolves from": "スキーマの解決元を表示します",
-    "Show where an installable workflow resolves from": "インストール可能ワークフローの解決元を表示します",
-    "Skip Git repository initialization": "Gitリポジトリの初期化を省略します",
-    "Skip confirmation": "確認を省略します",
-    "Skip confirmation prompts": "確認プロンプトを省略します",
-    "Skip spec update operations": "仕様の更新処理を省略します",
-    "Skip the confirmation prompt (required to execute in --json mode)": "確認プロンプトを省略します（--jsonでの実行に必須）",
-    "Skip validation (not recommended)": "検証を省略します（非推奨）",
-    "Sort order: \"recent\" (default) or \"name\"": "並び順です: \"recent\"（既定）または \"name\"",
-    "Source store to eject from": "取り出し元のストア",
-    "Specify item type when ambiguous": "曖昧な場合に項目種別を指定します",
-    "Start the Rasen management platform (board + config) on a localhost server": "Rasen管理プラットフォーム（ボード＋設定）をlocalhostサーバーで起動します",
-    "Start the localhost config API + optional web UI": "localhostのconfig APIと任意のWeb UIを起動します",
-    "Start the resident daemon as a detached background process": "常駐デーモンを分離したバックグラウンドプロセスとして起動します",
-    "Stop the resident daemon, reaping its live sessions": "常駐デーモンを停止し、稼働中のセッションを終了します",
-    "Store id": "store IDです",
-    "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）",
-    "Submit feedback about Rasen": "Rasenについてのフィードバックを送信します",
-    "Suggest a pipeline for a task (advisory keyword heuristic)": "タスクに合うパイプラインを提案します（キーワードによる参考判定）",
-    "Target destination: in-repo, external, or store": "移動先: in-repo、external、または store",
-    "Target store to add the project to": "projectを追加する対象storeです",
-    "Target store to adopt into": "取り込み先のストア",
-    "Target the project namespace for <id> instead of the store namespace": "store名前空間ではなく<id>のproject名前空間を対象にします",
-    "Uninstall completion script for a shell": "shell補完スクリプトをアンインストールします",
-    "Update Rasen instruction files": "Rasenの指示ファイルを更新します",
-    "Use a built-in or saved profile": "組み込みまたは保存済みプロファイルを使用します",
-    "Use a self-hosted foreground server instead of the resident daemon": "常駐デーモンの代わりに自前のフォアグラウンドサーバーを使用します",
-    "Use the newest main-session transcript for the current directory": "現在のディレクトリに対応する最新main-session transcriptを使用します",
-    "Validate a schema structure and templates": "スキーマ構造とテンプレートを検証します",
-    "Validate active-profile skills before returning the executable DAG": "実行可能なDAGを返す前に有効なプロファイルのスキルを検証します",
-    "Validate all changes": "すべての変更を検証します",
-    "Validate all changes and specs": "すべての変更と仕様を検証します",
-    "Validate all pipelines": "すべてのパイプラインを検証します",
-    "Validate all specs": "すべての仕様を検証します",
-    "Validate an installed pipeline, draft directory, or .rasenpkg": "インストール済みパイプライン、ドラフトディレクトリ、または.rasenpkgを検証します",
-    "Validate an installed workflow, draft directory, or .rasenpkg": "インストール済みワークフロー、ドラフトディレクトリ、または.rasenpkgを検証します",
-    "Validate and atomically install a pipeline .rasenpkg": "パイプラインの.rasenpkgを検証してatomicにインストールします",
-    "Validate and atomically install a workflow directory or package": "ワークフローディレクトリまたはパッケージを検証してatomicにインストールします",
-    "Validate and install a pipeline definition file as a user pipeline": "パイプライン定義ファイルを検証し、ユーザーパイプラインとしてインストールします",
-    "Validate changes and specs": "変更と仕様を検証します",
-    "Verify moved files by content hash": "移動したファイルを内容ハッシュで検証します",
-    "View and modify global or project Rasen configuration": "Rasenのグローバル設定またはプロジェクト設定を表示・変更します",
-    "Workflow schema to use": "使用するワークフロースキーマです",
-    "Write the report to this file instead of the default analytics directory": "デフォルトのanalyticsディレクトリの代わりに、このファイルにレポートを書き込みます",
-    "[Deprecated: use `rasen ui`] Start the localhost management server and open the config view": "[非推奨: `rasen ui` を使用してください] localhostの管理サーバーを起動し、設定画面を開きます",
-    "display help for command": "コマンドのヘルプを表示します",
-    "output the version number": "バージョン番号を表示します",
-    "Give a store a permanent identity and record it in the registry and the project's declaration": "storeに恒久識別子を付与し、レジストリとプロジェクトの宣言に記録します",
-    "Disambiguate a name that matches more than one registered store": "複数の登録済みstoreに一致する名前を特定します",
-    "Report every file that would be written and change nothing": "書き込む予定のファイルをすべて表示し、何も変更しません",
-    "Write the plan": "計画を実行します",
-    "Also record the target store as the project's planning store": "対象 store をプロジェクトの計画 store としても記録します",
-    "Report every file that would be written in each repository and change nothing": "各リポジトリに書き込まれるファイルをすべて報告し、何も変更しません",
-    "Convert a store's legacy membership data into per-project membership records": "store の旧形式メンバーシップデータをプロジェクトごとのメンバーシップレコードへ変換します",
-    "Report the conversion plan and change nothing": "変換計画を報告し、何も変更しません",
-    "Write the records and remove the legacy adoption manifest": "レコードを書き込み、旧 adoption マニフェストを削除します",
-    "project, store, or global": "project、store または global",
-    "Approve a store publication non-interactively, naming the store it applies to": "store への公開を非対話で承認し、対象の store を指定します",
-    "Show what this project actually receives, its sources by permanent identity, and any conflicts": "このプロジェクトが実際に受け取る知識、恒久 ID による出所、競合を表示します",
-    "Move per-clone knowledge into this project's canonical home and re-key ownership records on permanent identity": "クローンごとに散らばった知識をプロジェクトの正規の場所へ移し、所有記録を恒久 ID で記録し直します",
-    "Preview only: report what would change and write nothing": "プレビューのみ：変更内容を報告し、何も書き込みません",
-    "Report what this machine still needs before this project works": "このプロジェクトが動くまでにこのマシンへ何が不足しているかを報告します",
-    "Check mode: report from local information only, contacting no network": "チェックモード: ローカル情報のみから報告し、ネットワークには接続しません",
-    "Preview mode: additionally resolve remotes and the exact location each repository would be placed at": "プレビューモード: さらにリモートと、各リポジトリが配置される正確な場所を解決します",
-    "Location for one store or project, as <selector>=<dir>; repeatable": "1 つの store またはプロジェクトの場所を <selector>=<dir> 形式で指定します（繰り返し可）",
-    "Parent directory a derived name would be placed under": "導出した名前を配置する親ディレクトリ",
-    "Apply mode: register the current checkout, register present-unregistered Stores, obtain declared Stores from their remotes, prepare the knowledge location, and write the durable declaration": "適用モード: 現在のチェックアウトを登録し、存在する未登録 Store を登録し、リモートから宣言された Store を取得し、ナレッジ場所を準備し、永続宣言を書き込みます",
-    "Skip confirmation prompts for the project-declared Stores (apply mode only; does not obtain a Store's projects from a Store checkout)": "プロジェクト宣言 Store の確認プロンプトをスキップ（適用モードのみ。Store チェックアウトからプロジェクトを取得しません）",
-    "Apply mode: prepare repositories and knowledge, then offer each declared portable bundle as a separate confirmed import": "適用モード: リポジトリとナレッジ場所を準備し、宣言済みの各ポータブルバンドルを個別確認が必要なインポートとして提示します",
-    "Confirm project-declared actions, including project-config bundle imports; Store-only bundles and Store projects still require an explicit choice": "プロジェクト宣言の操作（プロジェクト設定のバンドルインポートを含む）を確認します。Store のみが宣言したバンドルと Store 内のプロジェクトは引き続き明示選択が必要です"
-  },
-  "commandDescriptionTemplates": {
-    "toolsPrefix": "AIツールを非対話で設定します。\"all\"、\"none\"、または次のツールIDをカンマ区切りで指定: {ids}"
-  },
   "telemetry": {
     "notice": "お知らせ: Rasenは匿名の利用統計（コマンド、バージョン、OS、Node.jsバージョン、ランダムID）を独自のCloudflare Workerへ送信します。無効化: RASEN_TELEMETRY=0"
   },
@@ -1430,5 +1101,1608 @@
       "skipAhead": "{original} はインストールされていないため、次は {workflow} です。"
     },
     "hint": "次のステップ: {workflow} — {reason}"
+  },
+  "cli": {
+    "chrome": {
+      "usageTitle": "使用法:",
+      "argumentsTitle": "引数:",
+      "optionsTitle": "オプション:",
+      "globalOptionsTitle": "グローバルオプション:",
+      "commandsTitle": "コマンド:",
+      "helpOption": "コマンドのヘルプを表示します",
+      "helpCommand": "指定したコマンドのヘルプを表示します",
+      "versionOption": "バージョン番号を表示します"
+    },
+    "compatibilityCommands": {
+      "experimental": {
+        "description": "init のエイリアスです（非推奨）",
+        "options": {
+          "tool": {
+            "description": "対象AIツール（--toolsに対応）"
+          },
+          "no-interactive": {
+            "description": "対話プロンプトを無効にします"
+          }
+        }
+      }
+    },
+    "root": {
+      "description": "仕様駆動開発のためのAIネイティブシステム",
+      "options": {
+        "no-color": {
+          "description": "カラー出力を無効にします"
+        }
+      },
+      "commands": {
+        "init": {
+          "description": "プロジェクトでRasenを初期化します",
+          "options": {
+            "tools": {
+              "description": "AIツールを非対話で設定します。\"all\"、\"none\"、または次のツールIDをカンマ区切りで指定: {ids}"
+            },
+            "force": {
+              "description": "確認せずに旧形式のファイルを自動整理します"
+            },
+            "profile": {
+              "description": "プロファイルをインストールして {workspaceDir}/config.yaml にロックします（full、core、または保存済みプロファイル。custom は一回限りでロックされません）"
+            }
+          }
+        },
+        "update": {
+          "description": "Rasenの指示ファイルを更新します",
+          "options": {
+            "force": {
+              "description": "ツールが最新でも強制更新します"
+            },
+            "all-projects": {
+              "description": "バージョンが古い、アクセス可能で固定されていないすべての登録プロジェクトを更新"
+            },
+            "only-this": {
+              "description": "マルチプロジェクトレジストリ参照をスキップ（このプロジェクトのみ更新）"
+            }
+          }
+        },
+        "migrate": {
+          "description": "旧openspec/ワークスペースを{workspaceDir}/へコピーします（原本は変更しません）",
+          "options": {
+            "no-interactive": {
+              "description": "確認を行いません（任意のマーカーブロック整理を省略）"
+            }
+          }
+        },
+        "list": {
+          "description": "項目を一覧表示します（既定は変更、--specsで仕様）",
+          "options": {
+            "specs": {
+              "description": "変更ではなく仕様を一覧表示します"
+            },
+            "changes": {
+              "description": "変更を明示的に一覧表示します（既定）"
+            },
+            "sort": {
+              "description": "並び順です: \"recent\"（既定）または \"name\""
+            },
+            "long": {
+              "description": "ID、タイトル、件数を表示します"
+            },
+            "json": {
+              "description": "JSONで出力します"
+            },
+            "store": {
+              "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+            },
+            "project": {
+              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+            }
+          }
+        },
+        "view": {
+          "description": "仕様と変更の対話ダッシュボードを表示します"
+        },
+        "validate": {
+          "description": "変更と仕様を検証します",
+          "options": {
+            "all": {
+              "description": "すべての変更と仕様を検証します"
+            },
+            "changes": {
+              "description": "すべての変更を検証します"
+            },
+            "specs": {
+              "description": "すべての仕様を検証します"
+            },
+            "pipelines": {
+              "description": "すべてのパイプラインを検証します"
+            },
+            "type": {
+              "description": "曖昧な場合に項目種別を指定します"
+            },
+            "strict": {
+              "description": "厳格な検証モードを有効にします"
+            },
+            "json": {
+              "description": "検証結果をJSONで出力します"
+            },
+            "concurrency": {
+              "description": "検証の最大同時実行数です（RASEN_CONCURRENCYまたは6が既定）"
+            },
+            "no-interactive": {
+              "description": "対話プロンプトを無効にします"
+            },
+            "store": {
+              "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+            },
+            "project": {
+              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+            }
+          }
+        },
+        "show": {
+          "description": "変更または仕様を表示します",
+          "options": {
+            "json": {
+              "description": "JSONで出力します"
+            },
+            "type": {
+              "description": "曖昧な場合に項目種別を指定します"
+            },
+            "no-interactive": {
+              "description": "対話プロンプトを無効にします"
+            },
+            "deltas-only": {
+              "description": "差分だけを表示します（JSONのみ、変更専用）"
+            },
+            "requirements-only": {
+              "description": "--deltas-only の別名（非推奨、変更専用）"
+            },
+            "requirements": {
+              "description": "シナリオを除き要件だけを表示します（JSONのみ、仕様専用）"
+            },
+            "no-scenarios": {
+              "description": "シナリオ内容を除外します（JSONのみ、仕様専用）"
+            },
+            "requirement": {
+              "description": "IDで指定した要件を表示します（JSONのみ、仕様専用）"
+            },
+            "store": {
+              "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+            },
+            "project": {
+              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+            }
+          }
+        },
+        "home": {
+          "description": "マシンローカルのプロジェクトホーム状態を管理します",
+          "commands": {
+            "prune": {
+              "description": "孤立したマシンホームディレクトリと古いレジストリエントリを一覧表示（デフォルト）または削除します",
+              "options": {
+                "apply": {
+                  "description": "報告された孤立項目を削除します（デフォルトは報告のみ）"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            }
+          }
+        },
+        "archive": {
+          "description": "完了した変更をアーカイブし、メイン仕様を更新します",
+          "options": {
+            "yes": {
+              "description": "確認プロンプトを省略します"
+            },
+            "confirm-prune": {
+              "description": "'prune' 保存先の完全削除を確認します（--yesとは別）"
+            },
+            "skip-specs": {
+              "description": "仕様の更新処理を省略します"
+            },
+            "no-validate": {
+              "description": "検証を省略します（非推奨）"
+            },
+            "json": {
+              "description": "JSONで出力します（非対話）"
+            },
+            "store": {
+              "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+            },
+            "project": {
+              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+            }
+          },
+          "commands": {
+            "relocate": {
+              "description": "既存のアーカイブ済み変更を移動し、archive.destination を同時に切り替えます",
+              "options": {
+                "to": {
+                  "description": "移動先: in-repo、external、または store"
+                },
+                "dry-run": {
+                  "description": "移動計画を表示し、何も変更しません"
+                },
+                "verify-hash": {
+                  "description": "移動したファイルを内容ハッシュで検証します"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            }
+          }
+        },
+        "status": {
+          "description": "変更に含まれる成果物の完了状態を表示します",
+          "options": {
+            "change": {
+              "description": "状態を表示する変更名です"
+            },
+            "schema": {
+              "description": "スキーマを上書きします"
+            },
+            "json": {
+              "description": "JSONで出力します"
+            },
+            "store": {
+              "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+            },
+            "project": {
+              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+            }
+          }
+        },
+        "instructions": {
+          "description": "成果物作成またはタスク実装用の詳細な指示を出力します",
+          "options": {
+            "change": {
+              "description": "変更名です"
+            },
+            "schema": {
+              "description": "スキーマを上書きします"
+            },
+            "json": {
+              "description": "JSONで出力します"
+            },
+            "store": {
+              "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+            },
+            "project": {
+              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+            }
+          }
+        },
+        "templates": {
+          "description": "スキーマ内の全成果物について解決済みテンプレートパスを表示します",
+          "options": {
+            "schema": {
+              "description": "使用するスキーマ（デフォルト: {defaultSchema}）"
+            },
+            "json": {
+              "description": "JSONで出力します"
+            }
+          }
+        },
+        "schemas": {
+          "description": "利用可能なワークフロースキーマと説明を一覧表示します",
+          "options": {
+            "json": {
+              "description": "JSONで出力します"
+            }
+          }
+        },
+        "new": {
+          "description": "新しい項目を作成します",
+          "commands": {
+            "change": {
+              "description": "新しい変更ディレクトリを作成します",
+              "options": {
+                "description": {
+                  "description": "README.mdへ追加する説明です"
+                },
+                "proposal": {
+                  "description": "このテキストでproposal.mdを種付けし、changeを即座にアクティブにします"
+                },
+                "goal": {
+                  "description": "変更と一緒に保存する任意の目標メタデータです"
+                },
+                "schema": {
+                  "description": "使用するワークフロースキーマ（デフォルト: {defaultSchema}）"
+                },
+                "pipeline": {
+                  "description": "実行状態を初期化するパイプラインです"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            }
+          }
+        },
+        "store": {
+          "description": "このマシンへ登録する独立Rasenリポジトリ（store）を作成・管理します",
+          "commands": {
+            "setup": {
+              "description": "ローカルstoreを作成または登録します",
+              "options": {
+                "path": {
+                  "description": "ストアを配置するフォルダー（例: ~/{workspaceDir}/<id>）"
+                },
+                "init-git": {
+                  "description": "store内にGitリポジトリを初期化します"
+                },
+                "no-init-git": {
+                  "description": "Gitリポジトリの初期化を省略します"
+                },
+                "remote": {
+                  "description": "store.yamlに記録する正式なclone元です"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "register": {
+              "description": "既存のstoreディレクトリを登録します",
+              "options": {
+                "id": {
+                  "description": "store IDです"
+                },
+                "yes": {
+                  "description": "store識別メタデータの作成を確認します"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "add-project": {
+              "description": "リポジトリ内projectをproject名前空間へ登録し、対象storeの参照へ追加します",
+              "options": {
+                "to": {
+                  "description": "projectを追加する対象storeです"
+                },
+                "as": {
+                  "description": "projectのstore IDを上書きします"
+                },
+                "set-primary": {
+                  "description": "対象 store をプロジェクトの計画 store としても記録します"
+                },
+                "dry-run": {
+                  "description": "各リポジトリに書き込まれるファイルをすべて報告し、何も変更しません"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "migrate-membership": {
+              "description": "store の旧形式メンバーシップデータをプロジェクトごとのメンバーシップレコードへ変換します",
+              "options": {
+                "dry-run": {
+                  "description": "変換計画を報告し、何も変更しません"
+                },
+                "apply": {
+                  "description": "レコードを書き込み、旧 adoption マニフェストを削除します"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "upgrade-identity": {
+              "description": "storeに恒久識別子を付与し、レジストリとプロジェクトの宣言に記録します",
+              "options": {
+                "uid": {
+                  "description": "複数の登録済みstoreに一致する名前を特定します"
+                },
+                "dry-run": {
+                  "description": "書き込む予定のファイルをすべて表示し、何も変更しません"
+                },
+                "apply": {
+                  "description": "計画を実行します"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "unregister": {
+              "description": "ファイルを削除せずローカルstoreの登録を解除します",
+              "options": {
+                "project-namespace": {
+                  "description": "store名前空間ではなく<id>のproject名前空間を対象にします"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "remove": {
+              "description": "ローカルstoreの登録とフォルダーを削除します",
+              "options": {
+                "yes": {
+                  "description": "ローカルstoreフォルダーの削除を確認します"
+                },
+                "project-namespace": {
+                  "description": "store名前空間ではなく<id>のproject名前空間を対象にします"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "adopt": {
+              "description": "リポジトリ内プロジェクトの計画内容をストアへ移行し、リポジトリをポインターに変換します",
+              "options": {
+                "to": {
+                  "description": "取り込み先のストア"
+                },
+                "archive": {
+                  "description": "アーカイブの扱い: move（デフォルト）、leave、または external"
+                },
+                "dry-run": {
+                  "description": "移動計画を表示し、何も変更しません"
+                },
+                "verify-hash": {
+                  "description": "移動したファイルを内容ハッシュで検証します"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "eject": {
+              "description": "ストアでホストされたプロジェクトをリポジトリ内計画へ復元します",
+              "options": {
+                "from": {
+                  "description": "取り出し元のストア"
+                },
+                "all": {
+                  "description": "マニフェストなしで全体をコピーして戻します（確認あり）"
+                },
+                "yes": {
+                  "description": "非対話モードでマニフェストなしの --all コピーバックへの同意"
+                },
+                "force": {
+                  "description": "マニフェストの不一致を報告しつつ続行します"
+                },
+                "into": {
+                  "description": "復元先のリポジトリパス"
+                },
+                "dry-run": {
+                  "description": "復元計画を表示し、何も変更しません"
+                },
+                "verify-hash": {
+                  "description": "移動したファイルを内容ハッシュで検証します"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "list": {
+              "description": "登録済みstoreを一覧表示します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "doctor": {
+              "description": "ローカルstoreの登録とメタデータを確認します",
+              "options": {
+                "project-namespace": {
+                  "description": "[id] のproject名前空間エントリだけを対象にします"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            }
+          }
+        },
+        "context": {
+          "description": "解決したRasen rootの作業コンテキストを表示します",
+          "options": {
+            "json": {
+              "description": "JSONで出力します"
+            },
+            "store": {
+              "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+            },
+            "project": {
+              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+            },
+            "code-workspace": {
+              "description": "このセットのVS Codeワークスペースファイルも作成します"
+            },
+            "force": {
+              "description": "既存の--code-workspaceファイルを上書きします"
+            }
+          }
+        },
+        "bootstrap": {
+          "description": "このプロジェクトが動くまでにこのマシンへ何が不足しているかを報告します",
+          "options": {
+            "check": {
+              "description": "チェックモード: ローカル情報のみから報告し、ネットワークには接続しません"
+            },
+            "dry-run": {
+              "description": "プレビューモード: さらにリモートと、各リポジトリが配置される正確な場所を解決します"
+            },
+            "apply": {
+              "description": "適用モード: リポジトリとナレッジ場所を準備し、宣言済みの各ポータブルバンドルを個別確認が必要なインポートとして提示します"
+            },
+            "yes": {
+              "description": "プロジェクト宣言の操作（プロジェクト設定のバンドルインポートを含む）を確認します。Store のみが宣言したバンドルと Store 内のプロジェクトは引き続き明示選択が必要です"
+            },
+            "json": {
+              "description": "JSONで出力します"
+            },
+            "path": {
+              "description": "1 つの store またはプロジェクトの場所を <selector>=<dir> 形式で指定します（繰り返し可）"
+            },
+            "into": {
+              "description": "導出した名前を配置する親ディレクトリ"
+            }
+          }
+        },
+        "doctor": {
+          "description": "解決したRasen rootの関係性の状態を報告します",
+          "options": {
+            "json": {
+              "description": "JSONで出力します"
+            },
+            "store": {
+              "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+            },
+            "project": {
+              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+            },
+            "gc": {
+              "description": "参照切れのmachine-home登録と孤立したhomeディレクトリを削除します — そのhome内の外部アーカイブもすべて削除されます（archive-destinationの'external'アーカイブはhomeと同じライフサイクルです。Git履歴が永続的な記録として残ります）"
+            }
+          }
+        },
+        "workset": {
+          "description": "個人用の作業ビューを構成・保存・表示します（ローカル限定）",
+          "commands": {
+            "create": {
+              "description": "選択したフォルダーを名前付き作業ビューとして構成・保存します",
+              "options": {
+                "member": {
+                  "description": "メンバーフォルダーを <path> または <name>=<path> で指定します（複数可、最初がprimary）"
+                },
+                "tool": {
+                  "description": "このworksetを開く既定ツールです"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "list": {
+              "description": "保存済みworksetとメンバーを表示します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "open": {
+              "description": "保存済みworksetをツールで開きます（エディターウィンドウまたはエージェントセッション）",
+              "options": {
+                "tool": {
+                  "description": "今回だけこのツールで開きます"
+                }
+              }
+            },
+            "remove": {
+              "description": "保存済みworksetを削除します（メンバーフォルダーは変更しません）",
+              "options": {
+                "yes": {
+                  "description": "非対話で削除を承認します"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            }
+          }
+        },
+        "feedback": {
+          "description": "Rasenについてのフィードバックを送信します",
+          "options": {
+            "body": {
+              "description": "フィードバックの詳しい説明です"
+            }
+          }
+        },
+        "completion": {
+          "description": "Rasen CLIのshell補完を管理します",
+          "commands": {
+            "generate": {
+              "description": "shell補完スクリプトを生成します（標準出力へ出力）"
+            },
+            "install": {
+              "description": "shell補完スクリプトをインストールします",
+              "options": {
+                "verbose": {
+                  "description": "詳しいインストール内容を表示します"
+                }
+              }
+            },
+            "uninstall": {
+              "description": "shell補完スクリプトをアンインストールします",
+              "options": {
+                "yes": {
+                  "description": "確認プロンプトを省略します"
+                }
+              }
+            }
+          }
+        },
+        "profile": {
+          "description": "再利用可能なワークフロープロファイルを管理します",
+          "commands": {
+            "new": {
+              "description": "名前付きプロファイルを対話的に作成して使用します"
+            },
+            "use": {
+              "description": "組み込みまたは保存済みプロファイルを使用します"
+            },
+            "update": {
+              "description": "保存済みプロファイル定義を対話的に編集します"
+            },
+            "list": {
+              "description": "組み込み・保存済みプロファイルを一覧表示します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "delete": {
+              "description": "保存済みプロファイルを削除します",
+              "options": {
+                "yes": {
+                  "description": "確認を省略します"
+                }
+              }
+            },
+            "import": {
+              "description": "profile package、YAML、またはJSONプロファイルをimportします",
+              "options": {
+                "as": {
+                  "description": "importしたプロファイルを別名で保存します"
+                },
+                "force": {
+                  "description": "同名の既存プロファイルを置き換えます"
+                }
+              }
+            },
+            "export": {
+              "description": "現在設定または名前付きプロファイルをexportします",
+              "options": {
+                "profile": {
+                  "description": "現在設定ではなく組み込みまたは保存済みプロファイルをexportします"
+                },
+                "thin": {
+                  "description": "user workflowを埋め込まずYAMLまたはJSONとしてexportします"
+                },
+                "force": {
+                  "description": "既存の出力先を上書きします"
+                }
+              }
+            }
+          }
+        },
+        "knowledge": {
+          "description": "証跡ゲート付きの学習スキルを管理します",
+          "commands": {
+            "bundle": {
+              "description": "移植可能なプロジェクト知識バンドルを管理します",
+              "commands": {
+                "export": {
+                  "description": "プロジェクト自身の学習知識を1つの移植可能なファイルへエクスポートします",
+                  "options": {
+                    "project": {
+                      "description": "計画ルートとは独立してプロジェクトの知識所有者を選択します"
+                    },
+                    "to": {
+                      "description": "新しく作成する宛先ファイル（上書きしません）"
+                    },
+                    "to-store": {
+                      "description": "所有権を与えず、登録済み Store にもバンドルを配置します"
+                    },
+                    "json": {
+                      "description": "JSONで出力します"
+                    }
+                  }
+                },
+                "import": {
+                  "description": "移植可能なバンドルをこのプロジェクト自身の知識としてインポートします",
+                  "positionals": {
+                    "bundle": {
+                      "description": "完全に検証してインポートする移植可能なバンドルファイル"
+                    }
+                  },
+                  "options": {
+                    "project": {
+                      "description": "計画ルートとは独立してプロジェクトの知識所有者を選択します"
+                    },
+                    "dry-run": {
+                      "description": "何も書き込まず、バンドル全体を検証して分類します"
+                    },
+                    "json": {
+                      "description": "JSONで出力します"
+                    }
+                  }
+                }
+              }
+            },
+            "apply": {
+              "description": "絶対パスの JSON ファイルから学習スキル候補を適用します",
+              "options": {
+                "from": {
+                  "description": "候補 JSON ファイルの絶対パス"
+                },
+                "approve-store": {
+                  "description": "store への公開を非対話で承認し、対象の store を指定します"
+                },
+                "approve-global": {
+                  "description": "グローバルの作成・昇格を非対話で承認します"
+                },
+                "project": {
+                  "description": "計画ルートとは独立してプロジェクトの知識所有者を選択します"
+                },
+                "store": {
+                  "description": "計画ルートとは独立してストアの知識所有者を選択します"
+                },
+                "run-state-dir": {
+                  "description": "auto-run.json を含む解決済みディレクトリから固定された知識 ID を読み込みます"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "list": {
+              "description": "正規の学習スキルを一覧表示します",
+              "options": {
+                "scope": {
+                  "description": "project、store または global"
+                },
+                "project": {
+                  "description": "計画ルートとは独立してプロジェクトの知識所有者を選択します"
+                },
+                "store": {
+                  "description": "計画ルートとは独立してストアの知識所有者を選択します"
+                },
+                "run-state-dir": {
+                  "description": "auto-run.json を含む解決済みディレクトリから固定された知識 ID を読み込みます"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "effective": {
+              "description": "このプロジェクトが実際に受け取る知識、恒久 ID による出所、競合を表示します",
+              "options": {
+                "project": {
+                  "description": "計画ルートとは独立してプロジェクトの知識所有者を選択します"
+                },
+                "store": {
+                  "description": "計画ルートとは独立してストアの知識所有者を選択します"
+                },
+                "run-state-dir": {
+                  "description": "auto-run.json を含む解決済みディレクトリから固定された知識 ID を読み込みます"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "migrate": {
+              "description": "クローンごとに散らばった知識をプロジェクトの正規の場所へ移し、所有記録を恒久 ID で記録し直します",
+              "options": {
+                "dry-run": {
+                  "description": "プレビューのみ：変更内容を報告し、何も書き込みません"
+                },
+                "project": {
+                  "description": "計画ルートとは独立してプロジェクトの知識所有者を選択します"
+                },
+                "store": {
+                  "description": "計画ルートとは独立してストアの知識所有者を選択します"
+                },
+                "run-state-dir": {
+                  "description": "auto-run.json を含む解決済みディレクトリから固定された知識 ID を読み込みます"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "show": {
+              "description": "正規の学習スキルを表示します",
+              "options": {
+                "scope": {
+                  "description": "project、store または global"
+                },
+                "project": {
+                  "description": "計画ルートとは独立してプロジェクトの知識所有者を選択します"
+                },
+                "store": {
+                  "description": "計画ルートとは独立してストアの知識所有者を選択します"
+                },
+                "run-state-dir": {
+                  "description": "auto-run.json を含む解決済みディレクトリから固定された知識 ID を読み込みます"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "retire": {
+              "description": "管理対象の学習スキルを廃止します",
+              "options": {
+                "scope": {
+                  "description": "project、store または global"
+                },
+                "project": {
+                  "description": "計画ルートとは独立してプロジェクトの知識所有者を選択します"
+                },
+                "store": {
+                  "description": "計画ルートとは独立してストアの知識所有者を選択します"
+                },
+                "run-state-dir": {
+                  "description": "auto-run.json を含む解決済みディレクトリから固定された知識 ID を読み込みます"
+                },
+                "yes": {
+                  "description": "確認プロンプトをスキップします"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            }
+          }
+        },
+        "workflow": {
+          "description": "ユーザー共通ライブラリのインストール可能ワークフローを管理します",
+          "commands": {
+            "list": {
+              "description": "組み込み・ユーザーワークフローを一覧表示します",
+              "options": {
+                "unused": {
+                  "description": "検出可能な利用元がないユーザーワークフローだけを表示します"
+                },
+                "all": {
+                  "description": "内部ワークフローも人間向け表に表示します"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "show": {
+              "description": "インストール可能ワークフローの定義と既知の利用元を表示します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "which": {
+              "description": "インストール可能ワークフローの解決元を表示します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "init": {
+              "description": "インストールせず最小ワークフロードラフトを作成します",
+              "options": {
+                "output": {
+                  "description": "作成する空のワークフロードラフトディレクトリです"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "validate": {
+              "description": "インストール済みワークフロー、ドラフトディレクトリ、または.rasenpkgを検証します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "import": {
+              "description": "ワークフローディレクトリまたはパッケージを検証してatomicにインストールします",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "export": {
+              "description": "ユーザーワークフローとそのユーザー依存を.rasenpkgとしてexportします",
+              "options": {
+                "force": {
+                  "description": "既存の出力先ファイルを置き換えます"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "delete": {
+              "description": "参照されていないユーザーワークフローを削除します",
+              "options": {
+                "yes": {
+                  "description": "確認を省略します"
+                },
+                "force": {
+                  "description": "参照ガードを無視し、まだ参照されているワークフローでも削除します"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            }
+          }
+        },
+        "config": {
+          "description": "Rasenのグローバル設定またはプロジェクト設定を表示・変更します",
+          "options": {
+            "scope": {
+              "description": "設定スコープです: \"global\"（既定）または \"project\""
+            }
+          },
+          "commands": {
+            "path": {
+              "description": "設定ファイルの場所を表示します"
+            },
+            "list": {
+              "description": "現在の全設定を表示します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "get": {
+              "description": "指定した値を取得します（raw、スクリプト向け）"
+            },
+            "set": {
+              "description": "値を設定します（型を自動変換）",
+              "options": {
+                "string": {
+                  "description": "値を文字列として保存します"
+                },
+                "allow-unknown": {
+                  "description": "未知のキーの設定を許可します"
+                }
+              }
+            },
+            "unset": {
+              "description": "キーを削除して既定値へ戻します"
+            },
+            "reset": {
+              "description": "設定を既定値へ戻します",
+              "options": {
+                "all": {
+                  "description": "すべての設定を初期化します（必須）"
+                },
+                "yes": {
+                  "description": "確認プロンプトを省略します"
+                }
+              }
+            },
+            "edit": {
+              "description": "$EDITORで設定を開きます"
+            },
+            "profile": {
+              "description": "`rasen profile` の互換エイリアスです"
+            },
+            "ui": {
+              "description": "[非推奨: `rasen ui` を使用してください] localhostの管理サーバーを起動し、設定画面を開きます",
+              "options": {
+                "no-open": {
+                  "description": "既定のブラウザを開きません"
+                },
+                "port": {
+                  "description": "listen portを固定します（既定は自動割り当て）"
+                }
+              }
+            }
+          }
+        },
+        "ui": {
+          "description": "Rasen管理プラットフォーム（ボード＋設定）をlocalhostサーバーで起動します",
+          "options": {
+            "no-open": {
+              "description": "既定のブラウザを開きません"
+            },
+            "port": {
+              "description": "listen portを固定します（既定は自動割り当て、--no-daemon時のみ有効）"
+            },
+            "no-daemon": {
+              "description": "常駐デーモンの代わりに自前のフォアグラウンドサーバーを使用します"
+            }
+          }
+        },
+        "daemon": {
+          "description": "常駐Rasenデーモンを管理します（セッションはターミナル終了後も継続します）",
+          "commands": {
+            "run": {
+              "description": "常駐デーモンをフォアグラウンドで実行します（デバッグ・上級者向け）",
+              "options": {
+                "port": {
+                  "description": "listen portを固定します（既定は8791、またはRASEN_DAEMON_PORT）"
+                }
+              }
+            },
+            "start": {
+              "description": "常駐デーモンを分離したバックグラウンドプロセスとして起動します",
+              "options": {
+                "port": {
+                  "description": "listen portを固定します（既定は8791、またはRASEN_DAEMON_PORT）"
+                }
+              }
+            },
+            "stop": {
+              "description": "常駐デーモンを停止し、稼働中のセッションを終了します"
+            },
+            "status": {
+              "description": "常駐デーモンが実行中かどうかを報告します"
+            }
+          }
+        },
+        "schema": {
+          "description": "ワークフロースキーマを管理します",
+          "commands": {
+            "which": {
+              "description": "スキーマの解決元を表示します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "all": {
+                  "description": "全スキーマと解決元を一覧表示します"
+                }
+              }
+            },
+            "validate": {
+              "description": "スキーマ構造とテンプレートを検証します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "verbose": {
+                  "description": "詳しい検証手順を表示します"
+                }
+              }
+            },
+            "fork": {
+              "description": "既存スキーマをカスタマイズ用にプロジェクトへコピーします",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "force": {
+                  "description": "既存の出力先を上書きします"
+                }
+              }
+            },
+            "init": {
+              "description": "プロジェクト固有の新しいスキーマを作成します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "description": {
+                  "description": "スキーマの説明です"
+                },
+                "artifacts": {
+                  "description": "カンマ区切りの成果物IDです"
+                },
+                "default": {
+                  "description": "プロジェクトの既定スキーマに設定します"
+                },
+                "no-default": {
+                  "description": "既定値に設定するか確認しません"
+                },
+                "force": {
+                  "description": "既存のスキーマを上書きします"
+                }
+              }
+            }
+          }
+        },
+        "pipeline": {
+          "description": "オーケストレーションパイプラインを確認・管理します",
+          "commands": {
+            "list": {
+              "description": "利用可能なパイプラインを一覧表示します（project > user > package）",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "show": {
+              "description": "パイプラインstageのDAGとbuild順を表示します",
+              "options": {
+                "for-execution": {
+                  "description": "実行可能なDAGを返す前に有効なプロファイルのスキルを検証します"
+                },
+                "planner": {
+                  "description": "plannerのruntimeを設定します: claude または codex"
+                },
+                "implementer": {
+                  "description": "implementerのruntimeを設定します: claude または codex"
+                },
+                "reviewer": {
+                  "description": "reviewerのruntimeを設定します: claude または codex"
+                },
+                "fixer": {
+                  "description": "fixerのruntimeを設定します: claude または codex"
+                },
+                "shipper": {
+                  "description": "shipperのruntimeを設定します: claude または codex"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "agents": {
+              "description": "パイプラインのrole別Claude/Codex runtimeを表示・設定します",
+              "options": {
+                "planner": {
+                  "description": "plannerのruntimeを設定します: claude または codex"
+                },
+                "implementer": {
+                  "description": "implementerのruntimeを設定します: claude または codex"
+                },
+                "reviewer": {
+                  "description": "reviewerのruntimeを設定します: claude または codex"
+                },
+                "fixer": {
+                  "description": "fixerのruntimeを設定します: claude または codex"
+                },
+                "shipper": {
+                  "description": "shipperのruntimeを設定します: claude または codex"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "classify": {
+              "description": "タスクに合うパイプラインを提案します（キーワードによる参考判定）",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "resume": {
+              "description": "変更のパイプライン実行状態（次/残りのstage）を表示します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "init": {
+              "description": "インストールせず最小パイプラインドラフトを作成します",
+              "options": {
+                "output": {
+                  "description": "作成する空のパイプラインドラフトディレクトリです"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "validate": {
+              "description": "インストール済みパイプライン、ドラフトディレクトリ、または.rasenpkgを検証します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "import": {
+              "description": "パイプラインの.rasenpkgを検証してatomicにインストールします",
+              "options": {
+                "force": {
+                  "description": "同名のインストール済みパイプラインを上書きします"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "export": {
+              "description": "ユーザーパイプラインを.rasenpkgとしてexportします",
+              "options": {
+                "force": {
+                  "description": "既存の出力先ファイルを置き換えます"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "delete": {
+              "description": "参照されていないユーザーパイプラインを削除します",
+              "options": {
+                "yes": {
+                  "description": "確認を省略します"
+                },
+                "force": {
+                  "description": "参照ガードを無視し、まだ参照されているパイプラインでも削除します"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "save": {
+              "description": "パイプライン定義ファイルを検証し、ユーザーパイプラインとしてインストールします",
+              "options": {
+                "from": {
+                  "description": "JSONまたはYAML形式のパイプライン定義へのパス"
+                },
+                "force": {
+                  "description": "同名のインストール済みパイプラインを上書きします"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "start": {
+              "description": "変更のパイプラインでreconciler-engine Runを開始（または再利用）します",
+              "options": {
+                "engine": {
+                  "description": "この起動で使うエンジン: auto（既定）、reconciler、legacy。runs.engine 設定より優先され、legacy は正規 Run の作成を拒否します。"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "status": {
+              "description": "変更のreconciler-engine Runビューを出力します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "resume-run": {
+              "description": "reconciler-engine Runを再開し、ready frontierを許可します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "cancel": {
+              "description": "変更のreconciler-engine Runをキャンセルします",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "complete": {
+              "description": "receipt bodyからreconciler-engine Runのactionを完了します",
+              "options": {
+                "run": {
+                  "description": "正確なRun ID"
+                },
+                "from": {
+                  "description": "receipt body（ファイルパス、またはstdinには-）"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            },
+            "control": {
+              "description": "reconciler-engine Runへ型付きcontrol requestを送信します",
+              "options": {
+                "run": {
+                  "description": "正確なRun ID"
+                },
+                "from": {
+                  "description": "control body（ファイルパス、またはstdinには-）"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            }
+          }
+        },
+        "scheme": {
+          "description": "マシンレベルのしきい値スキームを確認します",
+          "commands": {
+            "list": {
+              "description": "しきい値スキームを一覧表示します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "show": {
+              "description": "しきい値スキームを表示します",
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            }
+          }
+        },
+        "work": {
+          "description": "machine homeの作業ディレクトリを保守します（旧リポジトリ内一時成果物を移行）",
+          "commands": {
+            "migrate": {
+              "description": "旧リポジトリ内の一時成果物（run-state、handoff、reports、ship-log）をmachine homeへ移行します",
+              "options": {
+                "change": {
+                  "description": "1件の進行中またはアーカイブ済み変更だけを対象にします"
+                },
+                "dry-run": {
+                  "description": "プレビューのみ行い、ファイルを移動しません"
+                },
+                "include-tracked": {
+                  "description": "Git管理中の一時成果物も移動し、削除は未コミットのまま残します"
+                },
+                "json": {
+                  "description": "JSONで出力します（非対話、実行には--yesが必要）"
+                },
+                "yes": {
+                  "description": "確認プロンプトを省略します（--jsonでの実行に必須）"
+                }
+              }
+            }
+          }
+        },
+        "agent": {
+          "description": "ベースエージェントの実行時状態を検査・制御します",
+          "commands": {
+            "edit-boundary": {
+              "description": "チェックアウトスコープの実行時編集境界を制御します",
+              "commands": {
+                "set": {
+                  "description": "チェックアウトスコープの編集境界を既存のディレクトリに設定します",
+                  "options": {
+                    "runtime": {
+                      "description": "ランタイムを強制: claude、codex、または zed"
+                    },
+                    "json": {
+                      "description": "JSONで出力します"
+                    }
+                  }
+                },
+                "status": {
+                  "description": "アクティブな境界と観測されたホスト強制を表示します",
+                  "options": {
+                    "runtime": {
+                      "description": "ランタイムを強制: claude、codex、または zed"
+                    },
+                    "json": {
+                      "description": "JSONで出力します"
+                    }
+                  }
+                },
+                "clear": {
+                  "description": "チェックアウトスコープの編集境界をクリアします",
+                  "options": {
+                    "runtime": {
+                      "description": "ランタイムを強制: claude、codex、または zed"
+                    },
+                    "json": {
+                      "description": "JSONで出力します"
+                    }
+                  }
+                }
+              }
+            },
+            "context": {
+              "description": "記録済み使用量からtranscriptのcontext window使用率を報告します",
+              "options": {
+                "transcript": {
+                  "description": "Claude Code transcriptまたはCodex rollout jsonlへのパスです"
+                },
+                "latest": {
+                  "description": "現在のディレクトリに対応する最新main-session transcriptを使用します"
+                },
+                "dir": {
+                  "description": "--latestが使用するClaude projectsディレクトリを上書きします"
+                },
+                "limit": {
+                  "description": "解決済みcontext window上限を上書きします"
+                },
+                "runtime": {
+                  "description": "ファイル判定を使わず \"claude\" または \"codex\" を指定します"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                }
+              }
+            },
+            "wait": {
+              "description": "キャッシュ維持ビート1回：changeのロールシグナルファイルを短時間ブロッキングポーリングします",
+              "options": {
+                "change": {
+                  "description": "signalsディレクトリをポーリングするchange"
+                },
+                "role": {
+                  "description": "このworkerのシグナルファイルを識別するロールキー（例: reviewer、impl-spaces）"
+                },
+                "max-beats": {
+                  "description": "デフォルトのビート上限（12）を上書きします"
+                },
+                "context-tokens": {
+                  "description": "自己申告のコンテキストサイズ。keepalive下限未満なら即時スタンドダウンします"
+                },
+                "beat-seconds": {
+                  "description": "ビート時間（秒）。解決順序：フラグ > keepalive.beatSeconds 設定（デフォルト 270）> 100 秒フューズ。最大 300。シェルツールのデフォルトタイムアウトを超えるビートは、そのツールタイムアウトの引き上げが必要です。"
+                }
+              }
+            },
+            "audit": {
+              "description": "Claudeのtranscript、Codexのrollout、またはZedのスレッドデータベースからセッションのトークン消費量を分析します（実験的機能：内部の非公開形式を解析するため、harnessやZedの更新で動作しなくなる可能性があります）",
+              "options": {
+                "projects-dir": {
+                  "description": "session idの解決に使うClaude projectsディレクトリを上書きします"
+                },
+                "out": {
+                  "description": "デフォルトのanalyticsディレクトリの代わりに、このファイルにレポートを書き込みます"
+                },
+                "runtime": {
+                  "description": "ランタイムを \"claude\"・\"codex\"・\"zed\" のいずれかに強制します（Zedはローカルの threads.db を読み取ります。実験的機能で、形式は変わる可能性があります）"
+                },
+                "match": {
+                  "description": "Zed専用：スレッドidではなく最初のユーザーコマンドでセッションを特定します"
+                },
+                "db": {
+                  "description": "Zed専用：threads.db のパスを上書きします（既定はZedのOSごとの場所）"
+                },
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "open": {
+                  "description": "生成したレポートを読み込んだ状態で、同梱のviewerをデフォルトブラウザで開きます"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }

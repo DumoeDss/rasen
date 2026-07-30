@@ -5,8 +5,7 @@ import { tmpdir } from 'os';
 import { runCLI, cliProjectRoot } from '../helpers/run-cli.js';
 import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 import { AI_TOOLS } from '../../src/core/config.js';
-import { COMMAND_REGISTRY } from '../../src/core/completions/command-registry.js';
-import { localizeCommandRegistry } from '../../src/core/completions/description-localization.js';
+import { resolveCliPresentation } from '../../src/core/completions/cli-presentation.js';
 import { formatLocaleMessage, getLocaleCatalog } from '../../src/locales/index.js';
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -106,9 +105,10 @@ describe('openspec CLI e2e basics', () => {
 
   it('shows Simplified Chinese pipeline help for every registered subcommand and flag', async () => {
     const home = await prepareIsolatedHome();
-    const sourcePipeline = COMMAND_REGISTRY.find((command) => command.name === 'pipeline');
-    const localizedPipeline = localizeCommandRegistry(COMMAND_REGISTRY, 'zh-cn')
-      .find((command) => command.name === 'pipeline');
+    const sourcePipeline = resolveCliPresentation({ locale: 'en' }).root.subcommands
+      ?.find((command) => command.name === 'pipeline');
+    const localizedPipeline = resolveCliPresentation({ locale: 'zh-cn' }).root.subcommands
+      ?.find((command) => command.name === 'pipeline');
     const expectedSubcommands = [
       'list',
       'show',
@@ -222,7 +222,7 @@ describe('openspec CLI e2e basics', () => {
       .map((tool) => tool.value)
       .join(', ');
     const expectedDescription = formatLocaleMessage(
-      getLocaleCatalog('zh-cn').commandDescriptionTemplates.toolsPrefix,
+      getLocaleCatalog('zh-cn').cli.root.commands.init.options.tools.description,
       { ids: expectedTools }
     );
     const output = normalizeOutput(result.stdout);

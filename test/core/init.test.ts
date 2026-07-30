@@ -75,6 +75,9 @@ describe('InitCommand', () => {
       expect(logged).toContain('"matcher": "compact"');
       expect(logged).toContain('hooks/compact-recovery.sh');
 
+      // The managed runtime edit-boundary hook IS written to settings.json
+      // (runtime-edit-boundary feature); the instruction-only snippets above
+      // are never auto-written alongside it.
       const settingsPath = path.join(testDir, '.claude', 'settings.json');
       expect(await fileExists(settingsPath)).toBe(true);
       const settings = JSON.parse(await fs.readFile(settingsPath, 'utf-8'));
@@ -93,6 +96,11 @@ describe('InitCommand', () => {
           },
         ])
       );
+      // ...and the instruction-only snippets stay out of it, asserted negatively
+      // rather than inferred from the shape above.
+      const writtenHooks = JSON.stringify(settings.hooks ?? {});
+      expect(writtenHooks).not.toContain('safety-check');
+      expect(writtenHooks).not.toContain('compact-recovery');
     });
   });
 
@@ -596,7 +604,8 @@ describe('InitCommand - profile and detection features', () => {
     // Set global config to custom profile
     saveGlobalConfig({
       featureFlags: {},
-      profile: 'custom',
+      profile: 'custom',
+
       workflows: ['explore', 'new', 'apply'],
     });
 
@@ -616,7 +625,8 @@ describe('InitCommand - profile and detection features', () => {
   it('should drop a retired workflow id (ff) from a stored custom profile with a warning, and still succeed', async () => {
     saveGlobalConfig({
       featureFlags: {},
-      profile: 'custom',
+      profile: 'custom',
+
       workflows: ['explore', 'ff', 'apply'],
     });
 

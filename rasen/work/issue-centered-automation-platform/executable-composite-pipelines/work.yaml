@@ -1,7 +1,13 @@
 version: 1
 id: executable-composite-pipelines
-status: draft
+status: active
 authority:
   northStar: ../north-star.md
 targetState: target-state.md
 roadmap: roadmap.md
+# No activeSlice: ECP-1..5 are all delivered and merged, and the next Slice is a
+# user decision. `active` rather than `completed` because ECP-5's 收口范围 still
+# has two items with no evidence — see roadmap.md "当前位置".
+lastReconciled:
+  at: 2026-07-30T12:45:07+08:00
+  revision: be124057

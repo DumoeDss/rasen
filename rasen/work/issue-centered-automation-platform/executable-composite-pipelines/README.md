@@ -18,13 +18,27 @@ spine 推进到真实完整 ECP，并在完成后把可靠的 Change execution s
 
 ## 当前状态
 
-- 当前只完成了 root-DAG execution spine，尚未完成完整 ECP；
-- 7 个内置 Pipeline 尚未全部迁移到 canonical reconciler；
-- authored v2、CompositeRef、BoundedLoop、GoalLoop、FanOut 和 Join 尚未形成
-  Definition → Canvas → Runtime → Operations → E2E 的完整闭环；
-- 当前 Direction 状态为 `draft`，尚未激活 Slice；
-- 候选首个 Slice 是
-  [`review-cycle-vertical-closure`](./slices/review-cycle-vertical-closure/spec.md)。
+**已回写：2026-07-30，Git revision `be124057`（PR #111 合入 `dev/0.2.0`）。**
+下面每条都由观察事实取代了原先的 draft 期陈述：
+
+- **ECP-1..5 五个 Slice 全部交付并合入 `dev/0.2.0`**：ReviewCycle、Custom
+  Composite、GoalLoop、Choice/FanOut/Join + full-feature、Product Closure；
+  六个 ECP Change 已归档（`rasen/changes/archive/2026-07-30-ecp-*`）；
+- **7 个内置 Pipeline 中 6 个由 reconciler 真实执行**（`bug-fix`、
+  `small-feature`、`full-feature`、三个 goal-loop），真实 CLI 逐个核过；
+  第 7 个 `auto-decompose` 报 `execution_profile_unavailable` 并 fail-closed
+  —— 这是**设计如此**，它在本 Direction 的工作边界里始终是 `NOT NOW`
+  （其 `decompose` stage 无 skill、子项运行时才产生，与 frozen plan 不相容）；
+- authored v2、CompositeRef、BoundedLoop、GoalLoop、FanOut、Join 已形成
+  Definition → Canvas → Runtime → Operations → 真实 E2E 闭环：12 格 dogfood
+  矩阵全部来自真实 fresh-process CLI，含一个 Canvas 亲手编出的 Custom
+  Composite（连通两段 body，plan 带方向性依赖、首个 frontier 只有一项）；
+- Direction 状态 `active`，**无 activeSlice**：下一个 Slice 归用户决定；
+- **状态不是 `completed`**，因为 Roadmap 的 ECP-5 收口范围仍有两条没有证据：
+  「用 ECP 自身完成至少一个后续真实 Change 的 dogfood」和「重跑完成度审查并
+  关闭所有高优先级 finding」。按本 Roadmap 自己的规则（缺真实 dogfood 时
+  Result 只能是 `partial`），这两条以 OPEN 记录在
+  [`roadmap.md`](./roadmap.md) 的「当前位置」，而不是当它不存在。
 
 ## 目录内容
 

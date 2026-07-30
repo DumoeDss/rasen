@@ -1,4 +1,8 @@
-import { CompletionGenerator, CommandDefinition, FlagDefinition } from '../types.js';
+import {
+  CompletionGenerator,
+  ResolvedCommandDefinition,
+  ResolvedFlagDefinition,
+} from '../types.js';
 import { FISH_STATIC_HELPERS, FISH_DYNAMIC_HELPERS } from '../templates/fish-templates.js';
 
 /**
@@ -14,7 +18,7 @@ export class FishGenerator implements CompletionGenerator {
    * @param commands - Command definitions to generate completions for
    * @returns Fish completion script as a string
    */
-  generate(commands: CommandDefinition[]): string {
+  generate(commands: readonly ResolvedCommandDefinition[]): string {
     // Build top-level commands using push() for loop clarity
     const topLevelLines: string[] = [];
     for (const cmd of commands) {
@@ -62,7 +66,7 @@ ${commandCompletions}`;
   /**
    * Generate completions for a specific command
    */
-  private generateCommandCompletions(cmd: CommandDefinition): string[] {
+  private generateCommandCompletions(cmd: ResolvedCommandDefinition): string[] {
     const lines: string[] = [];
 
     // If command has subcommands
@@ -111,14 +115,17 @@ ${commandCompletions}`;
   /**
    * Generate flag completion
    */
-  private generateFlagCompletion(flag: FlagDefinition, condition: string): string[] {
+  private generateFlagCompletion(
+    flag: ResolvedFlagDefinition,
+    condition: string,
+  ): string[] {
     const lines: string[] = [];
     const longFlag = `--${flag.name}`;
     const shortFlag = flag.short ? `-${flag.short}` : undefined;
 
-    if (flag.takesValue && flag.values) {
+    if (flag.takesValue && flag.completionValues) {
       // Flag with enum values
-      for (const value of flag.values) {
+      for (const value of flag.completionValues) {
         if (shortFlag) {
           lines.push(
             `complete -c rasen -n '${condition}' -s ${flag.short} -l ${flag.name} -a '${value}' -d '${this.escapeDescription(flag.description)}'`

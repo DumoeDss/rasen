@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as yaml from 'yaml';
 import { ChangeMetadataSchema, type ChangeMetadata } from '../core/change-metadata/index.js';
 import { listSchemas } from '../core/artifact-graph/resolver.js';
+import { DEFAULT_SCHEMA } from '../core/config.js';
 import { readProjectConfig } from '../core/project-config.js';
 
 export const METADATA_FILENAME = '.openspec.yaml';
@@ -194,5 +195,5 @@ export function resolveSchemaForChange(
   }
 
   // 4. Default
-  return 'spec-driven';
+  return DEFAULT_SCHEMA;
 }
