@@ -715,3 +715,15 @@ for (const [key, fn] of Object.entries(scenarios)) {
 
 console.log('\n=== RESULTS ===');
 console.log(JSON.stringify({ head: HEAD, results }, null, 2));
+
+// The per-scenario catch above keeps one failure from hiding the other three
+// cells' evidence — but it must not hide the failure itself. Without this the
+// process exits 0 whatever happened, and "the dogfood passed" would mean only
+// that the script reached its end.
+const failedScenarios = Object.entries(results)
+  .filter(([, value]) => value && typeof value === 'object' && 'error' in value)
+  .map(([key]) => key);
+if (failedScenarios.length > 0) {
+  console.error(`\nFAILED scenarios: ${failedScenarios.join(', ')}`);
+  process.exitCode = 1;
+}
