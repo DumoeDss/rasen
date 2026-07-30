@@ -6,7 +6,9 @@ import { getTaskProgressForChange, formatTaskStatus } from '../utils/task-progre
 import { Validator } from './validation/validator.js';
 import { readProjectConfig, resolveArchiveTiming } from './project-config.js';
 import { resolveChangeWorkDir, resolveArchiveDestination } from './change-work.js';
-import { evidenceDir } from './file-placement.js';
+import { evidenceDir, ephemeraDir, resolveExecutionRoot } from './file-placement.js';
+import { classifyEphemera, applyEphemeraDeletion, type EphemeraClassification } from './ephemera-cleaner.js';
+import { resolveArchiveAccounting, writeArchiveJson, readArchiveInputSidecar, removeArchiveInputSidecar, type ProbeEntry, type HandoffAbsorbedEntry } from './archive-accounting.js';
 import chalk from 'chalk';
 import {
   emitStoreRootBanner,
@@ -55,6 +57,10 @@ export interface ArchiveOptions {
   store?: string;
   project?: string;
   storePath?: string;
+  /** Skip the ephemera cleaner entirely — preserve all ephemera. */
+  keepEphemera?: boolean;
+  /** Report all planned actions without executing anything. */
+  dryRun?: boolean;
 }
 
 interface ArchiveDiagnostic {
@@ -70,6 +76,17 @@ interface ArchiveResult {
   path: string;
   specsUpdated: boolean;
   totals?: { added: number; modified: number; removed: number; renamed: number };
+  /** Files deleted by the ephemera cleaner (empty when --keep-ephemera). */
+  ephemeraDiscarded?: string[];
+  /** Files preserved and reported by the cleaner (unknown entries). */
+  ephemeraPreserved?: string[];
+  /** True when a source manifest aborted the cleaner for this change. */
+  ephemeraAborted?: boolean;
+  ephemeraAbortReason?: string;
+  /** Present when --dry-run: the result describes a plan, not an execution. */
+  dryRun?: boolean;
+  /** Spec sync plan entries (dry-run only: what WOULD be created/updated). */
+  specSyncPlan?: Array<{ capability: string; status: string }>;
 }
 
 /**
@@ -444,6 +461,81 @@ export class ArchiveCommand {
       }
     }
 
+    // --- Dry-run: report all planned actions without executing anything ---
+    // Closes the validate blind spot (design D8): previews the full spec sync
+    // plan, ephemera delete list, handoff status, planned archive name, and
+    // blocking conditions. No file is moved, deleted, or written.
+    if (options.dryRun) {
+      const execRoot = resolveExecutionRoot(root.path, {
+        storeSelected: isStoreSelectedRoot(root),
+        cwd: process.cwd(),
+      });
+      const ephemeraPath = ephemeraDir(execRoot, changeName);
+      const ephemeraClassification = await classifyEphemera(ephemeraPath);
+
+      let specSyncPlan: Array<{ capability: string; status: string }> = [];
+      if (!options.skipSpecs) {
+        const specUpdates = await findSpecUpdates(changeDir, mainSpecsDir);
+        specSyncPlan = specUpdates.map((u) => ({
+          capability: path.basename(path.dirname(u.target)),
+          status: u.exists ? 'update' : 'create',
+        }));
+      }
+
+      const archiveName = `${this.getArchiveDate()}-${changeName}`;
+      const plannedArchivePath = path.join(targetArchiveDir, archiveName);
+
+      // Check blocking conditions
+      const blockingConditions: string[] = [];
+      try {
+        await fs.access(plannedArchivePath);
+        blockingConditions.push(`Archive target '${archiveName}' already exists.`);
+      } catch {
+        // Does not exist — not blocking.
+      }
+
+      if (json) {
+        return {
+          change: changeName,
+          archivedAs: archiveName,
+          path: plannedArchivePath,
+          specsUpdated: false,
+          dryRun: true,
+          specSyncPlan,
+          ephemeraDiscarded: ephemeraClassification.discarded,
+          ephemeraPreserved: ephemeraClassification.preserved,
+          ephemeraAborted: ephemeraClassification.aborted,
+          ...(ephemeraClassification.abortReason
+            ? { ephemeraAbortReason: ephemeraClassification.abortReason }
+            : {}),
+        };
+      }
+
+      console.log(chalk.cyan(`\n=== Archive dry-run for '${changeName}' ===`));
+      console.log(`Planned archive: ${archiveName}`);
+      console.log(
+        `Spec sync plan: ${specSyncPlan.length === 0 ? '(none)' : specSyncPlan.map((s) => `${s.capability}: ${s.status}`).join(', ')}`
+      );
+      if (ephemeraClassification.aborted) {
+        console.log(
+          chalk.yellow(`Ephemera cleaner: ABORTED (source manifest found: ${ephemeraClassification.abortReason})`)
+        );
+      } else {
+        console.log(
+          `Ephemera pending-delete (${ephemeraClassification.discarded.length}): ${ephemeraClassification.discarded.length === 0 ? '(none)' : ephemeraClassification.discarded.join(', ')}`
+        );
+        console.log(
+          `Ephemera preserved (${ephemeraClassification.preserved.length}): ${ephemeraClassification.preserved.length === 0 ? '(none)' : ephemeraClassification.preserved.join(', ')}`
+        );
+      }
+      if (blockingConditions.length > 0) {
+        console.log(chalk.red(`Blocking conditions:`));
+        for (const b of blockingConditions) console.log(chalk.red(`  ✗ ${b}`));
+      }
+      console.log(chalk.cyan('No files were moved, deleted, or written.'));
+      return null;
+    }
+
     // Handle spec updates unless skipSpecs flag is set
     let specsUpdated = false;
     let totals: ArchiveResult['totals'];
@@ -594,12 +686,84 @@ export class ArchiveCommand {
     // Create archive directory if needed
     await fs.mkdir(targetArchiveDir, { recursive: true });
 
+    // --- Ephemera cleaner (design D1/D2, runs BEFORE the directory move) ---
+    // The ephemera directory lives in the EXECUTION root, not inside the
+    // change directory, so the move does not touch it. Cleaning before the
+    // move means a source-manifest abort can surface before anything is
+    // irreversibly relocated.
+    const execRoot = resolveExecutionRoot(root.path, {
+      storeSelected: isStoreSelectedRoot(root),
+      cwd: process.cwd(),
+    });
+    const ephemeraPath = ephemeraDir(execRoot, changeName);
+    let ephemeraClassification: EphemeraClassification = {
+      discarded: [],
+      preserved: [],
+      aborted: false,
+    };
+    let ephemeraDeleted: string[] = [];
+    if (!options.keepEphemera) {
+      ephemeraClassification = await classifyEphemera(ephemeraPath);
+      if (ephemeraClassification.aborted) {
+        // Source manifest found — probes were misclassified. Do NOT delete
+        // anything; proceed with the move and report the discovery.
+        if (!json) {
+          console.log(
+            chalk.yellow(
+              `\n⚠️  Ephemera cleaner: ABORTED for this change. Source manifest discovered: ${ephemeraClassification.abortReason}. Cleaning skipped.`
+            )
+          );
+        }
+      } else {
+        ephemeraDeleted = await applyEphemeraDeletion(ephemeraPath, ephemeraClassification);
+        if (!json && ephemeraDeleted.length > 0) {
+          console.log(`Ephemera cleaner: deleted ${ephemeraDeleted.length} file(s).`);
+        }
+        if (!json && ephemeraClassification.preserved.length > 0) {
+          console.log(
+            chalk.yellow(
+              `Ephemera cleaner: preserved ${ephemeraClassification.preserved.length} unknown file(s): ${ephemeraClassification.preserved.join(', ')}`
+            )
+          );
+        }
+      }
+    }
+
+    // --- Read the archive-input sidecar BEFORE the move (M2 fix) ---
+    // The skill writes `.rasen-archive-input.json` in the change directory
+    // to pass its handoff absorption judgment and probe discoveries to the
+    // CLI. Read it now (before the move relocates the directory), then
+    // delete it so it does not enter the archive.
+    const sidecar = await readArchiveInputSidecar(changeDir);
+    if (sidecar) {
+      await removeArchiveInputSidecar(changeDir);
+    }
+
     // Move change to archive (uses copy+remove on EPERM/EXDEV, e.g. Windows)
     await moveDirectory(changeDir, archivePath);
 
     // Quality capture: scan archived directory for quality artifact files
     // (path-agnostic — runs against wherever the directory landed)
     await this.captureQuality(archivePath, json);
+
+    // --- archive.json accounting (design D4/D5, written AFTER the move) ---
+    // Records disposition accounting WITHOUT the planning-root commit hash
+    // (D4: unclosable self-reference). codeCommit is resolved from the
+    // execution root; planning side records branch + tree state only.
+    // handoffAbsorbed and probes come from the skill sidecar; when no
+    // sidecar was written (manual archive, skill didn't run), handoffAbsorbed
+    // is null so a reader can tell "no judgment made" from "[] (nothing
+    // absorbed)".
+    const accounting = await resolveArchiveAccounting({
+      changeName,
+      archivedDir: archivePath,
+      executionRoot: execRoot,
+      planningRoot: root.path,
+      ephemeraDiscarded: ephemeraDeleted,
+      handoffAbsorbed: sidecar?.handoffAbsorbed ?? null,
+      probes: sidecar?.probes ?? [],
+    });
+    await writeArchiveJson(archivePath, accounting);
 
     if (!json) {
       console.log(`Change '${changeName}' archived as '${archiveName}'.`);
@@ -611,6 +775,14 @@ export class ArchiveCommand {
       path: archivePath,
       specsUpdated,
       ...(totals ? { totals } : {}),
+      ephemeraDiscarded: ephemeraDeleted,
+      ephemeraPreserved: ephemeraClassification.preserved,
+      ...(ephemeraClassification.aborted
+        ? {
+            ephemeraAborted: true,
+            ephemeraAbortReason: ephemeraClassification.abortReason,
+          }
+        : {}),
     };
   }
 

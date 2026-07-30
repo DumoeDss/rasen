@@ -1283,6 +1283,12 @@
             "json": {
               "description": "输出为 JSON（非交互）"
             },
+            "keep-ephemera": {
+              "description": "跳过 ephemera 清理器，保留所有 ephemera 文件"
+            },
+            "dry-run": {
+              "description": "预演所有计划中的归档操作，不执行任何实际更改"
+            },
             "store": {
               "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
             },
@@ -2455,8 +2461,8 @@
                 "dry-run": {
                   "description": "仅预览；绝不移动文件"
                 },
-                "include-tracked": {
-                  "description": "同时移动由 Git 跟踪的临时产物，并保留未提交的删除"
+                "discard-absorbed-conclusions": {
+                  "description": "删除已确认被 handoff 或 evidence 吸收的 machine-root 结论目录（默认保留）"
                 },
                 "json": {
                   "description": "输出为 JSON（非交互；执行时需要 --yes）"

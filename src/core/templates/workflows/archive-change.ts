@@ -123,6 +123,19 @@ ${STORE_SELECTION_GUIDANCE}
 
    If user chooses sync, use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke rasen-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>"). Proceed to archive regardless of choice.
 
+4.5. **Handoff absorption judgment (the model's sole discretionary point at archive)**
+
+   Before the bookkeeping step moves the change directory, perform the handoff absorption judgment (defined by the \`file-placement\` capability). This is the ONLY agent-judgment point at archive — the CLI does NOT perform it.
+
+   For each file under \`<changeRoot>/handoff/\`:
+   - Read the handoff document and compare its dead-ends and eliminated hypotheses against \`design.md\` and the change's evidence (\`<changeRoot>/evidence/\`).
+   - **If the content is already absorbed** (the dead-ends are covered by \`design.md\` or evidence): delete the handoff document. Its knowledge now lives in the durable artifacts.
+   - **If the content is NOT absorbed** (it contains knowledge not covered by \`design.md\` or evidence): move it to \`<changeRoot>/evidence/handoff/\` so it travels with the archive. The default SHALL be preservation when you cannot confidently determine absorption — "eliminated hypotheses" are a change's most expensive information; their value begins after archive.
+
+   Record each judgment result by writing a sidecar file \`<changeRoot>/.rasen-archive-input.json\` with the shape \`{"handoffAbsorbed": [{"file": "handoff/implementer-1.md", "outcome": "absorbed"|"preserved"}], "probes": [{"path": "<execution-root-relative>", "codeCommit": "<sha>"}]}\`. The CLI reads this file when writing \`archive.json\` and deletes it before the move so it does not enter the archive. When you do NOT write the sidecar, \`handoffAbsorbed\` is recorded as \`null\` in \`archive.json\` (distinct from \`[]\` — a reader can tell "no judgment was made" from "judgment made, nothing absorbed").
+
+   If the change has no \`handoff/\` directory or it is empty, this step is a no-op.
+
 5. **Perform the archive (always in-repo)**
 
    Resolve \`archive.archiveDir\` from the status JSON fetched in step 2 — the planning root's archive directory, absolute and always present. **There is no destination axis.** Bookkeeping moves the change directory there unconditionally, whatever \`archive.destination\` a legacy config still carries; nothing is ever moved to the machine home and nothing is ever deleted without an archive copy. The payload's \`legacyArchiveDir\` (present only while machine-home archives left by the retired \`external\` destination still exist) is for already-archived detection and legacy discovery ONLY — never a bookkeeping target.
@@ -136,6 +149,8 @@ ${STORE_SELECTION_GUIDANCE}
    \`\`\`bash
    mv "<changeRoot>" "<planningHome.changesDir>/archive/YYYY-MM-DD-<name>"
    \`\`\`
+
+   **Ephemera cleaner and archive.json (CLI integration).** The CLI's ephemera cleaner (defined by the \`file-placement\` capability) runs BEFORE the directory move — it deletes only whitelisted filenames from the execution root's ephemera area (\`<executionRoot>/.rasen/changes/<name>/ephemera/\`) and preserves every unknown entry with its exact path reported. Use \`--keep-ephemera\` to skip the cleaner entirely. When the CLI performs the archive (\`rasen archive <change>\`), the cleaner and the \`archive.json\` writer run automatically. After the move, the CLI writes \`archive.json\` inside the archived directory with disposition accounting (\`codeCommit\`, \`planningBranch\`, \`planningTreeState\`, evidence hashes, \`probes\`, \`handoffAbsorbed\`, \`ephemeraDiscarded\`, \`missing\`). The skill SHALL NOT hand-write \`archive.json\` — the CLI writes it. If you performed the move manually (not via \`rasen archive\`), run \`rasen archive <change>\` instead so the cleaner and \`archive.json\` are handled deterministically, or accept that \`archive.json\` and the cleaner will not run for this archive.
 
    **Post-bookkeeping commit guidance:** direct a pathspec-scoped commit containing the synced specs, the change-directory removal, AND the archive-directory addition. \`git commit -- <path>\` alone only picks up tracked deletions/modifications — the newly archived directory, and a spec sync that CREATED a new capability directory, are both untracked and would be silently left out, so the tree would NOT end clean: \`git add\` the pathspec first. The commit message carries the ship cross-reference (\`sha-cross-stamping\` capability) — but its content must match what actually happened THIS run, never a fixed template:
    - **"specs synced" clause:** include it only when delta specs existed AND were synced this run (step 4). When there were no delta specs, or the user chose "Archive without syncing", DROP the clause entirely — \`chore(rasen): archive <name>\`, not a false claim of syncing.
@@ -176,6 +191,10 @@ ${STORE_SELECTION_GUIDANCE}
    - The archive location (always in the planning root)
    - Whether specs were synced (if applicable)
    - Ship SHA cross-reference, when recorded (the archive commit message and the ship-log's \`## Archive\` section)
+   - **Ephemera cleaner outcome**: how many files were deleted, how many were preserved-and-reported, and any source-manifest discovery that blocked cleaning for this change (when \`rasen archive\` ran the cleaner)
+   - **Handoff absorption results**: which handoff documents were absorbed (deleted) and which were preserved (moved to \`evidence/handoff/\`), per the step 4.5 judgment
+   - **Probes recorded (静置)**: any probe directories left in the execution root, with their paths and code commits
+   - **archive.json key fields**: \`codeCommit\`, \`planningBranch\`, and confirmation that \`archive.json\` was written by the CLI
    - Note about any warnings (incomplete artifacts/tasks)
 
 **Output On Success**

@@ -1,39 +1,32 @@
 /**
- * `rasen work` — the machine-home work-directory surface. Currently one
- * subcommand, `migrate` (`migrate-legacy-ephemera`): a one-shot, idempotent
- * migration of legacy in-repo T3 ephemera into the project's machine-home
- * work directories. Room for future `work path <change>` / `work sweep`
- * (design D1).
+ * `rasen work` — the legacy-state migration surface. One subcommand, `migrate`:
+ * consolidates legacy machine-home state into the terminal file-placement
+ * locations established by the `file-placement` capability. The direction is
+ * INVERTED from the original migrator (in-repo → machine home) to the terminal
+ * model (machine home → terminal locations).
  */
 import { Command } from 'commander';
 
 import { resolveRootForCommand } from '../core/root-selection.js';
 import {
   runWorkMigration,
-  type MigrationFileReport,
   type RunWorkMigrationResult,
   type WorkMigrationReport,
+  type ChangeMigrationReport,
 } from '../core/work-migration.js';
 import { emitFailure, printJson } from './shared-output.js';
 
 interface WorkMigrateOptions {
   change?: string;
   dryRun?: boolean;
-  includeTracked?: boolean;
+  /** Explicit opt-in to delete absorbed conclusion directories (M3 fix). */
+  discardAbsorbedConclusions?: boolean;
   json?: boolean;
   yes?: boolean;
 }
 
 const FAILURE_PAYLOAD = { changes: [], summary: null };
 
-/**
- * Non-`RootSelectionError` failure modes `runWorkMigration` reports as a
- * discriminated result rather than a throw (`home_unresolved`,
- * `change_not_found`, `git_query_failed`) are converted to this shape at
- * the command boundary so the outer catch's `emitFailure` handles every
- * failure uniformly (same `.diagnostic` duck-type `archive.ts`'s
- * `ArchiveBlockedError` uses).
- */
 class WorkMigrateBlockedError extends Error {
   readonly diagnostic: { severity: 'error'; code: string; message: string; fix?: string };
 
@@ -54,23 +47,11 @@ function unwrapOrThrow(result: RunWorkMigrationResult, changeName?: string): Wor
     );
   }
 
-  if (result.reason === 'git_query_failed') {
-    throw new WorkMigrateBlockedError(
-      'work_migrate_git_query_failed',
-      'Could not reliably determine which ephemera are git-tracked (the root is a git repository, but the tracked-files query failed) — refusing to guess, since guessing wrong could move committed content as if it were untracked noise.',
-      'Check for git lock contention, a corrupt .git directory, or a broken git installation, then retry `rasen work migrate`.'
-    );
-  }
-
   throw new WorkMigrateBlockedError(
     'work_migrate_home_unresolved',
     'Could not resolve or create the machine home for this project.',
     'Run `rasen init` first, then retry `rasen work migrate`.'
   );
-}
-
-function quoteForShell(p: string): string {
-  return /\s/.test(p) ? `"${p}"` : p;
 }
 
 function destinationLabel(destination: string | null): string {
@@ -84,9 +65,7 @@ function toJsonPayload(
   return {
     dryRun: meta.dryRun,
     executed: meta.executed,
-    gitRoot: report.gitRoot,
-    identityPending: report.identityPending,
-    changes: report.changes.map((c) => ({
+    changes: report.changes.map((c: ChangeMigrationReport) => ({
       change: c.change,
       archived: c.archived,
       changeDir: c.changeDir,
@@ -94,8 +73,8 @@ function toJsonPayload(
       moved: c.files
         .filter((f) => f.status === 'moved' || f.status === 'planned')
         .map((f) => f.relativePath),
-      skippedTracked: c.files
-        .filter((f) => f.status === 'skipped-tracked')
+      discarded: c.files
+        .filter((f) => f.status === 'discarded')
         .map((f) => f.relativePath),
       conflicts: c.files
         .filter((f) => f.status === 'conflict')
@@ -104,6 +83,18 @@ function toJsonPayload(
         .filter((f) => f.status === 'failed')
         .map((f) => ({ relativePath: f.relativePath, error: f.error })),
       notes: c.notes,
+    })),
+    probeDirs: report.probeDirs.map((p) => ({
+      dirName: p.dirName,
+      classification: p.classification,
+      action: p.action,
+      destination: p.destination,
+      status: p.status,
+    })),
+    designDocs: report.designDocs.map((d) => ({
+      source: d.source,
+      destination: d.destination,
+      status: d.status,
     })),
     summary: report.summary,
     notes: report.notes,
@@ -117,7 +108,7 @@ function printHumanReport(
   console.log(opts.title);
   console.log('');
 
-  if (report.summary.totalCandidates === 0) {
+  if (report.summary.totalCandidates === 0 && report.probeDirs.length === 0 && report.designDocs.length === 0) {
     console.log('Nothing to migrate.');
   } else {
     for (const change of report.changes) {
@@ -127,19 +118,19 @@ function printHumanReport(
       console.log(`  Work dir: ${change.workDir ?? '(pending — identity not minted yet)'}`);
 
       const toMove = change.files.filter((f) => f.status === 'moved' || f.status === 'planned');
-      const skippedTracked = change.files.filter((f) => f.status === 'skipped-tracked');
+      const discarded = change.files.filter((f) => f.status === 'discarded');
       const conflicts = change.files.filter((f) => f.status === 'conflict');
-      const failed = change.files.filter((f: MigrationFileReport) => f.status === 'failed');
+      const failed = change.files.filter((f) => f.status === 'failed');
 
       if (toMove.length > 0) {
         console.log(`  ${opts.executed ? 'Moved' : 'Would move'} (${toMove.length}):`);
         for (const f of toMove) {
-          console.log(`    - ${f.relativePath}${f.tracked ? ' (tracked)' : ''}`);
+          console.log(`    - ${f.relativePath} → ${destinationLabel(f.destination)}`);
         }
       }
-      if (skippedTracked.length > 0) {
-        console.log(`  Skipped, tracked — use --include-tracked to move (${skippedTracked.length}):`);
-        for (const f of skippedTracked) console.log(`    - ${f.relativePath}`);
+      if (discarded.length > 0) {
+        console.log(`  Discarded run-state (${discarded.length}):`);
+        for (const f of discarded) console.log(`    - ${f.relativePath}`);
       }
       if (conflicts.length > 0) {
         console.log(`  Conflicts, left in place (${conflicts.length}):`);
@@ -157,26 +148,32 @@ function printHumanReport(
       }
       console.log('');
     }
+
+    if (report.probeDirs.length > 0) {
+      console.log('Probe directories:');
+      for (const p of report.probeDirs) {
+        const status = opts.executed ? p.status : 'planned';
+        console.log(`  - ${p.dirName}: ${p.classification} → ${p.action} [${status}]`);
+      }
+      console.log('');
+    }
+
+    if (report.designDocs.length > 0) {
+      console.log('Design docs:');
+      for (const d of report.designDocs) {
+        const status = opts.executed ? d.status : 'planned';
+        console.log(`  - ${d.source} → ${d.destination} [${status}]`);
+      }
+      console.log('');
+    }
   }
 
   const s = report.summary;
-  const plannedCount = s.totalCandidates - s.skippedTracked - s.conflicts;
   console.log(
     opts.executed
-      ? `Summary: ${s.totalCandidates} candidate(s) — moved ${s.moved}, skipped-tracked ${s.skippedTracked}, conflicts ${s.conflicts}, failed ${s.failed}.`
-      : `Summary: ${s.totalCandidates} candidate(s) — would move ${plannedCount}, skipped-tracked ${s.skippedTracked}, conflicts ${s.conflicts}.`
+      ? `Summary: ${s.totalCandidates} candidate(s) — moved ${s.moved}, discarded ${s.discarded}, conflicts ${s.conflicts}, failed ${s.failed}.`
+      : `Summary: ${s.totalCandidates} candidate(s) — would move ${s.totalCandidates - s.conflicts - s.discarded}, discard ${s.discarded}, conflicts ${s.conflicts}.`
   );
-
-  if (opts.executed) {
-    const movedTracked = report.changes.flatMap((c) =>
-      c.files.filter((f) => f.status === 'moved' && f.tracked)
-    );
-    if (movedTracked.length > 0) {
-      console.log('');
-      console.log('Tracked files were moved; the deletions are uncommitted. To commit them:');
-      console.log(`  git commit -- ${movedTracked.map((f) => quoteForShell(f.source)).join(' ')}`);
-    }
-  }
 
   for (const note of report.notes) {
     console.log('');
@@ -188,12 +185,6 @@ async function runMigrate(options: WorkMigrateOptions): Promise<void> {
   const json = !!options.json;
 
   try {
-    // --store is deliberately not offered yet (task 2.1): the nearest root
-    // wins, matching every other maintenance-shaped command's first cut.
-    // Diagnostic-style resolution (allowImplicitRoot: false, doctor's
-    // precedent): migration operates on an EXISTING root's change dirs —
-    // there is nothing to migrate from a root that would otherwise be
-    // silently scaffolded.
     const root = await resolveRootForCommand(
       {},
       { json, failurePayload: FAILURE_PAYLOAD, allowImplicitRoot: false }
@@ -203,13 +194,11 @@ async function runMigrate(options: WorkMigrateOptions): Promise<void> {
     const dryRun = !!options.dryRun;
     const yes = !!options.yes;
     const scanOptions = {
-      includeTracked: !!options.includeTracked,
+      discardAbsorbedConclusions: !!options.discardAbsorbedConclusions,
       ...(options.change !== undefined ? { changeName: options.change } : {}),
     };
 
     if (dryRun || json) {
-      // --dry-run always stops at preview in both modes; --json is
-      // non-interactive and executes only with an explicit --yes.
       const execute = !dryRun && yes;
       const report = unwrapOrThrow(
         await runWorkMigration(root.path, root.changesDir, { ...scanOptions, execute }),
@@ -234,16 +223,16 @@ async function runMigrate(options: WorkMigrateOptions): Promise<void> {
     printHumanReport(preview, { executed: false, title: 'Work migration (preview)' });
 
     const plannedCount =
-      preview.summary.totalCandidates - preview.summary.skippedTracked - preview.summary.conflicts;
-    if (plannedCount === 0) {
-      return; // Nothing left to confirm — the preview already explained why.
+      preview.summary.totalCandidates - preview.summary.conflicts - preview.summary.discarded;
+    if (plannedCount === 0 && preview.probeDirs.length === 0 && preview.designDocs.length === 0) {
+      return;
     }
 
     let proceed = yes;
     if (!proceed) {
       const { confirm } = await import('@inquirer/prompts');
       proceed = await confirm({
-        message: `Move ${plannedCount} file(s) into the machine home?`,
+        message: `Migrate ${plannedCount} file(s) from the machine home to terminal locations?`,
         default: false,
       });
     }
@@ -271,7 +260,7 @@ export function registerWorkCommand(program: Command): void {
     .description('')
     .option('--change <name>', '')
     .option('--dry-run', '')
-    .option('--include-tracked', '')
+    .option('--discard-absorbed-conclusions', '')
     .option('--json', '')
     .option('--yes', '')
     .action(async (options: WorkMigrateOptions) => {

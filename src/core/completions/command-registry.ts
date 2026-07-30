@@ -182,6 +182,12 @@ const COMMANDS: readonly CommandDefinition[] = [
       {
         name: 'json',
       },
+      {
+        name: 'keep-ephemera',
+      },
+      {
+        name: 'dry-run',
+      },
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
     ],
@@ -1314,7 +1320,7 @@ const COMMANDS: readonly CommandDefinition[] = [
             name: 'dry-run',
           },
           {
-            name: 'include-tracked',
+            name: 'discard-absorbed-conclusions',
           },
           {
             name: 'json',

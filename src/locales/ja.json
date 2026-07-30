@@ -1283,6 +1283,12 @@
             "json": {
               "description": "JSONで出力します（非対話）"
             },
+            "keep-ephemera": {
+              "description": "ephemera クリーナーをスキップし、すべての ephemera ファイルを保持します"
+            },
+            "dry-run": {
+              "description": "計画されたすべてのアーカイブ操作をプレビューし、何も実行しません"
+            },
             "store": {
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
@@ -2455,8 +2461,8 @@
                 "dry-run": {
                   "description": "プレビューのみ行い、ファイルを移動しません"
                 },
-                "include-tracked": {
-                  "description": "Git管理中の一時成果物も移動し、削除は未コミットのまま残します"
+                "discard-absorbed-conclusions": {
+                  "description": "handoffまたはevidenceによって吸収されたと確認したmachine-root結論ディレクトリを削除します（デフォルトは保持）"
                 },
                 "json": {
                   "description": "JSONで出力します（非対話、実行には--yesが必要）"

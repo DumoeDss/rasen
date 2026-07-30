@@ -370,6 +370,8 @@ const archiveCommand = program
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--keep-ephemera', '')
+  .option('--dry-run', '')
   .addOption(hiddenStorePathOption())
   .action(async (changeName?: string, options?: ArchiveOptions) => {
     try {

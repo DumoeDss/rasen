@@ -1283,6 +1283,12 @@
             "json": {
               "description": "Output as JSON (non-interactive)"
             },
+            "keep-ephemera": {
+              "description": "Skip the ephemera cleaner and preserve all ephemera files"
+            },
+            "dry-run": {
+              "description": "Preview all planned archive actions without executing anything"
+            },
             "store": {
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
@@ -2455,8 +2461,8 @@
                 "dry-run": {
                   "description": "Preview only; never move files"
                 },
-                "include-tracked": {
-                  "description": "Also move git-tracked ephemera, leaving the deletions uncommitted"
+                "discard-absorbed-conclusions": {
+                  "description": "Delete machine-root conclusion directories you have confirmed are absorbed by handoff or evidence (preserved by default)"
                 },
                 "json": {
                   "description": "Output as JSON (non-interactive; requires --yes to execute)"

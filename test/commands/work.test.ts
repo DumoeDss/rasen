@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -8,9 +9,14 @@ import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
 import { createOpenSpecRoot } from '../helpers/rasen-fixtures.js';
 import { isolatedGitEnv } from '../helpers/store-git.js';
 import { cleanupTempPath } from '../helpers/temp-cleanup.js';
+import { registerProject, getProjectHomeDir } from '../../src/core/project-registry.js';
+import { getGlobalDataDir } from '../../src/core/global-config.js';
 
 /**
- * `rasen work migrate` CLI surface (`migrate-legacy-ephemera` task 2.4):
+ * `rasen work migrate` CLI surface — INVERTED direction (design
+ * `file-placement-collapse-archive` D6): scans machine-home work directories
+ * for legacy state and moves it to terminal file-placement locations.
+ *
  * dry-run moves nothing, --json without --yes is a preview, --yes executes,
  * --change scopes, and exit codes are honest about failure vs. success.
  */
@@ -40,6 +46,11 @@ describe('rasen work migrate', () => {
     return JSON.parse(result.stdout);
   }
 
+  function gdd(): string {
+    return getGlobalDataDir({ env });
+  }
+
+  /** Creates an in-repo change directory (needed for discoverChangeDirs + routing). */
   function makeChange(name: string): string {
     const dir = path.join(projectRoot, 'rasen', 'changes', name);
     fs.mkdirSync(dir, { recursive: true });
@@ -47,52 +58,81 @@ describe('rasen work migrate', () => {
     return dir;
   }
 
+  /**
+   * Registers the project's machine identity and creates a machine-home work
+   * directory for `changeName`. Returns the work dir path (the SOURCE of
+   * legacy files in the inverted model) and the in-repo change dir (a
+   * routing target).
+   */
+  async function setupWorkDir(
+    changeName: string,
+    options: { register?: boolean } = {}
+  ): Promise<{ workDir: string; changeDir: string }> {
+    const changeDir = makeChange(changeName);
+
+    if (options.register !== false) {
+      const { entry } = await registerProject(
+        { projectRoot, projectId: randomUUID(), mode: 'in-repo' },
+        { globalDataDir: gdd() }
+      );
+      const homeDir = getProjectHomeDir(entry.home, { globalDataDir: gdd() });
+      const workDir = path.join(homeDir, 'changes', changeName, 'work');
+      fs.mkdirSync(workDir, { recursive: true });
+      return { workDir, changeDir };
+    }
+
+    return { workDir: '', changeDir };
+  }
+
   it('--dry-run previews without moving files', async () => {
-    const dir = makeChange('foo');
-    fs.writeFileSync(path.join(dir, 'auto-run.json'), '{}');
+    const { workDir } = await setupWorkDir('foo');
+    fs.writeFileSync(path.join(workDir, 'auto-run.json'), '{}');
 
     const result = await runCLI(['work', 'migrate', '--dry-run', '--json'], { cwd: projectRoot, env });
 
     expect(result.exitCode).toBe(0);
-    expect(fs.existsSync(path.join(dir, 'auto-run.json'))).toBe(true);
+    expect(fs.existsSync(path.join(workDir, 'auto-run.json'))).toBe(true);
     const payload = parseJson(result);
     expect(payload.executed).toBe(false);
     expect(payload.dryRun).toBe(true);
     expect(payload.summary.totalCandidates).toBe(1);
+    // auto-run.json is classified as run-state → would move to ephemera.
     expect(payload.changes[0].moved).toEqual(['auto-run.json']);
   });
 
   it('--json without --yes previews without moving files', async () => {
-    const dir = makeChange('foo');
-    fs.writeFileSync(path.join(dir, 'ship-log.md'), '# ship\n');
+    const { workDir } = await setupWorkDir('foo');
+    fs.writeFileSync(path.join(workDir, 'ship-log.md'), '# ship\n');
 
     const result = await runCLI(['work', 'migrate', '--json'], { cwd: projectRoot, env });
 
     expect(result.exitCode).toBe(0);
-    expect(fs.existsSync(path.join(dir, 'ship-log.md'))).toBe(true);
+    expect(fs.existsSync(path.join(workDir, 'ship-log.md'))).toBe(true);
     const payload = parseJson(result);
     expect(payload.executed).toBe(false);
     expect(payload.summary.totalCandidates).toBe(1);
   });
 
   it('--json --yes executes and moves the file', async () => {
-    const dir = makeChange('foo');
-    fs.writeFileSync(path.join(dir, 'auto-run.json'), '{}');
+    const { workDir, changeDir } = await setupWorkDir('foo');
+    fs.writeFileSync(path.join(workDir, 'auto-run.json'), '{}');
 
     const result = await runCLI(['work', 'migrate', '--json', '--yes'], { cwd: projectRoot, env });
 
     expect(result.exitCode).toBe(0);
-    expect(fs.existsSync(path.join(dir, 'auto-run.json'))).toBe(false);
+    // File is gone from the machine-home work directory.
+    expect(fs.existsSync(path.join(workDir, 'auto-run.json'))).toBe(false);
     const payload = parseJson(result);
     expect(payload.executed).toBe(true);
     expect(payload.summary.moved).toBe(1);
-    const workDir = payload.changes[0].workDir as string;
-    expect(fs.existsSync(path.join(workDir, 'auto-run.json'))).toBe(true);
+    // File landed in the execution root's ephemera area.
+    const ephemeraPath = path.join(projectRoot, '.rasen', 'changes', 'foo', 'ephemera', 'auto-run.json');
+    expect(fs.existsSync(ephemeraPath)).toBe(true);
   });
 
   it('a second --yes run reports nothing to migrate (idempotent)', async () => {
-    const dir = makeChange('foo');
-    fs.writeFileSync(path.join(dir, 'auto-run.json'), '{}');
+    const { workDir } = await setupWorkDir('foo');
+    fs.writeFileSync(path.join(workDir, 'auto-run.json'), '{}');
 
     const first = await runCLI(['work', 'migrate', '--json', '--yes'], { cwd: projectRoot, env });
     expect(first.exitCode).toBe(0);
@@ -104,10 +144,10 @@ describe('rasen work migrate', () => {
   });
 
   it('--change scopes migration to a single change', async () => {
-    const fooDir = makeChange('foo');
-    const barDir = makeChange('bar');
-    fs.writeFileSync(path.join(fooDir, 'auto-run.json'), '{}');
-    fs.writeFileSync(path.join(barDir, 'auto-run.json'), '{}');
+    const foo = await setupWorkDir('foo');
+    const bar = await setupWorkDir('bar');
+    fs.writeFileSync(path.join(foo.workDir, 'auto-run.json'), '{}');
+    fs.writeFileSync(path.join(bar.workDir, 'auto-run.json'), '{}');
 
     const result = await runCLI(['work', 'migrate', '--json', '--yes', '--change', 'foo'], {
       cwd: projectRoot,
@@ -115,8 +155,8 @@ describe('rasen work migrate', () => {
     });
 
     expect(result.exitCode).toBe(0);
-    expect(fs.existsSync(path.join(fooDir, 'auto-run.json'))).toBe(false);
-    expect(fs.existsSync(path.join(barDir, 'auto-run.json'))).toBe(true);
+    expect(fs.existsSync(path.join(foo.workDir, 'auto-run.json'))).toBe(false);
+    expect(fs.existsSync(path.join(bar.workDir, 'auto-run.json'))).toBe(true);
     const payload = parseJson(result);
     expect(payload.changes).toHaveLength(1);
     expect(payload.changes[0].change).toBe('foo');
@@ -136,20 +176,20 @@ describe('rasen work migrate', () => {
   });
 
   it('human mode --dry-run prints the preview and exits 0', async () => {
-    const dir = makeChange('foo');
-    fs.writeFileSync(path.join(dir, 'auto-run.json'), '{}');
+    const { workDir } = await setupWorkDir('foo');
+    fs.writeFileSync(path.join(workDir, 'auto-run.json'), '{}');
 
     const result = await runCLI(['work', 'migrate', '--dry-run'], { cwd: projectRoot, env });
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain('Work migration (preview)');
     expect(result.stdout).toContain('auto-run.json');
-    expect(fs.existsSync(path.join(dir, 'auto-run.json'))).toBe(true);
+    expect(fs.existsSync(path.join(workDir, 'auto-run.json'))).toBe(true);
   });
 
   it('M1: --dry-run on an unregistered project never mints identity (config.yaml and registry untouched)', async () => {
+    // Create an in-repo change dir but do NOT register the project.
     const dir = makeChange('foo');
-    fs.writeFileSync(path.join(dir, 'auto-run.json'), '{}');
     const configPath = path.join(projectRoot, 'rasen', 'config.yaml');
     const configBefore = fs.readFileSync(configPath, 'utf-8');
 
@@ -157,28 +197,36 @@ describe('rasen work migrate', () => {
 
     expect(result.exitCode).toBe(0);
     const payload = parseJson(result);
-    expect(payload.identityPending).toBe(true);
+    // No machine home → no work directories scanned → 0 candidates.
+    expect(payload.summary.totalCandidates).toBe(0);
+    // No work directory was resolved (workDir is null for each change).
     expect(payload.changes[0].workDir).toBeNull();
+    // Identity was never minted: config and data dir are untouched.
     expect(fs.readFileSync(configPath, 'utf-8')).toBe(configBefore);
     expect(fs.existsSync(path.join(tempDir, 'data', 'rasen', 'projects'))).toBe(false);
   });
 
-  it('M2: a git query failure on a confirmed repo exits non-zero and moves nothing', async () => {
+  it('M2: the inverted migrator does not depend on git (corrupted index does not block migration)', async () => {
+    // The OLD migrator classified files as tracked/untracked via git
+    // ls-files, so a corrupted index caused a hard failure. The inverted
+    // migrator scans machine-home only — git state is irrelevant. Verify a
+    // corrupted git index does NOT block migration.
     execFileSync('git', ['init'], { cwd: projectRoot, stdio: 'ignore' });
     const gitExecEnv = { ...process.env, ...isolatedGitEnv(projectRoot) };
     execFileSync('git', ['add', '-A'], { cwd: projectRoot, env: gitExecEnv });
     execFileSync('git', ['commit', '-m', 'init'], { cwd: projectRoot, env: gitExecEnv, stdio: 'ignore' });
-
-    const dir = makeChange('foo');
-    fs.writeFileSync(path.join(dir, 'auto-run.json'), '{}');
     // Corrupt the index: rev-parse still confirms a repo, but ls-files fails.
     fs.writeFileSync(path.join(projectRoot, '.git', 'index'), 'not a valid index file, corrupted');
 
+    const { workDir } = await setupWorkDir('foo');
+    fs.writeFileSync(path.join(workDir, 'auto-run.json'), '{}');
+
     const result = await runCLI(['work', 'migrate', '--json', '--yes'], { cwd: projectRoot, env });
 
-    expect(result.exitCode).toBe(1);
+    // The inverted migrator succeeds — it does not query git at all.
+    expect(result.exitCode).toBe(0);
     const payload = parseJson(result);
-    expect(payload.status?.[0]?.code).toBe('work_migrate_git_query_failed');
-    expect(fs.existsSync(path.join(dir, 'auto-run.json'))).toBe(true);
+    expect(payload.summary.moved).toBe(1);
+    expect(fs.existsSync(path.join(workDir, 'auto-run.json'))).toBe(false);
   });
 });

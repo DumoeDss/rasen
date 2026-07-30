@@ -475,12 +475,12 @@ function printHumanHealth(health: RelationshipHealth, declaredReferenceCount: nu
   }
   if (health.machineHome.migratableEphemera) {
     const m = health.machineHome.migratableEphemera;
-    const detail = m.splitUnavailable
-      ? `${m.total} (tracked/untracked split unavailable)`
-      : m.tracked > 0
-        ? `${m.untracked} untracked (+${m.tracked} tracked, needs --include-tracked)`
-        : `${m.untracked} untracked`;
-    console.log(`  Migratable legacy ephemera: ${detail} (run \`${m.hint}\`)`);
+    const parts: string[] = [];
+    if (m.reports > 0) parts.push(`${m.reports} report(s)`);
+    if (m.handoff > 0) parts.push(`${m.handoff} handoff`);
+    if (m.runState > 0) parts.push(`${m.runState} run-state`);
+    const detail = parts.length > 0 ? parts.join(', ') : `${m.total}`;
+    console.log(`  Migratable legacy state: ${detail} (run \`${m.hint}\`)`);
   }
   for (const lingering of health.machineHome.relocation.lingering) {
     console.log(`  Legacy data dir at ${lingering.path}; contents were copied to ${lingering.target}; safe to delete after verifying.`);
