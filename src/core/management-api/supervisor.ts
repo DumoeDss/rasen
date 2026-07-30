@@ -16,6 +16,7 @@
  * (test/core/management-api/supervisor.test.ts).
  */
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
@@ -72,6 +73,74 @@ export type KillResult =
   | { ok: true; status: 200; record: SessionRecord }
   | { ok: false; status: 404 };
 
+export type HostState = 'starting' | 'idle' | 'waking' | 'lost' | 'retiring' | 'retired';
+
+export interface HostTurnInput {
+  /** Literal user text delivered as one stream-json user event over stdin. */
+  message: string;
+  /** Overall bound for this turn only; no host watchdog remains armed while idle. */
+  timeoutMs: number;
+  /** Silence bound for this turn only, reset by stdout or stderr activity. */
+  noOutputTimeoutMs: number;
+}
+
+export interface CreateHostInput extends HostTurnInput {
+  /** Trusted working directory, captured canonically and reused for recovery. */
+  cwd: string;
+  /** Trusted planning roots captured at creation and reused for recovery. */
+  attachedRoots?: readonly string[];
+  /** Frozen planning-space attribution for the host runtime context. */
+  space?: SessionSpace;
+  /** Frozen execution attribution for the host runtime context. */
+  execution?: SessionExecution;
+}
+
+export interface HostSnapshot {
+  /** Stable for this supervisor's lifetime, even when recovery replaces the process. */
+  id: string;
+  state: HostState;
+  cwd: string;
+  pid?: number;
+  /** Claude's stream-json session identity, used only for same-cwd recovery. */
+  sessionId?: string;
+  createdAt: number;
+}
+
+export type HostResultEnvelope = Record<string, unknown>;
+
+export type HostErrorCode =
+  | 'busy'
+  | 'shutting_down'
+  | 'agent_cli_unavailable'
+  | 'host_not_found'
+  | 'host_busy'
+  | 'host_retired'
+  | 'host_unrecoverable'
+  | 'delivery_uncertain'
+  | 'turn_timeout'
+  | 'no_output_timeout'
+  | 'write_failed';
+
+export interface HostErrorResult {
+  ok: false;
+  status: 404 | 409 | 500 | 503 | 504;
+  code: HostErrorCode;
+  message: string;
+  host?: HostSnapshot;
+}
+
+export type CreateHostResult =
+  | { ok: true; host: HostSnapshot; result: HostResultEnvelope }
+  | HostErrorResult;
+
+export type WakeHostResult =
+  | { ok: true; host: HostSnapshot; result: HostResultEnvelope }
+  | HostErrorResult;
+
+export type RetireHostResult =
+  | { ok: true; host: HostSnapshot }
+  | { ok: false; status: 404; code: 'host_not_found'; message: string };
+
 export interface SessionTails {
   stdout: string;
   stderr: string;
@@ -80,6 +149,10 @@ export interface SessionTails {
 export interface SessionSupervisor {
   launch(input: LaunchInput): Promise<LaunchResult>;
   kill(id: string): KillResult;
+  createHost(input: CreateHostInput): Promise<CreateHostResult>;
+  wakeHost(id: string, input: HostTurnInput): Promise<WakeHostResult>;
+  retireHost(id: string): Promise<RetireHostResult>;
+  getHost(id: string): HostSnapshot | undefined;
   getRecord(id: string): SessionRecord | undefined;
   list(): SessionRecord[];
   getTails(id: string): SessionTails | undefined;
@@ -95,6 +168,52 @@ interface ActiveEntry {
   killInitiated: boolean;
   triggerKill(reason: TerminationReason): void;
   onClosed: Promise<void>;
+}
+
+interface PendingHostTurn {
+  delivered: boolean;
+  settled: boolean;
+  requireSessionId: boolean;
+  noOutputTimeoutMs: number;
+  result?: HostResultEnvelope;
+  overallTimer?: NodeJS.Timeout;
+  noOutputTimer?: NodeJS.Timeout;
+  promise: Promise<HostTurnOutcome>;
+  resolve(outcome: HostTurnOutcome): void;
+}
+
+type HostTurnOutcome =
+  | { ok: true; result: HostResultEnvelope }
+  | { ok: false; code: Extract<HostErrorCode, 'delivery_uncertain' | 'turn_timeout' | 'no_output_timeout' | 'write_failed'>; message: string };
+
+interface HostProcess {
+  child: ChildProcess;
+  pid: number;
+  closed: boolean;
+  slotReleased: boolean;
+  killInitiated: boolean;
+  pendingKillCancel?: () => void;
+  contextFilePath?: string;
+  onClosed: Promise<void>;
+  resolveClosed(): void;
+}
+
+interface HostEntry {
+  id: string;
+  state: HostState;
+  cwd: string;
+  attachedRoots: readonly string[];
+  space?: SessionSpace;
+  execution?: SessionExecution;
+  sessionId?: string;
+  pid?: number;
+  createdAt: number;
+  /** Protocol framing buffer; intentionally independent from the bounded diagnostic tails. */
+  protocolBuffer: string;
+  process?: HostProcess;
+  pendingTurn?: PendingHostTurn;
+  activeWake?: Promise<WakeHostResult>;
+  retirePromise?: Promise<RetireHostResult>;
 }
 
 export interface CreateSessionSupervisorOptions {
@@ -115,6 +234,27 @@ function appendTail(current: string, chunk: string): string {
   const combined = current + chunk;
   if (combined.length <= TAIL_BYTES) return combined;
   return combined.slice(combined.length - TAIL_BYTES);
+}
+
+function encodeHostUserEvent(message: string): string {
+  return `${JSON.stringify({
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [{ type: 'text', text: message }],
+    },
+  })}\n`;
+}
+
+function copyHost(entry: HostEntry): HostSnapshot {
+  return {
+    id: entry.id,
+    state: entry.state,
+    cwd: entry.cwd,
+    ...(entry.pid !== undefined ? { pid: entry.pid } : {}),
+    ...(entry.sessionId !== undefined ? { sessionId: entry.sessionId } : {}),
+    createdAt: entry.createdAt,
+  };
 }
 
 /**
@@ -229,6 +369,7 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
   const sessionContextPaths = options.sessionContextPaths ?? {};
 
   const active = new Map<string, ActiveEntry>();
+  const hosts = new Map<string, HostEntry>();
   const tails = new Map<string, SessionTails>();
   let liveCount = 0;
   // Set synchronously as `shutdownAll`'s first statement (review m1) — closes
@@ -237,6 +378,520 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
   // that window spawns a session `shutdownAll` never observed, orphaning it
   // even on a *clean* exit.
   let draining = false;
+
+  function hostError(
+    entry: HostEntry | undefined,
+    status: HostErrorResult['status'],
+    code: HostErrorCode,
+    message: string
+  ): HostErrorResult {
+    return {
+      ok: false,
+      status,
+      code,
+      message,
+      ...(entry !== undefined ? { host: copyHost(entry) } : {}),
+    };
+  }
+
+  function releaseHostSlot(processEntry?: HostProcess): void {
+    if (processEntry?.slotReleased) return;
+    if (processEntry) processEntry.slotReleased = true;
+    liveCount -= 1;
+  }
+
+  function clearHostTurnTimers(turn: PendingHostTurn): void {
+    if (turn.overallTimer) clearTimeout(turn.overallTimer);
+    if (turn.noOutputTimer) clearTimeout(turn.noOutputTimer);
+  }
+
+  function settleHostTurn(entry: HostEntry, outcome: HostTurnOutcome): void {
+    const turn = entry.pendingTurn;
+    if (!turn || turn.settled) return;
+    turn.settled = true;
+    clearHostTurnTimers(turn);
+    entry.pendingTurn = undefined;
+    if (outcome.ok && entry.state !== 'retiring') {
+      entry.state = 'idle';
+    }
+    turn.resolve(outcome);
+  }
+
+  function resetHostNoOutputTimer(entry: HostEntry, timeoutMs: number): void {
+    const turn = entry.pendingTurn;
+    if (!turn || turn.settled) return;
+    if (turn.noOutputTimer) clearTimeout(turn.noOutputTimer);
+    turn.noOutputTimer = setTimeout(() => {
+      settleHostTurn(entry, {
+        ok: false,
+        code: 'no_output_timeout',
+        message: `The reusable host produced no output for ${timeoutMs} ms.`,
+      });
+      if (entry.process) triggerHostKill(entry.process);
+    }, timeoutMs);
+    turn.noOutputTimer.unref?.();
+  }
+
+  function triggerHostKill(processEntry: HostProcess): void {
+    if (processEntry.closed || processEntry.killInitiated) return;
+    processEntry.killInitiated = true;
+    if (processEntry.pid > 0) {
+      const handle = killProcessTree(processEntry.pid, { graceMs: killGraceMs });
+      processEntry.pendingKillCancel = handle.cancel;
+    }
+  }
+
+  function settleHostStdinFailure(entry: HostEntry, processEntry: HostProcess, error: unknown): void {
+    const turn = entry.pendingTurn;
+    if (!turn || turn.settled) return;
+    const delivered = turn.delivered;
+    settleHostTurn(entry, {
+      ok: false,
+      code: delivered ? 'delivery_uncertain' : 'write_failed',
+      message: delivered
+        ? 'The stdin write failed after accepting the message; delivery is uncertain and was not replayed.'
+        : error instanceof Error ? error.message : String(error),
+    });
+    if (!processEntry.closed) triggerHostKill(processEntry);
+  }
+
+  function inspectHostLine(entry: HostEntry, line: string): void {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    let parsed: Record<string, unknown>;
+    try {
+      const candidate = JSON.parse(trimmed) as unknown;
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return;
+      parsed = candidate as Record<string, unknown>;
+    } catch {
+      return;
+    }
+
+    if (
+      parsed.type === 'system'
+      && parsed.subtype === 'init'
+      && typeof parsed.session_id === 'string'
+    ) {
+      entry.sessionId = parsed.session_id;
+      const pending = entry.pendingTurn;
+      if (pending?.requireSessionId && pending.result) {
+        settleHostTurn(entry, { ok: true, result: pending.result });
+      }
+      return;
+    }
+    if (parsed.type === 'result' && entry.pendingTurn) {
+      if (entry.pendingTurn.requireSessionId && !entry.sessionId) {
+        entry.pendingTurn.result = parsed;
+        return;
+      }
+      settleHostTurn(entry, { ok: true, result: parsed });
+    }
+  }
+
+  function consumeHostStdout(entry: HostEntry, text: string): void {
+    entry.protocolBuffer += text;
+    let newlineIndex = entry.protocolBuffer.indexOf('\n');
+    while (newlineIndex >= 0) {
+      const line = entry.protocolBuffer.slice(0, newlineIndex);
+      entry.protocolBuffer = entry.protocolBuffer.slice(newlineIndex + 1);
+      inspectHostLine(entry, line);
+      newlineIndex = entry.protocolBuffer.indexOf('\n');
+    }
+  }
+
+  function createHostRuntimeContext(entry: HostEntry): string | undefined {
+    const runtimeContext = buildRuntimeContext({
+      sessionId: entry.id,
+      ...(entry.space !== undefined ? { space: entry.space } : {}),
+      ...(entry.execution !== undefined ? { execution: entry.execution } : {}),
+    });
+    if (!runtimeContext) return undefined;
+    try {
+      return writeSessionRuntimeContext(runtimeContext, sessionContextPaths);
+    } catch {
+      return undefined;
+    }
+  }
+
+  function spawnHostProcess(entry: HostEntry, claudeBin: string, resumeSessionId?: string): HostProcess {
+    const contextFilePath = createHostRuntimeContext(entry);
+    const argv = [
+      '-p',
+      '--input-format',
+      'stream-json',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--dangerously-skip-permissions',
+      ...(resumeSessionId !== undefined ? ['--resume', resumeSessionId] : []),
+      ...entry.attachedRoots.flatMap((root) => ['--add-dir', root]),
+    ];
+
+    let child: ChildProcess;
+    try {
+      child = spawnAgentCli(claudeBin, argv, {
+        cwd: entry.cwd,
+        env: contextFilePath
+          ? { ...process.env, [RASEN_SESSION_CONTEXT_ENV]: contextFilePath }
+          : process.env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: !IS_WINDOWS,
+        windowsHide: IS_WINDOWS,
+      });
+    } catch (error) {
+      if (contextFilePath) removeSessionRuntimeContext(entry.id, sessionContextPaths);
+      throw error;
+    }
+
+    let resolveClosed: () => void = () => {};
+    const onClosed = new Promise<void>((resolve) => {
+      resolveClosed = resolve;
+    });
+    const processEntry: HostProcess = {
+      child,
+      pid: child.pid ?? -1,
+      closed: false,
+      slotReleased: false,
+      killInitiated: false,
+      ...(contextFilePath !== undefined ? { contextFilePath } : {}),
+      onClosed,
+      resolveClosed,
+    };
+    entry.process = processEntry;
+    entry.pid = child.pid;
+    entry.protocolBuffer = '';
+
+    const onData = (streamKey: keyof SessionTails) => (chunk: Buffer) => {
+      const text = chunk.toString('utf-8');
+      const current = tails.get(entry.id) ?? { stdout: '', stderr: '' };
+      current[streamKey] = appendTail(current[streamKey], text);
+      tails.set(entry.id, current);
+      if (entry.pendingTurn) {
+        resetHostNoOutputTimer(entry, entry.pendingTurn.noOutputTimeoutMs);
+      }
+      if (streamKey === 'stdout') consumeHostStdout(entry, text);
+    };
+    child.stdout?.on('data', onData('stdout'));
+    child.stderr?.on('data', onData('stderr'));
+
+    const finishProcess = (): void => {
+      if (processEntry.closed) return;
+      processEntry.closed = true;
+      processEntry.pendingKillCancel?.();
+      releaseHostSlot(processEntry);
+      removeSessionRuntimeContext(entry.id, sessionContextPaths);
+      if (entry.process === processEntry) {
+        entry.process = undefined;
+        entry.pid = undefined;
+        if (entry.state !== 'retiring' && entry.state !== 'retired') {
+          entry.state = 'lost';
+        }
+        if (entry.pendingTurn) {
+          const delivered = entry.pendingTurn.delivered;
+          settleHostTurn(entry, {
+            ok: false,
+            code: delivered ? 'delivery_uncertain' : 'write_failed',
+            message: delivered
+              ? 'The host process closed after accepting the message but before returning a result; the message was not replayed.'
+              : 'The host process closed before accepting the message.',
+          });
+        }
+      }
+      processEntry.resolveClosed();
+    };
+    // Writable write failures invoke the write callback and then emit
+    // `error`. Keep a persistent consumer installed for the process lifetime
+    // and route both signals through one idempotent pending-turn settlement.
+    child.stdin?.on('error', (error) => {
+      settleHostStdinFailure(entry, processEntry, error);
+    });
+    child.once('error', finishProcess);
+    child.once('close', finishProcess);
+
+    return processEntry;
+  }
+
+  function makePendingHostTurn(
+    entry: HostEntry,
+    input: HostTurnInput,
+    requireSessionId: boolean
+  ): PendingHostTurn {
+    let resolveTurn: (outcome: HostTurnOutcome) => void = () => {};
+    const promise = new Promise<HostTurnOutcome>((resolve) => {
+      resolveTurn = resolve;
+    });
+    const turn: PendingHostTurn = {
+      delivered: false,
+      settled: false,
+      requireSessionId,
+      noOutputTimeoutMs: input.noOutputTimeoutMs,
+      promise,
+      resolve: resolveTurn,
+    };
+    entry.pendingTurn = turn;
+    turn.overallTimer = setTimeout(() => {
+      settleHostTurn(entry, {
+        ok: false,
+        code: 'turn_timeout',
+        message: `The reusable host turn exceeded ${input.timeoutMs} ms.`,
+      });
+      if (entry.process) triggerHostKill(entry.process);
+    }, input.timeoutMs);
+    turn.overallTimer.unref?.();
+    resetHostNoOutputTimer(entry, input.noOutputTimeoutMs);
+    return turn;
+  }
+
+  async function deliverHostTurn(
+    entry: HostEntry,
+    input: HostTurnInput,
+    requireSessionId = false
+  ): Promise<HostTurnOutcome> {
+    const processEntry = entry.process;
+    if (!processEntry || processEntry.closed || !processEntry.child.stdin) {
+      return {
+        ok: false,
+        code: 'write_failed',
+        message: 'The reusable host has no writable process.',
+      };
+    }
+
+    const turn = makePendingHostTurn(entry, input, requireSessionId);
+    const writeFinished = new Promise<void>((resolve, reject) => {
+      try {
+        processEntry.child.stdin!.write(encodeHostUserEvent(input.message), 'utf-8', (error?: Error | null) => {
+          if (error) reject(error);
+          else resolve();
+        });
+        // `Writable.write()` accepting the chunk establishes the ambiguity
+        // boundary even when it returns false and waits for backpressure.
+        turn.delivered = true;
+      } catch (error) {
+        reject(error);
+      }
+    });
+
+    try {
+      await Promise.race([
+        writeFinished,
+        turn.promise.then(() => undefined),
+      ]);
+    } catch (error) {
+      settleHostStdinFailure(entry, processEntry, error);
+    }
+
+    const outcome = await turn.promise;
+    if (
+      !outcome.ok
+      && ['turn_timeout', 'no_output_timeout', 'write_failed', 'delivery_uncertain'].includes(outcome.code)
+      && !processEntry.closed
+    ) {
+      triggerHostKill(processEntry);
+      await processEntry.onClosed;
+    }
+    return outcome;
+  }
+
+  function hostOutcomeError(entry: HostEntry, outcome: Exclude<HostTurnOutcome, { ok: true }>): HostErrorResult {
+    const status = outcome.code === 'turn_timeout' || outcome.code === 'no_output_timeout'
+      ? 504
+      : outcome.code === 'write_failed' ? 500 : 409;
+    return hostError(entry, status, outcome.code, outcome.message);
+  }
+
+  async function createHost(input: CreateHostInput): Promise<CreateHostResult> {
+    if (draining) {
+      return hostError(undefined, 503, 'shutting_down', 'The server is shutting down and is not admitting new hosts.');
+    }
+    if (liveCount >= maxConcurrent) {
+      return hostError(undefined, 409, 'busy', `Maximum concurrent processes (${maxConcurrent}) already live.`);
+    }
+
+    let canonicalCwd: string;
+    try {
+      canonicalCwd = fs.realpathSync.native(input.cwd);
+    } catch (error) {
+      return hostError(undefined, 503, 'agent_cli_unavailable', error instanceof Error ? error.message : String(error));
+    }
+
+    // Capacity is reserved before the resolver await, sharing the same
+    // synchronous admission gate as one-shot launches.
+    liveCount += 1;
+    const entry: HostEntry = {
+      id: randomUUID(),
+      state: 'starting',
+      cwd: canonicalCwd,
+      attachedRoots: Object.freeze([...(input.attachedRoots ?? [])]),
+      ...(input.space !== undefined ? { space: { ...input.space } } : {}),
+      ...(input.execution !== undefined ? { execution: { ...input.execution } } : {}),
+      createdAt: Date.now(),
+      protocolBuffer: '',
+    };
+    hosts.set(entry.id, entry);
+    tails.set(entry.id, { stdout: '', stderr: '' });
+
+    const claudeBin = await resolveAgentCli();
+    if (draining) {
+      releaseHostSlot();
+      hosts.delete(entry.id);
+      tails.delete(entry.id);
+      return hostError(undefined, 503, 'shutting_down', 'The server is shutting down and is not admitting new hosts.');
+    }
+    if (!claudeBin) {
+      releaseHostSlot();
+      hosts.delete(entry.id);
+      tails.delete(entry.id);
+      return hostError(undefined, 503, 'agent_cli_unavailable', 'No agent CLI binary could be resolved on this machine.');
+    }
+
+    try {
+      spawnHostProcess(entry, claudeBin);
+    } catch (error) {
+      releaseHostSlot();
+      hosts.delete(entry.id);
+      tails.delete(entry.id);
+      removeSessionRuntimeContext(entry.id, sessionContextPaths);
+      return hostError(undefined, 503, 'agent_cli_unavailable', error instanceof Error ? error.message : String(error));
+    }
+
+    const outcome = await deliverHostTurn(entry, input, true);
+    if (!outcome.ok) {
+      const failure = hostOutcomeError(entry, outcome);
+      if (entry.process && !entry.process.closed) {
+        triggerHostKill(entry.process);
+        await entry.process.onClosed;
+      }
+      hosts.delete(entry.id);
+      tails.delete(entry.id);
+      removeSessionRuntimeContext(entry.id, sessionContextPaths);
+      return { ...failure, host: undefined };
+    }
+    return { ok: true, host: copyHost(entry), result: outcome.result };
+  }
+
+  async function runAcceptedWake(
+    entry: HostEntry,
+    input: HostTurnInput,
+    recover: boolean,
+    slotReserved: boolean
+  ): Promise<WakeHostResult> {
+    if (recover) {
+      const claudeBin = await resolveAgentCli();
+      if (draining) {
+        if (slotReserved) releaseHostSlot();
+        if (entry.state !== 'retiring') entry.state = 'lost';
+        return hostError(entry, 503, 'shutting_down', 'The server is shutting down and is not admitting recovered hosts.');
+      }
+      if (!claudeBin) {
+        if (slotReserved) releaseHostSlot();
+        if (entry.state !== 'retiring') entry.state = 'lost';
+        return hostError(entry, 503, 'agent_cli_unavailable', 'No agent CLI binary could be resolved on this machine.');
+      }
+      try {
+        spawnHostProcess(entry, claudeBin, entry.sessionId);
+      } catch (error) {
+        if (slotReserved) releaseHostSlot();
+        if (entry.state !== 'retiring') entry.state = 'lost';
+        removeSessionRuntimeContext(entry.id, sessionContextPaths);
+        return hostError(entry, 503, 'agent_cli_unavailable', error instanceof Error ? error.message : String(error));
+      }
+    }
+
+    const outcome = await deliverHostTurn(entry, input);
+    if (!outcome.ok) return hostOutcomeError(entry, outcome);
+    return { ok: true, host: copyHost(entry), result: outcome.result };
+  }
+
+  function wakeHost(id: string, input: HostTurnInput): Promise<WakeHostResult> {
+    const entry = hosts.get(id);
+    if (!entry) {
+      return Promise.resolve(hostError(undefined, 404, 'host_not_found', `Reusable host ${id} was not found.`));
+    }
+    if (entry.state === 'retired') {
+      return Promise.resolve(hostError(entry, 409, 'host_retired', `Reusable host ${id} is retired.`));
+    }
+    if (entry.state === 'starting' || entry.state === 'waking' || entry.state === 'retiring') {
+      return Promise.resolve(hostError(entry, 409, 'host_busy', `Reusable host ${id} is not idle.`));
+    }
+    if (draining) {
+      return Promise.resolve(hostError(entry, 503, 'shutting_down', 'The server is shutting down and is not admitting host wakes.'));
+    }
+
+    const recover = entry.state === 'lost' || entry.process === undefined;
+    if (recover && !entry.sessionId) {
+      entry.state = 'lost';
+      return Promise.resolve(hostError(
+        entry,
+        409,
+        'host_unrecoverable',
+        `Reusable host ${id} has no captured Claude session identity and cannot be resumed.`
+      ));
+    }
+    if (recover && liveCount >= maxConcurrent) {
+      entry.state = 'lost';
+      return Promise.resolve(hostError(entry, 409, 'busy', `Maximum concurrent processes (${maxConcurrent}) already live.`));
+    }
+
+    // This state transition and recovery reservation are synchronous and
+    // precede the first await, so overlap cannot write or spawn.
+    entry.state = 'waking';
+    if (recover) liveCount += 1;
+    const operation = runAcceptedWake(entry, input, recover, recover);
+    entry.activeWake = operation;
+    void operation.finally(() => {
+      if (entry.activeWake === operation) entry.activeWake = undefined;
+    });
+    return operation;
+  }
+
+  function retireHost(id: string): Promise<RetireHostResult> {
+    const entry = hosts.get(id);
+    if (!entry) {
+      return Promise.resolve({
+        ok: false,
+        status: 404,
+        code: 'host_not_found',
+        message: `Reusable host ${id} was not found.`,
+      });
+    }
+    if (entry.retirePromise) return entry.retirePromise;
+    if (entry.state === 'retired') {
+      return Promise.resolve({ ok: true, host: copyHost(entry) });
+    }
+
+    // Terminal admission gate: later wakes observe `retiring` immediately,
+    // while an already accepted wake remains allowed to settle.
+    entry.state = 'retiring';
+    const retiring = (async (): Promise<RetireHostResult> => {
+      if (entry.activeWake) await entry.activeWake;
+      const processEntry = entry.process;
+      if (processEntry && !processEntry.closed) {
+        try {
+          processEntry.child.stdin?.end();
+        } catch {
+          // A synchronous close race is equivalent to the asynchronous stdin
+          // error consumed above; retirement still waits for actual close.
+        }
+        const escalationTimer = setTimeout(() => {
+          triggerHostKill(processEntry);
+        }, killGraceMs);
+        escalationTimer.unref?.();
+        await processEntry.onClosed;
+        clearTimeout(escalationTimer);
+      }
+      removeSessionRuntimeContext(entry.id, sessionContextPaths);
+      entry.pid = undefined;
+      entry.state = 'retired';
+      return { ok: true, host: copyHost(entry) };
+    })();
+    entry.retirePromise = retiring;
+    return retiring;
+  }
+
+  function getHost(id: string): HostSnapshot | undefined {
+    const entry = hosts.get(id);
+    return entry ? copyHost(entry) : undefined;
+  }
 
   /**
    * Drops a finished session's context file, plus those of any records the
@@ -537,10 +1192,27 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
       waits.push(entry.onClosed);
       void id;
     }
+    for (const entry of hosts.values()) {
+      const processEntry = entry.process;
+      if (!processEntry || processEntry.closed) continue;
+      triggerHostKill(processEntry);
+      waits.push(processEntry.onClosed);
+    }
     await Promise.all(waits);
   }
 
-  return { launch, kill, getRecord, list, getTails, shutdownAll };
+  return {
+    launch,
+    kill,
+    createHost,
+    wakeHost,
+    retireHost,
+    getHost,
+    getRecord,
+    list,
+    getTails,
+    shutdownAll,
+  };
 }
 
 // ---------------------------------------------------------------------------

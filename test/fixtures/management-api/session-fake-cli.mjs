@@ -14,6 +14,10 @@
 // that wrapper is what actually gets spawned there, driving the real
 // `.cmd`-shim spawn codepath (design D1/D2, `supervisor.ts`'s
 // `spawnAgentCli`).
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as readline from 'node:readline';
+
 const args = process.argv.slice(2);
 const promptIndex = args.indexOf('-p');
 const prompt = promptIndex >= 0 ? args[promptIndex + 1] : '';
@@ -28,7 +32,156 @@ function initLine(sessionId) {
   writeLine({ type: 'system', subtype: 'init', session_id: sessionId, permissionMode: 'bypassPermissions' });
 }
 
-switch (mode) {
+function fixtureMessage(event) {
+  const content = event?.message?.content;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((item) => item && item.type === 'text' && typeof item.text === 'string')
+    .map((item) => item.text)
+    .join('');
+}
+
+function appendHostEvent(event) {
+  fs.appendFileSync(
+    path.join(process.cwd(), 'host-fixture-events.ndjson'),
+    `${JSON.stringify(event)}\n`,
+    'utf-8'
+  );
+}
+
+async function writeHostEvent(event, chunked) {
+  const line = `${JSON.stringify(event)}\n`;
+  if (!chunked || line.length < 4) {
+    process.stdout.write(line);
+    return;
+  }
+  const first = Math.max(1, Math.floor(line.length / 3));
+  const second = Math.max(first + 1, Math.floor((line.length * 2) / 3));
+  process.stdout.write(line.slice(0, first));
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  process.stdout.write(line.slice(first, second));
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  process.stdout.write(line.slice(second));
+}
+
+function runHostFixture() {
+  const resumeIndex = args.indexOf('--resume');
+  const sessionId = resumeIndex >= 0 && args[resumeIndex + 1]
+    ? args[resumeIndex + 1]
+    : 'fake-host-session';
+  let firstDelivery = true;
+  let resistantInterval;
+  let closeOnNextInput = false;
+
+  appendHostEvent({
+    type: 'spawn',
+    pid: process.pid,
+    cwd: fs.realpathSync.native(process.cwd()),
+    argv: args,
+  });
+
+  process.stdin.on('data', () => {
+    if (!closeOnNextInput) return;
+    closeOnNextInput = false;
+    process.exit(19);
+  });
+
+  const lines = readline.createInterface({
+    input: process.stdin,
+    crlfDelay: Infinity,
+  });
+
+  lines.on('line', async (line) => {
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      process.stderr.write(`invalid fixture input: ${line}\n`);
+      return;
+    }
+
+    const message = fixtureMessage(event);
+    const chunked = message.includes('CHUNKED');
+    appendHostEvent({ type: 'delivery', pid: process.pid, message });
+
+    let emitInitAfterResult = false;
+    if (firstDelivery) {
+      firstDelivery = false;
+      if (!message.includes('MISSING_INIT')) {
+        if (message.includes('RESULT_BEFORE_INIT')) {
+          emitInitAfterResult = true;
+        } else {
+          await writeHostEvent(
+            { type: 'system', subtype: 'init', session_id: sessionId, permissionMode: 'bypassPermissions' },
+            chunked
+          );
+        }
+      }
+    }
+
+    if (message.includes('LONG_TAIL')) {
+      process.stderr.write(`prefix-${'x'.repeat(70 * 1024)}-suffix\n`);
+    }
+    if (message.includes('MALFORMED')) {
+      process.stdout.write('not-json diagnostic\n');
+    }
+    if (message.includes('UNKNOWN')) {
+      await writeHostEvent({ type: 'system', subtype: 'fixture-unknown', value: 1 }, chunked);
+    }
+    if (message.includes('MIDTURN_LOSS')) {
+      setTimeout(() => process.exit(17), 10);
+      return;
+    }
+
+    const delayMatch = /DELAY_RESULT=(\d+)/.exec(message);
+    if (delayMatch) {
+      await new Promise((resolve) => setTimeout(resolve, Number(delayMatch[1])));
+    }
+    if (message.includes('NO_RESULT_WITH_OUTPUT')) {
+      setInterval(() => {
+        writeLine({ type: 'system', subtype: 'fixture-progress', at: Date.now() });
+      }, 30);
+      return;
+    }
+    if (message.includes('NO_RESULT')) return;
+
+    const result = message.includes('LARGE_RESULT')
+      ? `large-start:${'r'.repeat(128 * 1024)}:large-end`
+      : `result:${message}`;
+    await writeHostEvent(
+      { type: 'result', subtype: 'success', result, fixture_pid: process.pid },
+      chunked
+    );
+
+    if (emitInitAfterResult) {
+      await writeHostEvent(
+        { type: 'system', subtype: 'init', session_id: sessionId, permissionMode: 'bypassPermissions' },
+        chunked
+      );
+    }
+    if (message.includes('ARM_CLOSE_DURING_WRITE')) {
+      closeOnNextInput = true;
+    }
+
+    if (message.includes('IDLE_LOSS')) {
+      setTimeout(() => process.exit(18), 20);
+    }
+    if (message.includes('SIGTERM_RESISTANT')) {
+      process.on('SIGTERM', () => {});
+      resistantInterval = setInterval(() => {}, 1000);
+    }
+  });
+
+  lines.on('close', () => {
+    if (resistantInterval) return;
+    process.exit(0);
+  });
+}
+
+if (args.includes('--input-format')) {
+  runHostFixture();
+} else switch (mode) {
   case 'fast-exit': {
     initLine('fake-session-fast-exit');
     writeLine({ type: 'result', result: 'ok' });
