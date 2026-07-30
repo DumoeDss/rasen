@@ -110,10 +110,20 @@ The other four are ECP-3's own unfinished verification, and they bear directly o
 
 ## Delivery
 
-Children ship **local** (commit only, no push, no PR). `feat/ecp-review-cycle` has no upstream and
-is 187 commits ahead of `origin/dev/0.1.6`. The **portfolio** delivers once, at the parent, as a
-single PR to `dev/0.1.6` after this last child is review-clean. Archive is `on-merge` and follows
-the user's merge — ECP-4 is parked at `pending` awaiting exactly that.
+Children ship **local** (commit only, no push, no PR). `feat/ecp-review-cycle` has no upstream. The
+**portfolio** delivers once, at the parent, as a single PR **to `dev/0.2.0`** after this last child
+is review-clean. Archive is `on-merge` and follows the user's merge — ECP-4 is parked at `pending`
+awaiting exactly that.
+
+**Target corrected 2026-07-30 (user):** the ECP paradigm lands on **`dev/0.2.0`**, not `dev/0.1.6`.
+Strategy changed — `0.1.6` is now the **bug-fix line off `0.1.5`**, not the ECP release. The
+retarget costs nothing mechanically: `origin/dev/0.2.0` (`8270941a`) is an **ancestor of this
+branch** (114 ahead, 0 behind), so the PR fast-forwards, and `origin/dev/0.2.0` carries the same
+`0.1.5`/`0.1.5` package versions the lockstep evidence was taken against. `origin/dev/0.1.6` holds
+**8 commits absent from `0.2.0`**, two of them breaking (`feat(cli)!: separate structure from
+localized copy` #110, `feat(agent)!: add runtime edit boundary`) — so the old target was the harder
+one. Watch #110 when those 8 reach `0.2.0`: it reshapes skill structure/copy, and this portfolio
+owns the generated-skill parity hashes.
 
 Known parked items, owned by the user, NOT this slice's job unless the proposal argues otherwise:
 - `packages/ui/package-lock.json` — stray npm lockfile in a pnpm repo, predates ECP-4, awaiting a
