@@ -1,7 +1,7 @@
 # file-placement Specification
 
 ## Purpose
-TBD - created by archiving change file-placement-collapse-landing. Update Purpose after archive.
+Define the seven-class file placement model — every file a change produces belongs to exactly one of seven classes (review-material, design-docs, evidence, handoff, probes, ephemera, coordination), each owned by one of three roots (planning, execution, machine) with a fixed landing path and no placement configuration — and the core invariant that any path an agent reads or writes with its own file tools must lie inside the planning root or the execution root, leaving the machine root for CLI-owned state only.
 ## Requirements
 ### Requirement: Agent-written files land inside the planning root or the execution root
 

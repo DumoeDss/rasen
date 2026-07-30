@@ -1,7 +1,7 @@
 # work-migration Specification
 
 ## Purpose
-Define `rasen work migrate`: a preview-first, git-boundary-safe command that sweeps legacy in-repo process ephemera (run-state, handoff documents, reports) left over from before the `change-work-dir` capability into the project's machine-home work directories, for both active and archived changes, without ever moving review material or writing to git on the caller's behalf.
+Define `rasen work migrate`: a preview-first, git-boundary-safe command that sweeps legacy in-repo process ephemera (run-state, reports, ship-log) left over from before the `change-work-dir` capability into the project's machine-home work directories, for both active and archived changes, without ever moving review material, touching the terminal `handoff/` directory, or writing to git on the caller's behalf.
 ## Requirements
 ### Requirement: A command migrates legacy in-repo ephemera to the machine home
 
