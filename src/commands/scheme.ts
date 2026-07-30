@@ -8,12 +8,12 @@ import {
 export function registerSchemeCommand(program: Command): void {
   const scheme = program
     .command('scheme')
-    .description('Inspect machine-level threshold schemes');
+    .description('');
 
   scheme
     .command('list')
-    .description('List threshold schemes')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--json', '')
     .action((options: { json?: boolean }) => {
       const schemes = listThresholdSchemes();
       if (options.json) {
@@ -35,8 +35,8 @@ export function registerSchemeCommand(program: Command): void {
 
   scheme
     .command('show <name>')
-    .description('Show one threshold scheme')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--json', '')
     .action((name: string, options: { json?: boolean }) => {
       const definition = readThresholdScheme(name);
       const result = { name, ...definition };

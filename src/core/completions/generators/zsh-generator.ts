@@ -1,7 +1,7 @@
 import {
   CompletionGenerator,
-  CommandDefinition,
-  FlagDefinition,
+  ResolvedCommandDefinition,
+  ResolvedFlagDefinition,
   PositionalDefinition,
 } from '../types.js';
 import { ZSH_DYNAMIC_HELPERS } from '../templates/zsh-templates.js';
@@ -19,7 +19,7 @@ export class ZshGenerator implements CompletionGenerator {
    * @param commands - Command definitions to generate completions for
    * @returns Zsh completion script as a string
    */
-  generate(commands: CommandDefinition[]): string {
+  generate(commands: readonly ResolvedCommandDefinition[]): string {
     // Build command list using push() for loop clarity
     const commandLines: string[] = [];
     for (const cmd of commands) {
@@ -88,7 +88,7 @@ compdef _rasen rasen
   /**
    * Generate completion function for a specific command
    */
-  private generateCommandFunction(cmd: CommandDefinition): string[] {
+  private generateCommandFunction(cmd: ResolvedCommandDefinition): string[] {
     const funcName = `_rasen_${this.sanitizeFunctionName(cmd.name)}`;
     const lines: string[] = [];
 
@@ -163,7 +163,10 @@ compdef _rasen rasen
   /**
    * Generate completion function for a subcommand
    */
-  private generateSubcommandFunction(parentName: string, subcmd: CommandDefinition): string[] {
+  private generateSubcommandFunction(
+    parentName: string,
+    subcmd: ResolvedCommandDefinition,
+  ): string[] {
     const funcName = `_rasen_${this.sanitizeFunctionName(parentName)}_${this.sanitizeFunctionName(subcmd.name)}`;
     const lines: string[] = [];
 
@@ -185,7 +188,7 @@ compdef _rasen rasen
   /**
    * Generate flag specification for _arguments
    */
-  private generateFlagSpec(flag: FlagDefinition): string {
+  private generateFlagSpec(flag: ResolvedFlagDefinition): string {
     const parts: string[] = [];
 
     // Handle mutually exclusive short and long forms
@@ -201,9 +204,9 @@ compdef _rasen rasen
 
     // Add value completion if flag takes a value
     if (flag.takesValue) {
-      if (flag.values && flag.values.length > 0) {
+      if (flag.completionValues && flag.completionValues.length > 0) {
         // Provide specific value completions
-        const valueList = flag.values.map(v => this.escapeValue(v)).join(' ');
+        const valueList = flag.completionValues.map(v => this.escapeValue(v)).join(' ');
         parts.push(`:value:(${valueList})`);
       } else {
         // Generic value placeholder
@@ -245,7 +248,7 @@ compdef _rasen rasen
     }
   }
 
-  private appendPositionalSpecs(lines: string[], cmd: CommandDefinition): void {
+  private appendPositionalSpecs(lines: string[], cmd: ResolvedCommandDefinition): void {
     const positionalSpecs = this.generatePositionalSpecs(cmd);
 
     if (positionalSpecs.length === 0) {
@@ -261,7 +264,7 @@ compdef _rasen rasen
     }
   }
 
-  private generatePositionalSpecs(cmd: CommandDefinition): string[] {
+  private generatePositionalSpecs(cmd: ResolvedCommandDefinition): string[] {
     if (cmd.positionals && cmd.positionals.length > 0) {
       return cmd.positionals.map((positional, index) =>
         this.generateIndexedPositionalSpec(positional, index + 1)

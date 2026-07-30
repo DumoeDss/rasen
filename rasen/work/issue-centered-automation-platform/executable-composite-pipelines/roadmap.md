@@ -4,7 +4,15 @@
 >
 > 权威目标：[`target-state.md`](./target-state.md)
 >
-> 当前状态：draft，尚未确认 active Slice
+> 当前状态：**active**，ECP-1..5 全部交付并合入 `dev/0.2.0`（回写于
+> 2026-07-30，revision `be124057`）。无 activeSlice —— 下一个 Slice 归用户
+> 决定。**不是 `completed`**：ECP-5 收口范围有两条仍 OPEN，见「当前位置」。
+>
+> 发布线修订（2026-07-30，用户拍板，本 Roadmap「版本边界」条款要求同步）：
+> 本文与 Target State 中的 `0.1.6` 里程碑标签现在指 **`0.2.0`**。`0.1.6` 已改
+> 定位为 `0.1.5` 的 bug 修复线（`dev/0.1.6` 另有 8 个 commit 不在 `0.2.0`，
+> 含两个 breaking）。这是显式 scope decision，不是改标题把 spine 重命名为完整
+> ECP —— 能力边界一字未动，只有版本号换了。
 
 ## 路线原则
 
@@ -22,26 +30,44 @@
 ## 当前位置
 
 ```text
-已观察
-  Definition v2 static model
-    + deterministic root-DAG Change Run spine
-    - executable Composite/Loop/parallel
-    - complete Canvas authoring
-    - Composite Operations
-    - built-in migration
+已交付（真实证据，非 checkbox；全部在 dev/0.2.0 @ be124057）
+  ECP-1 ReviewCycle Vertical Closure            DONE
+  ECP-2 Custom Composite Authoring/Runtime      DONE
+  ECP-3 GoalLoop and Thin Entrypoints           DONE
+  ECP-4 Choice / FanOut / Join and Full Feature DONE
+  ECP-5 Product Closure and Release Truth       DONE, 带 2 条 OPEN（见下）
 
-NOW（候选，等待确认）
-  ECP-1 ReviewCycle Vertical Closure
+  可执行面：6/7 内置 Pipeline 由 reconciler 真实运行；authored v2 +
+  CompositeRef + BoundedLoop + GoalLoop + FanOut/Join 全部跑通 Definition ->
+  Canvas -> Runtime -> Operations -> 真实 E2E；12 格 dogfood 矩阵锚在一个 revision
 
-LATER（按证据可调整，但依赖顺序不可倒置）
-  ECP-2 Custom Composite Authoring and Runtime Parity
-    -> ECP-3 GoalLoop and Thin Entrypoints
-      -> ECP-4 Choice / FanOut / Join and Full Feature
-        -> ECP-5 Product Closure and Release Truth
+ECP-5 仍 OPEN 的收口项（有意记录，不当它不存在）
+  O1 用 ECP 自身完成至少一个后续真实 Change 的 dogfood（自宿主）
+     —— 本 portfolio 自己是被 legacy prompt 路径驱动交付的，不是被 reconciler
+  O2 重跑完成度审查并关闭所有高优先级 finding
+     —— 仓库内只有 docs/audits/0.1.6-...-2026-07-29.md 这一份旧的
+  两条都不影响已交付能力，但按本 Roadmap 的规则，ECP-5 的 Result 只能记 partial
 
-NOT NOW
+NOW（用户 2026-07-30 确认的推进线）
+  Session 执行层（缓存重建线）—— 不是 ECP 的能力 Slice，而是 ECP 经
+  deliveryMode grant/defer 显式外包出去的那块执行基座：内核授予 agent
+  action，谁真的开 session、跑 agent、管 worker 生命周期，至今没有实现。
+  设计与探针档案：docs/session-execution-layer-design.md（PR #112），
+  P0 已闭环、上游前置已清零、P1 可直接开工。
+  未设 activeSlice：本层尚无 slices/<id>/{spec,plan}，若要按 Slice 追踪，
+  形式化它本身就是 P1 的第一步
+
+  ECP 侧的测试与审查由用户自己处理（2026-07-30）；O1（用 ECP 自身跑下一个
+  真实 Change）因此排在用户审查完 0.2.0 之后 —— 它必须用最新构建才有意义
+
+NOT NOW（边界未变）
   auto-decompose / Issue Dispatch / cross-project execution
   remote runtime / team platform / notifications / Forge
+
+  `auto-decompose` 的 fail-closed 是这条边界的正确表现，不是缺陷：它的
+  decompose stage 无 skill、子项运行时才产生，frozen plan 无法预先成形，因此
+  报 execution_profile_unavailable 并回落 legacy。portfolio 级的活因此仍不享有
+  kernel 保证 —— 这是已知且刻意的
 ```
 
 ## 进入 ECP-1 前的事实门

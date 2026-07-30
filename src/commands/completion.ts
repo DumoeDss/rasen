@@ -1,8 +1,9 @@
 import ora from 'ora';
 import { CompletionFactory } from '../core/completions/factory.js';
-import { COMMAND_REGISTRY } from '../core/completions/command-registry.js';
-import { localizeCommandRegistry } from '../core/completions/description-localization.js';
+import { resolveCliPresentation } from '../core/completions/cli-presentation.js';
+import type { ResolvedCliPresentation } from '../core/completions/types.js';
 import { getCliLocale } from '../core/cli-locale.js';
+import type { CliLocale } from '../utils/locale.js';
 import { detectShell, SupportedShell } from '../utils/shell-detection.js';
 import { CompletionProvider } from '../core/completions/completion-provider.js';
 import { getArchivedChangeIds } from '../utils/item-discovery.js';
@@ -32,15 +33,46 @@ interface CompleteOptions {
   type: string;
 }
 
+type CompletionCommandOptions =
+  | {
+      locale: CliLocale;
+      presentation: ResolvedCliPresentation;
+    }
+  | {
+      locale?: undefined;
+      presentation?: undefined;
+    };
+
 /**
  * Command for managing shell completions for Rasen CLI
  */
 export class CompletionCommand {
   private completionProvider: CompletionProvider;
+  private readonly locale: CliLocale | undefined;
+  private readonly presentation: ResolvedCliPresentation | undefined;
 
-  constructor() {
+  constructor(options: CompletionCommandOptions = {}) {
+    if (
+      (options.locale === undefined) !==
+      (options.presentation === undefined)
+    ) {
+      throw new TypeError(
+        'CompletionCommand locale and presentation must be provided together',
+      );
+    }
     this.completionProvider = new CompletionProvider();
+    this.locale = options.locale;
+    this.presentation = options.presentation;
   }
+
+  private resolveLocale(): CliLocale {
+    return this.locale ?? getCliLocale();
+  }
+
+  private resolvePresentation(): ResolvedCliPresentation {
+    return this.presentation ?? resolveCliPresentation({ locale: this.resolveLocale() });
+  }
+
   /**
    * Resolve shell parameter or exit with error
    *
@@ -49,7 +81,7 @@ export class CompletionCommand {
    * @returns Resolved shell or null if should exit
    */
   private resolveShellOrExit(shell: string | undefined, operationName: string): SupportedShell | null {
-    const ui = getCompletionUiMessages();
+    const ui = getCompletionUiMessages(this.resolveLocale());
     const supported = CompletionFactory.getSupportedShells().join(', ');
     const normalizedShell = this.normalizeShell(shell);
 
@@ -125,7 +157,7 @@ export class CompletionCommand {
    */
   private async generateForShell(shell: SupportedShell): Promise<void> {
     const generator = CompletionFactory.createGenerator(shell);
-    const script = generator.generate(localizeCommandRegistry(COMMAND_REGISTRY, getCliLocale()));
+    const script = generator.generate(this.resolvePresentation().completionCommands);
     console.log(script);
   }
 
@@ -133,7 +165,7 @@ export class CompletionCommand {
    * Install completion script for a specific shell
    */
   private async installForShell(shell: SupportedShell, verbose: boolean): Promise<void> {
-    const locale = getCliLocale();
+    const locale = this.resolveLocale();
     const ui = getCompletionUiMessages(locale);
     const generator = CompletionFactory.createGenerator(shell);
     const installer = CompletionFactory.createInstaller(shell);
@@ -142,7 +174,7 @@ export class CompletionCommand {
 
     try {
       // Generate the completion script
-      const script = generator.generate(localizeCommandRegistry(COMMAND_REGISTRY, getCliLocale()));
+      const script = generator.generate(this.resolvePresentation().completionCommands);
 
       // Install it
       const result = await installer.install(script);
@@ -229,7 +261,7 @@ export class CompletionCommand {
    * Uninstall completion script for a specific shell
    */
   private async uninstallForShell(shell: SupportedShell, skipConfirmation: boolean): Promise<void> {
-    const locale = getCliLocale();
+    const locale = this.resolveLocale();
     const ui = getCompletionUiMessages(locale);
     const installer = CompletionFactory.createInstaller(shell);
 
@@ -294,7 +326,7 @@ export class CompletionCommand {
    */
   async complete(options: CompleteOptions): Promise<void> {
     const type = options.type.toLowerCase();
-    const locale = getCliLocale();
+    const locale = this.resolveLocale();
     const labels = getLocaleCatalog(locale).completion.dynamic;
 
     try {

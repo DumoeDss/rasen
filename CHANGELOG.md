@@ -2,6 +2,12 @@
 
 <!-- rasen-history:start -->
 
+## Unreleased
+
+### Changed
+
+- **BREAKING (library API): CLI programs are now created with `createProgram({ locale, facts? })`.** The exported mutable `program` singleton has been removed. Each call returns a fresh Commander instance with catalog-backed help and completion presentation resolved for the requested locale, so library callers should replace `import { program }` with `import { createProgram }` and construct an instance before parsing or inspecting help.
+
 ## 0.1.5
 
 The management-platform release. Rasen grows a full web UI with supervised agent sessions and a drag-and-drop pipeline canvas, learns to keep idle subagents' prompt cache warm, and ships a local token-spend auditor — alongside the retirement of the slash-command generation surface (skills are now the only workflow-delivery format).

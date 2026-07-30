@@ -10,6 +10,7 @@ import chalk from 'chalk';
 import path from 'path';
 import * as fs from 'fs';
 import { getSchemaDir, listSchemas } from '../../core/artifact-graph/index.js';
+export { DEFAULT_SCHEMA } from '../../core/config.js';
 import type { ReferenceIndexEntry } from '../../core/references.js';
 import { isRootSelectionError } from '../../core/root-selection.js';
 import { validateChangeName } from '../../utils/change-utils.js';
@@ -58,12 +59,6 @@ export interface ApplyInstructions {
    */
   nextWorkflows: ResolvedNextStep[];
 }
-
-// -----------------------------------------------------------------------------
-// Constants
-// -----------------------------------------------------------------------------
-
-export const DEFAULT_SCHEMA = 'spec-driven';
 
 // -----------------------------------------------------------------------------
 // Utility Functions

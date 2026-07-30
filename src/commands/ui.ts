@@ -17,10 +17,10 @@ export type UiCommandOptions = UiLaunchOptions;
 export function registerUiCommand(program: Command): void {
   program
     .command('ui')
-    .description('Start the Rasen management platform (board + config) on a localhost server')
-    .option('--no-open', 'Do not open the default browser')
-    .option('--port <n>', 'Pin the listen port (default: ephemeral; --no-daemon only)')
-    .option('--no-daemon', 'Use a self-hosted foreground server instead of the resident daemon')
+    .description('')
+    .option('--no-open', '')
+    .option('--port <n>', '')
+    .option('--no-daemon', '')
     .action(async (options: UiCommandOptions) => {
       await runUiLaunch(options, {
         entryPath: '/',

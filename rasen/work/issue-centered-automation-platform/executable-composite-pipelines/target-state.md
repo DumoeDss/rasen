@@ -2,12 +2,16 @@
 
 > Direction：`executable-composite-pipelines`
 >
-> 状态：draft
+> 状态：active（Target State 本身未变；下方「当前观察基线」已按交付事实回写）
 >
 > 上位 North Star：[`../north-star.md`](../north-star.md)
 >
-> 当前事实基线：2026-07-29，Git revision
-> `8270941ae1fa9368221b4d3ef67f2b1c961d5956`
+> 当前事实基线：**2026-07-30，Git revision `be124057`**（PR #111 合入
+> `dev/0.2.0`；上一基线是 2026-07-29 的
+> `8270941ae1fa9368221b4d3ef67f2b1c961d5956`）
+>
+> 发布线：本文中的 `0.1.6` 里程碑标签现指 **`0.2.0`**（2026-07-30 用户拍板，
+> Roadmap「版本边界」条款要求同步）。`0.1.6` 是 `0.1.5` 的 bug 修复线。
 
 ## 目标结果
 
@@ -67,11 +71,16 @@ Agent 用户应当能够：
   parallel barrier 语义；
 - `ecp-review-cycle`、`ecp-custom-composite`、`ecp-goal-loop`、
   `ecp-full-feature`、`ecp-product-closure` 都只有 Change shell；
-- 当前 7 个 built-in 在一般产品视图中都仍显示 legacy engine；只有特定
-  `bug-fix` simple path 能在补全启动 profile 后进入 reconciler；
-- `rasen-auto`、`rasen-goal`、`rasen-review-cycle` 仍拥有 prompt-owned
-  机械推进规则；
-- 当前版本、changelog、tag 与“0.1.6 ECP 完整发布”尚未形成一致事实。
+- ~~当前 7 个 built-in 在一般产品视图中都仍显示 legacy engine；只有特定
+  `bug-fix` simple path 能在补全启动 profile 后进入 reconciler；~~
+  **已关闭（2026-07-30）**：真实 CLI 逐个核过，6/7 报 reconciler 支持并真实运行；
+  第 7 个 `auto-decompose` 按边界 fail-closed；
+- ~~`rasen-auto`、`rasen-goal`、`rasen-review-cycle` 仍拥有 prompt-owned
+  机械推进规则；~~ **已关闭**：三者都收敛为 thin launcher，机械推进归 reconciler
+  （`orchestration-bundles.test.ts` 守住删除，scenario D 用真实 CLI 驱动全程）；
+- **仍未关闭**：版本、changelog、tag 与“完整 ECP 发布”尚未形成一致事实 ——
+  仓库内版本仍是 `0.1.5`，发版是用户的动作；且 Roadmap 的 ECP-5 收口范围有两条
+  OPEN（自宿主 dogfood、重跑完成度审查），见 [`roadmap.md`](./roadmap.md)。
 
 因此，当前交付应称为：
 
