@@ -218,10 +218,11 @@ describe('bounded Claude process runner', () => {
       cwd,
       timeoutMs: 5000,
     });
+    const canonicalCwd = fs.realpathSync.native(cwd);
     expect(fresh).toMatchObject({
       ok: true,
       sessionId: 'fake-claude-session',
-      cwd,
+      cwd: canonicalCwd,
     });
     if (!fresh.ok) return;
     const summary = JSON.parse(
@@ -229,7 +230,7 @@ describe('bounded Claude process runner', () => {
     ) as { prompt: string; args: string[]; cwd: string };
     expect(summary.prompt).toContain('MODE=success');
     expect(summary.args).not.toContain(summary.prompt);
-    expect(summary.cwd).toBe(cwd);
+    expect(summary.cwd).toBe(canonicalCwd);
 
     const resumed = await runClaude({
       binary: fakeBinary,
