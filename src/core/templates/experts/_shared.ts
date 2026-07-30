@@ -64,19 +64,7 @@ If an explicit \`MODE: dispatched (report-only)\` token is present in your instr
 
 These dispatched-mode prohibitions **override** any contrary standalone instruction later in this skill (fix loops, batched questions, clean-tree gates, adversarial subagent dispatch, native report paths). Standalone mode retains all of that behavior.
 
-**Denied-edit honesty.** Read \`rasen agent edit-boundary status --json\` before describing an edit restriction. If a covered write is denied by an active **hard** boundary, the fix did NOT land: report it as an un-applied finding, \`[BLOCKED: edit-boundary] file:line — proposed fix\`, never as \`[AUTO-FIXED]\`, and never silently drop it. A **soft** boundary requires cooperation and is not a host denial; **unsupported** leaves edits unrestricted. (Dispatched mode does no AUTO-FIX at all; this clause primarily governs the standalone fix loops.)`;
-
-export const EDIT_BOUNDARY_GUIDANCE = `## Runtime edit boundary
-
-Use the base runtime, which works independently of optional skills:
-
-\`\`\`bash
-rasen agent edit-boundary set <directory>
-rasen agent edit-boundary status --json
-rasen agent edit-boundary clear
-\`\`\`
-
-The state is shared by concurrent agents in the same canonical checkout. Always read \`status\` before describing the restriction: **hard** means the detected host rejects covered structured write tools outside the boundary, while shell, MCP, external-process, and other unhooked writes remain outside the contract; **soft** requires agent cooperation and must not be described as a host denial; **unsupported** means edits remain unrestricted and no active boundary is created. Never state enforcement more strongly than the reported level.`;
+**Write-result and scope honesty.** After any standalone AUTO-FIX write attempt, inspect the tool result and the current diff before claiming success. If the intended change did not land, report it as an un-applied finding, never as \`[AUTO-FIXED]\`, and never silently drop it. Before a mutating standalone expert reports completion, inspect the actual changed-file set against the task's declared scope. An unexpected file without a recorded justification remains unresolved out-of-scope work. This is observable write/diff evidence, not mechanical write enforcement. (Dispatched mode does no AUTO-FIX at all; this clause primarily governs the standalone fix loops.)`;
 
 const ASK_USER_QUESTION_FORMAT = `## AskUserQuestion Format
 
@@ -169,7 +157,6 @@ plan's living status.`;
  */
 export const PREAMBLE = [
   `${PREAMBLE_BASE}\n${REPO_MODE_CONFIG}`,
-  EDIT_BOUNDARY_GUIDANCE,
   SEVERITY_VOCABULARY,
   DISPATCH_CONTRACT,
   ASK_USER_QUESTION_FORMAT,

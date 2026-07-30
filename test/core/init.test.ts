@@ -63,7 +63,7 @@ describe('InitCommand', () => {
   });
 
   describe('hook configuration hints', () => {
-    it('prints optional hook snippets and installs the base runtime edit-boundary hook', async () => {
+    it('prints optional hook snippets without installing a write hook', async () => {
       await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
 
       const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
@@ -75,32 +75,10 @@ describe('InitCommand', () => {
       expect(logged).toContain('"matcher": "compact"');
       expect(logged).toContain('hooks/compact-recovery.sh');
 
-      // The managed runtime edit-boundary hook IS written to settings.json
-      // (runtime-edit-boundary feature); the instruction-only snippets above
-      // are never auto-written alongside it.
       const settingsPath = path.join(testDir, '.claude', 'settings.json');
       expect(await fileExists(settingsPath)).toBe(true);
       const settings = JSON.parse(await fs.readFile(settingsPath, 'utf-8'));
-      expect(settings.hooks?.PreToolUse).toEqual(
-        expect.arrayContaining([
-          {
-            matcher: 'Edit|Write',
-            hooks: [
-              {
-                type: 'command',
-                command: 'rasen agent edit-boundary check --runtime claude',
-                timeout: 10,
-                statusMessage: 'Checking Rasen edit boundary',
-              },
-            ],
-          },
-        ])
-      );
-      // ...and the instruction-only snippets stay out of it, asserted negatively
-      // rather than inferred from the shape above.
-      const writtenHooks = JSON.stringify(settings.hooks ?? {});
-      expect(writtenHooks).not.toContain('safety-check');
-      expect(writtenHooks).not.toContain('compact-recovery');
+      expect(settings.hooks?.PreToolUse ?? []).toEqual([]);
     });
   });
 

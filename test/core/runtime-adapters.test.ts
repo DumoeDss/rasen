@@ -7,7 +7,6 @@ import {
   RUNTIME_ADAPTERS,
   detectHostRuntime,
   hasRuntimeCapability,
-  resolveEditBoundaryEnforcement,
   resolveDispatchRoute,
 } from '../../src/core/runtime-adapters.js';
 
@@ -18,19 +17,16 @@ describe('runtime adapter registry', () => {
         canProbeContext: true,
         canAudit: true,
         canDispatch: true,
-        editBoundary: 'hard',
       },
       codex: {
         canProbeContext: true,
         canAudit: true,
         canDispatch: true,
-        editBoundary: 'soft',
       },
       zed: {
         canProbeContext: false,
         canAudit: true,
         canDispatch: false,
-        editBoundary: 'unsupported',
       },
     });
   });
@@ -59,16 +55,6 @@ describe('runtime adapter registry', () => {
     expect(Object.isFrozen(DISPATCH_RUNTIMES)).toBe(true);
   });
 
-  it('caps observed edit-boundary support at the adapter classification', () => {
-    expect(resolveEditBoundaryEnforcement('claude', 'hard')).toBe('hard');
-    expect(resolveEditBoundaryEnforcement('claude', 'soft')).toBe('soft');
-    expect(resolveEditBoundaryEnforcement('codex', 'hard')).toBe('soft');
-    expect(resolveEditBoundaryEnforcement('codex', 'unsupported')).toBe(
-      'unsupported'
-    );
-    expect(resolveEditBoundaryEnforcement('zed', 'hard')).toBe('unsupported');
-    expect(resolveEditBoundaryEnforcement('unknown', 'hard')).toBe('unsupported');
-  });
 });
 
 describe('host runtime detection', () => {
