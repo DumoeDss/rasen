@@ -22,14 +22,14 @@ The system SHALL provide a SkillTemplate and CommandTemplate for office-hours in
 
 ### Requirement: Dual-Write Output
 
-Output SHALL be dual-written: the project-scoped default location (`~/.rasen/projects/<slug>/`) AND `rasen/changes/<name>/office-hours-design.md`.
+Output SHALL land in the planning root, never the machine root (`file-placement` capability: generated templates carry no direct machine-root writes). Which of the two in-root locations is used depends on context: with an active Rasen change, the document goes to `office-hours-design.md` under `changeRoot`; with no active change, it goes to `<topic-slug>.md` under the `office-hours/` directory resolved from the planning home. Both paths SHALL be resolved from status JSON per the "Office-Hours Resolves Its Output Paths From Status JSON" requirement. The office-hours *expert* skill's own design document is a root-level design doc and lands in `<planningRoot>/rasen/design-docs/` (`file-placement` capability).
 
 #### Scenario: Output when active change exists
 
 - **WHEN** office-hours completes
 - **AND** an active Rasen change context exists
-- **THEN** the output document SHALL be written to `rasen/changes/<name>/office-hours-design.md`
-- **AND** the output SHALL also be written to the project-scoped default location (`~/.rasen/projects/<slug>/`)
+- **THEN** the output document SHALL be written to `office-hours-design.md` under the change directory resolved from status JSON
+- **AND** nothing SHALL be written under the machine root
 
 #### Scenario: Output when no active change exists
 

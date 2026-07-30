@@ -128,12 +128,12 @@ PR body SHALL include the proposal summary from the change's `proposal.md`.
 
 ### Requirement: Ship Log
 
-`ship-log.md` SHALL be written to the change's work directory (the `workDir` reported by the CLI per the `change-work-dir` capability, with the change directory as the sticky-legacy fallback) with shipping details, aware of the delivery mode. Ship's pre-flight evidence reads (verification reports, expert reports, cycle reports) SHALL look in the same resolved location, falling back to the change directory.
+`ship-log.md` SHALL be written to the change's evidence directory (`<changeRoot>/evidence/`, the `evidenceDir` reported by the CLI per the `file-placement` capability), with the sticky-legacy fallback: a ship log that already exists in the legacy machine-home work directory or the change directory is updated in place. Ship's pre-flight evidence reads (verification reports, expert reports, cycle reports) SHALL look in the evidence directory first, then the legacy work directory, then the change directory.
 
 #### Scenario: Ship log written after delivery in any mode
 
 - **WHEN** the ship phase completes delivery (PR created, branch pushed, or local commit recorded)
-- **THEN** the system SHALL write `ship-log.md` to the work directory (or the legacy location per the fallback)
+- **THEN** the system SHALL write `ship-log.md` to the evidence directory (or the legacy location per the fallback)
 - **AND** the log SHALL include: the delivery mode, branch name, commit, the content tree fingerprint (`git rev-parse HEAD^{tree}`) of that commit, timestamp, the required verification scope and rationale, exact checks and result (or skip with evidence source and matched tree), the PR URL in `pr` mode, and the deferral note in `local` mode
 
 #### Scenario: Ship log updated after deployment
@@ -144,7 +144,7 @@ PR body SHALL include the proposal summary from the change's `proposal.md`.
 #### Scenario: Evidence read from the work directory
 
 - **WHEN** ship's pre-flight checks look for verification or test-skip evidence
-- **THEN** they SHALL check the work directory first and the change directory as fallback for the evidence report files
+- **THEN** they SHALL check the evidence directory first, then the legacy work directory, then the change directory for the evidence report files
 
 ### Requirement: Optional Land-and-Deploy
 
@@ -237,22 +237,6 @@ The ship workflow SHALL resolve the archive timing from the status JSON (`archiv
 
 - **WHEN** the working tree is already clean at the commit step
 - **THEN** the workflow SHALL skip committing and continue
-
-### Requirement: In-ship bookkeeping honors the destination axis
-
-When ship runs archive's bookkeeping inside the ship stage (timing `in-ship`), the bookkeeping SHALL follow the resolved destination from the status JSON: `in-repo` — move to the in-repo archive so the archived directory rides the delivery; `external` — move to the machine-home archive so the repo-side REMOVAL rides the delivery while the archive copy stays machine-local; `prune` — delete so the removal rides the delivery. The destructive-destination preconditions apply, except that the committed-state precondition is inherently satisfied because in-ship bookkeeping happens immediately before ship's own commit of the change's files. The ship log SHALL record the destination outcome (archived path or pruned state).
-
-#### Scenario: In-ship external delivery carries the removal
-
-- **WHEN** a change ships with timing `in-ship` and destination `external`
-- **THEN** the change directory SHALL be moved to the machine-home archive before the ship commit
-- **AND** the delivered commit SHALL contain the synced specs and the change-directory removal, with no archive-dir additions
-
-#### Scenario: In-ship prune records the pruned state
-
-- **WHEN** a change ships with timing `in-ship` and destination `prune`
-- **THEN** the change directory SHALL be deleted before the ship commit after the prune confirmation
-- **AND** the ship log SHALL record the pruned state so later archive invocations recognize the outcome
 
 ### Requirement: Ship stamps the delivery chain and embeds store review material
 

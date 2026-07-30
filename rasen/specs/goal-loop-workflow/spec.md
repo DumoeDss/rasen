@@ -2,7 +2,6 @@
 
 ## Purpose
 Define the goal-loop stage iteration model — a bounded modify→judge cycle driven by a measure or evaluate gate, with warm-reused implementer dispatch, stall detection, resume correctness, an authoritative round record, and the three registered backend goal-loop pipelines.
-
 ## Requirements
 ### Requirement: Goal-Loop Stage Iteration
 
@@ -110,7 +109,7 @@ Resume of an interrupted goal-loop SHALL be driven by the authoritative last rec
 
 ### Requirement: Authoritative Round Record in goal-run.json
 
-Each completed round SHALL append a record to the loop's run artifact (`loop.runArtifact`, default `goal-run.json`) in the change's work directory (the `workDir` reported by the CLI per the `change-work-dir` capability, with the change directory as the sticky-legacy fallback) containing `{round, score?, measurePassed?, evaluateSatisfied?, detail?, gaps?, error?, gitTreeFingerprint}`. This file SHALL be the authoritative loop spine that survives worker relay and session restart; `loopProgress` in run-state SHALL be a best-effort derived cache pointing to it via `historyRef`.
+Each completed round SHALL append a record to the loop's run artifact (`loop.runArtifact`, default `goal-run.json`) in the execution root's ephemera directory (`<executionRoot>/.rasen/changes/<change>/ephemera/`, the `ephemeraDir` reported by the CLI per the `file-placement` capability), with the sticky-legacy fallback: a run artifact that already exists in the legacy machine-home work directory or the change directory continues to append there. The record SHALL contain `{round, score?, measurePassed?, evaluateSatisfied?, detail?, gaps?, error?, gitTreeFingerprint}`. This file SHALL be the authoritative loop spine that survives worker relay and session restart; `loopProgress` in run-state SHALL be a best-effort derived cache pointing to it via `historyRef`.
 
 #### Scenario: Round record appended after each gate
 
@@ -120,7 +119,7 @@ Each completed round SHALL append a record to the loop's run artifact (`loop.run
 
 #### Scenario: Legacy run continues in place
 
-- **WHEN** a goal-loop resumes and its run artifact already exists in the change directory
+- **WHEN** a goal-loop resumes and its run artifact already exists in the legacy work directory or the change directory
 - **THEN** subsequent round records SHALL continue to append to that file (sticky-legacy), keeping one authoritative spine
 
 ### Requirement: Three Backend Goal-Loop Pipelines Are Registered
@@ -244,3 +243,4 @@ The evaluate gate's fresh reviewer (Step L evaluate branch and goal-command's te
 - **WHEN** the generated Tier-C evaluate fallback is inspected
 - **THEN** its freshly-reset single-context evaluation SHALL apply the same completion-audit discipline
 - **AND** SHALL still forbid the implementer self-certifying the rubric
+

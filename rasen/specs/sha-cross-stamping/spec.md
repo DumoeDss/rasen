@@ -2,11 +2,10 @@
 
 ## Purpose
 Define the delivery-chain journal recorded across ship and archive: a change's ship log ends up holding both ends of the chain (the delivered ship commit and the archive/bookkeeping commit that follows it), archive commit messages carry a short-SHA reference back to the ship they close out, and a store-rooted change's PR body embeds its review material with dual-repo (code + store) SHA traceability so a reviewer sees intent and contract delta without leaving the PR.
-
 ## Requirements
 ### Requirement: The ship log records a two-ended delivery chain
 
-A change's ship log (in the work directory per the `change-work-dir` capability) SHALL record both ends of the delivery chain: the ship end (the delivered commit, tree fingerprint, and PR when applicable — as ship already records) and an archive end appended by the archive workflow after bookkeeping — the archive/spec-sync commit SHA, the outcome (archived location, pruned state, or archived-in-ship), a timestamp, and the ship commit SHA it corresponds to, copied from the log's own recorded facts rather than re-derived. The append SHALL never rewrite the ship-side section. When no ship log exists (never-shipped or legacy change), the archive workflow SHALL create one containing only the archive section. When the archive commit is created after the append, its SHA SHALL be journaled in a follow-up append immediately after committing.
+A change's ship log (in the evidence directory `<changeRoot>/evidence/` per the `file-placement` capability, or a legacy location per its sticky-legacy chain) SHALL record both ends of the delivery chain: the ship end (the delivered commit, tree fingerprint, and PR when applicable — as ship already records) and an archive end appended by the archive workflow after bookkeeping — the archive/spec-sync commit SHA, the outcome (archived location, pruned state, or archived-in-ship), a timestamp, and the ship commit SHA it corresponds to, copied from the log's own recorded facts rather than re-derived. The append SHALL never rewrite the ship-side section. When no ship log exists (never-shipped or legacy change), the archive workflow SHALL create one containing only the archive section. When the archive commit is created after the append, its SHA SHALL be journaled in a follow-up append immediately after committing.
 
 #### Scenario: Archive appends the chain record
 
@@ -16,8 +15,8 @@ A change's ship log (in the work directory per the `change-work-dir` capability)
 
 #### Scenario: Chain survives every destination
 
-- **WHEN** a change archives to the external home or is pruned
-- **THEN** the ship log (work directory) SHALL still hold the complete chain record afterward
+- **WHEN** a legacy change was archived to the external home or recorded as pruned before those destinations were retired
+- **THEN** the ship log (at its resolved location) SHALL still hold the complete chain record afterward
 
 #### Scenario: Never-shipped change still gets an archive record
 
@@ -57,3 +56,4 @@ When the resolved planning root is a registered store (`root.store_id` is presen
 
 - **WHEN** ship creates a PR for a repo-rooted change
 - **THEN** the PR body SHALL be generated as before, with the proposal read from the CLI-resolved change root
+

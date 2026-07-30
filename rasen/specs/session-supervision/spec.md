@@ -121,7 +121,7 @@ Each supervised session SHALL record, at launch, the planning space selected for
 - **THEN** the session launches normally and its record carries no space attribution
 
 ### Requirement: Session listing is filterable by space and joins run state per session's own space
-`GET /api/v1/sessions` SHALL accept an optional `space` selector; when present, only sessions whose recorded space is that space are returned (unattributed sessions appear only in the unfiltered listing). Each listed session's run-state join SHALL resolve against the session's own recorded space — its root and that space's machine home — not against the server's launch project, so a session launched in one space never reports another space's run files.
+`GET /api/v1/sessions` SHALL accept an optional `space` selector; when present, only sessions whose recorded space is that space are returned (unattributed sessions appear only in the unfiltered listing). Each listed session's run-state join SHALL resolve against the session's own recorded space and execution context — the session's execution root's ephemera directory first, then that space's machine-home work directory, then its change directory (the `file-placement` capability's sticky-legacy chain) — not against the server's launch project, so a session launched in one space never reports another space's run files.
 
 #### Scenario: Filtered listing returns only the space's sessions
 - **WHEN** sessions exist in spaces A and B and a client sends `GET /api/v1/sessions?space=<selector for A>`
@@ -133,7 +133,7 @@ Each supervised session SHALL record, at launch, the planning space selected for
 
 #### Scenario: Run-state join follows the session's space
 - **WHEN** a session with a `changeName` was launched in a space other than the launch project
-- **THEN** its `runState` is read from that space's change directory and machine-home work directory, not the launch project's
+- **THEN** its `runState` is read from that session's own resolved locations (execution-root ephemera, that space's machine-home work directory, and change directory), not the launch project's
 
 ### Requirement: Session launch separates planning space from validated execution context
 `POST /api/v1/sessions` SHALL treat `space` as planning attribution and `execution` as the runtime working-directory selection. `execution` SHALL accept `project:<selector>`, resolved through the registered-project selector contract (including a linked worktree of that project), or the explicit Store-only value `planning`. The server SHALL resolve and canonicalize all roots from current machine registry, filesystem, Git worktree, and Store-pointer facts before spawn; it SHALL NOT use an arbitrary client path as cwd. For an explicit project space, omitted execution SHALL use that resolved project/worktree root for compatibility. For an explicit Store space, omitted execution SHALL return 409 `execution_required` and spawn nothing. Unresolvable or currently invalid execution selections SHALL return a specific 4xx error and spawn nothing.
@@ -196,3 +196,4 @@ When the resolved planning-space root differs from the resolved execution cwd, t
 #### Scenario: Windows shim receives the attached root literally
 - **WHEN** a Windows session launches through an npm `.cmd` or `.bat` shim and the canonical planning root contains command-interpreter metacharacters valid in a path
 - **THEN** the entire root reaches Claude as the single literal value of the server-built additional-directory option and no injected command or extra argv token is executed
+

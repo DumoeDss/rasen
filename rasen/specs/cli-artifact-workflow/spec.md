@@ -135,6 +135,12 @@ The system SHALL create new change directories with validation.
 - **WHEN** user runs `rasen new change add-feature --description "Add new feature"`
 - **THEN** the system creates the change directory with description in README.md
 
+#### Scenario: Pipeline run-state initializes in the execution root
+
+- **WHEN** user runs `rasen new change add-feature --pipeline small-feature`
+- **THEN** the change's initial run-state SHALL be created in the execution root's ephemera directory (`<executionRoot>/.rasen/changes/add-feature/ephemera/`), never in the machine-home work directory
+- **AND** creating a change with the same name in a different worktree of the same project SHALL succeed (per-worktree run-state)
+
 ### Requirement: Schema Selection
 The system SHALL support custom schema selection for workflow commands.
 
@@ -331,26 +337,6 @@ Generated workflow skills SHALL use Rasen CLI output as the source of truth for 
 - **THEN** it SHALL instruct the agent to run `rasen instructions <artifact> --change <id> --json`
 - **AND** it SHALL write to the resolved artifact path returned by the command
 
-### Requirement: Change-scoped workflow payloads carry the work directory
-
-The change-scoped workflow surfaces SHALL expose the change's external work directory (defined by the `change-work-dir` capability): `rasen status --change <n> --json` SHALL include a top-level absolute `workDir` field when the project is registered in the machine home, and both instructions payloads (`rasen instructions <artifact> --change <n> --json` and the apply-instructions payload) SHALL include the same field, establishing project identity on first use per the `change-work-dir` capability. The field SHALL be absent — not empty, not null — when no work directory can be resolved, so older consumers and unregistered projects see payloads shaped exactly as before.
-
-#### Scenario: Status payload includes workDir
-
-- **WHEN** `rasen status --change <n> --json` runs for a registered project
-- **THEN** the JSON SHALL include `workDir` as an absolute path alongside `changeRoot`
-- **AND** the path SHALL be correct on Windows and POSIX platforms
-
-#### Scenario: Instructions payloads include workDir
-
-- **WHEN** `rasen instructions <artifact> --change <n> --json` or the apply-instructions command runs
-- **THEN** the JSON SHALL include the change's `workDir`
-
-#### Scenario: Field omitted when unresolvable
-
-- **WHEN** the project has no machine identity and the surface is read-only (`status`)
-- **THEN** the payload SHALL omit `workDir` entirely and remain otherwise unchanged
-
 ### Requirement: Status payload carries the resolved archive timing
 
 `rasen status --change <n> --json` SHALL include an `archive` object carrying the resolved archive timing (`{ timing: "on-merge" | "in-ship" }`), with the default already applied, so workflow templates read one authoritative value from the payload they already consume instead of parsing config themselves. The field is additive; resolving it SHALL NOT invoke git or `gh` and SHALL NOT write anywhere.
@@ -365,25 +351,6 @@ The change-scoped workflow surfaces SHALL expose the change's external work dire
 - **WHEN** the project config has no `archive` block
 - **THEN** the payload SHALL include `archive.timing` = `on-merge`
 - **AND** the command SHALL perform no writes and no git/gh invocations for this field
-
-### Requirement: Status payload carries the resolved archive destination and location
-
-`rasen status --change <n> --json`'s `archive` object SHALL additionally carry `destination` (`in-repo` | `external` | `prune`, default applied) and, when one exists, `archiveDir` — the absolute resolved bookkeeping location (the in-repo archive directory, or the machine-home archive for `external`). `archiveDir` SHALL be omitted — not null or empty — for `prune` and when `external` cannot be resolved by a read-only probe, so templates can key their fallback on the field's absence. Resolving these fields SHALL NOT write anywhere and SHALL NOT invoke git or `gh`.
-
-#### Scenario: Status exposes destination and location
-
-- **WHEN** `rasen status --change <n> --json` runs with destination `external` in a registered project
-- **THEN** the payload's `archive` object SHALL include `destination` = `external` and an absolute `archiveDir` under the machine home
-
-#### Scenario: Prune omits the location
-
-- **WHEN** the resolved destination is `prune`
-- **THEN** the payload SHALL include `destination` = `prune` and omit `archiveDir`
-
-#### Scenario: Unresolvable external omits the location without side effects
-
-- **WHEN** destination is `external` but the project has no machine identity
-- **THEN** the payload SHALL include `destination` = `external`, omit `archiveDir`, and the command SHALL perform no writes
 
 ### Requirement: Status and apply instructions surface next workflows
 The `rasen status` and `rasen instructions` (apply) surfaces SHALL emit the runtime-resolved next workflow(s) for the change, filtered to the installed workflow set. In `--json` output this SHALL be a `nextWorkflows` array of `{ workflow, reason }` objects (a field distinct from the existing `nextSteps` artifact-authoring string array). In human-readable output this SHALL be a trailing `Next:` hint line. When resolution yields no installed next workflow, `nextWorkflows` SHALL be an empty array and no `Next:` line SHALL be printed.
@@ -421,3 +388,37 @@ constraint in case a later change adds a runnable command to the hint.
 - **WHEN** resolution finds no installed downstream workflow
 - **THEN** `nextWorkflows` SHALL be an empty array
 - **AND** no `Next:` line SHALL be printed
+
+### Requirement: Change-scoped workflow payloads carry the per-class landing directories
+
+The change-scoped workflow surfaces (`rasen status --change <n> --json`, `rasen instructions <artifact> --change <n> --json`, and the apply-instructions payload) SHALL expose the change's per-class landing directories as absolute paths: `evidenceDir` (`<changeRoot>/evidence`), `handoffDir` (`<changeRoot>/handoff`), and `ephemeraDir` (`<executionRoot>/.rasen/changes/<n>/ephemera`). These fields SHALL always be present (they derive from the planning and execution roots, needing no machine identity). The legacy `workDir` field SHALL additionally be present, probe-only, when the project already has a machine identity — absent otherwise — so sticky-legacy readers can check the legacy location. No surface SHALL mint machine identity or create directories to produce these fields.
+
+#### Scenario: Payloads include the landing directories
+
+- **WHEN** `rasen status --change <n> --json` or an instructions payload is produced
+- **THEN** the JSON SHALL include absolute `evidenceDir`, `handoffDir`, and `ephemeraDir` paths
+- **AND** the paths SHALL be correct on Windows and POSIX platforms
+
+#### Scenario: Landing directories resolve without machine identity
+
+- **WHEN** the project has no machine identity
+- **THEN** the payload SHALL still include `evidenceDir`, `handoffDir`, and `ephemeraDir`
+- **AND** SHALL omit `workDir` entirely
+- **AND** the command SHALL perform no writes
+
+### Requirement: Status payload reports the fixed archive location and legacy archives
+
+`rasen status --change <n> --json`'s `archive` object SHALL carry `archiveDir` — the absolute in-repo archive directory (`<planningRoot>/rasen/changes/archive`), always present — and, when a machine home resolves by read-only probe and its archive area exists, `legacyArchiveDir` naming the machine-home archive for legacy discovery. The object SHALL NOT carry a `destination` axis. Resolving these fields SHALL NOT write anywhere and SHALL NOT invoke git or `gh`.
+
+#### Scenario: Status exposes the fixed archive location
+
+- **WHEN** `rasen status --change <n> --json` runs
+- **THEN** the payload's `archive` object SHALL include the absolute in-repo `archiveDir`
+- **AND** SHALL NOT include a `destination` field
+
+#### Scenario: Legacy archives surfaced read-only
+
+- **WHEN** the project's machine home holds archives from the retired external destination
+- **THEN** the payload SHALL include `legacyArchiveDir`
+- **AND** the command SHALL perform no writes to produce it
+

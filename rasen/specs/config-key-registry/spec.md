@@ -5,9 +5,9 @@ Defines a single declarative registry of every CLI-settable configuration key �
 ## Requirements
 ### Requirement: Declarative registry of settable configuration keys across three scopes
 
-The system SHALL maintain a single declarative registry of every CLI-settable configuration key, where each entry declares the key path, the scopes it may be set in (any subset of `global`, `store`, and `project`), its value type (boolean, number, string, enum with allowed values, array, or the dual-form `threshold` type), any extra validation constraint, its built-in default, a one-line description, and a display group. Key validation for `config set`/`unset`, the interactive editor, the config HTTP API, and effective-config resolution SHALL all derive their key knowledge from this registry. The retired `delivery` key SHALL NOT appear in the registry as a settable key.
+The system SHALL maintain a single declarative registry of every CLI-settable configuration key, where each entry declares the key path, the scopes it may be set in (any subset of `global`, `store`, and `project`), its value type (boolean, number, string, enum with allowed values, array, or the dual-form `threshold` type), any extra validation constraint, its built-in default, a one-line description, and a display group. Key validation for `config set`/`unset`, the interactive editor, the config HTTP API, and effective-config resolution SHALL all derive their key knowledge from this registry. The retired `delivery` key SHALL NOT appear in the registry as a settable key, and the retired `archive.destination` key SHALL NOT appear in the registry as a settable key (its compatibility read is defined by the `config-loading` capability).
 
-Scope assignment SHALL be: every key previously settable in both `global` and `project` scope (the `autopilot.gates`/`autopilot.selection` pair, `handoff.threshold` plus the five `handoff.roles.<role>` keys, and `models.default` plus the five `models.roles.<role>` keys) is settable in `global`, `store`, and `project`; every key previously project-only (`schema`, `archive.timing`, `archive.destination`) is settable in `store` and `project`; the `workflows` selection key is settable in `global` and `project` — a project-scope value is the space's own workflow selection override; the `profile` key is settable in `global` (the user-wide profile) and `project` (the space's profile lock, per the init-profile-lock behavior), with scope-dependent allowed values; the remaining machine-level global-only keys (`language`, `featureFlags.<name>`, `proactive`, `repoMode`, `telemetry.enabled`) remain global-only, including the `featureFlags` wildcard family.
+Scope assignment SHALL be: every key previously settable in both `global` and `project` scope (the `autopilot.gates`/`autopilot.selection` pair, `handoff.threshold` plus the five `handoff.roles.<role>` keys, and `models.default` plus the five `models.roles.<role>` keys) is settable in `global`, `store`, and `project`; every key previously project-only (`schema`, `archive.timing`) is settable in `store` and `project`; the `workflows` selection key is settable in `global` and `project` — a project-scope value is the space's own workflow selection override; the `profile` key is settable in `global` (the user-wide profile) and `project` (the space's profile lock, per the init-profile-lock behavior), with scope-dependent allowed values; the remaining machine-level global-only keys (`language`, `featureFlags.<name>`, `proactive`, `repoMode`, `telemetry.enabled`) remain global-only, including the `featureFlags` wildcard family.
 
 #### Scenario: Registry drives set validation in every scope
 
@@ -43,6 +43,11 @@ Scope assignment SHALL be: every key previously settable in both `global` and `p
 
 - **WHEN** the registry is consulted, or `delivery` is validated for scope `global`, `store`, or `project`
 - **THEN** the registry SHALL NOT include the retired `delivery` key, and validation rejects it as not settable (surfacing the retirement notice per the cli-config spec)
+
+#### Scenario: Retired archive destination key is absent in every scope
+
+- **WHEN** the registry is consulted, or `archive.destination` is validated for scope `global`, `store`, or `project`
+- **THEN** the registry SHALL NOT include `archive.destination`, and validation rejects it as not settable
 
 #### Scenario: Per-role model keys accept any model id in every scope
 
@@ -264,3 +269,4 @@ SHALL be reported by the theme catalog and activation experience.
 - **WHEN** `ui.theme` is set to an identifier containing path syntax, uppercase
   characters, whitespace, or characters outside the theme-id contract
 - **THEN** validation rejects it before any configuration file is written
+

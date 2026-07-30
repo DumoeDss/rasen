@@ -3,9 +3,7 @@
 ## Purpose
 
 Define the expected behavior for the `/rasen-archive-change` skill, including readiness checks, spec sync prompting, archive execution, and user-facing output.
-
 ## Requirements
-
 ### Requirement: Rasen Archive Skill
 
 The system SHALL provide an `/rasen-archive-change` skill that archives completed changes in the experimental workflow.
@@ -67,7 +65,7 @@ The skill SHALL check task completion status from tasks.md before archiving. Inc
 
 ### Requirement: Verification Verdict Gate
 
-Before archiving, the skill SHALL read `verification-report.md` from the change's work directory (the `workDir` reported by status JSON per the `change-work-dir` capability), falling back to the change directory (resolved from status JSON), when it exists and honor its `VERIFY VERDICT:` line. A `BLOCKED` verdict SHALL be a hard gate: the skill SHALL refuse to archive by default and proceed only on an explicit, blocker-naming user override; in a non-interactive or dispatched context it SHALL refuse outright. This gate consumes the verdict defined by the `verify-ship-evidence` capability and introduces no new verdict vocabulary. The "don't block archive on warnings" guidance is scoped to soft warnings (incomplete non-task artifacts, unsynced delta specs, missing ship log, deferred delivery) and does NOT cover this hard gate or the incomplete-task hard gate.
+Before archiving, the skill SHALL read `verification-report.md` from the change's evidence directory (`<changeRoot>/evidence/`, the `evidenceDir` reported by status JSON per the `file-placement` capability), falling back to the legacy machine-home work directory and then the change directory (both resolved from status JSON), when it exists and honor its `VERIFY VERDICT:` line. A `BLOCKED` verdict SHALL be a hard gate: the skill SHALL refuse to archive by default and proceed only on an explicit, blocker-naming user override; in a non-interactive or dispatched context it SHALL refuse outright. This gate consumes the verdict defined by the `verify-ship-evidence` capability and introduces no new verdict vocabulary. The "don't block archive on warnings" guidance is scoped to soft warnings (incomplete non-task artifacts, unsynced delta specs, missing ship log, deferred delivery) and does NOT cover this hard gate or the incomplete-task hard gate.
 
 #### Scenario: BLOCKED verdict refuses archive
 
@@ -83,17 +81,17 @@ Before archiving, the skill SHALL read `verification-report.md` from the change'
 
 #### Scenario: No verification report
 
-- **WHEN** no `verification-report.md` exists in either the work directory or the change directory
+- **WHEN** no `verification-report.md` exists in the evidence directory, the legacy work directory, or the change directory
 - **THEN** the skill SHALL NOT hard-gate on verification absence
 - **AND** MAY proceed, since verification absence is not itself a blocking condition
 
 ### Requirement: Delivery Precondition Check
 
-Before archiving, the skill SHALL check for delivery evidence via `ship-log.md` in the change's work directory (per the `change-work-dir` capability), falling back to the change directory (both resolved from status JSON), and surface a soft warning when delivery has not completed, with an explicit escape for changes that legitimately do not ship.
+Before archiving, the skill SHALL check for delivery evidence via `ship-log.md` in the change's evidence directory (`<changeRoot>/evidence/`, per the `file-placement` capability), falling back to the legacy machine-home work directory and then the change directory (resolved from status JSON), and surface a soft warning when delivery has not completed, with an explicit escape for changes that legitimately do not ship.
 
 #### Scenario: No ship log
 
-- **WHEN** no `ship-log.md` exists in either the work directory or the change directory
+- **WHEN** no `ship-log.md` exists in the evidence directory, the legacy work directory, or the change directory
 - **THEN** the skill SHALL warn "This change has no ship log — archive without delivering?" and prompt for confirmation
 - **AND** SHALL offer an explicit escape for changes that legitimately do not ship (for example, spec-only changes)
 - **AND** SHALL proceed if the user confirms
@@ -213,44 +211,6 @@ The archive skill SHALL resolve the archive timing from the status JSON (`archiv
 - **WHEN** archive is invoked for an on-merge change with no ship log or with a `push`/`local` delivery
 - **THEN** the skill SHALL run its existing gates and steps unchanged, with no merge-confirmation step
 
-### Requirement: Bookkeeping step is destination-aware
-
-The archive skill SHALL resolve the destination and location from the status JSON (`archive.destination`, `archive.archiveDir`) and route its bookkeeping step: `in-repo` — the existing move; `external` — move to the payload's `archiveDir`, falling back to an in-repo move with an explicit note when the payload carries no location (a fallback relocates, it never deletes); `prune` — delete the change directory. Gates, spec sync, and their order SHALL be identical for every destination; branch conditions SHALL keep keying on recorded ship-log facts over re-resolved config wherever a delivery has already happened.
-
-#### Scenario: External move uses the CLI-reported location
-
-- **WHEN** the generated archive skill runs with `destination: external` and the payload carries `archiveDir`
-- **THEN** its bookkeeping SHALL move the change directory to that absolute location with the same date-prefix and collision rules as in-repo
-
-#### Scenario: Prune branch deletes instead of moving
-
-- **WHEN** the generated archive skill runs with `destination: prune` and the safety preconditions pass
-- **THEN** its bookkeeping SHALL delete the change directory and report the pruned state
-
-#### Scenario: Missing external location falls back with a note
-
-- **WHEN** `destination` is `external` but the payload omits `archiveDir`
-- **THEN** the skill SHALL move in-repo and state explicitly that it fell back from `external`
-
-### Requirement: Skill enforces the destructive-destination preconditions
-
-Before an external move or a prune delete, the skill SHALL verify the recorded delivery is complete (the existing timing/merge gates cover the pr-mode case) and that the change directory pathspec is both clean and tracked in git history — per the `archive-destination` capability's git-state check (`git status --porcelain --ignored` empty AND `git ls-files` non-empty; an unverifiable state fails closed and is refused, never treated as clean) — refusing with commit-first guidance otherwise. Prune SHALL additionally require a confirmation naming the deletion, and that confirmation SHALL be SEPARATE from any other confirmation or override already used earlier in the same invocation (e.g. the merge-confirmation gate's override for a recorded `pr`-mode delivery) — satisfying an earlier gate's confirmation SHALL NEVER be treated as also satisfying the prune confirmation. Prune SHALL be refused outright in non-interactive or dispatched contexts without a confirmation naming the deletion specifically. After destructive bookkeeping, the skill SHALL write the prune tombstone (per the `archive-destination` capability) before deleting, and SHALL direct a pathspec-scoped commit containing only the spec sync and the removal.
-
-#### Scenario: Dirty change directory blocks prune
-
-- **WHEN** the generated archive skill reaches bookkeeping with `destination: prune` and uncommitted, untracked, ignored-but-present, or unverifiable content under the change directory pathspec
-- **THEN** it SHALL refuse and direct committing the change directory first
-
-#### Scenario: Prune refused when dispatched
-
-- **WHEN** the skill runs prune bookkeeping in a non-interactive or dispatched context without an explicit prior override naming the deletion specifically
-- **THEN** it SHALL refuse outright with the reason
-
-#### Scenario: The merge-confirmation override does not also authorize prune
-
-- **WHEN** the skill has already obtained the merge-confirmation gate's override for a recorded `pr`-mode delivery (step 2.6) and then reaches prune bookkeeping (step 5) for the same invocation
-- **THEN** the prune confirmation SHALL still be required as its own, separate step — the merge-confirmation override SHALL NOT be treated as also authorizing the deletion
-
 ### Requirement: Already-archived detection covers every destination
 
 The skill's pre-status already-archived detection SHALL extend beyond the in-repo scan: after the status payload is available, a change absent from the active directory SHALL also be looked for in the external archive location (payload `archiveDir` or the home archive) and, failing directory presence, in its recorded ship-log outcome (archived path or pruned state) — reporting the existing outcome and stopping cleanly rather than hard-failing. The pre-status in-repo scan remains first (it needs no CLI call and catches the common case).
@@ -279,3 +239,14 @@ After its bookkeeping step succeeds (any destination), the archive skill SHALL a
 
 - **WHEN** the generated bulk-archive skill archives multiple changes
 - **THEN** each change SHALL receive its own ship-log append and its own ship-referencing commit-message form
+
+### Requirement: Bookkeeping step always moves in-repo
+
+The archive skill's bookkeeping step SHALL move the change directory to the planning root's archive directory (the status payload's `archive.archiveDir`) unconditionally — no destination branching. The payload's `legacyArchiveDir` (when present) serves only already-archived detection and legacy discovery, never as a bookkeeping target.
+
+#### Scenario: Bookkeeping ignores legacy destination config
+
+- **WHEN** the generated archive skill runs in a project whose config still carries `archive.destination: external` or `prune`
+- **THEN** its bookkeeping SHALL move the change directory to the in-repo archive with the same date-prefix and collision rules as always
+- **AND** SHALL neither move anything to the machine home nor delete the change directory without an archive copy
+
