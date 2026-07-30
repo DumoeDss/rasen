@@ -18,6 +18,15 @@
 > 产品范式的不可拆闭环，全部纳入 `0.1.6`<br>
 > 实施回写：2026-07-26，记录 Pipeline 内容格式 v1、两轮独立评审、安全修复、
 > PR #79 合并，以及 PR #80 完成 spec 同步与 Change 归档<br>
+> **发布线修订：2026-07-30（用户拍板）——本文中一切 `0.1.6` 里程碑标签，现在
+> 指的是 `0.2.0`。** 策略改为：`0.1.6` 是 `0.1.5` 的 **bug 修复线**（`dev/0.1.6`
+> 上另有 8 个 commit 不在 `dev/0.2.0`，含两个 breaking：`feat(cli)!` #110
+> structure/localized-copy 分离、`feat(agent)!` runtime edit boundary），
+> Executable Composite Pipelines 范式落在 **`dev/0.2.0`**。同理 `0.1.7`
+> follow-ups 应读作「本范式交付之后的下一版」。<br>
+> **正文与 §15.4 的标题、条目一律未改名，这是刻意的**：§15.4 的 14 条 exit
+> condition 内容一条未变，而 `slices/product-closure/result.md` 是**逐字引用**
+> 它们的 —— 改标题会打断那条引用链，本条修订记录才是权威的重命名说明。<br>
 > 范围：当前 Rasen Pipeline/Canvas、`rasen-auto`、`rasen-goal`、
 > `rasen-review-cycle`、`GrokBuild.SKILL.md`，以及 `north-star.md` 对这些研究的
 > 再次校准

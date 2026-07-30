@@ -12,6 +12,13 @@
 > 本节保留首次校准时的事实与路线推理，但不再拥有 ECP Target State、Roadmap
 > 或 active Slice。ECP 的当前权威入口是
 > [`executable-composite-pipelines/`](./executable-composite-pipelines/README.md)。
+>
+> **发布线修订（2026-07-30，用户拍板）：本节及其链接文件名里的 `0.1.6`
+> 里程碑标签，现在指 `0.2.0`。** `0.1.6` 已改定位为 `0.1.5` 的 bug 修复线，ECP
+> 范式落在 `dev/0.2.0`。快照文本与既有审查文件名一律保持原样（它们是历史事实），
+> 权威重命名说明见
+> [`deterministic-pipeline-kernel-research.md`](./executable-composite-pipelines/deterministic-pipeline-kernel-research.md)
+> 头部的「发布线修订」条。
 > 父路线只保留“ECP 通过后再进入 Issue 层”的依赖关系。
 
 ### 0.1 校准结论
