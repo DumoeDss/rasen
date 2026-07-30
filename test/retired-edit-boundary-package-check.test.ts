@@ -56,6 +56,16 @@ afterEach(() => {
 });
 
 describe('retired edit-boundary packed-payload guard', () => {
+  it('keeps the importable guard free of a shebang for Windows Node 20', () => {
+    const guardPath = path.join(
+      process.cwd(),
+      'scripts',
+      'retired-edit-boundary-package-check.mjs'
+    );
+
+    expect(fs.readFileSync(guardPath, 'utf8')).not.toMatch(/^#!/);
+  });
+
   it('allows exact migration payloads and historical docs while runtime surfaces stay clean', () => {
     const fixture = makePackageFixture();
 
