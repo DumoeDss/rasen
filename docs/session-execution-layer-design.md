@@ -94,7 +94,7 @@ reconciler ──next action──▶ launcher / runtime
 
 支撑这一约束的正是本设计的状态归属：run 状态在内核持久层、worker 在独立 session、touch 在 daemon——**driver 可插拔可更换**。用户关闭 Claude Code 窗口后，新会话或裸终端 `rasen pipeline resume` 接着驱动，worker 不重启、缓存不掉（launcher 死亡只是换 driver，不是 run 中断）。SessionHost/registry 对调用方无 driver 类型假设（Q1 的另一半）。
 
-### 4.2 接线定案（2026-07-29 深夜对表 feat/ecp-review-cycle @ `2fa693d8`，ECP-4 已收口、ECP-5 进行中）
+### 4.2 接线定案（初次对表 2026-07-29 @ `2fa693d8`；**2026-07-30 重新对表已合并的 `dev/0.2.0` @ `be124057`，ECP-1..5 全部交付并归档**）
 
 契约核对结果：**agent action 的 `session` 块、`ActorRef.sessionIdentityDigest`、`workspace.access` 与本设计依据的形态逐字段零变化**（`contracts.ts:196-208,122,185-190`）。执行现实核对结果：**"执行 agent action"目前没有任何代码实现**——内核经 `facade.ts:14` 的 `deliveryMode: 'grant'|'defer'` 显式外包（grant 把可执行 payload 交给调用者、内核不执行；defer 封印 HTTP 面永不携带可执行 payload），实际由 launcher 会话按 playbook 用自身 Task/SendMessage 完成。Session 执行层填的是**从未存在过的空位**，不替换任何 runner。
 
@@ -116,7 +116,24 @@ daemon 侧驱动遵循 ECP-5 确立的 `run-control.ts` 桥接约定：服务端
 
 **P1 模块落点修正**：不从零建 `src/core/session-host/`——`management-api/supervisor.ts` 已有 headless `claude` spawn、pid 管理、tree-kill、并发槽、Windows `.cmd` 转义（一次性 `-p`、stdin ignore）；`session-registry.ts` 是内存 registry 且注释预留了 daemon 独立构造。P1 = 给 supervisor 增加 stream-json stdin 多轮 + resume 宿主模式，并把 session registry 持久化（§7 schema），而非新起炉灶。
 
-**与 ECP-5 的唯一实质协调点**：ECP-5 的 `opsx-orchestration` delta spec 刚把 worker 句柄/session-relay generation 的所有权划给 run-state + playbook（prompt-owned）。本层落地（P2）必须显式 delta 修订该 spec 及 playbook Step A/B.1/B.4/H.2，把"agent action 的执行与 session 生命周期"的所有权移交 executor+registry；不得绕过。ECP-5 task 6.3（重写 `docs/architecture/executable-composite-pipelines.md`，该文档当前零 "session" 命中）是插入本层章节的天然时机。
+#### P2 上游前置四条 —— ECP-5 交付后的实际处置（2026-07-30 逐条核实于 `be124057`）
+
+原先记的四条前置里，**三条已经不再是前置**，第四条从"协调点"变成了"本层必须交付的 delta"：
+
+| # | 原前置 | ECP-5 的实际处置 | 现状 |
+|---|---|---|---|
+| ① | `handoffTokenLimit: 10_000` / `reuseRoundLimit: 1` 是硬编码孤儿字段 | 没有改值，而是把它**写成了显式占位契约**：`rasen/specs/ecp-change-run-runtime/spec.md` 的 "Recorded session guidance is placeholder until a slice defines its authoritative source" 要求未来读者**不得**把这两个值当作操作者或作者的选择、**不得**据以约束 session，并**须从自己那一层的权威来源取真实上限**。该 requirement 甚至点名了危害：`reuseRoundLimit: 1` 一旦被执行就会禁止评审者跨轮复用 —— 恰恰是本层的主要复用形态 | **不再是前置，而是授权**。占位值不会挡路，反而预先把"定义权威取值"指派给了本层。四个写入点都带 `'default'` provenance 和含 `placeholder` 字面量的注释 |
+| ② | 合成 stage 硬写 `sessionReuse` | 改为**按 provenance 分型**：由节点性质决定的值（一次性 evaluator 无法复用 session）带 `definition` provenance 且**是权威的**；没人选过的值带 `default` provenance 且是占位 | **已关闭**，且比原诉求更好 —— 硬写只在定义性成立处被合法化 |
+| ③ | 四值 `sessionReuse` → 二值 `reuse` 映射抹平语义 | 新增加性字段 `sessionReuseAuthored`，把作者写的 scope（`none`/`stage`/`run-planner`/`review-thread`）**原样保留**在二值 `reuse` 旁边；未创作时字段缺省。落在 `contracts.ts:213`、`actions.ts:211`、`execution-plan-internal.ts:275`、`commands/pipeline.ts:874`，并由 `session-contract-fidelity.test.ts` 钉住（含 digest 字节等价证明） | **已关闭** |
+| ④ | `opsx-orchestration` 的 worker 生命周期所有权边界 | 未移交，且更明确了：该 spec 的 "Change Directory Blackboard and Run-State" 现在把 reconciler-engine 的 run-state 显式界定为"worker 句柄与转录、gate-policy 冻结、retention 模式、strategy attempts、**session-relay generation**"这类簿记（LEAD/prompt-owned），另有独立 requirement "Run-State Records Session Relay Generation" | **仍是本层 P2 的必交项**：须显式 delta 修订上述两条 requirement 及 playbook Step A/B.1/B.4/H.2，把"agent action 的执行与 session 生命周期"的所有权移交 executor+registry。不得绕过、不得默默共存 |
+
+**架构文档的位置已经替本层留好了**（ECP-5 task 6.3 已完成，不再是"天然时机"而是既成事实）：
+`docs/architecture/executable-composite-pipelines.md` §3 明写内核"**不**运行 agent、不开 session、不管
+worker 生命周期"，谁真的去执行由 launcher 会话按 playbook 承担，而"独立的 **session execution layer
+是后续切片**"；§7「关键保证」把 `session.handoffTokenLimit` / `session.reuseRoundLimit` 列为占位，并
+写明"真实取值是 session execution layer 那一层的设计产出"。P2 是往既有的槽里插章节，不需要再谈判。
+
+**结论**：P1 的开工门槛只剩本层自己的工程量 —— 上游没有任何阻塞项，④ 是本层交付内容的一部分而不是等待项。
 
 ## 5. SessionHost（resume-cli 宿主）
 
@@ -305,8 +322,23 @@ rasen agent audit --run <runId>
 > **P0 第二轮（同日深夜收官，主会话直跑 + haiku subagent 操作员）**：上述三项全部关闭，结果见 §5.1 表——live 进程 55 分钟 HIT（含 repo 变化免疫实证）/65 分钟 MISS（1h TTL 上界）/重写后 5 分钟温链恢复；fork 无热继承（0/2，§6.3 已改写）；KC5 非确定性丢轮次复现。**touch 策略回归 §6.2 原始数字（~50 分钟 cadence、仅 >55 分钟空闲场景），P0 全部验证事项就此完结，P1 可开工（等 ECP 排期）。**
 > 运维教训（第二轮又复现两次）：subagent 后台闲等的完成通知会丢——数据须落盘、收割不依赖通知，正是本设计 registry/journal 的立论；探针脚本的日志写入（Add-Content）可能撞瞬时文件锁导致脚本早退，结果文件先于日志落盘的顺序救了数据，P1 实现里 registry 写入须 retry-on-lock。
 
-**P1 — SessionHost + registry + daemon touch scheduler（探针通过后；可与 ECP-4 后期并行的独立模块）**
-新模块（建议 `src/core/session-host/`）+ `rasen session exec|list|retire` CLI + daemon 内的 touch scheduler（§6.1 机械执行器）+ 单测。不碰 `change-run/`（只读契约类型），与 ECP-4 无文件冲突。
+**P1 — SessionHost + registry + daemon touch scheduler（探针已通过；上游已清空，随时可开工）**
+
+> **开工状态（2026-07-30 回写）**：**P1 的所有前期任务已完成，没有任何等待项。**
+> 1. 本分支已 rebase 到 `dev/0.2.0`（12 个 docs 提交，`origin/dev/0.2.0` 之上，0 落后）——
+>    ECP-1..5 已合并归档，`src/core/change-run/` 与 `management-api/supervisor.ts` 都是最终形态；
+> 2. §4.2 的四条上游前置**三条已关闭、第四条转为本层 P2 的交付内容**（逐条核实见 §4.2 表）；
+> 3. 排期已由用户确认（2026-07-30）：本层为 ECP 之后的下一条推进线；
+> 4. 架构文档的 session 章节槽位由 ECP-5 task 6.3 预留完成，P2 直接插入。
+>
+> 唯一仍需注意的既有事实（不阻塞、但影响 P1 的测试面）：`auto-decompose` 在 reconciler 下
+> `execution_profile_unavailable` fail-closed（设计如此，portfolio 级活仍走 legacy），所以 P1 的
+> executor 验收只应覆盖 6 个受支持的内建 pipeline，不要把 decompose 路径当回归。
+
+模块落点见 §4.2「P1 模块落点修正」——**不新起 `src/core/session-host/`**，而是给
+`management-api/supervisor.ts` 增加 stream-json stdin 多轮 + resume 宿主模式，并把 session registry
+持久化（§7 schema）+ `rasen session exec|list|retire` CLI + daemon 内的 touch scheduler
+（§6.1 机械执行器）+ 单测。只读 `change-run/` 的契约类型，不改其实现。
 门槛：真实 create→wake×N→touch→retire 链全绿；并发 wake 拒绝；retired 拒绝唤醒；registry 与 transcript 事实一致；daemon 在真实 50 分钟窗口自动 touch 续命且 deadline 后停止（KC1c 的自动化复现）；daemon 关闭时全链路仍正确（仅多付 MISS）。
 
 **P2 — ReviewCycle dogfood 接线（接线已在 §4.2 定案；开工前有上游前置）**
