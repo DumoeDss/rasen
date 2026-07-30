@@ -1515,6 +1515,73 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(saved.graph.connections[0]!.to.node).toBe(stageIds[1]);
   });
 
+  it('binds each body stage to a CHOSEN capability revision, not the first one', async () => {
+    // DISCRIMINATING PROBE. `createBodyStage` assigns `firstExactCapability()`
+    // to every stage it creates, so before this affordance a Canvas-authored
+    // multi-stage body could only ever repeat ONE capability — "run X, then run
+    // X again" — and the spec's own scenario says "the user adds an AtomicStage
+    // WITH CAPABILITY skill:rasen-apply". The assertion is that the two body
+    // stages carry DIFFERENT capabilities in the POSTed definition: a select
+    // that renders but is not wired leaves them identical, which is exactly the
+    // state a "the select exists" assertion would call green.
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-new-id"]'),
+      'mixed',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-create"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
+
+    const selects = Array.from(
+      container.querySelectorAll('[data-testid="declaration-body-stage-capability"]')
+    ) as HTMLSelectElement[];
+    expect(selects).toHaveLength(2);
+    // The starting state IS the defect: both stages bound to the same revision.
+    expect(selects[0]!.value).toBe(selects[1]!.value);
+    // Every enabled exact revision the catalog offers is selectable — the same
+    // set the root node panel renders, from the same filter.
+    expect(Array.from(selects[1]!.options).map((option) => option.value)).toEqual([
+      'skill:rasen-propose\0digest-propose',
+      'skill:rasen-apply\0digest-apply',
+    ]);
+
+    const other = Array.from(selects[1]!.options)
+      .map((option) => option.value)
+      .find((value) => value !== selects[1]!.value)!;
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-body-stage-capability"][data-stage-id="stage-2"]'),
+      other
+    );
+
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    vi.mocked(client.mutatePipeline).mockResolvedValueOnce({
+      pipeline: { name: 'v2-canvas', path: '/pipelines/v2-canvas' },
+      created: false,
+    });
+    vi.mocked(client.getPipelineDetail).mockResolvedValueOnce(v2EditableDetail);
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+    const posted = vi.mocked(client.mutatePipeline).mock.calls.at(-1)![0] as {
+      definition: {
+        declarations: {
+          id: string;
+          graph: { nodes: { id: string; capability?: { id: string; version: string } }[] };
+        }[];
+      };
+    };
+    const body = posted.definition.declarations.find((d) => d.id === 'mixed')!.graph.nodes;
+    expect(body).toHaveLength(2);
+    const encoded = body.map((node) => `${node.capability!.id}\0${node.capability!.version}`);
+    expect(encoded[1]).toBe(other);
+    expect(encoded[0]).not.toBe(encoded[1]);
+  });
+
   it('rejects a body connection that would create a cycle, with the model diagnostic', async () => {
     vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
     vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);

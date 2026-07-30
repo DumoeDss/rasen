@@ -521,6 +521,19 @@ async function scenarioCanvasComposite() {
   if (showRes.exitCode !== 0) throw new Error(`pipeline show FAILED: ${showRes.stderr.slice(0, 800)}`);
   const shown = JSON.parse(showRes.stdout.trim());
   console.log(`   discovery: ${JSON.stringify(shown.reconcilerSupport)}`);
+  // ASSERTED, not merely printed. A dump that a reader has to interpret is not
+  // evidence: exit code 0 must mean the cell holds. Discovery is the verdict
+  // section 6 made reachable, so a regression to `unsupported_pipeline_shape`
+  // or `execution_profile_unavailable` has to fail this scenario, not decorate
+  // its output.
+  if (
+    shown.reconcilerSupport?.supported !== true ||
+    shown.reconcilerSupport?.reason !== 'supported_v2_executable'
+  ) {
+    throw new Error(
+      `discovery expected supported_v2_executable, got ${JSON.stringify(shown.reconcilerSupport)}`
+    );
+  }
 
   // 4. Run it.
   const { h, receipt } = start(ctx, changeId, pipelineName);
@@ -549,6 +562,18 @@ async function scenarioCanvasComposite() {
     firstRequiresSecond: Boolean(first && second && first.requires.includes(second.nodeId)),
   };
   console.log(`   plan ordering: stage-2 requires stage = ${ordering.secondRequiresFirst}`);
+  // Directional, and asserted: `secondRequiresFirst` alone would also be true
+  // of a body with edges in BOTH directions, and a bare non-empty `requires`
+  // check would pass for a body wired backwards.
+  if (
+    ordering.bodyNodeCount !== 2 ||
+    !ordering.secondRequiresFirst ||
+    ordering.firstRequiresSecond
+  ) {
+    throw new Error(
+      `body ordering is not the authored sequence: ${JSON.stringify(ordering)}`
+    );
+  }
 
   // (2) Behavioural — the reconciler's OWN answer, and the one that settles it.
   //     A connected body puts exactly ONE action on the first frontier; the
@@ -557,8 +582,21 @@ async function scenarioCanvasComposite() {
   //     until after the snapshot.
   const firstFrontier = h.frontier().map((f) => f.path).sort();
   console.log(`   first frontier: ${JSON.stringify(firstFrontier)}`);
+  // The assertion that settles the cell. The disconnected shape — the one this
+  // scenario existed to distinguish — puts BOTH body stages here at once.
+  if (
+    firstFrontier.length !== 1 ||
+    firstFrontier[0] !== 'root:composite-ref/stage'
+  ) {
+    throw new Error(
+      `first frontier must be exactly the entry stage, got ${JSON.stringify(firstFrontier)}`
+    );
+  }
 
   const view = driveToTerminal(h);
+  if (view.status !== 'completed') {
+    throw new Error(`Canvas-authored composite did not complete: status=${view.status}`);
+  }
 
   const out = {
     pipeline: pipelineName,

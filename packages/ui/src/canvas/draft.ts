@@ -17,6 +17,28 @@ import type {
   WirePipelineDefinitionStage,
 } from '../api/types.js';
 
+/**
+ * The conventional control ports an authored connection uses when neither
+ * endpoint declares a typed one — which is every capability today, since
+ * production descriptors declare no inputs and a single `done` outcome.
+ *
+ * These MUST stay inside the kernel's accepted sets or every saved definition
+ * is rejected with PORT_MISMATCH: `CONTROL_TARGET_PORT` must be one of
+ * `CONTROL_INPUT_PORTS` (`input` | `in` | `start`) and `CONTROL_SOURCE_PORT`
+ * must name a declared outcome — both in
+ * `src/core/pipeline-registry/definition.ts`.
+ *
+ * They live in the model module, not in the page, so that requirement is a TEST
+ * rather than a comment: `test/core/pipeline-registry/canvas-control-port-provenance.test.ts`
+ * imports these two values and runs the REAL kernel `prepare` over a
+ * production-shaped catalog with them. Editing either one to something the
+ * kernel does not accept fails a kernel test instead of shipping a Canvas that
+ * authors unsaveable definitions — which is exactly the Blocker ECP-5 paid a
+ * round for.
+ */
+export const CONTROL_SOURCE_PORT = 'done';
+export const CONTROL_TARGET_PORT = 'input';
+
 export function isV1Definition(
   def: WirePipelineDefinition
 ): def is WirePipelineDefinitionV1 {

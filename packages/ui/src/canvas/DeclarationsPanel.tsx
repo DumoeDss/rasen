@@ -35,7 +35,7 @@ import { V2_BODY_PALETTE_KINDS } from './draft.js';
 export function DeclarationsPanel({
   definition,
   selectedId,
-  capabilityAvailable,
+  capabilities,
   onSelect,
   onCreate,
   onDelete,
@@ -48,8 +48,13 @@ export function DeclarationsPanel({
 }: {
   definition: WirePipelineDefinitionV2;
   selectedId: string | null;
-  /** Whether the trusted catalog can supply an exact capability revision. */
-  capabilityAvailable: boolean;
+  /**
+   * The trusted catalog's enabled exact capability revisions — the same list
+   * the root graph's node panel offers. Whether a body stage CAN be added and
+   * which capability it may carry are one fact, so they read from one prop:
+   * `capabilities.length > 0` is exactly "the catalog can supply a revision".
+   */
+  capabilities: readonly Readonly<{ id: string; version: string }>[];
   onSelect: (id: string | null) => void;
   onCreate: (id: string) => void;
   onDelete: (id: string) => void;
@@ -148,7 +153,7 @@ export function DeclarationsPanel({
         <DeclarationEditor
           key={selected.id}
           declaration={selected}
-          capabilityAvailable={capabilityAvailable}
+          capabilities={capabilities}
           onPatch={(patch) => onPatch(selected.id, patch)}
           onAddBodyStage={() => onAddBodyStage(selected.id)}
           onRemoveBodyStage={(stageId) => onRemoveBodyStage(selected.id, stageId)}
@@ -416,7 +421,7 @@ function BodyConnections({
  */
 function DeclarationEditor({
   declaration,
-  capabilityAvailable,
+  capabilities,
   onPatch,
   onAddBodyStage,
   onRemoveBodyStage,
@@ -425,7 +430,7 @@ function DeclarationEditor({
   onRemoveBodyConnection,
 }: {
   declaration: WireCompositeDeclaration;
-  capabilityAvailable: boolean;
+  capabilities: readonly Readonly<{ id: string; version: string }>[];
   onPatch: (
     patch: Partial<{
       inputs: WireDefinitionPort[];
@@ -504,9 +509,32 @@ function DeclarationEditor({
               />
               <span class="declaration-editor__body-stage-kind">{node.kind}</span>
               {node.capability && (
-                <span class="declaration-editor__body-stage-capability">
-                  {node.capability.id}
-                </span>
+                <select
+                  class="declaration-editor__body-stage-capability"
+                  data-testid="declaration-body-stage-capability"
+                  data-stage-id={node.id}
+                  value={`${node.capability.id}\0${node.capability.version}`}
+                  onChange={(event) => {
+                    const selected = (event.target as HTMLSelectElement).value;
+                    const capability = capabilities.find(
+                      (candidate) => `${candidate.id}\0${candidate.version}` === selected
+                    );
+                    if (capability) {
+                      onPatchBodyStage(node.id, {
+                        capability: { id: capability.id, version: capability.version },
+                      });
+                    }
+                  }}
+                >
+                  {capabilities.map((capability) => (
+                    <option
+                      key={`${capability.id}\0${capability.version}`}
+                      value={`${capability.id}\0${capability.version}`}
+                    >
+                      {capability.id} @ {capability.version}
+                    </option>
+                  ))}
+                </select>
               )}
               <button
                 type="button"
@@ -540,7 +568,7 @@ function DeclarationEditor({
               // Same rule as the root palette's AtomicStage entry: a body stage
               // must bind an exact capability revision, so without one the
               // action is unavailable rather than failing on click.
-              disabled={!capabilityAvailable}
+              disabled={capabilities.length === 0}
               onClick={onAddBodyStage}
             >
               {kind}

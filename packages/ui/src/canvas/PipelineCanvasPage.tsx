@@ -34,6 +34,8 @@ import { useSpace, spaceHref } from '../store/use-space.js';
 import { definitionToGraph, draftToGraph, layoutGraph, type PipelineFlowNode } from './layout.js';
 import { stageNodeTypes } from './StageNode.js';
 import {
+  CONTROL_SOURCE_PORT,
+  CONTROL_TARGET_PORT,
   addBodyConnection,
   addBodyStage,
   addDeclaration,
@@ -89,21 +91,6 @@ interface ExportState {
   status: 'idle' | 'exporting' | 'done' | 'error';
   message?: string;
 }
-
-/**
- * The conventional control ports an authored connection uses when neither
- * endpoint declares a typed one — which is every capability today, since
- * production descriptors declare no inputs and a single `done` outcome.
- *
- * These MUST stay inside the kernel's accepted sets, or a saved definition is
- * rejected with PORT_MISMATCH: `CONTROL_TARGET_PORT` must be one of the
- * `CONTROL_INPUT_PORTS` (`input` | `in` | `start`) and `CONTROL_SOURCE_PORT`
- * must name a declared outcome — both in
- * `src/core/pipeline-registry/definition.ts`. Root and body authoring share
- * them so one convention reaches the validator from both paths.
- */
-const CONTROL_SOURCE_PORT = 'done';
-const CONTROL_TARGET_PORT = 'input';
 
 /**
  * The pipeline graph route (`/p/:projectId/pipelines/:name`,
@@ -777,8 +764,19 @@ export function PipelineCanvasPage() {
 
   /** The first enabled catalog capability with an exact revision, if any. */
   function firstExactCapability() {
-    return (catalog?.skills ?? []).find((skill) => skill.enabled && skill.capability)
-      ?.capability;
+    return exactCapabilities()[0];
+  }
+
+  /**
+   * Every enabled exact capability revision the trusted catalog offers — the
+   * list the root graph's `V2NodePanel` select already renders, so the body
+   * stage editor offers the same set from the same filter rather than a second
+   * reading of "which capabilities may a stage bind".
+   */
+  function exactCapabilities() {
+    return (catalog?.skills ?? [])
+      .filter((skill) => skill.enabled && skill.capability)
+      .map((skill) => skill.capability!);
   }
 
   function createDeclaration(id: string) {
@@ -1508,7 +1506,7 @@ export function PipelineCanvasPage() {
           <DeclarationsPanel
             definition={draft}
             selectedId={selectedDeclarationId}
-            capabilityAvailable={firstExactCapability() !== undefined}
+            capabilities={exactCapabilities()}
             onSelect={setSelectedDeclarationId}
             onCreate={createDeclaration}
             onDelete={deleteDeclaration}
