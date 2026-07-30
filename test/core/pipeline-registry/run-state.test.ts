@@ -19,6 +19,7 @@ import {
   latestStageHandoffs,
   sessionHandoffGeneration,
   runStatePath,
+  resolveRunStateLocation,
   RunStateValidationError,
   RUN_STATE_FILENAME,
   type RunState,
@@ -1375,5 +1376,78 @@ describe('pipeline run-state', () => {
       expect(s.stages?.[RETAIN_STAGE_ID]?.status).toBe('done');
       expect(frozenRetentionMode(s)).toBe('off');
     });
+  });
+});
+
+describe('resolveRunStateLocation (three-location sticky-legacy chain)', () => {
+  let changeDir: string;
+  let workDir: string;
+  let ephemera: string;
+  let base: string;
+
+  const state: RunState = { pipeline: 'full-feature' };
+
+  beforeEach(() => {
+    base = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-runstate-chain-'));
+    changeDir = path.join(base, 'change');
+    workDir = path.join(base, 'work');
+    ephemera = path.join(base, 'ephemera');
+    fs.mkdirSync(changeDir, { recursive: true });
+  });
+  afterEach(() => {
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  it('finds run-state in the ephemera directory', () => {
+    writeRunState(ephemera, state);
+    const location = resolveRunStateLocation(changeDir, { ephemeraDir: ephemera, workDir });
+    expect(location).toEqual({ dir: ephemera, path: runStatePath(ephemera) });
+  });
+
+  it('finds run-state in the legacy machine-home work directory', () => {
+    writeRunState(workDir, state);
+    const location = resolveRunStateLocation(changeDir, { ephemeraDir: ephemera, workDir });
+    expect(location).toEqual({ dir: workDir, path: runStatePath(workDir) });
+  });
+
+  it('finds run-state in the change directory (oldest legacy location)', () => {
+    writeRunState(changeDir, state);
+    const location = resolveRunStateLocation(changeDir, { ephemeraDir: ephemera, workDir });
+    expect(location).toEqual({ dir: changeDir, path: runStatePath(changeDir) });
+  });
+
+  it('returns null when no location in the chain holds a file', () => {
+    expect(resolveRunStateLocation(changeDir, { ephemeraDir: ephemera, workDir })).toBeNull();
+  });
+
+  it('omitting the ephemera directory keeps the two legacy locations working', () => {
+    writeRunState(workDir, state);
+    expect(resolveRunStateLocation(changeDir, { workDir })?.dir).toBe(workDir);
+    expect(resolveRunStateLocation(changeDir)).toBeNull();
+  });
+
+  it('never splits one file across locations: a legacy file keeps being the resolved one', () => {
+    // Born legacy (work directory). Resolution must keep pointing at the
+    // legacy copy, and a writer following the resolved location updates it
+    // IN PLACE rather than creating a second copy at the terminal location.
+    writeRunState(workDir, state);
+    const first = resolveRunStateLocation(changeDir, { ephemeraDir: ephemera, workDir })!;
+    expect(first.dir).toBe(workDir);
+
+    writeRunState(first.dir, { ...state, completed: ['propose'] });
+
+    const second = resolveRunStateLocation(changeDir, { ephemeraDir: ephemera, workDir })!;
+    expect(second.dir).toBe(workDir);
+    expect(fs.existsSync(runStatePath(ephemera))).toBe(false);
+    expect(fs.existsSync(runStatePath(changeDir))).toBe(false);
+    expect(readRunState(second.dir)?.completed).toEqual(['propose']);
+  });
+
+  it('prefers the ephemera directory when the chain is ordered newest-first', () => {
+    writeRunState(ephemera, state);
+    writeRunState(workDir, { ...state, pipeline: 'small-feature' });
+    const location = resolveRunStateLocation(changeDir, { ephemeraDir: ephemera, workDir })!;
+    expect(location.dir).toBe(ephemera);
+    expect(readRunState(location.dir)?.pipeline).toBe('full-feature');
   });
 });

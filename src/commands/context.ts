@@ -14,6 +14,7 @@ import {
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
 import { resolveProjectHome } from '../core/project-home.js';
+import { deriveWorkspaceIdentity } from '../core/file-placement.js';
 import { inspectRelationships } from '../core/relationship-health.js';
 import {
   assembleWorkingSet,
@@ -60,8 +61,19 @@ async function gatherWorkingSet(
     ? { ...workingSet, root: { ...workingSet.root, machineHome: home.homeDir } }
     : workingSet;
 
+  // Workspace identity (design `file-placement-collapse-landing`, D5): a pure
+  // derivation from the canonicalized root path — distinct per Git worktree,
+  // which is what keeps two worktrees of one project from sharing per-change
+  // state. Read-only: no `workspaces/` directory is created here or anywhere
+  // else until a real coordination writer exists.
+  const workspaceIdentity = deriveWorkspaceIdentity(root.path).id;
+  const workingSetWithIdentity: WorkingSet = {
+    ...workingSetWithHome,
+    root: { ...workingSetWithHome.root, workspaceIdentity },
+  };
+
   return {
-    workingSet: workingSetWithHome,
+    workingSet: workingSetWithIdentity,
     declaredReferenceCount: data.projectConfig?.references?.length ?? 0,
   };
 }
@@ -78,6 +90,9 @@ function printHumanWorkingSet(workingSet: WorkingSet, declaredReferenceCount: nu
   console.log(`  ${rootLabel}  ${workingSet.root.path}`);
   if (workingSet.root.machineHome) {
     console.log(`  Machine home: ${workingSet.root.machineHome}`);
+  }
+  if (workingSet.root.workspaceIdentity) {
+    console.log(`  Workspace identity: ${workingSet.root.workspaceIdentity}`);
   }
 
   const availableStores = workingSet.members.filter(

@@ -207,7 +207,7 @@ After all fixes are applied:
 
 ## Phase 10: Report
 
-**Dispatched mode:** write ONLY \`design-review-report.md\` in the change's work directory (per the PREAMBLE's dispatched-mode rule; fall back to the change directory), each finding tagged with a canonical severity (impact \`high\`→Major — Blocker if broken/unusable, \`medium\`→Minor, \`polish\`→Trivial); skip the \`.rasen/design-reports/\` and \`~/.rasen/projects/\` writes. Then return.
+**Dispatched mode:** write ONLY \`design-review-report.md\` in the change's evidence directory (the \`evidenceDir\` reported by the CLI, per the PREAMBLE's dispatched-mode rule; sticky-legacy: a report already at a legacy location is updated in place), each finding tagged with a canonical severity (impact \`high\`→Major — Blocker if broken/unusable, \`medium\`→Minor, \`polish\`→Trivial); skip the \`.rasen/design-reports/\` writes. Then return.
 
 **Standalone mode.** Write the report to both local and project-scoped locations:
 

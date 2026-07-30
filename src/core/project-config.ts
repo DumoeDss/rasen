@@ -1134,7 +1134,22 @@ function parseProjectConfigContent(
             archiveRaw.destination === 'external' ||
             archiveRaw.destination === 'prune'
           ) {
+            // DEPRECATED and non-behavioral (`archive-destination` /
+            // `config-loading` capabilities): the value is still exposed so
+            // legacy-archive discovery and child B's migrator can see it, but
+            // it never routes a write. A non-default value gets a loud
+            // deprecation warning — silently changing behavior for an
+            // `external`/`prune` user would be worse.
             archive.destination = archiveRaw.destination;
+            if (archiveRaw.destination !== 'in-repo') {
+              warnConfig(
+                {
+                  key: 'deprecatedArchiveDestination',
+                  fallback: `'archive.destination' is deprecated and no longer selects a destination: archive bookkeeping always lands in the planning root. Remove the key; run 'rasen archive relocate --to in-repo' to consolidate existing archives.`,
+                },
+                reporter
+              );
+            }
           } else {
             warnConfig(
               {
@@ -1795,21 +1810,11 @@ export function resolveArchiveTiming(config: ProjectConfig | null | undefined): 
   return config?.archive?.timing ?? 'on-merge';
 }
 
-/**
- * Resolves the effective archive destination, applying the `in-repo`
- * default when the config, the `archive` block, or the `destination` field
- * is absent or was dropped during parsing. Every consumer (status exposure,
- * ship/archive templates, the CLI archive command) MUST resolve through
- * this function so the default is applied identically everywhere. This
- * decides only which value to use — the actual location resolution
- * (`resolveArchiveDestination` in `change-work.ts`) is async and beside
- * this function on purpose (`root.archiveDir` stays sync in-repo).
- */
-export function resolveArchiveDestinationValue(
-  config: ProjectConfig | null | undefined
-): ArchiveDestination {
-  return config?.archive?.destination ?? 'in-repo';
-}
+// `resolveArchiveDestinationValue` was deleted with the destination axis
+// (`archive-destination` capability). Nothing routes on the value any more, so
+// defaulting an absent key to `'in-repo'` would assert a choice that no longer
+// exists. `archive.destination` is still PARSED and left on the config object
+// for legacy discovery only — child B's migrator reads the raw field directly.
 
 // -----------------------------------------------------------------------------
 // Autopilot gate policy (config axis)

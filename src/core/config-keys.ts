@@ -347,15 +347,10 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     description: 'When archive runs relative to shipping a change',
     group: 'Archive',
   },
-  {
-    key: 'archive.destination',
-    scopes: ['store', 'project'],
-    type: 'enum',
-    enumValues: ['in-repo', 'external', 'prune'],
-    defaultValue: 'in-repo',
-    description: 'Where archive bookkeeping lands',
-    group: 'Archive',
-  },
+  // `archive.destination` is deliberately ABSENT (`config-key-registry`
+  // capability): the destination axis is retired, so `config set` rejects it
+  // as not settable. Its compatibility READ still parses (with a deprecation
+  // warning) in `project-config.ts` for legacy-archive discovery.
   // ---- both scopes ----
   {
     key: 'handoff.threshold',

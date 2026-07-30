@@ -27,7 +27,7 @@ Read all available artifacts:
 - `specs/` — delta specifications
 - `office-hours-design.md` — product validation session
 
-**Outcome Artifacts** (the work directory — `workDir` from status JSON; fall back to the change directory when `workDir` is absent or a file already lives there — legacy fallback):
+**Outcome Artifacts** (the change's evidence directory — `evidenceDir` from status JSON; sticky-legacy: a report that already lives in the legacy `workDir` or the change directory is read there instead):
 - `review-report.md` — code review findings
 - `qa-report.md` — QA findings
 - `cso-report.md` — security audit findings

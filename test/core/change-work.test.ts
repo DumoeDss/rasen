@@ -3,7 +3,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { resolveChangeWorkDir, resolveArchiveDestination } from '../../src/core/change-work.js';
+import {
+  resolveChangeWorkDir,
+  resolveArchiveDestination,
+  legacyExternalArchiveDir,
+} from '../../src/core/change-work.js';
 import { getProjectRegistryPath, readProjectRegistryState } from '../../src/core/project-registry.js';
 import { resolveProjectHome } from '../../src/core/project-home.js';
 
@@ -144,7 +148,7 @@ describe('resolveChangeWorkDir', () => {
   });
 });
 
-describe('resolveArchiveDestination', () => {
+describe('resolveArchiveDestination (destination axis retired)', () => {
   let projectRoot: string;
   let globalDataDir: string;
 
@@ -163,98 +167,83 @@ describe('resolveArchiveDestination', () => {
     fs.writeFileSync(path.join(projectRoot, 'rasen', 'config.yaml'), content);
   }
 
-  it('defaults to in-repo when the config has no archive block', async () => {
+  it('resolves the in-repo archive directory when the config has no archive block', () => {
     writeConfig('schema: spec-driven\n');
 
-    const result = await resolveArchiveDestination(projectRoot, { globalDataDir });
-
-    expect(result.destination).toBe('in-repo');
-    expect(result.archiveDir).toBe(path.join(projectRoot, 'rasen', 'changes', 'archive'));
-  });
-
-  it('in-repo destination maps to the same path constants as makeRoot', async () => {
-    writeConfig('schema: spec-driven\narchive:\n  destination: in-repo\n');
-
-    const result = await resolveArchiveDestination(projectRoot, { globalDataDir });
-
-    expect(result).toEqual({
-      destination: 'in-repo',
+    expect(resolveArchiveDestination(projectRoot)).toEqual({
       archiveDir: path.join(projectRoot, 'rasen', 'changes', 'archive'),
     });
   });
 
-  it('prune destination resolves to a null archiveDir', async () => {
-    writeConfig('schema: spec-driven\narchive:\n  destination: prune\n');
-
-    const result = await resolveArchiveDestination(projectRoot, { globalDataDir });
-
-    expect(result).toEqual({ destination: 'prune', archiveDir: null });
-  });
-
-  it('external destination probe miss (unregistered project) returns null without any write', async () => {
+  it('ignores a configured external destination — bookkeeping is always in-repo', () => {
     writeConfig('schema: spec-driven\narchive:\n  destination: external\n');
 
-    const result = await resolveArchiveDestination(projectRoot, { globalDataDir });
+    expect(resolveArchiveDestination(projectRoot)).toEqual({
+      archiveDir: path.join(projectRoot, 'rasen', 'changes', 'archive'),
+    });
+  });
 
-    expect(result.destination).toBe('external');
-    expect(result.archiveDir).toBeNull();
+  it('ignores a configured prune destination — nothing resolves to null or to deletion', () => {
+    writeConfig('schema: spec-driven\narchive:\n  destination: prune\n');
+
+    expect(resolveArchiveDestination(projectRoot).archiveDir).toBe(
+      path.join(projectRoot, 'rasen', 'changes', 'archive')
+    );
+  });
+
+  it('performs no writes and needs no machine identity', () => {
+    writeConfig('schema: spec-driven\narchive:\n  destination: external\n');
+
+    resolveArchiveDestination(projectRoot);
+
+    expect(fs.existsSync(path.join(globalDataDir, 'projects'))).toBe(false);
+  });
+});
+
+describe('legacyExternalArchiveDir', () => {
+  let projectRoot: string;
+  let globalDataDir: string;
+
+  beforeEach(() => {
+    projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-legacy-archive-'));
+    globalDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-legacy-archive-gdd-'));
+    fs.mkdirSync(path.join(projectRoot, 'rasen'), { recursive: true });
+    fs.writeFileSync(
+      path.join(projectRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\n'
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+    fs.rmSync(globalDataDir, { recursive: true, force: true });
+  });
+
+  it('returns null for an unregistered project without any write', async () => {
+    await expect(legacyExternalArchiveDir(projectRoot, { globalDataDir })).resolves.toBeNull();
     expect(fs.existsSync(path.join(globalDataDir, 'projects'))).toBe(false);
   });
 
-  it('external destination with ensure:true mints the home once and resolves its archiveDir', async () => {
-    writeConfig('schema: spec-driven\narchive:\n  destination: external\n');
+  it('returns null when the machine home resolves but holds no archive directory', async () => {
+    await resolveProjectHome(projectRoot, { globalDataDir, ensure: true });
 
-    const result = await resolveArchiveDestination(projectRoot, { globalDataDir, ensure: true });
-
-    expect(result.destination).toBe('external');
-    expect(result.archiveDir).not.toBeNull();
-    expect(path.isAbsolute(result.archiveDir!)).toBe(true);
-    expect(result.archiveDir).toContain('archive');
-
-    const home = await resolveProjectHome(projectRoot, { globalDataDir });
-    expect(result.archiveDir).toBe(home!.archiveDir);
+    await expect(legacyExternalArchiveDir(projectRoot, { globalDataDir })).resolves.toBeNull();
   });
 
-  it('external destination probes (no mint) after a prior ensure:true registration', async () => {
-    writeConfig('schema: spec-driven\narchive:\n  destination: external\n');
-    await resolveArchiveDestination(projectRoot, { globalDataDir, ensure: true });
+  it('surfaces the machine-home archive when it exists on disk', async () => {
+    const home = await resolveProjectHome(projectRoot, { globalDataDir, ensure: true });
+    fs.mkdirSync(home!.archiveDir, { recursive: true });
 
-    const registryPath = getProjectRegistryPath({ globalDataDir });
-    const beforeMtime = fs.statSync(registryPath).mtimeMs;
-
-    const result = await resolveArchiveDestination(projectRoot, { globalDataDir });
-
-    expect(result.destination).toBe('external');
-    expect(result.archiveDir).not.toBeNull();
-    const afterMtime = fs.statSync(registryPath).mtimeMs;
-    expect(afterMtime).toBe(beforeMtime);
-  });
-
-  it('external destination degrades to null (never throws) when the registry is corrupt', async () => {
-    writeConfig('schema: spec-driven\narchive:\n  destination: external\n');
-    await resolveArchiveDestination(projectRoot, { globalDataDir, ensure: true });
-    const registryPath = getProjectRegistryPath({ globalDataDir });
-    fs.writeFileSync(registryPath, '{not valid json');
-
-    const result = await resolveArchiveDestination(projectRoot, { globalDataDir });
-
-    expect(result).toEqual({ destination: 'external', archiveDir: null });
-  });
-
-  it('works for a store-root projectRoot (config-only pointer directory)', async () => {
-    const storeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-archive-dest-store-'));
-    fs.mkdirSync(path.join(storeRoot, 'rasen'), { recursive: true });
-    fs.writeFileSync(
-      path.join(storeRoot, 'rasen', 'config.yaml'),
-      'schema: spec-driven\nstore: some-store\narchive:\n  destination: external\n'
+    await expect(legacyExternalArchiveDir(projectRoot, { globalDataDir })).resolves.toBe(
+      home!.archiveDir
     );
+  });
 
-    try {
-      const result = await resolveArchiveDestination(storeRoot, { globalDataDir, ensure: true });
-      expect(result.destination).toBe('external');
-      expect(result.archiveDir).not.toBeNull();
-    } finally {
-      fs.rmSync(storeRoot, { recursive: true, force: true });
-    }
+  it('degrades to null (never throws) when the machine-global registry is corrupt', async () => {
+    const home = await resolveProjectHome(projectRoot, { globalDataDir, ensure: true });
+    fs.mkdirSync(home!.archiveDir, { recursive: true });
+    fs.writeFileSync(getProjectRegistryPath({ globalDataDir }), '{not valid json');
+
+    await expect(legacyExternalArchiveDir(projectRoot, { globalDataDir })).resolves.toBeNull();
   });
 });

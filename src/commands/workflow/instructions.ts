@@ -39,6 +39,8 @@ import { readProjectConfig, type ProjectConfig } from '../../core/project-config
 import {
   validateChangeExists,
   validateSchemaExists,
+  resolveChangeLandingDirs,
+  type ChangeLandingDirs,
   type TaskItem,
   type ApplyInstructions,
 } from './shared.js';
@@ -165,17 +167,27 @@ export async function instructionsCommand(
     });
     const isBlocked = instructions.dependencies.some((d) => !d.done);
 
-    // Instructions is the designated mutation boundary (design D2): it mints
-    // project identity on first use so this and every subsequent call for
-    // this project resolves a work directory.
-    const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: true });
+    // The per-class landing directories are always present: they derive from
+    // the planning and execution roots alone (`file-placement` capability).
+    const landing = resolveChangeLandingDirs(root, instructions.changeDir, changeName);
+
+    // Probe-only (`change-work-dir` capability): the CLI no longer mints a
+    // machine-home work directory — nothing new lands there. The field stays
+    // in the payload when the project already has an identity, so
+    // sticky-legacy readers can still check the legacy location.
+    const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: false });
 
     spinner?.stop();
 
     if (options.json) {
       console.log(
         JSON.stringify(
-          { ...instructions, ...(workDir ? { workDir } : {}), root: toRootOutput(root) },
+          {
+            ...instructions,
+            ...landing,
+            ...(workDir ? { workDir } : {}),
+            root: toRootOutput(root),
+          },
           null,
           2
         )
@@ -183,7 +195,7 @@ export async function instructionsCommand(
       return;
     }
 
-    printInstructionsText(instructions, isBlocked, workDir ?? undefined);
+    printInstructionsText(instructions, isBlocked, landing, workDir ?? undefined);
   } catch (error) {
     spinner?.stop();
     throw error;
@@ -193,6 +205,7 @@ export async function instructionsCommand(
 export function printInstructionsText(
   instructions: ArtifactInstructions,
   isBlocked: boolean,
+  landing?: ChangeLandingDirs,
   workDir?: string
 ): void {
   const {
@@ -218,10 +231,19 @@ export function printInstructionsText(
   console.log(`<artifact id="${artifactId}" change="${changeName}" schema="${schemaName}">`);
   console.log();
 
-  // Work dir: process ephemera (run-state, handoff docs, reports) belongs
-  // here, not in the change directory (design `change-work-dir`).
+  // Per-class landing directories (`file-placement` capability): evidence and
+  // handoff travel with the change in the planning root; ephemera lives in the
+  // execution root. `Work dir` is the legacy location, printed only when the
+  // project already has a machine identity so sticky-legacy readers see it.
+  if (landing) {
+    console.log(`Evidence dir: ${landing.evidenceDir}`);
+    console.log(`Handoff dir: ${landing.handoffDir}`);
+    console.log(`Ephemera dir: ${landing.ephemeraDir}`);
+  }
   if (workDir) {
-    console.log(`Work dir: ${workDir}`);
+    console.log(`Work dir (legacy): ${workDir}`);
+  }
+  if (landing || workDir) {
     console.log();
   }
 
@@ -391,6 +413,13 @@ function parseTasksFile(content: string): TaskItem[] {
 export interface GenerateApplyInstructionsOptions {
   planningHome?: PlanningHome;
   references?: ReferenceIndexEntry[];
+  /**
+   * The resolved root, used to derive the execution root for `ephemeraDir`
+   * (`file-placement` capability). Omitted only by callers with no root
+   * selection in hand, which then treat the planning root as the execution
+   * root — correct for every in-repo project.
+   */
+  root?: ResolvedOpenSpecRoot;
 }
 
 /**
@@ -488,9 +517,17 @@ export async function generateApplyInstructions(
     instruction = schemaInstruction?.trim() ?? 'Read context files, work through pending tasks, mark complete as you go.\nPause if you hit blockers or need clarification.';
   }
 
-  // Apply-instructions is the other designated mutation boundary (design
-  // D2): it mints project identity on first use, same as instructionsCommand.
-  const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: true });
+  // Probe-only (`change-work-dir` capability): apply-instructions no longer
+  // mints machine identity or a machine-home work directory — nothing new
+  // lands there. The legacy field survives for sticky-legacy readers.
+  const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: false });
+
+  // Always present: derived from the planning and execution roots alone.
+  const landing = resolveChangeLandingDirs(
+    options.root ?? { path: projectRoot } as ResolvedOpenSpecRoot,
+    changeDir,
+    changeName
+  );
 
   // Runtime-resolved next workflow(s) (design D4): apply's `ready` state is
   // mid-implementation, so it has no forward step (empty array). `blocked`
@@ -513,6 +550,7 @@ export async function generateApplyInstructions(
     nextWorkflows,
     ...(references !== undefined ? { references } : {}),
     ...(workDir ? { workDir } : {}),
+    ...landing,
   };
 }
 
@@ -545,6 +583,7 @@ export async function applyInstructionsCommand(options: ApplyInstructionsOptions
     const instructions = await generateApplyInstructions(projectRoot, changeName, options.schema, {
       planningHome,
       references,
+      root,
     });
 
     spinner?.stop();
@@ -566,8 +605,11 @@ export function printApplyInstructionsText(instructions: ApplyInstructions): voi
 
   console.log(`## Apply: ${changeName}`);
   console.log(`Schema: ${schemaName}`);
+  console.log(`Evidence dir: ${instructions.evidenceDir}`);
+  console.log(`Handoff dir: ${instructions.handoffDir}`);
+  console.log(`Ephemera dir: ${instructions.ephemeraDir}`);
   if (workDir) {
-    console.log(`Work dir: ${workDir}`);
+    console.log(`Work dir (legacy): ${workDir}`);
   }
   console.log();
 

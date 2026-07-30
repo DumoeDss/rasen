@@ -208,7 +208,7 @@ TREND: Performance degrading. LCP doubled in 8 days.
 
 ### Phase 9: Save Report
 
-**Dispatched mode:** write ONLY \`benchmark-report.md\` in the change's work directory (per the PREAMBLE's dispatched-mode rule; fall back to the change directory), each result tagged with a canonical severity (a \`REGRESSION\` crossing a hard budget / FAIL row → Blocker, a timing or size \`REGRESSION\` → Major, a \`WARNING\` → Minor, \`OK\` and grade-only deltas → Trivial); skip the \`.rasen/benchmark-reports/\` writes. Then return.
+**Dispatched mode:** write ONLY \`benchmark-report.md\` in the change's evidence directory (the \`evidenceDir\` reported by the CLI, per the PREAMBLE's dispatched-mode rule; sticky-legacy: a report already at a legacy location is updated in place), each result tagged with a canonical severity (a \`REGRESSION\` crossing a hard budget / FAIL row → Blocker, a timing or size \`REGRESSION\` → Major, a \`WARNING\` → Minor, \`OK\` and grade-only deltas → Trivial); skip the \`.rasen/benchmark-reports/\` writes. Then return.
 
 **Standalone mode.** Write to \`.rasen/benchmark-reports/{date}-benchmark.md\` and \`.rasen/benchmark-reports/{date}-benchmark.json\`.
 

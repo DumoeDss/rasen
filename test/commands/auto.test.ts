@@ -192,7 +192,9 @@ describe('auto workflow (orchestrated autopilot)', () => {
       expect(skillText).toContain('knowledge digest document');
       // The digest is explicitly the retired-between-children handoff document (F.1 finds it).
       expect(skillText).toContain('which IS a handoff document');
-      expect(skillText).toContain('handoff/<role>-<n>.md');
+      // It lands in the change's handoff directory (`file-placement` capability),
+      // not the retired machine-home work directory.
+      expect(skillText).toContain('<handoffDir>/<role>-<n>.md');
     });
   });
 });

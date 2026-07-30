@@ -29,6 +29,7 @@ export const CONFIG_DIAGNOSTIC_KEYS = [
   'invalidUpdatePin',
   'invalidArchiveTiming',
   'invalidArchiveDestination',
+  'deprecatedArchiveDestination',
   'invalidArchive',
   'invalidAutopilotGates',
   'invalidAutopilotSelection',

@@ -2,7 +2,10 @@
  * Run-state for an orchestrated pipeline run.
  *
  * The LEAD (the `auto` workflow) records progress for a change in
- * `openspec/changes/<name>/auto-run.json` while it drives a pipeline. This
+ * `auto-run.json` while it drives a pipeline — resolved through the
+ * `file-placement` sticky-legacy chain (`stateFileSearchChain`): the execution
+ * root's ephemera directory first, then the legacy machine-home work
+ * directory, then the change directory. This
  * module is the canonical typed contract for that file: the schema the LEAD
  * writes to, the reader `rasen pipeline resume` consumes, and a helper to
  * derive completed stages. State is durable on disk so a run survives a dead
@@ -520,26 +523,56 @@ export interface RunStateLocation {
 }
 
 /**
- * Resolves WHERE `auto-run.json` lives for a change (design D4, sticky-legacy):
- * `workDir` first when provided and it holds the file, else `changeDir`
- * (legacy). Returns null when neither location has one. This only locates the
- * file; callers read it via `readRunState(location.dir)` to get the validated
- * `RunState`, keeping `readRunState`'s existing signature and behavior intact.
+ * The sticky-legacy search inputs for a per-change state file. Stated once
+ * here and reused by every state-file resolver (`file-placement` capability):
+ * new state is born in the execution root's ephemera directory; state that
+ * already lives at a legacy location keeps living there. One file's state is
+ * never split across locations.
+ */
+export interface StateFileLocationOptions {
+  /**
+   * The execution root's ephemera directory — the TERMINAL landing, searched
+   * first. Omitted only by callers that cannot resolve an execution root.
+   */
+  ephemeraDir?: string | null;
+  /** The legacy machine-home work directory, searched second. */
+  workDir?: string | null;
+}
+
+/**
+ * The ordered sticky-legacy search chain for a per-change state file: the
+ * execution root's ephemera directory, then the legacy machine-home work
+ * directory, then the change directory (the oldest legacy location). The
+ * ordering rule lives here alone so every state-file resolver agrees.
+ */
+export function stateFileSearchChain(
+  changeDir: string,
+  options: StateFileLocationOptions = {}
+): string[] {
+  const chain: string[] = [];
+  if (options.ephemeraDir) chain.push(options.ephemeraDir);
+  if (options.workDir) chain.push(options.workDir);
+  chain.push(changeDir);
+  return chain;
+}
+
+/**
+ * Resolves WHERE `auto-run.json` lives for a change along the sticky-legacy
+ * chain (design D3): the execution root's ephemera directory first, then the
+ * legacy machine-home work directory, then the change directory. Returns null
+ * when no location has one. This only locates the file; callers read it via
+ * `readRunState(location.dir)` to get the validated `RunState`, keeping
+ * `readRunState`'s existing signature and behavior intact.
  */
 export function resolveRunStateLocation(
   changeDir: string,
-  workDir?: string | null
+  options: StateFileLocationOptions = {}
 ): RunStateLocation | null {
-  if (workDir) {
-    const workPath = runStatePath(workDir);
-    if (fs.existsSync(workPath)) {
-      return { dir: workDir, path: workPath };
+  for (const dir of stateFileSearchChain(changeDir, options)) {
+    const candidate = runStatePath(dir);
+    if (fs.existsSync(candidate)) {
+      return { dir, path: candidate };
     }
-  }
-
-  const legacyPath = runStatePath(changeDir);
-  if (fs.existsSync(legacyPath)) {
-    return { dir: changeDir, path: legacyPath };
   }
 
   return null;

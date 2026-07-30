@@ -15,13 +15,9 @@
  * designated mutation boundary, D2) can mint on demand.
  */
 import path from 'path';
+import * as fs from 'node:fs';
 import { WORKSPACE_DIR_NAME } from './config.js';
 import { resolveProjectHome, type ResolveProjectHomeOptions } from './project-home.js';
-import {
-  readProjectConfig,
-  resolveArchiveDestinationValue,
-  type ArchiveDestination,
-} from './project-config.js';
 
 export interface ResolveChangeWorkDirOptions {
   /** Test/DI override; forwarded to `resolveProjectHome`. */
@@ -86,82 +82,61 @@ export async function resolveChangeWorkDir(
 export interface ResolveArchiveDestinationOptions {
   /** Test/DI override; forwarded to `resolveProjectHome`. */
   globalDataDir?: string;
-  /**
-   * false (default): probe only for `external` — never mints identity,
-   * registers the project, or creates the home directory. true: mint-once
-   * when the probe misses (only the CLI archive command's write path passes
-   * this — archiving IS the home-needing write).
-   */
-  ensure?: boolean;
 }
 
 export interface ResolvedArchiveDestination {
-  destination: ArchiveDestination;
   /**
-   * The concrete bookkeeping location: the in-repo archive directory for
-   * `in-repo`, the machine-home archive for `external` when it resolves,
-   * or null (`external` unresolvable, or `prune`).
+   * The bookkeeping location — ALWAYS the in-repo archive directory. The
+   * destination axis is retired (`archive-destination` capability), so this
+   * is no longer nullable and no longer varies with configuration.
    */
-  archiveDir: string | null;
+  archiveDir: string;
 }
 
 /**
- * Resolves the effective archive destination axis (design D1):
- * `root.archiveDir` KEEPS its sync in-repo meaning everywhere it already
- * exists (legacy reads, default writes, scaffolding) — this async resolver
- * is the one place that maps config to a concrete bookkeeping location.
- * `in-repo` -> the in-repo archive directory (same path constants as
- * `makeRoot`); `external` -> `resolveProjectHome(...).archiveDir`
- * (probe-first; ensure only when `options.ensure` is true — child 2's
- * mint-once pattern); `prune` -> null. Every consumer resolves through this
- * function; nothing re-derives home paths (child 1's frozen-API rule). The
- * `external` branch's `resolveProjectHome` call is wrapped in try/catch and
- * degrades to a null `archiveDir` rather than throwing — destination
- * resolution is never allowed to break a workflow command (same contract as
- * `resolveChangeWorkDir`, though here only the `external` branch needs the
- * wrapping: `readProjectConfig`, used to determine `destination` itself,
- * already never throws — it returns null on a missing/unparseable config).
- * Reads `archive.destination` from `projectRoot`'s config itself (via
- * `readProjectConfig`) so every caller resolves the axis identically.
+ * Resolves the archive bookkeeping location. There is exactly one:
+ * `<planningRoot>/rasen/changes/archive` (the same path constants
+ * `makeRoot` uses). No configuration branch remains — `archive.destination`
+ * is a deprecated compat-read key that never routes a write
+ * (`archive-destination` / `config-loading` capabilities).
+ *
+ * Kept as a function (rather than inlining `archiveBookkeepingDir`) so the
+ * existing callers keep one seam to resolve through, and so the contrast
+ * with `legacyExternalArchiveDir` — the READ-ONLY discovery probe for
+ * archives written by the retired `external` destination — stays explicit.
  */
-export async function resolveArchiveDestination(
+export function resolveArchiveDestination(projectRoot: string): ResolvedArchiveDestination {
+  return {
+    archiveDir: path.join(projectRoot, WORKSPACE_DIR_NAME, 'changes', 'archive'),
+  };
+}
+
+/**
+ * READ-ONLY discovery probe for archives written by the retired `external`
+ * destination: the machine home's archive directory when a home resolves by
+ * probe AND that directory actually exists on disk, else null. Never a write
+ * target — it exists so `list`/`show`/`view` keep seeing the union of archive
+ * locations, and so already-archived detection recognizes a change archived
+ * there, until child B's migrator consolidates them into the planning root.
+ *
+ * Probe-only and error-swallowing by construction: legacy discovery must
+ * never mint identity and must never break a command.
+ */
+export async function legacyExternalArchiveDir(
   projectRoot: string,
   options: ResolveArchiveDestinationOptions = {}
-): Promise<ResolvedArchiveDestination> {
-  const destination = resolveArchiveDestinationValue(readProjectConfig(projectRoot));
-
-  if (destination === 'in-repo') {
-    return {
-      destination,
-      archiveDir: path.join(projectRoot, WORKSPACE_DIR_NAME, 'changes', 'archive'),
-    };
-  }
-
-  if (destination === 'prune') {
-    return { destination, archiveDir: null };
-  }
-
-  // destination === 'external'
+): Promise<string | null> {
   try {
     const probeOptions: ResolveProjectHomeOptions = {
       ensure: false,
       ...(options.globalDataDir !== undefined ? { globalDataDir: options.globalDataDir } : {}),
     };
     const probed = await resolveProjectHome(projectRoot, probeOptions);
-    if (probed) {
-      return { destination, archiveDir: probed.archiveDir };
+    if (!probed) {
+      return null;
     }
-
-    if (!options.ensure) {
-      return { destination, archiveDir: null };
-    }
-
-    const ensured = await resolveProjectHome(projectRoot, {
-      ...(options.globalDataDir !== undefined ? { globalDataDir: options.globalDataDir } : {}),
-      ensure: true,
-    });
-    return { destination, archiveDir: ensured ? ensured.archiveDir : null };
+    return fs.existsSync(probed.archiveDir) ? probed.archiveDir : null;
   } catch {
-    return { destination, archiveDir: null };
+    return null;
   }
 }

@@ -31,8 +31,8 @@ sidecar.
 
 ### 2. Gather change evidence
 
-- Run `rasen status --change "<name>" --json` to get `changeRoot` and `workDir`.
-- Read the planning artifacts from `changeRoot` (proposal, design, tasks, delta specs) and the outcome artifacts from `workDir` (review/qa/cso reports, ship-log, verification report), falling back to `changeRoot` for legacy ephemera.
+- Run `rasen status --change "<name>" --json` to get `changeRoot`, `evidenceDir`, and `ephemeraDir` (plus the legacy `workDir`, when the project has one).
+- Read the planning artifacts from `changeRoot` (proposal, design, tasks, delta specs) and the outcome artifacts from `evidenceDir` (review/qa/cso reports, ship-log, verification report); sticky-legacy: an artifact that already lives in the legacy `workDir` or the change directory is read there instead.
 - Record, for each artifact you use, its stable identity for evidence: the source project id (`rasen status`/registry), the change name, the artifact kind, and a content digest — never the raw body.
 
 ### 3. Propose candidate lessons
@@ -76,7 +76,8 @@ dates, change ids, user/project ids, or generic words (`memory`, `lesson`,
 ### 6. Submit through the CLI (never write skill directories yourself)
 
 For each accepted decision, write a **strict candidate JSON** file below the
-resolved `workDir` (a temporary file), then apply it:
+resolved `ephemeraDir` (a temporary file — it is regenerable, so it is ephemera),
+then apply it:
 
 ```bash
 rasen knowledge apply --from "<absolute-path-to-candidate>.json" --run-state-dir "<runStateDir>" [--json]

@@ -5,14 +5,14 @@
  * (pr / push / local), run tests only when evidence demands it, then deliver.
  * The ship execution contract is inlined here (no expert delegation).
  * PR body sourced from proposal summary. Ship log written to the change's
- * external work directory (resolved via `rasen status --json`; fallback:
- * the change directory). Archive timing (`archive.timing` from the same
+ * evidence directory (`evidenceDir` from `rasen status --json`; sticky-legacy
+ * fallback to the legacy work directory or the change directory). Archive timing (`archive.timing` from the same
  * status payload) decides whether spec sync + bookkeeping run inside this
  * ship stage (`in-ship`) or are deferred to a later archive gated on merge
- * confirmation (`on-merge`, the default). When timing is `in-ship`, archive
- * destination (`archive.destination`/`archiveDir`, same payload) decides
- * where that bookkeeping lands (in-repo move / external move / prune
- * delete) — identical branch to `rasen-archive-change`'s bookkeeping step.
+ * confirmation (`on-merge`, the default). In-ship bookkeeping always moves the
+ * change to the planning root's archive (`archive.archiveDir`, same payload) —
+ * there is no destination axis, identical to `rasen-archive-change`'s
+ * bookkeeping step.
  */
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
@@ -21,9 +21,9 @@ const SHIP_INSTRUCTIONS = `Release workflow — commit, resolve the delivery mod
 
 ${STORE_SELECTION_GUIDANCE}
 
-PR body comes from proposal summary. Ship log recorded to the change's work directory (resolve \`workDir\` from \`rasen status --change <name> --json\`; fall back to the change directory when it is absent or \`ship-log.md\` already lives there).
+PR body comes from proposal summary. Ship log recorded to the change's evidence directory (\`evidenceDir\` from \`rasen status --change <name> --json\`; sticky-legacy: a file that already lives in the legacy \`workDir\` or the change directory is used in place) — it is evidence, so it travels with the change and is delivered with the Archive.
 
-Resolve \`archive.timing\` from the same status payload (\`archive.timing\`, default \`on-merge\` when absent). Under **in-ship** timing, also resolve \`archive.destination\` (\`in-repo\` | \`external\` | \`prune\`) and \`archive.archiveDir\` (absent for \`prune\` and for an unresolvable \`external\`) from the same payload — the in-ship bookkeeping move/delete in step 3b branches on these exactly like \`rasen-archive-change\`'s bookkeeping step. Recorded ship-log facts (delivery mode, PR URL, archived-in-ship/pruned-in-ship marker) for a delivery that already happened always outrank a later re-resolved config value — the timing and destination axes are consulted only for decisions not yet taken.
+Resolve \`archive.timing\` from the same status payload (\`archive.timing\`, default \`on-merge\` when absent). Under **in-ship** timing, also resolve \`archive.archiveDir\` (the planning root's archive directory, always present) from the same payload — the in-ship bookkeeping move in step 3b targets it unconditionally, exactly like \`rasen-archive-change\`'s bookkeeping step. **There is no destination axis:** a legacy \`archive.destination\` in the config changes nothing, and ship never moves a change to the machine home nor deletes one. Recorded ship-log facts (delivery mode, PR URL, archived-in-ship marker) for a delivery that already happened always outrank a later re-resolved config value — the timing axis is consulted only for decisions not yet taken.
 
 ## When to Use
 
@@ -43,7 +43,7 @@ If a change name is provided, use it. Otherwise:
 Run all checks before shipping:
 
 **a. Verification Status**
-- Check if \`verification-report.md\` (from \`rasen-verify-change\`), \`review-report.md\`, \`review-cycle-report.md\` (from the review loop), or any other expert \`*-report.md\` exists in the work directory (\`workDir\` from \`rasen status --change <name> --json\`; fall back to the change directory) — any of these counts as verification evidence
+- Check if \`verification-report.md\` (from \`rasen-verify-change\`), \`review-report.md\`, \`review-cycle-report.md\` (from the review loop), or any other expert \`*-report.md\` exists in the change's evidence directory (\`evidenceDir\` from \`rasen status --change <name> --json\`; sticky-legacy: a file that already lives in the legacy \`workDir\` or the change directory is used in place) — any of these counts as verification evidence
 - If no verification report found, warn: "No verification report found. Run rasen-verify-change first."
 - Prompt user to confirm proceeding without verification
 
@@ -81,15 +81,12 @@ NEVER resolve an integration base by falling back to the repository's default br
 
 **b. Commit the change (all modes)**
 - **In-ship timing only, before staging/committing:** run the change's archive bookkeeping now, inside the ship stage, so its results ride this same delivery. Order matters — the change directory is about to move or disappear:
-  1. Capture what later ship steps need from the change directory FIRST: PR-body sections from \`<changeRoot>/proposal.md\` (the CLI-resolved change root from the status JSON already fetched for \`workDir\`), task-completion facts, and — when \`root.store_id\` is present (the store-mode embedding below needs it) — the change's delta spec content from \`<changeRoot>/specs/**/spec.md\`, read and held now, before the move. The store-mode embedding step gets no second chance at a fresh read once this step moves or deletes the directory.
+  1. Capture what later ship steps need from the change directory FIRST: PR-body sections from \`<changeRoot>/proposal.md\` (the CLI-resolved change root from the status JSON already fetched for the landing directories), task-completion facts, and — when \`root.store_id\` is present (the store-mode embedding below needs it) — the change's delta spec content from \`<changeRoot>/specs/**/spec.md\`, read and held now, before the move. The store-mode embedding step gets no second chance at a fresh read once this step moves or deletes the directory.
   2. Sync delta specs into main specs (the \`rasen-sync-specs\` step — same sync the archive skill runs).
-  3. **Destination-aware bookkeeping** (resolve \`archive.destination\`/\`archiveDir\` per the note above; the committed-state precondition that gates \`external\`/\`prune\` elsewhere is inherently satisfied here — this move/delete happens immediately BEFORE ship's own commit of the change's files, so nothing uncommitted is being destroyed):
-     - \`in-repo\` (default, or the fallback for \`external\` with no \`archiveDir\` in the payload — state the fallback explicitly, never escalate it to deletion): move the change directory to \`<changesDir>/archive/YYYY-MM-DD-<name>\` (the same collision rule as \`rasen-archive-change\`'s bookkeeping step).
-     - \`external\`: move the change directory to \`<archiveDir>/YYYY-MM-DD-<name>\` instead — the repo-side removal rides this delivery; the archive copy stays machine-local.
-     - \`prune\`: delete the change directory (no move) — no archive copy anywhere; git history is the archive. \`prune\` still requires its own named confirmation before deleting, even inside ship.
-  4. Record the destination outcome for the ship log (step 4): \`Archived in ship: <path>\` (in-repo/external) or \`Pruned: true\` (prune — the literal token \`Pruned:\`, unified with every other prune writer: \`rasen-archive-change\`, \`rasen-bulk-archive-change\`) — so a later archive invocation on this name recognizes the outcome via its ship-log tombstone check.
-  5. **Store-rooted change (\`root.store_id\` present):** steps 2-3 above (spec sync, destination-aware move/delete) mutated the STORE's working tree at \`<root.path>\`, NOT the code repo — the commit this step (b) makes right after is a code-repo commit and does not and cannot contain them. This workflow does not commit the store repo on your behalf. If you commit the store-side bookkeeping separately (agent's own action, following the store's own conventions), record that commit's SHA for step 4's \`## Archive\` section below; otherwise record it there as pending. Full store-commit orchestration is a known-open follow-up (see \`rasen/changes/externalize-artifacts/planning-context.md\`), not something this template invents.
-- Stage the change's files — under in-ship timing, this also includes the synced main specs and, for \`in-repo\`/\`external\`, the moved change directory from the steps above (a \`prune\`d change directory no longer exists to stage) — and commit with a conventional message derived from the change name / proposal summary
+  3. **Bookkeeping (always in-repo)**: move the change directory to \`<changesDir>/archive/YYYY-MM-DD-<name>\` (the same collision rule as \`rasen-archive-change\`'s bookkeeping step). Its \`evidence/\` and \`handoff/\` subdirectories travel with it. Nothing is moved to the machine home and nothing is deleted — a legacy \`archive.destination\` in the config has no effect here.
+  4. Record the outcome for the ship log (step 4): \`Archived in ship: <path>\` — so a later archive invocation on this name recognizes the outcome via its ship-log check.
+  5. **Store-rooted change (\`root.store_id\` present):** steps 2-3 above (spec sync, archive move) mutated the STORE's working tree at \`<root.path>\`, NOT the code repo — the commit this step (b) makes right after is a code-repo commit and does not and cannot contain them. This workflow does not commit the store repo on your behalf. If you commit the store-side bookkeeping separately (agent's own action, following the store's own conventions), record that commit's SHA for step 4's \`## Archive\` section below; otherwise record it there as pending. Full store-commit orchestration is a known-open follow-up (see \`rasen/changes/externalize-artifacts/planning-context.md\`), not something this template invents.
+- Stage the change's files — under in-ship timing, this also includes the synced main specs and the moved change directory from the steps above — and commit with a conventional message derived from the change name / proposal summary
 - Pre-commit hooks (lint, format) may reject the commit: fix the reported issues and retry — NEVER bypass with \`--no-verify\`
 - If the working tree is already clean, skip this step (on-merge timing only — in-ship timing always has the sync + move/delete above to commit)
 
@@ -145,7 +142,7 @@ but when in doubt treat it as blocking).
 
 **PR Body Generation (pr mode):**
 
-Read the proposal from \`<changeRoot>/proposal.md\` — the CLI-resolved change root from the status JSON already fetched for \`workDir\` (step 2a / step (b)), never the repo-relative literal \`rasen/changes/<name>/proposal.md\`. \`changeRoot\` resolves store-side for a registered store, closing a latent bug where a store-rooted change's PR body silently fell back to "no proposal was available" even though the proposal existed in the store.
+Read the proposal from \`<changeRoot>/proposal.md\` — the CLI-resolved change root from the status JSON already fetched for the landing directories (step 2a / step (b)), never the repo-relative literal \`rasen/changes/<name>/proposal.md\`. \`changeRoot\` resolves store-side for a registered store, closing a latent bug where a store-rooted change's PR body silently fell back to "no proposal was available" even though the proposal existed in the store.
 
 Under **in-ship** timing, the change directory already moved in step (b) — use the PR-body sections CAPTURED in step (b).1 (read from \`<changeRoot>/proposal.md\` before the move), never a fresh read after the move — the path no longer exists there, and treating its absence as "no proposal was available" would be false.
 
@@ -180,7 +177,7 @@ Repo-mode PR bodies are unchanged beyond the store-safe proposal read above.
 
 ### 4. Write Ship Log
 
-After successful delivery in ANY mode, write \`ship-log.md\` to the work directory (fallback: \`rasen/changes/<name>/ship-log.md\` — EXCEPT under **in-ship** timing, where the change directory already moved in step (b): fall back to the archived path recorded in step (b).3 instead, never to the original \`rasen/changes/<name>/\`, which would resurrect an empty directory there and strand the log outside the archive):
+After successful delivery in ANY mode, write \`ship-log.md\` to the change's evidence directory (\`evidenceDir\` from status JSON; sticky-legacy: a ship log already living in the legacy \`workDir\` or the change directory is updated in place — EXCEPT under **in-ship** timing, where the change directory already moved in step (b): write to the archived copy's \`evidence/\` directory recorded in step (b).3 instead, never to the original \`rasen/changes/<name>/\`, which would resurrect an empty directory there and strand the log outside the archive):
 
 \`\`\`markdown
 # Ship Log: <change-name>
@@ -195,8 +192,7 @@ After successful delivery in ANY mode, write \`ship-log.md\` to the work directo
 **Store:** <store-path>            (pr mode, store-rooted change only — the registered store's path, from \`root.path\`)
 **Store commit:** <sha>            (pr mode, store-rooted change only — store repo HEAD SHA at ship time, with the same dirty/non-git qualifiers stamped in the PR body)
 **Status:** PR Created | Pushed | Committed (delivery deferred to portfolio level)
-**Archived in ship:** <path>       (in-ship timing, destination in-repo/external — omit under on-merge)
-**Pruned:** true                  (in-ship timing, destination prune — the same literal token every prune writer uses; mutually exclusive with the line above; omit under on-merge)
+**Archived in ship:** <path>       (in-ship timing only — the in-repo archive path; omit under on-merge)
 
 ## Pre-Flight Results
 - Verification: <pass/skip>
@@ -213,7 +209,7 @@ After successful delivery in ANY mode, write \`ship-log.md\` to the work directo
 **Date:** <timestamp>
 **Ship commit:** <commit-hash>     (identical to \`Commit:\` above)
 **Archive commit:** <commit-hash>  (repo-rooted change: identical to \`Commit:\` above — in-ship bookkeeping and delivery share one commit, so both ends of the chain are this SHA. Store-rooted change (\`root.store_id\` present): NEVER identical — the bookkeeping in step (b).2/.3 mutated the STORE's working tree at \`<root.path>\`, a different repository this workflow's own commit does not touch. Per step (b).5: if that store-side change was committed separately, record ITS SHA here; otherwise write \`pending — store-side bookkeeping not committed by this workflow\` and leave the SHA blank. Never write the code-repo \`Commit:\` value here for a store-rooted change — that would be recording a fact that isn't true.)
-**Outcome:** archived in ship — see \`Archived in ship:\`/\`Pruned:\` above (store-rooted change: also note the store path \`<root.path>\` where the bookkeeping actually landed)
+**Outcome:** archived in ship — see \`Archived in ship:\` above (store-rooted change: also note the store path \`<root.path>\` where the bookkeeping actually landed)
 
 ## Deployment
 Status: Pending (run rasen-ship --deploy to continue)   (pr mode only)
@@ -249,7 +245,7 @@ Present next steps in lifecycle order. First, present the installed retention ha
 - Under **on-merge** timing, retention is the next lifecycle action and completes before any later archive action. This ship workflow presents the handoff only; it does NOT execute retention inline.
 
 Then give timing- and mode-aware archive guidance from facts recorded in the ship log, not a re-resolved config value:
-- **in-ship timing:** the change's archive bookkeeping is already done — see the ship log's \`Archived in ship:\` path (in-repo/external) or \`Pruned:\` marker (prune); its \`## Archive\` section already closes the delivery chain for a repo-rooted change (ship commit == archive commit) — no later append is needed. For a store-rooted change, check whether that section's \`Archive commit:\` is \`pending\`; if so, the store-side bookkeeping still needs a commit in the store repo (step (b).5) before the chain is truly closed. Do NOT suggest \`rasen-archive-change\`; because the change directory has already moved or been deleted, \`rasen status --change <name>\` for it will THROW "not found" — a later archive invocation recovers via its own early directory/external/tombstone scan (step 1.5, before it ever calls status) and reports the already-archived-or-pruned outcome, not from a successful status call.
+- **in-ship timing:** the change's archive bookkeeping is already done — see the ship log's \`Archived in ship:\` path; its \`## Archive\` section already closes the delivery chain for a repo-rooted change (ship commit == archive commit) — no later append is needed. For a store-rooted change, check whether that section's \`Archive commit:\` is \`pending\`; if so, the store-side bookkeeping still needs a commit in the store repo (step (b).5) before the chain is truly closed. Do NOT suggest \`rasen-archive-change\`; because the change directory has already moved, \`rasen status --change <name>\` for it will THROW "not found" — a later archive invocation recovers via its own early archive-directory/tombstone scan (step 1.5, before it ever calls status) and reports the already-archived outcome, not from a successful status call.
 - **on-merge timing, \`pr\` mode:** the change stays ACTIVE during PR review — status, resume, loop, and fix-forward keep working. Do NOT suggest archiving immediately; after retention, state that archive follows merge confirmation (\`rasen-archive-change\` checks the PR's merge state on each invocation, no polling).
 - **on-merge timing, \`push\`/\`local\` mode:** delivery is complete at ship with no merge event to await — after retention, suggest running \`rasen-archive-change\`.
 
@@ -280,7 +276,7 @@ Also suggest updating project documentation (README, architecture notes, changel
 export function getShipCommandSkillTemplate(): SkillTemplate {
   return {
     name: 'rasen-ship',
-    description: 'Ship the change — commit, resolve the delivery mode (pr / push / local), test when evidence demands it, deliver. PR body from proposal. Ship log saved to the work directory.',
+    description: 'Ship the change — commit, resolve the delivery mode (pr / push / local), test when evidence demands it, deliver. PR body from proposal. Ship log saved to the evidence directory.',
     instructions: SHIP_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',

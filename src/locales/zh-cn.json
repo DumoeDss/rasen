@@ -965,6 +965,7 @@
       "invalidUpdatePin": "配置中的 'update.pin' 字段无效（必须是布尔值）",
       "invalidArchiveTiming": "配置中的 'archive.timing' 字段无效（必须是 'on-merge' 或 'in-ship'）",
       "invalidArchiveDestination": "配置中的 'archive.destination' 字段无效（必须是 'in-repo'、'external' 或 'prune'）",
+      "deprecatedArchiveDestination": "'archive.destination' 已废弃，不再选择归档去向：归档簿记始终落在规划根。请删除该键；运行 'rasen archive relocate --to in-repo' 可把已有归档收拢回规划根。",
       "invalidArchive": "配置中的 'archive' 字段无效（必须是对象）",
       "invalidAutopilotGates": "配置中的 'autopilot.gates' 字段无效（必须是 'on' 或 'off'）",
       "invalidAutopilotSelection": "配置中的 'autopilot.selection' 字段无效（必须是 'classify'、'manual' 或 'compose'）",
@@ -1273,9 +1274,6 @@
             "yes": {
               "description": "跳过确认提示"
             },
-            "confirm-prune": {
-              "description": "确认永久删除 'prune' 目标（与 --yes 分开确认）"
-            },
             "skip-specs": {
               "description": "跳过规格更新操作"
             },
@@ -1294,10 +1292,10 @@
           },
           "commands": {
             "relocate": {
-              "description": "将现有归档变更移动到目标位置，并同步切换 archive.destination",
+              "description": "将现有归档变更收拢到 planning root 或 store（不写入任何配置）",
               "options": {
                 "to": {
-                  "description": "目标位置：in-repo、external 或 store"
+                  "description": "目标位置：in-repo 或 store（external 已退役）"
                 },
                 "dry-run": {
                   "description": "打印移动计划，不做任何更改"
@@ -1525,7 +1523,7 @@
                   "description": "要采纳到的目标 store"
                 },
                 "archive": {
-                  "description": "归档处理方式：move（默认）、leave 或 external"
+                  "description": "归档处理方式：move（默认）或 leave"
                 },
                 "dry-run": {
                   "description": "打印移动计划，不做任何更改"

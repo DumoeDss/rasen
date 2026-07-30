@@ -123,6 +123,7 @@ export {
   writeRunState,
   initializeRunState,
   resolveRunStateLocation,
+  stateFileSearchChain,
   completedStages,
   frozenRetentionMode,
   frozenKnowledgeContext,
@@ -146,6 +147,7 @@ export {
   type StageHandoffRecord,
   type SessionHandoff,
   type RunStateLocation,
+  type StateFileLocationOptions,
   type RunStateReadResult,
   type RunStatePipelineSeed,
 } from './run-state.js';

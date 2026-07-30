@@ -174,9 +174,6 @@ const COMMANDS: readonly CommandDefinition[] = [
         short: 'y',
       },
       {
-        name: 'confirm-prune',
-      },
-      {
         name: 'skip-specs',
       },
       {
@@ -404,7 +401,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           {
             name: 'archive',
             takesValue: true,
-            completionValues: ['move', 'leave', 'external'],
+            completionValues: ['move', 'leave'],
           },
           { name: 'dry-run', },
           { name: 'verify-hash', },

@@ -45,7 +45,6 @@ describe('config-keys registry', () => {
       expect(validateConfigKeyPath('autopilot.gates', 'project').valid).toBe(true);
       expect(validateConfigKeyPath('autopilot.selection', 'project').valid).toBe(true);
       expect(validateConfigKeyPath('archive.timing', 'project').valid).toBe(true);
-      expect(validateConfigKeyPath('archive.destination', 'project').valid).toBe(true);
       expect(validateConfigKeyPath('handoff.threshold', 'project').valid).toBe(true);
     });
 
@@ -88,7 +87,6 @@ describe('config-keys registry', () => {
       expect(validateConfigKeyPath('handoff.threshold', 'store').valid).toBe(true);
       expect(validateConfigKeyPath('schema', 'store').valid).toBe(true);
       expect(validateConfigKeyPath('archive.timing', 'store').valid).toBe(true);
-      expect(validateConfigKeyPath('archive.destination', 'store').valid).toBe(true);
       expect(validateConfigKeyPath('autopilot.gates', 'store').valid).toBe(true);
       expect(validateConfigKeyPath('autopilot.selection', 'store').valid).toBe(true);
       expect(validateConfigKeyPath('models.default', 'store').valid).toBe(true);
@@ -103,6 +101,18 @@ describe('config-keys registry', () => {
     it('rejects unknown keys', () => {
       expect(validateConfigKeyPath('unknownKey', 'global').valid).toBe(false);
       expect(validateConfigKeyPath('unknownKey', 'project').valid).toBe(false);
+    });
+
+    // config-key-registry: the destination axis is retired. Its compat READ
+    // still parses (project-config.ts) for legacy discovery, but the key is
+    // no longer settable in any scope.
+    it('rejects the retired archive.destination key in every scope', () => {
+      for (const scope of ['global', 'store', 'project'] as const) {
+        expect(validateConfigKeyPath('archive.destination', scope).valid).toBe(false);
+      }
+      expect(
+        CONFIG_KEY_REGISTRY.some((def) => def.key === 'archive.destination')
+      ).toBe(false);
     });
 
     it('rejects machine-managed telemetry fields as not settable', () => {
@@ -346,7 +356,7 @@ describe('config-keys registry', () => {
   });
 
   describe('scope assignment', () => {
-      it('assigns exactly 10 global-only, 4 global+project, 3 store+project, and 14 all-three keys', () => {
+      it('assigns exactly 10 global-only, 4 global+project, 2 store+project, and 14 all-three keys', () => {
       const nonWildcard = CONFIG_KEY_REGISTRY.filter((def) => !def.wildcard);
       const sorted = (def: (typeof nonWildcard)[number]) => [...def.scopes].sort().join(',');
       const globalOnly = nonWildcard.filter((def) => sorted(def) === 'global');
@@ -373,7 +383,7 @@ describe('config-keys registry', () => {
           'profile',
           'workflows',
         ]);
-      expect(storeProject.length).toBe(3);
+      expect(storeProject.length).toBe(2);
       expect(allThree.length).toBe(14);
       // Six wildcard families: featureFlags, four pipelines families, and
       // runtime threshold bindings.

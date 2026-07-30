@@ -42,7 +42,7 @@
   - **Tier A**：Claude Code + `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` → spawn 角色 worker + `SendMessage` 暖续聊（完全体；`SendMessage` **仅会话内**有效，跨重启走 §2.5 的 transcript 暖播种）。**`rasen init` / `update` 安装 Claude Code 时会自动把这个 flag 合并进项目 `.claude/settings.json`**（保留已有键、幂等、坏 JSON 不覆盖），所以默认就是 Tier A。
   - **Tier B**：有 spawn、无 agent-teams → 每阶段 fresh spawn，靠 change 目录 + run-state 冷重建上下文。
   - **Tier C**：无子 agent 能力 → 单上下文顺序执行（明确的兜底，**非**主路径）。
-- **状态在磁盘**：change 目录是持久黑板（阶段间靠产物交接）；LEAD 把进度记进 `rasen/changes/<id>/auto-run.json`（run-state），支撑中断续跑与可观测。
+- **状态在磁盘**：change 目录是持久黑板（阶段间靠产物交接）；LEAD 把进度记进 execution root 的 ephemera 目录下的 `auto-run.json`（run-state）——即 `<executionRoot>/.rasen/changes/<id>/ephemera/`，由 `rasen status --json` 以 `ephemeraDir` 报出——支撑中断续跑与可观测。已经落在旧位置的 run-state 文件继续留在原处。
 
 ### 2.2 流水线是数据：按任务选，从注册表取
 
@@ -136,7 +136,7 @@ rasen pipeline list --json                     # 列出 package/user/project 的
   - **仅当全部成立才并行**：① 任一方向都无依赖边、② 触及的能力/规格目录/文件无重叠、③ 宿主为 **Tier A**。满足条件的子 change 各起独立 worker 团队并发，**不设固定的并发上限**；Tier B/C 一律串行。
   - **独立性不确定 → 串行**（「宁可串行也不能乱并行」：并行需要*积极*的独立性证明，而非「没发现冲突」）。
 - **单层扇出（递归防护）。** `childPipeline` 必须解析到一条**不含 decompose** 的流水线（`validate` 强制），子流水线运行绝不会再 decompose。
-- **可观测 + 可续跑。** 父目录有一份 `portfolio-run.json`（拆分方案、子列表、依赖 DAG、每个子的执行模式/同批/流水线/状态、可运行前沿、顶层 `planner` 指针——persistent planner 跨子复用，见 §2.1），每个子仍各有 `auto-run.json`。`rasen pipeline resume <parent>` 从组合状态算出下一个可运行的子（`runnableChildren`），并单独报出 `interruptedChildren`（中断时停在 `in_progress` 的子——重启后**暖播种续跑**，不晾死）与 `escalatedChildren`（失败/升级、需人工）；某个子失败/升级时，停掉它的依赖链、保留已完成的独立子，连同前沿一起上报。
+- **可观测 + 可续跑。** 父 change 的 ephemera 目录下有一份 `portfolio-run.json`（拆分方案、子列表、依赖 DAG、每个子的执行模式/同批/流水线/状态、可运行前沿、顶层 `planner` 指针——persistent planner 跨子复用，见 §2.1），每个子仍各有 `auto-run.json`。`rasen pipeline resume <parent>` 从组合状态算出下一个可运行的子（`runnableChildren`），并单独报出 `interruptedChildren`（中断时停在 `in_progress` 的子——重启后**暖播种续跑**，不晾死）与 `escalatedChildren`（失败/升级、需人工）；某个子失败/升级时，停掉它的依赖链、保留已完成的独立子，连同前沿一起上报。
 - **跨子 worker 复用（暖复用 vs 退役）。** 依赖者直接消费前置的代码，所以刚写完这份代码的 implementer 就是依赖者最暖的 worker——前提是它还有余量。由流水线的 `reuse` 配置管控（`reuse: { planner, implementer: auto|never, threshold, roles }`，由 `resolvePipelineReuseConfig` 解析；默认 `{ auto, auto, 0.25 }`）。在**解锁依赖者的同一个 review-clean gate** 上，LEAD 探针前置 implementer 的 transcript（`rasen agent context --transcript`）：**≤ 解析出的 reuse 阈值** → 通过该路由自己的句柄（`SendMessage`、`followup_task`、Claude `sessionId + cwd` 或 Codex `threadId`）暖复用同一 worker，并带**污染防护条款**（前置的约定仅在依赖者自己的 proposal/design 沉默处成立——先读这些）；**>** → **retired-between-children 退役**（该 worker 写一份 handoff 文档，reason 为 `retired-between-children`，重心是跨 change 可迁移知识，`Remaining` 留空），再从「该文档 + LEAD 派工简报」双源播种一个新 implementer。复用要求**唯一暖前驱**——DAG 汇合点（依赖 >1 个前置的子）一律新开 worker，从各前置的 durable findings 多源播种。被复用的 worker 记录带上 `reusedFrom: <前置子 id>`。planner 复用由 `reuse.planner` 单独配置（`never` 时每次 propose 新开 planner，从 `planning-context.md` 播种）。范围护栏：设计级 fixer 排除（新鲜眼睛是其价值）；Tier B 或不可用的路由句柄走既有暖播种阶梯降级；用户手动连续跑的无关 change 序列不在范围内。实现发现通过 worker `DONE` 契约的 **durable-findings** 条款前向回流（1-3 行，LEAD 原文转贴进下一个 planner 的派工）。
 
 > 注：跨 change 的依赖 DAG 记在 `portfolio-run.json` 里，不依赖 `dependsOn`/`parent` 元数据；待 `add-change-stacking-awareness` 落地后，decompose 会额外写这些元数据并复用 `rasen change graph`。

@@ -297,7 +297,7 @@ This document recommends the second as the primary path, because review-loop nee
 
 The Codex review thread writes:
 
-- `rasen/changes/<id>/review-report.md`
+- `rasen/changes/<id>/evidence/review-report.md`
 - `auto-run.json.stages.verify.worker.threadId`
 - `auto-run.json.openFindings`
 

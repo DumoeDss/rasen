@@ -93,7 +93,7 @@ describe('work-migration', () => {
       fs.writeFileSync(path.join(dir, '.openspec.yaml'), 'goal: x\n');
       fs.writeFileSync(path.join(dir, 'office-hours-design.md'), '# oh\n');
 
-      const { candidates } = await scanChangeDirEphemera(dir);
+      const { candidates, notes } = await scanChangeDirEphemera(dir);
       const byRelative = new Map(candidates.map((c) => [c.relativePath, c.kind]));
 
       expect(byRelative.get('auto-run.json')).toBe('run-state');
@@ -102,8 +102,13 @@ describe('work-migration', () => {
       expect(byRelative.get('verification-report.md')).toBe('verification-report');
       expect(byRelative.get('ship-log.md')).toBe('ship-log');
       expect(byRelative.get('review-report.md')).toBe('report');
-      expect(byRelative.get('handoff/implementer-1.md')).toBe('handoff');
-      expect(byRelative.get('handoff/relay-prompt.txt')).toBe('handoff');
+
+      // `handoff/` is the TERMINAL landing (`file-placement` capability), not a
+      // migrate candidate: sweeping it would reverse the landing for this
+      // change and pin its future handoff documents to the machine home.
+      expect(byRelative.has('handoff/implementer-1.md')).toBe(false);
+      expect(byRelative.has('handoff/relay-prompt.txt')).toBe(false);
+      expect(notes.join('\n')).toContain('handoff/ is the terminal landing');
 
       // Never candidates.
       for (const excluded of [
@@ -117,7 +122,8 @@ describe('work-migration', () => {
         expect(byRelative.has(excluded)).toBe(false);
       }
       expect(candidates.some((c) => c.relativePath.startsWith('specs/'))).toBe(false);
-      expect(candidates).toHaveLength(8);
+      // Six top-level files; the two handoff documents are no longer candidates.
+      expect(candidates).toHaveLength(6);
     });
 
     it('reports report-like non-candidates instead of moving them', async () => {
@@ -377,32 +383,33 @@ describe('work-migration', () => {
       expect(fs.existsSync(path.join(liveChange.workDir!, 'ship-log.md'))).toBe(false);
     });
 
-    it('merges the handoff directory per file, conflicting only on the colliding file', async () => {
+    it('never moves the terminal handoff directory, even on an execute run', async () => {
       await mintIdentity();
       const dir = makeActiveChange('foo');
       fs.mkdirSync(path.join(dir, 'handoff'));
-      fs.writeFileSync(path.join(dir, 'handoff', 'implementer-1.md'), '# new\n');
-      fs.writeFileSync(path.join(dir, 'handoff', 'implementer-2.md'), '# also new\n');
-
-      const probe = await runWorkMigration(projectRoot, changesDir, { execute: false, globalDataDir });
-      expect(probe.ok).toBe(true);
-      if (!probe.ok) return;
-      const workDir = probe.report.changes[0]!.workDir;
-      expect(workDir).not.toBeNull();
-      fs.mkdirSync(path.join(workDir!, 'handoff'), { recursive: true });
-      fs.writeFileSync(path.join(workDir!, 'handoff', 'implementer-1.md'), '# already there\n');
+      fs.writeFileSync(path.join(dir, 'handoff', 'implementer-1.md'), '# terminal\n');
+      fs.writeFileSync(path.join(dir, 'handoff', 'relay-prompt.txt'), 'relay\n');
+      // One real candidate, so the run does something and the change is reported.
+      fs.writeFileSync(path.join(dir, 'auto-run.json'), '{}');
 
       const result = await runWorkMigration(projectRoot, changesDir, { execute: true, globalDataDir });
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       const change = result.report.changes[0]!;
-      const collided = change.files.find((f) => f.relativePath === 'handoff/implementer-1.md')!;
-      const merged = change.files.find((f) => f.relativePath === 'handoff/implementer-2.md')!;
-      expect(collided.status).toBe('conflict');
-      expect(merged.status).toBe('moved');
-      expect(fs.readFileSync(path.join(workDir!, 'handoff', 'implementer-1.md'), 'utf-8')).toContain('already');
-      expect(fs.existsSync(path.join(workDir!, 'handoff', 'implementer-2.md'))).toBe(true);
+      const workDir = change.workDir;
+      expect(workDir).not.toBeNull();
+
+      // The run-state moved; nothing under handoff/ was even planned.
+      expect(change.files.map((f) => f.relativePath)).toEqual(['auto-run.json']);
+      expect(fs.existsSync(path.join(workDir!, 'auto-run.json'))).toBe(true);
+
+      // The handoff documents are still where `file-placement` puts them, and
+      // no machine-home handoff directory was created to shadow them.
+      expect(fs.existsSync(path.join(dir, 'handoff', 'implementer-1.md'))).toBe(true);
+      expect(fs.existsSync(path.join(dir, 'handoff', 'relay-prompt.txt'))).toBe(true);
+      expect(fs.existsSync(path.join(workDir!, 'handoff'))).toBe(false);
+      expect(change.notes.join('\n')).toContain('handoff/ is the terminal landing');
     });
 
     it('treats a non-git root as all-untracked with an explicit note', async () => {

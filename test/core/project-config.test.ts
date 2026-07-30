@@ -11,7 +11,6 @@ import {
   suggestSchemas,
   ensureProjectIdInConfig,
   resolveArchiveTiming,
-  resolveArchiveDestinationValue,
   resolveAutopilotGatePolicy,
   resolveAutopilotSelectionPolicy,
   ProjectConfigSchema,
@@ -1062,7 +1061,7 @@ pipelines:
       expect(consoleWarnSpy).not.toHaveBeenCalled();
     });
 
-    it('exposes a valid external destination unchanged', () => {
+    it('exposes a valid external destination for legacy discovery, with a deprecation warning', () => {
       const configDir = path.join(tempDir, 'rasen');
       fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(
@@ -1076,10 +1075,12 @@ pipelines:
         schema: 'spec-driven',
         archive: { destination: 'external' },
       });
-      expect(consoleWarnSpy).not.toHaveBeenCalled();
+      expect(consoleWarnSpy).toHaveBeenCalledTimes(1);
+      expect(String(consoleWarnSpy.mock.calls[0][0])).toContain('archive.destination');
+      expect(String(consoleWarnSpy.mock.calls[0][0])).toContain('planning root');
     });
 
-    it('exposes a valid prune destination unchanged', () => {
+    it('exposes a valid prune destination for legacy discovery, with a deprecation warning', () => {
       const configDir = path.join(tempDir, 'rasen');
       fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(
@@ -1093,7 +1094,8 @@ pipelines:
         schema: 'spec-driven',
         archive: { destination: 'prune' },
       });
-      expect(consoleWarnSpy).not.toHaveBeenCalled();
+      expect(consoleWarnSpy).toHaveBeenCalledTimes(1);
+      expect(String(consoleWarnSpy.mock.calls[0][0])).toContain('archive.destination');
     });
 
     it('drops an invalid destination value with a warning, keeping a valid sibling timing', () => {
@@ -1141,44 +1143,6 @@ pipelines:
         archive: { timing: 'on-merge' },
       });
       expect(consoleWarnSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('resolveArchiveDestinationValue', () => {
-    it('defaults to in-repo for null config', () => {
-      expect(resolveArchiveDestinationValue(null)).toBe('in-repo');
-    });
-
-    it('defaults to in-repo for undefined config', () => {
-      expect(resolveArchiveDestinationValue(undefined)).toBe('in-repo');
-    });
-
-    it('defaults to in-repo when the archive block is absent', () => {
-      expect(resolveArchiveDestinationValue({ schema: 'spec-driven' })).toBe('in-repo');
-    });
-
-    it('defaults to in-repo when destination is absent from the archive block', () => {
-      expect(
-        resolveArchiveDestinationValue({ schema: 'spec-driven', archive: { timing: 'in-ship' } })
-      ).toBe('in-repo');
-    });
-
-    it('honors an explicit external destination', () => {
-      expect(
-        resolveArchiveDestinationValue({
-          schema: 'spec-driven',
-          archive: { destination: 'external' },
-        })
-      ).toBe('external');
-    });
-
-    it('honors an explicit prune destination', () => {
-      expect(
-        resolveArchiveDestinationValue({
-          schema: 'spec-driven',
-          archive: { destination: 'prune' },
-        })
-      ).toBe('prune');
     });
   });
 

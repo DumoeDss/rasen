@@ -103,8 +103,10 @@ import {
 import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
 import { resolveChangeWorkDir } from '../core/change-work.js';
+import { ephemeraDir, resolveExecutionRoot } from '../core/file-placement.js';
 import {
   resolveRootForCommand,
+  isStoreSelectedRoot,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
 import {
@@ -609,16 +611,26 @@ export class PipelineCommand {
     // never mint identity or write to the repo/registry (design D2).
     const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: false });
 
+    // Sticky-legacy chain (`file-placement` capability): the execution root's
+    // ephemera directory is the terminal landing and is searched first, then
+    // the legacy machine-home work directory, then the change directory.
+    const executionRoot = resolveExecutionRoot(projectRoot, {
+      storeSelected: isStoreSelectedRoot(root),
+    });
+    const stateLocations = {
+      ephemeraDir: ephemeraDir(executionRoot, changeName),
+      workDir,
+    };
+
     // Portfolio parent? The portfolio record is authoritative — resume reports
     // the next runnable child(ren) from the dependency DAG rather than stages.
-    // Sticky-legacy (design D4): workDir first, change dir fallback.
     //
     // Read DETAILED so a located-but-unreadable record is reported instead of
     // being read as "this change was never split". That substitution is not
     // cosmetic: it drops the parent to the stage-based branch below, where a
     // decomposed parent's stage list can leave delivery as the only thing
     // remaining — offering `ship` for work its children have not finished.
-    const portfolioLocation = resolvePortfolioStateLocation(changeDir, workDir);
+    const portfolioLocation = resolvePortfolioStateLocation(changeDir, stateLocations);
     const portfolioRead = portfolioLocation
       ? readPortfolioStateDetailed(portfolioLocation.dir)
       : ({ kind: 'absent' } as const);
@@ -770,10 +782,9 @@ export class PipelineCommand {
       return;
     }
 
-    // Sticky-legacy (design D4): workDir first, change dir fallback. Detailed
-    // read (design D3) so a located-but-unparseable file is reported
+    // Detailed read (design D3) so a located-but-unparseable file is reported
     // distinctly from no file at all, instead of masquerading as "not found".
-    const runStateLocation = resolveRunStateLocation(changeDir, workDir);
+    const runStateLocation = resolveRunStateLocation(changeDir, stateLocations);
     const runStateRead = runStateLocation
       ? readRunStateDetailed(runStateLocation.dir)
       : ({ kind: 'absent' } as const);

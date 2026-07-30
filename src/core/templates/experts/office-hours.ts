@@ -298,7 +298,7 @@ If matches found, read the matching design docs and surface them:
 - "FYI: Related design found — '{title}' by {user} on {date} (branch: {branch}). Key overlap: {1-line summary of relevant section}."
 - Ask via AskUserQuestion: "Should we build on this prior design or start fresh?"
 
-This enables cross-team discovery — multiple users exploring the same project will see each other's design docs in the project's registry-backed documents directory.
+This enables cross-team discovery — multiple users exploring the same project will see each other's design docs in the planning root's design-docs directory.
 
 If no matches found, proceed silently.
 
@@ -366,7 +366,7 @@ Count the signals. You'll use this count in Phase 6 to determine which tier of c
 
 **HARD GATE:** The precondition for writing the design doc is explicit user approval — either **approval of a recommended approach** when the fork-scan's method-space fork rendered an approach menu, or the **explicit "yes" to distilling a converged discussion into a doc** when no approach menu was needed (the Design product's convergence terminal). Those are the only two ways in. A complaint, silence, or a question is NOT approval — a user asking to be answered first or to discuss more is asking for more conversation, not a doc. Do not write or begin the design doc without that explicit approval. If it is missing, return to the discussion (Dialogue Override) or re-run the approach-approval question.
 
-Write the design document to the project's registry-backed documents directory.
+Write the design document to the planning root's design-docs directory.
 
 ${PROJECT_DOCS_DIR_RESOLUTION}
 \`\`\`bash
@@ -579,7 +579,7 @@ After the plea, suggest the next step:
 
 - **\`/rasen-propose\`** — turn the validated idea into a change: proposal, design, specs, and tasks
 
-The design doc at the project's registry-backed documents directory is automatically discoverable by downstream skills — they will read it during their pre-review system audit.
+The design doc at the planning root's design-docs directory is automatically discoverable by downstream skills — they will read it during their pre-review system audit.
 
 ---
 

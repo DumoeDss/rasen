@@ -26,9 +26,13 @@ import { resolveProjectHome, type ResolveProjectHomeOptions } from './project-ho
 import { getGlobalDataDir } from './global-config.js';
 import { gitListTrackedFiles, isConfirmedGitWorkTree } from './store/git.js';
 
+/**
+ * `'handoff'` is deliberately absent: `<changeRoot>/handoff/` is the terminal
+ * landing for handoff documents (`file-placement` capability), so this sweep
+ * never produces a handoff candidate. See `scanChangeDirEphemera`.
+ */
 export type MigrationCandidateKind =
   | 'run-state'
-  | 'handoff'
   | 'verification-report'
   | 'ship-log'
   | 'report';
@@ -85,11 +89,18 @@ async function walkDirFiles(dir: string): Promise<string[]> {
 }
 
 /**
- * Classifies the top-level (and, for `handoff/`, recursive) contents of one
- * change directory against the migrate set (design D2). Never recurses into
- * any directory other than `handoff/` — `specs/`, a would-be `research/`,
- * and anything else stay untouched by construction, not by an exclusion
- * list. Read-only; never mutates the filesystem.
+ * Classifies the top-level contents of one change directory against the
+ * migrate set (design D2). Never recurses into any subdirectory — `specs/`,
+ * `evidence/`, `handoff/`, a would-be `research/`, and anything else stay
+ * untouched by construction. Read-only; never mutates the filesystem.
+ *
+ * `handoff/` was a migrate candidate until the `file-placement` capability
+ * made `<changeRoot>/handoff/` the TERMINAL landing for handoff documents.
+ * Sweeping it now would reverse that landing for the change and — via the
+ * sticky-legacy series rule — pin its future handoff documents to the
+ * machine home, so the directory is reported and left in place instead.
+ * Migrating handoff documents that already sit in a legacy machine-home
+ * work directory back to the change is the archive child's migrator.
  */
 export async function scanChangeDirEphemera(changeDir: string): Promise<ChangeScanResult> {
   const candidates: RawMigrationCandidate[] = [];
@@ -98,12 +109,11 @@ export async function scanChangeDirEphemera(changeDir: string): Promise<ChangeSc
   for (const entry of await safeReaddir(changeDir)) {
     if (entry.isDirectory()) {
       if (entry.name === 'handoff') {
-        for (const abs of await walkDirFiles(path.join(changeDir, 'handoff'))) {
-          candidates.push({
-            source: abs,
-            relativePath: toDisplayRelative(path.relative(changeDir, abs)),
-            kind: 'handoff',
-          });
+        const handoffFiles = await walkDirFiles(path.join(changeDir, 'handoff'));
+        if (handoffFiles.length > 0) {
+          notes.push(
+            `handoff/ is the terminal landing for handoff documents (file-placement capability) — ${handoffFiles.length} file(s) left in place`
+          );
         }
       }
       continue;
@@ -308,9 +318,9 @@ async function pathExists(candidate: string): Promise<boolean> {
  * File-level EXDEV/EPERM-safe move: the machine home may be on another
  * filesystem/volume than the repo, and Windows can reject a rename of a
  * held-open file. Mirrors the copy+rename fallback `archive.ts`'s
- * `moveDirectory` uses, at file granularity — needed here (rather than a
- * directory-level move) so `handoff/` merges per file against a
- * destination that may already hold some of its files (design D5).
+ * `moveDirectory` uses, at file granularity — every candidate is an
+ * individual top-level file, and a per-file move lets one collision be
+ * reported as a conflict without blocking its siblings (design D5).
  */
 async function moveFileSafe(source: string, destination: string): Promise<void> {
   await fs.mkdir(path.dirname(destination), { recursive: true });

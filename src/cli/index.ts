@@ -365,7 +365,6 @@ const archiveCommand = program
   .command('archive [change-name]')
   .description('')
   .option('-y, --yes', '')
-  .option('--confirm-prune', '')
   .option('--skip-specs', '')
   .option('--no-validate', '')
   .option('--json', '')

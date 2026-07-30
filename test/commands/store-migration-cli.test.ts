@@ -32,7 +32,10 @@ describe('store-migration CLI', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('config set archive.destination external hints archive relocate when the repo archive is non-empty', async () => {
+  // The destination axis is retired (`config-key-registry` capability): the
+  // key is no longer settable in any scope, so there is no config-only
+  // destination flip left to hint about.
+  it('config set archive.destination is rejected as not settable', async () => {
     const repo = path.join(tempDir, 'app');
     createOpenSpecRoot(repo);
     fs.mkdirSync(path.join(repo, 'rasen', 'changes', 'archive', '2026-07-01-old'), { recursive: true });
@@ -42,8 +45,41 @@ describe('store-migration CLI', () => {
       ['config', 'set', 'archive.destination', 'external', '--scope', 'project'],
       { cwd: repo, env }
     );
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout + result.stderr).toContain('archive relocate --to external');
+    expect(result.exitCode).toBe(1);
+    const output = result.stdout + result.stderr;
+    expect(output).toContain('archive.destination');
+    // No config file gains the retired key.
+    const config = fs.readFileSync(path.join(repo, 'rasen', 'config.yaml'), 'utf-8');
+    expect(config).not.toContain('destination');
+  });
+
+  // The external archive destination is retired (`store-adopt` capability):
+  // the flag is refused before anything moves, and no config records it.
+  it('store adopt --archive external is rejected as retired', async () => {
+    const repo = path.join(tempDir, 'adopt-app');
+    createOpenSpecRoot(repo);
+    fs.mkdirSync(path.join(repo, 'rasen', 'changes', 'archive', '2026-07-01-old'), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(repo, 'rasen', 'changes', 'archive', '2026-07-01-old', 'p.md'),
+      'x\n'
+    );
+
+    const result = await runCLI(
+      ['store', 'adopt', repo, '--to', 'team-store', '--archive', 'external', '--json'],
+      { cwd: repo, env }
+    );
+    expect(result.exitCode).toBe(1);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.status[0].code).toBe('adopt_external_archive_retired');
+    // Nothing moved and no destination was recorded.
+    expect(fs.existsSync(path.join(repo, 'rasen', 'changes', 'archive', '2026-07-01-old'))).toBe(
+      true
+    );
+    expect(fs.readdirSync(path.join(storeRoot, 'rasen', 'changes', 'archive'))).toEqual([]);
+    const config = fs.readFileSync(path.join(repo, 'rasen', 'config.yaml'), 'utf-8');
+    expect(config).not.toContain('destination');
   });
 
   it('store eject --all --json refuses without --yes and succeeds with it', async () => {

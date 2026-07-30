@@ -4,7 +4,9 @@
  * When the LEAD takes a `decompose` stage it splits one task into several child
  * changes and drives each through its own pipeline. This module is the typed
  * contract for the parent-level record that makes that multi-change run
- * observable and resumable: `openspec/changes/<parent>/portfolio-run.json`.
+ * observable and resumable: `portfolio-run.json`, resolved through the
+ * `file-placement` sticky-legacy chain (the execution root's ephemera
+ * directory first, then the legacy work directory, then the change directory).
  *
  * The portfolio record is AUTHORITATIVE for resume; each child still keeps its
  * own per-change `auto-run.json` (see run-state.ts), and child-directory /
@@ -15,7 +17,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
-import { RunStateWorkerSchema, normalizeRunStateWorkerRecord } from './run-state.js';
+import {
+  RunStateWorkerSchema,
+  normalizeRunStateWorkerRecord,
+  stateFileSearchChain,
+  type StateFileLocationOptions,
+} from './run-state.js';
 
 export const PORTFOLIO_STATE_FILENAME = 'portfolio-run.json';
 
@@ -252,26 +259,23 @@ export interface PortfolioStateLocation {
 }
 
 /**
- * Resolves WHERE `portfolio-run.json` lives for a parent change (design D4,
- * sticky-legacy): `workDir` first when provided and it holds the file, else
- * `changeDir` (legacy). Returns null when neither location has one. Mirrors
- * `resolveRunStateLocation`; authoritative callers then use
+ * Resolves WHERE `portfolio-run.json` lives for a parent change along the
+ * sticky-legacy chain (design D3): the execution root's ephemera directory
+ * first, then the legacy machine-home work directory, then the change
+ * directory. Returns null when no location has one. Mirrors
+ * `resolveRunStateLocation` — the chain itself is stated once in
+ * `stateFileSearchChain`; authoritative callers then use
  * `readPortfolioStateDetailed(location.dir)`.
  */
 export function resolvePortfolioStateLocation(
   changeDir: string,
-  workDir?: string | null
+  options: StateFileLocationOptions = {}
 ): PortfolioStateLocation | null {
-  if (workDir) {
-    const workPath = portfolioStatePath(workDir);
-    if (fs.existsSync(workPath)) {
-      return { dir: workDir, path: workPath };
+  for (const dir of stateFileSearchChain(changeDir, options)) {
+    const candidate = portfolioStatePath(dir);
+    if (fs.existsSync(candidate)) {
+      return { dir, path: candidate };
     }
-  }
-
-  const legacyPath = portfolioStatePath(changeDir);
-  if (fs.existsSync(legacyPath)) {
-    return { dir: changeDir, path: legacyPath };
   }
 
   return null;

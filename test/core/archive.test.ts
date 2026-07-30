@@ -1308,7 +1308,10 @@ The system SHALL do the thing differently.
     });
   });
 
-  describe('destination axis', () => {
+  // The destination axis is retired (`archive-destination` capability):
+  // bookkeeping always lands in the planning root, no configuration can
+  // redirect it, and nothing is ever deleted or moved to the machine home.
+  describe('archive bookkeeping location (destination axis retired)', () => {
     let gitEnvBackup: Record<string, string | undefined>;
 
     async function writeConfig(content: string): Promise<void> {
@@ -1339,301 +1342,102 @@ The system SHALL do the thing differently.
       }
     });
 
-    it('external destination lands under the machine home and removes the repo copy', async () => {
-      await writeConfig('schema: spec-driven\narchive:\n  destination: external\n');
-      setUpGitRepo();
+    function parseLoggedArchive(): any {
+      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
+        .map((c) => c[0])
+        .join('\n');
+      return JSON.parse(logged);
+    }
 
-      const changeName = 'external-feature';
+    async function seedChange(changeName: string): Promise<string> {
       const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
       await fs.mkdir(changeDir, { recursive: true });
       await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
+      return changeDir;
+    }
+
+    it('a config still carrying destination: external still archives in-repo', async () => {
+      await writeConfig('schema: spec-driven\narchive:\n  destination: external\n');
+      setUpGitRepo();
+
+      const changeName = 'external-config-feature';
+      const changeDir = await seedChange(changeName);
       commitAll('add change');
 
       await archiveCommand.execute(changeName, { yes: true, json: true });
 
-      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .join('\n');
-      const parsed = JSON.parse(logged);
-
-      expect(parsed.archive.destination).toBe('external');
-      expect(parsed.archive.path).not.toContain(path.join('rasen', 'changes', 'archive'));
-      expect(path.isAbsolute(parsed.archive.path)).toBe(true);
+      const parsed = parseLoggedArchive();
+      const inRepoArchive = path.join(tempDir, 'rasen', 'changes', 'archive');
+      expect(parsed.archive.path.startsWith(inRepoArchive)).toBe(true);
+      expect(parsed.archive.destination).toBeUndefined();
       await expect(fs.access(parsed.archive.path)).resolves.not.toThrow();
       await expect(fs.access(changeDir)).rejects.toThrow();
 
-      const inRepoArchive = path.join(tempDir, 'rasen', 'changes', 'archive');
-      const entries = await fs.readdir(inRepoArchive).catch(() => []);
-      expect(entries.length).toBe(0);
-    });
-
-    it('prune destination refuses without --confirm-prune in JSON mode', async () => {
-      await writeConfig('schema: spec-driven\narchive:\n  destination: prune\n');
-      setUpGitRepo();
-
-      const changeName = 'prune-feature';
-      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
-      await fs.mkdir(changeDir, { recursive: true });
-      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
-      commitAll('add change');
-
-      await archiveCommand.execute(changeName, { json: true });
-
-      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .join('\n');
-      const parsed = JSON.parse(logged);
-      expect(parsed.status[0].code).toBe('archive_prune_confirmation_required');
-      await expect(fs.access(changeDir)).resolves.not.toThrow();
-    });
-
-    it('M3: --yes ALONE does not authorize prune deletion (separate consents)', async () => {
-      await writeConfig('schema: spec-driven\narchive:\n  destination: prune\n');
-      setUpGitRepo();
-
-      const changeName = 'prune-yes-only-feature';
-      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
-      await fs.mkdir(changeDir, { recursive: true });
-      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
-      commitAll('add change');
-
-      // --yes alone (no --confirm-prune) must still refuse the deletion.
-      await archiveCommand.execute(changeName, { yes: true, json: true });
-
-      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .join('\n');
-      const parsed = JSON.parse(logged);
-      expect(parsed.status[0].code).toBe('archive_prune_confirmation_required');
-      await expect(fs.access(changeDir)).resolves.not.toThrow();
-    });
-
-    it('prune destination deletes the change directory with --confirm-prune and creates no archive copy', async () => {
-      await writeConfig('schema: spec-driven\narchive:\n  destination: prune\n');
-      setUpGitRepo();
-
-      const changeName = 'prune-feature-yes';
-      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
-      await fs.mkdir(changeDir, { recursive: true });
-      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
-      commitAll('add change');
-
-      await archiveCommand.execute(changeName, { confirmPrune: true, json: true });
-
-      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .join('\n');
-      const parsed = JSON.parse(logged);
-      expect(parsed.archive.destination).toBe('prune');
-      expect(parsed.archive.pruned).toBe(true);
-      expect(parsed.archive.path).toBeUndefined();
-
-      await expect(fs.access(changeDir)).rejects.toThrow();
-      const inRepoArchive = path.join(tempDir, 'rasen', 'changes', 'archive');
-      const entries = await fs.readdir(inRepoArchive).catch(() => []);
-      expect(entries.length).toBe(0);
-    });
-
-    it('M2: prune writes a recognizable tombstone to the workDir ship log', async () => {
-      // Reuse the outer beforeEach's XDG_DATA_HOME (already isolated to
-      // this test's tempDir) — the CLI's own ensure:true mint reads it via
-      // getGlobalDataDir() (env-based), so the probe below must too rather
-      // than passing a separate DI `globalDataDir` override, which
-      // getGlobalDataDir() does NOT apply the same `$XDG_DATA_HOME/rasen`
-      // suffixing to (a DI override is used as-is).
-      await writeConfig('schema: spec-driven\narchive:\n  destination: prune\n');
-      setUpGitRepo();
-
-      const changeName = 'prune-tombstone-feature';
-      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
-      await fs.mkdir(changeDir, { recursive: true });
-      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
-      commitAll('add change');
-
-      await archiveCommand.execute(changeName, { confirmPrune: true, json: true });
-
-      const { resolveChangeWorkDir } = await import('../../src/core/change-work.js');
-      const workDir = await resolveChangeWorkDir(tempDir, changeName, { ensure: false });
-      expect(workDir).not.toBeNull();
-      const shipLog = await fs.readFile(path.join(workDir!, 'ship-log.md'), 'utf-8');
-      expect(shipLog).toMatch(/\*\*Pruned:\*\* true/);
-    });
-
-    it('blocks external destination when the change directory has uncommitted content', async () => {
-      await writeConfig('schema: spec-driven\narchive:\n  destination: external\n');
-      setUpGitRepo();
-      commitAll('initial'); // repo has a first commit, but the change dir below is never added
-
-      const changeName = 'dirty-feature';
-      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
-      await fs.mkdir(changeDir, { recursive: true });
-      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
-      // Intentionally NOT committed.
-
-      await archiveCommand.execute(changeName, { yes: true, json: true });
-
-      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .join('\n');
-      const parsed = JSON.parse(logged);
-      expect(parsed.status[0].code).toBe('archive_dirty_change_dir');
-      await expect(fs.access(changeDir)).resolves.not.toThrow();
-    });
-
-    it('blocks prune destination when the change directory has uncommitted content', async () => {
-      await writeConfig('schema: spec-driven\narchive:\n  destination: prune\n');
-      setUpGitRepo();
-      commitAll('initial');
-
-      const changeName = 'dirty-prune-feature';
-      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
-      await fs.mkdir(changeDir, { recursive: true });
-      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
-
-      await archiveCommand.execute(changeName, { yes: true, json: true });
-
-      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .join('\n');
-      const parsed = JSON.parse(logged);
-      expect(parsed.status[0].code).toBe('archive_dirty_change_dir');
-      await expect(fs.access(changeDir)).resolves.not.toThrow();
-    });
-
-    it('M1: blocks external destination when the change directory is gitignored (untracked, porcelain-clean)', async () => {
-      await writeConfig('schema: spec-driven\narchive:\n  destination: external\n');
-      setUpGitRepo();
-
-      const changeName = 'gitignored-feature';
-      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
-      // Ignore the whole change directory, then commit the .gitignore
-      // itself so the repo has a clean initial commit.
-      await fs.writeFile(path.join(tempDir, '.gitignore'), `rasen/changes/${changeName}/\n`);
-      commitAll('add gitignore');
-
-      await fs.mkdir(changeDir, { recursive: true });
-      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
-      // Intentionally never added/committed — it is gitignored, so a plain
-      // `git status --porcelain` (no --ignored) would report nothing here.
-
-      await archiveCommand.execute(changeName, { yes: true, confirmPrune: true, json: true });
-
-      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .join('\n');
-      const parsed = JSON.parse(logged);
-      expect(parsed.status[0].code).toBe('archive_dirty_change_dir');
-      expect(parsed.status[0].message).toMatch(/gitignore|not.*tracked|no content committed/i);
-      await expect(fs.access(changeDir)).resolves.not.toThrow();
-    });
-
-    it('M1: blocks prune destination when the change directory is gitignored', async () => {
-      await writeConfig('schema: spec-driven\narchive:\n  destination: prune\n');
-      setUpGitRepo();
-
-      const changeName = 'gitignored-prune-feature';
-      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
-      await fs.writeFile(path.join(tempDir, '.gitignore'), `rasen/changes/${changeName}/\n`);
-      commitAll('add gitignore');
-
-      await fs.mkdir(changeDir, { recursive: true });
-      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
-
-      await archiveCommand.execute(changeName, { yes: true, confirmPrune: true, json: true });
-
-      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .join('\n');
-      const parsed = JSON.parse(logged);
-      expect(parsed.status[0].code).toBe('archive_dirty_change_dir');
-      await expect(fs.access(changeDir)).resolves.not.toThrow();
-    });
-
-    it('m10: external falls back to in-repo (with a note) when the registry cannot be minted, never deletes', async () => {
-      await writeConfig('schema: spec-driven\narchive:\n  destination: external\n');
-      setUpGitRepo();
-
-      const changeName = 'fallback-feature';
-      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
-      await fs.mkdir(changeDir, { recursive: true });
-      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
-      commitAll('add change');
-
-      // Corrupt the machine-global registry so BOTH the initial probe and
-      // the later ensure:true mint (right before the move, per the M6 fix)
-      // degrade to null rather than throwing.
-      const { getProjectRegistryPath } = await import('../../src/core/project-registry.js');
-      const registryPath = getProjectRegistryPath();
-      await fs.mkdir(path.dirname(registryPath), { recursive: true });
-      await fs.writeFile(registryPath, '{not valid json');
-
-      await archiveCommand.execute(changeName, { yes: true, json: true });
-
-      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .join('\n');
-      const parsed = JSON.parse(logged);
-      expect(parsed.archive.destination).toBe('external');
-      expect(parsed.archive.destinationFallback).toBe(true);
-      expect(parsed.archive.path).toContain(path.join('rasen', 'changes', 'archive'));
-      await expect(fs.access(parsed.archive.path)).resolves.not.toThrow();
-      await expect(fs.access(changeDir)).rejects.toThrow();
-    });
-
-    it('M6: a refused external archive never mints machine identity (deferred ensure)', async () => {
-      await writeConfig('schema: spec-driven\narchive:\n  destination: external\n');
-
-      // No git repo at all here on purpose — the destructive-destination
-      // precondition will refuse (unknown git state), and that refusal
-      // must happen BEFORE any registry write, proving `ensure:true` is
-      // deferred until every gate has passed.
-      const changeName = 'refused-external-feature';
-      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
-      await fs.mkdir(changeDir, { recursive: true });
-      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
-
-      await archiveCommand.execute(changeName, { yes: true, json: true });
-
-      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .join('\n');
-      const parsed = JSON.parse(logged);
-      expect(parsed.status[0].code).toBe('archive_dirty_change_dir');
-
+      // Nothing moved to the machine home, and no identity was minted for it.
       const globalDataDir = process.env.XDG_DATA_HOME!;
-      const registeredAnything = await fs
+      const mintedProjects = await fs
         .access(path.join(globalDataDir, 'rasen', 'projects'))
         .then(() => true)
         .catch(() => false);
-      expect(registeredAnything).toBe(false);
+      expect(mintedProjects).toBe(false);
     });
 
-    it('in-repo destination (default) is unaffected by a dirty change directory', async () => {
+    it('a config still carrying destination: prune archives instead of deleting', async () => {
+      await writeConfig('schema: spec-driven\narchive:\n  destination: prune\n');
       setUpGitRepo();
-      commitAll('initial');
 
-      const changeName = 'inrepo-dirty-feature';
-      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
-      await fs.mkdir(changeDir, { recursive: true });
-      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
-      // Intentionally not committed — in-repo destination has no
-      // destructive-destination precondition to enforce.
+      const changeName = 'prune-config-feature';
+      const changeDir = await seedChange(changeName);
+      commitAll('add change');
 
       await archiveCommand.execute(changeName, { yes: true, json: true });
 
-      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .join('\n');
-      const parsed = JSON.parse(logged);
-      expect(parsed.archive.destination).toBe('in-repo');
+      const parsed = parseLoggedArchive();
+      // The change is ARCHIVED, not deleted: an archive copy exists.
+      expect(parsed.archive.archivedAs).toContain(changeName);
+      await expect(fs.access(parsed.archive.path)).resolves.not.toThrow();
+      await expect(fs.access(changeDir)).rejects.toThrow();
+      expect(parsed.archive.pruned).toBeUndefined();
+    });
+
+    it('archives an uncommitted change directory — no destructive-destination precondition remains', async () => {
+      await writeConfig('schema: spec-driven\narchive:\n  destination: external\n');
+      setUpGitRepo();
+      commitAll('initial');
+
+      const changeName = 'uncommitted-feature';
+      const changeDir = await seedChange(changeName);
+      // Deliberately NOT committed: the retired external/prune paths refused
+      // here; the in-repo move never removes the repo's only copy, so there is
+      // nothing left to guard.
+
+      await archiveCommand.execute(changeName, { yes: true, json: true });
+
+      const parsed = parseLoggedArchive();
+      expect(parsed.status).toBeUndefined();
+      await expect(fs.access(parsed.archive.path)).resolves.not.toThrow();
+      await expect(fs.access(changeDir)).rejects.toThrow();
+    });
+
+    it('default (no archive block) is unchanged: in-repo move', async () => {
+      setUpGitRepo();
+      commitAll('initial');
+
+      const changeName = 'default-feature';
+      const changeDir = await seedChange(changeName);
+
+      await archiveCommand.execute(changeName, { yes: true, json: true });
+
+      const parsed = parseLoggedArchive();
+      expect(parsed.archive.path.startsWith(path.join(tempDir, 'rasen', 'changes', 'archive'))).toBe(
+        true
+      );
       await expect(fs.access(changeDir)).rejects.toThrow();
     });
 
     it('timing guard refuses on-merge + pr-delivered ship log without --yes', async () => {
       const changeName = 'shipped-pr-feature';
-      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
-      await fs.mkdir(changeDir, { recursive: true });
-      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
+      const changeDir = await seedChange(changeName);
       await fs.writeFile(
         path.join(changeDir, 'ship-log.md'),
         '# Ship Log\n\n**Mode:** pr\n**PR:** https://example.com/pull/1\n'
@@ -1641,19 +1445,31 @@ The system SHALL do the thing differently.
 
       await archiveCommand.execute(changeName, { json: true });
 
-      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .join('\n');
-      const parsed = JSON.parse(logged);
+      const parsed = parseLoggedArchive();
+      expect(parsed.status[0].code).toBe('archive_merge_confirmation_required');
+      await expect(fs.access(changeDir)).resolves.not.toThrow();
+    });
+
+    it('timing guard reads the ship log from the evidence directory first', async () => {
+      const changeName = 'shipped-pr-evidence-feature';
+      const changeDir = await seedChange(changeName);
+      const evidence = path.join(changeDir, 'evidence');
+      await fs.mkdir(evidence, { recursive: true });
+      await fs.writeFile(
+        path.join(evidence, 'ship-log.md'),
+        '# Ship Log\n\n**Mode:** pr\n**PR:** https://example.com/pull/1\n'
+      );
+
+      await archiveCommand.execute(changeName, { json: true });
+
+      const parsed = parseLoggedArchive();
       expect(parsed.status[0].code).toBe('archive_merge_confirmation_required');
       await expect(fs.access(changeDir)).resolves.not.toThrow();
     });
 
     it('timing guard proceeds with --yes treating it as the merge confirmation', async () => {
       const changeName = 'shipped-pr-feature-yes';
-      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
-      await fs.mkdir(changeDir, { recursive: true });
-      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
+      const changeDir = await seedChange(changeName);
       await fs.writeFile(
         path.join(changeDir, 'ship-log.md'),
         '# Ship Log\n\n**Mode:** pr\n**PR:** https://example.com/pull/1\n'
@@ -1661,28 +1477,20 @@ The system SHALL do the thing differently.
 
       await archiveCommand.execute(changeName, { yes: true, json: true });
 
-      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .join('\n');
-      const parsed = JSON.parse(logged);
-      expect(parsed.archive.destination).toBe('in-repo');
+      const parsed = parseLoggedArchive();
+      expect(parsed.archive.archivedAs).toContain(changeName);
       await expect(fs.access(changeDir)).rejects.toThrow();
     });
 
     it('timing guard does not fire for a push-mode ship log', async () => {
       const changeName = 'shipped-push-feature';
-      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
-      await fs.mkdir(changeDir, { recursive: true });
-      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
+      const changeDir = await seedChange(changeName);
       await fs.writeFile(path.join(changeDir, 'ship-log.md'), '# Ship Log\n\n**Mode:** push\n');
 
       await archiveCommand.execute(changeName, { json: true });
 
-      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .join('\n');
-      const parsed = JSON.parse(logged);
-      expect(parsed.archive.destination).toBe('in-repo');
+      const parsed = parseLoggedArchive();
+      expect(parsed.archive.archivedAs).toContain(changeName);
       await expect(fs.access(changeDir)).rejects.toThrow();
     });
 
@@ -1690,9 +1498,7 @@ The system SHALL do the thing differently.
       await writeConfig('schema: spec-driven\narchive:\n  timing: in-ship\n');
 
       const changeName = 'inship-pr-feature';
-      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
-      await fs.mkdir(changeDir, { recursive: true });
-      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1');
+      const changeDir = await seedChange(changeName);
       await fs.writeFile(
         path.join(changeDir, 'ship-log.md'),
         '# Ship Log\n\n**Mode:** pr\n**PR:** https://example.com/pull/1\n'
@@ -1700,11 +1506,8 @@ The system SHALL do the thing differently.
 
       await archiveCommand.execute(changeName, { json: true });
 
-      const logged = (console.log as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .join('\n');
-      const parsed = JSON.parse(logged);
-      expect(parsed.archive.destination).toBe('in-repo');
+      const parsed = parseLoggedArchive();
+      expect(parsed.archive.archivedAs).toContain(changeName);
       await expect(fs.access(changeDir)).rejects.toThrow();
     });
   });

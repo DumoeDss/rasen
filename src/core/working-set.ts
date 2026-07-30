@@ -30,6 +30,13 @@ export interface WorkingSet {
     /** The registered machine home for this root (design `change-work-dir`,
      * D3); probe-only, omitted for an unregistered project. */
     machineHome?: string;
+    /**
+     * The derived workspace identity for this root's worktree (design
+     * `file-placement-collapse-landing`, D5 / 原则 7): `<name>--<shortId>`,
+     * distinct per Git worktree. Read-only exposure — resolving it creates no
+     * machine-root `workspaces/` state.
+     */
+    workspaceIdentity?: string;
   };
   members: WorkingSetMember[];
   status: StoreDiagnostic[];

@@ -13,6 +13,7 @@ import { WORKSPACE_DIR_NAME } from '../config.js';
 import type { ProjectHome } from '../project-home.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { buildChangeRunEntry } from './runs.js';
+import { ephemeraDir } from '../file-placement.js';
 import { CONTROL_CHAR_PATTERN } from './submit.js';
 import {
   NO_OUTPUT_TIMEOUT_CAP_MS,
@@ -194,8 +195,14 @@ export async function handleListSessions(
     }
     const changeDir = path.join(record.space.root, WORKSPACE_DIR_NAME, 'changes', record.changeName);
     const home = await resolveHomeForRoot(record.space.root);
-    const workDir = home ? home.workDir(record.changeName) : null;
-    sessions.push({ session: toWire(record), runState: buildChangeRunEntry(record.changeName, changeDir, workDir) });
+    // Resolved against the SESSION's own space, never the server's launch
+    // project: its execution root's ephemera directory first, then that
+    // space's machine-home work directory, then its change directory.
+    const locations = {
+      ephemeraDir: ephemeraDir(record.space.root, record.changeName),
+      workDir: home ? home.workDir(record.changeName) : null,
+    };
+    sessions.push({ session: toWire(record), runState: buildChangeRunEntry(record.changeName, changeDir, locations) });
   }
   return { sessions };
 }

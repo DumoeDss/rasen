@@ -965,6 +965,7 @@
       "invalidUpdatePin": "設定の 'update.pin' フィールドが無効です（真偽値である必要があります）",
       "invalidArchiveTiming": "設定の'archive.timing'フィールドが無効です（'on-merge'または'in-ship'を指定してください）",
       "invalidArchiveDestination": "設定の'archive.destination'フィールドが無効です（'in-repo'、'external'、または'prune'を指定してください）",
+      "deprecatedArchiveDestination": "'archive.destination' は非推奨になり、保存先を選択しなくなりました：アーカイブの記帳は常に計画ルートに配置されます。このキーを削除してください。既存のアーカイブは 'rasen archive relocate --to in-repo' で計画ルートに集約できます。",
       "invalidArchive": "設定の'archive'フィールドが無効です（オブジェクトを指定してください）",
       "invalidAutopilotGates": "設定の'autopilot.gates'フィールドが無効です（'on'または'off'を指定してください）",
       "invalidAutopilotSelection": "設定の'autopilot.selection'フィールドが無効です（'classify'、'manual'、または'compose'を指定してください）",
@@ -1273,9 +1274,6 @@
             "yes": {
               "description": "確認プロンプトを省略します"
             },
-            "confirm-prune": {
-              "description": "'prune' 保存先の完全削除を確認します（--yesとは別）"
-            },
             "skip-specs": {
               "description": "仕様の更新処理を省略します"
             },
@@ -1294,10 +1292,10 @@
           },
           "commands": {
             "relocate": {
-              "description": "既存のアーカイブ済み変更を移動し、archive.destination を同時に切り替えます",
+              "description": "既存のアーカイブ済み変更を planning root または store に集約します（設定は書き込みません）",
               "options": {
                 "to": {
-                  "description": "移動先: in-repo、external、または store"
+                  "description": "移動先: in-repo または store（external は廃止）"
                 },
                 "dry-run": {
                   "description": "移動計画を表示し、何も変更しません"
@@ -1525,7 +1523,7 @@
                   "description": "取り込み先のストア"
                 },
                 "archive": {
-                  "description": "アーカイブの扱い: move（デフォルト）、leave、または external"
+                  "description": "アーカイブの扱い: move（デフォルト）または leave"
                 },
                 "dry-run": {
                   "description": "移動計画を表示し、何も変更しません"

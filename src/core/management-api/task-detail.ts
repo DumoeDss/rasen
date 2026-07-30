@@ -31,6 +31,7 @@ import {
 } from '../pipeline-registry/portfolio-state.js';
 import { buildChangeSummary, findPortfolioContainers, portfolioOf } from './changes.js';
 import { buildChangeRunEntry } from './runs.js';
+import { ephemeraDir } from '../file-placement.js';
 import type {
   ChangeLoadError,
   TaskChildDetail,
@@ -107,8 +108,10 @@ export async function handleTaskDetail(
   for (const name of activeIds) {
     if (!belongsToTask(name)) continue;
     const changeDir = path.join(changesDir, name);
-    const workDir = home ? home.workDir(name) : null;
-    const run = buildChangeRunEntry(name, changeDir, workDir);
+    const run = buildChangeRunEntry(name, changeDir, {
+      ephemeraDir: ephemeraDir(root, name),
+      workDir: home ? home.workDir(name) : null,
+    });
     try {
       const summary = await buildChangeSummary(root, changesDir, name, containers, home);
       const tasks = await listTaskItemsForChange(changesDir, name, root);
@@ -166,7 +169,10 @@ export async function handleTaskDetail(
   // parse. Same distinction `/runs` makes about the same file.
   if (kind === 'portfolio') {
     const containerDir = path.join(changesDir, id);
-    const location = resolvePortfolioStateLocation(containerDir, home ? home.workDir(id) : null);
+    const location = resolvePortfolioStateLocation(containerDir, {
+      ephemeraDir: ephemeraDir(root, id),
+      workDir: home ? home.workDir(id) : null,
+    });
     const read = location
       ? readPortfolioStateDetailed(location.dir)
       : ({ kind: 'absent' } as const);
