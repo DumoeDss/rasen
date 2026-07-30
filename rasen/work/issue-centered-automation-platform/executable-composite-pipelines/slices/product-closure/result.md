@@ -956,4 +956,96 @@ cross-platform checks, and only the integrated HEAD has all seven slices in it.
 - `pack-version-check.mjs` leaves an `atelierai-rasen-0.1.5.tgz` in the repo
   root; it is `.gitignore`d and was deleted after the check.
 - Dogfood temp directories (`test-dogfood-*`, `test-engine-*`) are removed by
-  the scripts themselves and verified absent.
+  the scripts themselves and verified absent — **on the success path.** Round 2
+  found the `fs.rm` sits after each scenario's assertions, so a scenario that
+  throws leaks its directory into the repo root (untracked). Observed directly,
+  removed by hand; see Section 10, observation O-R1.
+
+## Section 10 — Round 2: the re-review of the post-fix delta
+
+Round 1 produced a Blocker (`PORT_MISMATCH`), a Major (F1) and four smaller
+findings; `3b33d5be`, `7f2fc33d`, `7f1b71bf`, `df106499` and `f111ada3` closed
+them. **That post-fix delta is itself a delta, and it got its own non-author
+pass** — by the relay LEAD, which authored none of those six commits. Full
+report: `work/review-report-round2.md`.
+
+**Verdict: no Blocker, no Major.** Three findings, all Minor-or-below, all fixed
+in-loop at `60b2d38a` and `c54af90a`. Round 1's six findings were each
+re-checked as landed.
+
+### The open question round 1 could not close
+
+> Did any downstream fail-closed guarantee — `unsupported_pipeline_shape`
+> particularly — rely on `PORT_MISMATCH` to reject a shape `3b33d5be` now admits?
+
+**No weakening exists**, on three independent paths:
+
+1. `unsupported_pipeline_shape` never reads a port. All three call sites in
+   `execution-plan-internal.ts` compare the **sorted set of expected node IDs**
+   (root AtomicStages + the body AtomicStages of referenced declarations) against
+   `supportProfileNodeIds(profile)`. Connections and ports are not inputs to it.
+2. Nothing downstream consumes `to.port` at all. The only port reads outside the
+   validators are `lowerer.ts:868` (`from.port` matched against outcome names —
+   the output side, untouched) and the requires derivation, which is node-ID-only:
+   `incomingRequirements` (`lowerer.ts:79`) and the composite body lowering
+   (`lowerer.ts:435-478`, Kahn's sort). The widening admits **authored graphs**,
+   not new runtime shapes — the shapes now savable lower through exactly the code
+   fixture-catalog tests already exercised, and the body lowerer keeps its own
+   fail-closed layers (AtomicStage-only, cycle → `lowerer_shape_mismatch`).
+3. The other `contractForNode` consumer gets **more** fail-closed, not less. A
+   refused edge marked the graph `complete = false`, and
+   `validateOwnerTerminalOutcomes` **skips** its "declares terminal outcome X but
+   the graph cannot produce it" diagnostic while `!complete` (`definition.ts:1828`).
+   Pre-fix that check was suppressed for exactly these definitions; post-fix it runs.
+
+No previously-savable definition changes verdict either: any definition carrying
+such an edge was refused outright before, and the legacy branch widened from
+`{start}` to a superset containing `start`. The scoping is real in the code — an
+unknown capability (no descriptor, non-legacy) still resolves to an EMPTY input
+set, so every edge into it is still refused.
+
+### The three findings
+
+| # | Sev | Finding | Fix |
+|---|---|---|---|
+| F-R1 | Minor | **The cell this ledger leans on hardest could not fail.** Scenario C printed its semantic claims — discovery reason, the directional `requires` chain, the one-entry frontier, the terminal — and asserted none of them; the driver's per-scenario catch then let the process exit 0 regardless. Task 7.6 and the §7 table already said the cell "**asserts**" ordering. It did not: a human reading four lines of a dump was the only thing separating the authored pipeline from the disconnected one | `60b2d38a` + `c54af90a`: all four claims `throw`, directionally (`secondRequiresFirst && !firstRequiresSecond`), and any scenario error sets a non-zero exit code after the RESULTS dump prints. **Mutation-verified with the exact regression**: stripping the authored body edge before `save` now yields `SCENARIO C FAILED: body ordering is not the authored sequence` and **exit 1**, where it previously exited 0 |
+| F-R2 | Minor | **The capability half of `updateBodyStage` had zero production callers** — the zero-caller signature this slice closed three times, inside the fix for it. `createBodyStage` stamps `firstExactCapability()` into every body stage and F1 shipped no way to change it, so a Canvas-authored multi-stage body could only repeat ONE capability while the requirement's own scenario says "adds an AtomicStage **with capability `skill:rasen-apply`**" | `60b2d38a`: the body stage row offers the same revision list, from the same filter, that the root graph's `V2NodePanel` has had since ECP-2. `capabilityAvailable: boolean` **replaced** by `capabilities: readonly {id,version}[]` — one fact, one owner (`capabilities.length > 0`). Probe asserts the two stages carry **different** capabilities in the POSTed definition; dropping the wire turns exactly one test red |
+| F-R3 | Trivial → mechanism | **The Canvas's control ports were bound to the kernel's accepted sets by a comment.** Kernel narrowing was covered; a **UI-side** edit was not — it left every kernel test and every UI test green while production authored unsaveable definitions, which is what the Blocker actually was | `60b2d38a`: constants moved to the model module and exported; `test/core/pipeline-registry/canvas-control-port-provenance.test.ts` runs the **real `prepare`** over a production-shaped catalog with them, negative control included. **Mutation-verified**: drifting `CONTROL_TARGET_PORT` to `'inpt'` leaves all 110 UI canvas tests green and turns the kernel test red |
+
+Observation **O-R1**: a dogfood scenario that throws leaks its
+`test-dogfood-<name>-tmp/` into the repo root, because `fs.rm(ctx.testDir)` sits
+after the assertions. Observed directly during the F-R1 mutation run and removed
+by hand. Task 9.6's claim below is corrected to say "on the success path".
+
+### Gates, re-taken at `c54af90a` (serialized, one owner of the tree)
+
+Fresh build first (411 emitted JS, CLI `0.1.5`), then: root **393 files / 6364
+passed / 1 failed / 33 skipped** — *identical* to the count claimed at
+`3b33d5be`, same single `token-audit/zed` failure, same root cause
+(`env.LOCALAPPDATA` outranks the test's `homedir` override at
+`zed/database.ts:63`; this machine has a real Zed DB), file byte-untouched by the
+delta. The four Windows flakes did not recur, nor did `supervisor-injection`.
+UI **56 files / 605 passed / 0 failed** (604 + this round's capability probe).
+Root tsc **0**; UI tsc **0**; `pnpm lint` **0 errors** + the same one
+pre-existing warning. All three lockstep checks green at **0.1.5**, pack checks
+dead last, `dist` verified intact afterwards. `git status` carries only the
+user-parked untracked `packages/ui/package-lock.json`.
+
+### The dogfood cell, re-run with the assertions live
+
+All four scenarios pass with the new hard assertions (no scenario error, exit 0).
+Scenario C alone, at `c54af90a`: discovery
+`{"supported":true,"reason":"supported_v2_executable","profileDigest":"sha256:de2b441d5d61d55b…"}`
+— **byte-identical to the digest `f111ada3` pre-announced** for the connected
+body — `plan ordering: stage-2 requires stage = true`,
+`first frontier: ["root:composite-ref/stage"]`, terminal **`completed`**,
+`run:d99136b96bfabeed…`. The RunId differs from the matrix's `run:07ef8426…`:
+fresh instance identity, expected. Terminals, ordering, frontier and digest match.
+
+**What this round did not do**, stated rather than implied: the other eight
+matrix cells were not re-run here (round 1 reproduced all twelve at `7f1b71bf`;
+those eight are v1-authored built-ins carrying no authored v2 connection, so the
+port widening cannot reach them — an argument, not a re-run), and this round's
+own three fixes were authored by the reviewer that found them, so for
+`60b2d38a`/`c54af90a` author == verifier, with mutation verification standing in
+for the missing second pair of eyes.
