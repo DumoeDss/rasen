@@ -9,7 +9,7 @@
 ## Position
 
 无 pipeline（纯设计 + 实验工作流）。
-- Worktree：`OpenSpec-code-hybrid-session-workers`，分支 `feat/hybrid-session-workers`，基于 `origin/dev/0.1.6 @ d623b8f5`（纯 docs 提交链 `0ff25ad1..574e129d`）。**实现开工时须改基到 dev/0.2.0**。
+- Worktree：`OpenSpec-code-hybrid-session-workers`，分支 `feat/hybrid-session-workers`。**已于 2026-07-30 改基到 `origin/dev/0.2.0`**（12 个纯 docs 提交落在 `be124057` 之上，0 落后；原基点 `origin/dev/0.1.6 @ d623b8f5` 那 8 个 0.1.6 提交**没有**被重放——它们由独立的 `chore/merge-0.1.6-into-0.2.0` 分支负责引入 0.2.0，避免同一批 commit 走两条路）。回退点：`backup/hybrid-session-workers-pre-rebase`。
 - 设计定稿：`docs/session-execution-layer-design.md`（v2 重定位版）。
 - 探��完整档案：`docs/experiments/session-cache-probe-results.md`（两轮）+ `session-cache-probe.md/.ps1`（可复跑协议/脚本）。
 - 已交付阶段：**P0 全部完结**（探针 + 设计 + ECP 对表）。未开工：P1（实现）、P2（接线 dogfood）。
@@ -23,11 +23,16 @@ Done:
 - 对表 `feat/ecp-review-cycle @ 2fa693d8`（ECP-4 收口、ECP-5 进行中），接线定案 + P2 上游前置（`574e129d`）。
 - memory 更新：`session-execution-layer-planb.md` + `session-cache-probe-results.md` + MEMORY.md 索引。
 
-Remaining:
-- **P2 上游前置（须转 ECP 侧或随本层修复，已在 ECP 反馈稿里整理）**：①`handoffTokenLimit:10_000`/`reuseRoundLimit:1` 硬编码孤儿字段 ②合成 stage 硬写 `sessionReuse:'never'` ③四值→二值映射抹平语义 ④`opsx-orchestration` spec worker 生命周期所有权边界修订。
-- **排期**：direction 校准把本层排为 ECP-5 之后切片（用户倾向已知，未正式拍板）。
-- P1（探针通过即可开工）：扩展 `management-api/supervisor.ts` 加 stream-json 多轮 + resume 宿主；持久化 `session-registry.ts`；`rasen session exec|list|retire` CLI；daemon touch scheduler。
-- 0.1.6 可选止血小 PR：`rasen agent signal` + retired-handle 拒绝（用户未决）。
+**2026-07-30 追加完成（前期任务清零）**：
+- 改基到 `dev/0.2.0`（见 Position），ECP-1..5 已合并归档，对表对象从"进行中"变成最终形态。
+- **P2 上游前置四条逐条核实并回写设计 §4.2**：③（四值保真）**已关闭** —— `sessionReuseAuthored` 落在 `contracts.ts:213`/`actions.ts:211`/`execution-plan-internal.ts:275`/`commands/pipeline.ts:874`，由 `session-contract-fidelity.test.ts` 钉住；②（合成 stage 硬写）**已关闭且更好** —— 改为按 provenance 分型，定义性的值带 `definition` 且权威，没人选过的带 `default` 且是占位；①（孤儿字段）**从前置变成授权** —— `ecp-change-run-runtime` spec 的占位 requirement 明文要求未来读者不得据 `reuseRoundLimit: 1` 约束 session（点名它会禁止评审者跨轮复用）、须从"自己那一层的权威来源"取真值，等于预先把定义权指派给本层；④（`opsx-orchestration` 所有权边界）**仍是本层 P2 的必交项**，不是等待项。
+- 架构文档槽位已由 ECP-5 task 6.3 备好：`docs/architecture/executable-composite-pipelines.md` §3 明写内核不开 session、不管 worker 生命周期，"独立的 session execution layer 是后续切片"；§7 写明占位值的真实取值是本层的设计产出。
+- 排期已由用户确认（2026-07-30）：ECP 之后推进本层；ECP 的测试与审查由用户自己处理。
+
+Remaining（真正剩下的）:
+- **P1 实现**（无任何等待项）：给 `management-api/supervisor.ts` 加 stream-json stdin 多轮 + resume 宿主；持久化 `session-registry.ts`（§7 schema，写入须 retry-on-lock）；`rasen session exec|list|retire` CLI；daemon touch scheduler（~50 分钟 cadence，仅 >55 分钟空闲）。门槛见 §9 P1。
+- **P2 接线 dogfood**：含 ④ 的 spec/playbook delta（Step A/B.1/B.4/H.2 所有权移交）+ 架构文档章节插入。P1 executor 验收只覆盖 6 个受 reconciler 支持的内建 pipeline —— `auto-decompose` fail-closed 是设计，不要当回归。
+- 0.1.6 可选止血小 PR：`rasen agent signal` + retired-handle 拒绝（用户未决；注意 0.1.6 现在是 0.1.5 的 bug 修复线）。
 
 ## Key decisions (and why)
 
@@ -67,8 +72,20 @@ ECP 对表证据（只读，在另一 worktree `OpenSpec-code-ecp-review-cycle @
 
 ## Next action
 
-本工作流处于"设计闭环完成、等排期"的稳态。接续者的第一动作取决于触发时机：
+~~本工作流处于"设计闭环完成、等排期"的稳态。~~ **2026-07-30：上面三条触发条件全部满足并处置完毕**
+—— ECP 侧反馈已到账并逐条回写（§4.2 表）、排期已由用户确认、分支已改基。本工作流现在处于
+**"P1 可直接开工"** 的状态，没有前置。
 
-1. **若 ECP 侧反馈到账（P2 上游前置 4 条的处置）** → 据其决定更新设计 §4.2/§6/§9 的前置清单。
-2. **若要排期** → 在 `rasen/work/issue-centered-automation-platform/executable-composite-pipelines/` 的 direction 校准中把本层排为 ECP-5 后切片；确认后改基 `feat/hybrid-session-workers` 到 dev/0.2.0。
-3. **若要开工 P1** → 先做"扩展 supervisor.ts 加 stream-json stdin 多轮宿主"的最小骨架（无需等 ECP 排期，模块独立），门槛见设计 §9 P1。
+**接续者的第一动作：直接开 P1 的最小骨架** ——
+给 `management-api/supervisor.ts` 加 `--input-format stream-json` 的 stdin 多轮宿主
+（现有 headless spawn / pid 管理 / tree-kill / 并发槽 / Windows `.cmd` 转义全部复用，不新起
+`src/core/session-host/`），先只做 create → wake×N → retire 的进程生命周期与单飞锁，
+registry 持久化随后跟上。门槛见设计 §9 P1。
+
+开工前值得先读的三处硬事实（都是探针买来的，别重走）：
+1. **缓存资产是"进程存活"，不是 session id** —— live stream-json 进程同 cwd 55 分钟仍 HIT（含 repo
+   变化免疫实证），65 分钟 MISS（1h 上界）；而 resume-cli 在 repo cwd 下因注入块前缀不稳定一发即
+   MISS。所以宿主形态本身就是设计的主体，不是实现细节。
+2. **并发 resume 会静默丢回合**（KC5，非确定性复现）→ 单飞锁必须在 CLI 之上自己实现。
+3. **subagent 后台闲等的完成通知会丢**（两轮探针各复现一次）→ 数据须落盘、收割不依赖通知；
+   registry 写入须 retry-on-lock（探针脚本就被瞬时文件锁咬过一次）。
