@@ -2473,44 +2473,6 @@
         "agent": {
           "description": "检查并控制基础代理运行时状态",
           "commands": {
-            "edit-boundary": {
-              "description": "控制检出范围的运行时编辑边界",
-              "commands": {
-                "set": {
-                  "description": "将检出范围的编辑边界设置为现有目录",
-                  "options": {
-                    "runtime": {
-                      "description": "强制运行时：claude、codex 或 zed"
-                    },
-                    "json": {
-                      "description": "输出为 JSON"
-                    }
-                  }
-                },
-                "status": {
-                  "description": "显示活动边界及观测到的宿主强制情况",
-                  "options": {
-                    "runtime": {
-                      "description": "强制运行时：claude、codex 或 zed"
-                    },
-                    "json": {
-                      "description": "输出为 JSON"
-                    }
-                  }
-                },
-                "clear": {
-                  "description": "清除检出范围的编辑边界",
-                  "options": {
-                    "runtime": {
-                      "description": "强制运行时：claude、codex 或 zed"
-                    },
-                    "json": {
-                      "description": "输出为 JSON"
-                    }
-                  }
-                }
-              }
-            },
             "dispatch": {
               "description": "派发结构化 Claude print-mode worker",
               "options": {

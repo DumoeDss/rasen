@@ -2473,44 +2473,6 @@
         "agent": {
           "description": "ベースエージェントの実行時状態を検査・制御します",
           "commands": {
-            "edit-boundary": {
-              "description": "チェックアウトスコープの実行時編集境界を制御します",
-              "commands": {
-                "set": {
-                  "description": "チェックアウトスコープの編集境界を既存のディレクトリに設定します",
-                  "options": {
-                    "runtime": {
-                      "description": "ランタイムを強制: claude、codex、または zed"
-                    },
-                    "json": {
-                      "description": "JSONで出力します"
-                    }
-                  }
-                },
-                "status": {
-                  "description": "アクティブな境界と観測されたホスト強制を表示します",
-                  "options": {
-                    "runtime": {
-                      "description": "ランタイムを強制: claude、codex、または zed"
-                    },
-                    "json": {
-                      "description": "JSONで出力します"
-                    }
-                  }
-                },
-                "clear": {
-                  "description": "チェックアウトスコープの編集境界をクリアします",
-                  "options": {
-                    "runtime": {
-                      "description": "ランタイムを強制: claude、codex、または zed"
-                    },
-                    "json": {
-                      "description": "JSONで出力します"
-                    }
-                  }
-                }
-              }
-            },
             "dispatch": {
               "description": "構造化された Claude print-mode worker をディスパッチ",
               "options": {

@@ -842,68 +842,6 @@ const agentCmd = program
   .command('agent')
   .description('');
 
-const editBoundaryCmd = agentCmd
-  .command('edit-boundary')
-  .description('');
-
-editBoundaryCmd
-  .command('set <directory>')
-  .description('')
-  .option('--runtime <runtime>', '')
-  .option('--json', '')
-  .action(async (directory: string, options: { runtime?: string; json?: boolean }) => {
-    try {
-      const result = await new AgentCommand().editBoundarySet(directory, options);
-      if (result.error) process.exitCode = 1;
-    } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exitCode = 1;
-    }
-  });
-
-editBoundaryCmd
-  .command('status')
-  .description('')
-  .option('--runtime <runtime>', '')
-  .option('--json', '')
-  .action(async (options: { runtime?: string; json?: boolean }) => {
-    try {
-      await new AgentCommand().editBoundaryStatus(options);
-    } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exitCode = 1;
-    }
-  });
-
-editBoundaryCmd
-  .command('clear')
-  .description('')
-  .option('--runtime <runtime>', '')
-  .option('--json', '')
-  .action(async (options: { runtime?: string; json?: boolean }) => {
-    try {
-      await new AgentCommand().editBoundaryClear(options);
-    } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exitCode = 1;
-    }
-  });
-
-editBoundaryCmd
-  .command('check', { hidden: true })
-  .option('--runtime <runtime>', '')
-  .action(async (options: { runtime?: string }) => {
-    try {
-      await new AgentCommand().editBoundaryCheck(options);
-    } catch {
-      // Hooks fail open: a checker failure must never be reported as hard
-      // protection or turn a parse/configuration error into a denial.
-    }
-  });
-
 agentCmd
   .command('dispatch')
   .description('')

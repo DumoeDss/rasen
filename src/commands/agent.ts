@@ -61,26 +61,9 @@ import {
   type KeepaliveConfigInput,
 } from '../core/keepalive/index.js';
 import { resolveEffectiveConfigWithMetadata } from '../core/effective-config.js';
-import {
-  clearEditBoundary,
-  editHookOutput,
-  evaluateEditHook,
-  getEditBoundaryStatus,
-  resolveEditBoundaryRoot,
-  setEditBoundary,
-  type EditBoundaryResult,
-} from '../core/edit-boundary.js';
-import { inspectEditBoundaryHook } from '../core/edit-boundary-hooks.js';
 import { getChangeDir, resolveCurrentPlanningHomeSync } from '../core/planning-home.js';
 import type { ThresholdValue } from '../core/pipeline-registry/types.js';
 import type { WorkerContract } from '../core/worker-contracts.js';
-import {
-  detectHostRuntime,
-  resolveEditBoundaryEnforcement,
-  RUNTIME_ADAPTERS,
-  type HostRuntimeSource,
-  type RuntimeAdapterId,
-} from '../core/runtime-adapters.js';
 import { runAudit } from '../core/token-audit/audit.js';
 import { TranscriptFormatError } from '../core/token-audit/errors.js';
 import { isCodexAuditResult, isZedAuditResult, type AuditResult } from '../core/token-audit/types.js';
@@ -119,18 +102,6 @@ export interface AgentAuditOptions {
   match?: string;
   /** Zed runtime only: override the `threads.db` path. */
   db?: string;
-}
-
-export interface AgentEditBoundaryOptions {
-  runtime?: string;
-  json?: boolean;
-  cwd?: string;
-}
-
-export interface AgentEditBoundaryCheckOptions {
-  runtime?: string;
-  input?: unknown;
-  cwd?: string;
 }
 
 export interface AgentDispatchOptions {
@@ -289,56 +260,6 @@ export async function resolveAgentWaitKeepaliveConfig(
         ? DEFAULT_BEAT_SECONDS
         : globalKeepalive?.beatSeconds),
   });
-}
-
-function resolveEditBoundaryRuntime(
-  requested: string | undefined,
-  cwd: string
-): {
-  runtime: RuntimeAdapterId | 'unknown';
-  source: HostRuntimeSource;
-  enforcement: import('../core/runtime-adapters.js').EditBoundaryEnforcement;
-} {
-  let runtime: RuntimeAdapterId | 'unknown';
-  let source: HostRuntimeSource;
-  if (requested !== undefined) {
-    const normalized = requested.trim().toLowerCase();
-    if (!Object.hasOwn(RUNTIME_ADAPTERS, normalized)) {
-      throw new Error(
-        `Unknown runtime "${requested}". Expected claude, codex, or zed.`
-      );
-    }
-    runtime = normalized as RuntimeAdapterId;
-    source = 'cli-option';
-  } else {
-    const detected = detectHostRuntime();
-    runtime = detected.runtime;
-    source = detected.source;
-  }
-
-  if (runtime === 'unknown') {
-    return { runtime, source, enforcement: 'unsupported' };
-  }
-  const root = resolveEditBoundaryRoot(cwd);
-  const observed = inspectEditBoundaryHook(root, runtime).enforcement;
-  return {
-    runtime,
-    source,
-    enforcement: resolveEditBoundaryEnforcement(runtime, observed),
-  };
-}
-
-async function readStdinJson(): Promise<unknown> {
-  let raw = '';
-  for await (const chunk of process.stdin) {
-    raw += String(chunk);
-  }
-  if (!raw.trim()) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
 }
 
 export class AgentCommand {
@@ -565,68 +486,6 @@ export class AgentCommand {
     }
   }
 
-  async editBoundarySet(
-    directory: string,
-    options: AgentEditBoundaryOptions = {}
-  ): Promise<EditBoundaryResult> {
-    const cwd = options.cwd ?? process.cwd();
-    const runtime = resolveEditBoundaryRuntime(options.runtime, cwd);
-    const result = setEditBoundary(directory, {
-      cwd,
-      ...runtime,
-      runtimeSource: runtime.source,
-    });
-    this.emitEditBoundary(result, options.json === true);
-    return result;
-  }
-
-  async editBoundaryStatus(
-    options: AgentEditBoundaryOptions = {}
-  ): Promise<EditBoundaryResult> {
-    const cwd = options.cwd ?? process.cwd();
-    const runtime = resolveEditBoundaryRuntime(options.runtime, cwd);
-    const result = getEditBoundaryStatus({
-      cwd,
-      ...runtime,
-      runtimeSource: runtime.source,
-    });
-    this.emitEditBoundary(result, options.json === true);
-    return result;
-  }
-
-  async editBoundaryClear(
-    options: AgentEditBoundaryOptions = {}
-  ): Promise<EditBoundaryResult> {
-    const cwd = options.cwd ?? process.cwd();
-    const runtime = resolveEditBoundaryRuntime(options.runtime, cwd);
-    const result = clearEditBoundary({
-      cwd,
-      ...runtime,
-      runtimeSource: runtime.source,
-    });
-    this.emitEditBoundary(result, options.json === true);
-    return result;
-  }
-
-  /**
-   * Hidden stdin hook action. Invalid JSON or an unrecognized envelope emits
-   * nothing and exits successfully: parse failure is never represented as
-   * hard protection.
-   */
-  async editBoundaryCheck(
-    options: AgentEditBoundaryCheckOptions = {}
-  ): Promise<void> {
-    const cwd = options.cwd ?? process.cwd();
-    if (options.runtime !== undefined) {
-      resolveEditBoundaryRuntime(options.runtime, cwd);
-    }
-    const input = options.input === undefined ? await readStdinJson() : options.input;
-    const output = editHookOutput(
-      evaluateEditHook(input, { fallbackCwd: cwd })
-    );
-    if (output) console.log(JSON.stringify(output));
-  }
-
   /**
    * One keepalive beat (cli-agent-wait spec). Gate checks run first and
    * return immediately without blocking or touching beat state; a live beat
@@ -724,24 +583,6 @@ export class AgentCommand {
 
   private emitWait(outcome: AgentWaitOutcome): void {
     console.log(JSON.stringify(outcome));
-  }
-
-  private emitEditBoundary(result: EditBoundaryResult, json: boolean): void {
-    if (json) {
-      console.log(JSON.stringify(result));
-      return;
-    }
-    console.log(
-      `edit-boundary action=${result.action} active=${result.active} changed=${result.changed} ` +
-        `runtime=${result.runtime} source=${result.runtimeSource} enforcement=${result.enforcement}`
-    );
-    console.log(`checkout=${result.root}`);
-    console.log(`boundary=${result.boundary ?? '(none)'}`);
-    for (const limitation of result.limitations) {
-      console.log(`limitation: ${limitation}`);
-    }
-    if (result.warning) console.warn(`warning: ${result.warning}`);
-    if (result.error) console.error(`error: ${result.error}`);
   }
 
   private toJson(
