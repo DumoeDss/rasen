@@ -108,6 +108,7 @@ export interface PipelineMessageValues {
   workerHandleWarning: { stage: string; recorded: string };
   duplicateRunStateKey: { key: string; path: string };
   resumeHandles: { stages: string };
+  resumeClaudeSession: { stage: string; sessionId: string; cwd: string };
   sessionHandoff: { generation: number; path: string };
   gatePolicy: { effective: string; source: string };
   executionBinding: { project: string; path: string };
@@ -217,6 +218,7 @@ export const PIPELINE_MESSAGE_KEYS = [
   'workerHandleWarning',
   'duplicateRunStateKey',
   'resumeHandles',
+  'resumeClaudeSession',
   'sessionHandoff',
   'gatePolicy',
   'executionBinding',

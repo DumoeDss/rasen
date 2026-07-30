@@ -487,9 +487,10 @@
       "openFindings": "未解决问题：{count} 个（交付前请解决）",
       "legacySkillHeading": "流水线 '{pipeline}' 中存在旧版技能 ID（请更新 pipeline yaml）：",
       "legacySkillEntry": "  阶段 {stage}：{from} -> {to}",
-      "workerHandleWarning": "智能体工作者句柄警告：阶段 '{stage}' 的智能体工作者没有持久句柄（已记录：{recorded}）；分派时请记录 agentId/transcript。",
+      "workerHandleWarning": "智能体工作者句柄警告：阶段 '{stage}' 的智能体工作者没有持久句柄（已记录：{recorded}）；分派时请记录 agentId/sessionId/transcript/threadId。",
       "duplicateRunStateKey": "运行状态键重复：'{key}' 在 {path} 处重复（JSON.parse 会保留最后一个值）。",
       "resumeHandles": "可用的恢复句柄（智能体工作者会话/transcript）：{stages}",
+      "resumeClaudeSession": "阶段 '{stage}' 的 Claude bridge 会话：{sessionId}（cwd：{cwd}）",
       "sessionHandoff": "会话交接（第 {generation} 代）：{path}",
       "gatePolicy": "门控策略：{effective}（{source}）",
       "executionBinding": "执行检出：{project}（{path}）",
@@ -2508,6 +2509,21 @@
                     }
                   }
                 }
+              }
+            },
+            "dispatch": {
+              "description": "派发结构化 Claude print-mode worker",
+              "options": {
+                "runtime": { "description": "Worker 运行时（claude）" },
+                "prompt-file": { "description": "包含完整 worker prompt 的 UTF-8 文件" },
+                "contract": { "description": "结构化结果契约：leaf 或 evaluate" },
+                "sandbox": { "description": "权限：read-only 或 workspace-write" },
+                "model": { "description": "Claude 模型覆盖" },
+                "effort": { "description": "Claude effort：low、medium、high、xhigh 或 max" },
+                "cwd": { "description": "Worker 工作目录" },
+                "timeout-ms": { "description": "超时毫秒数" },
+                "resume": { "description": "要恢复的精确 Claude session ID" },
+                "json": { "description": "输出一条机器可读 receipt" }
               }
             },
             "context": {

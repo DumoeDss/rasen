@@ -71,6 +71,8 @@ export const RunStateWorkerSchema = z.object({
   role: z.string().optional(),
   agentId: z.string().optional(),
   transcript: z.string().optional(),
+  sessionId: z.string().optional(),
+  cwd: z.string().optional(),
   threadId: z.string().optional(),
   turnId: z.string().optional(),
   jobId: z.string().optional(),
@@ -108,6 +110,9 @@ export function inferWorkerDispatchMode(
     return { dispatchMode: worker.dispatchMode, inferred: false };
   }
   if (worker.runtime === 'codex' && worker.threadId) {
+    return { dispatchMode: 'exec-bridge', inferred: true };
+  }
+  if (worker.runtime === 'claude' && worker.sessionId) {
     return { dispatchMode: 'exec-bridge', inferred: true };
   }
   if (worker.agentId) {
@@ -297,6 +302,8 @@ export function runStatePath(changeDir: string): string {
 const WORKER_NULLABLE_STRING_KEYS = [
   'transcript',
   'agentId',
+  'sessionId',
+  'cwd',
   'threadId',
   'turnId',
   'jobId',
@@ -634,17 +641,18 @@ export function normalizeWorker(
 
 /**
  * Per-stage worker pointers that carry something reusable across a session
- * boundary — an `agentId` (locates the transcript) or an explicit `transcript`
- * path. These are what a resume warm-seeds a fresh worker from; stages with no
- * such pointer are omitted. Bare-string (role-only) workers are omitted because
- * they hold nothing to seed from.
+ * boundary: a native `agentId`, a Claude bridge `sessionId`, a Codex bridge
+ * `threadId`, or an explicit `transcript` path. These are what a resume uses
+ * for exact-session continuation or warm-seeding; stages with no such pointer
+ * are omitted. Bare-string (role-only) workers are omitted because they hold
+ * nothing to resume from.
  */
 export function stageWorkers(state: RunState): Record<string, RunStateWorker> {
   const out: Record<string, RunStateWorker> = {};
   if (!state.stages) return out;
   for (const [id, stage] of Object.entries(state.stages)) {
     const w = normalizeWorker(stage.worker);
-    if (w && (w.agentId || w.transcript || w.threadId)) out[id] = w;
+    if (w && (w.agentId || w.sessionId || w.transcript || w.threadId)) out[id] = w;
   }
   return out;
 }
@@ -791,7 +799,8 @@ export function detectDuplicateKeys(content: string): { path: string; key: strin
 
 /**
  * Per-stage worker-handle validation (advisory). For each stage whose recorded
- * `worker` lacks EVERY durable handle (`agentId`, `transcript`, `threadId`),
+ * `worker` lacks EVERY durable handle (`agentId`, `sessionId`, `transcript`,
+ * `threadId`),
  * returns the stage id plus the non-durable keys the record carries — so a
  * name-only or role-only worker is SURFACED rather than silently dropped from
  * the warm-seed set by `stageWorkers`. A bare-string worker carries no object
@@ -812,7 +821,14 @@ export function stagesLackingDurableHandle(
     const normalized = normalizeWorker(worker);
     if (normalized === undefined) continue;
     // A durable handle present → warm-seedable; no warning.
-    if (normalized.agentId || normalized.transcript || normalized.threadId) continue;
+    if (
+      normalized.agentId ||
+      normalized.sessionId ||
+      normalized.transcript ||
+      normalized.threadId
+    ) {
+      continue;
+    }
     const keys =
       typeof worker === 'string' ? [] : Object.keys(worker).filter((k) => k !== 'role');
     out.push({ stage: id, keys });

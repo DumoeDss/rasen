@@ -8,6 +8,21 @@
 
 - **BREAKING (library API): CLI programs are now created with `createProgram({ locale, facts? })`.** The exported mutable `program` singleton has been removed. Each call returns a fresh Commander instance with catalog-backed help and completion presentation resolved for the requested locale, so library callers should replace `import { program }` with `import { createProgram }` and construct an instance before parsing or inspecting help.
 
+## 0.1.6
+
+The cross-runtime worker release. Codex-hosted orchestration can now dispatch Claude workers through a bounded, structured Claude Code print bridge instead of rejecting that host-target pair.
+
+### Added
+
+- Added `rasen agent dispatch --runtime claude`, with prompt-file stdin transport, shared leaf/evaluate contracts, strict one-receipt JSON output, bounded timeout/output handling, and classified failure receipts.
+- Added exact Claude bridge continuation by `sessionId` plus working directory, including single-writer protection and durable run-state/resume surfaces.
+
+### Changed
+
+- Completed the four-way Claude/Codex route matrix with explicit `codex-exec` and `claude-print` bridge identities in pipeline CLI and management inspection output.
+- Made execution preflight probe only the bridge kinds actually used, at most once each, while preserving probe-free native dispatch.
+- Updated generated orchestration guidance and documentation for Claude bridge prompt construction, author-versus-verifier isolation, exact-session recovery, failure handling, and non-parking semantics.
+
 ## 0.1.5
 
 The management-platform release. Rasen grows a full web UI with supervised agent sessions and a drag-and-drop pipeline canvas, learns to keep idle subagents' prompt cache warm, and ships a local token-spend auditor — alongside the retirement of the slash-command generation surface (skills are now the only workflow-delivery format).

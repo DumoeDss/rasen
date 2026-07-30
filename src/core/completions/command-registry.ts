@@ -1372,6 +1372,21 @@ const COMMANDS: readonly CommandDefinition[] = [
         ],
       },
       {
+        name: 'dispatch',
+        flags: [
+          { name: 'runtime', takesValue: true },
+          { name: 'prompt-file', takesValue: true },
+          { name: 'contract', takesValue: true },
+          { name: 'sandbox', takesValue: true },
+          { name: 'model', takesValue: true },
+          { name: 'effort', takesValue: true },
+          { name: 'cwd', takesValue: true },
+          { name: 'timeout-ms', takesValue: true },
+          { name: 'resume', takesValue: true },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
         name: 'context',
         flags: [
           {

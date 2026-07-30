@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-07-30
+goal: Codex-hosted Rasen pipelines can launch, resume, and safely manage Claude
+  workers with tested lifecycle behavior; package version is 0.1.6; PR targets
+  dev/0.1.6.
