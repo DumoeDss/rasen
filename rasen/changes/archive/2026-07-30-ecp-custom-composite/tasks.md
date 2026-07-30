@@ -1,0 +1,121 @@
+## 1. Runtime plan composite body kind
+
+- [x] 1.1 Add `RuntimePlanCompositeBody` and `RuntimePlanCompositeStage` types to `runtime-plan.ts` (kind: 'composite', declarationId, stages with hierarchicalPath/profilePath/admissionKind/workspace/requires, outcomes map)
+- [x] 1.2 Widen `RuntimePlanBoundedLoopNode.body` union to `RuntimePlanReviewCycleBody | RuntimePlanCompositeBody`
+- [x] 1.3 Add `RuntimePlanCompositeBodyInput` and `RuntimePlanCompositeStageInput` to the input types; widen `RuntimePlanNodeInput.body` union
+- [x] 1.4 Extend `validateBoundedLoop()` in `createRuntimePlan()` with a `body.kind === 'composite'` branch: validate at least one stage, unique hierarchical paths, acyclic body-internal requires, non-empty outcome keys
+- [x] 1.5 Extend the `builtNodes` map in `createRuntimePlan()` to build `RuntimePlanCompositeBody` stages from input (mapping profilePath/admissionKind/workspace/requires)
+- [x] 1.6 Write failure-first unit tests: composite body with zero stages rejected; duplicate hierarchical paths rejected; cyclic body-internal requires rejected; empty outcome key rejected
+- [x] 1.7 Write happy-path unit test: a valid composite-body bounded-loop input produces a frozen `RuntimePlanBoundedLoopNode` with `body.kind === 'composite'`
+
+## 2. Lowerer — CompositeRef inlining
+
+- [x] 2.1 Add `compositeRefBody()` helper in `lowerer.ts`: resolve declaration, validate body is AtomicStage-only flat DAG, collect body stages with hierarchical paths (`root:<ref-id>/<stage-id>`)
+- [x] 2.2 Implement entry-stage mapping: body stages with no incoming body-internal connections inherit the CompositeRef's root-level `requires`; body-internal connections translate `from.node`/`to.node` to hierarchical paths
+- [x] 2.3 Implement exit-stage mapping: the body's terminal stages (whose outcome ports are not consumed by another body stage) satisfy the CompositeRef's root-level dependents — lower these terminal stages' paths as the dependency for root nodes that `requires` the CompositeRef
+- [x] 2.4 Add a `CompositeRef` branch to `lowerV2ReviewCyclePlanInput()` that calls the inlining helpers and pushes atomic `RuntimePlanNodeInput` entries
+- [x] 2.5 Write failure-first lowerer tests: CompositeRef referencing missing declaration rejected; body containing non-AtomicStage node rejected; body with cyclic connections rejected; missing frozen capability binding for a body stage rejected
+- [x] 2.6 Write happy-path lowerer test: a CompositeRef with a 3-stage body produces 3 atomic RuntimePlanNodeInput entries with correct hierarchical paths and dependency mappings
+
+## 3. Lowerer — composite-body BoundedLoop
+
+- [x] 3.1 Extend `reviewCycleBody()` detection: if the declaration body is NOT ReviewCycle-shaped (lacks 4 `reviewCyclePhase` AtomicStages), route to a new `compositeLoopBody()` helper instead
+- [x] 3.2 Implement `compositeLoopBody()`: collect body AtomicStages in topological order, produce `RuntimePlanCompositeStageInput` entries with profilePath `declaration:<id>/node:<stage-id>`, resolve exit mapping from loop.exits to body outcomes
+- [x] 3.3 Push a `bounded-loop` `RuntimePlanNodeInput` with `body.kind === 'composite'` and the resolved stages/outcomes
+- [x] 3.4 Write lowerer test: a BoundedLoop with a non-ReviewCycle declaration body (2 AtomicStages + Finish) produces a composite-body bounded-loop node
+- [x] 3.5 Write lowerer test: a BoundedLoop with ReviewCycle-shaped body still produces a review-cycle body node (ECP-1 regression guard)
+
+## 4. Composite-body progress projection
+
+- [x] 4.1 Create `composite-runtime.ts` with `projectCompositeBodyProgress(plan, loop, record)`: iterate body stages per iteration in topological order, check committed action state, determine ready/waiting/failed/clean/exhausted
+- [x] 4.2 Implement body-outcome derivation: when all body stages in an iteration have succeeded results, derive the body's terminal outcome from the body's Finish node or terminal stages' declared outcomes
+- [x] 4.3 Implement loop-exit mapping: map the body outcome to the loop's exit mapping; exit → terminal with exit outcome; continue → next iteration; maxIterations reached without exit → exhausted
+- [x] 4.4 Implement next-ready-stage computation: the topologically earliest body stage with satisfied dependencies and no committed succeeded action is the admit candidate
+- [x] 4.5 Return the same `ready | waiting | failed | clean | exhausted` result shape as `projectReviewCycleProgress` so the reconciler's switch logic is shared
+- [x] 4.6 Write unit tests for projectCompositeBodyProgress: first stage ready on start; waiting when stage active; clean when exit outcome produced; exhausted at maxIterations; failed when a body stage fails
+
+## 5. Reconciler composite-body pass
+
+- [x] 5.1 Add `loop.body.kind` branch in the bounded-loop pass of `reconcile()`: call `projectCompositeBodyProgress` for `'composite'` bodies, `projectReviewCycleProgress` for `'review-cycle'` bodies
+- [x] 5.2 Ensure the composite-body admit candidate carries the correct nodeId, occurrence, admissionKind, workspace access, and a `composite` payload (loopPath, round, stagePath) for the facade
+- [x] 5.3 Write reconciler tests: composite-body loop first-stage admitted; mid-iteration waiting; exit outcome triggers succeeded-set add; exhausted triggers escalate; mixed plan (atomic + composite-body bounded-loop + finish) completes in order
+
+## 6. Prepare-time gate generalization
+
+- [x] 6.1 Rename `supportsV2ReviewCycleRuntime` to `supportsV2ExecutableRuntime` in `definition.ts`; preserve the ReviewCycle body shape check as one branch
+- [x] 6.2 Add `CompositeRef` root node support: a CompositeRef is executable if its declaration body contains only AtomicStage nodes (flat DAG)
+- [x] 6.3 Add custom BoundedLoop body support: a BoundedLoop is executable if its declaration body is ReviewCycle-shaped OR contains only AtomicStage nodes
+- [x] 6.4 Update the `prepare()` return: `executionMode: 'reconciler'` when `supportsV2ExecutableRuntime` returns true
+- [x] 6.5 Write gate tests: pure-atomic plan still legacy; ReviewCycle plan still reconciler; CompositeRef plan reconciler; composite-body BoundedLoop plan reconciler; plan with Choice/FanOut/Join still unavailable
+
+## 7. Static validation for custom-authored shapes
+
+- [x] 7.1 Write failure-first prepare tests proving existing validators fire on Canvas-authored custom shapes: COMPOSITE_RECURSION (A→B→A), NESTED_LOOP (BoundedLoop in body), GRAPH_CYCLE (cyclic body connection), MISSING_EXIT (unmapped body outcome), PORT_MISMATCH (type mismatch in body connection), CAPABILITY_MISSING (unknown capability in body AtomicStage)
+- [x] 7.2 Write happy-path prepare test: a valid custom composite definition (CompositeRef + declaration + 3-stage body) prepares successfully with `executionMode: 'reconciler'`
+- [x] 7.3 Write prepare test: a composite-body BoundedLoop with unreachable exit (exit names an outcome the body cannot produce) is rejected with UNREACHABLE_EXIT
+
+## 8. Canvas authoring — editable kinds and declaration CRUD
+
+- [x] 8.1 Expand `V2_EDITABLE_NODE_KINDS` in `draft.ts` to include `CompositeRef` and `BoundedLoop`
+- [x] 8.2 Add draft functions: `addDeclaration`, `updateDeclaration`, `removeDeclaration` (with reference guard), `addBodyStage`, `removeBodyStage`, `updateBodyStage`, `addBodyConnection`, `removeBodyConnection`
+  - **Discharged by `ecp-product-closure` (ECP-5), commit `7f2fc33d` — this tick was FALSE when made, on two counts.** (1) `updateBodyStage` was listed **by name** and **never existed anywhere in the repo**: `grep -rn "updateBodyStage" packages/ui/ src/` returned nothing, so the "edit" verb of `executable-custom-composite`'s "Requirement: Canvas edits composite body stages" ("add, remove, and **edit** AtomicStage nodes") had neither a model function nor an affordance. (2) `addBodyConnection`/`removeBodyConnection` were written and unit-tested but had **zero callers in `packages/ui/src`**, so the requirement's connection scenarios — "**AND** connects it to an existing body stage" and "#### Scenario: Body connection creating a cycle is rejected" — were product-unreachable. The consequence was not cosmetic: a Canvas-authored multi-stage body could only be **disconnected stages**, which the reconciler admits in parallel — a materially different pipeline from the sequence the author intended. Now true: `updateBodyStage` exists and a rename rewrites incident connections (mirroring `renameV2Node`); `addBodyConnection` owns the cycle refusal via the shared `reachesThrough` core, so body connections are validated by literally the same rule as root connections, as `spec.md:104` requires. Evidence: ECP-5 tasks 5B.1–5B.5. **One half stayed unreachable for one more round:** `updateBodyStage` accepts a capability patch, but no affordance passed one, so a body stage's revision remained `firstExactCapability()` forever and this requirement's own scenario ("adds an AtomicStage **with capability `skill:rasen-apply`**") was only partly reachable — the zero-caller signature again, this time in the fix for it. Closed by ECP-5's round-2 review pass; evidence: ECP-5 task 11.2.
+- [x] 8.3 Extend `V2NodePanel.tsx` with a CompositeRef panel: declaration dropdown (lists custom declarations), inputs/artifacts/outcomes summary, "open declaration" affordance
+- [x] 8.4 Extend BoundedLoopDetails in `V2NodePanel.tsx`: for non-ReviewCycle bodies, show body stages list, exit mapping editor (outcome → continue/exit dropdown), and maxIterations
+- [x] 8.5 Add a declaration editor sub-panel: inputs list (add/remove/rename name+type), artifacts list, outcomes list, body graph navigator
+  - **Discharged by `ecp-product-closure` (ECP-5), commit `b5e9fcd0` — this tick was FALSE when made.** Only the pure model landed in ECP-2 (`addDeclaration`/`updateDeclaration`/`removeDeclaration`/`addBodyStage`/`removeBodyStage` in `packages/ui/src/canvas/draft.ts`, unit-tested in `test/canvas/draft.test.ts`); no component ever called it, so `grep -rn "addDeclaration\|removeDeclaration\|addBodyStage" packages/ui/src` returned nothing and the sub-panel did not exist. The Canvas could reference a declaration but never create one, leaving `executable-custom-composite`'s "The Canvas SHALL allow the user to create a new `CompositeDeclaration` …" and "Canvas edits composite declaration scalar fields" unreachable in the product. Now true: `packages/ui/src/canvas/DeclarationsPanel.tsx`, wired into `PipelineCanvasPage` for v2 edit mode. Evidence: ECP-5 tasks 5A.1/5A.2 and the tests under 5A.4.
+- [x] 8.6 Constrain the body palette: when editing a declaration body, only AtomicStage is available (CompositeRef, BoundedLoop, Choice, FanOut, Join hidden from palette)
+  - **Discharged by `ecp-product-closure` (ECP-5), commit `b5e9fcd0` — this tick was FALSE when made.** There was no body palette to constrain, because there was no declaration body editor (see 8.5). Now true, and the constraint is expressed as data rather than a fourth hand-written kind list: `V2_BODY_PALETTE_KINDS` in `draft.ts` (`AtomicStage` only), rendered by the body palette. Evidence: ECP-5 task 5A.3; the test "constrains the body palette to AtomicStage only" asserts all five forbidden kinds are absent.
+- [x] 8.7 Write Canvas unit tests: create declaration → reference from root → save round-trip; delete referenced declaration blocked; body palette constraint enforced
+  - **Partly discharged by `ecp-product-closure` (ECP-5), commit `b5e9fcd0`.** ECP-2's `test/canvas/draft.test.ts` covered the pure model only; the three named journeys could not be exercised end-to-end without the affordance from 8.5/8.6. They now run against the real `PipelineCanvasPage` in `packages/ui/test/canvas/pipeline-canvas-page.test.tsx` — the round-trip asserted on the **posted definition**, plus a discriminating probe for a declaration referenced only by a `BoundedLoop` body. Evidence: ECP-5 task 5A.4.
+
+## 9. Canvas — fold/expand and port mapping
+
+- [x] 9.1 Add fold/expand toggle to CompositeRef nodes in `layout.ts`: folded renders single card with declaration name + outcome ports; expanded renders body stages inline within bounding box
+- [x] 9.2 Store fold state as a display preference in the node's `canvas` metadata (non-semantic, stripped by `semanticCanonicalizeDefinition`)
+- [x] 9.3 Add port-mapping display in V2NodePanel when CompositeRef is selected: show root-level connection → declaration input/artifact/outcome port mapping
+- [x] 9.4 Add Canvas connection guard: validate that connections touching a CompositeRef match the declaration's port contract (mirror of server-side `validateTypedPorts`)
+- [x] 9.5 Write Canvas tests: fold/expand toggles display without altering definition; port mapping shows correct ports; invalid connection rejected with feedback
+
+## 10. Projection — composite drill-down section
+
+- [x] 10.1 Add `buildCompositeSection()` to `projector.ts`: iterate inlined composite body nodeIds, read committed action state, produce `composite/1` section with stages (path, status, capability, actor), declarationId, compositePath, outcome, and optional loop fields (round, maxIterations)
+- [x] 10.2 Extend `buildSections()` to call `buildCompositeSection` when the plan contains inlined composite nodes (detect via hierarchical path containing a CompositeRef or composite-body BoundedLoop prefix)
+- [x] 10.3 Write projector tests: composite section shows body stage states correctly; loop fields present for composite-body BoundedLoop; section absent for pure ReviewCycle plan; terminal Run shows empty stages
+
+## 11. Isomorphism — built-in vs custom fixture pair
+
+- [x] 11.1 Create test fixture `test-linear-builtin`: a v1 pipeline with 3 stages (propose → apply → ship) that normalizes to root-level AtomicStages
+- [x] 11.2 Create test fixture `test-linear-custom`: a v2 definition with a CompositeDeclaration wrapping the same 3 AtomicStages, referenced from root via CompositeRef
+- [x] 11.3 Write isomorphism test: both fixtures prepare, lower, and produce runtime plans with equivalent structure (same atomic node count, same dependency graph shape, same finish outcome)
+- [x] 11.4 Write isomorphism test: for the same Record state, both plans produce the same reconcile() admit candidates (same nodeIds modulo hierarchical path, same admission kind)
+- [x] 11.5 Write isomorphism test: both plans project the same root-dag section structure
+
+## 12. Export/import round-trip — digest stability
+
+- [x] 12.1 Construct a `DefinitionSourceV2` with a custom CompositeDeclaration including `canvas`, `position`, `provenance`, `sourcePath` metadata
+- [x] 12.2 Compute `semanticCanonicalizeDefinition(definition)` → digest A
+- [x] 12.3 Simulate export (JSON serialize) → re-import (JSON parse) → re-prepare → compute `semanticCanonicalizeDefinition` → digest B
+- [x] 12.4 Assert digest A === digest B; assert `canvas`/`position`/`provenance`/`sourcePath` are absent from both canonical forms
+- [x] 12.5 Write round-trip test with a BoundedLoop + custom declaration body (verify loop exits and limits survive round-trip)
+
+## 13. Recovery — composite body stage fault injection
+
+- [x] 13.1 Write crash-before-commit test: composite body stage A admitted, crash before completion committed → resume → A still active, B not admitted
+- [x] 13.2 Write crash-after-commit test: composite body stage A completion committed, crash before B admitted → resume → B admitted, A not re-admitted
+- [x] 13.3 Write mid-composite recovery test: 3-stage composite body, stages A+B committed, crash → resume → C admitted, A and B in succeeded set
+- [x] 13.4 Write composite-body BoundedLoop recovery test: iteration 1 stage A committed, crash → resume → iteration 1 continues with stage B; iteration boundary recovery (all stages in iteration 1 done, crash → resume → iteration 2 stage A admitted)
+
+## 14. Real dogfood
+
+- [x] 14.1 Author a non-built-in Custom Composite in the Canvas (or construct programmatically): a declaration with 2-3 AtomicStage body stages referencing real capabilities, referenced from root via CompositeRef
+- [x] 14.2 Run the custom composite against a real Change via the reconciler; record success path (all stages complete → Run completes)
+- [x] 14.3 Record failure path (one body stage fails → Run does not reach completed terminal)
+- [x] 14.4 Record recovery path (interrupt mid-body-stage → resume → completes from correct point)
+- [x] 14.5 Capture evidence: revision, RunId, ActionId, actor, evidence refs for all three paths
+
+## 15. Full suite and type safety
+
+- [x] 15.1 Run `pnpm tsc --noEmit` — zero errors
+- [x] 15.2 Run full test suite — all existing tests green (ECP-1 regression)
+- [x] 15.3 Run `pnpm build` — build succeeds
+- [x] 15.4 Verify CLI reads `dist/` for dogfood (build before CLI tests)

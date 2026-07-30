@@ -201,6 +201,23 @@ export const RunStateSchema = z
         source: z.enum(['flag', 'project', 'store', 'global', 'config', 'default']),
       })
       .optional(),
+    // ECP-5: the engine that OWNS this run, recorded once at run start
+    // (`--engine` flag > project/store/global `runs.engine` > default `auto`,
+    // gated by the pipeline's engine support — see resolveRunsEnginePolicy).
+    // Resume reads it back to know WHICH run-state contract it is reading:
+    // under `legacy` this file is the authoritative progression record; under
+    // `reconciler` it is bounded to bookkeeping the canonical Run does not
+    // model, and every mechanical field below is a labeled projection that must
+    // never drive a progression decision the Run owns. Absent on runs recorded
+    // before this capability existed — infer the owner from what is on disk
+    // (a canonical Run for the change, or only legacy run-state), never from
+    // current config, since config can change after the fact.
+    engine: z
+      .object({
+        effective: z.enum(['reconciler', 'legacy']),
+        source: z.enum(['flag', 'project', 'store', 'global', 'default']),
+      })
+      .optional(),
     stages: z.record(z.string(), RunStateStageSchema).optional(),
     // The retention mode frozen on first entry to the retain stage (design D2).
     // Once recorded, resume prefers it over a later profile edit so a mid-run
@@ -256,8 +273,10 @@ export const RunStateSchema = z
         workProduct: z.enum(['code', 'prose']),
       })
       .optional(),
-    // Goal-loop: best-effort derived cache. The AUTHORITATIVE per-round record
-    // is goal-run.json (historyRef); this is a convenience for the resume fast path.
+    // Goal-loop: best-effort derived cache for legacy V1 Runs. For
+    // reconciler-engine Runs, the authoritative goal state is the canonical
+    // Record projected through `projectRunView` → goal/1 section. The
+    // historyRef (goal-run.json) is a compat projection for legacy display.
     loopProgress: z
       .object({
         kind: z.literal('goal'),
@@ -536,6 +555,62 @@ export function resolveRunStateLocation(
   }
 
   return null;
+}
+
+/**
+ * ECP-5 (design D8): whether a change's run-state artifact constitutes
+ * LEGACY-OWNER state for the bilateral engine-ownership guard.
+ *
+ * `present: false` means the artifact is absent, or present and declaring
+ * `engine.effective: 'reconciler'` — i.e. D3 bookkeeping beside a canonical
+ * Run, which is explicitly NOT a competing progression record.
+ *
+ * `present: true` carries WHY, because the refusal message has to be
+ * actionable:
+ * - `undeclared` — run-state with no `engine` declaration. Truthful, not a
+ *   heuristic: only pre-convergence LEADs, which owned mechanical progression
+ *   themselves, ever wrote engine-less run-state. Converged runs declare their
+ *   engine at run start, so no new run can enter this class.
+ * - `declared-legacy` — run-state declaring `engine.effective: 'legacy'`.
+ * - `unreadable` — the artifact exists but cannot be parsed. Fail-closed: an
+ *   unreadable artifact is never presumed to be harmless bookkeeping.
+ *
+ * Derived projections (`goal-run.json`, generated reports) are deliberately
+ * NOT inputs here — they are read-only derivations by construction, and
+ * counting them would make every reconciler-engine goal Run instantly
+ * ambiguous.
+ */
+export type LegacyOwnerSignal =
+  | Readonly<{ present: false }>
+  | Readonly<{
+      present: true;
+      path: string;
+      reason: 'undeclared' | 'declared-legacy' | 'unreadable';
+    }>;
+
+export function resolveLegacyOwnerSignal(
+  changeDir: string,
+  workDir?: string | null
+): LegacyOwnerSignal {
+  const location = resolveRunStateLocation(changeDir, workDir);
+  if (location === null) return Object.freeze({ present: false });
+
+  const read = readRunStateDetailed(location.dir);
+  if (read.kind === 'absent') return Object.freeze({ present: false });
+  if (read.kind === 'invalid') {
+    return Object.freeze({
+      present: true,
+      path: location.path,
+      reason: 'unreadable' as const,
+    });
+  }
+  const declared = read.state.engine?.effective;
+  if (declared === 'reconciler') return Object.freeze({ present: false });
+  return Object.freeze({
+    present: true,
+    path: location.path,
+    reason: declared === 'legacy' ? ('declared-legacy' as const) : ('undeclared' as const),
+  });
 }
 
 /** Validate, then write run-state to the change directory (pretty JSON). */

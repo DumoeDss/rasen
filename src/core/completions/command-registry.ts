@@ -1484,7 +1484,24 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
           { name: 'change', type: 'change-id' },
           { name: 'pipeline' },
         ],
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+        flags: [
+          COMMON_FLAGS.json,
+          // ECP-5 (task 9.2): `--engine` shipped on `pipeline start` in
+          // section 1 without its completion-registry entry, which
+          // `command-registry.test.ts` catches by diffing the registry against
+          // Commander's real option list. The candidate values are listed so
+          // shell completion offers the three policy values rather than a bare
+          // flag.
+          {
+            name: 'engine',
+            description:
+              'Engine for this launch: auto (default), reconciler, or legacy. Wins over the runs.engine config; legacy refuses to create a canonical Run.',
+            takesValue: true,
+            values: ['auto', 'reconciler', 'legacy'],
+          },
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+        ],
       },
       {
         name: 'status',

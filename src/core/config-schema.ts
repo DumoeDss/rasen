@@ -4,6 +4,7 @@ import { validateConfigKeyPath as registryValidateConfigKeyPath } from './config
 import type { ConfigScope } from './config-keys.js';
 import { thresholdSchema } from './pipeline-registry/types.js';
 import { RETENTION_MODES } from './retention.js';
+import { RUNS_ENGINE_POLICIES } from './project-config.js';
 import { SUPPORTED_CLI_LOCALES } from '../utils/locale.js';
 import { DISPATCH_RUNTIMES, PROBE_RUNTIMES } from './runtime-adapters.js';
 import { ThresholdSchemeNameSchema } from './threshold-schemes.js';
@@ -61,6 +62,15 @@ export const GlobalConfigSchema = z
       .object({
         gates: z.enum(['on', 'off']).optional(),
         selection: z.enum(['classify', 'manual', 'compose']).optional(),
+      })
+      .optional(),
+    // ECP-5 engine selection policy. `runs.engine` decides which engine owns a
+    // NEW Run; it resolves flag > project > store > global > built-in `auto`
+    // through `resolveRunsEnginePolicy`, and `rasen pipeline start` — not any
+    // prompt — enforces it.
+    runs: z
+      .object({
+        engine: z.enum(RUNS_ENGINE_POLICIES).optional(),
       })
       .optional(),
     // Keepalive gate for `rasen agent wait` (cli-agent-wait spec): per-runtime

@@ -24,6 +24,11 @@ import { verifyCompletion } from './completion.js';
 import { createCanonicalWait, type CanonicalWait } from './waits.js';
 import { deriveInvocationId } from './identity.js';
 import type { WorkspaceReservationRegistry } from './reservations.js';
+import { validateReviewCycleCompletion, projectReviewCycleProgress } from './review-cycle-runtime.js';
+import { validateGoalCycleCompletion, projectGoalCycleProgress } from './goal-cycle-runtime.js';
+import { assertReviewCycleMayShip } from './review-cycle.js';
+import { assertGoalCycleMayShip } from './goal-cycle.js';
+import { projectCompositeBodyProgress } from './composite-runtime.js';
 
 export interface RuntimeDeps {
   readonly store: RunStore;
@@ -37,6 +42,8 @@ export interface RuntimeDeps {
     readonly nodeId: string;
     readonly occurrence: number;
     readonly admissionKind: 'agent' | 'command' | 'host';
+    readonly profilePath?: string;
+    readonly input?: import('../contracts.js').JsonValue;
   }) => RunAction;
   /**
    * Optional mutation guard invoked before every mutating operation
@@ -85,13 +92,14 @@ function receipt(
   record: CanonicalRunRecord,
   disposition: ChangeRunReceipt['disposition'],
   actions: readonly RunAction[],
-  resolveSourceState?: (record: CanonicalRunRecord) => 'active' | 'archived' | 'missing'
+  resolveSourceState?: (record: CanonicalRunRecord) => 'active' | 'archived' | 'missing',
+  plan?: RuntimePlan
 ): ChangeRunReceipt {
   const sourceState = resolveSourceState?.(record) ?? 'active';
   return Object.freeze({
     format: 'change-run-receipt/1',
     disposition,
-    view: projectRunView(record, sourceState),
+    view: projectRunView(record, sourceState, plan),
     actions: Object.freeze([...actions]),
   }) as ChangeRunReceipt;
 }
@@ -190,6 +198,12 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
             nodeId: candidate.nodeId,
             occurrence: candidate.occurrence,
             admissionKind: candidate.admissionKind,
+            ...(candidate.profilePath !== undefined
+              ? { profilePath: candidate.profilePath }
+              : {}),
+            ...(candidate.input !== undefined
+              ? { input: candidate.input as import('../contracts.js').JsonValue }
+              : {}),
           });
           // Cross-Run reservation check. The reconciler has already decided
           // this candidate is admissible within THIS Run; the registry is the
@@ -379,7 +393,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
     start(_request, context: RuntimeMutationContext) {
       if (deps.store.has(deps.plan.runId)) {
         const record = deps.store.load(deps.plan.runId);
-        return asPromise(receipt(record, 'reused', [], deps.resolveSourceState));
+        return asPromise(receipt(record, 'reused', [], deps.resolveSourceState, deps.plan));
       }
       const reconciled = reconcile(deps.plan, deps.initialRecord);
       if (!reconciled.ok) {
@@ -391,7 +405,11 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         context.deliveryMode
       );
       deps.store.create(deps.plan.runId, settled.record);
-      return asPromise(receipt(settled.record, 'created', settled.granted, deps.resolveSourceState));
+      // Persist the sealed RuntimePlan alongside the Record so read paths
+      // (management API, operations) can project the review-cycle section
+      // without access to the launch context (Major-2).
+      deps.store.writePlan?.(deps.plan.runId, deps.plan);
+      return asPromise(receipt(settled.record, 'created', settled.granted, deps.resolveSourceState, deps.plan));
     },
     resume(_request, context: RuntimeMutationContext) {
       const record = deps.store.load(deps.plan.runId);
@@ -416,7 +434,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
               ? 'waiting'
               : 'advanced';
       return asPromise(
-        receipt(settled.record, disposition, settled.granted, deps.resolveSourceState)
+        receipt(settled.record, disposition, settled.granted, deps.resolveSourceState, deps.plan)
       );
     },
     complete(request: CompleteRunAction, context: RuntimeMutationContext) {
@@ -435,6 +453,15 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
           'facade complete failed: only domain-action-result completions are supported by this facade path.'
         );
       }
+      // Pre-commit ReviewCycle validation (D3): validate the completion against
+      // the exact mechanically expected phase BEFORE committing. Malformed
+      // results, same-actor fixer+verifier, and open Blocker/Major findings
+      // fail closed without Record mutation.
+      validateReviewCycleCompletion(deps.plan, record, request);
+      validateGoalCycleCompletion(deps.plan, record, request);
+      // ECP-4: validate choice/fan-out condition results before committing.
+      validateChoiceCompletion(deps.plan, record, request);
+      validateFanOutConditionCompletion(deps.plan, record, request);
       const commitStimulus: RunStimulus = {
         kind: 'commit-action-result',
         actionId: request.actionId,
@@ -442,6 +469,8 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         receiptDigest: request.receiptDigest as never,
         result: request.result,
         evidence: request.evidence,
+        actor: request.actor,
+        actorAttestation: request.actorAttestation,
       };
       // Apply the commit to an intermediate Record purely to discover the
       // candidate batch the completion unblocks; the final write folds the
@@ -494,6 +523,38 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         throw new Error(`facade complete settle failed: ${result.failure.message}`);
       }
       const finalRecord = result.record;
+      // Defense-in-depth ship guard (Minor-3): when the plan has a bounded-loop
+      // and the Run reaches a SUCCESSFUL terminal state, assert the ReviewCycle
+      // state is clean before committing. Escalated/exhausted terminals are NOT
+      // guarded here — the escalation IS the rejection. This is an explicit
+      // guard mandated by the spec, in addition to the DAG dependency.
+      const boundedLoop = deps.plan.nodes.find(
+        (node) => node.kind === 'bounded-loop'
+      );
+      if (
+        boundedLoop !== undefined &&
+        boundedLoop.kind === 'bounded-loop' &&
+        (boundedLoop.body.kind === 'review-cycle' ||
+          boundedLoop.body.kind === 'goal-cycle') &&
+        finalRecord.terminal !== undefined &&
+        finalRecord.status === 'completed'
+      ) {
+        if (boundedLoop.body.kind === 'review-cycle') {
+          const progress = projectReviewCycleProgress(
+            deps.plan,
+            boundedLoop,
+            finalRecord
+          );
+          assertReviewCycleMayShip(progress.state);
+        } else {
+          const progress = projectGoalCycleProgress(
+            deps.plan,
+            boundedLoop,
+            finalRecord
+          );
+          assertGoalCycleMayShip(progress.state);
+        }
+      }
       deps.store.commit(deps.plan.runId, finalRecord);
       const disposition: ChangeRunReceipt['disposition'] =
         finalRecord.terminal !== undefined
@@ -503,12 +564,12 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
             : finalRecord.waits.length > 0
               ? 'waiting'
               : 'advanced';
-      return asPromise(receipt(finalRecord, disposition, collected.granted, deps.resolveSourceState));
+      return asPromise(receipt(finalRecord, disposition, collected.granted, deps.resolveSourceState, deps.plan));
     },
     inspect(_ref: ExactChangeRunRef) {
       const record = deps.store.load(deps.plan.runId);
       const sourceState = deps.resolveSourceState?.(record) ?? 'active';
-      return asPromise(projectRunView(record, sourceState));
+      return asPromise(projectRunView(record, sourceState, deps.plan));
     },
     control(request: ChangeRunControlRequest, _context: RuntimeMutationContext) {
       const record = deps.store.load(deps.plan.runId);
@@ -518,10 +579,114 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         throw new Error(`facade control failed: ${result.failure.message}`);
       }
       deps.store.commit(deps.plan.runId, result.record);
-      return asPromise(receipt(result.record, 'advanced', [], deps.resolveSourceState));
+      return asPromise(receipt(result.record, 'advanced', [], deps.resolveSourceState, deps.plan));
     },
   };
 }
 
 export { asPromise };
 export type { ChangeRunView };
+
+/**
+ * ECP-4: a JSON object (not null, not an array). Both evaluator validators
+ * previously used this shape as a PRECONDITION for validating at all, which
+ * meant any non-object result bypassed validation and committed.
+ */
+function isPlainJsonObject(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Human-readable shape name for an evaluator-result rejection message. */
+function describeJsonShape(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'an array';
+  return `a ${typeof value}`;
+}
+
+/**
+ * ECP-4: validate a choice condition evaluator completion. The result must
+ * contain a valid `outcome` string matching one of the choice's declared
+ * outcomes.
+ */
+function validateChoiceCompletion(
+  plan: RuntimePlan,
+  record: CanonicalRunRecord,
+  request: CompleteRunAction
+): void {
+  // Find choice nodes whose nodeId matches the completed action.
+  const choiceNodes = plan.nodes.filter((n) => n.kind === 'choice');
+  for (const node of choiceNodes) {
+    if (node.kind !== 'choice') continue;
+    const action = Object.values(record.actions).find(
+      (a) => a.action.nodeId === node.nodeId && a.state === 'active'
+    );
+    if (action === undefined) continue;
+    if (action.action.actionId !== request.actionId) continue;
+    // This completion targets a choice node — validate the result.
+    // A failed/blocked evaluator legitimately carries no selection; only a
+    // SUCCEEDED completion must name a valid outcome.
+    if (request.kind === 'domain-action-result' && request.status === 'succeeded') {
+      if (!isPlainJsonObject(request.result)) {
+        // Guarding only the object shape used to SKIP validation entirely, so
+        // a string result committed and left the Run permanently stalled with
+        // no branch selected and no diagnostic.
+        throw new Error(
+          `Choice completion for ${node.hierarchicalPath} must be an object carrying an outcome; received ${describeJsonShape(request.result)}.`
+        );
+      }
+      const outcome = (request.result as Readonly<{ outcome?: unknown }>).outcome;
+      if (typeof outcome !== 'string' || !node.outcomes.includes(outcome)) {
+        throw new Error(
+          `Choice completion for ${node.hierarchicalPath} has invalid outcome ${JSON.stringify(outcome)}.`
+        );
+      }
+    }
+    break;
+  }
+}
+
+/**
+ * ECP-4: validate a FanOut condition evaluator completion. The result must
+ * contain `activeMembers` and `inactiveMembers` arrays, and all required
+ * members must be in `activeMembers`.
+ */
+function validateFanOutConditionCompletion(
+  plan: RuntimePlan,
+  record: CanonicalRunRecord,
+  request: CompleteRunAction
+): void {
+  const fanOutNodes = plan.nodes.filter((n) => n.kind === 'fan-out');
+  for (const node of fanOutNodes) {
+    if (node.kind !== 'fan-out') continue;
+    const action = Object.values(record.actions).find(
+      (a) => a.action.nodeId === node.nodeId && a.state === 'active'
+    );
+    if (action === undefined) continue;
+    if (action.action.actionId !== request.actionId) continue;
+    // This completion targets a fan-out condition — validate the result.
+    // A failed/blocked evaluator legitimately carries no member selection.
+    if (request.kind === 'domain-action-result' && request.status === 'succeeded') {
+      if (!isPlainJsonObject(request.result)) {
+        throw new Error(
+          `FanOut condition completion for ${node.hierarchicalPath} must be an object carrying activeMembers; received ${describeJsonShape(request.result)}.`
+        );
+      }
+      const result = request.result as Readonly<{ activeMembers?: unknown; inactiveMembers?: unknown }>;
+      if (!Array.isArray(result.activeMembers)) {
+        throw new Error(
+          `FanOut condition completion for ${node.hierarchicalPath} must include activeMembers array.`
+        );
+      }
+      // Required members must be in activeMembers.
+      const activeSet = new Set(result.activeMembers as readonly unknown[]);
+      for (const member of node.members) {
+        if (member.required && !activeSet.has(member.hierarchicalPath)) {
+          throw new Error(
+            `FanOut condition for ${node.hierarchicalPath} suppressed required member ${member.hierarchicalPath}.`
+          );
+        }
+      }
+    }
+    break;
+  }
+}

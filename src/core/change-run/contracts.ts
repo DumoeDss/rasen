@@ -202,6 +202,28 @@ const RunActionSchema = z.discriminatedUnion('kind', [
       input: JsonValueSchema,
       session: z.strictObject({
         reuse: z.enum(['never', 'same-invocation']),
+        /**
+         * ECP-5 (D9): the authored reuse scope, verbatim. Optional and
+         * undefined-dropped — absent when nothing was authored or the stage was
+         * synthesized, so existing action digests are byte-identical. It exists
+         * because the two-value `reuse` above cannot express the four authored
+         * scopes, and an author's expressed intent is not recoverable after the
+         * fact. Nothing enforces it in 0.1.6.
+         */
+        sessionReuseAuthored: z
+          .enum(['none', 'stage', 'run-planner', 'review-thread'])
+          .optional(),
+        /**
+         * PLACEHOLDER — see the `ecp-change-run-runtime` requirement
+         * "Recorded session guidance is placeholder until a slice defines its
+         * authoritative source". 0.1.6 offers no config or authoring surface
+         * for these two, so every 0.1.6-era recorded value is a placeholder by
+         * definition, not an operator's or author's choice. A future reader
+         * MUST derive real limits from its own slice's authoritative source —
+         * in particular, enforcing the recorded `reuseRoundLimit: 1` would
+         * forbid reviewer reuse across review rounds, the primary reuse
+         * pattern.
+         */
         handoffTokenLimit: SafeIntegerSchema,
         reuseRoundLimit: SafeIntegerSchema,
       }),
@@ -515,8 +537,41 @@ const RootDagViewSectionSchema = z.strictObject({
 export type RootDagViewSection = Readonly<
   z.infer<typeof RootDagViewSectionSchema>
 >;
+
+const ReviewCycleFindingSchema = z.strictObject({
+  id: z.string().min(1).max(256),
+  severity: z.string().min(1).max(64),
+  status: z.string().min(1).max(64),
+  claim: z.string().min(1).max(4096),
+  location: z.string().min(1).max(1024).optional(),
+});
+
+const ReviewCycleActorsSchema = z
+  .strictObject({
+    fixer: ActorRefSchema.optional(),
+    verifier: ActorRefSchema.optional(),
+    lastActor: ActorRefSchema.optional(),
+  });
+
+const ReviewCycleViewSectionSchema = z.strictObject({
+  kind: z.literal('review-cycle'),
+  version: z.literal(1),
+  loopPath: z.string().min(1).max(512),
+  round: SafeIntegerSchema,
+  phase: z.enum(['review', 'triage', 'fix', 're-review']),
+  outcome: z.enum(['clean', 'exhausted']).optional(),
+  findings: z.array(ReviewCycleFindingSchema),
+  actors: ReviewCycleActorsSchema,
+  waitReason: z.string().min(1).max(256).optional(),
+  maxRounds: SafeIntegerSchema,
+});
+
+export type ReviewCycleViewSection = Readonly<
+  z.infer<typeof ReviewCycleViewSectionSchema>
+>;
 export type ChangeRunViewSection =
   | RootDagViewSection
+  | ReviewCycleViewSection
   | Readonly<Record<string, unknown>>;
 
 const DriftStateSchema = z.enum(['unchanged', 'changed', 'unavailable']);
@@ -859,6 +914,14 @@ export function decodeChangeRunView(value: unknown): ChangeRunView {
       (section as { kind?: unknown }).kind === 'root-dag'
     ) {
       return decode(RootDagViewSectionSchema, section);
+    }
+    if (
+      section !== null &&
+      typeof section === 'object' &&
+      'kind' in section &&
+      (section as { kind?: unknown }).kind === 'review-cycle'
+    ) {
+      return decode(ReviewCycleViewSectionSchema, section);
     }
     const additive = z
       .object({

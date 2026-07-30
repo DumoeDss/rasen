@@ -187,11 +187,12 @@ describe('handoff workflow', () => {
       expect(autoText).toContain('Step H.7');
     });
 
-    it('review-cycle routes round exhaustion through the escalation ladder, never a silent pass', () => {
+    it('review-cycle escalates through the canonical Run, never a silent pass', () => {
       const rcText = getReviewCycleSkillTemplate().instructions;
-      expect(rcText).toContain('Step H.5/H.6 escalation ladder');
-      expect(rcText).toContain('strategyAttempts');
-      expect(rcText).toContain('Never report clean while any Blocker or Major finding is unresolved');
+      // The thin launcher delegates escalation to the canonical reconciler.
+      // It surfaces the escalated state to the human.
+      expect(rcText.toLowerCase()).toContain('escalat');
+      expect(rcText.toLowerCase()).toContain('maxrounds');
     });
   });
 

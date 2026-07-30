@@ -33,6 +33,8 @@ export const CONFIG_DIAGNOSTIC_KEYS = [
   'invalidAutopilotGates',
   'invalidAutopilotSelection',
   'invalidAutopilot',
+  'invalidRunsEngine',
+  'invalidRuns',
   'invalidHandoffThreshold',
   'invalidHandoff',
   'expertSelectionMigration',

@@ -37,15 +37,29 @@
  *      filtered from the list, projected read-only (`scope: other`, no controls),
  *      and POST control is rejected with `workspace-scope-mismatch`.
  *
- * Kernel integration gaps surfaced by this test (flagged for LEAD, NOT fixed
- * here per the frozen-kernel constraint):
- *  - The association registry is not yet wired into the CLI/facade launch path.
- *    The CLI derives ChangeInstanceId from `statSync(projectRoot)`, not the
- *    change directory's physical identity, so archive+recreate in the same
- *    project root does not yet produce a distinct instance through `pipeline
- *    start` alone. The distinct-instance semantics ARE correct at the
- *    association-registry level (proven below) and await the engine-ownership
- *    integration to enforce them end-to-end.
+ * Kernel integration gap surfaced by this test — CLOSED, kept for provenance:
+ *  - WHEN WRITTEN, the association registry was not wired into the CLI/facade
+ *    launch path: the CLI derived ChangeInstanceId from `statSync(projectRoot)`
+ *    rather than the change directory's physical identity, so archive+recreate
+ *    in one project root did not produce a distinct instance through `pipeline
+ *    start` alone. The distinct-instance semantics were correct at the
+ *    association-registry level (proven below) and awaited integration.
+ *  - THAT IS NO LONGER TRUE. The registry is the launch path's PRIMARY identity
+ *    source (`src/commands/pipeline.ts` — `createAssociationLedgerStore` +
+ *    `deriveChangeInstanceId`); the project-root stat survives only as the
+ *    fallback for unregistered projects. ECP-5's design D8 then made
+ *    instance-scoped ownership enforced rather than merely derivable: the
+ *    engine-ownership guard computes `canonicalPresent` from the RunStore bound
+ *    to the ChangeInstanceId, so an archived instance's artifacts cannot
+ *    conflict with a same-name recreation
+ *    (`test/core/change-run/engine-ownership-wiring.test.ts`).
+ *  - Corrected rather than deleted (ECP-5 review finding): this file is cited by
+ *    §15.4 exit condition 5, and condition 11 claims exactly the instance-scoped
+ *    ownership the stale note denied — so a reader auditing 11 against its own
+ *    cited test found the test refuting it. A comment asserting a limitation
+ *    that no longer exists is the same defect shape as the `pipeline show`
+ *    comment that justified a bug for four slices; the history is kept visible
+ *    because it explains why this file is shaped the way it is.
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';

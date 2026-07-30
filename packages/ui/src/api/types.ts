@@ -250,7 +250,7 @@ export interface WirePipeline {
   definitionValid?: boolean;
   planAvailable?: boolean;
   executable?: boolean;
-  executionMode?: 'legacy' | 'unavailable';
+  executionMode?: 'legacy' | 'reconciler' | 'unavailable';
   unavailableReason?: string;
   diagnostics?: PipelineValidationIssue[];
   /**
@@ -1352,7 +1352,7 @@ export interface WireDefinitionPreparation {
   digests?: { source: string; capability: string; plan: string };
   planAvailable: boolean;
   executable: boolean;
-  executionMode: 'legacy' | 'unavailable';
+  executionMode: 'legacy' | 'reconciler' | 'unavailable';
   unavailableReason?: string;
 }
 
@@ -1587,6 +1587,98 @@ export interface RootDagViewSection {
   allowedControls: readonly AllowedControl[];
 }
 
+/** A review-cycle/1 section projected from a Run with a BoundedLoop (additive). */
+export interface ReviewCycleFinding {
+  id: string;
+  severity: string;
+  status: string;
+  claim: string;
+  location?: string;
+}
+
+export interface ReviewCycleViewSection {
+  kind: 'review-cycle';
+  version: 1;
+  loopPath: string;
+  round: number;
+  phase: 'review' | 'triage' | 'fix' | 're-review';
+  outcome?: 'clean' | 'exhausted';
+  findings: ReviewCycleFinding[];
+  actors: {
+    fixer?: { identityDigest: string; kind: string; [key: string]: unknown };
+    verifier?: { identityDigest: string; kind: string; [key: string]: unknown };
+    lastActor?: { identityDigest: string; kind: string; [key: string]: unknown };
+  };
+  waitReason?: string;
+  maxRounds: number;
+}
+
+// --- ECP-4 parallel/1 and choice/1 sections ---
+//
+// Mirror of the server-projected `parallel/1` and `choice/1` sections. Source
+// of truth: `src/core/change-run/internal/projector.ts` in the root package
+// (`ParallelSectionView`, `ParallelMemberView`, `ParallelMemberStatus`,
+// `ParallelJoinState`, `ChoiceSectionView`, `ChoiceBranchView`). The CLI
+// `pipeline status` renderer, the Management API, and this UI all read the
+// SAME projection — the UI derives no member status, join state, budget usage,
+// or branch activation client-side.
+//
+// `joinPath`/`outcome` are `string | undefined` on the server type; over the
+// wire an undefined value means the key is absent, so they are mirrored as
+// optional properties.
+
+/** A fan-out member's projected status within a `parallel/1` section. */
+export type ParallelMemberStatus =
+  | 'waiting'
+  | 'suppressed'
+  | 'ready'
+  | 'running'
+  | 'succeeded'
+  | 'failed';
+
+/** The projected state of the Join barrier closing a fan-out. */
+export type ParallelJoinState = 'not-reached' | 'waiting' | 'proceeding' | 'failed';
+
+/** One fan-out member as projected by the server. */
+export interface ParallelMemberView {
+  path: string;
+  status: ParallelMemberStatus;
+  required: boolean;
+  condition: string;
+}
+
+/** A parallel/1 section projected from a Run whose plan has a FanOut node. */
+export interface ParallelViewSection {
+  kind: 'parallel';
+  version: 1;
+  fanOutPath: string;
+  joinPath?: string;
+  members: readonly ParallelMemberView[];
+  joinState: ParallelJoinState;
+  concurrencyCap: number;
+  budget: { used: number; max: number };
+  activeCount: number;
+  succeededCount: number;
+  failedCount: number;
+  keyBlockers: readonly string[];
+}
+
+/** One choice branch as projected by the server. */
+export interface ChoiceBranchView {
+  outcome: string;
+  path: string;
+  active: boolean;
+}
+
+/** A choice/1 section projected from a Run whose plan has a Choice node. */
+export interface ChoiceViewSection {
+  kind: 'choice';
+  version: 1;
+  choicePath: string;
+  outcome?: string;
+  branches: readonly ChoiceBranchView[];
+}
+
 /** An additive unknown section (tolerated, not rendered by name). */
 export interface AdditiveViewSection {
   kind: string;
@@ -1594,7 +1686,12 @@ export interface AdditiveViewSection {
   [key: string]: unknown;
 }
 
-export type ChangeRunViewSection = RootDagViewSection | AdditiveViewSection;
+export type ChangeRunViewSection =
+  | RootDagViewSection
+  | ReviewCycleViewSection
+  | ParallelViewSection
+  | ChoiceViewSection
+  | AdditiveViewSection;
 
 /** Drift state reported by the server's comparison-only DriftObserver. */
 export interface DriftView {
@@ -1645,6 +1742,49 @@ export function getRootDagSection(view: ChangeRunView): RootDagViewSection | nul
   return null;
 }
 
+/**
+ * Extracts the review-cycle/1 section from a ChangeRunView. Returns null when
+ * the view has no review-cycle section (Runs without a BoundedLoop, or views
+ * projected without the plan — e.g. the management API which has no plan).
+ */
+export function getReviewCycleSection(view: ChangeRunView): ReviewCycleViewSection | null {
+  for (const section of view.sections) {
+    if (section.kind === 'review-cycle' && section.version === 1) {
+      return section as ReviewCycleViewSection;
+    }
+  }
+  return null;
+}
+
+/**
+ * Extracts the parallel/1 section from a ChangeRunView. Returns null when the
+ * view has no parallel section (Runs whose plan has no FanOut node, or views
+ * projected without the plan — the projector emits the section only when it
+ * was given a RuntimePlan).
+ */
+export function getParallelSection(view: ChangeRunView): ParallelViewSection | null {
+  for (const section of view.sections) {
+    if (section.kind === 'parallel' && section.version === 1) {
+      return section as ParallelViewSection;
+    }
+  }
+  return null;
+}
+
+/**
+ * Extracts the choice/1 section from a ChangeRunView. Returns null when the
+ * view has no choice section (Runs whose plan has no Choice node, or views
+ * projected without the plan).
+ */
+export function getChoiceSection(view: ChangeRunView): ChoiceViewSection | null {
+  for (const section of view.sections) {
+    if (section.kind === 'choice' && section.version === 1) {
+      return section as ChoiceViewSection;
+    }
+  }
+  return null;
+}
+
 // --- Engine support analysis (14.7/14.8) ---
 // Additive `availableEngines`/`reconcilerSupport` on pipeline detail (and
 // the list endpoint's pipeline shape). Source of truth:
@@ -1652,12 +1792,22 @@ export function getRootDagSection(view: ChangeRunView): RootDagViewSection | nul
 // (`ReconcilerSupportAnalysis`). The UI renders these verbatim — it never
 // guesses engine support from the pipeline name.
 
+// ECP-5 (task 6.1): this mirror had DRIFTED from the server union it claims to
+// mirror — it was missing `supported_v2_executable` (ECP-2) and
+// `supported_v2_parallel` (ECP-4), and carried two reasons
+// (`unsupported_capability`, `unsupported_verify_policy`) the analyzer has
+// never emitted. Both halves of the drift were invisible while every read
+// plane reported `execution_profile_unavailable`. Kept key-for-key with
+// `ReconcilerSupportAnalysis['reconcilerSupport']['reason']`.
 export type ReconcilerSupportReason =
   | 'supported_root_dag_bug_fix'
+  | 'supported_v2_review_cycle'
+  | 'supported_v2_executable'
+  | 'supported_v2_parallel'
   | 'unsupported_definition_version'
   | 'unsupported_pipeline_shape'
-  | 'unsupported_capability'
-  | 'unsupported_verify_policy';
+  | 'unsupported_pipeline_semantics'
+  | 'execution_profile_unavailable';
 
 /** Additive availableEngines/reconcilerSupport on pipeline detail (14.7/14.8). */
 export interface PipelineEngineSupport {

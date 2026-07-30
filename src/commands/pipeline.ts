@@ -35,6 +35,7 @@ import {
   PipelineGraph,
   readRunStateDetailed,
   resolveRunStateLocation,
+  resolveLegacyOwnerSignal,
   completedStages,
   stageWorkers,
   stagesWithStatus,
@@ -81,8 +82,14 @@ import {
   type Stage,
   type StageRole,
 } from '../core/pipeline-registry/index.js';
-import { analyzeReconcilerSupport } from '../core/pipeline-registry/execution-plan-internal.js';
-import { resolveRuntimeExecutionProfile } from '../core/pipeline-registry/profile-resolver.js';
+import {
+  analyzeReconcilerSupport,
+  type ReconcilerSupportAnalysis,
+} from '../core/pipeline-registry/execution-plan-internal.js';
+import {
+  resolveDiscoveryReconcilerSupportProfile,
+  resolveRuntimeExecutionProfile,
+} from '../core/pipeline-registry/profile-resolver.js';
 import {
   prepareRuntimeContext,
   decodeCompletion,
@@ -103,6 +110,12 @@ import {
   readPhysicalIdentity,
 } from '../core/change-run/internal/identity.js';
 import { createFilesystemRunStore } from '../core/change-run/internal/run-store-fs.js';
+import {
+  assertSingleEngineOwner,
+  classifyEngineOwnership,
+  EngineOwnershipError,
+  type EngineOwner,
+} from '../core/change-run/internal/engine-ownership.js';
 import {
   createBoundedEvidenceStore,
   computeEvidenceContentDigest,
@@ -128,7 +141,9 @@ import { getGlobalConfig } from '../core/global-config.js';
 import {
   readProjectConfig,
   resolveAutopilotGatePolicy,
+  resolveRunsEnginePolicy,
   updateProjectConfigKey,
+  type ResolvedEnginePolicy,
   type ResolvedGatePolicy,
 } from '../core/project-config.js';
 import {
@@ -148,6 +163,7 @@ import {
   formatPipelineRootSelectionNotice,
   getPipelineMessages,
   pipelineMessageError,
+  RECONCILER_SUPPORT_REASON_KEYS,
   type PipelineMessages,
 } from './pipeline-messages.js';
 import {
@@ -168,6 +184,8 @@ interface PipelineCommandOptions {
   reviewer?: string;
   fixer?: string;
   shipper?: string;
+  /** ECP-5 `--engine <auto|reconciler|legacy>` — wins over `runs.engine` config. */
+  engine?: string;
 }
 
 /**
@@ -177,7 +195,7 @@ interface PipelineCommandOptions {
  */
 interface ResolvedRuntime {
   ctx: ReturnType<typeof prepareRuntimeContext>;
-  pipeline: PipelineYaml;
+  pipelineName: string;
   runId: string;
   projectRoot: string;
   projectId: string;
@@ -413,12 +431,22 @@ export class PipelineCommand {
       executionSelection?.resolution ?? registry.load(normalizedName);
     if (resolution.prepared.authoredVersion === 2 && !options.forExecution) {
       const prepared = resolution.prepared;
+      // ECP-5 (task 6.1): a v2-authored definition — a Canvas-authored Custom
+      // Composite — returns here, and used to carry NO engine-support fields
+      // at all, so capability discovery was silent for exactly the shapes
+      // ECP-2 shipped. Report the same analysis the v1 path reports.
+      const v2Support = analyzeReconcilerSupport(
+        prepared,
+        resolveDiscoveryReconcilerSupportProfile(prepared, registry.catalog)
+      );
       const result = {
         version: 2,
         name: prepared.authoredSource.name,
         description: prepared.authoredSource.description ?? '',
         definition: prepared.authoredSource,
         source: resolution.source,
+        availableEngines: v2Support.availableEngines,
+        reconcilerSupport: v2Support.reconcilerSupport,
         preparation: {
           authoredVersion: prepared.authoredVersion,
           normalizedVersion: prepared.normalizedVersion,
@@ -485,9 +513,31 @@ export class PipelineCommand {
 
     // Engine support analysis (task 12.8): availableEngines/reconcilerSupport
     // are additive fields shared with `pipeline start`, management detail, and
-    // Canvas. Without a launch-time execution profile, a supported root-DAG
-    // reports legacy availability and execution_profile_unavailable.
-    const support = analyzeReconcilerSupport(resolution.prepared, null);
+    // Canvas.
+    //
+    // ECP-5 (task 6.1): this used to pass `null`, so EVERY pipeline reported
+    // `execution_profile_unavailable` and no `supported_*` reason was
+    // reachable from `show` — including the `supported_v2_parallel` that
+    // `executable-parallel-pipelines` scenario 1 requires it to report. It now
+    // passes the DISCOVERY profile: the same capability bindings the launch
+    // profile resolves, from the same catalog, without sealing a Run's profile.
+    const support = analyzeReconcilerSupport(
+      resolution.prepared,
+      resolveDiscoveryReconcilerSupportProfile(
+        resolution.prepared,
+        registry.catalog
+      )
+    );
+
+    // ECP-5 (D1/task 1.5): the resolved engine policy for this pipeline, so a
+    // launcher can read the effective engine and its deciding layer from the
+    // same payload it already reads gates and thresholds from — rather than
+    // re-deriving the precedence chain in prompt text.
+    const enginePolicy = this.resolveEnginePolicy(
+      projectRoot,
+      storeLayer?.storeRoot,
+      options
+    );
 
     const result = {
       version: pipeline.version,
@@ -501,6 +551,21 @@ export class PipelineCommand {
       stages,
       availableEngines: support.availableEngines,
       reconcilerSupport: support.reconcilerSupport,
+      enginePolicy: {
+        configured: enginePolicy.effective,
+        source: enginePolicy.source,
+        // What `pipeline start` would do right now for this pipeline. `auto`
+        // resolves against the pipeline's reported engine availability;
+        // `legacy` is the off-switch and refuses to create a canonical Run.
+        effectiveEngine:
+          enginePolicy.effective === 'legacy'
+            ? 'legacy'
+            : enginePolicy.effective === 'reconciler'
+              ? 'reconciler'
+              : support.availableEngines.includes('reconciler')
+                ? 'reconciler'
+                : 'legacy',
+      },
       // Provenance marker (autonomy-ladder rung 2: composed pipelines) —
       // included only when declared so a human-authored pipeline's JSON shape
       // is unchanged.
@@ -531,11 +596,169 @@ export class PipelineCommand {
    * from the workspace's physical identity, and assembles the facade against
    * the immutable filesystem store.
    */
+  /**
+   * ECP-5 (D1): resolve the effective Run engine policy for a root — the
+   * `--engine` flag over `runs.engine` at project, then store, then global,
+   * then the built-in `auto`. Enforcement lives in the CLI rather than in a
+   * prompt because a prompt can be asked to honor config but cannot be PROVEN
+   * to; `pipeline start` is the only door that creates canonical Runs, so the
+   * refusal there is what makes the off-switch real.
+   */
+  private resolveEnginePolicy(
+    projectRoot: string,
+    storeRoot: string | null | undefined,
+    options: PipelineCommandOptions
+  ): ResolvedEnginePolicy {
+    return resolveRunsEnginePolicy(
+      readProjectConfig(projectRoot),
+      options.engine,
+      getGlobalConfig(),
+      storeRoot ? readProjectConfig(storeRoot) : null
+    );
+  }
+
+  /**
+   * ECP-5 (design D8): the bilateral engine-ownership guard, wired.
+   *
+   * `assertSingleEngineOwner` shipped with `ecp-run-spine` and had ZERO
+   * production callers until this slice — the guard existed and "blocks
+   * mutation" was aspirational. These are its production call sites.
+   *
+   * The discriminator is the run-state `engine` declaration, NOT the mere
+   * presence of `auto-run.json`: under design D3 a reconciler-engine run
+   * legitimately keeps run-state bookkeeping beside its canonical Record, so
+   * a presence-only guard would refuse every converged run.
+   *
+   * `canonicalPresent` is instance-scoped by construction: `runId` derives
+   * from the association registry's ChangeInstanceId, so an archived Change
+   * and a same-name recreation yield different Run identities and the old
+   * instance's Record can never be found for the new one (the Gap-E lesson —
+   * a mutation guard that looked up by alias let an old Run through after a
+   * recreate).
+   *
+   * Returns the resolved owner, or `'none'` when neither side exists yet (a
+   * fresh change) — the caller's own creation / not-found path owns that case,
+   * and reporting `engine_owner_unknown` there would be noise, not safety.
+   *
+   * This function NEVER writes, rewrites, or deletes run-state: refusing IS
+   * the behavior. Self-healing here would destroy the evidence the operator
+   * needs to decide which side to keep.
+   */
+  private async resolveEngineOwner(
+    changeId: string,
+    projectRoot: string,
+    runId: string,
+    store: Pick<ReturnType<typeof createFilesystemRunStore>, 'has'>
+  ): Promise<EngineOwner | 'none'> {
+    const changeDir = path.join(
+      projectRoot,
+      WORKSPACE_DIR_NAME,
+      'changes',
+      changeId
+    );
+    const workDir = await resolveChangeWorkDir(projectRoot, changeId, {
+      ensure: false,
+    });
+    const legacy = resolveLegacyOwnerSignal(changeDir, workDir);
+    const canonicalPresent = store.has(runId as never);
+
+    if (!canonicalPresent && !legacy.present) return 'none';
+
+    try {
+      return assertSingleEngineOwner({
+        canonicalPresent,
+        legacyPresent: legacy.present,
+      });
+    } catch (error) {
+      if (
+        error instanceof EngineOwnershipError &&
+        error.code === 'engine_owner_conflict' &&
+        legacy.present
+      ) {
+        throw pipelineMessageError(
+          'engineOwnerConflict',
+          { runState: legacy.path, run: runId, reason: legacy.reason },
+          'engine_owner_conflict'
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Refuse a canonical mutation when the change is claimed by both engines.
+   * Used by `resume-run` (which admits Actions, so it mutates), `complete`,
+   * and `control`.
+   */
+  private async assertCanonicalMutationAllowed(
+    changeId: string,
+    projectRoot: string,
+    runId: string,
+    store: Pick<ReturnType<typeof createFilesystemRunStore>, 'has'>
+  ): Promise<void> {
+    await this.resolveEngineOwner(changeId, projectRoot, runId, store);
+  }
+
+  /**
+   * ECP-5 (D8): the LAUNCH seam of the engine-ownership guard.
+   *
+   * Runs before `resolveRuntime`, so a refusal binds nothing in the
+   * association registry and leaves no Record — the legacy signal is pure
+   * filesystem and needs no Run identity to compute.
+   *
+   * The canonical side is deliberately not queried here, and the classifier is
+   * asked with `canonicalPresent: false`. That is an UNDER-SPECIFIED query, not
+   * a false claim about the world, and its answer is stable either way: with a
+   * legacy artifact present the owner is `legacy` (a canonical launch would
+   * re-home a legacy-owned change) and, were a Record also present, it would be
+   * `ambiguous` (a conflict). Both refuse, so the decision cannot differ — and
+   * refusing here is what stops the ambiguity from being MANUFACTURED by this
+   * very launch.
+   *
+   * Nothing is adopted, rewritten, or deleted; the operator decides which side
+   * to keep.
+   */
+  private async assertCanonicalLaunchAllowed(
+    changeId: string,
+    projectRoot: string
+  ): Promise<void> {
+    const changeDir = path.join(
+      projectRoot,
+      WORKSPACE_DIR_NAME,
+      'changes',
+      changeId
+    );
+    const workDir = await resolveChangeWorkDir(projectRoot, changeId, {
+      ensure: false,
+    });
+    const legacy = resolveLegacyOwnerSignal(changeDir, workDir);
+    if (!legacy.present) return;
+
+    const owner = classifyEngineOwnership({
+      canonicalPresent: false,
+      legacyPresent: true,
+    });
+    if (owner === 'legacy') {
+      throw pipelineMessageError(
+        'engineOwnedByLegacy',
+        { runState: legacy.path, reason: legacy.reason },
+        'engine_owner_conflict'
+      );
+    }
+  }
+
   private async resolveRuntime(
     changeId: string,
     pipelineName: string,
     options: PipelineCommandOptions,
-    runIdOverride?: string
+    runIdOverride?: string,
+    /**
+     * ECP-5: the launch-time engine selection, supplied only by `start`.
+     * Engine policy applies at LAUNCH only — status/resume-run/cancel/complete
+     * of an existing Run must never be re-homed by a config change, so they
+     * pass nothing and the support failure reports no deciding source.
+     */
+    engineSelection?: ResolvedEnginePolicy
   ): Promise<ResolvedRuntime> {
     const root = await this.resolveRoot(options);
     if (!root) throw new Error('No Rasen root resolved.');
@@ -551,24 +774,37 @@ export class PipelineCommand {
       this.executionOptions(options, host)
     );
     const prepared = execution.resolution.prepared;
-    const pipeline = prepared.authoredSource as PipelineYaml;
+    const isV2Authored = prepared.authoredVersion === 2;
     const storeLayer = await requireConfigStoreLayer(projectRoot);
     const modelLayers = resolveModelConfigLayers(
       projectRoot,
       storeLayer?.storeRoot
     );
-    const overrides = resolvePipelineStageOverrides(pipeline.name, {
+
+    // v2-authored definitions have no v1 PipelineYaml source — the policy
+    // stages are synthesized internally by resolveRuntimeExecutionProfile
+    // (remapPolicyStagesForV2Authored).  Skip the v1-specific pipeline
+    // processing entirely for v2.
+    const sourceDisplayName = isV2Authored
+      ? pipelineName
+      : (prepared.authoredSource as PipelineYaml).name;
+    const overrides = resolvePipelineStageOverrides(sourceDisplayName, {
       projectRoot,
       store: storeLayer,
     });
-    const executionStages = new Map(
-      resolvePipelineExecutionPlan(pipeline, {
-        host,
-        overrides,
-        modelLayers,
-        roleRuntimeOverrides,
-      }).stages.map((stage) => [stage.id, stage])
-    );
+    const executionStages = isV2Authored
+      ? new Map<string, ReturnType<typeof resolvePipelineExecutionPlan>['stages'][number]>()
+      : new Map(
+          resolvePipelineExecutionPlan(
+            prepared.authoredSource as PipelineYaml,
+            {
+              host,
+              overrides,
+              modelLayers,
+              roleRuntimeOverrides,
+            }
+          ).stages.map((stage) => [stage.id, stage])
+        );
     const baseGatePolicy = this.resolveBaseGatePolicy(
       projectRoot,
       storeLayer?.storeRoot
@@ -577,19 +813,22 @@ export class PipelineCommand {
     const sourceRevision = {
       layer: execution.resolution.source,
       kind: 'pipeline-yaml',
-      sourceId: `${execution.resolution.source}:${pipeline.name}`,
+      sourceId: `${execution.resolution.source}:${sourceDisplayName}`,
       authoredContentDigest: `sha256:${prepared.digests.source}` as never,
       semanticDigest: `sha256:${prepared.digests.source}` as never,
     };
-    const policyStages = pipeline.stages.map((stage) => {
+    const policyStages = isV2Authored
+      ? []
+      : (prepared.authoredSource as PipelineYaml).stages.map((stage) => {
       const resolved = executionStages.get(stage.id);
       if (!resolved) {
         throw new Error(
-          `Execution plan omitted stage "${stage.id}" from pipeline "${pipeline.name}".`
+          `Execution plan omitted stage "${stage.id}" from pipeline "${sourceDisplayName}".`
         );
       }
+      const v1Pipeline = prepared.authoredSource as PipelineYaml;
       const roleDefault = stage.role
-        ? normalizeAgentRuntimeConfig(pipeline.agents?.[stage.role])
+        ? normalizeAgentRuntimeConfig(v1Pipeline.agents?.[stage.role])
         : undefined;
       const sourceFor = (
         stageValue: unknown,
@@ -622,6 +861,26 @@ export class PipelineCommand {
           resolved.sessionReuse === undefined || resolved.sessionReuse === 'none'
             ? ('never' as const)
             : ('same-invocation' as const),
+        // ECP-5 (D9): the flattening above collapses four authored scopes onto
+        // two contract values, so `stage`, `run-planner`, and `review-thread`
+        // all read back as `same-invocation`. Record the authored scope
+        // verbatim beside it — omitted when the author wrote nothing, so no
+        // intent is fabricated and existing digests are untouched. This also
+        // makes the provenance pair self-describing: an authored
+        // `review-thread` records `reuse: 'same-invocation'` with provenance
+        // `'stage'`, which without this field claims the author chose a value
+        // the author never wrote.
+        ...(resolved.sessionReuse !== undefined
+          ? { sessionReuseAuthored: resolved.sessionReuse }
+          : {}),
+        // PLACEHOLDER — see the `ecp-change-run-runtime` requirement
+        // "Recorded session guidance is placeholder until a slice defines its
+        // authoritative source". 0.1.6 has no config key or authoring surface
+        // for either value, so the `'default'` provenance below is the truthful
+        // stamp: nobody chose these. Do NOT "fix" them by picking a bigger
+        // number — that re-commits the same defect at a different magnitude and
+        // churns every policy digest for zero behavior change. The real values
+        // are the Session execution layer's design output.
         handoffTokenLimit: 10_000,
         reuseRoundLimit: 1,
         provenance: {
@@ -649,10 +908,21 @@ export class PipelineCommand {
     );
     const support = analyzeReconcilerSupport(prepared, profile);
     if (!support.reconcilerSupport.supported) {
+      // ECP-5 (D1): fail with the SUPPORT REASON and — at launch — the layer
+      // that chose the engine. An explicit `reconciler` never silently falls
+      // back to legacy: the user asked for the engine by name. Under `auto`
+      // this is equally a refusal to create a canonical Run for a pipeline the
+      // reconciler cannot own; the caller routes to the legacy path.
       throw pipelineMessageError(
-        'pipelineNotFound',
-        { name: pipelineName, available: support.reconcilerSupport.reason },
-        'unsupported_pipeline_shape'
+        'engineUnsupportedForPipeline',
+        {
+          name: pipelineName,
+          reason: support.reconcilerSupport.reason,
+          source: engineSelection
+            ? `${engineSelection.effective} (${engineSelection.source})`
+            : 'the run\'s recorded engine',
+        },
+        'engine_unsupported'
       );
     }
 
@@ -818,7 +1088,7 @@ export class PipelineCommand {
           }
         : undefined,
     });
-    return { ctx, pipeline, runId, projectRoot, projectId, launchKey };
+    return { ctx, pipelineName: sourceDisplayName, runId, projectRoot, projectId, launchKey };
   }
 
   private printRunReceipt(
@@ -826,6 +1096,69 @@ export class PipelineCommand {
     payload: unknown
   ): void {
     console.log(JSON.stringify(payload, null, 2));
+  }
+
+  /**
+   * Human-readable rendering of a Run's current view (task 8.3). Shows the
+   * run status, committed actions, active waits, and — when present — the
+   * review-cycle section (round, phase, outcome, findings, actors).
+   */
+  private printRunStatusHuman(runId: string, view: unknown): void {
+    const v = view as {
+      status: string;
+      engine?: string;
+      sections: Array<Record<string, unknown>>;
+    };
+    console.log(`Run: ${runId}`);
+    console.log(`Status: ${v.status}`);
+    // ECP-5 (task 6.2): the ENGINE OWNER of this Run. `ChangeRunView` has
+    // carried `engine` since run-spine, but no run-facing human surface
+    // printed it — so "one Run has one engine owner" was invisible to the one
+    // person who has to act on it. Rendered verbatim: it is a server token the
+    // CLI, the API and Operations all print identically.
+    if (v.engine) {
+      console.log(`Engine: ${v.engine}`);
+    }
+    // Render the review-cycle section when present.
+    const rc = v.sections.find(
+      (s) => s.kind === 'review-cycle'
+    ) as
+      | {
+          kind: 'review-cycle';
+          round: number;
+          phase: string;
+          outcome?: string;
+          findings: Array<{ id: string; severity: string; status: string }>;
+          actors: { fixer?: unknown; verifier?: unknown; lastActor?: unknown };
+          waitReason?: string;
+          maxRounds: number;
+          loopPath: string;
+        }
+      | undefined;
+    if (rc) {
+      console.log();
+      console.log('Review Cycle:');
+      console.log(`  Round: ${rc.round} / ${rc.maxRounds}`);
+      console.log(`  Phase: ${rc.phase}`);
+      if (rc.outcome) {
+        console.log(`  Outcome: ${rc.outcome}`);
+      }
+      if (rc.waitReason) {
+        console.log(`  Wait: ${rc.waitReason}`);
+      }
+      if (rc.findings.length > 0) {
+        console.log(`  Findings (${rc.findings.length}):`);
+        for (const f of rc.findings) {
+          console.log(`    [${f.severity}] ${f.id}: ${f.status}`);
+        }
+      }
+      const actorKinds = Object.entries(rc.actors)
+        .filter(([, val]) => val !== undefined)
+        .map(([key]) => key);
+      if (actorKinds.length > 0) {
+        console.log(`  Actors: ${actorKinds.join(', ')}`);
+      }
+    }
   }
 
   /**
@@ -837,12 +1170,43 @@ export class PipelineCommand {
     pipelineName: string,
     options: PipelineCommandOptions = {}
   ): Promise<void> {
-    const { ctx, pipeline, runId, projectRoot, projectId, launchKey } =
-      await this.resolveRuntime(changeId, pipelineName, options);
+    // ECP-5 (D1): resolve and ENFORCE the engine policy before anything that
+    // could touch disk. An explicit `legacy` must leave no trace — no Run
+    // Record, and no association-registry binding either — so the refusal
+    // happens ahead of `resolveRuntime`, which binds the Change instance.
+    const policyRoot = await this.resolveRoot(options);
+    if (!policyRoot) throw new Error('No Rasen root resolved.');
+    const policyStoreLayer = await requireConfigStoreLayer(policyRoot.path);
+    const engineSelection = this.resolveEnginePolicy(
+      policyRoot.path,
+      policyStoreLayer?.storeRoot,
+      options
+    );
+    if (engineSelection.effective === 'legacy') {
+      throw pipelineMessageError(
+        'engineDisabledByConfig',
+        { layer: engineSelection.source },
+        'engine_disabled_by_config'
+      );
+    }
+
+    // ECP-5 (D8): the engine-ownership guard's launch seam. Runs BEFORE
+    // `resolveRuntime`, which binds the Change instance in the association
+    // registry, so a refusal leaves nothing behind at all.
+    await this.assertCanonicalLaunchAllowed(changeId, policyRoot.path);
+
+    const { ctx, pipelineName: resolvedPipelineName, runId, projectRoot, projectId, launchKey } =
+      await this.resolveRuntime(
+        changeId,
+        pipelineName,
+        options,
+        undefined,
+        engineSelection
+      );
     const receipt = await ctx.facade.start(
       {
         change: { projectRoot, changeId },
-        pipeline: pipeline.name,
+        pipeline: resolvedPipelineName,
         launchRequestId: launchKey as never,
         engine: 'reconciler',
       },
@@ -851,8 +1215,13 @@ export class PipelineCommand {
     this.printRunReceipt(options, {
       runId,
       change: { projectRoot, changeId, projectId },
-      pipeline: pipeline.name,
+      pipeline: resolvedPipelineName,
       engine: 'reconciler',
+      // The deciding layer, not just the outcome: `auto` and an explicit
+      // `--engine reconciler` produce the same engine for very different
+      // reasons, and the launcher displays which one applied.
+      engineSource: engineSelection.source,
+      enginePolicy: engineSelection.effective,
       disposition: receipt.disposition,
       status: receipt.view.status,
       actions: receipt.actions.map((action) => ({
@@ -892,6 +1261,10 @@ export class PipelineCommand {
       change: { projectRoot, changeId },
       runId: runId as never,
     });
+    if (!options.json) {
+      this.printRunStatusHuman(runId, view);
+      return;
+    }
     this.printRunReceipt(options, { runId, status: view.status, view });
   }
 
@@ -903,15 +1276,23 @@ export class PipelineCommand {
     pipelineName: string,
     options: PipelineCommandOptions = {}
   ): Promise<void> {
-    const { ctx, pipeline, runId, projectRoot, launchKey } =
+    const { ctx, pipelineName: resolvedPipelineName, runId, projectRoot, launchKey } =
       await this.resolveRuntime(changeId, pipelineName, options);
+    // ECP-5 (D8): resume-run ADMITS Actions, so it mutates — it rechecks
+    // ownership like any other canonical mutation.
+    await this.assertCanonicalMutationAllowed(
+      changeId,
+      projectRoot,
+      runId,
+      ctx.store
+    );
     const receipt = await ctx.facade.resume(
       { change: { projectRoot, changeId }, runId: runId as never },
       { deliveryMode: 'grant' }
     );
     this.printRunReceipt(options, {
       runId,
-      pipeline: pipeline.name,
+      pipeline: resolvedPipelineName,
       disposition: receipt.disposition,
       status: receipt.view.status,
       actions: receipt.actions.map((action) => ({
@@ -925,6 +1306,12 @@ export class PipelineCommand {
 
   /**
    * Cancel a Run (task 12.3/12.4 control).
+   *
+   * ECP-5 (D8): deliberately NOT behind the engine-ownership guard. Cancelling
+   * the canonical Run is one of the two resolutions the conflict refusal tells
+   * the operator to take; guarding it would make the documented escape hatch
+   * unreachable and deadlock the change. Cancel only ever ENDS the canonical
+   * claim, so it can never deepen an ownership conflict.
    */
   async cancelRun(
     changeId: string,
@@ -1295,6 +1682,13 @@ export class PipelineCommand {
   ): Promise<void> {
     const resolved = await this.resolveRuntimeForRun(changeId, runId, options);
     await this.assertChangeNotArchived(changeId, resolved.projectRoot, runId);
+    // ECP-5 (D8): a committed result is a canonical mutation.
+    await this.assertCanonicalMutationAllowed(
+      changeId,
+      resolved.projectRoot,
+      runId,
+      resolved.ctx.store
+    );
     const body = this.readBoundedPayload(from) as {
       completion?: unknown;
       uploads?: unknown;
@@ -1319,10 +1713,22 @@ export class PipelineCommand {
     const receipt = await resolved.ctx.facade.complete(completion, {
       deliveryMode: 'grant',
     });
+    // ECP-5 (task 7.7, found by the dogfood): `complete` settles to quiescence
+    // and GRANTS the next ready actions under `deliveryMode: 'grant'` — but the
+    // receipt dropped them, unlike `start` and `resume-run`, which both report
+    // `actions`. That made the converged Step E loop unfollowable at its own
+    // seam: `complete` swallowed the grant, and the `resume-run` that follows
+    // it correctly reports zero (nothing is left ungranted), so a LEAD reading
+    // only receipts saw no next action and could read the Run as finished.
     this.printRunReceipt(options, {
       runId,
       disposition: receipt.disposition,
       status: receipt.view.status,
+      actions: receipt.actions.map((action) => ({
+        actionId: action.actionId,
+        nodeId: action.nodeId,
+        kind: action.kind,
+      })),
     });
   }
 
@@ -1352,6 +1758,13 @@ export class PipelineCommand {
   ): Promise<void> {
     const resolved = await this.resolveRuntimeForRun(changeId, runId, options);
     await this.assertChangeNotArchived(changeId, resolved.projectRoot, runId);
+    // ECP-5 (D8): a control command mutates the Record.
+    await this.assertCanonicalMutationAllowed(
+      changeId,
+      resolved.projectRoot,
+      runId,
+      resolved.ctx.store
+    );
     const body = this.readBoundedPayload(from) as {
       control?: unknown;
       uploads?: unknown;
@@ -2036,6 +2449,12 @@ export class PipelineCommand {
       // before this capability existed carries no key, and the LEAD's
       // built-in default (gates on) still applies.
       ...(runState.gatePolicy ? { gatePolicy: runState.gatePolicy } : {}),
+      // ECP-5: the engine that owns this run, recorded at run start. A resumer
+      // must know which run-state contract it is reading BEFORE it interprets
+      // a single progression field. Included only when present — a run recorded
+      // before this capability existed carries no key, and the resumer infers
+      // the owner from what is on disk instead.
+      ...(runState.engine ? { engine: runState.engine } : {}),
       ...(runState.knowledgeContext
         ? { knowledgeContext: runState.knowledgeContext }
         : {}),
@@ -2414,6 +2833,13 @@ export class PipelineCommand {
       hostRuntime: DetectedHostRuntime['runtime'];
       hostRuntimeSource: DetectedHostRuntime['source'];
       origin?: PipelineYaml['origin'];
+      availableEngines: ReconcilerSupportAnalysis['availableEngines'];
+      reconcilerSupport: ReconcilerSupportAnalysis['reconcilerSupport'];
+      enginePolicy: {
+        configured: string;
+        source: string;
+        effectiveEngine: string;
+      };
     },
     graph: PipelineGraph,
     source: PipelineInfo['source'] | undefined,
@@ -2509,6 +2935,39 @@ export class PipelineCommand {
         : (stage.skill ?? '');
       console.log(messages.format('stageLine', { id, action, suffix }));
     }
+    // ECP-5 (task 6.2 / 6.1): the human `pipeline show` used to render the
+    // engine analysis nowhere — `--json` carried it and the terminal did not,
+    // so the only product surface for engine selection was a JSON field. Every
+    // reason renders as product copy beside its code (the same token the API
+    // and the Canvas print).
+    console.log();
+    console.log(messages.format('engineSupportHeading'));
+    console.log(
+      messages.format('engineSupportEngines', {
+        engines:
+          result.availableEngines.length > 0
+            ? result.availableEngines.join(', ')
+            : messages.format('none'),
+      })
+    );
+    const reasonCopy = messages.formatDescriptor(
+      RECONCILER_SUPPORT_REASON_KEYS[result.reconcilerSupport.reason]
+    );
+    console.log(
+      messages.format(
+        result.reconcilerSupport.supported
+          ? 'engineSupportSupported'
+          : 'engineSupportUnsupported',
+        { reason: result.reconcilerSupport.reason, copy: reasonCopy }
+      )
+    );
+    console.log(
+      messages.format('enginePolicyLine', {
+        configured: result.enginePolicy.configured,
+        source: result.enginePolicy.source,
+        effective: result.enginePolicy.effectiveEngine,
+      })
+    );
   }
 
   private printThresholdDiagnostics(result: {

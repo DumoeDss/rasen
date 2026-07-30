@@ -18,6 +18,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { RETENTION_MODES } from './retention.js';
+import { RUNS_ENGINE_POLICIES } from './project-config.js';
 import { SUPPORTED_CLI_LOCALES } from '../utils/locale.js';
 import { getGlobalConfigDir } from './global-config.js';
 import {
@@ -337,6 +338,16 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     defaultValue: 'manual',
     description: 'Default autopilot pipeline-selection policy (project wins over global)',
     group: 'Autopilot',
+  },
+  {
+    key: 'runs.engine',
+    scopes: ['global', 'store', 'project'],
+    type: 'enum',
+    enumValues: RUNS_ENGINE_POLICIES,
+    defaultValue: 'auto',
+    description:
+      'Which engine owns a NEW Run (project wins over store wins over global; a --engine flag wins over all): auto (reconciler where the pipeline supports it, legacy otherwise), reconciler (force — an unsupported pipeline fails with its support reason), or legacy (the reconciler off-switch — `rasen pipeline start` refuses with engine_disabled_by_config)',
+    group: 'Pipelines',
   },
   {
     key: 'archive.timing',

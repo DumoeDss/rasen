@@ -138,11 +138,15 @@ export async function freezeProductionPreparedPipelineRegistry(
       const selection = preflightPreparedDefinitionExecution(
         resolution.prepared
       );
-      await validatePipelineForExecution(selection.pipeline, projectRoot, {
-        ...executionOptions,
-        skillSets,
-        loadPrepared: load,
-      });
+      // v2-authored definitions are fully validated during prepare and have
+      // no legacy PipelineYaml; skip the legacy execution-plan validation.
+      if (resolution.prepared.authoredVersion === 1) {
+        await validatePipelineForExecution(selection.pipeline, projectRoot, {
+          ...executionOptions,
+          skillSets,
+          loadPrepared: load,
+        });
+      }
       return {
         resolution,
         pipeline: selection.pipeline,

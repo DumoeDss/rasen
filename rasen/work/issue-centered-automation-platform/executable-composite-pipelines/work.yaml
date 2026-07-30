@@ -1,0 +1,7 @@
+version: 1
+id: executable-composite-pipelines
+status: draft
+authority:
+  northStar: ../north-star.md
+targetState: target-state.md
+roadmap: roadmap.md

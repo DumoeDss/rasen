@@ -172,6 +172,20 @@ export const ProjectConfigSchema = z.object({
     .optional()
     .describe('Autopilot behavior configuration'),
 
+  // Optional: Run engine policy (ECP-5). Governs which engine owns a NEW Run.
+  // Extensible - future run-level fields join this same map.
+  runs: z
+    .object({
+      engine: z
+        .enum(['auto', 'reconciler', 'legacy'])
+        .optional()
+        .describe(
+          'Which engine owns a NEW Run: auto (default; reconciler where supported, legacy otherwise), reconciler (force; fail with the support reason when unsupported), or legacy (the reconciler off-switch; `rasen pipeline start` refuses)'
+        ),
+    })
+    .optional()
+    .describe('Run engine policy configuration'),
+
   // Optional: context-handoff threshold. Project scope wins over the global
   // config value of the same name (see effective-config.ts); both fall back
   // to the built-in default (0.5) when absent. Dual-form (a bare fraction in
@@ -322,6 +336,16 @@ export const PROJECT_REFERENCE_PREFIX = 'project:';
 
 /** Valid `autopilot.selection` values. */
 export type AutopilotSelectionPolicy = 'classify' | 'manual' | 'compose';
+
+/** Valid `runs.engine` values (ECP-5 engine selection policy). */
+export const RUNS_ENGINE_POLICIES = ['auto', 'reconciler', 'legacy'] as const;
+
+/** Valid `runs.engine` values. */
+export type RunsEnginePolicy = (typeof RUNS_ENGINE_POLICIES)[number];
+
+function isRunsEnginePolicy(value: unknown): value is RunsEnginePolicy {
+  return RUNS_ENGINE_POLICIES.includes(value as RunsEnginePolicy);
+}
 
 /** Normalized in-memory shape of a referenced store declaration. */
 export interface DeclarationEntry {
@@ -1207,6 +1231,39 @@ function parseProjectConfigContent(
       }
     }
 
+    // Parse runs field (ECP-5 engine selection policy): an optional map with an
+    // optional `engine` field. Resilient exactly like `autopilot` above — a
+    // non-map drops the whole block with a warning, an invalid value drops that
+    // field and leaves siblings (and future fields) parsing.
+    if (raw.runs !== undefined) {
+      if (raw.runs && typeof raw.runs === 'object' && !Array.isArray(raw.runs)) {
+        const runsRaw = raw.runs as Record<string, unknown>;
+        const runs: ProjectConfig['runs'] = {};
+        if (runsRaw.engine !== undefined) {
+          if (isRunsEnginePolicy(runsRaw.engine)) {
+            runs.engine = runsRaw.engine;
+          } else {
+            warnConfig(
+              {
+                key: 'invalidRunsEngine',
+                fallback: `Invalid 'runs.engine' field in config (must be ${RUNS_ENGINE_POLICIES.map((value) => `'${value}'`).join(', ')})`,
+              },
+              reporter
+            );
+          }
+        }
+        config.runs = runs;
+      } else {
+        warnConfig(
+          {
+            key: 'invalidRuns',
+            fallback: `Invalid 'runs' field in config (must be an object)`,
+          },
+          reporter
+        );
+      }
+    }
+
     // Parse handoff field: an optional map with an optional dual-form
     // `threshold` field (a bare fraction in (0, 1], or the absolute
     // `{ remainingTokens: N }` headroom form), plus an optional `roles` map
@@ -1827,6 +1884,68 @@ export interface AutopilotGlobalConfig {
     gates?: 'on' | 'off';
     selection?: 'classify' | 'manual' | 'compose';
   };
+}
+
+// -----------------------------------------------------------------------------
+// Run engine policy (ECP-5 config axis)
+// -----------------------------------------------------------------------------
+
+/** The resolved `runs.engine` policy plus which layer decided it. */
+export interface ResolvedEnginePolicy {
+  effective: RunsEnginePolicy;
+  source: 'flag' | 'project' | 'store' | 'global' | 'default';
+}
+
+/** Minimal shape of the global config's `runs` block (same rationale as {@link AutopilotGlobalConfig}). */
+export interface RunsGlobalConfig {
+  runs?: {
+    engine?: RunsEnginePolicy;
+  };
+}
+
+/**
+ * Resolves the effective Run engine policy with precedence: the `--engine`
+ * run flag first, then the project config default (`runs.engine`), then the
+ * inherited store config default (when a store layer is active — see
+ * `store-config-inheritance`), then the global config default, then the
+ * built-in default `auto`. Deliberately the same shape and source vocabulary
+ * as {@link resolveAutopilotGatePolicy} — it is that axis's sibling, and every
+ * consumer (CLI `pipeline start` enforcement, the `rasen-auto` engine line)
+ * MUST resolve through this one function so precedence is applied identically.
+ * An absent or invalid `runs.engine` at any scope falls through to the next
+ * layer without failing config parsing.
+ *
+ * This resolves the policy for a NEW Run only. It never re-homes an existing
+ * Run: engine ownership of a Run in flight is decided by
+ * `assertSingleEngineOwner` from what is actually on disk, not by config.
+ */
+export function resolveRunsEnginePolicy(
+  config: ProjectConfig | null | undefined,
+  engineFlag: string | undefined,
+  globalConfig?: RunsGlobalConfig | null,
+  storeConfig?: ProjectConfig | null
+): ResolvedEnginePolicy {
+  if (engineFlag !== undefined) {
+    if (!isRunsEnginePolicy(engineFlag)) {
+      throw new Error(
+        `Invalid --engine value "${engineFlag}" (must be ${RUNS_ENGINE_POLICIES.map((value) => `'${value}'`).join(', ')}).`
+      );
+    }
+    return { effective: engineFlag, source: 'flag' };
+  }
+  const projectValue = config?.runs?.engine;
+  if (isRunsEnginePolicy(projectValue)) {
+    return { effective: projectValue, source: 'project' };
+  }
+  const storeValue = storeConfig?.runs?.engine;
+  if (isRunsEnginePolicy(storeValue)) {
+    return { effective: storeValue, source: 'store' };
+  }
+  const globalValue = globalConfig?.runs?.engine;
+  if (isRunsEnginePolicy(globalValue)) {
+    return { effective: globalValue, source: 'global' };
+  }
+  return { effective: 'auto', source: 'default' };
 }
 
 /**

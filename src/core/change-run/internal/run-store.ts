@@ -40,10 +40,22 @@ export interface RunStore {
   readonly commit: (runId: RunId, next: CanonicalRunRecord) => void;
   readonly has: (runId: RunId) => boolean;
   readonly list: () => readonly RunSummary[];
+  /**
+   * Persist the sealed RuntimePlan alongside the Record so read paths without
+   * access to the launch context (management API, operations) can project the
+   * review-cycle section. Called once at Run creation; the plan is immutable.
+   */
+  readonly writePlan?: (runId: RunId, plan: unknown) => void;
+  /**
+   * Load the sealed RuntimePlan for a Run. Returns null if no plan was
+   * persisted (e.g. a Run created before plan persistence was added).
+   */
+  readonly loadPlan?: (runId: RunId) => unknown | null;
 }
 
 export function createInMemoryRunStore(): RunStore {
   const heads = new Map<string, CanonicalRunRecord>();
+  const plans = new Map<string, unknown>();
 
   const decode = (record: CanonicalRunRecord): CanonicalRunRecord =>
     decodeCanonicalRunRecord(JSON.parse(JSON.stringify(record)));
@@ -57,6 +69,12 @@ export function createInMemoryRunStore(): RunStore {
         );
       }
       heads.set(runId, decode(initial));
+    },
+    writePlan(runId: RunId, plan: unknown) {
+      plans.set(runId, JSON.parse(JSON.stringify(plan)));
+    },
+    loadPlan(runId: RunId) {
+      return plans.get(runId) ?? null;
     },
     load(runId: RunId) {
       const head = heads.get(runId);

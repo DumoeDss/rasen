@@ -31,7 +31,7 @@ describe('goal workflow guidance', () => {
     expect(skillText).toContain('ship -> retain -> archive  — measure/evaluate');
     expect(skillText).toContain('report only                — research');
     expect(skillText).toContain(
-      'the declared tail (`ship -> retain -> archive` for measure/evaluate; report only for research)'
+      'The reconciler replays all committed events from the canonical Record'
     );
   });
 });

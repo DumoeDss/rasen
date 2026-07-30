@@ -438,6 +438,15 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     // The complete-time settle commits the apply-gate wait in the same
     // revision — disposition is 'waiting' (no actions granted, one wait).
     expect(completeJson.disposition).toBe('waiting');
+    // ECP-5 (task 7.7): the receipt reports the actions this settle GRANTED,
+    // like `start` and `resume-run` do. It used to omit the field entirely,
+    // which broke the converged Step E loop at its own seam — `complete`
+    // swallowed the grant and the `resume-run` after it correctly reported
+    // zero, so a LEAD reading receipts saw no next action. Here the settle
+    // produces a gate wait rather than an action, so the list is empty — the
+    // point is that the field EXISTS and is authoritative.
+    expect(Array.isArray(completeJson.actions)).toBe(true);
+    expect(completeJson.actions).toEqual([]);
 
     // ---- 8. QUIESCENT POINT #3: pipeline status (action completed, Run progressed) ----
     // The facade's complete settles the candidate batch in the SAME revision

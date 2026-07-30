@@ -289,7 +289,7 @@ stages:
       expect(packageResult.prepared.capability).toMatchObject({
         planAvailable: true,
         executable: true,
-        executionMode: 'legacy',
+        executionMode: 'reconciler',
       });
 
       process.env.XDG_DATA_HOME = tempDir;

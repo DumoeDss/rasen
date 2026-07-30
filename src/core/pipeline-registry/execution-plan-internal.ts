@@ -8,6 +8,10 @@ import type {
   PreparedDefinition,
 } from './definition.js';
 import {
+  definitionRequiresV2Lowering,
+  orchestrationEvaluatorCapabilityFor,
+} from './definition.js';
+import {
   planValueDigest,
   type DefinitionPlanPayload,
 } from './definition-plan-internal.js';
@@ -251,6 +255,26 @@ const EffectiveRunPolicySchema = z.strictObject({
       sandbox: z.enum(['read-only', 'workspace-write']),
       gate: z.boolean(),
       sessionReuse: z.enum(['never', 'same-invocation']),
+      /**
+       * ECP-5 (D9): the AUTHORED reuse scope, verbatim, beside the two-value
+       * `sessionReuse` contract above.
+       *
+       * Resolution flattens four authored scopes onto two contract values, so
+       * `stage`, `run-planner`, and `review-thread` all become
+       * `same-invocation` and become indistinguishable in the Record. Unlike
+       * `handoffTokenLimit`/`reuseRoundLimit` — values NOBODY chose, which a
+       * contract-level rule can protect retroactively — this destroys intent an
+       * author DID express, and no future rule can recover what was never
+       * recorded. It has to be captured at write time.
+       *
+       * Optional and undefined-dropped: absent when nothing was authored or the
+       * stage is synthesized, so every existing profile digest is unchanged.
+       * Nothing reads it in 0.1.6; the Session execution layer is its first
+       * reader.
+       */
+      sessionReuseAuthored: z
+        .enum(['none', 'stage', 'run-planner', 'review-thread'])
+        .optional(),
       handoffTokenLimit: z.number().int().nonnegative().safe(),
       reuseRoundLimit: z.number().int().nonnegative().safe(),
       provenance: PolicyProvenanceSchema,
@@ -495,12 +519,56 @@ export function observeRuntimeDrift(
   });
 }
 
+/**
+ * The projection of a RuntimeExecutionProfile that engine-support analysis
+ * actually reads: the resolved capability node IDs (compared against the
+ * expected set for the definition's execution shape) and a digest to report.
+ *
+ * ECP-5 (task 6.1): `RuntimeExecutionProfile` satisfies this structurally, so
+ * the launch call site is unchanged — but DISCOVERY call sites (`pipeline
+ * show`, the management pipeline-detail endpoint, and therefore the Canvas
+ * `EngineSupportPanel`) have no Run and cannot freeze a launch profile. They
+ * used to pass `null`, which made every pipeline report
+ * `execution_profile_unavailable` and left `supported_*` unreachable from any
+ * read plane. They now pass a discovery projection
+ * (`resolveDiscoveryReconcilerSupportProfile`), which resolves the same
+ * bindings from the same catalog without sealing a profile.
+ */
+export interface ReconcilerSupportProfile {
+  readonly profileDigest: Digest;
+  readonly capabilities: readonly { readonly nodeId: string }[];
+}
+
+/**
+ * The profile's capability node IDs, SORTED — the order every expected-node-ID
+ * set below is built in.
+ *
+ * ECP-5 (task 6.1): a sealed launch profile arrives pre-sorted by
+ * `normalizeProfileInput`, so the comparisons below silently depended on that
+ * normalization having happened. A discovery profile resolves the same
+ * bindings without sealing anything, and its natural (definition) order made
+ * every supported pipeline report `unsupported_pipeline_shape` — a false
+ * NEGATIVE produced purely by ordering. Sorting here makes the analyzer
+ * independent of how its input was built, which is the property the three
+ * comparisons always assumed.
+ */
+function supportProfileNodeIds(
+  profile: ReconcilerSupportProfile
+): readonly string[] {
+  return profile.capabilities
+    .map((binding) => binding.nodeId)
+    .sort(compareStrings);
+}
+
 export interface ReconcilerSupportAnalysis {
   readonly availableEngines: readonly ('legacy' | 'reconciler')[];
   readonly reconcilerSupport: Readonly<{
     supported: boolean;
     reason:
       | 'supported_root_dag_bug_fix'
+      | 'supported_v2_review_cycle'
+      | 'supported_v2_executable'
+      | 'supported_v2_parallel'
       | 'unsupported_definition_version'
       | 'unsupported_pipeline_shape'
       | 'unsupported_pipeline_semantics'
@@ -518,12 +586,13 @@ const BUG_FIX_STAGES = [
 ] as const;
 
 function hasUnsupportedSemantics(pipeline: PipelineYaml): boolean {
+  // ECP-4: stages with parallelGroup/condition are now supported via
+  // FanOut/Join normalization. Only non-standard kinds and loops remain
+  // unsupported by the v2 runtime (goal loops are handled separately).
   return pipeline.stages.some(
     (stage) =>
       stage.kind !== 'standard' ||
-      stage.loop !== undefined ||
-      stage.parallelGroup !== undefined ||
-      stage.condition !== undefined
+      stage.loop !== undefined
   );
 }
 
@@ -545,25 +614,183 @@ function hasExactBugFixShape(pipeline: PipelineYaml): boolean {
   });
 }
 
+/**
+ * ECP-5 (D4): the capability-binding node IDs a v1 definition that needs v2
+ * lowering is EXPECTED to carry. This mirrors `resolveV2MigrationCapabilityBindings`
+ * node-for-node — root AtomicStages (including normalized `parallelGroup`
+ * members) and FanOut/Choice evaluators bind under `root:<id>`; a
+ * ReviewCycle-shaped BoundedLoop binds every AtomicStage of its body
+ * declaration; Gate, legacy Choice, Join, and Finish bind nothing.
+ *
+ * It exists so the strict comparison below and the binding resolver derive the
+ * expected set from ONE rule. The two inline copies this replaces disagreed
+ * about body-node selection, and their divergence is what made
+ * `supported_v2_parallel` unreachable for v1 parallel-only pipelines.
+ */
+function expectedV2MigrationNodeIds(
+  prepared: PreparedDefinition
+): readonly string[] {
+  const ids: string[] = [];
+  for (const node of prepared.definition.root.nodes) {
+    if (orchestrationEvaluatorCapabilityFor(node) !== null) {
+      ids.push(`root:${node.id}`);
+      continue;
+    }
+    if (node.kind === 'AtomicStage') {
+      ids.push(`root:${node.id}`);
+      continue;
+    }
+    if (node.kind === 'BoundedLoop') {
+      if (
+        node.exits.clean?.action !== 'exit' ||
+        node.exits.needs_fix?.action !== 'continue'
+      ) {
+        continue;
+      }
+      const declaration = prepared.definition.declarations.find(
+        (candidate) => candidate.id === node.body
+      );
+      if (declaration === undefined) continue;
+      for (const phaseNode of declaration.graph.nodes) {
+        if (phaseNode.kind !== 'AtomicStage') continue;
+        ids.push(`declaration:${declaration.id}/node:${phaseNode.id}`);
+      }
+    }
+  }
+  return ids.sort(compareStrings);
+}
+
 export function analyzeReconcilerSupport(
   prepared: PreparedDefinition,
-  profile: RuntimeExecutionProfile | null
+  profile: ReconcilerSupportProfile | null
 ): ReconcilerSupportAnalysis {
   const profileDigest =
     profile?.profileDigest ??
     domainDigest('reconciler-support-profile/1', prepared.plan.digest);
+  // Detect v1 definitions whose normalized form supports v2 ReviewCycle.
+  const hasV2ReviewCycle = prepared.definition.root.nodes.some(
+    (node) =>
+      node.kind === 'BoundedLoop' &&
+      node.exits.clean?.action === 'exit' &&
+      node.exits.needs_fix?.action === 'continue'
+  );
+  // ECP-5 (D4): the ONE rule that also routes lowering and binding resolution.
+  // A v1 definition whose only v2 construct is `parallelGroup` reaches the v2
+  // branch here for the first time — previously it fell to the flat bug-fix
+  // check and reported `unsupported_pipeline_shape` against `root:<id>`
+  // bindings it could never have produced.
+  const requiresV2 = definitionRequiresV2Lowering(prepared);
   const unsupported = (
     reason: ReconcilerSupportAnalysis['reconcilerSupport']['reason']
   ): ReconcilerSupportAnalysis =>
     deepFreeze({
-      availableEngines: prepared.authoredVersion === 1 ? ['legacy'] : [],
+      availableEngines:
+        prepared.authoredVersion === 1
+          ? requiresV2
+            ? ['legacy', 'reconciler']
+            : ['legacy']
+          : prepared.capability.executionMode === 'reconciler'
+            ? ['reconciler']
+            : [],
       reconcilerSupport: { supported: false, reason, profileDigest },
     });
 
-  if (prepared.authoredVersion !== 1) {
-    return unsupported('unsupported_definition_version');
+  if (prepared.authoredVersion === 2) {
+    if (prepared.capability.executionMode !== 'reconciler') {
+      return unsupported('unsupported_pipeline_semantics');
+    }
+    if (profile === null) {
+      return unsupported('execution_profile_unavailable');
+    }
+    // ECP-2: include root AtomicStages and ALL declaration body AtomicStages
+    // referenced by root-level CompositeRef/BoundedLoop nodes — not just
+    // ReviewCyclePhase-tagged ones — so Custom Composite definitions are
+    // admitted.  Only declarations actually referenced from root contribute
+    // (matching resolveCapabilityBindings).
+    const referencedDeclarationIds = new Set<string>();
+    for (const rootNode of prepared.definition.root.nodes) {
+      if (rootNode.kind === 'CompositeRef') {
+        referencedDeclarationIds.add(rootNode.declarationId);
+      } else if (rootNode.kind === 'BoundedLoop') {
+        referencedDeclarationIds.add(rootNode.body);
+      }
+    }
+    // ECP-4: FanOut/Choice evaluator nodes carry a synthetic capability
+    // binding (`parallel-dispatch` / `choice-select`), so they belong in the
+    // expected set — otherwise the strict shape check below rejects every
+    // definition with a parallel section.
+    const expectedRootIds = prepared.definition.root.nodes
+      .filter(
+        (node) =>
+          node.kind === 'AtomicStage' ||
+          orchestrationEvaluatorCapabilityFor(node) !== null
+      )
+      .map((node) => `root:${node.id}`);
+    const expectedBodyIds = prepared.definition.declarations
+      .filter((declaration) =>
+        referencedDeclarationIds.has(declaration.id)
+      )
+      .flatMap((declaration) =>
+        declaration.graph.nodes
+          .filter((node) => node.kind === 'AtomicStage')
+          .map(
+            (node) => `declaration:${declaration.id}/node:${node.id}`
+          )
+      );
+    const expectedNodeIds = [...expectedRootIds, ...expectedBodyIds].sort(
+      compareStrings
+    );
+    if (
+      expectedNodeIds.length === 0 ||
+      JSON.stringify(supportProfileNodeIds(profile)) !==
+        JSON.stringify(expectedNodeIds)
+    ) {
+      return unsupported('unsupported_pipeline_shape');
+    }
+    return deepFreeze({
+      availableEngines: ['reconciler'],
+      reconcilerSupport: {
+        supported: true,
+        reason: 'supported_v2_executable',
+        profileDigest: profile.profileDigest,
+      },
+    });
   }
   const pipeline = prepared.authoredSource as PipelineYaml;
+
+  // ECP-5 (D4): ONE v2 branch for every v1 definition the v2 lowerer owns —
+  // a ReviewCycle/GoalLoop BoundedLoop, a normalized `parallelGroup`, or both.
+  // The expected binding set is derived by the shared helper that mirrors the
+  // binding resolver, and the strict comparison stays fail-closed: an
+  // incomplete binding set reports `unsupported_pipeline_shape` BEFORE any Run
+  // is created rather than dying mid-Run at admission with
+  // `No capability/policy binding`.
+  if (requiresV2) {
+    if (profile === null) {
+      return unsupported('execution_profile_unavailable');
+    }
+    const expectedNodeIds = expectedV2MigrationNodeIds(prepared);
+    if (
+      expectedNodeIds.length === 0 ||
+      JSON.stringify(supportProfileNodeIds(profile)) !==
+        JSON.stringify(expectedNodeIds)
+    ) {
+      return unsupported('unsupported_pipeline_shape');
+    }
+    return deepFreeze({
+      availableEngines: ['legacy', 'reconciler'],
+      reconcilerSupport: {
+        supported: true,
+        // A loop-bearing definition keeps its ReviewCycle reason even when it
+        // ALSO fans out (full-feature does both); a definition whose only v2
+        // construct is `parallelGroup` reports the parallel reason.
+        reason: hasV2ReviewCycle
+          ? 'supported_v2_review_cycle'
+          : 'supported_v2_parallel',
+        profileDigest: profile.profileDigest,
+      },
+    });
+  }
   if (hasUnsupportedSemantics(pipeline)) {
     return unsupported('unsupported_pipeline_semantics');
   }
@@ -577,7 +804,7 @@ export function analyzeReconcilerSupport(
     compareStrings
   );
   if (
-    JSON.stringify(profile.capabilities.map((binding) => binding.nodeId)) !==
+    JSON.stringify(supportProfileNodeIds(profile)) !==
     JSON.stringify(expectedNodeIds)
   ) {
     return unsupported('unsupported_pipeline_shape');

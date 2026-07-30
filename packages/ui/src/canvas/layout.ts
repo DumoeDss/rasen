@@ -68,10 +68,48 @@ export interface UnpositionedStage {
   deletable?: boolean;
 }
 
+/**
+ * Look up a declaration by id and return its input or output ports as
+ * DefinitionHandleDescriptors. CompositeRef and BoundedLoop nodes use this
+ * to display their referenced declaration's port contract.
+ */
+function lookupDeclarationPorts(
+  declarations: unknown[] | undefined,
+  declarationId: unknown,
+  direction: 'input' | 'output'
+): DefinitionHandleDescriptor[] {
+  if (!declarations || typeof declarationId !== 'string') return [];
+  const decl = declarations.find((d) => {
+    if (d !== null && typeof d === 'object' && !Array.isArray(d)) {
+      return (d as Record<string, unknown>).id === declarationId;
+    }
+    return false;
+  });
+  if (!decl || typeof decl !== 'object') return [];
+  const declRecord = decl as Record<string, unknown>;
+  if (direction === 'input') {
+    const inputs = Array.isArray(declRecord.inputs) ? declRecord.inputs : [];
+    return inputs
+      .filter(
+        (p): p is Record<string, unknown> =>
+          p !== null && typeof p === 'object' && typeof (p as Record<string, unknown>).name === 'string'
+      )
+      .map((p) => ({
+        id: p.name as string,
+        type: typeof p.type === 'string' ? p.type : undefined,
+      }));
+  }
+  const outcomes = Array.isArray(declRecord.outcomes) ? declRecord.outcomes : [];
+  return outcomes
+    .filter((o): o is string => typeof o === 'string')
+    .map((o) => ({ id: o, type: `outcome/${o}` }));
+}
+
 function v2NodeCardData(
   node: unknown,
   graph: unknown,
-  catalog?: PipelineCatalogResponse | null
+  catalog?: PipelineCatalogResponse | null,
+  declarations?: unknown[]
 ): StageCardData {
   const record =
     node !== null && typeof node === 'object' && !Array.isArray(node)
@@ -142,7 +180,15 @@ function v2NodeCardData(
                 .concat('input')
             )
           ).map((id) => ({ id }))
-        : [];
+        : kind === 'CompositeRef' || kind === 'BoundedLoop'
+          ? lookupDeclarationPorts(
+              declarations,
+              kind === 'CompositeRef'
+                ? record.declarationId
+                : record.body,
+              'input'
+            )
+          : [];
   const outputPorts: DefinitionHandleDescriptor[] =
     kind === 'AtomicStage'
       ? [
@@ -165,7 +211,15 @@ function v2NodeCardData(
             id: outcome,
             type: `outcome/${outcome}`,
           }))
-        : [];
+        : kind === 'CompositeRef' || kind === 'BoundedLoop'
+          ? lookupDeclarationPorts(
+              declarations,
+              kind === 'CompositeRef'
+                ? record.declarationId
+                : record.body,
+              'output'
+            )
+          : [];
   const editorSupported = isV2EditableNodeKind(kind);
   const definitionKind = [
     'AtomicStage',
@@ -309,6 +363,18 @@ function isSafelyEditableV2Node(node: unknown): boolean {
       );
     case 'Finish':
       return typeof record.outcome === 'string';
+    // CompositeRef and BoundedLoop joined the editable vocabulary in ECP-2
+    // (`executable-custom-composite`: reference a declaration from the root
+    // graph, and "The Canvas SHALL allow the user to delete a `CompositeRef`
+    // node from the root graph"). This predicate is the WELL-FORMEDNESS guard
+    // — it must not double as a second vocabulary gate, or a node the editor
+    // reports as supported is one React Flow refuses to delete or connect.
+    case 'CompositeRef':
+      return typeof record.declarationId === 'string';
+    case 'BoundedLoop':
+      return typeof record.body === 'string';
+    // Everything else — FanOut, Join, and any kind a later slice introduces —
+    // stays a read-only card.
     default:
       return false;
   }
@@ -335,7 +401,7 @@ export function definitionToGraph(
         const projected = projectedV2Node(node, index);
         return {
         id: projected.id,
-        data: v2NodeCardData(projected.value, graph),
+        data: v2NodeCardData(projected.value, graph, undefined, definition.declarations),
         draggable: false,
         connectable: false,
         deletable: false,
@@ -394,7 +460,7 @@ export function draftToGraph(
         return {
         id: projected.id,
         data: {
-          ...v2NodeCardData(projected.value, graph, catalog),
+          ...v2NodeCardData(projected.value, graph, catalog, (def as { declarations?: unknown[] }).declarations),
           effectiveGate: {
             value: projected.kind === 'Gate',
             source: 'draft',

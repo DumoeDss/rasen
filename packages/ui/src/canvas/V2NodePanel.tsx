@@ -1,12 +1,26 @@
 import { useEffect, useState } from 'preact/hooks';
 import type {
   PipelineCatalogResponse,
+  WireBoundedLoopNode,
+  WireCompositeDeclaration,
+  WireCompositeRefNode,
   WireDefinitionNode,
+  WirePipelineDefinitionV2,
 } from '../api/types.js';
 import { isV2EditableNodeKind } from './draft.js';
 
+/** The canonical 4-phase ReviewCycle body this Canvas slice supports. */
+const REVIEW_CYCLE_PHASES = ['review', 'triage', 'fix', 're-review'] as const;
+
 function listValue(values: readonly string[]): string {
   return values.join(',');
+}
+
+/** Narrow an untyped wire-node field to a string list before rendering it. */
+function stringList(value: unknown): readonly string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 function parseList(value: string): string[] {
@@ -23,6 +37,7 @@ function parseList(value: string): string[] {
 export function V2NodePanel({
   node,
   catalog,
+  definition,
   fieldIssues,
   onRename,
   onPatch,
@@ -30,6 +45,7 @@ export function V2NodePanel({
 }: {
   node: WireDefinitionNode;
   catalog: PipelineCatalogResponse | null;
+  definition?: WirePipelineDefinitionV2 | null;
   fieldIssues: Record<string, 'error' | 'warning'>;
   onRename: (id: string) => void;
   onPatch: (patch: Partial<WireDefinitionNode>) => boolean | void;
@@ -100,6 +116,16 @@ export function V2NodePanel({
             This known Definition kind is preserved exactly and is read-only in
             this editor slice.
           </p>
+          {/* ECP-4's `executable-parallel-pipelines` delta ("Canvas provides
+              parallel authoring with legality feedback") promises that
+              selecting a FanOut shows its member list with required badges and
+              conditions, and its concurrency cap and budget. FanOut/Join are
+              deliberately NOT root-authorable (`isV2EditableNodeKind` excludes
+              them, pinned by `draft.test.ts`), so the detail renderers belong
+              on the read-only side — gating them behind `supported` made the
+              shipped promise unreachable in production. */}
+          {node.kind === 'FanOut' && <FanOutDetails node={node} />}
+          {node.kind === 'Join' && <JoinDetails node={node} />}
           <pre class="stage-panel__json">{JSON.stringify(node, null, 2)}</pre>
         </>
       ) : (
@@ -196,8 +222,391 @@ export function V2NodePanel({
               />
             </label>
           )}
+
+          {node.kind === 'BoundedLoop' && (
+            <BoundedLoopDetails
+              node={node as WireBoundedLoopNode}
+              definition={definition}
+              onPatch={onPatch}
+            />
+          )}
+
+          {node.kind === 'CompositeRef' && (
+            <CompositeRefDetails
+              node={node as WireCompositeRefNode}
+              definition={definition}
+              onPatch={onPatch}
+            />
+          )}
+
+          {/* FanOut/Join are never `supported`; their read-only detail
+              renderers live in the branch above. */}
         </>
       )}
     </aside>
+  );
+}
+
+/**
+ * BoundedLoop detail renderer (task 9.1/9.3): shows the body phases, exit
+ * outcomes, and a configurable maxRounds scalar. Shape editing (add/remove/
+ * reorder phases) is NOT enabled — the 4-phase ReviewCycle body is read-only.
+ */
+/**
+ * BoundedLoop detail renderer: shows the body phases/stages, exit outcomes,
+ * and a configurable maxRounds scalar. For ReviewCycle bodies the 4 phases
+ * are listed read-only. For non-ReviewCycle (composite) bodies, the body
+ * declaration's stages are listed read-only.
+ */
+function BoundedLoopDetails({
+  node,
+  definition,
+  onPatch,
+}: {
+  node: WireBoundedLoopNode;
+  definition?: WirePipelineDefinitionV2 | null;
+  onPatch: (patch: Partial<WireDefinitionNode>) => boolean | void;
+}) {
+  const currentMaxRounds = node.limits.maxIterations;
+  const [roundsDraft, setRoundsDraft] = useState(String(currentMaxRounds));
+
+  const exitEntries = Object.entries(node.exits);
+  const cleanExit = exitEntries.find(([, v]) => v.action === 'continue');
+  const exhaustedExit = exitEntries.find(([, v]) => v.action === 'exit');
+
+  const commitRounds = () => {
+    const parsed = parseInt(roundsDraft, 10);
+    if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 100) {
+      onPatch({
+        limits: { ...node.limits, maxIterations: parsed },
+      });
+    } else {
+      setRoundsDraft(String(currentMaxRounds));
+    }
+  };
+
+  // Look up the declaration to determine body kind.
+  const declaration = (definition?.declarations ?? []).find(
+    (d) => d.id === node.body
+  );
+  const bodyNodes = (declaration?.graph?.nodes ?? []) as Array<{
+    id: string;
+    kind: string;
+    reviewCyclePhase?: string;
+    capability?: { id: string };
+  }>;
+  const isReviewCycle = bodyNodes.some(
+    (n) => typeof n.reviewCyclePhase === 'string'
+  );
+
+  return (
+    <div
+      class="stage-panel__bounded-loop"
+      data-testid="v2-node-panel-bounded-loop"
+    >
+      <div class="stage-panel__field">
+        <span>Body kind</span>
+        <strong>{isReviewCycle ? 'Review Cycle (4 phases)' : 'Composite'}</strong>
+      </div>
+      <div
+        class="stage-panel__bounded-loop-phases"
+        data-testid="v2-node-panel-phases"
+      >
+        {isReviewCycle ? (
+          <>
+            <span>Phases (read-only):</span>
+            <ol>
+              {REVIEW_CYCLE_PHASES.map((phase) => (
+                <li key={phase}>{phase}</li>
+              ))}
+            </ol>
+          </>
+        ) : (
+          <>
+            <span>Body stages (read-only):</span>
+            <ol>
+              {bodyNodes.map((n) => (
+                <li key={n.id}>
+                  {n.id}
+                  {n.capability ? ` (${n.capability.id})` : ''}
+                </li>
+              ))}
+            </ol>
+          </>
+        )}
+      </div>
+      <label class="stage-panel__field">
+        <span>Max rounds</span>
+        <input
+          type="number"
+          min={1}
+          max={100}
+          data-testid="v2-node-panel-max-rounds"
+          value={roundsDraft}
+          onInput={(event) =>
+            setRoundsDraft((event.target as HTMLInputElement).value)
+          }
+          onBlur={commitRounds}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              (event.currentTarget as HTMLInputElement).blur();
+            }
+          }}
+        />
+      </label>
+      <div class="stage-panel__field">
+        <span>Exits</span>
+        <div class="stage-panel__exits">
+          {cleanExit && (
+            <span class="stage-panel__exit stage-panel__exit--clean">
+              {cleanExit[0]}: continue
+            </span>
+          )}
+          {exhaustedExit && (
+            <span class="stage-panel__exit stage-panel__exit--exhausted">
+              {exhaustedExit[0]}: {(exhaustedExit[1] as { outcome: string }).outcome}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * CompositeRef detail renderer (design D5): shows the referenced declaration
+ * (editable via dropdown), the declaration's contract (inputs/artifacts/
+ * outcomes read-only summary), the body stages list, and the port mapping
+ * between root-level connections and the declaration's declared ports.
+ */
+function CompositeRefDetails({
+  node,
+  definition,
+  onPatch,
+}: {
+  node: WireCompositeRefNode;
+  definition?: WirePipelineDefinitionV2 | null;
+  onPatch: (patch: Partial<WireDefinitionNode>) => boolean | void;
+}) {
+  const declarations = definition?.declarations ?? [];
+  const selectedDeclaration = declarations.find(
+    (d) => d.id === node.declarationId
+  );
+
+  return (
+    <div
+      class="stage-panel__composite-ref"
+      data-testid="v2-node-panel-composite-ref"
+    >
+      <label class="stage-panel__field">
+        <span>Declaration</span>
+        <select
+          data-testid="v2-node-panel-declaration"
+          value={node.declarationId}
+          onChange={(event) => {
+            const value = (event.target as HTMLSelectElement).value;
+            onPatch({ declarationId: value });
+          }}
+        >
+          {declarations.length === 0 && (
+            <option value="">(no declarations)</option>
+          )}
+          {declarations.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.id}
+              {d.provenance === 'built-in' ? ' (built-in)' : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {selectedDeclaration && (
+        <DeclarationSummary declaration={selectedDeclaration} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Read-only declaration contract summary: inputs, artifacts, outcomes, and
+ * body stage list. Also shows the port mapping surface.
+ */
+function DeclarationSummary({
+  declaration,
+}: {
+  declaration: WireCompositeDeclaration;
+}) {
+  const inputs = declaration.inputs ?? [];
+  const artifacts = declaration.artifacts ?? [];
+  const outcomes = declaration.outcomes ?? [];
+  const bodyNodes = (declaration.graph?.nodes ?? []) as Array<{
+    id: string;
+    kind: string;
+    capability?: { id: string };
+  }>;
+  const bodyConnections = declaration.graph?.connections ?? [];
+
+  return (
+    <div
+      class="stage-panel__declaration-summary"
+      data-testid="v2-node-panel-declaration-summary"
+    >
+      {inputs.length > 0 && (
+        <div class="stage-panel__field">
+          <span>Inputs</span>
+          <ul class="stage-panel__port-list">
+            {inputs.map((port) => (
+              <li key={port.name}>
+                {port.name}: {port.type}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {artifacts.length > 0 && (
+        <div class="stage-panel__field">
+          <span>Artifacts</span>
+          <ul class="stage-panel__port-list">
+            {artifacts.map((art) => (
+              <li key={art.name}>
+                {art.name}: {art.type}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div class="stage-panel__field">
+        <span>Outcomes</span>
+        <div class="stage-panel__outcomes-list">
+          {outcomes.join(', ') || '(none)'}
+        </div>
+      </div>
+      <div class="stage-panel__field">
+        <span>Body stages ({bodyNodes.length})</span>
+        <ol class="stage-panel__body-stages">
+          {bodyNodes.map((n) => (
+            <li key={n.id} data-testid="v2-node-panel-body-stage">
+              {n.id} ({n.kind})
+              {n.capability ? ` → ${n.capability.id}` : ''}
+            </li>
+          ))}
+        </ol>
+      </div>
+      {bodyConnections.length > 0 && (
+        <div class="stage-panel__field">
+          <span>Body connections ({bodyConnections.length})</span>
+          <ul class="stage-panel__port-list">
+            {bodyConnections.map((c, i) => (
+              <li key={i}>
+                {c.from.node}:{c.from.port} → {c.to.node}:{c.to.port}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div class="stage-panel__field stage-panel__port-mapping">
+        <span>Port mapping</span>
+        <div class="stage-panel__port-mapping-grid" data-testid="v2-node-panel-port-mapping">
+          {inputs.map((port) => (
+            <div key={`in:${port.name}`} class="stage-panel__port-mapping-row">
+              <span class="stage-panel__port-mapping-root">root:{port.name}</span>
+              <span class="stage-panel__port-mapping-arrow">→</span>
+              <span class="stage-panel__port-mapping-decl">{port.name}</span>
+            </div>
+          ))}
+          {outcomes.map((outcome) => (
+            <div key={`out:${outcome}`} class="stage-panel__port-mapping-row">
+              <span class="stage-panel__port-mapping-decl">{outcome}</span>
+              <span class="stage-panel__port-mapping-arrow">→</span>
+              <span class="stage-panel__port-mapping-root">root:{outcome}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ECP-4 FanOut detail renderer: shows member list with required badges,
+ * concurrency cap, and budget scalars (read-only display).
+ */
+function FanOutDetails({ node }: { node: WireDefinitionNode }) {
+  const branches = listValue(
+    stringList((node as Readonly<{ branches?: unknown }>).branches)
+  );
+  const cap = (node as Readonly<{ concurrencyCap?: unknown }>).concurrencyCap;
+  const budget = (node as Readonly<{ budget?: unknown }>).budget;
+  const members = (node as Readonly<{ members?: ReadonlyArray<{ id: string; required: boolean; condition: string }> }>).members;
+  return (
+    <div class="stage-panel__section" data-testid="v2-node-panel-fanout">
+      <h4 class="stage-panel__section-title">Parallel Members</h4>
+      {members !== undefined ? (
+        <ul class="stage-panel__member-list">
+          {members.map((m) => (
+            <li key={m.id} class="stage-panel__member-item">
+              <span class="stage-panel__member-id">{m.id}</span>
+              {m.required && (
+                <span class="stage-panel__badge stage-panel__badge--required">required</span>
+              )}
+              <span class="stage-panel__member-condition">{m.condition}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="stage-panel__muted">{branches}</p>
+      )}
+      <div class="stage-panel__scalars">
+        <label class="stage-panel__scalar">
+          <span>Concurrency cap</span>
+          <output>{String(cap ?? 3)}</output>
+        </label>
+        <label class="stage-panel__scalar">
+          <span>Budget</span>
+          <output>{String(budget ?? '—')}</output>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ECP-4 Join detail renderer: shows required/optional members and outcomes.
+ */
+function JoinDetails({ node }: { node: WireDefinitionNode }) {
+  const inputs = listValue(
+    stringList((node as Readonly<{ inputs?: unknown }>).inputs)
+  );
+  const requiredMembers = (node as Readonly<{ requiredMembers?: readonly string[] }>).requiredMembers;
+  const optionalMembers = (node as Readonly<{ optionalMembers?: readonly string[] }>).optionalMembers;
+  const outcomes = (node as Readonly<{ outcomes?: Readonly<{ proceed: string; failed: string }> }>).outcomes;
+  return (
+    <div class="stage-panel__section" data-testid="v2-node-panel-join">
+      <h4 class="stage-panel__section-title">Barrier Members</h4>
+      {requiredMembers !== undefined && optionalMembers !== undefined ? (
+        <ul class="stage-panel__member-list">
+          {requiredMembers.map((m) => (
+            <li key={m} class="stage-panel__member-item">
+              <span class="stage-panel__member-id">{m}</span>
+              <span class="stage-panel__badge stage-panel__badge--required">required</span>
+            </li>
+          ))}
+          {optionalMembers.map((m) => (
+            <li key={m} class="stage-panel__member-item">
+              <span class="stage-panel__member-id">{m}</span>
+              <span class="stage-panel__badge stage-panel__badge--optional">optional</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="stage-panel__muted">{inputs}</p>
+      )}
+      {outcomes !== undefined && (
+        <div class="stage-panel__outcomes">
+          <span>proceed: {outcomes.proceed}</span>
+          <span>failed: {outcomes.failed}</span>
+        </div>
+      )}
+    </div>
   );
 }

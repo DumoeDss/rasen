@@ -184,6 +184,48 @@ describe('auto workflow (orchestrated autopilot)', () => {
       expect(skillText).toContain('relays these findings VERBATIM');
     });
 
+    /**
+     * ECP-5 Section 3: auto converges to selection / launch / adapter for
+     * reconciler-engine runs. The engine is resolved from the CLI's already-
+     * resolved payload (not by re-reading config), displayed at run start, and
+     * decides which playbook branch executes.
+     */
+    it('resolves and displays the effective engine before launching (ECP-5)', () => {
+      expect(skillText).toContain('Resolve the engine (once, before launching anything)');
+      expect(skillText).toContain('runs.engine');
+      expect(skillText).toContain('--engine');
+      // Read the RESOLVED policy from the CLI, do not re-derive the chain.
+      expect(skillText).toContain('enginePolicy: { configured, source, effectiveEngine }');
+      expect(skillText).toContain('Engine: reconciler (auto)');
+      // Each resolution outcome is stated, including the off-switch's code.
+      expect(skillText).toContain('engine_disabled_by_config');
+      expect(skillText.toLowerCase()).toContain(
+        'do not silently substitute legacy'
+      );
+    });
+
+    it('launches a reconciler-engine run as ONE canonical Run and keeps the legacy path (ECP-5)', () => {
+      expect(skillText).toContain('rasen pipeline start <change> <name> --json');
+      expect(skillText).toContain('the Run owns stage sequencing, loop rounds and caps');
+      // The legacy branch is preserved, not deleted — not every run is
+      // reconciler-engine, and a playbook that lost its legacy mechanics would
+      // break every legacy run.
+      expect(skillText).toContain(
+        "execute the playbook's legacy path exactly as before"
+      );
+      // Engine selection is launch-only; it never re-homes a Run in flight.
+      expect(skillText).toContain('never re-homes one in flight');
+    });
+
+    it('resumes a reconciler-engine run from the canonical frontier (ECP-5)', () => {
+      expect(skillText).toContain('resume under the OWNING engine');
+      expect(skillText).toContain('rasen pipeline resume-run <change> <name> --json');
+      expect(skillText).toContain('MUST NOT override the frontier');
+      // The legacy artifact heuristic stays, scoped to legacy-engine changes.
+      expect(skillText).toContain('legacy-engine** change, determine the next incomplete stage');
+      expect(skillText).toContain('surface that engine-ownership conflict');
+    });
+
     it('requires a held warm reuse candidate to write its digest before session relay (H.7)', () => {
       expect(skillText).toContain('held warm reuse candidate');
       expect(skillText).toContain('knowledge digest document');

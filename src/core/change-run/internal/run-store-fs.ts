@@ -159,6 +159,24 @@ export function createFilesystemRunStore(rootDir: string): RunStore {
     has(runId: RunId): boolean {
       return headVersion(dirFor(runId)) !== -1;
     },
+    writePlan(runId: RunId, plan: unknown): void {
+      const dir = dirFor(runId);
+      ensureDir(dir);
+      const planFile = path.join(dir, 'plan.json');
+      const staging = `${planFile}.staging`;
+      const bytes = Buffer.from(JSON.stringify(plan, null, 0), 'utf8');
+      publishAtomic(FILESYSTEM_PLUMBING, staging, planFile, bytes);
+    },
+    loadPlan(runId: RunId): unknown | null {
+      const dir = dirFor(runId);
+      const planFile = path.join(dir, 'plan.json');
+      if (!existsSync(planFile)) return null;
+      try {
+        return JSON.parse(readFileSync(planFile, 'utf8'));
+      } catch {
+        return null;
+      }
+    },
     list(): readonly RunSummary[] {
       if (!existsSync(rootDir)) return [];
       const summaries: RunSummary[] = [];

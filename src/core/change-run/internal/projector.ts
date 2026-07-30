@@ -6,8 +6,12 @@ import type {
   CanonicalRunRecord,
   CommittedAction,
 } from './record.js';
+import type { RuntimePlan, RuntimePlanBoundedLoopNode, RuntimePlanFanOutNode, RuntimePlanChoiceNode } from './runtime-plan.js';
 import type { CanonicalWait } from './waits.js';
 import { canonicalJson } from './identity.js';
+import { projectReviewCycleProgress } from './review-cycle-runtime.js';
+import { projectGoalCycleProgress, type GoalCycleProgress } from './goal-cycle-runtime.js';
+import { projectCompositeBodyProgress, compositeBodyStagePath } from './composite-runtime.js';
 
 function actionView(committed: CommittedAction) {
   const action = committed.action;
@@ -117,7 +121,8 @@ function allowedControlsFor(
  */
 export function projectRunView(
   record: CanonicalRunRecord,
-  sourceState: 'active' | 'archived' | 'missing' = 'active'
+  sourceState: 'active' | 'archived' | 'missing' = 'active',
+  plan?: RuntimePlan
 ): ChangeRunView {
   const isTerminal = record.terminal !== undefined;
   const root = isTerminal
@@ -182,6 +187,444 @@ export function projectRunView(
       policy: 'unchanged',
       workspace: 'unchanged',
     },
-    sections: [root],
+    sections: buildSections(root, plan, record),
   } as ChangeRunView;
+}
+
+/**
+ * Build the view sections: root-dag always, review-cycle when the plan
+ * contains a bounded-loop. Both derive from the same canonical Record.
+ */
+function buildSections(
+  root: unknown,
+  plan: RuntimePlan | undefined,
+  record: CanonicalRunRecord
+): readonly unknown[] {
+  const sections: unknown[] = [root];
+  if (plan !== undefined) {
+    const loop = plan.nodes.find(
+      (node): node is RuntimePlanBoundedLoopNode => node.kind === 'bounded-loop'
+    );
+    if (loop !== undefined && loop.body.kind === 'review-cycle') {
+      const progress = projectReviewCycleProgress(plan, loop, record);
+      sections.push(buildReviewCycleSection(loop, progress));
+    }
+    // Emit goal/1 section for goal-cycle body bounded-loops.
+    const goalLoop = plan.nodes.find(
+      (node): node is RuntimePlanBoundedLoopNode =>
+        node.kind === 'bounded-loop' && node.body.kind === 'goal-cycle'
+    );
+    if (goalLoop !== undefined && goalLoop.body.kind === 'goal-cycle') {
+      const progress = projectGoalCycleProgress(plan, goalLoop, record);
+      sections.push(buildGoalSection(goalLoop, progress));
+    }
+    // Emit composite drill-down for composite-body loops or inlined CompositeRef nodes.
+    const compositeSection = buildCompositeSection(plan, record);
+    if (compositeSection !== null) {
+      sections.push(compositeSection);
+    }
+    // ECP-4: emit parallel/1 section when the plan contains a fan-out node.
+    const parallelSection = buildParallelSection(plan, record);
+    if (parallelSection !== null) {
+      sections.push(parallelSection);
+    }
+    // ECP-4: emit choice/1 section when the plan contains a choice node.
+    const choiceSection = buildChoiceSection(plan, record);
+    if (choiceSection !== null) {
+      sections.push(choiceSection);
+    }
+  }
+  return Object.freeze(sections);
+}
+
+/**
+ * Build a `composite/1` section when the plan contains inlined composite nodes.
+ * For composite-body BoundedLoop nodes, iterate the body stages and derive
+ * their per-round status from committed actions. For CompositeRef-inlined
+ * atomic nodes, detect them by hierarchical paths containing a `/` after
+ * `root:` (the inlined body stage separator).
+ */
+function buildCompositeSection(
+  plan: RuntimePlan,
+  record: CanonicalRunRecord
+): unknown | null {
+  // Check for composite-body BoundedLoop.
+  const compositeLoop = plan.nodes.find(
+    (node): node is RuntimePlanBoundedLoopNode =>
+      node.kind === 'bounded-loop' && node.body.kind === 'composite'
+  );
+  if (compositeLoop !== undefined && compositeLoop.body.kind === 'composite') {
+    const progress = projectCompositeBodyProgress(plan, compositeLoop, record);
+    const body = compositeLoop.body;
+    const stages = body.stages.map((stage) => {
+      const round = progress.kind === 'ready' || progress.kind === 'waiting' || progress.kind === 'failed'
+        ? progress.next.round
+        : 1;
+      const perRoundPath = compositeBodyStagePath(
+        compositeLoop.hierarchicalPath,
+        round,
+        stage.hierarchicalPath
+      );
+      const action = Object.values(record.actions).find(
+        (a) => a.action.nodeId === stage.nodeId
+      );
+      return {
+        path: stage.hierarchicalPath,
+        status: action === undefined ? 'pending' : action.state === 'active' ? 'active' : action.result?.status ?? 'pending',
+        capability: { id: stage.profilePath },
+      };
+    });
+    return Object.freeze({
+      kind: 'composite',
+      version: 1,
+      compositePath: compositeLoop.hierarchicalPath,
+      declarationId: body.declarationId,
+      stages,
+      outcome: progress.kind === 'clean' ? progress.outcome : undefined,
+      ...(progress.kind === 'ready' || progress.kind === 'waiting' || progress.kind === 'failed'
+        ? { round: progress.next.round, maxIterations: compositeLoop.maxIterations }
+        : { round: 1, maxIterations: compositeLoop.maxIterations }),
+    });
+  }
+
+  // Check for CompositeRef-inlined atomic nodes (paths with root:<id>/<stage> pattern).
+  const inlinedNodes = plan.nodes.filter(
+    (node): node is typeof node =>
+      node.kind === 'atomic' &&
+      node.hierarchicalPath.startsWith('root:') &&
+      node.hierarchicalPath.includes('/')
+  );
+  if (inlinedNodes.length === 0) return null;
+
+  // Group inlined nodes by their CompositeRef prefix.
+  const groups = new Map<string, typeof inlinedNodes>();
+  for (const node of inlinedNodes) {
+    const prefix = node.hierarchicalPath.split('/')[0]!;
+    const existing = groups.get(prefix) ?? [];
+    existing.push(node);
+    groups.set(prefix, existing);
+  }
+
+  // Build sections for the first group (simple: one composite per section).
+  const [compositePath, groupNodes] = [...groups.entries()][0]!;
+  const stages = groupNodes.map((node) => {
+    if (node.kind !== 'atomic') return null;
+    const action = Object.values(record.actions).find(
+      (a) => a.action.nodeId === node.nodeId
+    );
+    return {
+      path: node.hierarchicalPath,
+      status: action === undefined ? 'pending' : action.state === 'active' ? 'active' : action.result?.status ?? 'pending',
+      capability: { id: node.profilePath ?? node.hierarchicalPath },
+    };
+  }).filter((s): s is NonNullable<typeof s> => s !== null);
+
+  return Object.freeze({
+    kind: 'composite',
+    version: 1,
+    compositePath,
+    declarationId: 'custom',
+    stages,
+    outcome: undefined,
+  });
+}
+
+function buildReviewCycleSection(
+  loop: RuntimePlanBoundedLoopNode,
+  progress: ReturnType<typeof projectReviewCycleProgress>
+): unknown {
+  const state = progress.state;
+  const phase = 'next' in progress ? progress.next.phase : state.phase;
+  const round = 'next' in progress ? progress.next.round : state.round;
+  return Object.freeze({
+    kind: 'review-cycle',
+    version: 1,
+    loopPath: loop.hierarchicalPath,
+    round,
+    phase,
+    outcome: state.outcome,
+    findings: state.findings.map((f) => ({
+      id: f.id,
+      severity: f.severity,
+      status: f.status,
+      claim: f.claim,
+      ...(f.location !== undefined ? { location: f.location } : {}),
+    })),
+    actors: {
+      ...(state.fixerActor !== undefined
+        ? { fixer: state.fixerActor }
+        : {}),
+      ...(state.verifierActor !== undefined
+        ? { verifier: state.verifierActor }
+        : {}),
+      ...(state.lastActor !== undefined ? { lastActor: state.lastActor } : {}),
+    },
+    waitReason:
+      progress.kind === 'waiting'
+        ? 'action-active'
+        : progress.kind === 'failed'
+          ? 'committed-failure'
+          : undefined,
+    maxRounds: loop.maxIterations,
+  });
+}
+
+/**
+ * Build a `goal/1` section for a goal-cycle bounded-loop. Mirrors the
+ * review-cycle section shape but carries goal-specific fields: variant,
+ * score, gaps, stall streak, and budget.
+ */
+function buildGoalSection(
+  loop: RuntimePlanBoundedLoopNode,
+  progress: GoalCycleProgress
+): unknown {
+  const state = progress.state;
+  const phase = 'next' in progress ? progress.next.phase : state.phase;
+  const round = 'next' in progress ? progress.next.round : state.round;
+  const variant =
+    loop.body.kind === 'goal-cycle' ? loop.body.variant : 'measure';
+  return Object.freeze({
+    kind: 'goal',
+    version: 1,
+    loopPath: loop.hierarchicalPath,
+    variant,
+    round,
+    phase,
+    outcome: state.outcome,
+    ...(state.lastScore !== undefined ? { lastScore: state.lastScore } : {}),
+    lastGaps: state.lastGaps,
+    stallStreak: state.stallStreak,
+    budget: {
+      used: state.eventCount,
+      max: loop.maxIterations * 2, // 2 phases per round
+    },
+    waitReason:
+      progress.kind === 'waiting'
+        ? 'action-active'
+        : progress.kind === 'failed'
+          ? 'committed-failure'
+          : undefined,
+  });
+}
+
+/**
+ * ECP-4: the SUCCEEDED evaluator result the projection should display, or
+ * `undefined` when the evaluator has not resolved.
+ *
+ * Two defects lived here. The reader took the FIRST result-bearing attempt
+ * while the kernel takes the LAST, and it ignored completion status entirely.
+ * Both matter now that unresolved evaluators are RETRIED: after a
+ * failed-then-retried-successfully evaluator — an ordinary path precisely
+ * because the retry cap exists — the projection kept reading the failed first
+ * attempt forever, showing members `waiting` and joinState `not-reached` while
+ * the Run was actually executing. It also displayed a crashed evaluator's
+ * partial output as a real selection.
+ *
+ * Mirrors `succeededResultForNode` in the reconciler on purpose: the display
+ * plane must answer "what did this evaluator decide" exactly as the kernel
+ * does. All three parity planes share this one reader, which is why a parity
+ * suite alone can never catch a divergence here.
+ */
+function succeededEvaluatorResult(
+  record: CanonicalRunRecord,
+  nodeId: string
+): Readonly<Record<string, unknown>> | undefined {
+  const committed = Object.values(record.actions).filter(
+    (action) =>
+      action.action.nodeId === nodeId &&
+      action.result !== undefined &&
+      action.result.status === 'succeeded'
+  );
+  const last = committed[committed.length - 1];
+  const value = last?.result?.result;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Readonly<Record<string, unknown>>;
+}
+
+/**
+ * ECP-4: the `parallel/1` section a Run view exposes for a FanOut/Join pair.
+ * Consumed by the CLI `pipeline status` renderer, the Management API, and the
+ * Operations UI — all three read the SAME projection, so the shape is typed
+ * here rather than left as `unknown`.
+ */
+export type ParallelMemberStatus =
+  | 'waiting'
+  | 'suppressed'
+  | 'ready'
+  | 'running'
+  | 'succeeded'
+  | 'failed';
+
+export type ParallelJoinState =
+  | 'not-reached'
+  | 'waiting'
+  | 'proceeding'
+  | 'failed';
+
+export interface ParallelMemberView {
+  readonly path: string;
+  readonly status: ParallelMemberStatus;
+  readonly required: boolean;
+  readonly condition: string;
+}
+
+export interface ParallelSectionView {
+  readonly kind: 'parallel';
+  readonly version: 1;
+  readonly fanOutPath: string;
+  readonly joinPath: string | undefined;
+  readonly members: readonly ParallelMemberView[];
+  readonly joinState: ParallelJoinState;
+  readonly concurrencyCap: number;
+  readonly budget: Readonly<{ used: number; max: number }>;
+  readonly activeCount: number;
+  readonly succeededCount: number;
+  readonly failedCount: number;
+  readonly keyBlockers: readonly string[];
+}
+
+/** ECP-4: the `choice/1` section a Run view exposes for a Choice node. */
+export interface ChoiceBranchView {
+  readonly outcome: string;
+  readonly path: string;
+  readonly active: boolean;
+}
+
+export interface ChoiceSectionView {
+  readonly kind: 'choice';
+  readonly version: 1;
+  readonly choicePath: string;
+  readonly outcome: string | undefined;
+  readonly branches: readonly ChoiceBranchView[];
+}
+
+/**
+ * ECP-4: Build a `parallel/1` section when the plan contains a fan-out node.
+ * Iterates fan-out members, reads committed action states, derives member
+ * statuses, computes join state, budget usage, and key blockers.
+ */
+function buildParallelSection(
+  plan: RuntimePlan,
+  record: CanonicalRunRecord
+): ParallelSectionView | null {
+  const fanOut = plan.nodes.find(
+    (node): node is RuntimePlanFanOutNode => node.kind === 'fan-out'
+  );
+  if (fanOut === undefined) return null;
+  const join = plan.nodes.find((node) => node.kind === 'join');
+  // Read the SUCCEEDED fan-out condition result to determine active members.
+  let activeMembers: Set<string>;
+  let conditionCommitted = false;
+  const conditionResult = succeededEvaluatorResult(record, fanOut.nodeId);
+  if (conditionResult !== undefined && Array.isArray(conditionResult.activeMembers)) {
+    activeMembers = new Set(conditionResult.activeMembers as readonly string[]);
+    conditionCommitted = true;
+  } else {
+    activeMembers = new Set(fanOut.members.map((m) => m.hierarchicalPath));
+  }
+  // Derive member statuses.
+  const memberStatuses = fanOut.members.map((member) => {
+    const memberNode = plan.nodes.find(
+      (n) => n.kind === 'atomic' && n.nodeId === member.nodeId
+    );
+    const action = memberNode !== undefined
+      ? Object.values(record.actions).find((a) => a.action.nodeId === member.nodeId)
+      : undefined;
+    let status: ParallelMemberStatus;
+    if (!conditionCommitted) {
+      status = 'waiting';
+    } else if (!activeMembers.has(member.hierarchicalPath)) {
+      status = 'suppressed';
+    } else if (action === undefined) {
+      status = 'ready';
+    } else if (action.state === 'active') {
+      status = 'running';
+    } else if (action.result?.status === 'succeeded') {
+      status = 'succeeded';
+    } else if (action.result?.status === 'failed') {
+      status = 'failed';
+    } else {
+      status = 'ready';
+    }
+    return {
+      path: member.hierarchicalPath,
+      status,
+      required: member.required,
+      condition: member.condition,
+    };
+  });
+  // Determine join state.
+  let joinState: ParallelJoinState = 'not-reached';
+  if (join !== undefined && conditionCommitted) {
+    const succeeded = memberStatuses.filter((m) => m.status === 'succeeded');
+    const failed = memberStatuses.filter((m) => m.status === 'failed');
+    const requiredFailed = failed.some((m) => m.required);
+    const allRequiredSucceeded = memberStatuses
+      .filter((m) => m.required && m.status !== 'suppressed')
+      .every((m) => m.status === 'succeeded');
+    if (requiredFailed) {
+      joinState = 'failed';
+    } else if (allRequiredSucceeded) {
+      joinState = 'proceeding';
+    } else {
+      joinState = 'waiting';
+    }
+  }
+  // Compute budget usage.
+  const committedCount = memberStatuses.filter(
+    (m) => m.status === 'succeeded' || m.status === 'failed'
+  ).length;
+  const keyBlockers: string[] = [];
+  for (const m of memberStatuses) {
+    if (m.status === 'failed' && m.required) {
+      keyBlockers.push(`required member '${m.path}' failed`);
+    }
+  }
+  const section: ParallelSectionView = {
+    kind: 'parallel',
+    version: 1,
+    fanOutPath: fanOut.hierarchicalPath,
+    joinPath: join?.hierarchicalPath,
+    members: memberStatuses,
+    joinState,
+    concurrencyCap: fanOut.concurrencyCap,
+    budget: { used: committedCount, max: fanOut.budget },
+    activeCount: memberStatuses.filter((m) => m.status === 'running' || m.status === 'ready').length,
+    succeededCount: memberStatuses.filter((m) => m.status === 'succeeded').length,
+    failedCount: memberStatuses.filter((m) => m.status === 'failed').length,
+    keyBlockers,
+  };
+  return Object.freeze(section);
+}
+
+/**
+ * ECP-4: Build a `choice/1` section when the plan contains a choice node.
+ */
+function buildChoiceSection(
+  plan: RuntimePlan,
+  record: CanonicalRunRecord
+): ChoiceSectionView | null {
+  const choice = plan.nodes.find(
+    (node): node is RuntimePlanChoiceNode => node.kind === 'choice'
+  );
+  if (choice === undefined) return null;
+  // Read the SUCCEEDED choice result.
+  const choiceResult = succeededEvaluatorResult(record, choice.nodeId);
+  const selected = choiceResult?.outcome;
+  const outcome = typeof selected === 'string' ? selected : undefined;
+  const branches = choice.outcomes.map((o) => ({
+    outcome: o,
+    path: choice.branches[o] ?? '',
+    active: outcome === o,
+  }));
+  const section: ChoiceSectionView = {
+    kind: 'choice',
+    version: 1,
+    choicePath: choice.hierarchicalPath,
+    outcome,
+    branches,
+  };
+  return Object.freeze(section);
 }

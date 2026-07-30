@@ -2,9 +2,11 @@ import { z } from 'zod';
 
 import {
   ChangeRunContractError,
+  decodeActorRef,
   decodeEvidenceRef,
   decodeRunAction,
   decodeWorkspaceRevision,
+  type ActorRef,
   type ChangeInstanceId,
   type Digest,
   type EvidenceRef,
@@ -68,6 +70,8 @@ export interface CommittedDomainResult {
   readonly receiptDigest: Digest;
   readonly result: JsonValue;
   readonly evidence: readonly EvidenceRef[];
+  readonly actor?: ActorRef;
+  readonly actorAttestation?: EvidenceRef;
 }
 
 export interface CommittedInfrastructureObservation {
@@ -352,6 +356,8 @@ const ResultSchema = z.strictObject({
   receiptDigest: DigestSchema,
   result: z.json(),
   evidence: z.array(z.unknown()).max(64),
+  actor: z.unknown().optional(),
+  actorAttestation: z.unknown().optional(),
 });
 
 const InfrastructureSchema = z.strictObject({
@@ -497,6 +503,18 @@ function parseCommittedAction(value: unknown): CommittedAction {
           result: {
             ...parsed.data.result,
             evidence: parseEvidence(parsed.data.result.evidence),
+            ...(parsed.data.result.actorAttestation === undefined
+              ? {}
+              : {
+                  actorAttestation: decodeEvidenceRef(
+                    parsed.data.result.actorAttestation
+                  ),
+                }),
+            ...(parsed.data.result.actor === undefined
+              ? {}
+              : {
+                  actor: decodeActorRef(parsed.data.result.actor),
+                }),
           },
         }),
     ...(parsed.data.infrastructure === undefined

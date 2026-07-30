@@ -7,6 +7,249 @@
 [`north-star.md`](./north-star.md)。本路线允许随 dogfood 结果调整，但不得
 违反其中“闭环先于平台”和“完成必须有运行证据”等开发戒律。
 
+## 0. 2026-07-29 ECP 校准快照（已由子 Direction 接管）
+
+> 本节保留首次校准时的事实与路线推理，但不再拥有 ECP Target State、Roadmap
+> 或 active Slice。ECP 的当前权威入口是
+> [`executable-composite-pipelines/`](./executable-composite-pipelines/README.md)。
+>
+> **发布线修订（2026-07-30，用户拍板）：本节及其链接文件名里的 `0.1.6`
+> 里程碑标签，现在指 `0.2.0`。** `0.1.6` 已改定位为 `0.1.5` 的 bug 修复线，ECP
+> 范式落在 `dev/0.2.0`。快照文本与既有审查文件名一律保持原样（它们是历史事实），
+> 权威重命名说明见
+> [`deterministic-pipeline-kernel-research.md`](./executable-composite-pipelines/deterministic-pipeline-kernel-research.md)
+> 头部的「发布线修订」条。
+> 父路线只保留“ECP 通过后再进入 Issue 层”的依赖关系。
+
+### 0.1 校准结论
+
+当前工作位置是 North Star 的 **Horizon 0：Change 自动化内核**。现有
+Phase 0–8 描述的是 ECP 闭环之后的 Issue 层路线；在 ECP 产品闭环通过前，
+它们全部属于 Later，不应与 ECP 并行铺开。
+
+ECP 拆分后的 authority chain：
+
+```text
+north-star.md
+  ├─> goal.md（父级 legacy Target State input，保持原样）
+  │    -> roadmap.md（本文件：ECP 通过后的 Issue 路线）
+  └─> executable-composite-pipelines/target-state.md
+       -> executable-composite-pipelines/roadmap.md
+            -> executable-composite-pipelines/slices/<selected-slice>
+```
+
+没有把父级 `goal.md` 擅自迁移为 `target-state.md`。ECP 的详细方向与证据来自：
+
+- [`ECP 当前聚焦区`](./executable-composite-pipelines/README.md)；
+- [`deterministic-pipeline-kernel-research.md`](./executable-composite-pipelines/deterministic-pipeline-kernel-research.md)；
+- [`docs/architecture/executable-composite-pipelines.md`](../../../docs/architecture/executable-composite-pipelines.md)；
+- [`0.1.6 ECP 完成度审查`](../../../docs/audits/0.1.6-executable-composite-pipelines-completion-review-2026-07-29.md)。
+
+### 0.2 当前真实基线
+
+截至 2026-07-29，0.1.6 不是“所有 Pipeline 已经迁移到 executable
+composite pipeline”的状态：
+
+- 7 个内置 Pipeline YAML 均能通过静态校验，但当前 `pipeline show` 对
+  7/7 都只报告 legacy；
+- 只有形状严格匹配 root DAG 的 `bug-fix`，在启动时补充 execution profile
+  后，能够进入现有 reconciler；
+- authored v2 定义具有完整节点词汇，但会被明确标记
+  `executable: false`，原因为 `ecp_v2_runtime_unavailable`；
+- Runtime lowerer 只接受 authored v1 的特定 `bug-fix` root-DAG 形状，
+  RuntimePlan 只执行 `atomic | finish`；
+- `CompositeRef`、`BoundedLoop`、`GoalLoop`、`FanOut`、`Join` 尚未进入
+  reconciler 解释边界；
+- Canvas 只可编辑 `AtomicStage`、`Gate`、`Choice`、`Finish`，组合、循环、
+  扇出和汇合仍是只读 later-slice 节点；
+- root-DAG spine 已有较强自动化测试证据，但真实复杂 Pipeline 的
+  Definition → Canvas → Runtime → Operations → E2E 闭环尚未成立；
+- 现有 Change 制品的“artifact complete”不能替代实现任务、验证、归档和
+  发布证据；0.1.6 的版本清单、changelog 和 tag 也尚未形成一致发布事实。
+
+因此，当前已得到的是 **root-DAG execution spine**，不是完整 ECP 产品。
+
+### 0.3 ECP 完成状态
+
+只有以下结果同时可观察，才允许宣称 “ECP 真实完整实现”：
+
+1. **一个定义真相**
+   v2 authored definition 成为组合语义的 canonical truth；v1 只作为有明确
+   退场条件的兼容输入，不再形成第二套执行主线。
+
+2. **内置与自定义同构**
+   除属于 Issue/Dispatch 层的 `auto-decompose` 外，所有 Change-level
+   内置 Pipeline 与 Canvas 创建的 Custom Composite 都经过同一套
+   validate → lower → reconcile → persist 路径。
+
+3. **完整节点语义可执行**
+   `AtomicStage`、`Gate`、`Choice`、`Finish`、`CompositeRef`、
+   `BoundedLoop`、`FanOut`、`Join` 均有确定的状态转移、失败传播、预算和
+   恢复语义；GoalLoop 是有领域投影的 bounded composite，而不是另一套
+   Runtime。
+
+4. **一个 canonical Run**
+   CLI、API、Canvas 和 Operations 观察并控制同一个 Run 与同一份持久状态；
+   `rasen-auto`、`rasen-goal`、`rasen-review-cycle` 等入口只负责选择和启动，
+   不在 prompt 或命令层私自推进机械状态。
+
+5. **创作与运行对称**
+   Canvas 能创建、引用、折叠、展开和校验 composite/loop/parallel 结构；
+   保存后的定义可直接运行，运行结果可回投到相同图结构。
+
+6. **故障下仍然正确**
+   重启、resume、cancel、timeout、预算耗尽、部分并行失败、loop 达到上限和
+   人工 Gate 等场景均不会重复执行已完成节点，也不会静默误报 Done。
+
+7. **真实闭环证据**
+   至少覆盖 ReviewCycle、Custom Composite、GoalLoop 和 parallel
+   full-feature 四种真实 Rasen dogfood；每种都保存 definition revision、
+   lowering 结果、Run/Stage/Session 记录、外部验证和用户可理解的终态。
+
+8. **发布事实一致**
+   相关 Change 验证并归档，文档、manifest、changelog 和 tag 对同一版本
+   给出一致结论；任何 remaining limitation 都被明确列为非完成项。
+
+### 0.4 路线排序
+
+以下内容是拆分前的路线快照。当前顺序、Slice 边界和验收以
+[`executable-composite-pipelines/roadmap.md`](./executable-composite-pipelines/roadmap.md)
+为准。
+
+```text
+NOW
+  ECP-1 ReviewCycle 纵向闭环
+
+LATER（严格按顺序）
+  ECP-2 Custom Composite 同构闭环
+    -> ECP-3 GoalLoop 领域闭环
+      -> ECP-4 Choice / FanOut / Join 并行闭环
+        -> ECP-5 ECP 产品与发布闭环
+          -> Issue Phase 0–8
+
+NOT NOW
+  auto-decompose 的 ECP 化、Issue Dispatch、跨项目执行图、
+  Remote Runtime、团队权限、通知和 Forge 平台增强
+```
+
+#### ECP-1：ReviewCycle 纵向闭环
+
+**用户能力**
+
+用户运行一个带独立复审的真实 Change；review finding 能生成有界修复轮次，
+修复后由独立 reviewer 重审，直至通过、达到上限或显式升级。
+
+**最小完整范围**
+
+- v2 `CompositeRef + BoundedLoop` 的校验、lowering 和 reconciler 语义；
+- ReviewCycle domain reducer，以及 round、finding、fix、re-review 的持久投影；
+- `bug-fix` 和 `small-feature` 的复杂反馈路径迁移到该 composite；
+- Canvas 可创建、配置和检查 ReviewCycle/BoundedLoop；
+- Operations 展示当前轮次、finding、预算、阻塞原因和下一可执行节点；
+- crash/restart 后从持久状态恢复，不重跑已完成的 review/fix；
+- `rasen-review-cycle` 变成 thin launcher，不再拥有第二套循环。
+
+**退出证据**
+
+一个真实 finding 从独立 review 产生，触发真实修复和再次独立 review；正常
+通过路径、轮次耗尽路径和中途重启路径都有可审计记录。仅有 schema、fixture、
+单元测试或 UI mock 均不算退出。
+
+#### ECP-2：Custom Composite 同构闭环
+
+**用户能力**
+
+用户在 Canvas 声明一个带命名输入、输出、退出结果和局部预算的 composite，
+把它作为 `CompositeRef` 嵌入 Pipeline，保存后直接运行。
+
+**最小完整范围**
+
+- declaration/body、输入输出映射、outcome ports 和局部配置；
+- 创建、引用、折叠、展开、复制和删除的 Canvas 交互；
+- nested composite、递归、嵌套循环、能力和预算边界的静态验证；
+- built-in composite 与 custom composite 使用相同的 compiler/runtime contract；
+- 运行投影能从 composite 汇总到 root，又能下钻到内部节点。
+
+**退出证据**
+
+一个非内置、由 Canvas 创建的 composite 在真实 Change 中完成成功、失败和
+恢复路径；导出再导入后语义保持一致。
+
+#### ECP-3：GoalLoop 领域闭环
+
+**用户能力**
+
+用户选择 measure、evaluate 或 research 目标循环；系统通过同一个
+BoundedLoop 内核迭代，并用领域投影展示基线、当前结果、门槛、剩余预算和
+停止原因。
+
+**最小完整范围**
+
+- Measure、Evaluate、Research 共用 ECP loop mechanics；
+- 三类目标使用独立 domain reducer，不污染通用 reconciler；
+- `goal-loop-measure`、`goal-loop-evaluate`、`goal-loop-research` 迁移；
+- `rasen-goal` 只负责意图分类、定义选择和启动；
+- 人工停止、门槛达成、预算耗尽、无进展和恢复语义明确。
+
+**退出证据**
+
+至少一个 measure/evaluate 和一个 research 真实运行经历多轮推进，并对
+“为什么继续/为什么停止”给出可重放的机械证据。
+
+#### ECP-4：Choice / FanOut / Join 并行闭环
+
+**用户能力**
+
+用户运行 `full-feature`：条件分支选择唯一合法路径，可并行工作受并发和预算
+约束，Join 根据 required/optional/cancelled/superseded 语义确定推进结果。
+
+**最小完整范围**
+
+- Choice 条件求值和已选分支持久化；
+- FanOut/Join lowering、ready-set、并发上限和确定性汇合；
+- 部分失败、取消、超时、重试和 downstream suppression；
+- Canvas 并行结构的创建与合法性反馈；
+- Operations 的并行泳道、关键阻塞和未完成前沿；
+- `full-feature` 迁移到 canonical reconciler。
+
+**退出证据**
+
+真实运行至少覆盖一次并行成功、一次部分失败后恢复、一次取消或超时；重启
+后 ready-set 不漂移，Join 不重复消费结果。
+
+#### ECP-5：ECP 产品与发布闭环
+
+**用户能力**
+
+用户从 CLI、API 或 Canvas 选择任一 Change-level 内置 Pipeline 或 Custom
+Composite，看到一致的可执行性、启动方式、运行状态、控制动作和最终证据。
+
+**最小完整范围**
+
+- `bug-fix`、`small-feature`、`full-feature` 和三个 GoalLoop 内置定义全部
+  报告 reconciler；`auto-decompose` 明确归到后续 Issue/Dispatch 路线；
+- compatibility projection 只服务迁移，并写明 owner、调用者、退场门槛；
+- root/composite/loop/parallel 的恢复与故障矩阵全部通过；
+- `pipeline validate/show/run`、API、Canvas 和 Operations 结果一致；
+- 用 ECP 路线自身完成至少一个后续真实 Change，证明 dogfood；
+- 清理相互矛盾的文档和完成声明，完成验证、归档和发布事实收敛。
+
+**退出证据**
+
+重复执行 0.1.6 完成度审查时不再出现 Definition 可表达但 Runtime 不可执行、
+Canvas 只读、内置 Pipeline legacy-only 或发布版本漂移；所有完成结论均可
+追溯到真实运行记录。
+
+### 0.5 当前 Active Slice
+
+父 Direction 不再设置 ECP active Slice。原
+[`ecp-review-cycle-vertical-closure`](./slices/ecp-review-cycle-vertical-closure/spec.md)
+已作为规划位置被子 Direction 取代。
+
+ECP 当前为 draft，候选首个 Slice 是
+[`review-cycle-vertical-closure`](./executable-composite-pipelines/slices/review-cycle-vertical-closure/spec.md)；
+只有用户确认后，子 Direction 的 `work.yaml` 才会设置唯一 `activeSlice`。
+
 ## 1. 路线原则
 
 ### 1.1 每个切片必须跑通真实工作
@@ -33,7 +276,8 @@
 
 ### 1.2 CLI 和现有 Pipeline 先行
 
-- 现有 Change、Pipeline、Run 和 Session 能力继续作为执行基础。
+- 现有 Change、Run 和 Session 继续作为执行基础；现有 Pipeline 只有在完成
+  上述 ECP canonical runtime 迁移后，才可被视为稳定执行基础。
 - 新 UI 先做真实文件和运行状态的读模型。
 - UI 不创建一套与 CLI、Git 文件并行的状态真相。
 - 在核心闭环稳定前，不优先建设评论、通知、权限和 Forge 平台能力。
@@ -51,6 +295,8 @@
 ```
 
 ## 2. Phase 0：锁定语义与真实基线
+
+> 进入条件：ECP-5 产品与发布闭环已通过。未通过时，本阶段保持 Later。
 
 ### 用户能够做什么
 
@@ -365,6 +611,9 @@ auto-decompose 输出至少包含：
 - 为美化当前卡片而提前承诺错误的信息架构。
 
 ## 12. 第一条推荐的真实黄金路径
+
+> 这条 Issue 级黄金路径只在 ECP-5 通过后启动；当前第一条黄金路径是
+> ECP-1 ReviewCycle 纵向闭环。
 
 下一步最值得验证的不是完整平台，而是：
 

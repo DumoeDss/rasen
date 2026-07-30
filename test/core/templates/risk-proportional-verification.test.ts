@@ -26,8 +26,10 @@ describe('risk-proportional verification policy', () => {
   });
 
   it('records scope and rationale in every test-evidence producer', () => {
+    // The review-cycle skill is now a thin launcher — evidence recording is
+    // owned by the canonical Run, not the prompt. The verify-change and
+    // verify-enhanced skills still own their evidence pipeline.
     for (const instructions of [
-      getReviewCycleSkillTemplate().instructions,
       getVerifyChangeSkillTemplate().instructions,
       getVerifyEnhancedSkillTemplate().instructions,
     ]) {
@@ -35,5 +37,8 @@ describe('risk-proportional verification policy', () => {
       expect(instructions).toContain('rationale');
       expect(instructions).toContain('git rev-parse HEAD^{tree}');
     }
+    // The review-cycle thin launcher references evidence via the canonical Run.
+    const rcInstructions = getReviewCycleSkillTemplate().instructions;
+    expect(rcInstructions.toLowerCase()).toContain('evidence');
   });
 });

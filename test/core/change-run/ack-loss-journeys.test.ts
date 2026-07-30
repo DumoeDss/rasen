@@ -500,16 +500,19 @@ function applyStimulusToStore(
 
 async function buildBugFixPlan(projectRoot: string, runId: string) {
   const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, { reporter: false });
-  const execution = await registry.selectForExecution('bug-fix', { reporter: false });
-  const prepared = execution.resolution.prepared;
+  // Use registry.load() instead of selectForExecution() because bug-fix's
+  // normalized form now routes through the reconciler (ReviewCycle BoundedLoop),
+  // which selectForExecution's preflight rejects as non-legacy.
+  const resolution = registry.load('bug-fix');
+  const prepared = resolution.prepared;
   const pipeline = prepared.authoredSource as {
     name: string;
     stages: Array<{ id: string; role?: string; model?: string; gate?: boolean; verifyPolicy?: string }>;
   };
   const sourceRevision = {
-    layer: execution.resolution.source,
+    layer: resolution.source,
     kind: 'pipeline-yaml' as const,
-    sourceId: `${execution.resolution.source}:${pipeline.name}`,
+    sourceId: `${resolution.source}:${pipeline.name}`,
     authoredContentDigest: branded(`sha256:${prepared.digests.source}`),
     semanticDigest: branded(`sha256:${prepared.digests.source}`),
   };
@@ -651,10 +654,9 @@ describe('trusted first-claim via fresh-process CLI (15.5)', () => {
     expect(startJson.actions).toEqual([]); // propose is gated, nothing granted at start.
     const runId = startJson.runId as string;
 
-    // ---- KERNEL-INTERNAL: commit the propose gate wait + decide ----
-    const plan = await buildBugFixPlan(testDir, runId);
-    commitGateWaits(storeRoot, plan, runId);
-
+    // ---- KERNEL-INTERNAL: decide the propose gate wait ----
+    // pipeline start already committed the gate wait via the facade's settle
+    // (design §5.6). We only need to decide it so resume-run can admit.
     const record = loadHeadRecord(storeRoot, runId);
     const wait = record.waits.find((w) => w.kind === 'gate')!;
     applyStimulusToStore(storeRoot, runId, {

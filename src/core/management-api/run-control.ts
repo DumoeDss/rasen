@@ -37,6 +37,7 @@ import {
 } from '../change-run/internal/identity.js';
 import { projectRunView } from '../change-run/internal/projector.js';
 import { decodeCanonicalRunRecord, type CanonicalRunRecord } from '../change-run/internal/record.js';
+import type { RuntimePlan } from '../change-run/internal/runtime-plan.js';
 
 const require = createRequire(import.meta.url);
 
@@ -571,7 +572,20 @@ export async function handleRunControl(
       message: `The Run record could not be read after the control was applied.`,
     };
   }
-  const view = projectRunView(postRecord);
+  // Load the persisted RuntimePlan so the review-cycle section is projected
+  // (Major-2: operations emits the same review-cycle section as CLI).
+  const runDirName = runId.replace(/[^a-z0-9]/gi, '_');
+  const runDirPath = path.join(storeRoot, runDirName);
+  let plan: RuntimePlan | undefined;
+  try {
+    const planFile = path.join(runDirPath, 'plan.json');
+    if (fs.existsSync(planFile)) {
+      plan = JSON.parse(fs.readFileSync(planFile, 'utf-8')) as RuntimePlan;
+    }
+  } catch {
+    // Plan file absent or corrupt — project without it (additive section).
+  }
+  const view = projectRunView(postRecord, undefined, plan);
 
   // --- Seal the response: committed view + EMPTY action list ---
   // The control method inherently defers (facade.control ignores deliveryMode

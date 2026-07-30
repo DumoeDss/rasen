@@ -1,24 +1,28 @@
 import type { PipelineCatalogSkill } from '../api/types.js';
-import type { V2EditableNodeKind } from './draft.js';
+import { V2_ROOT_PALETTE_KINDS, type V2EditableNodeKind } from './draft.js';
 
 /** The DnD payload MIME type carrying a dragged skill's catalog entry. */
 export const PALETTE_DND_TYPE = 'application/rasen-pipeline-skill';
 
 /**
  * The assembly palette. Version 1 keeps the established draggable skill
- * vocabulary; version 2 exposes only the four root node kinds this Definition
- * slice can mutate. AtomicStage is unavailable until the trusted catalog
- * supplies an exact capability revision.
+ * vocabulary; version 2 exposes the root node kinds this Definition slice can
+ * mutate. AtomicStage is unavailable until the trusted catalog supplies an
+ * exact capability revision; the caller reports any further unavailable kinds
+ * via `disabledKinds` so the palette never re-decides insertability itself.
  */
 export function PalettePanel({
   skills,
   loading,
   definitionVersion = 1,
+  disabledKinds,
   onAddV2Node,
 }: {
   skills: PipelineCatalogSkill[] | null;
   loading: boolean;
   definitionVersion?: 1 | 2;
+  /** Kinds the current draft cannot accept right now (e.g. no declaration). */
+  disabledKinds?: readonly V2EditableNodeKind[];
   onAddV2Node?: (kind: V2EditableNodeKind) => void;
 }) {
   function onDragStart(event: DragEvent, skill: PipelineCatalogSkill) {
@@ -39,12 +43,13 @@ export function PalettePanel({
       )}
       {definitionVersion === 2 && (
         <div class="palette-panel__list" data-testid="v2-palette">
-          {(['AtomicStage', 'Gate', 'Choice', 'Finish'] as const).map((kind) => {
+          {V2_ROOT_PALETTE_KINDS.map((kind) => {
             const disabled =
-              kind === 'AtomicStage' &&
-              !(skills ?? []).some(
-                (skill) => skill.enabled && skill.capability !== undefined
-              );
+              (kind === 'AtomicStage' &&
+                !(skills ?? []).some(
+                  (skill) => skill.enabled && skill.capability !== undefined
+                )) ||
+              (disabledKinds ?? []).includes(kind);
             return (
               <button
                 key={kind}

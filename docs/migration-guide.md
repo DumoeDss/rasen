@@ -1047,6 +1047,83 @@ catalogs are removed only after the new location verified.
 
 ---
 
+## 0.1.6: the reconciler engine owns Run progression
+
+0.1.6 finishes the Executable Composite Pipelines portfolio. The change you can
+actually feel is **who owns a run's mechanical progression**: a canonical Run
+Record owned by the reconciler engine, rather than the orchestration prompt
+counting rounds in `auto-run.json`.
+
+### Engine ownership, and the one refusal you may hit on upgrade
+
+Every run resolves an engine, and one Run has exactly one engine **owner**,
+frozen at launch.
+
+```yaml
+# rasen/config.yaml   (also settable at the Store and global scope)
+runs:
+  engine: auto        # auto (default) | reconciler | legacy
+```
+
+Precedence is `--engine` flag > project > Store > global > default `auto`.
+`auto` picks the reconciler wherever capability discovery reports the pipeline
+supported, and the legacy path otherwise, displaying the reason either way.
+`rasen pipeline show <name>` prints the resolved policy and the support verdict.
+
+**The one thing that can refuse where it previously proceeded**: a change that
+still holds **pre-convergence run-state** — an `auto-run.json` written before
+0.1.6, which carries no `engine` declaration. Such run-state is a *legacy
+owner*. If you run `rasen pipeline start` on that change, it now refuses with
+`engine_owner_conflict` instead of creating a canonical Run that would be born
+unable to advance: its very first mutation would hit the same refusal. The
+message names the run-state file and the Run, and gives you two resolutions:
+
+1. **Keep driving the change through the legacy path.** `rasen pipeline resume`
+   works exactly as before on that change — legacy recovery is untouched, in
+   both directions, forever. Nothing migrates a run across engines.
+2. **Retire the legacy artifact** (finish the change, or move/delete its
+   `auto-run.json` yourself) and then start a canonical Run.
+
+The runtime never writes, rewrites, or deletes your run-state to resolve this —
+single-writer stays with you. `rasen pipeline cancel` is deliberately left
+unguarded so resolution 2's escape hatch is always reachable, and read-only
+`rasen pipeline status` is never blocked.
+
+Runs started on 0.1.6 record `engine: { effective, source }` at run start, so
+no new run can enter the ambiguous class.
+
+### Compatibility projections are not a second truth
+
+For a reconciler-engine run, `auto-run.json` keeps only what the kernel does
+not model — worker handles and transcripts, the gate-policy freeze, the
+retention mode, `strategyAttempts`, the session-relay generation. Stage status,
+rounds, phases, findings and outcomes are read from the canonical run view.
+Anything mirrored into run-state is a **labeled projection**, and `goal-run.json`
+plus generated Markdown reports are projections by construction — they are
+never read back to drive progression, and they never count as an engine owner.
+
+If you have tooling that parses `auto-run.json` or `goal-run.json` for run
+state, point it at `rasen pipeline status <change> --json` instead: that is the
+same `change-run-view/1` the CLI, the management API and the Operations UI all
+render.
+
+### Turning the reconciler off
+
+`runs.engine: legacy` is a real off-switch, not a preference:
+`rasen pipeline start` refuses with `engine_disabled_by_config` naming the
+deciding config layer, and no canonical Run Record is created. The legacy
+engine's retirement conditions are **recorded, not enacted** — see
+`docs/architecture/executable-composite-pipelines.md` §9.2. Nothing about the
+legacy path is removed in 0.1.6.
+
+### Nothing else changes
+
+`runs.engine`'s default `auto` resolves to exactly the engine `pipeline start`
+already used, so a project that sets nothing behaves identically. No wire-type
+version changes; no data migration; rolling back is reverting the release.
+
+---
+
 ## Getting Help
 
 - **Discord**: [discord.gg/YctCnvvshC](https://discord.gg/YctCnvvshC)

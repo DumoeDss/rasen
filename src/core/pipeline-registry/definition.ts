@@ -86,6 +86,38 @@ export type DefinitionNode =
   | GateNode
   | FinishNode;
 
+export type OrchestrationEvaluatorCapability =
+  | 'parallel-dispatch'
+  | 'choice-select';
+
+/**
+ * ECP-4: the synthetic capability name for root nodes the reconciler admits an
+ * *evaluator* Action for, or `null` when the node is not one. The FanOut
+ * condition evaluator (`parallel-dispatch`) and the v2-authored Choice
+ * evaluator (`choice-select`) need a capability/policy binding in the
+ * execution profile even though no authored stage backs them; the profile
+ * resolver synthesizes one.
+ *
+ * `Choice` nodes produced by v1 `condition:` normalization carry
+ * `legacyRuntimeOwner` and are metadata carriers only — the lowerer skips
+ * them, so they must NOT get a binding. `Join` nodes are never admitted (the
+ * Join pass derives its state from committed member results), so they are
+ * excluded too.
+ *
+ * Returns a nullable name rather than a type predicate on purpose: a legacy
+ * `Choice` node is still a `ChoiceNode`, so narrowing on a predicate would
+ * wrongly tell the compiler no `Choice` survives the check.
+ */
+export function orchestrationEvaluatorCapabilityFor(
+  node: DefinitionNode
+): OrchestrationEvaluatorCapability | null {
+  if (node.kind === 'FanOut') return 'parallel-dispatch';
+  if (node.kind !== 'Choice') return null;
+  const legacyOwner = (node as Readonly<{ legacyRuntimeOwner?: unknown }>)
+    .legacyRuntimeOwner;
+  return legacyOwner === undefined ? 'choice-select' : null;
+}
+
 export interface DefinitionConnection {
   id: string;
   from: Readonly<{ node: string; port: string }>;
@@ -225,7 +257,7 @@ export interface PreparedDefinition {
     definitionValid: true;
     planAvailable: true;
     executable: boolean;
-    executionMode: 'legacy' | 'unavailable';
+    executionMode: 'legacy' | 'reconciler' | 'unavailable';
     unavailableReason?: typeof V2_RUNTIME_UNAVAILABLE_REASON;
   }>;
 }
@@ -233,6 +265,36 @@ export interface PreparedDefinition {
 export type DefinitionPreparationResult =
   | Readonly<{ ok: true; value: PreparedDefinition }>
   | Readonly<{ ok: false; error: DefinitionReadError }>;
+
+/**
+ * ECP-5 (D4): the ONE rule for "does this definition execute through the v2
+ * hierarchical path?". A definition needs v2 lowering when it was authored at
+ * v2, or when its NORMALIZED root carries a construct the v1 flat lowerer
+ * cannot express — a `BoundedLoop` (ReviewCycle/GoalLoop migration) or a
+ * `FanOut`/`Join` pair (`parallelGroup` normalization).
+ *
+ * Before this existed, three layers each carried their own inline copy and they
+ * disagreed: the lowerer routed any FanOut/Join-bearing definition through the
+ * v2 lowerer (which looks bindings up by `root:<nodeId>`), while capability
+ * binding resolution only produced `root:<nodeId>` bindings when a ReviewCycle
+ * BoundedLoop was present — so a v1 pipeline whose ONLY v2 construct was a
+ * `parallelGroup` got flat `stage:<id>` bindings the v2 lowerer could not find.
+ * Support analysis then reported `unsupported_pipeline_shape`, making
+ * `supported_v2_parallel` unreachable for exactly the v1 audience it was built
+ * for. Every consumer resolves the question here so the three layers can never
+ * disagree again.
+ */
+export function definitionRequiresV2Lowering(
+  prepared: PreparedDefinition
+): boolean {
+  if (prepared.authoredVersion === 2) return true;
+  return prepared.definition.root.nodes.some(
+    (node) =>
+      node.kind === 'BoundedLoop' ||
+      node.kind === 'FanOut' ||
+      node.kind === 'Join'
+  );
+}
 
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -1470,12 +1532,27 @@ function contractForNode(
       );
       if (!descriptor && node.capability.version === 'legacy') {
         return {
-          inputs: new Map([['start', CONTROL_PORT_TYPE]]),
+          inputs: controlInputs(),
           outputs: new Map([['done', CONTROL_PORT_TYPE]]),
         };
       }
+      // A capability that declares NO typed inputs is joined by control flow,
+      // exactly like a Gate, Choice, FanOut, or Finish — so it accepts the same
+      // conventional control ports those node kinds already accept
+      // (`CONTROL_INPUT_PORTS`). Without this, no authored connection could ever
+      // target an AtomicStage backed by a real capability: every production
+      // descriptor is built with `inputs: []`
+      // (`createProductionCapabilityCatalogSnapshot`), so `portMap` produced an
+      // empty set and the connection validator rejected the edge with
+      // PORT_MISMATCH — in the root graph and in every declaration body alike.
+      //
+      // Scoped deliberately to the EMPTY case: a descriptor that does declare
+      // typed inputs keeps exactly its declared ports, so widening here cannot
+      // loosen validation for typed capabilities when they arrive.
+      const declaredInputs = descriptor ? portMap(descriptor.inputs) : new Map();
       return {
-        inputs: descriptor ? portMap(descriptor.inputs) : new Map(),
+        inputs:
+          descriptor && declaredInputs.size === 0 ? controlInputs() : declaredInputs,
         outputs: descriptor
           ? new Map([
               ...portMap(descriptor.artifacts),
@@ -1867,6 +1944,77 @@ function relevantCapabilityDescriptors(
   );
 }
 
+/**
+ * Determine whether a v2 definition is executable via the v2 reconciler runtime.
+ * Admits plans with root-level AtomicStage, Gate, Choice, Finish, CompositeRef,
+ * and BoundedLoop nodes. CompositeRef declarations must have AtomicStage-only
+ * bodies. BoundedLoop declarations must be either ReviewCycle-shaped or have
+ * AtomicStage-only bodies (composite body kind).
+ */
+function supportsV2ExecutableRuntime(
+  definition: DefinitionSourceV2
+): boolean {
+  let compositeOrLoop = 0;
+  for (const node of definition.root.nodes) {
+    if (node.kind === 'Finish') continue;
+    if (node.kind === 'AtomicStage') continue;
+    if (node.kind === 'Gate') continue;
+    if (node.kind === 'Choice') continue;
+    if (node.kind === 'FanOut') { compositeOrLoop += 1; continue; }
+    if (node.kind === 'Join') continue;
+    if (node.kind === 'CompositeRef') {
+      // A CompositeRef is executable if its declaration body contains only
+      // AtomicStage nodes (flat DAG).
+      const declaration = definition.declarations.find(
+        (candidate) => candidate.id === node.declarationId
+      );
+      if (declaration === undefined) return false;
+      const hasNonAtomic = declaration.graph.nodes.some(
+        (bodyNode) => bodyNode.kind !== 'AtomicStage'
+      );
+      if (hasNonAtomic) return false;
+      compositeOrLoop += 1;
+      continue;
+    }
+    if (node.kind !== 'BoundedLoop') return false;
+    compositeOrLoop += 1;
+    const declaration = definition.declarations.find(
+      (candidate) => candidate.id === node.body
+    );
+    if (declaration === undefined) return false;
+    // Check if ReviewCycle-shaped.
+    const phases = declaration.graph.nodes
+      .map((bodyNode) =>
+        bodyNode.kind === 'AtomicStage'
+          ? bodyNode.reviewCyclePhase
+          : undefined
+      )
+      .filter((phase): phase is string => typeof phase === 'string')
+      .sort();
+    const isReviewCycleShaped =
+      phases.length === 4 &&
+      JSON.stringify(phases) ===
+        JSON.stringify(['fix', 're-review', 'review', 'triage']);
+    if (isReviewCycleShaped) {
+      // ReviewCycle loop: must exit on clean and continue on needs_fix.
+      if (
+        node.exits.clean?.action !== 'exit' ||
+        node.exits.needs_fix?.action !== 'continue'
+      ) {
+        return false;
+      }
+    } else {
+      // Composite body: declaration must contain only AtomicStage nodes.
+      const hasNonAtomic = declaration.graph.nodes.some(
+        (bodyNode) => bodyNode.kind !== 'AtomicStage'
+      );
+      if (hasNonAtomic) return false;
+    }
+    compositeOrLoop += 1;
+  }
+  return compositeOrLoop > 0;
+}
+
 function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
   const stages = [...pipeline.stages].sort((left, right) =>
     compareCanonicalStrings(left.id, right.id)
@@ -1885,6 +2033,172 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
       ...stage,
       requires: [...stage.requires].sort(compareCanonicalStrings),
     };
+
+    // D4 migration: stages with loop.kind === 'review-cycle' or
+    // verifyPolicy === 'adaptive' produce a v2 BoundedLoop with a 4-phase
+    // ReviewCycle body, enabling reconciler execution.
+    const isReviewCycleLoop =
+      stage.loop?.kind === 'review-cycle';
+    const isAdaptiveVerify = stage.verifyPolicy === 'adaptive';
+
+    if (isReviewCycleLoop || isAdaptiveVerify) {
+      const bodyId = `review-cycle-body:${stage.id}`;
+      const maxIterations = isReviewCycleLoop
+        ? stage.loop!.maxRounds
+        : 3;
+      // Trivial-1 fix: all 4 ReviewCycle body phases use the same capability
+      // (`skill:rasen-review`) for consistency. The per-phase role/workspace
+      // differentiation is encoded in the execution profile, not the capability.
+      const reviewCycleCapability = { id: 'skill:rasen-review', version: 'legacy' };
+      declarations.push({
+        id: bodyId,
+        kind: 'Composite',
+        provenance: 'built-in',
+        inputs: [],
+        artifacts: [],
+        outcomes: ['clean', 'needs_fix'],
+        graph: {
+          nodes: [
+            {
+              id: `${stage.id}:review`,
+              kind: 'AtomicStage',
+              capability: reviewCycleCapability,
+              reviewCyclePhase: 'review',
+              legacyStageId: stage.id,
+              legacyRuntimeOwner: 'prompt-owned-v1',
+            },
+            {
+              id: `${stage.id}:triage`,
+              kind: 'AtomicStage',
+              capability: reviewCycleCapability,
+              reviewCyclePhase: 'triage',
+              legacyRuntimeOwner: 'prompt-owned-v1',
+            },
+            {
+              id: `${stage.id}:fix`,
+              kind: 'AtomicStage',
+              capability: reviewCycleCapability,
+              reviewCyclePhase: 'fix',
+              legacyRuntimeOwner: 'prompt-owned-v1',
+            },
+            {
+              id: `${stage.id}:re-review`,
+              kind: 'AtomicStage',
+              capability: reviewCycleCapability,
+              reviewCyclePhase: 're-review',
+              legacyRuntimeOwner: 'prompt-owned-v1',
+            },
+          ],
+          connections: [
+            {
+              id: `${stage.id}:review-to-triage`,
+              from: { node: `${stage.id}:review`, port: 'findings' },
+              to: { node: `${stage.id}:triage`, port: 'start' },
+            },
+            {
+              id: `${stage.id}:triage-to-fix`,
+              from: { node: `${stage.id}:triage`, port: 'ready' },
+              to: { node: `${stage.id}:fix`, port: 'start' },
+            },
+            {
+              id: `${stage.id}:fix-to-re-review`,
+              from: { node: `${stage.id}:fix`, port: 'fixed' },
+              to: { node: `${stage.id}:re-review`, port: 'start' },
+            },
+          ],
+        },
+      });
+      nodes.push({
+        id: `stage:${stage.id}`,
+        kind: 'BoundedLoop',
+        body: bodyId,
+        limits: { maxIterations },
+        exits: {
+          clean: { action: 'exit', outcome: 'clean' },
+          needs_fix: { action: 'continue' },
+        },
+        exhaustedOutcome: 'review_cycle_exhausted',
+        legacyRuntimeOwner: 'prompt-owned-v1',
+        legacy: normalizedLegacyStage,
+      });
+      continue;
+    }
+
+    // ECP-3 migration: stages with loop.kind === 'goal' produce a v2
+    // BoundedLoop with a 2-phase goal-cycle body (work → judge), enabling
+    // reconciler execution. The variant is derived from the gate type
+    // (measure → measure, evaluate → evaluate) and pipeline name
+    // (goal-loop-research → research), then stored as an explicit
+    // goalCycleVariant tag on the BoundedLoop node so downstream layers
+    // (lowerer) do not need to re-derive it from the pipeline name.
+    if (stage.loop?.kind === 'goal') {
+      const goalLoop = stage.loop;
+      const bodyId = `goal-cycle-body:${stage.id}`;
+      const maxIterations = goalLoop.maxRounds;
+      const gateKind = goalLoop.gate?.kind;
+      // Detect research variant from pipeline name.
+      const isResearch = pipeline.name === 'goal-loop-research';
+      const variant = isResearch
+        ? 'research'
+        : gateKind === 'measure'
+          ? 'measure'
+          : 'evaluate';
+      const iterateCapability = { id: 'skill:rasen-goal-iterate', version: 'legacy' };
+
+      declarations.push({
+        id: bodyId,
+        kind: 'Composite',
+        provenance: 'built-in',
+        inputs: [],
+        artifacts: [],
+        outcomes: ['clean', 'needs_fix'],
+        graph: {
+          nodes: [
+            {
+              id: `${stage.id}:work`,
+              kind: 'AtomicStage',
+              capability: iterateCapability,
+              goalCyclePhase: 'work',
+              legacyStageId: stage.id,
+              legacyRuntimeOwner: 'prompt-owned-v1',
+            },
+            {
+              id: `${stage.id}:judge`,
+              kind: 'AtomicStage',
+              capability: iterateCapability,
+              goalCyclePhase: 'judge',
+              legacyRuntimeOwner: 'prompt-owned-v1',
+            },
+          ],
+          connections: [
+            {
+              id: `${stage.id}:work-to-judge`,
+              from: { node: `${stage.id}:work`, port: 'done' },
+              to: { node: `${stage.id}:judge`, port: 'start' },
+            },
+          ],
+        },
+      });
+      nodes.push({
+        id: `stage:${stage.id}`,
+        kind: 'BoundedLoop',
+        body: bodyId,
+        limits: { maxIterations },
+        exits: {
+          clean: { action: 'exit', outcome: 'clean' },
+          needs_fix: { action: 'continue' },
+        },
+        exhaustedOutcome: 'goal_cycle_exhausted',
+        legacyRuntimeOwner: 'prompt-owned-v1',
+        legacy: normalizedLegacyStage,
+        // Explicit variant tag so downstream layers (lowerer) do not need to
+        // re-derive the variant from the pipeline name. The pipeline-name
+        // fallback in the lowerer is kept only for backward compatibility.
+        goalCycleVariant: variant,
+      });
+      continue;
+    }
+
     nodes.push({
       id: `stage:${stage.id}`,
       kind: 'AtomicStage',
@@ -1942,9 +2256,6 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
         body: bodyId,
         limits: {
           maxIterations: stage.loop.maxRounds,
-          ...(stage.loop.kind === 'goal'
-            ? { budget: stage.loop.maxRounds }
-            : {}),
         },
         exits: {
           done: { action: 'exit', outcome: 'done' },
@@ -1957,15 +2268,127 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
 
   nodes.sort((left, right) => compareCanonicalStrings(left.id, right.id));
   declarations.sort((left, right) => compareCanonicalStrings(left.id, right.id));
+
+  // ECP-4: detect v1 parallelGroup on stages and produce FanOut/Join v2 nodes.
+  const groupMap = new Map<string, typeof stages>();
+  for (const stage of stages) {
+    const group = (stage as Readonly<{ parallelGroup?: string }>).parallelGroup;
+    if (group === undefined) continue;
+    const existing = groupMap.get(group) ?? [];
+    existing.push(stage);
+    groupMap.set(group, existing);
+  }
+  // FanOut/Join nodes and connections produced by groups
+  const groupConnections: DefinitionConnection[] = [];
+
+  for (const [groupName, groupStages] of groupMap) {
+    const memberIds = groupStages.map((s) => s.id).sort(compareCanonicalStrings);
+    const joinId = `${groupName}-join`;
+    const memberMeta = groupStages.map((s) => {
+      const condition = (s as Readonly<{ condition?: string }>).condition ?? 'always';
+      return {
+        id: s.id,
+        required: condition === 'always',
+        condition,
+      };
+    });
+    const requiredMembers = memberMeta.filter((m) => m.required).map((m) => `stage:${m.id}`);
+    const optionalMembers = memberMeta.filter((m) => !m.required).map((m) => `stage:${m.id}`);
+
+    // FanOut node
+    const fanOutNode: DefinitionNode = {
+      id: `fanout:${groupName}`,
+      kind: 'FanOut',
+      branches: memberIds,
+      // ECP-4 metadata for the lowerer
+      concurrencyCap: 3,
+      budget: memberIds.length,
+      joinNodeId: `join:${joinId}`,
+      members: memberMeta.map((m) => ({
+        id: m.id,
+        hierarchicalPath: `stage:${m.id}`,
+        required: m.required,
+        condition: m.condition,
+      })),
+    };
+    nodes.push(fanOutNode);
+
+    // Join node
+    const joinNode: DefinitionNode = {
+      id: `join:${joinId}`,
+      kind: 'Join',
+      inputs: memberIds.map((id) => `stage:${id}`),
+      requiredMembers,
+      optionalMembers,
+      outcomes: { proceed: `${groupName}-done`, failed: `${groupName}-failed` },
+    };
+    nodes.push(joinNode);
+
+    // Connect FanOut → members (each member requires the FanOut)
+    for (const memberId of memberIds) {
+      groupConnections.push({
+        id: `fanout:${groupName}->stage:${memberId}`,
+        from: { node: `fanout:${groupName}`, port: 'dispatch' },
+        to: { node: `stage:${memberId}`, port: 'start' },
+      });
+    }
+    // Connect members → Join
+    for (const memberId of memberIds) {
+      groupConnections.push({
+        id: `stage:${memberId}->join:${joinId}`,
+        from: { node: `stage:${memberId}`, port: 'done' },
+        to: { node: `join:${joinId}`, port: 'input' },
+      });
+    }
+  }
+
+  // Rewrite downstream connections: a stage that requires a group member now
+  // requires the Join instead. Also, group members' upstream requires connect
+  // to the FanOut node instead of individual upstream stages.
+  const groupMemberIds = new Set<string>();
+  for (const [, groupStages] of groupMap) {
+    for (const s of groupStages) groupMemberIds.add(s.id);
+  }
+
   const connections = stages
-    .flatMap((stage) =>
-      [...stage.requires].sort(compareCanonicalStrings).map((required) => ({
-        id: `stage:${required}->stage:${stage.id}`,
-        from: { node: `stage:${required}`, port: 'done' },
-        to: { node: `stage:${stage.id}`, port: 'start' },
-      }))
-    )
-    .sort((left, right) => compareCanonicalStrings(left.id, right.id));
+    .flatMap((stage) => {
+      // Skip group members — their connections are generated above
+      if (groupMemberIds.has(stage.id)) {
+        // Member requires point to FanOut (already connected)
+        // But we still need to connect upstream deps to the FanOut
+        return [...stage.requires].sort(compareCanonicalStrings).map((required) => ({
+          id: `stage:${required}->fanout:${(stage as Readonly<{ parallelGroup?: string }>).parallelGroup}`,
+          from: { node: `stage:${required}`, port: 'done' },
+          to: { node: `fanout:${(stage as Readonly<{ parallelGroup?: string }>).parallelGroup}`, port: 'start' },
+        }));
+      }
+      // Non-member stages: if they require a group member, rewrite to Join
+      return [...stage.requires].sort(compareCanonicalStrings).map((required) => {
+        if (groupMemberIds.has(required)) {
+          const groupName = stages.find((s) => s.id === required)?.parallelGroup;
+          return {
+            id: `join:${groupName}-join->stage:${stage.id}`,
+            from: { node: `join:${groupName}-join`, port: 'done' },
+            to: { node: `stage:${stage.id}`, port: 'start' },
+          };
+        }
+        return {
+          id: `stage:${required}->stage:${stage.id}`,
+          from: { node: `stage:${required}`, port: 'done' },
+          to: { node: `stage:${stage.id}`, port: 'start' },
+        };
+      });
+    })
+    .concat(groupConnections);
+
+  // Deduplicate by connection id: multiple group members sharing the same
+  // upstream (e.g. 6 expert stages all requiring `apply`) produce identical
+  // upstream→FanOut connections; downstream stages requiring multiple group
+  // members produce identical Join→stage connections. Dedup keeps the
+  // connection list canonical.
+  const dedupConnections = [
+    ...new Map(connections.map((conn) => [conn.id, conn])).values(),
+  ].sort((left, right) => compareCanonicalStrings(left.id, right.id));
 
   return {
     version: ECP_DEFINITION_VERSION,
@@ -1979,7 +2402,7 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
     declarations,
     root: {
       nodes,
-      connections,
+      connections: dedupConnections,
     },
     legacyRuntime: {
       owner: 'prompt-owned-v1',
@@ -2118,6 +2541,11 @@ function prepare(source: DefinitionSource, catalog: CapabilityCatalogSnapshot): 
         },
       ])
     : [];
+  // D4 migration: a v1 definition whose normalized form contains a
+  // ReviewCycle BoundedLoop is executable via the reconciler. This makes
+  // `bug-fix` (verifyPolicy: 'adaptive') and `small-feature` (review-loop)
+  // route through the same ReviewCycle body as authored v2 definitions.
+  const v2Executable = supportsV2ExecutableRuntime(frozenDefinition);
 
   return deepFreeze({
     ok: true,
@@ -2133,20 +2561,27 @@ function prepare(source: DefinitionSource, catalog: CapabilityCatalogSnapshot): 
         capability: sealedPlan.capabilityDigest,
         plan: sealedPlan.planDigest,
       },
-      capability: authoredVersion === 1
+      capability: v2Executable
         ? {
             definitionValid: true,
             planAvailable: true,
             executable: true,
-            executionMode: 'legacy',
+            executionMode: 'reconciler' as const,
           }
-        : {
-            definitionValid: true,
-            planAvailable: true,
-            executable: false,
-            executionMode: 'unavailable',
-            unavailableReason: V2_RUNTIME_UNAVAILABLE_REASON,
-          },
+        : authoredVersion === 1
+          ? {
+              definitionValid: true,
+              planAvailable: true,
+              executable: true,
+              executionMode: 'legacy' as const,
+            }
+          : {
+              definitionValid: true,
+              planAvailable: true,
+              executable: false,
+              executionMode: 'unavailable' as const,
+              unavailableReason: V2_RUNTIME_UNAVAILABLE_REASON,
+            },
     },
   });
 }

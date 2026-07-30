@@ -34,6 +34,11 @@ import { useSpace, spaceHref } from '../store/use-space.js';
 import { definitionToGraph, draftToGraph, layoutGraph, type PipelineFlowNode } from './layout.js';
 import { stageNodeTypes } from './StageNode.js';
 import {
+  CONTROL_SOURCE_PORT,
+  CONTROL_TARGET_PORT,
+  addBodyConnection,
+  addBodyStage,
+  addDeclaration,
   addRequire,
   addStage,
   addV2Connection,
@@ -42,6 +47,12 @@ import {
   isDirty,
   isV2EditableNodeKind,
   issuePathTarget,
+  bodyConnectionIdFor,
+  loopBodyDeclaration,
+  referenceableDeclaration,
+  removeBodyConnection,
+  removeBodyStage,
+  removeDeclaration,
   removeRequire,
   removeStage,
   removeV2Connection,
@@ -49,6 +60,8 @@ import {
   renameStage,
   renameV2Node,
   stageIdFor,
+  updateBodyStage,
+  updateDeclaration,
   updateStageFields,
   updateStageHandoffThreshold,
   updateV2NodeFields,
@@ -57,6 +70,7 @@ import {
   wouldCreateCycle,
   type V2EditableNodeKind,
 } from './draft.js';
+import { DeclarationsPanel } from './DeclarationsPanel.js';
 import { PalettePanel, PALETTE_DND_TYPE } from './PalettePanel.js';
 import { StagePanel } from './StagePanel.js';
 import { V2NodePanel } from './V2NodePanel.js';
@@ -105,6 +119,8 @@ export function PipelineCanvasPage() {
   const [flowNodes, setFlowNodes] = useState<PipelineFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
+  /** The Custom Composite declaration open in the declaration editor, if any. */
+  const [selectedDeclarationId, setSelectedDeclarationId] = useState<string | null>(null);
 
   const [catalog, setCatalog] = useState<PipelineCatalogResponse | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -269,6 +285,7 @@ export function PipelineCanvasPage() {
     setLoadedDefinition(seed);
     setMode('edit');
     setSelectedStageId(null);
+    setSelectedDeclarationId(null);
     setIssues(initialIssues);
     setLatestPreparation(preparation);
     setLastValidation(null);
@@ -307,6 +324,7 @@ export function PipelineCanvasPage() {
     setDraft(null);
     setLoadedDefinition(null);
     setSelectedStageId(null);
+    setSelectedDeclarationId(null);
     setIssues([]);
     setLatestPreparation(null);
     setLastValidation(null);
@@ -439,6 +457,7 @@ export function PipelineCanvasPage() {
         setMode('view');
         setIssues([]);
         setSelectedStageId(null);
+        setSelectedDeclarationId(null);
         setSaveState({ status: 'idle', message: result.created ? 'Created.' : 'Saved.' });
       } catch (err) {
         if (err instanceof ApiError) {
@@ -532,11 +551,17 @@ export function PipelineCanvasPage() {
         );
         return;
       }
+      // `StageNode`'s handles carry no `id`, so React Flow reports null for
+      // both. Fall back to the conventional control ports the kernel accepts
+      // for a capability with no typed inputs (`CONTROL_INPUT_PORTS` /
+      // the `done` outcome) — the same pair `createBodyConnection` uses, so
+      // root and body authoring emit one convention. A handle that DOES carry
+      // an id still wins, for when typed ports arrive.
       const endpoints = {
         source: connection.source,
-        sourcePort: connection.sourceHandle,
+        sourcePort: connection.sourceHandle ?? CONTROL_SOURCE_PORT,
         target: connection.target,
-        targetPort: connection.targetHandle,
+        targetPort: connection.targetHandle ?? CONTROL_TARGET_PORT,
       };
       const nextDraft = addV2Connection(draft, {
         id: v2ConnectionIdFor(draft, endpoints),
@@ -692,6 +717,29 @@ export function PipelineCanvasPage() {
       node = { id, kind, outcomes: ['approved', 'rejected'] };
     } else if (kind === 'Choice') {
       node = { id, kind, outcomes: ['default'] };
+    } else if (kind === 'CompositeRef') {
+      const declaration = referenceableDeclaration(draft);
+      if (!declaration) {
+        showToast('No declaration available to reference.');
+        return;
+      }
+      node = { id, kind, declarationId: declaration.id };
+    } else if (kind === 'BoundedLoop') {
+      const declaration = loopBodyDeclaration(draft);
+      if (!declaration) {
+        showToast('No declaration available for loop body.');
+        return;
+      }
+      node = {
+        id,
+        kind,
+        body: declaration.id,
+        limits: { maxIterations: 3 },
+        exits: {
+          clean: { action: 'exit', outcome: draft.outcomes[0] ?? 'done' },
+          needs_fix: { action: 'continue' },
+        },
+      };
     } else {
       node = {
         id,
@@ -703,6 +751,166 @@ export function PipelineCanvasPage() {
     setDraft(nextDraft);
     recomputeFlow(nextDraft);
     setSelectedStageId(id);
+    markDraftChanged();
+  }
+
+  // --- Custom Composite declaration authoring (ECP-2 8.5/8.6) -------------
+  //
+  // Every handler delegates to the pure `draft.ts` model and reports the
+  // model's own refusal as a toast — the panel never re-decides a rule the
+  // model owns (uniqueness, reference guarding). `recomputeFlow` runs after
+  // each mutation because a CompositeRef/BoundedLoop card's ports are looked
+  // up from its declaration, so a contract edit changes the graph's handles.
+
+  /** The first enabled catalog capability with an exact revision, if any. */
+  function firstExactCapability() {
+    return exactCapabilities()[0];
+  }
+
+  /**
+   * Every enabled exact capability revision the trusted catalog offers — the
+   * list the root graph's `V2NodePanel` select already renders, so the body
+   * stage editor offers the same set from the same filter rather than a second
+   * reading of "which capabilities may a stage bind".
+   */
+  function exactCapabilities() {
+    return (catalog?.skills ?? [])
+      .filter((skill) => skill.enabled && skill.capability)
+      .map((skill) => skill.capability!);
+  }
+
+  function createDeclaration(id: string) {
+    if (!draft || draft.version !== 2) return;
+    let nextDraft;
+    try {
+      nextDraft = addDeclaration(draft, id);
+    } catch (error) {
+      // Duplicate id — the spec's "reject the creation with a duplicate-id
+      // diagnostic". The model is the single owner of that rule.
+      showToast(error instanceof Error ? error.message : 'Could not add the declaration.');
+      return;
+    }
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    setSelectedDeclarationId(id);
+    markDraftChanged();
+  }
+
+  function deleteDeclaration(id: string) {
+    if (!draft || draft.version !== 2) return;
+    let nextDraft;
+    try {
+      nextDraft = removeDeclaration(draft, id);
+    } catch (error) {
+      // "The Canvas SHALL NOT allow deleting a declaration that is still
+      // referenced by a root-level `CompositeRef` or `BoundedLoop`."
+      showToast(error instanceof Error ? error.message : 'Could not delete the declaration.');
+      return;
+    }
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    if (selectedDeclarationId === id) setSelectedDeclarationId(null);
+    markDraftChanged();
+  }
+
+  function patchDeclaration(
+    id: string,
+    patch: Parameters<typeof updateDeclaration>[2]
+  ) {
+    if (!draft || draft.version !== 2) return;
+    const nextDraft = updateDeclaration(draft, id, patch);
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
+  }
+
+  function createBodyStage(declarationId: string) {
+    if (!draft || draft.version !== 2) return;
+    const capability = firstExactCapability();
+    if (!capability) {
+      showToast('No enabled exact capability revision is available.');
+      return;
+    }
+    const declaration = (draft.declarations ?? []).find((d) => d.id === declarationId);
+    if (!declaration) return;
+    const existing = new Set(
+      (declaration.graph?.nodes ?? []).map((node) => (node as { id: string }).id)
+    );
+    let stageId = 'stage';
+    let suffix = 2;
+    while (existing.has(stageId)) {
+      stageId = `stage-${suffix}`;
+      suffix += 1;
+    }
+    const nextDraft = addBodyStage(draft, declarationId, {
+      id: stageId,
+      capability: { id: capability.id, version: capability.version },
+    });
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
+  }
+
+  function deleteBodyStage(declarationId: string, stageId: string) {
+    if (!draft || draft.version !== 2) return;
+    const nextDraft = removeBodyStage(draft, declarationId, stageId);
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
+  }
+
+  function patchBodyStage(
+    declarationId: string,
+    stageId: string,
+    patch: Parameters<typeof updateBodyStage>[3]
+  ) {
+    if (!draft || draft.version !== 2) return;
+    let nextDraft;
+    try {
+      nextDraft = updateBodyStage(draft, declarationId, stageId, patch);
+    } catch (error) {
+      // Blank / duplicate body stage id — the model's rule, surfaced verbatim.
+      showToast(error instanceof Error ? error.message : 'Could not edit the body stage.');
+      return;
+    }
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
+  }
+
+  function createBodyConnection(declarationId: string, from: string, to: string) {
+    if (!draft || draft.version !== 2) return;
+    // Ports follow the AtomicStage convention the root graph uses; the model
+    // owns every legality question (unknown stage, duplicate edge, cycle).
+    const endpoints = {
+      source: from,
+      sourcePort: CONTROL_SOURCE_PORT,
+      target: to,
+      targetPort: CONTROL_TARGET_PORT,
+    };
+    let nextDraft;
+    try {
+      nextDraft = addBodyConnection(draft, declarationId, {
+        id: bodyConnectionIdFor(draft, declarationId, endpoints),
+        from: { node: from, port: endpoints.sourcePort },
+        to: { node: to, port: endpoints.targetPort },
+      });
+    } catch (error) {
+      // "#### Scenario: Body connection creating a cycle is rejected" — the
+      // Canvas rejects it, and the server's GRAPH_CYCLE confirms on prepare.
+      showToast(error instanceof Error ? error.message : 'Could not add the connection.');
+      return;
+    }
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
+  }
+
+  function deleteBodyConnection(declarationId: string, connectionId: string) {
+    if (!draft || draft.version !== 2) return;
+    const nextDraft = removeBodyConnection(draft, declarationId, connectionId);
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
     markDraftChanged();
   }
 
@@ -1276,7 +1484,38 @@ export function PipelineCanvasPage() {
             skills={catalog?.skills ?? null}
             loading={catalogLoading}
             definitionVersion={draft?.version ?? 1}
+            // Same rule the insertion uses, read once — a CompositeRef needs a
+            // referenceable declaration and a BoundedLoop needs one with a body.
+            disabledKinds={
+              draft?.version === 2
+                ? [
+                    ...(referenceableDeclaration(draft) ? [] : (['CompositeRef'] as const)),
+                    ...(loopBodyDeclaration(draft) ? [] : (['BoundedLoop'] as const)),
+                  ]
+                : undefined
+            }
             onAddV2Node={addV2RootNode}
+          />
+        )}
+
+        {/* Custom Composite declaration authoring — v2 edit mode only. This is
+            the affordance ECP-2's spec requires and its tasks 8.5/8.6 claimed;
+            without it the Canvas could reference a declaration but never
+            create one. */}
+        {editable && draft?.version === 2 && (
+          <DeclarationsPanel
+            definition={draft}
+            selectedId={selectedDeclarationId}
+            capabilities={exactCapabilities()}
+            onSelect={setSelectedDeclarationId}
+            onCreate={createDeclaration}
+            onDelete={deleteDeclaration}
+            onPatch={patchDeclaration}
+            onAddBodyStage={createBodyStage}
+            onRemoveBodyStage={deleteBodyStage}
+            onPatchBodyStage={patchBodyStage}
+            onAddBodyConnection={createBodyConnection}
+            onRemoveBodyConnection={deleteBodyConnection}
           />
         )}
 
@@ -1353,6 +1592,7 @@ export function PipelineCanvasPage() {
             key={selectedV2Node.id}
             node={selectedV2Node}
             catalog={catalog}
+            definition={draft?.version === 2 ? draft : null}
             fieldIssues={selectedV2NodeFieldIssues}
             onRename={renameSelectedV2Node}
             onPatch={(patch) => patchV2Node(selectedV2Node.id, patch)}

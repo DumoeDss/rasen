@@ -204,6 +204,20 @@ export function buildAgentAction(
       input: input.input,
       session: {
         reuse: stage.sessionReuse,
+        // ECP-5 (D9): carry the authored scope through verbatim. Spread so an
+        // unauthored / synthesized stage OMITS the key entirely rather than
+        // recording `undefined` — that is what keeps every existing action
+        // digest byte-identical.
+        ...(stage.sessionReuseAuthored !== undefined
+          ? { sessionReuseAuthored: stage.sessionReuseAuthored }
+          : {}),
+        // PLACEHOLDER values, per the `ecp-change-run-runtime` requirement
+        // "Recorded session guidance is placeholder until a slice defines its
+        // authoritative source". They are persisted into every committed
+        // action, so they become historical fact — but 0.1.6 defines no
+        // authoritative source for either, and nothing reads them. Do NOT
+        // re-set the constants here; the real values are the Session execution
+        // layer's design output (they depend on the model window).
         handoffTokenLimit: stage.handoffTokenLimit,
         reuseRoundLimit: stage.reuseRoundLimit,
       },
