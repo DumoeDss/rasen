@@ -234,10 +234,12 @@ describe('durable reusable-session coordinator and recovery', () => {
   async function register(
     coordinator: ReturnType<typeof createSessionHostCoordinator>,
     cwd: string,
-    sessionKey = 'reviewer@one'
+    sessionKey = 'reviewer@one',
+    messageId = `bootstrap-${sessionKey}`
   ) {
     return coordinator.register({
       sessionKey,
+      messageId,
       role: 'reviewer',
       nodeId: 'review',
       invocationId: 'one',
@@ -350,6 +352,356 @@ describe('durable reusable-session coordinator and recovery', () => {
     })).toMatchObject({ ok: false, code: 'session_retired' });
   });
 
+  it('fences bootstrap with the stable message id and deduplicates a lost first response', async () => {
+    const run = makeRun();
+    const cwd = makeWorkspace();
+    const fake = createFakeSupervisor();
+    const coordinator = createSessionHostCoordinator({
+      run,
+      supervisor: fake.supervisor,
+      ownerInstanceId: 'owner-a',
+      transcriptProbe: transcriptExists,
+    });
+
+    const first = await register(coordinator, cwd);
+    expect(first).toMatchObject({
+      ok: true,
+      disposition: 'completed',
+      wake: {
+        outcome: 'completed',
+        messageIdDigest: durableSessionMessageIdDigest(
+          'bootstrap-reviewer@one'
+        ),
+      },
+    });
+
+    const retry = await coordinator.wake({
+      sessionKey: 'reviewer@one',
+      messageId: 'bootstrap-reviewer@one',
+      message: 'must not become an ordinary wake',
+      timeoutMs: 3000,
+      noOutputTimeoutMs: 1000,
+      kind: 'interactive',
+    });
+    expect(retry).toMatchObject({
+      ok: true,
+      disposition: 'duplicate',
+      terminalDisposition: 'completed',
+    });
+    expect(fake.calls.create).toHaveLength(1);
+    expect(fake.calls.wake).toHaveLength(0);
+
+    const persisted = fs.readFileSync(
+      resolveDurableSessionRegistryPaths(run).registryPath,
+      'utf-8'
+    );
+    expect(persisted).not.toContain('bootstrap-reviewer@one');
+    expect(persisted).toContain(
+      durableSessionMessageIdDigest('bootstrap-reviewer@one')
+    );
+  });
+
+  it('deduplicates a same-message bootstrap that overlaps host creation', async () => {
+    const run = makeRun();
+    const cwd = makeWorkspace();
+    const ownerA = createFakeSupervisor();
+    const ownerB = createFakeSupervisor();
+    const first = createSessionHostCoordinator({
+      run,
+      supervisor: ownerA.supervisor,
+      ownerInstanceId: 'owner-a',
+      transcriptProbe: transcriptExists,
+    });
+    const raced = createSessionHostCoordinator({
+      run,
+      supervisor: ownerB.supervisor,
+      ownerInstanceId: 'owner-b',
+      transcriptProbe: transcriptExists,
+    });
+
+    const releaseBootstrap = ownerA.pauseNextCreate();
+    const bootstrap = register(first, cwd);
+    await waitForCreateCall(ownerA);
+    const sameMessageOverlap = register(raced, cwd);
+    releaseBootstrap();
+    expect(await bootstrap).toMatchObject({
+      ok: true,
+      disposition: 'completed',
+    });
+    expect(await sameMessageOverlap).toMatchObject({
+      ok: true,
+      disposition: 'duplicate',
+      terminalDisposition: 'completed',
+    });
+    expect(ownerA.calls.create).toHaveLength(1);
+    expect(ownerA.calls.wake).toHaveLength(0);
+    expect(ownerB.calls.create).toHaveLength(0);
+  });
+
+  it('returns contention when a distinct-message registration enters before bootstrap settles', async () => {
+    const run = makeRun();
+    const cwd = makeWorkspace();
+    const ownerA = createFakeSupervisor();
+    const ownerB = createFakeSupervisor();
+    const first = createSessionHostCoordinator({
+      run,
+      supervisor: ownerA.supervisor,
+      ownerInstanceId: 'owner-a',
+      transcriptProbe: transcriptExists,
+    });
+    const raced = createSessionHostCoordinator({
+      run,
+      supervisor: ownerB.supervisor,
+      ownerInstanceId: 'owner-b',
+      transcriptProbe: transcriptExists,
+    });
+
+    const releaseBootstrap = ownerA.pauseNextCreate();
+    let bootstrapSettled = false;
+    const bootstrap = register(first, cwd).finally(() => {
+      bootstrapSettled = true;
+    });
+    await waitForCreateCall(ownerA);
+    const distinctMessageOverlap = register(
+      raced,
+      cwd,
+      'reviewer@one',
+      'distinct-overlapping-bootstrap'
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(bootstrapSettled).toBe(false);
+    releaseBootstrap();
+
+    expect(await bootstrap).toMatchObject({
+      ok: true,
+      disposition: 'completed',
+    });
+    expect(await distinctMessageOverlap).toMatchObject({
+      ok: false,
+      code: 'wake_busy',
+    });
+    expect(ownerA.calls.create).toHaveLength(1);
+    expect(ownerA.calls.wake).toHaveLength(0);
+    expect(ownerB.calls.create).toHaveLength(0);
+
+    expect(
+      await first.wake({
+        sessionKey: 'reviewer@one',
+        messageId: 'later-observed-existing',
+        message: 'ordinary wake',
+        timeoutMs: 3000,
+        noOutputTimeoutMs: 1000,
+      })
+    ).toMatchObject({ ok: true, disposition: 'completed' });
+    expect(ownerA.calls.create).toHaveLength(1);
+    expect(ownerA.calls.wake).toHaveLength(1);
+    expect(ownerB.calls.create).toHaveLength(0);
+  });
+
+  it('admits conditional touch metadata and accounts completed, retryable, uncertain, and duplicate outcomes', async () => {
+    const run = makeRun();
+    const cwd = makeWorkspace();
+    const fake = createFakeSupervisor();
+    const coordinator = createSessionHostCoordinator({
+      run,
+      supervisor: fake.supervisor,
+      ownerInstanceId: 'owner-a',
+      clock: () => '2026-07-30T09:00:00.000Z',
+      transcriptProbe: transcriptExists,
+    });
+    expect((await register(coordinator, cwd)).ok).toBe(true);
+
+    const stale = await coordinator.wake({
+      sessionKey: 'reviewer@one',
+      messageId: 'touch-stale',
+      message: 'touch',
+      timeoutMs: 3000,
+      noOutputTimeoutMs: 1000,
+      kind: 'touch',
+      expectedLastWakeAt: '2026-07-30T08:59:59.000Z',
+      touchOrdinal: 1,
+      touchAttempt: 1,
+    });
+    expect(stale).toMatchObject({
+      ok: false,
+      code: 'conditional_wake_stale',
+    });
+    expect(fake.calls.wake).toHaveLength(0);
+
+    const completed = await coordinator.wake({
+      sessionKey: 'reviewer@one',
+      messageId: 'touch-1-attempt-1',
+      message: 'touch',
+      timeoutMs: 3000,
+      noOutputTimeoutMs: 1000,
+      kind: 'touch',
+      expectedLastWakeAt: '2026-07-30T09:00:00.000Z',
+      touchOrdinal: 1,
+      touchAttempt: 1,
+    });
+    expect(completed).toMatchObject({
+      ok: true,
+      disposition: 'completed',
+      session: { touchPolicy: { touchesUsed: 1 } },
+      wake: {
+        kind: 'touch',
+        touchOrdinal: 1,
+        touchAttempt: 1,
+      },
+    });
+
+    expect(await coordinator.updateTouchPolicy('reviewer@one', {
+      ...touchPolicy,
+      maxTouches: 3,
+      touchesUsed: 1,
+    })).toMatchObject({ ok: true });
+    fake.setNextWake({ ok: false, code: 'write_failed' });
+    const retryable = await coordinator.wake({
+      sessionKey: 'reviewer@one',
+      messageId: 'touch-2-attempt-1',
+      message: 'retryable touch',
+      timeoutMs: 3000,
+      noOutputTimeoutMs: 1000,
+      kind: 'touch',
+      expectedLastWakeAt: '2026-07-30T09:00:00.000Z',
+      touchOrdinal: 2,
+      touchAttempt: 1,
+    });
+    expect(retryable).toMatchObject({
+      ok: false,
+      code: 'write_failed',
+      session: { touchPolicy: { touchesUsed: 1 } },
+      wake: {
+        outcome: 'pre_delivery_failed',
+        touchOrdinal: 2,
+        touchAttempt: 1,
+      },
+    });
+
+    const retried = await coordinator.wake({
+      sessionKey: 'reviewer@one',
+      messageId: 'touch-2-attempt-2',
+      message: 'retried touch',
+      timeoutMs: 3000,
+      noOutputTimeoutMs: 1000,
+      kind: 'touch',
+      expectedLastWakeAt: '2026-07-30T09:00:00.000Z',
+      touchOrdinal: 2,
+      touchAttempt: 2,
+    });
+    expect(retried).toMatchObject({
+      ok: true,
+      session: { touchPolicy: { touchesUsed: 2 } },
+      wake: { touchOrdinal: 2, touchAttempt: 2 },
+    });
+
+    fake.setNextWake({ ok: false, code: 'delivery_uncertain' });
+    const uncertain = await coordinator.wake({
+      sessionKey: 'reviewer@one',
+      messageId: 'touch-3-attempt-1',
+      message: 'uncertain touch',
+      timeoutMs: 3000,
+      noOutputTimeoutMs: 1000,
+      kind: 'touch',
+      expectedLastWakeAt: '2026-07-30T09:00:00.000Z',
+      touchOrdinal: 3,
+      touchAttempt: 1,
+    });
+    expect(uncertain).toMatchObject({
+      ok: false,
+      code: 'delivery_uncertain',
+      session: { touchPolicy: { touchesUsed: 3 } },
+      wake: {
+        outcome: 'delivery_uncertain',
+        touchOrdinal: 3,
+        touchAttempt: 1,
+      },
+    });
+    const dispatches = fake.calls.wake.length + fake.calls.recover.length;
+    expect(await coordinator.wake({
+      sessionKey: 'reviewer@one',
+      messageId: 'touch-3-attempt-1',
+      message: 'must remain deduplicated',
+      timeoutMs: 3000,
+      noOutputTimeoutMs: 1000,
+      kind: 'touch',
+      expectedLastWakeAt: '2026-07-30T09:00:00.000Z',
+      touchOrdinal: 3,
+      touchAttempt: 1,
+    })).toMatchObject({
+      ok: true,
+      disposition: 'duplicate',
+      terminalDisposition: 'delivery_uncertain',
+      session: { touchPolicy: { touchesUsed: 3 } },
+    });
+    expect(fake.calls.wake.length + fake.calls.recover.length)
+      .toBe(dispatches);
+    expect(await coordinator.updateTouchPolicy('reviewer@one', {
+      ...touchPolicy,
+      maxTouches: 3,
+      touchesUsed: 2,
+    })).toMatchObject({
+      ok: false,
+      code: 'conditional_wake_stale',
+      session: { touchPolicy: { touchesUsed: 3 } },
+    });
+  });
+
+  it('rejects a stale touch-policy mutation after an interactive wake wins', async () => {
+    const run = makeRun();
+    const cwd = makeWorkspace();
+    const fake = createFakeSupervisor();
+    let now = '2026-07-30T09:00:00.000Z';
+    const coordinator = createSessionHostCoordinator({
+      run,
+      supervisor: fake.supervisor,
+      ownerInstanceId: 'owner-a',
+      clock: () => now,
+      transcriptProbe: transcriptExists,
+    });
+    expect((await register(coordinator, cwd)).ok).toBe(true);
+    const listed = await coordinator.list();
+    if (!listed.ok) throw new Error(listed.message);
+    const observedLastWakeAt = listed.sessions[0]!.lifecycle.lastWakeAt;
+    if (observedLastWakeAt === undefined) {
+      throw new Error('Expected the bootstrap wake timestamp.');
+    }
+
+    now = '2026-07-30T09:01:00.000Z';
+    expect(
+      await coordinator.wake({
+        sessionKey: 'reviewer@one',
+        messageId: 'interactive-wins',
+        message: 'interactive wake',
+        timeoutMs: 3000,
+        noOutputTimeoutMs: 1000,
+        kind: 'interactive',
+      })
+    ).toMatchObject({
+      ok: true,
+      session: {
+        lifecycle: { lastWakeAt: '2026-07-30T09:01:00.000Z' },
+      },
+    });
+
+    expect(
+      await coordinator.updateTouchPolicy(
+        'reviewer@one',
+        {
+          mode: 'never',
+          maxTouches: 0,
+          touchesUsed: 0,
+          deadlineAction: 'stop',
+        },
+        observedLastWakeAt
+      )
+    ).toMatchObject({
+      ok: false,
+      code: 'conditional_wake_stale',
+      session: { touchPolicy: { mode: 'auto' } },
+    });
+  });
+
   it('durably reserves starting before host creation and never silently replaces an interrupted registration', async () => {
     const run = makeRun();
     const cwd = makeWorkspace();
@@ -414,7 +766,7 @@ describe('durable reusable-session coordinator and recovery', () => {
     expect(fake.calls.create).toHaveLength(1);
   });
 
-  it('keeps an explainable reservation across bootstrap and final-bind failures', async () => {
+  it('keeps an explainable reservation across bootstrap and final-settlement failures', async () => {
     const bootstrapRun = makeRun();
     const cwd = makeWorkspace();
     const bootstrapFake = createFakeSupervisor();
@@ -442,8 +794,8 @@ describe('durable reusable-session coordinator and recovery', () => {
       ...nodeDurableRegistryFileSystem,
       replace: (sourcePath, targetPath) => {
         replacements += 1;
-        if (replacements === 2) {
-          throw Object.assign(new Error('injected final bind crash'), {
+        if (replacements === 4) {
+          throw Object.assign(new Error('injected final settlement crash'), {
             code: 'EIO',
           });
         }
@@ -501,7 +853,7 @@ describe('durable reusable-session coordinator and recovery', () => {
       resolveDurableSessionRegistryPaths(run).registryPath,
       'utf-8'
     ));
-    expect(registry.revision).toBe(4);
+    expect(registry.revision).toBe(8);
 
     const held = await acquireDurableSessionWakeLease({
       store: coordinator.store,
@@ -630,10 +982,10 @@ describe('durable reusable-session coordinator and recovery', () => {
     expect(persisted).not.toContain('message-2');
     expect(persisted).not.toContain('message-3');
     expect(persisted).toContain(durableSessionMessageIdDigest('message-1'));
-    expect(JSON.parse(persisted).sessions[0].wakes).toHaveLength(3);
+    expect(JSON.parse(persisted).sessions[0].wakes).toHaveLength(4);
   });
 
-  it('preserves a healthy current-owner fence across get, list, and policy reads while the wake settles once', async () => {
+  it('preserves a healthy current-owner fence while policy mutation contends with the wake', async () => {
     const run = makeRun();
     const cwd = makeWorkspace();
     const fake = createFakeSupervisor();
@@ -641,6 +993,8 @@ describe('durable reusable-session coordinator and recovery', () => {
       run,
       supervisor: fake.supervisor,
       ownerInstanceId: 'owner-a',
+      wakeLeaseDeadlineMs: 25,
+      wakeLeasePollMs: 5,
       transcriptProbe: transcriptExists,
     });
     expect((await register(coordinator, cwd)).ok).toBe(true);
@@ -671,7 +1025,12 @@ describe('durable reusable-session coordinator and recovery', () => {
           messageIdDigest: durableSessionMessageIdDigest('healthy-in-flight'),
           phase: 'dispatching',
         },
-        wakes: [],
+        wakes: [{
+          messageIdDigest: durableSessionMessageIdDigest(
+            'bootstrap-reviewer@one'
+          ),
+          outcome: 'completed',
+        }],
       },
     });
     expect(await coordinator.list()).toMatchObject({
@@ -682,7 +1041,12 @@ describe('durable reusable-session coordinator and recovery', () => {
         inFlight: {
           messageIdDigest: durableSessionMessageIdDigest('healthy-in-flight'),
         },
-        wakes: [],
+        wakes: [{
+          messageIdDigest: durableSessionMessageIdDigest(
+            'bootstrap-reviewer@one'
+          ),
+          outcome: 'completed',
+        }],
       }],
     });
     expect(await coordinator.updateTouchPolicy('reviewer@one', {
@@ -691,15 +1055,8 @@ describe('durable reusable-session coordinator and recovery', () => {
       touchesUsed: 0,
       deadlineAction: 'stop',
     })).toMatchObject({
-      ok: true,
-      session: {
-        status: 'waking',
-        inFlight: {
-          messageIdDigest: durableSessionMessageIdDigest('healthy-in-flight'),
-        },
-        wakes: [],
-        touchPolicy: { mode: 'never' },
-      },
+      ok: false,
+      code: 'wake_busy',
     });
 
     releaseWake();
@@ -716,13 +1073,32 @@ describe('durable reusable-session coordinator and recovery', () => {
       ok: true,
       session: {
         status: 'idle',
-        wakes: [{
-          messageIdDigest: durableSessionMessageIdDigest('healthy-in-flight'),
-          outcome: 'completed',
-        }],
+        wakes: [
+          {
+            messageIdDigest: durableSessionMessageIdDigest(
+              'bootstrap-reviewer@one'
+            ),
+            outcome: 'completed',
+          },
+          {
+            messageIdDigest: durableSessionMessageIdDigest(
+              'healthy-in-flight'
+            ),
+            outcome: 'completed',
+          },
+        ],
       },
     });
     if (final.ok) expect(final.session).not.toHaveProperty('inFlight');
+    expect(await coordinator.updateTouchPolicy('reviewer@one', {
+      mode: 'never',
+      maxTouches: 0,
+      touchesUsed: 0,
+      deadlineAction: 'stop',
+    })).toMatchObject({
+      ok: true,
+      session: { touchPolicy: { mode: 'never' } },
+    });
     expect(fake.calls.wake).toHaveLength(1);
   });
 
@@ -765,10 +1141,20 @@ describe('durable reusable-session coordinator and recovery', () => {
       ok: true,
       session: {
         status: 'lost',
-        wakes: [{
-          messageIdDigest: durableSessionMessageIdDigest('admitted-before-crash'),
-          outcome: 'pre_delivery_failed',
-        }],
+        wakes: [
+          {
+            messageIdDigest: durableSessionMessageIdDigest(
+              'bootstrap-reviewer@one'
+            ),
+            outcome: 'completed',
+          },
+          {
+            messageIdDigest: durableSessionMessageIdDigest(
+              'admitted-before-crash'
+            ),
+            outcome: 'pre_delivery_failed',
+          },
+        ],
       },
     });
     if (reconciledAdmission.ok) {
@@ -791,6 +1177,7 @@ describe('durable reusable-session coordinator and recovery', () => {
       session: {
         status: 'lost',
         wakes: [
+          { outcome: 'completed' },
           { outcome: 'pre_delivery_failed' },
           { outcome: 'delivery_uncertain' },
         ],
@@ -930,10 +1317,20 @@ describe('durable reusable-session coordinator and recovery', () => {
       code: 'session_stale',
       session: {
         status: 'stale',
-        wakes: [{
-          messageIdDigest: durableSessionMessageIdDigest('interrupted-ownerless'),
-          outcome: 'pre_delivery_failed',
-        }],
+        wakes: [
+          {
+            messageIdDigest: durableSessionMessageIdDigest(
+              'bootstrap-reviewer@one'
+            ),
+            outcome: 'completed',
+          },
+          {
+            messageIdDigest: durableSessionMessageIdDigest(
+              'interrupted-ownerless'
+            ),
+            outcome: 'pre_delivery_failed',
+          },
+        ],
       },
     });
     expect(ownerB.calls.wake).toHaveLength(0);
@@ -1054,9 +1451,15 @@ describe('durable reusable-session coordinator and recovery', () => {
     const paths = resolveDurableSessionRegistryPaths(run);
     const registry = JSON.parse(fs.readFileSync(paths.registryPath, 'utf-8'));
     const existingDigest = durableSessionMessageIdDigest('capacity-existing');
+    const bootstrapDigest = durableSessionMessageIdDigest(
+      'bootstrap-reviewer@one'
+    );
     registry.sessions[0].idempotencyTombstones = makeTombstones(
       MAX_DURABLE_IDEMPOTENCY_TOMBSTONES,
-      new Map([[existingDigest, 'delivery_uncertain']])
+      new Map<string, 'completed' | 'delivery_uncertain'>([
+        [bootstrapDigest, 'completed'],
+        [existingDigest, 'delivery_uncertain'],
+      ])
     );
     fs.writeFileSync(paths.registryPath, `${JSON.stringify(registry, null, 2)}\n`);
     const priorBytes = fs.readFileSync(paths.registryPath, 'utf-8');
@@ -1123,8 +1526,12 @@ describe('durable reusable-session coordinator and recovery', () => {
     expect((await register(coordinator, cwd)).ok).toBe(true);
     const paths = resolveDurableSessionRegistryPaths(run);
     const registry = JSON.parse(fs.readFileSync(paths.registryPath, 'utf-8'));
+    const bootstrapDigest = durableSessionMessageIdDigest(
+      'bootstrap-reviewer@one'
+    );
     registry.sessions[0].idempotencyTombstones = makeTombstones(
-      MAX_DURABLE_IDEMPOTENCY_TOMBSTONES - 1
+      MAX_DURABLE_IDEMPOTENCY_TOMBSTONES - 1,
+      new Map([[bootstrapDigest, 'completed']])
     );
     fs.writeFileSync(paths.registryPath, `${JSON.stringify(registry, null, 2)}\n`);
 
@@ -1164,7 +1571,7 @@ describe('durable reusable-session coordinator and recovery', () => {
       ...nodeDurableRegistryFileSystem,
       replace: (sourcePath, targetPath) => {
         replacements += 1;
-        if (replacements === 5) {
+        if (replacements === 7) {
           throw Object.assign(new Error('injected settlement replacement failure'), {
             code: 'EIO',
           });
@@ -1184,10 +1591,18 @@ describe('durable reusable-session coordinator and recovery', () => {
     const paths = resolveDurableSessionRegistryPaths(run);
     const registry = JSON.parse(fs.readFileSync(paths.registryPath, 'utf-8'));
     const priorDigest = durableSessionMessageIdDigest('prior-terminal');
-    registry.sessions[0].idempotencyTombstones = [{
-      messageIdDigest: priorDigest,
-      disposition: 'delivery_uncertain',
-    }];
+    const priorWakes = registry.sessions[0].wakes;
+    const priorTombstones = makeTombstones(
+      2,
+      new Map<string, 'completed' | 'delivery_uncertain'>([
+        [
+          durableSessionMessageIdDigest('bootstrap-reviewer@one'),
+          'completed',
+        ],
+        [priorDigest, 'delivery_uncertain'],
+      ])
+    );
+    registry.sessions[0].idempotencyTombstones = priorTombstones;
     fs.writeFileSync(paths.registryPath, `${JSON.stringify(registry, null, 2)}\n`);
 
     expect(await coordinator.wake({
@@ -1197,13 +1612,10 @@ describe('durable reusable-session coordinator and recovery', () => {
       timeoutMs: 3000,
       noOutputTimeoutMs: 1000,
     })).toMatchObject({ ok: false, code: 'registry_write_failed' });
-    expect(replacements).toBe(5);
+    expect(replacements).toBe(7);
     const after = JSON.parse(fs.readFileSync(paths.registryPath, 'utf-8'));
-    expect(after.sessions[0].idempotencyTombstones).toEqual([{
-      messageIdDigest: priorDigest,
-      disposition: 'delivery_uncertain',
-    }]);
-    expect(after.sessions[0].wakes).toEqual([]);
+    expect(after.sessions[0].idempotencyTombstones).toEqual(priorTombstones);
+    expect(after.sessions[0].wakes).toEqual(priorWakes);
     expect(after.sessions[0].inFlight).toMatchObject({
       messageIdDigest: durableSessionMessageIdDigest('settlement-fails'),
       phase: 'dispatching',
@@ -1266,7 +1678,7 @@ describe('durable reusable-session coordinator and recovery', () => {
         .toBe(durableSessionMessageIdDigest('message-06'));
       expect(current.session.wakes[63].messageIdDigest)
         .toBe(durableSessionMessageIdDigest('message-69'));
-      expect(current.session.idempotencyTombstones).toHaveLength(70);
+      expect(current.session.idempotencyTombstones).toHaveLength(71);
     }
     const supervisorCalls =
       fake.calls.wake.length + fake.calls.recover.length;
@@ -1334,5 +1746,38 @@ describe('durable reusable-session coordinator and recovery', () => {
     expect(persisted.sessions[0].status).toBe('lost');
     expect(persisted.sessions[0]).not.toHaveProperty('owner');
     expect(persisted.sessions[0].lifecycle).not.toHaveProperty('retiredAt');
+  });
+
+  it('returns a typed failure when owner shutdown cannot settle durable loss', async () => {
+    const run = makeRun();
+    const cwd = makeWorkspace();
+    const fake = createFakeSupervisor();
+    let failSettlement = false;
+    const filesystem: DurableRegistryFileSystem = {
+      ...nodeDurableRegistryFileSystem,
+      replace(sourcePath, targetPath) {
+        if (failSettlement) {
+          throw Object.assign(new Error('injected shutdown settlement failure'), {
+            code: 'EIO',
+          });
+        }
+        nodeDurableRegistryFileSystem.replace(sourcePath, targetPath);
+      },
+    };
+    const coordinator = createSessionHostCoordinator({
+      run,
+      supervisor: fake.supervisor,
+      ownerInstanceId: 'owner-a',
+      filesystem,
+      transcriptProbe: transcriptExists,
+    });
+    expect((await register(coordinator, cwd)).ok).toBe(true);
+    failSettlement = true;
+
+    expect(await coordinator.ownerShutdown()).toMatchObject({
+      ok: false,
+      code: 'registry_write_failed',
+    });
+    expect(fake.calls.shutdown).toBe(1);
   });
 });

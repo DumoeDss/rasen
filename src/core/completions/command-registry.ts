@@ -1064,6 +1064,51 @@ const COMMANDS: readonly CommandDefinition[] = [
     ],
   },
   {
+    name: 'session',
+    flags: [],
+    subcommands: [
+      {
+        name: 'exec',
+        flags: [
+          { name: 'run', takesValue: true },
+          { name: 'session', takesValue: true },
+          { name: 'action', takesValue: true },
+          { name: 'cwd', takesValue: true },
+          { name: 'message-id', takesValue: true },
+          {
+            name: 'touch',
+            takesValue: true,
+            completionValues: ['auto', 'never'],
+          },
+          { name: 'touch-deadline', takesValue: true },
+          { name: 'max-touches', takesValue: true },
+          {
+            name: 'deadline-action',
+            takesValue: true,
+            completionValues: ['stop', 'retire-silent'],
+          },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'list',
+        flags: [
+          { name: 'run', takesValue: true },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'retire',
+        flags: [
+          { name: 'run', takesValue: true },
+          { name: 'session', takesValue: true },
+          { name: 'reason', takesValue: true },
+          COMMON_FLAGS.json,
+        ],
+      },
+    ],
+  },
+  {
     name: 'schema',
     flags: [],
     subcommands: [

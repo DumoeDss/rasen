@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 
 import {
@@ -97,6 +98,9 @@ export interface DurableDispatchFence {
   admittedAt: string;
   phase: 'admitted' | 'dispatching';
   dispatchFenceAt?: string;
+  kind?: 'interactive' | 'touch';
+  touchOrdinal?: number;
+  touchAttempt?: number;
 }
 
 export type DurableWakeOutcome =
@@ -110,6 +114,9 @@ export interface DurableTerminalWake {
   dispatchFenceAt?: string;
   settledAt: string;
   outcome: DurableWakeOutcome;
+  kind?: 'interactive' | 'touch';
+  touchOrdinal?: number;
+  touchAttempt?: number;
   code?: string;
   resultRef?: string;
   resultDigest?: string;
@@ -134,6 +141,7 @@ export interface DurableSessionLifecycle {
 export interface DurableSessionRecord {
   sessionKey: string;
   role: string;
+  actionId?: string;
   nodeId?: string;
   invocationId?: string;
   hostKind: 'stream-json';
@@ -190,6 +198,7 @@ export type DurableRegistryReadResult =
 export interface RegisterDurableSessionInput {
   sessionKey: string;
   role: string;
+  actionId?: string;
   nodeId?: string;
   invocationId?: string;
   cwd: string;
@@ -383,6 +392,9 @@ const DurableDispatchFenceSchema = z
     admittedAt: TimestampSchema,
     phase: z.enum(['admitted', 'dispatching']),
     dispatchFenceAt: TimestampSchema.optional(),
+    kind: z.enum(['interactive', 'touch']).optional(),
+    touchOrdinal: z.number().int().positive().optional(),
+    touchAttempt: z.number().int().positive().optional(),
   })
   .strict()
   .superRefine((fence, context) => {
@@ -398,6 +410,24 @@ const DurableDispatchFenceSchema = z
         message: 'A dispatching wake requires a dispatch fence',
       });
     }
+    if (
+      fence.kind === 'touch'
+      && (fence.touchOrdinal === undefined || fence.touchAttempt === undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A touch dispatch fence requires its ordinal and attempt',
+      });
+    }
+    if (
+      fence.kind !== 'touch'
+      && (fence.touchOrdinal !== undefined || fence.touchAttempt !== undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Only a touch dispatch fence may carry touch metadata',
+      });
+    }
   });
 const DurableTerminalWakeSchema = z
   .object({
@@ -410,11 +440,34 @@ const DurableTerminalWakeSchema = z
       'pre_delivery_failed',
       'delivery_uncertain',
     ]),
+    kind: z.enum(['interactive', 'touch']).optional(),
+    touchOrdinal: z.number().int().positive().optional(),
+    touchAttempt: z.number().int().positive().optional(),
     code: NonEmptyStringSchema.optional(),
     resultRef: NonEmptyStringSchema.optional(),
     resultDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((wake, context) => {
+    if (
+      wake.kind === 'touch'
+      && (wake.touchOrdinal === undefined || wake.touchAttempt === undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A terminal touch wake requires its ordinal and attempt',
+      });
+    }
+    if (
+      wake.kind !== 'touch'
+      && (wake.touchOrdinal !== undefined || wake.touchAttempt !== undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Only a terminal touch wake may carry touch metadata',
+      });
+    }
+  });
 const DurableIdempotencyTombstoneSchema = z
   .object({
     messageIdDigest: MessageIdDigestSchema,
@@ -441,6 +494,7 @@ const DurableSessionRecordSchema = z
   .object({
     sessionKey: NonEmptyStringSchema,
     role: NonEmptyStringSchema,
+    actionId: NonEmptyStringSchema.optional(),
     nodeId: NonEmptyStringSchema.optional(),
     invocationId: NonEmptyStringSchema.optional(),
     hostKind: z.literal('stream-json'),
@@ -481,12 +535,11 @@ const DurableSessionRecordSchema = z
       if (
         session.owner !== undefined
         || session.claudeSessionId !== undefined
-        || session.inFlight !== undefined
       ) {
         context.addIssue({
           code: 'custom',
           message:
-            'A starting session is an unbound registration reservation only',
+            'A starting session is an unbound bootstrap reservation only',
         });
       }
     }
@@ -512,10 +565,13 @@ const DurableSessionRecordSchema = z
             'A waking session requires a Claude identity and in-flight delivery',
         });
       }
-    } else if (session.inFlight !== undefined) {
+    } else if (
+      session.status !== 'starting'
+      && session.inFlight !== undefined
+    ) {
       context.addIssue({
         code: 'custom',
-        message: 'In-flight delivery requires waking status',
+        message: 'In-flight delivery requires waking or bootstrap status',
       });
     }
     if (
@@ -1460,6 +1516,9 @@ export function createDurableSessionRegistryStore(
         const session: DurableSessionRecord = {
           sessionKey: input.sessionKey,
           role: input.role,
+          ...(input.actionId !== undefined
+            ? { actionId: input.actionId }
+            : {}),
           ...(input.nodeId !== undefined ? { nodeId: input.nodeId } : {}),
           ...(input.invocationId !== undefined
             ? { invocationId: input.invocationId }
@@ -1613,6 +1672,9 @@ export function createDurableSessionRegistryStore(
         const session: DurableSessionRecord = {
           sessionKey: input.sessionKey,
           role: input.role,
+          ...(input.actionId !== undefined
+            ? { actionId: input.actionId }
+            : {}),
           ...(input.nodeId !== undefined ? { nodeId: input.nodeId } : {}),
           ...(input.invocationId !== undefined
             ? { invocationId: input.invocationId }
@@ -1767,7 +1829,9 @@ export function createExactClaudeTranscriptProbe(
 
 export interface RegisterSessionHostInput extends HostTurnInput {
   sessionKey: string;
+  messageId: string;
   role: string;
+  actionId?: string;
   nodeId?: string;
   invocationId?: string;
   cwd: string;
@@ -1783,7 +1847,9 @@ export interface RegisterSessionHostInput extends HostTurnInput {
 const RegisterSessionHostInputSchema = z
   .object({
     sessionKey: NonEmptyStringSchema,
+    messageId: NonEmptyStringSchema,
     role: NonEmptyStringSchema,
+    actionId: NonEmptyStringSchema.optional(),
     nodeId: NonEmptyStringSchema.optional(),
     invocationId: NonEmptyStringSchema.optional(),
     message: NonEmptyStringSchema,
@@ -1803,7 +1869,45 @@ const RegisterSessionHostInputSchema = z
 export interface WakeDurableSessionInput extends HostTurnInput {
   sessionKey: string;
   messageId: string;
+  kind?: 'interactive' | 'touch';
+  expectedLastWakeAt?: string;
+  touchOrdinal?: number;
+  touchAttempt?: number;
 }
+
+const WakeDurableSessionInputSchema = z
+  .object({
+    sessionKey: NonEmptyStringSchema,
+    messageId: NonEmptyStringSchema,
+    message: NonEmptyStringSchema,
+    timeoutMs: z.number().int().positive(),
+    noOutputTimeoutMs: z.number().int().positive(),
+    kind: z.enum(['interactive', 'touch']).optional(),
+    expectedLastWakeAt: TimestampSchema.optional(),
+    touchOrdinal: z.number().int().positive().optional(),
+    touchAttempt: z.number().int().positive().optional(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (
+      input.kind === 'touch'
+      && (input.touchOrdinal === undefined || input.touchAttempt === undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A touch wake requires its ordinal and attempt',
+      });
+    }
+    if (
+      input.kind !== 'touch'
+      && (input.touchOrdinal !== undefined || input.touchAttempt !== undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Only a touch wake may carry touch metadata',
+      });
+    }
+  });
 
 export type SessionHostCoordinatorErrorCode =
   | DurableRegistryDiagnosticCode
@@ -1813,6 +1917,7 @@ export type SessionHostCoordinatorErrorCode =
   | 'session_retired'
   | 'session_unrecoverable'
   | 'duplicate_message'
+  | 'conditional_wake_stale'
   | 'owner_shutdown_failed';
 
 export interface SessionHostCoordinatorFailure {
@@ -1835,8 +1940,17 @@ export type CoordinatorListResult =
 export type CoordinatorRegisterResult =
   | {
       ok: true;
+      disposition: 'completed';
       session: DurableSessionRecord;
+      wake: DurableTerminalWake;
       result: HostResultEnvelope;
+    }
+  | {
+      ok: true;
+      disposition: 'duplicate';
+      terminalDisposition: DurableWakeOutcome;
+      messageIdDigest: string;
+      session: DurableSessionRecord;
     }
   | SessionHostCoordinatorFailure;
 
@@ -1868,7 +1982,8 @@ export interface SessionHostCoordinator {
   retire(sessionKey: string, reason: string): Promise<CoordinatorSessionResult>;
   updateTouchPolicy(
     sessionKey: string,
-    policy: DurableTouchPolicy
+    policy: DurableTouchPolicy,
+    expectedLastWakeAt?: string
   ): Promise<CoordinatorSessionResult>;
   ownerShutdown(): Promise<
     { ok: true; sessions: DurableSessionRecord[] }
@@ -1970,6 +2085,13 @@ function terminalWake(
       : {}),
     settledAt,
     outcome,
+    ...(fence.kind !== undefined ? { kind: fence.kind } : {}),
+    ...(fence.touchOrdinal !== undefined
+      ? { touchOrdinal: fence.touchOrdinal }
+      : {}),
+    ...(fence.touchAttempt !== undefined
+      ? { touchAttempt: fence.touchAttempt }
+      : {}),
     ...(code !== undefined ? { code } : {}),
     ...(result !== undefined
       ? {
@@ -1979,6 +2101,23 @@ function terminalWake(
         }
       : {}),
   };
+}
+
+function accountTerminalTouch(
+  session: DurableSessionRecord,
+  wake: DurableTerminalWake
+): void {
+  if (
+    wake.kind !== 'touch'
+    || wake.touchOrdinal === undefined
+    || wake.outcome === 'pre_delivery_failed'
+  ) {
+    return;
+  }
+  session.touchPolicy.touchesUsed = Math.max(
+    session.touchPolicy.touchesUsed,
+    wake.touchOrdinal
+  );
 }
 
 function findIdempotencyTombstone(
@@ -2237,17 +2376,19 @@ export function createSessionHostCoordinator(
           fence.phase === 'admitted'
             ? 'pre_delivery_failed'
             : 'delivery_uncertain';
-        appendTerminalWake(
-          session,
-          terminalWake(
-            fence,
-            settledAt,
-            outcome,
-            fence.phase === 'admitted'
-              ? 'owner_lost_before_dispatch'
-              : 'owner_lost_after_dispatch_fence'
-          )
+        const wake = terminalWake(
+          fence,
+          settledAt,
+          outcome,
+          fence.phase === 'admitted'
+            ? 'owner_lost_before_dispatch'
+            : 'owner_lost_after_dispatch_fence'
         );
+        appendTerminalWake(session, wake);
+        accountTerminalTouch(session, wake);
+        if (outcome === 'delivery_uncertain') {
+          session.lifecycle.lastWakeAt = settledAt;
+        }
         session.inFlight = undefined;
         session.owner = undefined;
         setStatus(session, 'lost');
@@ -2345,6 +2486,42 @@ export function createSessionHostCoordinator(
     });
   }
 
+  async function duplicateWakeResult(
+    input: WakeDurableSessionInput,
+    session: DurableSessionRecord,
+    terminalDisposition: DurableWakeOutcome,
+    messageIdDigest: string
+  ): Promise<CoordinatorWakeResult> {
+    let projected = session;
+    if (
+      input.kind === 'touch'
+      && input.touchOrdinal !== undefined
+      && terminalDisposition !== 'pre_delivery_failed'
+      && session.touchPolicy.touchesUsed < input.touchOrdinal
+    ) {
+      const accounted = await mutateSession(input.sessionKey, (candidate) => {
+        const wake = candidate.wakes.find(
+          (entry) =>
+            entry.messageIdDigest === messageIdDigest
+            && entry.kind === 'touch'
+            && entry.touchOrdinal === input.touchOrdinal
+            && entry.touchAttempt === input.touchAttempt
+            && entry.outcome === terminalDisposition
+        );
+        if (wake) accountTerminalTouch(candidate, wake);
+      });
+      if (!accounted.ok) return coordinatorFailure(accounted.diagnostic);
+      projected = accounted.session;
+    }
+    return {
+      ok: true,
+      disposition: 'duplicate',
+      terminalDisposition,
+      messageIdDigest,
+      session: projected,
+    };
+  }
+
   const coordinator: SessionHostCoordinator = {
     ownerInstanceId,
     store,
@@ -2392,9 +2569,15 @@ export function createSessionHostCoordinator(
       const leaseResult = await acquireLease(validated.data.sessionKey);
       if (!leaseResult.ok) return coordinatorFailure(leaseResult.diagnostic);
       try {
+        const messageIdDigest = durableSessionMessageIdDigest(
+          validated.data.messageId
+        );
         const reserved = await store.reserve({
           sessionKey: validated.data.sessionKey,
           role: validated.data.role,
+          ...(validated.data.actionId !== undefined
+            ? { actionId: validated.data.actionId }
+            : {}),
           ...(validated.data.nodeId !== undefined
             ? { nodeId: validated.data.nodeId }
             : {}),
@@ -2420,7 +2603,109 @@ export function createSessionHostCoordinator(
             ? { launcherSessionId: validated.data.launcherSessionId }
             : {}),
         });
-        if (!reserved.ok) return coordinatorFailure(reserved.diagnostic);
+        if (!reserved.ok) {
+          if (reserved.diagnostic.code !== 'session_conflict') {
+            return coordinatorFailure(reserved.diagnostic);
+          }
+          const existing = await store.get(validated.data.sessionKey);
+          if (!existing.ok) return coordinatorFailure(existing.diagnostic);
+          const immutableFactsMatch =
+            existing.session.role === validated.data.role
+            && existing.session.actionId === validated.data.actionId
+            && existing.session.nodeId === validated.data.nodeId
+            && existing.session.invocationId === validated.data.invocationId
+            && existing.session.model === validated.data.model
+            && existing.session.effort === validated.data.effort
+            && durablePathsEqual(existing.session.cwd, cwd)
+            && isDeepStrictEqual(
+              existing.session.space,
+              validated.data.space
+            )
+            && isDeepStrictEqual(
+              existing.session.execution,
+              validated.data.execution
+            )
+            && existing.session.attachedRoots.length === attachedRoots.length
+            && existing.session.attachedRoots.every((root, index) =>
+              durablePathsEqual(root, attachedRoots[index]!)
+            );
+          if (!immutableFactsMatch) {
+            return coordinatorFailure(reserved.diagnostic);
+          }
+          const prior = findIdempotencyTombstone(
+            existing.session.idempotencyTombstones,
+            messageIdDigest
+          ).found;
+          if (prior) {
+            return {
+              ok: true,
+              disposition: 'duplicate',
+              terminalDisposition: prior.disposition,
+              messageIdDigest,
+              session: existing.session,
+            };
+          }
+          return {
+            ok: false,
+            code: 'wake_busy',
+            message:
+              `Reusable session ${validated.data.sessionKey} was registered by a concurrent bootstrap request.`,
+            session: existing.session,
+          };
+        }
+
+        const admittedAt = nowIso(clock);
+        const dispatchFenceAt = nowIso(clock);
+        const prepared = await internal.transactPair((registry) => {
+          const session = registry.sessions.find(
+            (candidate) =>
+              candidate.sessionKey === validated.data.sessionKey
+          );
+          if (!session || session.status !== 'starting' || session.inFlight) {
+            throw new DurableRegistryFault(
+              diagnostic(
+                'invalid_transition',
+                `Reusable session ${validated.data.sessionKey} lost its bootstrap reservation.`,
+                store.paths.registryPath
+              )
+            );
+          }
+          session.inFlight = {
+            messageIdDigest,
+            admittedAt,
+            phase: 'admitted',
+            kind: 'interactive',
+          };
+          session.lifecycle.updatedAt = admittedAt;
+          session.lifecycle.reason = 'bootstrap_admitted';
+        }, (registry) => {
+          const session = registry.sessions.find(
+            (candidate) =>
+              candidate.sessionKey === validated.data.sessionKey
+          );
+          if (
+            !session
+            || session.status !== 'starting'
+            || session.inFlight?.messageIdDigest !== messageIdDigest
+            || session.inFlight.phase !== 'admitted'
+          ) {
+            throw new DurableRegistryFault(
+              diagnostic(
+                'invalid_transition',
+                `Reusable session ${validated.data.sessionKey} lost its bootstrap admission before dispatch.`,
+                store.paths.registryPath
+              )
+            );
+          }
+          session.inFlight = {
+            ...session.inFlight,
+            phase: 'dispatching',
+            dispatchFenceAt,
+          };
+          session.lifecycle.updatedAt = dispatchFenceAt;
+          session.lifecycle.reason = 'bootstrap_dispatching';
+        });
+        if (!prepared.ok) return coordinatorFailure(prepared.diagnostic);
 
         const created = await options.supervisor.createHost({
           message: validated.data.message,
@@ -2435,60 +2720,108 @@ export function createSessionHostCoordinator(
             ? { execution: cloneJson(validated.data.execution) }
             : {}),
         });
-        if (!created.ok) {
-          const failed = await mutateSession(
-            validated.data.sessionKey,
-            (session) => {
-              if (session.status !== 'starting') return;
-              setStatus(session, 'stale');
-              session.lifecycle.reason = `bootstrap_failed:${created.code}`;
+        const settledAt = nowIso(clock);
+        const identityComplete =
+          created.host?.sessionId !== undefined
+          && created.host.pid !== undefined;
+        const durableOutcome: DurableWakeOutcome = created.ok
+          ? 'completed'
+          : created.code === 'write_failed'
+            ? 'pre_delivery_failed'
+            : created.code === 'delivery_uncertain'
+                || created.code === 'turn_timeout'
+                || created.code === 'no_output_timeout'
+              ? 'delivery_uncertain'
+              : 'pre_delivery_failed';
+        const settled = await mutateSession(
+          validated.data.sessionKey,
+          (session) => {
+            const fence = session.inFlight;
+            if (
+              session.status !== 'starting'
+              || !fence
+              || fence.messageIdDigest !== messageIdDigest
+            ) {
+              throw new DurableRegistryFault(
+                diagnostic(
+                  'invalid_transition',
+                  `Reusable session ${validated.data.sessionKey} lost its bootstrap dispatch fence.`,
+                  store.paths.registryPath
+                )
+              );
             }
-          );
+            const wake = terminalWake(
+              fence,
+              settledAt,
+              durableOutcome,
+              created.ok ? undefined : created.code,
+              created.ok ? created.result : undefined
+            );
+            appendTerminalWake(session, wake);
+            session.inFlight = undefined;
+            if (identityComplete) {
+              session.claudeSessionId = created.host!.sessionId!;
+            }
+            if (created.ok && identityComplete) {
+              session.owner = {
+                ownerInstanceId,
+                ownerPid,
+                hostId: created.host.id,
+                childPid: created.host.pid!,
+                boundAt: settledAt,
+              };
+              setStatus(session, 'idle');
+              session.lifecycle.lastWakeAt = settledAt;
+              session.lifecycle.reason = 'bootstrap_completed';
+            } else if (
+              durableOutcome === 'delivery_uncertain'
+              && identityComplete
+            ) {
+              session.owner = undefined;
+              setStatus(session, 'lost');
+              session.lifecycle.lastWakeAt = settledAt;
+              session.lifecycle.lostAt = settledAt;
+              session.lifecycle.reason = 'bootstrap_delivery_uncertain';
+            } else {
+              session.owner = undefined;
+              setStatus(session, 'stale');
+              session.lifecycle.reason = created.ok
+                ? 'bootstrap_identity_missing'
+                : `bootstrap_failed:${created.code}`;
+            }
+            return wake;
+          }
+        );
+        if (!settled.ok) {
+          if (created.host) {
+            await options.supervisor.retireHost(created.host.id);
+          }
+          return coordinatorFailure(settled.diagnostic);
+        }
+        if (!created.ok) {
           return hostFailure(
             created.code,
             created.message,
-            failed.ok ? failed.session : reserved.session
+            settled.session,
+            settled.value
           );
         }
-        if (
-          !created.host.sessionId
-          || created.host.pid === undefined
-        ) {
+        if (!identityComplete) {
           await options.supervisor.retireHost(created.host.id);
-          const failed = await mutateSession(
-            validated.data.sessionKey,
-            (session) => {
-              if (session.status !== 'starting') return;
-              setStatus(session, 'stale');
-              session.lifecycle.reason = 'bootstrap_identity_missing';
-            }
-          );
           return {
             ok: false,
             code: 'session_unrecoverable',
             message:
               'Bootstrap completed without the durable Claude identity or process binding.',
-            session: failed.ok ? failed.session : reserved.session,
+            session: settled.session,
+            wake: settled.value,
           };
-        }
-        const registered = await store.bind({
-          sessionKey: validated.data.sessionKey,
-          claudeSessionId: created.host.sessionId,
-          owner: {
-            ownerInstanceId,
-            ownerPid,
-            hostId: created.host.id,
-            childPid: created.host.pid,
-            boundAt: nowIso(clock),
-          },
-        });
-        if (!registered.ok) {
-          await options.supervisor.retireHost(created.host.id);
-          return coordinatorFailure(registered.diagnostic);
         }
         return {
           ok: true,
-          session: registered.session,
+          disposition: 'completed',
+          session: settled.session,
+          wake: settled.value,
           result: created.result,
         };
       } finally {
@@ -2510,9 +2843,15 @@ export function createSessionHostCoordinator(
       return { ok: true, sessions };
     },
     reconcile,
-    async updateTouchPolicy(sessionKey, policy) {
+    async updateTouchPolicy(sessionKey, policy, expectedLastWakeAt) {
       const validated = DurableTouchPolicySchema.safeParse(policy);
-      if (!validated.success) {
+      if (
+        !validated.success
+        || (
+          expectedLastWakeAt !== undefined
+          && !TimestampSchema.safeParse(expectedLastWakeAt).success
+        )
+      ) {
         return coordinatorFailure(
           diagnostic(
             'invalid_transition',
@@ -2521,22 +2860,52 @@ export function createSessionHostCoordinator(
           )
         );
       }
-      const reconciled = await reconcile(sessionKey);
-      if (!reconciled.ok) return reconciled;
-      if (reconciled.session.status === 'retired') {
-        return {
-          ok: false,
-          code: 'session_retired',
-          message: `Reusable session ${sessionKey} is retired.`,
-          session: reconciled.session,
-        };
+      const leaseResult = await acquireLease(sessionKey);
+      if (!leaseResult.ok) return coordinatorFailure(leaseResult.diagnostic);
+      try {
+        const reconciled = await reconcile(sessionKey);
+        if (!reconciled.ok) return reconciled;
+        if (reconciled.session.status === 'retired') {
+          return {
+            ok: false,
+            code: 'session_retired',
+            message: `Reusable session ${sessionKey} is retired.`,
+            session: reconciled.session,
+          };
+        }
+        if (
+          expectedLastWakeAt !== undefined
+          && reconciled.session.lifecycle.lastWakeAt !== expectedLastWakeAt
+        ) {
+          return {
+            ok: false,
+            code: 'conditional_wake_stale',
+            message:
+              `Touch policy for ${sessionKey} was computed from a stale wake observation.`,
+            session: reconciled.session,
+          };
+        }
+        if (
+          validated.data.touchesUsed
+            < reconciled.session.touchPolicy.touchesUsed
+        ) {
+          return {
+            ok: false,
+            code: 'conditional_wake_stale',
+            message:
+              `Touch policy for ${sessionKey} would roll back durable touch accounting.`,
+            session: reconciled.session,
+          };
+        }
+        const updated = await mutateSession(sessionKey, (session) => {
+          session.touchPolicy = cloneJson(validated.data);
+        });
+        return updated.ok
+          ? { ok: true, session: updated.session }
+          : coordinatorFailure(updated.diagnostic);
+      } finally {
+        await leaseResult.lease.release();
       }
-      const updated = await mutateSession(sessionKey, (session) => {
-        session.touchPolicy = cloneJson(validated.data);
-      });
-      return updated.ok
-        ? { ok: true, session: updated.session }
-        : coordinatorFailure(updated.diagnostic);
     },
     async retire(sessionKey, reason) {
       const leaseResult = await acquireLease(sessionKey);
@@ -2571,6 +2940,17 @@ export function createSessionHostCoordinator(
       }
     },
     async wake(input) {
+      const validated = WakeDurableSessionInputSchema.safeParse(input);
+      if (!validated.success) {
+        return coordinatorFailure(
+          diagnostic(
+            'invalid_transition',
+            'Reusable-session wake input is invalid.',
+            store.paths.registryPath
+          )
+        );
+      }
+      input = validated.data;
       const leaseResult = await acquireLease(input.sessionKey);
       if (!leaseResult.ok) return coordinatorFailure(leaseResult.diagnostic);
       try {
@@ -2584,13 +2964,12 @@ export function createSessionHostCoordinator(
           messageIdDigest
         ).found;
         if (priorBeforeReconciliation) {
-          return {
-            ok: true,
-            disposition: 'duplicate',
-            terminalDisposition: priorBeforeReconciliation.disposition,
-            messageIdDigest,
-            session: beforeReconciliation.session,
-          };
+          return duplicateWakeResult(
+            input,
+            beforeReconciliation.session,
+            priorBeforeReconciliation.disposition,
+            messageIdDigest
+          );
         }
         if (
           beforeReconciliation.session.idempotencyTombstones.length
@@ -2609,13 +2988,12 @@ export function createSessionHostCoordinator(
           messageIdDigest
         ).found;
         if (duplicate) {
-          return {
-            ok: true,
-            disposition: 'duplicate',
-            terminalDisposition: duplicate.disposition,
-            messageIdDigest,
-            session: reconciled.session,
-          };
+          return duplicateWakeResult(
+            input,
+            reconciled.session,
+            duplicate.disposition,
+            messageIdDigest
+          );
         }
         if (
           reconciled.session.idempotencyTombstones.length
@@ -2649,6 +3027,34 @@ export function createSessionHostCoordinator(
             message: `Reusable session ${input.sessionKey} has no Claude session identity.`,
             session: reconciled.session,
           };
+        }
+        if (
+          input.expectedLastWakeAt !== undefined
+          && reconciled.session.lifecycle.lastWakeAt
+            !== input.expectedLastWakeAt
+        ) {
+          return {
+            ok: false,
+            code: 'conditional_wake_stale',
+            message: `Reusable session ${input.sessionKey} changed after the caller observed it.`,
+            session: reconciled.session,
+          };
+        }
+        if (input.kind === 'touch') {
+          const expectedOrdinal =
+            reconciled.session.touchPolicy.touchesUsed + 1;
+          if (
+            reconciled.session.touchPolicy.mode !== 'auto'
+            || input.touchOrdinal !== expectedOrdinal
+            || input.touchOrdinal > reconciled.session.touchPolicy.maxTouches
+          ) {
+            return {
+              ok: false,
+              code: 'conditional_wake_stale',
+              message: `Reusable session ${input.sessionKey} no longer admits touch ordinal ${input.touchOrdinal}.`,
+              session: reconciled.session,
+            };
+          }
         }
 
         const admittedAt = nowIso(clock);
@@ -2696,8 +3102,14 @@ export function createSessionHostCoordinator(
             messageIdDigest,
             admittedAt,
             phase: 'admitted',
+            kind: input.kind ?? 'interactive',
+            ...(input.touchOrdinal !== undefined
+              ? { touchOrdinal: input.touchOrdinal }
+              : {}),
+            ...(input.touchAttempt !== undefined
+              ? { touchAttempt: input.touchAttempt }
+              : {}),
           };
-          session.lifecycle.lastWakeAt = admittedAt;
           session.lifecycle.updatedAt = admittedAt;
         }, (registry) => {
           const session = registry.sessions.find(
@@ -2793,6 +3205,7 @@ export function createSessionHostCoordinator(
             outcome.ok ? outcome.result : undefined
           );
           appendTerminalWake(session, wake);
+          accountTerminalTouch(session, wake);
           session.inFlight = undefined;
           if (outcome.ok) {
             if (
@@ -2813,6 +3226,7 @@ export function createSessionHostCoordinator(
               boundAt: settledAt,
             };
             setStatus(session, 'idle');
+            session.lifecycle.lastWakeAt = settledAt;
             session.lifecycle.recoveredAt = currentHost
               ? session.lifecycle.recoveredAt
               : settledAt;
@@ -2820,6 +3234,7 @@ export function createSessionHostCoordinator(
           } else if (durableOutcome === 'delivery_uncertain') {
             session.owner = undefined;
             setStatus(session, 'lost');
+            session.lifecycle.lastWakeAt = settledAt;
             session.lifecycle.lostAt = settledAt;
             session.lifecycle.reason = 'delivery_uncertain';
           } else if (currentHost) {

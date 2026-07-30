@@ -1102,6 +1102,79 @@
     },
     "hint": "Next: {workflow} — {reason}"
   },
+  "session": {
+    "messages": {
+      "foregroundNotice": "Using a foreground session owner. Correctness is preserved, but cache residency ends when this command exits.",
+      "completed": "Session turn completed.",
+      "duplicateCompleted": "This message already completed; the durable result was reused without another dispatch.",
+      "duplicatePreDeliveryFailed": "This message previously failed before delivery and was not dispatched again.",
+      "duplicateUncertain": "This message has a delivery-uncertain terminal result and was not replayed.",
+      "listedHeading": "Reusable sessions ({count}):",
+      "listEmpty": "No reusable sessions were found for this Run.",
+      "sessionLine": "  {session} [{role}] {status} — {cwd}",
+      "retired": "Reusable session retired.",
+      "failure": "Session command failed [{code}]: {message}",
+      "shutdownDiagnostic": "Owner shutdown diagnostic ({run}) [{code}]: {message}",
+      "sharedOwner": "shared supervisor",
+      "daemonForeign": "The daemon port is owned by a foreign listener; no foreground owner was started.",
+      "daemonVersionMismatch": "The resident daemon version ({actual}) does not match this Rasen installation ({expected}).",
+      "daemonIdentityAmbiguous": "The live daemon response does not exactly match the recorded daemon identity; no session request was sent.",
+      "transportUncertain": "The daemon request may have been admitted; retry only with the same stable message id."
+    },
+    "examples": {
+      "exec": "Example:\n  rasen session exec --run <run-id> --session reviewer --action action.json --cwd . --touch never",
+      "list": "Example:\n  rasen session list --run <run-id>",
+      "retire": "Example:\n  rasen session retire --run <run-id> --session reviewer"
+    },
+    "outcomes": {
+      "generic": "The session operation could not be completed.",
+      "invalid_request": "The session request is malformed.",
+      "invalid_action": "The action or touch policy is invalid.",
+      "bad_request": "The session request is not valid JSON.",
+      "payload_too_large": "The session request exceeds the protocol size limit.",
+      "run_not_found": "The exact canonical Run was not found.",
+      "run_record_invalid": "The canonical Run record is invalid or unreadable.",
+      "run_identity_mismatch": "The Run directory contains a different exact identity.",
+      "run_directory_invalid": "The canonical Run directory is unavailable or untrusted.",
+      "run_mismatch": "The durable registry belongs to a different Run.",
+      "registry_absent": "No durable session registry exists for this Run.",
+      "session_conflict": "The durable session has different immutable identity facts.",
+      "invalid_transition": "The durable session cannot make the requested transition.",
+      "wake_busy": "Another owner holds this session's wake lease.",
+      "host_busy": "The reusable host already has an active turn.",
+      "busy": "Reusable-host process capacity is full.",
+      "idempotency_capacity_exhausted": "The session's durable idempotency capacity is full.",
+      "session_not_found": "The reusable session was not found.",
+      "session_retired": "The reusable session is retired.",
+      "session_stale": "The reusable session has stale recovery identity.",
+      "session_unrecoverable": "The reusable session cannot be safely recovered.",
+      "host_not_found": "The reusable host was not found.",
+      "host_retired": "The reusable host is retired.",
+      "host_unrecoverable": "The reusable host cannot be safely recovered.",
+      "conditional_wake_stale": "The session changed after it was observed; the conditional wake was not admitted.",
+      "duplicate_message": "The stable message identity was already settled.",
+      "transport_uncertain": "The daemon request may have been admitted. Retry only with the same stable message id.",
+      "delivery_uncertain": "Delivery may have reached the agent and was not replayed.",
+      "turn_timeout": "The accepted turn timed out and delivery is uncertain.",
+      "no_output_timeout": "The accepted turn stopped producing output and delivery is uncertain.",
+      "registry_corrupt": "The durable session registry is corrupt and was left unchanged.",
+      "unsupported_schema": "The durable session registry uses an unsupported schema.",
+      "registry_lock_timeout": "The durable registry lock could not be acquired in time.",
+      "registry_lock_permission": "The durable registry lock is not accessible.",
+      "registry_write_failed": "The durable registry could not be persisted.",
+      "wake_lock_malformed": "The durable wake lock is malformed.",
+      "wake_lock_permission": "The durable wake lock is not accessible.",
+      "wake_lock_timeout": "The durable wake lock could not be acquired in time.",
+      "wake_lock_error": "The durable wake lock could not be inspected safely.",
+      "write_failed": "The agent request failed before delivery.",
+      "owner_shutdown_failed": "The reusable-session owner could not shut down cleanly.",
+      "agent_cli_unavailable": "The agent CLI is unavailable.",
+      "shutting_down": "The reusable-session owner is shutting down.",
+      "daemon_foreign": "The daemon port is owned by a foreign listener.",
+      "daemon_version_mismatch": "The resident daemon version does not match this Rasen installation.",
+      "daemon_identity_ambiguous": "The live daemon does not exactly match its recorded identity."
+    }
+  },
   "cli": {
     "chrome": {
       "usageTitle": "Usage:",
@@ -2168,6 +2241,74 @@
             },
             "status": {
               "description": "Report whether the resident daemon is running"
+            }
+          }
+        },
+        "session": {
+          "description": "Execute, inspect, and retire durable reusable agent sessions",
+          "commands": {
+            "exec": {
+              "description": "Execute one admitted agent action through a durable reusable session",
+              "options": {
+                "run": {
+                  "description": "Exact canonical Run id"
+                },
+                "session": {
+                  "description": "Stable reusable-session key"
+                },
+                "action": {
+                  "description": "Path to one change-run-action/1 JSON document, or - for stdin"
+                },
+                "cwd": {
+                  "description": "Explicit execution directory, canonicalized before admission"
+                },
+                "message-id": {
+                  "description": "Stable operation id; defaults to the action id"
+                },
+                "touch": {
+                  "description": "Touch policy mode: auto or never"
+                },
+                "touch-deadline": {
+                  "description": "Future ISO-8601 deadline required by auto touch mode"
+                },
+                "max-touches": {
+                  "description": "Positive touch limit required by auto touch mode"
+                },
+                "deadline-action": {
+                  "description": "Deadline behavior: stop or retire-silent"
+                },
+                "json": {
+                  "description": "Output one rasen-session-command/1 JSON document"
+                }
+              }
+            },
+            "list": {
+              "description": "List safe durable session facts for one exact canonical Run",
+              "options": {
+                "run": {
+                  "description": "Exact canonical Run id"
+                },
+                "json": {
+                  "description": "Output one rasen-session-command/1 JSON document"
+                }
+              }
+            },
+            "retire": {
+              "description": "Terminally retire one durable reusable session",
+              "options": {
+                "run": {
+                  "description": "Exact canonical Run id"
+                },
+                "session": {
+                  "description": "Stable reusable-session key"
+                },
+                "reason": {
+                  "description": "Bounded retirement reason stored with the durable lifecycle"
+                },
+                "json": {
+                  "description": "Output one rasen-session-command/1 JSON document"
+                }
+              }
             }
           }
         },

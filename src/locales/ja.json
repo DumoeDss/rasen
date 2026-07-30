@@ -1102,6 +1102,79 @@
     },
     "hint": "次のステップ: {workflow} — {reason}"
   },
+  "session": {
+    "messages": {
+      "foregroundNotice": "フォアグラウンドのセッション所有者を使用します。正しさは維持されますが、このコマンドの終了時にキャッシュ常駐も終了します。",
+      "completed": "セッションのターンが完了しました。",
+      "duplicateCompleted": "このメッセージは既に完了しています。再送信せず、永続化された結果を再利用しました。",
+      "duplicatePreDeliveryFailed": "このメッセージは以前に配信前に失敗しており、再送信されませんでした。",
+      "duplicateUncertain": "このメッセージの配信結果は不確実な終端状態であり、再実行されませんでした。",
+      "listedHeading": "再利用可能なセッション（{count}）:",
+      "listEmpty": "この Run に再利用可能なセッションはありません。",
+      "sessionLine": "  {session} [{role}] {status} — {cwd}",
+      "retired": "再利用可能なセッションを終了しました。",
+      "failure": "セッションコマンドが失敗しました [{code}]: {message}",
+      "shutdownDiagnostic": "所有者のシャットダウン診断 ({run}) [{code}]: {message}",
+      "sharedOwner": "共有スーパーバイザー",
+      "daemonForeign": "デーモンのポートは別のリスナーが使用しています。フォアグラウンド所有者は開始しませんでした。",
+      "daemonVersionMismatch": "常駐デーモンのバージョン（{actual}）は、この Rasen インストール（{expected}）と一致しません。",
+      "daemonIdentityAmbiguous": "稼働中デーモンの応答が記録済みの識別情報と完全には一致しないため、セッション要求を送信しませんでした。",
+      "transportUncertain": "デーモン要求は受理された可能性があります。同じ安定したメッセージ ID でのみ再試行してください。"
+    },
+    "examples": {
+      "exec": "例:\n  rasen session exec --run <run-id> --session reviewer --action action.json --cwd . --touch never",
+      "list": "例:\n  rasen session list --run <run-id>",
+      "retire": "例:\n  rasen session retire --run <run-id> --session reviewer"
+    },
+    "outcomes": {
+      "generic": "セッション操作を完了できませんでした。",
+      "invalid_request": "セッション要求の形式が正しくありません。",
+      "invalid_action": "アクションまたはタッチポリシーが無効です。",
+      "bad_request": "セッション要求は有効な JSON ではありません。",
+      "payload_too_large": "セッション要求がプロトコルのサイズ上限を超えています。",
+      "run_not_found": "正確な canonical Run が見つかりません。",
+      "run_record_invalid": "canonical Run レコードが無効か読み取れません。",
+      "run_identity_mismatch": "Run ディレクトリに別の正確な識別情報があります。",
+      "run_directory_invalid": "canonical Run ディレクトリを信頼して利用できません。",
+      "run_mismatch": "永続レジストリは別の Run に属しています。",
+      "registry_absent": "この Run には永続セッションレジストリがありません。",
+      "session_conflict": "永続セッションの不変な識別情報が一致しません。",
+      "invalid_transition": "永続セッションは要求された遷移を実行できません。",
+      "wake_busy": "別の所有者がこのセッションの wake lease を保持しています。",
+      "host_busy": "再利用ホストには既に実行中のターンがあります。",
+      "busy": "再利用ホストのプロセス容量が上限です。",
+      "idempotency_capacity_exhausted": "セッションの永続的な冪等性容量が上限です。",
+      "session_not_found": "再利用セッションが見つかりません。",
+      "session_retired": "再利用セッションは終了済みです。",
+      "session_stale": "再利用セッションの復旧識別情報が古くなっています。",
+      "session_unrecoverable": "再利用セッションを安全に復旧できません。",
+      "host_not_found": "再利用ホストが見つかりません。",
+      "host_retired": "再利用ホストは終了済みです。",
+      "host_unrecoverable": "再利用ホストを安全に復旧できません。",
+      "conditional_wake_stale": "観測後にセッションが変化したため、条件付き wake は受理されませんでした。",
+      "duplicate_message": "安定したメッセージ識別子は既に確定済みです。",
+      "transport_uncertain": "デーモン要求は受理された可能性があります。同じ安定したメッセージ ID でのみ再試行してください。",
+      "delivery_uncertain": "配信はエージェントに届いた可能性があり、再実行されませんでした。",
+      "turn_timeout": "受理済みターンがタイムアウトし、配信結果は不確実です。",
+      "no_output_timeout": "受理済みターンの出力が停止し、配信結果は不確実です。",
+      "registry_corrupt": "永続セッションレジストリが破損しているため、変更せず保持しました。",
+      "unsupported_schema": "永続セッションレジストリのスキーマは未対応です。",
+      "registry_lock_timeout": "期限内に永続レジストリロックを取得できませんでした。",
+      "registry_lock_permission": "永続レジストリロックにアクセスできません。",
+      "registry_write_failed": "永続レジストリを保存できませんでした。",
+      "wake_lock_malformed": "永続 wake ロックが無効です。",
+      "wake_lock_permission": "永続 wake ロックにアクセスできません。",
+      "wake_lock_timeout": "期限内に永続 wake ロックを取得できませんでした。",
+      "wake_lock_error": "永続 wake ロックを安全に検査できませんでした。",
+      "write_failed": "エージェント要求は配信前に失敗しました。",
+      "owner_shutdown_failed": "再利用セッション所有者を正常に終了できませんでした。",
+      "agent_cli_unavailable": "エージェント CLI を利用できません。",
+      "shutting_down": "再利用セッション所有者は終了処理中です。",
+      "daemon_foreign": "デーモンポートは別のリスナーが使用しています。",
+      "daemon_version_mismatch": "常駐デーモンのバージョンがこの Rasen インストールと一致しません。",
+      "daemon_identity_ambiguous": "稼働中デーモンが記録済みの識別情報と完全には一致しません。"
+    }
+  },
   "cli": {
     "chrome": {
       "usageTitle": "使用法:",
@@ -2168,6 +2241,74 @@
             },
             "status": {
               "description": "常駐デーモンが実行中かどうかを報告します"
+            }
+          }
+        },
+        "session": {
+          "description": "永続的に再利用可能なエージェントセッションを実行、確認、終了します",
+          "commands": {
+            "exec": {
+              "description": "許可済みのエージェントアクションを永続的な再利用セッションで1件実行します",
+              "options": {
+                "run": {
+                  "description": "正確な canonical Run ID"
+                },
+                "session": {
+                  "description": "安定した再利用セッションキー"
+                },
+                "action": {
+                  "description": "1件の change-run-action/1 JSON ファイル、または標準入力を表す -"
+                },
+                "cwd": {
+                  "description": "受理前に canonical 化される明示的な実行ディレクトリ"
+                },
+                "message-id": {
+                  "description": "安定した操作 ID。省略時はアクション ID"
+                },
+                "touch": {
+                  "description": "タッチポリシー: auto または never"
+                },
+                "touch-deadline": {
+                  "description": "auto タッチに必要な将来の ISO-8601 期限"
+                },
+                "max-touches": {
+                  "description": "auto タッチに必要な正の上限"
+                },
+                "deadline-action": {
+                  "description": "期限時の動作: stop または retire-silent"
+                },
+                "json": {
+                  "description": "rasen-session-command/1 JSON 文書を1件出力"
+                }
+              }
+            },
+            "list": {
+              "description": "1つの正確な canonical Run の安全な永続セッション情報を一覧表示します",
+              "options": {
+                "run": {
+                  "description": "正確な canonical Run ID"
+                },
+                "json": {
+                  "description": "rasen-session-command/1 JSON 文書を1件出力"
+                }
+              }
+            },
+            "retire": {
+              "description": "永続的な再利用セッションを終端状態として終了します",
+              "options": {
+                "run": {
+                  "description": "正確な canonical Run ID"
+                },
+                "session": {
+                  "description": "安定した再利用セッションキー"
+                },
+                "reason": {
+                  "description": "永続ライフサイクルに保存する長さ制限付きの終了理由"
+                },
+                "json": {
+                  "description": "rasen-session-command/1 JSON 文書を1件出力"
+                }
+              }
             }
           }
         },
