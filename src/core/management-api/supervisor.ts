@@ -95,6 +95,18 @@ export interface CreateHostInput extends HostTurnInput {
   execution?: SessionExecution;
 }
 
+/**
+ * Internal durable-recovery seam. Callers cannot replace cwd or identity:
+ * these facts must come from a reconciled durable record.
+ */
+export interface RecoverHostInput extends HostTurnInput {
+  cwd: string;
+  attachedRoots?: readonly string[];
+  space?: SessionSpace;
+  execution?: SessionExecution;
+  claudeSessionId: string;
+}
+
 export interface HostSnapshot {
   /** Stable for this supervisor's lifetime, even when recovery replaces the process. */
   id: string;
@@ -141,6 +153,12 @@ export type RetireHostResult =
   | { ok: true; host: HostSnapshot }
   | { ok: false; status: 404; code: 'host_not_found'; message: string };
 
+export interface HostLifecycleEvent {
+  type: 'lost';
+  reason: 'process-close' | 'owner-shutdown';
+  host: HostSnapshot;
+}
+
 export interface SessionTails {
   stdout: string;
   stderr: string;
@@ -150,8 +168,10 @@ export interface SessionSupervisor {
   launch(input: LaunchInput): Promise<LaunchResult>;
   kill(id: string): KillResult;
   createHost(input: CreateHostInput): Promise<CreateHostResult>;
+  recoverHost(input: RecoverHostInput): Promise<WakeHostResult>;
   wakeHost(id: string, input: HostTurnInput): Promise<WakeHostResult>;
   retireHost(id: string): Promise<RetireHostResult>;
+  subscribeHostLifecycle(listener: (event: HostLifecycleEvent) => void): () => void;
   getHost(id: string): HostSnapshot | undefined;
   getRecord(id: string): SessionRecord | undefined;
   list(): SessionRecord[];
@@ -371,6 +391,7 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
   const active = new Map<string, ActiveEntry>();
   const hosts = new Map<string, HostEntry>();
   const tails = new Map<string, SessionTails>();
+  const hostLifecycleListeners = new Set<(event: HostLifecycleEvent) => void>();
   let liveCount = 0;
   // Set synchronously as `shutdownAll`'s first statement (review m1) — closes
   // the window where `stopServer` reaps its snapshot of live sessions before
@@ -378,6 +399,17 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
   // that window spawns a session `shutdownAll` never observed, orphaning it
   // even on a *clean* exit.
   let draining = false;
+
+  function emitHostLifecycle(event: HostLifecycleEvent): void {
+    for (const listener of hostLifecycleListeners) {
+      try {
+        listener(event);
+      } catch {
+        // Lifecycle observation is prompt metadata only. Reconciliation on the
+        // next durable operation is the correctness fallback.
+      }
+    }
+  }
 
   function hostError(
     entry: HostEntry | undefined,
@@ -580,11 +612,17 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
       processEntry.pendingKillCancel?.();
       releaseHostSlot(processEntry);
       removeSessionRuntimeContext(entry.id, sessionContextPaths);
+      let lossEvent: HostLifecycleEvent | undefined;
       if (entry.process === processEntry) {
         entry.process = undefined;
         entry.pid = undefined;
         if (entry.state !== 'retiring' && entry.state !== 'retired') {
           entry.state = 'lost';
+          lossEvent = {
+            type: 'lost',
+            reason: draining ? 'owner-shutdown' : 'process-close',
+            host: copyHost(entry),
+          };
         }
         if (entry.pendingTurn) {
           const delivered = entry.pendingTurn.delivered;
@@ -598,6 +636,7 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
         }
       }
       processEntry.resolveClosed();
+      if (lossEvent) emitHostLifecycle(lossEvent);
     };
     // Writable write failures invoke the write callback and then emit
     // `error`. Keep a persistent consumer installed for the process lifetime
@@ -767,6 +806,103 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
       return { ...failure, host: undefined };
     }
     return { ok: true, host: copyHost(entry), result: outcome.result };
+  }
+
+  async function recoverHost(input: RecoverHostInput): Promise<WakeHostResult> {
+    if (draining) {
+      return hostError(
+        undefined,
+        503,
+        'shutting_down',
+        'The server is shutting down and is not admitting recovered hosts.'
+      );
+    }
+    if (liveCount >= maxConcurrent) {
+      return hostError(
+        undefined,
+        409,
+        'busy',
+        `Maximum concurrent processes (${maxConcurrent}) already live.`
+      );
+    }
+    if (input.claudeSessionId.trim().length === 0) {
+      return hostError(
+        undefined,
+        409,
+        'host_unrecoverable',
+        'Durable recovery requires the exact Claude session identity.'
+      );
+    }
+
+    let canonicalCwd: string;
+    let attachedRoots: readonly string[];
+    try {
+      canonicalCwd = fs.realpathSync.native(input.cwd);
+      const identity = (value: string) => {
+        const normalized = path.normalize(value);
+        return IS_WINDOWS ? normalized.toLowerCase() : normalized;
+      };
+      if (identity(canonicalCwd) !== identity(input.cwd)) {
+        return hostError(
+          undefined,
+          409,
+          'host_unrecoverable',
+          'The durable recovery cwd no longer matches its canonical identity.'
+        );
+      }
+      attachedRoots = Object.freeze(
+        [...(input.attachedRoots ?? [])].map((root) => {
+          const canonical = fs.realpathSync.native(root);
+          if (identity(canonical) !== identity(root)) {
+            throw new Error(
+              'A durable recovery attached root no longer matches its canonical identity.'
+            );
+          }
+          return canonical;
+        })
+      );
+    } catch (error) {
+      return hostError(
+        undefined,
+        409,
+        'host_unrecoverable',
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+
+    // Reserve capacity synchronously before binary resolution or spawn, using
+    // the same counter as live reusable hosts and one-shot sessions.
+    liveCount += 1;
+    const entry: HostEntry = {
+      id: randomUUID(),
+      state: 'lost',
+      cwd: canonicalCwd,
+      attachedRoots,
+      ...(input.space !== undefined ? { space: { ...input.space } } : {}),
+      ...(input.execution !== undefined
+        ? { execution: { ...input.execution } }
+        : {}),
+      sessionId: input.claudeSessionId,
+      createdAt: Date.now(),
+      protocolBuffer: '',
+    };
+    hosts.set(entry.id, entry);
+    tails.set(entry.id, { stdout: '', stderr: '' });
+
+    const operation = runAcceptedWake(entry, input, true, true);
+    entry.activeWake = operation;
+    try {
+      const result = await operation;
+      if (!result.ok) {
+        hosts.delete(entry.id);
+        tails.delete(entry.id);
+        removeSessionRuntimeContext(entry.id, sessionContextPaths);
+        return { ...result, host: undefined };
+      }
+      return result;
+    } finally {
+      if (entry.activeWake === operation) entry.activeWake = undefined;
+    }
   }
 
   async function runAcceptedWake(
@@ -1201,12 +1337,23 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
     await Promise.all(waits);
   }
 
+  function subscribeHostLifecycle(
+    listener: (event: HostLifecycleEvent) => void
+  ): () => void {
+    hostLifecycleListeners.add(listener);
+    return () => {
+      hostLifecycleListeners.delete(listener);
+    };
+  }
+
   return {
     launch,
     kill,
     createHost,
+    recoverHost,
     wakeHost,
     retireHost,
+    subscribeHostLifecycle,
     getHost,
     getRecord,
     list,

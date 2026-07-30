@@ -338,6 +338,50 @@ describe('reusable session host lifecycle', () => {
     expect(spawns[1].argv).toContain('fake-host-session');
   }, 15_000);
 
+  it('reconstructs a durable lost binding through the existing recovery path and reports owner-local loss', async () => {
+    const lifecycleEvents: Array<{
+      type: string;
+      reason: string;
+      host: { id: string; state: string };
+    }> = [];
+    const unsubscribe = supervisor!.subscribeHostLifecycle((event) => {
+      lifecycleEvents.push(event);
+    });
+
+    const recovered = await supervisor!.recoverHost({
+      message: 'durable recovery IDLE_LOSS',
+      cwd,
+      attachedRoots: [],
+      claudeSessionId: 'fake-host-session',
+      timeoutMs: 3000 + STARTUP_LATENCY_BUFFER_MS,
+      noOutputTimeoutMs: 1000 + STARTUP_LATENCY_BUFFER_MS,
+    });
+    expect(recovered.ok).toBe(true);
+    if (!recovered.ok) return;
+    expect(recovered.host).toMatchObject({
+      state: 'idle',
+      cwd: fs.realpathSync.native(cwd),
+      sessionId: 'fake-host-session',
+    });
+    const spawn = fixtureEvents().find((event) => event.type === 'spawn');
+    expect(spawn?.argv).toContain('--resume');
+    expect(spawn?.argv).toContain('fake-host-session');
+
+    await waitFor(
+      'durably reconstructed host loss event',
+      () => lifecycleEvents.some((event) => event.host.id === recovered.host.id)
+    );
+    expect(lifecycleEvents).toContainEqual({
+      type: 'lost',
+      reason: 'process-close',
+      host: expect.objectContaining({
+        id: recovered.host.id,
+        state: 'lost',
+      }),
+    });
+    unsubscribe();
+  }, 15_000);
+
   it('bounded-fails and cleans bootstrap when the session identity never arrives', async () => {
     await supervisor!.shutdownAll('server-shutdown');
     supervisor = makeSupervisor(1);
