@@ -609,7 +609,7 @@ The acceptance child SHALL own its integration tests, fixtures, harness, archite
 - **THEN** the harness retains no raw output, emits a stable safe public or harness code, records the CLI/protocol owner in `productGaps` through the full observer path, and never discards attribution into an ownerless generic exit/signal string
 
 ### Requirement: Native delivery evidence is bound to one exact repository commit
-Final cross-platform acceptance SHALL be recorded only after explicit parent authorization of the single portfolio delivery. A controlled parent entrypoint SHALL freeze and later recompute the exact audited tracked delivery index/tree, excluding the pre-existing untracked `packages/ui/package-lock.json` and every incidental untracked file, and SHALL prove that the delivered commit contains that exact tree. The evidence SHALL bind the final candidate, delivery SHA, GitHub target repository, workflow run, and required jobs. Result-bearing physical and CI evidence SHALL live outside the tested repository commit.
+Final cross-platform acceptance SHALL be recorded only after explicit parent authorization of the single portfolio delivery. A controlled parent entrypoint SHALL freeze and later recompute the exact audited tracked delivery index/tree, excluding the pre-existing untracked `packages/ui/package-lock.json` and every incidental untracked file, and SHALL prove that the delivered commit contains that exact tree. The evidence SHALL bind the final candidate, delivery SHA, GitHub target repository, workflow run, and required jobs. Result-bearing physical and CI evidence SHALL live outside the tested repository commit. Local evidence SHALL continue to describe only native-Windows and injected-POSIX execution and SHALL NOT be promoted into a native-Linux claim; native Linux completion SHALL instead require both successful canonical CI state and successful current exact-SHA CI evidence containing every required job.
 
 #### Scenario: Exact candidate is the tracked delivery tree
 - **WHEN** repository-local fixes, clean review, task/spec/local-delivery/archive state, and parent repository mutations are complete
@@ -630,6 +630,14 @@ Final cross-platform acceptance SHALL be recorded only after explicit parent aut
 #### Scenario: Every required job belongs to that workflow run
 - **WHEN** required native job evidence is collected from actual GitHub workflow-jobs REST records that do not contain a fabricated `job.repository` field
 - **THEN** repository identity is derived from exact `run_url` path segments and each exact named job has the same `run_id`, `run_attempt`, `run_url`, `head_sha`, target repository, job URL origin, and successful conclusion as the selected workflow; numeric-prefix collisions, attempt splices, inconsistent URLs, and caller-enriched substitutes cannot satisfy the gate
+
+#### Scenario: Successful exact-SHA CI closes native Linux separately from local proof
+- **WHEN** selected physical evidence and controlled delivery are complete, canonical local evidence remains `nativeLinux: false`, the canonical run records successful CI state, and the current exact-delivered-SHA CI document contains the successful workflow plus all five required native jobs
+- **THEN** final acceptance treats native Linux as proven by that matching CI state and document, revalidates the local records without changing their platform claims, and may complete when every other final gate also passes
+
+#### Scenario: Incomplete CI cannot borrow a local platform claim
+- **WHEN** CI is pending or failed, its current document is missing, mismatched, or incomplete, or any required exact-SHA job is absent or unsuccessful
+- **THEN** final acceptance remains incomplete even when all local gates pass, and no local native-Windows or injected-POSIX claim substitutes for native Linux CI
 
 #### Scenario: Evidence recording does not change the tested commit
 - **WHEN** physical or native CI conclusions become available
