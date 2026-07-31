@@ -1158,7 +1158,7 @@ describe('immutable session-cache acceptance generations', () => {
     ).toThrow(/bounded_regular_file_invalid/u);
   });
 
-  it('finalizes v2 beside the actual legacy shape without reading or changing v1', async () => {
+  it('finalizes v2 beside the actual legacy shape without parsing or changing v1', async () => {
     const root = workDir('rasen-legacy-history-');
     const legacy = path.join(root, 'acceptance-run.json');
     const actualLegacyShape = {
@@ -1222,6 +1222,9 @@ describe('immutable session-cache acceptance generations', () => {
       relativePath: 'acceptance-run.json',
       kind: 'file',
       bytes: before.byteLength,
+      fingerprint: createHash('sha256').update(before).digest('hex'),
+      descendantCount: 0,
+      catalogPolicy: 'bounded-named-file-sha256',
     });
     const attempt = createAttempt(root);
     expect(attempt.legacyHistory).toContainEqual(expect.objectContaining({
@@ -1275,6 +1278,173 @@ describe('immutable session-cache acceptance generations', () => {
     ).toThrow(/canonical_v2_record_incompatible/u);
     expect(fs.readFileSync(acceptanceRunV2Path(incompatibleRoot)))
       .toEqual(incompatibleBytes);
+  });
+
+  it('catalogues only bounded named markers beside growing legacy history', () => {
+    const root = workDir('rasen-growing-legacy-history-');
+    const history = path.join(root, 'history');
+    const attempts = path.join(root, 'attempts');
+    const logs = path.join(root, 'logs');
+    const historyDescendants = path.join(history, 'candidate', 'attempt');
+    const attemptDescendants = path.join(attempts, 'old-attempt', 'events');
+    const logDescendants = path.join(logs, 'archived');
+    fs.mkdirSync(historyDescendants, { recursive: true });
+    fs.mkdirSync(attemptDescendants, { recursive: true });
+    fs.mkdirSync(logDescendants, { recursive: true });
+    for (let index = 0; index < 300; index += 1) {
+      const body = Buffer.from(`immutable-${index}\n`, 'utf8');
+      fs.writeFileSync(
+        path.join(historyDescendants, `${index}.json`),
+        body
+      );
+      fs.writeFileSync(
+        path.join(attemptDescendants, `${index}.json`),
+        body
+      );
+      fs.writeFileSync(
+        path.join(logDescendants, `${index}.log`),
+        body
+      );
+    }
+    const sentinel = path.join(historyDescendants, '299.json');
+    const sentinelBefore = fs.readFileSync(sentinel);
+    const legacy = path.join(root, 'acceptance-run.json');
+    fs.writeFileSync(legacy, '{immutable malformed v1 bytes}\n');
+    const legacyBefore = fs.readFileSync(legacy);
+
+    expect(catalogLegacyHistory(root)).toEqual([
+      {
+        relativePath: 'history',
+        kind: 'directory',
+        bytes: 0,
+        fingerprint: null,
+        descendantCount: null,
+        catalogPolicy: 'named-root-marker-no-descendant-enumeration',
+      },
+      {
+        relativePath: 'acceptance-run.json',
+        kind: 'file',
+        bytes: legacyBefore.byteLength,
+        fingerprint: createHash('sha256')
+          .update(legacyBefore)
+          .digest('hex'),
+        descendantCount: 0,
+        catalogPolicy: 'bounded-named-file-sha256',
+      },
+    ]);
+
+    const attempt = createObservationAttempt(root, {
+      attemptId: '11111111-1111-4111-8111-111111111111',
+      candidate,
+      arms: armIdentities(),
+    }, fixedNow);
+    expect(attempt.legacyHistory).toHaveLength(2);
+    expect(attempt.legacyHistory).toContainEqual(expect.objectContaining({
+      relativePath: 'history',
+      catalogPolicy: 'named-root-marker-no-descendant-enumeration',
+    }));
+    expect(fs.readFileSync(sentinel)).toEqual(sentinelBefore);
+    expect(fs.readFileSync(legacy)).toEqual(legacyBefore);
+    expect(fs.readdirSync(historyDescendants)).toHaveLength(300);
+    expect(fs.readdirSync(attemptDescendants)).toHaveLength(300);
+    expect(fs.readdirSync(logDescendants)).toHaveLength(300);
+  });
+
+  it('fails closed for unsafe named legacy roots and files', () => {
+    const symlinkRoot = workDir('rasen-legacy-root-symlink-');
+    const symlinkTarget = workDir('rasen-legacy-root-target-');
+    fs.symlinkSync(
+      symlinkTarget,
+      path.join(symlinkRoot, 'history'),
+      'junction'
+    );
+    expect(() => catalogLegacyHistory(symlinkRoot))
+      .toThrow(/legacy_history_symlink/u);
+
+    const danglingRoot = workDir('rasen-legacy-root-dangling-');
+    fs.symlinkSync(
+      path.join(danglingRoot, 'missing-history-target'),
+      path.join(danglingRoot, 'history'),
+      'junction'
+    );
+    expect(() => catalogLegacyHistory(danglingRoot))
+      .toThrow(/legacy_history_symlink/u);
+
+    const liveFileRoot = workDir('rasen-legacy-file-symlink-');
+    const liveFileTarget = path.join(liveFileRoot, 'capacity-target.json');
+    fs.writeFileSync(
+      liveFileTarget,
+      '{"schema":"rasen-session-supervisor-capacity-proof/2"}\n'
+    );
+    fs.symlinkSync(
+      liveFileTarget,
+      path.join(liveFileRoot, 'capacity-proof.json'),
+      'file'
+    );
+    expect(() => catalogLegacyHistory(liveFileRoot))
+      .toThrow(/legacy_history_symlink/u);
+
+    const danglingFileRoot = workDir('rasen-legacy-file-dangling-');
+    fs.symlinkSync(
+      path.join(danglingFileRoot, 'missing-capacity-target.json'),
+      path.join(danglingFileRoot, 'capacity-proof.json'),
+      'file'
+    );
+    expect(() => catalogLegacyHistory(danglingFileRoot))
+      .toThrow(/legacy_history_symlink/u);
+
+    const nonregularRoot = workDir('rasen-legacy-root-nonregular-');
+    fs.writeFileSync(path.join(nonregularRoot, 'history'), 'not a directory\n');
+    expect(() => catalogLegacyHistory(nonregularRoot))
+      .toThrow(/legacy_history_not_regular/u);
+
+    const oversizedRoot = workDir('rasen-legacy-file-oversized-');
+    fs.writeFileSync(
+      path.join(oversizedRoot, 'capacity-proof.json'),
+      Buffer.alloc(1024 * 1024 + 1, 0x20)
+    );
+    expect(() => catalogLegacyHistory(oversizedRoot))
+      .toThrow(/legacy_history_file_oversize/u);
+
+    const wrongSchemaRoot = workDir('rasen-legacy-schema-invalid-');
+    fs.writeFileSync(
+      path.join(wrongSchemaRoot, 'capacity-proof.json'),
+      '{"schema":"rasen-session-supervisor-capacity-proof/999"}\n'
+    );
+    expect(() => catalogLegacyHistory(wrongSchemaRoot))
+      .toThrow(/legacy_history_schema_invalid:capacity-proof\.json/u);
+  });
+
+  it('keeps an empty failed attempt immutable without poisoning a new ID', () => {
+    const root = workDir('rasen-empty-failed-generation-');
+    const invalidLegacy = path.join(root, 'capacity-proof.json');
+    fs.writeFileSync(
+      invalidLegacy,
+      Buffer.alloc(1024 * 1024 + 1, 0x20)
+    );
+    const failedId = '22222222-2222-4222-8222-222222222222';
+    expect(() => createObservationAttempt(root, {
+      attemptId: failedId,
+      candidate,
+      arms: armIdentities(),
+    }, fixedNow)).toThrow(/legacy_history_file_oversize/u);
+    const failedDirectory = attemptDirectory(root, failedId);
+    expect(fs.readdirSync(failedDirectory)).toEqual([]);
+    expect(() => createObservationAttempt(root, {
+      attemptId: failedId,
+      candidate,
+      arms: armIdentities(),
+    }, fixedNow)).toThrow(/attempt_id_already_exists/u);
+
+    fs.unlinkSync(invalidLegacy);
+    const next = createObservationAttempt(root, {
+      attemptId: '33333333-3333-4333-8333-333333333333',
+      candidate,
+      arms: armIdentities(),
+    }, fixedNow);
+    expect(readAttemptIntent(root, next.attemptId)).toEqual(next);
+    expect(fs.readdirSync(failedDirectory)).toEqual([]);
+    expect(fs.existsSync(attemptIntentPath(root, failedId))).toBe(false);
   });
 
   it('strictly rejects unknown fields, attempt reuse, and summary overwrite', () => {

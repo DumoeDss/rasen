@@ -72,6 +72,21 @@ const MAX_JSON_BYTES = 1024 * 1024;
 const MAX_LOG_BYTES = 256 * 1024;
 const MAX_ATTEMPT_FILES = 4096;
 const MAX_LEGACY_ENTRIES = 256;
+const LEGACY_ROOT_MARKERS = Object.freeze([
+  'observations',
+  'history',
+  'physical',
+]);
+const LEGACY_NAMED_FILES = Object.freeze([
+  'capacity-proof.json',
+  'physical-launch.pid.json',
+  ACCEPTANCE_FILENAMES.legacyRun,
+]);
+const LEGACY_REQUIRED_SCHEMAS = Object.freeze({
+  'capacity-proof.json': Object.freeze([
+    'rasen-session-supervisor-capacity-proof/2',
+  ]),
+});
 const SHA256 = /^[a-f0-9]{64}$/u;
 const SHA = /^[a-f0-9]{40,64}$/u;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u;
@@ -431,13 +446,45 @@ const ObservationPolicySchema = z
   })
   .strict();
 
-const LegacyEntrySchema = z
+const LegacyEntryV1Schema = z
   .object({
     relativePath: z.string().min(1).max(1024),
     kind: z.enum(['file', 'directory']),
     bytes: z.number().int().nonnegative().max(MAX_JSON_BYTES),
   })
   .strict();
+
+const LegacyRootMarkerSchema = z
+  .object({
+    relativePath: z.enum(LEGACY_ROOT_MARKERS),
+    kind: z.literal('directory'),
+    bytes: z.literal(0),
+    fingerprint: z.null(),
+    descendantCount: z.null(),
+    catalogPolicy: z.literal(
+      'named-root-marker-no-descendant-enumeration'
+    ),
+  })
+  .strict();
+
+const LegacyNamedFileSchema = z
+  .object({
+    relativePath: z.enum(LEGACY_NAMED_FILES),
+    kind: z.literal('file'),
+    bytes: z.number().int().nonnegative().max(MAX_JSON_BYTES),
+    fingerprint: Fingerprint,
+    descendantCount: z.literal(0),
+    catalogPolicy: z.literal('bounded-named-file-sha256'),
+  })
+  .strict();
+
+// V1 entries remain readable for already-created immutable attempts. New
+// attempts only emit the strict named-root/named-file forms above.
+const LegacyEntrySchema = z.union([
+  LegacyRootMarkerSchema,
+  LegacyNamedFileSchema,
+  LegacyEntryV1Schema,
+]);
 
 const AttemptIntentSchema = z
   .object({
@@ -972,34 +1019,63 @@ function assertAttemptPolicies(intent) {
   }
 }
 
-function boundedLegacyWalk(root, relative, entries) {
-  if (entries.length >= MAX_LEGACY_ENTRIES) {
-    throw new Error('legacy_history_catalog_oversize');
-  }
+function legacyRootMarker(root, relative) {
   const absolute = path.join(root, relative);
   const stat = fs.lstatSync(absolute);
   if (stat.isSymbolicLink()) throw new Error('legacy_history_symlink');
-  if (stat.isFile()) {
-    if (stat.size > MAX_JSON_BYTES) throw new Error('legacy_history_file_oversize');
-    entries.push({
-      relativePath: relative.replace(/\\/gu, '/'),
-      kind: 'file',
-      bytes: stat.size,
-    });
-    return;
-  }
   if (!stat.isDirectory()) throw new Error('legacy_history_not_regular');
-  entries.push({
-    relativePath: relative.replace(/\\/gu, '/'),
+  return LegacyRootMarkerSchema.parse({
+    relativePath: relative,
     kind: 'directory',
     bytes: 0,
+    fingerprint: null,
+    descendantCount: null,
+    catalogPolicy: 'named-root-marker-no-descendant-enumeration',
   });
-  const children = fs.readdirSync(absolute, { withFileTypes: true });
-  if (children.length > MAX_LEGACY_ENTRIES) {
-    throw new Error('legacy_history_catalog_oversize');
+}
+
+function legacyNamedFile(root, relative) {
+  const absolute = path.join(root, relative);
+  const stat = fs.lstatSync(absolute);
+  if (stat.isSymbolicLink()) throw new Error('legacy_history_symlink');
+  if (!stat.isFile()) throw new Error('legacy_history_not_regular');
+  if (stat.size > MAX_JSON_BYTES) {
+    throw new Error('legacy_history_file_oversize');
   }
-  for (const child of children) {
-    boundedLegacyWalk(root, path.join(relative, child.name), entries);
+  const bytes = readRegularFileBounded(absolute, MAX_JSON_BYTES);
+  const requiredSchemas = LEGACY_REQUIRED_SCHEMAS[relative];
+  if (requiredSchemas !== undefined) {
+    let value;
+    try {
+      value = JSON.parse(bytes.toString('utf8'));
+    } catch {
+      throw new Error(`legacy_history_schema_invalid:${relative}`);
+    }
+    if (
+      value === null
+      || typeof value !== 'object'
+      || !requiredSchemas.includes(value.schema)
+    ) {
+      throw new Error(`legacy_history_schema_invalid:${relative}`);
+    }
+  }
+  return LegacyNamedFileSchema.parse({
+    relativePath: relative,
+    kind: 'file',
+    bytes: bytes.byteLength,
+    fingerprint: createHash('sha256').update(bytes).digest('hex'),
+    descendantCount: 0,
+    catalogPolicy: 'bounded-named-file-sha256',
+  });
+}
+
+function legacyNamedPathExists(absolute) {
+  try {
+    fs.lstatSync(absolute);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
   }
 }
 
@@ -1008,16 +1084,16 @@ export function catalogLegacyHistory(workDir) {
   fs.mkdirSync(root, { recursive: true });
   assertCanonicalDirectory(root);
   const entries = [];
-  for (const name of [
-    'observations',
-    'history',
-    'physical',
-    'capacity-proof.json',
-    'physical-launch.pid.json',
-    ACCEPTANCE_FILENAMES.legacyRun,
-  ]) {
-    if (fs.existsSync(path.join(root, name))) {
-      boundedLegacyWalk(root, name, entries);
+  // These growing roots are preservation markers only. In particular, never
+  // enumerate arbitrary history descendants or current attempts/logs.
+  for (const name of LEGACY_ROOT_MARKERS) {
+    if (legacyNamedPathExists(path.join(root, name))) {
+      entries.push(legacyRootMarker(root, name));
+    }
+  }
+  for (const name of LEGACY_NAMED_FILES) {
+    if (legacyNamedPathExists(path.join(root, name))) {
+      entries.push(legacyNamedFile(root, name));
     }
   }
   return entries.map((entry) => LegacyEntrySchema.parse(entry));
