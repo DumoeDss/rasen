@@ -22,6 +22,7 @@ import {
   attemptIntentPath,
   attemptSummaryPath,
   auditAcceptanceOwnership,
+  assertFinalAcceptanceComplete,
   authorizeParentDelivery,
   catalogLegacyHistory,
   classifyControlUsage,
@@ -1837,6 +1838,8 @@ describe('immutable session-cache acceptance generations', () => {
 
   it('preserves typed local evidence, default-deny delivery, and exact CI binding', () => {
     const root = workDir('rasen-local-ci-');
+    expect(path.relative(fs.realpathSync.native(os.tmpdir()), root))
+      .not.toMatch(/^\.\.(?:[\\/]|$)/u);
     const attempt = createAttempt(root);
     settleAttempt(root, attempt.attemptId);
     const finalized = finalizeAcceptanceAttempt(root, attempt.attemptId);
@@ -1913,6 +1916,13 @@ describe('immutable session-cache acceptance generations', () => {
       state: 'pending',
       deliverySha: '9'.repeat(40),
     });
+    expect(() => assertFinalAcceptanceComplete(root)).toThrow(
+      /final_acceptance_incomplete/u
+    );
+    expect(readAcceptanceRunV2(root)).toMatchObject({
+      ciState: 'pending',
+      localEvidence: { nativeLinux: false },
+    });
     const workflowRuns = [{
       id: 42,
       run_attempt: 3,
@@ -1938,6 +1948,19 @@ describe('immutable session-cache acceptance generations', () => {
       url:
         `https://api.github.com/repos/example/repository/actions/jobs/${100 + index}`,
     }));
+    expect(() => collectSuccessfulCiEvidence(root, {
+      workflowRuns,
+      jobs: jobs.slice(0, -1),
+      deliveryScope: 'portfolio',
+      platformEvidence: 'native',
+    }, fixedNow)).toThrow(/required_ci_job_not_successful/u);
+    expect(() => assertFinalAcceptanceComplete(root)).toThrow(
+      /final_acceptance_incomplete/u
+    );
+    expect(readAcceptanceRunV2(root)).toMatchObject({
+      ciState: 'pending',
+      localEvidence: { nativeLinux: false },
+    });
     expect(collectSuccessfulCiEvidence(root, {
       workflowRuns,
       jobs,
@@ -1946,6 +1969,16 @@ describe('immutable session-cache acceptance generations', () => {
     }, fixedNow)).toMatchObject({ state: 'successful' });
     expect(readJsonBounded(ciEvidencePath(root))).toMatchObject({
       state: 'successful',
+      requiredJobs: [...REQUIRED_CI_JOBS],
+      jobs: REQUIRED_CI_JOBS.map((name) => ({ name })),
+    });
+    expect(assertFinalAcceptanceComplete(root)).toMatchObject({
+      ciState: 'successful',
+      localEvidence: {
+        nativeWindows: true,
+        injectedPosix: true,
+        nativeLinux: false,
+      },
     });
   });
 

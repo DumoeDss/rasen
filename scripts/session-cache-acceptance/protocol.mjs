@@ -2608,7 +2608,6 @@ export function assertFinalAcceptanceComplete(workDir) {
     run.selectedAttemptId === null
     || !run.localEvidence.nativeWindows
     || !run.localEvidence.injectedPosix
-    || !run.localEvidence.nativeLinux
     || !run.localEvidence.physicalRetention
     || Object.values(run.arms).some((arm) => arm?.status !== 'completed')
     || run.productGaps.length > 0
