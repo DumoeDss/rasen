@@ -333,6 +333,7 @@ describe('archive apply named fault and recovery matrix', () => {
       plan.change,
       'proposal.md'
     );
+    const replacementBytes = await fs.readFile(path.join(active, 'proposal.md'));
     let quarantineStats = 0;
     const adapters: ArchiveEngineAdapters = {
       ...baseAdapters,
@@ -341,10 +342,11 @@ describe('archive apply named fault and recovery matrix', () => {
         lstat: async target => {
           if (target === quarantineProposal) {
             quarantineStats += 1;
-            if (quarantineStats === 3) {
-              const bytes = await fs.readFile(target);
+            // #3 is the handle-bound after-path check; #4 is the guarded
+            // deletion revalidation after the fingerprint handle is closed.
+            if (quarantineStats === 4) {
               await fs.rm(target);
-              await fs.writeFile(target, bytes);
+              await fs.writeFile(target, replacementBytes);
             }
           }
           return baseAdapters.fs.lstat(target);

@@ -26,6 +26,10 @@ describe('ArchiveCommand', () => {
     // Create temp directory
     tempDir = path.join(os.tmpdir(), `rasen-archive-test-${Date.now()}`);
     await fs.mkdir(tempDir, { recursive: true });
+    // Match the product's existing-path canonicalization. On macOS /var may
+    // resolve through /private/var, and Windows runners may expose an 8.3
+    // short-path alias for the same temporary directory.
+    tempDir = await fs.realpath(tempDir);
 
     // Change to temp directory
     process.chdir(tempDir);

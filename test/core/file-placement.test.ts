@@ -90,7 +90,7 @@ describe('per-class landing resolvers', () => {
 
   it('resolves without any machine identity or registry', () => {
     // No project home, no config, no registry — the roots alone are enough.
-    const bare = path.join('D:', 'nowhere');
+    const bare = path.resolve(os.tmpdir(), 'rasen-no-identity');
     expect(path.isAbsolute(evidenceDir(path.join(bare, 'rasen', 'changes', 'c')))).toBe(true);
     expect(path.isAbsolute(ephemeraDir(bare, 'c'))).toBe(true);
   });
