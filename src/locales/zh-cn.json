@@ -965,7 +965,6 @@
       "invalidUpdatePin": "配置中的 'update.pin' 字段无效（必须是布尔值）",
       "invalidArchiveTiming": "配置中的 'archive.timing' 字段无效（必须是 'on-merge' 或 'in-ship'）",
       "invalidArchiveDestination": "配置中的 'archive.destination' 字段无效（必须是 'in-repo'、'external' 或 'prune'）",
-      "deprecatedArchiveDestination": "'archive.destination' 已废弃，不再选择归档去向：归档簿记始终落在规划根。请删除该键；运行 'rasen archive relocate --to in-repo' 可把已有归档收拢回规划根。",
       "invalidArchive": "配置中的 'archive' 字段无效（必须是对象）",
       "invalidAutopilotGates": "配置中的 'autopilot.gates' 字段无效（必须是 'on' 或 'off'）",
       "invalidAutopilotSelection": "配置中的 'autopilot.selection' 字段无效（必须是 'classify'、'manual' 或 'compose'）",
@@ -978,7 +977,8 @@
       "profileLockShadowedByOverride": "注：锁定的配置方案 '{profile}' 已被此项目的 workflows 覆盖设置遮蔽。",
       "profileLockCustom": "警告：'custom' 不能作为锁定的配置方案；将改用用户全局配置方案。",
       "profileLockUnresolvable": "警告：无法解析锁定的配置方案 '{profile}'（{detail}）；将改用用户全局配置方案。",
-      "userWideProfileUnresolvable": "警告：无法解析用户全局配置方案 '{profile}'（{detail}）；将改用默认的 'full' 配置方案。"
+      "userWideProfileUnresolvable": "警告：无法解析用户全局配置方案 '{profile}'（{detail}）；将改用默认的 'full' 配置方案。",
+      "deprecatedArchiveDestination": "'archive.destination' 已废弃，不再选择归档去向：归档簿记始终落在规划根。请删除该键；运行 'rasen archive relocate --to in-repo' 可把已有归档收拢回规划根。"
     }
   },
   "completion": {
@@ -1274,6 +1274,9 @@
             "yes": {
               "description": "跳过确认提示"
             },
+            "confirm-prune": {
+              "description": "确认永久删除 'prune' 目标（与 --yes 分开确认）"
+            },
             "skip-specs": {
               "description": "跳过规格更新操作"
             },
@@ -1283,17 +1286,17 @@
             "json": {
               "description": "输出为 JSON（非交互）"
             },
-            "keep-ephemera": {
-              "description": "跳过 ephemera 清理器，保留所有 ephemera 文件"
-            },
-            "dry-run": {
-              "description": "预演所有计划中的归档操作，不执行任何实际更改"
-            },
             "store": {
               "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
             },
             "project": {
               "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+            },
+            "keep-ephemera": {
+              "description": "跳过 ephemera 清理器，保留所有 ephemera 文件"
+            },
+            "dry-run": {
+              "description": "预演所有计划中的归档操作，不执行任何实际更改"
             }
           },
           "commands": {
@@ -2461,14 +2464,17 @@
                 "dry-run": {
                   "description": "仅预览；绝不移动文件"
                 },
-                "discard-absorbed-conclusions": {
-                  "description": "删除已确认被 handoff 或 evidence 吸收的 machine-root 结论目录（默认保留）"
+                "include-tracked": {
+                  "description": "同时移动由 Git 跟踪的临时产物，并保留未提交的删除"
                 },
                 "json": {
                   "description": "输出为 JSON（非交互；执行时需要 --yes）"
                 },
                 "yes": {
                   "description": "跳过确认提示（在 --json 模式下执行时必需）"
+                },
+                "discard-absorbed-conclusions": {
+                  "description": "删除已确认被 handoff 或 evidence 吸收的 machine-root 结论目录（默认保留）"
                 }
               }
             }
@@ -2477,57 +2483,39 @@
         "agent": {
           "description": "检查并控制基础代理运行时状态",
           "commands": {
-            "edit-boundary": {
-              "description": "控制检出范围的运行时编辑边界",
-              "commands": {
-                "set": {
-                  "description": "将检出范围的编辑边界设置为现有目录",
-                  "options": {
-                    "runtime": {
-                      "description": "强制运行时：claude、codex 或 zed"
-                    },
-                    "json": {
-                      "description": "输出为 JSON"
-                    }
-                  }
-                },
-                "status": {
-                  "description": "显示活动边界及观测到的宿主强制情况",
-                  "options": {
-                    "runtime": {
-                      "description": "强制运行时：claude、codex 或 zed"
-                    },
-                    "json": {
-                      "description": "输出为 JSON"
-                    }
-                  }
-                },
-                "clear": {
-                  "description": "清除检出范围的编辑边界",
-                  "options": {
-                    "runtime": {
-                      "description": "强制运行时：claude、codex 或 zed"
-                    },
-                    "json": {
-                      "description": "输出为 JSON"
-                    }
-                  }
-                }
-              }
-            },
             "dispatch": {
               "description": "派发结构化 Claude print-mode worker",
               "options": {
-                "runtime": { "description": "Worker 运行时（claude）" },
-                "prompt-file": { "description": "包含完整 worker prompt 的 UTF-8 文件" },
-                "contract": { "description": "结构化结果契约：leaf 或 evaluate" },
-                "sandbox": { "description": "权限：read-only 或 workspace-write" },
-                "model": { "description": "Claude 模型覆盖" },
-                "effort": { "description": "Claude effort：low、medium、high、xhigh 或 max" },
-                "cwd": { "description": "Worker 工作目录" },
-                "timeout-ms": { "description": "超时毫秒数" },
-                "resume": { "description": "要恢复的精确 Claude session ID" },
-                "json": { "description": "输出一条机器可读 receipt" }
+                "runtime": {
+                  "description": "Worker 运行时（claude）"
+                },
+                "prompt-file": {
+                  "description": "包含完整 worker prompt 的 UTF-8 文件"
+                },
+                "contract": {
+                  "description": "结构化结果契约：leaf 或 evaluate"
+                },
+                "sandbox": {
+                  "description": "权限：read-only 或 workspace-write"
+                },
+                "model": {
+                  "description": "Claude 模型覆盖"
+                },
+                "effort": {
+                  "description": "Claude effort：low、medium、high、xhigh 或 max"
+                },
+                "cwd": {
+                  "description": "Worker 工作目录"
+                },
+                "timeout-ms": {
+                  "description": "超时毫秒数"
+                },
+                "resume": {
+                  "description": "要恢复的精确 Claude session ID"
+                },
+                "json": {
+                  "description": "输出一条机器可读 receipt"
+                }
               }
             },
             "context": {

@@ -8,12 +8,16 @@ const BANNED_LIVE_TOKENS = [
   'rasen-unfreeze',
   'check-freeze.sh',
   'freeze-dir.txt',
+  'rasen agent edit-boundary',
+  'EDIT_BOUNDARY_GUIDANCE',
+  'resolveEditBoundaryEnforcement',
 ] as const;
 
 const SCAN_ROOTS = ['src', 'docs', 'skills', path.join('test', 'fixtures')] as const;
 const ALLOWED_MIGRATION_FILES = new Set([
   path.normalize(path.join('src', 'core', 'retired-edit-boundary.ts')),
   path.normalize(path.join('src', 'core', 'legacy-cleanup.ts')),
+  path.normalize(path.join('docs', 'runtime-edit-boundary-retirement.md')),
 ]);
 
 function filesUnder(root: string): string[] {
@@ -51,5 +55,44 @@ describe('retired edit-boundary vocabulary guard', () => {
       }
     }
     expect(violations).toEqual([]);
+  });
+
+  it('has no live boundary modules, command surface, or public exports', () => {
+    expect(fs.existsSync(path.join('src', 'core', 'edit-boundary.ts'))).toBe(false);
+    expect(fs.existsSync(path.join('src', 'core', 'edit-boundary-hooks.ts'))).toBe(
+      false
+    );
+    for (const file of [
+      path.join('src', 'commands', 'agent.ts'),
+      path.join('src', 'cli', 'index.ts'),
+      path.join('src', 'core', 'completions', 'command-registry.ts'),
+      path.join('src', 'core', 'runtime-adapters.ts'),
+      path.join('src', 'core', 'index.ts'),
+    ]) {
+      const content = fs.readFileSync(file, 'utf-8');
+      expect(content, file).not.toContain('edit-boundary');
+      expect(content, file).not.toContain('EditBoundary');
+    }
+  });
+
+  it('keeps generic managed-execution controls independent of retirement cleanup', () => {
+    const agentCommand = fs.readFileSync(
+      path.join('src', 'commands', 'agent.ts'),
+      'utf-8'
+    );
+    expect(agentCommand).toContain(
+      'options.sandbox !== \'read-only\' && options.sandbox !== \'workspace-write\''
+    );
+
+    for (const file of [
+      path.join('src', 'commands', 'agent.ts'),
+      path.join('src', 'core', 'claude', 'invocation.ts'),
+      path.join('src', 'core', 'codex', 'invocation.ts'),
+      path.join('src', 'core', 'pipeline-registry', 'run-state.ts'),
+    ]) {
+      const content = fs.readFileSync(file, 'utf-8');
+      expect(content, file).not.toContain('edit-boundary');
+      expect(content, file).not.toContain('retired-edit-boundary');
+    }
   });
 });

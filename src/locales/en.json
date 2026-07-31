@@ -965,7 +965,6 @@
       "invalidUpdatePin": "Invalid 'update.pin' field in config (must be a boolean)",
       "invalidArchiveTiming": "Invalid 'archive.timing' field in config (must be 'on-merge' or 'in-ship')",
       "invalidArchiveDestination": "Invalid 'archive.destination' field in config (must be 'in-repo', 'external', or 'prune')",
-      "deprecatedArchiveDestination": "'archive.destination' is deprecated and no longer selects a destination: archive bookkeeping always lands in the planning root. Remove the key; run 'rasen archive relocate --to in-repo' to consolidate existing archives.",
       "invalidArchive": "Invalid 'archive' field in config (must be an object)",
       "invalidAutopilotGates": "Invalid 'autopilot.gates' field in config (must be 'on' or 'off')",
       "invalidAutopilotSelection": "Invalid 'autopilot.selection' field in config (must be 'classify', 'manual', or 'compose')",
@@ -978,7 +977,8 @@
       "profileLockShadowedByOverride": "Note: the locked profile '{profile}' is shadowed by this project's workflows override.",
       "profileLockCustom": "Warning: 'custom' cannot be a locked profile; using the user-wide profile instead.",
       "profileLockUnresolvable": "Warning: locked profile '{profile}' could not be resolved ({detail}); using the user-wide profile instead.",
-      "userWideProfileUnresolvable": "Warning: user-wide profile '{profile}' could not be resolved ({detail}); using the default 'full' profile instead."
+      "userWideProfileUnresolvable": "Warning: user-wide profile '{profile}' could not be resolved ({detail}); using the default 'full' profile instead.",
+      "deprecatedArchiveDestination": "'archive.destination' is deprecated and no longer selects a destination: archive bookkeeping always lands in the planning root. Remove the key; run 'rasen archive relocate --to in-repo' to consolidate existing archives."
     }
   },
   "completion": {
@@ -1274,6 +1274,9 @@
             "yes": {
               "description": "Skip confirmation prompts"
             },
+            "confirm-prune": {
+              "description": "Confirm a 'prune' destination's permanent deletion (separate from --yes; required in addition to it)"
+            },
             "skip-specs": {
               "description": "Skip spec update operations (useful for infrastructure, tooling, or doc-only changes)"
             },
@@ -1283,17 +1286,17 @@
             "json": {
               "description": "Output as JSON (non-interactive)"
             },
-            "keep-ephemera": {
-              "description": "Skip the ephemera cleaner and preserve all ephemera files"
-            },
-            "dry-run": {
-              "description": "Preview all planned archive actions without executing anything"
-            },
             "store": {
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
               "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+            },
+            "keep-ephemera": {
+              "description": "Skip the ephemera cleaner and preserve all ephemera files"
+            },
+            "dry-run": {
+              "description": "Preview all planned archive actions without executing anything"
             }
           },
           "commands": {
@@ -2461,14 +2464,17 @@
                 "dry-run": {
                   "description": "Preview only; never move files"
                 },
-                "discard-absorbed-conclusions": {
-                  "description": "Delete machine-root conclusion directories you have confirmed are absorbed by handoff or evidence (preserved by default)"
+                "include-tracked": {
+                  "description": "Also move git-tracked ephemera, leaving the deletions uncommitted"
                 },
                 "json": {
                   "description": "Output as JSON (non-interactive; requires --yes to execute)"
                 },
                 "yes": {
                   "description": "Skip the confirmation prompt (required to execute in --json mode)"
+                },
+                "discard-absorbed-conclusions": {
+                  "description": "Delete machine-root conclusion directories you have confirmed are absorbed by handoff or evidence (preserved by default)"
                 }
               }
             }
@@ -2477,57 +2483,39 @@
         "agent": {
           "description": "Inspect and control base agent runtime state",
           "commands": {
-            "edit-boundary": {
-              "description": "Control the checkout-scoped runtime edit boundary",
-              "commands": {
-                "set": {
-                  "description": "Set the checkout-scoped edit boundary to an existing directory",
-                  "options": {
-                    "runtime": {
-                      "description": "Force runtime: claude, codex, or zed"
-                    },
-                    "json": {
-                      "description": "Output stable JSON"
-                    }
-                  }
-                },
-                "status": {
-                  "description": "Show the active boundary and observed host enforcement",
-                  "options": {
-                    "runtime": {
-                      "description": "Force runtime: claude, codex, or zed"
-                    },
-                    "json": {
-                      "description": "Output stable JSON"
-                    }
-                  }
-                },
-                "clear": {
-                  "description": "Clear the checkout-scoped edit boundary",
-                  "options": {
-                    "runtime": {
-                      "description": "Force runtime: claude, codex, or zed"
-                    },
-                    "json": {
-                      "description": "Output stable JSON"
-                    }
-                  }
-                }
-              }
-            },
             "dispatch": {
               "description": "Dispatch a structured Claude print-mode worker",
               "options": {
-                "runtime": { "description": "Worker runtime (claude)" },
-                "prompt-file": { "description": "UTF-8 file containing the complete worker prompt" },
-                "contract": { "description": "Structured result contract: leaf or evaluate" },
-                "sandbox": { "description": "Worker permissions: read-only or workspace-write" },
-                "model": { "description": "Claude model override" },
-                "effort": { "description": "Claude effort: low, medium, high, xhigh, or max" },
-                "cwd": { "description": "Worker working directory" },
-                "timeout-ms": { "description": "Bounded worker timeout in milliseconds" },
-                "resume": { "description": "Exact Claude session ID to resume" },
-                "json": { "description": "Output one machine-readable receipt" }
+                "runtime": {
+                  "description": "Worker runtime (claude)"
+                },
+                "prompt-file": {
+                  "description": "UTF-8 file containing the complete worker prompt"
+                },
+                "contract": {
+                  "description": "Structured result contract: leaf or evaluate"
+                },
+                "sandbox": {
+                  "description": "Worker permissions: read-only or workspace-write"
+                },
+                "model": {
+                  "description": "Claude model override"
+                },
+                "effort": {
+                  "description": "Claude effort: low, medium, high, xhigh, or max"
+                },
+                "cwd": {
+                  "description": "Worker working directory"
+                },
+                "timeout-ms": {
+                  "description": "Bounded worker timeout in milliseconds"
+                },
+                "resume": {
+                  "description": "Exact Claude session ID to resume"
+                },
+                "json": {
+                  "description": "Output one machine-readable receipt"
+                }
               }
             },
             "context": {

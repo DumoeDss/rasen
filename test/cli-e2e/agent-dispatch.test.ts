@@ -166,7 +166,7 @@ describe('rasen agent dispatch --runtime claude', () => {
       args: string[];
     };
     expect(summary.prompt).toContain('第一行\n第二行');
-    expect(summary.cwd).toBe(cwd);
+    expect(summary.cwd).toBe(fs.realpathSync.native(cwd));
     expect(summary.args.join(' ')).not.toContain('第一行');
 
     const resumed = await dispatch(prompt, ['--resume', freshReceipt.sessionId]);

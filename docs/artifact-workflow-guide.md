@@ -249,7 +249,7 @@ An agent can't perceive its own context usage — it can only **measure** it. `r
 
 Regardless of profile, `rasen init` installs a set of expert skills (generated as `openspec-*`) that can be invoked individually during verification / planning:
 
-`/review` (code review), `/qa` `/qa-only` (QA), `/cso` (security), `/benchmark` (performance), `/design-review` `/design-consultation` (design / visual), `/investigate` `/careful` (investigation / destructive-command caution), `/codex`, `/setup-browser-cookies`, etc. Checkout-scoped write guidance lives in the base runtime: `rasen agent edit-boundary set|status|clear`; always read `status` and distinguish `hard`, `soft`, and `unsupported`.
+`/review` (code review), `/qa` `/qa-only` (QA), `/cso` (security), `/benchmark` (performance), `/design-review` `/design-consultation` (design / visual), `/investigate` `/careful` (investigation / destructive-command caution), `/codex`, `/setup-browser-cookies`, etc. For scope control, declare the evidence-backed affected area before editing and inspect the actual changed-file set and diff before completion. Managed sandbox/workspace policy remains the mechanism for execution containment.
 
 ---
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
@@ -21,6 +21,13 @@ const BUILTIN_NAMES = [
   'small-feature',
 ] as const;
 const PIPELINE_LOCALES = ['en', 'ja', 'zh-cn'] as const;
+const fakeClaudeBinary = path.join(
+  cliProjectRoot,
+  'test',
+  'fixtures',
+  'claude',
+  process.platform === 'win32' ? 'fake-claude.cmd' : 'fake-claude.mjs'
+);
 
 function packagedPipeline(
   name: string,
@@ -120,6 +127,10 @@ describe('pipeline command', () => {
   const projectRoot = process.cwd();
   const testDir = path.join(projectRoot, 'test-pipeline-command-tmp');
   const changesDir = path.join(testDir, 'rasen', 'changes');
+
+  beforeAll(async () => {
+    if (process.platform !== 'win32') await fs.chmod(fakeClaudeBinary, 0o755);
+  });
 
   beforeEach(async () => {
     await fs.mkdir(changesDir, { recursive: true });
@@ -821,13 +832,7 @@ stages:
           cwd: testDir,
           env: {
             ...env,
-            RASEN_CLAUDE_BIN: path.join(
-              cliProjectRoot,
-              'test',
-              'fixtures',
-              'claude',
-              process.platform === 'win32' ? 'fake-claude.cmd' : 'fake-claude.mjs'
-            ),
+            RASEN_CLAUDE_BIN: fakeClaudeBinary,
           },
         }
       );

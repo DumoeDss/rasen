@@ -965,7 +965,6 @@
       "invalidUpdatePin": "設定の 'update.pin' フィールドが無効です（真偽値である必要があります）",
       "invalidArchiveTiming": "設定の'archive.timing'フィールドが無効です（'on-merge'または'in-ship'を指定してください）",
       "invalidArchiveDestination": "設定の'archive.destination'フィールドが無効です（'in-repo'、'external'、または'prune'を指定してください）",
-      "deprecatedArchiveDestination": "'archive.destination' は非推奨になり、保存先を選択しなくなりました：アーカイブの記帳は常に計画ルートに配置されます。このキーを削除してください。既存のアーカイブは 'rasen archive relocate --to in-repo' で計画ルートに集約できます。",
       "invalidArchive": "設定の'archive'フィールドが無効です（オブジェクトを指定してください）",
       "invalidAutopilotGates": "設定の'autopilot.gates'フィールドが無効です（'on'または'off'を指定してください）",
       "invalidAutopilotSelection": "設定の'autopilot.selection'フィールドが無効です（'classify'、'manual'、または'compose'を指定してください）",
@@ -978,7 +977,8 @@
       "profileLockShadowedByOverride": "注: ロックされたプロファイル '{profile}' は、このプロジェクトの workflows オーバーライドにより無効化されています。",
       "profileLockCustom": "警告: 'custom' はロックできるプロファイルではありません。ユーザー全体のプロファイルを代わりに使用します。",
       "profileLockUnresolvable": "警告: ロックされたプロファイル '{profile}' を解決できませんでした（{detail}）。ユーザー全体のプロファイルを代わりに使用します。",
-      "userWideProfileUnresolvable": "警告: ユーザー全体のプロファイル '{profile}' を解決できませんでした（{detail}）。デフォルトの 'full' プロファイルを代わりに使用します。"
+      "userWideProfileUnresolvable": "警告: ユーザー全体のプロファイル '{profile}' を解決できませんでした（{detail}）。デフォルトの 'full' プロファイルを代わりに使用します。",
+      "deprecatedArchiveDestination": "'archive.destination' は非推奨になり、保存先を選択しなくなりました：アーカイブの記帳は常に計画ルートに配置されます。このキーを削除してください。既存のアーカイブは 'rasen archive relocate --to in-repo' で計画ルートに集約できます。"
     }
   },
   "completion": {
@@ -1274,6 +1274,9 @@
             "yes": {
               "description": "確認プロンプトを省略します"
             },
+            "confirm-prune": {
+              "description": "'prune' 保存先の完全削除を確認します（--yesとは別）"
+            },
             "skip-specs": {
               "description": "仕様の更新処理を省略します"
             },
@@ -1283,17 +1286,17 @@
             "json": {
               "description": "JSONで出力します（非対話）"
             },
-            "keep-ephemera": {
-              "description": "ephemera クリーナーをスキップし、すべての ephemera ファイルを保持します"
-            },
-            "dry-run": {
-              "description": "計画されたすべてのアーカイブ操作をプレビューし、何も実行しません"
-            },
             "store": {
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
               "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+            },
+            "keep-ephemera": {
+              "description": "ephemera クリーナーをスキップし、すべての ephemera ファイルを保持します"
+            },
+            "dry-run": {
+              "description": "計画されたすべてのアーカイブ操作をプレビューし、何も実行しません"
             }
           },
           "commands": {
@@ -2461,14 +2464,17 @@
                 "dry-run": {
                   "description": "プレビューのみ行い、ファイルを移動しません"
                 },
-                "discard-absorbed-conclusions": {
-                  "description": "handoffまたはevidenceによって吸収されたと確認したmachine-root結論ディレクトリを削除します（デフォルトは保持）"
+                "include-tracked": {
+                  "description": "Git管理中の一時成果物も移動し、削除は未コミットのまま残します"
                 },
                 "json": {
                   "description": "JSONで出力します（非対話、実行には--yesが必要）"
                 },
                 "yes": {
                   "description": "確認プロンプトを省略します（--jsonでの実行に必須）"
+                },
+                "discard-absorbed-conclusions": {
+                  "description": "handoffまたはevidenceによって吸収されたと確認したmachine-root結論ディレクトリを削除します（デフォルトは保持）"
                 }
               }
             }
@@ -2477,57 +2483,39 @@
         "agent": {
           "description": "ベースエージェントの実行時状態を検査・制御します",
           "commands": {
-            "edit-boundary": {
-              "description": "チェックアウトスコープの実行時編集境界を制御します",
-              "commands": {
-                "set": {
-                  "description": "チェックアウトスコープの編集境界を既存のディレクトリに設定します",
-                  "options": {
-                    "runtime": {
-                      "description": "ランタイムを強制: claude、codex、または zed"
-                    },
-                    "json": {
-                      "description": "JSONで出力します"
-                    }
-                  }
-                },
-                "status": {
-                  "description": "アクティブな境界と観測されたホスト強制を表示します",
-                  "options": {
-                    "runtime": {
-                      "description": "ランタイムを強制: claude、codex、または zed"
-                    },
-                    "json": {
-                      "description": "JSONで出力します"
-                    }
-                  }
-                },
-                "clear": {
-                  "description": "チェックアウトスコープの編集境界をクリアします",
-                  "options": {
-                    "runtime": {
-                      "description": "ランタイムを強制: claude、codex、または zed"
-                    },
-                    "json": {
-                      "description": "JSONで出力します"
-                    }
-                  }
-                }
-              }
-            },
             "dispatch": {
               "description": "構造化された Claude print-mode worker をディスパッチ",
               "options": {
-                "runtime": { "description": "ワーカー runtime（claude）" },
-                "prompt-file": { "description": "完全なワーカープロンプトを含む UTF-8 ファイル" },
-                "contract": { "description": "構造化結果契約: leaf または evaluate" },
-                "sandbox": { "description": "権限: read-only または workspace-write" },
-                "model": { "description": "Claude model override" },
-                "effort": { "description": "Claude effort: low, medium, high, xhigh, max" },
-                "cwd": { "description": "ワーカーの作業ディレクトリ" },
-                "timeout-ms": { "description": "タイムアウト（ミリ秒）" },
-                "resume": { "description": "再開する正確な Claude session ID" },
-                "json": { "description": "機械可読 receipt を1件出力" }
+                "runtime": {
+                  "description": "ワーカー runtime（claude）"
+                },
+                "prompt-file": {
+                  "description": "完全なワーカープロンプトを含む UTF-8 ファイル"
+                },
+                "contract": {
+                  "description": "構造化結果契約: leaf または evaluate"
+                },
+                "sandbox": {
+                  "description": "権限: read-only または workspace-write"
+                },
+                "model": {
+                  "description": "Claude model override"
+                },
+                "effort": {
+                  "description": "Claude effort: low, medium, high, xhigh, max"
+                },
+                "cwd": {
+                  "description": "ワーカーの作業ディレクトリ"
+                },
+                "timeout-ms": {
+                  "description": "タイムアウト（ミリ秒）"
+                },
+                "resume": {
+                  "description": "再開する正確な Claude session ID"
+                },
+                "json": {
+                  "description": "機械可読 receipt を1件出力"
+                }
               }
             },
             "context": {

@@ -1,6 +1,6 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { EDIT_BOUNDARY_GUIDANCE, PREAMBLE_LITE } from './_shared.js';
+import { PREAMBLE_LITE } from './_shared.js';
 
 const BODY = `
 <!-- adapted from mattpocock/skills (MIT, Copyright Matt Pocock) -->
@@ -62,12 +62,16 @@ Off the main flow — reach for each by name when its situation comes up.
 **Safety controls** — use these during risky work.
 
 - **\`rasen-careful\`** — warn before destructive commands (rm -rf, DROP TABLE, force-push).
-- **\`rasen agent edit-boundary set|status|clear\`** — checkout-scoped edit
-  boundary in the base runtime. Read status: \`hard\` denies only covered
-  structured writes, \`soft\` requires cooperation, and \`unsupported\` leaves
-  edits unrestricted.
-
-${EDIT_BOUNDARY_GUIDANCE}
+- **\`rasen-investigate\`** — minimise the reproduction, declare the
+  evidence-backed affected area before editing, and record the reason before
+  any necessary scope expansion.
+- **\`rasen-review\`**, **\`rasen-verify-change\`**, and
+  **\`rasen-verify-enhanced\`** — inspect the actual changed-file set and diff,
+  and surface unexplained out-of-scope work before delivery.
+- Managed daemon/ECP workspace access and sandbox policy are execution
+  containment controls when a managed runner is available. Scope declaration
+  and diff review are evidence disciplines; they do not mechanically deny
+  writes.
 `;
 
 export function getNavigatorSkillTemplate(): SkillTemplate {

@@ -2,11 +2,11 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, dev/0.1.5]
+    branches: [main, 'dev/**']
   merge_group:
-    branches: [main, dev/0.1.5]
+    branches: [main, 'dev/**']
   push:
-    branches: [main, dev/0.1.5]
+    branches: [main, 'dev/**']
   workflow_dispatch:
 
 permissions:
