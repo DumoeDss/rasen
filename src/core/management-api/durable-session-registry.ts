@@ -2222,6 +2222,27 @@ export function createSessionHostCoordinator(
     options.transcriptProbe
     ?? createExactClaudeTranscriptProbe({ filesystem });
   let observerTail = Promise.resolve();
+  type ActiveBootstrap = Readonly<{ messageIdDigest: string }>;
+  const activeBootstraps = new Map<string, ActiveBootstrap>();
+
+  function isLocallyActiveBootstrap(
+    session: DurableSessionRecord
+  ): boolean {
+    const active = activeBootstraps.get(session.sessionKey);
+    return (
+      active !== undefined
+      && session.status === 'starting'
+      && session.owner === undefined
+      && session.claudeSessionId === undefined
+      && (
+        session.inFlight === undefined
+        || (
+          session.inFlight.messageIdDigest === active.messageIdDigest
+          && session.inFlight.kind === 'interactive'
+        )
+      )
+    );
+  }
 
   async function mutateSession<T>(
     sessionKey: string,
@@ -2315,6 +2336,13 @@ export function createSessionHostCoordinator(
     if (!read.ok) return coordinatorFailure(read.diagnostic);
     const before = read.session;
     if (before.status === 'retired' || before.status === 'stale') {
+      return { ok: true, session: before };
+    }
+    if (isLocallyActiveBootstrap(before)) {
+      // This coordinator is still advancing the reservation toward dispatch,
+      // or the durable fence already matches that exact bootstrap. A
+      // concurrent local list/get is observation, not evidence that the owner
+      // crashed before binding.
       return { ok: true, session: before };
     }
 
@@ -2568,10 +2596,22 @@ export function createSessionHostCoordinator(
 
       const leaseResult = await acquireLease(validated.data.sessionKey);
       if (!leaseResult.ok) return coordinatorFailure(leaseResult.diagnostic);
+      let activeBootstrap: ActiveBootstrap | undefined;
       try {
         const messageIdDigest = durableSessionMessageIdDigest(
           validated.data.messageId
         );
+        const beforeReserve = await store.get(validated.data.sessionKey);
+        if (!beforeReserve.ok) {
+          if (
+            beforeReserve.diagnostic.code !== 'registry_absent'
+            && beforeReserve.diagnostic.code !== 'session_not_found'
+          ) {
+            return coordinatorFailure(beforeReserve.diagnostic);
+          }
+          activeBootstrap = { messageIdDigest };
+          activeBootstraps.set(validated.data.sessionKey, activeBootstrap);
+        }
         const reserved = await store.reserve({
           sessionKey: validated.data.sessionKey,
           role: validated.data.role,
@@ -2825,6 +2865,13 @@ export function createSessionHostCoordinator(
           result: created.result,
         };
       } finally {
+        if (
+          activeBootstrap !== undefined
+          && activeBootstraps.get(validated.data.sessionKey)
+            === activeBootstrap
+        ) {
+          activeBootstraps.delete(validated.data.sessionKey);
+        }
         await leaseResult.lease.release();
       }
     },

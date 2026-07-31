@@ -766,6 +766,128 @@ describe('durable reusable-session coordinator and recovery', () => {
     expect(fake.calls.create).toHaveLength(1);
   });
 
+  it('startup observations do not invalidate a reservation or in-flight bootstrap', async () => {
+    const run = makeRun();
+    const cwd = makeWorkspace();
+    const fake = createFakeSupervisor();
+    const coordinator = createSessionHostCoordinator({
+      run,
+      supervisor: fake.supervisor,
+      ownerInstanceId: 'owner-a',
+      transcriptProbe: transcriptExists,
+    });
+
+    const releaseCreate = fake.pauseNextCreate();
+    let releaseReserve!: () => void;
+    const reserveGate = new Promise<void>((resolve) => {
+      releaseReserve = resolve;
+    });
+    let markReservationVisible!: () => void;
+    const reservationVisible = new Promise<void>((resolve) => {
+      markReservationVisible = resolve;
+    });
+    const originalReserve = coordinator.store.reserve.bind(coordinator.store);
+    coordinator.store.reserve = async (input) => {
+      const result = await originalReserve(input);
+      markReservationVisible();
+      await reserveGate;
+      return result;
+    };
+
+    const registration = register(coordinator, cwd, 'reviewer@startup');
+    await reservationVisible;
+    const beforeDispatchFence = await coordinator.list();
+    releaseReserve();
+    await waitForCreateCall(fake);
+
+    const duringBootstrap = await coordinator.list();
+    releaseCreate();
+    const result = await registration;
+
+    expect(result).toMatchObject({
+      ok: true,
+      session: { sessionKey: 'reviewer@startup', status: 'idle' },
+    });
+    expect(beforeDispatchFence).toMatchObject({
+      ok: true,
+      sessions: [
+        { sessionKey: 'reviewer@startup', status: 'starting' },
+      ],
+    });
+    expect(duringBootstrap).toMatchObject({
+      ok: true,
+      sessions: [
+        { sessionKey: 'reviewer@startup', status: 'starting' },
+      ],
+    });
+    expect(fake.calls.retire).toHaveLength(0);
+  });
+
+  it('does not protect an older crashed reservation during a conflicting registration', async () => {
+    const run = makeRun();
+    const cwd = makeWorkspace();
+    const fake = createFakeSupervisor();
+    const coordinator = createSessionHostCoordinator({
+      run,
+      supervisor: fake.supervisor,
+      ownerInstanceId: 'owner-a',
+      transcriptProbe: transcriptExists,
+    });
+    expect(await coordinator.store.reserve({
+      sessionKey: 'reviewer@crashed',
+      role: 'reviewer',
+      nodeId: 'review',
+      invocationId: 'one',
+      cwd,
+      attachedRoots: [cwd],
+      touchPolicy,
+      launcherSessionId: 'launcher-a',
+    })).toMatchObject({
+      ok: true,
+      session: { status: 'starting' },
+    });
+
+    let releaseConflict!: () => void;
+    const conflictGate = new Promise<void>((resolve) => {
+      releaseConflict = resolve;
+    });
+    let markConflictVisible!: () => void;
+    const conflictVisible = new Promise<void>((resolve) => {
+      markConflictVisible = resolve;
+    });
+    const originalReserve = coordinator.store.reserve.bind(coordinator.store);
+    coordinator.store.reserve = async (input) => {
+      const result = await originalReserve(input);
+      markConflictVisible();
+      await conflictGate;
+      return result;
+    };
+
+    const registration = register(
+      coordinator,
+      cwd,
+      'reviewer@crashed',
+      'replacement-bootstrap'
+    );
+    await conflictVisible;
+    const listed = await coordinator.list();
+    releaseConflict();
+    const result = await registration;
+
+    expect(listed).toMatchObject({
+      ok: true,
+      sessions: [
+        {
+          sessionKey: 'reviewer@crashed',
+          status: 'stale',
+          lifecycle: { reason: 'missing_claude_session_identity' },
+        },
+      ],
+    });
+    expect(result).toMatchObject({ ok: false, code: 'wake_busy' });
+    expect(fake.calls.create).toHaveLength(0);
+  });
+
   it('keeps an explainable reservation across bootstrap and final-settlement failures', async () => {
     const bootstrapRun = makeRun();
     const cwd = makeWorkspace();
@@ -820,6 +942,16 @@ describe('durable reusable-session coordinator and recovery', () => {
     )).sessions[0]).toMatchObject({
       sessionKey: 'reviewer@bind-fail',
       status: 'starting',
+    });
+    expect(await bindCoordinator.list()).toMatchObject({
+      ok: true,
+      sessions: [
+        {
+          sessionKey: 'reviewer@bind-fail',
+          status: 'stale',
+          lifecycle: { reason: 'missing_claude_session_identity' },
+        },
+      ],
     });
   });
 
