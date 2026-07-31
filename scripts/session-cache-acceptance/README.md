@@ -117,6 +117,8 @@ inconclusive, never a forced hit/miss.
 For a control wake, classification uses the first distinct provider request,
 deduplicated by assistant message identity; later tool-continuation requests
 cannot reclassify the idle boundary after the entry request has rewritten it.
+Distinct all-zero synthetic assistant envelopes are transcript rows, not
+provider requests, and are excluded from request selection.
 The bootstrap's last distinct provider request supplies the preceding
 four-counter context estimate, persisted as a bounded comparison scalar in the
 checkpoint and result. Contexts below 30,000 tokens fail closed as too weak for

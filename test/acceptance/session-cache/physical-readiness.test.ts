@@ -1060,7 +1060,7 @@ describe('physical observation readiness hardening', () => {
     ).toThrow(/transcript_usage_identity_drift/u);
   });
 
-  it('captures the last distinct bootstrap request as the comparison context', () => {
+  it('captures the last provider request before a synthetic zero-usage row', () => {
     const fixture = transcriptFixture();
     fs.appendFileSync(
       fixture.transcriptPath,
@@ -1098,6 +1098,18 @@ describe('physical observation readiness hardening', () => {
               cache_creation_input_tokens: 20,
               cache_read_input_tokens: 30,
               output_tokens: 9,
+            },
+          },
+        },
+        {
+          type: 'assistant',
+          message: {
+            id: 'synthetic-terminal-envelope',
+            usage: {
+              input_tokens: 0,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+              output_tokens: 0,
             },
           },
         },

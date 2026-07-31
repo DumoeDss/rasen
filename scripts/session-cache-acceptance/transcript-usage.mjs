@@ -281,6 +281,13 @@ function deduplicatedUsageRequests(entries) {
     const usage = usageFromEntry(entry);
     if (usage === null) continue;
     terminalAssistantRows += 1;
+    if (Object.values(usage.counters).every((value) => value === 0)) {
+      // Claude may append a synthetic assistant envelope with a distinct
+      // message ID and all-zero usage after the final provider response.
+      // It is a transcript row, but it is not a provider request and cannot
+      // define either the wake boundary or the bootstrap context.
+      continue;
+    }
     const existingIndex = requestIndexes.get(usage.messageIdentity);
     if (existingIndex === undefined) {
       requestIndexes.set(usage.messageIdentity, requests.length);
