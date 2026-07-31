@@ -88,4 +88,3 @@ When a successor window cannot be launched (unsupported terminal, spawn failure)
 #### Scenario: Spawn fails
 - **WHEN** the spawn attempt errors or the platform terminal form is unknown
 - **THEN** the workflow SHALL print the working directory, the bootstrap prompt (or its file path), and the command to launch the successor manually
-

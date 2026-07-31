@@ -49,4 +49,3 @@ Relocate SHALL support `--dry-run` (list every archived change and its source an
 
 - **WHEN** the user runs `rasen archive relocate --to external`
 - **THEN** the command exits with an error explaining the external destination is retired
-

@@ -269,4 +269,3 @@ SHALL be reported by the theme catalog and activation experience.
 - **WHEN** `ui.theme` is set to an identifier containing path syntax, uppercase
   characters, whitespace, or characters outside the theme-id contract
 - **THEN** validation rejects it before any configuration file is written
-

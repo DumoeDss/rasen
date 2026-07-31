@@ -75,4 +75,3 @@ Migrating a legacy ephemeron moves it FROM the machine-home work location TO the
 - **WHEN** migration encounters run-state for an archived change
 - **THEN** the run-state SHALL be discarded rather than migrated
 - **AND** the migration report SHALL list the discarded files
-

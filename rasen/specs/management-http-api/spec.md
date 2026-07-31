@@ -410,4 +410,3 @@ and deeper path suffixes SHALL not be admitted as theme operations.
   path, GET to the import path, or addresses a deeper theme suffix
 - **THEN** the request is rejected or falls through according to the management
   router's exact-depth contract without modifying the theme library
-

@@ -68,4 +68,3 @@ Adopt SHALL never stage, commit, or otherwise write to any git index. It SHALL s
 #### Scenario: Completion prints per-repo commit suggestions
 - **WHEN** adopt completes successfully
 - **THEN** the output includes one suggested git commit command for the source repo (removals plus pointer config) and one for the store repo (additions), and neither has been executed
-

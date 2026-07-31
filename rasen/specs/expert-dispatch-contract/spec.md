@@ -108,4 +108,3 @@ The shared expert PREAMBLE (`src/core/templates/experts/_shared.ts`) SHALL scope
 - **THEN** it SHALL scope the "Default to action" / proactive-fix disposition to interactive/standalone sessions
 - **AND** SHALL state that a dispatched leaf worker records out-of-scope issues in its DONE durable-findings for the LEAD, rather than investigating or fixing them
 - **AND** the scoping SHALL be consistent with the dispatched-mode one-unit-of-work contract
-

@@ -54,4 +54,3 @@ Until previously externalized archives are migrated back to the planning root, e
 
 - **WHEN** archive is invoked for a change already archived to the machine home, or recorded as pruned in its ship log
 - **THEN** the invocation SHALL report the existing outcome and stop cleanly without re-gating, re-syncing, or re-moving
-

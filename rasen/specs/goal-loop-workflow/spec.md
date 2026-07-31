@@ -243,4 +243,3 @@ The evaluate gate's fresh reviewer (Step L evaluate branch and goal-command's te
 - **WHEN** the generated Tier-C evaluate fallback is inspected
 - **THEN** its freshly-reset single-context evaluation SHALL apply the same completion-audit discipline
 - **AND** SHALL still forbid the implementer self-certifying the rubric
-

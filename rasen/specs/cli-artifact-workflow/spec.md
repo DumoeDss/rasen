@@ -421,4 +421,3 @@ The change-scoped workflow surfaces (`rasen status --change <n> --json`, `rasen 
 - **WHEN** the project's machine home holds archives from the retired external destination
 - **THEN** the payload SHALL include `legacyArchiveDir`
 - **AND** the command SHALL perform no writes to produce it
-
