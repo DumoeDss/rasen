@@ -4,7 +4,9 @@ Date: 2026-08-01
 
 Mode: dispatched, report-only, independent non-author review
 
-Baseline / current committed HEAD: `04cea87ae5bea9af2d90f526455b6ea513cd57e8`
+Saved PR-head baseline: `04cea87ae5bea9af2d90f526455b6ea513cd57e8`
+
+Code/test delivery head: `4a07e3f508fcd6e24f62a5acb83eb5ef387c4863`
 
 Branch: `fix/pr121-file-placement-hardening`
 
@@ -65,14 +67,18 @@ Scope check: the implementation remains directed at the approved 0.1.6 file-plac
 
 **Required remediation:** add `rasen/changes/file-placement-hardening-closure/evidence/review-report.md` to the closure-owned inventory and refresh the final status counts after all review/fix rounds, while continuing to exclude the seven untracked `.rasen/.../ephemera/*.json` files from deliverables.
 
-## Verified surfaces
+## Verified surfaces at closure review
 
 - The dedicated `file_placement_recovery` job uses `ubuntu-latest`, `macos-latest`, and `windows-latest`, Node `20.19.0`, `VITEST_MAX_WORKERS: 1`, and the explicit archive engine/fault/path/accounting/ephemera/cleaner files. `test_pr_required`, `required-checks-pr`, and `required-checks-main` all depend on both the general matrix and this native matrix. Independent focused run: `test/ci-workflow-contract.test.ts`, 3/3 passed.
 - Independent parsing of the frozen snapshot and eight accepted JSON reports proved 341 assignments and 341 unique report paths, exact per-partition membership, zero duplicate/missing/extra paths, zero size/SHA drift, 1,492/1,492 passed suites, and `5,946 = 5,912 passed + 34 pending + 0 failed + 0 todo`. All raw report byte lengths and SHA-256 values match `direct-partition-results.md`.
 - The old `6,050 = 6,012 + 38` aggregate is consistently marked **INVALID / SUPERSEDED**. The P4, P6, and P8 initial failures and fixed-report hashes are retained. P6 remediation preserves the five exact 0.1.6 diagnostic projections with `archive: null`, adds the immutable top-level plan, and tests zero apply for malformed-sidecar and target-`EACCES` blockers; its independent re-review is recorded CLEAN. P4 is owned by the separate Windows-lock child; P8 preserves the runtime `windowsHide: true` call and changes only type syntax.
 - The retired kill-capable runner and ownership helper are absent and untracked. Searches found no executable residual reference or replacement kill capability. The incident record preserves the unrelated Vite-process terminations and later PID-reuse/runner failures; all runner outputs are superseded. The accepted protocol performs no custom/manual termination and states process cleanliness as `NOT EVALUATED`.
 - Package version is `0.1.6`, the Node engine floor is `>=20.19.0`, and `package.json`/lockfile are unchanged. Archive JSON compatibility is additive, existing CLI forms and the hidden `experimental -> init` alias remain present.
-- Remote Linux/macOS/Windows native recovery URLs/results, required aggregate result, commit, push, PR update, and archive are explicitly pending in `handoff/delivery.md`; closure does not claim delivery. `git ls-files -- .rasen` returns no tracked path.
+- At that pre-delivery review point, remote Linux/macOS/Windows native recovery
+  URLs/results, required aggregate result, commit, push, PR update, and archive
+  were explicitly pending in `handoff/delivery.md`. The delivery addendum below
+  supersedes that remote-state snapshot. `git ls-files -- .rasen` returned no
+  tracked path.
 - Independent static gates: closure strict validation 1/1 valid; main-spec strict validation 208/208 valid (INFO-only long-text suggestions); `git diff --check` exit 0 with only checkout line-ending warnings.
 
 ## Standards axis
@@ -177,7 +183,8 @@ are unaffected.
   `1b6a03a720da5688b3e370076049de0d7bdb9fb67924736ba658563a3b0d4f09`.
   The denominator fields remain eight, with per-partition file counts
   `43,43,43,43,43,42,42,42`.
-- Fresh `git status --short --untracked-files=all` reconciliation remains 40
+- The historical round-2 `git status --short --untracked-files=all`
+  reconciliation remained 40
   modified tracked + 112 untracked paths; seven `.rasen` invocation-state
   paths are excluded, leaving 145 deliverables and zero missing inventory
   entries. No `.rasen` path is tracked. The retired runner/helper remain absent,
@@ -185,10 +192,39 @@ are unaffected.
 - Closure strict validation is 1/1 valid with zero issues. Main-spec strict
   validation is 208/208 valid with zero failures and INFO-only long-text
   suggestions.
-- Remote Linux/macOS/Windows native recovery URLs and results, the required
-  aggregate result, commit, push, PR delivery/update, and archive remain
-  explicitly PENDING in `handoff/delivery.md` and `evidence/release-evidence.md`.
-  These are delivery-time gates, not review findings, and closure still makes
-  no delivery claim.
+- At that round-2 review point, remote Linux/macOS/Windows native recovery URLs
+  and results, the required aggregate result, commit, push, PR delivery/update,
+  and archive were explicitly PENDING in `handoff/delivery.md` and
+  `evidence/release-evidence.md`. The delivery addendum below supersedes that
+  remote-state snapshot; these were delivery-time gates, not review findings.
 - No partition or full-suite test was run in round 2; no frozen test input was
   modified.
+
+## Delivery review addendum
+
+The second delivery run
+https://github.com/DumoeDss/rasen/actions/runs/30652214877 exposed three
+test-fixture portability assumptions after closure review:
+
+- Windows Node 20 rejected same-path recreation while the fingerprint handle
+  was still open, so the intended same-byte identity-race injection stopped
+  early with `EPERM`.
+- The archive fixture compared lexical temporary paths with
+  product-canonicalized paths on macOS and aliased Windows temporary roots.
+- A nominal `D:` bare root was absolute on Windows but relative on POSIX.
+
+The remediation changes only
+`test/core/archive-fault-matrix.test.ts`, `test/core/archive.test.ts`, and
+`test/core/file-placement.test.ts`. Product code and the
+`source-remove` / `ESTALE` fail-closed contract are unchanged. Independent
+diagnosis reproduced both the Node 20 handle conflict and the lexical/canonical
+namespace split. Independent Node `20.19.0` verification passed 3/3 files and
+103/103 tests, including 32/32 archive fault-matrix tests. A separate
+report-only review concluded CLEAN with 0 Blockers, 0 Majors, and 0 Minors.
+
+At code/test delivery head
+`4a07e3f508fcd6e24f62a5acb83eb5ef387c4863`, the third delivery run's Linux,
+macOS, and Windows Node-floor recovery jobs all pass. All general matrix jobs,
+the required `Test` aggregate, and `All checks passed` also pass in
+https://github.com/DumoeDss/rasen/actions/runs/30653983123. Delivery evidence
+and exact job URLs are tracked in `handoff/delivery.md`.

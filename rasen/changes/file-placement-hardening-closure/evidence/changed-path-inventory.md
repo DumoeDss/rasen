@@ -1,8 +1,10 @@
 # Changed-path inventory
 
 Date: 2026-08-01
-Saved baseline and current committed HEAD:
+Saved PR-head baseline:
 `04cea87ae5bea9af2d90f526455b6ea513cd57e8`.
+Current code/test delivery head:
+`4a07e3f508fcd6e24f62a5acb83eb5ef387c4863`.
 Working branch: `fix/pr121-file-placement-hardening`.
 
 The inventory is relative to the saved baseline. It is refreshed at closure
@@ -205,6 +207,41 @@ scenarios are reconciled into the closure-owned main
 `rasen/specs/opsx-pipeline-registry/spec.md`; the child implementation and
 evidence paths remain classified in their dedicated section above.
 
+## Delivery-time CI corrections
+
+The first delivery run exposed PR-wide `git diff --check` failures in eleven
+pre-existing main specs. Commit `827e4101c32295817d27808e034bd1408ca1db8b`
+removed only their trailing blank lines:
+
+```text
+rasen/specs/archive-destination/spec.md
+rasen/specs/archive-relocate/spec.md
+rasen/specs/change-work-dir/spec.md
+rasen/specs/cli-artifact-workflow/spec.md
+rasen/specs/config-key-registry/spec.md
+rasen/specs/expert-dispatch-contract/spec.md
+rasen/specs/goal-loop-workflow/spec.md
+rasen/specs/management-http-api/spec.md
+rasen/specs/session-relay/spec.md
+rasen/specs/store-adopt/spec.md
+rasen/specs/verify-ship-evidence/spec.md
+```
+
+The second delivery run exposed three test-fixture portability assumptions.
+Commit `4a07e3f508fcd6e24f62a5acb83eb5ef387c4863` keeps the already-classified
+archive tests under archive-engine ownership and adds this root-routing test
+path to the inventory:
+
+```text
+test/core/file-placement.test.ts
+```
+
+The delivery-time test corrections canonicalize an existing temporary
+directory before comparing it with product-canonicalized paths, use a
+platform-native absolute bare root, and inject the same-byte replacement only
+after the fingerprint file handle closes. They do not change product code or
+weaken the `source-remove` / `ESTALE` assertion.
+
 The closure evidence glob includes `evidence/runner-safety-review.md` and the
 superseded runner JSON incident artifacts. The unsafe transient runner and its
 ownership helper were reviewed and then deleted; they are intentionally absent
@@ -229,3 +266,8 @@ are not modified, staged, or claimed by closure:
 .rasen/changes/file-placement-hardening-root-routing/ephemera/auto-run.json
 .rasen/changes/file-placement-hardening-windows-lock-contention/ephemera/auto-run.json
 ```
+
+Final reconciliation against the saved PR-head baseline contains 157 changed
+tracked deliverable paths. All 157 are classified above. The seven untracked
+`.rasen/.../ephemera/*.json` invocation-state paths remain excluded, and no
+`.rasen` path is tracked.

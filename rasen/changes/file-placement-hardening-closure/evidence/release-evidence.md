@@ -2,14 +2,15 @@
 
 Date: 2026-08-01
 
-Saved baseline and current committed HEAD: `04cea87ae5bea9af2d90f526455b6ea513cd57e8`
+Saved PR-head baseline: `04cea87ae5bea9af2d90f526455b6ea513cd57e8`
+
+Code/test delivery head: `4a07e3f508fcd6e24f62a5acb83eb5ef387c4863`
 
 Branch: `fix/pr121-file-placement-hardening`
 
 Package: `0.1.6`
 
-This is apply evidence only. It does not authorize commit, push, PR delivery,
-or archive.
+This is delivery evidence. It does not authorize merge or archive.
 
 ## Complete local repository gate
 
@@ -74,6 +75,31 @@ pnpm exec vitest run test/ci-workflow-contract.test.ts --maxWorkers=1 --minWorke
 
 Exit 0 in 2.4 s; 1/1 file; 3/3 tests passed.
 
+## Delivery-time portability verification
+
+The second remote delivery run,
+https://github.com/DumoeDss/rasen/actions/runs/30652214877, exposed test-only
+platform assumptions after the product had already failed closed:
+
+- Windows Node 20 could not recreate a just-unlinked pathname while the
+  fingerprint reader still held the old object open, so the fault injector
+  produced `source-remove` / `EPERM` before the intended identity check.
+- macOS `/var` versus `/private/var` and Windows temporary-directory aliases
+  split the archive fixture's lexical path from the product-canonicalized path.
+- `path.join('D:', 'nowhere')` was absolute on Windows but relative on POSIX.
+
+Commit `4a07e3f508fcd6e24f62a5acb83eb5ef387c4863` changes only the three affected
+test files. It moves the same-byte replacement to guarded deletion's fourth
+`lstat`, after the fingerprint handle closes; canonicalizes the existing
+archive fixture directory; and uses a platform-native absolute bare root.
+The `source-remove` / `ESTALE` fail-closed assertion is unchanged.
+
+Independent Node `20.19.0` verification passed all three files:
+3/3 files and 103/103 tests (`32 + 51 + 20`), exit 0. The exact fault case
+passed 1/1, the full fault matrix passed 32/32, and the independent
+`canonicalizeExistingPath` probe passed 2/2. Independent review was CLEAN with
+0 Blockers, 0 Majors, and 0 Minors.
+
 ## Derived-surface contract sweep
 
 - `src/core/archive-consumer-invocation.ts` contains the required
@@ -114,10 +140,13 @@ issue.
 ## Diff and path inventory
 
 - `git diff --check`: exit 0; only Git line-ending conversion warnings.
-- final review-remediated status inventory: 40 modified tracked paths and 112
-  untracked paths, 152 total; after excluding the seven `.rasen` invocation
-  state paths, all 145 deliverables are classified in
-  `evidence/changed-path-inventory.md`.
+- relative to the saved PR-head baseline, the delivered code/test tree plus
+  closure evidence contains 157 changed tracked deliverable paths; all 157 are
+  classified in `evidence/changed-path-inventory.md`.
+- the delivery series is
+  `c231a8ca1d024a31a3957f2f4b9a1909a574a9a2` (implementation),
+  `827e4101c32295817d27808e034bd1408ca1db8b` (PR-wide EOF whitespace), and
+  `4a07e3f508fcd6e24f62a5acb83eb5ef387c4863` (portable test fixtures).
 - seven untracked `.rasen/changes/.../ephemera/*.json` invocation-state paths
   are explicitly excluded from deliverables and untouched.
 - `git ls-files -- .rasen`: 0 paths; no tracked `.rasen` ephemera.
@@ -126,15 +155,28 @@ issue.
   `0.1.6`, the Node floor remains `>=20.19.0`, and runtime validation used Node
   `v24.14.0`.
 
-## Remaining delivery gates
+## Remote delivery gates
 
-Local test-result, focused, static, validation, build, compatibility, and diff
-gates are complete. These are deliberately still pending:
+The code/test delivery head is pushed and PR #121 is updated. Third-run native
+recovery is complete:
 
-- remote `File placement recovery (linux-node-floor)` URL and success result;
-- remote `File placement recovery (macos-node-floor)` URL and success result;
-- remote `File placement recovery (windows-node-floor)` URL and success result;
-- required aggregate remote check result;
-- commit, push, PR update/delivery, and archive actions.
+- Linux Node floor: SUCCESS,
+  https://github.com/DumoeDss/rasen/actions/runs/30653983123/job/91233748963;
+- macOS Node floor: SUCCESS,
+  https://github.com/DumoeDss/rasen/actions/runs/30653983123/job/91233749015;
+- Windows Node floor: SUCCESS,
+  https://github.com/DumoeDss/rasen/actions/runs/30653983123/job/91233748984.
+
+The same run completed successfully:
+
+- general Linux, macOS, Node 24, and all three Windows-shard jobs: SUCCESS;
+- required `Test` aggregate: SUCCESS,
+  https://github.com/DumoeDss/rasen/actions/runs/30653983123/job/91235591079;
+- required `All checks passed`: SUCCESS,
+  https://github.com/DumoeDss/rasen/actions/runs/30653983123/job/91235591135.
+
+The separate Docs site run also passed:
+https://github.com/DumoeDss/rasen/actions/runs/30653982777.
+Archive remains an on-merge action and has not been performed.
 
 See `handoff/delivery.md` for the unchecked delivery fields.
