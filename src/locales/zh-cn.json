@@ -1293,10 +1293,22 @@
               "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
             },
             "keep-ephemera": {
-              "description": "跳过 ephemera 清理器，保留所有 ephemera 文件"
+              "description": "保留所有 ephemera 文件，同时继续执行完整安全检查"
             },
             "dry-run": {
               "description": "预演所有计划中的归档操作，不执行任何实际更改"
+            },
+            "save-plan": {
+              "description": "保存精确的预演归档计划并输出不透明的应用令牌"
+            },
+            "apply-plan": {
+              "description": "不重新规划，按保存的令牌应用或恢复精确计划"
+            },
+            "intent-template": {
+              "description": "以 JSON 输出完整的归档意图模板，且不修改文件"
+            },
+            "intent-file": {
+              "description": "从指定文件读取并严格校验完整的归档意图"
             }
           },
           "commands": {
@@ -2453,10 +2465,10 @@
           }
         },
         "work": {
-          "description": "维护机器主目录中的工作目录（迁移旧版仓库内临时产物）",
+          "description": "维护旧版机器主目录中的工作目录",
           "commands": {
             "migrate": {
-              "description": "将旧版仓库内流程临时产物（run-state、handoff、reports、ship-log）迁移到机器主目录",
+              "description": "将旧版机器主目录状态（run-state、handoff、reports、ship-log）迁移到 planning root 与 execution root",
               "options": {
                 "change": {
                   "description": "仅限一项当前或已归档变更"
@@ -2464,8 +2476,11 @@
                 "dry-run": {
                   "description": "仅预览；绝不移动文件"
                 },
-                "include-tracked": {
-                  "description": "同时移动由 Git 跟踪的临时产物，并保留未提交的删除"
+                "store": {
+                  "description": "选择 Store 作为规划根目录"
+                },
+                "project": {
+                  "description": "选择已注册项目作为所有迁移根目录"
                 },
                 "json": {
                   "description": "输出为 JSON（非交互；执行时需要 --yes）"

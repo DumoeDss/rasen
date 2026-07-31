@@ -1,46 +1,51 @@
-import { promises as fs } from 'fs';
-import { readFileSync, existsSync, writeFileSync } from 'fs';
-import path from 'path';
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import { getTaskProgressForChange, formatTaskStatus } from '../utils/task-progress.js';
-import { Validator } from './validation/validator.js';
-import { readProjectConfig, resolveArchiveTiming } from './project-config.js';
-import { resolveChangeWorkDir, resolveArchiveDestination } from './change-work.js';
-import { evidenceDir, ephemeraDir, resolveExecutionRoot } from './file-placement.js';
-import { classifyEphemera, applyEphemeraDeletion, type EphemeraClassification } from './ephemera-cleaner.js';
-import { resolveArchiveAccounting, writeArchiveJson, readArchiveInputSidecar, removeArchiveInputSidecar, type ProbeEntry, type HandoffAbsorbedEntry } from './archive-accounting.js';
+import { createHash } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import * as path from 'node:path';
 import chalk from 'chalk';
+
+import { getTaskProgressForChange, formatTaskStatus } from '../utils/task-progress.js';
+import {
+  applyArchive,
+  createArchiveIntentTemplate,
+  createArchivePlan,
+  loadStoredArchivePlan,
+  persistArchivePlan,
+  resolveArchiveSidecar,
+  type ArchiveApplyResult,
+  type ArchiveIntentV1,
+  type ArchivePlan,
+  type PreparedArchiveSpecAction,
+} from './archive-engine.js';
+import { getGlobalDataDir } from './global-config.js';
+import { resolveArchiveDestination, resolveChangeWorkDir } from './change-work.js';
+import { ephemeraDir, evidenceDir, resolveExecutionRoot } from './file-placement.js';
+import { readProjectConfig, resolveArchiveTiming } from './project-config.js';
 import {
   emitStoreRootBanner,
   isRootSelectionError,
+  isStoreSelectedRoot,
   resolveOpenSpecRoot,
   toRootOutput,
   withStoreFlag,
   type ResolvedOpenSpecRoot,
-  isStoreSelectedRoot,
 } from './root-selection.js';
-import {
-  findSpecUpdates,
-  buildUpdatedSpec,
-  writeUpdatedSpec,
-  type SpecUpdate,
-} from './specs-apply.js';
+import { buildUpdatedSpec, findSpecUpdates } from './specs-apply.js';
+import { Validator } from './validation/validator.js';
+
+function errorCode(error: unknown): string | undefined {
+  return (error as NodeJS.ErrnoException | undefined)?.code;
+}
 
 function isMissingPathError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as NodeJS.ErrnoException).code === 'ENOENT'
-  );
+  return errorCode(error) === 'ENOENT';
 }
 
 async function listActiveChangeNames(changesDir: string): Promise<string[]> {
   try {
     const entries = await fs.readdir(changesDir, { withFileTypes: true });
     return entries
-      .filter((entry) => entry.isDirectory() && entry.name !== 'archive')
-      .map((entry) => entry.name)
+      .filter(entry => entry.isDirectory() && entry.name !== 'archive')
+      .map(entry => entry.name)
       .sort();
   } catch (error) {
     if (!isMissingPathError(error)) throw error;
@@ -57,10 +62,12 @@ export interface ArchiveOptions {
   store?: string;
   project?: string;
   storePath?: string;
-  /** Skip the ephemera cleaner entirely — preserve all ephemera. */
   keepEphemera?: boolean;
-  /** Report all planned actions without executing anything. */
   dryRun?: boolean;
+  savePlan?: boolean;
+  applyPlan?: string;
+  intentTemplate?: boolean;
+  intentFile?: string;
 }
 
 interface ArchiveDiagnostic {
@@ -76,24 +83,25 @@ interface ArchiveResult {
   path: string;
   specsUpdated: boolean;
   totals?: { added: number; modified: number; removed: number; renamed: number };
-  /** Files deleted by the ephemera cleaner (empty when --keep-ephemera). */
   ephemeraDiscarded?: string[];
-  /** Files preserved and reported by the cleaner (unknown entries). */
   ephemeraPreserved?: string[];
-  /** True when a source manifest aborted the cleaner for this change. */
   ephemeraAborted?: boolean;
   ephemeraAbortReason?: string;
-  /** Present when --dry-run: the result describes a plan, not an execution. */
   dryRun?: boolean;
-  /** Spec sync plan entries (dry-run only: what WOULD be created/updated). */
   specSyncPlan?: Array<{ capability: string; status: string }>;
+  plan?: ArchivePlan;
+  transactionId?: string;
+  planHash?: string;
+  journalPath?: string;
+  blockers?: ArchivePlan['blockers'];
+  planToken?: string;
+  status?: ArchiveApplyResult['status'];
+  result?: ArchiveApplyResult;
+  mode?: 'intent-template' | 'plan' | 'apply';
+  intent?: ArchiveIntentV1;
+  compatibilityDiagnostic?: ArchiveDiagnostic;
 }
 
-/**
- * JSON mode is non-interactive: any point where the human flow would prompt or
- * print prose instead throws this error, which becomes a machine-readable
- * status entry with a non-zero exit code.
- */
 class ArchiveBlockedError extends Error {
   readonly diagnostic: ArchiveDiagnostic;
 
@@ -110,12 +118,8 @@ class ArchiveBlockedError extends Error {
 }
 
 function toArchiveDiagnostic(error: unknown): ArchiveDiagnostic {
-  if (error instanceof ArchiveBlockedError) {
-    return error.diagnostic;
-  }
-  if (isRootSelectionError(error)) {
-    return error.diagnostic;
-  }
+  if (error instanceof ArchiveBlockedError) return error.diagnostic;
+  if (isRootSelectionError(error)) return error.diagnostic;
   return {
     severity: 'error',
     code: 'archive_error',
@@ -123,53 +127,6 @@ function toArchiveDiagnostic(error: unknown): ArchiveDiagnostic {
   };
 }
 
-/**
- * Recursively copy a directory. Used when fs.rename fails (e.g. EPERM on Windows).
- */
-async function copyDirRecursive(src: string, dest: string): Promise<void> {
-  await fs.mkdir(dest, { recursive: true });
-  const entries = await fs.readdir(src, { withFileTypes: true });
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-    if (entry.isDirectory()) {
-      await copyDirRecursive(srcPath, destPath);
-    } else {
-      await fs.copyFile(srcPath, destPath);
-    }
-  }
-}
-
-/**
- * Move a directory from src to dest. On Windows, fs.rename() often fails with
- * EPERM when the directory is non-empty or another process has it open (IDE,
- * file watcher, antivirus). Fall back to copy-then-remove when rename fails
- * with EPERM or EXDEV.
- */
-async function moveDirectory(src: string, dest: string): Promise<void> {
-  try {
-    await fs.rename(src, dest);
-  } catch (err: any) {
-    const code = err?.code;
-    if (code === 'EPERM' || code === 'EXDEV') {
-      await copyDirRecursive(src, dest);
-      await fs.rm(src, { recursive: true, force: true });
-    } else {
-      throw err;
-    }
-  }
-}
-
-/**
- * Extracts the ship log's recorded delivery mode from `ship-log.md`'s
- * `**Mode:**` line (design D4 — the minimal timing guard). Resolved along
- * the `file-placement` chain: the change's evidence directory first (where
- * ship writes it now), then the legacy machine-home work directory, then the
- * change directory — a file already living at a legacy location keeps living
- * there. Returns null when no location has a parseable ship log: no delivery
- * has happened yet, or the `Mode:` line is missing/unparseable (never
- * guessed).
- */
 async function readShipLogDeliveryMode(
   workDir: string | null,
   changeDir: string
@@ -179,13 +136,18 @@ async function readShipLogDeliveryMode(
     ...(workDir ? [path.join(workDir, 'ship-log.md')] : []),
     path.join(changeDir, 'ship-log.md'),
   ];
-
   for (const candidate of candidates) {
     let content: string;
     try {
-      content = await fs.readFile(candidate, 'utf-8');
-    } catch {
-      continue;
+      content = await fs.readFile(candidate, 'utf8');
+    } catch (error) {
+      if (isMissingPathError(error)) continue;
+      throw new ArchiveBlockedError(
+        'archive_ship_log_read_failed',
+        `Unable to read ship log at ${candidate}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
     const match = content.match(/\*\*Mode:\*\*\s*(pr|push|local)\b/);
     return match ? (match[1] as 'pr' | 'push' | 'local') : null;
@@ -193,10 +155,57 @@ async function readShipLogDeliveryMode(
   return null;
 }
 
+async function resolveShipLogPlan(
+  workDir: string | null,
+  changeDir: string
+): Promise<ArchivePlan['shipLog']> {
+  const candidates = [
+    path.join(evidenceDir(changeDir), 'ship-log.md'),
+    ...(workDir ? [path.join(workDir, 'ship-log.md')] : []),
+    path.join(changeDir, 'ship-log.md'),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const content = await fs.readFile(candidate);
+      return {
+        source: candidate,
+        sha256: createHash('sha256').update(content).digest('hex'),
+        recordedCommit:
+          content
+            .toString('utf8')
+            .match(/^\*\*Commit:\*\*\s*([0-9a-f]{7,64})\s*$/im)?.[1] ?? null,
+      };
+    } catch (error) {
+      if (isMissingPathError(error)) continue;
+      throw new ArchiveBlockedError(
+        'archive_ship_log_read_failed',
+        `Unable to read ship log at ${candidate}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+  return { source: null, sha256: null, recordedCommit: null };
+}
+
 export class ArchiveCommand {
   async execute(changeName?: string, options: ArchiveOptions = {}): Promise<void> {
     const json = !!options.json;
-
+    if (options.applyPlan !== undefined) {
+      await this.applyStoredPlan(changeName, options, json);
+      return;
+    }
+    if (options.savePlan && !options.dryRun) {
+      const error = new ArchiveBlockedError(
+        'archive_option_conflict',
+        '--save-plan is valid only with --dry-run.'
+      );
+      if (json) {
+        this.printJsonFailure(undefined, error.diagnostic);
+        return;
+      }
+      throw error;
+    }
     let root: ResolvedOpenSpecRoot;
     try {
       root = await resolveOpenSpecRoot({
@@ -215,10 +224,51 @@ export class ArchiveCommand {
     if (json) {
       try {
         const result = await this.run(changeName, options, root, true);
-        if (!result) {
-          return;
+        if (result) {
+          const { compatibilityDiagnostic, ...archive } = result;
+          if (compatibilityDiagnostic && !options.dryRun) {
+            this.printJsonFailure(root, compatibilityDiagnostic, result.plan);
+            return;
+          }
+          const firstBlocker = result.blockers?.[0];
+          const isMergeConfirmationBlocker =
+            firstBlocker?.operation === 'timing' &&
+            firstBlocker.message ===
+              'A recorded PR delivery requires explicit merge confirmation.' &&
+            result.plan?.decisions.timing.mode === 'on-merge' &&
+            result.plan.decisions.timing.deliveryMode === 'pr' &&
+            !result.plan.decisions.timing.override;
+          const isExistingTargetBlocker =
+            firstBlocker?.operation === 'target-lstat' &&
+            firstBlocker.code === 'EEXIST';
+          const diagnostic =
+            result.status && result.status !== 'complete'
+              ? {
+                  severity: 'error' as const,
+                  code:
+                    isMergeConfirmationBlocker
+                      ? 'archive_merge_confirmation_required'
+                      : isExistingTargetBlocker
+                        ? 'archive_target_exists'
+                        : result.status === 'recoverable'
+                          ? 'archive_recovery_required'
+                          : 'archive_plan_blocked',
+                  message: firstBlocker?.message ?? 'Archive plan is incomplete.',
+                }
+              : undefined;
+          console.log(
+            JSON.stringify(
+              {
+                archive,
+                ...(diagnostic && result.plan ? { plan: result.plan } : {}),
+                root: toRootOutput(root),
+                ...(diagnostic ? { status: [diagnostic] } : {}),
+              },
+              null,
+              2
+            )
+          );
         }
-        console.log(JSON.stringify({ archive: result, root: toRootOutput(root) }, null, 2));
       } catch (error) {
         this.printJsonFailure(root, toArchiveDiagnostic(error));
       }
@@ -229,11 +279,93 @@ export class ArchiveCommand {
     await this.run(changeName, options, root, false);
   }
 
-  private printJsonFailure(root: ResolvedOpenSpecRoot | undefined, diagnostic: ArchiveDiagnostic): void {
+  private async applyStoredPlan(
+    changeName: string | undefined,
+    options: ArchiveOptions,
+    json: boolean
+  ): Promise<void> {
+    const planningOptions = [
+      changeName !== undefined,
+      !!options.dryRun,
+      !!options.savePlan,
+      !!options.intentTemplate,
+      options.intentFile !== undefined,
+      !!options.skipSpecs,
+      !!options.noValidate,
+      options.validate === false,
+      options.store !== undefined,
+      options.project !== undefined,
+      options.storePath !== undefined,
+      !!options.keepEphemera,
+    ];
+    if (planningOptions.some(Boolean)) {
+      const diagnostic = new ArchiveBlockedError(
+        'archive_option_conflict',
+        '--apply-plan cannot be combined with a change name or planning options.'
+      ).diagnostic;
+      if (json) {
+        this.printJsonFailure(undefined, diagnostic);
+        return;
+      }
+      throw new ArchiveBlockedError(diagnostic.code, diagnostic.message);
+    }
+
+    try {
+      const plan = await loadStoredArchivePlan(
+        options.applyPlan!,
+        getGlobalDataDir()
+      );
+      const result = await this.applyPlannedArchive(plan);
+      if (result.status !== 'complete') {
+        if (!result.manualRecoveryAction) {
+          result.recoveryCommand =
+            `rasen archive --apply-plan ${options.applyPlan} --yes` +
+            (json ? ' --json' : '');
+        }
+        process.exitCode = 1;
+      }
+      if (json) {
+        console.log(
+          JSON.stringify(
+            { archive: { mode: 'apply', result } },
+            null,
+            2
+          )
+        );
+        return;
+      }
+      if (result.status === 'complete') {
+        console.log(`Change '${result.change}' archived as '${path.basename(result.path)}'.`);
+      } else {
+        for (const item of result.blockers) {
+          console.log(`${item.operation}: ${item.message}`);
+        }
+        if (result.manualRecoveryAction) {
+          console.log(`Manual recovery: ${result.manualRecoveryAction.guidance}`);
+        } else {
+          console.log(`Recovery: ${result.recoveryCommand}`);
+        }
+      }
+    } catch (error) {
+      const diagnostic = toArchiveDiagnostic(error);
+      if (json) {
+        this.printJsonFailure(undefined, diagnostic);
+        return;
+      }
+      throw error;
+    }
+  }
+
+  private printJsonFailure(
+    root: ResolvedOpenSpecRoot | undefined,
+    diagnostic: ArchiveDiagnostic,
+    plan?: ArchivePlan
+  ): void {
     console.log(
       JSON.stringify(
         {
           archive: null,
+          ...(plan ? { plan } : {}),
           ...(root ? { root: toRootOutput(root) } : {}),
           status: [diagnostic],
         },
@@ -244,21 +376,25 @@ export class ArchiveCommand {
     process.exitCode = 1;
   }
 
-  /**
-   * Shared archive flow. In human mode (json=false) prompts and prose match
-   * the historical behavior and cancellations return null. In JSON mode no
-   * prose reaches stdout and every blocked path throws.
-   */
+  protected applyPlannedArchive(plan: ArchivePlan): Promise<ArchiveApplyResult> {
+    return applyArchive(plan);
+  }
+
+  private async failHuman(message: string, abort = true): Promise<null> {
+    console.log(message);
+    if (abort) console.log('Aborted. No files were changed.');
+    process.exitCode = 1;
+    return null;
+  }
+
   private async run(
-    changeName: string | undefined,
+    requestedChange: string | undefined,
     options: ArchiveOptions,
     root: ResolvedOpenSpecRoot,
     json: boolean
   ): Promise<ArchiveResult | null> {
+    let changeName = requestedChange;
     const changesDir = root.changesDir;
-    const mainSpecsDir = root.specsDir;
-
-    // Get change name interactively if not provided
     if (!changeName) {
       if (json) {
         throw new ArchiveBlockedError(
@@ -267,652 +403,714 @@ export class ArchiveCommand {
           withStoreFlag(root, 'rasen archive <change-name> --json')
         );
       }
-      const selectedChange = await this.selectChange(changesDir);
-      if (!selectedChange) {
+      const selected = await this.selectChange(changesDir);
+      if (!selected) {
         console.log('No change selected. Aborting.');
         return null;
       }
-      changeName = selectedChange;
+      changeName = selected;
     }
 
     const changeDir = path.join(changesDir, changeName);
-
-    // Verify change exists
+    let sourceAvailable = true;
     try {
-      const stat = await fs.stat(changeDir);
-      if (!stat.isDirectory()) {
-        throw new Error(`Change '${changeName}' not found.`);
+      const stat = await fs.lstat(changeDir);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) {
+        sourceAvailable = false;
       }
     } catch {
+      sourceAvailable = false;
+    }
+
+    let compatibilityDiagnostic: ArchiveDiagnostic | undefined;
+    if (!sourceAvailable) {
       const available = await listActiveChangeNames(changesDir);
-      throw new ArchiveBlockedError(
+      compatibilityDiagnostic = new ArchiveBlockedError(
         'archive_change_not_found',
         available.length > 0
           ? `Change '${changeName}' not found. Available changes: ${available.join(', ')}`
           : `Change '${changeName}' not found. No active changes exist in this root.`
-      );
+      ).diagnostic;
     }
 
-    // Archive bookkeeping always lands in the planning root (`archive-
-    // destination` capability). No configuration is consulted, nothing is
-    // minted, and no gate can redirect it: a config still carrying
-    // `archive.destination` only produces a deprecation warning at parse time.
-    const targetArchiveDir = resolveArchiveDestination(root.path).archiveDir;
+    if (options.intentTemplate) {
+      if (!sourceAvailable) {
+        throw new ArchiveBlockedError(
+          compatibilityDiagnostic!.code,
+          compatibilityDiagnostic!.message,
+          compatibilityDiagnostic!.fix
+        );
+      }
+      const intent = await createArchiveIntentTemplate(changeDir, changeName);
+      if (!json) {
+        console.log(JSON.stringify(intent, null, 2));
+        return null;
+      }
+      return {
+        change: changeName,
+        archivedAs: '',
+        path: changeDir,
+        specsUpdated: false,
+        mode: 'intent-template',
+        intent,
+      };
+    }
 
-    // Timing guard (design D4, closes child 3's `ArchiveCommand` bypass gap):
-    // the CLI never shells to gh/git for workflow decisions, so it cannot
-    // verify a PR merge itself. When on-merge timing applies and the
-    // recorded ship log shows a pr-mode delivery, refuse without an
-    // explicit --yes override — the override IS the user's merge
-    // confirmation (cli-archive spec: "Explicit override archives anyway").
-    if (!options.yes) {
-      const archiveTiming = resolveArchiveTiming(readProjectConfig(root.path));
-      if (archiveTiming === 'on-merge') {
-        const workDirForShipLog = await resolveChangeWorkDir(root.path, changeName, { ensure: false });
-        const deliveryMode = await readShipLogDeliveryMode(workDirForShipLog, changeDir);
-        if (deliveryMode === 'pr') {
-          const message = `Change '${changeName}' shipped via a pull request under on-merge archive timing; the CLI cannot verify the merge itself.`;
-          const fix = `Use the archive skill (/rasen-archive-change), which checks the PR's merge state, or rerun with --yes after confirming the merge yourself.`;
-          if (json) {
-            throw new ArchiveBlockedError('archive_merge_confirmation_required', message, fix);
-          }
-          console.log(chalk.yellow(`\n⚠️  ${message}`));
-          console.log(chalk.yellow(fix));
-          process.exitCode = 1;
-          return null;
-        }
+    const archiveParent = resolveArchiveDestination(root.path).archiveDir;
+    const planningBlockers: ArchivePlan['blockers'] = [];
+    let workDir: string | null = null;
+    try {
+      workDir = await resolveChangeWorkDir(root.path, changeName, { ensure: false });
+    } catch (error) {
+      planningBlockers.push({
+        operation: 'timing',
+        path: changeDir,
+        ...(errorCode(error) ? { code: errorCode(error) } : {}),
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    let timing: ArchivePlan['decisions']['timing']['mode'] = 'on-merge';
+    try {
+      timing = resolveArchiveTiming(readProjectConfig(root.path));
+    } catch (error) {
+      planningBlockers.push({
+        operation: 'timing',
+        path: root.path,
+        ...(errorCode(error) ? { code: errorCode(error) } : {}),
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    let deliveryMode: ArchivePlan['decisions']['timing']['deliveryMode'] = null;
+    try {
+      deliveryMode = await readShipLogDeliveryMode(workDir, changeDir);
+    } catch (error) {
+      planningBlockers.push({
+        operation: 'timing',
+        path: changeDir,
+        ...(errorCode(error) ? { code: errorCode(error) } : {}),
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    if (
+      !options.yes &&
+      timing === 'on-merge' &&
+      deliveryMode === 'pr'
+    ) {
+      const message = `Change '${changeName}' shipped via a pull request under on-merge archive timing; the CLI cannot verify the merge itself.`;
+      const fix =
+        'Use the archive skill (/rasen-archive-change), which checks the PR merge state, or rerun with --yes after confirming the merge yourself.';
+      if (!json && !options.dryRun) {
+        console.log(chalk.yellow(`\nWarning: ${message}`));
+        console.log(chalk.yellow(fix));
       }
     }
 
     const skipValidation = options.validate === false || options.noValidate === true;
-
-    // Validate specs and change before archiving
-    if (!skipValidation) {
-      const validator = new Validator();
-      let hasValidationErrors = false;
-
-      // Validate proposal.md (informative only; human mode prints warnings)
-      if (!json) {
-        const changeFile = path.join(changeDir, 'proposal.md');
-        try {
-          await fs.access(changeFile);
-          const changeReport = await validator.validateChange(changeFile);
-          // Proposal validation is informative only (do not block archive)
-          if (!changeReport.valid) {
-            console.log(chalk.yellow(`\nProposal warnings in proposal.md (non-blocking):`));
-            for (const issue of changeReport.issues) {
-              const symbol = issue.level === 'ERROR' ? '⚠' : (issue.level === 'WARNING' ? '⚠' : 'ℹ');
-              console.log(chalk.yellow(`  ${symbol} ${issue.message}`));
-            }
-          }
-        } catch {
-          // Change file doesn't exist, skip validation
-        }
-      }
-
-      // Validate delta-formatted spec files under the change directory if present
-      const changeSpecsDir = path.join(changeDir, 'specs');
-      let hasDeltaSpecs = false;
+    let validationDecision: ArchivePlan['decisions']['validation'] =
+      skipValidation ? 'skipped' : 'passed';
+    if (!sourceAvailable) {
+      validationDecision = 'blocked';
+    } else if (!skipValidation) {
       try {
-        const candidates = await fs.readdir(changeSpecsDir, { withFileTypes: true });
-        for (const c of candidates) {
-          if (c.isDirectory()) {
-            try {
-              const candidatePath = path.join(changeSpecsDir, c.name, 'spec.md');
-              await fs.access(candidatePath);
-              const content = await fs.readFile(candidatePath, 'utf-8');
-              if (/^##\s+(ADDED|MODIFIED|REMOVED|RENAMED)\s+Requirements/m.test(content)) {
-                hasDeltaSpecs = true;
-                break;
-              }
-            } catch {}
-          }
-        }
-      } catch {}
-      if (hasDeltaSpecs) {
-        const deltaReport = await validator.validateChangeDeltaSpecs(changeDir);
-        if (!deltaReport.valid) {
-          hasValidationErrors = true;
-          if (!json) {
-            console.log(chalk.red(`\nValidation errors in change delta specs:`));
-            for (const issue of deltaReport.issues) {
-              if (issue.level === 'ERROR') {
-                console.log(chalk.red(`  ✗ ${issue.message}`));
-              } else if (issue.level === 'WARNING') {
-                console.log(chalk.yellow(`  ⚠ ${issue.message}`));
-              }
-            }
-          }
-        }
-      }
-
-      if (hasValidationErrors) {
-        if (json) {
-          throw new ArchiveBlockedError(
+        const validationPassed = await this.validateActiveChange(changeDir, json);
+        if (!validationPassed) {
+          validationDecision = 'blocked';
+          compatibilityDiagnostic ??= new ArchiveBlockedError(
             'archive_validation_failed',
             `Validation failed for change '${changeName}'.`,
             `Run ${withStoreFlag(root, `rasen validate ${changeName}`)} for details, fix the errors, or rerun with --no-validate.`
-          );
+          ).diagnostic;
         }
-        console.log(chalk.red('\nValidation failed. Please fix the errors before archiving.'));
-        console.log(chalk.yellow('To skip validation (not recommended), use --no-validate flag.'));
-        process.exitCode = 1;
+      } catch (error) {
+        validationDecision = 'blocked';
+        planningBlockers.push({
+          operation: 'validation',
+          path: changeDir,
+          ...(errorCode(error) ? { code: errorCode(error) } : {}),
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    } else if (!options.yes && !json && !options.dryRun) {
+      const { confirm } = await import('@inquirer/prompts');
+      const proceed = await confirm({
+        message: chalk.yellow(
+          'Warning: Skipping validation may archive invalid specs. Continue? (y/N)'
+        ),
+        default: false,
+      });
+      if (!proceed) {
+        console.log('Archive cancelled.');
         return null;
       }
-    } else if (json) {
-      if (!options.yes) {
-        throw new ArchiveBlockedError(
-          'archive_confirmation_required',
-          'Skipping validation requires confirmation: rerun with --yes.',
-          withStoreFlag(root, 'rasen archive <change-name> --json --no-validate --yes')
-        );
-      }
-    } else {
-      // Log warning when validation is skipped
-      const timestamp = new Date().toISOString();
-
-      if (!options.yes) {
-        const { confirm } = await import('@inquirer/prompts');
-        const proceed = await confirm({
-          message: chalk.yellow('⚠️  WARNING: Skipping validation may archive invalid specs. Continue? (y/N)'),
-          default: false
-        });
-        if (!proceed) {
-          console.log('Archive cancelled.');
-          return null;
-        }
-      } else {
-        console.log(chalk.yellow(`\n⚠️  WARNING: Skipping validation may archive invalid specs.`));
-      }
-
-      console.log(chalk.yellow(`[${timestamp}] Validation skipped for change: ${changeName}`));
+    }
+    if (skipValidation && !json) {
+      console.log(
+        chalk.yellow('\nWarning: Skipping validation may archive invalid specs.')
+      );
+      console.log(
+        chalk.yellow(
+          `[${new Date().toISOString()}] Validation skipped for change: ${changeName}`
+        )
+      );
       console.log(chalk.yellow(`Affected files: ${changeDir}`));
     }
 
-    // Show progress and check for incomplete tasks
-    const progress = await getTaskProgressForChange(changesDir, changeName, path.resolve(changesDir, '..', '..'));
-    if (!json) {
-      const status = formatTaskStatus(progress);
-      console.log(`Task status: ${status}`);
-    }
-
-    const incompleteTasks = Math.max(progress.total - progress.completed, 0);
-    if (incompleteTasks > 0) {
-      if (json) {
-        if (!options.yes) {
-          throw new ArchiveBlockedError(
-            'archive_tasks_incomplete',
-            `${incompleteTasks} incomplete task(s) found for change '${changeName}'.`,
-            'Complete the tasks or rerun with --yes.'
-          );
-        }
-      } else if (!options.yes) {
-        const { confirm } = await import('@inquirer/prompts');
-        const proceed = await confirm({
-          message: `Warning: ${incompleteTasks} incomplete task(s) found. Continue?`,
-          default: false
-        });
-        if (!proceed) {
-          console.log('Archive cancelled.');
-          return null;
-        }
-      } else {
-        console.log(`Warning: ${incompleteTasks} incomplete task(s) found. Continuing due to --yes flag.`);
-      }
-    }
-
-    // --- Dry-run: report all planned actions without executing anything ---
-    // Closes the validate blind spot (design D8): previews the full spec sync
-    // plan, ephemera delete list, handoff status, planned archive name, and
-    // blocking conditions. No file is moved, deleted, or written.
-    if (options.dryRun) {
-      const execRoot = resolveExecutionRoot(root.path, {
-        storeSelected: isStoreSelectedRoot(root),
-        cwd: process.cwd(),
-      });
-      const ephemeraPath = ephemeraDir(execRoot, changeName);
-      const ephemeraClassification = await classifyEphemera(ephemeraPath);
-
-      let specSyncPlan: Array<{ capability: string; status: string }> = [];
-      if (!options.skipSpecs) {
-        const specUpdates = await findSpecUpdates(changeDir, mainSpecsDir);
-        specSyncPlan = specUpdates.map((u) => ({
-          capability: path.basename(path.dirname(u.target)),
-          status: u.exists ? 'update' : 'create',
-        }));
-      }
-
-      const archiveName = `${this.getArchiveDate()}-${changeName}`;
-      const plannedArchivePath = path.join(targetArchiveDir, archiveName);
-
-      // Check blocking conditions
-      const blockingConditions: string[] = [];
-      try {
-        await fs.access(plannedArchivePath);
-        blockingConditions.push(`Archive target '${archiveName}' already exists.`);
-      } catch {
-        // Does not exist — not blocking.
-      }
-
-      if (json) {
-        return {
-          change: changeName,
-          archivedAs: archiveName,
-          path: plannedArchivePath,
-          specsUpdated: false,
-          dryRun: true,
-          specSyncPlan,
-          ephemeraDiscarded: ephemeraClassification.discarded,
-          ephemeraPreserved: ephemeraClassification.preserved,
-          ephemeraAborted: ephemeraClassification.aborted,
-          ...(ephemeraClassification.abortReason
-            ? { ephemeraAbortReason: ephemeraClassification.abortReason }
-            : {}),
-        };
-      }
-
-      console.log(chalk.cyan(`\n=== Archive dry-run for '${changeName}' ===`));
-      console.log(`Planned archive: ${archiveName}`);
-      console.log(
-        `Spec sync plan: ${specSyncPlan.length === 0 ? '(none)' : specSyncPlan.map((s) => `${s.capability}: ${s.status}`).join(', ')}`
-      );
-      if (ephemeraClassification.aborted) {
-        console.log(
-          chalk.yellow(`Ephemera cleaner: ABORTED (source manifest found: ${ephemeraClassification.abortReason})`)
-        );
-      } else {
-        console.log(
-          `Ephemera pending-delete (${ephemeraClassification.discarded.length}): ${ephemeraClassification.discarded.length === 0 ? '(none)' : ephemeraClassification.discarded.join(', ')}`
-        );
-        console.log(
-          `Ephemera preserved (${ephemeraClassification.preserved.length}): ${ephemeraClassification.preserved.length === 0 ? '(none)' : ephemeraClassification.preserved.join(', ')}`
-        );
-      }
-      if (blockingConditions.length > 0) {
-        console.log(chalk.red(`Blocking conditions:`));
-        for (const b of blockingConditions) console.log(chalk.red(`  ✗ ${b}`));
-      }
-      console.log(chalk.cyan('No files were moved, deleted, or written.'));
-      return null;
-    }
-
-    // Handle spec updates unless skipSpecs flag is set
-    let specsUpdated = false;
-    let totals: ArchiveResult['totals'];
-    if (options.skipSpecs) {
-      if (!json) {
-        console.log('Skipping spec updates (--skip-specs flag provided).');
-      }
-    } else {
-      // Find specs to update
-      const specUpdates = await findSpecUpdates(changeDir, mainSpecsDir);
-
-      if (specUpdates.length > 0) {
-        if (!json) {
-          console.log('\nSpecs to update:');
-          for (const update of specUpdates) {
-            const status = update.exists ? 'update' : 'create';
-            const capability = path.basename(path.dirname(update.target));
-            console.log(`  ${capability}: ${status}`);
-          }
-        }
-
-        let shouldUpdateSpecs = true;
-        if (!options.yes) {
-          if (json) {
-            throw new ArchiveBlockedError(
-              'archive_confirmation_required',
-              `Updating ${specUpdates.length} spec(s) requires confirmation: rerun with --yes.`,
-              withStoreFlag(root, 'rasen archive <change-name> --json --yes')
-            );
-          }
-          const { confirm } = await import('@inquirer/prompts');
-          shouldUpdateSpecs = await confirm({
-            message: 'Proceed with spec updates?',
-            default: true
-          });
-          if (!shouldUpdateSpecs) {
-            console.log('Skipping spec updates. Proceeding with archive.');
-          }
-        }
-
-        if (shouldUpdateSpecs) {
-          // Prepare all updates first (validation pass, no writes)
-          const prepared: Array<{ update: SpecUpdate; rebuilt: string; counts: { added: number; modified: number; removed: number; renamed: number }; emptied: boolean }> = [];
-          try {
-            for (const update of specUpdates) {
-              const built = await buildUpdatedSpec(update, changeName!, { silent: json });
-              prepared.push({ update, rebuilt: built.rebuilt, counts: built.counts, emptied: built.emptied });
-            }
-          } catch (err: any) {
-            if (json) {
-              throw new ArchiveBlockedError(
-                'archive_spec_update_failed',
-                String(err.message || err),
-                'Fix the change delta specs and rerun. No files were changed.'
-              );
-            }
-            console.log(String(err.message || err));
-            console.log('Aborted. No files were changed.');
-            process.exitCode = 1;
-            return null;
-          }
-
-          // Validate every rebuilt spec before writing any of them, so a
-          // late validation failure really does leave all targets unchanged.
-          // An emptied existing spec (every requirement REMOVED) is deleted, not
-          // written, so it has no content to validate — skip it.
-          if (!skipValidation) {
-            for (const p of prepared) {
-              if (p.emptied) continue;
-              const specName = path.basename(path.dirname(p.update.target));
-              const report = await new Validator().validateSpecContent(specName, p.rebuilt);
-              if (!report.valid) {
-                if (json) {
-                  throw new ArchiveBlockedError(
-                    'archive_spec_validation_failed',
-                    `Rebuilt spec for '${specName}' failed validation. No files were changed.`,
-                    `Run ${withStoreFlag(root, `rasen validate ${specName}`)} after fixing the change deltas.`
-                  );
-                }
-                console.log(chalk.red(`\nValidation errors in rebuilt spec for ${specName} (will not write changes):`));
-                for (const issue of report.issues) {
-                  if (issue.level === 'ERROR') console.log(chalk.red(`  ✗ ${issue.message}`));
-                  else if (issue.level === 'WARNING') console.log(chalk.yellow(`  ⚠ ${issue.message}`));
-                }
-                console.log('Aborted. No files were changed.');
-                process.exitCode = 1;
-                return null;
-              }
-            }
-          }
-
-          // All validations passed; write files and display counts
-          const writeTotals = { added: 0, modified: 0, removed: 0, renamed: 0 };
-          for (const p of prepared) {
-            const capability = path.basename(path.dirname(p.update.target));
-            if (p.emptied) {
-              // Existing spec fully emptied by this delta → delete its directory.
-              await fs.rm(path.dirname(p.update.target), { recursive: true, force: true });
-              if (!json) {
-                console.log(`Deleting spec '${capability}' — all requirements removed by this change.`);
-              }
-            } else {
-              await writeUpdatedSpec(p.update, p.rebuilt, p.counts, {
-                silent: json,
-                // Cross-root paths must be absolute when a store is selected.
-                ...(isStoreSelectedRoot(root) ? { displayPath: p.update.target } : {}),
-              });
-            }
-            writeTotals.added += p.counts.added;
-            writeTotals.modified += p.counts.modified;
-            writeTotals.removed += p.counts.removed;
-            writeTotals.renamed += p.counts.renamed;
-          }
-          specsUpdated = true;
-          totals = writeTotals;
-          if (!json) {
-            console.log(
-              `Totals: + ${writeTotals.added}, ~ ${writeTotals.modified}, - ${writeTotals.removed}, → ${writeTotals.renamed}`
-            );
-            console.log('Specs updated successfully.');
-          }
-        }
-      }
-    }
-
-    // The change directory moves to the planning root archive resolved above.
-    // Nothing is deleted and nothing leaves the repository, so the retired
-    // destructive-destination preconditions (committed/tracked change dir,
-    // separate prune consent) have nothing left to guard.
-
-    const archiveName = `${this.getArchiveDate()}-${changeName}`;
-    const archivePath = path.join(targetArchiveDir, archiveName);
-
-    // Check if archive already exists
-    let archiveExists = false;
+    let progress = { total: 0, completed: 0 };
     try {
-      await fs.access(archivePath);
-      archiveExists = true;
-    } catch (error: any) {
-      if (error.code !== 'ENOENT') {
-        throw error;
+      progress = await getTaskProgressForChange(
+        changesDir,
+        changeName,
+        path.resolve(changesDir, '..', '..')
+      );
+    } catch (error) {
+      planningBlockers.push({
+        operation: 'tasks',
+        path: changeDir,
+        ...(errorCode(error) ? { code: errorCode(error) } : {}),
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    if (!json) console.log(`Task status: ${formatTaskStatus(progress)}`);
+    const incompleteTasks = Math.max(progress.total - progress.completed, 0);
+    let tasksOverride = !!options.yes;
+    if (incompleteTasks > 0 && !options.yes) {
+      compatibilityDiagnostic ??= new ArchiveBlockedError(
+        'archive_tasks_incomplete',
+        `${incompleteTasks} incomplete task(s) found for change '${changeName}'.`,
+        'Complete the tasks or rerun with --yes.'
+      ).diagnostic;
+    }
+    if (incompleteTasks > 0 && !options.yes && !json && !options.dryRun) {
+      const { confirm } = await import('@inquirer/prompts');
+      const proceed = await confirm({
+        message: `Warning: ${incompleteTasks} incomplete task(s) found. Continue?`,
+        default: false,
+      });
+      if (!proceed) {
+        console.log('Archive cancelled.');
+        tasksOverride = false;
+      } else {
+        tasksOverride = true;
       }
-    }
-    if (archiveExists) {
-      throw new ArchiveBlockedError('archive_target_exists', `Archive '${archiveName}' already exists.`);
+    } else if (incompleteTasks > 0 && !json) {
+      console.log(
+        `Warning: ${incompleteTasks} incomplete task(s) found. Continuing due to --yes flag.`
+      );
     }
 
-    // Create archive directory if needed
-    await fs.mkdir(targetArchiveDir, { recursive: true });
+    const preparationBlockers: ArchivePlan['blockers'] = [...planningBlockers];
+    let specActions: PreparedArchiveSpecAction[] = [];
+    try {
+      if (!sourceAvailable) {
+        specActions = [];
+      } else {
+        specActions = await this.prepareSpecActions(
+          changeDir,
+          root.specsDir,
+          changeName,
+          options,
+          root,
+          json,
+          skipValidation
+        );
+      }
+    } catch (error) {
+      const diagnostic = toArchiveDiagnostic(error);
+      preparationBlockers.push({
+        operation: 'spec',
+        path: changeDir,
+        code: diagnostic.code,
+        message:
+          diagnostic.code === 'archive_spec_validation_failed'
+            ? diagnostic.message.replace(/ No files were changed\.$/, '')
+            : diagnostic.message,
+      });
+      if (error instanceof ArchiveBlockedError) {
+        compatibilityDiagnostic ??= diagnostic;
+      }
+      specActions = [];
+    }
 
-    // --- Ephemera cleaner (design D1/D2, runs BEFORE the directory move) ---
-    // The ephemera directory lives in the EXECUTION root, not inside the
-    // change directory, so the move does not touch it. Cleaning before the
-    // move means a source-manifest abort can surface before anything is
-    // irreversibly relocated.
-    const execRoot = resolveExecutionRoot(root.path, {
+    const executionRoot = resolveExecutionRoot(root.path, {
       storeSelected: isStoreSelectedRoot(root),
       cwd: process.cwd(),
     });
-    const ephemeraPath = ephemeraDir(execRoot, changeName);
-    let ephemeraClassification: EphemeraClassification = {
-      discarded: [],
-      preserved: [],
-      aborted: false,
+    const sidecar = sourceAvailable
+      ? await resolveArchiveSidecar(
+          changeDir,
+          executionRoot,
+          changeName,
+          undefined,
+          options.intentFile
+        )
+      : {
+          status: 'absent' as const,
+          schemaVersion: null,
+          change: null,
+          disposition: 'unjudged-preserve-all' as const,
+          handoff: {
+            complete: null,
+            decisions: [],
+            inventory: [],
+          },
+          probes: [],
+          blockers: [],
+        };
+    let shipLog: ArchivePlan['shipLog'] = {
+      source: null,
+      sha256: null,
+      recordedCommit: null,
     };
-    let ephemeraDeleted: string[] = [];
-    if (!options.keepEphemera) {
-      ephemeraClassification = await classifyEphemera(ephemeraPath);
-      if (ephemeraClassification.aborted) {
-        // Source manifest found — probes were misclassified. Do NOT delete
-        // anything; proceed with the move and report the discovery.
-        if (!json) {
-          console.log(
-            chalk.yellow(
-              `\n⚠️  Ephemera cleaner: ABORTED for this change. Source manifest discovered: ${ephemeraClassification.abortReason}. Cleaning skipped.`
-            )
-          );
-        }
-      } else {
-        ephemeraDeleted = await applyEphemeraDeletion(ephemeraPath, ephemeraClassification);
-        if (!json && ephemeraDeleted.length > 0) {
-          console.log(`Ephemera cleaner: deleted ${ephemeraDeleted.length} file(s).`);
-        }
-        if (!json && ephemeraClassification.preserved.length > 0) {
-          console.log(
-            chalk.yellow(
-              `Ephemera cleaner: preserved ${ephemeraClassification.preserved.length} unknown file(s): ${ephemeraClassification.preserved.join(', ')}`
-            )
-          );
-        }
+    if (sourceAvailable) {
+      try {
+        shipLog = await resolveShipLogPlan(workDir, changeDir);
+      } catch (error) {
+        preparationBlockers.push({
+          operation: 'evidence',
+          path: changeDir,
+          ...(errorCode(error) ? { code: errorCode(error) } : {}),
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     }
+    const plan = await createArchivePlan({
+      change: changeName,
+      planningRoot: root.path,
+      executionRoot,
+      activePath: changeDir,
+      archiveParent,
+      ephemeraPath: ephemeraDir(executionRoot, changeName),
+      date: this.getArchiveDate(),
+      keepEphemera: !!options.keepEphemera,
+      validation: validationDecision,
+      tasks: {
+        total: progress.total,
+        completed: progress.completed,
+        override: tasksOverride,
+      },
+      timing: {
+        mode: timing,
+        deliveryMode,
+        override: !!options.yes,
+      },
+      specActions,
+      preparationBlockers,
+      sidecar,
+      shipLog,
+    });
 
-    // --- Read the archive-input sidecar BEFORE the move (M2 fix) ---
-    // The skill writes `.rasen-archive-input.json` in the change directory
-    // to pass its handoff absorption judgment and probe discoveries to the
-    // CLI. Read it now (before the move relocates the directory), then
-    // delete it so it does not enter the archive.
-    const sidecar = await readArchiveInputSidecar(changeDir);
-    if (sidecar) {
-      await removeArchiveInputSidecar(changeDir);
+    if (options.dryRun) {
+      const planToken = options.savePlan
+        ? await persistArchivePlan(plan, getGlobalDataDir())
+        : undefined;
+      return this.renderDryRun(plan, json, planToken);
+    }
+    if (!plan.complete || plan.blockers.length > 0) {
+      const message = plan.blockers
+        .map(item => `${item.operation}: ${item.message}`)
+        .join('; ');
+      if (!json) {
+        const targetBlocker = plan.blockers.find(
+          item => item.operation === 'target-lstat' && item.code === 'EEXIST'
+        );
+        if (targetBlocker) {
+          throw new ArchiveBlockedError(
+            'archive_target_exists',
+            `Archive '${path.basename(plan.paths.final)}' already exists.`
+          );
+        }
+        return this.failHuman(message);
+      }
+      process.exitCode = 1;
+      return {
+        change: changeName,
+        archivedAs: path.basename(plan.paths.final),
+        path: plan.paths.final,
+        specsUpdated: false,
+        totals: { added: 0, modified: 0, removed: 0, renamed: 0 },
+        ephemeraDiscarded: [],
+        ephemeraPreserved: plan.cleaner.effectivePreserve,
+        ephemeraAborted: plan.cleaner.classification.aborted,
+        ...(plan.cleaner.classification.abortReason
+          ? { ephemeraAbortReason: plan.cleaner.classification.abortReason }
+          : {}),
+        plan,
+        transactionId: plan.transactionId,
+        planHash: plan.planHash,
+        journalPath: plan.paths.journal,
+        blockers: plan.blockers,
+        status: 'blocked',
+        ...(compatibilityDiagnostic ? { compatibilityDiagnostic } : {}),
+      };
     }
 
-    // Move change to archive (uses copy+remove on EPERM/EXDEV, e.g. Windows)
-    await moveDirectory(changeDir, archivePath);
-
-    // Quality capture: scan archived directory for quality artifact files
-    // (path-agnostic — runs against wherever the directory landed)
-    await this.captureQuality(archivePath, json);
-
-    // --- archive.json accounting (design D4/D5, written AFTER the move) ---
-    // Records disposition accounting WITHOUT the planning-root commit hash
-    // (D4: unclosable self-reference). codeCommit is resolved from the
-    // execution root; planning side records branch + tree state only.
-    // handoffAbsorbed and probes come from the skill sidecar; when no
-    // sidecar was written (manual archive, skill didn't run), handoffAbsorbed
-    // is null so a reader can tell "no judgment made" from "[] (nothing
-    // absorbed)".
-    const accounting = await resolveArchiveAccounting({
-      changeName,
-      archivedDir: archivePath,
-      executionRoot: execRoot,
-      planningRoot: root.path,
-      ephemeraDiscarded: ephemeraDeleted,
-      handoffAbsorbed: sidecar?.handoffAbsorbed ?? null,
-      probes: sidecar?.probes ?? [],
-    });
-    await writeArchiveJson(archivePath, accounting);
+    const result = await this.applyPlannedArchive(plan);
+    if (result.status !== 'complete') {
+      const message =
+        result.blockers.map(item => `${item.operation}: ${item.message}`).join('; ') ||
+        'Archive transaction did not complete.';
+      if (json) {
+        process.exitCode = 1;
+        return {
+          change: changeName,
+          archivedAs: path.basename(result.path),
+          path: result.path,
+          specsUpdated: result.specsUpdated,
+          totals: result.totals,
+          ephemeraDiscarded: result.ephemeraDiscarded,
+          ephemeraPreserved: result.ephemeraPreserved,
+          transactionId: result.transactionId,
+          planHash: result.planHash,
+          journalPath: result.journalPath,
+          blockers: result.blockers,
+          status: result.status,
+          result,
+        };
+      }
+      console.log(message);
+      console.log(`Recovery journal: ${result.journalPath}`);
+      if (result.manualRecoveryAction) {
+        console.log(`Manual recovery: ${result.manualRecoveryAction.guidance}`);
+      }
+      process.exitCode = 1;
+      return null;
+    }
 
     if (!json) {
-      console.log(`Change '${changeName}' archived as '${archiveName}'.`);
+      if (result.specsUpdated) {
+        for (const action of plan.specActions) {
+          if (action.action === 'delete') {
+            console.log(
+              `Deleting spec '${action.capability}' — all requirements removed by this change.`
+            );
+          }
+        }
+        console.log(
+          `Totals: + ${result.totals.added}, ~ ${result.totals.modified}, - ${result.totals.removed}, → ${result.totals.renamed}`
+        );
+        console.log('Specs updated successfully.');
+      }
+      if (result.ephemeraDiscarded.length > 0) {
+        console.log(
+          `Ephemera cleaner: deleted ${result.ephemeraDiscarded.length} file(s).`
+        );
+      }
+      console.log(
+        `Change '${changeName}' archived as '${path.basename(result.path)}'.`
+      );
     }
-
     return {
       change: changeName,
-      archivedAs: archiveName,
-      path: archivePath,
-      specsUpdated,
-      ...(totals ? { totals } : {}),
-      ephemeraDiscarded: ephemeraDeleted,
-      ephemeraPreserved: ephemeraClassification.preserved,
-      ...(ephemeraClassification.aborted
-        ? {
-            ephemeraAborted: true,
-            ephemeraAbortReason: ephemeraClassification.abortReason,
-          }
+      archivedAs: path.basename(result.path),
+      path: result.path,
+      specsUpdated: result.specsUpdated,
+      totals: result.totals,
+      ephemeraDiscarded: result.ephemeraDiscarded,
+      ephemeraPreserved: result.ephemeraPreserved,
+      ephemeraAborted: plan.cleaner.classification.aborted,
+      ...(plan.cleaner.classification.abortReason
+        ? { ephemeraAbortReason: plan.cleaner.classification.abortReason }
         : {}),
+      transactionId: result.transactionId,
+      planHash: result.planHash,
+      journalPath: result.journalPath,
+      blockers: [],
     };
   }
 
-  /**
-   * Scan the archived change directory for quality artifact files and capture
-   * their quality summary (scanned files + metric-line counts) into the
-   * archive's `.openspec.yaml`. Quality files match *-review.md, *-report.md,
-   * *-audit.md.
-   *
-   * Archive is NOT a codification step: it does not interpret `[RULE]` markers
-   * as reusable guidance, never mutates the project's `quality-rules`, and
-   * reports no extracted-rule count. Evidence-gated learned-skill creation is
-   * the `codify` mode of `rasen-retain`. Existing `quality-rules` remain
-   * untouched and continue normal instruction injection.
-   */
-  private async captureQuality(archivePath: string, quiet = false): Promise<void> {
-    try {
-      const entries = await fs.readdir(archivePath, { withFileTypes: true });
-      const qualityFiles = entries
-        .filter(e => !e.isDirectory())
-        .filter(e => {
-          const base = e.name.toLowerCase();
-          return base.endsWith('-review.md') || base.endsWith('-report.md') || base.endsWith('-audit.md');
-        });
-
-      if (qualityFiles.length === 0) return;
-
-      const qualityMetrics: Record<string, number> = {};
-
-      for (const qf of qualityFiles) {
-        const filePath = path.join(archivePath, qf.name);
-        try {
-          const content = await fs.readFile(filePath, 'utf-8');
-          const lines = content.split('\n');
-
-          // Count lines matching metric patterns. `[RULE]` lines are ordinary
-          // artifact content here — they are not extracted or interpreted.
-          let findings = 0;
-          let issues = 0;
-          let scenarios = 0;
-
-          for (const line of lines) {
-            const trimmed = line.trim().toLowerCase();
-            if (trimmed.match(/findings:/i)) findings++;
-            if (trimmed.match(/issues:/i)) issues++;
-            if (trimmed.match(/scenarios:/i)) scenarios++;
-          }
-
-          qualityMetrics[qf.name] = findings + issues + scenarios;
-        } catch {
-          // Skip unreadable files
-        }
-      }
-
-      // Write quality summary to .openspec.yaml in the archive directory
-      const metaPath = path.join(archivePath, '.openspec.yaml');
-      let metaData: Record<string, unknown> = {};
+  private async validateActiveChange(changeDir: string, json: boolean): Promise<boolean> {
+    const validator = new Validator();
+    if (!json) {
+      const proposal = path.join(changeDir, 'proposal.md');
       try {
-        if (existsSync(metaPath)) {
-          const existing = readFileSync(metaPath, 'utf-8');
-          metaData = (parseYaml(existing) as Record<string, unknown>) || {};
-        }
-      } catch {
-        // Start fresh if can't read
-      }
-
-      metaData.quality = {
-        files: qualityFiles.map(f => f.name),
-        metrics: qualityMetrics,
-      };
-
-      writeFileSync(metaPath, stringifyYaml(metaData), 'utf-8');
-
-      // Display quality summary (suppressed in JSON mode: stdout carries one document)
-      if (!quiet) {
-        console.log(chalk.cyan(`\nQuality capture:`));
-        console.log(chalk.cyan(`  Files scanned: ${qualityFiles.map(f => f.name).join(', ')}`));
-        for (const [file, count] of Object.entries(qualityMetrics)) {
-          if (count > 0) {
-            console.log(chalk.cyan(`  ${file}: ${count} metric line(s)`));
+        await fs.access(proposal);
+        const report = await validator.validateChange(proposal);
+        if (!report.valid) {
+          console.log(chalk.yellow('\nProposal warnings in proposal.md (non-blocking):'));
+          for (const issue of report.issues) {
+            console.log(chalk.yellow(`  - ${issue.message}`));
           }
         }
+      } catch (error) {
+        if (!isMissingPathError(error)) throw error;
       }
-    } catch {
-      // Quality capture is non-fatal - don't block archive
     }
+
+    const specsRoot = path.join(changeDir, 'specs');
+    let hasDeltaSpecs = false;
+    try {
+      const capabilities = await fs.readdir(specsRoot, { withFileTypes: true });
+      for (const capability of capabilities) {
+        if (!capability.isDirectory()) continue;
+        try {
+          const content = await fs.readFile(
+            path.join(specsRoot, capability.name, 'spec.md'),
+            'utf8'
+          );
+          if (
+            /^##\s+(ADDED|MODIFIED|REMOVED|RENAMED)\s+Requirements/m.test(content)
+          ) {
+            hasDeltaSpecs = true;
+            break;
+          }
+        } catch (error) {
+          if (!isMissingPathError(error)) throw error;
+        }
+      }
+    } catch (error) {
+      if (!isMissingPathError(error)) throw error;
+    }
+    if (!hasDeltaSpecs) return true;
+    const report = await validator.validateChangeDeltaSpecs(changeDir);
+    if (report.valid) return true;
+    if (!json) {
+      console.log(chalk.red('\nValidation errors in change delta specs:'));
+      for (const issue of report.issues) {
+        console.log(
+          issue.level === 'ERROR'
+            ? chalk.red(`  - ${issue.message}`)
+            : chalk.yellow(`  - ${issue.message}`)
+        );
+      }
+    }
+    return false;
+  }
+
+  private async prepareSpecActions(
+    changeDir: string,
+    mainSpecsDir: string,
+    changeName: string,
+    options: ArchiveOptions,
+    root: ResolvedOpenSpecRoot,
+    json: boolean,
+    skipValidation: boolean
+  ): Promise<PreparedArchiveSpecAction[]> {
+    if (options.skipSpecs) {
+      if (!json) console.log('Skipping spec updates (--skip-specs flag provided).');
+      return [];
+    }
+    let updates: Awaited<ReturnType<typeof findSpecUpdates>>;
+    try {
+      updates = await findSpecUpdates(changeDir, mainSpecsDir);
+    } catch (error) {
+      throw new ArchiveBlockedError(
+        'archive_spec_update_failed',
+        error instanceof Error ? error.message : String(error),
+        'Fix the change delta specs and rerun. No files were changed.'
+      );
+    }
+    if (updates.length === 0) return [];
+    if (!json) {
+      console.log('\nSpecs to update:');
+      for (const update of updates) {
+        console.log(
+          `  ${path.basename(path.dirname(update.target))}: ${
+            update.exists ? 'update' : 'create'
+          }`
+        );
+      }
+    }
+
+    if (!options.dryRun && !options.yes) {
+      if (json) {
+        throw new ArchiveBlockedError(
+          'archive_confirmation_required',
+          `Updating ${updates.length} spec(s) requires confirmation: rerun with --yes.`,
+          withStoreFlag(root, 'rasen archive <change-name> --json --yes')
+        );
+      }
+      const { confirm } = await import('@inquirer/prompts');
+      const proceed = await confirm({
+        message: 'Proceed with spec updates?',
+        default: true,
+      });
+      if (!proceed) {
+        console.log('Skipping spec updates. Proceeding with archive.');
+        return [];
+      }
+    }
+
+    const actions: PreparedArchiveSpecAction[] = [];
+    try {
+      for (const update of updates) {
+        const built = await buildUpdatedSpec(update, changeName, { silent: json });
+        const capability = path.basename(path.dirname(update.target));
+        if (!skipValidation && !built.emptied) {
+          const report = await new Validator().validateSpecContent(
+            capability,
+            built.rebuilt
+          );
+          if (!report.valid) {
+            if (!json) {
+              console.log(
+                chalk.red(
+                  `\nValidation errors in rebuilt spec for ${capability} (will not write changes):`
+                )
+              );
+              for (const issue of report.issues) {
+                console.log(
+                  issue.level === 'ERROR'
+                    ? chalk.red(`  - ${issue.message}`)
+                    : chalk.yellow(`  - ${issue.message}`)
+                );
+              }
+            }
+            throw new ArchiveBlockedError(
+              'archive_spec_validation_failed',
+              `Rebuilt spec for '${capability}' failed validation. No files were changed.`,
+              `Run ${withStoreFlag(root, `rasen validate ${capability}`)} after fixing the change deltas.`
+            );
+          }
+        }
+        const source = await fs.readFile(update.source);
+        let targetPrecondition: PreparedArchiveSpecAction['targetPrecondition'] = {
+          state: 'absent',
+        };
+        try {
+          targetPrecondition = {
+            state: 'file',
+            sha256: createHash('sha256')
+              .update(await fs.readFile(update.target))
+              .digest('hex'),
+          };
+        } catch (error) {
+          if (!isMissingPathError(error)) throw error;
+        }
+        actions.push({
+          capability,
+          action: built.emptied ? 'delete' : update.exists ? 'update' : 'create',
+          source: update.source,
+          target: update.target,
+          sourceSha256: createHash('sha256').update(source).digest('hex'),
+          targetPrecondition,
+          rebuilt: built.rebuilt,
+          counts: built.counts,
+        });
+      }
+      return actions.sort((left, right) => left.target.localeCompare(right.target));
+    } catch (error) {
+      if (error instanceof ArchiveBlockedError) throw error;
+      throw new ArchiveBlockedError(
+        'archive_spec_update_failed',
+        error instanceof Error ? error.message : String(error),
+        'Fix the change delta specs and rerun. No files were changed.'
+      );
+    }
+  }
+
+  private renderDryRun(
+    plan: ArchivePlan,
+    json: boolean,
+    planToken?: string
+  ): ArchiveResult | null {
+    const specSyncPlan = plan.specActions.map(action => ({
+      capability: action.capability,
+      status: action.action,
+    }));
+    if (!json) {
+      console.log(chalk.cyan(`\n=== Archive dry-run for '${plan.change}' ===`));
+      console.log(`Planned archive: ${path.basename(plan.paths.final)}`);
+      console.log(`Transaction: ${plan.transactionId}`);
+      console.log(`Plan hash: ${plan.planHash}`);
+      if (planToken) console.log(`Plan token: ${planToken}`);
+      console.log(
+        `Spec sync plan: ${
+          specSyncPlan.length === 0
+            ? '(none)'
+            : specSyncPlan
+                .map(item => `${item.capability}: ${item.status}`)
+                .join(', ')
+        }`
+      );
+      console.log(`Sidecar: ${plan.sidecar.status}; ${plan.sidecar.disposition}`);
+      console.log(
+        `Ephemera pending-delete (${plan.cleaner.effectiveDelete.length}): ${
+          plan.cleaner.effectiveDelete.join(', ') || '(none)'
+        }`
+      );
+      console.log(
+        `Ephemera preserved (${plan.cleaner.effectivePreserve.length}): ${
+          plan.cleaner.effectivePreserve.join(', ') || '(none)'
+        }`
+      );
+      if (plan.blockers.length > 0) {
+        console.log(chalk.red('Blocking conditions:'));
+        for (const item of plan.blockers) {
+          console.log(chalk.red(`  - ${item.operation}: ${item.message}`));
+        }
+      }
+      console.log(chalk.cyan('Authoritative serialized plan:'));
+      console.log(JSON.stringify(plan, null, 2));
+      console.log(
+        chalk.cyan(
+          planToken
+            ? 'No project files were moved, deleted, or written; the immutable plan was saved in the machine transaction store.'
+            : 'No files were moved, deleted, or written.'
+        )
+      );
+      if (!plan.complete || plan.blockers.length > 0) process.exitCode = 1;
+      return null;
+    }
+    if (!plan.complete || plan.blockers.length > 0) process.exitCode = 1;
+    return {
+      change: plan.change,
+      archivedAs: path.basename(plan.paths.final),
+      path: plan.paths.final,
+      specsUpdated: false,
+      dryRun: true,
+      specSyncPlan,
+      ephemeraDiscarded: plan.cleaner.effectiveDelete,
+      ephemeraPreserved: plan.cleaner.effectivePreserve,
+      ephemeraAborted: plan.cleaner.classification.aborted,
+      ...(plan.cleaner.classification.abortReason
+        ? { ephemeraAbortReason: plan.cleaner.classification.abortReason }
+        : {}),
+      plan,
+      ...(planToken ? { planToken } : {}),
+      transactionId: plan.transactionId,
+      planHash: plan.planHash,
+      journalPath: plan.paths.journal,
+      blockers: plan.blockers,
+    };
   }
 
   private async selectChange(changesDir: string): Promise<string | null> {
     const { select } = await import('@inquirer/prompts');
-    const changeDirs = await listActiveChangeNames(changesDir);
-
-    if (changeDirs.length === 0) {
+    const names = await listActiveChangeNames(changesDir);
+    if (names.length === 0) {
       console.log('No active changes found.');
       return null;
     }
-
-    // Build choices with progress inline to avoid duplicate lists
-    let choices: Array<{ name: string; value: string }> = changeDirs.map(name => ({ name, value: name }));
+    let choices = names.map(name => ({ name, value: name }));
     try {
-      const progressList: Array<{ id: string; status: string }> = [];
-      for (const id of changeDirs) {
-        const progress = await getTaskProgressForChange(changesDir, id, path.resolve(changesDir, '..', '..'));
-        const status = formatTaskStatus(progress);
-        progressList.push({ id, status });
-      }
-      const nameWidth = Math.max(...progressList.map(p => p.id.length));
-      choices = progressList.map(p => ({
-        name: `${p.id.padEnd(nameWidth)}     ${p.status}`,
-        value: p.id
+      const progress = await Promise.all(
+        names.map(async id => ({
+          id,
+          status: formatTaskStatus(
+            await getTaskProgressForChange(
+              changesDir,
+              id,
+              path.resolve(changesDir, '..', '..')
+            )
+          ),
+        }))
+      );
+      const width = Math.max(...progress.map(item => item.id.length));
+      choices = progress.map(item => ({
+        name: `${item.id.padEnd(width)}     ${item.status}`,
+        value: item.id,
       }));
     } catch {
-      // If anything fails, fall back to simple names
-      choices = changeDirs.map(name => ({ name, value: name }));
+      // The simple name choices remain usable.
     }
-
     try {
-      const answer = await select({
-        message: 'Select a change to archive',
-        choices
-      });
-      return answer;
-    } catch (error) {
-      // User cancelled (Ctrl+C)
+      return await select({ message: 'Select a change to archive', choices });
+    } catch {
       return null;
     }
   }
 
   private getArchiveDate(): string {
-    // Returns date in YYYY-MM-DD format
     return new Date().toISOString().split('T')[0];
   }
 }

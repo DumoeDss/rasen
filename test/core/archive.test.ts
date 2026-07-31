@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ArchiveCommand } from '../../src/core/archive.js';
+import type { ArchiveApplyResult, ArchivePlan } from '../../src/core/archive-engine.js';
 import { Validator } from '../../src/core/validation/validator.js';
 import { promises as fs } from 'fs';
 import { execFileSync } from 'node:child_process';
@@ -83,6 +84,309 @@ describe('ArchiveCommand', () => {
   });
 
   describe('execute', () => {
+    class TrackingArchiveCommand extends ArchiveCommand {
+      applyCalls = 0;
+
+      protected override applyPlannedArchive(
+        plan: ArchivePlan
+      ): Promise<ArchiveApplyResult> {
+        this.applyCalls += 1;
+        return super.applyPlannedArchive(plan);
+      }
+    }
+
+    it('applies an immutable token and never presents completed corruption as auto-resumable', async () => {
+      const changeName = 'durable-plan';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] done\n');
+
+      await archiveCommand.execute(changeName, {
+        dryRun: true,
+        savePlan: true,
+        json: true,
+        yes: true,
+      });
+      const preview = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      const token = preview.archive.planToken as string;
+      const previewHash = preview.archive.plan.planHash as string;
+      expect(token).toContain(previewHash);
+
+      const lateEphemera = path.join(
+        tempDir,
+        '.rasen',
+        'changes',
+        changeName,
+        'ephemera',
+        'late.log'
+      );
+      await fs.mkdir(path.dirname(lateEphemera), { recursive: true });
+      await fs.writeFile(lateEphemera, 'introduced after preview\n');
+      vi.mocked(console.log).mockClear();
+
+      await archiveCommand.execute(undefined, {
+        applyPlan: token,
+        yes: true,
+        json: true,
+      });
+      const applied = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(applied.archive.mode).toBe('apply');
+      expect(applied.archive.result.status).toBe('complete');
+      expect(applied.archive.result.planHash).toBe(previewHash);
+      expect(await fs.readFile(lateEphemera, 'utf8')).toBe(
+        'introduced after preview\n'
+      );
+
+      const archivedTask = path.join(applied.archive.result.path, 'tasks.md');
+      await fs.writeFile(archivedTask, 'corrupt completed archive\n');
+      vi.mocked(console.log).mockClear();
+
+      await archiveCommand.execute(undefined, {
+        applyPlan: token,
+        yes: true,
+        json: true,
+      });
+      const rejected = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(rejected.archive.result).toMatchObject({
+        status: 'recoverable',
+        resumed: true,
+        journalPath: applied.archive.result.journalPath,
+        manualRecoveryAction: {
+          kind: 'manual-recovery-required',
+          guidance: expect.stringContaining('Automatic archive resume is disabled'),
+        },
+      });
+      expect(rejected.archive.result.recoveryCommand).toBeUndefined();
+      expect(
+        JSON.parse(await fs.readFile(applied.archive.result.journalPath, 'utf8'))
+      ).toMatchObject({
+        phase: 'complete',
+        integrityFailure: {
+          operation: 'accounting',
+          code: 'ESTALE',
+        },
+      });
+      expect(await fs.readFile(archivedTask, 'utf8')).toBe(
+        'corrupt completed archive\n'
+      );
+    });
+
+    it('returns a complete blocked preview with a nonzero status', async () => {
+      const changeName = 'blocked-preview';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] done\n');
+      await fs.writeFile(
+        path.join(changeDir, '.rasen-archive-input.json'),
+        JSON.stringify({
+          schemaVersion: 99,
+          change: changeName,
+          handoff: { complete: true, decisions: [] },
+          probes: [],
+        })
+      );
+
+      await archiveCommand.execute(changeName, {
+        dryRun: true,
+        json: true,
+        yes: true,
+      });
+      const preview = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(process.exitCode).toBe(1);
+      expect(preview.archive.plan.complete).toBe(false);
+      expect(preview.archive.plan.blockers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ operation: 'sidecar-validate' }),
+        ])
+      );
+    });
+
+    it('returns an engine-only blocked plan without calling archive apply', async () => {
+      const changeName = 'blocked-sidecar-apply';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      const sidecarPath = path.join(changeDir, '.rasen-archive-input.json');
+      const sidecarBytes = '{"schemaVersion":99,"change":"blocked-sidecar-apply"}\n';
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] done\n');
+      await fs.writeFile(sidecarPath, sidecarBytes);
+
+      const trackingCommand = new TrackingArchiveCommand();
+      await trackingCommand.execute(changeName, { json: true, yes: true });
+
+      const payload = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(process.exitCode).toBe(1);
+      expect(trackingCommand.applyCalls).toBe(0);
+      expect(payload.archive).toMatchObject({
+        change: changeName,
+        status: 'blocked',
+        specsUpdated: false,
+        totals: { added: 0, modified: 0, removed: 0, renamed: 0 },
+        ephemeraDiscarded: [],
+        blockers: expect.arrayContaining([
+          expect.objectContaining({ operation: 'sidecar-validate' }),
+        ]),
+      });
+      expect(payload.archive.result).toBeUndefined();
+      expect(payload.archive.plan.complete).toBe(false);
+      expect(payload.plan).toEqual(payload.archive.plan);
+      expect(payload.status[0].code).toBe('archive_plan_blocked');
+      await expect(fs.readFile(sidecarPath, 'utf8')).resolves.toBe(sidecarBytes);
+      await expect(fs.access(payload.plan.paths.stage)).rejects.toThrow();
+      await expect(fs.access(payload.plan.paths.journal)).rejects.toThrow();
+      await expect(fs.access(payload.plan.paths.final)).rejects.toThrow();
+      await expect(fs.access(changeDir)).resolves.toBeUndefined();
+    });
+
+    it('keeps an engine-only target inspection failure generic without applying', async () => {
+      const changeName = 'blocked-target-inspection';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      const finalPath = path.join(
+        tempDir,
+        'rasen',
+        'changes',
+        'archive',
+        `${new Date().toISOString().split('T')[0]}-${changeName}`
+      );
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] done\n');
+
+      const originalLstat = fs.lstat;
+      const lstatSpy = vi.spyOn(fs, 'lstat').mockImplementation(async target => {
+        if (path.resolve(String(target)) === finalPath) {
+          throw Object.assign(new Error(`access denied: ${finalPath}`), {
+            code: 'EACCES',
+          });
+        }
+        return originalLstat(target);
+      });
+      const trackingCommand = new TrackingArchiveCommand();
+      try {
+        await trackingCommand.execute(changeName, {
+          json: true,
+          yes: true,
+          noValidate: true,
+          skipSpecs: true,
+        });
+      } finally {
+        lstatSpy.mockRestore();
+      }
+
+      const payload = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(process.exitCode).toBe(1);
+      expect(trackingCommand.applyCalls).toBe(0);
+      expect(payload.archive).toMatchObject({
+        change: changeName,
+        status: 'blocked',
+        blockers: expect.arrayContaining([
+          expect.objectContaining({
+            operation: 'target-lstat',
+            code: 'EACCES',
+          }),
+        ]),
+      });
+      expect(payload.archive.result).toBeUndefined();
+      expect(payload.plan).toEqual(payload.archive.plan);
+      expect(payload.status[0].code).toBe('archive_plan_blocked');
+      await expect(fs.access(payload.plan.paths.stage)).rejects.toThrow();
+      await expect(fs.access(payload.plan.paths.journal)).rejects.toThrow();
+      await expect(fs.access(payload.plan.paths.final)).rejects.toThrow();
+      await expect(fs.access(changeDir)).resolves.toBeUndefined();
+    });
+
+    it('saves a fully serializable blocked plan when the requested source is missing', async () => {
+      const changeName = 'missing-preview-source';
+
+      await archiveCommand.execute(changeName, {
+        dryRun: true,
+        savePlan: true,
+        json: true,
+        yes: true,
+      });
+
+      const previewText = vi.mocked(console.log).mock.calls.at(-1)?.[0] as string;
+      const preview = JSON.parse(previewText);
+      expect(process.exitCode).toBe(1);
+      expect(preview.archive.dryRun).toBe(true);
+      expect(preview.archive.planToken).toMatch(/^archive-v1:/);
+      expect(preview.archive.plan).toEqual(
+        expect.objectContaining({
+          change: changeName,
+          complete: false,
+          preconditions: expect.objectContaining({ source: 'missing' }),
+          sourceFingerprint: null,
+        })
+      );
+      expect(preview.archive.plan.blockers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            operation: 'source-lstat',
+            code: 'ENOENT',
+          }),
+        ])
+      );
+      expect(JSON.parse(JSON.stringify(preview.archive.plan))).toEqual(
+        preview.archive.plan
+      );
+      const transactionId = preview.archive.plan.transactionId as string;
+      await expect(
+        fs.access(
+          path.join(
+            process.env.XDG_DATA_HOME!,
+            'rasen',
+            'archive-transactions',
+            transactionId,
+            'plan.json'
+          )
+        )
+      ).resolves.toBeUndefined();
+    });
+
+    it('preserves a structured recoverable JSON result and same-token retry command', async () => {
+      const changeName = 'recoverable-json';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] done\n');
+      await archiveCommand.execute(changeName, {
+        dryRun: true,
+        savePlan: true,
+        yes: true,
+        json: true,
+      });
+      const preview = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      const token = preview.archive.planToken as string;
+      await fs.writeFile(path.join(changeDir, 'after-plan.txt'), 'drift\n');
+      vi.mocked(console.log).mockClear();
+
+      await archiveCommand.execute(undefined, {
+        applyPlan: token,
+        yes: true,
+        json: true,
+      });
+      const payload = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(process.exitCode).toBe(1);
+      expect(payload.archive.mode).toBe('apply');
+      expect(payload.archive.result.status).toBe('recoverable');
+      expect(payload.archive.result.planHash).toBe(preview.archive.plan.planHash);
+      expect(payload.archive.result.recoveryCommand).toContain(token);
+      await expect(fs.access(changeDir)).resolves.toBeUndefined();
+    });
+
     it('should archive a change successfully', async () => {
       // Create a test change
       const changeName = 'test-feature';
@@ -329,10 +633,16 @@ New feature description.
       expect(archives.some(a => a.includes(changeName))).toBe(false);
     });
 
-    it('should throw error if change does not exist', async () => {
-      await expect(
-        archiveCommand.execute('non-existent-change', { yes: true })
-      ).rejects.toThrow("Change 'non-existent-change' not found.");
+    it('should produce a blocked plan if change does not exist', async () => {
+      await archiveCommand.execute('non-existent-change', { yes: true });
+
+      expect(process.exitCode).toBe(1);
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining('source-lstat:')
+      );
+      expect(console.log).toHaveBeenCalledWith(
+        'Aborted. No files were changed.'
+      );
     });
 
     it('should throw error if archive already exists', async () => {
@@ -1076,7 +1386,7 @@ The system will log all events.
 
       expect(process.exitCode).toBe(1);
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('Validation failed')
+        expect.stringContaining('validation: Archive validation did not pass.')
       );
 
       // Change must NOT have been archived
@@ -1213,13 +1523,19 @@ The system SHALL do the thing differently.
   });
 
   describe('error handling', () => {
-    it('should report no active changes when openspec directory does not exist', async () => {
+    it('should report a blocked plan when the openspec directory does not exist', async () => {
       // Remove openspec directory
       await fs.rm(path.join(tempDir, 'rasen'), { recursive: true });
 
-      await expect(
-        archiveCommand.execute('any-change', { yes: true })
-      ).rejects.toThrow("Change 'any-change' not found. No active changes exist in this root.");
+      await archiveCommand.execute('any-change', { yes: true });
+
+      expect(process.exitCode).toBe(1);
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining('source-lstat:')
+      );
+      expect(console.log).toHaveBeenCalledWith(
+        'Aborted. No files were changed.'
+      );
     });
   });
 

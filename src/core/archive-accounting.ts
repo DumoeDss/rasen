@@ -1,69 +1,50 @@
 /**
- * archive.json accounting (design `file-placement-collapse-archive`, D4).
+ * Fail-closed disposition accounting for finalized archive payloads.
  *
- * Resolves and writes the structured disposition-accounting file that lives
- * inside an archived change directory. This is SEPARATE from
- * `.openspec.yaml` (quality capture) — the two coexist (D5).
- *
- * The file SHALL NOT record the planning-root commit hash (D4): `archive.json`
- * is itself inside that commit, so the hash is an unclosable self-reference.
- * The binding identifiers are `codeCommit` (cross-repo, closable) and evidence
- * content hashes (content-addressed, closable). The planning side records
- * branch + clean/dirty state only.
+ * Only a confirmed non-Git root receives the documented null/clean values.
+ * Evidence is recursively inventoried without following symlinks and the
+ * ledger is atomically written and verified before active-source removal.
  */
+import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
-import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 
-import { gitHeadCommit, isConfirmedGitWorkTree } from './store/git.js';
 import { evidenceDir } from './file-placement.js';
+import { isConfirmedGitWorkTree } from './store/git.js';
 
 const execFileAsync = promisify(execFile);
 
 export interface EvidenceEntry {
-  /** Path relative to the archived change directory (e.g. `evidence/review-report.md`). */
   path: string;
   sha256: string;
 }
 
 export interface ProbeEntry {
-  /** Execution-root-relative path of the probe directory left in place (静置). */
   path: string;
-  /** The code commit the probe was tested against. */
   codeCommit: string;
 }
 
 export interface HandoffAbsorbedEntry {
-  /** Handoff file path relative to the change directory. */
   file: string;
-  /** `absorbed` (deleted — dead-ends covered by design/evidence) or `preserved` (moved to evidence/handoff/). */
   outcome: 'absorbed' | 'preserved';
 }
 
 export interface ResolveArchiveAccountingInput {
-  /** Semantic change name. */
   changeName: string;
-  /** Where the change directory landed after the move (the archive path). */
   archivedDir: string;
-  /**
-   * The execution root — the code checkout being worked on. For an in-repo
-   * run this IS the planning root; for a store-selected run it is the code
-   * project's root. `codeCommit` is resolved from here.
-   */
   executionRoot: string;
-  /** The planning root — where the change directory lives. Used for `planningBranch` + `planningTreeState`. */
   planningRoot: string;
-  /** Filenames deleted by the ephemera cleaner. */
   ephemeraDiscarded: string[];
-  /**
-   * Handoff absorption judgment from the skill sidecar. `null` when no
-   * sidecar was written (no judgment made).
-   */
   handoffAbsorbed: HandoffAbsorbedEntry[] | null;
-  /** Probe directories left in place (静置). */
   probes: ProbeEntry[];
+  archivedAt?: string;
+  gitFacts?: {
+    codeCommit: string | null;
+    planningBranch: string | null;
+    planningTreeState: 'clean' | 'dirty';
+  };
 }
 
 export interface ArchiveAccounting {
@@ -74,195 +55,270 @@ export interface ArchiveAccounting {
   planningTreeState: 'clean' | 'dirty';
   evidence: EvidenceEntry[];
   probes: ProbeEntry[];
-  /**
-   * `null` = no absorption judgment was made (skill didn't run / manual
-   * archive). `[]` = judgment made, nothing absorbed.
-   */
   handoffAbsorbed: HandoffAbsorbedEntry[] | null;
   ephemeraDiscarded: string[];
   missing: string[];
 }
 
-/** Sidecar filename the archive skill writes for the CLI to read (M2 fix). */
 export const ARCHIVE_INPUT_SIDECAR_FILENAME = '.rasen-archive-input.json';
 
+/**
+ * Compatibility shape for callers that have not moved to the strict
+ * `resolveArchiveSidecar` engine API yet.
+ */
 export interface ArchiveInputSidecar {
-  handoffAbsorbed?: HandoffAbsorbedEntry[];
+  schemaVersion?: number;
+  change?: string;
+  handoff?: {
+    complete?: boolean;
+    decisions?: Array<{ path: string; outcome: 'absorbed' | 'preserved' }>;
+  };
   probes?: ProbeEntry[];
+  handoffAbsorbed?: HandoffAbsorbedEntry[];
 }
 
-/**
- * Computes the sha256 hex digest of a file's content.
- */
+function errorCode(error: unknown): string | undefined {
+  return (error as NodeJS.ErrnoException | undefined)?.code;
+}
+
+export class ArchiveAccountingError extends Error {
+  readonly operation: string;
+  readonly path: string;
+  readonly code?: string;
+
+  constructor(operation: string, target: string, error: unknown) {
+    const code = errorCode(error);
+    super(
+      `${operation} failed for ${target}${code ? ` (${code})` : ''}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+    this.name = 'ArchiveAccountingError';
+    this.operation = operation;
+    this.path = target;
+    if (code) this.code = code;
+  }
+}
+
+function sameFileIdentity(left: import('node:fs').Stats, right: import('node:fs').Stats): boolean {
+  return (
+    left.isFile() &&
+    right.isFile() &&
+    !left.isSymbolicLink() &&
+    !right.isSymbolicLink() &&
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.mode === right.mode &&
+    left.size === right.size &&
+    left.mtimeMs === right.mtimeMs &&
+    left.ctimeMs === right.ctimeMs
+  );
+}
+
 async function sha256File(absPath: string): Promise<string> {
-  const content = await fs.readFile(absPath);
-  return createHash('sha256').update(content).digest('hex');
+  try {
+    const before = await fs.lstat(absPath);
+    if (!before.isFile() || before.isSymbolicLink()) {
+      throw new Error('Evidence entry must be a regular file.');
+    }
+    const content = await fs.readFile(absPath);
+    const after = await fs.lstat(absPath);
+    if (!sameFileIdentity(before, after)) {
+      const drift = new Error('Evidence entry changed while it was being hashed.');
+      (drift as NodeJS.ErrnoException).code = 'ESTALE';
+      throw drift;
+    }
+    return createHash('sha256').update(content).digest('hex');
+  } catch (error) {
+    if (error instanceof ArchiveAccountingError) throw error;
+    throw new ArchiveAccountingError('evidence-hash', absPath, error);
+  }
 }
 
-/**
- * Walks the evidence directory inside the archived change directory and hashes
- * every file. Paths are relative to the archived change directory (prefixed
- * with `evidence/`). Non-existent evidence directory → empty array.
- */
-async function hashEvidence(archivedDir: string): Promise<EvidenceEntry[]> {
-  const evidencePath = evidenceDir(archivedDir);
+export async function hashArchiveEvidence(archivedDir: string): Promise<EvidenceEntry[]> {
+  const root = evidenceDir(archivedDir);
   const entries: EvidenceEntry[] = [];
 
-  async function walk(dir: string, prefix: string): Promise<void> {
+  async function walk(directory: string, prefix: string): Promise<void> {
     let dirents: import('node:fs').Dirent[];
     try {
-      dirents = await fs.readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
+      dirents = await fs.readdir(directory, { withFileTypes: true });
+    } catch (error) {
+      if (!prefix && errorCode(error) === 'ENOENT') return;
+      throw new ArchiveAccountingError('evidence-readdir', directory, error);
     }
-    dirents.sort((a, b) => a.name.localeCompare(b.name));
-    for (const entry of dirents) {
-      if (entry.isFile()) {
-        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-        const hash = await sha256File(path.join(dir, entry.name));
-        entries.push({ path: `evidence/${rel}`, sha256: hash });
-      } else if (entry.isDirectory()) {
-        await walk(path.join(dir, entry.name), prefix ? `${prefix}/${entry.name}` : entry.name);
+    dirents.sort((left, right) => left.name.localeCompare(right.name));
+    for (const dirent of dirents) {
+      const absolute = path.join(directory, dirent.name);
+      let stat: import('node:fs').Stats;
+      try {
+        stat = await fs.lstat(absolute);
+      } catch (error) {
+        throw new ArchiveAccountingError('evidence-lstat', absolute, error);
+      }
+      if (stat.isSymbolicLink()) {
+        throw new ArchiveAccountingError(
+          'evidence-containment',
+          absolute,
+          new Error('Evidence symlinks are not permitted.')
+        );
+      }
+      if (stat.isFile()) {
+        const relative = prefix ? `${prefix}/${dirent.name}` : dirent.name;
+        entries.push({
+          path: `evidence/${relative}`,
+          sha256: await sha256File(absolute),
+        });
+      } else if (stat.isDirectory()) {
+        await walk(absolute, prefix ? `${prefix}/${dirent.name}` : dirent.name);
+      } else {
+        throw new ArchiveAccountingError(
+          'evidence-lstat',
+          absolute,
+          new Error('Evidence contains a non-regular entry.')
+        );
       }
     }
   }
 
-  await walk(evidencePath, '');
-  entries.sort((a, b) => a.path.localeCompare(b.path));
+  await walk(root, '');
+  entries.sort((left, right) => left.path.localeCompare(right.path));
   return entries;
 }
 
-/**
- * Resolves the planning root's current branch name, or null when not a git
- * work tree or on a detached HEAD.
- */
-async function resolvePlanningBranch(planningRoot: string): Promise<string | null> {
+async function confirmedGitState(root: string): Promise<'git' | 'non-git'> {
+  const state = await isConfirmedGitWorkTree(root);
+  if (state === true) return 'git';
+  if (state === false) return 'non-git';
+  throw new ArchiveAccountingError(
+    'git-work-tree',
+    root,
+    new Error('Git state could not be confirmed.')
+  );
+}
+
+async function gitExec(root: string, args: string[], operation: string): Promise<string> {
   try {
-    const isGit = await isConfirmedGitWorkTree(planningRoot);
-    if (!isGit) return null;
-    const { stdout } = await execFileAsync(
-      'git',
-      ['-C', planningRoot, 'rev-parse', '--abbrev-ref', 'HEAD'],
-      { windowsHide: true }
-    );
-    const branch = stdout.trim();
-    // 'HEAD' means detached HEAD — no branch name to record.
-    return branch === 'HEAD' ? null : branch;
-  } catch {
-    return null;
+    const { stdout } = await execFileAsync('git', ['-C', root, ...args], {
+      windowsHide: true,
+    });
+    return stdout.trim();
+  } catch (error) {
+    throw new ArchiveAccountingError(operation, root, error);
   }
 }
 
-/**
- * Resolves whether the planning root's working tree has uncommitted changes.
- * Non-git roots record `clean` (no state to dirty).
- */
-async function resolvePlanningTreeState(planningRoot: string): Promise<'clean' | 'dirty'> {
-  try {
-    const isGit = await isConfirmedGitWorkTree(planningRoot);
-    if (!isGit) return 'clean';
-    const { stdout } = await execFileAsync(
-      'git',
-      ['-C', planningRoot, 'status', '--porcelain'],
-      { windowsHide: true }
+async function resolveCodeCommit(executionRoot: string): Promise<string | null> {
+  if ((await confirmedGitState(executionRoot)) === 'non-git') return null;
+  const commit = await gitExec(
+    executionRoot,
+    ['rev-parse', '--verify', 'HEAD^{commit}'],
+    'git-code-commit'
+  );
+  if (!/^[0-9a-f]{40}$/i.test(commit)) {
+    throw new ArchiveAccountingError(
+      'git-code-commit',
+      executionRoot,
+      new Error('Git returned a non-full commit id.')
     );
-    return stdout.trim().length > 0 ? 'dirty' : 'clean';
-  } catch {
-    return 'clean';
   }
+  return commit.toLowerCase();
 }
 
-/**
- * Checks for common expected evidence items and lists the absent ones.
- * Advisory: a change may legitimately archive without a ship log or
- * verification report.
- */
+async function resolvePlanningGitFacts(
+  planningRoot: string
+): Promise<{ branch: string | null; treeState: 'clean' | 'dirty' }> {
+  if ((await confirmedGitState(planningRoot)) === 'non-git') {
+    return { branch: null, treeState: 'clean' };
+  }
+  const [branch, status] = await Promise.all([
+    gitExec(planningRoot, ['rev-parse', '--abbrev-ref', 'HEAD'], 'git-planning-branch'),
+    gitExec(planningRoot, ['status', '--porcelain'], 'git-planning-status'),
+  ]);
+  return {
+    branch: branch === 'HEAD' ? null : branch,
+    treeState: status.length > 0 ? 'dirty' : 'clean',
+  };
+}
+
 function resolveMissing(evidenceEntries: EvidenceEntry[]): string[] {
+  const paths = new Set(evidenceEntries.map(entry => entry.path));
   const missing: string[] = [];
-  const paths = new Set(evidenceEntries.map((e) => e.path));
-  if (!paths.has('evidence/ship-log.md')) {
-    missing.push('ship-log');
-  }
-  if (!paths.has('evidence/verification-report.md')) {
-    missing.push('verification-report');
-  }
+  if (!paths.has('evidence/ship-log.md')) missing.push('ship-log');
+  if (!paths.has('evidence/verification-report.md')) missing.push('verification-report');
   return missing;
 }
 
 /**
- * Reads the archive-input sidecar file from the change directory (before the
- * move) and returns its parsed contents, or null when absent. The skill writes
- * this file to pass its absorption judgment and probe discoveries to the CLI.
- * The CLI reads it, uses the data for archive.json, then deletes it so it does
- * not enter the archive (M2 fix).
+ * Legacy read-only helper. It deliberately distinguishes ENOENT from every
+ * other failure; new archive code validates the value with
+ * `resolveArchiveSidecar` before apply.
  */
 export async function readArchiveInputSidecar(
   changeDir: string
 ): Promise<ArchiveInputSidecar | null> {
   const sidecarPath = path.join(changeDir, ARCHIVE_INPUT_SIDECAR_FILENAME);
+  let content: string;
   try {
-    const content = await fs.readFile(sidecarPath, 'utf-8');
+    content = await fs.readFile(sidecarPath, 'utf8');
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') return null;
+    throw new ArchiveAccountingError('sidecar-read', sidecarPath, error);
+  }
+  try {
     return JSON.parse(content) as ArchiveInputSidecar;
-  } catch {
-    return null;
+  } catch (error) {
+    throw new ArchiveAccountingError('sidecar-parse', sidecarPath, error);
   }
 }
 
 /**
- * Removes the sidecar file from the change directory after the CLI has read it.
- * Best-effort: a failure to delete is logged but does not block the archive.
+ * Compatibility helper retained for external imports. The engine itself
+ * never mutates the active sidecar; it excludes the control file while
+ * copying the staged payload and removes the active directory source-last.
  */
-export async function removeArchiveInputSidecar(changeDir: string): Promise<void> {
-  const sidecarPath = path.join(changeDir, ARCHIVE_INPUT_SIDECAR_FILENAME);
-  try {
-    await fs.rm(sidecarPath, { force: true });
-  } catch {
-    // Best-effort — the move will carry it if deletion fails, which is a
-    // minor cosmetic issue (the file is hidden and harmless in the archive).
-  }
+export async function removeArchiveInputSidecar(_changeDir: string): Promise<void> {
+  return;
 }
 
-/**
- * PURE resolution: gathers all archive.json fields from the filesystem and git
- * state WITHOUT writing anything. This is the seam the archive path calls
- * after the directory move. The `codeCommit` is resolved from the execution
- * root (for a store-selected run, the code project's HEAD — NOT the store's).
- */
 export async function resolveArchiveAccounting(
   input: ResolveArchiveAccountingInput
 ): Promise<ArchiveAccounting> {
-  const [codeCommit, planningBranch, planningTreeState, evidence] = await Promise.all([
-    gitHeadCommit(input.executionRoot),
-    resolvePlanningBranch(input.planningRoot),
-    resolvePlanningTreeState(input.planningRoot),
-    hashEvidence(input.archivedDir),
+  const evidencePromise = hashArchiveEvidence(input.archivedDir);
+  const codeCommitPromise = input.gitFacts
+    ? Promise.resolve(input.gitFacts.codeCommit)
+    : resolveCodeCommit(input.executionRoot);
+  const planningFactsPromise = input.gitFacts
+    ? Promise.resolve({
+        branch: input.gitFacts.planningBranch,
+        treeState: input.gitFacts.planningTreeState,
+      })
+    : resolvePlanningGitFacts(input.planningRoot);
+  const [codeCommit, planningFacts, evidence] = await Promise.all([
+    codeCommitPromise,
+    planningFactsPromise,
+    evidencePromise,
   ]);
 
   return {
     change: input.changeName,
-    archivedAt: new Date().toISOString(),
+    archivedAt: input.archivedAt ?? new Date().toISOString(),
     codeCommit,
-    planningBranch,
-    planningTreeState,
+    planningBranch: planningFacts.branch,
+    planningTreeState: planningFacts.treeState,
     evidence,
-    probes: input.probes,
-    handoffAbsorbed: input.handoffAbsorbed,
-    ephemeraDiscarded: input.ephemeraDiscarded,
+    probes: [...input.probes].sort((left, right) => left.path.localeCompare(right.path)),
+    handoffAbsorbed:
+      input.handoffAbsorbed === null
+        ? null
+        : [...input.handoffAbsorbed].sort((left, right) => left.file.localeCompare(right.file)),
+    ephemeraDiscarded: [...input.ephemeraDiscarded].sort(),
     missing: resolveMissing(evidence),
   };
 }
 
-/**
- * Writes `archive.json` inside an archived change directory. Called by the
- * archive path after the directory move. The file is pretty-printed JSON with
- * a trailing newline, sorted top-level keys for deterministic diff output.
- */
-export async function writeArchiveJson(
-  archivedDir: string,
-  accounting: ArchiveAccounting
-): Promise<void> {
-  // Sort top-level keys for deterministic output.
-  const ordered: Record<string, unknown> = {
+function orderedAccounting(accounting: ArchiveAccounting): Record<string, unknown> {
+  return {
     change: accounting.change,
     archivedAt: accounting.archivedAt,
     codeCommit: accounting.codeCommit,
@@ -274,6 +330,70 @@ export async function writeArchiveJson(
     ephemeraDiscarded: accounting.ephemeraDiscarded,
     missing: accounting.missing,
   };
-  const content = JSON.stringify(ordered, null, 2) + '\n';
-  await fs.writeFile(path.join(archivedDir, 'archive.json'), content, 'utf-8');
+}
+
+export function serializeArchiveAccounting(accounting: ArchiveAccounting): string {
+  return `${JSON.stringify(orderedAccounting(accounting), null, 2)}\n`;
+}
+
+function accountingEquals(left: ArchiveAccounting, right: unknown): boolean {
+  return (
+    typeof right === 'object' &&
+    right !== null &&
+    JSON.stringify(orderedAccounting(left)) === JSON.stringify(right)
+  );
+}
+
+export async function verifyArchiveAccounting(
+  archivedDir: string,
+  expected: ArchiveAccounting
+): Promise<void> {
+  const ledgerPath = path.join(archivedDir, 'archive.json');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await fs.readFile(ledgerPath, 'utf8'));
+  } catch (error) {
+    throw new ArchiveAccountingError('archive-json-read', ledgerPath, error);
+  }
+  if (!accountingEquals(expected, parsed)) {
+    throw new ArchiveAccountingError(
+      'archive-json-verify',
+      ledgerPath,
+      new Error('Parsed ledger differs from planned accounting.')
+    );
+  }
+  const actualEvidence = await hashArchiveEvidence(archivedDir);
+  if (JSON.stringify(actualEvidence) !== JSON.stringify(expected.evidence)) {
+    throw new ArchiveAccountingError(
+      'archive-json-evidence-verify',
+      ledgerPath,
+      new Error('Finalized evidence hashes do not match archive.json.')
+    );
+  }
+}
+
+export async function writeArchiveJson(
+  archivedDir: string,
+  accounting: ArchiveAccounting
+): Promise<void> {
+  const ledgerPath = path.join(archivedDir, 'archive.json');
+  const tempPath = path.join(
+    archivedDir,
+    `.archive.json.tmp-${process.pid}-${randomUUID()}`
+  );
+  const content = serializeArchiveAccounting(accounting);
+  let handle: import('node:fs/promises').FileHandle | undefined;
+  try {
+    handle = await fs.open(tempPath, 'wx', 0o600);
+    await handle.writeFile(content, 'utf8');
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await fs.rename(tempPath, ledgerPath);
+  } catch (error) {
+    await handle?.close().catch(() => undefined);
+    await fs.rm(tempPath, { force: true }).catch(() => undefined);
+    throw new ArchiveAccountingError('archive-json-write', ledgerPath, error);
+  }
+  await verifyArchiveAccounting(archivedDir, accounting);
 }

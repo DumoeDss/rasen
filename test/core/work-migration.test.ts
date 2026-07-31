@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -7,10 +8,51 @@ import {
   discoverChangeDirs,
   scanMachineHomeWorkDir,
   countMigratableEphemera,
+  applyWorkMigration,
+  archiveNameMatches,
+  defaultWorkMigrationFileSystem,
+  isPathWithin,
+  pathsEqualForPlatform,
+  freezeWorkMigrationRootContext,
+  planWorkMigration,
   runWorkMigration,
   RUN_ARTIFACT_CAVEAT_NOTE,
+  type WorkMigrationFileSystem,
+  type WorkMigrationRootContext,
 } from '../../src/core/work-migration.js';
 import { resolveProjectHome } from '../../src/core/project-home.js';
+
+function injectedFileSystem(
+  overrides: Partial<WorkMigrationFileSystem> = {}
+): WorkMigrationFileSystem {
+  return { ...defaultWorkMigrationFileSystem, ...overrides };
+}
+
+function fsError(code: string, message = code): NodeJS.ErrnoException {
+  return Object.assign(new Error(message), { code });
+}
+
+function hashTree(root: string): string {
+  const hash = createHash('sha256');
+  function walk(target: string, prefix: string): void {
+    for (const entry of fs.readdirSync(target, { withFileTypes: true }).sort((left, right) =>
+      left.name.localeCompare(right.name)
+    )) {
+      const absolute = path.join(target, entry.name);
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      hash.update(relative);
+      hash.update('\0');
+      if (entry.isDirectory()) {
+        walk(absolute, relative);
+      } else if (entry.isFile()) {
+        hash.update(fs.readFileSync(absolute));
+        hash.update('\0');
+      }
+    }
+  }
+  walk(root, '');
+  return hash.digest('hex');
+}
 
 /**
  * Tests for the inverted migrator (design D6/D7): legacy machine-home state →
@@ -474,6 +516,869 @@ describe('work-migration (inverted)', () => {
       const counts = await countMigratableEphemera(projectRoot, changesDir, { globalDataDir });
       expect(counts.unavailable).toBe(true);
       expect(counts.total).toBe(0);
+    });
+  });
+
+  describe('immutable plan and scoped ownership', () => {
+    beforeEach(async () => {
+      await mintIdentity();
+    });
+
+    it('adds a frozen in-repo root context while preserving compatibility aliases', async () => {
+      makeActiveChange('foo');
+      const rootContext = freezeWorkMigrationRootContext({
+        planningRoot: projectRoot,
+        changesDir,
+        executionRoot: projectRoot,
+        legacyHomeOwnerRoot: projectRoot,
+        pathIdentityFlavor: 'posix',
+      });
+
+      const plan = await planWorkMigration(rootContext, { globalDataDir });
+
+      expect(Object.isFrozen(rootContext)).toBe(true);
+      expect(plan.rootContext).toBe(rootContext);
+      expect(plan.projectRoot).toBe(rootContext.planningRoot);
+      expect(plan.changesDir).toBe(rootContext.changesDir);
+      expect(plan.executionRoot).toBe(rootContext.executionRoot);
+    });
+
+    it('routes Store planning, exact execution, and legacy-home ownership independently', async () => {
+      const planningRoot = path.join(projectRoot, 'store-planning');
+      const planningChanges = path.join(planningRoot, 'rasen', 'changes');
+      const changeDir = path.join(planningChanges, 'foo');
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.writeFileSync(path.join(changeDir, 'proposal.md'), '# proposal\n');
+
+      const executionRoot = path.join(projectRoot, 'member-worktree');
+      fs.mkdirSync(executionRoot, { recursive: true });
+      const legacyHomeOwnerRoot = path.join(projectRoot, 'legacy-home-owner');
+      fs.mkdirSync(path.join(legacyHomeOwnerRoot, 'rasen'), { recursive: true });
+      fs.writeFileSync(
+        path.join(legacyHomeOwnerRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\n'
+      );
+      const legacyHome = await resolveProjectHome(legacyHomeOwnerRoot, {
+        ensure: true,
+        globalDataDir,
+      });
+      expect(legacyHome).not.toBeNull();
+      const source = path.join(legacyHome!.workDir('foo'), 'auto-run.json');
+      fs.mkdirSync(path.dirname(source), { recursive: true });
+      fs.writeFileSync(source, '{}');
+
+      const rootContext: WorkMigrationRootContext = {
+        planningRoot,
+        changesDir: planningChanges,
+        executionRoot,
+        legacyHomeOwnerRoot,
+        pathIdentityFlavor: 'posix',
+      };
+      const plan = await planWorkMigration(rootContext, { globalDataDir });
+
+      expect(plan.rootContext).toEqual(rootContext);
+      expect(plan.discoveredChanges.map(change => change.changeDir)).toEqual([changeDir]);
+      expect(plan.actions).toHaveLength(1);
+      expect(plan.actions[0]).toMatchObject({
+        source,
+        destination: path.join(
+          executionRoot,
+          '.rasen',
+          'changes',
+          'foo',
+          'ephemera',
+          'auto-run.json'
+        ),
+      });
+      expect(plan.actions[0].destination).not.toContain(planningRoot + path.sep + '.rasen');
+    });
+
+    it.each<WorkMigrationRootContext['pathIdentityFlavor']>(['win32', 'posix'])(
+      'uses the explicit %s identity flavor from the root context',
+      async pathIdentityFlavor => {
+        makeActiveChange('Foo');
+        writeWorkFile('Foo', 'review-report.md', 'report');
+        const rootContext: WorkMigrationRootContext = {
+          planningRoot: projectRoot,
+          changesDir,
+          executionRoot: projectRoot,
+          legacyHomeOwnerRoot: projectRoot,
+          pathIdentityFlavor,
+        };
+
+        const plan = await planWorkMigration(rootContext, {
+          changeName: 'foo',
+          globalDataDir,
+        });
+
+        expect(plan.discoveredChanges.map(change => change.name)).toEqual(
+          pathIdentityFlavor === 'win32' ? ['Foo'] : []
+        );
+      }
+    );
+
+    it('uses byte-identical ordered actions for preview and apply', async () => {
+      makeActiveChange('foo');
+      writeWorkFile('foo', 'review-report.md', 'report');
+      const driver = path.join(homeDir, 'probe', 'driver');
+      fs.mkdirSync(driver, { recursive: true });
+      fs.writeFileSync(path.join(driver, 'run.ts'), 'export {}');
+      const conclusions = path.join(homeDir, 'probe', 'conclusions');
+      fs.mkdirSync(conclusions, { recursive: true });
+      fs.writeFileSync(path.join(conclusions, 'notes.md'), '# notes');
+
+      const plan = await planWorkMigration(projectRoot, changesDir, {
+        globalDataDir,
+        discardAbsorbedConclusions: true,
+      });
+      const serialized = JSON.stringify(plan.actions);
+      expect(plan.actions.map(action => action.action)).toEqual([
+        'move-file',
+        'discard-directory',
+        'move-directory',
+      ]);
+
+      const applied = await applyWorkMigration(plan);
+      expect(applied.applied).toBe(true);
+      expect(JSON.stringify(plan.actions)).toBe(serialized);
+      expect(applied.outcomes.map(record => record.status)).toEqual([
+        'moved',
+        'discarded',
+        'moved',
+      ]);
+    });
+
+    it('never rewrites a planned leave into a discard during apply', async () => {
+      const conclusions = path.join(homeDir, 'probe', 'research-notes');
+      fs.mkdirSync(conclusions, { recursive: true });
+      fs.writeFileSync(path.join(conclusions, 'notes.md'), '# notes');
+
+      const plan = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+      const leave = plan.actions.find(action => action.source === conclusions);
+      expect(leave?.action).toBe('leave');
+
+      const applied = await applyWorkMigration(plan);
+      expect(applied.outcomes.find(record => record.actionId === leave?.id)?.status).toBe('left');
+      expect(fs.readFileSync(path.join(conclusions, 'notes.md'), 'utf8')).toBe('# notes');
+      expect(leave?.action).toBe('leave');
+    });
+
+    it('--change includes only exact active/archive ownership and omits all globals', async () => {
+      makeActiveChange('foo');
+      makeActiveChange('bar');
+      makeArchivedChange('2026-04-05-foo');
+      makeArchivedChange('2026-04-05-Foo');
+      writeWorkFile('foo', 'review-report.md', 'foo');
+      writeWorkFile('bar', 'review-report.md', 'bar');
+      const archivedWork = path.join(
+        homeDir,
+        'changes',
+        'archive',
+        '2026-04-05-foo',
+        'work'
+      );
+      fs.mkdirSync(archivedWork, { recursive: true });
+      fs.writeFileSync(path.join(archivedWork, 'auto-run.json'), '{}');
+      const probe = path.join(homeDir, 'probe', 'foo-looking-global');
+      fs.mkdirSync(probe, { recursive: true });
+      fs.writeFileSync(path.join(probe, 'run.ts'), 'global');
+      const docs = path.join(homeDir, 'design-docs');
+      fs.mkdirSync(docs, { recursive: true });
+      fs.writeFileSync(path.join(docs, 'foo.md'), 'global-doc');
+
+      const plan = await planWorkMigration(projectRoot, changesDir, {
+        changeName: 'foo',
+        globalDataDir,
+        discardAbsorbedConclusions: true,
+      });
+      expect(plan.actions.every(action => action.phase === 'change-work')).toBe(true);
+      expect(plan.actions.map(action => action.owner)).toEqual(['foo', '2026-04-05-foo']);
+
+      await applyWorkMigration(plan);
+      expect(fs.readFileSync(path.join(workDirFor('bar'), 'review-report.md'), 'utf8')).toBe('bar');
+      expect(fs.readFileSync(path.join(probe, 'run.ts'), 'utf8')).toBe('global');
+      expect(fs.readFileSync(path.join(docs, 'foo.md'), 'utf8')).toBe('global-doc');
+
+      const unscoped = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+      expect(unscoped.actions.some(action => action.phase === 'probe')).toBe(true);
+      expect(unscoped.actions.some(action => action.phase === 'design-doc')).toBe(true);
+    });
+
+    it('prunes specs subtrees and preserves nested report-shaped files byte-for-byte', async () => {
+      makeActiveChange('foo');
+      writeWorkFile('foo', 'review-report.md', 'migrate-me');
+      const specsRoot = path.join(workDirFor('foo'), 'specs');
+      writeWorkFile('foo', 'specs/example/review-report.md', 'spec-review');
+      writeWorkFile('foo', 'specs/example/nested/ship-log.md', 'spec-ship');
+      const before = hashTree(specsRoot);
+
+      const plan = await planWorkMigration(projectRoot, changesDir, {
+        changeName: 'foo',
+        globalDataDir,
+      });
+      expect(
+        plan.actions.some(action => isPathWithin(specsRoot, action.source))
+      ).toBe(false);
+      expect(plan.changeNotes.foo).toContain('Review-material subtree left in place: specs/');
+
+      const applied = await applyWorkMigration(plan);
+      expect(applied.outcomes.map(outcome => outcome.status)).toEqual(['moved']);
+      expect(hashTree(specsRoot)).toBe(before);
+      expect(
+        fs.readFileSync(path.join(specsRoot, 'example', 'review-report.md'), 'utf8')
+      ).toBe('spec-review');
+      expect(
+        fs.readFileSync(path.join(specsRoot, 'example', 'nested', 'ship-log.md'), 'utf8')
+      ).toBe('spec-ship');
+    });
+
+    it.each(['EACCES', 'EPERM', 'EIO'])(
+      'filters unrelated active ownership before injected %s lstat',
+      async code => {
+        makeActiveChange('foo');
+        makeActiveChange('bar');
+        const fooSource = writeWorkFile('foo', 'review-report.md', 'foo');
+        const barSource = writeWorkFile('bar', 'review-report.md', 'bar');
+        const unrelated = path.join(changesDir, 'bar');
+        const injected = injectedFileSystem({
+          lstat: target =>
+            target === unrelated
+              ? Promise.reject(fsError(code, `unrelated active ${code}`))
+              : defaultWorkMigrationFileSystem.lstat(target),
+        });
+
+        const plan = await planWorkMigration(projectRoot, changesDir, {
+          changeName: 'foo',
+          globalDataDir,
+          fileSystem: injected,
+        });
+        expect(plan.complete).toBe(true);
+        expect(plan.blockers).toEqual([]);
+        expect(plan.discoveredChanges.map(change => change.name)).toEqual(['foo']);
+        expect((await applyWorkMigration(plan, { fileSystem: injected })).outcomes).toEqual([
+          expect.objectContaining({ status: 'moved', source: fooSource }),
+        ]);
+        expect(fs.readFileSync(barSource, 'utf8')).toBe('bar');
+      }
+    );
+
+    it.each(['EACCES', 'EPERM', 'EIO'])(
+      'filters unrelated date-prefixed archive ownership before injected %s lstat',
+      async code => {
+        const fooArchive = '2026-04-05-foo';
+        const barArchive = '2026-04-05-bar';
+        makeArchivedChange(fooArchive);
+        makeArchivedChange(barArchive);
+        const fooSource = path.join(
+          homeDir,
+          'changes',
+          'archive',
+          fooArchive,
+          'work',
+          'auto-run.json'
+        );
+        const barSource = path.join(
+          homeDir,
+          'changes',
+          'archive',
+          barArchive,
+          'work',
+          'auto-run.json'
+        );
+        fs.mkdirSync(path.dirname(fooSource), { recursive: true });
+        fs.mkdirSync(path.dirname(barSource), { recursive: true });
+        fs.writeFileSync(fooSource, '{"foo":true}');
+        fs.writeFileSync(barSource, '{"bar":true}');
+        const unrelated = path.join(changesDir, 'archive', barArchive);
+        const injected = injectedFileSystem({
+          lstat: target =>
+            target === unrelated
+              ? Promise.reject(fsError(code, `unrelated archive ${code}`))
+              : defaultWorkMigrationFileSystem.lstat(target),
+        });
+
+        const plan = await planWorkMigration(projectRoot, changesDir, {
+          changeName: 'foo',
+          globalDataDir,
+          fileSystem: injected,
+        });
+        expect(plan.complete).toBe(true);
+        expect(plan.blockers).toEqual([]);
+        expect(plan.discoveredChanges.map(change => change.name)).toEqual([fooArchive]);
+        expect((await applyWorkMigration(plan, { fileSystem: injected })).outcomes).toEqual([
+          expect.objectContaining({ status: 'discarded', source: fooSource }),
+        ]);
+        expect(fs.existsSync(fooSource)).toBe(false);
+        expect(fs.readFileSync(barSource, 'utf8')).toBe('{"bar":true}');
+      }
+    );
+
+    it.skipIf(process.platform !== 'win32')(
+      'uses the production Windows default for differently cased scoped owners before lstat',
+      async () => {
+        const activeName = 'Foo';
+        const archiveName = '2026-07-31-Foo';
+        const activeDir = makeActiveChange(activeName);
+        const archiveDir = makeArchivedChange(archiveName);
+        writeWorkFile(activeName, 'review-report.md', 'active');
+        const archiveSource = path.join(
+          homeDir,
+          'changes',
+          'archive',
+          archiveName,
+          'work',
+          'auto-run.json'
+        );
+        fs.mkdirSync(path.dirname(archiveSource), { recursive: true });
+        fs.writeFileSync(archiveSource, '{"archived":true}');
+
+        const posixLstatTargets: string[] = [];
+        const posix = await discoverChangeDirs(changesDir, {
+          changeName: 'foo',
+          pathIdentityFlavor: 'posix',
+          fileSystem: injectedFileSystem({
+            lstat: target => {
+              posixLstatTargets.push(target);
+              return defaultWorkMigrationFileSystem.lstat(target);
+            },
+          }),
+        });
+        expect(posix).toEqual([]);
+        expect(posixLstatTargets).not.toContain(activeDir);
+        expect(posixLstatTargets).not.toContain(archiveDir);
+
+        const defaultLstatTargets: string[] = [];
+        const plan = await planWorkMigration(projectRoot, changesDir, {
+          changeName: 'foo',
+          globalDataDir,
+          fileSystem: injectedFileSystem({
+            lstat: target => {
+              defaultLstatTargets.push(target);
+              return defaultWorkMigrationFileSystem.lstat(target);
+            },
+          }),
+        });
+        expect(plan.complete).toBe(true);
+        expect(plan.discoveredChanges.map(change => change.name)).toEqual([
+          activeName,
+          archiveName,
+        ]);
+        expect(plan.actions.map(action => action.owner)).toEqual([
+          activeName,
+          archiveName,
+        ]);
+        expect(defaultLstatTargets).toContain(activeDir);
+        expect(defaultLstatTargets).toContain(archiveDir);
+      }
+    );
+  });
+
+  describe('truthful archived-state disposal', () => {
+    beforeEach(async () => {
+      await mintIdentity();
+    });
+
+    it('counts discard only after successful unlink and a second plan is empty', async () => {
+      const archiveName = '2026-01-01-old';
+      makeArchivedChange(archiveName);
+      const source = path.join(homeDir, 'changes', 'archive', archiveName, 'work', 'auto-run.json');
+      fs.mkdirSync(path.dirname(source), { recursive: true });
+      fs.writeFileSync(source, '{}');
+
+      const plan = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+      expect(plan.actions).toHaveLength(1);
+      expect(plan.actions[0].action).toBe('discard-file');
+      expect(fs.existsSync(source)).toBe(true);
+
+      const injected = injectedFileSystem({
+        unlink: target =>
+          target === source
+            ? Promise.reject(fsError('EIO', 'injected unlink failure'))
+            : defaultWorkMigrationFileSystem.unlink(target),
+      });
+      const failedApply = await applyWorkMigration(plan, { fileSystem: injected });
+      expect(failedApply.outcomes[0]).toMatchObject({ status: 'failed', code: 'EIO' });
+      expect(fs.existsSync(source)).toBe(true);
+
+      const applied = await applyWorkMigration(plan);
+      expect(applied.outcomes[0].status).toBe('discarded');
+      expect(fs.existsSync(source)).toBe(false);
+      const second = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+      expect(second.actions).toHaveLength(0);
+    });
+
+    it('compatibility discarded counter stays zero on unlink failure', async () => {
+      const archiveName = '2026-01-02-old';
+      makeArchivedChange(archiveName);
+      const source = path.join(homeDir, 'changes', 'archive', archiveName, 'work', 'auto-run.json');
+      fs.mkdirSync(path.dirname(source), { recursive: true });
+      fs.writeFileSync(source, '{}');
+      const injected = injectedFileSystem({
+        unlink: target =>
+          target === source
+            ? Promise.reject(fsError('EPERM', 'denied'))
+            : defaultWorkMigrationFileSystem.unlink(target),
+      });
+      const result = await runWorkMigration(projectRoot, changesDir, {
+        execute: true,
+        globalDataDir,
+        fileSystem: injected,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.report.summary.discarded).toBe(0);
+      expect(result.report.summary.failed).toBe(1);
+      expect(fs.existsSync(source)).toBe(true);
+    });
+  });
+
+  describe('guarded destructive apply', () => {
+    beforeEach(async () => {
+      await mintIdentity();
+    });
+
+    function archivedRunState(archiveName: string, content: string): string {
+      makeArchivedChange(archiveName);
+      const source = path.join(
+        homeDir,
+        'changes',
+        'archive',
+        archiveName,
+        'work',
+        'auto-run.json'
+      );
+      fs.mkdirSync(path.dirname(source), { recursive: true });
+      fs.writeFileSync(source, content);
+      return source;
+    }
+
+    it('preserves a same-byte replacement and never reports it discarded', async () => {
+      const source = archivedRunState('2026-02-01-same-bytes', '{"same":true}');
+      const plan = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+      const plannedFingerprint = plan.actions[0].sourceFingerprint;
+      expect(plannedFingerprint?.kind).toBe('file');
+      let replaced = false;
+      const injected = injectedFileSystem({
+        lstat: async target => {
+          if (target === source && !replaced) {
+            replaced = true;
+            const replacement = `${source}.replacement`;
+            fs.writeFileSync(replacement, '{"same":true}');
+            fs.unlinkSync(source);
+            fs.renameSync(replacement, source);
+          }
+          const stat = await defaultWorkMigrationFileSystem.lstat(target);
+          if (target !== source || plannedFingerprint?.kind !== 'file') return stat;
+          return new Proxy(stat, {
+            get(current, property) {
+              if (property === 'ino') return plannedFingerprint.identity.ino + 1;
+              const value = Reflect.get(current, property, current);
+              return typeof value === 'function' ? value.bind(current) : value;
+            },
+          });
+        },
+      });
+
+      const applied = await applyWorkMigration(plan, { fileSystem: injected });
+      expect(applied.outcomes[0]).toMatchObject({
+        status: 'conflict',
+        code: 'ESTALE',
+      });
+      expect(applied.outcomes[0].status).not.toBe('discarded');
+      expect(fs.readFileSync(source, 'utf8')).toBe('{"same":true}');
+    });
+
+    it('preserves a changed-byte replacement and never reports it discarded', async () => {
+      const source = archivedRunState('2026-02-02-changed-bytes', '{"before":true}');
+      const plan = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+      let replaced = false;
+      const injected = injectedFileSystem({
+        lstat: async target => {
+          if (target === source && !replaced) {
+            replaced = true;
+            const replacement = `${source}.replacement`;
+            fs.writeFileSync(replacement, '{"after":true}');
+            fs.unlinkSync(source);
+            fs.renameSync(replacement, source);
+          }
+          return defaultWorkMigrationFileSystem.lstat(target);
+        },
+      });
+
+      const applied = await applyWorkMigration(plan, { fileSystem: injected });
+      expect(applied.outcomes[0]).toMatchObject({
+        status: 'conflict',
+        code: 'ESTALE',
+      });
+      expect(applied.outcomes[0].status).not.toBe('discarded');
+      expect(fs.readFileSync(source, 'utf8')).toBe('{"after":true}');
+    });
+
+    it('preserves a conclusion directory when a child appears after planning', async () => {
+      const source = path.join(homeDir, 'probe', 'drifting-conclusions');
+      fs.mkdirSync(source, { recursive: true });
+      fs.writeFileSync(path.join(source, 'notes.md'), '# planned\n');
+      const plan = await planWorkMigration(projectRoot, changesDir, {
+        globalDataDir,
+        discardAbsorbedConclusions: true,
+      });
+      expect(plan.actions[0]).toMatchObject({
+        action: 'discard-directory',
+        sourceFingerprint: { kind: 'directory' },
+      });
+      let drifted = false;
+      const injected = injectedFileSystem({
+        readdir: target => {
+          if (target === source && !drifted) {
+            drifted = true;
+            fs.writeFileSync(path.join(source, 'new-child.md'), '# concurrent\n');
+          }
+          return defaultWorkMigrationFileSystem.readdir(target);
+        },
+      });
+
+      const applied = await applyWorkMigration(plan, { fileSystem: injected });
+      expect(applied.outcomes[0]).toMatchObject({
+        status: 'conflict',
+        code: 'ESTALE',
+      });
+      expect(applied.outcomes[0].status).not.toBe('discarded');
+      expect(fs.readFileSync(path.join(source, 'notes.md'), 'utf8')).toBe('# planned\n');
+      expect(fs.readFileSync(path.join(source, 'new-child.md'), 'utf8')).toBe(
+        '# concurrent\n'
+      );
+    });
+  });
+
+  describe('ENOENT-only discovery and plan blockers', () => {
+    beforeEach(async () => {
+      await mintIdentity();
+    });
+
+    it.each(['EACCES', 'EPERM', 'EIO'])(
+      'blocks every apply action when work scan fails with %s',
+      async code => {
+        makeActiveChange('foo');
+        const source = writeWorkFile('foo', 'review-report.md', 'source');
+        const workDir = workDirFor('foo');
+        const injected = injectedFileSystem({
+          readdir: target =>
+            target === workDir
+              ? Promise.reject(fsError(code))
+              : defaultWorkMigrationFileSystem.readdir(target),
+        });
+        const plan = await planWorkMigration(projectRoot, changesDir, {
+          globalDataDir,
+          fileSystem: injected,
+        });
+        expect(plan.complete).toBe(false);
+        expect(plan.blockers).toContainEqual(
+          expect.objectContaining({ phase: 'change-work', operation: 'readdir', code })
+        );
+        const applied = await applyWorkMigration(plan, { fileSystem: injected });
+        expect(applied.applied).toBe(false);
+        expect(applied.outcomes).toEqual([]);
+        expect(fs.readFileSync(source, 'utf8')).toBe('source');
+      }
+    );
+
+    it.each(['EACCES', 'EPERM', 'EIO'])(
+      'blocks every apply action when global probe scan fails with %s',
+      async code => {
+        makeActiveChange('foo');
+        const source = writeWorkFile('foo', 'review-report.md', 'source');
+        const probeRoot = path.join(homeDir, 'probe');
+        fs.mkdirSync(probeRoot, { recursive: true });
+        const injected = injectedFileSystem({
+          readdir: target =>
+            target === probeRoot
+              ? Promise.reject(fsError(code))
+              : defaultWorkMigrationFileSystem.readdir(target),
+        });
+        const plan = await planWorkMigration(projectRoot, changesDir, {
+          globalDataDir,
+          fileSystem: injected,
+        });
+        expect(plan.blockers).toContainEqual(
+          expect.objectContaining({ phase: 'probe', code })
+        );
+        expect((await applyWorkMigration(plan, { fileSystem: injected })).applied).toBe(false);
+        expect(fs.readFileSync(source, 'utf8')).toBe('source');
+      }
+    );
+
+    it.each(['EACCES', 'EPERM', 'EIO'])(
+      'blocks every apply action when global design-doc scan fails with %s',
+      async code => {
+        makeActiveChange('foo');
+        const source = writeWorkFile('foo', 'review-report.md', 'source');
+        const docsRoot = path.join(homeDir, 'design-docs');
+        fs.mkdirSync(docsRoot, { recursive: true });
+        const injected = injectedFileSystem({
+          readdir: target =>
+            target === docsRoot
+              ? Promise.reject(fsError(code))
+              : defaultWorkMigrationFileSystem.readdir(target),
+        });
+        const plan = await planWorkMigration(projectRoot, changesDir, {
+          globalDataDir,
+          fileSystem: injected,
+        });
+        expect(plan.blockers).toContainEqual(
+          expect.objectContaining({ phase: 'design-doc', code })
+        );
+        expect((await applyWorkMigration(plan, { fileSystem: injected })).applied).toBe(false);
+        expect(fs.readFileSync(source, 'utf8')).toBe('source');
+      }
+    );
+
+    it('treats absent work/probe/design-doc directories as empty, complete scans', async () => {
+      makeActiveChange('foo');
+      const plan = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+      expect(plan.complete).toBe(true);
+      expect(plan.blockers).toEqual([]);
+      expect(plan.actions).toEqual([]);
+    });
+  });
+
+  describe('exclusive file publication', () => {
+    beforeEach(async () => {
+      await mintIdentity();
+      makeActiveChange('foo');
+    });
+
+    it('reports conflict when destination appears between plan and apply', async () => {
+      const source = writeWorkFile('foo', 'review-report.md', 'legacy-bytes');
+      const plan = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+      const destination = plan.actions[0].destination!;
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.writeFileSync(destination, 'concurrent-bytes');
+
+      const result = await applyWorkMigration(plan);
+      expect(result.outcomes[0].status).toBe('conflict');
+      expect(fs.readFileSync(source, 'utf8')).toBe('legacy-bytes');
+      expect(fs.readFileSync(destination, 'utf8')).toBe('concurrent-bytes');
+    });
+
+    it.each(['EACCES', 'EPERM', 'EIO'])(
+      'does not use copy fallback for primary publication %s',
+      async code => {
+        const source = writeWorkFile('foo', 'review-report.md', 'legacy');
+        const plan = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+        let copyCalls = 0;
+        const injected = injectedFileSystem({
+          link: () => Promise.reject(fsError(code, `link ${code}`)),
+          copyFile: async (...args) => {
+            copyCalls++;
+            await defaultWorkMigrationFileSystem.copyFile(...args);
+          },
+        });
+        const result = await applyWorkMigration(plan, { fileSystem: injected });
+        expect(result.outcomes[0]).toMatchObject({ status: 'failed', code });
+        expect(copyCalls).toBe(0);
+        expect(fs.readFileSync(source, 'utf8')).toBe('legacy');
+      }
+    );
+
+    it('uses exclusive copy fallback only for EXDEV and removes source last', async () => {
+      const source = writeWorkFile('foo', 'review-report.md', 'legacy');
+      const plan = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+      const destination = plan.actions[0].destination!;
+      let copyCalls = 0;
+      const injected = injectedFileSystem({
+        link: () => Promise.reject(fsError('EXDEV')),
+        copyFile: async (...args) => {
+          copyCalls++;
+          await defaultWorkMigrationFileSystem.copyFile(...args);
+        },
+      });
+      const result = await applyWorkMigration(plan, { fileSystem: injected });
+      expect(result.outcomes[0].status).toBe('moved');
+      expect(copyCalls).toBe(1);
+      expect(fs.existsSync(source)).toBe(false);
+      expect(fs.readFileSync(destination, 'utf8')).toBe('legacy');
+    });
+
+    it('reports copy failure and any migration-owned partial destination', async () => {
+      const source = writeWorkFile('foo', 'review-report.md', 'legacy');
+      const plan = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+      const destination = plan.actions[0].destination!;
+      const injected = injectedFileSystem({
+        link: () => Promise.reject(fsError('EXDEV')),
+        copyFile: async (_source, target) => {
+          fs.writeFileSync(target, 'partial');
+          throw fsError('EIO', 'copy failed');
+        },
+      });
+      const result = await applyWorkMigration(plan, { fileSystem: injected });
+      expect(result.outcomes[0]).toMatchObject({
+        status: 'failed',
+        code: 'EIO',
+        partialPaths: [destination],
+      });
+      expect(fs.readFileSync(source, 'utf8')).toBe('legacy');
+      expect(fs.readFileSync(destination, 'utf8')).toBe('partial');
+    });
+
+    it('reports verification mismatch as incomplete and preserves both paths', async () => {
+      const source = writeWorkFile('foo', 'review-report.md', 'legacy');
+      const plan = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+      const destination = plan.actions[0].destination!;
+      const injected = injectedFileSystem({
+        link: () => Promise.reject(fsError('EXDEV')),
+        readFile: target =>
+          target === destination
+            ? Promise.resolve(Buffer.from('tampered-view'))
+            : defaultWorkMigrationFileSystem.readFile(target),
+      });
+      const result = await applyWorkMigration(plan, { fileSystem: injected });
+      expect(result.outcomes[0]).toMatchObject({
+        status: 'incomplete',
+        partialPaths: [destination],
+      });
+      expect(fs.existsSync(source)).toBe(true);
+      expect(fs.existsSync(destination)).toBe(true);
+    });
+
+    it('reports source-removal failure as incomplete without claiming moved', async () => {
+      const source = writeWorkFile('foo', 'review-report.md', 'legacy');
+      const plan = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+      const destination = plan.actions[0].destination!;
+      const injected = injectedFileSystem({
+        unlink: target =>
+          target === source
+            ? Promise.reject(fsError('EPERM', 'source retained'))
+            : defaultWorkMigrationFileSystem.unlink(target),
+      });
+      const result = await applyWorkMigration(plan, { fileSystem: injected });
+      expect(result.outcomes[0]).toMatchObject({
+        status: 'incomplete',
+        code: 'EPERM',
+        survivingPaths: [source, destination],
+      });
+      expect(fs.existsSync(source)).toBe(true);
+      expect(fs.existsSync(destination)).toBe(true);
+    });
+  });
+
+  describe('exclusive directory publication', () => {
+    beforeEach(async () => {
+      await mintIdentity();
+    });
+
+    function makeDriver(name: string): string {
+      const source = path.join(homeDir, 'probe', name);
+      fs.mkdirSync(path.join(source, 'nested'), { recursive: true });
+      fs.writeFileSync(path.join(source, 'run.ts'), 'driver');
+      fs.writeFileSync(path.join(source, 'nested', 'fixture.txt'), 'fixture');
+      return source;
+    }
+
+    it('does not merge when a destination directory appears after planning', async () => {
+      const source = makeDriver('race-dir');
+      const plan = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+      const destination = plan.actions[0].destination!;
+      fs.mkdirSync(destination, { recursive: true });
+      fs.writeFileSync(path.join(destination, 'concurrent.txt'), 'concurrent');
+
+      const result = await applyWorkMigration(plan);
+      expect(result.outcomes[0].status).toBe('conflict');
+      expect(fs.readFileSync(path.join(source, 'run.ts'), 'utf8')).toBe('driver');
+      expect(fs.readFileSync(path.join(destination, 'concurrent.txt'), 'utf8')).toBe(
+        'concurrent'
+      );
+      expect(fs.existsSync(path.join(destination, 'run.ts'))).toBe(false);
+    });
+
+    it('does not overwrite a child created concurrently during recursive copy', async () => {
+      const source = makeDriver('child-race');
+      const plan = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+      const destination = plan.actions[0].destination!;
+      const racedChild = path.join(destination, 'run.ts');
+      let raced = false;
+      const injected = injectedFileSystem({
+        copyFile: async (from, to, mode) => {
+          if (to === racedChild && !raced) {
+            raced = true;
+            fs.writeFileSync(to, 'concurrent');
+          }
+          await defaultWorkMigrationFileSystem.copyFile(from, to, mode);
+        },
+      });
+      const result = await applyWorkMigration(plan, { fileSystem: injected });
+      expect(result.outcomes[0].status).toBe('conflict');
+      expect(result.outcomes[0].partialPaths).toEqual(
+        expect.arrayContaining([destination, path.join(destination, 'nested')])
+      );
+      expect(result.outcomes[0].partialPaths).not.toContain(racedChild);
+      expect(fs.readFileSync(racedChild, 'utf8')).toBe('concurrent');
+      expect(fs.readFileSync(path.join(source, 'run.ts'), 'utf8')).toBe('driver');
+      expect(fs.readFileSync(path.join(source, 'nested', 'fixture.txt'), 'utf8')).toBe(
+        'fixture'
+      );
+    });
+
+    it('keeps both complete trees when source removal fails after verification', async () => {
+      const source = makeDriver('remove-failure');
+      const plan = await planWorkMigration(projectRoot, changesDir, { globalDataDir });
+      const destination = plan.actions[0].destination!;
+      const injected = injectedFileSystem({
+        rm: (target, options) =>
+          target === source
+            ? Promise.reject(fsError('EIO', 'remove failure'))
+            : defaultWorkMigrationFileSystem.rm(target, options),
+      });
+      const result = await applyWorkMigration(plan, { fileSystem: injected });
+      expect(result.outcomes[0]).toMatchObject({ status: 'incomplete', code: 'EIO' });
+      expect(result.outcomes[0].partialPaths).toEqual(
+        expect.arrayContaining([
+          destination,
+          path.join(destination, 'run.ts'),
+          path.join(destination, 'nested', 'fixture.txt'),
+        ])
+      );
+      expect(fs.readFileSync(path.join(source, 'nested', 'fixture.txt'), 'utf8')).toBe(
+        'fixture'
+      );
+      expect(fs.readFileSync(path.join(destination, 'nested', 'fixture.txt'), 'utf8')).toBe(
+        'fixture'
+      );
+    });
+  });
+
+  describe('cross-platform routing helpers', () => {
+    it('uses Windows drive, separator, and case-insensitive identity semantics', () => {
+      expect(
+        isPathWithin(
+          'C:\\Repo\\rasen\\changes',
+          'c:\\repo\\rasen\\changes\\foo',
+          path.win32
+        )
+      ).toBe(true);
+      expect(pathsEqualForPlatform('C:\\Repo\\Foo', 'c:\\repo\\foo', 'win32')).toBe(
+        true
+      );
+      expect(archiveNameMatches('2026-07-31-Foo', 'foo', 'win32')).toBe(true);
+      expect(path.win32.join('C:\\Repo', 'rasen', 'changes', 'foo')).toBe(
+        'C:\\Repo\\rasen\\changes\\foo'
+      );
+    });
+
+    it('uses POSIX separators and case-sensitive archive/name semantics', () => {
+      expect(isPathWithin('/repo/rasen/changes', '/repo/rasen/changes/foo', path.posix)).toBe(
+        true
+      );
+      expect(pathsEqualForPlatform('/repo/Foo', '/repo/foo', 'posix')).toBe(false);
+      expect(archiveNameMatches('2026-07-31-Foo', 'foo', 'posix')).toBe(false);
+      expect(archiveNameMatches('2026-07-31-foo', 'foo', 'posix')).toBe(true);
+      expect(path.posix.join('/repo', 'rasen', 'changes', 'foo')).toBe(
+        '/repo/rasen/changes/foo'
+      );
+    });
+
+    it('rejects sibling-prefix containment on both path implementations', () => {
+      expect(isPathWithin('C:\\Repo\\foo', 'C:\\Repo\\foobar', path.win32)).toBe(false);
+      expect(isPathWithin('/repo/foo', '/repo/foobar', path.posix)).toBe(false);
     });
   });
 });

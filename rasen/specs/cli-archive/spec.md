@@ -45,28 +45,41 @@ The command SHALL verify task completion status before archiving to prevent prem
 
 ### Requirement: Archive Process
 
-The archive operation SHALL follow a structured process to safely move changes to the archive.
+The archive command SHALL expose one authoritative plan/apply operation used by direct CLI, single archive, bulk archive, and in-ship consumers. Planning SHALL complete validation, spec-update preparation, sidecar/handoff and probe validation, cleaner disposition, quality/evidence discovery, target selection, and blockers without mutation. Apply SHALL consume that exact plan without reclassifying paths or changing planned actions.
+
+A successful apply SHALL stage and verify the archive, publish it without clobbering, finalize cleaner outcomes and `archive.json`, and remove the active change last. A failed apply SHALL preserve the active source or leave a transaction journal that reports the recoverable state. Generated consumers SHALL invoke this operation and SHALL NOT move a change directory directly.
 
 #### Scenario: Performing archive
 
 - **WHEN** archiving a change
-- **THEN** execute these steps:
-  1. Create archive/ directory if it doesn't exist
-  2. Generate target name as `YYYY-MM-DD-[change-name]` using current date
-  3. Check if target directory already exists
-  4. Update main specs from the change's future state specs (see Spec Update Process below)
-  5. Move the entire change directory to the archive location
+- **THEN** the command SHALL derive a complete archive plan before mutation
+- **AND** SHALL apply the confirmed plan through the authoritative archive engine
+- **AND** SHALL publish to `YYYY-MM-DD-<change-name>` in the planning root without overwrite
 
 #### Scenario: Archive already exists
 
-- **WHEN** target archive already exists
-- **THEN** fail with error message
-- **AND** do not overwrite existing archive
+- **WHEN** an unrelated target archive already exists
+- **THEN** apply SHALL fail with a target-conflict error
+- **AND** SHALL preserve the active change, ephemera, and existing target
 
 #### Scenario: Successful archive
 
-- **WHEN** move succeeds
-- **THEN** display success message with archived name and list of updated specs
+- **WHEN** staged payload verification, publication, cleaner disposition, and accounting all complete
+- **THEN** the command SHALL display the archived name, updated specs, disposition totals, and recovery status
+- **AND** the archived evidence hashes SHALL verify
+- **AND** the active change SHALL be removed last
+
+#### Scenario: Every entry point calls the engine
+
+- **WHEN** generated single, bulk, and in-ship archive workflows are inspected
+- **THEN** each SHALL invoke the authoritative archive command for bookkeeping
+- **AND** none SHALL issue a direct archive `mv`, recursive source removal, or hand-written `archive.json`
+
+#### Scenario: Interrupted apply resumes only its own transaction
+
+- **WHEN** a retry encounters a stage or published archive with an incomplete journal
+- **THEN** it SHALL resume only if the transaction id and plan hash match the newly supplied plan
+- **AND** otherwise SHALL report both paths for recovery without deleting either copy
 
 ### Requirement: Spec Update Process
 
@@ -306,101 +319,134 @@ Because the CLI never invokes `gh`, and uses git only for local read-only status
 
 ### Requirement: Archive command always lands in the planning root
 
-`rasen archive <change>` SHALL move the change directory to the planning root's archive directory unconditionally — no configuration is consulted and no destination is resolved (`archive-destination` capability). A project whose config still carries `archive.destination: external` or `prune` SHALL archive in-repo exactly as a project with no such key; the deprecated value produces only a parse-time warning (`config-loading` capability). The command SHALL neither move a change to the machine home nor delete a change directory without an archive copy, and its JSON output SHALL report the archived name and absolute archived path.
+`rasen archive <change>` SHALL plan, stage, verify, and publish the change to the planning root's archive directory unconditionally — no configuration is consulted and no destination is resolved (`archive-destination` capability). A project whose config still carries `archive.destination: external` or `prune` SHALL archive in-repo exactly as a project with no such key; the deprecated value produces only a parse-time warning (`config-loading` capability). The engine SHALL neither publish to the machine home nor remove the active source before the archive and recovery/accounting state are durable, and its JSON output SHALL report the archived name and absolute archived path.
 
 #### Scenario: Legacy destination config does not redirect the CLI
 
 - **WHEN** `rasen archive <change> --yes --json` runs in a project whose config still carries `archive.destination: external` or `prune`
-- **THEN** the change SHALL be moved to the planning root's archive directory
+- **THEN** the engine SHALL publish the verified archive to the planning root's archive directory
 - **AND** the JSON result SHALL report the archived name and the absolute archived path
 - **AND** nothing SHALL be written under the machine home and no change directory SHALL be deleted
 
 ### Requirement: Ephemera cleaning at archive time
 
-`rasen archive` SHALL run the ephemera cleaner (defined by the `file-placement` capability) against the change's ephemera directory before moving the change directory to the archive. The cleaner deletes only whitelisted filenames and preserves every unknown entry with its exact path reported. The deleted filenames SHALL be recorded in `archive.json`'s `ephemeraDiscarded` array. When the ephemera directory does not exist (the change produced no ephemera), the cleaner SHALL be a no-op.
+Archive planning SHALL consume the `file-placement` cleaner's complete immutable classification, including candidate fingerprints, effective preserved paths, `sourceSignals`, typed `blockers`, and `complete`. Apply SHALL never invoke cleaner deletion for an aborted or incomplete classification.
 
-#### Scenario: Ephemera is cleaned before the move
+When the classification is complete and applicable, the engine SHALL dispose only the planned candidates, journal actual per-candidate progress, and record only actual outcomes in `archive.json`. A complete plan aborted by source signals SHALL preserve and report every effective path while the fully accounted archive may proceed. An incomplete classification or non-absence inspection blocker SHALL block all archive apply.
 
-- **WHEN** `rasen archive <change>` runs and the change's ephemera directory contains `auto-run.json`
-- **THEN** the cleaner SHALL delete `auto-run.json` before the change directory moves
-- **AND** `auto-run.json` SHALL appear in `archive.json`'s `ephemeraDiscarded`
+#### Scenario: Complete cleaner plan is applied and accounted
+
+- **WHEN** `rasen archive <change>` consumes a complete, non-aborted cleaner plan containing schema-valid `auto-run.json`
+- **THEN** apply SHALL use that exact candidate and fingerprint without reclassification
+- **AND** a successful deletion SHALL appear in `archive.json`'s `ephemeraDiscarded`
 
 #### Scenario: No ephemera directory is a no-op
 
-- **WHEN** the change has no ephemera directory at the execution root
-- **THEN** the cleaner SHALL complete without error
-- **AND** `ephemeraDiscarded` SHALL be empty or absent
+- **WHEN** cleaner discovery confirms the execution-root ephemera directory is absent with `ENOENT`
+- **THEN** the plan SHALL be complete with empty delete and preserve dispositions
+- **AND** archive may proceed with an empty `ephemeraDiscarded`
 
-#### Scenario: Source-manifest discovery blocks the cleaner for that change
+#### Scenario: Source signal preserves the effective tree
 
-- **WHEN** the ephemera directory contains a `package.json` or `Cargo.toml`
-- **THEN** the cleaner SHALL abort for that change (delete nothing)
-- **AND** archive SHALL proceed with the move
-- **AND** the archive output SHALL report the discovered manifest path and that cleaning was skipped
+- **WHEN** a complete cleaner plan reports a source manifest or source-tree signal
+- **THEN** archive apply SHALL NOT call cleaner deletion
+- **AND** every candidate and preserved path SHALL appear in the effective preserve disposition
+- **AND** the archive result SHALL report all source signals
+
+#### Scenario: Incomplete cleaner plan blocks archive
+
+- **WHEN** cleaner classification reports `complete: false` or an `EACCES`, `EPERM`, or `EIO` blocker
+- **THEN** the archive plan SHALL report the blocker with operation and path
+- **AND** apply SHALL perform no spec write, handoff action, ephemera deletion, stage publication, or active-source removal
 
 ### Requirement: The --keep-ephemera flag preserves all ephemera
 
-`rasen archive` SHALL accept a `--keep-ephemera` flag that skips the ephemera cleaner entirely. When the flag is present, no ephemera file SHALL be deleted, `ephemeraDiscarded` SHALL be empty or absent, and the archive SHALL proceed normally in all other respects.
+`rasen archive` SHALL accept `--keep-ephemera` and represent it in the archive plan. Planning SHALL still inspect and classify the ephemera tree so the preview can report every path and detect incomplete inspection. The effective delete disposition SHALL be empty and every cleaner candidate plus every already-preserved entry SHALL appear in the effective preserve disposition.
 
-#### Scenario: --keep-ephemera skips the cleaner
+#### Scenario: --keep-ephemera projects complete preservation
 
-- **WHEN** `rasen archive <change> --keep-ephemera` runs
-- **THEN** no ephemera file SHALL be deleted
-- **AND** `archive.json` SHALL NOT list any `ephemeraDiscarded` entries
-- **AND** the change directory SHALL still move to the archive
+- **WHEN** `rasen archive <change> --keep-ephemera` plans or applies
+- **THEN** the plan SHALL show an empty delete list and the complete effective preserved-path list
+- **AND** no ephemera file SHALL be deleted
+- **AND** `archive.json` SHALL record no `ephemeraDiscarded` entries
+
+#### Scenario: --keep-ephemera does not hide inspection failure
+
+- **WHEN** ephemera inspection under `--keep-ephemera` fails with a non-`ENOENT` error
+- **THEN** the plan SHALL report the blocker
+- **AND** archive apply SHALL remain blocked
 
 ### Requirement: The --dry-run flag previews all planned actions without executing
 
-`rasen archive` SHALL accept a `--dry-run` flag that reports every action the archive would take without executing any of them. The dry-run output SHALL include: the spec sync plan (which specs would be created/updated), the pending ephemera delete list (exact filenames), the handoff absorption status (if the skill is not involved, a note that handoff travels unchanged), the planned archive directory name, and any blocking conditions. No file SHALL be moved, deleted, or written.
+`rasen archive --dry-run` SHALL emit the same immutable archive plan that apply consumes. Human and JSON output SHALL include the final target; spec-sync actions; archive-level blocking conditions; sidecar presence/schema status; handoff and probe decisions; cleaner completeness, source signals, and blockers; `keepEphemera`; exact effective delete and preserve lists; quality/evidence inputs; staging/publication intent; and recovery identity. Dry-run SHALL create, move, delete, or write nothing.
 
-This closes the validate blind spot: `rasen validate` does not apply deltas to main specs, but `rasen archive --dry-run` previews the full spec rebuild and disposition logic without committing.
+#### Scenario: Dry-run reports complete disposition
 
-#### Scenario: Dry-run reports the pending-delete list
+- **WHEN** dry-run sees deletable, unknown, malformed, nested, or source-signal ephemera
+- **THEN** output SHALL list every effective delete or preserve path with its reason
+- **AND** SHALL include cleaner completeness, source signals, and typed blockers
+- **AND** no ephemera byte SHALL change
 
-- **WHEN** `rasen archive <change> --dry-run` runs and the ephemera directory contains `auto-run.json` and `custom.json`
-- **THEN** the output SHALL list `auto-run.json` as pending-delete (whitelisted)
-- **AND** SHALL list `custom.json` as preserved (unknown)
-- **AND** neither file SHALL be deleted
+#### Scenario: Dry-run reports sidecar and handoff decisions
+
+- **WHEN** a valid archive-input sidecar is present
+- **THEN** dry-run SHALL show its schema/change binding, every handoff outcome, every validated probe path/commit, and any blocker
+- **AND** SHALL NOT delete or move handoff files or remove the sidecar
 
 #### Scenario: Dry-run reports the spec sync plan
 
-- **WHEN** `rasen archive <change> --dry-run` runs and the change has delta specs
-- **THEN** the output SHALL list each spec that would be created or updated
+- **WHEN** a change has delta specs
+- **THEN** dry-run SHALL list each prepared create, update, or delete action
 - **AND** no main spec file SHALL be written
+
+#### Scenario: Dry-run reports target blockers in JSON and human modes
+
+- **WHEN** the final target is occupied or another archive precondition is unsatisfied
+- **THEN** both output modes SHALL report the same blocker codes, paths, and messages
+- **AND** JSON SHALL NOT omit blockers shown in human output
 
 #### Scenario: Dry-run moves nothing
 
-- **WHEN** `rasen archive <change> --dry-run` completes
-- **THEN** the change directory SHALL remain in its original location
-- **AND** no archive directory SHALL be created
-- **AND** no `archive.json` SHALL be written
+- **WHEN** dry-run completes
+- **THEN** the active change and all execution-root state SHALL remain byte-identical
+- **AND** no stage, journal, archive target, spec write, quality metadata, or `archive.json` SHALL be created
+
+#### Scenario: Apply consumes the displayed plan
+
+- **WHEN** a displayed dry-run plan is subsequently confirmed for apply
+- **THEN** apply SHALL consume byte-equivalent planned actions
+- **AND** source drift or a newly appearing target SHALL change only runtime outcomes, never introduce undisclosed actions
 
 ### Requirement: archive.json is written to the archived directory
 
-After the change directory moves to the archive, `rasen archive` SHALL write `archive.json` inside the archived directory with the fields defined by the `file-placement` capability (change name, timestamp, `codeCommit`, `planningBranch`, `planningTreeState`, evidence hashes, probes, `handoffAbsorbed`, `ephemeraDiscarded`, `missing`). The `codeCommit` SHALL be resolved from the execution root (for a store-selected run, the code project's HEAD; otherwise the planning root's HEAD). The `planningBranch` and `planningTreeState` SHALL be resolved from the planning root's git status at archive time. When the planning root is not a git work tree, `planningBranch` SHALL be `null` and `planningTreeState` SHALL be `clean`.
+The archive engine SHALL finalize `archive.json` from confirmed Git facts, the finalized recursive evidence inventory, validated sidecar intent, and actual cleaner outcomes. It SHALL write and verify the file atomically before removing the active change. A confirmed non-Git root may use its defined null/clean representation; Git ambiguity, sidecar failure, evidence read/hash failure, or accounting write failure SHALL block completion and remain recoverable through the transaction journal.
 
-#### Scenario: archive.json is written after the move
+#### Scenario: archive.json is finalized before active-source removal
 
-- **WHEN** `rasen archive <change>` completes successfully
-- **THEN** the archived directory SHALL contain `archive.json`
-- **AND** the file SHALL carry `codeCommit`, `planningBranch`, and `planningTreeState`
+- **WHEN** archive completes successfully
+- **THEN** the published directory SHALL contain a parsed and verified `archive.json`
+- **AND** its evidence digests SHALL match the final evidence tree
+- **AND** only then may the active change be removed
 
 #### Scenario: Store-selected run records the code project's commit
 
-- **WHEN** a store-selected change is archived
-- **THEN** `codeCommit` SHALL be the code project's HEAD SHA, not the store's HEAD SHA
+- **WHEN** a store-selected change is archived with a confirmed Git execution project
+- **THEN** `codeCommit` SHALL be that code project's HEAD SHA, not the store's HEAD SHA
 
-#### Scenario: Non-git planning root records null branch
+#### Scenario: Confirmed non-git planning root records null branch
 
-- **WHEN** the planning root is not a git work tree
+- **WHEN** Git confirms the planning root is not a work tree
 - **THEN** `planningBranch` SHALL be `null` and `planningTreeState` SHALL be `clean`
 
-## Why These Decisions
+#### Scenario: Ambiguous Git state blocks accounting
 
-**Interactive selection**: Reduces typing and helps users see available changes
-**Task checking**: Prevents accidental archiving of incomplete work
-**Date prefixing**: Maintains chronological order and prevents naming conflicts
-**No overwrite**: Preserves historical archives and prevents data loss
-**Spec updates before archiving**: Specs in the main directory represent current reality; when a change is deployed and archived, its future state specs become the new reality and must replace the main specs
-**Confirmation for spec updates**: Provides visibility into what will change, prevents accidental overwrites, and ensures users understand the impact before specs are modified
-**--yes flag for automation**: Allows CI/CD pipelines to archive without interactive prompts while maintaining safety by default for manual use
+- **WHEN** Git is unavailable, metadata is corrupt, or a branch/status/HEAD query fails unexpectedly
+- **THEN** the engine SHALL report a Git blocker
+- **AND** SHALL NOT guess `null`, `clean`, or a commit value
+
+#### Scenario: Accounting write failure keeps recovery evidence
+
+- **WHEN** atomic `archive.json` write or verification fails after publication
+- **THEN** the active change SHALL remain
+- **AND** the archive-local journal SHALL identify the failed phase and planned accounting
+- **AND** completion SHALL NOT be reported

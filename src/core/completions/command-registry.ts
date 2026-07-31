@@ -188,6 +188,20 @@ const COMMANDS: readonly CommandDefinition[] = [
       {
         name: 'dry-run',
       },
+      {
+        name: 'save-plan',
+      },
+      {
+        name: 'apply-plan',
+        takesValue: true,
+      },
+      {
+        name: 'intent-template',
+      },
+      {
+        name: 'intent-file',
+        takesValue: true,
+      },
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
     ],
@@ -1321,6 +1335,14 @@ const COMMANDS: readonly CommandDefinition[] = [
           },
           {
             name: 'discard-absorbed-conclusions',
+          },
+          {
+            name: 'store',
+            takesValue: true,
+          },
+          {
+            name: 'project',
+            takesValue: true,
           },
           {
             name: 'json',

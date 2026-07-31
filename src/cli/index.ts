@@ -372,6 +372,10 @@ const archiveCommand = program
   .option('--project <id>', '')
   .option('--keep-ephemera', '')
   .option('--dry-run', '')
+  .option('--save-plan', '')
+  .option('--apply-plan <token>', '')
+  .option('--intent-template', '')
+  .option('--intent-file <path>', '')
   .addOption(hiddenStorePathOption())
   .action(async (changeName?: string, options?: ArchiveOptions) => {
     try {

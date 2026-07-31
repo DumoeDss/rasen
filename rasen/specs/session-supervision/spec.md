@@ -121,19 +121,77 @@ Each supervised session SHALL record, at launch, the planning space selected for
 - **THEN** the session launches normally and its record carries no space attribution
 
 ### Requirement: Session listing is filterable by space and joins run state per session's own space
-`GET /api/v1/sessions` SHALL accept an optional `space` selector; when present, only sessions whose recorded space is that space are returned (unattributed sessions appear only in the unfiltered listing). Each listed session's run-state join SHALL resolve against the session's own recorded space and execution context — the session's execution root's ephemera directory first, then that space's machine-home work directory, then its change directory (the `file-placement` capability's sticky-legacy chain) — not against the server's launch project, so a session launched in one space never reports another space's run files.
+
+`GET /api/v1/sessions` SHALL accept an optional `space` selector; when present,
+only sessions whose recorded space is that space are returned (unattributed
+sessions appear only in the unfiltered listing). Each listed session's
+run-state join SHALL keep planning metadata under the session's frozen recorded
+space while reading terminal state only through its frozen recorded execution
+context: the execution root's ephemera directory first, then the machine-home
+work directory owned by that execution root, then the planning change
+directory as the oldest sticky-legacy location. The listing SHALL NOT resolve
+terminal state against the server launch project, substitute the planning root
+for a missing execution root, or re-resolve a recorded execution selector from
+current Store membership. A session without a usable recorded project
+execution context SHALL report `runState: { kind: "absent" }` without write
+side effects.
 
 #### Scenario: Filtered listing returns only the space's sessions
-- **WHEN** sessions exist in spaces A and B and a client sends `GET /api/v1/sessions?space=<selector for A>`
+
+- **WHEN** sessions exist in spaces A and B and a client sends
+  `GET /api/v1/sessions?space=<selector for A>`
 - **THEN** only the sessions recorded in space A are returned
 
 #### Scenario: Unfiltered listing keeps today's behavior
-- **WHEN** a client sends `GET /api/v1/sessions` with no space selector
-- **THEN** every session the supervisor knows is returned, including unattributed ones
 
-#### Scenario: Run-state join follows the session's space
-- **WHEN** a session with a `changeName` was launched in a space other than the launch project
-- **THEN** its `runState` is read from that session's own resolved locations (execution-root ephemera, that space's machine-home work directory, and change directory), not the launch project's
+- **WHEN** a client sends `GET /api/v1/sessions` with no space selector
+- **THEN** every session the supervisor knows is returned, including
+  unattributed ones
+
+#### Scenario: Store session joins member ephemera
+
+- **WHEN** a session plans change `feature` in a Store and its frozen execution
+  context names member worktree B
+- **THEN** its run-state join SHALL read
+  `<worktree-b>/.rasen/changes/feature/ephemera/` before legacy locations
+- **AND** SHALL NOT read the Store's ephemera directory or another member
+  worktree's ephemera directory
+
+#### Scenario: Legacy machine home follows the execution owner
+
+- **WHEN** Store planning and member execution have different roots and
+  run-state exists only in the member execution root's legacy machine-home work
+  directory
+- **THEN** the session listing SHALL report that run-state
+- **AND** SHALL NOT resolve machine-home ownership from the Store planning root
+
+#### Scenario: Frozen execution survives later Store changes
+
+- **WHEN** a running session's member registration, Store pointer, or current
+  Store membership changes after launch while its recorded execution checkout
+  remains available
+- **THEN** the run-state join SHALL continue using the frozen execution root
+- **AND** SHALL NOT retarget to a newly resolvable member
+
+#### Scenario: Missing execution context fails closed
+
+- **WHEN** a legacy or unattributed session record has a change and planning
+  space but no recorded execution context
+- **THEN** the listing SHALL report `runState: { kind: "absent" }`
+- **AND** SHALL NOT inspect the planning root as an invented terminal root
+
+#### Scenario: Planning-only execution has no terminal join
+
+- **WHEN** a Store session records explicit planning-only execution
+- **THEN** the listing SHALL report `runState: { kind: "absent" }`
+- **AND** SHALL leave the Store planning root unchanged
+
+#### Scenario: Removed execution checkout does not retarget
+
+- **WHEN** a session's frozen execution checkout is no longer available
+- **THEN** the listing SHALL report `runState: { kind: "absent" }`
+- **AND** SHALL NOT fall back to the Store, server launch project, or another
+  worktree as the terminal root
 
 ### Requirement: Session launch separates planning space from validated execution context
 `POST /api/v1/sessions` SHALL treat `space` as planning attribution and `execution` as the runtime working-directory selection. `execution` SHALL accept `project:<selector>`, resolved through the registered-project selector contract (including a linked worktree of that project), or the explicit Store-only value `planning`. The server SHALL resolve and canonicalize all roots from current machine registry, filesystem, Git worktree, and Store-pointer facts before spawn; it SHALL NOT use an arbitrary client path as cwd. For an explicit project space, omitted execution SHALL use that resolved project/worktree root for compatibility. For an explicit Store space, omitted execution SHALL return 409 `execution_required` and spawn nothing. Unresolvable or currently invalid execution selections SHALL return a specific 4xx error and spawn nothing.
@@ -196,4 +254,3 @@ When the resolved planning-space root differs from the resolved execution cwd, t
 #### Scenario: Windows shim receives the attached root literally
 - **WHEN** a Windows session launches through an npm `.cmd` or `.bat` shim and the canonical planning root contains command-interpreter metacharacters valid in a path
 - **THEN** the entire root reaches Claude as the single literal value of the server-built additional-directory option and no injected command or extra argv token is executed
-

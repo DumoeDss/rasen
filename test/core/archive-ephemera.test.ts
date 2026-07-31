@@ -90,7 +90,7 @@ describe('ArchiveCommand — ephemera cleaner integration', () => {
     it('reports pending deletes and spec syncs without changing disk', async () => {
       const changeName = 'dry-run-feature';
       const { changeDir, ephemeraDir } = await makeChangeWithEphemera(changeName, {
-        'auto-run.json': '{"state":"done"}',
+        'auto-run.json': '{"pipeline":"small-feature","completed":[]}',
         'custom.json': '{"important":true}',
       });
 
@@ -130,8 +130,8 @@ describe('ArchiveCommand — ephemera cleaner integration', () => {
     it('preserves ephemera files and writes empty ephemeraDiscarded', async () => {
       const changeName = 'keep-eph-feature';
       const { ephemeraDir } = await makeChangeWithEphemera(changeName, {
-        'auto-run.json': '{"state":"done"}',
-        'portfolio-run.json': '{"step":3}',
+        'auto-run.json': '{"pipeline":"small-feature","completed":[]}',
+        'portfolio-run.json': '{"parent":"keep-eph-feature","children":[]}',
         'custom.json': '{"important":true}',
       });
 
@@ -171,8 +171,8 @@ describe('ArchiveCommand — ephemera cleaner integration', () => {
     it('cleans ephemera, writes archive.json, moves change directory', async () => {
       const changeName = 'full-archive-feature';
       const { ephemeraDir } = await makeChangeWithEphemera(changeName, {
-        'auto-run.json': '{"state":"done"}',
-        'portfolio-run.json': '{"step":3}',
+        'auto-run.json': '{"pipeline":"small-feature","completed":[]}',
+        'portfolio-run.json': '{"parent":"full-archive-feature","children":[]}',
         'custom.json': '{"important":true}',
         'trace.log': 'log line\n',
       });
@@ -234,7 +234,7 @@ describe('ArchiveCommand — ephemera cleaner integration', () => {
 
       const changeName = 'git-archive-feature';
       const { ephemeraDir } = await makeChangeWithEphemera(changeName, {
-        'auto-run.json': '{"state":"done"}',
+        'auto-run.json': '{"pipeline":"small-feature","completed":[]}',
       });
 
       await archiveCommand.execute(changeName, {

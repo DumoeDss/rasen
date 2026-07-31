@@ -5,6 +5,7 @@
  * templates file into workflow-focused modules.
  */
 import type { SkillTemplate } from '../types.js';
+import { GENERATED_ARCHIVE_COMMAND_EXAMPLES } from '../../archive-consumer-invocation.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getBulkArchiveChangeSkillTemplate(): SkillTemplate {
@@ -126,24 +127,17 @@ ${STORE_SELECTION_GUIDANCE}
    Process changes in the determined order (respecting conflict resolution):
 
    a. **Sync specs** if delta specs exist:
-      - Use the rasen-sync-specs approach (agent-driven intelligent merge)
+      - Let the archive engine prepare and apply the intelligent spec merge
       - For conflicts, apply in resolved order
       - Track if sync was done
 
-   b. **Perform the archive (always in-repo, same bookkeeping as \`rasen-archive-change\`)**:
+   b. **Invoke the authoritative archive engine once per confirmed change**:
 
-      There is no destination axis: every change in the batch moves to the planning root's archive directory, whatever \`archive.destination\` a legacy config still carries. Nothing is moved to the machine home and no change directory is ever deleted without an archive copy.
-
-      \`\`\`bash
-      mkdir -p "<planningHome.changesDir>/archive"
-      mv "<changeRoot>" "<planningHome.changesDir>/archive/YYYY-MM-DD-<name>"
-      \`\`\`
-
-      Each change's \`evidence/\` and \`handoff/\` subdirectories travel with its directory in that \`mv\`.
+      For every change, run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.intentTemplate}\`, write and complete its intent (including empty-handoff and probe-only cases), then run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.savedPreview}\` with the resolved selector and frozen \`--skip-specs\` choice. Capture each exact \`planToken\` and apply with \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.apply}\`. Retry recoverable items with the same token; never replan. Use each structured JSON result for partial-success reporting. Never invoke an external spec-sync command, create an archive directory, move a change, recursively remove a source, or hand-write \`archive.json\`.
 
       **Post-bookkeeping commit guidance** (per change, same as \`rasen-archive-change\`, including its CONDITIONAL ship-referencing commit-message form — the "specs synced" clause included only when that change actually had delta specs synced this run, dropped entirely when it had none or sync was skipped; the ship suffix omitted, never invented, when that change's own ship log records no \`Commit:\`; four resulting forms, same as \`rasen-archive-change\` step 5): \`git add -- <changeRoot> <planningHome.changesDir>/archive <specsDir>\` then \`git commit -m "chore(rasen): archive <name> (specs synced; ship <short-sha>)" -- <changeRoot> <planningHome.changesDir>/archive <specsDir>\` (substituting the form that matches this change's actual sync/ship state) — the \`add\` step matters because the newly archived directory, and a spec sync that created a new capability directory, are both untracked and would otherwise be silently left out of a bare \`git commit --\`.
 
-   b.5. **Close the delivery chain per change (\`sha-cross-stamping\`, same mechanism as \`rasen-archive-change\` step 5.5, INCLUDING its evidence-first resolution and sticky-legacy caveat — resolve each ship log BEFORE the \`mv\`, and never target a pre-move \`changeRoot\` path the bookkeeping just emptied)**: for each successfully bookkept change, before its post-bookkeeping commit, append an \`## Archive\` section (\`Date\`, \`Ship commit\` copied from that change's own ship-log \`Commit:\` line — omitted when absent, \`Outcome\`) to its \`ship-log.md\` at the resolved location — normally the archived copy's \`evidence/ship-log.md\`, or the legacy machine-home \`workDir\` copy when the log stickily lives there (create a minimal \`# Ship Log: <name>\` header in the archived copy's \`evidence/\` directory when no log exists anywhere); after the commit, append \`Archive commit: <sha>\` (\`git rev-parse HEAD\`). Same append-only rule as \`rasen-archive-change\` — never rewrite the ship-side section.
+   b.5. **Require finalized delivery-chain evidence per change**: the engine finalizes the archive section and minimal archive-only log when needed before evidence hashing. Do not append a post-hash commit identifier or mutate any successful archive's evidence afterward.
 
    c. **Track outcome** for each change:
       - Success: archived successfully (record the archive location)
@@ -223,7 +217,7 @@ Spec sync summary:
 - No conflicts (or: M conflicts resolved)
 \`\`\`
 
-Each archived change's ship-log gained a chain record (\`## Archive\` section: ship commit, archive commit, outcome) and its archive commit message carries \`ship <short-sha>\` when that change was shipped — not shown in the compact summary above; inspect the individual change's \`ship-log.md\` for the full record.
+Each archived change's ship-log gained a pre-hash chain record (\`## Archive\` section: recorded ship commit when known, archive path, timestamp, outcome, and transaction) and its path-scoped bookkeeping commit message carries \`ship <short-sha>\` when that change was shipped. The engine also verified final accounting; no post-hash commit identifier is written into evidence.
 
 **Output On Partial Success**
 
@@ -257,11 +251,11 @@ No active changes found. Create a new change to get started.
 - Show clear per-change status before confirming
 - Use single confirmation for entire batch
 - Track and report all outcomes (success/skip/fail)
-- Preserve .openspec.yaml when moving to archive (it moves with the directory)
+- Require the engine to preserve and finalize .openspec.yaml in its staged payload
 - Archive directory target uses current date: YYYY-MM-DD-<name>
 - If archive target exists, fail that change but continue with others
-- **Bookkeeping is always in-repo, per change.** The destination axis is retired: every change in the batch moves to the planning root's archive directory. A legacy \`archive.destination: external\` or \`prune\` in the config changes nothing — this workflow never moves a change to the machine home and never deletes a change directory without an archive copy.
-- **Chain-record append (Step 8b.5), per change, is append-only.** Same rule as \`rasen-archive-change\`: never rewrite a change's ship-side ship-log section; its ship commit SHA is a copied recorded fact, never re-derived or invented — omit the ship reference for a never-shipped change in the batch rather than fabricating one.`,
+- **Bookkeeping is one engine invocation per change.** The destination axis is retired; no generated batch step directly moves or removes a change.
+- **Final evidence is immutable (Step 8b.5).** The engine finalizes ship-log evidence before hashing; no later batch step appends or rewrites it.`,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },

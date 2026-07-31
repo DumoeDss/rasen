@@ -1293,10 +1293,22 @@
               "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
             },
             "keep-ephemera": {
-              "description": "Skip the ephemera cleaner and preserve all ephemera files"
+              "description": "Preserve all ephemera files while retaining complete safety inspection"
             },
             "dry-run": {
               "description": "Preview all planned archive actions without executing anything"
+            },
+            "save-plan": {
+              "description": "Save the exact previewed archive plan and output an opaque apply token"
+            },
+            "apply-plan": {
+              "description": "Apply or resume the exact saved archive plan without replanning"
+            },
+            "intent-template": {
+              "description": "Output a complete archive intent template as JSON without changing files"
+            },
+            "intent-file": {
+              "description": "Read a complete, strictly validated archive intent from the specified file"
             }
           },
           "commands": {
@@ -2453,10 +2465,10 @@
           }
         },
         "work": {
-          "description": "Machine-home work-directory maintenance (migrate legacy in-repo ephemera)",
+          "description": "Legacy machine-home work-directory maintenance",
           "commands": {
             "migrate": {
-              "description": "Migrate legacy in-repo process ephemera (run-state, handoff, reports, ship-log) into the machine home",
+              "description": "Migrate legacy machine-home state (run-state, handoff, reports, ship-log) into planning and execution roots",
               "options": {
                 "change": {
                   "description": "Scope to one active or archived change"
@@ -2464,8 +2476,11 @@
                 "dry-run": {
                   "description": "Preview only; never move files"
                 },
-                "include-tracked": {
-                  "description": "Also move git-tracked ephemera, leaving the deletions uncommitted"
+                "store": {
+                  "description": "Use the selected Store as the planning root"
+                },
+                "project": {
+                  "description": "Use the selected registered project as every migration root"
                 },
                 "json": {
                   "description": "Output as JSON (non-interactive; requires --yes to execute)"

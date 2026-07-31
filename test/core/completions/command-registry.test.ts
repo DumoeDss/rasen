@@ -225,6 +225,7 @@ describe('root-inclusive CLI structure', () => {
       'show',
       'status',
       'validate',
+      'work migrate',
     ]);
     expect(pipeline.sort()).toEqual([
       'pipeline agents',
@@ -248,10 +249,12 @@ describe('root-inclusive CLI structure', () => {
       'pipeline delete',
       'pipeline save',
     ]);
+    const specializedSelectorCommands = new Set(['work migrate']);
     for (const commandPath of seen) {
       if (
         commandPath.startsWith('knowledge ') ||
-        deferredLibraryVerbs.has(commandPath)
+        deferredLibraryVerbs.has(commandPath) ||
+        specializedSelectorCommands.has(commandPath)
       ) {
         continue;
       }
