@@ -6,6 +6,8 @@ import {
   OBSERVATION_ARMS,
   OBSERVATION_CHECKPOINT_SCHEMA,
   OBSERVATION_RESULT_SCHEMA,
+  MIN_CONTROL_CONTEXT_TOKENS,
+  classifyControlUsage,
   observationDirectory,
   readObservationCheckpoint,
   recordObservationResult,
@@ -79,6 +81,8 @@ async function waitForPhysicalTarget(options) {
             !== JSON.stringify(options.admissionBinding ?? null)
           || JSON.stringify(existing.schedulerBaseline)
             !== JSON.stringify(options.schedulerBaseline ?? null)
+          || existing.controlContextBaselineTokens
+            !== (options.controlContextBaselineTokens ?? null)
         )
       )
     )
@@ -100,6 +104,8 @@ async function waitForPhysicalTarget(options) {
       identity: options.identity,
       admissionBinding: options.admissionBinding ?? null,
       schedulerBaseline: options.schedulerBaseline ?? null,
+      controlContextBaselineTokens:
+        options.controlContextBaselineTokens ?? null,
       schedulerPreterminalOwnerProof:
         existing?.schedulerPreterminalOwnerProof ?? null,
       startedAt: startedAt.toISOString(),
@@ -112,7 +118,7 @@ async function waitForPhysicalTarget(options) {
       updatedAt: options.clock.wallNow().toISOString(),
       }
     );
-  write('waiting');
+  write(elapsed >= options.minimumElapsedMs ? 'ready' : 'waiting');
   try {
     while (elapsed < options.minimumElapsedMs) {
       const segment = Math.min(
@@ -141,18 +147,6 @@ async function waitForPhysicalTarget(options) {
   return { startedAt, elapsedMonotonicMs: elapsed };
 }
 
-function usageClassification(usage) {
-  if (usage === null) return 'ambiguous';
-  if (usage.cacheReadInputTokens > 0) return 'cache_hit';
-  if (
-    usage.cacheReadInputTokens === 0
-    && usage.cacheCreationInputTokens > 0
-  ) {
-    return 'cache_miss_or_rewrite';
-  }
-  return 'ambiguous';
-}
-
 function inconclusiveReason(arm, observation) {
   if (observation.clockAmbiguous) return 'clock_ambiguity';
   if (arm.automaticTouch) {
@@ -161,7 +155,10 @@ function inconclusiveReason(arm, observation) {
     return null;
   }
   if (observation.usageCounters === null) return 'usage_counters_unavailable';
-  const classification = usageClassification(observation.usageCounters);
+  const classification = classifyControlUsage(
+    observation.usageCounters,
+    observation.controlContextBaselineTokens
+  );
   if (classification !== arm.expectedClassification) {
     return 'cache_classification_mismatch';
   }
@@ -206,6 +203,7 @@ async function runObservationArmInternal(options) {
         identity: options.identity,
         admissionBinding: null,
         schedulerBaseline: null,
+        controlContextBaselineTokens: null,
         schedulerPreterminalOwnerProof: null,
         startedAt: startedAt.toISOString(),
         cadenceToleranceMs,
@@ -261,6 +259,7 @@ async function runObservationArmInternal(options) {
         elapsedMonotonicMs
       ),
       physicalElapsed: clock.physical === true,
+      controlContextBaselineTokens: null,
       usageCounters: null,
       touchesObserved: 0,
       deadlineApplied: false,
@@ -287,6 +286,8 @@ async function runObservationArmInternal(options) {
   let observation;
   let admissionBinding = null;
   let schedulerBaseline = null;
+  let controlContextBaselineTokens = null;
+  let observationOperationStartedAt = null;
   try {
     let checkpoint = readObservationCheckpoint(
       options.workDir,
@@ -335,6 +336,8 @@ async function runObservationArmInternal(options) {
                 bootstrapState?.admissionBinding ?? null,
               schedulerBaseline:
                 bootstrapState?.schedulerBaseline ?? null,
+              controlContextBaselineTokens:
+                bootstrapState?.controlContextBaselineTokens ?? null,
               state: 'waiting',
               updatedAt: clock.wallNow().toISOString(),
             }
@@ -343,6 +346,8 @@ async function runObservationArmInternal(options) {
       });
       admissionBinding = admitted?.admissionBinding ?? null;
       schedulerBaseline = admitted?.schedulerBaseline ?? null;
+      controlContextBaselineTokens =
+        admitted?.controlContextBaselineTokens ?? null;
     } else if (typeof driver.resume === 'function') {
       const resumed = await driver.resume({
         armId: options.armId,
@@ -353,9 +358,32 @@ async function runObservationArmInternal(options) {
         resumed?.admissionBinding ?? checkpoint.admissionBinding;
       schedulerBaseline =
         resumed?.schedulerBaseline ?? checkpoint.schedulerBaseline;
+      controlContextBaselineTokens =
+        resumed?.controlContextBaselineTokens
+        ?? checkpoint.controlContextBaselineTokens;
     } else {
       admissionBinding = checkpoint.admissionBinding;
       schedulerBaseline = checkpoint.schedulerBaseline;
+      controlContextBaselineTokens =
+        checkpoint.controlContextBaselineTokens;
+    }
+    if (options.signal?.aborted) {
+      throw new ObservationInterruptedError();
+    }
+    if (
+      (
+        arm.automaticTouch
+        && controlContextBaselineTokens !== null
+      )
+      || (
+        !arm.automaticTouch
+        && (
+          !Number.isSafeInteger(controlContextBaselineTokens)
+          || controlContextBaselineTokens < MIN_CONTROL_CONTEXT_TOKENS
+        )
+      )
+    ) {
+      throw new Error('control_context_baseline_invalid');
     }
     const waited = await waitForPhysicalTarget({
       workDir: options.workDir,
@@ -365,6 +393,7 @@ async function runObservationArmInternal(options) {
       identity: options.identity,
       admissionBinding,
       schedulerBaseline,
+      controlContextBaselineTokens,
       startedAt,
       cadenceToleranceMs,
       deadlineApplicationToleranceMs,
@@ -375,6 +404,7 @@ async function runObservationArmInternal(options) {
     });
     startedAt = waited.startedAt;
     elapsedMonotonicMs = waited.elapsedMonotonicMs;
+    observationOperationStartedAt = clock.monotonicNow();
     observation = arm.automaticTouch
       ? await driver.inspectScheduler({
           armId: options.armId,
@@ -476,14 +506,34 @@ async function runObservationArmInternal(options) {
     }
   }
 
+  if (observationOperationStartedAt !== null) {
+    elapsedMonotonicMs += Math.max(
+      0,
+      clock.monotonicNow() - observationOperationStartedAt
+    );
+  }
+
   const endedAt = clock.wallNow();
-  elapsedMonotonicMs = Math.max(0, elapsedMonotonicMs);
-  const wallElapsedMs = endedAt.valueOf() - startedAt.valueOf();
+  elapsedMonotonicMs = Math.min(
+    24 * 60 * 60 * 1000,
+    Math.max(0, elapsedMonotonicMs)
+  );
+  const retentionStartedAt = new Date(
+    schedulerBaseline?.capturedAt
+      ?? admissionBinding?.boundAt
+      ?? startedAt
+  );
+  const wallElapsedMs =
+    endedAt.valueOf() - retentionStartedAt.valueOf();
   const elapsedAmbiguous =
-    wallElapsedMs < arm.minimumElapsedMs
+    !Number.isFinite(retentionStartedAt.valueOf())
+    || retentionStartedAt.valueOf() < startedAt.valueOf()
+    || retentionStartedAt.valueOf() > endedAt.valueOf()
+    || wallElapsedMs < arm.minimumElapsedMs
     || elapsedMonotonicMs < arm.minimumElapsedMs
     || Math.abs(wallElapsedMs - elapsedMonotonicMs) > 5 * 60 * 1000;
   const normalized = {
+    controlContextBaselineTokens,
     usageCounters: observation.usageCounters ?? null,
     touchesObserved: observation.touchesObserved ?? 0,
     deadlineApplied: observation.deadlineApplied ?? false,
@@ -498,7 +548,10 @@ async function runObservationArmInternal(options) {
     ? normalized.touchesObserved === 1 && normalized.deadlineApplied
       ? 'one_touch_then_deadline'
       : 'ambiguous'
-    : usageClassification(normalized.usageCounters);
+    : classifyControlUsage(
+      normalized.usageCounters,
+      normalized.controlContextBaselineTokens
+    );
   const result = {
     schema: OBSERVATION_RESULT_SCHEMA,
     attemptId: options.attemptId,
@@ -516,6 +569,8 @@ async function runObservationArmInternal(options) {
     endedAt: endedAt.toISOString(),
     elapsedMonotonicMs,
     physicalElapsed: clock.physical === true,
+    controlContextBaselineTokens:
+      normalized.controlContextBaselineTokens,
     usageCounters: normalized.usageCounters,
     touchesObserved: normalized.touchesObserved,
     deadlineApplied: normalized.deadlineApplied,

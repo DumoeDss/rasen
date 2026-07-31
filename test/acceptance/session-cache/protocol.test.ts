@@ -24,6 +24,7 @@ import {
   auditAcceptanceOwnership,
   authorizeParentDelivery,
   catalogLegacyHistory,
+  classifyControlUsage,
   ciEvidencePath,
   collectSuccessfulCiEvidence,
   createObservationAttempt,
@@ -169,6 +170,9 @@ function completedResult(
     : miss
       ? 65 * 60 * 1000
       : 55 * 60 * 1000;
+  const endedAt = new Date(
+    new Date('2026-07-31T01:00:00.000Z').valueOf() + elapsed
+  ).toISOString();
   const identity = identities[armId];
   const touchAttempt = 1;
   const messageIdHash = digestJson({
@@ -254,29 +258,33 @@ function completedResult(
     schema: OBSERVATION_CHECKPOINT_SCHEMA,
     attemptId,
     candidate,
-    armId: 'scheduler-cadence-deadline' as const,
+    armId,
     identity,
     admissionBinding,
-    schedulerBaseline: {
-      claudeSessionId,
-      transcriptPathFingerprint: '3'.repeat(64),
-      transcriptFileIdentityFingerprint: '4'.repeat(64),
-      transcriptSize: 100,
-      transcriptPrefixFingerprint: '5'.repeat(64),
-      capturedAt: '2026-07-31T01:00:00.000Z',
-    },
-    schedulerPreterminalOwnerProof: preterminal,
+    schedulerBaseline: scheduler
+      ? {
+          claudeSessionId,
+          transcriptPathFingerprint: '3'.repeat(64),
+          transcriptFileIdentityFingerprint: '4'.repeat(64),
+          transcriptSize: 100,
+          transcriptPrefixFingerprint: '5'.repeat(64),
+          capturedAt: '2026-07-31T01:00:00.000Z',
+        }
+      : null,
+    controlContextBaselineTokens: scheduler ? null : 100_000,
+    schedulerPreterminalOwnerProof: scheduler ? preterminal : null,
     startedAt: '2026-07-31T01:00:00.000Z',
-    cadenceToleranceMs:
-      OBSERVATION_ARMS['scheduler-cadence-deadline'].cadenceToleranceMs,
-    deadlineApplicationToleranceMs:
-      OBSERVATION_ARMS['scheduler-cadence-deadline']
-        .deadlineApplicationToleranceMs,
-    targetElapsedMs:
-      OBSERVATION_ARMS['scheduler-cadence-deadline'].minimumElapsedMs,
+    cadenceToleranceMs: scheduler
+      ? OBSERVATION_ARMS['scheduler-cadence-deadline'].cadenceToleranceMs
+      : null,
+    deadlineApplicationToleranceMs: scheduler
+      ? OBSERVATION_ARMS['scheduler-cadence-deadline']
+          .deadlineApplicationToleranceMs
+      : null,
+    targetElapsedMs: OBSERVATION_ARMS[armId].minimumElapsedMs,
     elapsedMonotonicMs: elapsed,
     state: 'ready' as const,
-    updatedAt: '2026-07-31T01:56:00.000Z',
+    updatedAt: endedAt,
   };
   const result = {
     schema: OBSERVATION_RESULT_SCHEMA,
@@ -286,18 +294,17 @@ function completedResult(
     identity,
     admissionBinding,
     startedAt: '2026-07-31T01:00:00.000Z',
-    endedAt: new Date(
-      new Date('2026-07-31T01:00:00.000Z').valueOf() + elapsed
-    ).toISOString(),
+    endedAt,
     elapsedMonotonicMs: elapsed,
     physicalElapsed: true,
+    controlContextBaselineTokens: scheduler ? null : 100_000,
     usageCounters: scheduler
       ? null
       : {
-          inputTokens: 100,
-          cacheCreationInputTokens: miss ? 90 : 0,
-          cacheReadInputTokens: miss ? 0 : 90,
-          outputTokens: 10,
+          inputTokens: 2,
+          cacheCreationInputTokens: miss ? 90_000 : 0,
+          cacheReadInputTokens: miss ? 0 : 90_000,
+          outputTokens: 500,
         },
     touchesObserved: scheduler ? 1 : 0,
     deadlineApplied: scheduler,
@@ -356,6 +363,37 @@ function completedResult(
   return { result, schedulerCheckpoint };
 }
 
+function writeCompletedCheckpointChain(
+  root: string,
+  attemptId: string,
+  armId: keyof typeof OBSERVATION_ARMS,
+  readyCheckpoint: ReturnType<typeof completedResult>['schedulerCheckpoint']
+) {
+  writeObservationCheckpoint(root, attemptId, armId, {
+    ...readyCheckpoint,
+    admissionBinding: null,
+    schedulerBaseline: null,
+    controlContextBaselineTokens: null,
+    schedulerPreterminalOwnerProof: null,
+    elapsedMonotonicMs: 0,
+    state: 'initializing',
+    updatedAt: readyCheckpoint.startedAt,
+  });
+  writeObservationCheckpoint(root, attemptId, armId, {
+    ...readyCheckpoint,
+    schedulerPreterminalOwnerProof: null,
+    elapsedMonotonicMs: 0,
+    state: 'waiting',
+    updatedAt: readyCheckpoint.startedAt,
+  });
+  return writeObservationCheckpoint(
+    root,
+    attemptId,
+    armId,
+    readyCheckpoint
+  );
+}
+
 function settleAttempt(
   root: string,
   attemptId: string,
@@ -366,14 +404,12 @@ function settleAttempt(
   >) {
     const { result, schedulerCheckpoint } =
       completedResult(attemptId, armId, identities);
-    if (armId === 'scheduler-cadence-deadline') {
-      writeObservationCheckpoint(
-        root,
-        attemptId,
-        armId,
-        schedulerCheckpoint
-      );
-    }
+    writeCompletedCheckpointChain(
+      root,
+      attemptId,
+      armId,
+      schedulerCheckpoint
+    );
     recordObservationResult(root, attemptId, result);
   }
   return writeAttemptSummary(root, attemptId, {
@@ -440,6 +476,89 @@ describe('immutable session-cache acceptance generations', () => {
     })).toThrow(/OBSERVATION_ARMS/u);
   });
 
+  it.each([
+    {
+      label: 'exact hit threshold',
+      usage: {
+        inputTokens: 0,
+        cacheCreationInputTokens: 15_000,
+        cacheReadInputTokens: 85_000,
+        outputTokens: 0,
+      },
+      expected: 'cache_hit',
+    },
+    {
+      label: 'just below hit threshold',
+      usage: {
+        inputTokens: 0,
+        cacheCreationInputTokens: 15_000,
+        cacheReadInputTokens: 84_999,
+        outputTokens: 0,
+      },
+      expected: 'ambiguous',
+    },
+    {
+      label: 'exact rewrite threshold',
+      usage: {
+        inputTokens: 0,
+        cacheCreationInputTokens: 70_000,
+        cacheReadInputTokens: 30_000,
+        outputTokens: 0,
+      },
+      expected: 'cache_miss_or_rewrite',
+    },
+    {
+      label: 'just below rewrite threshold',
+      usage: {
+        inputTokens: 30_001,
+        cacheCreationInputTokens: 69_999,
+        cacheReadInputTokens: 0,
+        outputTokens: 0,
+      },
+      expected: 'ambiguous',
+    },
+    {
+      label: 'collapsed apparent hit',
+      usage: {
+        inputTokens: 0,
+        cacheCreationInputTokens: 15,
+        cacheReadInputTokens: 85,
+        outputTokens: 0,
+      },
+      expected: 'ambiguous',
+    },
+    {
+      label: 'collapsed apparent rewrite',
+      usage: {
+        inputTokens: 30,
+        cacheCreationInputTokens: 70,
+        cacheReadInputTokens: 0,
+        outputTokens: 0,
+      },
+      expected: 'ambiguous',
+    },
+    {
+      label: 'undersized bootstrap context',
+      baseline: 29_999,
+      usage: {
+        inputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 100_000,
+        outputTokens: 0,
+      },
+      expected: 'ambiguous',
+    },
+  ])(
+    'classifies $label against the persisted bootstrap context',
+    (testCase) => {
+      const baseline = 'baseline' in testCase
+        ? testCase.baseline
+        : 100_000;
+      expect(classifyControlUsage(testCase.usage, baseline))
+        .toBe(testCase.expected);
+    }
+  );
+
   it('writes one immutable intent and disjoint create-once arm files without a ledger', () => {
     const root = workDir();
     const attempt = createAttempt(root);
@@ -470,6 +589,208 @@ describe('immutable session-cache acceptance generations', () => {
       recordObservationResult(root, attempt.attemptId, hit)
     ).toThrow(/already_exists/u);
     expect(fs.existsSync(acceptanceRunV2Path(root))).toBe(false);
+  });
+
+  it('finalizes a control miss whose first request predominantly rewrites the cache', () => {
+    const root = workDir('rasen-mixed-cache-miss-');
+    const attempt = createAttempt(root);
+    for (const armId of Object.keys(OBSERVATION_ARMS) as Array<
+      keyof typeof OBSERVATION_ARMS
+    >) {
+      const { result, schedulerCheckpoint } = completedResult(
+        attempt.attemptId,
+        armId
+      );
+      if (armId === 'control-miss-65m') {
+        result.controlContextBaselineTokens = 98_747;
+        schedulerCheckpoint.controlContextBaselineTokens = 98_747;
+        result.usageCounters = {
+          inputTokens: 2,
+          cacheCreationInputTokens: 77_027,
+          cacheReadInputTokens: 21_736,
+          outputTokens: 545,
+        };
+      }
+      writeCompletedCheckpointChain(
+        root,
+        attempt.attemptId,
+        armId,
+        schedulerCheckpoint
+      );
+      recordObservationResult(root, attempt.attemptId, result);
+    }
+    writeAttemptSummary(root, attempt.attemptId, {
+      launcherExits: Object.keys(OBSERVATION_ARMS).map((armId) => ({
+        armId,
+        code: 0,
+      })),
+    }, fixedNow);
+    expect(
+      finalizeAcceptanceAttempt(root, attempt.attemptId, fixedNow)
+    ).toMatchObject({
+      selectedAttemptId: attempt.attemptId,
+      localEvidence: { physicalRetention: true },
+    });
+  });
+
+  it('rejects a control result whose baseline differs from its ready checkpoint', () => {
+    const root = workDir('rasen-control-baseline-drift-');
+    const attempt = createAttempt(root);
+    const evidence = completedResult(
+      attempt.attemptId,
+      'control-hit-55m'
+    );
+    writeCompletedCheckpointChain(
+      root,
+      attempt.attemptId,
+      'control-hit-55m',
+      evidence.schedulerCheckpoint
+    );
+    evidence.result.controlContextBaselineTokens = 90_000;
+    recordObservationResult(root, attempt.attemptId, evidence.result);
+    expect(() =>
+      validateCompletedObservation(
+        root,
+        attempt.attemptId,
+        'control-hit-55m'
+      )
+    ).toThrow(/physical_result_hit_semantics_invalid/u);
+  });
+
+  it('rejects a completed control without a pre-wake checkpoint lifecycle', () => {
+    const root = workDir('rasen-control-checkpoint-lifecycle-');
+    const attempt = createAttempt(root);
+    const evidence = completedResult(
+      attempt.attemptId,
+      'control-hit-55m'
+    );
+    writeObservationCheckpoint(
+      root,
+      attempt.attemptId,
+      'control-hit-55m',
+      evidence.schedulerCheckpoint
+    );
+    recordObservationResult(root, attempt.attemptId, evidence.result);
+    expect(() =>
+      validateCompletedObservation(
+        root,
+        attempt.attemptId,
+        'control-hit-55m'
+      )
+    ).toThrow(/physical_result_checkpoint_lifecycle_invalid/u);
+  });
+
+  it('rejects an interrupted checkpoint that skips resume-waiting before ready', () => {
+    const root = workDir('rasen-control-interrupted-ready-');
+    const attempt = createAttempt(root);
+    const evidence = completedResult(
+      attempt.attemptId,
+      'control-hit-55m'
+    );
+    const ready = evidence.schedulerCheckpoint;
+    writeObservationCheckpoint(root, attempt.attemptId, 'control-hit-55m', {
+      ...ready,
+      admissionBinding: null,
+      controlContextBaselineTokens: null,
+      elapsedMonotonicMs: 0,
+      state: 'initializing',
+      updatedAt: ready.startedAt,
+    });
+    writeObservationCheckpoint(root, attempt.attemptId, 'control-hit-55m', {
+      ...ready,
+      elapsedMonotonicMs: 0,
+      state: 'waiting',
+      updatedAt: ready.startedAt,
+    });
+    writeObservationCheckpoint(root, attempt.attemptId, 'control-hit-55m', {
+      ...ready,
+      elapsedMonotonicMs: 1,
+      state: 'interrupted',
+      updatedAt: ready.startedAt,
+    });
+    writeObservationCheckpoint(
+      root,
+      attempt.attemptId,
+      'control-hit-55m',
+      ready
+    );
+    recordObservationResult(root, attempt.attemptId, evidence.result);
+    expect(() =>
+      validateCompletedObservation(
+        root,
+        attempt.attemptId,
+        'control-hit-55m'
+      )
+    ).toThrow(/physical_result_checkpoint_lifecycle_invalid/u);
+  });
+
+  it('rejects a non-ready checkpoint that already reached its target', () => {
+    const root = workDir('rasen-control-waiting-at-target-');
+    const attempt = createAttempt(root);
+    const evidence = completedResult(
+      attempt.attemptId,
+      'control-hit-55m'
+    );
+    const ready = evidence.schedulerCheckpoint;
+    writeObservationCheckpoint(root, attempt.attemptId, 'control-hit-55m', {
+      ...ready,
+      admissionBinding: null,
+      controlContextBaselineTokens: null,
+      elapsedMonotonicMs: 0,
+      state: 'initializing',
+      updatedAt: ready.startedAt,
+    });
+    writeObservationCheckpoint(root, attempt.attemptId, 'control-hit-55m', {
+      ...ready,
+      elapsedMonotonicMs: 0,
+      state: 'waiting',
+      updatedAt: ready.startedAt,
+    });
+    writeObservationCheckpoint(root, attempt.attemptId, 'control-hit-55m', {
+      ...ready,
+      state: 'waiting',
+      updatedAt: ready.startedAt,
+    });
+    writeObservationCheckpoint(
+      root,
+      attempt.attemptId,
+      'control-hit-55m',
+      ready
+    );
+    recordObservationResult(root, attempt.attemptId, evidence.result);
+    expect(() =>
+      validateCompletedObservation(
+        root,
+        attempt.attemptId,
+        'control-hit-55m'
+      )
+    ).toThrow(/physical_result_checkpoint_lifecycle_invalid/u);
+  });
+
+  it('rejects a ready checkpoint written after the completed control result', () => {
+    const root = workDir('rasen-control-checkpoint-after-result-');
+    const attempt = createAttempt(root);
+    const evidence = completedResult(
+      attempt.attemptId,
+      'control-hit-55m'
+    );
+    evidence.schedulerCheckpoint.updatedAt = new Date(
+      new Date(evidence.result.endedAt).valueOf() + 1
+    ).toISOString();
+    writeCompletedCheckpointChain(
+      root,
+      attempt.attemptId,
+      'control-hit-55m',
+      evidence.schedulerCheckpoint
+    );
+    recordObservationResult(root, attempt.attemptId, evidence.result);
+    expect(() =>
+      validateCompletedObservation(
+        root,
+        attempt.attemptId,
+        'control-hit-55m'
+      )
+    ).toThrow(/physical_result_wall_clock_invalid/u);
   });
 
   it('routes two launch/observe processes through the real product admission fence', async () => {
@@ -833,12 +1154,18 @@ describe('immutable session-cache acceptance generations', () => {
     const root = workDir('rasen-completed-noop-');
     const identities = armIdentities();
     const attempt = createAttempt(root, identities);
-    const hit = completedResult(
+    const hitEvidence = completedResult(
       attempt.attemptId,
       'control-hit-55m',
       identities
-    ).result;
-    recordObservationResult(root, attempt.attemptId, hit);
+    );
+    writeCompletedCheckpointChain(
+      root,
+      attempt.attemptId,
+      'control-hit-55m',
+      hitEvidence.schedulerCheckpoint
+    );
+    recordObservationResult(root, attempt.attemptId, hitEvidence.result);
     const resultPath = path.join(
       observationDirectory(root, attempt.attemptId, 'control-hit-55m'),
       'result.json'
@@ -868,11 +1195,17 @@ describe('immutable session-cache acceptance generations', () => {
   it('reuses a completed generation by immutable validated copy only', () => {
     const root = workDir('rasen-reuse-generation-');
     const source = createAttempt(root);
-    const hit = completedResult(
+    const hitEvidence = completedResult(
       source.attemptId,
       'control-hit-55m'
-    ).result;
-    recordObservationResult(root, source.attemptId, hit);
+    );
+    writeCompletedCheckpointChain(
+      root,
+      source.attemptId,
+      'control-hit-55m',
+      hitEvidence.schedulerCheckpoint
+    );
+    recordObservationResult(root, source.attemptId, hitEvidence.result);
     const sourcePath = path.join(
       observationDirectory(root, source.attemptId, 'control-hit-55m'),
       'result.json'
@@ -907,13 +1240,30 @@ describe('immutable session-cache acceptance generations', () => {
         'control-hit-55m'
       )
     ).toThrow(/already_exists/u);
+    const targetPath = path.join(
+      observationDirectory(root, target.attemptId, 'control-hit-55m'),
+      'result.json'
+    );
+    const tamperedReuse = JSON.parse(fs.readFileSync(targetPath, 'utf8'));
+    tamperedReuse.controlContextBaselineTokens = 90_000;
+    fs.writeFileSync(
+      targetPath,
+      `${JSON.stringify(tamperedReuse, null, 2)}\n`
+    );
+    expect(() =>
+      validateCompletedObservation(
+        root,
+        target.attemptId,
+        'control-hit-55m'
+      )
+    ).toThrow(/observation_reuse_evidence_mismatch/u);
 
     const schedulerSource = createAttempt(root);
     const schedulerEvidence = completedResult(
       schedulerSource.attemptId,
       'scheduler-cadence-deadline'
     );
-    writeObservationCheckpoint(
+    writeCompletedCheckpointChain(
       root,
       schedulerSource.attemptId,
       'scheduler-cadence-deadline',
@@ -949,10 +1299,19 @@ describe('immutable session-cache acceptance generations', () => {
       for (const armId of Object.keys(OBSERVATION_ARMS) as Array<
         keyof typeof OBSERVATION_ARMS
       >) {
+        const evidence = completedResult(attemptId, armId);
+        if (armId !== 'scheduler-cadence-deadline') {
+          writeCompletedCheckpointChain(
+            root,
+            attemptId,
+            armId,
+            evidence.schedulerCheckpoint
+          );
+        }
         recordObservationResult(
           root,
           attemptId,
-          completedResult(attemptId, armId).result
+          evidence.result
         );
       }
       writeAttemptSummary(root, attemptId, {
@@ -968,7 +1327,7 @@ describe('immutable session-cache acceptance generations', () => {
     recordResults(missingRoot, missing.attemptId);
     expect(() =>
       finalizeAcceptanceAttempt(missingRoot, missing.attemptId)
-    ).toThrow(/physical_result_scheduler_checkpoint_invalid/u);
+    ).toThrow(/physical_result_checkpoint_lifecycle_invalid/u);
     expect(fs.existsSync(acceptanceRunV2Path(missingRoot))).toBe(false);
 
     const wrongRoot = workDir('rasen-scheduler-checkpoint-wrong-attempt-');

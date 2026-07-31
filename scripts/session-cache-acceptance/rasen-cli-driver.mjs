@@ -17,13 +17,13 @@ import {
 } from './physical-preflight.mjs';
 import {
   captureExactDurableSession,
+  captureExactTranscriptContextBaseline,
   captureExactTranscriptState,
   captureExactTranscriptBaseline,
   extractExactAppendedUsage,
   inspectSchedulerTranscriptCausalAppend,
   restoreExactTranscriptBaseline,
 } from './transcript-usage.mjs';
-
 const MAX_PROCESS_OUTPUT_BYTES = 2 * 1024 * 1024;
 const SCHEDULER_TOUCH_MESSAGE =
   'Keepalive touch. Reply with exactly: OK. Do not use any tools.';
@@ -694,6 +694,7 @@ export function createObservationDriver(config) {
       const admissionBinding = await captureOwnedProcessBinding(identity);
       admissionBindings.set(armId, admissionBinding);
       let schedulerBaseline = null;
+      let controlContextBaselineTokens = null;
       if (identity.policy.mode === 'auto') {
         if (
           !Number.isInteger(cadenceToleranceMs)
@@ -725,14 +726,31 @@ export function createObservationDriver(config) {
           cadenceToleranceMs,
           deadlineApplicationToleranceMs,
         });
+      } else {
+        controlContextBaselineTokens =
+          config.admissionProofMode === true
+            ? null
+            : captureExactTranscriptContextBaseline({
+              rasenHome,
+              claudeHome: config.claude.home,
+              identity,
+            }).contextTokens;
       }
       await persistBootstrapState?.({
         admissionBinding,
         schedulerBaseline,
+        controlContextBaselineTokens,
       });
-      return { admissionBinding, schedulerBaseline };
+      return {
+        admissionBinding,
+        schedulerBaseline,
+        controlContextBaselineTokens,
+      };
     },
     async resume({ armId, identity, checkpoint }) {
+      if (config.admissionProofMode === true) {
+        throw new Error('admission_proof_resume_prohibited');
+      }
       const admissionBinding = await requireOwnedProcessBinding(
         identity,
         checkpoint.admissionBinding
@@ -762,9 +780,17 @@ export function createObservationDriver(config) {
           );
         }
       }
-      return { admissionBinding, schedulerBaseline };
+      return {
+        admissionBinding,
+        schedulerBaseline,
+        controlContextBaselineTokens:
+          checkpoint.controlContextBaselineTokens,
+      };
     },
     async wakeAndReadUsage({ armId, identity }) {
+      if (config.admissionProofMode === true) {
+        throw new Error('admission_proof_observation_prohibited');
+      }
       const before = captureExactTranscriptState({
         rasenHome,
         claudeHome: config.claude.home,
@@ -807,6 +833,9 @@ export function createObservationDriver(config) {
       signal,
       persistPreterminalProof,
     }) {
+      if (config.admissionProofMode === true) {
+        throw new Error('admission_proof_observation_prohibited');
+      }
       const deadline = new Date(identity.policy.deadlineAt ?? '').valueOf();
       if (!Number.isFinite(deadline)) throw new Error('scheduler_deadline_invalid');
       const before = schedulerSnapshots.get(armId);

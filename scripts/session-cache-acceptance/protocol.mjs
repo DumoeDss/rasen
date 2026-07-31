@@ -59,6 +59,50 @@ export const OBSERVATION_ARMS = Object.freeze({
     expectedClassification: 'one_touch_then_deadline',
   }),
 });
+
+const CONTROL_USAGE_FIELDS = Object.freeze([
+  'inputTokens',
+  'cacheCreationInputTokens',
+  'cacheReadInputTokens',
+  'outputTokens',
+]);
+export const MIN_CONTROL_CONTEXT_TOKENS = 30_000;
+
+export function classifyControlUsage(usage, contextBaselineTokens) {
+  if (
+    usage === null
+    || typeof usage !== 'object'
+    || !Number.isSafeInteger(contextBaselineTokens)
+    || contextBaselineTokens < MIN_CONTROL_CONTEXT_TOKENS
+    || CONTROL_USAGE_FIELDS.some(
+      (field) =>
+        !Number.isSafeInteger(usage[field])
+        || usage[field] < 0
+    )
+  ) {
+    return 'ambiguous';
+  }
+  // Keep the physical gate aligned with the original probe: compare the
+  // wake's read/write counters with the preceding bootstrap request's
+  // persisted context size. Mixed read/create requests are normal; the gap
+  // between the two thresholds deliberately fails closed.
+  const baseline = BigInt(contextBaselineTokens);
+  const cacheRead = BigInt(usage.cacheReadInputTokens);
+  const cacheCreation = BigInt(usage.cacheCreationInputTokens);
+  if (
+    cacheRead * 100n >= baseline * 85n
+    && cacheCreation * 100n <= baseline * 15n
+  ) {
+    return 'cache_hit';
+  }
+  if (
+    cacheCreation * 100n >= baseline * 70n
+  ) {
+    return 'cache_miss_or_rewrite';
+  }
+  return 'ambiguous';
+}
+
 export const ACCEPTANCE_FILENAMES = Object.freeze({
   legacyRun: 'acceptance-run.json',
   runV2: 'acceptance-run-v2.json',
@@ -264,6 +308,8 @@ const ObservationResultSchema = z
     endedAt: Timestamp,
     elapsedMonotonicMs: z.number().nonnegative().max(24 * 60 * 60 * 1000),
     physicalElapsed: z.boolean(),
+    controlContextBaselineTokens: z.number().int().positive()
+      .max(Number.MAX_SAFE_INTEGER).nullable().default(null),
     usageCounters: UsageCountersSchema.nullable(),
     touchesObserved: z.number().int().nonnegative().max(16),
     deadlineApplied: z.boolean(),
@@ -344,6 +390,8 @@ const ObservationCheckpointSchema = z
     identity: ArmIdentitySchema,
     admissionBinding: OwnedProcessBindingSchema.nullable().default(null),
     schedulerBaseline: SchedulerTranscriptBaselineSchema.nullable().default(null),
+    controlContextBaselineTokens: z.number().int().positive()
+      .max(Number.MAX_SAFE_INTEGER).nullable().default(null),
     schedulerPreterminalOwnerProof:
       SchedulerPreterminalOwnerProofSchema.nullable().default(null),
     startedAt: Timestamp,
@@ -419,6 +467,7 @@ const ObservationCheckpointSchema = z
       && (
         value.admissionBinding !== null
         || value.schedulerBaseline !== null
+        || value.controlContextBaselineTokens !== null
         || value.schedulerPreterminalOwnerProof !== null
         || value.elapsedMonotonicMs !== 0
       )
@@ -1199,6 +1248,22 @@ export function readObservationCheckpointChain(workDir, attemptId, armId) {
         && (
           checkpoint.sequence !== prior.sequence + 1
           || checkpoint.startedAt !== prior.startedAt
+          || (
+            prior.state !== 'initializing'
+            && (
+              checkpoint.controlContextBaselineTokens
+                !== prior.controlContextBaselineTokens
+              || JSON.stringify(checkpoint.admissionBinding)
+                !== JSON.stringify(prior.admissionBinding)
+              || JSON.stringify(checkpoint.schedulerBaseline)
+                !== JSON.stringify(prior.schedulerBaseline)
+            )
+          )
+          || (
+            prior.schedulerPreterminalOwnerProof !== null
+            && JSON.stringify(checkpoint.schedulerPreterminalOwnerProof)
+              !== JSON.stringify(prior.schedulerPreterminalOwnerProof)
+          )
           || checkpoint.cadenceToleranceMs !== prior.cadenceToleranceMs
           || checkpoint.deadlineApplicationToleranceMs
             !== prior.deadlineApplicationToleranceMs
@@ -1216,15 +1281,77 @@ export function readObservationCheckpointChain(workDir, attemptId, armId) {
   });
 }
 
+function assertCompletedCheckpointLifecycle(chain, armId) {
+  const first = chain[0] ?? null;
+  const admitted = chain[1] ?? null;
+  const latest = chain.at(-1) ?? null;
+  if (
+    chain.length < 3
+    || first === null
+    || first.state !== 'initializing'
+    || first.sequence !== 1
+    || first.admissionBinding !== null
+    || first.schedulerBaseline !== null
+    || first.controlContextBaselineTokens !== null
+    || first.schedulerPreterminalOwnerProof !== null
+    || first.elapsedMonotonicMs !== 0
+    || admitted === null
+    || admitted.state !== 'waiting'
+    || admitted.sequence !== 2
+    || admitted.admissionBinding === null
+    || admitted.elapsedMonotonicMs !== 0
+    || latest === null
+    || latest.state !== 'ready'
+  ) {
+    throw new Error(`physical_result_checkpoint_lifecycle_invalid:${armId}`);
+  }
+  const allowedTransitions = {
+    initializing: new Set(['waiting']),
+    waiting: new Set(['waiting', 'interrupted', 'ready']),
+    interrupted: new Set(['waiting']),
+    ready: new Set(['ready']),
+  };
+  for (let index = 1; index < chain.length; index += 1) {
+    const prior = chain[index - 1];
+    const checkpoint = chain[index];
+    if (
+      !allowedTransitions[prior.state].has(checkpoint.state)
+      || (
+        checkpoint.state !== 'ready'
+        && checkpoint.elapsedMonotonicMs >= checkpoint.targetElapsedMs
+      )
+    ) {
+      throw new Error(`physical_result_checkpoint_lifecycle_invalid:${armId}`);
+    }
+  }
+  return latest;
+}
+
 function readCompletedSchedulerCheckpointChain(workDir, attemptId) {
+  const armId = 'scheduler-cadence-deadline';
   const chain = readObservationCheckpointChain(
     workDir,
     attemptId,
-    'scheduler-cadence-deadline'
+    armId
   );
-  const latest = chain.at(-1) ?? null;
-  if (latest === null || latest.state !== 'ready') {
+  const latest = assertCompletedCheckpointLifecycle(chain, armId);
+  if (latest.schedulerBaseline === null) {
     throw new Error('physical_result_scheduler_checkpoint_invalid');
+  }
+  return { chain, latest };
+}
+
+function readCompletedControlCheckpointChain(workDir, attemptId, armId) {
+  if (armId === 'scheduler-cadence-deadline') {
+    throw new Error('physical_result_control_checkpoint_arm_invalid');
+  }
+  const chain = readObservationCheckpointChain(workDir, attemptId, armId);
+  const latest = assertCompletedCheckpointLifecycle(chain, armId);
+  if (
+    !Number.isSafeInteger(latest.controlContextBaselineTokens)
+    || latest.controlContextBaselineTokens < MIN_CONTROL_CONTEXT_TOKENS
+  ) {
+    throw new Error(`physical_result_control_checkpoint_invalid:${armId}`);
   }
   return { chain, latest };
 }
@@ -1333,8 +1460,13 @@ function assertCompletedObservationSemantics(
   }
   const started = new Date(result.startedAt).valueOf();
   const ended = new Date(result.endedAt).valueOf();
-  const wallElapsed = ended - started;
   const boundAt = new Date(result.admissionBinding.boundAt).valueOf();
+  const retentionStarted = armId === 'scheduler-cadence-deadline'
+    ? new Date(
+        checkpoint?.schedulerBaseline?.capturedAt ?? ''
+      ).valueOf()
+    : boundAt;
+  const wallElapsed = ended - retentionStarted;
   if (
     !Number.isFinite(wallElapsed)
     || wallElapsed < definition.minimumElapsedMs
@@ -1342,17 +1474,41 @@ function assertCompletedObservationSemantics(
     || !Number.isFinite(boundAt)
     || boundAt < started
     || boundAt > ended
+    || retentionStarted < started
+    || retentionStarted > ended
+    || (
+      result.provenance.kind === 'observed'
+      && (
+        checkpoint === null
+        || new Date(checkpoint.updatedAt).valueOf() > ended
+      )
+    )
   ) {
     throw new Error(`physical_result_wall_clock_invalid:${armId}`);
   }
+  const observedControlCheckpointInvalid =
+    result.provenance.kind === 'observed'
+    && (
+      checkpoint === null
+      || checkpoint.state !== 'ready'
+      || checkpoint.startedAt !== result.startedAt
+      || checkpoint.controlContextBaselineTokens
+        !== result.controlContextBaselineTokens
+      || JSON.stringify(checkpoint.admissionBinding)
+        !== JSON.stringify(result.admissionBinding)
+    );
   if (armId === 'control-hit-55m') {
     if (
-      result.identity.policy.mode !== 'never'
+      observedControlCheckpointInvalid
+      || result.identity.policy.mode !== 'never'
       || result.identity.policy.maxTouches !== 0
       || result.identity.policy.deadlineAt !== null
       || result.classification !== 'cache_hit'
       || result.usageCounters === null
-      || result.usageCounters.cacheReadInputTokens <= 0
+      || classifyControlUsage(
+        result.usageCounters,
+        result.controlContextBaselineTokens
+      ) !== 'cache_hit'
       || result.touchesObserved !== 0
       || result.deadlineApplied
     ) {
@@ -1362,13 +1518,17 @@ function assertCompletedObservationSemantics(
   }
   if (armId === 'control-miss-65m') {
     if (
-      result.identity.policy.mode !== 'never'
+      observedControlCheckpointInvalid
+      || result.identity.policy.mode !== 'never'
       || result.identity.policy.maxTouches !== 0
       || result.identity.policy.deadlineAt !== null
       || result.classification !== 'cache_miss_or_rewrite'
       || result.usageCounters === null
-      || result.usageCounters.cacheReadInputTokens !== 0
-      || result.usageCounters.cacheCreationInputTokens <= 0
+      || classifyControlUsage(
+        result.usageCounters,
+        result.controlContextBaselineTokens
+      )
+        !== 'cache_miss_or_rewrite'
       || result.touchesObserved !== 0
       || result.deadlineApplied
     ) {
@@ -1382,6 +1542,7 @@ function assertCompletedObservationSemantics(
     || result.identity.policy.maxTouches !== 1
     || result.identity.policy.deadlineAt === null
     || result.classification !== 'one_touch_then_deadline'
+    || result.controlContextBaselineTokens !== null
     || result.usageCounters !== null
     || result.touchesObserved !== 1
     || !result.deadlineApplied
@@ -1559,7 +1720,13 @@ export function validateCompletedObservation(workDir, attemptId, armId) {
   );
   const checkpoint = armId === 'scheduler-cadence-deadline'
     ? readCompletedSchedulerCheckpointChain(workDir, attemptId).latest
-    : null;
+    : result.provenance.kind === 'observed'
+      ? readCompletedControlCheckpointChain(
+          workDir,
+          attemptId,
+          armId
+        ).latest
+      : null;
   assertCompletedObservationSemantics(intent, armId, result, checkpoint);
   if (result.provenance.kind === 'reused-copy') {
     if (result.provenance.sourceAttemptId === attemptId) {
@@ -1578,12 +1745,40 @@ export function validateCompletedObservation(workDir, attemptId, armId) {
       throw new Error('observation_reuse_source_changed');
     }
     const source = validateObservationResult(JSON.parse(sourceBytes.toString('utf8')));
+    const sourceIntent = readAttemptIntent(
+      workDir,
+      result.provenance.sourceAttemptId
+    );
+    const sourceCheckpoint = readCompletedControlCheckpointChain(
+      workDir,
+      result.provenance.sourceAttemptId,
+      armId
+    ).latest;
     if (
       source.provenance.kind !== 'observed'
       || !candidatesEqual(source.candidate, result.candidate)
       || JSON.stringify(source.identity) !== JSON.stringify(result.identity)
     ) {
       throw new Error('observation_reuse_source_invalid');
+    }
+    assertCompletedObservationSemantics(
+      sourceIntent,
+      armId,
+      source,
+      sourceCheckpoint
+    );
+    if (
+      digestJson({
+        ...source,
+        attemptId: null,
+        provenance: null,
+      }) !== digestJson({
+        ...result,
+        attemptId: null,
+        provenance: null,
+      })
+    ) {
+      throw new Error('observation_reuse_evidence_mismatch');
     }
   }
   return result;

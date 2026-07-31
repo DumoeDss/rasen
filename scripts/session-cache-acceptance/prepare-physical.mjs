@@ -21,6 +21,43 @@ import {
   writeJsonAtomic,
 } from './protocol.mjs';
 
+export const PHYSICAL_OPERATION_TIMEOUT_MS = 30 * 60 * 1000;
+
+export function derivePhysicalSchedulerDeadlineAt(
+  preparedAt = Date.now()
+) {
+  const scheduler = OBSERVATION_ARMS['scheduler-cadence-deadline'];
+  return new Date(
+    preparedAt
+      + PHYSICAL_OPERATION_TIMEOUT_MS
+      + scheduler.expectedCadenceMs
+      + scheduler.cadenceToleranceMs
+      + scheduler.deadlineApplicationToleranceMs
+  ).toISOString();
+}
+
+export function assertPhysicalSchedulerDeadlineFresh(
+  deadlineAt,
+  launchedAt = Date.now(),
+  operationTimeoutMs = PHYSICAL_OPERATION_TIMEOUT_MS
+) {
+  const deadline = new Date(deadlineAt).valueOf();
+  const scheduler = OBSERVATION_ARMS['scheduler-cadence-deadline'];
+  const latestValidFirstTouchMs =
+    operationTimeoutMs
+    + scheduler.expectedCadenceMs
+    + scheduler.cadenceToleranceMs;
+  if (
+    !Number.isFinite(deadline)
+    || !Number.isFinite(launchedAt)
+    || !Number.isInteger(operationTimeoutMs)
+    || operationTimeoutMs <= 0
+    || deadline - launchedAt <= latestValidFirstTouchMs
+  ) {
+    throw new Error('physical_scheduler_deadline_budget_stale');
+  }
+}
+
 function option(name, fallback) {
   const index = process.argv.indexOf(name);
   if (index < 0) {
@@ -353,7 +390,7 @@ export async function preparePhysicalObservation(input) {
     writeJsonAtomic(actionFile, admitted.action);
     const automatic = OBSERVATION_ARMS[armId].automaticTouch;
     const deadlineAt = automatic
-      ? new Date(Date.now() + 55 * 60 * 1000).toISOString()
+      ? derivePhysicalSchedulerDeadlineAt()
       : null;
     const config = {
       actionFile,
@@ -390,7 +427,7 @@ export async function preparePhysicalObservation(input) {
           deadlineAction: 'retire-silent',
         },
       },
-      operationTimeoutMs: 30 * 60 * 1000,
+      operationTimeoutMs: PHYSICAL_OPERATION_TIMEOUT_MS,
       rasenBin: path.join(repositoryRoot, 'bin', 'rasen.js'),
       rasenHome,
       supervisorModule,

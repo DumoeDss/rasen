@@ -216,6 +216,20 @@ export function captureExactTranscriptState(input) {
   };
 }
 
+function parseExactJsonLines(serialized, code) {
+  if (!serialized.endsWith('\n')) throw new Error(`${code}_incomplete`);
+  const entries = [];
+  for (const line of serialized.split('\n')) {
+    if (line.length === 0) continue;
+    try {
+      entries.push(JSON.parse(line));
+    } catch {
+      throw new Error(`${code}_invalid_json`);
+    }
+  }
+  return entries;
+}
+
 function exactTranscriptAppend(input) {
   const before = input.before;
   const after = captureExactTranscriptState({
@@ -238,18 +252,7 @@ function exactTranscriptAppend(input) {
     throw new Error('transcript_append_oversize');
   }
   const appended = readExactRange(after.transcriptPath, before.size, appendedBytes);
-  if (!appended.endsWith('\n')) throw new Error('transcript_append_incomplete');
-  const entries = [];
-  for (const line of appended.split('\n')) {
-    if (line.length === 0) continue;
-    let entry;
-    try {
-      entry = JSON.parse(line);
-    } catch {
-      throw new Error('transcript_append_invalid_json');
-    }
-    entries.push(entry);
-  }
+  const entries = parseExactJsonLines(appended, 'transcript_append');
   return {
     after,
     appended,
@@ -270,18 +273,55 @@ function exactTranscriptAppend(input) {
   };
 }
 
-export function inspectExactTranscriptAppend(input) {
-  const append = exactTranscriptAppend(input);
-  let selected = null;
+function deduplicatedUsageRequests(entries) {
+  const requests = [];
+  const requestIndexes = new Map();
   let terminalAssistantRows = 0;
-  for (const entry of append.entries) {
+  for (const entry of entries) {
     const usage = usageFromEntry(entry);
     if (usage === null) continue;
-    // One Claude turn may contain several assistant/tool rounds. The final
-    // assistant usage row is the result usage for the completed exact wake.
-    selected = usage;
     terminalAssistantRows += 1;
+    const existingIndex = requestIndexes.get(usage.messageIdentity);
+    if (existingIndex === undefined) {
+      requestIndexes.set(usage.messageIdentity, requests.length);
+      requests.push(usage);
+    } else {
+      const existing = requests[existingIndex];
+      // Claude transcripts repeat a request once per content block. Preserve
+      // the request's input counters and its final output ceiling.
+      if (
+        existing.counters.inputTokens !== usage.counters.inputTokens
+        || existing.counters.cacheCreationInputTokens
+          !== usage.counters.cacheCreationInputTokens
+        || existing.counters.cacheReadInputTokens
+          !== usage.counters.cacheReadInputTokens
+      ) {
+        throw new Error('transcript_usage_identity_drift');
+      }
+      const updated = {
+        ...existing,
+        counters: {
+          ...existing.counters,
+          outputTokens: Math.max(
+            existing.counters.outputTokens,
+            usage.counters.outputTokens
+          ),
+        },
+      };
+      requests[existingIndex] = updated;
+    }
   }
+  return { requests, terminalAssistantRows };
+}
+
+export function inspectExactTranscriptAppend(input) {
+  const append = exactTranscriptAppend(input);
+  const { requests, terminalAssistantRows } =
+    deduplicatedUsageRequests(append.entries);
+  // The cache boundary belongs to the first provider request entering this
+  // wake. Later tool rounds may read a prefix that the first request just
+  // rewrote and therefore cannot classify the idle boundary.
+  const selected = requests[0] ?? null;
   if (selected === null) throw new Error('transcript_usage_missing');
   // Raw transcript rows and message identities remain process-local. Only the
   // four bounded integers cross the acceptance evidence boundary.
@@ -293,6 +333,7 @@ export function inspectExactTranscriptAppend(input) {
         .digest('hex'),
       ...append.proof,
       terminalAssistantRows,
+      distinctProviderRequests: requests.length,
     },
   };
 }
@@ -440,6 +481,48 @@ export function captureExactTranscriptBaseline(input) {
     ),
     capturedAt: input.capturedAt ?? new Date().toISOString(),
   };
+}
+
+export function captureExactTranscriptContextBaseline(input) {
+  const state = captureExactTranscriptState(input);
+  const serialized = readExactRange(state.transcriptPath, 0, state.size);
+  const entries = parseExactJsonLines(
+    serialized,
+    'transcript_context_baseline'
+  );
+  const { requests } = deduplicatedUsageRequests(entries);
+  const selected = requests.at(-1) ?? null;
+  if (selected === null) {
+    throw new Error('transcript_context_baseline_usage_missing');
+  }
+  const after = captureExactTranscriptState({
+    ...input,
+    expectedClaudeSessionId: state.claudeSessionId,
+  });
+  const serializedFingerprint = createHash('sha256')
+    .update(serialized, 'utf8')
+    .digest('hex');
+  if (
+    after.transcriptPath !== state.transcriptPath
+    || after.transcriptFileIdentityFingerprint
+      !== state.transcriptFileIdentityFingerprint
+    || after.size !== state.size
+    || exactRangeFingerprint(state.transcriptPath, 0, state.size)
+      !== serializedFingerprint
+  ) {
+    throw new Error('transcript_context_baseline_changed');
+  }
+  const contextTokens = Object.values(selected.counters).reduce(
+    (total, value) => total + value,
+    0
+  );
+  if (!Number.isSafeInteger(contextTokens) || contextTokens <= 0) {
+    throw new Error('transcript_context_baseline_invalid');
+  }
+  // Raw transcript rows, message identities, and individual bootstrap
+  // counters remain process-local; only the bounded comparison scalar crosses
+  // the acceptance evidence boundary.
+  return { contextTokens };
 }
 
 export function restoreExactTranscriptBaseline(input) {

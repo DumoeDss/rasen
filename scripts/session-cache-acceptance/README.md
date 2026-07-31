@@ -93,6 +93,14 @@ start and derives the 5-minute cadence and 10-minute deadline-application
 tolerances directly from immutable `OBSERVATION_ARMS`. A result and checkpoint
 that agree with each other on altered values still fail.
 
+Physical elapsed-time validation excludes bootstrap: controls anchor their
+retention window at the durable owner `boundAt`, while the scheduler anchors it
+at the transcript baseline `capturedAt`. Monotonic elapsed time includes the
+post-wait wake or scheduler inspection. The prepared scheduler deadline budgets
+the 30-minute bootstrap operation limit before its 50-minute cadence and
+5-minute cadence tolerance, plus the 10-minute deadline-application tolerance.
+Launch fails closed if preparation delay consumes that final safety margin.
+
 The scheduler result proves this complete order:
 
 ```text
@@ -105,6 +113,16 @@ durable wake, preterminal owner history, and production-valid terminal owner
 absence. Controls retain bounded raw usage counters and exact live owner,
 host, PID, and process-creation bindings. Identity or clock ambiguity is
 inconclusive, never a forced hit/miss.
+
+For a control wake, classification uses the first distinct provider request,
+deduplicated by assistant message identity; later tool-continuation requests
+cannot reclassify the idle boundary after the entry request has rewritten it.
+The bootstrap's last distinct provider request supplies the preceding
+four-counter context estimate, persisted as a bounded comparison scalar in the
+checkpoint and result. Contexts below 30,000 tokens fail closed as too weak for
+this gate. Against that baseline, a hit requires at least 85% cache read and at
+most 15% cache creation; a miss/rewrite requires at least 70% cache creation.
+Mixed counters between those thresholds remain ambiguous.
 
 ## Candidate ownership and parent delivery
 

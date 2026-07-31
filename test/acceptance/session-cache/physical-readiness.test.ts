@@ -20,6 +20,7 @@ import {
 } from '../../../scripts/session-cache-acceptance/protocol.mjs';
 import {
   extractExactAppendedUsage,
+  captureExactTranscriptContextBaseline,
   captureExactTranscriptBaseline,
   captureExactTranscriptState,
   inspectSchedulerTranscriptCausalAppend,
@@ -35,7 +36,10 @@ import {
   verifyCapacityProofDocument,
 } from '../../../scripts/session-cache-acceptance/physical-preflight.mjs';
 import {
+  PHYSICAL_OPERATION_TIMEOUT_MS,
+  assertPhysicalSchedulerDeadlineFresh,
   createAdmittedAction,
+  derivePhysicalSchedulerDeadlineAt,
 } from '../../../scripts/session-cache-acceptance/prepare-physical.mjs';
 import {
   boundedSpawn,
@@ -217,7 +221,10 @@ describe('physical observation readiness hardening', () => {
             capacityVerified: true,
             availableSlots: 3,
           }),
-          bootstrap: async () => ({ admissionBinding }),
+          bootstrap: async () => ({
+            admissionBinding,
+            controlContextBaselineTokens: 100_000,
+          }),
         },
       })
     ).rejects.toBeInstanceOf(ObservationInterruptedError);
@@ -250,12 +257,15 @@ describe('physical observation readiness hardening', () => {
           capacityVerified: true,
           availableSlots: 3,
         }),
-        bootstrap: async () => ({ admissionBinding }),
+        bootstrap: async () => ({
+          admissionBinding,
+          controlContextBaselineTokens: 100_000,
+        }),
         wakeAndReadUsage: async () => ({
           usageCounters: {
-            inputTokens: 10,
+            inputTokens: 1,
             cacheCreationInputTokens: 0,
-            cacheReadInputTokens: 10,
+            cacheReadInputTokens: 90_000,
             outputTokens: 1,
           },
           touchesObserved: 0,
@@ -271,7 +281,397 @@ describe('physical observation readiness hardening', () => {
     });
     expect(
       readObservationCheckpoint(workDir, attemptId, 'control-hit-55m')
+    ).toMatchObject({
+      state: 'ready',
+      controlContextBaselineTokens: 100_000,
+    });
+  });
+
+  it('keeps a ready checkpoint ready when resuming after a pre-result crash', async () => {
+    const workDir = temporaryDirectory('rasen-physical-ready-resume-');
+    const cwd = temporaryDirectory('rasen-physical-ready-resume-cwd-');
+    const identity = {
+      runId: `run:${'7'.repeat(64)}`,
+      sessionKey: 'physical-ready-resume',
+      cwd,
+      policy: {
+        mode: 'never' as const,
+        deadlineAt: null,
+        maxTouches: 0,
+        deadlineAction: 'stop' as const,
+      },
+    };
+    const start = new Date('2026-07-31T01:00:00.000Z').valueOf();
+    const attemptId = createAttemptForArm(
+      workDir,
+      candidate,
+      'control-hit-55m',
+      identity,
+      () => new Date(start)
+    );
+    let wall = start;
+    let monotonic = 0;
+    const clock = {
+      physical: true,
+      wallNow: () => new Date(wall),
+      monotonicNow: () => monotonic,
+      sleep: async (milliseconds: number) => {
+        wall += milliseconds;
+        monotonic += milliseconds;
+      },
+    };
+    const preflight = async () => ({
+      isolated: true,
+      capacityVerified: true,
+      availableSlots: 3,
+    });
+    await expect(
+      runObservationArm({
+        workDir,
+        attemptId,
+        armId: 'control-hit-55m',
+        candidate,
+        identity,
+        checkpointIntervalMs: 55 * 60 * 1000,
+        clock,
+        driver: {
+          preflight,
+          bootstrap: async () => ({
+            admissionBinding: {
+              ...admissionBinding,
+              boundAt: new Date(start).toISOString(),
+            },
+            controlContextBaselineTokens: 100_000,
+          }),
+          wakeAndReadUsage: async () => {
+            throw new ObservationInterruptedError();
+          },
+        },
+      })
+    ).rejects.toBeInstanceOf(ObservationInterruptedError);
+    expect(
+      readObservationCheckpoint(workDir, attemptId, 'control-hit-55m')
     ).toMatchObject({ state: 'ready' });
+
+    const result = await runObservationArm({
+      workDir,
+      attemptId,
+      armId: 'control-hit-55m',
+      candidate,
+      identity,
+      checkpointIntervalMs: 55 * 60 * 1000,
+      clock,
+      driver: {
+        preflight,
+        resume: async ({ checkpoint }) => ({
+          admissionBinding: checkpoint.admissionBinding,
+          controlContextBaselineTokens:
+            checkpoint.controlContextBaselineTokens,
+        }),
+        wakeAndReadUsage: async () => ({
+          usageCounters: {
+            inputTokens: 2,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 90_000,
+            outputTokens: 500,
+          },
+          touchesObserved: 0,
+          deadlineApplied: false,
+          clockAmbiguous: false,
+        }),
+      },
+    });
+    expect(result).toMatchObject({
+      disposition: 'completed',
+      classification: 'cache_hit',
+    });
+    expect(
+      readObservationCheckpoint(workDir, attemptId, 'control-hit-55m')
+    ).toMatchObject({ state: 'ready' });
+    expect(
+      validateCompletedObservation(
+        workDir,
+        attemptId,
+        'control-hit-55m'
+      )
+    ).toMatchObject({ disposition: 'completed' });
+  });
+
+  it('measures the control retention window after bootstrap without losing the causal start', async () => {
+    const workDir = temporaryDirectory('rasen-physical-bootstrap-clock-');
+    const cwd = temporaryDirectory('rasen-physical-bootstrap-clock-cwd-');
+    const identity = {
+      runId: `run:${'4'.repeat(64)}`,
+      sessionKey: 'physical-control-bootstrap-clock',
+      cwd,
+      policy: {
+        mode: 'never' as const,
+        deadlineAt: null,
+        maxTouches: 0,
+        deadlineAction: 'stop' as const,
+      },
+    };
+    const start = new Date('2026-07-31T01:00:00.000Z').valueOf();
+    const bootstrapDurationMs = 10 * 60 * 1000;
+    const wakeDurationMs = 10 * 60 * 1000;
+    const attemptId = createAttemptForArm(
+      workDir,
+      candidate,
+      'control-hit-55m',
+      identity,
+      () => new Date(start)
+    );
+    let wall = start;
+    let monotonic = 0;
+    const result = await runObservationArm({
+      workDir,
+      attemptId,
+      armId: 'control-hit-55m',
+      candidate,
+      identity,
+      checkpointIntervalMs: 55 * 60 * 1000,
+      clock: {
+        physical: true,
+        wallNow: () => new Date(wall),
+        monotonicNow: () => monotonic,
+        sleep: async (milliseconds: number) => {
+          wall += milliseconds;
+          monotonic += milliseconds;
+        },
+      },
+      driver: {
+        preflight: async () => ({
+          isolated: true,
+          capacityVerified: true,
+          availableSlots: 3,
+        }),
+        bootstrap: async () => {
+          wall += bootstrapDurationMs;
+          monotonic += bootstrapDurationMs;
+          return {
+            admissionBinding: {
+              ...admissionBinding,
+              boundAt: new Date(wall).toISOString(),
+            },
+            controlContextBaselineTokens: 100_000,
+          };
+        },
+        wakeAndReadUsage: async () => {
+          wall += wakeDurationMs;
+          monotonic += wakeDurationMs;
+          return {
+            usageCounters: {
+              inputTokens: 1,
+              cacheCreationInputTokens: 0,
+              cacheReadInputTokens: 90_000,
+              outputTokens: 1,
+            },
+            touchesObserved: 0,
+            deadlineApplied: false,
+            clockAmbiguous: false,
+          };
+        },
+      },
+    });
+    expect(result).toMatchObject({
+      disposition: 'completed',
+      classification: 'cache_hit',
+      reasonCode: null,
+      startedAt: new Date(start).toISOString(),
+      admissionBinding: {
+        boundAt: new Date(start + bootstrapDurationMs).toISOString(),
+      },
+      controlContextBaselineTokens: 100_000,
+      elapsedMonotonicMs: 65 * 60 * 1000,
+      endedAt: new Date(
+        start + bootstrapDurationMs + 55 * 60 * 1000 + wakeDurationMs
+      ).toISOString(),
+    });
+    expect(
+      validateCompletedObservation(
+        workDir,
+        attemptId,
+        'control-hit-55m'
+      )
+    ).toMatchObject({
+      disposition: 'completed',
+      classification: 'cache_hit',
+      elapsedMonotonicMs: 65 * 60 * 1000,
+    });
+  });
+
+  it('classifies a predominantly rewritten control request as a cache miss', async () => {
+    const workDir = temporaryDirectory('rasen-physical-mixed-miss-');
+    const cwd = temporaryDirectory('rasen-physical-mixed-miss-cwd-');
+    const identity = {
+      runId: `run:${'5'.repeat(64)}`,
+      sessionKey: 'physical-control-mixed-miss',
+      cwd,
+      policy: {
+        mode: 'never' as const,
+        deadlineAt: null,
+        maxTouches: 0,
+        deadlineAction: 'stop' as const,
+      },
+    };
+    const start = new Date('2026-07-31T01:00:00.000Z').valueOf();
+    const attemptId = createAttemptForArm(
+      workDir,
+      candidate,
+      'control-miss-65m',
+      identity,
+      () => new Date(start)
+    );
+    let wall = start;
+    let monotonic = 0;
+    const result = await runObservationArm({
+      workDir,
+      attemptId,
+      armId: 'control-miss-65m',
+      candidate,
+      identity,
+      checkpointIntervalMs: 65 * 60 * 1000,
+      clock: {
+        physical: true,
+        wallNow: () => new Date(wall),
+        monotonicNow: () => monotonic,
+        sleep: async (milliseconds: number) => {
+          wall += milliseconds;
+          monotonic += milliseconds;
+        },
+      },
+      driver: {
+        preflight: async () => ({
+          isolated: true,
+          capacityVerified: true,
+          availableSlots: 3,
+        }),
+        bootstrap: async () => ({
+          admissionBinding: {
+            ...admissionBinding,
+            boundAt: new Date(wall).toISOString(),
+          },
+          controlContextBaselineTokens: 98_747,
+        }),
+        wakeAndReadUsage: async () => ({
+          usageCounters: {
+            inputTokens: 2,
+            cacheCreationInputTokens: 77_027,
+            cacheReadInputTokens: 21_736,
+            outputTokens: 545,
+          },
+          touchesObserved: 0,
+          deadlineApplied: false,
+          clockAmbiguous: false,
+        }),
+      },
+    });
+    expect(result).toMatchObject({
+      disposition: 'completed',
+      classification: 'cache_miss_or_rewrite',
+      reasonCode: null,
+      controlContextBaselineTokens: 98_747,
+    });
+    expect(
+      validateCompletedObservation(
+        workDir,
+        attemptId,
+        'control-miss-65m'
+      )
+    ).toMatchObject({
+      disposition: 'completed',
+      classification: 'cache_miss_or_rewrite',
+    });
+  });
+
+  it('budgets the scheduler deadline beyond bootstrap and the latest valid cadence', () => {
+    const preparedAt = new Date('2026-07-31T01:00:00.000Z').valueOf();
+    const deadlineAt = derivePhysicalSchedulerDeadlineAt(preparedAt);
+    const scheduler = OBSERVATION_ARMS['scheduler-cadence-deadline'];
+    const deadlineBudgetMs = new Date(deadlineAt).valueOf() - preparedAt;
+    expect(deadlineBudgetMs).toBe(
+      PHYSICAL_OPERATION_TIMEOUT_MS
+        + scheduler.expectedCadenceMs
+        + scheduler.cadenceToleranceMs
+        + scheduler.deadlineApplicationToleranceMs
+    );
+    expect(() =>
+      assertPhysicalSchedulerDeadlineFresh(
+        deadlineAt,
+        preparedAt + scheduler.deadlineApplicationToleranceMs - 1
+      )
+    ).not.toThrow();
+    expect(() =>
+      assertPhysicalSchedulerDeadlineFresh(
+        deadlineAt,
+        preparedAt + scheduler.deadlineApplicationToleranceMs
+      )
+    ).toThrow(/physical_scheduler_deadline_budget_stale/u);
+  });
+
+  it('rejects a stale scheduler config before creating an attempt or observer', () => {
+    const workDir = temporaryDirectory('rasen-stale-physical-launch-');
+    const operationTimeoutMs = 45 * 60 * 1000;
+    const scheduler = OBSERVATION_ARMS['scheduler-cadence-deadline'];
+    const deadlineAt = new Date(
+      Date.now()
+        + PHYSICAL_OPERATION_TIMEOUT_MS
+        + scheduler.expectedCadenceMs
+        + scheduler.cadenceToleranceMs
+        + 60_000
+    ).toISOString();
+    const armIds = Object.keys(OBSERVATION_ARMS) as Array<
+      keyof typeof OBSERVATION_ARMS
+    >;
+    for (const [index, armId] of armIds.entries()) {
+      const cwd = path.join(workDir, `cwd-${index}`);
+      fs.mkdirSync(cwd, { recursive: true });
+      const automatic = OBSERVATION_ARMS[armId].automaticTouch;
+      const configDirectory = path.join(workDir, 'physical', armId);
+      fs.mkdirSync(configDirectory, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDirectory, 'observation-config.json'),
+        `${JSON.stringify({
+          armId,
+          candidate,
+          identity: {
+            runId: `run:${'6'.repeat(64)}`,
+            sessionKey: `stale-launch-${index}`,
+            cwd,
+            policy: {
+              mode: automatic ? 'auto' : 'never',
+              deadlineAt: automatic ? deadlineAt : null,
+              maxTouches: automatic ? 1 : 0,
+              deadlineAction: automatic ? 'retire-silent' : 'stop',
+            },
+          },
+          operationTimeoutMs,
+          workDir,
+        })}\n`
+      );
+    }
+    const launchPath = path.resolve(
+      'scripts',
+      'session-cache-acceptance',
+      'launch-physical.mjs'
+    );
+    expect(() =>
+      execFileSync(
+        process.execPath,
+        [launchPath, '--work-dir', workDir],
+        {
+          cwd: process.cwd(),
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            RASEN_SESSION_CACHE_REAL_OBSERVATION: '1',
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
+        }
+      )
+    ).toThrow(/physical_scheduler_deadline_budget_stale/u);
+    expect(fs.existsSync(path.join(workDir, 'attempts'))).toBe(false);
   });
 
   it.each(['before-eligibility', 'late-wait', 'after-touch'] as const)(
@@ -513,6 +913,199 @@ describe('physical observation readiness hardening', () => {
       cacheReadInputTokens: 101,
       outputTokens: 7,
     });
+  });
+
+  it('classifies the first distinct provider request in one agentic wake', () => {
+    const fixture = transcriptFixture();
+    const before = captureExactTranscriptState(fixture);
+    fs.appendFileSync(
+      fixture.transcriptPath,
+      [
+        {
+          type: 'assistant',
+          message: {
+            id: 'cold-entry-request',
+            usage: {
+              input_tokens: 2,
+              cache_creation_input_tokens: 77_027,
+              cache_read_input_tokens: 21_736,
+              output_tokens: 1,
+            },
+          },
+        },
+        {
+          type: 'assistant',
+          message: {
+            id: 'cold-entry-request',
+            usage: {
+              input_tokens: 2,
+              cache_creation_input_tokens: 77_027,
+              cache_read_input_tokens: 21_736,
+              output_tokens: 545,
+            },
+          },
+        },
+        {
+          type: 'assistant',
+          message: {
+            id: 'warm-tool-continuation',
+            usage: {
+              input_tokens: 2,
+              cache_creation_input_tokens: 1_080,
+              cache_read_input_tokens: 80_826,
+              output_tokens: 9,
+            },
+          },
+        },
+      ].map((line) => JSON.stringify(line)).join('\n') + '\n'
+    );
+    expect(
+      extractExactAppendedUsage({ ...fixture, before })
+    ).toEqual({
+      inputTokens: 2,
+      cacheCreationInputTokens: 77_027,
+      cacheReadInputTokens: 21_736,
+      outputTokens: 545,
+    });
+  });
+
+  it('deduplicates a late repeated block without selecting the middle request', () => {
+    const fixture = transcriptFixture();
+    const before = captureExactTranscriptState(fixture);
+    fs.appendFileSync(
+      fixture.transcriptPath,
+      [
+        {
+          type: 'assistant',
+          message: {
+            id: 'entry-request',
+            usage: {
+              input_tokens: 2,
+              cache_creation_input_tokens: 77_027,
+              cache_read_input_tokens: 21_736,
+              output_tokens: 1,
+            },
+          },
+        },
+        {
+          type: 'assistant',
+          message: {
+            id: 'tool-continuation',
+            usage: {
+              input_tokens: 2,
+              cache_creation_input_tokens: 1_080,
+              cache_read_input_tokens: 80_826,
+              output_tokens: 9,
+            },
+          },
+        },
+        {
+          type: 'assistant',
+          message: {
+            id: 'entry-request',
+            usage: {
+              input_tokens: 2,
+              cache_creation_input_tokens: 77_027,
+              cache_read_input_tokens: 21_736,
+              output_tokens: 545,
+            },
+          },
+        },
+      ].map((line) => JSON.stringify(line)).join('\n') + '\n'
+    );
+    expect(
+      extractExactAppendedUsage({ ...fixture, before })
+    ).toEqual({
+      inputTokens: 2,
+      cacheCreationInputTokens: 77_027,
+      cacheReadInputTokens: 21_736,
+      outputTokens: 545,
+    });
+  });
+
+  it('rejects cache-counter drift within one repeated provider request', () => {
+    const fixture = transcriptFixture();
+    const before = captureExactTranscriptState(fixture);
+    fs.appendFileSync(
+      fixture.transcriptPath,
+      [
+        {
+          type: 'assistant',
+          message: {
+            id: 'drifting-request',
+            usage: {
+              input_tokens: 2,
+              cache_creation_input_tokens: 77_027,
+              cache_read_input_tokens: 21_736,
+              output_tokens: 1,
+            },
+          },
+        },
+        {
+          type: 'assistant',
+          message: {
+            id: 'drifting-request',
+            usage: {
+              input_tokens: 2,
+              cache_creation_input_tokens: 1_080,
+              cache_read_input_tokens: 80_826,
+              output_tokens: 9,
+            },
+          },
+        },
+      ].map((line) => JSON.stringify(line)).join('\n') + '\n'
+    );
+    expect(() =>
+      extractExactAppendedUsage({ ...fixture, before })
+    ).toThrow(/transcript_usage_identity_drift/u);
+  });
+
+  it('captures the last distinct bootstrap request as the comparison context', () => {
+    const fixture = transcriptFixture();
+    fs.appendFileSync(
+      fixture.transcriptPath,
+      [
+        {
+          type: 'assistant',
+          message: {
+            id: 'bootstrap-first',
+            usage: {
+              input_tokens: 10,
+              cache_creation_input_tokens: 20,
+              cache_read_input_tokens: 30,
+              output_tokens: 1,
+            },
+          },
+        },
+        {
+          type: 'assistant',
+          message: {
+            id: 'bootstrap-last',
+            usage: {
+              input_tokens: 2,
+              cache_creation_input_tokens: 77_027,
+              cache_read_input_tokens: 21_173,
+              output_tokens: 545,
+            },
+          },
+        },
+        {
+          type: 'assistant',
+          message: {
+            id: 'bootstrap-first',
+            usage: {
+              input_tokens: 10,
+              cache_creation_input_tokens: 20,
+              cache_read_input_tokens: 30,
+              output_tokens: 9,
+            },
+          },
+        },
+      ].map((line) => JSON.stringify(line)).join('\n') + '\n'
+    );
+    expect(
+      captureExactTranscriptContextBaseline(fixture)
+    ).toEqual({ contextTokens: 98_747 });
   });
 
   it('restores the original transcript range after later appends and rejects baseline drift', () => {
@@ -980,14 +1573,16 @@ describe('physical observation readiness hardening', () => {
   it('persists a production-driver scheduler proof through the observer lifecycle', async () => {
     const workDir = temporaryDirectory('rasen-scheduler-driver-observer-');
     const fixture = transcriptFixture();
-    const start = Date.now() - 51 * 60 * 1000;
-    const admittedAt = start + 50 * 60 * 1000;
+    const bootstrapDurationMs = 10 * 60 * 1000;
+    const start = Date.now() - 61 * 60 * 1000;
+    const baselineStart = start + bootstrapDurationMs;
+    const admittedAt = baselineStart + 50 * 60 * 1000;
     const dispatchedAt = admittedAt + 100;
     const transcriptTouchAt = dispatchedAt + 100;
     const transcriptAssistantAt = transcriptTouchAt + 100;
     const transcriptResultAt = transcriptAssistantAt + 100;
     const settledAt = transcriptResultAt + 100;
-    const deadline = start + 55 * 60 * 1000;
+    const deadline = baselineStart + 55 * 60 * 1000;
     const identity = {
       ...fixture.identity,
       sessionKey: 'physical-hit',
@@ -1001,7 +1596,7 @@ describe('physical observation readiness hardening', () => {
     const baseline = captureExactTranscriptBaseline({
       ...fixture,
       identity,
-      capturedAt: new Date(start).toISOString(),
+      capturedAt: new Date(baselineStart).toISOString(),
     });
     const resultLine = {
       type: 'result',
@@ -1164,6 +1759,8 @@ describe('physical observation readiness hardening', () => {
             startedAt: new Date(start).toISOString(),
             schedulerBaseline: null,
           });
+          wall += bootstrapDurationMs;
+          monotonic += bootstrapDurationMs;
           const resumed = await productionDriver.resume({
             armId,
             identity: armIdentity,
@@ -1201,6 +1798,7 @@ describe('physical observation readiness hardening', () => {
       deadlineApplied: true,
       startedAt: new Date(start).toISOString(),
       endedAt: new Date(deadline).toISOString(),
+      elapsedMonotonicMs: 50 * 60 * 1000,
     });
     expect(reads).toBe(5);
     expect(
@@ -1211,6 +1809,9 @@ describe('physical observation readiness hardening', () => {
       )
     ).toMatchObject({
       startedAt: new Date(start).toISOString(),
+      schedulerBaseline: {
+        capturedAt: new Date(baselineStart).toISOString(),
+      },
       schedulerPreterminalOwnerProof: {
         touchMessageIdDigest: wake.messageIdDigest,
         touchAttempt: 1,
@@ -1687,7 +2288,10 @@ describe('physical observation readiness hardening', () => {
           capacityVerified: true,
           availableSlots: 3,
         }),
-        bootstrap: async () => ({ admissionBinding }),
+        bootstrap: async () => ({
+          admissionBinding,
+          controlContextBaselineTokens: 100_000,
+        }),
         wakeAndReadUsage: async () => ({
           usageCounters: {
             inputTokens: 10,
@@ -1789,6 +2393,35 @@ describe('physical observation readiness hardening', () => {
         },
       })
     ).rejects.toThrow(/owned_process_binding_drift/u);
+  });
+
+  it('prohibits admission-proof resume and terminal observation paths', async () => {
+    const root = temporaryDirectory('rasen-admission-proof-terminal-');
+    const driver = createObservationDriver({
+      rasenBin: path.join(root, 'rasen.js'),
+      actionFile: path.join(root, 'action.json'),
+      rasenHome: root,
+      admissionProofMode: true,
+    });
+    await expect(
+      driver.resume({
+        armId: 'control-hit-55m',
+        identity: {},
+        checkpoint: {},
+      })
+    ).rejects.toThrow(/admission_proof_resume_prohibited/u);
+    await expect(
+      driver.wakeAndReadUsage({
+        armId: 'control-hit-55m',
+        identity: {},
+      })
+    ).rejects.toThrow(/admission_proof_observation_prohibited/u);
+    await expect(
+      driver.inspectScheduler({
+        armId: 'scheduler-cadence-deadline',
+        identity: {},
+      })
+    ).rejects.toThrow(/admission_proof_observation_prohibited/u);
   });
 
   it('retires or proves absence only for the exact persisted owner binding', async () => {

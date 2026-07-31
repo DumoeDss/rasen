@@ -10,6 +10,9 @@ import {
   readJsonBounded,
   writeAttemptSummary,
 } from './protocol.mjs';
+import {
+  assertPhysicalSchedulerDeadlineFresh,
+} from './prepare-physical.mjs';
 
 function option(name) {
   const index = process.argv.indexOf(name);
@@ -71,6 +74,15 @@ if (
   )
 ) {
   throw new Error('physical_launch_candidate_mismatch');
+}
+const launchedAt = Date.now();
+for (const { armId, config } of configs) {
+  if (!OBSERVATION_ARMS[armId].automaticTouch) continue;
+  assertPhysicalSchedulerDeadlineFresh(
+    config.identity?.policy?.deadlineAt,
+    launchedAt,
+    config.operationTimeoutMs
+  );
 }
 const intent = createObservationAttempt(workDir, {
   candidate,
