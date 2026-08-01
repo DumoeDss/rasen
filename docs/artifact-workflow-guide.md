@@ -59,7 +59,7 @@ Built-in pipelines (can be overridden or augmented by user/project; resolution p
 
 | Pipeline | Stages (buildOrder summary) |
 |---|---|
-| **full-feature** | office-hours → propose (optional direction review) → apply → parallel expert review (review / cso / benchmark / design-review / qa\|qa-only) → review-loop → ship → retain → archive |
+| **full-feature** | office-hours → propose (optional direction review) → apply → parallel expert review (review / cso / benchmark / design-review / qa UI mode \| qa report-only/non-UI mode) → review-loop → ship → retain → archive |
 | **small-feature** _(default)_ | propose → apply → verify → review-loop → ship → archive |
 | **bug-fix** | propose → apply → adaptive verify → ship → archive |
 | **auto-decompose** | **decompose** (conditional first step, LEAD self-review, not a human gate) → propose → apply → verify → review-loop → ship → archive; taking decompose fans out into multiple sub-changes, each running `childPipeline` (default small-feature, see §2.7) |
@@ -113,7 +113,7 @@ Three steps, zero code — re-orchestrate existing stage skills into a new pipel
          loop: { kind: review-cycle, maxRounds: 2 } }
      - { id: ship,        skill: openspec-opsx-ship,    role: shipper,     requires: [review-loop], model: sonnet }
    ```
-   Ready-to-pick skills: `openspec-propose` / `openspec-apply-change` / `openspec-review-cycle` / `openspec-opsx-office-hours` / `openspec-opsx-ship` / `openspec-archive-change` / `openspec-opsx-retro`, experts `openspec:review` / `openspec:cso` / `openspec:benchmark` / `openspec:design-review` / `openspec:qa` / `openspec:qa-only`. Stage fields are as in §2.2; to crib an existing example use `rasen pipeline show full-feature`.
+   Ready-to-pick skills include `rasen-propose`, `rasen-apply-change`, `rasen-review-cycle`, `rasen-ship`, and `rasen-archive-change`; independently dispatchable experts include `rasen-review`, `rasen-cso`, `rasen-benchmark`, `rasen-design-review`, and the single `rasen-qa` identity. Use an explicit report-only/non-UI instruction when QA must not edit. Stage fields are as in §2.2; to crib an existing example use `rasen pipeline show full-feature`.
 3. **Validate + use**:
    ```bash
    rasen validate <name> --type pipeline   # unique id / requires resolvable / acyclic / skill exists / parallelGroup independent / decompose (at most one · first position · childPipeline resolvable and contains no recursion)
@@ -245,11 +245,11 @@ An agent can't perceive its own context usage — it can only **measure** it. `r
 
 - **Resume consumption**: `rasen pipeline resume --json` outputs `sessionHandoff` / each stage's latest handoff-doc pointer / each worker's `contextEstimate`; a new session **reads the handoff doc first** (the distillate), with raw-transcript warm seeding degrading to fallback.
 
-### 3.8 Expert skills (always installed, invoked on demand)
+### 3.8 Expert skills (profile-selectable, invoked on demand)
 
-Regardless of profile, `rasen init` installs a set of expert skills (generated as `openspec-*`) that can be invoked individually during verification / planning:
+Rasen catalogs 12 expert skills that can be invoked individually during verification / planning. The active profile selects which experts are installed: `core` includes the five-expert quality floor (`review`, `cso`, `qa`, `benchmark`, `design-review`), `full` includes all 12, and custom/named profiles use their saved expert choices. A selected workflow's `requires.skills` dependencies are always added by dependency closure even when they were not picked directly. Existing installations keep all experts until the user makes an explicit expert selection, preserving the migration guarantee.
 
-`/review` (code review), `/qa` `/qa-only` (QA), `/cso` (security), `/benchmark` (performance), `/design-review` `/design-consultation` (design / visual), `/investigate` `/careful` (investigation / destructive-command caution), `/codex`, `/setup-browser-cookies`, etc. For scope control, declare the evidence-backed affected area before editing and inspect the actual changed-file set and diff before completion. Managed sandbox/workspace policy remains the mechanism for execution containment.
+`rasen-review` (code review), `rasen-qa` (standalone or report-only/non-UI QA), `rasen-cso` (security), `rasen-benchmark` (performance), `rasen-design-review` / `rasen-design-consultation` (design / visual), `rasen-investigate` / `rasen-careful` (investigation / destructive-command caution), and `rasen-codex`. For scope control, declare the evidence-backed affected area before editing and inspect the actual changed-file set and diff before completion. Managed sandbox/workspace policy remains the mechanism for execution containment.
 
 ---
 
@@ -282,14 +282,14 @@ Slash commands are the "conductors"; the `openspec` CLI is what actually reads /
 - **Profile = which workflow commands to install**:
   - `core` (default) = `propose` / `explore` / `apply` / `archive`.
   - `custom` (expanded) = a set you select, which can include `new` `continue` `verify` `sync` `bulk-archive` `onboard` `review-cycle` `handoff` plus the fusion commands `auto` `ship` `verify-enhanced` `office-hours` `retro`.
-  - **Expert skills are profile-independent and always installed**.
+  - **Expert skills are profile-selectable**: `core` gets the five-expert quality floor, `full` gets all catalog experts, and custom/named profiles get their explicit choices; workflow `requires.skills` dependencies are added automatically.
 - **Enable expanded / fusion commands**:
   ```bash
   rasen config profile      # interactively select profile + workflows
   rasen update              # regenerate the corresponding skills/commands in the project
   ```
 - **Delivery = whether commands are installed alongside skills**: `both` (default, skills + commands) / `skills` (skills only). Set in the global config (`rasen config`).
-  - **Skills are always installed**, for every delivery mode. `/rasen-auto` and `/rasen-review-cycle` have the model **invoke other skills** at runtime (workers invoke stage skills; review-loop invokes `openspec-review`) — the model can invoke skills, **not** commands, so orchestration needs the skills present. Because delivery can no longer drop them, orchestration can't be silently broken by a delivery choice.
+  - **Every selected workflow/expert is installed as a skill**, for every delivery mode. `/rasen-auto` and `/rasen-review-cycle` have the model **invoke other skills** at runtime (workers invoke stage skills; review-loop invokes `rasen-review`) — the model can invoke skills, **not** commands, so dependency closure installs each required stage/expert skill even when it was not directly selected. Delivery controls command generation, not the resolved skill set.
   - A config still holding an older value (`commands`, `skills-first`, `commands-first`) is mapped automatically on the next read — `skills-first` → `skills`, `commands`/`commands-first` → `both` — with a one-time console notice, and the config file is rewritten. Nothing to do manually; skills are restored on the next `rasen update` if they were previously dropped.
 
 ### Upgrading an already-installed project (to get this release's orchestration + pipeline)

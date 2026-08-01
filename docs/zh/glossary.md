@@ -56,7 +56,7 @@
 
 **配置方案（Profile）。** 安装到你项目里的那套斜杠命令集合。**Full**（默认）会安装全部工作流。**Core** 会精简为 `propose`、`explore`、`apply`、`sync`、`archive`；**custom** 则是你任意挑选的子集。可以通过 `rasen config profile` 来更改。
 
-**交付方式（Delivery）。** 决定 rasen 是否在技能之外再装命令文件——`both`（默认，技能 + 命令）或 `skills`（仅技能）。技能始终安装。它按全局配置，并通过 `rasen update` 应用。
+**交付方式（Delivery）。** 决定 rasen 是否在技能之外再装命令文件——`both`（默认，技能 + 命令）或 `skills`（仅技能）。当前 profile 选择与 workflow 依赖闭包解析出的技能始终会生成；delivery 不会安装目录中的每一个技能。它按全局配置，并通过 `rasen update` 应用。
 
 ## 自定义
 

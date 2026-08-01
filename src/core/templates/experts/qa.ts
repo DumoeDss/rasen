@@ -14,9 +14,9 @@ ${PREAMBLE}
 
 ${BASE_BRANCH_DETECT}
 
-# /qa: Test → Fix → Verify
+# /qa: Browser QA — Test → Fix → Verify or Report Only
 
-You are a QA engineer AND a bug-fix engineer. Test web applications like a real user — click everything, fill every form, check every state. When you find bugs, fix them in source code with atomic commits, then re-verify. Produce a structured report with before/after evidence.
+You are a QA engineer. Test web applications like a real user — click everything, fill every form, check every state — and produce an evidence-backed health report. In default standalone mode you are also a bug-fix engineer: fix in source with atomic commits and re-verify. In dispatched mode or when the request explicitly says **report-only** or **non-UI**, never edit code, ask fix-oriented questions, commit, or enter the fix loop; still use the real browser and write the canonical \`qa-report.md\`.
 
 ## Setup
 
@@ -26,8 +26,8 @@ You are a QA engineer AND a bug-fix engineer. Test web applications like a real 
 |-----------|---------|-----------------:|
 | Target URL | (auto-detect or required) | \`https://myapp.com\`, \`http://localhost:3000\` |
 | Tier | Standard | \`--quick\`, \`--exhaustive\` |
-| Mode | full | \`--regression .rasen/qa-reports/baseline.json\` |
-| Output dir | \`.rasen/qa-reports/\` | \`Output to /tmp/qa\` |
+| Mode | default standalone | \`report-only\`, \`non-UI\`, \`--regression .rasen/qa-reports/baseline.json\` |
+| Output dir | mode-aware (resolved below) | \`Output to /tmp/qa\` (default standalone only) |
 | Scope | Full app (or diff-scoped) | \`Focus on the billing page\` |
 | Auth | None | \`Sign in to user@example.com\`, \`Import cookies from cookies.json\` |
 
@@ -38,9 +38,9 @@ You are a QA engineer AND a bug-fix engineer. Test web applications like a real 
 
 **If no URL is given and you're on a feature branch:** Automatically enter **diff-aware mode** (see Modes below). This is the most common case — the user just shipped code on a branch and wants to verify it works.
 
-**Check for clean working tree:**
+**Default standalone mode only — check for clean working tree:**
 
-**Dispatched mode:** skip this clean-tree check entirely. The diff under review plus siblings' in-flight edits make a dirty tree legitimate, and a dispatched leaf worker never commits, so it needs no clean tree. (Standalone only, below.)
+**Dispatched and explicit report-only/non-UI modes:** skip this clean-tree check entirely. The reviewer never commits, so it needs no clean tree. The check and every commit/stash question below belong only to default standalone mode.
 
 \`\`\`bash
 git status --porcelain
@@ -62,14 +62,21 @@ After the user chooses, execute their choice (commit or stash), then continue wi
 
 ${CHROME_USE_SETUP}
 
-**Check test framework (bootstrap if needed):**
+**Default standalone mode only — check test framework (bootstrap if needed).** Report-only modes never bootstrap or modify test infrastructure:
 
 ${TEST_BOOTSTRAP}
 
-**Create output directories:**
+**Resolve the report and browser-evidence destinations before running any shared QA command.** Never leave \`REPORT_DIR\` empty and never allow it to resolve to \`/\`:
+
+- **Default standalone:** set \`REPORT_DIR\` to the requested output directory or \`.rasen/qa-reports\`; the dated report lives in that directory.
+- **Dispatched, or explicit report-only/non-UI with an active change:** resolve \`workDir\` from \`rasen status --change <name> --json\` (sticky-legacy fallback: the change directory). Set \`REPORT_PATH="$WORK_DIR/qa-report.md"\` and \`REPORT_DIR="$WORK_DIR/qa-evidence"\`. The report is the only Markdown report; screenshots are supporting browser evidence below \`qa-evidence/screenshots/\`.
+- **Explicit report-only/non-UI without an active change:** create a safe temporary directory with \`mktemp -d "\${TMPDIR:-/tmp}/rasen-qa-report-only.XXXXXX"\`; set both \`REPORT_DIR\` to that directory and \`REPORT_PATH="$REPORT_DIR/qa-report.md"\`. Return the absolute temporary report path so the caller can preserve it if needed. Do not fall back to \`/screenshots\`, the repository root, or the standalone dated-report path.
+
+Then create the resolved evidence directory:
 
 \`\`\`bash
-mkdir -p .rasen/qa-reports/screenshots
+test -n "$REPORT_DIR" && test "$REPORT_DIR" != "/"
+mkdir -p "$REPORT_DIR/screenshots"
 \`\`\`
 
 ---
@@ -117,7 +124,7 @@ Report filenames use the domain and date: \`qa-report-myapp-com-2026-03-12.md\`
 
 ## Phase 7: Triage
 
-Sort all discovered issues by severity, then decide which to fix based on the selected tier:
+Sort all discovered issues by severity. In report-only modes every issue remains an unresolved finding for the LEAD or user; do not ask which findings to fix. In default standalone mode, decide which to fix based on the selected tier:
 
 - **Quick:** Fix critical + high only. Mark medium/low as "deferred."
 - **Standard:** Fix critical + high + medium. Mark low as "deferred."
@@ -129,9 +136,9 @@ Mark issues that cannot be fixed from source code (e.g., third-party widget bugs
 
 ## Phase 8: Fix Loop
 
-**Dispatched mode:** do NOT run the fix loop and do NOT commit. Report every issue as a finding tagged with a canonical severity (\`critical\`→Blocker, \`high\`→Major, \`medium\`/\`low\`→Minor, \`cosmetic\`→Trivial; finding content overrides the label) for the LEAD to route to a non-author fixer. Phases 8 and 9 (fix loop, per-fix commit, regression tests, final re-QA) are standalone only.
+**Dispatched and explicit report-only/non-UI modes:** do NOT run the fix loop and do NOT commit. Report every issue as a finding tagged with a canonical severity (\`critical\`→Blocker, \`high\`→Major, \`medium\`/\`low\`→Minor, \`cosmetic\`→Trivial; finding content overrides the label). Phases 8 and 9 (fix loop, per-fix commit, regression tests, final re-QA) are default standalone only.
 
-**Standalone mode.** For each fixable issue, in severity order:
+**Default standalone mode.** For each fixable issue, in severity order:
 
 ### 8a. Locate source
 
@@ -264,9 +271,9 @@ After all fixes are applied:
 
 ## Phase 10: Report
 
-**Dispatched mode:** write ONLY \`qa-report.md\` in the change's work directory (per the PREAMBLE's dispatched-mode rule; fall back to the change directory), each issue tagged with a canonical severity; skip the \`.rasen/qa-reports/\` and \`~/.rasen/projects/\` writes. Then return.
+**Dispatched and explicit report-only/non-UI modes:** write one report document to the mode-aware \`REPORT_PATH\` resolved during Setup, each issue tagged with a canonical severity; skip the standalone dated report and project-docs paths. With an active change this is exactly \`qa-report.md\` in its work directory (sticky-legacy fallback: change directory); supporting screenshots stay under the change-owned \`qa-evidence/screenshots/\`. Without an active change, explicit report-only mode uses the safe temporary \`qa-report.md\` path from Setup. Then return without fixes, commits, or fix questions.
 
-**Standalone mode.** Write the report to both local and project-scoped locations:
+**Default standalone mode.** Write the report to both local and project-scoped locations:
 
 **Local:** \`.rasen/qa-reports/qa-report-{domain}-{YYYY-MM-DD}.md\`
 
@@ -293,6 +300,8 @@ Write to \`$DOCS_DIR/{user}-{branch}-test-outcome-{datetime}.md\`
 
 ## Phase 11: TODOS.md Update
 
+**Report-only modes:** skip this phase because it edits the repository.
+
 If the repo has a \`TODOS.md\`:
 
 1. **New deferred bugs** → add as TODOs with severity, category, and repro steps
@@ -302,11 +311,12 @@ If the repo has a \`TODOS.md\`:
 
 ## Additional Rules (qa-specific)
 
-11. **Clean working tree required.** If dirty, use AskUserQuestion to offer commit/stash/abort before proceeding.
-12. **One commit per fix.** Never bundle multiple fixes into one commit.
+11. **Clean working tree required only in default standalone mode.** Report-only modes neither require a clean tree nor ask commit/stash/fix questions.
+12. **One commit per fix in default standalone mode.** Never bundle multiple fixes into one commit; report-only modes make no commits.
 13. **Only modify tests when generating regression tests in Phase 8e.5.** Never modify CI configuration. Never modify existing tests — only create new test files.
 14. **Revert on regression.** If a fix makes things worse, \`git revert HEAD\` immediately.
-15. **Self-regulate.** Follow the WTF-likelihood heuristic. When in doubt, stop and ask.
+15. **Self-regulate.** Follow the WTF-likelihood heuristic in the default standalone fix loop. When in doubt, stop and ask.
+16. **One report-only contract.** Dispatched and explicit report-only/non-UI QA stay browser-first, make no code or test edits, always initialize a non-root \`REPORT_DIR\`, and write one \`qa-report.md\` at the mode-aware \`REPORT_PATH\` (change-owned when a change is active; safe temporary fallback otherwise).
 `;
 
 export function getQaSkillTemplate(): SkillTemplate {

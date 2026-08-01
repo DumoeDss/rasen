@@ -2,21 +2,21 @@
 
 ## Purpose
 Repoint the generated browser-driving expert skills (QA, QA-only, design review, design consultation, benchmark, office-hours, navigator) from the `browse` binary to the vendored chrome-use CDP proxy's HTTP endpoints, and keep the `browse` expert template frozen (byte-identical output) so it can be removed cleanly by a later change.
-
 ## Requirements
 ### Requirement: Browser-Driving Experts Use chrome-use Endpoints
 
-The generated browser-driving expert skills (QA, QA-only, design review, design consultation, benchmark, office-hours) SHALL instruct the reader to drive the vendored chrome-use CDP proxy via its HTTP curl endpoints at `localhost:3456`, and SHALL NOT instruct the reader to invoke the `browse` binary (`$B` commands).
+The generated browser-driving expert skills (`qa`, design review, design consultation, benchmark, and office-hours) SHALL instruct the reader to drive the vendored chrome-use CDP proxy through its HTTP endpoints at `localhost:3456`, and SHALL NOT instruct the reader to invoke the retired `browse` binary. The single `rasen-qa` skill SHALL preserve this browser contract in default, dispatched, and explicit report-only/non-UI modes.
 
 #### Scenario: QA methodology drives chrome-use
 
-- **WHEN** the QA or QA-only expert skill is generated
-- **THEN** its browser steps use `curl localhost:3456/...` endpoint calls and contain no `$B` browse-binary invocations
+- **WHEN** `rasen-qa` is generated
+- **THEN** every QA mode's browser steps SHALL use `curl localhost:3456/...` endpoint calls and contain no `$B` browse-binary invocation
+- **AND** report-only/non-UI mode SHALL remain browser-based rather than being replaced by source-only review
 
 #### Scenario: Design and benchmark experts drive chrome-use
 
-- **WHEN** the design-review, design-consultation, benchmark, or office-hours expert skill is generated
-- **THEN** its browser steps use chrome-use curl endpoints and contain no `$B` browse-binary invocations
+- **WHEN** design-review, design-consultation, benchmark, or office-hours is generated
+- **THEN** its browser steps SHALL use chrome-use curl endpoints and contain no `$B` browse-binary invocation
 
 ### Requirement: chrome-use SETUP and Tab Lifecycle
 
@@ -34,17 +34,18 @@ The shared SETUP block used by browser-driving experts SHALL instruct the reader
 
 ### Requirement: curl Examples Bypass a Configured HTTP Proxy
 
-The chrome-use curl examples in the shared expert blocks and the self-contained chrome-use skill SHALL pass `--noproxy '*'` (or equivalent) so that calls to `localhost:3456` are not hijacked by a machine-level `HTTP(S)_PROXY` and returned as 502, and the SETUP guidance SHALL state why.
+The chrome-use curl examples in shared expert blocks and the self-contained chrome-use skill SHALL pass `--noproxy '*'` or an equivalent so calls to `localhost:3456` are not hijacked by machine-level proxy settings. The setup guidance SHALL explain the reason. This requirement SHALL apply to every mode of the unified QA skill.
 
 #### Scenario: Live curl examples opt out of the proxy
 
-- **WHEN** a browser-driving expert skill (QA, QA-only, design review, design consultation, benchmark, office-hours) is generated
-- **THEN** each live `curl` example that calls `localhost:3456` passes `--noproxy '*'` so it works on a machine with a configured HTTP(S) proxy
+- **WHEN** a browser-driving expert skill (`qa`, design-review, design-consultation, benchmark, or office-hours) is generated
+- **THEN** each live curl example that calls `localhost:3456` SHALL bypass configured HTTP(S) proxies
+- **AND** the result SHALL be the same for QA's default and report-only/non-UI paths
 
 #### Scenario: SETUP explains the proxy caveat
 
-- **WHEN** an expert skill's SETUP block is generated
-- **THEN** it notes that a configured `HTTP(S)_PROXY` would otherwise hijack `localhost` calls, which is why the examples pass `--noproxy '*'`
+- **WHEN** an expert skill's setup block is generated
+- **THEN** it SHALL note that configured HTTP(S) proxies can hijack localhost calls and explain the bypass flag
 
 ### Requirement: Endpoint Reference Consistency
 
@@ -81,12 +82,13 @@ The methodology blocks SHALL preserve responsive-audit and performance coverage 
 
 ### Requirement: Command Guide Points to chrome-use
 
-The navigator command guide and other prose-only references SHALL describe chrome-use as the browser-driving expert instead of browse.
+The navigator reference bundled with `rasen-help` and other prose-only routing references SHALL describe `rasen-chrome-use` as the browser-driving expert instead of browse. The router SHALL not require a standalone navigator identity.
 
 #### Scenario: Navigator lists chrome-use
 
-- **WHEN** the navigator skill is generated
-- **THEN** its browser-related command guidance describes chrome-use (CDP-driven real Chrome) and does not present browse as the browser tool
+- **WHEN** the installed `rasen-help` navigator reference is inspected
+- **THEN** its browser-related guidance SHALL describe `rasen-chrome-use` as CDP-driven real Chrome
+- **AND** SHALL not present browse as the browser tool
 
 ### Requirement: browse Template Frozen for Clean Removal
 

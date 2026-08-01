@@ -734,8 +734,8 @@ describe('pipeline library lifecycle', () => {
 
     it('uses the same legacy-project acknowledgement profile for v2 save and export', async () => {
       const workflowCatalog = loadWorkflowCatalog();
-      const tdd = workflowCatalog.definitions.find(
-        (definition) => definition.skill.template.name === 'rasen-tdd'
+      const codex = workflowCatalog.definitions.find(
+        (definition) => definition.skill.template.name === 'rasen-codex'
       )!;
       fs.writeFileSync(
         path.join(home, 'config.json'),
@@ -758,11 +758,11 @@ describe('pipeline library lifecycle', () => {
         root: {
           nodes: [
             {
-              id: 'tdd',
+              id: 'codex',
               kind: 'AtomicStage' as const,
               capability: {
-                id: 'skill:rasen-tdd',
-                version: tdd.digest,
+                id: 'skill:rasen-codex',
+                version: codex.digest,
               },
             },
           ],

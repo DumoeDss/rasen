@@ -112,7 +112,10 @@ describe('user workflow generation integration', () => {
     // Skills-only delivery (command-generation retired): no command file is
     // ever written, even for a workflow whose manifest opts into `command`.
     expect(fs.existsSync(commandPath)).toBe(false);
-    expect(readWorkflowArtifactLedger(project)?.workflows).toEqual(['team-delivery']);
+    expect(readWorkflowArtifactLedger(project)?.workflows).toEqual([
+      'retain-command',
+      'team-delivery',
+    ]);
 
     const installedSkill = path.join(getUserWorkflowsDir(), 'team-delivery', 'SKILL.md');
     fs.appendFileSync(installedSkill, '\nUpdated source instructions.\n');
@@ -142,6 +145,8 @@ describe('user workflow generation integration', () => {
     expect(fs.existsSync(sidecarPath)).toBe(false);
     expect(fs.existsSync(commandPath)).toBe(false);
     expect(fs.readFileSync(unmanagedPath, 'utf8')).toBe('user-owned\n');
-    expect(readWorkflowArtifactLedger(project)).toBeNull();
+    const finalLedger = readWorkflowArtifactLedger(project);
+    expect(finalLedger?.workflows).toContain('retain-command');
+    expect(finalLedger?.tools.claude.workflows['team-delivery']).toBeUndefined();
   });
 });

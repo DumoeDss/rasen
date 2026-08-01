@@ -11,9 +11,9 @@ import {
 
 describe('skill-generation', () => {
   describe('getSkillTemplates', () => {
-    it('should return all skill templates (24 workflow + 18 expert)', () => {
+    it('should return all skill templates (24 workflow + 12 expert)', () => {
       const templates = getSkillTemplates();
-      expect(templates).toHaveLength(42);
+      expect(templates).toHaveLength(36);
     });
 
     it('should include the opt-in review-cycle workflow skill', () => {
@@ -157,6 +157,17 @@ describe('skill-generation', () => {
       copySkillSidecars('qa', target);
       expect(existsSync(join(target, 'references', 'issue-taxonomy.md'))).toBe(true);
       expect(existsSync(join(target, 'templates', 'qa-report-template.md'))).toBe(true);
+    });
+
+    it('copies nested host-owned references beside each router using platform paths', () => {
+      copySkillSidecars('propose', target);
+      expect(existsSync(join(target, 'references', 'codebase-design', 'README.md'))).toBe(true);
+      expect(existsSync(join(target, 'references', 'codebase-design', 'DEEPENING.md'))).toBe(true);
+
+      rmSync(target, { recursive: true, force: true });
+      target = mkdtempSync(join(tmpdir(), 'rasen-sidecar-'));
+      copySkillSidecars('help', target);
+      expect(existsSync(join(target, 'references', 'navigator.md'))).toBe(true);
     });
 
     it('copies hook bin/*.sh sidecars', () => {

@@ -25,9 +25,9 @@ Use whatever the host project uses. If the project has no obvious runtime (e.g. 
 
 Match the project's existing conventions for tooling — don't add a new package manager or runtime just for the prototype.
 
-### 3. Isolate the logic in a portable module
+### 3. Isolate the probe logic behind a small interface
 
-Put the actual logic — the bit that's answering the question — behind a small, pure interface that could be lifted out and dropped into the real codebase later. The TUI around it is throwaway; the logic module shouldn't be.
+Put the actual logic — the bit that's answering the question — behind a small, pure interface so the experiment is easy to reason about. Under the `rasen-explore` host, both the TUI and this logic module are throwaway probe code; neither is promoted into production.
 
 The right shape depends on the question:
 
@@ -38,7 +38,7 @@ The right shape depends on the question:
 
 Pick whichever shape best fits the question being asked, *not* whichever is easiest to wire to a TUI. Keep it pure: no I/O, no terminal code, no `console.log` for control flow. The TUI imports it and calls into it; nothing flows the other direction.
 
-This is what makes the prototype useful past its own lifetime. When the question's been answered, the validated reducer / machine / function set can be lifted into the real module — the TUI shell gets deleted.
+This separation makes the conclusion understandable without making the prototype production code. When the question is answered, capture the selected interface, invariants, rejected alternatives, and evidence under the active change's `changeRoot` (`design.md` Decisions or a sidecar). Then delete the reducer / machine / function set together with the TUI shell and task-runner entry. Production implementation belongs to `rasen-propose`/`rasen-apply-change`, where it is rewritten with normal tests and error handling.
 
 ### 4. Build the smallest TUI that exposes the state
 
@@ -70,7 +70,7 @@ Give the user the run command. They'll drive it themselves; the interesting mome
 
 ### 7. Capture the answer
 
-When the prototype has done its job, the answer to the question is the only thing worth keeping. If the user is around, ask what it taught them. If not, leave a `NOTES.md` next to the prototype so the answer can be filled in (or filled in by you, if you've watched the session) before the prototype gets deleted.
+When the prototype has done its job, the answer to the question is the only thing worth keeping. For an active Rasen change, resolve `changeRoot` with `rasen status --change <name> --json`, record the verdict and settled decisions in `design.md` Decisions or a change-directory sidecar, then delete every probe file and undo its task-runner entry. If the user is absent, capture the evidence and your provisional verdict in the change directory before cleanup; do not leave a `NOTES.md` beside disposable code.
 
 ## Anti-patterns
 
@@ -78,4 +78,4 @@ When the prototype has done its job, the answer to the question is the only thin
 - **Don't wire it to the real database.** Use an in-memory store unless the question is specifically about persistence.
 - **Don't generalise.** No "what if we wanted to support X later." The prototype answers one question.
 - **Don't blur the logic and the TUI together.** If the reducer / state machine references `console.log`, prompts, or terminal escape codes, it's no longer portable. Keep the TUI as a thin shell over a pure module.
-- **Don't ship the TUI shell into production.** The shell is optimised for being driven by hand from a terminal. The logic module behind it is the bit worth keeping.
+- **Don't ship or promote prototype code into production.** Under `rasen-explore`, the TUI and logic module are both probes. Keep the captured decision, delete the code, and hand production work to propose/apply.

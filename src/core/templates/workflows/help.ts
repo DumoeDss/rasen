@@ -29,6 +29,7 @@ ${STORE_SELECTION_GUIDANCE}
 1. **Gauge the user's level from evidence, not assumption.** Run \`rasen status\` (and \`rasen list\`) quietly first: no \`rasen/\` directory → they are at Level 0; a workspace with changes → route within Level 1–2; questions about gates, roles, stores, or multi-repo → Level 3. Their question overrides the probe — a beginner can ask an advanced question.
 2. **Ground every version-, flag-, or state-specific claim** in actual CLI output: \`rasen --version\`, \`rasen --help\`, \`rasen <command> --help\`, \`rasen pipeline list\`. Never invent flags — check \`--help\` first when unsure.
 3. **Close with one next action** — a single command to run, not a menu. If the user already knows which command they want, skip routing and answer the question directly.
+4. **Load the detailed map only when needed.** For broad cross-workflow comparisons, expert selection, scope-control questions, or “which route?” questions that this shallow router cannot answer directly, read the installed relative reference \`references/navigator.md\` before responding. Do not load it for a direct command-specific question. Even after loading it, close with one next action and do not run the routed workflow yourself.
 
 ## Level 0 — Never used Rasen (start here for "what is this?")
 

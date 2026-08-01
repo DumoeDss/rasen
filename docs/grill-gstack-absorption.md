@@ -7,7 +7,7 @@
 
 ## 0. The one-paragraph current state
 
-OPSX (OpenSpec's fusion workflow layer) has **absorbed** both **grill** (Matt Pocock's skill set, MIT) and **gstack** (a parallel methodology/tooling layer) **into a single system**: 19 expert skills with TypeScript templates as the single source, unified `openspec` naming, orchestrated by OPSX workflow commands. The original grill / gstack entry points, toolchains, and branding have all exited; only the absorbed capabilities remain inside OpenSpec.
+Rasen's artifact workflow has **absorbed** both **grill** (Matt Pocock's skill set, MIT) and **gstack** (a parallel methodology/tooling layer) into one system. Twelve capabilities remain standalone experts with TypeScript templates as their source; single-host methodologies now ship as lazy references owned by their host workflow. The original grill/gstack entry points, toolchains, and branding have exited.
 
 One nuance to note: **the "skill-identity layer" (how the user invokes them, what they are named, where they install) is 100% de-gstacked; the "internal-code layer" (runtime paths, file-format markers, vendored tools) still retains a number of gstack strings** — part of which would change behavior if touched (so left alone), part of which is historical commentary (clearable but not required). Section 5 has the honest inventory.
 
@@ -45,9 +45,9 @@ Each step is an archived OpenSpec change; commits are in each change's retro.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Upper layer: expert skills (19 openspec:<name>, on demand)  │
+│  Upper layer: expert skills (12 rasen-<name>, on demand)     │
 │  review / cso / benchmark / qa / design-review / ...         │
-│  + methodology trio: codebase-design / tdd / prototype       │
+│  + host references under propose / apply / explore / help    │
 ├─────────────────────────────────────────────────────────────┤
 │  Middle layer: OPSX workflow commands (/opsx:*)              │
 │  explore → propose → apply → verify/review-cycle             │
@@ -61,25 +61,24 @@ Each step is an archived OpenSpec change; commits are in each change's retro.
 
 - **The lower-layer CLI** is the core of spec-driven development; all slash commands ultimately land on it.
 - **The middle-layer OPSX** strings the scattered CLIs into workflows with gates, loops, and orchestration, and provides the LEAD+worker multi-agent orchestration.
-- **The upper-layer experts** are "capability plugins" — standalone skills, conditionally referenced by workflow commands at the right moment, and also directly invocable by the user via `/review` and the like.
+- **The upper-layer experts** are independently invokable or dispatchable capability plugins. Single-host methods live one layer down as lazy host references instead of adding public expert identities.
 
-### 3.2 The 19 expert skills — inventory and classification
+### 3.2 The 12 standalone expert skills — inventory and classification
 
-Sources live in `src/core/templates/experts/<name>.ts` (one getter each), sidecars in `skills/experts/<name>/`, registered name `openspec:<name>`, install dir `openspec-<name>`.
+Sources live in `src/core/templates/experts/<name>.ts` (one getter each), sidecars in `skills/experts/<name>/`, and install under the canonical `rasen-<name>` skill identity.
 
 **Review/validation family (the parallel expert group in the `review` stage of the full-feature pipeline, triggered by condition)**
 - `review` — two-axis review (Standards + Spec), always triggered. Absorbed from grill's `code-review`.
 - `cso` — security audit (condition: security-relevant).
 - `benchmark` — performance baseline (condition: performance-sensitive).
-- `qa` — finds and fixes bugs in a real browser (condition: ui).
-- `qa-only` — like qa but report-only, no changes (condition: non-ui).
+- `qa` — browser-first QA. Standalone mode can fix and re-verify; dispatched or explicit report-only/non-UI mode writes `qa-report.md` without edits.
 - `design-review` — design audit + fix loop for rendered UI (condition: ui).
 - `design-consultation` — builds a complete design system from scratch (standalone expert, not in the pipeline).
 
-**Methodology trio (grill MIT, conditionally referenced by workflows, not enforced)**
-- `codebase-design` — deep-module design vocabulary (module/interface/depth/seam/adapter/leverage/locality). Referenced by `propose` for design-intensive changes.
-- `tdd` — one test worth keeping, red→green. Referenced by `apply` for test-first work.
-- `prototype` — a throwaway probe that answers one design question; keep the answer, delete the code. Referenced by `explore` for design questions where "stuck, only hands-on makes it clear".
+**Host-owned methodology references (grill MIT, loaded conditionally)**
+- `rasen-propose` owns `references/codebase-design/README.md` for design-intensive changes.
+- `rasen-apply-change` owns `references/tdd/README.md` for test-first work.
+- `rasen-explore` owns `references/prototype/README.md` for bounded throwaway probes.
 
 **Debugging/diagnosis**
 - `investigate` — systematic root-cause debugging, iron rule "build a red-reproducing feedback loop before talking hypotheses". Absorbed from grill's `diagnosing-bugs`.
@@ -87,7 +86,7 @@ Sources live in `src/core/templates/experts/<name>.ts` (one getter each), sideca
 **Browser tool / second opinion / routing / interview**
 - `chrome-use` — drives the user's own Chrome over CDP (navigate, click, capture network/cookies/WASM). Replaced the fork's original vendored `browse` tool (see §5).
 - `codex` — hands the task to Codex for an independent second opinion or parallel implementation.
-- `navigator` — routing skill, sketches this repo's skill map (evolved from grill's `ask-matt`).
+- `rasen-help` owns `references/navigator.md`, the detailed routing map evolved from grill's `ask-matt`.
 - `office-hours` — YC-style demand validation, Startup mode (six questions) + Builder mode (design brainstorm). Absorbs grill's `grilling` interview discipline.
 
 **Edit-safety family**
@@ -99,7 +98,7 @@ Sources live in `src/core/templates/experts/<name>.ts` (one getter each), sideca
   changed-file set; managed sandbox/workspace policy provides execution
   containment where required.
 
-> The roster went from 30 early on (including parallel lifecycle experts) → 20 (parallel lifecycle removed) → **19** (domain-modeling removed). Currently stable at 19.
+> The standalone roster went from 30 early on → 20 after parallel-lifecycle removal → 19 after domain-modeling removal → 18 after later catalog changes → **12** after moving five single-host methods into their hosts and merging QA-only into QA.
 
 ### 3.3 grill's fate
 
@@ -108,17 +107,17 @@ Sources live in `src/core/templates/experts/<name>.ts` (one getter each), sideca
 | `code-review` | → `review` (two-axis Standards+Spec) |
 | `grilling` (interview discipline) | → the interview phase of `office-hours` |
 | `diagnosing-bugs` | → `investigate` (feedback-loop first) |
-| `ask-matt` (routing) | → `navigator` |
-| `codebase-design` / `tdd` / `prototype` (methodology) | → standalone expert skills + conditional wiring into propose/apply/explore |
+| `ask-matt` (routing) | → `rasen-help`'s bundled `references/navigator.md` |
+| `codebase-design` / `tdd` / `prototype` (methodology) | → bundled references in propose/apply/explore |
 | `/to-prd`, `/to-issues`, `/implement`, `/triage`, `/improve-codebase-architecture`, `/research`, `/teach`, `/grill-me`, `/grill-with-docs`, `/setup-matt-pocock-skills` | **Not introduced** (this fork doesn't need them) |
 
-grill's MIT attribution is retained in the header of each skill source file that absorbs it (e.g. the `<!-- adapted from mattpocock/skills (MIT, Copyright Matt Pocock) -->` in `review.ts`, `navigator.ts`, `codebase-design.ts`, etc.).
+grill's MIT attribution is retained in each adapted source/reference file, including the navigator and the codebase-design/TDD/prototype entry and deeper sidecars.
 
 ### 3.4 gstack's fate
 
 | gstack capability | Destination |
 |---|---|
-| Expert-skill layer (review/cso/qa/chrome-use/...) | → the 19 experts (de-gstacked) |
+| Expert-skill layer (review/cso/qa/chrome-use/...) | → the 12 standalone experts (de-gstacked) |
 | `/ship` + `/land-and-deploy` | → `/opsx:ship` (land-and-deploy becomes `--deploy`) |
 | `/retro` | → `/opsx:retro` |
 | browse browser tool | → initially the vendored `browse` expert; replaced in the fork by the CDP-based `chrome-use` expert (see §5) |
@@ -127,13 +126,13 @@ grill's MIT attribution is retained in the header of each skill source file that
 
 The main axis is established: **OPSX workflows consume a pure expert layer; gstack no longer exists as a standalone system.**
 
-### 3.5 How the methodology experts are wired (conditional reference, not inline)
+### 3.5 How the host-owned methodologies are wired (conditional reference, not inline)
 
-The grill methodology trio (`codebase-design`/`tdd`/`prototype`) does **not** inline the expert body into the workflow instructions; instead it uses a sentence or two of "conditional reference" telling the agent when to call that standalone skill, and lands the artifacts in the change directory (not the skill's own path). The landing points:
+The grill methodology trio does **not** inline its body into workflow instructions. Each host names an installed relative entry and reads it only when the branch applies, then lands durable decisions in the change directory. The routes are:
 
-- `propose.ts` — "Design-intensive change (new module / non-trivial interface) → first consult `/codebase-design`, record the interface/design decisions in `design.md`'s Decisions."
-- `apply-change.ts` — "Test-first work → consult `/tdd`; touching destructive operations → consult `/careful`."
-- `explore.ts` — "Design question stuck, only hands-on makes it clear → use the `/prototype` probe, keep the answer, delete the code."
+- `propose.ts` → `references/codebase-design/README.md`; record interface/design decisions under `changeRoot`.
+- `apply-change.ts` → `references/tdd/README.md`; `rasen-careful` remains independent for destructive operations.
+- `explore.ts` → `references/prototype/README.md`; keep the answer under `changeRoot` and delete the probe.
 
 This "reference rather than inline" is to keep explore/propose/apply's "grab/plan/implement" core job from being diluted by methodology text. `schema.yaml` no longer carries any `enhance` hook (mechanism retained dormant, currently no consumers).
 
@@ -150,7 +149,7 @@ This "reference rather than inline" is to keep explore/propose/apply's "grab/pla
 
 ### 4.1 The single source for expert skills
 
-`src/core/templates/experts/<name>.ts` is the **single authoritative source** for expert skills — each getter returns a `SkillTemplate`, and the instruction body is a TS template string. Shared blocks (PREAMBLE, BROWSE_SETUP, SPEC_REVIEW_LOOP, ... — 14 in total) are extracted into constants in `src/core/templates/experts/_shared.ts`. `openspec init`/`update` generates the install-side `SKILL.md` + sidecar from these templates.
+`src/core/templates/experts/<name>.ts` is the authoritative source for each standalone expert's router/body. Shared blocks live in `src/core/templates/experts/_shared.ts`. Expert sidecars live under `skills/experts/<id>/`; host-owned workflow references live under `skills/workflows/<dirName>/`. `rasen init`/`update` generates `SKILL.md` and copies both nested sidecar forms.
 
 > This is the core outcome of `unify-expert-template-pipeline`: previously the source was `skills/gstack/<name>/SKILL.md.tmpl`, generated by bun + `gen-skill-docs`. Now unified to TS templates + a parity-hash freshness gate, with the toolchain deleted.
 
@@ -167,7 +166,7 @@ The `openspec-`-prefixed workflow skills (explore/propose/apply/...) and the `op
 
 ### 4.3 Freshness gate: parity golden-master
 
-`test/core/templates/skill-templates-parity.test.ts` pins template content with two sets of hashes: `EXPECTED_FUNCTION_HASHES` (a structural hash per getter) and `EXPECTED_GENERATED_SKILL_CONTENT_HASHES` (a generated-content hash). Change a template and you must recompute the hashes in lockstep or the test goes red — this is the "freshness gate", replacing the old gen-skill-docs consistency check. All 19 experts are now covered.
+`test/core/templates/skill-templates-parity.test.ts` pins template content with function and generated-content hashes. Catalog digests additionally cover nested sidecars, and the artifact ledger detects missing or changed installed references. All 12 standalone experts and every workflow router are covered.
 
 ### 4.4 The ship contract (restructured after dropping gstack assumptions)
 
@@ -208,7 +207,7 @@ De-branding targets the **skill-identity layer**. The internal-code layer still 
 
 ## 6. Tests and gates
 
-- **parity golden-master**: `test/core/templates/skill-templates-parity.test.ts` (function hash + generated-content hash, all 19 experts + workflows listed).
+- **parity golden-master**: `test/core/templates/skill-templates-parity.test.ts` (function hash + generated-content hash for the 12 experts and workflows).
 - **profiles**: `test/core/profiles.test.ts` guards the core/expanded skill-set split (review-cycle is opt-in, not in core).
 - **skill-generation / sidecar-install**: guards generation and install correctness.
 - **pipeline-registry**: guards the pipeline DAG (skill references must actually exist — after the rename, `openspec:review` and friends all have to line up).
@@ -218,6 +217,4 @@ De-branding targets the **skill-identity layer**. The internal-code layer still 
 ## 7. Known follow-ups (non-blocking)
 
 - **archive zero-requirement spec tool gap** (reproduced twice): the archiver cannot rebuild a spec down to zero requirements; an all-REMOVED spec can only go through `--no-validate` + a manual directory delete. Worth a small change to open up a deletion path.
-- **navigator's `/opsx:ship` blurb doesn't mention the three modes**: `navigator.ts:22` still says "test, push, open the PR", not reflecting the three delivery modes + evidence gate from §4.3. A one-line fix (leftover F3 from the `ship-delivery-modes` review).
 - **ship evidence gate could add a tree fingerprint**: `git rev-parse HEAD^{tree}` is tighter than "HEAD + dirty state" (F2).
-- **The `description: '|'` empty-description malaise in expert getters**: every getter except navigator hardcodes an empty YAML block scalar; it is a pre-existing bug, retained per the "behavior unchanged" principle, not fixed on this line.

@@ -327,8 +327,7 @@
     "repairNext": "次に：{command}"
   },
   "expertSkills": {
-    "workflowAuthor": "インストール可能なワークフローをstaging、静的検証、独立レビュー、ユーザー承認後のimportで安全に作成します",
-    "workflowReview": "インストール可能なワークフローの意味的品質、セキュリティ境界、移植性、依存関係、完了条件を独立してレビューします"
+    "workflowAuthor": "インストール可能なワークフローをstaging、静的検証、同梱の独立レビューブランチ、ユーザー承認後のimportで安全に作成します"
   },
   "workflowLibrary": {
     "ui": {
@@ -676,10 +675,6 @@
           "name": "Chrome操作",
           "description": "CDP経由で実際のChromeを操作し、DOMスナップショット、クリック、ネットワークキャプチャ、スクリーンショットを取得します"
         },
-        "codebase-design": {
-          "name": "コードベース設計",
-          "description": "二度設計し、モジュール境界を深め、実装を意図したアーキテクチャに沿わせます"
-        },
         "codex": {
           "name": "Codex",
           "description": "OpenAI Codex CLIを呼び出し、独立したレビューまたは実装パスを行います"
@@ -700,41 +695,21 @@
           "name": "調査",
           "description": "修正を試みる前に、証拠に基づきバグを再現・切り分け・根本原因特定します"
         },
-        "navigator": {
-          "name": "ナビゲーター",
-          "description": "このリポジトリのスキルとワークフロー、それぞれの使いどころの地図です"
-        },
         "office-hours": {
           "name": "オフィスアワー",
           "description": "構築前に製品需要と方向性を検証します"
         },
-        "prototype": {
-          "name": "プロトタイプ",
-          "description": "使い捨てのUIまたはロジックスパイクを素早く作り、疑問に答えます"
-        },
         "qa": {
           "name": "QA",
-          "description": "CDPプロキシ経由でアプリを探索し、証拠に基づく問題を記録して修正します"
-        },
-        "qa-only": {
-          "name": "QA（レポートのみ）",
-          "description": "QAと同じ探索とヘルススコアを行いますが、コードは編集しません"
+          "description": "既定の修正ループと明示的なレポート専用／非UIモードを備えたブラウザQAです"
         },
         "review": {
           "name": "レビュー",
           "description": "コードベース全体の文脈でブランチ差分をレビューし、重大度タグ付きの指摘と修正ループを提供します"
         },
-        "tdd": {
-          "name": "TDD",
-          "description": "モックの指針を伴うレッド・グリーン・リファクタの規律です"
-        },
         "workflow-author": {
           "name": "ワークフロー作成",
           "description": "インストール可能なワークフローとパイプラインを、段階的検証と独立レビューを経て安全に作成します"
-        },
-        "workflow-review": {
-          "name": "ワークフローレビュー",
-          "description": "インストール可能なワークフローとパイプラインを品質とセキュリティの観点から独立してレビューします"
         }
       },
       "workflowsGroupLabel": "-- ワークフロー --",

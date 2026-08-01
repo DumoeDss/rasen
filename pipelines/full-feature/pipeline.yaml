@@ -59,8 +59,8 @@ stages:
     parallelGroup: experts
     condition: ui
 
-  - id: qa-only
-    skill: rasen-qa-only
+  - id: qa-report-only
+    skill: rasen-qa
     role: reviewer
     requires: [apply]
     parallelGroup: experts
@@ -69,7 +69,7 @@ stages:
   - id: review-loop
     skill: rasen-review-cycle
     role: fixer
-    requires: [review, cso, benchmark, design-review, qa, qa-only]
+    requires: [review, cso, benchmark, design-review, qa, qa-report-only]
     loop:
       kind: review-cycle
       maxRounds: 3

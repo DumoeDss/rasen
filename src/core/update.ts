@@ -34,6 +34,7 @@ import {
   formatLegacyCoexistenceNotice,
   cleanupLegacyEditBoundaryState,
   pruneRetiredEditBoundarySkillDirs,
+  pruneRetiredConsolidatedExpertSkillDirs,
   pruneRetiredExpertSkillDirs,
   pruneRetiredWorkflowSkillDirs,
   pruneRetiredRetentionSkillDirs,
@@ -320,6 +321,9 @@ export class UpdateCommand {
       const tool = AI_TOOLS.find((candidate) => candidate.value === toolId);
       if (!tool?.skillsDir) continue;
       await pruneRetiredEditBoundarySkillDirs(
+        resolveToolSkillsRoot(tool, resolvedProjectPath)
+      );
+      await pruneRetiredConsolidatedExpertSkillDirs(
         resolveToolSkillsRoot(tool, resolvedProjectPath)
       );
     }

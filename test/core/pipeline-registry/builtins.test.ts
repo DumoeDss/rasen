@@ -91,6 +91,25 @@ describe('pipeline-registry/built-ins', () => {
     });
   });
 
+  it('full-feature keeps six expert members and uses one QA identity for mutually exclusive modes', () => {
+    const pipeline = loadPipelineByName('full-feature');
+    const experts = pipeline.stages.filter((stage) => stage.parallelGroup === 'experts');
+    expect(experts.map((stage) => stage.id)).toEqual([
+      'review', 'cso', 'benchmark', 'design-review', 'qa', 'qa-report-only',
+    ]);
+    expect(experts).toHaveLength(6);
+    expect(experts.find((stage) => stage.id === 'qa')).toMatchObject({
+      skill: 'rasen-qa',
+      condition: 'ui',
+    });
+    expect(experts.find((stage) => stage.id === 'qa-report-only')).toMatchObject({
+      skill: 'rasen-qa',
+      condition: 'non-ui',
+    });
+    expect(pipeline.stages.find((stage) => stage.id === 'review-loop')?.requires)
+      .toEqual(['review', 'cso', 'benchmark', 'design-review', 'qa', 'qa-report-only']);
+  });
+
   // autopilot-gate-policy: the stage gate is a plain boolean; the existing
   // boolean gate stages of the three non-goal-loop built-ins are unchanged.
   describe('backward-compat: existing gate: true stages are unchanged', () => {

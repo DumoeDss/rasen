@@ -41,6 +41,7 @@ import {
   formatLegacyCoexistenceNotice,
   cleanupLegacyEditBoundaryState,
   pruneRetiredEditBoundarySkillDirs,
+  pruneRetiredConsolidatedExpertSkillDirs,
   pruneRetiredExpertSkillDirs,
   pruneRetiredWorkflowSkillDirs,
   pruneRetiredRetentionSkillDirs,
@@ -1015,6 +1016,7 @@ export class InitCommand {
         // Prune expert-skill dirs orphaned by the rebrand (openspec-gstack-* →
         // openspec-*); installed dirs are not renamed in place.
         await pruneRetiredExpertSkillDirs(skillsDir);
+        await pruneRetiredConsolidatedExpertSkillDirs(skillsDir);
 
         // Prune skill/command artifacts left behind by retired built-in
         // workflows (e.g. `ff` → `rasen-ff-change`); the registry-derived

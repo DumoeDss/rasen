@@ -33,9 +33,9 @@ Determine verification depth by analyzing the change:
 
 | Scope | Criteria | Pipeline |
 |-------|----------|----------|
-| **Full** | Multi-file changes, UI components, significant scope | artifact checks + /review + /cso (if security) + /qa + /design-review (if UI) |
-| **Standard** | Small single-purpose feature | artifact checks + /review + conditional /cso + /qa-only |
-| **Light** | Bug fix, minimal scope | artifact checks + /review only |
+| **Full** | Multi-file changes, UI components, significant scope | artifact checks + rasen-review + rasen-cso (if security) + rasen-qa + rasen-design-review (if UI) |
+| **Standard** | Small single-purpose feature | artifact checks + rasen-review + conditional rasen-cso + rasen-qa in report-only/non-UI mode |
+| **Light** | Bug fix, minimal scope | artifact checks + rasen-review only |
 
 **Inputs for classification:**
 - Number of files changed (check with \`git diff --stat\`)
@@ -61,26 +61,26 @@ Report any inconsistencies found.
 ### 4. Run Expert Reviews Based on Scope
 
 **Full scope:**
-1. Invoke \`/review\` — adversarial code review with auto-scaled depth + test coverage audit
-2. If security-relevant (touches auth, input validation, crypto, data handling): invoke \`/cso\` — security audit
-3. Invoke \`/qa\` — browser-based quality assurance testing
-4. If UI change: invoke \`/design-review\` — visual audit + auto-fix suggestions
+1. Invoke \`rasen-review\` — adversarial code review with auto-scaled depth + test coverage audit
+2. If security-relevant (touches auth, input validation, crypto, data handling): invoke \`rasen-cso\` — security audit
+3. Invoke \`rasen-qa\` — browser-based quality assurance testing
+4. If UI change: invoke \`rasen-design-review\` — visual audit + auto-fix suggestions
 
 **Standard scope:**
-1. Invoke \`/review\` — code review
-2. If security-relevant: invoke \`/cso\` — security audit
-3. Invoke \`/qa-only\` — abbreviated QA check (no browser)
+1. Invoke \`rasen-review\` — code review
+2. If security-relevant: invoke \`rasen-cso\` — security audit
+3. Invoke \`rasen-qa\` with an explicit \`report-only/non-UI\` instruction — browser-based evidence and \`qa-report.md\`, with no fixes or commits
 
 **Light scope:**
-1. Invoke \`/review\` — code review only
+1. Invoke \`rasen-review\` — code review only
 
 ### 5. Save Reports
 
 Write reports to the change's work directory (resolve \`workDir\` from \`rasen status --change <name> --json\`; fall back to the change directory when it is absent or a report already lives there):
 - \`review-report.md\` — code review findings
-- \`cso-report.md\` — security audit (if /cso ran)
-- \`qa-report.md\` — QA findings (if /qa ran)
-- \`design-review-report.md\` — design review (if /design-review ran)
+- \`cso-report.md\` — security audit (if rasen-cso ran)
+- \`qa-report.md\` — QA findings (for either QA mode)
+- \`design-review-report.md\` — design review (if rasen-design-review ran)
 
 **Canonical verdict + status line.** Map every finding across the stages onto the canonical Blocker/Major/Minor/Trivial scale defined by the \`canonical-severity-vocabulary\` in the expert PREAMBLE (reference it; do NOT re-define the scale): a Critical Issue / a stage FAIL on a blocking check → **Blocker**; a Warning → **Major**; a nice-to-fix → **Minor** or **Trivial**. Per-stage PASS/FAIL stays as a display aid in the summary below. Emit ONE machine-checkable status line into the reports you write and the conversation:
 
@@ -116,9 +116,9 @@ Display a summary with pass/fail status for each stage:
 | Stage | Status | Issues |
 |-------|--------|--------|
 | Artifact Consistency | PASS/FAIL | <count> |
-| Code Review (/review) | PASS/FAIL | <count> |
-| Security (/cso) | PASS/FAIL | <count> |
-| QA (/qa) | PASS/FAIL | <count> |
+| Code Review (rasen-review) | PASS/FAIL | <count> |
+| Security (rasen-cso) | PASS/FAIL | <count> |
+| QA (rasen-qa) | PASS/FAIL | <count> |
 | Design Review | PASS/FAIL | <count> |
 
 ### Critical Issues (must fix before shipping)
