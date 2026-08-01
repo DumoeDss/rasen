@@ -139,15 +139,16 @@ export function verifyRetiredEditBoundaryPackage(metadata, rootDir = process.cwd
   };
 }
 
-function readPackMetadata(rootDir) {
+export function readPackMetadata(rootDir, run = execFileSync) {
   const npm = npmInvocationForPlatform();
-  const output = execFileSync(
+  const output = run(
     npm.command,
     [
       ...npm.argsPrefix,
       'pack',
       '--dry-run',
       '--ignore-scripts',
+      '--foreground-scripts=false',
       '--json',
       '--silent',
     ],

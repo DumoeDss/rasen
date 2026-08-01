@@ -3,7 +3,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { verifyRetiredEditBoundaryPackage } from '../scripts/retired-edit-boundary-package-check.mjs';
+import {
+  readPackMetadata,
+  verifyRetiredEditBoundaryPackage,
+} from '../scripts/retired-edit-boundary-package-check.mjs';
 
 const tempDirs: string[] = [];
 
@@ -56,6 +59,18 @@ afterEach(() => {
 });
 
 describe('retired edit-boundary packed-payload guard', () => {
+  it('keeps npm 10 prepare output out of the JSON metadata channel', () => {
+    const metadata = [{ files: [{ path: 'dist/index.js' }] }];
+    const runLikeNpm10 = (_command: string, args: string[]) => {
+      const json = JSON.stringify(metadata);
+      return args.includes('--foreground-scripts=false')
+        ? json
+        : `> @atelierai/rasen@0.1.6 prepare\n> pnpm build\n${json}`;
+    };
+
+    expect(readPackMetadata(process.cwd(), runLikeNpm10)).toEqual(metadata[0]);
+  });
+
   it('keeps the importable guard free of a shebang for Windows Node 20', () => {
     const guardPath = path.join(
       process.cwd(),
