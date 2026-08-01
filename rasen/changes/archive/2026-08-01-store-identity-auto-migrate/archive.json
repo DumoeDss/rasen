@@ -1,0 +1,23 @@
+{
+  "change": "store-identity-auto-migrate",
+  "archivedAt": "2026-08-01T06:22:19.265Z",
+  "codeCommit": "173e7316e1c498edae55ef7522851ae0f7bf4a77",
+  "planningBranch": "chore/archive-store-identity-auto-migrate-0.1.6",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "2365ce09a3924bfe1dbb2bca0b4d40923c80f0757376e1d2ee8a4560ae20392c"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "e330a9c7726baff682048f220e36e9ae1dc507ff602e4e34a9ec2e6aeabe7127"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}
