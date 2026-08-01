@@ -1,7 +1,8 @@
 # local-version-test-harness Specification
 
 ## Purpose
-TBD - created by archiving change add-local-version-test-harness. Update Purpose after archive.
+Define a repository-owned harness for preparing isolated, release-shaped local Rasen CLI/UI runtimes from any source worktree and launching Rasen, Codex, or Claude against arbitrary projects without mutating project package state, global installations, or shared machine state.
+
 ## Requirements
 ### Requirement: Local source and project selection
 The local-version harness SHALL accept a Rasen source worktree and a target project directory, default the source to the repository containing the harness, default the project to the caller's current directory, and support target projects with or without Node package metadata.
