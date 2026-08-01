@@ -28,7 +28,7 @@ The navigator reference bundled with `rasen-help` SHALL present a four-part map:
 - **AND** each route SHALL have a one-line "when to use"
 - **AND** each invokable skill SHALL use its canonical `rasen-*` name, not a `/rasen:*` colon reference
 
-#### Scenario: Reflects absorbed and consolidated skills
+#### Scenario: Reflects absorbed skills
 
 - **WHEN** the help navigator map is inspected
 - **THEN** `rasen-investigate` SHALL be described as refusing to hypothesise before a red-capable feedback loop
@@ -47,7 +47,7 @@ The navigator reference bundled with `rasen-help` SHALL present a four-part map:
 - **AND** the main flow SHALL retain `rasen-ship` → `rasen-retain` → `rasen-archive-change`
 - **AND** `rasen-retro` SHALL appear only as a compatibility alias outside that main flow
 
-#### Scenario: No removed methodology or consolidation identities referenced
+#### Scenario: No removed methodology skill referenced
 
 - **WHEN** the help navigator map is inspected
 - **THEN** it SHALL NOT present `/domain-modeling`, `rasen-codebase-design`, `rasen-tdd`, `rasen-prototype`, `rasen-workflow-review`, or `rasen-qa-only` as invokable skills

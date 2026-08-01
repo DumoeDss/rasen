@@ -4,7 +4,7 @@
 
 The generated browser-driving expert skills (`qa`, design review, design consultation, benchmark, and office-hours) SHALL instruct the reader to drive the vendored chrome-use CDP proxy through its HTTP endpoints at `localhost:3456`, and SHALL NOT instruct the reader to invoke the retired `browse` binary. The single `rasen-qa` skill SHALL preserve this browser contract in default, dispatched, and explicit report-only/non-UI modes.
 
-#### Scenario: Unified QA methodology drives chrome-use
+#### Scenario: QA methodology drives chrome-use
 
 - **WHEN** `rasen-qa` is generated
 - **THEN** every QA mode's browser steps SHALL use `curl localhost:3456/...` endpoint calls and contain no `$B` browse-binary invocation
@@ -25,7 +25,7 @@ The chrome-use curl examples in shared expert blocks and the self-contained chro
 - **THEN** each live curl example that calls `localhost:3456` SHALL bypass configured HTTP(S) proxies
 - **AND** the result SHALL be the same for QA's default and report-only/non-UI paths
 
-#### Scenario: Setup explains the proxy caveat
+#### Scenario: SETUP explains the proxy caveat
 
 - **WHEN** an expert skill's setup block is generated
 - **THEN** it SHALL note that configured HTTP(S) proxies can hijack localhost calls and explain the bypass flag
@@ -34,7 +34,7 @@ The chrome-use curl examples in shared expert blocks and the self-contained chro
 
 The navigator reference bundled with `rasen-help` and other prose-only routing references SHALL describe `rasen-chrome-use` as the browser-driving expert instead of browse. The router SHALL not require a standalone navigator identity.
 
-#### Scenario: Help navigator reference lists chrome-use
+#### Scenario: Navigator lists chrome-use
 
 - **WHEN** the installed `rasen-help` navigator reference is inspected
 - **THEN** its browser-related guidance SHALL describe `rasen-chrome-use` as CDP-driven real Chrome

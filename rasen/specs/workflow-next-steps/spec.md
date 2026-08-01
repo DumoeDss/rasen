@@ -59,14 +59,18 @@ Generated workflow skill bodies SHALL NOT encode the downstream workflow chain t
 - **AND** it SHALL include the `rasen status --change "<name>" --json` fallback
 
 ### Requirement: Cross-references use canonical skill names, not colon commands
-Generated workflow skill bodies and the CLI's next-step output SHALL reference other workflows and expert skills by their canonical skill name (the skill-directory form, e.g. `rasen-apply-change`, `rasen-tdd`), not the `/rasen:*` colon form. On tools where a skill surfaces as a slash command, the canonical skill name is the invocation; the body SHALL be phrased so each tool relays it under its own invocation convention.
+
+Generated workflow skill bodies and CLI next-step output SHALL reference other workflows and independently invokable experts by their canonical skill-directory names (for example `rasen-apply-change` or `rasen-careful`), not `/rasen:*` colon forms. A host-owned methodology or router reference SHALL instead be named by its installed relative reference path and SHALL NOT be presented as an invokable skill. On tools where a skill surfaces as a slash command, the canonical skill name remains the invocation and the body SHALL be phrased so each tool relays it under its own convention.
 
 #### Scenario: No colon command reference in a generated workflow skill body
-- **WHEN** every generated workflow skill body (and the navigator router body) is scanned by an automated guard test
+
+- **WHEN** every generated workflow skill body and the help navigator reference are scanned
 - **THEN** none SHALL contain a `/rasen:` colon-form reference
-- **AND** the guard's whitelist SHALL cover only frozen expert dispatched-contract content carried from `_shared.ts` and historical/archive documents
+- **AND** the guard's whitelist SHALL cover only frozen dispatched-contract content and historical/archive documents
 
 #### Scenario: Methodology and cross-workflow references named by skill
-- **WHEN** a workflow skill body references a methodology expert or another workflow (e.g. formerly `consult /tdd`, or `/rasen-apply-change <other>`)
-- **THEN** it SHALL name the canonical skill (`rasen-tdd`, `rasen-apply-change`) rather than a bare-slash or colon command
+
+- **WHEN** a workflow body refers to another invokable workflow or expert
+- **THEN** it SHALL use that skill's canonical `rasen-*` name
+- **AND** when `propose`, `apply`, `explore`, `workflow-author`, or `help` refers to consolidated internal guidance, it SHALL name the bundled relative reference rather than `rasen-codebase-design`, `rasen-tdd`, `rasen-prototype`, `rasen-workflow-review`, or `rasen-navigator`
 

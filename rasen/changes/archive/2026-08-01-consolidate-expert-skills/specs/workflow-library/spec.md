@@ -79,7 +79,7 @@ The `workflow-author` expert SHALL cover workflow and pipeline authoring and SHA
 - **AND** SHALL assign semantic review to a non-author when role isolation is available
 - **AND** SHALL NOT require a separate `rasen-workflow-review` skill
 
-#### Scenario: Review branch checks pipeline semantics
+#### Scenario: Review expert reviews a pipeline
 
 - **WHEN** the bundled review branch reviews a pipeline
 - **THEN** it SHALL check stage-DAG acyclicity, unique stage ids, decompose recursion bound, runtime/model resolvability, and skill enablement
@@ -99,7 +99,7 @@ The documentation SHALL state the community-package trust boundary honestly: a c
 
 The 12 surviving built-in experts SHALL be members of the unified workflow catalog with `kind: 'expert'` and `source: 'built-in'`, carrying no command. The roster SHALL contain `benchmark`, `careful`, `chrome-use`, `codex`, `cso`, `design-consultation`, `design-review`, `investigate`, `office-hours`, `qa`, `review`, and `workflow-author`. Each expert SHALL carry a digest computed over its template and own sidecar tree. `workflow list` SHALL present an `expert` group by default, and `--json` SHALL expose the same expert units with `kind: 'expert'`.
 
-#### Scenario: Surviving experts appear in the catalog
+#### Scenario: Experts appear in the catalog with kind expert
 
 - **WHEN** the built-in catalog is enumerated
 - **THEN** exactly the 12 surviving experts SHALL appear with `kind: 'expert'`, `source: 'built-in'`, no command, and a digest

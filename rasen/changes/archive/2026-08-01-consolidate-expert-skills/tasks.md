@@ -38,4 +38,4 @@
 - [x] 5.3 Run `pnpm run build`, `pnpm run lint`, and `pnpm test`; confirm no live-source search result presents a retired identity as invokable and no office-hours snapshot/hash changed.
 - [x] 5.4 Run the full-feature dogfood script and inspect the execution plan to confirm six FanOut members, mutually exclusive `qa`/`qa-report-only` conditions, one `rasen-qa` identity, and a clean Join/review-loop path.
 - [x] 5.5 Verify package contents include every new host reference and exclude retired source/template directories.
-- [ ] 5.6 Run the path-sensitive sidecar-copy and retired-directory cleanup coverage on Windows CI (or the repository's Windows validation job), using `path.join`/canonicalized expectations, and confirm the same tests remain portable on the non-Windows CI matrix.
+- [x] 5.6 Run the path-sensitive sidecar-copy and retired-directory cleanup coverage on Windows CI (or the repository's Windows validation job), using `path.join`/canonicalized expectations, and confirm the same tests remain portable on the non-Windows CI matrix.
