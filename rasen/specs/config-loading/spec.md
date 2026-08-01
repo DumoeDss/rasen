@@ -182,12 +182,13 @@ The project config (`rasen/config.yaml` or `config.yml`) SHALL support an option
 
 ### Requirement: Archive block carries an optional destination field
 
-The project config's `archive` map SHALL support an optional `destination` field whose valid values are `in-repo`, `external`, and `prune`, parsed under the existing resilient field-by-field policy: a valid value is exposed on the parsed config; an invalid value is dropped with a warning naming `archive.destination` while the rest of the config — including other `archive` fields such as `timing` — still parses; absence is not an error. Parsers that predate this field SHALL be unaffected by its presence (unknown keys in the `archive` map are ignored).
+The project config's `archive` map SHALL continue to accept an optional `destination` field for compatibility, parsed under the existing resilient field-by-field policy — but the field is DEPRECATED and non-behavioral: a valid value (`in-repo`, `external`, `prune`) is exposed on the parsed config solely so legacy-archive discovery and migration tooling can see it, and parsing a non-default value (`external` or `prune`) SHALL emit a deprecation warning naming `archive.destination` and stating that archives always land in the planning root. An invalid value is dropped with the existing invalid-field warning while the rest of the config — including other `archive` fields such as `timing` — still parses; absence is not an error and produces no warning. The deprecation warning SHALL be localized like other config warnings.
 
 #### Scenario: Valid destination is exposed
 
 - **WHEN** the config contains an `archive` block with `destination: external`
 - **THEN** the parsed project config includes `archive.destination` = `external`
+- **AND** a deprecation warning names `archive.destination` and states that archive bookkeeping always lands in the planning root
 
 #### Scenario: Invalid destination dropped resiliently
 

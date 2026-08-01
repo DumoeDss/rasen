@@ -1,0 +1,15 @@
+{
+  "change": "file-placement-collapse-archive",
+  "archivedAt": "2026-07-30T21:54:35.093Z",
+  "codeCommit": "47caa7692ccdfeb732b2ab94f070f6f085db1d84",
+  "planningBranch": "feat/file-placement-collapse-0.1.6",
+  "planningTreeState": "dirty",
+  "evidence": [],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [],
+  "missing": [
+    "ship-log",
+    "verification-report"
+  ]
+}

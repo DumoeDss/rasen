@@ -126,6 +126,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     globalSetup: './vitest.setup.ts',
+    setupFiles: ['./test/setup-reset-diagnostics.ts'],
     // Tests rely on per-file process isolation (e.g., `process.cwd()` assumptions).
     pool: 'forks',
     maxWorkers: resolveMaxWorkers(),

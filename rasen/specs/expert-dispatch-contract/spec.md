@@ -7,7 +7,7 @@ The dispatched vs standalone mode contract for generic expert skills (review, cs
 
 The shared expert PREAMBLE SHALL carry a **Dispatched vs standalone mode** section governing every generic expert skill that embeds it: `review`, `cso`, `qa`, `benchmark`, and `design-review`. A skill is in dispatched report-only mode when its invocation instructs it to do one unit of work, not spawn subagents, and states that a LEAD owns orchestration; otherwise it is in standalone mode. `rasen-qa` SHALL additionally recognize an explicit report-only/non-UI request as a no-edit mode even outside a LEAD dispatch.
 
-In dispatched or explicitly requested report-only mode, the skill SHALL apply no AUTO-FIX, make no code edits, issue no fix-oriented user questions, make no git commit, spawn no subagents, and SHALL return classified findings tagged with canonical severity. In dispatched mode it SHALL write the canonical report in the change's work directory with the existing sticky-legacy fallback. ASK-class and fix-class items SHALL remain unresolved findings for the LEAD. Standalone default mode SHALL retain the richer behavior of each surviving expert.
+In dispatched or explicitly requested report-only mode, the skill SHALL apply no AUTO-FIX, make no code edits, issue no fix-oriented user questions, make no git commit, spawn no subagents, and SHALL return classified findings tagged with canonical severity. In dispatched mode it SHALL write the canonical report in the change's evidence directory (`<changeRoot>/evidence/`, the `evidenceDir` reported by the CLI), with the sticky-legacy fallback for a report that already exists in the legacy machine-home work directory or the change directory. ASK-class and fix-class items SHALL remain unresolved findings for the LEAD. Standalone default mode SHALL retain the richer behavior of each surviving expert.
 
 #### Scenario: Dispatched-mode contract present in generated preamble
 
@@ -53,12 +53,12 @@ The `qa`, `design-review`, and `review` skills SHALL suppress mutating behavior 
 
 ### Requirement: Canonical report-file convention reconciled with orchestration Step B
 
-In dispatched mode each surviving generic expert SHALL write findings to the canonical report file in the change's work directory with the change-directory sticky-legacy fallback: `review-report.md`, `cso-report.md`, `qa-report.md`, `benchmark-report.md`, or `design-review-report.md`. Both UI QA and non-UI/report-only QA SHALL use `qa-report.md`. Dispatched experts SHALL NOT also write standalone report paths. Standalone modes SHALL retain native paths. Orchestration Step B SHALL state that dispatched experts run report-only, write the canonical report themselves, and that the dispatching worker verifies its presence before returning.
+In dispatched mode each surviving generic expert SHALL write findings to the canonical report file in the change's evidence directory (`<changeRoot>/evidence/`, with the sticky-legacy fallback for a report that already lives in the legacy work directory or the change directory): `review-report.md`, `cso-report.md`, `qa-report.md`, `benchmark-report.md`, or `design-review-report.md`. Both UI QA and non-UI/report-only QA SHALL use `qa-report.md`. Dispatched experts SHALL NOT also write standalone report paths or write new files under the CLI-owned machine root. Standalone modes SHALL retain native paths. Orchestration Step B SHALL state that dispatched experts run report-only, write the canonical report themselves, and that the dispatching worker verifies its presence before returning.
 
 #### Scenario: dispatched expert writes only the canonical report
 
 - **WHEN** the generated `cso`, `qa`, `benchmark`, or `design-review` skill is inspected
-- **THEN** it SHALL state that dispatched mode writes its canonical report in the work directory with the change-directory fallback
+- **THEN** it SHALL state that dispatched mode writes its canonical report in the evidence directory with the sticky-legacy fallback
 - **AND** SHALL scope standalone `.rasen/*-reports/` and project report paths to standalone mode
 - **AND** QA SHALL name one `qa-report.md` contract for every QA mode
 

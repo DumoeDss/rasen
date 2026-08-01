@@ -622,7 +622,7 @@ function parseStoreMembershipList(
     warnConfig(
       {
         key: 'storeMembershipsWithoutIdentity',
-        fallback: `Some '${STORE_MEMBERSHIPS_FIELD}' entries name a store only by display name; run 'rasen store upgrade-identity <store> --apply' so the hint survives a rename`,
+        fallback: `Some '${STORE_MEMBERSHIPS_FIELD}' entries name a store only by display name; run 'rasen update' so the hint survives a rename`,
       },
       reporter
     );
@@ -1158,7 +1158,22 @@ function parseProjectConfigContent(
             archiveRaw.destination === 'external' ||
             archiveRaw.destination === 'prune'
           ) {
+            // DEPRECATED and non-behavioral (`archive-destination` /
+            // `config-loading` capabilities): the value is still exposed so
+            // legacy-archive discovery and child B's migrator can see it, but
+            // it never routes a write. A non-default value gets a loud
+            // deprecation warning — silently changing behavior for an
+            // `external`/`prune` user would be worse.
             archive.destination = archiveRaw.destination;
+            if (archiveRaw.destination !== 'in-repo') {
+              warnConfig(
+                {
+                  key: 'deprecatedArchiveDestination',
+                  fallback: `'archive.destination' is deprecated and no longer selects a destination: archive bookkeeping always lands in the planning root. Remove the key; run 'rasen archive relocate --to in-repo' to consolidate existing archives.`,
+                },
+                reporter
+              );
+            }
           } else {
             warnConfig(
               {
@@ -1852,21 +1867,11 @@ export function resolveArchiveTiming(config: ProjectConfig | null | undefined): 
   return config?.archive?.timing ?? 'on-merge';
 }
 
-/**
- * Resolves the effective archive destination, applying the `in-repo`
- * default when the config, the `archive` block, or the `destination` field
- * is absent or was dropped during parsing. Every consumer (status exposure,
- * ship/archive templates, the CLI archive command) MUST resolve through
- * this function so the default is applied identically everywhere. This
- * decides only which value to use — the actual location resolution
- * (`resolveArchiveDestination` in `change-work.ts`) is async and beside
- * this function on purpose (`root.archiveDir` stays sync in-repo).
- */
-export function resolveArchiveDestinationValue(
-  config: ProjectConfig | null | undefined
-): ArchiveDestination {
-  return config?.archive?.destination ?? 'in-repo';
-}
+// `resolveArchiveDestinationValue` was deleted with the destination axis
+// (`archive-destination` capability). Nothing routes on the value any more, so
+// defaulting an absent key to `'in-repo'` would assert a choice that no longer
+// exists. `archive.destination` is still PARSED and left on the config object
+// for legacy discovery only — child B's migrator reads the raw field directly.
 
 // -----------------------------------------------------------------------------
 // Autopilot gate policy (config axis)
@@ -2386,6 +2391,54 @@ export async function appendStoreMembershipHint(
       const hints = [...existing, hint];
       await writeStoreMembershipHints(configPath, hints);
       return { configPath, changed: true, hints };
+    }
+  );
+}
+
+/**
+ * Backfills a permanent identity into existing identityless `storeMemberships`
+ * entries that name the store by display alias. A NEW writer (not
+ * `appendStoreMembershipHint`) because the dedup key changes from `id:<alias>`
+ * to `uid:<uid>` when a uid is added — the existing appender would fail to
+ * match the old entry and append a duplicate, leaving the identityless entry
+ * in place (still firing the warning). This writer matches by
+ * `entry.uid === undefined && entry.id === match.id`, sets `entry.uid`, and
+ * writes back through the same yaml-AST + owner-aware-lock approach.
+ */
+export async function backfillStoreMembershipUid(
+  projectRoot: string,
+  match: { id: string; uid: string }
+): Promise<{ configPath: string; changed: boolean }> {
+  const configPath = resolveConfigFilePath(projectRoot);
+  if (configPath === null) {
+    return { configPath: '', changed: false };
+  }
+
+  return withOwnerAwareFileLock(
+    {
+      lockPath: machineLockPath(path.resolve(configPath)),
+      errorFor: projectMembershipHintLockError,
+      holder: 'project-membership-hint',
+    },
+    async () => {
+      // Re-read INSIDE the lock so concurrent backfills see each other's
+      // writes, same discipline as `appendStoreMembershipHint`.
+      const existing = readProjectConfig(projectRoot)?.storeMemberships ?? [];
+      let changed = false;
+      const updated = existing.map((entry) => {
+        if (entry.uid === undefined && entry.id === match.id) {
+          changed = true;
+          return { ...entry, uid: match.uid };
+        }
+        return entry;
+      });
+
+      if (!changed) {
+        return { configPath, changed: false };
+      }
+
+      await writeStoreMembershipHints(configPath, updated);
+      return { configPath, changed: true };
     }
   );
 }

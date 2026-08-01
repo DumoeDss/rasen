@@ -79,6 +79,7 @@ import {
   type ThresholdValue,
   type ThresholdResolutionContext,
   type RunStateWorker,
+  type StateFileLocationOptions,
   type Stage,
   type StageRole,
 } from '../core/pipeline-registry/index.js';
@@ -154,8 +155,10 @@ import {
 import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
 import { resolveChangeWorkDir } from '../core/change-work.js';
+import { ephemeraDir, resolveExecutionRoot } from '../core/file-placement.js';
 import {
   resolveRootForCommand,
+  isStoreSelectedRoot,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
 import {
@@ -170,6 +173,7 @@ import {
   detectHostRuntime,
   resolveDispatchRoute,
   type DetectedHostRuntime,
+  type DispatchBridge,
   type DispatchMode,
 } from '../core/runtime-adapters.js';
 
@@ -200,6 +204,7 @@ interface ResolvedRuntime {
   projectRoot: string;
   projectId: string;
   launchKey: string;
+  stateLocations?: StateFileLocationOptions;
 }
 
 /**
@@ -245,6 +250,7 @@ interface StageView {
   runtime: AgentRuntime;
   runtimeSource: RuntimeSource;
   dispatchMode: DispatchMode;
+  bridge: DispatchBridge | null;
   sessionReuse: Stage['sessionReuse'] | null;
   sandbox: Stage['sandbox'] | null;
   model: string | null;
@@ -648,7 +654,8 @@ export class PipelineCommand {
     changeId: string,
     projectRoot: string,
     runId: string,
-    store: Pick<ReturnType<typeof createFilesystemRunStore>, 'has'>
+    store: Pick<ReturnType<typeof createFilesystemRunStore>, 'has'>,
+    stateLocations: StateFileLocationOptions = {}
   ): Promise<EngineOwner | 'none'> {
     const changeDir = path.join(
       projectRoot,
@@ -656,10 +663,7 @@ export class PipelineCommand {
       'changes',
       changeId
     );
-    const workDir = await resolveChangeWorkDir(projectRoot, changeId, {
-      ensure: false,
-    });
-    const legacy = resolveLegacyOwnerSignal(changeDir, workDir);
+    const legacy = resolveLegacyOwnerSignal(changeDir, stateLocations);
     const canonicalPresent = store.has(runId as never);
 
     if (!canonicalPresent && !legacy.present) return 'none';
@@ -694,9 +698,26 @@ export class PipelineCommand {
     changeId: string,
     projectRoot: string,
     runId: string,
-    store: Pick<ReturnType<typeof createFilesystemRunStore>, 'has'>
+    store: Pick<ReturnType<typeof createFilesystemRunStore>, 'has'>,
+    stateLocations: StateFileLocationOptions = {}
   ): Promise<void> {
-    await this.resolveEngineOwner(changeId, projectRoot, runId, store);
+    await this.resolveEngineOwner(changeId, projectRoot, runId, store, stateLocations);
+  }
+
+  private async resolveStateFileLocations(
+    changeId: string,
+    root: ResolvedOpenSpecRoot
+  ): Promise<StateFileLocationOptions> {
+    const workDir = await resolveChangeWorkDir(root.path, changeId, {
+      ensure: false,
+    });
+    const executionRoot = resolveExecutionRoot(root.path, {
+      storeSelected: isStoreSelectedRoot(root),
+    });
+    return {
+      ephemeraDir: ephemeraDir(executionRoot, changeId),
+      workDir,
+    };
   }
 
   /**
@@ -720,18 +741,17 @@ export class PipelineCommand {
    */
   private async assertCanonicalLaunchAllowed(
     changeId: string,
-    projectRoot: string
+    root: ResolvedOpenSpecRoot
   ): Promise<void> {
+    const projectRoot = root.path;
     const changeDir = path.join(
       projectRoot,
       WORKSPACE_DIR_NAME,
       'changes',
       changeId
     );
-    const workDir = await resolveChangeWorkDir(projectRoot, changeId, {
-      ensure: false,
-    });
-    const legacy = resolveLegacyOwnerSignal(changeDir, workDir);
+    const stateLocations = await this.resolveStateFileLocations(changeId, root);
+    const legacy = resolveLegacyOwnerSignal(changeDir, stateLocations);
     if (!legacy.present) return;
 
     const owner = classifyEngineOwnership({
@@ -1088,7 +1108,16 @@ export class PipelineCommand {
           }
         : undefined,
     });
-    return { ctx, pipelineName: sourceDisplayName, runId, projectRoot, projectId, launchKey };
+    const stateLocations = await this.resolveStateFileLocations(changeId, root);
+    return {
+      ctx,
+      pipelineName: sourceDisplayName,
+      runId,
+      projectRoot,
+      projectId,
+      launchKey,
+      stateLocations,
+    };
   }
 
   private printRunReceipt(
@@ -1193,7 +1222,7 @@ export class PipelineCommand {
     // ECP-5 (D8): the engine-ownership guard's launch seam. Runs BEFORE
     // `resolveRuntime`, which binds the Change instance in the association
     // registry, so a refusal leaves nothing behind at all.
-    await this.assertCanonicalLaunchAllowed(changeId, policyRoot.path);
+    await this.assertCanonicalLaunchAllowed(changeId, policyRoot);
 
     const { ctx, pipelineName: resolvedPipelineName, runId, projectRoot, projectId, launchKey } =
       await this.resolveRuntime(
@@ -1276,15 +1305,22 @@ export class PipelineCommand {
     pipelineName: string,
     options: PipelineCommandOptions = {}
   ): Promise<void> {
-    const { ctx, pipelineName: resolvedPipelineName, runId, projectRoot, launchKey } =
-      await this.resolveRuntime(changeId, pipelineName, options);
+    const {
+      ctx,
+      pipelineName: resolvedPipelineName,
+      runId,
+      projectRoot,
+      launchKey,
+      stateLocations,
+    } = await this.resolveRuntime(changeId, pipelineName, options);
     // ECP-5 (D8): resume-run ADMITS Actions, so it mutates — it rechecks
     // ownership like any other canonical mutation.
     await this.assertCanonicalMutationAllowed(
       changeId,
       projectRoot,
       runId,
-      ctx.store
+      ctx.store,
+      stateLocations
     );
     const receipt = await ctx.facade.resume(
       { change: { projectRoot, changeId }, runId: runId as never },
@@ -1687,7 +1723,8 @@ export class PipelineCommand {
       changeId,
       resolved.projectRoot,
       runId,
-      resolved.ctx.store
+      resolved.ctx.store,
+      resolved.stateLocations
     );
     const body = this.readBoundedPayload(from) as {
       completion?: unknown;
@@ -1763,7 +1800,8 @@ export class PipelineCommand {
       changeId,
       resolved.projectRoot,
       runId,
-      resolved.ctx.store
+      resolved.ctx.store,
+      resolved.stateLocations
     );
     const body = this.readBoundedPayload(from) as {
       control?: unknown;
@@ -2102,16 +2140,26 @@ export class PipelineCommand {
     // never mint identity or write to the repo/registry (design D2).
     const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: false });
 
+    // Sticky-legacy chain (`file-placement` capability): the execution root's
+    // ephemera directory is the terminal landing and is searched first, then
+    // the legacy machine-home work directory, then the change directory.
+    const executionRoot = resolveExecutionRoot(projectRoot, {
+      storeSelected: isStoreSelectedRoot(root),
+    });
+    const stateLocations = {
+      ephemeraDir: ephemeraDir(executionRoot, changeName),
+      workDir,
+    };
+
     // Portfolio parent? The portfolio record is authoritative — resume reports
     // the next runnable child(ren) from the dependency DAG rather than stages.
-    // Sticky-legacy (design D4): workDir first, change dir fallback.
     //
     // Read DETAILED so a located-but-unreadable record is reported instead of
     // being read as "this change was never split". That substitution is not
     // cosmetic: it drops the parent to the stage-based branch below, where a
     // decomposed parent's stage list can leave delivery as the only thing
     // remaining — offering `ship` for work its children have not finished.
-    const portfolioLocation = resolvePortfolioStateLocation(changeDir, workDir);
+    const portfolioLocation = resolvePortfolioStateLocation(changeDir, stateLocations);
     const portfolioRead = portfolioLocation
       ? readPortfolioStateDetailed(portfolioLocation.dir)
       : ({ kind: 'absent' } as const);
@@ -2262,10 +2310,9 @@ export class PipelineCommand {
       return;
     }
 
-    // Sticky-legacy (design D4): workDir first, change dir fallback. Detailed
-    // read (design D3) so a located-but-unparseable file is reported
+    // Detailed read (design D3) so a located-but-unparseable file is reported
     // distinctly from no file at all, instead of masquerading as "not found".
-    const runStateLocation = resolveRunStateLocation(changeDir, workDir);
+    const runStateLocation = resolveRunStateLocation(changeDir, stateLocations);
     const runStateRead = runStateLocation
       ? readRunStateDetailed(runStateLocation.dir)
       : ({ kind: 'absent' } as const);
@@ -2536,6 +2583,15 @@ export class PipelineCommand {
     if (warmSeedable.length > 0) {
       console.log(messages.format('resumeHandles', { stages: warmSeedable.join(', ') }));
     }
+    for (const [stage, worker] of Object.entries(workers)) {
+      if (worker.runtime === 'claude' && worker.sessionId) {
+        console.log(messages.format('resumeClaudeSession', {
+          stage,
+          sessionId: worker.sessionId,
+          cwd: worker.cwd ?? none,
+        }));
+      }
+    }
     if (sessionHandoff) {
       console.log(messages.format('sessionHandoff', {
         generation: sessionHandoffGeneration(sessionHandoff),
@@ -2716,6 +2772,7 @@ export class PipelineCommand {
     // the built-in "gates on" default so effective equals the declared gate.
     const policy: ResolvedGatePolicy = basePolicy ?? { effective: 'on', source: 'default' };
     const maskedGate = resolveMaskedStageGate(stage.gate, overrides?.gates.get(stage.id), policy);
+    const route = resolveDispatchRoute(host.runtime, effectiveStageRuntime);
     return {
       id: stage.id,
       kind: stage.kind,
@@ -2736,7 +2793,8 @@ export class PipelineCommand {
       runtime: effectiveStageRuntime,
       runtimeSource: executionRuntime?.runtimeSource ?? runtime.runtimeSource,
       dispatchMode: executionRuntime?.dispatchMode
-        ?? resolveDispatchRoute(host.runtime, effectiveStageRuntime).mode,
+        ?? route.mode,
+      bridge: executionRuntime?.bridge ?? route.bridge ?? null,
       sessionReuse: runtime.sessionReuse ?? null,
       sandbox: runtime.sandbox ?? null,
       model: runtime.model ?? null,

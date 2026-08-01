@@ -1,6 +1,6 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { PREAMBLE_DIALOGUE } from './_shared.js';
+import { PREAMBLE_DIALOGUE, PROBE_PLACEMENT_GUIDANCE } from './_shared.js';
 
 const BODY = `
 ${PREAMBLE_DIALOGUE}
@@ -151,6 +151,8 @@ Each probe must map to a specific prediction from Phase 4. **Change one variable
 **Tag every debug log** with a unique prefix, e.g. \`[DEBUG-a4f2]\`, so cleanup is a single grep — untagged logs survive, tagged logs die.
 
 **Perf branch.** For performance regressions, logs are usually wrong. Instead establish a baseline measurement (timing harness, \`performance.now()\`, profiler, query plan), then bisect. Measure first, fix second.
+
+${PROBE_PLACEMENT_GUIDANCE}
 
 ---
 

@@ -353,6 +353,8 @@ export async function handleListPipelines(
               : {}),
           },
           effectiveRuntime: { value: eff.runtime.value, source: eff.runtime.source },
+          dispatchMode: eff.dispatchMode,
+          bridge: eff.bridge ?? null,
         };
       }),
       ...preparationFields(preparation),
@@ -522,6 +524,8 @@ export async function handlePipelineDetail(
           value: eff.runtime.value,
           source: eff.runtime.source,
         },
+        dispatchMode: eff.dispatchMode,
+        bridge: eff.bridge ?? null,
       })),
       ...preparationFields(preparation),
     };

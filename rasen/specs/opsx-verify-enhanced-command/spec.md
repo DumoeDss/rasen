@@ -100,12 +100,12 @@ Light verification SHALL run artifact checks with code review only.
 
 ### Requirement: Report Output
 
-Reports SHALL be saved to the change's work directory (the `workDir` reported by the CLI per the `change-work-dir` capability, with the change directory as the sticky-legacy fallback).
+Reports SHALL be saved to the change's evidence directory (`<changeRoot>/evidence/`, the `evidenceDir` reported by the CLI per the `file-placement` capability), with the sticky-legacy fallback: a report that already exists in the legacy machine-home work directory or the change directory is updated in place.
 
 #### Scenario: Report files written after verification
 
 - **WHEN** verification completes
-- **THEN** the review report SHALL be saved as `review-report.md` in the resolved work directory (or the legacy location per the fallback)
+- **THEN** the review report SHALL be saved as `review-report.md` in the resolved evidence directory (or the legacy location per the fallback)
 - **AND** the CSO report SHALL be saved as `cso-report.md` there (if /cso was invoked)
 - **AND** the QA report SHALL be saved as `qa-report.md` there (if /qa was invoked)
 

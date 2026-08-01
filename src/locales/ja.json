@@ -499,9 +499,10 @@
       "openFindings": "未解決の指摘: {count}件（リリース前に解消してください）",
       "legacySkillHeading": "パイプライン'{pipeline}'に旧スキルIDがあります（pipeline yamlを更新してください）:",
       "legacySkillEntry": "  ステージ{stage}: {from} -> {to}",
-      "workerHandleWarning": "ワーカーハンドル警告: ステージ'{stage}'のワーカーに永続ハンドルがありません（記録: {recorded}）。dispatch時にagentId/transcriptを記録してください。",
+      "workerHandleWarning": "ワーカーハンドル警告: ステージ'{stage}'のワーカーに永続ハンドルがありません（記録: {recorded}）。dispatch時にagentId/sessionId/transcript/threadIdを記録してください。",
       "duplicateRunStateKey": "実行状態キーの重複: '{key}'が{path}で重複しています（JSON.parseは最後の値を保持します）。",
       "resumeHandles": "利用可能な再開ハンドル（ワーカーセッション/transcript）: {stages}",
+      "resumeClaudeSession": "ステージ'{stage}'のClaudeブリッジセッション: {sessionId} (cwd: {cwd})",
       "sessionHandoff": "セッションhandoff（世代{generation}）: {path}",
       "gatePolicy": "ゲートポリシー: {effective}（{source}）",
       "executionBinding": "実行チェックアウト: {project} ({path})",
@@ -938,7 +939,7 @@
       "invalidReferenceRemotes": "'references'に空または文字列でないremoteがあります。idはclone元なしで保持します",
       "invalidStoreMemberships": "config の 'storeMemberships' フィールドが不正です（store 参照の配列である必要があります）",
       "invalidStoreMembershipEntries": "一部の 'storeMemberships' エントリが不正です。利用できないエントリとフィールドを無視します",
-      "storeMembershipsWithoutIdentity": "一部の 'storeMemberships' エントリは store を表示名だけで指しています。改名後もヒントが有効であり続けるよう 'rasen store upgrade-identity <store> --apply' を実行してください",
+      "storeMembershipsWithoutIdentity": "一部の 'storeMemberships' エントリは store を表示名だけで指しています。改名後もヒントが有効であり続けるよう 'rasen update' を実行してください",
       "invalidSchema": "設定の'schema'フィールドが無効です（空でない文字列を指定してください）",
       "contextTooLarge": "contextが大きすぎます（{size}KB、上限{maximum}KB）",
       "ignoringContext": "contextフィールドを無視します",
@@ -973,8 +974,18 @@
       "profileLockShadowedByOverride": "注: ロックされたプロファイル '{profile}' は、このプロジェクトの workflows オーバーライドにより無効化されています。",
       "profileLockCustom": "警告: 'custom' はロックできるプロファイルではありません。ユーザー全体のプロファイルを代わりに使用します。",
       "profileLockUnresolvable": "警告: ロックされたプロファイル '{profile}' を解決できませんでした（{detail}）。ユーザー全体のプロファイルを代わりに使用します。",
-      "userWideProfileUnresolvable": "警告: ユーザー全体のプロファイル '{profile}' を解決できませんでした（{detail}）。デフォルトの 'full' プロファイルを代わりに使用します。"
+      "userWideProfileUnresolvable": "警告: ユーザー全体のプロファイル '{profile}' を解決できませんでした（{detail}）。デフォルトの 'full' プロファイルを代わりに使用します。",
+      "deprecatedArchiveDestination": "'archive.destination' は非推奨になり、保存先を選択しなくなりました：アーカイブの記帳は常に計画ルートに配置されます。このキーを削除してください。既存のアーカイブは 'rasen archive relocate --to in-repo' で計画ルートに集約できます。"
     }
+  },
+  "storeIdentityMigration": {
+    "upgraded": "{count} 件の store をアップグレードしました：",
+    "skipped": "{count} 件の store をスキップしました：",
+    "alreadyIdentified": "{count} 件の store は既に永続 ID を持っています。",
+    "rekeyed": "マシンの store レジストリを永続 ID で再キー化しました。",
+    "rekeyBlocked": "レジストリの再キー化が以下の store によりブロックされています：{stores}。",
+    "allIdentified": "登録済みのすべての store が永続 ID を持っています。",
+    "suggestedCommit": "{repo} でこれらのファイルをコミットしてください：{command}"
   },
   "completion": {
     "ui": {
@@ -1286,14 +1297,32 @@
             },
             "project": {
               "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+            },
+            "keep-ephemera": {
+              "description": "完全な安全検査を維持しながら、すべての ephemera ファイルを保持します"
+            },
+            "dry-run": {
+              "description": "計画されたすべてのアーカイブ操作をプレビューし、何も実行しません"
+            },
+            "save-plan": {
+              "description": "正確なプレビュー計画を保存し、不透明な適用トークンを出力します"
+            },
+            "apply-plan": {
+              "description": "再計画せず、保存済みトークンの正確な計画を適用または再開します"
+            },
+            "intent-template": {
+              "description": "ファイルを変更せずに、完全なアーカイブ意図テンプレートを JSON で出力します"
+            },
+            "intent-file": {
+              "description": "厳密に検証された完全なアーカイブ意図を指定ファイルから読み込みます"
             }
           },
           "commands": {
             "relocate": {
-              "description": "既存のアーカイブ済み変更を移動し、archive.destination を同時に切り替えます",
+              "description": "既存のアーカイブ済み変更を planning root または store に集約します（設定は書き込みません）",
               "options": {
                 "to": {
-                  "description": "移動先: in-repo、external、または store"
+                  "description": "移動先: in-repo または store（external は廃止）"
                 },
                 "dry-run": {
                   "description": "移動計画を表示し、何も変更しません"
@@ -1484,6 +1513,9 @@
                 "apply": {
                   "description": "計画を実行します"
                 },
+                "all": {
+                  "description": "すべての登録済みstoreの識別子を一括アップグレードします"
+                },
                 "json": {
                   "description": "JSONで出力します"
                 }
@@ -1521,7 +1553,7 @@
                   "description": "取り込み先のストア"
                 },
                 "archive": {
-                  "description": "アーカイブの扱い: move（デフォルト）、leave、または external"
+                  "description": "アーカイブの扱い: move（デフォルト）または leave"
                 },
                 "dry-run": {
                   "description": "移動計画を表示し、何も変更しません"
@@ -2541,10 +2573,10 @@
           }
         },
         "work": {
-          "description": "machine homeの作業ディレクトリを保守します（旧リポジトリ内一時成果物を移行）",
+          "description": "旧machine homeの作業ディレクトリを保守します",
           "commands": {
             "migrate": {
-              "description": "旧リポジトリ内の一時成果物（run-state、handoff、reports、ship-log）をmachine homeへ移行します",
+              "description": "旧machine homeの状態（run-state、handoff、reports、ship-log）をplanning rootとexecution rootへ移行します",
               "options": {
                 "change": {
                   "description": "1件の進行中またはアーカイブ済み変更だけを対象にします"
@@ -2552,14 +2584,20 @@
                 "dry-run": {
                   "description": "プレビューのみ行い、ファイルを移動しません"
                 },
-                "include-tracked": {
-                  "description": "Git管理中の一時成果物も移動し、削除は未コミットのまま残します"
+                "store": {
+                  "description": "Store を計画ルートとして選択"
+                },
+                "project": {
+                  "description": "登録済みプロジェクトをすべての移行ルートとして選択"
                 },
                 "json": {
                   "description": "JSONで出力します（非対話、実行には--yesが必要）"
                 },
                 "yes": {
                   "description": "確認プロンプトを省略します（--jsonでの実行に必須）"
+                },
+                "discard-absorbed-conclusions": {
+                  "description": "handoffまたはevidenceによって吸収されたと確認したmachine-root結論ディレクトリを削除します（デフォルトは保持）"
                 }
               }
             }
@@ -2568,6 +2606,41 @@
         "agent": {
           "description": "ベースエージェントの実行時状態を検査・制御します",
           "commands": {
+            "dispatch": {
+              "description": "構造化された Claude print-mode worker をディスパッチ",
+              "options": {
+                "runtime": {
+                  "description": "ワーカー runtime（claude）"
+                },
+                "prompt-file": {
+                  "description": "完全なワーカープロンプトを含む UTF-8 ファイル"
+                },
+                "contract": {
+                  "description": "構造化結果契約: leaf または evaluate"
+                },
+                "sandbox": {
+                  "description": "権限: read-only または workspace-write"
+                },
+                "model": {
+                  "description": "Claude model override"
+                },
+                "effort": {
+                  "description": "Claude effort: low, medium, high, xhigh, max"
+                },
+                "cwd": {
+                  "description": "ワーカーの作業ディレクトリ"
+                },
+                "timeout-ms": {
+                  "description": "タイムアウト（ミリ秒）"
+                },
+                "resume": {
+                  "description": "再開する正確な Claude session ID"
+                },
+                "json": {
+                  "description": "機械可読 receipt を1件出力"
+                }
+              }
+            },
             "context": {
               "description": "記録済み使用量からtranscriptのcontext window使用率を報告します",
               "options": {

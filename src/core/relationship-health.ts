@@ -255,22 +255,19 @@ export interface MachineHomeHealth {
    * verified "not registered" fact. */
   error?: { message: string; fix?: string };
   /**
-   * Legacy in-repo T3 ephemera eligible for `rasen work migrate`
-   * (`migrate-legacy-ephemera` task 3.1, review m1). Present only when the
-   * total is greater than zero — a clean project omits this entirely
-   * rather than reporting a zero count. `untracked`/`tracked` split the
-   * total so the hint never implies the suggested command will move
-   * everything when most of it is tracked (needs `--include-tracked`).
-   * `splitUnavailable` is true when the split itself could not be
-   * determined (non-git root, or the git query failed) — `total` is still
+   * Legacy machine-home state eligible for `rasen work migrate`
+   * (inverted direction). Present only when the total is greater than zero
+   * — a clean project omits this entirely rather than reporting a zero
+   * count. `reports`/`handoff`/`runState` break down the total by file type
+   * so the hint shows what the suggested command will actually do.
    * accurate; `untracked`/`tracked` are both 0 and must not be read as
    * "nothing tracked."
    */
   migratableEphemera?: {
     total: number;
-    untracked: number;
-    tracked: number;
-    splitUnavailable: boolean;
+    reports: number;
+    handoff: number;
+    runState: number;
     hint: string;
   };
   /**
@@ -337,7 +334,7 @@ export interface InspectRelationshipsInput {
   /** Set when the machine registry could not be read (MAJOR-2). */
   machineHomeError?: { message: string; fix?: string };
   /** Migratable-legacy-ephemera counts (read-only scan; never computed for an unregistered project). */
-  migratableEphemera?: { total: number; untracked: number; tracked: number; splitUnavailable: boolean };
+  migratableEphemera?: { total: number; reports: number; handoff: number; runState: number; unavailable: boolean };
   /** Machine-root relocation probe results (`checkMachineRootRelocation`), machine-wide, not just this project. */
   machineRootRelocation?: Array<{ path: string; target: string; targetHasContent: boolean }>;
   /**
@@ -519,13 +516,13 @@ export function inspectRelationships(input: InspectRelationshipsInput): Relation
     dangling: input.danglingProjectEntries ?? [],
     worktreeDuplicates: input.worktreeDuplicateEntries ?? [],
     ...(input.machineHomeError ? { error: input.machineHomeError } : {}),
-    ...(input.migratableEphemera && input.migratableEphemera.total > 0
+    ...(input.migratableEphemera && !input.migratableEphemera.unavailable && input.migratableEphemera.total > 0
       ? {
           migratableEphemera: {
             total: input.migratableEphemera.total,
-            untracked: input.migratableEphemera.untracked,
-            tracked: input.migratableEphemera.tracked,
-            splitUnavailable: input.migratableEphemera.splitUnavailable,
+            reports: input.migratableEphemera.reports,
+            handoff: input.migratableEphemera.handoff,
+            runState: input.migratableEphemera.runState,
             hint: 'rasen work migrate',
           },
         }

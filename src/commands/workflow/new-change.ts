@@ -11,7 +11,7 @@ import ora from 'ora';
 import path from 'path';
 import { createChange, validateChangeName } from '../../utils/change-utils.js';
 import { formatChangeLocation } from '../../core/planning-home.js';
-import { resolveChangeWorkDir } from '../../core/change-work.js';
+import { ephemeraDir, resolveExecutionRoot } from '../../core/file-placement.js';
 import {
   freezeProductionPreparedPipelineRegistry,
   initializeRunState,
@@ -187,9 +187,16 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
       );
     }
 
+    // Run-state is ephemera: it lands in the EXECUTION root (design D3), which
+    // is per-worktree by construction. The previous machine-home mint made two
+    // worktrees of one project share a run-state path, so the second worktree
+    // failed with "Run-state already exists" for a change it had never created.
     const initialized = pipeline
       ? initializeRunState(
-          (await resolveChangeWorkDir(projectRoot, name, { ensure: true })) ?? result.changeDir,
+          ephemeraDir(
+            resolveExecutionRoot(projectRoot, { storeSelected: isStoreSelectedRoot(root) }),
+            name
+          ),
           pipeline
         )
       : null;

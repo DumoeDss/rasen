@@ -4,6 +4,7 @@ import {
   bucketPipelineStageOverrides,
   resolveMaskedStageGate,
   resolveEffectiveStage,
+  resolvePipelineExecutionPlan,
   resolveStageRuntimeConfig,
   resolveStageHandoffConfig,
   resolvePipelineRoleRuntimes,
@@ -233,7 +234,32 @@ stages:
     expect(resolved.reviewer).toEqual({
       runtime: 'claude',
       source: 'declaration',
-      dispatchMode: 'unsupported',
+      dispatchMode: 'exec-bridge',
+      bridge: 'claude-print',
     });
   });
+});
+
+describe('resolvePipelineExecutionPlan bridge routing by config scope', () => {
+  it.each(['project', 'store', 'global'] as const)(
+    'routes a %s runtime instance through claude-print on a Codex host',
+    (scope) => {
+      const overrides: PipelineStageOverrides = {
+        ...emptyOverrides,
+        runtimes: new Map([
+          ['planner', { value: 'claude' as const, scope }],
+        ]),
+      };
+      const plan = resolvePipelineExecutionPlan(PIPELINE, {
+        host: { runtime: 'codex', source: 'codex-thread-id' },
+        overrides,
+      });
+      expect(plan.stages.find((candidate) => candidate.id === 'propose')).toMatchObject({
+        runtime: 'claude',
+        runtimeSource: `stage-override-${scope}`,
+        dispatchMode: 'exec-bridge',
+        bridge: 'claude-print',
+      });
+    }
+  );
 });

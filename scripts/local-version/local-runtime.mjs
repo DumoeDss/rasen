@@ -258,6 +258,10 @@ function pnpmIdentity(source) {
   const match = typeof declared === 'string' ? /^pnpm@(.+)$/.exec(declared) : null;
   if (match) return match[1];
 
+  const userAgent = process.env.npm_config_user_agent ?? '';
+  const userAgentMatch = /(?:^|\s)pnpm\/([^\s]+)/.exec(userAgent);
+  if (userAgentMatch) return userAgentMatch[1];
+
   const packageRoots = [source.sourceRoot, path.join(source.sourceRoot, 'packages', 'ui')];
   const needsPnpm = packageRoots.some((packageRoot, index) => {
     const manifest = index === 0 ? source.cliManifest : source.uiManifest;
@@ -696,8 +700,18 @@ async function main() {
   }
 }
 
+function canonicalPathIdentity(value) {
+  let identity;
+  try {
+    identity = fs.realpathSync.native(value);
+  } catch {
+    identity = path.resolve(value);
+  }
+  return process.platform === 'win32' ? identity.toLowerCase() : identity;
+}
+
 const isEntryPoint = process.argv[1]
-  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  && canonicalPathIdentity(process.argv[1]) === canonicalPathIdentity(fileURLToPath(import.meta.url));
 
 if (isEntryPoint) {
   await main();

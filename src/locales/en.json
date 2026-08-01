@@ -499,9 +499,10 @@
       "openFindings": "Open findings: {count} (resolve before ship)",
       "legacySkillHeading": "Legacy skill IDs in pipeline '{pipeline}' (update the pipeline yaml):",
       "legacySkillEntry": "  stage {stage}: {from} -> {to}",
-      "workerHandleWarning": "Worker handle warning: stage '{stage}' worker has no durable handle (recorded: {recorded}); record agentId/transcript on dispatch.",
+      "workerHandleWarning": "Worker handle warning: stage '{stage}' worker has no durable handle (recorded: {recorded}); record agentId/sessionId/transcript/threadId on dispatch.",
       "duplicateRunStateKey": "Duplicate run-state key: '{key}' repeated at {path} (JSON.parse keeps the last value).",
       "resumeHandles": "Resume handles available (worker sessions/transcripts): {stages}",
+      "resumeClaudeSession": "Claude bridge session for stage '{stage}': {sessionId} (cwd: {cwd})",
       "sessionHandoff": "Session handoff (generation {generation}): {path}",
       "gatePolicy": "Gate policy: {effective} ({source})",
       "executionBinding": "Execution checkout: {project} ({path})",
@@ -938,7 +939,7 @@
       "invalidReferenceRemotes": "Some 'references' remotes are not non-empty strings; the ids are kept without a clone source",
       "invalidStoreMemberships": "Invalid 'storeMemberships' field in config (must be an array of store references)",
       "invalidStoreMembershipEntries": "Some 'storeMemberships' entries are invalid; ignoring the unusable entries and fields",
-      "storeMembershipsWithoutIdentity": "Some 'storeMemberships' entries name a store only by display name; run 'rasen store upgrade-identity <store> --apply' so the hint survives a rename",
+      "storeMembershipsWithoutIdentity": "Some 'storeMemberships' entries name a store only by display name; run 'rasen update' so the hint survives a rename",
       "invalidSchema": "Invalid 'schema' field in config (must be non-empty string)",
       "contextTooLarge": "Context too large ({size}KB, limit: {maximum}KB)",
       "ignoringContext": "Ignoring context field",
@@ -973,8 +974,18 @@
       "profileLockShadowedByOverride": "Note: the locked profile '{profile}' is shadowed by this project's workflows override.",
       "profileLockCustom": "Warning: 'custom' cannot be a locked profile; using the user-wide profile instead.",
       "profileLockUnresolvable": "Warning: locked profile '{profile}' could not be resolved ({detail}); using the user-wide profile instead.",
-      "userWideProfileUnresolvable": "Warning: user-wide profile '{profile}' could not be resolved ({detail}); using the default 'full' profile instead."
+      "userWideProfileUnresolvable": "Warning: user-wide profile '{profile}' could not be resolved ({detail}); using the default 'full' profile instead.",
+      "deprecatedArchiveDestination": "'archive.destination' is deprecated and no longer selects a destination: archive bookkeeping always lands in the planning root. Remove the key; run 'rasen archive relocate --to in-repo' to consolidate existing archives."
     }
+  },
+  "storeIdentityMigration": {
+    "upgraded": "Upgraded {count} store(s):",
+    "skipped": "Skipped {count} store(s):",
+    "alreadyIdentified": "{count} store(s) already carry a permanent identity.",
+    "rekeyed": "Re-keyed the machine store registry by permanent identity.",
+    "rekeyBlocked": "Registry re-key blocked by: {stores}.",
+    "allIdentified": "All registered stores carry a permanent identity.",
+    "suggestedCommit": "Commit these files in {repo}: {command}"
   },
   "completion": {
     "ui": {
@@ -1286,14 +1297,32 @@
             },
             "project": {
               "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+            },
+            "keep-ephemera": {
+              "description": "Preserve all ephemera files while retaining complete safety inspection"
+            },
+            "dry-run": {
+              "description": "Preview all planned archive actions without executing anything"
+            },
+            "save-plan": {
+              "description": "Save the exact previewed archive plan and output an opaque apply token"
+            },
+            "apply-plan": {
+              "description": "Apply or resume the exact saved archive plan without replanning"
+            },
+            "intent-template": {
+              "description": "Output a complete archive intent template as JSON without changing files"
+            },
+            "intent-file": {
+              "description": "Read a complete, strictly validated archive intent from the specified file"
             }
           },
           "commands": {
             "relocate": {
-              "description": "Move existing archived changes to a destination and flip archive.destination together",
+              "description": "Consolidate existing archived changes into the planning root or a store (no configuration is written)",
               "options": {
                 "to": {
-                  "description": "Target destination: in-repo, external, or store"
+                  "description": "Target: in-repo or store (external is retired)"
                 },
                 "dry-run": {
                   "description": "Print the move plan and change nothing"
@@ -1484,6 +1513,9 @@
                 "apply": {
                   "description": "Write the plan"
                 },
+                "all": {
+                  "description": "Upgrade every registered store's identity in a batch"
+                },
                 "json": {
                   "description": "Output as JSON"
                 }
@@ -1521,7 +1553,7 @@
                   "description": "Target store to adopt the project into (must already be registered)"
                 },
                 "archive": {
-                  "description": "Archive handling: move (default), leave, or external"
+                  "description": "Archive handling: move (default) or leave"
                 },
                 "dry-run": {
                   "description": "Print the full move plan and change nothing"
@@ -2541,10 +2573,10 @@
           }
         },
         "work": {
-          "description": "Machine-home work-directory maintenance (migrate legacy in-repo ephemera)",
+          "description": "Legacy machine-home work-directory maintenance",
           "commands": {
             "migrate": {
-              "description": "Migrate legacy in-repo process ephemera (run-state, handoff, reports, ship-log) into the machine home",
+              "description": "Migrate legacy machine-home state (run-state, handoff, reports, ship-log) into planning and execution roots",
               "options": {
                 "change": {
                   "description": "Scope to one active or archived change"
@@ -2552,14 +2584,20 @@
                 "dry-run": {
                   "description": "Preview only; never move files"
                 },
-                "include-tracked": {
-                  "description": "Also move git-tracked ephemera, leaving the deletions uncommitted"
+                "store": {
+                  "description": "Use the selected Store as the planning root"
+                },
+                "project": {
+                  "description": "Use the selected registered project as every migration root"
                 },
                 "json": {
                   "description": "Output as JSON (non-interactive; requires --yes to execute)"
                 },
                 "yes": {
                   "description": "Skip the confirmation prompt (required to execute in --json mode)"
+                },
+                "discard-absorbed-conclusions": {
+                  "description": "Delete machine-root conclusion directories you have confirmed are absorbed by handoff or evidence (preserved by default)"
                 }
               }
             }
@@ -2568,6 +2606,41 @@
         "agent": {
           "description": "Inspect and control base agent runtime state",
           "commands": {
+            "dispatch": {
+              "description": "Dispatch a structured Claude print-mode worker",
+              "options": {
+                "runtime": {
+                  "description": "Worker runtime (claude)"
+                },
+                "prompt-file": {
+                  "description": "UTF-8 file containing the complete worker prompt"
+                },
+                "contract": {
+                  "description": "Structured result contract: leaf or evaluate"
+                },
+                "sandbox": {
+                  "description": "Worker permissions: read-only or workspace-write"
+                },
+                "model": {
+                  "description": "Claude model override"
+                },
+                "effort": {
+                  "description": "Claude effort: low, medium, high, xhigh, or max"
+                },
+                "cwd": {
+                  "description": "Worker working directory"
+                },
+                "timeout-ms": {
+                  "description": "Bounded worker timeout in milliseconds"
+                },
+                "resume": {
+                  "description": "Exact Claude session ID to resume"
+                },
+                "json": {
+                  "description": "Output one machine-readable receipt"
+                }
+              }
+            },
             "context": {
               "description": "Report context-window occupancy of a transcript from its recorded usage",
               "options": {

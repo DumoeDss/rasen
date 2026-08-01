@@ -365,12 +365,17 @@ const archiveCommand = program
   .command('archive [change-name]')
   .description('')
   .option('-y, --yes', '')
-  .option('--confirm-prune', '')
   .option('--skip-specs', '')
   .option('--no-validate', '')
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--keep-ephemera', '')
+  .option('--dry-run', '')
+  .option('--save-plan', '')
+  .option('--apply-plan <token>', '')
+  .option('--intent-template', '')
+  .option('--intent-file <path>', '')
   .addOption(hiddenStorePathOption())
   .action(async (changeName?: string, options?: ArchiveOptions) => {
     try {
@@ -973,6 +978,51 @@ pipelineCmd
 const agentCmd = program
   .command('agent')
   .description('');
+
+agentCmd
+  .command('dispatch')
+  .description('')
+  .option('--runtime <runtime>', '')
+  .option('--prompt-file <path>', '')
+  .option('--contract <contract>', '')
+  .option('--sandbox <sandbox>', '')
+  .option('--model <model>', '')
+  .option('--effort <effort>', '')
+  .option('--cwd <directory>', '')
+  .option('--timeout-ms <ms>', '', (value) => Number(value))
+  .option('--resume <session-id>', '')
+  .option('--json', '')
+  .action(async (options: {
+    runtime?: string;
+    promptFile?: string;
+    contract?: string;
+    sandbox?: string;
+    model?: string;
+    effort?: string;
+    cwd?: string;
+    timeoutMs?: number;
+    resume?: string;
+    json?: boolean;
+  }) => {
+    try {
+      await new AgentCommand().dispatch(options);
+    } catch (error) {
+      console.log(
+        JSON.stringify({
+          ok: false,
+          runtime: options.runtime ?? 'unknown',
+          dispatchMode: 'exec-bridge',
+          bridge: 'claude-print',
+          ...(options.contract ? { contract: options.contract } : {}),
+          failure: {
+            kind: 'invalid-input',
+            message: error instanceof Error ? error.message : String(error),
+          },
+        })
+      );
+      process.exitCode = 1;
+    }
+  });
 
 agentCmd
   .command('context')

@@ -104,7 +104,7 @@ describe('host x target dispatch routes', () => {
   it.each([
     ['claude', 'claude', 'native'],
     ['claude', 'codex', 'exec-bridge'],
-    ['codex', 'claude', 'unsupported'],
+    ['codex', 'claude', 'exec-bridge'],
     ['codex', 'codex', 'native'],
     ['unknown', 'claude', 'legacy-fallback'],
     ['unknown', 'codex', 'legacy-fallback'],
@@ -114,5 +114,18 @@ describe('host x target dispatch routes', () => {
       target,
       mode,
     });
+  });
+
+  it('identifies each cross-host bridge explicitly', () => {
+    expect(resolveDispatchRoute('claude', 'codex')).toMatchObject({
+      mode: 'exec-bridge',
+      bridge: 'codex-exec',
+    });
+    expect(resolveDispatchRoute('codex', 'claude')).toMatchObject({
+      mode: 'exec-bridge',
+      bridge: 'claude-print',
+    });
+    expect(resolveDispatchRoute('claude', 'claude')).not.toHaveProperty('bridge');
+    expect(resolveDispatchRoute('codex', 'codex')).not.toHaveProperty('bridge');
   });
 });

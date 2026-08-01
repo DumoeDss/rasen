@@ -581,6 +581,54 @@ export class UpdateCommand {
     if (!this.onlyThis) {
       await this.offerMultiProjectUpdate(resolvedProjectPath);
     }
+
+    // 18. Store identity auto-migration (change store-identity-auto-migrate):
+    // when --only-this is unset, run a best-effort batch migration that writes
+    // permanent identities into every registered store's metadata, backfills
+    // storeMemberships hints, and triggers the registry re-key. This silences
+    // the per-parse storeMembershipsWithoutIdentity warning after an update.
+    // Gated on !this.onlyThis so the recursive per-project calls (which set
+    // onlyThis:true) skip it — the migration runs exactly once, in the
+    // top-level invocation.
+    if (!this.onlyThis) {
+      await this.runStoreIdentityMigration(resolvedProjectPath);
+    }
+  }
+
+  /**
+   * Runs the batch store-identity migration as a best-effort step at the end
+   * of `rasen update`. Never aborts the update on failure — emits at most a
+   * yellow warning pointing at the manual command. Mirrors the
+   * `refreshProjectVersionCache` / `offerMultiProjectUpdate` best-effort
+   * discipline.
+   */
+  private async runStoreIdentityMigration(projectPath: string): Promise<void> {
+    try {
+      const { migrateAllStoreIdentities, formatStoreIdentityMigrationSummary } =
+        await import('./store/identity-migration.js');
+      const result = await migrateAllStoreIdentities({
+        apply: true,
+        projectRoot: projectPath,
+      });
+
+      const lines = formatStoreIdentityMigrationSummary(result);
+      // A single dim line when nothing needed migration; otherwise the summary.
+      if (lines.length === 1 && lines[0]?.includes('All registered stores')) {
+        console.log(chalk.dim(lines[0]));
+      } else if (lines.length > 0) {
+        console.log();
+        console.log(lines.join('\n'));
+      }
+    } catch (error) {
+      // Best-effort: never abort the update.
+      console.log(
+        chalk.yellow(
+          `Warning: store identity migration could not complete (${
+            error instanceof Error ? error.message : String(error)
+          }). Run 'rasen store upgrade-identity --all --apply' manually.`
+        )
+      );
+    }
   }
 
   /**

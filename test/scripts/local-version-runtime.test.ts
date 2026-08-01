@@ -38,6 +38,18 @@ function makeTemporaryRoot(): string {
   return root;
 }
 
+function isWithinExistingPath(parent: string, candidate: string): boolean {
+  const normalize = (value: string) => {
+    const realPath = fs.realpathSync.native(value);
+    return process.platform === 'win32' ? realPath.toLowerCase() : realPath;
+  };
+  const relative = path.relative(normalize(parent), normalize(candidate));
+  return relative !== ''
+    && relative !== '..'
+    && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative);
+}
+
 function writeJson(filePath: string, value: unknown): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
@@ -86,11 +98,16 @@ function createPackableSource(sourceRoot: string, version = '0.2.0-fixture.1'): 
   fs.writeFileSync(path.join(uiRoot, 'dist', 'index.html'), '<main>fixture UI</main>\n');
 }
 
-function runPrepare(sourceRoot: string, projectRoot: string, cacheRoot: string) {
+function runPrepare(
+  sourceRoot: string,
+  projectRoot: string,
+  cacheRoot: string,
+  scriptPath = runtimeScript,
+) {
   return spawnSync(
     process.execPath,
     [
-      runtimeScript,
+      scriptPath,
       'prepare',
       '--source',
       sourceRoot,
@@ -172,6 +189,41 @@ describe('local version prepare command', () => {
       },
     });
     expect(fs.existsSync(cacheRoot)).toBe(false);
+  });
+
+  test('runs prepare when the runtime entrypoint is reached through a directory alias', () => {
+    const root = makeTemporaryRoot();
+    const sourceRoot = path.join(root, 'mismatched source');
+    const projectRoot = path.join(root, 'empty project');
+    const cacheRoot = path.join(root, 'cache');
+    const scriptAlias = path.join(root, 'runtime script alias');
+    fs.mkdirSync(projectRoot, { recursive: true });
+    fs.symlinkSync(
+      path.dirname(runtimeScript),
+      scriptAlias,
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    writeJson(path.join(sourceRoot, 'package.json'), {
+      name: '@atelierai/rasen',
+      version: '0.2.0-test.1',
+    });
+    writeJson(path.join(sourceRoot, 'packages', 'ui', 'package.json'), {
+      name: '@atelierai/rasen-ui',
+      version: '0.2.0-test.2',
+    });
+
+    const result = runPrepare(
+      sourceRoot,
+      projectRoot,
+      cacheRoot,
+      path.join(scriptAlias, 'local-runtime.mjs'),
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(JSON.parse(result.stderr.trim().split(/\r?\n/).at(-1)!)).toMatchObject({
+      error: { code: 'VERSION_MISMATCH', phase: 'resolve' },
+    });
   });
 
   test('reports a failed source build with stable command diagnostics', () => {
@@ -449,9 +501,9 @@ describe('local version prepare command', () => {
             WorkingDirectory: fs.realpathSync.native(projectRoot),
           },
         });
-        expect(result.Child.Home.startsWith(cacheRoot)).toBe(true);
+        expect(isWithinExistingPath(cacheRoot, result.Child.Home)).toBe(true);
         expect(Number(result.Child.Port)).toBeGreaterThanOrEqual(20_000);
-        expect(result.Child.Command.startsWith(cacheRoot)).toBe(true);
+        expect(isWithinExistingPath(cacheRoot, result.Child.Command)).toBe(true);
       }
       expect(fs.readdirSync(projectRoot)).toEqual([]);
     },

@@ -174,9 +174,6 @@ const COMMANDS: readonly CommandDefinition[] = [
         short: 'y',
       },
       {
-        name: 'confirm-prune',
-      },
-      {
         name: 'skip-specs',
       },
       {
@@ -184,6 +181,26 @@ const COMMANDS: readonly CommandDefinition[] = [
       },
       {
         name: 'json',
+      },
+      {
+        name: 'keep-ephemera',
+      },
+      {
+        name: 'dry-run',
+      },
+      {
+        name: 'save-plan',
+      },
+      {
+        name: 'apply-plan',
+        takesValue: true,
+      },
+      {
+        name: 'intent-template',
+      },
+      {
+        name: 'intent-file',
+        takesValue: true,
       },
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
@@ -355,7 +372,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       {
         name: 'upgrade-identity',
         acceptsPositional: true,
-        positionals: [{ name: 'id' }],
+        positionals: [{ name: 'id', optional: true }],
         flags: [
           {
             name: 'uid',
@@ -366,6 +383,9 @@ const COMMANDS: readonly CommandDefinition[] = [
           },
           {
             name: 'apply',
+          },
+          {
+            name: 'all',
           },
           COMMON_FLAGS.json,
         ],
@@ -404,7 +424,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           {
             name: 'archive',
             takesValue: true,
-            completionValues: ['move', 'leave', 'external'],
+            completionValues: ['move', 'leave'],
           },
           { name: 'dry-run', },
           { name: 'verify-hash', },
@@ -1398,7 +1418,15 @@ const COMMANDS: readonly CommandDefinition[] = [
             name: 'dry-run',
           },
           {
-            name: 'include-tracked',
+            name: 'discard-absorbed-conclusions',
+          },
+          {
+            name: 'store',
+            takesValue: true,
+          },
+          {
+            name: 'project',
+            takesValue: true,
           },
           {
             name: 'json',
@@ -1414,6 +1442,21 @@ const COMMANDS: readonly CommandDefinition[] = [
     name: 'agent',
     flags: [],
     subcommands: [
+      {
+        name: 'dispatch',
+        flags: [
+          { name: 'runtime', takesValue: true },
+          { name: 'prompt-file', takesValue: true },
+          { name: 'contract', takesValue: true },
+          { name: 'sandbox', takesValue: true },
+          { name: 'model', takesValue: true },
+          { name: 'effort', takesValue: true },
+          { name: 'cwd', takesValue: true },
+          { name: 'timeout-ms', takesValue: true },
+          { name: 'resume', takesValue: true },
+          COMMON_FLAGS.json,
+        ],
+      },
       {
         name: 'context',
         flags: [

@@ -68,11 +68,13 @@ export type DispatchMode =
   | 'unsupported'
   | 'legacy-fallback';
 
+export type DispatchBridge = 'codex-exec' | 'claude-print';
+
 export interface DispatchRoute {
   host: HostRuntime;
   target: DispatchRuntime;
   mode: DispatchMode;
-  bridge?: 'codex-exec';
+  bridge?: DispatchBridge;
 }
 
 type KnownHostRuntime = Exclude<HostRuntime, 'unknown'>;
@@ -83,7 +85,7 @@ const KNOWN_DISPATCH_ROUTES = {
     codex: { mode: 'exec-bridge', bridge: 'codex-exec' },
   },
   codex: {
-    claude: { mode: 'unsupported' },
+    claude: { mode: 'exec-bridge', bridge: 'claude-print' },
     codex: { mode: 'native' },
   },
 } as const satisfies Readonly<

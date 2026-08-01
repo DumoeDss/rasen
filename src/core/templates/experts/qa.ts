@@ -85,7 +85,7 @@ mkdir -p "$REPORT_DIR/screenshots"
 
 Before falling back to git diff heuristics, check for richer test plan sources:
 
-1. **Project-scoped test plans:** Check the project's registry-backed documents directory for recent \`*-test-plan-*.md\` files for this repo
+1. **Project-scoped test plans:** Check the planning root's design-docs directory for recent \`*-test-plan-*.md\` files for this repo
    ${PROJECT_DOCS_DIR_RESOLUTION}
    \`\`\`bash
    ls -t "$DOCS_DIR"/*-test-plan-*.md 2>/dev/null | head -1
@@ -271,7 +271,7 @@ After all fixes are applied:
 
 ## Phase 10: Report
 
-**Dispatched and explicit report-only/non-UI modes:** write one report document to the mode-aware \`REPORT_PATH\` resolved during Setup, each issue tagged with a canonical severity; skip the standalone dated report and project-docs paths. With an active change this is exactly \`qa-report.md\` in its work directory (sticky-legacy fallback: change directory); supporting screenshots stay under the change-owned \`qa-evidence/screenshots/\`. Without an active change, explicit report-only mode uses the safe temporary \`qa-report.md\` path from Setup. Then return without fixes, commits, or fix questions.
+**Dispatched and explicit report-only/non-UI modes:** write one report document to the mode-aware \`REPORT_PATH\` resolved during Setup, each issue tagged with a canonical severity; skip the standalone dated report and project-docs paths. With an active change this is exactly \`qa-report.md\` in its evidence directory (the \`evidenceDir\` reported by the CLI; sticky-legacy: update a report that already lives in the legacy \`workDir\` or change directory); supporting screenshots stay under the change-owned \`qa-evidence/screenshots/\`. Without an active change, explicit report-only mode uses the safe temporary \`qa-report.md\` path from Setup. Then return without fixes, commits, or fix questions.
 
 **Default standalone mode.** Write the report to both local and project-scoped locations:
 

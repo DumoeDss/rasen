@@ -12,7 +12,7 @@ const VERIFY_ENHANCED_INSTRUCTIONS = `Enhanced verification — combines Rasen c
 
 ${STORE_SELECTION_GUIDANCE}
 
-Automatically adjusts review depth based on task size. Reports saved to the change's work directory (fallback: the change directory).
+Automatically adjusts review depth based on task size. Reports saved to the change's evidence directory (sticky-legacy fallback: the legacy work directory, then the change directory).
 
 ## When to Use
 
@@ -76,7 +76,7 @@ Report any inconsistencies found.
 
 ### 5. Save Reports
 
-Write reports to the change's work directory (resolve \`workDir\` from \`rasen status --change <name> --json\`; fall back to the change directory when it is absent or a report already lives there):
+Write reports to the change's evidence directory (\`evidenceDir\` from \`rasen status --change <name> --json\`; sticky-legacy: a file that already lives in the legacy \`workDir\` or the change directory is used in place):
 - \`review-report.md\` — code review findings
 - \`cso-report.md\` — security audit (if rasen-cso ran)
 - \`qa-report.md\` — QA findings (for either QA mode)
@@ -138,7 +138,7 @@ Display a summary with pass/fail status for each stage:
 
 - This command coexists with the original \`rasen-verify-change\` skill (pure artifact consistency check)
 - The enhanced version adds expert review layers on top of artifact checks
-- Reports written to the work directory are consumed by \`rasen-retain\` (report mode) and \`rasen-archive-change\`
+- Reports written to the evidence directory are consumed by \`rasen-retain\` (report mode) and \`rasen-archive-change\`
 - \`rasen-ship\` checks for verification reports before proceeding`;
 
 export function getVerifyEnhancedSkillTemplate(): SkillTemplate {

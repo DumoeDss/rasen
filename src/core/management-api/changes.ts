@@ -17,6 +17,7 @@ import { resolveProjectHome, type ProjectHome } from '../project-home.js';
 import { resolveRunStateLocation } from '../pipeline-registry/run-state.js';
 import { resolvePortfolioStateLocation } from '../pipeline-registry/portfolio-state.js';
 import { resolveGoalRunPath } from './runs.js';
+import { ephemeraDir } from '../file-placement.js';
 import type { ChangeLoadError, ChangeSummary, ChangesResponse } from './wire-types.js';
 
 export type ChangesResult =
@@ -97,11 +98,17 @@ export async function buildChangeSummary(
   const status = formatChangeStatus(context, { computeNextWorkflows: false });
 
   const taskProgress = await getTaskProgressForChange(changesDir, name, root);
-  const workDir = home ? home.workDir(name) : null;
+  // Sticky-legacy chain (`file-placement`): the execution root's ephemera
+  // directory first — `root` IS the execution root for a server-driven read —
+  // then the legacy machine-home work directory, then the change directory.
+  const locations = {
+    ephemeraDir: ephemeraDir(root, name),
+    workDir: home ? home.workDir(name) : null,
+  };
   const hasRunFiles =
-    resolveRunStateLocation(changeDir, workDir) !== null ||
-    resolvePortfolioStateLocation(changeDir, workDir) !== null ||
-    resolveGoalRunPath(changeDir, workDir) !== null;
+    resolveRunStateLocation(changeDir, locations) !== null ||
+    resolvePortfolioStateLocation(changeDir, locations) !== null ||
+    resolveGoalRunPath(changeDir, locations) !== null;
 
   const portfolio = portfolioOf(name, portfolioContainers);
   return {

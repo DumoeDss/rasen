@@ -42,7 +42,7 @@
   - **Tier A**：Claude Code + `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` → spawn 角色 worker + `SendMessage` 暖续聊（完全体；`SendMessage` **仅会话内**有效，跨重启走 §2.5 的 transcript 暖播种）。**`rasen init` / `update` 安装 Claude Code 时会自动把这个 flag 合并进项目 `.claude/settings.json`**（保留已有键、幂等、坏 JSON 不覆盖），所以默认就是 Tier A。
   - **Tier B**：有 spawn、无 agent-teams → 每阶段 fresh spawn，靠 change 目录 + run-state 冷重建上下文。
   - **Tier C**：无子 agent 能力 → 单上下文顺序执行（明确的兜底，**非**主路径）。
-- **状态在磁盘**：change 目录是持久黑板（阶段间靠产物交接）；LEAD 把进度记进 `rasen/changes/<id>/auto-run.json`（run-state），支撑中断续跑与可观测。
+- **状态在磁盘**：change 目录是持久黑板（阶段间靠产物交接）；LEAD 把进度记进 execution root 的 ephemera 目录下的 `auto-run.json`（run-state）——即 `<executionRoot>/.rasen/changes/<id>/ephemera/`，由 `rasen status --json` 以 `ephemeraDir` 报出——支撑中断续跑与可观测。已经落在旧位置的 run-state 文件继续留在原处。
 
 ### 2.2 流水线是数据：按任务选，从注册表取
 
@@ -136,8 +136,8 @@ rasen pipeline list --json                     # 列出 package/user/project 的
   - **仅当全部成立才并行**：① 任一方向都无依赖边、② 触及的能力/规格目录/文件无重叠、③ 宿主为 **Tier A**。满足条件的子 change 各起独立 worker 团队并发，**不设固定的并发上限**；Tier B/C 一律串行。
   - **独立性不确定 → 串行**（「宁可串行也不能乱并行」：并行需要*积极*的独立性证明，而非「没发现冲突」）。
 - **单层扇出（递归防护）。** `childPipeline` 必须解析到一条**不含 decompose** 的流水线（`validate` 强制），子流水线运行绝不会再 decompose。
-- **可观测 + 可续跑。** 父目录有一份 `portfolio-run.json`（拆分方案、子列表、依赖 DAG、每个子的执行模式/同批/流水线/状态、可运行前沿、顶层 `planner` 指针——persistent planner 跨子复用，见 §2.1），每个子仍各有 `auto-run.json`。`rasen pipeline resume <parent>` 从组合状态算出下一个可运行的子（`runnableChildren`），并单独报出 `interruptedChildren`（中断时停在 `in_progress` 的子——重启后**暖播种续跑**，不晾死）与 `escalatedChildren`（失败/升级、需人工）；某个子失败/升级时，停掉它的依赖链、保留已完成的独立子，连同前沿一起上报。
-- **跨子 worker 复用（暖复用 vs 退役）。** 依赖者直接消费前置的代码，所以刚写完这份代码的 implementer 就是依赖者最暖的 worker——前提是它还有余量。由流水线的 `reuse` 配置管控（`reuse: { planner, implementer: auto|never, threshold, roles }`，由 `resolvePipelineReuseConfig` 解析；默认 `{ auto, auto, 0.25 }`）。在**解锁依赖者的同一个 review-clean gate** 上，LEAD 探针前置 implementer 的 transcript（`rasen agent context --transcript`）：**≤ 解析出的 reuse 阈值** → 暖复用同一 worker（Tier A `SendMessage`），并带**污染防护条款**（前置的约定仅在依赖者自己的 proposal/design 沉默处成立——先读这些）；**>** → **retired-between-children 退役**（该 worker 写一份 handoff 文档，reason 为 `retired-between-children`，重心是跨 change 可迁移知识，`Remaining` 留空），再从「该文档 + LEAD 派工简报」双源播种一个新 implementer。复用要求**唯一暖前驱**——DAG 汇合点（依赖 >1 个前置的子）一律新开 worker，从各前置的 durable findings 多源播种。被复用的 worker 记录带上 `reusedFrom: <前置子 id>`。planner 复用由 `reuse.planner` 单独配置（`never` 时每次 propose 新开 planner，从 `planning-context.md` 播种）。范围护栏：设计级 fixer 排除（新鲜眼睛是其价值）；Tier B / Codex 走既有的暖播种 / `threadId` resume 阶梯降级；用户手动连续跑的无关 change 序列不在范围内。实现发现通过 worker `DONE` 契约的 **durable-findings** 条款前向回流（1-3 行，LEAD 原文转贴进下一个 planner 的派工）。
+- **可观测 + 可续跑。** 父 change 的 ephemera 目录下有一份 `portfolio-run.json`（拆分方案、子列表、依赖 DAG、每个子的执行模式/同批/流水线/状态、可运行前沿、顶层 `planner` 指针——persistent planner 跨子复用，见 §2.1），每个子仍各有 `auto-run.json`。`rasen pipeline resume <parent>` 从组合状态算出下一个可运行的子（`runnableChildren`），并单独报出 `interruptedChildren`（中断时停在 `in_progress` 的子——重启后**暖播种续跑**，不晾死）与 `escalatedChildren`（失败/升级、需人工）；某个子失败/升级时，停掉它的依赖链、保留已完成的独立子，连同前沿一起上报。
+- **跨子 worker 复用（暖复用 vs 退役）。** 依赖者直接消费前置的代码，所以刚写完这份代码的 implementer 就是依赖者最暖的 worker——前提是它还有余量。由流水线的 `reuse` 配置管控（`reuse: { planner, implementer: auto|never, threshold, roles }`，由 `resolvePipelineReuseConfig` 解析；默认 `{ auto, auto, 0.25 }`）。在**解锁依赖者的同一个 review-clean gate** 上，LEAD 探针前置 implementer 的 transcript（`rasen agent context --transcript`）：**≤ 解析出的 reuse 阈值** → 通过该路由自己的句柄（`SendMessage`、`followup_task`、Claude `sessionId + cwd` 或 Codex `threadId`）暖复用同一 worker，并带**污染防护条款**（前置的约定仅在依赖者自己的 proposal/design 沉默处成立——先读这些）；**>** → **retired-between-children 退役**（该 worker 写一份 handoff 文档，reason 为 `retired-between-children`，重心是跨 change 可迁移知识，`Remaining` 留空），再从「该文档 + LEAD 派工简报」双源播种一个新 implementer。复用要求**唯一暖前驱**——DAG 汇合点（依赖 >1 个前置的子）一律新开 worker，从各前置的 durable findings 多源播种。被复用的 worker 记录带上 `reusedFrom: <前置子 id>`。planner 复用由 `reuse.planner` 单独配置（`never` 时每次 propose 新开 planner，从 `planning-context.md` 播种）。范围护栏：设计级 fixer 排除（新鲜眼睛是其价值）；Tier B 或不可用的路由句柄走既有暖播种阶梯降级；用户手动连续跑的无关 change 序列不在范围内。实现发现通过 worker `DONE` 契约的 **durable-findings** 条款前向回流（1-3 行，LEAD 原文转贴进下一个 planner 的派工）。
 
 > 注：跨 change 的依赖 DAG 记在 `portfolio-run.json` 里，不依赖 `dependsOn`/`parent` 元数据；待 `add-change-stacking-awareness` 落地后，decompose 会额外写这些元数据并复用 `rasen change graph`。
 
@@ -398,7 +398,7 @@ rasen pipeline show small-feature --for-execution --json
 rasen pipeline show small-feature --for-execution --planner codex --reviewer codex --json
 ```
 
-输出顶层包含 `hostRuntime` / `hostRuntimeSource`，每个 stage 包含 `runtime`、`runtimeSource` 和 `dispatchMode`。单次调用覆盖显示为 `runtimeSource: invocation`，并在分发前完成宿主路由校验。
+输出顶层包含 `hostRuntime` / `hostRuntimeSource`，每个 stage 包含 `runtime`、`runtimeSource`、`dispatchMode` 和 `bridge`。单次调用覆盖显示为 `runtimeSource: invocation`，并在分发前完成宿主路由校验。
 
 显式选择仍然优先。runtime 解析顺序是：
 
@@ -411,13 +411,22 @@ rasen pipeline show small-feature --for-execution --planner codex --reviewer cod
 
 当前发布的路由矩阵：
 
-| 宿主 | 目标 worker | `dispatchMode` | 行为 |
+| 宿主 | 目标 worker | `dispatchMode` | bridge / 行为 |
 |---|---|---|---|
 | Claude | Claude | `native` | Task/subagent + `SendMessage` |
-| Claude | Codex | `exec-bridge` | 非交互 `codex exec`；预检最多探测一次 Codex CLI |
+| Claude | Codex | `exec-bridge` | `codex-exec`：非交互 `codex exec`；预检最多探测一次 Codex CLI |
 | Codex | Codex | `native` | Codex 原生协作工具；worker 的 final 会自动送达 LEAD |
-| Codex | Claude | `unsupported` | 预检失败；Rasen 不会悄悄改写显式 runtime |
+| Codex | Claude | `exec-bridge` | `claude-print`：通过 `rasen agent dispatch` 运行有界 Claude print 进程；预检最多探测一次 Claude Code CLI |
 | unknown | 旧版兼容目标 | `legacy-fallback` | 非致命告警；可设置 `RASEN_AGENT_RUNTIME=claude|codex` 明确宿主 |
+
+`claude-print` bridge 以 Claude Code CLI 2.1.220 为已验证前提，需要 `PATH` 中存在兼容的 `claude` 可执行文件。它通过 stdin 传入完整 prompt，禁用 Claude 委派/team 工具，并且只接受所选的严格结构化契约：
+
+```bash
+rasen agent dispatch --runtime claude --prompt-file <prompt.txt> \
+  --contract leaf --sandbox workspace-write --cwd <working-directory> --json
+```
+
+命令只输出一个 JSON receipt。成功 receipt 包含 `sessionId`、`cwd` 和已校验的 `result`。继续同一 worker 时必须精确传回 `--resume <sessionId> --cwd <cwd>`；没有“最新会话”回退，同一个 session 同时只允许一个 writer，彼此独立的 session 可并行。Claude bridge worker 是有界进程，不使用原生 `SendMessage`、agent parking 或 `rasen agent wait`。失败 receipt 会在 LEAD 决定重试、精确恢复或从持久制品重建之前，对 runtime 不可用、spawn/输入错误、session 占用、cwd 不匹配、超时、输出上限、非零退出、格式错误和契约违例进行分类。
 
 Codex 原生编排把 `wait_agent` 当作依赖 join，而不是 heartbeat：只有没有其他独立工作可做且关键路径依赖结果时才等待；使用一次较长、事件驱动的 wait，不反复进行短轮询。`send_message` 只用于中间协调，worker 的最终 `DONE` / `HANDOFF` 已会自动送达 LEAD。
 
@@ -429,13 +438,13 @@ Codex 原生编排把 `wait_agent` 当作依赖 join，而不是 heartbeat：只
 - `fixer`
 - `shipper`
 
-在 **Claude 宿主**中临时切换单次 `/rasen-auto` 调用（Claude → Codex 可通过 exec bridge 路由）：
+临时切换单次 `/rasen-auto` 的混合 runtime：
 
 ```text
 /rasen-auto --planner codex --reviewer codex --fixer claude <task>
 ```
 
-在 Codex 宿主中，任何 Claude worker 目标都不受支持；最终预检会直接拒绝，而不会悄悄替换成 Codex。
+在 Codex 宿主中，选择 Claude worker 会走 `claude-print`；如果 Claude Code CLI 不可用，最终预检会在分发前给出可执行的安装或 runtime 覆盖错误，而不会悄悄替换成 Codex。
 
 要把某个 role 固化到 pipeline，用 CLI 写入配置覆盖：
 
@@ -487,10 +496,11 @@ stages:
 run-state 会记录 `runtime` 和 `dispatchMode`，并且只记录所选路由真实返回的句柄：
 
 - Claude native 记录 `agentId`，以及宿主提供时的 `transcript`。
+- Claude exec-bridge 记录精确的 `sessionId` 和 `cwd`，以及实际返回的 transcript/model/sandbox/effort 元数据；绝不伪造原生 `agentId` 或 Codex `threadId`。
 - Codex native 记录原生协作工具返回的 `agentId`，绝不伪造 exec `threadId`。
 - Codex exec-bridge 记录 `threadId` 和 rollout `transcript`；exec 模式没有 `turnId`。
 
-缺少 `dispatchMode` 的旧记录仍可读取：Codex `threadId` 推断为 exec-bridge，原生 `agentId` 推断为 native；歧义记录会带告警保守降级，不会制造句柄。
+缺少 `dispatchMode` 的旧记录仍可读取：Claude `sessionId` 或 Codex `threadId` 推断为 exec-bridge，原生 `agentId` 推断为 native；歧义记录会带告警保守降级，不会制造句柄。
 
 ---
 

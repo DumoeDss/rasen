@@ -5,6 +5,7 @@
  * templates file into workflow-focused modules.
  */
 import type { SkillTemplate } from '../types.js';
+import { GENERATED_ARCHIVE_COMMAND_EXAMPLES } from '../../archive-consumer-invocation.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getBulkArchiveChangeSkillTemplate(): SkillTemplate {
@@ -43,7 +44,7 @@ ${STORE_SELECTION_GUIDANCE}
    a. **Artifact status** - Run \`rasen status --change "<name>" --json\`
       - Parse \`schemaName\`, \`artifacts\`, \`planningHome\`, \`changeRoot\`, \`artifactPaths\`, and \`actionContext\`
       - Note which artifacts are \`done\` vs other states
-      - Also record \`archive.destination\` (\`in-repo\` | \`external\` | \`prune\`) and \`archive.archiveDir\` (absent for \`prune\` or an unresolvable \`external\`) — one status call per change already happens, so no extra call is needed for this
+      - Also record \`archive.archiveDir\` (the planning root's archive directory, always present) and the change's \`evidenceDir\` — one status call per change already happens, so no extra call is needed for these
 
    b. **Task completion** - Read \`artifactPaths.tasks.existingOutputPaths\` from status JSON
       - Count \`- [ ]\` (incomplete) vs \`- [x]\` (complete)
@@ -126,41 +127,21 @@ ${STORE_SELECTION_GUIDANCE}
    Process changes in the determined order (respecting conflict resolution):
 
    a. **Sync specs** if delta specs exist:
-      - Use the rasen-sync-specs approach (agent-driven intelligent merge)
+      - Let the archive engine prepare and apply the intelligent spec merge
       - For conflicts, apply in resolved order
       - Track if sync was done
 
-   b. **Perform the archive (destination-aware, same branch and preconditions as \`rasen-archive-change\`)**:
+   b. **Invoke the authoritative archive engine once per confirmed change**:
 
-      For \`external\` and \`prune\`, both of which remove the repository's only copy of this change's review material, verify BEFORE bookkeeping, per change: the change directory must be BOTH clean AND tracked — \`git status --porcelain --ignored -- <changeRoot>\` empty (plain \`--porcelain\` without \`--ignored\` is NOT enough; gitignored content is invisible to it and would otherwise read as "clean" while never having been committed) AND \`git ls-files -- <changeRoot>\` non-empty (the directory must actually have committed content) — else fail that change with "commit the change directory first" (or "no content in git history — commit it first" when nothing is tracked) and continue with others. \`prune\` additionally needs a confirmation naming the deletion, SEPARATE from step 7's routine batch confirmation (call it out per-change explicitly — one consent must never silently authorize the other) — REFUSE that change outright in a non-interactive / dispatched context without a prior explicit override naming the deletion.
+      For every change, run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.intentTemplate}\`, write and complete its intent (including empty-handoff and probe-only cases), then run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.savedPreview}\` with the resolved selector and frozen \`--skip-specs\` choice. Capture each exact \`planToken\` and apply with \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.apply}\`. Retry recoverable items with the same token; never replan. Use each structured JSON result for partial-success reporting. Never invoke an external spec-sync command, create an archive directory, move a change, recursively remove a source, or hand-write \`archive.json\`.
 
-      \`in-repo\` (default, and the fallback for \`external\` when \`archiveDir\` is absent — state the fallback explicitly, never escalate it to deletion):
-      \`\`\`bash
-      mkdir -p "<planningHome.changesDir>/archive"
-      mv "<changeRoot>" "<planningHome.changesDir>/archive/YYYY-MM-DD-<name>"
-      \`\`\`
+      **Post-bookkeeping commit guidance** (per change, same as \`rasen-archive-change\`, including its CONDITIONAL ship-referencing commit-message form — the "specs synced" clause included only when that change actually had delta specs synced this run, dropped entirely when it had none or sync was skipped; the ship suffix omitted, never invented, when that change's own ship log records no \`Commit:\`; four resulting forms, same as \`rasen-archive-change\` step 5): \`git add -- <changeRoot> <planningHome.changesDir>/archive <specsDir>\` then \`git commit -m "chore(rasen): archive <name> (specs synced; ship <short-sha>)" -- <changeRoot> <planningHome.changesDir>/archive <specsDir>\` (substituting the form that matches this change's actual sync/ship state) — the \`add\` step matters because the newly archived directory, and a spec sync that created a new capability directory, are both untracked and would otherwise be silently left out of a bare \`git commit --\`.
 
-      \`external\` (same date-prefix/collision rule, targeting the resolved \`archiveDir\` instead):
-      \`\`\`bash
-      mkdir -p "<archiveDir>"
-      mv "<changeRoot>" "<archiveDir>/YYYY-MM-DD-<name>"
-      \`\`\`
-
-      \`prune\` (after the preconditions above pass, per change):
-      1. Write the prune tombstone FIRST (same mechanism and literal \`Pruned:\` token as \`rasen-archive-change\` — resolve \`workDir\` from status, append \`**Pruned:** true\` / \`**Pruned at:** <timestamp>\` to its \`ship-log.md\`; proceed without one if it cannot be resolved, noting the gap in this change's outcome).
-      2. Delete:
-         \`\`\`bash
-         rm -rf "<changeRoot>"
-         \`\`\`
-      No archive directory is created for a pruned change — git history is the archive.
-
-      **Post-bookkeeping commit guidance** (per change, same as \`rasen-archive-change\`, including its CONDITIONAL ship-referencing commit-message form — the "specs synced" clause included only when that change actually had delta specs synced this run, dropped entirely when it had none or sync was skipped; the ship suffix omitted, never invented, when that change's own ship log records no \`Commit:\`; four resulting forms, same as \`rasen-archive-change\` step 5): for \`external\`/\`prune\`, \`git add -- <changeRoot> <specsDir>\` then \`git commit -m "chore(rasen): archive <name> (specs synced; ship <short-sha>)" -- <changeRoot> <specsDir>\` (substituting the form that matches this change's actual sync/ship state) — the \`add\` step matters because a spec sync that created a new (untracked) capability directory would otherwise be silently left out of a bare \`git commit --\`. For \`in-repo\`, the archive-dir addition rides the commit as usual, same conditional message form.
-
-   b.5. **Close the delivery chain per change (\`sha-cross-stamping\`, same mechanism as \`rasen-archive-change\` step 5.5, INCLUDING its mint-on-demand \`workDir\` resolution and sticky-legacy caveat — never a silent fallback to \`changeRoot\`, which \`external\`/\`prune\` are about to move or delete)**: for each successfully bookkept change, before its post-bookkeeping commit, append an \`## Archive\` section (\`Date\`, \`Ship commit\` copied from that change's own ship-log \`Commit:\` line — omitted when absent, \`Outcome\`) to its work-directory \`ship-log.md\` (create a minimal \`# Ship Log: <name>\` header first if none exists); after the commit, append \`Archive commit: <sha>\` (\`git rev-parse HEAD\`). Same append-only rule as \`rasen-archive-change\` — never rewrite the ship-side section.
+   b.5. **Require finalized delivery-chain evidence per change**: the engine finalizes the archive section and minimal archive-only log when needed before evidence hashing. Do not append a post-hash commit identifier or mutate any successful archive's evidence afterward.
 
    c. **Track outcome** for each change:
-      - Success: archived successfully (record the destination and, unless pruned, the location)
-      - Failed: error during archive (record error) — includes a destructive-destination precondition failure
+      - Success: archived successfully (record the archive location)
+      - Failed: error during archive (record error)
       - Skipped: user chose not to archive (if applicable)
 
 9. **Display summary**
@@ -228,16 +209,15 @@ then add-graphql specs (chronological order, newer takes precedence).
 ## Bulk Archive Complete
 
 Archived N changes:
-- <change-1> [in-repo] -> archive/YYYY-MM-DD-<change-1>/
-- <change-2> [external] -> <machine-home>/archive/YYYY-MM-DD-<change-2>/
-- <change-3> [prune] -> pruned (no archive copy; git history is the archive)
+- <change-1> -> archive/YYYY-MM-DD-<change-1>/
+- <change-2> -> archive/YYYY-MM-DD-<change-2>/
 
 Spec sync summary:
 - N delta specs synced to main specs
 - No conflicts (or: M conflicts resolved)
 \`\`\`
 
-Each archived change's ship-log gained a chain record (\`## Archive\` section: ship commit, archive commit, outcome) and its archive commit message carries \`ship <short-sha>\` when that change was shipped — not shown in the compact summary above; inspect the individual change's \`ship-log.md\` for the full record.
+Each archived change's ship-log gained a pre-hash chain record (\`## Archive\` section: recorded ship commit when known, archive path, timestamp, outcome, and transaction) and its path-scoped bookkeeping commit message carries \`ship <short-sha>\` when that change was shipped. The engine also verified final accounting; no post-hash commit identifier is written into evidence.
 
 **Output On Partial Success**
 
@@ -245,14 +225,13 @@ Each archived change's ship-log gained a chain record (\`## Archive\` section: s
 ## Bulk Archive Complete (partial)
 
 Archived N changes:
-- <change-1> [in-repo] -> archive/YYYY-MM-DD-<change-1>/
+- <change-1> -> archive/YYYY-MM-DD-<change-1>/
 
 Skipped M changes:
 - <change-2> (user chose not to archive incomplete)
 
 Failed K changes:
 - <change-3>: Archive directory already exists
-- <change-4>: destination external/prune blocked — uncommitted content in the change directory
 \`\`\`
 
 **Output When No Changes**
@@ -272,11 +251,11 @@ No active changes found. Create a new change to get started.
 - Show clear per-change status before confirming
 - Use single confirmation for entire batch
 - Track and report all outcomes (success/skip/fail)
-- Preserve .openspec.yaml when moving to archive (in-repo and external only — a pruned change has no archived directory)
+- Require the engine to preserve and finalize .openspec.yaml in its staged payload
 - Archive directory target uses current date: YYYY-MM-DD-<name>
 - If archive target exists, fail that change but continue with others
-- **Destructive-destination preconditions, per change.** \`external\` and \`prune\` REFUSE that individual change unless it is BOTH clean (\`git status --porcelain --ignored -- <changeRoot>\` empty — \`--ignored\` matters, a gitignored change directory reads clean without it) AND tracked (\`git ls-files -- <changeRoot>\` non-empty), or (for \`prune\`) without its own confirmation naming the deletion — a SEPARATE consent from the batch confirmation in step 7 — fail that change and continue with the rest of the batch, exactly like an existing-target failure. A destination fallback (\`external\` → \`in-repo\`) MAY relocate a change; it must NEVER escalate to deletion.
-- **Chain-record append (Step 8b.5), per change, is append-only.** Same rule as \`rasen-archive-change\`: never rewrite a change's ship-side ship-log section; its ship commit SHA is a copied recorded fact, never re-derived or invented — omit the ship reference for a never-shipped change in the batch rather than fabricating one.`,
+- **Bookkeeping is one engine invocation per change.** The destination axis is retired; no generated batch step directly moves or removes a change.
+- **Final evidence is immutable (Step 8b.5).** The engine finalizes ship-log evidence before hashing; no later batch step appends or rewrites it.`,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },

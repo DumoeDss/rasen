@@ -28,6 +28,15 @@ import {
   type AgentContextResult,
   type HandoffThresholdReport,
 } from '../core/agent-context.js';
+import { resolveAgentCliBinary } from '../core/agent-cli-process.js';
+import {
+  buildClaudePrintInvocation,
+  claudeFailureReceipt,
+  runClaudePrint,
+  type ClaudeDispatchReceipt,
+  type ClaudeReasoningEffort,
+  type ClaudeSandboxMode,
+} from '../core/claude/index.js';
 import {
   contextResolveOptions,
   resolveRootConfigContext,
@@ -54,6 +63,7 @@ import {
 import { resolveEffectiveConfigWithMetadata } from '../core/effective-config.js';
 import { getChangeDir, resolveCurrentPlanningHomeSync } from '../core/planning-home.js';
 import type { ThresholdValue } from '../core/pipeline-registry/types.js';
+import type { WorkerContract } from '../core/worker-contracts.js';
 import { runAudit } from '../core/token-audit/audit.js';
 import { TranscriptFormatError } from '../core/token-audit/errors.js';
 import { isCodexAuditResult, isZedAuditResult, type AuditResult } from '../core/token-audit/types.js';
@@ -92,6 +102,19 @@ export interface AgentAuditOptions {
   match?: string;
   /** Zed runtime only: override the `threads.db` path. */
   db?: string;
+}
+
+export interface AgentDispatchOptions {
+  runtime?: string;
+  promptFile?: string;
+  contract?: string;
+  sandbox?: string;
+  model?: string;
+  effort?: string;
+  cwd?: string;
+  timeoutMs?: number;
+  resume?: string;
+  json?: boolean;
 }
 
 /**
@@ -292,6 +315,124 @@ export class AgentCommand {
     console.log(
       `runtime=${result.runtime} model=${result.model} context=${result.contextTokens}/${result.limit} (${pctDisplay}%) remaining=${result.remainingTokens} transcript=${result.transcript} ${handoffVerdict}`
     );
+  }
+
+  /**
+   * Machine-oriented Claude print bridge. Every outcome is emitted as exactly
+   * one JSON receipt; child stdout/stderr remains captured inside the runner.
+   */
+  async dispatch(options: AgentDispatchOptions): Promise<ClaudeDispatchReceipt | Record<string, unknown>> {
+    const rawContract = options.contract?.trim();
+    const emit = <T extends ClaudeDispatchReceipt | Record<string, unknown>>(receipt: T): T => {
+      console.log(JSON.stringify(receipt));
+      if (!('ok' in receipt) || receipt.ok !== true) process.exitCode = 1;
+      return receipt;
+    };
+    const invalid = (message: string) =>
+      emit({
+        ok: false,
+        runtime: options.runtime || 'unknown',
+        dispatchMode: 'exec-bridge',
+        bridge: 'claude-print',
+        ...(rawContract ? { contract: rawContract } : {}),
+        failure: { kind: 'invalid-input', message },
+      });
+
+    if (options.runtime !== 'claude') {
+      return invalid('--runtime must be "claude".');
+    }
+    if (rawContract !== 'leaf' && rawContract !== 'evaluate') {
+      return invalid('--contract must be "leaf" or "evaluate".');
+    }
+    const contract = rawContract as WorkerContract;
+    if (options.sandbox !== 'read-only' && options.sandbox !== 'workspace-write') {
+      return invalid('--sandbox must be "read-only" or "workspace-write".');
+    }
+    const sandbox = options.sandbox as ClaudeSandboxMode;
+    const validEfforts = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+    if (options.effort !== undefined && !validEfforts.has(options.effort)) {
+      return invalid('--effort must be low, medium, high, xhigh, or max.');
+    }
+    if (
+      options.resume !== undefined &&
+      !/^[^\s\u0000-\u001f]{1,256}$/.test(options.resume)
+    ) {
+      return invalid('--resume must be one non-empty session ID without whitespace.');
+    }
+    const timeoutMs = options.timeoutMs ?? 30 * 60 * 1000;
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 24 * 60 * 60 * 1000) {
+      return invalid('--timeout-ms must be an integer between 1 and 86400000.');
+    }
+
+    if (!options.promptFile?.trim()) {
+      return invalid('--prompt-file is required.');
+    }
+    const promptFile = path.resolve(options.promptFile);
+    try {
+      const stat = fs.statSync(promptFile);
+      if (!stat.isFile()) return invalid(`--prompt-file is not a file: ${promptFile}`);
+      if (stat.size > 2 * 1024 * 1024) {
+        return invalid(`--prompt-file exceeds the 2097152-byte limit: ${promptFile}`);
+      }
+    } catch {
+      return invalid(`--prompt-file does not exist or is unreadable: ${promptFile}`);
+    }
+
+    const cwd = path.resolve(options.cwd ?? process.cwd());
+    try {
+      if (!fs.statSync(cwd).isDirectory()) {
+        return invalid(`--cwd is not a directory: ${cwd}`);
+      }
+    } catch {
+      return invalid(`--cwd does not exist or is unreadable: ${cwd}`);
+    }
+
+    const binary = resolveAgentCliBinary({
+      envVar: 'RASEN_CLAUDE_BIN',
+      binaryName: 'claude',
+    });
+    if (!binary) {
+      return emit(
+        claudeFailureReceipt(
+          contract,
+          'runtime-unavailable',
+          'Claude Code CLI is unavailable. Install Claude Code or set RASEN_CLAUDE_BIN.',
+          { cwd }
+        )
+      );
+    }
+
+    let prompt: string;
+    try {
+      prompt = fs.readFileSync(promptFile, 'utf8');
+    } catch (error) {
+      return invalid(
+        `Unable to read --prompt-file: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+
+    try {
+      const invocation = buildClaudePrintInvocation({
+        prompt,
+        contract,
+        sandbox,
+        ...(options.model ? { model: options.model } : {}),
+        ...(options.effort
+          ? { effort: options.effort as ClaudeReasoningEffort }
+          : {}),
+        ...(options.resume ? { resumeSessionId: options.resume } : {}),
+      });
+      return emit(
+        await runClaudePrint({
+          binary,
+          invocation,
+          cwd,
+          timeoutMs,
+        })
+      );
+    } catch (error) {
+      return invalid(error instanceof Error ? error.message : String(error));
+    }
   }
 
   /**

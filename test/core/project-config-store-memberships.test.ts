@@ -5,10 +5,12 @@ import * as path from 'node:path';
 
 import {
   appendStoreMembershipHint,
+  backfillStoreMembershipUid,
   describeStoreMembershipHint,
   readProjectConfig,
   storeMembershipHintKey,
 } from '../../src/core/project-config.js';
+import { _resetConfigDiagnosticDedup } from '../../src/core/config-diagnostics.js';
 import {
   acquireOwnerAwareFileLock,
   machineLockPath,
@@ -31,6 +33,7 @@ describe('project-side store membership hints', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    _resetConfigDiagnosticDedup();
     fs.rmSync(projectRoot, { recursive: true, force: true });
   });
 
@@ -97,7 +100,7 @@ describe('project-side store membership hints', () => {
       expect(readProjectConfig(projectRoot)?.storeMemberships).toEqual([{ id: 'team-store' }]);
       expect(
         warn.mock.calls.flat().join(' ')
-      ).toContain('upgrade-identity');
+      ).toContain('rasen update');
     });
 
     it('de-duplicates on permanent identity and fills a missing field', () => {
@@ -336,6 +339,146 @@ describe('project-side store membership hints', () => {
         return found;
       }
       expect(walk(projectRoot)).toEqual([]);
+    });
+  });
+
+  describe('backfillStoreMembershipUid', () => {
+    afterEach(() => {
+      const abs = path.resolve(configPath);
+      fs.rmSync(machineLockPath(abs), { force: true });
+    });
+
+    it('backfills a uid into an identityless entry', async () => {
+      write(
+        [
+          'schema: spec-driven',
+          'storeMemberships:',
+          '  - id: store-a',
+          '',
+        ].join('\n')
+      );
+
+      const result = await backfillStoreMembershipUid(projectRoot, {
+        id: 'store-a',
+        uid: UID_A,
+      });
+
+      expect(result.changed).toBe(true);
+      expect(readProjectConfig(projectRoot)?.storeMemberships).toEqual([
+        { uid: UID_A, id: 'store-a' },
+      ]);
+    });
+
+    it('is a no-op when no matching identityless entry exists', async () => {
+      write(
+        [
+          'schema: spec-driven',
+          'storeMemberships:',
+          '  - id: other-store',
+          '',
+        ].join('\n')
+      );
+
+      const result = await backfillStoreMembershipUid(projectRoot, {
+        id: 'store-a',
+        uid: UID_A,
+      });
+
+      expect(result.changed).toBe(false);
+      expect(readProjectConfig(projectRoot)?.storeMemberships).toEqual([
+        { id: 'other-store' },
+      ]);
+    });
+
+    it('is a no-op when no storeMemberships exist at all', async () => {
+      write('schema: spec-driven\n');
+
+      const result = await backfillStoreMembershipUid(projectRoot, {
+        id: 'store-a',
+        uid: UID_A,
+      });
+
+      expect(result.changed).toBe(false);
+    });
+
+    it('does not modify a hint that already has a uid', async () => {
+      write(
+        [
+          'schema: spec-driven',
+          'storeMemberships:',
+          `  - uid: ${UID_B}`,
+          '    id: store-a',
+          '',
+        ].join('\n')
+      );
+
+      const result = await backfillStoreMembershipUid(projectRoot, {
+        id: 'store-a',
+        uid: UID_A,
+      });
+
+      expect(result.changed).toBe(false);
+      expect(readProjectConfig(projectRoot)?.storeMemberships).toEqual([
+        { uid: UID_B, id: 'store-a' },
+      ]);
+    });
+
+    it('preserves other entries, comments, and field ordering', async () => {
+      write(
+        [
+          '# project config',
+          'schema: spec-driven',
+          'projectId: p1',
+          'storeMemberships:',
+          '  - id: store-a',
+          '    remote: git@github.com:org/store-a.git',
+          '  - id: store-b',
+          '',
+        ].join('\n')
+      );
+
+      await backfillStoreMembershipUid(projectRoot, {
+        id: 'store-a',
+        uid: UID_A,
+      });
+
+      const content = fs.readFileSync(configPath, 'utf-8');
+      expect(content).toContain('# project config');
+      expect(content).toContain('projectId: p1');
+
+      const config = readProjectConfig(projectRoot);
+      expect(config?.storeMemberships).toEqual([
+        { uid: UID_A, id: 'store-a', remote: 'git@github.com:org/store-a.git' },
+        { id: 'store-b' },
+      ]);
+    });
+
+    it('backfills the surviving entry when duplicates exist', async () => {
+      // Two entries with the same alias collapse on parse (same dedup key).
+      // The writer backfills the one surviving entry.
+      write(
+        [
+          'schema: spec-driven',
+          'storeMemberships:',
+          '  - id: store-a',
+          '  - id: store-b',
+          '  - id: store-a',
+          '',
+        ].join('\n')
+      );
+
+      const result = await backfillStoreMembershipUid(projectRoot, {
+        id: 'store-a',
+        uid: UID_A,
+      });
+
+      expect(result.changed).toBe(true);
+      // After backfill, the deduplicated entry carries the uid.
+      const hints = readProjectConfig(projectRoot)?.storeMemberships ?? [];
+      expect(hints).toEqual([
+        { uid: UID_A, id: 'store-a' },
+        { id: 'store-b' },
+      ]);
     });
   });
 });

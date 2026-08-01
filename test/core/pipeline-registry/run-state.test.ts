@@ -19,6 +19,7 @@ import {
   latestStageHandoffs,
   sessionHandoffGeneration,
   runStatePath,
+  resolveRunStateLocation,
   RunStateValidationError,
   RUN_STATE_FILENAME,
   type RunState,
@@ -430,12 +431,28 @@ describe('pipeline run-state', () => {
       });
     });
 
-    it('infers legacy route handles conservatively without fabricating one', () => {
+    it('infers old native, Codex-thread, transcript-only, and Claude-session records conservatively', () => {
       expect(
         inferWorkerDispatchMode({ runtime: 'codex', threadId: 'exec-thread' })
       ).toEqual({ dispatchMode: 'exec-bridge', inferred: true });
       expect(
         inferWorkerDispatchMode({ runtime: 'codex', agentId: 'native-agent' })
+      ).toEqual({ dispatchMode: 'native', inferred: true });
+      expect(
+        inferWorkerDispatchMode({ runtime: 'claude', agentId: 'native-agent' })
+      ).toEqual({ dispatchMode: 'native', inferred: true });
+      expect(
+        inferWorkerDispatchMode({
+          runtime: 'claude',
+          sessionId: 'claude-session',
+          cwd: '/repo',
+        })
+      ).toEqual({ dispatchMode: 'exec-bridge', inferred: true });
+      expect(
+        inferWorkerDispatchMode({
+          runtime: 'claude',
+          transcript: 'agent-native.jsonl',
+        })
       ).toEqual({ dispatchMode: 'native', inferred: true });
 
       const ambiguous = inferWorkerDispatchMode({
@@ -444,6 +461,12 @@ describe('pipeline run-state', () => {
       });
       expect(ambiguous.dispatchMode).toBeUndefined();
       expect(ambiguous.warning).toContain('ambiguous');
+      const unknownKeys = inferWorkerDispatchMode({
+        runtime: 'codex',
+        futureHandle: 'future-1',
+      });
+      expect(unknownKeys.dispatchMode).toBeUndefined();
+      expect(unknownKeys.warning).toContain('ambiguous');
     });
 
     it('accepts a Codex worker with threadId + turnId', () => {
@@ -524,17 +547,32 @@ describe('pipeline run-state', () => {
       expect(w.reusedFrom).toBeUndefined();
     });
 
-    it('stageWorkers returns only stages with a reusable pointer (agentId/transcript/threadId)', () => {
+    it('stageWorkers returns only stages with a reusable pointer (agentId/sessionId/transcript/threadId)', () => {
       const s: RunState = {
         pipeline: 'small-feature',
         stages: {
           propose: { status: 'done', worker: 'planner-1' }, // bare string → nothing to seed from
           verify: { status: 'done', worker: { role: 'reviewer', agentId: 'abc', transcript: 'agent-abc.jsonl' } },
           reviewLoop: { status: 'done', worker: { runtime: 'codex', role: 'reviewer', threadId: 'thread-r1' } },
+          claudeReview: {
+            status: 'done',
+            worker: {
+              runtime: 'claude',
+              role: 'reviewer',
+              sessionId: 'session-r2',
+              cwd: '/repo',
+            },
+          },
           apply: { status: 'in_progress' }, // no worker
         },
       };
       expect(stageWorkers(s)).toEqual({
+        claudeReview: {
+          runtime: 'claude',
+          role: 'reviewer',
+          sessionId: 'session-r2',
+          cwd: '/repo',
+        },
         reviewLoop: { runtime: 'codex', role: 'reviewer', threadId: 'thread-r1' },
         verify: { role: 'reviewer', agentId: 'abc', transcript: 'agent-abc.jsonl' },
       });
@@ -980,7 +1018,7 @@ describe('pipeline run-state', () => {
   });
 
   // stagesLackingDurableHandle surfaces worker records that carry no durable
-  // handle (agentId/transcript/threadId) so they are not silently dropped from
+  // handle (agentId/sessionId/transcript/threadId) so they are not silently dropped from
   // the warm-seed set by stageWorkers. Advisory only — never mutates state.
   describe('stagesLackingDurableHandle (worker-handle validation)', () => {
     it('reports a name-only worker and lists name in keys', () => {
@@ -1020,6 +1058,15 @@ describe('pipeline run-state', () => {
           reviewLoop: {
             status: 'done',
             worker: { runtime: 'codex', role: 'reviewer', threadId: 'thread-r1' },
+          },
+          claudeReview: {
+            status: 'done',
+            worker: {
+              runtime: 'claude',
+              role: 'reviewer',
+              sessionId: 'session-r2',
+              cwd: '/repo',
+            },
           },
         },
       };
@@ -1329,5 +1376,78 @@ describe('pipeline run-state', () => {
       expect(s.stages?.[RETAIN_STAGE_ID]?.status).toBe('done');
       expect(frozenRetentionMode(s)).toBe('off');
     });
+  });
+});
+
+describe('resolveRunStateLocation (three-location sticky-legacy chain)', () => {
+  let changeDir: string;
+  let workDir: string;
+  let ephemera: string;
+  let base: string;
+
+  const state: RunState = { pipeline: 'full-feature' };
+
+  beforeEach(() => {
+    base = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-runstate-chain-'));
+    changeDir = path.join(base, 'change');
+    workDir = path.join(base, 'work');
+    ephemera = path.join(base, 'ephemera');
+    fs.mkdirSync(changeDir, { recursive: true });
+  });
+  afterEach(() => {
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  it('finds run-state in the ephemera directory', () => {
+    writeRunState(ephemera, state);
+    const location = resolveRunStateLocation(changeDir, { ephemeraDir: ephemera, workDir });
+    expect(location).toEqual({ dir: ephemera, path: runStatePath(ephemera) });
+  });
+
+  it('finds run-state in the legacy machine-home work directory', () => {
+    writeRunState(workDir, state);
+    const location = resolveRunStateLocation(changeDir, { ephemeraDir: ephemera, workDir });
+    expect(location).toEqual({ dir: workDir, path: runStatePath(workDir) });
+  });
+
+  it('finds run-state in the change directory (oldest legacy location)', () => {
+    writeRunState(changeDir, state);
+    const location = resolveRunStateLocation(changeDir, { ephemeraDir: ephemera, workDir });
+    expect(location).toEqual({ dir: changeDir, path: runStatePath(changeDir) });
+  });
+
+  it('returns null when no location in the chain holds a file', () => {
+    expect(resolveRunStateLocation(changeDir, { ephemeraDir: ephemera, workDir })).toBeNull();
+  });
+
+  it('omitting the ephemera directory keeps the two legacy locations working', () => {
+    writeRunState(workDir, state);
+    expect(resolveRunStateLocation(changeDir, { workDir })?.dir).toBe(workDir);
+    expect(resolveRunStateLocation(changeDir)).toBeNull();
+  });
+
+  it('never splits one file across locations: a legacy file keeps being the resolved one', () => {
+    // Born legacy (work directory). Resolution must keep pointing at the
+    // legacy copy, and a writer following the resolved location updates it
+    // IN PLACE rather than creating a second copy at the terminal location.
+    writeRunState(workDir, state);
+    const first = resolveRunStateLocation(changeDir, { ephemeraDir: ephemera, workDir })!;
+    expect(first.dir).toBe(workDir);
+
+    writeRunState(first.dir, { ...state, completed: ['propose'] });
+
+    const second = resolveRunStateLocation(changeDir, { ephemeraDir: ephemera, workDir })!;
+    expect(second.dir).toBe(workDir);
+    expect(fs.existsSync(runStatePath(ephemera))).toBe(false);
+    expect(fs.existsSync(runStatePath(changeDir))).toBe(false);
+    expect(readRunState(second.dir)?.completed).toEqual(['propose']);
+  });
+
+  it('prefers the ephemera directory when the chain is ordered newest-first', () => {
+    writeRunState(ephemera, state);
+    writeRunState(workDir, { ...state, pipeline: 'small-feature' });
+    const location = resolveRunStateLocation(changeDir, { ephemeraDir: ephemera, workDir })!;
+    expect(location.dir).toBe(ephemera);
+    expect(readRunState(location.dir)?.pipeline).toBe('full-feature');
   });
 });

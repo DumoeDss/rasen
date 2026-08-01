@@ -7,7 +7,8 @@
 import ora from 'ora';
 import chalk from 'chalk';
 import { getChangeDir } from '../../core/planning-home.js';
-import { resolveChangeWorkDir, resolveArchiveDestination } from '../../core/change-work.js';
+import { resolveChangeWorkDir, legacyExternalArchiveDir } from '../../core/change-work.js';
+import { archiveBookkeepingDir } from '../../core/file-placement.js';
 import { readProjectConfig, resolveArchiveTiming } from '../../core/project-config.js';
 import {
   resolveRootForCommand,
@@ -27,6 +28,8 @@ import {
   getAvailableChanges,
   getStatusIndicator,
   getStatusColor,
+  resolveChangeLandingDirs,
+  type ChangeLandingDirs,
 } from './shared.js';
 import { formatNextWorkflowHint } from '../../core/workflow-chain.js';
 import { getCliLocale } from '../../core/cli-locale.js';
@@ -114,22 +117,27 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
 
     // Probe-only (ensure:false): status is a read-only surface and must
     // never mint identity or write to the repo/registry (design D2). A
-    // probe miss simply omits `workDir` from the payload.
+    // probe miss simply omits `workDir` from the payload — it is a
+    // legacy-read location now, not a landing point.
     const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: false });
+
+    // Per-class landing directories (`file-placement` capability): always
+    // present — they derive from the planning and execution roots alone and
+    // need no machine identity.
+    const landing = resolveChangeLandingDirs(root, status.changeRoot, changeName);
 
     // Resolved archive timing (design D2/cli-artifact-workflow spec): a
     // plain config read + resolver, synchronous, no git/gh calls, no
     // writes. Always present — the default always resolves.
     const archiveTiming = resolveArchiveTiming(readProjectConfig(projectRoot));
 
-    // Resolved archive destination (design D6/cli-artifact-workflow spec):
-    // probe-only (ensure:false) — status is a read-only surface and must
-    // never mint identity or write to the repo/registry. `destination` is
-    // always present (the default always resolves); `archiveDir` is
-    // omitted — not null — for `prune` and when `external` cannot be
-    // resolved by a read-only probe, so templates can key their fallback
-    // on the field's absence.
-    const archiveDestination = await resolveArchiveDestination(projectRoot, { ensure: false });
+    // Archive bookkeeping is always the in-repo location (`archive-
+    // destination` capability): the destination axis is retired, so no
+    // `destination` field is reported. `legacyArchiveDir` appears only when a
+    // machine home resolves by read-only probe AND its archive area exists —
+    // discovery for archives written by the retired `external` destination.
+    const archiveDir = archiveBookkeepingDir(projectRoot);
+    const legacyArchiveDir = await legacyExternalArchiveDir(projectRoot);
 
     spinner?.stop();
 
@@ -138,11 +146,12 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
         JSON.stringify(
           {
             ...status,
+            ...landing,
             ...(workDir ? { workDir } : {}),
             archive: {
               timing: archiveTiming,
-              destination: archiveDestination.destination,
-              ...(archiveDestination.archiveDir ? { archiveDir: archiveDestination.archiveDir } : {}),
+              archiveDir,
+              ...(legacyArchiveDir ? { legacyArchiveDir } : {}),
             },
             root: rootOutput,
           },
@@ -153,7 +162,10 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
       return;
     }
 
-    printStatusText(status, workDir ?? undefined, archiveTiming, archiveDestination);
+    printStatusText(status, workDir ?? undefined, archiveTiming, {
+      archiveDir,
+      legacyArchiveDir,
+    }, landing);
   } catch (error) {
     spinner?.stop();
     throw error;
@@ -164,7 +176,8 @@ export function printStatusText(
   status: ChangeStatus,
   workDir?: string,
   archiveTiming?: string,
-  archiveDestination?: { destination: string; archiveDir: string | null }
+  archiveLocation?: { archiveDir: string; legacyArchiveDir: string | null },
+  landing?: ChangeLandingDirs
 ): void {
   const doneCount = status.artifacts.filter((a) => a.status === 'done').length;
   const total = status.artifacts.length;
@@ -174,17 +187,22 @@ export function printStatusText(
   if (status.changeRoot) {
     console.log(`Change root: ${status.changeRoot}`);
   }
+  if (landing) {
+    console.log(`Evidence dir: ${landing.evidenceDir}`);
+    console.log(`Handoff dir: ${landing.handoffDir}`);
+    console.log(`Ephemera dir: ${landing.ephemeraDir}`);
+  }
   if (workDir) {
-    console.log(`Work dir: ${workDir}`);
+    console.log(`Work dir (legacy): ${workDir}`);
   }
   if (archiveTiming) {
     console.log(`Archive timing: ${archiveTiming}`);
   }
-  if (archiveDestination) {
-    console.log(
-      `Archive destination: ${archiveDestination.destination}` +
-        (archiveDestination.archiveDir ? ` (${archiveDestination.archiveDir})` : '')
-    );
+  if (archiveLocation) {
+    console.log(`Archive dir: ${archiveLocation.archiveDir}`);
+    if (archiveLocation.legacyArchiveDir) {
+      console.log(`Legacy archive dir: ${archiveLocation.legacyArchiveDir}`);
+    }
   }
   console.log(`Progress: ${doneCount}/${total} artifacts complete`);
   console.log();

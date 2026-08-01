@@ -5,6 +5,7 @@
  * templates file into workflow-focused modules.
  */
 import type { SkillTemplate } from '../types.js';
+import { PROBE_PLACEMENT_GUIDANCE } from '../experts/_shared.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getExploreSkillTemplate(): SkillTemplate {
@@ -125,13 +126,13 @@ If the user mentions a change or you detect one is relevant:
     | Scope changed              | \`proposal.md\`                |
     | New work identified        | \`tasks.md\`                   |
     | Assumption invalidated     | Relevant artifact              |
-    | Bulky raw research (scratch logs, fetched corpora) | work directory's \`research/\` (\`workDir\` from status JSON) — never a committed artifact |
+    | Bulky raw research (scratch logs, fetched corpora) | the ephemera directory's \`research/\` area (\`<ephemeraDir>/research/\` from status JSON) — never a committed artifact |
 
    Example offers:
    - "That's a design decision. Capture it in design.md?"
    - "This is a new requirement. Add it to specs?"
    - "This changes scope. Update the proposal?"
-   - "That's a lot of raw material — want me to dump it in the work directory's research/ folder and just keep the conclusion here?"
+   - "That's a lot of raw material — want me to dump it in the ephemera directory's research/ folder and just keep the conclusion here?"
 
 4. **The user decides** - Offer and move on. Don't pressure. Don't auto-capture.
 
@@ -282,6 +283,8 @@ But this summary is optional. Sometimes the thinking IS the value.
 ---
 
 ## Prototype to Settle a Stuck Question
+
+${PROBE_PLACEMENT_GUIDANCE}
 
 When a design question is stuck and running code is the bounded way to settle it, read the installed relative entry \`references/prototype/README.md\`. Load it only for that prototype branch. Resolve an active change with \`rasen status --change "<name>" --json\`, capture the *answer* in its \`changeRoot\` (\`design.md\` Decisions or a concise change-directory sidecar), then delete every piece of throwaway code. This stays within explore's "capture, don't implement" stance: the artifact is the decision, not the probe.
 

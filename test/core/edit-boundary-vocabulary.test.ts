@@ -85,12 +85,24 @@ describe('retired edit-boundary vocabulary guard', () => {
     expect(contracts).toContain("kind: z.literal('workspace-reservation')");
     expect(contracts).toContain('Other-worktree views cannot expose controls');
 
+    const agentCommand = fs.readFileSync(
+      path.join('src', 'commands', 'agent.ts'),
+      'utf-8'
+    );
+    expect(agentCommand).toContain(
+      'options.sandbox !== \'read-only\' && options.sandbox !== \'workspace-write\''
+    );
+
     for (const file of [
       path.join('src', 'core', 'change-run', 'contracts.ts'),
       path.join('src', 'core', 'change-run', 'internal', 'reservations.ts'),
       path.join('src', 'core', 'change-run', 'internal', 'workspace.ts'),
       path.join('src', 'core', 'change-run', 'internal', 'workspace-git.ts'),
       path.join('src', 'core', 'pipeline-registry', 'profile-resolver.ts'),
+      path.join('src', 'commands', 'agent.ts'),
+      path.join('src', 'core', 'claude', 'invocation.ts'),
+      path.join('src', 'core', 'codex', 'invocation.ts'),
+      path.join('src', 'core', 'pipeline-registry', 'run-state.ts'),
     ]) {
       const content = fs.readFileSync(file, 'utf-8');
       expect(content, file).not.toContain('edit-boundary');

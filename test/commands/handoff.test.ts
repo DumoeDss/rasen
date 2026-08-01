@@ -68,8 +68,14 @@ describe('handoff workflow', () => {
     });
 
     it('writes numbered handoff documents into the change directory', () => {
-      expect(skillText).toContain('handoff/lead-<n>.md');
+      expect(skillText).toContain('<handoffDir>/lead-<n>.md');
       expect(skillText).toContain('Never overwrite an existing handoff document');
+    });
+
+    // Run-state lives under ephemeraDir while the document lives under
+    // handoffDir, so a relative pointer has no base a reader can trust.
+    it('records the sessionHandoff pointer as an absolute path', () => {
+      expect(skillText).toContain('Record `path` ABSOLUTE');
     });
 
     it('records the sessionHandoff pointer in run-state, LEAD-side only', () => {
