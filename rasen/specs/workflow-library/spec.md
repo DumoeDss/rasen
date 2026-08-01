@@ -4,7 +4,6 @@
 
 Define the ownership and localization boundary for installable user workflows in the user-wide workflow library.
 ## Requirements
-
 ### Requirement: Workflow definitions carry no command surface
 The command delivery surface is retired. A built-in or user-authored workflow definition SHALL NOT carry a `command` field, and no command template SHALL be registered for any workflow. A user-authored workflow package that still contains command content SHALL be accepted on install with that content ignored, rather than rejected.
 
@@ -142,9 +141,9 @@ The `--json` output of `rasen workflow list` SHALL include every workflow — `t
 
 ### Requirement: Workflow dependencies are declared in four slots
 
-A workflow definition's `requires` SHALL carry four dependency slots: `workflows`, `skills`, `pipelines`, and `schemas`. The `workflow.yaml` manifest MAY declare any of the four; an omitted slot SHALL default to empty. Each entry SHALL be a stable machine identifier. The `schemas` slot is existence-only in the current round (it declares a dependency to be validated for presence, and does not drive installation). Dependency declarations SHALL NOT participate in workflow digest computation, and adding or changing a `requires` slot SHALL NOT change a workflow's digest.
+A workflow definition's `requires` SHALL carry four dependency slots: `workflows`, `skills`, `pipelines`, and `schemas`. The `workflow.yaml` manifest MAY declare any of the four; an omitted slot SHALL default to empty. Each entry SHALL be a stable machine identifier. The `schemas` slot is existence-only in the current round. Dependency declarations SHALL NOT participate in workflow digest computation.
 
-Built-in workflows SHALL declare their real dependencies: `review-cycle` requires the `rasen-review` skill; `verify-enhanced-command` requires the `rasen-review`, `rasen-cso`, `rasen-qa`, `rasen-design-review`, and `rasen-qa-only` skills; `auto-command` requires the `rasen-review` skill and the `small-feature`, `full-feature`, `bug-fix`, and `auto-decompose` pipelines; `goal-command` requires the `goal-loop-measure`, `goal-loop-evaluate`, and `goal-loop-research` pipelines.
+Built-in workflows SHALL declare their real dependencies: `review-cycle` requires `rasen-review`; `verify-enhanced-command` requires `rasen-review`, `rasen-cso`, `rasen-qa`, and `rasen-design-review`; `auto-command` requires `rasen-review` and the `small-feature`, `full-feature`, `bug-fix`, and `auto-decompose` pipelines; `goal-command` requires the `goal-loop-measure`, `goal-loop-evaluate`, and `goal-loop-research` pipelines. No dependency SHALL name a consolidated reference-only or retired skill identity.
 
 #### Scenario: Manifest omitting a slot defaults to empty
 
@@ -155,8 +154,9 @@ Built-in workflows SHALL declare their real dependencies: `review-cycle` require
 #### Scenario: Built-in dependency edges are declared
 
 - **WHEN** the built-in workflow catalog is enumerated
-- **THEN** each built-in's `requires` SHALL match its real dependency edges (as above)
+- **THEN** each built-in's `requires` SHALL match its real dependency edges above
 - **AND** every declared built-in `requires.skills` and `requires.pipelines` entry SHALL resolve to an existing skill or pipeline
+- **AND** `verify-enhanced-command` SHALL name `rasen-qa` once and SHALL NOT name `rasen-qa-only`
 
 #### Scenario: Dependencies do not affect digest
 
@@ -215,50 +215,57 @@ When a workflow's `requires.pipelines` and `requires.schemas` are validated for 
 
 ### Requirement: Package authoring and review experts cover pipelines
 
-The workflow-author and workflow-review experts SHALL cover pipeline authoring and review in addition to workflows. The author expert SHALL guide creating a `pipeline.yaml` (stages, role, gate, loop, decompose/child-pipeline, per-role runtime) and using the pipeline authoring CLI loop (init, validate, import). The review expert SHALL review a pipeline for stage-DAG acyclicity, unique stage ids, decompose recursion bound, runtime/model resolvability, and skill enablement, applying the same static-validate-first discipline it applies to workflows.
+The `workflow-author` expert SHALL cover workflow and pipeline authoring and SHALL carry a bundled independent-review entry reference for both package types. The authoring path SHALL guide creating a `pipeline.yaml` (stages, role, gate, loop, decompose/child-pipeline, per-role runtime) and using the pipeline authoring CLI loop (init, validate, import). After static validation it SHALL dispatch a distinct reviewer with the bundled review reference when role isolation is available, or run a clearly separated read-only second pass otherwise. The review reference SHALL check stage-DAG acyclicity, unique stage ids, decompose recursion bound, runtime/model resolvability, and skill enablement.
 
 #### Scenario: Author expert guides pipeline creation
 
-- **WHEN** the workflow-author expert is used for a pipeline
+- **WHEN** `rasen-workflow-author` is used for a pipeline
 - **THEN** it SHALL guide authoring a valid `pipeline.yaml` and running the pipeline authoring CLI loop before installation
+
+#### Scenario: Author loads bundled independent review
+
+- **WHEN** a staged workflow or pipeline passes structural validation
+- **THEN** `rasen-workflow-author` SHALL load its bundled workflow-review entry reference
+- **AND** SHALL assign semantic review to a non-author when role isolation is available
+- **AND** SHALL NOT require a separate `rasen-workflow-review` skill
 
 #### Scenario: Review expert reviews a pipeline
 
-- **WHEN** the workflow-review expert reviews a pipeline
+- **WHEN** the bundled review branch reviews a pipeline
 - **THEN** it SHALL check stage-DAG acyclicity, unique stage ids, decompose recursion bound, runtime/model resolvability, and skill enablement
 
 ### Requirement: Package trust boundary is documented
 
-The documentation SHALL state the community-package trust boundary honestly: a community package is a set of executable prompts; the mitigations are transactional install, content digest verification, structural validation, and the author/review experts; there is no signature system and no marketplace. The documentation SHALL state the limitations plainly — a digest verifies byte integrity, not safety; validation is structural, not behavioral; the review expert is a mitigation, not a guarantee.
+The documentation SHALL state the community-package trust boundary honestly: a community package is executable prompt content; mitigations are transactional install, content digest verification, structural validation, and `rasen-workflow-author`'s independent semantic-review branch; there is no signature system and no marketplace. The documentation SHALL state that a digest verifies byte integrity rather than safety, validation is structural rather than behavioral, and independent review is a mitigation rather than a guarantee.
 
 #### Scenario: Trust boundary and its limits are stated
 
 - **WHEN** the workflow-packages documentation is read
 - **THEN** it SHALL state that community packages are executable prompts
-- **AND** it SHALL list the mitigations (transactional install, digest, validation, review experts) and that there is no signature system or marketplace
-- **AND** it SHALL state that a digest verifies integrity but not safety and that validation is structural, not behavioral
+- **AND** SHALL list transactional install, digest, validation, and independent review as mitigations and state that there is no signature system or marketplace
+- **AND** SHALL identify `rasen-workflow-author` as the host for the bundled review procedure
 
 ### Requirement: Experts are first-class catalog units
 
-The 21 built-in experts SHALL be members of the unified workflow catalog with `kind: 'expert'` and `source: 'built-in'`, carrying no command. Each expert SHALL carry a digest computed over its template and its sidecar directory tree, and SHALL preserve its sidecar source alias (an expert may materialize its sidecars from another expert's directory). `workflow list` SHALL present an `expert` group, shown by default alongside `task` and `driver`; `--json` SHALL expose experts with `kind: 'expert'` like any other unit. Enumerating the built-in catalog SHALL include the expert units.
+The 12 surviving built-in experts SHALL be members of the unified workflow catalog with `kind: 'expert'` and `source: 'built-in'`, carrying no command. The roster SHALL contain `benchmark`, `careful`, `chrome-use`, `codex`, `cso`, `design-consultation`, `design-review`, `investigate`, `office-hours`, `qa`, `review`, and `workflow-author`. Each expert SHALL carry a digest computed over its template and own sidecar tree. `workflow list` SHALL present an `expert` group by default, and `--json` SHALL expose the same expert units with `kind: 'expert'`.
 
 #### Scenario: Experts appear in the catalog with kind expert
 
 - **WHEN** the built-in catalog is enumerated
-- **THEN** each of the 21 experts SHALL appear with `kind: 'expert'`, `source: 'built-in'`, no command, and a digest
-- **AND** an expert that borrows another expert's sidecar directory SHALL retain that alias
+- **THEN** exactly the 12 surviving experts SHALL appear with `kind: 'expert'`, `source: 'built-in'`, no command, and a digest
+- **AND** `codebase-design`, `tdd`, `prototype`, `navigator`, `workflow-review`, and `qa-only` SHALL NOT appear as expert units
 
 #### Scenario: Experts listed by default
 
 - **WHEN** a user runs `rasen workflow list` without `--all`
 - **THEN** the `expert` group SHALL be shown
-- **AND** `rasen workflow list --json` SHALL include experts annotated with `kind: 'expert'`
+- **AND** `rasen workflow list --json` SHALL include only the surviving experts annotated with `kind: 'expert'`
 
 #### Scenario: Expert digest covers template and sidecars
 
-- **WHEN** an expert's template or a sidecar file changes
+- **WHEN** a surviving expert's template or sidecar file changes
 - **THEN** its digest SHALL change
-- **AND** two experts sharing one sidecar directory SHALL have distinct digests
+- **AND** every surviving built-in expert SHALL have a distinct digest
 
 ### Requirement: Delete guard protects skills referenced by requires.skills
 
@@ -328,4 +335,41 @@ When a stored workflow selection read from global config (a `custom` profile's w
 - **THEN** the unknown id SHALL be dropped from the resolved selection
 - **AND** a warning naming the dropped id SHALL be emitted
 - **AND** resolution SHALL succeed for the remaining known ids
+
+### Requirement: Built-in host references are generated and tracked with their host
+
+A built-in workflow or expert that ships host-owned Markdown references SHALL install those references beside its generated `SKILL.md`, preserving nested relative paths on Windows, macOS, and Linux. Its generated-artifact freshness contract SHALL cover the inline router and bundled sidecar tree so a missing or changed reference is observable and can be regenerated by update.
+
+#### Scenario: Host references install cross-platform
+
+- **WHEN** init or update generates `rasen-propose`, `rasen-apply-change`, `rasen-explore`, `rasen-help`, or `rasen-workflow-author` on Windows, macOS, or Linux
+- **THEN** each selected host SHALL receive its explicitly bundled reference files at the same relative paths
+- **AND** path construction SHALL use platform path utilities rather than hardcoded separators
+
+#### Scenario: Host reference changes affect freshness
+
+- **WHEN** a tracked host reference changes or is missing from an installed host skill
+- **THEN** the host's generated-artifact digest or freshness check SHALL detect the difference
+- **AND** update SHALL restore the complete current sidecar tree
+
+### Requirement: Consolidated expert installs are retired by exact identity
+
+Init and update SHALL remove installed directories for the six explicitly retired built-in identities: `rasen-codebase-design`, `rasen-tdd`, `rasen-prototype`, `rasen-navigator`, `rasen-workflow-review`, and `rasen-qa-only`. Cleanup SHALL run for each configured skill root before an up-to-date short circuit and SHALL use an explicit tracked name list with exact path lookup.
+
+#### Scenario: Update removes every retired generated directory
+
+- **WHEN** any of the six exact retired directories exists in a configured tool's skill root
+- **THEN** init or update SHALL remove that directory
+- **AND** SHALL generate the corresponding current host skill and references when the host is selected
+
+#### Scenario: Exact cleanup preserves neighbors on every platform
+
+- **WHEN** cleanup runs on Windows, macOS, or Linux and the skill root also contains similarly named or unrelated directories
+- **THEN** only names in the explicit retired-directory list SHALL be removed
+- **AND** no prefix, glob, regex, or directory-content inference SHALL select additional targets
+
+#### Scenario: Up-to-date update still heals retired artifacts
+
+- **WHEN** the installed version and selected current skills are otherwise up to date but a retired directory remains
+- **THEN** update SHALL remove the retired directory before returning success
 

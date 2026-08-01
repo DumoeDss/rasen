@@ -11,7 +11,7 @@ The PREAMBLE SHALL carry a per-expert mapping table for every surviving finding 
 - **AND** SHALL define one QA mapping that covers all QA modes
 - **AND** SHALL state that a data-loss, security, or corruption finding maps up regardless of its native label
 
-#### Scenario: Dispatched experts emit canonical severity
+#### Scenario: dispatched experts emit canonical severity
 
 - **WHEN** the generated `review`, `cso`, `qa`, `benchmark`, or `design-review` skill is inspected
 - **THEN** it SHALL state that each dispatched finding is tagged with a canonical severity in the report file

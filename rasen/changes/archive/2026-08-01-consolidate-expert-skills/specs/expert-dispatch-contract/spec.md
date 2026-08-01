@@ -52,14 +52,14 @@ The `qa`, `design-review`, and `review` skills SHALL suppress mutating behavior 
 
 In dispatched mode each surviving generic expert SHALL write findings to the canonical report file in the change's work directory with the change-directory sticky-legacy fallback: `review-report.md`, `cso-report.md`, `qa-report.md`, `benchmark-report.md`, or `design-review-report.md`. Both UI QA and non-UI/report-only QA SHALL use `qa-report.md`. Dispatched experts SHALL NOT also write standalone report paths. Standalone modes SHALL retain native paths. Orchestration Step B SHALL state that dispatched experts run report-only, write the canonical report themselves, and that the dispatching worker verifies its presence before returning.
 
-#### Scenario: Dispatched expert writes only the canonical report
+#### Scenario: dispatched expert writes only the canonical report
 
 - **WHEN** the generated `cso`, `qa`, `benchmark`, or `design-review` skill is inspected
 - **THEN** it SHALL state that dispatched mode writes its canonical report in the work directory with the change-directory fallback
 - **AND** SHALL scope standalone `.rasen/*-reports/` and project report paths to standalone mode
 - **AND** QA SHALL name one `qa-report.md` contract for every QA mode
 
-#### Scenario: Step B names the unified QA producer
+#### Scenario: Step B no longer claims experts save nothing
 
 - **WHEN** the generated orchestration playbook Step B is inspected
 - **THEN** it SHALL state that dispatched experts write their canonical report and the worker verifies its presence

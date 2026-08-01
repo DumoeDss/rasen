@@ -4,7 +4,7 @@
 
 The `rasen-apply-change` workflow template SHALL name its bundled TDD entry reference as an optional test-first implementation discipline and the independent `rasen-careful` skill for changes touching destructive operations. The TDD body SHALL be loaded only when test-first work is selected, while careful remains a conditional expert consultation. The workflow SHALL not inline either substantive body into its router instructions.
 
-#### Scenario: Apply loads the selected implementation discipline
+#### Scenario: Apply template names the implementation disciplines
 
 - **WHEN** the generated `rasen-apply-change` skill is used for test-first work
 - **THEN** it SHALL direct the agent to read its bundled TDD entry reference before implementation
@@ -15,7 +15,7 @@ The `rasen-apply-change` workflow template SHALL name its bundled TDD entry refe
 
 The `rasen-explore` workflow template SHALL name its bundled prototype entry reference as the way to settle a design question that only building can answer. It SHALL load that reference only for a bounded prototype branch, instruct capturing the answer in the change directory and deleting the throwaway code, and keep its "Don't implement" guardrail consistent with that exception.
 
-#### Scenario: Explore loads prototype guidance for a stuck question
+#### Scenario: Explore template names prototype
 
 - **WHEN** a design question is stuck and running code is selected as the bounded way to settle it
 - **THEN** the generated `rasen-explore` skill SHALL direct the agent to read its bundled prototype entry reference
@@ -31,7 +31,7 @@ The `rasen-explore` workflow template SHALL name its bundled prototype entry ref
 
 The `rasen-propose` workflow template SHALL name its bundled codebase-design entry reference as a conditional, teaching-level consultation for design-dense changes such as a new module or non-trivial interface. It SHALL load that reference only when the condition applies and SHALL direct resulting interface/design decisions to the change directory (`design.md` Decisions or a change-directory sidecar), not to an expert-native report path.
 
-#### Scenario: Propose loads bundled design methodology
+#### Scenario: Propose template names the design methodology expert
 
 - **WHEN** `rasen-propose` handles a design-dense change
 - **THEN** it SHALL direct the planner to read its bundled codebase-design entry reference

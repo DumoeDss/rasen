@@ -4,27 +4,30 @@
 Fuses the three methodology experts (`codebase-design`, `tdd`, `prototype`) into the Rasen workflow templates (propose, apply, explore) as conditional, teaching-level references — with their artifacts captured in the change directory rather than skill-native paths — and removes dangling `enhance` hooks and doc references to the plan-review skills deleted in an earlier change.
 ## Requirements
 ### Requirement: Apply references the TDD and careful disciplines
-The `rasen-apply-change` workflow template SHALL mention the `rasen-tdd` skill as an optional test-first implementation discipline and the `rasen-careful` skill for changes touching destructive operations, as conditional references without inlining their bodies. References SHALL name the canonical skill, not a bare-slash or `/rasen:*` colon command.
+
+The `rasen-apply-change` workflow template SHALL name its bundled TDD entry reference as an optional test-first implementation discipline and the independent `rasen-careful` skill for changes touching destructive operations. The TDD body SHALL be loaded only when test-first work is selected, while careful remains a conditional expert consultation. The workflow SHALL not inline either substantive body into its router instructions.
 
 #### Scenario: Apply template names the implementation disciplines
-- **WHEN** the generated `rasen-apply-change` skill template is inspected
-- **THEN** it SHALL reference the `rasen-tdd` skill as an implementation option and the `rasen-careful` skill for destructive-operation-heavy work
-- **AND** SHALL NOT contain an inlined copy of either expert's body
+
+- **WHEN** the generated `rasen-apply-change` skill is used for test-first work
+- **THEN** it SHALL direct the agent to read its bundled TDD entry reference before implementation
+- **AND** it SHALL continue to name `rasen-careful` for destructive-operation-heavy work
+- **AND** its router body SHALL NOT contain an inlined copy of either discipline
 
 ### Requirement: Explore references the prototype discipline
 
-The `rasen-explore` workflow template SHALL reference the `rasen-prototype` skill as the way to settle a design question that only building can answer, SHALL instruct capturing the answer in the change directory and deleting the throwaway code, and its "Don't implement" guardrail SHALL carry an explicit exception for the throwaway prototype probe so the template does not contradict itself.
+The `rasen-explore` workflow template SHALL name its bundled prototype entry reference as the way to settle a design question that only building can answer. It SHALL load that reference only for a bounded prototype branch, instruct capturing the answer in the change directory and deleting the throwaway code, and keep its "Don't implement" guardrail consistent with that exception.
 
 #### Scenario: Explore template names prototype
 
-- **WHEN** the generated `rasen-explore` skill template is inspected
-- **THEN** it SHALL reference the `rasen-prototype` skill for settling a stuck design question
+- **WHEN** a design question is stuck and running code is selected as the bounded way to settle it
+- **THEN** the generated `rasen-explore` skill SHALL direct the agent to read its bundled prototype entry reference
 - **AND** SHALL instruct capturing the answer in the change directory and deleting the throwaway code
 
 #### Scenario: Explore guardrail carve-out stays consistent with the prototype reference
 
-- **WHEN** the Guardrails section of the generated `rasen-explore` skill template is inspected
-- **THEN** the "Don't implement" guardrail SHALL name the throwaway `rasen-prototype` probe as its only exception
+- **WHEN** the Guardrails section of the generated `rasen-explore` skill is inspected
+- **THEN** the "Don't implement" guardrail SHALL name the throwaway prototype-reference branch as its only exception
 - **AND** SHALL require the probe's code to be deleted once the answer is captured
 
 ### Requirement: Spec-driven enhance hooks reference only existing skills
@@ -58,26 +61,16 @@ No live surface — workflow templates, expert templates, generated/installed sk
 - **WHEN** `test/core/templates/skill-templates-parity.test.ts` is run after the edits
 - **THEN** the golden-master parity check SHALL pass with no drift
 
-### Requirement: Fused experts remain standalone-invokable
-
-The surviving methodology experts SHALL remain registered and standalone-invokable after the fusion; the fusion adds workflow references only and SHALL NOT de-register `codebase-design`, `tdd`, or `prototype`.
-
-#### Scenario: Methodology experts still registered
-
-- **WHEN** `getSkillTemplates()` is called without a workflow filter
-- **THEN** the returned array SHALL still include entries with `dirName` `rasen-codebase-design`, `rasen-tdd`, and `rasen-prototype`
-- **AND** SHALL NOT include `openspec-domain-modeling`
-
 ### Requirement: Propose references the design methodology expert
 
-The `rasen-propose` workflow template SHALL reference the `rasen-codebase-design` skill as a conditional, teaching-level consultation for design-dense changes (a new module or a non-trivial interface), without inlining its skill body. The reference SHALL instruct that resulting interface/design decisions are captured in the change directory (the change's `design.md` Decisions section or a change-directory sidecar), not in expert-skill-native report paths.
+The `rasen-propose` workflow template SHALL name its bundled codebase-design entry reference as a conditional, teaching-level consultation for design-dense changes such as a new module or non-trivial interface. It SHALL load that reference only when the condition applies and SHALL direct resulting interface/design decisions to the change directory (`design.md` Decisions or a change-directory sidecar), not to an expert-native report path.
 
 #### Scenario: Propose template names the design methodology expert
 
-- **WHEN** the generated `rasen-propose` skill template is inspected
-- **THEN** it SHALL reference the `rasen-codebase-design` skill as a conditional consultation for design-dense changes
-- **AND** SHALL NOT reference `/domain-modeling`
-- **AND** SHALL NOT contain an inlined copy of the expert's body
+- **WHEN** `rasen-propose` handles a design-dense change
+- **THEN** it SHALL direct the planner to read its bundled codebase-design entry reference
+- **AND** SHALL NOT reference a standalone `rasen-codebase-design` or `/domain-modeling` skill
+- **AND** SHALL NOT contain an inlined copy of the methodology body
 
 #### Scenario: Design decisions captured in the change directory
 
@@ -86,11 +79,11 @@ The `rasen-propose` workflow template SHALL reference the `rasen-codebase-design
 
 ### Requirement: Prototype adapts its capture path to an active change context
 
-The `prototype` expert skill template SHALL carry change-context capture guidance (appended at the expert-getter layer to the inline instructions): when invoked while a Rasen change is active, the prototype verdict and the decisions it settles SHALL be captured in that change's directory — the change's `design.md` Decisions section or a change-directory sidecar resolved from `rasen status --change <name> --json` (`changeRoot`) — and the skill's standalone capture locations (ADR, `NOTES.md` beside the prototype) SHALL be described as standalone-use-only in that mode.
+The bundled prototype reference SHALL carry change-context capture guidance: when `rasen-explore` runs for an active Rasen change, the prototype verdict and settled decisions SHALL be captured in that change's directory, using `design.md` Decisions or a change-directory sidecar resolved from `rasen status --change <name> --json` (`changeRoot`). Standalone capture locations inherited from the adapted source SHALL be identified as non-Rasen guidance and SHALL NOT override the active change path.
 
 #### Scenario: Prototype verdict capture in a change context
 
-- **WHEN** the installed `prototype` expert skill is inspected
-- **THEN** it SHALL instruct capturing the prototype verdict into the active change's directory when a Rasen change context is active
-- **AND** SHALL scope its standalone capture locations to non-Rasen use
+- **WHEN** the installed `rasen-explore` prototype reference is used for an active change
+- **THEN** it SHALL instruct capturing the verdict into that active change's directory
+- **AND** SHALL scope standalone capture locations to non-Rasen use
 

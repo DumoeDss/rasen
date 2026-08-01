@@ -41,7 +41,7 @@ The interactive profile picker SHALL present the 12 current built-in experts as 
 - **THEN** that expert SHALL be shown as required by that workflow
 - **AND** the user SHALL NOT be able to remove it while the requiring workflow remains selected
 
-#### Scenario: Localized expert picker metadata matches the current roster
+#### Scenario: Localized expert picker metadata
 
 - **WHEN** the picker renders experts in English, Japanese, or Simplified Chinese
 - **THEN** each of the 12 surviving experts SHALL have a specific localized name and description rather than an id fallback
@@ -52,7 +52,7 @@ The interactive profile picker SHALL present the 12 current built-in experts as 
 
 Installed current experts SHALL be governed by the resolved profile plus dependency closure, while existing installations that predate explicit expert selection SHALL retain every current built-in expert until the user re-selects experts or applies a profile. This non-regression rule SHALL NOT preserve generated directories for identities that have been retired from the built-in catalog; exact retired directories are cleaned independently during init/update.
 
-#### Scenario: Existing install keeps all current experts
+#### Scenario: Existing install keeps all experts
 
 - **WHEN** a project created before expert selection existed is updated
 - **AND** the user has not re-selected experts
