@@ -66,9 +66,9 @@ describe('computeWorkflowDependencyGraph (design D7) — shipped built-ins', () 
     expect(new Set(entry.requires).size).toBe(entry.requires.length);
   });
 
-  it('the enhanced-verify workflow strongly requires its five quality experts', () => {
+  it('the enhanced-verify workflow strongly requires its four expert identities', () => {
     const entry = entryMap().get('verify-enhanced-command')!;
-    for (const id of ['cso', 'design-review', 'qa', 'qa-only', 'review']) {
+    for (const id of ['cso', 'design-review', 'qa', 'review']) {
       expect(entry.requires).toContain(id);
     }
   });
@@ -76,7 +76,7 @@ describe('computeWorkflowDependencyGraph (design D7) — shipped built-ins', () 
   it('condition-gated experts enhance the auto driver and are not in its strong closure', () => {
     const map = entryMap();
     const auto = map.get('auto-command')!;
-    for (const expert of ['cso', 'benchmark', 'design-review', 'qa', 'qa-only']) {
+    for (const expert of ['cso', 'benchmark', 'design-review', 'qa']) {
       expect(map.get(expert)!.enhances).toContain('auto-command');
       expect(auto.requires).not.toContain(expert);
     }

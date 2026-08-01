@@ -6,7 +6,8 @@ import * as os from 'node:os';
 import { execSync } from 'node:child_process';
 
 import { ALL_EXPERTS, ALL_WORKFLOWS } from '../../src/core/profiles.js';
-import { getExpertSkillDefinitions } from '../../src/core/workflow-registry/index.js';
+import { getExpertSkillDefinitions, loadWorkflowCatalog } from '../../src/core/workflow-registry/index.js';
+import { copySkillSidecars } from '../../src/core/shared/skill-generation.js';
 import { setStdoutRows } from '../helpers/stdout.js';
 
 // The picker's choice list is workflows + experts + 2 group Separators
@@ -102,7 +103,7 @@ describe('deriveProfileFromSelection', () => {
     const { deriveProfileFromSelection } = await import('../../src/commands/config.js');
     expect(deriveProfileFromSelection([
       'archive', 'auto-command', 'sync', 'apply', 'explore', 'propose', 'help',
-      'design-review', 'benchmark', 'qa-only', 'qa', 'cso', 'review',
+      'design-review', 'benchmark', 'qa', 'cso', 'review',
     ], 'off')).toBe('core');
   });
 
@@ -110,7 +111,7 @@ describe('deriveProfileFromSelection', () => {
     const { deriveProfileFromSelection } = await import('../../src/commands/config.js');
     expect(deriveProfileFromSelection([
       'archive', 'auto-command', 'sync', 'apply', 'explore', 'propose', 'help',
-      'design-review', 'benchmark', 'qa-only', 'qa', 'cso', 'review',
+      'design-review', 'benchmark', 'qa', 'cso', 'review',
     ], 'report')).toBe('custom');
   });
 });
@@ -238,6 +239,15 @@ describe('config profile interactive flow', () => {
       const skillPath = path.join(projectDir, '.claude', 'skills', expert.dirName, 'SKILL.md');
       fs.mkdirSync(path.dirname(skillPath), { recursive: true });
       fs.writeFileSync(skillPath, `name: ${expert.dirName}\n`, 'utf-8');
+    }
+
+    // Built-in workflow and expert sidecars are part of the installed skill
+    // contract, so a hand-built synced fixture must materialize them too.
+    for (const definition of loadWorkflowCatalog().definitions) {
+      const skillDir = path.join(projectDir, '.claude', 'skills', definition.skill.dirName);
+      if (fs.existsSync(path.join(skillDir, 'SKILL.md'))) {
+        copySkillSidecars(definition.id, skillDir);
+      }
     }
 
     const coreCommands = ['propose', 'explore', 'apply', 'sync', 'archive', 'auto', 'help'];
@@ -677,7 +687,7 @@ describe('config profile interactive flow', () => {
     // D4): the core preset now names the quality-floor experts too.
     expect(config.workflows).toEqual([
       'propose', 'explore', 'apply', 'sync', 'archive', 'auto-command', 'help',
-      'review', 'cso', 'qa', 'qa-only', 'benchmark', 'design-review',
+      'review', 'cso', 'qa', 'benchmark', 'design-review',
     ]);
     expect(config.expertSelectionExplicit).toBe(true);
     expect(select).not.toHaveBeenCalled();

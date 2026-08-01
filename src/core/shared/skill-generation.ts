@@ -10,7 +10,6 @@ import { fileURLToPath } from 'url';
 import type { SkillTemplate } from '../templates/skill-templates.js';
 import { quoteYamlValue, yamlScalar } from './yaml.js';
 import {
-  getExpertSkillDefinitions,
   loadWorkflowCatalog,
   resolveWorkflowSelection,
 } from '../workflow-registry/index.js';
@@ -76,15 +75,10 @@ function copySidecarTree(sourceDir: string, targetDir: string): void {
  *   that does not bundle `skills/`), matching the expert-template `readFileSync`
  *   try/catch behavior. Re-running overwrites in place (idempotent).
  */
-/**
- * Skills that ship no sidecar directory of their own but whose body references
- * another skill's sidecars (qa-only shares the QA_METHODOLOGY block with qa,
- * which points at `templates/` and `references/` beside the SKILL.md).
- */
 export function copySkillSidecars(workflowId: string, targetSkillDir: string): void {
-  const userDefinition = loadWorkflowCatalog().get(workflowId);
-  if (userDefinition?.source === 'user') {
-    for (const file of userDefinition.files) {
+  const definition = loadWorkflowCatalog().get(workflowId);
+  if (definition?.source === 'user') {
+    for (const file of definition.files) {
       if (file.path === 'SKILL.md' || file.path === 'workflow.yaml') continue;
       const target = join(targetSkillDir, ...file.path.split('/'));
       mkdirSync(dirname(target), { recursive: true });
@@ -93,10 +87,7 @@ export function copySkillSidecars(workflowId: string, targetSkillDir: string): v
     }
     return;
   }
-  const sourceId =
-    getExpertSkillDefinitions().find((definition) => definition.id === workflowId)
-      ?.sidecarSourceId ?? workflowId;
-  const expertSourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'experts', sourceId);
+  const expertSourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'experts', workflowId);
   if (existsSync(expertSourceDir)) {
     copySidecarTree(expertSourceDir, targetSkillDir);
   }
@@ -104,7 +95,7 @@ export function copySkillSidecars(workflowId: string, targetSkillDir: string): v
   // Built-in workflows may ship sidecars under `skills/workflows/<dirName>`
   // (e.g. rasen-retain's report/codify branch bodies), keyed by the installed
   // skill directory name rather than the workflow id.
-  const dirName = userDefinition?.skill.dirName;
+  const dirName = definition?.skill.dirName;
   if (dirName) {
     const workflowSourceDir = resolve(__dirname, '..', '..', '..', 'skills', 'workflows', dirName);
     if (existsSync(workflowSourceDir)) {

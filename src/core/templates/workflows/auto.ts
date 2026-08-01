@@ -145,7 +145,7 @@ Classification: Full Feature | Small Feature | Bug Fix      Tier: A | B | C
 - [ ] ship
 
 ### Workers / experts
-- review (always), cso (security), benchmark (perf), qa (UI) / qa-only (non-UI)
+- review (always), cso (security), benchmark (perf), qa (UI) / qa-report-only (non-UI; dispatch \`rasen-qa\` with an explicit report-only instruction)
 \`\`\`
 
 When decompose is taken, report **portfolio progress** instead — the children, their dependency order, what runs in parallel, and the runnable frontier:

@@ -345,7 +345,7 @@ AI:  Verifying add-dark-mode...
 
 ### `rasen-review-cycle`
 
-Drive a change to actually-clean with an iterative loop: `review → triage → fix → re-review(Δ) → {pass | loop | escalate}`. It does not reimplement the reviewer — each pass delegates to the always-installed `rasen-review` engine. This command owns the loop, fix-size triage, the author-vs-verifier invariant, termination, and escalation. Opt-in (not in the `core` profile).
+Drive a change to actually-clean with an iterative loop: `review → triage → fix → re-review(Δ) → {pass | loop | escalate}`. It does not reimplement the reviewer — each pass delegates to the `rasen-review` engine, which is installed with review-cycle through skill dependency closure even when it was not selected directly. This command owns the loop, fix-size triage, the author-vs-verifier invariant, termination, and escalation. Opt-in (not in the `core` profile).
 
 **Syntax:**
 ```

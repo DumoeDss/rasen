@@ -17,6 +17,38 @@ export {
 
 export const LEGACY_EDIT_BOUNDARY_STATE_FILE = 'freeze-dir.txt';
 
+/** Exact generated skill directories retired by expert consolidation. */
+export const RETIRED_CONSOLIDATED_EXPERT_SKILL_DIRS = [
+  'rasen-codebase-design',
+  'rasen-tdd',
+  'rasen-prototype',
+  'rasen-navigator',
+  'rasen-workflow-review',
+  'rasen-qa-only',
+] as const;
+
+/**
+ * Remove only the exact consolidated expert directories. Deliberately uses
+ * `path.join` and no glob, prefix, regex, or content inference, so similarly
+ * named and user-owned neighbors remain untouched on every platform.
+ */
+export async function pruneRetiredConsolidatedExpertSkillDirs(
+  skillsDir: string
+): Promise<string[]> {
+  const removed: string[] = [];
+  for (const dirName of RETIRED_CONSOLIDATED_EXPERT_SKILL_DIRS) {
+    const dirPath = path.join(skillsDir, dirName);
+    try {
+      if (!(await fs.stat(dirPath)).isDirectory()) continue;
+      await fs.rm(dirPath, { recursive: true, force: true });
+      removed.push(dirName);
+    } catch {
+      // Missing/unreadable entries are best-effort no-ops.
+    }
+  }
+  return removed;
+}
+
 /**
  * Remove only the three exact retired installed skill directories. Similar
  * names and user-authored directories are preserved.

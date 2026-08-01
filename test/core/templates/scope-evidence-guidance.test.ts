@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { getInvestigateSkillTemplate } from '../../../src/core/templates/experts/investigate.js';
-import { getNavigatorSkillTemplate } from '../../../src/core/templates/experts/navigator.js';
 import { getReviewSkillTemplate } from '../../../src/core/templates/experts/review.js';
 
 describe('scope evidence guidance', () => {
@@ -21,14 +22,17 @@ describe('scope evidence guidance', () => {
   });
 
   it('routes navigator to caution, investigation, and changed-file review', () => {
-    const content = getNavigatorSkillTemplate().instructions;
+    const content = readFileSync(fileURLToPath(new URL(
+      '../../../skills/workflows/rasen-help/references/navigator.md',
+      import.meta.url
+    )), 'utf8');
 
     expect(content).toContain('rasen-careful');
     expect(content).toContain('rasen-investigate');
     expect(content).toContain('rasen-review');
     expect(content).toContain('rasen-verify-change');
     expect(content).toContain('actual changed-file set and diff');
-    expect(content).toContain('Managed daemon/ECP workspace access and sandbox policy');
+    expect(content).toContain('Managed sandbox/workspace policy');
     expect(content).not.toContain('rasen agent edit-boundary');
     expect(content).not.toContain('hard` denies');
   });

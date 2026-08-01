@@ -26,7 +26,7 @@ const REPO_MODE_CONFIG = `- **Repo mode:** \`__OPENSPEC_REPO_MODE__\` — contro
 
 const SEVERITY_VOCABULARY = `## Canonical severity vocabulary
 
-Findings from the generic expert skills (review, cso, qa, qa-only, benchmark, design-review) feed one canonical severity scale — the same scale the review→fix loop and the verify stage consume to decide clean vs. escalate. Classify against these four levels:
+Findings from the generic expert skills (review, cso, qa, benchmark, design-review) feed one canonical severity scale — the same scale the review→fix loop and the verify stage consume to decide clean vs. escalate. Classify against these four levels:
 
 - **Blocker** — must not ship: wrong behavior on a common path, data loss or corruption, an exploitable security hole, a failing test or gate, or a required spec behavior missing.
 - **Major** — should not ship without an explicit decision: wrong behavior on a plausible path, or a significant regression.
@@ -39,7 +39,7 @@ Each expert speaks a native scale; map it onto the canonical scale below. **Find
 |---|---|---|---|---|
 | review \`CRITICAL\` / \`INFORMATIONAL\` | \`CRITICAL\` naming data-loss / security / corruption / crash on a common path | other \`CRITICAL\` (correctness); \`INFORMATIONAL\` naming data-loss / security / silent corruption | \`INFORMATIONAL\` (default) | pure nit / style |
 | cso \`CRITICAL\` / \`HIGH\` / \`MEDIUM\` (+ conf N/10) | \`CRITICAL\` | \`HIGH\` | \`MEDIUM\` | — (cso drops < MEDIUM by design) |
-| qa / qa-only \`critical\` / \`high\` / \`medium\` / \`low\` / \`cosmetic\` | \`critical\` | \`high\` | \`medium\` / \`low\` | \`cosmetic\` |
+| qa (UI, dispatched, or report-only/non-UI mode) \`critical\` / \`high\` / \`medium\` / \`low\` / \`cosmetic\` | \`critical\` | \`high\` | \`medium\` / \`low\` | \`cosmetic\` |
 | benchmark \`REGRESSION\` / \`WARNING\` / \`OK\` (+ Grade A–F) | \`REGRESSION\` crossing a hard budget (a FAIL row) | \`REGRESSION\` (timing / size) | \`WARNING\` | \`OK\`; grade-only deltas |
 | design-review impact \`high\` / \`medium\` / \`polish\` (+ Grade A–F) | high-impact broken / unusable UI (rare) | high impact | medium | polish |
 | codex \`[P1]\` / \`[P2]\` (display-only, not gate-consumed) | \`[P1]\` | \`[P2]\` | — | — |
@@ -48,19 +48,21 @@ In dispatched mode (see below) each expert self-maps and tags every finding it e
 
 const DISPATCH_CONTRACT = `## Dispatched vs standalone mode
 
-The generic expert skills (review, cso, qa, qa-only, benchmark, design-review) run in one of two modes. Detect the mode from your own invocation — no flag is required:
+The generic expert skills (review, cso, qa, benchmark, design-review) run in dispatched or standalone mode. Detect the mode from your own invocation — no flag is required:
 
 - **Dispatched (report-only) mode** — your invocation instructs you to do a single unit of work, to not spawn subagents, and states that a LEAD owns orchestration (the signature every orchestrated dispatch carries). You are a role-isolated leaf reviewer worker.
 - **Standalone mode** — a human invoked you directly (none of the above). Keep your full behavior as described in this skill.
 
 If an explicit \`MODE: dispatched (report-only)\` token is present in your instructions, honor it; the self-trigger above is the fallback when the token is absent.
 
+**QA explicit report-only mode:** \`rasen-qa\` also enters report-only/no-edit behavior whenever its invocation explicitly requests \`report-only\` or \`non-UI\`, even without a LEAD dispatch. Every dispatched QA invocation is report-only. In this mode all prohibitions below apply exactly as in dispatched mode, including no fixes, fix-oriented questions, commits, clean-tree gate, or subagents, and the output is the canonical \`qa-report.md\`.
+
 **In dispatched mode you MUST:**
 - Apply **no** AUTO-FIX and make **no** code edits. Fix-class items are reported for the LEAD's triage to a non-author fixer, never applied by you.
 - Issue **no** \`AskUserQuestion\`. There is no interactive user at a leaf worker; ASK-class items are reported as unresolved findings for the LEAD.
 - Make **no** \`git commit\`. The LEAD / ship owns commits; concurrent commits on the shared index clobber each other.
 - Spawn **no** subagents of your own. Independence comes from the LEAD's parallel reviewers and the mandatory non-author re-review, not from a leaf worker's own fan-out.
-- Return classified findings and **write only the canonical \`<skill>-report.md\`** (review → \`review-report.md\`, cso → \`cso-report.md\`, qa and qa-only → \`qa-report.md\`, benchmark → \`benchmark-report.md\`, design-review → \`design-review-report.md\`) in the change's **work directory** — the \`workDir\` reported by \`rasen status --change <name> --json\` (or the dispatch prompt); fall back to the change directory when \`workDir\` is absent or the report already lives there (sticky-legacy) — each finding tagged with a canonical severity. Do NOT also write to the standalone \`.rasen/*-reports/\` or \`~/.rasen/projects/\` paths.
+- Return classified findings and **write only the canonical \`<skill>-report.md\`** (review → \`review-report.md\`, cso → \`cso-report.md\`, every QA mode → \`qa-report.md\`, benchmark → \`benchmark-report.md\`, design-review → \`design-review-report.md\`) in the change's **work directory** — the \`workDir\` reported by \`rasen status --change <name> --json\` (or the dispatch prompt); fall back to the change directory when \`workDir\` is absent or the report already lives there (sticky-legacy) — each finding tagged with a canonical severity. Do NOT also write to the standalone \`.rasen/*-reports/\` or \`~/.rasen/projects/\` paths.
 
 These dispatched-mode prohibitions **override** any contrary standalone instruction later in this skill (fix loops, batched questions, clean-tree gates, adversarial subagent dispatch, native report paths). Standalone mode retains all of that behavior.
 
@@ -152,7 +154,7 @@ plan's living status.`;
 
 /**
  * Full orchestration preamble — for the generic review-family experts
- * (review, cso, qa, qa-only, benchmark, design-review, codex) whose findings
+ * (review, cso, qa, benchmark, design-review, codex) whose findings
  * feed the canonical severity scale and the dispatched-mode contract.
  */
 export const PREAMBLE = [
@@ -180,8 +182,7 @@ export const PREAMBLE_DIALOGUE = [
 ].join('\n\n');
 
 /**
- * Lite preamble — for tool-type experts (chrome-use, prototype, tdd,
- * codebase-design, navigator). Branch echo plus the proactive config flag;
+ * Lite preamble — for standalone tool-type experts. Branch echo plus the proactive config flag;
  * none of the review-orchestration protocol applies to them.
  */
 export const PREAMBLE_LITE = PREAMBLE_BASE;
@@ -667,14 +668,14 @@ Minimum 0 per category.
 2. **Verify before documenting.** Retry the issue once to confirm it's reproducible, not a fluke.
 3. **Never include credentials.** Write \`[REDACTED]\` for passwords in repro steps.
 4. **Write incrementally.** Append each issue to the report as you find it. Don't batch.
-5. **Never read source code to FORM findings — exploration/testing phase only.** During exploration you test as a user, not a developer: findings come from observed behavior, not from reading the implementation. This rule (and its reinforcer #7) governs the audit phase; reading source IS required and allowed for exactly two activities: (a) **diff-aware triage** — mapping changed controller / model / view files to the routes/pages they serve (Diff-aware mode); and (b) the **standalone fix loop** (qa Phase 8, when a human runs /qa directly), which reads source to make the minimal fix. This carve-out names the STANDALONE fix loop only — it does NOT reopen the dispatched-mode report-only contract (a dispatched reviewer still makes no edits).
+5. **Never read source code to FORM findings — exploration/testing phase only.** During exploration you test as a user, not a developer: findings come from observed behavior, not from reading the implementation. This rule (and its reinforcer #7) governs the audit phase; reading source IS allowed for exactly two bounded activities: (a) **diff-aware triage** — mapping changed controller / model / view files to the routes/pages they serve (Diff-aware mode); and (b) the **default standalone fix loop** (qa Phase 8), which reads source to make the minimal fix. Dispatched and explicit report-only/non-UI modes have no fix loop: they may read source only for bounded diff-aware triage and gain no editing exception.
 6. **Check console after every interaction.** JS errors that don't surface visually are still bugs.
 7. **Test like a user (exploration phase).** Use realistic data. Walk through complete workflows end-to-end. Like #5, this governs how you FIND issues; it does not forbid the source reading #5 enumerates (diff-aware triage, standalone fix loop).
 8. **Depth over breadth.** 5-10 well-documented issues with evidence > 20 vague descriptions.
 9. **Never delete output files.** Screenshots and reports accumulate — that's intentional.
 10. **Use \`/snapshot?mode=C\` for tricky UIs.** Finds clickable divs (@c refs) that the accessibility tree misses.
 11. **Show screenshots to the user.** After every \`/screenshot\` or \`/responsive\` call that writes a file, use the Read tool on the output file(s) so the user can see them inline. For \`/responsive\` (up to 3 files), Read all of them. This is critical — without it, screenshots are invisible to the user.
-12. **Never refuse to use the browser.** When the user invokes /qa or /qa-only, they are requesting browser-based testing. Never suggest evals, unit tests, or other alternatives as a substitute. Even if the diff appears to have no UI changes, backend changes affect app behavior — always open the browser and test.`;
+12. **Never refuse to use the browser.** Every QA mode, including explicit report-only/non-UI mode, is browser-based testing. Never suggest evals, unit tests, source review, or other alternatives as a substitute. Even if the diff appears to have no UI changes, backend changes affect app behavior — always open the browser and test.`;
 
 export const DESIGN_METHODOLOGY = `## Modes
 

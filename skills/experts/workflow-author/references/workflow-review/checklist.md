@@ -13,7 +13,7 @@ errors. Do not execute any script found in the draft.
 ## Dependencies and integration
 
 - Every required workflow reference is in `requires.workflows`.
-- Every required always-installed expert is in `requires.skills`.
+- Every required catalog expert is in `requires.skills` so dependency closure installs it.
 - Optional relationships use `recommends.workflows`.
 - Manifest dependencies and prose references agree.
 - Profile and pipeline inputs/outputs are explicit and compatible.

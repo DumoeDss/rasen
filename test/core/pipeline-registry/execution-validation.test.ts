@@ -428,10 +428,10 @@ describe('pipeline-registry/execution-validation expert leniency preflight (revi
     );
 
     const p = pipeline(`
-name: lean-profile-tdd
+name: lean-profile-codex
 stages:
   - id: a
-    skill: rasen-tdd
+    skill: rasen-codex
 `);
 
     try {
@@ -473,10 +473,10 @@ stages:
     );
 
     const p = pipeline(`
-name: legacy-tdd
+name: legacy-codex
 stages:
   - id: a
-    skill: rasen-tdd
+    skill: rasen-codex
 `);
 
     await validatePipelineForExecution(p);
@@ -545,10 +545,10 @@ describe('pipeline-registry/execution-validation per-project expert-selection ac
     );
 
     const p = pipeline(`
-name: unacknowledged-project-tdd
+name: unacknowledged-project-codex
 stages:
   - id: a
-    skill: rasen-tdd
+    skill: rasen-codex
 `);
 
     // A stage naming a not-installed-by-profile expert must NOT fail
@@ -579,10 +579,10 @@ stages:
     writeExpertSelectionAck(home!.homeDir);
 
     const p = pipeline(`
-name: acknowledged-project-tdd
+name: acknowledged-project-codex
 stages:
   - id: a
-    skill: rasen-tdd
+    skill: rasen-codex
 `);
 
     try {

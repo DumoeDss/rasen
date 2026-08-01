@@ -58,7 +58,7 @@ rasen pipeline list --json                     # 列出 package/user/project 的
 
 | 流水线 | 阶段（buildOrder 概要）|
 |---|---|
-| **full-feature** | office-hours → propose(可方向复审) → apply → 并行专家评审(review / cso / benchmark / design-review / qa\|qa-only) → review-loop(评审环) → ship → retain → archive |
+| **full-feature** | office-hours → propose(可方向复审) → apply → 并行专家评审(review / cso / benchmark / design-review / qa UI 模式 \| qa 只报告/non-UI 模式) → review-loop(评审环) → ship → retain → archive |
 | **small-feature** _(默认)_ | propose → apply → verify → review-loop → ship → archive |
 | **bug-fix** | propose → apply → 自适应 verify → ship → archive |
 | **auto-decompose** | **decompose**(条件性首步，LEAD 自审、非人类 gate) → propose → apply → verify → review-loop → ship → archive；取了 decompose 就扇出成多个子 change，每个子跑 `childPipeline`（默认 small-feature，见 §2.7）|
@@ -112,7 +112,7 @@ rasen pipeline list --json                     # 列出 package/user/project 的
          loop: { kind: review-cycle, maxRounds: 2 } }
      - { id: ship,        skill: openspec-opsx-ship,    role: shipper,     requires: [review-loop], model: sonnet }
    ```
-   可挑的现成 skill：`openspec-propose` / `openspec-apply-change` / `openspec-review-cycle` / `openspec-opsx-office-hours` / `openspec-opsx-ship` / `openspec-archive-change` / `openspec-opsx-retro`，专家 `openspec:review` / `openspec:cso` / `openspec:benchmark` / `openspec:design-review` / `openspec:qa` / `openspec:qa-only`。stage 字段同 §2.2；抄现成写法用 `rasen pipeline show full-feature`。
+   可挑的现成 skill 包括 `rasen-propose`、`rasen-apply-change`、`rasen-review-cycle`、`rasen-ship`、`rasen-archive-change`；可独立调度的质量专家包括 `rasen-review`、`rasen-cso`、`rasen-benchmark`、`rasen-design-review` 和唯一的 `rasen-qa` 身份。QA 不得改代码时要显式传入只报告/non-UI 模式。stage 字段同 §2.2；抄现成写法用 `rasen pipeline show full-feature`。
 3. **校验 + 用**：
    ```bash
    rasen validate <名字> --type pipeline   # 唯一id / requires可解析 / 无环 / skill存在 / parallelGroup独立 / decompose(至多一个·首位·childPipeline可解析且不含递归)
@@ -244,10 +244,10 @@ Agent 感知不到自己的上下文占用——它只能**测量**。`rasen age
 
 - **续跑消费**：`rasen pipeline resume --json` 输出 `sessionHandoff` / 各 stage 最新交接文档指针 / 各 worker 的 `contextEstimate`；新会话**先读交接文档**（蒸馏物），raw transcript 暖播种降级为兜底。
 
-### 3.8 专家技能（始终安装，按需调用）
-不论 profile 如何，`rasen init` 都会装上一组专家技能（生成为 `openspec-*`），可在验证/规划阶段单独调用：
+### 3.8 专家技能（由 profile 选择，按需调用）
+Rasen 目录中有 12 个可在验证/规划阶段单独调用的专家技能。实际安装集合由当前 profile 决定：`core` 默认包含五个质量底线专家（`review`、`cso`、`qa`、`benchmark`、`design-review`），`full` 包含全部 12 个，custom/命名 profile 使用已保存的专家选择。即使没有直接勾选，所选 workflow 的 `requires.skills` 依赖也会通过依赖闭包自动加入。为保证迁移不丢能力，旧安装在用户首次明确选择专家前暂时保留全部专家。
 
-`/review`（代码评审）、`/qa` `/qa-only`（QA）、`/cso`（安全）、`/benchmark`（性能）、`/design-review` `/design-consultation`（设计/视觉）、`/investigate` `/careful`（排查/破坏性命令确认）、`/codex`、`/setup-browser-cookies` 等。控制改动范围时，应在编辑前声明有证据支持的受影响区域，并在完成前检查实际变更文件集合与 diff。需要执行隔离时，使用受管 sandbox/workspace 策略。
+`rasen-review`（代码评审）、`rasen-qa`（独立修复模式或只报告/non-UI 模式）、`rasen-cso`（安全）、`rasen-benchmark`（性能）、`rasen-design-review` / `rasen-design-consultation`（设计/视觉）、`rasen-investigate` / `rasen-careful`（排查/破坏性命令确认）、`rasen-codex` 等。控制改动范围时，应在编辑前声明有证据支持的受影响区域，并在完成前检查实际变更文件集合与 diff。需要执行隔离时，使用受管 sandbox/workspace 策略。
 
 ---
 
@@ -280,14 +280,14 @@ slash 命令是「指挥」，真正读写状态、做校验/归档的是 `opens
 - **Profile = 装哪些 workflow 命令**：
   - `core`（默认）= `propose` / `explore` / `apply` / `archive`。
   - `custom`（expanded）= 你勾选的集合，可含 `new` `continue` `verify` `sync` `bulk-archive` `onboard` `review-cycle` `handoff` 以及 fusion 命令 `auto` `ship` `verify-enhanced` `office-hours` `retro`。
-  - **专家技能与 profile 无关，始终安装**。
+  - **专家技能可由 profile 选择**：`core` 使用五个质量底线专家，`full` 使用目录中的全部专家，custom/命名 profile 使用明确选择；workflow 的 `requires.skills` 依赖会自动补齐。
 - **启用 expanded / fusion 命令**：
   ```bash
   rasen config profile      # 交互选择 profile + workflows
   rasen update              # 在项目里重新生成对应的 skills/commands
   ```
 - **Delivery = command 是否与 skill 一起装**：`both`（默认，skill + command）/ `skills`（只装 skill）。在全局配置（`rasen config`）里设。
-  - **skill 始终安装**，任何 delivery 模式都一样。`/rasen-auto` 与 `/rasen-review-cycle` 在运行时让模型**调用其它 skill**（worker 调阶段 skill；review-loop 调 `openspec-review`）——模型能调 skill、**不能**调 command，所以编排需要 skill 在场。既然 delivery 再也不能把它删掉，编排就不会再被某个 delivery 选择悄悄打断。
+  - **被选中的 workflow/专家始终生成为 skill**，任何 delivery 模式都一样。`/rasen-auto` 与 `/rasen-review-cycle` 在运行时让模型**调用其它 skill**（worker 调阶段 skill；review-loop 调 `rasen-review`）——模型能调 skill、**不能**调 command，所以依赖闭包会补齐所有必需的阶段/专家 skill。delivery 只控制 command 是否生成，不改变解析后的 skill 集合。
   - 配置里若还留着旧值（`commands`、`skills-first`、`commands-first`），下次读取时会自动映射——`skills-first` → `skills`，`commands`/`commands-first` → `both`——并打印一次性提示，配置文件也会被改写。不用手动处理；之前被删掉的 skill 会在下次 `rasen update` 时恢复。
 
 ### 升级已安装过的项目（拿到本次的编排 + pipeline）

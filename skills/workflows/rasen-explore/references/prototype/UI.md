@@ -99,12 +99,12 @@ Surface the URL (and the `?variant=` keys). The user will flip through whenever 
 
 ### 6. Capture the answer and clean up
 
-Once a variant has won, write down which one and why (commit message, ADR, issue, or a `NOTES.md` next to the prototype if running AFK and the user hasn't responded yet). Then:
+Once a variant has won, resolve the active change's `changeRoot` with `rasen status --change <name> --json` and write down which one won, why, reusable design decisions, and evidence in `design.md` Decisions or a change-directory sidecar. If running AFK, record a provisional verdict there. Under `rasen-explore`, do not use a production commit, route, or component as the durable record. Then:
 
-- **Sub-shape A** — delete the losing variants and the switcher; fold the winner into the existing page.
-- **Sub-shape B** — promote the winning variant to a real route, delete the throwaway route and the switcher.
+- **Sub-shape A** — restore the existing page by deleting every variant and the switcher; record the winning shape as a decision for later implementation.
+- **Sub-shape B** — delete the throwaway route, every variant, and the switcher; record the proposed real-route shape for later implementation.
 
-Don't leave variant components or the switcher lying around. They rot fast and confuse the next reader.
+Don't leave variant components, routes, switchers, task-runner entries, or other probe artifacts lying around. Production implementation and promotion happen later through `rasen-propose`/`rasen-apply-change`, not Explore.
 
 ## Anti-patterns
 

@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import {
   getAutoCommandSkillTemplate,
   getDirectionSkillTemplate,
   getGoalCommandSkillTemplate,
   getHelpSkillTemplate,
-  getNavigatorSkillTemplate,
   getOpsxProposeSkillTemplate,
 } from '../../../src/core/templates/skill-templates.js';
 import { generateSkillContent } from '../../../src/core/shared/skill-generation.js';
@@ -112,14 +113,17 @@ describe('rasen-direction template contract', () => {
 describe('Direction routing stays explicit and non-coercive', () => {
   it('help and navigator route long-horizon needs while distinguishing the bounded goal loop', () => {
     const help = getHelpSkillTemplate().instructions;
-    const navigator = getNavigatorSkillTemplate().instructions;
+    const navigator = readFileSync(fileURLToPath(new URL(
+      '../../../skills/workflows/rasen-help/references/navigator.md',
+      import.meta.url
+    )), 'utf8');
 
     expect(help).toContain('rasen-direction');
     expect(help).toContain('ordinary bugs and features still go directly through the Change flow');
     expect(help).toContain('bounded plan → iterate → report loop');
     expect(help).toContain('cross-Change `target-state.md`');
 
-    expect(navigator).toContain('## Optional long-horizon governance');
+    expect(navigator).toContain('## On-ramps');
     expect(navigator).toContain('rasen-direction');
     expect(navigator).toContain('never a required numbered step');
     expect(navigator).toContain('bounded iteration toward one measure');

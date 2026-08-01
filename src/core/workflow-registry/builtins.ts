@@ -27,6 +27,11 @@ import {
   getAutoCommandSkillTemplate,
 } from '../templates/skill-templates.js';
 import type { SkillTemplate } from '../templates/types.js';
+import {
+  readSidecarTree,
+  resolveWorkflowSidecarDir,
+  type HashedSidecarFile,
+} from './expert-digest.js';
 import type { WorkflowDefinition, WorkflowDependencySet, WorkflowKind } from './types.js';
 
 export const CORE_WORKFLOW_IDS = [
@@ -110,7 +115,7 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
     dirName: 'rasen-verify-enhanced',
     skill: getVerifyEnhancedSkillTemplate,
     requires: {
-      skills: ['rasen-review', 'rasen-cso', 'rasen-qa', 'rasen-design-review', 'rasen-qa-only'],
+      skills: ['rasen-review', 'rasen-cso', 'rasen-qa', 'rasen-design-review'],
     },
   },
   {
@@ -158,13 +163,19 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
   { id: 'audit', dirName: 'rasen-audit', skill: getAuditSkillTemplate },
 ];
 
-function digestBuiltIn(adapter: BuiltInWorkflowAdapter, skill: SkillTemplate): string {
+export function computeBuiltInWorkflowDigest(
+  id: string,
+  dirName: string,
+  skill: SkillTemplate,
+  sidecars: readonly HashedSidecarFile[]
+): string {
   const preimage = JSON.stringify({
     format: 'rasen-built-in-workflow',
     version: 1,
-    id: adapter.id,
-    dirName: adapter.dirName,
+    id,
+    dirName,
     skill,
+    sidecars,
   });
   return `sha256:${createHash('sha256').update(preimage, 'utf8').digest('hex')}`;
 }
@@ -172,6 +183,8 @@ function digestBuiltIn(adapter: BuiltInWorkflowAdapter, skill: SkillTemplate): s
 export function getBuiltInWorkflowDefinitions(): WorkflowDefinition[] {
   return BUILT_IN_ADAPTERS.map((adapter) => {
     const skill = adapter.skill();
+    const files = readSidecarTree(resolveWorkflowSidecarDir(adapter.dirName));
+    const sidecars = files.map(({ path, sha256 }) => ({ path, sha256 }));
     return {
       id: adapter.id,
       source: 'built-in',
@@ -185,8 +198,8 @@ export function getBuiltInWorkflowDefinitions(): WorkflowDefinition[] {
         schemas: adapter.requires?.schemas ?? [],
       },
       recommends: { workflows: [] },
-      files: [],
-      digest: digestBuiltIn(adapter, skill),
+      files,
+      digest: computeBuiltInWorkflowDigest(adapter.id, adapter.dirName, skill, sidecars),
     };
   });
 }

@@ -56,7 +56,7 @@ Terms are grouped by topic, then alphabetized within each group.
 
 **Profile.** The set of slash commands installed in your project. **Full** (the default) installs every workflow. **Core** slims down to `propose`, `explore`, `apply`, `sync`, `archive`; **custom** is any subset you pick. Change it with `rasen config profile`.
 
-**Delivery.** Whether rasen also installs command files alongside skills (`both`, the default) or skills only (`skills`). Skills are always installed. Configured globally and applied with `rasen update`.
+**Delivery.** Whether rasen also installs command files alongside skills (`both`, the default) or skills only (`skills`). The skills resolved from the active profile selection and workflow dependency closure are always emitted; delivery does not install every catalog skill. Configured globally and applied with `rasen update`.
 
 **Installable workflow.** A user-wide, profile-selectable skill with an optional command, declared dependencies, and UTF-8 sidecars. It is distinct from an artifact schema and orchestration pipeline. Manage it with `rasen workflow`; see [Installable workflows and `.rasenpkg`](workflow-packages.md).
 

@@ -42,15 +42,17 @@ describe('expert digest preimage', () => {
     }
   });
 
-  it('gives qa-only a distinct digest from qa despite sharing a sidecar directory', () => {
+  it('keeps one QA identity and includes workflow-author sidecars in its digest contract', () => {
     const experts = getBuiltInExpertDefinitions();
     const qa = experts.find((expert) => expert.id === 'qa');
-    const qaOnly = experts.find((expert) => expert.id === 'qa-only');
+    const workflowAuthor = experts.find((expert) => expert.id === 'workflow-author');
 
     expect(qa).toBeDefined();
-    expect(qaOnly).toBeDefined();
-    expect(qaOnly?.sidecarSourceId).toBe('qa');
-    expect(qaOnly?.digest).not.toBe(qa?.digest);
+    expect(experts.filter((expert) => expert.id === 'qa')).toHaveLength(1);
+    expect(workflowAuthor?.files.map((file) => file.path)).toContain(
+      'references/workflow-review/README.md'
+    );
+    expect(workflowAuthor?.digest).not.toBe(qa?.digest);
   });
 
   it('gives every built-in expert a unique digest', () => {

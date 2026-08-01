@@ -327,8 +327,7 @@
     "repairNext": "Next: {command}"
   },
   "expertSkills": {
-    "workflowAuthor": "Author installable workflows safely through staging, static validation, independent review, and user-approved import",
-    "workflowReview": "Review installable workflows independently for semantic quality, security boundaries, portability, dependencies, and completion"
+    "workflowAuthor": "Author installable workflows safely through staging, static validation, a bundled independent-review branch, and user-approved import"
   },
   "workflowLibrary": {
     "ui": {
@@ -676,10 +675,6 @@
           "name": "Chrome Use",
           "description": "Drive the real Chrome browser via CDP for DOM snapshots, clicks, network capture, and screenshots"
         },
-        "codebase-design": {
-          "name": "Codebase Design",
-          "description": "Design it twice, deepen module boundaries, and keep implementation aligned with the intended architecture"
-        },
         "codex": {
           "name": "Codex",
           "description": "Dispatch the OpenAI Codex CLI for an independent review or implementation pass"
@@ -700,41 +695,21 @@
           "name": "Investigate",
           "description": "Reproduce, isolate, and root-cause a bug with evidence before attempting any fix"
         },
-        "navigator": {
-          "name": "Navigator",
-          "description": "A map of this repo's skills and workflows and when to reach for each"
-        },
         "office-hours": {
           "name": "Office Hours",
           "description": "Pressure-test product demand and design direction before building"
         },
-        "prototype": {
-          "name": "Prototype",
-          "description": "Build a throwaway UI or logic spike to answer a question fast"
-        },
         "qa": {
           "name": "QA",
-          "description": "Explore the app via the CDP proxy, document evidence-backed issues, and fix findings"
-        },
-        "qa-only": {
-          "name": "QA (report only)",
-          "description": "The same exploration and health score as QA, but never edits code"
+          "description": "Browser QA with a default fix loop and an explicit report-only/non-UI mode"
         },
         "review": {
           "name": "Review",
           "description": "Pre-landing PR review with full codebase context, severity-tagged findings, and a fix loop"
         },
-        "tdd": {
-          "name": "TDD",
-          "description": "Red, green, refactor discipline with mocking guidance"
-        },
         "workflow-author": {
           "name": "Workflow Author",
           "description": "Author installable workflows and pipelines safely, staged and independently reviewed"
-        },
-        "workflow-review": {
-          "name": "Workflow Review",
-          "description": "Review installable workflows and pipelines independently for quality and security"
         }
       },
       "workflowsGroupLabel": "-- Workflows --",

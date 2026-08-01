@@ -18,6 +18,7 @@ import {
   RETENTION_RUNNER_WORKFLOW_ID,
 } from '../../src/core/workflow-registry/index.js';
 import { RETRO_COMPAT_WRAPPER_DIR_NAME } from '../../src/core/templates/skill-templates.js';
+import { copySkillSidecars } from '../../src/core/shared/skill-generation.js';
 
 function writeSkill(projectDir: string, workflowId: string): void {
   // Resolve via the catalog (covers both task workflows and experts) rather
@@ -28,6 +29,7 @@ function writeSkill(projectDir: string, workflowId: string): void {
   const skillPath = path.join(projectDir, '.claude', 'skills', skillDirName, 'SKILL.md');
   fs.mkdirSync(path.dirname(skillPath), { recursive: true });
   fs.writeFileSync(skillPath, `name: ${skillDirName}\n`);
+  copySkillSidecars(workflowId, path.dirname(skillPath));
   if (workflowId === RETENTION_RUNNER_WORKFLOW_ID) {
     for (const fileName of ['report.md', 'codify.md']) {
       fs.writeFileSync(path.join(path.dirname(skillPath), fileName), `${fileName}\n`);
@@ -38,7 +40,7 @@ function writeSkill(projectDir: string, workflowId: string): void {
 /**
  * Installs the skill directories for the experts a workflow selection's
  * dependency closure pulls in (e.g. `verify-enhanced-command` requires
- * review/cso/qa/design-review/qa-only) but that are not already in
+ * review/cso/qa/design-review) but that are not already in
  * `workflows` — matching what a real install actually puts on disk, now
  * that drift detection is closure-aware.
  */
@@ -175,7 +177,7 @@ describe('profile sync drift detection', () => {
 
   it('returns false for the full profile after a clean install, including the skill-only goal-loop stage workflows', () => {
     setupFullSkills(tempDir);
-    // ALL_WORKFLOWS's closure requires review/cso/qa/design-review/qa-only
+    // ALL_WORKFLOWS's closure requires review/cso/qa/design-review
     // (pulled in by verify-enhanced-command and auto-command) — install
     // them too so the closure-aware forward-required check is satisfied,
     // matching a real install.
@@ -251,8 +253,8 @@ describe('profile sync drift detection with a project profile lock (init-profile
 describe('profile sync drift detection through the production caller (profile-editor.ts:maybeWarnProjectConfigDrift)', () => {
   // A `custom` profile whose stored workflow selection does not list the
   // experts a selected pipeline workflow pulls in via its dependency
-  // closure (`verify-enhanced-command` requires review/cso/qa/design-review/
-  // qa-only). Reproduces the regression: `resolveCurrentProfileState`
+  // closure (`verify-enhanced-command` requires review/cso/qa/design-review).
+  // Reproduces the regression: `resolveCurrentProfileState`
   // returns the raw, un-expanded selection — exactly what
   // `profile-editor.ts:299` passes to `hasProjectConfigDrift` — while the
   // closure experts are genuinely installed on disk.
@@ -302,7 +304,7 @@ describe('profile sync drift detection through the production caller (profile-ed
     // — otherwise this test would not reproduce the bug.
     expect(state.workflows).toEqual(CUSTOM_WORKFLOWS);
     const catalog = loadWorkflowCatalog();
-    for (const expert of ['cso', 'design-review', 'qa', 'qa-only', 'review']) {
+    for (const expert of ['cso', 'design-review', 'qa', 'review']) {
       expect(state.workflows).not.toContain(expert);
       const dirName = catalog.get(expert)!.skill.dirName;
       expect(fs.existsSync(path.join(testDir, '.claude', 'skills', dirName))).toBe(true);

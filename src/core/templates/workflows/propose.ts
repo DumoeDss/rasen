@@ -24,7 +24,7 @@ When ready to implement, run rasen-apply-change
 
 ${STORE_SELECTION_GUIDANCE}
 
-**Methodology consult (optional):** For design-dense changes — a new module or a non-trivial interface — consult the \`rasen-codebase-design\` skill (deep-module design, design-it-twice) before writing specs. Capture the resulting interface/design decisions in this change's \`design.md\` Decisions section (or a change-directory sidecar resolved from \`rasen status --json\` \`changeRoot\`). This is a conditional reference, not a required step; don't inline the expert body.
+**Methodology reference (conditional):** For a design-dense change — a new module, non-trivial interface, or comparable seam decision — first read the installed relative entry \`references/codebase-design/README.md\`. Load it only when this branch applies; otherwise do not read or summarize the methodology. Capture resulting interface/design decisions in this change's \`design.md\` Decisions section (or a change-directory sidecar under the \`changeRoot\` resolved by \`rasen status --change "<name>" --json\`).
 
 **Input**: The user's request should include a change name (kebab-case) OR a description of what they want to build.
 
