@@ -598,7 +598,7 @@ function parseStoreMembershipList(
     warnConfig(
       {
         key: 'storeMembershipsWithoutIdentity',
-        fallback: `Some '${STORE_MEMBERSHIPS_FIELD}' entries name a store only by display name; run 'rasen store upgrade-identity <store> --apply' so the hint survives a rename`,
+        fallback: `Some '${STORE_MEMBERSHIPS_FIELD}' entries name a store only by display name; run 'rasen update' so the hint survives a rename`,
       },
       reporter
     );
@@ -2272,6 +2272,54 @@ export async function appendStoreMembershipHint(
       const hints = [...existing, hint];
       await writeStoreMembershipHints(configPath, hints);
       return { configPath, changed: true, hints };
+    }
+  );
+}
+
+/**
+ * Backfills a permanent identity into existing identityless `storeMemberships`
+ * entries that name the store by display alias. A NEW writer (not
+ * `appendStoreMembershipHint`) because the dedup key changes from `id:<alias>`
+ * to `uid:<uid>` when a uid is added — the existing appender would fail to
+ * match the old entry and append a duplicate, leaving the identityless entry
+ * in place (still firing the warning). This writer matches by
+ * `entry.uid === undefined && entry.id === match.id`, sets `entry.uid`, and
+ * writes back through the same yaml-AST + owner-aware-lock approach.
+ */
+export async function backfillStoreMembershipUid(
+  projectRoot: string,
+  match: { id: string; uid: string }
+): Promise<{ configPath: string; changed: boolean }> {
+  const configPath = resolveConfigFilePath(projectRoot);
+  if (configPath === null) {
+    return { configPath: '', changed: false };
+  }
+
+  return withOwnerAwareFileLock(
+    {
+      lockPath: machineLockPath(path.resolve(configPath)),
+      errorFor: projectMembershipHintLockError,
+      holder: 'project-membership-hint',
+    },
+    async () => {
+      // Re-read INSIDE the lock so concurrent backfills see each other's
+      // writes, same discipline as `appendStoreMembershipHint`.
+      const existing = readProjectConfig(projectRoot)?.storeMemberships ?? [];
+      let changed = false;
+      const updated = existing.map((entry) => {
+        if (entry.uid === undefined && entry.id === match.id) {
+          changed = true;
+          return { ...entry, uid: match.uid };
+        }
+        return entry;
+      });
+
+      if (!changed) {
+        return { configPath, changed: false };
+      }
+
+      await writeStoreMembershipHints(configPath, updated);
+      return { configPath, changed: true };
     }
   );
 }

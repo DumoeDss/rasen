@@ -944,7 +944,7 @@
       "invalidReferenceRemotes": "Some 'references' remotes are not non-empty strings; the ids are kept without a clone source",
       "invalidStoreMemberships": "Invalid 'storeMemberships' field in config (must be an array of store references)",
       "invalidStoreMembershipEntries": "Some 'storeMemberships' entries are invalid; ignoring the unusable entries and fields",
-      "storeMembershipsWithoutIdentity": "Some 'storeMemberships' entries name a store only by display name; run 'rasen store upgrade-identity <store> --apply' so the hint survives a rename",
+      "storeMembershipsWithoutIdentity": "Some 'storeMemberships' entries name a store only by display name; run 'rasen update' so the hint survives a rename",
       "invalidSchema": "Invalid 'schema' field in config (must be non-empty string)",
       "contextTooLarge": "Context too large ({size}KB, limit: {maximum}KB)",
       "ignoringContext": "Ignoring context field",
@@ -980,6 +980,15 @@
       "userWideProfileUnresolvable": "Warning: user-wide profile '{profile}' could not be resolved ({detail}); using the default 'full' profile instead.",
       "deprecatedArchiveDestination": "'archive.destination' is deprecated and no longer selects a destination: archive bookkeeping always lands in the planning root. Remove the key; run 'rasen archive relocate --to in-repo' to consolidate existing archives."
     }
+  },
+  "storeIdentityMigration": {
+    "upgraded": "Upgraded {count} store(s):",
+    "skipped": "Skipped {count} store(s):",
+    "alreadyIdentified": "{count} store(s) already carry a permanent identity.",
+    "rekeyed": "Re-keyed the machine store registry by permanent identity.",
+    "rekeyBlocked": "Registry re-key blocked by: {stores}.",
+    "allIdentified": "All registered stores carry a permanent identity.",
+    "suggestedCommit": "Commit these files in {repo}: {command}"
   },
   "completion": {
     "ui": {
@@ -1506,6 +1515,9 @@
                 },
                 "apply": {
                   "description": "Write the plan"
+                },
+                "all": {
+                  "description": "Upgrade every registered store's identity in a batch"
                 },
                 "json": {
                   "description": "Output as JSON"

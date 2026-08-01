@@ -372,7 +372,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       {
         name: 'upgrade-identity',
         acceptsPositional: true,
-        positionals: [{ name: 'id' }],
+        positionals: [{ name: 'id', optional: true }],
         flags: [
           {
             name: 'uid',
@@ -383,6 +383,9 @@ const COMMANDS: readonly CommandDefinition[] = [
           },
           {
             name: 'apply',
+          },
+          {
+            name: 'all',
           },
           COMMON_FLAGS.json,
         ],
