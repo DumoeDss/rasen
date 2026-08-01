@@ -24,3 +24,12 @@
 ## Deployment
 
 Status: Pending (PR CI is running; merge/deploy was not requested)
+
+## CI Follow-up
+
+- Failed run: `30689519823` (`macOS` and `Windows tests (shard 3/3)`)
+- Root causes: the ESM entrypoint compared non-canonical path spellings on macOS; Windows preferred Node's bundled Corepack over the pnpm installed on `PATH`; launcher assertions compared Windows path spellings instead of filesystem identity.
+- Fix: canonicalize the runtime entrypoint, resolve the active pnpm from package metadata/user-agent/`PATH`, and canonicalize existing paths in launcher assertions.
+- Regression: added a directory-alias entrypoint case reproducing the macOS silent exit.
+- Local verification: focused CI cases 3/3 passed; full local-version suite 7/7 passed; ESLint, TypeScript, Node syntax, and `git diff --check` passed.
+- Status: Fix ready for PR CI re-run.

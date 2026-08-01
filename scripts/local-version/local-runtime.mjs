@@ -178,16 +178,6 @@ function commandInvocation(command) {
     };
   }
   if (command === 'pnpm' && process.platform === 'win32') {
-    const corepackPnpm = path.join(
-      path.dirname(process.execPath),
-      'node_modules',
-      'corepack',
-      'dist',
-      'pnpm.js',
-    );
-    if (fs.existsSync(corepackPnpm)) {
-      return { command: process.execPath, argsPrefix: [corepackPnpm] };
-    }
     return {
       command: process.env.ComSpec || 'cmd.exe',
       argsPrefix: ['/d', '/s', '/c', 'pnpm'],
@@ -257,6 +247,10 @@ function pnpmIdentity(source) {
   const declared = source.cliManifest.packageManager;
   const match = typeof declared === 'string' ? /^pnpm@(.+)$/.exec(declared) : null;
   if (match) return match[1];
+
+  const userAgent = process.env.npm_config_user_agent ?? '';
+  const userAgentMatch = /(?:^|\s)pnpm\/([^\s]+)/.exec(userAgent);
+  if (userAgentMatch) return userAgentMatch[1];
 
   const packageRoots = [source.sourceRoot, path.join(source.sourceRoot, 'packages', 'ui')];
   const needsPnpm = packageRoots.some((packageRoot, index) => {
@@ -696,8 +690,18 @@ async function main() {
   }
 }
 
+function canonicalPathIdentity(value) {
+  let identity;
+  try {
+    identity = fs.realpathSync.native(value);
+  } catch {
+    identity = path.resolve(value);
+  }
+  return process.platform === 'win32' ? identity.toLowerCase() : identity;
+}
+
 const isEntryPoint = process.argv[1]
-  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  && canonicalPathIdentity(process.argv[1]) === canonicalPathIdentity(fileURLToPath(import.meta.url));
 
 if (isEntryPoint) {
   await main();
