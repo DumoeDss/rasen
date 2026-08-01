@@ -27,6 +27,7 @@ import {
   createRuntimePlan,
   type RuntimePlan,
 } from '../../../src/core/change-run/internal/runtime-plan.js';
+import { fixtureLoopLifecycle } from './bounded-loop-fixture.js';
 
 const BUG_FIX = {
   version: 1,
@@ -472,7 +473,8 @@ const REVIEW_CYCLE_V2: DefinitionSourceV2 = {
         id: 'review-loop',
         kind: 'BoundedLoop',
         body: 'review-cycle-body',
-        limits: { maxIterations: 3, maxActions: 12 },
+        limits: { maxIterations: 3, maxActions: 12, budget: 12 },
+        lifecycle: fixtureLoopLifecycle('exhausted'),
         exits: {
           clean: { action: 'exit', outcome: 'clean' },
           needs_fix: { action: 'continue' },
@@ -617,7 +619,7 @@ describe('runtime plan lowerer (3.2)', () => {
       'fix',
       're-review',
     ]);
-    expect(loop.maxIterations).toBe(3);
+    expect(loop.limits.maxIterations).toBe(3);
     expect(plan.implicitFinishOutcome).toBe('bug-fix-completed');
   });
 
@@ -667,7 +669,7 @@ describe('runtime plan lowerer (3.2)', () => {
     expect(loop).toMatchObject({
       kind: 'bounded-loop',
       hierarchicalPath: 'root:review-loop',
-      maxIterations: 3,
+      limits: { maxIterations: 3, maxActions: 12, budget: 12 },
       outcomes: { clean: 'clean', exhausted: 'exhausted' },
     });
     if (loop.kind !== 'bounded-loop') return;

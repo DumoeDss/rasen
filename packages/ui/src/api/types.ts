@@ -1259,10 +1259,43 @@ export interface WireBoundedLoopNode extends WireDefinitionNodeBase {
   kind: 'BoundedLoop';
   body: string;
   limits: { maxIterations: number; maxActions?: number; budget?: number };
+  /** Read-side compatibility is optional; current authored v2 requires v1. */
+  lifecycle?: WireBoundedLoopLifecyclePolicyV1;
   exits: Record<
     string,
     { action: 'continue' } | { action: 'exit'; outcome: string }
   >;
+}
+
+export type WireLoopLifecycleTerminalExit = {
+  action: 'exit' | 'escalate' | 'fail';
+  outcome: string;
+};
+
+export type WireLoopLifecycleExit =
+  | WireLoopLifecycleTerminalExit
+  | { action: 'strategy' };
+
+export type WireLoopLifecycleBlockedExit =
+  | WireLoopLifecycleExit
+  | { action: 'human-required'; outcome: string };
+
+export interface WireBoundedLoopLifecyclePolicyV1 {
+  version: 1;
+  thresholds: { stallIterations: number; sameBlockerAttempts: number };
+  strategy: {
+    maxAttempts: number;
+    requireMaterialChange: true;
+    capability?: { id: string; version: string };
+  };
+  exits: {
+    iterationLimit: WireLoopLifecycleExit;
+    actionLimit: WireLoopLifecycleTerminalExit;
+    budgetLimit: WireLoopLifecycleTerminalExit;
+    stalled: WireLoopLifecycleExit;
+    blocked: WireLoopLifecycleBlockedExit;
+    strategyExhausted: WireLoopLifecycleTerminalExit;
+  };
 }
 
 export interface WireChoiceNode extends WireDefinitionNodeBase {
@@ -1465,10 +1498,34 @@ export interface RunActionView {
   effects: EffectView[];
 }
 
+/** A canonical evidence reference rendered for lifecycle waits. */
+export interface RunEvidenceRef {
+  format: 'change-run-evidence-ref/1';
+  store: 'change-run';
+  evidenceDigest: string;
+  contentDigest: string;
+  mediaType: string;
+  size: number;
+  observationKind: string;
+  producer: { id: string; version: string; identityDigest: string };
+  binding: {
+    planningSpaceId: string;
+    changeInstanceId: string;
+    projectId: string;
+    changeId: string;
+    runId: string;
+    actionId: string;
+    effectId?: string;
+    treeDigest?: string;
+    schema: string;
+  };
+}
+
 /** A discriminated wait reason projected from committed Record truth. */
 export type WaitView =
   | { waitId: string; kind: 'gate'; nodeId: string; invocationId: string; occurrence: number; gateId: string; decisionIds: string[] }
   | { waitId: string; kind: 'domain-blocked'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; reasonCode: string }
+  | { waitId: string; kind: 'human-required'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; loopPath: string; phase: string; blockerFingerprint: string; reasonCode: string; outcome: string; evidence: readonly RunEvidenceRef[]; decisionIds: readonly ['retry', 'escalate'] }
   | { waitId: string; kind: 'infrastructure'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; code: string; retryable: boolean }
   | { waitId: string; kind: 'uncertain-effect'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[] }
   | { waitId: string; kind: 'capability-unavailable'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; code: string }
@@ -1613,6 +1670,46 @@ export interface ReviewCycleViewSection {
   maxRounds: number;
 }
 
+/** Goal domain truth, intentionally separate from shared lifecycle counters. */
+export interface GoalViewSection {
+  kind: 'goal';
+  version: 1;
+  loopPath: string;
+  variant: 'measure' | 'evaluate' | 'research';
+  round: number;
+  phase: 'work' | 'judge';
+  outcome?: 'satisfied' | 'exhausted';
+  lastScore?: number;
+  lastGaps: readonly string[];
+  waitReason?: string;
+}
+
+export interface BoundedLoopLifecycleViewSection {
+  kind: 'bounded-loop-lifecycle';
+  version: 1;
+  loopPath: string;
+  bodyKind: 'review-cycle' | 'goal-cycle' | 'composite';
+  state: 'running' | 'waiting' | 'strategizing' | 'human-required' | 'terminal';
+  iteration: number;
+  phase: string;
+  limits: {
+    iterations: { used: number; max: number };
+    actions: { used: number; max: number };
+    budget: { used: number; max: number };
+  };
+  progressFingerprint?: string;
+  stallStreak: number;
+  blockerFingerprint?: string;
+  blockedStreak: number;
+  strategy: { attempts: number; maxAttempts: number; active?: number };
+  wait?: { waitId: string; kind: string; reasonCode?: string };
+  outcome?: {
+    kind: 'completed' | 'iteration-limit' | 'action-limit' | 'budget-limit' | 'stalled' | 'blocked' | 'strategy-exhausted' | 'failed' | 'cancelled';
+    disposition: 'exit' | 'escalate' | 'fail' | 'cancel';
+    value?: string;
+  };
+}
+
 // --- ECP-4 parallel/1 and choice/1 sections ---
 //
 // Mirror of the server-projected `parallel/1` and `choice/1` sections. Source
@@ -1689,6 +1786,8 @@ export interface AdditiveViewSection {
 export type ChangeRunViewSection =
   | RootDagViewSection
   | ReviewCycleViewSection
+  | GoalViewSection
+  | BoundedLoopLifecycleViewSection
   | ParallelViewSection
   | ChoiceViewSection
   | AdditiveViewSection;
@@ -1754,6 +1853,36 @@ export function getReviewCycleSection(view: ChangeRunView): ReviewCycleViewSecti
     }
   }
   return null;
+}
+
+/** Extracts recognized goal/1 domain truth without inferring lifecycle state. */
+export function getGoalSection(view: ChangeRunView): GoalViewSection | null {
+  for (const section of view.sections) {
+    if (section.kind === 'goal' && section.version === 1) {
+      return section as GoalViewSection;
+    }
+  }
+  return null;
+}
+
+/** Returns every recognized lifecycle/1 section; unknown future versions stay additive. */
+export function getBoundedLoopLifecycleSections(
+  view: ChangeRunView
+): readonly BoundedLoopLifecycleViewSection[] {
+  return view.sections.filter(
+    (section): section is BoundedLoopLifecycleViewSection =>
+      section.kind === 'bounded-loop-lifecycle' && section.version === 1
+  );
+}
+
+/** Future lifecycle versions remain visible but are never actionable. */
+export function getUnsupportedBoundedLoopLifecycleSections(
+  view: ChangeRunView
+): readonly AdditiveViewSection[] {
+  return view.sections.filter(
+    (section): section is AdditiveViewSection =>
+      section.kind === 'bounded-loop-lifecycle' && section.version !== 1
+  );
 }
 
 /**

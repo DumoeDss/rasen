@@ -515,6 +515,8 @@
       "createdDraft": "パイプラインドラフトを{path}に作成しました",
       "pipelineValid": "パイプラインは有効です。",
       "pipelineInvalid": "パイプラインは無効です。",
+      "boundedLoopPoliciesHeading": "正規化された境界付きループのライフサイクルポリシー:",
+      "boundedLoopPolicyLine": "  {node}: 制限={limits}; ライフサイクル={policy}",
       "validationDiagnostic": "  [{severity}] {code}: {message}",
       "importedHeading": "{path}からパイプラインをimportしました:",
       "importedEntry": "  {name}（ダイジェスト {digest}）",

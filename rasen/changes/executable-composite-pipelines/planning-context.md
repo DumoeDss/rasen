@@ -1,16 +1,16 @@
-# Executable Composite Pipelines 0.1.6 — Planning Context
+# Executable Composite Pipelines 0.2.0 — Planning Context
 
 ## User intent
 
-> `$rasen-auto auto-decompose` 由你开始推进整个0.1.6的开发吧，直到任务结束。
-> 在dev/0.1.6的基础上再创建开发分支，合理拆分changes，每一阶段提交代码，
-> 最终提pr到dev/0.1.6
+> `$rasen-auto auto-decompose` 由你开始推进整个0.2.0的开发吧，直到任务结束。
+> 在dev/0.2.0的基础上再创建开发分支，合理拆分changes，每一阶段提交代码，
+> 最终提pr到dev/0.2.0
 
 ## Branch and delivery
 
-- Base: `origin/dev/0.1.6` at `3e8d1d389cc6612c2bbd8c051cbf8b256189fe03`
+- Base: `origin/dev/0.2.0` at `3e8d1d389cc6612c2bbd8c051cbf8b256189fe03`
 - Development branch: `feat/0.1.6-executable-composite-pipelines`
-- Delivery: one final PR targeting `dev/0.1.6`
+- Delivery: one final PR targeting `dev/0.2.0`
 - Child Changes commit locally at review-clean stage boundaries; no child push or child PR
 - Other worktrees are out of scope and must remain untouched
 
@@ -31,9 +31,9 @@ The research is finalized. Its locked direction is:
 - Operations is the Change-run observation/control plane
 - The canonical Run Record is the only runtime truth
 
-## 0.1.6 product boundary
+## 0.2.0 product boundary
 
-`0.1.6` is complete only when the following form one end-to-end product closure:
+`0.2.0` is complete only when the following form one end-to-end product closure:
 
 1. Pipeline Definition v2 and v1 normalization/compatibility
 2. Canvas authoring for the v2 vocabulary and constrained Custom Composite
@@ -48,7 +48,7 @@ The research is finalized. Its locked direction is:
 - Root ordinary control flow remains a DAG.
 - Feedback is expressed only through bounded scopes with limits, typed outcomes, evidence,
   and explicit exits.
-- No recursive Composite calls and no nested loops in 0.1.6.
+- No recursive Composite calls and no nested loops in 0.2.0.
 - Built-in and Custom Composite definitions share one compiler/runtime contract.
 - `reconcile(plan, record) -> NextActions` is deterministic and mechanically pure.
 - Agent/command/host adapters execute typed actions; only validated committed results advance.

@@ -86,6 +86,29 @@ function incomingRequirements(
     .sort();
 }
 
+function boundedLoopContract(loop: BoundedLoopNode): Pick<
+  RuntimePlanNodeInput,
+  'limits' | 'lifecycle' | 'strategyProfilePath'
+> {
+  if (loop.limits.maxActions === undefined || loop.limits.budget === undefined) {
+    throw new RuntimePlanLowererError(
+      'lowerer_shape_mismatch',
+      `BoundedLoop ${loop.id} is missing normalized loop-local limits.`
+    );
+  }
+  return {
+    limits: {
+      maxIterations: loop.limits.maxIterations,
+      maxActions: loop.limits.maxActions,
+      budget: loop.limits.budget,
+    },
+    lifecycle: structuredClone(loop.lifecycle),
+    ...(loop.lifecycle.strategy.capability === undefined
+      ? {}
+      : { strategyProfilePath: `root:${loop.id}/strategy` }),
+  };
+}
+
 function reviewCycleBody(
   definition: DefinitionSourceV2,
   loop: BoundedLoopNode
@@ -756,7 +779,7 @@ function lowerV2ReviewCyclePlanInput(
           kind: 'bounded-loop',
           hierarchicalPath: `root:${node.id}`,
           requires: resolveRequires(node.id),
-          maxIterations: node.limits.maxIterations,
+          ...boundedLoopContract(node),
           body: { kind: 'review-cycle', phases },
           outcomes: {
             clean: cleanExit.outcome,
@@ -790,7 +813,7 @@ function lowerV2ReviewCyclePlanInput(
           kind: 'bounded-loop',
           hierarchicalPath: `root:${node.id}`,
           requires: resolveRequires(node.id),
-          maxIterations: node.limits.maxIterations,
+          ...boundedLoopContract(node),
           body: {
             kind: 'goal-cycle',
             variant: goal.variant,
@@ -821,7 +844,7 @@ function lowerV2ReviewCyclePlanInput(
           kind: 'bounded-loop',
           hierarchicalPath: `root:${node.id}`,
           requires: resolveRequires(node.id),
-          maxIterations: node.limits.maxIterations,
+          ...boundedLoopContract(node),
           body: {
             kind: 'composite',
             declarationId: composite.declaration.id,

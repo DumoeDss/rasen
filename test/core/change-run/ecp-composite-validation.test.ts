@@ -14,6 +14,7 @@ import {
   EcpDefinitionModule,
   createCapabilityCatalogSnapshot,
 } from '../../../src/core/pipeline-registry/index.js';
+import { fixtureLoopLifecycle } from './bounded-loop-fixture.js';
 
 function mkDescriptor(id: string): CapabilityDescriptor {
   return {
@@ -247,7 +248,8 @@ describe('ECP-2 static validation — custom-authored shapes', () => {
             id: 'loop',
             kind: 'BoundedLoop',
             body: 'loop-body',
-            limits: { maxIterations: 3 },
+            limits: { maxIterations: 3, maxActions: 6, budget: 6 },
+            lifecycle: fixtureLoopLifecycle('exhausted'),
             exits: {
               nonexistent: { action: 'exit', outcome: 'success' },
             },

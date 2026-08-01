@@ -21,12 +21,42 @@ const catalog = createCapabilityCatalogSnapshot([
   },
 ]);
 
+function fixtureLifecycle(outcome = 'loop_exhausted') {
+  return {
+    version: 1 as const,
+    thresholds: { stallIterations: 99, sameBlockerAttempts: 99 },
+    strategy: { maxAttempts: 0, requireMaterialChange: true as const },
+    exits: {
+      iterationLimit: { action: 'escalate' as const, outcome },
+      actionLimit: { action: 'escalate' as const, outcome: 'loop_action_limit' },
+      budgetLimit: { action: 'escalate' as const, outcome: 'loop_budget_limit' },
+      stalled: { action: 'escalate' as const, outcome: 'loop_stalled' },
+      blocked: { action: 'escalate' as const, outcome: 'loop_blocked' },
+      strategyExhausted: {
+        action: 'escalate' as const,
+        outcome: 'loop_strategy_exhausted',
+      },
+    },
+  };
+}
+
 function definitionWithNode(node: DefinitionSourceV2['root']['nodes'][number]): DefinitionSourceV2 {
+  const effectiveNode =
+    node.kind === 'BoundedLoop'
+      ? {
+          ...node,
+          limits: {
+            ...node.limits,
+            budget: node.limits.budget ?? node.limits.maxActions,
+          },
+          lifecycle: node.lifecycle ?? fixtureLifecycle(),
+        }
+      : node;
   const declarations: DefinitionSourceV2['declarations'] =
-    node.kind === 'CompositeRef'
+    effectiveNode.kind === 'CompositeRef'
       ? [
           {
-            id: node.declarationId,
+            id: effectiveNode.declarationId,
             kind: 'Composite',
             provenance: 'built-in',
             inputs: [],
@@ -38,10 +68,10 @@ function definitionWithNode(node: DefinitionSourceV2['root']['nodes'][number]): 
             },
           },
         ]
-      : node.kind === 'BoundedLoop'
+      : effectiveNode.kind === 'BoundedLoop'
         ? [
             {
-              id: node.body,
+              id: effectiveNode.body,
               kind: 'Composite',
               provenance: 'custom',
               inputs: [],
@@ -56,28 +86,28 @@ function definitionWithNode(node: DefinitionSourceV2['root']['nodes'][number]): 
         : [];
 
   const outcomes =
-    node.kind === 'Choice' || node.kind === 'Gate'
-      ? [...node.outcomes]
-      : node.kind === 'FanOut'
-        ? [...node.branches]
-        : node.kind === 'Finish'
-          ? [node.outcome]
-          : node.kind === 'BoundedLoop'
-            ? Object.values(node.exits)
+    effectiveNode.kind === 'Choice' || effectiveNode.kind === 'Gate'
+      ? [...effectiveNode.outcomes]
+      : effectiveNode.kind === 'FanOut'
+        ? [...effectiveNode.branches]
+        : effectiveNode.kind === 'Finish'
+          ? [effectiveNode.outcome]
+          : effectiveNode.kind === 'BoundedLoop'
+            ? Object.values(effectiveNode.exits)
                 .filter((exit) => exit.action === 'exit')
                 .map((exit) => exit.outcome)
             : ['done'];
 
   return {
     version: 2,
-    id: `definition-${node.kind.toLowerCase()}`,
+    id: `definition-${effectiveNode.kind.toLowerCase()}`,
     sourceId: 'fixture:closed-vocabulary',
-    name: `closed-${node.kind.toLowerCase()}`,
+    name: `closed-${effectiveNode.kind.toLowerCase()}`,
     inputs: [],
     artifacts: [],
     outcomes,
     declarations,
-    root: { nodes: [node], connections: [] },
+    root: { nodes: [effectiveNode], connections: [] },
   };
 }
 
@@ -94,7 +124,8 @@ describe('EcpDefinitionModule.prepare versioned definition contract', () => {
         id: 'loop',
         kind: 'BoundedLoop',
         body: 'iteration-body',
-        limits: { maxIterations: 3, maxActions: 8 },
+        limits: { maxIterations: 3, maxActions: 8, budget: 8 },
+        lifecycle: fixtureLifecycle(),
         exits: { done: { action: 'exit', outcome: 'done' } },
       },
       { id: 'choice', kind: 'Choice', outcomes: ['accepted', 'rejected'] },
@@ -110,6 +141,153 @@ describe('EcpDefinitionModule.prepare versioned definition contract', () => {
       if (result.ok) {
         expect(result.value.definition.root.nodes[0]?.kind).toBe(node.kind);
       }
+    }
+  });
+
+  it('rejects a missing authored v2 lifecycle policy at its stable path', () => {
+    const source = definitionWithNode({
+      id: 'loop',
+      kind: 'BoundedLoop',
+      body: 'iteration-body',
+      limits: { maxIterations: 3, maxActions: 8, budget: 8 },
+      lifecycle: fixtureLifecycle(),
+      exits: { done: { action: 'exit', outcome: 'done' } },
+    });
+    delete (source.root.nodes[0] as { lifecycle?: unknown }).lifecycle;
+
+    const result = EcpDefinitionModule.prepare(source, catalog);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'MISSING_LIFECYCLE_POLICY',
+          path: '/root/nodes/0/lifecycle',
+        })
+      );
+    }
+  });
+
+  it('reports every missing field in a partial lifecycle policy', () => {
+    const source = definitionWithNode({
+      id: 'loop',
+      kind: 'BoundedLoop',
+      body: 'iteration-body',
+      limits: { maxIterations: 3, maxActions: 8, budget: 8 },
+      lifecycle: fixtureLifecycle(),
+      exits: { done: { action: 'exit', outcome: 'done' } },
+    });
+    (source.root.nodes[0] as { lifecycle: unknown }).lifecycle = { version: 1 };
+
+    const result = EcpDefinitionModule.prepare(source, catalog);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(
+        result.error.diagnostics.map(({ code, path }) => ({ code, path }))
+      ).toEqual([
+        {
+          code: 'INCOMPLETE_LIFECYCLE_EXITS',
+          path: '/root/nodes/0/lifecycle/exits',
+        },
+        {
+          code: 'INVALID_LIFECYCLE_POLICY',
+          path: '/root/nodes/0/lifecycle/strategy',
+        },
+        {
+          code: 'INVALID_LIFECYCLE_POLICY',
+          path: '/root/nodes/0/lifecycle/thresholds',
+        },
+      ]);
+    }
+  });
+
+  it('rejects contradictory strategy configuration with path-addressed diagnostics', () => {
+    const lifecycle = fixtureLifecycle();
+    const source = definitionWithNode({
+      id: 'loop',
+      kind: 'BoundedLoop',
+      body: 'iteration-body',
+      limits: { maxIterations: 3, maxActions: 8, budget: 8 },
+      lifecycle: {
+        ...lifecycle,
+        exits: {
+          ...lifecycle.exits,
+          stalled: { action: 'strategy' },
+        },
+      },
+      exits: { done: { action: 'exit', outcome: 'done' } },
+    });
+
+    const result = EcpDefinitionModule.prepare(source, catalog);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'STRATEGY_CAPABILITY_REQUIRED',
+            path: '/root/nodes/0/lifecycle/strategy/capability',
+          }),
+          expect.objectContaining({
+            code: 'STRATEGY_CAPABILITY_REQUIRED',
+            path: '/root/nodes/0/lifecycle/strategy/maxAttempts',
+          }),
+        ])
+      );
+    }
+  });
+
+  it('orders independent impossible lifecycle and limit errors deterministically', () => {
+    const lifecycle = fixtureLifecycle();
+    const source = definitionWithNode({
+      id: 'loop',
+      kind: 'BoundedLoop',
+      body: 'iteration-body',
+      limits: { maxIterations: 0, maxActions: 4, budget: 2 },
+      lifecycle: {
+        ...lifecycle,
+        thresholds: { stallIterations: 0, sameBlockerAttempts: 0 },
+        strategy: {
+          maxAttempts: -1,
+          requireMaterialChange: true,
+          capability: { id: 'skill:implement', version: '1.0.0' },
+        },
+      },
+      exits: { done: { action: 'exit', outcome: 'done' } },
+    });
+
+    const first = EcpDefinitionModule.prepare(source, catalog);
+    const replay = EcpDefinitionModule.prepare(structuredClone(source), catalog);
+    expect(first.ok).toBe(false);
+    expect(replay.ok).toBe(false);
+    if (!first.ok && !replay.ok) {
+      expect(replay.error.diagnostics).toEqual(first.error.diagnostics);
+      expect(
+        first.error.diagnostics.map(({ code, path }) => ({ code, path }))
+      ).toEqual([
+        {
+          code: 'STRATEGY_CAPABILITY_FORBIDDEN',
+          path: '/root/nodes/0/lifecycle/strategy/capability',
+        },
+        {
+          code: 'INVALID_LIMIT',
+          path: '/root/nodes/0/lifecycle/strategy/maxAttempts',
+        },
+        {
+          code: 'INVALID_LIMIT',
+          path: '/root/nodes/0/lifecycle/thresholds/sameBlockerAttempts',
+        },
+        {
+          code: 'INVALID_LIMIT',
+          path: '/root/nodes/0/lifecycle/thresholds/stallIterations',
+        },
+        {
+          code: 'IMPOSSIBLE_BUDGET',
+          path: '/root/nodes/0/limits/budget',
+        },
+        {
+          code: 'INVALID_LIMIT',
+          path: '/root/nodes/0/limits/maxIterations',
+        },
+      ]);
     }
   });
 
@@ -857,6 +1035,7 @@ describe('trusted capability catalog admission', () => {
       kind: 'BoundedLoop',
       body: 'iteration-body',
       limits: { maxIterations: 2 },
+      lifecycle: fixtureLifecycle(),
       exits: { done: { action: 'exit', outcome: 'done' } },
     }],
     ['Choice', { id: 'subject', kind: 'Choice', outcomes: ['yes', 'no'] }],
@@ -909,6 +1088,7 @@ describe('trusted capability catalog admission', () => {
       kind: 'BoundedLoop',
       body: 'iteration-body',
       limits: { maxIterations: 2 },
+      lifecycle: fixtureLifecycle(),
       exits: { done: { action: 'exit', outcome: 'done' } },
     }],
     ['Choice', { id: 'subject', kind: 'Choice', outcomes: ['yes', 'no'] }],
@@ -1132,7 +1312,8 @@ function loopDefinition(
           id: 'loop',
           kind: 'BoundedLoop',
           body: 'body',
-          limits: { maxIterations: 3, maxActions: 4 },
+          limits: { maxIterations: 3, maxActions: 4, budget: 4 },
+          lifecycle: fixtureLifecycle(),
           exits,
         },
       ],
@@ -1310,6 +1491,7 @@ describe('authored contract identity validation', () => {
             kind: 'BoundedLoop',
             body: 'body',
             limits: { maxIterations: 2 },
+            lifecycle: fixtureLifecycle(),
             exits: {
               accepted: { action: 'exit', outcome: 'done' },
               rejected: { action: 'exit', outcome: 'done' },
@@ -1546,7 +1728,8 @@ describe('whole-definition validation', () => {
               id: 'loop',
               kind: 'BoundedLoop',
               body: 'body',
-              limits: { maxIterations: 0, maxActions: 4 },
+              limits: { maxIterations: 0, maxActions: 4, budget: 4 },
+              lifecycle: fixtureLifecycle(),
               exits: { done: { action: 'exit', outcome: 'done' } },
             },
           ],
@@ -1597,7 +1780,8 @@ describe('whole-definition validation', () => {
         id: 'nested-loop',
         kind: 'BoundedLoop',
         body: 'body',
-        limits: { maxIterations: 2 },
+        limits: { maxIterations: 2, maxActions: 4, budget: 4 },
+        lifecycle: fixtureLifecycle(),
         exits: { done: { action: 'exit', outcome: 'done' } },
       },
     ];
@@ -1645,7 +1829,8 @@ describe('whole-definition validation', () => {
               id: 'nested-loop',
               kind: 'BoundedLoop',
               body: 'leaf',
-              limits: { maxIterations: 2 },
+              limits: { maxIterations: 2, maxActions: 4, budget: 4 },
+              lifecycle: fixtureLifecycle(),
               exits: { done: { action: 'exit', outcome: 'done' } },
             },
           ],
@@ -2331,7 +2516,8 @@ describe('whole-definition validation', () => {
                 id: 'loop',
                 kind: 'BoundedLoop',
                 body: 'body',
-                limits: { maxIterations: 3 },
+                limits: { maxIterations: 3, maxActions: 4, budget: 4 },
+                lifecycle: fixtureLifecycle(),
                 exits: {
                   ghost: { action: 'exit', outcome: 'done' },
                 },
@@ -2440,7 +2626,8 @@ describe('whole-definition validation', () => {
         id: 'loop',
         kind: 'BoundedLoop',
         body: 'body',
-        limits: { maxIterations: 0 },
+        limits: { maxIterations: 0, maxActions: 4, budget: 4 },
+        lifecycle: fixtureLifecycle(),
         exits: {},
       },
     ];
@@ -2537,6 +2724,25 @@ describe('opaque ChangeRunPlan compilation', () => {
         const value = structuredClone(base);
         const loop = value.root.nodes[0]!;
         if (loop.kind === 'BoundedLoop') loop.limits.maxIterations = 4;
+        return value;
+      })(),
+      (() => {
+        const value = structuredClone(base);
+        const loop = value.root.nodes[0]!;
+        if (loop.kind === 'BoundedLoop') {
+          loop.lifecycle.thresholds.stallIterations = 4;
+        }
+        return value;
+      })(),
+      (() => {
+        const value = structuredClone(base);
+        const loop = value.root.nodes[0]!;
+        if (loop.kind === 'BoundedLoop') {
+          loop.lifecycle.exits.actionLimit = {
+            action: 'fail',
+            outcome: 'revised_action_limit',
+          };
+        }
         return value;
       })(),
       (() => {

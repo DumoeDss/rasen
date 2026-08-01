@@ -7,6 +7,12 @@
 [`north-star.md`](./north-star.md)。本路线允许随 dogfood 结果调整，但不得
 违反其中“闭环先于平台”和“完成必须有运行证据”等开发戒律。
 
+> **版本边界决策（2026-08-01）：0.2.0 只收口完整 ECP；本文件 Phase 0–8 的
+> Issue、Execution Plan、Dispatch、`auto-decompose` 上移与跨项目能力统一属于
+> 0.3.0。** 在子 Direction
+> [`executable-composite-pipelines/`](./executable-composite-pipelines/README.md)
+> 通过前，Phase 0–8 全部保持 Later。
+
 ## 0. 2026-07-29 ECP 校准快照（已由子 Direction 接管）
 
 > 本节保留首次校准时的事实与路线推理，但不再拥有 ECP Target State、Roadmap
@@ -612,8 +618,8 @@ auto-decompose 输出至少包含：
 
 ## 12. 第一条推荐的真实黄金路径
 
-> 这条 Issue 级黄金路径只在 ECP-5 通过后启动；当前第一条黄金路径是
-> ECP-1 ReviewCycle 纵向闭环。
+> 这条 0.3.0 Issue 级黄金路径只在完整 ECP 0.2.0 通过后启动；ECP 的当前
+> NOW 候选以子 Direction Roadmap 为准。
 
 下一步最值得验证的不是完整平台，而是：
 

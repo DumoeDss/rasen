@@ -18,8 +18,11 @@ import {
   validatePipelineSkills,
 } from './pipeline-registry/pipeline.js';
 import {
+  DefinitionReadError,
   EcpDefinitionModule,
   createProductionCapabilityCatalogSnapshot,
+  projectPreparedBoundedLoopPolicies,
+  type PreparedBoundedLoopPolicy,
   type PreparedDefinition,
 } from './pipeline-registry/definition.js';
 import { resolvePipelineExecutionSkillSets } from './pipeline-registry/execution-validation.js';
@@ -351,7 +354,30 @@ export interface PipelineValidationSummary {
   kind: 'installed' | 'directory' | 'package';
   name?: string;
   packageKind?: RasenPackage['kind'];
-  diagnostics: { code: string; severity: 'error' | 'warning'; message: string }[];
+  normalizedVersion?: 2;
+  boundedLoops?: readonly PreparedBoundedLoopPolicy[];
+  diagnostics: {
+    code: string;
+    severity: 'error' | 'warning';
+    message: string;
+    path?: string;
+  }[];
+}
+
+function preparationDiagnostics(error: unknown): PipelineValidationSummary['diagnostics'] | null {
+  const definitionError =
+    error instanceof DefinitionReadError
+      ? error
+      : error instanceof PipelineValidationError && error.cause instanceof DefinitionReadError
+        ? error.cause
+        : null;
+  if (definitionError === null) return null;
+  return definitionError.diagnostics.map((diagnostic) => ({
+    code: diagnostic.code,
+    severity: diagnostic.severity,
+    message: diagnostic.message,
+    path: diagnostic.path,
+  }));
 }
 
 /**
@@ -397,19 +423,30 @@ export async function validatePipelineInput(
           valid: true,
           kind: 'directory',
           name: prepared.value.authoredSource.name,
+          normalizedVersion: prepared.value.normalizedVersion,
+          boundedLoops: projectPreparedBoundedLoopPolicies(prepared.value),
           diagnostics: [],
         };
       } catch (error) {
+        const diagnostics = preparationDiagnostics(error);
         return {
           valid: false,
           kind: 'directory',
-          diagnostics: [
-            {
-              code: error instanceof PipelineValidationError ? error.code : 'pipeline_invalid',
-              severity: 'error',
-              message: error instanceof Error ? error.message : String(error),
-            },
-          ],
+          diagnostics:
+            diagnostics ??
+            [
+              {
+                code:
+                  error instanceof PipelineValidationError
+                    ? error.code
+                    : 'pipeline_invalid',
+                severity: 'error',
+                message: error instanceof Error ? error.message : String(error),
+                ...(error instanceof PipelineValidationError && error.path
+                  ? { path: error.path }
+                  : {}),
+              },
+            ],
         };
       }
     }
@@ -444,20 +481,25 @@ export async function validatePipelineInput(
       valid: true,
       kind: 'installed',
       name: resolution.prepared.authoredSource.name,
+      normalizedVersion: resolution.prepared.normalizedVersion,
+      boundedLoops: projectPreparedBoundedLoopPolicies(resolution.prepared),
       diagnostics: [],
     };
   } catch (error) {
+    const diagnostics = preparationDiagnostics(error);
     return {
       valid: false,
       kind: 'installed',
       name: nameOrPath,
-      diagnostics: [
-        {
-          code: 'pipeline_not_found',
-          severity: 'error',
-          message: error instanceof Error ? error.message : String(error),
-        },
-      ],
+      diagnostics:
+        diagnostics ??
+        [
+          {
+            code: 'pipeline_not_found',
+            severity: 'error',
+            message: error instanceof Error ? error.message : String(error),
+          },
+        ],
     };
   }
 }

@@ -73,6 +73,17 @@ export type RunStimulus =
       evidence: readonly EvidenceRef[];
     }>
   | Readonly<{ kind: 'await-gate'; wait: CanonicalWait & { kind: 'gate' } }>
+  | Readonly<{
+      kind: 'await-human-required';
+      wait: CanonicalWait & { kind: 'human-required' };
+    }>
+  | Readonly<{
+      kind: 'consume-domain-blocked-wait-for-strategy';
+      waitId: string;
+      actionId: string;
+      strategyNodeId: string;
+      trigger: string;
+    }>
   | Readonly<{ kind: 'suspend'; wait: CanonicalWait }>
   | Readonly<{ kind: 'resume-wait'; waitId: string }>
   | Readonly<{
@@ -82,12 +93,20 @@ export type RunStimulus =
       outcome: string;
     }>
   | Readonly<{
+      kind: 'decide-human';
+      waitId: string;
+      decisionId: 'retry' | 'escalate';
+      outcome: string;
+      evidence: readonly EvidenceRef[];
+    }>
+  | Readonly<{
       kind: 'accept-workspace-revision';
       waitId: string;
       revision: WorkspaceRevision;
       evidence: readonly EvidenceRef[];
     }>
   | Readonly<{ kind: 'escalate'; code: string; reason?: string }>
+  | Readonly<{ kind: 'fail'; code: string; reason?: string }>
   | Readonly<{ kind: 'cancel'; reason?: string }>
   | Readonly<{ kind: 'finish'; outcome: string }>;
 
@@ -156,6 +175,14 @@ const StimulusSchema = z.discriminatedUnion('kind', [
     evidence: z.array(z.unknown()).max(64),
   }),
   z.strictObject({ kind: z.literal('await-gate'), wait: z.unknown() }),
+  z.strictObject({ kind: z.literal('await-human-required'), wait: z.unknown() }),
+  z.strictObject({
+    kind: z.literal('consume-domain-blocked-wait-for-strategy'),
+    waitId: identity('wait'),
+    actionId: identity('action'),
+    strategyNodeId: identity('node'),
+    trigger: z.string().min(1).max(256),
+  }),
   z.strictObject({ kind: z.literal('suspend'), wait: z.unknown() }),
   z.strictObject({
     kind: z.literal('resume-wait'),
@@ -168,6 +195,13 @@ const StimulusSchema = z.discriminatedUnion('kind', [
     outcome: z.string().min(1).max(256),
   }),
   z.strictObject({
+    kind: z.literal('decide-human'),
+    waitId: identity('wait'),
+    decisionId: z.enum(['retry', 'escalate']),
+    outcome: z.string().min(1).max(256),
+    evidence: z.array(z.unknown()).max(64),
+  }),
+  z.strictObject({
     kind: z.literal('accept-workspace-revision'),
     waitId: identity('wait'),
     revision: z.unknown(),
@@ -175,6 +209,11 @@ const StimulusSchema = z.discriminatedUnion('kind', [
   }),
   z.strictObject({
     kind: z.literal('escalate'),
+    code: z.string().min(1).max(256),
+    reason: z.string().max(4096).optional(),
+  }),
+  z.strictObject({
+    kind: z.literal('fail'),
     code: z.string().min(1).max(256),
     reason: z.string().max(4096).optional(),
   }),
@@ -228,6 +267,15 @@ export function decodeRunStimulus(
       }
       return { ...stimulus, wait };
     }
+    case 'await-human-required': {
+      const wait = decodeCanonicalWait(stimulus.wait, record.runId);
+      if (wait.kind !== 'human-required') {
+        throw new Error('await-human-required requires a canonical human-required wait.');
+      }
+      return { ...stimulus, wait };
+    }
+    case 'consume-domain-blocked-wait-for-strategy':
+      return stimulus;
     case 'suspend':
       return {
         ...stimulus,
@@ -251,6 +299,11 @@ export function decodeRunStimulus(
         ...stimulus,
         evidence: parseEvidence(stimulus.evidence),
       } as RunStimulus;
+    case 'decide-human':
+      return {
+        ...stimulus,
+        evidence: parseEvidence(stimulus.evidence),
+      };
     case 'accept-workspace-revision':
       return {
         ...stimulus,
@@ -874,6 +927,81 @@ export function reduceCanonicalRunRecord(
         ),
       };
     }
+    case 'await-human-required': {
+      const existing = findWait(record, stimulus.wait.waitId);
+      if (existing !== undefined) {
+        return existing.kind === 'human-required'
+          ? { ok: true, record }
+          : failure(
+              'wait_identity_conflict',
+              'A human-required wait identity conflicts with an existing wait.'
+            );
+      }
+      const source = record.waits.find(
+        (wait) =>
+          wait.kind === 'domain-blocked' &&
+          wait.actionId === stimulus.wait.actionId
+      );
+      if (source === undefined) {
+        return failure(
+          'wait_identity_conflict',
+          'Human-required suspension requires the exact active domain-blocked wait.'
+        );
+      }
+      const capacity = reserveTransitionCapacity(record, 1);
+      if (capacity !== null) return capacity;
+      return {
+        ok: true,
+        record: commit(
+          record,
+          [{ kind: 'RunSuspended', waitId: stimulus.wait.waitId }],
+          {
+            waits: [
+              ...removeWait(record, source.waitId),
+              stimulus.wait,
+            ],
+          }
+        ),
+      };
+    }
+    case 'consume-domain-blocked-wait-for-strategy': {
+      const wait = findWait(record, stimulus.waitId);
+      if (
+        wait === undefined ||
+        wait.kind !== 'domain-blocked' ||
+        wait.actionId !== stimulus.actionId
+      ) {
+        return failure(
+          'wait_identity_conflict',
+          'Strategy wait consumption must address the exact active domain-blocked WaitId and ActionId.'
+        );
+      }
+      const source = record.actions[stimulus.actionId];
+      if (source?.result?.status !== 'blocked') {
+        return failure(
+          'illegal_transition',
+          'Strategy wait consumption requires a committed blocked domain result.'
+        );
+      }
+      const capacity = reserveTransitionCapacity(record, 1);
+      if (capacity !== null) return capacity;
+      return {
+        ok: true,
+        record: commit(
+          record,
+          [
+            {
+              kind: 'DomainBlockedWaitConsumedByStrategy',
+              waitId: wait.waitId,
+              actionId: wait.actionId,
+              strategyNodeId: stimulus.strategyNodeId,
+              trigger: stimulus.trigger,
+            },
+          ],
+          { waits: removeWait(record, wait.waitId) }
+        ),
+      };
+    }
     case 'suspend': {
       const capacity = reserveTransitionCapacity(record, 1);
       if (capacity !== null) return capacity;
@@ -983,6 +1111,62 @@ export function reduceCanonicalRunRecord(
         ),
       };
     }
+    case 'decide-human': {
+      const wait = findWait(record, stimulus.waitId);
+      if (wait === undefined || wait.kind !== 'human-required') {
+        return failure(
+          'wait_identity_conflict',
+          'Human decision must address one exact active human-required WaitId.'
+        );
+      }
+      if (!wait.decisionIds.includes(stimulus.decisionId)) {
+        return failure(
+          'control_not_allowed',
+          'Human decision is not declared by the frozen wait.'
+        );
+      }
+      if (stimulus.evidence.length > record.limits.maxEvidenceRefsPerAction) {
+        return terminateAtLimit(record, 'evidence');
+      }
+      const transitions: readonly TransitionWithoutOrdinal[] = [
+        {
+          kind: 'HumanDecisionCommitted',
+          waitId: wait.waitId,
+          actionId: wait.actionId,
+          decisionId: stimulus.decisionId,
+          outcome: stimulus.outcome,
+          evidence: stimulus.evidence.map(
+            (item) => item.evidenceDigest as Digest
+          ),
+        },
+      ];
+      if (stimulus.decisionId === 'retry') {
+        const capacity = reserveTransitionCapacity(record, 1);
+        if (capacity !== null) return capacity;
+        return {
+          ok: true,
+          record: commit(record, transitions, {
+            waits: removeWait(record, wait.waitId),
+          }),
+        };
+      }
+      const capacity = reserveTransitionCapacity(record, 2);
+      if (capacity !== null) return capacity;
+      const terminal: RunTerminalOutcome = {
+        kind: 'escalated',
+        code: wait.outcome,
+        reason: stimulus.outcome,
+      };
+      return {
+        ok: true,
+        record: commit(record, [...transitions, terminalTransition(terminal)], {
+          actions: closeCommittedActions(record.actions),
+          waits: [],
+          terminal,
+          status: terminal.kind,
+        }),
+      };
+    }
     case 'accept-workspace-revision': {
       const capacity = reserveTransitionCapacity(record, 1);
       if (capacity !== null) return capacity;
@@ -1022,6 +1206,14 @@ export function reduceCanonicalRunRecord(
     case 'escalate':
       return terminate(record, {
         kind: 'escalated',
+        code: stimulus.code,
+        ...(stimulus.reason === undefined
+          ? {}
+          : { reason: stimulus.reason }),
+      });
+    case 'fail':
+      return terminate(record, {
+        kind: 'failed',
         code: stimulus.code,
         ...(stimulus.reason === undefined
           ? {}

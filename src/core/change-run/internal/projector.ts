@@ -1,5 +1,6 @@
 import type {
   ChangeRunView,
+  NodeId,
   WorkspaceRevision,
 } from '../contracts.js';
 import type {
@@ -12,6 +13,20 @@ import { canonicalJson } from './identity.js';
 import { projectReviewCycleProgress } from './review-cycle-runtime.js';
 import { projectGoalCycleProgress, type GoalCycleProgress } from './goal-cycle-runtime.js';
 import { projectCompositeBodyProgress, compositeBodyStagePath } from './composite-runtime.js';
+import {
+  projectCompositeBodyDomainSnapshot,
+} from './composite-runtime.js';
+import { projectReviewCycleDomainSnapshot } from './review-cycle-runtime.js';
+import { projectGoalCycleDomainSnapshot } from './goal-cycle-runtime.js';
+import {
+  latestAttemptForNode,
+  reduceBoundedLoopLifecycle,
+  strategyInvocationPath,
+  strategyRecoveryInvocationPath,
+  type LoopDomainSnapshot,
+  type LoopLifecycleDecision,
+} from './bounded-loop-lifecycle.js';
+import { deriveNodeId } from './identity.js';
 
 function actionView(committed: CommittedAction) {
   const action = committed.action;
@@ -62,6 +77,16 @@ function allowedControlsFor(
   for (const wait of waits) {
     switch (wait.kind) {
       case 'gate':
+        for (const decisionId of wait.decisionIds) {
+          controls.push({
+            kind: 'decision',
+            waitId: wait.waitId,
+            decisionId,
+            outcomes: [...wait.decisionIds],
+          });
+        }
+        break;
+      case 'human-required':
         for (const decisionId of wait.decisionIds) {
           controls.push({
             kind: 'decision',
@@ -202,21 +227,25 @@ function buildSections(
 ): readonly unknown[] {
   const sections: unknown[] = [root];
   if (plan !== undefined) {
-    const loop = plan.nodes.find(
+    const loops = plan.nodes.filter(
       (node): node is RuntimePlanBoundedLoopNode => node.kind === 'bounded-loop'
     );
-    if (loop !== undefined && loop.body.kind === 'review-cycle') {
-      const progress = projectReviewCycleProgress(plan, loop, record);
-      sections.push(buildReviewCycleSection(loop, progress));
-    }
-    // Emit goal/1 section for goal-cycle body bounded-loops.
-    const goalLoop = plan.nodes.find(
-      (node): node is RuntimePlanBoundedLoopNode =>
-        node.kind === 'bounded-loop' && node.body.kind === 'goal-cycle'
-    );
-    if (goalLoop !== undefined && goalLoop.body.kind === 'goal-cycle') {
-      const progress = projectGoalCycleProgress(plan, goalLoop, record);
-      sections.push(buildGoalSection(goalLoop, progress));
+    for (const loop of loops) {
+      const domain = lifecycleDomainSnapshot(plan, loop, record);
+      sections.push(buildBoundedLoopLifecycleSection(plan, loop, record, domain));
+      if (loop.body.kind === 'review-cycle') {
+        sections.push(
+          buildReviewCycleSection(
+            loop,
+            projectReviewCycleProgress(plan, loop, record)
+          )
+        );
+      }
+      if (loop.body.kind === 'goal-cycle') {
+        sections.push(
+          buildGoalSection(loop, projectGoalCycleProgress(plan, loop, record))
+        );
+      }
     }
     // Emit composite drill-down for composite-body loops or inlined CompositeRef nodes.
     const compositeSection = buildCompositeSection(plan, record);
@@ -235,6 +264,179 @@ function buildSections(
     }
   }
   return Object.freeze(sections);
+}
+
+function lifecycleDomainSnapshot(
+  plan: RuntimePlan,
+  loop: RuntimePlanBoundedLoopNode,
+  record: CanonicalRunRecord
+): LoopDomainSnapshot {
+  if (loop.body.kind === 'review-cycle') {
+    return projectReviewCycleDomainSnapshot(plan, loop, record);
+  }
+  if (loop.body.kind === 'goal-cycle') {
+    return projectGoalCycleDomainSnapshot(plan, loop, record);
+  }
+  return projectCompositeBodyDomainSnapshot(plan, loop, record);
+}
+
+function lifecycleOutcome(decision: LoopLifecycleDecision):
+  | Readonly<{
+      kind:
+        | 'completed'
+        | 'iteration-limit'
+        | 'action-limit'
+        | 'budget-limit'
+        | 'stalled'
+        | 'blocked'
+        | 'strategy-exhausted'
+        | 'failed'
+        | 'cancelled';
+      disposition: 'exit' | 'escalate' | 'fail' | 'cancel';
+      value?: string;
+    }>
+  | undefined {
+  switch (decision.kind) {
+    case 'completed':
+      return {
+        kind: decision.reason === 'domain-complete' ? 'completed' : decision.reason,
+        disposition: 'exit',
+        value: decision.outcome,
+      };
+    case 'escalated':
+      return {
+        kind: decision.reason === 'action-failed' ? 'failed' : decision.reason,
+        disposition: 'escalate',
+        value: decision.outcome,
+      };
+    case 'failed':
+      return {
+        kind: decision.reason === 'action-failed' ? 'failed' : decision.reason,
+        disposition: 'fail',
+        value: decision.outcome,
+      };
+    case 'cancelled':
+      return { kind: 'cancelled', disposition: 'cancel' };
+    default:
+      return undefined;
+  }
+}
+
+function buildBoundedLoopLifecycleSection(
+  plan: RuntimePlan,
+  loop: RuntimePlanBoundedLoopNode,
+  record: CanonicalRunRecord,
+  domain: LoopDomainSnapshot
+): unknown {
+  const lifecycle = reduceBoundedLoopLifecycle(plan, loop, record, domain);
+  const activeStrategy = Array.from(
+    { length: loop.lifecycle.strategy.maxAttempts },
+    (_, index) => index + 1
+  ).find((attempt) => {
+    const nodeId = deriveNodeId(
+      plan.runId,
+      strategyInvocationPath(loop.hierarchicalPath, attempt)
+    );
+    const action = latestAttemptForNode(record, nodeId);
+    return action?.state === 'active' || action?.state === 'blocked';
+  });
+  const loopActionNodeIds = new Set<NodeId>(domain.ownedNodeIds);
+  for (
+    let attempt = 1;
+    attempt <= loop.lifecycle.strategy.maxAttempts;
+    attempt += 1
+  ) {
+    loopActionNodeIds.add(
+      deriveNodeId(
+        plan.runId,
+        strategyInvocationPath(loop.hierarchicalPath, attempt)
+      )
+    );
+    for (const invocation of domain.ownedInvocations) {
+      loopActionNodeIds.add(
+        deriveNodeId(
+          plan.runId,
+          strategyRecoveryInvocationPath(
+            loop.hierarchicalPath,
+            attempt,
+            invocation.hierarchicalPath
+          )
+        )
+      );
+    }
+  }
+  const selectedWait =
+    record.waits.find(
+      (wait) =>
+        wait.kind === 'human-required' &&
+        wait.loopPath === loop.hierarchicalPath
+    ) ??
+    record.waits.find((wait) => {
+      if (!('actionId' in wait)) return false;
+      const action = record.actions[wait.actionId];
+      return (
+        action !== undefined &&
+        loopActionNodeIds.has(action.action.nodeId as NodeId)
+      );
+    });
+  const outcome = lifecycleOutcome(lifecycle.decision);
+  const terminal = record.terminal !== undefined || outcome !== undefined;
+  const state = terminal
+    ? 'terminal'
+    : selectedWait?.kind === 'human-required'
+      ? 'human-required'
+      : selectedWait !== undefined
+          ? 'waiting'
+          : activeStrategy !== undefined || lifecycle.decision.kind === 'strategy-ready'
+            ? 'strategizing'
+            : lifecycle.decision.kind === 'waiting'
+              ? 'waiting'
+              : 'running';
+  return Object.freeze({
+    kind: 'bounded-loop-lifecycle',
+    version: 1,
+    loopPath: loop.hierarchicalPath,
+    bodyKind: domain.bodyKind,
+    state,
+    iteration: domain.iteration,
+    phase: domain.phase,
+    limits: {
+      iterations: {
+        used: Math.min(
+          domain.progressHistory.length,
+          loop.limits.maxIterations
+        ),
+        max: loop.limits.maxIterations,
+      },
+      actions: { used: lifecycle.actionsUsed, max: loop.limits.maxActions },
+      budget: { used: lifecycle.budgetUsed, max: loop.limits.budget },
+    },
+    ...(lifecycle.progressFingerprint === undefined
+      ? {}
+      : { progressFingerprint: lifecycle.progressFingerprint }),
+    stallStreak: lifecycle.stallStreak,
+    ...(lifecycle.blockerFingerprint === undefined
+      ? {}
+      : { blockerFingerprint: lifecycle.blockerFingerprint }),
+    blockedStreak: lifecycle.blockedStreak,
+    strategy: {
+      attempts: lifecycle.strategyAttempts,
+      maxAttempts: loop.lifecycle.strategy.maxAttempts,
+      ...(activeStrategy === undefined ? {} : { active: activeStrategy }),
+    },
+    ...(selectedWait === undefined
+      ? {}
+      : {
+          wait: {
+            waitId: selectedWait.waitId,
+            kind: selectedWait.kind,
+            ...('reasonCode' in selectedWait
+              ? { reasonCode: selectedWait.reasonCode }
+              : {}),
+          },
+        }),
+    ...(outcome === undefined ? {} : { outcome }),
+  });
 }
 
 /**
@@ -282,8 +484,8 @@ function buildCompositeSection(
       stages,
       outcome: progress.kind === 'clean' ? progress.outcome : undefined,
       ...(progress.kind === 'ready' || progress.kind === 'waiting' || progress.kind === 'failed'
-        ? { round: progress.next.round, maxIterations: compositeLoop.maxIterations }
-        : { round: 1, maxIterations: compositeLoop.maxIterations }),
+        ? { round: progress.next.round, maxIterations: compositeLoop.limits.maxIterations }
+        : { round: 1, maxIterations: compositeLoop.limits.maxIterations }),
     });
   }
 
@@ -365,14 +567,14 @@ function buildReviewCycleSection(
         : progress.kind === 'failed'
           ? 'committed-failure'
           : undefined,
-    maxRounds: loop.maxIterations,
+    maxRounds: loop.limits.maxIterations,
   });
 }
 
 /**
  * Build a `goal/1` section for a goal-cycle bounded-loop. Mirrors the
- * review-cycle section shape but carries goal-specific fields: variant,
- * score, gaps, stall streak, and budget.
+ * review-cycle section shape but carries only goal-specific fields. Shared
+ * stall and budget mechanics live exclusively in bounded-loop-lifecycle/1.
  */
 function buildGoalSection(
   loop: RuntimePlanBoundedLoopNode,
@@ -393,11 +595,6 @@ function buildGoalSection(
     outcome: state.outcome,
     ...(state.lastScore !== undefined ? { lastScore: state.lastScore } : {}),
     lastGaps: state.lastGaps,
-    stallStreak: state.stallStreak,
-    budget: {
-      used: state.eventCount,
-      max: loop.maxIterations * 2, // 2 phases per round
-    },
     waitReason:
       progress.kind === 'waiting'
         ? 'action-active'

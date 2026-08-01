@@ -6,6 +6,7 @@ import type {
   RuntimePlanCompositeBodyInput,
 } from '../../../src/core/change-run/internal/runtime-plan.js';
 import { RuntimePlanError } from '../../../src/core/change-run/internal/runtime-plan.js';
+import { fixtureRuntimeLoop } from './bounded-loop-fixture.js';
 
 const branded = <T>(value: string): T => value as T;
 const digest = (char: string) => branded<ReturnType<typeof digest>>(`sha256:${char.repeat(64)}`) as never;
@@ -51,7 +52,7 @@ function basePlanInput(
         kind: 'bounded-loop',
         hierarchicalPath: 'root/loop',
         requires: [],
-        maxIterations: 3,
+        ...fixtureRuntimeLoop(3, 24, 'exhausted'),
         body,
         outcomes: { clean: 'success', exhausted: 'exhausted' },
       },

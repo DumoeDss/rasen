@@ -19,6 +19,7 @@ import type {
   JsonValue,
   RunId,
 } from '../../../src/core/change-run/index.js';
+import { fixtureRuntimeLoop } from './bounded-loop-fixture.js';
 
 // The UI parity suites and this test read the SAME data module. `packages/ui`
 // cannot import the root `src/`, so the module lives on the UI side and the
@@ -158,7 +159,11 @@ function reviewCyclePlan(maxIterations: number): RuntimePlan {
       kind: 'bounded-loop',
       hierarchicalPath: 'root/review-cycle',
       requires: [],
-      maxIterations,
+      ...fixtureRuntimeLoop(
+        maxIterations,
+        maxIterations * 16,
+        'review_cycle_exhausted'
+      ),
       body: {
         kind: 'review-cycle',
         phases: [

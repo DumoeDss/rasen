@@ -39,10 +39,51 @@ export interface CompositeRefNode extends DefinitionNodeBase {
   declarationId: string;
 }
 
+export interface LoopLifecycleTerminalExit {
+  readonly action: 'exit' | 'escalate' | 'fail';
+  readonly outcome: string;
+}
+
+export type LoopLifecycleExit =
+  | LoopLifecycleTerminalExit
+  | Readonly<{ action: 'strategy' }>;
+
+export type LoopLifecycleBlockedExit =
+  | LoopLifecycleExit
+  | Readonly<{ action: 'human-required'; outcome: string }>;
+
+/**
+ * The complete mechanical lifecycle policy for a Definition v2 BoundedLoop.
+ * Domain body exits remain on `BoundedLoop.exits`; this object owns only
+ * program-derived triggers such as limits, stalls, repeated blockers and the
+ * bounded recovery strategy ladder.
+ */
+export interface BoundedLoopLifecyclePolicyV1 {
+  readonly version: 1;
+  readonly thresholds: Readonly<{
+    stallIterations: number;
+    sameBlockerAttempts: number;
+  }>;
+  readonly strategy: Readonly<{
+    maxAttempts: number;
+    requireMaterialChange: true;
+    capability?: Readonly<{ id: string; version: string }>;
+  }>;
+  readonly exits: Readonly<{
+    iterationLimit: LoopLifecycleExit;
+    actionLimit: LoopLifecycleTerminalExit;
+    budgetLimit: LoopLifecycleTerminalExit;
+    stalled: LoopLifecycleExit;
+    blocked: LoopLifecycleBlockedExit;
+    strategyExhausted: LoopLifecycleTerminalExit;
+  }>;
+}
+
 export interface BoundedLoopNode extends DefinitionNodeBase {
   kind: 'BoundedLoop';
   body: string;
   limits: Readonly<{ maxIterations: number; maxActions?: number; budget?: number }>;
+  lifecycle: BoundedLoopLifecyclePolicyV1;
   exits: Readonly<
     Record<
       string,
@@ -197,6 +238,11 @@ export type DefinitionDiagnosticCode =
   | 'PORT_MISMATCH'
   | 'INVALID_LIMIT'
   | 'IMPOSSIBLE_BUDGET'
+  | 'MISSING_LIFECYCLE_POLICY'
+  | 'INVALID_LIFECYCLE_POLICY'
+  | 'INCOMPLETE_LIFECYCLE_EXITS'
+  | 'STRATEGY_CAPABILITY_REQUIRED'
+  | 'STRATEGY_CAPABILITY_FORBIDDEN'
   | 'CAPABILITY_MISSING'
   | 'CAPABILITY_DISABLED'
   | 'CAPABILITY_FORBIDDEN'
@@ -622,6 +668,220 @@ function readLimits(
   }
 }
 
+export interface PreparedBoundedLoopPolicy {
+  readonly nodeId: string;
+  readonly limits: BoundedLoopNode['limits'];
+  readonly lifecycle: BoundedLoopLifecyclePolicyV1;
+}
+
+/**
+ * Public inspection projection for the exact normalized lifecycle policies
+ * that preparation seals into the semantic definition and plan digest.
+ */
+export function projectPreparedBoundedLoopPolicies(
+  prepared: PreparedDefinition
+): readonly PreparedBoundedLoopPolicy[] {
+  return Object.freeze(
+    prepared.definition.root.nodes
+      .filter((node): node is BoundedLoopNode => node.kind === 'BoundedLoop')
+      .map((node) =>
+        Object.freeze({
+          nodeId: node.id,
+          limits: node.limits,
+          lifecycle: node.lifecycle,
+        })
+      )
+  );
+}
+
+const LOOP_LIFECYCLE_EXIT_KEYS = [
+  'iterationLimit',
+  'actionLimit',
+  'budgetLimit',
+  'stalled',
+  'blocked',
+  'strategyExhausted',
+] as const;
+
+type LoopLifecycleExitKey = (typeof LOOP_LIFECYCLE_EXIT_KEYS)[number];
+
+function readLifecycleExit(
+  value: unknown,
+  path: string,
+  key: LoopLifecycleExitKey,
+  diagnostics: DefinitionDiagnostic[]
+): void {
+  if (!isObject(value)) {
+    diagnostics.push(
+      diagnostic('INVALID_LIFECYCLE_POLICY', path, 'Lifecycle exit must be an object.')
+    );
+    return;
+  }
+  const permitted =
+    key === 'blocked'
+      ? ['exit', 'escalate', 'fail', 'strategy', 'human-required']
+      : key === 'iterationLimit' || key === 'stalled'
+        ? ['exit', 'escalate', 'fail', 'strategy']
+        : ['exit', 'escalate', 'fail'];
+  if (typeof value.action !== 'string' || !permitted.includes(value.action)) {
+    diagnostics.push(
+      diagnostic(
+        'INVALID_LIFECYCLE_POLICY',
+        `${path}/action`,
+        `Lifecycle ${key} action must be one of ${permitted.join(', ')}.`
+      )
+    );
+    return;
+  }
+  if (value.action !== 'strategy') {
+    if (typeof value.outcome !== 'string' || value.outcome.trim().length === 0) {
+      diagnostics.push(
+        diagnostic(
+          'INVALID_LIFECYCLE_POLICY',
+          `${path}/outcome`,
+          `Lifecycle ${key} outcome must be a non-empty string.`
+        )
+      );
+    }
+  } else if (value.outcome !== undefined) {
+    diagnostics.push(
+      diagnostic(
+        'INVALID_LIFECYCLE_POLICY',
+        `${path}/outcome`,
+        'A strategy disposition must not declare a terminal outcome.'
+      )
+    );
+  }
+}
+
+function readBoundedLoopLifecycle(
+  value: unknown,
+  path: string,
+  diagnostics: DefinitionDiagnostic[]
+): void {
+  if (value === undefined) {
+    diagnostics.push(
+      diagnostic(
+        'MISSING_LIFECYCLE_POLICY',
+        path,
+        'Authored Definition v2 BoundedLoop nodes must declare lifecycle.version 1.'
+      )
+    );
+    return;
+  }
+  if (!isObject(value)) {
+    diagnostics.push(
+      diagnostic('INVALID_LIFECYCLE_POLICY', path, 'BoundedLoop lifecycle must be an object.')
+    );
+    return;
+  }
+  if (value.version !== 1) {
+    diagnostics.push(
+      diagnostic(
+        'INVALID_LIFECYCLE_POLICY',
+        `${path}/version`,
+        'BoundedLoop lifecycle version must be 1.'
+      )
+    );
+  }
+  if (!isObject(value.thresholds)) {
+    diagnostics.push(
+      diagnostic(
+        'INVALID_LIFECYCLE_POLICY',
+        `${path}/thresholds`,
+        'Lifecycle thresholds must be an object.'
+      )
+    );
+  } else {
+    for (const key of ['stallIterations', 'sameBlockerAttempts'] as const) {
+      if (typeof value.thresholds[key] !== 'number') {
+        diagnostics.push(
+          diagnostic(
+            'INVALID_LIFECYCLE_POLICY',
+            `${path}/thresholds/${key}`,
+            `${key} must be a number.`
+          )
+        );
+      }
+    }
+  }
+  if (!isObject(value.strategy)) {
+    diagnostics.push(
+      diagnostic(
+        'INVALID_LIFECYCLE_POLICY',
+        `${path}/strategy`,
+        'Lifecycle strategy must be an object.'
+      )
+    );
+  } else {
+    if (typeof value.strategy.maxAttempts !== 'number') {
+      diagnostics.push(
+        diagnostic(
+          'INVALID_LIFECYCLE_POLICY',
+          `${path}/strategy/maxAttempts`,
+          'strategy.maxAttempts must be a number.'
+        )
+      );
+    }
+    if (value.strategy.requireMaterialChange !== true) {
+      diagnostics.push(
+        diagnostic(
+          'INVALID_LIFECYCLE_POLICY',
+          `${path}/strategy/requireMaterialChange`,
+          'strategy.requireMaterialChange must be true for lifecycle version 1.'
+        )
+      );
+    }
+    if (value.strategy.capability !== undefined) {
+      if (!isObject(value.strategy.capability)) {
+        diagnostics.push(
+          diagnostic(
+            'INVALID_LIFECYCLE_POLICY',
+            `${path}/strategy/capability`,
+            'Strategy capability must be an object.'
+          )
+        );
+      } else {
+        readRequiredString(
+          value.strategy.capability.id,
+          `${path}/strategy/capability/id`,
+          'Strategy capability id',
+          diagnostics
+        );
+        readRequiredString(
+          value.strategy.capability.version,
+          `${path}/strategy/capability/version`,
+          'Strategy capability version',
+          diagnostics
+        );
+      }
+    }
+  }
+  if (!isObject(value.exits)) {
+    diagnostics.push(
+      diagnostic(
+        'INCOMPLETE_LIFECYCLE_EXITS',
+        `${path}/exits`,
+        'Lifecycle exits must be an object containing every mechanical trigger.'
+      )
+    );
+    return;
+  }
+  for (const key of LOOP_LIFECYCLE_EXIT_KEYS) {
+    if (value.exits[key] === undefined) {
+      diagnostics.push(
+        diagnostic(
+          'INCOMPLETE_LIFECYCLE_EXITS',
+          `${path}/exits/${key}`,
+          `Lifecycle exit ${key} is required.`
+        )
+      );
+      continue;
+    }
+    readLifecycleExit(value.exits[key], `${path}/exits/${key}`, key, diagnostics);
+  }
+}
+
 function readEndpoint(
   value: unknown,
   path: string,
@@ -708,6 +968,7 @@ function readDefinitionNode(
     case 'BoundedLoop': {
       readRequiredString(value.body, `${path}/body`, 'BoundedLoop body', diagnostics);
       readLimits(value.limits, `${path}/limits`, diagnostics, true);
+      readBoundedLoopLifecycle(value.lifecycle, `${path}/lifecycle`, diagnostics);
       if (!isObject(value.exits)) {
         diagnostics.push(
           diagnostic(
@@ -1277,8 +1538,7 @@ function validateLoopsAndLimits(
   ): void => {
     if (
       typeof value !== 'number' ||
-      !Number.isFinite(value) ||
-      !Number.isInteger(value) ||
+      !Number.isSafeInteger(value) ||
       value <= 0
     ) {
       diagnostics.push(
@@ -1326,20 +1586,16 @@ function validateLoopsAndLimits(
         `${loopPath}/limits/maxIterations`,
         'BoundedLoop maxIterations'
       );
-      if (node.limits.maxActions !== undefined) {
-        addPositiveLimitDiagnostic(
-          node.limits.maxActions,
-          `${loopPath}/limits/maxActions`,
-          'BoundedLoop maxActions'
-        );
-      }
-      if (node.limits.budget !== undefined) {
-        addPositiveLimitDiagnostic(
-          node.limits.budget,
-          `${loopPath}/limits/budget`,
-          'BoundedLoop budget'
-        );
-      }
+      addPositiveLimitDiagnostic(
+        node.limits.maxActions,
+        `${loopPath}/limits/maxActions`,
+        'BoundedLoop maxActions'
+      );
+      addPositiveLimitDiagnostic(
+        node.limits.budget,
+        `${loopPath}/limits/budget`,
+        'BoundedLoop budget'
+      );
       if (
         typeof node.limits.maxActions === 'number' &&
         typeof node.limits.budget === 'number' &&
@@ -1350,6 +1606,62 @@ function validateLoopsAndLimits(
             'IMPOSSIBLE_BUDGET',
             `${loopPath}/limits/budget`,
             `Loop budget ${node.limits.budget} cannot admit maxActions ${node.limits.maxActions}.`
+          )
+        );
+      }
+
+      const lifecycle = node.lifecycle;
+      addPositiveLimitDiagnostic(
+        lifecycle.thresholds.stallIterations,
+        `${loopPath}/lifecycle/thresholds/stallIterations`,
+        'Lifecycle stallIterations'
+      );
+      addPositiveLimitDiagnostic(
+        lifecycle.thresholds.sameBlockerAttempts,
+        `${loopPath}/lifecycle/thresholds/sameBlockerAttempts`,
+        'Lifecycle sameBlockerAttempts'
+      );
+      if (
+        !Number.isSafeInteger(lifecycle.strategy.maxAttempts) ||
+        lifecycle.strategy.maxAttempts < 0
+      ) {
+        diagnostics.push(
+          diagnostic(
+            'INVALID_LIMIT',
+            `${loopPath}/lifecycle/strategy/maxAttempts`,
+            'Lifecycle strategy maxAttempts must be a zero-or-positive safe integer.'
+          )
+        );
+      }
+      const strategyTriggers = Object.entries(lifecycle.exits)
+        .filter(([, disposition]) => disposition.action === 'strategy')
+        .map(([trigger]) => trigger)
+        .sort(compareCanonicalStrings);
+      if (strategyTriggers.length > 0) {
+        if (lifecycle.strategy.maxAttempts <= 0) {
+          diagnostics.push(
+            diagnostic(
+              'STRATEGY_CAPABILITY_REQUIRED',
+              `${loopPath}/lifecycle/strategy/maxAttempts`,
+              `Lifecycle trigger(s) ${strategyTriggers.join(', ')} require at least one strategy attempt.`
+            )
+          );
+        }
+        if (lifecycle.strategy.capability === undefined) {
+          diagnostics.push(
+            diagnostic(
+              'STRATEGY_CAPABILITY_REQUIRED',
+              `${loopPath}/lifecycle/strategy/capability`,
+              `Lifecycle trigger(s) ${strategyTriggers.join(', ')} require a frozen strategy capability.`
+            )
+          );
+        }
+      } else if (lifecycle.strategy.capability !== undefined) {
+        diagnostics.push(
+          diagnostic(
+            'STRATEGY_CAPABILITY_FORBIDDEN',
+            `${loopPath}/lifecycle/strategy/capability`,
+            'A strategy capability is forbidden when no lifecycle trigger can select strategy.'
           )
         );
       }
@@ -1442,6 +1754,54 @@ function validateCapabilities(
 
   for (const { graph, path } of graphEntries) {
     for (const [nodeIndex, node] of graph.nodes.entries()) {
+      if (
+        node.kind === 'BoundedLoop' &&
+        node.lifecycle.strategy.capability !== undefined
+      ) {
+        const capability = node.lifecycle.strategy.capability;
+        const capabilityPath = `${path}/nodes/${nodeIndex}/lifecycle/strategy/capability`;
+        const byId = catalog.descriptors.filter(
+          (descriptor) => descriptor.id === capability.id
+        );
+        if (byId.length === 0) {
+          diagnostics.push(
+            diagnostic(
+              'CAPABILITY_MISSING',
+              capabilityPath,
+              `Strategy capability '${capability.id}' is not present in catalog snapshot version ${catalog.version}.`
+            )
+          );
+        } else {
+          const descriptor = byId.find(
+            (candidate) => candidate.version === capability.version
+          );
+          if (descriptor === undefined) {
+            diagnostics.push(
+              diagnostic(
+                'CAPABILITY_VERSION_MISMATCH',
+                capabilityPath,
+                `Strategy capability '${capability.id}' version '${capability.version}' is unavailable; catalog versions are ${byId.map((candidate) => candidate.version).sort(compareCanonicalStrings).join(', ')}.`
+              )
+            );
+          } else if (descriptor.availability === 'disabled') {
+            diagnostics.push(
+              diagnostic(
+                'CAPABILITY_DISABLED',
+                capabilityPath,
+                `Strategy capability '${descriptor.id}' version '${descriptor.version}' is installed but disabled.`
+              )
+            );
+          } else if (descriptor.availability === 'forbidden') {
+            diagnostics.push(
+              diagnostic(
+                'CAPABILITY_FORBIDDEN',
+                capabilityPath,
+                `Strategy capability '${descriptor.id}' version '${descriptor.version}' is forbidden by the trusted catalog.`
+              )
+            );
+          }
+        }
+      }
       if (node.kind !== 'AtomicStage' || node.capability.version === 'legacy') continue;
       const capabilityPath = `${path}/nodes/${nodeIndex}/capability`;
       const byId = catalog.descriptors.filter(
@@ -1575,7 +1935,10 @@ function contractForNode(
     }
     case 'BoundedLoop': {
       const declaration = declarations.get(node.body);
-      const terminalOutcomes = Object.values(node.exits)
+      const terminalOutcomes = [
+        ...Object.values(node.exits),
+        ...Object.values(node.lifecycle.exits),
+      ]
         .filter(
           (
             exit
@@ -1647,8 +2010,14 @@ function outputPathForNode(
       const entry = Object.entries(node.exits).find(
         ([, exit]) => exit.action === 'exit' && exit.outcome === outcome
       );
-      return entry
-        ? `${nodePath}/exits/${pointerSegment(entry[0])}/outcome`
+      if (entry) {
+        return `${nodePath}/exits/${pointerSegment(entry[0])}/outcome`;
+      }
+      const lifecycleEntry = Object.entries(node.lifecycle.exits).find(
+        ([, exit]) => exit.action === 'exit' && exit.outcome === outcome
+      );
+      return lifecycleEntry
+        ? `${nodePath}/lifecycle/exits/${pointerSegment(lifecycleEntry[0])}/outcome`
         : `${nodePath}/exits`;
     }
     case 'CompositeRef':
@@ -1935,8 +2304,17 @@ function relevantCapabilityDescriptors(
   ];
   for (const graph of graphs) {
     for (const node of graph.nodes) {
-      if (node.kind !== 'AtomicStage' || node.capability.version === 'legacy') continue;
-      identities.add(`${node.capability.id}\0${node.capability.version}`);
+      if (node.kind === 'AtomicStage' && node.capability.version !== 'legacy') {
+        identities.add(`${node.capability.id}\0${node.capability.version}`);
+      }
+      if (
+        node.kind === 'BoundedLoop' &&
+        node.lifecycle.strategy.capability !== undefined
+      ) {
+        identities.add(
+          `${node.lifecycle.strategy.capability.id}\0${node.lifecycle.strategy.capability.version}`
+        );
+      }
     }
   }
   return catalog.descriptors.filter((descriptor) =>
@@ -2013,6 +2391,52 @@ function supportsV2ExecutableRuntime(
     compositeOrLoop += 1;
   }
   return compositeOrLoop > 0;
+}
+
+function compatibilityLoopLimits(
+  maxIterations: number,
+  phasesPerIteration: number
+): Readonly<{ maxIterations: number; maxActions: number; budget: number }> {
+  // Legacy prompt-owned loops did not have a loop-local action ceiling. Keep
+  // compatibility generous enough for one ordinary pass plus bounded retries
+  // while still materializing an explicit finite safety boundary.
+  const allowance = Math.max(
+    1,
+    maxIterations * Math.max(1, phasesPerIteration) * 4
+  );
+  return { maxIterations, maxActions: allowance, budget: allowance };
+}
+
+function compatibilityLifecyclePolicy(
+  exhaustedOutcome: string,
+  thresholds: Readonly<{
+    stallIterations?: number;
+    sameBlockerAttempts?: number;
+  }> = {}
+): BoundedLoopLifecyclePolicyV1 {
+  const terminal = (): LoopLifecycleTerminalExit => ({
+    action: 'escalate',
+    outcome: exhaustedOutcome,
+  });
+  return {
+    version: 1,
+    thresholds: {
+      stallIterations: thresholds.stallIterations ?? 2,
+      sameBlockerAttempts: thresholds.sameBlockerAttempts ?? 3,
+    },
+    strategy: {
+      maxAttempts: 0,
+      requireMaterialChange: true,
+    },
+    exits: {
+      iterationLimit: terminal(),
+      actionLimit: terminal(),
+      budgetLimit: terminal(),
+      stalled: terminal(),
+      blocked: { action: 'human-required', outcome: exhaustedOutcome },
+      strategyExhausted: terminal(),
+    },
+  };
 }
 
 function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
@@ -2112,7 +2536,8 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
         id: `stage:${stage.id}`,
         kind: 'BoundedLoop',
         body: bodyId,
-        limits: { maxIterations },
+        limits: compatibilityLoopLimits(maxIterations, 4),
+        lifecycle: compatibilityLifecyclePolicy('review_cycle_exhausted'),
         exits: {
           clean: { action: 'exit', outcome: 'clean' },
           needs_fix: { action: 'continue' },
@@ -2183,7 +2608,11 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
         id: `stage:${stage.id}`,
         kind: 'BoundedLoop',
         body: bodyId,
-        limits: { maxIterations },
+        limits: compatibilityLoopLimits(maxIterations, 2),
+        lifecycle: compatibilityLifecyclePolicy('goal_cycle_exhausted', {
+          stallIterations: goalLoop.loopStallLimit,
+          sameBlockerAttempts: goalLoop.blockedThreshold,
+        }),
         exits: {
           clean: { action: 'exit', outcome: 'clean' },
           needs_fix: { action: 'continue' },
@@ -2254,9 +2683,8 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
         id: `loop:${stage.id}`,
         kind: 'BoundedLoop',
         body: bodyId,
-        limits: {
-          maxIterations: stage.loop.maxRounds,
-        },
+        limits: compatibilityLoopLimits(stage.loop.maxRounds, 1),
+        lifecycle: compatibilityLifecyclePolicy('exhausted'),
         exits: {
           done: { action: 'exit', outcome: 'done' },
         },

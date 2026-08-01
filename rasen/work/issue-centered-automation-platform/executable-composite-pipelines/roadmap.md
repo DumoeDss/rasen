@@ -4,15 +4,12 @@
 >
 > 权威目标：[`target-state.md`](./target-state.md)
 >
-> 当前状态：**active**，ECP-1..5 全部交付并合入 `dev/0.2.0`（回写于
-> 2026-07-30，revision `be124057`）。无 activeSlice —— 下一个 Slice 归用户
-> 决定。**不是 `completed`**：ECP-5 收口范围有两条仍 OPEN，见「当前位置」。
+> 当前状态：**active / partial**。ECP-1..5 的实现组合已合入，但 2026-08-01
+> 校准确认完整 Target State 仍有真实缺口。ECP-6 已被选择为唯一 activeSlice，
+> 其验收契约见 `slices/v2-authoring-loop-contract-closure/`。
 >
-> 发布线修订（2026-07-30，用户拍板，本 Roadmap「版本边界」条款要求同步）：
-> 本文与 Target State 中的 `0.1.6` 里程碑标签现在指 **`0.2.0`**。`0.1.6` 已改
-> 定位为 `0.1.5` 的 bug 修复线（`dev/0.1.6` 另有 8 个 commit 不在 `0.2.0`，
-> 含两个 breaking）。这是显式 scope decision，不是改标题把 spine 重命名为完整
-> ECP —— 能力边界一字未动，只有版本号换了。
+> 版本边界：**0.2.0 完成 ECP；0.3.0 承接 Issue、Execution Plan、Dispatch、
+> `auto-decompose` 上移与跨项目编排。** 0.3.0 不接收使 ECP 成立所必需的债务。
 
 ## 路线原则
 
@@ -29,58 +26,100 @@
 
 ## 当前位置
 
+| 层面 | 当前证据 | 分类 |
+| --- | --- | --- |
+| Reconciler、Record、恢复、Operations | root/composite/loop/parallel 主路径与故障矩阵已落地 | 已交付基础 |
+| Change-level built-in | 6/6 在 `auto` 策略下选择 reconciler；`auto-decompose` 属于 0.3.0 | 已交付基础 |
+| Definition v2 | 可校验、lower、执行、round-trip | 已交付基础 |
+| v2 默认创作 | built-in、`pipeline init`、空白 Canvas 仍默认 v1 | **未完成** |
+| Canvas 原语对称 | FanOut/Join 只读；GoalLoop 与完整 loop policy 无 v2 创作面 | **未完成** |
+| 通用 loop contract | limits/exits 已有，stall/blocked/escalation 的公共生命周期不完整 | **未完成** |
+| Agent action 执行 | 内核 grant/defer；没有独立 Session executor | **未完成** |
+| 自宿主与发布 | 无后续真实 Change 自宿主；当前 HEAD 完成度审查与 release truth 未闭合 | **未完成** |
+
+ECP-1..4 的历史实现与 dogfood 证据继续有效，但不能覆盖上表缺口；ECP-5
+终态维持 `partial`。当前依据详见
+[`0.2.0 gap calibration`](../../../../docs/audits/0.2.0-ecp-gap-calibration-2026-08-01.md)。
+
 ```text
-已交付（真实证据，非 checkbox；全部在 dev/0.2.0 @ be124057）
-  ECP-1 ReviewCycle Vertical Closure            DONE
-  ECP-2 Custom Composite Authoring/Runtime      DONE
-  ECP-3 GoalLoop and Thin Entrypoints           DONE
-  ECP-4 Choice / FanOut / Join and Full Feature DONE
-  ECP-5 Product Closure and Release Truth       DONE, 带 2 条 OPEN（见下）
+NOW（唯一 activeSlice）
+  ECP-6 v2 Authoring and Loop Contract Closure
 
-  可执行面：6/7 内置 Pipeline 由 reconciler 真实运行；authored v2 +
-  CompositeRef + BoundedLoop + GoalLoop + FanOut/Join 全部跑通 Definition ->
-  Canvas -> Runtime -> Operations -> 真实 E2E；12 格 dogfood 矩阵锚在一个 revision
+LATER（严格顺序）
+  ECP-7 Session Execution and Self-hosting
+    -> ECP-8 Completion Audit and Release Truth
+      -> 0.3.0 Issue / Dispatch
 
-ECP-5 仍 OPEN 的收口项（有意记录，不当它不存在）
-  O1 用 ECP 自身完成至少一个后续真实 Change 的 dogfood（自宿主）
-     —— 本 portfolio 自己是被 legacy prompt 路径驱动交付的，不是被 reconciler
-  O2 重跑完成度审查并关闭所有高优先级 finding
-     —— 仓库内只有 docs/audits/0.1.6-...-2026-07-29.md 这一份旧的
-  两条都不影响已交付能力，但按本 Roadmap 的规则，ECP-5 的 Result 只能记 partial
-
-NOW（用户 2026-07-30 确认的推进线）
-  Session 执行层（缓存重建线）—— 不是 ECP 的能力 Slice，而是 ECP 经
-  deliveryMode grant/defer 显式外包出去的那块执行基座：内核授予 agent
-  action，谁真的开 session、跑 agent、管 worker 生命周期，至今没有实现。
-  设计与探针档案：docs/session-execution-layer-design.md（PR #112），
-  P0 已闭环、上游前置已清零、P1 可直接开工。
-  未设 activeSlice：本层尚无 slices/<id>/{spec,plan}，若要按 Slice 追踪，
-  形式化它本身就是 P1 的第一步
-
-  ECP 侧的测试与审查由用户自己处理（2026-07-30）；O1（用 ECP 自身跑下一个
-  真实 Change）因此排在用户审查完 0.2.0 之后 —— 它必须用最新构建才有意义
-
-NOT NOW（边界未变）
+NOT NOW（0.3.0 及以后）
   auto-decompose / Issue Dispatch / cross-project execution
   remote runtime / team platform / notifications / Forge
-
-  `auto-decompose` 的 fail-closed 是这条边界的正确表现，不是缺陷：它的
-  decompose stage 无 skill、子项运行时才产生，frozen plan 无法预先成形，因此
-  报 execution_profile_unavailable 并回落 legacy。portfolio 级的活因此仍不享有
-  kernel 保证 —— 这是已知且刻意的
 ```
 
-## 进入 ECP-1 前的事实门
+## ECP-6：v2 Authoring and Loop Contract Closure（ACTIVE）
 
-`ecp-run-spine` 当前为 131/137，且 association follow-up 仍有 deferred 项。
-这些不是新的产品 Slice，但必须作为 ECP-1 的前置事实核对：
+### 用户结果
 
-- 补齐或明确移交 `ecp-run-spine` 16.1–16.6 的验证、scope audit 和 dogfood；
-- 对 association runtime archive Action path 给出完成或明确 defer 的 disposition；
-- 保证 root-DAG seam 的缺陷在原 canonical runtime 中修复，不创建临时第二 Runtime；
-- 修正“root-DAG slice = 完整 ECP 0.1.6”的架构文档口径。
+用户新建 Pipeline 时得到 v2 定义，并能在 Canvas 中完整创作首版受支持原语；
+保存后的 definition、compiled plan、runtime behavior 与 Operations projection
+保持同一语义。v1 只作为兼容输入，不再是新建默认或误导性的执行说明。
 
-这些门只证明地基可信，不单独构成 ECP Target State 的通过证据。
+### 收口范围
+
+- `pipeline init`、空白 Canvas 与其他公开新建入口默认 v2；
+- package built-in 要么迁移为 authored v2，要么被显式标记为兼容 fixture，正常
+  产品视图不再对它们发出误导性的 legacy/prompt-owned warning；
+- Canvas 可创作和编辑 CompositeRef、BoundedLoop、Choice、FanOut/Join、Gate、
+  Finish，以及 declaration body、typed outcomes、limits、exits 与 capability；
+- ReviewCycle 与 GoalLoop 共享公共 bounded lifecycle：max iterations/actions/budget、
+  progress fingerprint、stall、blocked、strategy exhaustion、human escalation 和
+  类型化终态；领域 reducer 继续分离；
+- Definition、Canvas、lowerer、reconciler、Record、Operations 与 E2E fixture
+  同时覆盖成功、耗尽、阻塞、升级、取消与恢复。
+
+### 退出证据
+
+- 从空白 Canvas 创建一个含 loop + parallel 的 v2 Custom Composite，导出/导入
+  digest 不变，并完成成功、恢复和失败关闭 Run；
+- v1 fixture 与等价 v2 fixture lower 成等价 plan，但新建产品路径只输出 v2；
+- FanOut/Join 和 loop policy 不再只读；所有可表达字段都有 runtime/Operations
+  对称证据；
+- 当前高优先级定义/Canvas/loop finding 为零。
+
+## ECP-7：Session Execution and Self-hosting（LATER）
+
+### 用户结果
+
+Reconciler 授予的 agent action 由独立、可恢复、可审计的 Session executor 实际
+执行，不再要求 launcher 会话充当隐藏 worker manager；ECP 使用自身完成一个
+后续真实 Change。
+
+### 退出证据
+
+- executor 消费冻结 action contract，记录 session identity、cwd、actor、usage、
+  result 与 evidence，并安全处理 cancel/restart/ack loss；
+- session reuse/handoff policy 有真实实现和配置来源，不再是占位字段；
+- 一个非 ECP 玩具 Change 从 start 到 verify、review、ship/archive 由 ECP 自宿主，
+  保存 RunId、ActionId、Session、revision 与最终交付证据。
+
+## ECP-8：Completion Audit and Release Truth（LATER）
+
+### 用户结果
+
+0.2.0 的实现、文档、版本、changelog、包、tag 和迁移/回退说明给出同一能力边界，
+完成度审查不再发现高优先级缺口。
+
+### 退出证据
+
+- 在干净依赖和 fresh build 上串行运行 root/UI tests、typecheck、lint、package 与
+  release contract；环境性例外逐项归因；
+- 重跑完整 ECP support/dogfood/recovery matrix；
+- 明确 legacy engine 的保留或退休决定及存量 run-state 处理；
+- 完成审查为 `passed` 后才更新 Direction `completed` 并进入 0.3.0。
+
+## 历史实现 Slice（ECP-1..5）
+
+以下内容保留原始用户结果与验收意图，用于追溯已交付实现。它们不是当前 NOW
+列表；当前缺口已经合并进 ECP-6..8。
 
 ## ECP-1：ReviewCycle Vertical Closure
 
@@ -106,7 +145,7 @@ clean、exhausted、escalated 或 cancelled；重启不会丢失 finding，也�
 same-actor、open Major 和三个恢复边界均有可追溯证据。CLI、Management 与
 Operations 对同一 Run 投影一致。
 
-候选 Slice：
+历史 Slice：
 [`review-cycle-vertical-closure`](./slices/review-cycle-vertical-closure/spec.md)。
 
 ## ECP-2：Custom Composite Authoring and Runtime Parity
@@ -188,13 +227,14 @@ Composite，看到一致的可执行性、engine、启动、运行、控制和�
 - compatibility owner、fallback 和退场门槛；
 - 架构、用户文档、migration guide、manifest、changelog 和 tag 一致；
 - 用 ECP 自身完成至少一个后续真实 Change 的 dogfood；
-- 重跑 0.1.6 完成度审查并关闭所有高优先级 finding。
+- 重跑 0.2.0 完成度审查并关闭所有高优先级 finding。
 
-### 退出证据
+### 退出证据与当前分类
 
 support matrix 不再包含 Change-level built-in 的 legacy-only 项；不存在
 Definition 可表达但 Runtime 不可执行、Canvas 只读或 Operations 无法解释的
-目标节点；发布事实与实际能力一致。
+目标节点；发布事实与实际能力一致。2026-08-01 校准时这些条件尚未全部满足，
+因此 ECP-5 保持 **partial**，剩余工作由 ECP-6..8 接管。
 
 ## 证据如何调整路线
 
@@ -209,7 +249,7 @@ Definition 可表达但 Runtime 不可执行、Canvas 只读或 Operations 无�
 
 ## 版本边界
 
-本 Roadmap 保留研究文档锁定的产品定义：完整 ECP 所需能力不得静默推迟到
-0.1.7。若版本策略改变，必须形成显式 scope decision，并同步 Target State、
-Roadmap、架构、Change 组合与发布说明；不能通过改标题把 root-DAG spine
-重新命名为完整 ECP。
+本 Roadmap 保留研究文档锁定的产品定义：完整 ECP 所需能力必须在 0.2.0
+关闭，不得静默推迟到 0.3.0 Issue 版本线。若版本策略改变，必须形成显式 scope
+decision，并同步 Target State、Roadmap、架构、Change 组合与发布说明；不能用
+兼容编译或局部 dogfood 替代完整产品验收。

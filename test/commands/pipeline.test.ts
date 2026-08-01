@@ -73,6 +73,7 @@ const HUMAN_LOCALE_CASES = [
     createdDraft: 'Created pipeline draft at',
     valid: 'Pipeline is valid.',
     invalid: 'Pipeline is invalid.',
+    lifecycle: 'Normalized bounded-loop lifecycle policies:',
     imported: 'Imported pipeline(s) from',
     exported: 'Exported pipeline',
     confirmation: 'Deletion requires --yes in non-interactive mode',
@@ -93,6 +94,7 @@ const HUMAN_LOCALE_CASES = [
     createdDraft: 'パイプラインドラフトを',
     valid: 'パイプラインは有効です。',
     invalid: 'パイプラインは無効です。',
+    lifecycle: '正規化された境界付きループのライフサイクルポリシー:',
     imported: 'からパイプラインをimportしました',
     exported: 'を',
     confirmation: '非対話モードで削除するには--yesが必要です',
@@ -113,6 +115,7 @@ const HUMAN_LOCALE_CASES = [
     createdDraft: '创建流水线草稿',
     valid: '流水线有效。',
     invalid: '流水线无效。',
+    lifecycle: '已规范化的有界循环生命周期策略：',
     imported: '导入流水线',
     exported: '导出到',
     confirmation: '非交互模式下删除需要 --yes',
@@ -169,6 +172,7 @@ describe('pipeline command', () => {
         expect(show.exitCode).toBe(0);
         expect(show.stdout).toContain(expected.pipelineLabel);
         expect(show.stdout).toContain(expected.builtInDescription);
+        expect(show.stdout).toContain(expected.lifecycle);
 
         const missing = await runCLI(
           ['pipeline', 'show', 'missing-pipeline'],
@@ -222,6 +226,7 @@ describe('pipeline command', () => {
         );
         expect(validation.exitCode).toBe(0);
         expect(validation.stdout).toContain(expected.valid);
+        expect(validation.stdout).toContain(expected.lifecycle);
 
         const invalidDraft = path.join(testDir, `invalid-${expected.locale}`);
         await fs.mkdir(invalidDraft, { recursive: true });
@@ -741,6 +746,84 @@ describe('pipeline command', () => {
       expect(execution.exitCode).toBe(1);
       expect(execution.stderr).toContain('INVALID_SOURCE');
       expect(execution.stderr).toContain('/root/nodes/0/outcomes');
+    });
+
+    it('preserves lifecycle diagnostic code and JSON Pointer through validate and show', async () => {
+      const name = 'missing-loop-lifecycle-v2';
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', name);
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        JSON.stringify({
+          version: 2,
+          id: name,
+          sourceId: `fixture:${name}`,
+          name,
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+          declarations: [
+            {
+              id: 'body',
+              kind: 'Composite',
+              provenance: 'custom',
+              inputs: [],
+              artifacts: [],
+              outcomes: ['done'],
+              graph: {
+                nodes: [{ id: 'finish', kind: 'Finish', outcome: 'done' }],
+                connections: [],
+              },
+            },
+          ],
+          root: {
+            nodes: [
+              {
+                id: 'loop',
+                kind: 'BoundedLoop',
+                body: 'body',
+                limits: { maxIterations: 2, maxActions: 4, budget: 4 },
+                exits: { done: { action: 'exit', outcome: 'done' } },
+              },
+            ],
+            connections: [],
+          },
+        }),
+        'utf-8'
+      );
+
+      const validation = await runCLI(
+        ['pipeline', 'validate', pipelineDir, '--json'],
+        { cwd: testDir }
+      );
+      expect(validation.exitCode).toBe(1);
+      expect(JSON.parse(validation.stdout.trim())).toMatchObject({
+        validation: {
+          valid: false,
+          diagnostics: [
+            expect.objectContaining({
+              code: 'MISSING_LIFECYCLE_POLICY',
+              path: '/root/nodes/0/lifecycle',
+            }),
+          ],
+        },
+      });
+
+      const detail = await runCLI(['pipeline', 'show', name, '--json'], {
+        cwd: testDir,
+      });
+      expect(detail.exitCode).toBe(0);
+      expect(JSON.parse(detail.stdout.trim())).toMatchObject({
+        preparation: {
+          definitionValid: false,
+          diagnostics: [
+            expect.objectContaining({
+              code: 'MISSING_LIFECYCLE_POLICY',
+              path: '/root/nodes/0/lifecycle',
+            }),
+          ],
+        },
+      });
     });
 
     it('preserves invalid-v2 preparation identity and context for direct and decompose execution admission', async () => {
@@ -1869,6 +1952,47 @@ stages:
       expect(result.stdout).toContain('loop=review-cycle(max 3)');
       // The goal-loop bracket format must not appear on a review-cycle stage.
       expect(result.stdout).not.toContain('loop=goal[');
+    });
+
+    it('shows and validates the exact normalized lifecycle policy without inventing strategy', async () => {
+      const shown = await runCLI(
+        ['pipeline', 'show', 'goal-loop-measure', '--json'],
+        { cwd: testDir }
+      );
+      const validated = await runCLI(
+        ['pipeline', 'validate', 'goal-loop-measure', '--json'],
+        { cwd: testDir }
+      );
+      expect(shown.exitCode, shown.stderr).toBe(0);
+      expect(validated.exitCode, validated.stderr).toBe(0);
+
+      const showJson = JSON.parse(shown.stdout.trim());
+      const validationJson = JSON.parse(validated.stdout.trim()).validation;
+      expect(showJson.boundedLoops).toHaveLength(1);
+      expect(validationJson.normalizedVersion).toBe(2);
+      expect(validationJson.boundedLoops).toEqual(showJson.boundedLoops);
+      expect(showJson.boundedLoops[0]).toMatchObject({
+        nodeId: 'stage:iterate',
+        limits: { maxIterations: 5, maxActions: 40, budget: 40 },
+        lifecycle: {
+          version: 1,
+          thresholds: { stallIterations: 2, sameBlockerAttempts: 3 },
+          strategy: { maxAttempts: 0, requireMaterialChange: true },
+          exits: {
+            iterationLimit: {
+              action: 'escalate',
+              outcome: 'goal_cycle_exhausted',
+            },
+            blocked: {
+              action: 'human-required',
+              outcome: 'goal_cycle_exhausted',
+            },
+          },
+        },
+      });
+      expect(showJson.boundedLoops[0].lifecycle.strategy).not.toHaveProperty(
+        'capability'
+      );
     });
   });
 

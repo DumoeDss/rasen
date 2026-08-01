@@ -88,6 +88,10 @@ import {
   type ReconcilerSupportAnalysis,
 } from '../core/pipeline-registry/execution-plan-internal.js';
 import {
+  projectPreparedBoundedLoopPolicies,
+  type PreparedBoundedLoopPolicy,
+} from '../core/pipeline-registry/definition.js';
+import {
   resolveDiscoveryReconcilerSupportProfile,
   resolveRuntimeExecutionProfile,
 } from '../core/pipeline-registry/profile-resolver.js';
@@ -450,6 +454,7 @@ export class PipelineCommand {
         name: prepared.authoredSource.name,
         description: prepared.authoredSource.description ?? '',
         definition: prepared.authoredSource,
+        boundedLoops: projectPreparedBoundedLoopPolicies(prepared),
         source: resolution.source,
         availableEngines: v2Support.availableEngines,
         reconcilerSupport: v2Support.reconcilerSupport,
@@ -549,6 +554,7 @@ export class PipelineCommand {
       version: pipeline.version,
       name: pipeline.name,
       description: pipeline.description ?? '',
+      boundedLoops: projectPreparedBoundedLoopPolicies(resolution.prepared),
       agents: pipeline.agents ?? {},
       hostRuntime: host.runtime,
       hostRuntimeSource: host.source,
@@ -1147,6 +1153,54 @@ export class PipelineCommand {
     // CLI, the API and Operations all print identically.
     if (v.engine) {
       console.log(`Engine: ${v.engine}`);
+    }
+    const lifecycles = v.sections.filter(
+      (section) =>
+        section.kind === 'bounded-loop-lifecycle' && section.version === 1
+    ) as Array<{
+      loopPath: string;
+      bodyKind: string;
+      state: string;
+      iteration: number;
+      phase: string;
+      limits: {
+        iterations: { used: number; max: number };
+        actions: { used: number; max: number };
+        budget: { used: number; max: number };
+      };
+      stallStreak: number;
+      blockedStreak: number;
+      strategy: { attempts: number; maxAttempts: number; active?: number };
+      wait?: { waitId: string; kind: string; reasonCode?: string };
+      outcome?: { kind: string; disposition: string; value?: string };
+    }>;
+    for (const lifecycle of lifecycles) {
+      console.log();
+      console.log(`Bounded Loop Lifecycle (${lifecycle.loopPath}):`);
+      console.log(`  Body: ${lifecycle.bodyKind}`);
+      console.log(`  State: ${lifecycle.state}`);
+      console.log(
+        `  Iteration / Phase: ${lifecycle.iteration} / ${lifecycle.phase}`
+      );
+      console.log(
+        `  Limits: iterations ${lifecycle.limits.iterations.used}/${lifecycle.limits.iterations.max}, actions ${lifecycle.limits.actions.used}/${lifecycle.limits.actions.max}, budget ${lifecycle.limits.budget.used}/${lifecycle.limits.budget.max}`
+      );
+      console.log(
+        `  Streaks: stall ${lifecycle.stallStreak}, blocked ${lifecycle.blockedStreak}`
+      );
+      console.log(
+        `  Strategy: ${lifecycle.strategy.attempts}/${lifecycle.strategy.maxAttempts}${lifecycle.strategy.active === undefined ? '' : ` (attempt ${lifecycle.strategy.active} active)`}`
+      );
+      if (lifecycle.wait !== undefined) {
+        console.log(
+          `  Wait: ${lifecycle.wait.kind} ${lifecycle.wait.waitId}${lifecycle.wait.reasonCode === undefined ? '' : ` (${lifecycle.wait.reasonCode})`}`
+        );
+      }
+      if (lifecycle.outcome !== undefined) {
+        console.log(
+          `  Outcome: ${lifecycle.outcome.kind} / ${lifecycle.outcome.disposition}${lifecycle.outcome.value === undefined ? '' : ` / ${lifecycle.outcome.value}`}`
+        );
+      }
     }
     // Render the review-cycle section when present.
     const rc = v.sections.find(
@@ -1824,13 +1878,7 @@ export class PipelineCommand {
     if (requiredDigests.size > 0 || uploads.length > 0) {
       this.stageTransportUploads(uploads, requiredDigests);
     }
-    // The facade's control method casts the request as a RunStimulus (the
-    // reducer expects a top-level `kind`, not the control envelope's nested
-    // `command.kind`). Convert the decoded control request to the matching
-    // stimulus shape. This mirrors how cancelRun already passes a stimulus-
-    // shaped object via `as never`.
-    const stimulus = this.controlRequestToStimulus(control);
-    const receipt = await resolved.ctx.facade.control(stimulus as never, {
+    const receipt = await resolved.ctx.facade.control(control, {
       deliveryMode: 'grant',
     });
     this.printRunReceipt(options, {
@@ -1861,44 +1909,6 @@ export class PipelineCommand {
     }
     return digests;
   }
-
-  /**
-   * Convert a decoded ChangeRunControlRequest into the RunStimulus shape the
-   * reducer expects (top-level `kind`, not nested `command.kind`). The facade's
-   * control method casts its argument as a RunStimulus, so the command must be
-   * flattened before the call. This mirrors how `cancelRun` already constructs
-   * a stimulus-shaped object inline.
-   */
-  private controlRequestToStimulus(
-    control: ChangeRunControlRequest
-  ): Readonly<Record<string, unknown>> {
-    const cmd = control.command;
-    switch (cmd.kind) {
-      case 'cancel':
-        return { kind: 'cancel', ...(cmd.reason ? { reason: cmd.reason } : {}) };
-      case 'escalate':
-        // The escalate stimulus requires a `code`; the control command only
-        // carries a human `reason`. Use a stable default code.
-        return { kind: 'escalate', code: 'user_escalated', reason: cmd.reason };
-      case 'resume':
-        return { kind: 'resume-wait', waitId: cmd.waitId };
-      case 'decision':
-        return {
-          kind: 'decide-gate',
-          waitId: cmd.waitId,
-          decisionId: cmd.decisionId,
-          outcome: cmd.outcome,
-        };
-      case 'accept-workspace-revision':
-        return {
-          kind: 'accept-workspace-revision',
-          waitId: cmd.waitId,
-          revision: cmd.revision,
-          evidence: cmd.evidence,
-        };
-    }
-  }
-
 
   /**
    * Show or update role-level Claude/Codex runtime defaults for a pipeline.
@@ -2898,6 +2908,7 @@ export class PipelineCommand {
         source: string;
         effectiveEngine: string;
       };
+      boundedLoops: readonly PreparedBoundedLoopPolicy[];
     },
     graph: PipelineGraph,
     source: PipelineInfo['source'] | undefined,
@@ -2992,6 +3003,19 @@ export class PipelineCommand {
           })
         : (stage.skill ?? '');
       console.log(messages.format('stageLine', { id, action, suffix }));
+    }
+    if (result.boundedLoops.length > 0) {
+      console.log();
+      console.log(messages.format('boundedLoopPoliciesHeading'));
+      for (const loop of result.boundedLoops) {
+        console.log(
+          messages.format('boundedLoopPolicyLine', {
+            node: loop.nodeId,
+            limits: JSON.stringify(loop.limits),
+            policy: JSON.stringify(loop.lifecycle),
+          })
+        );
+      }
     }
     // ECP-5 (task 6.2 / 6.1): the human `pipeline show` used to render the
     // engine analysis nowhere — `--json` carried it and the terminal did not,

@@ -385,6 +385,27 @@ function resolveV2AuthoredCapabilityBindings(
         const access = typeof bodyNode.reviewCyclePhase === 'string' && bodyNode.reviewCyclePhase === 'fix' ? 'write' : 'read';
         bindings.push(buildBinding(path, skillName, descriptor.version, skillDigest, access));
       }
+      const strategy = node.lifecycle.strategy.capability;
+      if (strategy !== undefined) {
+        const descriptor = descriptorById.get(strategy.id);
+        if (descriptor === undefined || descriptor.version !== strategy.version) {
+          throw new Error(
+            `Capability descriptor for ${strategy.id}@${strategy.version} is not in the production catalog.`
+          );
+        }
+        const skillName = strategy.id.startsWith('skill:')
+          ? strategy.id.slice('skill:'.length)
+          : strategy.id;
+        bindings.push(
+          buildBinding(
+            `root:${node.id}/strategy`,
+            skillName,
+            descriptor.version,
+            descriptor.version as Digest,
+            'write'
+          )
+        );
+      }
     }
   }
 
@@ -436,6 +457,11 @@ function remapPolicyStagesForV2Authored(
           `declaration:${declaration.id}/node:${bodyNode.id}`,
           phase
         ));
+      }
+      if (node.lifecycle.strategy.capability !== undefined) {
+        stages.push(
+          synthesizeReviewCyclePolicyStage(`root:${node.id}/strategy`, 'fix')
+        );
       }
     }
   }

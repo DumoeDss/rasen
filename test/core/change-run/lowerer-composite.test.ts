@@ -20,6 +20,7 @@ import type {
   RunId,
   WorkspaceInstanceId,
 } from '../../../src/core/change-run/index.js';
+import { fixtureLoopLifecycle } from './bounded-loop-fixture.js';
 
 const branded = <T>(value: string): T => value as T;
 const runId = branded<RunId>(`run:${'a'.repeat(64)}`);
@@ -361,7 +362,8 @@ function loopDefinition(): DefinitionSourceV2 {
           id: 'my-loop',
           kind: 'BoundedLoop',
           body: 'loop-body',
-          limits: { maxIterations: 3 },
+          limits: { maxIterations: 3, maxActions: 12, budget: 12 },
+          lifecycle: fixtureLoopLifecycle('exhausted'),
           exits: {
             done: { action: 'exit', outcome: 'success' },
           },
@@ -466,7 +468,7 @@ describe('lowerer — composite-body BoundedLoop', () => {
     expect(loop.body.stages[1]!.requires).toHaveLength(1);
     expect(loop.body.stages[1]!.requires[0]).toBe('root:my-loop/step-a');
     expect(loop.body.outcomes).toEqual({ done: 'success' });
-    expect(loop.maxIterations).toBe(3);
+    expect(loop.limits.maxIterations).toBe(3);
   });
 });
 

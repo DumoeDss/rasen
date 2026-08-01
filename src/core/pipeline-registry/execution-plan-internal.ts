@@ -655,6 +655,9 @@ function expectedV2MigrationNodeIds(
         if (phaseNode.kind !== 'AtomicStage') continue;
         ids.push(`declaration:${declaration.id}/node:${phaseNode.id}`);
       }
+      if (node.lifecycle.strategy.capability !== undefined) {
+        ids.push(`root:${node.id}/strategy`);
+      }
     }
   }
   return ids.sort(compareStrings);
@@ -726,6 +729,13 @@ export function analyzeReconcilerSupport(
           orchestrationEvaluatorCapabilityFor(node) !== null
       )
       .map((node) => `root:${node.id}`);
+    const expectedStrategyIds = prepared.definition.root.nodes
+      .filter(
+        (node) =>
+          node.kind === 'BoundedLoop' &&
+          node.lifecycle.strategy.capability !== undefined
+      )
+      .map((node) => `root:${node.id}/strategy`);
     const expectedBodyIds = prepared.definition.declarations
       .filter((declaration) =>
         referencedDeclarationIds.has(declaration.id)
@@ -737,7 +747,11 @@ export function analyzeReconcilerSupport(
             (node) => `declaration:${declaration.id}/node:${node.id}`
           )
       );
-    const expectedNodeIds = [...expectedRootIds, ...expectedBodyIds].sort(
+    const expectedNodeIds = [
+      ...expectedRootIds,
+      ...expectedBodyIds,
+      ...expectedStrategyIds,
+    ].sort(
       compareStrings
     );
     if (

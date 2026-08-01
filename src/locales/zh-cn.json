@@ -515,6 +515,8 @@
       "createdDraft": "已在 {path} 创建流水线草稿",
       "pipelineValid": "流水线有效。",
       "pipelineInvalid": "流水线无效。",
+      "boundedLoopPoliciesHeading": "已规范化的有界循环生命周期策略：",
+      "boundedLoopPolicyLine": "  {node}：限制={limits}；生命周期={policy}",
       "validationDiagnostic": "  [{severity}] {code}：{message}",
       "importedHeading": "已从 {path} 导入流水线：",
       "importedEntry": "  {name}（摘要 {digest}）",

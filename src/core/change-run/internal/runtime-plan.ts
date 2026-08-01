@@ -3,6 +3,7 @@ import type {
   NodeId,
   RunId,
 } from '../contracts.js';
+import type { BoundedLoopLifecyclePolicyV1 } from '../../pipeline-registry/definition.js';
 import { deriveNodeId } from './identity.js';
 
 export type RuntimePlanAdmissionKind = 'agent' | 'command' | 'host';
@@ -94,7 +95,13 @@ export interface RuntimePlanBoundedLoopNode {
   readonly nodeId: NodeId;
   readonly hierarchicalPath: string;
   readonly requires: readonly NodeId[];
-  readonly maxIterations: number;
+  readonly limits: Readonly<{
+    maxIterations: number;
+    maxActions: number;
+    budget: number;
+  }>;
+  readonly lifecycle: BoundedLoopLifecyclePolicyV1;
+  readonly strategyProfilePath?: string;
   readonly body:
     | RuntimePlanReviewCycleBody
     | RuntimePlanCompositeBody
@@ -261,7 +268,13 @@ export interface RuntimePlanNodeInput {
   readonly adaptiveVerify?: boolean;
   readonly gate?: RuntimePlanGateInput;
   readonly outcome?: string;
-  readonly maxIterations?: number;
+  readonly limits?: Readonly<{
+    maxIterations: number;
+    maxActions: number;
+    budget: number;
+  }>;
+  readonly lifecycle?: BoundedLoopLifecyclePolicyV1;
+  readonly strategyProfilePath?: string;
   readonly body?:
     | RuntimePlanReviewCycleBodyInput
     | RuntimePlanCompositeBodyInput
@@ -578,7 +591,11 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
           nodeId,
           hierarchicalPath: node.hierarchicalPath,
           requires,
-          maxIterations: node.maxIterations!,
+          limits: { ...node.limits! },
+          lifecycle: structuredClone(node.lifecycle!),
+          ...(node.strategyProfilePath !== undefined
+            ? { strategyProfilePath: node.strategyProfilePath }
+            : {}),
           body: {
             kind: 'review-cycle',
             phases: body.phases.map((phase) => ({
@@ -602,7 +619,11 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
           nodeId,
           hierarchicalPath: node.hierarchicalPath,
           requires,
-          maxIterations: node.maxIterations!,
+          limits: { ...node.limits! },
+          lifecycle: structuredClone(node.lifecycle!),
+          ...(node.strategyProfilePath !== undefined
+            ? { strategyProfilePath: node.strategyProfilePath }
+            : {}),
           body: {
             kind: 'goal-cycle',
             variant: body.variant,
@@ -631,7 +652,11 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
         nodeId,
         hierarchicalPath: node.hierarchicalPath,
         requires,
-        maxIterations: node.maxIterations!,
+        limits: { ...node.limits! },
+        lifecycle: structuredClone(node.lifecycle!),
+        ...(node.strategyProfilePath !== undefined
+          ? { strategyProfilePath: node.strategyProfilePath }
+          : {}),
         body: {
           kind: 'composite',
           declarationId: body.declarationId,
@@ -891,17 +916,27 @@ function validateBoundedLoop(
   path: string,
   node: RuntimePlanNodeInput
 ): void {
-  if (
-    !Number.isSafeInteger(node.maxIterations) ||
-    node.maxIterations === undefined ||
-    node.maxIterations < 1 ||
-    node.maxIterations > 100
-  ) {
+  if (node.limits === undefined || node.lifecycle === undefined) {
     reject(
-      'invalid_runtime_plan',
-      `Bounded loop ${path} maxIterations must be between 1 and 100.`
+      'unsupported_runtime_plan',
+      `Bounded loop ${path} uses a policy-free runtime-plan format that cannot be resumed safely.`
     );
   }
+  for (const [name, value] of Object.entries(node.limits)) {
+    if (!Number.isSafeInteger(value) || value < 1) {
+      reject(
+        'invalid_runtime_plan',
+        `Bounded loop ${path} ${name} must be a positive safe integer.`
+      );
+    }
+  }
+  if (node.limits.budget < node.limits.maxActions) {
+    reject(
+      'invalid_runtime_plan',
+      `Bounded loop ${path} budget cannot be smaller than maxActions.`
+    );
+  }
+  validateBoundedLoopLifecycle(path, node.lifecycle, node.strategyProfilePath);
   if (node.body?.kind === 'review-cycle') {
     validateReviewCycleBody(path, node);
   } else if (node.body?.kind === 'composite') {
@@ -933,6 +968,75 @@ function validateBoundedLoop(
       'invalid_runtime_plan',
       `Bounded loop ${path} must not declare atomic, gate, or finish fields.`
     );
+  }
+}
+
+function validateBoundedLoopLifecycle(
+  path: string,
+  lifecycle: BoundedLoopLifecyclePolicyV1,
+  strategyProfilePath: string | undefined
+): void {
+  if (lifecycle.version !== 1) {
+    reject(
+      'unsupported_runtime_plan',
+      `Bounded loop ${path} uses unsupported lifecycle version ${JSON.stringify(lifecycle.version)}.`
+    );
+  }
+  if (
+    !Number.isSafeInteger(lifecycle.thresholds.stallIterations) ||
+    lifecycle.thresholds.stallIterations < 1 ||
+    !Number.isSafeInteger(lifecycle.thresholds.sameBlockerAttempts) ||
+    lifecycle.thresholds.sameBlockerAttempts < 1 ||
+    !Number.isSafeInteger(lifecycle.strategy.maxAttempts) ||
+    lifecycle.strategy.maxAttempts < 0 ||
+    lifecycle.strategy.requireMaterialChange !== true
+  ) {
+    reject(
+      'invalid_runtime_plan',
+      `Bounded loop ${path} lifecycle thresholds and strategy bounds are invalid.`
+    );
+  }
+  const exits = lifecycle.exits;
+  const entries = Object.entries(exits);
+  if (entries.length !== 6) {
+    reject(
+      'invalid_runtime_plan',
+      `Bounded loop ${path} lifecycle must declare exactly six trigger dispositions.`
+    );
+  }
+  const strategySelected = entries.some(([, disposition]) => disposition.action === 'strategy');
+  if (
+    strategySelected &&
+    (lifecycle.strategy.maxAttempts < 1 ||
+      lifecycle.strategy.capability === undefined ||
+      strategyProfilePath === undefined)
+  ) {
+    reject(
+      'invalid_runtime_plan',
+      `Bounded loop ${path} selects strategy without a positive budget, capability, and frozen profile path.`
+    );
+  }
+  if (
+    !strategySelected &&
+    (lifecycle.strategy.capability !== undefined || strategyProfilePath !== undefined)
+  ) {
+    reject(
+      'invalid_runtime_plan',
+      `Bounded loop ${path} carries an unreachable strategy binding.`
+    );
+  }
+  for (const [trigger, disposition] of entries) {
+    if (
+      disposition.action !== 'strategy' &&
+      (!('outcome' in disposition) ||
+        typeof disposition.outcome !== 'string' ||
+        disposition.outcome.length === 0)
+    ) {
+      reject(
+        'invalid_runtime_plan',
+        `Bounded loop ${path} lifecycle trigger ${trigger} lacks a typed outcome.`
+      );
+    }
   }
 }
 

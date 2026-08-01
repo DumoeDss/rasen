@@ -2,16 +2,16 @@
 
 > Direction：`executable-composite-pipelines`
 >
-> 状态：active（Target State 本身未变；下方「当前观察基线」已按交付事实回写）
+> 状态：active（Target State 本身未变；下方「当前观察基线」已重新校准）
 >
 > 上位 North Star：[`../north-star.md`](../north-star.md)
 >
-> 当前事实基线：**2026-07-30，Git revision `be124057`**（PR #111 合入
-> `dev/0.2.0`；上一基线是 2026-07-29 的
-> `8270941ae1fa9368221b4d3ef67f2b1c961d5956`）
+> 当前事实基线：**2026-08-01，Git revision
+> `14ed62bc088197294f4a219ff20e946a6a99691d`，分支 `dev/0.2.0`**
 >
-> 发布线：本文中的 `0.1.6` 里程碑标签现指 **`0.2.0`**（2026-07-30 用户拍板，
-> Roadmap「版本边界」条款要求同步）。`0.1.6` 是 `0.1.5` 的 bug 修复线。
+> 发布线：完整 ECP 属于 **`0.2.0`**；Issue、Execution Plan、Dispatch 和
+> `auto-decompose` 上移属于 **`0.3.0`**。研究与历史 Result 中的旧里程碑标签
+> 保留为当时证据，不作为当前版本真相。
 
 ## 目标结果
 
@@ -22,7 +22,8 @@ canonical Run Record；用户能够从 CLI、API、Canvas 和 Operations 看到�
 
 “完整 ECP”在本 Direction 中具有严格含义：
 
-- v1 Pipeline 可作为兼容输入归一化到统一语义，v2 Definition 可直接执行；
+- v2 Definition 是公开创作真相和所有新建入口的默认；v1 Pipeline 只作为兼容
+  输入归一化到同一语义并可继续恢复；
 - built-in 与 Custom Composite 使用同一套 validate、lower、reconcile、persist
   和 project contract；
 - root DAG、Composite、BoundedLoop、Choice、FanOut、Join、Gate 和 Finish
@@ -52,43 +53,36 @@ Agent 用户应当能够：
 - 获得明确的 capability、输入、输出、权限、预算和证据契约；
 - 在不依赖聊天历史的情况下恢复；
 - 在无法安全推进时返回类型化 wait/escalation，而不是临场发明控制流。
+- 让已授予 action 通过可恢复、可审计的 adapter/session boundary 实际执行，而
+  不是依赖 launcher 对 worker lifecycle 的隐藏解释。
 
 ## 当前观察基线
 
-以下事实来自
-[`0.1.6 ECP 完成度审查`](../../../../docs/audits/0.1.6-executable-composite-pipelines-completion-review-2026-07-29.md)、
-相关 Change ledger、现有架构文档和研究文档：
+当前代码、CLI 探针、ECP dogfood ledger 与
+[`0.2.0 gap calibration`](../../../../docs/audits/0.2.0-ecp-gap-calibration-2026-08-01.md)
+共同证明：
 
-- `ecp-definition-v2` 为 47/47；公开 Definition v2、归一化和静态校验基础已存在；
-- `ecp-run-spine` 为 131/137；root-DAG canonical Run spine 已有较强测试，
-  但正式验证、scope audit 和 dogfood gate 尚未全部关闭；
-- authored v2 当前仍报告 `ecp_v2_runtime_unavailable`；
-- runtime lowerer/reconciler 只覆盖受限 root-DAG 路径，不执行
-  CompositeRef、BoundedLoop、GoalLoop、FanOut 或 Join；
-- Canvas 对 CompositeRef、BoundedLoop、FanOut 和 Join 仍是只读保留，
-  不能完成 Custom Composite authoring；
-- Operations 只投影 root-DAG，不展示 composite、round、finding、goal 或
-  parallel barrier 语义；
-- `ecp-review-cycle`、`ecp-custom-composite`、`ecp-goal-loop`、
-  `ecp-full-feature`、`ecp-product-closure` 都只有 Change shell；
-- ~~当前 7 个 built-in 在一般产品视图中都仍显示 legacy engine；只有特定
-  `bug-fix` simple path 能在补全启动 profile 后进入 reconciler；~~
-  **已关闭（2026-07-30）**：真实 CLI 逐个核过，6/7 报 reconciler 支持并真实运行；
-  第 7 个 `auto-decompose` 按边界 fail-closed；
-- ~~`rasen-auto`、`rasen-goal`、`rasen-review-cycle` 仍拥有 prompt-owned
-  机械推进规则；~~ **已关闭**：三者都收敛为 thin launcher，机械推进归 reconciler
-  （`orchestration-bundles.test.ts` 守住删除，scenario D 用真实 CLI 驱动全程）；
-- **仍未关闭**：版本、changelog、tag 与“完整 ECP 发布”尚未形成一致事实 ——
-  仓库内版本仍是 `0.1.5`，发版是用户的动作；且 Roadmap 的 ECP-5 收口范围有两条
-  OPEN（自宿主 dogfood、重跑完成度审查），见 [`roadmap.md`](./roadmap.md)。
+- Definition v2、v1→v2 normalization、immutable plan、canonical Record 与
+  deterministic reconciler 已存在；CompositeRef、BoundedLoop、ReviewCycle、
+  GoalLoop、Choice、FanOut/Join 可执行；
+- 6 个 Change-level built-in 在默认 `runs.engine: auto` 下选择 reconciler；
+  `auto-decompose` 因属于 0.3.0 Issue/Dispatch 而 fail closed；
+- CLI、Management API 与 Operations 已投影 root/composite/loop/parallel 状态，
+  现有 fault/recovery 与 fresh-process dogfood 证据较强；
+- 但所有 built-in、`pipeline init` 和空白 Canvas 仍 authored v1；v2 尚未成为新建
+  定义的默认公开真相，v1 compatibility warning 的文案还错误暗示 prompt-owned
+  execution 未改变；
+- Canvas 的 FanOut/Join 仍只读，GoalLoop 只能通过 v1 表达，BoundedLoop 主要只可
+  修改轮数；limits、exits、stall/blocked/human policy 没有完整创作闭环；
+- 公共 BoundedLoop wire contract 只有 iteration/action/budget limits 与
+  continue/exit mapping；ReviewCycle 终态主要只有 clean/exhausted，尚未完整覆盖
+  研究稿要求的 stalled/blocked/escalated lifecycle；
+- 内核只 grant/defer action；真实 agent session、reuse、worker lifecycle 仍由
+  launcher 承担，没有独立 Session executor；
+- 尚未由 ECP 自身完成一个后续真实 Change，也没有在当前 HEAD 上完成最终审查、
+  全量验证、版本/changelog/tag 一致性与 legacy retirement 决策。
 
-因此，当前交付应称为：
-
-> deterministic root-DAG Change Run spine
-
-而不是：
-
-> complete Executable Composite Pipelines
+因此当前结果是：**组合执行内核已成形，但完整 ECP 产品仍为 partial。**
 
 ## 成功与健康证据
 
@@ -97,6 +91,7 @@ Target State 只有在以下证据同时成立时才满足。
 ### 1. Definition 与编译
 
 - v1 read/normalize/compile compatibility 和 v2 authored execution 均可用；
+- `pipeline init`、空白 Canvas 与其他新建入口默认输出 v2；
 - Canvas save/detail/export round-trip 后语义 digest 不漂移；
 - built-in 与 custom definition 生成相同类别的 immutable plan；
 - recursion、nested loop、普通 cyclic edge、缺失出口、非法 port、能力和预算
@@ -107,9 +102,13 @@ Target State 只有在以下证据同时成立时才满足。
 - 同一 immutable plan + committed Record 总是产生同一 next action；
 - root、composite、round、invocation、attempt 和 effect identity 稳定；
 - ReviewCycle、GoalLoop 和 FanOut/Join 都由同一个 reconciler lifecycle 推进；
+- 公共 BoundedLoop lifecycle 统一约束 progress/stall、blocked、strategy、budget、
+  human escalation 与 typed terminal outcomes；
 - crash-before-commit、crash-after-commit、ack loss、resume、cancel、timeout、
   cap exhaustion 和 partial failure 均有故障注入证据；
 - completed invocation 不会重复 admission，未提交结果不会推进状态。
+- agent action 的实际 Session 执行、取消、恢复、usage 与 evidence 可追溯到同一
+  canonical Run，而不是只存在于 launcher 会话。
 
 ### 3. 产品平面对称
 
@@ -131,7 +130,7 @@ Target State 只有在以下证据同时成立时才满足。
 - `full-feature`。
 
 至少一个 Canvas-authored Custom Composite 也必须使用相同 contract 完成真实
-Run。`auto-decompose` 属于未来 Issue Dispatch/Execution Plan，不计入
+Run。`auto-decompose` 属于 0.3.0 Issue Dispatch/Execution Plan，不计入
 Change-level ECP 迁移。
 
 ### 5. 领域安全
@@ -158,6 +157,7 @@ Change-level ECP 迁移。
 
 - Change-level Pipeline Definition、Canvas authoring、compiler/lowerer；
 - deterministic reconciler、canonical Run Record、adapter/effect recovery；
+- agent/command adapter 与可恢复 Session execution boundary；
 - ReviewCycle、GoalLoop、Choice、FanOut/Join、Gate 和 Finish；
 - CLI、Management API、Operations 的执行与控制平面；
 - Change-level built-in migration、Custom Composite dogfood；
@@ -165,7 +165,7 @@ Change-level ECP 迁移。
 
 ### 本 Direction 不包含
 
-- `auto-decompose`、Issue Dispatch、Issue Execution Plan 和 Issue Board；
+- 0.3.0 的 `auto-decompose`、Issue Dispatch、Issue Execution Plan 和 Issue Board；
 - 跨项目执行图与 portfolio 调度；
 - recursive Composite、nested loop、任意控制流脚本；
 - 无限制动态 node/plugin execution；
@@ -192,8 +192,8 @@ Change-level ECP 迁移。
    Operations 和真实 E2E；文件、schema、mock 或单元测试不单独证明完成。
 8. **兼容输入不是永久双轨。** v1 和旧 run artifacts 有明确的 owner、fallback
    与退场条件，不反向成为第二套状态机。
-9. **0.1.7 不承接 ECP 成立所需能力。** 若发布仍缺少本 Target State 的必要部分，
-   必须明确称为局部 run-spine，而不是完整 ECP。
+9. **0.3.0 不承接 ECP 成立所需能力。** 0.2.0 若仍缺少本 Target State 的必要
+   部分，就不能声明完整 ECP，也不能把完整性债务静默推给 Issue 版本线。
 
 ## 开放选择
 
@@ -214,5 +214,5 @@ Horizon 0 的原则：先证明一个真实 Change 自动化闭环，再进入 I
 平台层能力。
 
 父级 `goal.md` 是 legacy Target State input，保持原样。本 Direction 只负责把
-Change-level ECP 做成可依赖的执行底座；ECP 通过前，父级 Issue Phase 0–8
+Change-level ECP 做成可依赖的执行底座；ECP 通过前，父级 0.3.0 Issue Phase 0–8
 继续保持 Later。

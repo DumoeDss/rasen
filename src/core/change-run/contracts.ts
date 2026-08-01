@@ -398,6 +398,23 @@ const WaitViewSchema = z.discriminatedUnion('kind', [
   }),
   z.strictObject({
     ...WaitBaseShape,
+    kind: z.literal('human-required'),
+    nodeId: NodeIdSchema,
+    invocationId: InvocationIdSchema,
+    occurrence: SafeIntegerSchema,
+    attemptId: AttemptIdSchema,
+    actionId: ActionIdSchema,
+    effectIds: z.array(EffectIdSchema).max(64),
+    loopPath: z.string().min(1).max(1024),
+    phase: z.string().min(1).max(256),
+    blockerFingerprint: DigestSchema,
+    reasonCode: z.string().min(1).max(256),
+    outcome: z.string().min(1).max(256),
+    evidence: z.array(EvidenceRefSchema).max(64),
+    decisionIds: z.tuple([z.literal('retry'), z.literal('escalate')]),
+  }),
+  z.strictObject({
+    ...WaitBaseShape,
     kind: z.literal('infrastructure'),
     nodeId: NodeIdSchema,
     invocationId: InvocationIdSchema,
@@ -569,9 +586,89 @@ const ReviewCycleViewSectionSchema = z.strictObject({
 export type ReviewCycleViewSection = Readonly<
   z.infer<typeof ReviewCycleViewSectionSchema>
 >;
+
+const GoalViewSectionSchema = z.strictObject({
+  kind: z.literal('goal'),
+  version: z.literal(1),
+  loopPath: z.string().min(1).max(1024),
+  variant: z.enum(['measure', 'evaluate', 'research']),
+  round: SafeIntegerSchema,
+  phase: z.enum(['work', 'judge']),
+  outcome: z.enum(['satisfied', 'exhausted']).optional(),
+  lastScore: z.number().finite().optional(),
+  lastGaps: z.array(z.string().min(1).max(4096)).max(1024),
+  waitReason: z.string().min(1).max(256).optional(),
+});
+
+export type GoalViewSection = Readonly<z.infer<typeof GoalViewSectionSchema>>;
+
+const UsedMaxSchema = z.strictObject({
+  used: SafeIntegerSchema,
+  max: SafeIntegerSchema,
+});
+
+const BoundedLoopLifecycleViewSectionSchema = z.strictObject({
+  kind: z.literal('bounded-loop-lifecycle'),
+  version: z.literal(1),
+  loopPath: z.string().min(1).max(1024),
+  bodyKind: z.enum(['review-cycle', 'goal-cycle', 'composite']),
+  state: z.enum([
+    'running',
+    'waiting',
+    'strategizing',
+    'human-required',
+    'terminal',
+  ]),
+  iteration: SafeIntegerSchema,
+  phase: z.string().min(1).max(256),
+  limits: z.strictObject({
+    iterations: UsedMaxSchema,
+    actions: UsedMaxSchema,
+    budget: UsedMaxSchema,
+  }),
+  progressFingerprint: DigestSchema.optional(),
+  stallStreak: SafeIntegerSchema,
+  blockerFingerprint: DigestSchema.optional(),
+  blockedStreak: SafeIntegerSchema,
+  strategy: z.strictObject({
+    attempts: SafeIntegerSchema,
+    maxAttempts: SafeIntegerSchema,
+    active: SafeIntegerSchema.optional(),
+  }),
+  wait: z
+    .strictObject({
+      waitId: WaitIdSchema,
+      kind: z.string().min(1).max(256),
+      reasonCode: z.string().min(1).max(256).optional(),
+    })
+    .optional(),
+  outcome: z
+    .strictObject({
+      kind: z.enum([
+        'completed',
+        'iteration-limit',
+        'action-limit',
+        'budget-limit',
+        'stalled',
+        'blocked',
+        'strategy-exhausted',
+        'failed',
+        'cancelled',
+      ]),
+      disposition: z.enum(['exit', 'escalate', 'fail', 'cancel']),
+      value: z.string().min(1).max(256).optional(),
+    })
+    .optional(),
+});
+
+export type BoundedLoopLifecycleViewSection = Readonly<
+  z.infer<typeof BoundedLoopLifecycleViewSectionSchema>
+>;
 export type ChangeRunViewSection =
   | RootDagViewSection
   | ReviewCycleViewSection
+  | GoalViewSection
+  | BoundedLoopLifecycleViewSection
   | Readonly<Record<string, unknown>>;
 
 const DriftStateSchema = z.enum(['unchanged', 'changed', 'unavailable']);
@@ -922,6 +1019,26 @@ export function decodeChangeRunView(value: unknown): ChangeRunView {
       (section as { kind?: unknown }).kind === 'review-cycle'
     ) {
       return decode(ReviewCycleViewSectionSchema, section);
+    }
+    if (
+      section !== null &&
+      typeof section === 'object' &&
+      'kind' in section &&
+      (section as { kind?: unknown }).kind === 'goal' &&
+      'version' in section &&
+      (section as { version?: unknown }).version === 1
+    ) {
+      return decode(GoalViewSectionSchema, section);
+    }
+    if (
+      section !== null &&
+      typeof section === 'object' &&
+      'kind' in section &&
+      (section as { kind?: unknown }).kind === 'bounded-loop-lifecycle' &&
+      'version' in section &&
+      (section as { version?: unknown }).version === 1
+    ) {
+      return decode(BoundedLoopLifecycleViewSectionSchema, section);
     }
     const additive = z
       .object({

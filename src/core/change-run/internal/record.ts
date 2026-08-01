@@ -135,6 +135,23 @@ export type CommittedTransition =
         outcome: string;
       }>)
   | (TransitionBase &
+      Readonly<{
+        kind: 'HumanDecisionCommitted';
+        waitId: string;
+        actionId: string;
+        decisionId: 'retry' | 'escalate';
+        outcome: string;
+        evidence: readonly Digest[];
+      }>)
+  | (TransitionBase &
+      Readonly<{
+        kind: 'DomainBlockedWaitConsumedByStrategy';
+        waitId: string;
+        actionId: string;
+        strategyNodeId: string;
+        trigger: string;
+      }>)
+  | (TransitionBase &
       Readonly<{ kind: 'WorkspaceRevisionAccepted'; waitId: string }>)
   | (TransitionBase &
       Readonly<{ kind: 'RunSuspended'; waitId: string }>)
@@ -229,6 +246,7 @@ const ActionIdSchema = identity('action');
 const AttemptIdSchema = identity('attempt');
 const EffectIdSchema = identity('effect');
 const WaitIdSchema = identity('wait');
+const NodeIdSchema = identity('node');
 
 const TerminalSchema = z.discriminatedUnion('kind', [
   z.strictObject({
@@ -295,6 +313,23 @@ const TransitionSchema = z.discriminatedUnion('kind', [
     waitId: WaitIdSchema,
     decisionId: z.string().min(1).max(256),
     outcome: z.string().min(1).max(256),
+  }),
+  z.strictObject({
+    ...TransitionOrdinal,
+    kind: z.literal('HumanDecisionCommitted'),
+    waitId: WaitIdSchema,
+    actionId: ActionIdSchema,
+    decisionId: z.enum(['retry', 'escalate']),
+    outcome: z.string().min(1).max(256),
+    evidence: z.array(DigestSchema).max(64),
+  }),
+  z.strictObject({
+    ...TransitionOrdinal,
+    kind: z.literal('DomainBlockedWaitConsumedByStrategy'),
+    waitId: WaitIdSchema,
+    actionId: ActionIdSchema,
+    strategyNodeId: NodeIdSchema,
+    trigger: z.string().min(1).max(256),
   }),
   z.strictObject({
     ...TransitionOrdinal,

@@ -7,7 +7,7 @@
 
 ## What this change is
 
-This change **closes Gap E** of `ecp-run-spine` (0.1.6, PR #92): the association
+This change **closes Gap E** of `ecp-run-spine` (0.2.0, PR #92): the association
 registry that implements *distinct-ChangeInstance-on-recreate* exists at the kernel
 layer but is **not wired into production**. `ecp-run-spine` shipped with this gap
 documented; this change deploys the registry to the real launch/archive/inspect path

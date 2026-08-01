@@ -1,6 +1,10 @@
 # 0.2.0 内核 Session 执行层设计（Plan B 重定位版）
 
 > 版本：v2（重定位）。v1（面向 0.1.6 playbook 编排的「混合 Worker 后端」）见本文件的 git 历史（`0ff25ad1`）。
+>
+> 路线状态（2026-08-01）：设计仍有效，但实现顺序调整为 ECP Roadmap 的
+> **ECP-7 Session Execution and Self-hosting**；先完成 ECP-6 的 v2 authoring 与
+> loop contract，再接入本执行层。Issue/Dispatch 固定为 0.3.0。
 > 依据：`docs/audits/session-audit-9e36259d-cache-rebuild-review.md`（§8–13）；0.2.0 `change-run` 契约实读。
 > 前置验证：`docs/experiments/session-cache-probe.md`（KC 探针，结果未回之前本设计的宿主选型是**假设**）。
 > 状态：设计稿，待 ECP-4 契约冻结 + 探针结果后修订并排期。
@@ -35,7 +39,8 @@ worker sessions          大上下文，1 小时缓存档，空闲零成本，�
 - G2：**Session registry**：机器可读的 session 身份链与生命周期（active/idle/retired、lastRequestAt、cwd、id 链），单写者为 rasen CLI。
 - G3：**tier 决策**输入化：每个 agent action 按经济模型选择 5 分钟档（launcher 内 subagent）或 1 小时档（独立 session），默认值由 pipeline stage 配置承载。
 - G4：**`rasen agent audit --run`**：按 runId 聚合 launcher + 全部 worker session，输出后端对照与经济性证据。
-- G5：作为 ECP roadmap 的一个切片交付（建议位置：ECP-4 收口后、ECP-5 前或并入 ECP-5 的 dogfood 要求），以 ReviewCycle 真实闭环为退出证据。
+- G5：作为 ECP roadmap 的独立切片交付。2026-08-01 已校准为 **ECP-7**，在
+  ECP-6 v2 authoring/loop contract 之后，以真实 Change 自宿主为退出证据。
 
 ### 非目标
 
@@ -94,7 +99,7 @@ reconciler ──next action──▶ launcher / runtime
 
 支撑这一约束的正是本设计的状态归属：run 状态在内核持久层、worker 在独立 session、touch 在 daemon——**driver 可插拔可更换**。用户关闭 Claude Code 窗口后，新会话或裸终端 `rasen pipeline resume` 接着驱动，worker 不重启、缓存不掉（launcher 死亡只是换 driver，不是 run 中断）。SessionHost/registry 对调用方无 driver 类型假设（Q1 的另一半）。
 
-### 4.2 接线定案（初次对表 2026-07-29 @ `2fa693d8`；**2026-07-30 重新对表已合并的 `dev/0.2.0` @ `be124057`，ECP-1..5 全部交付并归档**）
+### 4.2 接线定案（初次对表 2026-07-29 @ `2fa693d8`；**2026-07-30 重新对表已合并的 `dev/0.2.0` @ `be124057`，ECP-1..5 implementation Changes 已交付归档；这不代表完整 Target State passed**）
 
 契约核对结果：**agent action 的 `session` 块、`ActorRef.sessionIdentityDigest`、`workspace.access` 与本设计依据的形态逐字段零变化**（`contracts.ts:196-208,122,185-190`）。执行现实核对结果：**"执行 agent action"目前没有任何代码实现**——内核经 `facade.ts:14` 的 `deliveryMode: 'grant'|'defer'` 显式外包（grant 把可执行 payload 交给调用者、内核不执行；defer 封印 HTTP 面永不携带可执行 payload），实际由 launcher 会话按 playbook 用自身 Task/SendMessage 完成。Session 执行层填的是**从未存在过的空位**，不替换任何 runner。
 
@@ -308,7 +313,8 @@ rasen agent audit --run <runId>
 > 2. **原 kill 路由「转评估 Agent SDK 宿主」作废**——缓存是服务端按前缀键控、宿主无关的，SDK streaming 会继承同样的留存行为。真正的杠杆是 §6.1 daemon touch 的 cadence：从 55 分钟改为「实测 T_eff − 余量」（预计 ~15 分钟级）。
 > 3. 死的是"55 分钟免费空闲"参数，不是架构；§6 经济模型待二分/KC1c 收工后按 T_eff 重算，MISS 惩罚不对称（2×C vs 1.25×C）会把路由阈值整体推向 subagent。
 > 4. KC2 已定：跨 cwd resume 硬报错 → registry 必须记录并校验 cwd。KC4 已定：session_id 恒定不换 → `sessionIdChain` 简化为单 id + 防御性链。KC5 已定：并发 resume 双方计费但一方回合被静默丢弃 → 单飞锁必须在 CLI 之上自行实现（已在 §5 设计内）。
-> 5. **排期解耦**：ECP-5 不等本层；本层在经济学重算为正后，再于 direction 校准排为 ECP-5 后切片。
+> 5. **排期决策**：ECP-5 没有等待本层；2026-08-01 Direction 已将本层排为
+> ECP-7，在 ECP-6 contract closure 之后执行。
 > 6. **官方文档调研确认（同日）**：1h 档官方措辞即"尽力而为、可逐出、无存活保证"——KC1a 解读获背书；客户端保温行为文档零记载（机制仍未知）。新增待测假设：
 >    - **KC6（高价值）**：常驻 `claude -p --input-format stream-json` 进程空闲 30–40 分钟后经 stdin 发消息是否 HIT——若"存活进程 = 交互式级留存"成立，宿主换 `stream-json` 形态（§5.1），touch 可能全免；
 >    - **KC7（低优先）**：`claude --bg` 会话的留存行为（supervisor 或有未记载保温；无编程消息 API，暂不作宿主）。
@@ -355,7 +361,8 @@ ReviewCycle 的 reviewer stage 以 `same-invocation` 复用真实跑一个 chang
 **P3 — audit --run + 经济性 A/B**
 同规模 run 对照 9e36259d 基线。门槛：eligible 场景 TTL 重写 ↓≥70%；tier 全场净 input-eq 明确为正；`wakes[]` 与 usage 对账误差 0。
 
-**排期归属**：ECP 子 Direction 的 roadmap 决策（用户拍板）。建议在 ECP-4 收口的 direction 校准中排为下一切片；其退出证据同时喂给 ECP-5 的「canonical Run + dogfood」要求。
+**排期归属**：ECP 子 Direction 的 roadmap 决策。2026-08-01 已确定为 ECP-7，
+排在 ECP-6 之后；其自宿主证据进入 ECP-8 的最终 completion/release audit。
 
 ## 10. 风险与开放问题
 

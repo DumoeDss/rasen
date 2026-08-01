@@ -83,6 +83,15 @@ describe('ECP-5: engine-ownership guard is wired (real CLI)', () => {
     await fs.writeFile(runStatePath(), `${JSON.stringify(state, null, 2)}\n`);
   }
 
+  async function statusView(): Promise<unknown> {
+    const result = await runCLI(
+      ['pipeline', 'status', changeId, 'bug-fix', '--json'],
+      { cwd: testDir, env, timeoutMs: 60_000 }
+    );
+    expect(result.exitCode, result.stderr).toBe(0);
+    return JSON.parse(result.stdout.trim()).view;
+  }
+
   beforeEach(async () => {
     testDir = path.join(repoRoot, 'test-engine-ownership-tmp');
     await fs.rm(testDir, { recursive: true, force: true });
@@ -228,6 +237,7 @@ describe('ECP-5: engine-ownership guard is wired (real CLI)', () => {
   // ambiguous.
   it('never treats a derived goal-run.json as an ownership signal', async () => {
     const { runId } = await startRun();
+    const beforeProjectionEdit = await statusView();
     await fs.writeFile(
       path.join(changeDir(), 'goal-run.json'),
       `${JSON.stringify(GOAL_RUN_PROJECTION, null, 2)}\n`
@@ -236,6 +246,25 @@ describe('ECP-5: engine-ownership guard is wired (real CLI)', () => {
       path.join(changeDir(), 'review-report.md'),
       '# Review report\n\nA generated report, not an ownership signal.\n'
     );
+    const afterProjectionWrite = await statusView();
+
+    await fs.writeFile(
+      path.join(changeDir(), 'goal-run.json'),
+      `${JSON.stringify({
+        ...GOAL_RUN_PROJECTION,
+        round: 999,
+        phase: 'satisfied',
+        lifecycle: { state: 'completed', actionsUsed: 0 },
+      }, null, 2)}\n`
+    );
+    await fs.writeFile(
+      path.join(changeDir(), 'review-report.md'),
+      '# Edited report\n\nClaims clean and complete; still non-authoritative.\n'
+    );
+    const afterProjectionEdit = await statusView();
+
+    expect(afterProjectionWrite).toEqual(beforeProjectionEdit);
+    expect(afterProjectionEdit).toEqual(beforeProjectionEdit);
 
     const resume = await runCLI(
       ['pipeline', 'resume-run', changeId, 'bug-fix', '--json'],

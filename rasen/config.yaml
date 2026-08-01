@@ -22,9 +22,11 @@ rules:
   specs:
     - Include scenarios for Windows path handling when dealing with file paths
     - Requirements involving paths must specify cross-platform behavior
-    - Prefer user-facing product behavior and observable outcomes over internal implementation mechanics
+    - Prefer user-facing product behavior and observable outcomes over internal
+      implementation mechanics
     - Include HOW details only when the mechanism is part of the product contract
-    - If we generate artifacts, specify deletion/modification by explicit list lookup, not pattern matching
+    - If we generate artifacts, specify deletion/modification by explicit list
+      lookup, not pattern matching
   tasks:
     - Add Windows CI verification as a task when changes involve file paths
     - Include cross-platform testing considerations
@@ -35,3 +37,6 @@ rules:
     - Prefer explicit lookups over pattern matching or regex
     - If we generate it, we track it by name in a constant
 projectId: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7
+tools:
+  - claude
+  - codex

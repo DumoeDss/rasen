@@ -5,9 +5,7 @@ authority:
   northStar: ../north-star.md
 targetState: target-state.md
 roadmap: roadmap.md
-# No activeSlice: ECP-1..5 are all delivered and merged, and the next Slice is a
-# user decision. `active` rather than `completed` because ECP-5's 收口范围 still
-# has two items with no evidence — see roadmap.md "当前位置".
+activeSlice: slices/v2-authoring-loop-contract-closure
 lastReconciled:
-  at: 2026-07-30T12:45:07+08:00
-  revision: be124057
+  at: 2026-08-01T14:59:22+08:00
+  revision: 14ed62bc088197294f4a219ff20e946a6a99691d

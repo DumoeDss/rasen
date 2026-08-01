@@ -421,7 +421,7 @@ describe('goal-cycle domain reducer — happy-path', () => {
       expect(state.round).toBe(maxIter);
     });
 
-    it('tracks score progression across rounds', () => {
+    it('tracks score progression while shared lifecycle owns stall detection', () => {
       let state = initialGoalCycleState('measure');
       // Round 1: score 50, not passed
       state = applyGoalCycleEvent(state, event(1, 'work', worker, WORK_RESULT, 'measure'), 5);
@@ -439,15 +439,15 @@ describe('goal-cycle domain reducer — happy-path', () => {
         evidence: [evidence('9')],
       }, 5);
       expect(state.lastScore).toBe(70);
-      expect(state.stallStreak).toBe(0); // improved
-      // Round 3: score 70 again, stalled
+      // Round 3: score 70 again; the domain keeps score truth while the
+      // shared lifecycle compares progress fingerprints.
       state = applyGoalCycleEvent(state, event(3, 'work', worker, WORK_RESULT, 'measure'), 5);
       state = applyGoalCycleEvent(state, {
         round: 3, phase: 'judge', actor: judge,
         result: { contract: 'goal-cycle/measure-judge/1', score: 70, threshold: 80, direction: 'gte', passed: false },
         evidence: [evidence('9')],
       }, 5);
-      expect(state.stallStreak).toBe(1); // score didn't improve
+      expect(state.lastScore).toBe(70);
     });
   });
 

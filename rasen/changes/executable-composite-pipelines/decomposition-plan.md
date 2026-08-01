@@ -1,8 +1,8 @@
-# 0.1.6 Executable Composite Pipelines — Decomposition Plan
+# 0.2.0 Executable Composite Pipelines — Decomposition Plan
 
 ## Decision
 
-Take the `auto-decompose` stage. The 0.1.6 scope contains several distinct,
+Take the `auto-decompose` stage. The 0.2.0 scope contains several distinct,
 review-heavy capabilities that share an ordered contract. The parent
 `executable-composite-pipelines` Change is a planning and delivery container;
 implementation is delegated to seven child Changes.
@@ -235,7 +235,7 @@ should not obscure the bounded-loop review or goal migrations.
 
 ### 7. `ecp-product-closure`
 
-Close the 0.1.6 product and compatibility surface; do not add a new runtime
+Close the 0.2.0 product and compatibility surface; do not add a new runtime
 model.
 
 Scope:
@@ -244,14 +244,14 @@ Scope:
 - reconciler engine selection/default/fallback and legacy recovery policy
 - complete CLI/Canvas/Operations product wording and capability discovery
 - built-in and Custom Composite end-to-end dogfood matrix
-- migration/user documentation and 0.1.6 version/release contract
+- migration/user documentation and 0.2.0 version/release contract
 - remove duplicate prompt-owned mechanical rules where replacement evidence exists
 
 Acceptance:
 
 - no entry owns independent mechanical progression
 - one Run has one engine owner and one canonical state
-- all 0.1.6 exit conditions in the research document have evidence
+- all 0.2.0 exit conditions in the research document have evidence
 - full root/composite crash-recovery and cross-plane parity suite passes
 - packaging/build/release checks pass
 
@@ -273,7 +273,7 @@ becoming an accidental second implementation.
   scheduling, recursive calls, nested loops, arbitrary scripts, and cross-project
   Operations remain excluded.
 - Delivery: each review-clean child creates a local commit; only the parent
-  portfolio pushes and opens one PR to `dev/0.1.6`.
+  portfolio pushes and opens one PR to `dev/0.2.0`.
 
 ## Shared interface problem for design-it-twice
 

@@ -78,7 +78,7 @@ function expectedActionCount(plan: RuntimePlan): number {
       node.body.kind === 'composite'
         ? node.body.stages.length
         : node.body.phases.length;
-    expected += node.maxIterations * Math.max(1, bodySize);
+    expected += node.limits.maxIterations * Math.max(1, bodySize);
   }
   return expected;
 }

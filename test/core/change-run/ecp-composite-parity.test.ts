@@ -27,6 +27,7 @@ import type { CanonicalRunRecord } from '../../../src/core/change-run/internal/r
 import type { RuntimePlan } from '../../../src/core/change-run/internal/runtime-plan.js';
 import type { RunId, Digest } from '../../../src/core/change-run/contracts.js';
 import { semanticCanonicalizeDefinition } from '../../../src/core/pipeline-registry/definition-plan-internal.js';
+import { fixtureRuntimeLoop } from './bounded-loop-fixture.js';
 
 const branded = <T>(value: string): T => value as T;
 const sha = (char: string) => {
@@ -305,7 +306,7 @@ describe('Group 13: Recovery at composite body stage boundaries', () => {
       implicitFinishOutcome: 'done',
       nodes: [{
         kind: 'bounded-loop', hierarchicalPath: 'root/loop', requires: [],
-        maxIterations: 2,
+        ...fixtureRuntimeLoop(2, 16, 'exhausted'),
         body: {
           kind: 'composite', declarationId: 'decl',
           stages: [

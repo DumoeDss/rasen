@@ -515,6 +515,8 @@
       "createdDraft": "Created pipeline draft at {path}",
       "pipelineValid": "Pipeline is valid.",
       "pipelineInvalid": "Pipeline is invalid.",
+      "boundedLoopPoliciesHeading": "Normalized bounded-loop lifecycle policies:",
+      "boundedLoopPolicyLine": "  {node}: limits={limits}; lifecycle={policy}",
       "validationDiagnostic": "  [{severity}] {code}: {message}",
       "importedHeading": "Imported pipeline(s) from {path}:",
       "importedEntry": "  {name} (digest {digest})",

@@ -18,6 +18,7 @@ import { createInMemoryRunStore } from '../../../src/core/change-run/internal/ru
 import { createRuntimePlan } from '../../../src/core/change-run/internal/runtime-plan.js';
 import type { RuntimePlan } from '../../../src/core/change-run/internal/runtime-plan.js';
 import {
+  projectGoalCycleDomainSnapshot,
   projectGoalCycleProgress,
 } from '../../../src/core/change-run/internal/goal-cycle-runtime.js';
 import {
@@ -79,7 +80,8 @@ function evidenceRef(action: RunAction, hex: string): EvidenceRef {
 
 function goalPlan(
   variant: 'measure' | 'evaluate' | 'research' = 'measure',
-  maxIterations = 3
+  maxIterations = 3,
+  withStrategy = false
 ): RuntimePlan {
   return createRuntimePlan({
     runId: branded<RunId>(`run:${'a'.repeat(64)}`),
@@ -95,7 +97,35 @@ function goalPlan(
         kind: 'bounded-loop',
         hierarchicalPath: 'root/goal-cycle',
         requires: [],
-        maxIterations,
+        limits: {
+          maxIterations,
+          maxActions: maxIterations * 8,
+          budget: maxIterations * 8,
+        },
+        lifecycle: {
+          version: 1,
+          thresholds: { stallIterations: 99, sameBlockerAttempts: 99 },
+          strategy: withStrategy
+            ? {
+                maxAttempts: 1,
+                requireMaterialChange: true,
+                capability: { id: 'goal-cycle:strategy', version: '1' },
+              }
+            : { maxAttempts: 0, requireMaterialChange: true },
+          exits: {
+            iterationLimit: withStrategy
+              ? { action: 'strategy' }
+              : { action: 'escalate', outcome: 'goal_cycle_exhausted' },
+            actionLimit: { action: 'escalate', outcome: 'goal_cycle_action_limit' },
+            budgetLimit: { action: 'escalate', outcome: 'goal_cycle_budget_limit' },
+            stalled: { action: 'escalate', outcome: 'goal_cycle_stalled' },
+            blocked: { action: 'escalate', outcome: 'goal_cycle_blocked' },
+            strategyExhausted: { action: 'escalate', outcome: 'goal_cycle_strategy_exhausted' },
+          },
+        },
+        ...(withStrategy
+          ? { strategyProfilePath: 'declaration:goal-cycle/node:strategy' }
+          : {}),
         body: {
           kind: 'goal-cycle',
           variant,
@@ -125,9 +155,10 @@ function goalPlan(
 
 function createHarness(
   variant: 'measure' | 'evaluate' | 'research' = 'measure',
-  maxIterations = 3
+  maxIterations = 3,
+  withStrategy = false
 ) {
-  const runtimePlan = goalPlan(variant, maxIterations);
+  const runtimePlan = goalPlan(variant, maxIterations, withStrategy);
   const initial = startRecord(runtimePlan);
   const store = createInMemoryRunStore();
   const buildAction = (descriptor: {
@@ -146,7 +177,7 @@ function createHarness(
       );
     }
     const role = descriptor.profilePath.split(':').at(-1)!;
-    const access = role === 'work' ? 'write' : 'read';
+    const access = role === 'work' || role === 'strategy' ? 'write' : 'read';
     return buildAgentAction(
       {
         capability: {
@@ -222,6 +253,8 @@ function createHarness(
   return {
     plan: runtimePlan,
     store,
+    initial,
+    buildAction,
     runtime: createChangePipelineRuntime({
       store,
       plan: runtimePlan,
@@ -229,6 +262,15 @@ function createHarness(
       buildAction,
     }),
   };
+}
+
+function restartHarness(harness: ReturnType<typeof createHarness>): void {
+  harness.runtime = createChangePipelineRuntime({
+    store: harness.store,
+    plan: harness.plan,
+    initialRecord: harness.initial,
+    buildAction: harness.buildAction,
+  });
 }
 
 async function complete(
@@ -258,6 +300,37 @@ async function complete(
       ...base,
       receiptDigest: computeCompletionReceiptDigest(base),
     },
+    { deliveryMode: 'grant' }
+  );
+}
+
+async function completeBlocked(
+  harness: ReturnType<typeof createHarness>,
+  action: RunAction,
+  eventActor: ReturnType<typeof actor>
+) {
+  const attestation = evidenceRef(action, 'c');
+  const base = {
+    format: 'change-run-completion/1' as const,
+    kind: 'domain-action-result' as const,
+    change: { projectRoot: '/root', changeId: 'fixture-change' },
+    runId: action.runId,
+    actionId: action.actionId,
+    invocationId: action.invocationId,
+    receiptDigest: digest('0'),
+    actor: eventActor,
+    actorAttestation: attestation,
+    evidence: [evidenceRef(action, 'e')],
+    status: 'blocked' as const,
+    result: {
+      contract: 'bounded-loop/blocked/1',
+      reasonCode: 'dependency_unavailable',
+      blockerKey: 'fixture:goal-dependency',
+      detail: 'Retry after restoring the fixture dependency.',
+    },
+  };
+  return harness.runtime.complete(
+    { ...base, receiptDigest: computeCompletionReceiptDigest(base) },
     { deliveryMode: 'grant' }
   );
 }
@@ -449,6 +522,66 @@ describe('goal-cycle reconciler integration (task 4.5)', () => {
   });
 });
 
+describe('GoalCycle blocked resume journeys across variants', () => {
+  for (const variant of ['measure', 'evaluate', 'research'] as const) {
+    it(`${variant}: blocked -> restart -> exact resume -> fresh attempt -> restart -> satisfied`, async () => {
+      const harness = createHarness(variant, 3);
+      const started = await harness.runtime.start(
+        {
+          change: { projectRoot: '/root', changeId: 'fixture-change' },
+          launchKey: `blocked-resume-${variant}`,
+        },
+        { deliveryMode: 'grant' }
+      );
+      const firstWork = expectOneAction(started);
+      const blocked = await completeBlocked(harness, firstWork, worker);
+      expect(blocked.actions).toHaveLength(0);
+
+      const blockedRecord = harness.store.load(harness.plan.runId);
+      const domainWait = blockedRecord.waits.find((wait) => wait.kind === 'domain-blocked');
+      expect(domainWait).toBeDefined();
+      if (domainWait === undefined) return;
+
+      // Fresh-process boundary after the blocked result+wait commit.
+      restartHarness(harness);
+      const resumed = await harness.runtime.control(
+        {
+          format: 'change-run-control/1',
+          ref: {
+            change: { projectRoot: '/root', changeId: 'fixture-change' },
+            runId: harness.plan.runId,
+          },
+          expectedRecordVersion: blockedRecord.recordVersion,
+          command: { kind: 'resume', waitId: domainWait.waitId },
+        },
+        { deliveryMode: 'grant' }
+      );
+      const retryWork = expectOneAction(resumed);
+      expect(retryWork.nodeId).toBe(firstWork.nodeId);
+      expect(retryWork.actionId).not.toBe(firstWork.actionId);
+
+      // Fresh-process boundary after the retry admission commit.
+      restartHarness(harness);
+      const workResultForVariant = variant === 'research' ? researchWorkResult(1) : workResult(1);
+      const afterWork = await complete(harness, retryWork, worker2, workResultForVariant);
+      const judgeAction = expectOneAction(afterWork);
+
+      // Fresh-process boundary after the recovered work result and judge admission.
+      restartHarness(harness);
+      const judgeResult = variant === 'measure'
+        ? measureJudgePassed()
+        : variant === 'evaluate'
+          ? evaluateJudgeSatisfied()
+          : researchJudgeSatisfied();
+      const finished = await complete(harness, judgeAction, judge, judgeResult);
+      expect(finished.view.status).toBe('completed');
+      const goal = finished.view.sections.find((section) => section.kind === 'goal');
+      expect(goal).toMatchObject({ variant, outcome: 'satisfied' });
+      expect(harness.store.load(harness.plan.runId).waits).toHaveLength(0);
+    });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Task 7.3: Facade pre-commit validation tests
 // ---------------------------------------------------------------------------
@@ -574,6 +707,114 @@ describe('goal-cycle facade pre-commit validation (task 7.3)', () => {
     });
   });
 
+  it('advances recovered GoalCycle phases through strategy-scoped paths', async () => {
+    const harness = createHarness('measure', 1, true);
+    const strategist = actor('8', 'strategist');
+    const started = await harness.runtime.start(
+      {
+        change: { projectRoot: '/root', changeId: 'fixture-change' },
+        pipeline: harness.plan.pipeline,
+        launchRequestId: branded(`launch:${'d'.repeat(64)}`),
+      },
+      { deliveryMode: 'grant' }
+    );
+    const work = expectOneAction(started);
+    const afterWork = await complete(harness, work, worker, workResult(1));
+    const judgeAction = expectOneAction(afterWork);
+    const afterJudge = await complete(
+      harness,
+      judgeAction,
+      judge,
+      measureJudgeFailed(50)
+    );
+    const strategy = expectOneAction(afterJudge);
+    expect(strategy.agent.input).toMatchObject({
+      boundedLoopStrategy: { attempt: 1, trigger: 'iteration-limit' },
+    });
+
+    const afterStrategy = await complete(harness, strategy, strategist, {
+      contract: 'bounded-loop/strategy-result/1',
+      strategyKey: 'goal-recovery',
+      rationale: 'Run one recovered work and judge iteration.',
+      intendedChangeSurface: ['goal-cycle'],
+      evidence: [],
+    });
+    const recoveryWork = expectOneAction(afterStrategy);
+    expect(recoveryWork.agent.input).toMatchObject({
+      goalCycle: { round: 2, phase: 'work' },
+      boundedLoopRecovery: {
+        strategyAttempt: 1,
+        iteration: 2,
+        phase: 'work',
+      },
+    });
+
+    const afterRecoveryWork = await complete(
+      harness,
+      recoveryWork,
+      worker2,
+      workResult(2)
+    );
+    const recoveryJudge = expectOneAction(afterRecoveryWork);
+    expect(recoveryJudge.agent.input).toMatchObject({
+      goalCycle: { round: 2, phase: 'judge' },
+      boundedLoopRecovery: {
+        strategyAttempt: 1,
+        iteration: 2,
+        phase: 'judge',
+      },
+    });
+
+    const recovered = await complete(
+      harness,
+      recoveryJudge,
+      judge,
+      measureJudgePassed()
+    );
+    expect(recovered.view.status).toBe('completed');
+    expect(recovered.view.sections.find((section) => section.kind === 'goal'))
+      .toMatchObject({ outcome: 'satisfied', lastScore: 90 });
+  });
+
+  it('unchanged GoalCycle recovery terminates at strategy-exhausted', async () => {
+    const harness = createHarness('measure', 1, true);
+    const strategist = actor('8', 'strategist');
+    let action = expectOneAction(await harness.runtime.start(
+      {
+        change: { projectRoot: '/root', changeId: 'fixture-change' },
+        pipeline: harness.plan.pipeline,
+        launchRequestId: branded(`launch:${'e'.repeat(64)}`),
+      },
+      { deliveryMode: 'grant' }
+    ));
+    action = expectOneAction(await complete(harness, action, worker, workResult(1)));
+    action = expectOneAction(await complete(harness, action, judge, measureJudgeFailed(50)));
+    action = expectOneAction(await complete(harness, action, strategist, {
+      contract: 'bounded-loop/strategy-result/1',
+      strategyKey: 'goal-unchanged-recovery',
+      rationale: 'Exercise an unchanged recovered score.',
+      intendedChangeSurface: ['goal-cycle'],
+      evidence: [],
+    }));
+    action = expectOneAction(await complete(harness, action, worker2, workResult(2)));
+    const exhausted = await complete(harness, action, judge, measureJudgeFailed(50));
+    expect(exhausted.view.status).toBe('escalated');
+    expect(harness.store.load(harness.plan.runId).terminal).toMatchObject({
+      kind: 'escalated',
+      code: 'goal_cycle_strategy_exhausted',
+    });
+    const lifecycle = exhausted.view.sections.find(
+      (section) => section.kind === 'bounded-loop-lifecycle'
+    );
+    expect(lifecycle).toMatchObject({
+      outcome: {
+        kind: 'strategy-exhausted',
+        disposition: 'escalate',
+        value: 'goal_cycle_strategy_exhausted',
+      },
+    });
+  });
+
   it('multi-round progression: round 1 fails, round 2 passes', async () => {
     const harness = createHarness('measure', 3);
     const started = await harness.runtime.start(
@@ -665,6 +906,75 @@ describe('goal-cycle facade pre-commit validation (task 7.3)', () => {
     );
     expect(finished.disposition).toBe('terminal');
     expect(finished.view.status).toBe('completed');
+  });
+
+  it.each([
+    {
+      variant: 'measure' as const,
+      work: workResult(1),
+      judge: measureJudgeFailed(42),
+      material: {
+        variant: 'measure',
+        direction: 'gte',
+        score: 42,
+        satisfied: false,
+      },
+    },
+    {
+      variant: 'evaluate' as const,
+      work: workResult(1),
+      judge: evaluateJudgeNotSatisfied(['gap-z', 'gap-a', 'gap-z']),
+      material: {
+        variant: 'evaluate',
+        satisfied: false,
+        gaps: ['gap-a', 'gap-z'],
+      },
+    },
+    {
+      variant: 'research' as const,
+      work: researchWorkResult(1),
+      judge: {
+        contract: 'goal-cycle/research-judge/1',
+        satisfied: false,
+        gaps: ['source-z', 'source-a', 'source-z'],
+        qualityAssessment: 'Prose is not progress identity.',
+      } as JsonValue,
+      material: {
+        variant: 'research',
+        satisfied: false,
+        gaps: ['source-a', 'source-z'],
+      },
+    },
+  ])('projects canonical $variant progress material from domain truth', async ({
+    variant,
+    work,
+    judge: judgeResult,
+    material,
+  }) => {
+    const harness = createHarness(variant, 3);
+    const started = await harness.runtime.start(
+      {
+        change: { projectRoot: '/root', changeId: 'fixture-change' },
+        pipeline: harness.plan.pipeline,
+        launchRequestId: branded(`launch:${'9'.repeat(64)}`),
+      },
+      { deliveryMode: 'grant' }
+    );
+    const workAction = expectOneAction(started);
+    const afterWork = await complete(harness, workAction, worker, work);
+    await complete(harness, expectOneAction(afterWork), judge, judgeResult);
+
+    const loop = harness.plan.nodes[0]!;
+    if (loop.kind !== 'bounded-loop') return;
+    const snapshot = projectGoalCycleDomainSnapshot(
+      harness.plan,
+      loop,
+      harness.store.load(harness.plan.runId)
+    );
+    expect(snapshot.progressHistory).toEqual([
+      { iteration: 1, material },
+    ]);
+    expect(snapshot.continueRequested).toBe(true);
   });
 });
 
@@ -942,7 +1252,7 @@ describe('goal-cycle projection (task 6.3) — goal/1 section shape', () => {
     });
   });
 
-  it('budget reflects eventCount and maxIterations', async () => {
+  it('projects budget only through the shared lifecycle section', async () => {
     const harness = createHarness('measure', 3);
     const started = await harness.runtime.start(
       {
@@ -959,9 +1269,14 @@ describe('goal-cycle projection (task 6.3) — goal/1 section shape', () => {
     const view = projectRunView(record, 'active', harness.plan);
     const goalSection = view.sections.find(
       (s: unknown) => (s as { kind: string }).kind === 'goal'
-    ) as { budget: { used: number; max: number } };
+    ) as Readonly<Record<string, unknown>>;
+    const lifecycleSection = view.sections.find(
+      (s: unknown) =>
+        (s as { kind: string }).kind === 'bounded-loop-lifecycle'
+    ) as { limits: { budget: { used: number; max: number } } };
     expect(goalSection).toBeDefined();
-    expect(goalSection.budget.used).toBe(1); // 1 event committed (work)
-    expect(goalSection.budget.max).toBe(6); // 3 rounds × 2 phases
+    expect(goalSection).not.toHaveProperty('budget');
+    expect(goalSection).not.toHaveProperty('stallStreak');
+    expect(lifecycleSection.limits.budget).toEqual({ used: 2, max: 24 });
   });
 });

@@ -1,14 +1,20 @@
-# 可执行组合管线 — 架构（0.1.6）
+# 可执行组合管线 — 架构（0.2.0）
 
-> 状态：0.1.6 portfolio 已完成 —— `ecp-run-spine` + `ecp-settle-completeness` (A+B) +
+> 状态：0.2.0 implementation portfolio ECP-1..5 已合入 —— `ecp-run-spine` +
+> `ecp-settle-completeness` (A+B) +
 > association-registry 接线 (E) + `ecp-review-cycle` (ECP-1) + `ecp-custom-composite`
 > (ECP-2) + `ecp-goal-loop` (ECP-3) + `ecp-full-feature` (ECP-4) + `ecp-product-closure`
-> (ECP-5)。这是已准备好的 Pipeline 计划的确定性 Run owner。本文档是权威架构参考。
+> (ECP-5)。这是已准备好的 Pipeline 计划的确定性 Run owner；**不等于 0.2.0
+> 产品已经通过**。当前完成状态和剩余 ECP-6..8 以 Direction
+> [`roadmap.md`](../../rasen/work/issue-centered-automation-platform/executable-composite-pipelines/roadmap.md)
+> 为准。
 >
-> 0.1.6 范围：**root-DAG 与组合执行内核** + 其 CLI / 管理 API / Operations-UI / Canvas 面。
+> 0.2.0 范围：**root-DAG 与组合执行内核** + 其 CLI / 管理 API / Operations-UI / Canvas 面。
 > Composite、BoundedLoop（ReviewCycle 与 GoalLoop）、FanOut/Join、Choice 的**执行均已落地**
-> 并有真实 Run 证据（见下方"证据台账"）。仍然**不在范围内**：Issue 级调度与 Board 生命周期
-> 映射（0.2.0 领域）、nested loop、递归 Composite call、分布式调度。
+> 并有真实 Run 证据（见下方“证据台账”）。仍然**不在范围内**：Issue 级调度与 Board 生命周期
+> 映射（0.3.0 领域）、nested loop、递归 Composite call、分布式调度。
+> 当前仍未闭合：v2 默认创作、FanOut/Join 与完整 loop policy 的 Canvas 对称、
+> 公共 stall/blocked/escalation lifecycle、Session executor、自宿主与最终发布审查。
 >
 > **本节此前的陈述已过时并已更正。** 它写着 "Composite/BoundedLoop/GoalLoop/FanOut/Join 的
 > 执行……明确不在范围内"，而那四个 slice 恰恰交付了这些执行能力 —— 一份自称权威的架构参考
@@ -19,7 +25,7 @@
 
 ## 1. 这是什么
 
-在 0.1.6 之前，Rasen 可以*准备*一个不可变的 Pipeline Definition v2 计划，但没有程序
+在 0.2.0 ECP 实现之前，Rasen 可以*准备*一个不可变的 Pipeline Definition v2 计划，但没有程序
 **拥有**该计划的持久执行 —— 新的运行依赖 prompt 托管的 `auto-run.json`，管理 UI 只能
 观察这些遗留文件。可执行组合管线（Executable Composite Pipelines，ECP）引入**唯一一个
 确定性的 Run owner**：给定一个冻结的计划，reconciler 引擎驱动一份规范、不可变的 Run Record
@@ -103,7 +109,7 @@
 
 **内核授予，调用方执行。** 内核在 `deliveryMode: 'grant'` 下把一个 admit 变成一个已授予的
 `RunAction` 并交给调用方 —— 它**不**运行 agent、不开 session、不管 worker 生命周期。谁真的去
-执行那个 action、用哪个 runtime、复用还是新开会话，全部在 Run owner 之外：0.1.6 里由 LEAD
+执行那个 action、用哪个 runtime、复用还是新开会话，全部在 Run owner 之外：当前由 LEAD
 （playbook Step B/C）承担，独立的 **session execution layer 是后续切片**。committed action 里
 的 `session` 块因此是为那一层预留的记录位，不是本版本的行为契约（见 §7 的占位说明）。
 
@@ -281,8 +287,8 @@ waits.ts               WaitId 分配 · variant 编解码器 · workspace-reserv
 - **确定性（Determinism）** —— reconciler 在打乱插入顺序、毒化的时钟/随机/env/文件系统以及
   replay 下均确定性。稳定的 identity/顺序。
 - **会话字段是占位（Session fields are placeholders）** —— committed action 的
-  `session.handoffTokenLimit` / `session.reuseRoundLimit` 在 0.1.6 里**没有任何配置或创作入口**，
-  因此每一个 0.1.6 时代 Record 记下的值按定义都是占位值：未来的读者**不得**把它们当作操作者或
+  `session.handoffTokenLimit` / `session.reuseRoundLimit` 在当前实现中**没有任何配置或创作入口**，
+  因此现有 Record 记下的值按定义都是占位值：未来的读者**不得**把它们当作操作者或
   作者的选择，也**不得**据以约束 session（尤其 `reuseRoundLimit: 1` 一旦被执行，会禁止评审者跨
   轮复用 —— 恰恰是主要的复用形态）。作者真正表达过的复用意图以附加字段 `sessionReuseAuthored`
   原样保留。真实取值是 session execution layer 那一层的设计产出。
@@ -351,9 +357,9 @@ legacy owner 与规范 Record 并存时，`pipeline start` 以及 `complete` / `
 记录，供后续版本判断：
 
 1. 三个 goal pipeline、`bug-fix`、`small-feature`、`full-feature` 与至少一个 Canvas 创作的
-   Custom Composite 在 reconciler 引擎下都有真实 Run 证据（0.1.6 已满足，见证据台账）。
-2. reconciler 对全部内置与 v1 可创作形状的 capability discovery 报告为真（0.1.6 已满足；
-   `auto-decompose` 仍 fail-closed 报 `execution_profile_unavailable`，属 0.2.0 领域）。
+   Custom Composite 在 reconciler 引擎下都有真实 Run 证据（0.2.0 implementation portfolio 已满足，见证据台账）。
+2. reconciler 对全部内置与 v1 可创作形状的 capability discovery 报告为真（当前实现已满足；
+   `auto-decompose` 仍 fail-closed 报 `execution_profile_unavailable`，属 0.3.0 领域）。
 3. 连续若干个真实发布周期中，没有用户因 reconciler 缺陷而设置 `runs.engine: legacy`。
 4. 存量携带 pre-convergence run-state 的 change 已自然清空（否则 `pipeline start` 的
    `engine_owner_conflict` 拒绝会成为升级路上的常见阻塞，而不是罕见提示）。
@@ -365,7 +371,7 @@ legacy owner 与规范 Record 并存时，`pipeline start` 以及 `complete` / `
 
 ---
 
-## 10. 范围（0.1.6，portfolio 完成后）
+## 10. 范围（0.2.0）
 
 **在范围内（全部已交付）**
 - root-DAG 执行内核（AtomicStage、Gate、Choice、自适应 simple/complex verify、隐式 root
@@ -379,15 +385,22 @@ legacy owner 与规范 Record 并存时，`pipeline start` 以及 `complete` / `
   Custom Composite 均有真实 Run。
 
 **不在范围内**
-- Issue 级调度与 Board 生命周期映射（0.2.0 领域；Run 的 terminal 状态永不修改
+- Issue 级调度与 Board 生命周期映射（0.3.0 领域；Run 的 terminal 状态永不修改
   Board/Issue 生命周期）。
 - `auto-decompose` 的 reconciler 执行 —— capability discovery 对它 fail-closed 报
-  `execution_profile_unavailable`，属 0.2.0 的 portfolio 编排领域。
+  `execution_profile_unavailable`，属 0.3.0 的 portfolio 编排领域。
 - nested loop、递归 Composite call、任意控制流脚本、分布式调度（研究文档 §15.3 非目标）。
-- **session execution layer** —— 已授予 action 的实际执行、session 复用语义
+
+**0.2.0 尚未完成但必须在发布前关闭**
+
+- v2 作为新建 Pipeline 与空白 Canvas 的默认 authored format；
+- FanOut/Join、GoalLoop 与完整 BoundedLoop policy 的 Canvas authoring；
+- stalled/blocked/strategy-exhausted/human-escalation 的公共 loop lifecycle；
+- **session execution layer**：已授予 action 的实际执行、session 复用语义
   （`review-thread` / `stage` / `run-planner`）、以及 `handoffTokenLimit` /
-  `reuseRoundLimit` 的真实取值与配置入口。0.1.6 只**记录**这些字段并声明其为占位（§7），
-  执行仍由调用方承担。
+  `reuseRoundLimit` 的真实取值与配置入口。当前只**记录**这些字段并声明其为占位（§7），
+  执行仍由调用方承担；
+- 一个后续真实 Change 的 ECP 自宿主和最终 completion/release audit。
 
 ---
 
@@ -399,4 +412,4 @@ legacy owner 与规范 Record 并存时，`pipeline start` 以及 `complete` / `
   `rasen/work/issue-centered-automation-platform/executable-composite-pipelines/slices/product-closure/result.md`
 - 长期方向：`rasen/work/issue-centered-automation-platform/{goal,north-star,roadmap}.md`
 - 内核研究：`rasen/work/issue-centered-automation-platform/executable-composite-pipelines/deterministic-pipeline-kernel-research.md`
-- PR：#92（`ecp-run-spine`，0.1.6）· #93（`ecp-settle-completeness`，A+B）· #94（association-registry 接线，E）
+- PR：#92（`ecp-run-spine`）· #93（`ecp-settle-completeness`，A+B）· #94（association-registry 接线，E）

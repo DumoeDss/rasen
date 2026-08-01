@@ -18,6 +18,7 @@ import {
 } from '../../../src/core/change-run/internal/reducer.js';
 import type { CanonicalRunRecord } from '../../../src/core/change-run/internal/record.js';
 import type { RunId, Digest } from '../../../src/core/change-run/contracts.js';
+import { fixtureRuntimeLoop } from './bounded-loop-fixture.js';
 
 const branded = <T>(value: string): T => value as T;
 const sha = (char: string) => branded<Digest>(`sha256:${char.repeat(64)}`);
@@ -37,7 +38,7 @@ function compositeLoopPlan(maxIterations = 2): RuntimePlan {
         kind: 'bounded-loop',
         hierarchicalPath: 'root/loop',
         requires: [],
-        maxIterations,
+        ...fixtureRuntimeLoop(maxIterations, maxIterations * 8, 'exhausted'),
         body: {
           kind: 'composite',
           declarationId: 'decl',
@@ -208,7 +209,7 @@ describe('projectCompositeBodyProgress', () => {
           kind: 'bounded-loop',
           hierarchicalPath: 'root/loop',
           requires: [],
-          maxIterations: 1,
+          ...fixtureRuntimeLoop(1, 8, 'exhausted'),
           body: {
             kind: 'composite',
             declarationId: 'decl',
@@ -276,7 +277,7 @@ describe('reconcile — composite-body bounded-loop', () => {
           kind: 'bounded-loop',
           hierarchicalPath: 'root/loop',
           requires: [],
-          maxIterations: 1,
+          ...fixtureRuntimeLoop(1, 8, 'exhausted'),
           body: {
             kind: 'composite',
             declarationId: 'decl',

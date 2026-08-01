@@ -663,10 +663,9 @@ describe('CLI control handler (12.5/12.6)', () => {
 // ---------------------------------------------------------------------------
 
 describe('Legacy resume byte-shape parity (12.7)', () => {
-  it('control with cancel dispatches through facade.control as a cancel stimulus', async () => {
-    // The design says "cancel is only typed sugar over control." Verify that
-    // the control command path converts a cancel control request into the
-    // matching RunStimulus and dispatches through facade.control.
+  it('control with cancel dispatches the public envelope through facade.control', async () => {
+    // The facade owns public-control translation so every caller gets the same
+    // optimistic identity checks and wait-kind-specific decision routing.
     const rt = await buildStartedRuntime();
     const controlSpy = vi.spyOn(rt.facade, 'control');
 
@@ -692,8 +691,12 @@ describe('Legacy resume byte-shape parity (12.7)', () => {
       });
 
       expect(controlSpy).toHaveBeenCalledTimes(1);
-      const stimulus = controlSpy.mock.calls[0]![0] as { kind: string };
-      expect(stimulus.kind).toBe('cancel');
+      const envelope = controlSpy.mock.calls[0]![0];
+      expect(envelope).toMatchObject({
+        format: 'change-run-control/1',
+        expectedRecordVersion: record.recordVersion,
+        command: { kind: 'cancel' },
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

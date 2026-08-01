@@ -1,6 +1,6 @@
 # ecp-settle-completeness — Planning Context
 
-A focused follow-up to `ecp-run-spine` (0.1.6) that closes two settle-completeness gaps
+A focused follow-up to `ecp-run-spine` (0.2.0) that closes two settle-completeness gaps
 in the reconciler facade. Both were found + diagnosed during ecp-run-spine's Wave 4–5
 verification and documented there; this change fixes them. The facade-settle ship-blocker
 fix (`0512e06e`, `settleCandidates`) is the foundation — DO NOT regress it.

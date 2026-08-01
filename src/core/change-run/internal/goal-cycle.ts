@@ -101,7 +101,6 @@ export interface GoalCycleState {
   readonly lastScore?: number;
   readonly lastSatisfied?: boolean;
   readonly lastGaps: readonly string[];
-  readonly stallStreak: number;
   readonly eventCount: number;
   readonly lastActor?: ActorRef;
   readonly judgeActor?: ActorRef;
@@ -364,7 +363,6 @@ function stateFrom(
   round: number,
   phase: GoalCyclePhase,
   variant: GoalCycleVariant,
-  stallStreak: number,
   eventCount: number,
   extras: Readonly<{
     outcome?: GoalCycleOutcome;
@@ -380,7 +378,6 @@ function stateFrom(
     round,
     phase,
     variant,
-    stallStreak,
     ...(extras.outcome === undefined ? {} : { outcome: extras.outcome }),
     ...(extras.lastScore === undefined ? {} : { lastScore: extras.lastScore }),
     ...(extras.lastSatisfied === undefined
@@ -438,37 +435,19 @@ function assertEventEnvelope(
 }
 
 /**
- * Score-based stall detection for the measure variant: if the score did not
- * move favorably from the previous round, the stall streak increments.
- */
-function scoreImproved(
-  previousScore: number | undefined,
-  currentScore: number,
-  direction: 'gte' | 'lte'
-): boolean {
-  if (previousScore === undefined) return true;
-  // A small epsilon for floating-point tolerance.
-  const epsilon = 1e-9;
-  if (direction === 'gte') {
-    return currentScore > previousScore + epsilon;
-  }
-  return currentScore < previousScore - epsilon;
-}
-
-/**
  * The pure transition function. Mirrors applyReviewCycleEvent: reads only
- * state + event, produces a new frozen state. All domain rules — actor
- * separation, stall detection, round capping — are enforced here.
+ * state + event, produces a new frozen state. Goal semantics and actor
+ * separation remain here; shared stall mechanics live in the loop lifecycle.
  */
 export function applyGoalCycleEvent(
   state: GoalCycleState,
   event: GoalCycleEvent,
   maxIterations: number
 ): GoalCycleState {
-  if (!Number.isSafeInteger(maxIterations) || maxIterations < 1 || maxIterations > 100) {
+  if (!Number.isSafeInteger(maxIterations) || maxIterations < 1) {
     throw new GoalCycleDomainError(
       'invalid_goal_cycle_transition',
-      'GoalCycle maxIterations must be between 1 and 100.'
+      'GoalCycle maxIterations must be a positive safe integer.'
     );
   }
   assertEventEnvelope(state, event);
@@ -477,17 +456,7 @@ export function applyGoalCycleEvent(
 
   if (event.phase === 'work') {
     // Work phase: accept the variant-appropriate work result, advance to judge.
-    // Detect zero-delta stall.
-    let stallStreak = state.stallStreak;
-    if (event.phase === 'work') {
-      // A work result with identical trees was already rejected by the parser.
-      // For stall purposes, we track whether the delta is meaningfully
-      // different from the previous work round. Since the parser enforces
-      // beforeTree !== afterTree, a work result is never a zero-delta —
-      // stall is tracked via score stagnation at the judge phase instead.
-      stallStreak = state.stallStreak; // no increment at work for now
-    }
-    return stateFrom(state.round, 'judge', state.variant, stallStreak, eventCount, {
+    return stateFrom(state.round, 'judge', state.variant, eventCount, {
       lastScore: state.lastScore,
       lastSatisfied: state.lastSatisfied,
       lastGaps: state.lastGaps,
@@ -511,7 +480,7 @@ export function applyGoalCycleEvent(
   if (state.variant === 'measure') {
     const judge = result as MeasureJudgeResult;
     if (judge.passed) {
-      return stateFrom(state.round, 'judge', state.variant, state.stallStreak, eventCount, {
+      return stateFrom(state.round, 'judge', state.variant, eventCount, {
         outcome: 'satisfied',
         lastScore: judge.score,
         lastSatisfied: true,
@@ -520,11 +489,8 @@ export function applyGoalCycleEvent(
         lastActor: event.actor,
       });
     }
-    // Not passed — check for stall (score did not improve).
-    const improved = scoreImproved(state.lastScore, judge.score, judge.direction);
-    const stallStreak = improved ? 0 : state.stallStreak + 1;
     if (state.round >= maxIterations) {
-      return stateFrom(state.round, 'judge', state.variant, stallStreak, eventCount, {
+      return stateFrom(state.round, 'judge', state.variant, eventCount, {
         outcome: 'exhausted',
         lastScore: judge.score,
         lastSatisfied: false,
@@ -533,7 +499,7 @@ export function applyGoalCycleEvent(
         lastActor: event.actor,
       });
     }
-    return stateFrom(state.round + 1, 'work', state.variant, stallStreak, eventCount, {
+    return stateFrom(state.round + 1, 'work', state.variant, eventCount, {
       lastScore: judge.score,
       lastSatisfied: false,
       lastGaps: [],
@@ -555,7 +521,7 @@ export function applyGoalCycleEvent(
       : (judge as ResearchJudgeResult).gaps;
 
   if (satisfied) {
-    return stateFrom(state.round, 'judge', state.variant, state.stallStreak, eventCount, {
+    return stateFrom(state.round, 'judge', state.variant, eventCount, {
       outcome: 'satisfied',
       lastSatisfied: true,
       lastGaps: gaps,
@@ -563,14 +529,8 @@ export function applyGoalCycleEvent(
       lastActor: event.actor,
     });
   }
-  // Not satisfied
-  // Stall detection: if the gaps are identical to the previous round's gaps.
-  const gapsUnchanged =
-    state.lastGaps.length === gaps.length &&
-    state.lastGaps.every((gap, index) => gap === gaps[index]);
-  const stallStreak = gapsUnchanged ? state.stallStreak + 1 : 0;
   if (state.round >= maxIterations) {
-    return stateFrom(state.round, 'judge', state.variant, stallStreak, eventCount, {
+    return stateFrom(state.round, 'judge', state.variant, eventCount, {
       outcome: 'exhausted',
       lastSatisfied: false,
       lastGaps: gaps,
@@ -578,7 +538,7 @@ export function applyGoalCycleEvent(
       lastActor: event.actor,
     });
   }
-  return stateFrom(state.round + 1, 'work', state.variant, stallStreak, eventCount, {
+  return stateFrom(state.round + 1, 'work', state.variant, eventCount, {
     lastSatisfied: false,
     lastGaps: gaps,
     judgeActor: event.actor,
@@ -590,7 +550,7 @@ export function applyGoalCycleEvent(
 export function initialGoalCycleState(
   variant: GoalCycleVariant
 ): GoalCycleState {
-  return stateFrom(1, 'work', variant, 0, 0, { lastGaps: [] });
+  return stateFrom(1, 'work', variant, 0, { lastGaps: [] });
 }
 
 export function reduceGoalCycleEvents(

@@ -8,7 +8,11 @@ import type {
   ExactChangeRunRef,
   RunAction,
 } from '../contracts.js';
-import type { ChangePipelineRuntime, RuntimeMutationContext } from '../facade.js';
+import {
+  ChangeRunRuntimeError,
+  type ChangePipelineRuntime,
+  type RuntimeMutationContext,
+} from '../facade.js';
 import type { RuntimePlan } from './runtime-plan.js';
 import type { CanonicalRunRecord } from './record.js';
 import { digestCanonicalRunRecord } from './record.js';
@@ -29,6 +33,10 @@ import { validateGoalCycleCompletion, projectGoalCycleProgress } from './goal-cy
 import { assertReviewCycleMayShip } from './review-cycle.js';
 import { assertGoalCycleMayShip } from './goal-cycle.js';
 import { projectCompositeBodyProgress } from './composite-runtime.js';
+import {
+  decodeBoundedLoopStrategyResult,
+  strategyTriggerForAction,
+} from './bounded-loop-lifecycle.js';
 
 export interface RuntimeDeps {
   readonly store: RunStore;
@@ -237,6 +245,15 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
               break;
             }
           }
+          if (candidate.consumesDomainBlockedWait !== undefined) {
+            stimuli.push({
+              kind: 'consume-domain-blocked-wait-for-strategy',
+              waitId: candidate.consumesDomainBlockedWait.waitId,
+              actionId: candidate.consumesDomainBlockedWait.actionId,
+              strategyNodeId: candidate.nodeId,
+              trigger: candidate.consumesDomainBlockedWait.trigger,
+            });
+          }
           stimuli.push({
             kind: 'admit-action',
             action,
@@ -268,6 +285,9 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
           }
           break;
         }
+        case 'await-human-required':
+          stimuli.push({ kind: 'await-human-required', wait: candidate.wait });
+          break;
         case 'suspend-unsupported': {
           const wait = capabilityUnavailableWait(
             workingRecord,
@@ -285,6 +305,15 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         case 'escalate':
           stimuli.push({
             kind: 'escalate',
+            code: candidate.code,
+            ...(candidate.reason !== undefined
+              ? { reason: candidate.reason }
+              : {}),
+          });
+          break;
+        case 'fail':
+          stimuli.push({
+            kind: 'fail',
             code: candidate.code,
             ...(candidate.reason !== undefined
               ? { reason: candidate.reason }
@@ -453,6 +482,12 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
           'facade complete failed: only domain-action-result completions are supported by this facade path.'
         );
       }
+      if (
+        request.status === 'succeeded' &&
+        strategyTriggerForAction(committed) !== undefined
+      ) {
+        decodeBoundedLoopStrategyResult(request.result);
+      }
       // Pre-commit ReviewCycle validation (D3): validate the completion against
       // the exact mechanically expected phase BEFORE committing. Malformed
       // results, same-actor fixer+verifier, and open Blocker/Major findings
@@ -571,17 +606,137 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       const sourceState = deps.resolveSourceState?.(record) ?? 'active';
       return asPromise(projectRunView(record, sourceState, deps.plan));
     },
-    control(request: ChangeRunControlRequest, _context: RuntimeMutationContext) {
+    control(request: ChangeRunControlRequest, context: RuntimeMutationContext) {
       const record = deps.store.load(deps.plan.runId);
       deps.assertMutationAllowed?.(record);
-      const result = reduceCanonicalRunRecord(record, request as unknown as RunStimulus);
+
+      if (
+        request.ref.runId !== record.runId ||
+        request.ref.change.changeId !== record.change.changeId
+      ) {
+        throw new ChangeRunRuntimeError(
+          'invalid_run_request',
+          'Control must address the exact Run and Change identity.'
+        );
+      }
+      if (request.expectedRecordVersion !== record.recordVersion) {
+        throw new ChangeRunRuntimeError(
+          'record_version_conflict',
+          `expectedRecordVersion ${request.expectedRecordVersion} does not match current Record version ${record.recordVersion}.`,
+          projectRunView(
+            record,
+            deps.resolveSourceState?.(record) ?? 'active',
+            deps.plan
+          )
+        );
+      }
+
+      const stimulus = controlStimulus(record, request);
+      const intermediate = reduceCanonicalRunRecord(record, stimulus);
+      if (!intermediate.ok) {
+        throw new Error(`facade control failed: ${intermediate.failure.message}`);
+      }
+
+      let collected: ReturnType<typeof collectSettleStimuli> = {
+        stimuli: [],
+        granted: [],
+      };
+      if (intermediate.record.terminal === undefined) {
+        const reconciled = reconcile(deps.plan, intermediate.record);
+        if (!reconciled.ok) {
+          throw new Error(
+            `facade control reconcile failed: ${reconciled.failure.message}`
+          );
+        }
+        collected = collectSettleStimuli(
+          intermediate.record,
+          reconciled.actions,
+          context.deliveryMode
+        );
+      }
+
+      const result = reduceCandidateBatch(record, [
+        stimulus,
+        ...collected.stimuli,
+      ]);
       if (!result.ok) {
-        throw new Error(`facade control failed: ${result.failure.message}`);
+        throw new Error(`facade control settle failed: ${result.failure.message}`);
       }
       deps.store.commit(deps.plan.runId, result.record);
-      return asPromise(receipt(result.record, 'advanced', [], deps.resolveSourceState, deps.plan));
+      const disposition: ChangeRunReceipt['disposition'] =
+        result.record.terminal !== undefined
+          ? 'terminal'
+          : result.record.waits.length > 0 && collected.granted.length === 0
+            ? 'waiting'
+            : 'advanced';
+      return asPromise(
+        receipt(
+          result.record,
+          disposition,
+          collected.granted,
+          deps.resolveSourceState,
+          deps.plan
+        )
+      );
     },
   };
+}
+
+function controlStimulus(
+  record: CanonicalRunRecord,
+  request: ChangeRunControlRequest
+): RunStimulus {
+  const command = request.command;
+  switch (command.kind) {
+    case 'resume':
+      return { kind: 'resume-wait', waitId: command.waitId };
+    case 'decision': {
+      const wait = record.waits.find(
+        (candidate) => candidate.waitId === command.waitId
+      );
+      if (wait?.kind === 'human-required') {
+        if (
+          command.decisionId !== 'retry' &&
+          command.decisionId !== 'escalate'
+        ) {
+          throw new Error(
+            'facade control failed: human-required decisions must be retry or escalate.'
+          );
+        }
+        return {
+          kind: 'decide-human',
+          waitId: command.waitId,
+          decisionId: command.decisionId,
+          outcome: command.outcome,
+          evidence: command.evidence ?? [],
+        };
+      }
+      return {
+        kind: 'decide-gate',
+        waitId: command.waitId,
+        decisionId: command.decisionId,
+        outcome: command.outcome,
+      };
+    }
+    case 'accept-workspace-revision':
+      return {
+        kind: 'accept-workspace-revision',
+        waitId: command.waitId,
+        revision: command.revision,
+        evidence: command.evidence,
+      };
+    case 'escalate':
+      return {
+        kind: 'escalate',
+        code: 'user_escalated',
+        reason: command.reason,
+      };
+    case 'cancel':
+      return {
+        kind: 'cancel',
+        ...(command.reason === undefined ? {} : { reason: command.reason }),
+      };
+  }
 }
 
 export { asPromise };
