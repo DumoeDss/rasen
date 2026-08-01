@@ -1,4 +1,6 @@
-## Requirement: Update performs a store-identity migration pass
+## ADDED Requirements
+
+### Requirement: Update performs a store-identity migration pass
 
 After completing the tool and version propagation and the multi-project update offer, `rasen update` SHALL perform a machine-wide store-identity migration pass that mints permanent identities for eligible registered Stores that lack one, backfills the uid into every affected project's `storeMemberships` hints, and re-keys the machine Store registry by permanent identity when every Store entry carries one.
 

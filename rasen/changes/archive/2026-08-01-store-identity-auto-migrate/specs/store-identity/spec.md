@@ -1,4 +1,6 @@
-## Requirement: A Store created before permanent identities keeps working
+## MODIFIED Requirements
+
+### Requirement: A Store created before permanent identities keeps working
 
 A Store whose metadata predates permanent identities SHALL remain fully readable and usable. Commands SHALL resolve it, report it, and operate on it exactly as before, while noting that it has no permanent identity yet and naming the command that would add one. Reading a Store SHALL NOT modify its metadata; the permanent identity SHALL be added only when the user explicitly runs the identity upgrade — either the single-store `rasen store upgrade-identity <store> --apply` or the batch `rasen store upgrade-identity --all --apply`, or implicitly as the store-identity migration step of `rasen update` (which the user explicitly invoked).
 
@@ -64,7 +66,7 @@ A Store whose metadata predates permanent identities SHALL remain fully readable
 - **AND** the registry re-key is a no-op
 - **AND** the summary reports that all Stores already carry a permanent identity
 
-## Requirement: The machine's Store registry records Stores by permanent identity
+### Requirement: The machine's Store registry records Stores by permanent identity
 
 The machine's Store registry SHALL identify Store entries by permanent identity, keeping the display alias as a lookup index that MAY match several entries. An existing registry SHALL be read exactly as written, and SHALL be rewritten in the new form only after a command the user ran to change it. A rewrite SHALL be refused, with the affected entries named, when any Store entry has no permanent identity to key on; the registry SHALL then keep its existing form rather than having identities invented for it. Registry writes SHALL be atomic, so an interrupted write never leaves a partially written registry.
 
@@ -108,7 +110,9 @@ The batch identity migration (`rasen store upgrade-identity --all --apply` and t
 - **THEN** both registrations are retained as distinct entries
 - **AND** resolving that alias reports ambiguity rather than choosing one
 
-## Requirement: Store identity warnings are deduplicated per invocation
+## ADDED Requirements
+
+### Requirement: Store identity warnings are deduplicated per invocation
 
 The `storeMembershipsWithoutIdentity` warning SHALL fire at most once per command invocation, regardless of how many times the project configuration is parsed during that invocation. A warning that the user has already seen within the same command SHALL NOT repeat. This deduplication SHALL apply to warning-level diagnostics only; error-level diagnostics SHALL remain emitted on every occurrence.
 
