@@ -6,8 +6,8 @@
  * only redirect it) against the enumerated scenarios in design.md's table.
  * Rows 1-3 and 14 are the non-regression guarantee: an existing (legacy,
  * marker-absent) install must never lose an expert. Rows 4-11 are the
- * flipped semantics once the marker is set. Row 13 is the qa-only -> qa
- * sidecar alias under selection.
+ * flipped semantics once the marker is set. Consolidated identities follow
+ * the existing unknown-id path and exact generated-directory cleanup.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { promises as fs } from 'fs';
@@ -21,6 +21,7 @@ import { ALL_EXPERTS, ALL_WORKFLOWS, QUALITY_FLOOR_EXPERTS } from '../../src/cor
 import { getExpertSkillDefinitions } from '../../src/core/workflow-registry/index.js';
 import { resolveProjectHome } from '../../src/core/project-home.js';
 import { EXPERT_SELECTION_ACK_FILE_NAME } from '../../src/core/expert-selection-state.js';
+import { RETIRED_CONSOLIDATED_EXPERT_SKILL_DIRS } from '../../src/core/legacy-cleanup.js';
 
 /**
  * A fresh init always writes its OWN project's expert-selection
@@ -176,7 +177,7 @@ describe('expert install-set matrix (6b)', () => {
     expect(await installedExpertIds(testDir)).toEqual(['review']);
   });
 
-  it('row 12 interplay: verify-enhanced-command closure pulls review, cso, qa, qa-only, design-review', async () => {
+  it('row 12 interplay: verify-enhanced-command closure pulls review, cso, qa, design-review once', async () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
@@ -188,19 +189,19 @@ describe('expert install-set matrix (6b)', () => {
     await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
 
     expect(await installedExpertIds(testDir)).toEqual(
-      ['cso', 'design-review', 'qa', 'qa-only', 'review'].sort()
+      ['cso', 'design-review', 'qa', 'review'].sort()
     );
   });
 
-  it('row 9: post-flip picker unchecking a non-floor, unreferenced expert (tdd) prunes it on update', async () => {
+  it('row 9: post-flip picker unchecking a non-floor, unreferenced expert (codex) prunes it on update', async () => {
     // Start from a full install (marker set by fresh init: all current experts).
     await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
-    expect(await installedExpertIds(testDir)).toContain('tdd');
+    expect(await installedExpertIds(testDir)).toContain('codex');
 
     // Simulate the picker persisting a `custom` selection matching
-    // full-minus-tdd (applyProfileState's write shape): every workflow +
-    // every expert except `tdd`, marker already set from the fresh init above.
-    const prunedSelection = [...ALL_WORKFLOWS, ...ALL_EXPERTS].filter((id) => id !== 'tdd');
+    // full-minus-codex (applyProfileState's write shape): every workflow +
+    // every expert except `codex`, marker already set from the fresh init above.
+    const prunedSelection = [...ALL_WORKFLOWS, ...ALL_EXPERTS].filter((id) => id !== 'codex');
     saveGlobalConfig({
       ...getGlobalConfig(),
       profile: 'custom',
@@ -210,7 +211,7 @@ describe('expert install-set matrix (6b)', () => {
 
     await new UpdateCommand({ force: true }).execute(testDir);
 
-    expect(await installedExpertIds(testDir)).not.toContain('tdd');
+    expect(await installedExpertIds(testDir)).not.toContain('codex');
     expect(await installedExpertIds(testDir)).toHaveLength(ALL_EXPERTS.length - 1);
   });
 
@@ -262,7 +263,7 @@ describe('expert install-set matrix (6b)', () => {
     }
   });
 
-  it('row 13: a custom selection naming qa-only installs it (with the qa sidecar materialized)', async () => {
+  it('row 13: a stored retired id is warned/dropped and its exact stale directory is removed', async () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
@@ -271,13 +272,47 @@ describe('expert install-set matrix (6b)', () => {
       expertSelectionExplicit: true,
     });
 
-    await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+    const stale = path.join(testDir, '.claude', 'skills', 'rasen-qa-only');
+    await fs.mkdir(stale, { recursive: true });
+    await fs.writeFile(path.join(stale, 'SKILL.md'), 'stale\n');
 
-    const qaOnlySkill = path.join(testDir, '.claude', 'skills', 'rasen-qa-only', 'SKILL.md');
-    expect(await fileExists(qaOnlySkill)).toBe(true);
-    // qa-only borrows qa's sidecar tree (sidecarSourceId: 'qa') — the
-    // reference doc should have materialized alongside SKILL.md.
-    const sidecarFile = path.join(testDir, '.claude', 'skills', 'rasen-qa-only', 'references', 'issue-taxonomy.md');
-    expect(await fileExists(sidecarFile)).toBe(true);
+    const warnSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    expect(await fileExists(path.join(stale, 'SKILL.md'))).toBe(false);
+    expect(await installedExpertIds(testDir)).toEqual([]);
+    expect(getExpertSkillDefinitions().map((expert) => expert.id)).not.toContain('qa-only');
+  });
+
+  it('init and an otherwise up-to-date update prune all six exact names but preserve neighbors', async () => {
+    const skillsRoot = path.join(testDir, '.claude', 'skills');
+    await fs.mkdir(skillsRoot, { recursive: true });
+    for (const dirName of RETIRED_CONSOLIDATED_EXPERT_SKILL_DIRS) {
+      await fs.mkdir(path.join(skillsRoot, dirName), { recursive: true });
+      await fs.writeFile(path.join(skillsRoot, dirName, 'SKILL.md'), 'stale\n');
+    }
+    const neighbor = path.join(skillsRoot, 'rasen-tdd-notes');
+    await fs.mkdir(neighbor, { recursive: true });
+    await fs.writeFile(path.join(neighbor, 'keep.md'), 'keep\n');
+
+    await new InitCommand({ tools: 'claude', force: true, profile: 'core' }).execute(testDir);
+    for (const dirName of RETIRED_CONSOLIDATED_EXPERT_SKILL_DIRS) {
+      expect(await fileExists(path.join(skillsRoot, dirName))).toBe(false);
+    }
+    expect(await fileExists(path.join(neighbor, 'keep.md'))).toBe(true);
+
+    for (const dirName of RETIRED_CONSOLIDATED_EXPERT_SKILL_DIRS) {
+      await fs.mkdir(path.join(skillsRoot, dirName), { recursive: true });
+      await fs.writeFile(path.join(skillsRoot, dirName, 'SKILL.md'), 'stale again\n');
+    }
+    await new UpdateCommand().execute(testDir);
+    for (const dirName of RETIRED_CONSOLIDATED_EXPERT_SKILL_DIRS) {
+      expect(await fileExists(path.join(skillsRoot, dirName))).toBe(false);
+    }
+    expect(await fileExists(path.join(neighbor, 'keep.md'))).toBe(true);
   });
 });

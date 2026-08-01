@@ -38,7 +38,7 @@ finish in staging and hand the user the validated path and exact import command.
 Edit only \`workflow.yaml\`, \`SKILL.md\`, and sidecars that are actually needed.
 
 - Put workflow dependencies in \`requires.workflows\`, not only in prose.
-- Put always-installed expert dependencies in \`requires.skills\`.
+- Put required catalog expert dependencies in \`requires.skills\`; dependency closure installs them even when the profile did not select them directly.
 - Put optional related workflows in \`recommends.workflows\`.
 - Optionally declare a human-readable display title in the manifest's
   \`skill:\` block (\`name\` is required inside the block; \`category\` and
@@ -57,10 +57,12 @@ reported and either resolved or explicitly explained; never hide them.
 
 ## 5. Independent semantic review
 
-Invoke \`rasen-workflow-review\` on the validated staging directory. When
-multi-agent execution is available, dispatch a reviewer that did not author the
-draft. Otherwise perform a clearly separated second pass using the review
-checklist. Static validity does not replace this review.
+After static validation passes, read the bundled installed reference
+\`references/workflow-review/README.md\`. When multi-agent execution is
+available, give that reference and the validated staging directory to a
+reviewer that did not author the draft. Otherwise perform a clearly separated,
+read-only second pass using the bundled review procedure. The author does not
+verify their own work merely because static validation passed.
 
 Apply required findings in staging, then run
 \`rasen workflow validate <staging-path> --json\` again until it is valid.

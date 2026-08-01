@@ -11,8 +11,8 @@
 
 OpenSpec 的流程是 `propose → apply → archive`，而 OPSX 专家技能融合工作又新增了专家技能与运行时命令：
 
-- **规划期评审**由 propose 工作流对设计密集型 change 的方法论咨询（`/codebase-design`，条件式引用）覆盖；`schemas/spec-driven/schema.yaml` 不再携带任何 `enhance` 钩子（机制保留、当前无使用方）。
-- **一次性代码评审**以始终安装的专家技能 `openspec-review`（源：`src/core/templates/experts/review.ts`）形式存在。
+- **规划期评审**由 `rasen-propose` 针对设计密集型 change 按需读取内置的 `references/codebase-design/README.md` 覆盖；`schemas/spec-driven/schema.yaml` 不再携带任何 `enhance` 钩子（机制保留、当前无使用方）。
+- **一次性代码评审**以目录专家技能 `rasen-review`（源：`src/core/templates/experts/review.ts`）形式存在；profile 可以直接选择它，需要它的 workflow 也会通过依赖闭包安装它。
 - **验证 / 交付**以融合命令（`verify-enhanced`、`ship`）形式存在 —— 参见进行中的 change `openspec/changes/add-opsx-fusion-commands/`。
 
 **缺失**的是一条一等公民级别的、在 `apply` 之后将这些环节串联起来的**迭代循环**：
@@ -127,7 +127,7 @@ OpenSpec 面向约 24 个工具；`SendMessage`/agent-teams 是 **Claude-Code �
    - 加入 `getCommandTemplates()`：`{ template: getOpsxReviewCycleCommandTemplate(), id: 'review-cycle' }`
    - 在文件顶部添加 import。
 4. **Profiles** `src/core/profiles.ts`：将 `'review-cycle'` 加入 `ALL_WORKFLOWS`。将其排除在 `CORE_WORKFLOWS` 之外（可选启用，与其他融合命令一致）。
-5. **复用而非重复评审引擎**：指令调用现有的 `openspec-review` 专家技能（始终安装）来做评审/复审判断；review-cycle 只负责*循环 + 分级 + 不变量 + 终止 + 恢复*。
+5. **复用而非重复评审引擎**：指令调用现有的 `rasen-review` 目录专家技能（由 review-cycle 通过依赖闭包装入）来做评审/复审判断；review-cycle 只负责*循环 + 分级 + 不变量 + 终止 + 恢复*。
 6. **适配器**：无需改动 —— 生成过程会自动向所有工具扇出；Claude 适配器会产出 `.claude/skills/openspec-review-cycle/SKILL.md` + `.claude/commands/opsx/review-cycle.md`。
 7. **可选的 schema 提示（独立、可选）**：一个分叉出的 schema `spec-driven-reviewed`，其 `apply.instruction` 将 `/opsx:review-cycle` 指向为推荐的下一步。**不要**修改核心的 `spec-driven` schema。这纯属建议性质；该工作流没有它也能运行。
 8. **文档**：实现后，向 `docs/commands.md` + `docs/workflows.md`（及 `docs/zh/` 镜像）添加面向用户的章节；本设计文档是其立论依据。

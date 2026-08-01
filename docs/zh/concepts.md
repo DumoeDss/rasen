@@ -533,11 +533,11 @@ artifacts:
 - **模式（schema）维持三层。** 模式解析（项目 → 用户 → 包）不受这个模型影响。后续的一个变更会在工作流的 `requires` 字段里预留一个 `schemas` 槽位，仅用于存在性校验——不会把 schema 并入工作流/pipeline 的可安装包机制。
 - **`-command` 后缀暂不改。** 一些 driver 的 ID 以 `-command` 结尾（`auto-command`、`goal-command`），这是历史原因，和 `kind` 字段无关。把它们改名（例如 `auto-command` → `auto`）是一项延后、单独排期的清理工作，不属于这个模型的范围。
 - **分享靠文件，不是应用商店。** 可安装的工作流和 pipeline 以 `.rasenpkg` 文件的形式，通过手工传递、git 或 pull request 分享——没有托管的注册中心或应用商店，这个模型里也没有计划做一个。
-- **信任边界。** 一份共享的工作流或 pipeline 本质上是一段可执行的 prompt：导入它，就意味着一个 AI agent 会读取并按其内容行动。Rasen 不用签名体系来解决这个问题，而是用事务化安装（校验通过之前不写入任何东西）、内容 digest（让重装或更新能证明底层内容没有被篡改）、静态 `validate`（在安装前完成检查），以及 `workflow-author` / `workflow-review` 两个专家（用于编写和审查包）来缓解风险。在导入前审查来源——就像审查一个要加进项目的依赖一样。
+- **信任边界。** 一份共享的工作流或 pipeline 本质上是一段可执行的 prompt：导入它，就意味着一个 AI agent 会读取并按其内容行动。Rasen 不用签名体系来解决这个问题，而是用事务化安装（校验通过之前不写入任何东西）、内容 digest（让重装或更新能证明底层内容没有被篡改）、静态 `validate`（在安装前完成检查），以及 `rasen-workflow-author` 内置的独立审查分支来缓解风险。在导入前审查来源——就像审查一个要加进项目的依赖一样。
 
 ### 接下来的方向
 
-以下三个后续变更是方向，不是已交付的行为：显式依赖图，让工作流的 `requires` 能表达真实的边（workflow → workflow、workflow → pipeline、driver → pipeline），而不是靠"全体必装"来兜底缺失的依赖数据；pipeline 通过和工作流相同的 `.rasenpkg` 机制变得可安装、可导出，CLI 动词集（`init`/`validate`/`import`/`export`/`delete`）随之补齐；以及 21 个内置专家（`rasen-review`、`rasen-qa` 等）加入同一个注册表，归为 `kind: 'expert'`，让它们的安装/digest/依赖故事不再是特例。这些都尚未上线——目前每个内置工作流的 `requires` 字段仍然是空的，也还没有 `rasen pipeline import`。
+统一目录现在包含 12 个 `kind: 'expert'` 的内置专家（`rasen-review`、`rasen-qa` 等），并带有已声明的工作流依赖和纳入 digest 的 sidecar。工作流和 pipeline 都可作为 `.rasenpkg` 单元导入/导出；所有外部 prompt 包仍遵守相同的信任边界。
 
 ## 归档（Archive）
 

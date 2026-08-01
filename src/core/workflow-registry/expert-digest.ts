@@ -6,6 +6,7 @@ import canonicalize from 'canonicalize';
 
 import type { SkillTemplate } from '../templates/types.js';
 import { sha256 } from './digest.js';
+import type { WorkflowFileEntry } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,15 +41,20 @@ export function resolveExpertSidecarDir(sourceId: string): string {
   return path.resolve(__dirname, '..', '..', '..', 'skills', 'experts', sourceId);
 }
 
+/** Resolves a built-in workflow sidecar tree by installed skill directory. */
+export function resolveWorkflowSidecarDir(dirName: string): string {
+  return path.resolve(__dirname, '..', '..', '..', 'skills', 'workflows', dirName);
+}
+
 /**
  * Recursively hashes a sidecar directory tree, applying the same filter and
  * traversal shape as the materialization path. Returns `[]` when `sourceDir`
  * does not exist (e.g. a published npm package that does not bundle
  * `skills/`, or an expert with no sidecar files of its own).
  */
-export function hashSidecarTree(sourceDir: string): HashedSidecarFile[] {
+export function readSidecarTree(sourceDir: string): WorkflowFileEntry[] {
   if (!fs.existsSync(sourceDir)) return [];
-  const results: HashedSidecarFile[] = [];
+  const results: WorkflowFileEntry[] = [];
 
   const visit = (directory: string, prefix: string): void => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -59,7 +65,8 @@ export function hashSidecarTree(sourceDir: string): HashedSidecarFile[] {
         continue;
       }
       if (!entry.isFile() || !isSidecarFile(entry.name)) continue;
-      results.push({ path: logicalPath, sha256: sha256(fs.readFileSync(entryPath)) });
+      const content = fs.readFileSync(entryPath, 'utf8');
+      results.push({ path: logicalPath, content, sha256: sha256(content) });
     }
   };
 
@@ -68,12 +75,17 @@ export function hashSidecarTree(sourceDir: string): HashedSidecarFile[] {
   return results;
 }
 
+export function hashSidecarTree(sourceDir: string): HashedSidecarFile[] {
+  return readSidecarTree(sourceDir).map(({ path: logicalPath, sha256: digest }) => ({
+    path: logicalPath,
+    sha256: digest,
+  }));
+}
+
 /**
  * Digest preimage for `kind: 'expert'` definitions, distinct from
  * `digestBuiltIn` (skill) and `computeWorkflowDigest` (inline
- * `files[]`). Covers the inline template plus the hashed sidecar tree, so two
- * experts sharing a sidecar directory (`qa`/`qa-only`) still get distinct
- * digests because `id`/`dirName`/`template` differ.
+ * `files[]`). Covers the inline template plus the hashed sidecar tree.
  */
 export function digestExpert(
   id: string,

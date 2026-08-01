@@ -143,15 +143,20 @@ export function hasToolProfileDrift(
   const definitionById = new Map(definitions.map((definition) => [definition.id, definition]));
   const skillsDir = resolveToolSkillsRoot(tool, projectPath);
 
-  // Skills are forward-required for every selected workflow. The retention
-  // runner's sidecars are part of its executable contract, so a partial
-  // runner must trigger ordinary regeneration just like a missing SKILL.md.
+  // Skills are forward-required for every selected workflow. Every packaged
+  // sidecar recorded by the catalog is part of the executable contract, so a
+  // partial host skill must trigger regeneration just like a missing SKILL.md.
   for (const workflow of knownDesiredWorkflows) {
-    const dirName = definitionById.get(workflow)!.skill.dirName;
-    const requiredFiles = workflow === RETENTION_RUNNER_WORKFLOW_ID
-      ? RETENTION_RUNNER_REQUIRED_FILES
-      : ['SKILL.md'];
-    if (requiredFiles.some((fileName) => !fs.existsSync(path.join(skillsDir, dirName, fileName)))) {
+    const definition = definitionById.get(workflow)!;
+    const dirName = definition.skill.dirName;
+    const requiredFiles = new Set<string>(['SKILL.md']);
+    if (workflow === RETENTION_RUNNER_WORKFLOW_ID) {
+      for (const fileName of RETENTION_RUNNER_REQUIRED_FILES) requiredFiles.add(fileName);
+    }
+    for (const file of definition.files) {
+      if (file.path !== 'SKILL.md' && file.path !== 'workflow.yaml') requiredFiles.add(file.path);
+    }
+    if ([...requiredFiles].some((fileName) => !fs.existsSync(path.join(skillsDir, dirName, ...fileName.split('/'))))) {
       return true;
     }
   }

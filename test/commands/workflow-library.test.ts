@@ -146,8 +146,11 @@ describe('workflow command', () => {
     expect(lastJson().workflows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'review', source: 'built-in', kind: 'expert' }),
-        expect.objectContaining({ id: 'qa-only', source: 'built-in', kind: 'expert' }),
+        expect.objectContaining({ id: 'qa', source: 'built-in', kind: 'expert' }),
       ])
+    );
+    expect(lastJson().workflows).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'qa-only' })])
     );
   });
 

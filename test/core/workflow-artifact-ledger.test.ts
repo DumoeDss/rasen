@@ -19,6 +19,7 @@ import {
   type LearnedArtifactEntry,
 } from '../../src/core/workflow-artifact-ledger.js';
 import { loadWorkflowCatalog } from '../../src/core/workflow-registry/index.js';
+import { copySkillSidecars } from '../../src/core/shared/skill-generation.js';
 
 describe('workflow artifact ledger', () => {
   let home: string;
@@ -66,6 +67,27 @@ describe('workflow artifact ledger', () => {
     fs.writeFileSync(sidecar, 'checklist\n');
     return { skill, sidecar, directory };
   }
+
+  it('tracks built-in host sidecars and detects changed or missing nested references', () => {
+    const definition = loadWorkflowCatalog().get('propose')!;
+    const directory = path.join(project, '.claude', 'skills', definition.skill.dirName);
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, 'SKILL.md'), 'generated propose skill\n');
+    copySkillSidecars('propose', directory);
+
+    syncWorkflowArtifactLedger(project, 'claude', ['propose']);
+    expect(hasWorkflowArtifactLedgerDrift(project, ['claude'], ['propose'])).toBe(false);
+
+    const entry = path.join(directory, 'references', 'codebase-design', 'README.md');
+    fs.appendFileSync(entry, '\nlocal drift\n');
+    expect(hasWorkflowArtifactLedgerDrift(project, ['claude'], ['propose'])).toBe(true);
+
+    copySkillSidecars('propose', directory);
+    syncWorkflowArtifactLedger(project, 'claude', ['propose']);
+    const nested = path.join(directory, 'references', 'codebase-design', 'DESIGN-IT-TWICE.md');
+    fs.rmSync(nested);
+    expect(hasWorkflowArtifactLedgerDrift(project, ['claude'], ['propose'])).toBe(true);
+  });
 
   it('preserves both sections when a tool carries a workflow entry and a learned entry (cross-section)', async () => {
     // Reproduces the combined case the codify change relies on: one tool ledger

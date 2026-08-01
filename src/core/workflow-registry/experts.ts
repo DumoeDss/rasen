@@ -2,31 +2,24 @@ import {
   getBenchmarkSkillTemplate,
   getCarefulSkillTemplate,
   getChromeUseSkillTemplate,
-  getCodebaseDesignSkillTemplate,
   getCodexSkillTemplate,
   getCsoSkillTemplate,
   getDesignConsultationSkillTemplate,
   getDesignReviewSkillTemplate,
   getInvestigateSkillTemplate,
-  getNavigatorSkillTemplate,
   getOfficeHoursSkillTemplate,
-  getPrototypeSkillTemplate,
-  getQaOnlySkillTemplate,
   getQaSkillTemplate,
   getReviewSkillTemplate,
-  getTddSkillTemplate,
   getWorkflowAuthorSkillTemplate,
-  getWorkflowReviewSkillTemplate,
 } from '../templates/skill-templates.js';
 import type { SkillTemplate } from '../templates/types.js';
-import { digestExpert, hashSidecarTree, resolveExpertSidecarDir } from './expert-digest.js';
+import { digestExpert, readSidecarTree, resolveExpertSidecarDir } from './expert-digest.js';
 import type { WorkflowDefinition } from './types.js';
 
 export interface ExpertSkillDefinition {
   id: string;
   dirName: string;
   template: SkillTemplate;
-  sidecarSourceId?: string;
 }
 
 export function getExpertSkillDefinitions(): ExpertSkillDefinition[] {
@@ -34,21 +27,15 @@ export function getExpertSkillDefinitions(): ExpertSkillDefinition[] {
     { id: 'benchmark', dirName: 'rasen-benchmark', template: getBenchmarkSkillTemplate() },
     { id: 'careful', dirName: 'rasen-careful', template: getCarefulSkillTemplate() },
     { id: 'chrome-use', dirName: 'rasen-chrome-use', template: getChromeUseSkillTemplate() },
-    { id: 'codebase-design', dirName: 'rasen-codebase-design', template: getCodebaseDesignSkillTemplate() },
     { id: 'codex', dirName: 'rasen-codex', template: getCodexSkillTemplate() },
     { id: 'cso', dirName: 'rasen-cso', template: getCsoSkillTemplate() },
     { id: 'design-consultation', dirName: 'rasen-design-consultation', template: getDesignConsultationSkillTemplate() },
     { id: 'design-review', dirName: 'rasen-design-review', template: getDesignReviewSkillTemplate() },
     { id: 'investigate', dirName: 'rasen-investigate', template: getInvestigateSkillTemplate() },
-    { id: 'navigator', dirName: 'rasen-navigator', template: getNavigatorSkillTemplate() },
     { id: 'office-hours', dirName: 'rasen-office-hours', template: getOfficeHoursSkillTemplate() },
-    { id: 'prototype', dirName: 'rasen-prototype', template: getPrototypeSkillTemplate() },
     { id: 'qa', dirName: 'rasen-qa', template: getQaSkillTemplate() },
-    { id: 'qa-only', dirName: 'rasen-qa-only', template: getQaOnlySkillTemplate(), sidecarSourceId: 'qa' },
     { id: 'review', dirName: 'rasen-review', template: getReviewSkillTemplate() },
-    { id: 'tdd', dirName: 'rasen-tdd', template: getTddSkillTemplate() },
     { id: 'workflow-author', dirName: 'rasen-workflow-author', template: getWorkflowAuthorSkillTemplate() },
-    { id: 'workflow-review', dirName: 'rasen-workflow-review', template: getWorkflowReviewSkillTemplate() },
   ];
 }
 
@@ -58,8 +45,8 @@ export function getExpertSkillNames(): ReadonlySet<string> {
 
 /**
  * Experts as unified-catalog units (`kind: 'expert'`, `source: 'built-in'`,
- * no command, empty `files[]` — sidecar reference files stay directory-backed
- * per the hybrid model, see design.md D1). Composed into
+ * no command. Packaged sidecars are represented in `files[]` for digest and
+ * installed-artifact freshness while remaining directory-backed at source. Composed into
  * `loadWorkflowCatalog` in `./registry.ts` alongside the built-in workflows.
  *
  * M2: memoized (module-level cache) — the sidecar tree is packaged and
@@ -73,7 +60,8 @@ let cachedBuiltInExpertDefinitions: WorkflowDefinition[] | undefined;
 export function getBuiltInExpertDefinitions(): WorkflowDefinition[] {
   if (!cachedBuiltInExpertDefinitions) {
     cachedBuiltInExpertDefinitions = getExpertSkillDefinitions().map((expert) => {
-      const sidecars = hashSidecarTree(resolveExpertSidecarDir(expert.sidecarSourceId ?? expert.id));
+      const files = readSidecarTree(resolveExpertSidecarDir(expert.id));
+      const sidecars = files.map(({ path, sha256 }) => ({ path, sha256 }));
       return {
         id: expert.id,
         source: 'built-in',
@@ -82,9 +70,8 @@ export function getBuiltInExpertDefinitions(): WorkflowDefinition[] {
         skill: { dirName: expert.dirName, template: expert.template },
         requires: { workflows: [], skills: [], pipelines: [], schemas: [] },
         recommends: { workflows: [] },
-        files: [],
+        files,
         digest: digestExpert(expert.id, expert.dirName, expert.template, sidecars),
-        sidecarSourceId: expert.sidecarSourceId,
       };
     });
   }

@@ -46,8 +46,9 @@ export const ALL_EXPERTS: readonly string[] = getExpertSkillDefinitions().map(
 );
 
 /**
- * The six quality-floor experts the built-in pipelines fan out to
- * (`full-feature` dispatches all six; `benchmark` is floor-only-by-profile
+ * The five quality-floor expert identities the built-in pipelines fan out to
+ * (`full-feature` keeps six stage nodes because QA has mutually exclusive UI
+ * and report-only modes; `benchmark` is floor-only-by-profile
  * since no workflow's `requires.skills` names it, so closure alone would
  * never install it). This is the `core` profile's default expert set.
  */
@@ -55,7 +56,6 @@ export const QUALITY_FLOOR_EXPERTS: readonly string[] = [
   'review',
   'cso',
   'qa',
-  'qa-only',
   'benchmark',
   'design-review',
 ];

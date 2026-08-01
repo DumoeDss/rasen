@@ -327,8 +327,7 @@
     "repairNext": "下一步：{command}"
   },
   "expertSkills": {
-    "workflowAuthor": "通过暂存、静态校验、独立审查和经用户批准的导入，安全地编写可安装工作流",
-    "workflowReview": "从语义质量、安全边界、可移植性、依赖关系和完整性方面独立审查可安装工作流"
+    "workflowAuthor": "通过暂存、静态校验、内置独立审查分支和经用户批准的导入，安全地编写可安装工作流"
   },
   "workflowLibrary": {
     "ui": {
@@ -676,10 +675,6 @@
           "name": "Chrome 操作",
           "description": "通过 CDP 驱动真实 Chrome 浏览器，获取 DOM 快照、执行点击、捕获网络请求和截图"
         },
-        "codebase-design": {
-          "name": "代码库设计",
-          "description": "进行两轮设计，深化模块边界，并使实现与目标架构保持一致"
-        },
         "codex": {
           "name": "Codex",
           "description": "调用 OpenAI Codex CLI 进行独立审查或实现"
@@ -700,41 +695,21 @@
           "name": "调查",
           "description": "在尝试修复前，用证据复现、隔离并找到缺陷根因"
         },
-        "navigator": {
-          "name": "导航",
-          "description": "代码库技能与工作流的地图，以及各自的适用时机"
-        },
         "office-hours": {
           "name": "产品咨询",
           "description": "构建前检验产品需求和设计方向"
         },
-        "prototype": {
-          "name": "原型",
-          "description": "构建一次性 UI 或逻辑试验，快速回答问题"
-        },
         "qa": {
           "name": "QA",
-          "description": "通过 CDP 代理探索应用、记录有证据的问题并修复问题"
-        },
-        "qa-only": {
-          "name": "QA（仅报告）",
-          "description": "执行与 QA 相同的探索和健康评分，但绝不编辑代码"
+          "description": "浏览器 QA，默认包含修复循环，也支持显式的仅报告/非 UI 模式"
         },
         "review": {
           "name": "审查",
           "description": "合入前结合完整代码库上下文审查 PR，按严重程度标记审查问题并循环修复"
         },
-        "tdd": {
-          "name": "TDD",
-          "description": "遵循红、绿、重构纪律，并提供模拟指导"
-        },
         "workflow-author": {
           "name": "工作流编写",
           "description": "通过分阶段处理和独立审查，安全地编写可安装工作流与流水线"
-        },
-        "workflow-review": {
-          "name": "工作流审查",
-          "description": "独立审查可安装工作流和流水线的质量与安全性"
         }
       },
       "workflowsGroupLabel": "-- 工作流 --",

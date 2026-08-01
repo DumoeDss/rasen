@@ -15,7 +15,7 @@ export function getApplyChangeSkillTemplate(): SkillTemplate {
 
 ${STORE_SELECTION_GUIDANCE}
 
-**Implementation disciplines (optional):** For test-first work, consult the \`rasen-tdd\` skill — agree the seams up front, drive red→green, and keep only the tests worth keeping. For changes touching destructive operations (\`rm -rf\`, \`DROP TABLE\`, force-push), consult the \`rasen-careful\` skill before running them. These are conditional references, not required steps; don't inline the expert bodies.
+**Implementation disciplines (conditional):** When test-first work is selected, read the installed relative entry \`references/tdd/README.md\` before implementation, agree the seams, and follow its vertical red → green loop. Do not load that reference when test-first work is not selected. For changes touching destructive operations (\`rm -rf\`, \`DROP TABLE\`, force-push), consult the independent \`rasen-careful\` skill before running them. These are shallow routes; do not inline either discipline's body.
 
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 

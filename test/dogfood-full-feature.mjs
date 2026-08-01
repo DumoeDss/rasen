@@ -57,7 +57,7 @@ const MEMBERS = [
   'root:stage:benchmark',     // condition: performance-sensitive
   'root:stage:design-review', // condition: ui
   'root:stage:qa',            // condition: ui
-  'root:stage:qa-only',       // condition: non-ui
+  'root:stage:qa-report-only', // condition: non-ui
 ];
 
 // ---------------------------------------------------------------------------
