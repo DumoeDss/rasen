@@ -10,8 +10,19 @@ import chalk from 'chalk';
 import path from 'path';
 import * as fs from 'fs';
 import { getSchemaDir, listSchemas } from '../../core/artifact-graph/index.js';
+export { DEFAULT_SCHEMA } from '../../core/config.js';
 import type { ReferenceIndexEntry } from '../../core/references.js';
-import { isRootSelectionError } from '../../core/root-selection.js';
+import {
+  isRootSelectionError,
+  isStoreSelectedRoot,
+  type ResolvedOpenSpecRoot,
+} from '../../core/root-selection.js';
+import {
+  evidenceDir,
+  handoffDir,
+  ephemeraDir,
+  resolveExecutionRoot,
+} from '../../core/file-placement.js';
 import { validateChangeName } from '../../utils/change-utils.js';
 import type { ResolvedNextStep } from '../../core/workflow-chain.js';
 
@@ -33,6 +44,40 @@ export interface TaskItem {
   done: boolean;
 }
 
+/**
+ * The per-class landing directories a change-scoped payload always carries
+ * (`file-placement` capability). Absolute, derived from the planning and
+ * execution roots alone — no machine identity, no directory creation.
+ */
+export interface ChangeLandingDirs {
+  /** `<changeRoot>/evidence` — reports, verification output, ship log. */
+  evidenceDir: string;
+  /** `<changeRoot>/handoff` — handoff documents and relay prompts. */
+  handoffDir: string;
+  /** `<executionRoot>/.rasen/changes/<change>/ephemera` — run-state, logs. */
+  ephemeraDir: string;
+}
+
+/**
+ * Resolves the per-class landing directories for a change. Pure derivation
+ * (plus the execution root's read-only `.git` walk for store-selected runs):
+ * it mints no identity, registers nothing, and creates no directories.
+ */
+export function resolveChangeLandingDirs(
+  root: ResolvedOpenSpecRoot,
+  changeDir: string,
+  changeName: string
+): ChangeLandingDirs {
+  const executionRoot = resolveExecutionRoot(root.path, {
+    storeSelected: isStoreSelectedRoot(root),
+  });
+  return {
+    evidenceDir: evidenceDir(changeDir),
+    handoffDir: handoffDir(changeDir),
+    ephemeraDir: ephemeraDir(executionRoot, changeName),
+  };
+}
+
 export interface ApplyInstructions {
   changeName: string;
   changeDir: string;
@@ -49,8 +94,18 @@ export interface ApplyInstructions {
   instruction: string;
   /** Referenced-store index (read-only upstream context; omitted when none declared) */
   references?: ReferenceIndexEntry[];
-  /** Resolved external work directory for process ephemera (design D3); absent when unresolvable. */
+  /**
+   * Legacy machine-home work directory (`change-work-dir` capability):
+   * probe-only, present only when the project already has a machine identity.
+   * Nothing NEW lands there — it exists so sticky-legacy readers can check it.
+   */
   workDir?: string;
+  /** `<changeRoot>/evidence` — always present (`file-placement` capability). */
+  evidenceDir: string;
+  /** `<changeRoot>/handoff` — always present (`file-placement` capability). */
+  handoffDir: string;
+  /** `<executionRoot>/.rasen/changes/<change>/ephemera` — always present. */
+  ephemeraDir: string;
   /**
    * Runtime-resolved next workflow(s), filtered to the installed workflow
    * set (design D1/D3/D4). Distinct from the artifact-authoring `nextSteps`
@@ -58,12 +113,6 @@ export interface ApplyInstructions {
    */
   nextWorkflows: ResolvedNextStep[];
 }
-
-// -----------------------------------------------------------------------------
-// Constants
-// -----------------------------------------------------------------------------
-
-export const DEFAULT_SCHEMA = 'spec-driven';
 
 // -----------------------------------------------------------------------------
 // Utility Functions

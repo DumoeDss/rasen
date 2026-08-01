@@ -738,4 +738,62 @@ describe('store identity CLI surface', () => {
     );
     expect(declaration).toContain(`uid: ${appliedPayload.store.uid}`);
   }, 180_000);
+
+  describe('upgrade-identity --all', () => {
+    it('previews without writing with --dry-run', async () => {
+      await registerStore();
+
+      const before = snapshotDirectory(storeRoot);
+      const result = await runCLI(
+        ['store', 'upgrade-identity', '--all', '--dry-run', '--json'],
+        { cwd: tempDir, env: env() }
+      );
+      expect(result.exitCode, result.stderr).toBe(0);
+      const payload = JSON.parse(result.stdout) as { applied: boolean; stores: Array<{ status: string }> };
+      expect(payload.applied).toBe(false);
+      // Store metadata untouched in preview.
+      expect(snapshotDirectory(storeRoot)).toEqual(before);
+    }, 180_000);
+
+    it('writes and reports with --apply', async () => {
+      await registerStore();
+
+      const result = await runCLI(
+        ['store', 'upgrade-identity', '--all', '--apply', '--json'],
+        { cwd: tempDir, env: env() }
+      );
+      expect(result.exitCode, result.stderr).toBe(0);
+      const payload = JSON.parse(result.stdout) as {
+        applied: boolean;
+        stores: Array<{ id: string; uid: string; status: string }>;
+      };
+      expect(payload.applied).toBe(true);
+      const teamStore = payload.stores.find((s) => s.id === 'team-store');
+      expect(teamStore?.status).toBe('upgraded');
+      expect(teamStore?.uid).toBeTruthy();
+
+      const metadata = fs.readFileSync(
+        path.join(storeRoot, '.rasen-store', 'store.yaml'),
+        'utf-8'
+      );
+      expect(metadata).toContain('version: 2');
+      expect(metadata).toContain(teamStore!.uid);
+    }, 180_000);
+
+    it('single-store flow still works unchanged', async () => {
+      await registerStore();
+
+      const result = await runCLI(
+        ['store', 'upgrade-identity', 'team-store', '--apply', '--json'],
+        { cwd: projectRoot, env: env() }
+      );
+      expect(result.exitCode, result.stderr).toBe(0);
+      const payload = JSON.parse(result.stdout) as {
+        applied: boolean;
+        store: { id: string; uid: string };
+      };
+      expect(payload.applied).toBe(true);
+      expect(payload.store.id).toBe('team-store');
+    }, 180_000);
+  });
 });

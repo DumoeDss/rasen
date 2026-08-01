@@ -7,7 +7,6 @@ import {
   RUNTIME_ADAPTERS,
   detectHostRuntime,
   hasRuntimeCapability,
-  resolveEditBoundaryEnforcement,
   resolveDispatchRoute,
 } from '../../src/core/runtime-adapters.js';
 
@@ -18,19 +17,16 @@ describe('runtime adapter registry', () => {
         canProbeContext: true,
         canAudit: true,
         canDispatch: true,
-        editBoundary: 'hard',
       },
       codex: {
         canProbeContext: true,
         canAudit: true,
         canDispatch: true,
-        editBoundary: 'soft',
       },
       zed: {
         canProbeContext: false,
         canAudit: true,
         canDispatch: false,
-        editBoundary: 'unsupported',
       },
     });
   });
@@ -59,16 +55,6 @@ describe('runtime adapter registry', () => {
     expect(Object.isFrozen(DISPATCH_RUNTIMES)).toBe(true);
   });
 
-  it('caps observed edit-boundary support at the adapter classification', () => {
-    expect(resolveEditBoundaryEnforcement('claude', 'hard')).toBe('hard');
-    expect(resolveEditBoundaryEnforcement('claude', 'soft')).toBe('soft');
-    expect(resolveEditBoundaryEnforcement('codex', 'hard')).toBe('soft');
-    expect(resolveEditBoundaryEnforcement('codex', 'unsupported')).toBe(
-      'unsupported'
-    );
-    expect(resolveEditBoundaryEnforcement('zed', 'hard')).toBe('unsupported');
-    expect(resolveEditBoundaryEnforcement('unknown', 'hard')).toBe('unsupported');
-  });
 });
 
 describe('host runtime detection', () => {
@@ -118,7 +104,7 @@ describe('host x target dispatch routes', () => {
   it.each([
     ['claude', 'claude', 'native'],
     ['claude', 'codex', 'exec-bridge'],
-    ['codex', 'claude', 'unsupported'],
+    ['codex', 'claude', 'exec-bridge'],
     ['codex', 'codex', 'native'],
     ['unknown', 'claude', 'legacy-fallback'],
     ['unknown', 'codex', 'legacy-fallback'],
@@ -128,5 +114,18 @@ describe('host x target dispatch routes', () => {
       target,
       mode,
     });
+  });
+
+  it('identifies each cross-host bridge explicitly', () => {
+    expect(resolveDispatchRoute('claude', 'codex')).toMatchObject({
+      mode: 'exec-bridge',
+      bridge: 'codex-exec',
+    });
+    expect(resolveDispatchRoute('codex', 'claude')).toMatchObject({
+      mode: 'exec-bridge',
+      bridge: 'claude-print',
+    });
+    expect(resolveDispatchRoute('claude', 'claude')).not.toHaveProperty('bridge');
+    expect(resolveDispatchRoute('codex', 'codex')).not.toHaveProperty('bridge');
   });
 });

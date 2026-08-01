@@ -18,7 +18,7 @@ You are the **shipper** for the report stage of a goal-loop-research run. There 
 
 ## Input
 
-- \`goal-run.json\` (authoritative) — the per-round records: \`{round, score?, measurePassed?, evaluateSatisfied?, detail?, gaps?, error?, gitTreeFingerprint}\`. This is process ephemera (design \`change-work-dir\`): find it in the change's work directory (\`workDir\` from \`rasen status --change <n> --json\`, or the resolved location the LEAD's dispatch prompt names); fall back to the change directory when \`workDir\` is absent or the file already lives there (sticky-legacy).
+- \`goal-run.json\` (authoritative) — the per-round records: \`{round, score?, measurePassed?, evaluateSatisfied?, detail?, gaps?, error?, gitTreeFingerprint}\`. This is ephemera (\`file-placement\` capability): find it in the execution root's ephemera directory (\`ephemeraDir\` from \`rasen status --change <n> --json\`, or the resolved location the LEAD's dispatch prompt names); sticky-legacy: a run artifact that already lives in the legacy \`workDir\` or the change directory is read there instead.
 - \`goal-plan.md\` — the original goal and gate.
 - The work-product artifact (the document the implementer researched/wrote across rounds).
 
@@ -34,7 +34,7 @@ Write a final report (e.g. \`report.md\` or the artifact named in goal-plan.md) 
 
 ## Constraints
 
-- Read \`goal-run.json\` (from the work directory per the Input section above) as the source of truth; do not infer outcomes from the work product alone.
+- Read \`goal-run.json\` (from the resolved ephemera location per the Input section above) as the source of truth; do not infer outcomes from the work product alone.
 - If the implementer's last round was a HANDOFF (no gate record yet), say so — do not guess whether it would have passed.
 - This stage does NOT run another gate round or edit the work product. It reports.`;
 

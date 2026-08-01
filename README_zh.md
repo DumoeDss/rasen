@@ -4,7 +4,6 @@
 
 <p align="center">
   <a href="https://github.com/DumoeDss/rasen/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/DumoeDss/rasen/actions/workflows/ci.yml/badge.svg" /></a>
-  <a href="./LICENSE"><img alt="许可证: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" /></a>
   <a href="https://rasen.io/zh/docs/"><img alt="文档" src="https://img.shields.io/badge/docs-rasen.io-4AF626?style=flat-square&labelColor=050505" /></a>
 </p>
 
@@ -28,9 +27,32 @@
 
 意图是你的起点，螺旋是你抵达的方式。
 
-## 血统（Lineage）
+## 实际演示
 
-Rasen fork 自 [OpenSpec](https://github.com/Fission-AI/OpenSpec)（MIT，Fission-AI 出品），由 [Sayo](https://github.com/DumoeDss) 独立维护。它**与 Fission-AI 无从属关系**。其工作流语义与上游 **OpenSpec v1.5.0** 对齐——`propose → apply → archive` 的 spec/change 模型完全一致——但 rasen 运行在**独立的命名空间**中：`rasen` 二进制、`/rasen-*` 斜杠命令、`rasen-*` 技能，以及 `rasen/` 工作区。rasen 在其之上叠加自动驾驶编排，并且从不改动上游的 `openspec/` 安装。
+```text
+你: /rasen-auto full-feature 我想加入深色模式，但还不确定怎样实现才足够整洁。
+AI: 流程：full-feature（显式指定）
+    第一阶段：office-hours。先检验一下这个设计。
+AI: 第一个关键分岔：使用一套共享 token 层，还是在各组件里
+    重复编写主题逻辑？我建议使用 CSS 变量，能减少偏差。
+    选择共享 token 层吗？
+你: 是的——使用一套共享 token 层。
+AI: 下一个分岔：默认跟随系统主题，并保存用户的手动
+    覆盖设置？我建议这样做；行为可预期，也不需要依赖。
+    确认这个方向吗？
+你: 是的——确认。
+AI: 设计已确认，已写入 office-hours 设计文档。
+    ✓ office-hours — 方向已确认并记录
+    LEAD 通过角色隔离的工作单元继续执行 full-feature 流程。
+    ✓ propose — 意图已整理为变更工件
+    ✓ apply — 深色模式已实现
+    ✓ expert reviews — 代码审查、设计审查和 QA 均已通过
+    ✓ review-cycle — 修复一项发现；复审通过
+    ✓ ship — 交付已记录
+    ✓ retain — 已评估可沉淀的经验
+    ✓ archive — 规格已同步
+    完成。深色模式已交付。
+```
 
 ## 安装
 
@@ -55,6 +77,19 @@ rasen init
 rasen update
 ```
 
+## 你会得到什么
+
+- **意图驱动的工作流** — 告诉它要构建什么。引擎会把它变成一个文件夹——提案、规格、设计、任务清单——在工作过程中自行生成并维护，你从不需要亲自动手写：`/rasen-propose → /rasen-apply-change → /rasen-archive-change`。
+- **`rasen` 流水线家族** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` 以数据（YAML）形式提供；用 `rasen pipeline show|list|classify|resume` 查看，用 `rasen pipeline import|export` 作为可安装包分享，或在 web UI 的流水线画布中拖拽组装你自己的流水线。新增一种任务类型 = 加一个文件，零代码。
+- **`rasen ui` 管理平台** — 本地 web UI：任务看板、可脱离终端存活的受监督 headless agent 会话、流水线画布，以及 config/workflow/profile 管理。见 [Web UI](#web-ui)。
+- **`/rasen-auto` 自动驾驶** — 一条命令把 agent 变成 **LEAD**，通过角色隔离的子 agent（planner / implementer / reviewer / fixer / shipper）驱动整条流水线，仅在 gate 处暂停。
+- **`/rasen-goal` 目标驱动迭代** — `/rasen-auto` 的姊妹，用于"完成"是一个条件而非文档的任务（把 Lighthouse 推到 90、把模块做到 rubric 洁净、研究并写出 brief）。LEAD 把任务分类到 measure / evaluate / research 后端，并重复 modify → judge 直到 gate 满足或达到轮次上限。
+- **Auto-decompose** — 当任务大到无法作为单个可评审 diff 时，拆分为多个可独立交付的子 change，附带依赖 DAG 与保守的串/并行策略。
+- **chrome-use** — 一个通过 CDP 驱动你真实 Chrome 的专家：导航、点击、抓包、注入 JS、读 cookie 和 `localStorage`、等待请求——面向需登录的页面、SPA，以及普通 fetch 触及不到的一切。
+- **上下文感知与交接** — `rasen agent context` 测量真实占用；`/rasen-handoff` 写一份蒸馏检查点；worker 在软预算下自我交接，一个 compact 恢复 hook 会在 auto-compact 后把会话重新锚定到蒸馏物，让长任务在上下文上限下存活。
+- **Prompt 缓存保活** — `rasen agent wait` 让空闲 worker 停靠在保活心跳上，而不是任由其 5 分钟 prompt 缓存过期——等待 implementer 的 reviewer 不再在下一轮支付整个上下文的重写成本。心跳长度可通过 `keepalive.beatSeconds` 调节。
+- **Token 审计** — `rasen agent audit` 展示一个会话的 token 究竟花在了哪里：按 agent 的开销、缓存 churn 及其成因，附带 HTML 查看器。支持 Claude Code transcript 与 Codex rollout，完全本地——不上传任何数据。
+
 ## Web UI
 
 CLI 之外还有一个基于浏览器的管理平台。在 CLI 旁边安装 UI 包,然后启动:
@@ -70,6 +105,16 @@ rasen ui
 - **Sessions** — 在浏览器里发起 headless 的 `/rasen-auto` / `/rasen-goal` 运行,查看输出、一键终止;关掉终端它们也继续存活。
 - **Pipeline 画布** — 以 DAG 形式查看任意流水线,并通过把技能拖上画布来组装新流水线,保存前有服务端校验。
 - **Config / Workflows / Profiles** — 可见继承来源的分层配置、支持按空间启停的可安装 workflow 库,以及命名的 workflow profile。
+
+### 0.1.5 Web UI
+
+**Pipeline Canvas** — 编辑阶段图、验证依赖，并调整角色、运行时、模型与交接设置。
+
+![Rasen 0.1.5 流水线画布](assets/webui/rasen-ui-0.1.5-pipeline-canvas.png)
+
+**Session Audit** — 对比 token 总量与缓存组成，并在时间线上追踪智能体和缓存抖动事件。
+
+![Rasen 0.1.5 会话审计](assets/webui/rasen-ui-0.1.5-session-audit.png)
 
 ## 与 OpenSpec 共存
 
@@ -92,60 +137,6 @@ rasen migrate
 
 `rasen migrate` 是**仅复制（copy-only）**的：它把 `openspec/{specs,changes,config.yaml}` 复制进 `rasen/`，跳过任何已存在的目标。你原有的 `openspec/` 目录**永远不会被修改或删除**——你可以继续用 OpenSpec 对它照常工作。
 
-### chrome-use 前置条件
-
-`chrome-use` 专家通过 Chrome DevTools Protocol 驱动你日常使用的 Chrome。使用它你需要：
-
-- 已安装 **Google Chrome**。
-- **Node.js 22 或更新版本**（CDP 代理工具链要求）。
-- 以远程调试模式启动 Chrome——打开 `chrome://inspect/#remote-debugging`（或用 `--remote-debugging-port` 启动 Chrome）。
-- **首次 CDP 连接**时，Chrome 会弹出 **"Allow"** 授权提示——批准它以允许工具挂载。
-
-## 你会得到什么
-
-- **意图驱动的工作流** — 告诉它要构建什么。引擎会把它变成一个文件夹——提案、规格、设计、任务清单——在工作过程中自行生成并维护，你从不需要亲自动手写：`/rasen-propose → /rasen-apply-change → /rasen-archive-change`。
-- **`rasen` 流水线家族** — `small-feature` / `bug-fix` / `full-feature` / `auto-decompose` 以数据（YAML）形式提供；用 `rasen pipeline show|list|classify|resume` 查看，用 `rasen pipeline import|export` 作为可安装包分享，或在 web UI 的流水线画布中拖拽组装你自己的流水线。新增一种任务类型 = 加一个文件，零代码。
-- **`rasen ui` 管理平台** — 本地 web UI：任务看板、可脱离终端存活的受监督 headless agent 会话、流水线画布，以及 config/workflow/profile 管理。见 [Web UI](#web-ui)。
-- **`/rasen-auto` 自动驾驶** — 一条命令把 agent 变成 **LEAD**，通过角色隔离的子 agent（planner / implementer / reviewer / fixer / shipper）驱动整条流水线，仅在 gate 处暂停。
-- **`/rasen-goal` 目标驱动迭代** — `/rasen-auto` 的姊妹，用于"完成"是一个条件而非文档的任务（把 Lighthouse 推到 90、把模块做到 rubric 洁净、研究并写出 brief）。LEAD 把任务分类到 measure / evaluate / research 后端，并重复 modify → judge 直到 gate 满足或达到轮次上限。
-- **Auto-decompose** — 当任务大到无法作为单个可评审 diff 时，拆分为多个可独立交付的子 change，附带依赖 DAG 与保守的串/并行策略。
-- **chrome-use** — 一个通过 CDP 驱动你真实 Chrome 的专家：导航、点击、抓包、注入 JS、读 cookie 和 `localStorage`、等待请求——面向需登录的页面、SPA，以及普通 fetch 触及不到的一切。
-- **上下文感知与交接** — `rasen agent context` 测量真实占用；`/rasen-handoff` 写一份蒸馏检查点；worker 在软预算下自我交接，一个 compact 恢复 hook 会在 auto-compact 后把会话重新锚定到蒸馏物，让长任务在上下文上限下存活。
-- **Prompt 缓存保活** — `rasen agent wait` 让空闲 worker 停靠在保活心跳上，而不是任由其 5 分钟 prompt 缓存过期——等待 implementer 的 reviewer 不再在下一轮支付整个上下文的重写成本。心跳长度可通过 `keepalive.beatSeconds` 调节。
-- **Token 审计** — `rasen agent audit` 展示一个会话的 token 究竟花在了哪里：按 agent 的开销、缓存 churn 及其成因，附带 HTML 查看器。支持 Claude Code transcript 与 Codex rollout，完全本地——不上传任何数据。
-
-## 实际演示
-
-```text
-你: /rasen-explore
-AI: 你想探索什么？
-你: 我想做暗色模式，但不确定怎么干净地实现。
-AI: 让我看看你的样式设置……
-    最干净的路径：CSS 变量 + 一个小的主题 context，
-    加上系统偏好检测。不引入新依赖。要不要定下范围？
-你: 好，就这么做。
-
-你: /rasen-propose add-dark-mode
-AI: 已创建 rasen/changes/add-dark-mode/
-    ✓ proposal.md — 为什么要做、有哪些变更
-    ✓ specs/       — 需求和场景
-    ✓ design.md    — 技术方案
-    ✓ tasks.md     — 实施清单
-    准备开始实施！
-
-你: /rasen-apply-change
-AI: 正在执行任务...
-    ✓ 1.1 添加主题上下文提供者
-    ✓ 1.2 创建切换组件
-    ✓ 2.1 添加 CSS 变量
-    ✓ 2.2 接入 localStorage
-    所有任务已完成！
-
-你: /rasen-archive-change
-AI: 已归档至 rasen/changes/archive/2026-01-23-add-dark-mode/
-    规范已更新。准备好迎接下一个功能。
-```
-
 ## 遥测与隐私
 
 Rasen 收集匿名使用遥测以了解哪些命令被使用。它**只**发送命令名、rasen 版本、一个匿名 UUID，以及你的操作系统和 Node 版本——**绝不**包含路径、参数或项目数据。
@@ -160,8 +151,13 @@ export DO_NOT_TRACK=1
 
 在 CI 环境中遥测也会**自动禁用**。
 
-## 许可证
+## 社群
 
-MIT — Copyright (c) 2024 OpenSpec Contributors 及 Copyright (c) 2026 Sayo。见 [LICENSE](./LICENSE)。
+<p>
+  <a href="https://discord.gg/JbWScy4y9K">
+    <img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="加入 Rasen Discord">
+  </a>
+</p>
 
-问题与反馈：[github.com/DumoeDss/rasen](https://github.com/DumoeDss/rasen)。
+- **QQ 群：** [1087505735](https://qm.qq.com/q/B663fvfMc0)
+- **LINUX DO：** [linux.do](https://linux.do)

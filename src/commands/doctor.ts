@@ -41,8 +41,6 @@ import {
   type InspectRelationshipsInput,
   type RelationshipHealth,
 } from '../core/relationship-health.js';
-import { COMMAND_REGISTRY } from '../core/completions/command-registry.js';
-import { COMMON_FLAGS } from '../core/completions/shared-flags.js';
 import { emitFailure, printJson } from './shared-output.js';
 import { getAllToolVersionStatus } from '../core/shared/index.js';
 import * as path from 'node:path';
@@ -477,12 +475,12 @@ function printHumanHealth(health: RelationshipHealth, declaredReferenceCount: nu
   }
   if (health.machineHome.migratableEphemera) {
     const m = health.machineHome.migratableEphemera;
-    const detail = m.splitUnavailable
-      ? `${m.total} (tracked/untracked split unavailable)`
-      : m.tracked > 0
-        ? `${m.untracked} untracked (+${m.tracked} tracked, needs --include-tracked)`
-        : `${m.untracked} untracked`;
-    console.log(`  Migratable legacy ephemera: ${detail} (run \`${m.hint}\`)`);
+    const parts: string[] = [];
+    if (m.reports > 0) parts.push(`${m.reports} report(s)`);
+    if (m.handoff > 0) parts.push(`${m.handoff} handoff`);
+    if (m.runState > 0) parts.push(`${m.runState} run-state`);
+    const detail = parts.length > 0 ? parts.join(', ') : `${m.total}`;
+    console.log(`  Migratable legacy state: ${detail} (run \`${m.hint}\`)`);
   }
   for (const lingering of health.machineHome.relocation.lingering) {
     console.log(`  Legacy data dir at ${lingering.path}; contents were copied to ${lingering.target}; safe to delete after verifying.`);
@@ -527,22 +525,18 @@ function printHumanHealth(health: RelationshipHealth, declaredReferenceCount: nu
 }
 
 export function registerDoctorCommand(program: Command): void {
-  const description =
-    COMMAND_REGISTRY.find((entry) => entry.name === 'doctor')?.description ??
-    'Report relationship health for the resolved Rasen root';
-
   program
     .command('doctor')
-    .description(description)
-    .option('--store <id>', COMMON_FLAGS.store.description)
-    .option('--project <id>', COMMON_FLAGS.project.description)
+    .description('')
+    .option('--store <id>', '')
+    .option('--project <id>', '')
     .addOption(
-      new Option('--store-path <path>', 'Removed; register the store and use --store').hideHelp()
+      new Option('--store-path <path>', '').hideHelp()
     )
-    .option('--json', 'Output as JSON')
+    .option('--json', '')
     .option(
       '--gc',
-      "Remove dangling machine-home registry entries and their orphaned home directories — this deletes ANY external archives inside those homes too (archive-destination's 'external' archives share the home's lifecycle; git history remains the durable record)"
+      ''
     )
     .action(async (options: { store?: string; project?: string; storePath?: string; json?: boolean; gc?: boolean }) => {
       try {

@@ -58,7 +58,7 @@ If you are genuinely stuck (cannot proceed toward the goal this round), report t
 
 You cannot feel your own context usage. If you notice your earlier conversation has been replaced by a compaction summary, OR you have completed substantial work but more remains and you are losing recall of details you read earlier:
 - Finish or cleanly abort the current atomic edit (do not leave the work product half-written).
-- Write \`<workDir>/handoff/implementer-<n>.md\` (the resolved work directory from the LEAD's dispatch, per playbook Step F; fallback: \`rasen/changes/<name>/handoff/implementer-<n>.md\`) per the rasen-handoff template.
+- Write \`<handoffDir>/implementer-<n>.md\` — the change's handoff directory (\`handoffDir\` from the status payload or the LEAD's dispatch, per playbook Step F; sticky-legacy: a change whose handoff series already lives under a legacy \`handoff/\` location continues there) — per the rasen-handoff template.
 - Return \`HANDOFF { path, reason: compaction|budget|self-assessment, completed: [...], remaining: [...] }\` instead of \`DONE\`.
 
 The LEAD warm-seeds a successor from your handoff document and the loop continues; \`goal-run.json\` is the spine that survives the relay.

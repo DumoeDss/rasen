@@ -2,14 +2,12 @@
 
 ## Purpose
 The dispatched vs standalone mode contract for generic expert skills (review, cso, qa, qa-only, benchmark, design-review) — report-only gating (no fix/ask/commit/subagent) when orchestrated by the LEAD, the canonical report-file convention reconciling orchestration Step B with the skills' real save behavior, and denied-edit honesty.
-
 ## Requirements
-
 ### Requirement: Dispatched vs standalone mode contract in the shared expert PREAMBLE
 
 The shared expert PREAMBLE (`src/core/templates/experts/_shared.ts`, the `PREAMBLE` constant) SHALL carry a **Dispatched vs standalone mode** section governing every generic expert skill that embeds the PREAMBLE (review, cso, qa, qa-only, benchmark, design-review). The section SHALL define two modes and their trigger: the skill is in **dispatched (report-only) mode** when its invocation instructs it to do a single unit of work, to not spawn subagents, and states that a LEAD owns orchestration (the orchestration Step B dispatch signature); otherwise it is in **standalone mode** (direct human invocation).
 
-In **dispatched mode** the skill SHALL: apply no AUTO-FIX and make no code edits; issue no `AskUserQuestion`; make no git commit; spawn no subagents; return classified findings tagged with a canonical severity; and write the canonical `<skill>-report.md` in the change's work directory (the `workDir` reported by the CLI per the `change-work-dir` capability, with the change directory as the sticky-legacy fallback). ASK-class and fix-class items SHALL be reported as unresolved findings for the LEAD's triage, never resolved by the skill itself. In **standalone mode** the skill SHALL retain its richer behavior (fix loop, batched questions, commits, adversarial subagent, native report paths) as adjudicated in the change's design.
+In **dispatched mode** the skill SHALL: apply no AUTO-FIX and make no code edits; issue no `AskUserQuestion`; make no git commit; spawn no subagents; return classified findings tagged with a canonical severity; and write the canonical `<skill>-report.md` in the change's evidence directory (`<changeRoot>/evidence/`, the `evidenceDir` reported by the CLI per the `file-placement` capability), with the sticky-legacy fallback: a report that already exists in the legacy machine-home work directory or the change directory continues to live there. ASK-class and fix-class items SHALL be reported as unresolved findings for the LEAD's triage, never resolved by the skill itself. In **standalone mode** the skill SHALL retain its richer behavior (fix loop, batched questions, commits, adversarial subagent, native report paths) as adjudicated in the change's design.
 
 #### Scenario: Dispatched-mode contract present in generated preamble
 
@@ -17,7 +15,7 @@ In **dispatched mode** the skill SHALL: apply no AUTO-FIX and make no code edits
 - **THEN** the output SHALL contain a section defining a dispatched (report-only) mode versus a standalone mode
 - **AND** SHALL state the dispatched trigger as the single-unit-of-work / no-subagents / LEAD-owns-orchestration dispatch signature
 - **AND** SHALL state that dispatched mode does no AUTO-FIX, no AskUserQuestion, no git commit, and no self-spawned subagents
-- **AND** SHALL state that dispatched mode returns classified findings and writes the canonical report file to the work directory (with the change-directory fallback)
+- **AND** SHALL state that dispatched mode returns classified findings and writes the canonical report file to the evidence directory (with the sticky-legacy fallback for pre-existing reports)
 
 ### Requirement: Mutating expert skills gate fix/commit/clean-tree behavior by mode
 
@@ -49,13 +47,13 @@ The `qa`, `design-review`, and `review` skills SHALL, in dispatched mode, suppre
 
 ### Requirement: Canonical report-file convention reconciled with orchestration Step B
 
-In dispatched mode each generic expert SHALL write its findings to the canonical report file in the change's work directory (with the change directory as the sticky-legacy fallback) — `review-report.md` (review), `cso-report.md` (cso), `qa-report.md` (qa and qa-only), `benchmark-report.md` (benchmark), `design-review-report.md` (design-review) — using canonical severities, and SHALL NOT write to its standalone `.rasen/*-reports/` or `~/.rasen/projects/` paths. Standalone mode SHALL retain the native paths. The orchestration Step B report-contract sentence in `src/core/templates/workflows/_orchestration.ts` SHALL be corrected: it SHALL NOT claim the generic experts "save NOTHING"; it SHALL state that dispatched experts run report-only and write the canonical `<skill>-report.md` themselves, and that the dispatching worker verifies the report is present before returning.
+In dispatched mode each generic expert SHALL write its findings to the canonical report file in the change's evidence directory (`<changeRoot>/evidence/`, with the sticky-legacy fallback for a report that already lives in the legacy work directory or the change directory) — `review-report.md` (review), `cso-report.md` (cso), `qa-report.md` (qa and qa-only), `benchmark-report.md` (benchmark), `design-review-report.md` (design-review) — using canonical severities, and SHALL NOT write to its standalone `.rasen/*-reports/` or `~/.rasen/projects/` paths. Standalone mode SHALL retain the native paths, except that no mode writes new files under `~/.rasen/projects/` (the machine root is CLI-owned per the `file-placement` capability). The orchestration Step B report-contract sentence in `src/core/templates/workflows/_orchestration.ts` SHALL be corrected: it SHALL NOT claim the generic experts "save NOTHING"; it SHALL state that dispatched experts run report-only and write the canonical `<skill>-report.md` themselves, and that the dispatching worker verifies the report is present before returning.
 
 #### Scenario: dispatched expert writes only the canonical report
 
 - **WHEN** the generated `cso`, `qa`, `qa-only`, `benchmark`, or `design-review` `SKILL.md` is inspected
-- **THEN** it SHALL state that in dispatched mode it writes the canonical `<skill>-report.md` in the work directory (change-directory fallback)
-- **AND** SHALL state that the standalone `.rasen/*-reports/` and `~/.rasen/projects/` paths apply to standalone mode only
+- **THEN** it SHALL state that in dispatched mode it writes the canonical `<skill>-report.md` in the evidence directory (with the sticky-legacy fallback)
+- **AND** SHALL state that the standalone `.rasen/*-reports/` paths apply to standalone mode only
 
 #### Scenario: Step B no longer claims experts save nothing
 
@@ -65,12 +63,31 @@ In dispatched mode each generic expert SHALL write its findings to the canonical
 
 ### Requirement: Denied-edit honesty in Fix-First flows
 
-The Fix-First / fix-loop guidance carried in the PREAMBLE SHALL state that when an Edit or Write is denied by an active edit boundary (`/freeze` or `/guard` with a target outside the boundary), the fix did NOT land and SHALL be reported as an un-applied finding — never as `[AUTO-FIXED]` — and SHALL NOT be silently dropped.
+The Fix-First / fix-loop guidance carried in the PREAMBLE SHALL verify whether
+each attempted write actually landed by inspecting the tool result and current
+diff. A write that did not land SHALL be reported as an un-applied finding,
+never as `[AUTO-FIXED]`, and SHALL NOT be silently dropped. Before a mutating
+standalone expert reports completion, it SHALL inspect the changed-file set
+against the task's declared scope and SHALL report an unexplained unexpected
+file as unresolved out-of-scope work. This contract SHALL use observable write
+and diff evidence without requiring or claiming a freeze/guard/runtime
+edit-boundary.
 
-#### Scenario: Denied-edit honesty stated in generated preamble
+#### Scenario: Failed write is not reported as fixed
 
-- **WHEN** the generated PREAMBLE section on fixes is inspected
-- **THEN** it SHALL state that a freeze/guard-denied edit is reported as un-applied, not `[AUTO-FIXED]`
+- **WHEN** a standalone Fix-First flow attempts a write and the tool result or
+  current diff shows that the intended change did not land
+- **THEN** the generated PREAMBLE SHALL require the fix to be reported as
+  un-applied
+- **AND** SHALL prohibit `[AUTO-FIXED]` and silent omission
+
+#### Scenario: Unexpected changed file remains unresolved
+
+- **WHEN** a mutating standalone expert's final changed-file inspection finds
+  a file outside the declared task scope without a recorded justification
+- **THEN** the generated PREAMBLE SHALL require it to be reported as unresolved
+  out-of-scope work
+- **AND** SHALL NOT infer safety or completion from an absent boundary denial
 
 ### Requirement: Golden-master parity preserved for affected templates
 

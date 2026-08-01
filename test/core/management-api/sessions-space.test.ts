@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 
 import { startManagementServer, type ManagementServerHandle } from '../../../src/core/management-api/server.js';
 import type { ManagementApiContext } from '../../../src/core/management-api/router.js';
-import { registerProject } from '../../../src/core/project-registry.js';
+import { getProjectHomeDir, registerProject } from '../../../src/core/project-registry.js';
 import { registerStore } from '../../../src/core/store/registry.js';
 import { getStoreMetadataPath } from '../../../src/core/store/foundation.js';
 import { writeStoreProjectRecord } from '../../../src/core/store/project-records.js';
@@ -232,6 +232,12 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
   it('uses a selected linked member worktree as the observable Session cwd', async () => {
     const storeRoot = path.join(tempDir, 'worktree-store');
     createOpenSpecRoot(storeRoot);
+    writeChange(storeRoot, 'worktree-change', dir =>
+      fs.writeFileSync(
+        path.join(dir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'store-decoy', stages: {} })
+      )
+    );
     await registerStore({ id: 'worktree-store', localPath: storeRoot, globalDataDir: dataDir });
     const mainRoot = path.join(tempDir, 'worktree-main');
     const worktreeRoot = path.join(tempDir, 'worktree-selected');
@@ -242,7 +248,7 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
     execFileSync('git', ['add', '.'], { cwd: mainRoot });
     execFileSync('git', ['commit', '-m', 'fixture'], { cwd: mainRoot });
     execFileSync('git', ['worktree', 'add', '-b', 'api-worktree', worktreeRoot], { cwd: mainRoot });
-    await registerProject(
+    const { entry: worktreeMemberEntry } = await registerProject(
       { projectRoot: mainRoot, projectId: 'worktree-member-id', mode: 'store' },
       { globalDataDir: dataDir }
     );
@@ -251,11 +257,41 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
       projectId: 'worktree-member-id',
       roles: { planning: true, knowledge: true },
     });
+    for (const [root, pipeline] of [
+      [mainRoot, 'main-decoy'],
+      [worktreeRoot, 'linked-authoritative'],
+      [launchRoot, 'launch-decoy'],
+    ] as const) {
+      const ephemera = path.join(
+        root,
+        '.rasen',
+        'changes',
+        'worktree-change',
+        'ephemera'
+      );
+      fs.mkdirSync(ephemera, { recursive: true });
+      fs.writeFileSync(
+        path.join(ephemera, 'auto-run.json'),
+        JSON.stringify({ pipeline, stages: {} })
+      );
+    }
+    const legacyWork = path.join(
+      getProjectHomeDir(worktreeMemberEntry.home, { globalDataDir: dataDir }),
+      'changes',
+      'worktree-change',
+      'work'
+    );
+    fs.mkdirSync(legacyWork, { recursive: true });
+    fs.writeFileSync(
+      path.join(legacyWork, 'auto-run.json'),
+      JSON.stringify({ pipeline: 'legacy-home-decoy', stages: {} })
+    );
 
     const h = await startServer();
     const res = await launchSession(h.port, {
       kind: 'auto',
       task: 'MODE=fast-exit worktree',
+      changeName: 'worktree-change',
       space: 'store:worktree-store',
       execution: `project:${worktreeRoot}`,
     });
@@ -264,17 +300,35 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
     expect((res.json() as any).session.cwd).toBe(
       FileSystemUtils.canonicalizeExistingPath(worktreeRoot)
     );
+    const sessionId = (res.json() as any).session.id;
+    const listRes = await req(h.port, {
+      method: 'GET',
+      path: '/api/v1/sessions?space=store%3Aworktree-store',
+      headers: authed(),
+    });
+    const listed = (listRes.json() as any).sessions.find(
+      (entry: any) => entry.session.id === sessionId
+    );
+    expect(listed.runState.kind).toBe('ok');
+    expect(listed.runState.autoRun.state.pipeline).toBe('linked-authoritative');
   });
 
   it('uses the Store root for explicit planning-only execution', async () => {
     const storeRoot = path.join(tempDir, 'planning-only-store');
     createOpenSpecRoot(storeRoot);
+    writeChange(storeRoot, 'planning-only-change', dir =>
+      fs.writeFileSync(
+        path.join(dir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'planning-decoy', stages: {} })
+      )
+    );
     await registerStore({ id: 'planning-only-store', localPath: storeRoot, globalDataDir: dataDir });
 
     const h = await startServer();
     const res = await launchSession(h.port, {
       kind: 'auto',
       task: 'MODE=fast-exit planning',
+      changeName: 'planning-only-change',
       space: 'store:planning-only-store',
       execution: 'planning',
     });
@@ -283,6 +337,15 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
     expect((res.json() as any).session.cwd).toBe(
       FileSystemUtils.canonicalizeExistingPath(storeRoot)
     );
+    const listRes = await req(h.port, {
+      method: 'GET',
+      path: '/api/v1/sessions?space=store%3Aplanning-only-store',
+      headers: authed(),
+    });
+    const listed = (listRes.json() as any).sessions.find(
+      (entry: any) => entry.session.id === (res.json() as any).session.id
+    );
+    expect(listed.runState).toEqual({ kind: 'absent' });
   });
 
   it('rejects a stale Store pointer before creating a Session record', async () => {
@@ -315,19 +378,19 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
     expect((listRes.json() as any).sessions).toEqual([]);
   });
 
-  it('filters a member-executed Session by Store space and joins run-state from the Store root', async () => {
+  it('filters by Store space but joins competing terminal state from the frozen member execution', async () => {
     const storeRoot = path.join(tempDir, 'joined-store');
     createOpenSpecRoot(storeRoot);
     writeChange(storeRoot, 'store-change', (dir) =>
       fs.writeFileSync(
         path.join(dir, 'auto-run.json'),
-        JSON.stringify({ pipeline: 'small-feature', stages: {} })
+        JSON.stringify({ pipeline: 'store-decoy', stages: {} })
       )
     );
     await registerStore({ id: 'joined-store', localPath: storeRoot, globalDataDir: dataDir });
     const memberRoot = path.join(tempDir, 'joined-member');
     createPointerProject(memberRoot, 'joined-member-id', 'joined-store');
-    await registerProject(
+    const { entry: memberEntry } = await registerProject(
       { projectRoot: memberRoot, projectId: 'joined-member-id', mode: 'store' },
       { globalDataDir: dataDir }
     );
@@ -336,6 +399,29 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
       projectId: 'joined-member-id',
       roles: { planning: true, knowledge: true },
     });
+    const memberEphemera = path.join(
+      memberRoot,
+      '.rasen',
+      'changes',
+      'store-change',
+      'ephemera'
+    );
+    fs.mkdirSync(memberEphemera, { recursive: true });
+    fs.writeFileSync(
+      path.join(memberEphemera, 'auto-run.json'),
+      JSON.stringify({ pipeline: 'member-execution', stages: {} })
+    );
+    const memberLegacyWork = path.join(
+      getProjectHomeDir(memberEntry.home, { globalDataDir: dataDir }),
+      'changes',
+      'store-change',
+      'work'
+    );
+    fs.mkdirSync(memberLegacyWork, { recursive: true });
+    fs.writeFileSync(
+      path.join(memberLegacyWork, 'auto-run.json'),
+      JSON.stringify({ pipeline: 'member-home-decoy', stages: {} })
+    );
 
     const h = await startServer();
     const launched = (await launchSession(h.port, {
@@ -345,6 +431,12 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
       space: 'store:joined-store',
       execution: 'project:joined-member-id',
     })).json() as any;
+    // Retarget the pointer after launch. Listing must trust the copied frozen
+    // execution root and must not re-resolve Store membership.
+    fs.writeFileSync(
+      path.join(memberRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nprojectId: joined-member-id\nstore: another-store\n'
+    );
 
     const listRes = await req(h.port, {
       method: 'GET',
@@ -356,7 +448,7 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
     expect(entries[0].session.id).toBe(launched.session.id);
     expect(entries[0].session.cwd).toBe(FileSystemUtils.canonicalizeExistingPath(memberRoot));
     expect(entries[0].runState.kind).toBe('ok');
-    expect(entries[0].runState.autoRun.state.pipeline).toBe('small-feature');
+    expect(entries[0].runState.autoRun.state.pipeline).toBe('member-execution');
   });
 
   it('filters the listing by space; the unfiltered listing returns every session', async () => {

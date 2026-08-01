@@ -14,6 +14,7 @@ import {
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
 import { resolveProjectHome } from '../core/project-home.js';
+import { deriveWorkspaceIdentity } from '../core/file-placement.js';
 import { inspectRelationships } from '../core/relationship-health.js';
 import {
   assembleWorkingSet,
@@ -23,8 +24,6 @@ import {
   type WorkingSetMember,
 } from '../core/working-set.js';
 import { StoreError } from '../core/store/errors.js';
-import { COMMAND_REGISTRY } from '../core/completions/command-registry.js';
-import { COMMON_FLAGS } from '../core/completions/shared-flags.js';
 import { emitFailure, printJson } from './shared-output.js';
 import { gatherRelationshipData } from './shared-gather.js';
 
@@ -62,8 +61,19 @@ async function gatherWorkingSet(
     ? { ...workingSet, root: { ...workingSet.root, machineHome: home.homeDir } }
     : workingSet;
 
+  // Workspace identity (design `file-placement-collapse-landing`, D5): a pure
+  // derivation from the canonicalized root path — distinct per Git worktree,
+  // which is what keeps two worktrees of one project from sharing per-change
+  // state. Read-only: no `workspaces/` directory is created here or anywhere
+  // else until a real coordination writer exists.
+  const workspaceIdentity = deriveWorkspaceIdentity(root.path).id;
+  const workingSetWithIdentity: WorkingSet = {
+    ...workingSetWithHome,
+    root: { ...workingSetWithHome.root, workspaceIdentity },
+  };
+
   return {
-    workingSet: workingSetWithHome,
+    workingSet: workingSetWithIdentity,
     declaredReferenceCount: data.projectConfig?.references?.length ?? 0,
   };
 }
@@ -80,6 +90,9 @@ function printHumanWorkingSet(workingSet: WorkingSet, declaredReferenceCount: nu
   console.log(`  ${rootLabel}  ${workingSet.root.path}`);
   if (workingSet.root.machineHome) {
     console.log(`  Machine home: ${workingSet.root.machineHome}`);
+  }
+  if (workingSet.root.workspaceIdentity) {
+    console.log(`  Workspace identity: ${workingSet.root.workspaceIdentity}`);
   }
 
   const availableStores = workingSet.members.filter(
@@ -174,21 +187,17 @@ function writeCodeWorkspace(
 }
 
 export function registerContextCommand(program: Command): void {
-  const description =
-    COMMAND_REGISTRY.find((entry) => entry.name === 'context')?.description ??
-    'Print the working context for the resolved Rasen root';
-
   program
     .command('context')
-    .description(description)
-    .option('--store <id>', COMMON_FLAGS.store.description)
-    .option('--project <id>', COMMON_FLAGS.project.description)
+    .description('')
+    .option('--store <id>', '')
+    .option('--project <id>', '')
     .addOption(
-      new Option('--store-path <path>', 'Removed; register the store and use --store').hideHelp()
+      new Option('--store-path <path>', '').hideHelp()
     )
-    .option('--json', 'Output the agent brief as JSON')
-    .option('--code-workspace <path>', 'Also write a VS Code workspace file for the set')
-    .option('--force', 'Overwrite an existing --code-workspace file')
+    .option('--json', '')
+    .option('--code-workspace <path>', '')
+    .option('--force', '')
     .action(
       async (options: {
         store?: string;

@@ -459,63 +459,63 @@ async function exportProfileCommand(
 export function registerProfileCommand(program: Command): void {
   const profileCommand = program
     .command('profile')
-    .description('Manage reusable workflow profiles')
+    .description('')
     .action(async () => {
       await runProfileAction(runInteractiveProfileEditor);
     });
 
   profileCommand
     .command('new [name]')
-    .description('Create and use a named profile interactively')
+    .description('')
     .action(async (name?: string) => {
       await runProfileAction(() => createProfile(name));
     });
 
   profileCommand
     .command('use [name]')
-    .description('Use a built-in or saved profile')
+    .description('')
     .action(async (name?: string) => {
       await runProfileAction(() => useProfileCommand(name));
     });
 
   profileCommand
     .command('update [name]')
-    .description('Edit a saved profile definition interactively')
+    .description('')
     .action(async (name?: string) => {
       await runProfileAction(() => updateProfileCommand(name));
     });
 
   profileCommand
     .command('list')
-    .description('List built-in and saved profiles')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--json', '')
     .action(async (options: { json?: boolean }) => {
       await runProfileAction(() => listProfiles(options));
     });
 
   profileCommand
     .command('delete [name]')
-    .description('Delete a saved profile')
-    .option('-y, --yes', 'Skip confirmation')
+    .description('')
+    .option('-y, --yes', '')
     .action(async (name: string | undefined, options: { yes?: boolean }) => {
       await runProfileAction(() => deleteProfileCommand(name, options));
     });
 
   profileCommand
     .command('import <path>')
-    .description('Import a profile package, YAML, or JSON profile')
-    .option('--as <name>', 'Save the imported profile under a different name')
-    .option('--force', 'Replace an existing profile with the same name')
+    .description('')
+    .option('--as <name>', '')
+    .option('--force', '')
     .action(async (sourcePath: string, options: { force?: boolean; as?: string }) => {
       await runProfileAction(() => importProfileCommand(sourcePath, options));
     });
 
   profileCommand
     .command('export <path>')
-    .description('Export current settings or a named profile')
-    .option('--profile <name>', 'Export a built-in or saved profile instead of current settings')
-    .option('--thin', 'Export YAML or JSON without embedding user workflows')
-    .option('--force', 'Overwrite an existing destination')
+    .description('')
+    .option('--profile <name>', '')
+    .option('--thin', '')
+    .option('--force', '')
     .action(async (destinationPath: string, options: { profile?: string; force?: boolean; thin?: boolean }) => {
       await runProfileAction(() => exportProfileCommand(destinationPath, options));
     });

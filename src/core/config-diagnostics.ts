@@ -29,6 +29,7 @@ export const CONFIG_DIAGNOSTIC_KEYS = [
   'invalidUpdatePin',
   'invalidArchiveTiming',
   'invalidArchiveDestination',
+  'deprecatedArchiveDestination',
   'invalidArchive',
   'invalidAutopilotGates',
   'invalidAutopilotSelection',
@@ -59,6 +60,24 @@ export interface ConfigDiagnostic {
 
 export type ConfigDiagnosticReporter = (diagnostic: ConfigDiagnostic) => void;
 
+/**
+ * Per-process set of warning keys already emitted on the default (no-reporter)
+ * path. A warning the user has already seen should not repeat within the same
+ * command — `readProjectConfig` is called multiple times per invocation and
+ * each call re-parses and re-warns. Errors remain loud (the set is scoped to
+ * `output: 'warn'` only). A reporter, when provided, always receives the
+ * diagnostic regardless of the set (explicit reporters collect every event).
+ */
+const emittedWarnings = new Set<ConfigDiagnosticKey>();
+
+/**
+ * Resets the per-process warning dedup set. Test-only: the set is otherwise
+ * process-scoped so a single CLI invocation suppresses repeats.
+ */
+export function _resetConfigDiagnosticDedup(): void {
+  emittedWarnings.clear();
+}
+
 export function reportConfigDiagnostic(
   diagnostic: ConfigDiagnostic,
   reporter?: ConfigDiagnosticReporter
@@ -66,6 +85,11 @@ export function reportConfigDiagnostic(
   if (reporter) {
     reporter(diagnostic);
     return;
+  }
+
+  if (diagnostic.output === 'warn') {
+    if (emittedWarnings.has(diagnostic.key)) return;
+    emittedWarnings.add(diagnostic.key);
   }
 
   if (diagnostic.output === 'error') {

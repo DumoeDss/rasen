@@ -93,9 +93,11 @@ Sources live in `src/core/templates/experts/<name>.ts` (one getter each), sideca
 **Edit-safety family**
 - `careful` — warns before destructive commands (rm -rf / DROP TABLE / force-push). Referenced by `apply`.
 - **Historical (retired):** the absorbed upstream catalog once carried three
-  separate directory-boundary commands. Current Rasen uses
-  `rasen agent edit-boundary set|status|clear` and reports
-  `hard|soft|unsupported`; the old commands are not available.
+  separate directory-boundary commands, and Rasen briefly replaced them with
+  a runtime edit-boundary command. Both generations are superseded. Current
+  workflows declare the evidence-backed affected area and audit the actual
+  changed-file set; managed sandbox/workspace policy provides execution
+  containment where required.
 
 > The roster went from 30 early on (including parallel lifecycle experts) → 20 (parallel lifecycle removed) → **19** (domain-modeling removed). Currently stable at 19.
 

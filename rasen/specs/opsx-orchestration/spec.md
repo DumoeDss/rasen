@@ -63,34 +63,6 @@ The LEAD SHALL assign distinct workers by role so that a fix is always confirmed
 - **WHEN** running under the single-context fallback
 - **THEN** the non-author confirmation SHALL degrade to an independent gate-run plus diff-read recorded in run-state, and this SHALL be marked as the fallback
 
-### Requirement: Change Directory Blackboard and Run-State
-
-Stages SHALL hand off through the change directory (review material: proposal, design, tasks, delta specs) and the change's work directory (process ephemera: reports, run-state, handoff documents — the `change-work-dir` capability), and the LEAD SHALL maintain a run-state record; `SendMessage` SHALL be used only for warm continuation, never as the inter-stage state channel. The LEAD SHALL resolve BOTH locations as absolute paths from `rasen status --change <n> --json` — the `changeRoot` field for review material and the `workDir` field for ephemera — before writing any blackboard artifact or run-state, so that all paths taught by the workflow are interpreted relative to the selected Rasen root (including a `--store`-selected store root) and never relative to the current working directory. When the payload carries no `workDir`, or when a given ephemeron already exists in the change directory, the LEAD SHALL use the change directory for that file (the sticky-legacy fallback of the `change-work-dir` capability).
-
-#### Scenario: Durable handoff
-
-- **WHEN** one stage's output feeds a later stage
-- **THEN** the output SHALL be written to the change directory (review material) or the work directory (process ephemera) and read by the later worker
-- **AND** the run SHALL survive a terminated worker or a new session because state lives on disk
-
-#### Scenario: Run-state recorded
-
-- **WHEN** the LEAD executes stages
-- **THEN** it SHALL record classification, selected pipeline, per-stage status, which worker handled each stage, review rounds, and open findings
-- **AND** this record SHALL support resume and observability
-
-#### Scenario: Run-state written to the work directory
-
-- **WHEN** the LEAD starts recording run-state for a change with no pre-existing `auto-run.json` and the status payload reports a `workDir`
-- **THEN** the LEAD SHALL write `auto-run.json` into that work directory
-- **AND** `rasen pipeline resume <change>` resolved to the same root SHALL read the run-state (`hasRunState: true`)
-
-#### Scenario: Run-state written to the selected root
-
-- **WHEN** the change lives in a store-selected or non-cwd Rasen root
-- **THEN** the LEAD SHALL write `auto-run.json` into the absolute location resolved from `rasen status --change <n> --json` (the work directory, or the change directory under the sticky-legacy fallback)
-- **AND** `rasen pipeline resume <change>` resolved to that same root SHALL read the run-state (`hasRunState: true`)
-
 ### Requirement: Gate, Loop, Parallel, and Condition Interpretation
 
 The LEAD SHALL interpret stage metadata: pause at gates, run loop stages as bounded loops (dispatching on `loop.kind` — `review-cycle` runs the bounded review→fix loop, `goal` runs the bounded goal-loop), run parallel-group stages concurrently, and skip stages whose condition is unmet.
@@ -129,7 +101,7 @@ Loop stages SHALL be bounded by a max-rounds cap and SHALL escalate to the human
 
 ### Requirement: 拆分产出一份由 LEAD 自审的方案
 
-当 LEAD 执行一个 `decompose` 阶段时，它 SHALL 产出一份**拆分方案**，由一组子 change（每个都是可独立交付、可 review 的切片）和一个**依赖 DAG**（声明哪些子 change 必须先落地）组成。LEAD SHALL 在扇出之前自审这份方案（切片内聚性、任何并行同批的独立性依据，以及 DAG 的正确性），并且 MAY 在无人类确认下继续。仅当它无法产出一份安全方案时，它 SHALL 升级给人类。每个子 change SHALL 用 `rasen new change <child-id>` 创建。
+当 LEAD 执行一个 `decompose` 阶段时，它 SHALL 产出一份**拆分方案**，由一组子 change（每个都是可独立交付、可 review 的切片）和一个**依赖 DAG**（声明哪些子 change 必须先落地）组成。LEAD SHALL 在扇出之前自审这份方案（切片内聚性、任何并行同批的独立性依据，以及 DAG 的正确性），并且 MAY 在无人类确认下继续。仅当它无法产出一份安全方案时，它 SHALL 升级给人类。每个子 change SHALL 用 `rasen new change <semantic-name>` 创建，名称 SHALL 是语义化的 kebab-case 名（描述该切片交付什么）；调度用的节点 ID（如 `g-003` 一类）SHALL 只存在于组合运行状态的 metadata 中，SHALL NOT 进入 change 目录名（`file-placement` capability 的调度 ID 分离规则）。
 
 #### Scenario: 在扇出前自审方案
 
@@ -142,6 +114,12 @@ Loop stages SHALL be bounded by a max-rounds cap and SHALL escalate to the human
 - **WHEN** decompose 阶段被执行
 - **THEN** 父 change 的其余流水线阶段 SHALL 被标记为 delegated，且 SHALL NOT 在父级运行
 - **AND** 每个子 change SHALL 运行解析出的 `childPipeline`（propose → apply → verify → review-loop → …）
+
+#### Scenario: 子 change 使用语义名称而非调度 ID
+
+- **WHEN** LEAD 创建拆分方案中的子 change
+- **THEN** 每个子 change 目录名 SHALL 是语义化 kebab-case 名称
+- **AND** 调度节点 ID 只出现在组合运行状态的 metadata 字段中
 
 ### Requirement: 沿依赖严格串行执行
 
@@ -203,7 +181,7 @@ LEAD SHALL 仅当全部成立时才并行运行子 change：(1) 任一方向都�
 
 ### Requirement: 组合运行状态
 
-LEAD SHALL 在父 change 目录维护一份**组合运行状态**记录（其路径用平台 path 模块构建，其文件名作为具名常量跟踪），记载拆分方案、子 change 列表、依赖 DAG、每个子 change 的执行模式与并行同批、每个子 change 的流水线状态，以及当前可运行前沿。每个子 change SHALL 保留它自己的、按 change 计的运行状态。组合运行状态在恢复时 SHALL 为权威；子目录与产物存在性是交叉校验。
+LEAD SHALL 维护一份**组合运行状态**记录（其路径用平台 path 模块构建，其文件名作为具名常量跟踪），落点为 execution root 的 ephemera 目录（`file-placement` capability；sticky-legacy 链兼容已存在于旧位置的记录），记载拆分方案、子 change 列表、依赖 DAG、每个子 change 的执行模式与并行同批、每个子 change 的流水线状态，以及当前可运行前沿。每个子 change SHALL 保留它自己的、按 change 计的运行状态。组合运行状态在恢复时 SHALL 为权威；子目录与产物存在性是交叉校验。
 
 #### Scenario: 组合状态记录 DAG 与每个子 change 的状态
 
@@ -344,7 +322,7 @@ The playbook SHALL interpret a pipeline's archive stage per the resolved archive
 
 ### Requirement: Codex dispatch follows the resolved route
 
-The orchestration playbook SHALL dispatch a Codex target according to the preflighted dispatch mode. A Codex-hosted `native` stage SHALL use the host's native collaboration tools and a role-isolated leaf worker. A Claude-hosted `exec-bridge` stage SHALL use the shipped non-interactive `codex exec` contract. The playbook SHALL NOT substitute one mode for the other or re-derive a target runtime after pipeline execution inspection.
+The orchestration playbook SHALL dispatch a Codex target according to the preflighted dispatch mode. A Codex-hosted `native` stage SHALL use the host's native collaboration tools and a role-isolated leaf worker. A Claude-hosted Codex `exec-bridge` stage SHALL use the shipped non-interactive `codex exec` contract. The playbook SHALL NOT substitute one mode for the other or re-derive a target runtime after pipeline execution inspection.
 
 #### Scenario: Same-host Codex uses native collaboration
 
@@ -354,21 +332,55 @@ The orchestration playbook SHALL dispatch a Codex target according to the prefli
 
 #### Scenario: Claude-to-Codex keeps the verified exec bridge
 
-- **WHEN** a stage reports host Claude, target Codex, and dispatch mode `exec-bridge`
+- **WHEN** a stage reports host Claude, target Codex, dispatch mode `exec-bridge`, and bridge `codex-exec`
 - **THEN** the playbook uses a `codex exec` invocation with stdin closed, `--json`, last-message capture, per-role sandbox/model/effort, the appended flat-hierarchy guard, and contract-schema-constrained returns
 - **AND** template and skill bodies are inlined client-side rather than resolved from Codex prompt files
 
-#### Scenario: Exec-bridge identity remains thread-based
+#### Scenario: Codex exec-bridge identity remains thread-based
 
-- **WHEN** an exec-bridge worker is recorded
+- **WHEN** a Codex exec-bridge worker is recorded
 - **THEN** its record carries `runtime`, role, dispatch mode, `threadId` captured from the JSON event stream, sandbox/model/effort metadata, and rollout path as the durable transcript pointer
-- **AND** no turn id is fabricated for exec mode
+- **AND** no turn id is fabricated for Codex exec mode
 
 #### Scenario: Unsupported route never reaches dispatch
 
 - **WHEN** execution preflight identifies an unsupported host × target pair
 - **THEN** the playbook receives no executable stage for that pair
 - **AND** does not silently substitute the host runtime for the explicit target
+
+### Requirement: Claude exec-bridge dispatch follows the resolved route
+
+The orchestration playbook SHALL dispatch a Claude target according to the preflighted route. A Codex-hosted stage reporting dispatch mode `exec-bridge` and bridge `claude-print` SHALL use the shipped `rasen agent dispatch --runtime claude` contract. Claude-native stages SHALL keep using the native Task/Agent lifecycle. Generic exec-bridge guidance SHALL distinguish Claude session IDs from Codex thread IDs.
+
+#### Scenario: Codex-to-Claude uses the shipped bridge
+
+- **WHEN** a stage reports host Codex, target Claude, dispatch mode `exec-bridge`, and bridge `claude-print`
+- **THEN** the LEAD writes the fully inlined leaf prompt to a prompt file and invokes `rasen agent dispatch --runtime claude`
+- **AND** passes the stage's result contract, model, effort, sandbox, and working directory without constructing a raw shell command
+
+#### Scenario: Claude bridge completion records session identity
+
+- **WHEN** the Claude bridge returns a successful structured receipt
+- **THEN** the LEAD records runtime `claude`, dispatch mode `exec-bridge`, the returned `sessionId`, working directory, and any surfaced transcript/model/sandbox/effort metadata
+- **AND** does not fabricate a native `agentId` or Codex `threadId`
+
+#### Scenario: Claude bridge resumes explicitly
+
+- **WHEN** the LEAD re-engages a completed Claude exec-bridge worker below its handoff threshold
+- **THEN** it invokes the bridge with the worker's exact recorded `sessionId` and working directory
+- **AND** does not use `SendMessage`, `--continue`, or a latest-session lookup
+
+#### Scenario: Claude bridge failure follows worker-death accounting
+
+- **WHEN** the bridge returns a timeout, CLI failure, protocol failure, or invalid contract receipt
+- **THEN** the LEAD classifies and records the failure using that receipt before choosing retry, exact-session resume, or reconstruction
+- **AND** never reports the stage clean from an unvalidated result
+
+#### Scenario: Claude-native dispatch remains unchanged
+
+- **WHEN** a stage reports host Claude, target Claude, and dispatch mode `native`
+- **THEN** the LEAD continues to use the native Task/Agent, agentId, transcript, and SendMessage lifecycle
+- **AND** does not start the external Claude bridge
 
 ### Requirement: Codex-native completion and synchronization are event-driven
 
@@ -461,4 +473,32 @@ When the LEAD has several consecutive instructions for the same live (not parked
 #### Scenario: An instruction that depends on an intermediate result is not batched
 - **WHEN** the LEAD's second instruction depends on the worker's response to the first
 - **THEN** the LEAD SHALL send them as separate messages in sequence, since batching does not apply when an intermediate result is actually needed
+
+### Requirement: Planning-Root and Execution-Root Blackboard
+
+Stages SHALL hand off through durable files at the per-class landing locations of the `file-placement` capability: review material (proposal, design, tasks, delta specs, planning-context) under `changeRoot`; evidence (reports) under the payload's `evidenceDir`; handoff documents under `handoffDir`; run-state and other process ephemera under `ephemeraDir`. `SendMessage` SHALL be used only for warm continuation, never as the inter-stage state channel. The LEAD SHALL resolve every location as an absolute path from `rasen status --change <n> --json` (or the instructions payloads) before writing any blackboard artifact, so all paths are interpreted relative to the selected Rasen root — including a `--store`-selected store root — and never relative to the current working directory. The sticky-legacy chain applies to every ephemeron and report: a file that already exists at a legacy location (the machine-home work directory or the change directory) keeps living there; one file's state is never split across locations.
+
+#### Scenario: Durable handoff
+
+- **WHEN** one stage's output feeds a later stage
+- **THEN** the output SHALL be written to its class's landing location and read by the later worker
+- **AND** the run SHALL survive a terminated worker or a new session because state lives on disk
+
+#### Scenario: Run-state recorded in the execution root
+
+- **WHEN** the LEAD starts recording run-state for a change with no pre-existing `auto-run.json`
+- **THEN** the LEAD SHALL write `auto-run.json` into the payload's `ephemeraDir`
+- **AND** `rasen pipeline resume <change>` resolved to the same root SHALL read the run-state (`hasRunState: true`)
+
+#### Scenario: Run-state resumes from a legacy location
+
+- **WHEN** a change's `auto-run.json` already lives in the machine-home work directory or the change directory
+- **THEN** the LEAD SHALL keep reading and writing that file in place
+- **AND** SHALL NOT create a second run-state file in the ephemera directory
+
+#### Scenario: Store-selected run writes to the selected root
+
+- **WHEN** the change lives in a store-selected or non-cwd Rasen root
+- **THEN** review material, evidence, and handoff SHALL be written to the absolute store-side locations from the payload, and ephemera to the execution root's ephemera directory
+- **AND** `rasen pipeline resume <change>` resolved to that same root SHALL read the run-state (`hasRunState: true`)
 

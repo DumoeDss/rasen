@@ -400,9 +400,9 @@ describe('schema command shell completion registry', () => {
       '../../src/core/completions/command-registry.js'
     );
 
-    const schemaCmd = COMMAND_REGISTRY.find((cmd) => cmd.name === 'schema');
+    const schemaCmd = COMMAND_REGISTRY.subcommands?.find((cmd) => cmd.name === 'schema');
     expect(schemaCmd).toBeDefined();
-    expect(schemaCmd?.description).toBe('Manage workflow schemas');
+    expect(schemaCmd).not.toHaveProperty('description');
   });
 
   it('should have all schema subcommands in registry', async () => {
@@ -410,7 +410,7 @@ describe('schema command shell completion registry', () => {
       '../../src/core/completions/command-registry.js'
     );
 
-    const schemaCmd = COMMAND_REGISTRY.find((cmd) => cmd.name === 'schema');
+    const schemaCmd = COMMAND_REGISTRY.subcommands?.find((cmd) => cmd.name === 'schema');
     const subcommandNames = schemaCmd?.subcommands?.map((s) => s.name) ?? [];
 
     expect(subcommandNames).toContain('which');
@@ -424,7 +424,7 @@ describe('schema command shell completion registry', () => {
       '../../src/core/completions/command-registry.js'
     );
 
-    const schemaCmd = COMMAND_REGISTRY.find((cmd) => cmd.name === 'schema');
+    const schemaCmd = COMMAND_REGISTRY.subcommands?.find((cmd) => cmd.name === 'schema');
     const subcommands = schemaCmd?.subcommands ?? [];
 
     for (const subcmd of subcommands) {
@@ -438,7 +438,7 @@ describe('schema command shell completion registry', () => {
       '../../src/core/completions/command-registry.js'
     );
 
-    const schemaCmd = COMMAND_REGISTRY.find((cmd) => cmd.name === 'schema');
+    const schemaCmd = COMMAND_REGISTRY.subcommands?.find((cmd) => cmd.name === 'schema');
     const whichCmd = schemaCmd?.subcommands?.find((s) => s.name === 'which');
     const flagNames = whichCmd?.flags?.map((f) => f.name) ?? [];
 
@@ -450,7 +450,7 @@ describe('schema command shell completion registry', () => {
       '../../src/core/completions/command-registry.js'
     );
 
-    const schemaCmd = COMMAND_REGISTRY.find((cmd) => cmd.name === 'schema');
+    const schemaCmd = COMMAND_REGISTRY.subcommands?.find((cmd) => cmd.name === 'schema');
     const validateCmd = schemaCmd?.subcommands?.find((s) => s.name === 'validate');
     const flagNames = validateCmd?.flags?.map((f) => f.name) ?? [];
 
@@ -462,7 +462,7 @@ describe('schema command shell completion registry', () => {
       '../../src/core/completions/command-registry.js'
     );
 
-    const schemaCmd = COMMAND_REGISTRY.find((cmd) => cmd.name === 'schema');
+    const schemaCmd = COMMAND_REGISTRY.subcommands?.find((cmd) => cmd.name === 'schema');
     const forkCmd = schemaCmd?.subcommands?.find((s) => s.name === 'fork');
     const initCmd = schemaCmd?.subcommands?.find((s) => s.name === 'init');
 

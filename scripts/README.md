@@ -2,6 +2,14 @@
 
 Utility scripts for Rasen maintenance and development.
 
+## local-version/
+
+Builds and caches a paired local CLI/UI runtime, then launches Rasen, Codex, or
+Claude against a selected target project without changing that project's npm
+state or the user's global Rasen. See
+[`local-version/README.md`](local-version/README.md) for PowerShell usage,
+portable-copy rules, cache isolation, and prototype migration.
+
 ## update-flake.sh
 
 Updates `flake.nix` pnpm dependency hash automatically.

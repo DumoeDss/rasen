@@ -1,6 +1,6 @@
 import type { SkillTemplate } from '../types.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
-import { EDIT_BOUNDARY_GUIDANCE, PREAMBLE_DIALOGUE } from './_shared.js';
+import { PREAMBLE_DIALOGUE, PROBE_PLACEMENT_GUIDANCE } from './_shared.js';
 
 const BODY = `
 ${PREAMBLE_DIALOGUE}
@@ -65,26 +65,25 @@ Do not proceed until you have reproduced **and** minimised.
 
 ---
 
-## Scope Lock
+## Affected-area declaration
 
-With a minimised repro in hand you know the affected module. Identify the
-narrowest directory containing the affected files and use the base runtime:
+With a minimised repro in hand, record the narrowest affected area supported
+by the evidence before making a fix. Name concrete directories or files (for
+example \`src/auth/\` plus its focused tests) as the initial allowlist and
+state why each belongs.
 
-\`\`\`bash
-rasen agent edit-boundary set "<detected-directory>"
-rasen agent edit-boundary status --json
-\`\`\`
+If root-cause evidence later proves that a necessary edit crosses that area,
+record the evidence and revised allowlist **before** editing the additional
+area. Do not silently widen scope because a nearby cleanup looks convenient.
 
-Substitute the actual directory (for example \`src/auth/\`) and inspect the
-returned status before describing protection. On \`hard\`, say only that
-covered structured write tools are rejected outside the directory. On
-\`soft\`, cooperate with the scope and explicitly say the host does not
-guarantee denial. On \`unsupported\`, state that edits remain unrestricted and
-do not claim a lock. When debugging is complete, run
-\`rasen agent edit-boundary clear\`. If the bug spans the whole checkout or the
-scope is genuinely unclear, skip setting a boundary and note why.
+This declaration is review evidence, not mechanical write enforcement. Before
+completion, inspect the actual changed-file set and diff (for example with
+\`git status --short\`, \`git diff --name-only\`, and \`git diff\`) against the
+latest allowlist. Classify every unexpected file as either:
 
-${EDIT_BOUNDARY_GUIDANCE}
+- a justified scope expansion whose evidence was recorded before the edit; or
+- unresolved out-of-scope work that must be reverted or explicitly justified
+  and verified before the investigation is complete.
 
 ---
 
@@ -153,6 +152,8 @@ Each probe must map to a specific prediction from Phase 4. **Change one variable
 
 **Perf branch.** For performance regressions, logs are usually wrong. Instead establish a baseline measurement (timing harness, \`performance.now()\`, profiler, query plan), then bisect. Measure first, fix second.
 
+${PROBE_PLACEMENT_GUIDANCE}
+
 ---
 
 ## Phase 6: Fix + regression test
@@ -210,6 +211,8 @@ Before declaring done:
 - [ ] Regression test passes (or the absence of a correct seam is documented)
 - [ ] All \`[DEBUG-...]\` instrumentation removed (\`grep\` the prefix)
 - [ ] Throwaway harnesses deleted or moved to a clearly-marked debug location
+- [ ] Actual changed files and diff match the latest declared affected area;
+      every expansion has recorded evidence, and no unexplained file remains
 
 Output a structured debug report:
 \`\`\`
@@ -220,6 +223,7 @@ Root cause:      [what was actually wrong]
 Fix:             [what was changed, with file:line references]
 Evidence:        [test output, reproduction attempt showing fix works]
 Regression test: [file:line of the new test, or documented absence of a correct seam]
+Scope audit:      [declared area, actual changed files, justified expansions, unresolved files]
 Related:         [TODOS.md items, prior bugs in same area, architectural notes]
 Status:          DONE | DONE_WITH_CONCERNS | BLOCKED
 ════════════════════════════════════════

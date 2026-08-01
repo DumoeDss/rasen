@@ -5,7 +5,6 @@ import ora from 'ora';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { promises as fs } from 'fs';
-import { getToolsWithSkillsDir } from '../core/shared/index.js';
 import { UpdateCommand } from '../core/update.js';
 import { ListCommand } from '../core/list.js';
 import { ArchiveCommand, type ArchiveOptions } from '../core/archive.js';
@@ -44,7 +43,6 @@ import {
   templatesCommand,
   schemasCommand,
   newChangeCommand,
-  DEFAULT_SCHEMA,
   type StatusOptions,
   type InstructionsOptions,
   type TemplatesOptions,
@@ -53,22 +51,22 @@ import {
 } from '../commands/workflow/index.js';
 import { maybeShowTelemetryNotice, trackCommand, shutdown } from '../telemetry/index.js';
 import { adoptLegacyMachineData } from '../core/global-config.js';
-import { COMMON_FLAGS } from '../core/completions/shared-flags.js';
 import { isInteractive } from '../utils/interactive.js';
-import { localizeProgramHelp, ROOT_OPTION_DESCRIPTIONS } from './help-localization.js';
-
-const STORE_OPTION_DESCRIPTION = COMMON_FLAGS.store.description;
-const PROJECT_OPTION_DESCRIPTION = COMMON_FLAGS.project.description;
+import { getCliLocale } from '../core/cli-locale.js';
+import { resolveCliPresentation } from '../core/completions/cli-presentation.js';
+import type {
+  CliPresentationFacts,
+  ResolvedCliPresentation,
+} from '../core/completions/types.js';
+import type { CliLocale } from '../utils/locale.js';
+import { applyCliPresentation } from './commander-presentation.js';
 
 // Deliberate rejection path: --store-path stays registered (hidden) so the
 // resolver can explain that registering the path is the supported route,
 // instead of Commander emitting a generic unknown-option error (or, for
 // `show`, silently ignoring it via allowUnknownOption).
 function hiddenStorePathOption(): Option {
-  return new Option(
-    '--store-path <path>',
-    'Not supported; register the path with "rasen store register <path>" and use --store <id>'
-  ).hideHelp();
+  return new Option('--store-path <path>', '').hideHelp();
 }
 
 function failWithError(
@@ -103,7 +101,6 @@ function failPipelineAction(error: unknown): never {
   process.exit(1);
 }
 
-const program = new Command();
 const require = createRequire(import.meta.url);
 const { version } = require('../../package.json');
 
@@ -127,13 +124,26 @@ export function getCommandPath(command: Command): string {
   return names.join(':') || 'rasen';
 }
 
+interface ProgramPresentationContext {
+  locale: CliLocale;
+  presentation: ResolvedCliPresentation;
+}
+
+function buildUnlocalizedProgram({
+  locale,
+  presentation,
+}: ProgramPresentationContext): Command {
+const program = new Command();
+const createCompletionCommand = (): CompletionCommand =>
+  new CompletionCommand({ locale, presentation });
+
 program
   .name('rasen')
-  .description('AI-native system for spec-driven development')
-  .version(version);
+  .description('')
+  .version(version, '-V, --version', '');
 
 // Global options
-program.option('--no-color', ROOT_OPTION_DESCRIPTIONS[0]);
+program.option('--no-color', '');
 
 // Apply global flags and telemetry before any command runs
 // Note: preAction receives (thisCommand, actionCommand) where:
@@ -162,15 +172,12 @@ program.hook('postAction', async () => {
   await shutdown();
 });
 
-const availableToolIds = getToolsWithSkillsDir();
-const toolsOptionDescription = `Configure AI tools non-interactively. Use "all", "none", or a comma-separated list of: ${availableToolIds.join(', ')}`;
-
 program
   .command('init [path]')
-  .description('Initialize Rasen in your project')
-  .option('--tools <tools>', toolsOptionDescription)
-  .option('--force', 'Auto-cleanup legacy files without prompting')
-  .option('--profile <profile>', 'Install and lock a profile in rasen/config.yaml (full, core, or a saved profile; custom applies once without locking)')
+  .description('')
+  .option('--tools <tools>', '')
+  .option('--force', '')
+  .option('--profile <profile>', '')
   .action(async (targetPath = '.', options?: { tools?: string; force?: boolean; profile?: string }) => {
     try {
       // Validate that the path is a valid directory
@@ -208,9 +215,9 @@ program
 // Hidden alias: 'experimental' -> 'init' for backwards compatibility
 program
   .command('experimental', { hidden: true })
-  .description('Alias for init (deprecated)')
-  .option('--tool <tool-id>', 'Target AI tool (maps to --tools)')
-  .option('--no-interactive', 'Disable interactive prompts')
+  .description('')
+  .option('--tool <tool-id>', '')
+  .option('--no-interactive', '')
   .action(async (options?: { tool?: string; noInteractive?: boolean }) => {
     try {
       console.log('Note: "rasen experimental" is deprecated. Use "rasen init" instead.');
@@ -228,10 +235,10 @@ program
 
 program
   .command('update [path]')
-  .description('Update Rasen instruction files')
-  .option('--force', 'Force update even when tools are up to date')
-  .option('--all-projects', 'Update every reachable, non-pinned registered project whose version is behind')
-  .option('--only-this', 'Skip multi-project registry consultation (update only this project)')
+  .description('')
+  .option('--force', '')
+  .option('--all-projects', '')
+  .option('--only-this', '')
   .action(async (targetPath = '.', options?: { force?: boolean; allProjects?: boolean; onlyThis?: boolean }) => {
     try {
       const updateCommand = new UpdateCommand({
@@ -248,8 +255,8 @@ program
 
 program
   .command('migrate [path]')
-  .description('Copy a legacy openspec/ workspace into rasen/ (copy-only; originals untouched)')
-  .option('--no-interactive', 'Do not prompt (skips optional marker-block cleanup)')
+  .description('')
+  .option('--no-interactive', '')
   .action(async (targetPath = '.', options?: { interactive?: boolean }) => {
     try {
       const projectRoot = path.resolve(targetPath);
@@ -304,14 +311,14 @@ program
 
 program
   .command('list')
-  .description('List items (changes by default). Use --specs to list specs.')
-  .option('--specs', 'List specs instead of changes')
-  .option('--changes', 'List changes explicitly (default)')
-  .option('--sort <order>', 'Sort order: "recent" (default) or "name"', 'recent')
-  .option('--long', 'Show id and title with counts')
-  .option('--json', 'Output as JSON (for programmatic use)')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .option('--specs', '')
+  .option('--changes', '')
+  .option('--sort <order>', '', 'recent')
+  .option('--long', '')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (options?: { specs?: boolean; changes?: boolean; sort?: string; long?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
     try {
@@ -343,7 +350,7 @@ program
 
 program
   .command('view')
-  .description('Display an interactive dashboard of specs and changes')
+  .description('')
   .action(async () => {
     try {
       const viewCommand = new ViewCommand();
@@ -356,14 +363,19 @@ program
 
 const archiveCommand = program
   .command('archive [change-name]')
-  .description('Archive a completed change and update main specs')
-  .option('-y, --yes', 'Skip confirmation prompts')
-  .option('--confirm-prune', "Confirm a 'prune' destination's permanent deletion (separate from --yes; required in addition to it)")
-  .option('--skip-specs', 'Skip spec update operations (useful for infrastructure, tooling, or doc-only changes)')
-  .option('--no-validate', 'Skip validation (not recommended, requires confirmation)')
-  .option('--json', 'Output as JSON (non-interactive)')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .option('-y, --yes', '')
+  .option('--skip-specs', '')
+  .option('--no-validate', '')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
+  .option('--keep-ephemera', '')
+  .option('--dry-run', '')
+  .option('--save-plan', '')
+  .option('--apply-plan <token>', '')
+  .option('--intent-template', '')
+  .option('--intent-file <path>', '')
   .addOption(hiddenStorePathOption())
   .action(async (changeName?: string, options?: ArchiveOptions) => {
     try {
@@ -398,18 +410,18 @@ registerWorkflowLibraryCommand(program);
 // Top-level validate command
 program
   .command('validate [item-name]')
-  .description('Validate changes, specs, and pipelines')
-  .option('--all', 'Validate all changes, specs, and pipelines')
-  .option('--changes', 'Validate all changes')
-  .option('--specs', 'Validate all specs')
-  .option('--pipelines', 'Validate all pipelines')
-  .option('--type <type>', 'Specify item type when ambiguous: change|spec|pipeline')
-  .option('--strict', 'Enable strict validation mode')
-  .option('--json', 'Output validation results as JSON')
-  .option('--concurrency <n>', 'Max concurrent validations (defaults to env RASEN_CONCURRENCY or 6)')
-  .option('--no-interactive', 'Disable interactive prompts')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .option('--all', '')
+  .option('--changes', '')
+  .option('--specs', '')
+  .option('--pipelines', '')
+  .option('--type <type>', '')
+  .option('--strict', '')
+  .option('--json', '')
+  .option('--concurrency <n>', '')
+  .option('--no-interactive', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (itemName?: string, options?: { all?: boolean; changes?: boolean; specs?: boolean; pipelines?: boolean; type?: string; strict?: boolean; json?: boolean; noInteractive?: boolean; concurrency?: string; store?: string; project?: string; storePath?: string }) => {
     try {
@@ -424,19 +436,19 @@ program
 // Top-level show command
 program
   .command('show [item-name]')
-  .description('Show a change or spec')
-  .option('--json', 'Output as JSON')
-  .option('--type <type>', 'Specify item type when ambiguous: change|spec')
-  .option('--no-interactive', 'Disable interactive prompts')
+  .description('')
+  .option('--json', '')
+  .option('--type <type>', '')
+  .option('--no-interactive', '')
   // change-only flags
-  .option('--deltas-only', 'Show only deltas (JSON only, change)')
-  .option('--requirements-only', 'Alias for --deltas-only (deprecated, change)')
+  .option('--deltas-only', '')
+  .option('--requirements-only', '')
   // spec-only flags
-  .option('--requirements', 'JSON only: Show only requirements (exclude scenarios)')
-  .option('--no-scenarios', 'JSON only: Exclude scenario content')
-  .option('-r, --requirement <id>', 'JSON only: Show specific requirement by ID (1-based)')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .option('--requirements', '')
+  .option('--no-scenarios', '')
+  .option('-r, --requirement <id>', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   // Explicit registration required: allowUnknownOption would otherwise
   // silently swallow --store-path instead of rejecting it deliberately.
   .addOption(hiddenStorePathOption())
@@ -455,8 +467,8 @@ program
 // Feedback command
 program
   .command('feedback <message>')
-  .description('Submit feedback about Rasen')
-  .option('--body <text>', 'Detailed description for the feedback')
+  .description('')
+  .option('--body <text>', '')
   .action(async (message: string, options?: { body?: string }) => {
     try {
       const feedbackCommand = new FeedbackCommand();
@@ -470,14 +482,14 @@ program
 // Completion command with subcommands
 const completionCmd = program
   .command('completion')
-  .description('Manage shell completions for Rasen CLI');
+  .description('');
 
 completionCmd
   .command('generate [shell]')
-  .description('Generate completion script for a shell (outputs to stdout)')
+  .description('')
   .action(async (shell?: string) => {
     try {
-      const completionCommand = new CompletionCommand();
+      const completionCommand = createCompletionCommand();
       await completionCommand.generate({ shell });
     } catch (error) {
       failWithError(error);
@@ -487,11 +499,11 @@ completionCmd
 
 completionCmd
   .command('install [shell]')
-  .description('Install completion script for a shell')
-  .option('--verbose', 'Show detailed installation output')
+  .description('')
+  .option('--verbose', '')
   .action(async (shell?: string, options?: { verbose?: boolean }) => {
     try {
-      const completionCommand = new CompletionCommand();
+      const completionCommand = createCompletionCommand();
       await completionCommand.install({ shell, verbose: options?.verbose });
     } catch (error) {
       failWithError(error);
@@ -501,11 +513,11 @@ completionCmd
 
 completionCmd
   .command('uninstall [shell]')
-  .description('Uninstall completion script for a shell')
-  .option('-y, --yes', 'Skip confirmation prompts')
+  .description('')
+  .option('-y, --yes', '')
   .action(async (shell?: string, options?: { yes?: boolean }) => {
     try {
-      const completionCommand = new CompletionCommand();
+      const completionCommand = createCompletionCommand();
       await completionCommand.uninstall({ shell, yes: options?.yes });
     } catch (error) {
       failWithError(error);
@@ -516,10 +528,10 @@ completionCmd
 // Hidden command for machine-readable completion data
 program
   .command('__complete <type>', { hidden: true })
-  .description('Output completion data in machine-readable format (internal use)')
+  .description('')
   .action(async (type: string) => {
     try {
-      const completionCommand = new CompletionCommand();
+      const completionCommand = createCompletionCommand();
       await completionCommand.complete({ type });
     } catch (error) {
       // Silently fail for graceful shell completion experience
@@ -534,12 +546,12 @@ program
 // Status command
 program
   .command('status')
-  .description('Display artifact completion status for a change')
-  .option('--change <id>', 'Change name to show status for')
-  .option('--schema <name>', 'Schema override (auto-detected from config.yaml)')
-  .option('--json', 'Output as JSON')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .option('--change <id>', '')
+  .option('--schema <name>', '')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (options: StatusOptions) => {
     try {
@@ -553,12 +565,12 @@ program
 // Instructions command
 program
   .command('instructions [artifact]')
-  .description('Output enriched instructions for creating an artifact or applying tasks')
-  .option('--change <id>', 'Change name')
-  .option('--schema <name>', 'Schema override (auto-detected from config.yaml)')
-  .option('--json', 'Output as JSON')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .option('--change <id>', '')
+  .option('--schema <name>', '')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (artifactId: string | undefined, options: InstructionsOptions) => {
     try {
@@ -577,9 +589,9 @@ program
 // Templates command
 program
   .command('templates')
-  .description('Show resolved template paths for all artifacts in a schema')
-  .option('--schema <name>', `Schema to use (default: ${DEFAULT_SCHEMA})`)
-  .option('--json', 'Output as JSON mapping artifact IDs to template paths')
+  .description('')
+  .option('--schema <name>', '')
+  .option('--json', '')
   .action(async (options: TemplatesOptions) => {
     try {
       await templatesCommand(options);
@@ -592,8 +604,8 @@ program
 // Schemas command
 program
   .command('schemas')
-  .description('List available workflow schemas with descriptions')
-  .option('--json', 'Output as JSON (for agent use)')
+  .description('')
+  .option('--json', '')
   .action(async (options: SchemasOptions) => {
     try {
       await schemasCommand(options);
@@ -604,24 +616,24 @@ program
   });
 
 // New command group with change subcommand
-const newCmd = program.command('new').description('Create new items');
+const newCmd = program.command('new').description('');
 
 newCmd
   .command('change <name>')
-  .description('Create a new change directory')
-  .option('--description <text>', 'Description to add to README.md')
-  .option('--proposal <text>', 'Seed proposal.md with this text, making the change active immediately')
-  .option('--goal <text>', 'Optional goal metadata to store with the change')
-  .option('--schema <name>', `Workflow schema to use (default: ${DEFAULT_SCHEMA})`)
-  .option('--pipeline <name>', 'Pipeline to initialize run-state for')
-  .option('--json', 'Output as JSON')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .option('--description <text>', '')
+  .option('--proposal <text>', '')
+  .option('--goal <text>', '')
+  .option('--schema <name>', '')
+  .option('--pipeline <name>', '')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   // Removed options kept registered (hidden) so users get a deliberate
   // explanation instead of a generic unknown-option error.
-  .addOption(new Option('--initiative <id>', 'No longer supported').hideHelp())
-  .addOption(new Option('--areas <names>', 'No longer supported').hideHelp())
+  .addOption(new Option('--initiative <id>', '').hideHelp())
+  .addOption(new Option('--areas <names>', '').hideHelp())
   .action(async (name: string, options: NewChangeOptions) => {
     try {
       await newChangeCommand(name, options);
@@ -634,14 +646,14 @@ newCmd
 // Pipeline command group: inspect orchestration pipelines and run-state
 const pipelineCmd = program
   .command('pipeline')
-  .description('Inspect and manage orchestration pipelines');
+  .description('');
 
 pipelineCmd
   .command('list')
-  .description('List available pipelines (project > user > package)')
-  .option('--json', 'Output as JSON')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (options?: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
     try {
@@ -654,16 +666,16 @@ pipelineCmd
 
 pipelineCmd
   .command('show <name>')
-  .description('Show a pipeline stage DAG and build order')
-  .option('--for-execution', 'Validate active-profile skills before returning the executable DAG')
-  .option('--planner <runtime>', 'Set planner runtime: claude or codex')
-  .option('--implementer <runtime>', 'Set implementer runtime: claude or codex')
-  .option('--reviewer <runtime>', 'Set reviewer runtime: claude or codex')
-  .option('--fixer <runtime>', 'Set fixer runtime: claude or codex')
-  .option('--shipper <runtime>', 'Set shipper runtime: claude or codex')
-  .option('--json', 'Output as JSON')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .option('--for-execution', '')
+  .option('--planner <runtime>', '')
+  .option('--implementer <runtime>', '')
+  .option('--reviewer <runtime>', '')
+  .option('--fixer <runtime>', '')
+  .option('--shipper <runtime>', '')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (name: string, options?: {
     planner?: string;
@@ -687,15 +699,15 @@ pipelineCmd
 
 pipelineCmd
   .command('agents <name>')
-  .description('Show or set per-role Claude/Codex runtimes for a pipeline')
-  .option('--planner <runtime>', 'Set planner runtime: claude or codex')
-  .option('--implementer <runtime>', 'Set implementer runtime: claude or codex')
-  .option('--reviewer <runtime>', 'Set reviewer runtime: claude or codex')
-  .option('--fixer <runtime>', 'Set fixer runtime: claude or codex')
-  .option('--shipper <runtime>', 'Set shipper runtime: claude or codex')
-  .option('--json', 'Output as JSON')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .option('--planner <runtime>', '')
+  .option('--implementer <runtime>', '')
+  .option('--reviewer <runtime>', '')
+  .option('--fixer <runtime>', '')
+  .option('--shipper <runtime>', '')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (
     name: string,
@@ -721,10 +733,10 @@ pipelineCmd
 
 pipelineCmd
   .command('classify <task>')
-  .description('Suggest a pipeline for a task (advisory keyword heuristic)')
-  .option('--json', 'Output as JSON')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (task: string, options?: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
     try {
@@ -737,10 +749,10 @@ pipelineCmd
 
 pipelineCmd
   .command('resume <change>')
-  .description("Show a change's pipeline run-state (next/remaining stages)")
-  .option('--json', 'Output as JSON')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (change: string, options?: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
     try {
@@ -753,11 +765,11 @@ pipelineCmd
 
 pipelineCmd
   .command('init <name>')
-  .description('Create a minimal pipeline draft without installing it')
-  .requiredOption('--output <path>', 'Empty pipeline draft directory to create')
-  .option('--json', 'Output as JSON')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .requiredOption('--output <path>', '')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (name: string, options: { output: string; json?: boolean; store?: string; project?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
@@ -766,10 +778,10 @@ pipelineCmd
 
 pipelineCmd
   .command('validate <name-or-path>')
-  .description('Validate an installed pipeline, draft directory, or .rasenpkg')
-  .option('--json', 'Output as JSON')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (nameOrPath: string, options: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
@@ -778,11 +790,11 @@ pipelineCmd
 
 pipelineCmd
   .command('import <path>')
-  .description('Validate and atomically install a pipeline .rasenpkg')
-  .option('--force', 'Overwrite an already-installed pipeline of the same name')
-  .option('--json', 'Output as JSON')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .option('--force', '')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (sourcePath: string, options: { force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
@@ -791,11 +803,11 @@ pipelineCmd
 
 pipelineCmd
   .command('export <name> <path>')
-  .description('Export a user pipeline as .rasenpkg')
-  .option('--force', 'Replace an existing destination file')
-  .option('--json', 'Output as JSON')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .option('--force', '')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (name: string, destination: string, options: { force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
@@ -804,12 +816,12 @@ pipelineCmd
 
 pipelineCmd
   .command('save <name>')
-  .description('Validate and install a pipeline definition file as a user pipeline')
-  .requiredOption('--from <file>', 'Path to a JSON or YAML pipeline definition')
-  .option('--force', 'Overwrite an already-installed user pipeline of the same name')
-  .option('--json', 'Output as JSON')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .requiredOption('--from <file>', '')
+  .option('--force', '')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (name: string, options: { from: string; force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
@@ -818,12 +830,12 @@ pipelineCmd
 
 pipelineCmd
   .command('delete <name>')
-  .description('Delete an unreferenced user pipeline')
-  .option('-y, --yes', 'Skip confirmation')
-  .option('--force', 'Bypass the referrer guard, deleting even a still-referenced pipeline')
-  .option('--json', 'Output as JSON')
-  .option('--store <id>', STORE_OPTION_DESCRIPTION)
-  .option('--project <id>', PROJECT_OPTION_DESCRIPTION)
+  .description('')
+  .option('-y, --yes', '')
+  .option('--force', '')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (name: string, options: { yes?: boolean; force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
@@ -833,79 +845,62 @@ pipelineCmd
 // Agent command group: introspect an agent's own runtime state
 const agentCmd = program
   .command('agent')
-  .description('Inspect and control base agent runtime state');
+  .description('');
 
-const editBoundaryCmd = agentCmd
-  .command('edit-boundary')
-  .description('Control the checkout-scoped runtime edit boundary');
-
-editBoundaryCmd
-  .command('set <directory>')
-  .description('Set the checkout-scoped edit boundary to an existing directory')
-  .option('--runtime <runtime>', 'Force runtime: claude, codex, or zed')
-  .option('--json', 'Output stable JSON')
-  .action(async (directory: string, options: { runtime?: string; json?: boolean }) => {
+agentCmd
+  .command('dispatch')
+  .description('')
+  .option('--runtime <runtime>', '')
+  .option('--prompt-file <path>', '')
+  .option('--contract <contract>', '')
+  .option('--sandbox <sandbox>', '')
+  .option('--model <model>', '')
+  .option('--effort <effort>', '')
+  .option('--cwd <directory>', '')
+  .option('--timeout-ms <ms>', '', (value) => Number(value))
+  .option('--resume <session-id>', '')
+  .option('--json', '')
+  .action(async (options: {
+    runtime?: string;
+    promptFile?: string;
+    contract?: string;
+    sandbox?: string;
+    model?: string;
+    effort?: string;
+    cwd?: string;
+    timeoutMs?: number;
+    resume?: string;
+    json?: boolean;
+  }) => {
     try {
-      const result = await new AgentCommand().editBoundarySet(directory, options);
-      if (result.error) process.exitCode = 1;
+      await new AgentCommand().dispatch(options);
     } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
+      console.log(
+        JSON.stringify({
+          ok: false,
+          runtime: options.runtime ?? 'unknown',
+          dispatchMode: 'exec-bridge',
+          bridge: 'claude-print',
+          ...(options.contract ? { contract: options.contract } : {}),
+          failure: {
+            kind: 'invalid-input',
+            message: error instanceof Error ? error.message : String(error),
+          },
+        })
+      );
       process.exitCode = 1;
-    }
-  });
-
-editBoundaryCmd
-  .command('status')
-  .description('Show the active boundary and observed host enforcement')
-  .option('--runtime <runtime>', 'Force runtime: claude, codex, or zed')
-  .option('--json', 'Output stable JSON')
-  .action(async (options: { runtime?: string; json?: boolean }) => {
-    try {
-      await new AgentCommand().editBoundaryStatus(options);
-    } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exitCode = 1;
-    }
-  });
-
-editBoundaryCmd
-  .command('clear')
-  .description('Clear the checkout-scoped edit boundary')
-  .option('--runtime <runtime>', 'Force runtime: claude, codex, or zed')
-  .option('--json', 'Output stable JSON')
-  .action(async (options: { runtime?: string; json?: boolean }) => {
-    try {
-      await new AgentCommand().editBoundaryClear(options);
-    } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exitCode = 1;
-    }
-  });
-
-editBoundaryCmd
-  .command('check', { hidden: true })
-  .option('--runtime <runtime>', 'Hook runtime')
-  .action(async (options: { runtime?: string }) => {
-    try {
-      await new AgentCommand().editBoundaryCheck(options);
-    } catch {
-      // Hooks fail open: a checker failure must never be reported as hard
-      // protection or turn a parse/configuration error into a denial.
     }
   });
 
 agentCmd
   .command('context')
-  .description('Report context-window occupancy of a transcript from its recorded usage')
-  .option('--transcript <path>', 'Path to a Claude Code transcript or Codex rollout jsonl')
-  .option('--latest', 'Use the newest main-session transcript for the current directory')
-  .option('--dir <dir>', 'Override the Claude projects directory used by --latest')
-  .option('--limit <n>', 'Override the resolved context-window limit', (v) => parseInt(v, 10))
-  .option('--runtime <runtime>', 'Force detection to "claude" or "codex" instead of sniffing the file')
-  .option('--json', 'Output as JSON')
+  .description('')
+  .option('--transcript <path>', '')
+  .option('--latest', '')
+  .option('--dir <dir>', '')
+  .option('--limit <n>', '', (v) => parseInt(v, 10))
+  .option('--runtime <runtime>', '')
+  .option('--json', '')
   .action(async (options?: {
     transcript?: string;
     latest?: boolean;
@@ -926,12 +921,12 @@ agentCmd
 
 agentCmd
   .command('wait')
-  .description('One cache-keepalive beat: block briefly polling the change\'s role signal file')
-  .requiredOption('--change <name>', 'Change whose signals directory to poll')
-  .requiredOption('--role <key>', 'Role key identifying this worker\'s signal file (e.g. reviewer, impl-spaces)')
-  .option('--max-beats <n>', 'Override the default beat cap (12)', (v) => parseInt(v, 10))
-  .option('--context-tokens <n>', 'Self-reported context size; below the keepalive floor stands down immediately', (v) => parseInt(v, 10))
-  .option('--beat-seconds <s>', 'Beat duration in seconds. Resolution: flag > keepalive.beatSeconds config (default 270) > 100s fuse; max 300. Beats over the shell tool default timeout require raising that tool timeout.', (v) => parseInt(v, 10))
+  .description('')
+  .requiredOption('--change <name>', '')
+  .requiredOption('--role <key>', '')
+  .option('--max-beats <n>', '', (v) => parseInt(v, 10))
+  .option('--context-tokens <n>', '', (v) => parseInt(v, 10))
+  .option('--beat-seconds <s>', '', (v) => parseInt(v, 10))
   .action(async (options: {
     change: string;
     role: string;
@@ -952,15 +947,15 @@ agentCmd
 agentCmd
   .command('audit [sessionId|path]')
   .description(
-    "Analyze a session's token spend from its Claude transcript, Codex rollout, or Zed thread database (experimental: parses internal, undocumented formats that may change with harness or Zed updates)"
+    ''
   )
-  .option('--projects-dir <dir>', 'Override the Claude projects directory a session id is resolved against')
-  .option('--out <path>', 'Write the report to this file instead of the default analytics directory')
-  .option('--runtime <runtime>', 'Force the runtime: "claude", "codex", or "zed" (Zed reads its local threads.db; experimental, format may change)')
-  .option('--match <text>', 'Zed only: resolve the session by its first user command instead of a thread id')
-  .option('--db <path>', "Zed only: override the threads.db path (default: Zed's per-OS location)")
-  .option('--json', 'Output as JSON')
-  .option('--open', 'Open the shipped viewer in your default browser, pre-loaded with the report')
+  .option('--projects-dir <dir>', '')
+  .option('--out <path>', '')
+  .option('--runtime <runtime>', '')
+  .option('--match <text>', '')
+  .option('--db <path>', '')
+  .option('--json', '')
+  .option('--open', '')
   .action(async (target: string | undefined, options?: {
     projectsDir?: string;
     out?: string;
@@ -980,14 +975,31 @@ agentCmd
     }
   });
 
-export { program };
+return program;
+}
+
+export interface CreateProgramOptions {
+  locale: CliLocale;
+  facts?: Partial<CliPresentationFacts>;
+}
+
+export function createProgram(options: CreateProgramOptions): Command {
+  const presentation = resolveCliPresentation(options);
+  const program = buildUnlocalizedProgram({
+    locale: options.locale,
+    presentation,
+  });
+  applyCliPresentation(program, presentation);
+  return program;
+}
 
 export function runCli(argv = process.argv): void {
   // One-time adoption of legacy machine data (brand rename + root
   // relocation) into the resolved config/data locations. Best-effort and
   // synchronous; must run before any config is read.
   adoptLegacyMachineData();
-  localizeProgramHelp(program);
+  const locale = getCliLocale();
+  const program = createProgram({ locale });
   program.parse(argv);
 }
 

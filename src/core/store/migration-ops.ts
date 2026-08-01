@@ -21,7 +21,6 @@ import {
   readStorePointer,
   resolveConfigFilePath,
   updateProjectConfigKey,
-  type ArchiveDestination,
   type StorePointerRead,
 } from '../project-config.js';
 import { storeBindingDeclarationFrom } from '../effective-config.js';
@@ -251,7 +250,12 @@ async function storeRemoteFor(storeRoot: string): Promise<string | undefined> {
   return remote !== undefined && !remoteCarriesCredentials(remote) ? remote : undefined;
 }
 
-export type ArchiveMode = 'move' | 'leave' | 'external';
+/**
+ * What adopt does with the source repo's existing archive. `external` is
+ * retired along with the destination axis (`archive-destination` capability):
+ * archives always land in a planning root — the source repo's or the store's.
+ */
+export type ArchiveMode = 'move' | 'leave';
 
 interface MoveOptions extends StorePathOptions, ProjectPathOptions {
   verifyHash?: boolean;
@@ -414,6 +418,19 @@ async function assertStoreHealthy(storeRoot: string, storeId: string): Promise<v
  * Fails closed before any move on precheck failure, aggregating every problem.
  */
 export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
+  // Reject before touching the filesystem: the external archive destination is
+  // retired, so this mode has no landing place left and must never half-run.
+  if ((input.archive as string) === 'external') {
+    throw new StoreError(
+      "`store adopt --archive external` is retired: archives always land in a planning root, never the machine home.",
+      'adopt_external_archive_retired',
+      {
+        target: 'archive.adopt',
+        fix: 'Use --archive move to bring the archive into the store, or --archive leave to keep it in the source repo.',
+      }
+    );
+  }
+
   const sourcePath = path.resolve(FileSystemUtils.canonicalizeExistingPath(input.sourcePath));
   const archiveMode: ArchiveMode = input.archive ?? 'move';
   const storeOpts: StorePathOptions = input.globalDataDir ? { globalDataDir: input.globalDataDir } : {};
@@ -661,35 +678,12 @@ async function handleAdoptArchive(
   mode: ArchiveMode,
   options: MoveOptions
 ): Promise<ArchiveMove[]> {
-  const sourceArchive = inRepoArchiveDir(sourcePath);
   if (mode === 'leave') {
     return [];
   }
-  if (mode === 'move') {
-    return moveArchiveEntries([sourceArchive], inRepoArchiveDir(storeRoot), options);
-  }
-  // external: relocate to the machine home archive + set destination external.
-  // A dry run must be fully inert (same rule as `archive relocate --to
-  // external`): probe the home instead of minting one, report a symbolic
-  // target when the project has no home yet, and never flip the config.
-  const home = await resolveProjectHome(sourcePath, {
-    ensure: !options.dryRun,
-    ...(options.globalDataDir ? { globalDataDir: options.globalDataDir } : {}),
-  });
-  if (!home && !options.dryRun) {
-    throw new StoreError(
-      'Could not resolve the machine home for --archive external.',
-      'adopt_external_archive_unresolved',
-      { target: 'project.registry', fix: 'Retry, or use --archive move.' }
-    );
-  }
-  const targetDir =
-    home?.archiveDir ?? path.join(getProjectsDir(options), '<project-home>', 'archive');
-  const moves = await moveArchiveEntries([sourceArchive], targetDir, options);
-  if (!options.dryRun) {
-    updateProjectConfigKey(sourcePath, 'archive.destination', 'external');
-  }
-  return moves;
+  // `move` is the only destination left: archives land in a planning root, and
+  // adopt writes no archive configuration (`archive-destination` capability).
+  return moveArchiveEntries([inRepoArchiveDir(sourcePath)], inRepoArchiveDir(storeRoot), options);
 }
 
 // -----------------------------------------------------------------------------
@@ -984,7 +978,13 @@ export async function ejectProject(input: EjectInput): Promise<EjectResult> {
 // archive relocate (design D5)
 // -----------------------------------------------------------------------------
 
-export type RelocateTarget = 'in-repo' | 'external' | 'store';
+/**
+ * Relocation consolidates archive DATA into the planning root (or the store's
+ * root in store mode). `external` is retired (`archive-relocate` capability):
+ * there is no destination axis left to flip, so relocation only ever moves
+ * archives INTO a planning root, never out of one.
+ */
+export type RelocateTarget = 'in-repo' | 'store';
 
 export interface RelocateInput extends StorePathOptions, ProjectPathOptions {
   projectRoot: string;
@@ -997,23 +997,34 @@ export interface RelocateResult {
   to: RelocateTarget;
   targetDir: string;
   moves: ArchiveMove[];
-  destinationValue: ArchiveDestination;
   dryRun: boolean;
 }
 
 /**
- * Moves existing archived changes to `--to` and flips `archive.destination`
- * in the same operation (spec archive-relocate). Enumerates from every current
- * location (repo, machine home, store archive) so a split archive consolidates.
+ * Consolidates existing archived changes into `--to` (spec archive-relocate).
+ * There is no destination configuration to flip any more — relocation moves
+ * DATA only. Enumerates from every current location (repo, machine home, store
+ * archive) so a split archive consolidates.
  */
 export async function relocateArchive(input: RelocateInput): Promise<RelocateResult> {
   if ((input.to as string) === 'prune') {
     throw new StoreError(
-      "`archive relocate --to prune` is not supported.",
+      "`archive relocate --to prune` is not supported: destructive pruning is retired and no path deletes archives.",
       'relocate_prune_rejected',
       {
-        target: 'archive.destination',
-        fix: 'Use `rasen config set archive.destination prune` and its confirmation flow.',
+        target: 'archive.relocate',
+        fix: 'Archives always live in the planning root. Use --to in-repo (or --to store in store mode).',
+      }
+    );
+  }
+
+  if ((input.to as string) === 'external') {
+    throw new StoreError(
+      "`archive relocate --to external` is retired: archive bookkeeping always lands in the planning root.",
+      'relocate_external_retired',
+      {
+        target: 'archive.relocate',
+        fix: 'Use --to in-repo to consolidate existing archives (including legacy machine-home ones) into the planning root, or --to store in store mode.',
       }
     );
   }
@@ -1047,31 +1058,11 @@ export async function relocateArchive(input: RelocateInput): Promise<RelocateRes
     }
   }
 
-  // Resolve the target dir.
+  // Resolve the target dir. Both targets are planning roots — the project's
+  // own, or the store's when the project is store-mode.
   let targetDir: string;
-  let destinationValue: ArchiveDestination;
   if (input.to === 'in-repo') {
     targetDir = inRepoArchiveDir(projectRoot);
-    destinationValue = 'in-repo';
-  } else if (input.to === 'external') {
-    // A dry run must be fully inert (finding #6): never mint/register a machine
-    // home. Probe only; when the project has no home yet, report a symbolic
-    // target rather than creating the home directory tree.
-    const ensuredHome = await resolveProjectHome(projectRoot, {
-      ensure: !input.dryRun,
-      ...(input.globalDataDir ? { globalDataDir: input.globalDataDir } : {}),
-    });
-    if (!ensuredHome && !input.dryRun) {
-      throw new StoreError('Could not resolve the machine home for --to external.', 'relocate_home_unresolved', {
-        target: 'project.registry',
-        fix: 'Retry the command.',
-      });
-    }
-    targetDir =
-      ensuredHome?.archiveDir ??
-      home?.archiveDir ??
-      path.join(getProjectsDir(storeOpts), '<project-home>', 'archive');
-    destinationValue = 'external';
   } else {
     // store
     if (!isStoreMode || !storeRoot) {
@@ -1082,9 +1073,6 @@ export async function relocateArchive(input: RelocateInput): Promise<RelocateRes
       );
     }
     targetDir = inRepoArchiveDir(storeRoot);
-    // 'store' is not a config enum value; store-mode archives resolve in-repo
-    // (to the store's own tree), so the config records `in-repo`.
-    destinationValue = 'in-repo';
   }
 
   const moves = await moveArchiveEntries([...sources], targetDir, {
@@ -1093,11 +1081,10 @@ export async function relocateArchive(input: RelocateInput): Promise<RelocateRes
     ...(input.dryRun ? { dryRun: true } : {}),
   });
 
-  if (!input.dryRun) {
-    updateProjectConfigKey(projectRoot, 'archive.destination', destinationValue);
-  }
+  // No config write: there is no destination axis left to record
+  // (`archive-relocate` capability). Relocation moves DATA only.
 
-  return { to: input.to, targetDir, moves, destinationValue, dryRun: !!input.dryRun };
+  return { to: input.to, targetDir, moves, dryRun: !!input.dryRun };
 }
 
 // -----------------------------------------------------------------------------

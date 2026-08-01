@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PowerShellGenerator } from '../../../../src/core/completions/generators/powershell-generator.js';
-import { CommandDefinition } from '../../../../src/core/completions/types.js';
+import { ResolvedCommandDefinition } from '../../../../src/core/completions/types.js';
 
 describe('PowerShellGenerator', () => {
 	let generator: PowerShellGenerator;
@@ -21,7 +21,7 @@ describe('PowerShellGenerator', () => {
 
 	describe('generate', () => {
 		it('should generate valid PowerShell completion script with header', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'init',
 					description: 'Initialize Rasen',
@@ -37,7 +37,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should register argument completer for rasen command', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'init',
 					description: 'Initialize Rasen',
@@ -52,7 +52,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should include all commands with descriptions', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'init',
 					description: 'Initialize Rasen',
@@ -81,7 +81,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should use CompletionResult objects for completions', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'init',
 					description: 'Initialize Rasen',
@@ -95,7 +95,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should handle commands with flags without short options', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'validate',
 					description: 'Validate specs',
@@ -121,7 +121,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should handle flags with short options', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'show',
 					description: 'Show a spec',
@@ -144,7 +144,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should handle boolean flags vs value-taking flags', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'validate',
 					description: 'Validate specs',
@@ -171,7 +171,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should handle flags with enum values', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'validate',
 					description: 'Validate specs',
@@ -180,7 +180,7 @@ describe('PowerShellGenerator', () => {
 							name: 'type',
 							description: 'Specify item type',
 							takesValue: true,
-							values: ['change', 'spec'],
+							completionValues: ['change', 'spec'],
 						},
 					],
 				},
@@ -194,7 +194,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should handle commands with subcommands', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'change',
 					description: 'Manage changes',
@@ -225,7 +225,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should offer parent flags when command has both flags and subcommands', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'config',
 					description: 'Manage configuration',
@@ -269,7 +269,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should handle positional arguments for change-id', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'archive',
 					description: 'Archive a change',
@@ -285,7 +285,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should handle positional arguments for spec-id', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'show-spec',
 					description: 'Show a spec',
@@ -301,7 +301,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should handle positional arguments for change-or-spec-id', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'show',
 					description: 'Show an item',
@@ -318,7 +318,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should handle positional arguments for shell with inline values', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'generate',
 					description: 'Generate completions',
@@ -337,7 +337,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should not include path completion helpers (PowerShell handles natively)', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'init',
 					description: 'Initialize Rasen',
@@ -354,7 +354,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should handle positional arguments for schema names', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'schema',
 					description: 'Manage schemas',
@@ -371,7 +371,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should handle positional arguments for profile names', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'profile-use',
 					description: 'Use a profile',
@@ -388,7 +388,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should generate dynamic completion helper for changes', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'archive',
 					description: 'Archive a change',
@@ -406,7 +406,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should generate dynamic completion helper for specs', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'show-spec',
 					description: 'Show a spec',
@@ -423,7 +423,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should escape double quotes in descriptions', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'test',
 					description: 'Test with "quotes"',
@@ -443,7 +443,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should handle complex nested subcommands with flags', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'spec',
 					description: 'Manage specs',
@@ -479,7 +479,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should not emit trailing commas in @() arrays', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'config',
 					description: 'Manage configuration',
@@ -507,7 +507,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should handle empty command list', () => {
-			const commands: CommandDefinition[] = [];
+			const commands: ResolvedCommandDefinition[] = [];
 
 			const script = generator.generate(commands);
 
@@ -517,7 +517,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should handle commands with no flags', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'view',
 					description: 'Display dashboard',
@@ -532,7 +532,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should generate helper function that splits on tab character', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'archive',
 					description: 'Archive a change',
@@ -553,7 +553,7 @@ describe('PowerShellGenerator', () => {
 
 	describe('security - command injection prevention', () => {
 		it('should escape $() subexpressions in descriptions', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'test',
 					description: 'Test command $(Get-Process)',
@@ -570,7 +570,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should escape backticks in descriptions', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'test',
 					description: 'Test with `n newline escape',
@@ -585,7 +585,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should escape dollar signs in descriptions', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'test',
 					description: 'Test with $env:PATH variable',
@@ -600,7 +600,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should escape double quotes in descriptions', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'test',
 					description: 'Test with "quotes"',
@@ -615,7 +615,7 @@ describe('PowerShellGenerator', () => {
 		});
 
 		it('should handle multiple PowerShell metacharacters together', () => {
-			const commands: CommandDefinition[] = [
+			const commands: ResolvedCommandDefinition[] = [
 				{
 					name: 'test',
 					description: 'Dangerous: $(Remove-Item -Force) `n $env:HOME "quoted"',

@@ -103,8 +103,10 @@ import {
 import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
 import { resolveChangeWorkDir } from '../core/change-work.js';
+import { ephemeraDir, resolveExecutionRoot } from '../core/file-placement.js';
 import {
   resolveRootForCommand,
+  isStoreSelectedRoot,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
 import {
@@ -118,6 +120,7 @@ import {
   detectHostRuntime,
   resolveDispatchRoute,
   type DetectedHostRuntime,
+  type DispatchBridge,
   type DispatchMode,
 } from '../core/runtime-adapters.js';
 
@@ -163,6 +166,7 @@ interface StageView {
   runtime: AgentRuntime;
   runtimeSource: RuntimeSource;
   dispatchMode: DispatchMode;
+  bridge: DispatchBridge | null;
   sessionReuse: Stage['sessionReuse'] | null;
   sandbox: Stage['sandbox'] | null;
   model: string | null;
@@ -607,16 +611,26 @@ export class PipelineCommand {
     // never mint identity or write to the repo/registry (design D2).
     const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: false });
 
+    // Sticky-legacy chain (`file-placement` capability): the execution root's
+    // ephemera directory is the terminal landing and is searched first, then
+    // the legacy machine-home work directory, then the change directory.
+    const executionRoot = resolveExecutionRoot(projectRoot, {
+      storeSelected: isStoreSelectedRoot(root),
+    });
+    const stateLocations = {
+      ephemeraDir: ephemeraDir(executionRoot, changeName),
+      workDir,
+    };
+
     // Portfolio parent? The portfolio record is authoritative — resume reports
     // the next runnable child(ren) from the dependency DAG rather than stages.
-    // Sticky-legacy (design D4): workDir first, change dir fallback.
     //
     // Read DETAILED so a located-but-unreadable record is reported instead of
     // being read as "this change was never split". That substitution is not
     // cosmetic: it drops the parent to the stage-based branch below, where a
     // decomposed parent's stage list can leave delivery as the only thing
     // remaining — offering `ship` for work its children have not finished.
-    const portfolioLocation = resolvePortfolioStateLocation(changeDir, workDir);
+    const portfolioLocation = resolvePortfolioStateLocation(changeDir, stateLocations);
     const portfolioRead = portfolioLocation
       ? readPortfolioStateDetailed(portfolioLocation.dir)
       : ({ kind: 'absent' } as const);
@@ -768,10 +782,9 @@ export class PipelineCommand {
       return;
     }
 
-    // Sticky-legacy (design D4): workDir first, change dir fallback. Detailed
-    // read (design D3) so a located-but-unparseable file is reported
+    // Detailed read (design D3) so a located-but-unparseable file is reported
     // distinctly from no file at all, instead of masquerading as "not found".
-    const runStateLocation = resolveRunStateLocation(changeDir, workDir);
+    const runStateLocation = resolveRunStateLocation(changeDir, stateLocations);
     const runStateRead = runStateLocation
       ? readRunStateDetailed(runStateLocation.dir)
       : ({ kind: 'absent' } as const);
@@ -1030,6 +1043,15 @@ export class PipelineCommand {
     if (warmSeedable.length > 0) {
       console.log(messages.format('resumeHandles', { stages: warmSeedable.join(', ') }));
     }
+    for (const [stage, worker] of Object.entries(workers)) {
+      if (worker.runtime === 'claude' && worker.sessionId) {
+        console.log(messages.format('resumeClaudeSession', {
+          stage,
+          sessionId: worker.sessionId,
+          cwd: worker.cwd ?? none,
+        }));
+      }
+    }
     if (sessionHandoff) {
       console.log(messages.format('sessionHandoff', {
         generation: sessionHandoffGeneration(sessionHandoff),
@@ -1187,6 +1209,7 @@ export class PipelineCommand {
     // the built-in "gates on" default so effective equals the declared gate.
     const policy: ResolvedGatePolicy = basePolicy ?? { effective: 'on', source: 'default' };
     const maskedGate = resolveMaskedStageGate(stage.gate, overrides?.gates.get(stage.id), policy);
+    const route = resolveDispatchRoute(host.runtime, effectiveStageRuntime);
     return {
       id: stage.id,
       kind: stage.kind,
@@ -1207,7 +1230,8 @@ export class PipelineCommand {
       runtime: effectiveStageRuntime,
       runtimeSource: executionRuntime?.runtimeSource ?? runtime.runtimeSource,
       dispatchMode: executionRuntime?.dispatchMode
-        ?? resolveDispatchRoute(host.runtime, effectiveStageRuntime).mode,
+        ?? route.mode,
+      bridge: executionRuntime?.bridge ?? route.bridge ?? null,
       sessionReuse: runtime.sessionReuse ?? null,
       sandbox: runtime.sandbox ?? null,
       model: runtime.model ?? null,

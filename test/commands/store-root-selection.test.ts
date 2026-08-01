@@ -523,6 +523,14 @@ describe('store root selection for normal commands', () => {
   });
 
   describe('archive --json is non-interactive', () => {
+    function expectBlockedPlanWithNoWrites(json: any): void {
+      expect(json.plan.complete).toBe(false);
+      expect(json.plan.blockers.length).toBeGreaterThan(0);
+      expect(fs.existsSync(json.plan.paths.stage)).toBe(false);
+      expect(fs.existsSync(json.plan.paths.journal)).toBe(false);
+      expect(fs.existsSync(json.plan.paths.final)).toBe(false);
+    }
+
     it('fails without a change name instead of opening a picker', async () => {
       createChange(storeRoot, 'store-change');
 
@@ -562,10 +570,17 @@ describe('store root selection for normal commands', () => {
       expect(result.exitCode).toBe(1);
       const json = parseJson(result);
       expect(json.archive).toBeNull();
-      expect(json.status[0]).toEqual(expect.objectContaining({
+      expect(json.status[0]).toEqual({
+        severity: 'error',
         code: 'archive_change_not_found',
         message: "Change 'missing-change' not found. No active changes exist in this root.",
-      }));
+      });
+      expectBlockedPlanWithNoWrites(json);
+      expect(json.plan.blockers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ operation: 'source-lstat', code: 'ENOENT' }),
+        ])
+      );
     });
 
     it('reports validation failures as diagnostics without stdout prose', async () => {
@@ -579,7 +594,16 @@ describe('store root selection for normal commands', () => {
       expect(result.stdout.trim().startsWith('{')).toBe(true);
       const json = parseJson(result);
       expect(json.archive).toBeNull();
-      expect(json.status[0].code).toBe('archive_validation_failed');
+      expect(json.status[0]).toEqual({
+        severity: 'error',
+        code: 'archive_validation_failed',
+        message: "Validation failed for change 'bad-change'.",
+        fix: 'Run rasen validate bad-change --store team-context for details, fix the errors, or rerun with --no-validate.',
+      });
+      expectBlockedPlanWithNoWrites(json);
+      expect(json.plan.blockers).toEqual(
+        expect.arrayContaining([expect.objectContaining({ operation: 'validation' })])
+      );
       // The change was not archived.
       expect(
         fs.existsSync(path.join(storeRoot, 'rasen', 'changes', 'bad-change'))
@@ -626,7 +650,21 @@ describe('store root selection for normal commands', () => {
       expect(result.exitCode).toBe(1);
       const json = parseJson(result);
       expect(json.archive).toBeNull();
-      expect(json.status[0].code).toBe('archive_spec_validation_failed');
+      expect(json.status[0]).toEqual({
+        severity: 'error',
+        code: 'archive_spec_validation_failed',
+        message: "Rebuilt spec for 'zzz-bad' failed validation. No files were changed.",
+        fix: 'Run rasen validate zzz-bad --store team-context after fixing the change deltas.',
+      });
+      expectBlockedPlanWithNoWrites(json);
+      expect(json.plan.blockers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            operation: 'spec',
+            code: 'archive_spec_validation_failed',
+          }),
+        ])
+      );
 
       // "No files were changed" must be true: the good spec was not created
       // and the bad target is byte-identical.
@@ -652,7 +690,21 @@ describe('store root selection for normal commands', () => {
       expect(result.stdout.trim().startsWith('{')).toBe(true);
       const json = parseJson(result);
       expect(json.archive).toBeNull();
-      expect(json.status[0].code).toBe('archive_spec_update_failed');
+      expect(json.status[0]).toEqual({
+        severity: 'error',
+        code: 'archive_spec_update_failed',
+        message: 'billing: target spec does not exist; only ADDED requirements are allowed for new specs. MODIFIED and RENAMED operations require an existing spec.',
+        fix: 'Fix the change delta specs and rerun. No files were changed.',
+      });
+      expectBlockedPlanWithNoWrites(json);
+      expect(json.plan.blockers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            operation: 'spec',
+            code: 'archive_spec_update_failed',
+          }),
+        ])
+      );
       expect(
         fs.existsSync(path.join(storeRoot, 'rasen', 'changes', 'modified-change'))
       ).toBe(true);
@@ -667,7 +719,17 @@ describe('store root selection for normal commands', () => {
       );
       expect(result.exitCode).toBe(1);
       const json = parseJson(result);
-      expect(json.status[0].code).toMatch(/archive_tasks_incomplete|archive_confirmation_required/);
+      expect(json.archive).toBeNull();
+      expect(json.status[0]).toEqual({
+        severity: 'error',
+        code: 'archive_tasks_incomplete',
+        message: "1 incomplete task(s) found for change 'wip-change'.",
+        fix: 'Complete the tasks or rerun with --yes.',
+      });
+      expectBlockedPlanWithNoWrites(json);
+      expect(json.plan.blockers).toEqual(
+        expect.arrayContaining([expect.objectContaining({ operation: 'tasks' })])
+      );
       expect(
         fs.existsSync(path.join(storeRoot, 'rasen', 'changes', 'wip-change'))
       ).toBe(true);

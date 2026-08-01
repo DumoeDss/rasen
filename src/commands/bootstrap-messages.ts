@@ -190,27 +190,6 @@ export const BOOTSTRAP_MESSAGE_KEYS = [
 
 export type BootstrapMessageKey = (typeof BOOTSTRAP_MESSAGE_KEYS)[number];
 
-/**
- * Command and flag descriptions, authored in English ON PURPOSE.
- *
- * Commander help is localized by the `commandDescriptions` lookup keyed on the
- * English text (`cli/help-localization.ts`), so a description handed to
- * Commander already in Japanese would fail that lookup and fall back to the
- * registry's English. Keeping them here as named constants means the command
- * file still spells out no English of its own, and the completion registry and
- * the command cannot drift apart on the text the lookup is keyed by.
- */
-export const BOOTSTRAP_DESCRIPTIONS = {
-  command: 'Report what this machine still needs before this project works',
-  check: 'Check mode: report from local information only, contacting no network',
-  dryRun: 'Preview mode: additionally resolve remotes and the exact location each repository would be placed at',
-  apply: 'Apply mode: prepare repositories and knowledge, then offer each declared portable bundle as a separate confirmed import',
-  yes: 'Confirm project-declared actions, including project-config bundle imports; Store-only bundles and Store projects still require an explicit choice',
-  json: 'Output as JSON',
-  path: 'Location for one store or project, as <selector>=<dir>; repeatable',
-  into: 'Parent directory a derived name would be placed under',
-} as const;
-
 export interface BootstrapMessages {
   headingProject: (path: string, mode: string) => string;
   headingStore: (store: string, path: string, mode: string) => string;

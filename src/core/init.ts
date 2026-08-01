@@ -23,6 +23,7 @@ import {
 import { transformToHyphenCommands } from '../utils/command-references.js';
 import {
   AI_TOOLS,
+  DEFAULT_SCHEMA,
   OPENSPEC_DIR_NAME,
   WORKSPACE_DIR_NAME,
   AIToolOption,
@@ -102,18 +103,12 @@ import {
 import { syncWorkflowArtifactLedger } from './workflow-artifact-ledger.js';
 import { getAvailableTools } from './available-tools.js';
 import { ensureClaudeAgentTeams } from './claude-settings.js';
-import { reconcileEditBoundaryHooks } from './edit-boundary-hooks.js';
+import { cleanupRetiredEditBoundaryArtifacts } from './retired-edit-boundary.js';
 import { migrateIfNeeded } from './migration.js';
 import { reconcileCodexProjectConfig, formatCodexConfigSummary, type CodexConfigReconcileResult } from './codex/index.js';
 
 const require = createRequire(import.meta.url);
 const { version: OPENSPEC_VERSION } = require('../../package.json');
-
-// -----------------------------------------------------------------------------
-// Constants
-// -----------------------------------------------------------------------------
-
-const DEFAULT_SCHEMA = 'spec-driven';
 
 const PROGRESS_SPINNER = {
   interval: 80,
@@ -233,10 +228,9 @@ export class InitCommand {
     // Validate selected tools
     const validatedTools = this.validateTools(selectedToolIds, toolStates);
 
-    // Base-runtime reconciliation is independent of selected skills. Heal the
-    // exact retired directories for every previously configured or selected
-    // tool, remove obsolete state, and install supported host hooks before
-    // entering the skill generation loop.
+    // Retired-boundary cleanup is independent of selected skills. Heal exact
+    // artifacts from both released generations before entering the skill
+    // generation loop; never create or reconcile a replacement hook.
     const cleanupToolIds = new Set([
       ...validatedTools.map((tool) => tool.value),
       ...[...toolStates.entries()]
@@ -251,11 +245,10 @@ export class InitCommand {
       );
     }
     await cleanupLegacyEditBoundaryState();
-    for (const result of reconcileEditBoundaryHooks(
-      projectPath,
-      validatedTools.map((tool) => tool.value)
-    )) {
-      if (result.warning) console.log(chalk.yellow(`Warning: ${result.warning}`));
+    const retiredBoundaryCleanup =
+      cleanupRetiredEditBoundaryArtifacts(projectPath);
+    for (const warning of retiredBoundaryCleanup.warnings) {
+      console.log(chalk.yellow(`Warning: ${warning}`));
     }
 
     // A fresh (non-extend) init is one of the explicit expert-aware write

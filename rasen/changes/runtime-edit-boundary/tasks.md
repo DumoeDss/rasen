@@ -38,6 +38,6 @@
 ## 6. Verification
 
 - [x] 6.1 Run focused runtime-adapter, edit-boundary, CLI-agent, Claude/Codex hook, init/update, profile, workflow-registry, sidecar, locale, and template-parity suites and fix all failures.
-- [ ] 6.2 Run `pnpm lint`, `pnpm test`, `pnpm build`, and package/release contract checks, confirming the npm payload needs no removed sidecar and contains all base-runtime code.
-- [ ] 6.3 Run the path/hook integration suite on Windows CI and at least one POSIX CI host, including a project with no retired skills installed and an explicit unsupported host.
-- [ ] 6.4 Manually smoke-test `set → status → outside covered write denied/cooperatively refused → clear` on Claude and Codex, recording the reported enforcement and confirming neither host is described more strongly than observed.
+- [ ] 6.2 **N/A — superseded by `retire-runtime-edit-boundary`.** The successor verifies removal and compatibility cleanup instead; do not mark this retired feature check complete.
+- [ ] 6.3 **N/A — superseded by `retire-runtime-edit-boundary`.** Cross-platform coverage belongs to the successor's subtractive migration suite.
+- [ ] 6.4 **N/A — superseded by `retire-runtime-edit-boundary`.** The removed transition lifecycle must not be smoke-tested or restored.

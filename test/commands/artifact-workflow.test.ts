@@ -4,6 +4,8 @@ import path from 'path';
 import os from 'os';
 import { runCLI } from '../helpers/run-cli.js';
 import { FileSystemUtils } from '../../src/utils/file-system.js';
+import { resolveProjectHome } from '../../src/core/project-home.js';
+import { getGlobalDataDir } from '../../src/core/index.js';
 
 describe('artifact-workflow CLI commands', () => {
   let tempDir: string;
@@ -871,118 +873,155 @@ artifacts:
     });
   });
 
-  describe('workDir exposure (design change-work-dir)', () => {
+  describe('per-class landing directories (file-placement capability)', () => {
     async function writeConfig(root: string): Promise<void> {
       await fs.writeFile(path.join(root, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
     }
 
-    it('status --json carries workDir for a registered project', async () => {
-      await writeConfig(tempDir);
-      await createTestChange('workdir-status-change');
-      const globalDataDir = path.join(tempDir, 'global-data-registered');
-
-      // First mint identity via the ensure surface (instructions), then
-      // confirm status (probe-only) picks it up without minting itself.
-      await runCLI(['instructions', 'proposal', '--change', 'workdir-status-change'], {
-        cwd: tempDir,
-        env: { XDG_DATA_HOME: globalDataDir },
+    /**
+     * Mints machine identity the way `rasen init` does. No change-scoped
+     * workflow surface mints any more (the work directory is legacy-read
+     * only), so a test that needs a REGISTERED project establishes identity
+     * through the resolver directly.
+     */
+    async function mintIdentity(dataHome: string): Promise<void> {
+      await resolveProjectHome(tempDir, {
+        ensure: true,
+        globalDataDir: getGlobalDataDir({ env: { XDG_DATA_HOME: dataHome } }),
       });
+    }
+
+    it('status --json always carries evidenceDir/handoffDir/ephemeraDir', async () => {
+      await writeConfig(tempDir);
+      await createTestChange('landing-status-change');
 
       const result = await runCLI(
-        ['status', '--change', 'workdir-status-change', '--json'],
-        { cwd: tempDir, env: { XDG_DATA_HOME: globalDataDir } }
+        ['status', '--change', 'landing-status-change', '--json'],
+        { cwd: tempDir }
       );
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout);
-      expect(typeof json.workDir).toBe('string');
-      expect(normalizePaths(json.workDir)).toContain('workdir-status-change/work');
+
+      expect(normalizePaths(json.evidenceDir)).toContain('changes/landing-status-change/evidence');
+      expect(normalizePaths(json.handoffDir)).toContain('changes/landing-status-change/handoff');
+      expect(normalizePaths(json.ephemeraDir)).toContain(
+        '.rasen/changes/landing-status-change/ephemera'
+      );
+      for (const dir of [json.evidenceDir, json.handoffDir, json.ephemeraDir]) {
+        expect(path.isAbsolute(dir)).toBe(true);
+      }
     });
 
-    it('status --json omits workDir for an unregistered project, with zero writes', async () => {
-      await createTestChange('workdir-status-unreg');
-      const globalDataDir = path.join(tempDir, 'global-data-unreg');
+    it('instructions and apply-instructions payloads carry the same three directories', async () => {
+      await writeConfig(tempDir);
+      await createTestChange('landing-instr-change', ['proposal', 'design', 'specs', 'tasks']);
 
-      const result = await runCLI(
-        ['status', '--change', 'workdir-status-unreg', '--json'],
-        { cwd: tempDir, env: { XDG_DATA_HOME: globalDataDir } }
+      const instructions = await runCLI(
+        ['instructions', 'proposal', '--change', 'landing-instr-change', '--json'],
+        { cwd: tempDir }
       );
-      expect(result.exitCode).toBe(0);
-      const json = JSON.parse(result.stdout);
-      expect(json.workDir).toBeUndefined();
-      // Probe-only: no registry directory created, and no config.yaml was
-      // ever written for this unregistered project.
-      expect(existsSync(path.join(globalDataDir, 'rasen', 'projects'))).toBe(false);
+      expect(instructions.exitCode).toBe(0);
+      const instructionsJson = JSON.parse(instructions.stdout);
+      expect(normalizePaths(instructionsJson.evidenceDir)).toContain(
+        'changes/landing-instr-change/evidence'
+      );
+      expect(normalizePaths(instructionsJson.handoffDir)).toContain(
+        'changes/landing-instr-change/handoff'
+      );
+      expect(normalizePaths(instructionsJson.ephemeraDir)).toContain(
+        '.rasen/changes/landing-instr-change/ephemera'
+      );
+
+      const apply = await runCLI(
+        ['instructions', 'apply', '--change', 'landing-instr-change', '--json'],
+        { cwd: tempDir }
+      );
+      expect(apply.exitCode).toBe(0);
+      const applyJson = JSON.parse(apply.stdout);
+      expect(applyJson.evidenceDir).toBe(instructionsJson.evidenceDir);
+      expect(applyJson.handoffDir).toBe(instructionsJson.handoffDir);
+      expect(applyJson.ephemeraDir).toBe(instructionsJson.ephemeraDir);
+    });
+
+    it('landing directories resolve for an unregistered project, with zero writes and no workDir', async () => {
+      await createTestChange('landing-unreg-change');
+      const dataHome = path.join(tempDir, 'global-data-landing-unreg');
+
+      for (const argv of [
+        ['status', '--change', 'landing-unreg-change', '--json'],
+        ['instructions', 'proposal', '--change', 'landing-unreg-change', '--json'],
+        ['instructions', 'apply', '--change', 'landing-unreg-change', '--json'],
+      ]) {
+        const result = await runCLI(argv, { cwd: tempDir, env: { XDG_DATA_HOME: dataHome } });
+        expect(result.exitCode, result.stdout + result.stderr).toBe(0);
+        const json = JSON.parse(result.stdout);
+        expect(typeof json.evidenceDir).toBe('string');
+        expect(typeof json.handoffDir).toBe('string');
+        expect(typeof json.ephemeraDir).toBe('string');
+        expect(json.workDir).toBeUndefined();
+      }
+
+      // Probe-only across every surface: nothing mints identity any more, so
+      // no registry, no machine home, and no config.yaml appear.
+      expect(existsSync(path.join(dataHome, 'rasen', 'projects'))).toBe(false);
       expect(existsSync(path.join(tempDir, 'rasen', 'config.yaml'))).toBe(false);
+      // Reporting a landing path never creates it.
+      expect(existsSync(path.join(tempDir, '.rasen'))).toBe(false);
     });
 
-    it('instructions --json mints identity on first call and carries workDir', async () => {
+    it('the instructions surfaces no longer mint machine identity', async () => {
       await writeConfig(tempDir);
-      await createTestChange('workdir-instr-change');
-      const globalDataDir = path.join(tempDir, 'global-data-mint');
-
-      const configPathBefore = await fs.readFile(
-        path.join(tempDir, 'rasen', 'config.yaml'),
-        'utf-8'
-      );
-      expect(configPathBefore).not.toContain('projectId');
+      await createTestChange('landing-nomint-change');
+      const dataHome = path.join(tempDir, 'global-data-landing-nomint');
 
       const result = await runCLI(
-        ['instructions', 'proposal', '--change', 'workdir-instr-change', '--json'],
-        { cwd: tempDir, env: { XDG_DATA_HOME: globalDataDir } }
+        ['instructions', 'proposal', '--change', 'landing-nomint-change', '--json'],
+        { cwd: tempDir, env: { XDG_DATA_HOME: dataHome } }
       );
       expect(result.exitCode).toBe(0);
-      const json = JSON.parse(result.stdout);
-      expect(typeof json.workDir).toBe('string');
-      expect(normalizePaths(json.workDir)).toContain('workdir-instr-change/work');
 
-      const configPathAfter = await fs.readFile(
-        path.join(tempDir, 'rasen', 'config.yaml'),
-        'utf-8'
-      );
-      expect(configPathAfter).toContain('projectId');
-      expect(existsSync(path.join(globalDataDir, 'rasen', 'projects'))).toBe(true);
+      const configAfter = await fs.readFile(path.join(tempDir, 'rasen', 'config.yaml'), 'utf-8');
+      expect(configAfter).not.toContain('projectId');
+      expect(existsSync(path.join(dataHome, 'rasen', 'projects'))).toBe(false);
     });
 
-    it('instructions apply --json carries workDir (parity with instructions)', async () => {
+    it('workDir stays present (probe-only) once the project has a machine identity', async () => {
       await writeConfig(tempDir);
-      await createTestChange('workdir-apply-change', ['proposal', 'design', 'specs', 'tasks']);
-      const globalDataDir = path.join(tempDir, 'global-data-apply');
+      await createTestChange('landing-registered-change');
+      const dataHome = path.join(tempDir, 'global-data-landing-registered');
+      await mintIdentity(dataHome);
 
-      const result = await runCLI(
-        ['instructions', 'apply', '--change', 'workdir-apply-change', '--json'],
-        { cwd: tempDir, env: { XDG_DATA_HOME: globalDataDir } }
-      );
-      expect(result.exitCode).toBe(0);
-      const json = JSON.parse(result.stdout);
-      expect(typeof json.workDir).toBe('string');
-      expect(normalizePaths(json.workDir)).toContain('workdir-apply-change/work');
+      for (const argv of [
+        ['status', '--change', 'landing-registered-change', '--json'],
+        ['instructions', 'proposal', '--change', 'landing-registered-change', '--json'],
+      ]) {
+        const result = await runCLI(argv, { cwd: tempDir, env: { XDG_DATA_HOME: dataHome } });
+        expect(result.exitCode, result.stdout + result.stderr).toBe(0);
+        const json = JSON.parse(result.stdout);
+        expect(typeof json.workDir).toBe('string');
+        expect(normalizePaths(json.workDir)).toContain('landing-registered-change/work');
+      }
     });
 
     it('context --json carries machineHome for a registered project and omits it otherwise', async () => {
       await writeConfig(tempDir);
-      const globalDataDir = path.join(tempDir, 'global-data-context');
+      const dataHome = path.join(tempDir, 'global-data-landing-context');
 
       const unregistered = await runCLI(['context', '--json'], {
         cwd: tempDir,
-        env: { XDG_DATA_HOME: globalDataDir },
+        env: { XDG_DATA_HOME: dataHome },
       });
       expect(unregistered.exitCode).toBe(0);
-      const unregisteredJson = JSON.parse(unregistered.stdout);
-      expect(unregisteredJson.root.machineHome).toBeUndefined();
+      expect(JSON.parse(unregistered.stdout).root.machineHome).toBeUndefined();
 
-      await createTestChange('workdir-context-change');
-      await runCLI(['instructions', 'proposal', '--change', 'workdir-context-change'], {
-        cwd: tempDir,
-        env: { XDG_DATA_HOME: globalDataDir },
-      });
+      await mintIdentity(dataHome);
 
       const registered = await runCLI(['context', '--json'], {
         cwd: tempDir,
-        env: { XDG_DATA_HOME: globalDataDir },
+        env: { XDG_DATA_HOME: dataHome },
       });
       expect(registered.exitCode).toBe(0);
-      const registeredJson = JSON.parse(registered.stdout);
-      expect(typeof registeredJson.root.machineHome).toBe('string');
+      expect(typeof JSON.parse(registered.stdout).root.machineHome).toBe('string');
     });
 
     // Review finding F1: a corrupt machine-global registry.json must never
@@ -991,40 +1030,38 @@ artifacts:
     describe('corrupt machine-global registry.json (F1 regression)', () => {
       async function registerAndCorruptRegistry(
         changeName: string,
-        globalDataDir: string
+        dataHome: string
       ): Promise<void> {
         await writeConfig(tempDir);
         await createTestChange(changeName);
-        // Mint identity first so the registry file actually exists.
-        await runCLI(['instructions', 'proposal', '--change', changeName], {
-          cwd: tempDir,
-          env: { XDG_DATA_HOME: globalDataDir },
-        });
-        const registryPath = path.join(globalDataDir, 'rasen', 'projects', 'registry.json');
+        await mintIdentity(dataHome);
+        const registryPath = path.join(dataHome, 'rasen', 'projects', 'registry.json');
         await fs.writeFile(registryPath, '{not valid json');
       }
 
       it('status --json still succeeds with workDir simply absent', async () => {
-        const globalDataDir = path.join(tempDir, 'global-data-corrupt-status');
-        await registerAndCorruptRegistry('workdir-corrupt-status', globalDataDir);
+        const dataHome = path.join(tempDir, 'global-data-corrupt-status');
+        await registerAndCorruptRegistry('workdir-corrupt-status', dataHome);
 
         const result = await runCLI(
           ['status', '--change', 'workdir-corrupt-status', '--json'],
-          { cwd: tempDir, env: { XDG_DATA_HOME: globalDataDir } }
+          { cwd: tempDir, env: { XDG_DATA_HOME: dataHome } }
         );
         expect(result.exitCode).toBe(0);
         const json = JSON.parse(result.stdout);
         expect(json.workDir).toBeUndefined();
         expect(json.changeName).toBe('workdir-corrupt-status');
+        // The per-class directories never depend on the registry.
+        expect(typeof json.evidenceDir).toBe('string');
       });
 
       it('instructions --json still succeeds with workDir simply absent', async () => {
-        const globalDataDir = path.join(tempDir, 'global-data-corrupt-instr');
-        await registerAndCorruptRegistry('workdir-corrupt-instr', globalDataDir);
+        const dataHome = path.join(tempDir, 'global-data-corrupt-instr');
+        await registerAndCorruptRegistry('workdir-corrupt-instr', dataHome);
 
         const result = await runCLI(
           ['instructions', 'proposal', '--change', 'workdir-corrupt-instr', '--json'],
-          { cwd: tempDir, env: { XDG_DATA_HOME: globalDataDir } }
+          { cwd: tempDir, env: { XDG_DATA_HOME: dataHome } }
         );
         expect(result.exitCode).toBe(0);
         const json = JSON.parse(result.stdout);
@@ -1033,12 +1070,12 @@ artifacts:
       });
 
       it('context --json still succeeds with machineHome simply absent', async () => {
-        const globalDataDir = path.join(tempDir, 'global-data-corrupt-context');
-        await registerAndCorruptRegistry('workdir-corrupt-context', globalDataDir);
+        const dataHome = path.join(tempDir, 'global-data-corrupt-context');
+        await registerAndCorruptRegistry('workdir-corrupt-context', dataHome);
 
         const result = await runCLI(['context', '--json'], {
           cwd: tempDir,
-          env: { XDG_DATA_HOME: globalDataDir },
+          env: { XDG_DATA_HOME: dataHome },
         });
         expect(result.exitCode).toBe(0);
         const json = JSON.parse(result.stdout);
@@ -1063,7 +1100,6 @@ artifacts:
       const json = JSON.parse(result.stdout);
       expect(json.archive).toEqual({
         timing: 'in-ship',
-        destination: 'in-repo',
         // canonical() (realpathSync under the hood) only resolves paths that
         // exist on disk; the archive/ subdirectory is never created by
         // `status`, so canonicalizing the full joined path silently falls
@@ -1086,7 +1122,6 @@ artifacts:
       const json = JSON.parse(result.stdout);
       expect(json.archive).toEqual({
         timing: 'on-merge',
-        destination: 'in-repo',
         // See the sibling test above for why the root is canonicalized
         // before joining, not the full (non-existent) archive/ path.
         archiveDir: path.join(canonical(tempDir), 'rasen', 'changes', 'archive'),
@@ -1106,78 +1141,83 @@ artifacts:
     });
   });
 
-  describe('archive.destination exposure (design externalize-artifacts-archive-dest)', () => {
-    it('status --json exposes the configured external destination and its resolved archiveDir', async () => {
-      const globalDataDir = path.join(tempDir, 'global-data-archive-dest-external');
+  // The destination axis is retired (archive-destination capability): the
+  // status archive block reports one fixed in-repo location, plus read-only
+  // legacy discovery, and never a `destination` field.
+  describe('archive location exposure (destination axis retired)', () => {
+    async function writeDestinationConfig(value: string): Promise<void> {
       await fs.writeFile(
         path.join(tempDir, 'rasen', 'config.yaml'),
-        'schema: spec-driven\narchive:\n  destination: external\n'
+        `schema: spec-driven\narchive:\n  destination: ${value}\n`
       );
-      await createTestChange('archive-dest-external');
+    }
 
-      // Register the project's machine home first (status is a read-only
-      // probe and never mints identity itself — design D2/D6).
-      const registerResult = await runCLI(['instructions', 'proposal', '--change', 'archive-dest-external', '--json'], {
-        cwd: tempDir,
-        env: { XDG_DATA_HOME: globalDataDir },
-      });
-      expect(registerResult.exitCode).toBe(0);
+    it('a config still carrying destination: external reports the in-repo archiveDir and no destination', async () => {
+      const dataHome = path.join(tempDir, 'global-data-archive-loc-external');
+      await writeDestinationConfig('external');
+      await createTestChange('archive-loc-external');
 
       const result = await runCLI(
-        ['status', '--change', 'archive-dest-external', '--json'],
-        { cwd: tempDir, env: { XDG_DATA_HOME: globalDataDir } }
+        ['status', '--change', 'archive-loc-external', '--json'],
+        { cwd: tempDir, env: { XDG_DATA_HOME: dataHome } }
       );
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout);
-      expect(json.archive.destination).toBe('external');
-      expect(json.archive.archiveDir).toBeDefined();
-      expect(path.isAbsolute(json.archive.archiveDir)).toBe(true);
-      expect(json.archive.archiveDir).not.toBe(path.join(tempDir, 'rasen', 'changes', 'archive'));
+      expect(json.archive.destination).toBeUndefined();
+      expect(json.archive.archiveDir).toBe(
+        path.join(canonical(tempDir), 'rasen', 'changes', 'archive')
+      );
+      // No machine home exists, so nothing legacy is surfaced — and the
+      // read-only probe mints nothing.
+      expect(json.archive.legacyArchiveDir).toBeUndefined();
+      expect(existsSync(path.join(dataHome, 'rasen', 'projects'))).toBe(false);
     });
 
-    it('status --json omits archiveDir for an unresolvable external destination without minting identity', async () => {
-      const globalDataDir = path.join(tempDir, 'global-data-archive-dest-unresolvable');
-      await fs.writeFile(
-        path.join(tempDir, 'rasen', 'config.yaml'),
-        'schema: spec-driven\narchive:\n  destination: external\n'
-      );
-      await createTestChange('archive-dest-unresolved');
+    it('a config still carrying destination: prune reports the same fixed in-repo archiveDir', async () => {
+      await writeDestinationConfig('prune');
+      await createTestChange('archive-loc-prune');
 
       const result = await runCLI(
-        ['status', '--change', 'archive-dest-unresolved', '--json'],
-        { cwd: tempDir, env: { XDG_DATA_HOME: globalDataDir } }
-      );
-      expect(result.exitCode).toBe(0);
-      const json = JSON.parse(result.stdout);
-      expect(json.archive.destination).toBe('external');
-      expect(json.archive.archiveDir).toBeUndefined();
-      // A read-only probe must never mint identity or write to the registry.
-      expect(existsSync(path.join(globalDataDir, 'projects'))).toBe(false);
-    });
-
-    it('status --json omits archiveDir for the prune destination', async () => {
-      await fs.writeFile(
-        path.join(tempDir, 'rasen', 'config.yaml'),
-        'schema: spec-driven\narchive:\n  destination: prune\n'
-      );
-      await createTestChange('archive-dest-prune');
-
-      const result = await runCLI(
-        ['status', '--change', 'archive-dest-prune', '--json'],
+        ['status', '--change', 'archive-loc-prune', '--json'],
         { cwd: tempDir }
       );
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout);
-      expect(json.archive).toEqual({ timing: 'on-merge', destination: 'prune' });
+      expect(json.archive).toEqual({
+        timing: 'on-merge',
+        archiveDir: path.join(canonical(tempDir), 'rasen', 'changes', 'archive'),
+      });
     });
 
-    it('status human output includes an Archive destination line', async () => {
+    it('surfaces legacyArchiveDir read-only when a machine-home archive exists', async () => {
       await fs.writeFile(path.join(tempDir, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
-      await createTestChange('archive-dest-text');
+      await createTestChange('archive-loc-legacy');
+      const dataHome = path.join(tempDir, 'global-data-archive-loc-legacy');
+      const globalDataDir = getGlobalDataDir({ env: { XDG_DATA_HOME: dataHome } });
+      const home = await resolveProjectHome(tempDir, { ensure: true, globalDataDir });
+      await fs.mkdir(home!.archiveDir, { recursive: true });
 
-      const result = await runCLI(['status', '--change', 'archive-dest-text'], { cwd: tempDir });
+      const result = await runCLI(
+        ['status', '--change', 'archive-loc-legacy', '--json'],
+        { cwd: tempDir, env: { XDG_DATA_HOME: dataHome } }
+      );
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('Archive destination: in-repo');
+      const json = JSON.parse(result.stdout);
+      expect(json.archive.archiveDir).toBe(
+        path.join(canonical(tempDir), 'rasen', 'changes', 'archive')
+      );
+      expect(typeof json.archive.legacyArchiveDir).toBe('string');
+      expect(json.archive.legacyArchiveDir).toContain('archive');
+    });
+
+    it('status human output includes an Archive dir line and no destination line', async () => {
+      await fs.writeFile(path.join(tempDir, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+      await createTestChange('archive-loc-text');
+
+      const result = await runCLI(['status', '--change', 'archive-loc-text'], { cwd: tempDir });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Archive dir:');
+      expect(result.stdout).not.toContain('Archive destination:');
     });
   });
 

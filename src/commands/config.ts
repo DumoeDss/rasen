@@ -342,38 +342,6 @@ async function editConfigEntry(
   }
 
   console.log(ui.setValue(definition.key, formatSetDisplayValue(rawValue)));
-
-  // Relocation hint (archive-destination spec): a config-only destination flip
-  // leaves existing archives where they are. When the repo archive is
-  // non-empty, point at `archive relocate` so data and config move together.
-  if (
-    scope === 'project' &&
-    projectRoot &&
-    definition.key === 'archive.destination' &&
-    (rawValue === 'external' || rawValue === 'prune')
-  ) {
-    maybeEmitRelocateHint(projectRoot, String(rawValue));
-  }
-}
-
-/**
- * Prints the `archive relocate` hint when a config-only destination flip leaves
- * a non-empty in-repo archive behind (archive-destination spec). Sync (the
- * `config set` write path is synchronous).
- */
-function maybeEmitRelocateHint(projectRoot: string, value: string): void {
-  if (value !== 'external' && value !== 'prune') return;
-  const archiveDir = path.join(projectRoot, WORKSPACE_DIR_NAME, 'changes', 'archive');
-  let nonEmpty = false;
-  try {
-    nonEmpty = fs.readdirSync(archiveDir).length > 0;
-  } catch {
-    nonEmpty = false;
-  }
-  if (!nonEmpty) return;
-  console.log(
-    `Note: existing archives remain in the repo. Run 'rasen archive relocate --to ${value === 'external' ? 'external' : 'in-repo'}' to move them together with the config${value === 'prune' ? " (prune deletes rather than relocates; relocate does not target prune)" : ''}.`
-  );
 }
 
 /**
@@ -472,8 +440,8 @@ async function runInteractiveConfigEditor(machineScope: boolean): Promise<void> 
 export function registerConfigCommand(program: Command): void {
   const configCmd = program
     .command('config')
-    .description('View and modify global or project Rasen configuration')
-    .option('--scope <scope>', 'Config scope: "global" (default) or "project"')
+    .description('')
+    .option('--scope <scope>', '')
     .action(async (options: { scope?: string }, command: Command) => {
       // No-arg invocation: interactive full-view editor (TTY) or the
       // effective-config listing (non-TTY). With no `--scope` the view spans
@@ -501,7 +469,7 @@ export function registerConfigCommand(program: Command): void {
   // config path
   configCmd
     .command('path')
-    .description('Show config file location')
+    .description('')
     .action((_options: unknown, command: Command) => {
       runScoped(command, (scope) => {
         if (scope === 'global') {
@@ -517,8 +485,8 @@ export function registerConfigCommand(program: Command): void {
   // config list
   configCmd
     .command('list')
-    .description('Show all current settings')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--json', '')
     .action((options: { json?: boolean }, command: Command) => {
       runScoped(command, (scope) => {
         if (scope === 'project') {
@@ -578,7 +546,7 @@ export function registerConfigCommand(program: Command): void {
   // config get
   configCmd
     .command('get <key>')
-    .description('Get a specific value (raw, scriptable)')
+    .description('')
     .action((key: string, _options: unknown, command: Command) => {
       runScoped(command, (scope) => {
         let value: unknown;
@@ -608,9 +576,9 @@ export function registerConfigCommand(program: Command): void {
   // config set
   configCmd
     .command('set <key> <value>')
-    .description('Set a value (auto-coerce types), validated against the config-key registry')
-    .option('--string', 'Force value to be stored as string')
-    .option('--allow-unknown', 'Allow setting unknown keys (global scope only)')
+    .description('')
+    .option('--string', '')
+    .option('--allow-unknown', '')
     .action(
       (
         key: string,
@@ -714,17 +682,6 @@ export function registerConfigCommand(program: Command): void {
           }
 
           console.log(messages.setValue(key, formatSetDisplayValue(coercedValue)));
-
-          if (
-            scope === 'project' &&
-            key === 'archive.destination' &&
-            (coercedValue === 'external' || coercedValue === 'prune')
-          ) {
-            const projectRoot = resolveProjectRootOrFail();
-            if (projectRoot) {
-              maybeEmitRelocateHint(projectRoot, String(coercedValue));
-            }
-          }
         });
       }
     );
@@ -732,7 +689,7 @@ export function registerConfigCommand(program: Command): void {
   // config unset
   configCmd
     .command('unset <key>')
-    .description('Remove a key (revert to default)')
+    .description('')
     .action((key: string, _options: unknown, command: Command) => {
       runScoped(command, (scope) => {
         const messages = getConfigCommandMessages();
@@ -790,9 +747,9 @@ export function registerConfigCommand(program: Command): void {
   // config reset
   configCmd
     .command('reset')
-    .description('Reset configuration to defaults (global scope only)')
-    .option('--all', 'Reset all configuration (required)')
-    .option('-y, --yes', 'Skip confirmation prompts')
+    .description('')
+    .option('--all', '')
+    .option('-y, --yes', '')
     .action(async (options: { all?: boolean; yes?: boolean }, command: Command) => {
       const messages = getConfigCommandMessages();
       const scope = resolveScope(command);
@@ -841,7 +798,7 @@ export function registerConfigCommand(program: Command): void {
   // config edit
   configCmd
     .command('edit')
-    .description('Open config in $EDITOR (global scope only)')
+    .description('')
     .action(async (_options: unknown, command: Command) => {
       const messages = getConfigCommandMessages();
       const scope = resolveScope(command);
@@ -919,7 +876,7 @@ export function registerConfigCommand(program: Command): void {
   // config profile [preset]
   configCmd
     .command('profile [preset]')
-    .description('Compatibility alias for `rasen profile`')
+    .description('')
     .action(async (preset?: string) => {
       await runLegacyConfigProfileCommand(preset);
     });
@@ -929,9 +886,9 @@ export function registerConfigCommand(program: Command): void {
   // one-line deprecation notice. Thin wrapper over the shared launch flow.
   configCmd
     .command('ui')
-    .description('[Deprecated: use `rasen ui`] Start the localhost management server and open the config view')
-    .option('--no-open', 'Do not open the default browser')
-    .option('--port <n>', 'Pin the listen port (default: ephemeral)')
+    .description('')
+    .option('--no-open', '')
+    .option('--port <n>', '')
     .action(async (options: { open?: boolean; port?: string }) => {
       await runUiLaunch(options, {
         entryPath: '/config',

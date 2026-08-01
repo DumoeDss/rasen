@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -37,6 +37,7 @@ describe('file-state', () => {
   // win32 ignores for directories, so the lock would succeed instead of
   // rejecting. The production error shapes are platform-agnostic.
   const itPosix = it.skipIf(process.platform === 'win32');
+  const describeWindows = describe.skipIf(process.platform !== 'win32');
 
   describe('writeFileAtomically', () => {
     it('writes content and creates parent directories', async () => {
@@ -96,6 +97,95 @@ describe('file-state', () => {
         ).rejects.toThrowError(`create-failed:${lockPath}`);
       } finally {
         fs.chmodSync(parent, 0o755);
+      }
+    });
+
+    describeWindows('Windows transient open handling', () => {
+      it.each(['EPERM', 'EACCES', 'EBUSY'] as const)(
+        'retries one %s sharing error, then acquires and releases cleanly',
+        async (code) => {
+          const lockPath = path.join(tempDir, `transient-${code}.lock`);
+          const originalOpen = fs.promises.open;
+          let matchingOpens = 0;
+          fs.promises.open = (async (p: fs.PathLike, flags: string, ...args: unknown[]) => {
+            if (p === lockPath && flags === 'wx') {
+              matchingOpens++;
+              if (matchingOpens === 1) {
+                const error = new Error(`synthetic ${code} sharing error`) as NodeJS.ErrnoException;
+                error.code = code;
+                throw error;
+              }
+            }
+            return (originalOpen as (...openArgs: unknown[]) => unknown)(p, flags, ...args);
+          }) as typeof fs.promises.open;
+
+          let lock: Awaited<ReturnType<typeof acquireFileLock>> | undefined;
+          try {
+            lock = await acquireFileLock({ lockPath, errorFor });
+            expect(matchingOpens).toBe(2);
+            expect(fs.existsSync(lockPath)).toBe(true);
+          } finally {
+            fs.promises.open = originalOpen;
+            if (lock) await releaseFileLock(lock, lockPath);
+            else fs.rmSync(lockPath, { force: true });
+          }
+
+          expect(fs.existsSync(lockPath)).toBe(false);
+        }
+      );
+
+      it('maps a persistent transient open error to timeout at the existing deadline', async () => {
+        const lockPath = path.join(tempDir, 'persistent-transient.lock');
+        const originalOpen = fs.promises.open;
+        const nowSpy = vi.spyOn(Date, 'now');
+        let nowCalls = 0;
+        let matchingOpens = 0;
+        nowSpy.mockImplementation(() => (nowCalls++ < 2 ? 1_000 : 6_000));
+        fs.promises.open = (async (p: fs.PathLike, flags: string, ...args: unknown[]) => {
+          if (p === lockPath && flags === 'wx') {
+            matchingOpens++;
+            const error = new Error('synthetic persistent sharing error') as NodeJS.ErrnoException;
+            error.code = 'EPERM';
+            throw error;
+          }
+          return (originalOpen as (...openArgs: unknown[]) => unknown)(p, flags, ...args);
+        }) as typeof fs.promises.open;
+
+        try {
+          await expect(acquireFileLock({ lockPath, errorFor })).rejects.toThrowError(
+            `timeout:${lockPath}`
+          );
+          expect(matchingOpens).toBe(2);
+        } finally {
+          fs.promises.open = originalOpen;
+          nowSpy.mockRestore();
+          fs.rmSync(lockPath, { force: true });
+        }
+      });
+    });
+
+    it('reports a non-transient open error through create-failed', async () => {
+      const lockPath = path.join(tempDir, 'non-transient.lock');
+      const originalOpen = fs.promises.open;
+      let matchingOpens = 0;
+      fs.promises.open = (async (p: fs.PathLike, flags: string, ...args: unknown[]) => {
+        if (p === lockPath && flags === 'wx') {
+          matchingOpens++;
+          const error = new Error('synthetic non-transient open error') as NodeJS.ErrnoException;
+          error.code = 'ENOSPC';
+          throw error;
+        }
+        return (originalOpen as (...openArgs: unknown[]) => unknown)(p, flags, ...args);
+      }) as typeof fs.promises.open;
+
+      try {
+        await expect(acquireFileLock({ lockPath, errorFor })).rejects.toThrowError(
+          `create-failed:${lockPath}`
+        );
+        expect(matchingOpens).toBe(1);
+      } finally {
+        fs.promises.open = originalOpen;
+        fs.rmSync(lockPath, { force: true });
       }
     });
   });

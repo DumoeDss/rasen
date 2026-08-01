@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { BashGenerator } from '../../../../src/core/completions/generators/bash-generator.js';
-import { CommandDefinition } from '../../../../src/core/completions/types.js';
+import { ResolvedCommandDefinition } from '../../../../src/core/completions/types.js';
 
 describe('BashGenerator', () => {
   let generator: BashGenerator;
@@ -21,7 +21,7 @@ describe('BashGenerator', () => {
 
   describe('generate', () => {
     it('should generate valid bash completion script with header', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'init',
           description: 'Initialize Rasen',
@@ -38,7 +38,7 @@ describe('BashGenerator', () => {
     });
 
     it('should include all commands in the command list', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'init',
           description: 'Initialize Rasen',
@@ -64,7 +64,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle commands with flags without short options', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'validate',
           description: 'Validate specs',
@@ -88,7 +88,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle flags with short options', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'show',
           description: 'Show a spec',
@@ -110,7 +110,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle boolean flags vs value-taking flags', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'validate',
           description: 'Validate specs',
@@ -135,7 +135,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle flags with enum values', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'validate',
           description: 'Validate specs',
@@ -144,7 +144,7 @@ describe('BashGenerator', () => {
               name: 'type',
               description: 'Specify item type',
               takesValue: true,
-              values: ['change', 'spec'],
+              completionValues: ['change', 'spec'],
             },
           ],
         },
@@ -158,7 +158,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle flags with takesValue but no specific values', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'validate',
           description: 'Validate specs',
@@ -178,7 +178,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle commands with subcommands', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'change',
           description: 'Manage changes',
@@ -206,7 +206,7 @@ describe('BashGenerator', () => {
     });
 
     it('should offer parent flags when command has both flags and subcommands', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'config',
           description: 'Manage configuration',
@@ -250,7 +250,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle positional arguments for change-id', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'archive',
           description: 'Archive a change',
@@ -266,7 +266,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle positional arguments for spec-id', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'show-spec',
           description: 'Show a spec',
@@ -282,7 +282,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle positional arguments for change-or-spec-id', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'show',
           description: 'Show an item',
@@ -298,7 +298,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle positional arguments for shell', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'generate',
           description: 'Generate completions',
@@ -317,7 +317,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle positional arguments for paths', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'init',
           description: 'Initialize Rasen',
@@ -333,7 +333,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle positional arguments for schema names', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'schema',
           description: 'Manage schemas',
@@ -350,7 +350,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle positional arguments for profile names', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'profile-use',
           description: 'Use a profile',
@@ -367,7 +367,7 @@ describe('BashGenerator', () => {
     });
 
     it('should generate dynamic completion helper for changes', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'archive',
           description: 'Archive a change',
@@ -386,7 +386,7 @@ describe('BashGenerator', () => {
     });
 
     it('should generate dynamic completion helper for specs', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'show-spec',
           description: 'Show a spec',
@@ -404,7 +404,7 @@ describe('BashGenerator', () => {
     });
 
     it('should generate dynamic completion helper for items (changes and specs)', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'show',
           description: 'Show an item',
@@ -422,7 +422,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle complex nested subcommands with flags', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'spec',
           description: 'Manage specs',
@@ -458,7 +458,7 @@ describe('BashGenerator', () => {
     });
 
     it('should generate script that ends with complete registration', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'init',
           description: 'Initialize',
@@ -472,7 +472,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle empty command list', () => {
-      const commands: CommandDefinition[] = [];
+      const commands: ResolvedCommandDefinition[] = [];
 
       const script = generator.generate(commands);
 
@@ -482,7 +482,7 @@ describe('BashGenerator', () => {
     });
 
     it('should handle commands with no flags', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'view',
           description: 'Display dashboard',
@@ -498,7 +498,7 @@ describe('BashGenerator', () => {
 
   describe('security - command injection prevention', () => {
     it('should escape command names with shell metacharacters', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'test',
           description: 'Test command',
@@ -516,7 +516,7 @@ describe('BashGenerator', () => {
       // This tests that if a command name somehow contained $, it would be escaped
       // In practice, command names are validated, but the escaping provides defense in depth
       const maliciousName = 'test$var';
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: maliciousName,
           description: 'Test',
@@ -532,7 +532,7 @@ describe('BashGenerator', () => {
 
     it('should escape backticks in command names', () => {
       const maliciousName = 'test`cmd`';
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: maliciousName,
           description: 'Test',
@@ -548,7 +548,7 @@ describe('BashGenerator', () => {
 
     it('should escape double quotes in command names', () => {
       const maliciousName = 'test"quoted"';
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: maliciousName,
           description: 'Test',
@@ -564,7 +564,7 @@ describe('BashGenerator', () => {
 
     it('should escape backslashes in command names', () => {
       const maliciousName = 'test\\path';
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: maliciousName,
           description: 'Test',
@@ -579,7 +579,7 @@ describe('BashGenerator', () => {
     });
 
     it('should escape subcommand names with shell metacharacters', () => {
-      const commands: CommandDefinition[] = [
+      const commands: ResolvedCommandDefinition[] = [
         {
           name: 'parent',
           description: 'Parent command',

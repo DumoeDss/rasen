@@ -5,6 +5,7 @@
  * templates file into workflow-focused modules.
  */
 import type { SkillTemplate } from '../types.js';
+import { GENERATED_ARCHIVE_COMMAND_EXAMPLES } from '../../archive-consumer-invocation.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getArchiveChangeSkillTemplate(): SkillTemplate {
@@ -28,23 +29,23 @@ ${STORE_SELECTION_GUIDANCE}
 
    **IMPORTANT**: Do NOT guess or auto-select a change. Always let the user choose.
 
-1.5. **Check for a prior archive across every destination (NEW — before the status call, which requires the change directory to still exist)**
+1.5. **Check for a prior archive, in-repo and legacy (before the status call, which requires the change directory to still exist)**
 
    Run \`rasen list --json\` (reuse step 1's call if it already ran) and take \`root.path\` from its payload — this gives \`<root.path>/rasen/changes\` as \`changesDir\` without needing a successful status call.
 
    **First, check whether \`<changesDir>/<name>\` still EXISTS as an active directory.** If it does, this step's archive scan does NOT apply — SKIP the rest of this step and proceed to step 2 normally. A currently-active directory means this name is not currently archived; it may also be a NEW change reusing a previously-archived name (see the recycled-name note below) — either way, an active directory always means "go to step 2", never "treat as already archived".
 
-   **Only when \`<changesDir>/<name>\` does NOT exist**, scan every destination the \`archive-destination\` axis allows — a config flip never migrates a prior archive, so re-invoking archive on an already-archived change must recognize wherever it actually landed, using directory presence and recorded facts (ground truth) rather than a status call, which would THROW "not found" for a change whose directory has already moved or been deleted:
+   **Only when \`<changesDir>/<name>\` does NOT exist**, scan the in-repo archive AND the legacy machine-home archive — bookkeeping always lands in-repo now, but archives written before the destination axis was retired still sit in the machine home and were never migrated, so re-invoking archive on an already-archived change must recognize wherever it actually landed, using directory presence and recorded facts (ground truth) rather than a status call, which would THROW "not found" for a change whose directory has already moved or been deleted:
 
    a. **In-repo scan** (no CLI call needed): check whether \`<changesDir>/archive/\` contains a directory matching \`YYYY-MM-DD-<name>\` — the date prefix is unknown so match the pattern, but the segment AFTER the date must equal \`<name>\` EXACTLY (not merely end with it), to avoid a suffix collision with a differently-named change.
    - **A match exists** → report the change as already archived at the matched path and STOP cleanly — do NOT call \`rasen status\` for this name; skip every remaining step (gates, sync, move).
    - **No match** → continue to (b); nothing has archived this change in-repo under this name (yet).
 
-   b. **External scan and ship-log tombstone** (only reached when (a) found nothing): run \`rasen context --json\` and read \`root.machineHome\` — this resolves without the change directory needing to exist, unlike status. When \`machineHome\` is present, check \`<machineHome>/archive/\` for a \`YYYY-MM-DD-<name>\` match under the same rule as (a); if none, read \`<machineHome>/changes/<name>/work/ship-log.md\` (the frozen work-directory layout, consulted directly here — the one exception to always resolving \`workDir\` from a status payload, because no status payload can exist for a change whose directory is already gone) for an \`Archived in ship:\` or \`Pruned:\` line.
-   - **Archive-directory match, or a tombstone line, found** → report the recorded outcome (the matched external path, or the pruned state) and STOP cleanly — skip step 2 and every remaining step.
+   b. **Legacy scan and ship-log tombstone** (only reached when (a) found nothing): run \`rasen context --json\` and read \`root.machineHome\` — this resolves without the change directory needing to exist, unlike status. This is the ONLY place this workflow reads under the machine home, and it is read-only: nothing is ever created, moved, or appended there. When \`machineHome\` is present, check \`<machineHome>/archive/\` for a \`YYYY-MM-DD-<name>\` match under the same rule as (a) — those are archives left by the retired \`external\` destination, never a location this workflow writes; if none, read \`<machineHome>/changes/<name>/work/ship-log.md\` (the frozen legacy work-directory layout, consulted directly here because no status payload can exist for a change whose directory is already gone) for an \`Archived in ship:\` or \`Pruned:\` line. \`Pruned:\` can only have been recorded by the retired \`prune\` destination — nothing writes that token any more, but a change that carries it must still be reported as pruned rather than "not found".
+   - **Archive-directory match, or a tombstone line, found** → report the recorded outcome (the matched legacy machine-home path, or the pruned state) and STOP cleanly — skip step 2 and every remaining step.
    - **No \`machineHome\` (project never registered), or nothing found anywhere** → proceed to step 2 normally; if the change genuinely does not exist under any known name or location, status's own "not found" error surfaces there for human triage.
 
-   **Recycled-name note:** a NEW change may reuse a name that a PRIOR (now-archived) change also used. The active-directory check above correctly routes such a name's new incarnation to step 2 (it is active, so the scan above is skipped) — but its \`workDir\` is keyed by change NAME, so it may still hold the PRIOR incarnation's ship log, carrying a stale \`Archived in ship:\` or \`Pruned:\` marker. That stale marker trips step 2.5's inconsistency HARD STOP later; this is loud and safe (it never silently mis-archives), but tell the human what it actually means — "a prior change with this same name was archived-in-ship (or pruned); this ship log is stale and belongs to that earlier change" — not a generic directory-move inconsistency.
+   **Recycled-name note:** a NEW change may reuse a name that a PRIOR (now-archived) change also used. The active-directory check above correctly routes such a name's new incarnation to step 2 (it is active, so the scan above is skipped) — but a legacy work directory is keyed by change NAME, so it may still hold the PRIOR incarnation's ship log, carrying a stale \`Archived in ship:\` or \`Pruned:\` marker. That stale marker trips step 2.5's inconsistency HARD STOP later; this is loud and safe (it never silently mis-archives), but tell the human what it actually means — "a prior change with this same name was archived-in-ship (or pruned); this ship log is stale and belongs to that earlier change" — not a generic directory-move inconsistency.
 
 2. **Check artifact completion status**
 
@@ -62,10 +63,10 @@ ${STORE_SELECTION_GUIDANCE}
 
 2.5. **Check the ship log's recorded delivery mode (gate on RECORDED facts, never on re-resolved config)**
 
-   Read \`ship-log.md\` from the work directory (\`workDir\` from status JSON; fall back to the change directory — \`changeRoot\` — when \`workDir\` is absent or the file already lives there), if it exists. Reaching this step already means step 1.5 found no archived directory for this name, so branch on what the ship log itself recorded — NOT on the currently-resolved \`archive.timing\` (a config value edited after the fact must never reinterpret what already happened; \`archive.timing\` is consulted only for decisions not yet taken):
+   Read \`ship-log.md\` from the change's evidence directory (\`evidenceDir\` from status JSON; sticky-legacy: a ship log that already lives in the legacy \`workDir\` or in the change directory — \`changeRoot\` — is read in place), if it exists. Reaching this step already means step 1.5 found no archived directory for this name, so branch on what the ship log itself recorded — NOT on the currently-resolved \`archive.timing\` (a config value edited after the fact must never reinterpret what already happened; \`archive.timing\` is consulted only for decisions not yet taken):
    - **No ship log exists** → proceed straight to step 3; nothing was recorded to gate on.
    - **Ship log exists and its \`Archived in ship:\` line IS present** → inconsistency: step 1.5's directory scan should already have caught this. Reaching here means the log claims an in-ship archive but the directory scan found nothing at the expected location (a partial/failed move, or a non-standard archive location) — do NOT proceed automatically. HARD STOP: surface the inconsistency for human triage (do not sync or move; do not silently treat it as either archived or not).
-   - **Ship log exists and its \`Pruned:\` line IS present** → the same class of inconsistency: step 1.5b's tombstone scan should already have caught this and stopped before reaching step 2 at all. Reaching here means the log claims the change was pruned but step 1.5b missed it (a stale probe, a corrupted registry, or the recycled-name situation below). HARD STOP: surface the inconsistency for human triage — do NOT proceed, do NOT delete, do NOT silently treat it as either pruned or not.
+   - **Ship log exists and its \`Pruned:\` line IS present** (a legacy record only — nothing writes this token any more) → the same class of inconsistency: step 1.5b's tombstone scan should already have caught this and stopped before reaching step 2 at all. Reaching here means the log claims the change was pruned but step 1.5b missed it (a stale probe, a corrupted registry, or the recycled-name situation below). HARD STOP: surface the inconsistency for human triage — do NOT proceed, do NOT delete, do NOT silently treat it as either pruned or not.
    - **Ship log exists, no \`Archived in ship:\` line, and its \`Mode:\` line is \`pr\`** → run the merge-confirmation gate (step 2.6) before continuing to step 3. This applies regardless of the currently-resolved \`archive.timing\` — a recorded \`pr\` delivery always needs its merge verified before archiving, whether the axis is \`on-merge\` or was later flipped.
    - **Ship log exists, no \`Archived in ship:\` line, and its \`Mode:\` line is \`push\` or \`local\`** → proceed straight to step 3; there is no PR to verify.
    - **Ship log exists, no \`Archived in ship:\` line, \`Mode:\` line missing or unparseable, but a \`PR:\` URL IS present** → treat as a recorded \`pr\`-mode delivery (a PR URL only makes sense for a pr-mode ship) and run the merge-confirmation gate (step 2.6), same as the \`Mode: pr\` branch — closes the gap where a malformed log missing \`Mode:\` would otherwise skip the gate.
@@ -96,14 +97,14 @@ ${STORE_SELECTION_GUIDANCE}
 
 3.5. **Check verification verdict (HARD GATE)**
 
-   Read \`verification-report.md\` from the work directory (\`workDir\` from status JSON; fall back to the change directory — \`changeRoot\` — when \`workDir\` is absent or the file already lives there) when it exists, and honor its \`VERIFY VERDICT:\` line (written by \`rasen-verify-change\` — capability \`verify-ship-evidence\`; do NOT invent new verdict words).
+   Read \`verification-report.md\` from the change's evidence directory (\`evidenceDir\` from status JSON; sticky-legacy: a report that already lives in the legacy \`workDir\` or in the change directory — \`changeRoot\` — is read in place) when it exists, and honor its \`VERIFY VERDICT:\` line (written by \`rasen-verify-change\` — capability \`verify-ship-evidence\`; do NOT invent new verdict words).
    - \`VERIFY VERDICT: BLOCKED\` → HARD GATE: REFUSE to archive by default; proceed only on an explicit, blocker-naming user override (e.g. "Archive anyway despite BLOCKED verification"); REFUSE outright non-interactively.
    - \`VERIFY VERDICT: CLEAN\` → no verification-related gate; proceed.
    - No \`verification-report.md\` → do NOT hard-gate on verification absence (a change may legitimately archive without a formal verify pass); a soft note at most.
 
 3.6. **Check delivery precondition (soft)**
 
-   Read \`ship-log.md\` from the work directory (\`workDir\` from status JSON; fall back to the change directory — \`changeRoot\` — when \`workDir\` is absent or the file already lives there):
+   Read \`ship-log.md\` from the change's evidence directory (\`evidenceDir\` from status JSON; sticky-legacy: a ship log that already lives in the legacy \`workDir\` or in the change directory — \`changeRoot\` — is read in place):
    - **Absent** → soft-warn "This change has no ship log — archive without delivering?" with an explicit escape for changes that legitimately do not ship (e.g. spec-only); proceed on confirm.
    - **Present and its \`Status:\` line contains "delivery deferred to portfolio level"** (the marker ship writes in local mode) → soft note that parent-level portfolio delivery is still pending and archiving the child now may lose track of it; confirm to proceed. Minimal cross-reference only — no portfolio graph or parent lookup.
    - **Present and delivery completed** (PR created / branch pushed) → proceed without a delivery warning.
@@ -121,87 +122,52 @@ ${STORE_SELECTION_GUIDANCE}
    - If changes needed: "Sync now (recommended)", "Archive without syncing"
    - If already synced: "Archive now", "Sync anyway", "Cancel"
 
-   If user chooses sync, use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke rasen-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>"). Proceed to archive regardless of choice.
+   Do not mutate main specs here. Record the choice for the archive engine: "Sync now" means omit \`--skip-specs\`; "Archive without syncing" means include \`--skip-specs\` when saving the immutable plan. The archive engine is the sole spec-mutation owner.
 
-5. **Perform the archive (destination-aware)**
+4.5. **Handoff absorption judgment (the model's sole discretionary point at archive)**
 
-   Resolve the destination and location from the status JSON fetched in step 2: \`archive.destination\` (\`in-repo\` | \`external\` | \`prune\`) and \`archive.archiveDir\` (absolute; always present for \`in-repo\`, present for \`external\` only when it resolves, absent for \`prune\`).
+   Before invoking the archive engine, perform the handoff absorption judgment (defined by the \`file-placement\` capability). This is the ONLY agent-judgment point at archive; the CLI validates and applies the resulting intent.
 
-   **Destructive-destination preconditions (\`external\` and \`prune\` only)** — both remove the repository's only copy of this change's review material, so verify BEFORE moving or deleting anything:
-   - Delivery is complete per the gates already run in steps 2.5/2.6 (a recorded \`pr\`-mode delivery must have already passed the merge-confirmation gate to reach this step at all).
-   - The change directory must be CLEAN AND TRACKED — a plain \`git status --porcelain\` is NOT sufficient on its own, because ignored files are invisible to it (a change directory covered by \`.gitignore\` would read as "clean" even though nothing in it was ever committed): run \`git status --porcelain --ignored -- <changeRoot>\` and require it to be empty (catches uncommitted, untracked, AND ignored-but-present content), AND run \`git ls-files -- <changeRoot>\` and require it to be NON-empty (the directory must actually have committed content, not just an absence of complaints). If either check fails, REFUSE — "commit the change directory first, then re-run archive" for the first, "this directory has no content in git history — commit it first" for the second — do NOT move or delete.
-   - \`prune\` additionally requires a confirmation that NAMES the deletion (e.g. the user selects "Permanently delete <name> — no archive copy will exist, git history is the archive"), SEPARATE from any routine "proceed anyway" confirmation used elsewhere in this flow (e.g. the merge-confirmation override in step 2.6) — one consent must never silently authorize the other. REFUSE outright in a non-interactive / dispatched context without a prior explicit override naming the deletion specifically.
+   For each file under \`<changeRoot>/handoff/\`:
+   - Read the handoff document and compare its dead-ends and eliminated hypotheses against \`design.md\` and the change's evidence (\`<changeRoot>/evidence/\`).
+   - **If the content is already absorbed** (the dead-ends are covered by \`design.md\` or evidence): record outcome \`absorbed\`.
+   - **If the content is NOT absorbed** (it contains knowledge not covered by \`design.md\` or evidence): record outcome \`preserved\`. The default SHALL be preservation when you cannot confidently determine absorption.
 
-   **\`in-repo\`** (the default; also the fallback for \`external\` when the payload carries no \`archiveDir\` — state explicitly that the archive fell back from \`external\`, and NEVER escalate a fallback to deletion):
-   \`\`\`bash
-   mkdir -p "<planningHome.changesDir>/archive"
-   \`\`\`
-   Generate target name using current date: \`YYYY-MM-DD-<change-name>\`.
-   - If the target already exists: Fail with error, suggest renaming the existing archive or using a different date.
-   - Otherwise: Move \`changeRoot\` to the archive directory.
-   \`\`\`bash
-   mv "<changeRoot>" "<planningHome.changesDir>/archive/YYYY-MM-DD-<name>"
-   \`\`\`
+   First run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.intentTemplate}\` with the resolved store selector. Write the returned strict intent to an execution-root ephemera file, judge every handoff decision, and add probes independently: \`{"schemaVersion":1,"change":"<name>","handoff":{"complete":true,"decisions":[{"path":"handoff/implementer-1.md","outcome":"absorbed"|"preserved"}]},"probes":[{"path":"<execution-root-relative>","codeCommit":"<full-40-hex-sha>"}]}\`. Decisions MUST exactly cover the regular-file handoff inventory. Even an empty handoff inventory writes a complete empty decisions array; probe-only intent remains valid. Do not delete or move active handoff files and do not write the machine transaction store.
 
-   **\`external\`** (payload carries \`archiveDir\`): same date-prefix and collision rule as \`in-repo\`, targeting the resolved machine-home location instead:
-   \`\`\`bash
-   mkdir -p "<archiveDir>"
-   mv "<changeRoot>" "<archiveDir>/YYYY-MM-DD-<name>"
-   \`\`\`
+5. **Invoke the authoritative archive engine**
 
-   **\`prune\`** (after the preconditions above pass):
-   1. **Write the prune tombstone FIRST, before deleting anything** — this is the ONLY way a later archive invocation can recognize this change once its directory is gone (git history holds nothing for a pruned change, by design). Resolve the work directory (\`workDir\` from the status JSON fetched in step 2; if absent — the project has no machine identity yet — mint one via any CLI surface that mints on demand, e.g. \`rasen instructions apply --change <name> --json\`, then re-resolve \`workDir\` from that response). Append to \`ship-log.md\` there (creating it with a minimal \`# Ship Log: <name>\` header if it does not yet exist):
-      \`\`\`markdown
-      **Pruned:** true
-      **Pruned at:** <timestamp>
-      \`\`\`
-      Use the literal token \`Pruned:\` — step 1.5b's scan (and every other prune writer: the CLI, bulk-archive, and ship.ts's in-ship branch) greps for exactly that token; a differently-worded marker silently defeats the tombstone. If no work directory can be resolved even after attempting to mint one, proceed with the deletion anyway (never block on this) and say so explicitly in the summary — a later archive invocation for this name will report "not found" instead of "pruned".
-   2. Delete the change directory:
-      \`\`\`bash
-      rm -rf "<changeRoot>"
-      \`\`\`
-   No archive directory is created anywhere — git history is the archive. Skip archive-directory quality/summary steps and say so explicitly rather than silently omitting them.
+   Run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.savedPreview}\` with the resolved store selector and \`--skip-specs\` only when step 4 chose not to sync. Inspect the immutable plan, require no blockers, and capture the exact \`planToken\`.
 
-   **Post-bookkeeping commit guidance:** for \`external\` and \`prune\`, direct a pathspec-scoped commit containing ONLY the synced specs and the change-directory removal — no archive-dir additions (there is nothing new under \`changesDir/archive\` to add). \`git commit -- <path>\` alone only picks up tracked deletions/modifications — a spec sync that CREATED a new capability directory (untracked) would be silently left out and the tree would NOT end clean, so \`git add\` the pathspec first. Every destination's commit message carries the ship cross-reference (\`sha-cross-stamping\` capability) — but its content must match what actually happened THIS run, never a fixed template:
+   After confirmation, run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.apply}\`. This is the only bookkeeping invocation. A blocked result stops before mutation. On a recoverable result, rerun that exact token command; never regenerate intent, resync specs, or replan.
+
+   Never create the archive directory, move the change, recursively remove the source, hand-write \`archive.json\`, or repair an engine journal in this workflow.
+
+   **Post-bookkeeping commit guidance:** direct a pathspec-scoped commit containing the synced specs, the change-directory removal, AND the archive-directory addition. \`git commit -- <path>\` alone only picks up tracked deletions/modifications — the newly archived directory, and a spec sync that CREATED a new capability directory, are both untracked and would be silently left out, so the tree would NOT end clean: \`git add\` the pathspec first. The commit message carries the ship cross-reference (\`sha-cross-stamping\` capability) — but its content must match what actually happened THIS run, never a fixed template:
    - **"specs synced" clause:** include it only when delta specs existed AND were synced this run (step 4). When there were no delta specs, or the user chose "Archive without syncing", DROP the clause entirely — \`chore(rasen): archive <name>\`, not a false claim of syncing.
-   - **Ship suffix:** append \`; ship <short-sha>\` (or, with the specs clause dropped, \`(ship <short-sha>)\`) sourced from the ship log's recorded \`Commit:\` line (work directory, resolved in step 2) — omit the suffix entirely, never invent one, when the log records no \`Commit:\` (a never-shipped or spec-only change).
+   - **Ship suffix:** append \`; ship <short-sha>\` (or, with the specs clause dropped, \`(ship <short-sha>)\`) sourced from the ship log's recorded \`Commit:\` line (the log read in step 3.6) — omit the suffix entirely, never invent one, when the log records no \`Commit:\` (a never-shipped or spec-only change).
    - Four resulting forms: \`chore(rasen): archive <name> (specs synced; ship <short-sha>)\`, \`chore(rasen): archive <name> (specs synced)\`, \`chore(rasen): archive <name> (ship <short-sha>)\`, or plain \`chore(rasen): archive <name>\`.
    \`\`\`bash
-   git add -- "<changeRoot>" "<specsDir>"
-   git commit -m "chore(rasen): archive <name> (specs synced; ship <short-sha>)" -- "<changeRoot>" "<specsDir>"
+   git add -- "<changeRoot>" "<planningHome.changesDir>/archive" "<specsDir>"
+   git commit -m "chore(rasen): archive <name> (specs synced; ship <short-sha>)" -- "<changeRoot>" "<planningHome.changesDir>/archive" "<specsDir>"
    \`\`\`
 
-   For \`in-repo\`, the archive-dir addition rides the commit as it does today — same conditional message form, no other change.
+5.5. **Close the delivery chain without post-hash mutation**
 
-5.5. **Close the delivery chain (\`sha-cross-stamping\`)**
-
-   Resolve the work directory the same way step 5's own prune tombstone write does — \`workDir\` from the status JSON fetched in step 2; if absent, mint one via any CLI surface that mints on demand (e.g. \`rasen instructions apply --change <name> --json\`), then re-resolve \`workDir\` from that response. Do NOT silently fall back to \`changeRoot\`: for \`external\`/\`prune\` that directory is about to move or be deleted by the bookkeeping above, and a fallback resolved there could target a path this very step is destroying.
-
-   The common case (a machine-home \`workDir\` resolves) is unaffected by the move/delete — use that same path for both appends below, before and after the commit. The one edge case needing care is a STICKY-LEGACY ship-log already living inside \`changeRoot\` (child 2's Q3 rule: an existing file stays where it is rather than migrating) when no \`workDir\` can be resolved even after minting: for \`in-repo\`/\`external\`, that file moves WITH the directory in the \`mv\` above, so the follow-up append (made after the commit) must target the NEW location (\`<planningHome.changesDir>/archive/YYYY-MM-DD-<name>/ship-log.md\` or \`<archiveDir>/YYYY-MM-DD-<name>/ship-log.md\`), never the pre-move \`changeRoot\` path — the same "never fall back to a path this workflow just destroyed" rule \`ship.ts\`'s own ship-log write uses under in-ship timing. For \`prune\`, a sticky log in \`changeRoot\` has nowhere to be redirected to once \`rm -rf\` runs — this step's FIRST append (below, before the commit) must happen no later than step 5's own tombstone write, at the same resolved location, so it is captured before deletion; there is no post-deletion recovery.
-
-   Before the post-bookkeeping commit above is created, append an \`## Archive\` section to \`ship-log.md\` at the resolved location — create the file with a minimal \`# Ship Log: <name>\` header first if none exists (a never-shipped or legacy change has no prior log):
-
-   \`\`\`markdown
-   ## Archive
-   **Date:** <timestamp>
-   **Ship commit:** <sha>            (copied from this log's own recorded \`Commit:\` line — omit this line entirely, never invent one, when the log records no \`Commit:\`)
-   **Outcome:** archived to <path> (in-repo/external) | pruned (prune)
-   \`\`\`
-
-   The ship-side section (everything above \`## Archive\`) is NEVER rewritten by this append. Once the post-bookkeeping commit is created, append one more line immediately after committing:
-   \`\`\`markdown
-   **Archive commit:** <sha>          (\`git rev-parse HEAD\` right after the commit above)
-   \`\`\`
-   so both ends of the chain live in the one file. (\`prune\`'s tombstone write earlier in step 5 already records \`Pruned: true\`/\`Pruned at:\` in the same ship-log — this section adds the SHA-bearing chain record alongside it, not instead of it.)
+   Require the engine result to confirm that it finalized the archive section of \`evidence/ship-log.md\` before recursive evidence hashing, copying only a ship commit already recorded in the ship-side log and adding the archive path, timestamp, outcome, and transaction identity. A never-shipped change gets a minimal archive-only log with no invented ship fact. Do not append a post-hash commit identifier or otherwise mutate evidence after successful accounting; archive-to-ship traceability remains in the path-scoped commit message guidance above.
 
 6. **Display summary**
 
    Show archive completion summary including:
    - Change name
    - Schema that was used
-   - Destination (\`in-repo\` / \`external\` / \`prune\`) and, unless pruned, the archive location — note explicitly when \`external\` fell back to \`in-repo\`
+   - The archive location (always in the planning root)
    - Whether specs were synced (if applicable)
-   - Ship SHA cross-reference, when recorded (the archive commit message and the ship-log's \`## Archive\` section)
+   - Ship SHA cross-reference, when recorded (the path-scoped bookkeeping commit message and the ship-log's \`## Archive\` section)
+   - **Ephemera cleaner outcome**: how many files were deleted, how many were preserved-and-reported, and any source-manifest discovery that blocked cleaning for this change (when \`rasen archive\` ran the cleaner)
+   - **Handoff absorption results**: which handoff documents were absorbed (deleted) and which were preserved (moved to \`evidence/handoff/\`), per the step 4.5 judgment
+   - **Probes recorded (静置)**: any probe directories left in the execution root, with their paths and code commits
+   - **archive.json key fields**: \`codeCommit\`, \`planningBranch\`, and confirmation that \`archive.json\` was written by the CLI
    - Note about any warnings (incomplete artifacts/tasks)
 
 **Output On Success**
@@ -211,8 +177,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 **Change:** <change-name>
 **Schema:** <schema-name>
-**Destination:** in-repo | external | prune
-**Archived to:** the archive path derived from \`planningHome.changesDir\`/YYYY-MM-DD-<name>/ (external: the machine-home path instead; prune: omit this line — "Pruned: no archive copy, git history is the archive")
+**Archived to:** the archive path derived from \`planningHome.changesDir\`/YYYY-MM-DD-<name>/
 **Specs:** ✓ Synced to main specs (or "No delta specs" or "Sync skipped")
 
 All artifacts complete. All tasks complete.
@@ -222,12 +187,12 @@ All artifacts complete. All tasks complete.
 - Always prompt for change selection if not provided
 - Use artifact graph (rasen status --json) for completion checking
 - **Hard gates vs soft warnings (precedence).** REFUSE archive by default on the three HARD GATES — merge confirmation for a recorded \`pr\`-mode delivery (Step 2.6: an open or closed-unmerged PR, or an unverifiable merge state), a \`VERIFY VERDICT: BLOCKED\` verification report (Step 3.5), and incomplete tasks (Step 3): proceed only on an explicit blocker-naming override, and refuse outright non-interactively. The merge gate has TWO distinct proceed paths that must not be confused: the blocker-naming **override** applies ONLY to an OPEN PR (proceed despite a known-unmerged state); a SEPARATE **confirmation** path applies ONLY to an unverifiable merge state (the human's explicit assertion REPLACES the check, it does not override a known-bad one) — a closed-unmerged PR has NEITHER path and is refused outright. The "don't block archive on warnings — just inform and confirm" rule applies ONLY to SOFT warnings (incomplete non-task artifacts, unsynced delta specs, missing ship log, portfolio-deferred delivery); it does NOT cover the three hard gates.
-- **Already-archived no-op (Step 1.5), every destination.** A change already found — in the in-repo \`<changesDir>/archive/\`, in the external \`<machineHome>/archive/\`, or via its ship-log tombstone (\`Archived in ship:\` / \`Pruned:\`) — is reported from that location or recorded outcome and never re-gated, re-synced, re-moved, or re-deleted. Detection happens BEFORE the status call, so a moved-or-deleted change directory never causes a hard failure. Step 2.5's \`Archived in ship:\`/\`Pruned:\`-present-but-not-caught-by-1.5 branches are defense-in-depth inconsistency checks, not the primary detection path.
-- **Destructive-destination preconditions (Step 5).** \`external\` and \`prune\` bookkeeping REFUSE outright unless the change directory is BOTH clean (\`git status --porcelain --ignored -- <changeRoot>\` empty — plain \`--porcelain\` without \`--ignored\` is NOT enough, since gitignored content is invisible to it) AND tracked (\`git ls-files -- <changeRoot>\` non-empty) — uncommitted, untracked, or ignored-but-present content is not yet in git history, and destroying the only copy is never acceptable. \`prune\` additionally REFUSES without its own confirmation that NAMES the deletion — a SEPARATE consent from any other override in this flow (e.g. the merge-confirmation override never doubles as prune consent) — non-interactively without a prior explicit override naming the deletion specifically. A destination fallback (\`external\` → \`in-repo\` when unresolvable) MAY relocate; it must NEVER escalate to deletion.
-- **Chain-record append (Step 5.5) is append-only.** The ship-side ship-log section is never rewritten; the ship commit SHA is a copied recorded fact (from the log's own \`Commit:\` line), never re-derived or invented — omit the ship reference entirely for a never-shipped change rather than fabricating one.
+- **Already-archived no-op (Step 1.5), in-repo and legacy.** A change already found — in the in-repo \`<changesDir>/archive/\`, in the legacy \`<machineHome>/archive/\` left by the retired \`external\` destination, or via its ship-log tombstone (\`Archived in ship:\` / the legacy \`Pruned:\`) — is reported from that location or recorded outcome and never re-gated, re-synced, re-moved, or re-deleted. Detection happens BEFORE the status call, so a moved-or-deleted change directory never causes a hard failure. Step 2.5's \`Archived in ship:\`/\`Pruned:\`-present-but-not-caught-by-1.5 branches are defense-in-depth inconsistency checks, not the primary detection path.
+- **Bookkeeping is always in-repo (Step 5).** The destination axis is retired: the change directory always moves to the planning root's archive directory, with the same date-prefix and collision rules as always. A legacy \`archive.destination: external\` or \`prune\` in the config changes nothing — this workflow never moves anything to the machine home and never deletes a change directory without an archive copy. The machine home enters this workflow only as Step 1.5b's read-only legacy probe.
+- **Final evidence is immutable (Step 5.5).** The engine writes the archive section before hashing; no workflow step appends a post-hash commit identifier or changes hashed evidence afterward.
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
-- If sync is requested, use rasen-sync-specs approach (agent-driven)
+- If sync is requested, leave spec application to the archive engine
 - If delta specs exist, always run the sync assessment and show the combined summary before prompting`,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',

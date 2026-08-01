@@ -1,11 +1,9 @@
-import { WORKSPACE_DIR_NAME } from '../core/config.js';
+import { DEFAULT_SCHEMA, WORKSPACE_DIR_NAME } from '../core/config.js';
 import path from 'path';
 import { FileSystemUtils } from './file-system.js';
 import { writeChangeMetadata, validateSchemaName } from './change-metadata.js';
 import { readProjectConfig } from '../core/project-config.js';
 import type { ChangeMetadata } from '../core/change-metadata/index.js';
-
-const DEFAULT_SCHEMA = 'spec-driven';
 
 /**
  * Options for creating a change.

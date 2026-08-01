@@ -103,6 +103,7 @@ interface StoreUpgradeIdentityOptions extends StoreJsonOptions {
   uid?: string;
   apply?: boolean;
   dryRun?: boolean;
+  all?: boolean;
 }
 
 /**
@@ -1367,6 +1368,48 @@ class StoreCommand {
     }
   }
 
+  /**
+   * Batch upgrade: migrates every registered store to a permanent identity,
+   * backfills `storeMemberships` hints, and triggers the registry re-key.
+   * Store-centric (no `projectRoot`); the `update` hook handles the project
+   * `store:` declaration.
+   */
+  async upgradeIdentityAll(
+    options: StoreUpgradeIdentityOptions = {}
+  ): Promise<void> {
+    try {
+      const { migrateAllStoreIdentities, formatStoreIdentityMigrationSummary } =
+        await import('../core/store/identity-migration.js');
+      const result = await migrateAllStoreIdentities({
+        apply: options.apply === true && options.dryRun !== true,
+      });
+
+      if (options.json) {
+        printJson(result);
+        return;
+      }
+
+      const lines = formatStoreIdentityMigrationSummary(result);
+      if (lines.length > 0) {
+        console.log(lines.join('\n'));
+      }
+    } catch (error) {
+      this.handleFailure(
+        options.json,
+        {
+          applied: false,
+          stores: [],
+          projects: [],
+          registryRekeyed: false,
+          registryBlockedBy: [],
+          suggestedCommits: [],
+          status: [],
+        },
+        error
+      );
+    }
+  }
+
   private handleFailure<T extends { status: StoreDiagnostic[] }>(
     json: boolean | undefined,
     payload: T,
@@ -1378,140 +1421,149 @@ class StoreCommand {
 
 export function registerStoreCommand(program: Command): void {
   const storeCommand = new StoreCommand();
-  // One source for the locked group one-liner: the completions registry
-  // entry, which shell completion scripts also consume.
-  const storeGroupDescription =
-    COMMAND_REGISTRY.find((entry) => entry.name === 'store')?.description ??
-    'Create and manage stores - standalone Rasen repos you register on this machine';
-  const store = program.command('store').description(storeGroupDescription);
+  const store = program.command('store').description('');
 
   store
     .command('setup [id]')
-    .description('Create and register a local store')
-    .option('--path <path>', `Folder where the store should live (for example ~/${WORKSPACE_DIR_NAME}/<id>)`)
-    .option('--init-git', 'Initialize a Git repository with an initial commit (default)')
-    .option('--no-init-git', 'Skip every Git action: no init, no initial commit')
-    .option('--remote <url>', 'Canonical clone source recorded in store.yaml')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--path <path>', '')
+    .option('--init-git', '')
+    .option('--no-init-git', '')
+    .option('--remote <url>', '')
+    .option('--json', '')
     .action(async (id: string | undefined, options: StoreSetupOptions) => {
       await storeCommand.setup(id, options);
     });
 
   store
     .command('register [path]')
-    .description('Register an existing local store')
-    .option('--id <id>', 'Store id; defaults to metadata or folder name')
-    .option('--yes', 'Confirm creating store identity metadata for a healthy Rasen root')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--id <id>', '')
+    .option('--yes', '')
+    .option('--json', '')
     .action(async (inputPath: string | undefined, options: StoreRegisterOptions) => {
       await storeCommand.register(inputPath, options);
     });
 
   store
     .command('unregister <id>')
-    .description('Forget a local store registration without deleting files')
-    .option('--project-namespace', 'Target the project namespace for <id> instead of the store namespace')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--project-namespace', '')
+    .option('--json', '')
     .action(async (id: string, options: StoreUnregisterOptions) => {
       await storeCommand.unregister(id, options);
     });
 
   store
     .command('remove <id>')
-    .description('Forget a local store registration and delete its local folder')
-    .option('--yes', 'Confirm local store folder deletion')
-    .option('--project-namespace', 'Target the project namespace for <id> instead of the store namespace')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--yes', '')
+    .option('--project-namespace', '')
+    .option('--json', '')
     .action(async (id: string, options: StoreRemoveOptions) => {
       await storeCommand.remove(id, options);
     });
 
   store
     .command('add-project <path>')
-    .description('Register an in-repo project into the project namespace and add it to a target store\'s references')
-    .option('--to <store-id>', 'Target store to add the project to (must already be registered)')
-    .option('--as <id>', 'Project store id override (ignored if the project is already a store)')
+    .description('')
+    .option('--to <store-id>', '')
+    .option('--as <id>', '')
     .option(
       '--set-primary',
-      "Also record the target store as the project's planning store; refuses when a different store is already bound"
+      ''
     )
-    .option('--dry-run', 'Report every file that would be written in each repository and change nothing')
-    .option('--json', 'Output as JSON')
+    .option('--dry-run', '')
+    .option('--json', '')
     .action(async (projectPath: string, options: StoreAddProjectOptions) => {
       await storeCommand.addProject(projectPath, options);
     });
 
   store
     .command('migrate-membership <store-id>')
-    .description("Convert a store's legacy membership data into per-project membership records")
-    .option('--dry-run', 'Report the conversion plan and change nothing (default)')
-    .option('--apply', 'Write the records and remove the legacy adoption manifest once they read back')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--dry-run', '')
+    .option('--apply', '')
+    .option('--json', '')
     .action(async (storeId: string, options: StoreMigrateMembershipOptions) => {
       await storeCommand.migrateMembership(storeId, options);
     });
 
   store
     .command('adopt [path]')
-    .description("Migrate an in-repo project's planning content into a store and convert the repo to a pointer")
-    .option('--to <store-id>', 'Target store to adopt the project into (must already be registered)')
-    .option('--archive <mode>', 'Archive handling: move (default), leave, or external')
-    .option('--dry-run', 'Print the full move plan and change nothing')
-    .option('--verify-hash', 'Verify moved files by content hash, not just size')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--to <store-id>', '')
+    .option('--archive <mode>', '')
+    .option('--dry-run', '')
+    .option('--verify-hash', '')
+    .option('--json', '')
     .action(async (inputPath: string | undefined, options) => {
       await runAdopt(inputPath, options);
     });
 
   store
     .command('eject <project-id>')
-    .description('Restore a store-hosted project back to in-repo planning using the adoption manifest')
-    .option('--from <store-id>', 'Source store to eject from (must already be registered)')
-    .option('--all', 'Manifest-less fallback: copy the entire store planning content back (with confirmation)')
-    .option('--yes', 'Explicit consent for a manifest-less --all copy back in non-interactive/JSON mode')
-    .option('--force', 'Proceed past manifest drift, reporting the missing content')
+    .description('')
+    .option('--from <store-id>', '')
+    .option('--all', '')
+    .option('--yes', '')
+    .option('--force', '')
     .option(
       '--into <path>',
-      'Repo path to restore into (else the current checkout when its project identity matches, else the single registered live checkout)'
+      ''
     )
-    .option('--dry-run', 'Print the restore plan and change nothing')
-    .option('--verify-hash', 'Verify moved files by content hash, not just size')
-    .option('--json', 'Output as JSON')
+    .option('--dry-run', '')
+    .option('--verify-hash', '')
+    .option('--json', '')
     .action(async (projectId: string, options) => {
       await runEject(projectId, options);
     });
 
   store
-    .command('upgrade-identity <id>')
-    .description("Give a store a permanent identity and record it in the registry and the project's declaration")
-    .option('--uid <uid>', 'Disambiguate a name that matches more than one registered store')
-    .option('--dry-run', 'Report every file that would be written and change nothing (default)')
-    .option('--apply', 'Write the plan')
-    .option('--json', 'Output as JSON')
-    .action(async (id: string, options: StoreUpgradeIdentityOptions) => {
+    .command('upgrade-identity [id]')
+    .description('')
+    .option('--uid <uid>', '')
+    .option('--dry-run', '')
+    .option('--apply', '')
+    .option('--all', '')
+    .option('--json', '')
+    .action(async (id: string | undefined, options: StoreUpgradeIdentityOptions) => {
+      if (options.all) {
+        await storeCommand.upgradeIdentityAll(options);
+        return;
+      }
+      if (!id) {
+        console.error(
+          asErrorMessage(
+            "Store id is required (or use '--all' to upgrade every registered store)."
+          )
+        );
+        process.exitCode = 1;
+        return;
+      }
       await storeCommand.upgradeIdentity(id, options);
     });
 
   store
     .command('list')
     .alias('ls')
-    .description('List locally registered stores')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--json', '')
     .action(async (options: StoreJsonOptions) => {
       await storeCommand.list(options);
     });
 
   store
     .command('doctor [id]')
-    .description('Check local store registration and metadata')
-    .option('--project-namespace', 'Limit to the project namespace entry for [id]')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--project-namespace', '')
+    .option('--json', '')
     .action(async (id: string | undefined, options: StoreDoctorOptions) => {
       await storeCommand.doctor(id, options);
     });
 
   const lifecycleRedirects = new Set(
-    COMMAND_REGISTRY.filter(
+    (COMMAND_REGISTRY.subcommands ?? []).filter(
       (entry) =>
         entry.flags.some((flag) => flag.name === 'store') ||
         (entry.subcommands ?? []).some((subcommand) =>

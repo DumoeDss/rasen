@@ -87,11 +87,21 @@ export async function runAdopt(sourcePath: string | undefined, options: AdoptOpt
       });
     }
     const archiveMode = (options.archive ?? 'move') as ArchiveMode;
-    if (!['move', 'leave', 'external'].includes(archiveMode)) {
+    if ((archiveMode as string) === 'external') {
+      throw new StoreError(
+        "`--archive external` is retired: archives always land in a planning root, never the machine home.",
+        'adopt_external_archive_retired',
+        {
+          target: 'archive.adopt',
+          fix: 'Use --archive move to bring the archive into the store, or --archive leave to keep it in the source repo.',
+        }
+      );
+    }
+    if (!['move', 'leave'].includes(archiveMode)) {
       throw new StoreError(
         `Invalid --archive value '${options.archive}'.`,
         'adopt_invalid_archive',
-        { target: 'archive.destination', fix: 'Use --archive move|leave|external.' }
+        { target: 'archive.adopt', fix: 'Use --archive move|leave.' }
       );
     }
 
@@ -291,16 +301,19 @@ function printEjectHuman(result: EjectResult): void {
 export async function runRelocate(options: RelocateOptions): Promise<void> {
   try {
     if (!options.to) {
-      throw new StoreError('Pass --to <in-repo|external|store>.', 'relocate_to_required', {
-        target: 'archive.destination',
-        fix: 'rasen archive relocate --to <in-repo|external|store>',
+      throw new StoreError('Pass --to <in-repo|store>.', 'relocate_to_required', {
+        target: 'archive.relocate',
+        fix: 'rasen archive relocate --to <in-repo|store>',
       });
     }
-    const to = options.to as RelocateTarget | 'prune';
-    if (!['in-repo', 'external', 'store', 'prune'].includes(to)) {
+    // `external` and `prune` are still ACCEPTED by this guard so
+    // `relocateArchive` can answer each with its own retirement message
+    // (`archive-relocate` capability), rather than a generic "invalid value".
+    const to = options.to as RelocateTarget | 'external' | 'prune';
+    if (!['in-repo', 'store', 'external', 'prune'].includes(to)) {
       throw new StoreError(`Invalid --to value '${options.to}'.`, 'relocate_invalid_to', {
-        target: 'archive.destination',
-        fix: 'Use --to in-repo|external|store.',
+        target: 'archive.relocate',
+        fix: 'Use --to in-repo|store.',
       });
     }
 
@@ -330,7 +343,6 @@ function toRelocateJson(result: RelocateResult) {
     relocate: {
       to: result.to,
       target_dir: result.targetDir,
-      destination_value: result.destinationValue,
       moves: result.moves.map((m) => ({ name: m.name, source: m.source, target: m.target })),
       dry_run: result.dryRun,
     },
@@ -346,11 +358,11 @@ function printRelocateHuman(result: RelocateResult): void {
   }
   if (result.dryRun) {
     console.log('');
-    console.log('Dry run: nothing was moved and no config changed.');
+    console.log('Dry run: nothing was moved.');
     return;
   }
   console.log('');
-  console.log(`archive.destination set to '${result.destinationValue}'.`);
+  console.log('Archives now live in the planning root; no configuration was written.');
 }
 
 // -----------------------------------------------------------------------------
@@ -429,11 +441,11 @@ function printHomePruneHuman(result: HomePruneResult): void {
 export function registerArchiveRelocateSubcommand(archiveCommand: Command): void {
   archiveCommand
     .command('relocate')
-    .description('Move existing archived changes to a destination and flip archive.destination together')
-    .requiredOption('--to <dest>', 'Target destination: in-repo, external, or store')
-    .option('--dry-run', 'Print the move plan and change nothing')
-    .option('--verify-hash', 'Verify moved files by content hash, not just size')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .requiredOption('--to <dest>', '')
+    .option('--dry-run', '')
+    .option('--verify-hash', '')
+    .option('--json', '')
     .action(async (options: RelocateOptions) => {
       await runRelocate(options);
     });
@@ -441,12 +453,12 @@ export function registerArchiveRelocateSubcommand(archiveCommand: Command): void
 
 /** Registers the `home` command group (`home prune`). */
 export function registerHomeCommand(program: Command): void {
-  const home = program.command('home').description('Manage machine-local project home state');
+  const home = program.command('home').description('');
   home
     .command('prune')
-    .description('List (default) or remove orphaned machine-home directories and stale registry entries')
-    .option('--apply', 'Delete the reported orphans (default is report-only)')
-    .option('--json', 'Output as JSON')
+    .description('')
+    .option('--apply', '')
+    .option('--json', '')
     .action(async (options: HomePruneOptions) => {
       await runHomePrune(options);
     });

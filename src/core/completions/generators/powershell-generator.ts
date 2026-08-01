@@ -1,7 +1,7 @@
 import {
   CompletionGenerator,
-  CommandDefinition,
-  FlagDefinition,
+  ResolvedCommandDefinition,
+  ResolvedFlagDefinition,
   PositionalDefinition,
 } from '../types.js';
 import { POWERSHELL_DYNAMIC_HELPERS } from '../templates/powershell-templates.js';
@@ -24,7 +24,7 @@ export class PowerShellGenerator implements CompletionGenerator {
    * @param commands - Command definitions to generate completions for
    * @returns PowerShell completion script as a string
    */
-  generate(commands: CommandDefinition[]): string {
+  generate(commands: readonly ResolvedCommandDefinition[]): string {
     // Build top-level commands using push() for loop clarity
     const commandLines: string[] = [];
     for (const cmd of commands) {
@@ -81,7 +81,7 @@ Register-ArgumentCompleter -CommandName rasen -ScriptBlock $rasenCompleter
   /**
    * Generate completion case for a command
    */
-  private generateCommandCase(cmd: CommandDefinition, indent: string): string[] {
+  private generateCommandCase(cmd: ResolvedCommandDefinition, indent: string): string[] {
     const lines: string[] = [];
 
     if (cmd.subcommands && cmd.subcommands.length > 0) {
@@ -145,7 +145,7 @@ Register-ArgumentCompleter -CommandName rasen -ScriptBlock $rasenCompleter
    * Generate argument completion (flags and positional)
    */
   private generateArgumentCompletion(
-    cmd: CommandDefinition,
+    cmd: ResolvedCommandDefinition,
     indent: string,
     firstPositionalTokenIndex: number
   ): string[] {
@@ -191,8 +191,8 @@ Register-ArgumentCompleter -CommandName rasen -ScriptBlock $rasenCompleter
   }
 
   private generateIndexedPositionalCompletion(
-    positionals: PositionalDefinition[],
-    flags: FlagDefinition[],
+    positionals: readonly PositionalDefinition[],
+    flags: readonly ResolvedFlagDefinition[],
     firstPositionalTokenIndex: number,
     indent: string
   ): string[] {
@@ -242,7 +242,7 @@ Register-ArgumentCompleter -CommandName rasen -ScriptBlock $rasenCompleter
     return lines;
   }
 
-  private generateValueFlags(flags: FlagDefinition[]): string[] {
+  private generateValueFlags(flags: readonly ResolvedFlagDefinition[]): string[] {
     return flags
       .filter((flag) => flag.takesValue)
       .flatMap((flag) => [

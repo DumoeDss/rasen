@@ -11,7 +11,6 @@ import {
   runBootstrapCommand,
 } from '../../src/commands/bootstrap.js';
 import {
-  BOOTSTRAP_DESCRIPTIONS,
   BOOTSTRAP_MESSAGE_KEYS,
   getBootstrapMessages,
 } from '../../src/commands/bootstrap-messages.js';
@@ -445,7 +444,7 @@ describe('rasen bootstrap command surface', () => {
           );
         }
       };
-      walk(COMMAND_REGISTRY, '');
+      walk(COMMAND_REGISTRY.subcommands ?? [], '');
       return paths;
     }
 
@@ -525,16 +524,10 @@ describe('rasen bootstrap command surface', () => {
           );
         }
 
-        const descriptions = getLocaleCatalog(locale).commandDescriptions as Record<
-          string,
-          string
-        >;
-        for (const description of Object.values(BOOTSTRAP_DESCRIPTIONS)) {
-          expect(descriptions[description], `${locale}: ${description}`).toBeTruthy();
-          if (description !== BOOTSTRAP_DESCRIPTIONS.json) {
-            expect(descriptions[description], `${locale}: ${description}`).not.toBe(description);
-          }
-        }
+        expect(
+          getLocaleCatalog(locale).cli.root.commands.bootstrap.description,
+          `${locale}: bootstrap CLI description`,
+        ).not.toBe(english.cli.root.commands.bootstrap.description);
       }
     });
   });

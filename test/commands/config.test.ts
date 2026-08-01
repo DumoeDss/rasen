@@ -220,17 +220,15 @@ describe('config command shell completion registry', () => {
   it('should have config command in registry', async () => {
     const { COMMAND_REGISTRY } = await import('../../src/core/completions/command-registry.js');
 
-    const configCmd = COMMAND_REGISTRY.find((cmd) => cmd.name === 'config');
+    const configCmd = COMMAND_REGISTRY.subcommands?.find((cmd) => cmd.name === 'config');
     expect(configCmd).toBeDefined();
-    expect(configCmd?.description).toBe(
-      'View and modify global or project Rasen configuration'
-    );
+    expect(configCmd).not.toHaveProperty('description');
   });
 
   it('should have all config subcommands in registry', async () => {
     const { COMMAND_REGISTRY } = await import('../../src/core/completions/command-registry.js');
 
-    const configCmd = COMMAND_REGISTRY.find((cmd) => cmd.name === 'config');
+    const configCmd = COMMAND_REGISTRY.subcommands?.find((cmd) => cmd.name === 'config');
     const subcommandNames = configCmd?.subcommands?.map((s) => s.name) ?? [];
 
     expect(subcommandNames).toContain('path');
@@ -245,7 +243,7 @@ describe('config command shell completion registry', () => {
   it('should have --json flag on list subcommand', async () => {
     const { COMMAND_REGISTRY } = await import('../../src/core/completions/command-registry.js');
 
-    const configCmd = COMMAND_REGISTRY.find((cmd) => cmd.name === 'config');
+    const configCmd = COMMAND_REGISTRY.subcommands?.find((cmd) => cmd.name === 'config');
     const listCmd = configCmd?.subcommands?.find((s) => s.name === 'list');
     const flagNames = listCmd?.flags?.map((f) => f.name) ?? [];
 
@@ -255,7 +253,7 @@ describe('config command shell completion registry', () => {
   it('should have --string flag on set subcommand', async () => {
     const { COMMAND_REGISTRY } = await import('../../src/core/completions/command-registry.js');
 
-    const configCmd = COMMAND_REGISTRY.find((cmd) => cmd.name === 'config');
+    const configCmd = COMMAND_REGISTRY.subcommands?.find((cmd) => cmd.name === 'config');
     const setCmd = configCmd?.subcommands?.find((s) => s.name === 'set');
     const flagNames = setCmd?.flags?.map((f) => f.name) ?? [];
 
@@ -266,7 +264,7 @@ describe('config command shell completion registry', () => {
   it('should have --all and -y flags on reset subcommand', async () => {
     const { COMMAND_REGISTRY } = await import('../../src/core/completions/command-registry.js');
 
-    const configCmd = COMMAND_REGISTRY.find((cmd) => cmd.name === 'config');
+    const configCmd = COMMAND_REGISTRY.subcommands?.find((cmd) => cmd.name === 'config');
     const resetCmd = configCmd?.subcommands?.find((s) => s.name === 'reset');
     const flagNames = resetCmd?.flags?.map((f) => f.name) ?? [];
 
@@ -277,21 +275,25 @@ describe('config command shell completion registry', () => {
   it('should have --scope flag on config command', async () => {
     const { COMMAND_REGISTRY } = await import('../../src/core/completions/command-registry.js');
 
-    const configCmd = COMMAND_REGISTRY.find((cmd) => cmd.name === 'config');
+    const configCmd = COMMAND_REGISTRY.subcommands?.find((cmd) => cmd.name === 'config');
     const flagNames = configCmd?.flags?.map((f) => f.name) ?? [];
 
     expect(flagNames).toContain('scope');
-    expect(configCmd?.flags.find((flag) => flag.name === 'scope')?.values).toEqual([
+    expect(configCmd?.flags.find((flag) => flag.name === 'scope')?.completionValues).toEqual([
       'global',
       'project',
     ]);
   });
 
   it('should generate both accepted --scope values for Zsh', async () => {
-    const { COMMAND_REGISTRY } = await import('../../src/core/completions/command-registry.js');
+    const { resolveCliPresentation } = await import(
+      '../../src/core/completions/cli-presentation.js'
+    );
     const { ZshGenerator } = await import('../../src/core/completions/generators/zsh-generator.js');
 
-    const script = new ZshGenerator().generate(COMMAND_REGISTRY);
+    const script = new ZshGenerator().generate(
+      resolveCliPresentation({ locale: 'en' }).completionCommands
+    );
 
     expect(script).toContain(':value:(global project)');
   });

@@ -47,6 +47,9 @@ export function verifyUiPackMetadata(metadata, expectedVersion) {
 export function main() {
   const { version } = loadReleaseContract({ rootDir });
   run(process.execPath, [path.join(rootDir, 'scripts', 'pack-version-check.mjs')], { cwd: rootDir });
+  run(process.execPath, [path.join(rootDir, 'scripts', 'retired-edit-boundary-package-check.mjs')], {
+    cwd: rootDir,
+  });
 
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-paired-pack-'));
   try {

@@ -117,10 +117,13 @@ describe('selective orchestration bundles', () => {
       AUTO_ORCHESTRATION_PLAYBOOK.indexOf('### Step G '),
       AUTO_ORCHESTRATION_PLAYBOOK.indexOf('### Step G.1 ')
     );
+    // Children are created under SEMANTIC names; scheduling ids stay in the
+    // portfolio record's `node` metadata (`file-placement` capability).
     expect(stepG).toContain(
-      'rasen new change <child-id> --pipeline <childPipeline>'
+      'rasen new change <semantic-name> --pipeline <childPipeline>'
     );
-    expect(stepG).toContain('"dependsOn": ["<parent>-a"]');
+    expect(stepG).toContain('Scheduling and DAG-internal identifiers');
+    expect(stepG).toContain('"dependsOn": ["<parent>-<what-this-slice-delivers>"]');
     expect(stepG).toContain('"delivery":');
     expect(stepG).toContain('"status": "pending"');
     expect(stepG).toContain('next: portfolio-delivery');
@@ -235,7 +238,7 @@ describe('selective orchestration bundles', () => {
     }
   });
 
-  it('branches Codex native, exec-bridge, and Claude-native worker lifecycles', () => {
+  it('pins all four native/bridge route lifecycles and their identity contracts', () => {
     for (const playbook of [
       AUTO_ORCHESTRATION_PLAYBOOK,
       GOAL_ORCHESTRATION_PLAYBOOK,
@@ -256,10 +259,23 @@ describe('selective orchestration bundles', () => {
       // Claude-native and external exec-bridge contracts remain complete.
       expect(playbook).toContain('Task tool (subagent_type: "general-purpose"');
       expect(playbook).toContain('via `SendMessage` to the LEAD');
+      expect(playbook).toContain('bridge `claude-print`');
+      expect(playbook).toContain('rasen agent dispatch --runtime claude');
+      expect(playbook).toContain('--prompt-file <prompt.txt>');
+      expect(playbook).toContain('--resume <exact-session-id>');
+      expect(playbook).toContain('the receipt then supplies `sessionId`, `cwd`');
+      expect(playbook).toContain(
+        'do NOT use `SendMessage`, `rasen agent wait`, or the signal-file parking protocol'
+      );
       expect(playbook).toContain('codex exec --json --output-schema');
       expect(playbook).toContain('< /dev/null');
       expect(playbook).toContain('codex exec resume <threadId>');
-      expect(playbook).toContain('Exec mode yields NO turn id');
+      expect(playbook).toContain('Codex exec mode yields NO turn id');
+      expect(playbook).toContain('Claude host → Claude worker `native`');
+      expect(playbook).toContain('Claude host → Codex worker `exec-bridge`');
+      expect(playbook).toContain('Codex host → Codex worker `native`');
+      expect(playbook).toContain('Codex host → Claude worker `exec-bridge`');
+      expect(playbook).not.toContain('Codex host → Claude worker `unsupported`');
     }
   });
 
@@ -271,7 +287,11 @@ describe('selective orchestration bundles', () => {
       const reviewLoop = stepSection(playbook, 'E');
       expect(reviewLoop).toContain('Claude-native uses `SendMessage` by agentId');
       expect(reviewLoop).toContain('Codex-native uses `followup_task` by agent id');
-      expect(reviewLoop).toContain('exec-bridge uses `codex exec resume <threadId>`');
+      expect(reviewLoop).toContain(
+        'Claude exec-bridge uses `rasen agent dispatch --resume <sessionId> --cwd <cwd>`'
+      );
+      expect(reviewLoop).toContain('Codex exec-bridge uses `codex exec resume <threadId>`');
+      expect(reviewLoop).toContain('A finding is resolved ONLY after a non-author confirms it');
     }
 
     for (const playbook of [
@@ -281,7 +301,11 @@ describe('selective orchestration bundles', () => {
       const goalLoop = stepSection(playbook, 'L');
       expect(goalLoop).toContain('Claude-native uses `SendMessage` on the same implementer agentId');
       expect(goalLoop).toContain('Codex-native uses `followup_task` on the same idle implementer agent');
-      expect(goalLoop).toContain('exec-bridge uses `codex exec resume <threadId>`');
+      expect(goalLoop).toContain(
+        'Claude exec-bridge uses `rasen agent dispatch --resume <sessionId> --cwd <cwd>`'
+      );
+      expect(goalLoop).toContain('Codex exec-bridge uses `codex exec resume <threadId>`');
+      expect(goalLoop).toContain('author ≠ verifier');
     }
 
     for (const playbook of [
@@ -292,7 +316,8 @@ describe('selective orchestration bundles', () => {
       const resume = stepSection(playbook, 'F.1');
       expect(resume).toContain('Claude-native `SendMessage`');
       expect(resume).toContain('Codex-native `followup_task`');
-      expect(resume).toContain('exec-bridge resume by `threadId`');
+      expect(resume).toContain('Claude exec-bridge continuation by exact `sessionId + cwd`');
+      expect(resume).toContain('Codex exec-bridge resume by `threadId`');
       expect(resume).toContain('never invent one');
     }
   });
@@ -399,11 +424,15 @@ describe('selective orchestration bundles', () => {
       REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK,
     ]) {
       expect(playbook).toContain('reads the effective `keepalive.enabled` entry ONCE');
-      expect(playbook).toContain('ONLY `keepalive.enabled=true` AND runtime `claude`');
+      expect(playbook).toContain(
+        'ONLY `keepalive.enabled=true` AND Claude `native` dispatch'
+      );
       expect(playbook).toContain('dispatch the stage as `ONE_SHOT`');
       expect(playbook).toContain('MUST omit the `rasen agent wait` loop');
       expect(playbook).toContain('the raw switch value');
-      expect(playbook).toContain('runtime gating (Claude on, Codex off by default');
+      expect(playbook).toContain(
+        'route gating (Claude-native on, `claude-print` and Codex off'
+      );
     }
   });
 
