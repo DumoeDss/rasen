@@ -117,10 +117,13 @@ describe('selective orchestration bundles', () => {
       AUTO_ORCHESTRATION_PLAYBOOK.indexOf('### Step G '),
       AUTO_ORCHESTRATION_PLAYBOOK.indexOf('### Step G.1 ')
     );
+    // Children are created under SEMANTIC names; scheduling ids stay in the
+    // portfolio record's `node` metadata (`file-placement` capability).
     expect(stepG).toContain(
-      'rasen new change <child-id> --pipeline <childPipeline>'
+      'rasen new change <semantic-name> --pipeline <childPipeline>'
     );
-    expect(stepG).toContain('"dependsOn": ["<parent>-a"]');
+    expect(stepG).toContain('Scheduling and DAG-internal identifiers');
+    expect(stepG).toContain('"dependsOn": ["<parent>-<what-this-slice-delivers>"]');
     expect(stepG).toContain('"delivery":');
     expect(stepG).toContain('"status": "pending"');
     expect(stepG).toContain('next: portfolio-delivery');

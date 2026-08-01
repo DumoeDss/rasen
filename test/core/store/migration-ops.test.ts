@@ -206,25 +206,42 @@ describe('store migration ops', () => {
     expect(readStorePointer(source).value).toBeUndefined();
   });
 
-  it('dry-run previews --archive external without minting a home or writing config', async () => {
+  it('rejects --archive external as retired, changing nothing', async () => {
     const source = makeSource();
     writeArchived(source, '2026-07-01-old');
 
-    const preview = await adoptProject({
-      sourcePath: source,
-      storeId: 'team-store',
-      archive: 'external',
-      globalDataDir,
-      dryRun: true,
-    });
+    await expect(
+      adoptProject({
+        sourcePath: source,
+        storeId: 'team-store',
+        archive: 'external' as never,
+        globalDataDir,
+      })
+    ).rejects.toThrow(/retired/i);
 
-    expect(preview.archiveMoves.map((m) => m.name)).toEqual(['2026-07-01-old']);
-    // No home directory was created and the destination flip never happened.
+    // Nothing moved, no machine home was minted, no destination was written.
     const { resolveProjectHome } = await import('../../../src/core/project-home.js');
     const probed = await resolveProjectHome(source, { ensure: false, globalDataDir });
     expect(probed === null || !fs.existsSync(probed.archiveDir)).toBe(true);
     expect(readProjectConfig(source)?.archive?.destination).toBeUndefined();
     expect(ls(path.join(source, 'rasen', 'changes', 'archive'))).toEqual(['2026-07-01-old']);
+    expect(readStorePointer(source).value).toBeUndefined();
+  });
+
+  it('--archive move consolidates into the store and writes no destination config', async () => {
+    const source = makeSource();
+    writeArchived(source, '2026-07-01-old');
+
+    const result = await adoptProject({
+      sourcePath: source,
+      storeId: 'team-store',
+      archive: 'move',
+      globalDataDir,
+    });
+
+    expect(result.archiveMoves.map((m) => m.name)).toEqual(['2026-07-01-old']);
+    expect(ls(path.join(storeRoot, 'rasen', 'changes', 'archive'))).toEqual(['2026-07-01-old']);
+    expect(readProjectConfig(source)?.archive?.destination).toBeUndefined();
   });
 
   it('still moves the full archive on a real adopt after the dry-run preview', async () => {
@@ -275,21 +292,27 @@ describe('store migration ops', () => {
     ).rejects.toThrow(/no ownership record/i);
   });
 
-  it('relocates archives in-repo -> external and consolidates a split archive', async () => {
+  // `archive-relocate` capability: relocation only ever CONSOLIDATES archives
+  // into a planning root. `external` is retired along with the destination
+  // axis, and relocation writes no configuration at all.
+  it('consolidates a legacy machine-home archive back into the planning root', async () => {
     const source = makeSource();
-    writeArchived(source, '2026-07-01-old');
+    const home = await adoptHomeArchiveDir(source);
+    const legacyEntry = path.join(home, '2026-07-01-old');
+    fs.mkdirSync(legacyEntry, { recursive: true });
+    fs.writeFileSync(path.join(legacyEntry, 'proposal.md'), 'legacy\n');
 
     const result = await relocateArchive({
       projectRoot: source,
-      to: 'external',
+      to: 'in-repo',
       globalDataDir,
     });
-    expect(result.destinationValue).toBe('external');
+
     expect(result.moves.map((m) => m.name)).toContain('2026-07-01-old');
-    // Config records external.
-    expect(readProjectConfig(source)?.archive?.destination).toBe('external');
-    // The archived entry left the repo.
-    expect(ls(path.join(source, 'rasen', 'changes', 'archive'))).not.toContain('2026-07-01-old');
+    expect(ls(path.join(source, 'rasen', 'changes', 'archive'))).toContain('2026-07-01-old');
+    // No destination configuration is written any more.
+    expect(readProjectConfig(source)?.archive?.destination).toBeUndefined();
+    expect((result as unknown as Record<string, unknown>).destinationValue).toBeUndefined();
   });
 
   it('rejects archive relocate --to prune', async () => {
@@ -297,6 +320,15 @@ describe('store migration ops', () => {
     await expect(
       relocateArchive({ projectRoot: source, to: 'prune' as never, globalDataDir })
     ).rejects.toThrow(/prune/i);
+  });
+
+  it('rejects archive relocate --to external as retired', async () => {
+    const source = makeSource();
+    await expect(
+      relocateArchive({ projectRoot: source, to: 'external' as never, globalDataDir })
+    ).rejects.toThrow(/retired/i);
+    // A refused relocation writes nothing.
+    expect(readProjectConfig(source)?.archive?.destination).toBeUndefined();
   });
 
   it('home prune reports dangling entries and applies removal', async () => {
@@ -410,18 +442,21 @@ describe('store migration ops', () => {
   // --- Task 4.5: relocate collision suffixing + split-archive consolidation ---
   it('relocate suffixes a colliding archive name at the target', async () => {
     const source = makeSource();
-    // Same-named archive dir in the repo AND already at the external home target.
+    // Same-named archive dir already in the repo AND in the legacy machine
+    // home, so consolidating into the planning root hits a name collision.
     writeArchived(source, '2026-07-01-old');
     const home = await adoptHomeArchiveDir(source);
     fs.mkdirSync(path.join(home, '2026-07-01-old'), { recursive: true });
-    fs.writeFileSync(path.join(home, '2026-07-01-old', 'keep.md'), 'existing\n');
+    fs.writeFileSync(path.join(home, '2026-07-01-old', 'keep.md'), 'legacy\n');
 
-    const result = await relocateArchive({ projectRoot: source, to: 'external', globalDataDir });
+    const result = await relocateArchive({ projectRoot: source, to: 'in-repo', globalDataDir });
     const move = result.moves.find((m) => m.name === '2026-07-01-old');
     expect(move).toBeDefined();
+    // The legacy copy is suffixed rather than overwriting the in-repo one.
     expect(path.basename(move!.target)).not.toBe('2026-07-01-old');
-    // Both remain readable at the target.
-    expect(fs.existsSync(path.join(home, '2026-07-01-old', 'keep.md'))).toBe(true);
+    const repoArchive = path.join(source, 'rasen', 'changes', 'archive');
+    expect(ls(repoArchive)).toContain('2026-07-01-old');
+    expect(fs.existsSync(path.join(repoArchive, path.basename(move!.target), 'keep.md'))).toBe(true);
   });
 
   it('relocate consolidates a split archive (repo + machine home) to the target', async () => {

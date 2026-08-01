@@ -134,9 +134,23 @@ describe('runAudit (Zed path)', () => {
 
   it('errors when the default database location is absent and no --db is given', async () => {
     const emptyHome = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-zed-nohome-'));
-    await expect(runAudit(ROOT, { runtime: 'zed', homedir: emptyHome, outPath: out })).rejects.toThrow(
-      /default location/
-    );
-    fs.rmSync(emptyHome, { recursive: true, force: true });
+    const previousLocalAppData = process.env.LOCALAPPDATA;
+    const previousXdgDataHome = process.env.XDG_DATA_HOME;
+    try {
+      const emptyDataHome = path.join(emptyHome, 'empty-data-home');
+      process.env.LOCALAPPDATA = emptyDataHome;
+      process.env.XDG_DATA_HOME = emptyDataHome;
+      await expect(runAudit(ROOT, { runtime: 'zed', homedir: emptyHome, outPath: out })).rejects.toThrow(
+        /default location/
+      );
+    } finally {
+      if (previousLocalAppData === undefined) delete process.env.LOCALAPPDATA;
+      else process.env.LOCALAPPDATA = previousLocalAppData;
+      if (previousXdgDataHome === undefined) delete process.env.XDG_DATA_HOME;
+      else process.env.XDG_DATA_HOME = previousXdgDataHome;
+      fs.rmSync(emptyHome, { recursive: true, force: true });
+    }
+    expect(process.env.LOCALAPPDATA).toBe(previousLocalAppData);
+    expect(process.env.XDG_DATA_HOME).toBe(previousXdgDataHome);
   });
 });

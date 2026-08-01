@@ -63,6 +63,7 @@ describe('rasen context (4.1)', () => {
       source: 'store',
       store_id: 'team-context',
       role: 'openspec_root',
+      workspaceIdentity: expect.stringMatching(/^[a-z0-9-]+--[0-9a-f]{8}$/),
     });
     expect(workingSet.members).toEqual([
       {
@@ -214,4 +215,31 @@ describe('rasen context (4.1)', () => {
     expect(payload.members).toEqual([]);
     expect(payload.status[0].code).toBeDefined();
   });
+
+  // file-placement D5 / 原则 7: one Git worktree = one workspace identity.
+  it('exposes a workspace identity that differs per worktree and mints no workspaces/ state', async () => {
+    const mainRoot = path.join(tempDir, 'ws-main');
+    const linkedRoot = path.join(tempDir, 'ws-main-wt-feature');
+    createOpenSpecRoot(mainRoot);
+    createOpenSpecRoot(linkedRoot);
+
+    const main = await runCLI(['context', '--json'], { cwd: mainRoot, env });
+    const linked = await runCLI(['context', '--json'], { cwd: linkedRoot, env });
+    expect(main.exitCode).toBe(0);
+    expect(linked.exitCode).toBe(0);
+
+    const mainIdentity = parseJson(main).root.workspaceIdentity;
+    const linkedIdentity = parseJson(linked).root.workspaceIdentity;
+    expect(mainIdentity).toMatch(/^[a-z0-9-]+--[0-9a-f]{8}$/);
+    expect(linkedIdentity).toMatch(/^[a-z0-9-]+--[0-9a-f]{8}$/);
+    expect(mainIdentity).not.toBe(linkedIdentity);
+
+    // No speculative workspace state anywhere: not in the machine data dir,
+    // not in either root.
+    expect(fs.existsSync(path.join(globalDataDir, 'workspaces'))).toBe(false);
+    expect(fs.existsSync(path.join(mainRoot, 'workspaces'))).toBe(false);
+
+    const human = await runCLI(['context'], { cwd: mainRoot, env });
+    expect(human.stdout).toContain(`Workspace identity: ${mainIdentity}`);
+  }, CONTEXT_MATRIX_TIMEOUT_MS);
 });

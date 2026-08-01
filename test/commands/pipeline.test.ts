@@ -8,6 +8,8 @@ import {
   type PipelinePackageInput,
 } from '../../src/core/workflow-package/index.js';
 import { cliProjectRoot, runCLI } from '../helpers/run-cli.js';
+import { resolveProjectHome } from '../../src/core/project-home.js';
+import { getGlobalDataDir } from '../../src/core/index.js';
 
 const BUILTIN_NAMES = [
   'auto-decompose',
@@ -2640,14 +2642,19 @@ stages:
     });
   });
 
-  describe('resume with external work directory (design change-work-dir)', () => {
+  // The three-location sticky-legacy chain (file-placement D3): the execution
+  // root's ephemera directory first, then the legacy machine-home work
+  // directory, then the change directory.
+  describe('resume run-state location chain (file-placement)', () => {
     function normalizePaths(str: string): string {
       return str.replace(/\\/g, '/');
     }
 
     /**
-     * Mints machine identity for `testDir` (via the ensure surface,
-     * `instructions`) and returns the resolved workDir for `changeName`.
+     * Mints machine identity for `testDir` and returns the resolved LEGACY
+     * work directory for `changeName`. No workflow surface mints any more (the
+     * work directory is legacy-read only), so identity is established through
+     * the resolver directly — the way `rasen init` does.
      */
     async function mintWorkDir(changeName: string, globalDataDir: string): Promise<string> {
       await fs.writeFile(path.join(testDir, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
@@ -2656,9 +2663,9 @@ stages:
         path.join(changesDir, changeName, 'proposal.md'),
         '## Why\nTest.\n\n## What Changes\n- test'
       );
-      await runCLI(['instructions', 'proposal', '--change', changeName], {
-        cwd: testDir,
-        env: { XDG_DATA_HOME: globalDataDir },
+      await resolveProjectHome(testDir, {
+        ensure: true,
+        globalDataDir: getGlobalDataDir({ env: { XDG_DATA_HOME: globalDataDir } }),
       });
       const statusResult = await runCLI(['status', '--change', changeName, '--json'], {
         cwd: testDir,
@@ -2668,6 +2675,45 @@ stages:
       expect(typeof statusJson.workDir).toBe('string');
       return statusJson.workDir as string;
     }
+
+    it('resolves run-state from the execution root ephemera directory first', async () => {
+      const globalDataDir = path.join(testDir, 'global-data-ephemera-first');
+      const workDir = await mintWorkDir('ephemera-first-change', globalDataDir);
+      const ephemeraDir = path.join(
+        testDir,
+        '.rasen',
+        'changes',
+        'ephemera-first-change',
+        'ephemera'
+      );
+      await fs.mkdir(ephemeraDir, { recursive: true });
+      await fs.writeFile(
+        path.join(ephemeraDir, 'auto-run.json'),
+        JSON.stringify(
+          { pipeline: 'bug-fix', stages: { propose: { status: 'done' }, implement: { status: 'done' } } },
+          null,
+          2
+        )
+      );
+      // A legacy copy in the work directory must LOSE to the ephemera copy.
+      await fs.mkdir(workDir, { recursive: true });
+      await fs.writeFile(
+        path.join(workDir, 'auto-run.json'),
+        JSON.stringify({ pipeline: 'bug-fix', stages: { propose: { status: 'done' } } }, null, 2)
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'ephemera-first-change', '--json'], {
+        cwd: testDir,
+        env: { XDG_DATA_HOME: globalDataDir },
+      });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.hasRunState).toBe(true);
+      expect(normalizePaths(json.runStateDir)).toContain(
+        '.rasen/changes/ephemera-first-change/ephemera'
+      );
+      expect(json.completed).toContain('implement');
+    });
 
     it('resolves run-state from the work directory for a new-style change', async () => {
       const globalDataDir = path.join(testDir, 'global-data-new');

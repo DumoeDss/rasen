@@ -40,7 +40,7 @@ mkdir -p "$REPORT_DIR/screenshots"
 
 Before falling back to git diff heuristics, check for richer test plan sources:
 
-1. **Project-scoped test plans:** Check the project's registry-backed documents directory for recent \`*-test-plan-*.md\` files for this repo
+1. **Project-scoped test plans:** Check the planning root's design-docs directory for recent \`*-test-plan-*.md\` files for this repo
    ${PROJECT_DOCS_DIR_RESOLUTION}
    \`\`\`bash
    ls -t "$DOCS_DIR"/*-test-plan-*.md 2>/dev/null | head -1
@@ -56,7 +56,7 @@ ${QA_METHODOLOGY}
 
 ## Output
 
-**Dispatched mode:** write ONLY \`qa-report.md\` in the change's work directory (per the PREAMBLE's dispatched-mode rule; fall back to the change directory), each issue tagged with a canonical severity (\`critical\`→Blocker, \`high\`→Major, \`medium\`/\`low\`→Minor, \`cosmetic\`→Trivial; finding content overrides the label); skip the \`.rasen/qa-reports/\` and \`~/.rasen/projects/\` writes. Then return.
+**Dispatched mode:** write ONLY \`qa-report.md\` in the change's evidence directory (the \`evidenceDir\` reported by the CLI, per the PREAMBLE's dispatched-mode rule; sticky-legacy: a report already at a legacy location is updated in place), each issue tagged with a canonical severity (\`critical\`→Blocker, \`high\`→Major, \`medium\`/\`low\`→Minor, \`cosmetic\`→Trivial; finding content overrides the label); skip the \`.rasen/qa-reports/\` writes. Then return.
 
 **Standalone mode.** Write the report to both local and project-scoped locations:
 

@@ -44,15 +44,19 @@ Adopt SHALL record ownership in the target store's membership record for the pro
 - **AND** it contains no filesystem path from the machine that ran the adoption, on any platform
 
 ### Requirement: Archive handling is an explicit choice on adopt
-Adopt SHALL accept `--archive move|leave|external` (default `move`): `move` migrates the existing archive into the store with everything else; `leave` keeps it in the source repo; `external` relocates it to the machine home and sets the project's archive destination to external.
+
+Adopt SHALL accept `--archive move|leave` (default `move`): `move` migrates the existing archive into the store with everything else; `leave` keeps it in the source repo. `--archive external` SHALL be rejected with an error explaining that the external archive destination is retired (`archive-destination` capability) and that archives always land in a planning root — the source repo's or the store's. Adopt SHALL NOT write an `archive.destination` configuration value under any mode, and SHALL NOT move archived changes to the machine home.
 
 #### Scenario: Default moves the archive
+
 - **WHEN** the user runs adopt without `--archive`
 - **THEN** the repo's archived changes appear under the store's archive location
 
 #### Scenario: External archive on adopt
+
 - **WHEN** the user passes `--archive external`
-- **THEN** archived changes land in the machine home's archive area and the project config records the external destination
+- **THEN** the command exits with an error explaining that the external destination is retired
+- **AND** no archived change is moved to the machine home and no `archive.destination` value is written to the config
 
 ### Requirement: Adopt is git-safe and previewable
 Adopt SHALL never stage, commit, or otherwise write to any git index. It SHALL support `--dry-run` (print the full move plan, including any uncommitted files inside moved paths, and change nothing) and `--json`. On completion it SHALL print suggested, pathspec-scoped commit commands for each affected repository.

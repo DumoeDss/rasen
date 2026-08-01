@@ -408,8 +408,13 @@ Move an in-repo project's planning content into a store and convert the repo to
 a config-only pointer.
 
 ```bash
-rasen store adopt [path] --to <store> [--archive <mode>] [--dry-run] [--verify-hash] [--json]
+rasen store adopt [path] --to <store> [--archive move|leave] [--dry-run] [--verify-hash] [--json]
 ```
+
+`--archive` decides what happens to the source repo's existing archive: `move`
+(default) brings it into the store, `leave` keeps it in the source repo. The
+retired `--archive external` is rejected — archives always land in a planning
+root, never the machine home.
 
 Adopt binds by definition: it writes the project's `store:` declaration as part
 of the migration, and is not routed through `--set-primary`. It records the
@@ -2682,7 +2687,7 @@ rasen config <subcommand> [options]
 | `schema` | project | The workflow schema this project uses |
 | `autopilot.gates` | project | Default autopilot gate policy (`on`/`off`) |
 | `autopilot.selection` | project | Default autopilot pipeline-selection policy |
-| `archive.timing`, `archive.destination` | project | Archive behavior |
+| `archive.timing` | project | When archive bookkeeping runs (`on-merge` / `in-ship`). `archive.destination` is retired: it is no longer settable, still parses with a deprecation warning, and selects nothing — archives always land in the planning root |
 
 **Examples:**
 

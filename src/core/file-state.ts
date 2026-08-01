@@ -134,6 +134,16 @@ export async function acquireFileLock(
       return await fs.open(lockPath, 'wx');
     } catch (error) {
       if (!isNodeErrorCode(error, 'EEXIST')) {
+        // Windows can briefly report an existing/closing lock as a sharing
+        // violation instead of EEXIST. Keep that contention bounded by the
+        // legacy deadline; every other create failure remains immediate.
+        if (isTransientWindowsLockOpenError(error)) {
+          if (Date.now() >= deadline) {
+            throw errorFor('timeout', { lockPath });
+          }
+          await sleep(LOCK_POLL_MS);
+          continue;
+        }
         // A permission or filesystem problem, not contention - say so.
         throw errorFor('create-failed', { lockPath, cause: error });
       }

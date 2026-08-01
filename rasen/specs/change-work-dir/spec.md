@@ -2,86 +2,7 @@
 
 ## Purpose
 Define the per-change external work directory: where process ephemera (run-state, handoff documents, expert/review reports, verification reports, ship logs) live once a project is registered in the machine home, how the CLI exposes the resolved location, and the sticky-legacy fallback that keeps changes already in flight working unchanged.
-
 ## Requirements
-### Requirement: Each change has an external work directory for process ephemera
-
-For a project registered in the machine home (the `project-registry` capability), each change SHALL have a per-change work directory at `changes/<change-name>/work` inside the project's machine home, holding the change's process ephemera: run-state (`auto-run.json`, `portfolio-run.json`, the goal-loop run artifact — `loop.runArtifact`, default `goal-run.json`), handoff documents and relay prompts (`handoff/`), expert and review reports (`review-report.md`, `cso-report.md`, `qa-report.md`, `benchmark-report.md`, `design-review-report.md`, `review-cycle-report.md`), `verification-report.md`, and `ship-log.md`. These files SHALL live outside the repository working tree from the moment they are created, requiring no git bookkeeping (no commits, no gitignore entries). Review material (proposal, design, tasks, delta specs) and knowledge documents (office-hours, research) are NOT process ephemera and SHALL remain in the change directory / planning root. All work-directory paths SHALL be constructed with the platform path module (Windows and POSIX).
-
-#### Scenario: Ephemera leave git status clean
-
-- **WHEN** a change is driven through a workflow that records run-state, writes reports, or produces handoff documents, and the tooling is current
-- **THEN** those files SHALL be created under the change's work directory, not under the repository's changes directory
-- **AND** `git status` SHALL show no untracked or modified files caused by process ephemera
-
-#### Scenario: Work directory is GC-safe by construction
-
-- **WHEN** the machine-home garbage collector (`doctor --gc`) evaluates directories under the projects area
-- **THEN** work directories SHALL be inside a registered project home and SHALL NOT be treated as unreferenced orphans while the project's registry entry lives
-
-#### Scenario: Work directory is shared across git worktrees
-
-- **WHEN** two git worktrees of the same repository drive the same change
-- **THEN** both SHALL resolve the same work directory (worktrees share one project home)
-- **AND** run-state written from one worktree SHALL be readable from the other, and SHALL survive `git clean -fdx` in either
-
-### Requirement: The CLI reports the resolved work directory; agents never derive it
-
-The resolved absolute work directory SHALL be exposed only via the CLI: `rasen status --change <n> --json` SHALL include a top-level `workDir` field when resolvable, and the artifact-instructions and apply-instructions payloads SHALL include the same field. The instructions surfaces SHALL establish project identity when it does not exist yet (mint once, then reuse); purely informational surfaces (`status`, `pipeline resume`, `context`) SHALL only probe and SHALL NOT write to the repository or the registry. Workflow templates SHALL consume the CLI-reported `workDir` and SHALL NOT construct machine-home paths themselves.
-
-#### Scenario: Status exposes the work directory
-
-- **WHEN** `rasen status --change <n> --json` runs for a change in a registered project
-- **THEN** the payload SHALL include an absolute `workDir` path for that change
-- **AND** the human-readable output SHALL show the work directory
-
-#### Scenario: Instructions establish identity once
-
-- **WHEN** `rasen instructions <artifact> --change <n> --json` runs in a project that has no machine identity yet
-- **THEN** the project SHALL be registered (identity minted, home created) and the payload SHALL include `workDir`
-- **AND** subsequent calls SHALL reuse the existing registration without further repository writes
-
-#### Scenario: Read-only surfaces never mutate
-
-- **WHEN** `rasen status --change <n> --json` runs in a project that has no machine identity
-- **THEN** the payload SHALL omit `workDir`
-- **AND** the command SHALL NOT write to the repository, the registry, or the file system
-
-#### Scenario: Root-scoped context shows the machine home
-
-- **WHEN** `rasen context --json` runs for a registered project
-- **THEN** the root object SHALL include the project's machine-home location (`machineHome`), and SHALL omit it for unregistered projects without side effects
-
-### Requirement: Sticky-legacy fallback keeps old changes working
-
-Ephemera placement SHALL degrade gracefully: readers SHALL look for an ephemeron in the work directory first and fall back to the change directory; a file that already exists in the change directory SHALL continue to live there (writers update it in place rather than creating a second copy in the work directory); new files SHALL be created in the work directory. When no `workDir` is available (unregistered project, older CLI payload), all reads and writes SHALL use the change directory exactly as before this capability existed. Archived changes SHALL NOT be migrated or rewritten.
-
-#### Scenario: In-flight change keeps its legacy run-state
-
-- **WHEN** a change already has `auto-run.json` in its change directory and the work directory does not contain one
-- **THEN** run-state updates SHALL continue to target the change-directory file
-- **AND** readers SHALL find and use that file
-
-#### Scenario: New change is external from birth
-
-- **WHEN** a change with no pre-existing ephemera starts recording run-state or reports and `workDir` is reported
-- **THEN** those files SHALL be created in the work directory and the change directory SHALL stay free of them
-
-#### Scenario: Missing workDir degrades to legacy behavior
-
-- **WHEN** a workflow consumes a status/instructions payload that carries no `workDir`
-- **THEN** it SHALL read and write ephemera in the change directory, matching pre-capability behavior byte-for-byte
-
-### Requirement: Bulky raw research is directed to the work directory
-
-Change-scoped research remains committed review material, but propose/explore guidance SHALL direct bulky raw research material (scratch probing logs, fetched corpora, long transcripts) to a `research/` area inside the work directory, with conclusions distilled into the committed design or research documents.
-
-#### Scenario: Raw dumps stay out of the PR
-
-- **WHEN** the generated propose/explore guidance is inspected
-- **THEN** it SHALL state that bulky raw research goes to the work directory's `research/` area
-- **AND** SHALL state that distilled conclusions belong in the committed change artifacts
-
 ### Requirement: The home layout includes an archived-change work area
 
 The machine-home layout SHALL include a work area for archived changes at `changes/archive/<archived-dir-name>/work` inside the project home, keyed by the archived directory's date-prefixed name, provided by the home layout owner (the project-home resolver) rather than derived by consumers. This area holds ephemera migrated from archived change directories and is distinct from live changes' work directories, so an archived change and a live change sharing a base name never share state.
@@ -91,16 +12,66 @@ The machine-home layout SHALL include a work area for archived changes at `chang
 - **WHEN** the home layout resolves the archived-work location for `2026-07-06-foo` and the work directory for a live change `foo`
 - **THEN** the two SHALL be different directories under the same project home
 
-### Requirement: Migration completes the sticky-legacy lifecycle
+### Requirement: The CLI reports the legacy work directory probe-only; agents never derive it
 
-Migrating a legacy ephemeron moves it from the change directory to the resolved work location, after which the work-directory copy is the ONLY copy: workDir-first readers (run-state resolution, ship's evidence pre-flight, archive gates, retro) SHALL find migrated state exactly as they find born-external state, with no reader changes required, and sticky-legacy writers SHALL treat the change as born-external from then on (no legacy file remains to stick to). Migration SHALL never create the both-copies-exist state the sticky-legacy policy guards against.
+The resolved absolute legacy work directory SHALL be exposed only via the CLI: `rasen status --change <n> --json` SHALL include a top-level `workDir` field when the project already has a machine identity, and the artifact-instructions and apply-instructions payloads SHALL include the same field. ALL surfaces — including the instructions surfaces — SHALL resolve it probe-only: no surface SHALL mint machine identity, register the project, or create the machine-home work directory on behalf of this field. Workflow templates SHALL consume the CLI-reported `workDir` (and the per-class landing directories of the `cli-artifact-workflow` capability) and SHALL NOT construct machine-home paths themselves.
 
-#### Scenario: Resume reads migrated run-state
+#### Scenario: Status exposes the legacy work directory
 
-- **WHEN** a change's `auto-run.json` is migrated to its work directory and `rasen pipeline resume <change>` runs
-- **THEN** resume SHALL read the migrated run-state (`hasRunState: true`) and report the work directory as its source
+- **WHEN** `rasen status --change <n> --json` runs for a change in a registered project
+- **THEN** the payload SHALL include an absolute `workDir` path for that change
 
-#### Scenario: Post-migration writes go external
+#### Scenario: No surface mints identity for the work directory
 
-- **WHEN** a workflow appends to a migrated change's run-state or reports after migration
-- **THEN** the writes SHALL target the work directory (no change-directory copy exists to stick to)
+- **WHEN** `rasen instructions <artifact> --change <n> --json` runs in a project that has no machine identity yet
+- **THEN** the project SHALL NOT be registered and no machine home SHALL be created
+- **AND** the payload SHALL omit `workDir` while still carrying the per-class landing directories, which need no identity
+
+#### Scenario: Read-only surfaces never mutate
+
+- **WHEN** `rasen status --change <n> --json` runs in a project that has no machine identity
+- **THEN** the payload SHALL omit `workDir`
+- **AND** the command SHALL NOT mint identity, write to the registry, or create a machine-home directory for this field
+
+#### Scenario: Root-scoped context shows the machine home
+
+- **WHEN** `rasen context --json` runs for a registered project
+- **THEN** the root object SHALL include the project's machine-home location (`machineHome`), and SHALL omit it for unregistered projects without side effects
+
+### Requirement: The work directory is a legacy-read location
+
+The machine-home work directory (`<machineHome>/changes/<change>/work`) SHALL be a legacy-read location only: files that already live there SHALL keep working (readers find them via the sticky-legacy chain; writers update them in place), but no workflow SHALL create a NEW file there. New files land per the `file-placement` capability: run-state and other ephemera in the execution root's ephemera directory, reports in `<changeRoot>/evidence/`, handoff documents in `<changeRoot>/handoff/`.
+
+#### Scenario: In-flight change keeps its work-directory state
+
+- **WHEN** a change already has `auto-run.json` or reports in its machine-home work directory
+- **THEN** readers SHALL continue to find and use those files
+- **AND** writers SHALL update them in place rather than creating a second copy at the terminal location
+
+#### Scenario: New files never land in the work directory
+
+- **WHEN** a change with no pre-existing work-directory state records run-state, writes reports, or produces handoff documents
+- **THEN** those files SHALL be created at their terminal locations per the `file-placement` capability
+- **AND** the machine-home work directory SHALL NOT gain new files
+
+### Requirement: Migration completes the terminal-relocation lifecycle
+
+Migrating a legacy ephemeron moves it FROM the machine-home work location TO the terminal file-placement location defined by the `file-placement` capability (evidence files to `<changeRoot>/evidence/`, handoff to `<changeRoot>/handoff/`, run-state to `<executionRoot>/.rasen/changes/<c>/ephemera/`). After migration, the terminal-location copy is the ONLY copy: readers following the resolution chain (terminal location first, then the legacy work directory, then the change directory — per the `file-placement` capability's sticky-legacy chain) SHALL find migrated state exactly as they find born-terminal state, with no reader changes required. Migration SHALL never create a state where one file exists in two locations. For an archived change, run-state is discarded (it has no recovery semantics post-archive) and listed in the migration report rather than migrated.
+
+#### Scenario: Resume reads migrated run-state from the terminal location
+
+- **WHEN** a change's `auto-run.json` was migrated from its work directory to the execution-root ephemera directory and `rasen pipeline resume <change>` runs
+- **THEN** resume SHALL read the migrated run-state from the ephemera directory (`hasRunState: true`)
+- **AND** the work directory SHALL no longer contain the file
+
+#### Scenario: Post-migration reads find the terminal copy
+
+- **WHEN** a change's `review-report.md` was migrated from its work directory to `<changeRoot>/evidence/`
+- **THEN** readers SHALL find it at the terminal location
+- **AND** the work directory SHALL no longer contain a copy
+
+#### Scenario: Archived change run-state is discarded
+
+- **WHEN** migration encounters run-state for an archived change
+- **THEN** the run-state SHALL be discarded rather than migrated
+- **AND** the migration report SHALL list the discarded files
