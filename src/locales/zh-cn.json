@@ -944,7 +944,7 @@
       "invalidReferenceRemotes": "部分 'references' 远程地址不是非空字符串；将保留其 ID，但不记录克隆源",
       "invalidStoreMemberships": "config 中的 'storeMemberships' 字段无效（必须是 store 引用数组）",
       "invalidStoreMembershipEntries": "部分 'storeMemberships' 条目无效，已忽略无法使用的条目与字段",
-      "storeMembershipsWithoutIdentity": "部分 'storeMemberships' 条目仅用显示名指向 store；请运行 'rasen store upgrade-identity <store> --apply'，让该提示在改名后依然有效",
+      "storeMembershipsWithoutIdentity": "部分 'storeMemberships' 条目仅用显示名指向 store；请运行 'rasen update'，让该提示在改名后依然有效",
       "invalidSchema": "配置中的 'schema' 字段无效（必须是非空字符串）",
       "contextTooLarge": "上下文过大（{size}KB，上限：{maximum}KB）",
       "ignoringContext": "将忽略 context 字段",
@@ -980,6 +980,15 @@
       "userWideProfileUnresolvable": "警告：无法解析用户全局配置方案 '{profile}'（{detail}）；将改用默认的 'full' 配置方案。",
       "deprecatedArchiveDestination": "'archive.destination' 已废弃，不再选择归档去向：归档簿记始终落在规划根。请删除该键；运行 'rasen archive relocate --to in-repo' 可把已有归档收拢回规划根。"
     }
+  },
+  "storeIdentityMigration": {
+    "upgraded": "已升级 {count} 个 store：",
+    "skipped": "已跳过 {count} 个 store：",
+    "alreadyIdentified": "{count} 个 store 已携带永久身份。",
+    "rekeyed": "已按永久身份重新索引机器 store 注册表。",
+    "rekeyBlocked": "注册表重新索引被以下 store 阻塞：{stores}。",
+    "allIdentified": "所有已注册 store 均已携带永久身份。",
+    "suggestedCommit": "请在 {repo} 中提交这些文件：{command}"
   },
   "completion": {
     "ui": {
@@ -1506,6 +1515,9 @@
                 },
                 "apply": {
                   "description": "执行该计划"
+                },
+                "all": {
+                  "description": "批量升级所有已注册 Store 的标识"
                 },
                 "json": {
                   "description": "输出为 JSON"

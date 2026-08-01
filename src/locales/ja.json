@@ -944,7 +944,7 @@
       "invalidReferenceRemotes": "'references'に空または文字列でないremoteがあります。idはclone元なしで保持します",
       "invalidStoreMemberships": "config の 'storeMemberships' フィールドが不正です（store 参照の配列である必要があります）",
       "invalidStoreMembershipEntries": "一部の 'storeMemberships' エントリが不正です。利用できないエントリとフィールドを無視します",
-      "storeMembershipsWithoutIdentity": "一部の 'storeMemberships' エントリは store を表示名だけで指しています。改名後もヒントが有効であり続けるよう 'rasen store upgrade-identity <store> --apply' を実行してください",
+      "storeMembershipsWithoutIdentity": "一部の 'storeMemberships' エントリは store を表示名だけで指しています。改名後もヒントが有効であり続けるよう 'rasen update' を実行してください",
       "invalidSchema": "設定の'schema'フィールドが無効です（空でない文字列を指定してください）",
       "contextTooLarge": "contextが大きすぎます（{size}KB、上限{maximum}KB）",
       "ignoringContext": "contextフィールドを無視します",
@@ -980,6 +980,15 @@
       "userWideProfileUnresolvable": "警告: ユーザー全体のプロファイル '{profile}' を解決できませんでした（{detail}）。デフォルトの 'full' プロファイルを代わりに使用します。",
       "deprecatedArchiveDestination": "'archive.destination' は非推奨になり、保存先を選択しなくなりました：アーカイブの記帳は常に計画ルートに配置されます。このキーを削除してください。既存のアーカイブは 'rasen archive relocate --to in-repo' で計画ルートに集約できます。"
     }
+  },
+  "storeIdentityMigration": {
+    "upgraded": "{count} 件の store をアップグレードしました：",
+    "skipped": "{count} 件の store をスキップしました：",
+    "alreadyIdentified": "{count} 件の store は既に永続 ID を持っています。",
+    "rekeyed": "マシンの store レジストリを永続 ID で再キー化しました。",
+    "rekeyBlocked": "レジストリの再キー化が以下の store によりブロックされています：{stores}。",
+    "allIdentified": "登録済みのすべての store が永続 ID を持っています。",
+    "suggestedCommit": "{repo} でこれらのファイルをコミットしてください：{command}"
   },
   "completion": {
     "ui": {
@@ -1506,6 +1515,9 @@
                 },
                 "apply": {
                   "description": "計画を実行します"
+                },
+                "all": {
+                  "description": "すべての登録済みstoreの識別子を一括アップグレードします"
                 },
                 "json": {
                   "description": "JSONで出力します"
