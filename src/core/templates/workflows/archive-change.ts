@@ -56,6 +56,8 @@ ${STORE_SELECTION_GUIDANCE}
    - \`planningHome\`, \`changeRoot\`, \`artifactPaths\`, and \`actionContext\`: path and scope context
    - \`artifacts\`: List of artifacts with their status (\`done\` or other)
 
+   **Task Loop delivery precondition (when status contains a \`task-loop/1\` section):** read the canonical status projection and require \`outcome === satisfied\` for the frozen contract digest. Also require the digest-stamped \`task-loop-report.md\` in \`evidenceDir\`; if it is missing or stale, regenerate it only from the canonical Record. REFUSE any other outcome before archive with \`task_loop_delivery_guard\`. \`--no-gate\`, confirmation, and edited report text cannot override this mechanical guard.
+
    **If any artifacts are not \`done\`:**
    - Display warning listing incomplete artifacts
    - Use **AskUserQuestion tool** to confirm user wants to proceed
@@ -93,7 +95,7 @@ ${STORE_SELECTION_GUIDANCE}
    - Proceed ONLY on an explicit override that NAMES the incomplete-task condition (e.g. the user selects "Archive anyway despite N incomplete tasks") — not the routine confirm.
    - In a non-interactive / dispatched context, REFUSE outright — do not auto-confirm.
 
-   **If no tasks file exists:** Proceed without task-related warning.
+   **If no tasks file exists:** Proceed without task-related warning; Task Loop intentionally creates none.
 
 3.5. **Check verification verdict (HARD GATE)**
 

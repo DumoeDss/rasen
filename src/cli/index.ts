@@ -708,6 +708,7 @@ pipelineCmd
   .option('--store <id>', '')
   .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
+  .addOption(new Option('--input-file <path>', '').hideHelp())
   .action(async (
     change: string,
     pipeline: string,
@@ -717,6 +718,7 @@ pipelineCmd
       store?: string;
       project?: string;
       storePath?: string;
+      inputFile?: string;
     }
   ) => {
     try {

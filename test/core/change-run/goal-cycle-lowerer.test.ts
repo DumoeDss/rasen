@@ -40,7 +40,38 @@ function prepare(source: unknown): PreparedDefinition {
   return result.value;
 }
 
+function declaredCapabilities(prepared: PreparedDefinition): string[] {
+  return prepared.definition.declarations
+    .flatMap((declaration) => declaration.graph.nodes)
+    .filter((node) => node.kind === 'AtomicStage')
+    .map((node) => node.capability.id);
+}
+
 describe('goal-cycle lowerer — v1 normalization (task 5.6)', () => {
+  it('lowers the goal stage declared skill capability without changing existing goal pipelines', () => {
+    const existing = prepare(GOAL_LOOP_MEASURE);
+    const taskLoop = prepare({
+      ...GOAL_LOOP_MEASURE,
+      name: 'task-loop',
+      stages: [
+        {
+          ...GOAL_LOOP_MEASURE.stages[1],
+          skill: 'rasen-task-loop',
+          requires: [],
+        },
+      ],
+    });
+
+    expect(declaredCapabilities(existing)).toEqual([
+      'skill:rasen-goal-iterate',
+      'skill:rasen-goal-iterate',
+    ]);
+    expect(declaredCapabilities(taskLoop)).toEqual([
+      'skill:rasen-task-loop',
+      'skill:rasen-task-loop',
+    ]);
+  });
+
   it('normalizes goal-loop-measure to BoundedLoop with goal-cycle declaration', () => {
     const prepared = prepare(GOAL_LOOP_MEASURE);
 

@@ -188,6 +188,23 @@ describe('pipeline messages', () => {
     }
   );
 
+  it('localizes stable Task Loop diagnostics while retaining their evidence detail', () => {
+    const error = Object.assign(new Error('rounds=8; largestGap=coverage'), {
+      code: 'task_loop_exhausted',
+    });
+    const english = formatPipelineError(error, 'en');
+    const chinese = formatPipelineError(error, 'zh-cn');
+    const japanese = formatPipelineError(error, 'ja');
+
+    for (const formatted of [english, chinese, japanese]) {
+      expect(formatted).toContain('rounds=8; largestGap=coverage');
+    }
+    expect(new Set([english, chinese, japanese]).size).toBe(3);
+    expect(formatPipelineErrorDetail(error, 'zh-cn')).toContain(
+      'rounds=8; largestGap=coverage'
+    );
+  });
+
   it.each(['ja', 'zh-cn'] as const)(
     'localizes package descriptions but preserves project and user content in %s',
     (locale) => {

@@ -14,6 +14,7 @@ import {
   GoalCycleDomainError,
   applyGoalCycleEvent,
   assertGoalCycleMayShip,
+  decodeGoalCycleResult,
   initialGoalCycleState,
   reduceGoalCycleEvents,
   type GoalCycleEvent,
@@ -74,6 +75,42 @@ function evidence(hex: string): EvidenceRef {
 const worker = actor('a', 'implementer');
 const worker2 = actor('f', 'implementer');
 const judge = actor('7', 'reviewer');
+
+describe('goal-cycle result wire compatibility', () => {
+  const taskOnlyResult = {
+    contract: 'goal-cycle/evaluate-judge/1',
+    satisfied: false,
+    gaps: ['one gap'],
+    largestGap: 'one gap',
+    passCondition: 'the focused test exits zero',
+    criteria: [
+      {
+        id: 'focused',
+        satisfied: false,
+        evidence: 'focused evidence',
+        evidenceDigests: [`sha256:${'1'.repeat(64)}`],
+      },
+    ],
+  } as const;
+
+  it('keeps generic evaluate strict while the task-loop decoder projects its extension', () => {
+    expect(() =>
+      decodeGoalCycleResult('judge', 'evaluate', taskOnlyResult as never)
+    ).toThrowError(
+      expect.objectContaining({ code: 'malformed_goal_cycle_result' })
+    );
+    expect(
+      decodeGoalCycleResult('judge', 'evaluate', taskOnlyResult as never, 'task-loop')
+    ).toEqual({
+      contract: 'goal-cycle/evaluate-judge/1',
+      satisfied: false,
+      gaps: ['one gap'],
+      criteria: [
+        { id: 'focused', satisfied: false, evidence: 'focused evidence' },
+      ],
+    });
+  });
+});
 
 function event(
   round: number,
