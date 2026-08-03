@@ -8,7 +8,11 @@ import {
   type PipelinePackageInput,
 } from '../../src/core/workflow-package/index.js';
 import { loadWorkflowCatalog } from '../../src/core/workflow-registry/index.js';
-import { cliProjectRoot, runCLI } from '../helpers/run-cli.js';
+import {
+  cliProjectRoot,
+  runCLI,
+  terminateActiveCliChildren,
+} from '../helpers/run-cli.js';
 import { resolveProjectHome } from '../../src/core/project-home.js';
 import { getGlobalDataDir } from '../../src/core/index.js';
 
@@ -138,6 +142,9 @@ describe('pipeline command', () => {
   });
 
   afterEach(async () => {
+    // A Vitest case timeout does not cancel the in-flight runCLI promise. Reap
+    // its exact child before removing the cwd so Windows cannot report EBUSY.
+    await terminateActiveCliChildren();
     await fs.rm(testDir, { recursive: true, force: true });
   });
 
@@ -294,7 +301,10 @@ describe('pipeline command', () => {
         expect(forcedDelete.stderr).toContain(expected.referrerWarning);
         expect(forcedDelete.stderr).toContain(`decompose:${parentName}`);
       },
-      60_000
+      // This assertion case intentionally launches sixteen separate CLIs. On
+      // Windows, four-worker process/FS contention can nearly double its
+      // isolated duration without changing any command result.
+      120_000
     );
   });
 

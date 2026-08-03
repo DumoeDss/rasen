@@ -14,6 +14,7 @@ describe('buildCodexWorkerRecord', () => {
   it('builds a record that validates against RunStateWorkerSchema', () => {
     const record = buildCodexWorkerRecord({
       threadId: '019f5504-86db-7cf1-9b59-5cdcf0f70672',
+      cwd: '/workspace/repo',
       model: 'gpt-5.6-sol',
       sandbox: 'workspace-write',
       effort: 'high',
@@ -25,6 +26,7 @@ describe('buildCodexWorkerRecord', () => {
     expect(record.runtime).toBe('codex');
     expect(record.dispatchMode).toBe('exec-bridge');
     expect(record.threadId).toBe('019f5504-86db-7cf1-9b59-5cdcf0f70672');
+    expect(record.cwd).toBe('/workspace/repo');
     expect(record.model).toBe('gpt-5.6-sol');
     expect(record.sandbox).toBe('workspace-write');
     expect(record.effort).toBe('high');
@@ -57,6 +59,7 @@ describe('buildCodexWorkerRecord', () => {
   it('carries the rollout path as the transcript pointer', () => {
     const record = buildCodexWorkerRecord({
       threadId: 't1',
+      cwd: '/workspace/repo',
       model: 'm',
       sandbox: 'read-only',
       effort: 'low',
@@ -68,6 +71,7 @@ describe('buildCodexWorkerRecord', () => {
   it('leaves turnId unset (exec-mode records omit turn granularity)', () => {
     const record = buildCodexWorkerRecord({
       threadId: 't1',
+      cwd: '/workspace/repo',
       model: 'm',
       sandbox: 'read-only',
       effort: 'low',
@@ -79,6 +83,7 @@ describe('buildCodexWorkerRecord', () => {
   it('omits transcript when no rolloutPath is known', () => {
     const record = buildCodexWorkerRecord({
       threadId: 't1',
+      cwd: '/workspace/repo',
       model: 'm',
       sandbox: 'read-only',
       effort: 'low',
@@ -89,6 +94,7 @@ describe('buildCodexWorkerRecord', () => {
   it('clamps ultra to xhigh, matching the builder — a record can never claim an effort no leaf dispatch actually ran with', () => {
     const record = buildCodexWorkerRecord({
       threadId: 't1',
+      cwd: '/workspace/repo',
       model: 'm',
       sandbox: 'read-only',
       effort: 'ultra',
@@ -99,6 +105,7 @@ describe('buildCodexWorkerRecord', () => {
   it('is picked up by stageWorkers() as warm-seedable (via threadId)', () => {
     const record = buildCodexWorkerRecord({
       threadId: '019f5504-86db-7cf1-9b59-5cdcf0f70672',
+      cwd: '/workspace/repo',
       model: 'm',
       sandbox: 'read-only',
       effort: 'low',
@@ -111,5 +118,16 @@ describe('buildCodexWorkerRecord', () => {
     };
     const workers = stageWorkers(state);
     expect(workers.implement).toEqual(record);
+  });
+
+  it('keeps model and effort optional for archived/default-runtime compatibility', () => {
+    const record = buildCodexWorkerRecord({
+      threadId: 't-defaults',
+      cwd: '/workspace/repo',
+      sandbox: 'read-only',
+    });
+    expect(record.model).toBeUndefined();
+    expect(record.effort).toBeUndefined();
+    expect(RunStateWorkerSchema.safeParse(record).success).toBe(true);
   });
 });

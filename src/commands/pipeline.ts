@@ -68,6 +68,8 @@ import {
   type ResolvedStageHandoffConfig,
   type HandoffConfigLayers,
   type ModelConfigLayers,
+  type EffortConfigLayers,
+  type EffortSource,
   type ModelSource,
   type RuntimeSource,
   type StageConfigOverrides,
@@ -135,6 +137,7 @@ import {
   resolveConfigStoreLayer,
   resolveHandoffThresholdLayers,
   resolveModelConfigLayers,
+  resolveEffortConfigLayers,
   resolveThresholdBindingLayers,
 } from '../core/effective-config.js';
 import { loadThresholdSchemeSnapshot } from '../core/threshold-resolver.js';
@@ -256,6 +259,7 @@ interface StageView {
   model: string | null;
   modelSource: ModelSource;
   effort: string | null;
+  effortSource: EffortSource;
   handoff: ResolvedStageHandoffConfig;
 }
 
@@ -481,6 +485,7 @@ export class PipelineCommand {
     const storeLayer = await requireConfigStoreLayer(projectRoot);
     const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
     const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
+    const effortLayers = resolveEffortConfigLayers(projectRoot, storeLayer?.storeRoot);
     const overrides = resolvePipelineStageOverrides(pipeline.name, {
       projectRoot,
       store: storeLayer,
@@ -498,6 +503,7 @@ export class PipelineCommand {
         host,
         overrides,
         modelLayers,
+        effortLayers,
         roleRuntimeOverrides,
       }).stages.map((stage) => [stage.id, stage])
     );
@@ -508,6 +514,7 @@ export class PipelineCommand {
         pipeline,
         configLayers,
         modelLayers,
+        effortLayers,
         overrides,
         basePolicy,
         thresholdContext,
@@ -800,6 +807,7 @@ export class PipelineCommand {
       projectRoot,
       storeLayer?.storeRoot
     );
+    const effortLayers = resolveEffortConfigLayers(projectRoot, storeLayer?.storeRoot);
 
     // v2-authored definitions have no v1 PipelineYaml source — the policy
     // stages are synthesized internally by resolveRuntimeExecutionProfile
@@ -821,6 +829,7 @@ export class PipelineCommand {
               host,
               overrides,
               modelLayers,
+              effortLayers,
               roleRuntimeOverrides,
             }
           ).stages.map((stage) => [stage.id, stage])
@@ -906,7 +915,7 @@ export class PipelineCommand {
         provenance: {
           role: stage.role ? 'stage' : 'default',
           model: resolved.modelSource,
-          effort: sourceFor(stage.effort, roleDefault?.effort),
+          effort: resolved.effortSource,
           runtime: resolved.runtimeSource,
           sandbox: sourceFor(stage.sandbox, roleDefault?.sandbox),
           gate: gate.source,
@@ -2686,6 +2695,7 @@ export class PipelineCommand {
     const storeLayer = await requireConfigStoreLayer(projectRoot);
     const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
     const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
+    const effortLayers = resolveEffortConfigLayers(projectRoot, storeLayer?.storeRoot);
     const overrides = resolvePipelineStageOverrides(name, { projectRoot, store: storeLayer });
     const thresholdContext = this.thresholdContext(
       pipeline,
@@ -2699,6 +2709,7 @@ export class PipelineCommand {
         host,
         overrides,
         modelLayers,
+        effortLayers,
       }).stages.map((stage) => [stage.id, stage])
     );
     const basePolicy = this.resolveBaseGatePolicy(projectRoot, storeLayer?.storeRoot);
@@ -2720,6 +2731,7 @@ export class PipelineCommand {
           pipeline,
           configLayers,
           modelLayers,
+          effortLayers,
           overrides,
           basePolicy,
           thresholdContext,
@@ -2743,6 +2755,7 @@ export class PipelineCommand {
     if (!overrides) return {};
     return {
       model: overrides.models.get(stage.id),
+      effort: overrides.efforts?.get(stage.id),
       handoff: overrides.handoff.get(stage.id),
       runtime: stage.role ? overrides.runtimes.get(stage.role) : undefined,
     };
@@ -2753,6 +2766,7 @@ export class PipelineCommand {
     pipeline: PipelineYaml,
     configLayers?: HandoffConfigLayers,
     modelLayers?: ModelConfigLayers,
+    effortLayers?: EffortConfigLayers,
     overrides?: PipelineStageOverrides,
     basePolicy?: ResolvedGatePolicy,
     thresholdContext?: ThresholdResolutionContext,
@@ -2765,7 +2779,8 @@ export class PipelineCommand {
       pipeline,
       modelLayers,
       stageOverrides,
-      { host }
+      { host },
+      effortLayers
     );
     const effectiveStageRuntime = executionRuntime?.runtime ?? runtime.runtime;
     // The mask needs a base policy; without one (no config context) fall back to
@@ -2800,6 +2815,7 @@ export class PipelineCommand {
       model: runtime.model ?? null,
       modelSource: runtime.modelSource,
       effort: runtime.effort ?? null,
+      effortSource: runtime.effortSource,
       handoff: resolveStageHandoffConfig(
         stage,
         pipeline,

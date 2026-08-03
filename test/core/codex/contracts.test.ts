@@ -23,6 +23,13 @@ describe('parseLeafReturn', () => {
     });
   });
 
+  it('normalizes Codex required-but-nullable optional fields', () => {
+    const result = parseLeafReturn(
+      '{"status":"DONE","summary":null,"handoffReason":null}'
+    );
+    expect(result).toEqual({ status: 'DONE' });
+  });
+
   it('fails on an empty last-message file', () => {
     expect(() => parseLeafReturn('')).toThrow(/empty/i);
   });
@@ -70,6 +77,13 @@ describe('parseEvaluateGate', () => {
     });
   });
 
+  it('normalizes the Codex nullable evaluate summary', () => {
+    const result = parseEvaluateGate(
+      '{"satisfied":true,"gaps":[],"summary":null}'
+    );
+    expect(result).toEqual({ satisfied: true, gaps: [] });
+  });
+
   it('fails on empty input', () => {
     expect(() => parseEvaluateGate('   ')).toThrow(/empty/i);
   });
@@ -87,7 +101,7 @@ describe('parseEvaluateGate', () => {
   });
 });
 
-describe('JSON Schema literal / zod parser parity', () => {
+describe('Codex-compatible JSON Schema and backwards-compatible parsing', () => {
   const leafAccept = [
     { status: 'DONE' },
     { status: 'HANDOFF', summary: 's' },
@@ -100,9 +114,13 @@ describe('JSON Schema literal / zod parser parity', () => {
     { summary: 'no status' },
   ];
 
-  it('LEAF_RETURN_SCHEMA required/enum/additionalProperties match parseLeafReturn behavior', () => {
-    expect(LEAF_RETURN_SCHEMA.required).toEqual(['status']);
+  it('requires every leaf property and represents optional values as nullable', () => {
+    expect(new Set(LEAF_RETURN_SCHEMA.required)).toEqual(
+      new Set(Object.keys(LEAF_RETURN_SCHEMA.properties))
+    );
     expect(LEAF_RETURN_SCHEMA.properties.status.enum).toEqual(['DONE', 'HANDOFF']);
+    expect(LEAF_RETURN_SCHEMA.properties.summary.type).toEqual(['string', 'null']);
+    expect(LEAF_RETURN_SCHEMA.properties.handoffReason.type).toEqual(['string', 'null']);
     expect(LEAF_RETURN_SCHEMA.additionalProperties).toBe(false);
 
     for (const fixture of leafAccept) {
@@ -119,8 +137,11 @@ describe('JSON Schema literal / zod parser parity', () => {
   ];
   const gateReject = [{}, { satisfied: true }, { gaps: [] }, { satisfied: true, gaps: [], extra: 1 }];
 
-  it('EVALUATE_GATE_SCHEMA required/additionalProperties match parseEvaluateGate behavior', () => {
-    expect(EVALUATE_GATE_SCHEMA.required).toEqual(['satisfied', 'gaps']);
+  it('requires every evaluate property and represents its optional summary as nullable', () => {
+    expect(new Set(EVALUATE_GATE_SCHEMA.required)).toEqual(
+      new Set(Object.keys(EVALUATE_GATE_SCHEMA.properties))
+    );
+    expect(EVALUATE_GATE_SCHEMA.properties.summary.type).toEqual(['string', 'null']);
     expect(EVALUATE_GATE_SCHEMA.additionalProperties).toBe(false);
 
     for (const fixture of gateAccept) {
