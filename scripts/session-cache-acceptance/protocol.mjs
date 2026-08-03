@@ -17,6 +17,8 @@ export const OBSERVATION_REUSE_SCHEMA =
   'rasen-session-cache-observation-reuse/1';
 export const LOCAL_EVIDENCE_SCHEMA =
   'rasen-session-cache-local-evidence/1';
+export const PRE_E1_DRAFT_PR_SCHEMA =
+  'rasen-session-cache-pre-e1-draft-pr/1';
 
 export const SUPPORTED_PIPELINES = Object.freeze([
   'bug-fix',
@@ -106,6 +108,8 @@ export function classifyControlUsage(usage, contextBaselineTokens) {
 export const ACCEPTANCE_FILENAMES = Object.freeze({
   legacyRun: 'acceptance-run.json',
   runV2: 'acceptance-run-v2.json',
+  preE1DraftPrAuthorization: 'pre-e1-draft-pr-authorization.json',
+  preE1DraftPrPublication: 'pre-e1-draft-pr-publication.json',
   ci: 'ci-evidence.json',
   attempts: 'attempts',
   history: 'history',
@@ -661,6 +665,46 @@ const AuthorizationSchema = z.discriminatedUnion('state', [
   }).strict(),
 ]);
 
+const PreE1DraftPrAuthorizationSchema = z.object({
+  schema: z.literal(PRE_E1_DRAFT_PR_SCHEMA),
+  revision: z.literal(0),
+  state: z.literal('authorized'),
+  remoteMutationAllowed: z.literal(true),
+  authorizer: SafeText,
+  authorizedAt: Timestamp,
+  candidateFingerprint: Fingerprint,
+  frozenTreeOid: z.string().regex(SHA),
+  repository: z.string().min(3).max(512),
+  githubOrigin: HttpsUrl,
+  branch: SafeText,
+  baseBranch: SafeText,
+}).strict();
+
+const PublishedPreE1DraftPrSchema = z.object({
+  schema: z.literal(PRE_E1_DRAFT_PR_SCHEMA),
+  revision: z.literal(1),
+  state: z.literal('published'),
+  remoteMutationAllowed: z.literal(false),
+  authorizer: SafeText,
+  authorizedAt: Timestamp,
+  candidateFingerprint: Fingerprint,
+  frozenTreeOid: z.string().regex(SHA),
+  repository: z.string().min(3).max(512),
+  githubOrigin: HttpsUrl,
+  branch: SafeText,
+  baseBranch: SafeText,
+  headSha: z.string().regex(SHA),
+  prNumber: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  prUrl: HttpsUrl,
+  isDraft: z.literal(true),
+  publishedAt: Timestamp,
+}).strict();
+
+const PreE1DraftPrSchema = z.discriminatedUnion('state', [
+  PreE1DraftPrAuthorizationSchema,
+  PublishedPreE1DraftPrSchema,
+]);
+
 const AcceptanceRunV2Schema = z
   .object({
     schema: z.literal(ACCEPTANCE_V2_SCHEMA),
@@ -686,6 +730,7 @@ const AcceptanceRunV2Schema = z
       recordPath: z.string().min(1).max(1024).nullable(),
       note: z.string().min(1).max(1024),
     }).strict(),
+    preE1Review: PublishedPreE1DraftPrSchema.nullable().default(null),
     productGaps: z.array(ProductGapSchema).max(128),
     authorization: AuthorizationSchema,
     ciState: z.enum(['pending', 'successful', 'failed']),
@@ -1021,6 +1066,20 @@ export function attemptSummaryPath(workDir, attemptId) {
 
 export function acceptanceRunV2Path(workDir) {
   return path.join(path.resolve(workDir), ACCEPTANCE_FILENAMES.runV2);
+}
+
+export function preE1DraftPrAuthorizationPath(workDir) {
+  return path.join(
+    path.resolve(workDir),
+    ACCEPTANCE_FILENAMES.preE1DraftPrAuthorization
+  );
+}
+
+export function preE1DraftPrPublicationPath(workDir) {
+  return path.join(
+    path.resolve(workDir),
+    ACCEPTANCE_FILENAMES.preE1DraftPrPublication
+  );
 }
 
 export function ciEvidencePath(workDir) {
@@ -1979,6 +2038,7 @@ function createAcceptanceRunV2(
   attemptId,
   arms,
   productGaps,
+  preE1Review,
   settledAt
 ) {
   return AcceptanceRunV2Schema.parse({
@@ -2004,6 +2064,7 @@ function createAcceptanceRunV2(
       note:
         'One explicitly selected immutable attempt passed all three physical arms; native CI remains separate.',
     },
+    preE1Review,
     productGaps,
     authorization: {
       state: 'awaiting_parent_authorization',
@@ -2026,6 +2087,107 @@ export function readAcceptanceRunV2(workDir) {
   return validateAcceptanceRunV2(
     readJsonBounded(acceptanceRunV2Path(workDir))
   );
+}
+
+export function validatePreE1DraftPr(value) {
+  return PreE1DraftPrSchema.parse(value);
+}
+
+export function readPreE1DraftPr(workDir) {
+  const publicationPath = preE1DraftPrPublicationPath(workDir);
+  return validatePreE1DraftPr(
+    readJsonBounded(
+      fs.existsSync(publicationPath)
+        ? publicationPath
+        : preE1DraftPrAuthorizationPath(workDir)
+    )
+  );
+}
+
+function samePreE1DraftPrAuthorization(left, right) {
+  return (
+    left.authorizer === right.authorizer
+    && left.candidateFingerprint === right.candidateFingerprint
+    && left.frozenTreeOid === right.frozenTreeOid
+    && left.repository === right.repository
+    && left.githubOrigin === right.githubOrigin
+    && left.branch === right.branch
+    && left.baseBranch === right.baseBranch
+  );
+}
+
+export function authorizePreE1DraftPr(workDir, authorization, clock) {
+  const root = path.resolve(workDir);
+  fs.mkdirSync(root, { recursive: true });
+  if (fs.existsSync(acceptanceRunV2Path(root))) {
+    throw new Error('pre_e1_draft_pr_too_late');
+  }
+  const filePath = preE1DraftPrAuthorizationPath(root);
+  const record = PreE1DraftPrAuthorizationSchema.parse({
+    schema: PRE_E1_DRAFT_PR_SCHEMA,
+    revision: 0,
+    state: 'authorized',
+    remoteMutationAllowed: true,
+    ...authorization,
+    authorizedAt: authorization.authorizedAt ?? isoNow(clock),
+  });
+  if (fs.existsSync(filePath)) {
+    const existing = readPreE1DraftPr(root);
+    if (!samePreE1DraftPrAuthorization(existing, record)) {
+      throw new Error('pre_e1_draft_pr_record_conflict');
+    }
+    return existing;
+  }
+  writeJsonCreateOnce(filePath, record);
+  return record;
+}
+
+export function recordPreE1DraftPr(workDir, publication, clock) {
+  const root = path.resolve(workDir);
+  if (fs.existsSync(acceptanceRunV2Path(root))) {
+    throw new Error('pre_e1_draft_pr_too_late');
+  }
+  const authorizationPath = preE1DraftPrAuthorizationPath(root);
+  const publicationPath = preE1DraftPrPublicationPath(root);
+  const current = PreE1DraftPrAuthorizationSchema.parse(
+    readJsonBounded(authorizationPath)
+  );
+  if (
+    current.candidateFingerprint !== publication.candidateFingerprint
+    || current.frozenTreeOid !== publication.frozenTreeOid
+  ) {
+    throw new Error('pre_e1_draft_pr_candidate_mismatch');
+  }
+  const expectedPrUrl =
+    `${current.githubOrigin}/${current.repository}/pull/${publication.prNumber}`;
+  if (publication.prUrl !== expectedPrUrl) {
+    throw new Error('pre_e1_draft_pr_url_mismatch');
+  }
+  const existingPublication = fs.existsSync(publicationPath)
+    ? PublishedPreE1DraftPrSchema.parse(readJsonBounded(publicationPath))
+    : null;
+  const record = PublishedPreE1DraftPrSchema.parse({
+    ...current,
+    revision: 1,
+    state: 'published',
+    remoteMutationAllowed: false,
+    headSha: publication.headSha,
+    prNumber: publication.prNumber,
+    prUrl: publication.prUrl,
+    isDraft: true,
+    publishedAt:
+      publication.publishedAt
+      ?? existingPublication?.publishedAt
+      ?? isoNow(clock),
+  });
+  if (existingPublication !== null) {
+    if (JSON.stringify(existingPublication) !== JSON.stringify(record)) {
+      throw new Error('pre_e1_draft_pr_record_conflict');
+    }
+    return existingPublication;
+  }
+  writeJsonCreateOnce(publicationPath, record);
+  return record;
 }
 
 function replaceAcceptanceRunV2(workDir, value) {
@@ -2099,6 +2261,25 @@ export function finalizeAcceptanceAttempt(workDir, attemptId) {
     attemptId,
     arms,
     productGaps,
+    (() => {
+      const authorizationPath = preE1DraftPrAuthorizationPath(workDir);
+      const publicationPath = preE1DraftPrPublicationPath(workDir);
+      if (
+        !fs.existsSync(authorizationPath)
+        && !fs.existsSync(publicationPath)
+      ) return null;
+      const review = readPreE1DraftPr(workDir);
+      if (review.state !== 'published') {
+        throw new Error('pre_e1_draft_pr_incomplete');
+      }
+      if (
+        review.candidateFingerprint !== intent.candidate.contentFingerprint
+        || review.frozenTreeOid !== intent.candidate.treeOid
+      ) {
+        throw new Error('pre_e1_draft_pr_candidate_mismatch');
+      }
+      return review;
+    })(),
     summary.settledAt
   );
   const filePath = acceptanceRunV2Path(workDir);
@@ -2260,6 +2441,16 @@ export function authorizeParentDelivery(workDir, authorization, clock) {
   ) {
     throw new Error('frozen_tree_fingerprint_mismatch');
   }
+  if (
+    run.preE1Review !== null
+    && (
+      authorization.deliveryMode !== 'pr'
+      || authorization.repository !== run.preE1Review.repository
+      || authorization.githubOrigin !== run.preE1Review.githubOrigin
+    )
+  ) {
+    throw new Error('pre_e1_review_requires_pr_delivery');
+  }
   const next = nextRevision(run, {
     ...run,
     authorization: {
@@ -2288,6 +2479,12 @@ export function recordParentDelivery(workDir, delivery, clock) {
     || delivery.currentTreeOid !== run.authorization.frozenTreeOid
   ) {
     throw new Error('repository_changed_after_freeze');
+  }
+  if (
+    run.preE1Review !== null
+    && delivery.deliveredSha !== run.preE1Review.headSha
+  ) {
+    throw new Error('pre_e1_review_delivery_sha_mismatch');
   }
   const next = nextRevision(run, {
     ...run,

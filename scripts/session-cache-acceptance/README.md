@@ -142,10 +142,51 @@ Product files, ECP Direction, every package lock, omitted paths, and
 unclassified paths fail closed. The pre-existing untracked
 `packages/ui/package-lock.json` is excluded and must never be staged.
 
-Remote mutation remains default-denied. The controlled parent first freezes the
-exact audited tracked delivery tree, then finalizes one physical attempt. Only
-after physical acceptance and explicit authorization may it record the single
-portfolio delivery. The delivered commit tree must equal the frozen tree.
+Remote mutation remains default-denied. The normal path freezes the exact
+audited tracked delivery tree, finalizes one physical attempt, authorizes E2,
+and records the single portfolio delivery. The delivered commit tree must equal
+the frozen tree.
+
+When E1 must be deferred, the parent may publish exactly one review-only Draft
+PR without pretending that E1 or E2 passed. First freeze the final staged tree,
+then authorize only the Draft PR mutation:
+
+```text
+RASEN_SESSION_CACHE_PARENT_CONTROLLED=1 node \
+  scripts/session-cache-acceptance/parent-delivery.mjs \
+  --repository-root <candidate-worktree> \
+  --work-dir <canonical-external-work-dir> \
+  --ownership-manifest <ownership-manifest.json> \
+  --delivery-manifest <delivery-manifest.json> \
+  --authorize-draft-pr \
+  --authorizer <explicit-human-authorizer> \
+  --base <explicit-integration-branch>
+```
+
+The shipper may then create the single commit, push the parent branch, and open
+a Draft PR. It must immediately record the actual PR and exact head:
+
+```text
+RASEN_SESSION_CACHE_PARENT_CONTROLLED=1 node \
+  scripts/session-cache-acceptance/parent-delivery.mjs \
+  --repository-root <candidate-worktree> \
+  --work-dir <canonical-external-work-dir> \
+  --ownership-manifest <ownership-manifest.json> \
+  --delivery-manifest <delivery-manifest.json> \
+  --record-draft-pr \
+  --delivery-sha <draft-pr-head-sha> \
+  --pr-number <number> \
+  --pr-url <https-pr-url>
+```
+
+Authorization and publication are separate create-once evidence files, so a
+crash between push and recording is visible and recoverable without mutable
+replacement. Publication closes remote-mutation permission. The PR must remain
+Draft and unmerged; early CI is advisory only. E1 must run against that exact
+head. Controlled E1 finalization embeds the matching publication record in
+`acceptance-run-v2.json`. E2 later accepts only PR mode and that same head SHA;
+any code or base-merge change invalidates the candidate and requires a new
+freeze and physical run.
 
 ## Exact-SHA CI and local evidence
 

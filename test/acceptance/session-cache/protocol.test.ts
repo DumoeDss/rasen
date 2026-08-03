@@ -15,6 +15,7 @@ import {
   OBSERVATION_ARMS,
   OBSERVATION_CHECKPOINT_SCHEMA,
   OBSERVATION_RESULT_SCHEMA,
+  PRE_E1_DRAFT_PR_SCHEMA,
   REQUIRED_CI_JOBS,
   SUPPORTED_PIPELINES,
   acceptanceRunV2Path,
@@ -23,6 +24,7 @@ import {
   attemptSummaryPath,
   auditAcceptanceOwnership,
   assertFinalAcceptanceComplete,
+  authorizePreE1DraftPr,
   authorizeParentDelivery,
   catalogLegacyHistory,
   classifyControlUsage,
@@ -36,8 +38,10 @@ import {
   readAttemptSummary,
   readJsonBounded,
   readObservationCheckpoint,
+  readPreE1DraftPr,
   recordLocalEvidence,
   recordObservationResult,
+  recordPreE1DraftPr,
   recordParentDelivery,
   reuseCompletedObservation,
   seedPendingCiEvidence,
@@ -1979,6 +1983,98 @@ describe('immutable session-cache acceptance generations', () => {
         injectedPosix: true,
         nativeLinux: false,
       },
+    });
+  });
+
+  it('keeps a pre-E1 draft PR review-only and binds later delivery to its exact head', () => {
+    const root = workDir('rasen-pre-e1-draft-pr-');
+    const authorization = authorizePreE1DraftPr(root, {
+      authorizer: 'portfolio-owner',
+      candidateFingerprint: candidate.contentFingerprint,
+      frozenTreeOid: candidate.treeOid,
+      repository: 'example/repository',
+      githubOrigin: 'https://github.com',
+      branch: 'feat/session-cache-optimization',
+      baseBranch: 'dev/0.2.0',
+    }, fixedNow);
+    expect(authorization).toMatchObject({
+      schema: PRE_E1_DRAFT_PR_SCHEMA,
+      revision: 0,
+      state: 'authorized',
+      remoteMutationAllowed: true,
+    });
+    expect(fs.existsSync(acceptanceRunV2Path(root))).toBe(false);
+    expect(authorizePreE1DraftPr(root, {
+      authorizer: 'portfolio-owner',
+      candidateFingerprint: candidate.contentFingerprint,
+      frozenTreeOid: candidate.treeOid,
+      repository: 'example/repository',
+      githubOrigin: 'https://github.com',
+      branch: 'feat/session-cache-optimization',
+      baseBranch: 'dev/0.2.0',
+    }, fixedNow)).toEqual(authorization);
+
+    const attempt = createAttempt(root);
+    settleAttempt(root, attempt.attemptId);
+    expect(() => finalizeAcceptanceAttempt(root, attempt.attemptId))
+      .toThrow(/pre_e1_draft_pr_incomplete/u);
+
+    const published = recordPreE1DraftPr(root, {
+      candidateFingerprint: candidate.contentFingerprint,
+      frozenTreeOid: candidate.treeOid,
+      headSha: '9'.repeat(40),
+      prNumber: 132,
+      prUrl: 'https://github.com/example/repository/pull/132',
+    }, fixedNow);
+    expect(published).toMatchObject({
+      schema: PRE_E1_DRAFT_PR_SCHEMA,
+      revision: 1,
+      state: 'published',
+      remoteMutationAllowed: false,
+      isDraft: true,
+      headSha: '9'.repeat(40),
+      prNumber: 132,
+    });
+    expect(readPreE1DraftPr(root)).toEqual(published);
+    expect(recordPreE1DraftPr(root, {
+      candidateFingerprint: candidate.contentFingerprint,
+      frozenTreeOid: candidate.treeOid,
+      headSha: '9'.repeat(40),
+      prNumber: 132,
+      prUrl: 'https://github.com/example/repository/pull/132',
+    }, () => new Date('2026-08-01T01:00:00.000Z'))).toEqual(published);
+
+    const finalized = finalizeAcceptanceAttempt(root, attempt.attemptId);
+    expect(finalized.preE1Review).toEqual(published);
+    expect(() => authorizeParentDelivery(root, {
+      authorizer: 'portfolio-owner',
+      deliveryMode: 'push',
+      frozenTreeFingerprint: candidate.contentFingerprint,
+      frozenTreeOid: candidate.treeOid,
+      repository: 'example/repository',
+      githubOrigin: 'https://github.com',
+    }, fixedNow)).toThrow(/pre_e1_review_requires_pr_delivery/u);
+
+    authorizeParentDelivery(root, {
+      authorizer: 'portfolio-owner',
+      deliveryMode: 'pr',
+      frozenTreeFingerprint: candidate.contentFingerprint,
+      frozenTreeOid: candidate.treeOid,
+      repository: 'example/repository',
+      githubOrigin: 'https://github.com',
+    }, fixedNow);
+    expect(() => recordParentDelivery(root, {
+      currentTreeFingerprint: candidate.contentFingerprint,
+      currentTreeOid: candidate.treeOid,
+      deliveredSha: '8'.repeat(40),
+    }, fixedNow)).toThrow(/pre_e1_review_delivery_sha_mismatch/u);
+    expect(recordParentDelivery(root, {
+      currentTreeFingerprint: candidate.contentFingerprint,
+      currentTreeOid: candidate.treeOid,
+      deliveredSha: '9'.repeat(40),
+    }, fixedNow).authorization).toMatchObject({
+      state: 'delivered',
+      deliveredSha: '9'.repeat(40),
     });
   });
 

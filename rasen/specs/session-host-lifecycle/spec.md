@@ -609,7 +609,7 @@ The acceptance child SHALL own its integration tests, fixtures, harness, archite
 - **THEN** the harness retains no raw output, emits a stable safe public or harness code, records the CLI/protocol owner in `productGaps` through the full observer path, and never discards attribution into an ownerless generic exit/signal string
 
 ### Requirement: Native delivery evidence is bound to one exact repository commit
-Final cross-platform acceptance SHALL be recorded only after explicit parent authorization of the single portfolio delivery. A controlled parent entrypoint SHALL freeze and later recompute the exact audited tracked delivery index/tree, excluding the pre-existing untracked `packages/ui/package-lock.json` and every incidental untracked file, and SHALL prove that the delivered commit contains that exact tree. The evidence SHALL bind the final candidate, delivery SHA, GitHub target repository, workflow run, and required jobs. Result-bearing physical and CI evidence SHALL live outside the tested repository commit. Local evidence SHALL continue to describe only native-Windows and injected-POSIX execution and SHALL NOT be promoted into a native-Linux claim; native Linux completion SHALL instead require both successful canonical CI state and successful current exact-SHA CI evidence containing every required job.
+Final cross-platform acceptance SHALL be recorded only after explicit parent authorization of the single portfolio delivery. A controlled parent entrypoint SHALL freeze and later recompute the exact audited tracked delivery index/tree, excluding the pre-existing untracked `packages/ui/package-lock.json` and every incidental untracked file, and SHALL prove that the delivered commit contains that exact tree. When physical execution is deferred, the parent MAY separately authorize one pre-E1 Draft PR for review only. That review publication SHALL use create-once authorization and publication records, remain visibly draft, bind the exact frozen tree and PR head, and SHALL NOT count as E2 delivery, native CI, merge authorization, or final acceptance. The evidence SHALL bind the final candidate, delivery SHA, GitHub target repository, workflow run, and required jobs. Result-bearing physical and CI evidence SHALL live outside the tested repository commit. Local evidence SHALL continue to describe only native-Windows and injected-POSIX execution and SHALL NOT be promoted into a native-Linux claim; native Linux completion SHALL instead require both successful canonical CI state and successful current exact-SHA CI evidence containing every required job.
 
 #### Scenario: Exact candidate is the tracked delivery tree
 - **WHEN** repository-local fixes, clean review, task/spec/local-delivery/archive state, and parent repository mutations are complete
@@ -617,7 +617,19 @@ Final cross-platform acceptance SHALL be recorded only after explicit parent aut
 
 #### Scenario: Missing parent authorization prevents remote delivery
 - **WHEN** local closure or physical acceptance completes without explicit parent portfolio-delivery authorization
-- **THEN** the external ledger remains awaiting authorization and no child pushes, opens a PR, triggers remote CI, or claims native evidence
+- **THEN** the external ledger remains awaiting authorization and no child pushes, opens a non-draft PR, merges, records E2 delivery, or claims native evidence; the only permitted earlier remote mutation is a separately authorized exact-tree parent Draft PR under the review-only scenario below
+
+#### Scenario: Pre-E1 Draft PR publishes the frozen tree for review only
+- **WHEN** physical E1 cannot run yet, local closure is clean, the parent explicitly authorizes review publication, and the controlled freeze still matches the complete portfolio tree
+- **THEN** the controlled entrypoint writes one immutable authorization record, permits only the parent branch to publish one Draft PR against the explicit integration base, proves the committed PR head tree equals the freeze, writes one immutable publication record, closes remote-mutation permission, and leaves E1, E2, E3, E4, merge, deployment, and native claims pending
+
+#### Scenario: E1 finalization binds an existing Draft PR without reinterpreting it as delivery
+- **WHEN** a physical attempt later completes against the exact candidate already published for review
+- **THEN** controlled finalization requires the Draft PR publication record to be complete and candidate-matching, embeds it in `acceptance-run-v2.json`, and leaves parent delivery authorization pending
+
+#### Scenario: E2 promotes only the same reviewed head
+- **WHEN** E1 has finalized a candidate that was published as a pre-E1 Draft PR
+- **THEN** parent authorization accepts only PR mode for the same repository/origin, final delivery accepts only the recorded Draft PR head SHA and frozen tree, and any code, base-merge, force-push, or head change requires a new candidate, freeze, and E1 rather than borrowing the old physical result
 
 #### Scenario: Controlled delivery proves the commit tree
 - **WHEN** the parent authorizes the single portfolio commit and push or PR
@@ -685,4 +697,3 @@ Every physical launch SHALL create a never-reused content-addressed or UUID atte
 #### Scenario: Canonical local evidence agrees with retained logs
 - **WHEN** local native-Windows, injected-POSIX, syntax, lint, validation, or other gates are recorded
 - **THEN** every platform/gate flag is derived from an explicit typed gate record, and final acceptance reopens and rehashes all five canonical complete-output files plus exit files, requiring their recorded byte counts, SHA-256 values, and zero exits; an intentionally empty success log is retained explicitly and any missing, changed, or contradictory file keeps local closure incomplete
-

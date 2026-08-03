@@ -14,10 +14,12 @@ import {
   sha256File,
 } from './physical-preflight.mjs';
 import {
+  authorizePreE1DraftPr,
   authorizeParentDelivery,
   finalizeAcceptanceAttempt,
   readAttemptIntent,
   readJsonBounded,
+  recordPreE1DraftPr,
   recordParentDelivery,
   writeJsonAtomic,
 } from './protocol.mjs';
@@ -249,6 +251,43 @@ export function authorizeControlledParentDelivery(input) {
   });
 }
 
+export function authorizeControlledPreE1DraftPr(input) {
+  const { frozen } = assertControlledFreezeUnchanged(input);
+  const repositoryRoot = path.resolve(input.repositoryRoot);
+  const remote = normalizeGithubRemote(
+    runGit(repositoryRoot, ['remote', 'get-url', 'origin'])
+  );
+  const branch = runGit(repositoryRoot, ['branch', '--show-current']);
+  if (branch.length === 0) {
+    throw new Error('pre_e1_draft_pr_detached_head');
+  }
+  return authorizePreE1DraftPr(input.workDir, {
+    authorizer: input.authorizer,
+    candidateFingerprint: frozen.candidate.contentFingerprint,
+    frozenTreeOid: frozen.candidate.treeOid,
+    repository: remote.repository,
+    githubOrigin: remote.githubOrigin,
+    branch,
+    baseBranch: input.baseBranch,
+  });
+}
+
+export function recordControlledPreE1DraftPr(input) {
+  const { frozen } = assertControlledFreezeUnchanged(input);
+  assertCommitMatchesDeliveryTree(
+    input.repositoryRoot,
+    input.deliverySha,
+    frozen.candidate.treeOid
+  );
+  return recordPreE1DraftPr(input.workDir, {
+    candidateFingerprint: frozen.candidate.contentFingerprint,
+    frozenTreeOid: frozen.candidate.treeOid,
+    headSha: input.deliverySha,
+    prNumber: input.prNumber,
+    prUrl: input.prUrl,
+  });
+}
+
 export function recordControlledParentDelivery(input) {
   const { frozen } = assertControlledFreezeUnchanged(input);
   assertCommitMatchesDeliveryTree(
@@ -302,6 +341,23 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       ...common,
       baselineRef: option('--baseline-ref', 'HEAD'),
     });
+  } else if (process.argv.includes('--authorize-draft-pr')) {
+    result = authorizeControlledPreE1DraftPr({
+      ...common,
+      authorizer: option('--authorizer'),
+      baseBranch: option('--base'),
+    });
+  } else if (process.argv.includes('--record-draft-pr')) {
+    const prNumber = Number(option('--pr-number'));
+    if (!Number.isSafeInteger(prNumber) || prNumber <= 0) {
+      throw new Error('pre_e1_draft_pr_number_invalid');
+    }
+    result = recordControlledPreE1DraftPr({
+      ...common,
+      deliverySha: option('--delivery-sha'),
+      prNumber,
+      prUrl: option('--pr-url'),
+    });
   } else if (process.argv.includes('--authorize')) {
     result = authorizeControlledParentDelivery({
       ...common,
@@ -320,7 +376,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     });
   } else {
     throw new Error(
-      'Choose exactly one of --freeze, --finalize-attempt, --authorize, --record-delivery.'
+      'Choose exactly one of --freeze, --authorize-draft-pr, --record-draft-pr, --finalize-attempt, --authorize, --record-delivery.'
     );
   }
   process.stdout.write(
@@ -328,10 +384,11 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       schema: 'rasen-session-cache-parent-delivery-command/1',
       candidateFingerprint:
         result.candidate?.contentFingerprint
-        ?? result.authorization?.frozenTreeFingerprint,
+        ?? result.authorization?.frozenTreeFingerprint
+        ?? result.candidateFingerprint,
       state:
         result.selectedAttemptId === undefined
-          ? result.authorization?.state ?? 'frozen'
+          ? result.authorization?.state ?? result.state ?? 'frozen'
           : 'physical_finalized',
       selectedAttemptId: result.selectedAttemptId ?? null,
     })}\n`
