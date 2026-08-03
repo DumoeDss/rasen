@@ -346,13 +346,13 @@ manifest includes all child artifacts such as `.openspec.yaml`,
 Findings are classified and routed as follows:
 
 - live process lifecycle/capacity/recovery mechanics → `host-lifecycle`;
-- durable registry, transcript, lock, fence, and reconciliation → 
+- durable registry, transcript, lock, fence, and reconciliation →
   `registry-recovery`;
-- public commands, foreground/resident protocol, output, and shutdown → 
+- public commands, foreground/resident protocol, output, and shutdown →
   `cli-surface`;
-- cadence, deadline, cold-gap, backoff, and daemon scheduler lifecycle → 
+- cadence, deadline, cold-gap, backoff, and daemon scheduler lifecycle →
   `touch-scheduler`;
-- harness, fixture, assertion, documentation, or evidence-schema defects → 
+- harness, fixture, assertion, documentation, or evidence-schema defects →
   this acceptance child.
 
 A product gap blocks the affected acceptance case. The owner fixes it, its own

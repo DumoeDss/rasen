@@ -282,4 +282,3 @@ export function assertCommitMatchesDeliveryTree(
   }
   return deliveredTreeOid;
 }
-
