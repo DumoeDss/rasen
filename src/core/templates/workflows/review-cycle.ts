@@ -88,6 +88,10 @@ On escalation, surface the findings and cycle history to the human. Do NOT retry
 
 ${REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK}
 
+## Cycle report
+
+Track everything in \`review-cycle-report.md\` in the change's evidence directory (\`evidenceDir\` from \`rasen status --change <name> --json\`; sticky-legacy: a file that already lives in the legacy \`workDir\` or the change directory is used in place): each round, each finding, its triage bucket, who fixed it, who confirmed it (the non-author), and the final disposition. Also record the **test evidence** of the final clean round (and of every Tier C gate-run): the required verification scope, a rationale explaining why that scope covers the observed risk, the exact test/gate command(s), their result, and the content tree fingerprint (\`git rev-parse HEAD^{tree}\`) of the git state they ran against — the ship stage's evidence-based test gate reads both scope coverage and tree identity before deciding which checks remain.
+
 ## Output
 
 Report the final state from the canonical \`ChangeRunView\`:
@@ -109,6 +113,9 @@ Source: \`rasen pipeline status <change-name> bug-fix --json\`
 - This skill owns NO mechanical state. Round counting, phase sequencing, max-rounds enforcement, actor separation, and escalation are all owned by the canonical ChangeRun reconciler.
 - Delegates every review pass to \`rasen-review\` — one review engine, no fork.
 - Runs AFTER implementation, against the live diff.
+- Complements (does not replace) the one-shot \`rasen-verify-enhanced\` gate and plan-time \`plan-*-review\`.
+- Shares the orchestration playbook with \`rasen-auto\` — this loop is auto's \`review-loop\` stage.
+- The cycle report lives in the evidence directory alongside \`review-report.md\` / \`ship-log.md\` and is consumable by \`rasen-retain\` (report mode) and \`rasen-archive-change\`.
 - The canonical Run Record is the single source of truth for cycle state.`;
 
 export function getReviewCycleSkillTemplate(): SkillTemplate {

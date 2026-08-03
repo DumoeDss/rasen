@@ -43,7 +43,7 @@ The artifact workflow breaks "a requirement → implemented, reviewed, verified,
   - **Tier A**: Claude Code + `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` → spawn role workers + `SendMessage` warm continuation (full form; `SendMessage` is **session-only**, cross-restart goes through the transcript warm seeding in §2.5). **`rasen init` / `update` installs Claude Code and automatically merges this flag into the project's `.claude/settings.json`** (preserving existing keys, idempotent, does not overwrite bad JSON), so Tier A is the default.
   - **Tier B**: has spawn, no agent-teams → each stage is a fresh spawn, rebuilding context from the change directory + run-state.
   - **Tier C**: no sub-agent capability → single-context sequential execution (explicit fallback, **not** the main path).
-- **State lives on disk**: the change directory is the persistent blackboard (artifacts are handed off between stages); the LEAD records progress in `rasen/changes/<id>/auto-run.json` (run-state), supporting resume-after-interrupt and observability.
+- **State lives on disk**: the change directory is the persistent blackboard (artifacts are handed off between stages); the LEAD records progress in `auto-run.json` (run-state) inside the execution root's ephemera directory — `<executionRoot>/.rasen/changes/<id>/ephemera/`, reported as `ephemeraDir` by `rasen status --json` — supporting resume-after-interrupt and observability. A run-state file that already lives at a legacy location keeps living there.
 
 ### 2.2 The pipeline is data: pick by task, fetch from the registry
 
@@ -59,7 +59,7 @@ Built-in pipelines (can be overridden or augmented by user/project; resolution p
 
 | Pipeline | Stages (buildOrder summary) |
 |---|---|
-| **full-feature** | office-hours → propose (optional direction review) → apply → parallel expert review (review / cso / benchmark / design-review / qa\|qa-only) → review-loop → ship → retain → archive |
+| **full-feature** | office-hours → propose (optional direction review) → apply → parallel expert review (review / cso / benchmark / design-review / qa UI mode \| qa report-only/non-UI mode) → review-loop → ship → retain → archive |
 | **small-feature** _(default)_ | propose → apply → verify → review-loop → ship → archive |
 | **bug-fix** | propose → apply → adaptive verify → ship → archive |
 | **auto-decompose** | **decompose** (conditional first step, LEAD self-review, not a human gate) → propose → apply → verify → review-loop → ship → archive; taking decompose fans out into multiple sub-changes, each running `childPipeline` (default small-feature, see §2.7) |
@@ -113,7 +113,7 @@ Three steps, zero code — re-orchestrate existing stage skills into a new pipel
          loop: { kind: review-cycle, maxRounds: 2 } }
      - { id: ship,        skill: openspec-opsx-ship,    role: shipper,     requires: [review-loop], model: sonnet }
    ```
-   Ready-to-pick skills: `openspec-propose` / `openspec-apply-change` / `openspec-review-cycle` / `openspec-opsx-office-hours` / `openspec-opsx-ship` / `openspec-archive-change` / `openspec-opsx-retro`, experts `openspec:review` / `openspec:cso` / `openspec:benchmark` / `openspec:design-review` / `openspec:qa` / `openspec:qa-only`. Stage fields are as in §2.2; to crib an existing example use `rasen pipeline show full-feature`.
+   Ready-to-pick skills include `rasen-propose`, `rasen-apply-change`, `rasen-review-cycle`, `rasen-ship`, and `rasen-archive-change`; independently dispatchable experts include `rasen-review`, `rasen-cso`, `rasen-benchmark`, `rasen-design-review`, and the single `rasen-qa` identity. Use an explicit report-only/non-UI instruction when QA must not edit. Stage fields are as in §2.2; to crib an existing example use `rasen pipeline show full-feature`.
 3. **Validate + use**:
    ```bash
    rasen validate <name> --type pipeline   # unique id / requires resolvable / acyclic / skill exists / parallelGroup independent / decompose (at most one · first position · childPipeline resolvable and contains no recursion)
@@ -137,8 +137,8 @@ Forcing a large task into one change yields a giant diff that can't be reviewed 
   - **Parallel only when all hold**: ① no dependency edge in either direction, ② no overlap in touched capabilities / specs directories / files, ③ the host is **Tier A**. Sub-changes meeting these conditions each spin up independent worker teams concurrently, **with no fixed concurrency cap**; Tier B/C is always serial.
   - **Independence uncertain → serial** ("better serial than chaotically parallel": parallel requires *positive* proof of independence, not "no conflict found").
 - **Single-level fan-out (recursion guard).** `childPipeline` must resolve to a pipeline **without decompose** (enforced by `validate`); child pipelines never decompose again.
-- **Observable + resumable.** The parent directory has a `portfolio-run.json` (split plan, child list, dependency DAG, each child's execution mode / batch / pipeline / status, runnable frontier, top-level `planner` pointer — the persistent planner reused across children, see §2.1), and each child still has its own `auto-run.json`. `rasen pipeline resume <parent>` computes the next runnable child (`runnableChildren`) from the combined state, and separately reports `interruptedChildren` (children that stopped at `in_progress` on interrupt — **warm-seeded to resume** after restart, not left dead) and `escalatedChildren` (failed / escalated, need human attention); when a child fails/escalates, its dependency chain is stopped, the completed independent children are preserved, and reported along with the frontier.
-- **Cross-child worker reuse (warm-vs-retire).** A dependent child directly consumes its prerequisite's code, so the implementer that just wrote it is the warmest worker for the dependent — provided it still has headroom. Governed by the pipeline's `reuse` config (`reuse: { planner, implementer: auto|never, threshold, roles }`, resolved by `resolvePipelineReuseConfig`; defaults `{ auto, auto, 0.25 }`). At the **same review-clean gate** that unblocks a dependent, the LEAD probes the prerequisite implementer's transcript (`rasen agent context --transcript`): **at or below the resolved reuse threshold** → warm-reuse the same worker (Tier A `SendMessage`) with a **contamination guard** (the predecessor's conventions hold only where the dependent's own proposal/design are silent — read those first); **above it** → **retire-between-children** (the worker writes a handoff doc, reason `retired-between-children`, focused on cross-change-transferable knowledge with an empty `Remaining`) and a fresh implementer is dual-source seeded from that doc + the LEAD's brief. Reuse requires a **unique warm predecessor** — a DAG merge node (a child depending on >1 prerequisite) always gets a fresh worker, multi-source seeded from each prerequisite's durable findings. The reused worker's record carries `reusedFrom: <prerequisite-child-id>`. Planner reuse is separately configurable via `reuse.planner` (`never` spawns a fresh planner per propose, seeded from `planning-context.md`). Scope guards: the design-level fixer is excluded (fresh eyes are its value); Tier B / Codex degrade through the existing warm-seed / `threadId`-resume ladders; manually-run sequences of unrelated changes are out of scope. Implementation discoveries reflow forward via the worker `DONE` contract's **durable-findings** clause (1–3 lines the LEAD relays verbatim into the next planner's dispatch).
+- **Observable + resumable.** The parent's ephemera directory has a `portfolio-run.json` (split plan, child list, dependency DAG, each child's execution mode / batch / pipeline / status, runnable frontier, top-level `planner` pointer — the persistent planner reused across children, see §2.1), and each child still has its own `auto-run.json`. `rasen pipeline resume <parent>` computes the next runnable child (`runnableChildren`) from the combined state, and separately reports `interruptedChildren` (children that stopped at `in_progress` on interrupt — **warm-seeded to resume** after restart, not left dead) and `escalatedChildren` (failed / escalated, need human attention); when a child fails/escalates, its dependency chain is stopped, the completed independent children are preserved, and reported along with the frontier.
+- **Cross-child worker reuse (warm-vs-retire).** A dependent child directly consumes its prerequisite's code, so the implementer that just wrote it is the warmest worker for the dependent — provided it still has headroom. Governed by the pipeline's `reuse` config (`reuse: { planner, implementer: auto|never, threshold, roles }`, resolved by `resolvePipelineReuseConfig`; defaults `{ auto, auto, 0.25 }`). At the **same review-clean gate** that unblocks a dependent, the LEAD probes the prerequisite implementer's transcript (`rasen agent context --transcript`): **at or below the resolved reuse threshold** → warm-reuse the same worker through its route-specific handle (`SendMessage`, `followup_task`, Claude `sessionId + cwd`, or Codex `threadId`) with a **contamination guard** (the predecessor's conventions hold only where the dependent's own proposal/design are silent — read those first); **above it** → **retire-between-children** (the worker writes a handoff doc, reason `retired-between-children`, focused on cross-change-transferable knowledge with an empty `Remaining`) and a fresh implementer is dual-source seeded from that doc + the LEAD's brief. Reuse requires a **unique warm predecessor** — a DAG merge node (a child depending on >1 prerequisite) always gets a fresh worker, multi-source seeded from each prerequisite's durable findings. The reused worker's record carries `reusedFrom: <prerequisite-child-id>`. Planner reuse is separately configurable via `reuse.planner` (`never` spawns a fresh planner per propose, seeded from `planning-context.md`). Scope guards: the design-level fixer is excluded (fresh eyes are its value); Tier B and unavailable route handles degrade through the warm-seed ladder; manually-run sequences of unrelated changes are out of scope. Implementation discoveries reflow forward via the worker `DONE` contract's **durable-findings** clause (1–3 lines the LEAD relays verbatim into the next planner's dispatch).
 
 > Note: the cross-change dependency DAG is recorded in `portfolio-run.json`, not relying on `dependsOn` / `parent` metadata; once `add-change-stacking-awareness` lands, decompose will additionally write this metadata and reuse `rasen change graph`.
 
@@ -245,11 +245,11 @@ An agent can't perceive its own context usage — it can only **measure** it. `r
 
 - **Resume consumption**: `rasen pipeline resume --json` outputs `sessionHandoff` / each stage's latest handoff-doc pointer / each worker's `contextEstimate`; a new session **reads the handoff doc first** (the distillate), with raw-transcript warm seeding degrading to fallback.
 
-### 3.8 Expert skills (always installed, invoked on demand)
+### 3.8 Expert skills (profile-selectable, invoked on demand)
 
-Regardless of profile, `rasen init` installs a set of expert skills (generated as `openspec-*`) that can be invoked individually during verification / planning:
+Rasen catalogs 12 expert skills that can be invoked individually during verification / planning. The active profile selects which experts are installed: `core` includes the five-expert quality floor (`review`, `cso`, `qa`, `benchmark`, `design-review`), `full` includes all 12, and custom/named profiles use their saved expert choices. A selected workflow's `requires.skills` dependencies are always added by dependency closure even when they were not picked directly. Existing installations keep all experts until the user makes an explicit expert selection, preserving the migration guarantee.
 
-`/review` (code review), `/qa` `/qa-only` (QA), `/cso` (security), `/benchmark` (performance), `/design-review` `/design-consultation` (design / visual), `/investigate` `/careful` (investigation / destructive-command caution), `/codex`, `/setup-browser-cookies`, etc. Checkout-scoped write guidance lives in the base runtime: `rasen agent edit-boundary set|status|clear`; always read `status` and distinguish `hard`, `soft`, and `unsupported`.
+`rasen-review` (code review), `rasen-qa` (standalone or report-only/non-UI QA), `rasen-cso` (security), `rasen-benchmark` (performance), `rasen-design-review` / `rasen-design-consultation` (design / visual), `rasen-investigate` / `rasen-careful` (investigation / destructive-command caution), and `rasen-codex`. For scope control, declare the evidence-backed affected area before editing and inspect the actual changed-file set and diff before completion. Managed sandbox/workspace policy remains the mechanism for execution containment.
 
 ---
 
@@ -282,14 +282,14 @@ Slash commands are the "conductors"; the `openspec` CLI is what actually reads /
 - **Profile = which workflow commands to install**:
   - `core` (default) = `propose` / `explore` / `apply` / `archive`.
   - `custom` (expanded) = a set you select, which can include `new` `continue` `verify` `sync` `bulk-archive` `onboard` `review-cycle` `handoff` plus the fusion commands `auto` `ship` `verify-enhanced` `office-hours` `retro`.
-  - **Expert skills are profile-independent and always installed**.
+  - **Expert skills are profile-selectable**: `core` gets the five-expert quality floor, `full` gets all catalog experts, and custom/named profiles get their explicit choices; workflow `requires.skills` dependencies are added automatically.
 - **Enable expanded / fusion commands**:
   ```bash
   rasen config profile      # interactively select profile + workflows
   rasen update              # regenerate the corresponding skills/commands in the project
   ```
 - **Delivery = whether commands are installed alongside skills**: `both` (default, skills + commands) / `skills` (skills only). Set in the global config (`rasen config`).
-  - **Skills are always installed**, for every delivery mode. `/rasen-auto` and `/rasen-review-cycle` have the model **invoke other skills** at runtime (workers invoke stage skills; review-loop invokes `openspec-review`) — the model can invoke skills, **not** commands, so orchestration needs the skills present. Because delivery can no longer drop them, orchestration can't be silently broken by a delivery choice.
+  - **Every selected workflow/expert is installed as a skill**, for every delivery mode. `/rasen-auto` and `/rasen-review-cycle` have the model **invoke other skills** at runtime (workers invoke stage skills; review-loop invokes `rasen-review`) — the model can invoke skills, **not** commands, so dependency closure installs each required stage/expert skill even when it was not directly selected. Delivery controls command generation, not the resolved skill set.
   - A config still holding an older value (`commands`, `skills-first`, `commands-first`) is mapped automatically on the next read — `skills-first` → `skills`, `commands`/`commands-first` → `both` — with a one-time console notice, and the config file is rewritten. Nothing to do manually; skills are restored on the next `rasen update` if they were previously dropped.
 
 ### Upgrading an already-installed project (to get this release's orchestration + pipeline)
@@ -400,7 +400,7 @@ For a run-local choice, pass the same role flags to this mandatory final-plan co
 rasen pipeline show small-feature --for-execution --planner codex --reviewer codex --json
 ```
 
-The output reports top-level `hostRuntime` / `hostRuntimeSource` and, for every stage, `runtime`, `runtimeSource`, and `dispatchMode`. Invocation choices appear with `runtimeSource: invocation` and are route-validated before dispatch.
+The output reports top-level `hostRuntime` / `hostRuntimeSource` and, for every stage, `runtime`, `runtimeSource`, `dispatchMode`, and `bridge`. Invocation choices appear with `runtimeSource: invocation` and are route-validated before dispatch.
 
 Explicit choices keep their authority. Runtime precedence is:
 
@@ -413,13 +413,22 @@ Explicit choices keep their authority. Runtime precedence is:
 
 The shipped route matrix is:
 
-| Host | Target worker | Dispatch mode | Behavior |
+| Host | Target worker | Dispatch mode | Bridge / behavior |
 |---|---|---|---|
 | Claude | Claude | `native` | Task/subagent + `SendMessage` |
-| Claude | Codex | `exec-bridge` | non-interactive `codex exec`; Codex CLI is preflighted once |
+| Claude | Codex | `exec-bridge` | `codex-exec`: non-interactive `codex exec`; Codex CLI is preflighted once |
 | Codex | Codex | `native` | Codex collaboration tools; final worker results are delivered automatically |
-| Codex | Claude | `unsupported` | preflight fails; Rasen does not silently change the requested runtime |
+| Codex | Claude | `exec-bridge` | `claude-print`: bounded Claude print process through `rasen agent dispatch`; Claude Code CLI is preflighted once |
 | Unknown | compatible legacy target | `legacy-fallback` | non-fatal warning; set `RASEN_AGENT_RUNTIME=claude|codex` to disambiguate |
+
+The `claude-print` bridge is tested against Claude Code CLI 2.1.220 and requires a compatible `claude` executable on `PATH`. It sends the complete prompt over stdin, disables Claude delegation/team tools, and accepts only the selected strict structured contract:
+
+```bash
+rasen agent dispatch --runtime claude --prompt-file <prompt.txt> \
+  --contract leaf --sandbox workspace-write --cwd <working-directory> --json
+```
+
+The command emits exactly one JSON receipt. A successful receipt includes `sessionId`, `cwd`, and the validated `result`. Continuation must pass that exact identity back with `--resume <sessionId> --cwd <cwd>`; there is no “latest session” fallback, and one session permits only one writer at a time. Independent session IDs may run concurrently. Claude bridge workers are bounded processes, so they do not use native `SendMessage`, agent parking, or `rasen agent wait`. Failure receipts classify unavailable runtime, spawn/input errors, session contention, cwd mismatch, timeouts, output limits, non-zero exit, malformed envelopes, and contract violations before the LEAD decides whether to retry, resume, or reconstruct from durable artifacts.
 
 Codex-native orchestration treats `wait_agent` as a dependency join, not a heartbeat: wait only when no independent work remains, use one long event-driven wait, and do not repeat short polling waits. `send_message` is for intermediate coordination; a native worker's final `DONE` / `HANDOFF` response is already delivered to the lead.
 
@@ -431,13 +440,13 @@ Each role can still be switched individually to `claude` or `codex`. The switcha
 - `fixer`
 - `shipper`
 
-Temporary switch for a single `/rasen-auto` invocation on a **Claude host** (where Claude → Codex is supported through the exec bridge):
+Temporary mixed-runtime switch for a single `/rasen-auto` invocation:
 
 ```text
 /rasen-auto --planner codex --reviewer codex --fixer claude <task>
 ```
 
-On a Codex host, selecting any Claude worker is unsupported and the final preflight rejects the run instead of silently substituting Codex.
+On a Codex host, any selected Claude worker uses `claude-print`; if the Claude Code CLI is unavailable, the final preflight fails before dispatch with an actionable install-or-override error instead of silently substituting Codex.
 
 To pin a role for a pipeline, write a config override:
 
@@ -489,10 +498,11 @@ stages:
 Run-state records both `runtime` and `dispatchMode`, plus only the handles the selected route actually returned:
 
 - Claude native records `agentId` and, when available, `transcript`.
+- Claude exec-bridge records its exact `sessionId` and `cwd`, plus any surfaced transcript/model/sandbox/effort metadata; it never fabricates a native `agentId` or Codex `threadId`.
 - Codex native records its returned native `agentId`; it never fabricates an exec `threadId`.
 - Codex exec-bridge records `threadId` and rollout `transcript`; exec mode has no `turnId`.
 
-Archived records without `dispatchMode` remain readable. A Codex `threadId` implies exec-bridge, a native `agentId` implies native dispatch, and ambiguous records fall back conservatively with a warning.
+Archived records without `dispatchMode` remain readable. A Claude `sessionId` or Codex `threadId` implies exec-bridge, a native `agentId` implies native dispatch, and ambiguous records fall back conservatively with a warning.
 
 ---
 

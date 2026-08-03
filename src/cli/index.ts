@@ -366,12 +366,17 @@ const archiveCommand = program
   .command('archive [change-name]')
   .description('')
   .option('-y, --yes', '')
-  .option('--confirm-prune', '')
   .option('--skip-specs', '')
   .option('--no-validate', '')
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--keep-ephemera', '')
+  .option('--dry-run', '')
+  .option('--save-plan', '')
+  .option('--apply-plan <token>', '')
+  .option('--intent-template', '')
+  .option('--intent-file <path>', '')
   .addOption(hiddenStorePathOption())
   .action(async (changeName?: string, options?: ArchiveOptions) => {
     try {
@@ -976,65 +981,48 @@ const agentCmd = program
   .command('agent')
   .description('');
 
-const editBoundaryCmd = agentCmd
-  .command('edit-boundary')
-  .description('');
-
-editBoundaryCmd
-  .command('set <directory>')
+agentCmd
+  .command('dispatch')
   .description('')
   .option('--runtime <runtime>', '')
+  .option('--prompt-file <path>', '')
+  .option('--contract <contract>', '')
+  .option('--sandbox <sandbox>', '')
+  .option('--model <model>', '')
+  .option('--effort <effort>', '')
+  .option('--cwd <directory>', '')
+  .option('--timeout-ms <ms>', '', (value) => Number(value))
+  .option('--resume <session-id>', '')
   .option('--json', '')
-  .action(async (directory: string, options: { runtime?: string; json?: boolean }) => {
+  .action(async (options: {
+    runtime?: string;
+    promptFile?: string;
+    contract?: string;
+    sandbox?: string;
+    model?: string;
+    effort?: string;
+    cwd?: string;
+    timeoutMs?: number;
+    resume?: string;
+    json?: boolean;
+  }) => {
     try {
-      const result = await new AgentCommand().editBoundarySet(directory, options);
-      if (result.error) process.exitCode = 1;
+      await new AgentCommand().dispatch(options);
     } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
+      console.log(
+        JSON.stringify({
+          ok: false,
+          runtime: options.runtime ?? 'unknown',
+          dispatchMode: 'exec-bridge',
+          bridge: 'claude-print',
+          ...(options.contract ? { contract: options.contract } : {}),
+          failure: {
+            kind: 'invalid-input',
+            message: error instanceof Error ? error.message : String(error),
+          },
+        })
+      );
       process.exitCode = 1;
-    }
-  });
-
-editBoundaryCmd
-  .command('status')
-  .description('')
-  .option('--runtime <runtime>', '')
-  .option('--json', '')
-  .action(async (options: { runtime?: string; json?: boolean }) => {
-    try {
-      await new AgentCommand().editBoundaryStatus(options);
-    } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exitCode = 1;
-    }
-  });
-
-editBoundaryCmd
-  .command('clear')
-  .description('')
-  .option('--runtime <runtime>', '')
-  .option('--json', '')
-  .action(async (options: { runtime?: string; json?: boolean }) => {
-    try {
-      await new AgentCommand().editBoundaryClear(options);
-    } catch (error) {
-      console.log();
-      ora().fail(`Error: ${(error as Error).message}`);
-      process.exitCode = 1;
-    }
-  });
-
-editBoundaryCmd
-  .command('check', { hidden: true })
-  .option('--runtime <runtime>', '')
-  .action(async (options: { runtime?: string }) => {
-    try {
-      await new AgentCommand().editBoundaryCheck(options);
-    } catch {
-      // Hooks fail open: a checker failure must never be reported as hard
-      // protection or turn a parse/configuration error into a denial.
     }
   });
 

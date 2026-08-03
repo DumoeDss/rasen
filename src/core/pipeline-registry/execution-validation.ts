@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 
+import { probeClaudeAvailability } from '../claude/index.js';
 import { probeCodexAvailability } from '../codex/index.js';
 import { resolveConfigStoreLayer } from '../effective-config.js';
 import { getGlobalConfig } from '../global-config.js';
@@ -26,6 +27,7 @@ import {
 import {
   detectHostRuntime,
   type DetectedHostRuntime,
+  type DispatchBridge,
 } from '../runtime-adapters.js';
 import type { AgentRuntime, PipelineYaml, StageRole } from './types.js';
 import type { PreparedDefinition } from './definition.js';
@@ -50,6 +52,11 @@ export interface PipelineExecutionOptions {
    * `validatePipelineForExecution` invocation.
    */
   probeCodex?: () => boolean;
+  /**
+   * Claude-CLI availability check for the `claude-print` bridge. Injected so
+   * automated tests never call the real Claude service or CLI.
+   */
+  probeClaude?: () => boolean;
   /** Injected once-detected LEAD host. */
   host?: DetectedHostRuntime;
   /** Test seam used only when `host` is not supplied. */
@@ -90,16 +97,35 @@ function reportPipelineExecutionNotice(
   console.error(chalk.yellow(message));
 }
 
-function throwRuntimeUnavailable(plan: PipelineExecutionPlan): never {
+function throwRuntimeUnavailable(
+  plans: PipelineExecutionPlan[],
+  bridge: DispatchBridge
+): never {
+  const plan =
+    plans.find((candidate) =>
+      candidate.stages.some(
+        (stage) =>
+          stage.bridge === bridge ||
+          (bridge === 'codex-exec' &&
+            stage.dispatchMode === 'legacy-fallback' &&
+            stage.runtime === 'codex')
+      )
+    ) ?? plans[0];
   const bridged = plan.stages.find(
     (stage) =>
-      stage.dispatchMode === 'exec-bridge' ||
-      (stage.dispatchMode === 'legacy-fallback' && stage.runtime === 'codex')
+      stage.bridge === bridge ||
+      (bridge === 'codex-exec' &&
+        stage.dispatchMode === 'legacy-fallback' &&
+        stage.runtime === 'codex')
   );
+  const targetLabel = bridge === 'codex-exec' ? 'codex' : 'Claude Code';
+  const bridgeLabel = bridge === 'codex-exec' ? 'codex exec' : bridge;
+  const hostOverride =
+    plan.hostRuntime === 'unknown' ? 'the detected host runtime' : plan.hostRuntime;
   throw new PipelineValidationError(
-    `Stage "${bridged?.id ?? '<unknown>'}" requires the codex exec bridge, but codex is not available. ` +
-      'Override the affected role to claude (e.g. `rasen pipeline agents <name> --<role> claude`, ' +
-      'or a stage-level `runtime: claude` in the pipeline.yaml), or install the codex CLI.',
+    `Stage "${bridged?.id ?? '<unknown>'}" requires the ${bridgeLabel} bridge, but ${targetLabel} is not available. ` +
+      `Override the affected role to ${hostOverride} (for example with a role flag or stage runtime), ` +
+      `or install the ${bridge === 'codex-exec' ? 'Codex CLI' : 'Claude Code CLI'}.`,
     'pipeline_runtime_unavailable'
   );
 }
@@ -309,17 +335,25 @@ export async function validatePipelineForExecution(
     }
   }
 
-  const bridgePlan = plans.find((plan) =>
-    plan.stages.some(
-      (stage) =>
-        stage.dispatchMode === 'exec-bridge' ||
-        (stage.dispatchMode === 'legacy-fallback' && stage.runtime === 'codex')
-    )
-  );
-  if (bridgePlan) {
-    const probeCodex = options?.probeCodex ?? probeCodexAvailability;
-    if (!probeCodex()) {
-      throwRuntimeUnavailable(bridgePlan);
+  const requiredBridges = new Set<DispatchBridge>();
+  for (const plan of plans) {
+    for (const stage of plan.stages) {
+      if (stage.bridge) requiredBridges.add(stage.bridge);
+      if (
+        stage.dispatchMode === 'legacy-fallback' &&
+        stage.runtime === 'codex'
+      ) {
+        requiredBridges.add('codex-exec');
+      }
+    }
+  }
+  for (const bridge of requiredBridges) {
+    const available =
+      bridge === 'codex-exec'
+        ? (options?.probeCodex ?? probeCodexAvailability)()
+        : (options?.probeClaude ?? probeClaudeAvailability)();
+    if (!available) {
+      throwRuntimeUnavailable(plans, bridge);
     }
   }
 }

@@ -7,12 +7,14 @@
  * newline) and reuses `validateChangeName` for the optional `changeName`.
  */
 import * as path from 'node:path';
+import * as fs from 'node:fs';
 
 import { validateChangeName } from '../../utils/change-utils.js';
 import { WORKSPACE_DIR_NAME } from '../config.js';
 import type { ProjectHome } from '../project-home.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { buildChangeRunEntry } from './runs.js';
+import { ephemeraDir } from '../file-placement.js';
 import { CONTROL_CHAR_PATTERN } from './submit.js';
 import {
   NO_OUTPUT_TIMEOUT_CAP_MS,
@@ -170,11 +172,12 @@ export async function handleLaunchSession(
 /**
  * `GET /api/v1/sessions` (design D3/D4): registry records, optionally filtered
  * to a single space, with each listed session's run-state joined against its
- * OWN recorded space root and that space's machine home (not the server's
- * launch project). `filterRoot` (a canonical root) restricts the listing to
- * sessions recorded in that space; when omitted, every session is returned
- * (unattributed ones included, compat). A session without a recorded space or
- * a `changeName` reports `runState: { kind: 'absent' }`.
+ * OWN frozen execution root and that checkout's machine home (not the
+ * planning Store or server launch project). `filterRoot` (a canonical root)
+ * still restricts the listing by recorded planning space; when omitted, every
+ * session is returned (unattributed ones included, compat). A session without
+ * a recorded space, change name, or usable frozen project execution reports
+ * `runState: { kind: 'absent' }`.
  */
 export async function handleListSessions(
   supervisor: SessionSupervisor,
@@ -192,10 +195,56 @@ export async function handleListSessions(
       sessions.push({ session: toWire(record), runState: { kind: 'absent' } });
       continue;
     }
+    if (!record.execution || record.execution.kind !== 'project') {
+      sessions.push({ session: toWire(record), runState: { kind: 'absent' } });
+      continue;
+    }
+    let executionRoot: string;
+    try {
+      const stats = fs.statSync(record.execution.root);
+      if (!stats.isDirectory()) {
+        sessions.push({ session: toWire(record), runState: { kind: 'absent' } });
+        continue;
+      }
+      executionRoot = FileSystemUtils.canonicalizeExistingPath(record.execution.root);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') {
+        sessions.push({ session: toWire(record), runState: { kind: 'absent' } });
+      } else {
+        sessions.push({
+          session: toWire(record),
+          runState: {
+            name: record.changeName,
+            kind: 'error',
+            message: error instanceof Error ? error.message : String(error),
+          },
+        });
+      }
+      continue;
+    }
     const changeDir = path.join(record.space.root, WORKSPACE_DIR_NAME, 'changes', record.changeName);
-    const home = await resolveHomeForRoot(record.space.root);
-    const workDir = home ? home.workDir(record.changeName) : null;
-    sessions.push({ session: toWire(record), runState: buildChangeRunEntry(record.changeName, changeDir, workDir) });
+    let home: ProjectHome | null;
+    try {
+      home = await resolveHomeForRoot(executionRoot);
+    } catch (error) {
+      sessions.push({
+        session: toWire(record),
+        runState: {
+          name: record.changeName,
+          kind: 'error',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+      continue;
+    }
+    // Terminal locations belong to the frozen execution checkout. The
+    // planning change directory remains the oldest compatibility location.
+    const locations = {
+      ephemeraDir: ephemeraDir(executionRoot, record.changeName),
+      workDir: home ? home.workDir(record.changeName) : null,
+    };
+    sessions.push({ session: toWire(record), runState: buildChangeRunEntry(record.changeName, changeDir, locations) });
   }
   return { sessions };
 }

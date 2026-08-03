@@ -327,8 +327,7 @@
     "repairNext": "下一步：{command}"
   },
   "expertSkills": {
-    "workflowAuthor": "通过暂存、静态校验、独立审查和经用户批准的导入，安全地编写可安装工作流",
-    "workflowReview": "从语义质量、安全边界、可移植性、依赖关系和完整性方面独立审查可安装工作流"
+    "workflowAuthor": "通过暂存、静态校验、内置独立审查分支和经用户批准的导入，安全地编写可安装工作流"
   },
   "workflowLibrary": {
     "ui": {
@@ -500,9 +499,10 @@
       "openFindings": "未解决问题：{count} 个（交付前请解决）",
       "legacySkillHeading": "流水线 '{pipeline}' 中存在旧版技能 ID（请更新 pipeline yaml）：",
       "legacySkillEntry": "  阶段 {stage}：{from} -> {to}",
-      "workerHandleWarning": "智能体工作者句柄警告：阶段 '{stage}' 的智能体工作者没有持久句柄（已记录：{recorded}）；分派时请记录 agentId/transcript。",
+      "workerHandleWarning": "智能体工作者句柄警告：阶段 '{stage}' 的智能体工作者没有持久句柄（已记录：{recorded}）；分派时请记录 agentId/sessionId/transcript/threadId。",
       "duplicateRunStateKey": "运行状态键重复：'{key}' 在 {path} 处重复（JSON.parse 会保留最后一个值）。",
       "resumeHandles": "可用的恢复句柄（智能体工作者会话/transcript）：{stages}",
+      "resumeClaudeSession": "阶段 '{stage}' 的 Claude bridge 会话：{sessionId}（cwd：{cwd}）",
       "sessionHandoff": "会话交接（第 {generation} 代）：{path}",
       "gatePolicy": "门控策略：{effective}（{source}）",
       "executionBinding": "执行检出：{project}（{path}）",
@@ -676,10 +676,6 @@
           "name": "Chrome 操作",
           "description": "通过 CDP 驱动真实 Chrome 浏览器，获取 DOM 快照、执行点击、捕获网络请求和截图"
         },
-        "codebase-design": {
-          "name": "代码库设计",
-          "description": "进行两轮设计，深化模块边界，并使实现与目标架构保持一致"
-        },
         "codex": {
           "name": "Codex",
           "description": "调用 OpenAI Codex CLI 进行独立审查或实现"
@@ -700,41 +696,21 @@
           "name": "调查",
           "description": "在尝试修复前，用证据复现、隔离并找到缺陷根因"
         },
-        "navigator": {
-          "name": "导航",
-          "description": "代码库技能与工作流的地图，以及各自的适用时机"
-        },
         "office-hours": {
           "name": "产品咨询",
           "description": "构建前检验产品需求和设计方向"
         },
-        "prototype": {
-          "name": "原型",
-          "description": "构建一次性 UI 或逻辑试验，快速回答问题"
-        },
         "qa": {
           "name": "QA",
-          "description": "通过 CDP 代理探索应用、记录有证据的问题并修复问题"
-        },
-        "qa-only": {
-          "name": "QA（仅报告）",
-          "description": "执行与 QA 相同的探索和健康评分，但绝不编辑代码"
+          "description": "浏览器 QA，默认包含修复循环，也支持显式的仅报告/非 UI 模式"
         },
         "review": {
           "name": "审查",
           "description": "合入前结合完整代码库上下文审查 PR，按严重程度标记审查问题并循环修复"
         },
-        "tdd": {
-          "name": "TDD",
-          "description": "遵循红、绿、重构纪律，并提供模拟指导"
-        },
         "workflow-author": {
           "name": "工作流编写",
           "description": "通过分阶段处理和独立审查，安全地编写可安装工作流与流水线"
-        },
-        "workflow-review": {
-          "name": "工作流审查",
-          "description": "独立审查可安装工作流和流水线的质量与安全性"
         }
       },
       "workflowsGroupLabel": "-- 工作流 --",
@@ -963,7 +939,7 @@
       "invalidReferenceRemotes": "部分 'references' 远程地址不是非空字符串；将保留其 ID，但不记录克隆源",
       "invalidStoreMemberships": "config 中的 'storeMemberships' 字段无效（必须是 store 引用数组）",
       "invalidStoreMembershipEntries": "部分 'storeMemberships' 条目无效，已忽略无法使用的条目与字段",
-      "storeMembershipsWithoutIdentity": "部分 'storeMemberships' 条目仅用显示名指向 store；请运行 'rasen store upgrade-identity <store> --apply'，让该提示在改名后依然有效",
+      "storeMembershipsWithoutIdentity": "部分 'storeMemberships' 条目仅用显示名指向 store；请运行 'rasen update'，让该提示在改名后依然有效",
       "invalidSchema": "配置中的 'schema' 字段无效（必须是非空字符串）",
       "contextTooLarge": "上下文过大（{size}KB，上限：{maximum}KB）",
       "ignoringContext": "将忽略 context 字段",
@@ -998,8 +974,18 @@
       "profileLockShadowedByOverride": "注：锁定的配置方案 '{profile}' 已被此项目的 workflows 覆盖设置遮蔽。",
       "profileLockCustom": "警告：'custom' 不能作为锁定的配置方案；将改用用户全局配置方案。",
       "profileLockUnresolvable": "警告：无法解析锁定的配置方案 '{profile}'（{detail}）；将改用用户全局配置方案。",
-      "userWideProfileUnresolvable": "警告：无法解析用户全局配置方案 '{profile}'（{detail}）；将改用默认的 'full' 配置方案。"
+      "userWideProfileUnresolvable": "警告：无法解析用户全局配置方案 '{profile}'（{detail}）；将改用默认的 'full' 配置方案。",
+      "deprecatedArchiveDestination": "'archive.destination' 已废弃，不再选择归档去向：归档簿记始终落在规划根。请删除该键；运行 'rasen archive relocate --to in-repo' 可把已有归档收拢回规划根。"
     }
+  },
+  "storeIdentityMigration": {
+    "upgraded": "已升级 {count} 个 store：",
+    "skipped": "已跳过 {count} 个 store：",
+    "alreadyIdentified": "{count} 个 store 已携带永久身份。",
+    "rekeyed": "已按永久身份重新索引机器 store 注册表。",
+    "rekeyBlocked": "注册表重新索引被以下 store 阻塞：{stores}。",
+    "allIdentified": "所有已注册 store 均已携带永久身份。",
+    "suggestedCommit": "请在 {repo} 中提交这些文件：{command}"
   },
   "completion": {
     "ui": {
@@ -1384,14 +1370,32 @@
             },
             "project": {
               "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+            },
+            "keep-ephemera": {
+              "description": "保留所有 ephemera 文件，同时继续执行完整安全检查"
+            },
+            "dry-run": {
+              "description": "预演所有计划中的归档操作，不执行任何实际更改"
+            },
+            "save-plan": {
+              "description": "保存精确的预演归档计划并输出不透明的应用令牌"
+            },
+            "apply-plan": {
+              "description": "不重新规划，按保存的令牌应用或恢复精确计划"
+            },
+            "intent-template": {
+              "description": "以 JSON 输出完整的归档意图模板，且不修改文件"
+            },
+            "intent-file": {
+              "description": "从指定文件读取并严格校验完整的归档意图"
             }
           },
           "commands": {
             "relocate": {
-              "description": "将现有归档变更移动到目标位置，并同步切换 archive.destination",
+              "description": "将现有归档变更收拢到 planning root 或 store（不写入任何配置）",
               "options": {
                 "to": {
-                  "description": "目标位置：in-repo、external 或 store"
+                  "description": "目标位置：in-repo 或 store（external 已退役）"
                 },
                 "dry-run": {
                   "description": "打印移动计划，不做任何更改"
@@ -1582,6 +1586,9 @@
                 "apply": {
                   "description": "执行该计划"
                 },
+                "all": {
+                  "description": "批量升级所有已注册 Store 的标识"
+                },
                 "json": {
                   "description": "输出为 JSON"
                 }
@@ -1619,7 +1626,7 @@
                   "description": "要采纳到的目标 store"
                 },
                 "archive": {
-                  "description": "归档处理方式：move（默认）、leave 或 external"
+                  "description": "归档处理方式：move（默认）或 leave"
                 },
                 "dry-run": {
                   "description": "打印移动计划，不做任何更改"
@@ -2707,10 +2714,10 @@
           }
         },
         "work": {
-          "description": "维护机器主目录中的工作目录（迁移旧版仓库内临时产物）",
+          "description": "维护旧版机器主目录中的工作目录",
           "commands": {
             "migrate": {
-              "description": "将旧版仓库内流程临时产物（run-state、handoff、reports、ship-log）迁移到机器主目录",
+              "description": "将旧版机器主目录状态（run-state、handoff、reports、ship-log）迁移到 planning root 与 execution root",
               "options": {
                 "change": {
                   "description": "仅限一项当前或已归档变更"
@@ -2718,14 +2725,20 @@
                 "dry-run": {
                   "description": "仅预览；绝不移动文件"
                 },
-                "include-tracked": {
-                  "description": "同时移动由 Git 跟踪的临时产物，并保留未提交的删除"
+                "store": {
+                  "description": "选择 Store 作为规划根目录"
+                },
+                "project": {
+                  "description": "选择已注册项目作为所有迁移根目录"
                 },
                 "json": {
                   "description": "输出为 JSON（非交互；执行时需要 --yes）"
                 },
                 "yes": {
                   "description": "跳过确认提示（在 --json 模式下执行时必需）"
+                },
+                "discard-absorbed-conclusions": {
+                  "description": "删除已确认被 handoff 或 evidence 吸收的 machine-root 结论目录（默认保留）"
                 }
               }
             }
@@ -2734,41 +2747,38 @@
         "agent": {
           "description": "检查并控制基础代理运行时状态",
           "commands": {
-            "edit-boundary": {
-              "description": "控制检出范围的运行时编辑边界",
-              "commands": {
-                "set": {
-                  "description": "将检出范围的编辑边界设置为现有目录",
-                  "options": {
-                    "runtime": {
-                      "description": "强制运行时：claude、codex 或 zed"
-                    },
-                    "json": {
-                      "description": "输出为 JSON"
-                    }
-                  }
+            "dispatch": {
+              "description": "派发结构化 Claude print-mode worker",
+              "options": {
+                "runtime": {
+                  "description": "Worker 运行时（claude）"
                 },
-                "status": {
-                  "description": "显示活动边界及观测到的宿主强制情况",
-                  "options": {
-                    "runtime": {
-                      "description": "强制运行时：claude、codex 或 zed"
-                    },
-                    "json": {
-                      "description": "输出为 JSON"
-                    }
-                  }
+                "prompt-file": {
+                  "description": "包含完整 worker prompt 的 UTF-8 文件"
                 },
-                "clear": {
-                  "description": "清除检出范围的编辑边界",
-                  "options": {
-                    "runtime": {
-                      "description": "强制运行时：claude、codex 或 zed"
-                    },
-                    "json": {
-                      "description": "输出为 JSON"
-                    }
-                  }
+                "contract": {
+                  "description": "结构化结果契约：leaf 或 evaluate"
+                },
+                "sandbox": {
+                  "description": "权限：read-only 或 workspace-write"
+                },
+                "model": {
+                  "description": "Claude 模型覆盖"
+                },
+                "effort": {
+                  "description": "Claude effort：low、medium、high、xhigh 或 max"
+                },
+                "cwd": {
+                  "description": "Worker 工作目录"
+                },
+                "timeout-ms": {
+                  "description": "超时毫秒数"
+                },
+                "resume": {
+                  "description": "要恢复的精确 Claude session ID"
+                },
+                "json": {
+                  "description": "输出一条机器可读 receipt"
                 }
               }
             },

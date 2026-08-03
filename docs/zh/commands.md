@@ -345,7 +345,7 @@ AI:  Verifying add-dark-mode...
 
 ### `rasen-review-cycle`
 
-通过迭代循环把变更推进到「真正干净」：`review → triage → fix → re-review(Δ) → {pass | loop | escalate}`。它不重新实现审查器 —— 每一轮都委托给始终安装的 `rasen-review` 引擎。本命令只负责循环、按修复规模分诊、作者≠验证者不变式、终止与上报。属于可选项（不在 `core` profile 中）。
+通过迭代循环把变更推进到「真正干净」：`review → triage → fix → re-review(Δ) → {pass | loop | escalate}`。它不重新实现审查器 —— 每一轮都委托给 `rasen-review` 引擎；即使未直接选择该专家，review-cycle 也会通过技能依赖闭包将其装入。本命令只负责循环、按修复规模分诊、作者≠验证者不变式、终止与上报。属于可选项（不在 `core` profile 中）。
 
 **语法：**
 ```

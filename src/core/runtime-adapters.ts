@@ -15,38 +15,23 @@ export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
 
 export type RuntimeAdapterCapabilities = Readonly<Record<RuntimeCapability, boolean>>;
 
-export const EDIT_BOUNDARY_ENFORCEMENT_LEVELS = [
-  'hard',
-  'soft',
-  'unsupported',
-] as const;
-
-export type EditBoundaryEnforcement =
-  (typeof EDIT_BOUNDARY_ENFORCEMENT_LEVELS)[number];
-
-export interface RuntimeAdapterDefinition extends RuntimeAdapterCapabilities {
-  /** Strongest edit-boundary claim this adapter is allowed to make. */
-  readonly editBoundary: EditBoundaryEnforcement;
-}
+export type RuntimeAdapterDefinition = RuntimeAdapterCapabilities;
 
 export const RUNTIME_ADAPTERS = {
   claude: {
     canProbeContext: true,
     canAudit: true,
     canDispatch: true,
-    editBoundary: 'hard',
   },
   codex: {
     canProbeContext: true,
     canAudit: true,
     canDispatch: true,
-    editBoundary: 'soft',
   },
   zed: {
     canProbeContext: false,
     canAudit: true,
     canDispatch: false,
-    editBoundary: 'unsupported',
   },
 } as const satisfies Readonly<Record<string, RuntimeAdapterDefinition>>;
 
@@ -83,11 +68,13 @@ export type DispatchMode =
   | 'unsupported'
   | 'legacy-fallback';
 
+export type DispatchBridge = 'codex-exec' | 'claude-print';
+
 export interface DispatchRoute {
   host: HostRuntime;
   target: DispatchRuntime;
   mode: DispatchMode;
-  bridge?: 'codex-exec';
+  bridge?: DispatchBridge;
 }
 
 type KnownHostRuntime = Exclude<HostRuntime, 'unknown'>;
@@ -98,7 +85,7 @@ const KNOWN_DISPATCH_ROUTES = {
     codex: { mode: 'exec-bridge', bridge: 'codex-exec' },
   },
   codex: {
-    claude: { mode: 'unsupported' },
+    claude: { mode: 'exec-bridge', bridge: 'claude-print' },
     codex: { mode: 'native' },
   },
 } as const satisfies Readonly<
@@ -110,29 +97,6 @@ const KNOWN_DISPATCH_ROUTES = {
 
 function hasText(value: string | undefined): boolean {
   return typeof value === 'string' && value.trim() !== '';
-}
-
-const EDIT_BOUNDARY_STRENGTH: Readonly<Record<EditBoundaryEnforcement, number>> = {
-  unsupported: 0,
-  soft: 1,
-  hard: 2,
-};
-
-/**
- * Resolve an edit-boundary level without allowing integration inspection to
- * claim more than the shipped adapter contract. Unknown runtimes are always
- * unsupported.
- */
-export function resolveEditBoundaryEnforcement(
-  runtime: RuntimeAdapterId | 'unknown',
-  observed?: EditBoundaryEnforcement
-): EditBoundaryEnforcement {
-  if (runtime === 'unknown') return 'unsupported';
-  const configured = RUNTIME_ADAPTERS[runtime].editBoundary;
-  if (observed === undefined) return configured;
-  return EDIT_BOUNDARY_STRENGTH[observed] <= EDIT_BOUNDARY_STRENGTH[configured]
-    ? observed
-    : configured;
 }
 
 /**

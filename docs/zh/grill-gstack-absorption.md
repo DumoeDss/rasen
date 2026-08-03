@@ -7,7 +7,7 @@
 
 ## 0. 一句话现状
 
-OPSX（OpenSpec 的融合工作流层）已经把 **grill**（Matt Pocock 的技能集，MIT）和 **gstack**（一套平行的方法论/工具层）**消化吸收为单一体系**：19 个专家技能以 TypeScript 模板为唯一源、统一 `openspec` 命名、由 OPSX 工作流命令编排。原 grill / gstack 的入口、工具链、品牌都已退出，只剩吸收后的能力留在 OpenSpec 里。
+Rasen 的 artifact workflow 已把 **grill**（Matt Pocock 的技能集，MIT）和 **gstack**（一套平行的方法论/工具层）吸收为单一体系。12 项能力保留为可独立调用的专家；只服务一个工作流的方法论改为宿主拥有、按需读取的 reference。原 grill / gstack 的入口、工具链和品牌都已退出。
 
 需要注意一个分寸：**「技能身份层」（用户怎么调、叫什么名、装在哪）已 100% 去 gstack 化；「内部代码层」（运行时路径、文件格式标记、vendored 工具）仍保留若干 gstack 字符串**——其中一部分是改了就会改变行为的（故不动），一部分是历史性注释（可清不清）。第 5 节有诚实清单。
 
@@ -45,9 +45,9 @@ OPSX（OpenSpec 的融合工作流层）已经把 **grill**（Matt Pocock 的技
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  上层：专家技能（19 个 openspec:<name>，按需调用）            │
+│  上层：专家技能（12 个 rasen-<name>，按需调用）              │
 │  review / cso / benchmark / qa / design-review / ...         │
-│  + 方法论三件：codebase-design / tdd / prototype             │
+│  + propose / apply / explore / help 的宿主 reference         │
 ├─────────────────────────────────────────────────────────────┤
 │  中层：OPSX 工作流命令（/opsx:*）                             │
 │  explore → propose → apply → verify/review-cycle             │
@@ -60,9 +60,9 @@ OPSX（OpenSpec 的融合工作流层）已经把 **grill**（Matt Pocock 的技
 
 - **底层 CLI** 是规格驱动开发的核心，所有 slash 命令最终都落到它身上。
 - **中层 OPSX** 把零散的 CLI 串成有门禁、有循环、有编排的工作流，并提供 LEAD+worker 多代理编排。
-- **上层专家** 是「能力插件」——独立技能，被工作流命令在合适时机条件式引用，也可被用户直接 `/review` 这样调用。
+- **上层专家** 是可独立调用或调度的「能力插件」；只服务一个工作流的方法留在宿主内，按需读取 reference，不再增加公共专家身份。
 
-### 3.2 19 个专家技能清单与分类
+### 3.2 12 个独立专家技能清单与分类
 
 源在 `src/core/templates/experts/<name>.ts`（每个一个 getter），sidecar 在 `skills/experts/<name>/`，注册名 `openspec:<name>`、安装目录 `openspec-<name>`。
 
@@ -70,15 +70,14 @@ OPSX（OpenSpec 的融合工作流层）已经把 **grill**（Matt Pocock 的技
 - `review` —— 双轴评审（Standards + Spec），始终触发。grill `code-review` 吸收而来。
 - `cso` —— 安全审计（condition: security-relevant）。
 - `benchmark` —— 性能基线（condition: performance-sensitive）。
-- `qa` —— 真实浏览器找 bug 并修（condition: ui）。
-- `qa-only` —— ��� qa 但只报告不改（condition: non-ui）。
+- `qa` —— 浏览器优先的 QA；独立模式可修复并复验，调度或显式只报告/non-UI 模式写 `qa-report.md` 且不改代码。
 - `design-review` —— 渲染 UI 的设计审计 + 修复循环（condition: ui）。
 - `design-consultation` —— 从零构建完整设计系统（独立专家，不在流水线）。
 
-**方法论三件（grill MIT，条件式被工作流引用，不强制）**
-- `codebase-design` —— 深模块设计词汇（module/interface/depth/seam/adapter/leverage/locality）。`propose` 对设计密集型 change 引用。
-- `tdd` —— 一个值得留下的测试，红→绿。`apply` 对测试先行工作引用。
-- `prototype` —— 一次性探针回答一个设计问题，留答案删代码。`explore` 对「卡住、只有动手才说得清」的设计问题引用。
+**宿主拥有的方法论 reference（grill MIT，按条件读取）**
+- `rasen-propose` 拥有 `references/codebase-design/README.md`。
+- `rasen-apply-change` 拥有 `references/tdd/README.md`。
+- `rasen-explore` 拥有 `references/prototype/README.md`。
 
 **调试/诊断**
 - `investigate` —— 系统化根因调试，铁律「先建能复红的反馈环再谈假设」。grill `diagnosing-bugs` 吸收而来。
@@ -86,16 +85,17 @@ OPSX（OpenSpec 的融合工作流层）已经把 **grill**（Matt Pocock 的技
 **浏览器工具 / 第二意见 / 路由 / 访谈**
 - `chrome-use` —— 通过 CDP 操控用户自己的 Chrome（导航、点击、抓网络请求/Cookie/WASM）。取代了 fork 最初的 vendored `browse` 工具（见 §5）。
 - `codex` —— 把任务交给 Codex 做独立第二意见或并行实现。
-- `navigator` —— 路由技能，画出本仓库技能地图（grill `ask-matt` 演化）。
+- `rasen-help` 拥有由 grill `ask-matt` 演化而来的 `references/navigator.md` 详细路由地图。
 - `office-hours` —— YC 式需求验证，Startup 模式（六问）+ Builder 模式（设计头脑风暴）。grill `grilling` 访谈纪律吸收。
 
 **编辑安全家**
 - `careful` —— 破坏性命令前警告（rm -rf / DROP TABLE / force-push）。`apply` 引用。
-- **历史记录（已退役）：**上游目录曾有三个独立的目录边界命令。当前
-  Rasen 使用 `rasen agent edit-boundary set|status|clear`，并报告
-  `hard|soft|unsupported`；旧命令已不可用。
+- **历史记录（已退役）：**上游目录曾有三个独立的目录边界命令，
+  Rasen 也曾短暂用运行时编辑边界命令替代它们；这两代方案均已废止。
+  当前工作流声明有证据支持的受影响区域并审计实际变更文件集合；
+  需要执行隔离时使用受管 sandbox/workspace 策略。
 
-> 名册从早期的 30（含平行生命周期专家）→ 20（移除平行生命周期）→ **19**（移除 domain-modeling）。当前稳定在 19。
+> 独立专家名册从早期 30 → 移除平行生命周期后的 20 → 移除 domain-modeling 后的 19 → 后续调整后的 18 → 把五个单宿主方法移入宿主并把 QA-only 合并进 QA 后的 **12**。
 
 ### 3.3 grill 的去留
 
@@ -104,17 +104,17 @@ OPSX（OpenSpec 的融合工作流层）已经把 **grill**（Matt Pocock 的技
 | `code-review` | → `review`（双轴 Standards+Spec） |
 | `grilling`（访谈纪律） | → `office-hours` 的访谈 phase |
 | `diagnosing-bugs` | → `investigate`（反馈环优先） |
-| `ask-matt`（路由） | → `navigator` |
-| `codebase-design` / `tdd` / `prototype`（方法论） | → 独立专家技能 + 条件式接入 propose/apply/explore |
+| `ask-matt`（路由） | → `rasen-help` 内置的 `references/navigator.md` |
+| `codebase-design` / `tdd` / `prototype`（方法论） | → propose/apply/explore 内置 reference |
 | `/to-prd`、`/to-issues`、`/implement`、`/triage`、`/improve-codebase-architecture`、`/research`、`/teach`、`/grill-me`、`/grill-with-docs`、`/setup-matt-pocock-skills` | **未引入**（本 fork 不需要） |
 
-grill 的 MIT 归属在每个吸收它的技能源文件头部保留（如 `review.ts`、`navigator.ts`、`codebase-design.ts` 等的 `<!-- adapted from mattpocock/skills (MIT, Copyright Matt Pocock) -->`）。
+grill 的 MIT 归属保留在每个改编的源文件或 reference 中，包括 navigator 以及 codebase-design/TDD/prototype 的入口和深层 sidecar。
 
 ### 3.4 gstack 的去留
 
 | gstack 能力 | 去向 |
 |---|---|
-| 专家技能层（review/cso/qa/chrome-use/...） | → 19 专家（去 gstack 品牌） |
+| 专家技能层（review/cso/qa/chrome-use/...） | → 12 个独立专家（去 gstack 品牌） |
 | `/ship` + `/land-and-deploy` | → `/opsx:ship`（land-and-deploy 变为 `--deploy`） |
 | `/retro` | → `/opsx:retro` |
 | browse 浏览器工具 | → 最初是 vendored 的 `browse` 专家；fork 中已由基于 CDP 的 `chrome-use` 专家取代（见 §5） |
@@ -125,11 +125,11 @@ grill 的 MIT 归属在每个吸收它的技能源文件头部保留（如 `revi
 
 ### 3.5 方法论专家的接线方式（条件式引用，不内联）
 
-grill 方法论三件（`codebase-design`/`tdd`/`prototype`）**不**把专家体塞进工作流指令，而是用一两句「条件式引用」告诉 agent 何时去调那个独立技能，并把产物落进 change 目录（而非技能自有路径）。落点：
+grill 方法论三件**不**把正文塞进工作流指令。每个宿主只写相对 reference 路径，并在条件满足时读取，再把持久决策落进 change 目录。路径是：
 
-- `propose.ts` ——「设计密集型 change（新模块/非平凡接口）→ 先咨询 `/codebase-design`，把接口/设计决策记进 `design.md` 的 Decisions。」
-- `apply-change.ts` ——「测试先行的工作 → 咨询 `/tdd`；触碰破坏性操作 → 咨询 `/careful`。」
-- `explore.ts` ——「设计问题卡住、只有动手才说得清 → 用 `/prototype` 探针，留答案删代码。」
+- `propose.ts` → `references/codebase-design/README.md`；把接口/设计决策写入 `changeRoot`。
+- `apply-change.ts` → `references/tdd/README.md`；破坏性操作仍单独使用 `rasen-careful`。
+- `explore.ts` → `references/prototype/README.md`；把答案写入 `changeRoot` 后删除探针。
 
 这种「引用而非内联」是为了保持 explore/propose/apply 的「抓取/规划/实现」本职不被方法论文本稀释。`schema.yaml` 不再携带任何 `enhance` 钩子（机制保留休眠、当前无使用方）。
 
@@ -163,7 +163,7 @@ grill 方法论三件（`codebase-design`/`tdd`/`prototype`）**不**把专家�
 
 ### 4.3 新鲜度门禁：parity golden-master
 
-`test/core/templates/skill-templates-parity.test.ts` 用两组哈希钉死模板内容：`EXPECTED_FUNCTION_HASHES`（每个 getter 的结构哈希）和 `EXPECTED_GENERATED_SKILL_CONTENT_HASHES`（生成内容哈希）。改了模板必须同步重算哈希，否则测试红——这就是「新鲜度门禁」，取代了旧的 gen-skill-docs 一致性检查。19 个专家现已全部纳入。
+`test/core/templates/skill-templates-parity.test.ts` 用函数哈希和生成内容哈希钉死模板。目录 digest 另外覆盖嵌套 sidecar，artifact ledger 会检测安装后的 reference 缺失或变化。12 个独立专家和所有工作流 router 都被覆盖。
 
 ### 4.4 ship 契约（去 gstack 假设后的重构）
 
@@ -202,7 +202,7 @@ gstack `/ship` 假设「feature 分支从 main 分叉、PR 回 main」，所以�
 
 ## 6. 测试与门禁
 
-- **parity golden-master**：`test/core/templates/skill-templates-parity.test.ts`（函数哈希 + 生成内容哈希，19 专家 + 工作流全在列）。
+- **parity golden-master**：`test/core/templates/skill-templates-parity.test.ts`（12 个专家和工作流的函数哈希 + 生成内容哈希）。
 - **profiles**：`test/core/profiles.test.ts` 守核心/扩展技能集划分（review-cycle 是 opt-in 不进 core）。
 - **skill-generation / sidecar-install**：守生成与安装正确性。
 - **pipeline-registry**：守流水线 DAG（skill 引用必须真实存在——改名后 `openspec:review` 等都得对得上）。
@@ -212,6 +212,4 @@ gstack `/ship` 假设「feature 分支从 main 分叉、PR 回 main」，所以�
 ## 7. 已知 follow-up（非阻塞）
 
 - **archive 零需求 spec 工具缺口**（已复现两次）：archiver 无法把 spec rebuild 到零 requirements，全 REMOVED 的 spec 只能 `--no-validate` + 手删目录。值得一个小 change 开删除路径。
-- **navigator 的 `/opsx:ship` 简介未提三模式**：`navigator.ts:22` 仍写「test, push, open the PR」，没反映 §4.3 的三交付模式 + 证据门。一句话级修复（`ship-delivery-modes` 评审遗留 F3）。
 - **ship 证据门可加 tree 指纹**：用 `git rev-parse HEAD^{tree}` 比「HEAD + dirty 状态」更严密（F2）。
-- **专家 getter 的 `description: '|'` 空描述痼疾**：除 navigator 外每个 getter 写死空 YAML block scalar，是既存 bug，按「行为不变」原则保留，未在本线修。

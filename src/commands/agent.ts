@@ -28,6 +28,15 @@ import {
   type AgentContextResult,
   type HandoffThresholdReport,
 } from '../core/agent-context.js';
+import { resolveAgentCliBinary } from '../core/agent-cli-process.js';
+import {
+  buildClaudePrintInvocation,
+  claudeFailureReceipt,
+  runClaudePrint,
+  type ClaudeDispatchReceipt,
+  type ClaudeReasoningEffort,
+  type ClaudeSandboxMode,
+} from '../core/claude/index.js';
 import {
   contextResolveOptions,
   resolveRootConfigContext,
@@ -52,25 +61,9 @@ import {
   type KeepaliveConfigInput,
 } from '../core/keepalive/index.js';
 import { resolveEffectiveConfigWithMetadata } from '../core/effective-config.js';
-import {
-  clearEditBoundary,
-  editHookOutput,
-  evaluateEditHook,
-  getEditBoundaryStatus,
-  resolveEditBoundaryRoot,
-  setEditBoundary,
-  type EditBoundaryResult,
-} from '../core/edit-boundary.js';
-import { inspectEditBoundaryHook } from '../core/edit-boundary-hooks.js';
 import { getChangeDir, resolveCurrentPlanningHomeSync } from '../core/planning-home.js';
 import type { ThresholdValue } from '../core/pipeline-registry/types.js';
-import {
-  detectHostRuntime,
-  resolveEditBoundaryEnforcement,
-  RUNTIME_ADAPTERS,
-  type HostRuntimeSource,
-  type RuntimeAdapterId,
-} from '../core/runtime-adapters.js';
+import type { WorkerContract } from '../core/worker-contracts.js';
 import { runAudit } from '../core/token-audit/audit.js';
 import { TranscriptFormatError } from '../core/token-audit/errors.js';
 import { isCodexAuditResult, isZedAuditResult, type AuditResult } from '../core/token-audit/types.js';
@@ -111,16 +104,17 @@ export interface AgentAuditOptions {
   db?: string;
 }
 
-export interface AgentEditBoundaryOptions {
+export interface AgentDispatchOptions {
   runtime?: string;
+  promptFile?: string;
+  contract?: string;
+  sandbox?: string;
+  model?: string;
+  effort?: string;
+  cwd?: string;
+  timeoutMs?: number;
+  resume?: string;
   json?: boolean;
-  cwd?: string;
-}
-
-export interface AgentEditBoundaryCheckOptions {
-  runtime?: string;
-  input?: unknown;
-  cwd?: string;
 }
 
 /**
@@ -268,56 +262,6 @@ export async function resolveAgentWaitKeepaliveConfig(
   });
 }
 
-function resolveEditBoundaryRuntime(
-  requested: string | undefined,
-  cwd: string
-): {
-  runtime: RuntimeAdapterId | 'unknown';
-  source: HostRuntimeSource;
-  enforcement: import('../core/runtime-adapters.js').EditBoundaryEnforcement;
-} {
-  let runtime: RuntimeAdapterId | 'unknown';
-  let source: HostRuntimeSource;
-  if (requested !== undefined) {
-    const normalized = requested.trim().toLowerCase();
-    if (!Object.hasOwn(RUNTIME_ADAPTERS, normalized)) {
-      throw new Error(
-        `Unknown runtime "${requested}". Expected claude, codex, or zed.`
-      );
-    }
-    runtime = normalized as RuntimeAdapterId;
-    source = 'cli-option';
-  } else {
-    const detected = detectHostRuntime();
-    runtime = detected.runtime;
-    source = detected.source;
-  }
-
-  if (runtime === 'unknown') {
-    return { runtime, source, enforcement: 'unsupported' };
-  }
-  const root = resolveEditBoundaryRoot(cwd);
-  const observed = inspectEditBoundaryHook(root, runtime).enforcement;
-  return {
-    runtime,
-    source,
-    enforcement: resolveEditBoundaryEnforcement(runtime, observed),
-  };
-}
-
-async function readStdinJson(): Promise<unknown> {
-  let raw = '';
-  for await (const chunk of process.stdin) {
-    raw += String(chunk);
-  }
-  if (!raw.trim()) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
 export class AgentCommand {
   /**
    * Probe context-window occupancy. Prints a single line (or `--json`) and
@@ -374,6 +318,124 @@ export class AgentCommand {
   }
 
   /**
+   * Machine-oriented Claude print bridge. Every outcome is emitted as exactly
+   * one JSON receipt; child stdout/stderr remains captured inside the runner.
+   */
+  async dispatch(options: AgentDispatchOptions): Promise<ClaudeDispatchReceipt | Record<string, unknown>> {
+    const rawContract = options.contract?.trim();
+    const emit = <T extends ClaudeDispatchReceipt | Record<string, unknown>>(receipt: T): T => {
+      console.log(JSON.stringify(receipt));
+      if (!('ok' in receipt) || receipt.ok !== true) process.exitCode = 1;
+      return receipt;
+    };
+    const invalid = (message: string) =>
+      emit({
+        ok: false,
+        runtime: options.runtime || 'unknown',
+        dispatchMode: 'exec-bridge',
+        bridge: 'claude-print',
+        ...(rawContract ? { contract: rawContract } : {}),
+        failure: { kind: 'invalid-input', message },
+      });
+
+    if (options.runtime !== 'claude') {
+      return invalid('--runtime must be "claude".');
+    }
+    if (rawContract !== 'leaf' && rawContract !== 'evaluate') {
+      return invalid('--contract must be "leaf" or "evaluate".');
+    }
+    const contract = rawContract as WorkerContract;
+    if (options.sandbox !== 'read-only' && options.sandbox !== 'workspace-write') {
+      return invalid('--sandbox must be "read-only" or "workspace-write".');
+    }
+    const sandbox = options.sandbox as ClaudeSandboxMode;
+    const validEfforts = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+    if (options.effort !== undefined && !validEfforts.has(options.effort)) {
+      return invalid('--effort must be low, medium, high, xhigh, or max.');
+    }
+    if (
+      options.resume !== undefined &&
+      !/^[^\s\u0000-\u001f]{1,256}$/.test(options.resume)
+    ) {
+      return invalid('--resume must be one non-empty session ID without whitespace.');
+    }
+    const timeoutMs = options.timeoutMs ?? 30 * 60 * 1000;
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 24 * 60 * 60 * 1000) {
+      return invalid('--timeout-ms must be an integer between 1 and 86400000.');
+    }
+
+    if (!options.promptFile?.trim()) {
+      return invalid('--prompt-file is required.');
+    }
+    const promptFile = path.resolve(options.promptFile);
+    try {
+      const stat = fs.statSync(promptFile);
+      if (!stat.isFile()) return invalid(`--prompt-file is not a file: ${promptFile}`);
+      if (stat.size > 2 * 1024 * 1024) {
+        return invalid(`--prompt-file exceeds the 2097152-byte limit: ${promptFile}`);
+      }
+    } catch {
+      return invalid(`--prompt-file does not exist or is unreadable: ${promptFile}`);
+    }
+
+    const cwd = path.resolve(options.cwd ?? process.cwd());
+    try {
+      if (!fs.statSync(cwd).isDirectory()) {
+        return invalid(`--cwd is not a directory: ${cwd}`);
+      }
+    } catch {
+      return invalid(`--cwd does not exist or is unreadable: ${cwd}`);
+    }
+
+    const binary = resolveAgentCliBinary({
+      envVar: 'RASEN_CLAUDE_BIN',
+      binaryName: 'claude',
+    });
+    if (!binary) {
+      return emit(
+        claudeFailureReceipt(
+          contract,
+          'runtime-unavailable',
+          'Claude Code CLI is unavailable. Install Claude Code or set RASEN_CLAUDE_BIN.',
+          { cwd }
+        )
+      );
+    }
+
+    let prompt: string;
+    try {
+      prompt = fs.readFileSync(promptFile, 'utf8');
+    } catch (error) {
+      return invalid(
+        `Unable to read --prompt-file: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+
+    try {
+      const invocation = buildClaudePrintInvocation({
+        prompt,
+        contract,
+        sandbox,
+        ...(options.model ? { model: options.model } : {}),
+        ...(options.effort
+          ? { effort: options.effort as ClaudeReasoningEffort }
+          : {}),
+        ...(options.resume ? { resumeSessionId: options.resume } : {}),
+      });
+      return emit(
+        await runClaudePrint({
+          binary,
+          invocation,
+          cwd,
+          timeoutMs,
+        })
+      );
+    } catch (error) {
+      return invalid(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /**
    * Local, pull-model session token-spend audit (cli-agent-audit spec):
    * parses a Claude Code session transcript (or, with `--runtime codex`, a
    * Codex rollout) plus its subagent transcripts, writes a report under the
@@ -422,68 +484,6 @@ export class AgentCommand {
       }
       throw error;
     }
-  }
-
-  async editBoundarySet(
-    directory: string,
-    options: AgentEditBoundaryOptions = {}
-  ): Promise<EditBoundaryResult> {
-    const cwd = options.cwd ?? process.cwd();
-    const runtime = resolveEditBoundaryRuntime(options.runtime, cwd);
-    const result = setEditBoundary(directory, {
-      cwd,
-      ...runtime,
-      runtimeSource: runtime.source,
-    });
-    this.emitEditBoundary(result, options.json === true);
-    return result;
-  }
-
-  async editBoundaryStatus(
-    options: AgentEditBoundaryOptions = {}
-  ): Promise<EditBoundaryResult> {
-    const cwd = options.cwd ?? process.cwd();
-    const runtime = resolveEditBoundaryRuntime(options.runtime, cwd);
-    const result = getEditBoundaryStatus({
-      cwd,
-      ...runtime,
-      runtimeSource: runtime.source,
-    });
-    this.emitEditBoundary(result, options.json === true);
-    return result;
-  }
-
-  async editBoundaryClear(
-    options: AgentEditBoundaryOptions = {}
-  ): Promise<EditBoundaryResult> {
-    const cwd = options.cwd ?? process.cwd();
-    const runtime = resolveEditBoundaryRuntime(options.runtime, cwd);
-    const result = clearEditBoundary({
-      cwd,
-      ...runtime,
-      runtimeSource: runtime.source,
-    });
-    this.emitEditBoundary(result, options.json === true);
-    return result;
-  }
-
-  /**
-   * Hidden stdin hook action. Invalid JSON or an unrecognized envelope emits
-   * nothing and exits successfully: parse failure is never represented as
-   * hard protection.
-   */
-  async editBoundaryCheck(
-    options: AgentEditBoundaryCheckOptions = {}
-  ): Promise<void> {
-    const cwd = options.cwd ?? process.cwd();
-    if (options.runtime !== undefined) {
-      resolveEditBoundaryRuntime(options.runtime, cwd);
-    }
-    const input = options.input === undefined ? await readStdinJson() : options.input;
-    const output = editHookOutput(
-      evaluateEditHook(input, { fallbackCwd: cwd })
-    );
-    if (output) console.log(JSON.stringify(output));
   }
 
   /**
@@ -583,24 +583,6 @@ export class AgentCommand {
 
   private emitWait(outcome: AgentWaitOutcome): void {
     console.log(JSON.stringify(outcome));
-  }
-
-  private emitEditBoundary(result: EditBoundaryResult, json: boolean): void {
-    if (json) {
-      console.log(JSON.stringify(result));
-      return;
-    }
-    console.log(
-      `edit-boundary action=${result.action} active=${result.active} changed=${result.changed} ` +
-        `runtime=${result.runtime} source=${result.runtimeSource} enforcement=${result.enforcement}`
-    );
-    console.log(`checkout=${result.root}`);
-    console.log(`boundary=${result.boundary ?? '(none)'}`);
-    for (const limitation of result.limitations) {
-      console.log(`limitation: ${limitation}`);
-    }
-    if (result.warning) console.warn(`warning: ${result.warning}`);
-    if (result.error) console.error(`error: ${result.error}`);
   }
 
   private toJson(

@@ -15,8 +15,9 @@ stores workflow IDs only; it never embeds workflow content.
 The runtime catalog is the stable built-in list followed by valid user
 workflows in ID order. `full` and `core` always contain built-ins only; user
 workflows are opt-in through a custom or named profile. Saving a selection
-expands `requires.workflows` transitively in catalog order. Always-installed
-expert skills remain outside the workflow selection.
+expands `requires.workflows` transitively in catalog order. Expert skills are
+catalog/profile selections in the same ID space, and selected workflows add
+their `requires.skills` experts through dependency closure.
 
 Built-in IDs cannot be overridden. A user workflow also cannot reuse a skill
 name owned by a built-in or another user workflow. Re-importing
@@ -24,7 +25,7 @@ the same ID and digest is a no-op. Reusing an ID with a different digest is an
 error in format version 1.
 
 Portable workflow IDs and user skill names must match
-`^[a-z0-9][a-z0-9-]{0,63}$`. References to always-installed expert skills use
+`^[a-z0-9][a-z0-9-]{0,63}$`. References to catalog expert skills use
 their catalog names — the `rasen-<name>` skill directory name; the retired
 `rasen:<name>` colon form is still accepted for backward compatibility. File paths
 are NFC-normalized relative POSIX paths.
@@ -85,8 +86,9 @@ The exact fields are:
   file other than `workflow.yaml` and `SKILL.md` must be declared exactly once.
   Scripts are data during validation and import and are never executed.
 - `requires`: optional. `workflows` is expanded to a transitive closure;
-  missing dependencies and cycles are errors. `skills` must name an
-  always-installed expert skill and is not added to the profile workflow list.
+  missing dependencies and cycles are errors. `skills` must name a catalog
+  expert skill; that expert is added to the resolved install set by dependency
+  closure without becoming a directly selected profile row.
 - `recommends`: optional. Missing workflows produce warnings and are not
   installed or enabled automatically.
 
@@ -125,7 +127,7 @@ Both kinds require `format`, `formatVersion`, `kind`, `roots`, `workflows`, and
   object containing `version`, `delivery`, and `workflows`.
 - Each workflow has only `id`, `digest`, and `files`.
 - Each file has only `path`, `encoding: "utf8"`, `sha256`, and `content`.
-- Built-in workflows and always-installed expert skills are referenced but are
+- Built-in workflows and catalog expert skills are referenced but are
   never embedded.
 
 Arrays are normalized before encoding: workflows by ID, files by path, and
@@ -201,7 +203,11 @@ created by that import.
 `init` and `update` resolve the effective profile through the full catalog
 before generating files. Selected user definitions provide `SKILL.md`, optional
 command content, and validated nested sidecars to every configured tool.
-Always-installed expert skills are generated independently of profile choice.
+Profile-selected experts and experts required by the workflow dependency
+closure are generated alongside the resolved workflow set. The `core` profile
+defaults to the five-expert quality floor, `full` defaults to all catalog
+experts, and explicit custom/named selections may be leaner while still gaining
+every required expert.
 
 Each project records user-workflow source, content digest, and exact generated
 file set in `rasen/.workflow-artifacts.json`. Drift detects a missing source,
@@ -218,13 +224,13 @@ by the active profile reports `pipeline_skill_disabled` and blocks execution.
 
 ## AI authoring and review
 
-The always-installed `rasen-workflow-author` expert follows this sequence:
+The standalone `rasen-workflow-author` expert follows this sequence:
 
 1. define purpose, trigger, inputs, output, completion, and prohibited actions;
 2. inspect `rasen workflow list --json` and scaffold in a writable staging path;
 3. author the minimal manifest, skill, and declared sidecars;
 4. run static validation until it has no errors;
-5. request an independent `rasen-workflow-review` semantic review;
+5. after static validation, load its bundled `references/workflow-review/README.md` and request an independent semantic review;
 6. fix findings and statically validate again;
 7. show the tree, scripts, dependencies, digest, and remaining risks;
 8. import only after the user asks for installation.
@@ -258,9 +264,9 @@ The mitigations available today are:
   validate` check manifest shape, path safety, stage-DAG acyclicity, and
   (for pipelines) decompose recursion bounds and skill references, before
   install and again before each execution (`validatePipelineForExecution`).
-- **Author/review experts** — `rasen-workflow-author` and
-  `rasen-workflow-review` (covering both workflows and pipelines) give a
-  structured authoring and independent-review pass before anyone imports.
+- **Author with bundled review** — `rasen-workflow-author` covers both
+  workflows and pipelines, then loads its bundled independent-review branch
+  before anyone imports.
 
 There is no signature system and no marketplace. Provenance is whatever the
 distributor claims through their distribution channel (a git remote, a PR, a
@@ -274,8 +280,8 @@ State the limits honestly, not just the mitigations:
 - **Validation is structural, not behavioral.** `validate` confirms the
   manifest/pipeline shape parses and its declared references resolve; it does
   not simulate what an agent following the instructions would do.
-- **Review is a mitigation, not a guarantee.** A passing
-  `rasen-workflow-review` pass raises the bar against careless or naive
+- **Review is a mitigation, not a guarantee.** A passing independent-review
+  branch under `rasen-workflow-author` raises the bar against careless or naive
   authoring; it is not an attestation, a signature, or proof of safety, and a
   reviewer can miss an adversarially crafted package.
 - **No signatures, no marketplace.** Anyone can author and distribute a

@@ -126,7 +126,7 @@ Resume of an interrupted goal-loop Run SHALL be driven entirely by the frozen pl
 
 ### Requirement: Authoritative Round Record in goal-run.json
 
-The canonical Record SHALL be the authoritative loop spine. Each committed goal-cycle event (work result, judge result) SHALL be recorded as a committed action in the canonical Record. The legacy `goal-run.json` file SHALL be a compatibility projection derived from the Record, NOT an independent authoritative source. A new Run SHALL NOT be back-driven by `goal-run.json`. The management API read path SHALL project per-round records from the Record into the legacy `{round, score?, measurePassed?, evaluateSatisfied?, gaps?}` shape for backward compatibility.
+For a reconciler-engine Run, the canonical Record SHALL be the authoritative loop spine. Each committed goal-cycle event (work result, judge result) SHALL be recorded as a committed action in the canonical Record. The legacy `goal-run.json` file SHALL be a compatibility projection derived from the Record, NOT an independent authoritative source, and SHALL NOT back-drive a new Run. For a legacy-engine run, each completed round SHALL append a record to `loop.runArtifact` (default `goal-run.json`) in the execution root's ephemera directory (`ephemeraDir` reported by the CLI), with sticky-legacy fallback to an existing legacy work-directory or change-directory file. The management API read path SHALL expose per-round records from the owning spine in the legacy `{round, score?, measurePassed?, evaluateSatisfied?, detail?, gaps?, error?, gitTreeFingerprint}` shape.
 
 #### Scenario: Canonical Record is authoritative
 
@@ -149,8 +149,8 @@ The canonical Record SHALL be the authoritative loop spine. Each committed goal-
 
 #### Scenario: Legacy run continues in place
 
-- **WHEN** a goal-loop resumes and its run artifact already exists in the change directory
-- **THEN** subsequent round records SHALL continue to resolve to that file (sticky-legacy), keeping one spine rather than splitting across two locations
+- **WHEN** a goal-loop resumes and its run artifact already exists in the legacy work directory or the change directory
+- **THEN** subsequent legacy writes or reconciler compatibility projections SHALL continue to resolve to that file (sticky-legacy), keeping one spine rather than splitting across two locations
 
 ### Requirement: Three Backend Goal-Loop Pipelines Are Registered
 

@@ -5,7 +5,9 @@
  * The list handler resolves the machine home read-only (`ensure: false` —
  * never mints identity or creates directories) and reads `auto-run.json`,
  * `portfolio-run.json`, and `goal-run.json` from their resolved locations
- * (work directory first, change directory as legacy fallback). Every file is
+ * along the `file-placement` sticky-legacy chain (the execution root's
+ * ephemera directory first, then the machine-home work directory, then the
+ * change directory as the oldest legacy fallback). Every file is
  * reported as `ok` / `invalid` / `absent`; a failure while handling one
  * change degrades to an `error` entry for that change, never a whole-response
  * failure.
@@ -30,7 +32,13 @@ import { createHash } from 'node:crypto';
 import { WORKSPACE_DIR_NAME } from '../config.js';
 import { resolveProjectHome, type ProjectHome } from '../project-home.js';
 import { getActiveChangeIds } from '../../utils/item-discovery.js';
-import { readRunStateDetailed, resolveRunStateLocation } from '../pipeline-registry/run-state.js';
+import {
+  readRunStateDetailed,
+  resolveRunStateLocation,
+  stateFileSearchChain,
+  type StateFileLocationOptions,
+} from '../pipeline-registry/run-state.js';
+import { ephemeraDir } from '../file-placement.js';
 import {
   readPortfolioStateDetailed,
   resolvePortfolioStateLocation,
@@ -599,25 +607,27 @@ function withOtherWorkspaceScope(view: ChangeRunView): ChangeRunView {
  */
 function readPortfolioDetailed(
   changeDir: string,
-  workDir: string | null
+  locations: StateFileLocationOptions
 ): RunFileResult<PortfolioState> {
-  const location = resolvePortfolioStateLocation(changeDir, workDir);
+  const location = resolvePortfolioStateLocation(changeDir, locations);
   if (!location) return { kind: 'absent' };
   return readPortfolioStateDetailed(location.dir);
 }
 
 /**
- * Mirrors `resolveRunStateLocation`'s workDir-first / changeDir-legacy-
- * fallback resolution. Exported so the changes handler can fold goal-run
- * presence into `hasRunFiles` without duplicating the resolution logic.
+ * Walks the same sticky-legacy chain as `resolveRunStateLocation` (stated
+ * once in `stateFileSearchChain`). Exported so the changes handler can fold
+ * goal-run presence into `hasRunFiles` without duplicating the resolution.
  */
-export function resolveGoalRunPath(changeDir: string, workDir: string | null): string | null {
-  if (workDir) {
-    const workPath = path.join(workDir, GOAL_RUN_STATE_FILENAME);
-    if (fs.existsSync(workPath)) return workPath;
+export function resolveGoalRunPath(
+  changeDir: string,
+  locations: StateFileLocationOptions
+): string | null {
+  for (const dir of stateFileSearchChain(changeDir, locations)) {
+    const candidate = path.join(dir, GOAL_RUN_STATE_FILENAME);
+    if (fs.existsSync(candidate)) return candidate;
   }
-  const legacyPath = path.join(changeDir, GOAL_RUN_STATE_FILENAME);
-  return fs.existsSync(legacyPath) ? legacyPath : null;
+  return null;
 }
 
 /**
@@ -629,8 +639,11 @@ export function resolveGoalRunPath(changeDir: string, workDir: string | null): s
  * Resume never reads this file to drive a Run — the reconciler replays
  * committed events from the canonical Record.
  */
-function readGoalRunDetailed(changeDir: string, workDir: string | null): RunFileResult<GoalRunRaw> {
-  const filePath = resolveGoalRunPath(changeDir, workDir);
+function readGoalRunDetailed(
+  changeDir: string,
+  locations: StateFileLocationOptions
+): RunFileResult<GoalRunRaw> {
+  const filePath = resolveGoalRunPath(changeDir, locations);
   if (!filePath) return { kind: 'absent' };
   try {
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as unknown;
@@ -678,8 +691,13 @@ export async function handleRuns(
     }
   }
 
+  // The selected space's root IS the execution root for a server-driven read
+  // (the board reads the checkout it was launched against).
   const runs: ChangeRunEntry[] = changeIds.map((name) =>
-    buildChangeRunEntry(name, path.join(changesDir, name), resolvedHome ? resolvedHome.workDir(name) : null)
+    buildChangeRunEntry(name, path.join(changesDir, name), {
+      ephemeraDir: ephemeraDir(root, name),
+      workDir: resolvedHome ? resolvedHome.workDir(name) : null,
+    })
   );
 
   // Discover reconciler-engine Runs from the immutable filesystem store
@@ -707,15 +725,19 @@ export async function handleRuns(
  * design D4) can join a single targeted change's run-state without
  * re-enumerating every active change via `getActiveChangeIds`.
  */
-export function buildChangeRunEntry(name: string, changeDir: string, workDir: string | null): ChangeRunEntry {
+export function buildChangeRunEntry(
+  name: string,
+  changeDir: string,
+  locations: StateFileLocationOptions
+): ChangeRunEntry {
   try {
-    const autoLocation = resolveRunStateLocation(changeDir, workDir);
+    const autoLocation = resolveRunStateLocation(changeDir, locations);
     const autoRun: RunFileResult<RunState> = autoLocation
       ? readRunStateDetailed(autoLocation.dir)
       : { kind: 'absent' };
 
-    const portfolio = readPortfolioDetailed(changeDir, workDir);
-    const goalRun = readGoalRunDetailed(changeDir, workDir);
+    const portfolio = readPortfolioDetailed(changeDir, locations);
+    const goalRun = readGoalRunDetailed(changeDir, locations);
 
     return { name, kind: 'ok', autoRun, portfolio, goalRun };
   } catch (err) {

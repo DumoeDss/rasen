@@ -1,30 +1,38 @@
-# OpenSpec Expert Skills — AI Engineering Workflow
+# Rasen Expert Skills — AI Engineering Workflow
 
-The OpenSpec expert skills give AI agents structured roles for
-software development. Each skill is a specialist: CEO reviewer, eng manager,
-designer, QA lead, release engineer, debugger, and more.
+Rasen's standalone experts give AI agents structured specialist roles for
+software development. The public roster is intentionally limited to experts
+that justify direct invocation or independent pipeline dispatch.
 
 ## Available skills
 
-Skills install as `openspec-<name>/` under the host's skills directory and are
-invoked by name (e.g., `/office-hours`).
+The 12 standalone experts install as `rasen-<name>/` under the host's skills
+directory and are invoked by their canonical skill name.
 
 | Skill | What it does |
 |-------|-------------|
-| `/office-hours` | Start here. Reframes your product idea before you write code. |
-| `/design-consultation` | Build a complete design system from scratch. |
-| `/review` | Pre-landing PR review. Finds bugs that pass CI but break in prod. |
-| `/debug` | Systematic root-cause debugging. No fixes without investigation. |
-| `/design-review` | Design audit + fix loop with atomic commits. |
-| `/qa` | Open a real browser, find bugs, fix them, re-verify. |
-| `/qa-only` | Same as /qa but report only — no code changes. |
-| `/browse` | Headless browser — real Chromium, real clicks, ~100ms/command. |
-| `/careful` | Warn before destructive commands (rm -rf, DROP TABLE, force-push). |
-| `rasen agent edit-boundary set\|status\|clear` | Checkout-scoped runtime boundary; read status for hard/soft/unsupported enforcement. |
-| `/codebase-design` | Deep-module vocabulary (seam / depth / adapter / leverage) and the deletion test. |
-| `/tdd` | Test-driven development that produces tests worth keeping: seams, red→green, anti-patterns. |
-| `/prototype` | Throwaway code that answers one design question — a LOGIC or UI branch. |
-| `/navigator` | A map of the skills and OPSX workflows and when to reach for each. User-invoked. |
+| `rasen-benchmark` | Repeatable performance and size regression checks against budgets. |
+| `rasen-careful` | Warn before destructive commands (`rm -rf`, `DROP TABLE`, force-push). |
+| `rasen-chrome-use` | Drive the user's real Chrome browser through the local CDP proxy. |
+| `rasen-codex` | Independent second opinion or bounded parallel implementation. |
+| `rasen-cso` | Adversarial security audit. |
+| `rasen-design-consultation` | Build a complete design system collaboratively. |
+| `rasen-design-review` | Browser-rendered design audit and standalone fix loop. |
+| `rasen-investigate` | Systematic root-cause debugging; reproduce before hypothesizing. |
+| `rasen-office-hours` | Start here. Reframes your product idea before you write code. |
+| `rasen-qa` | Browser QA: standalone test/fix/verify or explicit report-only/non-UI mode. |
+| `rasen-review` | Pre-landing code review with Standards + Spec axes. |
+| `rasen-workflow-author` | Stage and validate workflow/pipeline packages, then run its bundled independent review. |
+
+Single-host methods are bundled references, not standalone skills:
+
+| Host | Bundled reference |
+|---|---|
+| `rasen-propose` | `references/codebase-design/README.md` |
+| `rasen-apply-change` | `references/tdd/README.md` |
+| `rasen-explore` | `references/prototype/README.md` |
+| `rasen-workflow-author` | `references/workflow-review/README.md` |
+| `rasen-help` | `references/navigator.md` |
 
 ## Build commands
 
@@ -36,7 +44,7 @@ pnpm build               # compile TypeScript (also builds the skill payloads)
 
 ## Key conventions
 
-- Expert skill prose lives inline in `src/core/templates/experts/<name>.ts`; shared blocks are TypeScript constants in `src/core/templates/experts/_shared.ts`. Edit those directly — there is no `.tmpl` step.
-- Freshness is pinned by the parity golden-master in `test/core/templates/skill-templates-parity.test.ts`.
-- The browse binary provides headless browser access. Use `$B <command>` in skills.
-- `careful` uses inline advisory prose — always confirm before destructive operations. The base edit-boundary runtime is separate and must never be described more strongly than its reported enforcement.
+- Expert skill prose lives inline in `src/core/templates/experts/<name>.ts`; shared blocks are TypeScript constants in `src/core/templates/experts/_shared.ts`. Host-owned references live under `skills/workflows/<dirName>/`, while an expert's own references live under `skills/experts/<id>/`.
+- Freshness is pinned by the parity golden-master in `test/core/templates/skill-templates-parity.test.ts`; catalog digests and the workflow-artifact ledger also cover packaged sidecars.
+- `chrome-use` provides real-browser access through the local CDP proxy.
+- `careful` uses inline advisory prose — always confirm before destructive operations. Scope-sensitive work declares its affected area and audits the actual changed-file set; managed sandbox/workspace policy is separate execution containment.

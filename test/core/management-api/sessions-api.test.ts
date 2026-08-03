@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -6,6 +6,9 @@ import * as os from 'node:os';
 
 import { startManagementServer, type ManagementServerHandle } from '../../../src/core/management-api/server.js';
 import type { ManagementApiContext, ManagementRouterOptions } from '../../../src/core/management-api/router.js';
+import { handleListSessions } from '../../../src/core/management-api/sessions.js';
+import type { SessionRecord } from '../../../src/core/management-api/session-registry.js';
+import type { SessionSupervisor } from '../../../src/core/management-api/supervisor.js';
 import { fakeClaudeBin } from '../../helpers/fake-claude-bin.js';
 import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
 
@@ -284,6 +287,66 @@ describe('sessions API (session-supervision design D1/D4)', () => {
       const listRes = await req(h.port, { method: 'GET', path: '/api/v1/sessions', headers: authed() });
       const entry = (listRes.json() as any).sessions.find((e: any) => e.session.id === id);
       expect(entry.runState).toEqual({ kind: 'absent' });
+    });
+
+    it('fails closed for missing, planning-only, removed, and unexpectedly unreadable execution', async () => {
+      const planningRoot = path.join(projectRoot, 'planning');
+      const liveExecution = path.join(projectRoot, 'live-execution');
+      fs.mkdirSync(path.join(planningRoot, 'rasen', 'changes', 'joined'), {
+        recursive: true,
+      });
+      fs.mkdirSync(liveExecution, { recursive: true });
+      const base: Omit<SessionRecord, 'id' | 'execution'> = {
+        kind: 'auto',
+        task: 'test',
+        cwd: planningRoot,
+        space: { type: 'store', id: 'planning', root: planningRoot },
+        state: 'exited',
+        startedAt: 1,
+        lastOutputAt: 1,
+        changeName: 'joined',
+      };
+      const records: SessionRecord[] = [
+        { ...base, id: 'missing-execution' },
+        { ...base, id: 'planning-only', execution: { kind: 'planning-only' } },
+        {
+          ...base,
+          id: 'removed',
+          execution: {
+            kind: 'project',
+            projectId: 'removed',
+            root: path.join(projectRoot, 'removed'),
+          },
+        },
+        {
+          ...base,
+          id: 'home-error',
+          execution: { kind: 'project', projectId: 'live', root: liveExecution },
+        },
+      ];
+      const supervisor = { list: () => records } as unknown as SessionSupervisor;
+      const resolveHomeForRoot = vi.fn(async (root: string) => {
+        expect(root).toBe(fs.realpathSync.native(liveExecution));
+        throw Object.assign(new Error('home inspection denied'), { code: 'EACCES' });
+      });
+
+      const response = await handleListSessions(
+        supervisor,
+        undefined,
+        resolveHomeForRoot
+      );
+
+      expect(response.sessions.slice(0, 3).map(entry => entry.runState)).toEqual([
+        { kind: 'absent' },
+        { kind: 'absent' },
+        { kind: 'absent' },
+      ]);
+      expect(response.sessions[3].runState).toEqual({
+        name: 'joined',
+        kind: 'error',
+        message: 'home inspection denied',
+      });
+      expect(resolveHomeForRoot).toHaveBeenCalledTimes(1);
     });
   });
 

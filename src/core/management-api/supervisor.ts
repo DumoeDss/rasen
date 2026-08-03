@@ -15,12 +15,15 @@
  * SIGTERM-resistant fixture to prove the escalation actually fires
  * (test/core/management-api/supervisor.test.ts).
  */
-import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
-import { createRequire } from 'node:module';
 import * as path from 'node:path';
 
+import {
+  createAgentCliResolver as createSharedAgentCliResolver,
+  spawnAgentCli,
+} from '../agent-cli-process.js';
 import { killProcessTree } from './kill-tree.js';
 import {
   buildRuntimeContext,
@@ -308,21 +311,6 @@ function tryParseAgentSessionId(stdoutSoFar: string): string | undefined {
  * is an exact-pinned direct dependency; only its two pure string helpers are
  * used here, no spawning.
  */
-interface CmdEscape {
-  /** Caret-escape a bare command (the shim path) for `cmd.exe`. */
-  command(arg: string): string;
-  /** Quote + caret-escape one argument for `cmd.exe`; `doubleEscapeMetaChars` applies the escape twice. */
-  argument(arg: string, doubleEscapeMetaChars?: boolean): string;
-}
-let cachedCmdEscape: CmdEscape | undefined;
-function cmdEscape(): CmdEscape {
-  if (cachedCmdEscape === undefined) {
-    const require = createRequire(import.meta.url);
-    cachedCmdEscape = require('cross-spawn/lib/util/escape') as CmdEscape;
-  }
-  return cachedCmdEscape;
-}
-
 /**
  * Windows-aware agent-CLI spawn (design D1). `.cmd`/`.bat` shims cannot be
  * spawned directly with `shell:false` on modern Node (post-CVE-2024-27980
@@ -358,30 +346,6 @@ function cmdEscape(): CmdEscape {
  * multi-line prompt on POSIX (and for a native `.exe`), so a global validation
  * change would regress that legitimate feature.
  */
-const WINDOWS_SHIM_NEWLINE = /[\r\n]/;
-
-function spawnAgentCli(bin: string, argv: string[], options: SpawnOptions): ChildProcess {
-  if (IS_WINDOWS && ['.cmd', '.bat'].includes(path.extname(bin).toLowerCase())) {
-    const comSpec = process.env.ComSpec || 'cmd.exe';
-    if (argv.some((arg) => WINDOWS_SHIM_NEWLINE.test(arg))) {
-      throw new Error(
-        'Multi-line task text (containing a newline or carriage return) is not supported when the agent CLI is a Windows .cmd/.bat shim: cmd.exe truncates its command line at the first newline. Provide the task as a single line.'
-      );
-    }
-    const escape = cmdEscape();
-    const escapedBin = escape.command(path.normalize(bin));
-    const escapedArgs = argv.map((arg) => escape.argument(arg, true));
-    const commandLine = [escapedBin, ...escapedArgs].join(' ');
-    return spawn(comSpec, ['/d', '/s', '/c', `"${commandLine}"`], {
-      ...options,
-      shell: false,
-      windowsHide: true,
-      windowsVerbatimArguments: true,
-    });
-  }
-  return spawn(bin, argv, { ...options, shell: false, windowsHide: true });
-}
-
 export function createSessionSupervisor(options: CreateSessionSupervisorOptions): SessionSupervisor {
   const { registry, resolveAgentCli } = options;
   const maxConcurrent = options.maxConcurrent ?? DEFAULT_MAX_CONCURRENT;
@@ -1362,55 +1326,7 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
   };
 }
 
-// ---------------------------------------------------------------------------
-// Agent CLI discovery (design D1, task 1.4)
-// ---------------------------------------------------------------------------
-
-/** Candidate executable names per platform (Windows needs the shim extensions; POSIX just the bare name). */
-function candidateNames(): string[] {
-  return IS_WINDOWS ? ['claude.exe', 'claude.cmd', 'claude'] : ['claude'];
-}
-
-/**
- * Resolves the agent CLI binary: `RASEN_CLAUDE_BIN` env override first (not
- * verified to exist — an explicit override is trusted, and a bad override
- * surfaces as a spawn error rather than a silent fallback), else a PATH
- * scan. Never influenced by client input (design D1).
- */
-async function resolveAgentCliBin(): Promise<string | null> {
-  const override = process.env.RASEN_CLAUDE_BIN;
-  if (override) return override;
-
-  const pathEnv = process.env.PATH ?? '';
-  const dirs = pathEnv.split(path.delimiter).filter(Boolean);
-  for (const dir of dirs) {
-    for (const name of candidateNames()) {
-      const candidate = path.join(dir, name);
-      try {
-        if (!fs.statSync(candidate).isFile()) continue;
-        // review t3: a PATH hit that isn't actually executable (wrong
-        // permissions, a stray non-executable file named `claude`) would
-        // otherwise resolve here, spawn, and only fail later as a
-        // same-session `spawn-error` — an up-front 503 is the honest
-        // signal. `accessSync` throws (caught below) when the bit is
-        // unset; on win32 X_OK degrades to an existence check, which is
-        // already covered by `statSync` above, so this is a no-op there.
-        fs.accessSync(candidate, fs.constants.X_OK);
-        return candidate;
-      } catch {
-        // Missing, unreadable, or not executable — keep scanning.
-      }
-    }
-  }
-  return null;
-}
-
-/** Builds a `resolveAgentCli` closure that resolves once and caches — server-lifetime, per `createSessionSupervisor` call (task 1.4). */
+/** Builds a cached Claude CLI resolver for the management supervisor. */
 export function createAgentCliResolver(): () => Promise<string | null> {
-  let cached: string | null | undefined;
-  return async () => {
-    if (cached !== undefined) return cached;
-    cached = await resolveAgentCliBin();
-    return cached;
-  };
+  return createSharedAgentCliResolver();
 }

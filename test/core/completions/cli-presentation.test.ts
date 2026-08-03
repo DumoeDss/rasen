@@ -59,6 +59,35 @@ describe.sequential('CLI presentation resolution', () => {
     }
   });
 
+  it('resolves complete localized copy for the archive plan and intent flags', () => {
+    const expectedEnglish = {
+      'save-plan': 'Save the exact previewed archive plan and output an opaque apply token',
+      'apply-plan': 'Apply or resume the exact saved archive plan without replanning',
+      'intent-template':
+        'Output a complete archive intent template as JSON without changing files',
+      'intent-file':
+        'Read a complete, strictly validated archive intent from the specified file',
+    };
+
+    for (const locale of SUPPORTED_CLI_LOCALES) {
+      const archive = resolveCliPresentation({ locale, facts }).root.subcommands
+        ?.find((command) => command.name === 'archive');
+      const descriptions = Object.fromEntries(
+        (archive?.flags ?? [])
+          .filter((flag) => Object.hasOwn(expectedEnglish, flag.name))
+          .map((flag) => [flag.name, flag.description]),
+      );
+
+      expect(Object.keys(descriptions).sort()).toEqual(Object.keys(expectedEnglish).sort());
+      expect(Object.values(descriptions).every((description) => description.length > 0)).toBe(true);
+      if (locale === 'en') {
+        expect(descriptions).toEqual(expectedEnglish);
+      } else {
+        expect(descriptions).not.toEqual(expectedEnglish);
+      }
+    }
+  });
+
   it('interpolates typed facts without changing machine values', () => {
     const presentation = resolveCliPresentation({ locale: 'ja', facts });
     const commands = presentation.root.subcommands ?? [];

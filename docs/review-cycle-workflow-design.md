@@ -11,8 +11,8 @@
 
 OpenSpec's flow is `propose → apply → archive`, and the OPSX expert-skill fusion work added expert skills and runtime commands:
 
-- **Planning-phase review** is covered by the propose workflow's methodology consultation for design-intensive changes (`/codebase-design`, conditionally referenced); `schemas/spec-driven/schema.yaml` no longer carries any `enhance` hook (mechanism retained, currently no consumers).
-- **One-shot code review** exists as the always-installed expert skill `openspec-review` (source: `src/core/templates/experts/review.ts`).
+- **Planning-phase review** is covered by `rasen-propose`'s bundled `references/codebase-design/README.md` branch for design-intensive changes; `schemas/spec-driven/schema.yaml` no longer carries any `enhance` hook (mechanism retained, currently no consumers).
+- **One-shot code review** exists as the catalog expert skill `rasen-review` (source: `src/core/templates/experts/review.ts`); profiles may select it directly, and workflows that require it receive it through dependency closure.
 - **Validation / delivery** exist as fusion commands (`verify-enhanced`, `ship`) — see the in-progress change `openspec/changes/add-opsx-fusion-commands/`.
 
 **Missing** is a first-class **iterative loop** that, after `apply`, wires these stages together:
@@ -127,7 +127,7 @@ The generated Claude skill (`.claude/skills/openspec-review-cycle/SKILL.md`) doc
    - Add to `getCommandTemplates()`: `{ template: getOpsxReviewCycleCommandTemplate(), id: 'review-cycle' }`
    - Add the import at the top of the file.
 4. **Profiles** `src/core/profiles.ts`: add `'review-cycle'` to `ALL_WORKFLOWS`. Exclude it from `CORE_WORKFLOWS` (opt-in, consistent with the other fusion commands).
-5. **Reuse, don't duplicate, the review engine**: the instructions call the existing `openspec-review` expert skill (always installed) to make review/re-review judgments; review-cycle only handles *loop + triage + invariant + termination + resume*.
+5. **Reuse, don't duplicate, the review engine**: the instructions call the existing `rasen-review` catalog expert skill, which review-cycle receives through dependency closure, to make review/re-review judgments; review-cycle only handles *loop + triage + invariant + termination + resume*.
 6. **Adapters**: no changes — generation fans out to all tools automatically; the Claude adapter produces `.claude/skills/openspec-review-cycle/SKILL.md` + `.claude/commands/opsx/review-cycle.md`.
 7. **Optional schema hint (separate, optional)**: a forked schema `spec-driven-reviewed` whose `apply.instruction` points `/opsx:review-cycle` as the recommended next step. **Do not** modify the core `spec-driven` schema. This is purely advisory; the workflow runs without it.
 8. **Docs**: once implemented, add user-facing sections to `docs/commands.md` + `docs/workflows.md` (and `docs/zh/` mirrors); this design document is its rationale.

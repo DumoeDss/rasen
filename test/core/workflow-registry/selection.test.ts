@@ -74,7 +74,7 @@ describe('resolveWorkflowSelection includeSkillDependencies', () => {
     expect(selected.sort()).toEqual(['auto-command', 'retain-command', 'review'].sort());
   });
 
-  it('with the flag, review-cycle also pulls review; verify-enhanced-command pulls all five', () => {
+  it('with the flag, review-cycle also pulls review; verify-enhanced-command pulls one QA identity', () => {
     const catalog = loadWorkflowCatalog();
 
     const reviewCycleSelected = resolveWorkflowSelection(catalog, ['review-cycle'], {
@@ -86,7 +86,7 @@ describe('resolveWorkflowSelection includeSkillDependencies', () => {
       includeSkillDependencies: true,
     }).map((d) => d.id);
     expect(verifyEnhancedSelected.sort()).toEqual(
-      ['verify-enhanced-command', 'review', 'cso', 'qa', 'qa-only', 'design-review'].sort()
+      ['verify-enhanced-command', 'review', 'cso', 'qa', 'design-review'].sort()
     );
   });
 

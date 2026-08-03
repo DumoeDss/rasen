@@ -1,0 +1,2460 @@
+{
+  "schemaVersion": 1,
+  "kind": "rasen.closure-frozen-test-partitions",
+  "generatedAt": "2026-07-31T16:09:08.774Z",
+  "committedHead": "04cea87ae5bea9af2d90f526455b6ea513cd57e8",
+  "discovery": "test/**/*.test.ts",
+  "partitionEnvironment": "VITEST_FILE_PARTITION=N/8",
+  "totalFiles": 341,
+  "partitionCounts": [
+    43,
+    43,
+    43,
+    43,
+    43,
+    42,
+    42,
+    42
+  ],
+  "manifestSha256": "144d2e51bf03e05443fc70f9e1ecdb44a1ebc53e28f3dfc35ec460e651fc2b6a",
+  "files": [
+    {
+      "path": "test/ci-workflow-contract.test.ts",
+      "size": 3293,
+      "sha256": "eed2475be610e86cfda1cff2c065f77db645ed4d6712ee36cb42d03f5a3c25e2",
+      "partition": 4
+    },
+    {
+      "path": "test/cli-e2e/agent-audit.test.ts",
+      "size": 9801,
+      "sha256": "62aeed7c68f13fc8c8ee17d3417bf5389cf0e25affa1f711c89af8fd54020319",
+      "partition": 3
+    },
+    {
+      "path": "test/cli-e2e/agent-context.test.ts",
+      "size": 4707,
+      "sha256": "3b50c9c4e4d3a5b3365dc3d1b03aa4504e007f72caee4bb8195f5e03ab566a69",
+      "partition": 2
+    },
+    {
+      "path": "test/cli-e2e/agent-dispatch.test.ts",
+      "size": 13871,
+      "sha256": "f678c9e178243eab73cf68a6807e39d938fc03fc103a40ade92ee5da9eb3c11e",
+      "partition": 8
+    },
+    {
+      "path": "test/cli-e2e/basic.test.ts",
+      "size": 21425,
+      "sha256": "25b21816101ddfafc328287e4dbdae9fdfbc76b51c7525ed41b7ce493ed2191e",
+      "partition": 2
+    },
+    {
+      "path": "test/cli-e2e/capstone-journeys.test.ts",
+      "size": 7328,
+      "sha256": "398007bfc257d0398a879918554256db35671d21eea8ef7b03ffecfd0bb7ccd0",
+      "partition": 3
+    },
+    {
+      "path": "test/cli-e2e/scheme.test.ts",
+      "size": 977,
+      "sha256": "d78c58338617b1b19a55512d8be73ec681d2ee7a76cc6636c09078822de5f85b",
+      "partition": 1
+    },
+    {
+      "path": "test/cli-e2e/store-lifecycle.test.ts",
+      "size": 19063,
+      "sha256": "323ec34f9ba359db3c9a97d1310806d135274891d941278a52fb45d1a7f6b625",
+      "partition": 7
+    },
+    {
+      "path": "test/cli-e2e/workset-journey.test.ts",
+      "size": 8602,
+      "sha256": "35a325cc06dc814e472de4add86be8631015bb84b264052123ee66f25280f554",
+      "partition": 4
+    },
+    {
+      "path": "test/cli-program.test.ts",
+      "size": 6941,
+      "sha256": "014ba46b80800ac15c2aef145e12321e022c5dcb96993a49a22cd8fe985add63",
+      "partition": 8
+    },
+    {
+      "path": "test/commands/agent-wait.test.ts",
+      "size": 14224,
+      "sha256": "d12f0d0e5dc73861f91e6856c8d8c3bb600d12e1c9ebcf518639f34e5953646d",
+      "partition": 2
+    },
+    {
+      "path": "test/commands/artifact-workflow.test.ts",
+      "size": 64165,
+      "sha256": "ad5fada12021c2559c36c9212b8e78a3e059c945a5fafc61863777b5a25a2266",
+      "partition": 8
+    },
+    {
+      "path": "test/commands/auto.test.ts",
+      "size": 10259,
+      "sha256": "9bdb719c032204dd57a7533eb311b31bc22c84f891f16ee1ddd545f90d2d4791",
+      "partition": 3
+    },
+    {
+      "path": "test/commands/bootstrap-bundle-import.test.ts",
+      "size": 5005,
+      "sha256": "8d91bb60b92ddf18c80eeb7e025d36364558dc2a0ceeb25eaf75914978775dd0",
+      "partition": 4
+    },
+    {
+      "path": "test/commands/bootstrap.test.ts",
+      "size": 20765,
+      "sha256": "f2bde8cdb4a44674bcfacecc8c5610f6ab282152cb76d763fe4c33128e07c7cf",
+      "partition": 6
+    },
+    {
+      "path": "test/commands/change-initiative-link.test.ts",
+      "size": 4787,
+      "sha256": "76e1bdb36f59b304d27ca3acc42758cf81ac60a669fd54de54659e2ccf0cba37",
+      "partition": 7
+    },
+    {
+      "path": "test/commands/completion-installer-i18n.test.ts",
+      "size": 17980,
+      "sha256": "a58da03691639379162c4aecbe5dd8f7d66f6bc29710143493a1df29d52df4b2",
+      "partition": 6
+    },
+    {
+      "path": "test/commands/completion.test.ts",
+      "size": 17523,
+      "sha256": "219be3ca83ae8f52abb65f2944b41adf36a1526936046bcdb971e60558164d42",
+      "partition": 8
+    },
+    {
+      "path": "test/commands/config-editor.test.ts",
+      "size": 17352,
+      "sha256": "21f79e4e368c66f2a91831c262d0f0b848a331aeaab8af21ba7cfe316a7886d4",
+      "partition": 6
+    },
+    {
+      "path": "test/commands/config-messages.test.ts",
+      "size": 1080,
+      "sha256": "f7f5c52203273cba489a513a5c35c1d6e3622f7a7cd6b0832cb68ee23a9c1dd1",
+      "partition": 1
+    },
+    {
+      "path": "test/commands/config-profile.test.ts",
+      "size": 31488,
+      "sha256": "92b6a0c57e975d0758a76660385e5fffcb19721dd07d012b9cafd25e728a5667",
+      "partition": 6
+    },
+    {
+      "path": "test/commands/config-ui.test.ts",
+      "size": 7437,
+      "sha256": "0d33e1f6503f378a7dfae8271b889c99e3573a155394b0f287523b0033fd809e",
+      "partition": 7
+    },
+    {
+      "path": "test/commands/config.test.ts",
+      "size": 41608,
+      "sha256": "00c8491376546f3dd6638ba65f75c341cd20065fcbba65f3c6ee41e2d961cec2",
+      "partition": 3
+    },
+    {
+      "path": "test/commands/context.test.ts",
+      "size": 10398,
+      "sha256": "931e9dd52fb1ce857a2577b7ca214712864b84573afbcb632fea7bf529d33ba6",
+      "partition": 2
+    },
+    {
+      "path": "test/commands/daemon-lifecycle.test.ts",
+      "size": 9891,
+      "sha256": "219d49dbe87ca0bf7ebb1c47ab575e0474e85417dcfb627afdf8b07301b8f811",
+      "partition": 7
+    },
+    {
+      "path": "test/commands/daemon-spawn-convergence.test.ts",
+      "size": 3984,
+      "sha256": "c97adb49c056ccdc01f0d9a6e3515b3fb558fd7789cd0cffc4b1725d101e646d",
+      "partition": 4
+    },
+    {
+      "path": "test/commands/declared-store-fallback.test.ts",
+      "size": 11199,
+      "sha256": "f17f16e8f78f7dd36f592e696e80b99996f055ae6b0fd115b84233c5363780b3",
+      "partition": 4
+    },
+    {
+      "path": "test/commands/doctor.test.ts",
+      "size": 37591,
+      "sha256": "68171e9dfa36530ec2557a4015f6d22d7f07352c460e2f79b31466b957af1eb5",
+      "partition": 2
+    },
+    {
+      "path": "test/commands/feedback.test.ts",
+      "size": 14163,
+      "sha256": "73a4ff9958f863e1d9f6ae29a87bb971c0c48313be74e0ee3d8db6d134064330",
+      "partition": 5
+    },
+    {
+      "path": "test/commands/goal.test.ts",
+      "size": 1686,
+      "sha256": "6d1f5297b48f51578242dd2467e41b2adc48fa320f3ce154dea3097b824fb673",
+      "partition": 1
+    },
+    {
+      "path": "test/commands/handoff.test.ts",
+      "size": 12119,
+      "sha256": "28b20ee0d217bb29fd3be0662b951f1b97cd7b0fadfc8f086f159f533d166a57",
+      "partition": 5
+    },
+    {
+      "path": "test/commands/knowledge-bundle-export.test.ts",
+      "size": 16629,
+      "sha256": "9263d727ecbc11877444cbf80452cf9a16c57ae3b3057107596be842aad1e721",
+      "partition": 8
+    },
+    {
+      "path": "test/commands/knowledge-bundle-import.test.ts",
+      "size": 22583,
+      "sha256": "466b4554dcef0959d021a97de3e22da2629a0b02aa1ed5faa871481ee7d734a3",
+      "partition": 4
+    },
+    {
+      "path": "test/commands/knowledge.test.ts",
+      "size": 45608,
+      "sha256": "d9a7554c139c4f2938d933fc746b65b06bfe64c47694e0a41f92183f07417bc7",
+      "partition": 3
+    },
+    {
+      "path": "test/commands/legacy-groups-removed.test.ts",
+      "size": 7555,
+      "sha256": "fb83b8f337a3ad442c9ea599561bb0a7883a50debdc4e4e45a5f1687bafbbaee",
+      "partition": 2
+    },
+    {
+      "path": "test/commands/new-change-worktree-collision.test.ts",
+      "size": 5098,
+      "sha256": "a66e0a196458e677e5aeaf180676e76d4cbd637338c2bd45c3028aab3df3d672",
+      "partition": 4
+    },
+    {
+      "path": "test/commands/pipeline-messages.test.ts",
+      "size": 7296,
+      "sha256": "a934b0786f3cbff1b051dbf133db532e1907ba685ace86dbc744c0018ab7b12f",
+      "partition": 8
+    },
+    {
+      "path": "test/commands/pipeline-store-root-selection.test.ts",
+      "size": 13556,
+      "sha256": "0387d435fa97c5c1f8c486f4cf41b38576a955954a35e7bdb7809fe866c4acef",
+      "partition": 8
+    },
+    {
+      "path": "test/commands/pipeline.test.ts",
+      "size": 117374,
+      "sha256": "eeb978eeb969c5d9b0c7fcec6fb75b56ec3a458803443eef9333df58b82ee57d",
+      "partition": 1
+    },
+    {
+      "path": "test/commands/profile-editor.test.ts",
+      "size": 2800,
+      "sha256": "cd3d7f7706b7ba9bbb872058e333ba9d99e68659497181bb0322048f8b3b73ed",
+      "partition": 1
+    },
+    {
+      "path": "test/commands/profile.test.ts",
+      "size": 34581,
+      "sha256": "7ee91ec7fb08f4d3273effb9981f205a85591fd66e87a42919d724e992f3c0c5",
+      "partition": 6
+    },
+    {
+      "path": "test/commands/review-cycle.test.ts",
+      "size": 11111,
+      "sha256": "b92a920c2132641736a968e46d7c70bc90ce6202a2562f0d322a2da98f75df1e",
+      "partition": 3
+    },
+    {
+      "path": "test/commands/schema.test.ts",
+      "size": 15780,
+      "sha256": "68da98fdd8a5f4305fb10baddf83e27eb2403e69cb7aed5ea10aa4e87dc9e336",
+      "partition": 5
+    },
+    {
+      "path": "test/commands/scheme.test.ts",
+      "size": 3251,
+      "sha256": "50acbb07435daad65f62bb8fc97c18bb902e66f399af0cd8ba3cb73abbccc41f",
+      "partition": 2
+    },
+    {
+      "path": "test/commands/ship.test.ts",
+      "size": 4265,
+      "sha256": "063550308139e4261d93a12fe4b5d0c09c3289e443c64b31c0bc3334aad13047",
+      "partition": 4
+    },
+    {
+      "path": "test/commands/show.test.ts",
+      "size": 8285,
+      "sha256": "e37cab659b46d2c1fa5c51985feb45e5f666286975ce3673d88b9eb2f57c83bc",
+      "partition": 8
+    },
+    {
+      "path": "test/commands/store-add-project.test.ts",
+      "size": 14618,
+      "sha256": "4c121e20949215d59808b2bd1f44c683266608d552d9aba54a9b9cdda53901f3",
+      "partition": 7
+    },
+    {
+      "path": "test/commands/store-git.test.ts",
+      "size": 15530,
+      "sha256": "8fed76f312726ce41ae73d651fb72f968e00147022260c2a7b1dec07d558f182",
+      "partition": 5
+    },
+    {
+      "path": "test/commands/store-identity-cli.test.ts",
+      "size": 33141,
+      "sha256": "908017344768988a4a75298cc8f2b774b87607ead9bb98f2d11e314d67003d58",
+      "partition": 5
+    },
+    {
+      "path": "test/commands/store-membership-cli.test.ts",
+      "size": 18161,
+      "sha256": "a7e36ef206dab1e39f63b7bc193ffe8b38113c62a5e52632bd8c9233824b7565",
+      "partition": 4
+    },
+    {
+      "path": "test/commands/store-migration-cli.test.ts",
+      "size": 4837,
+      "sha256": "44f3d963b041c7294b59304e0941d101a524520b1394a59f53e77ada9b963d59",
+      "partition": 7
+    },
+    {
+      "path": "test/commands/store-references.test.ts",
+      "size": 10819,
+      "sha256": "5432bbe7c4fe32bf3831c14cfe8818458aeee2247a2c8294bdb894a3d56bf63e",
+      "partition": 5
+    },
+    {
+      "path": "test/commands/store-remote.test.ts",
+      "size": 22364,
+      "sha256": "abd957d39252f7d52253882082834f0e19bf1a481e26a85329050d834e3c8e44",
+      "partition": 3
+    },
+    {
+      "path": "test/commands/store-root-selection.test.ts",
+      "size": 31668,
+      "sha256": "d829856d08dd3e013c77506efc8d04168329c5945bab43d514399312f968d9ef",
+      "partition": 3
+    },
+    {
+      "path": "test/commands/store.test.ts",
+      "size": 54096,
+      "sha256": "a3e12a750bfcbfeb3036ee58c1db1ae1781f722001621aca160b16c9a0151e84",
+      "partition": 4
+    },
+    {
+      "path": "test/commands/ui-launch-space.test.ts",
+      "size": 3554,
+      "sha256": "80b870a0fd54ffaee868d63fd43d39a9275e37cd4c45a126b4f7e811017be2c2",
+      "partition": 2
+    },
+    {
+      "path": "test/commands/ui-launch-stale-replace.test.ts",
+      "size": 6707,
+      "sha256": "702b1bb548d6c63ee0244b6b406902b69463d7643154cd655570db6f2e0b877a",
+      "partition": 8
+    },
+    {
+      "path": "test/commands/ui.test.ts",
+      "size": 12064,
+      "sha256": "a12dabac0e3d6706c5cc9cd2fed39f901d4b28cb256fe382783cbadb2662df20",
+      "partition": 4
+    },
+    {
+      "path": "test/commands/validate.enriched-output.test.ts",
+      "size": 1888,
+      "sha256": "cf596e9318895ba1f467562cba001778c0789f1795187e82fe8ac4329d166a29",
+      "partition": 1
+    },
+    {
+      "path": "test/commands/validate.test.ts",
+      "size": 16256,
+      "sha256": "8f5feb79dff46ad010e27045d4c16ec73ca05aed0cd79c844defa4fe4371f403",
+      "partition": 6
+    },
+    {
+      "path": "test/commands/work.test.ts",
+      "size": 30663,
+      "sha256": "6c257a647e2adf8b625237be7ea53f3f606f8908b9f4ded3cdc8417ed812482b",
+      "partition": 6
+    },
+    {
+      "path": "test/commands/workflow-library.test.ts",
+      "size": 21863,
+      "sha256": "2f38abd7e070b7266f0e38dd187819fdd756ac583dd83eb9344edfe4cab4b084",
+      "partition": 2
+    },
+    {
+      "path": "test/commands/workset.test.ts",
+      "size": 37637,
+      "sha256": "3bec6c04b52f001b8e040e00c9383fb5cf960a2722ebbdeb48459c194039bb87",
+      "partition": 7
+    },
+    {
+      "path": "test/core/agent-cli-process.test.ts",
+      "size": 3086,
+      "sha256": "e11885f99c36c0ee4cde0cf2e13885d554a97d31c9c911c64d9c1e076ac5402a",
+      "partition": 2
+    },
+    {
+      "path": "test/core/agent-context.test.ts",
+      "size": 34032,
+      "sha256": "6a5e2dfce507bb2fa3227402d5a88efc0ddf3865dc6f6e7009abdc2bb422f2ba",
+      "partition": 6
+    },
+    {
+      "path": "test/core/archive-accounting.test.ts",
+      "size": 7641,
+      "sha256": "0c93a351bd02670ea846548a62657ca04c687d6981bbd45757e57ada7ad6c95a",
+      "partition": 8
+    },
+    {
+      "path": "test/core/archive-consumer-integration.test.ts",
+      "size": 18886,
+      "sha256": "fae1c18220a503d5af09dd924f59d0f74cce2f22806a4842b2e47cb8a4f8f4a1",
+      "partition": 6
+    },
+    {
+      "path": "test/core/archive-engine.test.ts",
+      "size": 34805,
+      "sha256": "5c9ba92315ac305dafa356a4048daaa22f247643a01093d94779e9a8d7416c94",
+      "partition": 5
+    },
+    {
+      "path": "test/core/archive-ephemera.test.ts",
+      "size": 11626,
+      "sha256": "417a4a6289c9be635eecb45a2727fb56a2c8494c9ced8cd20dd079615e926fff",
+      "partition": 2
+    },
+    {
+      "path": "test/core/archive-fault-matrix.test.ts",
+      "size": 46860,
+      "sha256": "fad0b93c0c3faaadcd70d1dc59f52934c78533784442291cce5ae1b6f1c25367",
+      "partition": 3
+    },
+    {
+      "path": "test/core/archive-path-semantics.test.ts",
+      "size": 5669,
+      "sha256": "c10c3f211b4319cdb54e8fd8463d675b02b994f1bc8734b7fe3b134dac9f73e5",
+      "partition": 3
+    },
+    {
+      "path": "test/core/archive.test.ts",
+      "size": 77731,
+      "sha256": "7cd947c553471f54e8ebbfd681551a8bc30f54c60304ee3fd7d2aece9a163bcd",
+      "partition": 3
+    },
+    {
+      "path": "test/core/artifact-graph/graph.test.ts",
+      "size": 10854,
+      "sha256": "51b08a24c7218de84848bdedc510a0bff485b2915299ec48ebac28995aee6e19",
+      "partition": 7
+    },
+    {
+      "path": "test/core/artifact-graph/instruction-loader.test.ts",
+      "size": 24679,
+      "sha256": "88253cc7d890c03821d157a436f739ccc99f2864aa188ec97456fcc9b17453c8",
+      "partition": 6
+    },
+    {
+      "path": "test/core/artifact-graph/outputs.test.ts",
+      "size": 7559,
+      "sha256": "45d1342679926b4b16fc17789a4a3b3a0d7093837c343acbb132e4c04aa230e3",
+      "partition": 8
+    },
+    {
+      "path": "test/core/artifact-graph/resolver.test.ts",
+      "size": 23134,
+      "sha256": "e87c08c60009c3f957458107cf994cb8a0aa6c67ee47cf971ba5a541fbe00515",
+      "partition": 4
+    },
+    {
+      "path": "test/core/artifact-graph/schema.test.ts",
+      "size": 5491,
+      "sha256": "bbdde315ba34e03a67acbdf404845049a16e9679f818b7accc988923eb1d3182",
+      "partition": 3
+    },
+    {
+      "path": "test/core/artifact-graph/state.test.ts",
+      "size": 6909,
+      "sha256": "36e5501777d83cadb846ecb55b8f3b88e2124396144274a295c6aa7e31e626d9",
+      "partition": 7
+    },
+    {
+      "path": "test/core/artifact-graph/workflow.integration.test.ts",
+      "size": 7844,
+      "sha256": "c7d6c92b2d5037dbe260b13cfb43748002e036c8e81797d45c3ea04693a420a8",
+      "partition": 2
+    },
+    {
+      "path": "test/core/available-tools.test.ts",
+      "size": 6891,
+      "sha256": "2b0e52da01415cebf1233299dc000ec0df412ae0fc76d8efa53cfc2213fd1acf",
+      "partition": 3
+    },
+    {
+      "path": "test/core/brand-guard.test.ts",
+      "size": 2666,
+      "sha256": "9566edb8f08708486e5a3b141cd3d9ef2b8a867ad0eaec1d7c57b28925812f30",
+      "partition": 1
+    },
+    {
+      "path": "test/core/change-status-action-context.test.ts",
+      "size": 6824,
+      "sha256": "94bdb4da306ba34f0671352ccd2e16c5e7ea426f8393008e3afcf305cd331a07",
+      "partition": 5
+    },
+    {
+      "path": "test/core/change-work.test.ts",
+      "size": 9805,
+      "sha256": "8018e3de5190f6f46de4792a0b3380fa70ba682106786f2c9e9c9f06767c6119",
+      "partition": 8
+    },
+    {
+      "path": "test/core/claude-settings.test.ts",
+      "size": 2935,
+      "sha256": "522a152079c2cf96b375d50bd019c8498bc3b022b6ca8dde00b28cb1faaac84a",
+      "partition": 1
+    },
+    {
+      "path": "test/core/claude/availability.test.ts",
+      "size": 1595,
+      "sha256": "2b4c40c89c0972ea3be9c653c14310d280d4f0e8c089c57d6ece4db468174475",
+      "partition": 1
+    },
+    {
+      "path": "test/core/claude/identity.test.ts",
+      "size": 1219,
+      "sha256": "dd05830ae3fdd6125540e50c63a4ef1f7616ea6f719bf0ff5abc7602e4b6244b",
+      "partition": 1
+    },
+    {
+      "path": "test/core/claude/invocation.test.ts",
+      "size": 3254,
+      "sha256": "c4f39f28e8d615e98b6c4d0af0ba0aad9d6dabe4193cfc78c80a69a7d50fb70a",
+      "partition": 2
+    },
+    {
+      "path": "test/core/claude/runner.test.ts",
+      "size": 15705,
+      "sha256": "c8ea6e97543509fd41966dd9d2c2e72f8f989ee1fca103ea07b638d5503cadcb",
+      "partition": 5
+    },
+    {
+      "path": "test/core/cli-locale.test.ts",
+      "size": 1613,
+      "sha256": "fb48ae7e7c9feb615d569967e3aa55107e99f9b6fed668cb50351dca11170597",
+      "partition": 1
+    },
+    {
+      "path": "test/core/codex/availability.test.ts",
+      "size": 1750,
+      "sha256": "ffb65601ee6f04bac86da58a570f7081b7efd46e1c6521408b73115944abe5c1",
+      "partition": 1
+    },
+    {
+      "path": "test/core/codex/contracts.test.ts",
+      "size": 4783,
+      "sha256": "bca9430d17527f36c67732517fac001f41ef066aaa6c8394b3dbcbac90159332",
+      "partition": 4
+    },
+    {
+      "path": "test/core/codex/exec-events.test.ts",
+      "size": 3627,
+      "sha256": "56351728d43bd5c02dc601d5a2728aaef7bd887169d4eacec33fd47f70d3e9e0",
+      "partition": 4
+    },
+    {
+      "path": "test/core/codex/identity.test.ts",
+      "size": 3881,
+      "sha256": "16a3f9272cd7b50d2d82728f15bcdfab1ee46890e54f858a8e5f88525c552bb5",
+      "partition": 4
+    },
+    {
+      "path": "test/core/codex/init-update-integration.test.ts",
+      "size": 10111,
+      "sha256": "633b006e70f5773c56d3476c9bdaa6330984dc3a628d651f1db7aefccb9e45ab",
+      "partition": 7
+    },
+    {
+      "path": "test/core/codex/invocation.test.ts",
+      "size": 14854,
+      "sha256": "ed4e478f6cfa5dd5ba5f4e72b55a82f45de71dbe931d70305679d68c47e82368",
+      "partition": 2
+    },
+    {
+      "path": "test/core/codex/lifecycle.test.ts",
+      "size": 17493,
+      "sha256": "fa7309a4b394650dd02a48cf0aee7dffa2d7486f430d7f82f8ec18af1e57da33",
+      "partition": 8
+    },
+    {
+      "path": "test/core/codex/project-config.test.ts",
+      "size": 16505,
+      "sha256": "eaed75ac58ae37111f0ef34bb2f13513aaee8c1b98acfc85b632a43f60c96c0f",
+      "partition": 5
+    },
+    {
+      "path": "test/core/codex/rollout.test.ts",
+      "size": 14962,
+      "sha256": "34373d86acba5aa52440fd5762d099fd348cde4a34c7c004ee6e572d6138a0de",
+      "partition": 7
+    },
+    {
+      "path": "test/core/codex/template-inline.test.ts",
+      "size": 1869,
+      "sha256": "b813c19b453820841de83575b19035c436ff6f09569c3140bb282e48dc0c6dce",
+      "partition": 1
+    },
+    {
+      "path": "test/core/commands/agent-command.context.test.ts",
+      "size": 12030,
+      "sha256": "a2e739b8cbd063fd7349aba4971ffc9733248736ea560ee460446cb256e4c568",
+      "partition": 3
+    },
+    {
+      "path": "test/core/commands/change-command.show.test.ts",
+      "size": 3244,
+      "sha256": "5b621cbb68e44380595cbd25acc14341f2dc549c7480428654e55f81cd5f0d7c",
+      "partition": 2
+    },
+    {
+      "path": "test/core/completions/cli-presentation.test.ts",
+      "size": 10102,
+      "sha256": "003791519b99620ac57b7529c33413431aa5624645048d394c91ff531d2b8566",
+      "partition": 3
+    },
+    {
+      "path": "test/core/completions/command-registry.test.ts",
+      "size": 9057,
+      "sha256": "1ed6db9dcf2881c64da5ac678dfcb111bc001b0ccb432a0c60edaee931be8c1f",
+      "partition": 8
+    },
+    {
+      "path": "test/core/completions/completion-provider.test.ts",
+      "size": 11372,
+      "sha256": "c77d7a3f2b3ff15ad2670be6350eade90f289065fadf5b28b8170bfeefa0e20a",
+      "partition": 3
+    },
+    {
+      "path": "test/core/completions/generators/bash-generator.test.ts",
+      "size": 17503,
+      "sha256": "7bef3b3bd640b365f15282668562d521bf8519e8798176991efda8a379e56c9e",
+      "partition": 6
+    },
+    {
+      "path": "test/core/completions/generators/fish-generator.test.ts",
+      "size": 19004,
+      "sha256": "d114546988cffbcc1bdb117a77e4aadcdf95ccceb366e60565f286728a8bb5e9",
+      "partition": 6
+    },
+    {
+      "path": "test/core/completions/generators/powershell-generator.test.ts",
+      "size": 16930,
+      "sha256": "ce6cca7d48a8d11b31df37ae78d65f8fd39bb6c1fa55888d6333393066394fba",
+      "partition": 6
+    },
+    {
+      "path": "test/core/completions/generators/resolved-presentation.test.ts",
+      "size": 1997,
+      "sha256": "2ae39a8d4cc0e0ecaa60397ed41ef2ee7abf78df6fb48c404fa02375cc2a7484",
+      "partition": 1
+    },
+    {
+      "path": "test/core/completions/generators/zsh-generator.test.ts",
+      "size": 12981,
+      "sha256": "7f16e223a8ef347f08c31c0b9b9d20fac6167c5e158b153b99cb3689ca11d417",
+      "partition": 5
+    },
+    {
+      "path": "test/core/completions/installers/bash-installer.test.ts",
+      "size": 26682,
+      "sha256": "83f18e54937c5e0a54b52a03ff7b017c125607bd98375bb28859f251a988e096",
+      "partition": 6
+    },
+    {
+      "path": "test/core/completions/installers/fish-installer.test.ts",
+      "size": 13835,
+      "sha256": "ddac75f42e14953157f19722f13049cf418fc60cf2d04ddbb5b36d1ad2789d21",
+      "partition": 6
+    },
+    {
+      "path": "test/core/completions/installers/powershell-installer.test.ts",
+      "size": 41705,
+      "sha256": "f0556de9145684c69a747806e3d80c69a5b127418c317bd9b589f71c967feaaf",
+      "partition": 3
+    },
+    {
+      "path": "test/core/completions/installers/zsh-installer.test.ts",
+      "size": 35606,
+      "sha256": "a866c4a08d220547f6b29aca1f0d1c0985bbf50dbecdd6ea4adc14a6601705e8",
+      "partition": 6
+    },
+    {
+      "path": "test/core/config-api/global-write.test.ts",
+      "size": 4664,
+      "sha256": "fdef460672f896d5cb463fd254e161fbba4741c18c498c58be74afe1eec5045c",
+      "partition": 4
+    },
+    {
+      "path": "test/core/config-api/piercing-cache.test.ts",
+      "size": 4013,
+      "sha256": "1b70582720d2f0e59c2093f04cb935e548dc4b27e5a66b83e38c7e0251fdbba7",
+      "partition": 2
+    },
+    {
+      "path": "test/core/config-api/project-addressing.test.ts",
+      "size": 6333,
+      "sha256": "31df28c2055b1cfaf84b2afcd0fba37446e44aa4abf37b7b74e46422fc96264b",
+      "partition": 8
+    },
+    {
+      "path": "test/core/config-api/router.test.ts",
+      "size": 44845,
+      "sha256": "9fe4c0fd6316359c3508b09eb1a3cbd9d880561740e84d8f4d3b770b38427e2b",
+      "partition": 6
+    },
+    {
+      "path": "test/core/config-api/serialize.test.ts",
+      "size": 6321,
+      "sha256": "0f14c98b8e8fa40d294db45f7efd429132f3c85adb54b32b0d79ff715b1427b4",
+      "partition": 5
+    },
+    {
+      "path": "test/core/config-api/server.test.ts",
+      "size": 2749,
+      "sha256": "edf1d2f9b66c31942362c77c17f610dea700efe1ca68593bc84ed062d766dbbd",
+      "partition": 1
+    },
+    {
+      "path": "test/core/config-api/static.test.ts",
+      "size": 2777,
+      "sha256": "fa7a63ad7ebd20ef264f76a297384ed49f4d3738dd4b042e3c1d5acc36544009",
+      "partition": 1
+    },
+    {
+      "path": "test/core/config-api/ui-package.test.ts",
+      "size": 502,
+      "sha256": "b688ad5030f835973364da6e8f207155508a031e9de86cca21e3c6b58f36bd3b",
+      "partition": 1
+    },
+    {
+      "path": "test/core/config-diagnostic-locale.test.ts",
+      "size": 2759,
+      "sha256": "9189b4603e6898bf8978912bc36a31972c50e7acbe4519d219e4be28ba913425",
+      "partition": 1
+    },
+    {
+      "path": "test/core/config-keys.test.ts",
+      "size": 28759,
+      "sha256": "12fd9d46545bac0b5e479ece93e36141d20bf9e9f39dff2ee67d65ed58360782",
+      "partition": 4
+    },
+    {
+      "path": "test/core/config-schema.test.ts",
+      "size": 14243,
+      "sha256": "ce98f8d1287f6d70b062866926189337a5090d523f26027d694e798b03fabb21",
+      "partition": 5
+    },
+    {
+      "path": "test/core/converters/json-converter.test.ts",
+      "size": 5736,
+      "sha256": "b05a21086fb1da446f88101be1560c96207685d08ca9fbca45e2a77b95c83e72",
+      "partition": 3
+    },
+    {
+      "path": "test/core/direction-generation.test.ts",
+      "size": 2835,
+      "sha256": "e8679dfb4d0344425b327c532e6f0b203a44422c8d2525bbe98c48017cbf3ef8",
+      "partition": 1
+    },
+    {
+      "path": "test/core/edit-boundary-lifecycle.test.ts",
+      "size": 8897,
+      "sha256": "a3ae4be67e706c639245e42cff69d157cfbc6d6047dbb5e537cf9e40f6beb2a1",
+      "partition": 8
+    },
+    {
+      "path": "test/core/edit-boundary-vocabulary.test.ts",
+      "size": 3582,
+      "sha256": "c87b1353c5425de12c63510f66b0a36011c38c2eac87e4513eb5b61dbb34bc00",
+      "partition": 4
+    },
+    {
+      "path": "test/core/effective-config.test.ts",
+      "size": 29601,
+      "sha256": "8ebceef5cea6ac383acada7d44e2f2c5023a4ab3766bc2dd477f6e18f2272c41",
+      "partition": 4
+    },
+    {
+      "path": "test/core/ephemera-cleaner.test.ts",
+      "size": 15765,
+      "sha256": "0b907cd281b3b14fe0b293d517d8e5515ced305b272e545bf9f926eafa006733",
+      "partition": 5
+    },
+    {
+      "path": "test/core/expert-install-flip.test.ts",
+      "size": 13961,
+      "sha256": "7937e8292a28014c19d760d76c66d8bc0965f2aae2cf62d83f595983f9f9957c",
+      "partition": 6
+    },
+    {
+      "path": "test/core/file-placement.test.ts",
+      "size": 8881,
+      "sha256": "435d4d1d8659994295dee871c04c7c0647c8a280376c3266c92d9c519055d637",
+      "partition": 2
+    },
+    {
+      "path": "test/core/file-state.test.ts",
+      "size": 28702,
+      "sha256": "6de4bf2e19fb060a25aa9b740686c94b1c6e689cdc83fbff5621eab35bb5b2e6",
+      "partition": 6
+    },
+    {
+      "path": "test/core/global-config-diagnostic-fallback.test.ts",
+      "size": 3280,
+      "sha256": "b426f90b029473864da288771d0ee803ed8099eb008bb18a865c159dc3d4ec6e",
+      "partition": 2
+    },
+    {
+      "path": "test/core/global-config.test.ts",
+      "size": 51659,
+      "sha256": "67110d13938b34e028b436e35f2c6846efee14f4e74e8c5527ac85f79928fdab",
+      "partition": 6
+    },
+    {
+      "path": "test/core/init-profile-lock.test.ts",
+      "size": 8521,
+      "sha256": "06de2ca6ab3505f428fe4120afe3572439b77dfd46501a99234f21029516ad12",
+      "partition": 2
+    },
+    {
+      "path": "test/core/init-update-learned.test.ts",
+      "size": 10021,
+      "sha256": "984c9ca313ca24807560dcc2eefcf32fdcb10ef527ca3d2c54fe462c077e1b41",
+      "partition": 7
+    },
+    {
+      "path": "test/core/init.test.ts",
+      "size": 48563,
+      "sha256": "d1dd401038ca56dd22fd07b0b2600ba9ae391097b518f11c6cc307355996c836",
+      "partition": 5
+    },
+    {
+      "path": "test/core/keepalive.test.ts",
+      "size": 9252,
+      "sha256": "f5f51945b31c23c8f6f67cfdac050ab7329d4f567bd1edbdc2df8b66b65c97ae",
+      "partition": 8
+    },
+    {
+      "path": "test/core/knowledge-bundle/declaration.test.ts",
+      "size": 7507,
+      "sha256": "5cc785dd6827a10ad0b773b000942e46f46af2beee4ea2d4728f9343d8ede360",
+      "partition": 8
+    },
+    {
+      "path": "test/core/knowledge-bundle/export-degraded.test.ts",
+      "size": 6728,
+      "sha256": "351b09d44e05f5859806fea1ad5e2d6b2bc0cc99eb30fc63caf6b4d7b0021e6e",
+      "partition": 3
+    },
+    {
+      "path": "test/core/knowledge-bundle/export.test.ts",
+      "size": 34547,
+      "sha256": "7d28927a0057ff7701537228083d03ddacd8551988cbfccf7e4faf67a88e94de",
+      "partition": 5
+    },
+    {
+      "path": "test/core/knowledge-bundle/import.test.ts",
+      "size": 69127,
+      "sha256": "dc06d57b220c4929c962a38cd1f041d292b1bc9f0e582fa3eefeb7050f4b100a",
+      "partition": 7
+    },
+    {
+      "path": "test/core/knowledge-bundle/schema.test.ts",
+      "size": 9095,
+      "sha256": "0c29d21e804c56610abe3ca15cf470edc34004915b6e0a3befe88d636b8762ab",
+      "partition": 8
+    },
+    {
+      "path": "test/core/knowledge-bundle/store-transport.test.ts",
+      "size": 21686,
+      "sha256": "1af4e6dde4bdd5ea6141fd1fa3689afbb3ebaae8c408426c48306660b35087ad",
+      "partition": 4
+    },
+    {
+      "path": "test/core/learned-skill-ledgers.test.ts",
+      "size": 24595,
+      "sha256": "8e493becfad17864025fd3ac2fef0e8c324cc6e975e0f005855d6a256f9a79a2",
+      "partition": 4
+    },
+    {
+      "path": "test/core/learned-skill-materialization.test.ts",
+      "size": 18571,
+      "sha256": "5ead187acdbeb55e2eda3ccc0f1a46466f1d67457a17dcde753cbac19435ada9",
+      "partition": 6
+    },
+    {
+      "path": "test/core/learned-skills/catalog-backup.test.ts",
+      "size": 11365,
+      "sha256": "be59f47000321f17aeed12459b4af0eded7fafa93f50aa19867003c26e94ee09",
+      "partition": 5
+    },
+    {
+      "path": "test/core/learned-skills/context.test.ts",
+      "size": 21779,
+      "sha256": "df4116af2781e5116bba41e440418013cf0da5bf9a10a2907eb7e9f67ccf4983",
+      "partition": 2
+    },
+    {
+      "path": "test/core/learned-skills/effective.test.ts",
+      "size": 21226,
+      "sha256": "b06f89440223edadce7796e7a7b97a2260bd1dafaaa89bf0a0ba5338d121389e",
+      "partition": 6
+    },
+    {
+      "path": "test/core/learned-skills/multi-checkout.test.ts",
+      "size": 13498,
+      "sha256": "f88ea179ffbd33f1de9d08fdb62a8e9677b4264366e61a65122949d53a6fa43b",
+      "partition": 5
+    },
+    {
+      "path": "test/core/learned-skills/mutate.test.ts",
+      "size": 25577,
+      "sha256": "bb4cb816ab204dc48b6b758b68d6a41024c10339e30cda6db54aba7b503dddad",
+      "partition": 4
+    },
+    {
+      "path": "test/core/learned-skills/session-context-precedence.test.ts",
+      "size": 8746,
+      "sha256": "f8fece743e2e920e495578619c78f0eaba1c9b334dc60fc7646acc6a6d1d302b",
+      "partition": 8
+    },
+    {
+      "path": "test/core/learned-skills/store-scope.test.ts",
+      "size": 34935,
+      "sha256": "4bce529ce33a631706d94b02d2c4da22005783f0caf67d70dc683f10b243cb38",
+      "partition": 6
+    },
+    {
+      "path": "test/core/learned-skills/validation.test.ts",
+      "size": 10139,
+      "sha256": "95779328ef38225a3d002d4ed2dc1369f9092f0529e413ca8a389d85f6f20d0c",
+      "partition": 3
+    },
+    {
+      "path": "test/core/legacy-cleanup.test.ts",
+      "size": 33964,
+      "sha256": "7668cbc415dde1099084bc575bcc5a2c53ce1dc30d5d89a58a7d13617b48f3a5",
+      "partition": 3
+    },
+    {
+      "path": "test/core/legacy-namespace-detection.test.ts",
+      "size": 2247,
+      "sha256": "463a340e646f69da006b60467106d100368e1f4eeaa03328f042ff2215cdec63",
+      "partition": 1
+    },
+    {
+      "path": "test/core/list.test.ts",
+      "size": 9513,
+      "sha256": "874bdef90c7f1a30c3dc3bb45bd5803c797f52e6ac6dbba8e3b664f988ff8506",
+      "partition": 8
+    },
+    {
+      "path": "test/core/management-api/archive-api.test.ts",
+      "size": 7283,
+      "sha256": "6a6bb799c265e4291bba59899757316b2d37020b77bace62b59ed731a1780853",
+      "partition": 7
+    },
+    {
+      "path": "test/core/management-api/archive.test.ts",
+      "size": 5416,
+      "sha256": "963d0c86cd11fbfb67c9cd6063cab5a8508e5520a568ca849cbeb9e40142faad",
+      "partition": 3
+    },
+    {
+      "path": "test/core/management-api/audits-api.test.ts",
+      "size": 9453,
+      "sha256": "654624d97e82c98da1a4c5d4d34d05bd10f29795c2858a2c953278a383974a12",
+      "partition": 8
+    },
+    {
+      "path": "test/core/management-api/changes.test.ts",
+      "size": 10334,
+      "sha256": "442d2856bfe92a20a72ccd044ab78c565bb19898f31a6a0ac2e967a42064d9b0",
+      "partition": 3
+    },
+    {
+      "path": "test/core/management-api/create-space.integration.test.ts",
+      "size": 3757,
+      "sha256": "cfef5acceb42c0c6b33ffa9ede2c7349b8956b9df6ec69a055023a13d3a7e6f7",
+      "partition": 2
+    },
+    {
+      "path": "test/core/management-api/create-space.test.ts",
+      "size": 6850,
+      "sha256": "7f924769f5e206ac5ed866c7377ee9120d2df64f1c3fbe96892963d6263f8326",
+      "partition": 8
+    },
+    {
+      "path": "test/core/management-api/daemon-probe.test.ts",
+      "size": 4636,
+      "sha256": "7b26abd6d801d9b37007ce0b56db0034556d3461f17838a6fa3e7bff6480ff0b",
+      "partition": 2
+    },
+    {
+      "path": "test/core/management-api/daemon-state.test.ts",
+      "size": 2752,
+      "sha256": "62ef6b20962258d2a14c59b4cba30abdfcc30dc6df1dffee022d28c4db5119eb",
+      "partition": 1
+    },
+    {
+      "path": "test/core/management-api/kill-tree-windows-injection.test.ts",
+      "size": 6027,
+      "sha256": "8e5fce591fd4962f46b7b9abef21ba50ba0f8179ae9c27227ea1f15ede4c2f29",
+      "partition": 7
+    },
+    {
+      "path": "test/core/management-api/kill-tree.test.ts",
+      "size": 3480,
+      "sha256": "4ed6de1592e88ed2dade175042747b74b87680a5911856f7d95d0536e8c5ccba",
+      "partition": 4
+    },
+    {
+      "path": "test/core/management-api/local-path-chooser.test.ts",
+      "size": 9451,
+      "sha256": "deb48ba7dd2939e222f785d98431d6180c51b472791e4775d1f0b4813b0e3f87",
+      "partition": 8
+    },
+    {
+      "path": "test/core/management-api/local-path-resolver.test.ts",
+      "size": 3687,
+      "sha256": "af868df9eb72ceac87b564755de20b2bab8cf27e9dc43828c0873bf811b3b8e0",
+      "partition": 4
+    },
+    {
+      "path": "test/core/management-api/local-paths.test.ts",
+      "size": 6261,
+      "sha256": "7e70643ec4706198eae52b369ed47b426abaa75f10e01c66dac575b74c9a012d",
+      "partition": 3
+    },
+    {
+      "path": "test/core/management-api/pipeline-submit.test.ts",
+      "size": 8493,
+      "sha256": "eba8a2b1a0ab8f4cf3470f53f44ff4865e1ef857636c22401a4322d725c602bc",
+      "partition": 8
+    },
+    {
+      "path": "test/core/management-api/pipelines-api.test.ts",
+      "size": 44728,
+      "sha256": "818396f00b6a716f739b556db86d387ab3ff6a845fc05283c484ede4a559e46f",
+      "partition": 6
+    },
+    {
+      "path": "test/core/management-api/profiles.test.ts",
+      "size": 9861,
+      "sha256": "1bd7e74727426d255c865c9251cc35e6090513dbc4de8a36cafe5f1cf751f413",
+      "partition": 3
+    },
+    {
+      "path": "test/core/management-api/router.test.ts",
+      "size": 24752,
+      "sha256": "e5c402de3b7412f05e234a3b408f38b8f0cab33cd8731ba039624b0d1799d5b2",
+      "partition": 4
+    },
+    {
+      "path": "test/core/management-api/runs.test.ts",
+      "size": 6369,
+      "sha256": "92149c321f68ec2d19df201b81e6bea1598cb44073311e93287c101283dedc4c",
+      "partition": 3
+    },
+    {
+      "path": "test/core/management-api/server-shutdown.test.ts",
+      "size": 5336,
+      "sha256": "2e6b61cf2b5ad30d9911851407616f8b1d087faf44447634ecb4eb8efd0b3350",
+      "partition": 3
+    },
+    {
+      "path": "test/core/management-api/session-context-handover.test.ts",
+      "size": 9030,
+      "sha256": "4e5adfa55c5fe448b0d2230789556bb62862f9dc4cd21cce5adc0c2cbe7231e3",
+      "partition": 2
+    },
+    {
+      "path": "test/core/management-api/session-launch-context.test.ts",
+      "size": 31749,
+      "sha256": "535bca48b2e02fcc927caceab7b0904ec1fd12b5a1a9604b2f560ba7401c3daf",
+      "partition": 6
+    },
+    {
+      "path": "test/core/management-api/session-registry.test.ts",
+      "size": 6558,
+      "sha256": "f79430f6016db0baa10bfbcd63cc02a44494315ab4d731db4f4d8328054939d8",
+      "partition": 3
+    },
+    {
+      "path": "test/core/management-api/sessions-api.test.ts",
+      "size": 19848,
+      "sha256": "f6cca3ba8ecc38b9c256c70a0abf8d51231fe915035a7ddbd726e0eb032cb1bf",
+      "partition": 7
+    },
+    {
+      "path": "test/core/management-api/sessions-space.test.ts",
+      "size": 22047,
+      "sha256": "3dd6c50c866396637af5e1c93a5515ccfa265fc3ae728445f03b82252cb5366b",
+      "partition": 4
+    },
+    {
+      "path": "test/core/management-api/space-scoping.test.ts",
+      "size": 22573,
+      "sha256": "ec91a567460c5dee97c65af320ca85d2abaabaf7005f1ac5ebc88ae3b0171a1d",
+      "partition": 6
+    },
+    {
+      "path": "test/core/management-api/spaces-membership.test.ts",
+      "size": 8063,
+      "sha256": "491c00e0d28a98be7df725dee988281c446427d2c721dc690b4cdcb24911a7ad",
+      "partition": 8
+    },
+    {
+      "path": "test/core/management-api/submit.test.ts",
+      "size": 11696,
+      "sha256": "9bef9fa17793accbcb15f0bb4ef4b28cc23aa6ea624b4d2a0d564d2e48e29e50",
+      "partition": 3
+    },
+    {
+      "path": "test/core/management-api/supervisor-injection.test.ts",
+      "size": 10338,
+      "sha256": "e02b547cbb52f3790eda091c23796157b2429436f48dbcfd8f0a85a61c28ddcd",
+      "partition": 7
+    },
+    {
+      "path": "test/core/management-api/supervisor.test.ts",
+      "size": 31083,
+      "sha256": "36a46cff4fc4f715c61589912dfcbef6ccddee0d2f58d84574b1c3ce5edb7e39",
+      "partition": 6
+    },
+    {
+      "path": "test/core/management-api/task-detail-api.test.ts",
+      "size": 7125,
+      "sha256": "3aa9876f4fd7b7ea0c0d9865bd8bc857b4d3463a9227f23d9b4412e0e14f0315",
+      "partition": 8
+    },
+    {
+      "path": "test/core/management-api/task-detail.test.ts",
+      "size": 10947,
+      "sha256": "4c08cf9e37a81412ba0309c0f73da634b92089ae22475b393ab2dbd29fc8c082",
+      "partition": 5
+    },
+    {
+      "path": "test/core/management-api/themes-api.test.ts",
+      "size": 5954,
+      "sha256": "051df49f9b8375e48d247c4f138145f7f842c8eafb416d5b3f3d1fc76a7b5051",
+      "partition": 7
+    },
+    {
+      "path": "test/core/management-api/threshold-schemes-api.test.ts",
+      "size": 20093,
+      "sha256": "c3e6a5de81e1c22baa1fd6bc440c4fbffaef8fa944c25caec10cd91b929aee48",
+      "partition": 6
+    },
+    {
+      "path": "test/core/management-api/workflow-enablement.test.ts",
+      "size": 15770,
+      "sha256": "7b35c7ef466e4985d62cbd7557edf2194d63fdc1d08105ea9761e4c54def6263",
+      "partition": 8
+    },
+    {
+      "path": "test/core/management-api/workflow-submit.test.ts",
+      "size": 8296,
+      "sha256": "48df8b4f50070a2e32f90588794803e9d714c7ec81381c1ba7deac692dc11a13",
+      "partition": 2
+    },
+    {
+      "path": "test/core/management-api/workflow-whitelist.test.ts",
+      "size": 3350,
+      "sha256": "caea66cd1cea19b1c72d8cc225ff3d8f36111d87c0ef880bae9dd2e51f478ae5",
+      "partition": 4
+    },
+    {
+      "path": "test/core/management-api/workflows-api.test.ts",
+      "size": 15320,
+      "sha256": "592166b3a96d459492dd06b743123dbc3324d93884fa52dfe429ec4481424d26",
+      "partition": 5
+    },
+    {
+      "path": "test/core/migration.test.ts",
+      "size": 6535,
+      "sha256": "9a9c39e9aefcdcc9c53c75c9af450674c9f3cdebba08a6baedf80d59a3fa1b36",
+      "partition": 8
+    },
+    {
+      "path": "test/core/model-presets.test.ts",
+      "size": 4383,
+      "sha256": "525e7262a21baa7f864facf94992607f5bb4e02dae69435fe75e022501a884cf",
+      "partition": 7
+    },
+    {
+      "path": "test/core/multi-project-update.test.ts",
+      "size": 12956,
+      "sha256": "dcdc547a865bef93f778234146f790ecbaf775aa318f28d2612512ad5b094a1d",
+      "partition": 4
+    },
+    {
+      "path": "test/core/named-profiles.test.ts",
+      "size": 15791,
+      "sha256": "98df45f3458ffaa265be17058f23ceba86defb8a12f30b6d3bde2d5458304053",
+      "partition": 8
+    },
+    {
+      "path": "test/core/openers.test.ts",
+      "size": 11099,
+      "sha256": "c69053cd2ba51936ced6e047611ec3ea9021a433d4c570d2eefb3cc88231b1a4",
+      "partition": 2
+    },
+    {
+      "path": "test/core/openspec-root.test.ts",
+      "size": 5294,
+      "sha256": "aafe50099d7b794a8936b37c4b84ef52d99e31e08c988d04dd24e51b387b7cdf",
+      "partition": 7
+    },
+    {
+      "path": "test/core/parsers/change-parser.test.ts",
+      "size": 2478,
+      "sha256": "feb55c1a1120a9b791dab5bc531c6f215eefe2d5483c85a8adefac29009f49e3",
+      "partition": 1
+    },
+    {
+      "path": "test/core/parsers/markdown-parser.test.ts",
+      "size": 10901,
+      "sha256": "300bd9900e13d8fc95a7bf46bf86af843c155a110cf30a1e1c0791b551ebdb9c",
+      "partition": 3
+    },
+    {
+      "path": "test/core/parsers/requirement-blocks.test.ts",
+      "size": 2231,
+      "sha256": "ab60396d808a750deab2620574d3571ffd24213b5f74c4c61b7c7f54f6c28cda",
+      "partition": 1
+    },
+    {
+      "path": "test/core/pipeline-library-rollback.test.ts",
+      "size": 5082,
+      "sha256": "3a1504d7cfb2d5ba406feb06e79237022671460d13ba9890607200d50275778d",
+      "partition": 3
+    },
+    {
+      "path": "test/core/pipeline-library.test.ts",
+      "size": 23600,
+      "sha256": "7ddc1363d7ab433fd3041e7c02bec2aa7d5d37c1dabd95b21f9d1b331f7fbb93",
+      "partition": 6
+    },
+    {
+      "path": "test/core/pipeline-registry/builtins.test.ts",
+      "size": 14006,
+      "sha256": "b3a5de8f0c5a1a983bb060d1904bc252e6b30b99c7153e305d5a8e29d1e0d59a",
+      "partition": 5
+    },
+    {
+      "path": "test/core/pipeline-registry/execution-binding.test.ts",
+      "size": 11935,
+      "sha256": "bf0426d7d8693bd687b95a47c4e7534d38f1dd715494c61ab0033a832dfaa650",
+      "partition": 4
+    },
+    {
+      "path": "test/core/pipeline-registry/execution-validation.test.ts",
+      "size": 20366,
+      "sha256": "52be87fa7014104dbab526482a7d8e2f3092f1436c286fc7c0d5366ad7838e48",
+      "partition": 7
+    },
+    {
+      "path": "test/core/pipeline-registry/goal-pipelines.test.ts",
+      "size": 6130,
+      "sha256": "28ababf074b36c47100fdd2c3be7b53d33561e8778513ecaf5a7d2c2a0c49f36",
+      "partition": 5
+    },
+    {
+      "path": "test/core/pipeline-registry/graph.test.ts",
+      "size": 6202,
+      "sha256": "72429674012ecf99f310bcdad4f08808a197ea3f99eb5e9c0aac3e0b1c6101de",
+      "partition": 7
+    },
+    {
+      "path": "test/core/pipeline-registry/pipeline.test.ts",
+      "size": 69135,
+      "sha256": "aa577eca2548716a610b1ca8f167cef0bfe00cc304dab26709b4ec2cd29281bc",
+      "partition": 6
+    },
+    {
+      "path": "test/core/pipeline-registry/portfolio-state.test.ts",
+      "size": 13541,
+      "sha256": "ca2a516fc3c881e733e933380e29e580ef870cf16d22e99fb7f7b79d43fc68be",
+      "partition": 5
+    },
+    {
+      "path": "test/core/pipeline-registry/resolver.test.ts",
+      "size": 13340,
+      "sha256": "0aa4d0322f47eb466dc677aa6fed97993f52207fc62629904fa99d98c9d62fc9",
+      "partition": 5
+    },
+    {
+      "path": "test/core/pipeline-registry/run-state.test.ts",
+      "size": 53758,
+      "sha256": "308b536b7c1b34fa7a5fe33ed70671403ef5db241ec4ae805809d4ba3ed1cae3",
+      "partition": 3
+    },
+    {
+      "path": "test/core/pipeline-registry/stage-overrides.test.ts",
+      "size": 10763,
+      "sha256": "c48eb00eb53aa380cc772660424a86f9a588926f7bb18dac59b3e4002c2f666f",
+      "partition": 3
+    },
+    {
+      "path": "test/core/pipeline-registry/state.test.ts",
+      "size": 1216,
+      "sha256": "e8e60de95061bf9e9fadc9cad4ad4368845cc8bfcd52939b96a511140b1f0104",
+      "partition": 1
+    },
+    {
+      "path": "test/core/pipeline-registry/vet-literal-guard.test.ts",
+      "size": 1892,
+      "sha256": "99979f8f02b0c1bbf82a454d96b9d06d61943632c0f5d109e3394bf73d1635cb",
+      "partition": 1
+    },
+    {
+      "path": "test/core/pipeline-threshold-bindings.test.ts",
+      "size": 6190,
+      "sha256": "0884c32b280f201d5f13c5a7d4fad591ffdf22519227b59a1d78b198459598f0",
+      "partition": 3
+    },
+    {
+      "path": "test/core/planning-home.test.ts",
+      "size": 1378,
+      "sha256": "2fccd5090587ea97746a92310d97f68bbe844859d42ab55572686fbbd858fb6d",
+      "partition": 1
+    },
+    {
+      "path": "test/core/profile-sync-drift.test.ts",
+      "size": 13425,
+      "sha256": "1b35b88da9cfa4ea540290e5c173d07c63e9f734043ac23485594265891495f5",
+      "partition": 5
+    },
+    {
+      "path": "test/core/profiles.test.ts",
+      "size": 19640,
+      "sha256": "7ac23660517458bdaa7595a7aaa934cd1ac6a020c467e0bf59c726a2921599b8",
+      "partition": 6
+    },
+    {
+      "path": "test/core/project-config-knowledge-bundle.test.ts",
+      "size": 2187,
+      "sha256": "79e61c77c61ed4d5875cfb4be54fcbe8223495cfafb623da0961078806e48e30",
+      "partition": 1
+    },
+    {
+      "path": "test/core/project-config-store-memberships.test.ts",
+      "size": 12821,
+      "sha256": "99883dfd72039807927a4c8e3cef27c351e1c220818d077149c662946727c413",
+      "partition": 5
+    },
+    {
+      "path": "test/core/project-config.test.ts",
+      "size": 77672,
+      "sha256": "22eda5a16d2f0ee0a9255dd4e3e7b9216a594604395b443ae56dd2c17c837810",
+      "partition": 4
+    },
+    {
+      "path": "test/core/project-home.test.ts",
+      "size": 18271,
+      "sha256": "3b04bbbd0e11411a924c6f09cd737fbd5b31ee7bcee8a4ae8d4a66888a39e2c5",
+      "partition": 8
+    },
+    {
+      "path": "test/core/project-knowledge-home.test.ts",
+      "size": 14327,
+      "sha256": "9d849e190ab854d0d3c4b459eac6ec588894d79d52d41429add4b984180781e0",
+      "partition": 2
+    },
+    {
+      "path": "test/core/project-registry.test.ts",
+      "size": 54915,
+      "sha256": "613392bbfde000ad7057b346e369abbca5f8cf9da012e840663832d4480da42b",
+      "partition": 5
+    },
+    {
+      "path": "test/core/references.test.ts",
+      "size": 22777,
+      "sha256": "7dc8d3bf24c469b4dbfd8c1469caa5a3ba313d70626df2e5b8f56606ff39b80b",
+      "partition": 3
+    },
+    {
+      "path": "test/core/relationship-health.test.ts",
+      "size": 17635,
+      "sha256": "9cbf9e7db6ff088a7a6ab32538b6e47acdcaf13ae9ec443a6a7c7700277b937d",
+      "partition": 6
+    },
+    {
+      "path": "test/core/retention-codify-e2e.test.ts",
+      "size": 10866,
+      "sha256": "75ceee2c6c20d18e8cb07fb8b40328b42364cc23dcbf0dd95439086961b262dc",
+      "partition": 2
+    },
+    {
+      "path": "test/core/retention.test.ts",
+      "size": 1493,
+      "sha256": "81de57481378292183541e9a4266863dbd3daebd6ce739104b1662c1edde9517",
+      "partition": 1
+    },
+    {
+      "path": "test/core/retired-edit-boundary.test.ts",
+      "size": 10271,
+      "sha256": "52443fd2f4cc06b2d6f55dc3a2c4437b32823d5a23a4652ecd4eb5555ed80ff3",
+      "partition": 7
+    },
+    {
+      "path": "test/core/root-selection.test.ts",
+      "size": 39989,
+      "sha256": "b371e6c7e1dafc14cc5012f5d7782ccdc1a7d96e17b15d41f4a25e9f4d33dad0",
+      "partition": 6
+    },
+    {
+      "path": "test/core/runtime-adapters.test.ts",
+      "size": 4358,
+      "sha256": "3747156494842693843e5ecb685901065f2e3e206971b8a9baf38b915191d770",
+      "partition": 2
+    },
+    {
+      "path": "test/core/session-runtime-context-e2e.test.ts",
+      "size": 13894,
+      "sha256": "02f7105f643d54032310792ebe3bd01572bd5255d6da3185fb9b91ea43d18675",
+      "partition": 5
+    },
+    {
+      "path": "test/core/session-runtime-context.test.ts",
+      "size": 9435,
+      "sha256": "37fff0c83239d48a919faa96e609bb089886b8c4edabfb677c02959dda0a75e2",
+      "partition": 8
+    },
+    {
+      "path": "test/core/shared/retired-command-paths.test.ts",
+      "size": 3971,
+      "sha256": "6047b2d5ccaf737fe82b0c0f102a1a6c042328cc3bd16a8299c0a7f7ddf9c10c",
+      "partition": 2
+    },
+    {
+      "path": "test/core/shared/skill-generation.test.ts",
+      "size": 17311,
+      "sha256": "db538791d6a4214fd93c12996618d2dbd445617ba9b046180cc7fb692a34e451",
+      "partition": 6
+    },
+    {
+      "path": "test/core/shared/skill-sidecar-install.test.ts",
+      "size": 3301,
+      "sha256": "666f7423d8d22890017395cc33d4e0c5923d0be4e0754f2d7c30d927e7574cbd",
+      "partition": 2
+    },
+    {
+      "path": "test/core/shared/tool-detection.test.ts",
+      "size": 18859,
+      "sha256": "e15d6df47771f4bf6ef8d88907d0a3d20204fd8615c33eaa96f3cd2a63fb3dbe",
+      "partition": 6
+    },
+    {
+      "path": "test/core/shared/yaml.test.ts",
+      "size": 3283,
+      "sha256": "2f99ca8403172890952469c46b9c929a23db669022cde2cc167ce8391cee6f2b",
+      "partition": 4
+    },
+    {
+      "path": "test/core/space-selector.test.ts",
+      "size": 12196,
+      "sha256": "c791053e03b74ca989b4b6354e5b3766a312ca0db46a182f0359f7aa7712ab7e",
+      "partition": 4
+    },
+    {
+      "path": "test/core/store/bootstrap-bundle-import.test.ts",
+      "size": 29334,
+      "sha256": "7769f4fd0a5b187ca5275127427b1da91caf73815502db9a376082c403f5b09e",
+      "partition": 6
+    },
+    {
+      "path": "test/core/store/bootstrap-metadata-probe.test.ts",
+      "size": 3594,
+      "sha256": "1b06c97278a12824e74cc2d504ffd1f4d79afb8a755413411d82e081c079d9a9",
+      "partition": 2
+    },
+    {
+      "path": "test/core/store/bootstrap-obtain.test.ts",
+      "size": 58787,
+      "sha256": "cc72531adaa7db7d94f16cfeec08bb4f49b20a066f8074773714b6a7add82d87",
+      "partition": 7
+    },
+    {
+      "path": "test/core/store/bootstrap.test.ts",
+      "size": 76468,
+      "sha256": "4be9a671a1782b1d89acc7bbb74230f18b5fe867a7fef78c6cb8155a0ed74e7c",
+      "partition": 5
+    },
+    {
+      "path": "test/core/store/foundation.test.ts",
+      "size": 14028,
+      "sha256": "cff4f596b791e828810626b864da2fba79be0c871e32e53e01cbaab7b0eec342",
+      "partition": 5
+    },
+    {
+      "path": "test/core/store/git-redaction.test.ts",
+      "size": 4906,
+      "sha256": "279e53abe0fba214e21068801992fb8fa4da52149fee5e385b3b28f4b45afdaa",
+      "partition": 4
+    },
+    {
+      "path": "test/core/store/git-worktree-list.test.ts",
+      "size": 6651,
+      "sha256": "13ea6a9fb628608f2102a7a408903d19780717b73e6d0bfbfcd33f223d2b7a81",
+      "partition": 5
+    },
+    {
+      "path": "test/core/store/git.test.ts",
+      "size": 3491,
+      "sha256": "2db86774cac1c879bbf55bdaf9e08d77d6bd8a833070d6884ac5dc447bf3acf5",
+      "partition": 4
+    },
+    {
+      "path": "test/core/store/identity-boundaries.test.ts",
+      "size": 21809,
+      "sha256": "839b2a4b496ba3c4e0de1304a32f43af33ca831a8b9267cf2deeb5214a2868a8",
+      "partition": 4
+    },
+    {
+      "path": "test/core/store/identity-repair-text.test.ts",
+      "size": 17126,
+      "sha256": "3333de5a4b5c288b62d89a0f821f666d0c48a273cf41594570d9baffca026fb3",
+      "partition": 8
+    },
+    {
+      "path": "test/core/store/identity-writers.test.ts",
+      "size": 13782,
+      "sha256": "9be07b85ab3413910e4d2782469f1d739ef8083437ae8f0fe9fd9d5fd123ea8a",
+      "partition": 5
+    },
+    {
+      "path": "test/core/store/identity.test.ts",
+      "size": 28976,
+      "sha256": "470b5ccce06f990f68bca1d81c4cbcd25d7537e06c2a99b4aed13efd70d0bfe1",
+      "partition": 4
+    },
+    {
+      "path": "test/core/store/legacy-metadata.test.ts",
+      "size": 3336,
+      "sha256": "c2edd537eee406f01fbc141a623b96b415b420f9415b6f045969867bb218255a",
+      "partition": 2
+    },
+    {
+      "path": "test/core/store/membership-operations.test.ts",
+      "size": 30150,
+      "sha256": "781a7068104f64e9d26e6171bffb96c2781e0872b9a88294067c3106035ff88a",
+      "partition": 6
+    },
+    {
+      "path": "test/core/store/membership.test.ts",
+      "size": 26658,
+      "sha256": "88271b5aa4f44495a037aae0699cfefc0e09820493fc8c0ea27fd2fdf7443868",
+      "partition": 6
+    },
+    {
+      "path": "test/core/store/migration-ops.test.ts",
+      "size": 26889,
+      "sha256": "6f14f8041d8b22993f5e89f49c775b9b545f8b0f16d937daad9ccbac92e24031",
+      "partition": 4
+    },
+    {
+      "path": "test/core/store/migration.test.ts",
+      "size": 3561,
+      "sha256": "a16f93e70c7fccbdb6d8809e0924d0cd55d6adc924ce28dd13836e47896928d7",
+      "partition": 2
+    },
+    {
+      "path": "test/core/store/project-record-knowledge-bundle.test.ts",
+      "size": 2811,
+      "sha256": "a68dfdc52ddf45ebd7da8c6e3c7b0fe64b20ad62861cb07a5b9faa3668a4d493",
+      "partition": 1
+    },
+    {
+      "path": "test/core/store/project-records.test.ts",
+      "size": 12965,
+      "sha256": "63f7314c15ffed3eb7f9e08a64be4b2531dd2fad989cfc98310e93030fc32f6c",
+      "partition": 5
+    },
+    {
+      "path": "test/core/store/register-existing-store-data-dir.test.ts",
+      "size": 4720,
+      "sha256": "0f415e48aa89638c113d4abf00cb024551fa896730e8d09e62bd7722accc37b4",
+      "partition": 4
+    },
+    {
+      "path": "test/core/store/registry-b5-cleanup.test.ts",
+      "size": 5218,
+      "sha256": "3b5ef1bdc609b5e314bb80819eb94208829025ed6b36a9e873d7c77cc2db909d",
+      "partition": 7
+    },
+    {
+      "path": "test/core/store/registry.test.ts",
+      "size": 23358,
+      "sha256": "f54fef28ba4a941ae5f7ba39451b540e7f986110235db04390a751808cf5eea9",
+      "partition": 6
+    },
+    {
+      "path": "test/core/store/remote.test.ts",
+      "size": 5234,
+      "sha256": "7b75ef737c169f46f57852fee9473e44b019ad534844f4ad6476d045d61a7d26",
+      "partition": 3
+    },
+    {
+      "path": "test/core/store/worktree-inventory-cache.test.ts",
+      "size": 5775,
+      "sha256": "5b131923dbd68b85841d7226c339bbaf876e12388b295a43ff9ff270977ceb46",
+      "partition": 7
+    },
+    {
+      "path": "test/core/templates/archive-engine-consumers.test.ts",
+      "size": 2975,
+      "sha256": "5c2aff448fbefbb15089d9b8e568a3d9a2d62b7b822a5d9e537a1c1df48be63d",
+      "partition": 2
+    },
+    {
+      "path": "test/core/templates/direction.test.ts",
+      "size": 7057,
+      "sha256": "b42c4d6083b25e74b0cdad31d712e18a3b3212431e2f1abbd1f9a9842ffceb8d",
+      "partition": 7
+    },
+    {
+      "path": "test/core/templates/office-hours-no-legacy-modes.test.ts",
+      "size": 1535,
+      "sha256": "33a00a1e4241d65781b09b5a8afc4844c0e5df3cea85ed9066c9881b4dc4d653",
+      "partition": 1
+    },
+    {
+      "path": "test/core/templates/orchestration-bundles.test.ts",
+      "size": 17324,
+      "sha256": "95458b1bed410ab320e3acce8f6a01980abfe0c68d1e145672c736ab1998d7eb",
+      "partition": 8
+    },
+    {
+      "path": "test/core/templates/retain.test.ts",
+      "size": 3657,
+      "sha256": "2fcfd336ac4f759c10f0d0829d6155303945af701c5929a9a51f2a472e727b72",
+      "partition": 2
+    },
+    {
+      "path": "test/core/templates/risk-proportional-verification.test.ts",
+      "size": 1551,
+      "sha256": "9b23ec35f7a921fd157edced38b921d3c14fe08563ce8f2325ce97622376c2f6",
+      "partition": 1
+    },
+    {
+      "path": "test/core/templates/scope-evidence-guidance.test.ts",
+      "size": 2425,
+      "sha256": "c70449ff911a744b480f35ee7aae3a06767b12081453d9ede1765ddc9631173a",
+      "partition": 1
+    },
+    {
+      "path": "test/core/templates/skill-templates-parity.test.ts",
+      "size": 20795,
+      "sha256": "ae2558c38d0bd1aa6f9abfc3680a6b1341df70df90266d57104a1f9ec0f96deb",
+      "partition": 7
+    },
+    {
+      "path": "test/core/templates/workflow-author-review.test.ts",
+      "size": 3437,
+      "sha256": "0ccb3b8044b69691ceeb1f51c4d014f0d528244a15a1e7b7e708f618d50678e4",
+      "partition": 2
+    },
+    {
+      "path": "test/core/test-isolation-net.test.ts",
+      "size": 2269,
+      "sha256": "48bbae6123a7c0d71c7135330256534e7775403bea401eb66225006d2cbb7521",
+      "partition": 1
+    },
+    {
+      "path": "test/core/theme-config.test.ts",
+      "size": 1465,
+      "sha256": "f4d7b082b35b823eb5f3e49b1dbef24cdac414ccdd159c785ddf6c4e5f22a7ad",
+      "partition": 1
+    },
+    {
+      "path": "test/core/theme-library.test.ts",
+      "size": 6450,
+      "sha256": "0bb1ac702fcbbcf939b95a47d558a395eda9cd8837200dece50dfb3909db862d",
+      "partition": 5
+    },
+    {
+      "path": "test/core/threshold-resolver.test.ts",
+      "size": 8746,
+      "sha256": "6d70431b0c42df1c90cb8a476e76c416126f91828139faff84b18a78b4a43fa6",
+      "partition": 2
+    },
+    {
+      "path": "test/core/threshold-schemes.test.ts",
+      "size": 6591,
+      "sha256": "6624f8ef5d1be0b81f9903622110318e235ea66e25fa057d4592f34cc228dba6",
+      "partition": 7
+    },
+    {
+      "path": "test/core/token-audit/audit.test.ts",
+      "size": 7089,
+      "sha256": "cdd6028f61f6f2ef4da19c358cd6c0210f163c40da1eaf7fc0047dc30997dc68",
+      "partition": 5
+    },
+    {
+      "path": "test/core/token-audit/classify.test.ts",
+      "size": 6210,
+      "sha256": "5287fea7d42f5d2b96fe07d50ca45cf2e3c46036835b51b99cc0fddcfc8a015b",
+      "partition": 5
+    },
+    {
+      "path": "test/core/token-audit/codex/audit-codex-enrich.test.ts",
+      "size": 9755,
+      "sha256": "b5111cd3cc2d3aaef9d9e38f564df292f05917bfc1b1fab96a596c4966e2e468",
+      "partition": 8
+    },
+    {
+      "path": "test/core/token-audit/codex/audit-codex.test.ts",
+      "size": 4918,
+      "sha256": "adc571dcd5ff373995c4d74bf5274ec1151e2b7707c579d546e824136d688d5f",
+      "partition": 7
+    },
+    {
+      "path": "test/core/token-audit/codex/classify-codex.test.ts",
+      "size": 6395,
+      "sha256": "8b4035bff5dac9f2229f7fd3a0009e482555cf4afe87f47983a0226d71fa46e1",
+      "partition": 7
+    },
+    {
+      "path": "test/core/token-audit/codex/discover-codex.test.ts",
+      "size": 4674,
+      "sha256": "9674c40adcce06bc49047d35cb79d18a8fac1c991aad8b3ffb3e32c78a0b75d9",
+      "partition": 7
+    },
+    {
+      "path": "test/core/token-audit/codex/parse-codex-enrich.test.ts",
+      "size": 10208,
+      "sha256": "a1d0c8a18f7d1978843d2e3030242c802045bf145bd2c0b4e655178a318328ed",
+      "partition": 7
+    },
+    {
+      "path": "test/core/token-audit/codex/parse-codex.test.ts",
+      "size": 5812,
+      "sha256": "f4e0a8bf7633a1f4312640f90f53b95ebc87c6795020e893b6682fdcfe7305bf",
+      "partition": 3
+    },
+    {
+      "path": "test/core/token-audit/format-drift.test.ts",
+      "size": 5395,
+      "sha256": "1c8b116731af81e496e27238e229ed7302303a0781155a2c1dd6cf6a8f13ae87",
+      "partition": 7
+    },
+    {
+      "path": "test/core/token-audit/management.test.ts",
+      "size": 16070,
+      "sha256": "b7454c9e29ee7322d9dcce2fb91fd693b7ab85043035c663420871bee7eb1d43",
+      "partition": 8
+    },
+    {
+      "path": "test/core/token-audit/parse.test.ts",
+      "size": 6014,
+      "sha256": "6384a3d88cb75b8f7ee8f7f13e5d25f395a1b991079012a91c7a4df1becbc0df",
+      "partition": 5
+    },
+    {
+      "path": "test/core/token-audit/viewer-embed.test.ts",
+      "size": 5599,
+      "sha256": "b2169370b8a0de467f5f1e7baf7e4afdcedc6eb0d75ddcf811d5495fa90fba08",
+      "partition": 7
+    },
+    {
+      "path": "test/core/token-audit/zed/audit.test.ts",
+      "size": 6744,
+      "sha256": "1a6cf5839a35ec2f7e7851f2bebb54ddbb83a5add6f731cd1769605d5a7c6f26",
+      "partition": 7
+    },
+    {
+      "path": "test/core/token-audit/zed/database.test.ts",
+      "size": 4161,
+      "sha256": "59ca78ff6b4061ae7ef42db728cfa4bbccc9ce8411b8558f11514fba3a689a62",
+      "partition": 4
+    },
+    {
+      "path": "test/core/token-audit/zed/decode.test.ts",
+      "size": 4372,
+      "sha256": "45fabda90854c41570f4c9d91a63c42c430a7b5820fef6f5ea94c6d2f2e1d1b8",
+      "partition": 4
+    },
+    {
+      "path": "test/core/token-audit/zed/viewer.test.ts",
+      "size": 2096,
+      "sha256": "89d7637e7d6e370af0c3a8240e5ff6fab0356b02eafa3a4bc86a98de486555b8",
+      "partition": 1
+    },
+    {
+      "path": "test/core/update.test.ts",
+      "size": 92276,
+      "sha256": "4241bd463069253b50788e54f5b69eca7a5f2e1a4b494f17fecce803dfe0998c",
+      "partition": 2
+    },
+    {
+      "path": "test/core/validation.enriched-messages.test.ts",
+      "size": 2896,
+      "sha256": "ef0a2fa6061532107d0396a341a0d785b9a0d51102a824786fb4b1af4e0fadaa",
+      "partition": 1
+    },
+    {
+      "path": "test/core/validation.test.ts",
+      "size": 28896,
+      "sha256": "92a6834f0a43de53300399287e5fab490b99674ee360a3e7ddaeb7e6fdadaf39",
+      "partition": 6
+    },
+    {
+      "path": "test/core/version-guard-state.test.ts",
+      "size": 2772,
+      "sha256": "06bf344ede99090df0d966e106a71eb7b9fbb8b12001e5b87191f802d2f8aba8",
+      "partition": 1
+    },
+    {
+      "path": "test/core/view.test.ts",
+      "size": 6914,
+      "sha256": "37a95cb64f4630e5ebe9512c2b62404bcec1e3f82ba554a3de3243043e9d40d6",
+      "partition": 5
+    },
+    {
+      "path": "test/core/windows-hide-guard.test.ts",
+      "size": 9308,
+      "sha256": "08fdbd068cc9b8f8f55763c36167484642fd7e38f3578ea06437dc495ae4a24e",
+      "partition": 8
+    },
+    {
+      "path": "test/core/work-migration.test.ts",
+      "size": 57932,
+      "sha256": "90c5e9b80ef0b3a9286a3d73fa55cadb3951ad12a9d5bade01270deb96e86d33",
+      "partition": 6
+    },
+    {
+      "path": "test/core/worker-contracts.test.ts",
+      "size": 1176,
+      "sha256": "052bcaa872dde987c9f70a7043179106be603655c606d2124a04f0766da4c227",
+      "partition": 1
+    },
+    {
+      "path": "test/core/workflow-artifact-ledger.test.ts",
+      "size": 11629,
+      "sha256": "e1f3e148b4062fbaa26b2e1a4b82302fbc5d893fa867e6ed58c8f8a8712cfdc5",
+      "partition": 4
+    },
+    {
+      "path": "test/core/workflow-chain.test.ts",
+      "size": 7440,
+      "sha256": "b8febd205e9e33b747ae716c7628da534279c9d09fc8555d9dcf35a708de041a",
+      "partition": 8
+    },
+    {
+      "path": "test/core/workflow-generation-integration.test.ts",
+      "size": 6232,
+      "sha256": "cfa33859d8142c7e19fb01a2ae7484120024ce99854e6587a9e2fe4bbad37b61",
+      "partition": 8
+    },
+    {
+      "path": "test/core/workflow-library.test.ts",
+      "size": 17685,
+      "sha256": "e8a338de2b7ee7825fdcb096a8bae763201a3239f579ebfcbe2b44ede17cdb6f",
+      "partition": 8
+    },
+    {
+      "path": "test/core/workflow-package/codec.test.ts",
+      "size": 14456,
+      "sha256": "837626a0788a43d78b1bb584554e0f868cbf893996c0fd9d55ddf237a701726e",
+      "partition": 5
+    },
+    {
+      "path": "test/core/workflow-package/pipeline-package.test.ts",
+      "size": 9977,
+      "sha256": "bc5645e58a0ed49758d784d122acdbe27cc04d3d0903807dc30a1d2489fec841",
+      "partition": 3
+    },
+    {
+      "path": "test/core/workflow-registry/builtins.test.ts",
+      "size": 7898,
+      "sha256": "ec70302024f97190edcb3bda5f5f63b8b2028195a46bc2e7ae7d0b6fbb8cf493",
+      "partition": 8
+    },
+    {
+      "path": "test/core/workflow-registry/dependency-graph-decompose.test.ts",
+      "size": 4187,
+      "sha256": "cfa16421c431dade7227e152d25f8dda56111a1a51dff8571e5f3c94dd73d0d1",
+      "partition": 2
+    },
+    {
+      "path": "test/core/workflow-registry/dependency-graph.test.ts",
+      "size": 5524,
+      "sha256": "53a2aea61c051dd0f53a4d39d457ccaa63715d5f8b321bc9951d9466a016c757",
+      "partition": 7
+    },
+    {
+      "path": "test/core/workflow-registry/expert-digest.test.ts",
+      "size": 2741,
+      "sha256": "6e8841ff2675c9b168a6a4373f62c312537f9b582bf1d44614b23fe15c8393da",
+      "partition": 1
+    },
+    {
+      "path": "test/core/workflow-registry/selection.test.ts",
+      "size": 4764,
+      "sha256": "8b18c6947e119f286ee59f84ade0d7b24fced4e8c1e4c15feb3ae77dc462ed44",
+      "partition": 7
+    },
+    {
+      "path": "test/core/workflow-registry/validator.test.ts",
+      "size": 23001,
+      "sha256": "51a091a892d7d8849b8e338fc06eae6467558803ae6a3c987ae12db82ddd3daf",
+      "partition": 6
+    },
+    {
+      "path": "test/core/working-set.test.ts",
+      "size": 3061,
+      "sha256": "95572d91db7534b7b5735a0f15a2a25d5bcc3af1a42a6f2d195da7b5539139df",
+      "partition": 2
+    },
+    {
+      "path": "test/core/worksets.test.ts",
+      "size": 11635,
+      "sha256": "3b984f283eb888c63c1ddd43c82dfcec535ac7c6c25a349b907ea465eaf31ce7",
+      "partition": 5
+    },
+    {
+      "path": "test/core/workspace-migration.test.ts",
+      "size": 6278,
+      "sha256": "496f75cd36a047b3606ba4e76faa2e43089e65cfeb05633acd45b6f609c1dde4",
+      "partition": 7
+    },
+    {
+      "path": "test/locales/catalog.test.ts",
+      "size": 11685,
+      "sha256": "ea21cac59bf4339802d682f20fbf9fbe03c149b64439b87a9ecd20aadf511e31",
+      "partition": 2
+    },
+    {
+      "path": "test/prompts/searchable-multi-select.test.ts",
+      "size": 7235,
+      "sha256": "1c9b86057d310f1b3b0f9cc05030aaf756f36dc4bf395d2fbf977e75d9ada2dc",
+      "partition": 3
+    },
+    {
+      "path": "test/release-contract.test.ts",
+      "size": 5680,
+      "sha256": "4becfb35475224e4970c1705a42dd888725efdd70e3ad7de4e4694c32df41ae5",
+      "partition": 7
+    },
+    {
+      "path": "test/release-workflow.test.ts",
+      "size": 1951,
+      "sha256": "4446a1da3e72d59a3904e82f92cba6b5189a5f518ea64ddd11f6ccd8bb71ed86",
+      "partition": 1
+    },
+    {
+      "path": "test/retired-edit-boundary-package-check.test.ts",
+      "size": 5588,
+      "sha256": "95a987ebdbefd3790825a6a04d7b68832d8e8acfd15f98521d1ec1337bf68c71",
+      "partition": 3
+    },
+    {
+      "path": "test/specs/source-specs-normalization.test.ts",
+      "size": 2638,
+      "sha256": "763d73a5ab765aec3ee3be22b112e570d7414a583c5ee3b5f67be27657468970",
+      "partition": 1
+    },
+    {
+      "path": "test/telemetry/config.test.ts",
+      "size": 12149,
+      "sha256": "03a9acd39b52c15e140512c086aab31b84f33d8dd61abe1a80c4eff1810d1287",
+      "partition": 3
+    },
+    {
+      "path": "test/telemetry/index.test.ts",
+      "size": 14938,
+      "sha256": "5634f8b6629efa7c83ce727f47f816b305b6b3cd04e9e094d2ceaad780921faf",
+      "partition": 5
+    },
+    {
+      "path": "test/ui/welcome-screen.test.ts",
+      "size": 1244,
+      "sha256": "cd6c7f5a72d0848b3776f5f2dc913e42ce374cf9543538c579fb67222082b815",
+      "partition": 1
+    },
+    {
+      "path": "test/utils/change-metadata.test.ts",
+      "size": 11991,
+      "sha256": "1343b37368e7974dbe392ebf7b5a35d7bd99bdce5708df952649332d0a1a5a7d",
+      "partition": 5
+    },
+    {
+      "path": "test/utils/change-utils.test.ts",
+      "size": 7000,
+      "sha256": "c6ef9b33d3168feab5ce8d7ea000317b1e0f1670306d518155d8b021702f2deb",
+      "partition": 3
+    },
+    {
+      "path": "test/utils/command-references.test.ts",
+      "size": 2857,
+      "sha256": "ba9bd90e492cd1b18ce6b24ce5f1ad938f5f77e2979c23e4ce27dac7c47d0067",
+      "partition": 1
+    },
+    {
+      "path": "test/utils/file-system.test.ts",
+      "size": 16044,
+      "sha256": "b58c8102817d38ae01f769002e7ee32249bb3c1329727574d3f0ccdaf964ac3d",
+      "partition": 5
+    },
+    {
+      "path": "test/utils/interactive.test.ts",
+      "size": 4822,
+      "sha256": "3da3f158bb07304150a1fd31045bf1056df4fe3672b357d3452a08013b18781b",
+      "partition": 4
+    },
+    {
+      "path": "test/utils/item-discovery.test.ts",
+      "size": 5065,
+      "sha256": "5381fee47b24a6ca66d8fecdb20f0ed6c9f0d31b93521115a44d35f8ac564ece",
+      "partition": 7
+    },
+    {
+      "path": "test/utils/locale.test.ts",
+      "size": 8216,
+      "sha256": "aaba05cd09f2a434e8e7b1b449ca6752af52ec7fb36254fe6ff3269fbd47bede",
+      "partition": 2
+    },
+    {
+      "path": "test/utils/marker-updates.test.ts",
+      "size": 23040,
+      "sha256": "045d78a0edd31e58525f233d9fe683e2c3518ee5fd3199f2ef487359ebab16f6",
+      "partition": 4
+    },
+    {
+      "path": "test/utils/shell-detection.test.ts",
+      "size": 6026,
+      "sha256": "3cf6b7302efa1bd8502bff580e32458aa6ebd99fff39fce348ac1d0bf45237b2",
+      "partition": 3
+    },
+    {
+      "path": "test/utils/task-progress.test.ts",
+      "size": 8701,
+      "sha256": "ebce52d4b8cf9f69a9086f2c93fdbc3f6f05e602e77764738e596b3dbbffaa5e",
+      "partition": 8
+    },
+    {
+      "path": "test/utils/terminal-text.test.ts",
+      "size": 7939,
+      "sha256": "85eb608fbf6a6b20b3fe61250a98ae648e6f7d841f8eac2fac3dda44823e991d",
+      "partition": 2
+    },
+    {
+      "path": "test/vocabulary-sweep.test.ts",
+      "size": 5462,
+      "sha256": "c2fd0bf81860fca3130d53c7089a5a61f7183507d7acdee9421981d74e70e4e7",
+      "partition": 7
+    }
+  ],
+  "partitions": [
+    {
+      "index": 1,
+      "count": 8,
+      "files": [
+        "test/cli-e2e/scheme.test.ts",
+        "test/commands/config-messages.test.ts",
+        "test/commands/goal.test.ts",
+        "test/commands/pipeline.test.ts",
+        "test/commands/profile-editor.test.ts",
+        "test/commands/validate.enriched-output.test.ts",
+        "test/core/brand-guard.test.ts",
+        "test/core/claude-settings.test.ts",
+        "test/core/claude/availability.test.ts",
+        "test/core/claude/identity.test.ts",
+        "test/core/cli-locale.test.ts",
+        "test/core/codex/availability.test.ts",
+        "test/core/codex/template-inline.test.ts",
+        "test/core/completions/generators/resolved-presentation.test.ts",
+        "test/core/config-api/server.test.ts",
+        "test/core/config-api/static.test.ts",
+        "test/core/config-api/ui-package.test.ts",
+        "test/core/config-diagnostic-locale.test.ts",
+        "test/core/direction-generation.test.ts",
+        "test/core/legacy-namespace-detection.test.ts",
+        "test/core/management-api/daemon-state.test.ts",
+        "test/core/parsers/change-parser.test.ts",
+        "test/core/parsers/requirement-blocks.test.ts",
+        "test/core/pipeline-registry/state.test.ts",
+        "test/core/pipeline-registry/vet-literal-guard.test.ts",
+        "test/core/planning-home.test.ts",
+        "test/core/project-config-knowledge-bundle.test.ts",
+        "test/core/retention.test.ts",
+        "test/core/store/project-record-knowledge-bundle.test.ts",
+        "test/core/templates/office-hours-no-legacy-modes.test.ts",
+        "test/core/templates/risk-proportional-verification.test.ts",
+        "test/core/templates/scope-evidence-guidance.test.ts",
+        "test/core/test-isolation-net.test.ts",
+        "test/core/theme-config.test.ts",
+        "test/core/token-audit/zed/viewer.test.ts",
+        "test/core/validation.enriched-messages.test.ts",
+        "test/core/version-guard-state.test.ts",
+        "test/core/worker-contracts.test.ts",
+        "test/core/workflow-registry/expert-digest.test.ts",
+        "test/release-workflow.test.ts",
+        "test/specs/source-specs-normalization.test.ts",
+        "test/ui/welcome-screen.test.ts",
+        "test/utils/command-references.test.ts"
+      ]
+    },
+    {
+      "index": 2,
+      "count": 8,
+      "files": [
+        "test/cli-e2e/agent-context.test.ts",
+        "test/cli-e2e/basic.test.ts",
+        "test/commands/agent-wait.test.ts",
+        "test/commands/context.test.ts",
+        "test/commands/doctor.test.ts",
+        "test/commands/legacy-groups-removed.test.ts",
+        "test/commands/scheme.test.ts",
+        "test/commands/ui-launch-space.test.ts",
+        "test/commands/workflow-library.test.ts",
+        "test/core/agent-cli-process.test.ts",
+        "test/core/archive-ephemera.test.ts",
+        "test/core/artifact-graph/workflow.integration.test.ts",
+        "test/core/claude/invocation.test.ts",
+        "test/core/codex/invocation.test.ts",
+        "test/core/commands/change-command.show.test.ts",
+        "test/core/config-api/piercing-cache.test.ts",
+        "test/core/file-placement.test.ts",
+        "test/core/global-config-diagnostic-fallback.test.ts",
+        "test/core/init-profile-lock.test.ts",
+        "test/core/learned-skills/context.test.ts",
+        "test/core/management-api/create-space.integration.test.ts",
+        "test/core/management-api/daemon-probe.test.ts",
+        "test/core/management-api/session-context-handover.test.ts",
+        "test/core/management-api/workflow-submit.test.ts",
+        "test/core/openers.test.ts",
+        "test/core/project-knowledge-home.test.ts",
+        "test/core/retention-codify-e2e.test.ts",
+        "test/core/runtime-adapters.test.ts",
+        "test/core/shared/retired-command-paths.test.ts",
+        "test/core/shared/skill-sidecar-install.test.ts",
+        "test/core/store/bootstrap-metadata-probe.test.ts",
+        "test/core/store/legacy-metadata.test.ts",
+        "test/core/store/migration.test.ts",
+        "test/core/templates/archive-engine-consumers.test.ts",
+        "test/core/templates/retain.test.ts",
+        "test/core/templates/workflow-author-review.test.ts",
+        "test/core/threshold-resolver.test.ts",
+        "test/core/update.test.ts",
+        "test/core/workflow-registry/dependency-graph-decompose.test.ts",
+        "test/core/working-set.test.ts",
+        "test/locales/catalog.test.ts",
+        "test/utils/locale.test.ts",
+        "test/utils/terminal-text.test.ts"
+      ]
+    },
+    {
+      "index": 3,
+      "count": 8,
+      "files": [
+        "test/cli-e2e/agent-audit.test.ts",
+        "test/cli-e2e/capstone-journeys.test.ts",
+        "test/commands/auto.test.ts",
+        "test/commands/config.test.ts",
+        "test/commands/knowledge.test.ts",
+        "test/commands/review-cycle.test.ts",
+        "test/commands/store-remote.test.ts",
+        "test/commands/store-root-selection.test.ts",
+        "test/core/archive-fault-matrix.test.ts",
+        "test/core/archive-path-semantics.test.ts",
+        "test/core/archive.test.ts",
+        "test/core/artifact-graph/schema.test.ts",
+        "test/core/available-tools.test.ts",
+        "test/core/commands/agent-command.context.test.ts",
+        "test/core/completions/cli-presentation.test.ts",
+        "test/core/completions/completion-provider.test.ts",
+        "test/core/completions/installers/powershell-installer.test.ts",
+        "test/core/converters/json-converter.test.ts",
+        "test/core/knowledge-bundle/export-degraded.test.ts",
+        "test/core/learned-skills/validation.test.ts",
+        "test/core/legacy-cleanup.test.ts",
+        "test/core/management-api/archive.test.ts",
+        "test/core/management-api/changes.test.ts",
+        "test/core/management-api/local-paths.test.ts",
+        "test/core/management-api/profiles.test.ts",
+        "test/core/management-api/runs.test.ts",
+        "test/core/management-api/server-shutdown.test.ts",
+        "test/core/management-api/session-registry.test.ts",
+        "test/core/management-api/submit.test.ts",
+        "test/core/parsers/markdown-parser.test.ts",
+        "test/core/pipeline-library-rollback.test.ts",
+        "test/core/pipeline-registry/run-state.test.ts",
+        "test/core/pipeline-registry/stage-overrides.test.ts",
+        "test/core/pipeline-threshold-bindings.test.ts",
+        "test/core/references.test.ts",
+        "test/core/store/remote.test.ts",
+        "test/core/token-audit/codex/parse-codex.test.ts",
+        "test/core/workflow-package/pipeline-package.test.ts",
+        "test/prompts/searchable-multi-select.test.ts",
+        "test/retired-edit-boundary-package-check.test.ts",
+        "test/telemetry/config.test.ts",
+        "test/utils/change-utils.test.ts",
+        "test/utils/shell-detection.test.ts"
+      ]
+    },
+    {
+      "index": 4,
+      "count": 8,
+      "files": [
+        "test/ci-workflow-contract.test.ts",
+        "test/cli-e2e/workset-journey.test.ts",
+        "test/commands/bootstrap-bundle-import.test.ts",
+        "test/commands/daemon-spawn-convergence.test.ts",
+        "test/commands/declared-store-fallback.test.ts",
+        "test/commands/knowledge-bundle-import.test.ts",
+        "test/commands/new-change-worktree-collision.test.ts",
+        "test/commands/ship.test.ts",
+        "test/commands/store-membership-cli.test.ts",
+        "test/commands/store.test.ts",
+        "test/commands/ui.test.ts",
+        "test/core/artifact-graph/resolver.test.ts",
+        "test/core/codex/contracts.test.ts",
+        "test/core/codex/exec-events.test.ts",
+        "test/core/codex/identity.test.ts",
+        "test/core/config-api/global-write.test.ts",
+        "test/core/config-keys.test.ts",
+        "test/core/edit-boundary-vocabulary.test.ts",
+        "test/core/effective-config.test.ts",
+        "test/core/knowledge-bundle/store-transport.test.ts",
+        "test/core/learned-skill-ledgers.test.ts",
+        "test/core/learned-skills/mutate.test.ts",
+        "test/core/management-api/kill-tree.test.ts",
+        "test/core/management-api/local-path-resolver.test.ts",
+        "test/core/management-api/router.test.ts",
+        "test/core/management-api/sessions-space.test.ts",
+        "test/core/management-api/workflow-whitelist.test.ts",
+        "test/core/multi-project-update.test.ts",
+        "test/core/pipeline-registry/execution-binding.test.ts",
+        "test/core/project-config.test.ts",
+        "test/core/shared/yaml.test.ts",
+        "test/core/space-selector.test.ts",
+        "test/core/store/git-redaction.test.ts",
+        "test/core/store/git.test.ts",
+        "test/core/store/identity-boundaries.test.ts",
+        "test/core/store/identity.test.ts",
+        "test/core/store/migration-ops.test.ts",
+        "test/core/store/register-existing-store-data-dir.test.ts",
+        "test/core/token-audit/zed/database.test.ts",
+        "test/core/token-audit/zed/decode.test.ts",
+        "test/core/workflow-artifact-ledger.test.ts",
+        "test/utils/interactive.test.ts",
+        "test/utils/marker-updates.test.ts"
+      ]
+    },
+    {
+      "index": 5,
+      "count": 8,
+      "files": [
+        "test/commands/feedback.test.ts",
+        "test/commands/handoff.test.ts",
+        "test/commands/schema.test.ts",
+        "test/commands/store-git.test.ts",
+        "test/commands/store-identity-cli.test.ts",
+        "test/commands/store-references.test.ts",
+        "test/core/archive-engine.test.ts",
+        "test/core/change-status-action-context.test.ts",
+        "test/core/claude/runner.test.ts",
+        "test/core/codex/project-config.test.ts",
+        "test/core/completions/generators/zsh-generator.test.ts",
+        "test/core/config-api/serialize.test.ts",
+        "test/core/config-schema.test.ts",
+        "test/core/ephemera-cleaner.test.ts",
+        "test/core/init.test.ts",
+        "test/core/knowledge-bundle/export.test.ts",
+        "test/core/learned-skills/catalog-backup.test.ts",
+        "test/core/learned-skills/multi-checkout.test.ts",
+        "test/core/management-api/task-detail.test.ts",
+        "test/core/management-api/workflows-api.test.ts",
+        "test/core/pipeline-registry/builtins.test.ts",
+        "test/core/pipeline-registry/goal-pipelines.test.ts",
+        "test/core/pipeline-registry/portfolio-state.test.ts",
+        "test/core/pipeline-registry/resolver.test.ts",
+        "test/core/profile-sync-drift.test.ts",
+        "test/core/project-config-store-memberships.test.ts",
+        "test/core/project-registry.test.ts",
+        "test/core/session-runtime-context-e2e.test.ts",
+        "test/core/store/bootstrap.test.ts",
+        "test/core/store/foundation.test.ts",
+        "test/core/store/git-worktree-list.test.ts",
+        "test/core/store/identity-writers.test.ts",
+        "test/core/store/project-records.test.ts",
+        "test/core/theme-library.test.ts",
+        "test/core/token-audit/audit.test.ts",
+        "test/core/token-audit/classify.test.ts",
+        "test/core/token-audit/parse.test.ts",
+        "test/core/view.test.ts",
+        "test/core/workflow-package/codec.test.ts",
+        "test/core/worksets.test.ts",
+        "test/telemetry/index.test.ts",
+        "test/utils/change-metadata.test.ts",
+        "test/utils/file-system.test.ts"
+      ]
+    },
+    {
+      "index": 6,
+      "count": 8,
+      "files": [
+        "test/commands/bootstrap.test.ts",
+        "test/commands/completion-installer-i18n.test.ts",
+        "test/commands/config-editor.test.ts",
+        "test/commands/config-profile.test.ts",
+        "test/commands/profile.test.ts",
+        "test/commands/validate.test.ts",
+        "test/commands/work.test.ts",
+        "test/core/agent-context.test.ts",
+        "test/core/archive-consumer-integration.test.ts",
+        "test/core/artifact-graph/instruction-loader.test.ts",
+        "test/core/completions/generators/bash-generator.test.ts",
+        "test/core/completions/generators/fish-generator.test.ts",
+        "test/core/completions/generators/powershell-generator.test.ts",
+        "test/core/completions/installers/bash-installer.test.ts",
+        "test/core/completions/installers/fish-installer.test.ts",
+        "test/core/completions/installers/zsh-installer.test.ts",
+        "test/core/config-api/router.test.ts",
+        "test/core/expert-install-flip.test.ts",
+        "test/core/file-state.test.ts",
+        "test/core/global-config.test.ts",
+        "test/core/learned-skill-materialization.test.ts",
+        "test/core/learned-skills/effective.test.ts",
+        "test/core/learned-skills/store-scope.test.ts",
+        "test/core/management-api/pipelines-api.test.ts",
+        "test/core/management-api/session-launch-context.test.ts",
+        "test/core/management-api/space-scoping.test.ts",
+        "test/core/management-api/supervisor.test.ts",
+        "test/core/management-api/threshold-schemes-api.test.ts",
+        "test/core/pipeline-library.test.ts",
+        "test/core/pipeline-registry/pipeline.test.ts",
+        "test/core/profiles.test.ts",
+        "test/core/relationship-health.test.ts",
+        "test/core/root-selection.test.ts",
+        "test/core/shared/skill-generation.test.ts",
+        "test/core/shared/tool-detection.test.ts",
+        "test/core/store/bootstrap-bundle-import.test.ts",
+        "test/core/store/membership-operations.test.ts",
+        "test/core/store/membership.test.ts",
+        "test/core/store/registry.test.ts",
+        "test/core/validation.test.ts",
+        "test/core/work-migration.test.ts",
+        "test/core/workflow-registry/validator.test.ts"
+      ]
+    },
+    {
+      "index": 7,
+      "count": 8,
+      "files": [
+        "test/cli-e2e/store-lifecycle.test.ts",
+        "test/commands/change-initiative-link.test.ts",
+        "test/commands/config-ui.test.ts",
+        "test/commands/daemon-lifecycle.test.ts",
+        "test/commands/store-add-project.test.ts",
+        "test/commands/store-migration-cli.test.ts",
+        "test/commands/workset.test.ts",
+        "test/core/artifact-graph/graph.test.ts",
+        "test/core/artifact-graph/state.test.ts",
+        "test/core/codex/init-update-integration.test.ts",
+        "test/core/codex/rollout.test.ts",
+        "test/core/init-update-learned.test.ts",
+        "test/core/knowledge-bundle/import.test.ts",
+        "test/core/management-api/archive-api.test.ts",
+        "test/core/management-api/kill-tree-windows-injection.test.ts",
+        "test/core/management-api/sessions-api.test.ts",
+        "test/core/management-api/supervisor-injection.test.ts",
+        "test/core/management-api/themes-api.test.ts",
+        "test/core/model-presets.test.ts",
+        "test/core/openspec-root.test.ts",
+        "test/core/pipeline-registry/execution-validation.test.ts",
+        "test/core/pipeline-registry/graph.test.ts",
+        "test/core/retired-edit-boundary.test.ts",
+        "test/core/store/bootstrap-obtain.test.ts",
+        "test/core/store/registry-b5-cleanup.test.ts",
+        "test/core/store/worktree-inventory-cache.test.ts",
+        "test/core/templates/direction.test.ts",
+        "test/core/templates/skill-templates-parity.test.ts",
+        "test/core/threshold-schemes.test.ts",
+        "test/core/token-audit/codex/audit-codex.test.ts",
+        "test/core/token-audit/codex/classify-codex.test.ts",
+        "test/core/token-audit/codex/discover-codex.test.ts",
+        "test/core/token-audit/codex/parse-codex-enrich.test.ts",
+        "test/core/token-audit/format-drift.test.ts",
+        "test/core/token-audit/viewer-embed.test.ts",
+        "test/core/token-audit/zed/audit.test.ts",
+        "test/core/workflow-registry/dependency-graph.test.ts",
+        "test/core/workflow-registry/selection.test.ts",
+        "test/core/workspace-migration.test.ts",
+        "test/release-contract.test.ts",
+        "test/utils/item-discovery.test.ts",
+        "test/vocabulary-sweep.test.ts"
+      ]
+    },
+    {
+      "index": 8,
+      "count": 8,
+      "files": [
+        "test/cli-e2e/agent-dispatch.test.ts",
+        "test/cli-program.test.ts",
+        "test/commands/artifact-workflow.test.ts",
+        "test/commands/completion.test.ts",
+        "test/commands/knowledge-bundle-export.test.ts",
+        "test/commands/pipeline-messages.test.ts",
+        "test/commands/pipeline-store-root-selection.test.ts",
+        "test/commands/show.test.ts",
+        "test/commands/ui-launch-stale-replace.test.ts",
+        "test/core/archive-accounting.test.ts",
+        "test/core/artifact-graph/outputs.test.ts",
+        "test/core/change-work.test.ts",
+        "test/core/codex/lifecycle.test.ts",
+        "test/core/completions/command-registry.test.ts",
+        "test/core/config-api/project-addressing.test.ts",
+        "test/core/edit-boundary-lifecycle.test.ts",
+        "test/core/keepalive.test.ts",
+        "test/core/knowledge-bundle/declaration.test.ts",
+        "test/core/knowledge-bundle/schema.test.ts",
+        "test/core/learned-skills/session-context-precedence.test.ts",
+        "test/core/list.test.ts",
+        "test/core/management-api/audits-api.test.ts",
+        "test/core/management-api/create-space.test.ts",
+        "test/core/management-api/local-path-chooser.test.ts",
+        "test/core/management-api/pipeline-submit.test.ts",
+        "test/core/management-api/spaces-membership.test.ts",
+        "test/core/management-api/task-detail-api.test.ts",
+        "test/core/management-api/workflow-enablement.test.ts",
+        "test/core/migration.test.ts",
+        "test/core/named-profiles.test.ts",
+        "test/core/project-home.test.ts",
+        "test/core/session-runtime-context.test.ts",
+        "test/core/store/identity-repair-text.test.ts",
+        "test/core/templates/orchestration-bundles.test.ts",
+        "test/core/token-audit/codex/audit-codex-enrich.test.ts",
+        "test/core/token-audit/management.test.ts",
+        "test/core/windows-hide-guard.test.ts",
+        "test/core/workflow-chain.test.ts",
+        "test/core/workflow-generation-integration.test.ts",
+        "test/core/workflow-library.test.ts",
+        "test/core/workflow-registry/builtins.test.ts",
+        "test/utils/task-progress.test.ts"
+      ]
+    }
+  ],
+  "snapshotSha256": "1b6a03a720da5688b3e370076049de0d7bdb9fb67924736ba658563a3b0d4f09"
+}

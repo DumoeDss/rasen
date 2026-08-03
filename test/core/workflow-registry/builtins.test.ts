@@ -9,6 +9,7 @@ import {
   BUILT_IN_WORKFLOW_IDS,
   CORE_WORKFLOW_IDS,
   WorkflowCatalog,
+  computeBuiltInWorkflowDigest,
   getBuiltInCatalogDefinitions,
   getBuiltInExpertDefinitions,
   getBuiltInWorkflowDefinitions,
@@ -45,22 +46,50 @@ describe('built-in workflow catalog', () => {
     expect(catalog.getBySkillName('rasen-apply-change')).toBe(apply);
   });
 
-  it('folds the 18 experts into the built-in catalog as kind:expert members', () => {
+  it('includes host sidecars in built-in workflow files and digest freshness', () => {
+    const propose = getBuiltInWorkflowDefinitions().find((definition) => definition.id === 'propose')!;
+    const sidecars = propose.files.map(({ path, sha256 }) => ({ path, sha256 }));
+
+    expect(sidecars.map((file) => file.path)).toEqual(expect.arrayContaining([
+      'references/codebase-design/README.md',
+      'references/codebase-design/DEEPENING.md',
+      'references/codebase-design/DESIGN-IT-TWICE.md',
+    ]));
+    expect(computeBuiltInWorkflowDigest(
+      propose.id,
+      propose.skill.dirName,
+      propose.skill.template,
+      sidecars
+    )).toBe(propose.digest);
+
+    const changed = sidecars.map((file, index) => index === 0
+      ? { ...file, sha256: `sha256:${'0'.repeat(64)}` }
+      : file);
+    expect(computeBuiltInWorkflowDigest(
+      propose.id,
+      propose.skill.dirName,
+      propose.skill.template,
+      changed
+    )).not.toBe(propose.digest);
+  });
+
+  it('folds the 12 surviving experts into the built-in catalog as kind:expert members', () => {
     const workflowIds = new Set(getBuiltInWorkflowDefinitions().map((definition) => definition.id));
     const experts = getBuiltInExpertDefinitions();
 
-    expect(experts).toHaveLength(18);
+    expect(experts).toHaveLength(12);
     expect(experts.every((expert) => expert.kind === 'expert')).toBe(true);
     expect(experts.every((expert) => expert.source === 'built-in')).toBe(true);
-    expect(experts.every((expert) => expert.files.length === 0)).toBe(true);
     expect(experts.some((expert) => workflowIds.has(expert.id))).toBe(false);
-
-    // qa-only shares qa's sidecar directory but is still its own catalog unit
-    // with its own digest (id/dirName/template differ).
-    const qa = experts.find((expert) => expert.id === 'qa');
-    const qaOnly = experts.find((expert) => expert.id === 'qa-only');
-    expect(qaOnly?.sidecarSourceId).toBe('qa');
-    expect(qa?.digest).not.toBe(qaOnly?.digest);
+    expect(experts.map((expert) => expert.id)).toEqual([
+      'benchmark', 'careful', 'chrome-use', 'codex', 'cso', 'design-consultation',
+      'design-review', 'investigate', 'office-hours', 'qa', 'review', 'workflow-author',
+    ]);
+    expect(experts.find((expert) => expert.id === 'workflow-author')?.files.map((file) => file.path))
+      .toEqual(expect.arrayContaining([
+        'references/workflow-review/README.md',
+        'references/workflow-review/checklist.md',
+      ]));
 
     // `getExpertSkillDefinitions` stays a catalog-backed filter shape (least
     // caller churn) — same ids/names, just the older narrower shape.
@@ -140,7 +169,7 @@ describe('built-in workflow catalog', () => {
     });
     expect(byId.get('verify-enhanced-command')?.requires).toEqual({
       workflows: [],
-      skills: ['rasen-review', 'rasen-cso', 'rasen-qa', 'rasen-design-review', 'rasen-qa-only'],
+      skills: ['rasen-review', 'rasen-cso', 'rasen-qa', 'rasen-design-review'],
       pipelines: [],
       schemas: [],
     });

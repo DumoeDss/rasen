@@ -59,14 +59,13 @@ export interface WorkflowDefinition {
   skill: WorkflowSkillDefinition;
   requires: WorkflowDependencySet;
   recommends: WorkflowRecommendations;
+  /**
+   * Built-in definitions use `files` for packaged sidecars as well as user
+   * workflows, so digest and installed-artifact freshness cover the complete
+   * generated skill rather than only `SKILL.md`.
+   */
   files: WorkflowFileEntry[];
   digest: string;
-  /**
-   * For `kind: 'expert'` definitions whose sidecar reference files live under
-   * another expert's directory (e.g. `qa-only` reads `skills/experts/qa/`).
-   * Undefined for every non-expert definition and for experts with no alias.
-   */
-  sidecarSourceId?: string;
 }
 
 export type WorkflowDiagnosticSeverity = 'error' | 'warning';

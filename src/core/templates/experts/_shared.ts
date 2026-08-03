@@ -26,7 +26,7 @@ const REPO_MODE_CONFIG = `- **Repo mode:** \`__OPENSPEC_REPO_MODE__\` — contro
 
 const SEVERITY_VOCABULARY = `## Canonical severity vocabulary
 
-Findings from the generic expert skills (review, cso, qa, qa-only, benchmark, design-review) feed one canonical severity scale — the same scale the review→fix loop and the verify stage consume to decide clean vs. escalate. Classify against these four levels:
+Findings from the generic expert skills (review, cso, qa, benchmark, design-review) feed one canonical severity scale — the same scale the review→fix loop and the verify stage consume to decide clean vs. escalate. Classify against these four levels:
 
 - **Blocker** — must not ship: wrong behavior on a common path, data loss or corruption, an exploitable security hole, a failing test or gate, or a required spec behavior missing.
 - **Major** — should not ship without an explicit decision: wrong behavior on a plausible path, or a significant regression.
@@ -39,7 +39,7 @@ Each expert speaks a native scale; map it onto the canonical scale below. **Find
 |---|---|---|---|---|
 | review \`CRITICAL\` / \`INFORMATIONAL\` | \`CRITICAL\` naming data-loss / security / corruption / crash on a common path | other \`CRITICAL\` (correctness); \`INFORMATIONAL\` naming data-loss / security / silent corruption | \`INFORMATIONAL\` (default) | pure nit / style |
 | cso \`CRITICAL\` / \`HIGH\` / \`MEDIUM\` (+ conf N/10) | \`CRITICAL\` | \`HIGH\` | \`MEDIUM\` | — (cso drops < MEDIUM by design) |
-| qa / qa-only \`critical\` / \`high\` / \`medium\` / \`low\` / \`cosmetic\` | \`critical\` | \`high\` | \`medium\` / \`low\` | \`cosmetic\` |
+| qa (UI, dispatched, or report-only/non-UI mode) \`critical\` / \`high\` / \`medium\` / \`low\` / \`cosmetic\` | \`critical\` | \`high\` | \`medium\` / \`low\` | \`cosmetic\` |
 | benchmark \`REGRESSION\` / \`WARNING\` / \`OK\` (+ Grade A–F) | \`REGRESSION\` crossing a hard budget (a FAIL row) | \`REGRESSION\` (timing / size) | \`WARNING\` | \`OK\`; grade-only deltas |
 | design-review impact \`high\` / \`medium\` / \`polish\` (+ Grade A–F) | high-impact broken / unusable UI (rare) | high impact | medium | polish |
 | codex \`[P1]\` / \`[P2]\` (display-only, not gate-consumed) | \`[P1]\` | \`[P2]\` | — | — |
@@ -48,35 +48,25 @@ In dispatched mode (see below) each expert self-maps and tags every finding it e
 
 const DISPATCH_CONTRACT = `## Dispatched vs standalone mode
 
-The generic expert skills (review, cso, qa, qa-only, benchmark, design-review) run in one of two modes. Detect the mode from your own invocation — no flag is required:
+The generic expert skills (review, cso, qa, benchmark, design-review) run in dispatched or standalone mode. Detect the mode from your own invocation — no flag is required:
 
 - **Dispatched (report-only) mode** — your invocation instructs you to do a single unit of work, to not spawn subagents, and states that a LEAD owns orchestration (the signature every orchestrated dispatch carries). You are a role-isolated leaf reviewer worker.
 - **Standalone mode** — a human invoked you directly (none of the above). Keep your full behavior as described in this skill.
 
 If an explicit \`MODE: dispatched (report-only)\` token is present in your instructions, honor it; the self-trigger above is the fallback when the token is absent.
 
+**QA explicit report-only mode:** \`rasen-qa\` also enters report-only/no-edit behavior whenever its invocation explicitly requests \`report-only\` or \`non-UI\`, even without a LEAD dispatch. Every dispatched QA invocation is report-only. In this mode all prohibitions below apply exactly as in dispatched mode, including no fixes, fix-oriented questions, commits, clean-tree gate, or subagents, and the output is the canonical \`qa-report.md\`.
+
 **In dispatched mode you MUST:**
 - Apply **no** AUTO-FIX and make **no** code edits. Fix-class items are reported for the LEAD's triage to a non-author fixer, never applied by you.
 - Issue **no** \`AskUserQuestion\`. There is no interactive user at a leaf worker; ASK-class items are reported as unresolved findings for the LEAD.
 - Make **no** \`git commit\`. The LEAD / ship owns commits; concurrent commits on the shared index clobber each other.
 - Spawn **no** subagents of your own. Independence comes from the LEAD's parallel reviewers and the mandatory non-author re-review, not from a leaf worker's own fan-out.
-- Return classified findings and **write only the canonical \`<skill>-report.md\`** (review → \`review-report.md\`, cso → \`cso-report.md\`, qa and qa-only → \`qa-report.md\`, benchmark → \`benchmark-report.md\`, design-review → \`design-review-report.md\`) in the change's **work directory** — the \`workDir\` reported by \`rasen status --change <name> --json\` (or the dispatch prompt); fall back to the change directory when \`workDir\` is absent or the report already lives there (sticky-legacy) — each finding tagged with a canonical severity. Do NOT also write to the standalone \`.rasen/*-reports/\` or \`~/.rasen/projects/\` paths.
+- Return classified findings and **write only the canonical \`<skill>-report.md\`** (review → \`review-report.md\`, cso → \`cso-report.md\`, every QA mode → \`qa-report.md\`, benchmark → \`benchmark-report.md\`, design-review → \`design-review-report.md\`) in the change's **evidence directory** — the \`evidenceDir\` reported by \`rasen status --change <name> --json\` (or the dispatch prompt), i.e. \`<changeRoot>/evidence/\`, so the report travels with the change and is delivered with the Archive. **Sticky-legacy:** if that report already exists at a legacy location (the reported \`workDir\`, or the change directory), update it in place there instead of creating a second copy. Each finding is tagged with a canonical severity. Do NOT also write to the standalone \`.rasen/*-reports/\` paths, and never write anywhere under the machine root (\`~/.rasen/\`) — it is CLI-owned.
 
 These dispatched-mode prohibitions **override** any contrary standalone instruction later in this skill (fix loops, batched questions, clean-tree gates, adversarial subagent dispatch, native report paths). Standalone mode retains all of that behavior.
 
-**Denied-edit honesty.** Read \`rasen agent edit-boundary status --json\` before describing an edit restriction. If a covered write is denied by an active **hard** boundary, the fix did NOT land: report it as an un-applied finding, \`[BLOCKED: edit-boundary] file:line — proposed fix\`, never as \`[AUTO-FIXED]\`, and never silently drop it. A **soft** boundary requires cooperation and is not a host denial; **unsupported** leaves edits unrestricted. (Dispatched mode does no AUTO-FIX at all; this clause primarily governs the standalone fix loops.)`;
-
-export const EDIT_BOUNDARY_GUIDANCE = `## Runtime edit boundary
-
-Use the base runtime, which works independently of optional skills:
-
-\`\`\`bash
-rasen agent edit-boundary set <directory>
-rasen agent edit-boundary status --json
-rasen agent edit-boundary clear
-\`\`\`
-
-The state is shared by concurrent agents in the same canonical checkout. Always read \`status\` before describing the restriction: **hard** means the detected host rejects covered structured write tools outside the boundary, while shell, MCP, external-process, and other unhooked writes remain outside the contract; **soft** requires agent cooperation and must not be described as a host denial; **unsupported** means edits remain unrestricted and no active boundary is created. Never state enforcement more strongly than the reported level.`;
+**Write-result and scope honesty.** After any standalone AUTO-FIX write attempt, inspect the tool result and the current diff before claiming success. If the intended change did not land, report it as an un-applied finding, never as \`[AUTO-FIXED]\`, and never silently drop it. Before a mutating standalone expert reports completion, inspect the actual changed-file set against the task's declared scope. An unexpected file without a recorded justification remains unresolved out-of-scope work. This is observable write/diff evidence, not mechanical write enforcement. (Dispatched mode does no AUTO-FIX at all; this clause primarily governs the standalone fix loops.)`;
 
 const ASK_USER_QUESTION_FORMAT = `## AskUserQuestion Format
 
@@ -164,12 +154,11 @@ plan's living status.`;
 
 /**
  * Full orchestration preamble — for the generic review-family experts
- * (review, cso, qa, qa-only, benchmark, design-review, codex) whose findings
+ * (review, cso, qa, benchmark, design-review, codex) whose findings
  * feed the canonical severity scale and the dispatched-mode contract.
  */
 export const PREAMBLE = [
   `${PREAMBLE_BASE}\n${REPO_MODE_CONFIG}`,
-  EDIT_BOUNDARY_GUIDANCE,
   SEVERITY_VOCABULARY,
   DISPATCH_CONTRACT,
   ASK_USER_QUESTION_FORMAT,
@@ -193,29 +182,54 @@ export const PREAMBLE_DIALOGUE = [
 ].join('\n\n');
 
 /**
- * Lite preamble — for tool-type experts (chrome-use, prototype, tdd,
- * codebase-design, navigator). Branch echo plus the proactive config flag;
+ * Lite preamble — for standalone tool-type experts. Branch echo plus the proactive config flag;
  * none of the review-orchestration protocol applies to them.
  */
 export const PREAMBLE_LITE = PREAMBLE_BASE;
 
 /**
- * Resolves the project's registry-backed machine-local documents directory.
- * Replaces the old `SLUG=$(basename ...) && mkdir -p ~/.rasen/projects/$SLUG`
- * pattern: that ad-hoc directory name was never written to the project
- * registry's `home` field, so `rasen doctor --gc` (which deletes any
- * `projects/` subdirectory no registry entry references) treated it as an
- * orphan and deleted it outright — including the design docs standalone
- * office-hours/qa/design-review sessions had just written there. `rasen init`
- * always registers the project before these skills can run, so `machineHome`
- * is reliably present; the in-repo fallback only covers a corrupt/unreadable
- * registry, and is never gc'd because gc only touches the global data dir.
+ * Resolves the project's design-docs directory — the ONE landing decider for
+ * every skill that writes or reads design material (office-hours,
+ * design-consultation, design-review, qa, qa-only). Single shared constant so
+ * one edit covers all five.
+ *
+ * Design docs are ROOT-LEVEL in the PLANNING root (`file-placement`
+ * capability): they belong to no single change (they pre-date any change and
+ * outlive it through `Supersedes:` lineage), so they never land under a change
+ * directory — and never under the machine root, where they are invisible to
+ * the repo, undeliverable, and were historically deleted outright by
+ * `rasen doctor --gc`.
+ *
+ * The fallback is anchored at the Git toplevel, never at the cwd: the previous
+ * bare `.rasen/design-docs` stranded docs in whatever subdirectory the session
+ * happened to be standing in. When neither resolution answers, the skill stops
+ * and reports rather than guessing a location.
  */
 export const PROJECT_DOCS_DIR_RESOLUTION = `\`\`\`bash
-DOCS_DIR=$(rasen context --json 2>/dev/null | jq -r '.root.machineHome // empty')
-if [ -n "$DOCS_DIR" ]; then DOCS_DIR="$DOCS_DIR/design-docs"; else DOCS_DIR=".rasen/design-docs"; fi
+DOCS_ROOT=$(rasen context --json 2>/dev/null | jq -r '.root.path // empty')
+[ -n "$DOCS_ROOT" ] || DOCS_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+[ -n "$DOCS_ROOT" ] || { echo "Cannot resolve a planning root for design docs — stop and report this rather than writing to the current directory." >&2; exit 1; }
+DOCS_DIR="$DOCS_ROOT/rasen/design-docs"
 mkdir -p "$DOCS_DIR"
 \`\`\``;
+
+/**
+ * Where probe / prototype / investigation-harness code lands (`file-placement`
+ * capability). Single shared constant so the rule reads identically in every
+ * skill that authorizes writing throwaway or investigative code.
+ *
+ * Probes are EXECUTION-root material: they are a project deliverable that must
+ * enter code history and be checkout-able by a later reader, so there is no
+ * external/machine-root option. The project's own convention wins over the
+ * fixed fallback — a repo that already has `experiments/` should not grow a
+ * second, Rasen-shaped home for the same kind of code.
+ */
+export const PROBE_PLACEMENT_GUIDANCE = `**Where probe / prototype / harness code goes.** Probe code is a project deliverable, not scratch state: it lands in the **execution root** (the code checkout you are working in) so it enters code history and a later reader can check it out and re-run it. It NEVER goes under the machine root (\`~/.rasen/\`), and there is no external/internal option to choose.
+
+1. **Follow the project's own convention first.** If the repo already has an \`experiments/\`, \`prototypes/\`, \`tools/\`, or \`fixtures/\` directory — or a module-adjacent location matching how it organizes this kind of code — put the probe there. A project convention always wins; do not invent a parallel home for code the project already has a place for.
+2. **Only when no convention is identifiable**, use the fixed fallback \`<executionRoot>/.rasen/probes/<change>/<probe>/\` — one directory per probe, named for the question it answers. Resolve \`<executionRoot>\` as the code checkout root (\`git rev-parse --show-toplevel\`); \`<change>\` is the active change name, or the topic slug when no change is active.
+
+Whether any of it enters Git is the user's \`.gitignore\` decision — Rasen writes no ignore rules.`;
 
 export const CHROME_USE_SETUP = `## SETUP (run this BEFORE any chrome-use command)
 
@@ -680,14 +694,14 @@ Minimum 0 per category.
 2. **Verify before documenting.** Retry the issue once to confirm it's reproducible, not a fluke.
 3. **Never include credentials.** Write \`[REDACTED]\` for passwords in repro steps.
 4. **Write incrementally.** Append each issue to the report as you find it. Don't batch.
-5. **Never read source code to FORM findings — exploration/testing phase only.** During exploration you test as a user, not a developer: findings come from observed behavior, not from reading the implementation. This rule (and its reinforcer #7) governs the audit phase; reading source IS required and allowed for exactly two activities: (a) **diff-aware triage** — mapping changed controller / model / view files to the routes/pages they serve (Diff-aware mode); and (b) the **standalone fix loop** (qa Phase 8, when a human runs /qa directly), which reads source to make the minimal fix. This carve-out names the STANDALONE fix loop only — it does NOT reopen the dispatched-mode report-only contract (a dispatched reviewer still makes no edits).
+5. **Never read source code to FORM findings — exploration/testing phase only.** During exploration you test as a user, not a developer: findings come from observed behavior, not from reading the implementation. This rule (and its reinforcer #7) governs the audit phase; reading source IS allowed for exactly two bounded activities: (a) **diff-aware triage** — mapping changed controller / model / view files to the routes/pages they serve (Diff-aware mode); and (b) the **default standalone fix loop** (qa Phase 8), which reads source to make the minimal fix. Dispatched and explicit report-only/non-UI modes have no fix loop: they may read source only for bounded diff-aware triage and gain no editing exception.
 6. **Check console after every interaction.** JS errors that don't surface visually are still bugs.
 7. **Test like a user (exploration phase).** Use realistic data. Walk through complete workflows end-to-end. Like #5, this governs how you FIND issues; it does not forbid the source reading #5 enumerates (diff-aware triage, standalone fix loop).
 8. **Depth over breadth.** 5-10 well-documented issues with evidence > 20 vague descriptions.
 9. **Never delete output files.** Screenshots and reports accumulate — that's intentional.
 10. **Use \`/snapshot?mode=C\` for tricky UIs.** Finds clickable divs (@c refs) that the accessibility tree misses.
 11. **Show screenshots to the user.** After every \`/screenshot\` or \`/responsive\` call that writes a file, use the Read tool on the output file(s) so the user can see them inline. For \`/responsive\` (up to 3 files), Read all of them. This is critical — without it, screenshots are invisible to the user.
-12. **Never refuse to use the browser.** When the user invokes /qa or /qa-only, they are requesting browser-based testing. Never suggest evals, unit tests, or other alternatives as a substitute. Even if the diff appears to have no UI changes, backend changes affect app behavior — always open the browser and test.`;
+12. **Never refuse to use the browser.** Every QA mode, including explicit report-only/non-UI mode, is browser-based testing. Never suggest evals, unit tests, source review, or other alternatives as a substitute. Even if the diff appears to have no UI changes, backend changes affect app behavior — always open the browser and test.`;
 
 export const DESIGN_METHODOLOGY = `## Modes
 
@@ -1630,18 +1644,11 @@ fresh pass after a major redesign**. Do NOT iterate toward a perfect score.
   review unavailable — presenting unreviewed doc." The document is already on disk; the
   review is a bonus, not a gate.
 
-**Step 6: Report and persist metrics**
+**Step 6: Report**
 
 1. Summary, by default: "Fresh review + N warm verification pass(es). M defect findings
    fixed; K direction fork(s) surfaced to you. Quality score: X/10." Show the full reviewer
    output only if asked.
 2. Residual unresolved issues → "## Reviewer Concerns" section in the document (downstream
-   skills read it).
-3. Append metrics:
-\`\`\`bash
-mkdir -p ~/.rasen/analytics
-echo '{"skill":"office-hours","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.rasen/analytics/spec-review.jsonl 2>/dev/null || true
-\`\`\`
-ITERATIONS = total review passes (fresh + warm). Replace ITERATIONS, FOUND, FIXED,
-REMAINING, SCORE with actual values from the review.`;
+   skills read it).`;
 

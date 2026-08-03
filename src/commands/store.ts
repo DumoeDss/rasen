@@ -103,6 +103,7 @@ interface StoreUpgradeIdentityOptions extends StoreJsonOptions {
   uid?: string;
   apply?: boolean;
   dryRun?: boolean;
+  all?: boolean;
 }
 
 /**
@@ -1367,6 +1368,48 @@ class StoreCommand {
     }
   }
 
+  /**
+   * Batch upgrade: migrates every registered store to a permanent identity,
+   * backfills `storeMemberships` hints, and triggers the registry re-key.
+   * Store-centric (no `projectRoot`); the `update` hook handles the project
+   * `store:` declaration.
+   */
+  async upgradeIdentityAll(
+    options: StoreUpgradeIdentityOptions = {}
+  ): Promise<void> {
+    try {
+      const { migrateAllStoreIdentities, formatStoreIdentityMigrationSummary } =
+        await import('../core/store/identity-migration.js');
+      const result = await migrateAllStoreIdentities({
+        apply: options.apply === true && options.dryRun !== true,
+      });
+
+      if (options.json) {
+        printJson(result);
+        return;
+      }
+
+      const lines = formatStoreIdentityMigrationSummary(result);
+      if (lines.length > 0) {
+        console.log(lines.join('\n'));
+      }
+    } catch (error) {
+      this.handleFailure(
+        options.json,
+        {
+          applied: false,
+          stores: [],
+          projects: [],
+          registryRekeyed: false,
+          registryBlockedBy: [],
+          suggestedCommits: [],
+          status: [],
+        },
+        error
+      );
+    }
+  }
+
   private handleFailure<T extends { status: StoreDiagnostic[] }>(
     json: boolean | undefined,
     payload: T,
@@ -1477,13 +1520,27 @@ export function registerStoreCommand(program: Command): void {
     });
 
   store
-    .command('upgrade-identity <id>')
+    .command('upgrade-identity [id]')
     .description('')
     .option('--uid <uid>', '')
     .option('--dry-run', '')
     .option('--apply', '')
+    .option('--all', '')
     .option('--json', '')
-    .action(async (id: string, options: StoreUpgradeIdentityOptions) => {
+    .action(async (id: string | undefined, options: StoreUpgradeIdentityOptions) => {
+      if (options.all) {
+        await storeCommand.upgradeIdentityAll(options);
+        return;
+      }
+      if (!id) {
+        console.error(
+          asErrorMessage(
+            "Store id is required (or use '--all' to upgrade every registered store)."
+          )
+        );
+        process.exitCode = 1;
+        return;
+      }
       await storeCommand.upgradeIdentity(id, options);
     });
 

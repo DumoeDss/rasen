@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "label": "partition-2-of-8",
+  "command": "pnpm test",
+  "partition": "2/8",
+  "maxWorkers": "1",
+  "timeoutMs": 480000,
+  "startedAt": "2026-07-31T11:58:18.290Z",
+  "elapsedMs": 267005,
+  "rootPid": 35468,
+  "timedOut": false,
+  "exitCode": 0,
+  "signal": null,
+  "spawnError": null,
+  "summaryDetected": true,
+  "ownedProcessCount": 236,
+  "survivingOwnedProcesses": [],
+  "survivingOwnedProcessesAfterCleanup": [],
+  "outputTail": [
+    " Test Files  43 passed (43)",
+    "      Tests  653 passed | 6 skipped (659)",
+    "   Start at  19:58:19",
+    "   Duration  259.33s (transform 4.57s, setup 0ms, collect 27.41s, tests 216.40s, environment 10ms, prepare 6.36s)"
+  ],
+  "evidenceNote": "The runner's complete console tail was returned to the calling terminal. This persisted JSON preserves every acceptance field and the exact Vitest summary lines; intervening passing-test detail is intentionally omitted."
+}

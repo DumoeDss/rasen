@@ -414,59 +414,55 @@ describe('rasen doctor (3.6)', () => {
       execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot, env: gitEnv, stdio: 'ignore' });
     });
 
-    it('hints at migratable legacy ephemera for a registered project (migrate-legacy-ephemera 3.1)', async () => {
+    it('hints at migratable legacy state for a registered project (inverted migrator)', async () => {
       const projectId = randomUUID();
-      await registerProject({ projectRoot: storeRoot, projectId, mode: 'in-repo' }, { globalDataDir });
-      const changeDir = path.join(storeRoot, 'rasen', 'changes', 'foo');
-      fs.mkdirSync(changeDir, { recursive: true });
-      fs.writeFileSync(path.join(changeDir, 'auto-run.json'), '{}');
+      const { entry } = await registerProject({ projectRoot: storeRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+      // The inverted migrator scans machine-home work directories (resolved
+      // via findProjectRegistryEntry + getProjectHomeDir, same as the CLI).
+      const homeDir = getProjectHomeDir(entry.home, { globalDataDir });
+      const workDir = path.join(homeDir, 'changes', 'foo', 'work');
+      fs.mkdirSync(workDir, { recursive: true });
+      fs.writeFileSync(path.join(workDir, 'auto-run.json'), '{}');
 
       const json = await runCLI(['doctor', '--json', '--store', 'team-context'], { cwd: tempDir, env });
       const health = parseJson(json);
-      // storeRoot is a plain (non-git) directory in this fixture, so the
-      // split is fully determined: 1 untracked, 0 tracked (review m1).
       expect(health.machineHome.migratableEphemera).toEqual({
         total: 1,
-        untracked: 1,
-        tracked: 0,
-        splitUnavailable: false,
+        reports: 0,
+        handoff: 0,
+        runState: 1,
         hint: 'rasen work migrate',
       });
 
       const human = await runCLI(['doctor', '--store', 'team-context'], { cwd: tempDir, env });
-      expect(human.stdout).toContain('Migratable legacy ephemera: 1 untracked');
+      expect(human.stdout).toContain('1 run-state');
       expect(human.stdout).toContain('rasen work migrate');
 
       // Doctor stays read-only: the hint never moves the file itself.
-      expect(fs.existsSync(path.join(changeDir, 'auto-run.json'))).toBe(true);
+      expect(fs.existsSync(path.join(workDir, 'auto-run.json'))).toBe(true);
     });
 
-    it('splits tracked from untracked in the migration hint (review m1)', async () => {
-      await registerProject(
+    it('counts migratable legacy state by file type', async () => {
+      const { entry } = await registerProject(
         { projectRoot: storeRoot, projectId: randomUUID(), mode: 'in-repo' },
         { globalDataDir }
       );
-      const changeDir = path.join(storeRoot, 'rasen', 'changes', 'foo');
-      fs.mkdirSync(changeDir, { recursive: true });
-      fs.writeFileSync(path.join(changeDir, 'review-report.md'), '# review\n');
-      const gitExecEnv = { ...process.env, ...isolatedGitEnv(storeRoot) };
-      execFileSync('git', ['init'], { cwd: storeRoot, stdio: 'ignore' });
-      execFileSync('git', ['add', '-A'], { cwd: storeRoot, env: gitExecEnv });
-      execFileSync('git', ['commit', '-m', 'init'], { cwd: storeRoot, env: gitExecEnv, stdio: 'ignore' });
-      fs.writeFileSync(path.join(changeDir, 'auto-run.json'), '{}'); // never committed
+      const homeDir = getProjectHomeDir(entry.home, { globalDataDir });
+      const workDir = path.join(homeDir, 'changes', 'foo', 'work');
+      fs.mkdirSync(path.join(workDir, 'handoff'), { recursive: true });
+      fs.writeFileSync(path.join(workDir, 'review-report.md'), '# review\n');
+      fs.writeFileSync(path.join(workDir, 'handoff', 'implementer-1.md'), '# handoff\n');
+      fs.writeFileSync(path.join(workDir, 'auto-run.json'), '{}');
 
       const json = await runCLI(['doctor', '--json', '--store', 'team-context'], { cwd: tempDir, env });
       const health = parseJson(json);
       expect(health.machineHome.migratableEphemera).toEqual({
-        total: 2,
-        untracked: 1,
-        tracked: 1,
-        splitUnavailable: false,
+        total: 3,
+        reports: 1,
+        handoff: 1,
+        runState: 1,
         hint: 'rasen work migrate',
       });
-
-      const human = await runCLI(['doctor', '--store', 'team-context'], { cwd: tempDir, env });
-      expect(human.stdout).toContain('1 untracked (+1 tracked, needs --include-tracked)');
     });
 
     it('omits the migration hint for a clean registered project', async () => {

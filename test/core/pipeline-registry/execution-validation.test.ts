@@ -178,6 +178,44 @@ stages:
     expect(probeCodex).toHaveBeenCalledTimes(1);
   });
 
+  it('covers a decompose child Claude bridge and probes it only once', async () => {
+    const projectRoot = path.join(tempDir, 'claude-child-project');
+    writePipeline(
+      path.join(projectRoot, 'rasen', 'pipelines'),
+      'claude-child',
+      `
+name: claude-child
+stages:
+  - id: first
+    skill: ${KNOWN_SKILL}
+    runtime: claude
+  - id: second
+    skill: ${KNOWN_SKILL}
+    runtime: claude
+    requires: [first]
+`
+    );
+
+    const parent = pipeline(`
+name: claude-decomposer
+stages:
+  - id: fanout
+    kind: decompose
+    childPipeline: claude-child
+`);
+    const probeClaude = vi.fn(() => true);
+    const probeCodex = vi.fn(() => false);
+
+    await validatePipelineForExecution(parent, projectRoot, {
+      host: CODEX_HOST,
+      probeClaude,
+      probeCodex,
+    });
+
+    expect(probeClaude).toHaveBeenCalledTimes(1);
+    expect(probeCodex).not.toHaveBeenCalled();
+  });
+
   it('never probes a pure-default (non-codex) pipeline', async () => {
     const p = pipeline(`
 name: pure-claude
@@ -189,8 +227,14 @@ stages:
     requires: [a]
 `);
     const probeCodex = vi.fn(() => false);
-    await validatePipelineForExecution(p, undefined, { probeCodex, host: CLAUDE_HOST });
+    const probeClaude = vi.fn(() => false);
+    await validatePipelineForExecution(p, undefined, {
+      probeCodex,
+      probeClaude,
+      host: CLAUDE_HOST,
+    });
     expect(probeCodex).not.toHaveBeenCalled();
+    expect(probeClaude).not.toHaveBeenCalled();
   });
 
   it('probes at most once for a pipeline with several codex stages', async () => {
@@ -230,14 +274,17 @@ stages:
     skill: ${KNOWN_SKILL}
 `);
     const probeCodex = vi.fn(() => false);
+    const probeClaude = vi.fn(() => false);
     await validatePipelineForExecution(p, undefined, {
       probeCodex,
+      probeClaude,
       host: CODEX_HOST,
     });
     expect(probeCodex).not.toHaveBeenCalled();
+    expect(probeClaude).not.toHaveBeenCalled();
   });
 
-  it('rejects Codex-host to Claude-target before dispatch with a stable code', async () => {
+  it('supports Codex-host to Claude-target through the Claude print bridge', async () => {
     const p = pipeline(`
 name: unsupported-route
 stages:
@@ -246,11 +293,46 @@ stages:
     role: planner
     runtime: claude
 `);
-    const probeCodex = vi.fn(() => true);
-    await expect(
-      validatePipelineForExecution(p, undefined, { probeCodex, host: CODEX_HOST })
-    ).rejects.toMatchObject({ code: 'pipeline_runtime_route_unsupported' });
+    const probeCodex = vi.fn(() => false);
+    const probeClaude = vi.fn(() => true);
+    await validatePipelineForExecution(p, undefined, {
+      probeCodex,
+      probeClaude,
+      host: CODEX_HOST,
+    });
     expect(probeCodex).not.toHaveBeenCalled();
+    expect(probeClaude).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails before dispatch with Claude-specific remedies when claude-print is unavailable', async () => {
+    const p = pipeline(`
+name: claude-stage
+stages:
+  - id: a
+    skill: ${KNOWN_SKILL}
+    role: planner
+    runtime: claude
+  - id: b
+    skill: ${KNOWN_SKILL}
+    role: reviewer
+    runtime: claude
+    requires: [a]
+`);
+    const probeClaude = vi.fn(() => false);
+    try {
+      await validatePipelineForExecution(p, undefined, {
+        probeClaude,
+        probeCodex: vi.fn(() => false),
+        host: CODEX_HOST,
+      });
+      expect.fail('expected validatePipelineForExecution to throw');
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'pipeline_runtime_unavailable' });
+      expect((error as Error).message).toMatch(/claude-print/);
+      expect((error as Error).message).toMatch(/Claude Code CLI/);
+      expect((error as Error).message).toMatch(/codex/);
+    }
+    expect(probeClaude).toHaveBeenCalledTimes(1);
   });
 
   it('keeps unknown-host compatibility and emits an actionable notice', async () => {
@@ -292,9 +374,12 @@ stages:
     skill: ${KNOWN_SKILL}
     role: planner
 `);
-    await expect(
-      validatePipelineForExecution(p, projectRoot, { host: CODEX_HOST })
-    ).rejects.toMatchObject({ code: 'pipeline_runtime_route_unsupported' });
+    const probeClaude = vi.fn(() => true);
+    await validatePipelineForExecution(p, projectRoot, {
+      host: CODEX_HOST,
+      probeClaude,
+    });
+    expect(probeClaude).toHaveBeenCalledTimes(1);
   });
 
   it('lets a run-local role override rescue a persisted unsupported route before rejection', async () => {
@@ -319,14 +404,17 @@ stages:
     role: planner
 `);
     const probeCodex = vi.fn(() => false);
+    const probeClaude = vi.fn(() => false);
 
     await validatePipelineForExecution(p, projectRoot, {
       host: CODEX_HOST,
       roleRuntimeOverrides: { planner: 'codex' },
       probeCodex,
+      probeClaude,
     });
 
     expect(probeCodex).not.toHaveBeenCalled();
+    expect(probeClaude).not.toHaveBeenCalled();
   });
 });
 
@@ -428,10 +516,10 @@ describe('pipeline-registry/execution-validation expert leniency preflight (revi
     );
 
     const p = pipeline(`
-name: lean-profile-tdd
+name: lean-profile-codex
 stages:
   - id: a
-    skill: rasen-tdd
+    skill: rasen-codex
 `);
 
     try {
@@ -473,10 +561,10 @@ stages:
     );
 
     const p = pipeline(`
-name: legacy-tdd
+name: legacy-codex
 stages:
   - id: a
-    skill: rasen-tdd
+    skill: rasen-codex
 `);
 
     await validatePipelineForExecution(p);
@@ -545,10 +633,10 @@ describe('pipeline-registry/execution-validation per-project expert-selection ac
     );
 
     const p = pipeline(`
-name: unacknowledged-project-tdd
+name: unacknowledged-project-codex
 stages:
   - id: a
-    skill: rasen-tdd
+    skill: rasen-codex
 `);
 
     // A stage naming a not-installed-by-profile expert must NOT fail
@@ -579,10 +667,10 @@ stages:
     writeExpertSelectionAck(home!.homeDir);
 
     const p = pipeline(`
-name: acknowledged-project-tdd
+name: acknowledged-project-codex
 stages:
   - id: a
-    skill: rasen-tdd
+    skill: rasen-codex
 `);
 
     try {

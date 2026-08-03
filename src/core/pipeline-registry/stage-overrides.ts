@@ -48,6 +48,7 @@ import {
   hasRuntimeCapability,
   resolveDispatchRoute,
   type DetectedHostRuntime,
+  type DispatchBridge,
   type DispatchMode,
 } from '../runtime-adapters.js';
 
@@ -79,12 +80,14 @@ export interface ResolvedRoleRuntime {
   runtime: AgentRuntime;
   source: RoleRuntimeSource;
   dispatchMode: DispatchMode;
+  bridge?: DispatchBridge;
 }
 
 export interface ExecutionStageRuntime extends ResolvedStageRuntimeConfig {
   id: string;
   role: StageRole | null;
   dispatchMode: DispatchMode;
+  bridge?: DispatchBridge;
 }
 
 export interface PipelineExecutionPlan {
@@ -132,11 +135,13 @@ export function resolvePipelineExecutionPlan(
             runtimeSource: 'invocation' as const,
           }
         : resolvedRuntime;
+      const route = resolveDispatchRoute(inputs.host.runtime, runtime.runtime);
       return {
         id: stage.id,
         role: stage.role ?? null,
         ...runtime,
-        dispatchMode: resolveDispatchRoute(inputs.host.runtime, runtime.runtime).mode,
+        dispatchMode: route.mode,
+        ...(route.bridge ? { bridge: route.bridge } : {}),
       };
     }),
   };
@@ -160,44 +165,52 @@ export function resolvePipelineRoleRuntimes(
     THRESHOLD_ROLES.map((role): [StageRole, ResolvedRoleRuntime] => {
       const invocationRuntime = roleRuntimeOverrides[role];
       if (invocationRuntime) {
+        const route = resolveDispatchRoute(host.runtime, invocationRuntime);
         return [
           role,
           {
             runtime: invocationRuntime,
             source: 'invocation',
-            dispatchMode: resolveDispatchRoute(host.runtime, invocationRuntime).mode,
+            dispatchMode: route.mode,
+            ...(route.bridge ? { bridge: route.bridge } : {}),
           },
         ];
       }
       const override = overrides.runtimes.get(role);
       if (override) {
+        const route = resolveDispatchRoute(host.runtime, override.value);
         return [
           role,
           {
             runtime: override.value,
             source: `config-${override.scope}`,
-            dispatchMode: resolveDispatchRoute(host.runtime, override.value).mode,
+            dispatchMode: route.mode,
+            ...(route.bridge ? { bridge: route.bridge } : {}),
           },
         ];
       }
       const declared = normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime;
       if (declared) {
+        const route = resolveDispatchRoute(host.runtime, declared);
         return [
           role,
           {
             runtime: declared,
             source: 'declaration',
-            dispatchMode: resolveDispatchRoute(host.runtime, declared).mode,
+            dispatchMode: route.mode,
+            ...(route.bridge ? { bridge: route.bridge } : {}),
           },
         ];
       }
       const runtime = host.runtime === 'unknown' ? 'claude' : host.runtime;
+      const route = resolveDispatchRoute(host.runtime, runtime);
       return [
         role,
         {
           runtime,
           source: host.runtime === 'unknown' ? 'legacy-default' : 'host',
-          dispatchMode: resolveDispatchRoute(host.runtime, runtime).mode,
+          dispatchMode: route.mode,
+          ...(route.bridge ? { bridge: route.bridge } : {}),
         },
       ];
     })
@@ -354,6 +367,7 @@ export interface EffectiveStageConfig {
   };
   runtime: { value: AgentRuntime; source: RuntimeSource };
   dispatchMode: DispatchMode;
+  bridge?: DispatchBridge;
 }
 
 /** The per-root resolution inputs a pipeline's effective per-stage values are computed against. */
@@ -411,6 +425,7 @@ export function resolveEffectiveStage(
     inputs.overrides.gates.get(stage.id),
     inputs.basePolicy
   );
+  const route = resolveDispatchRoute(host.runtime, runtime.runtime);
   return {
     id: stage.id,
     role: stage.role ?? null,
@@ -425,6 +440,7 @@ export function resolveEffectiveStage(
       ...(handoff.diagnostics ? { diagnostics: handoff.diagnostics } : {}),
     },
     runtime: { value: runtime.runtime, source: runtime.runtimeSource },
-    dispatchMode: resolveDispatchRoute(host.runtime, runtime.runtime).mode,
+    dispatchMode: route.mode,
+    ...(route.bridge ? { bridge: route.bridge } : {}),
   };
 }

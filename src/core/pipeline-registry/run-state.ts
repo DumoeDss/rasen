@@ -2,7 +2,10 @@
  * Run-state for an orchestrated pipeline run.
  *
  * The LEAD (the `auto` workflow) records progress for a change in
- * `openspec/changes/<name>/auto-run.json` while it drives a pipeline. This
+ * `auto-run.json` while it drives a pipeline — resolved through the
+ * `file-placement` sticky-legacy chain (`stateFileSearchChain`): the execution
+ * root's ephemera directory first, then the legacy machine-home work
+ * directory, then the change directory. This
  * module is the canonical typed contract for that file: the schema the LEAD
  * writes to, the reader `rasen pipeline resume` consumes, and a helper to
  * derive completed stages. State is durable on disk so a run survives a dead
@@ -71,6 +74,8 @@ export const RunStateWorkerSchema = z.object({
   role: z.string().optional(),
   agentId: z.string().optional(),
   transcript: z.string().optional(),
+  sessionId: z.string().optional(),
+  cwd: z.string().optional(),
   threadId: z.string().optional(),
   turnId: z.string().optional(),
   jobId: z.string().optional(),
@@ -108,6 +113,9 @@ export function inferWorkerDispatchMode(
     return { dispatchMode: worker.dispatchMode, inferred: false };
   }
   if (worker.runtime === 'codex' && worker.threadId) {
+    return { dispatchMode: 'exec-bridge', inferred: true };
+  }
+  if (worker.runtime === 'claude' && worker.sessionId) {
     return { dispatchMode: 'exec-bridge', inferred: true };
   }
   if (worker.agentId) {
@@ -316,6 +324,8 @@ export function runStatePath(changeDir: string): string {
 const WORKER_NULLABLE_STRING_KEYS = [
   'transcript',
   'agentId',
+  'sessionId',
+  'cwd',
   'threadId',
   'turnId',
   'jobId',
@@ -532,26 +542,56 @@ export interface RunStateLocation {
 }
 
 /**
- * Resolves WHERE `auto-run.json` lives for a change (design D4, sticky-legacy):
- * `workDir` first when provided and it holds the file, else `changeDir`
- * (legacy). Returns null when neither location has one. This only locates the
- * file; callers read it via `readRunState(location.dir)` to get the validated
- * `RunState`, keeping `readRunState`'s existing signature and behavior intact.
+ * The sticky-legacy search inputs for a per-change state file. Stated once
+ * here and reused by every state-file resolver (`file-placement` capability):
+ * new state is born in the execution root's ephemera directory; state that
+ * already lives at a legacy location keeps living there. One file's state is
+ * never split across locations.
+ */
+export interface StateFileLocationOptions {
+  /**
+   * The execution root's ephemera directory — the TERMINAL landing, searched
+   * first. Omitted only by callers that cannot resolve an execution root.
+   */
+  ephemeraDir?: string | null;
+  /** The legacy machine-home work directory, searched second. */
+  workDir?: string | null;
+}
+
+/**
+ * The ordered sticky-legacy search chain for a per-change state file: the
+ * execution root's ephemera directory, then the legacy machine-home work
+ * directory, then the change directory (the oldest legacy location). The
+ * ordering rule lives here alone so every state-file resolver agrees.
+ */
+export function stateFileSearchChain(
+  changeDir: string,
+  options: StateFileLocationOptions = {}
+): string[] {
+  const chain: string[] = [];
+  if (options.ephemeraDir) chain.push(options.ephemeraDir);
+  if (options.workDir) chain.push(options.workDir);
+  chain.push(changeDir);
+  return chain;
+}
+
+/**
+ * Resolves WHERE `auto-run.json` lives for a change along the sticky-legacy
+ * chain (design D3): the execution root's ephemera directory first, then the
+ * legacy machine-home work directory, then the change directory. Returns null
+ * when no location has one. This only locates the file; callers read it via
+ * `readRunState(location.dir)` to get the validated `RunState`, keeping
+ * `readRunState`'s existing signature and behavior intact.
  */
 export function resolveRunStateLocation(
   changeDir: string,
-  workDir?: string | null
+  options: StateFileLocationOptions = {}
 ): RunStateLocation | null {
-  if (workDir) {
-    const workPath = runStatePath(workDir);
-    if (fs.existsSync(workPath)) {
-      return { dir: workDir, path: workPath };
+  for (const dir of stateFileSearchChain(changeDir, options)) {
+    const candidate = runStatePath(dir);
+    if (fs.existsSync(candidate)) {
+      return { dir, path: candidate };
     }
-  }
-
-  const legacyPath = runStatePath(changeDir);
-  if (fs.existsSync(legacyPath)) {
-    return { dir: changeDir, path: legacyPath };
   }
 
   return null;
@@ -590,9 +630,9 @@ export type LegacyOwnerSignal =
 
 export function resolveLegacyOwnerSignal(
   changeDir: string,
-  workDir?: string | null
+  locations: StateFileLocationOptions = {}
 ): LegacyOwnerSignal {
-  const location = resolveRunStateLocation(changeDir, workDir);
+  const location = resolveRunStateLocation(changeDir, locations);
   if (location === null) return Object.freeze({ present: false });
 
   const read = readRunStateDetailed(location.dir);
@@ -709,17 +749,18 @@ export function normalizeWorker(
 
 /**
  * Per-stage worker pointers that carry something reusable across a session
- * boundary — an `agentId` (locates the transcript) or an explicit `transcript`
- * path. These are what a resume warm-seeds a fresh worker from; stages with no
- * such pointer are omitted. Bare-string (role-only) workers are omitted because
- * they hold nothing to seed from.
+ * boundary: a native `agentId`, a Claude bridge `sessionId`, a Codex bridge
+ * `threadId`, or an explicit `transcript` path. These are what a resume uses
+ * for exact-session continuation or warm-seeding; stages with no such pointer
+ * are omitted. Bare-string (role-only) workers are omitted because they hold
+ * nothing to resume from.
  */
 export function stageWorkers(state: RunState): Record<string, RunStateWorker> {
   const out: Record<string, RunStateWorker> = {};
   if (!state.stages) return out;
   for (const [id, stage] of Object.entries(state.stages)) {
     const w = normalizeWorker(stage.worker);
-    if (w && (w.agentId || w.transcript || w.threadId)) out[id] = w;
+    if (w && (w.agentId || w.sessionId || w.transcript || w.threadId)) out[id] = w;
   }
   return out;
 }
@@ -866,7 +907,8 @@ export function detectDuplicateKeys(content: string): { path: string; key: strin
 
 /**
  * Per-stage worker-handle validation (advisory). For each stage whose recorded
- * `worker` lacks EVERY durable handle (`agentId`, `transcript`, `threadId`),
+ * `worker` lacks EVERY durable handle (`agentId`, `sessionId`, `transcript`,
+ * `threadId`),
  * returns the stage id plus the non-durable keys the record carries — so a
  * name-only or role-only worker is SURFACED rather than silently dropped from
  * the warm-seed set by `stageWorkers`. A bare-string worker carries no object
@@ -887,7 +929,14 @@ export function stagesLackingDurableHandle(
     const normalized = normalizeWorker(worker);
     if (normalized === undefined) continue;
     // A durable handle present → warm-seedable; no warning.
-    if (normalized.agentId || normalized.transcript || normalized.threadId) continue;
+    if (
+      normalized.agentId ||
+      normalized.sessionId ||
+      normalized.transcript ||
+      normalized.threadId
+    ) {
+      continue;
+    }
     const keys =
       typeof worker === 'string' ? [] : Object.keys(worker).filter((k) => k !== 'role');
     out.push({ stage: id, keys });

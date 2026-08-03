@@ -5,9 +5,12 @@ import * as path from 'node:path';
 import { z } from 'zod';
 
 import { AI_TOOLS } from './config.js';
+import { RETIRED_CONSOLIDATED_EXPERT_SKILL_DIRS } from './legacy-cleanup.js';
 import { resolveToolSkillsRoot } from './shared/index.js';
 import {
   loadWorkflowCatalog,
+  RETENTION_RUNNER_WORKFLOW_ID,
+  resolveEffectiveWorkflowInstallSelection,
   resolveWorkflowSelection,
   type WorkflowDefinition,
 } from './workflow-registry/index.js';
@@ -271,7 +274,7 @@ function removeEmptyParents(start: string, stop: string): void {
 }
 
 /**
- * Reconciles one successfully generated tool with its user-workflow ledger.
+ * Reconciles one successfully generated tool with its workflow ledger.
  * Only unchanged files recorded by the previous ledger are removed.
  */
 export function syncWorkflowArtifactLedger(
@@ -282,20 +285,22 @@ export function syncWorkflowArtifactLedger(
   const resolvedProject = path.resolve(projectRoot);
   const catalog = loadWorkflowCatalog();
   const selected = resolveWorkflowSelection(catalog, desiredWorkflows);
-  const desiredUsers = selected.filter((definition) => definition.source === 'user');
   const ledger = readWorkflowArtifactLedger(resolvedProject) ?? emptyLedger();
   const previous = ledger.tools[toolId]?.workflows ?? {};
   const next: Record<string, WorkflowEntry> = {};
 
-  for (const definition of desiredUsers) {
+  for (const definition of selected) {
     next[definition.id] = buildWorkflowEntry(resolvedProject, toolId, definition);
   }
 
   let removedFiles = 0;
   for (const [workflowId, entry] of Object.entries(previous)) {
     const definition = catalog.get(workflowId);
-    if (!definition || definition.source !== 'user') {
-      next[workflowId] ??= entry;
+    if (!definition) {
+      const retiredDirName = `rasen-${workflowId}`;
+      if (!(RETIRED_CONSOLIDATED_EXPERT_SKILL_DIRS as readonly string[]).includes(retiredDirName)) {
+        next[workflowId] ??= entry;
+      }
       continue;
     }
     const keep = new Set((next[workflowId]?.files ?? []).map(artifactKey));
@@ -380,8 +385,6 @@ export function hasWorkflowArtifactLedgerDrift(
   desiredWorkflows: readonly string[]
 ): boolean {
   const catalog = loadWorkflowCatalog();
-  const desiredUsers = resolveWorkflowSelection(catalog, desiredWorkflows)
-    .filter((definition) => definition.source === 'user');
   let ledger: WorkflowArtifactLedger | null;
   try {
     ledger = readWorkflowArtifactLedger(projectRoot);
@@ -389,10 +392,31 @@ export function hasWorkflowArtifactLedgerDrift(
     return true;
   }
 
+  // Production init/update records the effective install set, including the
+  // compatibility retention root and skill dependencies. Direct library
+  // consumers may intentionally ledger only one user workflow. The existing
+  // retention entry distinguishes those two contracts without widening the
+  // public ledger API or forcing a built-in into a user-workflow transaction.
+  const tracksEffectiveInstallSet = toolIds.some(
+    (toolId) => ledger?.tools[toolId]?.workflows[RETENTION_RUNNER_WORKFLOW_ID] !== undefined
+  );
+  const desiredDefinitions = tracksEffectiveInstallSet
+    ? resolveEffectiveWorkflowInstallSelection(catalog, desiredWorkflows)
+    : resolveWorkflowSelection(catalog, desiredWorkflows);
+
+  // Projects installed before built-in sidecars joined the ledger have no
+  // workflow ledger at all. Preserve that migration path for built-ins: the
+  // direct profile check still detects missing files, and the next successful
+  // init/update creates the content-hash ledger. User workflows have always
+  // required a ledger because their source itself is external to the package.
+  if (!ledger && !desiredDefinitions.some((definition) => definition.source === 'user')) {
+    return false;
+  }
+
   for (const toolId of toolIds) {
     const actual = ledger?.tools[toolId]?.workflows ?? {};
-    if (Object.keys(actual).length !== desiredUsers.length) return true;
-    for (const definition of desiredUsers) {
+    if (Object.keys(actual).length !== desiredDefinitions.length) return true;
+    for (const definition of desiredDefinitions) {
       const entry = actual[definition.id];
       if (!entry || entry.digest !== definition.digest || entry.source !== (definition.sourcePath ?? definition.source)) {
         return true;

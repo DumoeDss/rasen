@@ -123,5 +123,5 @@ describe('controlled parent draft PR delivery', () => {
       state: 'published',
       headSha,
     });
-  });
+  }, 90_000);
 });

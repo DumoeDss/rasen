@@ -154,10 +154,65 @@ jobs:
           path: coverage/
           retention-days: 7
 
+  file_placement_recovery:
+    name: File placement recovery (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            shell: bash
+            label: linux-node-floor
+          - os: macos-latest
+            shell: bash
+            label: macos-node-floor
+          - os: windows-latest
+            shell: pwsh
+            label: windows-node-floor
+
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js floor
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build project
+        run: pnpm run build
+
+      - name: Run native file-placement recovery matrix
+        env:
+          VITEST_MAX_WORKERS: 1
+        run: >-
+          pnpm exec vitest run
+          test/core/archive-engine.test.ts
+          test/core/archive-fault-matrix.test.ts
+          test/core/archive-path-semantics.test.ts
+          test/core/archive-accounting.test.ts
+          test/core/archive-ephemera.test.ts
+          test/core/ephemera-cleaner.test.ts
+
   test_pr_required:
     name: Test
     runs-on: ubuntu-latest
-    needs: [test_matrix]
+    needs: [test_matrix, file_placement_recovery]
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     steps:
       - name: Verify matrix tests passed
@@ -166,7 +221,11 @@ jobs:
             echo "Matrix test job failed"
             exit 1
           fi
-          echo "All matrix tests passed!"
+          if [[ "${{ needs.file_placement_recovery.result }}" != "success" ]]; then
+            echo "Native file-placement recovery job failed"
+            exit 1
+          fi
+          echo "All general and native recovery matrix tests passed!"
 
   lint:
     name: Lint & Type Check
@@ -314,13 +373,17 @@ jobs:
   required-checks-pr:
     name: All checks passed
     runs-on: ubuntu-latest
-    needs: [test_matrix, lint, ui_build, nix-flake-validate]
+    needs: [test_matrix, file_placement_recovery, lint, ui_build, nix-flake-validate]
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     steps:
       - name: Verify all checks passed
         run: |
           if [[ "${{ needs.test_matrix.result }}" != "success" ]]; then
             echo "Matrix test job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.file_placement_recovery.result }}" != "success" ]]; then
+            echo "Native file-placement recovery job failed"
             exit 1
           fi
           if [[ "${{ needs.lint.result }}" != "success" ]]; then
@@ -344,13 +407,17 @@ jobs:
   required-checks-main:
     name: All checks passed
     runs-on: ubuntu-latest
-    needs: [test_matrix, lint, ui_build, nix-flake-validate]
+    needs: [test_matrix, file_placement_recovery, lint, ui_build, nix-flake-validate]
     if: always() && github.event_name == 'push'
     steps:
       - name: Verify all checks passed
         run: |
           if [[ "${{ needs.test_matrix.result }}" != "success" ]]; then
             echo "Matrix test job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.file_placement_recovery.result }}" != "success" ]]; then
+            echo "Native file-placement recovery job failed"
             exit 1
           fi
           if [[ "${{ needs.lint.result }}" != "success" ]]; then

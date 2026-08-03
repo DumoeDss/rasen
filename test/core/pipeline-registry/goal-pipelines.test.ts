@@ -117,7 +117,7 @@ describe('goal pipeline retention tail', () => {
         const pipeline = {
           ...base,
           stages: base.stages.map((stage) =>
-            stage.id === 'retain' ? { ...stage, skill: 'rasen-tdd' } : stage
+            stage.id === 'retain' ? { ...stage, skill: 'rasen-codex' } : stage
           ),
         };
 

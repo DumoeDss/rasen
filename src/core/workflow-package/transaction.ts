@@ -127,7 +127,7 @@ function assertInstallableSet(
       .find((id) => id !== undefined);
     if (expertCollision) {
       throw new WorkflowTransactionError(
-        `Skill identity "${skillName}" conflicts with always-installed expert "${expertCollision}"`,
+        `Skill identity "${skillName}" conflicts with catalog expert "${expertCollision}"`,
         'expert_skill_collision'
       );
     }

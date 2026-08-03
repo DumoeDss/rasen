@@ -17,7 +17,12 @@ import type {
   StageRole,
   ThresholdValue,
 } from '../pipeline-registry/index.js';
-import type { AuditRuntime, DispatchRuntime } from '../runtime-adapters.js';
+import type {
+  AuditRuntime,
+  DispatchBridge,
+  DispatchMode,
+  DispatchRuntime,
+} from '../runtime-adapters.js';
 import type {
   ThresholdBindingMetadata,
   ThresholdBindingRow,
@@ -107,6 +112,10 @@ export interface WirePipelineStage {
   effectiveModel: WireEffectiveValue<string | null>;
   effectiveHandoff: WireEffectiveThreshold;
   effectiveRuntime: WireEffectiveValue<DispatchRuntime>;
+  /** Concrete route selected for the server's available host context. */
+  dispatchMode: DispatchMode;
+  /** Named executable bridge when `dispatchMode` is `exec-bridge`. */
+  bridge: DispatchBridge | null;
 }
 
 /**
