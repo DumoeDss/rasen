@@ -42,5 +42,5 @@
 
 - [x] 6.1 Run focused unit and end-to-end suites for config resolution, pipeline resolution, Codex invocation/events/contracts/lifecycle, agent process launching, CLI dispatch, run-state, and orchestration templates.
 - [x] 6.2 Run `pnpm lint`, `pnpm build`, and the full `pnpm test` suite; record and triage any pre-existing unrelated failure separately rather than weakening the new assertions.
-- [ ] 6.3 Verify the focused dispatch and process-tree tests on Windows CI in addition to the existing macOS/Linux coverage, including `.cmd` shim launch, hidden windows, native separators, spaces in paths, EOF, timeout teardown, and lock-tolerant scratch cleanup.
+- [x] 6.3 Verify the focused dispatch and process-tree tests on Windows CI in addition to the existing macOS/Linux coverage, including `.cmd` shim launch, hidden windows, native separators, spaces in paths, EOF, timeout teardown, and lock-tolerant scratch cleanup.
 - [x] 6.4 Perform an opt-in real Codex smoke test with `gpt-5.6-luna` and `max`: fresh structured dispatch, exact-thread resume from a second process, two independent concurrent threads, and bounded completion with stdin closed; do not make network/account availability a mandatory CI gate.

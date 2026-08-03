@@ -38,3 +38,14 @@ Status: Pending. No external CI pass is claimed.
 ## Deployment
 
 Status: Pending. This delivery created the ready PR only; it did not merge or deploy.
+
+## Final External CI Verification
+
+- Verified: 2026-08-04T07:22:04+08:00.
+- Run: [CI 30861349349](https://github.com/DumoeDss/rasen/actions/runs/30861349349) - PASS on cleanup head `3bef90d9080edcade88902470c7e58895e2396ac`, tree `e31ad70ed62da834fed0d03e4fecff549638e37a`.
+- Windows test matrix: PASS - shard 1 job `91843796557`, shard 2 job `91843796537`, and shard 3 job `91843796584`.
+- Windows file-placement recovery: PASS - job `91843796512`, including the native Node-floor recovery matrix.
+- Cross-platform required checks: PASS - Linux, Linux Node 24, macOS, Linux/macOS file-placement recovery, lint/type check, UI package build, and both aggregate gates.
+- Nix Flake Validation: SKIPPED as expected because change detection found no Nix-related delta.
+- Task closure: 29/29 complete. Task 6.3 is closed by this successful external Windows CI run.
+- Delivery boundary: PR remains open and ready; no merge or deployment was performed.
