@@ -70,6 +70,21 @@ describe('auto workflow (orchestrated autopilot)', () => {
       expect(skillText).toContain('no-gate cannot bypass');
     });
 
+    it('supports gauntlet-loop only by explicit selector with a frozen reference-bar input bridge', () => {
+      expect(skillText).toContain('rasen-auto gauntlet-loop <goal>');
+      expect(skillText).toContain('rasen-auto --pipeline gauntlet-loop <goal>');
+      expect(skillText).toContain('gauntlet-loop-input/1');
+      expect(skillText).toContain('gauntlet-reference-bar/1');
+      expect(skillText).toContain('gauntlet-loop-input.json');
+      expect(skillText).toContain('gauntlet_reconciler_required');
+      expect(skillText).toContain('convergence-judge');
+      expect(skillText).toContain('attestation-evidenced');
+      expect(skillText.toLowerCase()).toContain('never classify or suggest `gauntlet-loop`');
+      expect(skillText).toContain('gauntlet_exhausted');
+      expect(skillText).toContain('launch_request_conflict');
+      expect(skillText).toContain('backstop-suspended');
+    });
+
     it('supports opt-in automatic pipeline selection via --auto-select / autopilot.selection', () => {
       expect(skillText).toContain('--auto-select');
       expect(skillText).toContain('autopilot.selection');

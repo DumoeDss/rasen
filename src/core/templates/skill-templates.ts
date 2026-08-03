@@ -37,6 +37,7 @@ export { getHandoffSkillTemplate } from './workflows/handoff.js';
 export { getGoalPlanSkillTemplate } from './workflows/goal-plan.js';
 export { getGoalIterateSkillTemplate } from './workflows/goal-iterate.js';
 export { getTaskLoopSkillTemplate } from './workflows/task-loop.js';
+export { getGauntletLoopSkillTemplate } from './workflows/gauntlet-loop.js';
 export { getGoalReportSkillTemplate } from './workflows/goal-report.js';
 export { getGoalCommandSkillTemplate } from './workflows/goal-command.js';
 export { getAuditSkillTemplate } from './workflows/audit.js';

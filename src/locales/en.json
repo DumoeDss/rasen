@@ -409,6 +409,9 @@
       },
       "task-loop": {
         "description": "Explicit-only, spec-free task loop: a builder improves real artifacts, a fresh critic checks frozen criteria and raw evidence each round, then only a satisfied run may ship and archive."
+      },
+      "gauntlet-loop": {
+        "description": "Explicit-only phased creation loop against a frozen reference quality bar: serial foundation (builder and fresh blind-A/B critic), lead-driven per-wave polish with optional smoothing, convergence-through-judge delivery, then ship and archive."
       }
     },
     "messages": {
@@ -574,6 +577,20 @@
       "task_loop_blocked": "Task Loop stopped because the builder or critic was blocked or failed.",
       "task_loop_exhausted": "Task Loop exhausted its round budget without satisfying the frozen quality bar.",
       "task_loop_delivery_guard": "Task Loop cannot ship or archive until the canonical run is mechanically satisfied.",
+      "gauntlet_input_missing": "Gauntlet Loop requires a frozen input contract with a concrete reference bar before work can begin.",
+      "gauntlet_input_invalid": "The Gauntlet Loop input contract or reference bar is invalid.",
+      "gauntlet_bar_missing": "Gauntlet Loop requires at least one concrete, inspectable reference target before admitting a builder.",
+      "gauntlet_bar_unprovable": "The Gauntlet Loop reference bar is not inspectable through the available BarAdapter.",
+      "gauntlet_bar_mismatch": "The Gauntlet Loop judgment does not match the frozen reference bar.",
+      "gauntlet_subjective_bar_rejected": "The Gauntlet Loop comparison axis is subjective; Rasen does not substitute a subjective bar.",
+      "gauntlet_critic_reused": "Gauntlet Loop requires a fresh critic for every judgment; the critic session was already used.",
+      "gauntlet_evidence_missing": "The Gauntlet Loop judgment is missing raw evidence bound to the Run, Action, and reference target.",
+      "gauntlet_false_satisfaction": "The Gauntlet Loop judgment reported satisfaction while the reference bar still has a gap or the attestation is missing.",
+      "gauntlet_reconciler_required": "Gauntlet Loop requires the reconciler engine and cannot fall back to legacy execution.",
+      "gauntlet_pipeline_identity": "A terminal Gauntlet Loop Run must not convert, upgrade, or fall back to another Pipeline.",
+      "gauntlet_delivery_guard": "Gauntlet Loop cannot ship or archive until the convergence-judge has recorded attestation-evidenced satisfaction.",
+      "gauntlet_blocked": "Gauntlet Loop stopped because the builder, critic, or lead was blocked or failed.",
+      "gauntlet_exhausted": "Gauntlet Loop exhausted its round budget without convergence.",
       "pipeline_command_error": "Pipeline operation failed ({code})."
     }
   },

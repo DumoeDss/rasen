@@ -409,6 +409,9 @@
       },
       "task-loop": {
         "description": "仅支持显式选择、且不生成 spec 的任务循环：构建者改进真实产物，每轮由全新评审者依据冻结标杆与原始证据检查；只有满足标杆后才能交付和归档。"
+      },
+      "gauntlet-loop": {
+        "description": "仅支持显式选择的阶段性创作循环：以冻结参照质量标杆为准，串行基础（构建者与盲测 A/B 评审）、主导驱动的逐波打磨（可选平滑 pass）、经由判定的收敛交付，然后交付并归档。"
       }
     },
     "messages": {
@@ -574,6 +577,20 @@
       "task_loop_blocked": "构建者或评审者受阻或失败，Task Loop 已停止。",
       "task_loop_exhausted": "Task Loop 已耗尽轮次预算，但仍未满足冻结的质量标杆。",
       "task_loop_delivery_guard": "只有规范 Run 被机械判定为已满足后，Task Loop 才能交付或归档。",
+      "gauntlet_input_missing": "Gauntlet Loop 开始工作前必须提供含具体参照标杆的冻结输入契约。",
+      "gauntlet_input_invalid": "Gauntlet Loop 输入契约或参照标杆无效。",
+      "gauntlet_bar_missing": "在准入构建者之前，Gauntlet Loop 至少需要一个可检查的具体参照目标。",
+      "gauntlet_bar_unprovable": "可用的 BarAdapter 无法检查 Gauntlet Loop 的参照标杆。",
+      "gauntlet_bar_mismatch": "Gauntlet Loop 判定与冻结参照标杆不匹配。",
+      "gauntlet_subjective_bar_rejected": "比较轴是主观的；Rasen 不以主观标杆替代。",
+      "gauntlet_critic_reused": "Gauntlet Loop 的每一轮判定都必须使用全新评审者；该会话已被使用。",
+      "gauntlet_evidence_missing": "Gauntlet Loop 判定缺少绑定到 Run、Action 和参照目标的原始证据。",
+      "gauntlet_false_satisfaction": "参照标杆仍有差距或缺少证明，但判定错误地报告为已满足。",
+      "gauntlet_reconciler_required": "Gauntlet Loop 必须使用调和器引擎，不能回退到旧执行引擎。",
+      "gauntlet_pipeline_identity": "终止的 Gauntlet Loop Run 不得转换、升级或回退到其他 Pipeline。",
+      "gauntlet_delivery_guard": "只有收敛判定记录了证明来源的满足后，Gauntlet Loop 才能交付或归档。",
+      "gauntlet_blocked": "构建者、评审者或主导受阻或失败，Gauntlet Loop 已停止。",
+      "gauntlet_exhausted": "Gauntlet Loop 已耗尽轮次预算，仍未收敛。",
       "pipeline_command_error": "流水线操作失败（{code}）。"
     }
   },

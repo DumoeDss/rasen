@@ -409,6 +409,9 @@
       },
       "task-loop": {
         "description": "明示選択専用で spec を生成しないタスクループです。ビルダーが実成果物を改善し、各ラウンドで新しい批評者が固定基準と生の証拠を検査します。満足と判定された Run だけが出荷・アーカイブできます。"
+      },
+      "gauntlet-loop": {
+        "description": "明示選択専用の段階的クリエイションループです。固定された参照品質バーに対して、シリアル基盤（ビルダーとブラインド A/B 批評者）、リード主導のウェーブ別 Polish（オプションのスムージング付き）、判定経由の収束によるデリバリー、そして出荷・アーカイブの順に進みます。"
       }
     },
     "messages": {
@@ -574,6 +577,20 @@
       "task_loop_blocked": "ビルダーまたは批評者がブロックまたは失敗したため、Task Loop は停止しました。",
       "task_loop_exhausted": "Task Loop はラウンド上限に達しましたが、固定された品質基準を満たせませんでした。",
       "task_loop_delivery_guard": "正規 Run が機械的に満足と判定されるまで、Task Loop は出荷もアーカイブもできません。",
+      "gauntlet_input_missing": "Gauntlet Loop を開始するには、具体参照バーを含む固定入力契約が必要です。",
+      "gauntlet_input_invalid": "Gauntlet Loop の入力契約または参照バーが無効です。",
+      "gauntlet_bar_missing": "ビルダーを承認する前に、少なくとも 1 つの検査可能な具体参照ターゲットが必要です。",
+      "gauntlet_bar_unprovable": "利用可能な BarAdapter で Gauntlet Loop の参照バーを検査できません。",
+      "gauntlet_bar_mismatch": "Gauntlet Loop の判定が固定された参照バーと一致しません。",
+      "gauntlet_subjective_bar_rejected": "比較軸が主観的です。Rasen は主観的なバーで代用しません。",
+      "gauntlet_critic_reused": "Gauntlet Loop の各判定には新しい批評者が必要です。そのセッションは既に使用済みです。",
+      "gauntlet_evidence_missing": "Run・Action・参照ターゲットに紐づく生の証拠が判定に含まれていません。",
+      "gauntlet_false_satisfaction": "参照バーに残りギャップがあるか、証明がないのに満足と報告されました。",
+      "gauntlet_reconciler_required": "Gauntlet Loop にはリコンサイラエンジンが必要で、レガシー実行へフォールバックできません。",
+      "gauntlet_pipeline_identity": "終端した Gauntlet Loop Run は別の Pipeline へ変換・アップグレード・フォールバックできません。",
+      "gauntlet_delivery_guard": "収束判定が証明ベースの満足を記録するまで、出荷もアーカイブもできません。",
+      "gauntlet_blocked": "ビルダー、批評者、またはリードがブロックまたは失敗したため停止しました。",
+      "gauntlet_exhausted": "Gauntlet Loop は収束しないままラウンド上限に達しました。",
       "pipeline_command_error": "パイプライン操作に失敗しました（{code}）。"
     }
   },

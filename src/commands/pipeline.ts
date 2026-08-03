@@ -116,6 +116,10 @@ import {
   decodeTaskLoopInput,
   TaskLoopDomainError,
 } from '../core/change-run/internal/task-loop.js';
+import {
+  decodeGauntletInput,
+  GauntletDomainError,
+} from '../core/change-run/internal/gauntlet-bar.js';
 import { createFilesystemRunStore } from '../core/change-run/internal/run-store-fs.js';
 import {
   assertSingleEngineOwner,
@@ -1272,10 +1276,14 @@ export class PipelineCommand {
     const policyRoot = await this.resolveRoot(options);
     if (!policyRoot) throw new Error('No Rasen root resolved.');
     const normalizedPipelineName = pipelineName.replace(/\.ya?ml$/, '');
-    if (options.inputFile !== undefined && normalizedPipelineName !== 'task-loop') {
+    if (
+      options.inputFile !== undefined &&
+      normalizedPipelineName !== 'task-loop' &&
+      normalizedPipelineName !== 'gauntlet-loop'
+    ) {
       throw new ChangeRunRuntimeError(
         'invalid_run_request',
-        'The internal launch-input bridge is reserved for the built-in task-loop Pipeline.'
+        'The internal launch-input bridge is reserved for the built-in task-loop and gauntlet-loop Pipelines.'
       );
     }
     const policyStoreLayer = await requireConfigStoreLayer(policyRoot.path);
@@ -1289,6 +1297,12 @@ export class PipelineCommand {
         throw new TaskLoopDomainError(
           'task_loop_reconciler_required',
           `Task Loop requires the reconciler engine; the ${engineSelection.source} layer selected legacy.`
+        );
+      }
+      if (normalizedPipelineName === 'gauntlet-loop') {
+        throw new GauntletDomainError(
+          'gauntlet_reconciler_required',
+          `Gauntlet Loop requires the reconciler engine; the ${engineSelection.source} layer selected legacy.`
         );
       }
       throw pipelineMessageError(
@@ -1314,7 +1328,14 @@ export class PipelineCommand {
               projectRoot: policyRoot.path,
             }) as unknown as JsonValue,
           })
-        : rawInputs;
+        : normalizedPipelineName === 'gauntlet-loop'
+          ? Object.freeze({
+              ...rawInputs,
+              gauntlet: decodeGauntletInput(rawInputs.gauntlet, {
+                projectRoot: policyRoot.path,
+              }) as unknown as JsonValue,
+            })
+          : rawInputs;
     // ECP-5 (D8): the engine-ownership guard's launch seam. Runs BEFORE
     // `resolveRuntime`, which binds the Change instance in the association
     // registry, so a refusal leaves nothing behind at all.

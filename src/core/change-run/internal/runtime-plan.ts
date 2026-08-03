@@ -89,6 +89,40 @@ export interface RuntimePlanGoalCycleBody {
   readonly phases: readonly RuntimePlanGoalCyclePhase[];
 }
 
+// ---------------------------------------------------------------------------
+// gauntlet-wave body kind (Decision 5 — wave orchestration)
+// ---------------------------------------------------------------------------
+
+/**
+ * The role each gauntlet-wave sub-phase plays in the wave lifecycle.
+ *
+ * - decompose:    the lead emits a one-level decomposition (write)
+ * - build:        a builder works on one piece (write — serializes under the
+ *                 single-writer lock)
+ * - critic:       a critic judges one piece against the reference bar (read —
+ *                 parallelizes with other readers once all builds commit)
+ * - meta-critic:  the meta-critic performs blind A/B over the whole artifact (read)
+ * - smooth:       optional fresh smoothing pass over the whole artifact (write)
+ */
+export type GauntletWavePhaseRole =
+  | 'decompose'
+  | 'build'
+  | 'critic'
+  | 'meta-critic'
+  | 'smooth';
+
+export interface RuntimePlanGauntletWavePhase {
+  readonly role: GauntletWavePhaseRole;
+  readonly profilePath: string;
+  readonly admissionKind: RuntimePlanAdmissionKind;
+  readonly workspace: RuntimePlanWorkspace;
+}
+
+export interface RuntimePlanGauntletWaveBody {
+  readonly kind: 'gauntlet-wave';
+  readonly phases: readonly RuntimePlanGauntletWavePhase[];
+}
+
 export interface RuntimePlanBoundedLoopNode {
   readonly kind: 'bounded-loop';
   readonly nodeId: NodeId;
@@ -98,7 +132,8 @@ export interface RuntimePlanBoundedLoopNode {
   readonly body:
     | RuntimePlanReviewCycleBody
     | RuntimePlanCompositeBody
-    | RuntimePlanGoalCycleBody;
+    | RuntimePlanGoalCycleBody
+    | RuntimePlanGauntletWaveBody;
   readonly outcomes: Readonly<{
     clean: string;
     exhausted: string;
@@ -227,6 +262,18 @@ export interface RuntimePlanGoalCycleBodyInput {
   readonly phases: readonly RuntimePlanGoalCyclePhaseInput[];
 }
 
+export interface RuntimePlanGauntletWavePhaseInput {
+  readonly role: GauntletWavePhaseRole;
+  readonly profilePath: string;
+  readonly admissionKind: RuntimePlanAdmissionKind;
+  readonly workspace?: Readonly<{ access?: RuntimePlanWorkspaceAccess }>;
+}
+
+export interface RuntimePlanGauntletWaveBodyInput {
+  readonly kind: 'gauntlet-wave';
+  readonly phases: readonly RuntimePlanGauntletWavePhaseInput[];
+}
+
 export interface RuntimePlanChoiceInput {
   readonly outcomes: readonly string[];
   /** outcome → branch hierarchical path */
@@ -265,7 +312,8 @@ export interface RuntimePlanNodeInput {
   readonly body?:
     | RuntimePlanReviewCycleBodyInput
     | RuntimePlanCompositeBodyInput
-    | RuntimePlanGoalCycleBodyInput;
+    | RuntimePlanGoalCycleBodyInput
+    | RuntimePlanGauntletWaveBodyInput;
   readonly outcomes?: Readonly<{
     clean: string;
     exhausted: string;
@@ -621,6 +669,34 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
           },
         } as RuntimePlanBoundedLoopNode;
       }
+      if (body.kind === 'gauntlet-wave') {
+        return {
+          kind: 'bounded-loop',
+          nodeId,
+          hierarchicalPath: node.hierarchicalPath,
+          requires,
+          maxIterations: node.maxIterations!,
+          body: {
+            kind: 'gauntlet-wave',
+            phases: body.phases.map((phase) => ({
+              role: phase.role,
+              profilePath: phase.profilePath,
+              admissionKind: phase.admissionKind,
+              workspace: {
+                access: phase.workspace?.access ?? (
+                  phase.role === 'critic' || phase.role === 'meta-critic'
+                    ? 'read'
+                    : 'write'
+                ),
+              },
+            })),
+          },
+          outcomes: {
+            clean: node.outcomes!.clean,
+            exhausted: node.outcomes!.exhausted,
+          },
+        } as RuntimePlanBoundedLoopNode;
+      }
       // composite body kind
       const bodyPathToNodeId = new Map<string, NodeId>();
       for (const stage of body.stages) {
@@ -908,6 +984,8 @@ function validateBoundedLoop(
     validateCompositeBody(path, node);
   } else if (node.body?.kind === 'goal-cycle') {
     validateGoalCycleBody(path, node);
+  } else if (node.body?.kind === 'gauntlet-wave') {
+    validateGauntletWaveBody(path, node);
   } else {
     reject(
       'unsupported_runtime_plan',
@@ -1111,6 +1189,66 @@ function validateGoalCycleBody(
       reject(
         'invalid_runtime_plan',
         `GoalCycle phase ${phase.phase} must declare a supported admission kind.`
+      );
+    }
+  }
+}
+
+function validateGauntletWaveBody(
+  path: string,
+  node: RuntimePlanNodeInput
+): void {
+  const body = node.body as RuntimePlanGauntletWaveBodyInput;
+  // The gauntlet-wave body MUST declare exactly these five roles.
+  // decompose → build → critic → meta-critic → smooth (optional).
+  const required: GauntletWavePhaseRole[] = ['decompose', 'build', 'critic', 'meta-critic'];
+  const optional: GauntletWavePhaseRole[] = ['smooth'];
+  const actual = body.phases.map((phase) => phase.role);
+  // All required roles must be present, in order, at the front.
+  for (let index = 0; index < required.length; index += 1) {
+    if (actual[index] !== required[index]) {
+      reject(
+        'invalid_runtime_plan',
+        `GauntletWave body ${path} must declare phases in order: decompose, build, critic, meta-critic${optional.length > 0 ? ', [smooth]' : ''}.`
+      );
+    }
+  }
+  // The optional smooth phase may follow, but nothing else.
+  if (actual.length === required.length + 1) {
+    if (actual[required.length] !== 'smooth') {
+      reject(
+        'invalid_runtime_plan',
+        `GauntletWave body ${path} optional fifth phase must be 'smooth'.`
+      );
+    }
+  } else if (actual.length !== required.length) {
+    reject(
+      'invalid_runtime_plan',
+      `GauntletWave body ${path} must declare exactly 4 required phases (decompose, build, critic, meta-critic) or 5 with smooth.`
+    );
+  }
+  const profilePaths = new Set<string>();
+  for (const phase of body.phases) {
+    if (
+      phase.profilePath.length === 0 ||
+      phase.profilePath.length > 1024 ||
+      phase.profilePath.includes('\\') ||
+      profilePaths.has(phase.profilePath)
+    ) {
+      reject(
+        'invalid_runtime_plan',
+        `GauntletWave phase profile path ${JSON.stringify(phase.profilePath)} is malformed or duplicated.`
+      );
+    }
+    profilePaths.add(phase.profilePath);
+    if (
+      phase.admissionKind !== 'agent' &&
+      phase.admissionKind !== 'command' &&
+      phase.admissionKind !== 'host'
+    ) {
+      reject(
+        'invalid_runtime_plan',
+        `GauntletWave phase ${phase.role} must declare a supported admission kind.`
       );
     }
   }

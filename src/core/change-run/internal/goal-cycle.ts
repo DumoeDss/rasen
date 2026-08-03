@@ -338,7 +338,7 @@ export function decodeGoalCycleResult(
   phase: GoalCyclePhase,
   variant: GoalCycleVariant,
   value: JsonValue,
-  mode: 'strict' | 'task-loop' = 'strict'
+  mode: 'strict' | 'task-loop' | 'gauntlet' = 'strict'
 ): GoalCycleDomainResult {
   if (phase === 'work') {
     if (variant === 'research') {
@@ -352,7 +352,7 @@ export function decodeGoalCycleResult(
       return parseMeasureJudgeResult(value);
     case 'evaluate':
       if (
-        mode === 'task-loop' &&
+        (mode === 'task-loop' || mode === 'gauntlet') &&
         value !== null &&
         typeof value === 'object' &&
         !Array.isArray(value)
@@ -494,7 +494,7 @@ export function applyGoalCycleEvent(
   state: GoalCycleState,
   event: GoalCycleEvent,
   maxIterations: number,
-  mode: 'strict' | 'task-loop' = 'strict'
+  mode: 'strict' | 'task-loop' | 'gauntlet' = 'strict'
 ): GoalCycleState {
   if (!Number.isSafeInteger(maxIterations) || maxIterations < 1 || maxIterations > 100) {
     throw new GoalCycleDomainError(
@@ -628,7 +628,7 @@ export function reduceGoalCycleEvents(
   events: readonly GoalCycleEvent[],
   maxIterations: number,
   variant: GoalCycleVariant,
-  mode: 'strict' | 'task-loop' = 'strict'
+  mode: 'strict' | 'task-loop' | 'gauntlet' = 'strict'
 ): GoalCycleState {
   return events.reduce(
     (state, event) => applyGoalCycleEvent(state, event, maxIterations, mode),

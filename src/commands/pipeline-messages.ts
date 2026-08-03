@@ -19,6 +19,7 @@ export const BUILT_IN_PIPELINE_IDS = [
   'goal-loop-research',
   'small-feature',
   'task-loop',
+  'gauntlet-loop',
 ] as const;
 
 export type BuiltInPipelineId = (typeof BUILT_IN_PIPELINE_IDS)[number];
@@ -328,6 +329,20 @@ export const PIPELINE_ERROR_KEYS = [
   'task_loop_blocked',
   'task_loop_exhausted',
   'task_loop_delivery_guard',
+  'gauntlet_input_missing',
+  'gauntlet_input_invalid',
+  'gauntlet_bar_missing',
+  'gauntlet_bar_unprovable',
+  'gauntlet_bar_mismatch',
+  'gauntlet_subjective_bar_rejected',
+  'gauntlet_critic_reused',
+  'gauntlet_evidence_missing',
+  'gauntlet_false_satisfaction',
+  'gauntlet_reconciler_required',
+  'gauntlet_pipeline_identity',
+  'gauntlet_delivery_guard',
+  'gauntlet_blocked',
+  'gauntlet_exhausted',
   'pipeline_command_error',
 ] as const;
 
@@ -506,6 +521,29 @@ const TASK_LOOP_ERROR_CODES = new Set<string>([
   'task_loop_delivery_guard',
 ]);
 
+const GAUNTLET_LOOP_ERROR_CODES = new Set<string>([
+  'launch_request_conflict',
+  'gauntlet_input_missing',
+  'gauntlet_input_invalid',
+  'gauntlet_bar_missing',
+  'gauntlet_bar_unprovable',
+  'gauntlet_bar_mismatch',
+  'gauntlet_subjective_bar_rejected',
+  'gauntlet_critic_reused',
+  'gauntlet_evidence_missing',
+  'gauntlet_false_satisfaction',
+  'gauntlet_reconciler_required',
+  'gauntlet_pipeline_identity',
+  'gauntlet_delivery_guard',
+  'gauntlet_blocked',
+  'gauntlet_exhausted',
+]);
+
+const LOCALIZED_ERROR_CODES = new Set<string>([
+  ...TASK_LOOP_ERROR_CODES,
+  ...GAUNTLET_LOOP_ERROR_CODES,
+]);
+
 export function formatPipelineErrorDetail(
   error: unknown,
   locale: CliLocale = getCliLocale()
@@ -514,7 +552,7 @@ export function formatPipelineErrorDetail(
     return getPipelineMessages(locale).formatDescriptor(error.key, error.values);
   }
   const code = errorCode(error);
-  if (TASK_LOOP_ERROR_CODES.has(code)) {
+  if (LOCALIZED_ERROR_CODES.has(code)) {
     const messages = getPipelineMessages(locale);
     return `${code}: ${messages.errorSummary(code)} ${errorDetail(error)}`;
   }
@@ -534,7 +572,7 @@ export function formatPipelineError(
 
   const detail = errorDetail(error);
   const code = errorCode(error);
-  if (TASK_LOOP_ERROR_CODES.has(code)) {
+  if (LOCALIZED_ERROR_CODES.has(code)) {
     const localized = messages.errorSummary(code);
     return messages.format('errorWithDetail', {
       detail: `${code}: ${detail === localized ? localized : `${localized} ${detail}`}`,

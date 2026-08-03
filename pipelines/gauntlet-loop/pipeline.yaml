@@ -1,0 +1,28 @@
+version: 1
+name: gauntlet-loop
+description: >-
+  Explicit-only phased creation loop against a frozen reference quality bar:
+  serial foundation (builder -> fresh blind-A/B critic) then lead-driven
+  per-wave polish with optional smoothing, convergence-through-judge delivery,
+  then ship and archive.
+stages:
+  - id: iterate
+    skill: rasen-gauntlet-loop
+    role: implementer
+    requires: []
+    loop:
+      kind: goal
+      gate: { kind: evaluate }
+      runArtifact: gauntlet-loop-run.json
+
+  - id: ship
+    skill: rasen-ship
+    role: shipper
+    requires: [iterate]
+    model: sonnet
+
+  - id: archive
+    skill: rasen-archive-change
+    role: shipper
+    requires: [ship]
+    model: sonnet

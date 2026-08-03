@@ -214,6 +214,8 @@ describe('config profile interactive flow', () => {
       'rasen-retain',
       // auto-command's skill-dependency closure also installs the internal task-loop runner.
       'rasen-task-loop',
+      // auto-command's skill-dependency closure also installs the internal gauntlet-loop runner.
+      'rasen-gauntlet-loop',
     ];
     for (const dirName of coreSkillDirs) {
       const skillPath = path.join(projectDir, '.claude', 'skills', dirName, 'SKILL.md');

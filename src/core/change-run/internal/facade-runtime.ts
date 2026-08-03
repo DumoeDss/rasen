@@ -44,6 +44,12 @@ import {
   validateTaskLoopCompletion,
   writeTaskLoopReport,
 } from './task-loop.js';
+import {
+  assertGauntletMayDeliver,
+  isGauntletRun,
+  validateGauntletCompletion,
+  writeGauntletReport,
+} from './gauntlet-loop.js';
 
 export interface RuntimeDeps {
   readonly store: RunStore;
@@ -99,6 +105,8 @@ export interface RuntimeDeps {
   readonly resolveSourceState?: (record: CanonicalRunRecord) => 'active' | 'archived' | 'missing';
   /** Derived task-loop report destination; never authoritative for replay. */
   readonly taskLoopEvidenceDir?: string;
+  /** Derived gauntlet-loop report destination; never authoritative for replay. */
+  readonly gauntletEvidenceDir?: string;
   /** Trusted live workspace observation used by TaskLoop evidence guards. */
   readonly observeWorkspace?: () => WorkspaceRevision;
 }
@@ -225,13 +233,16 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
   const observeTaskLoopWorkspace = (
     record: CanonicalRunRecord
   ): WorkspaceRevision | undefined => {
-    if (!isTaskLoopRun(deps.plan, record)) return undefined;
+    if (!isTaskLoopRun(deps.plan, record) && !isGauntletRun(deps.plan, record)) return undefined;
     const observed = deps.observeWorkspace?.();
     if (observed === undefined) {
-      throw new ChangeRunRuntimeError(
-        'workspace-scope-mismatch',
-        'Task Loop requires a trusted live workspace observer.'
-      );
+      if (isTaskLoopRun(deps.plan, record)) {
+        throw new ChangeRunRuntimeError(
+          'workspace-scope-mismatch',
+          'Task Loop requires a trusted live workspace observer.'
+        );
+      }
+      return undefined;
     }
     return observed;
   };
@@ -248,6 +259,18 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         'run_store_unavailable',
         `task_loop_report_unavailable: ${error instanceof Error ? error.message : String(error)}`
       );
+    }
+  };
+
+  const regenerateGauntletReport = (record: CanonicalRunRecord): void => {
+    if (
+      deps.gauntletEvidenceDir === undefined ||
+      !isGauntletRun(deps.plan, record)
+    ) return;
+    try {
+      writeGauntletReport(deps.gauntletEvidenceDir, deps.plan, record);
+    } catch {
+      // Gauntlet report is best-effort; never block delivery on report failure.
     }
   };
   /**
@@ -497,6 +520,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         const record = deps.store.load(deps.plan.runId);
         verifyLaunchIntent(request, record);
         regenerateTaskLoopReport(record);
+        regenerateGauntletReport(record);
         return asPromise(receipt(record, 'reused', [], deps.resolveSourceState, deps.plan));
       }
       verifyLaunchIntent(request, deps.initialRecord);
@@ -515,6 +539,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       // without access to the launch context (Major-2).
       deps.store.writePlan?.(deps.plan.runId, deps.plan);
       regenerateTaskLoopReport(settled.record);
+      regenerateGauntletReport(settled.record);
       return asPromise(receipt(settled.record, 'created', settled.granted, deps.resolveSourceState, deps.plan));
     },
     resume(_request, context: RuntimeMutationContext) {
@@ -532,6 +557,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         deps.store.commit(deps.plan.runId, settled.record);
       }
       regenerateTaskLoopReport(settled.record);
+      regenerateGauntletReport(settled.record);
       const disposition: ChangeRunReceipt['disposition'] =
         settled.record.terminal !== undefined
           ? 'terminal'
@@ -573,6 +599,12 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         request,
         observedTaskLoopWorkspace ?? record.currentWorkspaceRevision
       );
+      validateGauntletCompletion(
+        deps.plan,
+        record,
+        request,
+        observedTaskLoopWorkspace ?? record.currentWorkspaceRevision
+      );
       const goalDescriptor = locateGoalCycleInvocation(
         deps.plan,
         committed.action.nodeId as import('../contracts.js').NodeId
@@ -582,6 +614,13 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
           deps.plan,
           record,
           observedTaskLoopWorkspace
+        );
+      }
+      if (isGauntletRun(deps.plan, record) && goalDescriptor === null) {
+        assertGauntletMayDeliver(
+          deps.plan,
+          record,
+          observedTaskLoopWorkspace ?? record.currentWorkspaceRevision
         );
       }
       // ECP-4: validate choice/fan-out condition results before committing.
@@ -683,6 +722,11 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
             finalRecord,
             observeTaskLoopWorkspace(finalRecord)
           );
+          assertGauntletMayDeliver(
+            deps.plan,
+            finalRecord,
+            observeTaskLoopWorkspace(finalRecord) ?? finalRecord.currentWorkspaceRevision
+          );
         }
       }
       deps.store.commit(deps.plan.runId, finalRecord);
@@ -692,6 +736,13 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         request.status === 'succeeded'
       ) {
         regenerateTaskLoopReport(finalRecord);
+      }
+      if (
+        deps.gauntletEvidenceDir !== undefined &&
+        isGauntletRun(deps.plan, finalRecord) &&
+        request.status === 'succeeded'
+      ) {
+        regenerateGauntletReport(finalRecord);
       }
       const disposition: ChangeRunReceipt['disposition'] =
         finalRecord.terminal !== undefined
@@ -706,6 +757,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
     inspect(_ref: ExactChangeRunRef) {
       const record = deps.store.load(deps.plan.runId);
       regenerateTaskLoopReport(record);
+      regenerateGauntletReport(record);
       const sourceState = deps.resolveSourceState?.(record) ?? 'active';
       return asPromise(projectRunView(record, sourceState, deps.plan));
     },

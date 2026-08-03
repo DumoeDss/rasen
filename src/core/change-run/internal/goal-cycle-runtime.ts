@@ -199,7 +199,11 @@ export function projectGoalCycleProgress(
           events,
           loop.maxIterations,
           variant,
-          plan.pipeline === 'task-loop' ? 'task-loop' : 'strict'
+          plan.pipeline === 'task-loop'
+            ? 'task-loop'
+            : plan.pipeline === 'gauntlet-loop'
+              ? 'gauntlet'
+              : 'strict'
         );
   if (state.outcome === 'satisfied') {
     return Object.freeze({ kind: 'satisfied', state });
@@ -296,7 +300,11 @@ export function validateGoalCycleCompletion(
       evidence: request.evidence,
     },
     descriptor.loop.maxIterations,
-    plan.pipeline === 'task-loop' ? 'task-loop' : 'strict'
+    plan.pipeline === 'task-loop'
+      ? 'task-loop'
+      : plan.pipeline === 'gauntlet-loop'
+        ? 'gauntlet'
+        : 'strict'
   );
 }
 

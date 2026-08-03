@@ -134,15 +134,23 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
     )
     .split(path.sep)
     .join('/');
+  const gauntletReportPath = path
+    .relative(
+      input.projectRoot,
+      path.join(taskLoopEvidenceDir, 'gauntlet-report.md')
+    )
+    .split(path.sep)
+    .join('/');
   const taskLoopEphemeraPrefix = `.rasen/changes/${input.changeId}/ephemera/`;
   const omitTaskLoopRuntimeProjection = (
     manifest: WorkspaceManifest
   ): WorkspaceManifest => {
-    if (plan.pipeline !== 'task-loop') return manifest;
+    if (plan.pipeline !== 'task-loop' && plan.pipeline !== 'gauntlet-loop') return manifest;
     const keep = (entry: { readonly path: string }) => {
       const normalized = entry.path.split('\\').join('/');
       return (
         normalized !== taskLoopReportPath &&
+        normalized !== gauntletReportPath &&
         !normalized.startsWith(taskLoopEphemeraPrefix)
       );
     };
@@ -245,7 +253,14 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
       plan.pipeline === 'task-loop'
         ? taskLoopEvidenceDir
         : undefined,
-    observeWorkspace: plan.pipeline === 'task-loop' ? observeWorkspace : undefined,
+    gauntletEvidenceDir:
+      plan.pipeline === 'gauntlet-loop'
+        ? taskLoopEvidenceDir
+        : undefined,
+    observeWorkspace:
+      plan.pipeline === 'task-loop' || plan.pipeline === 'gauntlet-loop'
+        ? observeWorkspace
+        : undefined,
   });
 
   return Object.freeze({ plan, facade, store, initialRecord });

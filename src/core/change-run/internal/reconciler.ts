@@ -25,11 +25,17 @@ import {
   type GoalCycleProgress,
 } from './goal-cycle-runtime.js';
 import {
+  projectGauntletWaveProgress,
+  type GauntletWaveProgress,
+  type GauntletWaveInvocationDescriptor,
+} from './gauntlet-wave.js';
+import {
   createCanonicalWait,
   type CanonicalWait,
 } from './waits.js';
 import { deriveInvocationId } from './identity.js';
 import { taskLoopActionInput } from './task-loop.js';
+import { gauntletActionInput } from './gauntlet-loop.js';
 
 export type ReconcilerAdmissionKind = 'agent' | 'command' | 'host';
 
@@ -55,7 +61,14 @@ export type ReconcilerNextAction =
         reviewCycle?: Readonly<{ loopPath: string; round: number; phase: string; openFindingIds: readonly string[] }>;
         goalCycle?: Readonly<{ loopPath: string; round: number; phase: string }>;
         taskLoop?: JsonValue;
+        gauntlet?: JsonValue;
         fanOutCondition?: Readonly<{ fanOutPath: string }>;
+        gauntletWave?: Readonly<{
+          loopPath: string;
+          wave: number;
+          role: string;
+          pieceId?: string;
+        }>;
       }>;
       /**
        * The profile path for this admit's capability binding. Set for
@@ -336,6 +349,84 @@ export function reconcile(
               reason: 'A task-loop phase failed before satisfaction.',
             });
           }
+          break;
+      }
+    } else if (loop.body.kind === 'gauntlet-wave') {
+      // Gauntlet-wave body kind (Decision 5 — wave orchestration).
+      // Two-sub-phase staging: builders serialize (write), critics parallelize
+      // (read). Critics are withheld until every piece in the wave is committed.
+      const progress = projectGauntletWaveProgress(plan, loop, record);
+      switch (progress.kind) {
+        case 'satisfied':
+          succeeded.add(loop.nodeId);
+          break;
+        case 'exhausted':
+          actions.push({
+            kind: 'escalate',
+            code: loop.outcomes.exhausted,
+          });
+          break;
+        case 'ready': {
+          const descriptor = progress.descriptor;
+          boundedLoopAdmitCandidates.push({
+            nodeId: descriptor.nodeId,
+            occurrence: occurrenceForBoundedLoop(record, descriptor.nodeId),
+            admissionKind: descriptor.admissionKind,
+            access: descriptor.workspace.access,
+            loop,
+            bodyKind: 'gauntlet-wave',
+            descriptor: {
+              round: descriptor.wave,
+              phase: descriptor.role,
+              nodeId: descriptor.nodeId,
+              profilePath: descriptor.profilePath,
+            },
+            openFindingIds: [],
+            loopPath: loop.hierarchicalPath,
+            gauntletWave: {
+              wave: descriptor.wave,
+              role: descriptor.role,
+              ...(descriptor.pieceId !== undefined
+                ? { pieceId: descriptor.pieceId }
+                : {}),
+              profilePath: descriptor.profilePath,
+            },
+          });
+          break;
+        }
+        case 'critics-ready': {
+          // Emit MULTIPLE read-access candidates — all piece critics + the
+          // meta-critic. selectCompatibleAdmissions admits all readers
+          // together (parallel) since they share read access.
+          for (const descriptor of progress.critics) {
+            boundedLoopAdmitCandidates.push({
+              nodeId: descriptor.nodeId,
+              occurrence: occurrenceForBoundedLoop(record, descriptor.nodeId),
+              admissionKind: descriptor.admissionKind,
+              access: descriptor.workspace.access,
+              loop,
+              bodyKind: 'gauntlet-wave',
+              descriptor: {
+                round: descriptor.wave,
+                phase: descriptor.role,
+                nodeId: descriptor.nodeId,
+                profilePath: descriptor.profilePath,
+              },
+              openFindingIds: [],
+              loopPath: loop.hierarchicalPath,
+              gauntletWave: {
+                wave: descriptor.wave,
+                role: descriptor.role,
+                ...(descriptor.pieceId !== undefined
+                  ? { pieceId: descriptor.pieceId }
+                  : {}),
+                profilePath: descriptor.profilePath,
+              },
+            });
+          }
+          break;
+        }
+        case 'waiting':
           break;
       }
     } else {
@@ -630,21 +721,30 @@ export function reconcile(
           },
         });
       } else if (boundedLoopOriginal.bodyKind === 'goal-cycle') {
-        const goalInput = record.pipeline === 'task-loop'
-          ? taskLoopActionInput({
-              plan,
-              record,
-              loop: boundedLoopOriginal.loop,
-              round: boundedLoopOriginal.descriptor.round,
-              phase: boundedLoopOriginal.descriptor.phase as 'work' | 'judge',
-            })
-          : {
-              goalCycle: {
-                loopPath: boundedLoopOriginal.loopPath,
+        const goalInput =
+          record.pipeline === 'task-loop'
+            ? taskLoopActionInput({
+                plan,
+                record,
+                loop: boundedLoopOriginal.loop,
                 round: boundedLoopOriginal.descriptor.round,
-                phase: boundedLoopOriginal.descriptor.phase,
-              },
-            };
+                phase: boundedLoopOriginal.descriptor.phase as 'work' | 'judge',
+              })
+            : record.pipeline === 'gauntlet-loop'
+            ? gauntletActionInput({
+                plan,
+                record,
+                loop: boundedLoopOriginal.loop,
+                round: boundedLoopOriginal.descriptor.round,
+                phase: boundedLoopOriginal.descriptor.phase as 'work' | 'judge',
+              })
+            : {
+                goalCycle: {
+                  loopPath: boundedLoopOriginal.loopPath,
+                  round: boundedLoopOriginal.descriptor.round,
+                  phase: boundedLoopOriginal.descriptor.phase,
+                },
+              };
         actions.push({
           kind: 'admit',
           nodeId: candidate.nodeId,
@@ -653,6 +753,29 @@ export function reconcile(
           access: candidate.access,
           profilePath: boundedLoopOriginal.descriptor.profilePath,
           input: goalInput,
+        });
+      } else if (boundedLoopOriginal.bodyKind === 'gauntlet-wave') {
+        // Gauntlet-wave admit: carry the wave/role/pieceId payload.
+        const gw = boundedLoopOriginal.gauntletWave;
+        actions.push({
+          kind: 'admit',
+          nodeId: candidate.nodeId,
+          occurrence: candidate.occurrence,
+          admissionKind: candidate.admissionKind,
+          access: candidate.access,
+          profilePath: boundedLoopOriginal.descriptor.profilePath,
+          input: {
+            gauntletWave: gw !== undefined ? {
+              loopPath: boundedLoopOriginal.loopPath,
+              wave: gw.wave,
+              role: gw.role,
+              ...(gw.pieceId !== undefined ? { pieceId: gw.pieceId } : {}),
+            } : {
+              loopPath: boundedLoopOriginal.loopPath,
+              wave: boundedLoopOriginal.descriptor.round,
+              role: boundedLoopOriginal.descriptor.phase,
+            },
+          },
         });
       } else {
         // Composite-body admit: carry the profile path and composite payload.
@@ -717,7 +840,7 @@ interface BoundedLoopAdmitCandidate {
   readonly admissionKind: ReconcilerAdmissionKind;
   readonly access: 'none' | 'read' | 'write';
   readonly loop: RuntimePlanBoundedLoopNode;
-  readonly bodyKind: 'review-cycle' | 'composite' | 'goal-cycle';
+  readonly bodyKind: 'review-cycle' | 'composite' | 'goal-cycle' | 'gauntlet-wave';
   readonly descriptor: Readonly<{
     readonly round: number;
     readonly phase: string;
@@ -726,6 +849,12 @@ interface BoundedLoopAdmitCandidate {
   }>;
   readonly openFindingIds: readonly string[];
   readonly loopPath: string;
+  readonly gauntletWave?: Readonly<{
+    readonly wave: number;
+    readonly role: string;
+    readonly pieceId?: string;
+    readonly profilePath: string;
+  }>;
 }
 
 interface FanOutMemberCandidate {
@@ -938,6 +1067,9 @@ function boundedLoopIsClean(
   }
   if (loop.body.kind === 'goal-cycle') {
     return projectGoalCycleProgress(plan, loop, record).kind === 'satisfied';
+  }
+  if (loop.body.kind === 'gauntlet-wave') {
+    return projectGauntletWaveProgress(plan, loop, record).kind === 'satisfied';
   }
   return projectCompositeBodyProgress(plan, loop, record).kind === 'clean';
 }
