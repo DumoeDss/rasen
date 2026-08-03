@@ -1,18 +1,89 @@
 # Pre-Landing Review: codex-luna-thread-dispatch
 
-**Verdict: PASS - round 3 is independently clean. The aggregate-only pipeline timeout Blocker is resolved, the required exact monolithic gate passes, and no open Blocker or Major remains across the total delta.**
+**Verdict: PASS - the Windows local-runtime ship repair is independently clean. The Node 20.19/Corepack cause is reproduced, PATH pnpm preserves the lifecycle exit code, every requested local gate passes, and no open Blocker or Major exists in the repair delta. Task 6.3 remains open until fresh external PR Windows CI passes.**
 
 - Mode: dispatched, report-only independent non-author reviewer
 - Branch: `feat/codex-luna-thread-dispatch`
 - Base: `origin/dev/0.2.0`
-- Review date: 2026-08-04 (Asia/Shanghai)
-- Scope read: the complete `rasen-review` skill and checklist; `test/AGENTS.md`; every change artifact and both prior evidence reports; the round-3 diff and full relevant files; and the retained round-1/round-2 canonical dispositions.
-- Scope check: CLEAN. Round 3 changes only the cumulative timeout for one 16-process test journey and makes test-process teardown awaitable; production behavior and assertions are unchanged.
-- Fix-first disposition: no open finding to route. This reviewer changed no production code or tests; only task bookkeeping and canonical evidence were updated.
+- Review date: 2026-08-04T06:35:19+08:00
+- Scope read: the complete `rasen-review` skill, checklist, and Greptile triage reference; `test/AGENTS.md`; change artifacts; `evidence/review-report.md`, `evidence/review-cycle-report.md`, and `evidence/ship-log.md`; PR #134; GitHub Actions run `30854609588` attempts 1 and 2; the complete repair diff and both full relevant files; and commit `7baa8f3b` history.
+- Scope check: CLEAN. The repair removes only Windows pnpm's bundled-Corepack preference and adds focused copied-node regression fixtures; npm resolution, non-Windows invocation, package preparation, diagnostic classification, and the Codex dispatch implementation are unchanged.
+- Fix-first disposition: no finding to route. This reviewer changed no production code or tests and left `tasks.md`/`ship-log.md` untouched; only canonical review evidence was updated.
 
 ## Open canonical findings
 
 None.
+
+## Ship repair independent disposition
+
+### SR-1. [Resolved CI Blocker] Node 20.19 bundled Corepack bypassed the active pnpm and failed before the fixture script
+
+- GitHub Actions attempts 1 and 2 independently show `pnpm/action-setup@v4` installing pnpm 9.15.9 under `C:\Users\runneradmin\setup-pnpm\node_modules\.bin`, `actions/setup-node@v4` selecting Windows x64 Node 20.19.0, and the same sole failure: 141/142 files and 2,411/2,422 tests passed while `COMMAND_FAILED`/`build` reported exit 1 instead of the fixture's exit 7.
+- The official Node 20.19.0 Windows archive contains Corepack 0.31.0 at the exact formerly preferred adjacent path. With a source manifest that has a build script but no `packageManager` and a fresh isolated Corepack home, direct bundled invocation selected pnpm 11.20.0, attempted to add `packageManager`, and failed with `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING`/exit 1 before `node -e "process.exit(7)"` ran.
+- Under the same space-containing fixture, PATH pnpm executed the build script and returned exit 7. This establishes that CI's received 1 was a Corepack bootstrap failure, not exit-code normalization by the harness.
+- Commit `7baa8f3b` contains the same removal with the explicit rationale "Resolve pnpm from the active environment instead of preferring Node's bundled Corepack." Later merge history reintroduced the older branch; this repair restores that deliberate behavior.
+
+### SR-2. [Resolved portability risk] PATH resolution is bounded, quoted safely for current callers, and fail-closed
+
+- `scripts/local-version/local-runtime.mjs:180-184` invokes `%ComSpec% /d /s /c pnpm`; `runCommand()` passes argv as an array, retains the exact `cwd`, copies the current environment, and preserves `spawnSync.status` in the stable `COMMAND_FAILED` receipt (`:192-215`). This honors setup tooling's PATH/PATHEXT-selected `pnpm.CMD` rather than a Node-adjacent package manager selected independently of the environment.
+- Every pnpm argument at this boundary is a fixed token: `--version`, `install --frozen-lockfile`, or `run build` (`:220-225,389-395`). Filesystem paths with spaces are carried in `cwd`, not interpolated into the command string. npm's path-bearing `pack` call still runs the Node-adjacent npm CLI directly and is outside this change.
+- A full official-Node-20.19 harness probe put a fake `pnpm.cmd` in a PATH directory containing spaces. The marker recorded the exact space-containing source cwd and `args=run build`; the final receipt remained `COMMAND_FAILED`/`build`/exit 7 and no runtime was published.
+- The same full harness with an empty PATH failed promptly with cmd's actionable "pnpm is not recognized" text, `COMMAND_FAILED`/`build`/exit 1, and no runtime publication. Removing the bundled fallback therefore respects an explicitly unavailable tool rather than silently switching package-manager implementations.
+- The adjacent npm branch and every non-Windows branch are byte-for-byte unchanged. The production delta is the deletion of one Windows-only preference, not a new cross-platform command path.
+
+### SR-3. [Resolved test-risk audit] Copied-node fixtures are isolated, Windows-portable, and regression-sensitive
+
+- `createIsolatedNodeExecutable()` copies only the current standalone `node.exe` into roots named `node with corepack` / `node without corepack`, adds the minimum npm manifest needed to keep fingerprinting local, and creates a sentinel Corepack entry only for the present case (`test/scripts/local-version-runtime.test.ts:101-119`). The paths deliberately contain spaces.
+- `runPrepare()` accepts the copied executable and an environment overlay without mutating the parent process environment (`:121-156`). Each case sets the CI user-agent identity, requires exit 7, rejects the sentinel Corepack stderr, and asserts that no runtime was published (`:288-324`). The present layout fails under the removed implementation because the sentinel exits 1; the absent layout confirms the ordinary PATH fallback. Together they cannot pass merely from the copied executable existing.
+- Every case owns one `mkdtemp` root registered immediately at creation and `afterEach` removes only those exact roots (`:33-39,188-192`). All children are synchronous before cleanup. The official Node 20.19 versions of both fixtures pass, and no recent `rasen-local-version-*` root or worktree-associated Node/pnpm/cmd process remained after verification.
+
+## Repair coverage
+
+```text
+CODE PATH COVERAGE
+==================
+[+] Windows commandInvocation('pnpm')
+    [+ TESTED] Bundled Corepack present -> ignored; active PATH pnpm returns exit 7
+    [+ TESTED] Bundled Corepack absent  -> active PATH pnpm returns exit 7
+    [+ PROBED] PATH pnpm unavailable    -> stable COMMAND_FAILED/build/exit 1; no publication
+    [+ PROBED] PATH directory + cwd contain spaces -> exact pnpm.cmd and args selected
+[+] runCommand failure boundary
+    [+ TESTED] COMMAND_FAILED code, build phase, and child exit 7 remain stable
+[+] npm and non-Windows resolution
+    [+ STATIC] Unchanged by the repair delta
+
+USER FLOW COVERAGE
+==================
+[+] Local source runtime prepare on Windows
+    [+ TESTED] Exact CI failure case
+    [+ TESTED] Complete 9-test local-version integration file
+
+COVERAGE: all changed behavior and observed failure paths verified; no E2E/eval gap.
+```
+
+## Ship-repair verification evidence
+
+- Exact repaired failure case on the host Node 24.14.0: PASS, 1 selected / 8 skipped.
+- Both copied-node resolution fixtures on Node 24.14.0: PASS, 2 selected / 7 skipped.
+- Exact repaired failure case on official Node 20.19.0 with the CI user-agent: PASS, 1 selected / 8 skipped.
+- Both copied-node resolution fixtures on official Node 20.19.0: PASS, 2 selected / 7 skipped.
+- Complete `test/scripts/local-version-runtime.test.ts`: PASS, 1 file / 9 tests.
+- Official Node 20.19.0 + Corepack 0.31.0 causal probe: expected pre-repair behavior reproduced, exit 1 with `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING`; PATH build returned 7.
+- Explicit PATH/cwd-spaces full-harness probe: PASS, marker `args=run build`, stable exit-7 receipt, no runtime publication.
+- Empty-PATH full-harness probe: PASS, actionable unavailable-command stderr, stable exit-1 receipt, no runtime publication.
+- `pnpm lint`: PASS, exit 0; only the known unrelated unused-disable warning at `test/core/change-run/facade-settle-completeness.test.ts:139`.
+- `pnpm run build`: PASS, exit 0.
+- `node --check scripts/local-version/local-runtime.mjs`: PASS.
+- `git diff --check`: PASS; line-ending conversion notices only.
+- `node bin/rasen.js validate codex-luna-thread-dispatch --strict --json`: PASS, 1 change / 0 failures.
+- Greptile: no line-level or top-level Greptile comments on PR #134.
+- Medium-delta external Codex adversarial pass: timed out at the skill's five-minute bound without output; non-blocking, and no fallback subagent was permitted by the dispatched-leaf contract.
+
+## Ship-repair evidence boundaries
+
+- No fresh external CI run contains this uncommitted repair, so task 6.3 remains unchecked and the PR is not yet shippable on CI evidence alone.
+- No monolithic `pnpm test` rerun was performed for this two-line selection change; the previously reviewed committed-tree full-suite pass remains the branch-wide evidence, while the complete affected file plus exact Node 20.19 reproduction bound this delta.
+- HEAD remains `1b58aa310f3a355afe8804de88a446038809b20a` / tree `372afe139485679f39d3f238927c99275d5ac88f`; verification covered the live uncommitted repair.
 
 ## Round 3 independent disposition
 

@@ -274,3 +274,89 @@ Git evidence target:
 - Task 6.3 remains unchecked for real PR CI.
 - Task 6.4 remains checked from the prior independently verified real Luna/Terra matrix.
 - Post-run audit found no process associated with this worktree and no `test-pipeline-command-tmp`. The fresh baseline archive was removed. One inspected parent-death `rasen-codex-*` scratch directory and thirty-three current-run `rasen-test-config-*` directories were removed by exact validated paths; these ephemeral files are not recoverable.
+
+## Ship repair - Windows local-runtime exit-code mismatch
+
+- Date: 2026-08-04T06:14:27+08:00
+- Stage: ship repair after GitHub Actions run `30854609588`, attempts 1 and 2
+- Author: Codex fixer leaf `/root/fix_windows_local_runtime_ci`
+- Disposition: the reproducible Windows shard failure is fixed locally with focused cross-layout coverage. This fixer does not claim external CI closure; task 6.3 remains unchecked until a fresh GitHub Actions run passes.
+
+### Diagnosis
+
+- Both CI attempts used Windows x64, Node 20.19.0 from `actions/setup-node@v4`, and pnpm 9.15.9 installed by `pnpm/action-setup@v4` under `PNPM_HOME`. Both attempts failed only `test/scripts/local-version-runtime.test.ts:248`: 141/142 files and 2,411/2,422 tests passed, with the diagnostic's `COMMAND_FAILED` code and `build` phase correct but `exitCode` equal to 1 instead of 7.
+- The Node 20.19.0 Windows distribution includes Corepack 0.31.0 at the exact path preferred by `commandInvocation('pnpm')`, so CI took the bundled-Corepack branch and bypassed the action-installed pnpm 9.15.9 command on `PATH`.
+- The fixture intentionally has a build script but no `packageManager`. `pnpmIdentity()` records the outer `npm_config_user_agent` version without probing pnpm, while the later bundled-Corepack invocation independently resolves an unpinned package manager from the fixture cwd. An exact local reproduction using the official Node 20.19.0 Windows distribution, an isolated Corepack home, and the CI user-agent reproduced the same `COMMAND_FAILED` / `build` / exit-1 diagnostic. The raw child probe showed Corepack selecting the current pnpm and failing in its loader with `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING` before `node -e "process.exit(7)"` ran. The `1` was therefore a Corepack bootstrap failure, not legitimate normalization of the fixture's lifecycle exit code.
+- Direct probes of the action-style pnpm 9.15.9 `.CMD` shim and Node's `cmd.exe /d /s /c pnpm` fallback both preserved the inner exit code 7. Historical comparison also found commit `7baa8f3b` had intentionally removed the Corepack preference to "resolve pnpm from the active environment"; the current `origin/dev/0.2.0` tree had reintroduced the earlier branch during subsequent history.
+
+### Fix
+
+- `scripts/local-version/local-runtime.mjs` again routes Windows pnpm through `cmd.exe /d /s /c pnpm`, using the active environment selected by setup tooling. npm's adjacent-to-Node resolution and every non-Windows command path are unchanged.
+- `test/scripts/local-version-runtime.test.ts` now constructs isolated copied-Node layouts with a fake bundled Corepack entry both present and absent. In both layouts the active pnpm must run, the fake Corepack must remain untouched, and the build diagnostic must preserve exit code 7. The existing full integration test continues to assert the same stable diagnostic contract.
+
+### Exact verification
+
+Required scope: the exact CI assertion, both Windows command-resolution layouts, the complete local-version harness surface, the official CI Node/Corepack layout, lint, build, syntax/diff checks, and strict change validation. This covers the observed process-selection risk without changing Codex dispatch behavior or weakening diagnostics.
+
+- Pre-fix exact official-runtime reproduction: official Node 20.19.0 + Corepack 0.31.0 + isolated Corepack home + CI pnpm user-agent - expected FAIL with `COMMAND_FAILED`, phase `build`, received exit 1 instead of 7.
+- Post-fix focused cases: `pnpm exec vitest run test/scripts/local-version-runtime.test.ts -t "preserves a failed build exit code|reports a failed source build with stable command diagnostics" --reporter=verbose` - PASS, 3 selected / 6 skipped.
+- Post-fix exact official-runtime reproduction: official Node 20.19.0 running the exact failed test with the CI user-agent and a fresh isolated Corepack home - PASS, 1 selected / 8 skipped; the action-installed pnpm path preserved exit 7.
+- Complete file: `pnpm exec vitest run test/scripts/local-version-runtime.test.ts --reporter=verbose` - PASS, 1 file / 9 tests.
+- `pnpm run build` - PASS, exit 0.
+- `pnpm lint` - PASS, exit 0; only the existing unrelated unused-disable warning at `test/core/change-run/facade-settle-completeness.test.ts:139` remains.
+- `node --check scripts/local-version/local-runtime.mjs` - PASS.
+- `git diff --check` - PASS; line-ending conversion notices only.
+- `node bin/rasen.js validate codex-luna-thread-dispatch --strict --json` - PASS, 1 change / 0 failures.
+
+Git evidence target:
+
+- HEAD: `1b58aa310f3a355afe8804de88a446038809b20a`
+- `git rev-parse HEAD^{tree}`: `372afe139485679f39d3f238927c99275d5ac88f`
+- Verification ran against the live uncommitted ship-repair delta; the HEAD tree hash does not encode the three modified tracked files.
+
+### Remaining / cleanup
+
+- Task 6.3 remains unchecked. Only a fresh successful external Windows CI run can close it; this fixer has not edited `tasks.md` or `evidence/ship-log.md`.
+- No `pnpm test` monolithic rerun was performed because the two-line production selection change is bounded by the complete local-version file plus the exact official-runtime reproduction; the previously recorded committed-tree monolithic pass remains unchanged evidence for the rest of the branch.
+- The downloaded official Node archive/layout, isolated Corepack homes, action-style pnpm probe, and diagnostic scripts were removed from the exact run-owned ephemera directory after verification. No matching recent `rasen-local-version-*` temp directory or worktree-associated Node/pnpm/cmd process remained.
+
+## Ship repair - independent non-author re-review
+
+- Date: 2026-08-04T06:35:19+08:00
+- Reviewer: fresh independent leaf `/root/review_windows_local_runtime_ci`
+- Mode: dispatched, report-only; no production code or tests edited
+- Verdict: **PASS - repair delta clean.** The Windows CI cause and the repair are independently confirmed; no new Blocker or Major was found. Task 6.3 remains unchecked until this repair passes fresh external PR Windows CI.
+
+### Independent cause confirmation
+
+- GitHub run `30854609588` attempts 1 and 2 both installed pnpm 9.15.9 into `PNPM_HOME`, selected Windows x64 Node 20.19.0, and failed only `test/scripts/local-version-runtime.test.ts:248`: 141/142 files and 2,411/2,422 tests passed; the stable code/phase were correct and only exit 7 became exit 1.
+- The independently downloaded official Node 20.19.0 Windows archive reported Corepack 0.31.0 at the removed adjacent path. A fresh no-`packageManager` fixture and isolated Corepack home caused that bundled entry to select pnpm 11.20.0, then fail with `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING`/exit 1 before the exit-7 build script ran.
+- PATH pnpm ran the same space-containing fixture's build script and preserved exit 7. Commit `7baa8f3b` independently corroborates that active-environment selection was an intentional portability fix later lost in merge history.
+
+### Delta audit
+
+- `local-runtime.mjs:180-184,192-215` now uses `%ComSpec% /d /s /c pnpm`, preserves argv array construction, exact cwd, inherited PATH/PATHEXT, stderr, and child status. All pnpm callers pass only fixed tokens; path-bearing npm packing and non-Windows resolution are unchanged.
+- An official-Node-20.19 full-harness probe with a fake `pnpm.cmd` in a PATH directory containing spaces recorded the exact source cwd plus `args=run build`, returned the stable `COMMAND_FAILED`/`build`/exit-7 receipt, and published no runtime.
+- With an empty PATH the same harness retained cmd's actionable unavailable-command text, returned `COMMAND_FAILED`/`build`/exit 1, and published no runtime. The repair therefore fails closed instead of silently substituting bundled Corepack.
+- The copied-node tests use space-containing exact roots, a fake adjacent Corepack sentinel, synchronous child completion, and exact-root `afterEach` cleanup. The Corepack-present fixture fails under the removed behavior and passes only when the active PATH command is used; the absent fixture verifies the ordinary fallback. No parent environment is mutated.
+
+### Exact verification
+
+- Host Node 24 exact failed case - PASS, 1 selected / 8 skipped.
+- Host Node 24 copied-node layouts - PASS, 2 selected / 7 skipped.
+- Official Node 20.19 exact failed case with CI user-agent - PASS, 1 selected / 8 skipped.
+- Official Node 20.19 copied-node layouts - PASS, 2 selected / 7 skipped.
+- Complete local-version file - PASS, 1 file / 9 tests.
+- `pnpm lint` - PASS, exit 0; only the known unrelated warning at `test/core/change-run/facade-settle-completeness.test.ts:139`.
+- `pnpm run build` - PASS, exit 0.
+- `node --check scripts/local-version/local-runtime.mjs` - PASS.
+- `git diff --check` - PASS; line-ending conversion notices only.
+- Strict change validation - PASS, 1 change / 0 failures.
+- PR #134 Greptile query - zero comments.
+- Medium-delta read-only external Codex challenge - timed out at five minutes without output; non-blocking per the review skill, with no leaf-agent fallback permitted.
+
+### Evidence boundary and cleanup
+
+- No fresh external CI run includes the live repair. Task 6.3 remains unchecked; neither `tasks.md` nor `evidence/ship-log.md` was edited.
+- No monolithic rerun was needed for the bounded selection delta; the affected file, official runtime, PATH, unavailable-tool, lint/build, syntax, and strict-validation gates all pass.
+- The review-owned official Node/Corepack probe directory was removed after these checks. No matching recent local-version temp root or worktree-associated Node/pnpm/cmd/Codex process remained.
