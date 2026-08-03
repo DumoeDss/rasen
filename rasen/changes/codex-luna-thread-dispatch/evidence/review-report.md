@@ -1,18 +1,47 @@
 # Pre-Landing Review: codex-luna-thread-dispatch
 
-**Verdict: PASS - the Windows local-runtime ship repair is independently clean. The Node 20.19/Corepack cause is reproduced, PATH pnpm preserves the lifecycle exit code, every requested local gate passes, and no open Blocker or Major exists in the repair delta. Task 6.3 remains open until fresh external PR Windows CI passes.**
+**Verdict: PASS - the Windows local-runtime ship repair and its successor teardown cleanup are independently clean. The cleanup retries only the exact generated root within a finite budget, still propagates persistent failure, and passes both repeated focused and complete-file verification. No open Blocker or Major exists in either delta. Task 6.3 remains open until fresh external PR Windows CI passes.**
 
 - Mode: dispatched, report-only independent non-author reviewer
 - Branch: `feat/codex-luna-thread-dispatch`
 - Base: `origin/dev/0.2.0`
-- Review date: 2026-08-04T06:35:19+08:00
-- Scope read: the complete `rasen-review` skill, checklist, and Greptile triage reference; `test/AGENTS.md`; change artifacts; `evidence/review-report.md`, `evidence/review-cycle-report.md`, and `evidence/ship-log.md`; PR #134; GitHub Actions run `30854609588` attempts 1 and 2; the complete repair diff and both full relevant files; and commit `7baa8f3b` history.
-- Scope check: CLEAN. The repair removes only Windows pnpm's bundled-Corepack preference and adds focused copied-node regression fixtures; npm resolution, non-Windows invocation, package preparation, diagnostic classification, and the Codex dispatch implementation are unchanged.
+- Review date: 2026-08-04T07:07:24+08:00
+- Scope read: the complete `rasen-review` skill, checklist, and Greptile triage reference; `test/AGENTS.md`; change artifacts and canonical evidence; PR #134; GitHub Actions runs `30854609588` and `30859461935`; the complete repair and cleanup diffs; `test/scripts/local-version-runtime.test.ts`, `test/helpers/temp-cleanup.ts`, `vitest.config.ts`, and `tsconfig.json`; and commit `7baa8f3b` history.
+- Scope check: CLEAN. The repair removes only Windows pnpm's bundled-Corepack preference and adds focused copied-node regression fixtures. The successor changes only test teardown by reusing an unchanged exact-target cleanup helper; production, task 6.3, `ship-log.md`, assertions, npm resolution, non-Windows invocation, package preparation, diagnostic classification, and the Codex dispatch implementation are unchanged.
 - Fix-first disposition: no finding to route. This reviewer changed no production code or tests and left `tasks.md`/`ship-log.md` untouched; only canonical review evidence was updated.
 
 ## Open canonical findings
 
 None.
+
+## Successor cleanup independent disposition
+
+### SC-1. [Resolved CI cleanup race] Retry scope is exact, bounded, and failure-preserving
+
+- GitHub Actions run `30859461935` is on the current HEAD `1c430a9223bd6ef31424e71fcce9b3e6ebe0e97a`. Its Windows shard-2 job `91838021207` had one failure after the target fixture's assertions passed: the old one-shot teardown at `test/scripts/local-version-runtime.test.ts:190` raised `ENOTEMPTY` while removing the generated `node without corepack` subtree. The other 141 files passed, so this is cleanup hardening rather than a functional-test bypass.
+- `makeTemporaryRoot()` records only the exact path returned by `fs.mkdtempSync(...)` in `temporaryRoots` (`test/scripts/local-version-runtime.test.ts:35-40`). `afterEach` splices those exact strings and passes each one unchanged to `cleanupTempPath(root)` (`:190-193`). There is no parent computation, glob, directory enumeration, or fallback target.
+- The unchanged shared helper invokes `fs.rmSync(target, ...)` only on that supplied target (`test/helpers/temp-cleanup.ts:3-17`). Relative to the removed call, `recursive: true` and `force: true` are identical; the only behavioral addition is `maxRetries: 15` with `retryDelay: 200`, a finite backoff budget for retryable removal errors including the observed `ENOTEMPTY`.
+- Persistent failure remains visible. The helper has no `try`/`catch`, fallback deletion, or assertion suppression, so `rmSync` throws after its retry budget and Vitest fails the `afterEach`. The delta changes no test body or expectation.
+
+### SC-2. [Resolved module-integration risk] The helper import follows the live ESM convention
+
+- The test imports the TypeScript helper through `../helpers/temp-cleanup.js`, matching the repository's existing NodeNext ESM imports. `tsconfig.json` sets both `module` and `moduleResolution` to `NodeNext`.
+- More importantly, the focused and complete Vitest executions transformed, resolved, and ran this exact import successfully. This directly verifies the specifier in the test runner that consumes it.
+
+### Successor-cleanup exact verification
+
+- Exact CI-failing fixture, repeated sequentially by this independent reviewer: PASS, 5/5 runs; each ran 1 selected test with 8 skipped.
+- Complete `test/scripts/local-version-runtime.test.ts`: PASS, 1 file / 9 tests.
+- `pnpm lint`: PASS, exit 0; only the known unrelated unused-disable warning at `test/core/change-run/facade-settle-completeness.test.ts:139`.
+- `node bin/rasen.js validate codex-luna-thread-dispatch --strict --json`: PASS, 1 change / 0 failures.
+- `git diff --check`: PASS; line-ending conversion notices only.
+- Protected-diff check against HEAD for `scripts/local-version/local-runtime.mjs`, `tasks.md`, and `evidence/ship-log.md`: PASS, empty diff.
+- PR #134 Greptile re-query: zero review comments, issue comments, or reviews.
+
+### Successor-cleanup evidence boundary
+
+- Run `30859461935` demonstrates the old one-shot teardown failure; no external CI run yet contains this uncommitted cleanup delta. It therefore does not close task 6.3, which remains unchecked.
+- This independent reviewer edited only `evidence/review-report.md` and appended independent evidence to `evidence/review-cycle-report.md`; no production code, tests, task state, or ship log was changed.
 
 ## Ship repair independent disposition
 

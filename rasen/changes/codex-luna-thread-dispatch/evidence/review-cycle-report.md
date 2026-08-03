@@ -360,3 +360,67 @@ Git evidence target:
 - No fresh external CI run includes the live repair. Task 6.3 remains unchecked; neither `tasks.md` nor `evidence/ship-log.md` was edited.
 - No monolithic rerun was needed for the bounded selection delta; the affected file, official runtime, PATH, unavailable-tool, lint/build, syntax, and strict-validation gates all pass.
 - The review-owned official Node/Corepack probe directory was removed after these checks. No matching recent local-version temp root or worktree-associated Node/pnpm/cmd/Codex process remained.
+
+## Ship repair successor - Windows local-runtime teardown cleanup
+
+- Date: 2026-08-04T07:01:04+08:00
+- Author: successor Codex fixer leaf `/root/fix_windows_cleanup_ci_successor`
+- Scope: test-only teardown hardening for the transient Windows `ENOTEMPTY` in GitHub Actions run `30859461935`, Windows shard-2 job `91838021207`.
+- Disposition: imported the existing `cleanupTempPath` helper with the repository's ESM `.js` convention and replaced only the local-version file's direct recursive `afterEach` removal. Production runtime, task 6.3, `ship-log.md`, `.rasen/`, and unrelated files were not modified.
+
+### Delta and safety boundary
+
+- `test/scripts/local-version-runtime.test.ts` still removes each exact value spliced from `temporaryRoots`; it now passes that same root directly to `cleanupTempPath(root)`.
+- The reused helper remains unchanged and calls `fs.rmSync` on only the supplied target with `{ recursive: true, force: true, maxRetries: 15, retryDelay: 200 }`. The retry budget is bounded, and because the helper does not catch or suppress `rmSync` errors, a persistent cleanup failure still propagates.
+- Required verification scope: repeatedly exercise the exact Corepack-absent copied-node fixture that failed in CI, then cover both copied-node layouts and the rest of the local-version file, followed sequentially by build, lint, strict validation, diff inspection, and residue audit. This directly covers the observed teardown race without reopening production command selection.
+
+### Exact verification
+
+- `pnpm exec vitest run test/scripts/local-version-runtime.test.ts -t "preserves a failed build exit code when bundled Corepack is absent" --reporter=dot`, repeated sequentially 8 times - PASS, 8/8 iterations; each iteration ran 1 selected test with 8 skipped.
+- `pnpm exec vitest run test/scripts/local-version-runtime.test.ts --reporter=verbose` - PASS, 1 file / 9 tests, including both bundled-Corepack-present and bundled-Corepack-absent layouts.
+- `pnpm run build` - PASS, exit 0.
+- `pnpm lint` - PASS, exit 0; only the known unrelated unused-disable warning at `test/core/change-run/facade-settle-completeness.test.ts:139` remains.
+- `node bin/rasen.js validate codex-luna-thread-dispatch --strict --json` - PASS, 1 change / 0 failures.
+- `git diff --check` - PASS; line-ending conversion notices only.
+- Final scoped diff before this evidence append: one test file, 3 insertions / 1 deletion; exactly the helper import and teardown call replacement.
+
+Git evidence target:
+
+- HEAD: `1c430a9223bd6ef31424e71fcce9b3e6ebe0e97a`
+- `git rev-parse 'HEAD^{tree}'`: `defcc80477978f07578aef33e4f9a0b853fc2605`
+- Verification ran against the live uncommitted test-only successor delta; the HEAD tree hash is recorded as required but does not encode that delta.
+
+### Cleanup and evidence boundary
+
+- Post-run process audit found zero processes whose command line referenced this worktree or a `rasen-local-version-*` root.
+- The temp audit found zero `rasen-local-version-*` roots created or modified during this repair. One root, `C:\Users\Sayo\AppData\Local\Temp\rasen-local-version-9fyXAs`, predates this work (`2026-08-01`) and was preserved as unrelated rather than deleted.
+- No fresh external CI run includes this successor delta. Task 6.3 remains unchecked, and this fixer does not claim external Windows CI closure.
+
+## Ship repair successor - independent cleanup-delta re-review
+
+- Date: 2026-08-04T07:07:24+08:00
+- Reviewer: fresh independent leaf `/root/review_windows_local_runtime_ci`
+- Mode: dispatched, report-only; no production code, tests, task state, or ship log edited
+- Verdict: **PASS - cleanup delta clean.** No Blocker or Major was found. The retry is exact-root scoped and bounded, exhausted failure still propagates, the ESM import works in Vitest, and assertions plus protected files are unchanged.
+
+### Independent CI and safety confirmation
+
+- GitHub Actions run `30859461935` targets current HEAD `1c430a9223bd6ef31424e71fcce9b3e6ebe0e97a`. Windows shard-2 job `91838021207` failed only after the Corepack-absent fixture assertions completed, when the old direct `fs.rmSync` teardown raised `ENOTEMPTY`; 141 other test files passed.
+- `makeTemporaryRoot()` stores the exact `mkdtempSync` return value. `afterEach` splices and forwards only those exact values; `cleanupTempPath` calls `fs.rmSync` only on its supplied target. No parent, glob, relative fallback, or unrelated directory enters the deletion path.
+- The unchanged helper retains the prior `recursive: true, force: true` deletion semantics and adds only `maxRetries: 15, retryDelay: 200`. This is a finite retry budget. With no catch or fallback in the helper, a failure surviving that budget throws through the `afterEach` and fails Vitest.
+- Only the helper import and teardown call changed in the test. Test bodies and expectations are untouched. The `.js` specifier matches the repository's NodeNext convention and was resolved by every focused and complete-file Vitest run.
+- A protected-diff check was empty for `scripts/local-version/local-runtime.mjs`, `tasks.md`, and `evidence/ship-log.md`. Task 6.3 remains unchecked.
+
+### Independent exact verification
+
+- Exact CI-failing fixture repeated sequentially 5 times - PASS, 5/5; each run executed 1 selected test with 8 skipped.
+- Complete `test/scripts/local-version-runtime.test.ts` - PASS, 1 file / 9 tests.
+- `pnpm lint` - PASS, exit 0; only the known unrelated warning at `test/core/change-run/facade-settle-completeness.test.ts:139`.
+- Strict change validation - PASS, 1 change / 0 failures.
+- `git diff --check` - PASS; line-ending conversion notices only.
+- PR #134 Greptile re-query - zero review comments, issue comments, or reviews.
+
+### Evidence boundary
+
+- The failing remote run contains the committed production repair but predates this uncommitted test-only cleanup. Fresh external Windows CI is still required before task 6.3 can close.
+- This review adds evidence only. It does not broaden deletion scope, hide an assertion, alter production behavior, or claim ship readiness.
