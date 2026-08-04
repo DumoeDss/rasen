@@ -87,6 +87,14 @@ function stageControl(container: HTMLElement, testid: string, pipeline: string, 
   ) ?? null;
 }
 
+function configEntry(key: string, instanceKey?: string) {
+  return pipelinesConfigFixture.entries.find((entry) =>
+    instanceKey === undefined
+      ? entry.instanceKey === undefined && entry.definition.key === key
+      : entry.instanceKey === instanceKey
+  )!;
+}
+
 /** Expands a pipeline's collapsed-by-default Configure disclosure so its per-stage/per-role controls render. */
 async function expandConfig(container: HTMLElement, pipeline: string): Promise<void> {
   const section = stageSection(container, pipeline);
@@ -150,6 +158,143 @@ describe('PipelinesPage', () => {
     const builtIn = sections.find((s) => s.getAttribute('data-pipeline') === 'small-feature')!;
     expect(builtIn.querySelector('[data-testid="pipeline-provenance"]')!.textContent).toBe('built-in');
     expect(builtIn.querySelector('[data-testid="pipeline-source-layer"]')!.textContent).toBe('package');
+  });
+
+  it('renders the complete six-row Model/Effort defaults matrix from registry entries', async () => {
+    await mount(container);
+    const matrix = container.querySelector('[data-testid="defaults-matrix"]')!;
+    expect(matrix.parentElement?.getAttribute('data-testid')).toBe('defaults-matrix-scroll');
+    expect(matrix.parentElement?.classList.contains('defaults-matrix-scroll')).toBe(true);
+    expect([...matrix.querySelectorAll('thead th')].map((heading) => heading.textContent)).toEqual([
+      'Role',
+      'Model',
+      'Effort',
+    ]);
+    expect([...matrix.querySelectorAll('tbody tr')].map((row) => row.getAttribute('data-role'))).toEqual([
+      'default',
+      'planner',
+      'implementer',
+      'reviewer',
+      'fixer',
+      'shipper',
+    ]);
+    const effortSelects = matrix.querySelectorAll('[data-testid="defaults-effort-select"]');
+    expect(effortSelects).toHaveLength(6);
+    expect([...effortSelects[0]!.querySelectorAll('option')].map((option) => option.value)).toEqual([
+      'inherit',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+  });
+
+  it('writes fixed efforts at project/global scope and re-renders role inheritance from the API response', async () => {
+    (client.putKey as any).mockImplementation(async (key: string, body: { scope: string; value: string }) => {
+      const entry = configEntry(key);
+      return {
+        entry: {
+          ...entry,
+          value: body.value,
+          source: body.scope,
+          scopeValues: { ...entry.scopeValues, [body.scope]: body.value },
+        },
+        store: null,
+      };
+    });
+    const reviewer = configEntry('efforts.roles.reviewer');
+    (client.deleteKey as any).mockResolvedValue({
+      entry: {
+        ...reviewer,
+        value: 'medium',
+        source: 'global',
+        scopeValues: { global: 'medium' },
+      },
+      store: null,
+    });
+
+    await mount(container);
+    const baseCell = container.querySelector('[data-key="efforts.default"]')!;
+    await changeValue(baseCell.querySelector('[data-testid="defaults-effort-select"]'), 'high');
+    expect(client.putKey).toHaveBeenCalledWith(
+      'efforts.default',
+      { scope: 'project', value: 'high' },
+      'project:proj_x'
+    );
+    expect(baseCell.querySelector('[data-testid="defaults-effort-effective"]')!.textContent).toContain('high');
+
+    await clickAndFlush([...container.querySelectorAll('[data-testid="pipelines-mode"] button')][0]);
+    await changeValue(baseCell.querySelector('[data-testid="defaults-effort-select"]'), 'max');
+    expect(client.putKey).toHaveBeenCalledWith(
+      'efforts.default',
+      { scope: 'global', value: 'max' },
+      'project:proj_x'
+    );
+
+    await clickAndFlush([...container.querySelectorAll('[data-testid="pipelines-mode"] button')][1]);
+    const reviewerCell = container.querySelector('[data-key="efforts.roles.reviewer"]')!;
+    await changeValue(reviewerCell.querySelector('[data-testid="defaults-effort-select"]'), 'inherit');
+    expect(client.deleteKey).toHaveBeenCalledWith(
+      'efforts.roles.reviewer',
+      'project',
+      'project:proj_x'
+    );
+    expect((reviewerCell.querySelector('[data-testid="defaults-effort-select"]') as HTMLSelectElement).value).toBe('inherit');
+    expect(reviewerCell.querySelector('[data-testid="defaults-effort-effective"]')!.textContent).toContain('medium');
+    expect(reviewerCell.querySelector('[data-testid="defaults-source"]')!.textContent).toBe('global');
+  });
+
+  it('keeps a store-inherited role effort read-only in project Local mode', async () => {
+    const config = structuredClone(pipelinesConfigFixture) as any;
+    config.store = { id: 'team-store', root: '/stores/team-store' };
+    (client.listConfig as any).mockResolvedValue(config);
+
+    await mount(container);
+    const cell = container.querySelector('[data-role="implementer"] .defaults-cell--readonly')!;
+    expect(cell.querySelector('[data-testid="defaults-effort-select"]')).toBeNull();
+    expect(cell.querySelector('.config-entry__store-edit')!.textContent).toContain('team-store');
+  });
+
+  it('offers Luna/Terra on both model surfaces and writes arbitrary custom ids unchanged', async () => {
+    const customId = 'vendor/future-model-42';
+    (client.putKey as any).mockImplementation(async (key: string, body: { scope: string; value: string }) => ({
+      entry: {
+        ...(configEntry(key) ?? configEntry('pipelines.<name>.efforts.<stage>')),
+        value: body.value,
+        source: body.scope,
+        scopeValues: { [body.scope]: body.value },
+        ...(key.startsWith('pipelines.') ? { instanceKey: key } : {}),
+      },
+      store: null,
+    }));
+
+    await mount(container);
+    const defaultsInput = container.querySelector('[data-key="models.default"] [data-testid="defaults-model-input"]') as HTMLInputElement;
+    const defaultsList = document.getElementById(defaultsInput.getAttribute('list')!)!;
+    expect([...defaultsList.querySelectorAll('option')].map((option) => option.value)).toEqual(
+      expect.arrayContaining(['gpt-5.6-luna', 'gpt-5.6-terra', 'sonnet-5', 'gpt-5'])
+    );
+    await changeValue(defaultsInput, customId);
+    expect(client.putKey).toHaveBeenCalledWith(
+      'models.default',
+      { scope: 'project', value: customId },
+      'project:proj_x'
+    );
+
+    await expandConfig(container, 'small-feature');
+    const stageInput = stageControl(container, 'stage-model', 'small-feature', 'propose')!
+      .querySelector('[data-testid="stage-model-input"]') as HTMLInputElement;
+    const stageList = document.getElementById(stageInput.getAttribute('list')!)!;
+    expect([...stageList.querySelectorAll('option')].map((option) => option.value)).toEqual(
+      expect.arrayContaining(['gpt-5.6-luna', 'gpt-5.6-terra', 'opus-4', 'fable'])
+    );
+    await changeValue(stageInput, customId);
+    expect(client.putKey).toHaveBeenCalledWith(
+      'pipelines.small-feature.models.propose',
+      { scope: 'project', value: customId },
+      'project:proj_x'
+    );
   });
 
   it('shows keepalive enabled in Global and project Local modes, but omits store Local mode', async () => {
@@ -285,6 +430,126 @@ describe('PipelinesPage', () => {
     expect((runtime.querySelector('[data-testid="role-runtime-select"]') as HTMLSelectElement).value).toBe('codex');
   });
 
+  it('renders all registry-provided effort choices and writes a project-scoped stage effort', async () => {
+    const refreshed = structuredClone(pipelinesFixture) as any;
+    const gateReview = refreshed.pipelines[0].stages.find((stage: any) => stage.id === 'gate-review');
+    gateReview.effectiveEffort = { value: 'max', source: 'stage-override-project' };
+    (client.listPipelines as any)
+      .mockResolvedValueOnce(pipelinesFixture)
+      .mockResolvedValueOnce(refreshed);
+    const template = configEntry('pipelines.<name>.efforts.<stage>');
+    (client.putKey as any).mockResolvedValue({
+      entry: {
+        ...template,
+        value: 'max',
+        source: 'project',
+        scopeValues: { global: 'medium', project: 'max' },
+        instanceKey: 'pipelines.small-feature.efforts.gate-review',
+      },
+      store: null,
+    });
+
+    await mount(container);
+    await expandConfig(container, 'small-feature');
+    const effort = stageControl(container, 'stage-effort', 'small-feature', 'gate-review')!;
+    const select = effort.querySelector('[data-testid="stage-effort-select"]') as HTMLSelectElement;
+    expect([...select.options].map((option) => option.value)).toEqual([
+      'inherit',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+    expect(select.value).toBe('inherit');
+    expect(effort.querySelector('[data-testid="stage-effort-effective"]')!.textContent).toContain('Runtime default');
+    expect(effort.querySelector('[data-testid="stage-source"]')!.textContent).toBe('default');
+
+    await changeValue(select, 'max');
+    expect(client.putKey).toHaveBeenCalledWith(
+      'pipelines.small-feature.efforts.gate-review',
+      { scope: 'project', value: 'max' },
+      'project:proj_x'
+    );
+    expect(client.listPipelines).toHaveBeenCalledTimes(2);
+    expect((effort.querySelector('[data-testid="stage-effort-select"]') as HTMLSelectElement).value).toBe('max');
+    expect(effort.querySelector('[data-testid="stage-effort-effective"]')!.textContent).toContain('max');
+    expect(effort.querySelector('[data-testid="stage-source"]')!.textContent).toBe('stage-override-project');
+  });
+
+  it('deletes only the active project effort and refreshes the lower effective winner', async () => {
+    const refreshed = structuredClone(pipelinesFixture) as any;
+    const implement = refreshed.pipelines[0].stages.find((stage: any) => stage.id === 'implement');
+    implement.effectiveEffort = { value: 'low', source: 'stage-override-global' };
+    (client.listPipelines as any)
+      .mockResolvedValueOnce(pipelinesFixture)
+      .mockResolvedValueOnce(refreshed);
+    const configured = configEntry(
+      'pipelines.<name>.efforts.<stage>',
+      'pipelines.small-feature.efforts.implement'
+    );
+    (client.deleteKey as any).mockResolvedValue({
+      entry: {
+        ...configured,
+        value: 'low',
+        source: 'global',
+        scopeValues: { global: 'low' },
+      },
+      store: null,
+    });
+
+    await mount(container);
+    await expandConfig(container, 'small-feature');
+    const effort = stageControl(container, 'stage-effort', 'small-feature', 'implement')!;
+    const select = effort.querySelector('[data-testid="stage-effort-select"]') as HTMLSelectElement;
+    expect(select.value).toBe('max');
+    await changeValue(select, 'inherit');
+
+    expect(client.deleteKey).toHaveBeenCalledWith(
+      'pipelines.small-feature.efforts.implement',
+      'project',
+      'project:proj_x'
+    );
+    expect((effort.querySelector('[data-testid="stage-effort-select"]') as HTMLSelectElement).value).toBe('inherit');
+    expect(effort.querySelector('[data-testid="stage-effort-effective"]')!.textContent).toContain('low');
+    expect(effort.querySelector('[data-testid="stage-source"]')!.textContent).toBe('stage-override-global');
+  });
+
+  it('edits a shadowed Global effort by exact instance identity without replacing its sibling', async () => {
+    const configured = configEntry(
+      'pipelines.<name>.efforts.<stage>',
+      'pipelines.small-feature.efforts.implement'
+    );
+    (client.deleteKey as any).mockResolvedValue({
+      entry: {
+        ...configured,
+        value: 'max',
+        source: 'project',
+        scopeValues: { project: 'max' },
+      },
+      store: null,
+    });
+
+    await mount(container);
+    await clickAndFlush([...container.querySelectorAll('[data-testid="pipelines-mode"] button')][0]);
+    await expandConfig(container, 'small-feature');
+    const implement = stageControl(container, 'stage-effort', 'small-feature', 'implement')!;
+    const propose = stageControl(container, 'stage-effort', 'small-feature', 'propose')!;
+    expect((implement.querySelector('[data-testid="stage-effort-select"]') as HTMLSelectElement).value).toBe('low');
+    expect(implement.querySelector('[data-testid="stage-effort-effective"]')!.textContent).toContain('max');
+    expect((propose.querySelector('[data-testid="stage-effort-select"]') as HTMLSelectElement).value).toBe('medium');
+
+    await changeValue(implement.querySelector('[data-testid="stage-effort-select"]'), 'inherit');
+    expect(client.deleteKey).toHaveBeenCalledWith(
+      'pipelines.small-feature.efforts.implement',
+      'global',
+      'project:proj_x'
+    );
+    expect((implement.querySelector('[data-testid="stage-effort-select"]') as HTMLSelectElement).value).toBe('inherit');
+    expect(implement.querySelector('[data-testid="stage-effort-effective"]')!.textContent).toContain('max');
+    expect((propose.querySelector('[data-testid="stage-effort-select"]') as HTMLSelectElement).value).toBe('medium');
+  });
+
   it('renders every stage gate as an ordinary control — no vet lock remains', async () => {
     await mount(container);
     await expandConfig(container, 'small-feature');
@@ -398,9 +663,9 @@ describe('PipelinesPage', () => {
   it('keeps legacy and scoped stage handoff editors out of Pipelines while retaining Configure controls', async () => {
     await mount(container);
     const defaults = container.querySelector('[data-testid="pipelines-defaults"]')!;
-    const headings = [...defaults.querySelectorAll('[data-testid="defaults-matrix"] th')]
+    const headings = [...defaults.querySelectorAll('[data-testid="defaults-matrix"] thead th')]
       .map((heading) => heading.textContent);
-    expect(headings).toEqual(['Role', 'Model', 'Default', 'Planner']);
+    expect(headings).toEqual(['Role', 'Model', 'Effort']);
     expect(defaults.querySelector('[data-key="handoff.threshold"]')).toBeNull();
     expect(container.querySelector('[data-testid="pipelines-advanced"]')).toBeNull();
 
@@ -410,6 +675,7 @@ describe('PipelinesPage', () => {
     expect(section.querySelector('[data-testid="stage-handoff"]')).toBeNull();
     expect(section.querySelector('[data-testid="stage-gate"]')).not.toBeNull();
     expect(section.querySelector('[data-testid="stage-model"]')).not.toBeNull();
+    expect(section.querySelector('[data-testid="stage-effort"]')).not.toBeNull();
     expect(section.querySelector('[data-testid="role-runtime"]')).not.toBeNull();
   });
 
