@@ -41,7 +41,7 @@ export async function setup() {
 }
 
 export async function teardown() {
-  terminateActiveCliChildren();
+  await terminateActiveCliChildren();
   cleanupTempPath(machineRoot);
   cleanupTempPath(xdgDataNet);
 }

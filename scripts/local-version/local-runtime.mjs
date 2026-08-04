@@ -178,16 +178,6 @@ function commandInvocation(command) {
     };
   }
   if (command === 'pnpm' && process.platform === 'win32') {
-    const corepackPnpm = path.join(
-      path.dirname(process.execPath),
-      'node_modules',
-      'corepack',
-      'dist',
-      'pnpm.js',
-    );
-    if (fs.existsSync(corepackPnpm)) {
-      return { command: process.execPath, argsPrefix: [corepackPnpm] };
-    }
     return {
       command: process.env.ComSpec || 'cmd.exe',
       argsPrefix: ['/d', '/s', '/c', 'pnpm'],

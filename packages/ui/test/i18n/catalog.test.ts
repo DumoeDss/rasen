@@ -82,6 +82,21 @@ describe('catalog completeness — shipped locales have key-for-key parity (desi
     }
   });
 
+  it('pipeline effort labels are complete and translated in every shipped locale', () => {
+    const effortKeys = [
+      'pipelines.effort.label',
+      'pipelines.effort.effective',
+      'pipelines.effort.runtime_default',
+    ];
+    for (const key of effortKeys) {
+      expect(EN[key], `missing en effort key ${key}`).toBeTruthy();
+      expect(ZH[key], `missing zh-cn effort key ${key}`).toBeTruthy();
+      expect(JA[key], `missing ja effort key ${key}`).toBeTruthy();
+      expect(ZH[key], `zh-cn fell back to English for ${key}`).not.toBe(EN[key]);
+      expect(JA[key], `ja fell back to English for ${key}`).not.toBe(EN[key]);
+    }
+  });
+
   it('defines localized enabled label, description, state, and accessible-name keys', () => {
     for (const [locale, catalog] of Object.entries(CATALOGS)) {
       for (const key of [

@@ -393,9 +393,12 @@
   "pipelines.threshold.feedback.write_failed": "変更は保存されませんでした。現在のスコープとサーバーの詳細を確認してから再試行してください。",
 
   "pipelines.threshold.defaults.title": "既定値",
-  "pipelines.threshold.defaults.description": "モデルの既定値と keepalive のライフサイクル設定をここで管理します。通常の引き継ぎポリシーはしきい値スキームで設定します。",
+  "pipelines.threshold.defaults.description": "モデルと推論強度の既定値、および keepalive のライフサイクル設定をここで管理します。通常の引き継ぎポリシーはしきい値スキームで設定します。",
   "pipelines.threshold.defaults.role": "ロール",
   "pipelines.threshold.defaults.model": "モデル",
+  "pipelines.effort.label": "推論強度",
+  "pipelines.effort.effective": "有効値",
+  "pipelines.effort.runtime_default": "ランタイム既定値",
   "pipelines.keepalive.lifecycle_description": "ランタイムゲートとコンテキスト下限は、待機 worker のライフサイクルとキャッシュを制御します。しきい値割り当てとは独立しています。",
   "pipelines.keepalive.runtime_description": "{runtime} ランタイムで keepalive ビートを許可",
   "pipelines.keepalive.context_floor_description": "keepalive 待機に必要な最小コンテキストトークン数",

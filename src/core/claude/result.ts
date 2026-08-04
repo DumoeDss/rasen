@@ -3,6 +3,10 @@ import {
   type WorkerContract,
   type WorkerContractResult,
 } from '../worker-contracts.js';
+import {
+  DEFAULT_AGENT_DIAGNOSTIC_LIMIT_BYTES,
+  sanitizeAgentDiagnostic,
+} from '../agent-diagnostics.js';
 
 export type ClaudeDispatchFailureKind =
   | 'invalid-input'
@@ -63,76 +67,11 @@ interface ClaudeResultEnvelope {
   errors?: unknown;
 }
 
-const DIAGNOSTIC_LIMIT_BYTES = 8 * 1024;
-const REDACTED = '<redacted>';
-const STRUCTURED_DIAGNOSTIC_DEPTH = 8;
-const STRUCTURED_DIAGNOSTIC_ENTRIES = 100;
-const SENSITIVE_KEY =
-  /api.?key|authorization|cookie|credential|password|passwd|private.?key|secret|token/i;
-
-function redactDiagnosticString(value: string): string {
-  return value
-    .replace(
-      /\b(Bearer)\s+[A-Za-z0-9._~+/=-]+/gi,
-      `$1 ${REDACTED}`
-    )
-    .replace(
-      /\b(api[_ -]?key|authorization|cookie|credential|password|passwd|private[_ -]?key|secret|token)\b(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
-      `$1$2${REDACTED}`
-    )
-    .replace(/\bsk-(?:ant-)?[A-Za-z0-9_-]{8,}\b/g, REDACTED)
-    .replace(
-      /\b(https?:\/\/)[^/\s@]+@/gi,
-      `$1${REDACTED}@`
-    );
-}
-
-function redactDiagnosticValue(
-  value: unknown,
-  key?: string,
-  depth = 0
-): unknown {
-  if (key && SENSITIVE_KEY.test(key)) return REDACTED;
-  if (typeof value === 'string') return redactDiagnosticString(value);
-  if (depth >= STRUCTURED_DIAGNOSTIC_DEPTH) return '<truncated>';
-  if (Array.isArray(value)) {
-    return value
-      .slice(0, STRUCTURED_DIAGNOSTIC_ENTRIES)
-      .map((item) => redactDiagnosticValue(item, undefined, depth + 1));
-  }
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value)
-        .slice(0, STRUCTURED_DIAGNOSTIC_ENTRIES)
-        .map(([entryKey, entryValue]) => [
-          entryKey,
-          redactDiagnosticValue(entryValue, entryKey, depth + 1),
-        ])
-    );
-  }
-  return value;
-}
-
-function truncateUtf8(value: string, maxBytes: number): string {
-  const encoded = Buffer.from(value, 'utf8');
-  if (encoded.length <= maxBytes) return value;
-
-  const marker = '…<truncated>';
-  const markerBytes = Buffer.byteLength(marker, 'utf8');
-  const contentLimit = Math.max(0, maxBytes - markerBytes);
-  let end = contentLimit;
-  while (end > 0 && (encoded[end] & 0xc0) === 0x80) end -= 1;
-  return `${encoded.subarray(0, end).toString('utf8')}${marker}`;
-}
-
 export function sanitizeClaudeDiagnostic(
   value: unknown,
-  maxBytes = DIAGNOSTIC_LIMIT_BYTES
+  maxBytes = DEFAULT_AGENT_DIAGNOSTIC_LIMIT_BYTES
 ): string {
-  const redacted = redactDiagnosticValue(value);
-  const rendered =
-    typeof redacted === 'string' ? redacted : JSON.stringify(redacted);
-  return truncateUtf8(rendered ?? String(redacted), maxBytes);
+  return sanitizeAgentDiagnostic(value, maxBytes);
 }
 
 function envelopeDiagnostics(
@@ -143,10 +82,10 @@ function envelopeDiagnostics(
   if (!hasResult && !hasErrors) return undefined;
 
   const result = hasResult
-    ? sanitizeClaudeDiagnostic(envelope.result, DIAGNOSTIC_LIMIT_BYTES / 2)
+    ? sanitizeClaudeDiagnostic(envelope.result, DEFAULT_AGENT_DIAGNOSTIC_LIMIT_BYTES / 2)
     : undefined;
   const errors = hasErrors
-    ? sanitizeClaudeDiagnostic(envelope.errors, DIAGNOSTIC_LIMIT_BYTES / 2)
+    ? sanitizeClaudeDiagnostic(envelope.errors, DEFAULT_AGENT_DIAGNOSTIC_LIMIT_BYTES / 2)
     : undefined;
   return {
     ...(result ? { result } : {}),
