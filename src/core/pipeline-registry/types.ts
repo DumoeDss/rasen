@@ -48,12 +48,17 @@ export type AgentRuntimeSessionReuse = z.infer<typeof AgentRuntimeSessionReuseSc
 export const AgentRuntimeSandboxSchema = z.enum(['read-only', 'workspace-write']);
 export type AgentRuntimeSandbox = z.infer<typeof AgentRuntimeSandboxSchema>;
 
+/** Canonical reasoning-effort vocabulary for first-class leaf dispatch. */
+export const LEAF_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export const LeafEffortSchema = z.enum(LEAF_EFFORTS);
+export type LeafEffort = z.infer<typeof LeafEffortSchema>;
+
 export const AgentRuntimeConfigSchema = z.object({
   runtime: AgentRuntimeSchema.optional(),
   sessionReuse: AgentRuntimeSessionReuseSchema.optional(),
   sandbox: AgentRuntimeSandboxSchema.optional(),
   model: z.string().min(1).optional(),
-  effort: z.string().min(1).optional(),
+  effort: LeafEffortSchema.optional(),
 });
 export type AgentRuntimeConfig = z.infer<typeof AgentRuntimeConfigSchema>;
 
@@ -357,7 +362,7 @@ export const StageSchema = z
     sessionReuse: AgentRuntimeSessionReuseSchema.optional(),
     sandbox: AgentRuntimeSandboxSchema.optional(),
     model: z.string().min(1).optional(),
-    effort: z.string().min(1).optional(),
+    effort: LeafEffortSchema.optional(),
     // Per-stage context-handoff overrides. Resolved against the pipeline block
     // and built-in defaults by resolveStageHandoffConfig. `roles` is not
     // accepted here — it is pipeline-level config.
@@ -478,6 +483,7 @@ export interface StageOverride<T> {
  */
 export interface StageConfigOverrides {
   model?: StageOverride<string>;
+  effort?: StageOverride<LeafEffort>;
   handoff?: StageOverride<ThresholdValue>;
   runtime?: StageOverride<AgentRuntime>;
 }
@@ -497,6 +503,9 @@ export type ModelSource =
   | 'global-default'
   | 'default';
 
+/** Provenance of reasoning effort, tracked independently from model/runtime. */
+export type EffortSource = ModelSource;
+
 /** Provenance of the resolved `runtime` field specifically — a per-role config instance tops the pipeline declaration and default. */
 export type RuntimeSource =
   | 'invocation'
@@ -513,6 +522,8 @@ export interface ResolvedStageRuntimeConfig extends AgentRuntimeConfig {
   source: 'stage' | 'agent' | 'default';
   /** Provenance of the resolved `model` field; always present, independent of `source`. */
   modelSource: ModelSource;
+  /** Provenance of the resolved effort; absent effort with `default` means runtime default. */
+  effortSource: EffortSource;
   /** Provenance of the resolved `runtime` field; always present, independent of `source`. Equals `source` when no runtime override applies. */
   runtimeSource: RuntimeSource;
 }
@@ -542,6 +553,16 @@ export interface ModelConfigLayers {
   storeDefault?: string;
   globalRoles?: Partial<Record<StageRole, string>>;
   globalDefault?: string;
+}
+
+/** Project/store/global reasoning-effort layers, symmetric with model layers. */
+export interface EffortConfigLayers {
+  projectRoles?: Partial<Record<StageRole, LeafEffort>>;
+  projectDefault?: LeafEffort;
+  storeRoles?: Partial<Record<StageRole, LeafEffort>>;
+  storeDefault?: LeafEffort;
+  globalRoles?: Partial<Record<StageRole, LeafEffort>>;
+  globalDefault?: LeafEffort;
 }
 
 export function normalizeAgentRuntimeConfig(
@@ -582,7 +603,8 @@ export function resolveStageRuntimeConfig(
   pipeline: PipelineYaml,
   modelLayers?: ModelConfigLayers,
   stageOverrides?: StageConfigOverrides,
-  runtimeContext: RuntimeResolutionContext = { host: UNKNOWN_HOST_RUNTIME }
+  runtimeContext: RuntimeResolutionContext = { host: UNKNOWN_HOST_RUNTIME },
+  effortLayers?: EffortConfigLayers
 ): ResolvedStageRuntimeConfig {
   const roleDefault = stage.role
     ? normalizeAgentRuntimeConfig(pipeline.agents?.[stage.role])
@@ -597,6 +619,9 @@ export function resolveStageRuntimeConfig(
   const projectRoleModel = stage.role ? modelLayers?.projectRoles?.[stage.role] : undefined;
   const storeRoleModel = stage.role ? modelLayers?.storeRoles?.[stage.role] : undefined;
   const globalRoleModel = stage.role ? modelLayers?.globalRoles?.[stage.role] : undefined;
+  const projectRoleEffort = stage.role ? effortLayers?.projectRoles?.[stage.role] : undefined;
+  const storeRoleEffort = stage.role ? effortLayers?.storeRoles?.[stage.role] : undefined;
+  const globalRoleEffort = stage.role ? effortLayers?.globalRoles?.[stage.role] : undefined;
 
   const runtimeOverride = stageOverrides?.runtime;
   let runtime: AgentRuntime;
@@ -652,15 +677,50 @@ export function resolveStageRuntimeConfig(
     modelSource = 'default';
   }
 
+  let effort: LeafEffort | undefined;
+  let effortSource: EffortSource;
+  if (stageOverrides?.effort !== undefined) {
+    effort = stageOverrides.effort.value;
+    effortSource = `stage-override-${stageOverrides.effort.scope}` as EffortSource;
+  } else if (stage.effort !== undefined) {
+    effort = stage.effort;
+    effortSource = 'stage';
+  } else if (roleDefault?.effort !== undefined) {
+    effort = roleDefault.effort;
+    effortSource = 'agent';
+  } else if (projectRoleEffort !== undefined) {
+    effort = projectRoleEffort;
+    effortSource = 'project-role';
+  } else if (effortLayers?.projectDefault !== undefined) {
+    effort = effortLayers.projectDefault;
+    effortSource = 'project-default';
+  } else if (storeRoleEffort !== undefined) {
+    effort = storeRoleEffort;
+    effortSource = 'store-role';
+  } else if (effortLayers?.storeDefault !== undefined) {
+    effort = effortLayers.storeDefault;
+    effortSource = 'store-default';
+  } else if (globalRoleEffort !== undefined) {
+    effort = globalRoleEffort;
+    effortSource = 'global-role';
+  } else if (effortLayers?.globalDefault !== undefined) {
+    effort = effortLayers.globalDefault;
+    effortSource = 'global-default';
+  } else {
+    effort = undefined;
+    effortSource = 'default';
+  }
+
   if (stageHasOverride) {
     return {
       runtime,
       sessionReuse: stage.sessionReuse ?? roleDefault?.sessionReuse,
       sandbox: stage.sandbox ?? roleDefault?.sandbox,
       model,
-      effort: stage.effort ?? roleDefault?.effort,
+      effort,
       source: 'stage',
       modelSource,
+      effortSource,
       runtimeSource,
     };
   }
@@ -670,8 +730,10 @@ export function resolveStageRuntimeConfig(
       ...roleDefault,
       runtime,
       model,
+      effort,
       source: 'agent',
       modelSource,
+      effortSource,
       runtimeSource,
     };
   }
@@ -679,8 +741,10 @@ export function resolveStageRuntimeConfig(
   return {
     runtime,
     model,
+    effort,
     source: 'default',
     modelSource,
+    effortSource,
     runtimeSource,
   };
 }

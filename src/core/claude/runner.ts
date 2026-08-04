@@ -1,6 +1,6 @@
 import type { ChildProcess } from 'node:child_process';
-import { StringDecoder } from 'node:string_decoder';
 import { FileSystemUtils } from '../../utils/file-system.js';
+import { BoundedUtf8Capture } from '../agent-diagnostics.js';
 import { spawnAgentCli } from '../agent-cli-process.js';
 import { killProcessTree } from '../management-api/kill-tree.js';
 import type { WorkerContract } from '../worker-contracts.js';
@@ -33,33 +33,6 @@ export interface RunClaudePrintOptions {
   env?: NodeJS.ProcessEnv;
   spawn?: typeof spawnAgentCli;
   sessionStateDir?: string;
-}
-
-class BoundedUtf8Capture {
-  private readonly decoder = new StringDecoder('utf8');
-  private value = '';
-  private capturedBytes = 0;
-  private ended = false;
-  exceeded = false;
-
-  constructor(private readonly maxBytes: number) {}
-
-  append(chunk: Buffer | string): void {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, 'utf8');
-    const remaining = Math.max(0, this.maxBytes - this.capturedBytes);
-    const accepted = bytes.subarray(0, remaining);
-    this.capturedBytes += accepted.length;
-    this.value += this.decoder.write(accepted);
-    if (accepted.length < bytes.length) this.exceeded = true;
-  }
-
-  finish(): string {
-    if (!this.ended) {
-      this.ended = true;
-      this.value += this.decoder.end();
-    }
-    return this.value;
-  }
 }
 
 function diagnostics(

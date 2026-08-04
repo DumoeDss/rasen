@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { validateConfigKeyPath as registryValidateConfigKeyPath } from './config-keys.js';
 import type { ConfigScope } from './config-keys.js';
-import { thresholdSchema } from './pipeline-registry/types.js';
+import { LeafEffortSchema, thresholdSchema } from './pipeline-registry/types.js';
 import { RETENTION_MODES } from './retention.js';
 import { RUNS_ENGINE_POLICIES } from './project-config.js';
 import { SUPPORTED_CLI_LOCALES } from '../utils/locale.js';
@@ -103,6 +103,20 @@ export const GlobalConfigSchema = z
           .optional(),
       })
       .optional(),
+    efforts: z
+      .object({
+        default: LeafEffortSchema.optional(),
+        roles: z
+          .object({
+            planner: LeafEffortSchema.optional(),
+            implementer: LeafEffortSchema.optional(),
+            reviewer: LeafEffortSchema.optional(),
+            fixer: LeafEffortSchema.optional(),
+            shipper: LeafEffortSchema.optional(),
+          })
+          .optional(),
+      })
+      .optional(),
     thresholds: z
       .object({
         bindings: z
@@ -141,6 +155,7 @@ export const GlobalConfigSchema = z
           .object({
             gates: z.record(z.string(), z.enum(['on', 'off'])).optional(),
             models: z.record(z.string(), z.string().min(1)).optional(),
+            efforts: z.record(z.string(), LeafEffortSchema).optional(),
             handoff: z.record(z.string(), thresholdSchema('threshold')).optional(),
             runtimes: z.record(z.string(), z.enum(DISPATCH_RUNTIMES)).optional(),
           })

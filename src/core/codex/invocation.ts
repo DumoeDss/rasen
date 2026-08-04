@@ -79,8 +79,8 @@ export interface BuildCodexExecInvocationOptions {
   /** Path `codex exec -o` writes the final agent message to. */
   outputLastMessagePath: string;
   sandbox: CodexSandboxMode;
-  model: string;
-  effort: CodexReasoningEffort;
+  model?: string;
+  effort?: CodexReasoningEffort;
   /** Optional client-side template to inline ahead of `prompt` (design D6). */
   template?: CodexTemplateOptions;
   /** Optional provider override; emits no provider flags when absent (design D5). */
@@ -100,6 +100,8 @@ export interface CodexExecInvocation {
   command: 'codex';
   /** Full argv after `command`, in emission order (`exec`, flags, prompt last). */
   args: string[];
+  /** Spawn-safe argv with the assembled multiline prompt omitted for stdin transport. */
+  spawnArgs: string[];
   /** Directs the caller to close stdin on spawn — `codex exec` hangs otherwise (E01). */
   stdin: 'ignore';
   /** The fully assembled prompt (inlined template + task prompt + flat guard). */
@@ -159,8 +161,8 @@ export function buildCodexExecInvocation(
   options: BuildCodexExecInvocationOptions
 ): CodexExecInvocation {
   const warnings: string[] = [];
-  const { effort, warning } = clampLeafEffort(options.effort);
-  if (warning) warnings.push(warning);
+  const normalizedEffort = options.effort ? clampLeafEffort(options.effort) : undefined;
+  if (normalizedEffort?.warning) warnings.push(normalizedEffort.warning);
 
   const templateBody = options.template
     ? (options.template.inliner ?? { inline: inlineCommandTemplate }).inline(
@@ -204,8 +206,10 @@ export function buildCodexExecInvocation(
   } else {
     args.push('-s', options.sandbox);
   }
-  args.push('-m', options.model);
-  args.push('-c', `model_reasoning_effort=${tomlQuote(effort)}`);
+  if (options.model) args.push('-m', options.model);
+  if (normalizedEffort) {
+    args.push('-c', `model_reasoning_effort=${tomlQuote(normalizedEffort.effort)}`);
+  }
 
   const override = options.providerOverride;
   if (override) {
@@ -221,10 +225,12 @@ export function buildCodexExecInvocation(
   }
 
   args.push(prompt);
+  const spawnArgs = args.slice(0, -1);
 
   return {
     command: 'codex',
     args,
+    spawnArgs,
     stdin: 'ignore',
     prompt,
     warnings,

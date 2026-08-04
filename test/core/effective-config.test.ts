@@ -326,7 +326,7 @@ describe('effective-config', () => {
       // + runtime threshold bindings,
       // each a template with no instanceKey.
       const templates = wildcardEntries.filter((e) => e.instanceKey === undefined);
-      expect(templates.length).toBe(6);
+      expect(templates.length).toBe(7);
       expect(entries.some((e) => e.instanceKey !== undefined)).toBe(false);
       const gatesTemplate = templates.find(
         (e) => e.definition.key === 'pipelines.<name>.gates.<stage>'
