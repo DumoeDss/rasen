@@ -68,7 +68,7 @@ The Pipelines page SHALL retain a slim Defaults area presenting the base and per
 
 The base and per-role legacy handoff keys SHALL not appear in the Defaults area. Threshold Schemes and runtime bindings SHALL be the page's ordinary controls for scalar and role-specific handoff policy, while stored legacy values remain backend compatibility inputs.
 
-#### Scenario: Model and effort defaults remain a compact grid
+#### Scenario: Model defaults remain a compact grid
 
 - **WHEN** the user views the Defaults area
 - **THEN** the six role rows render Model and Effort columns in one role-keyed grid

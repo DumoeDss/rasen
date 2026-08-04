@@ -30,3 +30,9 @@
 ## Deployment
 
 Status: Pending (PR checks run on the final evidence head; do not merge in this ship step)
+
+## Archive
+**Date:** 2026-08-04T03:23:53.296Z
+**Ship commit:** 7903e5a45add4876333fccc3ae5d1d1a20c9ed3f
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-wt-codex-luna-thread-dispatch\rasen\changes\archive\2026-08-04-codex-model-effort-webui
+**Transaction:** c55c0938-4e5b-4963-9bd3-ccc102d1fa22
