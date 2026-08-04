@@ -25,7 +25,7 @@ The system SHALL support re-engaging an existing Codex worker thread through the
 ### Requirement: Single writer per thread
 The system SHALL enforce that at most one live process tree writes a given Codex thread id at a time, including when competing resumes originate in separate Rasen CLI processes. Claiming an already-owned thread SHALL fail before releasing the continuation prompt and SHALL name the thread. A claim SHALL remain owned while its recorded worker process tree is alive even if the bridge parent dies; it becomes reclaimable only after that tree is proven dead. Releasing a completed claim SHALL be idempotent. Independent thread ids SHALL remain dispatchable in parallel.
 
-#### Scenario: Double claim in one process is rejected
+#### Scenario: Double claim is rejected
 - **WHEN** a thread id is claimed while an earlier claim on it is still held in the same process
 - **THEN** the second claim SHALL fail with an actionable error naming the thread id
 

@@ -49,3 +49,9 @@ Status: Pending. This delivery created the ready PR only; it did not merge or de
 - Nix Flake Validation: SKIPPED as expected because change detection found no Nix-related delta.
 - Task closure: 29/29 complete. Task 6.3 is closed by this successful external Windows CI run.
 - Delivery boundary: PR remains open and ready; no merge or deployment was performed.
+
+## Archive
+**Date:** 2026-08-04T03:27:15.075Z
+**Ship commit:** 86dac5e867e1f2d61b79567fa14bee55ece62ee0
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-wt-codex-luna-thread-dispatch\rasen\changes\archive\2026-08-04-codex-luna-thread-dispatch
+**Transaction:** 9d37d2e3-65b4-47f2-af44-b8a2eb286f1c
