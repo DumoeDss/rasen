@@ -77,7 +77,17 @@ The one scenario this report left uncovered now has a test, so the change ships 
 - **Test:** `test/commands/retain-prepare.test.ts` — *resolves the recorded identity after the checkout moves to another absolute path*. It prepares a change, releases the working directory (a cwd cannot be renamed on Windows), renames the whole checkout, and re-runs preparation from the new path: `contextSource: 'recorded'`, the `knowledgeContext` deep-equal to the pre-move one, the same reported owner and planning root, the record byte-identical, and `runStateDir`/`runStatePath` composed with `path.join` under the new location. Restored in a `finally` so the suite's own cleanup reaches it.
 - **Proven load-bearing.** Neutralizing the moved-repo rebind in `src/core/project-registry.ts` (the `2b` branch that re-keys a same-`projectId` entry whose path is gone) makes exactly this test fail — `expected 1 to be undefined`, the refusal exit code, because the surviving stale entry makes the frozen project owner resolve to two roots (`knowledge_owner_ambiguous`). Every other test in the file still passed under that sabotage, so the assertion is specific to the moved-checkout path and not to preparation in general.
 
-Recorded as task 7.9. The second corrected claim — the non-uniform refusal surface — is unchanged and remains deliberate: no requirement in either spec asks for localized refusals, and the `knowledge_owner_*` / `knowledge_selector_conflict` diagnostics stay English literals owned by `context.ts`.
+Recorded as task 7.9.
+
+### A Windows-only test defect CI caught that no local run could (task 7.10)
+
+The first CI run on this branch — the first one ever, since the branch had no PR until ship time — failed one Windows shard on a test this change added: *propagates a read failure instead of reporting the record absent*. The production discrimination is correct; the fixture was not portable. It pointed the seam at a run-state path underneath a regular file, which the OS reports as `ENOTDIR` on POSIX and as `ENOENT` on Windows — precisely the code the seam is required to treat as a genuine absence. So on Windows the call returned `{ kind: 'absent' }`, the assertion `toThrow()` failed, and the local macOS evidence in this report could not have predicted it.
+
+The errno is now injected through the same partial-`node:fs` mock the crash-safety tests already use (`readFault.eacces`), so the test exercises the discrimination itself rather than a platform's errno mapping, and it additionally asserts the record is untouched. Proven load-bearing: making the seam return `absent` for every read error fails exactly this test and nothing else in the file.
+
+Shard mapping, for the record: the three changed suites split across the three Windows shards — `test/commands/pipeline.test.ts` (shard 1, green), `test/commands/retain-prepare.test.ts` (shard 2, green — so task 7.9's moved-checkout test passes on Windows), and `test/core/pipeline-registry/run-state.test.ts` (shard 3, the failure above).
+
+The second corrected claim — the non-uniform refusal surface — is unchanged and remains deliberate: no requirement in either spec asks for localized refusals, and the `knowledge_owner_*` / `knowledge_selector_conflict` diagnostics stay English literals owned by `context.ts`.
 
 ## Coherence
 

@@ -37,6 +37,17 @@ import {
 const { writeFault } = vi.hoisted(() => ({
   writeFault: { rename: false, tempWrite: false },
 }));
+/**
+ * The read side needs injection for a portability reason rather than an
+ * interruption one: the only fixture that produces a non-`ENOENT` read failure
+ * from real syscalls — a run-state path underneath a regular file — reports
+ * `ENOTDIR` on POSIX but `ENOENT` on Windows, which is exactly the code the
+ * seam is required to treat as a genuine absence. Injecting the errno tests the
+ * discrimination itself on every platform.
+ */
+const { readFault } = vi.hoisted(() => ({
+  readFault: { eacces: false },
+}));
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof fs>();
   // The literals mirror the helper: `auto-run.json` and its sibling temp
@@ -67,6 +78,12 @@ vi.mock('node:fs', async (importOriginal) => {
       }
       return actual.renameSync(oldPath, newPath);
     }) as typeof fs.renameSync,
+    readFileSync: ((target, options) => {
+      if (readFault.eacces && String(target).endsWith(runStateFile)) {
+        throw errno('EACCES: permission denied', 'EACCES');
+      }
+      return actual.readFileSync(target, options);
+    }) as typeof fs.readFileSync,
   };
 });
 
@@ -496,9 +513,16 @@ describe('pipeline run-state', () => {
     // kind as its own diagnostic, so an unreadable file reported as "no record
     // here" would surface to the user as a false `no auto-run.json found`.
     it('propagates a read failure instead of reporting the record absent', () => {
-      const notADirectory = path.join(dir, 'file-not-dir');
-      fs.writeFileSync(notADirectory, 'occupied\n', 'utf-8');
-      expect(() => updateRunStateKnowledgeContext(notADirectory, context)).toThrow();
+      const before = `${JSON.stringify({ pipeline: 'full-feature' }, null, 2)}\n`;
+      fs.writeFileSync(runStatePath(dir), before, 'utf-8');
+      readFault.eacces = true;
+      try {
+        expect(() => updateRunStateKnowledgeContext(dir, context)).toThrow(/EACCES/);
+      } finally {
+        readFault.eacces = false;
+      }
+      // The record the failed read never got to see is still exactly as written.
+      expect(fs.readFileSync(runStatePath(dir), 'utf-8')).toBe(before);
     });
   });
 
