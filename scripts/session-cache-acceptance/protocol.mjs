@@ -248,7 +248,12 @@ const SchedulerEvidenceSchema = z
       .max(Number.MAX_SAFE_INTEGER),
     transcriptAppendedBytes: z.number().int().positive().max(2 * 1024 * 1024),
     transcriptAppendFingerprint: Fingerprint,
-    terminalAssistantRows: z.literal(1),
+    terminalAssistantRows: z.number().int().positive().max(1024),
+    // The load-bearing anti-contamination invariant: the append carried exactly
+    // one prompt and exactly one provider request. Bookkeeping rows are counted
+    // by terminalAssistantRows but cannot move the causal boundary.
+    transcriptUserRows: z.literal(1),
+    transcriptProviderRequests: z.literal(1),
     completedWakeCountSinceBaseline: z.literal(1),
     touchOrdinal: z.literal(1),
     touchAttempt: z.number().int().positive().max(1024),
@@ -257,10 +262,8 @@ const SchedulerEvidenceSchema = z
     touchResultDigest: Fingerprint,
     transcriptTouchTextDigest: Fingerprint,
     transcriptAssistantChainFingerprint: Fingerprint,
-    transcriptResultDigest: Fingerprint,
     transcriptTouchAt: Timestamp,
     transcriptAssistantAt: Timestamp,
-    transcriptResultAt: Timestamp,
     touchDispatchedAt: Timestamp,
     claudeSessionIdDigest: Fingerprint,
     preterminalOwnerProofFingerprint: Fingerprint,
@@ -1642,7 +1645,6 @@ function assertCompletedObservationSemantics(
   const dispatched = new Date(scheduler.touchDispatchedAt).valueOf();
   const transcriptTouch = new Date(scheduler.transcriptTouchAt).valueOf();
   const transcriptAssistant = new Date(scheduler.transcriptAssistantAt).valueOf();
-  const transcriptResult = new Date(scheduler.transcriptResultAt).valueOf();
   const touchSettled = new Date(scheduler.touchSettledAt).valueOf();
   const configuredDeadline = new Date(scheduler.configuredDeadlineAt).valueOf();
   const deadlineApplied = new Date(scheduler.deadlineAppliedAt).valueOf();
@@ -1677,10 +1679,10 @@ function assertCompletedObservationSemantics(
     touchDispatchedAt: scheduler.touchDispatchedAt,
     transcriptTouchAt: scheduler.transcriptTouchAt,
     transcriptAssistantAt: scheduler.transcriptAssistantAt,
-    transcriptResultAt: scheduler.transcriptResultAt,
+    transcriptUserRows: scheduler.transcriptUserRows,
+    transcriptProviderRequests: scheduler.transcriptProviderRequests,
     touchSettledAt: scheduler.touchSettledAt,
     touchResultDigest: scheduler.touchResultDigest,
-    transcriptResultDigest: scheduler.transcriptResultDigest,
     transcriptAssistantChainFingerprint:
       scheduler.transcriptAssistantChainFingerprint,
     preterminalOwnerProofFingerprint:
@@ -1696,7 +1698,6 @@ function assertCompletedObservationSemantics(
       dispatched,
       transcriptTouch,
       transcriptAssistant,
-      transcriptResult,
       touchSettled,
       configuredDeadline,
       deadlineApplied,
@@ -1706,8 +1707,7 @@ function assertCompletedObservationSemantics(
     || touch > dispatched
     || dispatched > transcriptTouch
     || transcriptTouch > transcriptAssistant
-    || transcriptAssistant > transcriptResult
-    || transcriptResult > touchSettled
+    || transcriptAssistant > touchSettled
     || touchSettled > configuredDeadline
     || configuredDeadline > deadlineApplied
     || deadlineApplied > ended
@@ -1718,7 +1718,6 @@ function assertCompletedObservationSemantics(
     || deadlineApplied - touch >= definition.expectedCadenceMs
     || scheduler.touchMessageIdDigest !== expectedMessageIdDigest
     || scheduler.transcriptTouchTextDigest !== schedulerTouchTextDigest()
-    || scheduler.touchResultDigest !== scheduler.transcriptResultDigest
     || scheduler.claudeSessionIdDigest !== expectedClaudeSessionIdDigest
     || preterminal.admissionBindingFingerprint !== expectedAdmissionFingerprint
     || preterminal.ownerBindingFingerprint !== expectedOwnerFingerprint

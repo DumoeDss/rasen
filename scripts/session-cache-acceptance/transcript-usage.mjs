@@ -382,31 +382,50 @@ function schedulerTouchTextDigest(text) {
 
 export function inspectSchedulerTranscriptCausalAppend(input) {
   const append = exactTranscriptAppend(input);
-  if (append.entries.length !== 3) {
+  // Claude Code does not write a `result` row into the transcript -- the result
+  // envelope is its stdout response -- and it appends inert bookkeeping rows
+  // (`queue-operation`, `last-prompt`, ...) whose kinds change without notice.
+  // Asserting a fixed three-row shape therefore asserted something unreachable,
+  // and it only ever held against synthetic fixtures. What the transcript CAN
+  // prove is that inside this exact durable session, between the product's own
+  // dispatch fence and its settle, exactly one prompt and exactly one provider
+  // request appeared, and the prompt was the touch text. Rows that are neither
+  // a prompt nor a provider request cannot move that boundary, so they are
+  // counted and ignored rather than used to reject the append.
+  const userRows = append.entries.filter(
+    (entry) => entry?.type === 'user' && entry?.message?.role === 'user'
+  );
+  const { requests, terminalAssistantRows } =
+    deduplicatedUsageRequests(append.entries);
+  if (userRows.length !== 1 || requests.length !== 1) {
     throw new Error('scheduler_transcript_unrelated_append');
   }
-  const [user, assistant, result] = append.entries;
+  const [user] = userRows;
+  const assistantUsage = requests[0];
+  // Bind by message identity, never by position: a zero-usage synthetic
+  // envelope or an earlier chunk would otherwise be mistaken for the reply.
+  const assistantRows = append.entries.filter(
+    (entry) =>
+      entry?.type === 'assistant'
+      && entry?.message?.id === assistantUsage.messageIdentity
+  );
+  if (assistantRows.length === 0) {
+    throw new Error('scheduler_transcript_assistant_missing');
+  }
+  const [assistant] = assistantRows;
   const text = exactUserText(user);
   if (text !== SCHEDULER_TOUCH_MESSAGE) {
     throw new Error('scheduler_transcript_touch_text_mismatch');
   }
-  const assistantUsage = usageFromEntry(assistant);
-  if (assistantUsage === null) {
-    throw new Error('scheduler_transcript_assistant_missing');
-  }
-  if (result?.type !== 'result') {
-    throw new Error('scheduler_transcript_result_missing');
-  }
-  const claudeSessionId =
-    result.session_id ?? result.sessionId;
-  if (claudeSessionId !== input.expected.claudeSessionId) {
-    throw new Error('scheduler_transcript_result_session_mismatch');
-  }
-  if (
-    assistant.session_id !== undefined
-    && assistant.session_id !== input.expected.claudeSessionId
-  ) {
-    throw new Error('scheduler_transcript_assistant_session_mismatch');
+  // Every chunk of the request is checked, not just the first: a later chunk
+  // carrying a foreign session is an internally inconsistent transcript.
+  for (const entry of [user, ...assistantRows]) {
+    if (
+      entry.session_id !== undefined
+      && entry.session_id !== input.expected.claudeSessionId
+    ) {
+      throw new Error('scheduler_transcript_assistant_session_mismatch');
+    }
   }
   const transcriptTouchAt = exactTimestamp(
     user,
@@ -416,59 +435,46 @@ export function inspectSchedulerTranscriptCausalAppend(input) {
     assistant,
     'scheduler_transcript_assistant'
   );
-  const transcriptResultAt = exactTimestamp(
-    result,
-    'scheduler_transcript_result'
-  );
   const dispatch = new Date(input.expected.dispatchFenceAt).valueOf();
   const touch = new Date(transcriptTouchAt).valueOf();
   const assistantAt = new Date(transcriptAssistantAt).valueOf();
-  const resultAt = new Date(transcriptResultAt).valueOf();
   const settled = new Date(input.expected.settledAt).valueOf();
   if (
     !Number.isFinite(dispatch)
     || !Number.isFinite(settled)
     || dispatch > touch
     || touch > assistantAt
-    || assistantAt > resultAt
-    || resultAt > settled
+    || assistantAt > settled
   ) {
     throw new Error('scheduler_transcript_causal_timing_invalid');
   }
-  const transcriptResultDigest = createHash('sha256')
-    .update(JSON.stringify(result), 'utf8')
-    .digest('hex');
-  if (transcriptResultDigest !== input.expected.resultDigest) {
-    throw new Error('scheduler_transcript_result_digest_mismatch');
-  }
   const transcriptTouchTextDigest = schedulerTouchTextDigest(text);
+  const claudeSessionIdDigest = createHash('sha256')
+    .update(input.expected.claudeSessionId, 'utf8')
+    .digest('hex');
   const transcriptAssistantChainFingerprint = createHash('sha256')
     .update(JSON.stringify({
-      claudeSessionIdDigest: createHash('sha256')
-        .update(input.expected.claudeSessionId, 'utf8')
-        .digest('hex'),
+      claudeSessionIdDigest,
       transcriptTouchTextDigest,
       transcriptTouchAt,
       assistantMessageId: assistantUsage.messageIdentity,
       transcriptAssistantAt,
-      transcriptResultDigest,
-      transcriptResultAt,
+      transcriptUserRows: userRows.length,
+      transcriptProviderRequests: requests.length,
     }), 'utf8')
     .digest('hex');
   return {
     counters: assistantUsage.counters,
     proof: {
       ...append.proof,
-      terminalAssistantRows: 1,
+      terminalAssistantRows,
+      transcriptUserRows: userRows.length,
+      transcriptProviderRequests: requests.length,
       transcriptTouchTextDigest,
       transcriptAssistantChainFingerprint,
-      transcriptResultDigest,
       transcriptTouchAt,
       transcriptAssistantAt,
-      transcriptResultAt,
-      claudeSessionIdDigest: createHash('sha256')
-        .update(input.expected.claudeSessionId, 'utf8')
-        .digest('hex'),
+      claudeSessionIdDigest,
     },
   };
 }

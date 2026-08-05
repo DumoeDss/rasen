@@ -965,7 +965,6 @@ export function createObservationDriver(config) {
               claudeSessionId: before.claudeSessionId,
               dispatchFenceAt: touch.dispatchFenceAt,
               settledAt: touch.settledAt,
-              resultDigest: touch.resultDigest,
             },
           });
           if (
@@ -994,10 +993,10 @@ export function createObservationDriver(config) {
             touchDispatchedAt: touch.dispatchFenceAt,
             transcriptTouchAt: append.proof.transcriptTouchAt,
             transcriptAssistantAt: append.proof.transcriptAssistantAt,
-            transcriptResultAt: append.proof.transcriptResultAt,
+            transcriptUserRows: append.proof.transcriptUserRows,
+            transcriptProviderRequests: append.proof.transcriptProviderRequests,
             touchSettledAt,
             touchResultDigest: touch.resultDigest,
-            transcriptResultDigest: append.proof.transcriptResultDigest,
             transcriptAssistantChainFingerprint:
               append.proof.transcriptAssistantChainFingerprint,
             preterminalOwnerProofFingerprint,

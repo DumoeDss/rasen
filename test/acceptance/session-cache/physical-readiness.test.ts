@@ -1165,72 +1165,141 @@ describe('physical observation readiness hardening', () => {
     const baseTime = Date.now() - 60_000;
     const dispatchFenceAt = new Date(baseTime).toISOString();
     const settledAt = new Date(baseTime + 4_000).toISOString();
-    const buildLines = () => {
-      const result = {
-        type: 'result',
-        timestamp: new Date(baseTime + 3_000).toISOString(),
-        session_id: 'exact-claude-session',
-        subtype: 'success',
-      };
-      return {
-        result,
-        lines: [
-          {
-            type: 'user',
-            timestamp: new Date(baseTime + 1_000).toISOString(),
-            message: { role: 'user', content: schedulerTouchText },
-          },
-          {
-            type: 'assistant',
-            timestamp: new Date(baseTime + 2_000).toISOString(),
-            session_id: 'exact-claude-session',
-            message: {
-              id: 'exact-causal-assistant',
-              usage: {
-                input_tokens: 2,
-                cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 2,
-                output_tokens: 1,
-              },
+    // The real transcript shape: no `result` row, inert bookkeeping rows around
+    // the touch. Index 1 is the touch prompt, index 3 the provider reply.
+    const buildLines = () => ({
+      lines: [
+        {
+          type: 'queue-operation',
+          timestamp: new Date(baseTime + 900).toISOString(),
+          operation: 'enqueue',
+        },
+        {
+          type: 'user',
+          timestamp: new Date(baseTime + 1_000).toISOString(),
+          message: { role: 'user', content: schedulerTouchText },
+        },
+        {
+          type: 'last-prompt',
+          timestamp: new Date(baseTime + 1_100).toISOString(),
+        },
+        {
+          type: 'assistant',
+          timestamp: new Date(baseTime + 2_000).toISOString(),
+          session_id: 'exact-claude-session',
+          message: {
+            id: 'exact-causal-assistant',
+            usage: {
+              input_tokens: 2,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 2,
+              output_tokens: 1,
             },
           },
-          result,
-        ],
-      };
+        },
+        {
+          type: 'queue-operation',
+          timestamp: new Date(baseTime + 2_100).toISOString(),
+          operation: 'dequeue',
+        },
+      ] as Array<Record<string, unknown>>,
+    });
+    const secondProviderRequest = {
+      type: 'assistant',
+      timestamp: new Date(baseTime + 2_500).toISOString(),
+      session_id: 'exact-claude-session',
+      message: {
+        id: 'a-different-provider-request',
+        usage: {
+          input_tokens: 5,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 5,
+          output_tokens: 3,
+        },
+      },
     };
     const scenarios = [
       {
+        name: 'a second distinct provider request is attributed to this touch',
         code: /unrelated_append/u,
         mutate(lines: Array<Record<string, unknown>>) {
-          lines.push({ ...lines[1] });
+          lines.push({ ...secondProviderRequest });
         },
       },
       {
+        name: 'a second prompt lands inside the same fence',
         code: /unrelated_append/u,
         mutate(lines: Array<Record<string, unknown>>) {
-          lines.pop();
+          lines.push({
+            type: 'user',
+            timestamp: new Date(baseTime + 2_500).toISOString(),
+            message: { role: 'user', content: 'a second unrelated prompt' },
+          });
         },
       },
       {
+        name: 'the touch prompt is missing entirely',
+        code: /unrelated_append/u,
+        mutate(lines: Array<Record<string, unknown>>) {
+          lines.splice(1, 1);
+        },
+      },
+      {
+        name: 'the provider reply is missing entirely',
+        code: /unrelated_append/u,
+        mutate(lines: Array<Record<string, unknown>>) {
+          lines.splice(3, 1);
+        },
+      },
+      {
+        name: 'the reply precedes the prompt',
         code: /causal_timing_invalid/u,
         mutate(lines: Array<Record<string, unknown>>) {
-          lines[2] = {
-            ...lines[2],
-            timestamp: new Date(baseTime + 1_500).toISOString(),
+          lines[3] = {
+            ...lines[3],
+            timestamp: new Date(baseTime + 500).toISOString(),
           };
         },
       },
       {
-        code: /result_session_mismatch/u,
+        name: 'the reply lands after the product settled the touch',
+        code: /causal_timing_invalid/u,
         mutate(lines: Array<Record<string, unknown>>) {
-          lines[2] = { ...lines[2], session_id: 'wrong-session' };
+          lines[3] = {
+            ...lines[3],
+            timestamp: new Date(baseTime + 9_000).toISOString(),
+          };
         },
       },
       {
+        name: 'the reply belongs to another Claude session',
+        code: /assistant_session_mismatch/u,
+        mutate(lines: Array<Record<string, unknown>>) {
+          lines[3] = { ...lines[3], session_id: 'wrong-session' };
+        },
+      },
+      {
+        // A later chunk of the SAME request carrying a foreign session is an
+        // internally inconsistent transcript; checking only the first chunk
+        // would wave it through.
+        name: 'a later chunk of the reply belongs to another Claude session',
+        code: /assistant_session_mismatch/u,
+        mutate(lines: Array<Record<string, unknown>>) {
+          const first = lines[3] as { message: { id: string; usage: unknown } };
+          lines.push({
+            type: 'assistant',
+            timestamp: new Date(baseTime + 2_200).toISOString(),
+            session_id: 'wrong-session',
+            message: { id: first.message.id, usage: first.message.usage },
+          });
+        },
+      },
+      {
+        name: 'the prompt is not the touch text',
         code: /touch_text_mismatch/u,
         mutate(lines: Array<Record<string, unknown>>) {
-          lines[0] = {
-            ...lines[0],
+          lines[1] = {
+            ...lines[1],
             message: { role: 'user', content: 'unrelated wake' },
           };
         },
@@ -1245,17 +1314,18 @@ describe('physical observation readiness hardening', () => {
         fixture.transcriptPath,
         built.lines.map((line) => JSON.stringify(line)).join('\n') + '\n'
       );
-      expect(() =>
-        inspectSchedulerTranscriptCausalAppend({
-          ...fixture,
-          before,
-          expected: {
-            claudeSessionId: 'exact-claude-session',
-            dispatchFenceAt,
-            settledAt,
-            resultDigest: digestJson(built.result),
-          },
-        })
+      expect(
+        () =>
+          inspectSchedulerTranscriptCausalAppend({
+            ...fixture,
+            before,
+            expected: {
+              claudeSessionId: 'exact-claude-session',
+              dispatchFenceAt,
+              settledAt,
+            },
+          }),
+        scenario.name
       ).toThrow(scenario.code);
     }
 
@@ -1266,18 +1336,6 @@ describe('physical observation readiness hardening', () => {
       fixture.transcriptPath,
       built.lines.map((line) => JSON.stringify(line)).join('\n') + '\n'
     );
-    expect(() =>
-      inspectSchedulerTranscriptCausalAppend({
-        ...fixture,
-        before,
-        expected: {
-          claudeSessionId: 'exact-claude-session',
-          dispatchFenceAt,
-          settledAt,
-          resultDigest: '0'.repeat(64),
-        },
-      })
-    ).toThrow(/result_digest_mismatch/u);
     const proof = inspectSchedulerTranscriptCausalAppend({
       ...fixture,
       before,
@@ -1285,12 +1343,54 @@ describe('physical observation readiness hardening', () => {
         claudeSessionId: 'exact-claude-session',
         dispatchFenceAt,
         settledAt,
-        resultDigest: digestJson(built.result),
       },
     }).proof;
+    // The bookkeeping rows are counted, never used to reject, and never
+    // mistaken for the causal pair.
+    expect(proof.transcriptUserRows).toBe(1);
+    expect(proof.transcriptProviderRequests).toBe(1);
     expect(JSON.stringify(proof)).not.toContain(schedulerTouchText);
     expect(JSON.stringify(proof)).not.toContain('exact-causal-assistant');
     expect(JSON.stringify(proof)).not.toContain('exact-claude-session');
+
+    // Binding the reply by position rather than by message identity would pick
+    // the zero-usage synthetic envelope below -- whose timestamp precedes the
+    // prompt -- and silently mis-date the causal chain.
+    const decoyFixture = transcriptFixture();
+    const decoyBefore = captureExactTranscriptState(decoyFixture);
+    const decoyLines = buildLines().lines;
+    decoyLines.splice(1, 0, {
+      type: 'assistant',
+      timestamp: new Date(baseTime + 950).toISOString(),
+      session_id: 'exact-claude-session',
+      message: {
+        id: 'a-synthetic-zero-usage-envelope',
+        usage: {
+          input_tokens: 0,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+          output_tokens: 0,
+        },
+      },
+    });
+    fs.appendFileSync(
+      decoyFixture.transcriptPath,
+      decoyLines.map((line) => JSON.stringify(line)).join('\n') + '\n'
+    );
+    const decoyProof = inspectSchedulerTranscriptCausalAppend({
+      ...decoyFixture,
+      before: decoyBefore,
+      expected: {
+        claudeSessionId: 'exact-claude-session',
+        dispatchFenceAt,
+        settledAt,
+      },
+    }).proof;
+    expect(decoyProof.transcriptProviderRequests).toBe(1);
+    expect(decoyProof.terminalAssistantRows).toBe(2);
+    expect(decoyProof.transcriptAssistantAt).toBe(
+      new Date(baseTime + 2_000).toISOString()
+    );
   });
 
   it('derives scheduler terminal evidence only from the exact durable deadline touch', async () => {
@@ -1301,8 +1401,7 @@ describe('physical observation readiness hardening', () => {
     const dispatchedAt = admittedAt + 100;
     const transcriptTouchAt = dispatchedAt + 100;
     const transcriptAssistantAt = transcriptTouchAt + 100;
-    const transcriptResultAt = transcriptAssistantAt + 100;
-    const settledAt = transcriptResultAt + 100;
+    const settledAt = transcriptAssistantAt + 200;
     const deadline = start + 55 * 60 * 1000;
     const identity = {
       ...fixture.identity,
@@ -1318,15 +1417,18 @@ describe('physical observation readiness hardening', () => {
       identity,
       capturedAt: new Date(start).toISOString(),
     });
-    const resultLine = {
-      type: 'result',
-      timestamp: new Date(transcriptResultAt).toISOString(),
-      session_id: 'exact-claude-session',
-      subtype: 'success',
-    };
+    // The real shape observed in attempt 6a87cec0: Claude Code writes no
+    // `result` row into the transcript (0 of 1782 transcripts on the reference
+    // machine contain one) and interleaves inert bookkeeping rows around the
+    // touch. The causal proof must survive them.
     fs.appendFileSync(
       fixture.transcriptPath,
       [
+        {
+          type: 'queue-operation',
+          timestamp: new Date(transcriptTouchAt - 50).toISOString(),
+          operation: 'enqueue',
+        },
         {
           type: 'user',
           timestamp: new Date(transcriptTouchAt).toISOString(),
@@ -1334,6 +1436,10 @@ describe('physical observation readiness hardening', () => {
             role: 'user',
             content: schedulerTouchText,
           },
+        },
+        {
+          type: 'last-prompt',
+          timestamp: new Date(transcriptTouchAt + 10).toISOString(),
         },
         {
           type: 'assistant',
@@ -1349,7 +1455,11 @@ describe('physical observation readiness hardening', () => {
             },
           },
         },
-        resultLine,
+        {
+          type: 'queue-operation',
+          timestamp: new Date(transcriptAssistantAt + 10).toISOString(),
+          operation: 'dequeue',
+        },
       ].map((line) => JSON.stringify(line)).join('\n') + '\n'
     );
     const admission = {
@@ -1366,7 +1476,14 @@ describe('physical observation readiness hardening', () => {
       touchOrdinal: 1,
       touchAttempt: 1,
       messageIdDigest: schedulerMessageIdDigest(identity, 1, 1),
-      resultDigest: digestJson(resultLine),
+      // The product digests the CLI's stdout result envelope, which never
+      // appears as a transcript row, so nothing in the transcript can or
+      // should reproduce this value.
+      resultDigest: digestJson({
+        type: 'result',
+        subtype: 'success',
+        session_id: 'exact-claude-session',
+      }),
       admittedAt: new Date(admittedAt).toISOString(),
       dispatchFenceAt: new Date(dispatchedAt).toISOString(),
       settledAt: new Date(settledAt).toISOString(),
@@ -1596,8 +1713,7 @@ describe('physical observation readiness hardening', () => {
     const dispatchedAt = admittedAt + 100;
     const transcriptTouchAt = dispatchedAt + 100;
     const transcriptAssistantAt = transcriptTouchAt + 100;
-    const transcriptResultAt = transcriptAssistantAt + 100;
-    const settledAt = transcriptResultAt + 100;
+    const settledAt = transcriptAssistantAt + 200;
     const deadline = baselineStart + 55 * 60 * 1000;
     const identity = {
       ...fixture.identity,
@@ -1614,19 +1730,22 @@ describe('physical observation readiness hardening', () => {
       identity,
       capturedAt: new Date(baselineStart).toISOString(),
     });
-    const resultLine = {
-      type: 'result',
-      timestamp: new Date(transcriptResultAt).toISOString(),
-      session_id: 'exact-claude-session',
-      subtype: 'success',
-    };
     fs.appendFileSync(
       fixture.transcriptPath,
       [
         {
+          type: 'queue-operation',
+          timestamp: new Date(transcriptTouchAt - 50).toISOString(),
+          operation: 'enqueue',
+        },
+        {
           type: 'user',
           timestamp: new Date(transcriptTouchAt).toISOString(),
           message: { role: 'user', content: schedulerTouchText },
+        },
+        {
+          type: 'last-prompt',
+          timestamp: new Date(transcriptTouchAt + 10).toISOString(),
         },
         {
           type: 'assistant',
@@ -1642,7 +1761,11 @@ describe('physical observation readiness hardening', () => {
             },
           },
         },
-        resultLine,
+        {
+          type: 'queue-operation',
+          timestamp: new Date(transcriptAssistantAt + 10).toISOString(),
+          operation: 'dequeue',
+        },
       ].map((line) => JSON.stringify(line)).join('\n') + '\n'
     );
     const admission = {
@@ -1659,7 +1782,11 @@ describe('physical observation readiness hardening', () => {
       touchOrdinal: 1,
       touchAttempt: 1,
       messageIdDigest: schedulerMessageIdDigest(identity, 1, 1),
-      resultDigest: digestJson(resultLine),
+      resultDigest: digestJson({
+        type: 'result',
+        subtype: 'success',
+        session_id: 'exact-claude-session',
+      }),
       admittedAt: new Date(admittedAt).toISOString(),
       dispatchFenceAt: new Date(dispatchedAt).toISOString(),
       settledAt: new Date(settledAt).toISOString(),
