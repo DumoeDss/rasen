@@ -24,7 +24,7 @@ On Windows, `os.tmpdir()` commonly lives below `%LOCALAPPDATA%`, and this machin
 
 ### Use a config-specific initialized-project resolver
 
-The command layer will first use the existing nearest-root lookup, then accept the candidate only when `resolveConfigFilePath(candidate)` is an existing file. The interactive editor, effective view, and explicit `--scope project` operations consume the same helper.
+The command layer will use the existing nearest-root lookup, then accept a candidate only when `resolveConfigFilePath(candidate)` is an existing file. When a broad candidate does not qualify, the config-specific resolver resumes from that candidate's parent and continues until it finds the nearest initialized outer project or reaches the filesystem root. The interactive editor, effective view, and explicit `--scope project` operations consume the same helper.
 
 This keeps the general planning-root contract unchanged while aligning config project identity with the exact file config operations already own.
 
@@ -34,7 +34,7 @@ Alternative: force tests to use a clean `TEMP/TMP`. Rejected because it would hi
 
 ### Reproduce an ambient ancestor inside the test fixture
 
-The regression will create an ancestor containing `rasen/` but no `rasen/config.yaml`, then run the editor from a child directory. This is path-module based and independent of the host's real application-data layout.
+The regression creates both an ambient-only ancestor containing `rasen/` but no config and a nested collision where a nearer bare `rasen/` sits inside an initialized outer project. Public explicit-scope, effective-view, and editor paths must reject the former and select the outer project in the latter. These fixtures are path-module based and independent of the host's real application-data layout.
 
 ## Risks / Trade-offs
 

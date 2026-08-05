@@ -20,5 +20,5 @@
 ## 4. Local lifecycle and foundation unblock
 
 - [x] 4.1 Run local ship with a path-scoped commit containing only this Change, its config implementation, and focused regression; do not push or open a PR.
-- [ ] 4.2 Archive the shipped Change through the authoritative archive engine and record the terminal evidence.
+- [x] 4.2 Archive the shipped Change through the authoritative archive engine and record the terminal evidence.
 - [x] 4.3 Rerun the foundation's complete `pnpm test` gate from the normal environment and resume foundation task 9.11 only from a clean full-suite receipt.
