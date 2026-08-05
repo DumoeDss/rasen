@@ -79,14 +79,41 @@ function resolveScope(command: Command): ConfigScope | undefined {
 }
 
 /**
- * Resolves the nearest ancestor Rasen project root for `--scope project`
- * operations, matching other repo-local commands (nearest-`rasen/`-ancestor
- * resolution; store/project-flag routing is out of scope for this command).
+ * Resolves the nearest initialized project owned by config operations.
+ * General planning-root discovery intentionally accepts a bare `rasen/`
+ * directory; config operations require the configuration file they read and
+ * write, while preserving the shared resolver's `.yaml`/`.yml` compatibility.
+ */
+function findInitializedConfigProjectRoot(): string | undefined {
+  let searchFrom = process.cwd();
+
+  for (;;) {
+    const candidate = findRepoPlanningRootSync(searchFrom);
+    if (!candidate) return undefined;
+
+    const configPath = resolveConfigFilePath(candidate);
+    if (configPath) {
+      try {
+        if (fs.statSync(configPath).isFile()) return candidate;
+      } catch {
+        // The candidate changed between resolution and stat; keep searching.
+      }
+    }
+
+    const parent = path.dirname(candidate);
+    if (parent === candidate) return undefined;
+    searchFrom = parent;
+  }
+}
+
+/**
+ * Resolves the nearest initialized Rasen project root for `--scope project`
+ * operations (store/project-flag routing is out of scope for this command).
  * Exits 1 with guidance when no project is found.
  */
 function resolveProjectRootOrFail(): string | undefined {
   const messages = getConfigCommandMessages();
-  const root = findRepoPlanningRootSync(process.cwd());
+  const root = findInitializedConfigProjectRoot();
   if (!root) {
     console.error(messages.projectNotFound(WORKSPACE_DIR_NAME));
     console.error(messages.projectInitGuidance);
@@ -152,7 +179,7 @@ async function printEffectiveConfigView(machineScope: boolean): Promise<void> {
   const ui = getConfigEditorMessages(locale);
   const planningRoot = machineScope
     ? undefined
-    : (findRepoPlanningRootSync(process.cwd()) ?? undefined);
+    : findInitializedConfigProjectRoot();
   const contextOptions = planningRoot
     ? contextResolveOptions(await resolveRootConfigContext(planningRoot))
     : {};
@@ -362,7 +389,7 @@ async function runInteractiveConfigEditor(machineScope: boolean): Promise<void> 
   // and disables the project-only rows exactly as it does outside a project.
   const projectRoot = machineScope
     ? undefined
-    : (findRepoPlanningRootSync(process.cwd()) ?? undefined);
+    : findInitializedConfigProjectRoot();
   const storeLayer = machineScope ? null : await requireConfigStoreLayer(projectRoot);
 
   try {

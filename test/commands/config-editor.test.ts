@@ -206,6 +206,81 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
     expect(String(archiveRow.disabled)).toContain('requires a Rasen project');
   });
 
+  it('treats an unrelated ancestor rasen directory without project config as outside-project', async () => {
+    const ambientRoot = path.join(tempDir, 'ambient-root');
+    const childCwd = path.join(ambientRoot, 'nested', 'workspace');
+    fs.mkdirSync(path.join(ambientRoot, 'rasen'), { recursive: true });
+    fs.mkdirSync(childCwd, { recursive: true });
+    process.chdir(childCwd);
+
+    const { select, input } = await getPromptMocks();
+    select
+      .mockResolvedValueOnce('handoff.threshold')
+      .mockResolvedValueOnce('__exit__');
+    input.mockResolvedValueOnce('0.7');
+
+    await runConfigCommand([]);
+
+    const choices = await choicesFromCall(0);
+    const archiveRow = choices.find((choice) => choice.value === 'archive.timing')!;
+    expect(archiveRow.disabled).toBeTruthy();
+    expect(String(archiveRow.disabled)).toContain('requires a Rasen project');
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('not inside a Rasen project')
+    );
+  });
+
+  it('skips a nearer bare rasen directory and uses the initialized outer config project', async () => {
+    const outerRoot = path.join(tempDir, 'outer-project');
+    const outerConfigPath = path.join(outerRoot, 'rasen', 'config.yaml');
+    const innerRoot = path.join(outerRoot, 'inner');
+    const childCwd = path.join(innerRoot, 'workspace');
+    fs.mkdirSync(path.dirname(outerConfigPath), { recursive: true });
+    fs.writeFileSync(
+      outerConfigPath,
+      'schema: spec-driven\nhandoff:\n  threshold: 0.42\n'
+    );
+    fs.mkdirSync(path.join(innerRoot, 'rasen'), { recursive: true });
+    fs.mkdirSync(childCwd, { recursive: true });
+    process.chdir(childCwd);
+
+    await runConfigCommand(['path', '--scope', 'project']);
+    const explicitProjectExitCode = process.exitCode;
+    const loggedProjectPath = consoleLogSpy.mock.calls.find(
+      ([value]) => typeof value === 'string' && value.endsWith('config.yaml')
+    )?.[0];
+
+    process.exitCode = undefined;
+    consoleLogSpy.mockClear();
+    (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = false;
+    await runConfigCommand([]);
+    const effectiveLines = consoleLogSpy.mock.calls.map(([value]) => String(value));
+
+    consoleLogSpy.mockClear();
+    (process.stdout as NodeJS.WriteStream & { isTTY?: boolean }).isTTY = true;
+    const { select } = await getPromptMocks();
+    select.mockResolvedValueOnce('__exit__');
+    await runConfigCommand([]);
+    const choices = await choicesFromCall(0);
+    const thresholdRow = choices.find((choice) => choice.value === 'handoff.threshold')!;
+    const archiveRow = choices.find((choice) => choice.value === 'archive.timing')!;
+
+    expect.soft(explicitProjectExitCode).not.toBe(1);
+    expect.soft(loggedProjectPath).toBeDefined();
+    if (typeof loggedProjectPath === 'string') {
+      expect.soft(fs.realpathSync.native(loggedProjectPath)).toBe(
+        fs.realpathSync.native(outerConfigPath)
+      );
+    }
+    expect.soft(effectiveLines).toContain('handoff.threshold = 0.42 (project)');
+    expect.soft(thresholdRow.name).toContain('handoff.threshold = 0.42 (project)');
+    expect.soft(archiveRow.disabled).toBeFalsy();
+    expect(consoleLogSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('not inside a Rasen project')
+    );
+  });
+
   it('project-only keys are editable inside a Rasen project (not disabled)', async () => {
     makeProject();
     const { select } = await getPromptMocks();
