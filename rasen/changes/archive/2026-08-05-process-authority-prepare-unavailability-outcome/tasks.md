@@ -22,6 +22,6 @@
 
 ## 4. Local lifecycle and Linux resume
 
-- [ ] 4.1 Ship a path-scoped local commit with no push, child PR, platform code, or unrelated retained file.
+- [x] 4.1 Ship a path-scoped local commit with no push, child PR, platform code, or unrelated retained file.
 - [ ] 4.2 Archive through the authoritative engine, sync the delta spec, and record transaction/accounting evidence.
 - [ ] 4.3 Rebaseline the Linux provider's frozen common spec/suite hashes and resume its provider integration only from the archived common contract.
