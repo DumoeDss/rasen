@@ -163,10 +163,12 @@ export async function createAdmittedAction(input) {
     registryModule,
     profileModule,
     runtimeModule,
+    identityModule,
   ] = await Promise.all([
     import(dist('core', 'pipeline-registry', 'prepared-registry.js')),
     import(dist('core', 'pipeline-registry', 'profile-resolver.js')),
     import(dist('core', 'change-run', 'internal', 'runtime-context.js')),
+    import(dist('core', 'change-run', 'internal', 'identity.js')),
   ]);
   const registry = await registryModule.freezeProductionPreparedPipelineRegistry(
     input.repositoryRoot,
@@ -226,6 +228,12 @@ export async function createAdmittedAction(input) {
   const runId = `run:${digest(
     `physical:${input.candidate.contentFingerprint}:${input.armId}:${suffix}`
   )}`;
+  // The launch intent must be the product's own derivation, not a value the
+  // harness invents. verifyLaunchIntent recomputes it from the normalized
+  // pipeline, engine, and inputs and refuses anything else, so the same inputs
+  // have to reach both the initial record and start().
+  const inputs = { acceptanceArm: input.armId };
+  const launchIntent = { pipeline: 'bug-fix', engine: 'reconciler', inputs };
   const context = runtimeModule.prepareRuntimeContext({
     projectRoot: input.workspace,
     prepared,
@@ -236,9 +244,9 @@ export async function createAdmittedAction(input) {
     changeInstanceId: `change-instance:${digest(`change:${suffix}`)}`,
     changeId: `cache-${input.armId.replace(/[^a-z0-9]+/gu, '-')}`,
     projectId: 'session-cache-physical-acceptance',
-    launchRequestDigest: `sha256:${digest(`launch:${suffix}`)}`,
+    launchRequestDigest: identityModule.digestLaunchIntent(launchIntent),
     storeRoot: path.join(input.rasenHome, 'runs'),
-    inputs: { acceptanceArm: input.armId },
+    inputs,
   });
   const change = {
     projectRoot: input.workspace,
@@ -250,6 +258,7 @@ export async function createAdmittedAction(input) {
       pipeline: 'bug-fix',
       launchRequestId: `physical-${input.armId}`,
       engine: 'reconciler',
+      inputs,
     },
     { deliveryMode: 'grant' }
   );
