@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
