@@ -10,8 +10,8 @@ Verification was performed by two independent audits (a read-only spec-coverage 
 
 | Dimension | Status |
 |---|---|
-| Completeness | 39/39 tasks complete; 10/10 requirements implemented |
-| Correctness | 27/28 scenarios covered by an automated test; 2 Blockers found and fixed pre-review, 5 Major found and fixed in review |
+| Completeness | 40/40 tasks complete; 10/10 requirements implemented |
+| Correctness | 28/28 scenarios covered by an automated test; 2 Blockers found and fixed pre-review, 5 Major found and fixed in review |
 | Coherence | D1-D8 followed, with 4 departures recorded as ADR-1/2/3/4 and each justification re-verified against the code |
 
 `VERIFY VERDICT: CLEAN — Blocker:0 Major:0 Minor:0 Trivial:0`
@@ -30,7 +30,7 @@ A pre-landing review after this report found five Major items this verification 
 
 Two claims below were also corrected rather than defended:
 
-- **Not 26/26.** The scenario *A moved checkout still resolves* has no automated test; only its negative (no absolute path is persisted) is asserted.
+- **Not 26/26.** The scenario *A moved checkout still resolves* had no automated test; only its negative (no absolute path is persisted) was asserted. **Closed pre-ship** — see "Pre-ship coverage closure" below; the count is now 28/28.
 - **Not a uniform refusal surface.** The four Rasen-owned refusals are localized; the `knowledge_owner_*` / `knowledge_selector_conflict` diagnostics pass through as English literals from `context.ts`, and those are the refusals the fail-closed requirement is about.
 
 ## Findings raised and resolved
@@ -69,6 +69,16 @@ Fixed: same guard added before computing `active`. Regression test: `packages/ui
 
 - `tasks.md` item 3.6 named a `hasPipeline` payload field the implementation never emitted (it emits `pipeline: pipeline ?? null`, which `docs/cli.md` already documented). Task text corrected to `pipeline`.
 
+## Pre-ship coverage closure (2026-08-06)
+
+The one scenario this report left uncovered now has a test, so the change ships at 28/28 rather than 27/28.
+
+- **Scenario:** *A moved checkout still resolves* (`specs/retention-context-preparation/spec.md:130`) — a prepared change read from a different absolute location than the one it was prepared in must still resolve to the same planning root and owner.
+- **Test:** `test/commands/retain-prepare.test.ts` — *resolves the recorded identity after the checkout moves to another absolute path*. It prepares a change, releases the working directory (a cwd cannot be renamed on Windows), renames the whole checkout, and re-runs preparation from the new path: `contextSource: 'recorded'`, the `knowledgeContext` deep-equal to the pre-move one, the same reported owner and planning root, the record byte-identical, and `runStateDir`/`runStatePath` composed with `path.join` under the new location. Restored in a `finally` so the suite's own cleanup reaches it.
+- **Proven load-bearing.** Neutralizing the moved-repo rebind in `src/core/project-registry.ts` (the `2b` branch that re-keys a same-`projectId` entry whose path is gone) makes exactly this test fail — `expected 1 to be undefined`, the refusal exit code, because the surviving stale entry makes the frozen project owner resolve to two roots (`knowledge_owner_ambiguous`). Every other test in the file still passed under that sabotage, so the assertion is specific to the moved-checkout path and not to preparation in general.
+
+Recorded as task 7.9. The second corrected claim — the non-uniform refusal surface — is unchanged and remains deliberate: no requirement in either spec asks for localized refusals, and the `knowledge_owner_*` / `knowledge_selector_conflict` diagnostics stay English literals owned by `context.ts`.
+
 ## Coherence
 
 D1-D8 are followed. Four departures were recorded in `design.md` under "Deviations proven during implementation"; each justification was re-verified against the code during this audit and all four hold:
@@ -88,7 +98,7 @@ D1-D8 are followed. Four departures were recorded in `design.md` under "Deviatio
 | 4 | Repeating preparation reuses the same typed identities, no duplicate state | CLI e2e step 3 (`contextSource=recorded`, record unchanged); `retain-prepare.test.ts` *is idempotent…* |
 | 5 | Ambiguous, missing, renamed, or stale owners fail before candidate creation | 5 refusal tests, each asserting an exact code and that nothing was written |
 | 6 | Existing pipeline run-states and their `knowledgeContext` remain byte-for-byte authoritative, never implicitly upgraded | `retain-prepare.test.ts` *reports an existing pipeline run-state unchanged, at any context version* (loops v1/v2/v3, byte-identical assert) |
-| 7 | No absolute planning or owner root is persisted | `retain-prepare.test.ts` *records durable identity only* (walks the record for absolute paths) |
+| 7 | No absolute planning or owner root is persisted | `retain-prepare.test.ts` *records durable identity only* (walks the record for absolute paths); the positive half is *resolves the recorded identity after the checkout moves to another absolute path* |
 | 8 | Tests cover project and store ownership, including two stores with the same display name | *resolves the right store through durable identity when two stores share a display name* (resolves by uid, not the shared name) |
 
 ## Out-of-scope observation (not a finding against this change)
@@ -105,4 +115,11 @@ Two working-tree observations, neither a finding against this change and neither
 - command: `pnpm build` && `npx tsc --noEmit -p tsconfig.json` && `npx eslint src/ test/ vitest.config.ts vitest.setup.ts` && `npx vitest run` && `cd packages/ui && npx tsc --noEmit && npx vitest run`
 - result: pass — root 5972 passed / 27 skipped / 26 failed (6025 total); `packages/ui` 501 passed / 0 failed; typecheck and lint clean in both packages. All 26 root failures are pre-existing on the base branch `dev/0.1.7`, verified by running the same suites in a `git worktree` at that commit: they are git-clone and linked-worktree environment failures in `test/core/store/bootstrap-obtain.test.ts` (18), `test/commands/bootstrap.test.ts` (3), `test/core/learned-skills/store-scope.test.ts` (1), `test/core/session-runtime-context-e2e.test.ts` (1), `test/core/management-api/session-launch-context.test.ts` (1), `test/core/management-api/sessions-space.test.ts` (1), `test/core/store/bootstrap-bundle-import.test.ts` (1). The failing-test list is byte-identical before and after this change, re-confirmed after the ADR-4 gate landed.
 - CLI end-to-end (ADR-4): in a temp project, `retain prepare` under the default `full` profile reported `contextSource: "skipped"` and left no file under `.rasen` at all, with `pipeline resume` still reporting `hasRunState: false`; after `config set retention codify` the same command froze a v3 context (`hasRunState: true`, `pipeline: null`); repeating it reported `recorded`; unsetting the key back to `report` reported `skipped` with the record byte-identical (md5 unchanged); and planting `retention: "codify"` in that record under a `report` profile reported `frozenRetention: "codify"` with `contextSource: "prepared"`, proving the union arm on the real CLI.
+### Pre-ship re-verification (2026-08-06, after the work was committed)
+
+- scope: the three suites that own the changed contracts, plus root typecheck and lint on the touched files
+- rationale: the evidence above was taken on the uncommitted working tree; the work has since been committed as `83d90747`, `2448c966`, `a27a3e3d`, `5a8297c3`, `2d4d56f5`, and task 7.9 added a test. The full-suite baseline (including its 26 pre-existing failures) is not re-established here — this run bounds the new test and the contracts it touches, nothing wider.
+- command: `pnpm build` && `npx vitest run test/commands/pipeline.test.ts test/commands/retain-prepare.test.ts test/core/pipeline-registry/run-state.test.ts` && `npx tsc --noEmit -p tsconfig.json` && `npx eslint test/commands/retain-prepare.test.ts src/core/project-registry.ts`
+- result: pass — 248 passed / 0 failed across the three files (29 in `retain-prepare.test.ts`); typecheck and lint clean
+- note: `pnpm build` is a prerequisite, not a formality. `test/commands/pipeline.test.ts` spawns the built CLI, and the checkout's `dist/` predated this change (no `dist/commands/retain.js` at all), which produced 8 failures that were purely stale-build artifacts and disappeared after rebuilding. Anyone re-running these suites must build first.
 - tree: `4967e3adcf21bc51986b4b86b282cf80de2e891b` (`git rev-parse HEAD^{tree}`) with uncommitted work. The verified working tree is identified by the `git diff` digest `e0a94c5f2a645542` (sha256, first 16 hex) computed with this report excluded — `git diff -- . ':(exclude)rasen/changes/standalone-retention-context-freeze/evidence/verification-report.md'` — because a digest over the whole diff would be invalidated by writing it here.

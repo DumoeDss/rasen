@@ -345,6 +345,63 @@ describe('rasen retain prepare', () => {
     });
   });
 
+  // The positive half of the durable-identity requirement: the previous test
+  // proves no absolute root is written, this one proves the record is still
+  // resolvable when the checkout it was prepared in lives somewhere else. The
+  // whole record travels with the checkout, so the move is the real scenario —
+  // a path-derived identity would leave the planning root resolving to the old
+  // absolute location and the command refusing with a root mismatch.
+  it('resolves the recorded identity after the checkout moves to another absolute path', async () => {
+    createChange(projectRoot);
+    await runRetain(['prepare', CHANGE, '--json']);
+    const before = lastJson<{
+      contextSource: string;
+      knowledgeContext: unknown;
+      owner: string;
+      planningRoot: string;
+      runStatePath: string;
+    }>();
+    expect(before.contextSource).toBe('prepared');
+    const recorded = fs.readFileSync(before.runStatePath, 'utf-8');
+
+    // Release the working directory first: a directory that is the process cwd
+    // cannot be renamed on Windows.
+    const movedRoot = `${projectRoot}-moved`;
+    process.chdir(originalCwd);
+    fs.renameSync(projectRoot, movedRoot);
+    try {
+      process.chdir(movedRoot);
+      logSpy.mockClear();
+      await runRetain(['prepare', CHANGE, '--json']);
+
+      // No refusal: the identity on record resolves from the new location.
+      expect(process.exitCode).toBeUndefined();
+      const after = lastJson<{
+        contextSource: string;
+        knowledgeContext: unknown;
+        owner: string;
+        planningRoot: string;
+        runStateDir: string;
+        runStatePath: string;
+      }>();
+      expect(after.contextSource).toBe('recorded');
+      // The same planning root and the same owner, by identity.
+      expect(after.knowledgeContext).toEqual(before.knowledgeContext);
+      expect(after.owner).toBe(before.owner);
+      expect(after.planningRoot).toBe(before.planningRoot);
+      // Reported at the checkout's new location, and untouched on disk.
+      expect(after.runStateDir).toBe(
+        path.join(movedRoot, '.rasen', 'changes', CHANGE, 'ephemera')
+      );
+      expect(after.runStatePath).toBe(path.join(after.runStateDir, RUN_STATE_FILENAME));
+      expect(fs.readFileSync(after.runStatePath, 'utf-8')).toBe(recorded);
+    } finally {
+      // Back under `projectRoot` so the suite's own cleanup reaches it.
+      process.chdir(originalCwd);
+      fs.renameSync(movedRoot, projectRoot);
+    }
+  });
+
   it('is idempotent: a repeated run reuses the record and writes nothing new', async () => {
     createChange(projectRoot);
     await runRetain(['prepare', CHANGE, '--json']);
