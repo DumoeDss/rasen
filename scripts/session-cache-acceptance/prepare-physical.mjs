@@ -218,10 +218,16 @@ export async function createAdmittedAction(input) {
     sourceRevision,
     { maxAttempts: 32, maxActions: 128 }
   );
-  const runId = `run:${digest(
-    `physical:${input.candidate.contentFingerprint}:${input.armId}`
-  )}`;
+  // The workspace belongs in the Run identity, not just in the launch request.
+  // Deriving the Run from candidate+arm alone made two isolated workspaces
+  // collide on one Run id while their launch digests differed, which the
+  // product correctly rejects as launch_request_conflict. Including the
+  // workspace keeps the id deterministic per evidence directory and stops
+  // unrelated stores from ever sharing a Run.
   const suffix = digest(`${input.armId}:${input.workspace}`);
+  const runId = `run:${digest(
+    `physical:${input.candidate.contentFingerprint}:${input.armId}:${suffix}`
+  )}`;
   const context = runtimeModule.prepareRuntimeContext({
     projectRoot: input.workspace,
     prepared,

@@ -2309,9 +2309,13 @@ describe('physical observation readiness hardening', () => {
     {
       label: 'oversized',
       code: 'cli_failure_envelope_oversize',
+      // process.exit() discards a buffered stdout write when stdout is a pipe
+      // and writes are asynchronous, which is the case on POSIX but not on
+      // Windows. Setting exitCode and returning lets Node flush before exiting,
+      // so the parent actually receives the oversize payload on every platform.
       source:
-        "process.stdout.write('x'.repeat(2 * 1024 * 1024 + 1));"
-        + 'process.exit(2);',
+        'process.exitCode = 2;'
+        + "process.stdout.write('x'.repeat(2 * 1024 * 1024 + 1));",
     },
   ])(
     'routes $label nonzero envelope through the full observer without raw leakage',
