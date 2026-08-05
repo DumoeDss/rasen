@@ -8,6 +8,7 @@ import {
   readPathManifest,
 } from './delivery-candidate.mjs';
 import {
+  fingerprintSelectedExecutable,
   hashExactFileSet,
   inspectManagementServerCapacity,
   inspectPhysicalCapacity,
@@ -494,7 +495,7 @@ export function createObservationDriver(config) {
           config.candidate.repositoryRoot,
           config.binaryFiles
         ) !== config.candidate.binaryFingerprint
-        || sha256File(config.claude.binaryPath)
+        || fingerprintSelectedExecutable(config.claude.binaryPath)
           !== config.claude.binaryFingerprint
       ) {
         throw new Error('admission_proof_candidate_drift');
@@ -572,7 +573,7 @@ export function createObservationDriver(config) {
       }
     }
     if (
-      sha256File(config.claude.binaryPath)
+      fingerprintSelectedExecutable(config.claude.binaryPath)
       !== config.claude.binaryFingerprint
     ) {
       throw new Error('claude_binary_drift');

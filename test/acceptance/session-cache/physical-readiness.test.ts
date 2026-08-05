@@ -29,9 +29,13 @@ import {
 } from '../../../scripts/session-cache-acceptance/transcript-usage.mjs';
 import {
   CAPACITY_SCHEMA,
+  MAX_EVIDENCE_FINGERPRINT_BYTES,
+  MAX_EXECUTABLE_FINGERPRINT_BYTES,
+  fingerprintSelectedExecutable,
   hashExactFileSet,
   inspectPhysicalCapacity,
   parseWindowsCommandLine,
+  sha256File,
   verifyCandidateDaemonArgv,
   verifyCapacityProofDocument,
 } from '../../../scripts/session-cache-acceptance/physical-preflight.mjs';
@@ -2637,5 +2641,153 @@ describe('physical observation readiness hardening', () => {
       fs.readdirSync(path.join(rasenHome, 'runs', runDirectory))
         .some((entry) => /^record-v\d+\.json$/u.test(entry))
     ).toBe(true);
+  });
+});
+
+describe('selected-executable fingerprint bounds', () => {
+  const temporaryPaths: string[] = [];
+
+  function temporaryDirectory(label: string) {
+    const created = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), label))
+    );
+    temporaryPaths.push(created);
+    return created;
+  }
+
+  afterEach(async () => {
+    while (temporaryPaths.length > 0) {
+      await cleanupTempPathAsync(temporaryPaths.pop()!);
+    }
+  });
+
+  it('keeps the evidence default at 256 MiB and gives executables a larger finite bound', () => {
+    expect(MAX_EVIDENCE_FINGERPRINT_BYTES).toBe(256 * 1024 * 1024);
+    expect(MAX_EXECUTABLE_FINGERPRINT_BYTES)
+      .toBeGreaterThan(MAX_EVIDENCE_FINGERPRINT_BYTES);
+    expect(Number.isSafeInteger(MAX_EXECUTABLE_FINGERPRINT_BYTES)).toBe(true);
+  });
+
+  it('hashes a multi-chunk file identically to a single-shot digest', () => {
+    const directory = temporaryDirectory('rasen-fingerprint-chunk-');
+    const target = path.join(directory, 'multi-chunk.bin');
+    // Larger than the 1 MiB read chunk, and deliberately not a chunk multiple
+    // so the final short read is exercised.
+    const payload = Buffer.alloc(3 * 1024 * 1024 + 7, 0);
+    for (let offset = 0; offset < payload.length; offset += 4096) {
+      payload.writeUInt32LE(offset >>> 2, offset);
+    }
+    fs.writeFileSync(target, payload);
+    expect(sha256File(target)).toBe(
+      createHash('sha256').update(payload).digest('hex')
+    );
+  });
+
+  it('refuses a file past the supplied bound', () => {
+    const directory = temporaryDirectory('rasen-fingerprint-bound-');
+    const target = path.join(directory, 'bounded.bin');
+    fs.writeFileSync(target, Buffer.alloc(2048, 1));
+    expect(() => sha256File(target, 1024)).toThrow('fingerprint_file_oversize');
+    expect(sha256File(target, 2048)).toMatch(/^[a-f0-9]{64}$/u);
+  });
+
+  it('fingerprints an oversize selected executable through the approved helper', () => {
+    // Regression: Claude Code 2.1.222 ships a 266 MiB single-file native binary.
+    // Under the evidence default this failed closed with fingerprint_file_oversize
+    // and no physical acceptance run could be prepared at all.
+    const directory = temporaryDirectory('rasen-selected-executable-');
+    const target = path.join(directory, 'oversize-executable.bin');
+    const descriptor = fs.openSync(target, 'w');
+    try {
+      fs.ftruncateSync(descriptor, MAX_EVIDENCE_FINGERPRINT_BYTES + 1);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    expect(fs.statSync(target).size).toBe(MAX_EVIDENCE_FINGERPRINT_BYTES + 1);
+    expect(() => sha256File(target)).toThrow('fingerprint_file_oversize');
+    expect(fingerprintSelectedExecutable(target)).toBe(
+      sha256File(target, MAX_EXECUTABLE_FINGERPRINT_BYTES)
+    );
+  });
+
+  it('keeps the executable bound consumed in exactly one place', () => {
+    // The helper is the only choke point, so its own bound has to stay pinned:
+    // widening it here would reopen the hole everywhere at once.
+    const source = fs
+      .readFileSync(
+        path.join(
+          process.cwd(),
+          'scripts',
+          'session-cache-acceptance',
+          'physical-preflight.mjs'
+        ),
+        'utf8'
+      )
+      .replace(/\s+/gu, '');
+    expect(
+      source.split('sha256File(filePath,MAX_EXECUTABLE_FINGERPRINT_BYTES)').length - 1
+    ).toBe(1);
+    expect(MAX_EXECUTABLE_FINGERPRINT_BYTES).toBe(4 * 1024 * 1024 * 1024);
+  });
+
+  it('lets no harness module fingerprint a Claude executable directly', () => {
+    // Directory-wide, not an enumerated file list: a new module must not be
+    // able to reopen this bug class with zero coverage. sha256File stays
+    // exported for legitimate evidence and module fingerprints, so the
+    // invariant is narrower than "never call sha256File" -- it is "never hand
+    // sha256File something that names a Claude executable", under any bound.
+    const harnessDirectory = path.join(
+      process.cwd(),
+      'scripts',
+      'session-cache-acceptance'
+    );
+    const modules = fs
+      .readdirSync(harnessDirectory)
+      .filter((entry) => entry.endsWith('.mjs'));
+    expect(modules.length).toBeGreaterThan(0);
+    const offenders: string[] = [];
+    for (const module of modules) {
+      const source = fs
+        .readFileSync(path.join(harnessDirectory, module), 'utf8')
+        .replace(/\s+/gu, '');
+      for (const match of source.matchAll(/sha256File\(([^,)]*)/gu)) {
+        if (/claude/iu.test(match[1])) offenders.push(`${module}: ${match[0]})`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('routes every selected-Claude fingerprint through the approved helper', () => {
+    // Positive counterpart: the known call sites must actually still be there,
+    // so the invariant above cannot be satisfied by deleting the checks.
+    const callSites = [
+      {
+        module: 'prepare-physical.mjs',
+        binaryExpression: 'claudeBinary',
+        expectedHelperCalls: 1,
+      },
+      {
+        module: 'rasen-cli-driver.mjs',
+        binaryExpression: 'config.claude.binaryPath',
+        expectedHelperCalls: 2,
+      },
+    ];
+    for (const site of callSites) {
+      const source = fs
+        .readFileSync(
+          path.join(
+            process.cwd(),
+            'scripts',
+            'session-cache-acceptance',
+            site.module
+          ),
+          'utf8'
+        )
+        .replace(/\s+/gu, '');
+      const helperCalls = source.split(
+        `fingerprintSelectedExecutable(${site.binaryExpression})`
+      ).length - 1;
+      expect(helperCalls).toBe(site.expectedHelperCalls);
+    }
   });
 });

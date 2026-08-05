@@ -6,6 +6,15 @@ import { execFileSync } from 'node:child_process';
 
 const MAX_HTTP_BYTES = 2 * 1024 * 1024;
 const MAX_STATE_BYTES = 64 * 1024;
+const FINGERPRINT_CHUNK_BYTES = 1024 * 1024;
+export const MAX_EVIDENCE_FINGERPRINT_BYTES = 256 * 1024 * 1024;
+// Selected production executables are legitimately far larger than evidence
+// documents or built modules. The Claude Code CLI ships a single-file native
+// binary that has grown past 256 MiB, so fingerprinting it needs its own
+// explicit bound rather than the evidence default. Symlinks, devices, and fifos
+// are still refused by regularBoundedFile; the bound stays finite so a runaway
+// regular file is refused too.
+export const MAX_EXECUTABLE_FINGERPRINT_BYTES = 4 * 1024 * 1024 * 1024;
 const CAPACITY_SCHEMA = 'rasen-session-supervisor-capacity-proof/2';
 const SHA256 = /^[a-f0-9]{64}$/u;
 const LIVE_SESSION_STATES = new Set(['starting', 'running', 'exiting']);
@@ -23,9 +32,39 @@ function regularBoundedFile(filePath, maximumBytes, code) {
   return { resolved, stat };
 }
 
-export function sha256File(filePath, maximumBytes = 256 * 1024 * 1024) {
-  const { resolved } = regularBoundedFile(filePath, maximumBytes, 'fingerprint_file');
-  return createHash('sha256').update(fs.readFileSync(resolved)).digest('hex');
+export function sha256File(
+  filePath,
+  maximumBytes = MAX_EVIDENCE_FINGERPRINT_BYTES
+) {
+  const { resolved, stat } = regularBoundedFile(
+    filePath,
+    maximumBytes,
+    'fingerprint_file'
+  );
+  const hash = createHash('sha256');
+  const descriptor = fs.openSync(resolved, 'r');
+  try {
+    const buffer = Buffer.allocUnsafe(FINGERPRINT_CHUNK_BYTES);
+    let read = 0;
+    for (;;) {
+      const chunk = fs.readSync(descriptor, buffer, 0, FINGERPRINT_CHUNK_BYTES, null);
+      if (chunk === 0) break;
+      read += chunk;
+      if (read > maximumBytes) throw new Error('fingerprint_file_oversize');
+      hash.update(buffer.subarray(0, chunk));
+    }
+    if (read !== stat.size) throw new Error('fingerprint_file_size_drift');
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return hash.digest('hex');
+}
+
+// The single approved way to fingerprint a selected production executable.
+// Call sites must not reach for sha256File directly: a bound chosen per call
+// site is exactly how the Claude binary silently outgrew the evidence default.
+export function fingerprintSelectedExecutable(filePath) {
+  return sha256File(filePath, MAX_EXECUTABLE_FINGERPRINT_BYTES);
 }
 
 export function hashExactFileSet(root, relativePaths) {
@@ -50,7 +89,7 @@ export function hashExactFileSet(root, relativePaths) {
     }
     const { resolved } = regularBoundedFile(
       absolute,
-      256 * 1024 * 1024,
+      MAX_EVIDENCE_FINGERPRINT_BYTES,
       'fingerprint_file'
     );
     hash.update(relative, 'utf8');

@@ -7,9 +7,9 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 import {
+  fingerprintSelectedExecutable,
   hashExactFileSet,
   inspectPhysicalCapacity,
-  sha256File,
 } from './physical-preflight.mjs';
 import {
   deriveDeliveryTree,
@@ -339,7 +339,7 @@ export async function preparePhysicalObservation(input) {
   }
   const claude = {
     binaryPath: claudeBinary,
-    binaryFingerprint: sha256File(claudeBinary),
+    binaryFingerprint: fingerprintSelectedExecutable(claudeBinary),
     version: commandVersion(claudeBinary, repositoryRoot),
     home: path.resolve(input.claudeHome),
   };
