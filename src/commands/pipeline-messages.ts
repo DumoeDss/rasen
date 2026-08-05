@@ -101,6 +101,9 @@ export interface PipelineMessageValues {
   invalidPortfolioStateNote: { path: string; reason: string };
   invalidRunStateNote: { path: string; reason: string };
   noRunStateNote: undefined;
+  noPipelineRunStateNote: undefined;
+  runStateWouldLiveAt: { path: string };
+  frozenKnowledgeOwner: { owner: string };
   nextStage: { stage: string };
   openFindings: { count: number };
   legacySkillHeading: { pipeline: string };
@@ -211,6 +214,9 @@ export const PIPELINE_MESSAGE_KEYS = [
   'invalidPortfolioStateNote',
   'invalidRunStateNote',
   'noRunStateNote',
+  'noPipelineRunStateNote',
+  'runStateWouldLiveAt',
+  'frozenKnowledgeOwner',
   'nextStage',
   'openFindings',
   'legacySkillHeading',

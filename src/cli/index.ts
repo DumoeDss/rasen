@@ -22,6 +22,7 @@ import { registerSchemeCommand } from '../commands/scheme.js';
 import { registerKnowledgeCommand } from '../commands/knowledge.js';
 import { registerSchemaCommand } from '../commands/schema.js';
 import { PipelineCommand } from '../commands/pipeline.js';
+import { registerRetainCommand } from '../commands/retain.js';
 import { PipelineLibraryCommand } from '../commands/pipeline-library.js';
 import { formatPipelineError } from '../commands/pipeline-messages.js';
 import { AgentCommand } from '../commands/agent.js';
@@ -841,6 +842,9 @@ pipelineCmd
     const pipelineLibraryCommand = new PipelineLibraryCommand();
     await pipelineLibraryCommand.delete(name, options);
   });
+
+// Retain command group: prepare a change for a retention run
+registerRetainCommand(program);
 
 // Agent command group: introspect an agent's own runtime state
 const agentCmd = program

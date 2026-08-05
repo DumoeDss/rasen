@@ -204,9 +204,31 @@ Membership comes from `<store>/.rasen-store/projects/<projectId>.yaml`. A projec
 
 Retain/codify freezes a versioned `{planningRoot, owner}` identity in
 `auto-run.json`. Only typed ids are persisted; canonical paths are re-resolved
-and revalidated on resume by passing pipeline resume's absolute `runStateDir`
-to project-scope knowledge commands as `--run-state-dir`. Existing run-state without the field remains
-readable and gains the context conservatively at its first knowledge operation.
+and revalidated on resume by passing the absolute `runStateDir` to project-scope
+knowledge commands as `--run-state-dir`. Existing run-state without the field
+remains readable and gains the context conservatively at its first knowledge
+operation.
+
+**A standalone run gets that identity from `rasen retain prepare <change>`.** A
+completed change that never ran through a classified pipeline has no
+`auto-run.json` at all, so there is no directory for a knowledge command to load
+a frozen identity from. Preparation is the one operation that resolves it: it
+reports the effective retention mode, freezes durable identity when none is
+recorded, reuses a recorded identity of any version exactly as written, and
+returns the `runStateDir` every later knowledge command reads. A retention
+worker never hand-writes durable state or synthesizes an owner — ambiguous,
+missing, renamed, or stale ownership refuses before any candidate is created. A
+change prepared this way holds retention identity while naming no pipeline,
+which `rasen pipeline resume` reports as run-state present with no next stage.
+
+**Only `codify` gets a record.** Freezing identity is a write, and `codify` is
+the only branch that reads it: `report` writes a retrospective and `off` changes
+no learning state. So unless the effective mode — or a mode already frozen in
+run-state for a canonical `retain` stage — is `codify`, preparation resolves
+nothing and writes nothing, reporting `contextSource: "skipped"` and the
+directory durable state *would* live at. A change retained under `report` or
+`off` is left exactly as it was, with no `auto-run.json` claiming a run it never
+had.
 
 ## What a project actually receives
 

@@ -15,18 +15,20 @@ const RETAIN_INSTRUCTIONS = `Policy-driven retention runner. Resolve exactly one
 
 ${STORE_SELECTION_GUIDANCE}
 
-## 1. Freeze or reuse knowledge identity
+## 1. Prepare the run: resolve the mode, freeze identity for codify
 
-- Read the resolved run-state location from \`rasen pipeline resume <change> --json\` (thread the same planning \`--store\`/\`--project\` selector used for the change).
-- If run-state already carries a \`knowledgeContext\` of ANY version, treat its recorded \`planningRoot\` and \`owner\` as authoritative and leave the record exactly as written — it is the authority for a run already in flight, so never rewrite or upgrade it in place. Pass the absolute \`runStateDir\` returned by pipeline resume as \`--run-state-dir "<runStateDir>"\` on every project/store knowledge command so the CLI loads and revalidates BOTH frozen identities. A newly supplied \`--project\`/\`--store\` remains only a consistency check; a conflicting selector is an error and the CLI never falls back to the new cwd.
-- If the field is absent, resolve once before creating any candidate with \`rasen knowledge list --scope project --run-state-dir "<runStateDir>" --json\` (plus an explicit knowledge-owner selector only when zero-selector resolution requests one). Copy ONLY the returned identities into run-state as \`knowledgeContext: { version: 3, planningRoot: <durable ref>, owner: <durable ref> }\`, where a durable ref is \`{type:'store', uid, id?}\` or \`{type:'project', projectId, id?}\` — the permanent identity is the authority and the display name is carried for readability only, so a rename cannot retarget the run and two stores sharing a name stay distinct. Record \`execution\` alongside them when the session has an execution binding, and omit it when it does not. Never persist absolute roots. If a store has no permanent identity yet, the CLI records the older name-keyed shape instead; that record resolves fail-closed on resume (an ambiguous or unknown name stops the run), so run \`rasen store upgrade-identity <store>\` to move it onto a durable identity. Preserve the independently frozen \`retention\` field byte-for-byte. After persisting it, every later project/store knowledge command uses the same \`--run-state-dir\`.
-- If identity is ambiguous or stale, pause before candidate creation. Direct store planning does not imply a member project.
+- Run \`rasen retain prepare <change> --json\` before creating any candidate (thread the same \`--store\`/\`--project\` selector used for the change). This is the ONE Rasen-owned operation that reports the effective retention mode, freezes or reuses this change's durable knowledge identity, and returns the absolute \`runStateDir\`. It works for a change that never ran through a classified pipeline and therefore has no run-state at all.
+- Pass the returned \`runStateDir\` as \`--run-state-dir "<runStateDir>"\` on every project/store knowledge command so the CLI loads and revalidates BOTH frozen identities. A \`--project\`/\`--store\` supplied there remains only a consistency check; a conflicting selector is an error and the CLI never falls back to the new cwd.
+- \`prepare\` keeps its two selectors separate: \`--store\`/\`--project\` pick the PLANNING ROOT (the same selector the change itself uses), and \`--owner-store\`/\`--owner-project\` pick the KNOWLEDGE OWNER independently. Pass an owner selector only when zero-selector resolution requests one; an owner selector that disagrees with an already-recorded identity is refused, never applied.
+- \`contextSource: "recorded"\` means the change already carried a \`knowledgeContext\`: it is authoritative at ANY version, was left exactly as written, and was NOT upgraded in place. \`contextSource: "prepared"\` means preparation froze it now. Either way the reported identity is the one to use — never hand-write run-state, never synthesize an owner, and never derive one from the cwd, a directory basename, candidate evidence, or model output.
+- \`contextSource: "skipped"\` means neither the effective mode nor a mode frozen in run-state is \`codify\`, so preparation resolved and wrote NOTHING — no \`knowledgeContext\`, no run-state file, no change to any learning state. That is the expected outcome under \`off\` and \`report\`, which never read a frozen identity; it is not a failure and there is nothing to repair. The reported \`runStateDir\` is where durable state WOULD live, not a claim that it exists. Preparing again once the effective mode is \`codify\` freezes the identity then.
+- If preparation fails, pause before candidate creation and report the condition it named (ambiguous, missing, renamed, or stale ownership; an owner selector conflicting with a recorded identity; an unreadable run-state). Direct store planning does not imply a member project.
 
-## 2. Use the frozen mode or resolve a standalone mode
+## 2. Use the frozen mode or the reported standalone mode
 
-- When dispatched for any pipeline stage whose canonical ID is \`retain\`, use the retention mode the LEAD froze in run-state before dispatch (\`rasen pipeline resume <change> --json\`). The LEAD is the sole writer of the \`retention\` field; this worker never records or changes it.
+- When dispatched for any pipeline stage whose canonical ID is \`retain\`, use the retention mode the LEAD froze in run-state before dispatch (\`rasen pipeline resume <change> --json\`, or the \`frozenRetention\` field \`rasen retain prepare\` reports). The LEAD is the sole writer of the \`retention\` field; this worker never records or changes it.
 - On resume, always reuse that recorded mode. Never re-read the current profile for a canonical \`retain\` stage; a profile edit mid-run SHALL NOT switch the branch.
-- Only for a standalone invocation outside a canonical \`retain\` stage, read the effective profile retention (\`rasen config get retention\`, or the effective config). It is exactly one of \`off\`, \`report\`, or \`codify\`.
+- Only for a standalone invocation outside a canonical \`retain\` stage, use the \`retention\` value \`rasen retain prepare\` reported. That is the EFFECTIVE mode — the same resolution that decides whether a project-scoped lesson may be applied — so it answers even when no \`retention\` key was ever stored. It is exactly one of \`off\`, \`report\`, or \`codify\`.
 
 ## 3. Dispatch
 
@@ -44,6 +46,6 @@ export function getRetainCommandSkillTemplate(): SkillTemplate {
     instructions: RETAIN_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'rasen', version: '1.0' },
+    metadata: { author: 'rasen', version: '1.2' },
   };
 }

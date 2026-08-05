@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -7,6 +7,8 @@ import {
   parseRunState,
   readRunState,
   writeRunState,
+  createRunStateExclusive,
+  updateRunStateKnowledgeContext,
   completedStages,
   frozenRetentionMode,
   RETAIN_STAGE_ID,
@@ -24,6 +26,66 @@ import {
   RUN_STATE_FILENAME,
   type RunState,
 } from '../../../src/core/pipeline-registry/run-state.js';
+
+/**
+ * design D5 fault injection: the atomic write helper is a temp write followed
+ * by a rename, so tearing is only observable by interrupting one of those two
+ * syscalls. `vi.spyOn(fs, ...)` cannot reach them (an ESM module namespace is
+ * not configurable), hence the partial module mock. Both toggles are off
+ * except inside the crash-safety tests that set them.
+ */
+const { writeFault } = vi.hoisted(() => ({
+  writeFault: { rename: false, tempWrite: false },
+}));
+/**
+ * The read side needs injection for a portability reason rather than an
+ * interruption one: the only fixture that produces a non-`ENOENT` read failure
+ * from real syscalls — a run-state path underneath a regular file — reports
+ * `ENOTDIR` on POSIX but `ENOENT` on Windows, which is exactly the code the
+ * seam is required to treat as a genuine absence. Injecting the errno tests the
+ * discrimination itself on every platform.
+ */
+const { readFault } = vi.hoisted(() => ({
+  readFault: { eacces: false },
+}));
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof fs>();
+  // The literals mirror the helper: `auto-run.json` and its sibling temp
+  // `.auto-run.json.<pid>.<ts>.tmp`. They are spelled out rather than read from
+  // the module under test, whose bindings are still uninitialized when this
+  // factory runs during that module's own load.
+  const runStateFile = 'auto-run.json';
+  const runStateTemp = /[\\/]\.auto-run\.json\.[^\\/]+\.tmp$/;
+  const errno = (message: string, code: string): NodeJS.ErrnoException => {
+    const error = new Error(message) as NodeJS.ErrnoException;
+    error.code = code;
+    return error;
+  };
+  return {
+    ...actual,
+    writeFileSync: ((target, data, options) => {
+      if (writeFault.tempWrite && runStateTemp.test(String(target))) {
+        // ENOSPC/EACCES after the file exists: the partial temp is on disk and
+        // only then does the syscall fail.
+        actual.writeFileSync(target, data, options);
+        throw errno('ENOSPC: no space left on device', 'ENOSPC');
+      }
+      return actual.writeFileSync(target, data, options);
+    }) as typeof fs.writeFileSync,
+    renameSync: ((oldPath, newPath) => {
+      if (writeFault.rename && String(newPath).endsWith(runStateFile)) {
+        throw errno('EIO: rename interrupted', 'EIO');
+      }
+      return actual.renameSync(oldPath, newPath);
+    }) as typeof fs.renameSync,
+    readFileSync: ((target, options) => {
+      if (readFault.eacces && String(target).endsWith(runStateFile)) {
+        throw errno('EACCES: permission denied', 'EACCES');
+      }
+      return actual.readFileSync(target, options);
+    }) as typeof fs.readFileSync,
+  };
+});
 
 describe('pipeline run-state', () => {
   let dir: string;
@@ -111,8 +173,17 @@ describe('pipeline run-state', () => {
       expect(() => parseRunState('{ not json }')).toThrow();
     });
 
-    it('throws RunStateValidationError on schema mismatch (missing pipeline)', () => {
-      expect(() => parseRunState('{"completed":["propose"]}')).toThrow(RunStateValidationError);
+    // A run may hold frozen retention identity without a pipeline (design D1),
+    // so an absent `pipeline` is no longer a schema violation. A NON-STRING one
+    // still is: the field is optional, never free-form.
+    it('parses a run-state that names no pipeline', () => {
+      const state = parseRunState('{"completed":["propose"]}');
+      expect(state.pipeline).toBeUndefined();
+      expect(state.completed).toEqual(['propose']);
+    });
+
+    it('throws RunStateValidationError on schema mismatch (non-string pipeline)', () => {
+      expect(() => parseRunState('{"pipeline":42}')).toThrow(RunStateValidationError);
     });
 
     it('throws on an invalid stage status', () => {
@@ -309,6 +380,253 @@ describe('pipeline run-state', () => {
       const nested = path.join(dir, 'a', 'b');
       writeRunState(nested, { pipeline: 'small-feature' });
       expect(fs.existsSync(runStatePath(nested))).toBe(true);
+    });
+
+    // design D1: retention identity without a pipeline round-trips, and the
+    // written record names no pipeline rather than an empty string.
+    it('round-trips a pipeline-less state carrying frozen knowledge identity', () => {
+      const knowledgeContext = {
+        version: 3 as const,
+        planningRoot: { type: 'project' as const, projectId: 'p-1' },
+        owner: { type: 'project' as const, projectId: 'p-1' },
+      };
+      writeRunState(dir, { knowledgeContext });
+      const raw = JSON.parse(fs.readFileSync(runStatePath(dir), 'utf-8'));
+      expect(raw.pipeline).toBeUndefined();
+      expect(readRunState(dir)?.knowledgeContext).toEqual(knowledgeContext);
+    });
+
+    // design D5: the write is a temp file plus a rename, so a reader never sees
+    // a torn document. The observable contract is that no temp file survives a
+    // completed write.
+    it('leaves no temporary file behind after a successful write', () => {
+      writeRunState(dir, { pipeline: 'bug-fix' });
+      writeRunState(dir, { pipeline: 'small-feature' });
+      const leftovers = fs.readdirSync(dir).filter((entry) => entry.endsWith('.tmp'));
+      expect(leftovers).toEqual([]);
+      expect(readRunState(dir)?.pipeline).toBe('small-feature');
+    });
+  });
+
+  // design D4: preparation injects identity into an EXISTING record without
+  // rewriting anything else in it, and never overwrites a recorded context.
+  describe('updateRunStateKnowledgeContext', () => {
+    const context = {
+      version: 3 as const,
+      planningRoot: { type: 'project' as const, projectId: 'p-1' },
+      owner: { type: 'project' as const, projectId: 'p-1' },
+    };
+
+    it('injects only knowledgeContext, preserving every other recorded key', () => {
+      const recorded = {
+        pipeline: 'full-feature',
+        stages: { apply: { status: 'done', worker: { role: 'implementer', runtime: 'codex-host-fallback', transcript: null } } },
+        leadNote: 'hand-written by the LEAD',
+      };
+      fs.writeFileSync(runStatePath(dir), `${JSON.stringify(recorded, null, 2)}\n`, 'utf-8');
+
+      const result = updateRunStateKnowledgeContext(dir, context);
+      expect(result.kind).toBe('written');
+
+      const raw = JSON.parse(fs.readFileSync(runStatePath(dir), 'utf-8'));
+      expect(raw.knowledgeContext).toEqual(context);
+      // The read boundary normalizes a non-enum runtime into `runtimeRaw` and
+      // drops a null transcript. Writing that normalization back would rewrite
+      // another writer's record, so the raw values must survive verbatim.
+      expect(raw.stages.apply.worker.runtime).toBe('codex-host-fallback');
+      expect(raw.stages.apply.worker.transcript).toBeNull();
+      expect(raw.stages.apply.worker.runtimeRaw).toBeUndefined();
+      expect(raw.leadNote).toBe('hand-written by the LEAD');
+      expect(raw.pipeline).toBe('full-feature');
+    });
+
+    it('refuses when a context is already recorded, reporting it unchanged', () => {
+      const existing = {
+        version: 1 as const,
+        planningRoot: { type: 'store' as const, id: 'team' },
+        owner: { type: 'project' as const, id: 'web' },
+      };
+      const before = `${JSON.stringify({ pipeline: 'bug-fix', knowledgeContext: existing }, null, 2)}\n`;
+      fs.writeFileSync(runStatePath(dir), before, 'utf-8');
+
+      const result = updateRunStateKnowledgeContext(dir, context);
+      expect(result).toEqual({ kind: 'already-recorded', context: existing });
+      // Byte-identical: a v1 record is never upgraded in place.
+      expect(fs.readFileSync(runStatePath(dir), 'utf-8')).toBe(before);
+    });
+
+    it('reports an absent file rather than creating one', () => {
+      const empty = path.join(dir, 'no-state-here');
+      fs.mkdirSync(empty, { recursive: true });
+      expect(updateRunStateKnowledgeContext(empty, context)).toEqual({ kind: 'absent' });
+      expect(fs.existsSync(runStatePath(empty))).toBe(false);
+    });
+
+    it('refuses an unparseable record instead of overwriting it', () => {
+      const before = '{ not json';
+      fs.writeFileSync(runStatePath(dir), before, 'utf-8');
+      const result = updateRunStateKnowledgeContext(dir, context);
+      expect(result.kind).toBe('invalid');
+      expect(fs.readFileSync(runStatePath(dir), 'utf-8')).toBe(before);
+    });
+
+    it('refuses when the merged record would not validate', () => {
+      const before = `${JSON.stringify({ pipeline: 42 })}\n`;
+      fs.writeFileSync(runStatePath(dir), before, 'utf-8');
+      const result = updateRunStateKnowledgeContext(dir, context);
+      expect(result.kind).toBe('invalid');
+      expect(fs.readFileSync(runStatePath(dir), 'utf-8')).toBe(before);
+    });
+
+    // A hand-written `null` or a truncated ref parses as JSON yet fails the
+    // strict frozen-identity union. This arm must refuse WITHOUT writing:
+    // replacing it would clobber whatever identity the LEAD was recording.
+    it('refuses a recorded knowledgeContext that is not a valid frozen identity', () => {
+      const before = `${JSON.stringify({ pipeline: 'bug-fix', knowledgeContext: { version: 9 } }, null, 2)}\n`;
+      fs.writeFileSync(runStatePath(dir), before, 'utf-8');
+
+      const result = updateRunStateKnowledgeContext(dir, context);
+      expect(result.kind).toBe('invalid');
+      expect(fs.readFileSync(runStatePath(dir), 'utf-8')).toBe(before);
+    });
+
+    it('refuses a recorded knowledgeContext of null rather than filling it in', () => {
+      const before = `${JSON.stringify({ pipeline: 'bug-fix', knowledgeContext: null }, null, 2)}\n`;
+      fs.writeFileSync(runStatePath(dir), before, 'utf-8');
+
+      const result = updateRunStateKnowledgeContext(dir, context);
+      expect(result.kind).toBe('invalid');
+      expect(fs.readFileSync(runStatePath(dir), 'utf-8')).toBe(before);
+    });
+    it('refuses a record whose JSON root is not an object', () => {
+      // The only guard between an array or scalar root and a spread that would
+      // produce a document with no recognizable shape.
+      for (const root of ['[]', '42', '"x"', 'null']) {
+        const before = `${root}\n`;
+        fs.writeFileSync(runStatePath(dir), before, 'utf-8');
+        expect(updateRunStateKnowledgeContext(dir, context).kind).toBe('invalid');
+        expect(fs.readFileSync(runStatePath(dir), 'utf-8')).toBe(before);
+      }
+    });
+
+    // Only a genuine absence is `absent`. A caller renders every other refusal
+    // kind as its own diagnostic, so an unreadable file reported as "no record
+    // here" would surface to the user as a false `no auto-run.json found`.
+    it('propagates a read failure instead of reporting the record absent', () => {
+      const before = `${JSON.stringify({ pipeline: 'full-feature' }, null, 2)}\n`;
+      fs.writeFileSync(runStatePath(dir), before, 'utf-8');
+      readFault.eacces = true;
+      try {
+        expect(() => updateRunStateKnowledgeContext(dir, context)).toThrow(/EACCES/);
+      } finally {
+        readFault.eacces = false;
+      }
+      // The record the failed read never got to see is still exactly as written.
+      expect(fs.readFileSync(runStatePath(dir), 'utf-8')).toBe(before);
+    });
+  });
+
+  // A caller that decided "no run-state here" some time ago cannot publish with
+  // a replacing rename: retention preparation resolves identity asynchronously
+  // in between, and a LEAD's record seeded meanwhile carries the pipeline name
+  // and every stage record.
+  describe('createRunStateExclusive', () => {
+    const context = {
+      version: 3 as const,
+      planningRoot: { type: 'project' as const, projectId: 'p-1' },
+      owner: { type: 'project' as const, projectId: 'p-1' },
+    };
+
+    it('creates the record when the name is free, leaving no temporary behind', () => {
+      const fresh = path.join(dir, 'fresh');
+      const result = createRunStateExclusive(fresh, { knowledgeContext: context });
+      expect(result).toEqual({ kind: 'created', path: runStatePath(fresh) });
+      expect(readRunState(fresh)?.knowledgeContext).toEqual(context);
+      expect(readRunState(fresh)?.pipeline).toBeUndefined();
+      expect(fs.readdirSync(fresh).filter((entry) => entry.endsWith('.tmp'))).toEqual([]);
+    });
+
+    it('reports an occupied name without touching a single byte of it', () => {
+      const occupied = `${JSON.stringify({ pipeline: 'full-feature', rounds: 3 }, null, 2)}\n`;
+      fs.writeFileSync(runStatePath(dir), occupied, 'utf-8');
+
+      const result = createRunStateExclusive(dir, { knowledgeContext: context });
+      expect(result).toEqual({ kind: 'exists', path: runStatePath(dir) });
+      expect(fs.readFileSync(runStatePath(dir), 'utf-8')).toBe(occupied);
+      expect(fs.readdirSync(dir).filter((entry) => entry.endsWith('.tmp'))).toEqual([]);
+    });
+
+    it('validates before it publishes', () => {
+      const fresh = path.join(dir, 'invalid-seed');
+      expect(() =>
+        createRunStateExclusive(fresh, { pipeline: 42 } as never)
+      ).toThrow();
+      expect(fs.existsSync(runStatePath(fresh))).toBe(false);
+    });
+  });
+
+
+  // spec: an interrupted write leaves EITHER the previous complete content or
+  // the new complete content — never a torn file. A successful-write test
+  // cannot show that; only interrupting the rename can, so these drive the
+  // failure through both writers that share the atomic helper.
+  describe('interrupted writes (design D5)', () => {
+    const context = {
+      version: 3 as const,
+      planningRoot: { type: 'project' as const, projectId: 'p-1' },
+      owner: { type: 'project' as const, projectId: 'p-1' },
+    };
+    const tempLeftovers = (): string[] =>
+      fs.readdirSync(dir).filter((entry) => entry.endsWith('.tmp'));
+
+    afterEach(() => {
+      writeFault.rename = false;
+      writeFault.tempWrite = false;
+    });
+
+    it('writeRunState: an interrupted rename leaves the previous complete record', () => {
+      writeRunState(dir, { pipeline: 'bug-fix', tier: 'B' });
+      const before = fs.readFileSync(runStatePath(dir), 'utf-8');
+
+      writeFault.rename = true;
+      expect(() => writeRunState(dir, { pipeline: 'small-feature', tier: 'A' })).toThrow(/EIO/);
+
+      // Byte-identical to the previous write: not the new content, and not a
+      // truncated prefix of it.
+      expect(fs.readFileSync(runStatePath(dir), 'utf-8')).toBe(before);
+      expect(readRunState(dir)?.pipeline).toBe('bug-fix');
+      expect(tempLeftovers()).toEqual([]);
+    });
+
+    it('updateRunStateKnowledgeContext: an interrupted rename leaves the recorded document', () => {
+      const before = `${JSON.stringify(
+        { pipeline: 'full-feature', leadNote: 'hand-written by the LEAD' },
+        null,
+        2
+      )}\n`;
+      fs.writeFileSync(runStatePath(dir), before, 'utf-8');
+
+      writeFault.rename = true;
+      expect(() => updateRunStateKnowledgeContext(dir, context)).toThrow(/EIO/);
+
+      expect(fs.readFileSync(runStatePath(dir), 'utf-8')).toBe(before);
+      expect(readRunState(dir)?.knowledgeContext).toBeUndefined();
+      expect(tempLeftovers()).toEqual([]);
+    });
+
+    // A temp write that fails partway (ENOSPC, or EACCES after the file was
+    // created) must clean up too: `classifyEphemera` preserves any
+    // unrecognized top-level file, so a stray temp would permanently block the
+    // archive cleaner from clearing the ephemera directory.
+    it('a failed temp write leaves neither a torn record nor a leftover temp file', () => {
+      writeRunState(dir, { pipeline: 'bug-fix' });
+      const before = fs.readFileSync(runStatePath(dir), 'utf-8');
+
+      writeFault.tempWrite = true;
+      expect(() => writeRunState(dir, { pipeline: 'small-feature' })).toThrow(/ENOSPC/);
+
+      expect(fs.readFileSync(runStatePath(dir), 'utf-8')).toBe(before);
+      expect(tempLeftovers()).toEqual([]);
     });
   });
 

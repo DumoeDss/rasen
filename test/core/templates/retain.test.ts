@@ -39,6 +39,22 @@ describe('rasen-retain router and sidecars', () => {
     expect(body).not.toContain('If the full-feature pipeline recorded');
   });
 
+  it('resolves standalone retention through `rasen retain prepare`, not the stored-value lookup', () => {
+    const body = getRetainCommandSkillTemplate().instructions;
+    const codify = fs.readFileSync(
+      path.join(repoRoot, 'skills', 'workflows', 'rasen-retain', 'codify.md'),
+      'utf-8',
+    );
+    // One Rasen-owned call reports the effective mode AND the frozen knowledge
+    // identity, so a change that never ran a classified pipeline still resolves.
+    expect(body).toContain('rasen retain prepare');
+    expect(codify).toContain('rasen retain prepare');
+    // The retired lookup reported the STORED value, which is silent when no
+    // `retention` key was ever written; no surface may depend on it again.
+    expect(body).not.toContain('config get retention');
+    expect(codify).not.toContain('config get retention');
+  });
+
   it('ships the report and codify sidecars in the published skills tree', () => {
     const sidecarDir = path.join(repoRoot, 'skills', 'workflows', 'rasen-retain');
     expect(fs.existsSync(path.join(sidecarDir, 'report.md'))).toBe(true);

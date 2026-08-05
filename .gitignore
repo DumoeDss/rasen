@@ -161,6 +161,11 @@ opencode.json
 # Bob
 .bob/
 
+# Per-checkout state, not shared content: the workflow-artifact ledger records
+# this checkout's installed user workflows and the absolute path each was
+# installed from (src/core/workflow-artifact-ledger.ts).
+/rasen/.workflow-artifacts.json
+
 openspec/changes/**/auto-run.json
 openspec/changes/**/portfolio-run.json
 

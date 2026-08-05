@@ -174,6 +174,36 @@ describe('TaskDetailPage', () => {
     expect(container.querySelector('[data-testid="task-detail-live"]')).not.toBeNull();
   });
 
+  // A change prepared by `rasen retain prepare` carries retention identity and
+  // names no pipeline. `formatMessage` leaves a placeholder intact when its
+  // value is undefined, so an unguarded `run_no_stages` note would render the
+  // literal template token `{pipeline}` to the user.
+  it('reports a pipeline-less run-state without leaking a template placeholder', async () => {
+    vi.mocked(client.getTaskDetail).mockResolvedValue(singleTaskDetailFixture);
+    vi.mocked(client.listSessions).mockResolvedValue({
+      sessions: [
+        {
+          ...liveSession('fix-login'),
+          runState: {
+            name: 'fix-login',
+            kind: 'ok',
+            // Present, but naming no pipeline and reporting no stages.
+            autoRun: { kind: 'ok', state: {} },
+            portfolio: { kind: 'absent' },
+            goalRun: { kind: 'absent' },
+          },
+        },
+      ],
+    });
+    await mountAt(container, '/p/proj_x/task/fix-login');
+
+    const note = container.querySelector('[data-testid="session-run-no-stages"]');
+    expect(note).not.toBeNull();
+    expect(note!.textContent).not.toContain('{pipeline}');
+    expect(note!.textContent).not.toContain('undefined');
+    expect(note!.textContent).toContain('No pipeline');
+  });
+
   it('Launch run submits the page space and the single Task change as the linked change', async () => {
     vi.mocked(client.getTaskDetail).mockResolvedValue(singleTaskDetailFixture);
     vi.mocked(client.launchSession).mockResolvedValue({

@@ -1307,6 +1307,25 @@ const COMMANDS: readonly CommandDefinition[] = [
     ],
   },
   {
+    name: 'retain',
+    flags: [],
+    subcommands: [
+      {
+        name: 'prepare',
+        acceptsPositional: true,
+        positionalType: 'change-id',
+        positionals: [{ name: 'change', type: 'change-id' }],
+        flags: [
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+          { name: 'owner-store', takesValue: true },
+          { name: 'owner-project', takesValue: true },
+        ],
+      },
+    ],
+  },
+  {
     name: 'scheme',
     flags: [],
     subcommands: [
