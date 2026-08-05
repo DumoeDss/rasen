@@ -12,6 +12,7 @@ import { canonicalJson } from './identity.js';
 import { projectReviewCycleProgress } from './review-cycle-runtime.js';
 import { projectGoalCycleProgress, type GoalCycleProgress } from './goal-cycle-runtime.js';
 import { projectCompositeBodyProgress, compositeBodyStagePath } from './composite-runtime.js';
+import { projectTaskLoopSection } from './task-loop.js';
 
 function actionView(committed: CommittedAction) {
   const action = committed.action;
@@ -217,6 +218,9 @@ function buildSections(
     if (goalLoop !== undefined && goalLoop.body.kind === 'goal-cycle') {
       const progress = projectGoalCycleProgress(plan, goalLoop, record);
       sections.push(buildGoalSection(goalLoop, progress));
+      if (record.pipeline === 'task-loop') {
+        sections.push(projectTaskLoopSection(plan, record, goalLoop, progress));
+      }
     }
     // Emit composite drill-down for composite-body loops or inlined CompositeRef nodes.
     const compositeSection = buildCompositeSection(plan, record);

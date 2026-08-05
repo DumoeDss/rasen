@@ -406,6 +406,9 @@
       },
       "small-feature": {
         "description": "Lightweight feature pipeline: propose, apply, a single standard verification with a review cycle, then ship and archive."
+      },
+      "task-loop": {
+        "description": "Explicit-only, spec-free task loop: a builder improves real artifacts, a fresh critic checks frozen criteria and raw evidence each round, then only a satisfied run may ship and archive."
       }
     },
     "messages": {
@@ -559,6 +562,18 @@
       "engine_disabled_by_config": "The reconciler engine is disabled by configuration.",
       "engine_unsupported": "The pipeline does not support the selected engine.",
       "engine_owner_conflict": "The change is claimed by more than one engine.",
+      "launch_request_conflict": "The existing run was launched with different frozen inputs; it was not modified.",
+      "task_loop_input_missing": "Task Loop requires a frozen input contract before work can begin.",
+      "task_loop_input_invalid": "The Task Loop input contract is invalid.",
+      "task_loop_bar_unprovable": "The Task Loop quality bar is not mechanically provable from the declared evidence.",
+      "task_loop_critic_reused": "Task Loop requires a fresh critic for every judgment round.",
+      "task_loop_bar_mismatch": "The critic judgment does not cover the exact frozen quality bar.",
+      "task_loop_evidence_missing": "The critic judgment is missing raw evidence for a declared artifact target.",
+      "task_loop_false_satisfaction": "The critic reported satisfaction while a frozen criterion still failed.",
+      "task_loop_reconciler_required": "Task Loop requires the reconciler engine and cannot fall back to legacy execution.",
+      "task_loop_blocked": "Task Loop stopped because the builder or critic was blocked or failed.",
+      "task_loop_exhausted": "Task Loop exhausted its round budget without satisfying the frozen quality bar.",
+      "task_loop_delivery_guard": "Task Loop cannot ship or archive until the canonical run is mechanically satisfied.",
       "pipeline_command_error": "Pipeline operation failed ({code})."
     }
   },

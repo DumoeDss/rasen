@@ -110,6 +110,7 @@ export interface WirePipelineStage {
   /** The effective gate after the mask: `true` pauses, `false` auto-approves. */
   effectiveGate: WireEffectiveValue<boolean>;
   effectiveModel: WireEffectiveValue<string | null>;
+  effectiveEffort: WireEffectiveValue<string | null>;
   effectiveHandoff: WireEffectiveThreshold;
   effectiveRuntime: WireEffectiveValue<DispatchRuntime>;
   /** Concrete route selected for the server's available host context. */

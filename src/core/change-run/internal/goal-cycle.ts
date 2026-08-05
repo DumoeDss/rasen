@@ -337,7 +337,8 @@ function parseResearchJudgeResult(value: JsonValue): ResearchJudgeResult {
 export function decodeGoalCycleResult(
   phase: GoalCyclePhase,
   variant: GoalCycleVariant,
-  value: JsonValue
+  value: JsonValue,
+  mode: 'strict' | 'task-loop' = 'strict'
 ): GoalCycleDomainResult {
   if (phase === 'work') {
     if (variant === 'research') {
@@ -350,6 +351,35 @@ export function decodeGoalCycleResult(
     case 'measure':
       return parseMeasureJudgeResult(value);
     case 'evaluate':
+      if (
+        mode === 'task-loop' &&
+        value !== null &&
+        typeof value === 'object' &&
+        !Array.isArray(value)
+      ) {
+        const taskResult = value as Readonly<Record<string, JsonValue>>;
+        const criteria = Array.isArray(taskResult.criteria)
+          ? taskResult.criteria.map((criterion) => {
+              if (
+                criterion === null ||
+                typeof criterion !== 'object' ||
+                Array.isArray(criterion)
+              ) return criterion;
+              const item = criterion as Readonly<Record<string, JsonValue>>;
+              return {
+                id: item.id,
+                satisfied: item.satisfied,
+                evidence: item.evidence,
+              };
+            })
+          : taskResult.criteria;
+        return parseEvaluateJudgeResult({
+          contract: taskResult.contract,
+          satisfied: taskResult.satisfied,
+          gaps: taskResult.gaps,
+          criteria,
+        } as JsonValue);
+      }
       return parseEvaluateJudgeResult(value);
     case 'research':
       return parseResearchJudgeResult(value);
@@ -463,7 +493,8 @@ function scoreImproved(
 export function applyGoalCycleEvent(
   state: GoalCycleState,
   event: GoalCycleEvent,
-  maxIterations: number
+  maxIterations: number,
+  mode: 'strict' | 'task-loop' = 'strict'
 ): GoalCycleState {
   if (!Number.isSafeInteger(maxIterations) || maxIterations < 1 || maxIterations > 100) {
     throw new GoalCycleDomainError(
@@ -472,7 +503,7 @@ export function applyGoalCycleEvent(
     );
   }
   assertEventEnvelope(state, event);
-  const result = decodeGoalCycleResult(event.phase, state.variant, event.result);
+  const result = decodeGoalCycleResult(event.phase, state.variant, event.result, mode);
   const eventCount = state.eventCount + 1;
 
   if (event.phase === 'work') {
@@ -596,10 +627,11 @@ export function initialGoalCycleState(
 export function reduceGoalCycleEvents(
   events: readonly GoalCycleEvent[],
   maxIterations: number,
-  variant: GoalCycleVariant
+  variant: GoalCycleVariant,
+  mode: 'strict' | 'task-loop' = 'strict'
 ): GoalCycleState {
   return events.reduce(
-    (state, event) => applyGoalCycleEvent(state, event, maxIterations),
+    (state, event) => applyGoalCycleEvent(state, event, maxIterations, mode),
     initialGoalCycleState(variant)
   );
 }

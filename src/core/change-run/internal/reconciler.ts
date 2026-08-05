@@ -29,6 +29,7 @@ import {
   type CanonicalWait,
 } from './waits.js';
 import { deriveInvocationId } from './identity.js';
+import { taskLoopActionInput } from './task-loop.js';
 
 export type ReconcilerAdmissionKind = 'agent' | 'command' | 'host';
 
@@ -53,6 +54,7 @@ export type ReconcilerNextAction =
       input?: Readonly<{
         reviewCycle?: Readonly<{ loopPath: string; round: number; phase: string; openFindingIds: readonly string[] }>;
         goalCycle?: Readonly<{ loopPath: string; round: number; phase: string }>;
+        taskLoop?: JsonValue;
         fanOutCondition?: Readonly<{ fanOutPath: string }>;
       }>;
       /**
@@ -315,7 +317,25 @@ export function reconcile(
           });
           break;
         case 'waiting':
+          if (
+            record.pipeline === 'task-loop' &&
+            progress.action.result?.status === 'blocked'
+          ) {
+            actions.push({
+              kind: 'escalate',
+              code: 'task_loop_blocked',
+              reason: 'A task-loop phase reported a blocking condition.',
+            });
+          }
+          break;
         case 'failed':
+          if (record.pipeline === 'task-loop') {
+            actions.push({
+              kind: 'escalate',
+              code: 'task_loop_blocked',
+              reason: 'A task-loop phase failed before satisfaction.',
+            });
+          }
           break;
       }
     } else {
@@ -610,6 +630,21 @@ export function reconcile(
           },
         });
       } else if (boundedLoopOriginal.bodyKind === 'goal-cycle') {
+        const goalInput = record.pipeline === 'task-loop'
+          ? taskLoopActionInput({
+              plan,
+              record,
+              loop: boundedLoopOriginal.loop,
+              round: boundedLoopOriginal.descriptor.round,
+              phase: boundedLoopOriginal.descriptor.phase as 'work' | 'judge',
+            })
+          : {
+              goalCycle: {
+                loopPath: boundedLoopOriginal.loopPath,
+                round: boundedLoopOriginal.descriptor.round,
+                phase: boundedLoopOriginal.descriptor.phase,
+              },
+            };
         actions.push({
           kind: 'admit',
           nodeId: candidate.nodeId,
@@ -617,13 +652,7 @@ export function reconcile(
           admissionKind: candidate.admissionKind,
           access: candidate.access,
           profilePath: boundedLoopOriginal.descriptor.profilePath,
-          input: {
-            goalCycle: {
-              loopPath: boundedLoopOriginal.loopPath,
-              round: boundedLoopOriginal.descriptor.round,
-              phase: boundedLoopOriginal.descriptor.phase,
-            },
-          },
+          input: goalInput,
         });
       } else {
         // Composite-body admit: carry the profile path and composite payload.

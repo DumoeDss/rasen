@@ -13,6 +13,7 @@ import {
   resolveConfigStoreLayer,
   resolveHandoffThresholdLayers,
   resolveModelConfigLayers,
+  resolveEffortConfigLayers,
   resolveThresholdBindingLayers,
   type ResolveEffectiveConfigOptions,
   type StoreConfigLayer,
@@ -242,6 +243,7 @@ export function pipelineResolutionBundle(context: ConfigContext): PipelineResolu
         basePolicy,
         configLayers: resolveHandoffThresholdLayers(undefined, storeRoot),
         modelLayers: resolveModelConfigLayers(undefined, storeRoot),
+        effortLayers: resolveEffortConfigLayers(undefined, storeRoot),
         thresholdContext: {
           bindings: resolveThresholdBindingLayers(undefined, storeRoot),
           schemes: loadThresholdSchemeSnapshot(),
@@ -263,6 +265,7 @@ export function pipelineResolutionBundle(context: ConfigContext): PipelineResolu
       basePolicy,
       configLayers: resolveHandoffThresholdLayers(root, storeRoot),
       modelLayers: resolveModelConfigLayers(root, storeRoot),
+      effortLayers: resolveEffortConfigLayers(root, storeRoot),
       thresholdContext: {
         bindings: resolveThresholdBindingLayers(root, storeRoot),
         schemes: loadThresholdSchemeSnapshot(),

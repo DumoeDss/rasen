@@ -321,6 +321,48 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
       }
     });
 
+    it('reports configured and absent effective effort identically in inventory and detail', async () => {
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        [
+          'schema: spec-driven',
+          'pipelines:',
+          '  bug-fix:',
+          '    efforts:',
+          '      propose: max',
+          '',
+        ].join('\n')
+      );
+      const h = await startServer();
+
+      const inventoryRes = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/pipelines',
+        headers: authed(),
+      });
+      const detailRes = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/pipelines/bug-fix',
+        headers: authed(),
+      });
+
+      expect(inventoryRes.status).toBe(200);
+      expect(detailRes.status).toBe(200);
+      const inventory = inventoryRes.json() as any;
+      const inventoryPipeline = inventory.pipelines.find((pipeline: any) => pipeline.name === 'bug-fix');
+      const detailPipeline = (detailRes.json() as any).pipeline;
+      for (const pipeline of [inventoryPipeline, detailPipeline]) {
+        expect(pipeline.stages.find((stage: any) => stage.id === 'propose').effectiveEffort).toEqual({
+          value: 'max',
+          source: 'stage-override-project',
+        });
+        expect(pipeline.stages.find((stage: any) => stage.id === 'apply').effectiveEffort).toEqual({
+          value: null,
+          source: 'default',
+        });
+      }
+    });
+
     it('reflects the gate mask in effective gates: off base + per-stage on pierces it', async () => {
       fs.writeFileSync(
         path.join(projectRoot, 'rasen', 'config.yaml'),

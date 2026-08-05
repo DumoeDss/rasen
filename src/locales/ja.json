@@ -406,6 +406,9 @@
       },
       "small-feature": {
         "description": "軽量な機能パイプラインです。提案、実装、レビューサイクルを伴う標準検証、リリース、アーカイブの順に進みます。"
+      },
+      "task-loop": {
+        "description": "明示選択専用で spec を生成しないタスクループです。ビルダーが実成果物を改善し、各ラウンドで新しい批評者が固定基準と生の証拠を検査します。満足と判定された Run だけが出荷・アーカイブできます。"
       }
     },
     "messages": {
@@ -559,6 +562,18 @@
       "engine_disabled_by_config": "設定によりリコンサイラエンジンが無効化されています。",
       "engine_unsupported": "このパイプラインは選択されたエンジンをサポートしていません。",
       "engine_owner_conflict": "このチェンジは複数のエンジンから所有を主張されています。",
+      "launch_request_conflict": "既存の Run は異なる固定入力で開始されています。既存 Run は変更されませんでした。",
+      "task_loop_input_missing": "Task Loop を開始する前に固定入力契約が必要です。",
+      "task_loop_input_invalid": "Task Loop の入力契約が無効です。",
+      "task_loop_bar_unprovable": "宣言された証拠から Task Loop の品質基準を機械的に検証できません。",
+      "task_loop_critic_reused": "Task Loop の各判定ラウンドには新しい批評者が必要です。",
+      "task_loop_bar_mismatch": "批評者の判定が固定された品質基準を正確に網羅していません。",
+      "task_loop_evidence_missing": "批評者の判定に、宣言された成果物対象の生の証拠がありません。",
+      "task_loop_false_satisfaction": "固定基準に未達項目があるのに、満足と誤判定されました。",
+      "task_loop_reconciler_required": "Task Loop にはリコンサイラエンジンが必要で、レガシー実行へフォールバックできません。",
+      "task_loop_blocked": "ビルダーまたは批評者がブロックまたは失敗したため、Task Loop は停止しました。",
+      "task_loop_exhausted": "Task Loop はラウンド上限に達しましたが、固定された品質基準を満たせませんでした。",
+      "task_loop_delivery_guard": "正規 Run が機械的に満足と判定されるまで、Task Loop は出荷もアーカイブもできません。",
       "pipeline_command_error": "パイプライン操作に失敗しました（{code}）。"
     }
   },
