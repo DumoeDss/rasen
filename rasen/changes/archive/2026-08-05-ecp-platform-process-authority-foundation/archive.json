@@ -1,0 +1,144 @@
+{
+  "change": "ecp-platform-process-authority-foundation",
+  "archivedAt": "2026-08-05T00:50:19.948Z",
+  "codeCommit": "222eac509f5fb40ecce182c9eb7533ed754f310d",
+  "planningBranch": "wip/ecp-shared-bounded-loop-lifecycle-resume",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/code-spec-review-round-1.md",
+      "sha256": "5ef507363bcdc6130c8543c25ac4d585b5d3c19bee5b0ee7f7fb247c78b1a9f0"
+    },
+    {
+      "path": "evidence/code-spec-review-round-2.md",
+      "sha256": "434f2e80a67e95a825c0b2c425110b8bee2e8c4aa773c9ca2e858f44191e7068"
+    },
+    {
+      "path": "evidence/code-spec-review-round-3.md",
+      "sha256": "960605438265098a2e649d5506ee93a96d1a3f5eb5426a70d228fa38623826a2"
+    },
+    {
+      "path": "evidence/cso-report-round-1.md",
+      "sha256": "de01613e7626b2a37f6d665d3c4d1743e4bd387ef7ec64ead990fca6ed663b4c"
+    },
+    {
+      "path": "evidence/cso-report-round-2.md",
+      "sha256": "1369000bfa29f87a3b63fa1a3c97f0c7df6d081c4205a352fe423d513e0dce02"
+    },
+    {
+      "path": "evidence/cso-report-round-3.md",
+      "sha256": "b92cf41700e009c77ed7c070d394aa6b8bcaaeb238220723bdcf476bc55b641e"
+    },
+    {
+      "path": "evidence/final-verification-report.md",
+      "sha256": "a4d9df1d26e79c354eaa0de867172ecb764fde2aefc8adf7949e85405aebdefb"
+    },
+    {
+      "path": "evidence/final-verification-supplement.md",
+      "sha256": "a43fb371635417c06d06ce1ce7b938826cd04115eea24b45dc24fe0d54397bde"
+    },
+    {
+      "path": "evidence/fix-verify-round-1.md",
+      "sha256": "db681f7b163eb097f94f60b2f4d053d4c2cba5fcd49ca2d6260b96cdb1089204"
+    },
+    {
+      "path": "evidence/green-progress.md",
+      "sha256": "beb83e1d1e779d63b706a0efd3bddf973f295649c1d6d8a68cb6abef865f101a"
+    },
+    {
+      "path": "evidence/implementation-baseline.md",
+      "sha256": "4e6a847566207217b285b10a370541e47a8905f2dfd5684bcdd242350daee585"
+    },
+    {
+      "path": "evidence/implementation-progress-2.md",
+      "sha256": "b5250a568961c72fd7e8c842a3014a2bb44d89153ed05334ffe8632a64774beb"
+    },
+    {
+      "path": "evidence/implementation-report.md",
+      "sha256": "b0fb883a23e0aab7876629f9c1df7a27ccc526575a17f6bb552d21495a3cae87"
+    },
+    {
+      "path": "evidence/parent-terminal-return.md",
+      "sha256": "069bc19ca0b0c298a575b5051327efd5ee598477bb4942c719ecf962a7fc50ac"
+    },
+    {
+      "path": "evidence/red-baseline.md",
+      "sha256": "f47bff61fa4412f1ad33591b4504cb3d20c7e1813a7b606b48b27fa62eb139a3"
+    },
+    {
+      "path": "evidence/review-fix-round-1.md",
+      "sha256": "e822d9e6c1ba3a3aa053c02db1e737359a0a0a719d6f03651ed083c596b309c5"
+    },
+    {
+      "path": "evidence/review-fix-round-2.md",
+      "sha256": "4686c1d403cbacf9f11cc25bc05d82fe78600c9dc5e960d5b0932fc36c632529"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "327a07099cd2c8b4498bec5123bb1cf734de85beee577d76e8583a1b75ce468f"
+    },
+    {
+      "path": "evidence/verification-report.md",
+      "sha256": "0de8ef2a277ad96a4de0c62370e48cb9231c7e4dfb5b6439eb8823e6bb1f8e66"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [
+    {
+      "file": "handoff/code-spec-reviewer-1.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/code-spec-reviewer-2.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/code-spec-reviewer-3.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/cso-reviewer-1.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/cso-reviewer-2.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/cso-reviewer-3.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/fixer-review-1.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/fixer-review-2.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/fixer-verify-1.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/implementer-1.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/implementer-2.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/verifier-2.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/verifier-3.md",
+      "outcome": "absorbed"
+    }
+  ],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": []
+}
