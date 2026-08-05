@@ -24,6 +24,7 @@ const BUILTIN_NAMES = [
   'goal-loop-measure',
   'goal-loop-research',
   'small-feature',
+  'task-loop',
 ] as const;
 const PIPELINE_LOCALES = ['en', 'ja', 'zh-cn'] as const;
 const fakeClaudeBinary = path.join(
@@ -600,6 +601,84 @@ describe('pipeline command', () => {
       expect(result.stdout).toContain('bug-fix');
       expect(result.stdout).toContain('[package]');
     });
+
+    it.each(['project', 'user'] as const)(
+      'refuses a same-name %s task-loop shadow before creating a Run',
+      async (layer) => {
+        const changeId = `shadowed-task-loop-${layer}`;
+        await fs.mkdir(path.join(changesDir, changeId), { recursive: true });
+        const dataHome = path.join(testDir, `data-${layer}`);
+        const pipelineBase = layer === 'project'
+          ? path.join(testDir, 'rasen', 'pipelines')
+          : path.join(dataHome, 'rasen', 'pipelines');
+        const pipelineDir = path.join(pipelineBase, 'task-loop');
+        await fs.mkdir(pipelineDir, { recursive: true });
+        await fs.writeFile(
+          path.join(pipelineDir, 'pipeline.yaml'),
+          [
+            'version: 1',
+            'name: task-loop',
+            'description: A valid but unauthorized same-name shadow.',
+            'stages:',
+            '  - id: apply',
+            '    skill: rasen-apply-change',
+            '    role: implementer',
+            '    requires: []',
+          ].join('\n'),
+          'utf8'
+        );
+        const ephemera = path.join(
+          testDir,
+          '.rasen',
+          'changes',
+          changeId,
+          'ephemera'
+        );
+        await fs.mkdir(ephemera, { recursive: true });
+        const inputFile = path.join(ephemera, 'task-loop-input.json');
+        await fs.writeFile(
+          inputFile,
+          JSON.stringify({
+            taskLoop: {
+              format: 'task-loop-input/1',
+              goal: 'Prove package provenance is enforced.',
+              artifactTargets: ['README.md'],
+              bar: [
+                {
+                  id: 'package-only',
+                  criterion: 'The package built-in is the selected definition.',
+                  evidenceHint: 'Inspect the winning resolver source.',
+                },
+              ],
+              constraints: [],
+            },
+          }),
+          'utf8'
+        );
+
+        const result = await runCLI(
+          [
+            'pipeline',
+            'start',
+            changeId,
+            'task-loop',
+            '--input-file',
+            inputFile,
+            '--engine',
+            'reconciler',
+            '--json',
+          ],
+          {
+            cwd: testDir,
+            env: { XDG_DATA_HOME: dataHome, RASEN_AGENT_RUNTIME: 'codex' },
+          }
+        );
+        expect(result.exitCode).not.toBe(0);
+        expect(`${result.stdout}\n${result.stderr}`).toContain(
+          'reserved for the exact package built-in Pipeline'
+        );
+      }
+    );
   });
 
   describe('show', () => {
@@ -2046,6 +2125,18 @@ stages:
       expect(json.suggested).toBe('small-feature');
       expect(json.matched).toEqual([]);
       expect(json.basis).toBe('default');
+    });
+
+    it('lists task-loop as explicit-only but never classifies into it', async () => {
+      const result = await runCLI(
+        ['pipeline', 'classify', 'run a task loop over this artifact', '--json'],
+        { cwd: testDir }
+      );
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.available).toContain('task-loop');
+      expect(json.suggested).toBe('small-feature');
+      expect(json.suggested).not.toBe('task-loop');
     });
 
     it('prefers bug-fix over full-feature when both classes match', async () => {

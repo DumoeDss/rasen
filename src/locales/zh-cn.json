@@ -406,6 +406,9 @@
       },
       "small-feature": {
         "description": "轻量功能流水线：依次提出变更、实施、执行一次带审查循环的标准验证，然后交付并归档。"
+      },
+      "task-loop": {
+        "description": "仅支持显式选择、且不生成 spec 的任务循环：构建者改进真实产物，每轮由全新评审者依据冻结标杆与原始证据检查；只有满足标杆后才能交付和归档。"
       }
     },
     "messages": {
@@ -559,6 +562,18 @@
       "engine_disabled_by_config": "配置已禁用调和器引擎。",
       "engine_unsupported": "该流水线不支持所选引擎。",
       "engine_owner_conflict": "该变更被多个引擎主张所有权。",
+      "launch_request_conflict": "现有 Run 使用了不同的冻结输入；本次操作未修改它。",
+      "task_loop_input_missing": "Task Loop 开始工作前必须提供冻结输入契约。",
+      "task_loop_input_invalid": "Task Loop 输入契约无效。",
+      "task_loop_bar_unprovable": "无法从声明的证据中机械验证 Task Loop 质量标杆。",
+      "task_loop_critic_reused": "Task Loop 的每一轮判定都必须使用全新评审者。",
+      "task_loop_bar_mismatch": "评审结论未完整覆盖冻结的质量标杆。",
+      "task_loop_evidence_missing": "评审结论缺少声明产物目标的原始证据。",
+      "task_loop_false_satisfaction": "冻结标准仍有未通过项，但评审者错误地报告为已满足。",
+      "task_loop_reconciler_required": "Task Loop 必须使用调和器引擎，不能回退到旧执行引擎。",
+      "task_loop_blocked": "构建者或评审者受阻或失败，Task Loop 已停止。",
+      "task_loop_exhausted": "Task Loop 已耗尽轮次预算，但仍未满足冻结的质量标杆。",
+      "task_loop_delivery_guard": "只有规范 Run 被机械判定为已满足后，Task Loop 才能交付或归档。",
       "pipeline_command_error": "流水线操作失败（{code}）。"
     }
   },

@@ -11,6 +11,7 @@ import {
   getGoalIterateSkillTemplate,
   getGoalPlanSkillTemplate,
   getGoalReportSkillTemplate,
+  getTaskLoopSkillTemplate,
   getHandoffSkillTemplate,
   getHelpSkillTemplate,
   getDirectionSkillTemplate,
@@ -78,7 +79,12 @@ export const BUILT_IN_WORKFLOW_IDS = [
  * strong workflow dependencies and the temporary retro-wrapper compatibility
  * install root; the retention radio is its only profile control.
  */
-export const INTERNAL_BUILTIN_WORKFLOW_IDS = ['retain-command'] as const;
+export const INTERNAL_BUILTIN_WORKFLOW_IDS = ['retain-command', 'task-loop'] as const;
+
+/** True for dependency-only built-ins that never appear in profile roots. */
+export function isInternalBuiltInWorkflowId(id: string): boolean {
+  return (INTERNAL_BUILTIN_WORKFLOW_IDS as readonly string[]).includes(id);
+}
 
 /** The retention runner's workflow id (internal, non-selectable). */
 export const RETENTION_RUNNER_WORKFLOW_ID = 'retain-command';
@@ -137,8 +143,8 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
     kind: 'driver',
     requires: {
       workflows: [RETENTION_RUNNER_WORKFLOW_ID],
-      skills: ['rasen-review'],
-      pipelines: ['small-feature', 'full-feature', 'bug-fix', 'auto-decompose'],
+      skills: ['rasen-review', 'rasen-task-loop'],
+      pipelines: ['small-feature', 'full-feature', 'bug-fix', 'auto-decompose', 'task-loop'],
     },
   },
   {
@@ -150,6 +156,7 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
   { id: 'handoff', dirName: 'rasen-handoff', skill: getHandoffSkillTemplate },
   { id: 'goal-plan', dirName: 'rasen-goal-plan', skill: getGoalPlanSkillTemplate, kind: 'internal' },
   { id: 'goal-iterate', dirName: 'rasen-goal-iterate', skill: getGoalIterateSkillTemplate, kind: 'internal' },
+  { id: 'task-loop', dirName: 'rasen-task-loop', skill: getTaskLoopSkillTemplate, kind: 'internal' },
   { id: 'goal-report', dirName: 'rasen-goal-report', skill: getGoalReportSkillTemplate, kind: 'internal' },
   {
     id: 'goal-command',

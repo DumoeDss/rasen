@@ -71,7 +71,7 @@ describe('resolveWorkflowSelection includeSkillDependencies', () => {
     const selected = resolveWorkflowSelection(catalog, ['auto-command'], {
       includeSkillDependencies: true,
     }).map((d) => d.id);
-    expect(selected.sort()).toEqual(['auto-command', 'retain-command', 'review'].sort());
+    expect(selected.sort()).toEqual(['auto-command', 'retain-command', 'review', 'task-loop'].sort());
   });
 
   it('with the flag, review-cycle also pulls review; verify-enhanced-command pulls one QA identity', () => {

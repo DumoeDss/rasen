@@ -1,0 +1,26 @@
+version: 1
+name: task-loop
+description: >-
+  Explicit spec-free task iteration over real artifacts: builder work followed
+  by a fresh evidence-based critic until satisfied, then ship and archive.
+stages:
+  - id: iterate
+    skill: rasen-task-loop
+    role: implementer
+    requires: []
+    loop:
+      kind: goal
+      gate: { kind: evaluate }
+      runArtifact: task-loop-run.json
+
+  - id: ship
+    skill: rasen-ship
+    role: shipper
+    requires: [iterate]
+    model: sonnet
+
+  - id: archive
+    skill: rasen-archive-change
+    role: shipper
+    requires: [ship]
+    model: sonnet
