@@ -18,6 +18,8 @@ export type {
   ProviderControlOutcome,
   ProviderObservation,
   ProviderPreparedAuthority,
+  ProviderPreparationResult,
+  ProviderPreparationUnavailable,
   ProviderRetainedOutcome,
   ProviderRootExited,
   RecursiveProcessScopeSemantic,

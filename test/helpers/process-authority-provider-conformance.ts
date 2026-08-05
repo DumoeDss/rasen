@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createProcessAuthorityCoordinator,
-  createProcessAuthorityPublicationAcknowledgement,
   isExactScopeEmptyReceipt,
   mapProcessAuthorityObservation,
   ProcessAuthorityProviderRegistry,
@@ -12,6 +11,7 @@ import {
   type ProcessAuthorityProvider,
   type ProcessAuthorityProviderDescriptor,
   type ProcessAuthorityProviderManifest,
+  type ProcessAuthorityPublisher,
   type ProviderControlOutcome,
   type ProviderObservation,
 } from '../../src/core/session-host/process-authority/index.js';
@@ -43,10 +43,12 @@ export interface ProcessAuthorityProviderConformanceFixture {
   readonly clock: MonotonicClock;
   readonly manifest: ProcessAuthorityProviderManifest;
   readonly manifestRoot: string;
+  readonly publisher: ProcessAuthorityPublisher;
   setObservation(value: ProviderObservation): void;
   setControl(value: ProviderControlOutcome): void;
   setScenario(value:
     | 'normal'
+    | 'prepare-unavailable'
     | 'optimistic-close'
     | 'unavailable'
     | 'uncertain'
@@ -87,9 +89,7 @@ async function preparePublished(fixture: ProcessAuthorityProviderConformanceFixt
   const prepared = await coordinator.prepare(fixture.descriptor, fixture.input);
   expect(prepared.state).toBe('prepared-inert');
   if (prepared.state !== 'prepared-inert') throw new Error('expected inert authority');
-  const published = await prepared.publish(async (binding) =>
-    createProcessAuthorityPublicationAcknowledgement(binding)
-  );
+  const published = await prepared.publish(fixture.publisher);
   expect(published.state).toBe('published-inert');
   if (published.state !== 'published-inert') throw new Error('expected published authority');
   return { coordinator, prepared, published };
@@ -124,9 +124,8 @@ export function processAuthorityProviderConformanceSuite(
       });
       const prepared = await coordinator.prepare(fixture.descriptor, fixture.input);
       if (prepared.state !== 'prepared-inert') throw new Error('expected inert authority');
-      const exact = createProcessAuthorityPublicationAcknowledgement(prepared.publicationBinding);
-      await expect(prepared.publish(async () => ({
-        ...exact,
+      await expect(prepared.publish(async (binding, context) => ({
+        ...await fixture.publisher(binding, context),
         referenceDigest: '0'.repeat(64),
       }))).resolves.toMatchObject({ state: 'control-loss', phase: 'publish' });
       expect(fixture.workloadStarts()).toBe(0);
@@ -191,7 +190,10 @@ export function processAuthorityProviderConformanceSuite(
       const { coordinator, prepared } = await preparePublished(fixture);
       fixture.setObservation({ state, diagnostic });
       const outcome = await coordinator.inspect(prepared.reference);
-      expect(outcome).toEqual({ state, reference: prepared.reference, diagnostic });
+      expect(outcome).toMatchObject({ state, reference: prepared.reference });
+      if (!('diagnostic' in outcome)) throw new Error('expected retained diagnostic');
+      expect(outcome.diagnostic.length).toBeGreaterThan(0);
+      expect(outcome.diagnostic.length).toBeLessThanOrEqual(2_048);
       expect(isExactScopeEmptyReceipt(outcome)).toBe(false);
     });
 
@@ -204,6 +206,29 @@ export function processAuthorityProviderConformanceSuite(
         ...fixture.descriptor,
         protocolVersion: fixture.descriptor.protocolVersion + 1,
       }, fixture.input)).resolves.toMatchObject({ state: 'authority-unavailable' });
+      expect(fixture.workloadStarts()).toBe(0);
+    });
+
+    it('returns selected-provider prepare unavailability without a reference or workload start', async () => {
+      const fixture = factory();
+      fixture.setScenario('prepare-unavailable');
+      const coordinator = createProcessAuthorityCoordinator({
+        registry: createFixtureRegistry(fixture),
+        clock: fixture.clock,
+      });
+      const result = await coordinator.prepare(fixture.descriptor, fixture.input);
+      expect(result).toMatchObject({
+        state: 'authority-unavailable',
+        selection: {
+          providerId: fixture.descriptor.providerId,
+          capabilityId: fixture.descriptor.capabilityId,
+          protocolVersion: fixture.descriptor.protocolVersion,
+        },
+      });
+      if (!('diagnostic' in result)) throw new Error('expected prepare diagnostic');
+      expect(result.diagnostic.length).toBeGreaterThan(0);
+      expect(result.diagnostic.length).toBeLessThanOrEqual(2_048);
+      expect('reference' in result).toBe(false);
       expect(fixture.workloadStarts()).toBe(0);
     });
 
@@ -225,7 +250,18 @@ export function processAuthorityProviderConformanceSuite(
       'preserves %s during replacement recovery',
       async (state) => {
         const fixture = factory();
-        const { coordinator, prepared } = await preparePublished(fixture);
+        let operation = 0;
+        const coordinator = createProcessAuthorityCoordinator({
+          registry: createFixtureRegistry(fixture),
+          clock: fixture.clock,
+          operationId: () => `replacement-${state}-${++operation}`,
+        });
+        const prepared = await coordinator.prepare(fixture.descriptor, fixture.input);
+        if (prepared.state !== 'prepared-inert') throw new Error('expected inert authority');
+        if (state === 'published-inert') {
+          const published = await prepared.publish(fixture.publisher);
+          if (published.state !== 'published-inert') throw new Error('expected published authority');
+        }
         fixture.setObservation({ state });
         await expect(coordinator.inspect(prepared.reference)).resolves.toEqual({
           state,
@@ -248,9 +284,7 @@ export function processAuthorityProviderConformanceSuite(
         if (prepared.state !== 'prepared-inert') throw new Error('expected inert authority');
         const abortable = phase === 'prepared'
           ? prepared
-          : await prepared.publish(async (binding) =>
-              createProcessAuthorityPublicationAcknowledgement(binding)
-            );
+          : await prepared.publish(fixture.publisher);
         if (abortable.state !== `${phase}-inert`) throw new Error(`expected ${phase} authority`);
         expect(isExactScopeEmptyReceipt(await abortable.abort('exact-abort-proof'))).toBe(true);
         expect(fixture.workloadStarts()).toBe(0);
@@ -272,9 +306,7 @@ export function processAuthorityProviderConformanceSuite(
         if (prepared.state !== 'prepared-inert') throw new Error('expected inert authority');
         const abortable = phase === 'prepared'
           ? prepared
-          : await prepared.publish(async (binding) =>
-              createProcessAuthorityPublicationAcknowledgement(binding)
-            );
+          : await prepared.publish(fixture.publisher);
         if (abortable.state !== `${phase}-inert`) throw new Error(`expected ${phase} authority`);
         const outcome = await abortable.abort('broken-abort-proof');
         expect(outcome).toMatchObject({
@@ -340,9 +372,7 @@ export function processAuthorityProviderConformanceSuite(
         expect(isExactScopeEmptyReceipt(outcome)).toBe(false);
         return;
       }
-      const published = await prepared.publish(async (binding) =>
-        createProcessAuthorityPublicationAcknowledgement(binding)
-      );
+      const published = await prepared.publish(fixture.publisher);
       if (phase === 'publish') {
         expect(published).toMatchObject({ state: 'timeout', phase });
         return;
@@ -380,9 +410,7 @@ export function processAuthorityProviderConformanceSuite(
       });
       const prepared = await coordinator.prepare(fixture.descriptor, fixture.input);
       if (prepared.state !== 'prepared-inert') throw new Error('expected inert authority');
-      const published = await prepared.publish(async (binding) =>
-        createProcessAuthorityPublicationAcknowledgement(binding)
-      );
+      const published = await prepared.publish(fixture.publisher);
       if (published.state !== 'published-inert') throw new Error('expected published authority');
       fixture.setScenario('late-control');
       const observing = coordinator.inspect(prepared.reference);
@@ -470,9 +498,7 @@ export async function measureProcessAuthorityProviderConformance(
   const abortPublishedPreparation = await coordinator.prepare(fixture.descriptor, fixture.input);
   let publishedAbortExact = false;
   if (abortPublishedPreparation.state === 'prepared-inert') {
-    const abortPublished = await abortPublishedPreparation.publish(async (binding) =>
-      createProcessAuthorityPublicationAcknowledgement(binding)
-    );
+    const abortPublished = await abortPublishedPreparation.publish(fixture.publisher);
     publishedAbortExact = abortPublished.state === 'published-inert' &&
       isExactScopeEmptyReceipt(await abortPublished.abort('published-abort-mutation-probe'));
   }
@@ -489,9 +515,7 @@ export async function measureProcessAuthorityProviderConformance(
     });
   }
   const opaqueReference = String(prepared.reference).startsWith('rasen-process-authority/1:');
-  const published = await prepared.publish(async (binding) =>
-    createProcessAuthorityPublicationAcknowledgement(binding)
-  );
+  const published = await prepared.publish(fixture.publisher);
   if (published.state !== 'published-inert') {
     return Object.freeze({
       ...GREEN_PROCESS_AUTHORITY_MUTATION_SNAPSHOT,
@@ -556,9 +580,7 @@ export async function measureProcessAuthorityProviderConformance(
   const timeoutPrepared = await timeoutCoordinator.prepare(fixture.descriptor, fixture.input);
   let timeoutRetained = false;
   if (timeoutPrepared.state === 'prepared-inert') {
-    const timeoutPublished = await timeoutPrepared.publish(async (binding) =>
-      createProcessAuthorityPublicationAcknowledgement(binding)
-    );
+    const timeoutPublished = await timeoutPrepared.publish(fixture.publisher);
     if (timeoutPublished.state === 'published-inert') {
       fixture.setScenario('timeout');
       const timingOut = timeoutCoordinator.inspect(timeoutPrepared.reference);

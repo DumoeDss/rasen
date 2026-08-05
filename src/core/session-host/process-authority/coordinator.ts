@@ -16,7 +16,8 @@ import type {
   ProcessAuthoritySelection,
   ProviderControlOutcome,
   ProviderObservation,
-  ProviderPreparedAuthority,
+  ProviderPreparationResult,
+  ProviderPreparationUnavailable,
   ProviderAuthorityReference,
 } from './types.js';
 
@@ -467,26 +468,63 @@ interface CapturedProviderPreparedAuthority {
   activate(context: AuthorityOperationContext): Promise<ProviderObservation>;
 }
 
-function snapshotProviderPreparedAuthority(
-  value: ProviderPreparedAuthority
-): CapturedProviderPreparedAuthority | undefined {
+type CapturedProviderPreparation =
+  | {
+      readonly kind: 'prepared';
+      readonly authority: CapturedProviderPreparedAuthority;
+    }
+  | {
+      readonly kind: 'unavailable';
+      readonly outcome: ProviderPreparationUnavailable;
+    }
+  | { readonly kind: 'invalid' };
+
+function snapshotProviderPreparation(
+  value: ProviderPreparationResult
+): CapturedProviderPreparation {
   try {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return Object.freeze({ kind: 'invalid' });
+    }
+    const keys = Object.keys(value).sort();
+    const state = Reflect.get(value, 'state');
+    if (state === 'authority-unavailable') {
+      const exactUnavailableKeys = keys.length === 2 &&
+        keys[0] === 'diagnostic' &&
+        keys[1] === 'state';
+      const diagnostic = Reflect.get(value, 'diagnostic');
+      if (
+        !exactUnavailableKeys ||
+        typeof diagnostic !== 'string' ||
+        diagnostic.length > PROVIDER_DIAGNOSTIC_MAX_LENGTH
+      ) {
+        return Object.freeze({ kind: 'invalid' });
+      }
+      return Object.freeze({
+        kind: 'unavailable',
+        outcome: Object.freeze({ state, diagnostic }),
+      });
+    }
     const reference = Reflect.get(value, 'reference');
     const activate = Reflect.get(value, 'activate');
-    if (typeof reference !== 'string' || typeof activate !== 'function') return undefined;
+    if (typeof reference !== 'string' || typeof activate !== 'function') {
+      return Object.freeze({ kind: 'invalid' });
+    }
     return Object.freeze({
-      reference: reference as ProviderAuthorityReference,
-      activate(context: AuthorityOperationContext) {
-        try {
-          return Promise.resolve(Reflect.apply(activate, value, [context])) as Promise<ProviderObservation>;
-        } catch (error) {
-          return Promise.reject(error);
-        }
-      },
+      kind: 'prepared',
+      authority: Object.freeze({
+        reference: reference as ProviderAuthorityReference,
+        activate(context: AuthorityOperationContext) {
+          try {
+            return Promise.resolve(Reflect.apply(activate, value, [context])) as Promise<ProviderObservation>;
+          } catch (error) {
+            return Promise.reject(error);
+          }
+        },
+      }),
     });
   } catch {
-    return undefined;
+    return Object.freeze({ kind: 'invalid' });
   }
 }
 
@@ -994,7 +1032,7 @@ export function createProcessAuthorityCoordinator(
       reservationHeld = false;
       referenceReservations -= 1;
     };
-    let preparation: BoundedResult<ProviderPreparedAuthority>;
+    let preparation: BoundedResult<ProviderPreparationResult>;
     try {
       preparation = await bounded(
         'prepare',
@@ -1024,8 +1062,16 @@ export function createProcessAuthorityCoordinator(
         diagnostic: preparation.diagnostic,
       });
     }
-    const providerPrepared = snapshotProviderPreparedAuthority(preparation.value);
-    if (!providerPrepared) {
+    const capturedPreparation = snapshotProviderPreparation(preparation.value);
+    if (capturedPreparation.kind === 'unavailable') {
+      releaseReservation();
+      return Object.freeze({
+        state: capturedPreparation.outcome.state,
+        selection: exactSelection,
+        diagnostic: capturedPreparation.outcome.diagnostic,
+      });
+    }
+    if (capturedPreparation.kind === 'invalid') {
       releaseReservation();
       return Object.freeze({
         state: 'authority-unavailable',
@@ -1033,6 +1079,7 @@ export function createProcessAuthorityCoordinator(
         diagnostic: 'Process-authority provider returned an invalid inert preparation.',
       });
     }
+    const providerPrepared = capturedPreparation.authority;
     let reference: ProcessAuthorityReference;
     try {
       reference = encodeProcessAuthorityReference(

@@ -126,12 +126,22 @@ export interface ProviderPreparedAuthority {
   activate(context: AuthorityOperationContext): Promise<ProviderObservation>;
 }
 
+/** Expected prepare-time inability to establish the exact advertised authority. */
+export interface ProviderPreparationUnavailable {
+  readonly state: 'authority-unavailable';
+  readonly diagnostic: string;
+}
+
+export type ProviderPreparationResult =
+  | ProviderPreparedAuthority
+  | ProviderPreparationUnavailable;
+
 export interface ProcessAuthorityProvider {
   readonly descriptor: ProcessAuthorityProviderDescriptor;
   prepare(
     input: AuthorityPrepareInput,
     context: AuthorityOperationContext
-  ): Promise<ProviderPreparedAuthority>;
+  ): Promise<ProviderPreparationResult>;
   inspect(
     reference: ProviderAuthorityReference,
     context: AuthorityOperationContext

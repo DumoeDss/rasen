@@ -2,6 +2,7 @@ import {
   PROCESS_AUTHORITY_COMMON_CONTRACT_VERSION,
   RECURSIVE_PROCESS_SCOPE_CAPABILITY_ID,
   RECURSIVE_PROCESS_SCOPE_SEMANTICS,
+  createProcessAuthorityPublicationAcknowledgement,
   type AuthorityOperationContext,
   type ProcessAuthorityProvider,
   type ProcessAuthorityProviderDescriptor,
@@ -35,6 +36,12 @@ export function createDeterministicProcessAuthorityProviderFixture(
   const provider: ProcessAuthorityProvider = {
     descriptor,
     async prepare() {
+      if (scenario === 'prepare-unavailable') {
+        return {
+          state: 'authority-unavailable',
+          diagnostic: 'selected provider prerequisites unavailable',
+        };
+      }
       preparationGeneration += 1;
       if (mutation === 'activate-before-publication') starts += 1;
       return {
@@ -121,6 +128,8 @@ export function createDeterministicProcessAuthorityProviderFixture(
       }],
     },
     manifestRoot: process.cwd(),
+    publisher: async (binding) =>
+      createProcessAuthorityPublicationAcknowledgement(binding),
     workloadStarts: () => starts,
     setObservation(value) { observation = value; },
     setControl(value) { control = value; },
