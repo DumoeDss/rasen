@@ -17,6 +17,7 @@ interface RetainMessageValues {
   planningRootLabel: { planningRoot: string };
   contextPrepared: { version: number };
   contextReused: { version: number };
+  contextSkipped: { mode: string };
   noPipeline: undefined;
   pipelineLabel: { pipeline: string };
   planningRootMismatch: { changeRoot: string; identityRoot: string };

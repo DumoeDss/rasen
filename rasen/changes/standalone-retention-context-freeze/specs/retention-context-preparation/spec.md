@@ -10,6 +10,7 @@ Preparation SHALL be the only way a standalone retention run obtains a frozen id
 
 - **WHEN** a user prepares a completed change that has no pipeline run-state
 - **AND** the project knowledge owner resolves unambiguously
+- **AND** the effective retention mode is `codify`
 - **THEN** Rasen SHALL report the effective retention mode
 - **AND** SHALL record a frozen knowledge context holding the resolved planning root and owner
 - **AND** SHALL report the directory later knowledge commands read that frozen identity from
@@ -42,6 +43,24 @@ Preparation SHALL report the effective retention mode — the same resolution th
 - **AND** a project-scoped lesson application is then attempted for the same change
 - **THEN** the authorization decision SHALL be consistent with the reported mode
 
+### Requirement: Preparation records durable state only for the mode that reads it
+
+Freezing knowledge identity is a durable write, and only the `codify` branch ever reads it. Preparation SHALL record durable state only when a retention mode it reports can reach that branch — the effective mode, or a mode already frozen in run-state for a canonical retention stage. When neither is `codify`, preparation SHALL succeed while resolving no identity and writing nothing: no run-state record, no frozen identity, no change to any learning state. It SHALL still report the mode and the location durable state would occupy, and SHALL report that no identity was frozen. A change that never ran a pipeline SHALL NOT be left holding run-state that no run produced.
+
+#### Scenario: A mode that never codifies records nothing
+
+- **WHEN** preparation runs for a change with no pipeline run-state
+- **AND** neither the effective retention mode nor a mode frozen in run-state is `codify`
+- **THEN** preparation SHALL succeed and report that effective mode
+- **AND** SHALL create no run-state record
+- **AND** SHALL report that no knowledge identity was frozen
+
+#### Scenario: A `codify` mode frozen in run-state still prepares identity
+
+- **WHEN** run-state records `codify` as its frozen retention mode while the effective mode is not `codify`
+- **THEN** preparation SHALL freeze or reuse knowledge identity
+- **AND** SHALL report both modes, because a worker dispatched for that stage uses the frozen one
+
 ### Requirement: Preparation is safe to repeat and never rewrites recorded identity
 
 Repeating preparation for the same change SHALL reuse the identities already recorded rather than creating a second record or a duplicate knowledge entry. A knowledge context already present SHALL be treated as authoritative and left exactly as written, regardless of which context version recorded it, and SHALL NOT be upgraded in place. Preparation SHALL leave an existing pipeline run-state and its recorded knowledge context unchanged.
@@ -72,7 +91,7 @@ Repeating preparation for the same change SHALL reuse the identities already rec
 
 ### Requirement: Preparation fails closed on ownership it cannot settle
 
-Preparation SHALL refuse before any candidate is created when ownership is ambiguous, missing, renamed beyond resolution, or stale. It SHALL report which condition blocked it. Ownership SHALL resolve for both project-owned and store-owned knowledge, including two registered stores that share a display name.
+Preparation SHALL refuse before any candidate is created when ownership is ambiguous, missing, renamed beyond resolution, or stale. It SHALL report which condition blocked it. Ownership SHALL resolve for both project-owned and store-owned knowledge, including two registered stores that share a display name. These conditions are evaluated where identity is resolved: a preparation that records nothing because no mode it reports is `codify` resolves no owner and therefore reports none of them.
 
 #### Scenario: Ambiguous ownership blocks preparation
 

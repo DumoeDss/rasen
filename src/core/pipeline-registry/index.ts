@@ -121,6 +121,7 @@ export {
   readRunState,
   readRunStateDetailed,
   writeRunState,
+  createRunStateExclusive,
   updateRunStateKnowledgeContext,
   initializeRunState,
   resolveRunStateLocation,
@@ -151,6 +152,7 @@ export {
   type StateFileLocationOptions,
   type RunStateReadResult,
   type RunStatePipelineSeed,
+  type RunStateCreateResult,
   type RunStateContextUpdateResult,
   type RunStateContextUpdateRefusal,
 } from './run-state.js';

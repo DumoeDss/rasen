@@ -2,7 +2,7 @@
 
 Schema: `spec-driven`. Verified 2026-08-05 on branch `feature/standalone-retention-context-freeze` (uncommitted working tree).
 
-Artifacts verified against: `proposal.md`, `design.md` (D1-D8 + ADR-1/2/3), `specs/retention-context-preparation/spec.md` (6 ADDED requirements), `specs/opsx-pipeline-registry/spec.md` (2 MODIFIED + 1 ADDED), `tasks.md` (30 items), and the source report `local_docs/rasen-retention-standalone-run-state/report.md` (8 acceptance criteria + regression matrix).
+Artifacts verified against: `proposal.md`, `design.md` (D1-D8 + ADR-1/2/3/4), `specs/retention-context-preparation/spec.md` (7 ADDED requirements), `specs/opsx-pipeline-registry/spec.md` (2 MODIFIED + 1 ADDED), `tasks.md` (39 items), and the source report `local_docs/rasen-retention-standalone-run-state/report.md` (8 acceptance criteria + regression matrix).
 
 Verification was performed by two independent audits (a read-only spec-coverage matrix and an adversarial diff review) plus a CLI end-to-end reproduction of the reported blocker. The author did not self-certify coverage.
 
@@ -10,13 +10,28 @@ Verification was performed by two independent audits (a read-only spec-coverage 
 
 | Dimension | Status |
 |---|---|
-| Completeness | 30/30 tasks complete; 9/9 requirements implemented |
-| Correctness | 26/26 scenarios covered; 2 Blockers found and fixed |
-| Coherence | D1-D8 followed, with 3 departures recorded as ADR-1/2/3 and each justification re-verified against the code |
+| Completeness | 39/39 tasks complete; 10/10 requirements implemented |
+| Correctness | 27/28 scenarios covered by an automated test; 2 Blockers found and fixed pre-review, 5 Major found and fixed in review |
+| Coherence | D1-D8 followed, with 4 departures recorded as ADR-1/2/3/4 and each justification re-verified against the code |
 
 `VERIFY VERDICT: CLEAN — Blocker:0 Major:0 Minor:0 Trivial:0`
 
 All findings raised during verification were fixed and re-verified in this same session; none are left open.
+
+## Review pass (`/rasen-review`, 2026-08-05)
+
+A pre-landing review after this report found five Major items this verification missed, all now fixed with tests (`tasks.md` §7). They are recorded here because each one contradicts a claim above:
+
+- The no-run-state branch published with a replacing `renameSync` after an async identity resolution, so a record seeded meanwhile — a LEAD's pipeline name and every stage record — was silently destroyed. Creating is now exclusive (`createRunStateExclusive`), and a record that appeared meanwhile is merged into.
+- An ownership refusal printed the shared resolver's `Pass --project <id> or --store <id>`, which ADR-2 reassigned to planning-root selection on this command; the remediation could not settle the refusal it was attached to. It now names `--owner-project`/`--owner-store`.
+- A root-selection refusal under `--json` carried neither `ok` nor a code, on the `--store-path` path this command registers precisely to refuse. It now carries `ok: false`.
+- `updateRunStateKnowledgeContext` reported every read failure as `absent`, which the caller renders as a false `no auto-run.json found`. Only `ENOENT` is now an absence.
+- Preparation wrote for **every** retention mode, though only `codify` reads what it writes. Both built-in profiles therefore wrote: `full` resolves to `report`, `core` to `off`. A change that never ran a pipeline was left holding an `auto-run.json` no run produced — `pipeline resume` reports `hasRunState: true` for it, the board reports run files, and the frozen identity is authoritative at any version and never upgraded in place, so it was pinned permanently for a branch that never reads it. That contradicts the router's own step 3, which calls `off` a successful no-op that changes no learned-skill state. The write is now gated on the union of the two modes preparation reports (ADR-4, task 7.8): unless the effective mode — or a mode already frozen in run-state for a canonical `retain` stage — is `codify`, the command resolves nothing, validates nothing, and writes nothing, reporting `contextSource: 'skipped'` with no `knowledgeContext`, `owner`, or `planningRoot`. Proven load-bearing twice: neutralizing the gate fails the three new mode tests, and dropping `frozenRetention` from it fails the frozen-`codify` arm. Also corrected the copy the gate exposed — `retain.messages.noPipeline` claimed "the run-state carries retention identity only", which is false for a change no record was written for.
+
+Two claims below were also corrected rather than defended:
+
+- **Not 26/26.** The scenario *A moved checkout still resolves* has no automated test; only its negative (no absolute path is persisted) is asserted.
+- **Not a uniform refusal surface.** The four Rasen-owned refusals are localized; the `knowledge_owner_*` / `knowledge_selector_conflict` diagnostics pass through as English literals from `context.ts`, and those are the refusals the fail-closed requirement is about.
 
 ## Findings raised and resolved
 
@@ -46,9 +61,9 @@ Fixed: same guard added before computing `active`. Regression test: `packages/ui
 - **Mode/authorization agreement was only tested in the passing direction.** Added the refusal direction: under an effective `report` mode, `prepare` reports `retention: 'report'` and `knowledge apply --run-state-dir <the reported dir>` fails `codify_required` — binding the two surfaces for a non-`codify` mode.
 - **No positive test for the second selector pair** (ADR-2's whole justification). Added a case where the planning root resolves to a store while `--owner-project` names a different registered project, asserting `planningRoot` follows the root and `owner` follows the selector.
 - **Refusal messages were hardcoded English**, so the `ja`/`zh-cn` translations this change added for `invalidRunState` / `planningRootMismatch` / `writeRefused` were unreachable. Refusals now carry a typed catalog key alongside the English message: `--json` reports the English string (a machine contract must not shift with locale) and the human line renders in the caller's locale. Verified live: `RASEN_LANG=ja` prints the Japanese refusal while the JSON `message` stays English.
-- **A genuine write I/O failure fell through to the generic `retain_error`** with no `runStatePath`, while the shipped workflow instructs the worker to "report the condition it named". Both write sites now map a thrown filesystem error to `retention_context_write_failed` with `{ runStatePath, reason }`. Verified live with a `chmod 500` ephemera directory.
+- **A genuine write I/O failure fell through to the generic `retain_error`** with no `runStatePath`, while the shipped workflow instructs the worker to "report the condition it named". Both write sites now map a thrown filesystem error to `retention_context_write_failed` with `{ runStatePath, reason }`. Covered by a test that plants a file where the ephemera directory belongs (portable; the original proof was a manual `chmod 500`).
 - **`sessionStage`'s new pipeline-less branch had no test.** Added one to `packages/ui/test/board/columns.test.ts`.
-- **`retention_owner_selector_conflict` was the only refusal still unlocalized.** Added `retain.messages.ownerSelectorConflict` to all three locales and routed it through the same mechanism, so the refusal surface is uniform.
+- **`retention_owner_selector_conflict` was the only Rasen-owned refusal still unlocalized.** Added `retain.messages.ownerSelectorConflict` to all three locales and routed it through the same mechanism, so all four Rasen-owned refusals render in the caller's locale. The `knowledge_owner_*` / `knowledge_selector_conflict` diagnostics still pass through as English literals from `context.ts` — deliberate (they are core data, not this command's copy), but it means the refusal surface as a whole is not localized.
 
 ### Trivial (1) — fixed
 
@@ -56,11 +71,12 @@ Fixed: same guard added before computing `active`. Regression test: `packages/ui
 
 ## Coherence
 
-D1-D8 are followed. Three departures were recorded in `design.md` under "Deviations proven during implementation"; each justification was re-verified against the code during this audit and all three hold:
+D1-D8 are followed. Four departures were recorded in `design.md` under "Deviations proven during implementation"; each justification was re-verified against the code during this audit and all four hold:
 
 - **ADR-1** — `writeFileAtomically` is async while `writeRunState` is synchronous with synchronous callers, so atomicity is a synchronous temp-write + `renameSync` (the `writeSessionRuntimeContext` precedent). Confirmed: `run-state.ts` `writeRunState` is `: void` and its helper is synchronous throughout.
 - **ADR-2** — root-selection `--project` addresses only a `store add-project`-registered project, while knowledge `--project` addresses any project identity; they are different namespaces, so the selectors are separate flag pairs. Confirmed at `root-selection.ts:705-707`.
 - **ADR-3** — the identity resolver derives both planning and ownership from one directory, so passing a store root as `launchDirectory` misreports a store-planned change as `knowledge_owner_ambiguous`. `process.cwd()` is used with an explicit `retention_planning_root_mismatch` guard. Confirmed at `context.ts:799-804`; both arms are tested.
+- **ADR-4** — freezing is a write and only `codify` reads it, so preparation writes only when the effective mode or a run-state-frozen mode is `codify`; D3's steps 3-4 were unconditional. The order cannot simply be swapped, because preparation is itself what reports the mode. Confirmed at `retain.ts:347` — the gate sits between the mode resolution and the first write-bearing step, and `report.md` contains no reference to run-state while `codify.md` step 1 is the only reader of `runStateDir`.
 
 ## Acceptance criteria from the source report
 
@@ -77,12 +93,16 @@ D1-D8 are followed. Three departures were recorded in `design.md` under "Deviati
 
 ## Out-of-scope observation (not a finding against this change)
 
-`rasen/config.yaml` carries an uncommitted modification — a YAML reflow of two `rules.specs` entries plus an appended `tools: [claude]` block. It was already present in the working tree before this change began, is unrelated to standalone retention, and was deliberately left untouched per the repo's dirty-worktree policy. It should not be swept into this change's commit. (`.idea/` is likewise untracked and absent from `.gitignore`.)
+Two working-tree observations, neither a finding against this change and neither swept into it:
+
+- The uncommitted `rasen/config.yaml` modification this report recorded earlier (a YAML reflow of two `rules.specs` entries plus an appended `tools: [claude]` block) is **gone** — the working tree no longer carries it, and it was never committed on this branch (`git show --stat 83d90747 -- rasen/config.yaml` is empty). Someone reverted it outside this change.
+- `test/fixtures/claude/fake-claude.mjs` carries a mode-only change (`100644` → `100755`) with no content diff, produced by running the suite rather than by any edit here. `.idea/` is likewise untracked and absent from `.gitignore`. Both predate this pass and are left untouched per the repo's dirty-worktree policy.
 
 ## TEST EVIDENCE
 
 - scope: full repository (root package) + full `packages/ui` package + typecheck + lint + CLI end-to-end reproduction
 - rationale: the change relaxes a schema field consumed across the CLI, the management API, and the UI, so package-local runs cannot bound the risk; the CLI e2e exercises the exact path the source report proved impossible
 - command: `pnpm build` && `npx tsc --noEmit -p tsconfig.json` && `npx eslint src/ test/ vitest.config.ts vitest.setup.ts` && `npx vitest run` && `cd packages/ui && npx tsc --noEmit && npx vitest run`
-- result: pass — root 5959 passed / 27 skipped / 26 failed; `packages/ui` 501 passed / 0 failed; typecheck and lint clean in both packages. All 26 root failures are pre-existing on the base branch `dev/0.1.7`, verified by running the same suites in a `git worktree` at that commit: they are git-clone and linked-worktree environment failures in `test/core/store/bootstrap-obtain.test.ts` (18), `test/commands/bootstrap.test.ts` (3), `test/core/learned-skills/store-scope.test.ts` (1), `test/core/session-runtime-context-e2e.test.ts` (1), `test/core/management-api/session-launch-context.test.ts` (1), `test/core/management-api/sessions-space.test.ts` (1), `test/core/store/bootstrap-bundle-import.test.ts` (1). The failing-test list is byte-identical before and after this change.
-- tree: `0e0aceb345e7e9326207747bc6dcf5724c056013` (`git rev-parse HEAD^{tree}`) with uncommitted work; `git diff` digest `dceb8b75f3459852` (sha256, first 16 hex) identifies the verified working tree
+- result: pass — root 5972 passed / 27 skipped / 26 failed (6025 total); `packages/ui` 501 passed / 0 failed; typecheck and lint clean in both packages. All 26 root failures are pre-existing on the base branch `dev/0.1.7`, verified by running the same suites in a `git worktree` at that commit: they are git-clone and linked-worktree environment failures in `test/core/store/bootstrap-obtain.test.ts` (18), `test/commands/bootstrap.test.ts` (3), `test/core/learned-skills/store-scope.test.ts` (1), `test/core/session-runtime-context-e2e.test.ts` (1), `test/core/management-api/session-launch-context.test.ts` (1), `test/core/management-api/sessions-space.test.ts` (1), `test/core/store/bootstrap-bundle-import.test.ts` (1). The failing-test list is byte-identical before and after this change, re-confirmed after the ADR-4 gate landed.
+- CLI end-to-end (ADR-4): in a temp project, `retain prepare` under the default `full` profile reported `contextSource: "skipped"` and left no file under `.rasen` at all, with `pipeline resume` still reporting `hasRunState: false`; after `config set retention codify` the same command froze a v3 context (`hasRunState: true`, `pipeline: null`); repeating it reported `recorded`; unsetting the key back to `report` reported `skipped` with the record byte-identical (md5 unchanged); and planting `retention: "codify"` in that record under a `report` profile reported `frozenRetention: "codify"` with `contextSource: "prepared"`, proving the union arm on the real CLI.
+- tree: `4967e3adcf21bc51986b4b86b282cf80de2e891b` (`git rev-parse HEAD^{tree}`) with uncommitted work. The verified working tree is identified by the `git diff` digest `e0a94c5f2a645542` (sha256, first 16 hex) computed with this report excluded — `git diff -- . ':(exclude)rasen/changes/standalone-retention-context-freeze/evidence/verification-report.md'` — because a digest over the whole diff would be invalidated by writing it here.

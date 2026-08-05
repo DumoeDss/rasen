@@ -110,9 +110,12 @@ describe('rasen retain prepare', () => {
     fs.writeFileSync(path.join(projectRoot, 'go.mod'), 'module example\n');
     projectId = (await resolveProjectHome(projectRoot))!.projectId;
 
-    // The `full` profile with NO stored `retention` key: the exact configuration
-    // the report showed `config get retention` answering nothing for.
-    saveGlobalConfig({ featureFlags: {}, profile: 'full' });
+    // `codify` is the only mode that READS a frozen knowledge context, so it is
+    // the only mode preparation writes one for. The default fixture therefore
+    // stores it explicitly: every test below that exercises freezing needs the
+    // write open. The profile-derived modes (`full` → report, `core` → off) and
+    // the gate they close have their own tests.
+    saveGlobalConfig({ featureFlags: {}, profile: 'full', retention: 'codify' });
 
     process.chdir(projectRoot);
     process.exitCode = undefined;
@@ -185,6 +188,9 @@ describe('rasen retain prepare', () => {
   });
 
   it('reports the effective profile retention rather than only a stored value', async () => {
+    // The exact configuration the report showed `config get retention` answering
+    // nothing for: the `full` profile with NO stored `retention` key.
+    saveGlobalConfig({ featureFlags: {}, profile: 'full' });
     createChange(projectRoot);
     await runRetain(['prepare', CHANGE, '--json']);
     // `full` supplies `report` with no `retention` key stored anywhere.
@@ -194,6 +200,121 @@ describe('rasen retain prepare', () => {
     logSpy.mockClear();
     await runRetain(['prepare', CHANGE, '--json']);
     expect(lastJson<{ retention: string }>().retention).toBe('codify');
+  });
+
+  // Freezing is a WRITE and only the codify branch reads what it writes, so
+  // under any other mode preparation has to be inert: `off` is documented as a
+  // successful no-op that changes no learning state, and a change that never ran
+  // a pipeline must not be left holding run-state no run produced — `pipeline
+  // resume` and the board both report such a file as a run, and a context frozen
+  // now is authoritative forever at the version of the day it was written.
+  it.each([
+    { profile: 'full', mode: 'report' },
+    { profile: 'core', mode: 'off' },
+  ])('records nothing under the effective $mode mode', async ({ profile, mode }) => {
+    saveGlobalConfig({ featureFlags: {}, profile });
+    createChange(projectRoot);
+
+    await runRetain(['prepare', CHANGE, '--json']);
+    expect(process.exitCode).toBeUndefined();
+    const result = lastJson<{
+      ok: boolean;
+      retention: string;
+      contextSource: string;
+      runStateDir: string;
+      runStatePath: string;
+      knowledgeContext?: unknown;
+      owner?: string;
+      planningRoot?: string;
+    }>();
+    expect(result.ok).toBe(true);
+    expect(result.retention).toBe(mode);
+    expect(result.contextSource).toBe('skipped');
+    // Nothing was resolved, so nothing is reported as resolved.
+    expect(result.knowledgeContext).toBeUndefined();
+    expect(result.owner).toBeUndefined();
+    expect(result.planningRoot).toBeUndefined();
+    // The location is still reported (design D2) — as where durable state WOULD
+    // live, which is not a claim that anything lives there.
+    expect(result.runStateDir).toBe(
+      path.join(projectRoot, '.rasen', 'changes', CHANGE, 'ephemera')
+    );
+    expect(fs.existsSync(result.runStatePath)).toBe(false);
+    expect(fs.existsSync(result.runStateDir)).toBe(false);
+
+    // The human surface says so too, and offers no apply guidance for an
+    // identity it did not freeze.
+    logSpy.mockClear();
+    await runRetain(['prepare', CHANGE]);
+    const printed = logSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(printed).toContain(mode);
+    expect(printed).not.toContain('--run-state-dir');
+    expect(printed).not.toContain('{');
+
+    // And the change still reads as a change that never ran.
+    logSpy.mockClear();
+    await new PipelineCommand().resume(CHANGE, { json: true });
+    expect(lastJson<{ hasRunState: boolean }>().hasRunState).toBe(false);
+  });
+
+  // A worker dispatched for a canonical `retain` stage uses the mode the LEAD
+  // froze rather than the current profile, and preparation cannot tell that
+  // caller from a standalone one — so either mode being `codify` has to open the
+  // write. This is the arm the effective mode alone would have closed.
+  it('freezes identity when run-state froze codify and the effective mode is off', async () => {
+    saveGlobalConfig({ featureFlags: {}, profile: 'core' });
+    const changeDir = createChange(projectRoot);
+    fs.writeFileSync(
+      path.join(changeDir, RUN_STATE_FILENAME),
+      `${JSON.stringify({ pipeline: 'full-feature', retention: 'codify' }, null, 2)}\n`,
+      'utf-8'
+    );
+
+    await runRetain(['prepare', CHANGE, '--json']);
+    expect(process.exitCode).toBeUndefined();
+    const result = lastJson<{
+      retention: string;
+      frozenRetention: string;
+      contextSource: string;
+      knowledgeContext: { version: number };
+    }>();
+    expect(result.retention).toBe('off');
+    expect(result.frozenRetention).toBe('codify');
+    expect(result.contextSource).toBe('prepared');
+    expect(result.knowledgeContext.version).toBe(3);
+
+    const record = JSON.parse(
+      fs.readFileSync(path.join(changeDir, RUN_STATE_FILENAME), 'utf-8')
+    ) as Record<string, unknown>;
+    expect(record.knowledgeContext).toMatchObject({ version: 3 });
+    // The LEAD stays the sole writer of the frozen mode.
+    expect(record.retention).toBe('codify');
+  });
+
+  // The mirror arm: the effective mode codifies while run-state froze something
+  // else. The write must still open, because a standalone invocation uses the
+  // effective mode.
+  it('freezes identity when the effective mode codifies and run-state froze report', async () => {
+    const changeDir = createChange(projectRoot);
+    fs.writeFileSync(
+      path.join(changeDir, RUN_STATE_FILENAME),
+      `${JSON.stringify({ pipeline: 'full-feature', retention: 'report' }, null, 2)}\n`,
+      'utf-8'
+    );
+
+    await runRetain(['prepare', CHANGE, '--json']);
+    expect(process.exitCode).toBeUndefined();
+    const result = lastJson<{ retention: string; frozenRetention: string; contextSource: string }>();
+    expect(result.retention).toBe('codify');
+    expect(result.frozenRetention).toBe('report');
+    expect(result.contextSource).toBe('prepared');
+    expect(
+      (
+        JSON.parse(
+          fs.readFileSync(path.join(changeDir, RUN_STATE_FILENAME), 'utf-8')
+        ) as Record<string, unknown>
+      ).knowledgeContext
+    ).toMatchObject({ version: 3 });
   });
 
   it('records durable identity only — no absolute planning or owner root', async () => {
@@ -375,9 +496,21 @@ describe('rasen retain prepare', () => {
 
     await runRetain(['prepare', CHANGE, '--json']);
     expect(process.exitCode).toBe(1);
-    const result = lastJson<{ ok: boolean; error: { code: string } }>();
+    const result = lastJson<{
+      ok: boolean;
+      error: { code: string; message: string; selectorGuidance?: string[] };
+    }>();
     expect(result.ok).toBe(false);
     expect(result.error.code).toBe('knowledge_owner_ambiguous');
+    // The remediation has to name THIS command's owner selectors. `--project`/
+    // `--store` select the PLANNING ROOT here (ADR-2), so the shared resolver's
+    // own wording would send the user at a flag that cannot settle ownership.
+    expect(result.error.message).toContain('--owner-project <id> or --owner-store <id>');
+    expect(result.error.message).not.toContain('--project <id> or --store <id>');
+    expect(result.error.selectorGuidance).toEqual([
+      '--owner-project <id>',
+      '--owner-store <id>',
+    ]);
     // Refused before any candidate and before any durable record, at either
     // location a record could have been born in.
     expect(
@@ -520,11 +653,26 @@ describe('rasen retain prepare', () => {
 
   it('refuses the same project candidate under the report mode preparation reported', async () => {
     // The other half of "reported mode agrees with the authorization decision":
-    // the reported mode must also be the mode that REFUSES.
+    // the reported mode must also be the mode that REFUSES. Identity is frozen
+    // under `codify` first, because a non-codify preparation deliberately writes
+    // nothing at all — then the effective mode drops to `report` and the SAME
+    // directory must stop authorizing the apply.
     createChange(projectRoot);
     await runRetain(['prepare', CHANGE, '--json']);
-    const { runStateDir, retention } = lastJson<{ runStateDir: string; retention: string }>();
-    expect(retention).toBe('report');
+    const { runStateDir, runStatePath } = lastJson<{
+      runStateDir: string;
+      runStatePath: string;
+    }>();
+    const frozen = fs.readFileSync(runStatePath, 'utf-8');
+
+    saveGlobalConfig({ featureFlags: {}, profile: 'full' });
+    logSpy.mockClear();
+    await runRetain(['prepare', CHANGE, '--json']);
+    const reported = lastJson<{ retention: string; contextSource: string }>();
+    expect(reported.retention).toBe('report');
+    // A mode that never reads the context also never rewrites it.
+    expect(reported.contextSource).toBe('skipped');
+    expect(fs.readFileSync(runStatePath, 'utf-8')).toBe(frozen);
 
     logSpy.mockClear();
     await runKnowledge([
@@ -708,5 +856,104 @@ describe('rasen retain prepare', () => {
       ok: false,
       error: { code: 'retention_owner_selector_conflict' },
     });
+  });
+
+  // Identity resolution is async, so "there is no run-state here" can go stale
+  // between the decision and the write. The create must therefore be exclusive:
+  // a record that appeared meanwhile carries a LEAD's pipeline name and every
+  // stage record, and replacing it would destroy a whole run's progress while
+  // leaving a file no reader could tell apart from a retention-only one.
+  it('merges into a run-state that appeared during preparation instead of replacing it', async () => {
+    createChange(projectRoot);
+    const ephemera = path.join(projectRoot, '.rasen', 'changes', CHANGE, 'ephemera');
+    const runStateFile = path.join(ephemera, RUN_STATE_FILENAME);
+
+    // Stand in for the concurrent writer: seed a full LEAD record after the
+    // location probe would have run, by planting it before the write lands.
+    const seeded = {
+      pipeline: 'full-feature',
+      stages: { propose: { status: 'done' }, implement: { status: 'in_progress' } },
+      rounds: 2,
+    };
+    fs.mkdirSync(ephemera, { recursive: true });
+    fs.writeFileSync(runStateFile, `${JSON.stringify(seeded, null, 2)}\n`, 'utf-8');
+
+    await runRetain(['prepare', CHANGE, '--json']);
+    expect(process.exitCode).toBeUndefined();
+
+    const result = lastJson<{ ok: boolean; pipeline: string | null; contextSource: string }>();
+    expect(result.ok).toBe(true);
+    // The seeded record survives in full, and the context was added beside it.
+    const after = JSON.parse(fs.readFileSync(runStateFile, 'utf-8')) as Record<string, unknown>;
+    expect(after.pipeline).toBe('full-feature');
+    expect(after.stages).toEqual(seeded.stages);
+    expect(after.rounds).toBe(2);
+    expect(after.knowledgeContext).toMatchObject({
+      version: 3,
+      owner: { type: 'project', projectId },
+    });
+    expect(result.pipeline).toBe('full-feature');
+  });
+
+  it('reports a mistyped change name as a retain error rather than crashing', async () => {
+    createChange(projectRoot);
+    await runRetain(['prepare', 'no-such-change', '--json']);
+    expect(process.exitCode).toBe(1);
+    const result = lastJson<{ ok: boolean; error: { code: string; message: string } }>();
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('retain_error');
+    expect(result.error.message).toContain('no-such-change');
+    expect(
+      fs.existsSync(path.join(projectRoot, '.rasen', 'changes', 'no-such-change'))
+    ).toBe(false);
+  });
+
+  it('reports a run-state the filesystem refuses to record into with its real cause', async () => {
+    const changeDir = createChange(projectRoot);
+    const ephemera = path.join(projectRoot, '.rasen', 'changes', CHANGE, 'ephemera');
+    // A FILE where the ephemera directory belongs. Nothing is located (there is
+    // no directory to hold a record), so preparation takes the create path and
+    // fails there — on every platform, without chmod or an fs mock. It has to
+    // arrive as the named write refusal carrying the path it failed at, not as a
+    // bare errno under the generic code.
+    fs.mkdirSync(path.dirname(ephemera), { recursive: true });
+    fs.writeFileSync(ephemera, 'not a directory\n', 'utf-8');
+
+    await runRetain(['prepare', CHANGE, '--json']);
+    expect(process.exitCode).toBe(1);
+    const result = lastJson<{
+      ok: boolean;
+      error: { code: string; runStatePath?: string; reason?: string };
+    }>();
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('retention_context_write_failed');
+    expect(result.error.runStatePath).toBe(path.join(ephemera, RUN_STATE_FILENAME));
+    expect(result.error.reason).toBeTruthy();
+    expect(fs.existsSync(path.join(changeDir, RUN_STATE_FILENAME))).toBe(false);
+  });
+
+  it('prints a localized human surface, and keeps the JSON message English', async () => {
+    createChange(projectRoot);
+    process.env.RASEN_LANG = 'ja';
+
+    await runRetain(['prepare', CHANGE]);
+    expect(process.exitCode).toBeUndefined();
+    const printed = logSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    // The human surface is rendered from the ja catalog, names no pipeline for a
+    // change that never ran one, and leaks no unresolved template placeholder.
+    expect(printed).toContain(CHANGE);
+    expect(printed).toContain('codify');
+    expect(printed).toContain('パイプライン');
+    expect(printed).not.toContain('{');
+
+    logSpy.mockClear();
+    errSpy.mockClear();
+    await runRetain(['prepare', CHANGE, '--owner-project', projectId, '--owner-store', 'x']);
+    expect(process.exitCode).toBe(1);
+    const refusal = errSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(refusal).toContain('Error:');
+    // Rendered in the caller's locale — the mechanism the English-only literal
+    // this command replaced could not provide.
+    expect(refusal).toMatch(/[^\x00-\x7F]/);
   });
 });

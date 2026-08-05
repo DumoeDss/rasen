@@ -7,6 +7,7 @@ import {
   parseRunState,
   readRunState,
   writeRunState,
+  createRunStateExclusive,
   updateRunStateKnowledgeContext,
   completedStages,
   frozenRetentionMode,
@@ -480,7 +481,66 @@ describe('pipeline run-state', () => {
       expect(result.kind).toBe('invalid');
       expect(fs.readFileSync(runStatePath(dir), 'utf-8')).toBe(before);
     });
+    it('refuses a record whose JSON root is not an object', () => {
+      // The only guard between an array or scalar root and a spread that would
+      // produce a document with no recognizable shape.
+      for (const root of ['[]', '42', '"x"', 'null']) {
+        const before = `${root}\n`;
+        fs.writeFileSync(runStatePath(dir), before, 'utf-8');
+        expect(updateRunStateKnowledgeContext(dir, context).kind).toBe('invalid');
+        expect(fs.readFileSync(runStatePath(dir), 'utf-8')).toBe(before);
+      }
+    });
+
+    // Only a genuine absence is `absent`. A caller renders every other refusal
+    // kind as its own diagnostic, so an unreadable file reported as "no record
+    // here" would surface to the user as a false `no auto-run.json found`.
+    it('propagates a read failure instead of reporting the record absent', () => {
+      const notADirectory = path.join(dir, 'file-not-dir');
+      fs.writeFileSync(notADirectory, 'occupied\n', 'utf-8');
+      expect(() => updateRunStateKnowledgeContext(notADirectory, context)).toThrow();
+    });
   });
+
+  // A caller that decided "no run-state here" some time ago cannot publish with
+  // a replacing rename: retention preparation resolves identity asynchronously
+  // in between, and a LEAD's record seeded meanwhile carries the pipeline name
+  // and every stage record.
+  describe('createRunStateExclusive', () => {
+    const context = {
+      version: 3 as const,
+      planningRoot: { type: 'project' as const, projectId: 'p-1' },
+      owner: { type: 'project' as const, projectId: 'p-1' },
+    };
+
+    it('creates the record when the name is free, leaving no temporary behind', () => {
+      const fresh = path.join(dir, 'fresh');
+      const result = createRunStateExclusive(fresh, { knowledgeContext: context });
+      expect(result).toEqual({ kind: 'created', path: runStatePath(fresh) });
+      expect(readRunState(fresh)?.knowledgeContext).toEqual(context);
+      expect(readRunState(fresh)?.pipeline).toBeUndefined();
+      expect(fs.readdirSync(fresh).filter((entry) => entry.endsWith('.tmp'))).toEqual([]);
+    });
+
+    it('reports an occupied name without touching a single byte of it', () => {
+      const occupied = `${JSON.stringify({ pipeline: 'full-feature', rounds: 3 }, null, 2)}\n`;
+      fs.writeFileSync(runStatePath(dir), occupied, 'utf-8');
+
+      const result = createRunStateExclusive(dir, { knowledgeContext: context });
+      expect(result).toEqual({ kind: 'exists', path: runStatePath(dir) });
+      expect(fs.readFileSync(runStatePath(dir), 'utf-8')).toBe(occupied);
+      expect(fs.readdirSync(dir).filter((entry) => entry.endsWith('.tmp'))).toEqual([]);
+    });
+
+    it('validates before it publishes', () => {
+      const fresh = path.join(dir, 'invalid-seed');
+      expect(() =>
+        createRunStateExclusive(fresh, { pipeline: 42 } as never)
+      ).toThrow();
+      expect(fs.existsSync(runStatePath(fresh))).toBe(false);
+    });
+  });
+
 
   // spec: an interrupted write leaves EITHER the previous complete content or
   // the new complete content — never a torn file. A successful-write test

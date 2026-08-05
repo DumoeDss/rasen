@@ -2666,11 +2666,13 @@ A change that never ran through a classified pipeline has no `auto-run.json`, so
 - reuses a `knowledgeContext` already recorded at **any** version verbatim — reported unchanged, never upgraded in place, so repeating preparation is a no-op on disk;
 - reports the `runStateDir` to pass as `--run-state-dir` on every later project/store knowledge command.
 
-It writes run-state crash-safely (temp file plus rename) and, when updating an existing record, injects only `knowledgeContext` — the LEAD's own hand-written progress and handoff entries are left byte-for-byte as written.
+It writes run-state crash-safely (temp file plus rename), and it never replaces a record it did not create: a record that already exists — including one that appeared while preparation was resolving identity — is merged into, with `knowledgeContext` added and no other value changed, so the LEAD's own hand-written progress and handoff entries survive. The document is re-serialized rather than patched in place, so byte-level formatting is not preserved; a repeated key was already collapsed to its last value by any reader, which is the ambiguity `pipeline resume` reports separately.
+
+**It writes only for `codify`.** Freezing identity is a write, and only the `codify` branch reads what it freezes: `report` writes a retrospective, and `off` changes no learning state at all. When neither the effective mode nor a mode already frozen in run-state is `codify`, preparation resolves nothing and writes nothing — it reports the mode, the pipeline, and the directory durable state *would* live at, with `contextSource: "skipped"` and no `knowledgeContext`. A change that never ran a pipeline is therefore not left holding an `auto-run.json` no run produced, or an identity frozen permanently at the version of the day it was frozen for a branch that never reads it. Either mode being `codify` opens the write: a worker dispatched for a canonical `retain` stage uses the mode the LEAD froze while a standalone run uses the effective one, and preparation cannot tell those two callers apart.
 
 **Two independent selectors.** `--store`/`--project` select the planning root, exactly like `rasen pipeline resume`; `--owner-store`/`--owner-project` select the knowledge owner independently, exactly like the `rasen knowledge` group. Each pair is mutually exclusive within itself.
 
-**Fails closed before any candidate exists.** Ambiguous, missing, renamed, or stale ownership (`knowledge_owner_*`), an owner selector disagreeing with an already-recorded identity (`knowledge_selector_conflict`), an unreadable run-state (`retention_run_state_invalid`), and a change read from one planning root while identity resolves to another (`retention_planning_root_mismatch`) all refuse without writing.
+**Fails closed before any candidate exists.** Ambiguous, missing, renamed, or stale ownership (`knowledge_owner_*`), an owner selector disagreeing with an already-recorded identity (`knowledge_selector_conflict`), an unreadable run-state (`retention_run_state_invalid`), and a change read from one planning root while identity resolves to another (`retention_planning_root_mismatch`) all refuse without writing. The ownership and planning-root refusals belong to the resolution path: a preparation that records nothing because no mode it reports is `codify` resolves no owner and so reports none of them. An unreadable run-state still refuses, because the frozen mode cannot be read from it.
 
 ```json
 {
@@ -2691,7 +2693,7 @@ It writes run-state crash-safely (temp file plus rename) and, when updating an e
 }
 ```
 
-`contextSource` is `prepared` when this call froze the identity and `recorded` when it reused one already on file. `frozenRetention` appears only when run-state carries a mode the LEAD froze for a pipeline `retain` stage; `retention` always reports the effective mode.
+`contextSource` is `prepared` when this call froze the identity, `recorded` when it reused one already on file, and `skipped` when no mode it reports is `codify` — that payload carries no `knowledgeContext`, `owner`, or `planningRoot`, because nothing was resolved and nothing was written. `frozenRetention` appears only when run-state carries a mode the LEAD froze for a pipeline `retain` stage; `retention` always reports the effective mode.
 
 ### `rasen config`
 

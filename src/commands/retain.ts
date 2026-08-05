@@ -15,6 +15,18 @@
  * identity of any version verbatim, and reports the directory later knowledge
  * commands read.
  *
+ * Freezing is a WRITE, and only the `codify` branch ever reads what it writes:
+ * `report` writes a retrospective, and `off` is a successful no-op that changes
+ * no learning state. So preparation writes only when a mode it is about to
+ * report can reach that branch — the effective mode for a standalone
+ * invocation, or a mode already frozen in run-state for a canonical `retain`
+ * stage. It cannot see which caller it has, so either one being `codify` opens
+ * the write and neither being it closes it entirely: nothing is resolved,
+ * nothing is validated, nothing is written. Otherwise a change that never ran
+ * would be left holding run-state no run produced — reported as present by
+ * `pipeline resume` and the board — and an identity frozen permanently, at the
+ * version of the day it was frozen, for a branch that never reads it.
+ *
  * Two independent selectors, because they answer two different questions and
  * they are not the same namespace (ADR-2):
  *   - `--store`/`--project` select the PLANNING ROOT, exactly like `rasen
@@ -47,15 +59,17 @@ import {
 import { describeDurableOwner } from '../core/learned-skills/owner-identity.js';
 import {
   RUN_STATE_FILENAME,
+  createRunStateExclusive,
   readRunStateDetailed,
   resolveRunStateLocation,
+  runStatePath,
   updateRunStateKnowledgeContext,
-  writeRunState,
   type RunStateContextUpdateResult,
 } from '../core/pipeline-registry/index.js';
 import { resolveChangeWorkDir } from '../core/change-work.js';
 import { ephemeraDir, resolveExecutionRoot } from '../core/file-placement.js';
 import {
+  isRootSelectionError,
   isStoreSelectedRoot,
   resolveRootForCommand,
   type ResolvedOpenSpecRoot,
@@ -156,11 +170,11 @@ function retainRefusal(
  * an EACCES or ENOSPC has to arrive as `retention_context_write_failed` with the
  * path it failed at — not as a bare errno under the generic `retain_error`.
  */
-function contextWriteFailed(runStatePath: string, reason: string): RetainPrepareError {
+function contextWriteFailed(runStateFile: string, reason: string): RetainPrepareError {
   return retainRefusal(
     'retention_context_write_failed',
-    { key: 'writeRefused', values: { path: runStatePath, reason } },
-    { runStatePath, reason }
+    { key: 'writeRefused', values: { path: runStateFile, reason } },
+    { runStatePath: runStateFile, reason }
   );
 }
 
@@ -171,15 +185,29 @@ function contextWriteFailed(runStatePath: string, reason: string): RetainPrepare
  */
 function updateRecordedContext(
   runStateDir: string,
-  runStatePath: string,
+  runStateFile: string,
   knowledgeContext: FrozenKnowledgeContext
 ): RunStateContextUpdateResult {
   try {
     return updateRunStateKnowledgeContext(runStateDir, knowledgeContext);
   } catch (error) {
-    throw contextWriteFailed(runStatePath, asErrorMessage(error));
+    throw contextWriteFailed(runStateFile, asErrorMessage(error));
   }
 }
+
+/**
+ * This command's knowledge-owner selectors, and the shared resolver's wording
+ * for them.
+ *
+ * The resolver tells a caller to `Pass --project <id> or --store <id>`, which is
+ * right for `rasen knowledge` — there those ARE the owner selectors. Here they
+ * are not: `--store`/`--project` select the planning root (ADR-2), so a user who
+ * follows that wording verbatim cannot resolve an ownership refusal with it.
+ * Preparation is required to report the condition that blocked it, so its
+ * remediation is retargeted at `--owner-project`/`--owner-store` on the way out.
+ */
+const OWNER_SELECTOR_GUIDANCE = ['--owner-project <id>', '--owner-store <id>'];
+const RESOLVER_SELECTOR_WORDING = /--project <id> or --store <id>/g;
 
 /**
  * Canonicalizes a root for comparison, falling back to a plain resolve for a
@@ -207,6 +235,32 @@ function describeFrozen(frozen: FrozenKnowledgeContext): { owner: string; planni
     owner: owner.type === 'global' ? 'global' : `${owner.type}:${owner.id}`,
     planningRoot: `${frozen.planningRoot.type}:${frozen.planningRoot.id}`,
   };
+}
+
+/**
+ * The lines every successful preparation reports: the change, the mode(s) that
+ * govern it, and the pipeline. What follows them differs — a frozen identity,
+ * or the statement that none was frozen — so only the shared head lives here.
+ */
+function reportPreparationPreamble(
+  messages: RetainMessages,
+  base: {
+    change: string;
+    retention: string;
+    frozenRetention?: string;
+    pipeline: string | null;
+  }
+): void {
+  console.log(messages.format('changeLabel', { change: base.change }));
+  console.log(messages.format('retentionMode', { mode: base.retention }));
+  if (base.frozenRetention) {
+    console.log(messages.format('frozenRetentionMode', { mode: base.frozenRetention }));
+  }
+  console.log(
+    base.pipeline
+      ? messages.format('pipelineLabel', { pipeline: base.pipeline })
+      : messages.format('noPipeline')
+  );
 }
 
 export class RetainCommand {
@@ -271,6 +325,37 @@ export class RetainCommand {
     // nothing at all when no `retention` key was ever written.
     const retention = resolveCurrentProfileState(getGlobalConfig()).retention;
 
+    // Everything reportable before identity is resolved. The skip branch below
+    // reports exactly this and nothing more, because it resolves nothing.
+    const base = {
+      ok: true as const,
+      change: changeName,
+      retention,
+      ...(frozenRetention ? { frozenRetention } : {}),
+      runStateDir,
+      runStatePath: runStatePath(runStateDir),
+      pipeline: pipeline ?? null,
+    };
+
+    // Only `codify` reads a frozen identity, so only `codify` is worth writing
+    // one for. `frozenRetention` counts too: a worker dispatched for a canonical
+    // `retain` stage uses the mode the LEAD froze rather than the current
+    // profile, and preparation cannot tell that caller from a standalone one —
+    // so either mode being `codify` opens the write, and neither being it makes
+    // this command inert. `runStateDir` is still reported: it is where durable
+    // state WOULD live (design D2), not a claim that anything lives there.
+    if (retention !== 'codify' && frozenRetention !== 'codify') {
+      if (options.json) {
+        printJson({ ...base, contextSource: 'skipped' as const });
+        return;
+      }
+      const skippedMessages = getRetainMessages();
+      reportPreparationPreamble(skippedMessages, base);
+      console.log(skippedMessages.format('contextSkipped', { mode: retention }));
+      console.log(skippedMessages.format('runStateDir', { path: runStateDir }));
+      return;
+    }
+
     const sessionContext = requireSessionRuntimeContext();
     const selector = {
       ...(options.ownerProject !== undefined ? { project: options.ownerProject } : {}),
@@ -291,6 +376,11 @@ export class RetainCommand {
       launchDirectory: process.cwd(),
       selector,
       requestedScope: 'mixed',
+      // Threaded rather than left to the resolver's own read: it would otherwise
+      // read the session context a second time, and a relay that rewrote the
+      // file in between would freeze an execution ref from one session beside an
+      // owner resolved from another.
+      sessionContext: sessionContext ?? null,
       ...(recorded ? { frozen: recorded } : {}),
     });
 
@@ -323,41 +413,45 @@ export class RetainCommand {
         sessionContext ? sessionContext.execution : undefined
       );
       contextSource = 'prepared';
-      if (existingLocation) {
-        const update = updateRecordedContext(
-          runStateDir,
-          existingLocation.path,
-          knowledgeContext
-        );
+
+      // Where the context is recorded, or `undefined` once it has been written
+      // into a record this call created.
+      let mergeInto = existingLocation?.path;
+      if (mergeInto === undefined) {
+        // A change with no run-state at all gets a minimal record that names no
+        // pipeline: it never ran one, and claiming one would freeze a pipeline
+        // that was not active during the original run.
+        //
+        // The create is EXCLUSIVE because identity resolution above is async: a
+        // LEAD's first hand-write, or a second preparation, can seed this exact
+        // path inside that window. Replacing it would destroy that run's
+        // pipeline name and every stage record, and leave a file no reader could
+        // tell apart from a legitimately retention-only one — so a record that
+        // appeared meanwhile is merged into, exactly like one found up front.
+        let created;
+        try {
+          created = createRunStateExclusive(runStateDir, { knowledgeContext });
+        } catch (error) {
+          throw contextWriteFailed(runStatePath(runStateDir), asErrorMessage(error));
+        }
+        if (created.kind === 'exists') mergeInto = created.path;
+      }
+      if (mergeInto !== undefined) {
+        const update = updateRecordedContext(runStateDir, mergeInto, knowledgeContext);
         if (update.kind === 'already-recorded') {
           knowledgeContext = update.context;
           contextSource = 'recorded';
         } else if (update.kind !== 'written') {
-          const reason = update.kind === 'invalid' ? update.reason : `no ${RUN_STATE_FILENAME} found`;
-          throw contextWriteFailed(existingLocation.path, reason);
-        }
-      } else {
-        // A change with no run-state at all gets a minimal record that names no
-        // pipeline: it never ran one, and claiming one would freeze a pipeline
-        // that was not active during the original run.
-        const runStatePath = path.join(runStateDir, RUN_STATE_FILENAME);
-        try {
-          writeRunState(runStateDir, { knowledgeContext });
-        } catch (error) {
-          throw contextWriteFailed(runStatePath, asErrorMessage(error));
+          const reason =
+            update.kind === 'invalid' ? update.reason : `no ${RUN_STATE_FILENAME} found`;
+          throw contextWriteFailed(mergeInto, reason);
         }
       }
     }
 
     const described = describeFrozen(knowledgeContext);
     const result = {
-      ok: true as const,
-      change: changeName,
-      retention,
-      ...(frozenRetention ? { frozenRetention } : {}),
-      runStateDir,
-      runStatePath: path.join(runStateDir, RUN_STATE_FILENAME),
-      pipeline: pipeline ?? null,
+      ...base,
       contextSource,
       knowledgeContext,
       owner: described.owner,
@@ -370,16 +464,7 @@ export class RetainCommand {
     }
 
     const messages = getRetainMessages();
-    console.log(messages.format('changeLabel', { change: changeName }));
-    console.log(messages.format('retentionMode', { mode: retention }));
-    if (frozenRetention) {
-      console.log(messages.format('frozenRetentionMode', { mode: frozenRetention }));
-    }
-    console.log(
-      pipeline
-        ? messages.format('pipelineLabel', { pipeline })
-        : messages.format('noPipeline')
-    );
+    reportPreparationPreamble(messages, base);
     console.log(messages.format('ownerLabel', { owner: described.owner }));
     console.log(messages.format('planningRootLabel', { planningRoot: described.planningRoot }));
     console.log(
@@ -395,7 +480,18 @@ export class RetainCommand {
     options: RetainPrepareOptions
   ): Promise<ResolvedOpenSpecRoot | null> {
     if (options.json) {
-      return resolveRootForCommand(options, { json: true, reporter: false });
+      // A root-selection refusal keeps the `status: [diagnostic]` shape every
+      // store-aware command emits, so a caller reads one form of it everywhere —
+      // but it carries `ok: false` too, because a retain refusal is otherwise
+      // always `{ ok: false, error: … }` and `--store-path` is registered here
+      // precisely to be refused. Without it a worker parsing this command's
+      // output would find neither `ok` nor `error` on a rejection path the
+      // command deliberately owns.
+      return resolveRootForCommand(options, {
+        json: true,
+        reporter: false,
+        failurePayload: { ok: false },
+      });
     }
     return resolveRootForCommand(options, {
       reporter: (notice) => console.error(formatPipelineRootSelectionNotice(notice)),
@@ -425,6 +521,23 @@ export async function runRetainAction(
       return;
     }
     if (isKnowledgeContextError(error)) {
+      const { code, message, ...details } = error.diagnostic;
+      // Ownership remediation names THIS command's owner flags, not the planning
+      // ones the shared resolver's wording carries (ADR-2).
+      reportRetainError(
+        json,
+        message.replace(
+          RESOLVER_SELECTOR_WORDING,
+          `${OWNER_SELECTOR_GUIDANCE[0]} or ${OWNER_SELECTOR_GUIDANCE[1]}`
+        ),
+        code,
+        details.selectorGuidance === undefined
+          ? details
+          : { ...details, selectorGuidance: [...OWNER_SELECTOR_GUIDANCE] }
+      );
+      return;
+    }
+    if (isRootSelectionError(error)) {
       const { code, message, ...details } = error.diagnostic;
       reportRetainError(json, message, code, details);
       return;

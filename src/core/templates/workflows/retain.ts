@@ -15,12 +15,13 @@ const RETAIN_INSTRUCTIONS = `Policy-driven retention runner. Resolve exactly one
 
 ${STORE_SELECTION_GUIDANCE}
 
-## 1. Freeze or reuse knowledge identity
+## 1. Prepare the run: resolve the mode, freeze identity for codify
 
 - Run \`rasen retain prepare <change> --json\` before creating any candidate (thread the same \`--store\`/\`--project\` selector used for the change). This is the ONE Rasen-owned operation that reports the effective retention mode, freezes or reuses this change's durable knowledge identity, and returns the absolute \`runStateDir\`. It works for a change that never ran through a classified pipeline and therefore has no run-state at all.
 - Pass the returned \`runStateDir\` as \`--run-state-dir "<runStateDir>"\` on every project/store knowledge command so the CLI loads and revalidates BOTH frozen identities. A \`--project\`/\`--store\` supplied there remains only a consistency check; a conflicting selector is an error and the CLI never falls back to the new cwd.
 - \`prepare\` keeps its two selectors separate: \`--store\`/\`--project\` pick the PLANNING ROOT (the same selector the change itself uses), and \`--owner-store\`/\`--owner-project\` pick the KNOWLEDGE OWNER independently. Pass an owner selector only when zero-selector resolution requests one; an owner selector that disagrees with an already-recorded identity is refused, never applied.
 - \`contextSource: "recorded"\` means the change already carried a \`knowledgeContext\`: it is authoritative at ANY version, was left exactly as written, and was NOT upgraded in place. \`contextSource: "prepared"\` means preparation froze it now. Either way the reported identity is the one to use — never hand-write run-state, never synthesize an owner, and never derive one from the cwd, a directory basename, candidate evidence, or model output.
+- \`contextSource: "skipped"\` means neither the effective mode nor a mode frozen in run-state is \`codify\`, so preparation resolved and wrote NOTHING — no \`knowledgeContext\`, no run-state file, no change to any learning state. That is the expected outcome under \`off\` and \`report\`, which never read a frozen identity; it is not a failure and there is nothing to repair. The reported \`runStateDir\` is where durable state WOULD live, not a claim that it exists. Preparing again once the effective mode is \`codify\` freezes the identity then.
 - If preparation fails, pause before candidate creation and report the condition it named (ambiguous, missing, renamed, or stale ownership; an owner selector conflicting with a recorded identity; an unreadable run-state). Direct store planning does not imply a member project.
 
 ## 2. Use the frozen mode or the reported standalone mode
@@ -45,6 +46,6 @@ export function getRetainCommandSkillTemplate(): SkillTemplate {
     instructions: RETAIN_INSTRUCTIONS,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
-    metadata: { author: 'rasen', version: '1.1' },
+    metadata: { author: 'rasen', version: '1.2' },
   };
 }

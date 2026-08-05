@@ -11,6 +11,7 @@
  * derive completed stages. State is durable on disk so a run survives a dead
  * worker, a new session, or a Tier B/C cold re-spawn.
  */
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
@@ -586,6 +587,28 @@ export function resolveRunStateLocation(
 }
 
 /**
+ * A private temp name in `dir`, owned by this process alone. Entropy — not just
+ * pid + clock — because two writers in the same millisecond on a shared
+ * ephemera directory (bind-mounted containers can repeat a pid) would otherwise
+ * pick the same name and publish each other's bytes. Matches the repo's
+ * canonical no-clobber writer (`threshold-schemes.ts`).
+ */
+function runStateTempPath(dir: string): string {
+  const suffix = `${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
+  return path.join(dir, `.${RUN_STATE_FILENAME}.${suffix}.tmp`);
+}
+
+function removeRunStateTemp(temporary: string): void {
+  try {
+    fs.rmSync(temporary, { force: true });
+  } catch {
+    // Best effort: the publish already succeeded or already failed, and a temp
+    // can never be mistaken for run-state (`resolveRunStateLocation` matches
+    // only the exact `auto-run.json` name).
+  }
+}
+
+/**
  * Writes `content` over `destination` crash-safely: a temp file in the SAME
  * directory, then a rename (design D5). Retention preparation updates a file
  * that may already exist and that a LEAD may also be hand-writing, so a
@@ -593,38 +616,94 @@ export function resolveRunStateLocation(
  * invalid — must not be an observable state. Synchronous on purpose: the
  * canonical write seam below is synchronous and has synchronous callers.
  *
- * Either syscall failing removes the temp file before rethrowing. A leftover
- * temp cannot corrupt a read (`resolveRunStateLocation` matches only the exact
- * `auto-run.json` name), but `classifyEphemera` preserves any unrecognized
- * top-level file, so one would block the archive cleaner indefinitely.
+ * Either syscall failing removes the temp before rethrowing. A temp orphaned by
+ * an UNCATCHABLE interruption (SIGKILL between the write and the publish) is
+ * inert but unswept: `classifyEphemera` records an unrecognized top-level file
+ * as `preserved`/`unknown` — not a blocker, so `rasen archive` still succeeds —
+ * and nothing deletes it, so it lingers in the ephemera directory.
  */
 function writeRunStateFileAtomically(destination: string, content: string): void {
   const dir = path.dirname(destination);
   fs.mkdirSync(dir, { recursive: true });
-  const temporary = path.join(
-    dir,
-    `.${RUN_STATE_FILENAME}.${process.pid}.${Date.now()}.tmp`
-  );
+  const temporary = runStateTempPath(dir);
   try {
-    fs.writeFileSync(temporary, content, 'utf-8');
+    fs.writeFileSync(temporary, content, { encoding: 'utf-8', flag: 'wx' });
     fs.renameSync(temporary, destination);
   } catch (error) {
-    try {
-      fs.rmSync(temporary, { force: true });
-    } catch {
-      // The write or rename already failed; the temp file is inert either way.
-    }
+    removeRunStateTemp(temporary);
     throw error;
   }
 }
 
-/** Validate, then write run-state to the change directory (pretty JSON). */
-export function writeRunState(changeDir: string, state: RunState): void {
+/** Whether `destination` is currently owned by any filesystem entry. */
+function runStateEntryExists(destination: string): boolean {
+  try {
+    fs.lstatSync(destination);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+/** Validate, then write run-state into `runStateDir` (pretty JSON). */
+export function writeRunState(runStateDir: string, state: RunState): void {
   const validated = RunStateSchema.parse(state);
   writeRunStateFileAtomically(
-    runStatePath(changeDir),
+    runStatePath(runStateDir),
     `${JSON.stringify(validated, null, 2)}\n`
   );
+}
+
+export type RunStateCreateResult =
+  | { kind: 'created'; path: string }
+  | { kind: 'exists'; path: string };
+
+/**
+ * Creates run-state in `runStateDir` ONLY when no entry owns the name yet.
+ *
+ * `writeRunState` publishes with `renameSync`, which replaces whatever it lands
+ * on. That is correct for a caller that just read the file it is updating, and
+ * wrong for a caller that decided "there is no run-state here" some time ago:
+ * retention preparation resolves knowledge identity asynchronously in between,
+ * and a LEAD's `auto-run.json` — which carries the pipeline name and every
+ * stage record — can be seeded inside that window. Replacing it would destroy a
+ * whole run's progress and leave a file indistinguishable from a legitimately
+ * retention-only record, so this seam reports the collision instead and lets
+ * the caller merge into what is already there.
+ *
+ * `linkSync` is the exclusive publish: atomic like `renameSync`, but it fails
+ * rather than replacing when the name is taken, on Windows and POSIX alike.
+ */
+export function createRunStateExclusive(
+  runStateDir: string,
+  state: RunState
+): RunStateCreateResult {
+  const validated = RunStateSchema.parse(state);
+  const destination = runStatePath(runStateDir);
+  const dir = path.dirname(destination);
+  fs.mkdirSync(dir, { recursive: true });
+  const temporary = runStateTempPath(dir);
+  fs.writeFileSync(temporary, `${JSON.stringify(validated, null, 2)}\n`, {
+    encoding: 'utf-8',
+    flag: 'wx',
+  });
+  try {
+    fs.linkSync(temporary, destination);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // Windows reports a taken name as EACCES/EPERM rather than EEXIST, so
+    // confirm against the destination before calling it a collision.
+    if (code === 'EEXIST' || ((code === 'EACCES' || code === 'EPERM') && runStateEntryExists(destination))) {
+      return { kind: 'exists', path: destination };
+    }
+    throw error;
+  } finally {
+    // `linkSync` adds a second directory entry for the same inode rather than
+    // consuming the temp, so the temp is always ours to clear.
+    removeRunStateTemp(temporary);
+  }
+  return { kind: 'created', path: destination };
 }
 
 /** Why a raw knowledge-context injection did not happen. */
@@ -646,8 +725,10 @@ export type RunStateContextUpdateResult =
  * (`parseRunState` moves a non-enum `runtime` to `runtimeRaw`, drops `null`
  * optional fields) and applies nested schema defaults. A parse/serialize round
  * trip would therefore silently rewrite records the LEAD hand-wrote, which the
- * spec forbids — an existing run-state and its recorded context are
- * authoritative and stay exactly as written.
+ * spec forbids — `knowledgeContext` is ADDED and no other value is changed.
+ * (The document is re-serialized, so byte-level formatting is not preserved:
+ * `JSON.parse` has already collapsed a repeated key to its last value, which is
+ * exactly the ambiguity `detectDuplicateKeys` reports at read time.)
  *
  * An already-recorded context of ANY version is a refusal, not an overwrite:
  * preparation reuses what is recorded and never upgrades a version in place.
@@ -660,8 +741,13 @@ export function updateRunStateKnowledgeContext(
   let raw: string;
   try {
     raw = fs.readFileSync(destination, 'utf-8');
-  } catch {
-    return { kind: 'absent' };
+  } catch (error) {
+    // Only a genuine absence is `absent`. EACCES on a file this seam's callers
+    // have already located must not read back as "no record here" — the caller
+    // renders that as a false `no auto-run.json found` diagnostic, and its own
+    // contract promises the real errno instead.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'absent' };
+    throw error;
   }
 
   let parsed: unknown;

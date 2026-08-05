@@ -90,7 +90,7 @@
   "task.badge.escalated_title": "実行ステージがエスカレーション中です",
   "task.live_title": "このタスクのライブセッションが実行中です",
   "taskcard.run": "実行",
-  "taskcard.run_title": "この変更のパイプライン実行状態が記録されています",
+  "taskcard.run_title": "この変更の実行状態が記録されています",
 
   "worktree.label": "ワークツリー",
   "worktree.group_label": "ワークツリーを切り替え",

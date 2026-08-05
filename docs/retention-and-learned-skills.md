@@ -221,6 +221,15 @@ missing, renamed, or stale ownership refuses before any candidate is created. A
 change prepared this way holds retention identity while naming no pipeline,
 which `rasen pipeline resume` reports as run-state present with no next stage.
 
+**Only `codify` gets a record.** Freezing identity is a write, and `codify` is
+the only branch that reads it: `report` writes a retrospective and `off` changes
+no learning state. So unless the effective mode — or a mode already frozen in
+run-state for a canonical `retain` stage — is `codify`, preparation resolves
+nothing and writes nothing, reporting `contextSource: "skipped"` and the
+directory durable state *would* live at. A change retained under `report` or
+`off` is left exactly as it was, with no `auto-run.json` claiming a run it never
+had.
+
 ## What a project actually receives
 
 A project can draw on its own record, on every Store it is eligible for, and on machine-wide knowledge. What it *receives* is resolved in one stated order — `rasen knowledge effective` reports the answer and where every part of it came from:

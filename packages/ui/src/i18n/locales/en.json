@@ -90,7 +90,7 @@
   "task.badge.escalated_title": "A run stage is escalated",
   "task.live_title": "A live session is running for this Task",
   "taskcard.run": "Run",
-  "taskcard.run_title": "A pipeline run has recorded state for this change",
+  "taskcard.run_title": "Run state is recorded for this change",
 
   "worktree.label": "Worktrees",
   "worktree.group_label": "Switch worktree",

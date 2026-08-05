@@ -90,7 +90,7 @@
   "task.badge.escalated_title": "某个运行阶段已升级",
   "task.live_title": "此任务正在运行一个实时会话",
   "taskcard.run": "运行",
-  "taskcard.run_title": "此变更已记录一次流水线运行状态",
+  "taskcard.run_title": "此变更已记录运行状态",
 
   "worktree.label": "工作树",
   "worktree.group_label": "切换工作树",

@@ -96,6 +96,14 @@ D3 step 2 reuses `resolveLearnedSkillExecutionContext` "at the call shape of `kn
 
 `launchDirectory` is `process.cwd()`, exactly as every knowledge command does it. The "one place" guarantee moves to an explicit gate: when the change's planning root and the resolved `planningRoot.root` differ, preparation refuses with `retention_planning_root_mismatch` naming both. That makes the invariant a reported refusal instead of a silent preference, which is the same fail-closed posture as D7.
 
+### ADR-4 — Preparation writes only for the mode that reads what it writes
+
+D3 lists freezing and writing as unconditional steps 3 and 4. Review proved that wrong: the write's only consumer is the `codify` branch. `skills/workflows/rasen-retain/codify.md` step 1 is the sole reader of `runStateDir` / `knowledgeContext`; `report.md` never mentions run-state at all; and the router's step 3 calls `off` a "successful no-op" that must "NOT … change any learned-skill state". With the write unconditional, BOTH built-in profiles wrote — `full` resolves to `report`, `core` to `off` — so a change that never ran a pipeline was left holding an `auto-run.json` no run produced: `pipeline resume` reports `hasRunState: true` for it, the board reports run files, and the frozen identity (authoritative at any version and never upgraded in place, per D4) is pinned permanently for a branch that never reads it.
+
+Swapping the order is not available: preparation is itself what reports the mode, so no caller can know the mode before running it. The gate therefore lives inside preparation, between the mode resolution (a read of config and of the located run-state) and identity resolution (the first write-bearing step). Under a closed gate the command is inert — no session read, no identity resolution, no ownership refusal, no write — and reports `contextSource: 'skipped'` with no `knowledgeContext`, `owner`, or `planningRoot`, because it resolved none of them. `runStateDir` is still reported, exactly as D2 intends: where durable state *would* live, which is not a claim that it exists.
+
+The gate is the UNION of the two modes preparation reports, not the effective one alone. A worker dispatched for a canonical `retain` stage uses `frozenRetention` while a standalone invocation uses the effective mode, and preparation cannot tell those two callers apart — so either being `codify` opens the write, and only neither being it closes the command. The cost of the union is one merge into an already-existing record when a run froze a non-codify mode under a codifying profile; the cost of choosing wrong in the other direction would be withholding identity from a branch that requires it.
+
 ### Also decided
 
 - **`pipeline resume`'s pipeline-less branch reports, it does not gate.** It skips `resolveResumeExecution`. That gate exists to stop *dispatching stages* into the wrong checkout, and a pipeline-less run-state has no stages; the frozen identity is re-resolved and revalidated by every knowledge command through `--run-state-dir`, which is the real safety boundary. The spec enumerates what this branch reports and gives it no failure arm.
@@ -115,6 +123,8 @@ From the report, plus the mode-resolution row this change adds.
 | Pipeline `retain` | Existing v1 or v2 context | Reused unchanged; not upgraded in place |
 | Repeated standalone run | Context already initialized | Idempotent reuse, no duplicate record |
 | Standalone, `full` profile, no stored `retention` key | — | Reports the effective mode the apply gate uses |
+| Standalone `report` or `off` | No run-state | Reports the mode; records nothing at all (ADR-4) |
+| Pipeline `retain`, `codify` frozen | Profile resolves `off` | Identity still prepared: the stage uses the frozen mode |
 | Store ownership | Two stores sharing a display name | Resolves through durable identity |
 
 ## Out of scope
