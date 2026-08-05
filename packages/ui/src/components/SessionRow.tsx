@@ -81,9 +81,14 @@ function RunProgress({ runState }: { runState: SessionListEntry['runState'] }) {
   const stages = runState.autoRun.state.stages ?? {};
   const stageIds = Object.keys(stages);
   if (stageIds.length === 0) {
+    // A run-state that names no pipeline carries retention identity only, so it
+    // has no stages to report and no pipeline name to put in the note.
+    const { pipeline } = runState.autoRun.state;
     return (
       <p class="session-row__run-note" data-testid="session-run-no-stages">
-        {t('session.run_no_stages', { pipeline: runState.autoRun.state.pipeline })}
+        {pipeline
+          ? t('session.run_no_stages', { pipeline })
+          : t('session.run_no_pipeline')}
       </p>
     );
   }

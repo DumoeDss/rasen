@@ -483,6 +483,9 @@
       "invalidPortfolioStateNote": "Portfolio run-state file at {path} could not be read: {reason}. This change was split into children, so it is not resumed as an undivided change; repair the record before resuming.",
       "invalidRunStateNote": "Run-state file at {path} is invalid: {reason}",
       "noRunStateNote": "No run-state (auto-run.json) found; run classification to select a pipeline.",
+      "noPipelineRunStateNote": "Run-state names no pipeline; it carries retention identity only, so there is no next stage.",
+      "runStateWouldLiveAt": "Run-state for this change would live at: {path}",
+      "frozenKnowledgeOwner": "Frozen knowledge owner: {owner}",
       "nextStage": "Next: {stage}",
       "openFindings": "Open findings: {count} (resolve before ship)",
       "legacySkillHeading": "Legacy skill IDs in pipeline '{pipeline}' (update the pipeline yaml):",
@@ -541,6 +544,25 @@
       "staged_digest_mismatch": "The staged pipeline failed digest validation.",
       "pipeline_registry_busy": "The pipeline registry is busy.",
       "pipeline_command_error": "Pipeline operation failed ({code})."
+    }
+  },
+  "retain": {
+    "messages": {
+      "changeLabel": "Change: {change}",
+      "retentionMode": "Retention mode (effective): {mode}",
+      "frozenRetentionMode": "Retention mode frozen in run-state: {mode}",
+      "runStateDir": "Run-state directory: {path}",
+      "ownerLabel": "Knowledge owner: {owner}",
+      "planningRootLabel": "Planning root: {planningRoot}",
+      "contextPrepared": "Froze a new knowledge context (version {version}).",
+      "contextReused": "Reused the knowledge context already recorded (version {version}).",
+      "noPipeline": "This change is assigned to no pipeline; the run-state carries retention identity only.",
+      "pipelineLabel": "Pipeline: {pipeline}",
+      "planningRootMismatch": "This change was located in planning root {changeRoot}, but knowledge identity resolves to {identityRoot}. Preparation stops rather than freezing identity for a different planning root.",
+      "invalidRunState": "The run-state at {path} is invalid and cannot be trusted for retention identity: {reason}",
+      "writeRefused": "The knowledge context could not be recorded at {path}: {reason}",
+      "nextApply": "Pass --run-state-dir \"{path}\" on every project or store knowledge command for this change.",
+      "ownerSelectorConflict": "--owner-project and --owner-store are mutually exclusive knowledge-owner selectors; pass only one."
     }
   },
   "profile": {
@@ -2450,6 +2472,36 @@
                 },
                 "project": {
                   "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                }
+              }
+            }
+          }
+        },
+        "retain": {
+          "description": "Prepare a change for a retention run",
+          "commands": {
+            "prepare": {
+              "description": "Report the effective retention mode, freeze or reuse the change's durable knowledge identity, and report the run-state directory knowledge commands read it from",
+              "positionals": {
+                "change": {
+                  "description": "Change to prepare for retention"
+                }
+              },
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                },
+                "store": {
+                  "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
+                },
+                "project": {
+                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                },
+                "owner-store": {
+                  "description": "Select a store knowledge owner independently from the planning root"
+                },
+                "owner-project": {
+                  "description": "Select a project knowledge owner independently from the planning root"
                 }
               }
             }

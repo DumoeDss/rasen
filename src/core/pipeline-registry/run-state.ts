@@ -187,10 +187,17 @@ export function sessionHandoffGeneration(handoff: SessionHandoff): number {
  * without breaking the typed reader. `stages` (per-stage status) is the
  * authoritative progress record; `completed` is a simpler convenience the
  * reader also accepts (and falls back to when `stages` is absent).
+ *
+ * `pipeline` is OPTIONAL (design D1): a completed change that never ran through
+ * a classified pipeline can still hold frozen retention identity, and naming a
+ * pipeline it never ran would freeze a claim that is not true. This is a
+ * relaxation — every file valid before it stays valid — and the only reader
+ * that resolves a pipeline definition (`rasen pipeline resume`) skips that
+ * resolution when the field is absent rather than inventing a name.
  */
 export const RunStateSchema = z
   .object({
-    pipeline: z.string(),
+    pipeline: z.string().optional(),
     classification: z.string().optional(),
     tier: z.enum(['A', 'B', 'C']).optional(),
     // autopilot-gate-policy: the resolved gate policy for this run, recorded
@@ -578,11 +585,126 @@ export function resolveRunStateLocation(
   return null;
 }
 
+/**
+ * Writes `content` over `destination` crash-safely: a temp file in the SAME
+ * directory, then a rename (design D5). Retention preparation updates a file
+ * that may already exist and that a LEAD may also be hand-writing, so a
+ * half-written `auto-run.json` — which every reader would then report as
+ * invalid — must not be an observable state. Synchronous on purpose: the
+ * canonical write seam below is synchronous and has synchronous callers.
+ *
+ * Either syscall failing removes the temp file before rethrowing. A leftover
+ * temp cannot corrupt a read (`resolveRunStateLocation` matches only the exact
+ * `auto-run.json` name), but `classifyEphemera` preserves any unrecognized
+ * top-level file, so one would block the archive cleaner indefinitely.
+ */
+function writeRunStateFileAtomically(destination: string, content: string): void {
+  const dir = path.dirname(destination);
+  fs.mkdirSync(dir, { recursive: true });
+  const temporary = path.join(
+    dir,
+    `.${RUN_STATE_FILENAME}.${process.pid}.${Date.now()}.tmp`
+  );
+  try {
+    fs.writeFileSync(temporary, content, 'utf-8');
+    fs.renameSync(temporary, destination);
+  } catch (error) {
+    try {
+      fs.rmSync(temporary, { force: true });
+    } catch {
+      // The write or rename already failed; the temp file is inert either way.
+    }
+    throw error;
+  }
+}
+
 /** Validate, then write run-state to the change directory (pretty JSON). */
 export function writeRunState(changeDir: string, state: RunState): void {
   const validated = RunStateSchema.parse(state);
-  fs.mkdirSync(changeDir, { recursive: true });
-  fs.writeFileSync(runStatePath(changeDir), `${JSON.stringify(validated, null, 2)}\n`, 'utf-8');
+  writeRunStateFileAtomically(
+    runStatePath(changeDir),
+    `${JSON.stringify(validated, null, 2)}\n`
+  );
+}
+
+/** Why a raw knowledge-context injection did not happen. */
+export type RunStateContextUpdateRefusal =
+  | { kind: 'absent' }
+  | { kind: 'invalid'; reason: string }
+  | { kind: 'already-recorded'; context: FrozenKnowledgeContext };
+
+export type RunStateContextUpdateResult =
+  | { kind: 'written'; path: string }
+  | RunStateContextUpdateRefusal;
+
+/**
+ * Injects a frozen knowledge context into an EXISTING run-state file without
+ * rewriting anything else in it (design D4).
+ *
+ * Deliberately raw: it mutates the parsed JSON object rather than a validated
+ * `RunState`, because the canonical write path normalizes at the read boundary
+ * (`parseRunState` moves a non-enum `runtime` to `runtimeRaw`, drops `null`
+ * optional fields) and applies nested schema defaults. A parse/serialize round
+ * trip would therefore silently rewrite records the LEAD hand-wrote, which the
+ * spec forbids — an existing run-state and its recorded context are
+ * authoritative and stay exactly as written.
+ *
+ * An already-recorded context of ANY version is a refusal, not an overwrite:
+ * preparation reuses what is recorded and never upgrades a version in place.
+ */
+export function updateRunStateKnowledgeContext(
+  runStateDir: string,
+  context: FrozenKnowledgeContext
+): RunStateContextUpdateResult {
+  const destination = runStatePath(runStateDir);
+  let raw: string;
+  try {
+    raw = fs.readFileSync(destination, 'utf-8');
+  } catch {
+    return { kind: 'absent' };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return {
+      kind: 'invalid',
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { kind: 'invalid', reason: `${RUN_STATE_FILENAME} is not a JSON object` };
+  }
+
+  const record = parsed as Record<string, unknown>;
+  const recorded = FrozenKnowledgeContextSchema.safeParse(record.knowledgeContext);
+  if (recorded.success) return { kind: 'already-recorded', context: recorded.data };
+  if (record.knowledgeContext !== undefined) {
+    return {
+      kind: 'invalid',
+      reason: `the recorded knowledgeContext is not a valid frozen identity: ${recorded.error.issues
+        .map((issue) => issue.message)
+        .join('; ')}`,
+    };
+  }
+
+  // Validate the MERGED document before it is written, so preparation never
+  // turns a readable file into one a later resume reports as invalid — but
+  // write the raw merge, not the validated projection.
+  const merged = { ...record, knowledgeContext: context };
+  const validation = RunStateSchema.safeParse(normalizeRunStateJson(merged));
+  if (!validation.success) {
+    return {
+      kind: 'invalid',
+      reason: validation.error.issues
+        .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+        .join('; '),
+    };
+  }
+
+  writeRunStateFileAtomically(destination, `${JSON.stringify(merged, null, 2)}\n`);
+  return { kind: 'written', path: destination };
 }
 
 export interface RunStatePipelineSeed {

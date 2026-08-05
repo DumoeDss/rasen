@@ -24,10 +24,10 @@ sidecar.
 
 ### 1. Reuse the frozen knowledge owner
 
-- Read `knowledgeContext` and the absolute `runStateDir` from `rasen pipeline resume <change> --json`.
+- Read `knowledgeContext`, `contextSource`, and the absolute `runStateDir` from `rasen retain prepare <change> --json`. This works whether or not the change ever ran through a classified pipeline: it freezes identity when none is recorded and reports the recorded one, unchanged and un-upgraded, when one already exists.
 - Carry `--run-state-dir "<runStateDir>"` on every project-scope `rasen knowledge list`, `show`, `apply`, and `retire` call. The CLI loads the frozen context directly and revalidates both its planning root and owner; an optional `--project`/`--store` is only a consistency check. For a global candidate, omit the project run-state context because the global owner is a distinct typed owner and the CLI rejects owner/scope mismatch.
-- Never translate frozen identity into an ordinary selector or derive a replacement from the resume cwd, a directory basename, candidate evidence, or model output.
-- If pre-context run-state has no field, resolve and persist the typed context as directed by the parent `rasen-retain` skill before continuing. Ambiguous or stale identity is a pause, not permission to guess.
+- Never translate frozen identity into an ordinary selector or derive a replacement from the resume cwd, a directory basename, candidate evidence, or model output. Never hand-write `auto-run.json`: preparation is the only authorized writer of a standalone knowledge context.
+- If preparation refuses, that is a pause, not permission to guess — ambiguous, missing, renamed, or stale ownership, a selector conflicting with the recorded identity, and an unreadable run-state all stop the run before any candidate is created.
 
 ### 2. Gather change evidence
 

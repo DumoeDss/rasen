@@ -2633,7 +2633,7 @@ Pipeline help and Rasen-owned human output for all eleven subcommands are availa
 | `show <name>` | Show a pipeline's stage DAG, build order, and resolved per-stage runtime/handoff/reuse config; `--for-execution` also validates active-profile skills |
 | `agents <name>` | Show, or set (writing a project-local override), per-role Claude/Codex runtimes |
 | `classify <task>` | Suggest a pipeline for a task string via an advisory keyword heuristic |
-| `resume <change>` | Show a change's (or portfolio's) next/remaining stages from its run-state |
+| `resume <change>` | Show a change's (or portfolio's) next/remaining stages from its run-state. Reports three distinguishable states: no file (`hasRunState: false`, plus the deterministic `runStateDir` state would be created at), a located-but-unparseable file (`invalidRunState: true` with path and reason), and a valid file naming no pipeline (`hasRunState: true`, `pipeline: null`, no next stage — a change holding retention identity only) |
 | `init <name>` | Create a minimal `pipeline.yaml` draft in the required empty `--output` directory without installing it |
 | `save <name>` | Validate a JSON or YAML definition from `--from`, then install canonical normalized YAML in the user layer; `--force` may replace an existing user pipeline, but never a built-in |
 | `validate <name-or-path>` | Structurally validate an installed pipeline name, a draft directory, or a `kind: pipeline` `.rasenpkg` — parse, duplicate/cycle/parallel-group/decompose-stage checks; does not require referenced skills to already be installed |
@@ -2650,6 +2650,48 @@ Pipeline v1 keeps the existing flat `requires` DAG and the current `stage.loop.k
 `delete`'s refcount guard refuses to delete a pipeline referenced by any installed workflow's `requires.pipelines` or by another pipeline's `decompose` stage `childPipeline` (explicit or the `small-feature` default), naming every referrer; `--force` bypasses the guard (not the built-in-pipeline prohibition) and warns about the referrers left dangling.
 
 Pipeline stage `skill:` fields in the built-in pipelines use the workflow directory-name form (`rasen-propose`, `rasen-review`); `validate` and package import also accept the retired skill-name colon form (`rasen:review`) for backward compatibility, and do not require the skill to be installed at import time — a missing skill is caught at execution time instead.
+
+### `rasen retain`
+
+Prepare a change for a retention run — the Rasen-owned transition from "standalone retention resolved a mode" to "project knowledge operations have a frozen identity".
+
+```text
+rasen retain prepare <change> [--store <id>|--project <id>] [--owner-store <id>|--owner-project <id>] [--json]
+```
+
+A change that never ran through a classified pipeline has no `auto-run.json`, so `rasen pipeline resume` reports no run-state directory and every `--run-state-dir`-bearing knowledge command has nothing to load. `prepare` closes that gap in one operation:
+
+- reports the **effective** retention mode — the same resolution that authorizes a project-scoped `rasen knowledge apply`, so it answers even when no `retention` key was ever stored (unlike `rasen config get retention`, which prints nothing for an unset key);
+- freezes durable knowledge identity when the change carries none, recording `{type:'project', projectId, id?}` / `{type:'store', uid, id?}` refs and **no absolute planning or owner directory**, so the record stays valid on another machine or checkout;
+- reuses a `knowledgeContext` already recorded at **any** version verbatim — reported unchanged, never upgraded in place, so repeating preparation is a no-op on disk;
+- reports the `runStateDir` to pass as `--run-state-dir` on every later project/store knowledge command.
+
+It writes run-state crash-safely (temp file plus rename) and, when updating an existing record, injects only `knowledgeContext` — the LEAD's own hand-written progress and handoff entries are left byte-for-byte as written.
+
+**Two independent selectors.** `--store`/`--project` select the planning root, exactly like `rasen pipeline resume`; `--owner-store`/`--owner-project` select the knowledge owner independently, exactly like the `rasen knowledge` group. Each pair is mutually exclusive within itself.
+
+**Fails closed before any candidate exists.** Ambiguous, missing, renamed, or stale ownership (`knowledge_owner_*`), an owner selector disagreeing with an already-recorded identity (`knowledge_selector_conflict`), an unreadable run-state (`retention_run_state_invalid`), and a change read from one planning root while identity resolves to another (`retention_planning_root_mismatch`) all refuse without writing.
+
+```json
+{
+  "ok": true,
+  "change": "add-thing",
+  "retention": "codify",
+  "runStateDir": "/abs/path/.rasen/changes/add-thing/ephemera",
+  "runStatePath": "/abs/path/.rasen/changes/add-thing/ephemera/auto-run.json",
+  "pipeline": null,
+  "contextSource": "prepared",
+  "knowledgeContext": {
+    "version": 3,
+    "planningRoot": { "type": "project", "projectId": "…" },
+    "owner": { "type": "project", "projectId": "…" }
+  },
+  "owner": "project:…",
+  "planningRoot": "project:…"
+}
+```
+
+`contextSource` is `prepared` when this call froze the identity and `recorded` when it reused one already on file. `frozenRetention` appears only when run-state carries a mode the LEAD froze for a pipeline `retain` stage; `retention` always reports the effective mode.
 
 ### `rasen config`
 

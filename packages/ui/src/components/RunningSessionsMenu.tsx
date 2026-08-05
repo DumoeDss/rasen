@@ -18,13 +18,19 @@ const LIVE_SESSION_STATES: SessionRecordWire['state'][] = ['starting', 'running'
  * whenever the current space's selector changes.
  */
 
-/** A short stage descriptor from the run-state join: the pipeline and its in-progress stage, when known. */
+/**
+ * A short stage descriptor from the run-state join: the pipeline and its
+ * in-progress stage, when known. A run-state that names no pipeline (retention
+ * identity only) has no stage to describe, so it falls back to the change label
+ * exactly as an absent or unreadable record does.
+ */
 function describeStage(entry: SessionListEntry, noChangeLabel: string): string {
   const { runState } = entry;
   if (runState.kind !== 'ok' || runState.autoRun.kind !== 'ok') {
     return entry.session.changeName ?? noChangeLabel;
   }
   const { pipeline, stages } = runState.autoRun.state;
+  if (!pipeline) return entry.session.changeName ?? noChangeLabel;
   const active = stages
     ? Object.entries(stages).find(([, s]) => s.status === 'in_progress')?.[0]
     : undefined;

@@ -483,6 +483,9 @@
       "invalidPortfolioStateNote": "{path}のportfolio実行状態ファイルを読み取れませんでした: {reason}。この変更は子変更に分割されているため、分割されていない変更としては再開しません。再開する前に記録を修復してください。",
       "invalidRunStateNote": "{path}の実行状態ファイルは無効です: {reason}",
       "noRunStateNote": "実行状態（auto-run.json）が見つかりません。分類を実行してパイプラインを選択してください。",
+      "noPipelineRunStateNote": "実行状態はパイプラインを記録していません。retentionの識別情報のみを保持しているため、次のステージはありません。",
+      "runStateWouldLiveAt": "この変更の実行状態が作成される場所: {path}",
+      "frozenKnowledgeOwner": "凍結済みナレッジ所有者: {owner}",
       "nextStage": "次: {stage}",
       "openFindings": "未解決の指摘: {count}件（リリース前に解消してください）",
       "legacySkillHeading": "パイプライン'{pipeline}'に旧スキルIDがあります（pipeline yamlを更新してください）:",
@@ -541,6 +544,25 @@
       "staged_digest_mismatch": "stagingしたパイプラインのダイジェスト検証に失敗しました。",
       "pipeline_registry_busy": "パイプラインレジストリが使用中です。",
       "pipeline_command_error": "パイプライン操作に失敗しました（{code}）。"
+    }
+  },
+  "retain": {
+    "messages": {
+      "changeLabel": "変更: {change}",
+      "retentionMode": "retentionモード（実効値）: {mode}",
+      "frozenRetentionMode": "実行状態に凍結されたretentionモード: {mode}",
+      "runStateDir": "実行状態ディレクトリ: {path}",
+      "ownerLabel": "ナレッジ所有者: {owner}",
+      "planningRootLabel": "計画ルート: {planningRoot}",
+      "contextPrepared": "ナレッジコンテキストを新規に凍結しました（バージョン{version}）。",
+      "contextReused": "既に記録済みのナレッジコンテキストを再利用しました（バージョン{version}）。",
+      "noPipeline": "この変更はどのパイプラインにも割り当てられていません。実行状態はretentionの識別情報のみを保持します。",
+      "pipelineLabel": "パイプライン: {pipeline}",
+      "planningRootMismatch": "この変更は計画ルート{changeRoot}で見つかりましたが、ナレッジ識別情報は{identityRoot}に解決されます。別の計画ルートの識別情報を凍結しないよう、準備を中止します。",
+      "invalidRunState": "{path}の実行状態は無効で、retentionの識別情報として信頼できません: {reason}",
+      "writeRefused": "{path}にナレッジコンテキストを記録できませんでした: {reason}",
+      "nextApply": "この変更に対するプロジェクトまたはストアのknowledgeコマンドでは、必ず--run-state-dir \"{path}\"を渡してください。",
+      "ownerSelectorConflict": "--owner-projectと--owner-storeはナレッジ所有者セレクタとして排他です。どちらか一方のみを指定してください。"
     }
   },
   "profile": {
@@ -2450,6 +2472,36 @@
                 },
                 "project": {
                   "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                }
+              }
+            }
+          }
+        },
+        "retain": {
+          "description": "retention実行に向けて変更を準備します",
+          "commands": {
+            "prepare": {
+              "description": "実効のretentionモードを報告し、変更の永続的なナレッジ識別情報を凍結または再利用し、knowledgeコマンドがそれを読み取る実行状態ディレクトリを報告します",
+              "positionals": {
+                "change": {
+                  "description": "retentionの準備対象となる変更です"
+                }
+              },
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立したRasenリポジトリです）"
+                },
+                "project": {
+                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                },
+                "owner-store": {
+                  "description": "計画ルートとは独立してストアの知識所有者を選択します"
+                },
+                "owner-project": {
+                  "description": "計画ルートとは独立してプロジェクトの知識所有者を選択します"
                 }
               }
             }

@@ -1739,10 +1739,10 @@ stages:
     it('reports invalidRunState:true for a run-state that fails schema validation', async () => {
       const changeDir = path.join(changesDir, 'schema-broken-change');
       await fs.mkdir(changeDir, { recursive: true });
-      // missing required `pipeline` field
+      // `pipeline` is optional but still typed: a non-string value is invalid.
       await fs.writeFile(
         path.join(changeDir, 'auto-run.json'),
-        JSON.stringify({ completed: ['propose'] }),
+        JSON.stringify({ pipeline: 42, completed: ['propose'] }),
         'utf-8'
       );
 
@@ -1762,6 +1762,81 @@ stages:
       expect(json.hasRunState).toBe(false);
       expect(json.invalidRunState).toBeUndefined();
       expect(json.note).toContain('No run-state');
+    });
+
+    // design D2: the absent case reports WHERE state would live, so a caller
+    // (retention preparation) does not re-derive the sticky-legacy chain.
+    it('reports the deterministic run-state directory when no auto-run.json exists', async () => {
+      await fs.mkdir(path.join(changesDir, 'would-live-change'), { recursive: true });
+      const result = await runCLI(['pipeline', 'resume', 'would-live-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.hasRunState).toBe(false);
+      expect(json.runStateDir).toBe(
+        path.join(testDir, '.rasen', 'changes', 'would-live-change', 'ephemera')
+      );
+
+      const textResult = await runCLI(['pipeline', 'resume', 'would-live-change'], { cwd: testDir });
+      expect(textResult.exitCode).toBe(0);
+      expect(textResult.stdout).toContain(
+        path.join(testDir, '.rasen', 'changes', 'would-live-change', 'ephemera')
+      );
+    });
+
+    // design D1: a run may hold frozen retention identity with no pipeline. It
+    // is run-state that is PRESENT — never the no-run-state case — and no
+    // pipeline definition is resolved for it.
+    it('reports a pipeline-less run-state as present with no pipeline and no next stage', async () => {
+      const changeDir = path.join(changesDir, 'retention-only-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          knowledgeContext: {
+            version: 3,
+            planningRoot: { type: 'project', projectId: 'p-1' },
+            owner: { type: 'project', projectId: 'p-1' },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'retention-only-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.hasRunState).toBe(true);
+      expect(json.invalidRunState).toBeUndefined();
+      expect(json.pipeline).toBeNull();
+      expect(json.next).toBeNull();
+      expect(json.ready).toEqual([]);
+      expect(json.remaining).toEqual([]);
+      expect(json.runStateDir).toBe(changeDir);
+      expect(json.knowledgeContext.owner).toEqual({ type: 'project', projectId: 'p-1' });
+      expect(json.note).toContain('no pipeline');
+
+      const textResult = await runCLI(['pipeline', 'resume', 'retention-only-change'], { cwd: testDir });
+      expect(textResult.exitCode).toBe(0);
+      expect(textResult.stdout).toContain('project:p-1');
+    });
+
+    // A pipeline-less run-state must not send resume looking for a definition:
+    // an unknown pipeline name is an error, and "no name" is not a name.
+    it('resolves no pipeline definition for a run-state that names none', async () => {
+      const changeDir = path.join(changesDir, 'no-pipeline-name-change');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({ completed: ['propose'] }),
+        'utf-8'
+      );
+
+      const result = await runCLI(['pipeline', 'resume', 'no-pipeline-name-change', '--json'], { cwd: testDir });
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).not.toMatch(/pipeline/i);
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.hasRunState).toBe(true);
+      expect(json.pipeline).toBeNull();
+      expect(json.completed).toEqual(['propose']);
     });
 
     it('computes next/remaining from a synthesized auto-run.json', async () => {

@@ -149,6 +149,7 @@
   "session.run_absent": "未关联变更——运行创建变更后，进度将显示在看板上。",
   "session.run_no_state": "{name} 尚未记录运行状态。",
   "session.run_no_stages": "{pipeline} ——尚未报告任何阶段。",
+  "session.run_no_pipeline": "无流水线——该运行仅保存留存身份，因此没有阶段。",
   "session.stages_label": "流水线进度",
   "session.started": "开始于 {time}",
   "session.last_output": "最后输出 {time}",

@@ -222,6 +222,7 @@ describe('root-inclusive CLI structure', () => {
       'instructions',
       'list',
       'new change',
+      'retain prepare',
       'show',
       'status',
       'validate',

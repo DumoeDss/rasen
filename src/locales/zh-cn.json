@@ -483,6 +483,9 @@
       "invalidPortfolioStateNote": "无法读取 {path} 中的组合运行状态文件：{reason}。该变更已拆分为子变更，因此不会按未拆分的变更恢复；请先修复该记录再恢复。",
       "invalidRunStateNote": "{path} 中的运行状态文件无效：{reason}",
       "noRunStateNote": "未找到运行状态（auto-run.json）；请运行分类以选择流水线。",
+      "noPipelineRunStateNote": "运行状态未记录流水线；它仅保存留存身份，因此没有下一阶段。",
+      "runStateWouldLiveAt": "该变更的运行状态将创建于：{path}",
+      "frozenKnowledgeOwner": "已冻结的知识所有者：{owner}",
       "nextStage": "下一阶段：{stage}",
       "openFindings": "未解决问题：{count} 个（交付前请解决）",
       "legacySkillHeading": "流水线 '{pipeline}' 中存在旧版技能 ID（请更新 pipeline yaml）：",
@@ -541,6 +544,25 @@
       "staged_digest_mismatch": "暂存流水线的摘要校验失败。",
       "pipeline_registry_busy": "流水线注册表正忙。",
       "pipeline_command_error": "流水线操作失败（{code}）。"
+    }
+  },
+  "retain": {
+    "messages": {
+      "changeLabel": "变更：{change}",
+      "retentionMode": "留存模式（生效值）：{mode}",
+      "frozenRetentionMode": "运行状态中已冻结的留存模式：{mode}",
+      "runStateDir": "运行状态目录：{path}",
+      "ownerLabel": "知识所有者：{owner}",
+      "planningRootLabel": "规划根：{planningRoot}",
+      "contextPrepared": "已冻结新的知识上下文（版本 {version}）。",
+      "contextReused": "复用了已记录的知识上下文（版本 {version}）。",
+      "noPipeline": "该变更未分配任何流水线；运行状态仅保存留存身份。",
+      "pipelineLabel": "流水线：{pipeline}",
+      "planningRootMismatch": "该变更在规划根 {changeRoot} 中定位，但知识身份解析到 {identityRoot}。为避免冻结另一个规划根的身份，准备已中止。",
+      "invalidRunState": "{path} 中的运行状态无效，无法作为留存身份来信任：{reason}",
+      "writeRefused": "无法在 {path} 记录知识上下文：{reason}",
+      "nextApply": "对该变更的每个项目或 Store 知识命令都要传入 --run-state-dir \"{path}\"。",
+      "ownerSelectorConflict": "--owner-project 与 --owner-store 是互斥的知识所有者选择器；只能传入其中一个。"
     }
   },
   "profile": {
@@ -2450,6 +2472,36 @@
                 },
                 "project": {
                   "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+                }
+              }
+            }
+          }
+        },
+        "retain": {
+          "description": "为留存运行准备一个变更",
+          "commands": {
+            "prepare": {
+              "description": "报告生效的留存模式，冻结或复用该变更的持久知识身份，并报告知识命令读取该身份的运行状态目录",
+              "positionals": {
+                "change": {
+                  "description": "要为留存做准备的变更"
+                }
+              },
+              "options": {
+                "json": {
+                  "description": "以 JSON 输出"
+                },
+                "store": {
+                  "description": "用作 Rasen 根目录的 Store ID（Store 是你已注册的独立 Rasen 仓库）"
+                },
+                "project": {
+                  "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+                },
+                "owner-store": {
+                  "description": "独立于规划根目录选择 Store 知识所有者"
+                },
+                "owner-project": {
+                  "description": "独立于规划根目录选择项目知识所有者"
                 }
               }
             }

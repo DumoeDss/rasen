@@ -271,6 +271,24 @@ describe('groupIntoTasks (design D1/D3)', () => {
     expect(tasks[0]!.liveStage).toBe('raw work');
   });
 
+  // A change prepared by `rasen retain prepare` holds retention identity and
+  // names no pipeline. `sessionStage` returns a bare `string`, so an unguarded
+  // read would put `undefined` on the card instead of the task text.
+  it('falls back to the raw session task when the ok run-state names no pipeline', () => {
+    const retentionOnly: SessionListEntry = {
+      ...liveSession('solo', { task: 'raw work' }),
+      runState: {
+        name: 'solo',
+        kind: 'ok',
+        autoRun: { kind: 'ok', state: {} },
+        portfolio: { kind: 'absent' },
+        goalRun: { kind: 'absent' },
+      },
+    };
+    const tasks = groupIntoTasks([change({ name: 'solo' })], NO_RUNS, [retentionOnly]);
+    expect(tasks[0]!.liveStage).toBe('raw work');
+  });
+
   it('ignores a changeName-less session and non-live sessions', () => {
     const noChange = liveSession('solo');
     delete noChange.session.changeName;

@@ -487,7 +487,12 @@ export interface WireRunStage {
 }
 
 export interface WireRunState {
-  pipeline: string;
+  /**
+   * Optional: a run may hold frozen retention identity without naming a
+   * pipeline (`rasen retain prepare` writes exactly that record), so every
+   * reader must handle its absence rather than rendering `undefined`.
+   */
+  pipeline?: string;
   stages?: Record<string, WireRunStage>;
 }
 

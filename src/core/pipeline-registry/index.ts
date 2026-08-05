@@ -121,6 +121,7 @@ export {
   readRunState,
   readRunStateDetailed,
   writeRunState,
+  updateRunStateKnowledgeContext,
   initializeRunState,
   resolveRunStateLocation,
   stateFileSearchChain,
@@ -150,6 +151,8 @@ export {
   type StateFileLocationOptions,
   type RunStateReadResult,
   type RunStatePipelineSeed,
+  type RunStateContextUpdateResult,
+  type RunStateContextUpdateRefusal,
 } from './run-state.js';
 
 // Frozen-resume execution binding (unified-session-runtime-context D4)

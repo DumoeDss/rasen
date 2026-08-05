@@ -146,15 +146,22 @@ export function deriveTaskColumn(
   return { column, escalated };
 }
 
-/** The current stage of a live session (design D3): its pipeline and in-progress stage from the joined run-state, or the raw task text when no run-state is available. */
+/**
+ * The current stage of a live session (design D3): its pipeline and in-progress
+ * stage from the joined run-state, or the raw task text when no run-state is
+ * available. A run-state that names no pipeline (retention identity only) also
+ * falls back to the task text — there is no stage to show.
+ */
 export function sessionStage(entry: SessionListEntry): string {
   const { runState } = entry;
   if (runState.kind === 'ok' && runState.autoRun.kind === 'ok') {
     const { pipeline, stages } = runState.autoRun.state;
-    const active = stages
-      ? Object.entries(stages).find(([, s]) => s.status === 'in_progress')?.[0]
-      : undefined;
-    return active ? `${pipeline} · ${active}` : pipeline;
+    if (pipeline) {
+      const active = stages
+        ? Object.entries(stages).find(([, s]) => s.status === 'in_progress')?.[0]
+        : undefined;
+      return active ? `${pipeline} · ${active}` : pipeline;
+    }
   }
   return entry.session.task;
 }
