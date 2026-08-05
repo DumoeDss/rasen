@@ -26,3 +26,8 @@
 ## Delivery
 
 Local commit only. No push, pull request, merge, deployment, or archive was performed. Portfolio-level delivery remains deferred.
+
+## Archive
+**Date:** 2026-08-05T21:52:21.688Z
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-wt-store-project-planning-v2\rasen\changes\archive\2026-08-05-store-planning-foundation-v2
+**Transaction:** f16af185-e759-45b1-ab9b-e24da5ae1780
