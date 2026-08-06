@@ -160,7 +160,7 @@ export function detectSessionOwner(target: string, override?: RuntimeAdapterId):
 
 The fallback value is unchanged, so every target that resolved to a runtime before resolves to the same runtime after — except an Oh My Pi file, which is now claimed by its own store (D8). That is the point.
 
-**AMENDED — there are TWO exceptions, not one.** Unifying recognition also
+**AMENDED — there are THREE exceptions, not one.** Unifying recognition also
 moved Zed's extension check onto the probe path, where it never existed:
 `rasen agent context --transcript <threads.db>` previously fell through the
 content sniff to `claude` and failed with "No assistant usage found", and now
@@ -169,6 +169,16 @@ arguably mandated by the ADDED requirement since `zed` declares
 `canProbeContext: false` — but it is a second declared exception to this
 decision's "resolves to the same runtime after" claim, and it is untested on
 the probe path. Found by verification, not by the author.
+
+The third is the mirror image, on the audit path: `resolveRuntimeKind`
+content-sniffed only `target.endsWith('.jsonl')` and answered `claude` for
+every other non-database path, so `rasen agent audit ./copy-of-rollout.log`
+whose first row is `session_meta` resolved `claude` before and resolves
+`codex` now. A better answer, but a third undeclared departure from
+"resolves to the same runtime after" — and the reason recognition now reads
+targets the old audit path never opened, which is what makes an unbounded
+target (a FIFO, a character device) reachable where it previously was not.
+Found by review, not by the author.
 
 ### D5 — Dispatch routes derive from the adapters; the N×N table is deleted
 
@@ -210,11 +220,36 @@ verification caught it: `runner.ts` read `DISPATCH_ADAPTERS.claude.childEnv` as
 a hardcoded member access, and `childEnv` was an OPTIONAL interface member — so
 a future rasen-owned adapter that omitted it compiled clean. That is the same
 unenforceable-prose obligation this decision set out to destroy, reproduced one
-level down. `DispatchAdapter` is now a discriminated union on spawn ownership:
-the `rasen-owned` arm REQUIRES `childEnv`, the `playbook-owned` arm forbids it
-(`childEnv?: never`), so omitting it fails the build with `TS2322`. The merge
-itself lives in one place, `bridgeChildEnv(target, inherited)`, and every
-rasen-owned spawn calls it rather than reaching into an adapter.
+level down. `childEnv` is now REQUIRED on every dispatch adapter, and typed
+`RuntimeIdentityEnv<Id>` so the VALUE is pinned to the declaring runtime:
+omitting it or declaring another runtime's id fails the build with `TS2322`.
+The merge itself lives in one place, `bridgeChildEnv(target, inherited)`, and
+every rasen-owned spawn calls it rather than reaching into an adapter.
+
+**AMENDED AGAIN — the identity is TARGET-SCOPED, because it is inherited by
+descendants, not just by the worker.** Found by review, after the amendment
+above shipped. `RASEN_AGENT_RUNTIME` is an environment variable, so it reaches
+the whole descendant tree, and it outranks every fingerprint. Verified:
+`codex host → bridgeChildEnv('claude') → claude worker` correctly reports
+`claude`, but a `codex exec` grandchild of that worker inherits
+`RASEN_AGENT_RUNTIME=claude` alongside its own `CODEX_THREAD_ID` and reports
+`claude` — where before this change it correctly reported `codex`. In that
+grandchild `agent context --latest` reads the CLAUDE session store and reports
+an unrelated transcript's occupancy as its own: the confident-wrong-number
+class D8 targets, reintroduced one level down by the fix for it. The Risks
+section weighed only "a worker that relied on inheriting a fingerprint" and
+missed descendants entirely.
+
+So the original asymmetry claim above is WRONG in its conclusion, though right
+about the mechanism: it is true that Rasen owns no `codex exec` spawn, but it
+does not follow that a playbook-owned adapter should declare no identity. What
+it cannot do is APPLY one. `childEnv` is therefore required on BOTH arms —
+`spawn` now says only WHO applies it — `bridgeChildEnv` merges the target's
+identity unconditionally so no ancestor's value can stand, and
+`CodexExecInvocation` carries an `env` field that `formatShellInvocation`
+renders as a leading `RASEN_AGENT_RUNTIME=codex` (`set "…" &&` on Windows) so
+the playbook-owned spawn applies its own. The shipped orchestration playbook
+states it as a non-negotiable invariant beside the stdin redirect.
 
 Verification also found a SECOND rasen-owned Claude worker that bypassed the
 fix entirely: `management-api/supervisor.ts` spawns `claude -p` for workflow
@@ -285,6 +320,28 @@ Recognition (D8) is what decouples the probe and audit follow-ons. Before it, ad
 ### D14 — The `opus-5` preset rides along
 
 One line in `model-presets.ts`, and the same defect class: a hand-maintained list that produces a confident wrong number instead of an error. It affects the Claude probe too, not only Oh My Pi — any session on the current Opus generation. Its test lives in the same suite as the other probe assertions, so separating it would cost more than it isolates. Ground truth: Oh My Pi's own model cache reports `contextWindow: 1000000` for `claude-opus-5`, `anthropic/claude-opus-5`, and `claude-sonnet-5`. Matching is case-insensitive substring first-match, so adding `opus-5` covers the provider-prefixed id as well.
+
+**AMENDED — the same list carried the mirror-image defect, and this change
+edited the line it lived on.** Found by review. `opus-4` sat in the 1M bucket,
+and matching is case-insensitive substring first-match, so it swallowed every
+Opus 4.0 / 4.1 / 4.5 id — which the SAME model cache this decision cites
+reports at `contextWindow: 200000`, consistently across `anthropic`,
+`google-vertex` and `zenmux`; only 4.6 and later are 1M. Executed against the
+build: `resolveModelLimit('claude-opus-4-5-20251101')` returned 1,000,000, so a
+190k session reported 19% occupancy instead of 95% and `shouldHandoff` stayed
+false. That is the same defect class in the more damaging direction — `opus-5`
+failed CLOSED (a handoff that was not needed), `opus-4` failed OPEN (no handoff
+before the window overflows). Pre-existing rather than introduced here, but on
+the edited line and contradicted by the source consulted while editing it, so
+it is fixed here: the 1M families are enumerated (`opus-4-6`, `opus-4-7`,
+`opus-4-8`, `opus-5`, …) and a trailing `{ match: ['opus-4'], contextWindow:
+200_000 }` entry catches the rest. First-match order is now load-bearing and
+says so in the code.
+
+Not fixed: the `gpt-5` preset's 272,000 matches only the `bedrock-mantle`
+variants — `zenmux/openai/gpt-5` is 400,000 and `gpt-5.4`/`5.5`/`5.6` are
+1,050,000. Which provider surface a preset describes is a product decision, not
+a defect, and is left open.
 
 ### D15 — A temporary learned skill covers the window before this change ships
 
