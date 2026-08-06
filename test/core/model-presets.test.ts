@@ -91,5 +91,27 @@ describe('model-presets', () => {
       expect(resolveModelLimit('anthropic/claude-opus-5')).toBe(1_000_000);
       expect(resolveModelLimit('us.anthropic.claude-opus-5-20260101')).toBe(1_000_000);
     });
+
+    // The mirror-image defect, on the same list: `opus-4` in the 1M bucket
+    // swallowed 4.0/4.1/4.5, which are 200k models, so a 190k session reported
+    // 19% instead of 95% and `shouldHandoff` never fired. Fails OPEN, so it is
+    // the more damaging direction. Ground truth is the harness model cache that
+    // supplied the 1M families above: 4.0/4.1/4.5 are 200k on anthropic,
+    // google-vertex and zenmux alike; 4.6 and later are 1M.
+    it('keeps the earlier Opus 4 generations on their real 200k window', () => {
+      for (const id of [
+        'claude-opus-4-0',
+        'claude-opus-4-1',
+        'claude-opus-4-5',
+        'claude-opus-4-5-20251101',
+        'anthropic/claude-opus-4.5',
+      ]) {
+        expect(resolveModelLimit(id), id).toBe(200_000);
+      }
+      // …without demoting the generations that really do carry 1M.
+      for (const id of ['claude-opus-4-6', 'claude-opus-4-7', 'claude-opus-4-8']) {
+        expect(resolveModelLimit(id), id).toBe(1_000_000);
+      }
+    });
   });
 });
