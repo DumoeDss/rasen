@@ -99,7 +99,11 @@ describe('resolveSessionLaunchContext', () => {
       launchProject: null,
     });
 
-    expect(result).toEqual({
+    // `planningSpace.planning` is additive: task 9.4 has the session freeze the
+    // shared scope description's stable Store/project facts (no capability
+    // token, no derived child path). Everything else is unchanged from
+    // baseline, and the facts are asserted rather than merely tolerated.
+    expect(result).toMatchObject({
       ok: true,
       context: {
         planningSpace: {
@@ -115,6 +119,11 @@ describe('resolveSessionLaunchContext', () => {
           root: FileSystemUtils.canonicalizeExistingPath(memberRoot),
         },
       },
+    });
+    const launched = (result as { context: { planningSpace: { planning?: unknown } } }).context;
+    expect(launched.planningSpace.planning).toEqual({
+      storeId: 'team-store',
+      projectId: 'member-a-id',
     });
   });
 
@@ -652,12 +661,19 @@ describe('resolveSessionLaunchContext', () => {
       launchProject: null,
     });
 
-    expect(result).toEqual({
+    // DELIBERATE: space resolution now owns this failure. A registration that
+    // cannot produce one healthy planning scope is 409 `space_unavailable`
+    // carrying the underlying planning diagnostic — required verbatim by this
+    // change's delta spec `specs/planning-space-addressing/spec.md`, scenario
+    // "Unhealthy or inconsistent space". Still 409, still refused before spawn,
+    // and the reason is now the specific resolver diagnostic rather than a
+    // generic "not available".
+    expect(result).toMatchObject({
       ok: false,
       status: 409,
-      code: 'execution_unavailable',
-      message: 'Project planning space "dead-project-id" is not available at its registered root.',
+      code: 'space_unavailable',
     });
+    expect((result as { message: string }).message).toContain('dead-project-id');
   });
 
   it('resolves a linked member worktree to its own canonical cwd while retaining the registered main identity', async () => {
@@ -707,7 +723,7 @@ describe('resolveSessionLaunchContext', () => {
     }
   });
 
-  it('preserves omitted-space pointer-repo fallback: member cwd with Store attribution and attachment', async () => {
+  it('resolves omitted-space pointer-repo fallback to the launch project effective scope, planning in the Store, executing in the member cwd', async () => {
     const storeRoot = path.join(tempDir, 'fallback-store');
     createOpenSpecRoot(storeRoot);
     await registerStore({ id: 'fallback-store', localPath: storeRoot, globalDataDir: dataDir });
@@ -727,12 +743,22 @@ describe('resolveSessionLaunchContext', () => {
       },
     });
 
-    expect(result).toEqual({
+    // DELIBERATE: the omitted-space fallback now reports the launch PROJECT's
+    // effective planning scope, not the Store aggregate. Task 9.2 — "resolve
+    // omitted-space fallback from the launch project identity/binding instead
+    // of assuming the launch checkout is the planning root" — and
+    // `specs/planning-space-addressing/spec.md` scenario "Bound launch project
+    // follows Store planning" require exactly this. The planning ROOT is still
+    // the Store (that is where this member's planning lives) and the cwd is
+    // still the member checkout, so attribution and attachment are unchanged;
+    // only the space's own identity became the project rather than the Store.
+    // `planningSpace.planning` is additive (task 9.4).
+    expect(result).toMatchObject({
       ok: true,
       context: {
         planningSpace: {
-          type: 'store',
-          id: 'fallback-store',
+          type: 'project',
+          id: 'fallback-member-id',
           root: FileSystemUtils.canonicalizeExistingPath(storeRoot),
         },
         cwd: FileSystemUtils.canonicalizeExistingPath(projectRoot),
@@ -743,6 +769,11 @@ describe('resolveSessionLaunchContext', () => {
           root: FileSystemUtils.canonicalizeExistingPath(projectRoot),
         },
       },
+    });
+    const fallback = (result as { context: { planningSpace: { planning?: unknown } } }).context;
+    expect(fallback.planningSpace.planning).toEqual({
+      storeId: 'fallback-store',
+      projectId: 'fallback-member-id',
     });
   });
 

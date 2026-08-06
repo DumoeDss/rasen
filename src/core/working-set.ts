@@ -26,6 +26,8 @@ export interface WorkingSet {
     path: string;
     source: ResolvedOpenSpecRoot['source'];
     store_id?: string;
+    /** Scope description and typed local locators; diagnostic data, never replayable authority. */
+    scope?: ReturnType<typeof toRootOutput>['scope'];
     role: 'openspec_root';
     /** The registered machine home for this root (design `change-work-dir`,
      * D3); probe-only, omitted for an unregistered project. */

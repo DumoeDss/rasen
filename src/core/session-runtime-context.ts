@@ -43,7 +43,14 @@ const CONTEXT_FILE_NAME = 'context.json';
  */
 export type RuntimePlanningRef =
   | { type: 'project'; projectId: string; root: string }
-  | { type: 'store'; uid?: string; id?: string; root: string };
+  | {
+      type: 'store';
+      uid?: string;
+      id?: string;
+      projectId?: string;
+      targetLineId?: string;
+      root: string;
+    };
 
 /**
  * Which project the session works on, and where that checkout is. Planning-only
@@ -73,6 +80,8 @@ export const RuntimePlanningRefSchema = z.discriminatedUnion('type', [
       type: z.literal('store'),
       uid: z.string().min(1).optional(),
       id: z.string().min(1).optional(),
+      projectId: z.string().min(1).optional(),
+      targetLineId: z.string().min(1).optional(),
       root: z.string().min(1),
     })
     .strict(),
@@ -112,7 +121,25 @@ export function planningRefFor(space: {
   type: 'project' | 'store';
   id: string;
   root: string;
+  planning?: {
+    storeUid?: string;
+    storeId?: string;
+    projectId?: string;
+    targetLineId?: string;
+  };
 }): RuntimePlanningRef {
+  if (space.planning?.storeUid !== undefined || space.planning?.storeId !== undefined) {
+    return {
+      type: 'store',
+      ...(space.planning.storeUid === undefined ? {} : { uid: space.planning.storeUid }),
+      ...(space.planning.storeId === undefined ? {} : { id: space.planning.storeId }),
+      ...(space.planning.projectId === undefined ? {} : { projectId: space.planning.projectId }),
+      ...(space.planning.targetLineId === undefined
+        ? {}
+        : { targetLineId: space.planning.targetLineId }),
+      root: space.root,
+    };
+  }
   return space.type === 'project'
     ? { type: 'project', projectId: space.id, root: space.root }
     : { type: 'store', id: space.id, root: space.root };
@@ -131,7 +158,17 @@ export function planningRefFor(space: {
  */
 export function buildRuntimeContext(input: {
   sessionId: string;
-  space?: { type: 'project' | 'store'; id: string; root: string };
+  space?: {
+    type: 'project' | 'store';
+    id: string;
+    root: string;
+    planning?: {
+      storeUid?: string;
+      storeId?: string;
+      projectId?: string;
+      targetLineId?: string;
+    };
+  };
   execution?: RuntimeExecutionRef;
 }): RuntimeContext | undefined {
   if (!input.space || !input.execution) return undefined;

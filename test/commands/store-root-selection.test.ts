@@ -150,11 +150,16 @@ describe('store root selection for normal commands', () => {
       expect(result.exitCode).toBe(0);
 
       const json = parseJson(result);
-      expect(json.root).toEqual({
+      // `scope` is additive and required by the delta spec ("Machine-readable
+      // context describes scope without granting authority"); the established
+      // compatibility fields are unchanged.
+      expect(json.root).toMatchObject({
         path: storeRoot,
         source: 'store',
         store_id: 'team-context',
+        scope: { kind: 'legacy-store' },
       });
+      expect(Object.keys(json.root).sort()).toEqual(['path', 'scope', 'source', 'store_id']);
       expect(path.isAbsolute(json.change.path)).toBe(true);
       expect(json.change.path).toBe(
         path.join(storeRoot, 'rasen', 'changes', 'add-billing')

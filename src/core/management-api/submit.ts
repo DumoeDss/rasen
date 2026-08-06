@@ -15,6 +15,7 @@ import { createRequire } from 'node:module';
 import * as path from 'node:path';
 
 import { validateChangeName } from '../../utils/change-utils.js';
+import type { ResolvedSpace } from '../config-api/project-addressing.js';
 import type { ManagementApiContext } from './router.js';
 import { getBoundedCliEntry } from './whitelist.js';
 import type { SubmitChangeResponse } from './wire-types.js';
@@ -43,6 +44,16 @@ export const CONTROL_CHAR_PATTERN = /[\x00-\x08\x0b-\x1f\x7f]/;
 export type SubmitResult =
   | { ok: true; status: 201; response: SubmitChangeResponse }
   | { ok: false; status: number; code: string; message: string; cliExitCode?: number; stderr?: string };
+
+/** Resolved project scope from the router; string is the legacy direct-call adapter. */
+/**
+ * A legacy flat Store space is a valid submission target: it has no project
+ * catalog, so its flat `rasen/changes` IS the content a `store:` space
+ * addresses, and `rasen new change --store <id>` writes exactly there. Only a
+ * Store v2 aggregate cannot select a project implicitly; the router screens
+ * that with `isStoreAggregateSpace()`.
+ */
+export type ChangeSubmissionTarget = ResolvedSpace | string | undefined;
 
 /**
  * Resolves the CLI entry belonging to this very server process's own
@@ -123,19 +134,24 @@ function parseErrorMessage(stdout: string, stderr: string): string {
 export function createChangeSubmitter(
   context: Pick<ManagementApiContext, 'launchProjectRoot'>,
   options: { timeoutMs?: number; killGraceMs?: number; cliEntryOverride?: string } = {}
-): (name: unknown, description: unknown, spaceRoot?: string | undefined) => Promise<SubmitResult> {
+): (name: unknown, description: unknown, target?: ChangeSubmissionTarget) => Promise<SubmitResult> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const killGraceMs = options.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
   const cliEntry = options.cliEntryOverride ?? resolveCliEntry();
   let inFlight = false;
 
-  return async (name, description, spaceRoot) => {
-    // The subprocess cwd is the server-resolved space root when the request
-    // carried a `space` selector (resolved by the router before this call, so
-    // an unresolvable selector never reaches here), else the launch project
-    // (change-submission spec: cwd is never client free text). `spaceRoot` is
-    // always a registry-resolved absolute path or undefined.
-    const cwd = spaceRoot ?? context.launchProjectRoot;
+  return async (name, description, target) => {
+    // For a scoped request, cwd remains execution-owned while the CLI receives
+    // the complete stable planning selection separately. A Store planning
+    // checkout is never substituted as an execution root merely because it
+    // owns the Change.
+    const cwd = typeof target === 'string'
+      ? target
+      : (target !== undefined && target.type === 'project' ? target.executionRoot : undefined) ??
+        context.launchProjectRoot;
+    const selection = typeof target === 'object'
+      ? target.planningScope.describe().followupSelection
+      : undefined;
     // Admission gate through the shared whitelist table (design D7, review
     // m4): this endpoint serves only the bounded-cli tier's one entry.
     // `create-change` is a fixed constant here — there is no `kind`/`op`
@@ -192,6 +208,7 @@ export function createChangeSubmitter(
       cwd,
       name,
       description as string,
+      selection,
       timeoutMs,
       killGraceMs,
       () => {
@@ -206,6 +223,7 @@ function runSubmission(
   cwd: string,
   name: string,
   description: string,
+  selection: { store?: string; project?: string; targetLine?: string } | undefined,
   timeoutMs: number,
   killGraceMs: number,
   onChildClosed: () => void
@@ -214,7 +232,22 @@ function runSubmission(
     // A single `--proposal=<text>` token (rather than two argv elements) so
     // a description that starts with `-` can never be parsed as a distinct
     // CLI option (design D3, injection posture).
-    const argv = [cliEntry, 'new', 'change', name, `--proposal=${description}`, '--json'];
+    const selectorArgv = selection === undefined
+      ? []
+      : [
+          ...(selection.store === undefined ? [] : ['--store', selection.store]),
+          ...(selection.project === undefined ? [] : ['--project', selection.project]),
+          ...(selection.targetLine === undefined ? [] : ['--target-line', selection.targetLine]),
+        ];
+    const argv = [
+      cliEntry,
+      'new',
+      'change',
+      name,
+      `--proposal=${description}`,
+      '--json',
+      ...selectorArgv,
+    ];
 
     const child = spawn(process.execPath, argv, { cwd, shell: false, windowsHide: true });
 

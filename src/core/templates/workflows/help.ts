@@ -34,7 +34,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 Give the mental model in three sentences before any command:
 
-> Rasen turns AI-assisted work into **spec-driven development**: your \`rasen/specs/\` are the long-term truth about how the system behaves, and every piece of work is a **change** — a folder carrying its own proposal (why), delta specs (what), design (how), and tasks (steps) from idea to archive. Commands and skills drive that loop by hand; orchestration commands run the same loop autonomously with review built in. When a change ships, its delta specs merge into the main specs, so the truth stays current and the change folder becomes searchable decision history.
+> Rasen turns AI-assisted work into **spec-driven development**: the selected project scope's canonical specs are the long-term truth about how the system behaves, and every piece of work is a **Change** carrying its own proposal (why), delta specs (what), design (how), and tasks (steps) from idea to Archive. Commands and skills drive that loop by hand; orchestration commands run the same loop autonomously with review built in. When a Change ships, its delta specs merge into the project scope's canonical specs, so the truth stays current and the Change becomes searchable decision history.
 
 Then the first-session path — in order, one step at a time:
 

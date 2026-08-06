@@ -8,6 +8,7 @@ import { Command, Option } from 'commander';
 
 import {
   resolveRootForCommand,
+  toRootOutput,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
 import {
@@ -530,6 +531,7 @@ export function registerDoctorCommand(program: Command): void {
     .description('')
     .option('--store <id>', '')
     .option('--project <id>', '')
+    .option('--target-line <id>', '')
     .addOption(
       new Option('--store-path <path>', '').hideHelp()
     )
@@ -538,14 +540,22 @@ export function registerDoctorCommand(program: Command): void {
       '--gc',
       ''
     )
-    .action(async (options: { store?: string; project?: string; storePath?: string; json?: boolean; gc?: boolean }) => {
+    .action(async (options: { store?: string; project?: string; targetLine?: string; storePath?: string; json?: boolean; gc?: boolean }) => {
       try {
         const root = await resolveRootForCommand(
-          { store: options.store, project: options.project, storePath: options.storePath },
+          {
+            store: options.store,
+            project: options.project,
+            targetLine: options.targetLine,
+            storePath: options.storePath,
+          },
           {
             json: options.json,
             failurePayload: FAILURE_PAYLOAD,
             allowImplicitRoot: false,
+            ...(options.store !== undefined && options.project === undefined
+              ? { intent: 'store-read' as const }
+              : {}),
             // Doctor is the surface that REPORTS a broken store declaration,
             // so it must not be stopped by one (design D4).
             allowUnavailableStore: true,
@@ -559,6 +569,43 @@ export function registerDoctorCommand(program: Command): void {
         // read-only by default. Runs before gathering health so the report
         // reflects the post-GC registry state.
         const gcResult = options.gc ? await gcProjectRegistry() : null;
+
+        if (root.planningScope?.kind === 'store-aggregate') {
+          const ref = root.planningScope.ref;
+          if (ref.mode !== 'store-aggregate') {
+            throw new Error('Store aggregate description carried a non-aggregate ref.');
+          }
+          const aggregate = {
+            root: toRootOutput(root),
+            store: {
+              id: ref.storeId,
+              ...(ref.storeUid === undefined ? {} : { uid: ref.storeUid }),
+              ...(ref.layoutVersion === undefined ? {} : { layoutVersion: ref.layoutVersion }),
+              planningRoot: ref.storeRoot,
+            },
+            project: null,
+            references: [],
+            status: [{
+              severity: 'info' as const,
+              code: 'store_aggregate_scope',
+              message: 'Store aggregate scope is healthy; project content requires an explicit project scope.',
+            }],
+            ...(gcResult ? { gc: formatGcResult(gcResult) } : {}),
+          };
+          if (options.json) {
+            printJson(aggregate);
+          } else {
+            console.log('Doctor');
+            console.log('');
+            console.log('Store aggregate');
+            console.log(`  Store: ${ref.storeId}`);
+            if (ref.storeUid) console.log(`  Store identity: ${ref.storeUid}`);
+            console.log(`  Planning root: ${ref.storeRoot}`);
+            console.log('  Project planning content: requires an explicit project scope');
+            if (gcResult) printGcSummary(gcResult);
+          }
+          return;
+        }
 
         const { health, declaredReferenceCount } = await gatherHealth(root);
 

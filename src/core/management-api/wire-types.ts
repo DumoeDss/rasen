@@ -250,6 +250,12 @@ export interface SessionSpaceWire {
   type: 'project' | 'store';
   id: string;
   root?: string;
+  planning?: {
+    storeUid?: string;
+    storeId?: string;
+    projectId?: string;
+    targetLineId?: string;
+  };
 }
 
 /** `POST /api/v1/changes` success response: the CLI-created change, as reported by its own `--json` output. */

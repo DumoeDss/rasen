@@ -1204,7 +1204,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             }
           }
         },
@@ -1245,7 +1248,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             }
           }
         },
@@ -1280,7 +1286,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             }
           }
         },
@@ -1322,7 +1331,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             },
             "keep-ephemera": {
               "description": "完全な安全検査を維持しながら、すべての ephemera ファイルを保持します"
@@ -1379,7 +1391,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             }
           }
         },
@@ -1399,7 +1414,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             }
           }
         },
@@ -1450,7 +1468,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             }
@@ -1652,7 +1673,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             },
             "code-workspace": {
               "description": "このセットのVS Codeワークスペースファイルも作成します"
@@ -1698,7 +1722,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             },
             "gc": {
               "description": "参照切れのmachine-home登録と孤立したhomeディレクトリを削除します — そのhome内の外部アーカイブもすべて削除されます（archive-destinationの'external'アーカイブはhomeと同じライフサイクルです。Git履歴が永続的な記録として残ります）"
@@ -2278,7 +2305,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2310,7 +2340,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2339,7 +2372,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2353,7 +2389,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2367,7 +2406,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2384,7 +2426,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2398,7 +2443,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2415,7 +2463,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2432,7 +2483,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2452,7 +2506,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2472,7 +2529,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             }
@@ -2496,7 +2556,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立したRasenリポジトリです）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 },
                 "owner-store": {
                   "description": "計画ルートとは独立してストアの知識所有者を選択します"
@@ -2546,6 +2609,9 @@
                 },
                 "project": {
                   "description": "登録済みプロジェクトをすべての移行ルートとして選択"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 },
                 "json": {
                   "description": "JSONで出力します（非対話、実行には--yesが必要）"

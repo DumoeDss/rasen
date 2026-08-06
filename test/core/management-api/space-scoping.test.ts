@@ -130,6 +130,27 @@ describe('management API space scoping (planning-space-addressing design D2/D6)'
       expect(names).toEqual(['store-change']);
     });
 
+    it('GET /api/v1/spaces/worktrees?space=store:<id> answers for a legacy flat Store instead of refusing', async () => {
+      // The CLI reads and writes this Store's flat content, so the API must not
+      // refuse the same scope: `specs/store-planning-scope-routing` requires
+      // that equivalent entry points resolve identically. Only a Store v2
+      // AGGREGATE returns `project_scope_required`. This endpoint was the
+      // fourth site of that defect and, unlike the other three, had no test —
+      // which is exactly how the class kept surviving.
+      const storeRoot = path.join(tempDir, 'worktree-team-store');
+      createOpenSpecRoot(storeRoot);
+      await registerStore({ id: 'wt-team', localPath: storeRoot, globalDataDir: dataDir });
+
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/spaces/worktrees?space=store:wt-team',
+        headers: authed(),
+      });
+      expect(res.status).toBe(200);
+      expect(Array.isArray((res.json() as any).worktrees)).toBe(true);
+    });
+
     it('GET /api/v1/runs?space=project:<B> resolves against B, not the launch project', async () => {
       const projectB = path.join(tempDir, 'project-b-runs');
       createOpenSpecRoot(projectB);

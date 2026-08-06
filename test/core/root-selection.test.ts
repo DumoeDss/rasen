@@ -18,7 +18,10 @@ import {
   writeStoreRegistryState,
 } from '../../src/core/store/foundation.js';
 import { getGlobalDataDir } from '../../src/core/global-config.js';
-import { readProjectRegistryState } from '../../src/core/project-registry.js';
+import {
+  readProjectRegistryState,
+  registerProject,
+} from '../../src/core/project-registry.js';
 import { FileSystemUtils } from '../../src/utils/file-system.js';
 
 describe('resolveOpenSpecRoot', () => {
@@ -104,6 +107,44 @@ describe('resolveOpenSpecRoot', () => {
     );
 
     return storeRoot;
+  }
+
+  async function makeStoreV2Project(
+    storeId: string,
+    projectId: string
+  ): Promise<{ storeRoot: string; storeUid: string }> {
+    const storeUid = randomUUID();
+    const storeRoot = await registerStore(storeId);
+    await writeStoreRegistryState(
+      {
+        version: 2,
+        stores: {
+          [storeUid]: {
+            id: storeId,
+            backend: { type: 'git', local_path: storeRoot },
+          },
+        },
+      },
+      { globalDataDir }
+    );
+    await writeStoreMetadataState(storeRoot, {
+      version: 2,
+      uid: storeUid,
+      id: storeId,
+      layoutVersion: 2,
+    });
+    const catalogPath = path.join(
+      storeRoot,
+      '.rasen-store',
+      'projects',
+      `${projectId}.yaml`
+    );
+    fs.mkdirSync(path.dirname(catalogPath), { recursive: true });
+    fs.writeFileSync(
+      catalogPath,
+      `version: 2\nprojectId: ${projectId}\nid: ${projectId}\nroles:\n  planning: true\n  knowledge: false\nplanningBinding:\n  state: bound\n  boundAt: 2026-08-06T00:00:00.000Z\n`
+    );
+    return { storeRoot, storeUid };
   }
 
   async function expectRootSelectionError(
@@ -628,7 +669,7 @@ describe('resolveOpenSpecRoot', () => {
 
       const canonicalPath = FileSystemUtils.canonicalizeExistingPath(storeRoot);
       const state = await readProjectRegistryState({ globalDataDir });
-      expect(state?.projects[canonicalPath]?.projectId).toBe(projectId);
+      expect(state?.projects[canonicalPath]).toBeUndefined();
 
       // Must not have leaked into the XDG-default registry either - the
       // whole point of DI is that a missed thread can never reach it.
@@ -640,6 +681,30 @@ describe('resolveOpenSpecRoot', () => {
   });
 
   describe('--project selection (store-project-namespace)', () => {
+    it('resolves a project that exists only in the machine project registry', async () => {
+      const projectRoot = mkdir('machine-projects/machine-only');
+      createOpenSpecRoot(projectRoot);
+      fs.writeFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        'schema: spec-driven\nprojectId: machine-only\n'
+      );
+      await registerProject(
+        { projectRoot, projectId: 'machine-only', mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      const root = await resolveOpenSpecRoot({
+        project: 'machine-only',
+        startPath: mkdir('unrelated-cwd'),
+        globalDataDir,
+      });
+
+      expect(root.path).toBe(fs.realpathSync.native(projectRoot));
+      expect(root.storeId).toBe('machine-only');
+      expect(root.storeType).toBe('project');
+      expect(root.planningScope?.kind).toBe('standalone');
+    });
+
     it('resolves a project root with full parity to a store root', async () => {
       const projectRoot = await registerStore('elftia', { type: 'project' });
 
@@ -677,34 +742,42 @@ describe('resolveOpenSpecRoot', () => {
 
       const error = await expectRootSelectionError(
         resolveOpenSpecRoot({ project: 'other-project', globalDataDir }),
-        'unknown_store'
+        'unknown_project'
       );
       expect(error.message).toContain("'other-project'");
       expect(error.message).toContain('elftia');
     });
 
-    it('rejects both --store and --project in a single invocation before resolving', async () => {
-      await registerStore('elftia', { type: 'store' });
+    it('uses --store and --project as orthogonal Store v2 dimensions', async () => {
+      const { storeRoot } = await makeStoreV2Project('team', 'elftia');
 
-      const error = await expectRootSelectionError(
-        resolveOpenSpecRoot({ store: 'elftia', project: 'elftia', globalDataDir }),
-        'store_project_mutually_exclusive'
+      const root = await resolveOpenSpecRoot({
+        store: 'team',
+        project: 'elftia',
+        startPath: storeRoot,
+        globalDataDir,
+      });
+
+      expect(root.planningScope?.kind).toBe('store-project');
+      expect(root.projectHome).toBe(
+        path.join(storeRoot, 'rasen', 'projects', 'elftia')
       );
-      expect(error.message).toContain('--store');
-      expect(error.message).toContain('--project');
+      expect(root.changesDir).toBe(
+        path.join(storeRoot, 'rasen', 'projects', 'elftia', 'changes')
+      );
     });
 
-    it('rejects both flags in resolveRootForCommand JSON mode with a single diagnostic payload', async () => {
+    it('resolves both flags in resolveRootForCommand JSON mode without a diagnostic payload', async () => {
+      const { storeRoot } = await makeStoreV2Project('team', 'elftia');
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       try {
         const root = await resolveRootForCommand(
-          { store: 'elftia', project: 'elftia' },
+          { store: 'team', project: 'elftia' },
           { json: true, globalDataDir }
         );
-        expect(root).toBeNull();
-        expect(logSpy).toHaveBeenCalledTimes(1);
-        const payload = JSON.parse(logSpy.mock.calls[0][0] as string);
-        expect(payload.status[0].code).toBe('store_project_mutually_exclusive');
+        expect(root?.path).toBe(storeRoot);
+        expect(root?.planningScope?.kind).toBe('store-project');
+        expect(logSpy).not.toHaveBeenCalled();
       } finally {
         logSpy.mockRestore();
       }
@@ -762,6 +835,101 @@ describe('resolveOpenSpecRoot', () => {
 
         expect(withStoreFlag(root, 'rasen list')).toBe('rasen list --store elftia');
       });
+    });
+  });
+
+  describe('ambient bound-project routing never fails open to the flat Store root', () => {
+    function writeMemberCheckout(
+      dirName: string,
+      storeId: string,
+      projectId: string,
+      options: { localPlanning?: boolean } = {}
+    ): string {
+      const checkout = mkdir(dirName);
+      if (options.localPlanning) {
+        createOpenSpecRoot(checkout);
+      } else {
+        fs.mkdirSync(path.join(checkout, 'rasen'), { recursive: true });
+      }
+      fs.writeFileSync(
+        path.join(checkout, 'rasen', 'config.yaml'),
+        `schema: spec-driven\nprojectId: ${projectId}\nstore: ${storeId}\n`
+      );
+      return checkout;
+    }
+
+    function unbindProject(storeRoot: string, projectId: string): void {
+      fs.writeFileSync(
+        path.join(storeRoot, '.rasen-store', 'projects', `${projectId}.yaml`),
+        `version: 2\nprojectId: ${projectId}\nid: ${projectId}\nroles:\n  planning: false\n  knowledge: true\nplanningBinding:\n  state: unbound\n`
+      );
+    }
+
+    it('surfaces the catalog diagnostic instead of reading the Store root-level changes', async () => {
+      const { storeRoot } = await makeStoreV2Project('team', 'elftia');
+      fs.mkdirSync(
+        path.join(storeRoot, 'rasen', 'projects', 'elftia', 'changes', 'partition-change'),
+        { recursive: true }
+      );
+      // The flat Store root also carries content; it must never answer for the
+      // project, least of all after a diagnostic.
+      fs.mkdirSync(path.join(storeRoot, 'rasen', 'changes', 'store-root-decoy'), {
+        recursive: true,
+      });
+      const checkout = writeMemberCheckout('member-checkout', 'team', 'elftia');
+
+      const healthy = await resolveOpenSpecRoot({
+        startPath: checkout,
+        globalDataDir,
+        reporter: false,
+      });
+      expect(healthy.planningScope?.kind).toBe('store-project');
+      expect(healthy.changesDir).toBe(
+        path.join(storeRoot, 'rasen', 'projects', 'elftia', 'changes')
+      );
+
+      fs.writeFileSync(
+        path.join(storeRoot, '.rasen-store', 'projects', 'elftia.yaml'),
+        'version: 2\nprojectId: [unclosed\n'
+      );
+
+      const error = await expectRootSelectionError(
+        resolveOpenSpecRoot({ startPath: checkout, globalDataDir, reporter: false }),
+        'invalid_project_catalog'
+      );
+      expect(error.diagnostic.target).toContain('elftia.yaml');
+    });
+
+    it('reports the unbound planning relationship for a pointer checkout with no local planning', async () => {
+      const { storeRoot } = await makeStoreV2Project('team', 'elftia');
+      unbindProject(storeRoot, 'elftia');
+      fs.mkdirSync(path.join(storeRoot, 'rasen', 'changes', 'store-root-decoy'), {
+        recursive: true,
+      });
+      const checkout = writeMemberCheckout('unbound-checkout', 'team', 'elftia');
+
+      await expectRootSelectionError(
+        resolveOpenSpecRoot({ startPath: checkout, globalDataDir, reporter: false }),
+        'project_not_in_store'
+      );
+    });
+
+    it('keeps configuration inheritance resolving to the local planning tree', async () => {
+      const { storeRoot } = await makeStoreV2Project('team', 'elftia');
+      unbindProject(storeRoot, 'elftia');
+      const checkout = writeMemberCheckout('inheriting-checkout', 'team', 'elftia', {
+        localPlanning: true,
+      });
+
+      const root = await resolveOpenSpecRoot({
+        startPath: checkout,
+        globalDataDir,
+        reporter: false,
+      });
+
+      expect(root.path).toBe(checkout);
+      expect(root.changesDir).toBe(path.join(checkout, 'rasen', 'changes'));
+      expect(root.storeId).toBeUndefined();
     });
   });
 

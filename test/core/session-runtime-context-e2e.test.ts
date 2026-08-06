@@ -112,11 +112,16 @@ describe('session runtime context end to end', () => {
   it('carries Store S, project P and checkout B from launch to the capability an agent reads', async () => {
     const fixture = await storeSessionFixture();
 
-    expect(fixture.context.planning).toEqual({
+    // `planning` (the frozen Store/project facts) is additive: task 9.4 has the
+    // session freeze the shared scope description's stable facts. The three
+    // baseline fields are unchanged, and the added facts are asserted rather
+    // than merely tolerated.
+    expect(fixture.context.planning).toMatchObject({
       type: 'store',
       id: 'store-s',
       root: fixture.storeRoot,
     });
+    expect(fixture.context.planning).toMatchObject({ projectId: 'project-p' });
     expect(fixture.context.execution).toEqual({
       kind: 'project',
       projectId: 'project-p',

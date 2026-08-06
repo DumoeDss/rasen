@@ -187,6 +187,7 @@ describe('root-inclusive CLI structure', () => {
       'json',
       'store',
       'project',
+      'target-line',
     ]);
   });
 
@@ -204,6 +205,9 @@ describe('root-inclusive CLI structure', () => {
         if (flagNames.includes('store')) {
           seen.push(commandPath);
           expect(flagNames, `${commandPath} --project`).toContain('project');
+          if (!commandPath.startsWith('knowledge ')) {
+            expect(flagNames, `${commandPath} --target-line`).toContain('target-line');
+          }
           if (commandPath.startsWith('pipeline ')) {
             pipeline.push(commandPath);
           } else if (!commandPath.startsWith('knowledge ')) {

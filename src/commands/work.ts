@@ -9,9 +9,9 @@ import { Command } from 'commander';
 
 import {
   resolveRootForCommand,
+  resolvedExecutionProjectRoot,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
-import { resolveExecutionRoot } from '../core/file-placement.js';
 import { NATIVE_PATH_IDENTITY_FLAVOR } from '../core/path-identity.js';
 import {
   applyWorkMigration,
@@ -36,6 +36,7 @@ export interface WorkMigrateOptions {
   yes?: boolean;
   store?: string;
   project?: string;
+  targetLine?: string;
 }
 
 const FAILURE_PAYLOAD = { changes: [], summary: null };
@@ -76,6 +77,16 @@ class WorkMigrateBlockedError extends Error {
   }
 }
 
+/**
+ * A legacy flat Store planning root: either positively classified by the scope
+ * resolver, or a store-typed compatibility root that carries no scope at all
+ * (Store layout v2 always carries one).
+ */
+function isLegacyFlatStorePlanningRoot(root: ResolvedOpenSpecRoot): boolean {
+  if (root.planningScope !== undefined) return root.planningScope.kind === 'legacy-store';
+  return root.storeId !== undefined && (root.storeType ?? 'store') === 'store';
+}
+
 function assertRequestedChangeExists(plan: WorkMigrationPlan, changeName?: string): void {
   if (changeName !== undefined && plan.discoveredChanges.length === 0) {
     throw new WorkMigrateBlockedError(
@@ -94,10 +105,29 @@ export function workMigrationRootContext(
   root: ResolvedOpenSpecRoot,
   cwd = process.cwd()
 ): WorkMigrationRootContext {
-  const storePlanning = root.storeId !== undefined && (root.storeType ?? 'store') === 'store';
-  const executionRoot = storePlanning
-    ? resolveExecutionRoot(root.path, { cwd, storeSelected: true })
-    : root.path;
+  void cwd;
+  // Work migration is a BULK relocation of planning-owned files (evidence,
+  // handoff, design docs) into the planning root — not an ordinary write, which
+  // a legacy flat Store still accepts via `new change` and `archive`. Doing it
+  // before the layout migration would move that content twice and hand the
+  // migration slice a tree it must re-inventory, so the capability is withheld
+  // until that slice exists. The diagnostic names the real cause and repair
+  // rather than "no execution checkout was verified".
+  if (isLegacyFlatStorePlanningRoot(root)) {
+    throw new WorkMigrateBlockedError(
+      'legacy_flat_store_requires_migration',
+      'Legacy flat Store planning is read-only; work migration cannot write into it until the Store is migrated.',
+      'Run the Store migration workflow first, then rerun rasen work migrate.'
+    );
+  }
+  const executionRoot = resolvedExecutionProjectRoot(root);
+  if (executionRoot === undefined) {
+    throw new WorkMigrateBlockedError(
+      'execution_authority_required',
+      'Work migration requires a verified execution checkout; planning scope alone is not writable.',
+      'Run from an associated execution worktree and retry.'
+    );
+  }
   return freezeWorkMigrationRootContext({
     planningRoot: root.path,
     changesDir: root.changesDir,
@@ -288,6 +318,7 @@ export async function runWorkMigrateCommand(
       {
         ...(options.store !== undefined ? { store: options.store } : {}),
         ...(options.project !== undefined ? { project: options.project } : {}),
+        ...(options.targetLine !== undefined ? { targetLine: options.targetLine } : {}),
       },
       { json, failurePayload: FAILURE_PAYLOAD, allowImplicitRoot: false }
     );
@@ -390,6 +421,7 @@ export function registerWorkCommand(
     .option('--discard-absorbed-conclusions', '')
     .option('--store <id>', '')
     .option('--project <id>', '')
+    .option('--target-line <id>', '')
     .option('--json', '')
     .option('--yes', '')
     .action(async (options: WorkMigrateOptions) => {

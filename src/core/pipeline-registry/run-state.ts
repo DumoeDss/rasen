@@ -545,6 +545,8 @@ export interface StateFileLocationOptions {
   ephemeraDir?: string | null;
   /** The legacy machine-home work directory, searched second. */
   workDir?: string | null;
+  /** Store v2 planning Changes are not execution-owned state locations. */
+  includeChangeDir?: boolean;
 }
 
 /**
@@ -560,7 +562,7 @@ export function stateFileSearchChain(
   const chain: string[] = [];
   if (options.ephemeraDir) chain.push(options.ephemeraDir);
   if (options.workDir) chain.push(options.workDir);
-  chain.push(changeDir);
+  if (options.includeChangeDir !== false) chain.push(changeDir);
   return chain;
 }
 

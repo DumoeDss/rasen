@@ -272,11 +272,23 @@ describe('standalone store lifecycle journey', () => {
     );
     expect(created.exitCode).toBe(0);
     const createdPayload = JSON.parse(created.stdout);
-    expect(createdPayload.root).toEqual({
+    // The established compatibility fields are unchanged. `scope` is additive
+    // and REQUIRED: root JSON must identify whether the result is standalone,
+    // legacy Store, Store aggregate, or Store project scope
+    // (specs/store-planning-scope-routing "Machine-readable context describes
+    // scope without granting authority").
+    expect(createdPayload.root).toMatchObject({
       path: canonical(storeRoot),
       source: 'store',
       store_id: STORE_ID,
+      scope: { kind: 'legacy-store', ref: { mode: 'legacy-store', storeId: STORE_ID } },
     });
+    expect(Object.keys(createdPayload.root).sort()).toEqual([
+      'path',
+      'scope',
+      'source',
+      'store_id',
+    ]);
     expect(path.isAbsolute(createdPayload.change.path)).toBe(true);
 
     const status = await runCLI(
@@ -467,10 +479,14 @@ describe('standalone store lifecycle journey', () => {
       expect(entries).toContain('rasen/config.yaml');
     }
 
-    // Global state holds only registry/config metadata (the store registry,
-    // and the project registry's machine-home directory for the resolved
-    // store root), no planning files. The machine-home dir name embeds a
-    // hash of a freshly minted projectId, so it can't be asserted verbatim.
+    // Global state holds only registry/config metadata, never planning files.
+    //
+    // DELIBERATE CHANGE (task 6.5): registry self-healing and version warnings
+    // are now constrained to a real standalone/execution project, so selecting
+    // a Store no longer registers the STORE CHECKOUT as a project. The single
+    // machine home this test used to require was exactly that side effect —
+    // its old comment named it "the machine-home directory for the resolved
+    // store root". A Store checkout is a planning locator, not a project.
     for (const env of [machineA, machineB]) {
       const dataEntries = await listRelativeEntries(
         path.join(env.XDG_DATA_HOME as string, 'rasen'),
@@ -481,9 +497,9 @@ describe('standalone store lifecycle journey', () => {
       }
       expect(dataEntries).toContain('stores/');
       expect(dataEntries).toContain('stores/registry.yaml');
-      expect(dataEntries).toContain('projects/');
-      expect(dataEntries).toContain('projects/registry.json');
-      expect(dataEntries.filter((entry) => /^projects\/[a-z0-9-]+\/$/.test(entry))).toHaveLength(1);
+      // Regression guard: if scope selection ever re-registers a Store
+      // checkout as a project, a machine home reappears here and this fails.
+      expect(dataEntries.filter((entry) => /^projects\/[a-z0-9-]+\/$/.test(entry))).toHaveLength(0);
     }
   });
 

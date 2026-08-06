@@ -1734,6 +1734,17 @@ describe('resolveRunStateLocation (three-location sticky-legacy chain)', () => {
     expect(location).toEqual({ dir: changeDir, path: runStatePath(changeDir) });
   });
 
+  it('omits a Store v2 planning Change from the execution-owned search chain', () => {
+    writeRunState(changeDir, { ...state, pipeline: 'planning-decoy' });
+    expect(
+      resolveRunStateLocation(changeDir, {
+        ephemeraDir: ephemera,
+        workDir,
+        includeChangeDir: false,
+      })
+    ).toBeNull();
+  });
+
   it('returns null when no location in the chain holds a file', () => {
     expect(resolveRunStateLocation(changeDir, { ephemeraDir: ephemera, workDir })).toBeNull();
   });

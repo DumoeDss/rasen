@@ -16,14 +16,16 @@ import {
   type ArchivePlan,
   type PreparedArchiveSpecAction,
 } from './archive-engine.js';
+import { WORKSPACE_DIR_NAME } from './config.js';
 import { getGlobalDataDir } from './global-config.js';
-import { resolveArchiveDestination, resolveChangeWorkDir } from './change-work.js';
-import { ephemeraDir, evidenceDir, resolveExecutionRoot } from './file-placement.js';
-import { readProjectConfig, resolveArchiveTiming } from './project-config.js';
+import { resolveChangeWorkDir } from './change-work.js';
+import { ephemeraDir, evidenceDir } from './file-placement.js';
+import { resolveArchiveTiming } from './project-config.js';
 import {
   emitStoreRootBanner,
   isRootSelectionError,
-  isStoreSelectedRoot,
+  readResolvedProjectConfig,
+  resolvedExecutionProjectRoot,
   resolveOpenSpecRoot,
   toRootOutput,
   withStoreFlag,
@@ -61,6 +63,7 @@ export interface ArchiveOptions {
   json?: boolean;
   store?: string;
   project?: string;
+  targetLine?: string;
   storePath?: string;
   keepEphemera?: boolean;
   dryRun?: boolean;
@@ -75,6 +78,70 @@ interface ArchiveDiagnostic {
   code: string;
   message: string;
   fix?: string;
+}
+
+function storeFinalizationDiagnostic(root: ResolvedOpenSpecRoot): ArchiveDiagnostic | null {
+  if (root.planningScope?.kind === 'store-project') {
+    return {
+      severity: 'error',
+      code: 'store_v2_finalization_unavailable',
+      message: 'Store v2 Archive/finalization is unavailable until the finalization owner activates it.',
+      fix: 'Use the later Store finalization workflow; no planning or execution files were changed.',
+    };
+  }
+  // A legacy flat Store keeps archiving into its own frozen flat layout. The
+  // read-only refusal ships with `store-layout-v2-migration`, together with the
+  // migration that makes it survivable; refusing here would leave every
+  // existing Store unable to finalize anything for the rest of the portfolio.
+  // Store v2 is still fail-closed above, which is what P3 actually required.
+  return null;
+}
+
+/** The planning scope facts recorded on every plan this build creates. */
+function archivePlanScope(root: ResolvedOpenSpecRoot): ArchivePlan['scope'] {
+  const ref = root.planningScope?.ref;
+  if (root.planningScope === undefined || ref === undefined) {
+    return { kind: 'standalone' };
+  }
+  return {
+    kind: root.planningScope.kind,
+    ...(ref.mode === 'standalone' || ref.storeUid === undefined
+      ? {}
+      : { storeUid: ref.storeUid }),
+    ...('projectId' in ref && ref.projectId !== undefined
+      ? { projectId: ref.projectId }
+      : {}),
+  };
+}
+
+/**
+ * A stored plan is Store v2 only when it SAYS so. The previous
+ * `<sep>rasen<sep>projects<sep>` substring test refused a legitimate standalone
+ * project checked out at e.g. `E:\rasen\projects\myapp`. A plan written before
+ * the scope field existed is classified from its own recorded roots, which
+ * cannot collide with the checkout's own location.
+ */
+function storedPlanFinalizationDiagnostic(plan: ArchivePlan): ArchiveDiagnostic | null {
+  const storeV2 = plan.scope === undefined
+    ? planActivePathIsStorePartition(plan)
+    : plan.scope.kind === 'store-project' || plan.scope.kind === 'store-aggregate';
+  if (storeV2) {
+    return {
+      severity: 'error',
+      code: 'store_v2_finalization_unavailable',
+      message: 'Stored Store v2 Archive/finalization plans cannot be applied by this child.',
+      fix: 'Discard the deferred plan and use the later Store finalization workflow.',
+    };
+  }
+  return null;
+}
+
+/** Relative to the plan's OWN planning root, so the checkout's location cannot alias it. */
+function planActivePathIsStorePartition(plan: ArchivePlan): boolean {
+  const relative = path.relative(plan.roots.planning, plan.paths.active);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) return false;
+  const segments = relative.split(/[\\/]/);
+  return segments[0] === WORKSPACE_DIR_NAME && segments[1] === 'projects';
 }
 
 interface ArchiveResult {
@@ -211,6 +278,7 @@ export class ArchiveCommand {
       root = await resolveOpenSpecRoot({
         ...(options.store !== undefined ? { store: options.store } : {}),
         ...(options.project !== undefined ? { project: options.project } : {}),
+        ...(options.targetLine !== undefined ? { targetLine: options.targetLine } : {}),
         ...(options.storePath !== undefined ? { storePath: options.storePath } : {}),
       });
     } catch (error) {
@@ -219,6 +287,19 @@ export class ArchiveCommand {
         return;
       }
       throw error;
+    }
+
+    const finalizationDiagnostic = storeFinalizationDiagnostic(root);
+    if (finalizationDiagnostic) {
+      if (json) {
+        this.printJsonFailure(root, finalizationDiagnostic);
+        return;
+      }
+      throw new ArchiveBlockedError(
+        finalizationDiagnostic.code,
+        finalizationDiagnostic.message,
+        finalizationDiagnostic.fix
+      );
     }
 
     if (json) {
@@ -315,6 +396,18 @@ export class ArchiveCommand {
         options.applyPlan!,
         getGlobalDataDir()
       );
+      const finalizationDiagnostic = storedPlanFinalizationDiagnostic(plan);
+      if (finalizationDiagnostic) {
+        if (json) {
+          this.printJsonFailure(undefined, finalizationDiagnostic);
+          return;
+        }
+        throw new ArchiveBlockedError(
+          finalizationDiagnostic.code,
+          finalizationDiagnostic.message,
+          finalizationDiagnostic.fix
+        );
+      }
       const result = await this.applyPlannedArchive(plan);
       if (result.status !== 'complete') {
         if (!result.manualRecoveryAction) {
@@ -403,7 +496,7 @@ export class ArchiveCommand {
           withStoreFlag(root, 'rasen archive <change-name> --json')
         );
       }
-      const selected = await this.selectChange(changesDir);
+      const selected = await this.selectChange(root);
       if (!selected) {
         console.log('No change selected. Aborting.');
         return null;
@@ -456,7 +549,7 @@ export class ArchiveCommand {
       };
     }
 
-    const archiveParent = resolveArchiveDestination(root.path).archiveDir;
+    const archiveParent = root.archiveDir;
     const planningBlockers: ArchivePlan['blockers'] = [];
     let workDir: string | null = null;
     try {
@@ -471,7 +564,7 @@ export class ArchiveCommand {
     }
     let timing: ArchivePlan['decisions']['timing']['mode'] = 'on-merge';
     try {
-      timing = resolveArchiveTiming(readProjectConfig(root.path));
+      timing = resolveArchiveTiming(readResolvedProjectConfig(root));
     } catch (error) {
       planningBlockers.push({
         operation: 'timing',
@@ -560,7 +653,8 @@ export class ArchiveCommand {
       progress = await getTaskProgressForChange(
         changesDir,
         changeName,
-        path.resolve(changesDir, '..', '..')
+        path.resolve(changesDir, '..', '..'),
+        root.schemasDir
       );
     } catch (error) {
       planningBlockers.push({
@@ -631,10 +725,14 @@ export class ArchiveCommand {
       specActions = [];
     }
 
-    const executionRoot = resolveExecutionRoot(root.path, {
-      storeSelected: isStoreSelectedRoot(root),
-      cwd: process.cwd(),
-    });
+    const executionRoot = resolvedExecutionProjectRoot(root);
+    if (executionRoot === undefined) {
+      throw new ArchiveBlockedError(
+        'execution_authority_required',
+        'Archive requires a verified execution checkout; planning scope alone is not writable.',
+        'Run from an associated execution worktree and retry.'
+      );
+    }
     const sidecar = sourceAvailable
       ? await resolveArchiveSidecar(
           changeDir,
@@ -677,6 +775,7 @@ export class ArchiveCommand {
       change: changeName,
       planningRoot: root.path,
       executionRoot,
+      scope: archivePlanScope(root),
       activePath: changeDir,
       archiveParent,
       ephemeraPath: ephemeraDir(executionRoot, changeName),
@@ -1074,8 +1173,9 @@ export class ArchiveCommand {
     };
   }
 
-  private async selectChange(changesDir: string): Promise<string | null> {
+  private async selectChange(root: ResolvedOpenSpecRoot): Promise<string | null> {
     const { select } = await import('@inquirer/prompts');
+    const changesDir = root.changesDir;
     const names = await listActiveChangeNames(changesDir);
     if (names.length === 0) {
       console.log('No active changes found.');
@@ -1090,7 +1190,8 @@ export class ArchiveCommand {
             await getTaskProgressForChange(
               changesDir,
               id,
-              path.resolve(changesDir, '..', '..')
+              root.path,
+              root.schemasDir
             )
           ),
         }))

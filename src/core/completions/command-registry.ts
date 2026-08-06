@@ -69,6 +69,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
     ],
   },
   {
@@ -103,6 +104,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       COMMON_FLAGS.noInteractive,
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
     ],
   },
   {
@@ -133,6 +135,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       },
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
     ],
   },
   {
@@ -204,6 +207,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       },
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
     ],
   },
   {
@@ -220,6 +224,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
     ],
   },
   {
@@ -238,6 +243,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
     ],
   },
   {
@@ -288,6 +294,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
     ],
@@ -472,6 +479,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
       {
         name: 'code-workspace',
         takesValue: true,
@@ -515,6 +523,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
       {
         name: 'gc',
       },
@@ -1159,7 +1168,12 @@ const COMMANDS: readonly CommandDefinition[] = [
     subcommands: [
       {
         name: 'list',
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+        flags: [
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
+        ],
       },
       {
         name: 'show',
@@ -1192,6 +1206,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
       {
@@ -1222,20 +1237,31 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
       {
         name: 'classify',
         acceptsPositional: true,
         positionals: [{ name: 'task' }],
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+        flags: [
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
+        ],
       },
       {
         name: 'resume',
         acceptsPositional: true,
         positionalType: 'change-id',
         positionals: [{ name: 'change', type: 'change-id' }],
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+        flags: [
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
+        ],
       },
       {
         name: 'init',
@@ -1246,13 +1272,19 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
       {
         name: 'validate',
         acceptsPositional: true,
         positionals: [{ name: 'name-or-path' }],
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+        flags: [
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
+        ],
       },
       {
         name: 'import',
@@ -1264,6 +1296,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
       {
@@ -1278,6 +1311,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
       {
@@ -1290,6 +1324,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
       {
@@ -1302,6 +1337,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
     ],
@@ -1319,6 +1355,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
           { name: 'owner-store', takesValue: true },
           { name: 'owner-project', takesValue: true },
         ],
@@ -1364,6 +1401,10 @@ const COMMANDS: readonly CommandDefinition[] = [
           },
           {
             name: 'project',
+            takesValue: true,
+          },
+          {
+            name: 'target-line',
             takesValue: true,
           },
           {

@@ -803,7 +803,9 @@ describe('rasen retain prepare', () => {
     expect(result.knowledgeContext.planningRoot).toEqual({ type: 'store', uid, id: 'member-store' });
     expect(result.knowledgeContext.owner).toMatchObject({ type: 'project', projectId: memberId });
     // `file-placement`: for a store-selected run, planning lives store-side
-    // while ephemera lives in the checkout the user stands in.
+    // while ephemera lives in the member checkout the run launched from. That
+    // checkout is discovered as a qualifying project root, never guessed from
+    // the bare current directory.
     expect(result.runStateDir).toBe(
       path.join(member, '.rasen', 'changes', CHANGE, 'ephemera')
     );

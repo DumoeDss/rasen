@@ -1533,6 +1533,11 @@ stages:
           CLAUDECODE: '',
         },
       });
+      // Assert the CLI succeeded before parsing: a non-zero exit or empty stdout
+      // otherwise surfaces as `SyntaxError: Unexpected end of JSON input`, which
+      // names neither the exit code nor stderr. This test failed exactly that way
+      // once during review and cost a diagnosis; the cause is still unknown.
+      expect(result.exitCode, result.stderr).toBe(0);
       const json = JSON.parse(result.stdout.trim());
       expect(json.effectiveRoles.planner).toEqual({
         runtime: 'claude',

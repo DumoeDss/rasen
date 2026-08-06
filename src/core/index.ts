@@ -28,3 +28,4 @@ export * from './threshold-schemes.js';
 export * from './threshold-resolver.js';
 export * from './runtime-adapters.js';
 export * from './change-metadata/index.js';
+export * from './store-planning/index.js';

@@ -2,7 +2,10 @@ import { mkdtempSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { ensureCliBuilt, terminateActiveCliChildren } from './test/helpers/run-cli.js';
+import {
+  ensureCliBuildFresh,
+  terminateActiveCliChildren,
+} from './test/helpers/run-cli.js';
 import { cleanupTempPath } from './test/helpers/temp-cleanup.js';
 
 let machineRoot: string | undefined;
@@ -37,7 +40,12 @@ export async function setup() {
   xdgDataNet = mkdtempSync(path.join(os.tmpdir(), 'rasen-test-xdg-data-'));
   process.env.XDG_DATA_HOME = xdgDataNet;
 
-  await ensureCliBuilt();
+  // Verify the shared bundle matches the current sources, compiling only when
+  // it does not. Never an unconditional clean+rebuild: two Vitest processes in
+  // one checkout would otherwise remove or half-overwrite the `dist/` the other
+  // is executing. `ensureCliBuildFresh` ignores any ambient readiness marker,
+  // so a stale pre-existing `dist/` is still never trusted.
+  await ensureCliBuildFresh();
 }
 
 export async function teardown() {

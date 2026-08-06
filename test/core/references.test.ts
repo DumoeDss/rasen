@@ -130,6 +130,24 @@ describe('reference index assembly', () => {
     expect(entry.status).toEqual([]);
   });
 
+  it('does not fabricate project specs from a Store v2 aggregate root', async () => {
+    const storeRoot = await registerStore('v2-context', { metadataId: null });
+    fs.mkdirSync(path.join(storeRoot, '.rasen-store'), { recursive: true });
+    fs.writeFileSync(
+      path.join(storeRoot, '.rasen-store', 'store.yaml'),
+      'version: 2\nuid: 123e4567-e89b-42d3-a456-426614174000\nid: v2-context\nlayoutVersion: 2\n'
+    );
+    writeSpec(storeRoot, 'must-not-leak', '## Purpose\n\nFlat Store content.\n');
+
+    const entries = await assemble(['v2-context']);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].specs).toBeUndefined();
+    expect(entries[0].status[0]).toEqual(
+      expect.objectContaining({ code: 'reference_project_scope_required' })
+    );
+  });
+
   it('indexes a resolved store with zero specs as an empty entry', async () => {
     await registerStore('empty-context');
 

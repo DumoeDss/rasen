@@ -205,6 +205,18 @@ export interface ArchivePlan {
     planning: string;
     execution: string;
   };
+  /**
+   * The planning scope this plan was created under. Finalization authority is
+   * decided from these recorded facts, never re-derived from a path substring —
+   * a standalone checkout may legitimately live at `.../rasen/projects/<name>`.
+   * Absent on plans written before the field existed; those predate Store v2
+   * planning entirely and are classified by their own recorded roots.
+   */
+  scope?: {
+    kind: 'standalone' | 'legacy-store' | 'store-aggregate' | 'store-project';
+    storeUid?: string;
+    projectId?: string;
+  };
   paths: {
     active: string;
     archiveParent: string;
@@ -1295,6 +1307,8 @@ export interface CreateArchivePlanInput {
   change: string;
   planningRoot: string;
   executionRoot: string;
+  /** The planning scope the plan is created under; see `ArchivePlan['scope']`. */
+  scope?: ArchivePlan['scope'];
   activePath: string;
   archiveParent: string;
   ephemeraPath: string;
@@ -1696,6 +1710,7 @@ export async function createArchivePlan(
       planning: path.resolve(input.planningRoot),
       execution: path.resolve(input.executionRoot),
     },
+    ...(input.scope === undefined ? {} : { scope: input.scope }),
     paths: {
       active: path.resolve(input.activePath),
       archiveParent: transactionPaths.archiveParent,

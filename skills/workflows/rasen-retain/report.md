@@ -135,7 +135,7 @@ Do NOT persist legacy `.context/retros/*.json` snapshots or run history-compare 
 
 ### 4. Write Report
 
-**Change-scoped:** Write to `rasen/changes/<name>/retro.md`
+**Change-scoped:** Run `rasen status --change <name> --json` with the complete selection and write to `<changeRoot>/retro.md` using the returned absolute `changeRoot`.
 
 **General:** Write to `rasen/retro-latest.md`
 

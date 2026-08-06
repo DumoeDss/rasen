@@ -9,10 +9,15 @@
 import type * as http from 'node:http';
 
 import type { ConfigApiContext } from '../config-api/router.js';
-import { resolveSpaceSelector } from '../config-api/project-addressing.js';
+import {
+  resolveProjectPlanningSpaceFromRoot,
+  resolveSpaceSelector,
+  type ResolvedSpace,
+} from '../config-api/project-addressing.js';
 import type { ProjectHome } from '../project-home.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { handleChanges } from './changes.js';
+import { isStoreAggregateSpace } from './project-space.js';
 import { handleArchive } from './archive.js';
 import { handleRuns } from './runs.js';
 import { handleTaskDetail } from './task-detail.js';
@@ -62,7 +67,7 @@ import { hasRuntimeCapability } from '../runtime-adapters.js';
 
 /** Resolution of a request's optional `space` selector to a planning-space root (planning-space-addressing design D2). */
 type RequestSpaceResolution =
-  | { ok: true; root: string | undefined }
+  | { ok: true; space: ResolvedSpace | undefined }
   | { ok: false; status: number; code: string; message: string };
 
 function canonicalizeOrResolve(target: string): string {
@@ -444,11 +449,13 @@ export function createManagementRouter(
   // pre-space clients). Read-only — resolution never mutates any registry.
   const resolveRequestSpace = async (selector: string | undefined): Promise<RequestSpaceResolution> => {
     if (!selector) {
-      return { ok: true, root: context.launchProjectRoot ?? undefined };
+      if (!context.launchProjectRoot) return { ok: true, space: undefined };
+      const resolved = await resolveProjectPlanningSpaceFromRoot(context.launchProjectRoot);
+      return resolved.ok ? { ok: true, space: resolved.space } : resolved;
     }
     const resolved = await resolveSpaceSelector(selector);
     if (!resolved.ok) return resolved;
-    return { ok: true, root: resolved.space.root };
+    return { ok: true, space: resolved.space };
   };
 
   const handle = async (req: http.IncomingMessage, res: http.ServerResponse, rawPathname: string): Promise<void> => {
@@ -661,16 +668,16 @@ export function createManagementRouter(
         sendError(res, 400, 'invalid_input', 'space must be a string.');
         return;
       }
-      let submitRoot: string | undefined;
-      if (typeof request.space === 'string' && request.space !== '') {
-        const resolvedSpace = await resolveRequestSpace(request.space);
-        if (!resolvedSpace.ok) {
-          sendError(res, resolvedSpace.status, resolvedSpace.code, resolvedSpace.message);
-          return;
-        }
-        submitRoot = resolvedSpace.root;
+      const resolvedSpace = await resolveRequestSpace(request.space);
+      if (!resolvedSpace.ok) {
+        sendError(res, resolvedSpace.status, resolvedSpace.code, resolvedSpace.message);
+        return;
       }
-      const result = await submitChange(request.name, request.description, submitRoot);
+      if (isStoreAggregateSpace(resolvedSpace.space)) {
+        sendError(res, 400, 'project_scope_required', 'Change submission requires a project planning scope; a Store aggregate cannot select a project implicitly.');
+        return;
+      }
+      const result = await submitChange(request.name, request.description, resolvedSpace.space);
       if (!result.ok) {
         res.writeHead(result.status, JSON_HEADERS);
         res.end(
@@ -790,8 +797,10 @@ export function createManagementRouter(
         sendError(res, space.status, space.code, space.message);
         return;
       }
-      const home = await resolveHomeForRoot(space.root ?? null);
-      const result = await handleChanges(space.root, home);
+      const home = await resolveHomeForRoot(
+        space.space?.type === 'project' ? space.space.executionRoot ?? null : null
+      );
+      const result = await handleChanges(space.space, home);
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
@@ -808,8 +817,10 @@ export function createManagementRouter(
         sendError(res, space.status, space.code, space.message);
         return;
       }
-      const home = await resolveHomeForRoot(space.root ?? null);
-      const result = await handleArchive(space.root, home);
+      const home = await resolveHomeForRoot(
+        space.space?.type === 'project' ? space.space.executionRoot ?? null : null
+      );
+      const result = await handleArchive(space.space, home);
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
@@ -852,18 +863,27 @@ export function createManagementRouter(
     if (pathname === '/api/v1/spaces/worktrees') {
       // Space-resolved exactly like `/changes` (worktree-aware-spaces D3):
       // explicit selector through the registries, omitted → launch-project
-      // fallback. A resolved-but-non-git root yields an empty inventory; no
-      // resolvable root at all likewise yields an empty inventory, never an error.
+      // fallback. Active-Change counts require a project scope; a Store
+      // aggregate never supplies an implicit project.
       const space = await resolveRequestSpace(spaceSelector);
       if (!space.ok) {
         sendError(res, space.status, space.code, space.message);
         return;
       }
-      if (!space.root) {
+      if (!space.space) {
         sendJson(res, 200, { worktrees: [] });
         return;
       }
-      sendJson(res, 200, await handleSpaceWorktrees(space.root));
+      if (isStoreAggregateSpace(space.space)) {
+        sendError(
+          res,
+          400,
+          'project_scope_required',
+          'Project content requires a project planning scope; a Store aggregate cannot select a project implicitly.'
+        );
+        return;
+      }
+      sendJson(res, 200, await handleSpaceWorktrees(space.space));
       return;
     }
 
@@ -1033,8 +1053,10 @@ export function createManagementRouter(
         sendError(res, space.status, space.code, space.message);
         return;
       }
-      const home = await resolveHomeForRoot(space.root ?? null);
-      const result = await handleTaskDetail(space.root, home, taskId);
+      const home = await resolveHomeForRoot(
+        space.space?.type === 'project' ? space.space.executionRoot ?? null : null
+      );
+      const result = await handleTaskDetail(space.space, home, taskId);
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
@@ -1071,16 +1093,16 @@ export function createManagementRouter(
       // A `space` selector filters the listing to that space (design D3); an
       // omitted selector returns every session (compat), so — unlike the
       // data endpoints — there is no launch-project fallback here.
-      let filterRoot: string | undefined;
+      let filterSpace: Pick<ResolvedSpace, 'type' | 'id'> | undefined;
       if (spaceSelector) {
         const resolved = await resolveSpaceSelector(spaceSelector);
         if (!resolved.ok) {
           sendError(res, resolved.status, resolved.code, resolved.message);
           return;
         }
-        filterRoot = canonicalizeOrResolve(resolved.space.root);
+        filterSpace = { type: resolved.space.type, id: resolved.space.id };
       }
-      const response = await handleListSessions(supervisor, filterRoot, (root) => resolveHomeForRoot(root));
+      const response = await handleListSessions(supervisor, filterSpace, (root) => resolveHomeForRoot(root));
       sendJson(res, 200, response);
       return;
     }
@@ -1115,13 +1137,19 @@ export function createManagementRouter(
       // No resolvable root (no selector and no launch project) means no
       // changes could exist to report runs for — an empty listing, not an
       // error (unlike `/changes`, which requires a resolvable project).
-      if (!space.root) {
+      if (!space.space) {
         sendJson(res, 200, { runs: [] });
         return;
       }
-      const home = await resolveHomeForRoot(space.root);
-      const runsResponse = await handleRuns(space.root, home);
-      sendJson(res, 200, runsResponse);
+      const home = await resolveHomeForRoot(
+        space.space.type === 'project' ? space.space.executionRoot ?? null : null
+      );
+      const runsResponse = await handleRuns(space.space, home);
+      if (!runsResponse.ok) {
+        sendError(res, runsResponse.status, runsResponse.code, runsResponse.message);
+        return;
+      }
+      sendJson(res, 200, runsResponse.response);
       return;
     }
   };

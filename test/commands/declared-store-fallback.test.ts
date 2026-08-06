@@ -58,11 +58,24 @@ describe('declared store fallback (3.2)', () => {
       env,
     });
     expect(created.exitCode).toBe(0);
-    expect(parseJson(created).root).toEqual({
+    // The established compatibility fields are unchanged. `scope` is additive
+    // and REQUIRED: "Root and planning-context JSON SHALL identify whether the
+    // result is standalone, legacy Store, Store aggregate, or Store project
+    // scope" (specs/store-planning-scope-routing "Machine-readable context
+    // describes scope without granting authority"). Asserting it here is
+    // stronger than the old strict shape, not weaker.
+    expect(parseJson(created).root).toMatchObject({
       path: fs.realpathSync.native(storeRoot),
       source: 'declared',
       store_id: 'team-context',
+      scope: { kind: 'legacy-store', ref: { mode: 'legacy-store', storeId: 'team-context' } },
     });
+    expect(Object.keys(parseJson(created).root).sort()).toEqual([
+      'path',
+      'scope',
+      'source',
+      'store_id',
+    ]);
 
     const statusHuman = await runCLI(['status', '--change', 'billing-rework'], {
       cwd: pointerRepo,

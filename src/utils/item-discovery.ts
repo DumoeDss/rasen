@@ -3,8 +3,11 @@ import { promises as fs, existsSync } from 'fs';
 import path from 'path';
 import { resolveProjectHome, type ProjectHome } from '../core/project-home.js';
 
-export async function getActiveChangeIds(root: string = process.cwd()): Promise<string[]> {
-  const changesPath = path.join(root, WORKSPACE_DIR_NAME, 'changes');
+export async function getActiveChangeIds(
+  root: string = process.cwd(),
+  changesDir?: string
+): Promise<string[]> {
+  const changesPath = changesDir ?? path.join(root, WORKSPACE_DIR_NAME, 'changes');
   try {
     const entries = await fs.readdir(changesPath, { withFileTypes: true });
     const result: string[] = [];
@@ -24,8 +27,11 @@ export async function getActiveChangeIds(root: string = process.cwd()): Promise<
   }
 }
 
-export async function getSpecIds(root: string = process.cwd()): Promise<string[]> {
-  const specsPath = path.join(root, WORKSPACE_DIR_NAME, 'specs');
+export async function getSpecIds(
+  root: string = process.cwd(),
+  specsDir?: string
+): Promise<string[]> {
+  const specsPath = specsDir ?? path.join(root, WORKSPACE_DIR_NAME, 'specs');
   const result: string[] = [];
   try {
     const entries = await fs.readdir(specsPath, { withFileTypes: true });
@@ -68,6 +74,10 @@ async function scanArchiveDirForChangeIds(archivePath: string): Promise<string[]
 export interface GetArchivedChangeIdsOptions {
   /** Test/DI override; forwarded to `resolveProjectHome`. */
   globalDataDir?: string;
+  /** Explicit scope-owned Archive directory. Null means the scope has no Archive line. */
+  archiveDir?: string | null;
+  /** Pre-resolved execution-project home. Null prevents any ambient home lookup. */
+  home?: ProjectHome | null;
 }
 
 /**
@@ -84,15 +94,19 @@ export async function getArchivedChangeIds(
   root: string = process.cwd(),
   options: GetArchivedChangeIdsOptions = {}
 ): Promise<string[]> {
-  const inRepoPath = path.join(root, WORKSPACE_DIR_NAME, 'changes', 'archive');
-  const inRepoIds = await scanArchiveDirForChangeIds(inRepoPath);
+  const archivePath = options.archiveDir === undefined
+    ? path.join(root, WORKSPACE_DIR_NAME, 'changes', 'archive')
+    : options.archiveDir;
+  const inRepoIds = archivePath === null ? [] : await scanArchiveDirForChangeIds(archivePath);
 
   let externalIds: string[] = [];
   try {
-    const home = await resolveProjectHome(root, {
-      ensure: false,
-      ...(options.globalDataDir !== undefined ? { globalDataDir: options.globalDataDir } : {}),
-    });
+    const home = options.home !== undefined
+      ? options.home
+      : await resolveProjectHome(root, {
+          ensure: false,
+          ...(options.globalDataDir !== undefined ? { globalDataDir: options.globalDataDir } : {}),
+        });
     if (home) {
       externalIds = await scanArchiveDirForChangeIds(home.archiveDir);
     }
@@ -145,10 +159,11 @@ export function parseArchivedRef(dated: string): ArchivedRef | null {
  * there is no home, otherwise the home's `archiveDir`. Read-only.
  */
 export function resolveArchivedChangeDir(
-  inRepoArchiveDir: string,
+  inRepoArchiveDir: string | null,
   home: ProjectHome | null,
   dated: string
-): string {
+): string | null {
+  if (inRepoArchiveDir === null) return home?.archiveDir ?? null;
   if (!existsSync(path.join(inRepoArchiveDir, dated)) && home) {
     return home.archiveDir;
   }

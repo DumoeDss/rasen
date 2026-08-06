@@ -11,6 +11,7 @@ import { Command, Option } from 'commander';
 
 import {
   resolveRootForCommand,
+  toRootOutput,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
 import { resolveProjectHome } from '../core/project-home.js';
@@ -29,9 +30,33 @@ import { gatherRelationshipData } from './shared-gather.js';
 
 const FAILURE_PAYLOAD = { root: null, members: [] };
 
+/**
+ * The aggregate payload must SAY that project content needs project authority
+ * (`store-planning-scope-routing`: "Aggregate context has no fabricated project
+ * home"). Without it an aggregate read is indistinguishable from a healthy
+ * project context that simply declares no references. `doctor` reports the same
+ * fact under the same code.
+ */
+const STORE_AGGREGATE_STATUS = {
+  severity: 'info' as const,
+  code: 'store_aggregate_scope',
+  message:
+    'Store aggregate scope: project authority is required for project content. Add --project <project-id> to address a project.',
+};
+
 async function gatherWorkingSet(
   root: ResolvedOpenSpecRoot
 ): Promise<{ workingSet: WorkingSet; declaredReferenceCount: number }> {
+  if (root.planningScope?.kind === 'store-aggregate') {
+    return {
+      workingSet: {
+        root: { ...toRootOutput(root), role: 'openspec_root' },
+        members: [],
+        status: [STORE_AGGREGATE_STATUS],
+      },
+      declaredReferenceCount: 0,
+    };
+  }
   const data = await gatherRelationshipData(root);
 
   // Reuse the 3.6 composition for member classification; the
@@ -93,6 +118,16 @@ function printHumanWorkingSet(workingSet: WorkingSet, declaredReferenceCount: nu
   }
   if (workingSet.root.workspaceIdentity) {
     console.log(`  Workspace identity: ${workingSet.root.workspaceIdentity}`);
+  }
+
+  if (workingSet.root.scope?.kind === 'store-aggregate') {
+    // An aggregate read has no project working set to list; the human form must
+    // still state the authority requirement rather than reading as an empty
+    // but healthy project context.
+    console.log('');
+    console.log('Store aggregate');
+    console.log(`  ${STORE_AGGREGATE_STATUS.message}`);
+    return;
   }
 
   const availableStores = workingSet.members.filter(
@@ -192,6 +227,7 @@ export function registerContextCommand(program: Command): void {
     .description('')
     .option('--store <id>', '')
     .option('--project <id>', '')
+    .option('--target-line <id>', '')
     .addOption(
       new Option('--store-path <path>', '').hideHelp()
     )
@@ -202,6 +238,7 @@ export function registerContextCommand(program: Command): void {
       async (options: {
         store?: string;
         project?: string;
+        targetLine?: string;
         storePath?: string;
         json?: boolean;
         codeWorkspace?: string;
@@ -209,8 +246,20 @@ export function registerContextCommand(program: Command): void {
       }) => {
         try {
           const root = await resolveRootForCommand(
-            { store: options.store, project: options.project, storePath: options.storePath },
-            { json: options.json, failurePayload: FAILURE_PAYLOAD, allowImplicitRoot: false }
+            {
+              store: options.store,
+              project: options.project,
+              targetLine: options.targetLine,
+              storePath: options.storePath,
+            },
+            {
+              json: options.json,
+              failurePayload: FAILURE_PAYLOAD,
+              allowImplicitRoot: false,
+              ...(options.store !== undefined && options.project === undefined
+                ? { intent: 'store-read' as const }
+                : {}),
+            }
           );
           if (!root) {
             return;

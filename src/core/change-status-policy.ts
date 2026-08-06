@@ -68,6 +68,12 @@ export interface ChangeNextStepsInput {
   storeId?: string;
   /** Namespace of storeId; absent/'store' renders --store, 'project' renders --project. */
   storeType?: 'store' | 'project';
+  /** Complete scope selector, preferred over the legacy one-dimensional fields. */
+  followupSelection?: {
+    store?: string;
+    project?: string;
+    targetLine?: string;
+  };
 }
 
 export interface ActionContextInput {
@@ -256,13 +262,60 @@ export function buildActionContext(input: ActionContextInput): ActionContext {
   };
 }
 
+export function buildResolvedPlanningActionContext(input: {
+  artifactIds: string[];
+  planningWriteRoots: string[];
+  planningReadRoot: string;
+  executionRoot?: string;
+  /** Present only when the old single-root contract is an honest projection. */
+  compatibilityRoot?: string;
+}): ActionContext {
+  const planningWriteRoots = withoutHomeDirectory(dedupeRoots(input.planningWriteRoots));
+  const codeWriteRoots = withoutHomeDirectory(
+    input.executionRoot === undefined ? [] : [input.executionRoot]
+  );
+  const readRoots = withoutHomeDirectory(
+    dedupeRoots([
+      input.planningReadRoot,
+      ...(input.executionRoot === undefined ? [] : [input.executionRoot]),
+    ])
+  );
+  const union = dedupeRoots([...planningWriteRoots, ...codeWriteRoots]);
+  const projectable = input.compatibilityRoot !== undefined &&
+    union.every((root) => isWithinRoot(root, input.compatibilityRoot as string));
+  return {
+    mode: 'repo-local',
+    sourceOfTruth: 'repo',
+    planningArtifacts: [...input.artifactIds],
+    linkedContext: [],
+    version: projectable ? 1 : 2,
+    planningWriteRoots,
+    codeWriteRoots,
+    readRoots,
+    ...(projectable ? { allowedEditRoots: minimizeRoots(union) } : {}),
+    requiresAffectedAreaSelection: false,
+    constraints: input.executionRoot === undefined
+      ? [PLANNING_ONLY_CONSTRAINT, VISIBILITY_CONSTRAINT]
+      : sameRoot(input.planningReadRoot, input.executionRoot)
+        ? [REPO_LOCAL_CONSTRAINT, VISIBILITY_CONSTRAINT]
+        : [SPLIT_ROOTS_CONSTRAINT, VISIBILITY_CONSTRAINT],
+  };
+}
+
 export function buildNextSteps(input: ChangeNextStepsInput): string[] {
   const readyArtifact = input.artifactStatuses.find((artifact) => artifact.status === 'ready');
   const steps: string[] = [];
 
   if (readyArtifact) {
-    const flagName = input.storeType === 'project' ? '--project' : '--store';
-    const storeFlag = input.storeId ? ` ${flagName} ${input.storeId}` : '';
+    const completeSelection = input.followupSelection;
+    const storeFlag = completeSelection
+      ? `${completeSelection.store === undefined ? '' : ` --store ${completeSelection.store}`}` +
+        `${completeSelection.project === undefined ? '' : ` --project ${completeSelection.project}`}` +
+        `${completeSelection.targetLine === undefined ? '' : ` --target-line ${completeSelection.targetLine}`}`
+      : (() => {
+          const flagName = input.storeType === 'project' ? '--project' : '--store';
+          return input.storeId ? ` ${flagName} ${input.storeId}` : '';
+        })();
     steps.push(
       `Run rasen instructions ${readyArtifact.id} --change "${input.changeName}"${storeFlag} --json before writing that artifact.`
     );

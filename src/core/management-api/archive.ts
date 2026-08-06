@@ -9,9 +9,6 @@
  * Reuses the same discovery/progress helpers, mints nothing, and writes nothing
  * (the real-source red line, decision #10).
  */
-import * as path from 'node:path';
-
-import { WORKSPACE_DIR_NAME } from '../config.js';
 import {
   getArchivedChangeIds,
   parseArchivedRef,
@@ -21,6 +18,11 @@ import { getTaskProgressForChange } from '../../utils/task-progress.js';
 import type { ProjectHome } from '../project-home.js';
 import { findPortfolioContainers, portfolioOf } from './changes.js';
 import type { ArchivedChangeSummary, ArchiveResponse } from './wire-types.js';
+import {
+  resolveExecutionHome,
+  resolveProjectContentSpace,
+  type ProjectSpaceInput,
+} from './project-space.js';
 
 export type ArchiveResult =
   | { ok: true; response: ArchiveResponse }
@@ -38,28 +40,31 @@ export type ArchiveResult =
  * no machine identity yet — the archive-home probe degrades to the in-repo dir.
  */
 export async function handleArchive(
-  root: string | undefined,
-  home: ProjectHome | null
+  input: ProjectSpaceInput,
+  home?: ProjectHome | null
 ): Promise<ArchiveResult> {
-  if (!root) {
-    return {
-      ok: false,
-      status: 400,
-      code: 'project_required',
-      message: 'No Rasen project is available for this server; launch `rasen ui` inside a project.',
-    };
-  }
-
-  const changesDir = path.join(root, WORKSPACE_DIR_NAME, 'changes');
-  const archiveDir = path.join(changesDir, 'archive');
-  const containers = findPortfolioContainers(changesDir);
+  const resolved = resolveProjectContentSpace(input);
+  if (!resolved.ok) return resolved;
+  const space = resolved.space;
+  const resolvedHome = await resolveExecutionHome(space, home);
+  const archiveDir = space.archiveDir ?? null;
+  const containers = findPortfolioContainers(space.changesDir);
 
   const changes: ArchivedChangeSummary[] = [];
-  for (const dated of await getArchivedChangeIds(root)) {
+  for (const dated of await getArchivedChangeIds(space.planningCheckoutRoot, {
+    archiveDir,
+    home: resolvedHome,
+  })) {
     const ref = parseArchivedRef(dated);
     if (!ref) continue;
-    const archiveChangesDir = resolveArchivedChangeDir(archiveDir, home, ref.dated);
-    const taskProgress = await getTaskProgressForChange(archiveChangesDir, ref.dated, root);
+    const archiveChangesDir = resolveArchivedChangeDir(archiveDir, resolvedHome, ref.dated);
+    if (archiveChangesDir === null) continue;
+    const taskProgress = await getTaskProgressForChange(
+      archiveChangesDir,
+      ref.dated,
+      space.planningCheckoutRoot,
+      space.schemasDir
+    );
     const portfolio = portfolioOf(ref.name, containers);
     changes.push({
       name: ref.name,

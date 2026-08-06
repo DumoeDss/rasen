@@ -21,6 +21,7 @@ import {
 } from './store/foundation.js';
 import { getStoreRootForBackend } from './store/registry.js';
 import { inspectRegisteredStore, type ResolvedOpenSpecRoot } from './root-selection.js';
+import { PlanningScopeError, StorePlanning } from './store-planning/index.js';
 import { getSpecIds } from '../utils/item-discovery.js';
 import { FileSystemUtils } from '../utils/file-system.js';
 import { MAX_CONTEXT_SIZE, type DeclarationEntry } from './project-config.js';
@@ -144,15 +145,18 @@ export function extractFirstPurposeLine(markdown: string): string {
   return '';
 }
 
-async function collectSpecEntries(referencedRoot: string): Promise<ReferenceSpecEntry[]> {
-  const specIds = await getSpecIds(referencedRoot);
+async function collectSpecEntries(
+  referencedRoot: string,
+  specsDir: string
+): Promise<ReferenceSpecEntry[]> {
+  const specIds = await getSpecIds(referencedRoot, specsDir);
 
   return Promise.all(
     specIds.map(async (specId) => {
       let summary = '';
       try {
         const content = await fs.readFile(
-          path.join(referencedRoot, WORKSPACE_DIR_NAME, 'specs', specId, 'spec.md'),
+          path.join(specsDir, specId, 'spec.md'),
           'utf-8'
         );
         summary = sanitizeInline(extractFirstPurposeLine(content));
@@ -408,7 +412,39 @@ export async function assembleReferenceIndex(
       continue;
     }
 
-    const specs = await collectSpecEntries(inspection.canonicalRoot);
+    let specsDir: string;
+    try {
+      const scope = await StorePlanning.open({
+        intent: 'project-read',
+        startPath: inspection.canonicalRoot,
+        selection: type === 'project' ? { project: id } : { store: id },
+        ...(input.globalDataDir === undefined ? {} : { globalDataDir: input.globalDataDir }),
+      });
+      specsDir = scope.locate({ kind: 'specs' }).absolutePath;
+    } catch (error) {
+      const needsProject =
+        error instanceof PlanningScopeError && error.diagnostic.code === 'project_scope_required';
+      entries.push({
+        store_id: id,
+        type,
+        root: inspection.canonicalRoot,
+        fetch: fetchRecipe(id, type),
+        status: [
+          warning(
+            needsProject ? 'reference_project_scope_required' : 'reference_scope_unavailable',
+            needsProject
+              ? `Referenced store '${id}' is a Store aggregate and cannot expose one project's specs.`
+              : `Referenced ${noun} '${id}' has no usable project planning scope.`,
+            needsProject
+              ? `Reference a registered project instead: project:<project-id>.`
+              : `Run: rasen store doctor ${id}`
+          ),
+        ],
+      });
+      continue;
+    }
+
+    const specs = await collectSpecEntries(inspection.canonicalRoot, specsDir);
     const entry: ReferenceIndexEntry = {
       store_id: id,
       type,

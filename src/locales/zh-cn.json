@@ -1204,7 +1204,10 @@
               "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
             },
             "project": {
-              "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+              "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+            },
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
             }
           }
         },
@@ -1245,7 +1248,10 @@
               "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
             },
             "project": {
-              "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+              "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+            },
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
             }
           }
         },
@@ -1280,7 +1286,10 @@
               "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
             },
             "project": {
-              "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+              "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+            },
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
             }
           }
         },
@@ -1322,7 +1331,10 @@
               "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
             },
             "project": {
-              "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+              "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+            },
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
             },
             "keep-ephemera": {
               "description": "保留所有 ephemera 文件，同时继续执行完整安全检查"
@@ -1379,7 +1391,10 @@
               "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
             },
             "project": {
-              "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+              "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+            },
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
             }
           }
         },
@@ -1399,7 +1414,10 @@
               "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
             },
             "project": {
-              "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+              "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+            },
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
             }
           }
         },
@@ -1450,7 +1468,10 @@
                   "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
                 },
                 "project": {
-                  "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+                  "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 }
               }
             }
@@ -1652,7 +1673,10 @@
               "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
             },
             "project": {
-              "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+              "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+            },
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
             },
             "code-workspace": {
               "description": "同时为此集合写入 VS Code 工作区文件"
@@ -1698,7 +1722,10 @@
               "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
             },
             "project": {
-              "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+              "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+            },
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
             },
             "gc": {
               "description": "移除机器主目录注册表中的悬空条目及其孤立主目录——这也会删除这些主目录中的所有外部归档（archive-destination 的 'external' 归档与主目录共享生命周期；Git 历史记录仍是持久记录）"
@@ -2278,7 +2305,10 @@
                   "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
                 },
                 "project": {
-                  "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+                  "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 }
               }
             },
@@ -2310,7 +2340,10 @@
                   "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
                 },
                 "project": {
-                  "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+                  "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 }
               }
             },
@@ -2339,7 +2372,10 @@
                   "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
                 },
                 "project": {
-                  "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+                  "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 }
               }
             },
@@ -2353,7 +2389,10 @@
                   "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
                 },
                 "project": {
-                  "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+                  "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 }
               }
             },
@@ -2367,7 +2406,10 @@
                   "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
                 },
                 "project": {
-                  "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+                  "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 }
               }
             },
@@ -2384,7 +2426,10 @@
                   "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
                 },
                 "project": {
-                  "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+                  "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 }
               }
             },
@@ -2398,7 +2443,10 @@
                   "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
                 },
                 "project": {
-                  "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+                  "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 }
               }
             },
@@ -2415,7 +2463,10 @@
                   "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
                 },
                 "project": {
-                  "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+                  "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 }
               }
             },
@@ -2432,7 +2483,10 @@
                   "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
                 },
                 "project": {
-                  "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+                  "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 }
               }
             },
@@ -2452,7 +2506,10 @@
                   "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
                 },
                 "project": {
-                  "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+                  "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 }
               }
             },
@@ -2472,7 +2529,10 @@
                   "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
                 },
                 "project": {
-                  "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+                  "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 }
               }
             }
@@ -2496,7 +2556,10 @@
                   "description": "用作 Rasen 根目录的 Store ID（Store 是你已注册的独立 Rasen 仓库）"
                 },
                 "project": {
-                  "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+                  "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 },
                 "owner-store": {
                   "description": "独立于规划根目录选择 Store 知识所有者"
@@ -2546,6 +2609,9 @@
                 },
                 "project": {
                   "description": "选择已注册项目作为所有迁移根目录"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 },
                 "json": {
                   "description": "输出为 JSON（非交互；执行时需要 --yes）"

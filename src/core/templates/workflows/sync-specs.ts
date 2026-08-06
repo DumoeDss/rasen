@@ -17,6 +17,8 @@ This is an **agent-driven** operation - you will read delta specs and directly e
 
 ${STORE_SELECTION_GUIDANCE}
 
+**Store spec-sync hard gate:** inspect the first resolved CLI payload before editing any spec. If root.scope.kind is 'store-project', REFUSE with 'store_v2_finalization_unavailable' — Store project spec locators stay read-only until landed-only sync is available. Any other scope, including 'legacy-store', proceeds normally.
+
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
@@ -54,7 +56,7 @@ ${STORE_SELECTION_GUIDANCE}
 
    a. **Read the delta spec** to understand the intended changes
 
-   b. **Read the main spec**, resolved under the \`specs/\` directory that is the sibling of \`planningHome.changesDir\` (from the status JSON in step 2), NOT the literal repo-relative \`rasen/specs/<capability>/spec.md\` (it may not exist yet) — in a registered store this resolves to the store's specs
+   b. **Read the main spec** under \`root.scope.paths.specs\` from the status JSON in step 2. Require that typed project location; do not derive a sibling from \`planningHome.changesDir\` or use a repo-relative fallback (the capability file may not exist yet).
 
    c. **Apply changes intelligently**:
 
@@ -77,7 +79,7 @@ ${STORE_SELECTION_GUIDANCE}
       - Find the FROM requirement, rename to TO
 
    d. **Create new main spec** if capability doesn't exist yet:
-      - Create the main spec under the resolved \`specs/\` directory (the sibling of \`planningHome.changesDir\` from step 2), NOT a literal repo-relative \`rasen/specs/<capability>/spec.md\`
+      - Create the main spec under the exact \`root.scope.paths.specs\` directory from step 2; never reconstruct a Store or repo-relative specs path.
       - Add Purpose section (can be brief, mark as TBD)
       - Add Requirements section with the ADDED requirements
 

@@ -67,10 +67,10 @@ import {
   type RunStateContextUpdateResult,
 } from '../core/pipeline-registry/index.js';
 import { resolveChangeWorkDir } from '../core/change-work.js';
-import { ephemeraDir, resolveExecutionRoot } from '../core/file-placement.js';
+import { ephemeraDir } from '../core/file-placement.js';
 import {
   isRootSelectionError,
-  isStoreSelectedRoot,
+  resolvedExecutionProjectRoot,
   resolveRootForCommand,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
@@ -91,6 +91,7 @@ export interface RetainPrepareOptions {
   /** Planning-root selector (lifecycle namespace), as on `pipeline resume`. */
   store?: string;
   project?: string;
+  targetLine?: string;
   storePath?: string;
   /** Knowledge-owner selector (knowledge namespace), independent of the above. */
   ownerStore?: string;
@@ -283,12 +284,17 @@ export class RetainCommand {
     const changeName = await validateChangeExists(change, projectRoot, root.changesDir);
     const changeDir = path.join(root.changesDir, changeName);
 
+    const executionRoot = resolvedExecutionProjectRoot(root);
+    if (executionRoot === undefined) {
+      throw new RetainPrepareError(
+        'retention_planning_root_mismatch',
+        'Retention requires a verified execution checkout; planning scope alone is not writable.',
+        { selectorGuidance: ['Run from an associated execution worktree and retry.'] }
+      );
+    }
     // Probe-only: locating existing state must not mint a work directory for a
     // change that has none (the same contract `pipeline resume` holds).
-    const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: false });
-    const executionRoot = resolveExecutionRoot(projectRoot, {
-      storeSelected: isStoreSelectedRoot(root),
-    });
+    const workDir = await resolveChangeWorkDir(executionRoot, changeName, { ensure: false });
     const deterministicDir = ephemeraDir(executionRoot, changeName);
 
     // Sticky-legacy (`file-placement`): state that already lives at a legacy
@@ -296,6 +302,9 @@ export class RetainCommand {
     const existingLocation = resolveRunStateLocation(changeDir, {
       ephemeraDir: deterministicDir,
       workDir,
+      ...(root.planningScope?.kind === 'store-project'
+        ? { includeChangeDir: false }
+        : {}),
     });
     const runStateDir = existingLocation?.dir ?? deterministicDir;
 
@@ -578,6 +587,7 @@ export function registerRetainCommand(program: Command): void {
     .option('--json', '')
     .option('--store <id>', '')
     .option('--project <id>', '')
+    .option('--target-line <id>', '')
     .option('--owner-store <id>', '')
     .option('--owner-project <id>', '')
     // Deliberate rejection path, matching the pipeline group: --store-path stays

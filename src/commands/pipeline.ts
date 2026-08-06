@@ -104,12 +104,13 @@ import {
 import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
 import { resolveChangeWorkDir } from '../core/change-work.js';
-import { ephemeraDir, resolveExecutionRoot } from '../core/file-placement.js';
+import { ephemeraDir } from '../core/file-placement.js';
 import {
   resolveRootForCommand,
-  isStoreSelectedRoot,
+  resolvedExecutionProjectRoot,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
+import type { ChangeSelector } from '../core/store-planning/index.js';
 import {
   formatPipelineExecutionNotice,
   formatPipelineRootSelectionNotice,
@@ -130,6 +131,7 @@ interface PipelineCommandOptions {
   forExecution?: boolean;
   store?: string;
   project?: string;
+  targetLine?: string;
   storePath?: string;
   planner?: string;
   implementer?: string;
@@ -244,13 +246,19 @@ export class PipelineCommand {
    * so callers early-return without further output (mirrors validate.ts:86-89).
    */
   private async resolveRoot(
-    options: PipelineCommandOptions
+    options: PipelineCommandOptions,
+    changeSelector?: ChangeSelector
   ): Promise<ResolvedOpenSpecRoot | null> {
     if (options.json) {
-      return resolveRootForCommand(options, { json: true, reporter: false });
+      return resolveRootForCommand(options, {
+        json: true,
+        reporter: false,
+        ...(changeSelector === undefined ? {} : { changeSelector }),
+      });
     }
     return resolveRootForCommand(options, {
       reporter: (notice) => console.error(formatPipelineRootSelectionNotice(notice)),
+      ...(changeSelector === undefined ? {} : { changeSelector }),
     });
   }
 
@@ -611,7 +619,10 @@ export class PipelineCommand {
    * Resume a change: compute next/remaining stages from its run-state file.
    */
   async resume(change: string | undefined, options: PipelineCommandOptions = {}): Promise<void> {
-    const root = await this.resolveRoot(options);
+    const root = await this.resolveRoot(
+      options,
+      change === undefined ? undefined : { changeId: change }
+    );
     if (!root) return;
     const projectRoot = root.path;
     const host = detectHostRuntime();
@@ -621,17 +632,22 @@ export class PipelineCommand {
 
     // Probe-only (ensure:false): resume is a read-only surface and must
     // never mint identity or write to the repo/registry (design D2).
-    const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: false });
+    const executionRoot = resolvedExecutionProjectRoot(root);
+    const workDir = executionRoot === undefined
+      ? null
+      : await resolveChangeWorkDir(executionRoot, changeName, { ensure: false });
 
     // Sticky-legacy chain (`file-placement` capability): the execution root's
     // ephemera directory is the terminal landing and is searched first, then
     // the legacy machine-home work directory, then the change directory.
-    const executionRoot = resolveExecutionRoot(projectRoot, {
-      storeSelected: isStoreSelectedRoot(root),
-    });
     const stateLocations = {
-      ephemeraDir: ephemeraDir(executionRoot, changeName),
+      ...(executionRoot === undefined
+        ? {}
+        : { ephemeraDir: ephemeraDir(executionRoot, changeName) }),
       workDir,
+      ...(root.planningScope?.kind === 'store-project'
+        ? { includeChangeDir: false }
+        : {}),
     };
 
     // Portfolio parent? The portfolio record is authoritative — resume reports
@@ -856,9 +872,11 @@ export class PipelineCommand {
       const messages = getPipelineMessages();
       console.log(messages.format('changeLabel', { change: changeName }));
       console.log(messages.format('noRunStateNote'));
-      console.log(messages.format('runStateWouldLiveAt', {
-        path: stateLocations.ephemeraDir,
-      }));
+      if (stateLocations.ephemeraDir !== undefined) {
+        console.log(messages.format('runStateWouldLiveAt', {
+          path: stateLocations.ephemeraDir,
+        }));
+      }
       return;
     }
 

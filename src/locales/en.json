@@ -1204,7 +1204,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             }
           }
         },
@@ -1245,7 +1248,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             }
           }
         },
@@ -1280,7 +1286,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             }
           }
         },
@@ -1322,7 +1331,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             },
             "keep-ephemera": {
               "description": "Preserve all ephemera files while retaining complete safety inspection"
@@ -1379,7 +1391,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             }
           }
         },
@@ -1399,7 +1414,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             }
           }
         },
@@ -1450,7 +1468,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             }
@@ -1652,7 +1673,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             },
             "code-workspace": {
               "description": "Also write a VS Code workspace file for the set"
@@ -1698,7 +1722,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             },
             "gc": {
               "description": "Remove dangling machine-home registry entries and their orphaned home directories — this deletes ANY external archives inside those homes too (archive-destination's 'external' archives share the home's lifecycle; git history remains the durable record)"
@@ -2278,7 +2305,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2310,7 +2340,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2339,7 +2372,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2353,7 +2389,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2367,7 +2406,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2384,7 +2426,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2398,7 +2443,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2415,7 +2463,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2432,7 +2483,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2452,7 +2506,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2472,7 +2529,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             }
@@ -2496,7 +2556,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 },
                 "owner-store": {
                   "description": "Select a store knowledge owner independently from the planning root"
@@ -2546,6 +2609,9 @@
                 },
                 "project": {
                   "description": "Use the selected registered project as every migration root"
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 },
                 "json": {
                   "description": "Output as JSON (non-interactive; requires --yes to execute)"
