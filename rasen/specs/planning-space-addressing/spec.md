@@ -93,7 +93,7 @@ The resident daemon SHALL serve any addressable planning space regardless of the
 
 The platform SHALL derive a directory's planning scope through the shared Store-planning resolver. A qualifying local planning tree owned by an unbound project yields that standalone project scope, including configuration-only Store inheritance. A checkout with verified Store-owned planning yields its Store project scope, not the Store aggregate. A Store planning checkout yields the project scope recorded by its Change/worktree facts when complete and otherwise yields only a Store aggregate scope. Malformed, unavailable, split-truth, or conflicting facts SHALL produce the corresponding planning diagnostic rather than a guessed attribution. `rasen ui` URL emission and session space attribution SHALL consume the same result, so a session launched from a directory and a UI opened from it agree on planning ownership.
 
-#### Scenario: Pointer repo derives its store's space
+#### Scenario: Bound project checkout derives its Store project scope
 
 - **WHEN** derivation runs in project P's checkout and its verified planning binding names Store S
 - **THEN** the derived planning scope SHALL identify Store S and project P
@@ -116,7 +116,7 @@ The platform SHALL derive a directory's planning scope through the shared Store-
 - **THEN** it SHALL derive the Store aggregate scope
 - **AND** project operations SHALL still require an explicit or recorded project
 
-#### Scenario: Unresolvable pointer degrades to no space
+#### Scenario: Unresolvable or conflicting facts do not guess
 
 - **WHEN** derivation encounters an unavailable Store, malformed declaration, split planning truth, or conflicting binding facts
 - **THEN** it SHALL return the stable diagnostic for that state
