@@ -186,6 +186,9 @@ const COMMANDS: readonly CommandDefinition[] = [
         name: 'keep-ephemera',
       },
       {
+        name: 'no-whitespace-check',
+      },
+      {
         name: 'dry-run',
       },
       {

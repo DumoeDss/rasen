@@ -1389,6 +1389,9 @@
             "keep-ephemera": {
               "description": "保留所有 ephemera 文件，同时继续执行完整安全检查"
             },
+            "no-whitespace-check": {
+              "description": "跳过空白预检（该预检会拦下 CI 将会拒绝的归档产物）"
+            },
             "dry-run": {
               "description": "预演所有计划中的归档操作，不执行任何实际更改"
             },

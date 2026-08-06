@@ -1389,6 +1389,9 @@
             "keep-ephemera": {
               "description": "Preserve all ephemera files while retaining complete safety inspection"
             },
+            "no-whitespace-check": {
+              "description": "Skip the whitespace preflight that blocks archiving artifacts CI would reject"
+            },
             "dry-run": {
               "description": "Preview all planned archive actions without executing anything"
             },
