@@ -49,3 +49,25 @@ export const DISPATCH_ADAPTERS = {
     probeAvailability: () => probeCodexAvailability(),
   },
 } satisfies { [Id in DispatchRuntime]: DispatchAdapter<Id> };
+
+/**
+ * The environment for a worker Rasen spawns itself: what this process
+ * inherited, with the TARGET runtime's own identity merged over it.
+ *
+ * Every rasen-owned spawn goes through here rather than reaching into an
+ * adapter at the spawn site. A child inherits the SPAWNING harness's
+ * fingerprints — a Codex host's outrank `CLAUDECODE` — so without the merge a
+ * bridged worker reports its parent's runtime as its own to every Rasen
+ * command it runs (design D7). A `playbook-owned` target has no spawn Rasen
+ * controls, so it contributes nothing and the inherited environment passes
+ * through unchanged.
+ */
+export function bridgeChildEnv(
+  target: DispatchRuntime,
+  inherited: NodeJS.ProcessEnv = process.env
+): NodeJS.ProcessEnv {
+  const adapter = DISPATCH_ADAPTERS[target];
+  return adapter.spawn === 'rasen-owned'
+    ? { ...inherited, ...adapter.childEnv }
+    : { ...inherited };
+}

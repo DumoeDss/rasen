@@ -21,7 +21,6 @@ import {
   RolloutOccupancyUnavailableError,
   readRolloutSessionMeta,
   listRolloutFiles,
-  resolveCodexHome,
   CODEX_CLI_VERSION_PREMISE,
 } from './codex/index.js';
 import { findRepoPlanningRootSync } from './planning-home.js';

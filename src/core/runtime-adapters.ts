@@ -195,18 +195,17 @@ export interface AuditReader<Id extends AuditRuntime = AuditRuntime> {
 }
 
 /**
- * How Rasen runs a worker on one runtime, and every user-facing fact about
- * the bridge that reaches it (design D6). A diagnostic about one bridge is
- * built from that bridge's own adapter, so it can never name another
- * bridge's tool or check another bridge's binary.
+ * Every user-facing fact about the bridge that reaches a runtime (design D6).
+ * A diagnostic about one bridge is built from that bridge's own adapter, so
+ * it can never name another bridge's tool or check another bridge's binary.
  */
-export interface DispatchAdapter<Id extends DispatchRuntime = DispatchRuntime> {
+interface DispatchAdapterFacts<Id extends DispatchRuntime> {
   readonly id: Id;
   /** The mechanism another dispatch-capable host runs to reach this runtime. */
   readonly bridge: (typeof DISPATCH_BRIDGES)[Id];
   /** The tool the bridge runs, as a user reads it in a diagnostic. */
   readonly cliLabel: string;
-  /** What to install when {@link probeAvailability} is false. */
+  /** What to install when {@link DispatchAdapter.probeAvailability} is false. */
   readonly installHint: string;
   /** Default executable name looked up on PATH. */
   readonly defaultBinary: string;
@@ -216,21 +215,38 @@ export interface DispatchAdapter<Id extends DispatchRuntime = DispatchRuntime> {
    * spawn resolves its own.
    */
   readonly binaryEnvVar?: string;
-  /**
-   * Who owns the child process. Only a `rasen-owned` spawn can have its
-   * environment fixed in code; `codex/invocation.ts` returns argv and the
-   * orchestration playbook owns the process (design D7).
-   */
-  readonly spawn: 'rasen-owned' | 'playbook-owned';
-  /**
-   * Merged over the inherited environment for every rasen-owned spawn, so a
-   * bridged worker identifies itself as its own runtime instead of inheriting
-   * the spawning harness's fingerprints (design D7).
-   */
-  readonly childEnv?: Readonly<Record<string, string>>;
   /** Whether this runtime's own tool is present on this machine. */
   probeAvailability(): boolean;
 }
+
+/**
+ * Who owns the child process, and what that obliges the adapter to declare.
+ *
+ * A `rasen-owned` spawn MUST declare `childEnv`: Rasen builds that child's
+ * environment, and a child otherwise inherits the SPAWNING harness's
+ * fingerprints and reports its parent's identity as its own (design D7).
+ * Requiring it on this arm is the enforcement — a rasen-owned adapter that
+ * omits it matches neither arm and fails the build, where a docstring
+ * obligation is only read after the bug.
+ *
+ * A `playbook-owned` spawn carries no such obligation and MUST NOT declare
+ * one: `codex/invocation.ts` returns argv and the orchestration playbook owns
+ * the process, so there is no spawn site to inject an environment into.
+ */
+type DispatchSpawnOwnership =
+  | {
+      readonly spawn: 'rasen-owned';
+      /** Merged over the inherited environment by `bridgeChildEnv`. */
+      readonly childEnv: Readonly<Record<string, string>>;
+    }
+  | {
+      readonly spawn: 'playbook-owned';
+      readonly childEnv?: never;
+    };
+
+/** How Rasen runs a worker on one runtime. */
+export type DispatchAdapter<Id extends DispatchRuntime = DispatchRuntime> =
+  DispatchAdapterFacts<Id> & DispatchSpawnOwnership;
 
 interface HostFingerprint {
   /** Environment variable whose non-empty presence identifies the host. */

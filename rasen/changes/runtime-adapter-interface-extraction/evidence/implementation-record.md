@@ -291,6 +291,59 @@ Neither state affects CI: `.claude/` is gitignored, so a CI checkout has no
 installed skills, `getAllToolVersionStatus` finds nothing, and the assertion
 `stderr === ''` holds.
 
+## Found by verification, fixed after the fact
+
+Two defects reached the implementation and were caught only by the independent
+verification pass, not by the author. Both are recorded because the miss is
+informative, not just the fix.
+
+1. **The `childEnv` guarantee was one hardcoded literal.** `runner.ts` read
+   `DISPATCH_ADAPTERS.claude.childEnv` at a Claude-specific spawn site and
+   `childEnv` was an OPTIONAL interface member, so a future rasen-owned adapter
+   that omitted it would compile clean. That is the same unenforceable-prose
+   shape D7 set out to destroy, reproduced one level down. Now a discriminated
+   union (`runtime-adapters.ts:222-249`) makes `childEnv` REQUIRED on the
+   `rasen-owned` arm, and `bridgeChildEnv` (`dispatch-adapters.ts:53-73`) is the
+   single merge site. Verified by flipping codex to `rasen-owned` and observing
+   `TS2322 … Property 'childEnv' is missing`.
+2. **A second rasen-owned Claude worker bypassed the merge entirely.**
+   `management-api/supervisor.ts:320` spawns `claude -p` for workflow skills
+   with `env: process.env`, and `daemon.ts:179` gives the daemon its launching
+   shell's environment — so a daemon started from a Codex session handed every
+   Claude worker a Codex identity. Live defect 3 at a site the change never
+   looked at. The task-3.8 audit enumerated runtime LITERALS; it never
+   enumerated SPAWN SITES, which is why the author missed it. Fixed via
+   `bridgeChildEnv`.
+
+Lesson worth carrying: when a requirement says "every X", the audit has to
+enumerate X, not the symptom the change happened to start from.
+
+## Declared follow-up: the audit zero-report invariant is broader than recognition
+
+`cli-agent-audit` scenario 2 says, unqualified, that "a session that could not
+be analyzed by that auditor SHALL NOT appear as a zero-valued report of that
+runtime". Two paths still violate it, both reproduced on the built CLI:
+
+- `agent audit <omp file> --runtime claude` — the override skips recognition
+  (design D4: "an explicit override wins outright", unchanged from before this
+  change), and the Claude auditor writes a zero report named
+  `session-audit-claude-omp.json`.
+- `agent audit <unrecognized .jsonl>` — no override needed. The file is claimed
+  by no store, follows `SNIFF_FALLBACK_RUNTIME` to the Claude auditor, parses to
+  zero requests, and is written at exit 0.
+
+Neither is a regression and neither is in this change's stated scope — the
+proposal scopes the fix to a harness Rasen RECOGNIZES. But the scenario as
+written is not satisfied, and pretending otherwise would be exactly the
+declaration/implementation gap this change exists to close.
+
+The repair is a decision, not a patch: either add a format-recognition guard to
+`runClaudeAudit` (hard — a genuinely empty Claude session is a legitimate zero,
+so the guard must assert Claude FORMAT, not zero COUNT), or tighten the scenario
+to "a session belonging to a recognized harness", which is what the rest of the
+capability already says. Resolve it with the Oh My Pi `AuditReader` follow-on,
+where a real second reader makes the distinction concrete.
+
 ## Out of scope, found during the prose sweep
 
 Recorded so they are not lost, and deliberately not fixed here:

@@ -3,7 +3,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { spawnAgentCli } from '../agent-cli-process.js';
 import { killProcessTree } from '../management-api/kill-tree.js';
-import { DISPATCH_ADAPTERS } from '../runtimes/dispatch-adapters.js';
+import { bridgeChildEnv } from '../runtimes/dispatch-adapters.js';
 import type { WorkerContract } from '../worker-contracts.js';
 import type { ClaudePrintInvocation } from './invocation.js';
 import {
@@ -197,11 +197,11 @@ export async function runClaudePrint(
     try {
       child = (options.spawn ?? spawnAgentCli)(binary, invocation.args, {
         cwd: canonicalCwd,
-        // The adapter's own identity, merged over whatever this process
+        // The worker's own identity, merged over whatever this process
         // inherited. A child inherits the SPAWNING harness's fingerprints —
         // a Codex host's outrank `CLAUDECODE` — so without this the worker
         // would report its parent's runtime as its own (design D7).
-        env: { ...(options.env ?? process.env), ...DISPATCH_ADAPTERS.claude.childEnv },
+        env: bridgeChildEnv('claude', options.env ?? process.env),
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: process.platform !== 'win32',
         windowsHide: true,

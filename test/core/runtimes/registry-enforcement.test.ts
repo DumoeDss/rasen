@@ -10,7 +10,7 @@ import {
 } from '../../../src/core/runtime-adapters.js';
 import { AUDIT_READERS } from '../../../src/core/runtimes/audit-readers.js';
 import { CONTEXT_READERS } from '../../../src/core/runtimes/context-readers.js';
-import { DISPATCH_ADAPTERS } from '../../../src/core/runtimes/dispatch-adapters.js';
+import { DISPATCH_ADAPTERS, bridgeChildEnv } from '../../../src/core/runtimes/dispatch-adapters.js';
 import { SESSION_STORES } from '../../../src/core/runtimes/session-stores.js';
 
 /**
@@ -125,12 +125,30 @@ describe('shipped registry maps', () => {
     }
   });
 
-  it('declares a child identity only for a spawn Rasen actually owns', () => {
-    expect(DISPATCH_ADAPTERS.claude.spawn).toBe('rasen-owned');
-    expect(DISPATCH_ADAPTERS.claude.childEnv).toEqual({ RASEN_AGENT_RUNTIME: 'claude' });
-    // Codex returns argv and the playbook owns the process, so there is no
-    // spawn site to inject an environment into (design D7).
+  it('gives every rasen-owned target its own identity, not just the one bridge shipped today', () => {
+    // The spec requires the guarantee for EVERY bridge Rasen starts, so this
+    // iterates the registry rather than naming claude. A rasen-owned adapter
+    // that omits `childEnv` cannot reach here — the DispatchAdapter union
+    // makes it a build error — and one that declares the WRONG identity is
+    // caught below.
+    for (const [id, adapter] of Object.entries(DISPATCH_ADAPTERS)) {
+      if (adapter.spawn !== 'rasen-owned') continue;
+      const merged = bridgeChildEnv(id as keyof typeof DISPATCH_ADAPTERS, {
+        CODEX_THREAD_ID: 'parent-thread',
+        CARRIED: 'kept',
+      });
+      expect(merged.RASEN_AGENT_RUNTIME, id).toBe(id);
+      // The spawning harness's fingerprints still reach the child; they are
+      // outranked, not stripped.
+      expect(merged.CODEX_THREAD_ID, id).toBe('parent-thread');
+      expect(merged.CARRIED, id).toBe('kept');
+    }
+  });
+
+  it('leaves a playbook-owned target’s environment untouched', () => {
+    // Rasen owns no spawn for it, so there is nothing to inject; declaring an
+    // identity it could never apply would be a contract with no enforcer.
     expect(DISPATCH_ADAPTERS.codex.spawn).toBe('playbook-owned');
-    expect(DISPATCH_ADAPTERS.codex.childEnv).toBeUndefined();
+    expect(bridgeChildEnv('codex', { CARRIED: 'kept' })).toEqual({ CARRIED: 'kept' });
   });
 });
