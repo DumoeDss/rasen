@@ -784,6 +784,19 @@ describe('resolveHandoffThresholdReport', () => {
     fs.rmSync(outsideDir, { recursive: true, force: true });
   });
 
+  it('uses the looser codex default threshold (0.85) for a codex runtime', async () => {
+    const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-codex-default-'));
+
+    // 0.8 occupancy hands off under claude's 0.5 default but NOT under codex's
+    // 0.85 default — codex has a larger window and low-loss auto-compact, so a
+    // worker can keep working past where claude would retire.
+    const result = await resolveHandoffThresholdReport(0.8, 40_000, 'codex', outsideDir);
+
+    expect(result).toEqual({ threshold: 0.85, thresholdSource: 'default', shouldHandoff: false });
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  });
+
   it('reports shouldHandoff true when occupancy meets a project threshold', async () => {
     const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
     const projectRoot = path.join(tempDir, 'project');
