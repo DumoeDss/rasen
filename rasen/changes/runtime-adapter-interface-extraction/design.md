@@ -56,12 +56,39 @@ So the declaration stays a leaf and gains nothing that executes:
 ```
 src/core/runtime-adapters.ts        (leaf: capabilities, host fingerprints, route rule, types)
         ▲  import type only
-src/core/runtimes/registry.ts       (new: the three satisfies-checked implementation maps)
-        ▲
+src/core/runtimes/{session-stores,context-readers,audit-readers,dispatch-adapters}.ts
+        ▲      (the four satisfies-checked implementation maps)
 src/core/{claude,codex,agent-context,token-audit}/…   (unchanged locations)
 ```
 
-Rejected: one registry holding implementations (import blowup, cycle); a `runtime-adapters/` barrel that re-exports both (same import blowup for schema consumers, just hidden).
+Rejected: one registry holding implementations (import blowup, cycle); a
+`runtime-adapters/` barrel that re-exports both (same import blowup for schema
+consumers, just hidden).
+
+**AMENDED during implementation — four sibling modules, not one `registry.ts`.**
+This decision originally specified a single `src/core/runtimes/registry.ts`.
+`AUDIT_READERS` must import `token-audit/audit.ts`, which reaches
+`token-audit/zed/database.ts` → `node-sqlite3-wasm`; measured on the dev
+machine, that import alone costs **6.8 ms and 9.8 MB RSS**. One barrel would
+put it on the `rasen agent context` pre-flight path, which the pipeline
+machinery calls per warm-continue decision. The four modules each declare
+exactly one `satisfies`-checked map, so D2's enforcement is unchanged, and a
+consumer imports only the registry its operation needs. No barrel ships,
+deliberately: a barrel that must never be imported is a trap.
+
+**AMENDED — the provider↔registry import cycle is accepted, and made inert.**
+This decision cites cycle avoidance as a reason for the split, but the cycle is
+unavoidable for a module that both PROVIDES an implementation and CONSUMES the
+map: `agent-context.ts` supplies the Claude reader and consumes
+`CONTEXT_READERS`; `token-audit/audit.ts` supplies all three auditors and
+consumes `AUDIT_READERS`. A Tarjan pass over all 383 `src/**/*.ts` files found
+**7 pre-existing cyclic SCCs**, so this is consistent with the codebase rather
+than a new hazard class. It is made inert by construction: every adapter member
+is an arrow that CALLS its implementation, never a bare function reference, so
+no imported binding is dereferenced during module evaluation and load order
+cannot matter. That invariant is load-bearing — "simplifying" a wrapper to a
+bare reference reintroduces the hazard — and is documented in
+`session-stores.ts`'s header.
 
 ### D2 — `satisfies Record<DerivedTuple, Interface>` is the enforcement mechanism
 
@@ -104,6 +131,20 @@ A flat three-way split matching the three capabilities is the obvious decomposit
 
 `SessionStore.recognizes` takes a pre-read first line rather than a path, so the file is read once for the whole recognition pass instead of once per adapter.
 
+**AMENDED — `recognizes` receives the first line LAZILY, and `DispatchAdapter`
+ships no `buildInvocation`.** The recognition argument is
+`{ path, firstLine }` as designed, but `firstLine` is a memoized getter: a
+store that recognizes by path alone (Zed's `.db`, Codex's `rollout-*.jsonl`)
+never triggers a read, which matters because eagerly reading would pull a
+multi-megabyte SQLite database into a string to sniff a line it does not have.
+Separately, the planned `buildInvocation` member was dropped:
+`buildClaudePrintInvocation` and `buildCodexExecInvocation` take structurally
+unrelated option objects and return unrelated shapes, and no call site selects
+between them by runtime id (`buildCodexExecInvocation` is not called from
+`src/` at all). A common field would be a contract with no consumer, forced to
+`unknown` options every caller must re-narrow — reintroducing the branch it
+claims to remove.
+
 ### D4 — Recognition is a first-match loop with a named fallback constant
 
 ```ts
@@ -118,6 +159,16 @@ export function detectSessionOwner(target: string, override?: RuntimeAdapterId):
 ```
 
 The fallback value is unchanged, so every target that resolved to a runtime before resolves to the same runtime after — except an Oh My Pi file, which is now claimed by its own store (D8). That is the point.
+
+**AMENDED — there are TWO exceptions, not one.** Unifying recognition also
+moved Zed's extension check onto the probe path, where it never existed:
+`rasen agent context --transcript <threads.db>` previously fell through the
+content sniff to `claude` and failed with "No assistant usage found", and now
+refuses naming `zed`. Still a non-zero exit with no occupancy fields, and
+arguably mandated by the ADDED requirement since `zed` declares
+`canProbeContext: false` — but it is a second declared exception to this
+decision's "resolves to the same runtime after" claim, and it is untested on
+the probe path. Found by verification, not by the author.
 
 ### D5 — Dispatch routes derive from the adapters; the N×N table is deleted
 
@@ -135,6 +186,14 @@ Checked against every shipped cell: claude→claude `native`; claude→codex `ex
 
 Rejected: keeping the table and widening it per runtime (the thing being removed); dropping `'unsupported'` (loses the ability to refuse a pair, and `throwUnsupportedRoute` already exists).
 
+**AMENDED — the per-runtime probe options were removed, not kept.** The
+implementation task called for a per-adapter `probe` seam *alongside* the
+existing `probeCodex` / `probeClaude` options. Keeping both forces
+`resolveAvailabilityProbe` to carry a `target === 'codex' ? … : …` branch —
+exactly the runtime literal this change exists to delete, and exactly the
+"one named option per runtime" shape that blocks a third adapter. Six call
+sites were migrated to `probe: { <target>: fn }`; no alias remains.
+
 ### D6 — Every user-facing bridge fact moves onto the target's adapter
 
 `cliLabel`, `installHint`, `binaryEnvVar`, `defaultBinary`, and `probeAvailability()` become adapter fields. This deletes the three binary ternaries in `execution-validation.ts` at `:141`, `:152`, and `:321-324`. The third is the serious one: it routes any bridge that is not `codex-exec` to `probeClaude`, so a third bridge's preflight would check the Claude binary and pass on a machine where the actual tool is missing.
@@ -144,6 +203,26 @@ Rejected: keeping the table and widening it per runtime (the thing being removed
 `runtime-adapters.ts:124-128` currently carries the obligation as prose: *"Whoever gives Oh My Pi dispatch MUST inject `RASEN_AGENT_RUNTIME=claude` into that child's environment."* A docstring cannot be enforced. The Claude adapter declares `childEnv: { RASEN_AGENT_RUNTIME: 'claude' }` and `runner.ts:199` merges `adapter.childEnv` over the inherited environment for every rasen-owned spawn.
 
 This is a real behavior change and it fixes live defect 3. Note the asymmetry it preserves honestly: the adapter also declares `spawn: 'rasen-owned' | 'playbook-owned'`, because `codex/invocation.ts:4-8` returns argv and the orchestration playbook owns the process. Only a rasen-owned spawn can be fixed in code; pretending the two are symmetric would invent a spawn site that does not exist.
+
+**AMENDED — `childEnv` is REQUIRED on a rasen-owned adapter, and the merge is
+shared.** As first implemented this decision was only half-done, and
+verification caught it: `runner.ts` read `DISPATCH_ADAPTERS.claude.childEnv` as
+a hardcoded member access, and `childEnv` was an OPTIONAL interface member — so
+a future rasen-owned adapter that omitted it compiled clean. That is the same
+unenforceable-prose obligation this decision set out to destroy, reproduced one
+level down. `DispatchAdapter` is now a discriminated union on spawn ownership:
+the `rasen-owned` arm REQUIRES `childEnv`, the `playbook-owned` arm forbids it
+(`childEnv?: never`), so omitting it fails the build with `TS2322`. The merge
+itself lives in one place, `bridgeChildEnv(target, inherited)`, and every
+rasen-owned spawn calls it rather than reaching into an adapter.
+
+Verification also found a SECOND rasen-owned Claude worker that bypassed the
+fix entirely: `management-api/supervisor.ts` spawns `claude -p` for workflow
+skills with `env: process.env`, and `daemon.ts` gives the daemon its launching
+shell's environment — so a daemon started from a Codex session handed every
+Claude worker a Codex identity. This decision named only `runner.ts`, and the
+task-3.8 audit enumerated runtime LITERALS rather than SPAWN SITES, which is
+why neither caught it. Both sites now go through `bridgeChildEnv`.
 
 ### D8 — Register the Oh My Pi session store now, with no readers
 
@@ -172,6 +251,17 @@ No capability boolean flips, so `PROBE_RUNTIMES`, `AUDIT_RUNTIMES`, `DISPATCH_RU
 - **Viewer** (`audit.html:219`, `:372-384`) — the right fix is to *delete* the allow-list, accept any report carrying the `rasen-token-audit/2` schema tag, and give the render dispatch an explicit unknown-runtime arm. That makes the viewer forward-compatible so no future runtime touches it at all — a contract change, not a list edit.
 
 Both are declared follow-ups of the audit capability change, where they first matter.
+
+**AMENDED — there was a THIRD mirror, and this change broke it.**
+`packages/ui/src/config/controls.ts` hand-maintains `KNOWN_MODEL_IDS` as a
+mirror of `MODEL_PRESETS`, so adding `opus-5` (D14) left the UI suggesting the
+PREVIOUS Opus generation and omitting the current one — on the very change
+whose point is that `opus-5` is current. Its own parity test is one-directional
+(mirror → preset, never preset → mirror) and `packages/ui` sits outside the
+root vitest include, so the drift was doubly silent. Fixed here rather than
+deferred, because unlike the other two this one was CAUSED by this change.
+Found by verification, not by the author. The one-directional parity test
+remains a hole and joins the follow-up list.
 
 ### D12 — This change ships alone; the capability additions follow
 

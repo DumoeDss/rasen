@@ -9,6 +9,16 @@ instructed to treat `evidence/implementation-record.md` as a claim, not proof.
 Their findings are reproduced and adjudicated below; two Majors they raised
 were reproduced by hand on the shipped build before being accepted.
 
+**Open follow-ups travel in a sibling file.** The verdict below is CLEAN, which
+means no Blocker and no Major is open — it does NOT mean nothing is left.
+Eight deferred items are recorded in `evidence/deferred-followups-report.md`,
+including one spec scenario this change does not satisfy (the audit zero-report
+invariant) and one half-enforced guarantee (bridged-worker identity is
+build-checked on declaration, not on application). `rasen archive` counts that
+file's entries into the archived `.openspec.yaml` `quality.metrics` and hashes
+it into `archive.json`; **read it before treating the archived change as
+closed.**
+
 ## Summary
 
 | Dimension | Status |
