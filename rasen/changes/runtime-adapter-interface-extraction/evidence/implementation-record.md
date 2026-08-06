@@ -24,8 +24,9 @@ asserts `stderr === ''`. It receives the skill/CLI version-drift warning
 Evidence it is not this change:
 
 - The same test passes on a clean `HEAD` worktree (`git worktree add /tmp/rasen-base HEAD`).
-- `.claude/skills/*/SKILL.md` in this working tree carry `generatedBy: "0.1.6-dev.local"`. Those files are **untracked** — installed by a prior local dev pack. Only `.claude/skills/rasen-npm-pack/` is tracked, and it is locally deleted.
-- Running `rasen pipeline list` from a directory with no dev-local skills produces empty stderr; running it from the repo root produces the warning. The drift source is the working tree's skill install, not any source file this change touched.
+- `.claude/skills/*/SKILL.md` in this working tree are stamped by whichever CLI last ran `rasen update` — `0.1.6-dev.local` when this was first diagnosed, `0.1.7-dev.local.1` now. Those files are **untracked**; only `.claude/skills/rasen-npm-pack/` is tracked, and it is locally deleted.
+- Running `rasen pipeline list` from a directory with no installed skills produces empty stderr; running it from the repo root produces the warning. The drift source is the working tree's skill install, not any source file this change touched.
+- It is not closable by installing the new pack — see "Correction: installing the pack does NOT clear the version-drift warning" below for why a dev-local install can never match the repository's plain version.
 
 ### Live-data smoke tests (task 7.3)
 
@@ -234,37 +235,61 @@ The retirement touched only the machine-local knowledge home
 (`~/.rasen/project-knowledge/<id>/learned-skills/…`); no tracked repository
 file changed.
 
-### Declared follow-up: `runtime-adapter-host-id-widening-audit` (gated on the local install)
+### `runtime-adapter-host-id-widening-audit` — retired, gate met
 
-That skill stays **active** until this code is what the machine runs. It is
-process guidance, not a defect warning: "adding an id to the runtime adapter
-registry — convert every sentinel-literal branch to a capability test and
-sweep locale copy, shipped prompts, docs, and exact-equality assertions."
+Done: `rasen knowledge retire runtime-adapter-host-id-widening-audit --scope project`,
+followed by `rasen update` to de-materialize it.
 
+It was process guidance, not a defect warning: "adding an id to the runtime
+adapter registry — convert every sentinel-literal branch to a capability test
+and sweep locale copy, shipped prompts, docs, and exact-equality assertions."
 This change makes most of that structural (capability tests replace the
 sentinels, derivation replaces the route table, `satisfies` catches a missing
-implementation), but it does **not** make the sweep half automatic: the locale
-catalogs, the shipped playbooks, the two published guides, and the SHA-256
-skill baselines all still had to be found and edited by hand here, and the
-prose sweep is what found them.
+implementation); it does not make the sweep half automatic, which is why the
+locale catalogs, shipped playbooks, published guides, and SHA-256 baselines
+still had to be found and edited by hand here.
 
-**The gate is the local install, nothing more.** Once this code is the code
-the machine actually runs — `npm install -g` of a pack built from it — the
-skill has done its job and can be retired as-is. It does not wait on a later
-runtime addition to prove anything.
-
-Measured at the time of writing, the gate is still open:
+The gate was the local install, and it is met — this branch is what the
+machine now runs:
 
 ```
 $ npm ls -g @atelierai/rasen --depth=0
-└── @atelierai/rasen@0.1.6-dev.local
+└── @atelierai/rasen@0.1.7-dev.local.1
 ```
 
-That stale global install is also the cause of the one failing e2e test
-recorded above — `.claude/skills/*/SKILL.md` in this working tree carry
-`generatedBy: "0.1.6-dev.local"`, which is what trips the version-drift
-warning. Installing the new pack closes both at once: the drift warning stops
-firing, and the skill's role ends.
+All four fixes were re-verified through that globally installed binary, not
+through `bin/rasen.js`: the Oh My Pi context probe and audit both exit 1
+without writing a report, and the real `claude-opus-5` session still reports
+`limit: 1000000, pct: 0.199452`.
+
+### Correction: installing the pack does NOT clear the version-drift warning
+
+An earlier revision of this record claimed the install would close the drift
+warning and the failing e2e test along with the gate. That was wrong, and the
+reason is structural rather than incidental.
+
+A dev-local install carries a `-dev.local.<n>` suffix, so its version can
+never equal the repository's plain `package.json` version. `rasen update`
+stamps `.claude/skills/*/SKILL.md` with whichever CLI ran it, and the drift
+check compares that stamp against the CLI currently running. Three versions
+are in play and only two can ever agree:
+
+| | before this session | after the install |
+|---|---|---|
+| global CLI | `0.1.6-dev.local` | `0.1.7-dev.local.1` |
+| skill stamp | `0.1.6-dev.local` | `0.1.7-dev.local.1` |
+| repo build (`bin/rasen.js`, what the e2e test spawns) | `0.1.6` | `0.1.7` |
+| result | global quiet, e2e test fails | global quiet, e2e test fails |
+
+The shape is identical, one version up: no regression, and no improvement
+either. Choosing the other side — `node bin/rasen.js update`, stamping
+`0.1.7` — would make the suite green and put a warning on every global `rasen`
+invocation in this repository instead. The current state preserves the one
+that was already in force.
+
+Neither state affects CI: `.claude/` is gitignored, so a CI checkout has no
+installed skills, `getAllToolVersionStatus` finds nothing, and the assertion
+`stderr === ''` holds.
 
 ## Out of scope, found during the prose sweep
 
