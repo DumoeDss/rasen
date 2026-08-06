@@ -208,13 +208,15 @@ export function resolvePipelineRoleRuntimes(
           },
         ];
       }
-      const runtime = host.runtime === 'unknown' ? 'claude' : host.runtime;
-      const route = resolveDispatchRoute(host.runtime, runtime);
+      const hostRuntime = host.runtime;
+      const hostDispatches = hasRuntimeCapability(hostRuntime, 'canDispatch');
+      const runtime = hostDispatches ? hostRuntime : 'claude';
+      const route = resolveDispatchRoute(hostRuntime, runtime);
       return [
         role,
         {
           runtime,
-          source: host.runtime === 'unknown' ? 'legacy-default' : 'host',
+          source: hostDispatches ? 'host' : 'legacy-default',
           dispatchMode: route.mode,
           ...(route.bridge ? { bridge: route.bridge } : {}),
         },

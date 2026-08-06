@@ -410,6 +410,62 @@ describe('agent-context', () => {
     it('still throws when neither --transcript nor --latest is provided (input error)', () => {
       expect(() => probeAgentContextSafe({})).toThrow(/--transcript|--latest/);
     });
+
+    it('refuses an implicit --latest probe on a host with no context-probe adapter', () => {
+      const p = writeTranscript('foreign.jsonl', [
+        assistantLine('claude-opus-4-8', { input_tokens: 10 }),
+      ]);
+      expect(fs.existsSync(p)).toBe(true);
+      const result = probeAgentContextSafe({
+        latest: true,
+        dir,
+        env: { OMPCODE: '1', CLAUDECODE: '1' },
+      });
+      expect(result.available).toBe(false);
+      if (!result.available) {
+        expect(result.reason).toBe('unsupported-host');
+        expect(result.detail).toMatch(/"omp"/);
+        expect(result.detail).toMatch(/No context probe exists/);
+      }
+      expect(result).not.toHaveProperty('runtime');
+      expect(result).not.toHaveProperty('contextTokens');
+      expect(result).not.toHaveProperty('limit');
+      expect(result).not.toHaveProperty('pct');
+    });
+
+    it('honours an explicit --transcript from a host with no context-probe adapter', () => {
+      const p = writeTranscript('explicit-from-omp.jsonl', [
+        assistantLine('claude-opus-4-8', { input_tokens: 10 }),
+      ]);
+      const result = probeAgentContextSafe({ transcript: p, env: { OMPCODE: '1' } });
+      expect(result.available).toBe(true);
+      if (result.available) expect(result.contextTokens).toBe(10);
+    });
+
+    it('honours an explicit --runtime from a host with no context-probe adapter', () => {
+      writeTranscript('main.jsonl', [assistantLine('claude-opus-4-8', { input_tokens: 7 })]);
+      const result = probeAgentContextSafe({
+        latest: true,
+        runtime: 'claude',
+        dir,
+        env: { OMPCODE: '1' },
+      });
+      expect(result.available).toBe(true);
+      if (result.available) expect(result.contextTokens).toBe(7);
+    });
+
+    // A Codex host is probe-capable, so implicit --latest is NOT gated and
+    // keeps resolving through the Claude store exactly as it did before.
+    it('leaves probe-capable hosts and an unidentified host resolving as before', () => {
+      writeTranscript('main-claude.jsonl', [
+        assistantLine('claude-opus-4-8', { input_tokens: 4 }),
+      ]);
+      for (const env of [{ CLAUDECODE: '1' }, { CODEX_THREAD_ID: 'thread-1' }, {}]) {
+        const result = probeAgentContextSafe({ latest: true, dir, env });
+        expect(result.available, JSON.stringify(env)).toBe(true);
+        if (result.available) expect(result.contextTokens).toBe(4);
+      }
+    });
   });
 
   describe('resolveTranscriptPath / probeAgentContext', () => {
@@ -541,7 +597,7 @@ describe('agent-context', () => {
       expect(detectTranscriptKind(p, 'codex')).toBe('codex');
     });
 
-    it.each(['zed', 'bogus'])(
+    it.each(['zed', 'omp', 'bogus'])(
       'rejects non-probe runtime %s with the accepted runtimes in the error',
       (runtime) => {
       const p = writeTranscript('t.jsonl', [assistantLine('claude-opus-4-8', { input_tokens: 1 })]);
