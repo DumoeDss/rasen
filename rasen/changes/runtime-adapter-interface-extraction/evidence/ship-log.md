@@ -84,6 +84,42 @@ out in the PR body because they bear on approval:
   runtime" scenario is not satisfied as written; both violating paths were
   reproduced on the built CLI. The repair is a decision, not a patch.
 
+## Post-delivery CI fix-forward
+
+The first CI run failed **Lint & Type Check** at its `Check for whitespace
+errors in diff` step (`.github/workflows/ci.yml:249-252`,
+`git diff --check "$BASE_SHA...HEAD"`) — before typecheck and lint, which were
+skipped as a result. Reproduced locally against the base:
+
+```
+rasen/specs/runtime-adapter-registry/spec.md:181: new blank line at EOF.
+```
+
+Not introduced by this change's own work: `git log` attributes the line to
+`cd22d53e`, the **previous** change's archive spec-sync. It is graded here only
+because `cd22d53e` is on this branch and not yet on `dev/0.1.7`. Commit
+`778e2dea` fixed the identical defect class earlier, so `rasen archive`'s
+spec-sync emitting a trailing blank line at EOF has now been observed twice and
+is worth fixing at the emitter rather than cleaned up per branch.
+
+Fixed in `0ec0bc93` (one deletion). `git diff --check upstream/dev/0.1.7...HEAD`
+now exits 0, and `rasen validate --specs --strict` passes 209/209.
+
+The suite was **not** re-run for this fix. The edit is a single blank line in a
+planning-artifact markdown file; the root vitest include is `test/**/*.test.ts`,
+and no test reads `rasen/specs/runtime-adapter-registry/spec.md` (every `test/`
+reference to `rasen/specs` is a synthetic path, an fs mock, or a `.gitkeep`
+assertion). `rasen validate --specs --strict` is the gate that actually covers
+this file, and it was run.
+
+**Pre-flight gap, recorded per the project's own preflight guidance:** the
+`pnpm-vitest-preflight-ci-parity` learned skill already prescribes
+`git diff --check <base>...HEAD` as a gate a local eslint/tsc pass does not
+cover, and explicitly warns that a planning-artifact edit can fail
+"Lint & Type Check" with no code involved. The guidance was correct and
+available; this ship did not run it. That is an execution miss, not a missing
+lesson.
+
 ## Deployment
 
 Status: Pending (run `rasen-ship --deploy` to continue)
