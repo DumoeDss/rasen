@@ -409,7 +409,7 @@ Explicit choices keep their authority. Runtime precedence is:
 3. stage `runtime`;
 4. pipeline `agents.<role>.runtime`;
 5. detected host;
-6. legacy Claude fallback only when the host cannot be identified.
+6. legacy Claude fallback whenever the host has no dispatch adapter — either unidentified, or identified with no adapter for it (`omp`).
 
 The shipped route matrix is:
 
@@ -420,6 +420,7 @@ The shipped route matrix is:
 | Codex | Codex | `native` | Codex collaboration tools; final worker results are delivered automatically |
 | Codex | Claude | `exec-bridge` | `claude-print`: bounded Claude print process through `rasen agent dispatch`; Claude Code CLI is preflighted once |
 | Unknown | compatible legacy target | `legacy-fallback` | non-fatal warning; set `RASEN_AGENT_RUNTIME=claude|codex` to disambiguate |
+| Identified, no dispatch adapter (`omp`) | compatible legacy target | `legacy-fallback` | non-fatal warning naming the host; stages report `runtimeSource: legacy-default`, not `host` |
 
 The `claude-print` bridge is tested against Claude Code CLI 2.1.220 and requires a compatible `claude` executable on `PATH`. It sends the complete prompt over stdin, disables Claude delegation/team tools, and accepts only the selected strict structured contract:
 

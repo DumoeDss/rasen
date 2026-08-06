@@ -168,6 +168,20 @@ describe('runtime detection and gate', () => {
     expect(detectAgentRuntime({})).toBe('unknown');
   });
 
+  // design D5: the omp fail-safe is inherited, not written — `AgentRuntime`
+  // aliases the widened `HostRuntime`, so detection reports `omp` and the
+  // gate's fall-through withholds beats with no `keepalive.runtimes.omp` key.
+  // Pinned here because nothing else fails if a later change adds that key or
+  // reorders the fingerprint checks: the bypass named in the proposal would
+  // come back with a green suite.
+  it('detects omp and withholds beats for it with no config key of its own', () => {
+    expect(detectAgentRuntime({ OMPCODE: '1', CLAUDECODE: '1' })).toBe('omp');
+    expect(isRuntimeGated('omp', DEFAULT_KEEPALIVE_CONFIG)).toBe(false);
+    expect(isRuntimeGated('omp', resolveKeepaliveConfig({ runtimes: { claude: true } }))).toBe(
+      false
+    );
+  });
+
   it('gates claude on and codex/unknown off by default', () => {
     expect(isRuntimeGated('claude', DEFAULT_KEEPALIVE_CONFIG)).toBe(true);
     expect(isRuntimeGated('codex', DEFAULT_KEEPALIVE_CONFIG)).toBe(false);

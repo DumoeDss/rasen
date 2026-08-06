@@ -88,6 +88,27 @@ Splitting the override per consumer is rejected as scope inflation for a diagnos
 - host unknown → existing guidance
 - host recognized, no dispatch adapter → name the host, and state that forcing a runtime also redirects context probing
 
+### D8 — The test suite must pin the host, or this change breaks it locally
+
+Discovered during implementation, not anticipated above. Host detection reads
+the environment directly, and nothing in the test harness scrubs it: a
+developer running the suite from inside a harness leaks that harness into
+every host-sensitive assertion. Today `CLAUDECODE` silently makes local runs
+resolve `claude` while CI (which sets neither fingerprint) resolves
+`unknown` — the two already disagree, invisibly. After D3, the same leak
+resolves `omp` and fails a large set of unrelated suites locally only.
+
+`vitest.setup.ts` therefore deletes `CLAUDECODE` and `OMPCODE` alongside the
+existing `RASEN_HOME`/`XDG_DATA_HOME` safety nets: `globalSetup` runs before
+the forks pool spawns, workers inherit `process.env`, and `runCLI` passes
+that same scrubbed environment to spawned CLIs. The default host becomes
+`unknown` everywhere, matching CI; a suite that exercises a specific host
+sets the fingerprint itself and wins (`test/commands/agent-wait.test.ts`
+adds `OMPCODE` to its `ENV_KEYS` save/delete/restore list for exactly this).
+
+Rejected: patching each affected suite. One setup-level scrub is smaller than
+N per-file patches and removes the local/CI divergence instead of encoding it.
+
 ## Constraints
 
 - `src/locales/{en,ja,zh-cn}.json` currently hold 1358 keys each (verified). `test/locales/catalog.test.ts:208-213` asserts every locale's pipeline message keys equal `PIPELINE_MESSAGE_KEYS` exactly, so a new or renamed key lands in all three catalogs plus `pipeline-messages.ts:43-44,159-160,373-376` together.

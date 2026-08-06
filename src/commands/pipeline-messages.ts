@@ -42,6 +42,7 @@ export interface PipelineMessageValues {
   selectedProjectRoot: { project: string; path: string };
   staleProfileWorkflowsWarning: { workflows: string };
   unknownHostRuntimeWarning: { override: string };
+  hostRuntimeWithoutDispatchAdapterWarning: { host: string; override: string };
   noPipelinesFound: undefined;
   availablePipelinesHeading: undefined;
   pipelineTableEntry: { name: string; source: string };
@@ -161,6 +162,7 @@ export const PIPELINE_MESSAGE_KEYS = [
   'selectedProjectRoot',
   'staleProfileWorkflowsWarning',
   'unknownHostRuntimeWarning',
+  'hostRuntimeWithoutDispatchAdapterWarning',
   'noPipelinesFound',
   'availablePipelinesHeading',
   'pipelineTableEntry',
@@ -372,17 +374,31 @@ export function formatPipelineRootSelectionNotice(
   });
 }
 
+/**
+ * Exhaustive by construction, mirroring `unlocalizedNoticeMessage`'s `switch`
+ * in `execution-validation.ts`: a trailing `return` for the last kind would
+ * make a fourth notice variant compile and then render as a stale-profile
+ * warning, reading `workflowIds` off a notice that has none. Both renderers
+ * must fail at the same compile error.
+ */
 export function formatPipelineExecutionNotice(
   notice: PipelineExecutionNotice,
   locale: CliLocale = getCliLocale()
 ): string {
   const messages = getPipelineMessages(locale);
-  if (notice.kind === 'unknown-host-runtime') {
-    return messages.format('unknownHostRuntimeWarning', { override: notice.override });
+  switch (notice.kind) {
+    case 'unknown-host-runtime':
+      return messages.format('unknownHostRuntimeWarning', { override: notice.override });
+    case 'host-runtime-without-dispatch-adapter':
+      return messages.format('hostRuntimeWithoutDispatchAdapterWarning', {
+        host: notice.host,
+        override: notice.override,
+      });
+    case 'unknown-profile-workflows':
+      return messages.format('staleProfileWorkflowsWarning', {
+        workflows: notice.workflowIds.join(', '),
+      });
   }
-  return messages.format('staleProfileWorkflowsWarning', {
-    workflows: notice.workflowIds.join(', '),
-  });
 }
 
 export class PipelineMessageError extends Error {

@@ -138,4 +138,24 @@ describe('CLI: agent context --latest --runtime codex', () => {
     expect(parsed.reason).toBe('no-transcript');
     expect(typeof parsed.detail).toBe('string');
   });
+
+  // The command layer forwards no `env` to `probeAgentContextSafe`, so the
+  // host it gates on comes from the spawned process's own environment. Only a
+  // real CLI invocation covers that inheritance, plus the exit code and the
+  // stdout/stderr split the refusal has to preserve for `--json` consumers.
+  it('refuses an implicit --latest under a host with no probe adapter, exit 0 and stdout-clean', async () => {
+    const result = await runCLI(['agent', 'context', '--latest', '--json'], {
+      cwd: projectDir,
+      env: { OMPCODE: '1', CLAUDECODE: '1' },
+    });
+
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout.trim());
+    expect(parsed).toEqual({
+      available: false,
+      reason: 'unsupported-host',
+      detail: expect.stringContaining('"omp"'),
+    });
+    expect(result.stdout).not.toContain('"contextTokens"');
+  });
 });

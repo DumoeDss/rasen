@@ -34,6 +34,7 @@ import { DEFAULT_HANDOFF_CONFIG, type ThresholdValue } from './pipeline-registry
 import { resolveModelPreset } from './model-presets.js';
 import {
   PROBE_RUNTIMES,
+  detectHostRuntime,
   hasRuntimeCapability,
   type ProbeRuntime,
 } from './runtime-adapters.js';
@@ -432,6 +433,11 @@ export interface ProbeOptions {
   homeDir?: string;
   /** Force detection to `'claude'` or `'codex'` instead of sniffing the file. */
   runtime?: string;
+  /**
+   * Environment the implicit-`--latest` host gate reads (defaults to
+   * `process.env`). A seam, not a CLI flag: host identity is ambient.
+   */
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -547,6 +553,19 @@ export async function resolveHandoffThresholdReport(
 }
 
 /**
+ * `--limit` is an input error, not a host state: an out-of-range value must
+ * throw from every entry point, including the ones that answer environmental
+ * absence with a tagged result. Extracted so {@link probeAgentContextSafe}'s
+ * host gate cannot return before the check and downgrade a typo into an
+ * exit-0 "unavailable".
+ */
+function validateProbeLimit(limit: number | undefined): void {
+  if (limit !== undefined && (!Number.isInteger(limit) || limit <= 0)) {
+    throw new Error('--limit must be a positive integer (token count of the context window).');
+  }
+}
+
+/**
  * Full probe: resolve the transcript, detect its kind (Codex rollout vs
  * Claude transcript — explicit `--runtime` wins over detection), then
  * compute its context occupancy. Throws an actionable error on any
@@ -554,12 +573,7 @@ export async function resolveHandoffThresholdReport(
  */
 export function probeAgentContext(options: ProbeOptions): AgentContextResult {
   const runtime = validateRuntime(options.runtime);
-  if (
-    options.limit !== undefined &&
-    (!Number.isInteger(options.limit) || options.limit <= 0)
-  ) {
-    throw new Error('--limit must be a positive integer (token count of the context window).');
-  }
+  validateProbeLimit(options.limit);
   const transcriptPath = resolveTranscriptPath(options, runtime);
   const kind = detectTranscriptKind(transcriptPath, runtime);
   return kind === 'codex'
@@ -570,7 +584,7 @@ export function probeAgentContext(options: ProbeOptions): AgentContextResult {
 /** Tagged result of {@link probeAgentContextSafe} — success or environmental unavailability. */
 export type ProbeAgentContextResult =
   | ({ available: true } & AgentContextResult)
-  | { available: false; reason: 'no-transcript'; detail: string };
+  | { available: false; reason: 'no-transcript' | 'unsupported-host'; detail: string };
 
 /**
  * Same resolution as {@link probeAgentContext}, but catches ONLY environmental
@@ -579,8 +593,34 @@ export type ProbeAgentContextResult =
  * other failure (invalid `--runtime`/`--limit`, no source flag, an explicit
  * `--transcript` that is unreadable/usage-free) still throws — those are input
  * errors, not a host's normal state, and must stay hard errors.
+ *
+ * An *inferred* probe on a harness with no context-probe adapter is refused
+ * up front, before any transcript store is touched. Without `--transcript` or
+ * `--runtime`, `resolveTranscriptPath` silently assumes Claude, so a harness
+ * that sets Claude's own environment values (Oh My Pi) would otherwise return
+ * some unrelated Claude session's occupancy — a wrong answer the caller cannot
+ * distinguish from a correct one. An `unknown` host is deliberately not gated:
+ * it has no adapter to contradict, and its legacy Claude-store resolution is
+ * the behavior every existing caller already depends on. `--limit` is
+ * validated BEFORE the gate: an out-of-range value is an input error on every
+ * host, and returning the refusal first would tell a user with a `--limit`
+ * typo that their host is unsupported.
  */
 export function probeAgentContextSafe(options: ProbeOptions): ProbeAgentContextResult {
+  if (options.latest && !options.transcript && options.runtime === undefined) {
+    validateProbeLimit(options.limit);
+    const { runtime } = detectHostRuntime(options.env);
+    if (runtime !== 'unknown' && !hasRuntimeCapability(runtime, 'canProbeContext')) {
+      return {
+        available: false,
+        reason: 'unsupported-host',
+        detail:
+          `No context probe exists for the detected host runtime "${runtime}". ` +
+          `Pass --transcript <path>, or --runtime ${PROBE_RUNTIMES.join('|')} with --latest, ` +
+          'to name what should be read.',
+      };
+    }
+  }
   try {
     const result = probeAgentContext(options);
     return { available: true, ...result };

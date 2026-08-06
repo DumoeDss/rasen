@@ -545,6 +545,21 @@ stages:
         .toMatchObject({ runtime: 'claude', runtimeSource: 'legacy-default' });
     });
 
+    it('does not inherit a host that has no dispatch adapter', () => {
+      const pipeline = parsePipeline(`
+name: omp-host
+stages:
+  - id: inherit
+    skill: rasen-propose
+    role: planner
+`);
+      expect(
+        resolveStageRuntimeConfig(pipeline.stages[0], pipeline, undefined, undefined, {
+          host: { runtime: 'omp', source: 'omp-code' },
+        })
+      ).toMatchObject({ runtime: 'claude', runtimeSource: 'legacy-default' });
+    });
+
     describe('per-role machine model config layers (config-page-coherence)', () => {
       const noModelPipeline = parsePipeline(`
 name: model-layer-test

@@ -14,6 +14,7 @@ import {
 } from '../threshold-resolver.js';
 import {
   DISPATCH_RUNTIMES,
+  hasRuntimeCapability,
   type DetectedHostRuntime,
   type DispatchRuntime,
 } from '../runtime-adapters.js';
@@ -610,7 +611,7 @@ export function resolveStageRuntimeConfig(
   } else if (roleDefault?.runtime !== undefined) {
     runtime = roleDefault.runtime;
     runtimeSource = 'agent';
-  } else if (runtimeContext.host.runtime !== 'unknown') {
+  } else if (hasRuntimeCapability(runtimeContext.host.runtime, 'canDispatch')) {
     runtime = runtimeContext.host.runtime;
     runtimeSource = 'host';
   } else {
@@ -956,10 +957,10 @@ export function resolvePipelineReuseConfig(
     const roleModel = normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.model;
     const presetThreshold = resolveModelPreset(roleModel)?.reuseThreshold;
     const declaredRuntime = normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime;
-    const fallbackRuntime =
-      thresholdContext?.host?.runtime && thresholdContext.host.runtime !== 'unknown'
-        ? thresholdContext.host.runtime
-        : 'claude';
+    const hostRuntime = thresholdContext?.host?.runtime;
+    const fallbackRuntime = hasRuntimeCapability(hostRuntime, 'canDispatch')
+      ? hostRuntime
+      : 'claude';
     return resolveThreshold({
       family: 'reuse',
       role,

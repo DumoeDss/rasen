@@ -273,7 +273,11 @@ export class AgentCommand {
    * Environmental absence under `--latest` (no Claude projects directory / no
    * main-session transcript — a non-Claude host's normal state, e.g. a Codex
    * CLI LEAD) does NOT throw: it degrades gracefully, exit 0, because the
-   * probe is a non-blocking pre-flight for any host (design D2).
+   * probe is a non-blocking pre-flight for any host (design D2). An implicit
+   * `--latest` (no `--transcript`, no `--runtime`) on a recognized host with
+   * no context-probe adapter degrades the same way, with
+   * `reason: 'unsupported-host'` — refusing rather than reading another
+   * harness's transcript store.
    */
   async context(options: AgentContextOptions = {}): Promise<void> {
     const result = probeAgentContextSafe({

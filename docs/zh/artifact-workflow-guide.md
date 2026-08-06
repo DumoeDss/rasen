@@ -407,7 +407,7 @@ rasen pipeline show small-feature --for-execution --planner codex --reviewer cod
 3. stage 的 `runtime`；
 4. pipeline 的 `agents.<role>.runtime`；
 5. 检测到的宿主；
-6. 只有宿主无法识别时才使用旧版 Claude 兼容默认。
+6. 宿主没有派发适配器时使用旧版 Claude 兼容默认——包括无法识别的宿主，以及可识别但没有派发适配器的宿主（`omp`）。
 
 当前发布的路由矩阵：
 
@@ -418,6 +418,7 @@ rasen pipeline show small-feature --for-execution --planner codex --reviewer cod
 | Codex | Codex | `native` | Codex 原生协作工具；worker 的 final 会自动送达 LEAD |
 | Codex | Claude | `exec-bridge` | `claude-print`：通过 `rasen agent dispatch` 运行有界 Claude print 进程；预检最多探测一次 Claude Code CLI |
 | unknown | 旧版兼容目标 | `legacy-fallback` | 非致命告警；可设置 `RASEN_AGENT_RUNTIME=claude|codex` 明确宿主 |
+| 可识别但无派发适配器（`omp`） | 旧版兼容目标 | `legacy-fallback` | 非致命告警并指明宿主名；stage 报告 `runtimeSource: legacy-default`，而不是 `host` |
 
 `claude-print` bridge 以 Claude Code CLI 2.1.220 为已验证前提，需要 `PATH` 中存在兼容的 `claude` 可执行文件。它通过 stdin 传入完整 prompt，禁用 Claude 委派/team 工具，并且只接受所选的严格结构化契约：
 

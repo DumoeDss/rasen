@@ -430,6 +430,7 @@
       "selectedProjectRoot": "使用 Rasen 根目录：项目 {project}（{path}）",
       "staleProfileWorkflowsWarning": "警告：已从存储的配置方案中忽略未知工作流 ID：{workflows}",
       "unknownHostRuntimeWarning": "警告：无法识别 LEAD 工具宿主，正在使用旧版兼容路由。设置 {override}=claude|codex 可获得确定的派发行为。",
+      "hostRuntimeWithoutDispatchAdapterWarning": "警告：LEAD 工具宿主 {host} 没有派发适配器，正在使用旧版兼容路由。设置 {override}=claude|codex 可获得确定的派发行为，同时也会解除上下文探测的拒绝，此后 `rasen agent context --latest` 读取的是 Claude 的 transcript 存储，而不是本宿主自己的会话。",
       "noPipelinesFound": "未找到流水线。",
       "availablePipelinesHeading": "可用流水线：",
       "pipelineTableEntry": "  {name}  [{source}]",

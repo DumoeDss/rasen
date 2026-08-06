@@ -27,7 +27,7 @@ Use when: "drive this score to 90", "optimize p99 latency", "hit the lighthouse 
 
 ## 0. Pre-flight context probe (once, non-blocking)
 
-Before anything else run \`rasen agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy. At or above the session handoff threshold (default 0.5; see the playbook's Step H), offer the user a three-way choice: (a) automatic relay now; (b) continue this session; (c) handle it manually via rasen-handoff. Proceed on the user's say-so; below the threshold, proceed silently.
+Before anything else run \`rasen agent context --latest --json\` — it measures YOUR (the LEAD session's) context occupancy. At or above the session handoff threshold (default 0.5; see the playbook's Step H), offer the user a three-way choice: (a) automatic relay now; (b) continue this session; (c) handle it manually via rasen-handoff. Proceed on the user's say-so; below the threshold, proceed silently. The probe may legitimately answer \`{"available": false, "reason": "no-transcript"|"unsupported-host", "detail": "..."}\` at exit \`0\` with no \`pct\` — \`unsupported-host\` means this session's harness has no context-probe adapter, so no reading exists to take. Branch on \`available\` and follow the playbook's H.1 unavailable arm: proceed as if the threshold had not been reached, offer nothing, force nothing, and never read a missing \`pct\` as "below threshold".
 
 ## 1. Classify and select the backend pipeline (explicit wins)
 

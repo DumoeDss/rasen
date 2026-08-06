@@ -21,8 +21,10 @@ import {
 } from './stage-overrides.js';
 import {
   detectHostRuntime,
+  hasRuntimeCapability,
   type DetectedHostRuntime,
   type DispatchBridge,
+  type RuntimeAdapterId,
 } from '../runtime-adapters.js';
 import type { AgentRuntime, PipelineYaml, StageRole } from './types.js';
 
@@ -33,6 +35,11 @@ export type PipelineExecutionNotice =
     }
   | {
       kind: 'unknown-host-runtime';
+      override: 'RASEN_AGENT_RUNTIME';
+    }
+  | {
+      kind: 'host-runtime-without-dispatch-adapter';
+      host: RuntimeAdapterId;
       override: 'RASEN_AGENT_RUNTIME';
     };
 
@@ -63,6 +70,36 @@ export interface PipelineExecutionOptions {
   reporter?: PipelineExecutionReporter | false;
 }
 
+/**
+ * English fallback copy for callers that pass no reporter. The localized
+ * catalog (`formatPipelineExecutionNotice`) is the pipeline-command path;
+ * this keeps non-pipeline callers diagnosable without a locale dependency.
+ */
+function unlocalizedNoticeMessage(notice: PipelineExecutionNotice): string {
+  switch (notice.kind) {
+    case 'unknown-profile-workflows':
+      return `Warning: dropping unknown workflow id(s) from stored profile: ${notice.workflowIds.join(', ')}`;
+    case 'unknown-host-runtime':
+      return (
+        'Warning: the LEAD host runtime is unknown; using the legacy compatibility route. ' +
+        `Set ${notice.override}=claude|codex for deterministic dispatch.`
+      );
+    case 'host-runtime-without-dispatch-adapter':
+      // The second clause states what forcing the override ACTUALLY does to
+      // the context probe (design D7's coupling): it lifts the
+      // `unsupported-host` refusal, after which an implicit `--latest`
+      // resolves the Claude transcript store again — NOT this harness's own
+      // session, and not the forced runtime's store either (the override
+      // feeds host detection only; the probe still takes its store from
+      // `--runtime`, which an implicit probe does not pass).
+      return (
+        `Warning: LEAD host runtime "${notice.host}" has no dispatch adapter; using the legacy compatibility route. ` +
+        `Set ${notice.override}=claude|codex for deterministic dispatch — that also lifts the context-probe refusal, ` +
+        'after which `rasen agent context --latest` reads the Claude transcript store instead of this host\'s own session.'
+      );
+  }
+}
+
 function reportPipelineExecutionNotice(
   reporter: PipelineExecutionReporter | false | undefined,
   notice: PipelineExecutionNotice
@@ -73,11 +110,7 @@ function reportPipelineExecutionNotice(
     return;
   }
 
-  const message =
-    notice.kind === 'unknown-profile-workflows'
-      ? `Warning: dropping unknown workflow id(s) from stored profile: ${notice.workflowIds.join(', ')}`
-      : 'Warning: the LEAD host runtime is unknown; using the legacy compatibility route. ' +
-        `Set ${notice.override}=claude|codex for deterministic dispatch.`;
+  const message = unlocalizedNoticeMessage(notice);
   // Warnings/notices go to stderr so they never corrupt `--json` stdout (the
   // CLI-spawning tests JSON.parse stdout; a stdout warning broke them on CI,
   // where RASEN_AGENT_RUNTIME is unset and this notice fires).
@@ -106,8 +139,13 @@ function throwRuntimeUnavailable(
         stage.runtime === 'codex')
   );
   const targetLabel = bridge === 'codex-exec' ? 'codex' : 'Claude Code';
-  const hostOverride =
-    plan.hostRuntime === 'unknown' ? 'the detected host runtime' : plan.hostRuntime;
+  // Only a dispatch-capable host names a role runtime the role flags accept
+  // (`AgentRuntimeSchema` = `z.enum(DISPATCH_RUNTIMES)`). A recognized host
+  // with no dispatch adapter must NOT be printed here — advising "override
+  // the role to omp" names a value every role validator rejects.
+  const hostOverride = hasRuntimeCapability(plan.hostRuntime, 'canDispatch')
+    ? plan.hostRuntime
+    : 'the detected host runtime';
   throw new PipelineValidationError(
     `Stage "${bridged?.id ?? '<unknown>'}" requires the ${bridge} bridge, but ${targetLabel} is not available. ` +
       `Override the affected role to ${hostOverride} (for example with a role flag or stage runtime), ` +
@@ -229,6 +267,15 @@ export async function validatePipelineForExecution(
   if (host.runtime === 'unknown') {
     reportPipelineExecutionNotice(options?.reporter, {
       kind: 'unknown-host-runtime',
+      override: 'RASEN_AGENT_RUNTIME',
+    });
+  } else if (!hasRuntimeCapability(host.runtime, 'canDispatch')) {
+    // D6: after host identity widened past dispatch capability, a recognized
+    // host takes the legacy route too. Without this branch the degradation
+    // would be silent — the one thing this change exists to prevent.
+    reportPipelineExecutionNotice(options?.reporter, {
+      kind: 'host-runtime-without-dispatch-adapter',
+      host: host.runtime,
       override: 'RASEN_AGENT_RUNTIME',
     });
   }
