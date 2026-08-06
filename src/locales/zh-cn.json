@@ -1103,6 +1103,79 @@
     },
     "hint": "下一步：{workflow} — {reason}"
   },
+  "session": {
+    "messages": {
+      "foregroundNotice": "正在使用前台会话所有者。正确性不受影响，但本命令退出后缓存驻留也会结束。",
+      "completed": "会话轮次已完成。",
+      "duplicateCompleted": "该消息此前已完成；已直接复用持久结果，没有再次派发。",
+      "duplicatePreDeliveryFailed": "该消息此前在投递前失败，本次没有重新派发。",
+      "duplicateUncertain": "该消息已有投递不确定的终态，本次没有重放。",
+      "listedHeading": "可复用会话（{count}）：",
+      "listEmpty": "此 Run 下没有可复用会话。",
+      "sessionLine": "  {session} [{role}] {status} — {cwd}",
+      "retired": "可复用会话已退役。",
+      "failure": "会话命令失败 [{code}]：{message}",
+      "shutdownDiagnostic": "所有者关闭诊断（{run}）[{code}]：{message}",
+      "sharedOwner": "共享监督器",
+      "daemonForeign": "守护进程端口由外部监听器占用；未启动前台所有者。",
+      "daemonVersionMismatch": "常驻守护进程版本（{actual}）与当前 Rasen 安装（{expected}）不一致。",
+      "daemonIdentityAmbiguous": "实时守护进程响应与记录的身份不完全一致；未发送会话请求。",
+      "transportUncertain": "守护进程请求可能已经准入；只能使用同一个稳定消息 ID 重试。"
+    },
+    "examples": {
+      "exec": "示例：\n  rasen session exec --run <run-id> --session reviewer --action action.json --cwd . --touch never",
+      "list": "示例：\n  rasen session list --run <run-id>",
+      "retire": "示例：\n  rasen session retire --run <run-id> --session reviewer"
+    },
+    "outcomes": {
+      "generic": "无法完成会话操作。",
+      "invalid_request": "会话请求格式不正确。",
+      "invalid_action": "action 或 touch 策略无效。",
+      "bad_request": "会话请求不是有效的 JSON。",
+      "payload_too_large": "会话请求超过协议大小限制。",
+      "run_not_found": "未找到精确的 canonical Run。",
+      "run_record_invalid": "canonical Run 记录无效或无法读取。",
+      "run_identity_mismatch": "Run 目录内包含另一个精确身份。",
+      "run_directory_invalid": "canonical Run 目录不可用或不可信。",
+      "run_mismatch": "持久注册表属于另一个 Run。",
+      "registry_absent": "该 Run 尚无持久会话注册表。",
+      "session_conflict": "持久会话的不变身份信息不一致。",
+      "invalid_transition": "持久会话无法执行所请求的状态转换。",
+      "wake_busy": "另一个所有者正持有此会话的 wake lease。",
+      "host_busy": "可复用 host 已有一个活动轮次。",
+      "busy": "可复用 host 的进程容量已满。",
+      "idempotency_capacity_exhausted": "会话的持久幂等容量已满。",
+      "session_not_found": "未找到可复用会话。",
+      "session_retired": "可复用会话已退役。",
+      "session_stale": "可复用会话的恢复身份已过期。",
+      "session_unrecoverable": "无法安全恢复可复用会话。",
+      "host_not_found": "未找到可复用 host。",
+      "host_retired": "可复用 host 已退役。",
+      "host_unrecoverable": "无法安全恢复可复用 host。",
+      "conditional_wake_stale": "会话在观察后发生了变化；条件 wake 未获准入。",
+      "duplicate_message": "该稳定消息身份已经结算。",
+      "transport_uncertain": "守护进程请求可能已准入。只能使用同一个稳定消息 ID 重试。",
+      "delivery_uncertain": "投递可能已到达智能体，本次没有重放。",
+      "turn_timeout": "已准入轮次超时，投递结果不确定。",
+      "no_output_timeout": "已准入轮次停止输出，投递结果不确定。",
+      "registry_corrupt": "持久会话注册表已损坏，系统未对其进行改写。",
+      "unsupported_schema": "持久会话注册表使用了不支持的 schema。",
+      "registry_lock_timeout": "未能在期限内获取持久注册表锁。",
+      "registry_lock_permission": "无法访问持久注册表锁。",
+      "registry_write_failed": "无法持久化会话注册表。",
+      "wake_lock_malformed": "持久 wake 锁格式无效。",
+      "wake_lock_permission": "无法访问持久 wake 锁。",
+      "wake_lock_timeout": "未能在期限内获取持久 wake 锁。",
+      "wake_lock_error": "无法安全检查持久 wake 锁。",
+      "write_failed": "智能体请求在投递前失败。",
+      "owner_shutdown_failed": "可复用会话所有者未能正常关闭。",
+      "agent_cli_unavailable": "智能体 CLI 不可用。",
+      "shutting_down": "可复用会话所有者正在关闭。",
+      "daemon_foreign": "守护进程端口由外部监听器占用。",
+      "daemon_version_mismatch": "常驻守护进程版本与当前 Rasen 安装不一致。",
+      "daemon_identity_ambiguous": "实时守护进程与记录的身份不完全一致。"
+    }
+  },
   "cli": {
     "chrome": {
       "usageTitle": "用法：",
@@ -2190,6 +2263,74 @@
             },
             "status": {
               "description": "报告常驻守护进程是否正在运行"
+            }
+          }
+        },
+        "session": {
+          "description": "执行、查看和退役持久可复用的智能体会话",
+          "commands": {
+            "exec": {
+              "description": "通过持久可复用会话执行一个已准入的智能体 action",
+              "options": {
+                "run": {
+                  "description": "精确的 canonical Run ID"
+                },
+                "session": {
+                  "description": "稳定的可复用会话键"
+                },
+                "action": {
+                  "description": "一个 change-run-action/1 JSON 文件的路径，或用 - 表示标准输入"
+                },
+                "cwd": {
+                  "description": "显式执行目录；准入前会进行 canonical 化"
+                },
+                "message-id": {
+                  "description": "稳定操作 ID；默认使用 action ID"
+                },
+                "touch": {
+                  "description": "touch 策略模式：auto 或 never"
+                },
+                "touch-deadline": {
+                  "description": "auto touch 必需的未来 ISO-8601 截止时间"
+                },
+                "max-touches": {
+                  "description": "auto touch 必需的正数上限"
+                },
+                "deadline-action": {
+                  "description": "截止行为：stop 或 retire-silent"
+                },
+                "json": {
+                  "description": "输出一个 rasen-session-command/1 JSON 文档"
+                }
+              }
+            },
+            "list": {
+              "description": "列出一个精确 canonical Run 下的安全持久会话信息",
+              "options": {
+                "run": {
+                  "description": "精确的 canonical Run ID"
+                },
+                "json": {
+                  "description": "输出一个 rasen-session-command/1 JSON 文档"
+                }
+              }
+            },
+            "retire": {
+              "description": "将一个持久可复用会话终态退役",
+              "options": {
+                "run": {
+                  "description": "精确的 canonical Run ID"
+                },
+                "session": {
+                  "description": "稳定的可复用会话键"
+                },
+                "reason": {
+                  "description": "写入持久生命周期的有界退役原因"
+                },
+                "json": {
+                  "description": "输出一个 rasen-session-command/1 JSON 文档"
+                }
+              }
             }
           }
         },
