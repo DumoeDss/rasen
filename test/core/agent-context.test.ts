@@ -711,6 +711,20 @@ describe('agent-context', () => {
       expect(SNIFF_FALLBACK_RUNTIME).toBe('claude');
     });
 
+    it('refuses to read a target that is not a regular file', () => {
+      // Recognition is reached for ANY target now that probe and audit share
+      // it, including paths no harness wrote. Reading a character device to
+      // find "the first line" never returns: `agent audit /dev/zero` hung with
+      // no output where it previously failed actionably. A directory covers the
+      // same guard on every platform; the device case is POSIX-only.
+      const started = Date.now();
+      expect(detectSessionOwner(dir)).toBe(SNIFF_FALLBACK_RUNTIME);
+      if (process.platform !== 'win32') {
+        expect(detectSessionOwner('/dev/zero')).toBe(SNIFF_FALLBACK_RUNTIME);
+      }
+      expect(Date.now() - started).toBeLessThan(2_000);
+    });
+
     it('consults every registered runtime, so a new store cannot be left out of the pass', () => {
       expect([...SESSION_STORE_LIST].map((store) => store.id).sort()).toEqual(
         [...RUNTIME_ADAPTER_IDS].sort()

@@ -137,22 +137,58 @@ export const SESSION_STORES = {
  */
 const RECOGNITION_ORDER = ['zed', 'codex', 'omp', 'claude'] as const;
 
+/**
+ * A registered runtime missing from {@link RECOGNITION_ORDER} would never be
+ * consulted, and every target it owns would fall to
+ * {@link SNIFF_FALLBACK_RUNTIME} — the fabricated-number bug this registry
+ * exists to remove. `satisfies` proves the MAP above is complete but cannot
+ * see a missing tuple member, so coverage is asserted at the type level
+ * rather than left to a runtime test: omit an id and this fails the build.
+ */
+type AssertNever<T extends never> = T;
+type _RecognitionOrderCoversEveryRuntime = AssertNever<
+  Exclude<RuntimeAdapterId, (typeof RECOGNITION_ORDER)[number]>
+>;
+
 export const SESSION_STORE_LIST: readonly SessionStore[] = Object.freeze(
   RECOGNITION_ORDER.map((id) => SESSION_STORES[id] as SessionStore)
 );
 
+/**
+ * How much of a target recognition may read. A session file's first row is a
+ * single JSON object; 64 KiB is orders of magnitude more than any harness
+ * writes and still bounded.
+ */
+const RECOGNITION_READ_BYTES = 64 * 1024;
+
+/**
+ * The target's first non-empty line, or `undefined` when there is none to read.
+ *
+ * Reads a BOUNDED prefix of a REGULAR file. Recognition is reached for any
+ * audit or probe target now that it is unified, including paths no harness
+ * wrote, so neither bound is optional: without the regular-file gate
+ * `rasen agent audit /dev/zero` (or a FIFO) never returns, and without the
+ * byte bound a multi-gigabyte file is pulled into a string to look at one line.
+ */
 function readFirstNonEmptyLine(target: string): string | undefined {
-  let content: string;
+  let fd: number | undefined;
   try {
-    content = fs.readFileSync(target, 'utf-8');
+    if (!fs.statSync(target).isFile()) return undefined;
+    fd = fs.openSync(target, 'r');
+    const buffer = Buffer.allocUnsafe(RECOGNITION_READ_BYTES);
+    const read = fs.readSync(fd, buffer, 0, RECOGNITION_READ_BYTES, 0);
+    // A line the prefix truncated cannot be parsed as a whole row, so it is
+    // reported as-is and simply claimed by no store.
+    for (const line of buffer.subarray(0, read).toString('utf-8').split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed) return trimmed;
+    }
+    return undefined;
   } catch {
     return undefined;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
   }
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed) return trimmed;
-  }
-  return undefined;
 }
 
 /**
