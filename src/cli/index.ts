@@ -372,6 +372,7 @@ const archiveCommand = program
   .option('--store <id>', '')
   .option('--project <id>', '')
   .option('--keep-ephemera', '')
+  .option('--no-whitespace-check', '')
   .option('--dry-run', '')
   .option('--save-plan', '')
   .option('--apply-plan <token>', '')

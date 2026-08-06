@@ -854,7 +854,13 @@ Some details.`;
 Updated details.`;
       await fs.writeFile(path.join(changeSpecDir, 'spec.md'), deltaContent);
 
-      await archiveCommand.execute(changeName, { yes: true, noValidate: true });
+      // The trailing whitespace after the requirement name is the subject of
+      // this test, so the archive whitespace preflight is explicitly waived.
+      await archiveCommand.execute(changeName, {
+        yes: true,
+        noValidate: true,
+        whitespaceCheck: false,
+      });
 
       const updated = await fs.readFile(path.join(mainSpecDir, 'spec.md'), 'utf-8');
       expect(updated).toContain('### Requirement: Important Rule');

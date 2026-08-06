@@ -1389,6 +1389,9 @@
             "keep-ephemera": {
               "description": "完全な安全検査を維持しながら、すべての ephemera ファイルを保持します"
             },
+            "no-whitespace-check": {
+              "description": "CI が拒否する成果物のアーカイブを止める空白事前チェックをスキップする"
+            },
             "dry-run": {
               "description": "計画されたすべてのアーカイブ操作をプレビューし、何も実行しません"
             },
