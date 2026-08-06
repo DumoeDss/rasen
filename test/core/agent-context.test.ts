@@ -421,17 +421,35 @@ describe('agent-context', () => {
         dir,
         env: { OMPCODE: '1', CLAUDECODE: '1' },
       });
-      expect(result.available).toBe(false);
-      if (!result.available) {
-        expect(result.reason).toBe('unsupported-host');
-        expect(result.detail).toMatch(/"omp"/);
-        expect(result.detail).toMatch(/No context probe exists/);
-      }
-      expect(result).not.toHaveProperty('runtime');
-      expect(result).not.toHaveProperty('contextTokens');
-      expect(result).not.toHaveProperty('limit');
-      expect(result).not.toHaveProperty('pct');
+      // Exhaustive: `toEqual` on the whole result rejects an EXTRA fabricated
+      // field as well as a missing one, which a list of `not.toHaveProperty`
+      // calls against a three-key literal cannot do.
+      expect(result).toEqual({
+        available: false,
+        reason: 'unsupported-host',
+        detail: expect.stringContaining('No context probe exists for the detected host runtime "omp"'),
+      });
     });
+
+    // Regression: the host gate returns before `probeAgentContext`, which is
+    // where `--limit` is validated. Without hoisting that check the gate
+    // answers exit-0 `unsupported-host` for a `--limit` typo, telling the
+    // user their HOST is the problem — and the docstring's own rule
+    // ("invalid --runtime/--limit ... must stay hard errors") is broken on
+    // exactly the host this gate exists for.
+    it.each([0, -1, 1.5, Number.NaN])(
+      'still throws for an invalid --limit (%s) before refusing an unsupported host',
+      (limit) => {
+        expect(() =>
+          probeAgentContextSafe({
+            latest: true,
+            dir,
+            limit,
+            env: { OMPCODE: '1', CLAUDECODE: '1' },
+          })
+        ).toThrow(/--limit must be a positive integer/);
+      }
+    );
 
     it('honours an explicit --transcript from a host with no context-probe adapter', () => {
       const p = writeTranscript('explicit-from-omp.jsonl', [
@@ -463,7 +481,7 @@ describe('agent-context', () => {
       for (const env of [{ CLAUDECODE: '1' }, { CODEX_THREAD_ID: 'thread-1' }, {}]) {
         const result = probeAgentContextSafe({ latest: true, dir, env });
         expect(result.available, JSON.stringify(env)).toBe(true);
-        if (result.available) expect(result.contextTokens).toBe(4);
+        if (result.available) expect(result.contextTokens, JSON.stringify(env)).toBe(4);
       }
     });
   });
