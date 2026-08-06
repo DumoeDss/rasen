@@ -34,6 +34,7 @@ import { DEFAULT_HANDOFF_CONFIG, type ThresholdValue } from './pipeline-registry
 import { resolveModelPreset } from './model-presets.js';
 import {
   PROBE_RUNTIMES,
+  detectHostRuntime,
   hasRuntimeCapability,
   type ProbeRuntime,
 } from './runtime-adapters.js';
@@ -432,6 +433,11 @@ export interface ProbeOptions {
   homeDir?: string;
   /** Force detection to `'claude'` or `'codex'` instead of sniffing the file. */
   runtime?: string;
+  /**
+   * Environment the implicit-`--latest` host gate reads (defaults to
+   * `process.env`). A seam, not a CLI flag: host identity is ambient.
+   */
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -570,7 +576,7 @@ export function probeAgentContext(options: ProbeOptions): AgentContextResult {
 /** Tagged result of {@link probeAgentContextSafe} — success or environmental unavailability. */
 export type ProbeAgentContextResult =
   | ({ available: true } & AgentContextResult)
-  | { available: false; reason: 'no-transcript'; detail: string };
+  | { available: false; reason: 'no-transcript' | 'unsupported-host'; detail: string };
 
 /**
  * Same resolution as {@link probeAgentContext}, but catches ONLY environmental
@@ -579,8 +585,30 @@ export type ProbeAgentContextResult =
  * other failure (invalid `--runtime`/`--limit`, no source flag, an explicit
  * `--transcript` that is unreadable/usage-free) still throws — those are input
  * errors, not a host's normal state, and must stay hard errors.
+ *
+ * An *inferred* probe on a harness with no context-probe adapter is refused
+ * up front, before any transcript store is touched. Without `--transcript` or
+ * `--runtime`, `resolveTranscriptPath` silently assumes Claude, so a harness
+ * that sets Claude's own environment values (Oh My Pi) would otherwise return
+ * some unrelated Claude session's occupancy — a wrong answer the caller cannot
+ * distinguish from a correct one. An `unknown` host is deliberately not gated:
+ * it has no adapter to contradict, and its legacy Claude-store resolution is
+ * the behavior every existing caller already depends on.
  */
 export function probeAgentContextSafe(options: ProbeOptions): ProbeAgentContextResult {
+  if (options.latest && !options.transcript && options.runtime === undefined) {
+    const { runtime } = detectHostRuntime(options.env);
+    if (runtime !== 'unknown' && !hasRuntimeCapability(runtime, 'canProbeContext')) {
+      return {
+        available: false,
+        reason: 'unsupported-host',
+        detail:
+          `No context probe exists for the detected host runtime "${runtime}". ` +
+          `Pass --transcript <path>, or --runtime ${PROBE_RUNTIMES.join('|')} with --latest, ` +
+          'to name what should be read.',
+      };
+    }
+  }
   try {
     const result = probeAgentContext(options);
     return { available: true, ...result };

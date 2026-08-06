@@ -42,6 +42,7 @@ export interface PipelineMessageValues {
   selectedProjectRoot: { project: string; path: string };
   staleProfileWorkflowsWarning: { workflows: string };
   unknownHostRuntimeWarning: { override: string };
+  hostRuntimeWithoutDispatchAdapterWarning: { host: string; override: string };
   noPipelinesFound: undefined;
   availablePipelinesHeading: undefined;
   pipelineTableEntry: { name: string; source: string };
@@ -161,6 +162,7 @@ export const PIPELINE_MESSAGE_KEYS = [
   'selectedProjectRoot',
   'staleProfileWorkflowsWarning',
   'unknownHostRuntimeWarning',
+  'hostRuntimeWithoutDispatchAdapterWarning',
   'noPipelinesFound',
   'availablePipelinesHeading',
   'pipelineTableEntry',
@@ -379,6 +381,12 @@ export function formatPipelineExecutionNotice(
   const messages = getPipelineMessages(locale);
   if (notice.kind === 'unknown-host-runtime') {
     return messages.format('unknownHostRuntimeWarning', { override: notice.override });
+  }
+  if (notice.kind === 'host-runtime-without-dispatch-adapter') {
+    return messages.format('hostRuntimeWithoutDispatchAdapterWarning', {
+      host: notice.host,
+      override: notice.override,
+    });
   }
   return messages.format('staleProfileWorkflowsWarning', {
     workflows: notice.workflowIds.join(', '),

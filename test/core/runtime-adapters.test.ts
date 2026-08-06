@@ -28,7 +28,22 @@ describe('runtime adapter registry', () => {
         canAudit: true,
         canDispatch: false,
       },
+      omp: {
+        canProbeContext: false,
+        canAudit: false,
+        canDispatch: false,
+      },
     });
+  });
+
+  it('excludes a capability-free adapter from every operation set while keeping it registered', () => {
+    expect(Object.hasOwn(RUNTIME_ADAPTERS, 'omp')).toBe(true);
+    for (const set of [PROBE_RUNTIMES, AUDIT_RUNTIMES, DISPATCH_RUNTIMES]) {
+      expect(set).not.toContain('omp');
+    }
+    expect(hasRuntimeCapability('omp', 'canProbeContext')).toBe(false);
+    expect(hasRuntimeCapability('omp', 'canAudit')).toBe(false);
+    expect(hasRuntimeCapability('omp', 'canDispatch')).toBe(false);
   });
 
   it('derives deterministic capability sets in registry order', () => {
@@ -98,6 +113,41 @@ describe('host runtime detection', () => {
       detectHostRuntime({ CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1' })
     ).toEqual({ runtime: 'unknown', source: 'unknown' });
   });
+
+  it('detects Oh My Pi from OMPCODE even though it sets CLAUDECODE too', () => {
+    expect(detectHostRuntime({ OMPCODE: '1', CLAUDECODE: '1' })).toEqual({
+      runtime: 'omp',
+      source: 'omp-code',
+    });
+  });
+
+  it('keeps a Codex process launched from Oh My Pi identified as Codex', () => {
+    expect(
+      detectHostRuntime({
+        CODEX_THREAD_ID: 'thread-1',
+        OMPCODE: '1',
+        CLAUDECODE: '1',
+      })
+    ).toEqual({ runtime: 'codex', source: 'codex-thread-id' });
+  });
+
+  it('accepts any registered adapter id as the explicit override', () => {
+    expect(detectHostRuntime({ RASEN_AGENT_RUNTIME: 'omp', CLAUDECODE: '1' })).toEqual({
+      runtime: 'omp',
+      source: 'env-override',
+    });
+    expect(detectHostRuntime({ RASEN_AGENT_RUNTIME: 'zed' })).toEqual({
+      runtime: 'zed',
+      source: 'env-override',
+    });
+  });
+
+  it('ignores an empty OMPCODE rather than treating presence as truth', () => {
+    expect(detectHostRuntime({ OMPCODE: '   ', CLAUDECODE: '1' })).toEqual({
+      runtime: 'claude',
+      source: 'claude-code',
+    });
+  });
 });
 
 describe('host x target dispatch routes', () => {
@@ -108,6 +158,9 @@ describe('host x target dispatch routes', () => {
     ['codex', 'codex', 'native'],
     ['unknown', 'claude', 'legacy-fallback'],
     ['unknown', 'codex', 'legacy-fallback'],
+    ['omp', 'claude', 'legacy-fallback'],
+    ['omp', 'codex', 'legacy-fallback'],
+    ['zed', 'claude', 'legacy-fallback'],
   ] as const)('resolves %s -> %s as %s', (host, target, mode) => {
     expect(resolveDispatchRoute(host, target)).toMatchObject({
       host,
@@ -127,5 +180,10 @@ describe('host x target dispatch routes', () => {
     });
     expect(resolveDispatchRoute('claude', 'claude')).not.toHaveProperty('bridge');
     expect(resolveDispatchRoute('codex', 'codex')).not.toHaveProperty('bridge');
+  });
+
+  it('reports no bridge for a recognized host with no dispatch adapter', () => {
+    expect(resolveDispatchRoute('omp', 'claude')).not.toHaveProperty('bridge');
+    expect(resolveDispatchRoute('omp', 'codex')).not.toHaveProperty('bridge');
   });
 });
