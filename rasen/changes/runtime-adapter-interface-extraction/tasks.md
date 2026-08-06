@@ -64,4 +64,4 @@
 - [x] 8.1 Archive `detect-omp-host-runtime` before archiving this change, so this change's `MODIFIED` requirements layer on its delta instead of reverting it (design D13)
 - [x] 8.2 Record the follow-on order in the change's evidence: Oh My Pi `locateLatest` + `ContextReader`, then `AuditReader`, then `DispatchAdapter` with the keepalive decision (design D12)
 - [x] 8.3 Record the two typecheck-free mirrors as declared follow-ups of the audit capability change: relax `packages/ui/src/api/types.ts:341` first, and replace `viewer/audit.html`'s allow-list with a schema-tag check plus an explicit unknown-runtime render arm (design D11)
-- [ ] 8.4 After this change ships in `v0.1.7` and the fixed behavior has been observed in real use, retire the temporary `omp-session-file-fabricated-zeroes` learned skill with `rasen knowledge retire` (design D15) — gated on observation, not on merge
+- [x] 8.4 After this change ships in `v0.1.7` and the fixed behavior has been observed in real use, retire the temporary `omp-session-file-fabricated-zeroes` learned skill with `rasen knowledge retire` (design D15) — gated on observation, not on merge

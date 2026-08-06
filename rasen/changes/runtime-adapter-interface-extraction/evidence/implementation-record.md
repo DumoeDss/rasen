@@ -206,14 +206,51 @@ matters:
    explicit unknown-runtime arm. That makes the viewer forward-compatible so no
    future runtime touches it at all — a contract change, not a list edit.
 
-## Task 8.4 — the observation gate (NOT satisfied by this change)
+## Task 8.4 — `omp-session-file-fabricated-zeroes` retired with this change
 
-`rasen knowledge retire omp-session-file-fabricated-zeroes` is deliberately
-gated on **observation in real use after `v0.1.7` ships**, not on merge (D15).
-The three defects the skill warns about are fixed and demonstrated above, but
-the skill stays until the fixed behavior has been seen in the wild. Retiring it
-at merge time would discard the warning during exactly the window where a
-regression is most likely to surface.
+Done: `rasen knowledge retire omp-session-file-fabricated-zeroes --scope project`.
+
+D15 gates the retirement on "this change ships in `v0.1.7` and the fixed
+behavior has been observed in real use", and calls it "the final task of this
+change". **This change is `v0.1.7`**, so the gate closes here rather than in a
+later release. Both halves are satisfied:
+
+- Shipped: this change is the `v0.1.7` content.
+- Observed in real use, not in fixtures: the four defects were exercised
+  against a live Oh My Pi session file under `~/.omp/agent/sessions/` and a
+  real 199,452-token `claude-opus-5` session (the smoke-test table above).
+
+Retiring it is not merely permitted, it is now **required**: every one of the
+skill's three claims is false against the shipped code, so leaving it active
+would teach agents to distrust correct output —
+
+| Skill claim | Status after this change |
+|---|---|
+| "both fall through to the Claude reader and return a confident zero at exit 0" | false — both refuse, non-zero, naming the harness |
+| "treat `contextTokens` 0 with `available` true as a failed read" | actively harmful — a zero-turn Codex rollout legitimately reads 0 |
+| "do not trust an opus-5 occupancy percentage" | false — `opus-5` resolves to its real 1M window |
+
+The retirement touched only the machine-local knowledge home
+(`~/.rasen/project-knowledge/<id>/learned-skills/…`); no tracked repository
+file changed.
+
+### Declared follow-up: `runtime-adapter-host-id-widening-audit` (post-`v0.1.7` operation)
+
+That skill stays **active** and is the one whose retirement waits until
+`v0.1.7` has been in real operation. It is process guidance, not a defect
+warning: "adding an id to the runtime adapter registry — convert every
+sentinel-literal branch to a capability test and sweep locale copy, shipped
+prompts, docs, and exact-equality assertions."
+
+This change makes most of that structural (capability tests replace the
+sentinels, derivation replaces the route table, `satisfies` catches a missing
+implementation), but it does **not** make the sweep half automatic: the locale
+catalogs, the shipped playbooks, the two published guides, and the SHA-256
+skill baselines all still had to be found and edited by hand here, and the
+prose sweep is what found them. Retire it only once a later runtime addition
+has demonstrated that the new structure makes that sweep unnecessary — that
+demonstration is the observation the gate waits on. The three follow-on
+adapters in task 8.2 are the natural occasion.
 
 ## Out of scope, found during the prose sweep
 
