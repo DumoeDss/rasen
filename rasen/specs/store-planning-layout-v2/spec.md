@@ -1,7 +1,7 @@
 # store-planning-layout-v2 Specification
 
 ## Purpose
-TBD - created by archiving change store-planning-foundation-v2. Update Purpose after archive.
+Defines Store planning layout v2, which partitions planning content per project under `rasen/projects/<projectId>/` and leaves no writable flat `rasen/changes` or `rasen/specs` namespace: the layout version is tracked independently from Store metadata version, project and target-line identifiers are portable canonical path segments, project and target-line catalogs are strict portable records, layout path computation is a pure containment-checked function rather than caller-side path joining, and archive entry names carry stable Change-instance disambiguation.
 ## Requirements
 ### Requirement: Layout v2 partitions Store planning content by project
 

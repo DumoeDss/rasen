@@ -1,7 +1,7 @@
 # store-planning-identity-v2 Specification
 
 ## Purpose
-TBD - created by archiving change store-planning-foundation-v2. Update Purpose after archive.
+Establishes the v2 planning identity dimensions as typed, canonical, domain-separated values: `PlanningScopeId` names one complete Store/project planning scope, `ChangeInstanceId` names one portable attempt at a Change, `WorktreeInstanceId` names one local physical worktree, and `WorkspacePairId` binds an ordered planning/execution worktree pair to a Change — so identity never rests on mutable Git branch names, and v2 Change metadata verifies its own derived identity rather than trusting a recorded copy.
 ## Requirements
 ### Requirement: PlanningScopeId is stable and scope-complete
 

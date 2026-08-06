@@ -1,7 +1,7 @@
 # change-finalization-record-v2 Specification
 
 ## Purpose
-TBD - created by archiving change store-planning-foundation-v2. Update Purpose after archive.
+Defines the Archive v2 finalization record: every Change ends in exactly one explicit shape-valid outcome (`landed`, `superseded`, `cancelled`, or `abandoned`), only `landed` may synchronize canonical specs, landed proof shape distinguishes code Changes from planning-only ones, supersession preserves Store project ownership, and each record carries complete stable scope and workspace accounting plus portable digest-verified evidence — serialized deterministically so that parsing the emitted text reproduces the same validated record.
 ## Requirements
 ### Requirement: Finalization outcome is explicit and shape-valid
 
