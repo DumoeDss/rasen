@@ -138,6 +138,20 @@ function runHostFixture() {
     if (delayMatch) {
       await new Promise((resolve) => setTimeout(resolve, Number(delayMatch[1])));
     }
+    // Deterministic turn barrier: hold this turn open until the driving test
+    // creates the release file. A timed delay cannot guarantee that a
+    // competing launch meets a busy session rather than an idle one, because
+    // the competitor's own startup cost is unbounded on a loaded machine.
+    // Opt-in from both sides (token in the task text + env path) so no other
+    // fixture user can be blocked by accident; bounded so a crashed test
+    // cannot hang the turn.
+    const releaseFile = process.env.RASEN_FAKE_AGENT_RELEASE_FILE;
+    if (message.includes('AWAIT_RELEASE') && releaseFile) {
+      const deadline = Date.now() + 20_000;
+      while (!fs.existsSync(releaseFile) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    }
     if (message.includes('NO_RESULT_WITH_OUTPUT')) {
       setInterval(() => {
         writeLine({ type: 'system', subtype: 'fixture-progress', at: Date.now() });
