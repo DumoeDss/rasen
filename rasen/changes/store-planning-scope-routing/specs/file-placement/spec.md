@@ -14,13 +14,13 @@ Every file a Change produces SHALL belong to exactly one of seven classes, and e
 
 For a standalone project, the resolver returns the existing in-project locations. For a Store v2 project, `changesDir`, `changeRoot`, project design docs, evidence, and handoff SHALL be inside `rasen/projects/<projectId>/` in the selected Store planning checkout. Store-level design docs remain separate. The execution root is the code checkout/worktree the run operates on and SHALL NOT be inferred from a Store planning root; planning-only work has no execution root.
 
-#### Scenario: Evidence lands with the scoped Change
+#### Scenario: Evidence lands with the change
 
 - **WHEN** a dispatched expert or verification workflow produces a report for a Change
 - **THEN** the report SHALL land under that scope's `<changeRoot>/evidence/`
 - **AND** it SHALL remain with the Change through later Archive accounting
 
-#### Scenario: Handoff lands with the scoped Change
+#### Scenario: Handoff lands with the change
 
 - **WHEN** a worker or session writes a handoff document or relay prompt
 - **THEN** the file SHALL land under that scope's `<changeRoot>/handoff/`
@@ -31,7 +31,7 @@ For a standalone project, the resolver returns the existing in-project locations
 - **THEN** it SHALL land under `<executionRoot>/.rasen/changes/<change>/ephemera/`
 - **AND** whether it enters Git SHALL be governed solely by the user's `.gitignore`
 
-#### Scenario: Store project work splits planning and execution landings
+#### Scenario: Store-selected run splits planning and execution landings
 
 - **WHEN** a Change is planned in a Store v2 project partition and implemented in a project execution worktree
 - **THEN** planning files, evidence, and handoff SHALL land in that Store project partition
@@ -69,7 +69,7 @@ Each planning-owned landing SHALL be resolved from a typed address on one frozen
 
 Office-hours, design-consultation, design-review, qa, and qa-only SHALL request either the project-design-docs or Store-design-docs typed address from the selected planning scope. Project work SHALL default to project design docs: standalone projects use their existing planning directory and Store-backed projects use their project partition. Store design docs SHALL be used only when the work is explicitly cross-project. When CLI scope resolution is unavailable for an unbound standalone project, the fallback SHALL remain anchored to the repository root, never the current working directory. A Store-backed or ambiguous scope SHALL fail rather than use a standalone fallback.
 
-#### Scenario: Standalone project design doc remains local
+#### Scenario: Design doc lands in the planning root
 
 - **WHEN** a project-level design workflow runs for an unbound standalone project
 - **THEN** its document SHALL land in that project's existing design-docs directory
@@ -96,13 +96,13 @@ Office-hours, design-consultation, design-review, qa, and qa-only SHALL request 
 
 Placement consumers SHALL resolve one planning scope and one execution context at their authority boundary and carry those capabilities unchanged to downstream consumers. The planning scope SHALL identify standalone or Store ownership, project identity, target line when applicable, layout, and explicit `win32` or `posix` path identity; the execution context SHALL identify the execution worktree and legacy machine-home owner when either exists. Planning-owned paths SHALL derive only from the planning scope's typed locations. Terminal execution paths and legacy-home lookup SHALL derive only from execution context. Unavailable authority SHALL remain unavailable rather than being inferred from current working directory, Store integration checkout, Store membership, branch names, or server launch roots.
 
-#### Scenario: Store operation carries planning and execution separately
+#### Scenario: Store migration carries both roots
 
 - **WHEN** an operation plans in a Store project scope and executes in a member worktree
 - **THEN** every planning-owned destination SHALL derive from the frozen Store project scope
 - **AND** every execution-owned destination and legacy-home lookup SHALL derive from the frozen member worktree context
 
-#### Scenario: Consumer observes frozen capabilities
+#### Scenario: Consumer observes a frozen context
 
 - **WHEN** current working directory, registration, Store membership, or binding changes after scope resolution
 - **THEN** downstream read consumers SHALL continue using the frozen scope

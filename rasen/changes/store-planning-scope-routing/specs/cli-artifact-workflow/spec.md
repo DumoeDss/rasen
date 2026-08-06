@@ -4,7 +4,7 @@
 
 The system SHALL create a new Change through the resolved project planning scope with validation and no-clobber publication. Standalone projects SHALL retain their existing Change path and metadata compatibility. Store v2 creation SHALL require Store, project, stable target-line, and verified planning-worktree authority, SHALL create the Change in the selected project partition, and SHALL write Foundation v2 portable identity metadata. A caller SHALL NOT supply or override the identity seed, scope identity, or Change-instance identity.
 
-#### Scenario: Create valid standalone Change
+#### Scenario: Create valid change
 
 - **WHEN** a user runs `rasen new change add-feature` in a standalone project
 - **THEN** the system SHALL create `rasen/changes/add-feature/` in that project
@@ -16,13 +16,13 @@ The system SHALL create a new Change through the resolved project planning scope
 - **THEN** the system SHALL create `add-feature` in S's project P active-Changes location
 - **AND** `.openspec.yaml` SHALL carry a verified v2 identity for S, P, and L
 
-#### Scenario: Invalid Change name
+#### Scenario: Invalid change name
 
 - **WHEN** a user runs `rasen new change "Add Feature"` with an invalid name
 - **THEN** the system SHALL display a validation error with guidance
 - **AND** no Change location SHALL be created
 
-#### Scenario: Duplicate Change name
+#### Scenario: Duplicate change name
 
 - **WHEN** a user creates a Change whose scope-resolved active location already exists
 - **THEN** the system SHALL display an error indicating the Change already exists in that scope
@@ -85,7 +85,7 @@ The status command SHALL expose action context that lets agents act without hard
 - **THEN** planning write roots SHALL be locations inside S's P partition in the selected planning worktree
 - **AND** S's repository root, every other project partition, and every other member checkout SHALL be absent from the write lists
 
-#### Scenario: Store planning with project execution reports both checkouts
+#### Scenario: Store planning with project execution reports both roots
 
 - **GIVEN** the Change is planned in a Store worktree while a project execution worktree is being used
 - **WHEN** status JSON is produced
@@ -99,7 +99,7 @@ The status command SHALL expose action context that lets agents act without hard
 - **THEN** the action context SHALL report an empty set of code write roots
 - **AND** it SHALL retain only the selected project's authorized planning write roots
 
-#### Scenario: Compatibility view never widens access
+#### Scenario: The compatibility view never widens access
 
 - **WHEN** a consumer reads the earlier single-list form for any context shape
 - **THEN** every root it receives SHALL be one the earlier form would also have granted for that same context
@@ -131,7 +131,7 @@ Artifact and apply instructions SHALL use the selected planning scope's resolved
 
 The change-scoped workflow surfaces (`rasen status --change <n> --json`, `rasen instructions <artifact> --change <n> --json`, and apply instructions) SHALL expose absolute scope-resolved per-class landing directories: `evidenceDir` (`<changeRoot>/evidence`), `handoffDir` (`<changeRoot>/handoff`), and `ephemeraDir` (`<executionRoot>/.rasen/changes/<n>/ephemera`). Store v2 `changeRoot`, evidence, and handoff SHALL be inside the selected project partition; ephemera SHALL remain execution-owned. These fields SHALL derive without machine identity. The legacy `workDir` field SHALL additionally be present, probe-only, when the execution project already has machine identity, so sticky-legacy readers can inspect that location. No surface SHALL mint machine identity or create directories to produce these fields.
 
-#### Scenario: Payloads include resolved landing directories
+#### Scenario: Payloads include the landing directories
 
 - **WHEN** status or instructions is produced for a Change
 - **THEN** JSON SHALL include absolute `evidenceDir`, `handoffDir`, and `ephemeraDir` paths correct for its planning and execution scopes
@@ -153,7 +153,7 @@ The change-scoped workflow surfaces (`rasen status --change <n> --json`, `rasen 
 
 `rasen status --change <n> --json`'s `archive` object SHALL carry the absolute Archive location returned by the selected planning scope. A standalone or legacy project SHALL report its existing in-repo Archive directory; a Store v2 project Change SHALL report the selected project's stable target-line Archive directory. The object SHALL NOT carry a destination axis. When the execution project's machine home resolves by read-only probe and its legacy archive area exists, `legacyArchiveDir` SHALL name that area for legacy discovery. Resolving these fields SHALL not write or invoke Git or `gh`.
 
-#### Scenario: Standalone status exposes its fixed Archive location
+#### Scenario: Status exposes the fixed archive location
 
 - **WHEN** status runs for a standalone Change
 - **THEN** `archive.archiveDir` SHALL identify that project's existing in-repo Archive directory

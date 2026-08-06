@@ -4,18 +4,18 @@
 
 An unbound project whose `rasen/config.yaml` declares `store: <store-id>` while the project keeps its own local planning shape (a `rasen/specs/` or `rasen/changes/` directory) SHALL mean: planning stays local, and configuration inherits from the named Store. The named Store's own `rasen/config.yaml` SHALL contribute a Store layer to the project's configuration resolution, sitting between the project layer and the global layer (see `config-resolution`). This interpretation applies only while the Store's project catalog does not record the project as planning-bound. If the verified catalog records the project as bound, the Store project partition is the planning truth; a remaining local planning shape SHALL be reported as `split_planning_truth`, SHALL NOT become an inheritance-only local planning root, and SHALL block planning mutations.
 
-#### Scenario: Inherited value resolves for an unbound project
+#### Scenario: Inherited value resolves for a member project
 
 - **WHEN** an unbound project with local planning shape declares `store: team-store`, `team-store` is registered with `handoff.threshold: 0.7`, and the project config does not set `handoff.threshold`
 - **THEN** the project's effective `handoff.threshold` SHALL be 0.7 with a source identifying the Store layer
 
-#### Scenario: Project value wins over the inherited Store value
+#### Scenario: Project value wins over the inherited store value
 
 - **WHEN** the same unbound project's own config sets `handoff.threshold: 0.4` while the Store sets 0.7
 - **THEN** the effective value SHALL be 0.4 with source `project`
 - **AND** the Store's 0.7 SHALL remain visible as the raw Store-layer value
 
-#### Scenario: Unbound planning stays local
+#### Scenario: Planning stays local
 
 - **WHEN** an unbound project with local planning shape declares `store: team-store`
 - **THEN** changes, specs, and every planning command SHALL keep resolving to the project's local planning scope
@@ -31,7 +31,7 @@ An unbound project whose `rasen/config.yaml` declares `store: <store-id>` while 
 
 A `store: <store-id>` declaration in a project checkout with no local planning shape SHALL continue to locate Store-owned planning. For a legacy flat Store, commands SHALL resolve that Store's existing flat planning scope with its established read and write behavior. For a Store declaring layout v2, the checkout's canonical `projectId` SHALL be verified against that Store's version 2 project catalog and `planningBinding.state: bound`; planning SHALL resolve to that project's partition rather than to the Store root. Mere Store membership or a pointer without a bound catalog record SHALL NOT transfer planning ownership. Configuration SHALL come from the resolved planning scope rather than adding a second inherited layer.
 
-#### Scenario: Legacy pointer checkout keeps its established behavior
+#### Scenario: Pointer repo is unchanged
 
 - **WHEN** a project checkout has no local planning shape and declares a legacy flat Store
 - **THEN** commands SHALL resolve that Store's legacy planning scope as before, for both reads and writes

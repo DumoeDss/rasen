@@ -40,7 +40,3 @@ Three review-cycle rounds, each with an independent reviewer (author != verifier
 ## Delivery
 
 Local commit only. No push, pull request, merge, deployment, or archive was performed as part of the implementation commit. The portfolio opens a single PR later, once all children are shipped and archived. This change's archive is performed as a separate, subsequent local commit in the same delivery pass.
-
-## Archive
-
-(Filled in by the archive step below.)
