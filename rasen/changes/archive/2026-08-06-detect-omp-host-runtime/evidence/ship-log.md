@@ -84,8 +84,13 @@ suite run and will recur for the next person.
 
 Status: Pending (run `rasen-ship --deploy` to continue)
 
-## Archive
+## Archive Timing
 
 Timing: `on-merge`. The change stays ACTIVE during PR review — `status`,
 `resume`, and fix-forward keep working. Archive follows merge confirmation of
 PR #137.
+
+## Archive
+**Date:** 2026-08-06T05:02:05.043Z
+**Outcome:** archived at /Users/boao.zeng/SyncLocal/rasen/rasen/changes/archive/2026-08-06-detect-omp-host-runtime
+**Transaction:** 4d70c8fc-bd4f-475f-b34b-469bdc9a7551
