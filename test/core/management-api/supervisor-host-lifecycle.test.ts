@@ -160,6 +160,15 @@ describe('reusable session host lifecycle', () => {
     expect(created.ok).toBe(true);
     if (!created.ok) return;
 
+    // createHost resolves on the stdout result envelope, which is a different
+    // pipe from the diagnostic stderr the fixture writes. On POSIX the 70 KiB
+    // write lands in 64 KiB pipe-buffer chunks, so the trailing chunk can still
+    // be in flight here; wait for the drain instead of racing it.
+    await waitFor(
+      'the trailing stderr chunk to drain',
+      () => (supervisor!.getTails(created.host.id)?.stderr ?? '').includes('-suffix')
+    );
+
     const tails = supervisor!.getTails(created.host.id)!;
     expect(tails.stderr.length).toBeLessThanOrEqual(64 * 1024);
     expect(tails.stderr).toContain('-suffix');
