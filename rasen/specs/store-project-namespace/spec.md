@@ -46,27 +46,6 @@ Registration conflict checks SHALL key on the pair, not the id alone. In the pro
 - **THEN** the registration succeeds and both entries are retained
 - **AND** a warning states that the alias now matches more than one Store and that declarations should name the permanent identity
 
-### Requirement: --project selects the project namespace and is exclusive with --store
-
-Every command that accepts `--store <id>` SHALL also accept `--project <id>`, selecting the entry of that id in the project namespace. `--store` and `--project` SHALL be mutually exclusive on a single invocation; passing both SHALL fail with a friendly error naming both flags, before any root resolution. A bare id (no flag, or an unprefixed reference) SHALL continue to mean the store namespace. A project-selected root SHALL resolve to a normal Rasen root with the same capabilities as a store-selected root — the type governs namespace and display only, never capability.
-
-#### Scenario: --project resolves the project-namespace root
-
-- **WHEN** a user runs a specs/changes command or a `pipeline` inspection command with `--project elftia`
-- **THEN** the command resolves the project `elftia`'s Rasen root and behaves exactly as it would for a store root
-- **AND** list/show/instructions/status/validate/archive/context operate identically
-
-#### Scenario: Passing both --store and --project is rejected
-
-- **WHEN** a command is invoked with both `--store x` and `--project y`
-- **THEN** it fails before resolving any root with an error naming the two mutually exclusive flags
-- **AND** no store or project root is selected
-
-#### Scenario: Hints and banner for a project root use --project
-
-- **WHEN** a command resolves a project-selected root and prints a verification banner or a pasteable follow-up hint
-- **THEN** the banner identifies the project and the follow-up hint carries `--project <id>`, not `--store <id>`
-
 ### Requirement: Config references address the project namespace with a project: prefix
 
 A `references:` entry of the form `project:<id>` SHALL address the project namespace; a bare `<id>` SHALL continue to address the store namespace. The id portion after the `project:` prefix SHALL be validated against the id grammar; an entry whose id portion is invalid SHALL drop with a warning, consistent with the existing resilient handling of the references list, rather than failing generation. A `project:`-prefixed reference SHALL render in the referenced-store index the same way a store reference does, distinguished by its type, with content never inlined.
@@ -107,4 +86,50 @@ Entries registered before the type split (bare-id store entries created by the o
 - **WHEN** an entry was registered by the original `store add-project` (no type field) and is selected with `--store <id>` or referenced by bare id
 - **THEN** it resolves as a store-typed root exactly as it did before this change
 - **AND** no migration step is needed to keep it working
+
+### Requirement: Store and project selectors address orthogonal scope dimensions
+
+Every planning command that accepts `--store <id>` SHALL also accept `--project <id>`, and project-scoped planning commands SHALL accept `--target-line <id>`. `--store` SHALL select an entry in the Store namespace; when used with it, `--project` SHALL select and verify a project from that Store's project catalog rather than selecting a second registry root. `--project` without `--store` SHALL continue to select the registered-project namespace, then follow that project's verified planning binding: an unbound project uses its standalone planning root and a Store-bound project uses its project partition in the bound Store. `--target-line` SHALL select a stable target-line identity, not a branch name. Explicit selectors SHALL agree with durable binding, Change metadata, session, and worktree facts; a conflict SHALL fail before planning access.
+
+#### Scenario: Project alone selects the project namespace
+
+- **WHEN** a user runs a planning command with `--project elftia` and no Store selector
+- **THEN** the project-namespace registration for `elftia` SHALL be selected
+- **AND** its verified planning binding SHALL determine whether planning is standalone or Store-backed
+
+#### Scenario: Store and project select one Store partition
+
+- **WHEN** a user runs a planning command with `--store team --project elftia`
+- **THEN** `team` SHALL resolve in the Store namespace and `elftia` SHALL resolve from that Store's project catalog
+- **AND** the command SHALL use `elftia`'s planning partition in that Store
+
+#### Scenario: Store and project can share one display id
+
+- **WHEN** a Store and one of its projects are both displayed as `elftia` and the user passes `--store elftia --project elftia`
+- **THEN** each selector SHALL resolve in its own dimension without ambiguity
+- **AND** neither value SHALL be treated as a substitute for the other
+
+#### Scenario: Project is not in the selected Store
+
+- **WHEN** `--store team --project outsider` names a project not present and planning-bound in Store `team`
+- **THEN** resolution SHALL fail with a diagnostic naming the Store and project
+- **AND** it SHALL NOT fall back to a standalone `outsider` registration or another Store
+
+#### Scenario: Target line is stable identity
+
+- **WHEN** a user passes `--target-line line-0.2` and its catalog later maps to a renamed Git ref
+- **THEN** the same stable target line SHALL remain selected
+- **AND** no command SHALL reinterpret the ref name as target-line identity
+
+#### Scenario: Explicit selectors conflict with recorded scope
+
+- **WHEN** an explicit Store, project, or target line disagrees with the selected Change or frozen session scope
+- **THEN** the command SHALL fail before resolving a planning path
+- **AND** no stronger explicit selector SHALL silently rewrite the recorded scope
+
+#### Scenario: Follow-up hint preserves the complete selection
+
+- **WHEN** a command selected Store S, project P, and target line L and prints a pasteable project-scoped follow-up
+- **THEN** the hint SHALL carry `--store S --project P --target-line L` in that order
+- **AND** a project-only or standalone hint SHALL carry only the selectors needed to reproduce its scope
 
