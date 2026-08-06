@@ -808,6 +808,8 @@ describe('immutable session-cache acceptance generations', () => {
       process.env.RASEN_HOME = root;
       process.env.RASEN_CLAUDE_BIN = fakeClaudeBin;
       process.env.RASEN_TELEMETRY = '0';
+      const releaseFile = path.join(root, 'release-admitted-turn');
+      process.env.RASEN_FAKE_AGENT_RELEASE_FILE = releaseFile;
       fs.mkdirSync(path.join(root, 'rasen'), { recursive: true });
       fs.writeFileSync(
         path.join(root, 'rasen', 'config.yaml'),
@@ -818,7 +820,7 @@ describe('immutable session-cache acceptance generations', () => {
         'bug-fix',
         {
           acceptancePipeline: 'bug-fix',
-          deterministicAgentBarrier: 'DELAY_RESULT=5000',
+          deterministicAgentBarrier: 'AWAIT_RELEASE',
         }
       );
       const token = 'real-product-admission-token';
@@ -953,32 +955,56 @@ describe('immutable session-cache acceptance generations', () => {
         RASEN_SESSION_CACHE_REAL_OBSERVATION: '1',
         RASEN_SESSION_CACHE_ADMISSION_PROOF: '1',
       };
-      const launched = await Promise.allSettled([
-        execFileAsync(process.execPath, [
-          launchPath,
-          '--work-dir',
-          evidenceRoot,
-          '--arm',
-          'control-hit-55m',
-        ], {
-          cwd: repositoryRoot,
-          env: launchEnv,
-          windowsHide: true,
-          timeout: 45_000,
-        }),
-        execFileAsync(process.execPath, [
-          launchPath,
-          '--work-dir',
-          evidenceRoot,
-          '--arm',
-          'control-hit-55m',
-        ], {
-          cwd: repositoryRoot,
-          env: launchEnv,
-          windowsHide: true,
-          timeout: 45_000,
-        }),
-      ]);
+      const launchCompetitor = () => execFileAsync(process.execPath, [
+        launchPath,
+        '--work-dir',
+        evidenceRoot,
+        '--arm',
+        'control-hit-55m',
+      ], {
+        cwd: repositoryRoot,
+        env: launchEnv,
+        windowsHide: true,
+        timeout: 45_000,
+      });
+      const sessionsPath = path.join(
+        fixture.manifest.runDirectory,
+        'sessions.json'
+      );
+      const awaitAdmittedTurnInFlight = async () => {
+        const deadline = Date.now() + 30_000;
+        for (;;) {
+          try {
+            const snapshot = readJsonBounded(sessionsPath) as {
+              sessions?: Array<{ inFlight?: unknown }>;
+            };
+            if (
+              snapshot.sessions?.some((entry) => entry.inFlight !== undefined)
+            ) {
+              return;
+            }
+          } catch {
+            // The registry is published by atomic rename; a torn or missing
+            // read here just means the next poll gets it.
+          }
+          if (Date.now() >= deadline) {
+            throw new Error('admitted launch never reached an in-flight turn');
+          }
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      };
+
+      // The fence is only exercised when the second launch meets a session
+      // that is genuinely mid-turn. A timed agent barrier cannot guarantee
+      // that: it races the second process's own startup, and on a loaded
+      // machine it loses — both launches are then admitted in sequence
+      // against an idle session and the fence is never tested. So hold the
+      // admitted turn open until the competing launch has been answered.
+      const admitted = Promise.allSettled([launchCompetitor()]);
+      await awaitAdmittedTurnInFlight();
+      const [fenced] = await Promise.allSettled([launchCompetitor()]);
+      fs.writeFileSync(releaseFile, '');
+      const launched = [...(await admitted), fenced];
       const processOutput = launched.map((outcome) =>
         outcome.status === 'fulfilled'
           ? outcome.value.stdout
