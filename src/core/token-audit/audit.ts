@@ -1,9 +1,11 @@
 /**
- * Session-level orchestration for `rasen agent audit` (design D1): resolves
- * the runtime (explicit `--runtime`, else filename/content detection reusing
- * `detectTranscriptKind` from `agent-context.ts`), discovers files for that
- * runtime, runs the matching parse path, aggregates, sorts agents into
- * activation order, and writes the runtime-appropriate result object.
+ * Session-level orchestration for `rasen agent audit` (design D1): recognizes
+ * the harness that owns the target with `detectSessionOwner`
+ * (`../runtimes/session-stores.ts`, explicit `--runtime` wins), refuses by
+ * name when that harness has no registered auditor, then looks its auditor up
+ * in `AUDIT_READERS` — which discovers files for that runtime, runs the
+ * matching parse path, aggregates, sorts agents into activation order, and
+ * writes the runtime-appropriate result object.
  *
  * Mirrors `src/core/agent-context.ts`'s role for `agent context`, but this
  * module also owns the report write (the JSON file IS the product, unlike

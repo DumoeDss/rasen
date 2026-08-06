@@ -412,13 +412,14 @@ Explicit choices keep their authority. Runtime precedence is:
 5. detected host;
 6. legacy Claude fallback whenever the host has no dispatch adapter — either unidentified, or a recognized runtime with no dispatch adapter of its own (today `zed` and `omp`).
 
-Routes are **derived from the shipped dispatch adapters**, not read off a fixed matrix. Three rules decide every pair:
+Routes are **derived from the shipped dispatch adapters**, not read off a fixed matrix. Four ordered rules decide every pair, first match wins:
 
 1. A host with no dispatch adapter — unidentified, or recognized without one — resolves `legacy-fallback`.
-2. A dispatch-capable host targeting its own runtime resolves `native`.
-3. Any other dispatch-capable pair resolves `exec-bridge` through the bridge the **target's** adapter declares.
+2. A pair on the registry's declared list of combinations known not to work resolves `unsupported`. That list is empty today, so no shipped pair is refused — but it is consulted *before* the native rule, so a declared exception outranks even a host targeting itself.
+3. A dispatch-capable host targeting its own runtime resolves `native`.
+4. Any other dispatch-capable pair resolves `exec-bridge` through the bridge the **target's** adapter declares.
 
-The registry also carries a declared list of pairs known not to work, which resolve `unsupported`; it is empty today, so no shipped pair is refused. Registering a dispatch adapter therefore adds its routes automatically — the table below is what those rules currently yield, not a separate source of truth:
+Registering a dispatch adapter therefore adds its routes automatically — the table below is what those rules currently yield, not a separate source of truth:
 
 | Host | Target worker | Dispatch mode | Bridge / behavior |
 |---|---|---|---|
