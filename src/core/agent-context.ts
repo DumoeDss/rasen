@@ -30,7 +30,11 @@ import {
   resolveHandoffThresholdLayers,
   resolveThresholdBindingLayers,
 } from './effective-config.js';
-import { DEFAULT_HANDOFF_CONFIG, type ThresholdValue } from './pipeline-registry/types.js';
+import {
+  DEFAULT_HANDOFF_CONFIG,
+  defaultHandoffThresholdForRuntime,
+  type ThresholdValue,
+} from './pipeline-registry/types.js';
 import { resolveModelPreset } from './model-presets.js';
 import {
   PROBE_RUNTIMES,
@@ -532,7 +536,7 @@ export async function resolveHandoffThresholdReport(
       project: { value: layers.projectThreshold, source: 'project' },
       store: { value: layers.storeThreshold, source: 'store' },
       global: { value: layers.globalThreshold, source: 'global' },
-      default: { value: DEFAULT_HANDOFF_CONFIG.threshold, source: 'default' },
+      default: { value: defaultHandoffThresholdForRuntime(runtime), source: 'default' },
     },
   });
   const threshold = selected.threshold;

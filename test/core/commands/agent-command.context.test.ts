@@ -186,7 +186,7 @@ describe('AgentCommand.context — Codex rollout support', () => {
     expect(JSON.parse(logs[0]!)).toMatchObject({
       contextTokens: 20_000,
       pct: 0.2,
-      threshold: 0.5,
+      threshold: 0.85,
       shouldHandoff: false,
     });
   });
@@ -272,7 +272,7 @@ describe('AgentCommand.context — Codex rollout support', () => {
     const p = writeRollout('rollout-2026-01-01T00-00-04-abc.jsonl', [
       SESSION_META_LINE,
       TURN_CONTEXT_LINE,
-      tokenCountLine(1_000, 353_400), // low occupancy, default 0.5 threshold not met
+      tokenCountLine(1_000, 353_400), // low occupancy, default 0.85 threshold not met
     ]);
 
     const logs: string[] = [];
@@ -285,7 +285,7 @@ describe('AgentCommand.context — Codex rollout support', () => {
     }
 
     expect(logs[0]).toContain('handoff not yet needed');
-    expect(logs[0]).toContain('50%');
+    expect(logs[0]).toContain('85%');
     expect(logs[0]).toContain('default');
   });
 
