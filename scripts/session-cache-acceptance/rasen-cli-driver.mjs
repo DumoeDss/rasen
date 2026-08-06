@@ -221,6 +221,26 @@ async function processCreationIdentity(pid, config, cwd) {
     }
     return value;
   }
+  if (process.platform === 'darwin') {
+    // macOS has no /proc. `ps -o lstart=` is the portable creation stamp; its
+    // one-second granularity is enough to notice the pid being reused by a
+    // different process later in the same observation.
+    let result;
+    try {
+      result = await boundedSpawn(
+        '/bin/ps',
+        ['-p', String(pid), '-o', 'lstart='],
+        { cwd, env: process.env, timeoutMs: 15_000 }
+      );
+    } catch {
+      throw new Error('owned_process_creation_identity_ambiguous');
+    }
+    const value = result.stdout.trim();
+    if (value.length === 0 || value.length > 256 || /[\r\n]/u.test(value)) {
+      throw new Error('owned_process_creation_identity_ambiguous');
+    }
+    return `mac-lstart:${value}`;
+  }
   if (process.platform !== 'win32') {
     let value;
     try {
