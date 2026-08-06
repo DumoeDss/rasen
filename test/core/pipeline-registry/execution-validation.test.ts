@@ -305,6 +305,64 @@ stages:
     );
   });
 
+  // Regression: `hostOverride` keyed on `=== 'unknown'`, so a recognized host
+  // with no dispatch adapter printed its own id — advising the user to
+  // override a role to `omp`, a value `AgentRuntimeSchema`
+  // (`z.enum(DISPATCH_RUNTIMES)`) rejects. Only a dispatch-capable host may
+  // be named as a role runtime.
+  it('never advises overriding a role to a host that cannot be a role runtime', async () => {
+    const p = pipeline(`
+name: omp-host-codex-stage
+stages:
+  - id: a
+    skill: ${KNOWN_SKILL}
+    role: planner
+    runtime: codex
+`);
+    try {
+      await validatePipelineForExecution(p, undefined, {
+        host: OMP_HOST,
+        probeCodex: vi.fn(() => false),
+        probeClaude: vi.fn(() => false),
+        reporter: false,
+      });
+      expect.fail('expected validatePipelineForExecution to throw');
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'pipeline_runtime_unavailable' });
+      const message = (error as Error).message;
+      expect(message).toMatch(/Override the affected role to the detected host runtime/);
+      expect(message).not.toMatch(/Override the affected role to omp/);
+    }
+  });
+
+  // The reporter-less path renders `unlocalizedNoticeMessage`, not the locale
+  // catalog, so the new variant needs its own coverage. It must name the host
+  // AND must not claim that forcing the override redirects the context probe:
+  // the override feeds host detection only, so an implicit `--latest` still
+  // resolves the Claude store (verified: `RASEN_AGENT_RUNTIME=codex` +
+  // `--latest` reports runtime `claude`).
+  it('renders the recognized-host fallback without a reporter, naming the host honestly', async () => {
+    const p = pipeline(`
+name: omp-host-unlocalized
+stages:
+  - id: a
+    skill: ${KNOWN_SKILL}
+`);
+    const errors: string[] = [];
+    const original = console.error;
+    console.error = (msg?: unknown) => errors.push(String(msg));
+    try {
+      await validatePipelineForExecution(p, undefined, { host: OMP_HOST });
+    } finally {
+      console.error = original;
+    }
+    const message = errors.join('\n');
+    expect(message).toMatch(/LEAD host runtime "omp" has no dispatch adapter/);
+    expect(message).toMatch(/lifts the context-probe refusal/);
+    expect(message).not.toMatch(/report the forced runtime/);
+    expect(message).not.toMatch(/host runtime is unknown/);
+  });
+
   it('validates persisted per-role runtime instances instead of ignoring configuration', async () => {
     const projectRoot = path.join(tempDir, 'configured-project');
     fs.mkdirSync(path.join(projectRoot, 'rasen'), { recursive: true });
