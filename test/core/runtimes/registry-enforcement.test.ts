@@ -7,7 +7,9 @@ import {
   DISPATCH_RUNTIMES,
   PROBE_RUNTIMES,
   RUNTIME_ADAPTER_IDS,
+  detectHostRuntime,
 } from '../../../src/core/runtime-adapters.js';
+import { buildCodexExecInvocation, formatShellInvocation } from '../../../src/core/codex/index.js';
 import { AUDIT_READERS } from '../../../src/core/runtimes/audit-readers.js';
 import { CONTEXT_READERS } from '../../../src/core/runtimes/context-readers.js';
 import { DISPATCH_ADAPTERS, bridgeChildEnv } from '../../../src/core/runtimes/dispatch-adapters.js';
@@ -125,14 +127,13 @@ describe('shipped registry maps', () => {
     }
   });
 
-  it('gives every rasen-owned target its own identity, not just the one bridge shipped today', () => {
-    // The spec requires the guarantee for EVERY bridge Rasen starts, so this
-    // iterates the registry rather than naming claude. A rasen-owned adapter
-    // that omits `childEnv` cannot reach here — the DispatchAdapter union
-    // makes it a build error — and one that declares the WRONG identity is
-    // caught below.
+  it('gives EVERY dispatch target its own identity, whoever owns the spawn', () => {
+    // The guarantee is required for every bridge, not just the one Rasen
+    // spawns itself, so this iterates the registry rather than naming claude.
+    // An adapter that omits `childEnv` or declares the WRONG id cannot reach
+    // here — `RuntimeIdentityEnv<Id>` pins the value, so both are build errors.
     for (const [id, adapter] of Object.entries(DISPATCH_ADAPTERS)) {
-      if (adapter.spawn !== 'rasen-owned') continue;
+      expect(adapter.childEnv.RASEN_AGENT_RUNTIME, id).toBe(id);
       const merged = bridgeChildEnv(id as keyof typeof DISPATCH_ADAPTERS, {
         CODEX_THREAD_ID: 'parent-thread',
         CARRIED: 'kept',
@@ -145,10 +146,37 @@ describe('shipped registry maps', () => {
     }
   });
 
-  it('leaves a playbook-owned target’s environment untouched', () => {
-    // Rasen owns no spawn for it, so there is nothing to inject; declaring an
-    // identity it could never apply would be a contract with no enforcer.
+  it('overwrites an ancestor worker identity instead of inheriting it', () => {
+    // An identity is an environment variable, so it reaches the whole
+    // descendant tree and outranks every fingerprint. Without a target of its
+    // own, a Codex worker started beneath a bridged Claude worker would report
+    // `claude` while holding Codex's fingerprints — a confident wrong answer,
+    // and the reason the merge is keyed on the target rather than skipped for
+    // a playbook-owned spawn.
+    const bridgedClaudeWorker = bridgeChildEnv('claude', { CODEX_THREAD_ID: 'parent-thread' });
+    expect(detectHostRuntime(bridgedClaudeWorker)).toEqual({
+      runtime: 'claude',
+      source: 'env-override',
+    });
+    expect(detectHostRuntime(bridgeChildEnv('codex', bridgedClaudeWorker))).toEqual({
+      runtime: 'codex',
+      source: 'env-override',
+    });
+  });
+
+  it('surfaces the identity on the playbook-owned invocation Rasen cannot apply itself', () => {
+    // `codex/invocation.ts` returns data and the playbook owns the process, so
+    // the only way the identity reaches that child is by being rendered into
+    // the command the playbook runs.
     expect(DISPATCH_ADAPTERS.codex.spawn).toBe('playbook-owned');
-    expect(bridgeChildEnv('codex', { CARRIED: 'kept' })).toEqual({ CARRIED: 'kept' });
+    const invocation = buildCodexExecInvocation({
+      prompt: 'Task prompt.',
+      outputLastMessagePath: '/tmp/last.txt',
+      sandbox: 'read-only',
+      model: 'm',
+      effort: 'low',
+    });
+    expect(invocation.env).toEqual(DISPATCH_ADAPTERS.codex.childEnv);
+    expect(formatShellInvocation(invocation)).toContain("RASEN_AGENT_RUNTIME='codex'");
   });
 });

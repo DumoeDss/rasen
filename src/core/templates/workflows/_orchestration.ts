@@ -76,7 +76,7 @@ For continuation, invoke the same command with the exact recorded \`--resume <se
 For a **Codex exec-bridge** stage, dispatch a leaf worker as a \`codex exec\` process — the shipped invocation shape (\`src/core/codex\`'s \`buildCodexExecInvocation\`), rendered as the shell command you actually run:
 
 \`\`\`
-codex exec --json --output-schema <schema.json> -o <last-message.txt> \\
+RASEN_AGENT_RUNTIME=codex codex exec --json --output-schema <schema.json> -o <last-message.txt> \\
   -s <read-only|workspace-write> -m <model> -c model_reasoning_effort="<effort>" \\
   "<inlined template + task prompt + flat-hierarchy guard>" < /dev/null
 \`\`\`
@@ -84,6 +84,7 @@ codex exec --json --output-schema <schema.json> -o <last-message.txt> \\
 Non-negotiable invariants, not style preferences:
 
 - **Always redirect stdin from \`/dev/null\`.** \`codex exec\` blocks forever awaiting EOF otherwise.
+- **Always set \`RASEN_AGENT_RUNTIME=codex\` on the command** (the invocation's own \`env\`; Rasen does not own this spawn, so nothing else can apply it). A process inherits its whole ancestry's environment and this key outranks every host fingerprint, so a \`codex exec\` started from a bridged Claude worker inherits that worker's \`claude\` identity: every Rasen command the Codex worker runs would then report \`claude\` and read the wrong runtime's session. On Windows render it as \`set "RASEN_AGENT_RUNTIME=codex" &&\` before the command.
 - **Always end the prompt with the flat-hierarchy no-delegation guard** (the library's \`CODEX_FLAT_HIERARCHY_GUARD\` constant — paraphrase it, do not skip it: it tells the worker it is a leaf and must not spawn, delegate, or wait on sub-agents under any circumstances). Codex's native multi-agent system is hierarchical by default and only prompt-level suppression is verified to work.
 - **Never dispatch a leaf worker at \`ultra\` reasoning effort.** \`ultra\` auto-delegates to sub-agents, which breaks the flat-leaf invariant; use \`xhigh\` for the hardest leaf work instead.
 - **Inline template and skill bodies into the prompt client-side** — never rely on Codex resolving a prompt file on its own (\`$CODEX_HOME/prompts\`); that path fails silently rather than erroring, so a worker that was supposed to receive a skill body can silently run without it.

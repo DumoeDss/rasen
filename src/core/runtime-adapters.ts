@@ -6,9 +6,10 @@
  * `config-keys.ts`, `config-schema.ts`, `project-config.ts`,
  * `pipeline-registry/types.ts`, and `management-api/*`, so it declares
  * contracts and data only and never imports anything that executes. The
- * implementations that satisfy these contracts are registered in
- * `src/core/runtimes/registry.ts`, which is free to import `fs`,
- * `child_process`, and the Zed SQLite reader.
+ * implementations that satisfy these contracts are registered in the four
+ * sibling modules under `src/core/runtimes/` (`session-stores`,
+ * `context-readers`, `audit-readers`, `dispatch-adapters`), which are free to
+ * import `fs`, `child_process`, and the Zed SQLite reader.
  *
  * This registry deliberately does not reuse the installation-oriented
  * `AI_TOOLS` registry. Installing a tool and having a context probe, token
@@ -217,36 +218,63 @@ interface DispatchAdapterFacts<Id extends DispatchRuntime> {
   readonly binaryEnvVar?: string;
   /** Whether this runtime's own tool is present on this machine. */
   probeAvailability(): boolean;
+  /**
+   * The identity a worker on this runtime MUST run with (design D7).
+   *
+   * REQUIRED on every adapter, not only the ones Rasen spawns itself. A
+   * process inherits its whole ancestry's environment, so an identity injected
+   * for one target stays set in every descendant: without a target of its own
+   * to overwrite it, a Codex worker started beneath a bridged Claude worker
+   * would report `claude` while holding Codex's fingerprints. Requiring it on
+   * both arms is the enforcement — {@link RuntimeIdentityEnv} pins the value
+   * to this adapter's own id, so a missing or wrong identity fails the build.
+   */
+  readonly childEnv: RuntimeIdentityEnv<Id>;
+  /** Who applies {@link DispatchAdapterFacts.childEnv} — see {@link DispatchSpawnOwnership}. */
+  readonly spawn: DispatchSpawnOwnership;
 }
 
 /**
- * Who owns the child process, and what that obliges the adapter to declare.
+ * The environment variable that tells a Rasen process what runtime it is.
  *
- * A `rasen-owned` spawn MUST declare `childEnv`: Rasen builds that child's
- * environment, and a child otherwise inherits the SPAWNING harness's
- * fingerprints and reports its parent's identity as its own (design D7).
- * Requiring it on this arm is the enforcement — a rasen-owned adapter that
- * omits it matches neither arm and fails the build, where a docstring
- * obligation is only read after the bug.
- *
- * A `playbook-owned` spawn carries no such obligation and MUST NOT declare
- * one: `codex/invocation.ts` returns argv and the orchestration playbook owns
- * the process, so there is no spawn site to inject an environment into.
+ * Rasen's own override, outranking every fingerprint in
+ * {@link detectHostRuntime}. Named here so the key has one spelling across the
+ * declaration, the merge, and the rendered playbook-owned invocation.
  */
-type DispatchSpawnOwnership =
-  | {
-      readonly spawn: 'rasen-owned';
-      /** Merged over the inherited environment by `bridgeChildEnv`. */
-      readonly childEnv: Readonly<Record<string, string>>;
-    }
-  | {
-      readonly spawn: 'playbook-owned';
-      readonly childEnv?: never;
-    };
+export const RUNTIME_IDENTITY_ENV_VAR = 'RASEN_AGENT_RUNTIME';
+
+/**
+ * An environment carrying one runtime's identity.
+ *
+ * The key is required and its VALUE is pinned to the declaring runtime, so an
+ * adapter that declares another runtime's identity fails the build rather
+ * than mislabelling every worker it starts.
+ */
+export type RuntimeIdentityEnv<Id extends RuntimeAdapterId> = Readonly<
+  Record<string, string>
+> & { readonly [RUNTIME_IDENTITY_ENV_VAR]: Id };
+
+/** The identity environment for one runtime — the only place the pair is built. */
+export function runtimeIdentityEnv<Id extends RuntimeAdapterId>(id: Id): RuntimeIdentityEnv<Id> {
+  return { [RUNTIME_IDENTITY_ENV_VAR]: id };
+}
+
+/**
+ * Who applies {@link DispatchAdapter.childEnv} to the worker process.
+ *
+ * `rasen-owned` — Rasen builds the child's environment itself, so
+ * `bridgeChildEnv` merges the identity at the spawn site.
+ *
+ * `playbook-owned` — `codex/invocation.ts` returns argv and the orchestration
+ * playbook owns the process, so Rasen cannot apply the identity; the
+ * invocation SURFACES it (`CodexExecInvocation.env`) and the playbook passes
+ * it on the command it runs.
+ */
+export type DispatchSpawnOwnership = 'rasen-owned' | 'playbook-owned';
 
 /** How Rasen runs a worker on one runtime. */
 export type DispatchAdapter<Id extends DispatchRuntime = DispatchRuntime> =
-  DispatchAdapterFacts<Id> & DispatchSpawnOwnership;
+  DispatchAdapterFacts<Id>;
 
 interface HostFingerprint {
   /** Environment variable whose non-empty presence identifies the host. */
@@ -285,16 +313,16 @@ function hasText(value: string | undefined): boolean {
 /**
  * Detect the tool host running the LEAD.
  *
- * `RASEN_AGENT_RUNTIME` is Rasen's own override and outranks every
- * fingerprint: it is how a bridged worker is told what it is
- * ({@link DispatchAdapter.childEnv}) rather than inferring it from an
+ * {@link RUNTIME_IDENTITY_ENV_VAR} is Rasen's own override and outranks every
+ * fingerprint: it is how a worker is told what it is
+ * ({@link DispatchAdapterFacts.childEnv}) rather than inferring it from an
  * environment it inherited. Fingerprint precedence is documented on
  * {@link HOST_FINGERPRINTS}.
  */
 export function detectHostRuntime(
   env: NodeJS.ProcessEnv = process.env
 ): DetectedHostRuntime {
-  const explicit = env.RASEN_AGENT_RUNTIME?.trim().toLowerCase();
+  const explicit = env[RUNTIME_IDENTITY_ENV_VAR]?.trim().toLowerCase();
   if (explicit !== undefined && Object.hasOwn(RUNTIME_ADAPTERS, explicit)) {
     return { runtime: explicit as RuntimeAdapterId, source: 'env-override' };
   }

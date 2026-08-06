@@ -10,9 +10,13 @@
  * another bridge's tool or run another bridge's availability check
  * (design D6).
  */
+import {
+  runtimeIdentityEnv,
+  type DispatchAdapter,
+  type DispatchRuntime,
+} from '../runtime-adapters.js';
 import { probeClaudeAvailability } from '../claude/index.js';
 import { probeCodexAvailability } from '../codex/index.js';
-import type { DispatchAdapter, DispatchRuntime } from '../runtime-adapters.js';
 
 export const DISPATCH_ADAPTERS = {
   claude: {
@@ -23,13 +27,7 @@ export const DISPATCH_ADAPTERS = {
     defaultBinary: 'claude',
     binaryEnvVar: 'RASEN_CLAUDE_BIN',
     spawn: 'rasen-owned',
-    /**
-     * A child inherits the spawning harness's fingerprints, and the Codex
-     * ones outrank `CLAUDECODE` by design. `RASEN_AGENT_RUNTIME` is Rasen's
-     * own override and outranks all of them, so a bridged Claude worker
-     * reports Claude whatever host started it (design D7).
-     */
-    childEnv: { RASEN_AGENT_RUNTIME: 'claude' },
+    childEnv: runtimeIdentityEnv('claude'),
     probeAvailability: () => probeClaudeAvailability(),
   },
   codex: {
@@ -39,13 +37,16 @@ export const DISPATCH_ADAPTERS = {
     installHint: 'Codex CLI',
     defaultBinary: 'codex',
     /**
-     * No `binaryEnvVar` and no `childEnv`: `codex/invocation.ts` returns argv
-     * and the orchestration playbook owns the process, so Rasen never
-     * resolves the binary and has no spawn to inject an environment into.
-     * Declaring either would be a contract nothing honors — the asymmetry is
-     * recorded rather than papered over (design D7).
+     * No `binaryEnvVar`: `codex/invocation.ts` returns argv and the
+     * orchestration playbook owns the process, so Rasen never resolves the
+     * binary. `childEnv` is declared all the same — Rasen cannot APPLY it
+     * here, but the invocation surfaces it (`CodexExecInvocation.env`) so the
+     * playbook does, and a Codex worker beneath a bridged Claude worker
+     * overwrites the inherited `claude` identity instead of adopting it
+     * (design D7).
      */
     spawn: 'playbook-owned',
+    childEnv: runtimeIdentityEnv('codex'),
     probeAvailability: () => probeCodexAvailability(),
   },
 } satisfies { [Id in DispatchRuntime]: DispatchAdapter<Id> };
@@ -55,19 +56,20 @@ export const DISPATCH_ADAPTERS = {
  * inherited, with the TARGET runtime's own identity merged over it.
  *
  * Every rasen-owned spawn goes through here rather than reaching into an
- * adapter at the spawn site. A child inherits the SPAWNING harness's
- * fingerprints — a Codex host's outrank `CLAUDECODE` — so without the merge a
- * bridged worker reports its parent's runtime as its own to every Rasen
- * command it runs (design D7). A `playbook-owned` target has no spawn Rasen
- * controls, so it contributes nothing and the inherited environment passes
- * through unchanged.
+ * adapter at the spawn site. The merge is UNCONDITIONAL and keyed on the
+ * target, because the identity is an environment variable and therefore
+ * inherited by the whole descendant tree: a target that contributed nothing
+ * would let an ancestor's identity stand, and a Codex worker started beneath a
+ * bridged Claude worker would report `claude` while carrying Codex's own
+ * fingerprints (design D7).
+ *
+ * A `playbook-owned` target has no spawn Rasen controls, so this is not the
+ * site that applies its identity — `CodexExecInvocation.env` is. Merging here
+ * anyway keeps the answer the same whichever site builds the environment.
  */
 export function bridgeChildEnv(
   target: DispatchRuntime,
   inherited: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
-  const adapter = DISPATCH_ADAPTERS[target];
-  return adapter.spawn === 'rasen-owned'
-    ? { ...inherited, ...adapter.childEnv }
-    : { ...inherited };
+  return { ...inherited, ...DISPATCH_ADAPTERS[target].childEnv };
 }
