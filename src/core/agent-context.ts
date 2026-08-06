@@ -38,10 +38,15 @@ import {
 import { resolveModelPreset } from './model-presets.js';
 import {
   PROBE_RUNTIMES,
+  SNIFF_FALLBACK_RUNTIME,
   detectHostRuntime,
   hasRuntimeCapability,
+  type ContextReader,
   type ProbeRuntime,
+  type RuntimeAdapterId,
 } from './runtime-adapters.js';
+import { CONTEXT_READERS } from './runtimes/context-readers.js';
+import { SESSION_STORES, detectSessionOwner } from './runtimes/session-stores.js';
 import {
   loadThresholdSchemeSnapshot,
   resolveThreshold,
@@ -171,12 +176,7 @@ export function computeContextFromTranscript(
   };
 }
 
-export type TranscriptKind = ProbeRuntime;
-
-/** codex-cli's own rollout filename convention — the same one `findRolloutPath` builds paths from. */
-const CODEX_ROLLOUT_BASENAME = /^rollout-.*\.jsonl$/;
-
-function validateRuntime(runtime: string | undefined): TranscriptKind | undefined {
+function validateRuntime(runtime: string | undefined): ProbeRuntime | undefined {
   if (runtime === undefined) return undefined;
   if (hasRuntimeCapability(runtime, 'canProbeContext')) return runtime;
   const expected = PROBE_RUNTIMES.map((candidate) => `"${candidate}"`).join(' or ');
@@ -184,56 +184,21 @@ function validateRuntime(runtime: string | undefined): TranscriptKind | undefine
 }
 
 /**
- * First-non-empty-line sniff for a renamed/copied file whose basename doesn't
- * match the `rollout-*.jsonl` convention. A real rollout's first row is
- * always `session_meta` (live-verified against ~40 rollouts on this
- * machine); a `payload` envelope with no Claude-style `message` field is
- * accepted defensively for any other Codex row shape. Anything else,
- * including an unreadable file, defaults to claude — the safe default,
- * since the claude branch's own read produces an actionable error rather
- * than silently misrouting. Pinned to {@link CODEX_CLI_VERSION_PREMISE}.
+ * The context reader for the harness that owns a target, or an actionable
+ * refusal naming that harness.
+ *
+ * Recognizing a session does not grant a reader for it: measuring one
+ * harness's file with another harness's field names yields a confident number
+ * that describes nothing, which is strictly worse than refusing. Callers that
+ * must never fail on a missing probe catch this and report absence.
  */
-function sniffTranscriptKind(transcriptPath: string): TranscriptKind {
-  let content: string;
-  try {
-    content = fs.readFileSync(transcriptPath, 'utf-8');
-  } catch {
-    return 'claude';
-  }
-  let firstLine: string | undefined;
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed) {
-      firstLine = trimmed;
-      break;
-    }
-  }
-  if (!firstLine) return 'claude';
-  let row: Record<string, unknown>;
-  try {
-    row = JSON.parse(firstLine) as Record<string, unknown>;
-  } catch {
-    return 'claude';
-  }
-  if (row.type === 'session_meta') return 'codex';
-  if ('payload' in row && row.message === undefined) return 'codex';
-  return 'claude';
-}
-
-/**
- * Detect whether a path is a Codex rollout or a Claude Code transcript
- * (design D1). Order: explicit override wins outright; then the filename
- * convention (zero extra I/O, covers every rollout in situ); then a
- * first-line content sniff for a renamed/copied file; default claude.
- */
-export function detectTranscriptKind(
-  transcriptPath: string,
-  runtimeOverride?: string
-): TranscriptKind {
-  const override = validateRuntime(runtimeOverride);
-  if (override) return override;
-  if (CODEX_ROLLOUT_BASENAME.test(path.basename(transcriptPath))) return 'codex';
-  return sniffTranscriptKind(transcriptPath);
+function contextReaderFor(owner: RuntimeAdapterId, target: string): ContextReader {
+  if (hasRuntimeCapability(owner, 'canProbeContext')) return CONTEXT_READERS[owner];
+  throw new Error(
+    `No context reader exists for the recognized session runtime "${owner}": ${target}. ` +
+      `Reading it with another runtime's reader would report a number that describes nothing. ` +
+      `Rasen can probe ${PROBE_RUNTIMES.join(' and ')} sessions.`
+  );
 }
 
 /**
@@ -445,25 +410,23 @@ export interface ProbeOptions {
 }
 
 /**
- * Resolve which transcript a probe should read. `--transcript` wins; otherwise
- * `--latest` resolves the newest main-session transcript — the Claude-side
- * path under `--dir` (or the cwd-derived Claude projects dir) when `runtime`
- * is absent/`'claude'`, or the newest cwd-matching Codex rollout under `--dir`
- * (or the default Codex sessions root) when `runtime` is `'codex'` (design
- * D1/D3). `runtime` here is the already-validated value — callers must
- * validate `--runtime` before calling. Throws when neither `--transcript` nor
- * `--latest` is provided.
+ * Resolve which transcript a probe should read. `--transcript` wins;
+ * otherwise `--latest` asks the named runtime's own session store to locate
+ * its newest live session, under `--dir` when given. An unnamed runtime falls
+ * to {@link SNIFF_FALLBACK_RUNTIME} — the same "nothing named a runtime"
+ * decision the recognition pass makes, and the legacy Claude-store behavior
+ * every existing caller depends on. `runtime` here is the already-validated
+ * value — callers must validate `--runtime` before calling. Throws when
+ * neither `--transcript` nor `--latest` is provided.
  */
-export function resolveTranscriptPath(options: ProbeOptions, runtime?: TranscriptKind): string {
+export function resolveTranscriptPath(options: ProbeOptions, runtime?: ProbeRuntime): string {
   if (options.transcript) return options.transcript;
   if (options.latest) {
-    if (runtime === 'codex') {
-      const sessionsDir = options.dir ?? path.join(resolveCodexHome(), 'sessions');
-      return findLatestRollout(sessionsDir, options.cwd ?? process.cwd());
-    }
-    const baseDir =
-      options.dir ?? claudeProjectsDir(options.cwd ?? process.cwd(), options.homeDir);
-    return findLatestMainTranscript(baseDir);
+    return SESSION_STORES[runtime ?? SNIFF_FALLBACK_RUNTIME].locateLatest({
+      cwd: options.cwd ?? process.cwd(),
+      ...(options.dir ? { dir: options.dir } : {}),
+      ...(options.homeDir ? { homeDir: options.homeDir } : {}),
+    });
   }
   throw new Error('Specify a transcript to probe: pass --transcript <path> or --latest.');
 }
@@ -515,10 +478,12 @@ export async function resolveHandoffThresholdReport(
   runtimeOrCwd?: ProbeRuntime | string,
   cwdArg?: string
 ): Promise<HandoffThresholdReport> {
-  const runtime =
-    runtimeOrCwd === 'claude' || runtimeOrCwd === 'codex'
-      ? runtimeOrCwd
-      : undefined;
+  // A capability test, not an identity check: a runtime with no context
+  // probe must not be mistaken for a working directory and leak into the
+  // `cwd` argument below.
+  const runtime = hasRuntimeCapability(runtimeOrCwd, 'canProbeContext')
+    ? runtimeOrCwd
+    : undefined;
   const cwd =
     runtime === undefined
       ? runtimeOrCwd ?? process.cwd()
@@ -570,19 +535,20 @@ function validateProbeLimit(limit: number | undefined): void {
 }
 
 /**
- * Full probe: resolve the transcript, detect its kind (Codex rollout vs
- * Claude transcript — explicit `--runtime` wins over detection), then
- * compute its context occupancy. Throws an actionable error on any
- * unreadable/usage-free/unspecified input, or an invalid `--runtime` value.
+ * Full probe: resolve the transcript, recognize the harness that owns it
+ * (explicit `--runtime` wins over recognition), then read its context
+ * occupancy with that harness's own reader. Throws an actionable error on any
+ * unreadable/usage-free/unspecified input, an invalid `--runtime` value, or a
+ * recognized harness Rasen ships no reader for.
  */
 export function probeAgentContext(options: ProbeOptions): AgentContextResult {
   const runtime = validateRuntime(options.runtime);
   validateProbeLimit(options.limit);
   const transcriptPath = resolveTranscriptPath(options, runtime);
-  const kind = detectTranscriptKind(transcriptPath, runtime);
-  return kind === 'codex'
-    ? computeContextFromRollout(transcriptPath, { limit: options.limit })
-    : computeContextFromTranscript(transcriptPath, { limit: options.limit });
+  const owner = detectSessionOwner(transcriptPath, runtime);
+  return contextReaderFor(owner, transcriptPath).read(transcriptPath, {
+    limit: options.limit,
+  });
 }
 
 /** Tagged result of {@link probeAgentContextSafe} — success or environmental unavailability. */
@@ -638,22 +604,20 @@ export function probeAgentContextSafe(options: ProbeOptions): ProbeAgentContextR
 
 /**
  * Best-effort context estimate for an already-known transcript path. Routes
- * through the same kind detection as {@link probeAgentContext} (no explicit
+ * through the same recognition as {@link probeAgentContext} (no explicit
  * override — callers like `pipeline resume` pass a bare path). Returns the
- * three-field estimate, or `undefined` on any read error — including an
- * unreadable Codex rollout — for callers that must never fail because a
- * probe could not be taken.
+ * three-field estimate, or `undefined` on any read error — an unreadable
+ * Codex rollout, or a transcript belonging to a harness Rasen ships no reader
+ * for — because a caller that must never fail needs absence to stay
+ * distinguishable from an estimate of zero occupancy.
  */
 export function tryContextEstimate(
   transcriptPath: string,
   limit?: number
 ): ContextEstimate | undefined {
   try {
-    const kind = detectTranscriptKind(transcriptPath);
-    const r =
-      kind === 'codex'
-        ? computeContextFromRollout(transcriptPath, { limit })
-        : computeContextFromTranscript(transcriptPath, { limit });
+    const owner = detectSessionOwner(transcriptPath);
+    const r = contextReaderFor(owner, transcriptPath).read(transcriptPath, { limit });
     return {
       contextTokens: r.contextTokens,
       limit: r.limit,

@@ -1,7 +1,5 @@
 import chalk from 'chalk';
 
-import { probeClaudeAvailability } from '../claude/index.js';
-import { probeCodexAvailability } from '../codex/index.js';
 import { resolveConfigStoreLayer } from '../effective-config.js';
 import { getGlobalConfig } from '../global-config.js';
 import { resolveDesiredWorkflowSelection } from '../profiles.js';
@@ -17,15 +15,17 @@ import {
 import {
   resolvePipelineExecutionPlan,
   resolvePipelineStageOverrides,
+  type ExecutionStageRuntime,
   type PipelineExecutionPlan,
 } from './stage-overrides.js';
 import {
   detectHostRuntime,
   hasRuntimeCapability,
   type DetectedHostRuntime,
-  type DispatchBridge,
+  type DispatchRuntime,
   type RuntimeAdapterId,
 } from '../runtime-adapters.js';
+import { DISPATCH_ADAPTERS } from '../runtimes/dispatch-adapters.js';
 import type { AgentRuntime, PipelineYaml, StageRole } from './types.js';
 
 export type PipelineExecutionNotice =
@@ -47,17 +47,12 @@ export type PipelineExecutionReporter = (notice: PipelineExecutionNotice) => voi
 
 export interface PipelineExecutionOptions {
   /**
-   * Codex-CLI availability check, injected so the preflight is unit-testable
-   * without a real codex binary. Defaults to the real
-   * `probeCodexAvailability`. Called at most once per
-   * `validatePipelineForExecution` invocation.
+   * Per-target availability checks, injected so the preflight is unit-testable
+   * without a real binary. A target's own `DispatchAdapter.probeAvailability`
+   * is used when no override is supplied. Each required target is checked at
+   * most once per `validatePipelineForExecution` invocation.
    */
-  probeCodex?: () => boolean;
-  /**
-   * Claude-CLI availability check for the `claude-print` bridge. Injected so
-   * automated tests never call the real Claude service or CLI.
-   */
-  probeClaude?: () => boolean;
+  probe?: Partial<Record<DispatchRuntime, () => boolean>>;
   /** Injected once-detected LEAD host. */
   host?: DetectedHostRuntime;
   /** Test seam used only when `host` is not supplied. */
@@ -117,28 +112,54 @@ function reportPipelineExecutionNotice(
   console.error(chalk.yellow(message));
 }
 
+/**
+ * Whether a stage can only run if `target`'s own CLI is present.
+ *
+ * A bridged stage always needs it. Under the legacy compatibility route the
+ * orchestration playbook drives dispatch itself, so the tool is needed
+ * exactly when the target's spawn is playbook-owned — the playbook shells the
+ * binary — and not when it is rasen-owned, because Rasen is not the one
+ * dispatching on that route.
+ */
+function stageNeedsTargetTool(
+  stage: ExecutionStageRuntime,
+  target: DispatchRuntime
+): boolean {
+  if (stage.runtime !== target) return false;
+  if (stage.bridge !== undefined) return true;
+  return (
+    stage.dispatchMode === 'legacy-fallback' &&
+    DISPATCH_ADAPTERS[target].spawn === 'playbook-owned'
+  );
+}
+
+/**
+ * The availability check for a dispatch target: an injected override, else
+ * the target's own adapter. One seam keyed by target rather than a named
+ * option per runtime, so a runtime added later needs no new option.
+ */
+function resolveAvailabilityProbe(
+  target: DispatchRuntime,
+  options: PipelineExecutionOptions | undefined
+): () => boolean {
+  return options?.probe?.[target] ?? DISPATCH_ADAPTERS[target].probeAvailability;
+}
+
+/**
+ * A stage whose worker cannot be started because the target runtime's own
+ * tool is missing. Every user-facing fact here comes from that runtime's
+ * adapter, so the message can never name another bridge's tool (design D6).
+ */
 function throwRuntimeUnavailable(
   plans: PipelineExecutionPlan[],
-  bridge: DispatchBridge
+  target: DispatchRuntime
 ): never {
+  const adapter = DISPATCH_ADAPTERS[target];
   const plan =
     plans.find((candidate) =>
-      candidate.stages.some(
-        (stage) =>
-          stage.bridge === bridge ||
-          (bridge === 'codex-exec' &&
-            stage.dispatchMode === 'legacy-fallback' &&
-            stage.runtime === 'codex')
-      )
+      candidate.stages.some((stage) => stageNeedsTargetTool(stage, target))
     ) ?? plans[0];
-  const bridged = plan.stages.find(
-    (stage) =>
-      stage.bridge === bridge ||
-      (bridge === 'codex-exec' &&
-        stage.dispatchMode === 'legacy-fallback' &&
-        stage.runtime === 'codex')
-  );
-  const targetLabel = bridge === 'codex-exec' ? 'codex' : 'Claude Code';
+  const bridged = plan.stages.find((stage) => stageNeedsTargetTool(stage, target));
   // Only a dispatch-capable host names a role runtime the role flags accept
   // (`AgentRuntimeSchema` = `z.enum(DISPATCH_RUNTIMES)`). A recognized host
   // with no dispatch adapter must NOT be printed here — advising "override
@@ -147,9 +168,9 @@ function throwRuntimeUnavailable(
     ? plan.hostRuntime
     : 'the detected host runtime';
   throw new PipelineValidationError(
-    `Stage "${bridged?.id ?? '<unknown>'}" requires the ${bridge} bridge, but ${targetLabel} is not available. ` +
+    `Stage "${bridged?.id ?? '<unknown>'}" requires the ${adapter.bridge} bridge, but ${adapter.cliLabel} is not available. ` +
       `Override the affected role to ${hostOverride} (for example with a role flag or stage runtime), ` +
-      `or install the ${bridge === 'codex-exec' ? 'Codex CLI' : 'Claude Code CLI'}.`,
+      `or install the ${adapter.installHint}.`,
     'pipeline_runtime_unavailable'
   );
 }
@@ -305,25 +326,15 @@ export async function validatePipelineForExecution(
     }
   }
 
-  const requiredBridges = new Set<DispatchBridge>();
+  const requiredTargets = new Set<DispatchRuntime>();
   for (const plan of plans) {
     for (const stage of plan.stages) {
-      if (stage.bridge) requiredBridges.add(stage.bridge);
-      if (
-        stage.dispatchMode === 'legacy-fallback' &&
-        stage.runtime === 'codex'
-      ) {
-        requiredBridges.add('codex-exec');
-      }
+      if (stageNeedsTargetTool(stage, stage.runtime)) requiredTargets.add(stage.runtime);
     }
   }
-  for (const bridge of requiredBridges) {
-    const available =
-      bridge === 'codex-exec'
-        ? (options?.probeCodex ?? probeCodexAvailability)()
-        : (options?.probeClaude ?? probeClaudeAvailability)();
-    if (!available) {
-      throwRuntimeUnavailable(plans, bridge);
+  for (const target of requiredTargets) {
+    if (!resolveAvailabilityProbe(target, options)()) {
+      throwRuntimeUnavailable(plans, target);
     }
   }
 }

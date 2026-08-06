@@ -158,4 +158,34 @@ describe('CLI: agent context --latest --runtime codex', () => {
     });
     expect(result.stdout).not.toContain('"contextTokens"');
   });
+
+  // The refusal has to reach the CLI's non-zero input-error contract, not the
+  // exit-0 `available:false` shape above: naming a file explicitly is a user
+  // input error, while an implicit `--latest` on an unsupported host is that
+  // host's normal state.
+  it('refuses an explicitly named session file from a harness with no reader', async () => {
+    const ompPath = path.join(projectDir, 'omp-session.jsonl');
+    fs.writeFileSync(
+      ompPath,
+      [
+        JSON.stringify({ type: 'title', v: 1, title: 'x', source: 'auto', pad: ' '.repeat(64) }),
+        JSON.stringify({ type: 'session', version: 3, id: 'abc', cwd: projectDir }),
+        JSON.stringify({
+          type: 'message',
+          message: { role: 'assistant', usage: { input: 87_848, cacheRead: 0 } },
+        }),
+      ].join('\n') + '\n',
+      'utf-8'
+    );
+
+    const result = await runCLI(['agent', 'context', '--transcript', ompPath, '--json'], {
+      cwd: projectDir,
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain('"omp"');
+    expect(result.stderr).toMatch(/no context reader/i);
+    expect(result.stdout).not.toContain('"contextTokens"');
+    expect(result.stdout).not.toContain('"pct"');
+  });
 });

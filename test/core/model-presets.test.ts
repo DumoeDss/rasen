@@ -82,5 +82,14 @@ describe('model-presets', () => {
     it('now also resolves gpt-5 family windows via the registry', () => {
       expect(resolveModelLimit('gpt-5.6-sol')).toBe(272_000);
     });
+
+    // The current Opus generation was measured against the conservative 200k
+    // default, reporting a 170k session as 85% full instead of 17% and
+    // recommending a handoff it did not need.
+    it('resolves the current Opus generation to its real 1M window', () => {
+      expect(resolveModelLimit('claude-opus-5')).toBe(1_000_000);
+      expect(resolveModelLimit('anthropic/claude-opus-5')).toBe(1_000_000);
+      expect(resolveModelLimit('us.anthropic.claude-opus-5-20260101')).toBe(1_000_000);
+    });
   });
 });

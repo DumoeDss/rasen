@@ -5,6 +5,8 @@ import * as os from 'node:os';
 
 import { parsePipeline, PipelineValidationError } from '../../../src/core/pipeline-registry/pipeline.js';
 import { validatePipelineForExecution } from '../../../src/core/pipeline-registry/execution-validation.js';
+import { DISPATCH_ADAPTERS } from '../../../src/core/runtimes/dispatch-adapters.js';
+import type { DispatchRuntime } from '../../../src/core/runtime-adapters.js';
 
 // A real, always-enabled core skill (see builtins.ts) so the pre-existing
 // skill-presence/enablement checks pass and these tests exercise only the
@@ -14,6 +16,8 @@ const CLAUDE_HOST = { runtime: 'claude', source: 'claude-code' } as const;
 const CODEX_HOST = { runtime: 'codex', source: 'codex-thread-id' } as const;
 const UNKNOWN_HOST = { runtime: 'unknown', source: 'unknown' } as const;
 const OMP_HOST = { runtime: 'omp', source: 'omp-code' } as const;
+/** Every shipped dispatch target, so this suite grows with the registry. */
+const DISPATCH_TARGETS = Object.keys(DISPATCH_ADAPTERS) as DispatchRuntime[];
 
 function pipeline(yaml: string) {
   return parsePipeline(yaml);
@@ -53,7 +57,7 @@ stages:
     runtime: codex
 `);
     const probeCodex = vi.fn(() => true);
-    await validatePipelineForExecution(p, undefined, { probeCodex, host: CLAUDE_HOST });
+    await validatePipelineForExecution(p, undefined, { probe: { codex: probeCodex }, host: CLAUDE_HOST });
     expect(probeCodex).toHaveBeenCalledTimes(1);
   });
 
@@ -67,7 +71,7 @@ stages:
 `);
     const probeCodex = vi.fn(() => false);
     try {
-      await validatePipelineForExecution(p, undefined, { probeCodex, host: CLAUDE_HOST });
+      await validatePipelineForExecution(p, undefined, { probe: { codex: probeCodex }, host: CLAUDE_HOST });
       expect.fail('expected validatePipelineForExecution to throw');
     } catch (error) {
       expect(error).toBeInstanceOf(PipelineValidationError);
@@ -103,7 +107,7 @@ stages:
 
     const probeCodex = vi.fn(() => false);
     await expect(
-      validatePipelineForExecution(p, projectRoot, { probeCodex, host: CLAUDE_HOST })
+      validatePipelineForExecution(p, projectRoot, { probe: { codex: probeCodex }, host: CLAUDE_HOST })
     ).rejects.toThrow(PipelineValidationError);
     expect(probeCodex).toHaveBeenCalledTimes(1);
   });
@@ -138,8 +142,7 @@ stages:
 
     await validatePipelineForExecution(parent, projectRoot, {
       host: CODEX_HOST,
-      probeClaude,
-      probeCodex,
+      probe: { claude: probeClaude, codex: probeCodex },
     });
 
     expect(probeClaude).toHaveBeenCalledTimes(1);
@@ -159,8 +162,7 @@ stages:
     const probeCodex = vi.fn(() => false);
     const probeClaude = vi.fn(() => false);
     await validatePipelineForExecution(p, undefined, {
-      probeCodex,
-      probeClaude,
+      probe: { codex: probeCodex, claude: probeClaude },
       host: CLAUDE_HOST,
     });
     expect(probeCodex).not.toHaveBeenCalled();
@@ -180,7 +182,7 @@ stages:
     requires: [a]
 `);
     const probeCodex = vi.fn(() => true);
-    await validatePipelineForExecution(p, undefined, { probeCodex, host: CLAUDE_HOST });
+    await validatePipelineForExecution(p, undefined, { probe: { codex: probeCodex }, host: CLAUDE_HOST });
     expect(probeCodex).toHaveBeenCalledTimes(1);
   });
 
@@ -206,8 +208,7 @@ stages:
     const probeCodex = vi.fn(() => false);
     const probeClaude = vi.fn(() => false);
     await validatePipelineForExecution(p, undefined, {
-      probeCodex,
-      probeClaude,
+      probe: { codex: probeCodex, claude: probeClaude },
       host: CODEX_HOST,
     });
     expect(probeCodex).not.toHaveBeenCalled();
@@ -226,8 +227,7 @@ stages:
     const probeCodex = vi.fn(() => false);
     const probeClaude = vi.fn(() => true);
     await validatePipelineForExecution(p, undefined, {
-      probeCodex,
-      probeClaude,
+      probe: { codex: probeCodex, claude: probeClaude },
       host: CODEX_HOST,
     });
     expect(probeCodex).not.toHaveBeenCalled();
@@ -251,8 +251,7 @@ stages:
     const probeClaude = vi.fn(() => false);
     try {
       await validatePipelineForExecution(p, undefined, {
-        probeClaude,
-        probeCodex: vi.fn(() => false),
+        probe: { claude: probeClaude, codex: vi.fn(() => false) },
         host: CODEX_HOST,
       });
       expect.fail('expected validatePipelineForExecution to throw');
@@ -264,6 +263,56 @@ stages:
     }
     expect(probeClaude).toHaveBeenCalledTimes(1);
   });
+
+  // The regression this replaces: a ternary routed every bridge that was not
+  // `codex-exec` to the Claude probe, so a third bridge's preflight would
+  // check the Claude binary and pass on a machine where its own tool is
+  // missing. Driven off the shipped adapters so it stays true as adapters are
+  // added.
+  it.each(DISPATCH_TARGETS)(
+    'runs only %s\'s own availability check and builds the message from its adapter alone',
+    async (target) => {
+      const host = DISPATCH_TARGETS.find((candidate) => candidate !== target)!;
+      const p = pipeline(`
+name: bridge-${target}
+stages:
+  - id: a
+    skill: ${KNOWN_SKILL}
+    role: planner
+    runtime: ${target}
+`);
+      const checked: string[] = [];
+      const probe = Object.fromEntries(
+        DISPATCH_TARGETS.map((id) => [
+          id,
+          () => {
+            checked.push(id);
+            return false;
+          },
+        ])
+      );
+      const adapter = DISPATCH_ADAPTERS[target];
+      const other = DISPATCH_ADAPTERS[host];
+
+      try {
+        await validatePipelineForExecution(p, undefined, {
+          probe,
+          host: { runtime: host, source: 'env-override' },
+        });
+        expect.fail('expected validatePipelineForExecution to throw');
+      } catch (error) {
+        expect(error).toBeInstanceOf(PipelineValidationError);
+        const message = (error as Error).message;
+        expect(message).toContain(adapter.bridge);
+        expect(message).toContain(adapter.cliLabel);
+        expect(message).toContain(adapter.installHint);
+        expect(message).not.toContain(other.bridge);
+        expect(message).not.toContain(other.installHint);
+      }
+
+      expect(checked).toEqual([target]);
+    }
+  );
 
   it('keeps unknown-host compatibility and emits an actionable notice', async () => {
     const p = pipeline(`
@@ -322,8 +371,7 @@ stages:
     try {
       await validatePipelineForExecution(p, undefined, {
         host: OMP_HOST,
-        probeCodex: vi.fn(() => false),
-        probeClaude: vi.fn(() => false),
+        probe: { codex: vi.fn(() => false), claude: vi.fn(() => false) },
         reporter: false,
       });
       expect.fail('expected validatePipelineForExecution to throw');
@@ -387,7 +435,7 @@ stages:
     const probeClaude = vi.fn(() => true);
     await validatePipelineForExecution(p, projectRoot, {
       host: CODEX_HOST,
-      probeClaude,
+      probe: { claude: probeClaude },
     });
     expect(probeClaude).toHaveBeenCalledTimes(1);
   });
@@ -419,8 +467,7 @@ stages:
     await validatePipelineForExecution(p, projectRoot, {
       host: CODEX_HOST,
       roleRuntimeOverrides: { planner: 'codex' },
-      probeCodex,
-      probeClaude,
+      probe: { codex: probeCodex, claude: probeClaude },
     });
 
     expect(probeCodex).not.toHaveBeenCalled();

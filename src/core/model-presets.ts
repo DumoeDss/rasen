@@ -45,7 +45,7 @@ export interface ModelPreset {
 export const MODEL_PRESETS: ModelPreset[] = [
   { match: ['haiku'], contextWindow: 200_000 },
   {
-    match: ['opus-4', 'sonnet-5', 'sonnet-4-6', 'fable', 'mythos'],
+    match: ['opus-4', 'opus-5', 'sonnet-5', 'sonnet-4-6', 'fable', 'mythos'],
     contextWindow: 1_000_000,
   },
   {

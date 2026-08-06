@@ -15,7 +15,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { claudeProjectsDir, detectTranscriptKind } from '../agent-context.js';
+import { claudeProjectsDir } from '../agent-context.js';
 import { findRolloutPath, resolveCodexHome } from '../codex/index.js';
 import { getGlobalDataDir, type GlobalDataDirOptions } from '../global-config.js';
 import {
@@ -23,6 +23,8 @@ import {
   hasRuntimeCapability,
   type AuditRuntime,
 } from '../runtime-adapters.js';
+import { AUDIT_READERS } from '../runtimes/audit-readers.js';
+import { detectSessionOwner } from '../runtimes/session-stores.js';
 import { PRICING, REQUEST_CLASSES, TTL_MIN, classify, classifyCodex, clusterBursts, clusterCodexBursts } from './classify.js';
 import { buildCodexFamilyMember, discoverCodexThreadFamily } from './discover-codex.js';
 import { TranscriptFormatError } from './errors.js';
@@ -140,20 +142,6 @@ function validateRuntimeOption(runtime: string | undefined): AuditRuntime | unde
   throw new Error(`--runtime must be ${expected} (got "${runtime}").`);
 }
 
-/**
- * Runtime selection (design D5, extended for Zed): an explicit `--runtime`
- * wins outright; otherwise a `threads.db`/`.db`/`.sqlite` path detects as Zed
- * and a `*.jsonl` path is detected from its filename/content; a bare id with
- * no `--runtime` resolves as Claude (unchanged default) — resolving a bare id
- * as Codex or Zed requires the corresponding `--runtime` flag.
- */
-function resolveRuntimeKind(target: string, override: AuditRuntime | undefined): AuditRuntime {
-  if (override) return override;
-  if (target.endsWith('.jsonl')) return detectTranscriptKind(target);
-  if (target.endsWith('.db') || target.endsWith('.sqlite') || path.basename(target) === 'threads.db') return 'zed';
-  return 'claude';
-}
-
 function defaultOutPath(result: AuditResult, options: RunAuditOptions): string {
   return path.join(
     getGlobalDataDir(options),
@@ -174,17 +162,28 @@ export async function runAudit(target: string, options: RunAuditOptions = {}): P
   const wantsZedMatch = override === 'zed' && !!options.match;
   if (!target && !wantsZedMatch) {
     throw new Error(
-      'usage: rasen agent audit <sessionId|path> [--projects-dir <dir>] [--out <file>] [--runtime <claude|codex|zed>]\n' +
+      `usage: rasen agent audit <sessionId|path> [--projects-dir <dir>] [--out <file>] [--runtime <${AUDIT_RUNTIMES.join('|')}>]\n` +
         '       rasen agent audit --runtime zed [<threadId> | --match <text>] [--db <threads.db>]'
     );
   }
-  const kind = resolveRuntimeKind(target, override);
+  // Recognize the owning harness, then look up an auditor for it. A bare
+  // session id is claimed by no store and follows the registry's declared
+  // fallback, which is the unchanged "a bare id resolves as Claude" behavior.
+  const kind = detectSessionOwner(target, override);
+  if (!hasRuntimeCapability(kind, 'canAudit')) {
+    throw new Error(
+      `No token auditor exists for the recognized session runtime "${kind}": ${target}. ` +
+        `Analyzing it with another runtime's parser would attribute the report to a runtime ` +
+        `that did not produce the session. Rasen can audit ${AUDIT_RUNTIMES.join(', ')} sessions.`
+    );
+  }
+  // `--match` and `--db` name Zed thread-database concepts. A flag-scope
+  // statement, not an implementation selection: encoding it as an adapter
+  // field would be a contract with one implementor and no second use.
   if (kind !== 'zed' && (options.match !== undefined || options.db !== undefined)) {
     throw new Error('--match and --db only apply to --runtime zed');
   }
-  if (kind === 'zed') return runZedAudit(target, options);
-  if (kind === 'codex') return runCodexAudit(target, options);
-  return runClaudeAudit(target, options);
+  return AUDIT_READERS[kind].run(target, options);
 }
 
 // ---------------------------------------------------------------------------
@@ -247,7 +246,7 @@ function parseAgentLabel(fileBase: string, kind: AgentKind): { label: string; ro
   return { label, roleFamily };
 }
 
-async function runClaudeAudit(target: string, options: RunAuditOptions): Promise<RunAuditResult> {
+export async function runClaudeAudit(target: string, options: RunAuditOptions): Promise<RunAuditResult> {
   const mainPath = resolveClaudeMainTranscript(target, options);
   const { sid, files } = discoverClaudeAgentFiles(mainPath);
 
@@ -446,7 +445,7 @@ function buildForkCaveat(forkedFromId: string): string {
   );
 }
 
-async function runCodexAudit(target: string, options: RunAuditOptions): Promise<RunAuditResult> {
+export async function runCodexAudit(target: string, options: RunAuditOptions): Promise<RunAuditResult> {
   const codexHome = options.codexHome ?? resolveCodexHome();
   const sessionsDir = path.join(codexHome, 'sessions');
 
@@ -764,7 +763,7 @@ function resolveZedRootId(db: ZedDatabase, target: string, options: RunAuditOpti
   return ids[0];
 }
 
-async function runZedAudit(target: string, options: RunAuditOptions): Promise<RunAuditResult> {
+export async function runZedAudit(target: string, options: RunAuditOptions): Promise<RunAuditResult> {
   const dbPath = options.db ? path.resolve(options.db) : resolveDefaultZedDbPath({ homedir: options.homedir });
   if (!options.db && !fs.existsSync(dbPath)) {
     throw new Error(`Zed thread database not found at its default location: ${dbPath} (pass --db <path>)`);

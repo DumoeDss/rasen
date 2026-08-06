@@ -2603,7 +2603,7 @@
               "description": "Report context-window occupancy of a transcript from its recorded usage",
               "options": {
                 "transcript": {
-                  "description": "Path to a Claude Code transcript or Codex rollout jsonl"
+                  "description": "Path to a Claude Code transcript or Codex rollout jsonl; a session file from another recognized harness is refused by name rather than measured"
                 },
                 "latest": {
                   "description": "Use the newest main-session transcript for the current directory"
@@ -2643,7 +2643,7 @@
               }
             },
             "audit": {
-              "description": "Analyze a session's token spend from its Claude transcript, Codex rollout, or Zed thread database (experimental: parses internal, undocumented formats that may change with harness or Zed updates)",
+              "description": "Analyze a session's token spend from its Claude transcript, Codex rollout, or Zed thread database; a session file from another recognized harness is refused by name rather than reported as zero (experimental: parses internal, undocumented formats that may change with harness or Zed updates)",
               "options": {
                 "projects-dir": {
                   "description": "Override the Claude projects directory a session id is resolved against"

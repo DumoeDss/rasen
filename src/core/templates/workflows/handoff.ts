@@ -15,7 +15,7 @@ const HANDOFF_INSTRUCTIONS = `Write a handoff document — distill the current w
 
 ${STORE_SELECTION_GUIDANCE}
 
-Context-window occupancy is measured, never guessed: \`rasen agent context --latest\` reads the exact API usage from the session transcript (\`--transcript <path>\` probes a specific worker transcript instead). The handoff document is a DISTILLATION CHECKPOINT on top of the change-directory blackboard, not a replacement for it — tasks.md ticks and on-disk artifacts stay the primary state; the document carries only what the blackboard cannot record.
+Context-window occupancy is measured, never guessed: \`rasen agent context --latest\` reads the exact API usage from the session transcript (\`--transcript <path>\` probes a specific worker transcript instead). The two flags fail differently: \`--latest\` degrades to \`available: false\` at exit 0 (step 1 below), while \`--transcript\` naming a file from a harness Rasen ships no reader for exits NON-ZERO with a message naming that harness — a deliberate refusal, because reading it with another harness's reader would report a number that describes nothing. Treat that worker's occupancy as unmeasured; do not force it with \`--runtime\`. The handoff document is a DISTILLATION CHECKPOINT on top of the change-directory blackboard, not a replacement for it — tasks.md ticks and on-disk artifacts stay the primary state; the document carries only what the blackboard cannot record.
 
 ## When to Use
 

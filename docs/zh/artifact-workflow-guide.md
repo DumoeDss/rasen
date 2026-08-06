@@ -137,7 +137,7 @@ rasen pipeline list --json                     # 列出 package/user/project 的
   - **独立性不确定 → 串行**（「宁可串行也不能乱并行」：并行需要*积极*的独立性证明，而非「没发现冲突」）。
 - **单层扇出（递归防护）。** `childPipeline` 必须解析到一条**不含 decompose** 的流水线（`validate` 强制），子流水线运行绝不会再 decompose。
 - **可观测 + 可续跑。** 父 change 的 ephemera 目录下有一份 `portfolio-run.json`（拆分方案、子列表、依赖 DAG、每个子的执行模式/同批/流水线/状态、可运行前沿、顶层 `planner` 指针——persistent planner 跨子复用，见 §2.1），每个子仍各有 `auto-run.json`。`rasen pipeline resume <parent>` 从组合状态算出下一个可运行的子（`runnableChildren`），并单独报出 `interruptedChildren`（中断时停在 `in_progress` 的子——重启后**暖播种续跑**，不晾死）与 `escalatedChildren`（失败/升级、需人工）；某个子失败/升级时，停掉它的依赖链、保留已完成的独立子，连同前沿一起上报。
-- **跨子 worker 复用（暖复用 vs 退役）。** 依赖者直接消费前置的代码，所以刚写完这份代码的 implementer 就是依赖者最暖的 worker——前提是它还有余量。由流水线的 `reuse` 配置管控（`reuse: { planner, implementer: auto|never, threshold, roles }`，由 `resolvePipelineReuseConfig` 解析；默认 `{ auto, auto, 0.25 }`）。在**解锁依赖者的同一个 review-clean gate** 上，LEAD 探针前置 implementer 的 transcript（`rasen agent context --transcript`）：**≤ 解析出的 reuse 阈值** → 通过该路由自己的句柄（`SendMessage`、`followup_task`、Claude `sessionId + cwd` 或 Codex `threadId`）暖复用同一 worker，并带**污染防护条款**（前置的约定仅在依赖者自己的 proposal/design 沉默处成立——先读这些）；**>** → **retired-between-children 退役**（该 worker 写一份 handoff 文档，reason 为 `retired-between-children`，重心是跨 change 可迁移知识，`Remaining` 留空），再从「该文档 + LEAD 派工简报」双源播种一个新 implementer。复用要求**唯一暖前驱**——DAG 汇合点（依赖 >1 个前置的子）一律新开 worker，从各前置的 durable findings 多源播种。被复用的 worker 记录带上 `reusedFrom: <前置子 id>`。planner 复用由 `reuse.planner` 单独配置（`never` 时每次 propose 新开 planner，从 `planning-context.md` 播种）。范围护栏：设计级 fixer 排除（新鲜眼睛是其价值）；Tier B 或不可用的路由句柄走既有暖播种阶梯降级；用户手动连续跑的无关 change 序列不在范围内。实现发现通过 worker `DONE` 契约的 **durable-findings** 条款前向回流（1-3 行，LEAD 原文转贴进下一个 planner 的派工）。
+- **跨子 worker 复用（暖复用 vs 退役）。** 依赖者直接消费前置的代码，所以刚写完这份代码的 implementer 就是依赖者最暖的 worker——前提是它还有余量。由流水线的 `reuse` 配置管控（`reuse: { planner, implementer: auto|never, threshold, roles }`，由 `resolvePipelineReuseConfig` 解析；默认 `{ auto, auto, 0.25 }`）。在**解锁依赖者的同一个 review-clean gate** 上，LEAD 探针前置 implementer 的 transcript（`rasen agent context --transcript`）：**≤ 解析出的 reuse 阈值** → 通过该路由自己的句柄（`SendMessage`、`followup_task`、Claude `sessionId + cwd` 或 Codex `threadId`）暖复用同一 worker，并带**污染防护条款**（前置的约定仅在依赖者自己的 proposal/design 沉默处成立——先读这些）；**>** → **retired-between-children 退役**（该 worker 写一份 handoff 文档，reason 为 `retired-between-children`，重心是跨 change 可迁移知识，`Remaining` 留空），再从「该文档 + LEAD 派工简报」双源播种一个新 implementer。探针被**拒绝**时——transcript 属于 Rasen 没有 reader 的 harness，命令以非零退出并指名它——这是第三种结果，而不是一次阈值读数：把该 worker 的占用视为未测量，回退到新开一个 implementer，不要基于未测量的探针暖复用。复用要求**唯一暖前驱**——DAG 汇合点（依赖 >1 个前置的子）一律新开 worker，从各前置的 durable findings 多源播种。被复用的 worker 记录带上 `reusedFrom: <前置子 id>`。planner 复用由 `reuse.planner` 单独配置（`never` 时每次 propose 新开 planner，从 `planning-context.md` 播种）。范围护栏：设计级 fixer 排除（新鲜眼睛是其价值）；Tier B 或不可用的路由句柄走既有暖播种阶梯降级；用户手动连续跑的无关 change 序列不在范围内。实现发现通过 worker `DONE` 契约的 **durable-findings** 条款前向回流（1-3 行，LEAD 原文转贴进下一个 planner 的派工）。
 
 > 注：跨 change 的依赖 DAG 记在 `portfolio-run.json` 里，不依赖 `dependsOn`/`parent` 元数据；待 `add-change-stacking-awareness` 落地后，decompose 会额外写这些元数据并复用 `rasen change graph`。
 
@@ -193,7 +193,7 @@ rasen pipeline list --json                     # 列出 package/user/project 的
 
 ### 3.7 上下文感知与交接（`rasen agent context` + `/rasen-handoff`）
 
-Agent 感知不到自己的上下文占用——它只能**测量**。`rasen agent context` 从 transcript 里记录的 API usage 读出精确占用（`--latest` 测主会话自己，`--transcript <path>` 测某个 worker，`--json` 输出 `{ model, contextTokens, limit, pct }`）。整套交接机制建立在这个探针 + 「离散检查点、绝不注入持续倒计时」的原则上：
+Agent 感知不到自己的上下文占用——它只能**测量**。`rasen agent context` 从 transcript 里记录的 API usage 读出精确占用（`--latest` 测主会话自己，`--transcript <path>` 测某个 worker，`--json` 输出 `{ model, contextTokens, limit, pct, remainingTokens }`）。这两个 flag 的失败方式故意不同：在没有上下文探测适配器的 harness 上，裸 `--latest` 以退出码 0 返回 `{ available: false, reason: "unsupported-host" }`——那是该宿主的正常状态，不是错误；而显式指定的 `--transcript` 指向一个 Rasen 没有对应 reader 的 harness 的会话文件时，会以**非零**退出码并指名该 harness。显式指名文件属于输入，用另一个 harness 的字段名去读只会给出一个什么都不描述的数字。整套交接机制建立在这个探针 + 「离散检查点、绝不注入持续倒计时」的原则上：
 
 - **Session 级**：`/rasen-handoff` 随时可调——探测、写 `rasen/changes/<id>/handoff/lead-<n>.md`（原始意图 / 关键决策 / 死胡同 / 下一步），并把 `sessionHandoff` 指针（含接力代数 `n`）记入 `auto-run.json`。`/rasen-auto` 入口会做一次非阻塞预检：达到阈值时给出三选一——现在自动接力 / 继续本会话 / 手动处理——由用户决定。不交接也没关系——harness 的 auto-compact 是兜底。
 - **Session 接力（主动拉起继任者）**：经用户授权，撞线会话可以自己拉起继任者——在项目根目录打开一个可见的交互式 Claude Code 窗口，bootstrap 指令为「读交接文档 → 运行 `rasen pipeline resume` → 按文档的下一步继续」。不变式：只在 stage 边界接力（所有 worker 已返回、run-state 已落盘）；文档 + run-state 落盘之后才 spawn，spawn 后前任退场；bootstrap prompt 走文件中转（`handoff/relay-prompt.txt`）或 PowerShell `-EncodedCommand`——裸拼引号会被嵌套 shell 解析截断；`sessionHandoff.n` 达到 `maxRelays` 时停止自动接力，改为建议拆分。subagent 绝不跨会话恢复——继任者按「交接文档 / 已记录 transcript / 变更目录」梯度重建 worker。
@@ -407,9 +407,15 @@ rasen pipeline show small-feature --for-execution --planner codex --reviewer cod
 3. stage 的 `runtime`；
 4. pipeline 的 `agents.<role>.runtime`；
 5. 检测到的宿主；
-6. 宿主没有派发适配器时使用旧版 Claude 兼容默认——包括无法识别的宿主，以及可识别但没有派发适配器的宿主（`omp`）。
+6. 宿主没有派发适配器时使用旧版 Claude 兼容默认——包括无法识别的宿主，以及可识别但自身没有派发适配器的宿主（目前是 `zed` 和 `omp`）。
 
-当前发布的路由矩阵：
+路由由**已发布的派发适配器推导得出**，不是查一张固定矩阵。三条规则决定每一对：
+
+1. 没有派发适配器的宿主——无法识别的，或可识别但自身没有适配器的——解析为 `legacy-fallback`。
+2. 具备派发能力的宿主指向自己的 runtime，解析为 `native`。
+3. 其余具备派发能力的组合解析为 `exec-bridge`，走**目标** runtime 自己的适配器所声明的 bridge。
+
+注册表另外维护一份「已知不可用」的组合清单，命中则解析为 `unsupported`；该清单目前为空，所以没有任何已发布组合被拒绝。因此注册一个派发适配器会自动带来它的路由——下表只是这些规则当前推导出的结果，并非另一处事实来源：
 
 | 宿主 | 目标 worker | `dispatchMode` | bridge / 行为 |
 |---|---|---|---|
@@ -418,7 +424,7 @@ rasen pipeline show small-feature --for-execution --planner codex --reviewer cod
 | Codex | Codex | `native` | Codex 原生协作工具；worker 的 final 会自动送达 LEAD |
 | Codex | Claude | `exec-bridge` | `claude-print`：通过 `rasen agent dispatch` 运行有界 Claude print 进程；预检最多探测一次 Claude Code CLI |
 | unknown | 旧版兼容目标 | `legacy-fallback` | 非致命告警；可设置 `RASEN_AGENT_RUNTIME=claude|codex` 明确宿主 |
-| 可识别但无派发适配器（`omp`） | 旧版兼容目标 | `legacy-fallback` | 非致命告警并指明宿主名；stage 报告 `runtimeSource: legacy-default`，而不是 `host` |
+| 可识别但无派发适配器（`zed`、`omp`） | 旧版兼容目标 | `legacy-fallback` | 非致命告警并指明宿主名；stage 报告 `runtimeSource: legacy-default`，而不是 `host` |
 
 `claude-print` bridge 以 Claude Code CLI 2.1.220 为已验证前提，需要 `PATH` 中存在兼容的 `claude` 可执行文件。它通过 stdin 传入完整 prompt，禁用 Claude 委派/team 工具，并且只接受所选的严格结构化契约：
 

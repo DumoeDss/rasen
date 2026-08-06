@@ -15,6 +15,8 @@ import {
   parseClaudeResultEnvelope,
   runClaudePrint,
 } from '../../../src/core/claude/index.js';
+import { spawnAgentCli } from '../../../src/core/agent-cli-process.js';
+import { detectHostRuntime } from '../../../src/core/runtime-adapters.js';
 
 const fixtureDir = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -391,6 +393,38 @@ describe('bounded Claude process runner', () => {
       ok: true,
       result: { status: 'DONE', summary: '中文🙂' },
     });
+  });
+
+  // A child inherits the SPAWNING harness's fingerprints, and the Codex ones
+  // outrank `CLAUDECODE`. Only the runner can fix this — the worker cannot
+  // tell its parent's environment from its own. `RASEN_AGENT_RUNTIME` is
+  // deliberately not scrubbed by the setup file, so this asserts the merge
+  // rather than an ambient default.
+  it.each([
+    ['codex fingerprints', { CODEX_THREAD_ID: 'parent-thread', CODEX_SANDBOX: 'workspace-write' }],
+    ['a harness that sets claude values of its own', { OMPCODE: '1', CLAUDECODE: '1' }],
+  ])('identifies a bridged worker as claude under %s', async (_label, hostFingerprints) => {
+    let childEnv: NodeJS.ProcessEnv | undefined;
+    const receipt = await runClaude({
+      binary: fakeBinary,
+      invocation: invocation('success'),
+      cwd,
+      timeoutMs: 5000,
+      env: { ...process.env, ...hostFingerprints, RASEN_RUNNER_CANARY: 'kept' },
+      spawn: ((binary, args, options) => {
+        childEnv = options.env;
+        return spawnAgentCli(binary, args, options);
+      }) as Parameters<typeof runClaudePrint>[0]['spawn'],
+    });
+
+    expect(receipt.ok).toBe(true);
+    expect(detectHostRuntime(childEnv)).toEqual({ runtime: 'claude', source: 'env-override' });
+    // Establishing identity changes nothing else: every inherited value,
+    // including the host's own fingerprints, still reaches the worker.
+    for (const [key, value] of Object.entries(hostFingerprints)) {
+      expect(childEnv?.[key]).toBe(value);
+    }
+    expect(childEnv?.RASEN_RUNNER_CANARY).toBe('kept');
   });
 
   it('recovers a writer claim whose recorded owner is provably dead', async () => {

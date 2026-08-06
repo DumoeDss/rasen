@@ -64,6 +64,7 @@ import { resolveEffectiveConfigWithMetadata } from '../core/effective-config.js'
 import { getChangeDir, resolveCurrentPlanningHomeSync } from '../core/planning-home.js';
 import type { ThresholdValue } from '../core/pipeline-registry/types.js';
 import type { WorkerContract } from '../core/worker-contracts.js';
+import { DISPATCH_ADAPTERS } from '../core/runtimes/dispatch-adapters.js';
 import { runAudit } from '../core/token-audit/audit.js';
 import { TranscriptFormatError } from '../core/token-audit/errors.js';
 import { isCodexAuditResult, isZedAuditResult, type AuditResult } from '../core/token-audit/types.js';
@@ -391,16 +392,17 @@ export class AgentCommand {
       return invalid(`--cwd does not exist or is unreadable: ${cwd}`);
     }
 
+    const adapter = DISPATCH_ADAPTERS.claude;
     const binary = resolveAgentCliBinary({
-      envVar: 'RASEN_CLAUDE_BIN',
-      binaryName: 'claude',
+      envVar: adapter.binaryEnvVar,
+      binaryName: adapter.defaultBinary,
     });
     if (!binary) {
       return emit(
         claudeFailureReceipt(
           contract,
           'runtime-unavailable',
-          'Claude Code CLI is unavailable. Install Claude Code or set RASEN_CLAUDE_BIN.',
+          `${adapter.installHint} is unavailable. Install ${adapter.cliLabel} or set ${adapter.binaryEnvVar}.`,
           { cwd }
         )
       );

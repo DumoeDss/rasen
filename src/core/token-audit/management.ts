@@ -100,6 +100,270 @@ function runtimeOf(value: unknown): AuditRuntime | null {
   return hasRuntimeCapability(value, 'canAudit') ? value : null;
 }
 
+const isNumber = (item: unknown): item is number =>
+  typeof item === 'number' && Number.isFinite(item);
+const isNullableNumber = (item: unknown): boolean => item === null || isNumber(item);
+const isNullableString = (item: unknown): boolean => item === null || typeof item === 'string';
+const hasNumbers = (item: unknown, fields: string[]): boolean => {
+  const object = asObject(item);
+  return !!object && fields.every((field) => isNumber(object[field]));
+};
+const hasStringArray = (item: unknown): boolean =>
+  Array.isArray(item) && item.every((entry) => typeof entry === 'string');
+const hasNumericValues = (item: unknown): boolean => {
+  const object = asObject(item);
+  return !!object && Object.values(object).every(isNumber);
+};
+const isRebuildRollup = (item: unknown): boolean => {
+  const rollup = asObject(item);
+  const byCause = asObject(rollup?.byCause);
+  return !!rollup &&
+    hasNumbers(rollup, ['events', 'rewroteTokens']) &&
+    !!byCause &&
+    Object.values(byCause).every((cause) => hasNumbers(cause, ['events', 'rewroteTokens']));
+};
+
+/**
+ * What a per-runtime report-shape validator is given: the already-parsed
+ * report and session objects, plus the shared rejection.
+ */
+interface ReportShapeContext {
+  report: Record<string, unknown>;
+  session: Record<string, unknown>;
+  invalid: () => never;
+}
+
+function validateClaudeReportShape({ report, session, invalid }: ReportShapeContext): void {
+  if (
+    !hasNumbers(report.pricing, ['cacheReadX', 'cacheWriteMainX', 'cacheWriteSubX']) ||
+    !hasNumbers(report.totals, [
+      'requests',
+      'outputTokens',
+      'inputRaw',
+      'cacheWrite',
+      'cacheRead',
+      'billedInputEq',
+    ])
+  ) invalid();
+  const totals = asObject(report.totals)!;
+  const churn = asObject(totals.churn);
+  const resumes = asObject(totals.resumes);
+  if (
+    !churn ||
+    !isNumber(churn.tokens) ||
+    !isNumber(churn.events) ||
+    !asObject(churn.byCause) ||
+    !resumes ||
+    !hasNumbers(resumes, ['hit', 'miss', 'missRewrote']) ||
+    !asObject(report.byModel) ||
+    !hasNumericValues(report.gapHistogram) ||
+    !Array.isArray(report.agents) ||
+    !Array.isArray(report.churnEvents)
+  ) invalid();
+  if (
+    !Object.values(asObject(report.byModel)!).every((value) =>
+      hasNumbers(value, ['requests', 'outputTokens', 'cacheWrite', 'cacheRead'])
+    ) ||
+    !Object.values(asObject(churn!.byCause)!).every((value) =>
+      hasNumbers(value, ['tokens', 'events'])
+    )
+  ) invalid();
+  const requests = asObject(report.requests);
+  if (
+    !requests ||
+    !hasStringArray(requests.columns) ||
+    !hasStringArray(requests.classes) ||
+    !Array.isArray(requests.rows) ||
+    !requests.rows.every(
+      (row) => Array.isArray(row) && row.every((cell) => cell === null || isNumber(cell))
+    )
+  ) invalid();
+  for (const agentValue of report.agents as unknown[]) {
+    const agent = asObject(agentValue);
+    if (
+      !agent ||
+      !isNumber(agent.index) ||
+      typeof agent.label !== 'string' ||
+      typeof agent.roleFamily !== 'string' ||
+      typeof agent.kind !== 'string' ||
+      !asObject(agent.models) ||
+      !hasNumericValues(agent.models) ||
+      !isNullableNumber(agent.firstTs) ||
+      !isNullableNumber(agent.lastTs) ||
+      !hasNumbers(agent, [
+        'requests',
+        'outputTokens',
+        'cacheWrite',
+        'cacheRead',
+        'billedInputEq',
+        'peakContext',
+        'spawnWrite',
+      ]) ||
+      !hasNumbers(agent.churn, ['tokens', 'events']) ||
+      !hasNumbers(agent.resumes, ['hit', 'miss'])
+    ) invalid();
+  }
+  for (const eventValue of report.churnEvents as unknown[]) {
+    const event = asObject(eventValue);
+    if (
+      !event ||
+      typeof event.cause !== 'string' ||
+      !isNumber(event.agent) ||
+      !isNullableNumber(event.ts) ||
+      !isNullableNumber(event.gapMin) ||
+      !hasNumbers(event, ['rewrote', 'prevPrefix', 'readNow']) ||
+      typeof event.forked !== 'boolean' ||
+      typeof event.injected !== 'boolean'
+    ) invalid();
+  }
+}
+
+function validateCodexReportShape({ report, session, invalid }: ReportShapeContext): void {
+  const totals = asObject(report.totals);
+  if (
+    !totals ||
+    !isNumber(totals.requests) ||
+    !isNumber(totals.cacheHitRatio) ||
+    !hasNumbers(totals.rawTokens, [
+      'inputTokens',
+      'cachedInputTokens',
+      'cacheWriteInputTokens',
+      'outputTokens',
+      'reasoningOutputTokens',
+      'totalTokens',
+    ]) ||
+    !Array.isArray(report.agents)
+  ) invalid();
+  if (
+    (session.forkedFrom !== undefined && typeof session.forkedFrom !== 'string') ||
+    (totals!.rebuilds !== undefined && !isRebuildRollup(totals!.rebuilds))
+  ) invalid();
+  for (const agentValue of report.agents as unknown[]) {
+    const agent = asObject(agentValue);
+    if (
+      !agent ||
+      !isNumber(agent.index) ||
+      typeof agent.label !== 'string' ||
+      typeof agent.kind !== 'string' ||
+      !isNumber(agent.requests) ||
+      !isNumber(agent.cacheHitRatio) ||
+      !hasNumbers(agent.rawTokens, [
+        'inputTokens',
+        'cachedInputTokens',
+        'cacheWriteInputTokens',
+        'outputTokens',
+        'reasoningOutputTokens',
+        'totalTokens',
+      ]) ||
+      !Array.isArray(agent.turns)
+    ) invalid();
+    if (
+      (agent!.key !== undefined && typeof agent!.key !== 'string') ||
+      (agent!.threadId !== undefined && typeof agent!.threadId !== 'string') ||
+      (agent!.parentThreadId !== undefined && !isNullableString(agent!.parentThreadId)) ||
+      (agent!.firstTs !== undefined && !isNullableNumber(agent!.firstTs)) ||
+      (agent!.lastTs !== undefined && !isNullableNumber(agent!.lastTs)) ||
+      (agent!.peakContext !== undefined && !isNumber(agent!.peakContext)) ||
+      (agent!.modelContextWindow !== undefined && !isNullableNumber(agent!.modelContextWindow)) ||
+      (agent!.bursts !== undefined && !Array.isArray(agent!.bursts)) ||
+      (agent!.rebuilds !== undefined && !isRebuildRollup(agent!.rebuilds))
+    ) invalid();
+    for (const turnValue of agent!.turns as unknown[]) {
+      const turn = asObject(turnValue);
+      if (
+        !turn ||
+        !(turn.turnId === null || typeof turn.turnId === 'string') ||
+        !isNullableNumber(turn.start) ||
+        !isNullableNumber(turn.end) ||
+        !isNumber(turn.requests) ||
+        !isNumber(turn.cacheHitRatio) ||
+        !hasNumbers(turn.rawTokens, [
+          'inputTokens',
+          'cachedInputTokens',
+          'cacheWriteInputTokens',
+          'outputTokens',
+          'reasoningOutputTokens',
+          'totalTokens',
+        ]) ||
+        (turn.aborted !== undefined && typeof turn.aborted !== 'boolean')
+      ) invalid();
+    }
+  }
+  const requests = report.requests === undefined ? null : asObject(report.requests);
+  if (
+    report.requests !== undefined &&
+    (!requests ||
+      !hasStringArray(requests.columns) ||
+      !hasStringArray(requests.classes) ||
+      !Array.isArray(requests.rows) ||
+      !requests.rows.every(
+        (row) => Array.isArray(row) && row.every((cell) => cell === null || isNumber(cell))
+      ))
+  ) invalid();
+  if (
+    report.rebuildEvents !== undefined &&
+    (!Array.isArray(report.rebuildEvents) ||
+      !report.rebuildEvents.every((eventValue) => {
+        const event = asObject(eventValue);
+        return !!event &&
+          typeof event.cause === 'string' &&
+          isNumber(event.agent) &&
+          isNullableNumber(event.ts) &&
+          isNullableNumber(event.gapMin) &&
+          hasNumbers(event, ['rewrote', 'prevPrefix', 'readNow']) &&
+          (event.compacted === undefined || typeof event.compacted === 'boolean') &&
+          (event.injected === undefined || typeof event.injected === 'boolean') &&
+          (event.rolledBack === undefined || typeof event.rolledBack === 'boolean') &&
+          (event.approximate === undefined || typeof event.approximate === 'boolean');
+      }))
+  ) invalid();
+  if (
+    report.unsupportedDimensions !== undefined &&
+    (!Array.isArray(report.unsupportedDimensions) ||
+      !report.unsupportedDimensions.every((item) => {
+        const dimension = asObject(item);
+        return !!dimension &&
+          typeof dimension.dimension === 'string' &&
+          typeof dimension.reason === 'string';
+      }))
+  ) invalid();
+}
+
+function validateZedReportShape({ report, session, invalid }: ReportShapeContext): void {
+  const totals = asObject(report.totals);
+  const source = asObject(report.source);
+  if (
+    !totals ||
+    !isNumber(totals.retainedRequests) ||
+    !isNumber(totals.cacheHitRatio) ||
+    !hasNumbers(totals.rawTokens, ['inputTokens', 'cachedInputTokens', 'outputTokens']) ||
+    !Array.isArray(report.threads) ||
+    !source ||
+    source.adapter !== 'zed-threads-db' ||
+    !(source.dataVersion === null || typeof source.dataVersion === 'string')
+  ) invalid();
+  for (const field of ['title', 'workingDir', 'firstUserCommand'] as const) {
+    const fieldValue = session[field];
+    if (fieldValue !== undefined && !isNullableString(fieldValue)) invalid();
+  }
+  for (const threadValue of report.threads as unknown[]) {
+    const thread = asObject(threadValue);
+    if (
+      !thread ||
+      !isNumber(thread.index) ||
+      typeof thread.threadId !== 'string' ||
+      typeof thread.kind !== 'string' ||
+      !isNumber(thread.retainedRequests) ||
+      !isNumber(thread.cacheHitRatio) ||
+      !hasNumbers(thread.rawTokens, ['inputTokens', 'cachedInputTokens', 'outputTokens'])
+    ) invalid();
+    for (const field of ['title', 'model', 'parentThreadId', 'workingDir', 'firstUserCommand'] as const) {
+      const fieldValue = thread![field];
+      if (fieldValue !== null && fieldValue !== undefined && typeof fieldValue !== 'string') invalid();
+    }
+  }
+}
+
 export function validateAuditReport(value: unknown): AuditResult {
   const report = asObject(value);
   if (!report || (report.schema !== 'rasen-token-audit/1' && report.schema !== 'rasen-token-audit/2')) {
@@ -124,267 +388,16 @@ export function validateAuditReport(value: unknown): AuditResult {
       `The ${runtime} audit report does not match the supported ${String(report.schema)} structure.`
     );
   };
-  const isNumber = (item: unknown): item is number =>
-    typeof item === 'number' && Number.isFinite(item);
-  const isNullableNumber = (item: unknown): boolean => item === null || isNumber(item);
-  const isNullableString = (item: unknown): boolean => item === null || typeof item === 'string';
-  const hasNumbers = (item: unknown, fields: string[]): boolean => {
-    const object = asObject(item);
-    return !!object && fields.every((field) => isNumber(object[field]));
-  };
-  const hasStringArray = (item: unknown): boolean =>
-    Array.isArray(item) && item.every((entry) => typeof entry === 'string');
-  const hasNumericValues = (item: unknown): boolean => {
-    const object = asObject(item);
-    return !!object && Object.values(object).every(isNumber);
-  };
-  const isRebuildRollup = (item: unknown): boolean => {
-    const rollup = asObject(item);
-    const byCause = asObject(rollup?.byCause);
-    return !!rollup &&
-      hasNumbers(rollup, ['events', 'rewroteTokens']) &&
-      !!byCause &&
-      Object.values(byCause).every((cause) => hasNumbers(cause, ['events', 'rewroteTokens']));
-  };
-  const validateCommonSession = (): void => {
-    if (
-      !session ||
-      typeof session.mainTranscript !== 'string' ||
-      !isNullableNumber(session.start) ||
-      !isNullableNumber(session.end) ||
-      !isNullableNumber(session.durationMs) ||
-      !isNumber(session.agentCount)
-    ) invalid();
-  };
-  validateCommonSession();
+  if (
+    typeof session.mainTranscript !== 'string' ||
+    !isNullableNumber(session.start) ||
+    !isNullableNumber(session.end) ||
+    !isNullableNumber(session.durationMs) ||
+    !isNumber(session.agentCount)
+  ) invalid();
   if (report.caveats !== undefined && !hasStringArray(report.caveats)) invalid();
 
-  if (runtime === 'claude') {
-    if (
-      !hasNumbers(report.pricing, ['cacheReadX', 'cacheWriteMainX', 'cacheWriteSubX']) ||
-      !hasNumbers(report.totals, [
-        'requests',
-        'outputTokens',
-        'inputRaw',
-        'cacheWrite',
-        'cacheRead',
-        'billedInputEq',
-      ])
-    ) invalid();
-    const totals = asObject(report.totals)!;
-    const churn = asObject(totals.churn);
-    const resumes = asObject(totals.resumes);
-    if (
-      !churn ||
-      !isNumber(churn.tokens) ||
-      !isNumber(churn.events) ||
-      !asObject(churn.byCause) ||
-      !resumes ||
-      !hasNumbers(resumes, ['hit', 'miss', 'missRewrote']) ||
-      !asObject(report.byModel) ||
-      !hasNumericValues(report.gapHistogram) ||
-      !Array.isArray(report.agents) ||
-      !Array.isArray(report.churnEvents)
-    ) invalid();
-    if (
-      !Object.values(asObject(report.byModel)!).every((value) =>
-        hasNumbers(value, ['requests', 'outputTokens', 'cacheWrite', 'cacheRead'])
-      ) ||
-      !Object.values(asObject(churn!.byCause)!).every((value) =>
-        hasNumbers(value, ['tokens', 'events'])
-      )
-    ) invalid();
-    const requests = asObject(report.requests);
-    if (
-      !requests ||
-      !hasStringArray(requests.columns) ||
-      !hasStringArray(requests.classes) ||
-      !Array.isArray(requests.rows) ||
-      !requests.rows.every(
-        (row) => Array.isArray(row) && row.every((cell) => cell === null || isNumber(cell))
-      )
-    ) invalid();
-    for (const agentValue of report.agents as unknown[]) {
-      const agent = asObject(agentValue);
-      if (
-        !agent ||
-        !isNumber(agent.index) ||
-        typeof agent.label !== 'string' ||
-        typeof agent.roleFamily !== 'string' ||
-        typeof agent.kind !== 'string' ||
-        !asObject(agent.models) ||
-        !hasNumericValues(agent.models) ||
-        !isNullableNumber(agent.firstTs) ||
-        !isNullableNumber(agent.lastTs) ||
-        !hasNumbers(agent, [
-          'requests',
-          'outputTokens',
-          'cacheWrite',
-          'cacheRead',
-          'billedInputEq',
-          'peakContext',
-          'spawnWrite',
-        ]) ||
-        !hasNumbers(agent.churn, ['tokens', 'events']) ||
-        !hasNumbers(agent.resumes, ['hit', 'miss'])
-      ) invalid();
-    }
-    for (const eventValue of report.churnEvents as unknown[]) {
-      const event = asObject(eventValue);
-      if (
-        !event ||
-        typeof event.cause !== 'string' ||
-        !isNumber(event.agent) ||
-        !isNullableNumber(event.ts) ||
-        !isNullableNumber(event.gapMin) ||
-        !hasNumbers(event, ['rewrote', 'prevPrefix', 'readNow']) ||
-        typeof event.forked !== 'boolean' ||
-        typeof event.injected !== 'boolean'
-      ) invalid();
-    }
-  } else if (runtime === 'codex') {
-    const totals = asObject(report.totals);
-    if (
-      !totals ||
-      !isNumber(totals.requests) ||
-      !isNumber(totals.cacheHitRatio) ||
-      !hasNumbers(totals.rawTokens, [
-        'inputTokens',
-        'cachedInputTokens',
-        'cacheWriteInputTokens',
-        'outputTokens',
-        'reasoningOutputTokens',
-        'totalTokens',
-      ]) ||
-      !Array.isArray(report.agents)
-    ) invalid();
-    if (
-      (session.forkedFrom !== undefined && typeof session.forkedFrom !== 'string') ||
-      (totals!.rebuilds !== undefined && !isRebuildRollup(totals!.rebuilds))
-    ) invalid();
-    for (const agentValue of report.agents as unknown[]) {
-      const agent = asObject(agentValue);
-      if (
-        !agent ||
-        !isNumber(agent.index) ||
-        typeof agent.label !== 'string' ||
-        typeof agent.kind !== 'string' ||
-        !isNumber(agent.requests) ||
-        !isNumber(agent.cacheHitRatio) ||
-        !hasNumbers(agent.rawTokens, [
-          'inputTokens',
-          'cachedInputTokens',
-          'cacheWriteInputTokens',
-          'outputTokens',
-          'reasoningOutputTokens',
-          'totalTokens',
-        ]) ||
-        !Array.isArray(agent.turns)
-      ) invalid();
-      if (
-        (agent!.key !== undefined && typeof agent!.key !== 'string') ||
-        (agent!.threadId !== undefined && typeof agent!.threadId !== 'string') ||
-        (agent!.parentThreadId !== undefined && !isNullableString(agent!.parentThreadId)) ||
-        (agent!.firstTs !== undefined && !isNullableNumber(agent!.firstTs)) ||
-        (agent!.lastTs !== undefined && !isNullableNumber(agent!.lastTs)) ||
-        (agent!.peakContext !== undefined && !isNumber(agent!.peakContext)) ||
-        (agent!.modelContextWindow !== undefined && !isNullableNumber(agent!.modelContextWindow)) ||
-        (agent!.bursts !== undefined && !Array.isArray(agent!.bursts)) ||
-        (agent!.rebuilds !== undefined && !isRebuildRollup(agent!.rebuilds))
-      ) invalid();
-      for (const turnValue of agent!.turns as unknown[]) {
-        const turn = asObject(turnValue);
-        if (
-          !turn ||
-          !(turn.turnId === null || typeof turn.turnId === 'string') ||
-          !isNullableNumber(turn.start) ||
-          !isNullableNumber(turn.end) ||
-          !isNumber(turn.requests) ||
-          !isNumber(turn.cacheHitRatio) ||
-          !hasNumbers(turn.rawTokens, [
-            'inputTokens',
-            'cachedInputTokens',
-            'cacheWriteInputTokens',
-            'outputTokens',
-            'reasoningOutputTokens',
-            'totalTokens',
-          ]) ||
-          (turn.aborted !== undefined && typeof turn.aborted !== 'boolean')
-        ) invalid();
-      }
-    }
-    const requests = report.requests === undefined ? null : asObject(report.requests);
-    if (
-      report.requests !== undefined &&
-      (!requests ||
-        !hasStringArray(requests.columns) ||
-        !hasStringArray(requests.classes) ||
-        !Array.isArray(requests.rows) ||
-        !requests.rows.every(
-          (row) => Array.isArray(row) && row.every((cell) => cell === null || isNumber(cell))
-        ))
-    ) invalid();
-    if (
-      report.rebuildEvents !== undefined &&
-      (!Array.isArray(report.rebuildEvents) ||
-        !report.rebuildEvents.every((eventValue) => {
-          const event = asObject(eventValue);
-          return !!event &&
-            typeof event.cause === 'string' &&
-            isNumber(event.agent) &&
-            isNullableNumber(event.ts) &&
-            isNullableNumber(event.gapMin) &&
-            hasNumbers(event, ['rewrote', 'prevPrefix', 'readNow']) &&
-            (event.compacted === undefined || typeof event.compacted === 'boolean') &&
-            (event.injected === undefined || typeof event.injected === 'boolean') &&
-            (event.rolledBack === undefined || typeof event.rolledBack === 'boolean') &&
-            (event.approximate === undefined || typeof event.approximate === 'boolean');
-        }))
-    ) invalid();
-    if (
-      report.unsupportedDimensions !== undefined &&
-      (!Array.isArray(report.unsupportedDimensions) ||
-        !report.unsupportedDimensions.every((item) => {
-          const dimension = asObject(item);
-          return !!dimension &&
-            typeof dimension.dimension === 'string' &&
-            typeof dimension.reason === 'string';
-        }))
-    ) invalid();
-  } else {
-    const totals = asObject(report.totals);
-    const source = asObject(report.source);
-    if (
-      !totals ||
-      !isNumber(totals.retainedRequests) ||
-      !isNumber(totals.cacheHitRatio) ||
-      !hasNumbers(totals.rawTokens, ['inputTokens', 'cachedInputTokens', 'outputTokens']) ||
-      !Array.isArray(report.threads) ||
-      !source ||
-      source.adapter !== 'zed-threads-db' ||
-      !(source.dataVersion === null || typeof source.dataVersion === 'string')
-    ) invalid();
-    for (const field of ['title', 'workingDir', 'firstUserCommand'] as const) {
-      const fieldValue = session[field];
-      if (fieldValue !== undefined && !isNullableString(fieldValue)) invalid();
-    }
-    for (const threadValue of report.threads as unknown[]) {
-      const thread = asObject(threadValue);
-      if (
-        !thread ||
-        !isNumber(thread.index) ||
-        typeof thread.threadId !== 'string' ||
-        typeof thread.kind !== 'string' ||
-        !isNumber(thread.retainedRequests) ||
-        !isNumber(thread.cacheHitRatio) ||
-        !hasNumbers(thread.rawTokens, ['inputTokens', 'cachedInputTokens', 'outputTokens'])
-      ) invalid();
-      for (const field of ['title', 'model', 'parentThreadId', 'workingDir', 'firstUserCommand'] as const) {
-        const fieldValue = thread![field];
-        if (fieldValue !== null && fieldValue !== undefined && typeof fieldValue !== 'string') invalid();
-      }
-    }
-  }
+  AUDIT_MANAGEMENT[runtime].validateReportShape({ report, session, invalid });
   return value as AuditResult;
 }
 
@@ -655,14 +668,11 @@ export function discoverAuditSessions(
   const limit = Math.max(1, Math.min(MAX_RECENT_AUDIT_LIMIT, Math.trunc(requestedLimit)));
   const sessions: RecentAuditSession[] = [];
   const diagnostics: AuditRuntimeDiagnostic[] = [];
-  const discoverers: Array<[AuditRuntime, () => RecentAuditSession[]]> = [
-    ['claude', () => discoverClaude(options, limit)],
-    ['codex', () => discoverCodex(options, limit)],
-    ['zed', () => discoverZed(options, limit)],
-  ];
-  for (const [runtime, discover] of discoverers) {
+  for (const [runtime, adapter] of Object.entries(AUDIT_MANAGEMENT) as Array<
+    [AuditRuntime, (typeof AUDIT_MANAGEMENT)[AuditRuntime]]
+  >) {
     try {
-      sessions.push(...discover());
+      sessions.push(...adapter.discoverRecent(options, limit));
       diagnostics.push({ runtime, available: true });
     } catch (error) {
       diagnostics.push({
@@ -692,6 +702,105 @@ export function discoverAuditSessions(
   return { sessions: unique.slice(0, limit), diagnostics, limit };
 }
 
+function resolveClaudeNativeTarget(
+  sessionId: string,
+  options: AuditManagementOptions
+): NativeTarget {
+  const runtime = 'claude' as const;
+  const matches: Array<{ dir: string; mtimeMs: number }> = [];
+  for (const project of safeDirEntries(claudeRoot(options))) {
+    if (!project.isDirectory()) continue;
+    const candidate = path.join(claudeRoot(options), project.name, `${sessionId}.jsonl`);
+    try {
+      const stat = fs.lstatSync(candidate);
+      if (stat.isFile() && !stat.isSymbolicLink()) matches.push({ dir: path.dirname(candidate), mtimeMs: stat.mtimeMs });
+    } catch {
+      // no exact transcript in this project
+    }
+  }
+  if (matches.length === 0) {
+    throw new AuditServiceError(
+      404,
+      'audit_session_not_found',
+      `Claude session "${sessionId}" is no longer available.`
+    );
+  }
+  matches.sort((a, b) => b.mtimeMs - a.mtimeMs || a.dir.localeCompare(b.dir));
+  return {
+    target: sessionId,
+    options: { ...options, runtime, projectsDir: matches[0].dir },
+  };
+}
+
+function resolveCodexNativeTarget(
+  sessionId: string,
+  options: AuditManagementOptions
+): NativeTarget {
+  const runtime = 'codex' as const;
+  const matches = discoverCodex(options, MAX_RECENT_AUDIT_LIMIT).filter((item) => item.sessionId === sessionId);
+  if (matches.length === 0) {
+    throw new AuditServiceError(404, 'audit_session_not_found', `Codex session "${sessionId}" is no longer available.`);
+  }
+  return {
+    target: sessionId,
+    options: { ...options, runtime, codexHome: options.codexHome ?? resolveCodexHome() },
+  };
+}
+
+function resolveZedNativeTarget(
+  sessionId: string,
+  options: AuditManagementOptions
+): NativeTarget {
+  const runtime = 'zed' as const;
+  const dbPath = options.zedDbPath ?? resolveDefaultZedDbPath(options);
+  const db = openZedDatabase(dbPath);
+  try {
+  const matches = queryRootThreadIds(db, sessionId);
+  if (matches.length !== 1) {
+    throw new AuditServiceError(404, 'audit_session_not_found', `Zed session "${sessionId}" is no longer available.`);
+  }
+  } finally {
+  db.close();
+  }
+  return { target: sessionId, options: { ...options, runtime, db: dbPath } };
+}
+
+/**
+ * Per-runtime management operations, checked against `AuditRuntime`. Adding an
+ * audit-capable runtime without an entry here fails the build; an entry for a
+ * runtime that declares no audit capability fails it too. Neither can degrade
+ * into "the implicit else must be Zed", which is what these three lookups
+ * replace.
+ *
+ * Declared here rather than on the shipped `AUDIT_READERS` adapters because
+ * these are management-API concerns — UI session discovery and report import
+ * validation — that the core auditors have no use for.
+ */
+const AUDIT_MANAGEMENT = {
+  claude: {
+    validateReportShape: validateClaudeReportShape,
+    discoverRecent: discoverClaude,
+    resolveNativeTarget: resolveClaudeNativeTarget,
+  },
+  codex: {
+    validateReportShape: validateCodexReportShape,
+    discoverRecent: discoverCodex,
+    resolveNativeTarget: resolveCodexNativeTarget,
+  },
+  zed: {
+    validateReportShape: validateZedReportShape,
+    discoverRecent: discoverZed,
+    resolveNativeTarget: resolveZedNativeTarget,
+  },
+} satisfies Record<
+  AuditRuntime,
+  {
+    validateReportShape: (ctx: ReportShapeContext) => void;
+    discoverRecent: (options: AuditManagementOptions, limit: number) => RecentAuditSession[];
+    resolveNativeTarget: (sessionId: string, options: AuditManagementOptions) => NativeTarget;
+  }
+>;
+
 export function resolveNativeAuditTarget(
   runtime: AuditRuntime,
   sessionId: string,
@@ -700,52 +809,7 @@ export function resolveNativeAuditTarget(
   if (!sessionId || sessionId.includes('/') || sessionId.includes('\\') || sessionId.includes('\0')) {
     throw new AuditServiceError(400, 'invalid_session', 'A valid exact session id is required.');
   }
-  if (runtime === 'claude') {
-    const matches: Array<{ dir: string; mtimeMs: number }> = [];
-    for (const project of safeDirEntries(claudeRoot(options))) {
-      if (!project.isDirectory()) continue;
-      const candidate = path.join(claudeRoot(options), project.name, `${sessionId}.jsonl`);
-      try {
-        const stat = fs.lstatSync(candidate);
-        if (stat.isFile() && !stat.isSymbolicLink()) matches.push({ dir: path.dirname(candidate), mtimeMs: stat.mtimeMs });
-      } catch {
-        // no exact transcript in this project
-      }
-    }
-    if (matches.length === 0) {
-      throw new AuditServiceError(
-        404,
-        'audit_session_not_found',
-        `Claude session "${sessionId}" is no longer available.`
-      );
-    }
-    matches.sort((a, b) => b.mtimeMs - a.mtimeMs || a.dir.localeCompare(b.dir));
-    return {
-      target: sessionId,
-      options: { ...options, runtime, projectsDir: matches[0].dir },
-    };
-  }
-  if (runtime === 'codex') {
-    const matches = discoverCodex(options, MAX_RECENT_AUDIT_LIMIT).filter((item) => item.sessionId === sessionId);
-    if (matches.length === 0) {
-      throw new AuditServiceError(404, 'audit_session_not_found', `Codex session "${sessionId}" is no longer available.`);
-    }
-    return {
-      target: sessionId,
-      options: { ...options, runtime, codexHome: options.codexHome ?? resolveCodexHome() },
-    };
-  }
-  const dbPath = options.zedDbPath ?? resolveDefaultZedDbPath(options);
-  const db = openZedDatabase(dbPath);
-  try {
-    const matches = queryRootThreadIds(db, sessionId);
-    if (matches.length !== 1) {
-      throw new AuditServiceError(404, 'audit_session_not_found', `Zed session "${sessionId}" is no longer available.`);
-    }
-  } finally {
-    db.close();
-  }
-  return { target: sessionId, options: { ...options, runtime, db: dbPath } };
+  return AUDIT_MANAGEMENT[runtime].resolveNativeTarget(sessionId, options);
 }
 
 function normalizeAuditError(error: unknown): AuditServiceError {
