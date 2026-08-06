@@ -10,7 +10,6 @@ import {
   resolveModelLimit,
   computeContextFromTranscript,
   computeContextFromRollout,
-  detectTranscriptKind,
   claudeProjectsDir,
   findLatestMainTranscript,
   findLatestRollout,
@@ -21,6 +20,14 @@ import {
   DEFAULT_CONTEXT_LIMIT,
   AgentContextUnavailableError,
 } from '../../src/core/agent-context.js';
+import {
+  RUNTIME_ADAPTER_IDS,
+  SNIFF_FALLBACK_RUNTIME,
+} from '../../src/core/runtime-adapters.js';
+import {
+  SESSION_STORE_LIST,
+  detectSessionOwner,
+} from '../../src/core/runtimes/session-stores.js';
 
 /** Serialize an assistant usage entry as one transcript jsonl line. */
 function assistantLine(
@@ -61,6 +68,32 @@ function turnContextLine(model: string): string {
   return JSON.stringify({ type: 'turn_context', payload: { model } });
 }
 
+/**
+ * Oh My Pi reserves a fixed-width `title` row at file creation; the `pad`
+ * field is what lets the title be rewritten in place later. Captured from a
+ * real session file under `~/.omp/agent/sessions/`.
+ */
+const OMP_TITLE_LINE = JSON.stringify({
+  type: 'title',
+  v: 1,
+  title: 'Refactor runtime adapter registry',
+  source: 'auto',
+  updatedAt: '2026-08-06T04:43:28.560Z',
+  pad: ' '.repeat(125),
+});
+const OMP_SESSION_LINE = JSON.stringify({
+  type: 'session',
+  version: 3,
+  id: '019fd520-9cc1-7000-8f0d-54e210c25bca',
+  timestamp: '2026-08-06T03:31:52.129Z',
+  cwd: '/Users/example/project',
+});
+/** One Oh My Pi assistant row: the field names that make the Claude reader report zero. */
+const OMP_MESSAGE_LINE = JSON.stringify({
+  type: 'message',
+  message: { role: 'assistant', usage: { input: 87_848, cacheRead: 0, cacheWrite: 12_000 } },
+});
+
 const SESSION_META_LINE = JSON.stringify({ type: 'session_meta', payload: { cli_version: '0.144.1' } });
 
 describe('agent-context', () => {
@@ -77,6 +110,11 @@ describe('agent-context', () => {
     const p = path.join(dir, name);
     fs.writeFileSync(p, lines.join('\n') + '\n', 'utf-8');
     return p;
+  }
+
+  /** An Oh My Pi session file, in the on-disk row order every real one uses. */
+  function writeOmpSession(name: string): string {
+    return writeTranscript(name, [OMP_TITLE_LINE, OMP_SESSION_LINE, OMP_MESSAGE_LINE]);
   }
 
   describe('resolveModelLimit', () => {
@@ -608,11 +646,11 @@ describe('agent-context', () => {
     });
   });
 
-  describe('detectTranscriptKind', () => {
+  describe('detectSessionOwner', () => {
     it('an explicit override wins outright, regardless of filename or content', () => {
       const p = writeTranscript('rollout-2026-01-01T00-00-00-abc.jsonl', [SESSION_META_LINE]);
-      expect(detectTranscriptKind(p, 'claude')).toBe('claude');
-      expect(detectTranscriptKind(p, 'codex')).toBe('codex');
+      expect(detectSessionOwner(p, 'claude')).toBe('claude');
+      expect(detectSessionOwner(p, 'codex')).toBe('codex');
     });
 
     it.each(['zed', 'omp', 'bogus'])(
@@ -628,29 +666,96 @@ describe('agent-context', () => {
     it('the rollout-*.jsonl filename convention selects codex with zero content I/O', () => {
       // A nonexistent file still detects codex from the name alone — proves no read happens.
       const p = path.join(dir, 'rollout-2026-01-01T00-00-00-abc.jsonl');
-      expect(detectTranscriptKind(p)).toBe('codex');
+      expect(detectSessionOwner(p)).toBe('codex');
     });
 
     it('sniffs a renamed rollout (session_meta first row) as codex', () => {
       const p = writeTranscript('renamed-copy.jsonl', [SESSION_META_LINE, turnContextLine('gpt-5.6-sol')]);
-      expect(detectTranscriptKind(p)).toBe('codex');
+      expect(detectSessionOwner(p)).toBe('codex');
     });
 
     it('sniffs the real captured rollout fixture as codex', () => {
-      expect(detectTranscriptKind(FIXTURE_ROLLOUT)).toBe('codex');
+      expect(detectSessionOwner(FIXTURE_ROLLOUT)).toBe('codex');
     });
 
-    it('defaults to claude for a Claude-shaped or unrecognized first line', () => {
-      const claudeShaped = writeTranscript('renamed-claude.jsonl', [
+    it('claims a Claude transcript for claude', () => {
+      const p = writeTranscript('renamed-claude.jsonl', [
         assistantLine('claude-opus-4-8', { input_tokens: 1 }),
       ]);
-      expect(detectTranscriptKind(claudeShaped)).toBe('claude');
+      expect(detectSessionOwner(p)).toBe('claude');
+    });
 
-      const empty = writeTranscript('empty.jsonl', []);
-      expect(detectTranscriptKind(empty)).toBe('claude');
+    it('claims a Zed thread database by path, without reading it', () => {
+      // Never written: recognition by extension must not depend on content.
+      expect(detectSessionOwner(path.join(dir, 'threads.db'))).toBe('zed');
+      expect(detectSessionOwner(path.join(dir, 'archive.sqlite'))).toBe('zed');
+    });
 
-      const missing = path.join(dir, 'does-not-exist.jsonl');
-      expect(detectTranscriptKind(missing)).toBe('claude');
+    it('claims an Oh My Pi session file despite the shared .jsonl convention', () => {
+      expect(detectSessionOwner(writeOmpSession('omp-session.jsonl'))).toBe('omp');
+    });
+
+    it('claims an Oh My Pi session file whose title row was never reserved', () => {
+      const p = writeTranscript('omp-untitled.jsonl', [OMP_SESSION_LINE]);
+      expect(detectSessionOwner(p)).toBe('omp');
+    });
+
+    it('resolves an unclaimed target to the declared fallback', () => {
+      expect(detectSessionOwner(writeTranscript('unclaimed.jsonl', ['{"nothing":1}']))).toBe(
+        SNIFF_FALLBACK_RUNTIME
+      );
+      expect(detectSessionOwner(writeTranscript('empty.jsonl', []))).toBe(SNIFF_FALLBACK_RUNTIME);
+      expect(detectSessionOwner(path.join(dir, 'does-not-exist.jsonl'))).toBe(
+        SNIFF_FALLBACK_RUNTIME
+      );
+      expect(SNIFF_FALLBACK_RUNTIME).toBe('claude');
+    });
+
+    it('refuses to read a target that is not a regular file', () => {
+      // Recognition is reached for ANY target now that probe and audit share
+      // it, including paths no harness wrote. Reading a character device to
+      // find "the first line" never returns: `agent audit /dev/zero` hung with
+      // no output where it previously failed actionably. A directory covers the
+      // same guard on every platform; the device case is POSIX-only.
+      const started = Date.now();
+      expect(detectSessionOwner(dir)).toBe(SNIFF_FALLBACK_RUNTIME);
+      if (process.platform !== 'win32') {
+        expect(detectSessionOwner('/dev/zero')).toBe(SNIFF_FALLBACK_RUNTIME);
+      }
+      expect(Date.now() - started).toBeLessThan(2_000);
+    });
+
+    it('consults every registered runtime, so a new store cannot be left out of the pass', () => {
+      expect([...SESSION_STORE_LIST].map((store) => store.id).sort()).toEqual(
+        [...RUNTIME_ADAPTER_IDS].sort()
+      );
+    });
+  });
+
+  describe('a recognized harness with no context reader', () => {
+    it('refuses an explicit --transcript by name instead of measuring it', () => {
+      const p = writeOmpSession('omp-explicit.jsonl');
+      expect(() => probeAgentContext({ transcript: p })).toThrow(
+        /No context reader exists for the recognized session runtime "omp"/
+      );
+    });
+
+    it('names what Rasen can probe instead of leaving the user stuck', () => {
+      const p = writeOmpSession('omp-advice.jsonl');
+      expect(() => probeAgentContext({ transcript: p })).toThrow(/claude and codex/);
+    });
+
+    it('reports absence from the opportunistic estimate, never a zero occupancy', () => {
+      const p = writeOmpSession('omp-estimate.jsonl');
+      expect(tryContextEstimate(p)).toBeUndefined();
+    });
+
+    it('still measures a Claude transcript that merely lives beside one', () => {
+      writeOmpSession('omp-neighbour.jsonl');
+      const claude = writeTranscript('real-claude.jsonl', [
+        assistantLine('claude-opus-4-8', { input_tokens: 250_000 }),
+      ]);
+      expect(probeAgentContext({ transcript: claude }).contextTokens).toBe(250_000);
     });
   });
 

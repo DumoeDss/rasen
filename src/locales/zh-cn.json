@@ -2603,7 +2603,7 @@
               "description": "根据已记录的使用量报告 transcript 的上下文窗口占用率",
               "options": {
                 "transcript": {
-                  "description": "Claude Code transcript 或 Codex rollout jsonl 的路径"
+                  "description": "Claude Code transcript 或 Codex rollout jsonl 的路径；来自其他已识别 harness 的会话文件会指名拒绝，而不是被测量"
                 },
                 "latest": {
                   "description": "使用当前目录最新的 main-session transcript"
@@ -2643,7 +2643,7 @@
               }
             },
             "audit": {
-              "description": "根据 Claude transcript、Codex rollout 或 Zed 线程数据库分析一次会话的 token 花费（实验性功能：解析内部未公开的格式，harness 或 Zed 升级可能导致失效）",
+              "description": "根据 Claude transcript、Codex rollout 或 Zed 线程数据库分析一次会话的 token 花费；来自其他已识别 harness 的会话文件会指名拒绝，而不是报告为 0（实验性功能：解析内部未公开的格式，harness 或 Zed 升级可能导致失效）",
               "options": {
                 "projects-dir": {
                   "description": "覆盖用于解析 session id 的 Claude projects 目录"

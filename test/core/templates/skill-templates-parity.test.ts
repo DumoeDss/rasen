@@ -1,4 +1,4 @@
-﻿import { createHash } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -73,13 +73,13 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getShipCommandSkillTemplate: 'c18415efe4442403ed9fd4201785e56249aa32c762df3744dfbf5d7d7d366d53',
   getRetainCommandSkillTemplate: '7d393153b2598fa1cafe00215f496892f01bc9ccfa757ffeaa913b77aef2ceae',
   getRetroCommandSkillTemplate: '64725c0d0c2d5ee285de0186c62e9bb9cfc6b2ddc95eabd408e089ff1d00c6db',
-  getAutoCommandSkillTemplate: '8abd99383251cf48091ad344af4af0937ebbe24fb90f7738678959a635ce32b3',
-  getReviewCycleSkillTemplate: '3e6ab2f232e0ee3fb4754b1907676e27a8c752f783e26c69f0b5e3c36dd6c240',
-  getHandoffSkillTemplate: '608c6aa14ce45a85af119bcb9f0beaebec7c35705197ac23ad7ad651e2543e8c',
+  getAutoCommandSkillTemplate: '6af8b8654556d0e0294d73c5d7fe14dfc5a08607452c1f2dbb22ae557067dfea',
+  getReviewCycleSkillTemplate: '0308bda928bfb8d935182fbc78d0e360f7f2ca27dae1d66466e393a9908042db',
+  getHandoffSkillTemplate: '6db0d1330fd5deba4a3999898a7933c39ecb93353bfcf428375422257855438b',
   getGoalPlanSkillTemplate: 'cce12d9c86ff6a10579ce2ce65c734e168b1de411525dbb568db8f51e6c9112a',
   getGoalIterateSkillTemplate: '7e3f4828bbc57e2a5fd9f223f7a86644765a24777f572733a6606ffa54520a8c',
   getGoalReportSkillTemplate: '802fc6970447f1ab5e98b76795c64433db45c03944767237fdbe534262ad6099',
-  getGoalCommandSkillTemplate: '82bd713179cc7a11a3d3e097a46d33b80e60977998a9efed51136f26d7cf319d',
+  getGoalCommandSkillTemplate: '3fc5219c7887f7ff933696584bb755af31f3a71ac461ff110b96e9146b23047e',
   getHelpSkillTemplate: '85f8fd52aeb508a7c7716c4dffe2d76adfc7f68a31c2f05a426336c371c77949',
   getDirectionSkillTemplate: '4c3c0bc2629fc239b7da4ed96c1d72a6fdb654f0cf222ced208c1410f3e5ff7d',
   // Expert skill templates (inlined; see expert-template-inlining)
@@ -120,13 +120,13 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-ship': 'a6fcab24bdaacf1db616264b2c5d32bf70bf9cb9937b61f9af986bbfdea85fb7',
   'rasen-retain': 'cf304454fd0b43f6d7d07b9d25d95225d306bef30e5281bc2737cb106b0498ee',
   'rasen-retro': 'af377d3849b0cbd34d1362044cc1be6f440a4fb93a3c1001dd5d64e7a58da008',
-  'rasen-auto': 'db3a5175d41634c0566f7a61d2bbadbd75924287d542956990f80157360f6b87',
-  'rasen-review-cycle': 'b0232d97f3740957f164bd5cb9e88ff211a0ea6d44778e3a1c322b32ed2472eb',
-  'rasen-handoff': '0ed5c88b8b9934c8e0d35ad38f1ca7fbe584bb58fce5729a591db5fdc848bdf1',
+  'rasen-auto': '27774ec535bed5f593120c3c5eb33de6592259d7d45486766fecc3e38003911e',
+  'rasen-review-cycle': 'b28b868f3d60e8d40104adadae1749b770f360c332320a53aaf690db2b98190b',
+  'rasen-handoff': '8330b43ad8d382178258bafa5fd8ffb675af6019f09d08551daa9f5d71e76f02',
   'rasen-goal-plan': '651638edafced47ecba39a0c3c7715d0f5cc362680762627e333f441b53ec24a',
   'rasen-goal-iterate': '19f5e3992de78900dd182a45331c87e572f3c316907bea3397018ef3d09cd680',
   'rasen-goal-report': '5ed2aa34cd7f2c2d879974b8ad96e8fcff48765413b87f6837f70fcab0e13b44',
-  'rasen-goal': 'a0a7cc11ec6302ed583cffe44b2f56b828d65b64cfa84a1146179cee1484f801',
+  'rasen-goal': 'de2c6634441c05e2b44b0380854e99c7f69af1f371adf5afe0e16b8c8e5b8de7',
   'rasen-help': '08a9843859943e3c6ced3408c638b178c3eb29b51c26827692e815c98e914815',
   'rasen-direction': '1a7c35be672134e32fe477fbc5af73083c07dda13b47e0978966205ac8115d6a',
   // Expert skills (inlined; see expert-template-inlining)

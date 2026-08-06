@@ -29,7 +29,7 @@ Otherwise, help them find one:
 ## 2. Run the audit
 
 \`\`\`bash
-rasen agent audit <sessionId|path>                       # Claude session (default runtime)
+rasen agent audit <sessionId|path>                       # Claude session by bare id, or any recognized session file by path
 rasen agent audit <threadId|path/to/rollout.jsonl> --runtime codex   # Codex session
 rasen agent audit <threadId> --runtime zed               # Zed session by thread id
 rasen agent audit --runtime zed --match "<first command>"  # Zed session by first command
@@ -64,6 +64,7 @@ If asked for detail beyond the summary, offer \`--open\` (or point at the printe
 Relay the actual error and next step — do not invent a cause:
 - **Ambiguous session id prefix**: the error names the matches; ask the user to supply more of the id, or a direct path.
 - **Format-drift** (\`transcript format not recognized\`): this is the experimental-format risk materializing — say so plainly, note the harness (or Zed) may have updated its log/database format since this command was last verified against it, and suggest filing feedback (\`rasen feedback\`) if it keeps happening. Don't attempt to patch or work around the parse failure yourself.
+- **Unauditable harness** (\`No token auditor exists for the recognized session runtime "<id>"\`): the file was recognized as belonging to a harness Rasen ships no auditor for. This is a deliberate refusal, NOT format drift and NOT a bug — analyzing it with another runtime's parser would attribute the report to a runtime that did not produce the session, and the behavior it replaces was a schema-valid ALL-ZERO report at exit 0. No report file is written. Relay the harness name and the auditable set (\`claude\`, \`codex\`, \`zed\`); do NOT suggest \`rasen feedback\`, and do NOT retry with \`--runtime\` to force another runtime's parser onto it.
 - **No transcript matching**: check the session id and, if relevant, \`--projects-dir\`/\`--runtime\`.
 - **Zed: database not found**: the default \`threads.db\` location for the platform had no database — relay the path it looked for and offer \`--db <path>\` if the user's Zed data lives elsewhere.
 - **Zed: ambiguous \`--match\`**: the error lists every thread whose first command matched — relay the candidates (id, title, start) and ask the user to pick, or to pass the thread id directly. Never guess one.

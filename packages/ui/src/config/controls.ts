@@ -40,6 +40,7 @@ export interface ControlSpec {
 export const KNOWN_MODEL_IDS = [
   'sonnet-5',
   'sonnet-4-6',
+  'opus-5',
   'opus-4',
   'fable',
   'mythos',

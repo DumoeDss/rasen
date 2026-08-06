@@ -48,10 +48,12 @@ async function validatePipelineByName(
     // The codex availability probe is a pre-EXECUTION concern (it runs in
     // `pipeline run`'s preflight); surfacing it here makes every pipeline with
     // a codex role report invalid on machines without codex installed, including
-    // CI — even though the pipeline definition itself is well-formed.  The
-    // probeCodex stub keeps route validation (unsupported routes still fail)
-    // while skipping the binary availability check.
-    await validatePipelineForExecution(pipeline, projectRoot, { probeCodex: () => true });
+    // CI — even though the pipeline definition itself is well-formed.
+    // The codex probe stub keeps route validation (unsupported routes still
+    // fail) while skipping the binary availability check.
+    await validatePipelineForExecution(pipeline, projectRoot, {
+      probe: { codex: () => true },
+    });
   } catch (error) {
     const message =
       error instanceof PipelineLoadError && error.cause

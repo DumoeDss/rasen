@@ -15,6 +15,8 @@ import {
   parseClaudeResultEnvelope,
   runClaudePrint,
 } from '../../../src/core/claude/index.js';
+import { spawnAgentCli } from '../../../src/core/agent-cli-process.js';
+import { detectHostRuntime } from '../../../src/core/runtime-adapters.js';
 
 const fixtureDir = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -391,6 +393,47 @@ describe('bounded Claude process runner', () => {
       ok: true,
       result: { status: 'DONE', summary: '中文🙂' },
     });
+  });
+
+  // A child inherits the SPAWNING harness's fingerprints, and the Codex ones
+  // outrank `CLAUDECODE`. Only the spawn site can fix this — the worker
+  // cannot tell its parent's environment from its own. `vitest.setup.ts`
+  // scrubs `RASEN_AGENT_RUNTIME` along with all four fingerprints, which is
+  // exactly why this is non-vacuous: the inherited env carries no identity,
+  // so `source: 'env-override'` can only have come from the merge. Do NOT
+  // relax that scrub — an ambient `RASEN_AGENT_RUNTIME=claude` (which this
+  // change now sets on every bridged worker) would make both cases pass
+  // without the merge on a developer machine while CI stayed honest.
+  it.each([
+    ['codex fingerprints', { CODEX_THREAD_ID: 'parent-thread', CODEX_SANDBOX: 'workspace-write' }],
+    ['a harness that sets claude values of its own', { OMPCODE: '1', CLAUDECODE: '1' }],
+  ])('identifies a bridged worker as claude under %s', async (_label, hostFingerprints) => {
+    let childEnv: NodeJS.ProcessEnv | undefined;
+    const receipt = await runClaude({
+      binary: fakeBinary,
+      invocation: invocation('success'),
+      cwd,
+      timeoutMs: 5000,
+      env: { ...process.env, ...hostFingerprints, RASEN_RUNNER_CANARY: 'kept' },
+      spawn: ((binary, args, options) => {
+        childEnv = options.env;
+        return spawnAgentCli(binary, args, options);
+      }) as Parameters<typeof runClaudePrint>[0]['spawn'],
+    });
+
+    expect(receipt.ok).toBe(true);
+    expect(detectHostRuntime(childEnv)).toEqual({ runtime: 'claude', source: 'env-override' });
+    // Establishing identity changes nothing else: the child's environment is
+    // exactly what was inherited plus the one identity key — asserted as a
+    // key SET so a second childEnv member cannot slip in unnoticed.
+    const inherited = { ...process.env, ...hostFingerprints, RASEN_RUNNER_CANARY: 'kept' };
+    expect(Object.keys(childEnv ?? {}).sort()).toEqual(
+      [...new Set([...Object.keys(inherited), 'RASEN_AGENT_RUNTIME'])].sort()
+    );
+    for (const [key, value] of Object.entries(inherited)) {
+      if (key === 'RASEN_AGENT_RUNTIME') continue;
+      expect(childEnv?.[key]).toBe(value);
+    }
   });
 
   it('recovers a writer claim whose recorded owner is provably dead', async () => {
