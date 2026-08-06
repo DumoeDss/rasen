@@ -133,7 +133,7 @@ interface ReportShapeContext {
   invalid: () => never;
 }
 
-function validateClaudeReportShape({ report, session, invalid }: ReportShapeContext): void {
+function validateClaudeReportShape({ report, invalid }: ReportShapeContext): void {
   if (
     !hasNumbers(report.pricing, ['cacheReadX', 'cacheWriteMainX', 'cacheWriteSubX']) ||
     !hasNumbers(report.totals, [
@@ -755,12 +755,12 @@ function resolveZedNativeTarget(
   const dbPath = options.zedDbPath ?? resolveDefaultZedDbPath(options);
   const db = openZedDatabase(dbPath);
   try {
-  const matches = queryRootThreadIds(db, sessionId);
-  if (matches.length !== 1) {
-    throw new AuditServiceError(404, 'audit_session_not_found', `Zed session "${sessionId}" is no longer available.`);
-  }
+    const matches = queryRootThreadIds(db, sessionId);
+    if (matches.length !== 1) {
+      throw new AuditServiceError(404, 'audit_session_not_found', `Zed session "${sessionId}" is no longer available.`);
+    }
   } finally {
-  db.close();
+    db.close();
   }
   return { target: sessionId, options: { ...options, runtime, db: dbPath } };
 }
