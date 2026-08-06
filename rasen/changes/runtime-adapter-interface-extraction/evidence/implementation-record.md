@@ -234,23 +234,37 @@ The retirement touched only the machine-local knowledge home
 (`~/.rasen/project-knowledge/<id>/learned-skills/…`); no tracked repository
 file changed.
 
-### Declared follow-up: `runtime-adapter-host-id-widening-audit` (post-`v0.1.7` operation)
+### Declared follow-up: `runtime-adapter-host-id-widening-audit` (gated on the local install)
 
-That skill stays **active** and is the one whose retirement waits until
-`v0.1.7` has been in real operation. It is process guidance, not a defect
-warning: "adding an id to the runtime adapter registry — convert every
-sentinel-literal branch to a capability test and sweep locale copy, shipped
-prompts, docs, and exact-equality assertions."
+That skill stays **active** until this code is what the machine runs. It is
+process guidance, not a defect warning: "adding an id to the runtime adapter
+registry — convert every sentinel-literal branch to a capability test and
+sweep locale copy, shipped prompts, docs, and exact-equality assertions."
 
 This change makes most of that structural (capability tests replace the
 sentinels, derivation replaces the route table, `satisfies` catches a missing
 implementation), but it does **not** make the sweep half automatic: the locale
 catalogs, the shipped playbooks, the two published guides, and the SHA-256
 skill baselines all still had to be found and edited by hand here, and the
-prose sweep is what found them. Retire it only once a later runtime addition
-has demonstrated that the new structure makes that sweep unnecessary — that
-demonstration is the observation the gate waits on. The three follow-on
-adapters in task 8.2 are the natural occasion.
+prose sweep is what found them.
+
+**The gate is the local install, nothing more.** Once this code is the code
+the machine actually runs — `npm install -g` of a pack built from it — the
+skill has done its job and can be retired as-is. It does not wait on a later
+runtime addition to prove anything.
+
+Measured at the time of writing, the gate is still open:
+
+```
+$ npm ls -g @atelierai/rasen --depth=0
+└── @atelierai/rasen@0.1.6-dev.local
+```
+
+That stale global install is also the cause of the one failing e2e test
+recorded above — `.claude/skills/*/SKILL.md` in this working tree carry
+`generatedBy: "0.1.6-dev.local"`, which is what trips the version-drift
+warning. Installing the new pack closes both at once: the drift warning stops
+firing, and the skill's role ends.
 
 ## Out of scope, found during the prose sweep
 
