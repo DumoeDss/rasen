@@ -160,7 +160,15 @@ export type ThresholdSchemeListEntry =
   | { name: string; valid: false; error: string };
 
 export type ThresholdBindingScope = 'project' | 'store' | 'global';
-export type ThresholdBindingRow = 'claude' | 'codex' | 'default';
+/**
+ * Mirrors the CLI's `ThresholdBindingRow`, which the server derives from
+ * `[...PROBE_RUNTIMES, 'default']` (`src/core/management-api/threshold-schemes.ts`).
+ * The union therefore widens whenever a runtime adapter declares
+ * `canProbeContext` — `omp` joined when Oh My Pi gained a context reader — so a
+ * reader must never enumerate these members as an exhaustive `claude | codex`
+ * pair. Render the row verbatim; do not re-derive it.
+ */
+export type ThresholdBindingRow = 'claude' | 'codex' | 'omp' | 'default';
 
 export interface ThresholdBindingMetadata {
   scope: ThresholdBindingScope;

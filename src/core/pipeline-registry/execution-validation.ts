@@ -80,17 +80,25 @@ function unlocalizedNoticeMessage(notice: PipelineExecutionNotice): string {
         `Set ${notice.override}=claude|codex for deterministic dispatch.`
       );
     case 'host-runtime-without-dispatch-adapter':
-      // The second clause states what forcing the override ACTUALLY does to
-      // the context probe (design D7's coupling): it lifts the
-      // `unsupported-host` refusal, after which an implicit `--latest`
-      // resolves the Claude transcript store again — NOT this harness's own
-      // session, and not the forced runtime's store either (the override
-      // feeds host detection only; the probe still takes its store from
-      // `--runtime`, which an implicit probe does not pass).
+      // Kept in lockstep with the localized copy (`locales/*.json`
+      // `hostRuntimeWithoutDispatchAdapterWarning`) — this fallback is what a
+      // reporter-less caller prints, so the two must not state opposite facts.
+      //
+      // There is no context-probe refusal left to lift: `omp` — the runtime
+      // that triggers this notice — declares `canProbeContext`, so an implicit
+      // `--latest` already reports this host's OWN session. What the override
+      // still does is redirect that probe, which is the consequence worth
+      // naming. Verified on an Oh My Pi host: bare `--latest` reports
+      // `runtime=omp` from this session's own journal, while
+      // `RASEN_AGENT_RUNTIME=claude --latest` reports `runtime=claude` from an
+      // unrelated conversation. The destination store is deliberately unnamed:
+      // `LEGACY_LATEST_STORE_HOSTS` pins a `codex` host to the Claude store, so
+      // "that runtime's store" would be false for one of the two values this
+      // very sentence offers.
       return (
         `Warning: LEAD host runtime "${notice.host}" has no dispatch adapter; using the legacy compatibility route. ` +
-        `Set ${notice.override}=claude|codex for deterministic dispatch — that also lifts the context-probe refusal, ` +
-        'after which `rasen agent context --latest` reads the Claude transcript store instead of this host\'s own session.'
+        `Set ${notice.override}=claude|codex for deterministic dispatch — note that the same override also redirects ` +
+        '`rasen agent context --latest` away from this host\'s own session, so what gets reported is another conversation\'s occupancy.'
       );
   }
 }

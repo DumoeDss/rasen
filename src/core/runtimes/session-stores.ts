@@ -28,9 +28,11 @@ import * as path from 'node:path';
 import {
   claudeProjectsDir,
   findLatestMainTranscript,
+  findLatestOmpSession,
   findLatestRollout,
 } from '../agent-context.js';
 import { resolveCodexHome } from '../codex/index.js';
+import { resolveOmpAgentDir } from '../omp/omp-home.js';
 import {
   SNIFF_FALLBACK_RUNTIME,
   type RuntimeAdapterId,
@@ -114,11 +116,6 @@ export const SESSION_STORES = {
      * first in every session file on disk (verified against all 19 on this
      * machine). The `session` row is accepted too, for a file whose title row
      * was never reserved.
-     *
-     * No `locateLatest`, no reader: recognition alone is what turns an Oh My
-     * Pi target from a fabricated Claude zero into an honest refusal
-     * (design D8). Locating the live session is genuine domain work and
-     * belongs with the reader that needs it.
      */
     recognizes: (target) => {
       const row = firstRow(target);
@@ -126,6 +123,26 @@ export const SESSION_STORES = {
       if (row.type === 'title') return true;
       return row.type === 'session' && typeof row.version === 'number';
     },
+    /**
+     * Unlike Claude's pure slug derivation, this one enumerates every bucket
+     * present and confirms each candidate against the `cwd` its own header
+     * records: Oh My Pi has written several bucket layouts and migrates the
+     * older ones only opportunistically, so a derived name can name a
+     * directory that does not exist while the live session sits in a legacy
+     * one. See `findLatestOmpSession` for the measurement that forced this.
+     */
+    locateLatest: (options) =>
+      findLatestOmpSession(
+        // `homeDir` is honoured because `resolveOmpAgentDir` accepts one. The
+        // Claude entry above threads it through too; the Codex entry cannot,
+        // since `resolveCodexHome` takes no argument. Dropping it here would
+        // make a caller that isolates through the documented seam read the
+        // REAL user's `~/.omp` sessions instead of the injected root — a
+        // hermeticity trap for the next test author, silent because it still
+        // returns a plausible answer.
+        options.dir ?? path.join(resolveOmpAgentDir(process.env, options.homeDir), 'sessions'),
+        options.cwd
+      ),
   },
 } satisfies { [Id in RuntimeAdapterId]: SessionStore<Id> };
 

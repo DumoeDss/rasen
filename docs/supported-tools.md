@@ -39,6 +39,7 @@ Switch profiles (in either direction) with `rasen config profile`, then run `ras
 | Factory Droid (`factory`) | `.factory/skills/rasen-*/SKILL.md` |
 | Gemini CLI (`gemini`) | `.gemini/skills/rasen-*/SKILL.md` |
 | GitHub Copilot (`github-copilot`) | `.github/skills/rasen-*/SKILL.md` |
+| Hermes (`hermes`) | `<HERMES_HOME or ~/.hermes>/skills/rasen-*/SKILL.md` (machine-global, not project-local) |
 | iFlow (`iflow`) | `.iflow/skills/rasen-*/SKILL.md` |
 | Junie (`junie`) | `.junie/skills/rasen-*/SKILL.md` |
 | Kilo Code (`kilocode`) | `.kilocode/skills/rasen-*/SKILL.md` |
@@ -46,6 +47,7 @@ Switch profiles (in either direction) with `rasen config profile`, then run `ras
 | Kiro (`kiro`) | `.kiro/skills/rasen-*/SKILL.md` |
 | Lingma (`lingma`) | `.lingma/skills/rasen-*/SKILL.md` |
 | Mistral Vibe (`vibe`) | `.vibe/skills/rasen-*/SKILL.md` |
+| Oh My Pi (`omp`) | `.omp/skills/rasen-*/SKILL.md` |
 | OpenCode (`opencode`) | `.opencode/skills/rasen-*/SKILL.md` |
 | Pi (`pi`) | `.pi/skills/rasen-*/SKILL.md` |
 | Qoder (`qoder`) | `.qoder/skills/rasen-*/SKILL.md` |
@@ -60,7 +62,7 @@ For CI/CD or scripted setup, use `--tools` (and optionally `--profile`):
 
 ```bash
 # Configure specific tools
-rasen init --tools claude,cursor
+rasen init --tools claude,codex
 
 # Configure all supported tools
 rasen init --tools all
@@ -72,7 +74,13 @@ rasen init --tools none
 rasen init --profile core
 ```
 
-**Available tool IDs (`--tools`):** `amazon-q`, `antigravity`, `auggie`, `bob`, `claude`, `cline`, `codex`, `forgecode`, `codebuddy`, `continue`, `costrict`, `crush`, `cursor`, `factory`, `gemini`, `github-copilot`, `iflow`, `junie`, `kilocode`, `kimi`, `kiro`, `lingma`, `opencode`, `pi`, `qoder`, `qwen`, `roocode`, `trae`, `vibe`, `windsurf`
+**Installable tool IDs (`--tools`):** `claude`, `codex`, `hermes`, `omp`. `--tools all`
+expands to exactly these four.
+
+Every other ID in the table above is recognized but not offered for installation:
+Rasen adapts its dispatch, worker lifecycle, and resume behavior per agent, and
+naming an unadapted one explicitly fails with a message saying so — distinct from
+the error for an unrecognized token.
 
 ## Workflow-Dependent Installation
 

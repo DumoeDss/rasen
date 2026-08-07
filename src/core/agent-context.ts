@@ -290,6 +290,186 @@ export function computeContextFromRollout(
 }
 
 /**
+ * One Oh My Pi message row's recorded usage. Field names are Oh My Pi's own
+ * (live-verified against `OMP_CLI_VERSION_PREMISE`), and they map one-to-one
+ * onto the three Claude fields {@link sumUsage} adds.
+ *
+ * `totalTokens` is deliberately NOT modelled: it is present, tempting, and
+ * wrong — it adds the turn's OUTPUT. Live on this machine, a turn recording
+ * `input:2, cacheRead:122824, cacheWrite:1275, output:263` also records
+ * `totalTokens:124364`, which is the correct occupancy of 124101 plus the 263
+ * it produced. Using it would overstate occupancy by one turn's output on
+ * every reading and make an Oh My Pi session cross the handoff threshold
+ * earlier than a Claude session at the same real occupancy.
+ */
+interface OmpUsage {
+  input?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}
+
+/**
+ * Occupancy recorded by one Oh My Pi usage row: everything sent to the model
+ * for that turn, and nothing it produced. The Oh My Pi analog of
+ * {@link sumUsage}.
+ */
+function sumOmpUsage(usage: OmpUsage): number {
+  return (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+}
+
+interface OmpSessionRow {
+  type?: string;
+  /** `model_change` carries the id at the row level, provider-prefixed. */
+  model?: unknown;
+  message?: {
+    model?: unknown;
+    usage?: OmpUsage;
+  };
+}
+
+/**
+ * Compute context occupancy from an Oh My Pi session journal.
+ *
+ * Occupancy is `input + cacheRead + cacheWrite` of the last `message` row that
+ * MEASURES something — everything sent to the model for that turn, including
+ * cached input, and nothing it produced. That is the same definition
+ * {@link sumUsage} applies to a Claude transcript, so the two harnesses' numbers
+ * stay directly comparable (design D7).
+ *
+ * "Measures something" rather than simply "the last one": Oh My Pi writes an
+ * all-zero usage row for a turn that sent nothing, so a session interrupted at
+ * the end carries a tail of rows that record no measurement. Those are skipped
+ * — see the scan below for the measurement that forced it. A session whose
+ * rows are ALL zero still reports `0`.
+ *
+ * The model comes from that same row's `message.model` (present on every
+ * assistant message live), falling back to the last `model_change` row and then
+ * `'unknown'` (design D9): the model that produced the measured usage is the one
+ * attached to it, while a `model_change` can precede a turn that never
+ * completed.
+ *
+ * `limit` prefers an explicit override, else the model's own preset window, else
+ * `0` — deliberately NOT {@link resolveModelLimit}, whose
+ * {@link DEFAULT_CONTEXT_LIMIT} fallback is defensible only for a harness
+ * running one vendor's models. Oh My Pi routes to dozens of providers whose real
+ * windows span a few thousand tokens to over a million, so a substituted 200 000
+ * would produce a confident `pct` describing nothing. At `limit === 0` the
+ * fraction is reported as `0`, the same honest-unknown branch
+ * {@link computeContextFromRollout} already takes for a rollout that never
+ * reported a window (design D8).
+ *
+ * Throws when the file cannot be read, or when it holds no usage-bearing
+ * message — matching the Claude reader rather than the Codex young-rollout zero,
+ * because an Oh My Pi journal records usage on the first completed turn and its
+ * absence means the file is not a measurable session.
+ */
+export function computeContextFromOmpSession(
+  sessionPath: string,
+  options: { limit?: number } = {}
+): AgentContextResult {
+  let content: string;
+  try {
+    content = fs.readFileSync(sessionPath, 'utf-8');
+  } catch {
+    throw new Error(
+      `Cannot read Oh My Pi session: ${sessionPath}. Pass a readable Oh My Pi session jsonl with --transcript, or use --latest.`
+    );
+  }
+
+  // Two cursors, because a trailing row can carry `usage` without MEASURING
+  // anything: Oh My Pi records an all-zero usage row for a turn that sent
+  // nothing (an aborted or interrupted one), and writes a run of them at the
+  // tail of a session that ended that way. Measured on this machine: 21 such
+  // rows across the real journals, and one 479-row session whose last TWELVE
+  // usage rows are all-zero while its real occupancy is 353_360. Taking the
+  // last row unconditionally reported that session as empty with its whole
+  // window free, so the handoff verdict said "not yet needed" for a session
+  // at 35% — the placeholder-vs-measurement confusion `isUnmeasurableWindow`
+  // exists to prevent, arriving through the occupancy channel instead.
+  //
+  // The Claude reader is deliberately NOT changed to match: Claude records no
+  // all-zero usage row at all (0 of 53 rows on this machine, 0 of 6
+  // transcripts ending on one), so the shape this guards against does not
+  // occur there and `cli-agent-context` requires that reader byte-identical.
+  //
+  // Skip-and-keep-previous rather than throw, mirroring the sibling reader
+  // that already faces this shape: {@link computeContextFromRollout} ignores a
+  // trailing `token_count` whose `last_token_usage` is degenerate and keeps
+  // the previous valid snapshot (pinned by "uses the last valid token_count
+  // snapshot" in `test/core/agent-context.test.ts`). Oh My Pi was the odd one
+  // out, not Codex.
+  let lastMeasured: { usage: OmpUsage; model: string | undefined } | undefined;
+  let lastAny: { usage: OmpUsage; model: string | undefined } | undefined;
+  let lastModelChange: string | undefined;
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let row: OmpSessionRow;
+    try {
+      row = JSON.parse(trimmed) as OmpSessionRow;
+    } catch {
+      continue; // tolerate partial/corrupt lines, as the Claude reader does
+    }
+    if (row.type === 'model_change' && typeof row.model === 'string') {
+      lastModelChange = row.model;
+      continue;
+    }
+    // `/clear` appends a payload-free `reset_boundary`, and Oh My Pi rebuilds
+    // the model context AFTER the latest one — everything before it is hidden
+    // from the model while remaining in the journal for transcript export
+    // (`omp://session.md`, `buildSessionContext` step 4). Both cursors reset
+    // so occupancy is measured within the CURRENT context epoch only.
+    //
+    // This guard is what keeps the skip-zero rule above safe: without it, a
+    // `/clear` followed by an aborted turn would walk back PAST the boundary
+    // and report the pre-clear occupancy of a context that is now empty —
+    // turning an under-report into a much larger over-report.
+    if (row.type === 'reset_boundary') {
+      lastMeasured = undefined;
+      lastAny = undefined;
+      continue;
+    }
+    // The fixed-width `title` row and every non-message row fall through here
+    // without a special case: only a `message` carrying `usage` can measure.
+    const usage = row.message?.usage;
+    if (row.type === 'message' && usage && typeof usage === 'object') {
+      const entry = {
+        usage,
+        model: typeof row.message?.model === 'string' ? row.message.model : undefined,
+      };
+      lastAny = entry;
+      // The model is taken from the measuring row for the same reason the sum
+      // is: it is the model that actually produced the occupancy reported.
+      if (sumOmpUsage(usage) > 0) lastMeasured = entry;
+    }
+  }
+
+  // Falls back to the last usage row when NOTHING measured, which keeps a
+  // session whose only rows are all-zero reporting its existing honest `0`
+  // rather than becoming an error.
+  const last = lastMeasured ?? lastAny;
+
+  if (!last) {
+    throw new Error(
+      `No assistant usage found in Oh My Pi session: ${sessionPath}. The file has no message entry carrying message.usage, so context occupancy cannot be measured.`
+    );
+  }
+
+  const contextTokens = sumOmpUsage(last.usage);
+  const model = last.model ?? lastModelChange ?? 'unknown';
+  const limit = options.limit ?? resolveModelPreset(model)?.contextWindow ?? 0;
+  return {
+    runtime: 'omp',
+    model,
+    contextTokens,
+    limit,
+    pct: limit > 0 ? roundPct(contextTokens / limit) : 0,
+    remainingTokens: remainingTokens(limit, contextTokens),
+    transcript: sessionPath,
+  };
+}
+
+/**
  * The Claude Code transcript directory for a working directory. The slug is the
  * absolute cwd with every ':', path separator, and '.' replaced by '-' (e.g.
  * `E:\a\b.app` → `E--a-b-app`), matching Claude Code's project-dir convention.
@@ -386,20 +566,193 @@ export function findLatestRollout(sessionsDir: string, cwd: string): string {
   );
 }
 
+/**
+ * How much of an Oh My Pi session file the header scan may read, in order.
+ *
+ * The file's first physical row is a fixed-width `title` slot (a ~190-character
+ * `pad` field exists so the title can be rewritten in place, which bounds that
+ * row) and the `session` header is the second, so the first bound is orders of
+ * magnitude more than needed and still cheap. Oh My Pi's own recent-session
+ * scans read a 4 KiB prefix (`omp://session.md`), so it is the same class of
+ * cost.
+ *
+ * The second bound exists because the header is NOT actually fixed-width: it
+ * carries the documented growth fields `additionalDirectories` and
+ * `previousSessionFiles`, so a long-lived session can push it past the first
+ * bound. Discarding the candidate there would make a LIVE session permanently
+ * invisible to `--latest`, which is the failure this whole locator exists to
+ * prevent. The retry bound matches `RECOGNITION_READ_BYTES` in
+ * `runtimes/session-stores.ts` — the two prefix reads in this change should not
+ * disagree about how much of a session file is reasonable to look at.
+ */
+const OMP_HEADER_READ_BOUNDS = [8 * 1024, 64 * 1024] as const;
+
+/**
+ * The working directory an Oh My Pi session file records in its `session`
+ * header, or `undefined` when no such row is reachable.
+ *
+ * Reads a bounded prefix rather than the file: a long-running session journal
+ * reaches tens of megabytes, and the locator may inspect several before it
+ * finds a match. When the header is not in the first prefix AND that read was
+ * truncated, the scan retries once at the larger bound — a short read means the
+ * whole file is already in hand and there is nothing further to find.
+ */
+function readOmpSessionCwd(sessionPath: string): string | undefined {
+  for (const bound of OMP_HEADER_READ_BOUNDS) {
+    let prefix: string;
+    let read: number;
+    let handle: number | undefined;
+    try {
+      handle = fs.openSync(sessionPath, 'r');
+      const buffer = Buffer.alloc(bound);
+      read = fs.readSync(handle, buffer, 0, bound, 0);
+      prefix = buffer.subarray(0, read).toString('utf-8');
+    } catch {
+      return undefined;
+    } finally {
+      if (handle !== undefined) {
+        try {
+          fs.closeSync(handle);
+        } catch {
+          // A close failure cannot change the answer already read.
+        }
+      }
+    }
+
+    for (const line of prefix.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let row: { type?: string; cwd?: unknown };
+      try {
+        row = JSON.parse(trimmed) as { type?: string; cwd?: unknown };
+      } catch {
+        // The last line of a bounded prefix is usually truncated mid-object.
+        // Anything before the header being unparseable is equally survivable.
+        continue;
+      }
+      if (row.type === 'session') {
+        return typeof row.cwd === 'string' ? row.cwd : undefined;
+      }
+    }
+
+    if (read < bound) return undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Newest Oh My Pi session for `cwd` across EVERY bucket under `sessionsDir`
+ * — the Oh My Pi analog of {@link findLatestMainTranscript} and
+ * {@link findLatestRollout} (design D6).
+ *
+ * Oh My Pi buckets a project's sessions under
+ * `<scope>-<basename>-<sha256(canonical cwd)>` today, migrating its older
+ * home-relative (`-<relative>`), temp-relative and absolute layouts into that
+ * name only opportunistically, on access. Deriving one bucket name the way
+ * {@link claudeProjectsDir} does is therefore measurably wrong: on the
+ * maintainer's machine this repository's sessions live ONLY in the legacy
+ * `-SyncLocal-rasen` bucket — including the live one — and the hashed name a
+ * derivation would produce does not exist at all, so a derived-name locator
+ * reports absence for a session that is running. Enumerating buckets also
+ * means a future fourth layout is found with no code change.
+ *
+ * Every candidate is confirmed against the `cwd` its own `session` header
+ * records, because a legacy bucket can hold sessions for more than one
+ * directory (Oh My Pi splits colliding legacy buckets by header cwd during
+ * migration). Candidates are ordered newest-mtime-first ACROSS all buckets and
+ * the walk stops at the first match, so the common case — probing from the
+ * directory whose session is the newest on the machine — reads exactly one
+ * header. Ordering globally rather than per bucket is what makes a mixed
+ * legacy bucket answer correctly: its newest file may belong to another
+ * directory while an older one in the same bucket is the requested session.
+ *
+ * Only files DIRECTLY under a bucket are candidates. Oh My Pi writes each
+ * subagent's journal to `<bucket>/<main session basename>/<AgentName>.jsonl`,
+ * and those journals record the same `cwd` and the same header shape as their
+ * LEAD — they are indistinguishable by content, so depth is the only thing
+ * that separates them. Recursing would let a subagent's occupancy be reported
+ * as the LEAD's, the same defect {@link findLatestMainTranscript} excludes
+ * `agent-*.jsonl` to avoid.
+ *
+ * Throws {@link AgentContextUnavailableError} when nothing matches —
+ * environmental absence, reachable only via `--latest`.
+ */
+export function findLatestOmpSession(sessionsDir: string, cwd: string): string {
+  const resolvedCwd = path.resolve(cwd);
+
+  let buckets: fs.Dirent[];
+  try {
+    buckets = fs.readdirSync(sessionsDir, { withFileTypes: true });
+  } catch {
+    throw new AgentContextUnavailableError(
+      `No Oh My Pi sessions directory at ${sessionsDir}. Run from the project whose session you want to probe, or pass --transcript / --dir.`
+    );
+  }
+
+  const candidates: Array<{ path: string; mtimeMs: number }> = [];
+  for (const bucket of buckets) {
+    if (!bucket.isDirectory()) continue;
+    const bucketDir = path.join(sessionsDir, bucket.name);
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(bucketDir, { withFileTypes: true });
+    } catch {
+      continue; // an unreadable bucket cannot disqualify the others
+    }
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+      const full = path.join(bucketDir, entry.name);
+      try {
+        candidates.push({ path: full, mtimeMs: fs.statSync(full).mtimeMs });
+      } catch {
+        continue; // raced deletion
+      }
+    }
+  }
+
+  // Ties are broken on basename, descending. Equal mtimes are not exotic — a
+  // restored, rsynced or `cp -p` store carries them — and without a tiebreak
+  // which session answers falls out of `readdirSync` order across buckets, so
+  // it is arbitrary and flips on a bucket rename. Oh My Pi names each file
+  // with an ISO-8601 timestamp prefix, so basename order IS chronological
+  // order and the newest still wins.
+  candidates.sort(
+    (a, b) =>
+      b.mtimeMs - a.mtimeMs || path.basename(b.path).localeCompare(path.basename(a.path))
+  );
+  for (const candidate of candidates) {
+    const headerCwd = readOmpSessionCwd(candidate.path);
+    if (headerCwd !== undefined && path.resolve(headerCwd) === resolvedCwd) {
+      return candidate.path;
+    }
+  }
+
+  throw new AgentContextUnavailableError(
+    `No Oh My Pi session found under ${sessionsDir} whose session cwd matches ${resolvedCwd}. Run from the project whose session you want to probe, or pass --transcript / --dir.`
+  );
+}
+
 export interface ProbeOptions {
   /** Explicit transcript path. Takes precedence over `latest`. */
   transcript?: string;
   /** Resolve the newest main-session transcript for `cwd`/`dir`. */
   latest?: boolean;
-  /** Override the Claude projects base dir used by `latest`. */
+  /**
+   * Override the session-store root `latest` searches — the Claude projects
+   * directory, Codex's sessions root, or Oh My Pi's sessions root, whichever
+   * the resolved runtime names.
+   */
   dir?: string;
   /** Override the resolved context-window limit. */
   limit?: number;
-  /** Working directory used to derive the projects dir (defaults to process.cwd()). */
+  /** Working directory used to derive the session-store dir (defaults to process.cwd()). */
   cwd?: string;
-  /** Home directory used to derive the projects dir (defaults to os.homedir()). */
+  /** Home directory used to derive the session-store dir (defaults to os.homedir()). */
   homeDir?: string;
-  /** Force detection to `'claude'` or `'codex'` instead of sniffing the file. */
+  /**
+   * Force detection to a probe-capable runtime ({@link PROBE_RUNTIMES} —
+   * `'claude'`, `'codex'` or `'omp'`) instead of sniffing the file.
+   */
   runtime?: string;
   /**
    * Environment the implicit-`--latest` host gate reads (defaults to
@@ -430,6 +783,46 @@ export function resolveTranscriptPath(options: ProbeOptions, runtime?: ProbeRunt
   throw new Error('Specify a transcript to probe: pass --transcript <path> or --latest.');
 }
 
+/**
+ * Hosts whose implicit `--latest` keeps resolving through
+ * {@link SNIFF_FALLBACK_RUNTIME}'s store instead of their own.
+ *
+ * A named exception to {@link implicitLatestStoreRuntime}'s derivation, in the
+ * spirit of `ROUTE_EXCEPTIONS`: the derivation is what serves, and the pins are
+ * stated rather than encoded as a special case in the resolver.
+ *
+ * `codex` is pinned because `cli-agent-context` requires a Claude or Codex
+ * host's implicit discovery to stay byte-identical to its pre-existing
+ * behavior, and a Codex host resolves through the Claude projects directory
+ * today. Routing it to its own rollout store is a strictly better answer and
+ * deliberately out of scope here — it changes a shipped contract, so it needs
+ * its own change rather than arriving as a side effect of adding a harness.
+ * `claude` needs no pin: its own store IS the fallback.
+ */
+const LEGACY_LATEST_STORE_HOSTS: readonly RuntimeAdapterId[] = ['codex'];
+
+/**
+ * Which store an INFERRED `--latest` should locate through: the detected host's
+ * own, so a harness receives a reading of its own session rather than whatever
+ * the fallback store happens to hold for the same directory.
+ *
+ * Returns `undefined` — meaning "fall through to {@link SNIFF_FALLBACK_RUNTIME}"
+ * — for a host with no probe capability (`probeAgentContextSafe` refuses that
+ * case before it gets here; the throwing entry point keeps the legacy
+ * resolution), for an `unknown` host, and for a pinned host.
+ *
+ * Deliberately does NOT decide which READER measures the located file. The
+ * reader stays a recognition decision keyed off the explicit `--runtime` only,
+ * so a foreign file that happens to sit in a host's own store is still read by
+ * the harness that actually wrote it.
+ */
+function implicitLatestStoreRuntime(options: ProbeOptions): ProbeRuntime | undefined {
+  if (options.transcript || !options.latest) return undefined;
+  const { runtime } = detectHostRuntime(options.env);
+  if (!hasRuntimeCapability(runtime, 'canProbeContext')) return undefined;
+  return LEGACY_LATEST_STORE_HOSTS.includes(runtime) ? undefined : runtime;
+}
+
 export type HandoffThresholdSource =
   | 'project-scheme'
   | 'store-scheme'
@@ -449,8 +842,45 @@ export interface HandoffThresholdReport {
    * threshold`; for the absolute `{ remainingTokens }` form, `remainingTokens
    * <= threshold.remainingTokens` (design D2, same direction as
    * `resolveStageHandoffConfig`'s handoff comparison).
+   *
+   * ABSENT when the probe could not measure the context window
+   * ({@link isUnmeasurableWindow}). Optional rather than `false` on purpose: at
+   * an unknown window BOTH comparisons answer wrongly — the fraction can never
+   * fire because `pct` is reported as `0`, and the absolute form always fires
+   * because `remainingTokens` is reported as `0`, which satisfies every
+   * headroom floor. `false` would be indistinguishable from a real
+   * below-threshold reading, so no verdict is reported at all.
    */
-  shouldHandoff: boolean;
+  shouldHandoff?: boolean;
+  /**
+   * `'unknown'` when the context window could not be resolved while real
+   * occupancy was measured, so a consumer can tell an unmeasurable window from
+   * an empty session. Absent when the window is known.
+   */
+  window?: 'unknown';
+}
+
+/**
+ * Whether a reading measured occupancy but not the window it occupies.
+ *
+ * `limit === 0` means "no window known" for every reader. It is reachable two
+ * ways, and they are NOT the same state:
+ *
+ * - A Codex rollout with zero completed turns reports `limit: 0` alongside
+ *   `contextTokens: 0`. Nothing was sent yet, so `pct: 0` and
+ *   `remainingTokens: 0` describe reality and the threshold comparison is
+ *   meaningful ("not near the limit" is true).
+ * - An Oh My Pi session whose model has no {@link MODEL_PRESETS} entry reports
+ *   `limit: 0` alongside REAL occupancy (design D8 — the alternative was
+ *   fabricating a 200 000-token window). Here `pct` and `remainingTokens` are
+ *   placeholders, not measurements.
+ *
+ * Discriminating on `contextTokens > 0` is what keeps the Codex young-rollout
+ * reading byte-identical to its pre-existing behavior, as `cli-agent-context`
+ * requires, while refusing to render a verdict for the case that has no answer.
+ */
+export function isUnmeasurableWindow(limit: number, contextTokens: number): boolean {
+  return limit === 0 && contextTokens > 0;
 }
 
 /**
@@ -470,12 +900,17 @@ export interface HandoffThresholdReport {
  * because resolving the store layer reads the store registry
  * (`resolveConfigStoreLayer`). Remains a probe: callers must not treat
  * `shouldHandoff` as a reason to change the exit code.
+ *
+ * `unmeasurableWindow` withholds the verdict entirely rather than reporting a
+ * comparison against placeholder figures — see {@link isUnmeasurableWindow} for
+ * why `false` would be the wrong answer, not a conservative one.
  */
 export async function resolveHandoffThresholdReport(
   pct: number,
   remainingTokens: number,
   runtimeOrCwd?: ProbeRuntime | string,
-  cwdArg?: string
+  cwdArg?: string,
+  unmeasurableWindow = false
 ): Promise<HandoffThresholdReport> {
   // A capability test, not an identity check: a runtime with no context
   // probe must not be mistaken for a working directory and leak into the
@@ -505,6 +940,16 @@ export async function resolveHandoffThresholdReport(
   });
   const threshold = selected.threshold;
   const thresholdSource = selected.source as HandoffThresholdSource;
+
+  if (unmeasurableWindow) {
+    return {
+      threshold,
+      thresholdSource,
+      window: 'unknown',
+      ...(selected.binding ? { binding: selected.binding } : {}),
+      ...(selected.diagnostics.length > 0 ? { diagnostics: selected.diagnostics } : {}),
+    };
+  }
 
   const shouldHandoff =
     typeof threshold === 'number'
@@ -539,11 +984,23 @@ function validateProbeLimit(limit: number | undefined): void {
  * occupancy with that harness's own reader. Throws an actionable error on any
  * unreadable/usage-free/unspecified input, an invalid `--runtime` value, or a
  * recognized harness Rasen ships no reader for.
+ *
+ * An explicit `--runtime` selects BOTH the locating store and the reader. An
+ * inferred `--latest` selects only the store, from the detected host
+ * ({@link implicitLatestStoreRuntime}); the reader is still recognized from the
+ * located file, so nothing about how a file is measured changes with the host
+ * it was found from. Flipping `canProbeContext` alone would not have been
+ * enough: without this split an Oh My Pi host's implicit `--latest` still
+ * resolves through the fallback Claude store and reports another harness's
+ * conversation, which is the defect the capability was added to remove.
  */
 export function probeAgentContext(options: ProbeOptions): AgentContextResult {
   const runtime = validateRuntime(options.runtime);
   validateProbeLimit(options.limit);
-  const transcriptPath = resolveTranscriptPath(options, runtime);
+  const transcriptPath = resolveTranscriptPath(
+    options,
+    runtime ?? implicitLatestStoreRuntime(options)
+  );
   const owner = detectSessionOwner(transcriptPath, runtime);
   return contextReaderFor(owner, transcriptPath).read(transcriptPath, {
     limit: options.limit,

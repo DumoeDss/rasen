@@ -55,6 +55,21 @@ export async function setup() {
   delete process.env.OMPCODE;
   delete process.env.CLAUDECODE;
 
+  // Same divergence class, one layer deeper: `resolveOmpAgentDir`
+  // (src/core/omp/omp-home.ts) resolves Oh My Pi's active agent directory —
+  // and therefore where the session locator scans — from four ambient
+  // variables. A developer running the suite under `omp --profile <name>`
+  // carries `OMP_PROFILE`, so any assertion that reaches the locator without
+  // injecting an explicit dir would search that profile's sessions while CI
+  // searched the default one. Every input the resolution reads is scrubbed,
+  // in its own precedence order, so the default is the same "no overrides"
+  // state CI produces. A suite that exercises one specific override sets it
+  // itself and wins.
+  delete process.env.OMP_PROFILE;
+  delete process.env.PI_PROFILE;
+  delete process.env.PI_CONFIG_DIR;
+  delete process.env.PI_CODING_AGENT_DIR;
+
   // Fourth net layer, same divergence class as the third: two more pieces of
   // developer machine state that CI does not have and that the suite reads
   // only indirectly, so a leak surfaces as an unrelated assertion failure

@@ -11,6 +11,7 @@
  * declare the capability fails it too (design D2).
  */
 import {
+  computeContextFromOmpSession,
   computeContextFromRollout,
   computeContextFromTranscript,
 } from '../agent-context.js';
@@ -24,5 +25,9 @@ export const CONTEXT_READERS = {
   codex: {
     id: 'codex',
     read: (target, options) => computeContextFromRollout(target, options),
+  },
+  omp: {
+    id: 'omp',
+    read: (target, options) => computeContextFromOmpSession(target, options),
   },
 } satisfies { [Id in ProbeRuntime]: ContextReader<Id> };

@@ -1,3 +1,7 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 import * as ts from 'typescript';
 
@@ -26,7 +30,7 @@ const RUNTIME_ADAPTERS = {
   claude: { canProbeContext: true, canAudit: true, canDispatch: true },
   codex: { canProbeContext: true, canAudit: true, canDispatch: true },
   zed: { canProbeContext: false, canAudit: true, canDispatch: false },
-  omp: { canProbeContext: false, canAudit: false, canDispatch: false },
+  omp: { canProbeContext: true, canAudit: false, canDispatch: false },
 } as const;
 type Id = keyof typeof RUNTIME_ADAPTERS;
 type For<C extends 'canProbeContext' | 'canAudit' | 'canDispatch'> = {
@@ -36,6 +40,7 @@ type ProbeRuntime = For<'canProbeContext'>;
 interface ContextReader<I extends ProbeRuntime = ProbeRuntime> { id: I; read(p: string): number }
 const claudeReader: ContextReader<'claude'> = { id: 'claude', read: () => 1 };
 const codexReader: ContextReader<'codex'> = { id: 'codex', read: () => 1 };
+const ompReader: ContextReader<'omp'> = { id: 'omp', read: () => 1 };
 `;
 
 function compile(source: string): ts.Diagnostic[] {
@@ -60,7 +65,7 @@ describe('registry build enforcement', () => {
   it('compiles clean when every declared capability has an implementation', () => {
     const diagnostics = compile(
       `${HARNESS}
-export const OK = { claude: claudeReader, codex: codexReader } satisfies {
+export const OK = { claude: claudeReader, codex: codexReader, omp: ompReader } satisfies {
   [I in ProbeRuntime]: ContextReader<I>;
 };`
     );
@@ -79,16 +84,20 @@ export const MISSING = { claude: claudeReader } satisfies {
   });
 
   it('fails the build when an implementation has no declared capability', () => {
+    // `zed` is the non-declared runtime here, not `omp`: once Oh My Pi declares
+    // `canProbeContext` an `omp` reader is legitimate, so using it would assert
+    // the opposite of the mechanism under test.
     const diagnostics = compile(
       `${HARNESS}
 export const EXTRA = {
   claude: claudeReader,
   codex: codexReader,
-  omp: { id: 'omp' as never, read: () => 1 },
+  omp: ompReader,
+  zed: { id: 'zed' as never, read: () => 1 },
 } satisfies { [I in ProbeRuntime]: ContextReader<I> };`
     );
     expect(diagnostics.map((d) => d.code)).toContain(2353);
-    expect(ts.flattenDiagnosticMessageText(diagnostics[0].messageText, ' ')).toContain('omp');
+    expect(ts.flattenDiagnosticMessageText(diagnostics[0].messageText, ' ')).toContain('zed');
   });
 });
 
@@ -117,8 +126,38 @@ describe('shipped registry maps', () => {
 
   it('gives every registered runtime a session store, capability or not', () => {
     expect(Object.keys(SESSION_STORES).sort()).toEqual([...RUNTIME_ADAPTER_IDS].sort());
-    expect(SESSION_STORES.omp.locateLatest).toBeUndefined();
+    // A locator comes with the probe capability, not with registration: `omp`
+    // has both now, while `zed` is registered for recognition and audit only.
+    expect(SESSION_STORES.omp.locateLatest).toBeDefined();
     expect(SESSION_STORES.zed.locateLatest).toBeUndefined();
+  });
+
+  it('locates an Oh My Pi session under the injected homeDir, not the real one', () => {
+    // `homeDir` is the documented isolation seam. Dropping it made the omp
+    // locator read the REAL user's `~/.omp` sessions while a caller believed it
+    // had sandboxed the lookup — silent, because it still returns a plausible
+    // answer. Asserting the located path lies under the sandbox is what makes
+    // that failure visible.
+    const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-omp-home-'));
+    try {
+      const project = path.join(sandbox, 'project');
+      const bucket = path.join(sandbox, '.omp', 'agent', 'sessions', 'bucket-a');
+      fs.mkdirSync(project, { recursive: true });
+      fs.mkdirSync(bucket, { recursive: true });
+      const session = path.join(bucket, 'live.jsonl');
+      fs.writeFileSync(
+        session,
+        [
+          JSON.stringify({ type: 'session', version: 3, cwd: project }),
+          JSON.stringify({ type: 'message', message: { usage: { input: 1 } } }),
+        ].join('\n') + '\n',
+        'utf-8'
+      );
+
+      expect(SESSION_STORES.omp.locateLatest?.({ cwd: project, homeDir: sandbox })).toBe(session);
+    } finally {
+      fs.rmSync(sandbox, { recursive: true, force: true });
+    }
   });
 
   it('agrees with the leaf bridge table each adapter is typed against', () => {

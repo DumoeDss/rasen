@@ -430,7 +430,7 @@
       "selectedProjectRoot": "使用するRasenルート: プロジェクト {project} ({path})",
       "staleProfileWorkflowsWarning": "警告: 保存済みプロファイルから不明なワークフローIDを除外します: {workflows}",
       "unknownHostRuntimeWarning": "警告: LEADのホストruntimeを識別できないため、legacy互換ルートを使用します。決定的なdispatchには {override}=claude|codex を設定してください。",
-      "hostRuntimeWithoutDispatchAdapterWarning": "警告: LEADのホストruntime {host} にはdispatchアダプタがないため、legacy互換ルートを使用します。決定的なdispatchには {override}=claude|codex を設定してください。この設定はcontextの計測の拒否も解除するため、以降 `rasen agent context --latest` はこのホスト自身のセッションではなくClaudeのtranscript storeを読みます。",
+      "hostRuntimeWithoutDispatchAdapterWarning": "警告: LEADのホストruntime {host} にはdispatchアダプタがないため、legacy互換ルートを使用します。決定的なdispatchには {override}=claude|codex を設定してください。ただしこの override は `rasen agent context --latest` の参照先をこのホスト自身のセッションから切り替えるため、以降は別の会話の占有率が報告されます。",
       "noPipelinesFound": "パイプラインが見つかりません。",
       "availablePipelinesHeading": "利用可能なパイプライン:",
       "pipelineTableEntry": "  {name}  [{source}]",
@@ -1004,6 +1004,10 @@
       "userWideProfileUnresolvable": "警告: ユーザー全体のプロファイル '{profile}' を解決できませんでした（{detail}）。デフォルトの 'full' プロファイルを代わりに使用します。",
       "deprecatedArchiveDestination": "'archive.destination' は非推奨になり、保存先を選択しなくなりました：アーカイブの記帳は常に計画ルートに配置されます。このキーを削除してください。既存のアーカイブは 'rasen archive relocate --to in-repo' で計画ルートに集約できます。"
     }
+  },
+  "ompProjectContext": {
+    "nestedInstallCaptureWarning": "{installDir} に Oh My Pi の設定が入ったため、Oh My Pi はプロジェクト指示と常時適用ルールを上位ディレクトリではなくこの場所から読み込みます。次のファイルは読み込まれなくなります：{files}",
+    "nestedInstallCaptureFix": "読み込みを維持するには、{boundary} にインストールするか、上記のファイルを {installDir} にコピーしてください。インストール済みスキルには影響しません（Oh My Pi はスキルを全上位ディレクトリから探索します）。"
   },
   "storeIdentityMigration": {
     "upgraded": "{count} 件の store をアップグレードしました：",
@@ -2609,13 +2613,13 @@
                   "description": "現在のディレクトリに対応する最新main-session transcriptを使用します"
                 },
                 "dir": {
-                  "description": "--latestが使用するClaude projectsディレクトリを上書きします"
+                  "description": "--latest が検索するセッションストアのディレクトリを上書きします（解決された runtime に応じて Claude projects ディレクトリ、Codex の sessions ルート、Oh My Pi の sessions ルート）"
                 },
                 "limit": {
                   "description": "解決済みcontext window上限を上書きします"
                 },
                 "runtime": {
-                  "description": "ファイル判定を使わず \"claude\" または \"codex\" を指定します"
+                  "description": "ファイル判定を使わず runtime を指定します：\"claude\"、\"codex\"、\"omp\""
                 },
                 "json": {
                   "description": "JSONで出力します"

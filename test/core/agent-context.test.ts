@@ -10,8 +10,10 @@ import {
   resolveModelLimit,
   computeContextFromTranscript,
   computeContextFromRollout,
+  computeContextFromOmpSession,
   claudeProjectsDir,
   findLatestMainTranscript,
+  findLatestOmpSession,
   findLatestRollout,
   resolveTranscriptPath,
   probeAgentContext,
@@ -93,6 +95,52 @@ const OMP_MESSAGE_LINE = JSON.stringify({
   type: 'message',
   message: { role: 'assistant', usage: { input: 87_848, cacheRead: 0, cacheWrite: 12_000 } },
 });
+/** A session header row recording an arbitrary cwd — the field the locator confirms. */
+function ompSessionLine(cwd: string): string {
+  return JSON.stringify({
+    type: 'session',
+    version: 3,
+    id: '019fd520-9cc1-7000-8f0d-54e210c25bca',
+    timestamp: '2026-08-06T03:31:52.129Z',
+    cwd,
+  });
+}
+/**
+ * One Oh My Pi message row carrying the model, plus the `totalTokens` a real
+ * row also records. `totalTokens` is included on purpose: it is the trap field
+ * (it adds the turn's output), so a reader that used it would fail the
+ * arithmetic assertions instead of passing them.
+ */
+function ompMessageLine(
+  model: string,
+  usage: { input: number; cacheRead: number; cacheWrite: number; output: number }
+): string {
+  return JSON.stringify({
+    type: 'message',
+    message: {
+      role: 'assistant',
+      model,
+      provider: 'anthropic',
+      usage: {
+        ...usage,
+        totalTokens: usage.input + usage.cacheRead + usage.cacheWrite + usage.output,
+        cost: { input: 0.00001, output: 0.025, cacheRead: 0.06, cacheWrite: 0.008, total: 0.09 },
+        cttl: { ephemeral1h: usage.cacheWrite },
+      },
+    },
+  });
+}
+/** A `model_change` row — provider-prefixed, as Oh My Pi writes it. */
+function ompModelChangeLine(model: string): string {
+  return JSON.stringify({
+    type: 'model_change',
+    id: 'a22658f7',
+    parentId: null,
+    timestamp: '2026-08-06T03:31:52.272Z',
+    model,
+    resolvedModelIsFallback: false,
+  });
+}
 
 const SESSION_META_LINE = JSON.stringify({ type: 'session_meta', payload: { cli_version: '0.144.1' } });
 
@@ -115,6 +163,51 @@ describe('agent-context', () => {
   /** An Oh My Pi session file, in the on-disk row order every real one uses. */
   function writeOmpSession(name: string): string {
     return writeTranscript(name, [OMP_TITLE_LINE, OMP_SESSION_LINE, OMP_MESSAGE_LINE]);
+  }
+
+  /** One session file inside a bucket: its filename, its header cwd, and rows. */
+  interface OmpSessionSpec {
+    name: string;
+    cwd: string;
+    /** Rows after the title/session header. Defaults to one usage-bearing message. */
+    rows?: string[];
+    /** Explicit mtime, so newest-wins ordering is deterministic rather than raced. */
+    mtimeMs?: number;
+    /** Write into `<bucket>/<subdir>/` — how Oh My Pi stores SUBAGENT journals. */
+    subdir?: string;
+  }
+
+  /**
+   * An Oh My Pi `sessions/` directory with the given buckets, returning its path.
+   * Buckets are named by the caller so a test can put a legacy-named bucket and
+   * a current hashed-named one side by side, which is the layout the locator
+   * exists for.
+   */
+  function writeOmpSessionsTree(buckets: Record<string, OmpSessionSpec[]>): string {
+    const sessionsDir = path.join(dir, 'omp-sessions');
+    for (const [bucket, sessions] of Object.entries(buckets)) {
+      for (const session of sessions) {
+        const holder = session.subdir
+          ? path.join(sessionsDir, bucket, session.subdir)
+          : path.join(sessionsDir, bucket);
+        fs.mkdirSync(holder, { recursive: true });
+        const file = path.join(holder, session.name);
+        fs.writeFileSync(
+          file,
+          [
+            OMP_TITLE_LINE,
+            ompSessionLine(session.cwd),
+            ...(session.rows ?? [OMP_MESSAGE_LINE]),
+          ].join('\n') + '\n',
+          'utf-8'
+        );
+        if (session.mtimeMs !== undefined) {
+          const when = session.mtimeMs / 1000;
+          fs.utimesSync(file, when, when);
+        }
+      }
+    }
+    return sessionsDir;
   }
 
   describe('resolveModelLimit', () => {
@@ -388,6 +481,208 @@ describe('agent-context', () => {
     });
   });
 
+  describe('findLatestOmpSession', () => {
+    const PROJECT = path.join('/', 'Users', 'example', 'project');
+    const OTHER = path.join('/', 'Users', 'example', 'other');
+
+    /**
+     * Reproduces the live finding this locator exists for: one working directory
+     * with sessions under two bucket layouts at once, the NEWER one sitting in
+     * the legacy home-relative bucket rather than the current hashed one. A
+     * locator that derived a single bucket name from the cwd would read the
+     * hashed bucket and report the older session as the live one.
+     */
+    it('returns the newest session for the cwd even when a legacy bucket holds it', () => {
+      const sessions = writeOmpSessionsTree({
+        'home-project-0a97387b3087316e0000000000000000': [
+          { name: '2026-08-05T07-01-52-329Z_old.jsonl', cwd: PROJECT, mtimeMs: 1_000_000 },
+        ],
+        '-Users-example-project': [
+          { name: '2026-08-06T10-37-00-000Z_new.jsonl', cwd: PROJECT, mtimeMs: 2_000_000 },
+        ],
+      });
+      expect(findLatestOmpSession(sessions, PROJECT)).toBe(
+        path.join(sessions, '-Users-example-project', '2026-08-06T10-37-00-000Z_new.jsonl')
+      );
+    });
+
+    it('rejects a bucket whose header records another cwd, however its name reads', () => {
+      // The bucket NAME says this repository; the header says otherwise, and the
+      // header is what Oh My Pi itself trusts when it splits colliding legacy
+      // buckets. A name-derived locator would return this file.
+      const sessions = writeOmpSessionsTree({
+        '-Users-example-project': [
+          { name: '2026-08-06T11-00-00-000Z_foreign.jsonl', cwd: OTHER, mtimeMs: 3_000_000 },
+        ],
+        'home-project-abc': [
+          { name: '2026-08-06T09-00-00-000Z_ours.jsonl', cwd: PROJECT, mtimeMs: 1_000_000 },
+        ],
+      });
+      expect(findLatestOmpSession(sessions, PROJECT)).toBe(
+        path.join(sessions, 'home-project-abc', '2026-08-06T09-00-00-000Z_ours.jsonl')
+      );
+    });
+
+    it('does not privilege a bucket named by the current hashing scheme', () => {
+      // Ordering is by mtime across every layout. A locator that special-cased
+      // the derived name — or merely preferred it on a tie — would return the
+      // hashed bucket's older file here.
+      const sessions = writeOmpSessionsTree({
+        'home-project-0a97387b3087316e0000000000000000': [
+          { name: 'hashed-older.jsonl', cwd: PROJECT, mtimeMs: 1_000_000 },
+        ],
+        '-tmp-project': [{ name: 'temp-newer.jsonl', cwd: PROJECT, mtimeMs: 5_000_000 }],
+        '--Users-example-project--': [
+          { name: 'absolute-middle.jsonl', cwd: PROJECT, mtimeMs: 3_000_000 },
+        ],
+      });
+      expect(findLatestOmpSession(sessions, PROJECT)).toBe(
+        path.join(sessions, '-tmp-project', 'temp-newer.jsonl')
+      );
+    });
+
+    it('finds our older session when a mixed bucket holds a newer foreign one', () => {
+      // Oh My Pi splits colliding legacy buckets by header cwd, so one bucket
+      // CAN hold two directories' sessions. Taking each bucket's newest file
+      // before confirming the cwd would miss ours entirely.
+      const sessions = writeOmpSessionsTree({
+        '-Users-example-project': [
+          { name: 'mixed-foreign-newer.jsonl', cwd: OTHER, mtimeMs: 4_000_000 },
+          { name: 'mixed-ours-older.jsonl', cwd: PROJECT, mtimeMs: 2_000_000 },
+        ],
+      });
+      expect(findLatestOmpSession(sessions, PROJECT)).toBe(
+        path.join(sessions, '-Users-example-project', 'mixed-ours-older.jsonl')
+      );
+    });
+
+    it('never returns a subagent journal, which records the LEAD cwd and header', () => {
+      // Oh My Pi writes each subagent's journal to
+      // `<bucket>/<lead session basename>/<AgentName>.jsonl`, with the same cwd
+      // and the same title/session rows as its LEAD — indistinguishable by
+      // content, so only depth separates them. This is the Oh My Pi analog of
+      // excluding Claude's `agent-*.jsonl`.
+      const sessions = writeOmpSessionsTree({
+        '-Users-example-project': [
+          { name: 'lead.jsonl', cwd: PROJECT, mtimeMs: 1_000_000 },
+          {
+            name: 'ReviewWorker.jsonl',
+            cwd: PROJECT,
+            mtimeMs: 9_000_000,
+            subdir: '2026-08-06T10-37-00-000Z_lead',
+          },
+        ],
+      });
+      expect(findLatestOmpSession(sessions, PROJECT)).toBe(
+        path.join(sessions, '-Users-example-project', 'lead.jsonl')
+      );
+    });
+
+    it('skips a candidate whose header cannot be read or parsed', () => {
+      const sessions = writeOmpSessionsTree({
+        'home-project-abc': [{ name: 'ours.jsonl', cwd: PROJECT, mtimeMs: 1_000_000 }],
+      });
+      fs.writeFileSync(
+        path.join(sessions, 'home-project-abc', 'corrupt.jsonl'),
+        '{not json\n{"type":"session"\n',
+        'utf-8'
+      );
+      fs.utimesSync(path.join(sessions, 'home-project-abc', 'corrupt.jsonl'), 9_000, 9_000);
+      expect(findLatestOmpSession(sessions, PROJECT)).toBe(
+        path.join(sessions, 'home-project-abc', 'ours.jsonl')
+      );
+    });
+
+    it('compares resolved absolute paths, tolerating a non-normalized probe cwd', () => {
+      const sessions = writeOmpSessionsTree({
+        'home-project-abc': [{ name: 'ours.jsonl', cwd: PROJECT }],
+      });
+      // A TRAILING SEPARATOR, not `..`: `path.join(PROJECT, '..', 'project')`
+      // collapses to PROJECT before the locator ever sees it, so the assertion
+      // would hold even with both `path.resolve` calls deleted. `PROJECT + sep`
+      // is not string-equal to the recorded cwd and only survives if the
+      // comparison really resolves both sides.
+      const messy = PROJECT + path.sep;
+      expect(messy).not.toBe(PROJECT);
+      expect(findLatestOmpSession(sessions, messy)).toBe(
+        path.join(sessions, 'home-project-abc', 'ours.jsonl')
+      );
+    });
+
+    it('finds a header pushed past the first prefix bound', () => {
+      // The header is NOT fixed-width: it carries the documented growth fields
+      // `additionalDirectories` and `previousSessionFiles`, so a long-lived
+      // session can push the `session` row past the first 8 KiB bound.
+      // Discarding the candidate there would make a LIVE session permanently
+      // invisible to `--latest`.
+      const sessions = writeOmpSessionsTree({
+        'home-project-abc': [{ name: 'ours.jsonl', cwd: PROJECT }],
+      });
+      const file = path.join(sessions, 'home-project-abc', 'ours.jsonl');
+      // Re-write the file with a >8 KiB filler row ahead of the header.
+      const filler = JSON.stringify({ type: 'custom', pad: 'x'.repeat(9_000) });
+      fs.writeFileSync(
+        file,
+        [filler, ompSessionLine(PROJECT), OMP_MESSAGE_LINE].join('\n') + '\n',
+        'utf-8'
+      );
+      expect(filler.length).toBeGreaterThan(8 * 1024);
+      expect(findLatestOmpSession(sessions, PROJECT)).toBe(file);
+    });
+
+    it('breaks an mtime tie deterministically instead of by directory order', () => {
+      // Equal mtimes are not exotic — a restored, rsynced or `cp -p` store
+      // carries them. Without a tiebreak the winner falls out of readdir order
+      // across buckets, so it is arbitrary and flips on a bucket rename.
+      const sessions = writeOmpSessionsTree({
+        'bucket-a': [{ name: '2026-01-01T00-00-01Z_aaa.jsonl', cwd: PROJECT, mtimeMs: 1_700_000_000_000 }],
+        'bucket-b': [{ name: '2026-01-02T00-00-01Z_bbb.jsonl', cwd: PROJECT, mtimeMs: 1_700_000_000_000 }],
+      });
+      // Oh My Pi names each file with an ISO-8601 prefix, so basename order IS
+      // chronological order: the later timestamp must win both times.
+      const expected = path.join(sessions, 'bucket-b', '2026-01-02T00-00-01Z_bbb.jsonl');
+      expect(findLatestOmpSession(sessions, PROJECT)).toBe(expected);
+      expect(findLatestOmpSession(sessions, PROJECT)).toBe(expected);
+    });
+
+    it('skips a non-regular file without reading it, so a device cannot hang the scan', () => {
+      // The Dirent `isFile()`/`isDirectory()` filter is load-bearing and easy to
+      // destroy: `fs.statSync(full).isFile()` looks equivalent but FOLLOWS
+      // symlinks, which would hand `readOmpSessionCwd`'s openSync a character
+      // device and never return. Mirrors the existing "refuses to read a target
+      // that is not a regular file" guard added for `agent audit`.
+      const sessions = writeOmpSessionsTree({
+        'home-project-abc': [{ name: 'ours.jsonl', cwd: PROJECT, mtimeMs: 1_000 }],
+      });
+      const bucket = path.join(sessions, 'home-project-abc');
+      // A directory that looks like a session file, and a bucket-level symlink loop.
+      fs.mkdirSync(path.join(bucket, 'looks-like.jsonl'), { recursive: true });
+      fs.symlinkSync(path.join(sessions, 'loopB'), path.join(sessions, 'loopA'));
+      fs.symlinkSync(path.join(sessions, 'loopA'), path.join(sessions, 'loopB'));
+      if (process.platform !== 'win32') {
+        // Newer than the real session, so an unfiltered scan would reach it first.
+        fs.symlinkSync('/dev/zero', path.join(bucket, 'devzero.jsonl'));
+      }
+
+      const started = Date.now();
+      expect(findLatestOmpSession(sessions, PROJECT)).toBe(path.join(bucket, 'ours.jsonl'));
+      expect(Date.now() - started).toBeLessThan(2_000);
+    });
+
+    it('throws AgentContextUnavailableError when the sessions root is missing', () => {
+      expect(() => findLatestOmpSession(path.join(dir, 'absent'), PROJECT)).toThrow(
+        AgentContextUnavailableError
+      );
+    });
+
+    it('throws AgentContextUnavailableError when no bucket records the cwd', () => {
+      const sessions = writeOmpSessionsTree({
+        '-Users-example-other': [{ name: 'foreign.jsonl', cwd: OTHER }],
+      });
+      expect(() => findLatestOmpSession(sessions, PROJECT)).toThrow(AgentContextUnavailableError);
+    });
+  });
+
   // design D2: graceful degradation for environmental absence under --latest.
   describe('probeAgentContextSafe', () => {
     it('returns {available:false, reason:"no-transcript"} when the projects dir is absent', () => {
@@ -449,15 +744,56 @@ describe('agent-context', () => {
       expect(() => probeAgentContextSafe({})).toThrow(/--transcript|--latest/);
     });
 
-    it('refuses an implicit --latest probe on a host with no context-probe adapter', () => {
+    it('reports an Oh My Pi host its OWN session, not another harness store', () => {
+      const sessions = writeOmpSessionsTree({
+        '-tmp-project': [{ name: '2026-08-07T00-00-00-000Z_live.jsonl', cwd: dir }],
+      });
+      // A Claude transcript sits in the same suite temp dir; a reading that
+      // came from it would report 10 tokens instead of the session's own.
+      writeTranscript('foreign.jsonl', [assistantLine('claude-opus-4-8', { input_tokens: 10 })]);
+      const result = probeAgentContextSafe({
+        latest: true,
+        dir: sessions,
+        cwd: dir,
+        env: { OMPCODE: '1', CLAUDECODE: '1' },
+      });
+      expect(result.available).toBe(true);
+      if (result.available) {
+        expect(result.runtime).toBe('omp');
+        expect(result.contextTokens).toBe(99_848);
+      }
+    });
+
+    it('reports the ordinary no-transcript absence when an Oh My Pi host has no session', () => {
+      const sessions = path.join(dir, 'omp-sessions-empty');
+      fs.mkdirSync(sessions, { recursive: true });
+      const result = probeAgentContextSafe({
+        latest: true,
+        dir: sessions,
+        cwd: dir,
+        env: { OMPCODE: '1', CLAUDECODE: '1' },
+      });
+      // The absence path, NOT `unsupported-host`: Oh My Pi has a probe adapter,
+      // it simply has no session for this directory yet.
+      expect(result).toEqual({
+        available: false,
+        reason: 'no-transcript',
+        detail: expect.stringContaining('No Oh My Pi session found under'),
+      });
+    });
+
+    it('still refuses an implicit --latest probe on a host with no context-probe adapter', () => {
       const p = writeTranscript('foreign.jsonl', [
         assistantLine('claude-opus-4-8', { input_tokens: 10 }),
       ]);
       expect(fs.existsSync(p)).toBe(true);
+      // `zed` is registered with no probe adapter and has no host fingerprint,
+      // so the explicit override is the only way to reach the refusal now
+      // (design D11 — the contract narrows, it is not deleted).
       const result = probeAgentContextSafe({
         latest: true,
         dir,
-        env: { OMPCODE: '1', CLAUDECODE: '1' },
+        env: { RASEN_AGENT_RUNTIME: 'zed' },
       });
       // Exhaustive: `toEqual` on the whole result rejects an EXTRA fabricated
       // field as well as a missing one, which a list of `not.toHaveProperty`
@@ -465,7 +801,7 @@ describe('agent-context', () => {
       expect(result).toEqual({
         available: false,
         reason: 'unsupported-host',
-        detail: expect.stringContaining('No context probe exists for the detected host runtime "omp"'),
+        detail: expect.stringContaining('No context probe exists for the detected host runtime "zed"'),
       });
     });
 
@@ -483,17 +819,20 @@ describe('agent-context', () => {
             latest: true,
             dir,
             limit,
-            env: { OMPCODE: '1', CLAUDECODE: '1' },
+            env: { RASEN_AGENT_RUNTIME: 'zed' },
           })
         ).toThrow(/--limit must be a positive integer/);
       }
     );
 
     it('honours an explicit --transcript from a host with no context-probe adapter', () => {
-      const p = writeTranscript('explicit-from-omp.jsonl', [
+      const p = writeTranscript('explicit-from-zed.jsonl', [
         assistantLine('claude-opus-4-8', { input_tokens: 10 }),
       ]);
-      const result = probeAgentContextSafe({ transcript: p, env: { OMPCODE: '1' } });
+      const result = probeAgentContextSafe({
+        transcript: p,
+        env: { RASEN_AGENT_RUNTIME: 'zed' },
+      });
       expect(result.available).toBe(true);
       if (result.available) expect(result.contextTokens).toBe(10);
     });
@@ -504,7 +843,7 @@ describe('agent-context', () => {
         latest: true,
         runtime: 'claude',
         dir,
-        env: { OMPCODE: '1' },
+        env: { RASEN_AGENT_RUNTIME: 'zed' },
       });
       expect(result.available).toBe(true);
       if (result.available) expect(result.contextTokens).toBe(7);
@@ -520,6 +859,27 @@ describe('agent-context', () => {
         const result = probeAgentContextSafe({ latest: true, dir, env });
         expect(result.available, JSON.stringify(env)).toBe(true);
         if (result.available) expect(result.contextTokens, JSON.stringify(env)).toBe(4);
+      }
+    });
+
+    it('keeps a Codex host pinned to the fallback store, not its own rollouts', () => {
+      // `cli-agent-context` requires a Claude or Codex host's implicit
+      // discovery to stay byte-identical, so the host-aware resolution added
+      // for Oh My Pi must NOT reach Codex. Both stores hold a session for this
+      // cwd here and the assertion is which one answered: routing to Codex's
+      // own rollouts is a better answer and a separate change.
+      writeTranscript('main-claude.jsonl', [
+        assistantLine('claude-opus-4-8', { input_tokens: 4 }),
+      ]);
+      const result = probeAgentContextSafe({
+        latest: true,
+        dir,
+        env: { CODEX_THREAD_ID: 'thread-1' },
+      });
+      expect(result.available).toBe(true);
+      if (result.available) {
+        expect(result.runtime).toBe('claude');
+        expect(result.contextTokens).toBe(4);
       }
     });
   });
@@ -646,6 +1006,211 @@ describe('agent-context', () => {
     });
   });
 
+  describe('computeContextFromOmpSession', () => {
+    /** The exact figures a live session on this machine recorded. */
+    const LIVE = { input: 2, cacheRead: 122_824, cacheWrite: 1_275, output: 263 };
+    const LIVE_OCCUPANCY = LIVE.input + LIVE.cacheRead + LIVE.cacheWrite; // 124_101
+    const LIVE_TOTAL_TOKENS = LIVE_OCCUPANCY + LIVE.output; // 124_364
+
+    function writeSession(name: string, rows: string[]): string {
+      return writeTranscript(name, [OMP_TITLE_LINE, OMP_SESSION_LINE, ...rows]);
+    }
+
+    it('sums what was sent to the model, cached input included', () => {
+      const p = writeSession('live.jsonl', [ompMessageLine('claude-opus-5', LIVE)]);
+      const result = computeContextFromOmpSession(p);
+      expect(result).toEqual({
+        runtime: 'omp',
+        model: 'claude-opus-5',
+        contextTokens: LIVE_OCCUPANCY,
+        limit: 1_000_000,
+        pct: 0.124101,
+        remainingTokens: 875_899,
+        transcript: p,
+      });
+    });
+
+    it('does NOT report totalTokens, which adds the turn output', () => {
+      // The trap this reader exists to avoid: `totalTokens` is present on every
+      // real row and is 263 higher than the occupancy. Using it would overstate
+      // occupancy by one turn's output on every reading, making an Oh My Pi
+      // session cross the handoff threshold earlier than a Claude session at
+      // the same real occupancy.
+      const p = writeSession('total-trap.jsonl', [ompMessageLine('claude-opus-5', LIVE)]);
+      expect(LIVE_TOTAL_TOKENS).toBe(124_364);
+      expect(computeContextFromOmpSession(p).contextTokens).not.toBe(LIVE_TOTAL_TOKENS);
+      expect(computeContextFromOmpSession(p).contextTokens).toBe(124_101);
+    });
+
+    it('uses the LAST usage-bearing message', () => {
+      const p = writeSession('last-wins.jsonl', [
+        ompMessageLine('claude-opus-5', { input: 1, cacheRead: 10, cacheWrite: 0, output: 5 }),
+        JSON.stringify({ type: 'custom', payload: { note: 'no usage here' } }),
+        ompMessageLine('claude-opus-5', LIVE),
+      ]);
+      expect(computeContextFromOmpSession(p).contextTokens).toBe(LIVE_OCCUPANCY);
+    });
+
+    // Oh My Pi records an all-zero usage row for a turn that sent nothing (an
+    // aborted or interrupted one) and writes a RUN of them at the tail of a
+    // session that ended that way — measured on a real 479-row journal whose
+    // last twelve usage rows are all-zero while its true occupancy is 353_360.
+    // An unconditional last-wins read reported that session as empty with its
+    // whole window free, so the handoff verdict said "not yet needed" at 35%.
+    const OMP_ZERO = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
+
+    it('does not let a trailing zero-usage row mask real occupancy', () => {
+      const p = writeSession('zero-tail.jsonl', [
+        ompMessageLine('claude-opus-5', LIVE),
+        ompMessageLine('claude-opus-5', OMP_ZERO),
+      ]);
+      expect(computeContextFromOmpSession(p).contextTokens).toBe(LIVE_OCCUPANCY);
+    });
+
+    it('sees past a RUN of trailing zero-usage rows, as a real journal writes', () => {
+      const p = writeSession('zero-tail-run.jsonl', [
+        ompMessageLine('claude-opus-5', LIVE),
+        ...Array.from({ length: 12 }, () => ompMessageLine('claude-opus-5', OMP_ZERO)),
+      ]);
+      const r = computeContextFromOmpSession(p);
+      expect(r.contextTokens).toBe(LIVE_OCCUPANCY);
+      // The whole point of the fix: the verdict layer receives real headroom
+      // rather than a full-window fabrication.
+      expect(r.remainingTokens).toBe(1_000_000 - LIVE_OCCUPANCY);
+      expect(r.pct).toBeGreaterThan(0);
+    });
+
+    it('takes the model from the measuring row, not from a later zero row', () => {
+      const p = writeSession('zero-tail-model.jsonl', [
+        ompMessageLine('claude-opus-5', LIVE),
+        ompMessageLine('some-unlisted-model', OMP_ZERO),
+      ]);
+      const r = computeContextFromOmpSession(p);
+      expect(r.model).toBe('claude-opus-5');
+      // Reading the model off the zero row would also lose the window.
+      expect(r.limit).toBe(1_000_000);
+    });
+
+    it('still reports 0 when every usage row is zero, rather than erroring', () => {
+      const p = writeSession('zero-only.jsonl', [
+        ompMessageLine('claude-opus-5', OMP_ZERO),
+        ompMessageLine('claude-opus-5', OMP_ZERO),
+      ]);
+      const r = computeContextFromOmpSession(p);
+      expect(r.contextTokens).toBe(0);
+      expect(r.model).toBe('claude-opus-5');
+    });
+
+    // `/clear` appends a payload-free `reset_boundary` and Oh My Pi rebuilds
+    // the model context after the latest one (`omp://session.md`), so pre-clear
+    // turns are no longer occupying anything.
+    const OMP_RESET = JSON.stringify({ type: 'reset_boundary', id: 'b1' });
+
+    it('measures only the current context epoch after a reset boundary', () => {
+      const p = writeSession('reset-epoch.jsonl', [
+        ompMessageLine('claude-opus-5', LIVE),
+        OMP_RESET,
+        ompMessageLine('claude-opus-5', { input: 1, cacheRead: 10, cacheWrite: 0, output: 5 }),
+      ]);
+      expect(computeContextFromOmpSession(p).contextTokens).toBe(11);
+    });
+
+    // The interaction that makes the boundary guard load-bearing: skipping zero
+    // rows must not walk BACK past a reset, which would turn a cleared session
+    // into a report of its pre-clear occupancy.
+    it('does not walk past a reset boundary to find a nonzero row', () => {
+      const p = writeSession('reset-then-zero.jsonl', [
+        ompMessageLine('claude-opus-5', LIVE),
+        OMP_RESET,
+        ompMessageLine('claude-opus-5', OMP_ZERO),
+      ]);
+      const r = computeContextFromOmpSession(p);
+      expect(r.contextTokens).toBe(0);
+      expect(r.contextTokens).not.toBe(LIVE_OCCUPANCY);
+    });
+
+    it('skips the fixed-width title row and any malformed line', () => {
+      const p = writeSession('malformed.jsonl', [
+        '{ not json',
+        '',
+        ompMessageLine('claude-opus-5', LIVE),
+      ]);
+      expect(computeContextFromOmpSession(p).contextTokens).toBe(LIVE_OCCUPANCY);
+    });
+
+    it('reports an unknown window as unknown rather than substituting a default', () => {
+      // Oh My Pi routes to dozens of providers whose real windows span a few
+      // thousand tokens to over a million, so `DEFAULT_CONTEXT_LIMIT` would be a
+      // confident percentage describing nothing.
+      const p = writeSession('unknown-model.jsonl', [
+        ompMessageLine('some-vendor/experimental-7b', LIVE),
+      ]);
+      const result = computeContextFromOmpSession(p);
+      expect(result.model).toBe('some-vendor/experimental-7b');
+      expect(result.limit).toBe(0);
+      expect(result.pct).toBe(0);
+      expect(result.remainingTokens).toBe(0);
+      expect(result.contextTokens).toBe(LIVE_OCCUPANCY);
+      expect(result.limit).not.toBe(DEFAULT_CONTEXT_LIMIT);
+    });
+
+    it('resolves a known model to its own preset window', () => {
+      const p = writeSession('known-model.jsonl', [ompMessageLine('gpt-5.6-sol', LIVE)]);
+      expect(computeContextFromOmpSession(p).limit).toBe(272_000);
+    });
+
+    it('honours an explicit limit over both the preset and the unknown fallback', () => {
+      const known = writeSession('override-known.jsonl', [ompMessageLine('claude-opus-5', LIVE)]);
+      const unknown = writeSession('override-unknown.jsonl', [ompMessageLine('mystery-1', LIVE)]);
+      expect(computeContextFromOmpSession(known, { limit: 50_000 }).limit).toBe(50_000);
+      expect(computeContextFromOmpSession(unknown, { limit: 50_000 }).limit).toBe(50_000);
+    });
+
+    it('falls back to the last model_change when the message carries no model', () => {
+      // A `model_change` id is provider-prefixed (`anthropic/claude-opus-5`);
+      // preset matching is substring-based, so the window still resolves.
+      const p = writeSession('model-change.jsonl', [
+        ompModelChangeLine('anthropic/claude-sonnet-4-5'),
+        ompModelChangeLine('anthropic/claude-opus-5'),
+        OMP_MESSAGE_LINE,
+      ]);
+      const result = computeContextFromOmpSession(p);
+      expect(result.model).toBe('anthropic/claude-opus-5');
+      expect(result.limit).toBe(1_000_000);
+    });
+
+    it("prefers the measured message's own model over a later model_change", () => {
+      // The model that produced the measured usage is the one attached to it; a
+      // `model_change` can precede a turn that never completed.
+      const p = writeSession('model-precedence.jsonl', [
+        ompMessageLine('gpt-5.6-sol', LIVE),
+        ompModelChangeLine('anthropic/claude-opus-5'),
+      ]);
+      expect(computeContextFromOmpSession(p).model).toBe('gpt-5.6-sol');
+      expect(computeContextFromOmpSession(p).limit).toBe(272_000);
+    });
+
+    it("reports 'unknown' when neither a message model nor a model_change exists", () => {
+      const p = writeSession('no-model.jsonl', [OMP_MESSAGE_LINE]);
+      expect(computeContextFromOmpSession(p).model).toBe('unknown');
+    });
+
+    it('refuses a session with no completed assistant turn, naming the file', () => {
+      // Refusal, not a zero: the Codex young-rollout zero is right for a rollout
+      // that has not reported `token_count` yet, but an Oh My Pi journal records
+      // usage on its first completed turn, so absence means it is not measurable.
+      const p = writeSession('no-usage.jsonl', [ompModelChangeLine('anthropic/claude-opus-5')]);
+      expect(() => computeContextFromOmpSession(p)).toThrow(/No assistant usage found/);
+      expect(() => computeContextFromOmpSession(p)).toThrow(p);
+    });
+
+    it('throws an actionable error on an unreadable file', () => {
+      expect(() => computeContextFromOmpSession(path.join(dir, 'absent.jsonl'))).toThrow(
+        /Cannot read Oh My Pi session/
+      );
+    });
+  });
+
   describe('detectSessionOwner', () => {
     it('an explicit override wins outright, regardless of filename or content', () => {
       const p = writeTranscript('rollout-2026-01-01T00-00-00-abc.jsonl', [SESSION_META_LINE]);
@@ -653,12 +1218,14 @@ describe('agent-context', () => {
       expect(detectSessionOwner(p, 'codex')).toBe('codex');
     });
 
-    it.each(['zed', 'omp', 'bogus'])(
+    it.each(['zed', 'bogus'])(
       'rejects non-probe runtime %s with the accepted runtimes in the error',
       (runtime) => {
+      // `omp` is deliberately absent: it declares `canProbeContext` now, so it
+      // is an accepted `--runtime` value and is covered as a positive case below.
       const p = writeTranscript('t.jsonl', [assistantLine('claude-opus-4-8', { input_tokens: 1 })]);
       expect(() => probeAgentContext({ transcript: p, runtime })).toThrow(
-        /--runtime must be "claude" or "codex"/
+        /--runtime must be "claude" or "codex" or "omp"/
       );
       }
     );
@@ -732,21 +1299,46 @@ describe('agent-context', () => {
     });
   });
 
-  describe('a recognized harness with no context reader', () => {
-    it('refuses an explicit --transcript by name instead of measuring it', () => {
+  describe('an explicitly named Oh My Pi session', () => {
+    it('is read by name rather than refused for want of a reader', () => {
       const p = writeOmpSession('omp-explicit.jsonl');
+      const result = probeAgentContext({ transcript: p });
+      expect(result.runtime).toBe('omp');
+      expect(result.contextTokens).toBe(99_848); // 87_848 + 0 + 12_000
+      expect(result.transcript).toBe(p);
+    });
+
+    it('is accepted as an explicit --runtime value', () => {
+      const p = writeOmpSession('omp-runtime-flag.jsonl');
+      expect(probeAgentContext({ transcript: p, runtime: 'omp' }).runtime).toBe('omp');
+    });
+
+    it('names Oh My Pi among what Rasen can probe when a runtime IS unreadable', () => {
+      // The refusal contract narrows rather than disappearing: `zed` is still
+      // registered with no context reader, and its advice must now list `omp`.
+      const p = path.join(dir, 'threads.db');
+      fs.writeFileSync(p, '', 'utf-8');
       expect(() => probeAgentContext({ transcript: p })).toThrow(
-        /No context reader exists for the recognized session runtime "omp"/
+        /No context reader exists for the recognized session runtime "zed"/
       );
+      expect(() => probeAgentContext({ transcript: p })).toThrow(/claude and codex and omp/);
     });
 
-    it('names what Rasen can probe instead of leaving the user stuck', () => {
-      const p = writeOmpSession('omp-advice.jsonl');
-      expect(() => probeAgentContext({ transcript: p })).toThrow(/claude and codex/);
-    });
-
-    it('reports absence from the opportunistic estimate, never a zero occupancy', () => {
+    it('yields an estimate from the opportunistic path instead of absence', () => {
       const p = writeOmpSession('omp-estimate.jsonl');
+      expect(tryContextEstimate(p)).toEqual({
+        contextTokens: 99_848,
+        // No model on the row and no `model_change`, so the window is honestly
+        // unknown — an estimate with no fraction, never a fabricated 200k.
+        limit: 0,
+        pct: 0,
+        remainingTokens: 0,
+      });
+    });
+
+    it('still reports absence for a harness that genuinely has no reader', () => {
+      const p = path.join(dir, 'threads.sqlite');
+      fs.writeFileSync(p, '', 'utf-8');
       expect(tryContextEstimate(p)).toBeUndefined();
     });
 
@@ -1047,5 +1639,59 @@ describe('resolveHandoffThresholdReport', () => {
 
     expect(result).toEqual({ threshold: 0.7, thresholdSource: 'store', shouldHandoff: true });
     fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  describe('an unmeasurable context window withholds the verdict', () => {
+    // The defect this pins: at `limit === 0` the reader reports `pct: 0` and
+    // `remainingTokens: 0` as PLACEHOLDERS, not measurements. Compared against a
+    // threshold, the fraction form can then never fire and the absolute form
+    // always fires — so a session at real occupancy was reported both as "0.0%
+    // full, handoff not yet needed" and, under an absolute threshold, as
+    // "handoff recommended" from its first turn. Neither is an answer.
+    it('is detected only when occupancy is real, so a young rollout is unaffected', async () => {
+      const { isUnmeasurableWindow } = await import('../../src/core/agent-context.js');
+      // Oh My Pi on a model with no preset: occupancy measured, window not.
+      expect(isUnmeasurableWindow(0, 124_101)).toBe(true);
+      // A Codex rollout with zero completed turns: nothing sent yet, so the
+      // zeros describe reality and its reading must stay byte-identical.
+      expect(isUnmeasurableWindow(0, 0)).toBe(false);
+      // A known window is always measurable.
+      expect(isUnmeasurableWindow(1_000_000, 124_101)).toBe(false);
+      expect(isUnmeasurableWindow(1_000_000, 0)).toBe(false);
+    });
+
+    it('omits shouldHandoff and reports window unknown for a fraction threshold', async () => {
+      const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
+      const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-unmeas-frac-'));
+      // pct/remainingTokens are the placeholders the reader emits at limit 0.
+      const result = await resolveHandoffThresholdReport(0, 0, outside, undefined, true);
+      expect(result).toEqual({
+        threshold: 0.5,
+        thresholdSource: 'default',
+        window: 'unknown',
+      });
+      expect(result.shouldHandoff).toBeUndefined();
+      fs.rmSync(outside, { recursive: true, force: true });
+    });
+
+    it('omits shouldHandoff for an absolute threshold that a 0 remaining would always satisfy', async () => {
+      const { saveGlobalConfig } = await import('../../src/core/global-config.js');
+      saveGlobalConfig({ handoff: { threshold: { remainingTokens: 60_000 } } } as never);
+      const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
+      const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-unmeas-abs-'));
+
+      // Measurable control: 0 <= 60_000 fires, which is exactly why the
+      // unmeasurable case must not reach this comparison.
+      const measurable = await resolveHandoffThresholdReport(0, 0, outside);
+      expect(measurable.shouldHandoff).toBe(true);
+
+      const unmeasurable = await resolveHandoffThresholdReport(0, 0, outside, undefined, true);
+      expect(unmeasurable).toEqual({
+        threshold: { remainingTokens: 60_000 },
+        thresholdSource: 'global',
+        window: 'unknown',
+      });
+      fs.rmSync(outside, { recursive: true, force: true });
+    });
   });
 });
