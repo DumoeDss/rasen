@@ -96,16 +96,35 @@ if (prepared.state !== 'prepared-inert') {
   throw new Error(`Daemon prepare did not remain inert: ${prepared.state}`);
 }
 
-// `activate` lives on the published authority, so the daemon walks the full
-// prepare -> publish -> activate protocol exactly as the coordinator requires.
+// `activate` lives on the published authority, and the guardian refuses to activate a scope whose
+// runtime bridge is not open (`primary.rs` handle_control, Activate arm). The daemon therefore
+// walks publish -> open runtime -> activate, which is exactly the order production uses in
+// `process-scope-adapter.ts`. Skipping the bridge yields a guardian refusal that the control client
+// reports as `reference-invalid`, which names the reference rather than the missing bridge.
 const published = await prepared.publish(bundle.publishAuthority);
 if (published.state !== 'published-inert') {
   throw new Error(`Daemon publication did not remain inert: ${published.state}`);
 }
+const runtime = bundle.openRuntime(prepared.reference);
+// The bridge is held for the scope's whole life, as the adapter holds it. Nothing here consumes
+// the workload's output, so the streams are drained and every terminal promise is settled
+// locally: an unhandled rejection would kill this daemon and forge the very teardown under test.
+runtime.stdout.resume();
+runtime.stderr.resume();
+runtime.rootExited.catch(() => {});
+runtime.exactScopeEmpty.catch(() => {});
 const live = await published.activate();
 if (live.state !== 'live') {
   throw new Error(`Daemon activate did not reach live: ${JSON.stringify(live)}`);
 }
 
 fs.writeFileSync(ready, String(process.pid), 'utf8');
+
+// A pending promise is not an event-loop handle, so `await new Promise(() => {})` alone lets this
+// daemon exit 13 - silently - as soon as its last handle goes. That is not hypothetical here: the
+// runtime bridge tears its own helper down on an inactivity timeout, and a daemon that dies with it
+// forges exactly the teardown this oracle is meant to observe. The daemon therefore owns a handle
+// that depends on nothing else. Only the test's SIGKILL ends this process.
+const held = setInterval(() => {}, 1_000);
+held.ref();
 await new Promise(() => {});

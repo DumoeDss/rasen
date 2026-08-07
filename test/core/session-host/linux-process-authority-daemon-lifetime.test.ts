@@ -126,6 +126,14 @@ describeActualWsl('Linux daemon-lifetime teardown through the shipped transport'
       // The daemon is never touched. The workload must be allowed to run to completion, which is
       // what a wiring that releases its endpoint too early would break.
       await waitFor(path.join(markers, 'root-completed'), 'the workload to finish', daemon.stderr);
+      // The root and its two resistant descendants time their escape on three independent clocks,
+      // and the double-forked one starts last, so it can still be short of its deadline when the
+      // root records completion. Each marker is waited for on its own deadline instead of being
+      // sampled the instant the root finishes. A torn-down scope writes none of them, so the wait
+      // times out and this case still fails: the claim is unchanged, only the clock it is read on.
+      for (const name of ESCAPE_MARKERS) {
+        await waitFor(path.join(markers, name), name, daemon.stderr);
+      }
       expect(present(markers, ESCAPE_MARKERS).sort()).toEqual([...ESCAPE_MARKERS].sort());
       expect(daemon.child.exitCode).toBeNull();
     } finally {
