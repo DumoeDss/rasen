@@ -1,0 +1,168 @@
+> **Step 1 scope re-tiering (2026-08-07).** Two Direction re-gradings - locked decision 11
+> (daemon-lifetime scope: criterion 4 and its downstream machinery move to the upgrade path)
+> and locked decision 12 (threat model: local-attacker defences are no longer acceptance) -
+> re-tier this ledger. Marker convention used in the per-section notes below:
+> `KEEP` = task remains 0.2.0 acceptance; `NARROWS(reason)` = survives with shrunk
+> acceptance; `UPGRADE-PATH(reason)` = forward obligation moves to the criterion-4 upgrade
+> path (implementation retained in git, nothing deleted); `SUPERSEDED` = the task's premise
+> was overtaken by a later Direction decision. Reasons: `(a)` = decision 11, `(b)` =
+> decision 12, `none` = predates or is untouched by both. Completed checkboxes are
+> historical fact and are never unticked; markers grade forward obligations only. **No
+> finding is closed by this re-tiering.** Full per-task and per-finding grading with
+> anchored justifications: `evidence/step1-scope-reconciliation.md`.
+
+## 1. Historical baseline and S1-S5 RED discriminators
+
+> Re-tier: 1.2 NARROWS(a); 1.4 UPGRADE-PATH(a); 1.5 NARROWS(a); 1.6 NARROWS(b); 1.1/1.3/1.7/1.8 KEEP.
+
+- [x] 1.1 Record the implementation starting point as the escalated `ecp-durable-agent-session-host` strategy delta, including the last fresh 21-file/140-test focused green, 4-file/17-test native green, Windows controller-death success, and open S1-S5 verdict; do not claim the existing opaque/native code as original work of this Change.
+- [x] 1.2 Add an S1 RED macOS ABI test that compile-time checks `proc_uniqidentifierinfo` at 56 bytes plus a platform-gated actual-macOS oracle for same-second distinct birth ids, same-PID/different-birth zero signal, and unavailable-source fail-closed behavior; the test may be locally skipped but must remain runnable unchanged by ECP-8.
+- [x] 1.3 Add an S2 RED real-process test where a backend root spawns a detached descendant and exits; assert the root-exit receipt does not settle whole-scope `closed`, `inspect(ref)` remains live/controllable, and host registry/writer authority remains present until exact terminate or scope-empty.
+- [x] 1.4 Add an S3 RED POSIX replacement suite covering daemon/controller death with a resistant descendant, exact supervisor/group cleanup, and same-PID/different-controller-or-supervisor-birth zero-signal mutations through deterministic discriminators plus platform-gated actual Linux/macOS cases runnable unchanged by ECP-8.
+- [x] 1.5 Add S4 RED test-only hung-controller mutations for PREPARED -> ACTIVATE and prepared abort; assert both settle inside an injected `controlTimeoutMs`, return a typed phase-specific uncertainty, retain the opaque ref/claim, and never automatically issue a second ACTIVATE.
+- [x] 1.6 Add an S5 RED two-clean-build test that builds the helper in two isolated roots, compares bytes/digests, and fails if unequal output coexists with any authoritative byte-reproducibility claim; separately assert each output still exact-matches its own adjacent manifest.
+- [x] 1.7 Run the pre-fix discriminator command and capture the expected failures in `evidence/red-baseline.md`: `pnpm exec vitest run test/core/session-host/process-scope-contract.test.ts test/core/session-host/process-capsule-package.test.ts test/core/session-host/process-capsule-migration.test.ts test/core/session-host/process-capsule-native.test.ts test/core/session-host/process-capsule-macos-identity.test.ts test/core/session-host/process-capsule-posix-replacement.test.ts test/core/session-host/process-capsule-control-deadline.test.ts test/core/session-host/process-capsule-provenance.test.ts test/core/session-host/process-scope-host-closure.test.ts --maxWorkers=1 --minWorkers=1`.
+- [x] 1.8 After every real-process RED probe, audit and reap only exact test-owned PIDs/process groups and remove only test-owned temp roots; record any pre-existing retained temp output without deleting it.
+
+## 2. Protocol-v2 and deep ProcessScope close semantics
+
+> Re-tier: 2.3 NARROWS(none - PGID empty observer superseded 2026-08-04; ROOT_EXIT/SCOPE_EMPTY semantics KEEP); all other tasks KEEP.
+
+- [x] 2.1 Extend `ProcessScope` close/control outcome types with distinct backend-root exit, exact scope-empty, control-lost, and phase-specific timeout/uncertainty facts while keeping PID/PGID/Job/controller/supervisor fields out of the public control interface.
+- [x] 2.2 Rev the private helper protocol and adjacent manifest capability by named constants so old/new helper-client pairs exact-match or fail before preparation; update parser bounds and unknown/out-of-order frame failures without compatibility guessing.
+- [x] 2.3 Change the Rust supervisor/controller protocol so backend root emits `ROOT_EXIT`, the controller continues owning descendants, and only observed whole-group/Job empty emits one terminal `SCOPE_EMPTY` receipt.
+- [x] 2.4 Change `CapsuleClient` so `ROOT_EXIT` is observable without setting the client closed, controller/control-pipe close before `SCOPE_EMPTY` becomes typed uncertainty, and `LiveProcessScope.closed` settles successfully only from scope-empty.
+- [x] 2.5 Update `ClaudeResidentTransport` to end or fail the current backend turn from root-exit facts without treating that event as authority closure, and keep backend protocol results separate from ProcessScope terminal state.
+- [x] 2.6 Update the smallest `SessionHost` close observer/open/cancel/restart/retire/shutdown paths so registry `process`, writer claim, transport capacity, and restart admission clear only after exact scope-empty; controller close, timeout, foreign, and uncertain outcomes retain authority and typed diagnostics.
+- [x] 2.7 Extend the deterministic ProcessScope adapter with independent root-exit and scope-empty transitions and prove the same host integration tests pass without native platform vocabulary leaking above the seam.
+- [x] 2.8 Run `pnpm exec vitest run test/core/session-host/process-scope-contract.test.ts test/core/session-host/process-scope-host-closure.test.ts test/core/session-host/claude-backend.test.ts test/core/session-host/host.test.ts --maxWorkers=1 --minWorkers=1` and repair the S2/deep-boundary set to GREEN.
+
+## 3. S1 macOS 56-byte exact birth identity
+
+> Re-tier: entire section UPGRADE-PATH(a); the macOS durable consumer separately moved to 0.3.0 by locked decision 10 / Replan 4. The 3.5 "mandatory ECP-8 actual-macOS acceptance command" is void; ECP-8 macOS receipts are the in-tool receipt plus best-effort honesty receipt.
+
+- [x] 3.1 Add a committed generated binding with pinned XNU header provenance, or the complete minimal `#[repr(C)]` declaration, for every `proc_uniqidentifierinfo` field including both trailing 64-bit reserve fields.
+- [x] 3.2 Add compile-time macOS size/alignment assertions requiring the native structure to be exactly 56 bytes; make any layout drift a build failure.
+- [x] 3.3 Accept `proc_pidinfo` identity only when it returns the complete structure and non-zero unique id/version facts; map short/zero/unavailable results to unsupported or uncertain without activation or signalling.
+- [x] 3.4 Add deterministic foreign/unavailable branches plus an actual macOS process collision oracle that starts multiple same-second processes and proves the kernel unique identities differ.
+- [x] 3.5 Run the pinned `aarch64-apple-darwin` compile and deterministic S1 discriminators locally, label them non-runtime evidence, and record `pnpm exec vitest run test/core/session-host/process-capsule-macos-identity.test.ts test/core/session-host/process-capsule-native.test.ts --maxWorkers=1 --minWorkers=1` plus required OS version, architecture, helper digest and receipts as the mandatory ECP-8 actual-macOS acceptance command.
+
+## 4. S3 exact POSIX replacement cleanup
+
+> Re-tier: entire section UPGRADE-PATH(a) - replacement/reattach identity machinery is criterion 4. The 4.6/4.7 recorded ECP-8 actual-OS commands are void as obligations; superseded by zero-orphan daemon-death teardown and `execution-lost` receipts.
+
+- [x] 4.1 Version the opaque native ref payload so it binds controller PID/birth, supervisor PID/birth, reserved PGID, nonce, platform, and protocol without exposing those fields to Session host or accepting them as public control arguments.
+- [x] 4.2 Implement Linux replacement inspection that revalidates controller and supervisor boot/start identity around pidfd acquisition and group control; any mismatch or unavailable exact authority returns foreign/uncertain with zero signal.
+- [x] 4.3 Implement macOS replacement inspection that uses the corrected kernel unique-birth identity immediately around controller/supervisor/group control; any mismatch or unavailable exact authority returns foreign/uncertain with zero signal.
+- [x] 4.4 After exact controller loss, terminate the still-reserved supervisor group gracefully then forcibly under bounded deadlines; report closed only when controller and group are both absent, including the leader-exited/descendants-remain case.
+- [x] 4.5 Add race discriminators for controller PID reuse, supervisor PID/PGID reuse, leader exit before replacement, group empty before signal, resistant descendant, daemon force-death, and repeated termination; prove unrelated processes remain alive.
+- [x] 4.6 Run the pinned Linux cross-target build and deterministic POSIX replacement discriminators locally, label them non-runtime evidence, and record `pnpm exec vitest run test/core/session-host/process-capsule-posix-replacement.test.ts test/core/session-host/process-capsule-native.test.ts --maxWorkers=1 --minWorkers=1` plus required OS/kernel/architecture/helper digest and receipts as the mandatory ECP-8 actual-Linux acceptance command.
+- [x] 4.7 Run the pinned macOS cross-target build and deterministic POSIX replacement discriminators locally, label them non-runtime evidence, and record the same command and receipt contract as the mandatory ECP-8 actual-macOS acceptance gate; never mark that gate executed from cross-target output.
+
+## 5. S4 bounded ACTIVATE and prepared abort
+
+> Re-tier: 5.2/5.3/5.5 NARROWS(a) - prepared/activate/abort phases travel with the three-phase protocol; bounded control with typed uncertainty KEEPs for surviving phases; 5.1/5.4/5.6 KEEP.
+
+- [x] 5.1 Implement one internal deadline helper that races acknowledgement, controller error/close, cancellation, and `controlTimeoutMs`, clears its timer exactly once, and identifies PREPARE, ACTIVATE, ABORT, TERMINATE, INSPECT, or SCOPE_EMPTY as the failed phase.
+- [x] 5.2 Bound `PreparedProcessScope.activate()`; on timeout return typed `process-control-timeout`/`activate` uncertainty, keep the published ref and claim, and prohibit automatic reactivation.
+- [x] 5.3 Bound `PreparedProcessScope.abort()`; on timeout return an uncertain termination receipt with `process-control-timeout`/`abort`, keep the ref and claim, and allow later exact inspect/terminate reconciliation.
+- [x] 5.4 Bound live terminate and scope-empty observation through the same helper without weakening the caller's requested graceful period; an unobserved close returns retained/uncertain rather than closed.
+- [x] 5.5 Add explicit test-only controller modes for withheld ACTIVATE and withheld abort/terminate acknowledgements, selected only through injected test construction and never client input or production fallback.
+- [x] 5.6 Run `pnpm exec vitest run test/core/session-host/process-capsule-control-deadline.test.ts test/core/session-host/process-scope-contract.test.ts test/core/session-host/host.test.ts test/core/management-api/server-shutdown.test.ts --maxWorkers=1 --minWorkers=1` and prove bounded settlement, one outcome, no late mutation, and retained authority.
+
+## 6. S5 truthful helper provenance and package integrity
+
+> Re-tier: 6.4 NARROWS(b) - byte-reproducibility is permanently retired as a provenance claim, the task survives only as the no-claim guard; 6.1/6.2/6.3/6.5 KEEP (manifest-to-adjacent-binary integrity explicitly retained by decision 12).
+
+- [x] 6.1 Audit proposal/design/specs, architecture/package/release docs, manifest fields, build output, and evidence language for claims that source/compiler inputs deterministically reproduce helper bytes; list every authoritative claim before editing.
+- [x] 6.2 Narrow the manifest/docs contract to per-artifact integrity plus source/compiler build-input provenance, retaining exact protocol/platform/architecture/capability/length/SHA validation and never presenting input provenance as a reproducible-build proof.
+- [x] 6.3 Make `scripts/build-process-capsule.mjs` expose an isolated clean-build test seam without changing production adjacent output selection, staged artifact validation, or pinned compiler/source digest capture.
+- [x] 6.4 Run two isolated source-identical clean builds on the current OS, record both digests and equality/inequality honestly, and prove the test passes under either byte result only when all provenance claims match that evidence.
+- [x] 6.5 Run `pnpm exec vitest run test/core/session-host/process-capsule-package.test.ts test/core/session-host/process-capsule-provenance.test.ts --maxWorkers=1 --minWorkers=1`, then `node scripts/build-process-capsule.mjs` and `npm pack --dry-run --json`; independently verify the packed helper length/SHA against the packed manifest.
+
+## 7. Preservation, migration, and supply-chain regression closure
+
+> Re-tier: 7.3 NARROWS(a) - fail-closed migration/byte-preservation discipline KEEPs, registry v2's publish-for-replacement role moves to the upgrade path; 7.1/7.2/7.4/7.5/7.6 KEEP (7.5's SEC-002 ancestor-junction extension is retired under (b); its existing negatives stay).
+
+- [x] 7.1 Keep the Windows unnamed kill-on-close Job assigned while the supervisor is suspended and preserve unique non-inherited controller handle ownership; do not add a daemon/backend duplicate handle.
+- [x] 7.2 Re-run the real Windows controller-death, duplicate-Job-handle mutation, and early-activation mutation oracles and prove root plus detached descendant close while the unrelated process remains live.
+- [x] 7.3 Preserve registry schema v2 and its owner-free v1 mutation migration unless the opaque internal ref version requires only a private protocol change; live/uncertain v1 PID facts and unknown future bytes must remain byte-preserved and fail closed.
+- [x] 7.4 Add protocol-v1/v2 mismatch and opaque-ref-version rollback tests proving an older client/helper never clears or mutates authority it cannot interpret.
+- [x] 7.5 Re-run resolver negatives for missing helper, wrong protocol/platform/architecture/capability/length/hash, non-regular file, and symlink escape; assert there is no runtime compile, download, PATH, shell, PowerShell, generic PID-tree, or `ps lstart` fallback.
+- [x] 7.6 Run `pnpm exec vitest run test/core/session-host/process-capsule-migration.test.ts test/core/session-host/process-capsule-package.test.ts test/core/session-host/process-capsule-native.test.ts --maxWorkers=1 --minWorkers=1` and record the preserved Windows/package/migration results.
+
+## 8. Focused, static, native, and package gates
+
+> Re-tier: all KEEP (gate receipts are provenance; 12.9 reruns them on the integrated tree).
+
+- [x] 8.1 Run the complete native closure command: `pnpm exec vitest run test/core/session-host/process-scope-contract.test.ts test/core/session-host/process-capsule-package.test.ts test/core/session-host/process-capsule-migration.test.ts test/core/session-host/process-capsule-native.test.ts test/core/session-host/process-capsule-macos-identity.test.ts test/core/session-host/process-capsule-posix-replacement.test.ts test/core/session-host/process-capsule-control-deadline.test.ts test/core/session-host/process-capsule-provenance.test.ts test/core/session-host/process-scope-host-closure.test.ts --maxWorkers=1 --minWorkers=1`.
+- [x] 8.2 Run the complete focused host/Management/daemon/CLI command: `pnpm exec vitest run test/core/session-host test/core/agent-cli-process.test.ts test/core/claude/runner.test.ts test/core/management-api/hosted-sessions-api.test.ts test/core/management-api/hosted-session-recovery.test.ts test/core/management-api/server-shutdown.test.ts test/commands/daemon-half-started.test.ts test/commands/daemon-spawn-convergence.test.ts test/cli-e2e/session-host.test.ts --maxWorkers=1 --minWorkers=1`.
+- [x] 8.3 Run `pnpm run build`, `pnpm run lint`, `pnpm exec tsc --noEmit`, and `git diff --check`; repair every product-owned failure without relaxing production time/output/control bounds.
+- [x] 8.4 Run `cargo +stable fmt --manifest-path native/process-capsule/Cargo.toml -- --check` and `cargo +stable clippy --manifest-path native/process-capsule/Cargo.toml --locked --all-targets -- -D warnings`.
+- [x] 8.5 Run pinned cross-target compile checks for `x86_64-unknown-linux-gnu` and `aarch64-apple-darwin` with `cargo +1.88.0 check --manifest-path native/process-capsule/Cargo.toml --locked --target <target>`; label these results compile-only.
+- [x] 8.6 Run `node bin/rasen.js validate ecp-native-process-capsule-closure --strict`, `node scripts/build-process-capsule.mjs`, and `npm pack --dry-run --json`; verify the package includes only declared platform helpers plus the closed manifest and that every included helper exact-matches it.
+- [x] 8.7 Run `pnpm test` after the last implementation fix and preserve the complete root result; run `pnpm --dir packages/ui run typecheck`, `pnpm --dir packages/ui run test`, and `pnpm --dir packages/ui run build` to prove the narrow host integration did not regress consumers despite adding no UI.
+- [x] 8.8 Audit all test-owned helper/controller/supervisor/backend processes and temp roots after gates; leave pre-existing or unrelated retained outputs untouched and record any environment residue.
+
+## 9. Independent implementation closure, release obligations, and local lifecycle
+
+> Re-tier: 9.2 NARROWS(a) - `evidence/platform-obligations.md` is substantially void as ECP-8 input; 9.3 NARROWS(b) - drop cwd-retargeting/TOCTOU items from the security-review scope; 9.4 NARROWS(a) - S1/S3 content is upgrade-path provenance, not acceptance; 9.10 NARROWS(a) - the three-OS matrix re-shapes to OS x backend with zero-orphan/`execution-lost` receipts; 9.1/9.5/9.6/9.7/9.8/9.9 KEEP.
+
+- [x] 9.1 Produce `evidence/implementation-report.md` mapping every durable-process-scope-authority scenario and S1-S5 finding to exact code, tests and commands, distinguishing current-host runtime, deterministic, ABI/source, cross-target compile, independent-review, and unexecuted ECP-8 platform-acceptance evidence.
+- [x] 9.2 Confirm real current-host Windows oracles, deterministic platform discriminators, sourced ABI/layout assertions, Linux/macOS cross-target builds, and focused/static/package gates are complete; record exact actual-Linux/macOS commands and expected receipts as mandatory ECP-8 release obligations without labelling them executed or blocking child closure solely for platform availability.
+- [ ] 9.3 Dispatch a fresh non-author security review over root-exit authority retention, POSIX exact-group cleanup/PID reuse, Windows last-handle ownership, timeout uncertainty, helper integrity/provenance, command injection, secret leakage, cwd retargeting, and forbidden Run/signing authority; resolve every Blocker/Major.
+- [ ] 9.4 Dispatch a separate fresh non-author code/spec review over S1-S5, protocol state machine, migration/rollback, fault-oracle sensitivity, package claims, task/spec coverage, and closure-versus-release evidence truth; resolve every implementation/code/spec Blocker/Major through a bounded fix/re-review loop.
+- [ ] 9.5 After the final review fix, rerun tasks 8.1-8.8 plus every affected current-host oracle and deterministic discriminator, then record final 0-Blocker/0-Major security and code/spec verdicts together with the still-unexecuted ECP-8 Linux/macOS acceptance obligations.
+- [x] 9.6 Confirm the final diff owns only ProcessCapsule/ProcessScope closure, minimal host integration, tests, package/build wiring, docs, and Change evidence; exclude frozen Action execution, signer custody, Run mutation, policy/control UI, self-hosting, ECP-8 release/version/tag, and 0.3.0 Issue/Dispatch/portfolio work.
+- [ ] 9.7 Run local `rasen-ship` only after tasks 9.2-9.6 are complete; create the child commit with `Mode: local`, no push, no per-child PR, and no unrelated retained temp/stash content.
+- [ ] 9.8 Immediately dispatch `rasen-archive-change` after local ship and record real archive evidence as `archive: done`; use `skipped` only if ship evidence explicitly reports `Archived in ship`.
+- [ ] 9.9 Return the terminal closure evidence to the ECP-7 parent without marking `ecp-durable-agent-session-host` delivered; the LEAD must preserve its prior escalation and grant a separate bounded post-remediation verify/review budget before child 2 becomes runnable.
+- [ ] 9.10 Preserve the portfolio delivery boundary: ECP-8 alone creates the clean final branch, executes the mandatory real three-OS acceptance/release CI, updates release truth, pushes, and opens the unique 0.2.0 PR; a missing or failed Linux/macOS oracle blocks release and support claims and routes the defect back for repair.
+
+## 10. Architecture replan gate (added after review round 1)
+
+> Re-tier: 10.5/10.6 SUPERSEDED(none) - Replan 4 (locked decision 10) re-projected the three-provider DAG; closure `dependsOn` is `[linux, windows]` and the macOS edge must not be re-added; 10.1-10.4 KEEP as provenance.
+
+- [x] 10.1 Preserve `RC-001..005`, `SEC-001..003`, review round 1, CSO review and fixer no-op as immutable evidence; record that `setsid()`/`setpgid()` disproves the old POSIX PGID authority rather than resetting review history.
+- [x] 10.2 Compare two complete replacements using primary OS/API sources and record the research-preferred contingent native candidate, VM alternative, availability/restart behavior, exact undecided product boundary, ownership, and the then-current DAG in `evidence/architecture-replan.md`; this research task does not approve a macOS architecture.
+- [x] 10.3 Record the product owner's explicit defer: the macOS authority solution will be decided later; this is not approval of Endpoint Security, VM, silent unsupported, a minimum version, signing/entitlement work, or a macOS support claim. Keep macOS/final closure/ECP-8 release decision-gated while allowing common, Linux, and Windows work to proceed.
+- [x] 10.4 Have the LEAD create four prerequisite Changes without implementing them in this Change: common-only `ecp-platform-process-authority-foundation`, `ecp-linux-process-authority-provider`, `ecp-windows-process-authority-provider`, and decision-gated `ecp-macos-process-authority-provider`.
+- [x] 10.5 Have the LEAD project the schema-valid DAG: foundation is the sole initial `pending` child; Linux and Windows are `pending` and depend on foundation; macOS is `escalated` with `decision-deferred`; closure is `escalated`, depends on all three providers, and retains its current apply/verify/review/finding history; host escalation and executor's explicit closure+host dependency remain intact.
+- [x] 10.6 Record the re-entry rule: only a later explicit Direction decision may move the macOS node to `pending` and create architecture-specific planning; only all three terminal providers may grant this closure a fresh bounded integration/re-review budget, without resetting any prior counters or evidence.
+
+## 11. Projected prerequisite RED to GREEN (split owner DAG)
+
+> Re-tier: 11.1/11.2 KEEP (delivered by the archived foundation Change; bookkeeping rows); 11.3/11.4/11.14/11.15 KEEP (provider-owned containment core); 11.5/11.6 NARROWS(a) - availability probes and typed `authority-unavailable` KEEP, broker-token/broker-fallback halves leave to 0.3.0 with the broker; 11.7 NARROWS(a) - daemon-death legs collapse to zero-orphan teardown plus `execution-lost`; 11.8 UPGRADE-PATH(a) - replacement recovery is criterion 4 verbatim; 11.9-11.13 SUPERSEDED(none) - macOS durable authority moved to 0.3.0 by decision 10, and the reopened macOS child is a new narrow best-effort provider proposed separately; 11.16/11.17 NARROWS(a) - recovery legs and macOS legs leave, real-OS Linux/Windows gates and the OS x backend obligations stay.
+
+- [ ] 11.1 COMMON RED (`ecp-platform-process-authority-foundation`): add contract mutations proving the public provider rejects activation without a published exact authority and retains the opaque reference on unavailable, identity-drift, event-gap and timeout outcomes.
+- [ ] 11.2 COMMON GREEN (`ecp-platform-process-authority-foundation`): implement the versioned `ProcessAuthorityProvider`/opaque-reference envelope, provider dispatch/registry, bounded `prepare`, `activate`, `inspect`, `terminate` and `abort`, and closed capability negotiation; include no OS adapter, broker, installer, entitlement, PID-tree/PGID fallback, or OS support claim.
+- [ ] 11.3 LINUX RED (`ecp-linux-process-authority-provider`): on real Linux, recursively fork and call `setsid()`/`setpgid()` plus nested PID-namespace creation; prove the old process-group implementation leaks while the oracle keeps an unrelated process live.
+- [ ] 11.4 LINUX GREEN (`ecp-linux-process-authority-provider`): implement the user+PID namespace guardian, publish exact boot/start/pidns identity before activation, reap to exact natural empty, and terminate by exact namespace PID 1 so the 11.3 oracle closes.
+- [ ] 11.5 LINUX RED: inject disabled user namespaces, namespace exhaustion, a workload cgroup migration attempt and a forged/stale broker token; prove every weak fallback or writable same-UID cgroup mutation fails.
+- [ ] 11.6 LINUX GREEN: implement the PREPARE availability probe and authenticated installed-broker fallback that retains an equivalent namespace and root-owned non-migratable cgroup-v2 leaf; return typed unavailable when neither authority exists.
+- [ ] 11.7 LINUX RED: kill/restart the Linux daemon, controller, namespace guardian and broker at each lifecycle boundary; distinguish guardian death, surviving authority, lost broker and PID reuse without optimistic closure or restart.
+- [ ] 11.8 LINUX GREEN: implement exact Linux replacement recovery using boot/start identity, pidns inode, pidfd and broker/cgroup token, with retained uncertainty when revalidation is incomplete.
+- [ ] 11.9 MACOS DECISION-GATED (`ecp-macos-process-authority-provider`): after and only after a future Direction decision, replace this placeholder with real-OS RED scenarios for the selected Endpoint Security, VM, or support-matrix contract. Until then do not run, implement, or treat the prior Endpoint Security research as acceptance.
+- [ ] 11.10 MACOS DECISION-GATED: implement only the explicitly selected authority and its pre-activation non-escape boundary; do not infer signed/entitled descendants clients, VM semantics, or unsupported behavior from this ledger.
+- [ ] 11.11 MACOS DECISION-GATED: add architecture-specific mutation oracles for exact empty/kill, authority death/recovery, identity/event completeness and non-convergence on real macOS after the decision.
+- [ ] 11.12 MACOS DECISION-GATED: prove every ambiguity returns typed unavailable/uncertain and never false `scope-empty`; no cross-target or injected receipt is runtime acceptance.
+- [ ] 11.13 MACOS DECISION-GATED: add only the selected minimum OS/SDK, entitlement/signing/notarization or VM/install/update/uninstall requirements and non-secret release inputs; no packaging work begins before approval.
+- [ ] 11.14 WINDOWS RED (`ecp-windows-process-authority-provider`): on real Windows, enable breakaway or duplicate/inherit the last Job handle and prove the controller-death oracle fails while an unrelated process remains observable.
+- [ ] 11.15 WINDOWS GREEN (`ecp-windows-process-authority-provider`): preserve suspended assign-before-run, breakaway-disabled unnamed Job containment and exactly one non-inherited owning controller handle behind the common provider.
+- [ ] 11.16 PLATFORM PROVIDERS RED to GREEN: within each platform-owned Change, prove exact natural empty, exact recursive terminate/abort, one-authority death/recovery, authority unavailable, unrelated-process survival and bounded settlement using real processes on that provider's actual OS; one provider cannot satisfy another's gate.
+- [ ] 11.17 PLATFORM PROVIDERS/ECP-8: record exact runner identity, OS/SDK/kernel prerequisites and commands as ECP-8 repeat obligations; cross-target compilation and injected events remain labelled non-runtime evidence.
+
+## 12. Current closure resume after the prerequisite
+
+> Re-tier: 12.1 NARROWS(none) - the "explicitly selected macOS providers" precondition is void (`dependsOn: [linux, windows]`, Replan 4); PGID deletion and atomic protocol re-rev stand unrevised and do not touch the in-tool path (verified in `evidence/step1-scope-reconciliation.md`); 12.2 KEEP (SEC-001); 12.3 SUPERSEDED(b) (SEC-002 not closed, no longer acceptance); 12.4 SUPERSEDED(a+b) (SEC-003 not closed, no longer acceptance); 12.5 NARROWS(a) (RC-002: Linux/Windows exact natural empty still owed; macOS proof leg left); 12.6 UPGRADE-PATH(a) (RC-003); 12.7 UPGRADE-PATH(a) (RC-004, resurfaces if any one-shot probe survives integration); 12.8 KEEP (RC-005); 12.9/12.10 KEEP.
+
+- [ ] 12.1 After the common foundation plus Linux, Windows, and explicitly selected macOS providers are all terminal, integrate their frozen contracts into ProcessScope/host, rev the private protocol/manifest atomically, delete or hard-disable POSIX PGID authority/fallback, and add RED-to-GREEN protocol mismatch/rollback coverage.
+- [ ] 12.2 Close `SEC-001`: transport/controller loss returns retained uncertainty or independently proven termination, never clean detach.
+- [ ] 12.3 Close `SEC-002`: bind helper resolution to an exact safe root and reject ancestor junction/reparse/symlink redirection with a mutation test.
+- [ ] 12.4 Close `SEC-003`: bind cwd by safe handle or equivalent identity through spawn and reject validation-to-spawn retargeting with a mutation test.
+- [ ] 12.5 Close `RC-002`: remove the supervisor-zombie false-live state and prove exact natural empty under the selected authority.
+- [ ] 12.6 Close `RC-003`: remove controller-live/group-empty false closure and prove only the platform authority can issue `scope-empty`.
+- [ ] 12.7 Close `RC-004`: contain one-shot parser/callback failure, settle exactly once, and retain uncertain authority without crashing the process.
+- [ ] 12.8 Close `RC-005`: remove terminal clients from the map on every success/failure/timeout path and prove no lifecycle leak.
+- [ ] 12.9 Re-run tasks 8.1-8.8 and 9.3-9.6 plus all affected real-OS gates; require fresh independent security and code/spec verdicts with zero Blocker/Major.
+- [ ] 12.10 Only after 12.9, execute the existing local ship/archive/parent-return tasks 9.7-9.10 without rewriting prior review or escalation evidence.
