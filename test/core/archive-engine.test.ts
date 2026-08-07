@@ -220,6 +220,42 @@ describe('archive plan/apply engine', () => {
     expect(finalized.toString('utf8').slice(original.length)).toContain('## Archive');
   });
 
+  it('archives a ship log whose own prose already carries an "## Archive" heading', async () => {
+    // Regression: the ship flow writes its own `## Archive` section describing
+    // archive-timing policy, and that prose carries no `**Transaction:**`
+    // receipt. Ownership detection used to key on the heading alone, so this
+    // ordinary ship log was misread as belonging to a foreign transaction and
+    // archive threw permanently. CRLF here also exercises the marker's
+    // trailing `[ \t\r]*` under the `m` flag.
+    const prose = Buffer.from(
+      '# Ship Log: sample\r\n**Mode:** local\r\n**Commit:** abcdef1\r\n\r\n' +
+        '## Archive\r\nArchived on merge per the repository archive-timing policy.\r\n'
+    );
+    await fs.writeFile(path.join(active, 'evidence', 'ship-log.md'), prose);
+    const archivePlan = await plan();
+
+    expect((await applyArchive(archivePlan)).status).toBe('complete');
+    const finalized = await fs.readFile(
+      path.join(archivePlan.paths.final, 'evidence', 'ship-log.md'),
+      'utf8'
+    );
+    // The prose is preserved byte-for-byte and the receipt is appended after it.
+    expect(finalized.startsWith(prose.toString('utf8'))).toBe(true);
+    expect(finalized).toContain(`**Transaction:** ${archivePlan.transactionId}`);
+  });
+
+  it('still refuses a ship log carrying a different transaction receipt', async () => {
+    // The guard must keep working: a genuine foreign receipt still blocks.
+    await fs.writeFile(
+      path.join(active, 'evidence', 'ship-log.md'),
+      '# Ship Log: sample\n**Mode:** local\n\n## Archive\n' +
+        '**Transaction:** 00000000-dead-beef-0000-000000000000\n'
+    );
+    const archivePlan = await plan();
+
+    expect((await applyArchive(archivePlan)).status).not.toBe('complete');
+  });
+
   it('refuses a source that drifts after planning without creating a stage', async () => {
     const archivePlan = await plan();
     await fs.writeFile(path.join(active, 'after-plan.txt'), 'drift');

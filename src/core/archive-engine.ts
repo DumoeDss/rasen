@@ -2692,9 +2692,18 @@ async function finalizeStagedShipLog(
     }
   }
 
-  const archiveHeading = /^## Archive\s*$/im;
-  if (archiveHeading.test(content)) {
-    if (!content.includes(`**Transaction:** ${plan.transactionId}`)) {
+  // Ownership is proven by the engine-written transaction receipt, never by a
+  // bare `## Archive` heading. The ship flow emits its own `## Archive` prose
+  // section documenting archive-timing policy, and that section carries no
+  // receipt — so keying on the heading misread ordinary ship prose as a
+  // foreign transaction and made archive permanently unrecoverable for any
+  // change shipped after that prose was introduced. Only this engine writes
+  // the `**Transaction:**` marker, so it is the sole trustworthy owner signal.
+  // The `[ \t\r]*` tail keeps CRLF ship logs matching under the `m` flag.
+  const transactionMarker = /^\*\*Transaction:\*\*[ \t]*(\S+)[ \t\r]*$/im;
+  const existingTransaction = content.match(transactionMarker);
+  if (existingTransaction) {
+    if (existingTransaction[1] !== plan.transactionId) {
       throw new Error('Ship log already has an archive section for another transaction.');
     }
     return;
