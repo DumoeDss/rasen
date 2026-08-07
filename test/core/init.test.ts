@@ -581,7 +581,7 @@ describe('InitCommand - profile and detection features', () => {
     // Set global config to custom profile
     saveGlobalConfig({
       featureFlags: {},
-      profile: 'custom',
+      profile: 'custom',
       workflows: ['explore', 'new', 'apply'],
     });
 
@@ -601,7 +601,7 @@ describe('InitCommand - profile and detection features', () => {
   it('should drop a retired workflow id (ff) from a stored custom profile with a warning, and still succeed', async () => {
     saveGlobalConfig({
       featureFlags: {},
-      profile: 'custom',
+      profile: 'custom',
       workflows: ['explore', 'ff', 'apply'],
     });
 
