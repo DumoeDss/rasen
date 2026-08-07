@@ -198,8 +198,76 @@ Enumerated by reading both codecs and both control paths, not by sampling the di
 | 7 | guardian `handle_control` auth (`primary.rs:1258-1267`) | capability, identity, or frame-kind mismatch -> `PermissionDenied` -> `Failure(7)` -> relayed at `:317` | Eliminated by P2/P5-A: the same capabilities and identity authenticated for `inspect` and `terminate`. |
 | 8 | guardian `ControlRequest::decode` (`authority.rs:252-308`) | any malformed field -> `InvalidData` -> `Failure(7)` -> relayed | Eliminated by P2/P5-A: same encoder, same fields. |
 | 9 | `NativeFailure::decode` (`protocol.rs:201-207`) | failure payload malformed -> `InvalidData` | Eliminated by P5-A: a `Failure` frame was decoded successfully on the terminate path in the same run. |
+| 9b | `from_control_error`'s exact-string loop (`protocol.rs:163-175`) | the guardian itself sent `Failure(7)`, relayed as `io::Error::other("reference-invalid")` by `primary.rs:317` | Eliminated for activate by construction: `:317` is unreachable on activate because `:298` returns first. It is the route by which rows 7 and 8 would have surfaced, and both are eliminated on their own terms. |
 | 10 | `activate_until` (`primary.rs:131-133`) `invalid_response("activated")` | response after the gate release is not `Activated` | Eliminated by P2: the machine was still `inert` and no root was spawned, so the gate exchange never happened. |
 | 11 | **`control_on_until` (`primary.rs:294-299`) `invalid_response("activation-ready")`** | the first activate response is anything but `ActivationReady`, including a `Failure` frame | **STANDS. Positively confirmed by P5's A/B.** |
+
+## Reconciliation with the sibling worker's independent narrowing
+
+A sibling worker, reasoning from the same failure code down a different path, relayed a narrowing
+mid-investigation. Most of it agrees with what is measured above. **One inference does not, and it is
+falsified here by measurement rather than by argument.**
+
+| Sibling's claim | Verdict |
+| --- | --- |
+| The failure is native failure code 7 | **Agrees.** Same code, reached independently. |
+| `from_control_error` produces 7 only from `PermissionDenied` or `InvalidData` | **Incomplete.** There is a third route: the exact-string loop at `protocol.rs:163-175` returns `ReferenceInvalid` for an error whose message *is* `"reference-invalid"`, which is what `primary.rs:317` produces when the **guardian** sent `Failure(7)`. So code 7 does not even imply a local `PermissionDenied`/`InvalidData`. |
+| Therefore it points at `validate_control_socket` or the server-challenge verification | **CONTRADICTED.** See below. |
+| The guardian was alive at that moment, proved by signalling its PID | **Agrees, and independently reproduced.** C1 below: `kill(pid, 0)` answers `alive` both before and after the failed activate. A dead guardian was never a candidate and no time was spent on it. |
+
+### Why the narrowing lands in the wrong place
+
+The inference enumerates only the `PermissionDenied` producers and misses `invalid_response()`, which
+returns **`InvalidData`** (`primary.rs:2588`) - and `invalid_response("activation-ready")` is the site
+that fires. Both named suspects run on **every** control verb, before `control_on_until` branches on
+the operation at all: `validate_control_socket` at `primary.rs:276`, `verify_server_challenge` at
+`:280`, and the guardian sends its challenge on every accepted connection (`primary.rs:1224`).
+
+So the two hypotheses make a prediction that can be tested: if either were firing, `inspect` would
+fail with the same code. Probe 7 makes `validate_control_socket` genuinely fire, by relaxing the
+control socket to `0666`, and records the **shape** of the failure rather than only its code:
+
+```text
+C1 guardian pid=53941 kernel says alive
+C1 inspect  ={"state":"inert"}
+C1 activate ={"state":"authority-unavailable","diagnosticCode":"reference-invalid"}
+C1 guardian after the failed activate: alive
+
+C2 socket mode now 0o666 (validate_control_socket must refuse)
+C2 inspect  ={"state":"authority-unavailable","diagnosticCode":"reference-invalid"}
+C2 activate ={"state":"authority-unavailable","diagnosticCode":"reference-invalid"}
+C2 guardian: alive
+
+C3 socket mode restored to 0o600
+C3 inspect  ={"state":"inert"}
+C3 abort    ={"state":"exact-scope-empty"}
+```
+
+C2 confirms the sibling is right that `validate_control_socket` **is** a producer of code 7. It also
+shows what that looks like: **every verb fails**. The real failure is activate-only, against a
+socket C1 and C3 both show to be healthy. Same for the server challenge, by the same argument plus
+`inspect` succeeding at C1 and C3.
+
+C3 restores the mode and `inspect` returns `inert` again, so the mutation was the only difference.
+
+**The general lesson**: identifying which sites can emit a code narrows the search, but a code alone
+cannot choose between them. What chose here was the **signature** - which verbs fail and which do
+not - and that took making a candidate actually fire to learn what its signature is. Two independent
+paths converged on the same code and diverged on the site; the disagreement is what produced the
+answer.
+
+### The sibling's other two findings
+
+1. **Daemon-lifetime layers 1 and 2 receipted with both mutations discriminating.** Relayed, **not
+   verified here**, and nothing in this file depends on it. It is consistent with Probe 1's control:
+   the wiring is not a candidate cause of the activate failure either way.
+2. **`publish` can report success over a dead scope.** **Independently confirmed by reading**, and
+   the anchor is `provider.ts:489-510`: `publishAuthority` calls the ledger publisher, and reaches
+   `transport.recordPublication` only when `mode === 'broker-pidns-cgroupv2'`. On `user-pidns`,
+   publish never contacts the guardian. Every `publish=published-inert` line in this file is
+   therefore a ledger fact and no evidence of liveness. **No probe here used publish as a liveness
+   probe** - liveness is taken from `transport.inspect`, which does reach the guardian and returns a
+   journal-derived observation, and in Probe 7 from the kernel's answer to `kill(pid, 0)`.
 
 ## What fixing defect 1 uncovered
 
@@ -373,9 +441,11 @@ diagnostic-fidelity defect today and a triage trap for whoever debugs the next a
 1. **Section 12's not-claimed item 1 still stands as written.** No production Linux scope has been
    shown to carry the daemon-lifetime property. Crossing activate was the blocker to testing it, not
    the test. Nothing here was ticked.
-2. **The two owed mutations were not taken** - early-release RED and never-pass-the-flag RED. They
-   were meaningless while activate was RED for an unrelated reason and are the successor's unit now
-   that it is not. **The four green runs above therefore establish nothing about discrimination.**
+2. **The two owed mutations were not taken here** - early-release RED and never-pass-the-flag RED.
+   **The four green runs above therefore establish nothing about discrimination.** A sibling worker
+   reports taking both at the transport layer with discriminating results; that is relayed, is not
+   verified in this file, and does not cover the two oracle cases above, whose mutation receipt is
+   still owed.
 3. **No claim that the daemon-lifetime wiring works.** P3 shows a scope reaching `live` with the
    wiring enabled; it does not show that the endpoint governs that scope's death.
 4. **Defect 2's and defect 4's repairs are untested**, because they were not written. Both are read
