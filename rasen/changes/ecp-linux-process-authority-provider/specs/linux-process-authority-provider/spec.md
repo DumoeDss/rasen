@@ -16,6 +16,11 @@
 > copy only the `### Requirement:` blocks. That is why every marker also lives inside its
 > requirement body, where projection carries it. Per-task verdicts and governing reasons:
 > `evidence/step1-task-ledger-retier.md`.
+> Addendum 2026-08-07, later the same day: one requirement - `Scope lifetime equals the owning
+> daemon's lifetime` - was ADDED under locked decision 11 after the grading above. It and its two
+> scenarios are additional to the 11 requirements / 47 scenarios counted above; its own
+> `**Scope**:` line (which projects) carries its tier, receipt mapping, and its relationship to
+> `Durable references reopen only the same Linux authority`.
 
 ## ADDED Requirements
 
@@ -245,6 +250,38 @@ take destructive-target safety with it.
 - **WHEN** an authentic same-boot reference is reopened after its exact guardian PID has exited and no conflicting live identity occupies it
 - **THEN** the provider applies the Linux PID-namespace-init teardown oracle and durable terminal record rules
 - **AND** returns exact empty only when those rules positively prove the old scope empty
+
+### Requirement: Scope lifetime equals the owning daemon's lifetime
+Every scope created by the primary provider SHALL live exactly as long as the daemon that owns it. When the owning daemon exits for any reason - crash, forced kill, or orderly shutdown - while scope members are live, the Linux kernel SHALL terminate every member without cooperation from any surviving daemon, controller, or helper process, so that no workload process started inside the scope outlives the daemon that owned it and unrelated processes are unaffected. A scope whose owning daemon has died SHALL NOT be resumed: no reattach path exists, and identity revalidation of a retained reference serves only destructive-target safety and positive empty proof under `Durable references reopen only the same Linux authority`, never restoration of live authority; such a reference afterwards yields only a positively proven empty result or a retained typed outcome. Work interrupted by daemon death SHALL surface honestly: the owning Run records the in-flight action as the typed outcome `execution-lost` - never claimed success and never an unresolved state - and resumes only from its last committed frontier.
+
+**Scope**: [STAYS-0.2.0] in full. ADDED 2026-08-07 under Direction Step 1 (Target State locked
+decision 11), later than and in addition to the re-tier grading recorded in the preamble. It
+states the 0.2.0 lifetime property that replaces replacement recovery: `Durable references reopen
+only the same Linux authority` keeps its text unedited, its `Exact replacement recovery succeeds`
+scenario is [MOVES-UPGRADE-PATH], and this requirement is what 0.2.0 delivers instead; that
+requirement's retained per-operation identity checks are unaffected and are relied on here. Per
+scenario: `Owning daemon dies while the scope is live` [STAYS-0.2.0] - implemented by task 12.1,
+receipted by task 12.2's actual-kernel oracles (owning-daemon kill and daemon-side pipe-end close,
+each with setsid / double-fork / nested-PID-namespace descendants live, zero workload orphans,
+unrelated-process survival, and the teardown-disabled discriminating mutant), re-frozen and
+re-bound by task 12.3; `A dead daemon's scope is not resumed` [STAYS-0.2.0] - receipted by task
+12.2's zero-orphan proof together with the already-taken retained guardian-absence receipts (tasks
+5.6 / 5.7 and the retained halves of tasks 7.7 / 7.9). The `execution-lost` and committed-frontier
+clause is 0.2.0 acceptance owed by `ecp-frozen-action-session-executor` with session-host
+cooperation and is deliberately not a task in this ledger (routing:
+`evidence/step1-obligation-tasks.md`, "Recorded, deliberately NOT added here"); ECP-8's Linux
+receipts consume both the zero-orphan and the `execution-lost` halves.
+
+#### Scenario: Owning daemon dies while the scope is live
+- **WHEN** the daemon owning an activated scope exits for any reason while the scope root and resistant descendants (setsid, double-fork, nested PID namespace) are live
+- **THEN** the Linux kernel tears down the scope and kills every member without cooperation from any surviving daemon, controller, or helper process
+- **AND** no workload process outlives the owning daemon
+- **AND** unrelated processes outside the scope survive unaffected
+
+#### Scenario: A dead daemon's scope is not resumed
+- **WHEN** a later process presents an authentic reference to a scope whose owning daemon has died
+- **THEN** no live authority over the scope is resumed or reattached
+- **AND** the outcome is limited to exact empty positively proven under the retained teardown-proof and terminal-record rules, or a retained typed result
 
 ### Requirement: Privileged broker authority is explicit, authenticated, and non-migratable
 The broker provider SHALL operate only as a separately installed, explicitly selected provider. It SHALL mutually authenticate the local client and root-owned broker installation, create the workload guardian inside a unique root-owned cgroup-v2 leaf before activation, prevent workload migration out of that leaf, and use the stable leaf plus lease token as an independently reopenable exact membership and kill boundary.

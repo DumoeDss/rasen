@@ -111,3 +111,47 @@ changed beyond the gating correction):
   do not gate) is unchanged.
 - Section 12's prose no longer says the gating is undecided; it records the LEAD decision and
   its date so Direction can revisit it as a decision rather than discover it as a fact.
+
+## Update - 2026-08-07, later again: the daemon-lifetime spec gap is closed
+
+`handoff/lead-5.md` ("Owed, and not yet written anywhere") recorded that Section 12's tasks had
+no requirement behind them: no spec stated the daemon-lifetime property, and the 0.2.0 contract
+did not say what the system does when a daemon dies. Same author role (planner, leaf worker),
+same constraints: no tick changed, no existing task or requirement text edited, nothing under
+`native/` or `rasen/specs/` touched.
+
+The delta spec (`specs/linux-process-authority-provider/spec.md`) now states the property as an
+ADDED requirement, `Scope lifetime equals the owning daemon's lifetime`, placed directly after
+`Durable references reopen only the same Linux authority` (R7) and before the broker requirement.
+It is [STAYS-0.2.0] in full, with the `**Scope**:` line inside the requirement body per the
+projection convention; a dated preamble addendum reconciles the re-tier's 11-requirement /
+47-scenario counts, which that addendum does not alter.
+
+Mapping to Section 12:
+
+- Task 12.1 implements the requirement's kernel-guarantee sentence (every member killed by the
+  Linux kernel with no surviving cooperating process). The guardian-held inherited-pipe mechanism
+  and the `PR_SET_PDEATHSIG` exclusion stay in the task text; the requirement carries only the
+  outcome depth the product contract depends on - teardown is a kernel guarantee, not cooperative
+  cleanup.
+- Task 12.2 receipts scenario `Owning daemon dies while the scope is live` in full (both oracle
+  triggers: owning-daemon kill and daemon-side pipe-end close; resistant descendants; zero
+  workload orphans; unrelated-process survival; the teardown-disabled discriminating mutant). It
+  also receipts the zero-orphan half of `A dead daemon's scope is not resumed`; that scenario's
+  reopen behavior is already receipted by the retained guardian-absence evidence (tasks 5.6 /
+  5.7 and the retained halves of 7.7 / 7.9), so no new task was needed for it.
+- Task 12.3 re-binds every receipt to the superseding frozen digest; the two scenarios' receipts
+  consumed by ECP-8 must be the re-bound ones.
+
+The `execution-lost` / committed-frontier clause is stated in the requirement prose so that the
+0.2.0 contract is complete, and its receipt routing is unchanged from this record: it is owed by
+`ecp-frozen-action-session-executor` with session-host cooperation and is deliberately not a task
+in this ledger. The requirement's Scope line carries that routing where projection carries it, so
+the archived main spec cannot silently present the clause as receipted by this Change.
+
+R7 relationship, handled without editing R7: the new requirement's Scope line states that it is
+what 0.2.0 delivers in place of R7's `Exact replacement recovery succeeds` scenario (retained,
+[MOVES-UPGRADE-PATH]), and that R7's retained per-operation identity checks - destructive-target
+safety and positive empty proof - are unaffected and relied on. The requirement prose scopes its
+"no reattach" clause the same way, so a mechanical reading cannot take R7's retained safety
+machinery with it.
