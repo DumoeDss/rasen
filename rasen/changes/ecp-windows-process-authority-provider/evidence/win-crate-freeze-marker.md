@@ -39,6 +39,22 @@ in this working tree but are not pinned, so their digests change with the checko
 Recording them would reintroduce, inside the marker, the exact defect this re-freeze removes. See
 section 8 of the evidence file.
 
+### Amendment 2026-08-07: a third test file, and why this is NOT a re-freeze
+
+Section 8 added `tests/windows_section8_gate.rs`. Its digest is recorded below.
+
+**This is a completeness fix to the test-digest map, not a moved freeze, and the distinction is
+demonstrated rather than asserted.** `sourceSha256` is measured identical before and after that
+file existed -- `2b3fabd9...` both times -- which is the same falsification the map's own
+justification rests on: `tests/` is outside `sourceDigest()`'s input set, so a new 56189-byte file
+there cannot move the crate source digest, and it did not. The two digests already in the map are
+byte-identical to their original values, because Section 8 modified neither file; all new test work
+went into the new file specifically so that this amendment adds a line and changes none.
+
+A future reader should treat an added `testFiles` entry as evidence that `tests/` grew, and should
+look at `sourceSha256` -- not at the size of this map -- to decide whether the freeze moved.
+Working: `evidence/section-8-actual-kernel-gate.md`.
+
 ## Lineage
 
 ```text
@@ -76,8 +92,10 @@ b44c5e25      frozen, then found to reproduce on NO fresh checkout -- an artifac
     ],
     "testFiles": {
       "native/windows-process-authority/tests/windows_authority_kernel.rs": "2cbf1c24da4ef8ca3713aa18ca45becce4accea028d40cf24b903559842da4fb",
-      "native/windows-process-authority/tests/windows_guardian_lifecycle.rs": "81e10a339873b737e32c4690f1f0f600d3c74f4ce51be765bdbab60a4b8afd8c"
+      "native/windows-process-authority/tests/windows_guardian_lifecycle.rs": "81e10a339873b737e32c4690f1f0f600d3c74f4ce51be765bdbab60a4b8afd8c",
+      "native/windows-process-authority/tests/windows_section8_gate.rs": "ba540903bdb9ac157303ee3c366cf8ed1a8c9dbf4d6896b23bf31db6a473bb87"
     },
+    "testFilesAmended": "2026-08-07, Section 8: windows_section8_gate.rs added (56189 B). A map entry was ADDED and none was changed -- the other two digests are byte-identical to their original values. sourceSha256 re-measured identical before and after, so the freeze did not move; tests/ is outside sourceDigest()'s input set and this is the falsification that shows it.",
     "testFilesExcluded": "The nine Windows TypeScript test and fixture files are not pinned to LF, so their digests are checkout-platform dependent. Recording them would reintroduce the defect this re-freeze removes.",
     "reproducibilityMechanism": ".gitattributes pins Cargo.lock, Cargo.toml, THIRD_PARTY.md, src/** and tests/** of this crate to eol=lf. Demonstrated on a real checkout on this host: without the rule the crate checks out all-CRLF at dbc9e58e...; with it, 2b3fabd9...",
     "verifiedBy": "computed by two independent paths by this worker -- an in-memory all-LF transform of the working tree, and a direct read of the committed HEAD blobs. Both give 2b3fabd9. Not yet reproduced by a second agent."

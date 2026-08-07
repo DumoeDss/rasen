@@ -121,3 +121,36 @@ Also plan for the systemic pattern that has produced two Blockers on this portfo
 code exercised only through a stand-in.** Ask, for every production entry point this change adds,
 "is this exercised only through a fixture or a `...ForTesting` twin?" Both Blockers so far were
 found by running production code against a real kernel, not by any test.
+
+## Findings from the propose stage (planner, 2026-08-07)
+
+Durable facts established while writing proposal/design/specs/tasks; a successor should not
+re-research these.
+
+- **The frozen common contract rejects subset providers outright.** `registry.ts:105-112` and
+  `manifest.ts:61-62,119` hard-require the exact capability id `rasen-recursive-process-scope/1`
+  plus the complete ordered ten-semantics list, and the accepted `process-authority-provider`
+  spec has an explicit subset-rejection scenario. A best-effort provider cannot register there,
+  which is why design D1 integrates at the ProcessScope seam instead - this also produces zero
+  file overlap with the pending `workload-non-escape`/`replacement-recovery` contract edit
+  (`types.ts`/`registry.ts`/`manifest.ts` untouched by this change).
+- **The host release rule makes the declaration-gated release mandatory scope.**
+  `closeDurableProcess` (`host.ts:614-638`) releases durable authority only from a `closed`
+  receipt; a scope whose terminate never returns `closed` wedges the session as
+  live-or-uncertain forever. The honest-unproven terminal therefore needs a distinct receipt
+  state (not `closed`, not `uncertain`) plus a host rule releasing from it only when the record
+  carries the pre-start declaration.
+- **ProcessScope seam vocabulary** (`src/core/session-host/process-scope.ts`):
+  `TerminationReceipt.state` is `closed | retained | uncertain`; `LiveProcessScope.closed`
+  resolves a proven scope-empty receipt; `asProcessRef` enforces the `rasen-process-scope/1:`
+  prefix for all scopes.
+- **Construction-site precision** (matches the closure record's verification note): reachable
+  `src/` entry is `router.ts` only (`:639`, `:642`), but `createNativeProcessScope` is also
+  constructed as internal default fallbacks at `host.ts:299` and `claude-backend.ts:395` - the
+  darwin selection (task 4.1) must cover all three sites.
+- **Node `detached: true` on POSIX performs `setsid()`**: new session implies new process group
+  with group id equal to the leader pid - a strict superset of multica's `setpgid` shape with
+  identical group-signal semantics. This is what makes a Node-only implementation (no native
+  helper, no macOS build infrastructure) sufficient for this tier.
+- **Prepare-inertness is achievable without native code** by deferring the spawn to `activate()`
+  (design D4); `POSIX_SPAWN_START_SUSPENDED` was considered and rejected as native-only.
