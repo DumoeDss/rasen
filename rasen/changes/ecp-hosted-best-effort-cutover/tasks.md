@@ -53,8 +53,11 @@ Scope legend: `[WSL-EXTERNAL]` marks real-Linux evidence that MUST run in an ext
 
 ## 5. Legacy freeze integrity
 
-- [ ] 5.1 After all code changes are committed: recompute every digest in BOTH pin lists from the COMMIT (`git show <commit>:<file>` piped to sha256) and record an integrity receipt in `evidence/legacy-freeze-integrity.md` showing each pinned file byte-identical to the baseline (old hash = new hash, per file). Expected outcome: no rebaseline anywhere.
-- [ ] 5.2 Contingency (expected unused): if any pinned file must change, STOP before editing it and escalate to the LEAD as an explicit rebaseline decision; a rebaseline, if granted, is its own ticked task with old hash, new hash, and reason - never a silent side effect. Do not touch `native/linux-process-authority/**` or `native/windows-process-authority/**` under any outcome.
+- [x] 5.1 After all code changes are committed: recompute every digest in BOTH pin lists from the COMMIT (`git show <commit>:<file>` piped to sha256) and record an integrity receipt in `evidence/legacy-freeze-integrity.md` showing each pinned file byte-identical to the baseline (old hash = new hash, per file). Expected outcome: no rebaseline anywhere.
+  - Receipt: `evidence/legacy-freeze-integrity.md`, digests from commit `af21ba8d`. All 7 + 5 LEGACY_PROCESS_CAPSULE_INPUTS digests identical to the `b3edf5bc` baseline; `git diff --stat b3edf5bc..af21ba8d -- native/` is empty, as is the same diff for host.ts/router.ts/claude-backend.ts/registry.ts. No rebaseline.
+  - **FINDING, escalated not fixed:** both suites are nonetheless RED on a DIFFERENT constant - `FROZEN_COMMON_INPUTS`' pin of `rasen/specs/process-authority-provider/spec.md` (`05257eb1…` -> `359db6d9…`), moved by LEAD commit `2961848b` (Purpose-placeholder fix), not by this change. Run: 2 failed / 19 passed (21). The legacy-capsule assertion this change is accountable for passes. Rebaseline is a LEAD decision; left untouched.
+- [x] 5.2 Contingency (expected unused): if any pinned file must change, STOP before editing it and escalate to the LEAD as an explicit rebaseline decision; a rebaseline, if granted, is its own ticked task with old hash, new hash, and reason - never a silent side effect. Do not touch `native/linux-process-authority/**` or `native/windows-process-authority/**` under any outcome.
+  - Receipt: not triggered. No pinned file required modification, so no rebaseline was requested, granted, or performed. Both frozen provider crates received zero bytes (empty `git diff --stat` over `native/`). The one RED pin above was NOT resolved by editing a constant - it was escalated.
 
 ## 6. Real Linux receipts [WSL-EXTERNAL]
 
