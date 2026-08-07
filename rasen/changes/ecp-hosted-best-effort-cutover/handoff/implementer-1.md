@@ -3,8 +3,7 @@
 Role: IMPLEMENTER. Resumed from the session-limit interruption per
 `handoff/lead-1.md`, starting from preservation commit `88ffc08b`.
 
-Tasks ticked: **29 of 33**. Unticked: Section 6 only (6.1-6.4, the WSL Linux
-receipts).
+Tasks ticked: **33 of 33**. Nothing is left unticked.
 
 ## Read order for the next worker
 
@@ -53,6 +52,7 @@ byte-pinned file. Zero bytes to `native/**`.
 | `evidence/legacy-freeze-integrity.md` | Tasks 5.1-5.2. Pin digests at `af21ba8d`; **plus the escalated RED pin** |
 | `evidence/win32-real-host-receipts.md` | Tasks 7.1-7.4. Real Job teardown; production-path cancel; transport loss; **plus the D3 finding** |
 | `evidence/win32-daemon-death-probe.mjs` + `-driver.mjs` | Reproducible KILL_ON_JOB_CLOSE chain probe |
+| `evidence/linux-real-kernel-receipts.md` | Tasks 6.1-6.4. External ext4 tree provenance; real setsid escape; exact exit/signal; **plus the projection finding** |
 
 ## Findings the LEAD/reviewer must act on
 
@@ -98,7 +98,26 @@ Deliberately not fixed — a rebaseline is a LEAD decision with lineage. Likely
 resolution: authorised rebaseline of the two `FROZEN_COMMON_INPUTS` constants,
 not a revert of the docs fix.
 
-### 4. Two small corrections to design.md's anchors (no decision changed)
+### 4. `record.processTerminal.emptiness` cannot detect a lying scope
+
+`toHostedProcessTerminal` (`src/core/session-host/host.ts:655`) writes
+`emptiness: 'unproven'` as a **hardcoded literal**. That is good for the "Record
+must not lie" invariant — the Record structurally cannot express a proof claim —
+but it means any test asserting tier honesty through that field is checking the
+host's projection, not the tier.
+
+Found by mutation on the real kernel: with the POSIX module mutated to claim
+`proven-empty`, receipts 6.2 and 6.3 stayed GREEN and only 6.4 (which asserts the
+scope's own `live.closed` receipt) failed. Both were strengthened to assert the
+scope's receipt as well, after which all three fail against the mutation.
+
+**The same weakness applies to pre-existing suites**, including
+`darwin-declaration-gated-release.test.ts`. Those assertions are not wrong, but a
+reviewer should not read them as proof that a tier is honest — only assertions on
+the scope's own receipt do that. On win32 those live in
+`win32-best-effort-scope.test.ts` and are proven by mutations (a) and (f).
+
+### 5. Two small corrections to design.md's anchors (no decision changed)
 
 - The `closeDurableProcess` receipt release path opens at `host.ts:715`, not
   `:716`. Same path.
@@ -123,39 +142,30 @@ not a revert of the docs fix.
 - `test/core/session-host/linux-process-authority-*.test.ts` belong to the
   concurrent skipIf worker. Not touched, not committed by this wave.
 
-## Exact state of every unticked task
+## Exact state of every task
 
-All four are Section 6, `[WSL-EXTERNAL]`. **Not started.** No WSL run tree was
-created, no Linux process was spawned, and no partial Linux evidence exists —
-there is nothing half-done to clean up.
+All 33 are ticked with the receipt each one names. Nothing is partial, and no
+task was ticked on a run that skipped.
 
-- **6.1** Prepare the external ext4 run tree. Not started. Recipe is in
-  `rasen/changes/ecp-linux-process-authority-provider/handoff/lead-2.md`
-  ("Dead ends & gotchas"); known-good roots exist under
-  `/home/sayo/.local/share/rasen-build/` (e.g. `ts-oracles-tree`,
-  `ts-oracles-nm`). Never use the repo's Windows `node_modules` under WSL.
-- **6.2** Production-path cancel receipt on Linux. Not started. The Windows
-  analogue is `win32-real-capsule-receipts.test.ts` 7.1 — the Linux version
-  should mirror its structure but drive `createPosixBestEffortProcessScope`
-  through `createHostedProcessScope()` with `platform` left to
-  `process.platform`.
-- **6.3** setsid escape-honesty receipt on a real kernel. Not started. This is
-  the one that cannot be faked on Windows: a descendant calls `setsid()`,
-  survives a completed cancel, and the Record must still read
-  `cancelled / emptiness-unproven`. The deterministic analogue already exists
-  (`darwin-best-effort-scope.test.ts` "reports emptiness-unproven even when the
-  group is observed empty") but models the kernel; 6.3 must use the real one.
-- **6.4** Natural-completion receipt: exact root exit code and, separately,
-  exact terminating signal. Not started.
+The two gated suites deserve a note because they SKIP silently off their
+platform, which is the classic way a green run proves nothing here:
 
-Reason not done: context budget. Sections 1-5, 7 and 8 were completed and
-receipted first because Section 7 needed this specific Windows host, whereas
-Section 6 needs only WSL and is fully portable to a fresh worker.
+- `test/core/session-host/win32-real-capsule-receipts.test.ts` needs
+  `process.platform === 'win32'` AND `RASEN_WIN32_REAL_CAPSULE=1`.
+- `test/core/session-host/posix-real-kernel-receipts.test.ts` needs
+  `process.platform === 'linux'` AND `RASEN_POSIX_REAL_KERNEL=1`, and must run
+  in an external ext4 tree.
 
-**Do not tick 6.x from a Windows run.** The suite would need a
-`process.platform === 'linux'` gate plus an env gate; running it from Windows
-skips silently and proves nothing. Any Section 6 receipt must quote the asserted
-test count, not an exit code.
+Both evidence files quote the asserted test count, and the Linux one records a
+negative control (3 skipped without the gate) so the passing run cannot be
+confused with a skipped one. Neither suite runs in normal CI on the other
+platform; that is intentional, and their value is the recorded receipt.
+
+The Linux run tree (`/home/sayo/.local/share/rasen-build/ecp-cutover-linux`) is
+disposable and can be rebuilt from any commit with the setup in
+`evidence/linux-real-kernel-receipts.md`. It is a symlink consumer of the
+pre-existing `ts-oracles-nm/node_modules`; nothing in the repo checkout was
+written to.
 
 ## Commits from this wave
 
@@ -165,7 +175,8 @@ test count, not an exit code.
 | `b33a4f84` | win32 wrapper guards + both-paths release guards + shared capsule seam; tasks 2.4-2.5, 3.1-3.6, 4.1-4.4 |
 | `af21ba8d` | Mutation receipts (task 4.5) |
 | `b00dc64e` | Legacy freeze integrity + the escalated RED pin (tasks 5.1-5.2) |
-| (this commit) | Real Windows receipts, the D3 transport-loss fix, tasks 7.1-7.4 and 8.1-8.4 |
+| `0346ba29` | Real Windows receipts, the D3 transport-loss fix, tasks 7.1-7.4 and 8.1-8.4 |
+| (this commit) | Real Linux receipts in an external ext4 WSL tree, tasks 6.1-6.4 |
 
 The code itself was preserved earlier in `88ffc08b`; commits here add the
 receipts that make it defensible, plus the D3 fix.
