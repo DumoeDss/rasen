@@ -217,7 +217,7 @@ remediation plan, and each was checked against the current source.
 | C3 | Durable write helper: barrier and reference must be fsynced (file + parent directory) before the parent may observe them | **already correct** | `durableBarrier()` in `test/fixtures/linux-process-authority-wsl-controller.mjs:11-26`; used for both the reference file (0600) and each window barrier |
 | C4 | Replacement must inspect across the common coordinator, not only the provider | **already correct** | `replacementAbortsPublished()` asserts `replacementCoordinator.inspect(...)` **and** `replacement.provider.inspect(...)`, and re-asserts the coordinator after abort |
 | C5 | `try/finally` cleanup so a failed oracle still reaps the controller and aborts the real guardian | **already correct** | both tests wrap in `try/finally` with `killAndReapController` + `bestEffortExactAbort`; the private root is removed only once exact-empty is proven, so a failure retains state for diagnosis |
-| C6 | A subprocess fixture that installs a process-local `no_new_privs` seccomp filter (`WSL-R4-M05`) | **not applicable to this track** | The remediation plan places this in `native/linux-process-authority/tests/linux_primary_contract.rs`. Node cannot install a seccomp BPF filter, and the helper is a static PIE so no loader-based interception exists. It is implemented in the Rust crate at `linux_primary_contract.rs:1417` (`unavailable_configuration_matrix_fails_closed_without_global_mutation`) and `:1709` (`unavailable_configuration_fixture`). Owned by the native track |
+| C6 | A subprocess fixture that installs a process-local `no_new_privs` seccomp filter (`WSL-R4-M05`) | **not applicable to this track** | The remediation plan places this in `native/linux-process-authority/tests/linux_primary_contract.rs`. Node cannot install a seccomp BPF filter, and the helper is a static PIE so no loader-based interception exists. It is implemented in the Rust crate at `linux_primary_contract.rs:1475` (`unavailable_configuration_matrix_fails_closed_without_global_mutation`) and `:1767` (`unavailable_configuration_fixture`) - both anchors re-verified against the frozen file this receipt binds (`7d56ca4e...`, 65505 bytes), correcting the stale `:1417` / `:1709` an earlier revision of this row carried. Owned by the native track |
 
 ### One assertion added by this track
 
@@ -408,8 +408,13 @@ Nothing moved. Every row below is therefore bound to that exact set.
 
 Author/verifier separation: the four Rust suites were authored by the native track and executed here
 by this track, so `author != verifier` holds for them. The three TypeScript oracles are authored and
-executed by this track; their independent check is the mutation matrix recorded above, and they remain
-owed a non-author review in the unified wave.
+executed by this track; their only discrimination check is the mutation matrix recorded above, and
+that matrix is a **self-check** - it was authored and run by the same track that wrote the oracles,
+so `author == verifier` holds for it. A self-run mutation matrix is necessary and is real evidence
+that the oracles discriminate; it is not an independent check, and an earlier revision of this line
+called it one. They remain owed a non-author review in the unified wave. (A non-author review of
+these three oracles was subsequently taken in `evidence/review-report-linux-oracles-nonauthor.md`;
+whether that discharges the unified wave's obligation is the wave's call, not this receipt's.)
 
 The helper was rebuilt for this pass, because the earlier `track-b-pkg-r3` binary was built from the
 superseded `a568f53b`:

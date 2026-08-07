@@ -8,7 +8,35 @@ Do not open it until you have finished Step 7.
 
 ## Boundary
 
-Closes **Task 7.2** and the Minor `PKG-P5` (stale implementation-evidence source digest) only.
+Closes **Task 7.2** only.
+
+It does **not** close the Minor `PKG-P5` (stale implementation-evidence source digest). What this
+receipt establishes is that PKG-P5's *ground* is gone: the stale digest is replaced by a first-hand
+re-derivation of the frozen `087d87a5` over 26 files, taken before the build and again after the
+last verification step, unchanged. Closing a finding is the unified review wave's act, not the
+implementation wave's - `lead2-implementation-wave-findings.md` states that boundary itself ("The
+implementation wave does not close findings; the unified review wave does"). An earlier revision of
+this line said this receipt closed PKG-P5; that claim is corrected here rather than deleted.
+
+Status of `PKG-P5` as it now stands: **closable by the review wave** - a non-author independently
+re-derived `087d87a5` byte-exact from the current tree
+(`review-report-linux-oracles-nonauthor.md`) - carrying one **artifact-generation coherence item**
+that must be recorded together with the closure:
+
+```text
+post-F-L2-15 reproducible helper, frozen src 087d87a5   4835b1bb...   578312
+  its generated build-authority.js, recorded            ce043419...   1106 bytes, pins 4835b1bb...
+oracle package root track-b-pkg-r4 helper               94002604...   578440   pre-fix
+```
+
+Both artifacts are built from the same frozen source `087d87a5`, and only `4835b1bb...` reproduces
+under the fixed build. The WSL oracle receipts (`wsl-ts-oracles-lead2.md`) and every WSL-R4 row they
+carry are bound to the `94002604...` package root, which by construction carries its own generated
+`build-authority.js` pinning that root's adjacent artifact; the recorded post-fix `build-authority.js`
+(`wsl-native-build-manifest-lead2-results.md`, appendix) pins `4835b1bb...`. This receipt does not
+reconcile the two and none is attempted here: the next packaging pass must re-emit them coherently,
+or the pinned identity will refer to a binary that no longer reproduces. Recorded as a coherence
+item, not as a defect verdict.
 
 Makes **no** claim about: any Section 7 mutation row, Section 9 installed-broker / cgroup-v2 authority,
 package install support, distribution or the packaging matrix, production default provider selection,
