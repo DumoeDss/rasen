@@ -328,8 +328,8 @@ describe('trusted Linux authority publication ledger', () => {
     });
   });
 
-  it('requires an exact private mode for an existing ledger root', () => {
-    if (process.platform === 'win32') return;
+  // Parked-provider subject (locked decision 13): POSIX private-mode check, Linux-covered by wsl-ts-oracles-lead2; skipped, not passed, on win32.
+  it.skipIf(process.platform === 'win32')('requires an exact private mode for an existing ledger root', () => {
     const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-linux-ledger-mode-'));
     tempRoots.push(parent);
     const root = path.join(parent, 'authority-publications');

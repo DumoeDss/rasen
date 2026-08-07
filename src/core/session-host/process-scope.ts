@@ -73,7 +73,25 @@ export const BEST_EFFORT_SCOPE_SEMANTICS = Object.freeze([
   'honest-unproven-terminal',
 ] as const);
 
-export type BestEffortScopeSemantic = (typeof BEST_EFFORT_SCOPE_SEMANTICS)[number];
+/**
+ * Descriptive vocabulary of the win32 declared best-effort tier. The Job object
+ * is the containment primitive there, so the mechanism tokens differ from the
+ * POSIX list while the honesty tokens are shared. Added alongside
+ * BEST_EFFORT_SCOPE_SEMANTICS, which is not modified: neither list claims any
+ * part of the frozen recursive capability.
+ */
+export const WIN32_BEST_EFFORT_SCOPE_SEMANTICS = Object.freeze([
+  'own-job-object',
+  'job-kill-cancel',
+  'kill-on-job-close-teardown',
+  'exact-root-exit',
+  'bounded-controls',
+  'honest-unproven-terminal',
+] as const);
+
+export type BestEffortScopeSemantic =
+  | (typeof BEST_EFFORT_SCOPE_SEMANTICS)[number]
+  | (typeof WIN32_BEST_EFFORT_SCOPE_SEMANTICS)[number];
 
 /**
  * Limits a best-effort scope declares before it starts. Absence of a

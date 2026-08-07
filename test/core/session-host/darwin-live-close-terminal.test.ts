@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createClaudeSessionBackend } from '../../../src/core/session-host/claude-backend.js';
 import type { HostedSessionRecord } from '../../../src/core/session-host/contracts.js';
 import { createSessionHost } from '../../../src/core/session-host/host.js';
-import { createDarwinBestEffortProcessScope } from '../../../src/core/session-host/process-capsule/darwin-best-effort-scope.js';
+import { createPosixBestEffortProcessScope } from '../../../src/core/session-host/process-capsule/posix-best-effort-scope.js';
 import {
   createDeterministicProcessScope,
   type ProcessScope,
@@ -73,7 +73,7 @@ function darwinHarness(): { scope: ProcessScope; children: FakeChild[] } {
     setImmediate(() => child.emit('spawn'));
     return child as unknown as ChildProcess;
   }) as unknown as typeof nodeSpawn;
-  const scope = createDarwinBestEffortProcessScope({
+  const scope = createPosixBestEffortProcessScope({
     spawn,
     control: { signalGroup() { /* noop */ }, groupPresent: () => false },
     pollIntervalMs: 1,

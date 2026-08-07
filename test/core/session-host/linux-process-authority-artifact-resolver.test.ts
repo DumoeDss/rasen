@@ -149,8 +149,8 @@ describe('adjacent Linux process-authority artifact resolver', () => {
     })).toThrow(/actual Linux runtime|build-pinned|authority/i);
   });
 
-  it('pins the verified Linux helper handle so a later pathname swap cannot change execution bytes', () => {
-    if (process.platform !== 'linux') return;
+  // Parked-provider subject (locked decision 13): upgrade-path resolver, Linux-only fd semantics; skipped, not passed, elsewhere.
+  it.skipIf(process.platform !== 'linux')('pins the verified Linux helper handle so a later pathname swap cannot change execution bytes', () => {
     const item = fixture();
     const resolved = resolveLinuxProcessAuthorityArtifact({
       packageRoot: item.root,
@@ -167,8 +167,8 @@ describe('adjacent Linux process-authority artifact resolver', () => {
     expect(pinned).not.toEqual(fs.readFileSync(item.helperPath));
   });
 
-  it('rejects setuid, setgid, and sticky helper mode bits instead of masking them away', () => {
-    if (process.platform !== 'linux') return;
+  // Parked-provider subject (locked decision 13): upgrade-path resolver, Linux-only mode bits; skipped, not passed, elsewhere.
+  it.skipIf(process.platform !== 'linux')('rejects setuid, setgid, and sticky helper mode bits instead of masking them away', () => {
     const item = fixture();
     fs.chmodSync(item.helperPath, 0o4755);
     expect(() => resolveLinuxProcessAuthorityArtifact({

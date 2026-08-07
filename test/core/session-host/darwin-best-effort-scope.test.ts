@@ -7,11 +7,11 @@ import type { ChildProcess, spawn as nodeSpawn } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 
 import {
-  createDarwinBestEffortProcessScope,
+  createPosixBestEffortProcessScope,
   createNativeProcessGroupControl,
-  DARWIN_BEST_EFFORT_DECLARATION,
+  POSIX_BEST_EFFORT_DECLARATION,
   type ProcessGroupControl,
-} from '../../../src/core/session-host/process-capsule/darwin-best-effort-scope.js';
+} from '../../../src/core/session-host/process-capsule/posix-best-effort-scope.js';
 import { createHostedProcessScope } from '../../../src/core/session-host/process-capsule/hosted-process-scope.js';
 import {
   asProcessRef,
@@ -19,6 +19,13 @@ import {
   type ProcessPrepareInput,
   type ProcessScope,
 } from '../../../src/core/session-host/process-scope.js';
+
+/**
+ * The module these suites exercise is now the shared POSIX best-effort scope
+ * (darwin and linux run the same implementation). The filename is kept so the
+ * macOS change's evidence trail keeps resolving; the subject under test moved,
+ * the behaviour did not.
+ */
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../../', import.meta.url)));
 const ABSOLUTE_COMMAND = process.platform === 'win32' ? 'C:\\bin\\workload' : '/bin/workload';
@@ -165,7 +172,7 @@ async function liveScope(options: {
 }) {
   const calls = options.calls ?? [];
   const { spawn, children } = kernelSpawn(options.kernel, calls);
-  const scope = createDarwinBestEffortProcessScope({
+  const scope = createPosixBestEffortProcessScope({
     spawn,
     control: options.control ?? createNativeProcessGroupControl(options.kernel.kill),
     now: options.clock.now,
@@ -184,7 +191,7 @@ describe('macOS best-effort scope declares its limits before anything starts', (
     const clock = virtualClock();
     const calls: SpawnRecord[] = [];
     const { spawn } = kernelSpawn(kernel, calls);
-    const scope = createDarwinBestEffortProcessScope({
+    const scope = createPosixBestEffortProcessScope({
       spawn,
       control: createNativeProcessGroupControl(kernel.kill),
       now: clock.now,
@@ -205,8 +212,8 @@ describe('macOS best-effort scope declares its limits before anything starts', (
         'honest-unproven-terminal',
       ],
     });
-    expect(DARWIN_BEST_EFFORT_DECLARATION.exactCancel).toBe(false);
-    expect(DARWIN_BEST_EFFORT_DECLARATION.scopeEmptyProof).toBe(false);
+    expect(POSIX_BEST_EFFORT_DECLARATION.exactCancel).toBe(false);
+    expect(POSIX_BEST_EFFORT_DECLARATION.scopeEmptyProof).toBe(false);
     // Prepare is inert: no workload process exists yet.
     expect(calls).toHaveLength(0);
     expect(kernel.processes.size).toBe(0);
@@ -216,7 +223,7 @@ describe('macOS best-effort scope declares its limits before anything starts', (
     const kernel = new Kernel();
     const calls: SpawnRecord[] = [];
     const { spawn } = kernelSpawn(kernel, calls);
-    const scope = createDarwinBestEffortProcessScope({
+    const scope = createPosixBestEffortProcessScope({
       spawn,
       control: createNativeProcessGroupControl(kernel.kill),
     });
@@ -232,7 +239,7 @@ describe('macOS best-effort scope declares its limits before anything starts', (
     const kernel = new Kernel();
     const calls: SpawnRecord[] = [];
     const { spawn } = kernelSpawn(kernel, calls);
-    const scope = createDarwinBestEffortProcessScope({
+    const scope = createPosixBestEffortProcessScope({
       spawn,
       control: createNativeProcessGroupControl(kernel.kill),
     });
@@ -341,7 +348,7 @@ describe('cancel escalation is keyed off whole-group emptiness, never leader exi
     };
     const calls: SpawnRecord[] = [];
     const { spawn } = kernelSpawn(kernel, calls);
-    const scope = createDarwinBestEffortProcessScope({
+    const scope = createPosixBestEffortProcessScope({
       spawn,
       control: stuck,
       controlTimeoutMs: 20,
@@ -391,7 +398,7 @@ describe('the tier never reports a clean cancel or a proven-empty scope', () => 
 
   it('has no source path that emits closed or scope-empty on this tier', () => {
     const source = fs.readFileSync(
-      path.join(repoRoot, 'src/core/session-host/process-capsule/darwin-best-effort-scope.ts'),
+      path.join(repoRoot, 'src/core/session-host/process-capsule/posix-best-effort-scope.ts'),
       'utf8'
     );
     const code = source
@@ -466,7 +473,7 @@ describe('daemon death is honest loss, never reattach', () => {
     );
     const calls: SpawnRecord[] = [];
     const { spawn } = kernelSpawn(kernel, calls);
-    const scope = createDarwinBestEffortProcessScope({
+    const scope = createPosixBestEffortProcessScope({
       spawn,
       control: createNativeProcessGroupControl(kernel.kill),
     });
@@ -483,7 +490,7 @@ describe('daemon death is honest loss, never reattach', () => {
 
   it('contains no reattach or identity revalidation anywhere in the module', () => {
     const source = fs.readFileSync(
-      path.join(repoRoot, 'src/core/session-host/process-capsule/darwin-best-effort-scope.ts'),
+      path.join(repoRoot, 'src/core/session-host/process-capsule/posix-best-effort-scope.ts'),
       'utf8'
     );
     expect(source).not.toMatch(/reattach/i);
@@ -491,28 +498,39 @@ describe('daemon death is honest loss, never reattach', () => {
   });
 });
 
-describe('darwin selection at hosted-session ProcessScope construction', () => {
+describe('POSIX selection at hosted-session ProcessScope construction', () => {
+  // Any exact-tier construction calls resolve() to locate the capsule helper.
+  // Throwing from there is therefore an unambiguous "this platform reached the
+  // legacy capsule" signal, and reaching the best-effort tier means resolve()
+  // was never consulted at all.
   const sentinel = new ProcessScopeError('containment-unsupported', 'exact-tier-sentinel');
 
-  it('selects the best-effort tier only on darwin', async () => {
-    const darwin: ProcessScope = createHostedProcessScope({
-      platform: 'darwin',
-      resolve: () => {
-        throw sentinel;
-      },
-    });
-    const prepared = await darwin.prepare(prepareInput());
-    expect(prepared.declaration).toEqual(DARWIN_BEST_EFFORT_DECLARATION);
-
-    for (const platform of ['linux', 'win32'] as const) {
-      const exact = createHostedProcessScope({
+  it('selects the shared POSIX best-effort tier on darwin AND on linux', async () => {
+    for (const platform of ['darwin', 'linux'] as const) {
+      const scope: ProcessScope = createHostedProcessScope({
         platform,
         resolve: () => {
           throw sentinel;
         },
       });
-      await expect(exact.prepare(prepareInput())).rejects.toBe(sentinel);
+      const prepared = await scope.prepare(prepareInput());
+      expect(prepared.declaration, platform).toEqual(POSIX_BEST_EFFORT_DECLARATION);
+      expect(prepared.declaration?.exactCancel, platform).toBe(false);
+      expect(prepared.declaration?.scopeEmptyProof, platform).toBe(false);
     }
+  });
+
+  it('keeps every non-cutover platform on the exact-tier legacy capsule', async () => {
+    // win32 has its own cutover and its own selection guard in
+    // win32-best-effort-scope.test.ts; freebsd stands for the platforms this
+    // Direction makes no support claim about, which must route as before.
+    const exact = createHostedProcessScope({
+      platform: 'freebsd',
+      resolve: () => {
+        throw sentinel;
+      },
+    });
+    await expect(exact.prepare(prepareInput())).rejects.toBe(sentinel);
   });
 
   it('routes every hosted-session construction site through the selection helper', () => {
@@ -526,7 +544,7 @@ describe('darwin selection at hosted-session ProcessScope construction', () => {
       expect(source, `${site} must construct via createHostedProcessScope`).toMatch(
         /createHostedProcessScope\(/
       );
-      expect(source, `${site} must not bypass the darwin selection`).not.toMatch(
+      expect(source, `${site} must not bypass the platform selection`).not.toMatch(
         /createNativeProcessScope\(/
       );
     }

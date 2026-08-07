@@ -21,6 +21,14 @@ import {
   type TerminationReceipt,
 } from '../process-scope.js';
 
+/**
+ * Declared best-effort process scope for POSIX hosted sessions - one
+ * implementation shared by darwin and linux. Every mechanism here is
+ * POSIX-generic: a detached spawn creates a new session (and therefore a new
+ * process group whose id equals the leader pid), cancel addresses the whole
+ * group, and escalation is keyed on whole-group emptiness.
+ */
+
 const DEFAULT_POLL_INTERVAL_MS = 25;
 const DEFAULT_FINAL_OBSERVATION_MS = 2_000;
 const DEFAULT_CONTROL_TIMEOUT_MS = 10_000;
@@ -29,7 +37,7 @@ const DEFAULT_CONTROL_TIMEOUT_MS = 10_000;
  * The declaration this tier publishes before any workload starts. Both limit
  * flags are literal `false` and no code path can widen them.
  */
-export const DARWIN_BEST_EFFORT_DECLARATION: BestEffortScopeDeclaration = Object.freeze({
+export const POSIX_BEST_EFFORT_DECLARATION: BestEffortScopeDeclaration = Object.freeze({
   tier: 'best-effort',
   exactCancel: false,
   scopeEmptyProof: false,
@@ -79,7 +87,7 @@ export function createNativeProcessGroupControl(
   };
 }
 
-export interface DarwinBestEffortProcessScopeOptions {
+export interface PosixBestEffortProcessScopeOptions {
   spawn?: typeof spawn;
   control?: ProcessGroupControl;
   /** Interval of the whole-group emptiness poll. */
@@ -152,8 +160,8 @@ function timeoutReceipt(phase: ProcessControlPhase, message: string): Terminatio
   };
 }
 
-export function createDarwinBestEffortProcessScope(
-  options: DarwinBestEffortProcessScopeOptions = {}
+export function createPosixBestEffortProcessScope(
+  options: PosixBestEffortProcessScopeOptions = {}
 ): ProcessScope {
   const spawnProcess = options.spawn ?? spawn;
   const control = options.control ?? createNativeProcessGroupControl();
@@ -182,7 +190,7 @@ export function createDarwinBestEffortProcessScope(
         reject(
           new ProcessScopeError(
             'process-control-timeout',
-            `macOS best-effort scope ${phase} exceeded its bound.`,
+            `POSIX best-effort scope ${phase} exceeded its bound.`,
             undefined,
             phase
           )
@@ -326,7 +334,7 @@ export function createDarwinBestEffortProcessScope(
     } catch (error) {
       throw new ProcessScopeError(
         'activation-failed',
-        'macOS best-effort scope could not start the workload leader.',
+        'POSIX best-effort scope could not start the workload leader.',
         { cause: error },
         'activate'
       );
@@ -342,7 +350,7 @@ export function createDarwinBestEffortProcessScope(
             ? error
             : new ProcessScopeError(
                 'activation-failed',
-                'macOS best-effort scope leader failed to start.',
+                'POSIX best-effort scope leader failed to start.',
                 { cause: error },
                 'activate'
               )
@@ -362,7 +370,7 @@ export function createDarwinBestEffortProcessScope(
           fail(
             new ProcessScopeError(
               'activation-failed',
-              'macOS best-effort scope leader exposed no group id or no stdio.',
+              'POSIX best-effort scope leader exposed no group id or no stdio.',
               undefined,
               'activate'
             )
@@ -402,7 +410,7 @@ export function createDarwinBestEffortProcessScope(
       if (input.signal?.aborted) {
         throw new ProcessScopeError(
           'containment-prepare-failed',
-          'macOS best-effort scope preparation was cancelled.',
+          'POSIX best-effort scope preparation was cancelled.',
           undefined,
           'prepare'
         );
@@ -411,7 +419,7 @@ export function createDarwinBestEffortProcessScope(
         // Refused before any process exists; the tier never resolves PATH.
         throw new ProcessScopeError(
           'containment-prepare-failed',
-          'macOS best-effort scope requires a server-resolved absolute command.',
+          'POSIX best-effort scope requires a server-resolved absolute command.',
           undefined,
           'prepare'
         );
@@ -439,7 +447,7 @@ export function createDarwinBestEffortProcessScope(
       scopes.set(ref, state);
       return {
         ref,
-        declaration: DARWIN_BEST_EFFORT_DECLARATION,
+        declaration: POSIX_BEST_EFFORT_DECLARATION,
         async activate(): Promise<LiveProcessScope> {
           if (state.phase !== 'prepared') {
             throw new ProcessScopeError(

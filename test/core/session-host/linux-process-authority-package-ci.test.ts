@@ -254,12 +254,15 @@ afterEach(() => {
 });
 
 describe('Linux process-authority package and CI boundary', () => {
-  it('assembles locked staged input into deterministic adjacent package authority', () => {
+  // Parked-provider subject (locked decision 13): the win32 refusal is the one live claim on this host.
+  it.runIf(process.platform === 'win32')('refuses authoritative assembly on win32', () => {
     const item = fixture();
-    if (process.platform === 'win32') {
-      expect(() => assemble(item)).toThrow(/POSIX|0755|authoritative assembly/i);
-      return;
-    }
+    expect(() => assemble(item)).toThrow(/POSIX|0755|authoritative assembly/i);
+  });
+
+  // Parked-provider subject (locked decision 13): assembly machinery is upgrade-path; skipped, not passed, on win32.
+  it.skipIf(process.platform === 'win32')('assembles locked staged input into deterministic adjacent package authority', () => {
+    const item = fixture();
     const firstLog = assemble(item);
     const nativeRoot = path.join(item.output, 'dist', 'native');
     const helperPath = path.join(
@@ -455,8 +458,8 @@ describe('Linux process-authority package and CI boundary', () => {
     );
   });
 
-  it('rejects empty or cross-built staged bytes before pinning package authority', () => {
-    if (process.platform === 'win32') return;
+  // Parked-provider subject (locked decision 13): staging validation is upgrade-path; skipped, not passed, on win32.
+  it.skipIf(process.platform === 'win32')('rejects empty or cross-built staged bytes before pinning package authority', () => {
     const empty = fixture();
     fs.writeFileSync(path.join(
       empty.staging,
@@ -483,8 +486,8 @@ describe('Linux process-authority package and CI boundary', () => {
     expect(() => assemble(cross)).toThrow(/native Linux build|provenance/i);
   });
 
-  it('binds staged bytes to trusted release input and exact target ELF identity', () => {
-    if (process.platform === 'win32') return;
+  // Parked-provider subject (locked decision 13): release-input binding is upgrade-path; skipped, not passed, on win32.
+  it.skipIf(process.platform === 'win32')('binds staged bytes to trusted release input and exact target ELF identity', () => {
     const replacedRelease = fixture();
     const pinnedReleaseSha256 = createHash('sha256')
       .update(fs.readFileSync(replacedRelease.releaseInput))
@@ -526,8 +529,8 @@ describe('Linux process-authority package and CI boundary', () => {
     expect(() => assemble(foreignMachine)).toThrow(/ELF|machine|target/i);
   });
 
-  it('emits architecture-correct manifests for arm64-only and dual-architecture input', () => {
-    if (process.platform === 'win32') return;
+  // Parked-provider subject (locked decision 13): manifest emission is upgrade-path; skipped, not passed, on win32.
+  it.skipIf(process.platform === 'win32')('emits architecture-correct manifests for arm64-only and dual-architecture input', () => {
     const arm64 = fixture(['arm64']);
     assemble(arm64);
     const armManifest = JSON.parse(fs.readFileSync(path.join(
@@ -561,8 +564,8 @@ describe('Linux process-authority package and CI boundary', () => {
     }
   });
 
-  it('replaces owned assembly/export trees and removes stale privileged inventory', () => {
-    if (process.platform === 'win32') return;
+  // Parked-provider subject (locked decision 13): assembly-tree hygiene is upgrade-path; skipped, not passed, on win32.
+  it.skipIf(process.platform === 'win32')('replaces owned assembly/export trees and removes stale privileged inventory', () => {
     const item = fixture();
     const stalePackageRoot = path.join(item.output, 'dist', 'native', 'linux-x64');
     const staleForeignRoot = path.join(item.output, 'dist', 'native', 'linux-arm64');
@@ -670,8 +673,8 @@ describe('Linux process-authority package and CI boundary', () => {
     expect(script).not.toMatch(/cwd:\s*root,\s*stdio:\s*'inherit'/u);
   });
 
-  it('fails closed when live source changes after the immutable snapshot starts', () => {
-    if (process.platform === 'win32') return;
+  // Parked-provider subject (locked decision 13): snapshot immutability is upgrade-path; skipped, not passed, on win32.
+  it.skipIf(process.platform === 'win32')('fails closed when live source changes after the immutable snapshot starts', () => {
     const item = fixture();
     const copiedRoot = path.join(item.root, 'copied-source');
     const copiedScript = path.join(copiedRoot, 'scripts', 'build-linux-process-authority.mjs');

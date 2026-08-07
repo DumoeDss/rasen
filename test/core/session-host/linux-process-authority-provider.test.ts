@@ -305,8 +305,8 @@ describe('Linux process-authority provider bundle', () => {
     } as never)).toThrow(/options|production|injection/i);
   });
 
-  it('rejects writable or special-mode ancestors instead of accepting an arbitrary 0700 leaf', () => {
-    if (process.platform === 'win32') return;
+  // Parked-provider subject (locked decision 13): POSIX ancestor-mode walk, Linux-covered by wsl-ts-oracles-lead2; skipped, not passed, on win32.
+  it.skipIf(process.platform === 'win32')('rejects writable or special-mode ancestors instead of accepting an arbitrary 0700 leaf', () => {
     const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-linux-production-unapproved-'));
     tempRoots.push(parent);
     const stateRoot = path.join(parent, 'state');
