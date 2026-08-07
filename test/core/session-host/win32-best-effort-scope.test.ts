@@ -233,8 +233,15 @@ describe('win32 terminals are declared-unproven, never the capsule exact claim',
       .filter((line) => !line.trim().startsWith('//') && !line.trim().startsWith('*'))
       .join('\n');
     expect(code).not.toMatch(/state:\s*'closed'/);
-    expect(code).not.toMatch(/'scope-empty'/);
+    expect(code).not.toMatch(/state:\s*'scope-empty'/);
     expect(code).not.toMatch(/emptiness:\s*'proven/);
+    // `scope-empty` is also the name of a ProcessControlPhase, and naming the
+    // phase a control channel died in is honest reporting, not an emptiness
+    // claim - the capsule adapter labels the same failure the same way. Those
+    // occurrences are stripped so the remaining assertion stays absolute: the
+    // token may appear ONLY as a phase label anywhere in this module.
+    const withoutPhaseLabels = code.replace(/phase:\s*'scope-empty'(\s+as\s+const)?/g, '');
+    expect(withoutPhaseLabels).not.toMatch(/'scope-empty'/);
   });
 
   it('contains no reattach or identity revalidation anywhere in the module', () => {
@@ -308,6 +315,34 @@ describe('transport and controller loss are retained uncertainty, never a termin
     expect(receipt.unproven).toBeUndefined();
     expect(receipt.failure?.code).toBe('process-control-lost');
     expect(receiptAuthorizesRelease(receipt, true)).toBe(false);
+  });
+
+  it('never lets a post-loss probe turn a scope we owned into a terminal', async () => {
+    // Regression guard for a real defect this change's Windows receipt caught:
+    // after the controller dies, KILL_ON_JOB_CLOSE tears the Job down, so the
+    // capsule's one-shot probe then answers "gone". Treating that as an outcome
+    // released the Session - a clean detach produced by transport loss, exactly
+    // what SEC-001 describes. For a scope this daemon prepared, a probe answer
+    // is not an outcome.
+    const seam = capsuleSeam({ controller: 'lose-transport-on-terminate', probe: PROBE_CLOSED });
+    const scope = createWin32BestEffortProcessScope({ spawn: seam.spawn, resolve: seam.resolve });
+    const prepared = await scope.prepare(prepareInput());
+    const live = await prepared.activate();
+
+    await scope.terminate(live.ref, { reason: 'controller-death', graceMs: 0 });
+
+    const observation = await scope.inspect(live.ref);
+    expect(observation.state).toBe('uncertain');
+    expect(observation.state === 'uncertain' && observation.failure).toEqual({
+      code: 'process-control-lost',
+      phase: 'scope-empty',
+    });
+
+    const again = await scope.terminate(live.ref, { reason: 'retry', graceMs: 0 });
+    expect(again.state).toBe('uncertain');
+    expect(again.unproven).toBeUndefined();
+    expect(receiptAuthorizesRelease(again, true)).toBe(false);
+    expect(await settledWithin(live.closed, 40)).toBe(false);
   });
 
   it('reports a probe that never answers as an uncertain observation', async () => {

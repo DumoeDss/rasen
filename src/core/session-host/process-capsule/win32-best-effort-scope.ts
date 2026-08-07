@@ -45,6 +45,28 @@ const JOB_EMPTY_LOCAL_DIAGNOSTIC =
 const JOB_EMPTY_PROBE_DIAGNOSTIC =
   'windows Job observed empty by the capsule one-shot probe; the scope belongs to a previous daemon lifetime and emptiness is not proven';
 const NEVER_ACTIVATED_DIAGNOSTIC = 'no workload ran';
+const LOST_CONTROL_DIAGNOSTIC =
+  'the capsule control channel for this scope was lost without a protocol outcome; authority is retained and the scope is not released';
+
+/**
+ * The answer for a scope this daemon prepared and then lost control of. It is a
+ * terminal-looking situation that is deliberately NOT a terminal: authority
+ * stays retained until something other than a lost channel accounts for it.
+ */
+const LOST_CONTROL_OBSERVATION: ProcessObservation = Object.freeze({
+  state: 'uncertain',
+  controllable: false,
+  diagnostic: LOST_CONTROL_DIAGNOSTIC,
+  failure: { code: 'process-control-lost' as const, phase: 'scope-empty' as const },
+});
+
+const LOST_CONTROL_RECEIPT: TerminationReceipt = Object.freeze({
+  state: 'uncertain',
+  gracefulAttempted: false,
+  forced: false,
+  diagnostic: LOST_CONTROL_DIAGNOSTIC,
+  failure: { code: 'process-control-lost' as const, phase: 'scope-empty' as const },
+});
 
 /**
  * The declaration this tier publishes before any workload starts. Both limit
@@ -63,6 +85,14 @@ interface ScopeState {
   activated: boolean;
   /** Latched on the first cancel; a cancelled scope never settles 'completed'. */
   cancelling: boolean;
+  /**
+   * Latched when this daemon's own control channel to the scope died without a
+   * protocol outcome. Once set, the scope can never mint a terminal again: the
+   * capsule's one-shot probe may still answer about the Job, but that answer is
+   * about a scope this daemon has lost control of, and treating it as an
+   * outcome is exactly the clean-detach SEC-001 describes.
+   */
+  transportLost: boolean;
   terminal?: DeclaredUnprovenReceipt;
   settleTerminal(receipt: DeclaredUnprovenReceipt): void;
   readonly closed: Promise<DeclaredUnprovenReceipt>;
@@ -175,6 +205,7 @@ export function createWin32BestEffortProcessScope(
     const state: ScopeState = {
       activated: false,
       cancelling: false,
+      transportLost: false,
       closed,
       settleTerminal(receipt) {
         if (state.terminal) return;
@@ -260,7 +291,9 @@ export function createWin32BestEffortProcessScope(
                 })
               );
             },
-            () => undefined
+            () => {
+              state.transportLost = true;
+            }
           );
           return {
             ref: live.ref,
@@ -291,6 +324,7 @@ export function createWin32BestEffortProcessScope(
       if (state?.terminal) {
         return { state: 'declared-unproven', controllable: false, terminal: state.terminal };
       }
+      if (state?.transportLost) return LOST_CONTROL_OBSERVATION;
       let observation: ProcessObservation;
       try {
         observation = await capsule.inspect(ref);
@@ -302,21 +336,31 @@ export function createWin32BestEffortProcessScope(
         return observation;
       }
       if (observation.state === 'declared-unproven') return observation;
-      // The remaining case is the capsule's exact claim about a Job the one-shot
-      // probe found gone. Reported as a declared-unproven completion so a stale
-      // record can be reconciled, with the observation named in the diagnostic.
-      const terminal = unprovenReceipt('completed', {
-        jobObservedEmpty: true,
-        forced: false,
-        diagnostic: JOB_EMPTY_PROBE_DIAGNOSTIC,
-      });
-      state?.settleTerminal(terminal);
-      return { state: 'declared-unproven', controllable: false, terminal };
+      // The remaining case is the capsule's exact claim about a Job that is
+      // gone. For a scope THIS daemon prepared, that answer can only have come
+      // from the one-shot probe - the live channel would have settled a
+      // terminal instead - which means control was lost without an outcome.
+      // Minting a terminal there would be the clean detach SEC-001 names.
+      if (state) return LOST_CONTROL_OBSERVATION;
+      // For a ref from a previous daemon lifetime, the probe observation is the
+      // only evidence there will ever be, and reporting only uncertainty would
+      // wedge the stale Session forever (design D4). Reported as a
+      // declared-unproven completion with the observation named.
+      return {
+        state: 'declared-unproven',
+        controllable: false,
+        terminal: unprovenReceipt('completed', {
+          jobObservedEmpty: true,
+          forced: false,
+          diagnostic: JOB_EMPTY_PROBE_DIAGNOSTIC,
+        }),
+      };
     },
 
     async terminate(ref, intent: TerminationIntent): Promise<TerminationReceipt> {
       const state = scopes.get(ref);
       if (state?.terminal) return terminationFrom(state.terminal);
+      if (state?.transportLost) return LOST_CONTROL_RECEIPT;
       if (state) state.cancelling = true;
       let receipt: TerminationReceipt;
       try {

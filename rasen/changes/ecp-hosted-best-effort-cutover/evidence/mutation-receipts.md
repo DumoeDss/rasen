@@ -194,6 +194,36 @@ RED - `npx vitest run darwin-best-effort-scope.test.ts darwin-live-close-termina
 The fifth failure is the repointed source-scan guard, which is the specific
 claim task 2.3 needed proven. GREEN unmutated: 22 passed (22).
 
+### (f) The win32 module emits a proven scope-empty claim
+
+Added after the Windows receipts forced a change to the win32 source-scan guard.
+The transport-loss fix introduced `failure: { code: 'process-control-lost',
+phase: 'scope-empty' }` - a control-PHASE label, which the capsule adapter uses
+for the same failure - and the original guard's bare `/'scope-empty'/` assertion
+turned RED on it. The guard was narrowed to forbid `state: 'scope-empty'` and to
+strip only `phase: 'scope-empty'` occurrences before re-asserting the token is
+absent. Narrowing a guard demands re-proving it, so:
+
+Mutation in `win32-best-effort-scope.ts` (inside `unprovenReceipt`):
+
+```diff
+   return Object.freeze({
+-    state: 'declared-unproven',
++    state: 'scope-empty' as unknown as 'declared-unproven',
+     outcome,
+```
+
+RED:
+
+```
+ FAIL  win32 terminals are declared-unproven, never the capsule exact claim > settles the live closed promise with an honest terminal, never a scope-empty receipt
+ FAIL  win32 terminals are declared-unproven, never the capsule exact claim > has no source path that emits closed or scope-empty on this tier
+      Tests  2 failed | 17 passed (19)
+```
+
+GREEN unmutated: 19 passed (19). The narrowed guard still catches a real
+emission of the token it polices; only the phase-label spelling is tolerated.
+
 ## Integrity after the wave
 
 Every mutated file was restored from its byte-exact backup and the working tree
