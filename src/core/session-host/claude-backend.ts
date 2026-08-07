@@ -11,6 +11,7 @@ import { CLAUDE_CLI_VERSION_PREMISE } from '../claude/premise.js';
 import type {
   AgentSessionBackend,
   AgentSessionTransport,
+  BackendClosure,
   BackendEvent,
   BackendTermination,
   BackendTurn,
@@ -18,8 +19,10 @@ import type {
 } from './backend.js';
 import { createHostedProcessScope } from './process-capsule/hosted-process-scope.js';
 import {
+  isDeclaredUnprovenReceipt,
   receiptAuthorizesRelease,
   type BestEffortScopeDeclaration,
+  type DeclaredUnprovenReceipt,
   type LiveProcessScope,
   type ProcessRef,
   type ProcessScope,
@@ -213,7 +216,7 @@ function writeStreamMessage(stdin: Writable, turn: BackendTurn): Promise<void> {
 class ClaudeResidentTransport implements AgentSessionTransport {
   readonly runtimeRef: ProcessRef;
   readonly displayPid?: number;
-  readonly closed: Promise<unknown>;
+  readonly closed: Promise<BackendClosure | undefined>;
   private decoder?: BoundedNdjsonDecoder;
   private active?: TurnQueue;
   private activeResultSeen = false;
@@ -221,8 +224,10 @@ class ClaudeResidentTransport implements AgentSessionTransport {
   private protocolViolation?: Error;
   private rootExitedState = false;
   private closedState = false;
-  private resolveClosed!: () => void;
+  private resolveClosed!: (closure: BackendClosure | undefined) => void;
   private closeError?: unknown;
+  /** Honest terminal observed on the scope's own close; exact tier leaves it unset. */
+  private scopeTerminal?: DeclaredUnprovenReceipt;
 
   constructor(
     private readonly live: LiveProcessScope,
@@ -233,7 +238,7 @@ class ClaudeResidentTransport implements AgentSessionTransport {
   ) {
     this.runtimeRef = live.ref;
     this.displayPid = live.displayPid;
-    this.closed = new Promise<void>((resolve) => {
+    this.closed = new Promise<BackendClosure | undefined>((resolve) => {
       this.resolveClosed = resolve;
     });
 
@@ -272,7 +277,13 @@ class ClaudeResidentTransport implements AgentSessionTransport {
         : new ClaudeSessionBackendError('backend-protocol-failed', 'Claude root-exit observation failed.');
       this.active?.fail(this.protocolViolation);
     });
-    void live.closed.then(() => this.close(), (error) => this.close(error));
+    void live.closed.then((receipt) => {
+      // Natural completion of a declared scope settles its honest terminal
+      // here; the exact tier settles a proven scope-empty receipt and records
+      // nothing, exactly as before.
+      if (isDeclaredUnprovenReceipt(receipt)) this.scopeTerminal = receipt;
+      this.close();
+    }, (error) => this.close(error));
   }
 
   send(turn: BackendTurn): BackendTurnStream {
@@ -325,10 +336,15 @@ class ClaudeResidentTransport implements AgentSessionTransport {
     });
     // Declaration-gated: an exact-tier scope still closes only on a proven
     // scope-empty receipt. A declared best-effort scope also closes on its
-    // honest declared-unproven terminal, which is terminal by design.
+    // honest declared-unproven terminal, which is terminal by design. The
+    // terminal itself is reported, not collapsed into the boolean: the host
+    // owns the release gate and needs the terminal to persist it.
     return {
       closed: receiptAuthorizesRelease(receipt, this.declaration !== undefined),
       cancelledBeforeWork: false,
+      ...(receipt.state === 'declared-unproven' && receipt.unproven
+        ? { unproven: receipt.unproven }
+        : {}),
     };
   }
 
@@ -391,7 +407,9 @@ class ClaudeResidentTransport implements AgentSessionTransport {
         )
       );
     }
-    this.resolveClosed();
+    // Exact tier resolves `undefined` exactly as it always did: only a declared
+    // scope's honest terminal changes what this promise carries.
+    this.resolveClosed(this.scopeTerminal ? { unproven: this.scopeTerminal } : undefined);
   }
 }
 

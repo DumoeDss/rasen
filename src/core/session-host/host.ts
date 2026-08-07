@@ -2,10 +2,12 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 
 import {
+  backendClosureTerminal,
   createAgentSessionBackendRegistry,
   type AgentSessionBackend,
   type AgentSessionTransport,
   type BackendEvent,
+  type BackendTermination,
 } from './backend.js';
 import {
   canTransitionHostedSession,
@@ -61,7 +63,7 @@ interface LiveTransport {
   claim: SessionHostWriterClaim;
   closing: boolean;
   released: boolean;
-  termination?: Promise<{ closed: boolean; cancelledBeforeWork: boolean }>;
+  termination?: Promise<BackendTermination>;
 }
 
 class HostOperationError extends Error {
@@ -513,7 +515,7 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
       const publishedLive = live;
       transports.set(authorityRecord.sessionId, publishedLive);
       void transport.closed.then(
-        () => observeTransportClose(authorityRecord!.sessionId, publishedLive),
+        (closure) => observeTransportClose(authorityRecord!.sessionId, publishedLive, closure),
         () => observeTransportClose(authorityRecord!.sessionId, publishedLive)
       );
       if (draining) {
@@ -555,7 +557,7 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
           };
           transports.set(record.sessionId, live);
           void transport.closed.then(
-            () => observeTransportClose(record.sessionId, live!),
+            (closure) => observeTransportClose(record.sessionId, live!, closure),
             () => observeTransportClose(record.sessionId, live!)
           );
           await markCloseUnobserved(record.sessionId, 'process-close-unobserved');
@@ -622,6 +624,11 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
           live.termination = undefined;
           return termination;
         }
+        // The live-close route is the production-normal one: cancelling a
+        // RUNNING declared session must leave the honest terminal on the
+        // Record, not only release the scope. Staged like every other close so
+        // the caller's own CAS runs against an unbumped record.
+        if (termination.unproven) noteProcessTerminal(sessionId, termination.unproven);
         await detachLive(sessionId, live);
         return termination;
       } catch (error) {
@@ -642,31 +649,47 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     }
   }
 
-  /**
-   * Staged rather than written inline: the close callers hold a pre-close
-   * snapshot for their own generation/revision CAS, so the terminal is
-   * persisted only after they finish.
-   */
-  function noteProcessTerminal(sessionId: string, receipt: DeclaredUnprovenReceipt): void {
-    pendingTerminals.set(sessionId, {
+  function toHostedProcessTerminal(receipt: DeclaredUnprovenReceipt): HostedProcessTerminal {
+    return {
       outcome: receipt.outcome,
       emptiness: 'unproven',
       label: declaredUnprovenTerminalLabel(receipt.outcome),
       groupObservedEmpty: receipt.groupObservedEmpty,
       forced: receipt.forced,
       recordedAt: timestamp(),
-    });
+    };
+  }
+
+  /**
+   * Staged rather than written inline: the close callers hold a pre-close
+   * snapshot for their own generation/revision CAS, so the terminal is
+   * persisted only after they finish.
+   */
+  function noteProcessTerminal(sessionId: string, receipt: DeclaredUnprovenReceipt): void {
+    pendingTerminals.set(sessionId, toHostedProcessTerminal(receipt));
   }
 
   async function flushProcessTerminals(): Promise<void> {
     for (const [sessionId, terminal] of [...pendingTerminals]) {
-      pendingTerminals.delete(sessionId);
-      await updateLatest(sessionId, (current) => {
-        // Permanent: release never rewrites it into a clean or proven outcome.
-        current.processTerminal = terminal;
-        current.updatedAt = timestamp();
-        return current;
-      }).catch(() => undefined);
+      try {
+        await updateLatest(sessionId, (current) => {
+          // Permanent: release never rewrites it into a clean or proven outcome.
+          current.processTerminal = terminal;
+          current.updatedAt = timestamp();
+          return current;
+        });
+        // Dropped only after the write landed. Deleting first would lose the
+        // terminal permanently and silently on CAS exhaustion - the exact
+        // failure class this staging exists to close.
+        pendingTerminals.delete(sessionId);
+      } catch (error) {
+        // A record that no longer exists can never receive its terminal;
+        // anything else (contention, a transient write failure) keeps the
+        // staged terminal for the next flush.
+        if (error instanceof SessionHostRegistryError && error.code === 'session-not-found') {
+          pendingTerminals.delete(sessionId);
+        }
+      }
     }
   }
 
@@ -707,8 +730,17 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     return released === 'live-or-uncertain' ? 'live-or-uncertain' : 'closed';
   }
 
-  async function observeTransportClose(sessionId: string, live: LiveTransport): Promise<void> {
+  async function observeTransportClose(
+    sessionId: string,
+    live: LiveTransport,
+    closure?: unknown
+  ): Promise<void> {
     if (live.closing || transports.get(sessionId) !== live) return;
+    // Natural completion of a declared scope carries its honest terminal on the
+    // transport's own close. Written inline rather than staged: this route owns
+    // the CAS that clears the process facts, so the terminal lands atomically
+    // with them instead of waiting for a flush that no dispatch will run.
+    const terminal = backendClosureTerminal(closure);
     await detachLive(sessionId, live).catch(() => undefined);
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const record = registry.get(sessionId);
@@ -728,6 +760,12 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
             return current;
           }
           const request = currentGenerationRequest(current);
+          // Declaration-gated exactly like every other release: only a scope
+          // whose limits were published before the workload started may record
+          // a declared-unproven terminal. Undeclared scopes are untouched.
+          if (terminal && current.process?.declaration) {
+            current.processTerminal = toHostedProcessTerminal(terminal);
+          }
           current.process = undefined;
           current.updatedAt = timestamp();
           if (current.hostState === 'retired' || current.hostState === 'retiring') {
@@ -1462,6 +1500,10 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
       closeRetained,
       Promise.allSettled(openingEntries.map(([finished]) => finished)),
     ]);
+    // The third and last flush point. A shutdown-routed close stages terminals
+    // that no dispatch and no reconcile will ever drain - the daemon is going
+    // away and `pendingTerminals` is in-memory only.
+    await flushProcessTerminals();
     if (
       closed.some((value) => !value) ||
       retainedClosed.some((value) => !value) ||
