@@ -8,3 +8,22 @@ openspec/changes/** linguist-generated=true
 
 # This fixture is spawned directly through its shebang on POSIX.
 test/fixtures/management-api/session-fake-cli.mjs text eol=lf
+
+# The Windows process-authority crate is digest-frozen: its build script hashes these
+# exact bytes, so a working tree whose line endings depend on the checkout platform gives
+# the crate a different source digest on every machine and the frozen digest reproduces
+# nowhere. Pinning them to LF makes it reproduce on any clone. The set below is exactly
+# the build script's closed source-input set (Cargo.lock, Cargo.toml, THIRD_PARTY.md,
+# src/**) plus tests/**, which the freeze marker records separately because the source
+# digest excludes it.
+native/windows-process-authority/Cargo.lock text eol=lf
+native/windows-process-authority/Cargo.toml text eol=lf
+native/windows-process-authority/THIRD_PARTY.md text eol=lf
+native/windows-process-authority/src/** text eol=lf
+native/windows-process-authority/tests/** text eol=lf
+
+# The Linux sibling crate is digest-frozen the same way and had the same exposure: its
+# frozen digest 087d87a5 held only because this working tree happens to be all-LF. A
+# Windows checkout converted it to 442e8743, which the package-CI guard asserts against
+# and the windows-latest workflow runs. This pin changes no file under that crate.
+native/linux-process-authority/** text eol=lf
