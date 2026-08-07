@@ -332,7 +332,13 @@ through task 11.3.
 
 ## Not claimed
 
-1. **The production daemon does not pass the endpoint.** The property is established at the native
+1. **NARROWED 2026-08-07 by `evidence/section-12-production-wiring.md`.** The daemon now creates
+   and passes an endpoint, and a live guardian's answer to its closure is receipted on the real
+   kernel with two discriminating mutations. What is still NOT established is the end-to-end
+   property - a real daemon dying and a resistant workload dying with it - because `activate` does
+   not reach `live` on the TypeScript path for a reason that predates this work and reproduces with
+   the wiring disabled. Read that file before relying on this item. Original text follows.
+   **The production daemon does not pass the endpoint.** The property is established at the native
    seam and is exercised end-to-end by a real daemon process in the oracle, but
    `src/core/session-host/process-authority/linux/native-assembly.ts` still spawns `prepare`
    without `--daemon-lifetime-fd`, so a scope created by the Node daemon today is **unbound**. The
