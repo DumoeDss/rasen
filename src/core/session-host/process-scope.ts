@@ -25,6 +25,11 @@ export type ProcessObservation =
   | { state: 'closed'; controllable: false }
   | { state: 'foreign'; controllable: false }
   | {
+      state: 'declared-unproven';
+      controllable: false;
+      terminal: DeclaredUnprovenReceipt;
+    }
+  | {
       state: 'uncertain';
       controllable: false;
       diagnostic: string;
@@ -54,12 +59,76 @@ export interface ScopeEmptyReceipt {
   state: 'scope-empty';
 }
 
+/**
+ * Descriptive vocabulary of the declared best-effort tier. Deliberately NOT
+ * added to RECURSIVE_PROCESS_SCOPE_SEMANTICS: this tier claims no part of the
+ * frozen recursive capability, and the frozen constant stays untouched.
+ */
+export const BEST_EFFORT_SCOPE_SEMANTICS = Object.freeze([
+  'own-process-group',
+  'group-signal-cancel',
+  'emptiness-keyed-escalation',
+  'exact-root-exit',
+  'bounded-controls',
+  'honest-unproven-terminal',
+] as const);
+
+export type BestEffortScopeSemantic = (typeof BEST_EFFORT_SCOPE_SEMANTICS)[number];
+
+/**
+ * Limits a best-effort scope declares before it starts. Absence of a
+ * declaration means the exact tier, whose behavior this addition never alters.
+ * Both flags are literal `false`: this tier cannot ever declare them true.
+ */
+export interface BestEffortScopeDeclaration {
+  readonly tier: 'best-effort';
+  readonly exactCancel: false;
+  readonly scopeEmptyProof: false;
+  readonly semantics: readonly BestEffortScopeSemantic[];
+}
+
+export type DeclaredUnprovenOutcome = 'cancelled' | 'completed' | 'never-activated';
+
+/**
+ * Terminal of a declared best-effort scope. Distinct from `closed` (a proven
+ * scope-empty claim) and from `uncertain` (a transient unknown awaiting
+ * reconciliation): unproven-by-design is itself terminal. `groupObservedEmpty`
+ * is diagnostic detail only and never upgrades `emptiness`.
+ */
+export interface DeclaredUnprovenReceipt {
+  readonly state: 'declared-unproven';
+  readonly outcome: DeclaredUnprovenOutcome;
+  readonly emptiness: 'unproven';
+  readonly groupObservedEmpty: boolean;
+  readonly forced: boolean;
+  readonly rootExit?: { readonly code: number | null; readonly signal: string | null };
+  readonly diagnostic?: string;
+}
+
+export const DECLARED_UNPROVEN_TERMINAL_LABELS = Object.freeze({
+  cancelled: 'cancelled / emptiness-unproven',
+  completed: 'completed / emptiness-unproven',
+  'never-activated': 'never-activated / emptiness-unproven',
+} as const);
+
+export function declaredUnprovenTerminalLabel(outcome: DeclaredUnprovenOutcome): string {
+  return DECLARED_UNPROVEN_TERMINAL_LABELS[outcome];
+}
+
+export function isDeclaredUnprovenReceipt(value: unknown): value is DeclaredUnprovenReceipt {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<DeclaredUnprovenReceipt>;
+  return candidate.state === 'declared-unproven' && candidate.emptiness === 'unproven';
+}
+
 export interface TerminationReceipt {
-  state: 'closed' | 'retained' | 'uncertain';
+  state: 'closed' | 'retained' | 'uncertain' | 'declared-unproven';
   gracefulAttempted: boolean;
   forced: boolean;
   diagnostic?: string;
   failure?: ProcessControlFailure;
+  /** Present exactly when state is 'declared-unproven'. */
+  unproven?: DeclaredUnprovenReceipt;
 }
 
 export interface LiveProcessScope {
@@ -70,12 +139,14 @@ export interface LiveProcessScope {
   readonly stdout: Readable;
   readonly stderr: Readable;
   readonly rootExited: Promise<BackendRootExit>;
-  readonly closed: Promise<ScopeEmptyReceipt>;
+  readonly closed: Promise<ScopeEmptyReceipt | DeclaredUnprovenReceipt>;
 }
 
 export interface PreparedProcessScope {
   readonly ref: ProcessRef;
   readonly displayPid?: number;
+  /** Present only on a declared best-effort tier; absent means the exact tier. */
+  readonly declaration?: BestEffortScopeDeclaration;
   activate(): Promise<LiveProcessScope>;
   abort(reason: string): Promise<TerminationReceipt>;
 }
@@ -120,6 +191,22 @@ export function asProcessRef(value: string): ProcessRef {
     throw new ProcessScopeError('process-authority-uncertain', 'ProcessRef is malformed.');
   }
   return value as ProcessRef;
+}
+
+/**
+ * Declaration-gated release rule.
+ *
+ * Exact-tier scopes keep the pre-existing rule byte-for-byte: only a proven
+ * scope-empty receipt authorises release. A declared-unproven terminal
+ * authorises release only when the pre-start declaration is present; an
+ * undeclared scope presenting one is refused, fail closed.
+ */
+export function receiptAuthorizesRelease(
+  receipt: Pick<TerminationReceipt, 'state'>,
+  declared: boolean
+): boolean {
+  if (receipt.state === 'closed') return true;
+  return declared && receipt.state === 'declared-unproven';
 }
 
 export interface DeterministicProcessScopeOptions {

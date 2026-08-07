@@ -7,6 +7,7 @@
  * shape, before the two route groups became the server's composition seam).
  */
 import type * as http from 'node:http';
+import * as path from 'node:path';
 
 import type { ConfigApiContext } from '../config-api/router.js';
 import { resolveSpaceSelector } from '../config-api/project-addressing.js';
@@ -15,8 +16,8 @@ import {
   getProjectRegistryPath,
   parseProjectRegistryState,
 } from '../project-registry.js';
-import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { derivePlanningSpaceId } from '../change-run/internal/identity.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { handleChanges } from './changes.js';
 import { handleArchive } from './archive.js';
@@ -35,6 +36,16 @@ import { resolveLocalPath } from './local-path-resolver.js';
 import { createLocalPathChooser } from './local-path-chooser.js';
 import { createSessionRegistry } from './session-registry.js';
 import { createAgentCliResolver, createSessionSupervisor, type SessionSupervisor } from './supervisor.js';
+import { createSessionHost } from '../session-host/host.js';
+import { createSessionHostRegistry } from '../session-host/registry.js';
+import { createClaudeSessionBackend } from '../session-host/claude-backend.js';
+import { createSessionHostOwnership } from '../session-host/ownership.js';
+import { createHostedProcessScope } from '../session-host/process-capsule/hosted-process-scope.js';
+import type { SessionHost, SessionHostCommand } from '../session-host/contracts.js';
+import {
+  handleHostedSessionDispatch,
+  hostedSessionToWire,
+} from './hosted-sessions.js';
 import { createChangeSubmitter } from './submit.js';
 import { createSpaceCreator } from './create-space.js';
 import {
@@ -69,9 +80,9 @@ import { hasRuntimeCapability } from '../runtime-adapters.js';
 
 /**
  * Extended resolution for the runs endpoints, which additionally accept a
- * `planning:<PlanningSpaceId>` selector that bypasses root resolution (design
- * §13). When `planningSpaceId` is set, the handler filters by PlanningSpaceId
- * match instead of by derived WorkspaceInstanceId.
+ * `planning:<PlanningSpaceId>` selector (design §13). The selector is resolved
+ * through the registered project homes to one canonical physical root before
+ * list, detail, or control authorization is evaluated.
  */
 type RunsSpaceResolution =
   | { ok: true; root: string | undefined; planningSpaceId?: string }
@@ -97,16 +108,77 @@ function checkProjectAmbiguity(projectId: string): { ambiguous: boolean; candida
   } catch {
     return { ambiguous: false, candidates: [] };
   }
-  const matchingRoots = Object.entries(state.projects)
+  const matchingEntries = Object.entries(state.projects)
     .filter(([, entry]) => entry.projectId === projectId)
-    .map(([root]) => root);
-  if (matchingRoots.length <= 1) return { ambiguous: false, candidates: [] };
+  if (matchingEntries.length <= 1) return { ambiguous: false, candidates: [] };
   // Derive the PlanningSpaceId for each matching root (same chain as CLI).
-  const candidates = matchingRoots.map((root) => {
-    const home = `project-${createHash('sha256').update(root).digest('hex').slice(0, 12)}`;
-    return `planning-space:${createHash('sha256').update('planning-space/1' + home).digest('hex')}`;
-  });
+  const candidates = [...new Set(
+    matchingEntries.map(([, entry]) => derivePlanningSpaceId(entry.name) as string)
+  )].sort();
   return { ambiguous: true, candidates };
+}
+
+function resolvePlanningSelector(planningSpaceId: string): RunsSpaceResolution {
+  if (!/^planning-space:[0-9a-f]{64}$/.test(planningSpaceId)) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'planning_selector_invalid',
+      message: 'planning selector must contain one full PlanningSpaceId.',
+    };
+  }
+  const registryPath = getProjectRegistryPath();
+  if (!existsSync(registryPath)) {
+    return {
+      ok: false,
+      status: 404,
+      code: 'planning_selector_unavailable',
+      message: `PlanningSpaceId ${planningSpaceId} is not registered on this machine.`,
+    };
+  }
+  let state;
+  try {
+    state = parseProjectRegistryState(readFileSync(registryPath, 'utf8'));
+  } catch {
+    return {
+      ok: false,
+      status: 503,
+      code: 'planning_registry_unavailable',
+      message: 'The project registry cannot resolve an exact planning root.',
+    };
+  }
+  const roots = new Set<string>();
+  for (const [registeredRoot, entry] of Object.entries(state.projects)) {
+    if (derivePlanningSpaceId(entry.name) !== planningSpaceId) continue;
+    try {
+      if (!statSync(registeredRoot).isDirectory()) continue;
+      roots.add(FileSystemUtils.canonicalizeExistingPath(registeredRoot));
+    } catch {
+      // A missing/unreadable registration is unavailable authority, never a
+      // cwd or registry-order fallback.
+    }
+  }
+  if (roots.size === 0) {
+    return {
+      ok: false,
+      status: 404,
+      code: 'planning_selector_unavailable',
+      message: `PlanningSpaceId ${planningSpaceId} has no available registered root.`,
+    };
+  }
+  if (roots.size > 1) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'planning_selector_ambiguous',
+      message: `PlanningSpaceId ${planningSpaceId} maps to multiple registered roots.`,
+    };
+  }
+  return {
+    ok: true,
+    root: [...roots][0]!,
+    planningSpaceId,
+  };
 }
 
 function canonicalizeOrResolve(target: string): string {
@@ -125,6 +197,10 @@ export interface ManagementRouterOptions {
   resolveAgentCliOverride?: () => Promise<string | null>;
   maxConcurrentSessions?: number;
   sessionKillGraceMs?: number;
+  /** Test override for the durable hosted lifecycle; production constructs one per daemon/server. */
+  sessionHostOverride?: SessionHost;
+  /** Test-only parent data directory for the durable hosted registry. */
+  sessionHostStateDir?: string;
   /** Test/daemon override for native runtime homes and the Rasen machine-data directory. */
   audit?: AuditManagementOptions;
   /**
@@ -139,11 +215,13 @@ export interface ManagementRouterOptions {
 export interface ManagementRouterHandle {
   handle: (req: http.IncomingMessage, res: http.ServerResponse, pathname: string) => Promise<void>;
   supervisor: SessionSupervisor;
+  sessionHost: SessionHost;
   shutdownPathChooser: () => Promise<void>;
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 const MAX_BODY_BYTES = 64 * 1024;
+const MAX_HOSTED_BODY_BYTES = 2 * 1024 * 1024 + 16 * 1024;
 
 /** The management endpoints with no path parameter, canonical (no trailing slash) form. */
 const MANAGEMENT_PATHS = new Set([
@@ -152,6 +230,8 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/archive',
   '/api/v1/runs',
   '/api/v1/sessions',
+  '/api/v1/hosted-sessions',
+  '/api/v1/hosted-sessions/execute',
   '/api/v1/spaces',
   '/api/v1/spaces/worktrees',
   '/api/v1/local-paths',
@@ -174,6 +254,7 @@ const MANAGEMENT_PATHS = new Set([
 ]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
+const HOSTED_SESSION_PATH_PREFIX = '/api/v1/hosted-sessions/';
 const TASK_ID_PATH_PREFIX = '/api/v1/tasks/';
 const WORKFLOW_ID_PATH_PREFIX = '/api/v1/workflows/';
 const PIPELINE_ID_PATH_PREFIX = '/api/v1/pipelines/';
@@ -302,6 +383,21 @@ function matchSessionIdPath(pathname: string): string | null {
   return rest;
 }
 
+function matchHostedSessionPath(
+  pathname: string
+): { sessionId: string; operation?: 'cancel' | 'restart' | 'retire' } | null {
+  if (!pathname.startsWith(HOSTED_SESSION_PATH_PREFIX)) return null;
+  const rest = pathname.slice(HOSTED_SESSION_PATH_PREFIX.length);
+  const segments = rest.split('/');
+  if (segments.length < 1 || segments.length > 2 || !UUID_PATTERN.test(segments[0] ?? '')) {
+    return null;
+  }
+  if (segments.length === 1) return { sessionId: segments[0]! };
+  const operation = segments[1];
+  if (operation !== 'cancel' && operation !== 'restart' && operation !== 'retire') return null;
+  return { sessionId: segments[0]!, operation };
+}
+
 /** Methods admitted per management path (design D1/D4; space-creation D5): everywhere GETs, `/changes`, `/sessions`, and `/spaces` also POST, session-id paths also DELETE. */
 function isMethodAdmitted(pathname: string, method: string | undefined): boolean {
   if (pathname === '/api/v1/local-paths/resolve') return method === 'GET';
@@ -312,6 +408,8 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
   if (pathname === '/api/v1/audits') return method === 'GET' || method === 'POST';
   if (pathname === '/api/v1/audits/sessions') return method === 'GET';
   if (pathname === '/api/v1/audits/import') return method === 'POST';
+  const hostedSession = matchHostedSessionPath(pathname);
+  if (hostedSession) return hostedSession.operation ? method === 'POST' : method === 'GET';
   if (matchSessionIdPath(pathname) !== null) {
     return method === 'GET' || method === 'DELETE';
   }
@@ -350,6 +448,8 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
   if (pathname === '/api/v1/sessions') {
     return method === 'GET' || method === 'POST';
   }
+  if (pathname === '/api/v1/hosted-sessions') return method === 'GET';
+  if (pathname === '/api/v1/hosted-sessions/execute') return method === 'POST';
   if (pathname === '/api/v1/pipelines') {
     return method === 'GET' || method === 'POST';
   }
@@ -395,7 +495,10 @@ type BodyReadResult =
   | { ok: false; status: number; code: string; message: string };
 
 /** Reads and JSON-parses the request body, capped like the config API's own reader. */
-function readJsonBody(req: http.IncomingMessage): Promise<BodyReadResult> {
+function readJsonBody(
+  req: http.IncomingMessage,
+  maxBytes = MAX_BODY_BYTES
+): Promise<BodyReadResult> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
     let total = 0;
@@ -409,12 +512,12 @@ function readJsonBody(req: http.IncomingMessage): Promise<BodyReadResult> {
     req.on('data', (chunk: Buffer) => {
       if (settled) return;
       total += chunk.length;
-      if (total > MAX_BODY_BYTES) {
+      if (total > maxBytes) {
         finish({
           ok: false,
           status: 413,
           code: 'payload_too_large',
-          message: `Request body exceeds ${MAX_BODY_BYTES} bytes.`,
+          message: `Request body exceeds ${maxBytes} bytes.`,
         });
       } else {
         chunks.push(chunk);
@@ -451,6 +554,7 @@ export function isManagementPath(pathname: string): boolean {
   return (
     MANAGEMENT_PATHS.has(stripped) ||
     matchSessionIdPath(stripped) !== null ||
+    matchHostedSessionPath(stripped) !== null ||
     matchTaskIdPath(stripped) !== null ||
     matchWorkflowIdPath(stripped) !== null ||
     matchPipelineIdPath(stripped) !== null ||
@@ -525,6 +629,31 @@ export function createManagementRouter(
     maxConcurrent: options.maxConcurrentSessions,
     killGraceMs: options.sessionKillGraceMs,
   });
+  const sessionHostRegistry = options.sessionHostOverride
+    ? undefined
+    : createSessionHostRegistry({
+        ...(options.sessionHostStateDir ? { stateDir: options.sessionHostStateDir } : {}),
+      });
+  const sessionProcessScope = options.sessionHostOverride
+    ? undefined
+    : createHostedProcessScope();
+  const sessionHost =
+    options.sessionHostOverride ??
+    createSessionHost({
+      registry: sessionHostRegistry!,
+      ownership: createSessionHostOwnership({
+        stateDir: path.join(sessionHostRegistry!.paths.root, 'owners'),
+      }),
+      processScope: sessionProcessScope!,
+      backends: [
+        createClaudeSessionBackend({
+          processScope: sessionProcessScope!,
+          ...(options.resolveAgentCliOverride
+            ? { resolveBinary: options.resolveAgentCliOverride }
+            : {}),
+        }),
+      ],
+    });
 
   // Resolves a request's optional `space` selector to a planning-space root
   // (design D2): an explicit selector resolves through the machine registries,
@@ -542,15 +671,16 @@ export function createManagementRouter(
   /**
    * Runs-specific space resolution (design §13). Extends the standard resolver
    * with two runs-only behaviors:
-   * 1. `planning:<PlanningSpaceId>` — bypasses registry resolution and returns
-   *    the exact PlanningSpaceId for Run filtering (no root needed).
+   * 1. `planning:<PlanningSpaceId>` — resolves the exact identifier through the
+   *    registry to one canonical physical root, or fails closed when unavailable
+   *    or ambiguous.
    * 2. `project:<projectId>` — checks for duplicate clone homes before
    *    delegating; returns `project_selector_ambiguous` with candidate
    *    PlanningSpaceIds when multiple homes share the projectId.
    */
   const resolveRunsSpace = async (selector: string | undefined): Promise<RunsSpaceResolution> => {
     if (selector?.startsWith('planning:')) {
-      return { ok: true, root: undefined, planningSpaceId: selector.slice('planning:'.length) };
+      return resolvePlanningSelector(selector.slice('planning:'.length));
     }
     if (selector?.startsWith('project:')) {
       const projectId = selector.slice('project:'.length);
@@ -1168,6 +1298,75 @@ export function createManagementRouter(
       return;
     }
 
+    if (pathname === '/api/v1/hosted-sessions/execute' && req.method === 'POST') {
+      const body = await readJsonBody(req, MAX_HOSTED_BODY_BYTES);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      if (typeof body.value !== 'object' || body.value === null || Array.isArray(body.value)) {
+        sendError(res, 400, 'invalid-input', 'Hosted Session execute body must be an object.');
+        return;
+      }
+      const value = body.value as Record<string, unknown>;
+      const result = await handleHostedSessionDispatch(sessionHost, {
+        ...value,
+        op: 'execute',
+      } as SessionHostCommand);
+      sendJson(res, result.status, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/hosted-sessions' && req.method === 'GET') {
+      sendJson(res, 200, { sessions: sessionHost.list() });
+      return;
+    }
+
+    const hostedSession = matchHostedSessionPath(pathname);
+    if (hostedSession && !hostedSession.operation && req.method === 'GET') {
+      const session = sessionHost.inspect(hostedSession.sessionId);
+      if (!session) {
+        sendError(res, 404, 'session-not-found', `No hosted Session with id ${hostedSession.sessionId}.`);
+        return;
+      }
+      sendJson(res, 200, { session });
+      return;
+    }
+
+    if (hostedSession?.operation && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      if (typeof body.value !== 'object' || body.value === null || Array.isArray(body.value)) {
+        sendError(res, 400, 'invalid-input', 'Hosted Session control body must be an object.');
+        return;
+      }
+      const value = body.value as Record<string, unknown>;
+      const allowedKeys = hostedSession.operation === 'restart' ? [] : ['reason'];
+      if (Object.keys(value).some((key) => !allowedKeys.includes(key))) {
+        sendError(res, 400, 'invalid-input', 'Hosted Session control body contains an unsupported field.');
+        return;
+      }
+      const command: SessionHostCommand =
+        hostedSession.operation === 'restart'
+          ? { op: 'restart', sessionId: hostedSession.sessionId }
+          : {
+              op: hostedSession.operation,
+              sessionId: hostedSession.sessionId,
+              reason:
+                typeof value.reason === 'string' && value.reason.trim()
+                  ? value.reason
+                  : 'requested-by-local-control',
+            };
+      const result = await handleHostedSessionDispatch(sessionHost, command);
+      sendJson(res, result.status, result.response);
+      return;
+    }
+
     if (pathname === '/api/v1/sessions' && req.method === 'POST') {
       const body = await readJsonBody(req);
       if (!body.ok) {
@@ -1206,6 +1405,9 @@ export function createManagementRouter(
         filterRoot = canonicalizeOrResolve(resolved.space.root);
       }
       const response = await handleListSessions(supervisor, filterRoot, (root) => resolveHomeForRoot(root));
+      for (const hosted of sessionHost.list()) {
+        response.sessions.push({ session: hostedSessionToWire(hosted), runState: { kind: 'absent' } });
+      }
       sendJson(res, 200, response);
       return;
     }
@@ -1214,6 +1416,14 @@ export function createManagementRouter(
     if (sessionId !== null && req.method === 'GET') {
       const result = handleGetSession(supervisor, sessionId);
       if (!result.ok) {
+        const hosted = sessionHost.inspect(sessionId);
+        if (hosted) {
+          sendJson(res, 200, {
+            session: hostedSessionToWire(hosted),
+            tails: { stdout: '', stderr: '' },
+          });
+          return;
+        }
         sendError(res, 404, 'not_found', `No session with id ${sessionId}.`);
         return;
       }
@@ -1224,6 +1434,16 @@ export function createManagementRouter(
     if (sessionId !== null && req.method === 'DELETE') {
       const result = handleKillSession(supervisor, sessionId);
       if (!result.ok) {
+        const hosted = sessionHost.inspect(sessionId);
+        if (hosted) {
+          const cancelled = await sessionHost.dispatch({
+            op: 'cancel',
+            sessionId,
+            reason: 'legacy-management-delete',
+          });
+          sendJson(res, cancelled.ok ? 202 : 409, cancelled);
+          return;
+        }
         sendError(res, 404, 'not_found', `No session with id ${sessionId}.`);
         return;
       }
@@ -1352,5 +1572,5 @@ export function createManagementRouter(
     }
   };
 
-  return { handle, supervisor, shutdownPathChooser: pathChooser.shutdown };
+  return { handle, supervisor, sessionHost, shutdownPathChooser: pathChooser.shutdown };
 }

@@ -61,6 +61,33 @@ export interface HostedRequestRecord {
   diagnostic?: string;
 }
 
+/**
+ * Best-effort tier limits, recorded before activation so an operator sees them
+ * before any workload code runs. Absence means the exact tier.
+ */
+export interface HostedProcessDeclaration {
+  tier: 'best-effort';
+  exactCancel: false;
+  scopeEmptyProof: false;
+}
+
+export type HostedProcessTerminalOutcome = 'cancelled' | 'completed' | 'never-activated';
+
+/**
+ * Permanent honest terminal of a declared best-effort scope. Release never
+ * rewrites it into a clean or proven-empty outcome.
+ */
+export interface HostedProcessTerminal {
+  outcome: HostedProcessTerminalOutcome;
+  emptiness: 'unproven';
+  /** Human-readable Record surface, e.g. "cancelled / emptiness-unproven". */
+  label: string;
+  /** Diagnostic detail only; never scope-emptiness proof. */
+  groupObservedEmpty: boolean;
+  forced: boolean;
+  recordedAt: string;
+}
+
 export interface HostedProcessFacts {
   generation: number;
   ownerToken: string;
@@ -69,6 +96,8 @@ export interface HostedProcessFacts {
   /** Optional observation only; never accepted by a control method. */
   displayPid?: number;
   preparedAt: string;
+  /** Present only for a declared best-effort scope; written before activation. */
+  declaration?: HostedProcessDeclaration;
 }
 
 export interface HostedSessionRecord {
@@ -92,6 +121,11 @@ export interface HostedSessionRecord {
    */
   prunedRequestFilter?: string;
   process?: HostedProcessFacts;
+  /**
+   * Survives the clearing of `process`: the honest terminal a declared
+   * best-effort scope reached, kept permanently on the released record.
+   */
+  processTerminal?: HostedProcessTerminal;
   recoveryReason?: string;
   retirementReason?: string;
 }
@@ -110,6 +144,10 @@ export interface SessionHostView {
     HostedRequestRecord,
     'requestId' | 'state' | 'generation' | 'resultDigest' | 'resultRef'
   >;
+  /** Visible before the workload starts when the scope declares its limits. */
+  processDeclaration?: HostedProcessDeclaration;
+  /** The honest terminal an operator reads; never a clean-cancel claim. */
+  processTerminal?: HostedProcessTerminal;
   recoveryReason?: string;
   retirementReason?: string;
   createdAt: string;
@@ -386,6 +424,10 @@ export function toSessionHostView(record: HostedSessionRecord): SessionHostView 
           },
         }
       : {}),
+    ...(record.process?.declaration
+      ? { processDeclaration: { ...record.process.declaration } }
+      : {}),
+    ...(record.processTerminal ? { processTerminal: { ...record.processTerminal } } : {}),
     ...(record.recoveryReason ? { recoveryReason: record.recoveryReason } : {}),
     ...(record.retirementReason ? { retirementReason: record.retirementReason } : {}),
     createdAt: record.createdAt,

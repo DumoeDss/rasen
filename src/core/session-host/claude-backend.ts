@@ -16,11 +16,13 @@ import type {
   BackendTurn,
   BackendTurnStream,
 } from './backend.js';
-import { createNativeProcessScope } from './process-capsule/native-process-scope.js';
-import type {
-  LiveProcessScope,
-  ProcessRef,
-  ProcessScope,
+import { createHostedProcessScope } from './process-capsule/hosted-process-scope.js';
+import {
+  receiptAuthorizesRelease,
+  type BestEffortScopeDeclaration,
+  type LiveProcessScope,
+  type ProcessRef,
+  type ProcessScope,
 } from './process-scope.js';
 import { BoundedNdjsonDecoder, SessionProtocolError } from './protocol.js';
 
@@ -225,7 +227,9 @@ class ClaudeResidentTransport implements AgentSessionTransport {
   constructor(
     private readonly live: LiveProcessScope,
     private readonly processScope: ProcessScope,
-    private readonly killGraceMs: number
+    private readonly killGraceMs: number,
+    /** Pre-start best-effort declaration; absent means the exact tier. */
+    private readonly declaration?: BestEffortScopeDeclaration
   ) {
     this.runtimeRef = live.ref;
     this.displayPid = live.displayPid;
@@ -319,7 +323,13 @@ class ClaudeResidentTransport implements AgentSessionTransport {
       reason,
       graceMs: this.killGraceMs,
     });
-    return { closed: receipt.state === 'closed', cancelledBeforeWork: false };
+    // Declaration-gated: an exact-tier scope still closes only on a proven
+    // scope-empty receipt. A declared best-effort scope also closes on its
+    // honest declared-unproven terminal, which is terminal by design.
+    return {
+      closed: receiptAuthorizesRelease(receipt, this.declaration !== undefined),
+      cancelledBeforeWork: false,
+    };
   }
 
   private accept(raw: unknown): void {
@@ -392,7 +402,7 @@ export function createClaudeSessionBackend(
   const verifyProtocol =
     options.verifyProtocol ?? (async (binary: string) => verifyClaudeSessionProtocol(binary));
   const env = options.env ?? process.env;
-  const processScope = options.processScope ?? createNativeProcessScope();
+  const processScope = options.processScope ?? createHostedProcessScope();
   const killGraceMs = options.killGraceMs ?? 5_000;
 
   const backendEnvironment = (): Record<string, string> => {
@@ -480,9 +490,15 @@ export function createClaudeSessionBackend(
       return {
         runtimeRef: prepared.ref,
         ...(prepared.displayPid ? { displayPid: prepared.displayPid } : {}),
+        ...(prepared.declaration ? { declaration: prepared.declaration } : {}),
         activate: async () => {
           const live = await prepared.activate();
-          return new ClaudeResidentTransport(live, processScope, killGraceMs);
+          return new ClaudeResidentTransport(
+            live,
+            processScope,
+            killGraceMs,
+            prepared.declaration
+          );
         },
         abort: (reason: string) => prepared.abort(reason),
       };

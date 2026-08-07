@@ -1,5 +1,6 @@
 import type { TurnLimits } from './contracts.js';
 import type {
+  BestEffortScopeDeclaration,
   ProcessRef,
   TerminationReceipt,
 } from './process-scope.js';
@@ -44,6 +45,11 @@ export interface AgentSessionTransport {
 export interface PreparedAgentSessionTransport {
   readonly runtimeRef: ProcessRef;
   readonly displayPid?: number;
+  /**
+   * Best-effort tier limits, known before activation so the host can record
+   * them before any workload code runs. Absent means the exact tier.
+   */
+  readonly declaration?: BestEffortScopeDeclaration;
   activate(): Promise<AgentSessionTransport>;
   abort(reason: string): Promise<TerminationReceipt>;
 }

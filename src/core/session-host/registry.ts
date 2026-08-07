@@ -160,6 +160,7 @@ const SESSION_KEYS = new Set([
   'requests',
   'prunedRequestFilter',
   'process',
+  'processTerminal',
   'recoveryReason',
   'retirementReason',
 ]);
@@ -170,7 +171,18 @@ const PROCESS_KEYS = new Set([
   'runtimeRef',
   'displayPid',
   'preparedAt',
+  'declaration',
 ]);
+const DECLARATION_KEYS = new Set(['tier', 'exactCancel', 'scopeEmptyProof']);
+const PROCESS_TERMINAL_KEYS = new Set([
+  'outcome',
+  'emptiness',
+  'label',
+  'groupObservedEmpty',
+  'forced',
+  'recordedAt',
+]);
+const PROCESS_TERMINAL_OUTCOMES = new Set(['cancelled', 'completed', 'never-activated']);
 const LEGACY_PROCESS_KEYS = new Set([
   'generation',
   'rootPid',
@@ -301,6 +313,41 @@ function parseSession(
       !isFiniteTimestamp(processFacts.preparedAt)
     ) {
       throw new Error('invalid process facts');
+    }
+    if (processFacts.declaration !== undefined) {
+      const declaration = processFacts.declaration as Record<string, unknown>;
+      // Both limit flags are literal false; a record claiming otherwise is not
+      // a best-effort declaration and is refused rather than read leniently.
+      if (
+        typeof declaration !== 'object' ||
+        declaration === null ||
+        Array.isArray(declaration) ||
+        Object.keys(declaration).some((field) => !DECLARATION_KEYS.has(field)) ||
+        declaration.tier !== 'best-effort' ||
+        declaration.exactCancel !== false ||
+        declaration.scopeEmptyProof !== false
+      ) {
+        throw new Error('invalid best-effort scope declaration');
+      }
+    }
+  }
+  if (record.processTerminal !== undefined) {
+    const terminal = record.processTerminal as unknown as Record<string, unknown>;
+    if (
+      typeof terminal !== 'object' ||
+      terminal === null ||
+      Array.isArray(terminal) ||
+      Object.keys(terminal).some((field) => !PROCESS_TERMINAL_KEYS.has(field)) ||
+      typeof terminal.outcome !== 'string' ||
+      !PROCESS_TERMINAL_OUTCOMES.has(terminal.outcome) ||
+      terminal.emptiness !== 'unproven' ||
+      typeof terminal.label !== 'string' ||
+      !terminal.label ||
+      typeof terminal.groupObservedEmpty !== 'boolean' ||
+      typeof terminal.forced !== 'boolean' ||
+      !isFiniteTimestamp(terminal.recordedAt)
+    ) {
+      throw new Error('invalid process terminal');
     }
   }
   return { ...(record as HostedSessionRecord), revision: record.revision ?? 0, requests };

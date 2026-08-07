@@ -12,6 +12,7 @@ import {
   sanitizeHostDiagnostic,
   toSessionHostView,
   validateSessionHostCommand,
+  type HostedProcessTerminal,
   type HostedRequestRecord,
   type HostedSessionRecord,
   type SessionHost,
@@ -34,10 +35,14 @@ import {
   type SessionHostOwnership,
   type SessionHostWriterClaim,
 } from './ownership.js';
-import { createNativeProcessScope } from './process-capsule/native-process-scope.js';
+import { createHostedProcessScope } from './process-capsule/hosted-process-scope.js';
 import {
   ProcessScopeError,
   asProcessRef,
+  declaredUnprovenTerminalLabel,
+  receiptAuthorizesRelease,
+  type DeclaredUnprovenReceipt,
+  type ProcessRef,
   type ProcessScope,
 } from './process-scope.js';
 
@@ -296,7 +301,7 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
   const uuid = options.uuid ?? randomUUID;
   const now = options.now ?? (() => new Date());
   const ownership = options.ownership ?? noSessionHostOwnership;
-  const processScope = options.processScope ?? createNativeProcessScope();
+  const processScope = options.processScope ?? createHostedProcessScope();
   const transports = new Map<string, LiveTransport>();
   const retainedPrepared = new Map<
     string,
@@ -306,6 +311,7 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
   const activeSessions = new Set<string>();
   const cancelledSessions = new Set<string>();
   const ephemeralResults = new Map<string, string>();
+  const pendingTerminals = new Map<string, HostedProcessTerminal>();
   let ready = false;
   let draining = false;
 
@@ -444,17 +450,42 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
           runtimeRef: prepared!.runtimeRef,
           ...(prepared!.displayPid ? { displayPid: prepared!.displayPid } : {}),
           preparedAt: timestamp(),
+          ...(prepared!.declaration
+            ? {
+                declaration: {
+                  tier: prepared!.declaration.tier,
+                  exactCancel: prepared!.declaration.exactCancel,
+                  scopeEmptyProof: prepared!.declaration.scopeEmptyProof,
+                },
+              }
+            : {}),
         };
         current.updatedAt = timestamp();
         return current;
       });
+      // Acceptance, not decoration: a declared tier's limits must be readable
+      // in the Record before activation. If the declaration did not land, the
+      // scope is aborted and no workload code runs.
+      if (prepared.declaration && !authorityRecord.process?.declaration) {
+        preparedTermination = await prepared.abort('declaration-not-recorded').catch(() => ({
+          state: 'uncertain' as const,
+          gracefulAttempted: false,
+          forced: false,
+        }));
+        throw new ProcessScopeError(
+          'authority-persist-failed',
+          'Best-effort scope limits were not recorded before activation.',
+          undefined,
+          'prepare'
+        );
+      }
       if (openController.signal.aborted || draining) {
         preparedTermination = await prepared.abort('host-shutdown-before-activation').catch(() => ({
           state: 'uncertain' as const,
           gracefulAttempted: false,
           forced: false,
         }));
-        if (preparedTermination.state !== 'closed') {
+        if (!receiptAuthorizesRelease(preparedTermination, prepared.declaration !== undefined)) {
           await markCloseUnobserved(record.sessionId, 'shutdown-close-unobserved');
           throw new ProcessScopeError(
             'process-termination-unobserved',
@@ -537,7 +568,7 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
           gracefulAttempted: false,
           forced: false,
         }));
-        if (preparedTermination.state !== 'closed') {
+        if (!receiptAuthorizesRelease(preparedTermination, prepared.declaration !== undefined)) {
           retainedPrepared.set(String(prepared.runtimeRef), {
             sessionId: record.sessionId,
             prepared,
@@ -611,6 +642,34 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     }
   }
 
+  /**
+   * Staged rather than written inline: the close callers hold a pre-close
+   * snapshot for their own generation/revision CAS, so the terminal is
+   * persisted only after they finish.
+   */
+  function noteProcessTerminal(sessionId: string, receipt: DeclaredUnprovenReceipt): void {
+    pendingTerminals.set(sessionId, {
+      outcome: receipt.outcome,
+      emptiness: 'unproven',
+      label: declaredUnprovenTerminalLabel(receipt.outcome),
+      groupObservedEmpty: receipt.groupObservedEmpty,
+      forced: receipt.forced,
+      recordedAt: timestamp(),
+    });
+  }
+
+  async function flushProcessTerminals(): Promise<void> {
+    for (const [sessionId, terminal] of [...pendingTerminals]) {
+      pendingTerminals.delete(sessionId);
+      await updateLatest(sessionId, (current) => {
+        // Permanent: release never rewrites it into a clean or proven outcome.
+        current.processTerminal = terminal;
+        current.updatedAt = timestamp();
+        return current;
+      }).catch(() => undefined);
+    }
+  }
+
   async function closeDurableProcess(
     record: HostedSessionRecord,
     reason: string
@@ -618,13 +677,24 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     const facts = record.process;
     if (!facts) return 'closed';
     const ref = asProcessRef(facts.runtimeRef);
+    // Declaration-gated release. The pre-start declaration on the Record is the
+    // sole authority for releasing from a declared-unproven terminal; an
+    // undeclared scope keeps the exact rule and fails closed.
+    const declared = facts.declaration !== undefined;
     const observation = await processScope.inspect(ref);
     if (observation.state === 'foreign' || observation.state === 'uncertain') {
       return 'live-or-uncertain';
     }
+    if (observation.state === 'declared-unproven') {
+      if (!declared) return 'live-or-uncertain';
+      noteProcessTerminal(record.sessionId, observation.terminal);
+    }
     if (observation.controllable) {
       const receipt = await processScope.terminate(ref, { reason, graceMs: 5_000 });
-      if (receipt.state !== 'closed') return 'live-or-uncertain';
+      if (!receiptAuthorizesRelease(receipt, declared)) return 'live-or-uncertain';
+      if (receipt.state === 'declared-unproven' && receipt.unproven) {
+        noteProcessTerminal(record.sessionId, receipt.unproven);
+      }
     }
     const localPrepared = retainedPrepared.get(String(ref));
     if (localPrepared) {
@@ -1206,6 +1276,8 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     } catch (error) {
       const mapped = mapFailure(error);
       return failure(command.op, mapped.code, mapped.message);
+    } finally {
+      await flushProcessTerminals();
     }
   }
 
@@ -1313,6 +1385,7 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
           report.recovered += 1;
         }
       }
+      await flushProcessTerminals();
       ready = true;
       report.ready = true;
       return report;
@@ -1332,7 +1405,9 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
         gracefulAttempted: false,
         forced: false,
       }));
-      if (receipt.state !== 'closed') return false;
+      if (!receiptAuthorizesRelease(receipt, retained.prepared.declaration !== undefined)) {
+        return false;
+      }
       retainedPrepared.delete(ref);
       await retained.claim.release();
       const record = registry.get(retained.sessionId);
