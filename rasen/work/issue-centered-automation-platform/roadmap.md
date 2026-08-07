@@ -656,10 +656,12 @@ breakaway-disabled + last-handle 不变量），macOS 则没有等价的非特�
 PID namespace 也无 cgroup，Mach task 不是层级化终止单位，`kqueue`/`NOTE_TRACK` 只
 观察不强制且会丢事件，`proc_listchildpids` 属于被明令禁止的 PID-tree 采样。
 
-**0.2.0 的处理（已生效）。** 执行后端按能力分级：macOS 只交付 `in-tool` 后端
-（worker 由宿主工具拥有，rasen 不做任何进程权威声明）；`hosted` 请求返回类型化
-`authority-unavailable`，绝不静默改路由。这是**声明的能力边界**，不是 silent
-unsupported。
+**0.2.0 的处理（已生效；2026-08-07 同日两次修订）。** 执行后端按能力分级：macOS 交付
+`in-tool` 后端；同日 Step 1 决定另交付**显式声明的 best-effort `hosted`**（POSIX
+进程组，`exactCancel: false`/`scopeEmptyProof: false`）；同日锁定决策 13 进一步把
+该 best-effort 档统一为三 OS 的 0.2.0 `hosted` 形态（见 §13.2）。请求当前平台不具备
+的能力档时返回类型化 `authority-unavailable`，绝不静默改路由。这是**声明的能力
+边界**，不是 silent unsupported。
 
 **0.3.0 需要研究并拍板的。** 候选方向已有研究记录但**均未获批准**：
 
@@ -673,5 +675,29 @@ unsupported。
 与子 Direction 的 Architecture Replan 2/3。
 
 **不因移交而免除的义务。** ECP-8 仍须在真实 macOS 上取得两条 receipt：`in-tool`
-后端可用，以及 `hosted` 请求返回类型化 `authority-unavailable` 且未发生静默改路由。
-缺失时必须显式记为 0.2.0 已知缺口，不得默认写成通过。
+后端可用，以及 best-effort `hosted` 的语义如实上报（取消终态
+`cancelled / emptiness-unproven`、能力声明启动前可见）。缺失时必须显式记为 0.2.0
+已知缺口，不得默认写成通过。
+
+### 13.2 Linux/Windows 内核强制进程权威（2026-08-07 锁定决策 13）
+
+**背景。** ECP-7 为 Linux（user+PID namespace guardian）与 Windows（Job guardian +
+attestation）各建成一个内核强制权威 crate 并两度冻结（Linux `89f6c1d5`、Windows
+`fc49a7c2`/helper `367666f6`），guardian/attestation/receipt 机器完整、receipt 齐备。
+但 2026-08-07 全面审查证实：生产 hosted 路径从未接入这两个 crate（构造点
+`router.ts:639` 上非 darwin 平台走遗留 ProcessCapsule），且两 crate 的取消路径均被
+测量证实端到端不可用——Linux `open-runtime --deadline-ms` 被丢弃致 2 s 死桥（D4）、
+activate 失败一律误标 `reference-invalid`（D2）；Windows 缺 frame 保真 `open-runtime`
+verb，stdout 复用构成 receipt 伪造面。修复需要 Windows 侧全新协议设计与两 crate 各
+一轮 break/re-freeze/全仓 re-bind，且历次波中新 Blocker 发现率未收敛。
+
+**0.2.0 的处理（已生效）。** 操作者决定（锁定决策 13）：0.2.0 `hosted` 三 OS 统一为
+显式声明的 best-effort 档（POSIX 进程组 / Windows Job object，
+`exactCancel: false`/`scopeEmptyProof: false`、终态 `cancelled / emptiness-unproven`）；
+两个 crate 及全部机器、receipt、evidence、handoff **保留在 git 作为升级路线资产**，
+已知缺陷（D4/D2/verb，修法与拒绝理由均有 evidence 文件）随资产记录在案，0.2.0 不
+修复、不取新 receipt。
+
+**0.3.0+ 重启时的入口。** 按 D4/D2/verb 三缺陷起修（一次 break、一次 re-freeze、
+一次全仓 re-bind per crate），不必重做既有审查；资产清单见子 Direction
+`slices/session-execution-and-self-hosting/plan.md` Architecture Replan 6。

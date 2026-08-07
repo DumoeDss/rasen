@@ -4,7 +4,8 @@
 >
 > 权威目标：[`target-state.md`](./target-state.md)
 >
-> 当前状态：**active / partial；执行后端已分级，macOS durable 权威移交 0.3.0**。
+> 当前状态：**active / partial；执行后端已分级，`hosted` 三 OS 统一 best-effort
+> （锁定决策 13），内核强制权威与 macOS durable 权威同列升级路线**。
 > ECP-6 已于 2026-08-04 依据四个 child 的独立 CLEAN review、真实 vertical、fresh
 > root/UI gates 标记 `passed`。ECP-7 是唯一 activeSlice；native ProcessCapsule closure
 > 的 review round 1 已证明 POSIX process-group authority 可被 `setsid()`/`setpgid()` 逃逸。
@@ -22,6 +23,14 @@
 > `exactCancel: false`/`scopeEmptyProof: false`，取消终态 `cancelled / emptiness-unproven`）。
 > 详见 Target State 锁定决策 11 与
 > [`Step 1 replan 输入`](../../../explorations/direction-replan-input-step1-daemon-lifetime-scope.md)。
+>
+> **2026-08-07 操作者决定（同日最晚，修订上两条中 `hosted` 的能力面）：**
+> 0.2.0 的 `hosted` 后端**三 OS 统一为显式声明的 best-effort 档**；Linux/Windows
+> 的内核强制权威——两个已冻结 crate（Linux `89f6c1d5`、Windows `fc49a7c2`）及其
+> 全部机器与 evidence——整体保留为**升级路线资产**，与 macOS durable 权威同列
+> 父级 roadmap §13。决定依据是全面审查证实生产 hosted 路径从未接入这两个 crate，
+> 且其取消路径在两个平台上均被测量证实端到端不可用。见 Target State 锁定决策 13
+> 与 plan.md Architecture Replan 6。
 >
 > 版本边界：**0.2.0 完成 ECP；0.3.0 承接 Issue、Execution Plan、Dispatch、
 > `auto-decompose` 上移与跨项目编排。** 0.3.0 不接收使 ECP 成立所必需的债务；
@@ -52,9 +61,10 @@
 | 通用 loop contract | ReviewCycle/GoalLoop 共享 progress/stall/blocked/strategy/escalation/recovery | **ECP-6 passed** |
 | Custom vertical | loop + parallel success/failure/recovery、73 processes/transitions、跨平面对称 | **ECP-6 passed** |
 | Trusted producer | plan-bound public authority 与签名/持久证据已验证，但 producer 仍是测试宿主 | **ECP-7 NOW** |
-| Agent Session 执行 | durable host/opaque ProcessScope 已有累计实现；PGID authority 已被真实审查否证，仍有 RC-001..005、SEC-001..003；common foundation 已 terminal，Linux provider 实现波进行中，Windows 待起；macOS durable 权威移交 0.3.0；真实 Action executor 尚未开始 | **ECP-7 NOW / graded backends** |
-| 执行后端分级 | `in-tool`、`hosted`（内核强制）、`hosted`（macOS best-effort）三档尚未在 executor 中成型；能力矩阵与「不静默改路由」证据未取 | **ECP-7 NOW** |
+| Agent Session 执行 | darwin best-effort scope 已建成、已审查、已接线（`router.ts:639`）；其余平台生产路径仍是遗留 ProcessCapsule（POSIX exact 主张已被证伪）；真实 Action executor 尚未开始 | **ECP-7 NOW / best-effort cutover** |
+| 执行后端分级 | `in-tool` 与 `hosted`（三 OS best-effort，锁定决策 13）两档尚未在 executor 中成型；能力矩阵与「不静默改路由」证据未取 | **ECP-7 NOW** |
 | 判据 4（替换安全身份） | opaque ref、三态协议、registry v2、replacement recovery 已有累计实现；Step 1 决定将其整体转为**升级路线**，0.2.0 改为守护进程死亡即作用域死亡 | **移交升级路线（保留全部实现与 evidence）** |
+| 内核强制权威（Linux/Windows crate） | 两 crate 已冻结（`89f6c1d5` / `fc49a7c2`），guardian/attestation/receipt 机器完整；取消路径经测量证实端到端不可用（Linux D4 2 s 死桥、Windows 缺 frame 保真 verb）；生产从未接入 | **移交升级路线（保留全部实现与 evidence，缺陷记录在案）** |
 | 自宿主与发布 | 无非 ECP 玩具 Change 自宿主；统一 PR/CI/release truth 未闭合 | **ECP-7 / ECP-8** |
 
 ECP-1..4 的历史实现与 dogfood 证据继续有效，但不能覆盖上表缺口；ECP-5
@@ -65,18 +75,25 @@ ECP-1..4 的历史实现与 dogfood 证据继续有效，但不能覆盖上表�
 PASSED
   ECP-6 v2 Authoring and Loop Contract Closure
 
-NOW（唯一 activeSlice）
+NOW（唯一 activeSlice；2026-08-07 锁定决策 13 后的执行前沿）
   ECP-7 Session Execution and Self-hosting
-    -> ecp-platform-process-authority-foundation（common contract；已 terminal）
-         -> ecp-linux-process-authority-provider ────┐
-         -> ecp-windows-process-authority-provider ──┴─> ecp-native-process-capsule-closure
-    -> 恢复 ecp-durable-agent-session-host 的 fresh independent review
-    -> 原 child 2–4 严格串行；executor 同时拥有 in-tool 与 hosted 两个后端
+    -> ecp-hosted-best-effort-cutover（新 change：POSIX best-effort scope 泛化到
+       linux、win32 Job 档诚实再声明、三构造点平台选择、真实 receipt）
+         -> ecp-native-process-capsule-closure（验收改写：删除 PGID exact 主张、
+            ProcessScope/host 集成收口；findings 按新分级 re-grade）
+              -> ecp-durable-agent-session-host（fresh independent review）
+                   -> ecp-frozen-action-session-executor
+                        -> ecp-session-policy-and-control-parity
+                             -> ecp-session-self-hosting-vertical-proof
 
-MOVED OUT（0.2.0 不再包含）
+MOVED OUT（0.2.0 不再包含；全部保留在 git 作为升级路线资产）
   macOS durable 进程权威（sandbox / Endpoint Security / VM 方向均未选）
-    -> 登记为 0.3.0 研究事项，见父级 roadmap.md §13
-    -> 不再有边指向 ecp-native-process-capsule-closure
+    -> 登记为 0.3.0 研究事项，见父级 roadmap.md §13.1
+  Linux/Windows 内核强制权威（冻结 crate `89f6c1d5` / `fc49a7c2` + guardian/
+  attestation/receipt 全部机器；已知缺陷 D4/D2/verb 记录在案）
+    -> 登记为升级路线资产，见父级 roadmap.md §13.2
+    -> ecp-linux/windows-process-authority-provider 两 change 随之停泊，
+       不再是 closure 的前置
 
 LATER（严格顺序）
   ECP-8 Completion Audit and Release Truth
@@ -260,6 +277,40 @@ lifecycle）不变。
 最低版本、Apple entitlement/签名/公证分发——一项都没有。它们整体移交 0.3.0 研究，
 登记在父级 `roadmap.md` §13。
 
+### 2026-08-07 全平台 best-effort 收敛与内核强制权威移交升级路线（锁定决策 13）
+
+本节修订上节表格中 `hosted` 的能力面，保留其历史。触发是操作者的交付约束与
+同日全面审查（细节见 Target State 锁定决策 13 与 plan.md Architecture Replan 6）：
+
+- **审查事实（经代码核实）**：生产 hosted 路径从未接入两个冻结 crate——
+  `router.ts:639` 上 darwin 走已建成、已审查、已接线的 best-effort scope
+  （`darwin-best-effort-scope.ts`，POSIX 进程组整组控制 + 冻结声明 +
+  declaration-gated release），其余平台走遗留 ProcessCapsule（其 POSIX
+  exact-scope-empty 主张已被审查证伪；Windows 侧本就是 Job object 实现）。
+  两 crate 的取消路径均被测量证实端到端不可用。
+- **修订后的后端表**：
+
+  | 后端 | 进程归属 | durable | headless driver | 精确递归终止 | 平台 |
+  | --- | --- | --- | --- | --- | --- |
+  | `in-tool` | 宿主工具 | 否 | 否 | 否 | Linux / Windows / macOS |
+  | `hosted`（best-effort） | rasen daemon/host | daemon-lifetime | 是 | **否**，终态 `emptiness-unproven` | Linux / Windows / macOS |
+
+  内核强制档从 0.2.0 表中移除，整体为升级路线（父级 §13.2）。红线不变：能力
+  声明启动前可见，`authority-unavailable` 绝不静默改路由。
+- **执行前沿**：新 change `ecp-hosted-best-effort-cutover` 承接三件事——
+  darwin scope 泛化为 POSIX best-effort 并对 linux 启用（构造点
+  `router.ts:639`、`host.ts:299`、`claude-backend.ts:395` 三处平台选择）、
+  win32 保留 Job 杀伤但终态改走 `DeclaredUnprovenReceipt` 诚实再声明（顺带
+  结构性关闭 SEC-001 的「transport 丢失变干净 detach」形状）、真实 Linux
+  （WSL）与 Windows（本机）receipt。closure 在其后收口，随后 host → executor
+  → policy-parity → self-hosting 串行不变。
+- **provider changes 停泊**：`ecp-linux-process-authority-provider` 与
+  `ecp-windows-process-authority-provider` 两个 change 连同其冻结 crate、
+  receipt、evidence、handoff 全部保留在 git，已知缺陷（Linux D4/D2、Windows
+  frame 保真 verb 缺失）随资产记录在案；0.2.0 不再向它们取任何新 receipt。
+  macOS provider change 的 best-effort 部分并入 cutover 波的验收基线，其
+  Section 7 真实 macOS 取证义务由 ECP-8 承接（无 runner 时显式记缺口）。
+
 ### 用户结果
 
 Reconciler 授予的 agent action 由独立、可恢复、可审计的 Session executor 实际
@@ -298,18 +349,20 @@ Reconciler 授予的 agent action 由独立、可恢复、可审计的 Session e
 - 在干净依赖和 fresh build 上串行运行 root/UI tests、typecheck、lint、package 与
   release contract；环境性例外逐项归因；
 - 重跑完整 ECP support/dogfood/recovery matrix；support matrix 的维度是
-  **OS × 执行后端**：
-  - Linux：`in-tool` receipt + `hosted` receipt；
-  - Windows：`in-tool` receipt + `hosted` receipt；
+  **OS × 执行后端**（2026-08-07 锁定决策 13 后，`hosted` 三 OS 统一为
+  best-effort 档）：
+  - Linux：`in-tool` receipt + best-effort `hosted` receipt（真实运行，取消
+    终态 `cancelled / emptiness-unproven`、能力声明启动前可见）；
+  - Windows：`in-tool` receipt + best-effort `hosted` receipt（同上），另须
+    receipt：Job 最后句柄关闭 → `KILL_ON_JOB_CLOSE` 的守护进程死亡拆除，以及
+    在飞 action 被记为类型化 `execution-lost`；
   - macOS：`in-tool` receipt（**必须是真实 macOS 运行**），外加一次真实 macOS
-    运行证明 best-effort `hosted` 的语义如实上报——取消终态为
-    `cancelled / emptiness-unproven`（不得写成已干净取消），且
-    `exactCancel: false`/`scopeEmptyProof: false` 的能力声明在启动前对用户可见。
-  - Linux/Windows 另须 receipt：守护进程死亡时**零孤儿**拆除（Linux 管道 EOF →
-    namespace 拆除；Windows 最后句柄关闭 → `KILL_ON_JOB_CLOSE`），以及在飞
-    action 被记为类型化 `execution-lost`。
+    运行证明 best-effort `hosted` 的语义如实上报；
+  - Linux/macOS 侧守护进程死亡的孤儿风险是**声明的已知限制**（锁定决策 13），
+    receipt 须证明的是 `execution-lost` 类型化与「未提交前沿保持未提交」，
+    不是零孤儿。
 
-  移出 macOS durable 权威**不免除 macOS runner**：上述两条 macOS 断言只能由真实
+  移出 macOS durable 权威**不免除 macOS runner**：上述 macOS 断言只能由真实
   macOS 运行证明，不接受 cross-compile、注入事件或文档声明代替。若届时仍无
   macOS runner，必须把它显式记为 0.2.0 的已知缺口，不得默认写成通过；
 - 明确 legacy engine 的保留或退休决定及存量 run-state 处理；
@@ -465,3 +518,14 @@ decision，并同步 Target State、Roadmap、架构、Change 组合与发布说
 
 该出口条款不可用于放宽 Blocker/Major gate、真实 OS 证据、Section 9 权限要求、
 child archive 证据或 ECP-8 单一干净分支 PR 边界。
+
+**已行使的出口条款（2026-08-07，第二次）**：0.2.0 `hosted` 后端三 OS 统一收敛为
+best-effort 档、Linux/Windows 内核强制权威移交升级路线，是本条款下的第二次显式
+scope decision（操作者拍板，Target State 锁定决策 13）。其代价同样已按条款支付：
+
+- Target State 头部注记、目标结果、观察基线、成功证据 §2/§6 与新锁定决策 13；
+- 本 Roadmap 头部、当前位置表、DAG、ECP-7 新小节与 ECP-8 矩阵同步收窄；
+- Slice `spec.md` 验收 2/4/7 与排除项、`plan.md` Architecture Replan 6、
+  `result.md` reconcile 同步；
+- 父级 `roadmap.md` §13.2 登记升级路线资产（含已知缺陷清单）；
+- 发布说明须在 ECP-8 按修订后的 OS × 后端矩阵陈述能力边界。

@@ -5,6 +5,9 @@
 > 状态：active。**2026-08-07 起 Target State 本身已被材料性修订**：执行后端
 > 按能力分级，macOS durable 进程权威经显式 scope decision 移交 0.3.0
 > （见「锁定决策 10」）。此前各次校准只改「当前观察基线」，本次不同。
+> **同日操作者最终决定（锁定决策 13）：0.2.0 的 `hosted` 后端三 OS 统一收敛为
+> 显式声明的 best-effort 档；Linux/Windows 内核强制权威（两个已冻结 crate 及其
+> 全部机器与 evidence）整体保留为升级路线资产，与 macOS durable 权威同列。**
 >
 > 上位 North Star：[`../north-star.md`](../north-star.md)
 >
@@ -35,10 +38,11 @@ canonical Run Record；用户能够从 CLI、API、Canvas 和 Operations 看到�
   不再由 prompt、skill 或命令维护第二套推进状态；
 - 一个 Run 只有一个 engine owner、一份 canonical state 和一个投影视图来源；
 - 冻结 Action 的实际执行由**声明能力的执行后端**承担：`in-tool`（宿主工具拥有
-  worker 进程、不做任何进程权威声明）与 `hosted`（rasen 拥有 durable 进程、由
-  内核强制的 `ProcessAuthorityProvider` 围栏）。后端能力由声明计算成矩阵，
-  用户在启动前即可看到差异；请求 `hosted` 而当前平台无 provider 时返回类型化
-  `authority-unavailable`，**绝不静默改路由到 `in-tool`**；
+  worker 进程、不做任何进程权威声明）与 `hosted`（rasen 拥有 daemon-lifetime
+  进程；0.2.0 为显式声明的 best-effort 档，内核强制的
+  `ProcessAuthorityProvider` 围栏属升级路线——锁定决策 13）。后端能力由声明
+  计算成矩阵，用户在启动前即可看到差异；请求当前平台不具备的能力档时返回
+  类型化 `authority-unavailable`，**绝不静默改路由到 `in-tool`**；
 - 故障、重启、预算耗尽、人工介入和部分失败都 fail closed，不会重复已提交工作，
   也不会错误进入 ship 或 Done；
 - 只有真实运行、恢复、dogfood 和发布证据齐备时，才允许声明 ECP 完成。
@@ -96,6 +100,12 @@ Agent 用户应当能够：
   在 Linux/Windows 由内核强制权威支撑，macOS 的 durable 进程权威（sandbox /
   Endpoint Security / VM 方向均未选）整体移交 0.3.0 研究；**macOS 在 0.2.0 的
   执行形态是 `in-tool`**。这不是静默推债，见「锁定决策 10」；
+- 2026-08-07 全面审查（经代码核实）：生产 hosted 路径从未接入两个已冻结的
+  authority crate——构造点 `router.ts:639` 上 darwin 走 best-effort scope，其余
+  平台走**遗留 ProcessCapsule**（其 POSIX exact-scope-empty 主张已被审查证伪）；
+  两 crate 的取消路径均被测量证实端到端不可用（Linux `open-runtime` 2 s 死桥、
+  Windows 缺 frame 保真 verb）。同日操作者据此决定锁定决策 13：0.2.0 hosted
+  三 OS 统一 best-effort，内核强制权威移交升级路线；
 - 尚未由 ECP 自身从 start 到 delivery-ready 完成一个后续非 ECP 玩具 Change；最终
   干净分支、统一 PR/远端 CI、版本/changelog/tag 一致性与 legacy retirement 决策也
   尚未闭合。
@@ -128,10 +138,11 @@ Target State 只有在以下证据同时成立时才满足。
 - agent action 的实际 Session 执行、取消、恢复、usage 与 evidence 可追溯到同一
   canonical Run，而不是只存在于 launcher 会话。该要求按后端分级验收：
   - `hosted`：headless driver、跨 launcher 退出存活（`durable: daemon-lifetime`）
-    均须有真实证据；Linux/Windows 另须证明精确递归终止与精确 scope-empty，
-    以及守护进程死亡时的零孤儿拆除；macOS 为声明的 best-effort，
-    `exactCancel: false`/`scopeEmptyProof: false`，取消终态为
-    `cancelled / emptiness-unproven`；
+    均须有真实证据；**三 OS 统一为显式声明的 best-effort 档（锁定决策 13）**：
+    `exactCancel: false`/`scopeEmptyProof: false` 在启动前对用户可见，取消终态
+    为 `cancelled / emptiness-unproven`；Windows 的 Job `KILL_ON_JOB_CLOSE`
+    守护进程死亡拆除保证保留并须有 receipt；内核强制的精确递归终止与精确
+    scope-empty 属升级路线，不再是 0.2.0 验收；
   - `in-tool`：须证明 launcher 消失时返回类型化 `execution-lost`、未提交前沿
     保持未提交、Run 可由其他 driver 恢复、已提交 invocation 不重复执行；
     它**不声称** durable、headless 或精确递归终止，且该限制必须是声明出来的，
@@ -283,6 +294,39 @@ Change-level ECP 迁移。
       与 ECP-8）。
     - 该决定不放宽任何 Blocker/Major gate、不豁免真实 OS 证据、不修改 closure
       对 PGID 权威的删除义务，也不改变 0.2.0/0.3.0 在其他方面的边界。
+13. **0.2.0 `hosted` 后端三 OS 统一收敛为 best-effort，内核强制权威整体移交
+    升级路线（2026-08-07 操作者决定）。** Roadmap「版本边界」出口条款的第二次
+    显式行使。操作者约束是交付时限与成本：把难以落地的实现先拆分出来（不丢弃
+    既有工作），干净利落地切到可以落地的方案，之后再慢慢探索更难的方案。
+
+    - 0.2.0 的 `hosted` 后端在 **Linux、Windows、macOS 三 OS 统一为显式声明的
+      best-effort 档**：POSIX 进程组 / Windows Job object 承担 janitor 职能，
+      能力声明 `exactCancel: false`、`scopeEmptyProof: false` 启动前可见，取消
+      终态 `cancelled / emptiness-unproven`，daemon 死亡语义仍按锁定决策 11 的
+      `execution-lost` 路径。锁定决策 10 中「`hosted` 仅在具备内核强制
+      `ProcessAuthorityProvider` 的 Linux 与 Windows 可用」的能力面陈述由本条
+      修订；其 macOS durable 权威在 0.3.0 的部分不变，并扩展为**三 OS 的内核
+      强制权威都在升级路线**。
+    - **决定依据（2026-08-07 全面审查，经代码核实）**：生产 hosted 路径从未接
+      入两个冻结 crate（`router.ts:639`：darwin → best-effort scope，其余 →
+      遗留 ProcessCapsule）；两 crate 的取消路径均被测量证实端到端不可用。因此
+      本决定不放弃任何当前可工作的能力，反而以诚实声明取代遗留 capsule 在
+      POSIX 上已被证伪的 exact-scope-empty 虚报。
+    - **不丢弃既有工作**：Linux `89f6c1d5` 与 Windows `fc49a7c2`/helper
+      `367666f6` 两个冻结 crate、guardian/attestation/receipt 全部机器与
+      evidence 保留在 git 作为升级路线资产，比照判据 4 与 macOS durable 权威的
+      既定规矩；已知缺陷（Linux D4/D2、Windows frame 保真 verb 缺失）随资产
+      记录在案，不在 0.2.0 修复。
+    - 锁定决策 11 中「Linux/Windows 守护进程死亡必须零孤儿（内核保证）」按本条
+      修订：Windows 侧 Job `KILL_ON_JOB_CLOSE` 保证保留；Linux/macOS 侧收敛为
+      best-effort 声明语义，孤儿风险是**声明的已知限制**。「Record 不说谎」的
+      不变量不变。
+    - 本决定不放宽 fail-closed 类型化不确定性、能力诚实（`authority-unavailable`
+      不静默改路由）、actor separation 程序强制、完成证据的事务完整性，也不
+      改变 ECP-8 真实 OS receipt 与单一干净分支 PR 边界。closure 的验收随之
+      改写为「以 best-effort 档取代遗留 capsule 的虚报并完成 ProcessScope/host
+      集成」；其 PGID 删除义务转化为 **PGID exact 主张删除**（进程组机制本身
+      以声明 best-effort 的形态保留）。细节见 plan.md Architecture Replan 6。
 
 ## 开放选择
 

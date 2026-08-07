@@ -7,5 +7,5 @@ targetState: target-state.md
 roadmap: roadmap.md
 activeSlice: slices/session-execution-and-self-hosting
 lastReconciled:
-  at: 2026-08-07T13:40:00+08:00
-  revision: 140115ced9df814f6adf3190b47171202d964a5e
+  at: 2026-08-07T23:30:00+08:00
+  revision: b4acde4302ca9982c9d280c7eb1614f342bfcc4e

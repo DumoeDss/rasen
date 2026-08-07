@@ -506,3 +506,83 @@ Step 1 内，无消费者）；`WSL-R4-M04`（published-inert abort）与 `WSL-R
 
 完整输入见
 [`Step 1 replan 输入`](../../../../explorations/direction-replan-input-step1-daemon-lifetime-scope.md)。
+
+## Architecture Replan 6：全平台 best-effort 收敛，内核强制权威移交升级路线（2026-08-07）
+
+### 触发与决定
+
+操作者决定（同日最晚，锁定决策 13）：交付时限与成本约束下，「把难以落地的实现先拆分
+出来（不丢弃既有工作），干净利落地切到可以落地的方案，之后再慢慢探索更难的方案」。
+触发它的全面审查建立了三个此前未上台面的代码事实：
+
+1. **生产 hosted 路径从未接入两个冻结 crate。** 构造点 `router.ts:639`（另
+   `host.ts:299`、`claude-backend.ts:395` 两处默认）上，darwin 走已建成、已审查、
+   已接线的 `darwin-best-effort-scope.ts`（491 行，POSIX 进程组整组控制、冻结声明、
+   `DeclaredUnprovenReceipt`、declaration-gated release），其余平台走**遗留
+   ProcessCapsule**（`native-process-scope.ts` → `native/process-capsule`）。Linux
+   crate 装配第 3 层被阻塞，Windows 工厂 inert by construction、零调用方。
+2. **两 crate 的取消路径均被测量证实端到端不可用**（lead-6：Linux D4 2 s 死桥、D2
+   误标；Windows 缺 frame 保真 `open-runtime` verb，stdout 复用构成 receipt 伪造面）。
+3. **遗留 capsule 的 Windows 侧本就是 Job object 实现**（`main.rs`：
+   CreateJobObjectW/TerminateJobObject/QueryInformationJobObject）；被证伪的只是
+   POSIX PGID 的 exact 主张。
+
+因此本 Replan **不放弃任何当前可工作的能力**：0.2.0 失去的只是从未兑现的证明，换来的
+是以诚实声明取代遗留 capsule 在 POSIX 上已被证伪的 exact-scope-empty 虚报。
+
+### 与 Replan 5「三条不可退让项」的对表
+
+- 第 2 条「Linux 必须保 PID namespace，不退回 PGID」**由锁定决策 13 显式修订**。该条
+  当时防的是**带着 exact 主张退回 PGID**——review 证伪的是「PGID 是权威」这一声明。
+  best-effort 档声明 `scopeEmptyProof: false`、终态 `emptiness-unproven`，不复活被
+  证伪的主张；存续的不变量是「Record 不说谎」，而非「必须内核强制」。
+- 第 1 条修订后保留其内核：Windows 继续用 Job object（遗留 capsule 即 Job 实现，
+  `KILL_ON_JOB_CLOSE` 拆除保证保留并须 receipt），不退到 Multica 的空实现。
+- 第 3 条（类型化 `authority-unavailable` + 绝不静默改路由）不变。
+
+### 修订后的 DAG 与 change 处置
+
+```text
+ecp-hosted-best-effort-cutover                  [新 change；当前唯一 runnable frontier]
+  -> ecp-native-process-capsule-closure         [验收改写；findings re-grade 后收口]
+       -> ecp-durable-agent-session-host        [fresh independent review]
+            -> ecp-frozen-action-session-executor
+                 -> ecp-session-policy-and-control-parity
+                      -> ecp-session-self-hosting-vertical-proof
+
+停泊（保留在 git，0.2.0 不取新 receipt）
+  ecp-linux-process-authority-provider          [冻结 89f6c1d5；已知缺陷 D4/D2 在案]
+  ecp-windows-process-authority-provider        [冻结 fc49a7c2/367666f6；缺 verb 在案]
+```
+
+- **`ecp-hosted-best-effort-cutover`（新）拥有**：darwin scope 泛化为 POSIX
+  best-effort 并对 linux 启用；win32 保留 Job 杀伤、终态改走
+  `DeclaredUnprovenReceipt` 的诚实再声明（结构性关闭 SEC-001 的「transport 丢失变
+  干净 detach」形状）；三构造点平台选择；capability 声明启动前可见；真实 Linux
+  （WSL）与 Windows（本机）receipt。规模基准是 macOS change（29 任务）。
+- **macOS provider change**：其 best-effort 实现并入 cutover 波的验收基线（代码已
+  接线）；Section 7 真实 macOS 取证义务由 ECP-8 承接，无 runner 时显式记缺口。
+- **closure**：验收改写为「以 best-effort 档取代遗留 capsule 的虚报并完成
+  ProcessScope/host 集成收口」；PGID 删除义务转化为 PGID exact 主张删除；
+  `SEC-001..003`/`RC-001..005` 按新分级 re-grade（re-grade 是读账与改账，不是新
+  工程）。
+- **两个 provider change 停泊**：连同冻结 crate、receipt、evidence、handoff 全部
+  保留；`process-authority-scope-semantics-wording` 的残余簿记（5.4 对新冻结基线
+  改写、7.5 勾对账）随停泊一并处理，不阻塞 cutover。
+- **executor**：其 planning-context 的「DO NOT PROPOSE YET」条件随本 Replan 消解
+  （semantics 契约已落地、closure/host 不再等内核强制收口）；cutover terminal 后
+  即可 propose。
+
+### 升级路线资产清单（防丢弃，供 0.3.0+ 重启时按图索骥）
+
+- Linux crate `native/linux-process-authority`（冻结 `89f6c1d5`，26 文件）+ WSL
+  receipt/evidence；已知缺陷 D4（`main.rs:141` 丢弃 deadline → `CONTROL_TIMEOUT`
+  2 s 死桥，修法已写入
+  `evidence/activate-reference-invalid-investigation.md`）、D2（`primary.rs:315-318`
+  Failure 检查须上移）。
+- Windows crate `native/windows-process-authority`（冻结 `fc49a7c2`，helper
+  `367666f6`）+ Section 8/9 receipt；已知缺口：frame 保真 `open-runtime` verb 缺失
+  （装配 worker 的拒绝理由记录于 `evidence/windows-native-assembly.md`）。
+- 判据 4 全部机器（Replan 5 已登记）。
+- 三层分级中的「hosted 内核强制」档定义保留在 Target State 历史与本 Replan，重启
+  时按 D4/D2/verb 三缺陷起修，不必重做审查。

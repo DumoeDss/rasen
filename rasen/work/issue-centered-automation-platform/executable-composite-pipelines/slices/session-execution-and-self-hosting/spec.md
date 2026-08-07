@@ -31,15 +31,15 @@ work”形成一条可恢复链，而不是把真实执行留到 ECP 路线最�
    usage/cost、result、stderr/诊断与 evidence 关联到同一 Run/Action。registry 只保存宿主
    lifecycle 事实，不成为第二份完成状态。
 
-   **分级执行后端（2026-08-07 scope decision）**：executor 通过声明能力的后端执行冻结
-   Action，首版两个后端：
+   **分级执行后端（2026-08-07 scope decision；同日锁定决策 13 修订）**：executor 通过
+   声明能力的后端执行冻结 Action，首版两个后端：
 
    - `in-tool`：worker 由宿主工具（Claude Code / Codex）自身设施创建，rasen 不拥有任何
      进程，不做任何进程权威声明。三 OS 可用。
-   - `hosted`（内核强制）：rasen daemon/host 拥有子进程，由内核强制的
-     `ProcessAuthorityProvider` 围栏。0.2.0 覆盖 Linux 与 Windows。
-   - `hosted`（best-effort，macOS）：POSIX 进程组，**显式非权威**。2026-08-07
-     Step 1 决定纳入 0.2.0；它不是 macOS durable 权威的替代实现，后者仍在 0.3.0。
+   - `hosted`（best-effort）：rasen daemon/host 拥有 daemon-lifetime 子进程，**显式非
+     权威**——POSIX 进程组（Linux/macOS）/ Job object（Windows），三 OS 可用。
+     内核强制的 `ProcessAuthorityProvider` 围栏经锁定决策 13 整体移交升级路线，
+     不再是 0.2.0 的后端档次。
 
    后端能力（`durable`、`headlessDriver`、`exactCancel`、`scopeEmptyProof`、
    `usageAttribution`）由声明**计算**成 OS × 后端矩阵，用户在启动前即可看到差异。
@@ -77,13 +77,14 @@ work”形成一条可恢复链，而不是把真实执行留到 ECP 路线最�
    - `hosted` SHALL 证明 headless driver 与 `durable: daemon-lifetime`（跨 launcher 退出
      存活，**不跨守护进程自身重启**）。**守护进程死亡 SHALL 使作用域死亡**，在飞 action
      记类型化 `execution-lost`，Run 只能从最后一个已提交前沿恢复；SHALL NOT 尝试重新
-     附着或复验身份。Linux/Windows SHALL 另证明精确递归终止、精确 scope-empty，以及
-     守护进程死亡时的**零孤儿**拆除（Linux 继承管道 EOF → namespace 拆除；Windows
-     最后句柄关闭 → `KILL_ON_JOB_CLOSE`）；
-   - macOS `hosted` 为**显式声明的 best-effort**（POSIX 进程组）：SHALL 声明
-     `exactCancel: false`、`scopeEmptyProof: false` 且启动前对用户可见；取消终态
-     SHALL 为 `cancelled / emptiness-unproven`，**SHALL NOT 写成「已干净取消」**。
-     `setsid()` 逃逸的残留风险是已知且已声明的限制，不是缺陷；
+     附着或复验身份。（2026-08-07 锁定决策 13 修订：）三 OS 的 `hosted` 均为**显式
+     声明的 best-effort**——POSIX 进程组（Linux/macOS）/ Job object（Windows）：
+     SHALL 声明 `exactCancel: false`、`scopeEmptyProof: false` 且启动前对用户可见；
+     取消终态 SHALL 为 `cancelled / emptiness-unproven`，**SHALL NOT 写成「已干净
+     取消」**。`setsid()` 逃逸（POSIX）的残留风险是已知且已声明的限制，不是缺陷。
+     Windows SHALL 另证明 Job 最后句柄关闭 → `KILL_ON_JOB_CLOSE` 的守护进程死亡
+     拆除；内核强制的精确递归终止、精确 scope-empty 与 Linux namespace 零孤儿
+     拆除属升级路线，SHALL NOT 作为 0.2.0 验收取证；
    - `in-tool` SHALL 证明 launcher 消失时返回类型化 `execution-lost`、未提交前沿保持未提交、
      Run 可由其他 driver 恢复、已提交 invocation 不重复执行；它 SHALL NOT 声称 durable、
      headless 或对孙代进程的精确递归终止。该限制必须是**声明出来的**能力事实，不是事后解释。
@@ -107,9 +108,9 @@ work”形成一条可恢复链，而不是把真实执行留到 ECP 路线最�
    ECP-7 PR。
 
    自宿主证据 SHALL 显式记录所使用的执行后端与运行平台。**后端选择尚未拍板**（见下方
-   「开放决定」）：Direction 建议在 Windows 上用 `hosted` 后端完成主证据（本机可验证、能力
-   声明最强），并另取一份 `in-tool` receipt 证明两个后端消费同一冻结 Action contract；该建议
-   在用户确认前不构成验收要求。
+   「开放决定」）：Direction 建议在 Windows 上用 best-effort `hosted` 后端完成主证据
+   （本机可验证、Job 拆除保证最强），并另取一份 `in-tool` receipt 证明两个后端消费同一
+   冻结 Action contract；该建议在用户确认前不构成验收要求。
 8. **质量门**：Session/executor/trust/control 相关的 Blocker/Major finding 为零；真实 backend
    fixture/protocol replay、故障注入、root/UI tests、typecheck、lint 与严格 Change 验证通过。
 
@@ -132,6 +133,14 @@ work”形成一条可恢复链，而不是把真实执行留到 ECP 路线最�
   2026-08-07 Step 1 决定转为**升级路线**。既有实现与 evidence **全部保留、不删除、
   不改写历史**。0.2.0 改为守护进程死亡即作用域死亡（见验收 4 与 Target State
   锁定决策 11）。
+- **Linux/Windows 内核强制进程权威**（user+PID namespace guardian、Windows Job
+  guardian、attestation/receipt 机器；冻结 crate `89f6c1d5` / `fc49a7c2`）：经
+  2026-08-07 锁定决策 13 转为**升级路线**。既有实现、receipt、evidence、handoff
+  全部保留在 git；已知缺陷（Linux D4——`open-runtime --deadline-ms` 被丢弃致 2 s
+  死桥、D2——activate 失败一律误标 `reference-invalid`；Windows——缺 frame 保真
+  `open-runtime` verb，stdout 复用构成 receipt 伪造面）随资产记录在案，0.2.0 不
+  修复、不取新 receipt。本 Slice 的 `hosted` 交付面改为三 OS best-effort（见
+  验收 2/4）。
 - 为所有 agent backend 一次性建立完整平台；本 Slice 要求稳定窄接口、至少一个真实 backend
   与其他现有 driver 的明确 capability/fallback，而不是虚构全支持。
 - 以 cache HIT、成本优化或常驻 daemon 代替正确性；缓存只作为有证据的性能优化，daemon

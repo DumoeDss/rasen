@@ -295,3 +295,45 @@ fail-closed 与类型化不确定性、能力诚实、actor separation 程序强
 **Direction 不代为关闭任何 finding**——既有相关 finding 由 review 波按本威胁模型重新
 定级。ECP-7 继续为 `partial`；本次同样未新增任何已验证退出证据，但 executor 与 host
 两个尚未开始的 Change 的预期工作量因①显著下降。
+
+## Reconcile：2026-08-07 全平台 best-effort 收敛（锁定决策 13，操作者拍板）
+
+### 触发
+
+操作者的交付约束：「缝缝补补多长时间了，我需要一个现在就能落地的方案，没有时间和
+金钱让你无限消耗下去」，并明确要求「把难以落地的实现先拆分出来（不要把之前的工作都
+直接丢弃），然后干净利落地切到可以落地的方案，之后我们再慢慢去探索那个更难的方案」。
+决定前进行了全面审查（继 lead-6 交接之后），审查建议「切」，操作者批准。
+
+### 观察基线（经代码核实，非转述）
+
+- 生产 hosted 路径从未接入两个冻结 crate：`router.ts:639` 上 darwin 走已建成、已审查、
+  已接线的 best-effort scope；其余平台走遗留 ProcessCapsule（POSIX exact 主张已被
+  证伪；Windows 侧本就是 Job object 实现）。
+- 两 crate 取消路径均被测量证实端到端不可用（lead-6：Linux D4 2 s 死桥、D2 误标；
+  Windows 缺 frame 保真 `open-runtime` verb）。
+- 原生路线剩余成本枚举：Windows 需全新协议设计 + 两 crate 各一轮
+  break/re-freeze/全仓 re-bind + 10 个 win32 early-return 逐点决策 + Section 11 +
+  closure/host/executor/policy-parity/self-hosting（后三者为空目录）+ ECP-8 +
+  macOS 真机；且最近一波仍在「已完成」部分挖出三个新 Blocker，发现率未收敛。
+
+### 已记录的人类决定
+
+0.2.0 `hosted` 三 OS 统一为显式声明的 best-effort 档；Linux/Windows 内核强制权威
+整体保留为升级路线资产（不删除、不改写历史、已知缺陷记录在案）；0.2.0 不再向两个
+provider change 取任何新 receipt。这是 Roadmap「版本边界」出口条款的第二次显式行使。
+
+### 已同步的 Direction 制品
+
+- Target State：头部注记、目标结果、观察基线、成功证据 §2、新锁定决策 13；
+- Roadmap：头部、当前位置表、DAG、ECP-7 新小节、ECP-8 矩阵、版本边界第二次行使记录；
+- Slice `spec.md`：验收 2/4/7、排除项新增内核强制权威条目；
+- Slice `plan.md`：Architecture Replan 6（含与 Replan 5 不可退让项的显式对表、
+  升级路线资产清单）；
+- 父级 `roadmap.md`：§13.2 登记（与本次 reconcile 同一提交）。
+
+### Reconcile 分类
+
+ECP-7 继续为 `partial`。本次未新增已验证退出证据；执行前沿收敛为单一 runnable
+change（`ecp-hosted-best-effort-cutover`），executor 的「DO NOT PROPOSE YET」
+条件随之消解。North Star 逐字节未动。
