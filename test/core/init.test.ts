@@ -291,14 +291,111 @@ describe('InitCommand', () => {
       const claudeSkill = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
       const codexSkill = path.join(testDir, '.codex', 'skills', 'rasen-explore', 'SKILL.md');
       const hermesSkill = path.join(hermesHome, 'skills', 'rasen-explore', 'SKILL.md');
+      // Asserted as an explicit project-local path, not merely "some skill was
+      // written": HERMES_HOME is set in this very test, so a wrong global-home
+      // resolution for omp would land inside `.hermes-home` and still satisfy a
+      // vaguer assertion.
+      const ompSkill = path.join(testDir, '.omp', 'skills', 'rasen-explore', 'SKILL.md');
       const cursorSkill = path.join(testDir, '.cursor', 'skills', 'rasen-explore', 'SKILL.md');
       const windsurfSkill = path.join(testDir, '.windsurf', 'skills', 'rasen-explore', 'SKILL.md');
 
       expect(await fileExists(claudeSkill)).toBe(true);
       expect(await fileExists(codexSkill)).toBe(true);
       expect(await fileExists(hermesSkill)).toBe(true);
+      expect(await fileExists(ompSkill)).toBe(true);
+      expect(await fileExists(path.join(hermesHome, 'skills', 'rasen-explore'))).toBe(true);
       expect(await fileExists(cursorSkill)).toBe(false);
       expect(await fileExists(windsurfSkill)).toBe(false);
+    });
+
+    it('should install omp skills to the project-local root with --tools omp', async () => {
+      const hermesHome = path.join(testDir, '.hermes-home');
+      process.env.HERMES_HOME = hermesHome;
+      const initCommand = new InitCommand({ tools: 'omp', force: true });
+
+      await initCommand.execute(testDir);
+
+      expect(
+        await fileExists(path.join(testDir, '.omp', 'skills', 'rasen-explore', 'SKILL.md'))
+      ).toBe(true);
+      // Nothing lands in the Hermes global home, and no command files are
+      // generated for a harness that discovers skills directly.
+      expect(await directoryExists(path.join(hermesHome, 'skills'))).toBe(false);
+      expect(await directoryExists(path.join(testDir, '.omp', 'commands'))).toBe(false);
+    });
+
+    it('should carry a non-empty description in every omp skill front matter', async () => {
+      // Oh My Pi's `native` provider discovers with `requireDescription: true`,
+      // so a skill without one is installed and invisible.
+      const initCommand = new InitCommand({ tools: 'omp', force: true });
+      await initCommand.execute(testDir);
+
+      const skillsRoot = path.join(testDir, '.omp', 'skills');
+      const skillDirs = await fs.readdir(skillsRoot);
+      expect(skillDirs.length).toBeGreaterThan(0);
+      for (const dirName of skillDirs) {
+        const content = await fs.readFile(path.join(skillsRoot, dirName, 'SKILL.md'), 'utf-8');
+        const description = /^description:\s*(.+)$/m.exec(content);
+        expect(description, `${dirName} must declare a description`).not.toBeNull();
+        expect(description![1]!.replace(/^['"]|['"]$/g, '').trim().length).toBeGreaterThan(0);
+      }
+    });
+
+    describe('omp nested-install disclosure', () => {
+      /** A monorepo package inside a Git checkout that carries Oh My Pi context. */
+      async function buildNestedRepo(enclosingFiles: string[]): Promise<string> {
+        const repo = path.join(testDir, 'monorepo');
+        const pkg = path.join(repo, 'packages', 'api');
+        await fs.mkdir(pkg, { recursive: true });
+        await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+        if (enclosingFiles.length > 0) {
+          await fs.mkdir(path.join(repo, '.omp'), { recursive: true });
+          for (const name of enclosingFiles) {
+            await fs.writeFile(path.join(repo, '.omp', name), '# enclosing\n');
+          }
+        }
+        return pkg;
+      }
+
+      function loggedLines(): string {
+        return vi
+          .mocked(console.log)
+          .mock.calls.map((call) => String(call[0] ?? ''))
+          .join('\n');
+      }
+
+      it.each(['AGENTS.md', 'RULES.md'])(
+        'names an enclosing .omp/%s and still completes the install',
+        async (fileName) => {
+          const pkg = await buildNestedRepo([fileName]);
+          await new InitCommand({ tools: 'omp', force: true }).execute(pkg);
+
+          const output = loggedLines();
+          expect(output).toContain(path.join(testDir, 'monorepo', '.omp', fileName));
+          expect(output).toContain('stop loading');
+          // Advisory, not blocking: the skills are written either way.
+          expect(
+            await fileExists(path.join(pkg, '.omp', 'skills', 'rasen-explore', 'SKILL.md'))
+          ).toBe(true);
+        }
+      );
+
+      it('says nothing when no enclosing context file exists', async () => {
+        const pkg = await buildNestedRepo([]);
+        await new InitCommand({ tools: 'omp', force: true }).execute(pkg);
+
+        expect(loggedLines()).not.toContain('stop loading');
+        expect(
+          await fileExists(path.join(pkg, '.omp', 'skills', 'rasen-explore', 'SKILL.md'))
+        ).toBe(true);
+      });
+
+      it('says nothing when omp is not among the selected tools', async () => {
+        const pkg = await buildNestedRepo(['AGENTS.md']);
+        await new InitCommand({ tools: 'claude', force: true }).execute(pkg);
+
+        expect(loggedLines()).not.toContain('stop loading');
+      });
     });
 
     it('should skip tool configuration with --tools none option', async () => {
@@ -582,6 +679,7 @@ describe('InitCommand - profile and detection features', () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
+
       workflows: ['explore', 'new', 'apply'],
     });
 
@@ -602,6 +700,7 @@ describe('InitCommand - profile and detection features', () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
+
       workflows: ['explore', 'ff', 'apply'],
     });
 

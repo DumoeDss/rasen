@@ -1005,6 +1005,10 @@
       "deprecatedArchiveDestination": "'archive.destination' は非推奨になり、保存先を選択しなくなりました：アーカイブの記帳は常に計画ルートに配置されます。このキーを削除してください。既存のアーカイブは 'rasen archive relocate --to in-repo' で計画ルートに集約できます。"
     }
   },
+  "ompProjectContext": {
+    "nestedInstallCaptureWarning": "警告: {installDir} に Oh My Pi の設定が入ったため、Oh My Pi はプロジェクト指示と常時適用ルールを上位ディレクトリではなくこの場所から読み込みます。次のファイルは読み込まれなくなります：{files}",
+    "nestedInstallCaptureFix": "読み込みを維持するには、{boundary} で rasen init を実行するか、上記のファイルを {installDir} にコピーしてください。インストール済みスキルには影響しません（Oh My Pi はスキルを全上位ディレクトリから探索します）。"
+  },
   "storeIdentityMigration": {
     "upgraded": "{count} 件の store をアップグレードしました：",
     "skipped": "{count} 件の store をスキップしました：",

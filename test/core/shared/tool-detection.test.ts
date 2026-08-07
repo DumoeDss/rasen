@@ -56,14 +56,21 @@ describe('tool-detection', () => {
   });
 
   describe('getToolsWithSkillsDir', () => {
-    it('should return only adapted tools (claude, codex, hermes)', () => {
+    it('should return exactly the tools the registry marks adapted', () => {
       const tools = getToolsWithSkillsDir();
       expect(tools).toContain('claude');
       expect(tools).toContain('codex');
       expect(tools).toContain('hermes');
+      expect(tools).toContain('omp');
       expect(tools).not.toContain('cursor');
       expect(tools).not.toContain('windsurf');
-      expect(tools.length).toBeGreaterThan(0);
+      // Derived from the registry rather than restated, so adding an adapted
+      // tool cannot leave this assertion silently describing the old set.
+      expect([...tools].sort()).toEqual(
+        AI_TOOLS.filter((t) => t.skillsDir && t.adapted)
+          .map((t) => t.value)
+          .sort()
+      );
     });
   });
 
@@ -108,6 +115,21 @@ describe('tool-detection', () => {
       expect(resolveToolSkillsRoot(hermes, projectPath)).toBe(
         path.join(customHome, 'skills')
       );
+    });
+
+    it('returns the project-local path for omp, never a global skills home', () => {
+      // The assertion that would have caught a `skillsHome: 'global'` misdirection:
+      // that branch is hard-wired to `resolveHermesHome()`, so a second
+      // global-home tool would silently write into Hermes' home. HERMES_HOME is
+      // set to a distinctive value here BECAUSE both the init and e2e suites set
+      // it too — a wrong root has to fail, not pass under a shared override.
+      process.env.HERMES_HOME = path.join(testDir, 'hermes-decoy');
+      const omp = AI_TOOLS.find((t) => t.value === 'omp')!;
+      const projectPath = path.join(testDir, 'my-project');
+      const result = resolveToolSkillsRoot(omp, projectPath);
+      expect(result).toBe(path.join(projectPath, '.omp', 'skills'));
+      expect(result).not.toContain('hermes-decoy');
+      expect(omp.skillsHome).toBeUndefined();
     });
   });
 

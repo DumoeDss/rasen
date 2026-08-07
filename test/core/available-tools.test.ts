@@ -163,5 +163,42 @@ describe('available-tools', () => {
       expect(vibeTool?.name).toBe('Mistral Vibe');
       expect(vibeTool?.skillsDir).toBe('.vibe');
     });
+
+    it('should not detect Oh My Pi from a bare empty .omp directory', async () => {
+      // Oh My Pi (and unrelated tooling) can leave an empty `.omp/` behind —
+      // this very repository carried one, untracked, before Oh My Pi was an
+      // install target. Under the default bare-directory rule that would report
+      // the tool as configured and make `rasen update` nudge on every run.
+      await fs.mkdir(path.join(testDir, '.omp'), { recursive: true });
+
+      const tools = getAvailableTools(testDir);
+      expect(tools.map((t) => t.value)).not.toContain('omp');
+    });
+
+    it.each([
+      ['skills', 'skills'],
+      ['commands', 'commands'],
+      ['agents', 'agents'],
+    ])('should detect Oh My Pi from a populated .omp/%s directory', async (_label, dirName) => {
+      await fs.mkdir(path.join(testDir, '.omp', dirName), { recursive: true });
+
+      const tools = getAvailableTools(testDir);
+      expect(tools.map((t) => t.value)).toContain('omp');
+    });
+
+    it.each(['AGENTS.md', 'RULES.md', 'settings.json', 'config.yml', 'mcp.json'])(
+      'should detect Oh My Pi from .omp/%s',
+      async (fileName) => {
+        await fs.mkdir(path.join(testDir, '.omp'), { recursive: true });
+        await fs.writeFile(path.join(testDir, '.omp', fileName), '');
+
+        const tools = getAvailableTools(testDir);
+        const omp = tools.find((t) => t.value === 'omp');
+        expect(omp).toBeDefined();
+        expect(omp?.name).toBe('Oh My Pi');
+        expect(omp?.skillsDir).toBe('.omp');
+        expect(omp?.adapted).toBe(true);
+      }
+    );
   });
 });

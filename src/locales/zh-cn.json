@@ -1005,6 +1005,10 @@
       "deprecatedArchiveDestination": "'archive.destination' 已废弃，不再选择归档去向：归档簿记始终落在规划根。请删除该键；运行 'rasen archive relocate --to in-repo' 可把已有归档收拢回规划根。"
     }
   },
+  "ompProjectContext": {
+    "nestedInstallCaptureWarning": "警告：{installDir} 现在包含 Oh My Pi 配置，因此 Oh My Pi 会从这里而不是外层目录读取项目指令与常驻规则。以下文件将不再加载：{files}",
+    "nestedInstallCaptureFix": "若要保留它们，请改在 {boundary} 运行 rasen init，或把上述文件复制到 {installDir}。已安装的技能不受影响——Oh My Pi 会扫描所有上层目录来发现技能。"
+  },
   "storeIdentityMigration": {
     "upgraded": "已升级 {count} 个 store：",
     "skipped": "已跳过 {count} 个 store：",
