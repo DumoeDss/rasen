@@ -39,20 +39,10 @@ const ESCAPE_SLACK: Duration = Duration::from_secs(4);
 /// Bound on every "wait for a marker" step.
 const MARKER_TIMEOUT: Duration = Duration::from_secs(45);
 
-const LIVE_MARKERS: [&str; 5] = [
-    "live-root",
-    "live-setsid",
-    "live-doublefork",
-    "live-nested-init",
-    "live-nested-child",
-];
-const ESCAPE_MARKERS: [&str; 5] = [
-    "escaped-root",
-    "escaped-setsid",
-    "escaped-doublefork",
-    "escaped-nested-init",
-    "escaped-nested-child",
-];
+const LIVE_MARKERS: [&str; 3] = ["live-root", "live-setsid", "live-doublefork"];
+const ESCAPE_MARKERS: [&str; 3] = ["escaped-root", "escaped-setsid", "escaped-doublefork"];
+/// The nested pair report by content, not by existence - see `Scene::state_contains`.
+const NESTED_STATE_FILES: [&str; 2] = ["nested-init.state", "nested-child.state"];
 
 // ---------------------------------------------------------------------------------------------
 // Oracles
@@ -77,7 +67,7 @@ fn owning_daemon_death_tears_down_every_resistant_descendant() {
 /// `PR_SET_PDEATHSIG`-shaped implementation would not fire here at all.
 #[test]
 fn closing_only_the_daemon_endpoint_tears_down_every_resistant_descendant() {
-    let scene = Scene::start("dlc", DaemonMode::EndpointClosedOnly);
+    let mut scene = Scene::start("dlc", DaemonMode::EndpointClosedOnly);
     scene.require_scope_live();
     let unrelated_started = Instant::now();
     scene.end_the_daemon();
@@ -104,7 +94,7 @@ fn a_malformed_daemon_lifetime_endpoint_is_refused_before_any_namespace_is_built
         (closed_descriptor(), "open inherited descriptor"),
     ] {
         let outcome = prepare_primary_with_daemon_lifetime_ms(
-            request(&runtime, &cwd, "/bin/true", Vec::new()),
+            inert_request(&runtime, &cwd),
             artifact,
             [0x4d; 32],
             10_000,
@@ -133,16 +123,18 @@ fn a_malformed_daemon_lifetime_endpoint_is_refused_before_any_namespace_is_built
 fn an_absent_endpoint_leaves_the_existing_lifecycle_unchanged() {
     let (parent, runtime, cwd) = create_runtime_and_cwd("dla");
     let prepared = prepare_primary_with_daemon_lifetime_ms(
-        request(&runtime, &cwd, "/bin/true", Vec::new()),
+        inert_request(&runtime, &cwd),
         current_executable_digest().unwrap(),
         [0x4e; 32],
         10_000,
         DAEMON_LIFETIME_ENDPOINT_ABSENT,
     )
     .expect("an absent endpoint must still prepare an inert scope");
+    // `inert` is the native helper's own state name; mapping it to prepared or published is the
+    // ledger's job above this seam, so this test asserts what the crate actually reports.
     assert_eq!(
         prepared.client().unwrap().inspect().unwrap().to_string(),
-        "prepared-inert"
+        "inert"
     );
     prepared.client().unwrap().abort(2_000).unwrap();
     assert_eq!(
@@ -187,6 +179,8 @@ impl Scene {
             .args(["--exact", "unrelated_bystander_fixture", "--nocapture"])
             .env("RPA_DL_MARKERS", &markers)
             .stdin(Stdio::null())
+            .stdout(diagnostic_log(&markers, "unrelated"))
+            .stderr(diagnostic_log(&markers, "unrelated"))
             .spawn()
             .expect("the unrelated bystander must start");
         let daemon = Command::new(current_test_executable())
@@ -197,6 +191,8 @@ impl Scene {
             .env("RPA_DL_MODE", mode.as_env())
             .env("RPA_DL_HELPER", current_test_executable())
             .stdin(Stdio::null())
+            .stdout(diagnostic_log(&markers, "daemon"))
+            .stderr(diagnostic_log(&markers, "daemon"))
             .spawn()
             .expect("the owning daemon must start");
         Scene {
@@ -225,10 +221,19 @@ impl Scene {
         for name in LIVE_MARKERS {
             self.wait_for(name);
         }
+        for name in NESTED_STATE_FILES {
+            self.wait_for_state(name, "live");
+        }
         for name in ESCAPE_MARKERS {
             assert!(
                 !self.marker(name).exists(),
                 "{name} was recorded before the teardown was triggered"
+            );
+        }
+        for name in NESTED_STATE_FILES {
+            assert!(
+                !self.state_contains(name, "escaped"),
+                "{name} recorded an escape before the teardown was triggered"
             );
         }
     }
@@ -258,14 +263,39 @@ impl Scene {
     }
 
     fn require_zero_workload_orphans(&self) {
-        let escaped: Vec<&str> = ESCAPE_MARKERS
+        let mut escaped: Vec<&str> = ESCAPE_MARKERS
             .into_iter()
             .filter(|name| self.marker(name).exists())
             .collect();
+        escaped.extend(
+            NESTED_STATE_FILES
+                .into_iter()
+                .filter(|name| self.state_contains(name, "escaped")),
+        );
         assert!(
             escaped.is_empty(),
             "workload processes outlived the owning daemon: {escaped:?}"
         );
+    }
+
+    /// The nested pair report by appending to descriptors opened before they entered their nested
+    /// user namespace, so their state is the file's content and never its existence.
+    fn state_contains(&self, name: &str, needle: &str) -> bool {
+        fs::read_to_string(self.marker(name))
+            .unwrap_or_default()
+            .contains(needle)
+    }
+
+    fn wait_for_state(&self, name: &str, needle: &str) {
+        let deadline = Instant::now() + MARKER_TIMEOUT;
+        while !self.state_contains(name, needle) {
+            assert!(
+                Instant::now() < deadline,
+                "{name} never reported {needle}; recorded markers: {:?}",
+                recorded_markers(&self.markers)
+            );
+            thread::sleep(Duration::from_millis(25));
+        }
     }
 
     fn require_unrelated_process_survived(&self) {
@@ -275,11 +305,19 @@ impl Scene {
         );
     }
 
-    fn require_daemon_still_alive(&self) {
+    /// Two independent checks, because either alone is weak. `try_wait` is race-free but a zombie
+    /// would still answer a bare signal probe, and the marker proves the daemon was actually
+    /// running code after the teardown rather than merely un-reaped.
+    fn require_daemon_still_alive(&mut self) {
+        let exited = self.daemon.try_wait().expect("the daemon must be waitable");
+        assert!(
+            exited.is_none(),
+            "the daemon exited ({exited:?}) instead of surviving the close, so this variant \
+             proved nothing beyond the kill variant"
+        );
         assert!(
             self.marker("daemon-alive-after-close").exists(),
-            "the daemon did not survive closing its own endpoint, so this variant proved nothing \
-             beyond the kill variant"
+            "the daemon never recorded running past the teardown it caused"
         );
     }
 
@@ -303,6 +341,20 @@ impl Scene {
         let _ = self.unrelated.wait();
         let _ = fs::remove_dir_all(&self.parent);
     }
+}
+
+/// Fixture children never inherit the test harness's own stdout or stderr. A long-lived child
+/// holding the harness pipe keeps that pipe open after the harness exits, which reads to whatever
+/// is consuming the run as a hang rather than as a result. Their output goes to files beside the
+/// markers instead, so diagnostics survive without anybody waiting on them.
+fn diagnostic_log(markers: &Path, name: &str) -> Stdio {
+    Stdio::from(
+        fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(markers.join(format!("{name}.log")))
+            .expect("fixture diagnostics must be writable"),
+    )
 }
 
 fn recorded_markers(directory: &Path) -> Vec<String> {
@@ -354,7 +406,9 @@ fn owning_daemon_fixture() {
             .env("RPA_DLH_MARKERS", &markers)
             .env("RPA_DLH_RUNTIME", &runtime)
             .env("RPA_DLH_CWD", &cwd)
-            .stdin(Stdio::null());
+            .stdin(Stdio::null())
+            .stdout(diagnostic_log(&markers, "helper"))
+            .stderr(diagnostic_log(&markers, "helper"));
         unsafe {
             command.pre_exec(move || {
                 if libc::dup2(helper_endpoint, LIFETIME_ENDPOINT_FD) < 0 {
@@ -391,8 +445,10 @@ fn owning_daemon_fixture() {
             "the daemon must be able to release its endpoint"
         );
         fs::write(markers.join("daemon-endpoint-closed"), b"closed").unwrap();
-        thread::sleep(ESCAPE_AFTER + ESCAPE_SLACK);
-        // Written only if this daemon is still running long after the teardown it caused.
+        // Deliberately the same window the orphan candidates get, and strictly shorter than the
+        // test's settle deadline: the daemon's survival and the workload's death are then measured
+        // on one clock, and the marker cannot race the assertion that reads it.
+        thread::sleep(ESCAPE_AFTER);
         fs::write(markers.join("daemon-alive-after-close"), b"alive").unwrap();
     }
     loop {
@@ -439,10 +495,17 @@ fn preparing_helper_fixture() {
     let runtime_channel = prepared.client().unwrap().open_runtime().unwrap();
     prepared.client().unwrap().activate().unwrap();
     let deadline = Instant::now() + MARKER_TIMEOUT;
-    while !LIVE_MARKERS
-        .into_iter()
-        .all(|name| markers.join(name).exists())
-    {
+    let workload_is_live = || {
+        LIVE_MARKERS
+            .into_iter()
+            .all(|name| markers.join(name).exists())
+            && NESTED_STATE_FILES.into_iter().all(|name| {
+                fs::read_to_string(markers.join(name))
+                    .unwrap_or_default()
+                    .contains("live")
+            })
+    };
+    while !workload_is_live() {
         assert!(
             Instant::now() < deadline && !markers.join("nested-unavailable").exists(),
             "the resistant workload did not reach a live state"
@@ -486,28 +549,49 @@ fn resistant_workload_fixture() {
     fork_child(|| {
         // Nested PID namespace: its init is not a descendant the outer authority can signal
         // individually, and its children are invisible from the outer namespace's process table.
-        // `CLONE_NEWPID` alone is deliberate: the workload is uid 0 inside the authority's user
-        // namespace and keeps `CAP_SYS_ADMIN` there, whereas nesting another user namespace would
-        // leave this branch unmapped and unable to record anything it observed.
-        if unsafe { libc::unshare(libc::CLONE_NEWPID) } < 0 {
-            let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
-            record_text(&paths.nested_unavailable, &format!("unshare errno {errno}"));
+        //
+        // The authority drops the capability bounding set, calls `capset` and sets
+        // `NO_NEW_PRIVS` before launching the workload (`drop_workload_privileges`), so the
+        // workload holds no `CAP_SYS_ADMIN` and `CLONE_NEWPID` alone is refused. An unprivileged
+        // user namespace needs no capability and grants a full set inside itself, which is the
+        // ordinary way a confined process nests namespaces - and the crate's own comment names it
+        // as the retained shape - so that is what this branch does.
+        //
+        // Inside that nested user namespace this process is unmapped, and re-mapping its identity
+        // is not needed: filesystem permission is decided at `open`, so both nested processes
+        // report through descriptors opened out here, before the `unshare`. Their state is the
+        // file's CONTENT rather than its existence, because the file exists from the moment it is
+        // opened.
+        let states = match NestedStateFiles::open(&paths) {
+            Some(states) => states,
+            None => {
+                record_text(&paths.nested_unavailable, "nested state files unavailable");
+                unsafe { libc::_exit(0) }
+            }
+        };
+        let mut report = [0 as RawFd; 2];
+        if unsafe { libc::pipe2(report.as_mut_ptr(), libc::O_CLOEXEC) } < 0 {
+            record_text(&paths.nested_unavailable, "report pipe unavailable");
             unsafe { libc::_exit(0) }
         }
-        let nested_init = unsafe { libc::fork() };
-        if nested_init != 0 {
-            unsafe { libc::_exit(0) }
-        }
-        record(&paths.live_nested_init);
-        let nested_child = unsafe { libc::fork() };
-        if nested_child == 0 {
-            record(&paths.live_nested_child);
+        let nested = unsafe { libc::fork() };
+        if nested == 0 {
+            unsafe { libc::close(report[0]) };
+            enter_nested_namespaces(report[1]);
+            append(states.init, NESTED_LIVE);
+            let nested_child = unsafe { libc::fork() };
+            if nested_child == 0 {
+                append(states.child, NESTED_LIVE);
+                wait_out_escape_window();
+                append(states.child, NESTED_ESCAPED);
+                unsafe { libc::_exit(0) }
+            }
             wait_out_escape_window();
-            record(&paths.escaped_nested_child);
+            append(states.init, NESTED_ESCAPED);
             unsafe { libc::_exit(0) }
         }
-        wait_out_escape_window();
-        record(&paths.escaped_nested_init);
+        unsafe { libc::close(report[1]) };
+        report_nested_failure(&paths, report[0]);
     });
 
     record(&paths.live_root);
@@ -541,10 +625,8 @@ struct MarkerPaths {
     escaped_setsid: CString,
     live_doublefork: CString,
     escaped_doublefork: CString,
-    live_nested_init: CString,
-    escaped_nested_init: CString,
-    live_nested_child: CString,
-    escaped_nested_child: CString,
+    nested_init_state: CString,
+    nested_child_state: CString,
     nested_unavailable: CString,
 }
 
@@ -560,13 +642,108 @@ impl MarkerPaths {
             escaped_setsid: at("escaped-setsid"),
             live_doublefork: at("live-doublefork"),
             escaped_doublefork: at("escaped-doublefork"),
-            live_nested_init: at("live-nested-init"),
-            escaped_nested_init: at("escaped-nested-init"),
-            live_nested_child: at("live-nested-child"),
-            escaped_nested_child: at("escaped-nested-child"),
+            nested_init_state: at("nested-init.state"),
+            nested_child_state: at("nested-child.state"),
             nested_unavailable: at("nested-unavailable"),
         }
     }
+}
+
+/// Descriptors the nested processes report through. They are opened before the `unshare`, because
+/// inside an unmapped nested user namespace no new `open` under the marker directory would be
+/// permitted, while writes to an already-open descriptor are unaffected.
+#[derive(Clone, Copy)]
+struct NestedStateFiles {
+    init: RawFd,
+    child: RawFd,
+}
+
+impl NestedStateFiles {
+    fn open(paths: &MarkerPaths) -> Option<Self> {
+        let init = open_state_file(&paths.nested_init_state)?;
+        let child = open_state_file(&paths.nested_child_state)?;
+        Some(NestedStateFiles { init, child })
+    }
+}
+
+fn open_state_file(path: &CString) -> Option<RawFd> {
+    let descriptor = unsafe {
+        libc::open(
+            path.as_ptr(),
+            libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC | libc::O_APPEND | libc::O_CLOEXEC,
+            0o600,
+        )
+    };
+    if descriptor < 0 {
+        None
+    } else {
+        Some(descriptor)
+    }
+}
+
+const NESTED_LIVE: &[u8] = b"live\n";
+const NESTED_ESCAPED: &[u8] = b"escaped\n";
+
+fn append(descriptor: RawFd, bytes: &[u8]) {
+    unsafe {
+        libc::write(descriptor, bytes.as_ptr().cast(), bytes.len());
+    }
+}
+
+/// Stage identifiers reported back through the nested branch's private pipe, for the steps that
+/// happen where no marker can be written.
+const NESTED_STAGE_UNSHARE: u8 = 1;
+const NESTED_STAGE_FORK: u8 = 2;
+
+/// Enter a nested user + PID namespace. On failure the stage and errno go down `report` and this
+/// process leaves without pretending to be nested, so the caller only ever continues as a genuine
+/// nested init.
+fn enter_nested_namespaces(report: RawFd) {
+    let fail = |stage: u8| -> ! {
+        let errno = unsafe { *libc::__errno_location() } as u8;
+        unsafe {
+            libc::write(report, [stage, errno].as_ptr().cast(), 2);
+            libc::_exit(0)
+        }
+    };
+    if unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWPID) } < 0 {
+        fail(NESTED_STAGE_UNSHARE);
+    }
+    // The `unshare` above puts children, not this process, into the new PID namespace.
+    let nested_init = unsafe { libc::fork() };
+    if nested_init < 0 {
+        fail(NESTED_STAGE_FORK);
+    }
+    if nested_init != 0 {
+        unsafe { libc::_exit(0) }
+    }
+    unsafe { libc::close(report) };
+}
+
+/// Wait briefly for the nested branch to report a failure. Silence is not read as success - the
+/// `live` content in the nested state files is what proves the nested namespace exists - but a
+/// reported failure turns an unexplained timeout into a named cause.
+fn report_nested_failure(paths: &MarkerPaths, report: RawFd) {
+    let mut descriptor = libc::pollfd {
+        fd: report,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    let polled = unsafe { libc::poll(&mut descriptor, 1, 5_000) };
+    if polled <= 0 || descriptor.revents & libc::POLLIN == 0 {
+        return;
+    }
+    let mut reported = [0_u8; 2];
+    if unsafe { libc::read(report, reported.as_mut_ptr().cast(), 2) } != 2 {
+        return;
+    }
+    record_text(
+        &paths.nested_unavailable,
+        &format!(
+            "nested stage {} failed with errno {}",
+            reported[0], reported[1]
+        ),
+    );
 }
 
 fn fork_child(body: impl FnOnce()) {
@@ -631,14 +808,21 @@ fn create_runtime_and_cwd(label: &str) -> (PathBuf, PathBuf, PathBuf) {
     (parent, runtime, cwd)
 }
 
-fn request(runtime_root: &Path, cwd: &Path, command: &str, args: Vec<String>) -> PrepareRequest {
+/// A launch the authority accepts: the canonical test executable, invoked on a fixture that is a
+/// no-op without its environment. Launch validation refuses any path with a symlinked component,
+/// so a convenience path like `/bin/true` is rejected before these tests reach what they measure.
+fn inert_request(runtime_root: &Path, cwd: &Path) -> PrepareRequest {
     PrepareRequest {
         operation_id: "prepare-daemon-lifetime-guard".to_owned(),
         runtime_root: runtime_root.to_owned(),
         launch: LaunchSpec {
-            command: PathBuf::from(command),
+            command: current_test_executable(),
             cwd: cwd.to_owned(),
-            args,
+            args: vec![
+                "--exact".to_owned(),
+                "unrelated_bystander_fixture".to_owned(),
+                "--nocapture".to_owned(),
+            ],
             env: BTreeMap::from([("LANG".to_owned(), "C.UTF-8".to_owned())]),
         },
     }
