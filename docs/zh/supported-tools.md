@@ -1,22 +1,23 @@
 # 支持的工具
 
-rasen 兼容多种 AI 编程助手。当你运行 `rasen init` 时，rasen 会根据你激活的 profile/workflow 选择和交付模式来配置选定的工具。
+rasen 兼容多种 AI 编程助手。当你运行 `rasen init` 时，rasen 会根据你激活的 profile/workflow 选择来配置选定的工具。
 
 ## 工作原理
 
-对于每个选定的工具，rasen 可以安装：
+对于每个选定的工具，rasen 会安装：
 
-1. **Skills**（如果交付模式包含 skills）：`.../skills/rasen-*/SKILL.md`
-2. **Commands**（如果交付模式包含 commands）：工具特定的 `opsx-*` 命令文件
+1. **Skills**（始终安装）：`.../skills/rasen-*/SKILL.md`
 
-默认情况下，rasen 使用 `core` 配置文件，包含：
+skill 是唯一的交付形式——rasen 不再生成独立的、按工具区分的斜杠命令文件。所有原生支持发现项目 skill 的工具（Claude Code 以及 15 种以上的其他工具）都会自动识别它们；至于某个 skill 如何暴露为可调用的命令，请查阅该工具自己的文档。
+
+默认情况下，rasen 使用 `full` 配置文件，会安装全部工作流。如果你想精简到日常必需的那几个，可以切换到 `core` 配置文件：
 - `propose`
 - `explore`
 - `apply`
 - `sync`
 - `archive`
 
-你可以通过 `rasen config profile` 启用扩展工作流（`new`、`continue`、`verify`、`bulk-archive`、`onboard`），然后运行 `rasen update`。
+用 `rasen config profile` 切换配置文件（两个方向都可以），然后运行 `rasen update`。
 
 ## 工具目录参考
 
@@ -83,11 +84,12 @@ rasen init --profile core
 
 rasen 根据选定的工作流安装工作流产物：
 
-- **Core profile（默认）：** `propose`、`explore`、`apply`、`sync`、`archive`
+- **Full profile（默认）：** 全部工作流 ID
+- **Core profile：** `propose`、`explore`、`apply`、`sync`、`archive`
 - **自定义选择：** 所有工作流 ID 的任意子集：
   `propose`、`explore`、`new`、`continue`、`apply`、`sync`、`archive`、`bulk-archive`、`verify`、`onboard`
 
-换句话说，skill/command 的数量取决于 profile 和交付模式，并非固定不变。
+换句话说，skill 的数量取决于 profile，并非固定不变。
 
 ## 生成的 Skill 名称
 

@@ -2,10 +2,40 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { detectOmpNestedInstallCapture } from '../../../src/core/omp/project-context.js';
 import { ompNestedInstallCaptureReport } from '../../../src/core/omp/project-context-locale.js';
+
+/**
+ * The detector discriminates on the ERRNO, not on a filesystem shape: `ENOENT`
+ * and `ENOTDIR` mean absent, anything else means present-but-unreadable. The
+ * errno is therefore what the test has to control. A `chmod 0` fixture is inert
+ * for an administrator on Windows, and a path under a regular file yields
+ * `ENOTDIR` on POSIX but `ENOENT` on Windows — so building the shape would
+ * prove the opposite thing on the two CI platforms. Inject instead, gated on
+ * the exact directory under test so every other read in this file stays real.
+ */
+const readdirFault = vi.hoisted(() => ({
+  target: undefined as string | undefined,
+  code: 'EACCES',
+}));
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof fs>();
+  return {
+    ...actual,
+    readdirSync: ((target: fs.PathLike, options?: unknown) => {
+      const p = typeof target === 'string' ? target : target.toString();
+      if (readdirFault.target !== undefined && p === readdirFault.target) {
+        const error = new Error(`${readdirFault.code}: injected`) as NodeJS.ErrnoException;
+        error.code = readdirFault.code;
+        throw error;
+      }
+      return (actual.readdirSync as (t: fs.PathLike, o?: unknown) => unknown)(target, options);
+    }) as typeof actual.readdirSync,
+  };
+});
 
 describe('detectOmpNestedInstallCapture', () => {
   // `home` is nested inside a disposable sandbox because one case below writes
@@ -100,6 +130,57 @@ describe('detectOmpNestedInstallCapture', () => {
     const capture = detectOmpNestedInstallCapture(pkg, home);
     expect(capture?.capturedFiles).toEqual([nearer]);
     expect(capture?.capturedRoot).toBe(path.join(repo, 'packages'));
+  });
+
+  // Both cases below use a `.git`-free chain, because `repo`'s Git boundary
+  // would otherwise stop the walk on its own and the assertion would hold with
+  // the errno discrimination deleted.
+  it('stops at an ancestor whose .omp cannot be listed, rather than walking past it', () => {
+    // An `.omp/` that exists but is unreadable is PRESENT — Oh My Pi would stop
+    // there. Reading the error as "absent" lets the walk escape and blame a
+    // farther, unrelated ancestor for a capture that directory did not cause.
+    // The errno is the contract, so it is injected rather than built: `chmod 0`
+    // is inert for an administrator on Windows, and a path under a regular file
+    // yields ENOTDIR on POSIX but ENOENT on Windows.
+    const loose = path.join(home, 'work', 'proj', 'sub');
+    fs.mkdirSync(loose, { recursive: true });
+    writeOmpFile(path.join(home, 'work'), 'AGENTS.md');
+    const unreadable = path.join(home, 'work', 'proj', '.omp');
+    fs.mkdirSync(unreadable, { recursive: true });
+    readdirFault.target = unreadable;
+    try {
+      expect(detectOmpNestedInstallCapture(loose, home)).toBeUndefined();
+    } finally {
+      readdirFault.target = undefined;
+    }
+  });
+
+  it('treats an ENOENT .omp as absent and keeps walking', () => {
+    // The control for the case above: same fixture, same injection point, only
+    // the CODE differs — so it proves the discrimination is on the errno rather
+    // than on "any throw stops the walk".
+    const loose = path.join(home, 'work', 'proj', 'sub');
+    fs.mkdirSync(loose, { recursive: true });
+    const enclosing = writeOmpFile(path.join(home, 'work'), 'AGENTS.md');
+    readdirFault.target = path.join(home, 'work', 'proj', '.omp');
+    readdirFault.code = 'ENOENT';
+    try {
+      expect(detectOmpNestedInstallCapture(loose, home)?.capturedFiles).toEqual([enclosing]);
+    } finally {
+      readdirFault.target = undefined;
+      readdirFault.code = 'EACCES';
+    }
+  });
+
+  it('never reports the home directory itself as the captured root', () => {
+    // `~/.omp` is Oh My Pi's CONFIG root, populated for every Oh My Pi user, and
+    // its user-level context files live under `~/.omp/agent/` and are read
+    // directly rather than through this walk. Reporting it would be both a
+    // category error and the most frequently reached false positive there is.
+    const loose = path.join(home, 'scratch', 'project');
+    fs.mkdirSync(loose, { recursive: true });
+    writeOmpFile(home, 'AGENTS.md');
+    expect(detectOmpNestedInstallCapture(loose, home)).toBeUndefined();
   });
 
   it('does not walk past the repository root', () => {

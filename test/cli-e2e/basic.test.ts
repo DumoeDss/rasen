@@ -420,14 +420,19 @@ describe('openspec CLI e2e basics', () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Rasen Setup Complete');
 
-      // --tools all now means "all adapted tools" — claude, codex, and hermes.
+      // --tools all now means "all adapted tools" — claude, codex, hermes, and omp.
       const claudeSkillPath = path.join(emptyProjectDir, '.claude/skills/rasen-explore/SKILL.md');
       const codexSkillPath = path.join(emptyProjectDir, '.codex/skills/rasen-explore/SKILL.md');
       const hermesSkillPath = path.join(hermesHome, 'skills/rasen-explore/SKILL.md');
+      // Asserted at the project-local path, not merely "some skill exists":
+      // HERMES_HOME is set in this very test, so a wrong global-home resolution
+      // for omp would land inside `.hermes-home` and still pass a vaguer check.
+      const ompSkillPath = path.join(emptyProjectDir, '.omp/skills/rasen-explore/SKILL.md');
       const cursorSkillPath = path.join(emptyProjectDir, '.cursor/skills/rasen-explore/SKILL.md');
       expect(await fileExists(claudeSkillPath)).toBe(true);
       expect(await fileExists(codexSkillPath)).toBe(true);
       expect(await fileExists(hermesSkillPath)).toBe(true);
+      expect(await fileExists(ompSkillPath)).toBe(true);
       expect(await fileExists(cursorSkillPath)).toBe(false);
     }, 25000);
 

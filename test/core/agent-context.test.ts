@@ -609,6 +609,42 @@ describe('agent-context', () => {
       );
     });
 
+    it('finds a header pushed past the first prefix bound', () => {
+      // The header is NOT fixed-width: it carries the documented growth fields
+      // `additionalDirectories` and `previousSessionFiles`, so a long-lived
+      // session can push the `session` row past the first 8 KiB bound.
+      // Discarding the candidate there would make a LIVE session permanently
+      // invisible to `--latest`.
+      const sessions = writeOmpSessionsTree({
+        'home-project-abc': [{ name: 'ours.jsonl', cwd: PROJECT }],
+      });
+      const file = path.join(sessions, 'home-project-abc', 'ours.jsonl');
+      // Re-write the file with a >8 KiB filler row ahead of the header.
+      const filler = JSON.stringify({ type: 'custom', pad: 'x'.repeat(9_000) });
+      fs.writeFileSync(
+        file,
+        [filler, ompSessionLine(PROJECT), OMP_MESSAGE_LINE].join('\n') + '\n',
+        'utf-8'
+      );
+      expect(filler.length).toBeGreaterThan(8 * 1024);
+      expect(findLatestOmpSession(sessions, PROJECT)).toBe(file);
+    });
+
+    it('breaks an mtime tie deterministically instead of by directory order', () => {
+      // Equal mtimes are not exotic — a restored, rsynced or `cp -p` store
+      // carries them. Without a tiebreak the winner falls out of readdir order
+      // across buckets, so it is arbitrary and flips on a bucket rename.
+      const sessions = writeOmpSessionsTree({
+        'bucket-a': [{ name: '2026-01-01T00-00-01Z_aaa.jsonl', cwd: PROJECT, mtimeMs: 1_700_000_000_000 }],
+        'bucket-b': [{ name: '2026-01-02T00-00-01Z_bbb.jsonl', cwd: PROJECT, mtimeMs: 1_700_000_000_000 }],
+      });
+      // Oh My Pi names each file with an ISO-8601 prefix, so basename order IS
+      // chronological order: the later timestamp must win both times.
+      const expected = path.join(sessions, 'bucket-b', '2026-01-02T00-00-01Z_bbb.jsonl');
+      expect(findLatestOmpSession(sessions, PROJECT)).toBe(expected);
+      expect(findLatestOmpSession(sessions, PROJECT)).toBe(expected);
+    });
+
     it('skips a non-regular file without reading it, so a device cannot hang the scan', () => {
       // The Dirent `isFile()`/`isDirectory()` filter is load-bearing and easy to
       // destroy: `fs.statSync(full).isFile()` looks equivalent but FOLLOWS

@@ -50,16 +50,26 @@ export interface OmpNestedInstallCapture {
 }
 
 /**
- * Whether `dir` holds a non-empty `.omp/`. Oh My Pi's admission helper treats
- * an existing-but-empty `.omp/` as absent for these files, so this check has to
- * match it: an empty ancestor directory captures nothing, and neither does the
- * install target until init writes the skills into it.
+ * What `dir`'s `.omp/` is, for the purposes of the walk.
+ *
+ * Oh My Pi's admission helper treats an existing-but-EMPTY `.omp/` as absent
+ * for these files, so `empty` deliberately covers both "no directory" and
+ * "directory with nothing in it": an empty ancestor captures nothing, and
+ * neither does the install target until init writes the skills into it.
+ *
+ * `unreadable` is its own answer rather than being folded into `empty`. A
+ * `.omp/` that exists but cannot be listed (EACCES above all) is PRESENT — Oh
+ * My Pi would stop there — so treating it as absent lets the walk escape past
+ * the real enclosing project and blame a farther, unrelated ancestor.
  */
-function hasPopulatedOmpDir(dir: string): boolean {
+type OmpDirState = 'populated' | 'empty' | 'unreadable';
+
+function ompDirState(dir: string): OmpDirState {
   try {
-    return fs.readdirSync(path.join(dir, OMP_PROJECT_DIR)).length > 0;
-  } catch {
-    return false;
+    return fs.readdirSync(path.join(dir, OMP_PROJECT_DIR)).length > 0 ? 'populated' : 'empty';
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code === 'ENOENT' || code === 'ENOTDIR' ? 'empty' : 'unreadable';
   }
 }
 
@@ -87,7 +97,10 @@ export function detectOmpNestedInstallCapture(
   homeDir: string = os.homedir()
 ): OmpNestedInstallCapture | undefined {
   const start = path.resolve(installRoot);
-  if (hasPopulatedOmpDir(start)) return undefined;
+  // `unreadable` bails alongside `populated`: if the install target's own
+  // `.omp/` cannot be listed, whether this install NEWLY populates it is
+  // unanswerable, and guessing would blame Rasen for a pre-existing state.
+  if (ompDirState(start) !== 'empty') return undefined;
 
   // The install root's OWN boundary stops the walk before it starts. Oh My Pi
   // resolves project context only up to the enclosing Git checkout root, so
@@ -104,7 +117,18 @@ export function detectOmpNestedInstallCapture(
   let current = path.dirname(start);
   let previous = start;
   while (current !== previous) {
-    if (hasPopulatedOmpDir(current)) {
+    // The home boundary is checked BEFORE the capture test, unlike `.git`.
+    // `~/.omp` is Oh My Pi's CONFIG root — it holds `agent/`, `cache/`,
+    // `logs/` — so it is populated for every Oh My Pi user, which would make
+    // it the most frequently reached "capture" there is. It is not a project
+    // directory: the user-level context files live under `~/.omp/agent/` and
+    // are read DIRECTLY rather than through this ancestor walk
+    // (`omp://config-usage.md`), so naming `~/.omp/AGENTS.md` as a captured
+    // project root would report a shadowing that does not happen.
+    if (current === home) return undefined;
+
+    const state = ompDirState(current);
+    if (state === 'populated') {
       const capturedFiles = CAPTURED_PROJECT_FILES.map((name) =>
         path.join(current, OMP_PROJECT_DIR, name)
       ).filter((candidate) => fs.existsSync(candidate));
@@ -112,10 +136,14 @@ export function detectOmpNestedInstallCapture(
         ? { installRoot: start, capturedRoot: current, capturedFiles }
         : undefined;
     }
-    // Boundary checked AFTER the capture test so a repository root that itself
-    // carries the context files is still reported — that is the common
-    // monorepo shape, not an edge case.
-    if (current === home || fs.existsSync(path.join(current, '.git'))) return undefined;
+    // A `.omp/` that exists but cannot be listed is PRESENT, so Oh My Pi would
+    // stop here too; walking on would blame a farther, unrelated ancestor.
+    if (state === 'unreadable') return undefined;
+
+    // The `.git` boundary is checked AFTER the capture test so a repository
+    // root that itself carries the context files is still reported — that is
+    // the common monorepo shape, not an edge case.
+    if (fs.existsSync(path.join(current, '.git'))) return undefined;
     previous = current;
     current = path.dirname(current);
   }

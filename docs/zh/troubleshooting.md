@@ -30,10 +30,22 @@ node --version
 init 会询问要设置哪些工具。如果你跳过了你的工具，或者想再加一个，重新运行即可，或使用非交互式形式：
 
 ```bash
-rasen init --tools claude,cursor
+rasen init --tools claude,codex
 ```
 
 完整的工具 ID 列表见[支持的工具](supported-tools.md)。用 `--tools all` 安装全部，用 `--tools none` 跳过工具设置。
+
+### `rasen init` 之后 Oh My Pi 不再加载我仓库的 `AGENTS.md`
+
+你在子目录里运行了 `rasen init --tools omp`（最常见的是 monorepo 里的某个包），于是在那个目录下创建了 `.omp/`。Oh My Pi 会从你启动它的位置向上查找，取**最近的那个非空 `.omp/` 目录**来读项目指令（`.omp/AGENTS.md`）和始终生效的项目规则（`.omp/RULES.md`），找到就停——于是新目录接管了更靠近仓库根目录的那一个。init 会打印警告，点名哪些文件从此不再被加载；这一条是给没看那段输出就撞上问题的人。
+
+已安装的技能不受影响：Oh My Pi 会扫描每一层祖先目录的 `.omp/skills`，所以 `rasen-*` 技能无论哪种情况都仍然能被发现。
+
+按你的情况任选一种：
+
+- **改在仓库根目录安装。** 在仓库根目录运行 `rasen init --tools omp`；如果不再需要嵌套的那个 `.omp/skills` 目录，把它删掉。
+- **把上下文文件复制下来。** 把外层 `.omp/` 里的 `AGENTS.md` / `RULES.md` 复制到嵌套的那一个里。这两个文件由你自己维护——Rasen 从不为任何工具写上下文文件。
+- **从仓库根目录启动 Oh My Pi。** 发现逻辑是相对于你启动时所在的工作目录的。
 
 ## 命令没有出现
 

@@ -2,7 +2,7 @@
 
 ### Requirement: Only adapted agents are offered for installation
 
-Rasen SHALL offer an AI coding agent for installation only when Rasen has adapted its orchestration for that agent. An agent is "adapted" when Rasen's dispatch, worker lifecycle, and resume behavior are implemented for it. At the time of this capability, the adapted agents SHALL be Claude Code (`claude`), Codex (`codex`), Hermes (`hermes`), and Oh My Pi (`omp`). All other known agents SHALL be hidden from every install/selection surface while remaining defined in the tool registry.
+Rasen SHALL offer an AI coding agent for installation only when Rasen has adapted its orchestration for that agent. An agent is "adapted" when Rasen installs and maintains its skill set on that agent's own discovery surface; the deeper orchestration behaviors — dispatch, worker lifecycle, and resume — are offered for an adapted agent only where Rasen declares that runtime capability. At the time of this capability, the adapted agents SHALL be Claude Code (`claude`), Codex (`codex`), Hermes (`hermes`), and Oh My Pi (`omp`). All other known agents SHALL be hidden from every install/selection surface while remaining defined in the tool registry.
 
 #### Scenario: Install surface lists only adapted agents
 

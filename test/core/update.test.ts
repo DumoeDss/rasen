@@ -499,6 +499,79 @@ Old instructions content
 
       consoleSpy.mockRestore();
     });
+
+    // `update` writes skills for every tool in the authoritative `tools:`
+    // manifest with no precondition that the tool's directory already exists,
+    // so it can NEWLY populate `.omp/` and capture the enclosing tree's Oh My
+    // Pi context files — the same event `init` discloses. The project lives one
+    // level below `testDir` so the enclosing `.omp/` stays inside the sandbox
+    // that `afterEach` removes.
+    it('should disclose the enclosing Oh My Pi context files a newly populated .omp/ captures', async () => {
+      const projectDir = path.join(testDir, 'pkg');
+      await fs.mkdir(path.join(projectDir, 'rasen'), { recursive: true });
+      await fs.writeFile(
+        path.join(projectDir, 'rasen', 'config.yaml'),
+        'schema: spec-driven\ntools:\n  - omp\n'
+      );
+
+      // The enclosing project context that stops loading once `pkg/.omp/` fills.
+      const capturedFile = path.join(testDir, '.omp', 'AGENTS.md');
+      await fs.mkdir(path.join(testDir, '.omp'), { recursive: true });
+      await fs.writeFile(capturedFile, '# enclosing project instructions\n');
+
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await new UpdateCommand({ onlyThis: true }).execute(projectDir);
+
+      // The manifest alone made update populate `.omp/` — the precondition for
+      // the capture, asserted so the disclosure is not vacuous.
+      expect(
+        await FileSystemUtils.fileExists(
+          path.join(projectDir, '.omp', 'skills', 'rasen-explore', 'SKILL.md')
+        )
+      ).toBe(true);
+
+      // Naming the file that stopped loading is the disclosure's payload, and
+      // it is the same in every locale.
+      const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(output).toContain(capturedFile);
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should stay silent when a newly populated .omp/ captures no context files', async () => {
+      const projectDir = path.join(testDir, 'pkg');
+      await fs.mkdir(path.join(projectDir, 'rasen'), { recursive: true });
+      await fs.writeFile(
+        path.join(projectDir, 'rasen', 'config.yaml'),
+        'schema: spec-driven\ntools:\n  - omp\n'
+      );
+
+      // A populated enclosing `.omp/` that holds no context files: it bounds
+      // the walk (so it never escapes the sandbox) and nothing is captured.
+      await fs.mkdir(path.join(testDir, '.omp', 'skills', 'my-own-skill'), { recursive: true });
+      await fs.writeFile(
+        path.join(testDir, '.omp', 'skills', 'my-own-skill', 'SKILL.md'),
+        'user-authored'
+      );
+
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await new UpdateCommand({ onlyThis: true }).execute(projectDir);
+
+      expect(
+        await FileSystemUtils.fileExists(
+          path.join(projectDir, '.omp', 'skills', 'rasen-explore', 'SKILL.md')
+        )
+      ).toBe(true);
+
+      const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(output).not.toContain('AGENTS.md');
+
+      consoleSpy.mockRestore();
+    });
   });
 
   describe('error handling', () => {

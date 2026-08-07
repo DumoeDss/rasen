@@ -133,7 +133,14 @@ export const SESSION_STORES = {
      */
     locateLatest: (options) =>
       findLatestOmpSession(
-        options.dir ?? path.join(resolveOmpAgentDir(), 'sessions'),
+        // `homeDir` is honoured because `resolveOmpAgentDir` accepts one. The
+        // Claude entry above threads it through too; the Codex entry cannot,
+        // since `resolveCodexHome` takes no argument. Dropping it here would
+        // make a caller that isolates through the documented seam read the
+        // REAL user's `~/.omp` sessions instead of the injected root — a
+        // hermeticity trap for the next test author, silent because it still
+        // returns a plausible answer.
+        options.dir ?? path.join(resolveOmpAgentDir(process.env, options.homeDir), 'sessions'),
         options.cwd
       ),
   },

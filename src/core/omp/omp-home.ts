@@ -41,21 +41,18 @@ export const OMP_CLI_VERSION_PREMISE = '17.2.10';
 const DEFAULT_CONFIG_DIR_NAME = '.omp';
 
 /**
- * Environment the resolution reads. `NodeJS.ProcessEnv` rather than a narrow
- * four-field shape, matching `detectHostRuntime`: an all-optional interface is a
- * weak type, so `process.env` would not be assignable to it.
- */
-type OmpHomeEnv = NodeJS.ProcessEnv;
-
-/**
  * The active profile name, or `undefined` for the default profile.
+ *
+ * The parameter is `NodeJS.ProcessEnv` rather than a narrow four-field shape,
+ * matching `detectHostRuntime`: an all-optional interface is a weak type, so
+ * `process.env` would not be assignable to it.
  *
  * `OMP_PROFILE` is checked for definedness rather than truthiness so an
  * explicitly empty value shadows a `PI_PROFILE` left over in the same shell —
  * the documented precedence, and live-verified: `OMP_PROFILE= PI_PROFILE=legacy`
  * resolves to the DEFAULT agent directory, not `legacy`'s.
  */
-function resolveProfile(env: OmpHomeEnv): string | undefined {
+function resolveProfile(env: NodeJS.ProcessEnv): string | undefined {
   const raw = env.OMP_PROFILE !== undefined ? env.OMP_PROFILE : env.PI_PROFILE;
   const name = raw?.trim();
   if (name === undefined || name === '' || name === 'default') return undefined;
@@ -67,7 +64,7 @@ function resolveProfile(env: OmpHomeEnv): string | undefined {
  * built with `path.join`/`path.resolve` so it is correct on every platform.
  */
 export function resolveOmpAgentDir(
-  env: OmpHomeEnv = process.env,
+  env: NodeJS.ProcessEnv = process.env,
   homeDir: string = os.homedir()
 ): string {
   const profile = resolveProfile(env);

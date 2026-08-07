@@ -567,57 +567,75 @@ export function findLatestRollout(sessionsDir: string, cwd: string): string {
 }
 
 /**
- * How much of an Oh My Pi session file the header scan may read. The file's
- * first physical row is a fixed-width `title` slot (a ~190-character `pad`
- * field exists so the title can be rewritten in place, which bounds that row)
- * and the `session` header is the second, so 8 KiB is orders of magnitude more
- * than needed and still bounded. Oh My Pi's own recent-session scans read a
- * 4 KiB prefix (`omp://session.md`), so this is the same class of cost.
+ * How much of an Oh My Pi session file the header scan may read, in order.
+ *
+ * The file's first physical row is a fixed-width `title` slot (a ~190-character
+ * `pad` field exists so the title can be rewritten in place, which bounds that
+ * row) and the `session` header is the second, so the first bound is orders of
+ * magnitude more than needed and still cheap. Oh My Pi's own recent-session
+ * scans read a 4 KiB prefix (`omp://session.md`), so it is the same class of
+ * cost.
+ *
+ * The second bound exists because the header is NOT actually fixed-width: it
+ * carries the documented growth fields `additionalDirectories` and
+ * `previousSessionFiles`, so a long-lived session can push it past the first
+ * bound. Discarding the candidate there would make a LIVE session permanently
+ * invisible to `--latest`, which is the failure this whole locator exists to
+ * prevent. The retry bound matches `RECOGNITION_READ_BYTES` in
+ * `runtimes/session-stores.ts` — the two prefix reads in this change should not
+ * disagree about how much of a session file is reasonable to look at.
  */
-const OMP_HEADER_READ_BYTES = 8 * 1024;
+const OMP_HEADER_READ_BOUNDS = [8 * 1024, 64 * 1024] as const;
 
 /**
  * The working directory an Oh My Pi session file records in its `session`
- * header, or `undefined` when the prefix holds no such row.
+ * header, or `undefined` when no such row is reachable.
  *
  * Reads a bounded prefix rather than the file: a long-running session journal
  * reaches tens of megabytes, and the locator may inspect several before it
- * finds a match.
+ * finds a match. When the header is not in the first prefix AND that read was
+ * truncated, the scan retries once at the larger bound — a short read means the
+ * whole file is already in hand and there is nothing further to find.
  */
 function readOmpSessionCwd(sessionPath: string): string | undefined {
-  let prefix: string;
-  let handle: number | undefined;
-  try {
-    handle = fs.openSync(sessionPath, 'r');
-    const buffer = Buffer.alloc(OMP_HEADER_READ_BYTES);
-    const read = fs.readSync(handle, buffer, 0, OMP_HEADER_READ_BYTES, 0);
-    prefix = buffer.subarray(0, read).toString('utf-8');
-  } catch {
-    return undefined;
-  } finally {
-    if (handle !== undefined) {
-      try {
-        fs.closeSync(handle);
-      } catch {
-        // A close failure cannot change the answer already read.
+  for (const bound of OMP_HEADER_READ_BOUNDS) {
+    let prefix: string;
+    let read: number;
+    let handle: number | undefined;
+    try {
+      handle = fs.openSync(sessionPath, 'r');
+      const buffer = Buffer.alloc(bound);
+      read = fs.readSync(handle, buffer, 0, bound, 0);
+      prefix = buffer.subarray(0, read).toString('utf-8');
+    } catch {
+      return undefined;
+    } finally {
+      if (handle !== undefined) {
+        try {
+          fs.closeSync(handle);
+        } catch {
+          // A close failure cannot change the answer already read.
+        }
       }
     }
-  }
 
-  for (const line of prefix.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    let row: { type?: string; cwd?: unknown };
-    try {
-      row = JSON.parse(trimmed) as { type?: string; cwd?: unknown };
-    } catch {
-      // The last line of a bounded prefix is usually truncated mid-object.
-      // Anything before the header being unparseable is equally survivable.
-      continue;
+    for (const line of prefix.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let row: { type?: string; cwd?: unknown };
+      try {
+        row = JSON.parse(trimmed) as { type?: string; cwd?: unknown };
+      } catch {
+        // The last line of a bounded prefix is usually truncated mid-object.
+        // Anything before the header being unparseable is equally survivable.
+        continue;
+      }
+      if (row.type === 'session') {
+        return typeof row.cwd === 'string' ? row.cwd : undefined;
+      }
     }
-    if (row.type === 'session') {
-      return typeof row.cwd === 'string' ? row.cwd : undefined;
-    }
+
+    if (read < bound) return undefined;
   }
   return undefined;
 }
@@ -692,7 +710,16 @@ export function findLatestOmpSession(sessionsDir: string, cwd: string): string {
     }
   }
 
-  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  // Ties are broken on basename, descending. Equal mtimes are not exotic — a
+  // restored, rsynced or `cp -p` store carries them — and without a tiebreak
+  // which session answers falls out of `readdirSync` order across buckets, so
+  // it is arbitrary and flips on a bucket rename. Oh My Pi names each file
+  // with an ISO-8601 timestamp prefix, so basename order IS chronological
+  // order and the newest still wins.
+  candidates.sort(
+    (a, b) =>
+      b.mtimeMs - a.mtimeMs || path.basename(b.path).localeCompare(path.basename(a.path))
+  );
   for (const candidate of candidates) {
     const headerCwd = readOmpSessionCwd(candidate.path);
     if (headerCwd !== undefined && path.resolve(headerCwd) === resolvedCwd) {
