@@ -19,11 +19,11 @@ Disposition in `evidence/fix-round-1.md`:
 - **F2 [Minor] FIXED** — `translateTermination` re-checks the `transportLost`
   latch after its await and now requires channel attribution; the latch is armed
   during the prepared window too.
-- **F3 [Minor] FIXED** — mutations (i)/(j)/(k) supplied for the three named
-  guards, plus a real-host re-run of mutation (a) against the packaged capsule so
-  the win32 real suite is demonstrably capable of failing. One narrow waiver
-  recorded for real-host receipt 7.2b, with justification; the reviewer decides
-  whether to accept it or narrow the spec scenario instead.
+- **F3 [Minor] FIXED, no waiver** — mutations (i)/(j)/(k) supplied for the three
+  named guards, plus TWO real-host mutations against the packaged capsule:
+  (a-real) reds receipt 7.1 and (m-real) reds receipt 7.2b alone while 7.1/7.3
+  stay green. An earlier draft waived 7.2b with a justification; the waiver was
+  withdrawn and replaced with the actual mutation.
 - **F4 [Minor] DEFERRED** — recorded, not fixed, per the review's own
   recommendation: the unpruned `scopes` map in BOTH tier modules is the RC-005
   shape, and one lifecycle rule should cover all three maps in closure task 12.8.

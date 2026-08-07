@@ -11,7 +11,7 @@ Host: Windows 11 Pro 10.0.26200.8875, Node v24.14.0, vitest 3.2.6.
 | --- | --- | --- |
 | F1 [Major] RC-004 probe parser containment | FIXED + authorized pin rebaseline | `8e48ce45`, `0e86380f` |
 | F2 [Minor] D3 terminate-leg hardening | FIXED | `8e48ce45` |
-| F3 [Minor] guards without a failing counterpart | FIXED (4 mutations) + 1 narrow recorded waiver | this commit |
+| F3 [Minor] guards without a failing counterpart | FIXED (5 mutations, no waiver) | `708b558c` + this commit |
 | F4 [Minor] RC-005 retention shape | DEFERRED to closure 12.8 by review recommendation - recorded, not fixed | this commit |
 
 ## F1 - one-shot probe parser containment
@@ -200,24 +200,42 @@ Unmutated: 3 passed (3). The real-host suite is now demonstrably capable of
 failing against a dishonest wrapper, not only against the organic first-run
 failure of 7.3.
 
-### Recorded waiver: real-host receipt 7.2b
+### (m-real) win32 real-host receipt 7.2b
 
-No mutation is supplied for 7.2b (stale ref from a dead daemon reported honestly,
-no reattach). Justification, narrow and explicit:
+An earlier draft of this file waived 7.2b with a justification. The waiver is
+**withdrawn**: the LEAD's fix dispatch required a mutation counterpart for 7.2b
+as well as 7.1, so one was supplied rather than argued around.
 
-- the "no reattach / no identity revalidation" property is a source-scan guard on
-  the module, discriminated by the same class of mutation as the POSIX one
-  (receipt (e) proved the repointed scan still catches a real emission);
-- the "reported honestly, never controllable" property is discriminated
-  deterministically by the five foreign/stale translation guards, and by
-  mutations (a), (f) and (h) which each break a translation leg;
-- 7.2b's own added value is that the probe path is reachable against the REAL
-  capsule, which the 7.3 organic failure and the (a-real) mutation above both
-  already demonstrate for that suite.
+Mutation: a ref from a previous daemon lifetime is adopted as a live,
+controllable scope - the reattach this tier forbids outright.
 
-Reviewer's call whether this waiver is acceptable or whether the delta spec's
-acceptance scenario should instead be narrowed in text; both were offered by the
-review as valid dispositions.
+```diff
+-      if (observation.controllable) return observation;
+-      if (observation.state === 'foreign' || observation.state === 'uncertain') {
+-        return observation;
+-      }
+-      if (observation.state === 'declared-unproven') return observation;
++      return { state: 'live', controllable: true };
+```
+
+RED against the REAL packaged capsule on this host:
+
+```
+$ RASEN_WIN32_REAL_CAPSULE=1 npx vitest run test/core/session-host/win32-real-capsule-receipts.test.ts
+   ✓ 7.1 cancels a real Job-backed workload and records cancelled / emptiness-unproven  2219ms
+   ✓ 7.3 reports controller loss as retained uncertainty, not a clean detach  2158ms
+ FAIL  7.2b reports a ref from a dead daemon honestly and never reattaches
+      Tests  1 failed | 2 passed (3)
+```
+
+Precise: 7.2b alone fails while 7.1 and 7.3 stay green, so the RED is
+attributable to the reattach property specifically rather than to a broad
+breakage. Unmutated: 3 passed (3). Reverted byte-exact;
+`git diff --numstat -- src/ test/` empty.
+
+With (a-real) and (m-real) both landed, every property the win32 real-host suite
+guards has a demonstrated failing counterpart, and no waiver remains in this
+change.
 
 ## F4 - RC-005 retention shape (DEFERRED, recorded only)
 
