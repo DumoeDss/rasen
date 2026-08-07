@@ -51,3 +51,9 @@
 
 No accidental debug output, secrets, or TODO markers - already covered by review round 1 and
 the independent delta re-review round 2 (CLEAN), both of which read the full diff.
+
+## Archive
+**Date:** 2026-08-07T18:24:16.761Z
+**Ship commit:** 41e3d73f5a7af3984ca68f10b053a455dd8d5a88
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle\rasen\changes\archive\2026-08-07-ecp-hosted-best-effort-cutover
+**Transaction:** d75f1310-2a67-4eb8-858a-ba1c67c792d6
