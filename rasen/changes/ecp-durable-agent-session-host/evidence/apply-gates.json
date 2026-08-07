@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-04T12:36:24.1089523+08:00",
+  "worktree": {
+    "path": "E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle",
+    "branch": "wip/ecp-shared-bounded-loop-lifecycle-resume",
+    "baseHead": "050fc84332b26a75a07f441efd6b235842f89e1e",
+    "committed": false,
+    "pushed": false,
+    "archived": false
+  },
+  "environment": {
+    "platform": "win32",
+    "node": "v24.14.0",
+    "pnpm": "9.15.9",
+    "rootTestWorkers": 1,
+    "isolatedTemp": true,
+    "isolatedRasenHome": true
+  },
+  "gates": [
+    {
+      "command": "pnpm run build",
+      "exitCode": 0,
+      "result": "pass"
+    },
+    {
+      "command": "pnpm run lint",
+      "exitCode": 0,
+      "result": "pass"
+    },
+    {
+      "command": "pnpm exec tsc --noEmit",
+      "exitCode": 0,
+      "result": "pass"
+    },
+    {
+      "command": "node bin/rasen.js validate ecp-durable-agent-session-host --strict",
+      "exitCode": 0,
+      "result": "valid"
+    },
+    {
+      "command": "pnpm exec vitest run test/core/session-host test/core/management-api/hosted-sessions-api.test.ts test/core/management-api/hosted-session-recovery.test.ts test/commands/daemon-half-started.test.ts test/commands/daemon-spawn-convergence.test.ts test/cli-e2e/session-host.test.ts --maxWorkers=1 --minWorkers=1",
+      "exitCode": 0,
+      "testFilesPassed": 13,
+      "testsPassed": 71
+    },
+    {
+      "command": "pnpm --dir packages/ui run typecheck",
+      "exitCode": 0,
+      "result": "pass"
+    },
+    {
+      "command": "pnpm --dir packages/ui run test",
+      "exitCode": 0,
+      "testFilesPassed": 59,
+      "testsPassed": 651
+    },
+    {
+      "command": "pnpm --dir packages/ui run build",
+      "exitCode": 0,
+      "result": "pass"
+    },
+    {
+      "command": "pnpm run test",
+      "exitCode": 0,
+      "testFilesPassed": 452,
+      "testsPassed": 6947,
+      "testsSkipped": 34,
+      "testsTotal": 6981,
+      "durationSeconds": 4871.87,
+      "stdoutBytes": 469950,
+      "stdoutSha256": "af52741c44c37074cd7c01234bac66d6dca4672fe2983861833dec2fd7023a65",
+      "stderrBytes": 75154,
+      "stderrSha256": "348d2c26f1e953f78ffd7a448b9e58f28d3261dfc3e90f158f7ea2711f3301ae",
+      "exitMarker": "ROOT_TEST_EXIT_CODE=0"
+    }
+  ],
+  "mutationDiscriminator": {
+    "target": "pruned terminal request id without a second stdin write",
+    "mutation": "prunedRequestIdMayExist returns false",
+    "mutatedExitCode": 1,
+    "mutatedObservedOutcome": "old pruned request returned ok:true",
+    "restoredExitCode": 0,
+    "retainedMutation": false,
+    "evidence": "mutation-discriminator.md"
+  },
+  "cleanup": {
+    "testOwnedOsTempRootsRemoved": true,
+    "workspaceRetainedOutputsTouched": false
+  }
+}
