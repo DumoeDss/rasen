@@ -1,15 +1,40 @@
-// Task 9.6 dynamic half. Rewrite sys.rs so every hand-declared foreign item is reached through
-// a counting wrapper that appends its name to a per-process trace file on FIRST call, then
-// forwards to the real import. Write-on-first-call rather than dump-at-exit is deliberate: the
-// guardian is force-killed in several rows, so an at-exit dump would lose exactly the process
-// whose coverage matters most.
+// Task 9.6: prove every hand-declared foreign item is exercised by a real call.
 //
-// TEMPORARY. `--restore` puts the original bytes back and the caller re-measures the digest.
+// ONE COMMAND, from the repository root:
+//
+//   node rasen/changes/ecp-windows-process-authority-provider/evidence/ffi-coverage-instrument.mjs
+//   RWPA_FFI_TRACE=<dir> cargo test --manifest-path native/windows-process-authority/Cargo.toml --locked -- --test-threads 1
+//   node rasen/changes/ecp-windows-process-authority-provider/evidence/ffi-coverage-instrument.mjs --restore
+//
+// The first command rewrites native/windows-process-authority/src/sys.rs so every declared
+// foreign item is reached through a forwarding wrapper that appends its name to
+// $RWPA_FFI_TRACE/<pid>.txt on FIRST call and then forwards to the real import. The union of
+// those files across every traced process is the coverage answer. `--restore` puts the
+// pristine bytes back; verify with `node scripts/build-windows-process-authority.mjs --plan`.
+//
+// THIS IS TEMPORARY MEASUREMENT SCAFFOLDING AND MUST NEVER BE FROZEN OR SHIPPED. It moves the
+// three extern blocks verbatim into a private `mod imports` and adds a recorder that takes a
+// mutex inside calls as ordinary as CloseHandle. It changes no signature, link name, constant
+// or call site, so it is behaviour-preserving, but the crate source digest moves and every
+// receipt taken against it is bound to the instrumented tree, not to the freeze.
+//
+// Write-on-first-call rather than dump-at-exit is deliberate: the guardian is force-killed in
+// several rows, so anything buffered until exit would be lost for exactly the process whose
+// coverage matters most. See evidence/section-9-oracle-discrimination.md, finding S9-F2, for
+// the two recorder defects that both produced the same plausible WRONG answer before this
+// version was trusted.
+//
+// If the pristine backup is missing (a new session, a cleared temp directory), restore with:
+//   git checkout -- native/windows-process-authority/src/sys.rs
 import fs from 'node:fs';
+import path from 'node:path';
 import crypto from 'node:crypto';
+import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 
-const SYS = 'E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle/native/windows-process-authority/src/sys.rs';
-const BACKUP = 'C:/Users/Sayo/AppData/Local/Temp/claude/E--AI-ChatAI-Agents-VibeCodingProjects-workflow-Reference-OpenSpec-code/36b82234-1205-4f59-a9f6-d23788a32f5d/scratchpad/sys.rs.original';
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
+const SYS = path.join(REPO, 'native/windows-process-authority/src/sys.rs');
+const BACKUP = path.join(os.tmpdir(), 'rasen-wpa-sys-pristine.rs');
 
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 

@@ -377,11 +377,69 @@ Consequences that change how earlier evidence reads:
   does not fail closed *reliably*; it fails closed *sometimes* and succeeds *usually*. An
   intermittent lost receipt is harder to find than a deterministic one, not easier.
 
-### `S9-F2` (method, no product impact) -- an instrument that produced a plausible security finding twice
+### `S9-F2` (method, Major) -- two independent instrument defects converged on the same wrong answer
 
-Recorded in full under 9.6. The lesson that generalises: **a coverage instrument is a guard test
-and owes its own falsification.** Both defects produced the same specific, coherent, wrong answer
-naming the same three items. Neither was visible by reading the recorder.
+Two defects, with nothing in common, both produced **`53/56`, naming the same three items**
+(`GetCurrentThread`, `OpenThreadToken`, `RevertToSelf`) as never called:
+
+1. **Concurrent-open loss.** The recorder opened its trace file per record. Several guardian
+   threads open the same path at once, Windows refuses the second open with a sharing violation,
+   and the already-set HIT bit meant the item was never retried.
+2. **Blind inside the impersonation window.** All three missing items sit between
+   `ImpersonateNamedPipeClient` and `RevertToSelf` in `win::named_pipe_client_sid`. In that
+   window the thread carries an **identification-level token, which permits identity queries and
+   no file access at all**, so every open there failed silently.
+
+**A wrong result that two different bugs agree on is indistinguishable from a right one.** The
+answer was specific, mechanistically plausible, and would have been written up as a
+Blocker-shaped security finding: "the guardian's symmetric client authentication never reads a
+token", straight against `design.md` Decision 6.
+
+**Inspection did not catch it and would not have.** What caught it was the measurement
+contradicting the code: `guardian.rs:1121` makes an unauthenticated session fail immediately,
+`dogfood` authenticated and completed the full lifecycle, therefore the token *had* been read.
+The trace and the control flow could not both be true.
+
+Two things generalise. **A coverage instrument is a guard test and owes its own falsification
+before its output is quoted.** And the impersonation detail is a standing trap for anyone
+instrumenting this crate: **no file, registry or named-pipe access succeeds between
+`ImpersonateNamedPipeClient` and `RevertToSelf`**, so any recorder that allocates a resource
+there is blind exactly where the security-relevant code runs.
+
+### `S9-F7` (method, convention) -- the mutation was fine; the missing marker was the defect
+
+Task 9.6's mutate-measure-restore cycle is legitimate and completed byte-exact twice. The
+session was then interrupted mid-third-cycle, leaving instrumented source in a shared worktree.
+
+**A worktree left mid-measurement is indistinguishable from an intended source change to anyone
+who finds it.** It cost the LEAD an accounting round and produced a commit that preserved
+measurement scaffolding as though it were work.
+
+**Convention, cheap and worth adopting:** any deliberate temporary mutation of frozen source
+writes a marker file in the tree first, naming the task, the tool, the pristine hash to restore,
+and the command that restores it. One file. It converts "someone modified frozen source" into
+"a measurement is in flight, here is how to end it".
+
+### `S9-F8` (cross-change) -- the Linux re-freeze lands in a Windows assertion, and a bare swap would have lied
+
+`ecp-linux-process-authority-provider` re-froze its crate `087d87a5 -> 89f6c1d5` under an
+authorised Section 12 wave, and `windows-process-authority-package-ci.test.ts` pins that value
+for task 10.7.
+
+**The constant was updated and the assertion was reworded, not just repointed.** 10.7's text is
+"no file under `native/linux-process-authority/**` ... changed, and the recorded frozen source
+digest still matches". Files under that path **did** change. A bare constant swap would have
+turned the test green while the sentence it encoded became false -- the exact failure mode 9.9
+exists to catch, arriving from another change.
+
+What the test can honestly assert, and now says: **this Change contributes no byte to the Linux
+tree, which stands at its own Change's recorded digest.** The lineage is recorded in the
+constant's comment so a future move must arrive with its own lineage rather than as a silent
+repoint. Anything else that moves the digest is drift and still fails here.
+
+**Owed to the planner:** task 10.7's own wording still says "no file ... changed" without the
+qualifier "by this Change", so the ledger text is now less precise than the test it governs.
+Rewording a task is a planner act and was not done here.
 
 ### `S9-F3` (boundary, not a defect) -- `design.md` Decision 3's stated mechanism still does not reproduce
 
@@ -493,6 +551,58 @@ than this change's evidence directory:
 `*.yml`: the single hit was a prose comment in `windows_section8_gate.rs`, updated. This is the
 opposite of the Linux situation, where `windows-process-authority-package-ci.test.ts:295` asserts
 `087d87a5` in code -- that assertion is untouched by this re-freeze and still holds.
+
+### The 9.6 capability, persisted
+
+The instrument existed only as a generated file and a scratchpad script, which is not a
+capability. Both halves are now in the repository and both were **run from their persisted
+paths** before this was written:
+
+```text
+evidence/ffi-coverage-census.mjs      static half: 56 declared, 56 with src/** call sites, 0 dead
+evidence/ffi-coverage-instrument.mjs  dynamic half; --restore returns pristine bytes
+```
+
+Round-trip proved rather than asserted, from the repository root, with no absolute paths:
+
+```text
+instrument      src/sys.rs 26130 -> 47844 B      crate digest fc49a7c2 -> 6c1c63a2
+--restore       src/sys.rs 47844 -> 26130 B      crate digest 6c1c63a2 -> fc49a7c2
+```
+
+### The 9.6 measurement, re-taken so it is bound
+
+The 56/56 result was first measured on an instrumented tree whose digest I never recorded. That
+receipt was **unbound**, which is worse than a mix, and no digest was reconstructed for it after
+the fact. It has been **re-taken on the post-fix tree** instead:
+
+```text
+pristine base   fc49a7c2   instrumented   6c1c63a2   35 processes traced   56 / 56
+```
+
+One interaction surfaced and is recorded rather than smoothed over: under instrumentation the
+descendant's refused breakaway reports `os-error=203` instead of `5`. Measured both ways with an
+identical test file. The errno assertion is now skipped **only** when `RWPA_FFI_TRACE` is set,
+named in the test, and the load-bearing `refused` assertion is unconditional.
+
+### The freeze marker owes a fourth `testFiles` entry
+
+`tests/` is outside `sourceDigest()`, which is exactly why that map exists. For the re-freeze:
+
+```text
+native/windows-process-authority/tests/windows_section9_discrimination.rs
+  25311 B  6eeff98401be5121b81d04e45e4020acabdd0247268148ad66142f94cd1c23e9   <- NEW
+
+native/windows-process-authority/tests/windows_section8_gate.rs
+  57294 B  eca9f3aaf280d5305d20aef24cccef94aabf9d4df6777c28e7acf29eabcdceef   <- CHANGED (9.9 rewrite)
+                       was ba540903bdb9ac157303ee3c366cf8ed1a8c9dbf4d6896b23bf31db6a473bb87
+native/windows-process-authority/tests/windows_authority_kernel.rs      unchanged  2cbf1c24...
+native/windows-process-authority/tests/windows_guardian_lifecycle.rs    unchanged  81e10a33...
+```
+
+Note the second line: this is **not** a pure addition like Section 8's amendment was. The 9.9
+rewrite changed an existing test file, so the marker must record a changed entry as well as a new
+one, and a reader must not infer from "the map grew by one" that nothing was modified.
 
 ### Counts at the new freeze
 

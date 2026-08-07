@@ -1,10 +1,22 @@
-// Task 9.6 static half: enumerate every hand-declared foreign item and its call sites,
-// separated into product code (src/**) and test code (tests/**). A call site in tests/** only
-// means the item is exercised by the SUITE, not by the product.
+// Task 9.6, static half: enumerate every hand-declared foreign item and its call sites,
+// separated into product code (src/**) and test code (tests/**).
+//
+// ONE COMMAND, from the repository root:
+//
+//   node rasen/changes/ecp-windows-process-authority-provider/evidence/ffi-coverage-census.mjs
+//
+// This proves REACHABILITY, never execution. A call site in tests/** only means the item is
+// exercised by the SUITE, not by the product; an item with no call site anywhere is a dead
+// declaration. Task 9.6 asks for execution, which only the dynamic half
+// (ffi-coverage-instrument.mjs) can answer. Read this as the denominator, not the answer.
+//
+// Writes ffi-declared.json next to itself for the instrument run to diff against.
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const crate = 'E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle/native/windows-process-authority';
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const crate = path.resolve(HERE, '../../../..', 'native/windows-process-authority');
 const sysText = fs.readFileSync(path.join(crate, 'src/sys.rs'), 'utf8');
 
 // Parse the three extern blocks.
@@ -76,7 +88,4 @@ for (const r of noProduct) {
   console.log(`  ${r.library}::${r.name}  tests: ${r.tests.length ? r.tests.join(', ') : 'none anywhere'}`);
 }
 
-fs.writeFileSync(
-  'C:/Users/Sayo/AppData/Local/Temp/claude/E--AI-ChatAI-Agents-VibeCodingProjects-workflow-Reference-OpenSpec-code/36b82234-1205-4f59-a9f6-d23788a32f5d/scratchpad/ffi-declared.json',
-  JSON.stringify(rows, null, 1)
-);
+fs.writeFileSync(path.join(HERE, 'ffi-declared.json'), JSON.stringify(rows, null, 1));

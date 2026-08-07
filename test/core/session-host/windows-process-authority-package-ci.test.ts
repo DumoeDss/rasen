@@ -12,12 +12,26 @@ const CRATE = path.resolve('native/windows-process-authority');
 const HELPER_RELATIVE = 'dist/native/win32-x64/rasen-windows-process-authority-helper.exe';
 
 /**
- * The frozen Linux tree marker. This Change must not modify a byte of it, and
- * the marker is recomputed here rather than trusted, because a stale marker
- * would let a modification pass unnoticed.
+ * The Linux crate's source digest, as currently recorded by **its own Change**.
+ * The digest is recomputed here rather than trusted, because a stale value would
+ * let a modification pass unnoticed.
+ *
+ * **This pin does not assert the Linux tree is immutable, and it never did.** It
+ * asserts that *this* Change contributes no byte to it. The Linux crate is owned
+ * by `ecp-linux-process-authority-provider`, and that Change re-froze it under an
+ * authorised Section 12 wave:
+ *
+ *   087d87a5948c74ae770233f15bb1dce845557d8bcc66dc23fa12642cf615ad59  (superseded)
+ *   89f6c1d5270c3ad301f84edde1ae1f67541ac81ca271eb8eaef7871715aba643  (current, 26 files)
+ *
+ * So the value below moves only when the owning Change authorises a move, and
+ * every such move must land here **with its lineage**. A bare constant swap would
+ * turn this test green while the sentence it used to mean — "nothing changed" —
+ * became false, which is the failure mode this Change's own Section 9 exists to
+ * catch. Anything else that moves this digest is drift, and it fails here.
  */
-const FROZEN_LINUX_SOURCE_DIGEST =
-  '087d87a5948c74ae770233f15bb1dce845557d8bcc66dc23fa12642cf615ad59';
+const LINUX_CRATE_SOURCE_DIGEST =
+  '89f6c1d5270c3ad301f84edde1ae1f67541ac81ca271eb8eaef7871715aba643';
 
 const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
   'native/process-capsule/src/main.rs':
@@ -292,11 +306,11 @@ describe('Windows Change boundary guards', () => {
     )).toEqual(FROZEN_COMMON_INPUTS);
   });
 
-  it('leaves the frozen Linux native tree at its recorded source digest', () => {
+  it('contributes no byte to the Linux native tree, which stands at its own Change’s digest', () => {
     expect(crateSourceDigest(
       path.resolve('native/linux-process-authority'),
       ['Cargo.lock', 'Cargo.toml', 'THIRD_PARTY.md']
-    )).toBe(FROZEN_LINUX_SOURCE_DIGEST);
+    )).toBe(LINUX_CRATE_SOURCE_DIGEST);
   });
 
   it('leaves the legacy ProcessCapsule implementation unchanged in meaning', () => {
