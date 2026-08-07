@@ -100,3 +100,47 @@ retested after the Session executor/public effect-observation seam lands.
 - Domain semantics remain split: ReviewCycle owns findings and clean ship safety; GoalLoop owns
   scores/gaps and satisfaction. Dependent children must not merge them or equate a lifecycle `exit`
   (including a research report tail) with domain success.
+
+## Child 2 durable planning findings: v2 defaults and built-ins
+
+- The default gap is structural, not a version literal: `pipeline init` and Canvas empty drafts author
+  v1, while v2 CLI/detail currently return raw definition JSON or empty execution stages. Child 2 must
+  land a canonical blank/serializer and one prepared execution view before migrating manifests.
+- Native v2 AtomicStages need a closed execution declaration (role, explicit workspace access, gate,
+  verification and existing policy intent) so inspection, config overrides, profile freezing and lowering
+  do not depend on review-oriented synthetic defaults or v1 `legacy` payloads. Session limit selection and
+  worker enforcement remain ECP-7.
+- The migration set is exactly `bug-fix`, `small-feature`, `full-feature`, and the three `goal-loop-*`
+  pipelines. Their capability versions are exact trusted catalog pins; pin drift must fail at a named path.
+- Review strategies bind `rasen-review-cycle`; Goal strategies bind `rasen-goal-iterate`, subject to
+  failure-first invocation/result-contract verification. Research iteration exhaustion must enter its
+  report tail as a truthful non-success lifecycle exit, never as goal satisfaction.
+- `auto-decompose` remains byte-identical authored v1 and is separately labeled
+  `issue-dispatch-0.3.0`; it is not a partial v2 Change pipeline and is absent from the six-item set.
+- Child 3 may rely on a fresh blank v2 draft and lossless wire/serializer contract, but still owns all
+  Composite/loop/parallel authoring panels and round-trip parity. Child 4 owns final vertical proof.
+
+## Child 2 review-clean durable findings
+
+- Native-v2 authored Gate is the sole authority (`target`, decisions/outcomes, dispositions); the retired AtomicStage boolean gate must never reappear. V1 normalization alone preserves historical gate ids and `approve | reject` compatibility.
+- Inspection and execution must share the host-aware prepared execution view and route/bridge preflight. A UI-local execution model or inferred capability profile is not authoritative.
+- ReviewCycle fix and GoalLoop judge require distinct exact capabilities (`rasen-review-fix`, `rasen-goal-judge`) with role/workspace validation; phase labels cannot make an incompatible skill safe.
+- Installation/execution capability closure and public workflow selection are different sets. Internal dependency workflows may be enabled transitively but must not appear as picker roots or next-workflow suggestions.
+- Child 2 passed a three-round non-author review cycle. Final local evidence combines 432/432 clean non-local-version files with two hermetic 7/7 local-version runs and UI 611/611; the shared-TEMP concurrent local-version interference remains documented rather than hidden.
+- Canvas Child 3 must consume these contracts losslessly and expose the full supported v2 authoring surface without migrating `auto-decompose`, inventing a serializer, or claiming the Child 4 vertical proof.
+
+## Child 3 planner durable findings: Canvas v2 authoring parity
+
+- `ecp-canvas-v2-authoring-parity` is proposal-complete and strict-valid with proposal/design, a complete `pipelines-ui` delta, and 67 ordered apply/review tasks.
+- The observed product gap is not only read-only preservation: FanOut/Join are explicitly outside the editable vocabulary; AtomicStage creation omits required execution; Gate target/dispositions and full loop lifecycle are unauthorable; declaration diagnostics and `/limits/budget` are unmapped.
+- Implementation is constrained to the existing complete wire Definition draft, declaration CRUD, graph mutation layer, Management validation/save/detail seams, and canonical server serializer/preparation. No second Canvas model, serializer, execution view, lifecycle policy, or capability inference may be introduced.
+- FanOut/Join must be authored and mutated as one paired contract. Reference-aware rename/delete must also cover Gate targets, parallel member/Join identities, CompositeRef declaration ids, BoundedLoop bodies, and typed connections.
+- Acceptance distinguishes creation through real controls from lossless preservation, and requires positive/negative authoring matrices plus save/reload and source/capability/plan digest evidence. V1 open/edit/save/duplicate remains source-version-preserving compatibility.
+- Child 3 does not claim the loop-plus-parallel canonical Run; Child 4 consumes the saved Canvas definition for that vertical proof. Session/effect execution, release closure, Issue/Dispatch/portfolio, and `auto-decompose` migration remain outside Child 3.
+
+## Child 4 planner durable findings: vertical proof seams
+
+- The sole shared fixture is preparation-valid and canonically persistent, but its root graph currently has no connections. It is not yet sufficient evidence for the authored execution order of a loop-plus-parallel Run. Child 4 must extend that same fixture through visible Canvas connection controls and feed the exact Management-saved value forward; a second runtime fixture is forbidden.
+- The public `change-run-completion/1` contract and CLI decoder already accept `effect-observation`, while `createChangePipelineRuntime.complete()` rejects every non-`domain-action-result` request. Private reducer injection would make a green test without proving the product. Child 4 therefore owns the minimal contract-conforming facade closure that commits trusted effect receipts; ECP-7 still owns automatic observation and Session/worker execution.
+- The real proof seam is Management save/detail, production preparation/profile/lowering, CLI `start`/`resume-run`/`complete`/`status`/`control`, the filesystem-backed canonical store across fresh processes, and Management/Operations consumption of the same `ChangeRunView` projector.
+- Success, fresh-process resume, malformed receipt rejection, and required FanOut member failure are distinct acceptance journeys. Each must retain stable source/capability/plan digests and exact Run/Action identities and must never use a private reducer-only path as its completion evidence.
