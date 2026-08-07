@@ -46,10 +46,27 @@ export type ControllerBehaviour =
   /** Controller answers a cancel with a protocol-level ERROR frame. */
   | 'protocol-error-on-terminate';
 
+/**
+ * Malformed probe answers. These are the RC-004 shapes: a probe that speaks
+ * garbage must become typed uncertainty, never an uncaught exception escaping
+ * the stdout callback and killing the daemon.
+ */
+export type ProbeFailureMode =
+  | 'close-without-observation'
+  | 'silent'
+  /** Frame header declaring a length past MAX_FRAME_BYTES; parsing throws. */
+  | 'oversized-frame'
+  /** OBSERVATION frame whose payload is not the single expected byte. */
+  | 'truncated-observation'
+  /** A frame kind the probe protocol never defines. */
+  | 'unknown-frame'
+  /** Two observations; the first must win and the second must not crash. */
+  | 'duplicate-observation';
+
 export interface CapsuleScript {
   controller?: ControllerBehaviour;
   /** Observation byte the one-shot probe answers with, or a failure mode. */
-  probe?: number | 'close-without-observation' | 'silent';
+  probe?: number | ProbeFailureMode;
 }
 
 export function encodeFrame(kind: number, payload: Buffer = Buffer.alloc(0)): Buffer {
@@ -145,6 +162,28 @@ export class FakeCapsuleProcess extends EventEmitter {
     if (probe === 'silent') return;
     if (probe === 'close-without-observation') {
       this.emit('close', 3);
+      return;
+    }
+    if (probe === 'oversized-frame') {
+      // A header whose declared length exceeds the parser's bound. The parser
+      // throws on this, from inside the stdout data callback.
+      const header = Buffer.allocUnsafe(5);
+      header[0] = OBSERVATION;
+      header.writeUInt32BE(64 * 1024 * 1024, 1);
+      this.stdout.write(header);
+      return;
+    }
+    if (probe === 'truncated-observation') {
+      this.emitFrame(OBSERVATION, Buffer.from([1, 2, 3]));
+      return;
+    }
+    if (probe === 'unknown-frame') {
+      this.emitFrame(0x77, Buffer.from('unexpected', 'utf8'));
+      return;
+    }
+    if (probe === 'duplicate-observation') {
+      this.emitFrame(OBSERVATION, Buffer.from([PROBE_FOREIGN]));
+      this.emitFrame(OBSERVATION, Buffer.from([PROBE_LIVE]));
       return;
     }
     this.emitFrame(OBSERVATION, Buffer.from([probe]));

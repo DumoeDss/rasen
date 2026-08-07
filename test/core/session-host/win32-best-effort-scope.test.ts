@@ -418,6 +418,68 @@ describe('foreign and stale refs translate conservatively without wedging', () =
     expect(receiptAuthorizesRelease(receipt, false)).toBe(false);
   });
 
+  it('survives a malformed probe answer with typed uncertainty instead of crashing', async () => {
+    // RC-004 / review finding F1. Each mode makes the probe speak garbage on
+    // stdout. Before the containment fix, the oversized case threw out of the
+    // stdout data callback as an uncaught exception - the daemon dies instead of
+    // reporting uncertainty. None of these may produce a terminal either.
+    for (const mode of [
+      'oversized-frame',
+      'truncated-observation',
+      'unknown-frame',
+    ] as const) {
+      const seam = capsuleSeam({ probe: mode });
+      const scope = createWin32BestEffortProcessScope({ spawn: seam.spawn, resolve: seam.resolve });
+
+      const observation = await scope.inspect(refFor('previous-daemon-lifetime'));
+
+      expect(observation.state, mode).toBe('uncertain');
+      expect(observation.controllable, mode).toBe(false);
+
+      const receipt = await scope.terminate(refFor('previous-daemon-lifetime'), {
+        reason: mode,
+        graceMs: 0,
+      });
+      expect(receipt.state, mode).toBe('uncertain');
+      expect(receipt.unproven, mode).toBeUndefined();
+      expect(receiptAuthorizesRelease(receipt, true), mode).toBe(false);
+    }
+  });
+
+  it('settles once on a duplicate probe observation rather than throwing', async () => {
+    const seam = capsuleSeam({ probe: 'duplicate-observation' });
+    const scope = createWin32BestEffortProcessScope({ spawn: seam.spawn, resolve: seam.resolve });
+
+    // Two OBSERVATION frames arrive; the first must win and the second must not
+    // reject an already-settled deferred or escape as an unhandled error.
+    const observation = await scope.inspect(refFor('previous-daemon-lifetime'));
+
+    expect(observation).toEqual({ state: 'foreign', controllable: false });
+  });
+
+  it('never mints a terminal after the controller dies during the prepared window', async () => {
+    // Review finding F2: before activation the wrapper holds no subscription to
+    // the capsule's close signal, so a controller that dies here is invisible
+    // until a control verb reports it. The Job then dies with it, the probe says
+    // "gone", and a naive translation would mint never-activated - a terminal
+    // minted from a lost channel rather than a protocol outcome.
+    const seam = capsuleSeam({ probe: PROBE_CLOSED });
+    const scope = createWin32BestEffortProcessScope({ spawn: seam.spawn, resolve: seam.resolve });
+    const prepared = await scope.prepare(prepareInput());
+    expect(prepared.declaration).toEqual(WIN32_BEST_EFFORT_DECLARATION);
+
+    seam.controllers[0].loseTransport();
+
+    const receipt = await scope.terminate(prepared.ref, { reason: 'pre-activation', graceMs: 0 });
+
+    expect(receipt.state).toBe('uncertain');
+    expect(receipt.unproven).toBeUndefined();
+    expect(receiptAuthorizesRelease(receipt, true)).toBe(false);
+    // The observation leg is guarded by the same rule.
+    const observation = await scope.inspect(prepared.ref);
+    expect(observation.state).toBe('uncertain');
+  });
+
   it('keeps a still-live foreign scope retained rather than releasing it', async () => {
     const seam = capsuleSeam({ probe: PROBE_LIVE });
     const scope = createWin32BestEffortProcessScope({ spawn: seam.spawn, resolve: seam.resolve });

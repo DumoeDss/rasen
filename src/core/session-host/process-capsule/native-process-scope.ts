@@ -343,34 +343,72 @@ async function oneShotProbe(
   if (!child.stdin || !child.stdout) throw new ProcessScopeError('process-authority-uncertain', 'ProcessCapsule probe pipes are unavailable.');
   const result = deferred<number>();
   const parser = new CapsuleFrames();
+  const phase: ProcessControlPhase = operation === '--inspect' ? 'inspect' : 'terminate';
+  let settled = false;
+  const failProbe = (error: unknown) => {
+    if (settled) return;
+    settled = true;
+    result.reject(
+      error instanceof ProcessScopeError
+        ? new ProcessScopeError(error.code, error.message, { cause: error }, phase)
+        : new ProcessScopeError(
+          'process-authority-uncertain',
+          'ProcessCapsule probe framing failed.',
+          { cause: error },
+          phase,
+        ),
+    );
+  };
+  // Containment mirrors the resident client's stdout handler. Frame parsing can
+  // throw (oversized or corrupt length field) and this is an EventEmitter
+  // callback: without the try/catch the throw escapes as an uncaught exception
+  // and takes the daemon down instead of becoming typed uncertainty. Every
+  // non-observation frame is likewise rejected as a typed protocol failure
+  // rather than ignored until the close/timeout deadline.
   child.stdout.on('data', (chunk: Buffer) => {
-    for (const item of parser.push(chunk)) {
-      if (item.kind === OBSERVATION && item.payload.length === 1) result.resolve(item.payload[0]);
-      else if (item.kind === ERROR) result.reject(new ProcessScopeError('process-authority-uncertain', item.payload.toString('utf8').slice(0, 2048)));
+    if (settled) return;
+    try {
+      for (const item of parser.push(chunk)) {
+        if (item.kind === OBSERVATION && item.payload.length === 1) {
+          settled = true;
+          result.resolve(item.payload[0]);
+          return;
+        }
+        if (item.kind === ERROR) {
+          failProbe(new ProcessScopeError(
+            'process-authority-uncertain',
+            item.payload.toString('utf8').slice(0, 2048),
+          ));
+          return;
+        }
+        failProbe(new ProcessScopeError(
+          'process-authority-uncertain',
+          `Unexpected ProcessCapsule probe frame ${item.kind}.`,
+        ));
+        return;
+      }
+    } catch (error) {
+      failProbe(error);
     }
   });
-  child.once('error', result.reject);
+  child.once('error', failProbe);
   child.once('close', (code) => {
-    result.reject(new ProcessScopeError(
+    failProbe(new ProcessScopeError(
       'process-authority-uncertain',
       `ProcessCapsule probe closed before observation (code ${String(code)}).`
     ));
   });
   child.stdin.end(frame(INSPECT, nativeRef(ref)));
   try {
-    const state = await awaitControl(
-      operation === '--inspect' ? 'inspect' : 'terminate',
-      result.promise,
-      timeoutMs,
-    );
+    const state = await awaitControl(phase, result.promise, timeoutMs);
     if (state === 1) return { state: 'live', controllable: true };
     if (state === 2) return { state: 'closed', controllable: false };
     if (state === 3) return { state: 'foreign', controllable: false };
     return { state: 'uncertain', controllable: false, diagnostic: 'native exact observation unavailable' };
   } catch (error) {
-    if (error instanceof ProcessScopeError && error.code === 'process-control-timeout') {
-      child.kill('SIGKILL');
-    }
+    // A probe that timed out or broke the protocol is malfunctioning; it is not
+    // left running to leak a process.
+    child.kill('SIGKILL');
     throw error;
   }
 }

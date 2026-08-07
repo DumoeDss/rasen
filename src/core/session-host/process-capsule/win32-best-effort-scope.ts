@@ -217,20 +217,57 @@ export function createWin32BestEffortProcessScope(
   }
 
   /**
+   * Arms the lost-control latch from a typed control failure. Before activation
+   * the wrapper holds no subscription to the capsule's close signal - the live
+   * `closed` promise only exists once `activate()` has returned - so a
+   * controller that dies during the prepared window is invisible until a control
+   * verb reports it. Arming here closes that window: the first typed loss latches
+   * the scope, and every later verb answers retained uncertainty.
+   */
+  function armTransportLost(state: ScopeState, receipt: TerminationReceipt): void {
+    if (receipt.state === 'uncertain') state.transportLost = true;
+  }
+
+  function armTransportLostFromError(state: ScopeState, error: unknown): void {
+    if (
+      error instanceof ProcessScopeError &&
+      (error.code === 'process-control-lost' ||
+        error.code === 'process-control-timeout' ||
+        error.code === 'process-authority-uncertain')
+    ) {
+      state.transportLost = true;
+    }
+  }
+
+  /**
    * Translate a capsule termination result for a scope this daemon prepared.
    * `outcome` is decided by the scope's own lifecycle, never by the capsule's
    * vocabulary.
+   *
+   * `channelAttributed` states whether the answer provably came from this
+   * daemon's own resident control channel. It is not a convenience flag: the
+   * capsule answers `closed` both from the resident channel and from the
+   * one-shot probe, and a probe answer about an owned ref means control was
+   * lost, so minting a terminal from it would be the clean detach D3 forbids.
+   * `inspect` can distinguish the two structurally (a resident channel never
+   * answers `closed`); `terminate` cannot, so the caller states it.
    */
   function translateTermination(
     state: ScopeState,
-    receipt: TerminationReceipt
+    receipt: TerminationReceipt,
+    channelAttributed: boolean
   ): TerminationReceipt {
     if (!capsuleAcknowledgedEmpty(receipt)) {
       // `retained` means the scope is still live and controllable; it is the
       // capsule's own honest answer and passes through untouched.
       if (receipt.state === 'retained') return receipt;
+      armTransportLost(state, receipt);
       return uncertainReceipt(receipt);
     }
+    // Re-checked AFTER the await, not only before it: the control channel can
+    // die while the cancel is in flight, and the latch is armed by that
+    // rejection rather than by anything this function can see beforehand.
+    if (state.transportLost || !channelAttributed) return LOST_CONTROL_RECEIPT;
     const outcome: DeclaredUnprovenOutcome = state.activated ? 'cancelled' : 'never-activated';
     const unproven = unprovenReceipt(outcome, {
       jobObservedEmpty: state.activated,
@@ -276,7 +313,16 @@ export function createWin32BestEffortProcessScope(
         // workload still does not exist.
         declaration: WIN32_BEST_EFFORT_DECLARATION,
         async activate(): Promise<LiveProcessScope> {
-          const live = await prepared.activate();
+          let live: LiveProcessScope;
+          try {
+            live = await prepared.activate();
+          } catch (error) {
+            // A controller that died during the prepared window surfaces here
+            // first; latch it so no later verb can mint a terminal for a scope
+            // this daemon never got control of.
+            armTransportLostFromError(state, error);
+            throw error;
+          }
           state.activated = true;
           // The capsule's own close signal is a protocol outcome and may mint a
           // terminal. Its rejection is transport loss and must not: the hosted
@@ -312,9 +358,12 @@ export function createWin32BestEffortProcessScope(
           try {
             receipt = await prepared.abort(reason);
           } catch (error) {
+            armTransportLostFromError(state, error);
             return uncertainFromError(error, 'abort');
           }
-          return translateTermination(state, receipt);
+          // Attributable by construction: abort drives the resident control
+          // channel directly, and a dead channel throws rather than answering.
+          return translateTermination(state, receipt, true);
         },
       };
     },
@@ -366,9 +415,15 @@ export function createWin32BestEffortProcessScope(
       try {
         receipt = await capsule.terminate(ref, intent);
       } catch (error) {
+        if (state) armTransportLostFromError(state, error);
         return uncertainFromError(error, 'terminate');
       }
-      return state ? translateTermination(state, receipt) : translateForeignTermination(receipt);
+      if (!state) return translateForeignTermination(receipt);
+      // The capsule marks a cancel it actually drove over the resident channel
+      // as gracefully attempted; its one-shot probe leg never does. For an owned
+      // ref that difference is the attribution: a probe answer means this daemon
+      // had already lost the channel, whatever the Job now looks like.
+      return translateTermination(state, receipt, receipt.gracefulAttempted);
     },
   };
 }
