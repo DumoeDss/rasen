@@ -17,6 +17,7 @@ import {
   createCapabilityCatalogSnapshot,
 } from '../../../src/core/pipeline-registry/index.js';
 import { lowerRuntimePlanInput } from '../../../src/core/change-run/internal/lowerer.js';
+import { createRuntimeExecutionProfile } from '../../../src/core/pipeline-registry/execution-plan-internal.js';
 import { createRuntimePlan } from '../../../src/core/change-run/internal/runtime-plan.js';
 import { projectCompositeBodyProgress, compositeBodyStagePath } from '../../../src/core/change-run/internal/composite-runtime.js';
 import { reconcile } from '../../../src/core/change-run/internal/reconciler.js';
@@ -28,8 +29,14 @@ import type { RuntimePlan } from '../../../src/core/change-run/internal/runtime-
 import type { RunId, Digest } from '../../../src/core/change-run/contracts.js';
 import { semanticCanonicalizeDefinition } from '../../../src/core/pipeline-registry/definition-plan-internal.js';
 import { fixtureRuntimeLoop } from './bounded-loop-fixture.js';
+import { withTestAttestationAuthority } from '../../fixtures/trusted-completion.js';
 
 const branded = <T>(value: string): T => value as T;
+const COMPLETE_EXECUTION = {
+  version: 1,
+  role: 'implementer',
+  workspace: { access: 'write' },
+} as const;
 const sha = (char: string) => {
   // Ensure hex-only characters for valid digests.
   const hex = char.length === 1 && /[0-9a-f]/.test(char) ? char : 'a';
@@ -54,7 +61,7 @@ function prepareDef(def: DefinitionSourceV2): PreparedDefinition {
 }
 
 function makeBindings(paths: string[]) {
-  return paths.map((p) => ({
+  return paths.map((p) => withTestAttestationAuthority({
     nodeId: p,
     authoredCapability: { id: 'skill:test', version: '1' },
     contract: { id: 'test', version: '1', digest: sha('3') },
@@ -82,15 +89,14 @@ function lowerCompositeRefPlan(prepared: PreparedDefinition): RuntimePlan {
   const paths = decl.graph.nodes.map((n) => `declaration:${decl.id}/node:${n.id}`);
   const input = lowerRuntimePlanInput(
     prepared,
-    {
+    createRuntimeExecutionProfile({
       sourceRevision: {
         layer: 'package', kind: 'pipeline-yaml', sourceId: 'test',
         authoredContentDigest: sha('1'), semanticDigest: sha('2'),
       },
       capabilities: makeBindings(paths),
       policy: { format: 'effective-run-policy/1', maxAttempts: 12, maxActions: 64, stages: makePolicyStages(paths) },
-      capabilityProfileDigest: sha('7'), policyDigest: sha('8'), profileDigest: sha('9'),
-    },
+    }),
     fixtureDigests.runId
   );
   return createRuntimePlan(input);
@@ -136,9 +142,9 @@ describe('Group 11: Isomorphism — built-in vs custom fixture pair', () => {
       declarations: [],
       root: {
         nodes: [
-          { id: 'a', kind: 'AtomicStage', capability: { id: 'skill:a', version: '1' } },
-          { id: 'b', kind: 'AtomicStage', capability: { id: 'skill:b', version: '1' } },
-          { id: 'c', kind: 'AtomicStage', capability: { id: 'skill:c', version: '1' } },
+          { id: 'a', kind: 'AtomicStage', capability: { id: 'skill:a', version: '1' }, execution: COMPLETE_EXECUTION },
+          { id: 'b', kind: 'AtomicStage', capability: { id: 'skill:b', version: '1' }, execution: COMPLETE_EXECUTION },
+          { id: 'c', kind: 'AtomicStage', capability: { id: 'skill:c', version: '1' }, execution: COMPLETE_EXECUTION },
           { id: 'finish', kind: 'Finish', outcome: 'done' },
         ],
         connections: [
@@ -160,9 +166,9 @@ describe('Group 11: Isomorphism — built-in vs custom fixture pair', () => {
         inputs: [], artifacts: [], outcomes: ['done'],
         graph: {
           nodes: [
-            { id: 'a', kind: 'AtomicStage', capability: { id: 'skill:a', version: '1' } },
-            { id: 'b', kind: 'AtomicStage', capability: { id: 'skill:b', version: '1' } },
-            { id: 'c', kind: 'AtomicStage', capability: { id: 'skill:c', version: '1' } },
+            { id: 'a', kind: 'AtomicStage', capability: { id: 'skill:a', version: '1' }, execution: COMPLETE_EXECUTION },
+            { id: 'b', kind: 'AtomicStage', capability: { id: 'skill:b', version: '1' }, execution: COMPLETE_EXECUTION },
+            { id: 'c', kind: 'AtomicStage', capability: { id: 'skill:c', version: '1' }, execution: COMPLETE_EXECUTION },
           ],
           connections: [
             { id: 'ab', from: { node: 'a', port: 'done' }, to: { node: 'b', port: 'input' } },
@@ -194,12 +200,11 @@ describe('Group 11: Isomorphism — built-in vs custom fixture pair', () => {
     );
     const builtinInput = lowerRuntimePlanInput(
       builtinPrepared,
-      {
+      createRuntimeExecutionProfile({
         sourceRevision: { layer: 'package', kind: 'pipeline-yaml', sourceId: 'test', authoredContentDigest: sha('1'), semanticDigest: sha('2') },
         capabilities: makeBindings(builtinPrepared.definition.root.nodes.filter((n) => n.kind === 'AtomicStage').map((n) => `root:${n.id}`)),
         policy: { format: 'effective-run-policy/1', maxAttempts: 12, maxActions: 64, stages: makePolicyStages(builtinPrepared.definition.root.nodes.filter((n) => n.kind === 'AtomicStage').map((n) => `root:${n.id}`)) },
-        capabilityProfileDigest: sha('7'), policyDigest: sha('8'), profileDigest: sha('9'),
-      },
+      }),
       fixtureDigests.runId
     );
     const builtinPlan = createRuntimePlan(builtinInput);
@@ -221,12 +226,11 @@ describe('Group 11: Isomorphism — built-in vs custom fixture pair', () => {
 
     const builtinInput = lowerRuntimePlanInput(
       builtinPrepared,
-      {
+      createRuntimeExecutionProfile({
         sourceRevision: { layer: 'package', kind: 'pipeline-yaml', sourceId: 'test', authoredContentDigest: sha('1'), semanticDigest: sha('2') },
         capabilities: makeBindings(builtinPrepared.definition.root.nodes.filter((n) => n.kind === 'AtomicStage').map((n) => `root:${n.id}`)),
         policy: { format: 'effective-run-policy/1', maxAttempts: 12, maxActions: 64, stages: makePolicyStages(builtinPrepared.definition.root.nodes.filter((n) => n.kind === 'AtomicStage').map((n) => `root:${n.id}`)) },
-        capabilityProfileDigest: sha('7'), policyDigest: sha('8'), profileDigest: sha('9'),
-      },
+      }),
       fixtureDigests.runId
     );
     const builtinPlan = createRuntimePlan(builtinInput);
@@ -261,7 +265,7 @@ describe('Group 12: Export/import round-trip — digest stability', () => {
         id: 'comp', kind: 'Composite', provenance: 'custom',
         inputs: [], artifacts: [], outcomes: ['done'],
         graph: {
-          nodes: [{ id: 'a', kind: 'AtomicStage', capability: { id: 'skill:a', version: '1' } }],
+          nodes: [{ id: 'a', kind: 'AtomicStage', capability: { id: 'skill:a', version: '1' }, execution: COMPLETE_EXECUTION }],
           connections: [],
         },
         // Non-semantic metadata that should be stripped.

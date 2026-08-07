@@ -122,8 +122,8 @@ describe('daemon lifecycle (real subprocess, tasks 5.3/5.4/6.3)', () => {
     // Best-effort cleanup even on assertion failure mid-test.
     await runCli(['daemon', 'stop'], baseEnv, projectRoot).catch(() => undefined);
     if (foreignServer) await new Promise<void>((resolve) => foreignServer!.close(() => resolve()));
-    await cleanupTempPathAsync(tempHome);
-    await cleanupTempPathAsync(projectRoot);
+    await cleanupTempPathAsync(tempHome, { maxRetries: 60, retryDelayMs: 250 });
+    await cleanupTempPathAsync(projectRoot, { maxRetries: 60, retryDelayMs: 250 });
   });
 
   it(
@@ -184,7 +184,7 @@ describe('daemon lifecycle (real subprocess, tasks 5.3/5.4/6.3)', () => {
       await new Promise((resolve) => setTimeout(resolve, 300));
       expect(isAlive(sessionPid)).toBe(false);
     },
-    20_000
+    60_000
   );
 
   it(
@@ -199,7 +199,7 @@ describe('daemon lifecycle (real subprocess, tasks 5.3/5.4/6.3)', () => {
       expect(running.code).toBe(0);
       expect(running.stdout).toMatch(/running: rasen daemon/i);
     },
-    20_000
+    60_000
   );
 
   it(

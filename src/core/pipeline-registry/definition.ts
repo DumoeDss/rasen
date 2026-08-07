@@ -1,7 +1,23 @@
-import { PipelineYamlSchema, type PipelineYaml } from './types.js';
+import {
+  AgentRuntimeSchema,
+  AgentRuntimeSandboxSchema,
+  AgentRuntimeSessionReuseSchema,
+  PipelineYamlSchema,
+  StageHandoffConfigSchema,
+  StageRoleSchema,
+  VerifyPolicySchema,
+  type AgentRuntime,
+  type AgentRuntimeSandbox,
+  type AgentRuntimeSessionReuse,
+  type PipelineYaml,
+  type StageHandoffConfig,
+  type StageRole,
+  type VerifyPolicy,
+} from './types.js';
 import { validateLegacyPipelineDefinition } from './legacy-validation.js';
 import { parsePipelineSourceDocument } from './source-document.js';
 import { sealDefinitionPlan } from './definition-plan-internal.js';
+import { stringify as stringifyYaml } from 'yaml';
 
 export const ECP_DEFINITION_VERSION = 2 as const;
 export const CHANGE_RUN_PLAN_VERSION = 1 as const;
@@ -32,6 +48,38 @@ interface DefinitionNodeBase {
 export interface AtomicStageNode extends DefinitionNodeBase {
   kind: 'AtomicStage';
   capability: Readonly<{ id: string; version: string }>;
+  /** Required on authored v2; absent only on v1 compatibility normalization. */
+  execution?: AtomicStageExecutionV1;
+  reviewCyclePhase?: ReviewCyclePhase;
+  goalCyclePhase?: GoalCyclePhase;
+}
+
+export const REVIEW_CYCLE_PHASES = [
+  'review',
+  'triage',
+  'fix',
+  're-review',
+] as const;
+export type ReviewCyclePhase = (typeof REVIEW_CYCLE_PHASES)[number];
+
+export const GOAL_CYCLE_PHASES = ['work', 'judge'] as const;
+export type GoalCyclePhase = (typeof GOAL_CYCLE_PHASES)[number];
+
+export const GOAL_CYCLE_VARIANTS = ['measure', 'evaluate', 'research'] as const;
+export type GoalCycleVariant = (typeof GOAL_CYCLE_VARIANTS)[number];
+
+export interface AtomicStageExecutionV1 {
+  readonly version: 1;
+  readonly role: StageRole;
+  readonly workspace: Readonly<{ access: 'none' | 'read' | 'write' }>;
+  readonly leadReview?: boolean;
+  readonly verifyPolicy?: VerifyPolicy;
+  readonly runtime?: AgentRuntime;
+  readonly model?: string;
+  readonly effort?: string;
+  readonly sandbox?: AgentRuntimeSandbox;
+  readonly sessionReuse?: AgentRuntimeSessionReuse;
+  readonly handoff?: StageHandoffConfig;
 }
 
 export interface CompositeRefNode extends DefinitionNodeBase {
@@ -90,6 +138,7 @@ export interface BoundedLoopNode extends DefinitionNodeBase {
       Readonly<{ action: 'continue' } | { action: 'exit'; outcome: string }>
     >
   >;
+  goalCycleVariant?: GoalCycleVariant;
 }
 
 export interface ChoiceNode extends DefinitionNodeBase {
@@ -100,16 +149,30 @@ export interface ChoiceNode extends DefinitionNodeBase {
 export interface FanOutNode extends DefinitionNodeBase {
   kind: 'FanOut';
   branches: readonly string[];
+  concurrencyCap: number;
+  budget: number;
+  joinNodeId: string;
+  members: readonly Readonly<{
+    id: string;
+    hierarchicalPath: string;
+    required: boolean;
+    condition: string;
+  }>[];
 }
 
 export interface JoinNode extends DefinitionNodeBase {
   kind: 'Join';
   inputs: readonly string[];
+  requiredMembers: readonly string[];
+  optionalMembers: readonly string[];
+  outcomes: Readonly<{ proceed: string; failed: string }>;
 }
 
 export interface GateNode extends DefinitionNodeBase {
   kind: 'Gate';
+  target: string;
   outcomes: readonly string[];
+  dispositions: Readonly<Record<string, 'proceed' | 'fail' | 'escalate'>>;
 }
 
 export interface FinishNode extends DefinitionNodeBase {
@@ -210,7 +273,16 @@ export interface CapabilityDescriptor {
   artifacts: readonly DefinitionArtifact[];
   outcomes: readonly string[];
   limits: Readonly<{ maxActions?: number; budget?: number }>;
+  phaseContracts?: readonly CapabilityPhaseContract[];
 }
+
+export type CapabilityPhaseContract =
+  | 'review-cycle/review'
+  | 'review-cycle/triage'
+  | 'review-cycle/fix'
+  | 'review-cycle/re-review'
+  | 'goal-cycle/work'
+  | 'goal-cycle/judge';
 
 export interface CapabilityCatalogSnapshot {
   readonly version: 1;
@@ -243,6 +315,8 @@ export type DefinitionDiagnosticCode =
   | 'INCOMPLETE_LIFECYCLE_EXITS'
   | 'STRATEGY_CAPABILITY_REQUIRED'
   | 'STRATEGY_CAPABILITY_FORBIDDEN'
+  | 'INVALID_EXECUTION_DECLARATION'
+  | 'INVALID_LOWERING_METADATA'
   | 'CAPABILITY_MISSING'
   | 'CAPABILITY_DISABLED'
   | 'CAPABILITY_FORBIDDEN'
@@ -385,6 +459,9 @@ export function createCapabilityCatalogSnapshot(
       artifacts: [...descriptor.artifacts],
       outcomes: [...descriptor.outcomes],
       limits: { ...descriptor.limits },
+      ...(descriptor.phaseContracts === undefined
+        ? {}
+        : { phaseContracts: [...descriptor.phaseContracts].sort(compareCanonicalStrings) }),
     }))
     .sort((left, right) =>
       compareCanonicalStrings(
@@ -422,8 +499,32 @@ export function createProductionCapabilityCatalogSnapshot(
       artifacts: [],
       outcomes: ['done'],
       limits: {},
+      ...productionPhaseContracts(definition.skill.template.name),
     }))
   );
+}
+
+function productionPhaseContracts(
+  skillName: string
+): Pick<CapabilityDescriptor, 'phaseContracts'> | Record<string, never> {
+  switch (skillName) {
+    case 'rasen-review':
+      return {
+        phaseContracts: [
+          'review-cycle/review',
+          'review-cycle/triage',
+          'review-cycle/re-review',
+        ],
+      };
+    case 'rasen-review-fix':
+      return { phaseContracts: ['review-cycle/fix'] };
+    case 'rasen-goal-iterate':
+      return { phaseContracts: ['goal-cycle/work'] };
+    case 'rasen-goal-judge':
+      return { phaseContracts: ['goal-cycle/judge'] };
+    default:
+      return {};
+  }
 }
 
 function diagnostic(
@@ -898,6 +999,258 @@ function readEndpoint(
   readRequiredString(value.port, `${path}/port`, `${label} port`, diagnostics);
 }
 
+const ATOMIC_EXECUTION_KEYS = new Set([
+  'version',
+  'role',
+  'workspace',
+  'leadReview',
+  'verifyPolicy',
+  'runtime',
+  'model',
+  'effort',
+  'sandbox',
+  'sessionReuse',
+  'handoff',
+]);
+
+function executionDiagnostic(
+  diagnostics: DefinitionDiagnostic[],
+  path: string,
+  message: string
+): void {
+  diagnostics.push(
+    diagnostic('INVALID_EXECUTION_DECLARATION', path, message)
+  );
+}
+
+function readAtomicStageExecution(
+  value: unknown,
+  path: string,
+  diagnostics: DefinitionDiagnostic[]
+): void {
+  if (!isObject(value)) {
+    executionDiagnostic(
+      diagnostics,
+      path,
+      'Authored Definition v2 AtomicStage execution must be a complete version 1 object.'
+    );
+    return;
+  }
+  for (const key of Object.keys(value).sort(compareCanonicalStrings)) {
+    if (!ATOMIC_EXECUTION_KEYS.has(key)) {
+      executionDiagnostic(
+        diagnostics,
+        `${path}/${pointerSegment(key)}`,
+        `Unknown AtomicStage execution field '${key}'.`
+      );
+    }
+  }
+  if (value.version !== 1) {
+    executionDiagnostic(
+      diagnostics,
+      `${path}/version`,
+      'AtomicStage execution version must be 1.'
+    );
+  }
+  if (!StageRoleSchema.safeParse(value.role).success) {
+    executionDiagnostic(
+      diagnostics,
+      `${path}/role`,
+      `AtomicStage execution role must be one of ${StageRoleSchema.options.join(', ')}.`
+    );
+  }
+  if (!isObject(value.workspace)) {
+    executionDiagnostic(
+      diagnostics,
+      `${path}/workspace`,
+      'AtomicStage execution workspace must be an object.'
+    );
+  } else {
+    for (const key of Object.keys(value.workspace).sort(compareCanonicalStrings)) {
+      if (key !== 'access') {
+        executionDiagnostic(
+          diagnostics,
+          `${path}/workspace/${pointerSegment(key)}`,
+          `Unknown AtomicStage workspace field '${key}'.`
+        );
+      }
+    }
+    if (!['none', 'read', 'write'].includes(String(value.workspace.access))) {
+      executionDiagnostic(
+        diagnostics,
+        `${path}/workspace/access`,
+        'AtomicStage workspace access must be one of none, read, write.'
+      );
+    }
+  }
+  if (value.leadReview !== undefined && typeof value.leadReview !== 'boolean') {
+    executionDiagnostic(
+      diagnostics,
+      `${path}/leadReview`,
+      'AtomicStage execution leadReview must be a boolean.'
+    );
+  }
+  const enumFields = [
+    ['verifyPolicy', VerifyPolicySchema],
+    ['runtime', AgentRuntimeSchema],
+    ['sandbox', AgentRuntimeSandboxSchema],
+    ['sessionReuse', AgentRuntimeSessionReuseSchema],
+  ] as const;
+  for (const [key, schema] of enumFields) {
+    if (value[key] !== undefined && !schema.safeParse(value[key]).success) {
+      executionDiagnostic(
+        diagnostics,
+        `${path}/${key}`,
+        `AtomicStage execution ${key} is outside the supported registry vocabulary.`
+      );
+    }
+  }
+  for (const key of ['model', 'effort'] as const) {
+    if (
+      value[key] !== undefined &&
+      (typeof value[key] !== 'string' || value[key].trim().length === 0)
+    ) {
+      executionDiagnostic(
+        diagnostics,
+        `${path}/${key}`,
+        `AtomicStage execution ${key} must be a non-empty string.`
+      );
+    }
+  }
+  if (value.handoff !== undefined) {
+    if (isObject(value.handoff)) {
+      const allowed = new Set(['threshold', 'maxRelays', 'stallLimit']);
+      for (const key of Object.keys(value.handoff).sort(compareCanonicalStrings)) {
+        if (!allowed.has(key)) {
+          executionDiagnostic(
+            diagnostics,
+            `${path}/handoff/${pointerSegment(key)}`,
+            `Unknown AtomicStage handoff field '${key}'.`
+          );
+        }
+      }
+    }
+    const parsed = StageHandoffConfigSchema.safeParse(value.handoff);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        if (issue.code === 'unrecognized_keys') continue;
+        const suffix = issue.path
+          .map((segment) => pointerSegment(String(segment)))
+          .join('/');
+        executionDiagnostic(
+          diagnostics,
+          `${path}/handoff${suffix.length > 0 ? `/${suffix}` : ''}`,
+          issue.message
+        );
+      }
+    }
+  }
+}
+
+function loweringMetadataDiagnostic(
+  diagnostics: DefinitionDiagnostic[],
+  path: string,
+  message: string
+): void {
+  diagnostics.push(
+    diagnostic('INVALID_LOWERING_METADATA', path, message)
+  );
+}
+
+function readPositiveIntegerMetadata(
+  value: unknown,
+  path: string,
+  label: string,
+  diagnostics: DefinitionDiagnostic[]
+): void {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+    loweringMetadataDiagnostic(
+      diagnostics,
+      path,
+      `${label} must be a positive safe integer.`
+    );
+  }
+}
+
+function readParallelMemberList(
+  value: unknown,
+  path: string,
+  diagnostics: DefinitionDiagnostic[]
+): void {
+  if (!Array.isArray(value) || value.length === 0) {
+    loweringMetadataDiagnostic(
+      diagnostics,
+      path,
+      'FanOut members must be a non-empty array.'
+    );
+    return;
+  }
+  for (const [index, member] of value.entries()) {
+    const memberPath = `${path}/${index}`;
+    if (!isObject(member)) {
+      loweringMetadataDiagnostic(
+        diagnostics,
+        memberPath,
+        'FanOut member metadata must be an object.'
+      );
+      continue;
+    }
+    readRequiredString(
+      member.id,
+      `${memberPath}/id`,
+      'FanOut member id',
+      diagnostics
+    );
+    readRequiredString(
+      member.hierarchicalPath,
+      `${memberPath}/hierarchicalPath`,
+      'FanOut member hierarchicalPath',
+      diagnostics
+    );
+    if (typeof member.required !== 'boolean') {
+      loweringMetadataDiagnostic(
+        diagnostics,
+        `${memberPath}/required`,
+        'FanOut member required must be a boolean.'
+      );
+    }
+    if (typeof member.condition !== 'string' || member.condition.trim().length === 0) {
+      loweringMetadataDiagnostic(
+        diagnostics,
+        `${memberPath}/condition`,
+        'FanOut member condition must be a non-empty string.'
+      );
+    }
+  }
+}
+
+function readJoinOutcomes(
+  value: unknown,
+  path: string,
+  diagnostics: DefinitionDiagnostic[]
+): void {
+  if (!isObject(value)) {
+    loweringMetadataDiagnostic(
+      diagnostics,
+      path,
+      'Join outcomes must declare proceed and failed.'
+    );
+    return;
+  }
+  readRequiredString(
+    value.proceed,
+    `${path}/proceed`,
+    'Join proceed outcome',
+    diagnostics
+  );
+  readRequiredString(
+    value.failed,
+    `${path}/failed`,
+    'Join failed outcome',
+    diagnostics
+  );
+}
+
 function readDefinitionNode(
   value: unknown,
   path: string,
@@ -933,6 +1286,39 @@ function readDefinitionNode(
 
   switch (value.kind as EcpNodeKind) {
     case 'AtomicStage': {
+      readAtomicStageExecution(value.execution, `${path}/execution`, diagnostics);
+      if (
+        value.reviewCyclePhase !== undefined &&
+        (!(typeof value.reviewCyclePhase === 'string') ||
+          !(REVIEW_CYCLE_PHASES as readonly string[]).includes(value.reviewCyclePhase))
+      ) {
+        loweringMetadataDiagnostic(
+          diagnostics,
+          `${path}/reviewCyclePhase`,
+          `reviewCyclePhase must be one of ${REVIEW_CYCLE_PHASES.join(', ')}.`
+        );
+      }
+      if (
+        value.goalCyclePhase !== undefined &&
+        (!(typeof value.goalCyclePhase === 'string') ||
+          !(GOAL_CYCLE_PHASES as readonly string[]).includes(value.goalCyclePhase))
+      ) {
+        loweringMetadataDiagnostic(
+          diagnostics,
+          `${path}/goalCyclePhase`,
+          `goalCyclePhase must be one of ${GOAL_CYCLE_PHASES.join(', ')}.`
+        );
+      }
+      if (
+        value.reviewCyclePhase !== undefined &&
+        value.goalCyclePhase !== undefined
+      ) {
+        loweringMetadataDiagnostic(
+          diagnostics,
+          `${path}/goalCyclePhase`,
+          'An AtomicStage cannot be both a ReviewCycle and GoalLoop phase.'
+        );
+      }
       if (!isObject(value.capability)) {
         diagnostics.push(
           diagnostic(
@@ -969,6 +1355,17 @@ function readDefinitionNode(
       readRequiredString(value.body, `${path}/body`, 'BoundedLoop body', diagnostics);
       readLimits(value.limits, `${path}/limits`, diagnostics, true);
       readBoundedLoopLifecycle(value.lifecycle, `${path}/lifecycle`, diagnostics);
+      if (
+        value.goalCycleVariant !== undefined &&
+        (!(typeof value.goalCycleVariant === 'string') ||
+          !(GOAL_CYCLE_VARIANTS as readonly string[]).includes(value.goalCycleVariant))
+      ) {
+        loweringMetadataDiagnostic(
+          diagnostics,
+          `${path}/goalCycleVariant`,
+          `goalCycleVariant must be one of ${GOAL_CYCLE_VARIANTS.join(', ')}.`
+        );
+      }
       if (!isObject(value.exits)) {
         diagnostics.push(
           diagnostic(
@@ -1021,14 +1418,112 @@ function readDefinitionNode(
       break;
     }
     case 'Choice':
-    case 'Gate':
       readStringList(value.outcomes, `${path}/outcomes`, `${value.kind} outcomes`, diagnostics);
       break;
+    case 'Gate': {
+      readRequiredString(value.target, `${path}/target`, 'Gate target', diagnostics);
+      readStringList(
+        value.outcomes,
+        `${path}/outcomes`,
+        'Gate outcomes',
+        diagnostics
+      );
+      if (!isObject(value.dispositions)) {
+        loweringMetadataDiagnostic(
+          diagnostics,
+          `${path}/dispositions`,
+          'Gate dispositions must map every outcome to proceed, fail, or escalate.'
+        );
+        break;
+      }
+      const outcomes = Array.isArray(value.outcomes)
+        ? value.outcomes.filter((outcome): outcome is string => typeof outcome === 'string')
+        : [];
+      const outcomeSet = new Set(outcomes);
+      for (const key of Object.keys(value.dispositions).sort(compareCanonicalStrings)) {
+        if (!outcomeSet.has(key)) {
+          loweringMetadataDiagnostic(
+            diagnostics,
+            `${path}/dispositions/${pointerSegment(key)}`,
+            `Gate disposition '${key}' has no matching authored outcome.`
+          );
+        }
+        if (!['proceed', 'fail', 'escalate'].includes(String(value.dispositions[key]))) {
+          loweringMetadataDiagnostic(
+            diagnostics,
+            `${path}/dispositions/${pointerSegment(key)}`,
+            'Gate disposition must be proceed, fail, or escalate.'
+          );
+        }
+      }
+      for (const [index, outcome] of outcomes.entries()) {
+        if (!(outcome in value.dispositions)) {
+          loweringMetadataDiagnostic(
+            diagnostics,
+            `${path}/outcomes/${index}`,
+            `Gate outcome '${outcome}' is missing a disposition.`
+          );
+        }
+      }
+      break;
+    }
     case 'FanOut':
       readStringList(value.branches, `${path}/branches`, 'FanOut branches', diagnostics);
+      readPositiveIntegerMetadata(
+        value.concurrencyCap,
+        `${path}/concurrencyCap`,
+        'FanOut concurrencyCap',
+        diagnostics
+      );
+      readPositiveIntegerMetadata(
+        value.budget,
+        `${path}/budget`,
+        'FanOut budget',
+        diagnostics
+      );
+      if (
+        typeof value.joinNodeId !== 'string' ||
+        value.joinNodeId.trim().length === 0
+      ) {
+        loweringMetadataDiagnostic(
+          diagnostics,
+          `${path}/joinNodeId`,
+          'FanOut joinNodeId must be a non-empty string.'
+        );
+      }
+      readParallelMemberList(value.members, `${path}/members`, diagnostics);
       break;
     case 'Join':
       readStringList(value.inputs, `${path}/inputs`, 'Join inputs', diagnostics);
+      if (!Array.isArray(value.requiredMembers)) {
+        loweringMetadataDiagnostic(
+          diagnostics,
+          `${path}/requiredMembers`,
+          'Join requiredMembers must be an array.'
+        );
+      } else {
+        readStringList(
+          value.requiredMembers,
+          `${path}/requiredMembers`,
+          'Join requiredMembers',
+          diagnostics
+        );
+      }
+      if (!Array.isArray(value.optionalMembers)) {
+        loweringMetadataDiagnostic(
+          diagnostics,
+          `${path}/optionalMembers`,
+          'Join optionalMembers must be an array.'
+        );
+      } else {
+        readStringList(
+          value.optionalMembers,
+          `${path}/optionalMembers`,
+          'Join optionalMembers',
+          diagnostics
+        );
+      }
+      readJoinOutcomes(value.outcomes, `${path}/outcomes`, diagnostics);
       break;
     case 'Finish':
       readRequiredString(value.outcome, `${path}/outcome`, 'Finish outcome', diagnostics);
@@ -1259,11 +1754,16 @@ function normalizeDefinitionNode(node: DefinitionNode): DefinitionNode {
       return {
         ...normalized,
         branches: [...normalized.branches].sort(compareCanonicalStrings),
+        members: [...normalized.members]
+          .map((member) => structuredClone(member))
+          .sort((left, right) => compareCanonicalStrings(left.id, right.id)),
       };
     case 'Join':
       return {
         ...normalized,
         inputs: [...normalized.inputs].sort(compareCanonicalStrings),
+        requiredMembers: [...normalized.requiredMembers].sort(compareCanonicalStrings),
+        optionalMembers: [...normalized.optionalMembers].sort(compareCanonicalStrings),
       };
     default:
       return normalized;
@@ -1299,6 +1799,111 @@ function normalizeV2Definition(definition: DefinitionSourceV2): DefinitionSource
       .sort((left, right) => compareCanonicalStrings(left.id, right.id)),
     root: normalizeDefinitionGraph(definition.root),
   };
+}
+
+const AUTHORED_V2_KEY_ORDER = [
+  'version',
+  'id',
+  'sourceId',
+  'name',
+  'description',
+  'kind',
+  'target',
+  'provenance',
+  'capability',
+  'execution',
+  'inputs',
+  'artifacts',
+  'outcomes',
+  'dispositions',
+  'declarations',
+  'root',
+  'graph',
+  'nodes',
+  'connections',
+  'from',
+  'to',
+  'node',
+  'port',
+  'body',
+  'limits',
+  'lifecycle',
+  'exits',
+] as const;
+
+const authoredV2KeyOrder = new Map<string, number>(
+  AUTHORED_V2_KEY_ORDER.map((key, index) => [key, index])
+);
+
+function compareAuthoredV2Keys(left: string, right: string): number {
+  const leftOrder = authoredV2KeyOrder.get(left);
+  const rightOrder = authoredV2KeyOrder.get(right);
+  if (leftOrder !== undefined || rightOrder !== undefined) {
+    if (leftOrder === undefined) return 1;
+    if (rightOrder === undefined) return -1;
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+  }
+  return compareCanonicalStrings(left, right);
+}
+
+function orderAuthoredV2ObjectKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(orderAuthoredV2ObjectKeys);
+  }
+  if (!isObject(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort(compareAuthoredV2Keys)
+      .map((key) => [key, orderAuthoredV2ObjectKeys(value[key])])
+  );
+}
+
+/**
+ * Creates the intentionally empty Definition v2 envelope used by every new
+ * public authoring flow. `source` is a stable source namespace (for example
+ * `pipeline-init` or `canvas`) rather than a filesystem path.
+ */
+export function createBlankPipelineDefinitionV2(
+  name: string,
+  source: string
+): DefinitionSourceV2 {
+  return {
+    version: ECP_DEFINITION_VERSION,
+    id: `pipeline:${name}`,
+    sourceId: `${source}:${name}`,
+    name,
+    inputs: [],
+    artifacts: [],
+    outcomes: [],
+    declarations: [],
+    root: { nodes: [], connections: [] },
+  };
+}
+
+/**
+ * Canonical authored-v2 writer. It canonicalizes only fields whose order is
+ * semantically unordered in the Definition contract, retains unknown authored
+ * fields, recursively stabilizes object-key order, and always emits UTF-8-safe
+ * LF text with one final newline. Authored v1 sources deliberately continue to
+ * use their compatibility serializer at the caller boundary.
+ */
+export function serializeAuthoredPipelineDefinition(
+  source: PreparedDefinition | DefinitionSourceV2
+): string {
+  const authored = 'authoredVersion' in source
+    ? source.authoredVersion === ECP_DEFINITION_VERSION
+      ? source.authoredSource as DefinitionSourceV2
+      : (() => {
+          throw new TypeError(
+            'serializeAuthoredPipelineDefinition accepts authored Definition v2 only.'
+          );
+        })()
+    : source;
+  const normalized = normalizeV2Definition(authored);
+  const serialized = stringifyYaml(orderAuthoredV2ObjectKeys(normalized), {
+    lineWidth: 0,
+  }).replace(/\r\n?/gu, '\n');
+  return serialized.endsWith('\n') ? serialized : `${serialized}\n`;
 }
 
 function validateCompositeRecursion(
@@ -1430,6 +2035,18 @@ function validateIdentitiesAndReferences(
             'UNKNOWN_REFERENCE',
             `${path}/nodes/${index}/body`,
             `BoundedLoop body declaration '${node.body}' does not exist.`
+          )
+        );
+      }
+      if (
+        node.kind === 'Gate' &&
+        !graph.nodes.some((candidate) => candidate.id === node.target)
+      ) {
+        diagnostics.push(
+          diagnostic(
+            'UNKNOWN_REFERENCE',
+            `${path}/nodes/${index}/target`,
+            `Gate target '${node.target}' does not exist in the same graph.`
           )
         );
       }
@@ -1596,20 +2213,6 @@ function validateLoopsAndLimits(
         `${loopPath}/limits/budget`,
         'BoundedLoop budget'
       );
-      if (
-        typeof node.limits.maxActions === 'number' &&
-        typeof node.limits.budget === 'number' &&
-        node.limits.budget < node.limits.maxActions
-      ) {
-        diagnostics.push(
-          diagnostic(
-            'IMPOSSIBLE_BUDGET',
-            `${loopPath}/limits/budget`,
-            `Loop budget ${node.limits.budget} cannot admit maxActions ${node.limits.maxActions}.`
-          )
-        );
-      }
-
       const lifecycle = node.lifecycle;
       addPositiveLimitDiagnostic(
         lifecycle.thresholds.stallIterations,
@@ -1852,6 +2455,277 @@ function validateCapabilities(
   return diagnostics;
 }
 
+function validateLoweringMetadata(
+  definition: DefinitionSourceV2,
+  catalog: CapabilityCatalogSnapshot
+): DefinitionDiagnostic[] {
+  const diagnostics: DefinitionDiagnostic[] = [];
+  const declarations = new Map(
+    definition.declarations.map((declaration, index) => [
+      declaration.id,
+      { declaration, index },
+    ])
+  );
+  const graphEntries = [
+    { graph: definition.root, path: '/root' },
+    ...definition.declarations.map((declaration, index) => ({
+      graph: declaration.graph,
+      path: `/declarations/${index}/graph`,
+    })),
+  ];
+
+  for (const { graph, path } of graphEntries) {
+    const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+    const gateByTarget = new Map<string, number>();
+    for (const [nodeIndex, node] of graph.nodes.entries()) {
+      const nodePath = `${path}/nodes/${nodeIndex}`;
+      if (node.kind === 'Gate') {
+        const target = nodeById.get(node.target);
+        if (target !== undefined && target.kind !== 'AtomicStage') {
+          loweringMetadataDiagnostic(
+            diagnostics,
+            `${nodePath}/target`,
+            `Gate target '${node.target}' must reference an AtomicStage in the same graph.`
+          );
+        }
+        const firstGateIndex = gateByTarget.get(node.target);
+        if (firstGateIndex !== undefined) {
+          loweringMetadataDiagnostic(
+            diagnostics,
+            `${nodePath}/target`,
+            `AtomicStage '${node.target}' is already governed by Gate '${graph.nodes[firstGateIndex]!.id}'.`
+          );
+        } else {
+          gateByTarget.set(node.target, nodeIndex);
+        }
+      }
+      if (node.kind === 'FanOut') {
+        const seenMembers = new Set<string>();
+        const memberIds = new Set<string>();
+        const requiredCount = node.members.filter((member) => member.required).length;
+        for (const [memberIndex, member] of node.members.entries()) {
+          const memberPath = `${nodePath}/members/${memberIndex}`;
+          if (seenMembers.has(member.id)) {
+            loweringMetadataDiagnostic(
+              diagnostics,
+              `${memberPath}/id`,
+              `FanOut member id '${member.id}' is duplicated.`
+            );
+          }
+          seenMembers.add(member.id);
+          memberIds.add(member.id);
+          if (!nodeById.has(member.hierarchicalPath)) {
+            loweringMetadataDiagnostic(
+              diagnostics,
+              `${memberPath}/hierarchicalPath`,
+              `FanOut member path '${member.hierarchicalPath}' does not name a node in this graph.`
+            );
+          }
+        }
+        for (const [branchIndex, branch] of node.branches.entries()) {
+          if (!memberIds.has(branch)) {
+            loweringMetadataDiagnostic(
+              diagnostics,
+              `${nodePath}/branches/${branchIndex}`,
+              `FanOut branch '${branch}' has no matching member metadata.`
+            );
+          }
+        }
+        if (node.members.some((member) => !node.branches.includes(member.id))) {
+          loweringMetadataDiagnostic(
+            diagnostics,
+            `${nodePath}/members`,
+            'Every FanOut member id must appear exactly once in branches.'
+          );
+        }
+        if (node.concurrencyCap > node.members.length) {
+          loweringMetadataDiagnostic(
+            diagnostics,
+            `${nodePath}/concurrencyCap`,
+            'FanOut concurrencyCap cannot exceed its member count.'
+          );
+        }
+        if (node.budget < requiredCount || node.budget > node.members.length) {
+          loweringMetadataDiagnostic(
+            diagnostics,
+            `${nodePath}/budget`,
+            'FanOut budget must admit every required member and cannot exceed member count.'
+          );
+        }
+        const join = nodeById.get(node.joinNodeId);
+        if (join?.kind !== 'Join') {
+          loweringMetadataDiagnostic(
+            diagnostics,
+            `${nodePath}/joinNodeId`,
+            `FanOut joinNodeId '${node.joinNodeId}' must reference a Join in the same graph.`
+          );
+        } else {
+          const expectedInputs = [...node.members]
+            .map((member) => member.hierarchicalPath)
+            .sort(compareCanonicalStrings);
+          const actualInputs = [...join.inputs].sort(compareCanonicalStrings);
+          if (JSON.stringify(expectedInputs) !== JSON.stringify(actualInputs)) {
+            loweringMetadataDiagnostic(
+              diagnostics,
+              `${nodePath}/joinNodeId`,
+              `FanOut members must exactly match Join '${join.id}' inputs.`
+            );
+          }
+        }
+      }
+      if (node.kind === 'Join') {
+        const required = new Set<string>();
+        for (const [index, member] of node.requiredMembers.entries()) {
+          if (required.has(member)) {
+            loweringMetadataDiagnostic(
+              diagnostics,
+              `${nodePath}/requiredMembers/${index}`,
+              `Required Join member '${member}' is duplicated.`
+            );
+          }
+          required.add(member);
+        }
+        const optional = new Set<string>();
+        for (const [index, member] of node.optionalMembers.entries()) {
+          if (required.has(member) || optional.has(member)) {
+            loweringMetadataDiagnostic(
+              diagnostics,
+              `${nodePath}/optionalMembers/${index}`,
+              `Optional Join member '${member}' conflicts with another membership entry.`
+            );
+          }
+          optional.add(member);
+        }
+        const partition = [...required, ...optional].sort(compareCanonicalStrings);
+        const inputs = [...node.inputs].sort(compareCanonicalStrings);
+        if (JSON.stringify(partition) !== JSON.stringify(inputs)) {
+          loweringMetadataDiagnostic(
+            diagnostics,
+            `${nodePath}/inputs`,
+            'Join requiredMembers and optionalMembers must partition inputs exactly.'
+          );
+        }
+        if (node.outcomes.proceed === node.outcomes.failed) {
+          loweringMetadataDiagnostic(
+            diagnostics,
+            `${nodePath}/outcomes/failed`,
+            'Join proceed and failed outcomes must be distinct.'
+          );
+        }
+      }
+      if (node.kind !== 'BoundedLoop') continue;
+      const bodyEntry = declarations.get(node.body);
+      if (!bodyEntry) continue;
+      const reviewPhases = bodyEntry.declaration.graph.nodes
+        .filter((candidate): candidate is AtomicStageNode => candidate.kind === 'AtomicStage')
+        .map((candidate) => candidate.reviewCyclePhase)
+        .filter((phase): phase is ReviewCyclePhase => phase !== undefined);
+      const goalPhases = bodyEntry.declaration.graph.nodes
+        .filter((candidate): candidate is AtomicStageNode => candidate.kind === 'AtomicStage')
+        .map((candidate) => candidate.goalCyclePhase)
+        .filter((phase): phase is GoalCyclePhase => phase !== undefined);
+      const declarationPath = `/declarations/${bodyEntry.index}/graph/nodes`;
+      if (reviewPhases.length > 0) {
+        const actual = [...reviewPhases].sort(compareCanonicalStrings);
+        const expected = [...REVIEW_CYCLE_PHASES].sort(compareCanonicalStrings);
+        if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+          loweringMetadataDiagnostic(
+            diagnostics,
+            declarationPath,
+            'ReviewCycle bodies must declare review, triage, fix, and re-review exactly once.'
+          );
+        }
+        if (node.goalCycleVariant !== undefined || goalPhases.length > 0) {
+          loweringMetadataDiagnostic(
+            diagnostics,
+            `${nodePath}/goalCycleVariant`,
+            'A ReviewCycle body cannot also declare GoalLoop metadata.'
+          );
+        }
+      }
+      if (goalPhases.length > 0 || node.goalCycleVariant !== undefined) {
+        const actual = [...goalPhases].sort(compareCanonicalStrings);
+        const expected = [...GOAL_CYCLE_PHASES].sort(compareCanonicalStrings);
+        if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+          loweringMetadataDiagnostic(
+            diagnostics,
+            declarationPath,
+            'GoalLoop bodies must declare work and judge exactly once.'
+          );
+        }
+        if (node.goalCycleVariant === undefined) {
+          loweringMetadataDiagnostic(
+            diagnostics,
+            `${nodePath}/goalCycleVariant`,
+            'A GoalLoop BoundedLoop must declare goalCycleVariant.'
+          );
+        }
+      }
+      if (reviewPhases.length > 0 || goalPhases.length > 0) {
+        validatePhaseCapabilityContracts(
+          bodyEntry.declaration,
+          declarationPath,
+          catalog,
+          diagnostics
+        );
+      }
+    }
+  }
+  return diagnostics;
+}
+
+function validatePhaseCapabilityContracts(
+  declaration: CompositeDeclaration,
+  nodesPath: string,
+  catalog: CapabilityCatalogSnapshot,
+  diagnostics: DefinitionDiagnostic[]
+): void {
+  for (const [nodeIndex, node] of declaration.graph.nodes.entries()) {
+    if (node.kind !== 'AtomicStage') continue;
+    const required = node.reviewCyclePhase !== undefined
+      ? `review-cycle/${node.reviewCyclePhase}` as CapabilityPhaseContract
+      : node.goalCyclePhase !== undefined
+        ? `goal-cycle/${node.goalCyclePhase}` as CapabilityPhaseContract
+        : undefined;
+    if (required === undefined) continue;
+    const descriptor = catalog.descriptors.find(
+      (candidate) =>
+        candidate.id === node.capability.id &&
+        candidate.version === node.capability.version
+    );
+    if (descriptor !== undefined && !descriptor.phaseContracts?.includes(required)) {
+      loweringMetadataDiagnostic(
+        diagnostics,
+        `${nodesPath}/${nodeIndex}/capability`,
+        `Capability '${node.capability.id}' does not advertise the required '${required}' phase contract.`
+      );
+    }
+    const execution = node.execution;
+    if (execution === undefined) continue;
+    const needsWrite = required === 'review-cycle/fix' || required === 'goal-cycle/work';
+    const expectedRoles: readonly StageRole[] = required === 'review-cycle/fix'
+      ? ['fixer', 'implementer']
+      : required === 'goal-cycle/work'
+        ? ['implementer']
+        : ['reviewer'];
+    if (!expectedRoles.includes(execution.role)) {
+      loweringMetadataDiagnostic(
+        diagnostics,
+        `${nodesPath}/${nodeIndex}/execution/role`,
+        `Phase '${required}' requires role ${expectedRoles.join(' or ')}.`
+      );
+    }
+    const expectedAccess = needsWrite ? 'write' : 'read';
+    if (execution.workspace.access !== expectedAccess) {
+      loweringMetadataDiagnostic(
+        diagnostics,
+        `${nodesPath}/${nodeIndex}/execution/workspace/access`,
+        `Phase '${required}' requires ${expectedAccess} workspace access.`
+      );
+    }
+  }
+}
+
 const CONTROL_PORT_TYPE = 'ecp/control';
 const CONTROL_INPUT_PORTS = ['input', 'in', 'start'] as const;
 
@@ -1872,6 +2746,26 @@ function controlInputs(): Map<string, string> {
 
 function outcomeOutputs(outcomes: readonly string[]): Map<string, string> {
   return new Map(outcomes.map((outcome) => [outcome, CONTROL_PORT_TYPE]));
+}
+
+/**
+ * Loop phase tags project each phase-specific capability's ordinary `done`
+ * outcome into the closed control ports consumed by ReviewCycle/GoalLoop.
+ * Capability descriptors independently authorize exact phase semantics; this
+ * projection does not make one capability interchangeable across phases.
+ */
+function loopPhaseOutcomeNames(node: AtomicStageNode): readonly string[] | undefined {
+  switch (node.reviewCyclePhase) {
+    case 'review': return ['findings'];
+    case 'triage': return ['ready'];
+    case 'fix': return ['fixed'];
+    case 're-review': return ['clean', 'needs_fix'];
+  }
+  switch (node.goalCyclePhase) {
+    case 'work': return ['ready'];
+    case 'judge': return ['clean', 'needs_fix'];
+  }
+  return undefined;
 }
 
 /**
@@ -1910,13 +2804,14 @@ function contractForNode(
       // typed inputs keeps exactly its declared ports, so widening here cannot
       // loosen validation for typed capabilities when they arrive.
       const declaredInputs = descriptor ? portMap(descriptor.inputs) : new Map();
+      const phaseOutcomes = loopPhaseOutcomeNames(node);
       return {
         inputs:
           descriptor && declaredInputs.size === 0 ? controlInputs() : declaredInputs,
         outputs: descriptor
           ? new Map([
               ...portMap(descriptor.artifacts),
-              ...outcomeOutputs(descriptor.outcomes),
+              ...outcomeOutputs(phaseOutcomes ?? descriptor.outcomes),
             ])
           : new Map(),
       };
@@ -1967,7 +2862,10 @@ function contractForNode(
         inputs: new Map(
           node.inputs.map((input) => [input, CONTROL_PORT_TYPE])
         ),
-        outputs: outcomeOutputs(['done']),
+        outputs: outcomeOutputs([
+          node.outcomes.proceed,
+          node.outcomes.failed,
+        ]),
       };
     case 'Finish':
       return {
@@ -2330,15 +3228,25 @@ function relevantCapabilityDescriptors(
  * AtomicStage-only bodies (composite body kind).
  */
 function supportsV2ExecutableRuntime(
-  definition: DefinitionSourceV2
+  definition: DefinitionSourceV2,
+  authoredVersion: 1 | 2
 ): boolean {
-  let compositeOrLoop = 0;
+  const hasFinish = definition.root.nodes.some((node) => node.kind === 'Finish');
+  let hasExecutableNode = false;
+  let hasCompositeOrLoop = false;
   for (const node of definition.root.nodes) {
     if (node.kind === 'Finish') continue;
-    if (node.kind === 'AtomicStage') continue;
+    if (node.kind === 'AtomicStage') {
+      hasExecutableNode = true;
+      continue;
+    }
     if (node.kind === 'Gate') continue;
     if (node.kind === 'Choice') continue;
-    if (node.kind === 'FanOut') { compositeOrLoop += 1; continue; }
+    if (node.kind === 'FanOut') {
+      hasExecutableNode = true;
+      hasCompositeOrLoop = true;
+      continue;
+    }
     if (node.kind === 'Join') continue;
     if (node.kind === 'CompositeRef') {
       // A CompositeRef is executable if its declaration body contains only
@@ -2351,11 +3259,13 @@ function supportsV2ExecutableRuntime(
         (bodyNode) => bodyNode.kind !== 'AtomicStage'
       );
       if (hasNonAtomic) return false;
-      compositeOrLoop += 1;
+      hasExecutableNode = true;
+      hasCompositeOrLoop = true;
       continue;
     }
     if (node.kind !== 'BoundedLoop') return false;
-    compositeOrLoop += 1;
+    hasExecutableNode = true;
+    hasCompositeOrLoop = true;
     const declaration = definition.declarations.find(
       (candidate) => candidate.id === node.body
     );
@@ -2367,7 +3277,7 @@ function supportsV2ExecutableRuntime(
           ? bodyNode.reviewCyclePhase
           : undefined
       )
-      .filter((phase): phase is string => typeof phase === 'string')
+      .filter((phase): phase is ReviewCyclePhase => phase !== undefined)
       .sort();
     const isReviewCycleShaped =
       phases.length === 4 &&
@@ -2388,9 +3298,14 @@ function supportsV2ExecutableRuntime(
       );
       if (hasNonAtomic) return false;
     }
-    compositeOrLoop += 1;
   }
-  return compositeOrLoop > 0;
+  // Native v2 graphs are closed authored programs and therefore need an
+  // explicit Finish. For v1, retain the existing compatibility boundary:
+  // only normalized composite/loop shapes use the reconciler, while ordinary
+  // prompt-owned flat stages remain on the legacy executor.
+  return authoredVersion === 1
+    ? hasCompositeOrLoop
+    : hasExecutableNode && hasFinish;
 }
 
 function compatibilityLoopLimits(
@@ -2649,9 +3564,12 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
     }
     if (stage.gate) {
       nodes.push({
-        id: `gate:${stage.id}`,
+        // Compatibility-normalized v1 retains the exact gate identity and
+        // decision vocabulary produced by the historical flat lowerer.
+        id: `stage:${stage.id}-gate`,
         kind: 'Gate',
-        outcomes: ['approved', 'rejected'],
+        outcomes: ['approve', 'reject'],
+        dispositions: { approve: 'proceed', reject: 'escalate' },
         target: `stage:${stage.id}`,
         legacyRuntimeOwner: 'prompt-owned-v1',
       });
@@ -2899,6 +3817,7 @@ function prepare(source: DefinitionSource, catalog: CapabilityCatalogSnapshot): 
       ...validateGraphCycles(parsed.value),
       ...validateCompositeRecursion(parsed.value),
       ...validateLoopsAndLimits(parsed.value, catalog),
+      ...validateLoweringMetadata(parsed.value, catalog),
       ...validateCapabilities(parsed.value, catalog),
       ...validateTypedPorts(parsed.value, catalog),
       ...validateOwnerTerminalOutcomes(parsed.value, catalog),
@@ -2965,7 +3884,7 @@ function prepare(source: DefinitionSource, catalog: CapabilityCatalogSnapshot): 
           code: 'LEGACY_NORMALIZED',
           path: '/version',
           message:
-            'Legacy Pipeline Definition v1 was normalized for planning; its authored source and prompt-owned execution remain unchanged.',
+            'Pipeline Definition v1 compatibility input was normalized for planning; its authored source and compatibility execution ownership remain unchanged.',
         },
       ])
     : [];
@@ -2973,7 +3892,10 @@ function prepare(source: DefinitionSource, catalog: CapabilityCatalogSnapshot): 
   // ReviewCycle BoundedLoop is executable via the reconciler. This makes
   // `bug-fix` (verifyPolicy: 'adaptive') and `small-feature` (review-loop)
   // route through the same ReviewCycle body as authored v2 definitions.
-  const v2Executable = supportsV2ExecutableRuntime(frozenDefinition);
+  const v2Executable = supportsV2ExecutableRuntime(
+    frozenDefinition,
+    authoredVersion
+  );
 
   return deepFreeze({
     ok: true,

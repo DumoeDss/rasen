@@ -5,8 +5,12 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { execSync } from 'node:child_process';
 
-import { ALL_EXPERTS, ALL_WORKFLOWS } from '../../src/core/profiles.js';
-import { getExpertSkillDefinitions, loadWorkflowCatalog } from '../../src/core/workflow-registry/index.js';
+import {
+  ALL_EXPERTS,
+  ALL_WORKFLOWS,
+  resolveDesiredWorkflowSelection,
+} from '../../src/core/profiles.js';
+import { loadWorkflowCatalog } from '../../src/core/workflow-registry/index.js';
 import { copySkillSidecars } from '../../src/core/shared/skill-generation.js';
 import { setStdoutRows } from '../helpers/stdout.js';
 
@@ -202,18 +206,16 @@ describe('config profile interactive flow', () => {
 
   function setupSyncedCoreBothArtifacts(projectDir: string): void {
     fs.mkdirSync(path.join(projectDir, 'rasen'), { recursive: true });
-    const coreSkillDirs = [
-      'rasen-propose',
-      'rasen-explore',
-      'rasen-apply-change',
-      'rasen-sync-specs',
-      'rasen-archive-change',
-      'rasen-auto',
-      'rasen-help',
-      // auto-command's workflow dependency installs the internal retention runner.
-      'rasen-retain',
-    ];
-    for (const dirName of coreSkillDirs) {
+    const catalog = loadWorkflowCatalog();
+    const effectiveIds = resolveDesiredWorkflowSelection(
+      catalog,
+      'core',
+      undefined,
+      false,
+      { projectRoot: projectDir }
+    ).ids;
+    for (const id of effectiveIds) {
+      const dirName = catalog.get(id)!.skill.dirName;
       const skillPath = path.join(projectDir, '.claude', 'skills', dirName, 'SKILL.md');
       fs.mkdirSync(path.dirname(skillPath), { recursive: true });
       fs.writeFileSync(skillPath, `name: ${dirName}\n`, 'utf-8');
@@ -231,15 +233,6 @@ describe('config profile interactive flow', () => {
     const retroSkillPath = path.join(projectDir, '.claude', 'skills', 'rasen-retro', 'SKILL.md');
     fs.mkdirSync(path.dirname(retroSkillPath), { recursive: true });
     fs.writeFileSync(retroSkillPath, 'name: rasen-retro\n', 'utf-8');
-
-    // Legacy (no explicit expert selection) resolves to CORE_WORKFLOWS +
-    // ALL_EXPERTS (design.md D4 non-regression fallback) — a project fully
-    // in sync also has every expert skill dir installed.
-    for (const expert of getExpertSkillDefinitions()) {
-      const skillPath = path.join(projectDir, '.claude', 'skills', expert.dirName, 'SKILL.md');
-      fs.mkdirSync(path.dirname(skillPath), { recursive: true });
-      fs.writeFileSync(skillPath, `name: ${expert.dirName}\n`, 'utf-8');
-    }
 
     // Built-in workflow and expert sidecars are part of the installed skill
     // contract, so a hand-built synced fixture must materialize them too.

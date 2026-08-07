@@ -38,7 +38,10 @@ import {
 const require = createRequire(import.meta.url);
 const IS_WINDOWS = process.platform === 'win32';
 
-const READINESS_POLL_ATTEMPTS = 20;
+// A cold Windows process can spend several seconds in loader/antivirus work
+// before the Management server binds. Keep readiness bounded, but do not kill
+// a healthy daemon solely because a 5-second local-start budget was exceeded.
+const READINESS_POLL_ATTEMPTS = 60;
 const READINESS_POLL_INTERVAL_MS = 250;
 
 export function ownVersion(): string {
@@ -125,9 +128,17 @@ async function runDaemonRun(options: { port?: string }): Promise<void> {
     // `stopServer` already reaps every live supervised session via
     // `supervisor.shutdownAll('server-shutdown')` before resolving (server.ts)
     // — the daemon's clean-shutdown reap requirement is inherited for free.
-    await handle.stopServer();
-    deleteDaemonState();
-    process.exit(0);
+    try {
+      await handle.stopServer();
+      deleteDaemonState();
+      process.exit(0);
+    } catch (error) {
+      shuttingDown = false;
+      process.exitCode = 1;
+      console.error(
+        `Error: daemon shutdown retained live Session authority (${error instanceof Error ? error.message : String(error)}). Retry stop after inspecting the hosted Session.`
+      );
+    }
   };
   process.on('SIGINT', () => void shutdown());
   process.on('SIGTERM', () => void shutdown());

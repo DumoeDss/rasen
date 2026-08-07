@@ -245,6 +245,10 @@ export interface WirePipeline {
   >;
   effectiveReuse?: WireEffectiveReuse;
   stages: WirePipelineStage[];
+  buildOrder?: string[];
+  capabilityPaths?: readonly WirePreparedExecutionCapabilityPath[];
+  policyPaths?: readonly WirePreparedExecutionPolicyPath[];
+  boundedLoops?: readonly WirePreparedBoundedLoopPolicy[];
   authoredVersion?: number;
   normalizedVersion?: 2;
   definitionValid?: boolean;
@@ -252,6 +256,8 @@ export interface WirePipeline {
   executable?: boolean;
   executionMode?: 'legacy' | 'reconciler' | 'unavailable';
   unavailableReason?: string;
+  /** Named migration boundary for an intentionally retained package v1 fixture. */
+  compatibilityBoundary?: 'issue-dispatch-0.3.0';
   diagnostics?: PipelineValidationIssue[];
   /**
    * Additive engine support analysis (task 14.7/14.8): present on the detail
@@ -265,6 +271,35 @@ export interface WirePipeline {
     reason: ReconcilerSupportReason;
     profileDigest: string;
   };
+}
+
+export interface WirePreparedExecutionCapabilityPath {
+  profilePath: string;
+  capability: { id: string; version: string };
+  workspace: 'none' | 'read' | 'write';
+}
+
+export interface WirePreparedExecutionPolicyPath {
+  profilePath: string;
+  role: string;
+  runtime: WireEffectiveValue<'claude' | 'codex'>;
+  model: WireEffectiveValue<string | null>;
+  effort: WireEffectiveValue<string | null>;
+  sandbox: 'read-only' | 'workspace-write';
+  effectiveGate: WireEffectiveValue<boolean>;
+  sessionReuse: {
+    effective: 'never' | 'same-invocation';
+    authored?: 'none' | 'stage' | 'run-planner' | 'review-thread';
+    source: string;
+  };
+  handoffTokenLimit: WireEffectiveValue<number>;
+  reuseRoundLimit: WireEffectiveValue<number>;
+}
+
+export interface WirePreparedBoundedLoopPolicy {
+  nodeId: string;
+  limits: { maxIterations: number; maxActions?: number; budget?: number };
+  lifecycle: WireBoundedLoopLifecyclePolicyV1;
 }
 
 export interface ThresholdPresetSeed {
@@ -1123,7 +1158,12 @@ export interface PipelineHandoffConfig {
 }
 
 /** Per-stage handoff overrides — same shape as `PipelineHandoffConfig` minus `roles` (pipeline-level only). */
-export type PipelineStageHandoffConfig = Omit<PipelineHandoffConfig, 'roles'>;
+export interface PipelineStageHandoffConfig {
+  threshold?: ThresholdValue;
+  maxRelays?: number;
+  stallLimit?: number;
+  [key: string]: unknown;
+}
 
 export type PipelineReuseMode = 'auto' | 'never';
 
@@ -1231,6 +1271,45 @@ export interface WireDefinitionArtifact {
   type: string;
 }
 
+export interface WireDefinitionLimits {
+  maxActions?: number;
+  budget?: number;
+  [key: string]: unknown;
+}
+
+export type WireStageRole =
+  | 'planner'
+  | 'implementer'
+  | 'reviewer'
+  | 'fixer'
+  | 'shipper';
+
+export type WireReviewCyclePhase = 'review' | 'triage' | 'fix' | 're-review';
+export type WireGoalCyclePhase = 'work' | 'judge';
+export type WireGoalCycleVariant = 'measure' | 'evaluate' | 'research';
+
+export interface WireAtomicStageWorkspaceV1 {
+  access: 'none' | 'read' | 'write';
+  [key: string]: unknown;
+}
+
+/** Complete authored v2 AtomicStage execution declaration. */
+export interface WireAtomicStageExecutionV1 {
+  version: 1;
+  role: WireStageRole;
+  workspace: WireAtomicStageWorkspaceV1;
+  leadReview?: boolean;
+  verifyPolicy?: PipelineVerifyPolicy;
+  runtime?: PipelineAgentRuntime;
+  model?: string;
+  effort?: string;
+  sandbox?: PipelineAgentRuntimeSandbox;
+  sessionReuse?: PipelineAgentRuntimeSessionReuse;
+  handoff?: PipelineStageHandoffConfig;
+  /** Forward-compatible authored fields survive unrelated edits. */
+  [key: string]: unknown;
+}
+
 export interface WireDefinitionNodeBase {
   id: string;
   kind:
@@ -1248,6 +1327,10 @@ export interface WireDefinitionNodeBase {
 export interface WireAtomicStageNode extends WireDefinitionNodeBase {
   kind: 'AtomicStage';
   capability: { id: string; version: string };
+  /** Optional on the wire so an invalid draft can still render its diagnostics; required for valid authored v2. */
+  execution?: WireAtomicStageExecutionV1;
+  reviewCyclePhase?: WireReviewCyclePhase;
+  goalCyclePhase?: WireGoalCyclePhase;
 }
 
 export interface WireCompositeRefNode extends WireDefinitionNodeBase {
@@ -1265,6 +1348,7 @@ export interface WireBoundedLoopNode extends WireDefinitionNodeBase {
     string,
     { action: 'continue' } | { action: 'exit'; outcome: string }
   >;
+  goalCycleVariant?: WireGoalCycleVariant;
 }
 
 export type WireLoopLifecycleTerminalExit = {
@@ -1282,11 +1366,16 @@ export type WireLoopLifecycleBlockedExit =
 
 export interface WireBoundedLoopLifecyclePolicyV1 {
   version: 1;
-  thresholds: { stallIterations: number; sameBlockerAttempts: number };
+  thresholds: {
+    stallIterations: number;
+    sameBlockerAttempts: number;
+    [key: string]: unknown;
+  };
   strategy: {
     maxAttempts: number;
     requireMaterialChange: true;
     capability?: { id: string; version: string };
+    [key: string]: unknown;
   };
   exits: {
     iterationLimit: WireLoopLifecycleExit;
@@ -1295,7 +1384,9 @@ export interface WireBoundedLoopLifecyclePolicyV1 {
     stalled: WireLoopLifecycleExit;
     blocked: WireLoopLifecycleBlockedExit;
     strategyExhausted: WireLoopLifecycleTerminalExit;
+    [key: string]: unknown;
   };
+  [key: string]: unknown;
 }
 
 export interface WireChoiceNode extends WireDefinitionNodeBase {
@@ -1306,16 +1397,31 @@ export interface WireChoiceNode extends WireDefinitionNodeBase {
 export interface WireFanOutNode extends WireDefinitionNodeBase {
   kind: 'FanOut';
   branches: string[];
+  concurrencyCap: number;
+  budget: number;
+  joinNodeId: string;
+  members: Array<{
+    id: string;
+    hierarchicalPath: string;
+    required: boolean;
+    condition: string;
+    [key: string]: unknown;
+  }>;
 }
 
 export interface WireJoinNode extends WireDefinitionNodeBase {
   kind: 'Join';
   inputs: string[];
+  requiredMembers: string[];
+  optionalMembers: string[];
+  outcomes: { proceed: string; failed: string; [key: string]: unknown };
 }
 
 export interface WireGateNode extends WireDefinitionNodeBase {
   kind: 'Gate';
+  target: string;
   outcomes: string[];
+  dispositions: Record<string, 'proceed' | 'fail' | 'escalate'>;
 }
 
 export interface WireFinishNode extends WireDefinitionNodeBase {
@@ -1368,7 +1474,7 @@ export interface WirePipelineDefinitionV2 {
   outcomes: string[];
   declarations: WireCompositeDeclaration[];
   root: WireDefinitionGraph;
-  limits?: { maxActions?: number; budget?: number };
+  limits?: WireDefinitionLimits;
   /** Authored extension fields are retained losslessly even when unexposed. */
   [key: string]: any;
 }

@@ -46,7 +46,6 @@ export interface ManagementServerHandle {
 const SHUTDOWN_GUARD_MS = 2000;
 
 /** Backstop on reaping live sessions (design D6) — bounds the wait past the supervisor's own SIGTERM-then-SIGKILL grace period. */
-const SESSION_SHUTDOWN_GUARD_MS = 8000;
 
 const LOOPBACK_HOST = '127.0.0.1';
 export const AUDIT_VIEWER_ASSET_PATH = '/assets/audit-viewer.html';
@@ -96,6 +95,7 @@ export function startManagementServer(
   const {
     handle: managementHandler,
     supervisor,
+    sessionHost,
     shutdownPathChooser,
   } = createManagementRouter(context, resolveHomeForRoot, options.sessions);
 
@@ -166,10 +166,11 @@ export function startManagementServer(
   });
 
   let stopped = false;
+  let stopPromise: Promise<void> | undefined;
   const stopServer = (): Promise<void> => {
     if (stopped) return Promise.resolve();
-    stopped = true;
-    return (async () => {
+    if (stopPromise) return stopPromise;
+    stopPromise = (async () => {
       // Reap every live supervised session before the process actually
       // exits (design D6): the in-memory registry has no adopter in this
       // child-1 world, so anything still running past this point would be
@@ -177,18 +178,16 @@ export function startManagementServer(
       // Covers both a clean `server.close()` and the SIGINT/SIGTERM path
       // (`ui-launch.ts` calls this same `stopServer`), bounded so a
       // SIGTERM-resistant session can never hang shutdown indefinitely.
-      await Promise.race([
-        Promise.all([
-          supervisor.shutdownAll('server-shutdown'),
-          shutdownPathChooser(),
-        ]).then(() => undefined),
-        new Promise<void>((resolve) => {
-          const t = setTimeout(resolve, SESSION_SHUTDOWN_GUARD_MS);
-          t.unref?.();
-        }),
+      // Each supervisor/host tree cleanup owns a bounded graceful/forced
+      // deadline. Do not layer a shorter outer race over that contract: a
+      // clean return must mean every known tree has published its outcome.
+      await Promise.all([
+        supervisor.shutdownAll('server-shutdown'),
+        sessionHost.shutdown('server-shutdown'),
+        shutdownPathChooser(),
       ]);
 
-      return new Promise<void>((resolve) => {
+      await new Promise<void>((resolve) => {
         const guard = setTimeout(resolve, SHUTDOWN_GUARD_MS);
         guard.unref?.();
         server.close(() => {
@@ -203,17 +202,29 @@ export function startManagementServer(
           socket.destroy();
         }
       });
-    })();
+      stopped = true;
+    })().finally(() => {
+      if (!stopped) stopPromise = undefined;
+    });
+    return stopPromise;
   };
 
-  return new Promise((resolve, reject) => {
-    const onError = (error: Error) => reject(error);
-    server.once('error', onError);
-    server.listen(options.port ?? 0, LOOPBACK_HOST, () => {
-      server.removeListener('error', onError);
-      const address = server.address();
-      const port = typeof address === 'object' && address ? address.port : (options.port ?? 0);
-      resolve({ server, port, stopServer });
+  return (async () => {
+    const recovery = await sessionHost.reconcileOnStart();
+    if (!recovery.ready) {
+      throw new Error(
+        `Hosted Session registry reconciliation failed${recovery.diagnostics.length ? `: ${recovery.diagnostics.join('; ')}` : '.'}`
+      );
+    }
+    return new Promise((resolve, reject) => {
+      const onError = (error: Error) => reject(error);
+      server.once('error', onError);
+      server.listen(options.port ?? 0, LOOPBACK_HOST, () => {
+        server.removeListener('error', onError);
+        const address = server.address();
+        const port = typeof address === 'object' && address ? address.port : (options.port ?? 0);
+        resolve({ server, port, stopServer });
+      });
     });
-  });
+  })();
 }

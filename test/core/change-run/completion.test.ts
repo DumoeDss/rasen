@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TEST_ATTESTATION_AUTHORITY } from '../../fixtures/trusted-completion.js';
 
 import {
   CompletionError,
@@ -38,7 +39,12 @@ function action() {
         effects: [
           { slot: 'workspace', kind: 'workspace', resource: 'worktree', recovery: 'suspend-if-ambiguous' },
         ],
-        adapter: { id: 'adapter:a', version: '1', contentDigest: digest('4') },
+        adapter: {
+          id: 'adapter:a',
+          version: '1',
+          contentDigest: digest('4'),
+          attestationAuthority: TEST_ATTESTATION_AUTHORITY,
+        },
       } as never,
       stage: {
         nodeId: 'stage:apply',

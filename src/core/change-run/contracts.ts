@@ -76,7 +76,25 @@ const WorkspaceRevisionSchema = z.strictObject({
 
 export type WorkspaceRevision = Readonly<z.infer<typeof WorkspaceRevisionSchema>>;
 
-const EvidenceRefSchema = z.strictObject({
+const EvidenceProducerSchema = z.strictObject({
+  id: z.string().min(1).max(256),
+  version: z.string().min(1).max(128),
+  identityDigest: DigestSchema,
+});
+
+const EvidenceBindingSchema = z.strictObject({
+  planningSpaceId: PlanningSpaceIdSchema,
+  changeInstanceId: ChangeInstanceIdSchema,
+  projectId: z.string().min(1).max(256),
+  changeId: z.string().min(1).max(128),
+  runId: RunIdSchema,
+  actionId: ActionIdSchema,
+  effectId: EffectIdSchema.optional(),
+  treeDigest: DigestSchema.optional(),
+  schema: z.string().min(1).max(256),
+});
+
+const LegacyEvidenceRefV1Schema = z.strictObject({
   format: z.literal('change-run-evidence-ref/1'),
   store: z.literal('change-run'),
   evidenceDigest: DigestSchema,
@@ -84,25 +102,57 @@ const EvidenceRefSchema = z.strictObject({
   mediaType: z.string().min(1).max(256),
   size: SafeIntegerSchema,
   observationKind: z.string().min(1).max(256),
-  producer: z.strictObject({
-    id: z.string().min(1).max(256),
-    version: z.string().min(1).max(128),
-    identityDigest: DigestSchema,
-  }),
-  binding: z.strictObject({
-    planningSpaceId: PlanningSpaceIdSchema,
-    changeInstanceId: ChangeInstanceIdSchema,
-    projectId: z.string().min(1).max(256),
-    changeId: z.string().min(1).max(128),
-    runId: RunIdSchema,
-    actionId: ActionIdSchema,
-    effectId: EffectIdSchema.optional(),
-    treeDigest: DigestSchema.optional(),
-    schema: z.string().min(1).max(256),
+  producer: EvidenceProducerSchema,
+  binding: EvidenceBindingSchema,
+});
+
+const EvidenceProofV1Schema = z.strictObject({
+  format: z.literal('change-run-evidence-proof/1'),
+  authorityDigest: DigestSchema,
+  signature: z.string().min(1).max(256),
+});
+
+const AttestedEvidenceRefV2Schema = z.strictObject({
+  format: z.literal('change-run-evidence-ref/2'),
+  evidenceDigest: DigestSchema,
+  contentDigest: DigestSchema,
+  mediaType: z.string().min(1).max(256),
+  sizeBytes: SafeIntegerSchema,
+  observationKind: z.string().min(1).max(256),
+  producer: EvidenceProducerSchema,
+  binding: EvidenceBindingSchema,
+  proof: EvidenceProofV1Schema,
+});
+
+const EvidenceRefSchema = z.discriminatedUnion('format', [
+  LegacyEvidenceRefV1Schema,
+  AttestedEvidenceRefV2Schema,
+]);
+
+export type LegacyEvidenceRefV1 = Readonly<
+  z.infer<typeof LegacyEvidenceRefV1Schema>
+>;
+export type AttestedEvidenceRefV2 = Readonly<
+  z.infer<typeof AttestedEvidenceRefV2Schema>
+>;
+export type EvidenceRef = Readonly<z.infer<typeof EvidenceRefSchema>>;
+
+const AttestationAuthoritySchema = z.strictObject({
+  format: z.literal('change-run-attestation-authority/1'),
+  algorithm: z.literal('ed25519'),
+  keyId: z.string().min(1).max(256),
+  keyVersion: z.string().min(1).max(128),
+  publicKey: z.strictObject({
+    format: z.literal('spki-der'),
+    encoding: z.literal('base64'),
+    value: z.string().min(1).max(4096),
+    digest: DigestSchema,
   }),
 });
 
-export type EvidenceRef = Readonly<z.infer<typeof EvidenceRefSchema>>;
+export type AttestationAuthority = Readonly<
+  z.infer<typeof AttestationAuthoritySchema>
+>;
 
 const AdapterSchema = z.strictObject({
   id: z.string().min(1).max(256),
@@ -143,6 +193,38 @@ const ActorRefSchema = z.discriminatedUnion('kind', [
 
 export type ActorRef = Readonly<z.infer<typeof ActorRefSchema>>;
 
+const EvidenceUseAuthoritySchema = z.strictObject({
+  producer: EvidenceProducerSchema,
+  observationKind: z.string().min(1).max(256),
+  schema: z.string().min(1).max(256),
+  mediaType: z.string().min(1).max(256),
+});
+
+/**
+ * Immutable completion authority copied into every newly admitted Action.
+ * The field is optional only so pre-authority Records remain decodable and
+ * inspectable; every completion mutation fails closed when an old Action lacks it.
+ */
+const CompletionAuthoritySchema = z.strictObject({
+  format: z.literal('change-run-completion-authority/1'),
+  actor: ActorRefSchema,
+  actorAttestation: EvidenceUseAuthoritySchema,
+  observations: z.strictObject({
+    domainActionResult: EvidenceUseAuthoritySchema,
+    effectObservation: EvidenceUseAuthoritySchema,
+    infrastructureObservation: EvidenceUseAuthoritySchema,
+  }),
+  /**
+   * Additive for legacy decoding. Newly admitted executable Actions always
+   * carry this frozen public trust root; completion fails closed when absent.
+   */
+  attestationAuthority: AttestationAuthoritySchema.optional(),
+});
+
+export type CompletionAuthority = Readonly<
+  z.infer<typeof CompletionAuthoritySchema>
+>;
+
 const EffectDescriptorSchema = z.strictObject({
   slot: z.string().min(1).max(128),
   effectId: EffectIdSchema,
@@ -181,6 +263,7 @@ const RunActionBaseShape = {
   capability: CapabilityBindingSchema,
   resultContractDigest: DigestSchema,
   evidenceContractDigest: DigestSchema,
+  completionAuthority: CompletionAuthoritySchema.optional(),
   policyDigest: DigestSchema,
   workspace: z.strictObject({
     access: z.enum(['none', 'read', 'write']),
@@ -522,6 +605,8 @@ const RunActionViewSchema = z.strictObject({
     contractDigest: DigestSchema,
     artifactDigest: DigestSchema,
   }),
+  completionAuthority: CompletionAuthoritySchema.optional(),
+  expectedBeforeWorkspace: WorkspaceRevisionSchema.optional(),
   effects: z.array(EffectViewSchema).max(64),
 });
 
@@ -962,12 +1047,26 @@ export function decodeWorkspaceRevision(value: unknown): WorkspaceRevision {
 }
 
 export function decodeEvidenceRef(value: unknown): EvidenceRef {
-  assertMajor(
-    value,
-    'change-run-evidence-ref/1',
-    'unsupported_contract_version'
-  );
+  const format =
+    value !== null && typeof value === 'object'
+      ? (value as { format?: unknown }).format
+      : undefined;
+  if (
+    format !== 'change-run-evidence-ref/1' &&
+    format !== 'change-run-evidence-ref/2'
+  ) {
+    throw new ChangeRunContractError(
+      'unsupported_contract_version',
+      `Unsupported contract format ${JSON.stringify(format)}; expected change-run-evidence-ref/1 or change-run-evidence-ref/2.`
+    );
+  }
   return decode(EvidenceRefSchema, value);
+}
+
+export function decodeAttestationAuthority(
+  value: unknown
+): AttestationAuthority {
+  return decode(AttestationAuthoritySchema, value);
 }
 
 export function decodeActorRef(value: unknown): ActorRef {

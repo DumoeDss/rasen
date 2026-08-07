@@ -27,7 +27,6 @@ import {
 } from '../workflow-registry/index.js';
 import {
   freezeProductionPreparedPipelineRegistry,
-  type PipelineYaml,
 } from '../pipeline-registry/index.js';
 import type {
   WorkflowDependenciesResponse,
@@ -104,15 +103,7 @@ export async function handleWorkflowDependenciesRead(
     registry.workflowCatalog,
     projectRoot,
     {
-      loadPipeline: (name) => {
-        const resolution = registry.load(name);
-        if (resolution.prepared.authoredVersion !== 1) {
-          throw new Error(
-            `Pipeline '${name}' is not a legacy stage graph dependency source.`
-          );
-        }
-        return resolution.prepared.authoredSource as PipelineYaml;
-      },
+      loadPipeline: (name) => registry.load(name),
     }
   );
   return { ok: true, response: { dependencies: graph.entries } };

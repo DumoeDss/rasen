@@ -15,7 +15,7 @@ import { ephemeraDir, resolveExecutionRoot } from '../../core/file-placement.js'
 import {
   freezeProductionPreparedPipelineRegistry,
   initializeRunState,
-  type PipelineYaml,
+  type RunStatePipelineSeed,
 } from '../../core/pipeline-registry/index.js';
 import {
   resolveRootForCommand,
@@ -134,16 +134,32 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
     const projectRoot = root.path;
     // Resolve before creating anything so an invalid assignment is atomic:
     // no orphan child directory is left behind on an unknown pipeline.
-    const pipeline: PipelineYaml | null = options.pipeline
-      ? (
-          await (
-            await freezeProductionPreparedPipelineRegistry(projectRoot, {
-              reporter: options.json ? false : undefined,
-            })
-          ).selectForExecution(options.pipeline, {
+    const pipelineSelection = options.pipeline
+      ? await (
+          await freezeProductionPreparedPipelineRegistry(projectRoot, {
             reporter: options.json ? false : undefined,
           })
-        ).pipeline
+        ).selectForExecution(options.pipeline, {
+          reporter: options.json ? false : undefined,
+        })
+      : null;
+
+    // Native v2 deliberately has no legacy PipelineYaml adapter. A newly
+    // assigned change still needs the durable pipeline identity plus pending
+    // compatibility cursors that `pipeline resume` can project read-only
+    // before the reconciler creates its canonical Run. Seed only root
+    // AtomicStage/BoundedLoop ids; Gate/FanOut/Join/Finish and loop bodies are
+    // reconciler-owned and must not become a second writable progression
+    // model in auto-run.json.
+    const pipeline: RunStatePipelineSeed | null = pipelineSelection
+      ? pipelineSelection.resolution.prepared.authoredVersion === 2
+        ? {
+            name: pipelineSelection.resolution.prepared.definition.name,
+            stages: pipelineSelection.resolution.prepared.definition.root.nodes
+              .filter(node => node.kind === 'AtomicStage' || node.kind === 'BoundedLoop')
+              .map(node => ({ id: node.id })),
+          }
+        : pipelineSelection.pipeline
       : null;
 
     // Validate schema if provided

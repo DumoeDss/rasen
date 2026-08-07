@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import {
   checkoutsMatch,
@@ -38,6 +39,11 @@ describe('frozen-resume execution binding', () => {
   function makeCheckout(name: string, projectId: string): string {
     const root = path.join(tempDir, name);
     fs.mkdirSync(path.join(root, 'rasen'), { recursive: true });
+    // Keep this checkout hermetic even when the test TEMP directory itself is
+    // inside the repository under test. Otherwise `git rev-parse` walks into
+    // the parent worktree and correctly resolves every fixture to that main
+    // checkout, defeating the registry-candidate scenarios below.
+    execFileSync('git', ['init', '--quiet'], { cwd: root, stdio: 'ignore' });
     fs.writeFileSync(
       path.join(root, 'rasen', 'config.yaml'),
       `schema: spec-driven\nprojectId: ${projectId}\n`

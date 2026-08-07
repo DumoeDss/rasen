@@ -67,7 +67,9 @@ function runClaude(
 }
 
 async function waitUntil(check: () => Promise<boolean>): Promise<void> {
-  const deadline = Date.now() + 2000;
+  // Exact Windows process-instance capture uses CIM before publishing the
+  // claim. Allow that OS probe to complete under a busy integration runner.
+  const deadline = Date.now() + 10_000;
   while (!(await check())) {
     if (Date.now() >= deadline) throw new Error('Timed out waiting for condition.');
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -398,6 +400,15 @@ describe('bounded Claude process runner', () => {
     const stateOptions = {
       stateDir: sessionStateDir(),
       processTreeProbe: () => false,
+      processInstanceProbe: {
+        capture: (pid: number) => `test-process:${pid}`,
+        inspect: (pid: number, expected: string) =>
+          pid === 2_147_483_647
+            ? ('absent' as const)
+            : expected === `test-process:${pid}`
+              ? ('same' as const)
+              : ('different' as const),
+      },
     };
     const paths = getClaudeSessionStatePaths(sessionId, stateOptions);
     const staleClaim = await claimClaudeSessionWriter(
@@ -423,6 +434,15 @@ describe('bounded Claude process runner', () => {
     const stateOptions = {
       stateDir: sessionStateDir(),
       processTreeProbe: () => false,
+      processInstanceProbe: {
+        capture: (pid: number) => `test-process:${pid}`,
+        inspect: (pid: number, expected: string) =>
+          pid === 2_147_483_647
+            ? ('absent' as const)
+            : expected === `test-process:${pid}`
+              ? ('same' as const)
+              : ('different' as const),
+      },
     };
     const paths = getClaudeSessionStatePaths(sessionId, stateOptions);
     const staleClaim = await claimClaudeSessionWriter(

@@ -8,8 +8,19 @@ import { isNodeErrorCode } from '../file-state.js';
 
 const fs = nodeFs.promises;
 const SESSION_STATE_VERSION = 1;
-const CLAIM_TOKEN_VERSION = 2;
-const WORKER_TOKEN_VERSION = 1;
+const CLAIM_TOKEN_VERSION = 3;
+const WORKER_TOKEN_VERSION = 2;
+
+export type ProcessInstanceInspection =
+  | 'same'
+  | 'different'
+  | 'absent'
+  | 'uncertain';
+
+export interface ProcessInstanceProbe {
+  capture(pid: number): string | undefined;
+  inspect(pid: number, expectedProcessInstanceId: string): ProcessInstanceInspection;
+}
 
 interface ClaudeSessionRecord {
   version: typeof SESSION_STATE_VERSION;
@@ -21,14 +32,18 @@ interface ClaudeSessionRecord {
 interface ClaudeSessionClaimToken {
   version: typeof CLAIM_TOKEN_VERSION;
   bridgePid: number;
+  bridgeProcessInstanceId: string;
   nonce: string;
   createdAt: string;
+  /** Only this mode proves that no capable worker exists before bind. */
+  admission?: 'supervised';
 }
 
 interface ClaudeSessionWorkerToken {
   version: typeof WORKER_TOKEN_VERSION;
   nonce: string;
   rootPid: number;
+  processInstanceId: string;
   createdAt: string;
 }
 
@@ -36,12 +51,17 @@ export interface ClaudeSessionStateOptions {
   env?: NodeJS.ProcessEnv;
   stateDir?: string;
   processTreeProbe?: (rootPid: number) => boolean;
+  processInstanceProbe?: ProcessInstanceProbe;
+  platform?: NodeJS.Platform;
+  supervisedAdmission?: boolean;
 }
 
 export interface ClaudeSessionWriterClaim {
   sessionId: string;
   cwd: string;
-  bindWorker: (rootPid: number) => void;
+  ownerToken: string;
+  bindWorker: (rootPid: number) => string;
+  inspectWorker: (rootPid: number, processInstanceId: string) => ProcessInstanceInspection;
   release: () => Promise<void>;
 }
 
@@ -176,7 +196,7 @@ function processTreeIsAlive(
   options: ClaudeSessionStateOptions
 ): boolean {
   if (options.processTreeProbe) return options.processTreeProbe(rootPid);
-  if (process.platform !== 'win32') {
+  if ((options.platform ?? process.platform) !== 'win32') {
     try {
       // Claude workers are detached process-group leaders on POSIX. Probe the
       // whole group so a surviving descendant keeps the session busy even if
@@ -199,10 +219,13 @@ function parseClaimToken(content: string): ClaudeSessionClaimToken | undefined {
       parsed.version !== CLAIM_TOKEN_VERSION ||
       !Number.isInteger(parsed.bridgePid) ||
       (parsed.bridgePid ?? 0) <= 0 ||
+      typeof parsed.bridgeProcessInstanceId !== 'string' ||
+      !parsed.bridgeProcessInstanceId ||
       typeof parsed.nonce !== 'string' ||
       !parsed.nonce ||
       typeof parsed.createdAt !== 'string' ||
-      !Number.isFinite(Date.parse(parsed.createdAt))
+      !Number.isFinite(Date.parse(parsed.createdAt)) ||
+      (parsed.admission !== undefined && parsed.admission !== 'supervised')
     ) {
       return undefined;
     }
@@ -223,6 +246,8 @@ function parseWorkerToken(
       parsed.nonce !== expectedNonce ||
       !Number.isInteger(parsed.rootPid) ||
       (parsed.rootPid ?? 0) <= 0 ||
+      typeof parsed.processInstanceId !== 'string' ||
+      !parsed.processInstanceId ||
       typeof parsed.createdAt !== 'string' ||
       !Number.isFinite(Date.parse(parsed.createdAt))
     ) {
@@ -267,16 +292,26 @@ async function claimIsLiveOrUncertain(
   owner: ClaudeSessionClaimToken,
   options: ClaudeSessionStateOptions
 ): Promise<boolean> {
-  if (pidIsAlive(owner.bridgePid)) return true;
+  const bridge = instanceProbe(options).inspect(
+    owner.bridgePid,
+    owner.bridgeProcessInstanceId
+  );
+  if (bridge === 'same' || bridge === 'uncertain') return true;
 
   const worker = await readWorkerToken(writerPath, owner);
   if (!worker) {
-    // The bridge may have died after spawn but before publishing the worker
-    // root. The runner withholds prompt stdin until that publication, so this
-    // phase cannot have started a turn, but we still fail closed: without a
-    // durable root PID there is no process tree we can prove dead.
-    return true;
+    // The admitted-spawn contract starts only an inert supervisor before the
+    // worker token is committed. That supervisor cannot activate the backend
+    // after its bridge dies because its private activation pipe closes. The
+    // exact no-worker claim is therefore a provable pre-spawn state.
+    return owner.admission !== 'supervised';
   }
+  const workerInstance = instanceProbe(options).inspect(
+    worker.rootPid,
+    worker.processInstanceId
+  );
+  if (workerInstance === 'different') return false;
+  if (workerInstance === 'uncertain') return true;
   return processTreeIsAlive(worker.rootPid, options);
 }
 
@@ -338,11 +373,19 @@ async function createAtomicClaim(
   await fs.mkdir(root, { recursive: true, mode: 0o700 });
 
   for (;;) {
+    const bridgeProcessInstanceId = instanceProbe(options).capture(process.pid);
+    if (!bridgeProcessInstanceId) {
+      throw new ClaudeSessionStateError(
+        'Unable to capture the exact writer process-start identity.'
+      );
+    }
     const token: ClaudeSessionClaimToken = {
       version: CLAIM_TOKEN_VERSION,
       bridgePid: process.pid,
+      bridgeProcessInstanceId,
       nonce: randomBytes(16).toString('hex'),
       createdAt: new Date().toISOString(),
+      ...(options.supervisedAdmission ? { admission: 'supervised' as const } : {}),
     };
     const tokenText = `${JSON.stringify(token)}\n`;
     const candidatePath = path.join(
@@ -423,8 +466,9 @@ function bindWorkerToClaim(
   writerPath: string,
   tokenText: string,
   nonce: string,
-  rootPid: number
-): void {
+  rootPid: number,
+  options: ClaudeSessionStateOptions
+): string {
   if (!Number.isInteger(rootPid) || rootPid <= 0) {
     throw new ClaudeSessionStateError(
       'Claude worker did not expose a valid process-tree root PID.'
@@ -446,11 +490,19 @@ function bindWorkerToClaim(
     );
   }
 
+  const processInstanceId = instanceProbe(options).capture(rootPid);
+  if (!processInstanceId) {
+    throw new ClaudeSessionStateError(
+      'Unable to capture the exact Claude worker process-start identity.'
+    );
+  }
+
   const workerPath = workerTokenPath(writerPath, nonce);
   const workerToken: ClaudeSessionWorkerToken = {
     version: WORKER_TOKEN_VERSION,
     nonce,
     rootPid,
+    processInstanceId,
     createdAt: new Date().toISOString(),
   };
   const workerText = `${JSON.stringify(workerToken)}\n`;
@@ -469,7 +521,7 @@ function bindWorkerToClaim(
         isNodeErrorCode(error, 'EEXIST') &&
         nodeFs.readFileSync(workerPath, 'utf8') === workerText
       ) {
-        return;
+        return processInstanceId;
       }
       throw error;
     }
@@ -485,6 +537,7 @@ function bindWorkerToClaim(
       // The candidate may already be absent after a failed create.
     }
   }
+  return processInstanceId;
 }
 
 function parseSessionRecord(
@@ -617,8 +670,11 @@ export async function claimClaudeSessionWriter(
         `Claude session "${sessionId}" writer claim was already released.`
       );
     }
-    bindWorkerToClaim(writerPath, tokenText, token.nonce, rootPid);
+    return bindWorkerToClaim(writerPath, tokenText, token.nonce, rootPid, options);
   };
+
+  const inspectWorker = (rootPid: number, processInstanceId: string) =>
+    instanceProbe(options).inspect(rootPid, processInstanceId);
 
   const release = async () => {
     if (released) return;
@@ -626,7 +682,14 @@ export async function claimClaudeSessionWriter(
     await releaseAtomicClaim(writerPath, tokenText, token.nonce);
   };
 
-  return { sessionId, cwd: canonicalCwd, bindWorker, release };
+  return {
+    sessionId,
+    cwd: canonicalCwd,
+    ownerToken: token.nonce,
+    bindWorker,
+    inspectWorker,
+    release,
+  };
 }
 
 export async function isClaudeSessionWriterClaimed(
@@ -640,4 +703,163 @@ export async function isClaudeSessionWriterClaimed(
   } catch (error) {
     return !isNodeErrorCode(error, 'ENOENT');
   }
+}
+
+function captureWindowsProcessInstance(pid: number): string | undefined {
+  const command = [
+    '$ErrorActionPreference = "Stop";',
+    `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}";`,
+    'if ($null -eq $p) { exit 3 };',
+    '[Console]::Out.Write($p.CreationDate.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture))',
+  ].join(' ');
+  const result = spawnSync(
+    'powershell.exe',
+    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command],
+    {
+      encoding: 'utf8',
+      windowsHide: true,
+      shell: false,
+      timeout: 5_000,
+      maxBuffer: 64 * 1024,
+    }
+  );
+  const value = result.stdout.trim();
+  return !result.error && result.status === 0 && /^\d+$/.test(value)
+    ? `windows-cim:${value}`
+    : undefined;
+}
+
+function captureLinuxProcessInstance(pid: number): string | undefined {
+  try {
+    const stat = nodeFs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    const closeParen = stat.lastIndexOf(')');
+    if (closeParen < 0) return undefined;
+    // After comm, the first field is state (#3); process start time is #22.
+    const startTicks = stat.slice(closeParen + 2).trim().split(/\s+/)[19];
+    if (!/^\d+$/.test(startTicks ?? '')) return undefined;
+    const bootId = nodeFs
+      .readFileSync('/proc/sys/kernel/random/boot_id', 'utf8')
+      .trim()
+      .toLowerCase();
+    if (!/^[0-9a-f-]{36}$/.test(bootId)) return undefined;
+    return `linux-proc:${bootId}:${startTicks}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function defaultProcessInstanceProbe(
+  platform: NodeJS.Platform = process.platform
+): ProcessInstanceProbe {
+  const capture = (pid: number): string | undefined => {
+    if (!Number.isInteger(pid) || pid <= 0) return undefined;
+    if (platform === 'win32') return captureWindowsProcessInstance(pid);
+    if (platform === 'linux') return captureLinuxProcessInstance(pid);
+    // Durable hosted Sessions use ProcessCapsule's native macOS birth source.
+    // This legacy claim module has no exact remaining-POSIX source and fails
+    // closed instead of sampling second-resolution `ps lstart` authority.
+    return undefined;
+  };
+  return {
+    capture,
+    inspect(pid, expectedProcessInstanceId) {
+      const current = capture(pid);
+      if (current !== undefined) {
+        return current === expectedProcessInstanceId ? 'same' : 'different';
+      }
+      return pidIsAlive(pid) ? 'uncertain' : 'absent';
+    },
+  };
+}
+
+function instanceProbe(options: ClaudeSessionStateOptions): ProcessInstanceProbe {
+  return options.processInstanceProbe ?? defaultProcessInstanceProbe(options.platform);
+}
+
+export type ClaudeSessionStaleOwnerReap =
+  | 'absent'
+  | 'reaped'
+  | 'live-or-uncertain';
+
+/**
+ * Reap one unattachable worker only when the durable writer nonce and worker
+ * root both match the caller's registry facts and the original bridge is
+ * provably dead. PID alone is never authority to signal a process tree.
+ */
+export async function reapClaudeSessionStaleOwner(
+  sessionId: string,
+  expected: { ownerToken: string; rootPid?: number; processInstanceId?: string },
+  terminateTree: (rootPid: number) => Promise<void>,
+  options: ClaudeSessionStateOptions = {}
+): Promise<ClaudeSessionStaleOwnerReap> {
+  const { writerPath } = getClaudeSessionStatePaths(sessionId, options);
+  let observed: string;
+  try {
+    observed = await fs.readFile(writerPath, 'utf8');
+  } catch (error) {
+    return isNodeErrorCode(error, 'ENOENT') ? 'absent' : 'live-or-uncertain';
+  }
+  const owner = parseClaimToken(observed);
+  if (!owner || owner.nonce !== expected.ownerToken) {
+    return 'live-or-uncertain';
+  }
+  const bridge = instanceProbe(options).inspect(
+    owner.bridgePid,
+    owner.bridgeProcessInstanceId
+  );
+  if (bridge === 'same' || bridge === 'uncertain') {
+    return 'live-or-uncertain';
+  }
+  const worker = await readWorkerToken(writerPath, owner);
+  if (!worker) {
+    if (owner.admission !== 'supervised' || expected.rootPid !== undefined) {
+      return 'live-or-uncertain';
+    }
+    return (await reclaimDeadClaimOnce(writerPath, observed, owner))
+      ? 'reaped'
+      : 'live-or-uncertain';
+  }
+  if (expected.rootPid !== undefined && worker.rootPid !== expected.rootPid) {
+    return 'live-or-uncertain';
+  }
+
+  if (
+    expected.processInstanceId !== undefined &&
+    worker.processInstanceId !== expected.processInstanceId
+  ) {
+    return 'live-or-uncertain';
+  }
+
+  const workerInstance = instanceProbe(options).inspect(
+    worker.rootPid,
+    worker.processInstanceId
+  );
+  if (workerInstance === 'uncertain') return 'live-or-uncertain';
+  if (workerInstance === 'different') {
+    // The old worker is provably gone. Never signal a new process which
+    // merely reused its numeric PID.
+    return (await reclaimDeadClaimOnce(writerPath, observed, owner))
+      ? 'reaped'
+      : 'live-or-uncertain';
+  }
+
+  if (processTreeIsAlive(worker.rootPid, options)) {
+    if (
+      workerInstance === 'absent' &&
+      (options.platform ?? process.platform) === 'win32'
+    ) {
+      // After root exit, a Windows PID is no longer safe tree authority.
+      // The admitted kill-on-close Job controller must finish containment.
+      return 'live-or-uncertain';
+    }
+    try {
+      await terminateTree(worker.rootPid);
+    } catch {
+      return 'live-or-uncertain';
+    }
+    if (processTreeIsAlive(worker.rootPid, options)) return 'live-or-uncertain';
+  }
+  return (await reclaimDeadClaimOnce(writerPath, observed, owner))
+    ? 'reaped'
+    : 'live-or-uncertain';
 }

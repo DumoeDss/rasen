@@ -17,6 +17,7 @@ import {
 import { saveNamedProfile } from '../../src/core/named-profiles.js';
 import {
   getExpertSkillDefinitions,
+  INTERNAL_BUILTIN_WORKFLOW_IDS,
   loadWorkflowCatalog,
 } from '../../src/core/workflow-registry/index.js';
 
@@ -179,6 +180,13 @@ describe('profiles', () => {
 
     it('includes the recently-added `audit` workflow', () => {
       expect(getCurrentBuiltInWorkflowIds()).toContain('audit');
+    });
+
+    it('generically excludes every current and future internal built-in id', () => {
+      const ids = getCurrentBuiltInWorkflowIds();
+      for (const internalId of INTERNAL_BUILTIN_WORKFLOW_IDS) {
+        expect(ids).not.toContain(internalId);
+      }
     });
   });
 

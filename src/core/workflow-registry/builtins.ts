@@ -9,6 +9,7 @@ import {
   getExploreSkillTemplate,
   getGoalCommandSkillTemplate,
   getGoalIterateSkillTemplate,
+  getGoalJudgeSkillTemplate,
   getGoalPlanSkillTemplate,
   getGoalReportSkillTemplate,
   getHandoffSkillTemplate,
@@ -20,6 +21,7 @@ import {
   getOpsxProposeSkillTemplate,
   getRetainCommandSkillTemplate,
   getReviewCycleSkillTemplate,
+  getReviewFixSkillTemplate,
   getShipCommandSkillTemplate,
   getSyncSpecsSkillTemplate,
   getVerifyChangeSkillTemplate,
@@ -78,7 +80,11 @@ export const BUILT_IN_WORKFLOW_IDS = [
  * strong workflow dependencies and the temporary retro-wrapper compatibility
  * install root; the retention radio is its only profile control.
  */
-export const INTERNAL_BUILTIN_WORKFLOW_IDS = ['retain-command'] as const;
+export const INTERNAL_BUILTIN_WORKFLOW_IDS = [
+  'retain-command',
+  'review-fix',
+  'goal-judge',
+] as const;
 
 /** The retention runner's workflow id (internal, non-selectable). */
 export const RETENTION_RUNNER_WORKFLOW_ID = 'retain-command';
@@ -145,11 +151,18 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
     id: 'review-cycle',
     dirName: 'rasen-review-cycle',
     skill: getReviewCycleSkillTemplate,
-    requires: { skills: ['rasen-review'] },
+    requires: { workflows: ['review-fix'], skills: ['rasen-review'] },
+  },
+  {
+    id: 'review-fix',
+    dirName: 'rasen-review-fix',
+    skill: getReviewFixSkillTemplate,
+    kind: 'internal',
   },
   { id: 'handoff', dirName: 'rasen-handoff', skill: getHandoffSkillTemplate },
   { id: 'goal-plan', dirName: 'rasen-goal-plan', skill: getGoalPlanSkillTemplate, kind: 'internal' },
   { id: 'goal-iterate', dirName: 'rasen-goal-iterate', skill: getGoalIterateSkillTemplate, kind: 'internal' },
+  { id: 'goal-judge', dirName: 'rasen-goal-judge', skill: getGoalJudgeSkillTemplate, kind: 'internal' },
   { id: 'goal-report', dirName: 'rasen-goal-report', skill: getGoalReportSkillTemplate, kind: 'internal' },
   {
     id: 'goal-command',
@@ -157,6 +170,7 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
     skill: getGoalCommandSkillTemplate,
     kind: 'driver',
     requires: {
+      workflows: ['goal-judge'],
       pipelines: ['goal-loop-measure', 'goal-loop-evaluate', 'goal-loop-research'],
     },
   },

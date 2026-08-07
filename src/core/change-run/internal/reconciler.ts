@@ -57,6 +57,7 @@ export type ReconcilerNextAction =
         reviewCycle?: Readonly<{ loopPath: string; round: number; phase: string; openFindingIds: readonly string[] }>;
         goalCycle?: Readonly<{ loopPath: string; round: number; phase: string }>;
         boundedLoopStrategy?: Readonly<{
+          contract: 'bounded-loop/strategy-invocation/1';
           loopPath: string;
           attempt: number;
           trigger: string;
@@ -136,7 +137,11 @@ type NodeDisposition =
   | Readonly<{ status: 'gate-pending' }>
   | Readonly<{ status: 'gate-awaiting' }>
   | Readonly<{ status: 'gate-decided-proceed' }>
-  | Readonly<{ status: 'gate-decided-blocked'; gateId: string }>
+  | Readonly<{
+      status: 'gate-decided-terminal';
+      gateId: string;
+      disposition: 'fail' | 'escalate';
+    }>
   | Readonly<{ status: 'active' }>
   | Readonly<{ status: 'blocked' }>
   | Readonly<{ status: 'succeeded' }>
@@ -264,12 +269,12 @@ export function reconcile(
     if (succeeded.size === sizeBefore) break;
   }
 
-  // Pass 1b: bounded-loop outcomes → succeeded set update. A clean
-  // bounded-loop contributes its nodeId to the succeeded set so that
-  // downstream atomic nodes (ship, archive) whose requires includes the
-  // bounded-loop can proceed. An exhausted bounded-loop emits an escalate
-  // candidate. This pass runs BEFORE the atomic classification pass so
-  // downstream nodes see the updated succeeded set.
+  // Pass 1b: shared bounded-loop lifecycle decisions. Domain completion and
+  // lifecycle `exit` dispositions contribute the loop nodeId to the succeeded
+  // set so an authored tail can proceed without misreporting domain success.
+  // Strategy, human-required, escalation, failure, and cancellation remain
+  // distinct candidates. This pass runs before atomic classification so
+  // downstream nodes see the sealed lifecycle decision at the same boundary.
   const actions: ReconcilerNextAction[] = [];
   const boundedLoopAdmitCandidates: BoundedLoopAdmitCandidate[] = [];
   for (const loop of boundedLoopNodes) {
@@ -510,13 +515,45 @@ export function reconcile(
       // Check if this member should be admitted via FanOut pass.
       const isCandidate = fanOutMemberCandidates.some((c) => c.nodeId === node.nodeId);
       if (isCandidate) {
-        admitCandidates.push({
-          nodeId: node.nodeId,
-          occurrence: occurrenceFor(record, node),
-          admissionKind: node.admissionKind,
-          access: node.workspace.access,
-          ...(node.profilePath !== undefined ? { profilePath: node.profilePath } : {}),
-        });
+        const disposition = dispositionFor(plan, record, node, succeeded);
+        switch (disposition.status) {
+          case 'ready':
+          case 'gate-decided-proceed':
+            admitCandidates.push({
+              nodeId: node.nodeId,
+              occurrence: occurrenceFor(record, node),
+              admissionKind: node.admissionKind,
+              access: node.workspace.access,
+              ...(node.profilePath !== undefined
+                ? { profilePath: node.profilePath }
+                : {}),
+            });
+            break;
+          case 'gate-pending':
+            actions.push(awaitGateFor(plan, node));
+            break;
+          case 'suspending-unsupported':
+            actions.push({
+              kind: 'suspend-unsupported',
+              nodeId: node.nodeId,
+              code: disposition.code,
+            });
+            break;
+          case 'gate-decided-terminal':
+            actions.push({
+              kind: disposition.disposition,
+              code: `gate_rejected_${disposition.gateId}`,
+            });
+            break;
+          case 'pending':
+          case 'gate-awaiting':
+          case 'active':
+          case 'blocked':
+          case 'suspended-unsupported':
+          case 'failed':
+          case 'succeeded':
+            break;
+        }
       }
       continue;
     }
@@ -552,9 +589,9 @@ export function reconcile(
           code: disposition.code,
         });
         break;
-      case 'gate-decided-blocked':
+      case 'gate-decided-terminal':
         actions.push({
-          kind: 'escalate',
+          kind: disposition.disposition,
           code: `gate_rejected_${disposition.gateId}`,
         });
         break;
@@ -676,6 +713,7 @@ export function reconcile(
           profilePath: boundedLoopOriginal.descriptor.profilePath,
           input: {
             boundedLoopStrategy: {
+              contract: 'bounded-loop/strategy-invocation/1',
               loopPath: boundedLoopOriginal.loopPath,
               attempt: boundedLoopOriginal.strategy!.attempt,
               trigger: boundedLoopOriginal.strategy!.trigger,
@@ -1370,7 +1408,11 @@ function gateDisposition(
     const outcome = node.gate!.outcomes[decided.decisionId] ?? 'fail';
     return outcome === 'proceed'
       ? { status: 'gate-decided-proceed' }
-      : { status: 'gate-decided-blocked', gateId: node.gate!.gateId };
+      : {
+          status: 'gate-decided-terminal',
+          gateId: node.gate!.gateId,
+          disposition: outcome,
+        };
   }
   const awaited = record.transitions.some(
     (transition) =>

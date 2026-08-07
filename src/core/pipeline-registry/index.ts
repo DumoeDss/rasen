@@ -85,11 +85,14 @@ export {
   DefinitionReadError,
   createCapabilityCatalogSnapshot,
   createProductionCapabilityCatalogSnapshot,
+  createBlankPipelineDefinitionV2,
   orderDefinitionDiagnostics,
+  serializeAuthoredPipelineDefinition,
   type DefinitionSource,
   type DefinitionSourceV2,
   type DefinitionPort,
   type DefinitionArtifact,
+  type AtomicStageExecutionV1,
   type DefinitionNode,
   type DefinitionGraph,
   type DefinitionConnection,
@@ -101,12 +104,14 @@ export {
   type ProductionCapabilityDefinition,
   type ChangeRunPlan,
   type PreparedDefinition,
+  type PreparedBoundedLoopPolicy,
   type DefinitionPreparationResult,
 } from './definition.js';
 export {
   preflightPreparedDefinitionExecution,
   resolvePipelineExecutionSkillSets,
   validatePipelineForExecution,
+  validatePreparedPipelineForExecution,
   type PreparedDefinitionExecutionSelection,
   type PipelineExecutionSkillSets,
   type PipelineExecutionOptions,
@@ -117,6 +122,23 @@ export {
   type PreparedPipelineExecution,
   type ProductionPreparedPipelineRegistry,
 } from './prepared-registry.js';
+export {
+  projectPreparedPipelineExecutionView,
+  type PreparedExecutionStageView,
+  type PreparedExecutionCapabilityPathView,
+  type PreparedExecutionPolicyPathView,
+  type PreparedPipelineExecutionView,
+  type PreparedExecutionViewInputs,
+} from './prepared-execution-view.js';
+export {
+  CHANGE_LEVEL_BUILTIN_PIPELINES,
+  PIPELINE_V1_COMPATIBILITY_FIXTURES,
+  PIPELINE_V1_COMPATIBILITY_BOUNDARIES,
+  pipelineV1CompatibilityBoundary,
+  type ChangeLevelBuiltinPipeline,
+  type PipelineV1CompatibilityFixture,
+  type PipelineCompatibilityBoundary,
+} from './builtins.js';
 
 // Per-pipeline stage-override resolver + gate mask (config top layer)
 export {
@@ -213,6 +235,7 @@ export {
   loadPipelineByName,
   loadPreparedPipelineByName,
   resolvePipelinePath,
+  resolvePipelineSource,
   listPipelines,
   listPipelinesWithInfo,
   getPipelineDir,
@@ -230,6 +253,18 @@ export {
 
 // Legacy skill-ID recognition (resume old->new hinting)
 export { mapLegacySkillId } from './legacy-skill.js';
+
+export {
+  createTrustedExecutionAdapterCatalog,
+  loadTrustedExecutionAdapterCatalog,
+  provisionTrustedExecutionAdapterCatalog,
+  resolveTrustedExecutionAdapterAuthority,
+  trustedExecutionAdapterCatalogPath,
+  TrustedExecutionAdapterError,
+  PACKAGE_UNAVAILABLE_AUTHORITY,
+  type TrustedExecutionAdapterCatalog,
+  type TrustedExecutionAdapterDescriptor,
+} from './trusted-execution-adapters.js';
 
 // Portfolio run-state (portfolio-run.json) — multi-change observability + resume
 export {

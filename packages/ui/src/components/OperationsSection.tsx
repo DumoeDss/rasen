@@ -1087,6 +1087,25 @@ function RunDetailBody({
                   <span class="ops-run__action-kind">{action.kind}</span>
                   <span class="ops-run__action-id">{actShort.label}</span>
                   <span class="ops-run__delivery">{action.deliveryState}</span>
+                  {action.effects.length > 0 && (
+                    <ul class="ops-run__effect-list" data-testid="ops-run-effects">
+                      {action.effects.map((effect) => (
+                        <li
+                          key={effect.effectId}
+                          class={`ops-run__effect ops-run__effect--${effect.state}`}
+                          data-testid="ops-run-effect"
+                          data-effect-state={effect.state}
+                          title={`EffectId: ${effect.effectId}\nSlot: ${effect.slot}`}
+                        >
+                          <span class="ops-run__effect-slot">{effect.slot}</span>
+                          <span class="ops-run__effect-id">
+                            {shortId(effect.effectId).label}
+                          </span>
+                          <span class="ops-run__effect-state">{effect.state}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               );
             })}

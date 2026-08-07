@@ -10,9 +10,12 @@ export {
 } from './builtins.js';
 export { WorkflowCatalog, WorkflowCatalogError } from './catalog.js';
 export {
+  collectWorkflowPipelineCapabilityOwnerIds,
   computeWorkflowDependencyGraph,
+  type PipelineDependencySource,
   type WorkflowDependencyEntry,
   type WorkflowDependencyGraph,
+  type WorkflowPipelineCapabilityOwnerOptions,
 } from './dependency-graph.js';
 export { computeWorkflowDigest, sha256 } from './digest.js';
 export {

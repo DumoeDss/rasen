@@ -191,9 +191,11 @@ describe('review-cycle workflow', () => {
       await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
 
       const skillFile = path.join(testDir, '.claude', 'skills', 'rasen-review-cycle', 'SKILL.md');
+      const fixSkillFile = path.join(testDir, '.claude', 'skills', 'rasen-review-fix', 'SKILL.md');
       const commandFile = path.join(testDir, '.claude', 'commands', 'rasen', 'review-cycle.md');
 
       expect(await fileExists(skillFile)).toBe(true);
+      expect(await fileExists(fixSkillFile)).toBe(true);
       // The command surface is retired: no command file is ever generated.
       expect(await fileExists(commandFile)).toBe(false);
 
@@ -202,7 +204,7 @@ describe('review-cycle workflow', () => {
       expect(skillContent).toContain('rasen-review');
     });
 
-    it('does NOT generate review-cycle under the core profile', async () => {
+    it('installs review-cycle and its fix phase as core auto pipeline dependencies without generating a command', async () => {
       saveGlobalConfig({
         featureFlags: {},
         profile: 'core',
@@ -215,10 +217,14 @@ describe('review-cycle workflow', () => {
       const coreSkill = path.join(testDir, '.claude', 'skills', 'rasen-propose', 'SKILL.md');
       expect(await fileExists(coreSkill)).toBe(true);
 
-      // ...but review-cycle is opt-in and must be absent.
+      // review-cycle remains absent from CORE_WORKFLOWS (registration test),
+      // but core includes auto-command, whose required pipelines can dispatch
+      // both the cycle strategy and its write-capable fix phase.
       const skillFile = path.join(testDir, '.claude', 'skills', 'rasen-review-cycle', 'SKILL.md');
+      const fixSkillFile = path.join(testDir, '.claude', 'skills', 'rasen-review-fix', 'SKILL.md');
       const commandFile = path.join(testDir, '.claude', 'commands', 'rasen', 'review-cycle.md');
-      expect(await fileExists(skillFile)).toBe(false);
+      expect(await fileExists(skillFile)).toBe(true);
+      expect(await fileExists(fixSkillFile)).toBe(true);
       expect(await fileExists(commandFile)).toBe(false);
     });
 

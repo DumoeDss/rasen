@@ -8,9 +8,13 @@ import type {
   DefinitionNode,
   DefinitionSourceV2,
   FanOutNode,
+  GateNode,
   JoinNode,
 } from '../../pipeline-registry/definition.js';
-import type { RuntimeExecutionProfile } from '../../pipeline-registry/execution-plan-internal.js';
+import {
+  sealRuntimeExecutionPlan,
+  type RuntimeExecutionProfile,
+} from '../../pipeline-registry/execution-plan-internal.js';
 import type { PipelineYaml } from '../../pipeline-registry/types.js';
 import type { Digest, RunId } from '../contracts.js';
 import {
@@ -206,7 +210,7 @@ function isGoalCycleShaped(
         ? (bodyNode as Readonly<{ goalCyclePhase?: unknown }>).goalCyclePhase
         : undefined
     )
-    .filter((phase): phase is string => typeof phase === 'string')
+    .filter((phase): phase is NonNullable<typeof phase> => phase !== undefined)
     .sort();
   return (
     phases.length === 2 &&
@@ -222,8 +226,7 @@ function goalCycleBody(
   definition: DefinitionSourceV2,
   loop: BoundedLoopNode,
   capabilityByPath: Map<string, RuntimeExecutionProfile['capabilities'][number]>,
-  policyByPath: Map<string, RuntimeExecutionProfile['policy']['stages'][number]>,
-  pipelineName: string
+  policyByPath: Map<string, RuntimeExecutionProfile['policy']['stages'][number]>
 ): Readonly<{
   declaration: CompositeDeclaration;
   variant: 'measure' | 'evaluate' | 'research';
@@ -243,21 +246,17 @@ function goalCycleBody(
       `BoundedLoop ${loop.id} references missing body ${loop.body}.`
     );
   }
-  // Detect variant from the BoundedLoop node's explicit goalCycleVariant tag
-  // (set during normalization in definition.ts). Fall back to pipeline-name
-  // and gate-kind detection for backward compatibility with older plans that
-  // predate the explicit tag.
-  const nodeVariant = (loop as unknown as Readonly<{ goalCycleVariant?: unknown }>).goalCycleVariant;
-  const legacyStage = (loop as unknown as Readonly<{ legacy?: Readonly<{ loop?: Readonly<{ kind?: string; gate?: Readonly<{ kind?: string }> }> }> }>).legacy;
-  const legacyLoop = legacyStage?.loop;
-  const variant: 'measure' | 'evaluate' | 'research' =
-    nodeVariant === 'research' || nodeVariant === 'measure' || nodeVariant === 'evaluate'
-      ? (nodeVariant as 'measure' | 'evaluate' | 'research')
-      : pipelineName === 'goal-loop-research'
-        ? 'research'
-        : legacyLoop?.gate?.kind === 'measure'
-          ? 'measure'
-          : 'evaluate';
+  // Preparation requires and canonicalizes the typed variant for every
+  // GoalLoop-shaped body, including v1 compatibility normalization. The
+  // lowerer must never recover missing authored meaning from a package name or
+  // a legacy payload.
+  const variant = loop.goalCycleVariant;
+  if (variant === undefined) {
+    throw new RuntimePlanLowererError(
+      'lowerer_shape_mismatch',
+      `GoalCycle loop ${loop.id} must declare goalCycleVariant.`
+    );
+  }
 
   const phaseEntries = declaration.graph.nodes.map((node) => {
     if (node.kind !== 'AtomicStage') {
@@ -266,7 +265,7 @@ function goalCycleBody(
         `GoalCycle body ${declaration.id} may contain only AtomicStage phases.`
       );
     }
-    const phase = (node as Readonly<{ goalCyclePhase?: unknown }>).goalCyclePhase;
+    const phase = node.goalCyclePhase;
     if (
       typeof phase !== 'string' ||
       !(GOAL_CYCLE_PHASES as readonly string[]).includes(phase)
@@ -346,7 +345,7 @@ function isReviewCycleShaped(
         ? bodyNode.reviewCyclePhase
         : undefined
     )
-    .filter((phase): phase is string => typeof phase === 'string')
+    .filter((phase): phase is NonNullable<typeof phase> => phase !== undefined)
     .sort();
   return (
     phases.length === 4 &&
@@ -576,6 +575,45 @@ function compositeRefBody(
   return { nodes, terminalPaths };
 }
 
+function authoredGateInput(gate: GateNode): RuntimePlanGateInput {
+  return {
+    gateId: gate.id,
+    decisionIds: [...gate.outcomes],
+    outcomes: { ...gate.dispositions },
+  };
+}
+
+function assertTypedFanOut(node: FanOutNode): void {
+  if (
+    !Array.isArray(node.members) ||
+    !Number.isInteger(node.concurrencyCap) ||
+    !Number.isInteger(node.budget) ||
+    typeof node.joinNodeId !== 'string' ||
+    node.joinNodeId.length === 0
+  ) {
+    throw new RuntimePlanLowererError(
+      'lowerer_shape_mismatch',
+      `FanOut ${node.id} is missing typed FanOut lowering metadata.`
+    );
+  }
+}
+
+function assertTypedJoin(node: JoinNode): void {
+  if (
+    !Array.isArray(node.requiredMembers) ||
+    !Array.isArray(node.optionalMembers) ||
+    typeof node.outcomes !== 'object' ||
+    node.outcomes === null ||
+    typeof node.outcomes.proceed !== 'string' ||
+    typeof node.outcomes.failed !== 'string'
+  ) {
+    throw new RuntimePlanLowererError(
+      'lowerer_shape_mismatch',
+      `Join ${node.id} is missing typed Join lowering metadata.`
+    );
+  }
+}
+
 function lowerV2ReviewCyclePlanInput(
   prepared: PreparedDefinition,
   profile: RuntimeExecutionProfile,
@@ -588,6 +626,24 @@ function lowerV2ReviewCyclePlanInput(
   const policyByPath = new Map(
     profile.policy.stages.map((stage) => [stage.nodeId, stage] as const)
   );
+  const rootGateByTarget = new Map(
+    definition.root.nodes
+      .filter((node): node is GateNode => node.kind === 'Gate')
+      .map((node) => [node.target, node] as const)
+  );
+  const declarationGateFor = (
+    profilePath: string,
+    target: string
+  ): GateNode | undefined => {
+    const declarationId = profilePath.match(/^declaration:([^/]+)\/node:/u)?.[1];
+    const declaration = definition.declarations.find(
+      (candidate) => candidate.id === declarationId
+    );
+    return declaration?.graph.nodes.find(
+      (candidate): candidate is GateNode =>
+        candidate.kind === 'Gate' && candidate.target === target
+    );
+  };
 
   // Pre-pass: collect CompositeRef terminal paths so root-level dependents can
   // map `root:<composite-ref-id>` requires to the terminal body stage paths.
@@ -613,7 +669,7 @@ function lowerV2ReviewCyclePlanInput(
         expanded.push(req);
       }
     }
-    return expanded;
+    return [...new Set(expanded)].sort();
   };
 
   // ECP-4: Pre-scan for FanOut member stage IDs. The v1 normalizer keeps
@@ -626,14 +682,8 @@ function lowerV2ReviewCyclePlanInput(
   const fanOutMemberNodeIds = new Set<string>();
   for (const scanNode of definition.root.nodes) {
     if (scanNode.kind !== 'FanOut') continue;
-    const scanMeta = scanNode as FanOutNode & {
-      members?: ReadonlyArray<{ id: string; hierarchicalPath: string }>;
-    };
-    const memberList = scanMeta.members ?? scanNode.branches.map((id) => ({
-      id,
-      hierarchicalPath: `stage:${id}`,
-    }));
-    for (const member of memberList) {
+    assertTypedFanOut(scanNode);
+    for (const member of scanNode.members) {
       fanOutMemberNodeIds.add(member.hierarchicalPath);
     }
   }
@@ -641,10 +691,11 @@ function lowerV2ReviewCyclePlanInput(
   const nodes: RuntimePlanNodeInput[] = [];
 
   for (const node of definition.root.nodes) {
-    // Skip v1-normalization structural artifacts. Gate nodes are
-    // metadata carriers — gate logic is encoded in the AtomicStage's policy
-    // gate field. Legacy-loop BoundedLoop nodes (non-ReviewCycle) are not
-    // supported by the v2 runtime.
+    // Gate nodes are authored control contracts consumed when the targeted
+    // AtomicStage is lowered; they are not standalone runtime nodes. The
+    // AtomicStage policy carries only the resolved effective gate boolean.
+    // Legacy-loop BoundedLoop nodes (non-ReviewCycle) are not supported by
+    // the v2 runtime.
     if (node.kind === 'Gate') continue;
     // ECP-4: Choice nodes from v1 condition normalization are metadata only.
     // Choice nodes authored in v2 or from parallelGroup normalization are
@@ -675,6 +726,14 @@ function lowerV2ReviewCyclePlanInput(
             `No effective policy for ${profilePath}.`
           );
         }
+        const target = bodyNode.hierarchicalPath.split('/').at(-1)!;
+        const gate = declarationGateFor(profilePath, target);
+        if (policy.gate && gate === undefined) {
+          throw new RuntimePlanLowererError(
+            'lowerer_shape_mismatch',
+            `Effective gate for ${profilePath} has no authored Gate authority.`
+          );
+        }
         nodes.push({
           kind: 'atomic',
           hierarchicalPath: bodyNode.hierarchicalPath,
@@ -683,8 +742,8 @@ function lowerV2ReviewCyclePlanInput(
           workspace: { access: capability.workspace.access },
           adaptiveVerify: false,
           profilePath,
-          ...(policy.gate
-            ? { gate: gateInput(bodyNode.hierarchicalPath, DEFAULT_LOWERED_GATE_POLICY) }
+          ...(policy.gate && gate !== undefined
+            ? { gate: authoredGateInput(gate) }
             : {}),
         });
       }
@@ -731,6 +790,13 @@ function lowerV2ReviewCyclePlanInput(
           `No effective policy for ${path}.`
         );
       }
+      const gate = rootGateByTarget.get(node.id);
+      if (policy.gate && gate === undefined) {
+        throw new RuntimePlanLowererError(
+          'lowerer_shape_mismatch',
+          `Effective gate for ${path} has no authored Gate authority.`
+        );
+      }
       nodes.push({
         kind: 'atomic',
         hierarchicalPath: path,
@@ -738,8 +804,8 @@ function lowerV2ReviewCyclePlanInput(
         admissionKind: capability.actionKind,
         workspace: { access: capability.workspace.access },
         adaptiveVerify: false,
-        ...(policy.gate
-          ? { gate: gateInput(node.id, DEFAULT_LOWERED_GATE_POLICY) }
+        ...(policy.gate && gate !== undefined
+          ? { gate: authoredGateInput(gate) }
           : {}),
       });
       continue;
@@ -795,8 +861,7 @@ function lowerV2ReviewCyclePlanInput(
           definition,
           node,
           capabilityByPath,
-          policyByPath,
-          definition.name
+          policyByPath
         );
         const cleanExit = node.exits.clean;
         const continueExit = node.exits.needs_fix;
@@ -893,8 +958,10 @@ function lowerV2ReviewCyclePlanInput(
         if (targetConn) {
           branches[outcome] = `root:${targetConn.to.node}`;
         } else {
-          // Fallback: use the outcome as a path suffix
-          branches[outcome] = `root:${node.id}/${outcome}`;
+          throw new RuntimePlanLowererError(
+            'lowerer_shape_mismatch',
+            `Choice ${node.id} outcome ${outcome} must target one typed graph node.`
+          );
         }
       }
       nodes.push({
@@ -910,12 +977,7 @@ function lowerV2ReviewCyclePlanInput(
     }
     // ECP-4: FanOut nodes
     if (node.kind === 'FanOut') {
-      const fanOutMeta = node as FanOutNode & {
-        concurrencyCap?: number;
-        budget?: number;
-        joinNodeId?: string;
-        members?: ReadonlyArray<{ id: string; hierarchicalPath: string; required: boolean; condition: string }>;
-      };
+      assertTypedFanOut(node);
       // Member paths must be the FULL plan paths (`root:stage:<id>`) — the
       // same string the member atomic node is lowered under. createRuntimePlan
       // resolves `fanOut.members[].nodeId` through the plan's path→nodeId map,
@@ -924,20 +986,12 @@ function lowerV2ReviewCyclePlanInput(
       // normalize once here; without this the member nodeIds resolve to
       // undefined and NO member is ever admitted (the FanOut silently stalls
       // with every member stuck at `ready`).
-      const memberList = (
-        fanOutMeta.members ?? node.branches.map((id) => ({
-          id,
-          hierarchicalPath: `stage:${id}`,
-          required: true,
-          condition: 'always',
-        }))
-      ).map((member) => ({
+      const memberList = node.members.map((member) => ({
         ...member,
         hierarchicalPath: member.hierarchicalPath.startsWith('root:')
           ? member.hierarchicalPath
           : `root:${member.hierarchicalPath}`,
       }));
-      const joinNodeId = fanOutMeta.joinNodeId ?? `join:${node.id.replace('fanout:', '')}-join`;
       nodes.push({
         kind: 'fan-out',
         hierarchicalPath: `root:${node.id}`,
@@ -951,19 +1005,33 @@ function lowerV2ReviewCyclePlanInput(
             required: m.required,
             condition: m.condition,
           })),
-          concurrencyCap: fanOutMeta.concurrencyCap ?? 3,
-          budget: fanOutMeta.budget ?? memberList.length,
-          joinNodeId: `root:${joinNodeId}`,
+          concurrencyCap: node.concurrencyCap,
+          budget: node.budget,
+          joinNodeId: `root:${node.joinNodeId}`,
         },
       });
       // Also lower each member as an atomic node with fanOutTag
       for (const member of memberList) {
         const memberPath = member.hierarchicalPath;
         const capability = capabilityByPath.get(memberPath);
+        const policy = policyByPath.get(memberPath);
         if (capability === undefined) {
           throw new RuntimePlanLowererError(
             'lowerer_shape_mismatch',
             `No frozen capability binding exists for ${memberPath}.`
+          );
+        }
+        if (policy === undefined) {
+          throw new RuntimePlanLowererError(
+            'lowerer_shape_mismatch',
+            `No effective policy for ${memberPath}.`
+          );
+        }
+        const gate = rootGateByTarget.get(member.id);
+        if (policy.gate && gate === undefined) {
+          throw new RuntimePlanLowererError(
+            'lowerer_shape_mismatch',
+            `Effective gate for ${memberPath} has no authored Gate authority.`
           );
         }
         nodes.push({
@@ -975,20 +1043,16 @@ function lowerV2ReviewCyclePlanInput(
           adaptiveVerify: false,
           profilePath: memberPath,
           fanOutTag: { nodeId: `root:${node.id}`, required: member.required },
+          ...(policy.gate && gate !== undefined
+            ? { gate: authoredGateInput(gate) }
+            : {}),
         });
       }
       continue;
     }
     // ECP-4: Join nodes
     if (node.kind === 'Join') {
-      const joinMeta = node as JoinNode & {
-        requiredMembers?: readonly string[];
-        optionalMembers?: readonly string[];
-        outcomes?: Readonly<{ proceed: string; failed: string }>;
-      };
-      const requiredMembers = joinMeta.requiredMembers ?? [];
-      const optionalMembers = joinMeta.optionalMembers ?? node.inputs;
-      const outcomes = joinMeta.outcomes ?? { proceed: 'join-done', failed: 'join-failed' };
+      assertTypedJoin(node);
       // Resolve member hierarchical paths (prepend root:)
       const resolveMemberPaths = (members: readonly string[]) =>
         members.map((m) => m.startsWith('root:') ? m : `root:${m}`);
@@ -997,9 +1061,9 @@ function lowerV2ReviewCyclePlanInput(
         hierarchicalPath: `root:${node.id}`,
         requires: resolveRequires(node.id),
         join: {
-          requiredMembers: resolveMemberPaths([...requiredMembers]),
-          optionalMembers: resolveMemberPaths([...optionalMembers]),
-          outcomes,
+          requiredMembers: resolveMemberPaths([...node.requiredMembers]),
+          optionalMembers: resolveMemberPaths([...node.optionalMembers]),
+          outcomes: node.outcomes,
         },
       });
       continue;
@@ -1010,14 +1074,16 @@ function lowerV2ReviewCyclePlanInput(
     );
   }
   const hasFinish = nodes.some((node) => node.kind === 'finish');
+  const sealedPlan = sealRuntimeExecutionPlan(prepared.plan, profile);
   return {
     runId,
     pipeline: definition.name,
-    planDigest: `sha256:${prepared.digests.plan}` as Digest,
+    planDigest: `sha256:${sealedPlan.digest}` as Digest,
     profileDigest: profile.profileDigest,
     sourceRevisionDigest: profile.sourceRevision.semanticDigest as Digest,
     capabilityDigest: profile.capabilityProfileDigest,
     policyDigest: profile.policyDigest,
+    executionProfile: profile,
     ...(hasFinish ? {} : { implicitFinishOutcome: `${definition.name}-completed` }),
     nodes,
   };
@@ -1089,13 +1155,16 @@ export function lowerRuntimePlanInput(
   return {
     runId,
     pipeline: pipeline.name,
-    // The plan envelope digest is stored as raw hex; the canonical Digest
-    // identity carries the sha256: prefix, so bind the prefixed form here.
-    planDigest: `sha256:${prepared.digests.plan}` as Digest,
+    // Seal the complete public execution meaning. In particular, the exact
+    // host-owned adapter attestation authority participates through the
+    // RuntimeExecutionProfile instead of leaving RuntimePlan identity bound to
+    // Definition-only authoring meaning.
+    planDigest: `sha256:${sealRuntimeExecutionPlan(prepared.plan, profile).digest}` as Digest,
     profileDigest: profile.profileDigest,
     sourceRevisionDigest: profile.sourceRevision.semanticDigest as Digest,
     capabilityDigest: profile.capabilityProfileDigest,
     policyDigest: profile.policyDigest,
+    executionProfile: profile,
     implicitFinishOutcome: `${pipeline.name}-completed`,
     nodes,
   };

@@ -258,7 +258,7 @@ describe('closed change-run codecs', () => {
       decodeActorRef({ ...actor, format: 'change-run-actor/2' })
     ).toThrowError(expect.objectContaining({ code: 'unsupported_contract_version' }));
     expect(() =>
-      decodeEvidenceRef({ ...evidence, format: 'change-run-evidence-ref/2' })
+      decodeEvidenceRef({ ...evidence, format: 'change-run-evidence-ref/3' })
     ).toThrowError(expect.objectContaining({ code: 'unsupported_contract_version' }));
     expect(() => decodeRunAction({ ...action, command: {} })).toThrow(
       ChangeRunContractError

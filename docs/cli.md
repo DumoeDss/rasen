@@ -1444,6 +1444,45 @@ in the action context the agent reads (see [`rasen status`](#rasen-status)).
 
 ---
 
+## Durable hosted agent Sessions
+
+`rasen session` talks to the resident local daemon. The daemon, not the short-lived
+CLI caller, owns the agent process and its stdin/stdout pipes.
+
+```bash
+# Create a Session. The prompt body is read from a bounded file and sent over stdin.
+rasen session exec --backend claude --prompt-file ./turn.txt --cwd . --json
+
+# Wake the same stable Rasen Session with a new idempotency key.
+rasen session exec --backend claude --prompt-file ./next-turn.txt --cwd . \
+  --session <rasen-session-uuid> --request-id <request-uuid> --json
+
+rasen session list --json
+rasen session inspect <rasen-session-uuid> --json
+rasen session cancel <rasen-session-uuid> --reason operator-stop --json
+rasen session restart <rasen-session-uuid> --json
+rasen session retire <rasen-session-uuid> --reason work-complete --json
+```
+
+The public Rasen Session UUID stays stable. The backend Session id is separate
+and is used only for exact recovery. Closing the CLI caller is a logical driver
+reattach: the daemon and live transport continue. After daemon replacement, an
+idle Session can be opened with the exact backend identity and original canonical
+working directory. A request durably marked `sent` but not `settled` becomes
+`ambiguous`/`interrupted`; Rasen never replays that input automatically.
+
+`cancel` fences the current generation and classifies a turn as cancelled only
+when the backend can prove it did no work; otherwise the result remains unknown.
+`restart` requires the exact backend identity and original directory. `retire`
+is terminal and permanently rejects later wake or restart operations.
+
+Hosted Session outcomes are execution-layer receipts only. They do not complete
+a canonical Run, write Action/Record/Evidence, or make a trust claim. Registry,
+state, upgrade, and local Management API details are in
+[Durable Session host](session-host.md).
+
+---
+
 ## Personal worksets
 
 > **Beta.** Worksets are part of the new beta surface; commands, flags, and file formats may change shape between releases. For the walkthrough, see the [stores guide](stores-beta/user-guide.md#worksets-reopen-the-folders-you-work-on-together).
@@ -2641,9 +2680,9 @@ Pipeline help and Rasen-owned human output for all eleven subcommands are availa
 | `export <name> <path>` | Package an installed **user** pipeline as a deterministic `.rasenpkg`; built-in and project-local pipelines cannot be exported |
 | `delete <name>` | Delete an unreferenced user pipeline after a refcount check; built-in pipelines cannot be deleted |
 
-**Pipeline definition content version.** The public reader accepts authored `version: 1` and `version: 2`. Historical definitions with no version remain readable as v1; unsupported or malformed versions fail at `/version`. `show` and the management detail API preserve the authored definition/version while preparation reports normalized v2 planning and execution capability. `save` and `export` preserve either supported authored version. `init` still scaffolds v1 today; making v2 the default for every new authoring entry point is an open 0.2.0 ECP closure item. The package manifest's `formatVersion` is a separate `.rasenpkg` container version.
+**Pipeline definition content version.** New CLI and Canvas drafts start from a minimal authored `version: 2` definition, and the six Change-level package pipelines (`bug-fix`, `small-feature`, `full-feature`, and the three `goal-loop-*` variants) are authored v2. The public reader also accepts authored `version: 1` as a compatibility input; historical definitions with no version remain readable as v1, while unsupported or malformed versions fail at `/version`. `show` and the management detail API preserve the authored definition/version while preparation reports normalized v2 planning and execution capability. `save` and `export` preserve either supported authored version. The package manifest's `formatVersion` is a separate `.rasenpkg` container version.
 
-Pipeline v1 keeps the flat `requires` DAG and `stage.loop.kind: review-cycle | goal` declarations. They are compatibility inputs normalized into the same composite plan used by authored v2. With the default `runs.engine: auto`, supported Change-level pipelines run under the reconciler; the legacy playbook remains only for an explicit/owned legacy path. Canvas edits v1 and v2 definitions, but its current v2 authoring surface is not yet symmetric: FanOut/Join are read-only and the complete bounded-loop/GoalLoop policy surface is still an ECP closure item.
+Pipeline v1 keeps the flat `requires` DAG and `stage.loop.kind: review-cycle | goal` declarations. They are compatibility inputs normalized into the same composite plan used by authored v2. `auto-decompose` is the only package v1 compatibility fixture; list, show, and Management API responses identify its migration boundary as `issue-dispatch-0.3.0`. With the default `runs.engine: auto`, supported Change-level pipelines run under the reconciler; the legacy playbook remains only for an explicit/owned legacy path. Canvas continues to edit existing authored v1 definitions without silently converting them. Its v2 authoring surface intentionally does not add full primitive/loop editor parity in this Change.
 
 `.rasenpkg` files carry a `kind` discriminant — `workflow`, `profile`, or `pipeline` — sharing one package format. A `kind: pipeline` package's digest, transactional install (temp stage → atomic rename, all-or-nothing across every packaged pipeline), and file-limit rules mirror the `kind: workflow` contract in [Installable workflows and `.rasenpkg`](workflow-packages.md). Every package also carries an optional `minRasenVersion`, stamped from the packing CLI's own version: an older CLI importing a package that requires a newer one gets a clear upgrade message instead of an opaque schema error. This preflight only helps CLIs from this point forward — an already-shipped CLI predating this field still rejects an unrecognized package `kind` opaquely; there is no way to retrofit that.
 

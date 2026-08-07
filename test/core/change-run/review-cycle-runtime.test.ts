@@ -14,6 +14,10 @@ import { buildAgentAction } from '../../../src/core/change-run/internal/actions.
 import { buildAgentActor } from '../../../src/core/change-run/internal/actors.js';
 import { computeCompletionReceiptDigest } from '../../../src/core/change-run/internal/completion.js';
 import { createChangePipelineRuntime } from '../../../src/core/change-run/internal/facade-runtime.js';
+import {
+  buildEvidenceRef,
+  createBoundedEvidenceStore,
+} from '../../../src/core/change-run/internal/evidence.js';
 import { createInMemoryRunStore } from '../../../src/core/change-run/internal/run-store.js';
 import { createRuntimePlan } from '../../../src/core/change-run/internal/runtime-plan.js';
 import type { RuntimePlan } from '../../../src/core/change-run/internal/runtime-plan.js';
@@ -23,6 +27,11 @@ import {
   reviewCycleInvocation,
 } from '../../../src/core/change-run/internal/review-cycle-runtime.js';
 import { startRecord } from './reconciler-fixture.js';
+import {
+  TEST_ATTESTATION_AUTHORITY,
+  attestTestCompletion,
+  stageTestCompletion,
+} from '../../fixtures/trusted-completion.js';
 
 const branded = <T>(value: string): T => value as T;
 const digest = (char: string) =>
@@ -160,6 +169,10 @@ function createHarness(maxIterations = 3, withStrategy = false) {
   const runtimePlan = plan(maxIterations, withStrategy);
   const initial = startRecord(runtimePlan);
   const store = createInMemoryRunStore();
+  const evidenceStore = createBoundedEvidenceStore({
+    maxRunBytes: 1024 * 1024,
+    maxEntries: 128,
+  });
   const buildAction = (descriptor: {
     nodeId: string;
     occurrence: number;
@@ -203,6 +216,7 @@ function createHarness(maxIterations = 3, withStrategy = false) {
             id: `adapter:${role}`,
             version: '1',
             contentDigest: digest('b'),
+            attestationAuthority: TEST_ATTESTATION_AUTHORITY,
           },
         },
         stage: {
@@ -246,11 +260,13 @@ function createHarness(maxIterations = 3, withStrategy = false) {
     store,
     initial,
     buildAction,
+    evidenceStore,
     runtime: createChangePipelineRuntime({
       store,
       plan: runtimePlan,
       initialRecord: initial,
       buildAction,
+      evidenceStore,
     }),
   };
 }
@@ -261,36 +277,74 @@ function restartHarness(harness: ReturnType<typeof createHarness>): void {
     plan: harness.plan,
     initialRecord: harness.initial,
     buildAction: harness.buildAction,
+    evidenceStore: harness.evidenceStore,
   });
+}
+
+function completionEvidence(
+  harness: ReturnType<typeof createHarness>,
+  action: RunAction
+): { actorAttestation: EvidenceRef; proof: EvidenceRef } {
+  const authority = action.completionAuthority!;
+  const common = {
+    planningSpaceId: branded<PlanningSpaceId>(
+      `planning-space:${'1'.repeat(64)}`
+    ),
+    changeInstanceId: branded<ChangeInstanceId>(
+      `change-instance:${'2'.repeat(64)}`
+    ),
+    projectId: 'project-fixture',
+    changeId: 'fixture-change',
+    runId: action.runId as RunId,
+    actionId: action.actionId as ActionId,
+    treeDigest: action.expectedBeforeWorkspace.treeDigest,
+  };
+  const attestationBytes = Buffer.from('{"attested":true}');
+  const proofBytes = Buffer.from('{"kind":"domain-action-result"}');
+  const actorAttestation = buildEvidenceRef({
+    content: attestationBytes,
+    mediaType: authority.actorAttestation.mediaType,
+    observationKind: authority.actorAttestation.observationKind,
+    producer: authority.actorAttestation.producer,
+    binding: { ...common, schema: authority.actorAttestation.schema },
+  });
+  const domainAuthority = authority.observations.domainActionResult;
+  const proof = buildEvidenceRef({
+    content: proofBytes,
+    mediaType: domainAuthority.mediaType,
+    observationKind: domainAuthority.observationKind,
+    producer: domainAuthority.producer,
+    binding: { ...common, schema: domainAuthority.schema },
+  });
+  harness.evidenceStore.stageClaimed(actorAttestation, attestationBytes);
+  harness.evidenceStore.stageClaimed(proof, proofBytes);
+  return { actorAttestation, proof };
 }
 
 async function complete(
   harness: ReturnType<typeof createHarness>,
   action: RunAction,
   eventActor: ReturnType<typeof actor>,
-  result: JsonValue
+  result: JsonValue,
+  overrideActor = false
 ) {
-  const attestation = evidence(action, 'c');
-  const proof = evidence(action, 'e');
-  const base = {
-    format: 'change-run-completion/1' as const,
-    kind: 'domain-action-result' as const,
+  const submission = attestTestCompletion({
     change: { projectRoot: '/root', changeId: 'fixture-change' },
-    runId: action.runId,
-    actionId: action.actionId,
-    invocationId: action.invocationId,
-    receiptDigest: digest('0'),
-    actor: eventActor,
-    actorAttestation: attestation,
-    evidence: [proof],
-    status: 'succeeded' as const,
-    result,
-  };
+    record: harness.store.load(harness.plan.runId),
+    action,
+    completion: { kind: 'domain-action-result', status: 'succeeded', result },
+    evidenceContent: Buffer.from(JSON.stringify({ result })),
+  });
+  let completion = stageTestCompletion(harness.evidenceStore, submission);
+  if (overrideActor) {
+    const changed = { ...completion, actor: eventActor };
+    completion = {
+      ...changed,
+      receiptDigest: computeCompletionReceiptDigest(changed),
+    };
+  }
   return harness.runtime.complete(
-    {
-      ...base,
-      receiptDigest: computeCompletionReceiptDigest(base),
-    },
+    completion,
     { deliveryMode: 'grant' }
   );
 }
@@ -298,29 +352,23 @@ async function complete(
 async function completeBlocked(
   harness: ReturnType<typeof createHarness>,
   action: RunAction,
-  eventActor: ReturnType<typeof actor>
+  _eventActor: ReturnType<typeof actor>
 ) {
-  const base = {
-    format: 'change-run-completion/1' as const,
-    kind: 'domain-action-result' as const,
+  const result = {
+    contract: 'bounded-loop/blocked/1',
+    reasonCode: 'dependency_unavailable',
+    blockerKey: 'fixture:review-dependency',
+    detail: 'Retry after restoring the fixture dependency.',
+  } as const;
+  const submission = attestTestCompletion({
     change: { projectRoot: '/root', changeId: 'fixture-change' },
-    runId: action.runId,
-    actionId: action.actionId,
-    invocationId: action.invocationId,
-    receiptDigest: digest('0'),
-    actor: eventActor,
-    actorAttestation: evidence(action, 'c'),
-    evidence: [evidence(action, 'e')],
-    status: 'blocked' as const,
-    result: {
-      contract: 'bounded-loop/blocked/1',
-      reasonCode: 'dependency_unavailable',
-      blockerKey: 'fixture:review-dependency',
-      detail: 'Retry after restoring the fixture dependency.',
-    },
-  };
+    record: harness.store.load(harness.plan.runId),
+    action,
+    completion: { kind: 'domain-action-result', status: 'blocked', result },
+    evidenceContent: Buffer.from(JSON.stringify(result)),
+  });
   return harness.runtime.complete(
-    { ...base, receiptDigest: computeCompletionReceiptDigest(base) },
+    stageTestCompletion(harness.evidenceStore, submission),
     { deliveryMode: 'grant' }
   );
 }
@@ -401,8 +449,8 @@ describe('ReviewCycle canonical Runtime', () => {
             evidence: [evidence(reReview, '5')],
           },
         ],
-      })
-    ).rejects.toMatchObject({ code: 'review_cycle_actor_separation' });
+      }, true)
+    ).rejects.toThrow(/actor does not match the (?:admitted )?Action authority/i);
 
     const finished = await complete(harness, reReview, verifier, {
       contract: 'review-cycle/verification-result/1',
@@ -421,7 +469,9 @@ describe('ReviewCycle canonical Runtime', () => {
     const fixResult = Object.values(head.actions).find(
       (entry) => entry.action.nodeId === fix.nodeId
     )?.result;
-    expect(fixResult?.actor?.identityDigest).toBe(fixer.identityDigest);
+    expect(fixResult?.actor?.identityDigest).toBe(
+      fix.completionAuthority!.actor.identityDigest
+    );
     expect(fixResult?.actorAttestation).toBeDefined();
   });
 
@@ -700,8 +750,8 @@ describe('ReviewCycle failure-first guards', () => {
             evidence: [evidence(action, '5')],
           },
         ],
-      })
-    ).rejects.toMatchObject({ code: 'review_cycle_actor_separation' });
+      }, true)
+    ).rejects.toThrow(/actor does not match the (?:admitted )?Action authority/i);
     expect(harness.store.load(harness.plan.runId)).toBe(recordBefore);
   });
 
@@ -970,7 +1020,7 @@ describe('ReviewCycle happy-path and identity', () => {
     );
     expect(reviewCommitted?.result).toBeDefined();
     expect(reviewCommitted?.result?.actor?.identityDigest).toBe(
-      reviewer.identityDigest
+      reviewAction.completionAuthority!.actor.identityDigest
     );
     expect(reviewCommitted?.result?.actorAttestation).toBeDefined();
 

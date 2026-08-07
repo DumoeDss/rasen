@@ -435,6 +435,7 @@
       "pipelineTableStages": "    stages: {stages}",
       "pipelineLabel": "Pipeline: {name}",
       "definitionVersionLabel": "Definition version: {version}",
+      "compatibilityBoundaryLabel": "Compatibility input boundary: {boundary}",
       "hostRuntimeLabel": "Host runtime: {runtime} ({source})",
       "pipelineNotFound": "Pipeline '{name}' not found. Available pipelines:\n  {available}",
       "originLabel": "Origin: {origin}",
@@ -2177,6 +2178,103 @@
             },
             "status": {
               "description": "Report whether the resident daemon is running"
+            }
+          }
+        },
+        "session": {
+          "description": "Execute and control durable hosted agent Sessions through the resident daemon",
+          "commands": {
+            "exec": {
+              "description": "Create or wake one hosted Session turn",
+              "options": {
+                "backend": {
+                  "description": "Named server-supported agent backend"
+                },
+                "prompt-file": {
+                  "description": "Read the turn input from this bounded file"
+                },
+                "cwd": {
+                  "description": "Bind or verify the Session working directory"
+                },
+                "session": {
+                  "description": "Wake this existing Rasen Session UUID"
+                },
+                "request-id": {
+                  "description": "Idempotency UUID for this turn"
+                },
+                "timeout-ms": {
+                  "description": "Bound the turn wall-clock time in milliseconds"
+                },
+                "json": {
+                  "description": "Output exactly one JSON receipt"
+                }
+              }
+            },
+            "list": {
+              "description": "List durable hosted Sessions",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "inspect": {
+              "description": "Inspect one durable hosted Session",
+              "positionals": {
+                "id": {
+                  "description": "Rasen Session UUID"
+                }
+              },
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "cancel": {
+              "description": "Cancel the exact live Session generation",
+              "positionals": {
+                "id": {
+                  "description": "Rasen Session UUID"
+                }
+              },
+              "options": {
+                "reason": {
+                  "description": "Bounded cancellation reason"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "restart": {
+              "description": "Open an exact-resume Session generation",
+              "positionals": {
+                "id": {
+                  "description": "Rasen Session UUID"
+                }
+              },
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "retire": {
+              "description": "Permanently retire a hosted Session",
+              "positionals": {
+                "id": {
+                  "description": "Rasen Session UUID"
+                }
+              },
+              "options": {
+                "reason": {
+                  "description": "Bounded retirement reason"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
             }
           }
         },

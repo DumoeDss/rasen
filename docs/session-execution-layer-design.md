@@ -10,6 +10,12 @@
 > 状态：设计稿，待 ECP-4 契约冻结 + 探针结果后修订并排期。
 > 日期：2026-07-29
 
+> **ECP-7 P1 实现校准（2026-08-04）**：持久 Session host、原子 registry、
+> Claude stream-json adapter、daemon-local Management API 与 `rasen session`
+> 已落地并通过本地主机的真实无网络常驻进程测试。本文后续 tier、touch、policy、
+> canonical completion 与 self-hosting 章节仍是后续子项，不能从 P1 的落地推断为已实现。
+> 具体运行契约见 [`docs/session-host.md`](session-host.md)。
+
 ---
 
 ## 1. 重定位说明：为什么从 0.1.6 playbook 改到 0.2.0 内核
@@ -119,7 +125,13 @@ rasen pipeline complete <change> --run <id> --from <receipt.json>
 
 daemon 侧驱动遵循 ECP-5 确立的 `run-control.ts` 桥接约定：服务端绝不 in-process 改 Record——pre-spawn 校验后 spawn 本地 CLI 子命令、解析其 JSON receipt。
 
-**P1 模块落点修正**：不从零建 `src/core/session-host/`——`management-api/supervisor.ts` 已有 headless `claude` spawn、pid 管理、tree-kill、并发槽、Windows `.cmd` 转义（一次性 `-p`、stdin ignore）；`session-registry.ts` 是内存 registry 且注释预留了 daemon 独立构造。P1 = 给 supervisor 增加 stream-json stdin 多轮 + resume 宿主模式，并把 session registry 持久化（§7 schema），而非新起炉灶。
+**P1 实现落点校准（2026-08-04）**：早期“直接扩展
+`management-api/supervisor.ts`”的假设已被实现证据取代。旧 supervisor 的一次性
+launch、容量与 wire 兼容语义必须原样保留；常驻 transport、durable request phase、
+exact-resume 与 fail-closed registry 则需要更深的独立边界。因此实现落在
+`src/core/session-host/`，复用既有 `spawnAgentCli`、`killProcessTree`、daemon
+identity/readiness 与 file-state 原语，并由 Management router 作窄适配。两种 Session
+在 daemon 内并存，`GET /api/v1/sessions` 只增加 hosted view，不改变旧 launch 语义。
 
 #### P2 上游前置四条 —— ECP-5 交付后的实际处置（2026-07-30 逐条核实于 `be124057`）
 
@@ -328,7 +340,7 @@ rasen agent audit --run <runId>
 > **P0 第二轮（同日深夜收官，主会话直跑 + haiku subagent 操作员）**：上述三项全部关闭，结果见 §5.1 表——live 进程 55 分钟 HIT（含 repo 变化免疫实证）/65 分钟 MISS（1h TTL 上界）/重写后 5 分钟温链恢复；fork 无热继承（0/2，§6.3 已改写）；KC5 非确定性丢轮次复现。**touch 策略回归 §6.2 原始数字（~50 分钟 cadence、仅 >55 分钟空闲场景），P0 全部验证事项就此完结，P1 可开工（等 ECP 排期）。**
 > 运维教训（第二轮又复现两次）：subagent 后台闲等的完成通知会丢——数据须落盘、收割不依赖通知，正是本设计 registry/journal 的立论；探针脚本的日志写入（Add-Content）可能撞瞬时文件锁导致脚本早退，结果文件先于日志落盘的顺序救了数据，P1 实现里 registry 写入须 retry-on-lock。
 
-**P1 — SessionHost + registry + daemon touch scheduler（探针已通过；上游已清空，随时可开工）**
+**P1 — SessionHost + registry（2026-08-04：durable host 子项已实现；touch/policy 仍后续）**
 
 > **开工状态（2026-07-30 回写）**：**P1 的所有前期任务已完成，没有任何等待项。**
 > 1. 本分支已 rebase 到 `dev/0.2.0`（12 个 docs 提交，`origin/dev/0.2.0` 之上，0 落后）——
@@ -341,11 +353,13 @@ rasen agent audit --run <runId>
 > `execution_profile_unavailable` fail-closed（设计如此，portfolio 级活仍走 legacy），所以 P1 的
 > executor 验收只应覆盖 6 个受支持的内建 pipeline，不要把 decompose 路径当回归。
 
-模块落点见 §4.2「P1 模块落点修正」——**不新起 `src/core/session-host/`**，而是给
-`management-api/supervisor.ts` 增加 stream-json stdin 多轮 + resume 宿主模式，并把 session registry
-持久化（§7 schema）+ `rasen session exec|list|retire` CLI + daemon 内的 touch scheduler
-（§6.1 机械执行器）+ 单测。只读 `change-run/` 的契约类型，不改其实现。
-门槛：真实 create→wake×N→touch→retire 链全绿；并发 wake 拒绝；retired 拒绝唤醒；registry 与 transcript 事实一致；daemon 在真实 50 分钟窗口自动 touch 续命且 deadline 后停止（KC1c 的自动化复现）；daemon 关闭时全链路仍正确（仅多付 MISS）。
+实际落点见 §4.2「P1 实现落点校准」：`src/core/session-host/` 持有 deep host、
+registry 与 backend seam；Management server 在 readiness 前 reconcile，并在 shutdown 时同时
+drain 旧 supervisor 与 deep host；`rasen session exec|list|inspect|cancel|restart|retire`
+经 authenticated daemon-local API 驱动。真实 create→wake×2、driver 退出后复连、exact resume、
+并发 wake 拒绝、ambiguous 不重放、retired 终态、registry fault 与无网络真实进程链已有自动化证据。
+touch cadence、tier/policy 与 canonical Run completion 不属于 durable-host 子项，仍由后续 ECP-7
+children 承接；这里不得把它们标成 P1 已完成。
 
 **P2 — ReviewCycle dogfood 接线（接线已在 §4.2 定案；开工前有上游前置）**
 ReviewCycle 的 reviewer stage 以 `same-invocation` 复用真实跑一个 change。

@@ -358,6 +358,14 @@ describe('artifact-workflow CLI commands', () => {
       expect(state.pipeline).toBe('small-feature');
       expect(state.stages.propose.status).toBe('pending');
       const stages = state.stages as Record<string, { status: string }>;
+      expect(Object.keys(stages).sort()).toEqual([
+        'propose',
+        'apply',
+        'verify',
+        'review-loop',
+        'ship',
+        'archive',
+      ].sort());
       expect(Object.values(stages).every(stage => stage.status === 'pending')).toBe(true);
 
       const resumed = await runCLI(

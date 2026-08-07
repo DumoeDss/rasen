@@ -7,14 +7,32 @@
  * without a canvas mount, the same reasoning that made `layout.ts` pure.
  */
 import type {
+  PipelineAgentRuntime,
+  PipelineAgentRuntimeSandbox,
+  PipelineAgentRuntimeSessionReuse,
+  PipelineStageHandoffConfig,
+  PipelineVerifyPolicy,
   ThresholdValue,
+  WireAtomicStageExecutionV1,
+  WireAtomicStageNode,
+  WireBoundedLoopLifecyclePolicyV1,
+  WireBoundedLoopNode,
   WireCompositeDeclaration,
+  WireDefinitionArtifact,
   WireDefinitionConnection,
   WireDefinitionNode,
+  WireDefinitionPort,
+  WireFanOutNode,
+  WireGateNode,
+  WireGoalCycleVariant,
+  WireGoalCyclePhase,
+  WireJoinNode,
   WirePipelineDefinition,
   WirePipelineDefinitionV1,
   WirePipelineDefinitionV2,
   WirePipelineDefinitionStage,
+  WireStageRole,
+  WireReviewCyclePhase,
 } from '../api/types.js';
 
 /**
@@ -49,6 +67,43 @@ export function isV2Definition(
   def: WirePipelineDefinition
 ): def is WirePipelineDefinitionV2 {
   return def.version === 2;
+}
+
+/**
+ * Browser-safe mirror of the core blank Definition v2 factory. Keep this pure
+ * and dependency-free so Canvas never bundles the Node-oriented kernel. The
+ * cross-package parity fixture pins every field to the core factory.
+ */
+export function createBlankCanvasPipelineDefinitionV2(
+  name: string,
+  source = 'canvas'
+): WirePipelineDefinitionV2 {
+  return {
+    version: 2,
+    id: `pipeline:${name}`,
+    sourceId: `${source}:${name}`,
+    name,
+    inputs: [],
+    artifacts: [],
+    outcomes: [],
+    declarations: [],
+    root: { nodes: [], connections: [] },
+  };
+}
+
+/** Forks an authored v2 definition into stable Canvas-owned user identities. */
+export function duplicateV2Definition(
+  def: WirePipelineDefinitionV2,
+  name: string
+): WirePipelineDefinitionV2 {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error('A duplicate pipeline name cannot be blank.');
+  return {
+    ...def,
+    id: `pipeline:${trimmed}`,
+    sourceId: `canvas:${trimmed}`,
+    name: trimmed,
+  };
 }
 
 /**
@@ -307,15 +362,323 @@ export function updateV2NodeFields(
   };
 }
 
-export type V2EditableNodeKind = 'AtomicStage' | 'Gate' | 'Choice' | 'Finish' | 'CompositeRef' | 'BoundedLoop';
+export interface AtomicStageExecutionPatch {
+  role?: WireStageRole;
+  workspace?: Partial<WireAtomicStageExecutionV1['workspace']>;
+  leadReview?: boolean | null;
+  verifyPolicy?: PipelineVerifyPolicy | null;
+  runtime?: PipelineAgentRuntime | null;
+  model?: string | null;
+  effort?: string | null;
+  sandbox?: PipelineAgentRuntimeSandbox | null;
+  sessionReuse?: PipelineAgentRuntimeSessionReuse | null;
+  handoff?: {
+    threshold?: PipelineStageHandoffConfig['threshold'] | null;
+    maxRelays?: number | null;
+    stallLimit?: number | null;
+    [key: string]: unknown;
+  } | null;
+}
+
+/**
+ * Patches one AtomicStage execution owner in place. `null` clears an optional
+ * authored field; nested workspace/handoff patches retain unexposed siblings.
+ */
+export function updateAtomicStageExecution(
+  def: WirePipelineDefinitionV2,
+  id: string,
+  patch: AtomicStageExecutionPatch
+): WirePipelineDefinitionV2 {
+  const node = def.root.nodes.find((candidate) => candidate.id === id);
+  if (!node || node.kind !== 'AtomicStage') {
+    throw new Error(`AtomicStage '${id}' does not exist.`);
+  }
+  const current: WireAtomicStageExecutionV1 = node.execution ?? {
+    version: 1,
+    role: 'implementer',
+    workspace: { access: 'write' },
+  };
+  const next: WireAtomicStageExecutionV1 = {
+    ...current,
+    ...(patch.role !== undefined ? { role: patch.role } : {}),
+    workspace:
+      patch.workspace === undefined
+        ? current.workspace
+        : { ...current.workspace, ...patch.workspace },
+  };
+  const optionalKeys = [
+    'leadReview',
+    'verifyPolicy',
+    'runtime',
+    'model',
+    'effort',
+    'sandbox',
+    'sessionReuse',
+  ] as const;
+  for (const key of optionalKeys) {
+    const value = patch[key];
+    if (value === undefined) continue;
+    if (value === null) delete next[key];
+    else next[key] = value as never;
+  }
+  if (patch.handoff === null) {
+    delete next.handoff;
+  } else if (patch.handoff !== undefined) {
+    const handoff = { ...(current.handoff ?? {}) };
+    for (const [key, value] of Object.entries(patch.handoff)) {
+      if (value === null) delete handoff[key];
+      else handoff[key] = value;
+    }
+    next.handoff = handoff;
+  }
+  return updateV2NodeFields(def, id, { execution: next } as Partial<WireAtomicStageNode>);
+}
+
+export interface DefinitionContractPatch {
+  inputs?: WireDefinitionPort[];
+  artifacts?: WireDefinitionArtifact[];
+  outcomes?: string[];
+  limits?: {
+    maxActions?: number | null;
+    budget?: number | null;
+    [key: string]: unknown;
+  } | null;
+}
+
+function assertNamedContractRows(
+  label: string,
+  rows: readonly { name: string; type: string }[]
+): void {
+  const names = rows.map((row) => row.name.trim());
+  if (names.some((name) => !name)) throw new Error(`A ${label} name cannot be blank.`);
+  if (new Set(names).size !== names.length) throw new Error(`${label} names must be unique.`);
+  if (rows.some((row) => !row.type.trim())) throw new Error(`A ${label} type cannot be blank.`);
+}
+
+function assertNamedOutcomes(label: string, outcomes: readonly string[]): void {
+  const values = outcomes.map((outcome) => outcome.trim());
+  if (values.some((outcome) => !outcome)) throw new Error(`A ${label} outcome cannot be blank.`);
+  if (new Set(values).size !== values.length) throw new Error(`${label} outcomes must be unique.`);
+}
+
+/** Patches top-level authored contracts without reconstructing the Definition. */
+export function updateDefinitionContracts(
+  def: WirePipelineDefinitionV2,
+  patch: DefinitionContractPatch
+): WirePipelineDefinitionV2 {
+  if (patch.inputs !== undefined) assertNamedContractRows('definition input', patch.inputs);
+  if (patch.artifacts !== undefined) assertNamedContractRows('definition artifact', patch.artifacts);
+  if (patch.outcomes !== undefined) assertNamedOutcomes('definition', patch.outcomes);
+  if (patch.limits) {
+    for (const [key, value] of Object.entries(patch.limits)) {
+      if (value !== null && typeof value === 'number' && (!Number.isSafeInteger(value) || value <= 0)) {
+        throw new Error(`Definition limit '${key}' must be a positive integer.`);
+      }
+    }
+  }
+  const next: WirePipelineDefinitionV2 = {
+    ...def,
+    ...(patch.inputs !== undefined ? { inputs: patch.inputs } : {}),
+    ...(patch.artifacts !== undefined ? { artifacts: patch.artifacts } : {}),
+    ...(patch.outcomes !== undefined ? { outcomes: patch.outcomes } : {}),
+  };
+  if (patch.limits === null) delete next.limits;
+  else if (patch.limits !== undefined) {
+    const limits = { ...(def.limits ?? {}) };
+    for (const [key, value] of Object.entries(patch.limits)) {
+      if (value === null) delete limits[key];
+      else limits[key] = value;
+    }
+    if (Object.keys(limits).length === 0) delete next.limits;
+    else next.limits = limits;
+  }
+  return next;
+}
+
+export interface BoundedLoopContractPatch {
+  body?: string;
+  goalCycleVariant?: WireGoalCycleVariant | null;
+  limits?: {
+    maxIterations?: number;
+    maxActions?: number | null;
+    budget?: number | null;
+  };
+  lifecycle?: {
+    thresholds?: Partial<WireBoundedLoopLifecyclePolicyV1['thresholds']>;
+    strategy?: {
+      maxAttempts?: number;
+      requireMaterialChange?: true;
+      capability?: { id: string; version: string } | null;
+    };
+    exits?: Partial<WireBoundedLoopLifecyclePolicyV1['exits']>;
+  };
+  exits?: Record<
+    string,
+    { action: 'continue' } | { action: 'exit'; outcome: string }
+  >;
+}
+
+/** Visible starter values for a complete authored lifecycle; not runtime inference. */
+export function createDefaultBoundedLoopLifecycle(): WireBoundedLoopLifecyclePolicyV1 {
+  return {
+    version: 1,
+    thresholds: { stallIterations: 2, sameBlockerAttempts: 2 },
+    strategy: { maxAttempts: 0, requireMaterialChange: true },
+    exits: {
+      iterationLimit: { action: 'exit', outcome: 'iteration-limit' },
+      actionLimit: { action: 'fail', outcome: 'action-limit' },
+      budgetLimit: { action: 'fail', outcome: 'budget-limit' },
+      stalled: { action: 'escalate', outcome: 'stalled' },
+      blocked: { action: 'human-required', outcome: 'blocked' },
+      strategyExhausted: { action: 'fail', outcome: 'strategy-exhausted' },
+    },
+  };
+}
+
+/**
+ * Rebuilds one loop's domain exits against the outcomes reachable from its
+ * body contract. Retained outcomes keep their authored mapping, retired
+ * outcomes disappear, and newly reachable outcomes receive a deterministic
+ * visible default without manufacturing duplicate terminal exits.
+ */
+function reconcileBoundedLoopExits(
+  current: WireBoundedLoopNode['exits'],
+  nextOutcomes: readonly string[],
+  defaultExitOutcome: string
+): WireBoundedLoopNode['exits'] {
+  const keepsTerminalExit = nextOutcomes.some(
+    (outcome) => current[outcome]?.action === 'exit'
+  );
+  return Object.fromEntries(
+    nextOutcomes.map((outcome, index) => [
+      outcome,
+      current[outcome] ??
+        (!keepsTerminalExit && index === nextOutcomes.length - 1
+          ? {
+              action: 'exit' as const,
+              outcome: defaultExitOutcome,
+            }
+          : { action: 'continue' as const }),
+    ])
+  );
+}
+
+/** Patches loop domain and mechanical contracts while preserving every sibling. */
+export function updateBoundedLoopContract(
+  def: WirePipelineDefinitionV2,
+  id: string,
+  patch: BoundedLoopContractPatch
+): WirePipelineDefinitionV2 {
+  const node = def.root.nodes.find((candidate) => candidate.id === id);
+  if (!node || node.kind !== 'BoundedLoop') {
+    throw new Error(`BoundedLoop '${id}' does not exist.`);
+  }
+  const next: WireBoundedLoopNode = {
+    ...node,
+    ...(patch.body !== undefined ? { body: patch.body } : {}),
+  };
+  let exits = node.exits;
+  if (patch.body !== undefined && patch.body !== node.body) {
+    const nextDeclaration = def.declarations.find(
+      (declaration) => declaration.id === patch.body
+    );
+    if (nextDeclaration) {
+      exits = reconcileBoundedLoopExits(
+        node.exits,
+        nextDeclaration.outcomes,
+        def.outcomes[0] ?? 'done'
+      );
+    }
+  }
+  if (patch.exits !== undefined) {
+    exits = { ...exits, ...patch.exits };
+  }
+  next.exits = exits;
+  if (patch.limits !== undefined) {
+    const limits = { ...node.limits };
+    for (const [key, value] of Object.entries(patch.limits)) {
+      if (value === null) delete limits[key as 'maxActions' | 'budget'];
+      else limits[key as keyof typeof limits] = value;
+    }
+    next.limits = limits;
+  }
+  if (patch.goalCycleVariant === null) delete next.goalCycleVariant;
+  else if (patch.goalCycleVariant !== undefined) {
+    next.goalCycleVariant = patch.goalCycleVariant;
+  }
+  if (patch.lifecycle !== undefined) {
+    const currentLifecycle = node.lifecycle ?? createDefaultBoundedLoopLifecycle();
+    const strategy: WireBoundedLoopLifecyclePolicyV1['strategy'] = {
+      ...currentLifecycle.strategy,
+    };
+    if (patch.lifecycle.strategy?.maxAttempts !== undefined) {
+      strategy.maxAttempts = patch.lifecycle.strategy.maxAttempts;
+    }
+    if (patch.lifecycle.strategy?.requireMaterialChange !== undefined) {
+      strategy.requireMaterialChange = patch.lifecycle.strategy.requireMaterialChange;
+    }
+    if (patch.lifecycle.strategy?.capability === null) delete strategy.capability;
+    else if (patch.lifecycle.strategy?.capability !== undefined) {
+      strategy.capability = patch.lifecycle.strategy.capability;
+    }
+    next.lifecycle = {
+      ...currentLifecycle,
+      thresholds: {
+        ...currentLifecycle.thresholds,
+        ...(patch.lifecycle.thresholds ?? {}),
+      },
+      strategy,
+      exits: {
+        ...currentLifecycle.exits,
+        ...(patch.lifecycle.exits ?? {}),
+      },
+    };
+  }
+  return updateV2NodeFields(def, id, next);
+}
+
+/** Keeps Gate decisions unique, ordered, and in one-to-one disposition sync. */
+export function updateGateDecisions(
+  def: WirePipelineDefinitionV2,
+  id: string,
+  decisions: readonly string[]
+): WirePipelineDefinitionV2 {
+  const node = def.root.nodes.find((candidate) => candidate.id === id);
+  if (!node || node.kind !== 'Gate') throw new Error(`Gate '${id}' does not exist.`);
+  const outcomes = Array.from(new Set(decisions.map((value) => value.trim()).filter(Boolean)));
+  const dispositions = Object.fromEntries(
+    outcomes.map((outcome) => [outcome, node.dispositions[outcome] ?? 'proceed'])
+  ) as WireGateNode['dispositions'];
+  return updateV2NodeFields(def, id, { outcomes, dispositions } as Partial<WireGateNode>);
+}
+
+export function updateGateDisposition(
+  def: WirePipelineDefinitionV2,
+  id: string,
+  decision: string,
+  disposition: WireGateNode['dispositions'][string]
+): WirePipelineDefinitionV2 {
+  const node = def.root.nodes.find((candidate) => candidate.id === id);
+  if (!node || node.kind !== 'Gate') throw new Error(`Gate '${id}' does not exist.`);
+  if (!node.outcomes.includes(decision)) {
+    throw new Error(`Gate decision '${decision}' does not exist on '${id}'.`);
+  }
+  return updateV2NodeFields(def, id, {
+    dispositions: { ...node.dispositions, [decision]: disposition },
+  } as Partial<WireGateNode>);
+}
+
+export type V2EditableNodeKind = WireDefinitionNode['kind'];
 
 const V2_EDITABLE_NODE_KINDS = new Set<WireDefinitionNode['kind']>([
   'AtomicStage',
-  'Gate',
-  'Choice',
-  'Finish',
   'CompositeRef',
   'BoundedLoop',
+  'Choice',
+  'FanOut',
+  'Join',
+  'Gate',
+  'Finish',
 ]);
 
 /** The deliberately bounded v2 vocabulary this Canvas slice may mutate. */
@@ -327,16 +690,17 @@ export function isV2EditableNodeKind(
 
 /**
  * The kinds the ROOT palette offers — the editable vocabulary, in display
- * order. FanOut/Join are absent: ECP-4 promises display and legality feedback
- * for them, not root authoring.
+ * order. All eight closed v2 kinds are authored by this slice.
  */
 export const V2_ROOT_PALETTE_KINDS: readonly V2EditableNodeKind[] = [
   'AtomicStage',
-  'Gate',
-  'Choice',
-  'Finish',
   'CompositeRef',
   'BoundedLoop',
+  'Choice',
+  'FanOut',
+  'Join',
+  'Gate',
+  'Finish',
 ];
 
 /**
@@ -396,16 +760,303 @@ export function addV2Node(
   };
 }
 
-/** Removes a v2 root node and every incident connection. */
-export function removeV2Node(
+export interface CreateParallelPairInput {
+  fanOutId: string;
+  joinId: string;
+  memberNodeIds: readonly string[];
+  requiredMemberIds?: readonly string[];
+  concurrencyCap: number;
+  budget: number;
+  outcomes: WireJoinNode['outcomes'];
+}
+
+function parallelPair(
   def: WirePipelineDefinitionV2,
-  id: string
+  fanOutId: string
+): { fanOut: WireFanOutNode; join: WireJoinNode } {
+  const fanOut = def.root.nodes.find(
+    (node): node is WireFanOutNode => node.id === fanOutId && node.kind === 'FanOut'
+  );
+  if (!fanOut) throw new Error(`FanOut '${fanOutId}' does not exist.`);
+  const join = def.root.nodes.find(
+    (node): node is WireJoinNode =>
+      node.id === fanOut.joinNodeId && node.kind === 'Join'
+  );
+  if (!join) {
+    throw new Error(
+      `FanOut '${fanOutId}' references missing paired Join '${fanOut.joinNodeId}'.`
+    );
+  }
+  return { fanOut, join };
+}
+
+/** Creates both structural halves of one parallel frontier as one transaction. */
+export function createParallelPair(
+  def: WirePipelineDefinitionV2,
+  input: CreateParallelPairInput
 ): WirePipelineDefinitionV2 {
+  const fanOutId = input.fanOutId.trim();
+  const joinId = input.joinId.trim();
+  if (!fanOutId || !joinId) throw new Error('Parallel node ids cannot be blank.');
+  if (fanOutId === joinId) throw new Error('FanOut and Join ids must be distinct.');
+  const existing = new Set(def.root.nodes.map((node) => node.id));
+  if (existing.has(fanOutId) || existing.has(joinId)) {
+    throw new Error('Parallel node id already exists.');
+  }
+  const memberNodeIds = Array.from(
+    new Set(input.memberNodeIds.map((id) => id.trim()).filter(Boolean))
+  );
+  if (memberNodeIds.length === 0) {
+    throw new Error('A parallel contract requires at least one member.');
+  }
+  for (const id of memberNodeIds) {
+    const node = def.root.nodes.find((candidate) => candidate.id === id);
+    if (!node || node.kind !== 'AtomicStage') {
+      throw new Error(`Parallel member '${id}' must be a root AtomicStage.`);
+    }
+  }
+  if (!Number.isFinite(input.concurrencyCap) || input.concurrencyCap <= 0) {
+    throw new Error('Parallel concurrency cap must be positive.');
+  }
+  if (!Number.isFinite(input.budget) || input.budget <= 0) {
+    throw new Error('Parallel budget must be positive.');
+  }
+  const required = new Set(input.requiredMemberIds ?? memberNodeIds);
+  for (const id of required) {
+    if (!memberNodeIds.includes(id)) {
+      throw new Error(`Required parallel member '${id}' is not selected.`);
+    }
+  }
+  const fanOut: WireFanOutNode = {
+    id: fanOutId,
+    kind: 'FanOut',
+    branches: [...memberNodeIds],
+    concurrencyCap: input.concurrencyCap,
+    budget: input.budget,
+    joinNodeId: joinId,
+    members: memberNodeIds.map((id) => ({
+      id,
+      hierarchicalPath: id,
+      required: required.has(id),
+      condition: 'always',
+    })),
+  };
+  const join: WireJoinNode = {
+    id: joinId,
+    kind: 'Join',
+    inputs: [...memberNodeIds],
+    requiredMembers: memberNodeIds.filter((id) => required.has(id)),
+    optionalMembers: memberNodeIds.filter((id) => !required.has(id)),
+    outcomes: { ...input.outcomes },
+  };
   return {
     ...def,
     root: {
       ...def.root,
-      nodes: def.root.nodes.filter((node) => node.id !== id),
+      nodes: [...def.root.nodes, fanOut, join],
+    },
+  };
+}
+
+export interface ParallelMemberPatch {
+  required?: boolean;
+  condition?: string;
+  hierarchicalPath?: string;
+}
+
+/** Replaces ordered membership while preserving existing member metadata. */
+export function setParallelMembers(
+  def: WirePipelineDefinitionV2,
+  fanOutId: string,
+  memberNodeIds: readonly string[]
+): WirePipelineDefinitionV2 {
+  const { fanOut, join } = parallelPair(def, fanOutId);
+  const ids = Array.from(
+    new Set(memberNodeIds.map((id) => id.trim()).filter(Boolean))
+  );
+  if (ids.length === 0) throw new Error('A parallel contract cannot have empty membership.');
+  for (const id of ids) {
+    const node = def.root.nodes.find((candidate) => candidate.id === id);
+    if (!node || node.kind !== 'AtomicStage') {
+      throw new Error(`Parallel member '${id}' must be a root AtomicStage.`);
+    }
+  }
+  const previous = new Map(fanOut.members.map((member) => [member.id, member]));
+  const members = ids.map(
+    (id, index) =>
+      previous.get(id) ?? {
+        id,
+        hierarchicalPath: id,
+        required: index === 0,
+        condition: 'always',
+      }
+  );
+  const requiredMembers = members.filter((member) => member.required).map((member) => member.id);
+  const optionalMembers = members.filter((member) => !member.required).map((member) => member.id);
+  return {
+    ...def,
+    root: {
+      ...def.root,
+      nodes: def.root.nodes.map((node) => {
+        if (node.id === fanOut.id) {
+          return { ...fanOut, branches: ids, members };
+        }
+        if (node.id === join.id) {
+          return { ...join, inputs: ids, requiredMembers, optionalMembers };
+        }
+        return node;
+      }),
+    },
+  };
+}
+
+/** Updates a member and both required/optional partitions atomically. */
+export function updateParallelMember(
+  def: WirePipelineDefinitionV2,
+  fanOutId: string,
+  memberId: string,
+  patch: ParallelMemberPatch
+): WirePipelineDefinitionV2 {
+  const { fanOut, join } = parallelPair(def, fanOutId);
+  const current = fanOut.members.find((member) => member.id === memberId);
+  if (!current) throw new Error(`Parallel member '${memberId}' does not exist.`);
+  const members = fanOut.members.map((member) =>
+    member.id === memberId ? { ...member, ...patch } : member
+  );
+  const requiredMembers = members.filter((member) => member.required).map((member) => member.id);
+  const optionalMembers = members.filter((member) => !member.required).map((member) => member.id);
+  return {
+    ...def,
+    root: {
+      ...def.root,
+      nodes: def.root.nodes.map((node) => {
+        if (node.id === fanOut.id) return { ...fanOut, members };
+        if (node.id === join.id) return { ...join, requiredMembers, optionalMembers };
+        return node;
+      }),
+    },
+  };
+}
+
+export interface ParallelContractPatch {
+  concurrencyCap?: number;
+  budget?: number;
+  joinId?: string;
+  outcomes?: Partial<WireJoinNode['outcomes']>;
+}
+
+/** Updates pair-owned limits, Join identity, and terminal outcomes atomically. */
+export function updateParallelContract(
+  def: WirePipelineDefinitionV2,
+  fanOutId: string,
+  patch: ParallelContractPatch
+): WirePipelineDefinitionV2 {
+  let next = def;
+  let pair = parallelPair(next, fanOutId);
+  if (patch.joinId !== undefined && patch.joinId.trim() !== pair.join.id) {
+    next = renameV2Node(next, pair.join.id, patch.joinId.trim());
+    pair = parallelPair(next, fanOutId);
+  }
+  if (patch.concurrencyCap !== undefined && patch.concurrencyCap <= 0) {
+    throw new Error('Parallel concurrency cap must be positive.');
+  }
+  if (patch.budget !== undefined && patch.budget <= 0) {
+    throw new Error('Parallel budget must be positive.');
+  }
+  return {
+    ...next,
+    root: {
+      ...next.root,
+      nodes: next.root.nodes.map((node) => {
+        if (node.id === pair.fanOut.id) {
+          return {
+            ...pair.fanOut,
+            ...(patch.concurrencyCap !== undefined
+              ? { concurrencyCap: patch.concurrencyCap }
+              : {}),
+            ...(patch.budget !== undefined ? { budget: patch.budget } : {}),
+          };
+        }
+        if (node.id === pair.join.id) {
+          return {
+            ...pair.join,
+            ...(patch.outcomes !== undefined
+              ? { outcomes: { ...pair.join.outcomes, ...patch.outcomes } }
+              : {}),
+          };
+        }
+        return node;
+      }),
+    },
+  };
+}
+
+/** Explicitly removes the paired FanOut and Join, including incident connections. */
+export function removeParallelPair(
+  def: WirePipelineDefinitionV2,
+  fanOutId: string
+): WirePipelineDefinitionV2 {
+  const { fanOut, join } = parallelPair(def, fanOutId);
+  const ids = new Set([fanOut.id, join.id]);
+  return {
+    ...def,
+    root: {
+      ...def.root,
+      nodes: def.root.nodes.filter((node) => !ids.has(node.id)),
+      connections: def.root.connections.filter(
+        (connection) => !ids.has(connection.from.node) && !ids.has(connection.to.node)
+      ),
+    },
+  };
+}
+
+/** Removes a root node while protecting Gate and paired-parallel references. */
+export function removeV2Node(
+  def: WirePipelineDefinitionV2,
+  id: string
+): WirePipelineDefinitionV2 {
+  const removed = def.root.nodes.find((node) => node.id === id);
+  if (!removed) return def;
+  if (removed.kind === 'FanOut' || removed.kind === 'Join') {
+    throw new Error('FanOut and Join require explicit paired deletion.');
+  }
+  const targetingGate = def.root.nodes.find(
+    (node) => node.kind === 'Gate' && node.target === id
+  );
+  if (targetingGate) {
+    throw new Error(`Node '${id}' is still targeted by Gate '${targetingGate.id}'.`);
+  }
+  for (const node of def.root.nodes) {
+    if (node.kind !== 'FanOut' || !node.members.some((member) => member.id === id)) continue;
+    if (node.members.length === 1) {
+      throw new Error(`Node '${id}' is the only parallel member of '${node.id}'.`);
+    }
+  }
+  const nodes = def.root.nodes
+    .filter((node) => node.id !== id)
+    .map((node): WireDefinitionNode => {
+      if (node.kind === 'FanOut' && node.members.some((member) => member.id === id)) {
+        return {
+          ...node,
+          branches: node.branches.filter((member) => member !== id),
+          members: node.members.filter((member) => member.id !== id),
+        };
+      }
+      if (node.kind === 'Join' && node.inputs.includes(id)) {
+        return {
+          ...node,
+          inputs: node.inputs.filter((member) => member !== id),
+          requiredMembers: node.requiredMembers.filter((member) => member !== id),
+          optionalMembers: node.optionalMembers.filter((member) => member !== id),
+        };
+      }
+      return node;
+    });
+  return {
+    ...def,
+    root: {
+      ...def.root,
+      nodes,
       connections: def.root.connections.filter(
         (connection) =>
           connection.from.node !== id && connection.to.node !== id
@@ -414,30 +1065,61 @@ export function removeV2Node(
   };
 }
 
-/** Renames a v2 root node and rewrites both typed connection endpoints. */
+/** Renames a root node and every structured reference owned by the draft. */
 export function renameV2Node(
   def: WirePipelineDefinitionV2,
   oldId: string,
   newId: string
 ): WirePipelineDefinitionV2 {
+  const trimmed = newId.trim();
+  if (!trimmed) throw new Error('A root node id cannot be blank.');
+  if (!def.root.nodes.some((node) => node.id === oldId)) {
+    throw new Error(`Root node '${oldId}' does not exist.`);
+  }
+  if (trimmed !== oldId && def.root.nodes.some((node) => node.id === trimmed)) {
+    throw new Error(`Root node id '${trimmed}' already exists.`);
+  }
+  const rewrite = (value: string) => (value === oldId ? trimmed : value);
   return {
     ...def,
     root: {
       ...def.root,
-      nodes: def.root.nodes.map((node) =>
-        node.id === oldId
-          ? ({ ...node, id: newId } as WireDefinitionNode)
-          : node
-      ),
+      nodes: def.root.nodes.map((node): WireDefinitionNode => {
+        const renamed = node.id === oldId ? { ...node, id: trimmed } : node;
+        if (renamed.kind === 'Gate') {
+          return { ...renamed, target: rewrite(renamed.target) };
+        }
+        if (renamed.kind === 'FanOut') {
+          return {
+            ...renamed,
+            branches: renamed.branches.map(rewrite),
+            joinNodeId: rewrite(renamed.joinNodeId),
+            members: renamed.members.map((member) => ({
+              ...member,
+              id: rewrite(member.id),
+              hierarchicalPath: rewrite(member.hierarchicalPath),
+            })),
+          };
+        }
+        if (renamed.kind === 'Join') {
+          return {
+            ...renamed,
+            inputs: renamed.inputs.map(rewrite),
+            requiredMembers: renamed.requiredMembers.map(rewrite),
+            optionalMembers: renamed.optionalMembers.map(rewrite),
+          };
+        }
+        return renamed as WireDefinitionNode;
+      }),
       connections: def.root.connections.map((connection) => ({
         ...connection,
         from:
           connection.from.node === oldId
-            ? { ...connection.from, node: newId }
+            ? { ...connection.from, node: trimmed }
             : connection.from,
         to:
           connection.to.node === oldId
-            ? { ...connection.to, node: newId }
+            ? { ...connection.to, node: trimmed }
             : connection.to,
       })),
     },
@@ -483,11 +1165,13 @@ export function removeV2Connection(
 
 const V2_NODE_ID_BASE: Record<V2EditableNodeKind, string> = {
   AtomicStage: 'atomic-stage',
-  Gate: 'gate',
-  Choice: 'choice',
-  Finish: 'finish',
   CompositeRef: 'composite-ref',
   BoundedLoop: 'bounded-loop',
+  Choice: 'choice',
+  FanOut: 'fan-out',
+  Join: 'join',
+  Gate: 'gate',
+  Finish: 'finish',
 };
 
 /** Generates a stable, human-readable, graph-local identity for a new v2 node. */
@@ -557,6 +1241,10 @@ export interface IssueTarget {
 
 export type DefinitionIssueTarget =
   | {
+      kind: 'definition';
+      field?: string;
+    }
+  | {
       kind: 'node';
       index: number;
       id: string;
@@ -567,7 +1255,43 @@ export type DefinitionIssueTarget =
       index: number;
       id: string;
       field?: string;
+    }
+  | {
+      kind: 'declaration';
+      index: number;
+      id: string;
+      field?: string;
+    }
+  | {
+      kind: 'body-node';
+      declarationIndex: number;
+      declarationId: string;
+      index: number;
+      id: string;
+      field?: string;
+    }
+  | {
+      kind: 'body-connection';
+      declarationIndex: number;
+      declarationId: string;
+      index: number;
+      id: string;
+      field?: string;
     };
+
+function jsonPointerSegments(path: string): string[] | null {
+  if (!path.startsWith('/')) return null;
+  if (path === '/') return [];
+  const raw = path.slice(1).split('/');
+  if (raw.some((segment) => /~(?![01])/u.test(segment))) return null;
+  return raw.map((segment) => segment.replace(/~1/gu, '/').replace(/~0/gu, '~'));
+}
+
+function arrayIndex(segment: string | undefined, length: number): number | null {
+  if (segment === undefined || !/^(0|[1-9]\d*)$/u.test(segment)) return null;
+  const index = Number(segment);
+  return Number.isSafeInteger(index) && index < length ? index : null;
+}
 
 /**
  * Maps a validation issue's JSON-pointer-ish `path` (e.g. `/stages/2/skill`)
@@ -590,9 +1314,9 @@ export function issuePathTarget(path: string, stageCount?: number): IssueTarget 
 }
 
 /**
- * Maps the shared diagnostic JSON Pointer onto the exact authored Canvas
- * element. Declaration/definition-level and malformed paths intentionally
- * return null so callers retain them as fully-qualified unmapped issues.
+ * Maps the shared diagnostic JSON Pointer onto the exact authored owner.
+ * Malformed, out-of-range, and unknown top-level paths intentionally remain
+ * unmapped so the issue list never points at a different control.
  */
 export function definitionIssuePathTarget(
   def: WirePipelineDefinition,
@@ -611,46 +1335,79 @@ export function definitionIssuePathTarget(
       ...(target.field ? { field: target.field } : {}),
     };
   }
+  const segments = jsonPointerSegments(path);
+  if (!segments || segments.length === 0) return null;
+  const field = (tail: readonly string[]) =>
+    tail.length > 0 ? { field: tail.join('/') } : {};
 
-  const root =
-    def.root !== null && typeof def.root === 'object' && !Array.isArray(def.root)
-      ? (def.root as {
-          nodes?: { id?: unknown }[];
-          connections?: { id?: unknown }[];
-        })
-      : {};
-  const nodes = Array.isArray(root.nodes) ? root.nodes : [];
-  const connections = Array.isArray(root.connections)
-    ? root.connections
-    : [];
-  const nodeMatch = /^\/root\/nodes\/(\d+)(?:\/(.+))?$/.exec(path);
-  if (nodeMatch) {
-    const index = Number(nodeMatch[1]);
-    const id = nodes[index]?.id;
-    if (!Number.isInteger(index) || index < 0 || typeof id !== 'string') {
-      return null;
-    }
+  const definitionFields = new Set([
+    'version',
+    'id',
+    'sourceId',
+    'name',
+    'description',
+    'inputs',
+    'artifacts',
+    'outcomes',
+    'limits',
+  ]);
+  if (definitionFields.has(segments[0]!)) {
+    return { kind: 'definition', ...field(segments) };
+  }
+
+  if (segments[0] === 'root' && segments[1] === 'nodes') {
+    const index = arrayIndex(segments[2], def.root.nodes.length);
+    if (index === null) return null;
+    const id = def.root.nodes[index]?.id;
+    if (typeof id !== 'string') return null;
+    return { kind: 'node', index, id, ...field(segments.slice(3)) };
+  }
+  if (segments[0] === 'root' && segments[1] === 'connections') {
+    const index = arrayIndex(segments[2], def.root.connections.length);
+    if (index === null) return null;
+    const id = def.root.connections[index]?.id;
+    if (typeof id !== 'string') return null;
+    return { kind: 'connection', index, id, ...field(segments.slice(3)) };
+  }
+  if (segments[0] !== 'declarations') return null;
+  const declarationIndex = arrayIndex(segments[1], def.declarations.length);
+  if (declarationIndex === null) return null;
+  const declaration = def.declarations[declarationIndex];
+  if (!declaration || typeof declaration.id !== 'string') return null;
+  const tail = segments.slice(2);
+  if (tail[0] === 'graph' && tail[1] === 'nodes') {
+    const index = arrayIndex(tail[2], declaration.graph.nodes.length);
+    if (index === null) return null;
+    const id = declaration.graph.nodes[index]?.id;
+    if (typeof id !== 'string') return null;
     return {
-      kind: 'node',
+      kind: 'body-node',
+      declarationIndex,
+      declarationId: declaration.id,
       index,
       id,
-      ...(nodeMatch[2] ? { field: nodeMatch[2] } : {}),
+      ...field(tail.slice(3)),
     };
   }
-
-  const connectionMatch =
-    /^\/root\/connections\/(\d+)(?:\/(.+))?$/.exec(path);
-  if (!connectionMatch) return null;
-  const index = Number(connectionMatch[1]);
-  const id = connections[index]?.id;
-  if (!Number.isInteger(index) || index < 0 || typeof id !== 'string') {
-    return null;
+  if (tail[0] === 'graph' && tail[1] === 'connections') {
+    const index = arrayIndex(tail[2], declaration.graph.connections.length);
+    if (index === null) return null;
+    const id = declaration.graph.connections[index]?.id;
+    if (typeof id !== 'string') return null;
+    return {
+      kind: 'body-connection',
+      declarationIndex,
+      declarationId: declaration.id,
+      index,
+      id,
+      ...field(tail.slice(3)),
+    };
   }
   return {
-    kind: 'connection',
-    index,
-    id,
-    ...(connectionMatch[2] ? { field: connectionMatch[2] } : {}),
+    kind: 'declaration',
+    index: declarationIndex,
+    id: declaration.id,
+    ...field(tail),
   };
 }
 
@@ -701,7 +1458,9 @@ export function addDeclaration(
 }
 
 /**
- * Update a declaration's scalar fields (inputs, artifacts, outcomes).
+ * Update a declaration's scalar fields (inputs, artifacts, outcomes). An
+ * outcome edit also rebuilds every referencing root BoundedLoop exit map as
+ * part of the same immutable mutation.
  */
 export function updateDeclaration(
   def: WirePipelineDefinitionV2,
@@ -712,11 +1471,72 @@ export function updateDeclaration(
     outcomes: string[];
   }>
 ): WirePipelineDefinitionV2 {
+  if (patch.inputs !== undefined) assertNamedContractRows('declaration input', patch.inputs);
+  if (patch.artifacts !== undefined) assertNamedContractRows('declaration artifact', patch.artifacts);
+  if (patch.outcomes !== undefined) assertNamedOutcomes('declaration', patch.outcomes);
+  const declarationExists = def.declarations.some((declaration) => declaration.id === id);
+  const nextOutcomes = patch.outcomes;
+  const declarations = def.declarations.map((declaration) =>
+    declaration.id === id ? { ...declaration, ...patch } : declaration
+  );
   return {
     ...def,
-    declarations: def.declarations.map((d) =>
-      d.id === id ? { ...d, ...patch } : d
+    declarations,
+    ...(declarationExists && nextOutcomes !== undefined
+      ? {
+          root: {
+            ...def.root,
+            nodes: def.root.nodes.map((node): WireDefinitionNode =>
+              node.kind === 'BoundedLoop' && node.body === id
+                ? {
+                    ...node,
+                    exits: reconcileBoundedLoopExits(
+                      node.exits,
+                      nextOutcomes,
+                      def.outcomes[0] ?? 'done'
+                    ),
+                  }
+                : node
+            ),
+          },
+        }
+      : {}),
+  };
+}
+
+/** Renames one custom declaration and every root reference to it. */
+export function renameDeclaration(
+  def: WirePipelineDefinitionV2,
+  oldId: string,
+  newId: string
+): WirePipelineDefinitionV2 {
+  const declaration = def.declarations.find((candidate) => candidate.id === oldId);
+  if (!declaration) throw new Error(`Declaration '${oldId}' does not exist.`);
+  if (declaration.provenance === 'built-in') {
+    throw new Error(`Built-in declaration '${oldId}' cannot be renamed.`);
+  }
+  const trimmed = newId.trim();
+  if (!trimmed) throw new Error('A declaration id cannot be blank.');
+  if (trimmed !== oldId && !isDeclarationIdUnique(def, trimmed)) {
+    throw new Error(`Declaration id '${trimmed}' already exists.`);
+  }
+  return {
+    ...def,
+    declarations: def.declarations.map((candidate) =>
+      candidate.id === oldId ? { ...candidate, id: trimmed } : candidate
     ),
+    root: {
+      ...def.root,
+      nodes: def.root.nodes.map((node): WireDefinitionNode => {
+        if (node.kind === 'CompositeRef' && node.declarationId === oldId) {
+          return { ...node, declarationId: trimmed };
+        }
+        if (node.kind === 'BoundedLoop' && node.body === oldId) {
+          return { ...node, body: trimmed };
+        }
+        return node;
+      }),
+    },
   };
 }
 
@@ -728,6 +1548,10 @@ export function removeDeclaration(
   def: WirePipelineDefinitionV2,
   id: string
 ): WirePipelineDefinitionV2 {
+  const declaration = def.declarations.find((candidate) => candidate.id === id);
+  if (declaration?.provenance === 'built-in') {
+    throw new Error(`Built-in declaration '${id}' cannot be deleted.`);
+  }
   const referenced = def.root.nodes.some(
     (node) =>
       (node.kind === 'CompositeRef' && node.declarationId === id) ||
@@ -742,15 +1566,27 @@ export function removeDeclaration(
   };
 }
 
-/**
- * Add an AtomicStage node to a declaration's body graph.
- * The body palette is constrained to AtomicStage only.
- */
+export interface BodyAtomicStageInput {
+  id: string;
+  capability: { id: string; version: string };
+  execution?: WireAtomicStageExecutionV1;
+  reviewCyclePhase?: WireReviewCyclePhase;
+  goalCyclePhase?: WireGoalCyclePhase;
+  [key: string]: unknown;
+}
+
+/** Add an AtomicStage node to a declaration's body graph. */
 export function addBodyStage(
   def: WirePipelineDefinitionV2,
   declarationId: string,
-  stage: { id: string; capability: { id: string; version: string } }
+  stage: BodyAtomicStageInput
 ): WirePipelineDefinitionV2 {
+  const declaration = def.declarations.find((candidate) => candidate.id === declarationId);
+  if (!declaration) throw new Error(`Declaration '${declarationId}' does not exist.`);
+  if (!stage.id.trim()) throw new Error('A body stage id cannot be blank.');
+  if (declaration.graph.nodes.some((candidate) => candidate.id === stage.id)) {
+    throw new Error(`Body stage id '${stage.id}' already exists in '${declarationId}'.`);
+  }
   return {
     ...def,
     declarations: def.declarations.map((d) => {
@@ -782,7 +1618,7 @@ export function updateBodyStage(
   def: WirePipelineDefinitionV2,
   declarationId: string,
   stageId: string,
-  patch: Partial<{ id: string; capability: { id: string; version: string } }>
+  patch: Partial<BodyAtomicStageInput>
 ): WirePipelineDefinitionV2 {
   const declaration = (def.declarations ?? []).find((d) => d.id === declarationId);
   if (declaration === undefined) {
@@ -830,6 +1666,58 @@ export function updateBodyStage(
   };
 }
 
+/** Patches one declaration-body AtomicStage execution without rebuilding its node. */
+export function updateBodyStageExecution(
+  def: WirePipelineDefinitionV2,
+  declarationId: string,
+  stageId: string,
+  patch: AtomicStageExecutionPatch
+): WirePipelineDefinitionV2 {
+  const declaration = def.declarations.find((candidate) => candidate.id === declarationId);
+  const node = declaration?.graph.nodes.find((candidate) => candidate.id === stageId);
+  if (!node || node.kind !== 'AtomicStage') {
+    throw new Error(`Body AtomicStage '${stageId}' does not exist in '${declarationId}'.`);
+  }
+  const current: WireAtomicStageExecutionV1 = node.execution ?? {
+    version: 1,
+    role: 'implementer',
+    workspace: { access: 'write' },
+  };
+  const next: WireAtomicStageExecutionV1 = {
+    ...current,
+    ...(patch.role !== undefined ? { role: patch.role } : {}),
+    workspace:
+      patch.workspace === undefined
+        ? current.workspace
+        : { ...current.workspace, ...patch.workspace },
+  };
+  const optionalKeys = [
+    'leadReview',
+    'verifyPolicy',
+    'runtime',
+    'model',
+    'effort',
+    'sandbox',
+    'sessionReuse',
+  ] as const;
+  for (const key of optionalKeys) {
+    const value = patch[key];
+    if (value === undefined) continue;
+    if (value === null) delete next[key];
+    else next[key] = value as never;
+  }
+  if (patch.handoff === null) delete next.handoff;
+  else if (patch.handoff !== undefined) {
+    const handoff = { ...(current.handoff ?? {}) };
+    for (const [key, value] of Object.entries(patch.handoff)) {
+      if (value === null) delete handoff[key];
+      else handoff[key] = value;
+    }
+    next.handoff = handoff;
+  }
+  return updateBodyStage(def, declarationId, stageId, { execution: next });
+}
+
 /**
  * Remove a body stage and all incident body connections.
  */
@@ -845,6 +1733,7 @@ export function removeBodyStage(
       return {
         ...d,
         graph: {
+          ...d.graph,
           nodes: d.graph.nodes.filter((n) => n.id !== stageId),
           connections: d.graph.connections.filter(
             (c) => c.from.node !== stageId && c.to.node !== stageId

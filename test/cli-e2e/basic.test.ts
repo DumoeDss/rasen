@@ -249,7 +249,9 @@ describe('openspec CLI e2e basics', () => {
     expect(listResult.stdout).toContain('可用流水线：');
     expect(listResult.stdout).toContain('bug-fix  [package]');
     expect(listResult.stdout).toContain('最简缺陷修复流水线');
-    expect(listResult.stdout).toContain('阶段：propose -> apply -> verify -> ship -> archive');
+    expect(listResult.stdout).toContain(
+      'root:propose -> root:apply -> root:verify/node:review'
+    );
     expect(listResult.stdout).not.toContain('Available pipelines:');
     expect(listResult.stdout).not.toContain('Stages:');
     expect(listResult.stderr).toBe('');

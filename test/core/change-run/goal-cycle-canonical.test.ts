@@ -14,6 +14,10 @@ import { buildAgentAction } from '../../../src/core/change-run/internal/actions.
 import { buildAgentActor } from '../../../src/core/change-run/internal/actors.js';
 import { computeCompletionReceiptDigest } from '../../../src/core/change-run/internal/completion.js';
 import { createChangePipelineRuntime } from '../../../src/core/change-run/internal/facade-runtime.js';
+import {
+  buildEvidenceRef,
+  createBoundedEvidenceStore,
+} from '../../../src/core/change-run/internal/evidence.js';
 import { createInMemoryRunStore } from '../../../src/core/change-run/internal/run-store.js';
 import { createRuntimePlan } from '../../../src/core/change-run/internal/runtime-plan.js';
 import type { RuntimePlan } from '../../../src/core/change-run/internal/runtime-plan.js';
@@ -25,6 +29,11 @@ import {
   reconcile,
 } from '../../../src/core/change-run/internal/reconciler.js';
 import { startRecord } from './reconciler-fixture.js';
+import {
+  TEST_ATTESTATION_AUTHORITY,
+  attestTestCompletion,
+  stageTestCompletion,
+} from '../../fixtures/trusted-completion.js';
 import type { CanonicalRunRecord } from '../../../src/core/change-run/internal/record.js';
 import { projectRunView } from '../../../src/core/change-run/internal/projector.js';
 
@@ -81,7 +90,9 @@ function evidenceRef(action: RunAction, hex: string): EvidenceRef {
 function goalPlan(
   variant: 'measure' | 'evaluate' | 'research' = 'measure',
   maxIterations = 3,
-  withStrategy = false
+  withStrategy = false,
+  strategyMaxAttempts = withStrategy ? 1 : 0,
+  withResearchReportTail = false
 ): RuntimePlan {
   return createRuntimePlan({
     runId: branded<RunId>(`run:${'a'.repeat(64)}`),
@@ -91,7 +102,9 @@ function goalPlan(
     sourceRevisionDigest: digest('3'),
     capabilityDigest: digest('4'),
     policyDigest: digest('5'),
-    implicitFinishOutcome: 'goal-satisfied',
+    implicitFinishOutcome: withResearchReportTail
+      ? 'research-report-complete'
+      : 'goal-satisfied',
     nodes: [
       {
         kind: 'bounded-loop',
@@ -107,7 +120,7 @@ function goalPlan(
           thresholds: { stallIterations: 99, sameBlockerAttempts: 99 },
           strategy: withStrategy
             ? {
-                maxAttempts: 1,
+                maxAttempts: strategyMaxAttempts,
                 requireMaterialChange: true,
                 capability: { id: 'goal-cycle:strategy', version: '1' },
               }
@@ -115,7 +128,9 @@ function goalPlan(
           exits: {
             iterationLimit: withStrategy
               ? { action: 'strategy' }
-              : { action: 'escalate', outcome: 'goal_cycle_exhausted' },
+              : withResearchReportTail
+                ? { action: 'exit', outcome: 'max-rounds-exhausted' }
+                : { action: 'escalate', outcome: 'goal_cycle_exhausted' },
             actionLimit: { action: 'escalate', outcome: 'goal_cycle_action_limit' },
             budgetLimit: { action: 'escalate', outcome: 'goal_cycle_budget_limit' },
             stalled: { action: 'escalate', outcome: 'goal_cycle_stalled' },
@@ -149,6 +164,18 @@ function goalPlan(
           exhausted: 'goal_cycle_exhausted',
         },
       },
+      ...(withResearchReportTail
+        ? [
+            {
+              kind: 'atomic' as const,
+              hierarchicalPath: 'root:report',
+              requires: ['root/goal-cycle'],
+              admissionKind: 'agent' as const,
+              workspace: { access: 'read' as const },
+              profilePath: 'root:report',
+            },
+          ]
+        : []),
     ],
   });
 }
@@ -156,11 +183,23 @@ function goalPlan(
 function createHarness(
   variant: 'measure' | 'evaluate' | 'research' = 'measure',
   maxIterations = 3,
-  withStrategy = false
+  withStrategy = false,
+  strategyMaxAttempts = withStrategy ? 1 : 0,
+  withResearchReportTail = false
 ) {
-  const runtimePlan = goalPlan(variant, maxIterations, withStrategy);
+  const runtimePlan = goalPlan(
+    variant,
+    maxIterations,
+    withStrategy,
+    strategyMaxAttempts,
+    withResearchReportTail
+  );
   const initial = startRecord(runtimePlan);
   const store = createInMemoryRunStore();
+  const evidenceStore = createBoundedEvidenceStore({
+    maxRunBytes: 1024 * 1024,
+    maxEntries: 128,
+  });
   const buildAction = (descriptor: {
     nodeId: string;
     occurrence: number;
@@ -212,6 +251,7 @@ function createHarness(
             id: `adapter:${role}`,
             version: '1',
             contentDigest: digest('b'),
+            attestationAuthority: TEST_ATTESTATION_AUTHORITY,
           },
         },
         stage: {
@@ -255,11 +295,13 @@ function createHarness(
     store,
     initial,
     buildAction,
+    evidenceStore,
     runtime: createChangePipelineRuntime({
       store,
       plan: runtimePlan,
       initialRecord: initial,
       buildAction,
+      evidenceStore,
     }),
   };
 }
@@ -270,36 +312,93 @@ function restartHarness(harness: ReturnType<typeof createHarness>): void {
     plan: harness.plan,
     initialRecord: harness.initial,
     buildAction: harness.buildAction,
+    evidenceStore: harness.evidenceStore,
   });
+}
+
+function completionEvidence(
+  harness: ReturnType<typeof createHarness>,
+  action: RunAction
+): { actorAttestation: EvidenceRef; proof: EvidenceRef } {
+  const authority = action.completionAuthority!;
+  const common = {
+    planningSpaceId: branded<PlanningSpaceId>(
+      `planning-space:${'1'.repeat(64)}`
+    ),
+    changeInstanceId: branded<ChangeInstanceId>(
+      `change-instance:${'2'.repeat(64)}`
+    ),
+    projectId: 'project-fixture',
+    changeId: 'fixture-change',
+    runId: action.runId as RunId,
+    actionId: action.actionId as ActionId,
+    treeDigest: action.expectedBeforeWorkspace.treeDigest,
+  };
+  const attestationBytes = Buffer.from('{"attested":true}');
+  const proofBytes = Buffer.from('{"kind":"domain-action-result"}');
+  const actorAttestation = buildEvidenceRef({
+    content: attestationBytes,
+    mediaType: authority.actorAttestation.mediaType,
+    observationKind: authority.actorAttestation.observationKind,
+    producer: authority.actorAttestation.producer,
+    binding: { ...common, schema: authority.actorAttestation.schema },
+  });
+  const domainAuthority = authority.observations.domainActionResult;
+  const proof = buildEvidenceRef({
+    content: proofBytes,
+    mediaType: domainAuthority.mediaType,
+    observationKind: domainAuthority.observationKind,
+    producer: domainAuthority.producer,
+    binding: { ...common, schema: domainAuthority.schema },
+  });
+  harness.evidenceStore.stageClaimed(actorAttestation, attestationBytes);
+  harness.evidenceStore.stageClaimed(proof, proofBytes);
+  return { actorAttestation, proof };
 }
 
 async function complete(
   harness: ReturnType<typeof createHarness>,
   action: RunAction,
   eventActor: ReturnType<typeof actor>,
-  result: JsonValue
+  result: JsonValue,
+  overrideActor = false
 ) {
-  const attestation = evidenceRef(action, 'c');
-  const proof = evidenceRef(action, 'e');
-  const base = {
-    format: 'change-run-completion/1' as const,
-    kind: 'domain-action-result' as const,
+  const submission = attestTestCompletion({
     change: { projectRoot: '/root', changeId: 'fixture-change' },
-    runId: action.runId,
-    actionId: action.actionId,
-    invocationId: action.invocationId,
-    receiptDigest: digest('0'),
-    actor: eventActor,
-    actorAttestation: attestation,
-    evidence: [proof],
-    status: 'succeeded' as const,
-    result,
-  };
+    record: harness.store.load(harness.plan.runId),
+    action,
+    completion: { kind: 'domain-action-result', status: 'succeeded', result },
+    evidenceContent: Buffer.from(JSON.stringify({ result })),
+  });
+  let completion = stageTestCompletion(harness.evidenceStore, submission);
+  if (overrideActor) {
+    const changed = { ...completion, actor: eventActor };
+    completion = {
+      ...changed,
+      receiptDigest: computeCompletionReceiptDigest(changed),
+    };
+  }
   return harness.runtime.complete(
-    {
-      ...base,
-      receiptDigest: computeCompletionReceiptDigest(base),
-    },
+    completion,
+    { deliveryMode: 'grant' }
+  );
+}
+
+async function completeFailed(
+  harness: ReturnType<typeof createHarness>,
+  action: RunAction,
+  _eventActor: ReturnType<typeof actor>,
+  result: JsonValue = { code: 'fixture_failure' }
+) {
+  const submission = attestTestCompletion({
+    change: { projectRoot: '/root', changeId: 'fixture-change' },
+    record: harness.store.load(harness.plan.runId),
+    action,
+    completion: { kind: 'domain-action-result', status: 'failed', result },
+    evidenceContent: Buffer.from(JSON.stringify({ result })),
+  });
+  return harness.runtime.complete(
+    stageTestCompletion(harness.evidenceStore, submission),
     { deliveryMode: 'grant' }
   );
 }
@@ -307,30 +406,23 @@ async function complete(
 async function completeBlocked(
   harness: ReturnType<typeof createHarness>,
   action: RunAction,
-  eventActor: ReturnType<typeof actor>
+  _eventActor: ReturnType<typeof actor>
 ) {
-  const attestation = evidenceRef(action, 'c');
-  const base = {
-    format: 'change-run-completion/1' as const,
-    kind: 'domain-action-result' as const,
+  const result = {
+    contract: 'bounded-loop/blocked/1',
+    reasonCode: 'dependency_unavailable',
+    blockerKey: 'fixture:goal-dependency',
+    detail: 'Retry after restoring the fixture dependency.',
+  } as const;
+  const submission = attestTestCompletion({
     change: { projectRoot: '/root', changeId: 'fixture-change' },
-    runId: action.runId,
-    actionId: action.actionId,
-    invocationId: action.invocationId,
-    receiptDigest: digest('0'),
-    actor: eventActor,
-    actorAttestation: attestation,
-    evidence: [evidenceRef(action, 'e')],
-    status: 'blocked' as const,
-    result: {
-      contract: 'bounded-loop/blocked/1',
-      reasonCode: 'dependency_unavailable',
-      blockerKey: 'fixture:goal-dependency',
-      detail: 'Retry after restoring the fixture dependency.',
-    },
-  };
+    record: harness.store.load(harness.plan.runId),
+    action,
+    completion: { kind: 'domain-action-result', status: 'blocked', result },
+    evidenceContent: Buffer.from(JSON.stringify(result)),
+  });
   return harness.runtime.complete(
-    { ...base, receiptDigest: computeCompletionReceiptDigest(base) },
+    stageTestCompletion(harness.evidenceStore, submission),
     { deliveryMode: 'grant' }
   );
 }
@@ -633,8 +725,8 @@ describe('goal-cycle facade pre-commit validation (task 7.3)', () => {
 
     // Judge with same actor as worker → must be rejected.
     await expect(
-      complete(harness, judge, worker, measureJudgePassed())
-    ).rejects.toMatchObject({ code: 'goal_cycle_actor_separation' });
+      complete(harness, judge, worker, measureJudgePassed(), true)
+    ).rejects.toThrow(/actor does not match the (?:admitted )?Action authority/i);
 
     // Record was not mutated.
     expect(harness.store.load(harness.plan.runId)).toBe(recordBefore);
@@ -815,6 +907,166 @@ describe('goal-cycle facade pre-commit validation (task 7.3)', () => {
     });
   });
 
+  it('failed strategy attempts advance and exhaust once through the facade across restart', async () => {
+    const harness = createHarness('measure', 1, true, 2);
+    const strategist = actor('8', 'strategist');
+    let action = expectOneAction(await harness.runtime.start(
+      {
+        change: { projectRoot: '/root', changeId: 'fixture-change' },
+        pipeline: harness.plan.pipeline,
+        launchRequestId: branded(`launch:${'f'.repeat(64)}`),
+      },
+      { deliveryMode: 'grant' }
+    ));
+    action = expectOneAction(
+      await complete(harness, action, worker, workResult(1))
+    );
+    action = expectOneAction(
+      await complete(harness, action, judge, measureJudgeFailed(50))
+    );
+    expect(action.agent.input).toMatchObject({
+      boundedLoopStrategy: { attempt: 1, trigger: 'iteration-limit' },
+    });
+
+    const afterFirstFailure = await completeFailed(
+      harness,
+      action,
+      strategist,
+      { code: 'strategy_attempt_failed' }
+    );
+    const second = expectOneAction(afterFirstFailure);
+    expect(second.agent.input).toMatchObject({
+      boundedLoopStrategy: { attempt: 2, trigger: 'iteration-limit' },
+    });
+    expect(
+      afterFirstFailure.view.sections.find(
+        (section) => section.kind === 'bounded-loop-lifecycle'
+      )
+    ).toMatchObject({
+      strategy: { attempts: 1, maxAttempts: 2, active: 2 },
+    });
+
+    restartHarness(harness);
+    const exhausted = await completeFailed(
+      harness,
+      second,
+      strategist,
+      { code: 'strategy_attempt_failed_again' }
+    );
+    expect(exhausted.view.status).toBe('escalated');
+    expect(exhausted.actions).toHaveLength(0);
+    expect(
+      exhausted.view.sections.find(
+        (section) => section.kind === 'bounded-loop-lifecycle'
+      )
+    ).toMatchObject({
+      strategy: { attempts: 2, maxAttempts: 2 },
+      outcome: {
+        kind: 'strategy-exhausted',
+        disposition: 'escalate',
+        value: 'goal_cycle_strategy_exhausted',
+      },
+    });
+    const terminalRecord = harness.store.load(harness.plan.runId);
+    expect(
+      terminalRecord.transitions.filter(
+        (transition) => transition.kind === 'RunEscalated'
+      )
+    ).toHaveLength(1);
+
+    restartHarness(harness);
+    const replay = await harness.runtime.resume(
+      { change: { projectRoot: '/root', changeId: 'fixture-change' } },
+      { deliveryMode: 'grant' }
+    );
+    expect(replay.view.status).toBe('escalated');
+    expect(replay.actions).toHaveLength(0);
+    expect(harness.store.load(harness.plan.runId)).toEqual(terminalRecord);
+  });
+
+  it('blocked strategy exact-resume grants a fresh occurrence without consuming the attempt', async () => {
+    const harness = createHarness('measure', 1, true, 2);
+    const strategist = actor('8', 'strategist');
+    let action = expectOneAction(await harness.runtime.start(
+      {
+        change: { projectRoot: '/root', changeId: 'fixture-change' },
+        pipeline: harness.plan.pipeline,
+        launchRequestId: branded(`launch:${'6'.repeat(64)}`),
+      },
+      { deliveryMode: 'grant' }
+    ));
+    action = expectOneAction(
+      await complete(harness, action, worker, workResult(1))
+    );
+    action = expectOneAction(
+      await complete(harness, action, judge, measureJudgeFailed(50))
+    );
+    const firstStrategy = action;
+    const blocked = await completeBlocked(harness, firstStrategy, strategist);
+    expect(blocked.actions).toHaveLength(0);
+    const blockedRecord = harness.store.load(harness.plan.runId);
+    const strategyWait = blockedRecord.waits.find(
+      (wait) =>
+        wait.kind === 'domain-blocked' &&
+        wait.actionId === firstStrategy.actionId
+    );
+    expect(strategyWait).toBeDefined();
+    if (strategyWait === undefined) return;
+    expect(
+      blocked.view.sections.find(
+        (section) => section.kind === 'bounded-loop-lifecycle'
+      )
+    ).toMatchObject({
+      strategy: { attempts: 0, maxAttempts: 2, active: 1 },
+      wait: { waitId: strategyWait.waitId, kind: 'domain-blocked' },
+    });
+
+    restartHarness(harness);
+    const resumed = await harness.runtime.control(
+      {
+        format: 'change-run-control/1',
+        ref: {
+          change: { projectRoot: '/root', changeId: 'fixture-change' },
+          runId: harness.plan.runId,
+        },
+        expectedRecordVersion: blockedRecord.recordVersion,
+        command: { kind: 'resume', waitId: strategyWait.waitId },
+      },
+      { deliveryMode: 'grant' }
+    );
+    const retryStrategy = expectOneAction(resumed);
+    expect(retryStrategy.nodeId).toBe(firstStrategy.nodeId);
+    expect(retryStrategy.actionId).not.toBe(firstStrategy.actionId);
+    expect(retryStrategy.agent.input).toMatchObject({
+      boundedLoopStrategy: { attempt: 1, trigger: 'iteration-limit' },
+    });
+    expect(
+      resumed.view.sections.find(
+        (section) => section.kind === 'bounded-loop-lifecycle'
+      )
+    ).toMatchObject({
+      strategy: { attempts: 0, maxAttempts: 2, active: 1 },
+    });
+
+    restartHarness(harness);
+    const afterFailure = await completeFailed(
+      harness,
+      retryStrategy,
+      strategist,
+      { code: 'strategy_retry_failed' }
+    );
+    expect(expectOneAction(afterFailure).agent.input).toMatchObject({
+      boundedLoopStrategy: { attempt: 2, trigger: 'iteration-limit' },
+    });
+    expect(
+      afterFailure.view.sections.find(
+        (section) => section.kind === 'bounded-loop-lifecycle'
+      )
+    ).toMatchObject({
+      strategy: { attempts: 1, maxAttempts: 2, active: 2 },
+    });
+  });
+
   it('multi-round progression: round 1 fails, round 2 passes', async () => {
     const harness = createHarness('measure', 3);
     const started = await harness.runtime.start(
@@ -906,6 +1158,132 @@ describe('goal-cycle facade pre-commit validation (task 7.3)', () => {
     );
     expect(finished.disposition).toBe('terminal');
     expect(finished.view.status).toBe('completed');
+  });
+
+  it('research iteration-limit exit completes its report tail without claiming satisfaction', async () => {
+    const harness = createHarness('research', 1, false, 0, true);
+    const reporter = actor('9', 'shipper');
+    const started = await harness.runtime.start(
+      {
+        change: { projectRoot: '/root', changeId: 'fixture-change' },
+        pipeline: harness.plan.pipeline,
+        launchRequestId: branded(`launch:${'0'.repeat(64)}`),
+      },
+      { deliveryMode: 'grant' }
+    );
+    const work = expectOneAction(started);
+    const afterWork = await complete(
+      harness,
+      work,
+      worker,
+      researchWorkResult(1)
+    );
+    const afterJudge = await complete(
+      harness,
+      expectOneAction(afterWork),
+      judge,
+      {
+        contract: 'goal-cycle/research-judge/1',
+        satisfied: false,
+        gaps: ['missing-primary-source'],
+        qualityAssessment: 'The report must disclose the remaining gap.',
+      }
+    );
+    const report = expectOneAction(afterJudge);
+    expect(report.nodeId).toBe(
+      harness.plan.nodes.find(
+        (node) => node.kind === 'atomic' && node.hierarchicalPath === 'root:report'
+      )?.nodeId
+    );
+    expect(
+      afterJudge.view.sections.find((section) => section.kind === 'goal')
+    ).toMatchObject({
+      variant: 'research',
+      outcome: 'exhausted',
+      lastGaps: ['missing-primary-source'],
+    });
+    expect(
+      afterJudge.view.sections.find(
+        (section) => section.kind === 'bounded-loop-lifecycle'
+      )
+    ).toMatchObject({
+      outcome: {
+        kind: 'iteration-limit',
+        disposition: 'exit',
+        value: 'max-rounds-exhausted',
+      },
+    });
+
+    const finished = await complete(harness, report, reporter, {
+      contract: 'goal-cycle/research-report/1',
+      outcome: 'max-rounds-exhausted',
+      disclosedGaps: ['missing-primary-source'],
+    });
+    expect(finished.disposition).toBe('terminal');
+    expect(finished.view.status).toBe('completed');
+    expect(harness.store.load(harness.plan.runId).terminal).toEqual({
+      kind: 'completed',
+      outcome: 'research-report-complete',
+    });
+    expect(
+      finished.view.sections.find((section) => section.kind === 'goal')
+    ).toMatchObject({ outcome: 'exhausted' });
+    expect(
+      finished.view.sections.find(
+        (section) => section.kind === 'bounded-loop-lifecycle'
+      )
+    ).toMatchObject({
+      outcome: {
+        kind: 'iteration-limit',
+        disposition: 'exit',
+        value: 'max-rounds-exhausted',
+      },
+    });
+    const loop = harness.plan.nodes.find(
+      (node) => node.kind === 'bounded-loop'
+    );
+    expect(loop?.kind).toBe('bounded-loop');
+    if (loop?.kind !== 'bounded-loop') return;
+    expect(
+      projectGoalCycleProgress(
+        harness.plan,
+        loop,
+        harness.store.load(harness.plan.runId)
+      ).state.lastSatisfied
+    ).toBe(false);
+  });
+
+  it('does not let a non-research lifecycle exit bypass the satisfied delivery guard', async () => {
+    const harness = createHarness('measure', 1, false, 0, true);
+    const started = await harness.runtime.start(
+      {
+        change: { projectRoot: '/root', changeId: 'fixture-change' },
+        pipeline: harness.plan.pipeline,
+        launchRequestId: branded(`launch:${'b'.repeat(64)}`),
+      },
+      { deliveryMode: 'grant' }
+    );
+    const afterWork = await complete(
+      harness,
+      expectOneAction(started),
+      worker,
+      workResult(1)
+    );
+    const afterJudge = await complete(
+      harness,
+      expectOneAction(afterWork),
+      judge,
+      measureJudgeFailed(40)
+    );
+    const report = expectOneAction(afterJudge);
+    const before = harness.store.load(harness.plan.runId);
+    await expect(
+      complete(harness, report, actor('9', 'shipper'), {
+        contract: 'goal-cycle/report/1',
+        outcome: 'max-rounds-exhausted',
+      })
+    ).rejects.toThrow(/GoalCycle may ship only after the goal is satisfied/);
+    expect(harness.store.load(harness.plan.runId)).toBe(before);
   });
 
   it.each([

@@ -49,6 +49,7 @@ export interface PipelineMessageValues {
   pipelineTableStages: { stages: string };
   pipelineLabel: { name: string };
   definitionVersionLabel: { version: number };
+  compatibilityBoundaryLabel: { boundary: string };
   hostRuntimeLabel: { runtime: string; source: string };
   pipelineNotFound: { name: string; available: string };
   originLabel: { origin: string };
@@ -188,6 +189,7 @@ export const PIPELINE_MESSAGE_KEYS = [
   'pipelineTableStages',
   'pipelineLabel',
   'definitionVersionLabel',
+  'compatibilityBoundaryLabel',
   'hostRuntimeLabel',
   'pipelineNotFound',
   'originLabel',

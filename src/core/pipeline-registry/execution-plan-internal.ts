@@ -189,6 +189,19 @@ const ArtifactSchema = z.strictObject({
   contentDigest: DigestSchema,
 });
 
+const AttestationAuthoritySchema = z.strictObject({
+  format: z.literal('change-run-attestation-authority/1'),
+  algorithm: z.literal('ed25519'),
+  keyId: z.string().min(1).max(256),
+  keyVersion: z.string().min(1).max(128),
+  publicKey: z.strictObject({
+    format: z.literal('spki-der'),
+    encoding: z.literal('base64'),
+    value: z.string().min(1).max(4096),
+    digest: DigestSchema,
+  }),
+});
+
 const RuntimeCapabilityBindingSchema = z.strictObject({
   nodeId: z.string().min(1).max(512),
   authoredCapability: z.strictObject({
@@ -226,7 +239,9 @@ const RuntimeCapabilityBindingSchema = z.strictObject({
       })
     )
     .max(64),
-  adapter: ArtifactSchema,
+  adapter: ArtifactSchema.extend({
+    attestationAuthority: AttestationAuthoritySchema,
+  }).strict(),
 });
 
 const PolicyProvenanceSchema = z.strictObject({
@@ -410,6 +425,18 @@ function decodeRuntimeProfile(value: unknown): RuntimeExecutionProfile {
     );
   }
   return recreated;
+}
+
+/**
+ * Re-open a persisted public execution profile and recompute every digest.
+ * This is intentionally a verifier, not a permissive cast: Run resume uses it
+ * to recover the launch-time trust root without consulting the mutable host
+ * catalog and must fail closed if the stored profile was changed.
+ */
+export function openRuntimeExecutionProfile(
+  value: unknown
+): RuntimeExecutionProfile {
+  return decodeRuntimeProfile(value);
 }
 
 export function sealRuntimeExecutionPlan(

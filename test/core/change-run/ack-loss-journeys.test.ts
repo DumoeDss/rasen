@@ -662,8 +662,8 @@ describe('trusted first-claim via fresh-process CLI (15.5)', () => {
     applyStimulusToStore(storeRoot, runId, {
       kind: 'decide-gate',
       waitId: wait.waitId,
-      decisionId: 'approve',
-      outcome: 'approve',
+      decisionId: 'approved',
+      outcome: 'approved',
     });
 
     // ---- FIRST-CLAIM: resume-run grants the propose action ----

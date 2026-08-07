@@ -19,8 +19,8 @@ import {
 import { projectReviewCycleDomainSnapshot } from './review-cycle-runtime.js';
 import { projectGoalCycleDomainSnapshot } from './goal-cycle-runtime.js';
 import {
-  latestAttemptForNode,
   reduceBoundedLoopLifecycle,
+  strategyAttemptAccounting,
   strategyInvocationPath,
   strategyRecoveryInvocationPath,
   type LoopDomainSnapshot,
@@ -44,6 +44,8 @@ function actionView(committed: CommittedAction) {
       contractDigest: action.capability.contractDigest,
       artifactDigest: action.capability.artifact.contentDigest,
     },
+    completionAuthority: action.completionAuthority,
+    expectedBeforeWorkspace: action.expectedBeforeWorkspace,
     effects: [...committed.effects]
       .sort((left, right) => (left.slot < right.slot ? -1 : 1))
       .map((effect) => ({
@@ -329,17 +331,8 @@ function buildBoundedLoopLifecycleSection(
   domain: LoopDomainSnapshot
 ): unknown {
   const lifecycle = reduceBoundedLoopLifecycle(plan, loop, record, domain);
-  const activeStrategy = Array.from(
-    { length: loop.lifecycle.strategy.maxAttempts },
-    (_, index) => index + 1
-  ).find((attempt) => {
-    const nodeId = deriveNodeId(
-      plan.runId,
-      strategyInvocationPath(loop.hierarchicalPath, attempt)
-    );
-    const action = latestAttemptForNode(record, nodeId);
-    return action?.state === 'active' || action?.state === 'blocked';
-  });
+  const strategyAccounting = strategyAttemptAccounting(plan, loop, record);
+  const activeStrategy = strategyAccounting.active;
   const loopActionNodeIds = new Set<NodeId>(domain.ownedNodeIds);
   for (
     let attempt = 1;

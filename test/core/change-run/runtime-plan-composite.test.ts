@@ -62,6 +62,23 @@ function basePlanInput(
 
 describe('createRuntimePlan — composite body kind', () => {
   describe('failure-first', () => {
+    it('fails closed for a policy-free live bounded-loop plan', () => {
+      const input = basePlanInput(compositeBodyInput());
+      const loop = input.nodes[0] as unknown as {
+        limits?: unknown;
+        lifecycle?: unknown;
+      };
+      delete loop.limits;
+      delete loop.lifecycle;
+
+      expect(() => createRuntimePlan(input)).toThrowError(
+        expect.objectContaining({ code: 'unsupported_runtime_plan' })
+      );
+      expect(() => createRuntimePlan(input)).toThrow(
+        /policy-free runtime-plan format/
+      );
+    });
+
     it('rejects composite body with zero stages', () => {
       const input = basePlanInput({
         kind: 'composite',
@@ -145,6 +162,20 @@ describe('createRuntimePlan — composite body kind', () => {
   });
 
   describe('happy-path', () => {
+    it('preserves a budget below maxActions as an independent loop limit', () => {
+      const input = basePlanInput(compositeBodyInput());
+      const loop = input.nodes[0]!;
+      if (loop.kind !== 'bounded-loop') return;
+      loop.limits = { ...loop.limits, maxActions: 8, budget: 2 };
+
+      const plan = createRuntimePlan(input);
+      const decoded = plan.nodes.find((node) => node.kind === 'bounded-loop');
+      expect(decoded).toMatchObject({
+        kind: 'bounded-loop',
+        limits: { maxIterations: 3, maxActions: 8, budget: 2 },
+      });
+    });
+
     it('produces a frozen bounded-loop node with body.kind === composite', () => {
       const plan = createRuntimePlan(basePlanInput(compositeBodyInput()));
       const loop = plan.nodes.find((n) => n.kind === 'bounded-loop');

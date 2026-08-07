@@ -6,11 +6,35 @@
  * rendering, so these run under the default `node` environment.
  */
 import { describe, expect, it } from 'vitest';
-import { definitionToGraph, layoutGraph, NODE_HEIGHT, NODE_WIDTH } from '../../src/canvas/layout.js';
+import {
+  definitionToGraph,
+  draftToGraph,
+  layoutGraph,
+  NODE_HEIGHT,
+  NODE_WIDTH,
+} from '../../src/canvas/layout.js';
 import { pipelineDetailFixture } from '../fixtures/pipelines.js';
+import {
+  CANVAS_V2_AUTHORING_CATALOG,
+  CANVAS_V2_AUTHORING_DEFINITION,
+} from '../fixtures/canvas-v2-authoring.js';
 import type { PipelineDetailResponse } from '../../src/api/types.js';
 
 describe('definitionToGraph', () => {
+  it('renders the accepted control target for production-shaped input-less AtomicStages', () => {
+    const { nodes } = draftToGraph(
+      structuredClone(CANVAS_V2_AUTHORING_DEFINITION),
+      CANVAS_V2_AUTHORING_CATALOG
+    );
+    const atomic = nodes.find((node) => node.id === 'atomic-stage');
+
+    expect(atomic?.data.inputPorts).toEqual([{ id: 'input' }]);
+    expect(atomic?.data.outputPorts).toContainEqual({
+      id: 'done',
+      type: 'outcome/done',
+    });
+  });
+
   it('derives one edge per requires entry, including multi-requires convergence', () => {
     const { edges } = definitionToGraph(pipelineDetailFixture);
 

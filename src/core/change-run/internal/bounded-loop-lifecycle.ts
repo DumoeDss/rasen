@@ -13,7 +13,11 @@ import type {
 } from '../../pipeline-registry/definition.js';
 import { deriveNodeId } from './identity.js';
 import { domainDigest } from './identity.js';
-import type { CanonicalRunRecord, CommittedAction } from './record.js';
+import {
+  committedActionOccurrence,
+  type CanonicalRunRecord,
+  type CommittedAction,
+} from './record.js';
 import type { RuntimePlan, RuntimePlanBoundedLoopNode } from './runtime-plan.js';
 import { createCanonicalWait } from './waits.js';
 
@@ -110,6 +114,29 @@ export interface LoopLifecycleSnapshot {
   readonly actionsUsed: number;
   readonly budgetUsed: number;
   readonly strategyAttempts: number;
+}
+
+export type LoopStrategyAttemptStatus =
+  | 'unstarted'
+  | 'active'
+  | 'blocked'
+  | 'retry-ready'
+  | 'succeeded'
+  | 'failed'
+  | 'invalid';
+
+export interface LoopStrategyAttemptState {
+  readonly attempt: number;
+  readonly nodeId: NodeId;
+  readonly status: LoopStrategyAttemptStatus;
+  readonly action?: CommittedAction;
+  readonly waitId?: WaitId;
+}
+
+export interface LoopStrategyAttemptAccounting {
+  readonly attempts: readonly LoopStrategyAttemptState[];
+  readonly consumed: number;
+  readonly active?: number;
 }
 
 const BlockedResultSchema = z.strictObject({
@@ -461,6 +488,82 @@ export function strategyActionsForLoop(
     );
 }
 
+/**
+ * One closed logical-attempt model shared by execution and projection.
+ *
+ * A strategy node path identifies one logical attempt. A domain-blocked
+ * result may be resumed only through a new invocation occurrence of that same
+ * node path; it does not silently become another logical attempt. Successful
+ * and failed terminal results each consume the logical attempt exactly once.
+ */
+export function strategyAttemptAccounting(
+  plan: RuntimePlan,
+  loop: RuntimePlanBoundedLoopNode,
+  record: CanonicalRunRecord
+): LoopStrategyAttemptAccounting {
+  const attempts = Array.from(
+    { length: loop.lifecycle.strategy.maxAttempts },
+    (_, index): LoopStrategyAttemptState => {
+      const attempt = index + 1;
+      const nodeId = deriveNodeId(
+        plan.runId,
+        strategyInvocationPath(loop.hierarchicalPath, attempt)
+      );
+      const action = latestAttemptForNode(record, nodeId);
+      if (action === undefined) {
+        return { attempt, nodeId, status: 'unstarted' };
+      }
+      if (action.state === 'active') {
+        return { attempt, nodeId, status: 'active', action };
+      }
+      if (action.result?.status === 'succeeded') {
+        return { attempt, nodeId, status: 'succeeded', action };
+      }
+      if (action.result?.status === 'failed') {
+        return { attempt, nodeId, status: 'failed', action };
+      }
+      if (action.result?.status === 'blocked') {
+        const waitId = waitIdForAction(record, action);
+        if (waitId !== undefined) {
+          return {
+            attempt,
+            nodeId,
+            status: 'blocked',
+            action,
+            waitId,
+          };
+        }
+        if (hasPendingFreshAttempt(record, action)) {
+          return { attempt, nodeId, status: 'retry-ready', action };
+        }
+        return { attempt, nodeId, status: 'invalid', action };
+      }
+      if (action.state === 'blocked') {
+        const waitId = waitIdForAction(record, action);
+        return waitId === undefined
+          ? { attempt, nodeId, status: 'invalid', action }
+          : { attempt, nodeId, status: 'blocked', action, waitId };
+      }
+      return { attempt, nodeId, status: 'invalid', action };
+    }
+  );
+  const consumed = attempts.filter(
+    (attempt) =>
+      attempt.status === 'succeeded' || attempt.status === 'failed'
+  ).length;
+  const active = attempts.find(
+    (attempt) =>
+      attempt.status === 'active' ||
+      attempt.status === 'blocked' ||
+      attempt.status === 'retry-ready'
+  )?.attempt;
+  return Object.freeze({
+    attempts: Object.freeze(attempts.map((attempt) => Object.freeze(attempt))),
+    consumed,
+    ...(active === undefined ? {} : { active }),
+  });
+}
+
 export function strategyTriggerForAction(
   action: CommittedAction
 ): string | undefined {
@@ -487,10 +590,11 @@ export function strategyIterationLimitAllowance(
   loop: RuntimePlanBoundedLoopNode,
   record: CanonicalRunRecord
 ): number {
-  return strategyActionsForLoop(plan, loop, record).filter(
-    (action) =>
-      action.result?.status === 'succeeded' &&
-      strategyTriggerForAction(action) === 'iteration-limit'
+  return strategyAttemptAccounting(plan, loop, record).attempts.filter(
+    (attempt) =>
+      attempt.status === 'succeeded' &&
+      attempt.action !== undefined &&
+      strategyTriggerForAction(attempt.action) === 'iteration-limit'
   ).length;
 }
 
@@ -554,7 +658,7 @@ function hasPendingFreshAttempt(
     kind: 'domain-blocked',
     nodeId: action.action.nodeId,
     invocationId: action.action.invocationId,
-    occurrence: 0,
+    occurrence: committedActionOccurrence(record, action),
     attemptId: action.action.attemptId,
     actionId: action.action.actionId,
     effectIds: action.action.effects.map((effect) => effect.effectId),
@@ -633,12 +737,11 @@ function pendingStrategyRecovery(
   record: CanonicalRunRecord,
   snapshot: LoopDomainSnapshot
 ): LoopLifecycleDecision | undefined {
-  const strategies = strategyActionsForLoop(plan, loop, record);
-  const latest = strategies.at(-1);
-  if (latest?.result?.status !== 'succeeded') return undefined;
-  const attempt = strategies.filter(
-    (action) => action.result?.status === 'succeeded'
-  ).length;
+  const latest = strategyAttemptAccounting(plan, loop, record).attempts
+    .filter((attempt) => attempt.status !== 'unstarted')
+    .at(-1);
+  if (latest?.status !== 'succeeded') return undefined;
+  const attempt = latest.attempt;
   const existing = recoveryActionsForAttempt(
     plan,
     loop,
@@ -738,25 +841,53 @@ function applyDisposition(
   if (disposition.action !== 'strategy') {
     return terminalDecision(reason, disposition);
   }
-  const attempts = strategyActionsForLoop(plan, loop, record);
-  const latest = attempts.at(-1);
-  if (latest?.state === 'active' || latest?.state === 'blocked') {
-    return { kind: 'waiting', ...(waitIdForAction(record, latest) ? { waitId: waitIdForAction(record, latest) } : {}) };
+  const accounting = strategyAttemptAccounting(plan, loop, record);
+  const latest = accounting.attempts
+    .filter((attempt) => attempt.status !== 'unstarted')
+    .at(-1);
+  if (latest?.status === 'active') {
+    return { kind: 'waiting' };
   }
-  const completedAttempts = attempts.filter(
-    (action) => action.result?.status === 'succeeded'
-  ).length;
-  if (completedAttempts >= loop.lifecycle.strategy.maxAttempts) {
+  if (latest?.status === 'blocked') {
+    return {
+      kind: 'waiting',
+      ...(latest.waitId === undefined ? {} : { waitId: latest.waitId }),
+    };
+  }
+  if (latest?.status === 'invalid') {
+    return {
+      kind: 'failed',
+      outcome: 'invalid_strategy_attempt_state',
+      reason: 'action-failed',
+    };
+  }
+  if (accounting.consumed >= loop.lifecycle.strategy.maxAttempts) {
     return terminalDecision('strategy-exhausted', loop.lifecycle.exits.strategyExhausted);
   }
-  const attempt = completedAttempts + 1;
+  const retrying = latest?.status === 'retry-ready';
+  const attempt = retrying ? latest.attempt : accounting.consumed + 1;
   const hierarchicalPath = strategyInvocationPath(loop.hierarchicalPath, attempt);
   const sourceWaitId =
-    reason === 'blocked' ? waitIdForAction(record, blocker.action) : undefined;
+    !retrying && reason === 'blocked'
+      ? waitIdForAction(record, blocker.action)
+      : undefined;
+  const recordedTrigger =
+    retrying && latest.action !== undefined
+      ? strategyTriggerForAction(latest.action)
+      : undefined;
+  const trigger =
+    recordedTrigger === 'iteration-limit' ||
+    recordedTrigger === 'action-limit' ||
+    recordedTrigger === 'budget-limit' ||
+    recordedTrigger === 'stalled' ||
+    recordedTrigger === 'blocked' ||
+    recordedTrigger === 'strategy-exhausted'
+      ? recordedTrigger
+      : reason;
   return {
     kind: 'strategy-ready',
     attempt,
-    trigger: reason,
+    trigger,
     invocation: {
       nodeId: deriveNodeId(plan.runId, hierarchicalPath),
       hierarchicalPath,
@@ -790,6 +921,7 @@ export function reduceBoundedLoopLifecycle(
   const progress = reconstructProgress(snapshot.progressHistory);
   const blocker = reconstructBlocker(plan, record, loop, snapshot);
   const strategies = strategyActionsForLoop(plan, loop, record);
+  const strategyAccounting = strategyAttemptAccounting(plan, loop, record);
   const recoveryActions = Array.from(
     { length: loop.lifecycle.strategy.maxAttempts },
     (_, index) => index + 1
@@ -817,9 +949,7 @@ export function reduceBoundedLoopLifecycle(
     blockedStreak: blocker.streak,
     actionsUsed,
     budgetUsed: actionsUsed,
-    strategyAttempts: strategies.filter(
-      (action) => action.result?.status === 'succeeded'
-    ).length,
+    strategyAttempts: strategyAccounting.consumed,
   };
   const admissionLimitDecision =
     actionsUsed >= loop.limits.maxActions

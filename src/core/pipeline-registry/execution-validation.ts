@@ -30,7 +30,8 @@ import {
   type DispatchBridge,
 } from '../runtime-adapters.js';
 import type { AgentRuntime, PipelineYaml, StageRole } from './types.js';
-import type { PreparedDefinition } from './definition.js';
+import type { CapabilityCatalogSnapshot, PreparedDefinition } from './definition.js';
+import { projectPreparedPipelineExecutionView } from './prepared-execution-view.js';
 
 export type PipelineExecutionNotice =
   | {
@@ -250,7 +251,8 @@ export async function resolvePipelineExecutionSkillSets(
     catalog,
     config.profile ?? 'full',
     config.workflows,
-    expertSelectionExplicit
+    expertSelectionExplicit,
+    { projectRoot }
   );
   if (unknownProfileWorkflows.length > 0) {
     reportPipelineExecutionNotice(options.reporter, {
@@ -290,10 +292,11 @@ export async function validatePipelineForExecution(
     }));
   validatePipelineSkills(pipeline, knownSkillNames, enabledSkillNames);
   const loadChild = options?.loadPrepared
-    ? (name: string): PipelineYaml =>
-        preflightPreparedDefinitionExecution(
-          options.loadPrepared!(name).prepared
-        ).pipeline
+    ? (name: string): PipelineYaml | null => {
+        const prepared = options.loadPrepared!(name).prepared;
+        const selection = preflightPreparedDefinitionExecution(prepared);
+        return prepared.authoredVersion === 2 ? null : selection.pipeline;
+      }
     : undefined;
   validateDecomposeChildPipelines(pipeline, projectRoot, loadChild);
 
@@ -325,6 +328,9 @@ export async function validatePipelineForExecution(
     const child = loadChild
       ? loadChild(resolveChildPipelineName(stage))
       : loadPipelineByName(resolveChildPipelineName(stage), projectRoot);
+    // A native-v2 child already passed Definition preparation and execution
+    // preflight in `loadChild`; it has no legacy stage/runtime plan to inspect.
+    if (child === null) continue;
     validatePipelineSkills(child, knownSkillNames, enabledSkillNames);
     plans.push(resolvePlan(child));
   }
@@ -354,6 +360,66 @@ export async function validatePipelineForExecution(
         : (options?.probeClaude ?? probeClaudeAvailability)();
     if (!available) {
       throwRuntimeUnavailable(plans, bridge);
+    }
+  }
+}
+
+/**
+ * Native-v2 admission preflight. Preparation closes capability authority; this
+ * companion closes the host/runtime route using the same projected policy the
+ * CLI and Management API display. It runs before a Run Record is created.
+ */
+export async function validatePreparedPipelineForExecution(
+  prepared: PreparedDefinition,
+  catalog: CapabilityCatalogSnapshot,
+  projectRoot?: string,
+  options?: PipelineExecutionOptions
+): Promise<void> {
+  const host = options?.host ?? options?.detectHost?.() ?? detectHostRuntime();
+  if (host.runtime === 'unknown') {
+    reportPipelineExecutionNotice(options?.reporter, {
+      kind: 'unknown-host-runtime',
+      override: 'RASEN_AGENT_RUNTIME',
+    });
+  }
+  const storeLayer = projectRoot ? await resolveConfigStoreLayer(projectRoot) : null;
+  const overrides = resolvePipelineStageOverrides(prepared.definition.name, {
+    projectRoot,
+    store: storeLayer,
+  });
+  const view = projectPreparedPipelineExecutionView(prepared, catalog, {
+    host,
+    overrides,
+    roleRuntimeOverrides: options?.roleRuntimeOverrides,
+    basePolicy: { effective: 'on', source: 'default' },
+  });
+  const unsupported = view.stages.find((stage) => stage.dispatchMode === 'unsupported');
+  if (unsupported) {
+    throw new PipelineValidationError(
+      `Unsupported runtime route ${host.runtime} -> ${unsupported.runtime.value} ` +
+        `for stage "${unsupported.id}" (role ${unsupported.role}). ` +
+        'Remove or change the explicit runtime override to inherit the host, or run this workflow from a supported host.',
+      'pipeline_runtime_route_unsupported'
+    );
+  }
+  const requiredBridges = new Set(
+    view.stages
+      .map((stage) => stage.bridge)
+      .filter((bridge): bridge is DispatchBridge => bridge !== null)
+  );
+  for (const bridge of requiredBridges) {
+    const available = bridge === 'codex-exec'
+      ? (options?.probeCodex ?? probeCodexAvailability)()
+      : (options?.probeClaude ?? probeClaudeAvailability)();
+    if (!available) {
+      const stage = view.stages.find((candidate) => candidate.bridge === bridge);
+      const targetLabel = bridge === 'codex-exec' ? 'codex' : 'Claude Code';
+      const bridgeLabel = bridge === 'codex-exec' ? 'codex exec' : bridge;
+      throw new PipelineValidationError(
+        `Stage "${stage?.id ?? '<unknown>'}" requires the ${bridgeLabel} bridge, but ${targetLabel} is not available. ` +
+          `Override the affected role to ${host.runtime}, or install the ${bridge === 'codex-exec' ? 'Codex CLI' : 'Claude Code CLI'}.`,
+        'pipeline_runtime_unavailable'
+      );
     }
   }
 }

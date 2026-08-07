@@ -21,7 +21,16 @@
  * dropped, cycles are tolerated (BFS with a visited set), and a pipeline that
  * fails to load or a skill with no owning catalog unit is skipped silently.
  */
-import { loadPipelineByName, resolveChildPipelineName } from '../pipeline-registry/resolver.js';
+import {
+  createProductionCapabilityCatalogSnapshot,
+  type DefinitionGraph,
+  type DefinitionSourceV2,
+} from '../pipeline-registry/definition.js';
+import {
+  loadPreparedPipelineByName,
+  resolveChildPipelineName,
+  type PreparedPipelineResolution,
+} from '../pipeline-registry/resolver.js';
 import type { PipelineYaml } from '../pipeline-registry/types.js';
 import type { WorkflowCatalog } from './catalog.js';
 import { portablePathCollisionKey } from './path-policy.js';
@@ -57,6 +66,84 @@ function isUnconditional(condition: string | undefined): boolean {
   return condition === undefined || condition === 'always';
 }
 
+export type PipelineDependencySource = PipelineYaml | PreparedPipelineResolution;
+
+function addCapabilityOwner(
+  capabilityId: string,
+  condition: string | undefined,
+  selfId: string,
+  ownerByKey: Map<string, string>,
+  strong: Set<string>,
+  weak: Set<string>
+): void {
+  const skillName = capabilityId.startsWith('skill:')
+    ? capabilityId.slice('skill:'.length)
+    : capabilityId;
+  const owner = ownerByKey.get(portablePathCollisionKey(skillName));
+  if (!owner || owner === selfId) return;
+  if (isUnconditional(condition)) strong.add(owner);
+  else weak.add(owner);
+}
+
+/** Collect exact capability ownership from the reachable authored-v2 graph. */
+function collectDefinitionOwners(
+  definition: DefinitionSourceV2,
+  selfId: string,
+  ownerByKey: Map<string, string>,
+  strong: Set<string>,
+  weak: Set<string>
+): void {
+  const declarations = new Map(
+    definition.declarations.map((declaration) => [declaration.id, declaration])
+  );
+  const visitedDeclarations = new Set<string>();
+
+  const visitGraph = (graph: DefinitionGraph, root: boolean): void => {
+    const memberConditions = new Map<string, string>();
+    if (root) {
+      for (const node of graph.nodes) {
+        if (node.kind !== 'FanOut') continue;
+        for (const member of node.members) {
+          memberConditions.set(member.id, member.condition);
+        }
+      }
+    }
+
+    for (const node of graph.nodes) {
+      if (node.kind === 'AtomicStage') {
+        addCapabilityOwner(
+          node.capability.id,
+          root ? memberConditions.get(node.id) : undefined,
+          selfId,
+          ownerByKey,
+          strong,
+          weak
+        );
+        continue;
+      }
+      if (node.kind !== 'CompositeRef' && node.kind !== 'BoundedLoop') continue;
+      if (node.kind === 'BoundedLoop' && node.lifecycle.strategy.capability) {
+        addCapabilityOwner(
+          node.lifecycle.strategy.capability.id,
+          undefined,
+          selfId,
+          ownerByKey,
+          strong,
+          weak
+        );
+      }
+      const declarationId = node.kind === 'CompositeRef' ? node.declarationId : node.body;
+      if (visitedDeclarations.has(declarationId)) continue;
+      const declaration = declarations.get(declarationId);
+      if (!declaration) continue;
+      visitedDeclarations.add(declarationId);
+      visitGraph(declaration.graph, false);
+    }
+  };
+
+  visitGraph(definition.root, true);
+}
+
 /**
  * Walks a pipeline's stages (and, one level down, any decompose stage's child
  * pipeline — decompose children are themselves decompose-free) accumulating the
@@ -73,7 +160,8 @@ function collectPipelineOwners(
   weak: Set<string>,
   visited: Set<string>,
   projectRoot: string | undefined,
-  loadPipeline: (name: string, projectRoot?: string) => PipelineYaml
+  loadPipeline: (name: string, projectRoot?: string) => PipelineDependencySource,
+  ignoreLoadErrors: boolean
 ): void {
   if (visited.has(pipelineName)) return;
   visited.add(pipelineName);
@@ -81,8 +169,25 @@ function collectPipelineOwners(
   let pipeline;
   try {
     pipeline = loadPipeline(pipelineName, projectRoot);
-  } catch {
-    return; // advisory graph: a broken/missing pipeline contributes nothing
+  } catch (error) {
+    if (ignoreLoadErrors) {
+      return; // advisory graph: a broken/missing pipeline contributes nothing
+    }
+    throw error;
+  }
+
+  if ('prepared' in pipeline) {
+    if (pipeline.prepared.authoredVersion === 2) {
+      collectDefinitionOwners(
+        pipeline.prepared.definition,
+        selfId,
+        ownerByKey,
+        strong,
+        weak
+      );
+      return;
+    }
+    pipeline = pipeline.prepared.authoredSource as PipelineYaml;
   }
 
   for (const stage of pipeline.stages) {
@@ -102,7 +207,8 @@ function collectPipelineOwners(
         weak,
         visited,
         projectRoot,
-        loadPipeline
+        loadPipeline,
+        ignoreLoadErrors
       );
     }
   }
@@ -137,7 +243,8 @@ function directEdges(
       weak,
       visited,
       projectRoot,
-      loadPipeline
+      loadPipeline,
+      true
     );
   }
 
@@ -145,6 +252,61 @@ function directEdges(
   // same parent (design D7: weak = weak − strong).
   for (const s of strong) weak.delete(s);
   return { strong, weak };
+}
+
+export interface WorkflowPipelineCapabilityOwnerOptions {
+  loadPipeline?: (name: string, projectRoot?: string) => PipelineDependencySource;
+}
+
+/**
+ * Resolves every catalog unit that owns a capability reachable from the
+ * pipelines required by `workflowIds`. Unlike the advisory dependency graph,
+ * this authoritative install/enablement seam includes conditional members and
+ * fails when a declared required pipeline cannot be loaded or prepared.
+ */
+export function collectWorkflowPipelineCapabilityOwnerIds(
+  catalog: WorkflowCatalog,
+  workflowIds: readonly string[],
+  projectRoot?: string,
+  options: WorkflowPipelineCapabilityOwnerOptions = {}
+): string[] {
+  const ownerByKey = buildSkillOwnerMap(catalog);
+  const enabledSkillNames = new Set(
+    catalog.definitions.map((definition) => definition.skill.template.name)
+  );
+  const capabilityCatalog = createProductionCapabilityCatalogSnapshot(
+    catalog.definitions,
+    enabledSkillNames
+  );
+  const loadPipeline = options.loadPipeline ?? ((name: string, root?: string) =>
+    loadPreparedPipelineByName(name, root, { catalog: capabilityCatalog }));
+  const owners = new Set<string>();
+  const visited = new Set<string>();
+
+  for (const workflowId of workflowIds) {
+    const definition = catalog.get(workflowId);
+    if (!definition) continue;
+    for (const pipelineName of definition.requires.pipelines) {
+      // The same set is intentional: installation must include both
+      // unconditional and condition-gated capability owners so every branch
+      // the selected driver can dispatch is available.
+      collectPipelineOwners(
+        pipelineName,
+        workflowId,
+        ownerByKey,
+        owners,
+        owners,
+        visited,
+        projectRoot,
+        loadPipeline,
+        false
+      );
+    }
+  }
+
+  return catalog.definitions
+    .filter((definition) => owners.has(definition.id))
+    .map((definition) => definition.id);
 }
 
 /**
@@ -162,7 +324,15 @@ export function computeWorkflowDependencyGraph(
   } = {}
 ): WorkflowDependencyGraph {
   const ownerByKey = buildSkillOwnerMap(catalog);
-  const loadPipeline = options.loadPipeline ?? loadPipelineByName;
+  const enabledSkillNames = new Set(
+    catalog.definitions.map((definition) => definition.skill.template.name)
+  );
+  const capabilityCatalog = createProductionCapabilityCatalogSnapshot(
+    catalog.definitions,
+    enabledSkillNames
+  );
+  const loadPipeline = options.loadPipeline ?? ((name: string, root?: string) =>
+    loadPreparedPipelineByName(name, root, { catalog: capabilityCatalog }));
 
   const directStrong = new Map<string, Set<string>>();
   const directWeak = new Map<string, Set<string>>();

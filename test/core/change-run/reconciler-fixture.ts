@@ -22,6 +22,7 @@ import {
   type RuntimePlan,
   type RuntimePlanInput,
 } from '../../../src/core/change-run/internal/runtime-plan.js';
+import { buildAgentActor } from '../../../src/core/change-run/internal/actors.js';
 import type {
   AttemptId,
   ActionId,
@@ -35,6 +36,7 @@ import type {
   RunId,
   WaitId,
 } from '../../../src/core/change-run/index.js';
+import { TEST_ATTESTATION_AUTHORITY } from '../../fixtures/trusted-completion.js';
 
 const branded = <T>(value: string): T => value as T;
 
@@ -182,6 +184,18 @@ export function agentAction(
     node !== undefined && node.kind === 'atomic'
       ? node.workspace.access
       : 'write';
+  const completionActor = buildAgentActor({
+    role: 'implementer',
+    provider: 'codex',
+    runtime: 'codex',
+    principalIdentityDigest: fixtureDigests.workspaceDigest,
+    sessionIdentityDigest: fixtureDigests.profileDigest,
+    adapter: {
+      id: path,
+      version: '1',
+      artifactDigest: fixtureDigests.capabilityDigest,
+    },
+  });
   return {
     format: 'change-run-action/1',
     kind: 'agent',
@@ -219,6 +233,53 @@ export function agentAction(
     },
     resultContractDigest: fixtureDigests.workspaceDigest,
     evidenceContractDigest: fixtureDigests.workspaceDigest,
+    completionAuthority: {
+      format: 'change-run-completion-authority/1',
+      attestationAuthority: TEST_ATTESTATION_AUTHORITY,
+      actor: completionActor,
+      actorAttestation: {
+        producer: {
+          id: path,
+          version: '1',
+          identityDigest: fixtureDigests.capabilityDigest,
+        },
+        observationKind: 'actor-attestation',
+        schema: 'fixture-evidence/actor-attestation/1',
+        mediaType: 'application/json',
+      },
+      observations: {
+        domainActionResult: {
+          producer: {
+            id: 'fixture-evidence',
+            version: '1',
+            identityDigest: fixtureDigests.workspaceDigest,
+          },
+          observationKind: 'domain-action-result',
+          schema: 'fixture-evidence/domain-action-result/1',
+          mediaType: 'application/json',
+        },
+        effectObservation: {
+          producer: {
+            id: 'fixture-evidence',
+            version: '1',
+            identityDigest: fixtureDigests.workspaceDigest,
+          },
+          observationKind: 'effect-observation',
+          schema: 'fixture-evidence/effect-observation/1',
+          mediaType: 'application/json',
+        },
+        infrastructureObservation: {
+          producer: {
+            id: 'fixture-evidence',
+            version: '1',
+            identityDigest: fixtureDigests.workspaceDigest,
+          },
+          observationKind: 'infrastructure-observation',
+          schema: 'fixture-evidence/infrastructure-observation/1',
+          mediaType: 'application/json',
+        },
+      },
+    },
     policyDigest: plan.policyDigest,
     workspace: { access, resources: ['worktree'] },
     expectedBeforeWorkspace: fixtureWorkspaceRevision,
@@ -340,12 +401,18 @@ export function succeedNode(
   }
   if (node.gate !== undefined) {
     const wait = gateWait(plan, path);
+    const decisionId = node.gate.decisionIds.find(
+      (candidate) => node.gate!.outcomes[candidate] === 'proceed'
+    ) ?? node.gate.decisionIds[0];
+    if (decisionId === undefined) {
+      throw new Error(`fixture: gate ${node.gate.gateId} has no decision`);
+    }
     next = apply(plan, next, { kind: 'await-gate', wait });
     next = apply(plan, next, {
       kind: 'decide-gate',
       waitId: wait.waitId,
-      decisionId: 'approve',
-      outcome: 'approve',
+      decisionId,
+      outcome: decisionId,
     });
   }
   const action = agentAction(plan, path);

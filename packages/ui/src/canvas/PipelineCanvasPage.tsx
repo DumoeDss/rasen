@@ -36,6 +36,9 @@ import { stageNodeTypes } from './StageNode.js';
 import {
   CONTROL_SOURCE_PORT,
   CONTROL_TARGET_PORT,
+  createBlankCanvasPipelineDefinitionV2,
+  createDefaultBoundedLoopLifecycle,
+  createParallelPair,
   addBodyConnection,
   addBodyStage,
   addDeclaration,
@@ -44,6 +47,7 @@ import {
   addV2Connection,
   addV2Node,
   definitionIssuePathTarget,
+  duplicateV2Definition,
   isDirty,
   isV2EditableNodeKind,
   issuePathTarget,
@@ -57,11 +61,22 @@ import {
   removeStage,
   removeV2Connection,
   removeV2Node,
+  removeParallelPair,
+  renameDeclaration,
   renameStage,
   renameV2Node,
+  setParallelMembers,
   stageIdFor,
   updateBodyStage,
+  updateBodyStageExecution,
+  updateAtomicStageExecution,
+  updateBoundedLoopContract,
   updateDeclaration,
+  updateDefinitionContracts,
+  updateGateDisposition,
+  updateGateDecisions,
+  updateParallelContract,
+  updateParallelMember,
   updateStageFields,
   updateStageHandoffThreshold,
   updateV2NodeFields,
@@ -69,8 +84,11 @@ import {
   v2NodeIdFor,
   wouldCreateCycle,
   type V2EditableNodeKind,
+  type DefinitionIssueTarget,
 } from './draft.js';
 import { DeclarationsPanel } from './DeclarationsPanel.js';
+import { DefinitionContractPanel } from './DefinitionContractPanel.js';
+import type { IntegerContractDraftError } from './IntegerContractField.js';
 import { PalettePanel, PALETTE_DND_TYPE } from './PalettePanel.js';
 import { StagePanel } from './StagePanel.js';
 import { V2NodePanel } from './V2NodePanel.js';
@@ -121,6 +139,13 @@ export function PipelineCanvasPage() {
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
   /** The Custom Composite declaration open in the declaration editor, if any. */
   const [selectedDeclarationId, setSelectedDeclarationId] = useState<string | null>(null);
+  const [selectedIssueTarget, setSelectedIssueTarget] =
+    useState<DefinitionIssueTarget | null>(null);
+  const [selectedIssueSeverity, setSelectedIssueSeverity] =
+    useState<'error' | 'warning' | null>(null);
+  const [authoringDraftErrors, setAuthoringDraftErrors] = useState<
+    Record<string, IntegerContractDraftError>
+  >({});
 
   const [catalog, setCatalog] = useState<PipelineCatalogResponse | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -150,7 +175,10 @@ export function PipelineCanvasPage() {
   const [pendingExit, setPendingExit] = useState<(() => void) | null>(null);
   const [duplicateDialog, setDuplicateDialog] = useState<{ name: string; error: string | null } | null>(null);
 
-  const dirty = draft !== null && loadedDefinition !== null && isDirty(draft, loadedDefinition);
+  const hasAuthoringDraftErrors = Object.keys(authoringDraftErrors).length > 0;
+  const dirty =
+    (draft !== null && loadedDefinition !== null && isDirty(draft, loadedDefinition)) ||
+    hasAuthoringDraftErrors;
 
   // Detail fetch (view mode) OR pending-draft consumption (new/duplicate drafts, design D6).
   useEffect(() => {
@@ -164,7 +192,7 @@ export function PipelineCanvasPage() {
         ? pending.definition.version === 1
           ? { ...pending.definition, name: pending.name, origin: 'ui' }
           : { ...pending.definition, name: pending.name }
-        : { version: 1, name: pending.name, origin: 'ui', stages: [] };
+        : createBlankCanvasPipelineDefinitionV2(pending.name);
       setDetail(null);
       setLoading(false);
       setNotFound(false);
@@ -179,6 +207,8 @@ export function PipelineCanvasPage() {
     setPageError(null);
     setMode('view');
     setDraft(null);
+    setAuthoringDraftErrors({});
+    setSelectedIssueSeverity(null);
     setIssues([]);
     setLatestPreparation(null);
     client
@@ -246,6 +276,11 @@ export function PipelineCanvasPage() {
     setLastValidation(null);
     setLatestPreparation(null);
     setIssues([]);
+    setSelectedIssueTarget(null);
+    setSelectedIssueSeverity(null);
+    setSaveState((state) =>
+      state.status === 'blocked' ? { status: 'idle' } : state
+    );
     setFlowNodes((nodes) =>
       nodes.map((n) =>
         n.type === 'stage' && n.data.issueSeverity
@@ -286,6 +321,9 @@ export function PipelineCanvasPage() {
     setMode('edit');
     setSelectedStageId(null);
     setSelectedDeclarationId(null);
+    setSelectedIssueTarget(null);
+    setSelectedIssueSeverity(null);
+    setAuthoringDraftErrors({});
     setIssues(initialIssues);
     setLatestPreparation(preparation);
     setLastValidation(null);
@@ -325,6 +363,9 @@ export function PipelineCanvasPage() {
     setLoadedDefinition(null);
     setSelectedStageId(null);
     setSelectedDeclarationId(null);
+    setSelectedIssueTarget(null);
+    setSelectedIssueSeverity(null);
+    setAuthoringDraftErrors({});
     setIssues([]);
     setLatestPreparation(null);
     setLastValidation(null);
@@ -356,6 +397,7 @@ export function PipelineCanvasPage() {
         recordSeverity(severityByNode, target.id, issue.severity);
         continue;
       }
+      if (target.kind !== 'connection') continue;
       recordSeverity(severityByEdge, target.id, issue.severity);
       if (def.version === 2) {
         const consumingNode = def.root.connections[target.index]?.to.node;
@@ -392,6 +434,8 @@ export function PipelineCanvasPage() {
     if (!selector) return null;
     try {
       const res = await client.validatePipeline(def, selector);
+      setSelectedIssueTarget(null);
+      setSelectedIssueSeverity(null);
       setIssues(res.issues);
       setLatestPreparation(res.preparation ?? null);
       applyIssueMarkers(res.issues, def);
@@ -407,6 +451,13 @@ export function PipelineCanvasPage() {
 
   async function handleValidate() {
     if (!draft) return;
+    if (hasAuthoringDraftErrors) {
+      setSaveState({
+        status: 'blocked',
+        message: 'Fix the invalid integer field before validating or saving.',
+      });
+      return;
+    }
     setSaveState({ status: 'idle' });
     setExportState({ open: false, path: '', status: 'idle' });
     await runValidate(
@@ -416,6 +467,13 @@ export function PipelineCanvasPage() {
 
   async function handleSave(force = false) {
     if (!draft || !selector) return;
+    if (hasAuthoringDraftErrors) {
+      setSaveState({
+        status: 'blocked',
+        message: 'Fix the invalid integer field before validating or saving.',
+      });
+      return;
+    }
     // Guard against a second concurrent save mutation (rapid double-click on
     // Save/Overwrite/Retry): the buttons' `disabled` attribute only reflects
     // `saveState` after the next render, so a ref is read/set synchronously
@@ -458,6 +516,9 @@ export function PipelineCanvasPage() {
         setIssues([]);
         setSelectedStageId(null);
         setSelectedDeclarationId(null);
+        setSelectedIssueTarget(null);
+        setSelectedIssueSeverity(null);
+        setAuthoringDraftErrors({});
         setSaveState({ status: 'idle', message: result.created ? 'Created.' : 'Saved.' });
       } catch (err) {
         if (err instanceof ApiError) {
@@ -475,7 +536,13 @@ export function PipelineCanvasPage() {
 
   async function handleExport(event: Event) {
     event.preventDefault();
-    if (!draft || draft.version !== 2 || !selector || !exportState.path.trim()) {
+    if (
+      !draft ||
+      draft.version !== 2 ||
+      !selector ||
+      !exportState.path.trim() ||
+      hasAuthoringDraftErrors
+    ) {
       return;
     }
     if (dirty) {
@@ -530,10 +597,6 @@ export function PipelineCanvasPage() {
       return;
     }
     if (draft.version === 2) {
-      if (!connection.sourceHandle || !connection.targetHandle) {
-        showToast('Rejected: choose a typed source and target port.');
-        return;
-      }
       const sourceNode = draft.root.nodes.find(
         (node) => node.id === connection.source
       );
@@ -551,12 +614,9 @@ export function PipelineCanvasPage() {
         );
         return;
       }
-      // `StageNode`'s handles carry no `id`, so React Flow reports null for
-      // both. Fall back to the conventional control ports the kernel accepts
-      // for a capability with no typed inputs (`CONTROL_INPUT_PORTS` /
-      // the `done` outcome) — the same pair `createBodyConnection` uses, so
-      // root and body authoring emit one convention. A handle that DOES carry
-      // an id still wins, for when typed ports arrive.
+      // Rendered typed/control handle ids are authoritative. Fall back to the
+      // same conventional control ports only when React Flow omits an id.
+      // This keeps root and declaration-body authoring on one convention.
       const endpoints = {
         source: connection.source,
         sourcePort: connection.sourceHandle ?? CONTROL_SOURCE_PORT,
@@ -589,7 +649,14 @@ export function PipelineCanvasPage() {
             (candidate) => candidate.id === id
           );
           if (node && isV2EditableNodeKind(node.kind)) {
-            nextDraft = removeV2Node(nextDraft, id);
+            try {
+              nextDraft = removeV2Node(nextDraft, id);
+              removeAuthoringDraftErrorScopes([`root-node:${id}`]);
+            } catch (error) {
+              showToast(
+                error instanceof Error ? error.message : 'Could not remove the node.'
+              );
+            }
           }
         }
         setDraft(nextDraft);
@@ -712,9 +779,27 @@ export function PipelineCanvasPage() {
         id,
         kind,
         capability: { id: capability.id, version: capability.version },
+        execution: {
+          version: 1,
+          role: 'implementer',
+          workspace: { access: 'write' },
+        },
       };
     } else if (kind === 'Gate') {
-      node = { id, kind, outcomes: ['approved', 'rejected'] };
+      const target = draft.root.nodes.find(
+        (candidate) => candidate.kind === 'AtomicStage'
+      );
+      if (!target) {
+        showToast('Add an AtomicStage before authoring a Gate.');
+        return;
+      }
+      node = {
+        id,
+        kind,
+        target: target.id,
+        outcomes: ['approved', 'rejected'],
+        dispositions: { approved: 'proceed', rejected: 'escalate' },
+      };
     } else if (kind === 'Choice') {
       node = { id, kind, outcomes: ['default'] };
     } else if (kind === 'CompositeRef') {
@@ -734,12 +819,51 @@ export function PipelineCanvasPage() {
         id,
         kind,
         body: declaration.id,
-        limits: { maxIterations: 3 },
-        exits: {
-          clean: { action: 'exit', outcome: draft.outcomes[0] ?? 'done' },
-          needs_fix: { action: 'continue' },
-        },
+        limits: { maxIterations: 3, maxActions: 12, budget: 12 },
+        lifecycle: createDefaultBoundedLoopLifecycle(),
+        exits: Object.fromEntries(
+          declaration.outcomes.map((outcome, index) => [
+            outcome,
+            index === declaration.outcomes.length - 1
+              ? { action: 'exit', outcome: draft.outcomes[0] ?? 'done' }
+              : { action: 'continue' },
+          ])
+        ),
       };
+    } else if (kind === 'FanOut' || kind === 'Join') {
+      const members = draft.root.nodes
+        .filter((candidate) => candidate.kind === 'AtomicStage')
+        .map((candidate) => candidate.id);
+      if (members.length === 0) {
+        showToast('Add an AtomicStage before authoring a parallel frontier.');
+        return;
+      }
+      const fanOutId =
+        kind === 'FanOut' ? id : v2NodeIdFor('FanOut', draft);
+      const joinId = kind === 'Join' ? id : v2NodeIdFor('Join', draft);
+      let nextDraft;
+      try {
+        nextDraft = createParallelPair(draft, {
+          fanOutId,
+          joinId,
+          memberNodeIds: members,
+          requiredMemberIds: [members[0]!],
+          concurrencyCap: Math.max(1, Math.min(3, members.length)),
+          budget: Math.max(1, members.length),
+          outcomes: {
+            proceed: draft.outcomes[0] ?? 'done',
+            failed: draft.outcomes[1] ?? 'failed',
+          },
+        });
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Could not add the parallel pair.');
+        return;
+      }
+      setDraft(nextDraft);
+      recomputeFlow(nextDraft);
+      setSelectedStageId(kind === 'FanOut' ? fanOutId : joinId);
+      markDraftChanged();
+      return;
     } else {
       node = {
         id,
@@ -779,6 +903,69 @@ export function PipelineCanvasPage() {
       .map((skill) => skill.capability!);
   }
 
+  function setAuthoringDraftError(
+    field: string,
+    error: IntegerContractDraftError | null
+  ) {
+    setAuthoringDraftErrors((current) => {
+      if (error === null) {
+        if (!(field in current)) return current;
+        const next = { ...current };
+        delete next[field];
+        return next;
+      }
+      return current[field]?.raw === error.raw &&
+        current[field]?.message === error.message
+        ? current
+        : { ...current, [field]: error };
+    });
+  }
+
+  function removeAuthoringDraftErrorScopes(scopes: readonly string[]) {
+    setAuthoringDraftErrors((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(
+          ([field]) =>
+            !scopes.some(
+              (scope) => field === scope || field.startsWith(`${scope}/`)
+            )
+        )
+      );
+      return Object.keys(next).length === Object.keys(current).length
+        ? current
+        : next;
+    });
+  }
+
+  function renameAuthoringDraftErrorScope(from: string, to: string) {
+    setAuthoringDraftErrors((current) => {
+      const matching = Object.entries(current).filter(
+        ([field]) => field === from || field.startsWith(`${from}/`)
+      );
+      if (matching.length === 0) return current;
+      const next = { ...current };
+      for (const [field, error] of matching) {
+        delete next[field];
+        next[`${to}${field.slice(from.length)}`] = error;
+      }
+      return next;
+    });
+  }
+
+  function patchDefinitionContract(
+    patch: Parameters<typeof updateDefinitionContracts>[1]
+  ) {
+    if (!draft || draft.version !== 2) return;
+    try {
+      const nextDraft = updateDefinitionContracts(draft, patch);
+      setDraft(nextDraft);
+      recomputeFlow(nextDraft);
+      markDraftChanged();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not edit the definition contract.');
+    }
+  }
+
   function createDeclaration(id: string) {
     if (!draft || draft.version !== 2) return;
     let nextDraft;
@@ -813,15 +1000,32 @@ export function PipelineCanvasPage() {
     markDraftChanged();
   }
 
+  function renameCustomDeclaration(id: string, nextId: string) {
+    if (!draft || draft.version !== 2) return;
+    try {
+      const nextDraft = renameDeclaration(draft, id, nextId);
+      setDraft(nextDraft);
+      recomputeFlow(nextDraft);
+      setSelectedDeclarationId(nextId.trim());
+      markDraftChanged();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not rename the declaration.');
+    }
+  }
+
   function patchDeclaration(
     id: string,
     patch: Parameters<typeof updateDeclaration>[2]
   ) {
     if (!draft || draft.version !== 2) return;
-    const nextDraft = updateDeclaration(draft, id, patch);
-    setDraft(nextDraft);
-    recomputeFlow(nextDraft);
-    markDraftChanged();
+    try {
+      const nextDraft = updateDeclaration(draft, id, patch);
+      setDraft(nextDraft);
+      recomputeFlow(nextDraft);
+      markDraftChanged();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not edit the declaration contract.');
+    }
   }
 
   function createBodyStage(declarationId: string) {
@@ -845,6 +1049,11 @@ export function PipelineCanvasPage() {
     const nextDraft = addBodyStage(draft, declarationId, {
       id: stageId,
       capability: { id: capability.id, version: capability.version },
+      execution: {
+        version: 1,
+        role: 'implementer',
+        workspace: { access: 'write' },
+      },
     });
     setDraft(nextDraft);
     recomputeFlow(nextDraft);
@@ -876,6 +1085,22 @@ export function PipelineCanvasPage() {
     setDraft(nextDraft);
     recomputeFlow(nextDraft);
     markDraftChanged();
+  }
+
+  function patchBodyExecution(
+    declarationId: string,
+    stageId: string,
+    patch: Parameters<typeof updateBodyStageExecution>[3]
+  ) {
+    if (!draft || draft.version !== 2) return;
+    try {
+      const nextDraft = updateBodyStageExecution(draft, declarationId, stageId, patch);
+      setDraft(nextDraft);
+      recomputeFlow(nextDraft);
+      markDraftChanged();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not edit body execution.');
+    }
   }
 
   function createBodyConnection(declarationId: string, from: string, to: string) {
@@ -921,11 +1146,119 @@ export function PipelineCanvasPage() {
     if (!draft || draft.version !== 2) return false;
     const node = draft.root.nodes.find((candidate) => candidate.id === id);
     if (!node || !isV2EditableNodeKind(node.kind)) return false;
-    const nextDraft = updateV2NodeFields(draft, id, patch);
+    const nextDraft =
+      node.kind === 'Gate' && 'outcomes' in patch && Array.isArray(patch.outcomes)
+        ? updateGateDecisions(draft, id, patch.outcomes)
+        : updateV2NodeFields(draft, id, patch);
     setDraft(nextDraft);
     recomputeFlow(nextDraft);
     markDraftChanged();
     return true;
+  }
+
+  function patchAtomicExecution(
+    id: string,
+    patch: Parameters<typeof updateAtomicStageExecution>[2]
+  ) {
+    if (!draft || draft.version !== 2) return;
+    const nextDraft = updateAtomicStageExecution(draft, id, patch);
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
+  }
+
+  function patchGateDisposition(
+    id: string,
+    decision: string,
+    disposition: Parameters<typeof updateGateDisposition>[3]
+  ) {
+    if (!draft || draft.version !== 2) return;
+    const nextDraft = updateGateDisposition(draft, id, decision, disposition);
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
+  }
+
+  function patchBoundedLoop(
+    id: string,
+    patch: Parameters<typeof updateBoundedLoopContract>[2]
+  ) {
+    if (!draft || draft.version !== 2) return;
+    const nextDraft = updateBoundedLoopContract(draft, id, patch);
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
+  }
+
+  function editParallelMembers(fanOutId: string, memberIds: readonly string[]) {
+    if (!draft || draft.version !== 2) return;
+    try {
+      const nextDraft = setParallelMembers(draft, fanOutId, memberIds);
+      setDraft(nextDraft);
+      recomputeFlow(nextDraft);
+      markDraftChanged();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not edit parallel members.');
+    }
+  }
+
+  function editParallelMember(
+    fanOutId: string,
+    memberId: string,
+    patch: Parameters<typeof updateParallelMember>[3]
+  ) {
+    if (!draft || draft.version !== 2) return;
+    try {
+      const nextDraft = updateParallelMember(draft, fanOutId, memberId, patch);
+      setDraft(nextDraft);
+      recomputeFlow(nextDraft);
+      markDraftChanged();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not edit the parallel member.');
+    }
+  }
+
+  function editParallelContract(
+    fanOutId: string,
+    patch: Parameters<typeof updateParallelContract>[2]
+  ) {
+    if (!draft || draft.version !== 2) return;
+    try {
+      const previousJoin = draft.root.nodes.find(
+        (candidate) => candidate.kind === 'FanOut' && candidate.id === fanOutId
+      );
+      const oldJoinId = previousJoin?.kind === 'FanOut' ? previousJoin.joinNodeId : null;
+      const nextDraft = updateParallelContract(draft, fanOutId, patch);
+      setDraft(nextDraft);
+      recomputeFlow(nextDraft);
+      if (patch.joinId && selectedStageId === oldJoinId) setSelectedStageId(patch.joinId.trim());
+      markDraftChanged();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not edit the parallel contract.');
+    }
+  }
+
+  function deleteParallel(fanOutId: string) {
+    if (!draft || draft.version !== 2) return;
+    try {
+      const fanOut = draft.root.nodes.find(
+        (candidate) => candidate.kind === 'FanOut' && candidate.id === fanOutId
+      );
+      const nextDraft = removeParallelPair(draft, fanOutId);
+      setDraft(nextDraft);
+      recomputeFlow(nextDraft);
+      setSelectedStageId(null);
+      removeAuthoringDraftErrorScopes([
+        `parallel:${fanOutId}`,
+        `root-node:${fanOutId}`,
+        ...(fanOut?.kind === 'FanOut'
+          ? [`root-node:${fanOut.joinNodeId}`]
+          : []),
+      ]);
+      markDraftChanged();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not remove the parallel pair.');
+    }
   }
 
   function renameSelectedV2Node(newId: string) {
@@ -945,6 +1278,16 @@ export function PipelineCanvasPage() {
     setDraft(nextDraft);
     recomputeFlow(nextDraft);
     setSelectedStageId(newId);
+    renameAuthoringDraftErrorScope(
+      `root-node:${selectedStageId}`,
+      `root-node:${newId}`
+    );
+    if (node.kind === 'FanOut') {
+      renameAuthoringDraftErrorScope(
+        `parallel:${selectedStageId}`,
+        `parallel:${newId}`
+      );
+    }
     markDraftChanged();
   }
 
@@ -1049,7 +1392,13 @@ export function PipelineCanvasPage() {
       return;
     }
     const newName = duplicateDialog.name.trim();
-    setPendingDraft({ name: newName, definition: detail.definition });
+    setPendingDraft({
+      name: newName,
+      definition:
+        detail.definition.version === 2
+          ? duplicateV2Definition(detail.definition, newName)
+          : detail.definition,
+    });
     setDuplicateDialog(null);
     route(spaceHref(space, 'pipelines', newName));
   }
@@ -1057,7 +1406,7 @@ export function PipelineCanvasPage() {
   function startAssembling() {
     if (!name) return;
     setPendingDraft({ name });
-    enterEditWith({ version: 1, name, origin: 'ui', stages: [] });
+    enterEditWith(createBlankCanvasPipelineDefinitionV2(name));
   }
 
   const backHref = space ? spaceHref(space, 'pipelines') : '/';
@@ -1119,6 +1468,90 @@ export function PipelineCanvasPage() {
     }
     return result;
   }, [draft, selectedStageId, issues]);
+
+  function selectIssueTarget(
+    target: DefinitionIssueTarget,
+    severity: 'error' | 'warning'
+  ) {
+    setSelectedIssueTarget(target);
+    setSelectedIssueSeverity(severity);
+    if (!draft) return;
+    if (target.kind === 'definition') {
+      setSelectedStageId(null);
+      setSelectedDeclarationId(null);
+      return;
+    }
+    if (target.kind === 'node') {
+      setSelectedDeclarationId(null);
+      setSelectedStageId(target.id);
+      return;
+    }
+    if (target.kind === 'connection' && draft.version === 2) {
+      const consuming = draft.root.connections[target.index]?.to.node;
+      if (consuming) setSelectedStageId(consuming);
+      setSelectedDeclarationId(null);
+      return;
+    }
+    if (
+      target.kind === 'declaration' ||
+      target.kind === 'body-node' ||
+      target.kind === 'body-connection'
+    ) {
+      setSelectedStageId(null);
+      setSelectedDeclarationId(
+        target.kind === 'declaration' ? target.id : target.declarationId
+      );
+    }
+  }
+
+  function selectDeclaration(id: string | null) {
+    setSelectedDeclarationId(id);
+    setSelectedIssueTarget(null);
+    setSelectedIssueSeverity(null);
+  }
+
+  const definitionFocusedField =
+    selectedIssueTarget?.kind === 'definition'
+      ? selectedIssueTarget.field ?? null
+      : null;
+  const selectedIssueDeclarationId =
+    selectedIssueTarget?.kind === 'declaration'
+      ? selectedIssueTarget.id
+      : selectedIssueTarget?.kind === 'body-node' ||
+          selectedIssueTarget?.kind === 'body-connection'
+        ? selectedIssueTarget.declarationId
+        : null;
+  const selectedIssueOwnsOpenDeclaration =
+    selectedIssueDeclarationId !== null &&
+    selectedIssueDeclarationId === selectedDeclarationId;
+  const declarationFocusedField =
+    selectedIssueTarget?.kind === 'declaration' &&
+    selectedIssueTarget.id === selectedDeclarationId
+      ? selectedIssueTarget.field ?? null
+      : selectedIssueTarget?.kind === 'body-node' &&
+          selectedIssueOwnsOpenDeclaration
+        ? selectedIssueTarget.field ?? null
+        : null;
+  const selectedBodyStageFromIssue =
+    selectedIssueTarget?.kind === 'body-node' &&
+    selectedIssueOwnsOpenDeclaration
+      ? selectedIssueTarget.id
+      : null;
+  const selectedBodyConnectionIssue =
+    selectedIssueTarget?.kind === 'body-connection' &&
+    selectedIssueOwnsOpenDeclaration
+      ? {
+          declarationId: selectedIssueTarget.declarationId,
+          id: selectedIssueTarget.id,
+          field: selectedIssueTarget.field ?? null,
+          severity: selectedIssueSeverity ?? 'error',
+        }
+      : null;
+  const selectedRootFocusedField =
+    selectedIssueTarget?.kind === 'node' &&
+    selectedIssueTarget.id === selectedStageId
+      ? selectedIssueTarget.field ?? null
+      : null;
 
   if (!selector) {
     return (
@@ -1262,6 +1695,7 @@ export function PipelineCanvasPage() {
               data-testid="pipeline-canvas-save"
               disabled={
                 isSaving ||
+                hasAuthoringDraftErrors ||
                 (draft.version === 2 && v2DefinitionValid === false)
               }
               onClick={() => handleSave(false)}
@@ -1276,7 +1710,9 @@ export function PipelineCanvasPage() {
                 <button
                   type="button"
                   data-testid="pipeline-canvas-export"
-                  disabled={v2DefinitionValid === false}
+                  disabled={
+                    hasAuthoringDraftErrors || v2DefinitionValid === false
+                  }
                   onClick={() =>
                     setExportState((state) => ({
                       ...state,
@@ -1491,6 +1927,9 @@ export function PipelineCanvasPage() {
                 ? [
                     ...(referenceableDeclaration(draft) ? [] : (['CompositeRef'] as const)),
                     ...(loopBodyDeclaration(draft) ? [] : (['BoundedLoop'] as const)),
+                    ...(draft.root.nodes.some((node) => node.kind === 'AtomicStage')
+                      ? []
+                      : (['Gate', 'FanOut', 'Join'] as const)),
                   ]
                 : undefined
             }
@@ -1503,20 +1942,41 @@ export function PipelineCanvasPage() {
             without it the Canvas could reference a declaration but never
             create one. */}
         {editable && draft?.version === 2 && (
-          <DeclarationsPanel
-            definition={draft}
-            selectedId={selectedDeclarationId}
-            capabilities={exactCapabilities()}
-            onSelect={setSelectedDeclarationId}
-            onCreate={createDeclaration}
-            onDelete={deleteDeclaration}
-            onPatch={patchDeclaration}
-            onAddBodyStage={createBodyStage}
-            onRemoveBodyStage={deleteBodyStage}
-            onPatchBodyStage={patchBodyStage}
-            onAddBodyConnection={createBodyConnection}
-            onRemoveBodyConnection={deleteBodyConnection}
-          />
+          <div class="pipeline-canvas__authoring-contracts">
+            <DefinitionContractPanel
+              definition={draft}
+              focusedField={definitionFocusedField}
+              draftErrors={authoringDraftErrors}
+              onPatch={patchDefinitionContract}
+              onInvalidChange={setAuthoringDraftError}
+            />
+            <DeclarationsPanel
+              definition={draft}
+              selectedId={selectedDeclarationId}
+              selectedIssueDeclarationId={selectedIssueDeclarationId}
+              selectedBodyStageId={selectedBodyStageFromIssue}
+              selectedBodyStageSeverity={
+                selectedIssueTarget?.kind === 'body-node' &&
+                selectedIssueOwnsOpenDeclaration
+                  ? selectedIssueSeverity
+                  : null
+              }
+              selectedBodyConnectionIssue={selectedBodyConnectionIssue}
+              focusedField={declarationFocusedField}
+              catalog={catalog}
+              onSelect={selectDeclaration}
+              onCreate={createDeclaration}
+              onDelete={deleteDeclaration}
+              onRename={renameCustomDeclaration}
+              onPatch={patchDeclaration}
+              onAddBodyStage={createBodyStage}
+              onRemoveBodyStage={deleteBodyStage}
+              onPatchBodyStage={patchBodyStage}
+              onPatchBodyExecution={patchBodyExecution}
+              onAddBodyConnection={createBodyConnection}
+              onRemoveBodyConnection={deleteBodyConnection}
+            />
+          </div>
         )}
 
         {/* The flow and the issues drawer share one vertical column so the
@@ -1548,11 +2008,13 @@ export function PipelineCanvasPage() {
             <IssuesDrawer
               issues={issues}
               draft={(editable ? draft : detail!.definition)!}
-              onSelectStage={(id) => setSelectedStageId(id)}
+              onSelectTarget={selectIssueTarget}
               onDismiss={
                 editable
                   ? () => {
                       setIssues([]);
+                      setSelectedIssueTarget(null);
+                      setSelectedIssueSeverity(null);
                       // Don't orphan the blocked-save message (which points "below")
                       // once its issue list is gone (m2).
                       if (saveState.status === 'blocked') {
@@ -1594,8 +2056,24 @@ export function PipelineCanvasPage() {
             catalog={catalog}
             definition={draft?.version === 2 ? draft : null}
             fieldIssues={selectedV2NodeFieldIssues}
+            draftErrors={authoringDraftErrors}
+            focusedField={selectedRootFocusedField}
             onRename={renameSelectedV2Node}
             onPatch={(patch) => patchV2Node(selectedV2Node.id, patch)}
+            onAtomicExecutionPatch={(patch) =>
+              patchAtomicExecution(selectedV2Node.id, patch)
+            }
+            onGateDisposition={(decision, disposition) =>
+              patchGateDisposition(selectedV2Node.id, decision, disposition)
+            }
+            onBoundedLoopPatch={(patch) =>
+              patchBoundedLoop(selectedV2Node.id, patch)
+            }
+            onParallelMembers={editParallelMembers}
+            onParallelMemberPatch={editParallelMember}
+            onParallelContractPatch={editParallelContract}
+            onDeleteParallelPair={deleteParallel}
+            onInvalidChange={setAuthoringDraftError}
             onClose={() => setSelectedStageId(null)}
           />
         )}

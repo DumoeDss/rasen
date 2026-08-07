@@ -11,6 +11,7 @@ import { loadWorkflowCatalog } from '../../src/core/workflow-registry/index.js';
 import { cliProjectRoot, runCLI } from '../helpers/run-cli.js';
 import { resolveProjectHome } from '../../src/core/project-home.js';
 import { getGlobalDataDir } from '../../src/core/index.js';
+import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
 const BUILTIN_NAMES = [
   'auto-decompose',
@@ -129,19 +130,23 @@ const HUMAN_LOCALE_CASES = [
 
 describe('pipeline command', () => {
   const projectRoot = process.cwd();
-  const testDir = path.join(projectRoot, 'test-pipeline-command-tmp');
-  const changesDir = path.join(testDir, 'rasen', 'changes');
+  let testDir: string;
+  let changesDir: string;
 
   beforeAll(async () => {
     if (process.platform !== 'win32') await fs.chmod(fakeClaudeBinary, 0o755);
   });
 
   beforeEach(async () => {
+    testDir = await fs.mkdtemp(
+      path.join(projectRoot, '.rasen-pipeline-command-')
+    );
+    changesDir = path.join(testDir, 'rasen', 'changes');
     await fs.mkdir(changesDir, { recursive: true });
   });
 
   afterEach(async () => {
-    await fs.rm(testDir, { recursive: true, force: true });
+    await cleanupTempPathAsync(testDir);
   });
 
   async function createIsolatedProposeOnlyHome(name: string): Promise<string> {
@@ -407,7 +412,7 @@ describe('pipeline command', () => {
         description: expect.stringContaining('Minimal bug-fix pipeline'),
       });
       expect(payloads.show.description).toContain('Minimal bug-fix pipeline');
-      expect(Object.prototype.hasOwnProperty.call(payloads.show, 'source')).toBe(false);
+      expect(payloads.show.source).toBe('package');
       // Engine support analysis (task 12.8): additive fields shared with start,
       // management detail, and Canvas. bug-fix normalizes to a v2 ReviewCycle
       // BoundedLoop (D4 migration), so both legacy and reconciler engines are
@@ -423,10 +428,10 @@ describe('pipeline command', () => {
       // `reconciler` with reason `supported_v2_parallel`") was unsatisfiable.
       // `show` now resolves a DISCOVERY profile — the same bindings the launch
       // profile resolves — so the reason is the definition's real shape.
-      expect(payloads.show.availableEngines).toEqual(['legacy', 'reconciler']);
+      expect(payloads.show.availableEngines).toEqual(['reconciler']);
       expect(payloads.show.reconcilerSupport).toMatchObject({
         supported: true,
-        reason: 'supported_v2_review_cycle',
+        reason: 'supported_v2_executable',
       });
       expect(payloads.classify).toMatchObject({
         suggested: 'bug-fix',
@@ -565,7 +570,7 @@ describe('pipeline command', () => {
         expect(Object.prototype.hasOwnProperty.call(shown, 'source')).toBe(false);
         expect(Object.prototype.hasOwnProperty.call(shown, 'localizedDescription')).toBe(false);
       },
-      30_000
+      120_000
     );
   });
 
@@ -585,8 +590,43 @@ describe('pipeline command', () => {
       expect(bugFix).toBeDefined();
       expect(bugFix.source).toBe('package');
       expect(Array.isArray(bugFix.stages)).toBe(true);
-      expect(bugFix.stages).toContain('propose');
+      expect(bugFix.stages).toContain('root:propose');
+      expect(bugFix.executionView).toMatchObject({
+        authoredVersion: 2,
+        buildOrder: expect.arrayContaining(['root:propose', 'root:archive']),
+        availableEngines: expect.arrayContaining(['reconciler']),
+        reconcilerSupport: { supported: true },
+      });
+      expect(bugFix.executionView.stages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            nodePath: 'root:propose',
+            capability: expect.objectContaining({ id: 'skill:rasen-propose' }),
+          }),
+        ])
+      );
+      expect(bugFix.executionView.capabilityPaths).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ profilePath: 'root:verify/strategy' }),
+        ])
+      );
+      expect(bugFix.executionView.policyPaths).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ profilePath: 'root:verify/strategy' }),
+        ])
+      );
       expect(typeof bugFix.description).toBe('string');
+
+      const compatibilityFixtures = json.pipelines.filter(
+        (pipeline: any) => pipeline.compatibilityBoundary !== undefined
+      );
+      expect(compatibilityFixtures).toEqual([
+        expect.objectContaining({
+          name: 'auto-decompose',
+          authoredVersion: 1,
+          compatibilityBoundary: 'issue-dispatch-0.3.0',
+        }),
+      ]);
     });
 
     it('prints a human-readable table without --json', async () => {
@@ -594,12 +634,15 @@ describe('pipeline command', () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('bug-fix');
       expect(result.stdout).toContain('[package]');
+      expect(result.stdout).toContain(
+        'Compatibility input boundary: issue-dispatch-0.3.0'
+      );
     });
   });
 
   describe('show', () => {
     it(
-      'keeps exact-capability v2 visible in list/detail and stops execution at the stable runtime boundary',
+      'keeps incomplete exact-capability v2 visible and stops execution at its truthful unavailable boundary',
       async () => {
         const workflow = loadWorkflowCatalog().definitions.find(
           (definition) =>
@@ -629,6 +672,11 @@ describe('pipeline command', () => {
                     id: 'skill:rasen-apply-change',
                     version: workflow!.digest,
                   },
+                  execution: {
+                    version: 1,
+                    role: 'implementer',
+                    workspace: { access: 'write' },
+                  },
                 },
               ],
               connections: [],
@@ -649,6 +697,7 @@ describe('pipeline command', () => {
           definitionValid: true,
           planAvailable: true,
           executable: false,
+          executionMode: 'unavailable',
           unavailableReason: 'ecp_v2_runtime_unavailable',
         });
         expect(listed).not.toHaveProperty('prepared');
@@ -665,8 +714,16 @@ describe('pipeline command', () => {
             definitionValid: true,
             planAvailable: true,
             executable: false,
+            executionMode: 'unavailable',
             unavailableReason: 'ecp_v2_runtime_unavailable',
           },
+          buildOrder: ['root:implement'],
+          stages: [
+            expect.objectContaining({
+              nodePath: 'root:implement',
+              workspace: 'write',
+            }),
+          ],
         });
 
         const execution = await runCLI(
@@ -676,12 +733,90 @@ describe('pipeline command', () => {
         expect(execution.exitCode).toBe(1);
         expect(execution.stderr).toContain('ecp_v2_runtime_unavailable');
         expect(execution.stderr).not.toContain('pipeline_not_found');
-        expect(execution.stderr).not.toContain(
-          'pipeline_capability_catalog_required'
-        );
       },
       60_000
     );
+
+    it('projects a closed AtomicStage-to-Finish native v2 graph identically before and after execution preflight', async () => {
+      const workflow = loadWorkflowCatalog().definitions.find(
+        (definition) => definition.skill.template.name === 'rasen-apply-change'
+      );
+      expect(workflow).toBeDefined();
+      const name = 'closed-native-v2';
+      const pipelineDir = path.join(testDir, 'rasen', 'pipelines', name);
+      await fs.mkdir(pipelineDir, { recursive: true });
+      await fs.writeFile(
+        path.join(pipelineDir, 'pipeline.yaml'),
+        JSON.stringify({
+          version: 2,
+          id: `pipeline:${name}`,
+          sourceId: `fixture:${name}`,
+          name,
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+          declarations: [],
+          root: {
+            nodes: [
+              {
+                id: 'apply',
+                kind: 'AtomicStage',
+                capability: {
+                  id: 'skill:rasen-apply-change',
+                  version: workflow!.digest,
+                },
+                execution: {
+                  version: 1,
+                  role: 'implementer',
+                  workspace: { access: 'write' },
+                },
+              },
+              { id: 'finish', kind: 'Finish', outcome: 'done' },
+            ],
+            connections: [
+              {
+                id: 'apply-to-finish',
+                from: { node: 'apply', port: 'done' },
+                to: { node: 'finish', port: 'start' },
+              },
+            ],
+          },
+        }),
+        'utf-8'
+      );
+
+      const display = await runCLI(['pipeline', 'show', name, '--json'], {
+        cwd: testDir,
+      });
+      const execution = await runCLI(
+        ['pipeline', 'show', name, '--for-execution', '--json'],
+        { cwd: testDir }
+      );
+      expect(display.exitCode).toBe(0);
+      expect(execution.exitCode, execution.stderr).toBe(0);
+      expect(JSON.parse(execution.stdout)).toEqual(JSON.parse(display.stdout));
+      expect(JSON.parse(display.stdout)).toMatchObject({
+        buildOrder: ['root:apply'],
+        capabilityPaths: [
+          expect.objectContaining({ profilePath: 'root:apply' }),
+        ],
+        policyPaths: [
+          expect.objectContaining({ profilePath: 'root:apply' }),
+        ],
+        stages: [
+          expect.objectContaining({
+            nodePath: 'root:apply',
+            capability: {
+              id: 'skill:rasen-apply-change',
+              version: workflow!.digest,
+            },
+            role: 'implementer',
+            workspace: 'write',
+          }),
+        ],
+        preparation: { executable: true, executionMode: 'reconciler' },
+      });
+    });
 
     it('shows the same invalid v2 winner in CLI inventory and detail', async () => {
       const name = 'invalid-v2-detail';
@@ -1077,10 +1212,10 @@ describe('pipeline command', () => {
     );
 
     it('exposes normalized Pipeline definition v1 in JSON and human output', async () => {
-      const jsonResult = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], {
+      const jsonResult = await runCLI(['pipeline', 'show', 'auto-decompose', '--json'], {
         cwd: testDir,
       });
-      const humanResult = await runCLI(['pipeline', 'show', 'bug-fix'], {
+      const humanResult = await runCLI(['pipeline', 'show', 'auto-decompose'], {
         cwd: testDir,
       });
 
@@ -1196,7 +1331,8 @@ describe('pipeline command', () => {
         { cwd: testDir, env: { RASEN_HOME: home } }
       );
       expect(executable.exitCode).toBe(1);
-      expect(executable.stderr).toMatch(/known but disabled skill/);
+      expect(executable.stderr).toMatch(/CAPABILITY_DISABLED/);
+      expect(executable.stderr).toMatch(/installed but disabled/);
       expect(executable.stderr).not.toMatch(/unknown skill/);
       expect(executable.stdout).not.toMatch(/"buildOrder"/);
     });
@@ -1214,23 +1350,23 @@ describe('pipeline command', () => {
       expect(json.hostRuntimeSource).toBe('codex-thread-id');
       expect(typeof json.description).toBe('string');
       expect(Array.isArray(json.buildOrder)).toBe(true);
-      expect(json.buildOrder[0]).toBe('propose');
+      expect(json.buildOrder[0]).toBe('root:propose');
 
       // Every stage carries the full field set (defaults made explicit).
       const stage = json.stages[0];
       for (const field of [
         'id',
-        'skill',
+        'nodePath',
+        'profilePath',
+        'capability',
         'role',
         'requires',
+        'workspace',
         'gate',
-        'loop',
-        'parallelGroup',
-        'condition',
+        'effectiveGate',
         'leadReview',
         'verifyPolicy',
         'runtime',
-        'runtimeSource',
         'dispatchMode',
         'bridge',
         'sessionReuse',
@@ -1244,15 +1380,12 @@ describe('pipeline command', () => {
       // handoff is the fully-resolved config (built-in defaults when unset).
       expect(stage.handoff).toMatchObject({
         threshold: 0.5,
-        maxRelays: 3,
-        stallLimit: 2,
         source: 'default',
       });
       expect(stage.id).toBe('propose');
-      expect(stage.runtime).toBe('codex');
-      expect(stage.runtimeSource).toBe('host');
+      expect(stage.runtime).toEqual({ value: 'codex', source: 'host' });
       expect(stage.dispatchMode).toBe('native');
-      expect(stage.skill).toBe('rasen-propose');
+      expect(stage.capability.id).toBe('skill:rasen-propose');
       expect(stage.gate).toBe(true);
       // build order length equals stage count
       expect(json.buildOrder.length).toBe(json.stages.length);
@@ -1273,8 +1406,7 @@ describe('pipeline command', () => {
       expect(json.hostRuntime).toBe('unknown');
       expect(json.hostRuntimeSource).toBe('unknown');
       expect(json.stages[0]).toMatchObject({
-        runtime: 'claude',
-        runtimeSource: 'legacy-default',
+        runtime: { value: 'claude', source: 'legacy-default' },
         dispatchMode: 'legacy-fallback',
       });
     });
@@ -1517,11 +1649,20 @@ stages:
       const result = await runCLI(['pipeline', 'show', 'auto-decompose', '--json'], { cwd: testDir });
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());
+      expect(json.compatibilityBoundary).toBe('issue-dispatch-0.3.0');
       expect(json.buildOrder[0]).toBe('decompose');
       const dec = json.stages.find((s: any) => s.id === 'decompose');
       expect(dec.kind).toBe('decompose');
       expect(dec.childPipeline).toBe('small-feature');
       expect(dec.skill).toBeNull();
+
+      const human = await runCLI(['pipeline', 'show', 'auto-decompose'], {
+        cwd: testDir,
+      });
+      expect(human.exitCode).toBe(0);
+      expect(human.stdout).toContain(
+        'Compatibility input boundary: issue-dispatch-0.3.0'
+      );
     });
 
     it('surfaces the resolved per-stage handoff config (stage > role > pipeline)', async () => {
@@ -1740,15 +1881,15 @@ stages:
       ).toHaveLength(1);
     });
 
-    it('surfaces the resolved reuse config as built-in defaults when no block is declared', async () => {
+    it('reports native-v2 session reuse per stage instead of fabricating a legacy pipeline-wide reuse block', async () => {
       const result = await runCLI(['pipeline', 'show', 'bug-fix', '--json'], { cwd: testDir });
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());
-      expect(json.reuse).toEqual({
-        planner: 'auto',
-        implementer: 'auto',
-        threshold: 0.25,
-        roles: { planner: 0.25, implementer: 0.25 },
+      expect(json).not.toHaveProperty('reuse');
+      expect(json.stages.every((stage: any) => stage.sessionReuse)).toBe(true);
+      expect(json.stages[0].sessionReuse).toEqual({
+        effective: 'never',
+        source: 'default',
       });
     });
 
@@ -1896,33 +2037,34 @@ stages:
 
       const reviewerStage = json.stages.find((s: any) => s.role === 'reviewer');
       if (reviewerStage) {
-        expect(reviewerStage.model).toBe('fable');
-        expect(reviewerStage.modelSource).toBe('global-role');
+        expect(reviewerStage.model).toEqual({
+          value: 'fable',
+          source: 'global-role',
+        });
       }
       const implementerStage = json.stages.find((s: any) => s.role === 'implementer');
       if (implementerStage) {
-        expect(implementerStage.model).toBe('opus');
-        expect(implementerStage.modelSource).toBe('project-role');
+        expect(implementerStage.model).toEqual({
+          value: 'opus',
+          source: 'project-role',
+        });
       }
     });
 
-    // Goal-loop `pipeline show` human-readable rendering. goal-loop-core
-    // generalized the meta line (pipeline.ts) to emit the goal-loop gate label,
-    // but shipped no command test for the string. These assert the exact format.
-    it('renders the goal-loop measure gate label in human-readable show', async () => {
+    it('renders the native goal-loop measure lifecycle in human-readable show', async () => {
       const result = await runCLI(['pipeline', 'show', 'goal-loop-measure'], { cwd: testDir });
       expect(result.exitCode).toBe(0);
-      // The iterate stage meta line names the gate kind + both bounds.
-      expect(result.stdout).toContain('loop=goal[measure](max 5, stall 2)');
-      // And it must NOT degrade to the review-cycle label format.
-      expect(result.stdout).not.toContain('loop=review-cycle');
+      expect(result.stdout).toContain('iterate: limits={"maxIterations":5');
+      expect(result.stdout).toContain('"stallIterations":2');
+      expect(result.stdout).toContain('rasen-goal-iterate');
     });
 
-    it('renders the goal-loop evaluate gate label in human-readable show', async () => {
+    it('renders the native goal-loop evaluate lifecycle in human-readable show', async () => {
       const result = await runCLI(['pipeline', 'show', 'goal-loop-evaluate'], { cwd: testDir });
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('loop=goal[evaluate](max 5, stall 2)');
-      expect(result.stdout).not.toContain('loop=review-cycle');
+      expect(result.stdout).toContain('iterate: limits={"maxIterations":5');
+      expect(result.stdout).toContain('"stallIterations":2');
+      expect(result.stdout).toContain('rasen-goal-iterate');
     });
 
     // autopilot-gate-policy: the vet type is retired — define-goal is an
@@ -1944,17 +2086,14 @@ stages:
       expect(humanResult.stdout).not.toContain('gate(vet)');
     });
 
-    // Regression guard: the goal-loop generalization must not have changed the
-    // review-cycle label on the existing built-in pipelines.
-    it('still renders the review-cycle loop label for small-feature (no regression)', async () => {
+    it('renders the native ReviewCycle lifecycle for small-feature', async () => {
       const result = await runCLI(['pipeline', 'show', 'small-feature'], { cwd: testDir });
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('loop=review-cycle(max 3)');
-      // The goal-loop bracket format must not appear on a review-cycle stage.
-      expect(result.stdout).not.toContain('loop=goal[');
+      expect(result.stdout).toContain('review-loop: limits={"maxIterations":3');
+      expect(result.stdout).toContain('rasen-review-cycle');
     });
 
-    it('shows and validates the exact normalized lifecycle policy without inventing strategy', async () => {
+    it('shows and validates the exact authored native lifecycle strategy', async () => {
       const shown = await runCLI(
         ['pipeline', 'show', 'goal-loop-measure', '--json'],
         { cwd: testDir }
@@ -1972,26 +2111,32 @@ stages:
       expect(validationJson.normalizedVersion).toBe(2);
       expect(validationJson.boundedLoops).toEqual(showJson.boundedLoops);
       expect(showJson.boundedLoops[0]).toMatchObject({
-        nodeId: 'stage:iterate',
+        nodeId: 'iterate',
         limits: { maxIterations: 5, maxActions: 40, budget: 40 },
         lifecycle: {
           version: 1,
           thresholds: { stallIterations: 2, sameBlockerAttempts: 3 },
-          strategy: { maxAttempts: 0, requireMaterialChange: true },
+          strategy: {
+            maxAttempts: 1,
+            requireMaterialChange: true,
+            capability: {
+              id: 'skill:rasen-goal-iterate',
+              version: expect.any(String),
+            },
+          },
           exits: {
             iterationLimit: {
-              action: 'escalate',
-              outcome: 'goal_cycle_exhausted',
+              action: 'strategy',
             },
             blocked: {
               action: 'human-required',
-              outcome: 'goal_cycle_exhausted',
+              outcome: 'goal-human-required',
             },
           },
         },
       });
-      expect(showJson.boundedLoops[0].lifecycle.strategy).not.toHaveProperty(
-        'capability'
+      expect(showJson.boundedLoops[0].lifecycle.strategy.capability.version).toBe(
+        'sha256:9522e1108c941534a888d5a0230ba29f1b7719a75949411b36e05f664d95331b'
       );
     });
   });
@@ -2057,13 +2202,16 @@ stages:
       const verify = shown.stages.find((s: any) => s.id === 'verify');
       const apply = shown.stages.find((s: any) => s.id === 'apply');
 
-      expect(propose.runtime).toBe('codex');
-      expect(propose.runtimeSource).toBe('stage-override-project');
+      expect(propose.runtime).toEqual({
+        value: 'codex',
+        source: 'stage-override-project',
+      });
       expect(propose.dispatchMode).toBe('exec-bridge');
-      expect(verify.runtime).toBe('codex');
-      expect(verify.runtimeSource).toBe('stage-override-project');
-      expect(apply.runtime).toBe('claude');
-      expect(apply.runtimeSource).toBe('host');
+      expect(verify.runtime).toEqual({
+        value: 'codex',
+        source: 'stage-override-project',
+      });
+      expect(apply.runtime).toEqual({ value: 'claude', source: 'host' });
       expect(apply.dispatchMode).toBe('native');
     });
 
@@ -2158,6 +2306,8 @@ stages:
       expect(result.exitCode).toBe(0);
       const json = JSON.parse(result.stdout.trim());
       expect(json.suggested).toBe('small-feature');
+      expect(json.suggested).not.toBe('auto-decompose');
+      expect(json.available).toContain('auto-decompose');
       expect(json.matched).toEqual([]);
       expect(json.basis).toBe('default');
     });
@@ -2176,6 +2326,75 @@ stages:
   });
 
   describe('resume', () => {
+    it('keeps the auto-decompose v1 compatibility fixture on legacy stage resume', async () => {
+      const changeDir = path.join(changesDir, 'auto-decompose-legacy-resume');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'auto-decompose',
+          stages: {
+            decompose: { status: 'done' },
+            propose: { status: 'pending' },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(
+        ['pipeline', 'resume', 'auto-decompose-legacy-resume', '--json'],
+        { cwd: testDir }
+      );
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout.trim())).toMatchObject({
+        pipeline: 'auto-decompose',
+        completed: ['decompose'],
+        next: 'propose',
+      });
+    });
+
+    it('resumes a legacy run-state after its package pipeline migrates to native v2', async () => {
+      const changeDir = path.join(changesDir, 'native-v2-resume');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'auto-run.json'),
+        JSON.stringify({
+          pipeline: 'small-feature',
+          engine: { effective: 'legacy', source: 'default' },
+          stages: {
+            propose: { status: 'done' },
+            apply: { status: 'in_progress' },
+            verify: { status: 'pending' },
+            'review-loop': { status: 'pending' },
+            ship: { status: 'pending' },
+            archive: { status: 'pending' },
+          },
+        }),
+        'utf-8'
+      );
+
+      const result = await runCLI(
+        ['pipeline', 'resume', 'native-v2-resume', '--json'],
+        { cwd: testDir }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).not.toContain("Cannot read properties of null");
+      const json = JSON.parse(result.stdout.trim());
+      expect(json.pipeline).toBe('small-feature');
+      expect(json.completed).toEqual(['propose']);
+      expect(json.next).toBe('apply');
+      expect(json.ready).toEqual(['apply']);
+      expect(json.remaining).toEqual([
+        'apply',
+        'verify',
+        'review-loop',
+        'ship',
+        'archive',
+      ]);
+      expect(json.legacySkillHints).toBeUndefined();
+    });
+
     it('blocks a resumed executable frontier when the active profile disables a known skill', async () => {
       const home = await createIsolatedProposeOnlyHome('.resume-execution-home');
       const changeDir = path.join(changesDir, 'disabled-resume');
@@ -2191,7 +2410,7 @@ stages:
         env: { RASEN_HOME: home },
       });
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toMatch(/known but disabled skill/);
+      expect(result.stderr).toMatch(/installed but disabled/);
       expect(result.stderr).not.toMatch(/unknown skill/);
       expect(result.stdout).not.toMatch(/"ready"/);
     });

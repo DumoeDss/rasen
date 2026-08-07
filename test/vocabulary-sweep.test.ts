@@ -118,7 +118,14 @@ describe('vocabulary sweep', () => {
     // RootSelectionError code `legacy_workspace_detected`, emitted when root
     // resolution finds a legacy openspec/ workspace but no rasen/ one and points
     // the user at `rasen migrate` (rasen-full-rebrand slice 1.4). Deliberate.
-    const allowed = new Set(['initiative_option_removed', 'workspace_detected']);
+    // workspace_identity_unavailable: Management fails closed when it cannot
+    // prove that a Run belongs to the selected physical workspace. This is an
+    // intentional authority error, not a revived workspace command surface.
+    const allowed = new Set([
+      'initiative_option_removed',
+      'workspace_detected',
+      'workspace_identity_unavailable',
+    ]);
     const found = new Set<string>();
     const pattern = /(workspace|initiative)_[a-z_]+/g;
 

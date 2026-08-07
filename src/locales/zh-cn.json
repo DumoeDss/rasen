@@ -534,7 +534,8 @@
       "engineDisabledByConfig": "engine_disabled_by_config: 配置已禁用调和器引擎（runs.engine: legacy，决定层：{layer}），因此未创建规范 Run。请在旧引擎上运行此变更，或将 runs.engine 设为 auto 或 reconciler 以重新启用。",
       "engineUnsupportedForPipeline": "engine_unsupported: 流水线 \"{name}\" 不支持调和器引擎（{reason}）；引擎由 {source} 选定。未在任何引擎下创建 Run。",
       "engineOwnerConflict": "engine_owner_conflict: 该变更同时被两个引擎主张所有权，因此规范操作已被拒绝，未修改任何内容。旧引擎 run-state：{runState}（{reason}）。规范 Run：{run}。请自行解决 — 完成或取消规范 Run（先 `rasen pipeline status`，再 `rasen pipeline cancel`），或将旧引擎的 run-state 文件移走。Rasen 不会替你采纳、改写或删除任何一方。",
-      "engineOwnedByLegacy": "engine_owner_conflict: 该变更由旧引擎所有，因此未创建规范 Run。旧引擎 run-state：{runState}（{reason}）。请继续在旧引擎上运行（`rasen pipeline resume <change>`）；若确实要将该变更迁到调和器，请先将该 run-state 文件移走。Rasen 不会替你采纳、改写或删除它。"
+      "engineOwnedByLegacy": "engine_owner_conflict: 该变更由旧引擎所有，因此未创建规范 Run。旧引擎 run-state：{runState}（{reason}）。请继续在旧引擎上运行（`rasen pipeline resume <change>`）；若确实要将该变更迁到调和器，请先将该 run-state 文件移走。Rasen 不会替你采纳、改写或删除它。",
+      "compatibilityBoundaryLabel": "Compatibility input boundary: {boundary}"
     },
     "errors": {
       "pipeline_not_found": "未找到该流水线。",
@@ -2709,6 +2710,103 @@
                 },
                 "open": {
                   "description": "在默认浏览器中打开随包分发的 viewer，并预加载本次生成的报告"
+                }
+              }
+            }
+          }
+        },
+        "session": {
+          "description": "Execute and control durable hosted agent Sessions through the resident daemon",
+          "commands": {
+            "exec": {
+              "description": "Create or wake one hosted Session turn",
+              "options": {
+                "backend": {
+                  "description": "Named server-supported agent backend"
+                },
+                "prompt-file": {
+                  "description": "Read the turn input from this bounded file"
+                },
+                "cwd": {
+                  "description": "Bind or verify the Session working directory"
+                },
+                "session": {
+                  "description": "Wake this existing Rasen Session UUID"
+                },
+                "request-id": {
+                  "description": "Idempotency UUID for this turn"
+                },
+                "timeout-ms": {
+                  "description": "Bound the turn wall-clock time in milliseconds"
+                },
+                "json": {
+                  "description": "Output exactly one JSON receipt"
+                }
+              }
+            },
+            "list": {
+              "description": "List durable hosted Sessions",
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "inspect": {
+              "description": "Inspect one durable hosted Session",
+              "positionals": {
+                "id": {
+                  "description": "Rasen Session UUID"
+                }
+              },
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "cancel": {
+              "description": "Cancel the exact live Session generation",
+              "positionals": {
+                "id": {
+                  "description": "Rasen Session UUID"
+                }
+              },
+              "options": {
+                "reason": {
+                  "description": "Bounded cancellation reason"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "restart": {
+              "description": "Open an exact-resume Session generation",
+              "positionals": {
+                "id": {
+                  "description": "Rasen Session UUID"
+                }
+              },
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "retire": {
+              "description": "Permanently retire a hosted Session",
+              "positionals": {
+                "id": {
+                  "description": "Rasen Session UUID"
+                }
+              },
+              "options": {
+                "reason": {
+                  "description": "Bounded retirement reason"
+                },
+                "json": {
+                  "description": "Output as JSON"
                 }
               }
             }

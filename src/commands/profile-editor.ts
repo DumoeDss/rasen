@@ -26,9 +26,9 @@ import {
   type RetentionMode,
 } from '../core/retention.js';
 import {
+  INTERNAL_BUILTIN_WORKFLOW_IDS,
   loadWorkflowCatalog,
   portablePathCollisionKey,
-  RETENTION_RUNNER_WORKFLOW_ID,
 } from '../core/workflow-registry/index.js';
 import { getCommandFileId } from '../core/shared/retired-command-paths.js';
 import { resolveExpertSelectionExplicitReadOnly } from '../core/expert-selection-state.js';
@@ -264,8 +264,9 @@ export function workflowChoices(
   const catalog = loadWorkflowCatalog();
   // The retention runner is installed by dependency closure but is never a
   // profile checkbox — the retention radio is its only control.
+  const internalIds = new Set<string>(INTERNAL_BUILTIN_WORKFLOW_IDS);
   const definitions = catalog.definitions.filter(
-    (definition) => definition.id !== RETENTION_RUNNER_WORKFLOW_ID
+    (definition) => !internalIds.has(definition.id)
   );
   // Display ids strip the internal '-command' suffix fusion workflow ids
   // carry (e.g. `ship-command` -> `ship`) so the picker shows the friendly
@@ -465,12 +466,13 @@ export function applyProfileState(state: ProfileState): void {
  */
 export function unselectedBuiltInWorkflowDisplayIds(currentState: ProfileState): string[] {
   const selectedIds = new Set(currentState.workflows);
+  const internalIds = new Set<string>(INTERNAL_BUILTIN_WORKFLOW_IDS);
   return loadWorkflowCatalog()
     .definitions.filter(
       (definition) =>
         definition.source === 'built-in' &&
         definition.kind !== 'expert' &&
-        definition.id !== RETENTION_RUNNER_WORKFLOW_ID &&
+        !internalIds.has(definition.id) &&
         !selectedIds.has(definition.id)
     )
     .map((definition) => getCommandFileId(definition.id) ?? definition.id);

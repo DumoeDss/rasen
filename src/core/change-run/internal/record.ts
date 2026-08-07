@@ -220,6 +220,39 @@ export interface CanonicalRunRecord {
   readonly terminal?: RunTerminalOutcome;
 }
 
+/**
+ * Derive the invocation occurrence of one committed Action from canonical
+ * admission chronology. InvocationId, rather than attemptOrdinal, is the
+ * occurrence boundary: retries within one invocation keep the same ordinal
+ * domain while a resumed bounded-loop phase receives a fresh InvocationId.
+ */
+export function committedActionOccurrence(
+  record: CanonicalRunRecord,
+  action: CommittedAction
+): number {
+  const invocationIds: string[] = [];
+  for (const transition of record.transitions) {
+    if (transition.kind !== 'ActionAdmitted') continue;
+    const admitted = record.actions[transition.actionId];
+    if (
+      admitted === undefined ||
+      admitted.action.nodeId !== action.action.nodeId ||
+      invocationIds.includes(admitted.action.invocationId)
+    ) {
+      continue;
+    }
+    invocationIds.push(admitted.action.invocationId);
+  }
+  const occurrence = invocationIds.indexOf(action.action.invocationId);
+  if (occurrence < 0) {
+    throw new CanonicalRecordError(
+      'invalid_record_invariant',
+      `Action ${action.action.actionId} has no canonical ActionAdmitted occurrence.`
+    );
+  }
+  return occurrence;
+}
+
 export interface CreateCanonicalRunRecord {
   readonly runId: RunId;
   readonly runOrdinal: number;

@@ -15,6 +15,7 @@ import type {
   RunId,
   WorkspaceInstanceId,
 } from '../../../src/core/change-run/index.js';
+import { TEST_ATTESTATION_AUTHORITY } from '../../fixtures/trusted-completion.js';
 
 const branded = <T>(value: string): T => value as T;
 const runId = branded<RunId>(`run:${'a'.repeat(64)}`);
@@ -66,6 +67,7 @@ function capability(
       id: 'adapter:apply-change',
       version: '1',
       contentDigest: branded(`sha256:${'4'.repeat(64)}`),
+      attestationAuthority: TEST_ATTESTATION_AUTHORITY,
     },
   } as RuntimeCapabilityBinding;
 }
@@ -126,6 +128,10 @@ describe('buildAgentAction (6.1/6.4)', () => {
       'apply-change:workspace'
     );
     expect(action.effects[0]!.operation.conflictPolicy).toBe('uncertain');
+    expect(action.completionAuthority?.attestationAuthority).toEqual(
+      TEST_ATTESTATION_AUTHORITY
+    );
+    expect(JSON.stringify(action)).not.toMatch(/private|pkcs8|BEGIN PRIVATE KEY/i);
   });
 
   it('rejects a capability bound to a different action kind', () => {

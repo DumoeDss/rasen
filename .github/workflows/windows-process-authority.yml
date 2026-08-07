@@ -1,0 +1,223 @@
+name: Windows Process Authority
+
+on:
+  pull_request:
+    branches: [main, 'dev/**']
+    paths:
+      - 'native/windows-process-authority/**'
+      - 'src/core/session-host/process-authority/windows/**'
+      - 'scripts/build-windows-process-authority.mjs'
+      - 'build.js'
+      - 'package.json'
+      - 'test/core/session-host/windows-process-authority-*.test.ts'
+      - '.github/workflows/windows-process-authority.yml'
+  push:
+    branches: [main, 'dev/**']
+    paths:
+      - 'native/windows-process-authority/**'
+      - 'src/core/session-host/process-authority/windows/**'
+      - 'scripts/build-windows-process-authority.mjs'
+      - 'build.js'
+      - 'package.json'
+      - 'test/core/session-host/windows-process-authority-*.test.ts'
+      - '.github/workflows/windows-process-authority.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-process-authority-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-provider-build:
+    name: Windows provider build/package (non-runtime)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: pnpm
+
+      - name: Setup pinned Rust and Windows x64 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build locked native Windows helper and package manifests
+        env:
+          RASEN_WINDOWS_PROCESS_AUTHORITY_EXPORT_DIR: ${{ runner.temp }}/windows-authority-export
+        run: node scripts/build-windows-process-authority.mjs --target x86_64-pc-windows-msvc
+
+      - name: Prove the helper build is byte-reproducible from identical source
+        shell: pwsh
+        run: |
+          $env:RASEN_WINDOWS_PROCESS_AUTHORITY_BUILD_ROOT = "${{ runner.temp }}/repro-a"
+          $a = node scripts/build-windows-process-authority.mjs --target x86_64-pc-windows-msvc | ConvertFrom-Json
+          $env:RASEN_WINDOWS_PROCESS_AUTHORITY_BUILD_ROOT = "${{ runner.temp }}/repro-b"
+          $b = node scripts/build-windows-process-authority.mjs --target x86_64-pc-windows-msvc | ConvertFrom-Json
+          if ($a.artifacts[0].sha256 -ne $b.artifacts[0].sha256) {
+            Write-Output "## OPEN: Windows helper reproducibility gate" >> $env:GITHUB_STEP_SUMMARY
+            Write-Output "Two builds of identical source produced different bytes. Equal artifact length is not evidence; only the digest is." >> $env:GITHUB_STEP_SUMMARY
+            exit 1
+          }
+          Write-Output "Reproducible helper digest: $($a.artifacts[0].sha256)" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Run non-privileged native contract tests
+        run: >-
+          cargo test --locked
+          --manifest-path native/windows-process-authority/Cargo.toml
+          --target x86_64-pc-windows-msvc
+          --lib
+
+      - name: Verify provider, resolver, package and CI contracts
+        run: >-
+          pnpm exec vitest run
+          test/core/session-host/windows-process-authority-artifact-resolver.test.ts
+          test/core/session-host/windows-process-authority-conformance.test.ts
+          test/core/session-host/windows-process-authority-contract.test.ts
+          test/core/session-host/windows-process-authority-package-ci.test.ts
+          test/core/session-host/windows-process-authority-provider.test.ts
+          test/core/session-host/windows-process-authority-publication-ledger.test.ts
+          test/core/session-host/windows-process-authority-recovery.test.ts
+
+      - name: Upload non-runtime build provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-process-authority-x64-build-input
+          path: ${{ runner.temp }}/windows-authority-export
+          if-no-files-found: error
+
+  windows-job-object-policy:
+    name: Windows Job Object policy classification (not a runtime pass)
+    runs-on: windows-latest
+    timeout-minutes: 5
+    outputs:
+      state: ${{ steps.job_policy.outputs.state }}
+      result: ${{ steps.job_policy.outputs.result }}
+    steps:
+      - name: Classify whether this runner permits the authority construction
+        id: job_policy
+        shell: pwsh
+        run: |
+          # A hosted runner may itself sit inside an ambient Job Object. Nested
+          # Jobs are supported, so ambient membership alone is not a verdict:
+          # the only honest test is whether a real construction succeeds.
+          $probe = @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class JobProbe {
+            [DllImport("kernel32.dll", SetLastError = true)]
+            public static extern IntPtr CreateJobObjectW(IntPtr a, string name);
+            [DllImport("kernel32.dll", SetLastError = true)]
+            public static extern bool CloseHandle(IntPtr h);
+          }
+          '@
+          Add-Type -TypeDefinition $probe
+          $handle = [JobProbe]::CreateJobObjectW([IntPtr]::Zero, $null)
+          if ($handle -eq [IntPtr]::Zero) {
+            "state=open" >> $env:GITHUB_OUTPUT
+            'result={"gate":"windows-actual-kernel","state":"open","reason":"job-object-creation-denied"}' >> $env:GITHUB_OUTPUT
+            "## OPEN: Windows Job Object policy gate" >> $env:GITHUB_STEP_SUMMARY
+            "This runner refused Job Object creation. The actual-kernel job is skipped and this is not a passing runtime receipt." >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            [void][JobProbe]::CloseHandle($handle)
+            "state=available" >> $env:GITHUB_OUTPUT
+            'result={"gate":"windows-actual-kernel","state":"available"}' >> $env:GITHUB_OUTPUT
+          }
+
+  windows-provider-actual-kernel:
+    name: Windows provider actual kernel gate
+    needs: windows-job-object-policy
+    if: always()
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Keep a runner-policy denial machine-readable and fail closed
+        if: needs.windows-job-object-policy.outputs.state != 'available'
+        shell: pwsh
+        run: |
+          '${{ needs.windows-job-object-policy.outputs.result }}' | Out-File actual-kernel-gate.json
+          "## OPEN: Windows provider actual kernel gate" >> $env:GITHUB_STEP_SUMMARY
+          "Runner policy denied the kernel oracle. This check fails closed and is not a passing runtime receipt." >> $env:GITHUB_STEP_SUMMARY
+          exit 1
+
+      - name: Checkout source without persisted credentials
+        if: needs.windows-job-object-policy.outputs.state == 'available'
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup pinned Rust and Windows x64 target
+        if: needs.windows-job-object-policy.outputs.state == 'available'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+          targets: x86_64-pc-windows-msvc
+
+      - name: Run the non-interactive actual-kernel matrix
+        if: needs.windows-job-object-policy.outputs.state == 'available'
+        run: >-
+          cargo test --locked
+          --manifest-path native/windows-process-authority/Cargo.toml
+          --target x86_64-pc-windows-msvc
+          -- --test-threads=1
+
+      - name: Keep the interactive and arm64 runtime gates explicitly open
+        if: needs.windows-job-object-policy.outputs.state == 'available'
+        shell: pwsh
+        run: |
+          "## OPEN: Windows arm64 runtime, distribution/install, and packaging-matrix gates" >> $env:GITHUB_STEP_SUMMARY
+          "This job covers the non-interactive x64 portion only. arm64 has no hardware here, and install/packaging/release truth is later evidence." >> $env:GITHUB_STEP_SUMMARY
+
+  windows-arm64-cross-shape:
+    name: Windows arm64 cross-target shape (non-runtime)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: pnpm
+
+      - name: Setup pinned Rust and installed arm64 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+          targets: aarch64-pc-windows-msvc
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cargo-check arm64 as explicit non-runtime evidence
+        run: node scripts/build-windows-process-authority.mjs --check-only --target aarch64-pc-windows-msvc
+
+      - name: Record that arm64 runtime truth remains unproven
+        shell: pwsh
+        run: |
+          "## OPEN: Windows arm64 runtime gate" >> $env:GITHUB_STEP_SUMMARY
+          "A cross-target check proves the source compiles for arm64. It is not a runtime receipt and must never be reported as one." >> $env:GITHUB_STEP_SUMMARY

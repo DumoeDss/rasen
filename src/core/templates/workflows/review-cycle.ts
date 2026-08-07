@@ -21,6 +21,37 @@ ${STORE_SELECTION_GUIDANCE}
 
 This workflow is a **thin launcher**. The ReviewCycle loop (round counting, phase sequencing, max-rounds enforcement, actor separation, escalation) is owned by the canonical ChangeRun reconciler. This skill does NOT duplicate that state.
 
+## Bounded-loop strategy capability mode
+
+Before following the launcher flow below, inspect the admitted Action input. When it contains a \`boundedLoopStrategy\` object whose \`contract\` is \`bounded-loop/strategy-invocation/1\`, this invocation is a bounded recovery-strategy selection, not a request to launch a ReviewCycle.
+
+The versioned invocation is exactly:
+
+\`\`\`json
+{
+  "contract": "bounded-loop/strategy-invocation/1",
+  "loopPath": "<canonical loop path>",
+  "attempt": 1,
+  "trigger": "iteration-limit | action-limit | budget-limit | stalled | blocked | strategy-exhausted"
+}
+\`\`\`
+
+Choose one materially different recovery tactic for the reported trigger. Use the canonical Run view and current review evidence to explain why it differs from exhausted work and which files, findings, tests, or review surfaces the next ordinary loop pass should change. Do NOT perform the fix in this strategy Action. Do NOT launch or resume another Run; that would recursively create a second mechanical owner.
+
+For this Action, return only the strategy result, using this exact closed shape:
+
+\`\`\`json
+{
+  "contract": "bounded-loop/strategy-result/1",
+  "strategyKey": "<stable tactic key>",
+  "rationale": "<why this is materially different and addresses the trigger>",
+  "intendedChangeSurface": ["<specific file, finding, test, or subsystem>"],
+  "evidence": []
+}
+\`\`\`
+
+\`strategyKey\`, \`rationale\`, and every \`intendedChangeSurface\` entry are non-empty; \`evidence\` is an array. Stop after returning that object. The reconciler validates \`bounded-loop/strategy-result/1\`, accounts the attempt, and separately admits the ordinary recovery pass. If the Action input is not this versioned invocation, continue with the launcher flow below.
+
 ## When to Use
 
 Use when: "review cycle", "keep reviewing until clean", "drive the findings to closure", "iterate on the review", "loop the review", "make sure the fixes actually got re-reviewed".

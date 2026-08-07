@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { stringify as stringifyYaml } from 'yaml';
 
 import {
   acquireFileLock,
@@ -20,8 +19,10 @@ import {
 import {
   DefinitionReadError,
   EcpDefinitionModule,
+  createBlankPipelineDefinitionV2,
   createProductionCapabilityCatalogSnapshot,
   projectPreparedBoundedLoopPolicies,
+  serializeAuthoredPipelineDefinition,
   type PreparedBoundedLoopPolicy,
   type PreparedDefinition,
 } from './pipeline-registry/definition.js';
@@ -29,13 +30,11 @@ import { resolvePipelineExecutionSkillSets } from './pipeline-registry/execution
 import { freezeProductionPreparedPipelineRegistry } from './pipeline-registry/prepared-registry.js';
 import {
   getUserPipelinesDir,
-  listPipelinesWithInfo,
+  resolvePipelineSource,
   resolveChildPipelineName,
+  type PipelineSourceLayer,
 } from './pipeline-registry/resolver.js';
-import {
-  PIPELINE_DEFINITION_VERSION,
-  type PipelineYaml,
-} from './pipeline-registry/types.js';
+import { type PipelineYaml } from './pipeline-registry/types.js';
 import { isPortableWorkflowId } from './workflow-registry/path-policy.js';
 import {
   loadWorkflowCatalog,
@@ -90,8 +89,13 @@ function definitionPreparationError(
 function serializePreparedDefinition(prepared: PreparedDefinition): string {
   return prepared.authoredVersion === 1
     ? serializePipelineYaml(prepared.authoredSource as PipelineYaml)
-    : stringifyYaml(prepared.authoredSource);
+    : serializeAuthoredPipelineDefinition(prepared);
 }
+
+export {
+  createBlankPipelineDefinitionV2,
+  serializeAuthoredPipelineDefinition,
+};
 
 function pipelinesLockError(kind: FileLockErrorKind, info: FileLockErrorInfo): PipelineLibraryError {
   return new PipelineLibraryError(
@@ -330,19 +334,15 @@ export function scaffoldPipeline(name: string, outputPath: string): string {
     fs.mkdirSync(target, { recursive: true, mode: 0o700 });
   }
 
-  const yaml = [
-    `version: ${PIPELINE_DEFINITION_VERSION}`,
-    `name: ${name}`,
-    `description: Describe when to use the ${name} pipeline.`,
-    'stages:',
-    '  - id: implement',
-    '    skill: rasen-apply-change',
-    '    role: implementer',
-    '    requires: []',
-    '',
-  ].join('\n');
-  const pipeline = parsePipeline(yaml); // fail fast if the scaffold itself is not structurally valid
-  fs.writeFileSync(path.join(target, 'pipeline.yaml'), serializePipelineYaml(pipeline), {
+  const definition = createBlankPipelineDefinitionV2(name, 'pipeline-init');
+  const prepared = EcpDefinitionModule.prepare(
+    definition,
+    createProductionCapabilityCatalogSnapshot([], new Set())
+  );
+  if (!prepared.ok) {
+    throw definitionPreparationError(prepared.error);
+  }
+  fs.writeFileSync(path.join(target, 'pipeline.yaml'), serializeAuthoredPipelineDefinition(definition), {
     flag: 'wx',
     mode: 0o600,
   });
@@ -678,8 +678,8 @@ export async function exportPipeline(
   const projectRoot =
     options.projectRoot ?? findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
   // Preserve project > user > package precedence after the candidate is safe.
-  const info = listPipelinesWithInfo(projectRoot).find((entry) => entry.name === name);
-  if (info && info.source !== 'user') {
+  const source = resolvePipelineSource(name, projectRoot);
+  if (source && source !== 'user') {
     throw new PipelineLibraryError(
       `Pipeline "${name}" was not found in the user pipeline library (built-in and project pipelines cannot be exported)`,
       'pipeline_not_found'
@@ -780,11 +780,11 @@ export async function deletePipeline(
   return withPipelinesLock(async () => {
     const projectRoot =
       options.projectRoot ?? findRepoPlanningRootSync(process.cwd()) ?? process.cwd();
-    const info = listPipelinesWithInfo(projectRoot).find((entry) => entry.name === name);
-    if (!info) throw new PipelineLibraryError(`Pipeline "${name}" was not found`, 'pipeline_not_found');
-    if (info.source !== 'user') {
+    const source = resolvePipelineSource(name, projectRoot);
+    if (!source) throw new PipelineLibraryError(`Pipeline "${name}" was not found`, 'pipeline_not_found');
+    if (source !== 'user') {
       throw new PipelineLibraryError(
-        `${info.source === 'package' ? 'Built-in' : 'Project-local'} pipelines cannot be deleted with this command`,
+        `${source === 'package' ? 'Built-in' : 'Project-local'} pipelines cannot be deleted with this command`,
         'pipeline_delete_forbidden'
       );
     }
@@ -827,9 +827,7 @@ export interface SavePipelineResult {
 }
 
 interface PipelineSaveTargetState {
-  readonly info:
-    | ReturnType<typeof listPipelinesWithInfo>[number]
-    | undefined;
+  readonly source: PipelineSourceLayer | null;
   readonly userManifestExisted: boolean;
 }
 
@@ -851,22 +849,20 @@ function resolvePipelineSaveTarget(
     );
   }
 
-  const info = listPipelinesWithInfo(projectRoot).find(
-    (entry) => entry.name === name
-  );
-  if (info?.source === 'package') {
+  const source = resolvePipelineSource(name, projectRoot);
+  if (source === 'package') {
     throw new PipelineLibraryError(
       `Pipeline "${name}" is a built-in pipeline and cannot be overwritten by save`,
       'pipeline_builtin_protected'
     );
   }
-  if (info?.source === 'user' && !force) {
+  if (source === 'user' && !force) {
     throw new PipelineLibraryError(
       `Pipeline "${name}" already exists; use --force to overwrite`,
       'pipeline_already_exists'
     );
   }
-  return { info, userManifestExisted };
+  return { source, userManifestExisted };
 }
 
 /**
@@ -962,7 +958,7 @@ export async function savePipeline(
     // only this recheck is authoritative. The machine-wide file lock makes
     // the no-force conflict decision and the following write one atomic
     // cross-process operation.
-    const { info, userManifestExisted } = resolvePipelineSaveTarget(
+    const { source, userManifestExisted } = resolvePipelineSaveTarget(
       name,
       projectRoot,
       options.force === true
@@ -977,7 +973,7 @@ export async function savePipeline(
     return {
       name,
       path: targetFile,
-      created: !info && !userManifestExisted,
+      created: !source && !userManifestExisted,
     };
   });
 }

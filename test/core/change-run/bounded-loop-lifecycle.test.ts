@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import type { JsonValue, NodeId } from '../../../src/core/change-run/contracts.js';
-import { buildAgentActor } from '../../../src/core/change-run/internal/actors.js';
+import {
+  buildEvidenceRef,
+  createBoundedEvidenceStore,
+} from '../../../src/core/change-run/internal/evidence.js';
 import {
   decodeBoundedLoopStrategyResult,
   reconstructProgress,
   reduceBoundedLoopLifecycle,
   selectLatestAttempt,
+  strategyAttemptAccounting,
   strategyInvocationPath,
   strategyRecoveryInvocationPath,
   type LoopDomainSnapshot,
@@ -21,6 +25,7 @@ import type {
   CanonicalRunRecord,
   CommittedAction,
 } from '../../../src/core/change-run/internal/record.js';
+import { decodeCanonicalRunRecord } from '../../../src/core/change-run/internal/record.js';
 import {
   reduceCandidateBatch,
   reduceCanonicalRunRecord,
@@ -39,6 +44,10 @@ import {
   fixtureDigests,
   startRecord,
 } from './reconciler-fixture.js';
+import {
+  attestTestCompletion,
+  stageTestCompletion,
+} from '../../fixtures/trusted-completion.js';
 
 function loopNode(
   path: string,
@@ -144,9 +153,14 @@ function blockInvocation(
     reasonCode: 'dependency_unavailable',
     blockerKey: 'service:fixture',
     detail: 'The prose is deliberately not part of blocker identity.',
-  }
+  },
+  input: JsonValue = { fixture: true }
 ): Readonly<{ record: CanonicalRunRecord; action: CommittedAction }> {
-  const action = agentAction(runtimePlan, invocationPath, occurrence);
+  const base = agentAction(runtimePlan, invocationPath, occurrence);
+  const action = {
+    ...base,
+    agent: { ...base.agent, input },
+  };
   let next = apply(record, {
     kind: 'admit-action',
     action,
@@ -209,9 +223,15 @@ function succeedInvocation(
 function failInvocation(
   runtimePlan: RuntimePlan,
   record: CanonicalRunRecord,
-  invocationPath: string
+  invocationPath: string,
+  input: JsonValue = { fixture: true },
+  occurrence = 0
 ): Readonly<{ record: CanonicalRunRecord; action: CommittedAction }> {
-  const action = agentAction(runtimePlan, invocationPath);
+  const base = agentAction(runtimePlan, invocationPath, occurrence);
+  const action = {
+    ...base,
+    agent: { ...base.agent, input },
+  };
   let next = apply(record, {
     kind: 'admit-action',
     action,
@@ -477,6 +497,256 @@ describe('closed shared lifecycle decision matrix', () => {
     ).decision).toMatchObject({
       kind: 'escalated',
       reason: 'strategy-exhausted',
+    });
+  });
+
+  it('counts failed logical strategy attempts, advances, and exhausts exactly once across restart', () => {
+    const runtimePlan = plan(12, false, 1, 2, 2);
+    const loop = runtimePlan.nodes[0] as RuntimePlanBoundedLoopNode;
+    const atLimit = {
+      ...snapshotFor(runtimePlan, loop),
+      continueRequested: true,
+      nextInvocation: undefined,
+    };
+    const strategyInput = (attempt: number): JsonValue => ({
+      boundedLoopStrategy: {
+        loopPath: loop.hierarchicalPath,
+        attempt,
+        trigger: 'iteration-limit',
+      },
+    });
+
+    const normalCompleted = succeedInvocation(
+      runtimePlan,
+      startRecord(runtimePlan),
+      `${loop.hierarchicalPath}/round:1/stage`,
+      { material: 'before-strategy' }
+    ).record;
+    let record = failInvocation(
+      runtimePlan,
+      normalCompleted,
+      strategyInvocationPath(loop.hierarchicalPath, 1),
+      strategyInput(1)
+    ).record;
+    const afterFirstFailure = reduceBoundedLoopLifecycle(
+      runtimePlan,
+      loop,
+      record,
+      atLimit
+    );
+    expect(afterFirstFailure.strategyAttempts).toBe(1);
+    expect(afterFirstFailure.decision).toMatchObject({
+      kind: 'strategy-ready',
+      attempt: 2,
+      trigger: 'iteration-limit',
+    });
+    expect(strategyAttemptAccounting(runtimePlan, loop, record)).toMatchObject({
+      consumed: 1,
+      attempts: [
+        { attempt: 1, status: 'failed' },
+        { attempt: 2, status: 'unstarted' },
+      ],
+    });
+    const firstProjection = projectRunView(record, 'active', runtimePlan).sections
+      .find((section) => section.kind === 'bounded-loop-lifecycle');
+    expect(firstProjection).toMatchObject({
+      strategy: { attempts: 1, maxAttempts: 2 },
+    });
+
+    const restarted = decodeCanonicalRunRecord(
+      JSON.parse(JSON.stringify(record))
+    );
+    expect(
+      reduceBoundedLoopLifecycle(runtimePlan, loop, restarted, atLimit)
+    ).toEqual(afterFirstFailure);
+    expect(reconcile(runtimePlan, restarted)).toEqual(
+      reconcile(runtimePlan, record)
+    );
+
+    record = failInvocation(
+      runtimePlan,
+      record,
+      strategyInvocationPath(loop.hierarchicalPath, 2),
+      strategyInput(2)
+    ).record;
+    const exhausted = reduceBoundedLoopLifecycle(
+      runtimePlan,
+      loop,
+      record,
+      atLimit
+    );
+    expect(exhausted.strategyAttempts).toBe(2);
+    expect(exhausted.decision).toMatchObject({
+      kind: 'escalated',
+      reason: 'strategy-exhausted',
+      outcome: 'strategy-exhausted',
+    });
+    const first = reconcile(runtimePlan, record);
+    const replay = reconcile(
+      runtimePlan,
+      decodeCanonicalRunRecord(JSON.parse(JSON.stringify(record)))
+    );
+    expect(first).toEqual(replay);
+    expect(first).toMatchObject({
+      ok: true,
+      actions: [{ kind: 'escalate', code: 'strategy-exhausted' }],
+    });
+
+    const terminal = apply(record, {
+      kind: 'escalate',
+      code: 'strategy-exhausted',
+    });
+    expect(
+      terminal.transitions.filter(
+        (transition) => transition.kind === 'RunEscalated'
+      )
+    ).toHaveLength(1);
+    expect(reconcile(runtimePlan, terminal)).toMatchObject({
+      ok: true,
+      actions: [],
+    });
+  });
+
+  it('resumes a blocked strategy through a fresh occurrence with a new exact wait', () => {
+    const runtimePlan = plan(12, false, 1, 2, 2);
+    const loop = runtimePlan.nodes[0] as RuntimePlanBoundedLoopNode;
+    const strategyPath = strategyInvocationPath(loop.hierarchicalPath, 1);
+    const input: JsonValue = {
+      boundedLoopStrategy: {
+        loopPath: loop.hierarchicalPath,
+        attempt: 1,
+        trigger: 'iteration-limit',
+      },
+    };
+    const atLimit = {
+      ...snapshotFor(runtimePlan, loop),
+      continueRequested: true,
+      nextInvocation: undefined,
+    };
+    const normalCompleted = succeedInvocation(
+      runtimePlan,
+      startRecord(runtimePlan),
+      `${loop.hierarchicalPath}/round:1/stage`,
+      { material: 'before-strategy' }
+    ).record;
+    const blocked = blockInvocation(
+      runtimePlan,
+      normalCompleted,
+      strategyPath,
+      0,
+      undefined,
+      input
+    );
+    const firstWait = blocked.record.waits.find(
+      (wait) => wait.kind === 'domain-blocked'
+    )!;
+    expect(
+      reduceBoundedLoopLifecycle(runtimePlan, loop, blocked.record, atLimit)
+    ).toMatchObject({
+      strategyAttempts: 0,
+      decision: { kind: 'waiting', waitId: firstWait.waitId },
+    });
+
+    let record = apply(blocked.record, {
+      kind: 'resume-wait',
+      waitId: firstWait.waitId,
+    });
+    const restarted = decodeCanonicalRunRecord(
+      JSON.parse(JSON.stringify(record))
+    );
+    const resumedDecision = reduceBoundedLoopLifecycle(
+      runtimePlan,
+      loop,
+      restarted,
+      atLimit
+    );
+    expect(resumedDecision).toMatchObject({
+      strategyAttempts: 0,
+      decision: {
+        kind: 'strategy-ready',
+        attempt: 1,
+        trigger: 'iteration-limit',
+      },
+    });
+    const reconciled = reconcile(runtimePlan, restarted);
+    expect(reconciled).toMatchObject({
+      ok: true,
+      actions: [
+        {
+          kind: 'admit',
+          occurrence: 1,
+          input: { boundedLoopStrategy: { attempt: 1 } },
+        },
+      ],
+    });
+    expect(reconciled).toEqual(reconcile(runtimePlan, record));
+
+    const baseFresh = agentAction(runtimePlan, strategyPath, 1);
+    const fresh = {
+      ...baseFresh,
+      agent: { ...baseFresh.agent, input },
+    };
+    record = apply(record, {
+      kind: 'admit-action',
+      action: fresh,
+      attemptOrdinal: 0,
+      deliveryMode: 'grant',
+    });
+    expect(
+      reduceBoundedLoopLifecycle(runtimePlan, loop, record, atLimit).decision
+    ).toEqual({ kind: 'waiting' });
+
+    record = apply(record, {
+      kind: 'commit-action-result',
+      actionId: fresh.actionId,
+      status: 'blocked',
+      receiptDigest: fixtureDigests.receiptDigest,
+      result: {
+        contract: 'bounded-loop/blocked/1',
+        reasonCode: 'dependency_unavailable',
+        blockerKey: 'strategy:fixture',
+      },
+      evidence: [],
+    });
+    const secondWait = record.waits.find(
+      (wait) => wait.kind === 'domain-blocked'
+    )!;
+    expect(secondWait.waitId).not.toBe(firstWait.waitId);
+    expect(firstWait.occurrence).toBe(0);
+    expect(secondWait.occurrence).toBe(1);
+    expect(
+      reduceBoundedLoopLifecycle(runtimePlan, loop, record, atLimit)
+    ).toMatchObject({
+      strategyAttempts: 0,
+      decision: { kind: 'waiting', waitId: secondWait.waitId },
+    });
+    const projected = projectRunView(record, 'active', runtimePlan).sections
+      .find((section) => section.kind === 'bounded-loop-lifecycle');
+    expect(projected).toMatchObject({
+      strategy: { attempts: 0, maxAttempts: 2, active: 1 },
+      wait: { waitId: secondWait.waitId, kind: 'domain-blocked' },
+    });
+
+    record = apply(record, {
+      kind: 'resume-wait',
+      waitId: secondWait.waitId,
+    });
+    const twiceResumed = decodeCanonicalRunRecord(
+      JSON.parse(JSON.stringify(record))
+    );
+    expect(
+      reduceBoundedLoopLifecycle(runtimePlan, loop, twiceResumed, atLimit)
+        .decision
+    ).toMatchObject({ kind: 'strategy-ready', attempt: 1 });
+    expect(reconcile(runtimePlan, twiceResumed)).toMatchObject({
+      ok: true,
+      actions: [
+        {
+          kind: 'admit',
+          occurrence: 2,
+          input: { boundedLoopStrategy: { attempt: 1 } },
+        },
+      ],
     });
   });
 
@@ -801,7 +1071,11 @@ describe('blocked-to-strategy admission boundary', () => {
     expect(strategyCandidate).toMatchObject({
       kind: 'admit',
       input: {
-        boundedLoopStrategy: { attempt: 1, trigger: 'iteration-limit' },
+        boundedLoopStrategy: {
+          contract: 'bounded-loop/strategy-invocation/1',
+          attempt: 1,
+          trigger: 'iteration-limit',
+        },
       },
     });
 
@@ -1078,6 +1352,10 @@ describe('blocked-to-strategy admission boundary', () => {
     });
     const store = createInMemoryRunStore();
     store.create(runtimePlan.runId, record);
+    const evidenceStore = createBoundedEvidenceStore({
+      maxRunBytes: 1024 * 1024,
+      maxEntries: 16,
+    });
     const runtime = createChangePipelineRuntime({
       store,
       plan: runtimePlan,
@@ -1085,38 +1363,20 @@ describe('blocked-to-strategy admission boundary', () => {
       buildAction: () => {
         throw new Error('No action should be built while validating completion.');
       },
+      evidenceStore,
     });
-    const attestation = evidenceFor(runtimePlan, strategy.actionId)[0]!;
-    const actor = buildAgentActor({
-      role: 'strategist',
-      provider: 'fixture',
-      runtime: 'vitest',
-      principalIdentityDigest: fixtureDigests.receiptDigest,
-      sessionIdentityDigest: fixtureDigests.workspaceDigest,
-      adapter: {
-        id: 'fixture-strategy',
-        version: '1',
-        artifactDigest: fixtureDigests.capabilityDigest,
-      },
-    });
-    const completion = {
-      format: 'change-run-completion/1' as const,
-      kind: 'domain-action-result' as const,
+    const submission = attestTestCompletion({
       change: { projectRoot: '/root', changeId: 'fixture-change' },
-      runId: runtimePlan.runId,
-      actionId: strategy.actionId,
-      invocationId: strategy.invocationId,
-      receiptDigest: fixtureDigests.receiptDigest,
-      actor,
-      actorAttestation: attestation,
-      evidence: [],
-      status: 'succeeded' as const,
-      result: { materialChange: true },
-    };
-    const request = {
-      ...completion,
-      receiptDigest: computeCompletionReceiptDigest(completion),
-    };
+      record: store.load(runtimePlan.runId),
+      action: strategy,
+      completion: {
+        kind: 'domain-action-result',
+        status: 'succeeded',
+        result: { materialChange: true },
+      },
+      evidenceContent: Buffer.from('{"materialChange":true}'),
+    });
+    const request = stageTestCompletion(evidenceStore, submission);
     const before = store.load(runtimePlan.runId);
     expect(() =>
       runtime.complete(request, { deliveryMode: 'grant' })

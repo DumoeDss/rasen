@@ -20,7 +20,6 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { promises as fs, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 
 import { runCLI } from '../helpers/run-cli.js';
 
@@ -35,13 +34,15 @@ import { reduceCanonicalRunRecord } from '../../src/core/change-run/internal/red
 import { decodeCanonicalRunRecord } from '../../src/core/change-run/internal/record.js';
 import { createCanonicalWait } from '../../src/core/change-run/internal/waits.js';
 import { deriveInvocationId } from '../../src/core/change-run/internal/identity.js';
-import { computeCompletionReceiptDigest } from '../../src/core/change-run/internal/completion.js';
-import { buildAgentActor } from '../../src/core/change-run/internal/actors.js';
 import { buildEvidenceRef } from '../../src/core/change-run/internal/evidence.js';
 import type { RuntimePlan } from '../../src/core/change-run/internal/runtime-plan.js';
 import type { CanonicalRunRecord } from '../../src/core/change-run/internal/record.js';
 import type { RunStimulus } from '../../src/core/change-run/internal/reducer.js';
-import type { Digest, RunId, JsonValue } from '../../src/core/change-run/index.js';
+import type { ActionId, Digest, RunId, JsonValue } from '../../src/core/change-run/index.js';
+import {
+  attestTestCompletion,
+  provisionTestTrustedExecutionAdaptersForPipeline,
+} from '../fixtures/trusted-completion.js';
 
 // ---------------------------------------------------------------------------
 // Helpers (mirror pipeline-bugfix-e2e.test.ts — same documented pattern)
@@ -53,56 +54,22 @@ async function buildBugFixPlan(projectRoot: string, runId: string): Promise<Runt
   const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, { reporter: false });
   const execution = await registry.selectForExecution('bug-fix', { reporter: false });
   const prepared = execution.resolution.prepared;
-  const pipeline = prepared.authoredSource as {
-    name: string;
-    stages: Array<{
-      id: string;
-      role?: string;
-      model?: string;
-      gate?: boolean;
-      verifyPolicy?: string;
-    }>;
-  };
 
   const sourceRevision = {
     layer: execution.resolution.source,
     kind: 'pipeline-yaml' as const,
-    sourceId: `${execution.resolution.source}:${pipeline.name}`,
+    sourceId: `${execution.resolution.source}:${prepared.definition.name}`,
     authoredContentDigest: branded(`sha256:${prepared.digests.source}`),
     semanticDigest: branded(`sha256:${prepared.digests.source}`),
   };
-  const policyStages = pipeline.stages.map((stage) => ({
-    nodeId: `stage:${stage.id}`,
-    role: stage.role ?? 'implementer',
-    model: stage.model ?? 'default',
-    effort: 'default',
-    runtime: 'codex',
-    sandbox:
-      stage.verifyPolicy === 'adaptive' || stage.id === 'verify'
-        ? ('read-only' as const)
-        : ('workspace-write' as const),
-    gate: stage.gate ?? false,
-    sessionReuse: 'never' as const,
-    handoffTokenLimit: 10_000,
-    reuseRoundLimit: 1,
-    provenance: {
-      role: 'stage',
-      model: stage.model ? 'stage' : 'default',
-      effort: 'default',
-      runtime: 'host',
-      sandbox: 'default',
-      gate: 'stage',
-      sessionReuse: 'default',
-      handoffTokenLimit: 'default',
-      reuseRoundLimit: 'default',
-    },
-  }));
   const profile = resolveRuntimeExecutionProfile(
     prepared,
     registry.catalog,
-    policyStages,
+    [],
     sourceRevision,
-    { maxAttempts: 3, maxActions: 64 }
+    { maxAttempts: 3, maxActions: 64 },
+    undefined,
+    registry.trustedExecutionAdapters
   );
   return lowerRuntimePlan(prepared, profile, branded(runId));
 }
@@ -192,95 +159,26 @@ function observeAdmittedEffects(storeRoot: string, runId: string): void {
 
 function buildCompletionBody(
   record: CanonicalRunRecord,
-  runId: string,
   changeId: string,
   projectRoot: string,
   actionId: string,
-  invocationId: string,
   result?: JsonValue
-): { completion: Record<string, unknown>; uploads: Array<{ contentDigest: string; contentBase64: string }> } {
-  const evidenceContent = new TextEncoder().encode('{"result":"ok"}');
-  const attestationContent = new TextEncoder().encode('{"signed":true}');
-  const evidenceDigest = `sha256:${createHash('sha256').update(evidenceContent).digest('hex')}`;
-  const attestationDigest = `sha256:${createHash('sha256').update(attestationContent).digest('hex')}`;
-
-  const principalDigest = branded<Digest>(`sha256:${'a1'.repeat(32)}`);
-  const sessionDigest = branded<Digest>(`sha256:${'b2'.repeat(32)}`);
-
-  const evidenceRef = buildEvidenceRef({
-    content: evidenceContent,
-    mediaType: 'application/json',
-    observationKind: 'completion-evidence',
-    producer: {
-      id: 'e2e-producer',
-      version: '1',
-      identityDigest: principalDigest,
-    },
-    binding: {
-      planningSpaceId: record.change.planningSpaceId,
-      changeInstanceId: record.change.instanceId,
-      projectId: record.change.projectId,
-      changeId,
-      runId: branded(runId),
-      actionId: branded(actionId),
-      schema: 'evidence/1',
-    },
-  });
-  const attestationRef = buildEvidenceRef({
-    content: attestationContent,
-    mediaType: 'application/json',
-    observationKind: 'actor-attestation',
-    producer: {
-      id: 'e2e-actor',
-      version: '1',
-      identityDigest: sessionDigest,
-    },
-    binding: {
-      planningSpaceId: record.change.planningSpaceId,
-      changeInstanceId: record.change.instanceId,
-      projectId: record.change.projectId,
-      changeId,
-      runId: branded(runId),
-      actionId: branded(actionId),
-      schema: 'attestation/1',
-    },
-  });
-
-  const actor = buildAgentActor({
-    role: 'implementer',
-    provider: 'anthropic',
-    runtime: 'claude',
-    principalIdentityDigest: principalDigest,
-    sessionIdentityDigest: sessionDigest,
-    adapter: {
-      id: 'adapter:e2e',
-      version: '1',
-      artifactDigest: sessionDigest,
-    },
-  });
-
-  const base = {
-    format: 'change-run-completion/1',
-    kind: 'domain-action-result',
+) {
+  const committed = record.actions[actionId as ActionId];
+  if (committed === undefined) {
+    throw new Error(`No committed action ${actionId} exists in the Run.`);
+  }
+  return attestTestCompletion({
     change: { projectRoot, changeId },
-    runId,
-    actionId,
-    invocationId,
-    actor,
-    actorAttestation: attestationRef,
-    evidence: [evidenceRef],
-    status: 'succeeded',
-    result: result ?? { ok: true },
-  };
-  const receiptDigest = computeCompletionReceiptDigest(base as never);
-
-  return {
-    completion: { ...base, receiptDigest },
-    uploads: [
-      { contentDigest: evidenceDigest, contentBase64: Buffer.from(evidenceContent).toString('base64') },
-      { contentDigest: attestationDigest, contentBase64: Buffer.from(attestationContent).toString('base64') },
-    ],
-  };
+    record,
+    action: committed.action,
+    completion: {
+      kind: 'domain-action-result',
+      status: 'succeeded',
+      result: result ?? { ok: true },
+    },
+    evidenceContent: new TextEncoder().encode('{"result":"ok"}'),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -313,7 +211,10 @@ async function driveToComplexVerify(
     ['pipeline', 'start', changeId, 'bug-fix', '--json'],
     { cwd: testDir, env, timeoutMs: 60_000 }
   );
-  expect(startResult.exitCode).toBe(0);
+  expect(
+    startResult.exitCode,
+    `${startResult.stderr}\n${startResult.stdout}`
+  ).toBe(0);
   const startJson = JSON.parse(startResult.stdout.trim());
   expect(startJson.disposition).toBe('created');
   expect(startJson.actions).toEqual([]);
@@ -339,7 +240,7 @@ async function driveToComplexVerify(
       format: 'change-run-control/1',
       ref: { change: { projectRoot: testDir, changeId }, runId },
       expectedRecordVersion: expectedVersion,
-      command: { kind: 'decision', waitId, decisionId: 'approve', outcome: 'approve' },
+      command: { kind: 'decision', waitId, decisionId: 'approved', outcome: 'approved' },
     },
   };
   let controlFile = path.join(testDir, 'control-propose.json');
@@ -362,8 +263,8 @@ async function driveToComplexVerify(
     (a) => a.state === 'active'
   )!;
   const proposeCompletion = buildCompletionBody(
-    record, runId, changeId, testDir,
-    proposeAction.action.actionId, proposeAction.action.invocationId
+    record, changeId, testDir,
+    proposeAction.action.actionId
   );
   let completionFile = path.join(testDir, 'complete-propose.json');
   writeFileSync(completionFile, JSON.stringify(proposeCompletion));
@@ -393,7 +294,7 @@ async function driveToComplexVerify(
       format: 'change-run-control/1',
       ref: { change: { projectRoot: testDir, changeId }, runId },
       expectedRecordVersion: expectedVersion,
-      command: { kind: 'decision', waitId, decisionId: 'approve', outcome: 'approve' },
+      command: { kind: 'decision', waitId, decisionId: 'approved', outcome: 'approved' },
     },
   };
   controlFile = path.join(testDir, 'control-apply.json');
@@ -415,8 +316,8 @@ async function driveToComplexVerify(
     (a) => a.state === 'active'
   )!;
   const applyCompletion = buildCompletionBody(
-    record, runId, changeId, testDir,
-    applyAction.action.actionId, applyAction.action.invocationId
+    record, changeId, testDir,
+    applyAction.action.actionId
   );
   completionFile = path.join(testDir, 'complete-apply.json');
   writeFileSync(completionFile, JSON.stringify(applyCompletion));
@@ -477,8 +378,8 @@ async function driveToComplexVerify(
     ],
   };
   const reviewCompletion = buildCompletionBody(
-    record, runId, changeId, testDir,
-    reviewActionId, reviewInvocationId,
+    record, changeId, testDir,
+    reviewActionId,
     reviewResult
   );
   completionFile = path.join(testDir, 'complete-review-findings.json');
@@ -497,17 +398,24 @@ async function driveToComplexVerify(
 // ---------------------------------------------------------------------------
 
 describe('fresh-process ReviewCycle blocking E2E (15.4)', () => {
-  const projectRoot = process.cwd();
+  const repoRoot = process.cwd();
   let testDir: string;
   let dataDir: string;
   let storeRoot: string;
 
   beforeEach(async () => {
-    testDir = path.join(projectRoot, 'test-pipeline-e2e-complex-tmp');
+    testDir = await fs.mkdtemp(
+      path.join(repoRoot, '.rasen-e2e-complex-')
+    );
     dataDir = path.join(testDir, 'global-data');
     storeRoot = storeRootFor(dataDir);
     await fs.mkdir(path.join(testDir, 'rasen', 'specs'), { recursive: true });
     await fs.mkdir(path.join(testDir, 'rasen', 'changes'), { recursive: true });
+    await provisionTestTrustedExecutionAdaptersForPipeline(
+      testDir,
+      path.join(dataDir, 'rasen'),
+      'bug-fix'
+    );
   });
 
   afterEach(async () => {

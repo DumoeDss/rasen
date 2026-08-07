@@ -22,6 +22,7 @@ import {
 } from './identity.js';
 import {
   closeCommittedActions,
+  committedActionOccurrence,
   decodeCanonicalRunRecord,
   digestCanonicalRunRecord,
   type CanonicalRunRecord,
@@ -813,7 +814,7 @@ export function reduceCanonicalRunRecord(
           kind: 'domain-blocked',
           nodeId: committed.action.nodeId,
           invocationId: committed.action.invocationId,
-          occurrence: 0,
+          occurrence: committedActionOccurrence(record, committed),
           attemptId: committed.action.attemptId,
           actionId: committed.action.actionId,
           effectIds: committed.action.effects.map((effect) => effect.effectId),

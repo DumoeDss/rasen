@@ -36,11 +36,13 @@
                 ./bin
                 ./schemas
                 ./scripts
+                ./native
                 ./test
                 ./package.json
                 ./pnpm-lock.yaml
                 ./tsconfig.json
                 ./build.js
+                ./rust-toolchain.toml
                 ./vitest.config.ts
                 ./vitest.setup.ts
                 ./eslint.config.js
@@ -59,6 +61,8 @@
               npmHooks.npmInstallHook
               pnpmConfigHook
               pnpm_9
+              cargo
+              rustc
             ];
 
             buildPhase = ''
@@ -99,6 +103,8 @@
             buildInputs = with pkgs; [
               nodejs_20
               pnpm_9
+              cargo
+              rustc
             ];
 
             shellHook = ''

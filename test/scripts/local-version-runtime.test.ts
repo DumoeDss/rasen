@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { afterEach, describe, expect, test } from 'vitest';
+import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
 const repositoryRoot = path.resolve(import.meta.dirname, '..', '..');
 const runtimeScript = path.join(
@@ -155,9 +156,9 @@ function runPrepareAsync(sourceRoot: string, projectRoot: string, cacheRoot: str
   });
 }
 
-afterEach(() => {
+afterEach(async () => {
   for (const root of temporaryRoots.splice(0)) {
-    fs.rmSync(root, { recursive: true, force: true });
+    await cleanupTempPathAsync(root);
   }
 });
 

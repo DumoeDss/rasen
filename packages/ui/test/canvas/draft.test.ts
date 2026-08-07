@@ -11,6 +11,7 @@ import {
   addDeclaration,
   addRequire,
   bodyWouldCreateCycle,
+  createBlankCanvasPipelineDefinitionV2,
   updateBodyStage,
   addStage,
   addV2Connection,
@@ -54,6 +55,22 @@ function baseDef(): WirePipelineDefinitionV1 {
     ],
   };
 }
+
+describe('createBlankCanvasPipelineDefinitionV2', () => {
+  it('creates the complete browser-safe blank v2 envelope with stable identities', () => {
+    expect(createBlankCanvasPipelineDefinitionV2('fresh-draft')).toEqual({
+      version: 2,
+      id: 'pipeline:fresh-draft',
+      sourceId: 'canvas:fresh-draft',
+      name: 'fresh-draft',
+      inputs: [],
+      artifacts: [],
+      outcomes: [],
+      declarations: [],
+      root: { nodes: [], connections: [] },
+    });
+  });
+});
 
 describe('wouldCreateCycle', () => {
   it('rejects a direct cycle (b already requires a; a->b would close it back... a requiring b)', () => {
@@ -359,7 +376,13 @@ function v2Def(): WirePipelineDefinitionV2 {
           capability: { id: 'skill:produce', version: 'sha256:produce' },
           hidden: { preserve: true },
         },
-        { id: 'gate', kind: 'Gate', outcomes: ['approved', 'rejected'] },
+        {
+          id: 'gate',
+          kind: 'Gate',
+          target: 'produce',
+          outcomes: ['approved', 'rejected'],
+          dispositions: { approved: 'proceed', rejected: 'escalate' },
+        },
         { id: 'finish', kind: 'Finish', outcome: 'done' },
       ],
       connections: [],
@@ -382,7 +405,13 @@ describe('version 2 root graph reducer', () => {
     const choiceId = v2NodeIdFor('Choice', def);
     def = addV2Node(def, { id: choiceId, kind: 'Choice', outcomes: ['matched', 'skipped'] });
     const gateId = v2NodeIdFor('Gate', def);
-    def = addV2Node(def, { id: gateId, kind: 'Gate', outcomes: ['approved', 'rejected'] });
+    def = addV2Node(def, {
+      id: gateId,
+      kind: 'Gate',
+      target: 'produce',
+      outcomes: ['approved', 'rejected'],
+      dispositions: { approved: 'proceed', rejected: 'escalate' },
+    });
     const finishId = v2NodeIdFor('Finish', def);
     def = addV2Node(def, { id: finishId, kind: 'Finish', outcome: 'failed' });
 
@@ -393,7 +422,13 @@ describe('version 2 root graph reducer', () => {
         capability: { id: 'skill:consume', version: 'sha256:consume' },
       },
       { id: 'choice', kind: 'Choice', outcomes: ['matched', 'skipped'] },
-      { id: 'gate-2', kind: 'Gate', outcomes: ['approved', 'rejected'] },
+      {
+        id: 'gate-2',
+        kind: 'Gate',
+        target: 'produce',
+        outcomes: ['approved', 'rejected'],
+        dispositions: { approved: 'proceed', rejected: 'escalate' },
+      },
       { id: 'finish-2', kind: 'Finish', outcome: 'failed' },
     ]);
     expect(v2NodeIdFor('Gate', def)).toBe('gate-3');
@@ -452,9 +487,9 @@ describe('version 2 root graph reducer', () => {
     expect(def.root.connections).toEqual([]);
   });
 
-  it('recognizes the four enabled kinds and preserves known later-slice kinds byte-for-byte', () => {
+  it('recognizes all eight enabled root kinds and preserves unrelated nodes byte-for-byte', () => {
     expect(['AtomicStage', 'Gate', 'Choice', 'Finish', 'CompositeRef', 'BoundedLoop'].every(isV2EditableNodeKind)).toBe(true);
-    expect(['FanOut', 'Join'].some(isV2EditableNodeKind)).toBe(false);
+    expect(['FanOut', 'Join'].every(isV2EditableNodeKind)).toBe(true);
 
     const def = v2Def();
     def.root.nodes.push(
@@ -468,6 +503,13 @@ describe('version 2 root graph reducer', () => {
         id: 'fan',
         kind: 'FanOut',
         branches: ['a', 'b'],
+        concurrencyCap: 2,
+        budget: 2,
+        joinNodeId: 'join',
+        members: [
+          { id: 'a', hierarchicalPath: 'a', required: true, condition: 'always' },
+          { id: 'b', hierarchicalPath: 'b', required: false, condition: 'always' },
+        ],
         futurePayload: { preserve: true },
       }
     );
@@ -503,10 +545,13 @@ describe('definitionIssuePathTarget', () => {
     });
   });
 
-  it('retains declaration-level, definition-level, malformed, and out-of-range paths as unmapped', () => {
+  it('maps definition fields while retaining absent declarations, malformed, and out-of-range paths as unmapped', () => {
     const def = v2Def();
     expect(definitionIssuePathTarget(def, '/declarations/0/graph/nodes/0')).toBeNull();
-    expect(definitionIssuePathTarget(def, '/limits/budget')).toBeNull();
+    expect(definitionIssuePathTarget(def, '/limits/budget')).toEqual({
+      kind: 'definition',
+      field: 'limits/budget',
+    });
     expect(definitionIssuePathTarget(def, '/root/nodes/99/id')).toBeNull();
     expect(definitionIssuePathTarget(def, '/root/connections/nope')).toBeNull();
   });

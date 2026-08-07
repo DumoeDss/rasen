@@ -9,6 +9,7 @@ import { upsertAdoptionEntry } from '../../src/core/store/migration.js';
 import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
 import { snapshotDirectory as snapshot } from '../helpers/fs-snapshot.js';
 import { createOpenSpecRoot, writeSpec } from '../helpers/rasen-fixtures.js';
+import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
 const PROJECT_A = '3c0f0a3e-9e2b-4a0e-8c2f-6d5b1f0a7e11';
 
@@ -49,8 +50,8 @@ describe('store membership CLI surface', () => {
     await registerStore({ id: 'team-context', localPath: storeRoot, globalDataDir });
   });
 
-  afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+  afterEach(async () => {
+    await cleanupTempPathAsync(tempDir);
   });
 
   function parseJson(result: RunCLIResult): any {
@@ -363,6 +364,10 @@ describe('store membership CLI surface', () => {
       expect(absent?.unavailable).toBeTruthy();
     });
 
+    // This case intentionally starts five fresh CLI processes. Under a cold,
+    // one-worker full-root run it can legitimately exceed Vitest's global
+    // 30-second test budget. Let the bounded CLI operations reach `close`
+    // before afterEach removes their cwd; otherwise timeout and cleanup race.
     it('reports the same membership findings from store doctor', async () => {
       const projectRoot = makeProject();
       await runCLI(['store', 'add-project', projectRoot, '--to', 'team-context', '--json'], {
@@ -395,7 +400,7 @@ describe('store membership CLI surface', () => {
       // `store doctor` diagnoses; it does not repair.
       expect(snapshot(projectRoot)).toEqual(beforeProject);
       expect(snapshot(storeRoot)).toEqual(beforeStore);
-    });
+    }, 120_000);
 
     it('reports no membership finding twice', async () => {
       const projectRoot = makeProject();

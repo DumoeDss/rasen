@@ -1,7 +1,10 @@
 import type {
   PreparedDefinition,
 } from '../../pipeline-registry/definition.js';
-import type { RuntimeExecutionProfile } from '../../pipeline-registry/execution-plan-internal.js';
+import {
+  openRuntimeExecutionProfile,
+  type RuntimeExecutionProfile,
+} from '../../pipeline-registry/execution-plan-internal.js';
 import type {
   ChangeInstanceId,
   Digest,
@@ -12,9 +15,15 @@ import type {
 import type { CanonicalRecordLimits, CanonicalRunRecord } from './record.js';
 import { createCanonicalRunRecord } from './record.js';
 import { createFilesystemRunStore } from './run-store-fs.js';
+import { createFilesystemEvidenceStore } from './evidence-store-fs.js';
+import type { BoundedEvidenceStore } from './evidence.js';
+import {
+  createHostEvidenceWriter,
+  type HostEvidenceWriter,
+} from './host-evidence-writer.js';
 import type { RunStore } from './run-store.js';
 import { lowerRuntimePlan } from './lowerer.js';
-import type { RuntimePlan } from './runtime-plan.js';
+import { openRuntimePlan, type RuntimePlan } from './runtime-plan.js';
 import { buildAgentAction } from './actions.js';
 import { observeGitWorkspace } from './workspace-git.js';
 import { deriveWorkspaceRevision } from './workspace.js';
@@ -34,6 +43,8 @@ export interface RuntimeContextInput {
   readonly projectId: string;
   readonly launchRequestDigest: Digest;
   readonly storeRoot: string;
+  /** Persisted RuntimePlan for an existing Run; decoded and verified here. */
+  readonly frozenPlan?: unknown;
   readonly limits?: CanonicalRecordLimits;
   readonly inputs?: Readonly<Record<string, unknown>>;
   /**
@@ -49,6 +60,8 @@ export interface RuntimeContext {
   readonly facade: ChangePipelineRuntime;
   readonly store: RunStore;
   readonly initialRecord: CanonicalRunRecord;
+  readonly evidenceStore: BoundedEvidenceStore;
+  readonly hostEvidenceWriter: HostEvidenceWriter;
 }
 
 const DEFAULT_LIMITS: CanonicalRecordLimits = Object.freeze({
@@ -115,7 +128,28 @@ function deriveLimits(plan: RuntimePlan): CanonicalRecordLimits {
  * {@link ChangePipelineRuntime} interface.
  */
 export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContext {
-  const plan = lowerRuntimePlan(input.prepared, input.profile, input.runId);
+  const currentPlan = lowerRuntimePlan(input.prepared, input.profile, input.runId);
+  const plan =
+    input.frozenPlan === undefined
+      ? currentPlan
+      : openRuntimePlan(input.frozenPlan);
+  if (plan.runId !== input.runId) {
+    throw new Error('Persisted RuntimePlan RunId does not match the requested Run.');
+  }
+  const profile =
+    plan.executionProfile === undefined
+      ? input.profile
+      : openRuntimeExecutionProfile(plan.executionProfile);
+  if (
+    profile.profileDigest !== plan.profileDigest ||
+    profile.sourceRevision.semanticDigest !== plan.sourceRevisionDigest ||
+    profile.capabilityProfileDigest !== plan.capabilityDigest ||
+    profile.policyDigest !== plan.policyDigest
+  ) {
+    throw new Error(
+      'Persisted RuntimePlan has no usable frozen execution profile for this Run.'
+    );
+  }
   const workspaceRevision = deriveWorkspaceRevision(
     observeGitWorkspace(input.projectRoot)
   );
@@ -142,11 +176,15 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
   });
 
   const store = createFilesystemRunStore(input.storeRoot);
+  const evidenceStore = createFilesystemEvidenceStore(input.storeRoot, plan.runId, {
+    maxRunBytes: 64 * 1024 * 1024,
+    maxEntries: 64,
+  });
   const capabilityByPath = new Map(
-    input.profile.capabilities.map((binding) => [binding.nodeId, binding] as const)
+    profile.capabilities.map((binding) => [binding.nodeId, binding] as const)
   );
   const stageByPath = new Map(
-    input.profile.policy.stages.map((stage) => [stage.nodeId, stage] as const)
+    profile.policy.stages.map((stage) => [stage.nodeId, stage] as const)
   );
 
   const buildAction = (descriptor: {
@@ -175,8 +213,8 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
       {
         capability,
         stage: stage as never,
-        executionProfileDigest: input.profile.profileDigest,
-        policyDigest: input.profile.policyDigest,
+        executionProfileDigest: profile.profileDigest,
+        policyDigest: profile.policyDigest,
       },
       {
         runId: plan.runId,
@@ -197,9 +235,23 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
     store,
     plan,
     initialRecord,
+    evidenceStore,
     buildAction,
     resolveSourceState: input.resolveSourceState,
   });
 
-  return Object.freeze({ plan, facade, store, initialRecord });
+  const hostEvidenceWriter = createHostEvidenceWriter({
+    runId: plan.runId,
+    runStore: store,
+    evidenceStore,
+  });
+
+  return Object.freeze({
+    plan,
+    facade,
+    store,
+    initialRecord,
+    evidenceStore,
+    hostEvidenceWriter,
+  });
 }

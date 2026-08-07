@@ -14,6 +14,7 @@ import { RuntimePlanLowererError } from '../../../src/core/change-run/internal/l
 import type {
   RuntimeCapabilityBinding,
 } from '../../../src/core/pipeline-registry/execution-plan-internal.js';
+import { createRuntimeExecutionProfile } from '../../../src/core/pipeline-registry/execution-plan-internal.js';
 import type {
   ChangeInstanceId,
   Digest,
@@ -21,6 +22,7 @@ import type {
   WorkspaceInstanceId,
 } from '../../../src/core/change-run/index.js';
 import { fixtureLoopLifecycle } from './bounded-loop-fixture.js';
+import { withTestAttestationAuthority } from '../../fixtures/trusted-completion.js';
 
 const branded = <T>(value: string): T => value as T;
 const runId = branded<RunId>(`run:${'a'.repeat(64)}`);
@@ -29,6 +31,12 @@ const sha = (char: string) => branded<Digest>(`sha256:${char.repeat(64)}`);
 const SKILL_PROPOSE = 'skill:propose-a';
 const SKILL_APPLY = 'skill:apply-b';
 const SKILL_SHIP = 'skill:ship-c';
+
+const TEST_EXECUTION = {
+  version: 1 as const,
+  role: 'implementer' as const,
+  workspace: { access: 'write' as const },
+};
 
 function catalogDescriptors(): readonly CapabilityDescriptor[] {
   const mk = (id: string): CapabilityDescriptor => ({
@@ -63,9 +71,9 @@ function compositeDefinition(): DefinitionSourceV2 {
         outcomes: ['done'],
         graph: {
           nodes: [
-            { id: 'stage-a', kind: 'AtomicStage', capability: { id: SKILL_PROPOSE, version: '1' } },
-            { id: 'stage-b', kind: 'AtomicStage', capability: { id: SKILL_APPLY, version: '1' } },
-            { id: 'stage-c', kind: 'AtomicStage', capability: { id: SKILL_SHIP, version: '1' } },
+            { id: 'stage-a', kind: 'AtomicStage', capability: { id: SKILL_PROPOSE, version: '1' }, execution: TEST_EXECUTION },
+            { id: 'stage-b', kind: 'AtomicStage', capability: { id: SKILL_APPLY, version: '1' }, execution: TEST_EXECUTION },
+            { id: 'stage-c', kind: 'AtomicStage', capability: { id: SKILL_SHIP, version: '1' }, execution: TEST_EXECUTION },
           ],
           connections: [
             { id: 'conn-ab', from: { node: 'stage-a', port: 'done' }, to: { node: 'stage-b', port: 'input' } },
@@ -107,7 +115,7 @@ function capabilityBindings(
 }
 
 function makeBinding(nodeId: string): RuntimeCapabilityBinding {
-  return {
+  return withTestAttestationAuthority({
     nodeId,
     authoredCapability: { id: 'skill:test', version: '1' },
     contract: { id: 'test', version: '1', digest: sha('3') },
@@ -120,7 +128,7 @@ function makeBinding(nodeId: string): RuntimeCapabilityBinding {
       { slot: 'workspace', kind: 'workspace', resource: 'worktree', recovery: 'suspend-if-ambiguous' },
     ],
     adapter: { id: 'adapter:test', version: '1', contentDigest: sha('6') },
-  };
+  });
 }
 
 function policyStages(prepared: PreparedDefinition) {
@@ -176,27 +184,25 @@ function prepareComposite(source: DefinitionSourceV2 = compositeDefinition()): P
 }
 
 function lowerInput(prepared: PreparedDefinition) {
+  const profile = createRuntimeExecutionProfile({
+    sourceRevision: {
+      layer: 'package',
+      kind: 'pipeline-yaml',
+      sourceId: 'package:custom-composite',
+      authoredContentDigest: sha('1'),
+      semanticDigest: sha('2'),
+    },
+    capabilities: [...capabilityBindings(prepared)],
+    policy: {
+      format: 'effective-run-policy/1' as const,
+      maxAttempts: 12,
+      maxActions: 64,
+      stages: policyStages(prepared),
+    },
+  });
   return lowerRuntimePlanInput(
     prepared,
-    {
-      sourceRevision: {
-        layer: 'package',
-        kind: 'pipeline-yaml',
-        sourceId: 'package:custom-composite',
-        authoredContentDigest: sha('1'),
-        semanticDigest: sha('2'),
-      },
-      capabilities: [...capabilityBindings(prepared)],
-      policy: {
-        format: 'effective-run-policy/1' as const,
-        maxAttempts: 12,
-        maxActions: 64,
-        stages: policyStages(prepared),
-      },
-      capabilityProfileDigest: sha('7'),
-      policyDigest: sha('8'),
-      profileDigest: sha('9'),
-    },
+    profile,
     runId
   );
 }
@@ -265,7 +271,7 @@ describe('lowerer — CompositeRef inlining', () => {
       expect(() =>
         lowerRuntimePlanInput(
           prepared,
-          {
+          createRuntimeExecutionProfile({
             sourceRevision: {
               layer: 'package',
               kind: 'pipeline-yaml',
@@ -280,10 +286,7 @@ describe('lowerer — CompositeRef inlining', () => {
               maxActions: 64,
               stages: policyStages(prepared),
             },
-            capabilityProfileDigest: sha('7'),
-            policyDigest: sha('8'),
-            profileDigest: sha('9'),
-          },
+          }),
           runId
         )
       ).toThrow(/No frozen capability binding/);
@@ -347,8 +350,8 @@ function loopDefinition(): DefinitionSourceV2 {
         outcomes: ['done'],
         graph: {
           nodes: [
-            { id: 'step-a', kind: 'AtomicStage', capability: { id: SKILL_PROPOSE, version: '1' } },
-            { id: 'step-b', kind: 'AtomicStage', capability: { id: SKILL_APPLY, version: '1' } },
+            { id: 'step-a', kind: 'AtomicStage', capability: { id: SKILL_PROPOSE, version: '1' }, execution: TEST_EXECUTION },
+            { id: 'step-b', kind: 'AtomicStage', capability: { id: SKILL_APPLY, version: '1' }, execution: TEST_EXECUTION },
           ],
           connections: [
             { id: 'ab', from: { node: 'step-a', port: 'done' }, to: { node: 'step-b', port: 'input' } },
@@ -427,27 +430,25 @@ function prepareLoop(source: DefinitionSourceV2 = loopDefinition()): PreparedDef
 }
 
 function lowerLoopInput(prepared: PreparedDefinition) {
+  const profile = createRuntimeExecutionProfile({
+    sourceRevision: {
+      layer: 'package',
+      kind: 'pipeline-yaml',
+      sourceId: 'package:composite-loop',
+      authoredContentDigest: sha('1'),
+      semanticDigest: sha('2'),
+    },
+    capabilities: [...loopCapabilityBindings(prepared)],
+    policy: {
+      format: 'effective-run-policy/1' as const,
+      maxAttempts: 12,
+      maxActions: 64,
+      stages: loopPolicyStages(prepared),
+    },
+  });
   return lowerRuntimePlanInput(
     prepared,
-    {
-      sourceRevision: {
-        layer: 'package',
-        kind: 'pipeline-yaml',
-        sourceId: 'package:composite-loop',
-        authoredContentDigest: sha('1'),
-        semanticDigest: sha('2'),
-      },
-      capabilities: [...loopCapabilityBindings(prepared)],
-      policy: {
-        format: 'effective-run-policy/1' as const,
-        maxAttempts: 12,
-        maxActions: 64,
-        stages: loopPolicyStages(prepared),
-      },
-      capabilityProfileDigest: sha('7'),
-      policyDigest: sha('8'),
-      profileDigest: sha('9'),
-    },
+    profile,
     runId
   );
 }
@@ -487,7 +488,7 @@ describe('supportsV2ExecutableRuntime gate', () => {
     expect(prepared.capability.executable).toBe(true);
   });
 
-  it('pure atomic v2 plan (no composite/loop) → unavailable', () => {
+  it('closed pure atomic v2 plan uses the reconciler runtime', () => {
     const def: DefinitionSourceV2 = {
       version: 2,
       id: 'test:atomic-only',
@@ -499,7 +500,7 @@ describe('supportsV2ExecutableRuntime gate', () => {
       declarations: [],
       root: {
         nodes: [
-          { id: 'a', kind: 'AtomicStage', capability: { id: SKILL_PROPOSE, version: '1' } },
+          { id: 'a', kind: 'AtomicStage', capability: { id: SKILL_PROPOSE, version: '1' }, execution: TEST_EXECUTION },
           { id: 'finish', kind: 'Finish', outcome: 'done' },
         ],
         connections: [
@@ -510,8 +511,7 @@ describe('supportsV2ExecutableRuntime gate', () => {
     const result = EcpDefinitionModule.prepare(def, createCapabilityCatalogSnapshot(catalogDescriptors()));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Pure atomic v2 without composite/loop → unavailable (v1 path handles atomic)
-    expect(result.value.capability.executionMode).toBe('unavailable');
+    expect(result.value.capability.executionMode).toBe('reconciler');
   });
 });
 

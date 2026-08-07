@@ -17,6 +17,7 @@ import {
 } from '../../src/core/archive-engine.js';
 import { hashArchiveEvidence } from '../../src/core/archive-accounting.js';
 import { hashDirectoryTree } from '../../src/core/ephemera-cleaner.js';
+import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
 describe('archive plan/apply engine', () => {
   let root: string;
@@ -41,7 +42,7 @@ describe('archive plan/apply engine', () => {
   });
 
   afterEach(async () => {
-    await fs.rm(root, { recursive: true, force: true });
+    await cleanupTempPathAsync(root);
   });
 
   async function plan(

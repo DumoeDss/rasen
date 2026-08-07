@@ -33,9 +33,11 @@ export {
 } from './workflows/retro.js';
 export { getAutoCommandSkillTemplate } from './workflows/auto.js';
 export { getReviewCycleSkillTemplate } from './workflows/review-cycle.js';
+export { getReviewFixSkillTemplate } from './workflows/review-fix.js';
 export { getHandoffSkillTemplate } from './workflows/handoff.js';
 export { getGoalPlanSkillTemplate } from './workflows/goal-plan.js';
 export { getGoalIterateSkillTemplate } from './workflows/goal-iterate.js';
+export { getGoalJudgeSkillTemplate } from './workflows/goal-judge.js';
 export { getGoalReportSkillTemplate } from './workflows/goal-report.js';
 export { getGoalCommandSkillTemplate } from './workflows/goal-command.js';
 export { getAuditSkillTemplate } from './workflows/audit.js';
