@@ -260,5 +260,59 @@ describe('CLI: agent context --latest --runtime codex', () => {
     // Never the 200_000 conservative default: a percentage against a guessed
     // window is indistinguishable from a correct one.
     expect(parsed.limit).not.toBe(200_000);
+    // And the verdict is WITHHELD rather than answered against those
+    // placeholders. `shouldHandoff: false` here would have read as "plenty of
+    // room" for a session holding 124k tokens.
+    expect(parsed.window).toBe('unknown');
+    expect(parsed).not.toHaveProperty('shouldHandoff');
+  });
+
+  it('prints an unknown window as unknown, never as 0.0% full', async () => {
+    const ompPath = path.join(projectDir, 'omp-unknown-model-text.jsonl');
+    fs.writeFileSync(ompPath, ompSessionFile(projectDir, 'some-vendor/mystery-7b'), 'utf-8');
+
+    const result = await runCLI(['agent', 'context', '--transcript', ompPath], {
+      cwd: projectDir,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('context=124101/unknown');
+    expect(result.stdout).toContain('handoff undetermined');
+    // The two halves of the old contradiction: a zero fraction beside a real
+    // occupancy, and a confident verdict derived from it.
+    expect(result.stdout).not.toContain('(0.0%)');
+    expect(result.stdout).not.toContain('handoff not yet needed');
+    expect(result.stdout).not.toContain('handoff recommended');
+  });
+
+  it('leaves a Codex rollout with zero completed turns reporting its verdict', async () => {
+    // The discriminator's other side: `limit: 0` with `contextTokens: 0` is a
+    // measurable "nothing sent yet", and `cli-agent-context` requires its
+    // reading to stay byte-identical.
+    const rolloutPath = path.join(
+      codexHome,
+      'sessions',
+      '2026',
+      '08',
+      '07',
+      'rollout-2026-08-07T00-00-00-young.jsonl'
+    );
+    fs.mkdirSync(path.dirname(rolloutPath), { recursive: true });
+    fs.writeFileSync(
+      rolloutPath,
+      [sessionMeta(projectDir), turnContextLine('gpt-5.6-sol')].join('\n') + '\n',
+      'utf-8'
+    );
+
+    const result = await runCLI(['agent', 'context', '--transcript', rolloutPath, '--json'], {
+      cwd: projectDir,
+    });
+
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout.trim());
+    expect(parsed.contextTokens).toBe(0);
+    expect(parsed.limit).toBe(0);
+    expect(parsed).not.toHaveProperty('window');
+    expect(typeof parsed.shouldHandoff).toBe('boolean');
   });
 });

@@ -115,3 +115,107 @@ adds the long-missing `hermes` and the new `omp`, but nothing prevents the next
 drift: no test compares any published list against
 `getToolsWithSkillsDir()`. The registry-derived assertion added to
 `test/core/shared/tool-detection.test.ts` guards the code path, not the docs.
+
+
+## Found by adversarial verification (six independent slices)
+
+### FU-G — An empty detection directory counts as a detection, for every `detectionPaths` tool
+
+Findings: 1 open — pre-existing semantics this change inherits; narrowing it changes another tool.
+
+`getAvailableTools` (`src/core/available-tools.ts`) resolves a `detectionPaths`
+entry with `fs.statSync` and no emptiness check, so an EMPTY `.omp/skills/`
+reports Oh My Pi as configured. The consequences are the ones D2 exists to
+prevent: `rasen update` re-nudges forever once a user selects `omp` and later
+deletes the skills, and non-interactive `rasen init` with no `--tools` silently
+selects it.
+
+Tightening it was attempted and REVERTED: three pre-existing tests
+(`test/core/available-tools.test.ts`) create an EMPTY `.github/prompts`,
+`.github/agents` and `.github/skills` and assert `github-copilot` IS detected. So
+empty-directory detection is that tool's deliberate, pinned contract, and `omp`
+follows the precedent consistently. Narrowing it belongs to a change that owns
+`github-copilot`'s contract. `src/core/omp/project-context.ts` already carries the
+right predicate (`readdirSync(...).length > 0`) for the same question about the
+same directory, so the repair has a shape to copy.
+
+### FU-H — The Claude session locator does not confirm a candidate's recorded cwd
+
+Findings: 1 open — a latent pre-existing hazard this change's spec had to be narrowed around.
+
+`findLatestMainTranscript` (`src/core/agent-context.ts`) trusts the directory
+`claudeProjectsDir` derives and reads no recorded `cwd`. The slug is lossy —
+`/a/b.c` and `/a/b/c` produce the same name (verified) — and Claude transcripts DO
+record `cwd` (verified on a real transcript), so the confirmation step is
+implementable. Its `fs.statSync(full).mtimeMs` is also unguarded, throwing raw
+`ENOENT` on a raced deletion instead of `AgentContextUnavailableError`.
+
+This change originally stated its locator discipline as a registry-WIDE
+requirement that the Claude locator violates. The requirement was NARROWED to
+multi-layout runtimes rather than the code changed, because `cli-agent-context`
+requires Claude discovery to stay byte-identical and the proposal declares Claude
+probing unchanged. This entry owns the repair.
+
+### FU-I — `pnpm --dir packages/ui typecheck` does not run on a pull request
+
+Findings: 1 open — the reason this change's mirror guard needed two halves.
+
+`.github/workflows/ci.yml`'s `ui_build` job runs `install`, a four-file `vitest`
+subset, and `build` — not `typecheck`. Only `release.yml:48` runs that. Every
+compile-time-only guard in `packages/ui`, including the exhaustive
+`Record<ThresholdBindingRow, true>` added here, is therefore a release-time gate
+rather than a merge gate. The drift is still caught pre-merge by the root-side
+source-text guard added here, but `KNOWN_MODEL_IDS` (FU-5) reached a release
+precisely through this hole. One-line CI change, deferred because
+`test/release-workflow.test.ts` pins the release workflow's shape.
+
+### FU-J — `--limit 1.5` is truncated by the CLI before validation sees it
+
+Findings: 1 open — pre-existing; it makes one arm of a regression test unreachable end to end.
+
+`src/cli/index.ts` parses with `parseInt(v, 10)`, so `1.5` becomes `1` and
+`validateProbeLimit`'s integer check never fires. Measured: `--limit 1.5` on a real
+transcript reports `limit: 1` and `pct: 124101` — a 12,410,100% occupancy — while
+`--limit 0`, `-1` and `abc` correctly exit 1. Not in this change's diff. The repair
+is to parse with `Number(v)`.
+
+### FU-K — Terminal escapes in a directory name reach the terminal unfiltered
+
+Findings: 1 open — pre-existing CLI-wide class; this change adds one more site.
+
+The nested-install disclosure interpolates absolute paths into two `console.log`
+lines. A directory named with CSI/OSC sequences clears the screen and rewrites the
+terminal title when the warning prints, reachable from a hostile clone because the
+`.git` boundary is checked after the capture test.
+
+Verified NOT an inconsistency: no filesystem path is sanitized for console output
+anywhere in the CLI (`selectedProjectRoot`, `Machine home:` and the `RASEN_HOME`
+warning all interpolate raw), and `sanitizeInline` targets a different threat
+(forging instruction lines in agent guidance) with three content-only call sites.
+Scoping a fix to only this warning would CREATE an inconsistency; the repair is one
+`sanitizePathForDisplay` applied uniformly at the console boundary.
+
+### FU-L — One legacy prefix sweep can delete a user-authored skill
+
+Findings: 1 open — inherited behavior; the requirement admits no exception.
+
+`pruneRetiredExpertSkillDirs` (`src/core/legacy-cleanup.ts`) is a `readdir` +
+prefix scan on `openspec-gstack-` and is reached on the omp path from both `init`
+and `update`. A user-authored `.omp/skills/openspec-gstack-mine/` is removed. Every
+other deletion reaching that root is exact-name or ownership-ledger scoped and is
+safe. The behavior is inherited — it applies identically to `.claude/skills` and
+predates this change — but `omp-integration`'s "SHALL leave any non-`rasen-` skills
+untouched" is written absolute. Either narrow the requirement to name the rebrand
+sweep as a deliberate legacy exception, or give the sweep a manifest guard.
+
+### FU-M — The registered-but-capability-free registry arm now has no instance
+
+Findings: 1 open — an invariant left without a subject, not a behavior change.
+
+`runtime-adapter-registry` retains the scenario "A registered runtime with no
+capability is still recognized". `omp` was the only all-false entry; after the flip
+none exists (`zed` still carries `canAudit`), so `runtimesFor`'s behavior for such
+an adapter is untested against the shipped registry. The scenario is still a real
+forward contract. `test/core/runtimes/registry-enforcement.test.ts` already
+declares its own local registry in `HARNESS`, so it could carry a capability-free
+id without touching the shipped one.

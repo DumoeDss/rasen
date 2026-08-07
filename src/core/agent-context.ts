@@ -747,8 +747,45 @@ export interface HandoffThresholdReport {
    * threshold`; for the absolute `{ remainingTokens }` form, `remainingTokens
    * <= threshold.remainingTokens` (design D2, same direction as
    * `resolveStageHandoffConfig`'s handoff comparison).
+   *
+   * ABSENT when the probe could not measure the context window
+   * ({@link isUnmeasurableWindow}). Optional rather than `false` on purpose: at
+   * an unknown window BOTH comparisons answer wrongly — the fraction can never
+   * fire because `pct` is reported as `0`, and the absolute form always fires
+   * because `remainingTokens` is reported as `0`, which satisfies every
+   * headroom floor. `false` would be indistinguishable from a real
+   * below-threshold reading, so no verdict is reported at all.
    */
-  shouldHandoff: boolean;
+  shouldHandoff?: boolean;
+  /**
+   * `'unknown'` when the context window could not be resolved while real
+   * occupancy was measured, so a consumer can tell an unmeasurable window from
+   * an empty session. Absent when the window is known.
+   */
+  window?: 'unknown';
+}
+
+/**
+ * Whether a reading measured occupancy but not the window it occupies.
+ *
+ * `limit === 0` means "no window known" for every reader. It is reachable two
+ * ways, and they are NOT the same state:
+ *
+ * - A Codex rollout with zero completed turns reports `limit: 0` alongside
+ *   `contextTokens: 0`. Nothing was sent yet, so `pct: 0` and
+ *   `remainingTokens: 0` describe reality and the threshold comparison is
+ *   meaningful ("not near the limit" is true).
+ * - An Oh My Pi session whose model has no {@link MODEL_PRESETS} entry reports
+ *   `limit: 0` alongside REAL occupancy (design D8 — the alternative was
+ *   fabricating a 200 000-token window). Here `pct` and `remainingTokens` are
+ *   placeholders, not measurements.
+ *
+ * Discriminating on `contextTokens > 0` is what keeps the Codex young-rollout
+ * reading byte-identical to its pre-existing behavior, as `cli-agent-context`
+ * requires, while refusing to render a verdict for the case that has no answer.
+ */
+export function isUnmeasurableWindow(limit: number, contextTokens: number): boolean {
+  return limit === 0 && contextTokens > 0;
 }
 
 /**
@@ -768,12 +805,17 @@ export interface HandoffThresholdReport {
  * because resolving the store layer reads the store registry
  * (`resolveConfigStoreLayer`). Remains a probe: callers must not treat
  * `shouldHandoff` as a reason to change the exit code.
+ *
+ * `unmeasurableWindow` withholds the verdict entirely rather than reporting a
+ * comparison against placeholder figures — see {@link isUnmeasurableWindow} for
+ * why `false` would be the wrong answer, not a conservative one.
  */
 export async function resolveHandoffThresholdReport(
   pct: number,
   remainingTokens: number,
   runtimeOrCwd?: ProbeRuntime | string,
-  cwdArg?: string
+  cwdArg?: string,
+  unmeasurableWindow = false
 ): Promise<HandoffThresholdReport> {
   // A capability test, not an identity check: a runtime with no context
   // probe must not be mistaken for a working directory and leak into the
@@ -803,6 +845,16 @@ export async function resolveHandoffThresholdReport(
   });
   const threshold = selected.threshold;
   const thresholdSource = selected.source as HandoffThresholdSource;
+
+  if (unmeasurableWindow) {
+    return {
+      threshold,
+      thresholdSource,
+      window: 'unknown',
+      ...(selected.binding ? { binding: selected.binding } : {}),
+      ...(selected.diagnostics.length > 0 ? { diagnostics: selected.diagnostics } : {}),
+    };
+  }
 
   const shouldHandoff =
     typeof threshold === 'number'

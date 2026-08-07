@@ -326,7 +326,7 @@ These are different numbers for a reason; do NOT apply the handoff threshold to 
 - **Fraction** \`t\`: handoff fires at \`pct >= t\`; reuse permits at \`pct <= t\`.
 - **Absolute** \`{ remainingTokens: N }\`: handoff fires at \`remainingTokens <= N\`; reuse permits at \`remainingTokens >= N\`.
 
-A probe reporting \`limit: 0\` (no window known — e.g. a Codex rollout with zero completed turns) fires NEITHER form: a young rollout is by definition not near its limit, so treat the threshold as not-yet-fired and re-probe later.
+A probe reporting \`limit: 0\` means NO WINDOW IS KNOWN, and it has two causes you MUST distinguish by \`contextTokens\`. (a) \`contextTokens: 0\` too — a Codex rollout with zero completed turns: nothing was sent yet, so the session is by definition not near its limit; treat the threshold as not-yet-fired and re-probe later. (b) \`contextTokens\` NONZERO — an Oh My Pi session whose model has no known window: the occupancy is REAL and the window is unknown, so no fraction and no remaining-headroom figure exists. In that case the probe reports \`"window": "unknown"\` and OMITS \`shouldHandoff\` entirely; text mode prints \`context=<n>/unknown ... handoff undetermined\`. Branch on the PRESENCE of \`shouldHandoff\`, never on its falsiness: an absent verdict is UNMEASURED, not below-threshold. Route it to the H.1b unmeasured outcome — do not warm-continue on the strength of it, and do not read \`pct: 0\` as "nearly empty".
 
 **Counter table — every orchestration counter, what it counts, and its independence.** Several caps share the same default value; they are DISTINCT counters and never share a tally:
 

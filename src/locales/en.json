@@ -430,7 +430,7 @@
       "selectedProjectRoot": "Using Rasen root: project {project} ({path})",
       "staleProfileWorkflowsWarning": "Warning: dropping unknown workflow id(s) from stored profile: {workflows}",
       "unknownHostRuntimeWarning": "Warning: LEAD host runtime is unknown; using the legacy compatibility route. Set {override}=claude|codex for deterministic dispatch.",
-      "hostRuntimeWithoutDispatchAdapterWarning": "Warning: LEAD host runtime {host} has no dispatch adapter; using the legacy compatibility route. Set {override}=claude|codex for deterministic dispatch.",
+      "hostRuntimeWithoutDispatchAdapterWarning": "Warning: LEAD host runtime {host} has no dispatch adapter; using the legacy compatibility route. Set {override}=claude|codex for deterministic dispatch — note that the same override also redirects `rasen agent context --latest` to that runtime's session store, so this host's own occupancy is no longer what gets reported.",
       "noPipelinesFound": "No pipelines found.",
       "availablePipelinesHeading": "Available pipelines:",
       "pipelineTableEntry": "  {name}  [{source}]",
@@ -2613,13 +2613,13 @@
                   "description": "Use the newest main-session transcript for the current directory"
                 },
                 "dir": {
-                  "description": "Override the Claude projects directory used by --latest"
+                  "description": "Override the session store directory --latest searches (the Claude projects directory, Codex's sessions root, or Oh My Pi's sessions root, per the resolved runtime)"
                 },
                 "limit": {
                   "description": "Override the resolved context-window limit"
                 },
                 "runtime": {
-                  "description": "Force detection to \"claude\" or \"codex\" instead of sniffing the file"
+                  "description": "Force the runtime instead of sniffing the file: \"claude\", \"codex\", or \"omp\""
                 },
                 "json": {
                   "description": "Output as JSON"

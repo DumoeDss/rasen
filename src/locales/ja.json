@@ -430,7 +430,7 @@
       "selectedProjectRoot": "使用するRasenルート: プロジェクト {project} ({path})",
       "staleProfileWorkflowsWarning": "警告: 保存済みプロファイルから不明なワークフローIDを除外します: {workflows}",
       "unknownHostRuntimeWarning": "警告: LEADのホストruntimeを識別できないため、legacy互換ルートを使用します。決定的なdispatchには {override}=claude|codex を設定してください。",
-      "hostRuntimeWithoutDispatchAdapterWarning": "警告: LEADのホストruntime {host} にはdispatchアダプタがないため、legacy互換ルートを使用します。決定的なdispatchには {override}=claude|codex を設定してください。",
+      "hostRuntimeWithoutDispatchAdapterWarning": "警告: LEADのホストruntime {host} にはdispatchアダプタがないため、legacy互換ルートを使用します。決定的なdispatchには {override}=claude|codex を設定してください。ただしこの override は `rasen agent context --latest` の参照先セッションストアも指定した runtime に切り替えるため、以降はこのホスト自身の占有率が報告されなくなります。",
       "noPipelinesFound": "パイプラインが見つかりません。",
       "availablePipelinesHeading": "利用可能なパイプライン:",
       "pipelineTableEntry": "  {name}  [{source}]",
@@ -2613,13 +2613,13 @@
                   "description": "現在のディレクトリに対応する最新main-session transcriptを使用します"
                 },
                 "dir": {
-                  "description": "--latestが使用するClaude projectsディレクトリを上書きします"
+                  "description": "--latest が検索するセッションストアのディレクトリを上書きします（解決された runtime に応じて Claude projects ディレクトリ、Codex の sessions ルート、Oh My Pi の sessions ルート）"
                 },
                 "limit": {
                   "description": "解決済みcontext window上限を上書きします"
                 },
                 "runtime": {
-                  "description": "ファイル判定を使わず \"claude\" または \"codex\" を指定します"
+                  "description": "ファイル判定を使わず runtime を指定します：\"claude\"、\"codex\"、\"omp\""
                 },
                 "json": {
                   "description": "JSONで出力します"

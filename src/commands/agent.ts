@@ -23,6 +23,7 @@ import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
+  isUnmeasurableWindow,
   probeAgentContextSafe,
   resolveHandoffThresholdReport,
   type AgentContextResult,
@@ -297,10 +298,16 @@ export class AgentCommand {
       return;
     }
 
+    // An unmeasurable window makes `pct` and `remainingTokens` placeholders
+    // rather than measurements, so the verdict layer is told to withhold rather
+    // than compare against them.
+    const unmeasurableWindow = isUnmeasurableWindow(result.limit, result.contextTokens);
     const handoff = await resolveHandoffThresholdReport(
       result.pct,
       result.remainingTokens,
-      result.runtime
+      result.runtime,
+      undefined,
+      unmeasurableWindow
     );
     for (const diagnostic of handoff.diagnostics ?? []) {
       console.warn(diagnostic.message);
@@ -311,14 +318,21 @@ export class AgentCommand {
       return;
     }
 
-    const pctDisplay = (result.pct * 100).toFixed(1);
     const thresholdDisplay = formatThresholdDisplay(handoff.threshold);
     const comparator = typeof handoff.threshold === 'number' ? '>=' : 'remaining <=';
-    const handoffVerdict = handoff.shouldHandoff
-      ? `handoff recommended (${comparator} ${thresholdDisplay}, ${handoff.thresholdSource})`
-      : `handoff not yet needed (${comparator} ${thresholdDisplay} not met, ${handoff.thresholdSource})`;
+    // `unknown` rather than `/0 (0.0%)`: printing a zero fraction beside a real
+    // occupancy reads as "empty" and contradicts the withheld verdict.
+    const occupancyDisplay = unmeasurableWindow
+      ? `context=${result.contextTokens}/unknown`
+      : `context=${result.contextTokens}/${result.limit} (${(result.pct * 100).toFixed(1)}%) remaining=${result.remainingTokens}`;
+    const handoffVerdict =
+      handoff.shouldHandoff === undefined
+        ? `handoff undetermined (context window unknown for model ${result.model}; ${thresholdDisplay} cannot be evaluated)`
+        : handoff.shouldHandoff
+          ? `handoff recommended (${comparator} ${thresholdDisplay}, ${handoff.thresholdSource})`
+          : `handoff not yet needed (${comparator} ${thresholdDisplay} not met, ${handoff.thresholdSource})`;
     console.log(
-      `runtime=${result.runtime} model=${result.model} context=${result.contextTokens}/${result.limit} (${pctDisplay}%) remaining=${result.remainingTokens} transcript=${result.transcript} ${handoffVerdict}`
+      `runtime=${result.runtime} model=${result.model} ${occupancyDisplay} transcript=${result.transcript} ${handoffVerdict}`
     );
   }
 
@@ -591,6 +605,12 @@ export class AgentCommand {
     console.log(JSON.stringify(outcome));
   }
 
+  /**
+   * The probe receipt. `shouldHandoff` is omitted and `window: 'unknown'` is
+   * emitted instead when the reading measured occupancy but not the window it
+   * occupies, so a consumer branches on the field's PRESENCE rather than
+   * mistaking a withheld verdict for a below-threshold one.
+   */
   private toJson(
     result: AgentContextResult,
     handoff: HandoffThresholdReport
@@ -605,7 +625,8 @@ export class AgentCommand {
     transcript: string;
     threshold: ThresholdValue;
     thresholdSource: string;
-    shouldHandoff: boolean;
+    shouldHandoff?: boolean;
+    window?: 'unknown';
   } {
     return {
       available: true,
@@ -618,7 +639,8 @@ export class AgentCommand {
       transcript: result.transcript,
       threshold: handoff.threshold,
       thresholdSource: handoff.thresholdSource,
-      shouldHandoff: handoff.shouldHandoff,
+      ...(handoff.shouldHandoff === undefined ? {} : { shouldHandoff: handoff.shouldHandoff }),
+      ...(handoff.window === undefined ? {} : { window: handoff.window }),
     };
   }
 }

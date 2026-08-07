@@ -597,10 +597,40 @@ describe('agent-context', () => {
       const sessions = writeOmpSessionsTree({
         'home-project-abc': [{ name: 'ours.jsonl', cwd: PROJECT }],
       });
-      const messy = path.join(PROJECT, '..', 'project');
+      // A TRAILING SEPARATOR, not `..`: `path.join(PROJECT, '..', 'project')`
+      // collapses to PROJECT before the locator ever sees it, so the assertion
+      // would hold even with both `path.resolve` calls deleted. `PROJECT + sep`
+      // is not string-equal to the recorded cwd and only survives if the
+      // comparison really resolves both sides.
+      const messy = PROJECT + path.sep;
+      expect(messy).not.toBe(PROJECT);
       expect(findLatestOmpSession(sessions, messy)).toBe(
         path.join(sessions, 'home-project-abc', 'ours.jsonl')
       );
+    });
+
+    it('skips a non-regular file without reading it, so a device cannot hang the scan', () => {
+      // The Dirent `isFile()`/`isDirectory()` filter is load-bearing and easy to
+      // destroy: `fs.statSync(full).isFile()` looks equivalent but FOLLOWS
+      // symlinks, which would hand `readOmpSessionCwd`'s openSync a character
+      // device and never return. Mirrors the existing "refuses to read a target
+      // that is not a regular file" guard added for `agent audit`.
+      const sessions = writeOmpSessionsTree({
+        'home-project-abc': [{ name: 'ours.jsonl', cwd: PROJECT, mtimeMs: 1_000 }],
+      });
+      const bucket = path.join(sessions, 'home-project-abc');
+      // A directory that looks like a session file, and a bucket-level symlink loop.
+      fs.mkdirSync(path.join(bucket, 'looks-like.jsonl'), { recursive: true });
+      fs.symlinkSync(path.join(sessions, 'loopB'), path.join(sessions, 'loopA'));
+      fs.symlinkSync(path.join(sessions, 'loopA'), path.join(sessions, 'loopB'));
+      if (process.platform !== 'win32') {
+        // Newer than the real session, so an unfiltered scan would reach it first.
+        fs.symlinkSync('/dev/zero', path.join(bucket, 'devzero.jsonl'));
+      }
+
+      const started = Date.now();
+      expect(findLatestOmpSession(sessions, PROJECT)).toBe(path.join(bucket, 'ours.jsonl'));
+      expect(Date.now() - started).toBeLessThan(2_000);
     });
 
     it('throws AgentContextUnavailableError when the sessions root is missing', () => {
@@ -1495,5 +1525,59 @@ describe('resolveHandoffThresholdReport', () => {
 
     expect(result).toEqual({ threshold: 0.7, thresholdSource: 'store', shouldHandoff: true });
     fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  describe('an unmeasurable context window withholds the verdict', () => {
+    // The defect this pins: at `limit === 0` the reader reports `pct: 0` and
+    // `remainingTokens: 0` as PLACEHOLDERS, not measurements. Compared against a
+    // threshold, the fraction form can then never fire and the absolute form
+    // always fires — so a session at real occupancy was reported both as "0.0%
+    // full, handoff not yet needed" and, under an absolute threshold, as
+    // "handoff recommended" from its first turn. Neither is an answer.
+    it('is detected only when occupancy is real, so a young rollout is unaffected', async () => {
+      const { isUnmeasurableWindow } = await import('../../src/core/agent-context.js');
+      // Oh My Pi on a model with no preset: occupancy measured, window not.
+      expect(isUnmeasurableWindow(0, 124_101)).toBe(true);
+      // A Codex rollout with zero completed turns: nothing sent yet, so the
+      // zeros describe reality and its reading must stay byte-identical.
+      expect(isUnmeasurableWindow(0, 0)).toBe(false);
+      // A known window is always measurable.
+      expect(isUnmeasurableWindow(1_000_000, 124_101)).toBe(false);
+      expect(isUnmeasurableWindow(1_000_000, 0)).toBe(false);
+    });
+
+    it('omits shouldHandoff and reports window unknown for a fraction threshold', async () => {
+      const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
+      const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-unmeas-frac-'));
+      // pct/remainingTokens are the placeholders the reader emits at limit 0.
+      const result = await resolveHandoffThresholdReport(0, 0, outside, undefined, true);
+      expect(result).toEqual({
+        threshold: 0.5,
+        thresholdSource: 'default',
+        window: 'unknown',
+      });
+      expect(result.shouldHandoff).toBeUndefined();
+      fs.rmSync(outside, { recursive: true, force: true });
+    });
+
+    it('omits shouldHandoff for an absolute threshold that a 0 remaining would always satisfy', async () => {
+      const { saveGlobalConfig } = await import('../../src/core/global-config.js');
+      saveGlobalConfig({ handoff: { threshold: { remainingTokens: 60_000 } } } as never);
+      const { resolveHandoffThresholdReport } = await import('../../src/core/agent-context.js');
+      const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-agentctx-unmeas-abs-'));
+
+      // Measurable control: 0 <= 60_000 fires, which is exactly why the
+      // unmeasurable case must not reach this comparison.
+      const measurable = await resolveHandoffThresholdReport(0, 0, outside);
+      expect(measurable.shouldHandoff).toBe(true);
+
+      const unmeasurable = await resolveHandoffThresholdReport(0, 0, outside, undefined, true);
+      expect(unmeasurable).toEqual({
+        threshold: { remainingTokens: 60_000 },
+        thresholdSource: 'global',
+        window: 'unknown',
+      });
+      fs.rmSync(outside, { recursive: true, force: true });
+    });
   });
 });

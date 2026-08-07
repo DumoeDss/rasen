@@ -62,7 +62,7 @@ Rejected: `skillsHome: 'global'` pointing at `~/.omp/agent/skills`. It is a real
 
 ### D2 — Detection names content inside `.omp/`, never the bare directory
 
-`getAvailableTools` (`src/core/available-tools.ts:36-39`) treats an existing `skillsDir` directory as a detection. An empty `.omp/` exists in this very repository, so a bare-directory rule would report Oh My Pi as detected here — and `detectNewTools` (`src/core/update.ts:779-800`) would nudge on every `rasen update`. `detectionPaths` is the existing escape hatch (`github-copilot` precedent, `src/core/config.ts:55`); populate it with real Oh My Pi content paths (`.omp/skills`, `.omp/AGENTS.md`, `.omp/RULES.md`, `.omp/config.yml`, `.omp/commands`, `.omp/agents`, `.omp/mcp.json`).
+`getAvailableTools` (`src/core/available-tools.ts:36-39`) treats an existing `skillsDir` directory as a detection. An empty `.omp/` exists in this very repository, so a bare-directory rule would report Oh My Pi as detected here — and `detectNewTools` (`src/core/update.ts:779-800`) would nudge on every `rasen update`. `detectionPaths` is the existing escape hatch (`github-copilot` precedent, `src/core/config.ts:55`); populate it with real Oh My Pi content paths (`.omp/skills`, `.omp/AGENTS.md`, `.omp/RULES.md`, `.omp/settings.json`, `.omp/config.yml`, `.omp/commands`, `.omp/agents`, `.omp/mcp.json`). Both settings spellings are listed because Oh My Pi's native provider reads `settings.json` then `config.yml` (`omp://config-usage.md:256`) — this resolves Open Question 1 in favor of the broader list.
 
 ### D3 — No project-config reconciler for Oh My Pi
 
@@ -111,7 +111,9 @@ Claude's `sumUsage` (`src/core/agent-context.ts:115-121`) is `input_tokens + cac
 
 The reader therefore uses `resolveModelPreset(model)?.contextWindow ?? 0` and, at `limit === 0`, reports `pct: 0`. This is not new behavior in the codebase: the Codex branch already returns `limit: 0` when no window was ever reported (`agent-context.ts:267-278`), for the same reason.
 
-Consequence to accept: an Oh My Pi session on a model outside `MODEL_PRESETS` gets occupancy and no fraction, so fraction-based handoff thresholds do not fire for it while absolute `remainingTokens` thresholds also cannot (remaining is `0` at an unknown limit). That is honest unavailability, and it is visible; a wrong percentage would not be.
+Consequence to accept: an Oh My Pi session on a model outside `MODEL_PRESETS` gets occupancy and no window. **Corrected during verification — the original wording here was factually inverted.** The two threshold forms fail in OPPOSITE directions, not both silently: a fraction threshold can never fire, because `pct` is reported as `0`; an absolute `{ remainingTokens }` threshold ALWAYS fires, because `remainingTokens` is reported as `0` and `0 <= N` holds for every headroom floor. Reproduced end to end: a 510-token Oh My Pi session on an unlisted model reported `shouldHandoff: true` against `{ remainingTokens: 60000 }`, and a 124k-token one reported `handoff not yet needed` against the default `0.5`.
+
+So "honest unavailability, and it is visible" was wrong too: both figures are placeholders that read as measurements. The window being unknown must therefore be carried into the verdict layer rather than left to a comparison — `isUnmeasurableWindow(limit, contextTokens)` (`limit === 0 && contextTokens > 0`) gates it, `shouldHandoff` is OMITTED and `window: 'unknown'` reported instead, and text mode prints `context=<n>/unknown ... handoff undetermined`. The discriminator is `contextTokens > 0` so a Codex rollout with zero completed turns — the only pre-existing `limit: 0` producer, where the zeros are truthful — keeps its reading byte-identical, as `cli-agent-context` requires.
 
 ### D9 — Model id comes from the message, with `model_change` as the fallback
 

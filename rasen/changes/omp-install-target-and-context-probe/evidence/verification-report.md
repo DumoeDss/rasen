@@ -1,346 +1,346 @@
 # Verification Report: omp-install-target-and-context-probe
 
-Schema: spec-driven. Verified against 7 delta specs, `design.md` (D1–D14), and
+Schema: spec-driven. Verified against 7 delta specs (20 requirements, **61
+scenarios, each individually adjudicated**), `design.md` (D1–D14), and
 `tasks.md` (55 tasks).
 
-**Open follow-ups travel in a sibling file.** The verdict below is CLEAN, which
-means no Blocker and no Major is open — it does NOT mean nothing is left. Six
-deferred items are recorded in `evidence/deferred-followups-report.md`, including
-the two slices this change deliberately excludes (Oh My Pi token auditing and
-worker dispatch) and the four `runtime-adapter-interface-extraction` follow-ups
-they own. `rasen archive` counts that file's entries into the archived
-`.openspec.yaml` `quality.metrics` and hashes it into `archive.json`; **read it
-before treating this change as closed.**
+**Author ≠ verifier.** The implementer wrote this change, so an earlier
+self-written report asserting CLEAN was replaced by this one. All 61 scenarios
+were re-adjudicated by six independent adversarial readers instructed to treat
+that report as a claim, not proof, and to find what it got wrong. They found a
+**Blocker the author's own verification had missed**, plus five Majors. Every
+Blocker and Major below was reproduced by hand on the shipped build before being
+accepted, and every one is now fixed.
+
+**Open follow-ups travel in a sibling file.** The verdict is CLEAN, which means
+no Blocker and no Major is open — it does NOT mean nothing is left. Thirteen
+deferred items are recorded in `evidence/deferred-followups-report.md` (FU-A…FU-M),
+seven of them surfaced by this verification. `rasen archive` counts that file's
+entries into `quality.metrics` and hashes it into `archive.json`; **read it before
+treating this change as closed.**
 
 ## Summary
 
 | Dimension | Status |
 |---|---|
-| Completeness | 55/55 tasks; both slices delivered and independently smoke-tested |
-| Correctness | Install and probe verified end-to-end against live `omp` v17.2.10 |
-| Coherence | 4 design deviations, all recorded as ADRs below |
+| Completeness | 55/55 tasks; 20/20 requirements implemented |
+| Correctness | 61/61 scenarios adjudicated; 1 Blocker + 5 Majors found and fixed |
+| Coherence | D1–D14: 13 followed, 1 deviated with an ADR now added; 4 original ADRs all survived adversarial re-measurement |
 | Regression | Claude / Codex / unknown-host probe output byte-identical to the pre-change build |
 
-Premise: all live evidence was taken against `omp/17.2.10` on darwin/arm64,
-recorded as `OMP_CLI_VERSION_PREMISE` in `src/core/omp/omp-home.ts`. The design's
-evidence table was captured against 17.2.9; every fact it asserts was re-verified
-here, and the two that had CHANGED are called out in ADR-1.
+Premise: `omp/17.2.10` on darwin/arm64, recorded as `OMP_CLI_VERSION_PREMISE`.
 
-## ADR-1 — The bucket-layout evidence got stronger, not weaker
+## Verification method
 
-`design.md` justified D6 (scan every bucket, confirm each header `cwd`) with a
-live observation: two buckets existed for this repository —
-`home-rasen-0a97387b…` (hashed, current layout, newest session 2026-08-05) and
-`-SyncLocal-rasen` (legacy home-relative, newest 2026-08-06) — so a locator that
-derived one bucket name would read the hashed one and report a day-old session.
+Six concurrent slices, each with a disjoint scope and a mandate to attack rather
+than confirm:
 
-Re-measured on 2026-08-07, the hashed bucket **no longer exists at all**:
+| Slice | Scope | Result |
+|---|---|---|
+| InstallSpecs | `adapted-agent-visibility`, `ai-tool-paths`, `cli-init`, `omp-integration` (32 scenarios) | 0 Blocker, 0 Major, 4 Minor |
+| ProbeSpecs | `omp-session-probe`, `runtime-adapter-registry` (19 scenarios) | 0 Blocker, 1 Major, 4 Minor, 1 Trivial |
+| ContextSpec | `cli-agent-context` (10 scenarios) | **1 Blocker**, 2 Major, 1 Minor, 2 Trivial |
+| DesignAdherence | D1–D14, the four ADRs, the Evidence table | 0 Blocker, 0 Major, 2 Minor, 3 Trivial |
+| CodeQuality | branch diff as code, test quality | **1 Blocker** (same), 2 Major, 6 Minor/Trivial |
+| SecurityAudit | new filesystem + environment handling | 0 Blocker, 0 Major, 3 Minor |
 
-```
-$ for d in ~/.omp/agent/sessions/*/; do ... done
-bucket=-SyncLocal-rasen                                   files=13  newest=2026-08-07T00-58-31-209Z_019fd9ba-…jsonl
-bucket=home-AlertCheck-2e3f4e9d60da9969eecdfa0f8a704ae7…  files=2
-bucket=home-kumo-524c7048c28c068960ca10eee8d987471350e0…  files=2
-bucket=home-xard-devtools-302e0db373c26b588877ad7b5e886…  files=4
-bucket=home-xard-management-console-0d6bc3315e2015d1ed5…  files=1
+Three slices converged independently on the same Blocker, from three different
+directions (spec scenario, code review, and the author's own parallel check).
 
-$ printf '%s' "/Users/boao.zeng/SyncLocal/rasen" | sha256sum | cut -c1-16
-0a97387b3087316e
-$ ls -d ~/.omp/agent/sessions/*0a97387b*
-ls: No such file or directory
-```
+## Blocker (found, reproduced, fixed)
 
-So the naive derivation does not merely return a stale session for this
-repository — it returns **absence** for a session that is running. Both bucket
-layouts still coexist on the machine (`-SyncLocal-rasen` legacy beside four
-`home-<basename>-<sha256>` hashed ones), which is the condition D6 exists for.
-D6 is therefore upheld with stronger evidence; only the design's specific
-sentence about which bucket held which date is stale.
+### B1 — An unknown context window produced a confident, wrong handoff verdict
 
-## ADR-2 — The locator orders candidates globally, not per bucket
-
-`design.md` D6's pseudocode takes **each bucket's newest** `.jsonl`, then the
-newest of those. `findLatestOmpSession` instead orders every candidate across
-every bucket newest-mtime-first and stops at the first cwd match.
-
-Reason: `omp://session.md:45` states that colliding legacy buckets are split by
-the cwd recorded in each session header during migration — i.e. one legacy bucket
-CAN hold two directories' sessions. Under the per-bucket rule, a mixed bucket
-whose newest file belongs to another directory hides our older session in the same
-bucket, and the locator reports absence. That violates the `omp-session-probe`
-scenario "The newest session wins across bucket layouts" and the
-`runtime-adapter-registry` scenario "the newest qualifying session SHALL be
-selected regardless of which layout holds it".
-
-Global ordering satisfies both, is the shape `findLatestRollout` already uses for
-Codex, and costs the same in the common case (the newest file on the machine is
-usually the caller's own, so one header is read). Pinned by
-`test/core/agent-context.test.ts` → "finds our older session when a mixed bucket
-holds a newer foreign one".
-
-## ADR-3 — Subagent journals are excluded by DEPTH, and the design never mentioned them
-
-Not in `design.md`'s evidence at all. Oh My Pi writes each subagent's journal to
-`<bucket>/<lead session basename>/<AgentName>.jsonl`:
+**What was wrong.** `computeContextFromOmpSession` reports `limit: 0` when the
+model has no `MODEL_PRESETS` entry (design D8, deliberately preferring that to a
+fabricated 200 000). At `limit === 0` the reader also reports `pct: 0` and
+`remainingTokens: 0` — and those two are PLACEHOLDERS, not measurements. They
+flowed unchanged into `resolveHandoffThresholdReport`, where both threshold forms
+then answer wrongly, in OPPOSITE directions:
 
 ```
-$ find ~/.omp/agent/sessions -mindepth 3 -name '*.jsonl' | head -3
-…/-SyncLocal-rasen/2026-08-06T05-28-17-995Z_019fd58b-…/PlaybookSweep.jsonl
-…/-SyncLocal-rasen/2026-08-06T05-28-17-995Z_019fd58b-…/ArchiveHooks.jsonl
-…/-SyncLocal-rasen/2026-08-06T05-28-17-995Z_019fd58b-…/VerifyBridgeAndPresets.jsonl
-
-$ head -c 200 …/PlaybookSweep.jsonl
-{"type":"title","v":1,…}
-{"type":"session","version":3,"id":"019fd5b7-…","cwd":"/Users/boao.zeng/SyncLocal/rasen"}
+$ # unlisted model, 510 tokens occupied, project sets handoff.threshold {remainingTokens: 60000}
+$ rasen agent context --latest --json
+{...,"contextTokens":510,"limit":0,"pct":0,"remainingTokens":0,
+ "threshold":{"remainingTokens":60000},"shouldHandoff":true}      <-- fires at 510 tokens
+$ rasen agent context --latest        # default fraction threshold 0.5
+runtime=omp ... context=124101/0 (0.0%) remaining=0 ... handoff not yet needed   <-- never fires at 124k
 ```
 
-A subagent journal records the **same** `cwd` and the **same** header shape as its
-LEAD, so it is indistinguishable by content — and its mtime can be newer than the
-LEAD's. A recursive scan would therefore sometimes report a subagent's occupancy
-as the LEAD's: exactly the wrong-answer class `detect-omp-host-runtime` removed,
-reintroduced through a different door.
+- Fraction form: `pct >= threshold` can never fire, because `pct` is always `0`.
+- Absolute form: `remainingTokens <= N` ALWAYS fires, because `0 <= N` for every
+  headroom floor — from the session's first completed turn onward.
 
-`findLatestOmpSession` considers only files DIRECTLY under a bucket. This is the
-Oh My Pi analog of `findLatestMainTranscript` excluding `agent-*.jsonl`, achieved
-by depth rather than by name because Oh My Pi's names carry no marker. Pinned by
-"never returns a subagent journal, which records the LEAD cwd and header".
+**Why it is a regression, not a pre-existing gap.** At base `ad650853`,
+`canProbeContext` was `false` for `omp`, so probing an Oh My Pi session exited
+NON-ZERO and the orchestration playbook's H.1b arm governed: *"treat that
+worker's occupancy as UNMEASURED — do not warm-continue on the strength of an
+unmeasured probe."* After the flip the same probe returns `available: true,
+pct: 0`, so H.2 governs instead: *"Below its resolved threshold → continue
+warm."* A decision that was explicitly guarded became a decision taken on a zero
+that describes nothing.
 
-## ADR-4 — Flipping `canProbeContext` was NOT sufficient; the implicit path needed routing
+**Why the author's verification missed it.** The live smoke test ran on
+`claude-opus-5`, which HAS a preset. `MODEL_PRESETS` has ten match strings and
+covers no Gemini, GLM, DeepSeek, Kimi, Grok, Qwen, Llama or Mistral id — nor
+`claude-sonnet-4-5`, `gpt-4.1` or `o3`. Oh My Pi routes to dozens of providers,
+so the unmeasurable case is the COMMON one, not an edge case. No test paired
+`limit: 0` with a threshold; the existing absolute-threshold test uses
+`remainingTokens = 50_000`.
 
-The design assumed the capability flip plus a registered locator and reader would
-make `rasen agent context --latest` work inside Oh My Pi. It does not.
-`resolveTranscriptPath` locates through `SESSION_STORES[runtime ?? SNIFF_FALLBACK_RUNTIME]`,
-and an inferred `--latest` passes no runtime — so after the flip an Oh My Pi host
-stopped being refused and started silently reading the **Claude** store, which is
-the original defect wearing a success shape. The first run of the reworked task-9.1
-test caught it:
+**Aggravating factor.** The shipped playbook told the LEAD to disregard the one
+tell. `_orchestration.ts:329` read: *"A probe reporting `limit: 0` (no window
+known — e.g. a Codex rollout with zero completed turns) fires NEITHER form: a
+young rollout is by definition not near its limit, so treat the threshold as
+not-yet-fired and re-probe later."* That rationale is sound for the only
+pre-existing producer of `limit: 0`, where `contextTokens` is also 0. This change
+created a second producer with the opposite meaning and left the line untouched.
+Design D8 claimed the consequence was *"honest unavailability, and it is
+visible"* — it was visible in neither the fraction channel, the verdict clause,
+nor the playbook.
 
-```
-- Expected: StringContaining "No Oh My Pi session found under"
-+ Received: "No main-session transcript (*.jsonl) found in …/omp-sessions-empty…"
-```
+**Fix.** The unknown window is now carried into the verdict layer instead of
+being left to a comparison against placeholders:
 
-Fix: `probeAgentContext` now separates *which store locates* from *which reader
-reads*. `implicitLatestStoreRuntime` returns the detected host when it is
-probe-capable, so the host's own store answers; the reader stays a recognition
-decision keyed off the explicit `--runtime` only, so nothing about how a located
-file is measured changes with the host it was found from.
+- `isUnmeasurableWindow(limit, contextTokens)` = `limit === 0 && contextTokens > 0`
+  (`src/core/agent-context.ts`). The `contextTokens > 0` discriminator is what
+  keeps a Codex rollout with zero completed turns byte-identical, as
+  `cli-agent-context` requires — there the zeros are truthful.
+- `HandoffThresholdReport.shouldHandoff` became OPTIONAL and is ABSENT when
+  unmeasurable; `window: 'unknown'` is reported instead. Optional rather than
+  `false` on purpose: `false` is indistinguishable from a real below-threshold
+  reading.
+- `agent context --json` omits `shouldHandoff` and emits `window: "unknown"`, so
+  a consumer branches on PRESENCE.
+- Text mode prints `context=510/unknown ... handoff undetermined (context window
+  unknown for model X; ... cannot be evaluated)` instead of the contradictory
+  `context=510/0 (0.0%) ... handoff recommended`.
+- `_orchestration.ts:329` now names both causes, tells the LEAD to branch on
+  `shouldHandoff`'s presence rather than its falsiness, and routes an absent
+  verdict to the H.1b unmeasured outcome.
+- Design D8's consequence paragraph is corrected in place, marked as corrected
+  during verification.
 
-`codex` is pinned to the legacy fallback by `LEGACY_LATEST_STORE_HOSTS` because
-`cli-agent-context`'s "Hosts with a probe adapter are unaffected" scenario —
-pre-existing in the main spec, carried into the delta unchanged — requires a
-Claude or Codex host's implicit discovery to stay byte-identical. `claude` needs no
-pin: its own store IS the fallback. The pin is defended by its own test and
-recorded as FU-C for the change that should remove it.
-
-## Task 12.1 — Install smoke test
-
-```
-$ rm -rf /tmp/omp-smoke && mkdir -p /tmp/omp-smoke && cd /tmp/omp-smoke && git init -q .
-$ node dist/cli/index.js init --tools omp --force
-Rasen Setup Complete
-Created: Oh My Pi
-33 skills in .omp/
-Config: rasen/config.yaml (schema: spec-driven)
-
-$ ls .omp/skills | wc -l
-34
-$ head -3 .omp/skills/rasen-apply-change/SKILL.md
----
-name: rasen-apply-change
-description: Implement tasks from a Rasen change. Use when the user wants to start implementing, …
-$ ls -d .omp/commands
-ls: cannot access '.omp/commands': No such file or directory
-```
-
-Non-empty `description` front matter is present, which is what Oh My Pi's
-`native` provider requires (`requireDescription: true`). No command directory was
-created — D4's deliberate absence holds in practice.
-
-Discovery and invocability confirmed by starting Oh My Pi in that directory:
+Verified after the fix:
 
 ```
-$ omp --version
-omp/17.2.10
-$ omp -p --no-session "List every skill name you can discover that starts with 'rasen-'. …"
-rasen-apply-change
-rasen-archive-change
-… (32 names)
-rasen-workflow-review
-
-$ omp -p --no-session "Read skill://rasen-apply-change and report ONLY … the absolute path …"
-/private/tmp/omp-smoke/.omp/skills/rasen-apply-change/SKILL.md
-Implement tasks from a Rasen change. Use when the
+$ # the reproduction above, re-run
+{...,"contextTokens":510,"limit":0,"pct":0,"remainingTokens":0,
+ "threshold":{"remainingTokens":60000},"window":"unknown"}        <-- no shouldHandoff
+runtime=omp ... context=510/unknown ... handoff undetermined (...)
 ```
 
-The resolved path is the project-local root Rasen wrote, so the skill is
-discovered at the highest precedence Oh My Pi offers and `skill://rasen-<workflow>`
-resolves to it. (`omp` has no `skills list` subcommand; a headless prompt is the
-available observation of its own discovery.)
+Pinned by 5 new tests: `isUnmeasurableWindow`'s four cases (including the Codex
+`0/0` false), the withheld verdict for both threshold forms, the e2e JSON shape
+(`window: 'unknown'` present, `shouldHandoff` absent), the e2e text shape, and a
+Codex young-rollout control asserting `shouldHandoff` is still a boolean.
 
-## Task 12.2 — Probe smoke test from a live Oh My Pi session
+## Majors (found, reproduced, fixed)
 
-Run from this repository, inside the live session that authored the change:
+### M1 — The delta spec mandated own-store routing for every probe-capable host
 
-```
-$ node dist/cli/index.js agent context --latest --json
-{"available":true,"runtime":"omp","model":"claude-opus-5","contextTokens":433793,
- "limit":1000000,"pct":0.433793,"remainingTokens":566207,
- "transcript":"/Users/boao.zeng/.omp/agent/sessions/-SyncLocal-rasen/2026-08-07T00-58-31-209Z_019fd9ba-93a9-7000-bbce-24ba3465849b.jsonl",
- "threshold":0.5,"thresholdSource":"default","shouldHandoff":false}
-```
+`specs/cli-agent-context/spec.md:7` stated that when a harness has a probe
+adapter *"the implicit path SHALL locate that harness's own newest session"* —
+while the same requirement's own scenario requires a Codex host's discovery to
+stay byte-identical, and `LEGACY_LATEST_STORE_HOSTS = ['codex']` deliberately
+pins it to the fallback store. Measured: with a Codex rollout present for the
+probe cwd, a `CODEX_THREAD_ID` host still answers from the Claude projects
+directory. So the scenario passed while the requirement prose was false, in the
+same requirement — and on merge the shipped spec would carry a SHALL no code
+satisfies. ADR-4 and FU-C both explain the pin; neither noticed the sentence was
+broader than the behavior.
 
-Three things are verified, not asserted:
+Fixed: the sentence now names the pin as a stated exception.
 
-1. **`transcript` names the bucket actually in use.** `-SyncLocal-rasen` is the
-   legacy layout — the only bucket holding this repository's sessions (ADR-1), and
-   the one containing today's session. Not another layout's, and not a
-   derived-name guess, which would have found nothing.
+### M2 — Design D8's stated consequence was factually inverted
 
-2. **`contextTokens` is the session's own arithmetic.** The figure matches a real
-   row's `input + cacheRead + cacheWrite` exactly:
+D8 claimed *"fraction-based handoff thresholds do not fire for it while absolute
+`remainingTokens` thresholds also cannot (remaining is `0` at an unknown
+limit)"*. Remaining being `0` makes every absolute threshold fire, not none.
+Found independently by the author's own pass and by two slices, reproduced end to
+end. Fixed alongside B1.
 
-   ```
-   $ jq -r 'select(.type=="message" and .message.usage!=null)
-            | "\(.message.usage.input + .message.usage.cacheRead + .message.usage.cacheWrite)\ttotal=\(.message.usage.totalTokens)"' "$f" \
-       | grep -n '^433793'
-   328:433793	total=434068
-   ```
+### M3 — An ADDED registry requirement the shipped Claude locator violates
 
-3. **It is NOT `totalTokens`.** That row's `totalTokens` is 434068 — 275 higher,
-   its output — and no row in the file carries `totalTokens == 433793`:
-
-   ```
-   $ jq -r '… .message.usage.totalTokens' "$f" | grep -c '^433793$'
-   0
-   ```
-
-   So the reported occupancy cannot have come from the trap field. D7 verified
-   against a live file, not a fixture.
-
-`model: claude-opus-5` is the bare id from the measured message, and
-`limit: 1000000` is its `MODEL_PRESETS` window (`opus-5`) — not the
-`DEFAULT_CONTEXT_LIMIT` fallback.
-
-## Task 12.3 — Claude and Codex regression check
-
-A pre-change build was produced from the merge base in a separate worktree
-(`git worktree add /tmp/rasen-baseline ad650853`, then `pnpm run build`) and the
-two builds compared on identical inputs:
+`specs/runtime-adapter-registry/spec.md` added *"A runtime's declared session
+locator SHALL … confirm each candidate against the working directory the session
+itself recorded"* — stated over ANY locator. `findLatestMainTranscript` does not:
+it trusts the slug `claudeProjectsDir` derives and reads no `cwd`. Verified the
+hazard is real, not theoretical:
 
 ```
-$ for HE in CLAUDECODE=1 CODEX_THREAD_ID=t1 RASEN_NOTHING=1; do … done
-=== CLAUDECODE=1      IDENTICAL
-=== CODEX_THREAD_ID=t1 IDENTICAL
-=== RASEN_NOTHING=1    IDENTICAL
+$ node -e "const s=c=>c.replace(/[:\\\\/.]/g,'-'); console.log(s('/a/b.c'), s('/a/b/c'))"
+-a-b-c -a-b-c
+$ head -c 4000 <a real claude transcript> | grep -o '"cwd":"[^"]*"' | head -1
+"cwd":"/Users/boao.zeng/SyncLocal/rasen"
 ```
 
-(`env -i` with an explicit host fingerprint, `agent context --latest --dir
-<claude projects dir> --json`, output compared as whole strings.) The third case
-is the `unknown` host, whose legacy Claude-store resolution is also unchanged.
+The slug collides, and Claude transcripts DO record `cwd`, so the confirmation is
+implementable. Its `fs.statSync` is also unguarded, throwing raw `ENOENT` on a
+raced deletion rather than routing through the environmental-absence path.
 
-Explicit-transcript readers likewise unchanged: the Codex rollout fixture reports
-the same `runtime/model/contextTokens/limit/pct/remainingTokens` from both builds,
-and a named Claude transcript is byte-identical between them.
+Fixed by scoping the requirement to multi-layout runtimes and naming the Claude
+locator's derivation as permitted, with the repair recorded as **FU-H**. Not
+fixed in code: `cli-agent-context` requires Claude discovery to stay
+byte-identical and the proposal declares Claude probing unchanged.
 
-## Task 12.4 — Keepalive fail-safe untouched
+### M4 — A copy edit removed a warning that was only half false
 
-```
-$ git diff --stat test/core/keepalive.test.ts        # (empty)
-$ grep -rn "keepalive.runtimes.omp\|runtimes\.omp" src/   # (empty)
-$ pnpm exec vitest run test/core/keepalive.test.ts
-Tests  27 passed (27)
-```
-
-No dispatch capability became true, so Oh My Pi stays withheld from beats by the
-existing fall-through fail-safe and gains no configuration key.
-
-## Task 8.2 — The registry's build enforcement was exercised, not assumed
-
-The claim "the compiler forces the missing reader" was tested by removing the
-entry and observing the failure, then restoring it:
+`hostRuntimeWithoutDispatchAdapterWarning` lost its whole second clause. Only
+part of it had become false. Reproduced against the shipped CLI with both stores
+populated for the same cwd:
 
 ```
-$ # with CONTEXT_READERS.omp deleted
-src/core/agent-context.ts(195,62): error TS7053: … Property 'omp' does not exist on type '{ claude: …; codex: … }'
-src/core/runtimes/context-readers.ts(29,3): error TS1360: … Property 'omp' is missing … but required in type
-  '{ codex: ContextReader<"codex">; claude: ContextReader<"claude">; omp: ContextReader<"omp">; }'
-$ # restored
-CLEAN
+OMPCODE=1                              -> runtime=omp,    contextTokens=401002  (this session)
+OMPCODE=1 RASEN_AGENT_RUNTIME=claude   -> runtime=claude, contextTokens=7       (an unrelated conversation)
 ```
 
-Both errors the task predicted are real and both are satisfied by registration
-rather than cast past.
+So *"lifts the context-probe refusal"* became false, but *"`agent context
+--latest` reads the Claude transcript store instead of this host's own session"*
+is still true — and now MORE consequential, because the override is the one thing
+that undoes the capability this change adds. Worse, the new test assertion
+`not.toMatch(/context|…/i)` actively pinned the removal.
 
-## Deliberate absences (D3, D4)
+Fixed: the redirection caveat is restored in all three catalogs (placeholders
+intact, catalog parity green) and the negative assertion now targets
+`/refusal|拒否|拒绝/` — the claim that actually became false.
 
-Recorded because the absence is the decision:
+### M5 — The CLI's own `--help` still refused to admit `omp`
 
-- **No project-config reconciler for Oh My Pi.** `src/core/init.ts`'s only
-  per-tool branches remain `codex` (wait-policy reconcile), `opencode`/`pi`
-  (hyphen transform), and `claude` (agent teams). Every `skills.*` setting ships
-  `true`, so an installed skill is discovered with no file written; a
-  `.omp/config.yml` writer would create a project file with nothing to say.
-- **No command-path builder.** `TOOL_COMMAND_PATH_BUILDERS`
-  (`src/core/shared/retired-command-paths.ts`) has no `omp` key, so
-  `getRetiredCommandFilePath('omp', …)` returns `null` and the cleanup pass is a
-  correct no-op. Adding one would make Rasen delete files it never wrote —
-  confirmed by the smoke test's absent `.omp/commands`.
-- **No hyphen transform.** Oh My Pi addresses skills by their canonical `rasen-*`
-  name, like `claude`/`codex`/`hermes`.
+Task 10.x corrected `docs/**` and the orchestration templates but not the option
+help strings. Shipped output before the fix:
 
-## Non-edits confirmed (tasks 9.6, 9.7)
+```
+--runtime <runtime>  ファイル判定を使わず "claude" または "codex" を指定します
+--dir <dir>          --latestが使用するClaude projectsディレクトリを上書きします
+```
 
-Both pass **unmodified**; recorded so nobody "fixes" them later:
+`omp` is an accepted `--runtime` value (the error message names it correctly) and
+`--dir` now feeds three different stores. The primary discovery surface contradicted
+the behavior. Fixed in all three locales.
 
-- `test/core/management-api/threshold-schemes-api.test.ts` — derives
-  `bindingRows` from `PROBE_RUNTIMES`, so it absorbed the widening on its own, and
-  its `not.toContain('zed')` still holds.
-- `test/core/config-keys.test.ts` — `toEqual(['claude','codex'])` on the dispatch
-  set. A diff there would mean a dispatch capability was flipped, contradicting
-  this change's scope.
+## The four original ADRs: all survived adversarial re-measurement
+
+Every fact was re-run by a slice that did not write it.
+
+- **ADR-1 (bucket evidence)** — UPHELD and strengthened. The hashed bucket for
+  this repository still does not exist (`sha256` reproduces `0a97387b3087…`;
+  `ls` finds no such bucket), so a derived-name locator returns ABSENCE for a
+  running session. A **third** layout has since appeared —
+  `--private-tmp-omp-smoke--`, the documented `abs` form, created by this change's
+  own smoke test — so three naming layouts now coexist.
+- **ADR-2 (global candidate ordering)** — UPHELD; the `omp://session.md` citation
+  ("colliding legacy buckets are split by the cwd recorded in each session
+  header") verified verbatim at source. A mutation implementing design D6's own
+  per-bucket pseudocode failed 2 tests.
+- **ADR-3 (subagent journals excluded by depth)** — UPHELD, both halves, with a
+  live example that was the verifying agent itself: `DesignAdherence.jsonl`
+  (mtime 1786070036) is strictly newer than its LEAD (1786070034), records the
+  same `cwd`, and the probe still returned the LEAD. A mutation that recursed
+  failed 1 test.
+- **ADR-4 (implicit-path routing)** — UPHELD, not overstated. Re-derived from the
+  pre-fix source, and the "claude needs no pin" theory was verified rather than
+  accepted: 28 instrumented cells show `SESSION_STORES.claude.locateLatest`
+  receiving a byte-identical argument object on both the pinned and host-aware
+  paths, plus byte-exact CLI stdout across six host environments with all three
+  stores populated. The reader-stays-recognition claim was verified in both
+  directions by planting foreign files in each store.
+
+## Corrections to the author's own report
+
+Three claims in the replaced report did not survive:
+
+1. *"every fact it asserts was re-verified here"* — two further Evidence rows are
+   also stale: this repository no longer holds an empty `.omp/` at all, and *"all
+   12 `skills.*` settings default to `true`"* is wrong as written (3 of the 12 are
+   arrays defaulting `[]`). Neither affects the implementation.
+2. The non-deletion claim cited *"the smoke test's absent `.omp/commands`"* as
+   proof. An absent directory cannot demonstrate a non-deletion property. Fixed by
+   adding a test that pre-seeds both retired adapter shapes and asserts they
+   survive `init`.
+3. `VERIFY VERDICT: CLEAN` was asserted over 61 scenarios with no scenario→test
+   mapping. This report carries the adjudication.
+
+## Regression check
+
+A pre-change build from the merge base (`git worktree add /tmp/rasen-baseline
+ad650853`) compared on identical inputs, `env -i` with an explicit host
+fingerprint:
+
+```
+CLAUDECODE=1         IDENTICAL
+CODEX_THREAD_ID=t1   IDENTICAL
+RASEN_NOTHING=1      IDENTICAL   (the `unknown` host's legacy resolution)
+```
+
+Text mode byte-identical for a Claude host. Explicit-transcript readers unchanged:
+the Codex rollout fixture and a named Claude transcript both report identical
+fields from both builds.
+
+## Install and probe smoke tests
+
+`rasen init --tools omp` in a scratch git repo wrote 34 skills to
+`.omp/skills/rasen-*/SKILL.md` with non-empty `description` front matter and no
+command directory. Oh My Pi itself then discovered them, and
+`skill://rasen-apply-change` resolved to
+`/private/tmp/omp-smoke/.omp/skills/rasen-apply-change/SKILL.md` — the
+project-local root, at the highest precedence Oh My Pi offers.
+
+The live probe from this repository's own session reports its own occupancy from
+the legacy `-SyncLocal-rasen` bucket, and the figure is the session's own
+arithmetic rather than the `totalTokens` trap:
+
+```
+$ jq -r '…(input + cacheRead + cacheWrite)…' "$f" | grep -n '^433793'
+328:433793	total=434068
+$ jq -r '… .message.usage.totalTokens' "$f" | grep -c '^433793$'
+0
+```
+
+Independently corroborated at scale by a slice that enumerated `message.usage`
+across all 63 real session files: the key universe is CLOSED at seven keys, so no
+sent-token field is silently dropped; `cttl` is a per-tier breakdown of
+`cacheWrite` (equal in all 4395 rows, so counting it would double-count); and
+`input + cacheRead + cacheWrite + output == totalTokens` holds for 4416/4416 rows.
+
+## Security
+
+No Blocker, no Major. Threat model applied: a single-user, non-privileged CLI with
+no setuid bit, daemon, or listener. `..` in `OMP_PROFILE`/`PI_CONFIG_DIR` does
+escape the intended root, but the resolved path has exactly one consumer and is
+read-only, no hostile input can set those variables, and the user already has the
+capability via `--transcript`. The locator's `Dirent` filter was verified to
+refuse FIFOs, device symlinks, symlinked buckets and symlink loops in 1 ms, and it
+is 4× faster than the shipped Codex locator at 100 000 files. Three Minors are
+recorded as FU-J/FU-K and SEC-2's guard test, which was added here.
 
 ## Gates run
 
 | Gate | Result |
 |---|---|
-| `pnpm run lint` (eslint over `src/ test/ vitest.config.ts vitest.setup.ts`) | pass |
+| `pnpm run lint` | pass |
 | `pnpm exec tsc --noEmit` (root realm) | pass |
 | `pnpm --dir packages/ui typecheck` | pass |
 | `pnpm --dir packages/ui test` | 49 files, 502 tests pass |
-| `pnpm exec vitest run` (root suite, after `pnpm run build`) | 349 files, 6142 pass, 27 skipped |
-| `git diff --check <base>...HEAD` (CI whitespace gate) | clean |
+| `pnpm exec vitest run` (root suite, after `pnpm run build`) | **349 files, 6150 pass, 27 skipped** |
+| `git diff --check <base>...HEAD` | clean |
 
-Ordering observed for the parity hashes as `rasen/specs/workflow-template-parity`
-requires: template edits → `pnpm run build` → `node dist/cli/index.js update` →
-recompute both maps. Exactly three templates moved in each map
-(`getAutoCommandSkillTemplate`, `getGoalCommandSkillTemplate`,
-`getReviewCycleSkillTemplate` / `rasen-auto`, `rasen-goal`,
-`rasen-review-cycle`) — all three embed the edited orchestration playbook; every
-other hash is byte-identical.
+Parity hashes refreshed in the order `rasen/specs/workflow-template-parity`
+mandates (edit → build → run the BUILT CLI's update → recompute). Exactly three
+templates moved in each map, all three embedding the edited playbook.
 
-## Incidental finding: a line-ending trap in the test suite
-
-`test/core/init.test.ts` was committed with mixed endings (984 CRLF lines, 106 LF,
-plus two `\r\r\n` doubled terminators). Editing it under this repository's
-`core.autocrlf=input` restages the whole file, so ~100 added lines arrived as a
-2067-line diff. Verified as pre-existing rather than caused here: staging the
-pristine base bytes reproduces the base blob exactly (no filter rewrite), while
-staging any edited version strips every CR.
-
-Split into its own mechanical commit (`style(test): normalize init.test.ts line
-endings to LF`) so the behavioral diff for that file is 99 additions and 0
-deletions. Content is byte-identical once terminators are ignored — only `\r`
-characters were removed, and every one was part of a line ending.
+TEST EVIDENCE
+- scope: full repository root suite plus the `packages/ui` suite and both typecheck realms
+- rationale: the fix changes a shared contract (`HandoffThresholdReport.shouldHandoff` became optional) consumed by the command layer and the generated orchestration templates, so narrowing to the touched files would not cover the consumers; the UI suite is outside the root include and holds one half of the wire-mirror guard
+- command: `pnpm run lint && pnpm exec tsc --noEmit && pnpm run build && pnpm exec vitest run && pnpm --dir packages/ui typecheck && pnpm --dir packages/ui test`
+- result: pass
+- tree: `7b011ea6eaedee114f78f2c852f84d0b943509c6` (`git rev-parse HEAD^{tree}` at the time the gates ran, i.e. the parent of the fix commit). The verified content is identified by the code-diff digest `b89eeafab383811b` (sha256, first 16 hex) over `git diff --cached -- . ':(exclude)rasen/changes/omp-install-target-and-context-probe/evidence/*'` — the evidence files are excluded because writing this line would otherwise invalidate the digest of the diff containing it.
 
 ## Open follow-ups
 
-Six deferred items are recorded in **`evidence/deferred-followups-report.md`**:
-the audit slice (FU-A, owning `runtime-adapter-interface-extraction`'s FU-2/FU-3/FU-4),
-the dispatch slice (FU-B, owning FU-1), the pinned Codex implicit-store wart
-(FU-C), Oh My Pi's contradictory `SYSTEM.md` documentation (FU-D), the
-incompatible unused-symbol policies between the two typecheck realms (FU-E), and
-the untested published `--tools` lists (FU-F). Read that file before treating
-this change as closed.
+Thirteen items in **`evidence/deferred-followups-report.md`** — the audit slice
+(FU-A) and dispatch slice (FU-B) with the four `runtime-adapter-interface-extraction`
+follow-ups they own, plus FU-C…FU-F from implementation and FU-G…FU-M from this
+verification. Read that file before treating this change as closed.
 
-VERIFY VERDICT: CLEAN
+VERIFY VERDICT: CLEAN — Blocker:0 Major:0 Minor:13 Trivial:8

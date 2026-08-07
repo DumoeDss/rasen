@@ -3,10 +3,12 @@
  *
  * Kept apart from the detection in `project-context.ts` so the detection stays
  * pure (filesystem in, paths out) and testable without a locale, mirroring how
- * `learned-materialization-locale.ts` sits beside its reconciler. Both `init`
- * and `update` print the same two lines from here rather than formatting their
- * own, so the disclosure cannot end up reported by one command and not the
- * other.
+ * `learned-materialization-locale.ts` sits beside its reconciler.
+ *
+ * `init` is the only caller, and deliberately: it is the only command that can
+ * NEWLY populate a `.omp/` directory, and a capture that already happened is not
+ * news. The rendering is factored out here anyway so a future update-side caller
+ * cannot word the same disclosure differently.
  */
 import { formatLocaleMessage, getLocaleCatalog } from '../../locales/index.js';
 import { resolveCliLocale } from '../../utils/locale.js';

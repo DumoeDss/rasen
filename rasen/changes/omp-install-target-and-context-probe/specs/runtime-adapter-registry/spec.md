@@ -48,20 +48,23 @@ Every Rasen surface that validates a context-probe, token-audit, or pipeline-dis
 
 ## ADDED Requirements
 
-### Requirement: A runtime's session locator answers for every layout that runtime has written
+### Requirement: A session locator for a multi-layout runtime answers for every layout
 
-A harness may store its sessions under more than one directory layout on the same machine, because the harness changed its own naming and migrated only opportunistically. A runtime's declared session locator SHALL therefore answer for every layout that runtime is known to have written, and SHALL confirm each candidate against the working directory the session itself recorded, so the located session is the newest one belonging to the requested directory rather than the newest one under a single derived name.
+A harness may store its sessions under more than one directory layout on the same machine, because the harness changed its own naming and migrated only opportunistically. When a runtime is known to have written more than one layout, its declared session locator SHALL answer for every layout that runtime has written, and SHALL confirm each candidate against the working directory the session itself recorded, so the located session is the newest one belonging to the requested directory rather than the newest one under a single derived name.
+
+This requirement is scoped to multi-layout runtimes rather than every locator. A runtime that has only ever written one layout MAY derive its directory, and the shipped Claude locator does exactly that — it trusts a slug derived from the working directory and reads no recorded `cwd`. Generalizing the confirmation step to that locator is a real improvement (the slug is lossy: `/a/b.c` and `/a/b/c` derive the same name) but it changes a shipped runtime's behavior and is therefore owned by its own change, not by the addition of a harness.
 
 #### Scenario: A locator considers every layout, not one derived name
 
-- **GIVEN** a runtime's sessions for one working directory exist under more than one of that runtime's layouts
+- **GIVEN** a runtime is known to have written more than one session layout
+- **AND** its sessions for one working directory exist under more than one of those layouts
 - **WHEN** that runtime's session locator resolves the newest session for the working directory
 - **THEN** every layout present SHALL be considered
 - **AND** the newest qualifying session SHALL be selected regardless of which layout holds it
 
 #### Scenario: A located session is confirmed against its own recorded directory
 
-- **WHEN** a session locator considers a candidate session
+- **WHEN** a multi-layout runtime's session locator considers a candidate session
 - **THEN** the candidate SHALL be accepted only if the working directory it records is the requested one
 - **AND** a candidate recording a different working directory SHALL be rejected even when its layout name suggests a match
 

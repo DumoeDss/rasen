@@ -98,32 +98,43 @@ describe('pipeline messages', () => {
   // Exact strings, not `toContain('omp')`: the English copy already contains
   // "c-omp-atibility", so a substring check passes even when `{host}` is
   // never interpolated. `test/locales/catalog.test.ts` already guards key and
-  // placeholder parity, so the value this test alone can defend is the COPY —
-  // specifically that it makes no claim at all about the context probe. It used
-  // to promise that forcing the override "also lifts the context-probe
-  // refusal"; Oh My Pi is the only host that can trigger this warning today and
-  // it now has its own context reader, so there is no refusal for the override
-  // to lift and the sentence was false exactly where it was read.
+  // placeholder parity, so the value this test alone can defend is the COPY.
+  //
+  // The old copy made TWO claims and only one became false. Forcing the
+  // override no longer "lifts the context-probe refusal" — Oh My Pi is the only
+  // host that can trigger this warning and it now has its own reader, so there
+  // is no refusal to lift. But the override DOES still redirect
+  // `agent context --latest` to the forced runtime's store, and that half is now
+  // MORE consequential: it is the one thing that undoes the probe capability,
+  // silently substituting another conversation's occupancy. So the negative
+  // assertion below targets the refusal claim specifically rather than the word
+  // "context", which would forbid the true caveat as well.
   it.each([
     {
       locale: 'en',
       expected:
         'Warning: LEAD host runtime omp has no dispatch adapter; using the legacy compatibility route. ' +
-        'Set RASEN_AGENT_RUNTIME=claude|codex for deterministic dispatch.',
+        'Set RASEN_AGENT_RUNTIME=claude|codex for deterministic dispatch — note that the same override ' +
+        'also redirects `rasen agent context --latest` to that runtime\'s session store, so this host\'s ' +
+        'own occupancy is no longer what gets reported.',
     },
     {
       locale: 'ja',
       expected:
         '警告: LEADのホストruntime omp にはdispatchアダプタがないため、legacy互換ルートを使用します。' +
-        '決定的なdispatchには RASEN_AGENT_RUNTIME=claude|codex を設定してください。',
+        '決定的なdispatchには RASEN_AGENT_RUNTIME=claude|codex を設定してください。' +
+        'ただしこの override は `rasen agent context --latest` の参照先セッションストアも指定した runtime に' +
+        '切り替えるため、以降はこのホスト自身の占有率が報告されなくなります。',
     },
     {
       locale: 'zh-cn',
       expected:
         '警告：LEAD 工具宿主 omp 没有派发适配器，正在使用旧版兼容路由。' +
-        '设置 RASEN_AGENT_RUNTIME=claude|codex 可获得确定的派发行为。',
+        '设置 RASEN_AGENT_RUNTIME=claude|codex 可获得确定的派发行为。' +
+        '但该 override 同时会把 `rasen agent context --latest` 的读取目标切换到该 runtime 的会话存储，' +
+        '此后报告的将不再是本宿主自己的占用率。',
     },
-  ] as const)('names the host and makes no context-probe claim in $locale', (row) => {
+  ] as const)('names the host and keeps only the still-true probe caveat in $locale', (row) => {
     const rendered = formatPipelineExecutionNotice(
       {
         kind: 'host-runtime-without-dispatch-adapter',
@@ -134,7 +145,8 @@ describe('pipeline messages', () => {
     );
     expect(rendered).toBe(row.expected);
     expect(rendered, row.locale).not.toMatch(/\{\w+\}/);
-    expect(rendered, row.locale).not.toMatch(/context|コンテキスト|context の|上下文/i);
+    // The claim that became false: that the override lifts a probe REFUSAL.
+    expect(rendered, row.locale).not.toMatch(/refusal|拒否|拒绝/i);
   });
 
   it('formats the inheriting-store-config and unavailable-store notices', () => {

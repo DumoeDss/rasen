@@ -4,7 +4,7 @@
 
 When the user asks for the current session's occupancy without naming a transcript or a runtime, `rasen agent context --latest` SHALL resolve the harness the session is running in and, if that harness has no context-probe adapter, SHALL report the occupancy as unavailable with a reason identifying the host. It SHALL NOT read another harness's transcript store in that case, because a reading taken from a different harness's session describes a different conversation and cannot be distinguished from a correct answer by the caller.
 
-When the resolved harness DOES have a context-probe adapter, the implicit path SHALL locate that harness's own newest session for the working directory and report the occupancy — this now includes Oh My Pi, so an Oh My Pi session receives a reading of its own session instead of the unavailable result.
+When the resolved harness DOES have a context-probe adapter, the implicit path SHALL locate that harness's own newest session for the working directory and report the occupancy — this now includes Oh My Pi, so an Oh My Pi session receives a reading of its own session instead of the unavailable result. A harness whose pre-existing implicit resolution is pinned by the byte-identical guarantee below is the stated exception and SHALL keep resolving through the fallback store; today that is Codex, whose implicit `--latest` continues to read the Claude projects directory.
 
 This refusal SHALL follow the existing environmental-absence contract: exit 0 with a machine-readable unavailable result that fabricates no probe fields, since a host without a probe adapter is a legitimate host for a non-blocking probe rather than an error.
 

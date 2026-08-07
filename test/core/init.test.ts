@@ -324,6 +324,23 @@ describe('InitCommand', () => {
       expect(await directoryExists(path.join(testDir, '.omp', 'commands'))).toBe(false);
     });
 
+    it('should not delete files under an Oh My Pi command directory it never wrote', async () => {
+      // The spec's non-deletion clause. An ABSENT `.omp/commands` proves only
+      // non-creation, so both retired adapter shapes are pre-seeded and asserted
+      // to survive: `TOOL_COMMAND_PATH_BUILDERS` has no `omp` key, so every
+      // cleanup loop iterates an empty candidate list.
+      const flat = path.join(testDir, '.omp', 'commands', 'rasen-explore.md');
+      const nested = path.join(testDir, '.omp', 'commands', 'rasen', 'explore.md');
+      await fs.mkdir(path.dirname(nested), { recursive: true });
+      await fs.writeFile(flat, 'user-authored flat command');
+      await fs.writeFile(nested, 'user-authored nested command');
+
+      await new InitCommand({ tools: 'omp', force: true }).execute(testDir);
+
+      expect(await fs.readFile(flat, 'utf-8')).toBe('user-authored flat command');
+      expect(await fs.readFile(nested, 'utf-8')).toBe('user-authored nested command');
+    });
+
     it('should carry a non-empty description in every omp skill front matter', async () => {
       // Oh My Pi's `native` provider discovers with `requireDescription: true`,
       // so a skill without one is installed and invisible.
@@ -418,11 +435,18 @@ describe('InitCommand', () => {
       await expect(initCommand.execute(testDir)).rejects.toThrow(/Invalid tool\(s\): invalid-tool/);
     });
 
-    it('should reject a known but unadapted tool with a "not yet adapted" message', async () => {
+    it('should reject a known but unadapted tool and name every adapted tool', async () => {
       const initCommand = new InitCommand({ tools: 'cursor', force: true });
+      // Derived, not restated: the message is built from `getToolsWithSkillsDir()`,
+      // and the spec says the set SHALL be the one the shipped registry declares.
+      // A hardcoded `claude, codex` in the message would satisfy a literal
+      // assertion while dropping `hermes` and `omp` from what the user is told.
+      const { getToolsWithSkillsDir } = await import('../../src/core/shared/tool-detection.js');
+      const adapted = getToolsWithSkillsDir().join(', ');
+      expect(adapted).toContain('omp');
 
       await expect(initCommand.execute(testDir)).rejects.toThrow(
-        /recognized but not yet adapted in Rasen.*claude, codex/
+        new RegExp(`recognized but not yet adapted in Rasen.*${adapted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
       );
     });
 
@@ -679,7 +703,6 @@ describe('InitCommand - profile and detection features', () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
-
       workflows: ['explore', 'new', 'apply'],
     });
 
@@ -700,7 +723,6 @@ describe('InitCommand - profile and detection features', () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
-
       workflows: ['explore', 'ff', 'apply'],
     });
 

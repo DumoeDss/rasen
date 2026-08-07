@@ -5,11 +5,19 @@ import type { ThresholdBindingRow } from '../../src/api/types';
  * Drift guards for the hand-maintained wire mirror in `src/api/types.ts`.
  *
  * `packages/ui` sits outside the root vitest include, so the root suite never
- * runs these files — a mirror that drifts is caught only by this package's own
- * `pnpm test` / `pnpm typecheck`, both of which the release workflow runs
- * (`test/release-workflow.test.ts:13-14`). That isolation is how the
- * `KNOWN_MODEL_IDS` drift reached a release (FU-5), so the guard below runs in
- * BOTH directions rather than only mirror -> expectation.
+ * runs these files. Know which gate catches what, because the two halves of this
+ * guard fire at different times:
+ *
+ * - The COMPILE-TIME half below is the `Record` annotation, and it binds only
+ *   under `pnpm --dir packages/ui typecheck`, which `.github/workflows/ci.yml`
+ *   does NOT run — only `release.yml:48` does. On a pull request this file
+ *   executes with types erased, so the annotation contributes nothing there.
+ * - The mirror -> server half runs in the ROOT suite on every PR (see below).
+ *
+ * So drift is caught pre-merge by the root half and at release time by this one.
+ * That release-only asymmetry is how the `KNOWN_MODEL_IDS` drift reached a
+ * release (FU-5); adding the UI typecheck to `ci.yml` is recorded as a
+ * follow-up rather than done here.
  *
  * The complementary mirror -> server assertion lives in the ROOT suite
  * (`test/core/management-api/threshold-binding-row-mirror.test.ts`), which

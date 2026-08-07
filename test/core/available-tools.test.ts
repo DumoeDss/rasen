@@ -175,15 +175,30 @@ describe('available-tools', () => {
       expect(tools.map((t) => t.value)).not.toContain('omp');
     });
 
+    // Titled "directory exists", not "populated": detection is `statSync` on the
+    // path, so the DIRECTORY existing is what triggers it, empty or not. That is
+    // the `github-copilot` precedent this entry follows — `.github/prompts`,
+    // `.github/agents` and `.github/skills` are pinned the same way above — so
+    // narrowing it here would silently change that tool's shipped behavior.
+    // Recorded as a follow-up rather than fixed inside this change.
     it.each([
       ['skills', 'skills'],
       ['commands', 'commands'],
       ['agents', 'agents'],
-    ])('should detect Oh My Pi from a populated .omp/%s directory', async (_label, dirName) => {
+    ])('should detect Oh My Pi when the .omp/%s directory exists', async (_label, dirName) => {
       await fs.mkdir(path.join(testDir, '.omp', dirName), { recursive: true });
 
       const tools = getAvailableTools(testDir);
       expect(tools.map((t) => t.value)).toContain('omp');
+    });
+
+    it('should still not detect Oh My Pi from a bare .omp with no known child', async () => {
+      // The distinction that makes the entry's detectionPaths worth having: the
+      // tool directory itself is not a detection, only a named child of it.
+      await fs.mkdir(path.join(testDir, '.omp', 'unrelated-junk'), { recursive: true });
+
+      const tools = getAvailableTools(testDir);
+      expect(tools.map((t) => t.value)).not.toContain('omp');
     });
 
     it.each(['AGENTS.md', 'RULES.md', 'settings.json', 'config.yml', 'mcp.json'])(
