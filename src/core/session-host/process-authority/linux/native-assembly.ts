@@ -1,5 +1,7 @@
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcessByStdio } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import fs, { constants as fsConstants } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { PassThrough, Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
@@ -499,12 +501,74 @@ function failureOutcome(payload: Buffer): Record<string, unknown> {
   return Object.freeze({ state: mapped[0], diagnosticCode: mapped[1] });
 }
 
+/**
+ * Descriptor the prepare helper receives the daemon-lifetime endpoint on. Slot 3 carries the
+ * pinned executable, so 4 is the first free inherited descriptor. The helper passes this number
+ * through to the native crate, which transfers the endpoint to the namespace guardian and keeps it
+ * out of the workload's descriptor set.
+ */
+const DAEMON_LIFETIME_CHILD_FD = 4;
+
+/**
+ * This daemon's end of one scope's lifetime channel.
+ *
+ * It is deliberately NOT a `stdio: 'pipe'` slot. Node ties the streams it creates for a child to
+ * that child's lifetime and destroys its own end when the child exits - measured directly: with a
+ * grandchild still holding the far end, the parent's socket read `destroyed === true` and the
+ * grandchild saw end-of-file immediately after the direct child left. Since the prepare helper
+ * always exits while the guardian lives on, a stdio slot would signal "the daemon is gone" the
+ * instant prepare returned and tear down every scope at birth.
+ *
+ * A FIFO gives an endpoint whose lifetime is this daemon's alone. The daemon holds it `O_RDWR`, so
+ * it counts as the sole writer; the guardian inherits a read-only descriptor. The path is unlinked
+ * as soon as both descriptors exist, so no later process can open a second writer and keep a dead
+ * daemon's scope alive.
+ */
+interface DaemonLifetimeChannel {
+  /** Held by this daemon for exactly as long as the scope may be live. */
+  readonly holder: number;
+  /** Handed to the helper, inherited by the guardian, closed here right after spawn. */
+  readonly childEnd: number;
+}
+
+function openDaemonLifetimeChannel(): DaemonLifetimeChannel {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-lpa-lifetime-'));
+  const fifo = path.join(directory, 'endpoint');
+  try {
+    execFileSync('mkfifo', ['-m', '600', fifo], { stdio: 'ignore' });
+    const holder = fs.openSync(fifo, fsConstants.O_RDWR);
+    let childEnd: number;
+    try {
+      childEnd = fs.openSync(fifo, fsConstants.O_RDONLY);
+    } catch (error) {
+      fs.closeSync(holder);
+      throw error;
+    }
+    return Object.freeze({ holder, childEnd });
+  } finally {
+    // The descriptors keep the FIFO alive; the name is removed so nothing else can reach it.
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function closeDescriptor(descriptor: number | undefined): void {
+  if (descriptor === undefined) return;
+  try {
+    fs.closeSync(descriptor);
+  } catch {
+    // Already closed. Releasing an endpoint twice must never fail a control operation.
+  }
+}
+
 function spawnPinned(
   artifact: LinuxProcessAuthorityResolvedArtifact,
-  arguments_: readonly string[]
+  arguments_: readonly string[],
+  daemonLifetimeChildEnd?: number
 ): HelperProcess {
   return spawn('/proc/self/fd/3', [...arguments_], {
-    stdio: ['pipe', 'pipe', 'pipe', artifact.executableFd],
+    stdio: daemonLifetimeChildEnd === undefined
+      ? ['pipe', 'pipe', 'pipe', artifact.executableFd]
+      : ['pipe', 'pipe', 'pipe', artifact.executableFd, daemonLifetimeChildEnd],
     windowsHide: true,
   }) as HelperProcess;
 }
@@ -513,9 +577,15 @@ async function invoke(
   artifact: LinuxProcessAuthorityResolvedArtifact,
   arguments_: readonly string[],
   request: Buffer,
-  context: AuthorityOperationContext
-): Promise<{ readonly kind: number; readonly payload: Buffer }> {
-  const child = spawnPinned(artifact, arguments_);
+  context: AuthorityOperationContext,
+  daemonLifetime?: DaemonLifetimeChannel
+): Promise<{
+  readonly kind: number;
+  readonly payload: Buffer;
+}> {
+  const child = spawnPinned(artifact, arguments_, daemonLifetime?.childEnd);
+  // The child has its own duplicate from here on; this daemon keeps only the holder.
+  closeDescriptor(daemonLifetime?.childEnd);
   const chunks: Buffer[] = [];
   const diagnosticChunks: Buffer[] = [];
   let total = 0;
@@ -553,10 +623,15 @@ async function invoke(
   } finally {
     context.signal.removeEventListener('abort', abort);
   }
+  // Any path that returns no frame leaves no caller able to retain the endpoint, and an endpoint
+  // nobody holds a scope for would keep that scope's guardian alive indefinitely. Released here
+  // rather than at each throw site.
   if (context.signal.aborted || total > MAX_FRAME_BYTES + FRAME_HEADER_BYTES) {
+    closeDescriptor(daemonLifetime?.holder);
     throw new Error('Linux process-authority native operation was cancelled or over-bound.');
   }
   if (total === 0) {
+    closeDescriptor(daemonLifetime?.holder);
     const diagnostic = Buffer.concat(diagnosticChunks).toString('utf8')
       .replaceAll(/[\u0000-\u001f\u007f]+/gu, ' ')
       .trim()
@@ -793,6 +868,41 @@ function createLinuxNativeAssembly(
     mode,
   });
   const readyByGeneration = new Map<string, Promise<void>>();
+  // This daemon's end of each live scope's lifetime channel, held for exactly as long as the scope
+  // may be live. Closing one tells that scope's guardian the daemon is gone, so an entry is removed
+  // ONLY on a positively proven-empty outcome - never on typed uncertainty, which may be transient
+  // and whose scope may still be running.
+  const daemonLifetimeByGeneration = new Map<string, number>();
+  // The broker path owns its scope lifetime through the root-owned lease, not through this
+  // channel, so only the primary provider binds one.
+  const bindsDaemonLifetime = mode === 'user-pidns';
+  const retainDaemonLifetime = (
+    outcome: Record<string, unknown>,
+    channel: DaemonLifetimeChannel | undefined
+  ): void => {
+    if (!channel) return;
+    const attestation = outcome.attestation as { readonly generation?: string } | undefined;
+    const generation = outcome.state === 'inert' ? attestation?.generation : undefined;
+    if (typeof generation !== 'string') {
+      // No scope was created, or none this daemon can name. Holding the endpoint would keep a
+      // guardian alive that nothing can ever address.
+      closeDescriptor(channel.holder);
+      return;
+    }
+    closeDescriptor(daemonLifetimeByGeneration.get(generation));
+    daemonLifetimeByGeneration.set(generation, channel.holder);
+  };
+  const releaseDaemonLifetimeIfEmpty = (
+    reference: LinuxPrivateAuthorityReference,
+    outcome: ProviderObservation
+  ): ProviderObservation => {
+    if (outcome.state !== 'exact-scope-empty') return outcome;
+    const holder = daemonLifetimeByGeneration.get(reference.generation);
+    if (holder === undefined) return outcome;
+    daemonLifetimeByGeneration.delete(reference.generation);
+    closeDescriptor(holder);
+    return outcome;
+  };
   const brokerPreparePayload = (request: LinuxAuthorityNativePrepareRequest): Buffer =>
     encodeBrokerPreparationPayload(request, runtimeRoot, artifact);
   const decodePrepareResponse = (
@@ -819,6 +929,7 @@ function createLinuxNativeAssembly(
       request: LinuxAuthorityNativePrepareRequest,
       context: AuthorityOperationContext
     ) {
+      const channel = bindsDaemonLifetime ? openDaemonLifetimeChannel() : undefined;
       const response = await invoke(
         artifact,
         [
@@ -826,11 +937,17 @@ function createLinuxNativeAssembly(
           '--artifact-sha256', artifact.artifact.sha256,
           '--source-sha256', artifact.artifact.sourceSha256,
           '--deadline-ms', String(remainingBudgetMs(context)),
+          ...(bindsDaemonLifetime
+            ? ['--daemon-lifetime-fd', String(DAEMON_LIFETIME_CHILD_FD)]
+            : []),
         ],
         frame(FRAME.prepare, encodePrepare(request, runtimeRoot)),
-        context
+        context,
+        channel
       );
-      return decodePrepareResponse(response);
+      const outcome = decodePrepareResponse(response);
+      retainDaemonLifetime(outcome, channel);
+      return outcome;
     },
     preparationDeliveryDigest(request: LinuxAuthorityNativePrepareRequest) {
       if (mode !== 'broker-pidns-cgroupv2') {
@@ -1000,9 +1117,10 @@ function createLinuxNativeAssembly(
         throw new TypeError('Linux native inspection returned an unexpected frame.');
       }
       const outcome = decodeJournal(response.payload);
-      return outcome.state === 'prepared-inert' || outcome.state === 'published-inert'
-        ? { state: 'inert' }
-        : outcome;
+      if (outcome.state === 'prepared-inert' || outcome.state === 'published-inert') {
+        return { state: 'inert' };
+      }
+      return releaseDaemonLifetimeIfEmpty(reference, outcome);
     },
     async terminate(
       reference: LinuxPrivateAuthorityReference,
@@ -1021,9 +1139,12 @@ function createLinuxNativeAssembly(
         context
       );
       if (response.kind === FRAME.failure) return failureOutcome(response.payload);
-      return response.kind === FRAME.exactScopeEmpty
-        ? { state: 'exact-scope-empty' }
-        : decodeJournal(response.payload);
+      return releaseDaemonLifetimeIfEmpty(
+        reference,
+        response.kind === FRAME.exactScopeEmpty
+          ? { state: 'exact-scope-empty' }
+          : decodeJournal(response.payload)
+      );
     },
     async abort(
       reference: LinuxPrivateAuthorityReference,
@@ -1037,9 +1158,12 @@ function createLinuxNativeAssembly(
         context
       );
       if (response.kind === FRAME.failure) return failureOutcome(response.payload);
-      return response.kind === FRAME.exactScopeEmpty
-        ? { state: 'exact-scope-empty' }
-        : decodeJournal(response.payload);
+      return releaseDaemonLifetimeIfEmpty(
+        reference,
+        response.kind === FRAME.exactScopeEmpty
+          ? { state: 'exact-scope-empty' }
+          : decodeJournal(response.payload)
+      );
     },
   });
   const runtimeOpener: LinuxAuthorityRuntimeOpener = Object.freeze({
