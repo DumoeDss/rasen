@@ -87,14 +87,11 @@ independently, which is the cross-check that the bypass changed nothing.
 **One artifact was left behind by this.** The first `pnpm --dir packages/ui`
 attempt wrote a stub `packages/ui/pnpm-workspace.yaml`
 (`allowBuilds: {esbuild: set this to true or false}`) as its approval prompt. It
-is untracked, so it is not in the delivery, but it should not stay: a
+is untracked, so it was never in the delivery, but it could not stay: a
 `pnpm-workspace.yaml` inside `packages/ui` makes that directory a pnpm workspace
 root in its own right. Removing it was attempted and refused by this session's
-command policy, so it is recorded here for manual removal:
-
-```
-rm packages/ui/pnpm-workspace.yaml
-```
+command policy, so it was removed manually before this log was finalized —
+`git status` confirms it gone.
 
 The underlying wart is worth fixing at the root: adding `esbuild` to
 `onlyBuiltDependencies` in `pnpm-workspace.yaml` would make
@@ -130,6 +127,35 @@ Commit `1288ca5b` added `rasen/changes/agent-context-occupancy-contract-gaps/`
 occupancy-contract gaps this work surfaced but does not close. It is on the
 branch and therefore in PR #142's diff. Recorded here and noted in the PR body so
 a reviewer does not read it as unimplemented scope of this change.
+
+## CI
+
+All checks passed on the first run — no fix-forward was needed. Run
+[31149039512](https://github.com/DumoeDss/rasen/actions/runs/31149039512),
+against the ship-log commit `b30f770f`:
+
+| Job | Result |
+|---|---|
+| Lint & Type Check | pass (53s) |
+| UI Package Build | pass (36s) |
+| Test (linux-bash) | pass (9m01s) |
+| Test (linux-bash-node24) | pass (7m36s) |
+| Test (macos-bash) | pass (8m57s) |
+| Test (windows-pwsh-shard-1 / -2 / -3) | pass (7m10s / 6m45s / 6m29s) |
+| File placement recovery (linux / macos / windows -node-floor) | pass |
+| Nix Flake Validation | skipped |
+
+This is the first of the last three ships on this lineage to need no
+post-delivery CI fix. `Lint & Type Check` — the job whose `git diff --check`
+step failed the previous branch after its PR was opened — passed here, which is
+the outcome the pre-flight run of the same command predicted. The
+`pnpm-vitest-preflight-ci-parity` gate the previous ship recorded as an
+execution miss was run this time, and it was the difference.
+
+The three Windows shards passing matters independently: this change adds path
+resolution for a relocatable agent directory and named profiles, and the Windows
+shards are the only place its `path.join`/`path.resolve` assertions run on a
+non-POSIX separator.
 
 ## Deployment
 
