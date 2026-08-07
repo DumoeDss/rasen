@@ -5,6 +5,34 @@ Role: IMPLEMENTER. Resumed from the session-limit interruption per
 
 Tasks ticked: **33 of 33**. Nothing is left unticked.
 
+## Fix round 1 (appended after the independent review)
+
+Review `evidence/review-round-1.md` returned CHANGES_REQUIRED (Major 1, Minor 3).
+Disposition in `evidence/fix-round-1.md`:
+
+- **F1 [Major] FIXED** — the one-shot probe's stdout callback is contained;
+  malformed frames become typed uncertainty and non-observation frames are typed
+  protocol failures instead of being ignored to the deadline. Required a
+  LEAD-authorized rebaseline of `native-process-scope.ts` in both pin lists
+  (`0848c77b…` -> `a070733c…`), lineage recorded at both sites, digest from the
+  committed bytes of `8e48ce45`. Every other pinned digest unchanged.
+- **F2 [Minor] FIXED** — `translateTermination` re-checks the `transportLost`
+  latch after its await and now requires channel attribution; the latch is armed
+  during the prepared window too.
+- **F3 [Minor] FIXED** — mutations (i)/(j)/(k) supplied for the three named
+  guards, plus a real-host re-run of mutation (a) against the packaged capsule so
+  the win32 real suite is demonstrably capable of failing. One narrow waiver
+  recorded for real-host receipt 7.2b, with justification; the reviewer decides
+  whether to accept it or narrow the spec scenario instead.
+- **F4 [Minor] DEFERRED** — recorded, not fixed, per the review's own
+  recommendation: the unpruned `scopes` map in BOTH tier modules is the RC-005
+  shape, and one lifecycle rule should cover all three maps in closure task 12.8.
+  **Carry this forward** — it is the only finding this change leaves open.
+
+Owed to the re-review: update the closure `decision13-regrade.md` RC-004 entry
+from its conditional park to the review's ruling. I deliberately did not touch
+the reviewer's accounting files.
+
 ## Read order for the next worker
 
 1. This file.

@@ -224,6 +224,16 @@ RED:
 GREEN unmutated: 19 passed (19). The narrowed guard still catches a real
 emission of the token it polices; only the phase-label spelling is tolerated.
 
+## Later additions
+
+Review round 1 found four guards in this change without a demonstrated failing
+counterpart, and the fix round added two new guards of its own. Mutations
+(g) probe-parser containment, (h) terminate-leg attribution, (i) unsettled
+terminal, (j) API projection, (k) activation gate, and a real-host re-run of
+mutation (a) against the packaged capsule are recorded in
+`fix-round-1.md`, together with one narrow recorded waiver (real-host receipt
+7.2b). That file is the current index for this change's mutation coverage.
+
 ## Integrity after the wave
 
 Every mutated file was restored from its byte-exact backup and the working tree
