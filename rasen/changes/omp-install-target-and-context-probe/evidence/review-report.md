@@ -15,7 +15,7 @@ excluded from re-reporting, except where a recorded fix was found INCOMPLETE.
 
 ## Verdict
 
-`REVIEW VERDICT: 1 Blocker + 7 Major fixed and pinned; 3 Major + 13 Minor + 6 Trivial open`
+`REVIEW VERDICT: 1 Blocker + 7 Major + 7 Minor fixed and pinned; 3 Major open, 6 Minor rejected with evidence`
 
 Scope Check: **CLEAN**. Intent: make `omp` an adapted install target and a
 context-probe-capable runtime. Delivered: exactly that — all nine `What Changes`
@@ -170,6 +170,61 @@ radius. `.claude/` is gitignored, so the regenerated dogfooding skills are untra
 | `pnpm --dir packages/ui test` | 49 files, 502 pass |
 | `git diff --check` (base + worktree) | clean |
 
+## Round 2 — the Minors, fixed in `c906a6ae`
+
+Everything the first round left open as a Minor was re-examined. Most were
+fixed; six were rejected with evidence rather than forced, because applying them
+would have traded a measured problem for an unmeasured one.
+
+**Fixed.** The locator's 8 KiB header bound now retries once at the 64 KiB
+recognition bound when the first read was truncated, so a header pushed past it
+by the documented growth fields no longer makes a live session invisible.
+Candidate ordering breaks mtime ties on basename, which is chronological because
+Oh My Pi names each file with an ISO-8601 prefix. The detector discriminates
+ENOENT/ENOTDIR ("absent") from every other errno ("present but unreadable"), so
+an unlistable `.omp/` stops the walk instead of letting it blame a farther
+ancestor. The home boundary moved ahead of the capture test — `~/.omp` is the
+config root and is populated for every Oh My Pi user, so it was the most
+frequently reached false positive — while the `.git` boundary deliberately stays
+after it, preserving the monorepo case. `SESSION_STORES.omp` threads
+`options.homeDir`. `rasen update` runs the same detector before its writes and
+renders the same disclosure as `init`; the copy dropped its self-applied
+"Warning:" (the renderer already emits `⚠`) and stopped naming `rasen init`, now
+that two commands render it. Docs, CHANGELOG, the `adapted-agent-visibility`
+definition and task 4.3's missing e2e assertion are all closed.
+
+**Rejected, with the evidence.**
+
+- *Canonicalize path identity in `findLatestOmpSession`.* Attempted both
+  realistic macOS aliases — a symlinked cwd and a case variant on
+  case-insensitive APFS — and neither reproduces: `process.cwd()` already
+  returns the physical canonical path, so both sides of the comparison agree.
+  Adding `realpathSync` per candidate would buy an unreproducible case at the
+  cost of I/O on the hot path, and the pre-existing `findLatestRollout` has the
+  identical shape. Left as a documented conformance note.
+- *Match the header's `additionalDirectories` as well as `cwd`.* No real session
+  on this machine carries the field, and it is unconfirmed whether Oh My Pi
+  itself resumes a session from a secondary root. Matching it would be
+  speculative generality — behaviour added for a need no spec has.
+- *Cache the `statSync` sweep.* The 343 ms figure comes from a synthetic 5000-
+  candidate store; the real store here holds 23 files. A cache keyed on bucket
+  mtime buys nothing measurable and adds a staleness surface to the one function
+  whose entire job is finding the NEWEST session.
+- *Reverse-chunk the reader instead of `readFileSync` + `split`.* Real: a 42 MiB
+  journal costs ~98 MiB RSS. But the probe is a short-lived process, the read is
+  62 ms, and reverse-chunking a JSONL file correctly across partial lines and
+  multi-byte boundaries is a rewrite of the one function this review already
+  found a Blocker in. Deferred deliberately, not overlooked.
+- *Derive `OMP_PROJECT_DIR` from the `AI_TOOLS` registry entry.* Coupling the
+  detector to the install registry to deduplicate a four-character literal is
+  worse than the duplication.
+- *Collapse `shouldHandoff` + `window` into one discriminant.* That is a wire
+  contract change, not a cleanup — `window` is what the shipped playbook teaches
+  consumers to branch on.
+
+Still open and unchanged: the three Majors below, and `isUnmeasurableWindow` at
+`contextTokens === 0`.
+
 ## Open — NOT fixed, needs a decision
 
 ### Major
@@ -194,26 +249,11 @@ radius. `.claude/` is gitignored, so the regenerated dogfooding skills are untra
    journals), so this is documented-but-unobserved. A correct fix means following
    `parentId` from the leaf rather than file order — genuinely a separate change.
 
-### Minor (13)
+### Minor — all closed in round 2
 
-Reader/locator: the 8 KiB header prefix has no fallback and disagrees 8× with the
-64 KiB recognition bound in the same change; `candidates.sort` never breaks mtime ties;
-every `.jsonl` in every bucket is `statSync`ed on every probe (343 ms at 5000
-candidates, hit or miss); candidate confirmation uses `path.resolve` rather than
-`realpath` while Oh My Pi buckets by canonicalized cwd; the header's documented
-`additionalDirectories` is ignored; the whole journal is read into a string per probe
-(+98 MiB RSS on a 42 MiB file). Detector: `hasPopulatedOmpDir` swallows EACCES as
-absence; the `current === home` boundary is effectively dead because `~/.omp` is always
-populated. Wiring: `SESSION_STORES.omp` drops `options.homeDir` (a latent hermeticity
-trap — no caller passes it today, and the Codex sibling does the same); `rasen update`
-can newly populate `.omp/` and capture with no disclosure, since `init` is the only
-caller. Docs: `docs/zh/supported-tools.md` still describes the retired two-mode
-delivery with `opsx-*` command files (contradicting its own line 58) and states the
-default profile is `core` when it is `full` — both pre-existing and **outside this
-change's touched hunks**, so left for their owner; `CHANGELOG.md` `## Unreleased`
-records nothing for either half of this change; `docs/artifact-workflow-guide.md`
-omits `window` from the receipt list; `docs/zh/troubleshooting.md` never received the
-26-line Oh My Pi entry its English counterpart gained.
+The thirteen Minors this section originally listed were resolved in `c906a6ae`:
+seven fixed, six rejected with the evidence. See "Round 2" above for the
+disposition of each. Nothing from that set remains open.
 
 ### Also open
 
@@ -223,19 +263,15 @@ omits `window` from the receipt list; `docs/zh/troubleshooting.md` never receive
   Reproduced. Narrowed a great deal by the RV-B1 fix (it now needs a session where
   nothing ever measured), and tightening it would change the Codex young-rollout
   reading that `cli-agent-context` pins byte-identical. Left deliberately.
-- Task 4.3 is marked `[x]` but only half delivered: `test/cli-e2e/basic.test.ts`'s
-  `--tools all` case still asserts claude/codex/hermes only, with a comment naming
-  three tools, and no `.omp` assertion.
-- `specs/adapted-agent-visibility/spec.md` widens the adapted set to include `omp`
-  while leaving its own definition ("dispatch, worker lifecycle, and resume behavior
-  are implemented") untouched — false for `omp` by this change's own Non-Goal, and
-  already false for `hermes`.
 - `findLatestOmpSession` compares path identity without canonicalizing, against a
-  documented repo standard (`CLAUDE.md`, `test/AGENTS.md`). I attempted both realistic
-  macOS aliases — a symlinked cwd and a case variant — and **neither reproduces**,
-  because `process.cwd()` already returns the physical canonical path. Reported as a
-  standards-conformance gap, not a live defect; the pre-existing `findLatestRollout`
-  has the identical shape.
+  documented repo standard (`CLAUDE.md`, `test/AGENTS.md`). Both realistic macOS
+  aliases — a symlinked cwd and a case variant — were attempted and **neither
+  reproduces**, because `process.cwd()` already returns the physical canonical
+  path. Left as a standards-conformance gap rather than a live defect; the
+  pre-existing `findLatestRollout` has the identical shape.
+
+Task 4.3's missing e2e assertion and the `adapted-agent-visibility` definition
+sentence, previously listed here, were both closed in `c906a6ae`.
 
 ## Verified clean (stated so it is not re-investigated)
 
