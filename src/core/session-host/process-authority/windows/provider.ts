@@ -18,6 +18,7 @@ import type {
 } from '../types.js';
 import { decodeProcessAuthorityReferenceForDispatch } from '../reference-codec.js';
 import { WINDOWS_PROCESS_AUTHORITY_DESCRIPTOR } from './contracts.js';
+import { createWindowsNativeAssembly } from './native-assembly.js';
 import {
   createWindowsPrivateAuthorityReference,
   decodeWindowsPrivateAuthorityReference,
@@ -229,9 +230,25 @@ function snapshotLaunch(input: AuthorityPrepareInput): Required<
   });
 }
 
+/**
+ * The domain-separated launch digest.
+ *
+ * `RWL1` is not this layer's choice: it is `launch.rs:canonical_bytes`, and the
+ * guardian digests the launch it was actually given with that prefix
+ * (`guardian.rs:524`). `createPreparedReference` then requires the attested
+ * `launchDigest` to equal the one computed here, so the two producers must agree
+ * byte for byte or no real attestation can ever be accepted.
+ *
+ * This constant read `RPW1` until a native assembly first fed a real attestation
+ * through the production factory. Nothing had ever compared the two, because
+ * nothing had ever produced both: every existing test computes the expected
+ * digest with this same function, so the mismatch was invisible to all of them
+ * and would have made production `prepare` throw
+ * "attestation identity binding differs" on every healthy host.
+ */
 export function digestWindowsAuthorityLaunch(input: AuthorityPrepareInput): string {
   const snapshot = snapshotLaunch(input);
-  const chunks: Buffer[] = [Buffer.from('RPW1', 'ascii')];
+  const chunks: Buffer[] = [Buffer.from('RWL1', 'ascii')];
   const putString = (value: string): void => {
     const bytes = Buffer.from(value, 'utf8');
     const length = Buffer.allocUnsafe(4);
@@ -771,6 +788,11 @@ function exactProductionChildDirectory(stateRoot: string, name: string): string 
 }
 
 /**
+ * The fallback when no native assembly can be built - which in a source checkout
+ * is the normal case, because `WINDOWS_PROCESS_AUTHORITY_BUILD_IDENTITIES` is
+ * empty until packaging writes it and artifact resolution therefore cannot
+ * succeed.
+ *
  * Unavailability never selects another provider, never falls back to a process
  * group, a toolhelp snapshot, `taskkill`, WMI or the legacy capsule helper, and
  * never starts workload code. It returns typed unavailable and retains.
@@ -832,7 +854,19 @@ export function createWindowsProcessAuthorityProviderBundle(
   const runtimeRoot = exactProductionChildDirectory(stateRoot, 'runtime');
   const publicationRoot = exactProductionChildDirectory(runtimeRoot, 'publication-ledger');
   const ledger = createWindowsAuthorityPublicationLedger({ root: publicationRoot });
-  const assembly = unavailableNativeAssembly();
+  // The real assembly, exactly as the sibling provider wires its own
+  // (`linux/provider.ts:1042`). Resolution is the only thing that can refuse it,
+  // and it refuses by throwing, so the fallback below is reached when - and only
+  // when - no packaged artifact is bound by build-pinned authority.
+  let assembly: Pick<
+    WindowsProcessAuthorityProviderBundleOptions,
+    'transport' | 'runtimeOpener' | 'artifactIdentity'
+  >;
+  try {
+    assembly = createWindowsNativeAssembly(runtimeRoot);
+  } catch {
+    assembly = unavailableNativeAssembly();
+  }
   return createWindowsProcessAuthorityProviderBundleWithTransport({
     transport: assembly.transport,
     runtimeOpener: assembly.runtimeOpener,

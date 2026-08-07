@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -31,6 +32,16 @@ import {
   type WindowsAuthorityNativeTransport,
 } from '../../../src/core/session-host/process-authority/windows/provider.js';
 import {
+  resolveWindowsProcessAuthorityArtifact,
+} from '../../../src/core/session-host/process-authority/windows/artifact-resolver.js';
+import {
+  WINDOWS_PROCESS_AUTHORITY_BUILD_IDENTITIES,
+} from '../../../src/core/session-host/process-authority/windows/build-authority.js';
+import {
+  createWindowsNativeAssemblyForTesting,
+  WINDOWS_PROCESS_AUTHORITY_HELPER_FILE,
+} from '../../../src/core/session-host/process-authority/windows/native-assembly.js';
+import {
   cleanupWindowsProcessAuthorityProviderFixtures,
   createWindowsProviderHarness,
   windowsPrepareAttestation,
@@ -49,10 +60,38 @@ const INPUT: AuthorityPrepareInput = Object.freeze({
 
 const temporaryRoots: string[] = [];
 
+/**
+ * Gated entry point. Artifact resolution refuses to become an authority outside
+ * an actual Windows runtime, so the rows that exercise it are skipped elsewhere.
+ * They assert on values the resolver produced, so a skipped row cannot make an
+ * unrelated row pass silently - it removes an assertion rather than weakening one.
+ */
+const itOnWindows =
+  process.platform === 'win32' && (process.arch === 'x64' || process.arch === 'arm64')
+    ? it
+    : it.skip;
+
 function temporaryRoot(prefix: string): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   temporaryRoots.push(root);
   return root;
+}
+
+/**
+ * The smallest byte sequence the artifact resolver's PE check accepts: an `MZ`
+ * stub, a header offset, the `PE\0\0` signature, the machine field for this
+ * runtime's architecture, and characteristics marking an executable image that
+ * is not a DLL. Deliberately not a real helper - this row proves identity
+ * binding, and never executes what it resolves.
+ */
+function syntheticPortableExecutable(): Buffer {
+  const bytes = Buffer.alloc(128);
+  bytes.write('MZ', 0, 'ascii');
+  bytes.writeUInt32LE(0x40, 0x3c);
+  bytes.write('PE\0\0', 0x40, 'ascii');
+  bytes.writeUInt16LE(process.arch === 'arm64' ? 0xaa_64 : 0x86_64, 0x44);
+  bytes.writeUInt16LE(0x0022, 0x40 + 22);
+  return bytes;
 }
 
 function context(
@@ -76,7 +115,6 @@ async function publish(
 ): Promise<void> {
   const full = encodeProcessAuthorityReference(WINDOWS_PROCESS_AUTHORITY_DESCRIPTOR, reference);
   const decoded = decodeWindowsPrivateAuthorityReference(reference);
-  const { createHash } = await import('node:crypto');
   await harness.bundle.publishAuthority({
     reference: full,
     referenceDigest: createHash('sha256').update(String(full), 'utf8').digest('hex'),
@@ -465,11 +503,29 @@ describe('Windows inspect and durable publication phase', () => {
 });
 
 describe('Windows production provider entry point', () => {
-  it('assembles from a trusted state root and stays fail-closed without a pinned artifact', async () => {
+  // Task 9.9 recorded these rows as owed. The assertions they replace said
+  // production `prepare` returns `authority-unavailable` and every control verb
+  // retains - which restated the wiring at the time, when the factory was bound
+  // to a permanent-unavailable stub. The contract is conditional: on a host whose
+  // prerequisites are present AND whose artifact is bound by build-pinned
+  // authority, prepare returns `prepared-inert`. A source checkout fails only the
+  // second condition, because `WINDOWS_PROCESS_AUTHORITY_BUILD_IDENTITIES` stays
+  // empty until packaging writes it, so each row now states the implication and
+  // pins the cause instead of stating the outcome unconditionally.
+  it('is unavailable only for want of a build-pinned artifact, and pins that cause', async () => {
     const stateRoot = temporaryRoot('rasen-windows-production-');
     const bundle = createWindowsProcessAuthorityProviderBundle({ stateRoot });
     expect(bundle.provider.descriptor).toEqual(WINDOWS_PROCESS_AUTHORITY_DESCRIPTOR);
     expect(fs.existsSync(path.join(stateRoot, 'runtime', 'publication-ledger'))).toBe(true);
+
+    // The cause, asserted rather than assumed: the checked-in build-authority
+    // table is empty, so the production resolver the assembly calls cannot
+    // succeed for any input in this tree.
+    expect(WINDOWS_PROCESS_AUTHORITY_BUILD_IDENTITIES).toEqual([]);
+    expect(() => resolveWindowsProcessAuthorityArtifact({
+      packageRoot: process.cwd(),
+      artifactPath: 'dist/native/win32-x64/rasen-windows-process-authority-helper.exe',
+    })).toThrow(/Windows process-authority artifact/u);
 
     const result = await bundle.provider.prepare(INPUT, context('prepare', 'production-prepare'));
     expect(result).toEqual({
@@ -479,7 +535,7 @@ describe('Windows production provider entry point', () => {
     expect('reference' in result).toBe(false);
   });
 
-  it('retains rather than falls back on every control verb', async () => {
+  it('retains on every control verb and never answers with a lifecycle receipt', async () => {
     const stateRoot = temporaryRoot('rasen-windows-production-control-');
     const bundle = createWindowsProcessAuthorityProviderBundle({ stateRoot });
     const harness = createWindowsProviderHarness();
@@ -493,21 +549,111 @@ describe('Windows production provider entry point', () => {
       ),
       bundle.provider.abort(authority.reference, 'production', context('abort', 'production-abort')),
     ]) {
-      await expect(call).resolves.toMatchObject({ state: 'authority-unavailable' });
+      const outcome = await call;
+      expect(outcome).toMatchObject({ state: 'authority-unavailable' });
+      // The contract half rather than the wiring half: an authority that cannot
+      // be reached must never answer with a lifecycle state, and above all never
+      // with the exact-empty receipt a caller would act on.
+      expect([
+        'exact-scope-empty', 'live', 'root-exited', 'prepared-inert', 'published-inert',
+      ]).not.toContain(outcome.state);
+      expect((outcome as { diagnostic?: string }).diagnostic)
+        .toMatch(/prerequisites unavailable|authority is retained/u);
     }
     expect(() => bundle.openRuntime(
       encodeProcessAuthorityReference(WINDOWS_PROCESS_AUTHORITY_DESCRIPTOR, authority.reference)
-    )).toThrow(/native runtime is unavailable/u);
+    )).toThrow(/native runtime.*unavailable/u);
   });
 
   it('forbids dependency injection through the production options', () => {
     const stateRoot = temporaryRoot('rasen-windows-production-injection-');
+    // The production factory takes its transport from the native assembly it
+    // resolves, so an options object carrying one is refused outright rather
+    // than having the extra key ignored.
     expect(() => createWindowsProcessAuthorityProviderBundle({
       stateRoot,
       transport: { async prepare() { return {}; } },
     } as unknown as { stateRoot: string })).toThrow(/forbid dependency injection/u);
+    expect(() => createWindowsProcessAuthorityProviderBundle({
+      stateRoot,
+      runtimeOpener: { open() { throw new Error('unused'); } },
+    } as unknown as { stateRoot: string })).toThrow(/forbid dependency injection/u);
     expect(() => createWindowsProcessAuthorityProviderBundle({ stateRoot: 'relative/path' }))
       .toThrow(/state root is malformed/u);
+  });
+
+  /**
+   * The positive counterpart to the row above, and the reason it can now be
+   * written as an implication: given a build-pinned artifact, the very factory
+   * the production entry point calls produces an assembly whose declared
+   * identity is the resolved artifact's, not the `'e'.repeat(64)` /
+   * `'f'.repeat(64)` placeholder the unavailable stub declares.
+   *
+   * Gated entry point: `itOnWindows` skips off win32 or off x64/arm64, because
+   * `resolveWindowsProcessAuthorityArtifact` refuses to become an authority
+   * outside an actual Windows runtime. It executes no helper - resolution reads
+   * and hashes the image, it does not run it - so this row is package-integrity
+   * evidence, not actual-runtime evidence.
+   */
+  itOnWindows('binds the resolved artifact identity rather than a placeholder', () => {
+    const packageRoot = temporaryRoot('rasen-windows-assembly-');
+    const artifactPath = `dist/native/win32-${process.arch}/${
+      WINDOWS_PROCESS_AUTHORITY_HELPER_FILE}`;
+    const helperPath = path.join(packageRoot, ...artifactPath.split('/'));
+    fs.mkdirSync(path.dirname(helperPath), { recursive: true });
+    const image = syntheticPortableExecutable();
+    fs.writeFileSync(helperPath, image);
+    const identity = {
+      artifactPath,
+      arch: process.arch as 'x64' | 'arm64',
+      mode: 'job-object' as const,
+      providerId: 'rasen.windows.job-object' as const,
+      protocolVersion: 1 as const,
+      providerReferenceVersion: 1 as const,
+      length: image.byteLength,
+      sha256: createHash('sha256').update(image).digest('hex'),
+      sourceSha256: 'a'.repeat(64),
+      compiler: 'rustc 0.0.0 (synthetic)',
+    };
+    fs.writeFileSync(`${helperPath}.manifest.json`, `${JSON.stringify({
+      schema: 'rasen-windows-process-authority-artifact/1',
+      platform: 'win32',
+      arch: identity.arch,
+      mode: identity.mode,
+      providerId: identity.providerId,
+      capabilityId: 'rasen-recursive-process-scope/1',
+      protocolVersion: identity.protocolVersion,
+      providerReferenceVersion: identity.providerReferenceVersion,
+      artifactFile: WINDOWS_PROCESS_AUTHORITY_HELPER_FILE,
+      machine: process.arch === 'arm64' ? 0xaa_64 : 0x86_64,
+      length: identity.length,
+      sha256: identity.sha256,
+      sourceSha256: identity.sourceSha256,
+      compiler: identity.compiler,
+    })}\n`);
+
+    const assembly = createWindowsNativeAssemblyForTesting(
+      temporaryRoot('rasen-windows-assembly-runtime-'),
+      { packageRoot, artifactPath },
+      identity
+    );
+    expect(assembly.artifactIdentity).toEqual({
+      helperProtocolVersion: 1,
+      artifactSha256: identity.sha256,
+      sourceSha256: identity.sourceSha256,
+    });
+    expect(assembly.artifactIdentity.artifactSha256).not.toBe('e'.repeat(64));
+    expect(assembly.artifactIdentity.sourceSha256).not.toBe('f'.repeat(64));
+    // A tampered image is refused by the same resolver the production factory
+    // calls, so the identity above is bound to these bytes and not merely to a
+    // manifest that claims them.
+    fs.writeFileSync(helperPath, Buffer.concat([image.subarray(0, image.byteLength - 1),
+      Buffer.from([image[image.byteLength - 1]! ^ 0xff])]));
+    expect(() => createWindowsNativeAssemblyForTesting(
+      temporaryRoot('rasen-windows-assembly-runtime-tampered-'),
+      { packageRoot, artifactPath },
+      identity
+    )).toThrow(/hash differs from its manifest/u);
   });
 
   it('is selectable through the manifest-bound registry without becoming a default', () => {

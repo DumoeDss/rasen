@@ -535,7 +535,7 @@ function openDaemonLifetimeChannel(): DaemonLifetimeChannel {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-lpa-lifetime-'));
   const fifo = path.join(directory, 'endpoint');
   try {
-    execFileSync('mkfifo', ['-m', '600', fifo], { stdio: 'ignore' });
+    execFileSync('mkfifo', ['-m', '600', fifo], { stdio: 'ignore', windowsHide: true });
     const holder = fs.openSync(fifo, fsConstants.O_RDWR);
     let childEnd: number;
     try {
