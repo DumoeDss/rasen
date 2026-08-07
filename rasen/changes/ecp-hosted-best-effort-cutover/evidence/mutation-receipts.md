@@ -229,10 +229,11 @@ emission of the token it polices; only the phase-label spelling is tolerated.
 Review round 1 found four guards in this change without a demonstrated failing
 counterpart, and the fix round added two new guards of its own. Mutations
 (g) probe-parser containment, (h) terminate-leg attribution, (i) unsettled
-terminal, (j) API projection, (k) activation gate, and a real-host re-run of
-mutation (a) against the packaged capsule are recorded in
-`fix-round-1.md`, together with one narrow recorded waiver (real-host receipt
-7.2b). That file is the current index for this change's mutation coverage.
+terminal, (j) API projection, (k) activation gate, and real-host re-runs of
+mutations (a) and (m) against the packaged capsule are recorded in
+`fix-round-1.md`. No waiver remains: the earlier 7.2b waiver was withdrawn in
+`fec34c16` and replaced by mutation (m-real). That file is the current index for
+this change's mutation coverage.
 
 ## Integrity after the wave
 
