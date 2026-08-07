@@ -92,10 +92,14 @@ describe('agent-context', () => {
       expect(resolveModelLimit('claude-haiku-4-5-20251001')).toBe(200_000);
     });
 
-    it('falls back to the conservative default for unknown models', () => {
+    it('falls back to the 1M default for unknown models', () => {
+      expect(DEFAULT_CONTEXT_LIMIT).toBe(1_000_000);
       expect(resolveModelLimit('some-unknown-model')).toBe(DEFAULT_CONTEXT_LIMIT);
       expect(resolveModelLimit(undefined)).toBe(DEFAULT_CONTEXT_LIMIT);
       expect(resolveModelLimit(null)).toBe(DEFAULT_CONTEXT_LIMIT);
+      // Real ids seen in the wild that no preset matches.
+      expect(resolveModelLimit('claude-opus-5')).toBe(1_000_000);
+      expect(resolveModelLimit('glm-5.2')).toBe(1_000_000);
     });
   });
 

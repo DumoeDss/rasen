@@ -69,15 +69,23 @@ export interface ContextEstimate {
   remainingTokens: number;
 }
 
-/** Conservative fallback window for unknown models. */
-export const DEFAULT_CONTEXT_LIMIT = 200_000;
+/**
+ * Fallback window for unknown models. A Claude transcript records only
+ * `message.model` — no context-window field — so an id the registry does not
+ * know (a new family like `claude-opus-5`, or a non-Anthropic id like
+ * `glm-5.2`) has to be guessed at. 1M is the modern floor for the models this
+ * tool is actually driven by; the old 200000 guess made every such session
+ * read as 5x more occupied than it was and fired handoffs that were not due.
+ * A genuinely small-window model therefore under-reports until it earns a
+ * preset entry — pin it with `--limit <n>` in the meantime.
+ */
+export const DEFAULT_CONTEXT_LIMIT = 1_000_000;
 
 /**
  * Resolve a model id to its context-window size via the built-in
- * {@link resolveModelPreset} registry, falling back to the conservative
- * default for unknown models. One source of truth for context-window sizes;
- * identical resolutions to the previous ad-hoc map for every id it resolved
- * before.
+ * {@link resolveModelPreset} registry, falling back to
+ * {@link DEFAULT_CONTEXT_LIMIT} for unknown models. One source of truth for
+ * context-window sizes.
  */
 export function resolveModelLimit(model: string | undefined | null): number {
   return resolveModelPreset(model)?.contextWindow ?? DEFAULT_CONTEXT_LIMIT;
