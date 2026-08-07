@@ -265,6 +265,13 @@ leaves-with-parked-crates 3; superseded-by-decision-13 1; stays-0.2.0 1.
   must be fixed (contained parser callback, typed phase-specific rejection, exactly one bounded
   observation) before closure can complete. This is the single highest-value grep of the
   cutover review.
+- **Resolution note (2026-08-08):** the check was performed by the cutover independent review
+  round 1 (`../ecp-hosted-best-effort-cutover/evidence/review-round-1.md`, finding F1). The
+  probe IS reachable by design (cutover D4) and was exercised on a real host, so the
+  conditional above resolved AGAINST the park: RC-004 is resurfaced 0.2.0 acceptance, with the
+  parser-containment fix assigned to the cutover fix round. The closure residual is stated in
+  `decision13-rescope-input.md` section 1. The conditional text above is preserved as the
+  2026-08-07 record.
 
 ### RC-005 - Minor - exact-closed local clients remain retained forever
 
@@ -293,7 +300,8 @@ leaves-with-parked-crates 3; superseded-by-decision-13 1; stays-0.2.0 1.
 Re-grades change which ledger a finding is carried on; they resolve nothing. SEC-001 remains an
 open Blocker of this Change until the named discriminator exists, passes, and is independently
 confirmed. RC-005 remains open 0.2.0 acceptance. RC-004's departure is conditional on a check
-that has not yet been performed. SEC-002, SEC-003, RC-001, RC-002, and RC-003 stay on the
+that has not yet been performed (2026-08-08: performed; the park failed - see the RC-004
+resolution note above). SEC-002, SEC-003, RC-001, RC-002, and RC-003 stay on the
 record with their re-entry conditions. The authority to close any of the above belongs to the
 `ecp-hosted-best-effort-cutover` independent review and the closure re-review under the
 rewritten acceptance, not to this document.
