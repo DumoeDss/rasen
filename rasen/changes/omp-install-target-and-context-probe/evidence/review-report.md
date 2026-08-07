@@ -225,7 +225,15 @@ definition and task 4.3's missing e2e assertion are all closed.
 Still open and unchanged: the three Majors below, and `isUnmeasurableWindow` at
 `contextTokens === 0`.
 
-## Open — NOT fixed, needs a decision
+## Open — filed for the repository owner to decide
+
+All three Majors below are now raised as their own change,
+**`agent-context-occupancy-contract-gaps`**, with the evidence, the alternatives
+and a recommendation for each. They are NOT decided here: two change a published
+contract and the third trades correctness against a rewrite of the function this
+review already found a Blocker in, so the call belongs to the repository owner
+rather than the reviewer. That proposal is sequenced after this change archives,
+because one of its delta specs modifies a capability this change introduces.
 
 ### Major
 
