@@ -5,7 +5,7 @@ authority:
   northStar: ../north-star.md
 targetState: target-state.md
 roadmap: roadmap.md
-activeSlice: slices/v2-authoring-loop-contract-closure
+activeSlice: slices/session-execution-and-self-hosting
 lastReconciled:
-  at: 2026-08-01T14:59:22+08:00
-  revision: 14ed62bc088197294f4a219ff20e946a6a99691d
+  at: 2026-08-07T13:40:00+08:00
+  revision: 140115ced9df814f6adf3190b47171202d964a5e

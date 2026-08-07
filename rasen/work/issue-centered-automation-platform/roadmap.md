@@ -12,6 +12,10 @@
 > 0.3.0。** 在子 Direction
 > [`executable-composite-pipelines/`](./executable-composite-pipelines/README.md)
 > 通过前，Phase 0–8 全部保持 Later。
+>
+> **补充（2026-08-07）：0.3.0 另接收一项非 Issue 层的研究事项——macOS durable
+> 进程权威。** 它由 0.2.0 经显式 scope decision 移交，不属于 Phase 0–8，也不构成
+> Phase 0–8 的前置条件。详见 [§13](#13-从-020-移交的非-issue-研究事项2026-08-07)。
 
 ## 0. 2026-07-29 ECP 校准快照（已由子 Direction 接管）
 
@@ -636,3 +640,38 @@ auto-decompose 输出至少包含：
 
 这条黄金路径通过后，再进入“单项目多 Change”；不要同时建设跨项目路由、
 复杂看板和 Forge 集成。
+
+## 13. 从 0.2.0 移交的非 Issue 研究事项（2026-08-07）
+
+本节登记由 0.2.0 经显式 scope decision 移交给 0.3.0 的事项。它们不属于 Phase 0–8
+的 Issue 层路线，也**不是** Phase 0–8 的前置条件；单独排期，单独取证。
+
+### 13.1 macOS durable 进程权威
+
+**背景。** ECP-7 的独立审查实证否证了 POSIX process group 作为递归进程权威的假设：
+workload 调用 `setsid()` / `setpgid()` 即可逃出保留的进程组，逃逸后既杀不掉也看不见。
+Linux 与 Windows 各有内核强制的替代方案（user+PID namespace guardian / 经认证安装
+broker 的不可迁移 cgroup-v2 leaf；Job Object 的 suspended assign-before-run +
+breakaway-disabled + last-handle 不变量），macOS 则没有等价的非特权原语——XNU 既无
+PID namespace 也无 cgroup，Mach task 不是层级化终止单位，`kqueue`/`NOTE_TRACK` 只
+观察不强制且会丢事件，`proc_listchildpids` 属于被明令禁止的 PID-tree 采样。
+
+**0.2.0 的处理（已生效）。** 执行后端按能力分级：macOS 只交付 `in-tool` 后端
+（worker 由宿主工具拥有，rasen 不做任何进程权威声明）；`hosted` 请求返回类型化
+`authority-unavailable`，绝不静默改路由。这是**声明的能力边界**，不是 silent
+unsupported。
+
+**0.3.0 需要研究并拍板的。** 候选方向已有研究记录但**均未获批准**：
+
+1. macOS 27 signed/entitled dual Endpoint Security descendants clients，配套
+   Apple entitlement、Developer ID 签名/公证、最低版本承诺与真实 macOS 27 runner；
+2. Virtualization.framework VM 边界——完整但显著扩张 runtime 与分发；
+3. 修改 macOS support promise 本身。
+
+研究输入见
+[`ecp-native-process-capsule-closure/evidence/architecture-replan.md`](../../changes/ecp-native-process-capsule-closure/evidence/architecture-replan.md)
+与子 Direction 的 Architecture Replan 2/3。
+
+**不因移交而免除的义务。** ECP-8 仍须在真实 macOS 上取得两条 receipt：`in-tool`
+后端可用，以及 `hosted` 请求返回类型化 `authority-unavailable` 且未发生静默改路由。
+缺失时必须显式记为 0.2.0 已知缺口，不得默认写成通过。
