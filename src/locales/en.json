@@ -430,7 +430,7 @@
       "selectedProjectRoot": "Using Rasen root: project {project} ({path})",
       "staleProfileWorkflowsWarning": "Warning: dropping unknown workflow id(s) from stored profile: {workflows}",
       "unknownHostRuntimeWarning": "Warning: LEAD host runtime is unknown; using the legacy compatibility route. Set {override}=claude|codex for deterministic dispatch.",
-      "hostRuntimeWithoutDispatchAdapterWarning": "Warning: LEAD host runtime {host} has no dispatch adapter; using the legacy compatibility route. Set {override}=claude|codex for deterministic dispatch — note that the same override also redirects `rasen agent context --latest` to that runtime's session store, so this host's own occupancy is no longer what gets reported.",
+      "hostRuntimeWithoutDispatchAdapterWarning": "Warning: LEAD host runtime {host} has no dispatch adapter; using the legacy compatibility route. Set {override}=claude|codex for deterministic dispatch — note that the same override also redirects `rasen agent context --latest` away from this host's own session, so what gets reported is another conversation's occupancy.",
       "noPipelinesFound": "No pipelines found.",
       "availablePipelinesHeading": "Available pipelines:",
       "pipelineTableEntry": "  {name}  [{source}]",

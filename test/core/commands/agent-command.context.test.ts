@@ -289,6 +289,32 @@ describe('AgentCommand.context — Codex rollout support', () => {
     expect(logs[0]).toContain('default');
   });
 
+  // The `recommended` arm moved behind a three-way ternary when the withheld
+  // verdict was added, and nothing rendered it: the only other mentions in the
+  // suite are a NEGATIVE assertion and a comment. It is the arm that actually
+  // triggers a handoff, so leaving it unrendered means the widened ternary
+  // could lose it silently.
+  it('the human-readable line reports the recommended verdict above the threshold', async () => {
+    const p = writeRollout('rollout-2026-01-01T00-00-05-abc.jsonl', [
+      SESSION_META_LINE,
+      TURN_CONTEXT_LINE,
+      tokenCountLine(340_000, 353_400), // ~96% occupancy, past the default 0.85
+    ]);
+
+    const logs: string[] = [];
+    const orig = console.log;
+    console.log = (msg?: unknown) => logs.push(String(msg));
+    try {
+      await cmd.context({ transcript: p });
+    } finally {
+      console.log = orig;
+    }
+
+    expect(logs[0]).toContain('handoff recommended');
+    expect(logs[0]).not.toContain('handoff not yet needed');
+    expect(logs[0]).not.toContain('handoff undetermined');
+  });
+
   it('a successful --json probe carries available: true', async () => {
     const p = writeRollout('rollout-2026-01-01T00-00-06-abc.jsonl', [
       SESSION_META_LINE,

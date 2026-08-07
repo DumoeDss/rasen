@@ -118,8 +118,8 @@ rasen init
 # 在指定目录初始化
 rasen init ./my-project
 
-# 非交互式：为 Claude 和 Cursor 配置
-rasen init --tools claude,cursor
+# 非交互式：为 Claude 和 Oh My Pi 配置
+rasen init --tools claude,omp
 
 # 为所有支持的工具配置
 rasen init --tools all

@@ -131,8 +131,8 @@ rasen init
 # Initialize in a specific directory
 rasen init ./my-project
 
-# Non-interactive: configure for Claude and Cursor
-rasen init --tools claude,cursor
+# Non-interactive: configure for Claude and Oh My Pi
+rasen init --tools claude,omp
 
 # Configure for all supported tools
 rasen init --tools all

@@ -385,10 +385,12 @@ stages:
 
   // The reporter-less path renders `unlocalizedNoticeMessage`, not the locale
   // catalog, so the new variant needs its own coverage. It must name the host
-  // AND must not claim that forcing the override redirects the context probe:
-  // the override feeds host detection only, so an implicit `--latest` still
-  // resolves the Claude store (verified: `RASEN_AGENT_RUNTIME=codex` +
-  // `--latest` reports runtime `claude`).
+  // AND must not claim the override "lifts the context-probe refusal" — `omp`
+  // now declares `canProbeContext`, so there is no refusal to lift (verified:
+  // on an Oh My Pi host a bare `--latest` reports `runtime=omp` from this
+  // session's own journal). The negative below mirrors the localized sibling's
+  // (`test/commands/pipeline-messages.test.ts`), so the two copies of this
+  // notice cannot drift back into stating opposite facts.
   it('renders the recognized-host fallback without a reporter, naming the host honestly', async () => {
     const p = pipeline(`
 name: omp-host-unlocalized
@@ -406,7 +408,8 @@ stages:
     }
     const message = errors.join('\n');
     expect(message).toMatch(/LEAD host runtime "omp" has no dispatch adapter/);
-    expect(message).toMatch(/lifts the context-probe refusal/);
+    expect(message).toMatch(/redirects `rasen agent context --latest`/);
+    expect(message).not.toMatch(/refusal/i);
     expect(message).not.toMatch(/report the forced runtime/);
     expect(message).not.toMatch(/host runtime is unknown/);
   });

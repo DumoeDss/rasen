@@ -89,7 +89,18 @@ export function detectOmpNestedInstallCapture(
   const start = path.resolve(installRoot);
   if (hasPopulatedOmpDir(start)) return undefined;
 
+  // The install root's OWN boundary stops the walk before it starts. Oh My Pi
+  // resolves project context only up to the enclosing Git checkout root, so
+  // when the install root IS that root (the ordinary `rasen init` case) no
+  // ancestor above it is ever consulted, and reporting one would name files
+  // that never loaded. Checked here rather than in the loop because the loop's
+  // own boundary test deliberately runs AFTER its capture test, which is what
+  // lets a repository root one level UP still be reported.
+  // A `.git` FILE counts too, so a worktree or submodule bounds it exactly as
+  // a normal checkout does.
   const home = path.resolve(homeDir);
+  if (start === home || fs.existsSync(path.join(start, '.git'))) return undefined;
+
   let current = path.dirname(start);
   let previous = start;
   while (current !== previous) {

@@ -104,35 +104,43 @@ describe('pipeline messages', () => {
   // override no longer "lifts the context-probe refusal" — Oh My Pi is the only
   // host that can trigger this warning and it now has its own reader, so there
   // is no refusal to lift. But the override DOES still redirect
-  // `agent context --latest` to the forced runtime's store, and that half is now
-  // MORE consequential: it is the one thing that undoes the probe capability,
-  // silently substituting another conversation's occupancy. So the negative
-  // assertion below targets the refusal claim specifically rather than the word
-  // "context", which would forbid the true caveat as well.
+  // `agent context --latest` away from this host's own session, and that half
+  // is now MORE consequential: it is the one thing that undoes the probe
+  // capability, silently substituting another conversation's occupancy. So the
+  // negative assertion below targets the refusal claim specifically rather than
+  // the word "context", which would forbid the true caveat as well.
+  //
+  // The caveat deliberately does NOT name the destination store. Saying "that
+  // runtime's session store" would be false for half the values the same
+  // sentence offers: `LEGACY_LATEST_STORE_HOSTS` pins a `codex` host to the
+  // Claude store, so `RASEN_AGENT_RUNTIME=codex` does not read Codex rollouts
+  // (verified end to end — it reports `runtime: claude`). The destination is
+  // also what FU-C may change; "away from this host's own session" is the part
+  // that is true now and stays true either way.
   it.each([
     {
       locale: 'en',
       expected:
         'Warning: LEAD host runtime omp has no dispatch adapter; using the legacy compatibility route. ' +
         'Set RASEN_AGENT_RUNTIME=claude|codex for deterministic dispatch — note that the same override ' +
-        'also redirects `rasen agent context --latest` to that runtime\'s session store, so this host\'s ' +
-        'own occupancy is no longer what gets reported.',
+        'also redirects `rasen agent context --latest` away from this host\'s own session, so what ' +
+        'gets reported is another conversation\'s occupancy.',
     },
     {
       locale: 'ja',
       expected:
         '警告: LEADのホストruntime omp にはdispatchアダプタがないため、legacy互換ルートを使用します。' +
         '決定的なdispatchには RASEN_AGENT_RUNTIME=claude|codex を設定してください。' +
-        'ただしこの override は `rasen agent context --latest` の参照先セッションストアも指定した runtime に' +
-        '切り替えるため、以降はこのホスト自身の占有率が報告されなくなります。',
+        'ただしこの override は `rasen agent context --latest` の参照先をこのホスト自身のセッションから' +
+        '切り替えるため、以降は別の会話の占有率が報告されます。',
     },
     {
       locale: 'zh-cn',
       expected:
         '警告：LEAD 工具宿主 omp 没有派发适配器，正在使用旧版兼容路由。' +
         '设置 RASEN_AGENT_RUNTIME=claude|codex 可获得确定的派发行为。' +
-        '但该 override 同时会把 `rasen agent context --latest` 的读取目标切换到该 runtime 的会话存储，' +
-        '此后报告的将不再是本宿主自己的占用率。',
+        '但该 override 同时会把 `rasen agent context --latest` 的读取目标从本宿主自己的会话切换走，' +
+        '此后报告的将是另一个会话的占用率。',
     },
   ] as const)('names the host and keeps only the still-true probe caveat in $locale', (row) => {
     const rendered = formatPipelineExecutionNotice(

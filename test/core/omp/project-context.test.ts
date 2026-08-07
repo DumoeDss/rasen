@@ -8,12 +8,20 @@ import { detectOmpNestedInstallCapture } from '../../../src/core/omp/project-con
 import { ompNestedInstallCaptureReport } from '../../../src/core/omp/project-context-locale.js';
 
 describe('detectOmpNestedInstallCapture', () => {
+  // `home` is nested inside a disposable sandbox because one case below writes
+  // an `.omp/AGENTS.md` ABOVE `home` to prove the walk stops there. With `home`
+  // itself the mkdtemp, that write landed in the shared system temp directory
+  // and `afterEach` never removed it, so the suite permanently planted a
+  // `$TMPDIR/.omp/AGENTS.md` that every later capture walk over a temp-dir
+  // install root would then find.
+  let sandbox: string;
   let home: string;
   let repo: string;
   let pkg: string;
 
   beforeEach(() => {
-    home = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-omp-ctx-'));
+    sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-omp-ctx-'));
+    home = path.join(sandbox, 'home');
     repo = path.join(home, 'work', 'monorepo');
     pkg = path.join(repo, 'packages', 'api');
     fs.mkdirSync(pkg, { recursive: true });
@@ -22,7 +30,7 @@ describe('detectOmpNestedInstallCapture', () => {
   });
 
   afterEach(() => {
-    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(sandbox, { recursive: true, force: true });
   });
 
   function writeOmpFile(dir: string, name: string): string {
@@ -99,6 +107,25 @@ describe('detectOmpNestedInstallCapture', () => {
     // own discovery boundary, so it was never loading here to begin with.
     writeOmpFile(path.join(home, 'work'), 'AGENTS.md');
     expect(detectOmpNestedInstallCapture(pkg, home)).toBeUndefined();
+  });
+
+  it('reports nothing when the install root IS the repository root', () => {
+    // The ordinary `rasen init` case. Oh My Pi resolves project context only up
+    // to the enclosing Git checkout, so from inside `repo` nothing above it is
+    // ever consulted — naming an enclosing file would blame the install for a
+    // capture that never happens. The walk must stop before it starts, not
+    // after its first hop.
+    const above = writeOmpFile(path.join(home, 'work'), 'AGENTS.md');
+    expect(fs.existsSync(above)).toBe(true);
+    expect(detectOmpNestedInstallCapture(repo, home)).toBeUndefined();
+  });
+
+  it('reports nothing when the install root is a worktree whose .git is a FILE', () => {
+    const wt = path.join(home, 'work', 'worktree');
+    fs.mkdirSync(wt, { recursive: true });
+    fs.writeFileSync(path.join(wt, '.git'), 'gitdir: /elsewhere\n', 'utf-8');
+    writeOmpFile(path.join(home, 'work'), 'RULES.md');
+    expect(detectOmpNestedInstallCapture(wt, home)).toBeUndefined();
   });
 
   it('does not walk past the home directory when there is no repository root', () => {

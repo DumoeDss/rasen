@@ -430,7 +430,7 @@
       "selectedProjectRoot": "使用するRasenルート: プロジェクト {project} ({path})",
       "staleProfileWorkflowsWarning": "警告: 保存済みプロファイルから不明なワークフローIDを除外します: {workflows}",
       "unknownHostRuntimeWarning": "警告: LEADのホストruntimeを識別できないため、legacy互換ルートを使用します。決定的なdispatchには {override}=claude|codex を設定してください。",
-      "hostRuntimeWithoutDispatchAdapterWarning": "警告: LEADのホストruntime {host} にはdispatchアダプタがないため、legacy互換ルートを使用します。決定的なdispatchには {override}=claude|codex を設定してください。ただしこの override は `rasen agent context --latest` の参照先セッションストアも指定した runtime に切り替えるため、以降はこのホスト自身の占有率が報告されなくなります。",
+      "hostRuntimeWithoutDispatchAdapterWarning": "警告: LEADのホストruntime {host} にはdispatchアダプタがないため、legacy互換ルートを使用します。決定的なdispatchには {override}=claude|codex を設定してください。ただしこの override は `rasen agent context --latest` の参照先をこのホスト自身のセッションから切り替えるため、以降は別の会話の占有率が報告されます。",
       "noPipelinesFound": "パイプラインが見つかりません。",
       "availablePipelinesHeading": "利用可能なパイプライン:",
       "pipelineTableEntry": "  {name}  [{source}]",

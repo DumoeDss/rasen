@@ -308,6 +308,15 @@ interface OmpUsage {
   cacheWrite?: number;
 }
 
+/**
+ * Occupancy recorded by one Oh My Pi usage row: everything sent to the model
+ * for that turn, and nothing it produced. The Oh My Pi analog of
+ * {@link sumUsage}.
+ */
+function sumOmpUsage(usage: OmpUsage): number {
+  return (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+}
+
 interface OmpSessionRow {
   type?: string;
   /** `model_change` carries the id at the row level, provider-prefixed. */
@@ -321,11 +330,17 @@ interface OmpSessionRow {
 /**
  * Compute context occupancy from an Oh My Pi session journal.
  *
- * Occupancy is `input + cacheRead + cacheWrite` of the LAST `message` row
- * carrying `message.usage` — everything sent to the model for that turn,
- * including cached input, and nothing it produced. That is the same definition
+ * Occupancy is `input + cacheRead + cacheWrite` of the last `message` row that
+ * MEASURES something — everything sent to the model for that turn, including
+ * cached input, and nothing it produced. That is the same definition
  * {@link sumUsage} applies to a Claude transcript, so the two harnesses' numbers
  * stay directly comparable (design D7).
+ *
+ * "Measures something" rather than simply "the last one": Oh My Pi writes an
+ * all-zero usage row for a turn that sent nothing, so a session interrupted at
+ * the end carries a tail of rows that record no measurement. Those are skipped
+ * — see the scan below for the measurement that forced it. A session whose
+ * rows are ALL zero still reports `0`.
  *
  * The model comes from that same row's `message.model` (present on every
  * assistant message live), falling back to the last `model_change` row and then
@@ -361,7 +376,30 @@ export function computeContextFromOmpSession(
     );
   }
 
-  let last: { usage: OmpUsage; model: string | undefined } | undefined;
+  // Two cursors, because a trailing row can carry `usage` without MEASURING
+  // anything: Oh My Pi records an all-zero usage row for a turn that sent
+  // nothing (an aborted or interrupted one), and writes a run of them at the
+  // tail of a session that ended that way. Measured on this machine: 21 such
+  // rows across the real journals, and one 479-row session whose last TWELVE
+  // usage rows are all-zero while its real occupancy is 353_360. Taking the
+  // last row unconditionally reported that session as empty with its whole
+  // window free, so the handoff verdict said "not yet needed" for a session
+  // at 35% — the placeholder-vs-measurement confusion `isUnmeasurableWindow`
+  // exists to prevent, arriving through the occupancy channel instead.
+  //
+  // The Claude reader is deliberately NOT changed to match: Claude records no
+  // all-zero usage row at all (0 of 53 rows on this machine, 0 of 6
+  // transcripts ending on one), so the shape this guards against does not
+  // occur there and `cli-agent-context` requires that reader byte-identical.
+  //
+  // Skip-and-keep-previous rather than throw, mirroring the sibling reader
+  // that already faces this shape: {@link computeContextFromRollout} ignores a
+  // trailing `token_count` whose `last_token_usage` is degenerate and keeps
+  // the previous valid snapshot (pinned by "uses the last valid token_count
+  // snapshot" in `test/core/agent-context.test.ts`). Oh My Pi was the odd one
+  // out, not Codex.
+  let lastMeasured: { usage: OmpUsage; model: string | undefined } | undefined;
+  let lastAny: { usage: OmpUsage; model: string | undefined } | undefined;
   let lastModelChange: string | undefined;
   for (const line of content.split('\n')) {
     const trimmed = line.trim();
@@ -376,16 +414,40 @@ export function computeContextFromOmpSession(
       lastModelChange = row.model;
       continue;
     }
+    // `/clear` appends a payload-free `reset_boundary`, and Oh My Pi rebuilds
+    // the model context AFTER the latest one — everything before it is hidden
+    // from the model while remaining in the journal for transcript export
+    // (`omp://session.md`, `buildSessionContext` step 4). Both cursors reset
+    // so occupancy is measured within the CURRENT context epoch only.
+    //
+    // This guard is what keeps the skip-zero rule above safe: without it, a
+    // `/clear` followed by an aborted turn would walk back PAST the boundary
+    // and report the pre-clear occupancy of a context that is now empty —
+    // turning an under-report into a much larger over-report.
+    if (row.type === 'reset_boundary') {
+      lastMeasured = undefined;
+      lastAny = undefined;
+      continue;
+    }
     // The fixed-width `title` row and every non-message row fall through here
     // without a special case: only a `message` carrying `usage` can measure.
     const usage = row.message?.usage;
     if (row.type === 'message' && usage && typeof usage === 'object') {
-      last = {
+      const entry = {
         usage,
         model: typeof row.message?.model === 'string' ? row.message.model : undefined,
       };
+      lastAny = entry;
+      // The model is taken from the measuring row for the same reason the sum
+      // is: it is the model that actually produced the occupancy reported.
+      if (sumOmpUsage(usage) > 0) lastMeasured = entry;
     }
   }
+
+  // Falls back to the last usage row when NOTHING measured, which keeps a
+  // session whose only rows are all-zero reporting its existing honest `0`
+  // rather than becoming an error.
+  const last = lastMeasured ?? lastAny;
 
   if (!last) {
     throw new Error(
@@ -393,8 +455,7 @@ export function computeContextFromOmpSession(
     );
   }
 
-  const contextTokens =
-    (last.usage.input ?? 0) + (last.usage.cacheRead ?? 0) + (last.usage.cacheWrite ?? 0);
+  const contextTokens = sumOmpUsage(last.usage);
   const model = last.model ?? lastModelChange ?? 'unknown';
   const limit = options.limit ?? resolveModelPreset(model)?.contextWindow ?? 0;
   return {
@@ -649,15 +710,22 @@ export interface ProbeOptions {
   transcript?: string;
   /** Resolve the newest main-session transcript for `cwd`/`dir`. */
   latest?: boolean;
-  /** Override the Claude projects base dir used by `latest`. */
+  /**
+   * Override the session-store root `latest` searches — the Claude projects
+   * directory, Codex's sessions root, or Oh My Pi's sessions root, whichever
+   * the resolved runtime names.
+   */
   dir?: string;
   /** Override the resolved context-window limit. */
   limit?: number;
-  /** Working directory used to derive the projects dir (defaults to process.cwd()). */
+  /** Working directory used to derive the session-store dir (defaults to process.cwd()). */
   cwd?: string;
-  /** Home directory used to derive the projects dir (defaults to os.homedir()). */
+  /** Home directory used to derive the session-store dir (defaults to os.homedir()). */
   homeDir?: string;
-  /** Force detection to `'claude'` or `'codex'` instead of sniffing the file. */
+  /**
+   * Force detection to a probe-capable runtime ({@link PROBE_RUNTIMES} —
+   * `'claude'`, `'codex'` or `'omp'`) instead of sniffing the file.
+   */
   runtime?: string;
   /**
    * Environment the implicit-`--latest` host gate reads (defaults to

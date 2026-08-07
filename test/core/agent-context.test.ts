@@ -1015,6 +1015,84 @@ describe('agent-context', () => {
       expect(computeContextFromOmpSession(p).contextTokens).toBe(LIVE_OCCUPANCY);
     });
 
+    // Oh My Pi records an all-zero usage row for a turn that sent nothing (an
+    // aborted or interrupted one) and writes a RUN of them at the tail of a
+    // session that ended that way — measured on a real 479-row journal whose
+    // last twelve usage rows are all-zero while its true occupancy is 353_360.
+    // An unconditional last-wins read reported that session as empty with its
+    // whole window free, so the handoff verdict said "not yet needed" at 35%.
+    const OMP_ZERO = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
+
+    it('does not let a trailing zero-usage row mask real occupancy', () => {
+      const p = writeSession('zero-tail.jsonl', [
+        ompMessageLine('claude-opus-5', LIVE),
+        ompMessageLine('claude-opus-5', OMP_ZERO),
+      ]);
+      expect(computeContextFromOmpSession(p).contextTokens).toBe(LIVE_OCCUPANCY);
+    });
+
+    it('sees past a RUN of trailing zero-usage rows, as a real journal writes', () => {
+      const p = writeSession('zero-tail-run.jsonl', [
+        ompMessageLine('claude-opus-5', LIVE),
+        ...Array.from({ length: 12 }, () => ompMessageLine('claude-opus-5', OMP_ZERO)),
+      ]);
+      const r = computeContextFromOmpSession(p);
+      expect(r.contextTokens).toBe(LIVE_OCCUPANCY);
+      // The whole point of the fix: the verdict layer receives real headroom
+      // rather than a full-window fabrication.
+      expect(r.remainingTokens).toBe(1_000_000 - LIVE_OCCUPANCY);
+      expect(r.pct).toBeGreaterThan(0);
+    });
+
+    it('takes the model from the measuring row, not from a later zero row', () => {
+      const p = writeSession('zero-tail-model.jsonl', [
+        ompMessageLine('claude-opus-5', LIVE),
+        ompMessageLine('some-unlisted-model', OMP_ZERO),
+      ]);
+      const r = computeContextFromOmpSession(p);
+      expect(r.model).toBe('claude-opus-5');
+      // Reading the model off the zero row would also lose the window.
+      expect(r.limit).toBe(1_000_000);
+    });
+
+    it('still reports 0 when every usage row is zero, rather than erroring', () => {
+      const p = writeSession('zero-only.jsonl', [
+        ompMessageLine('claude-opus-5', OMP_ZERO),
+        ompMessageLine('claude-opus-5', OMP_ZERO),
+      ]);
+      const r = computeContextFromOmpSession(p);
+      expect(r.contextTokens).toBe(0);
+      expect(r.model).toBe('claude-opus-5');
+    });
+
+    // `/clear` appends a payload-free `reset_boundary` and Oh My Pi rebuilds
+    // the model context after the latest one (`omp://session.md`), so pre-clear
+    // turns are no longer occupying anything.
+    const OMP_RESET = JSON.stringify({ type: 'reset_boundary', id: 'b1' });
+
+    it('measures only the current context epoch after a reset boundary', () => {
+      const p = writeSession('reset-epoch.jsonl', [
+        ompMessageLine('claude-opus-5', LIVE),
+        OMP_RESET,
+        ompMessageLine('claude-opus-5', { input: 1, cacheRead: 10, cacheWrite: 0, output: 5 }),
+      ]);
+      expect(computeContextFromOmpSession(p).contextTokens).toBe(11);
+    });
+
+    // The interaction that makes the boundary guard load-bearing: skipping zero
+    // rows must not walk BACK past a reset, which would turn a cleared session
+    // into a report of its pre-clear occupancy.
+    it('does not walk past a reset boundary to find a nonzero row', () => {
+      const p = writeSession('reset-then-zero.jsonl', [
+        ompMessageLine('claude-opus-5', LIVE),
+        OMP_RESET,
+        ompMessageLine('claude-opus-5', OMP_ZERO),
+      ]);
+      const r = computeContextFromOmpSession(p);
+      expect(r.contextTokens).toBe(0);
+      expect(r.contextTokens).not.toBe(LIVE_OCCUPANCY);
+    });
+
     it('skips the fixed-width title row and any malformed line', () => {
       const p = writeSession('malformed.jsonl', [
         '{ not json',
