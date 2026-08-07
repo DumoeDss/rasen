@@ -1,0 +1,37 @@
+[package]
+name = "rasen-linux-process-authority"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT"
+publish = false
+
+[lib]
+name = "rasen_linux_process_authority"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rasen-linux-process-authority"
+path = "src/main.rs"
+
+[[bin]]
+name = "rasen-linux-process-authority-broker"
+path = "src/bin/rasen-linux-process-authority-broker.rs"
+
+[[bin]]
+name = "rasen-linux-process-authority-broker-client"
+path = "src/bin/rasen-linux-process-authority-broker-client.rs"
+
+[dependencies]
+ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["fast", "std", "zeroize"] }
+getrandom = "=0.3.3"
+libc = "=0.2.174"
+sha2 = "=0.10.9"
+zeroize = "=1.9.0"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+panic = "abort"
+strip = "symbols"

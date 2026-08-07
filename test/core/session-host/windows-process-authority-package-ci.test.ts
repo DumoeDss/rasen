@@ -1,0 +1,332 @@
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
+
+const SCRIPT = path.resolve('scripts/build-windows-process-authority.mjs');
+const WORKFLOW = path.resolve('.github/workflows/windows-process-authority.yml');
+const CRATE = path.resolve('native/windows-process-authority');
+const HELPER_RELATIVE = 'dist/native/win32-x64/rasen-windows-process-authority-helper.exe';
+
+/**
+ * The frozen Linux tree marker. This Change must not modify a byte of it, and
+ * the marker is recomputed here rather than trusted, because a stale marker
+ * would let a modification pass unnoticed.
+ */
+const FROZEN_LINUX_SOURCE_DIGEST =
+  '087d87a5948c74ae770233f15bb1dce845557d8bcc66dc23fa12642cf615ad59';
+
+const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
+  'native/process-capsule/src/main.rs':
+    '79dc1ad0f19e5f1d087083707c5307d8523002c557995a6658146c64f0f41c8d',
+  'native/process-capsule/Cargo.lock':
+    'f00e64114e06f06b623880947c4ec4d33953218d901abdba3b2b2f1d32db8793',
+  'scripts/build-process-capsule.mjs':
+    '4117b109bbe524ccd9423e9e4ef1da8f52cfc1a27e818871ae71c653f599ef92',
+  'src/core/session-host/process-capsule/resolver.ts':
+    'a1df4e2ed63167231c0207dbd4d5a5d8c8aa5bb4e44665e7b4cbe3d5624bbf91',
+  'src/core/session-host/process-capsule/native-process-scope.ts':
+    '0848c77b55d405afdf02b43c797986cb15193cca453b61fa7aa03d07209588fa',
+});
+
+const FROZEN_COMMON_INPUTS = Object.freeze({
+  'rasen/specs/process-authority-provider/spec.md':
+    '05257eb1860aa40ce06a2289b63348e21a81187f4df4fd4aff346e7e8ac57d5a',
+  'test/helpers/process-authority-provider-conformance.ts':
+    '2e952cde167a72e195e437e45cfa870c5130e29de2cd09c8341ca5c0b93f8b60',
+});
+
+function posix(relativePath: string): string {
+  return relativePath.split(path.sep).join('/');
+}
+
+function sourceFiles(directory: string, prefix = ''): string[] {
+  const files: string[] = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const relative = path.join(prefix, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...sourceFiles(path.join(directory, entry.name), relative));
+    } else if (entry.isFile()) {
+      files.push(posix(relative));
+    }
+  }
+  return files;
+}
+
+/** The build script's convention, including the trailing NUL after each file. */
+function crateSourceDigest(crate: string, roots: readonly string[]): string {
+  const files = [...roots, ...sourceFiles(path.join(crate, 'src'), 'src')].sort();
+  const hash = createHash('sha256');
+  for (const file of files) {
+    hash.update(file);
+    hash.update('\0');
+    hash.update(fs.readFileSync(path.join(crate, ...file.split('/'))));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+function sha256File(relativePath: string): string {
+  return createHash('sha256').update(fs.readFileSync(path.resolve(relativePath))).digest('hex');
+}
+
+function runScript(args: readonly string[]): { status: number; stdout: string; stderr: string } {
+  try {
+    const stdout = execFileSync(process.execPath, [SCRIPT, ...args], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return { status: 0, stdout, stderr: '' };
+  } catch (error) {
+    const failure = error as { status?: number; stdout?: string; stderr?: string };
+    return {
+      status: failure.status ?? 1,
+      stdout: failure.stdout ?? '',
+      stderr: failure.stderr ?? '',
+    };
+  }
+}
+
+describe('Windows process-authority build script', () => {
+  it('plans an explicitly non-runtime artifact for each supported target', () => {
+    for (const [target, arch, directory] of [
+      ['x86_64-pc-windows-msvc', 'x64', 'win32-x64'],
+      ['aarch64-pc-windows-msvc', 'arm64', 'win32-arm64'],
+    ] as const) {
+      const result = runScript(['--plan', '--target', target]);
+      expect(result.status, result.stderr).toBe(0);
+      const plan = JSON.parse(result.stdout) as Record<string, unknown>;
+      expect(plan).toMatchObject({
+        platform: 'win32',
+        arch,
+        target,
+        artifactPath: `dist/native/${directory}/rasen-windows-process-authority-helper.exe`,
+        runtimeAccepted: false,
+      });
+      expect(plan.evidenceClassification).toMatch(/non-runtime$/u);
+    }
+  });
+
+  it('computes the source digest with the trailing NUL after each file', () => {
+    const plan = JSON.parse(runScript(['--plan']).stdout) as { sourceSha256: string };
+    // Recomputed independently. The sibling build script's convention appends a
+    // NUL after the path *and* after the contents; a recomputation that omits
+    // either disagrees with every digest the script has emitted.
+    expect(plan.sourceSha256).toBe(
+      crateSourceDigest(CRATE, ['Cargo.lock', 'Cargo.toml', 'THIRD_PARTY.md'])
+    );
+    expect(plan.sourceSha256).not.toBe(
+      crateSourceDigest(CRATE, ['Cargo.lock', 'Cargo.toml'])
+    );
+  });
+
+  it('reports whether third-party accounting is present rather than assuming it', () => {
+    const plan = JSON.parse(runScript(['--plan']).stdout) as { thirdPartyAccounting: boolean };
+    expect(typeof plan.thirdPartyAccounting).toBe('boolean');
+    expect(plan.thirdPartyAccounting).toBe(fs.existsSync(path.join(CRATE, 'THIRD_PARTY.md')));
+  });
+
+  it('refuses a target outside the supported Windows set', () => {
+    for (const target of [
+      'x86_64-unknown-linux-gnu',
+      'aarch64-apple-darwin',
+      'x86_64-pc-windows-gnu',
+      'not-a-target',
+    ]) {
+      const result = runScript(['--plan', '--target', target]);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toMatch(/not a supported explicit Windows target/u);
+    }
+  });
+
+  it('refuses more than one operation and an unknown argument', () => {
+    expect(runScript(['--plan', '--check-only']).stderr)
+      .toMatch(/only one operation may be selected/u);
+    expect(runScript(['--publish']).stderr).toMatch(/unknown argument/u);
+  });
+
+  it('refuses a build-affecting environment override', () => {
+    try {
+      process.env.RUSTFLAGS = '-Copt-level=0';
+      expect(runScript(['--check-only']).stderr)
+        .toMatch(/build-affecting environment override is forbidden: RUSTFLAGS/u);
+    } finally {
+      delete process.env.RUSTFLAGS;
+    }
+  });
+
+  it('pins the linker flag that makes the artifact byte-reproducible', () => {
+    // Without /Brepro two builds of identical source differ by the COFF
+    // TimeDateStamp, its debug-directory copies, and the CodeView GUID — at
+    // identical length. Recorded as a guard so a later simplification that
+    // drops it is a regression rather than a cleanup.
+    const script = fs.readFileSync(SCRIPT, 'utf8');
+    expect(script).toContain('-Clink-arg=/Brepro');
+  });
+});
+
+describe('Windows process-authority package shape', () => {
+  it('includes the Windows helper tree through the packaged dist root', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8')) as {
+      files: string[];
+      scripts: Record<string, string>;
+    };
+    expect(manifest.files).toContain('dist');
+    const exclusions = manifest.files.filter((entry) => entry.startsWith('!'));
+    for (const exclusion of exclusions) {
+      expect(HELPER_RELATIVE.startsWith('dist/')).toBe(true);
+      expect(exclusion).not.toMatch(/windows-process-authority/u);
+    }
+    expect(manifest.scripts['build:windows-authority'])
+      .toBe('node scripts/build-windows-process-authority.mjs');
+    expect(manifest.scripts['check:windows-authority-target'])
+      .toContain('--check-only --target aarch64-pc-windows-msvc');
+  });
+
+  it('packages the guardian under the exact filename the helper resolves', () => {
+    // The helper finds its guardian by `current_exe().parent().join(NAME)` —
+    // no compiled-in path, no env var, no PATH search. That makes the packaged
+    // guardian's filename a load-bearing cross-component invariant held between
+    // two files with different owners. Today it holds by agreement; this guard
+    // makes a rename break the build instead of the runtime.
+    const cli = fs.readFileSync(path.resolve(CRATE, 'src/cli.rs'), 'utf8');
+    const declared = /GUARDIAN_EXECUTABLE:\s*&str\s*=\s*"([^"]+)"/u.exec(cli);
+    expect(declared, 'crate no longer declares GUARDIAN_EXECUTABLE').not.toBeNull();
+    const script = fs.readFileSync(SCRIPT, 'utf8');
+    const packaged = /^const guardianName = '([^']+)';$/mu.exec(script);
+    expect(packaged, 'build script no longer names the packaged guardian').not.toBeNull();
+    expect(packaged![1]).toBe(declared![1]);
+  });
+
+  it('never enables a native mutation switch from the provider', () => {
+    // The shipped helper deliberately carries runtime mutation switches so the
+    // discrimination REDs run against the artifact that ships rather than a
+    // test-only twin. This layer must never be able to reach one.
+    const windowsSourceRoot = path.resolve('src/core/session-host/process-authority/windows');
+    const sources = fs.readdirSync(windowsSourceRoot)
+      .filter((name) => name.endsWith('.ts'))
+      .map((name) => path.resolve(windowsSourceRoot, name));
+    for (const file of [...sources, SCRIPT]) {
+      const text = fs.readFileSync(file, 'utf8');
+      const code = text
+        .split('\n')
+        .filter((line) => !/^\s*(?:\/\/|\*|\/\*)/u.test(line))
+        .join('\n');
+      expect(code, `${path.basename(file)} references a mutation switch`)
+        .not.toMatch(/--mutate|duplicate-job-into-root/u);
+    }
+  });
+
+  it('does not change the legacy ProcessCapsule package shape', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    expect(manifest.scripts['build']).toBe('node build.js');
+    expect(manifest.scripts['build:windows-authority']).not.toContain('process-capsule');
+    const script = fs.readFileSync(SCRIPT, 'utf8');
+    expect(script).not.toContain('process-capsule');
+    expect(script).not.toContain('linux-process-authority');
+  });
+});
+
+describe('Windows process-authority CI contract', () => {
+  it('builds natively and runs the non-interactive matrix on a Windows runner', () => {
+    const workflow = parse(fs.readFileSync(WORKFLOW, 'utf8')) as {
+      jobs: Record<string, { 'runs-on': string; steps: { name: string; run?: string }[] }>;
+    };
+    const jobs = Object.keys(workflow.jobs).sort();
+    expect(jobs).toEqual([
+      'windows-arm64-cross-shape',
+      'windows-job-object-policy',
+      'windows-provider-actual-kernel',
+      'windows-provider-build',
+    ]);
+    for (const job of Object.values(workflow.jobs)) {
+      expect(job['runs-on']).toBe('windows-latest');
+    }
+    const build = workflow.jobs['windows-provider-build']!;
+    expect(build.steps.some((step) =>
+      step.run?.includes('scripts/build-windows-process-authority.mjs') === true &&
+      step.run.includes('--target x86_64-pc-windows-msvc'))).toBe(true);
+  });
+
+  it('reports a runner-policy restriction as an open gate rather than a pass', () => {
+    const text = fs.readFileSync(WORKFLOW, 'utf8');
+    const workflow = parse(text) as {
+      jobs: Record<string, { steps: { name: string; if?: string; run?: string }[] }>;
+    };
+    const gate = workflow.jobs['windows-provider-actual-kernel']!;
+    const denial = gate.steps[0]!;
+    expect(denial.if).toContain("!= 'available'");
+    // Fails closed: a denied policy must not be able to appear as a green
+    // runtime receipt, which is what `exit 1` on the denial path guarantees.
+    expect(denial.run).toContain('exit 1');
+    expect(text).toContain('## OPEN: Windows provider actual kernel gate');
+    expect(text).toContain('## OPEN: Windows arm64 runtime gate');
+  });
+
+  it('keeps arm64 evidence labelled non-runtime', () => {
+    const text = fs.readFileSync(WORKFLOW, 'utf8');
+    expect(text).toContain('--check-only --target aarch64-pc-windows-msvc');
+    expect(text).not.toMatch(/build-windows-process-authority\.mjs --target aarch64/u);
+  });
+
+  it('classifies Job Object policy by real construction, not by ambient membership', () => {
+    const text = fs.readFileSync(WORKFLOW, 'utf8');
+    expect(text).toContain('CreateJobObjectW');
+    expect(text).toContain('job-object-creation-denied');
+    // Ambient Job membership is not an unavailability verdict, because nested
+    // Jobs are supported. A probe that concluded from membership alone would
+    // repeat the sibling's "verdict from a narrow probe" method failure.
+    expect(text).not.toContain('IsProcessInJob');
+  });
+});
+
+describe('Windows Change boundary guards', () => {
+  it('consumes the accepted common spec and shared conformance suite byte-for-byte', () => {
+    expect(Object.fromEntries(
+      Object.keys(FROZEN_COMMON_INPUTS).map((file) => [file, sha256File(file)])
+    )).toEqual(FROZEN_COMMON_INPUTS);
+  });
+
+  it('leaves the frozen Linux native tree at its recorded source digest', () => {
+    expect(crateSourceDigest(
+      path.resolve('native/linux-process-authority'),
+      ['Cargo.lock', 'Cargo.toml', 'THIRD_PARTY.md']
+    )).toBe(FROZEN_LINUX_SOURCE_DIGEST);
+  });
+
+  it('leaves the legacy ProcessCapsule implementation unchanged in meaning', () => {
+    expect(Object.fromEntries(
+      Object.keys(LEGACY_PROCESS_CAPSULE_INPUTS).map((file) => [file, sha256File(file)])
+    )).toEqual(LEGACY_PROCESS_CAPSULE_INPUTS);
+    const resolver = fs.readFileSync(
+      path.resolve('src/core/session-host/process-capsule/resolver.ts'),
+      'utf8'
+    );
+    // The legacy Windows capability gate stays exactly where it was; this
+    // Change adds an authority, it does not reinterpret the legacy one.
+    expect(resolver).toContain("artifact.capabilities.includes('unnamed-job-kill-on-close')");
+    expect(resolver).toContain('PROCESS_CAPSULE_PROTOCOL_VERSION = 2');
+    expect(resolver).not.toContain('rasen.windows.job-object');
+  });
+
+  it('touches no file under the frozen Linux provider or its Change directory', () => {
+    const forbidden = [
+      'src/core/session-host/process-authority/linux',
+      'rasen/changes/ecp-linux-process-authority-provider',
+    ];
+    const windowsSources = fs.readdirSync(
+      path.resolve('src/core/session-host/process-authority/windows')
+    ).map((name) => path.resolve('src/core/session-host/process-authority/windows', name));
+    for (const file of [SCRIPT, WORKFLOW, ...windowsSources]) {
+      const text = fs.readFileSync(file, 'utf8');
+      for (const needle of forbidden) {
+        expect(text, `${path.basename(file)} references ${needle}`).not.toContain(needle);
+      }
+    }
+  });
+});

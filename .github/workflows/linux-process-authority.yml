@@ -1,0 +1,251 @@
+name: Linux Process Authority
+
+on:
+  pull_request:
+    branches: [main, 'dev/**']
+    paths:
+      - 'native/linux-process-authority/**'
+      - 'src/core/session-host/process-authority/linux/**'
+      - 'scripts/build-linux-process-authority.mjs'
+      - 'build.js'
+      - 'package.json'
+      - 'test/core/session-host/linux-process-authority-*.test.ts'
+      - '.github/workflows/linux-process-authority.yml'
+  push:
+    branches: [main, 'dev/**']
+    paths:
+      - 'native/linux-process-authority/**'
+      - 'src/core/session-host/process-authority/linux/**'
+      - 'scripts/build-linux-process-authority.mjs'
+      - 'build.js'
+      - 'package.json'
+      - 'test/core/session-host/linux-process-authority-*.test.ts'
+      - '.github/workflows/linux-process-authority.yml'
+  workflow_dispatch:
+    inputs:
+      broker_gate_authority:
+        description: 'Type writable-cgroup-v2+sudo to request the protected broker wiring job'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-process-authority-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-provider-primary:
+    name: Linux provider build/package (unprivileged, non-runtime)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: pnpm
+
+      - name: Setup pinned Rust and Linux target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build locked native Linux helper and package manifests
+        env:
+          RASEN_LINUX_PROCESS_AUTHORITY_EXPORT_DIR: ${{ runner.temp }}/linux-authority-export
+        run: node scripts/build-linux-process-authority.mjs --target x86_64-unknown-linux-gnu
+
+      - name: Run non-privileged native contract tests
+        run: >-
+          cargo test --locked
+          --manifest-path native/linux-process-authority/Cargo.toml
+          --target x86_64-unknown-linux-gnu
+          --lib
+          --test authority_contract
+          --test protocol_contract
+          --test linux_identity_contract
+          --test linux_journal_contract
+          --test lifecycle_contract
+
+      - name: Verify package, resolver, and CI contracts
+        run: >-
+          pnpm exec vitest run
+          test/core/session-host/linux-process-authority-artifact-resolver.test.ts
+          test/core/session-host/linux-process-authority-package-ci.test.ts
+
+      - name: Upload non-runtime build provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-process-authority-x64-build-input
+          path: ${{ runner.temp }}/linux-authority-export
+          if-no-files-found: error
+
+  linux-primary-namespace-policy:
+    name: Linux primary namespace-policy classification (not a runtime pass)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      state: ${{ steps.namespace_policy.outputs.state }}
+      result: ${{ steps.namespace_policy.outputs.result }}
+    steps:
+      - name: Classify namespace policy without privilege escalation
+        id: namespace_policy
+        shell: bash
+        run: |
+          if unshare --user --map-root-user --pid --fork --mount --mount-proc true; then
+            echo "state=available" >> "$GITHUB_OUTPUT"
+            echo 'result={"gate":"linux-primary-actual-runtime","state":"available"}' >> "$GITHUB_OUTPUT"
+            echo "Linux primary namespace policy is available; the separately named actual-runtime gate may run." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "state=open" >> "$GITHUB_OUTPUT"
+            echo 'result={"gate":"linux-primary-actual-runtime","state":"open","reason":"namespace-policy-denied"}' >> "$GITHUB_OUTPUT"
+            echo "## OPEN: Linux primary namespace-policy gate" >> "$GITHUB_STEP_SUMMARY"
+            echo "The separately named actual-runtime job will be skipped, so this classification cannot appear as a green runtime receipt." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  linux-provider-primary-actual-runtime:
+    name: Linux provider actual runtime gate
+    needs: linux-primary-namespace-policy
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Keep namespace-policy denial machine-readable and fail closed
+        if: needs.linux-primary-namespace-policy.outputs.state != 'available'
+        shell: bash
+        run: |
+          echo '${{ needs.linux-primary-namespace-policy.outputs.result }}' > actual-runtime-gate.json
+          echo "## OPEN: Linux provider actual runtime gate" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Namespace policy denied the kernel oracle. This check fails closed and is not a passing runtime receipt.' >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Checkout source without persisted credentials
+        if: needs.linux-primary-namespace-policy.outputs.state == 'available'
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup pinned Rust and Linux target
+        if: needs.linux-primary-namespace-policy.outputs.state == 'available'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Run actual primary contract on the admitted kernel
+        if: needs.linux-primary-namespace-policy.outputs.state == 'available'
+        run: >-
+          cargo test --locked
+          --manifest-path native/linux-process-authority/Cargo.toml
+          --target x86_64-unknown-linux-gnu
+          --test linux_primary_contract
+          -- --test-threads=1
+
+  windows-linux-target-shape:
+    name: Windows Linux-target shape (non-runtime)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: pnpm
+
+      - name: Setup pinned Rust and installed Linux target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cargo-check Linux target as explicit non-runtime evidence
+        run: node scripts/build-linux-process-authority.mjs --check-only --target x86_64-unknown-linux-gnu
+
+      - name: Run Windows path and package-shape contracts
+        run: pnpm exec vitest run test/core/session-host/linux-process-authority-package-ci.test.ts
+
+  broker-privileged-manual:
+    name: Broker protected runner wiring (manual, non-terminal)
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'DumoeDss/rasen' &&
+      inputs.broker_gate_authority == 'writable-cgroup-v2+sudo'
+    environment: linux-process-authority-broker
+    runs-on: [self-hosted, linux, x64, rasen-cgroup-v2-broker]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      RASEN_BROKER_GATE_AUTHORITY: ${{ vars.RASEN_BROKER_GATE_AUTHORITY }}
+    steps:
+      - name: Checkout source without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Verify preinstalled pinned Rust tooling before authority probes
+        shell: bash
+        run: |
+          test "$(rustc --version)" = "rustc 1.88.0 (6b00bc388 2025-06-23)"
+          test "$(cargo --version)" = "cargo 1.88.0 (873a06493 2025-05-10)"
+          test -x "$(command -v rustc)"
+          test -x "$(command -v cargo)"
+
+      - name: Require explicit writable cgroup-v2 and sudo authority
+        shell: bash
+        run: |
+          test "$RASEN_BROKER_GATE_AUTHORITY" = "writable-cgroup-v2+sudo"
+          sudo -n true
+          test -f /sys/fs/cgroup/cgroup.controllers
+          test -f /sys/fs/cgroup/cgroup.kill
+          test -f /sys/fs/cgroup/cgroup.events
+          sudo -n test -w /sys/fs/cgroup/cgroup.procs
+          sudo -n test -x /usr/libexec/rasen/rasen-linux-process-authority-broker
+          sudo -n test -f /etc/rasen/linux-process-authority/broker-public-key.manifest
+          sudo -n test -f /var/lib/rasen/linux-process-authority/broker.key
+          sudo -n test -d /var/lib/rasen/linux-process-authority/leases
+          sudo -n test -S /run/rasen/linux-process-authority/broker.sock
+          echo "Protected runner authority was explicit; no ordinary or forked CI job can reach this step." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run broker contract wiring without claiming Section 9 closure
+        run: >-
+          cargo test --locked
+          --manifest-path native/linux-process-authority/Cargo.toml
+          --test linux_broker_protocol_contract
+          --test linux_broker_peer_contract
+          --test linux_broker_install_contract
+          --test linux_broker_lease_contract
+          --test linux_broker_cgroup_contract
+          --test linux_broker_service_contract
+          --test linux_broker_admin_contract
+
+      - name: Preserve the actual installed-broker gate as open
+        shell: bash
+        run: |
+          echo "## OPEN: installed broker/cgroup-v2 terminal gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "This manual job validates protected-runner wiring and broker contracts only. Section 9 still requires the exact installed service, authenticated client, lifecycle mutations, and independent security receipt." >> "$GITHUB_STEP_SUMMARY"
