@@ -7,7 +7,8 @@ fn main() {
     use rasen_linux_process_authority::deadline::AbsoluteMonotonicDeadline;
     use rasen_linux_process_authority::lifecycle::GuardianEvent;
     use rasen_linux_process_authority::primary::{
-        prepare_primary_with_deadline_ms, AuthorityClient, AuthorityInspection,
+        prepare_primary_with_daemon_lifetime_ms, AuthorityClient, AuthorityInspection,
+        DAEMON_LIFETIME_ENDPOINT_ABSENT,
     };
     use rasen_linux_process_authority::protocol::{
         read_frame, write_frame, Frame, FrameKind, NativeFailure, NativeFailureCode, PrepareRequest,
@@ -44,6 +45,17 @@ fn main() {
         Ok(Path::new(&arguments[2]))
     }
 
+    fn exact_inherited_fd(value: &str) -> io::Result<i32> {
+        let number = bounded_u32(value)?;
+        if number < 3 || number > i32::MAX as u32 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "daemon-lifetime descriptor is not an inherited descriptor above standard stdio",
+            ));
+        }
+        Ok(number as i32)
+    }
+
     fn bounded_u32(value: &str) -> io::Result<u32> {
         if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
             return Err(io::Error::new(
@@ -62,26 +74,38 @@ fn main() {
     fn run(arguments: &[String]) -> io::Result<()> {
         let operation = arguments.first().map(String::as_str).unwrap_or("");
         if operation == "prepare" {
-            if arguments.len() != 7
+            // The optional trailing pair binds the scope's lifetime to the owning daemon's: the
+            // named descriptor is one endpoint of a channel whose peer only that daemon holds, and
+            // it is transferred to the namespace guardian. Prepare is refused rather than silently
+            // downgraded when the pair is present but malformed, so a caller that intends the
+            // binding never gets an unbound scope back.
+            if (arguments.len() != 7 && arguments.len() != 9)
                 || arguments[1] != "--artifact-sha256"
                 || arguments[3] != "--source-sha256"
                 || arguments[5] != "--deadline-ms"
+                || (arguments.len() == 9 && arguments[7] != "--daemon-lifetime-fd")
             {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "prepare arguments are malformed",
                 ));
             }
+            let daemon_lifetime = if arguments.len() == 9 {
+                exact_inherited_fd(&arguments[8])?
+            } else {
+                DAEMON_LIFETIME_ENDPOINT_ABSENT
+            };
             let artifact_digest = decode_sha256(&arguments[2])?;
             let source_digest = decode_sha256(&arguments[4])?;
             let deadline_ms = bounded_u32(&arguments[6])?;
             let frame = one_input(FrameKind::Prepare)?;
             let request = PrepareRequest::decode(&frame.payload)?;
-            let prepared = prepare_primary_with_deadline_ms(
+            let prepared = prepare_primary_with_daemon_lifetime_ms(
                 request,
                 artifact_digest,
                 source_digest,
                 deadline_ms,
+                daemon_lifetime,
             )?;
             return write_output(Frame::new(
                 FrameKind::Prepared,

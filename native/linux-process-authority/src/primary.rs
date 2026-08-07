@@ -35,6 +35,16 @@ const MAX_SHEBANG_BYTES: usize = 256;
 const SERVER_CHALLENGE_DOMAIN: &[u8] = b"RPA1-server-first-v1";
 const CHALLENGE_BYTES: usize = 64;
 
+/// Exit status the namespace guardian uses when it observes end-of-file on the daemon-lifetime
+/// endpoint. The status is diagnostic only: the teardown guarantee is that PID 1 of the guardian
+/// PID namespace leaves, which makes the kernel `SIGKILL` every remaining namespace member. It is
+/// deliberately distinct from the construction failure status (71) so a post-mortem can tell
+/// "the owning daemon died" from "construction failed".
+pub const GUARDIAN_DAEMON_LIFETIME_EXIT_CODE: libc::c_int = 73;
+
+/// Sentinel for "this prepare was given no daemon-lifetime endpoint".
+pub const DAEMON_LIFETIME_ENDPOINT_ABSENT: RawFd = -1;
+
 pub struct PreparedPrimary {
     pub attestation: PreparedAttestation,
     runtime_root: PathBuf,
@@ -402,13 +412,49 @@ pub fn prepare_primary_with_deadline_ms(
     source_digest: [u8; 32],
     deadline_ms: u32,
 ) -> io::Result<PreparedPrimary> {
+    prepare_primary_with_daemon_lifetime_ms(
+        request,
+        expected_artifact_digest,
+        source_digest,
+        deadline_ms,
+        DAEMON_LIFETIME_ENDPOINT_ABSENT,
+    )
+}
+
+/// Prepare a scope whose lifetime is bound to the owning daemon's.
+///
+/// `daemon_lifetime` is one endpoint of a pipe (or socketpair) whose peer endpoint is held only by
+/// the daemon that owns this scope. It is transferred to the namespace guardian by inheritance and
+/// is then held by that guardian alone; the workload never inherits it, because activation closes
+/// every descriptor outside the launch set. When the owning daemon exits for any reason its peer
+/// endpoint closes, the guardian reads end-of-file and leaves as PID 1 of the guardian PID
+/// namespace, so the kernel kills every remaining member without cooperation from any surviving
+/// process.
+///
+/// This is deliberately a pipe endpoint rather than `PR_SET_PDEATHSIG`: that signal fires on the
+/// death of the *thread* that created the child, not of the owning process, and it is cleared
+/// across `setuid` and `exec`, so it cannot carry a daemon-lifetime guarantee.
+///
+/// The endpoint is borrowed, never consumed: the caller keeps ownership and closes its own copy.
+/// The caller MUST NOT hold the peer endpoint, or the scope will outlive the daemon.
+/// `DAEMON_LIFETIME_ENDPOINT_ABSENT` prepares a scope with no daemon-lifetime binding.
+pub fn prepare_primary_with_daemon_lifetime_ms(
+    request: PrepareRequest,
+    expected_artifact_digest: [u8; 32],
+    source_digest: [u8; 32],
+    deadline_ms: u32,
+    daemon_lifetime: RawFd,
+) -> io::Result<PreparedPrimary> {
     let mut permit = ImmediatePreReadinessPermit;
-    prepare_primary_recoverable_until(
+    prepare_primary_observed_until(
         request,
         expected_artifact_digest,
         source_digest,
         AbsoluteMonotonicDeadline::after_ms(deadline_ms)?,
         &mut permit,
+        &mut NoopConstructionObserver,
+        None,
+        daemon_lifetime,
     )
 }
 
@@ -490,9 +536,11 @@ pub fn prepare_primary_recoverable_until(
         permit,
         &mut observer,
         None,
+        DAEMON_LIFETIME_ENDPOINT_ABSENT,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn prepare_primary_observed_until(
     request: PrepareRequest,
     expected_artifact_digest: [u8; 32],
@@ -501,8 +549,10 @@ fn prepare_primary_observed_until(
     permit: &mut dyn PreReadinessPermit,
     observer: &mut dyn ConstructionObserver,
     failure_checkpoint: Option<ConstructionCheckpoint>,
+    daemon_lifetime: RawFd,
 ) -> io::Result<PreparedPrimary> {
     deadline.ensure_live()?;
+    validate_daemon_lifetime_endpoint(daemon_lifetime)?;
     let immutable = PrepareRequest::decode(&request.encode()?)?;
     let launch_handles = prepare_launch_filesystem(&immutable.launch)?;
     let artifact_digest = current_executable_digest()?;
@@ -595,6 +645,7 @@ fn prepare_primary_observed_until(
         deadline,
         construction_parent_pidfd,
         failure_checkpoint,
+        daemon_lifetime,
     });
     let context_pointer = Box::into_raw(context);
     let mut stack = vec![0_u8; 1024 * 1024];
@@ -724,6 +775,7 @@ struct ChildContext {
     deadline: AbsoluteMonotonicDeadline,
     construction_parent_pidfd: RawFd,
     failure_checkpoint: Option<ConstructionCheckpoint>,
+    daemon_lifetime: RawFd,
 }
 
 extern "C" fn child_entry(argument: *mut libc::c_void) -> libc::c_int {
@@ -756,6 +808,18 @@ fn child_main(context: ChildContext) -> io::Result<()> {
     if let Some(script) = &context.launch_handles.script {
         guardian_descriptors.push(script.readable.as_raw_fd());
         guardian_descriptors.push(script.interpreter.executable.as_raw_fd());
+    }
+    // The daemon-lifetime endpoint survives the strict close because the guardian is its sole
+    // holder from here on. It is deliberately absent from the workload's descriptor set in
+    // `spawn_root`, so the workload can neither observe nor close the daemon's channel.
+    if context.daemon_lifetime != DAEMON_LIFETIME_ENDPOINT_ABSENT {
+        if guardian_descriptors.contains(&context.daemon_lifetime) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "daemon-lifetime endpoint collides with a guardian construction descriptor",
+            ));
+        }
+        guardian_descriptors.push(context.daemon_lifetime);
     }
     strict_close_except(&guardian_descriptors)?;
     if unsafe { libc::getpid() } != 1 {
@@ -813,8 +877,39 @@ fn child_main(context: ChildContext) -> io::Result<()> {
         runtime: None,
         root: None,
         exiting: false,
+        daemon_lifetime: context.daemon_lifetime,
     };
     guardian.run()
+}
+
+/// A daemon-lifetime endpoint must be an already-open descriptor above the standard three, so it
+/// cannot be confused with the guardian's redirected stdio and cannot silently name a closed slot
+/// that a later `open` would reuse. A caller that names a closed descriptor is refused here rather
+/// than being given a scope whose teardown binding is vacuous.
+/// Leave the guardian PID namespace as its init process. Every remaining member is killed by the
+/// kernel; nothing here kills anything, and nothing here needs to still be working for that to
+/// happen. `_exit` is used so no destructor, buffered write or journal flush can run first.
+fn daemon_lifetime_teardown() -> ! {
+    unsafe { libc::_exit(GUARDIAN_DAEMON_LIFETIME_EXIT_CODE) }
+}
+
+fn validate_daemon_lifetime_endpoint(daemon_lifetime: RawFd) -> io::Result<()> {
+    if daemon_lifetime == DAEMON_LIFETIME_ENDPOINT_ABSENT {
+        return Ok(());
+    }
+    if daemon_lifetime < 3 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "daemon-lifetime endpoint must be an inherited descriptor above standard stdio",
+        ));
+    }
+    if unsafe { libc::fcntl(daemon_lifetime, libc::F_GETFD) } < 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "daemon-lifetime endpoint is not an open inherited descriptor",
+        ));
+    }
+    Ok(())
 }
 
 fn fail_at_construction_checkpoint(
@@ -948,16 +1043,28 @@ struct Guardian<'a> {
     runtime: Option<UnixStream>,
     root: Option<RootProcess>,
     exiting: bool,
+    daemon_lifetime: RawFd,
 }
 
 impl Guardian<'_> {
     fn run(&mut self) -> io::Result<()> {
         while !self.exiting {
+            self.check_daemon_lifetime();
             let mut descriptors = vec![libc::pollfd {
                 fd: self.listener.as_raw_fd(),
                 events: libc::POLLIN,
                 revents: 0,
             }];
+            let daemon_lifetime_index = if self.daemon_lifetime != DAEMON_LIFETIME_ENDPOINT_ABSENT {
+                descriptors.push(libc::pollfd {
+                    fd: self.daemon_lifetime,
+                    events: libc::POLLIN,
+                    revents: 0,
+                });
+                Some(descriptors.len() - 1)
+            } else {
+                None
+            };
             let runtime_index = self.runtime.as_ref().map(|runtime| {
                 descriptors.push(libc::pollfd {
                     fd: runtime.as_raw_fd(),
@@ -1002,6 +1109,14 @@ impl Guardian<'_> {
             if result < 0 && io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
                 return Err(io::Error::last_os_error());
             }
+            // Daemon death is answered before any control, output or reaping work in this
+            // iteration: once the owning daemon is gone there is nothing left to serve, and the
+            // scope must not continue for even one more control round.
+            if let Some(index) = daemon_lifetime_index {
+                if descriptors[index].revents != 0 {
+                    self.check_daemon_lifetime();
+                }
+            }
             if descriptors[0].revents & libc::POLLIN != 0 {
                 self.accept_control()?;
             }
@@ -1028,6 +1143,73 @@ impl Guardian<'_> {
             self.reap_children()?;
         }
         Ok(())
+    }
+
+    /// Answer the daemon-lifetime endpoint. End-of-file on it means the owning daemon released
+    /// its peer endpoint - which, for a daemon that holds it for the scope's whole lifetime, means
+    /// the daemon has died - so this guardian leaves as PID 1 of its PID namespace and the kernel
+    /// kills every remaining member. `POLLERR`/`POLLNVAL` are treated the same way: an endpoint we
+    /// can no longer read cannot prove the daemon is alive, and the fail-closed answer for a scope
+    /// that exists only to be cancellable is to end it.
+    ///
+    /// The exit is `_exit`, not a return through the guardian loop, for two reasons. The teardown
+    /// must not depend on any further code succeeding, and no terminal journal record may be
+    /// written here: this scope did not reach a proven-empty terminal state by observation, and
+    /// fabricating one would let a later reader claim positive emptiness that nothing measured.
+    /// A reference reopened afterwards therefore travels the retained guardian-absence path and
+    /// proves emptiness from the kernel teardown, or stays typed-uncertain.
+    fn check_daemon_lifetime(&mut self) {
+        if self.daemon_lifetime == DAEMON_LIFETIME_ENDPOINT_ABSENT {
+            return;
+        }
+        let mut descriptor = libc::pollfd {
+            fd: self.daemon_lifetime,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let polled = unsafe { libc::poll(&mut descriptor, 1, 0) };
+        if polled < 0 {
+            if io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
+                return;
+            }
+            daemon_lifetime_teardown();
+        }
+        if polled == 0 || descriptor.revents == 0 {
+            return;
+        }
+        if descriptor.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
+            daemon_lifetime_teardown();
+        }
+        if descriptor.revents & libc::POLLIN == 0 {
+            return;
+        }
+        // Readable without hangup: a socketpair peer reports its close this way. Only a read that
+        // returns zero is end-of-file; unexpected daemon traffic is drained and ignored, because
+        // this endpoint carries no protocol and must never become a second control channel.
+        let mut scratch = [0_u8; 64];
+        loop {
+            let count = unsafe {
+                libc::read(
+                    self.daemon_lifetime,
+                    scratch.as_mut_ptr().cast(),
+                    scratch.len(),
+                )
+            };
+            if count == 0 {
+                daemon_lifetime_teardown();
+            }
+            if count < 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() == io::ErrorKind::Interrupted {
+                    continue;
+                }
+                if error.kind() == io::ErrorKind::WouldBlock {
+                    return;
+                }
+                daemon_lifetime_teardown();
+            }
+            return;
+        }
     }
 
     fn accept_control(&mut self) -> io::Result<()> {
@@ -2592,6 +2774,7 @@ mod construction_matrix_tests {
                 &mut permit,
                 &mut observer,
                 Some(checkpoint),
+                DAEMON_LIFETIME_ENDPOINT_ABSENT,
             )
             .err()
             .unwrap_or_else(|| panic!("{checkpoint:?} unexpectedly returned prepared authority"));
