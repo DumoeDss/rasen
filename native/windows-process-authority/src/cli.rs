@@ -640,21 +640,49 @@ fn control(options: &Options) -> io::Result<()> {
                     payload,
                 },
             )?;
-            let frame = expect_frame(&mut stream)?;
-            match frame.kind {
-                FrameKind::ExactScopeEmpty => {
-                    println!("{OBSERVATION_PREFIX}{}", hex(&frame.payload));
-                    Ok(())
+            // Drain until the authority reports its own outcome, exactly as `run_workload`
+            // already does.
+            //
+            // The guardian broadcasts unsolicited frames onto the session writer from other
+            // threads -- `deliver_root_exit` (`guardian.rs:673`) is the one that matters here,
+            // because terminating a live authority kills the root and that broadcast races the
+            // terminate handler's `ExactScopeEmpty` on the same writer. Reading exactly one
+            // frame therefore returned `unexpected frame root-exited` for a termination that had
+            // actually converged, and the caller retained uncertainty about an authority that
+            // was empty. Measured before this fix: the receipt was lost in 19 of 20 direct runs
+            // (`S9-F1`).
+            //
+            // `RootExited` is not special-cased: any frame that is not the authority's own
+            // verdict is drained, so a later broadcast added to the guardian cannot reintroduce
+            // this defect.
+            loop {
+                if Instant::now() >= deadline {
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        NativeFailureCode::Timeout.diagnostic_code().to_owned(),
+                    ));
                 }
-                FrameKind::Failure => Err(io::Error::other(
-                    NativeFailureCode::decode(&frame.payload)?
-                        .diagnostic_code()
-                        .to_owned(),
-                )),
-                other => Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("unexpected frame {}", other.name()),
-                )),
+                let frame = expect_frame(&mut stream)?;
+                match frame.kind {
+                    FrameKind::ExactScopeEmpty => {
+                        println!("{OBSERVATION_PREFIX}{}", hex(&frame.payload));
+                        return Ok(());
+                    }
+                    FrameKind::Failure => {
+                        return Err(io::Error::other(
+                            NativeFailureCode::decode(&frame.payload)?
+                                .diagnostic_code()
+                                .to_owned(),
+                        ))
+                    }
+                    FrameKind::RootExited => {
+                        let status = RootStatus::decode(&frame.payload)?;
+                        eprintln!("root-exited code={} signal=null", status.unsigned_text());
+                    }
+                    FrameKind::Output => io::stdout().write_all(&frame.payload)?,
+                    FrameKind::ErrorOutput => io::stderr().write_all(&frame.payload)?,
+                    _ => {}
+                }
             }
         }
         "run" => run_workload(&mut stream, deadline),

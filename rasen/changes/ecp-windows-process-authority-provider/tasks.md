@@ -39,7 +39,7 @@
 - [x] 4.5 Implement the private control endpoint as a first-instance-only named pipe with an owner-only non-inherited DACL and remote clients rejected, treating an existing name as a typed failure rather than a reuse.
 - [x] 4.6 Implement guardian launch with only the minimum inherited handles, closing every unintended inherited handle, and verify the workload can never reach the endpoint, the Job handle, or the trusted state root.
 - [x] 4.7 Implement guardian readiness and prepare attestation containing boot identity, guardian process id and birth identity, observed limit mask, port-association state, endpoint owner identity, sole-handle attestation, helper identity, and the fact that no workload process exists.
-- [ ] 4.8 Implement the TypeScript availability transaction that revalidates every attested fact before returning `prepared-inert` and maps each enumerated denied or unsupported prerequisite to typed unavailable with a bounded diagnostic.
+- [x] 4.8 Implement the TypeScript availability transaction that revalidates every attested fact before returning `prepared-inert` and maps each enumerated denied or unsupported prerequisite to typed unavailable with a bounded diagnostic.
 - [ ] 4.9 Implement exact partial-construction reconciliation for every injected failure point from state-root validation through final revalidation, proving no workload process, no live guardian, no surviving Job, and no residual endpoint remain; tie the injected-failure matrix to the checkpoint enumeration with a compile-time exhaustiveness forcing function.
 
 ## 5. Suspended Assign-Before-Run Activation
@@ -93,7 +93,7 @@ This section runs natively on the Windows host. **No task here may be closed on 
 - [x] 8.9 Run and record exact natural empty driven by the active-process-zero message with a complete event history, and record the accounting corroboration alongside it.
 - [x] 8.10 Run and record recursive forced termination against a workload that creates processes continuously during teardown, proving the bounded re-terminate loop converges on the authority's own empty event and that deadline expiry retains `timeout` rather than reporting empty.
 - [x] 8.11 Run and record guardian forced death while members are live, proving the operating system destroys the authority and terminates every member, and that the provider reports exact empty only through the last-handle rule with its attestation.
-- [ ] 8.12 Run and record controller replacement while the authority is live: a fresh process authenticates the endpoint and guardian birth identity, rereads the full tuple after opening handles, then inspects and terminates the same authority.
+- [x] 8.12 Run and record controller replacement while the authority is live: a fresh process authenticates the endpoint and guardian birth identity, rereads the full tuple after opening handles, then inspects and terminates the same authority.
 - [x] 8.13 Run and record identity-drift mutations on the real kernel — reused guardian identifier with a different birth identity, endpoint served by a different process, wrong endpoint owner, injected boot-identity change, and tuple change between pre-open and post-open reads — proving no destructive operation targets a replacement or unrelated process.
 - [x] 8.14 Run and record prepared abort, published abort, and the two publication crash windows (commit-before-acknowledgement, acknowledgement-before-activate) with real process replacement, proving the ledger reports published-inert while no workload root has ever been created.
 - [x] 8.15 Run and record every enumerated unavailable configuration reachable on this host, and for each unreachable one state precisely why it is unreachable and which entry points were enumerated before that verdict; a verdict may not be generalised from a single probe or validated against design prose instead of the consuming code.
@@ -104,16 +104,16 @@ This section runs natively on the Windows host. **No task here may be closed on 
 
 Every task in this section produces a RED/GREEN pair. A green assertion with no demonstrated failing counterpart does not close its gate.
 
-- [ ] 9.1 Demonstrate RED for breakaway containment by enabling the breakaway permission on the Job and showing a descendant successfully creating a process outside the authority.
-- [ ] 9.2 Demonstrate RED for the sole-handle invariant by duplicating the Job handle into a second process, killing the guardian, and showing descendants surviving — proving the guardian-absence exact-empty inference is load-bearing rather than incidental.
-- [ ] 9.3 Demonstrate RED for completion-port ordering by associating the port after the first member exists and showing the membership event history becomes incomplete.
-- [ ] 9.4 Demonstrate RED for the wait-before-status rule by reading the exit status without a completed wait and showing an exited root misreported as running, and RED for status fidelity by sign-extending or truncating a high-bit status.
-- [ ] 9.5 Demonstrate RED for the post-open reread by skipping it and showing that a target that changed identity between lookup and use would be acted upon.
-- [ ] 9.6 Prove that every hand-declared foreign item from 3.2 is exercised by at least one real call against the real kernel, and record any item that is not; an unexercised declared item leaves its dependent gate open.
-- [ ] 9.7 Audit which production types and factories are crossed only by a recording stand-in, an injected fixture, or a testing-only variant — including the TypeScript production assembly factory — and record the answer per module rather than in aggregate; each uncovered production entry point leaves its dependent gates open.
+- [x] 9.1 Demonstrate RED for breakaway containment by enabling the breakaway permission on the Job and showing a descendant successfully creating a process outside the authority.
+- [x] 9.2 Demonstrate RED for the sole-handle invariant by duplicating the Job handle into a second process, killing the guardian, and showing descendants surviving — proving the guardian-absence exact-empty inference is load-bearing rather than incidental.
+- [x] 9.3 Demonstrate RED for completion-port ordering by associating the port after the first member exists and showing the membership event history becomes incomplete.
+- [x] 9.4 Demonstrate RED for the wait-before-status rule by reading the exit status without a completed wait and showing an exited root misreported as running, and RED for status fidelity by sign-extending or truncating a high-bit status.
+- [x] 9.5 Demonstrate RED for the post-open reread by skipping it and showing that a target that changed identity between lookup and use would be acted upon.
+- [x] 9.6 Prove that every hand-declared foreign item from 3.2 is exercised by at least one real call against the real kernel, and record any item that is not; an unexercised declared item leaves its dependent gate open.
+- [x] 9.7 Audit which production types and factories are crossed only by a recording stand-in, an injected fixture, or a testing-only variant — including the TypeScript production assembly factory — and record the answer per module rather than in aggregate; each uncovered production entry point leaves its dependent gates open.
 - [ ] 9.8 Run production code directly against the real kernel with no test harness in the loop, exercising prepare, activate, inspect, terminate, abort, and recovery end to end, and record what that run found that no test found.
-- [ ] 9.9 For every acceptance row that records observed behaviour, state separately what the contract requires and show the assertion discriminates between the two; remove or rewrite any assertion that merely restates current behaviour.
-- [ ] 9.10 Record asserting-test counts separately from headline suite counts, name every gated or early-returning test entry point, and bind every count and receipt to the helper digest and crate source digest that produced it; artifact byte length is not a change signal.
+- [x] 9.9 For every acceptance row that records observed behaviour, state separately what the contract requires and show the assertion discriminates between the two; remove or rewrite any assertion that merely restates current behaviour.
+- [x] 9.10 Record asserting-test counts separately from headline suite counts, name every gated or early-returning test entry point, and bind every count and receipt to the helper digest and crate source digest that produced it; artifact byte length is not a change signal.
 
 ## 10. Build, Package, and Cross-Architecture Evidence
 

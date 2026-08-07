@@ -475,810 +475,231 @@ pub struct TokenUser {
 // Foreign items
 // ---------------------------------------------------------------------------------------------
 
-// ===== TEMPORARY TASK 9.6 INSTRUMENTATION -- NOT PART OF THE FROZEN SOURCE =====
-// Every hand-declared foreign item is reached through a forwarding wrapper that records its
-// first real call. Restored byte-exact after the measurement; the crate source digest is
-// re-measured to prove the freeze is intact.
-#[allow(non_snake_case)]
-mod imports {
-    use super::*;
+#[link(name = "kernel32")]
+extern "system" {
+    pub fn CreateJobObjectW(attributes: *mut SecurityAttributes, name: *const u16) -> Handle;
+    pub fn SetInformationJobObject(
+        job: Handle,
+        class: Dword,
+        information: *const c_void,
+        length: Dword,
+    ) -> Bool;
+    pub fn QueryInformationJobObject(
+        job: Handle,
+        class: Dword,
+        information: *mut c_void,
+        length: Dword,
+        returned: *mut Dword,
+    ) -> Bool;
+    pub fn TerminateJobObject(job: Handle, exit_code: Dword) -> Bool;
+    pub fn IsProcessInJob(process: Handle, job: Handle, result: *mut Bool) -> Bool;
 
-    #[link(name = "kernel32")]
-    extern "system" {
-        pub fn CreateJobObjectW(attributes: *mut SecurityAttributes, name: *const u16) -> Handle;
-        pub fn SetInformationJobObject(
-            job: Handle,
-            class: Dword,
-            information: *const c_void,
-            length: Dword,
-        ) -> Bool;
-        pub fn QueryInformationJobObject(
-            job: Handle,
-            class: Dword,
-            information: *mut c_void,
-            length: Dword,
-            returned: *mut Dword,
-        ) -> Bool;
-        pub fn TerminateJobObject(job: Handle, exit_code: Dword) -> Bool;
-        pub fn IsProcessInJob(process: Handle, job: Handle, result: *mut Bool) -> Bool;
+    pub fn CreateIoCompletionPort(
+        file: Handle,
+        existing_port: Handle,
+        completion_key: UlongPtr,
+        concurrent_threads: Dword,
+    ) -> Handle;
+    pub fn GetQueuedCompletionStatus(
+        port: Handle,
+        bytes: *mut Dword,
+        completion_key: *mut UlongPtr,
+        overlapped: *mut *mut Overlapped,
+        milliseconds: Dword,
+    ) -> Bool;
+    pub fn PostQueuedCompletionStatus(
+        port: Handle,
+        bytes: Dword,
+        completion_key: UlongPtr,
+        overlapped: *mut Overlapped,
+    ) -> Bool;
 
-        pub fn CreateIoCompletionPort(
-            file: Handle,
-            existing_port: Handle,
-            completion_key: UlongPtr,
-            concurrent_threads: Dword,
-        ) -> Handle;
-        pub fn GetQueuedCompletionStatus(
-            port: Handle,
-            bytes: *mut Dword,
-            completion_key: *mut UlongPtr,
-            overlapped: *mut *mut Overlapped,
-            milliseconds: Dword,
-        ) -> Bool;
-        pub fn PostQueuedCompletionStatus(
-            port: Handle,
-            bytes: Dword,
-            completion_key: UlongPtr,
-            overlapped: *mut Overlapped,
-        ) -> Bool;
+    pub fn CreateProcessW(
+        application: *const u16,
+        command_line: *mut u16,
+        process_attributes: *mut SecurityAttributes,
+        thread_attributes: *mut SecurityAttributes,
+        inherit_handles: Bool,
+        creation_flags: Dword,
+        environment: *mut c_void,
+        current_directory: *const u16,
+        startup: *mut StartupInfoW,
+        information: *mut ProcessInformation,
+    ) -> Bool;
+    pub fn InitializeProcThreadAttributeList(
+        list: *mut c_void,
+        count: Dword,
+        flags: Dword,
+        size: *mut usize,
+    ) -> Bool;
+    pub fn UpdateProcThreadAttribute(
+        list: *mut c_void,
+        flags: Dword,
+        attribute: usize,
+        value: *mut c_void,
+        size: usize,
+        previous: *mut c_void,
+        returned: *mut usize,
+    ) -> Bool;
+    pub fn DeleteProcThreadAttributeList(list: *mut c_void);
+    pub fn ResumeThread(thread: Handle) -> Dword;
+    pub fn OpenProcess(access: Dword, inherit: Bool, process_id: Dword) -> Handle;
+    pub fn GetProcessTimes(
+        process: Handle,
+        creation: *mut FileTime,
+        exit: *mut FileTime,
+        kernel: *mut FileTime,
+        user: *mut FileTime,
+    ) -> Bool;
+    pub fn GetExitCodeProcess(process: Handle, exit_code: *mut Dword) -> Bool;
+    pub fn TerminateProcess(process: Handle, exit_code: Dword) -> Bool;
+    pub fn GetCurrentProcess() -> Handle;
+    pub fn GetCurrentProcessId() -> Dword;
+    pub fn GetCurrentThread() -> Handle;
 
-        pub fn CreateProcessW(
-            application: *const u16,
-            command_line: *mut u16,
-            process_attributes: *mut SecurityAttributes,
-            thread_attributes: *mut SecurityAttributes,
-            inherit_handles: Bool,
-            creation_flags: Dword,
-            environment: *mut c_void,
-            current_directory: *const u16,
-            startup: *mut StartupInfoW,
-            information: *mut ProcessInformation,
-        ) -> Bool;
-        pub fn InitializeProcThreadAttributeList(
-            list: *mut c_void,
-            count: Dword,
-            flags: Dword,
-            size: *mut usize,
-        ) -> Bool;
-        pub fn UpdateProcThreadAttribute(
-            list: *mut c_void,
-            flags: Dword,
-            attribute: usize,
-            value: *mut c_void,
-            size: usize,
-            previous: *mut c_void,
-            returned: *mut usize,
-        ) -> Bool;
-        pub fn DeleteProcThreadAttributeList(list: *mut c_void);
-        pub fn ResumeThread(thread: Handle) -> Dword;
-        pub fn OpenProcess(access: Dword, inherit: Bool, process_id: Dword) -> Handle;
-        pub fn GetProcessTimes(
-            process: Handle,
-            creation: *mut FileTime,
-            exit: *mut FileTime,
-            kernel: *mut FileTime,
-            user: *mut FileTime,
-        ) -> Bool;
-        pub fn GetExitCodeProcess(process: Handle, exit_code: *mut Dword) -> Bool;
-        pub fn TerminateProcess(process: Handle, exit_code: Dword) -> Bool;
-        pub fn GetCurrentProcess() -> Handle;
-        pub fn GetCurrentProcessId() -> Dword;
-        pub fn GetCurrentThread() -> Handle;
+    pub fn WaitForSingleObject(handle: Handle, milliseconds: Dword) -> Dword;
+    pub fn CreateEventW(
+        attributes: *mut SecurityAttributes,
+        manual_reset: Bool,
+        initial_state: Bool,
+        name: *const u16,
+    ) -> Handle;
+    pub fn GetOverlappedResult(
+        file: Handle,
+        overlapped: *mut Overlapped,
+        transferred: *mut Dword,
+        wait: Bool,
+    ) -> Bool;
+    pub fn CloseHandle(handle: Handle) -> Bool;
+    pub fn DuplicateHandle(
+        source_process: Handle,
+        source: Handle,
+        target_process: Handle,
+        target: *mut Handle,
+        access: Dword,
+        inherit: Bool,
+        options: Dword,
+    ) -> Bool;
+    pub fn SetHandleInformation(handle: Handle, mask: Dword, flags: Dword) -> Bool;
+    pub fn GetHandleInformation(handle: Handle, flags: *mut Dword) -> Bool;
 
-        pub fn WaitForSingleObject(handle: Handle, milliseconds: Dword) -> Dword;
-        pub fn CreateEventW(
-            attributes: *mut SecurityAttributes,
-            manual_reset: Bool,
-            initial_state: Bool,
-            name: *const u16,
-        ) -> Handle;
-        pub fn GetOverlappedResult(
-            file: Handle,
-            overlapped: *mut Overlapped,
-            transferred: *mut Dword,
-            wait: Bool,
-        ) -> Bool;
-        pub fn CloseHandle(handle: Handle) -> Bool;
-        pub fn DuplicateHandle(
-            source_process: Handle,
-            source: Handle,
-            target_process: Handle,
-            target: *mut Handle,
-            access: Dword,
-            inherit: Bool,
-            options: Dword,
-        ) -> Bool;
-        pub fn SetHandleInformation(handle: Handle, mask: Dword, flags: Dword) -> Bool;
-        pub fn GetHandleInformation(handle: Handle, flags: *mut Dword) -> Bool;
+    pub fn CreatePipe(
+        read: *mut Handle,
+        write: *mut Handle,
+        attributes: *mut SecurityAttributes,
+        size: Dword,
+    ) -> Bool;
+    pub fn CreateNamedPipeW(
+        name: *const u16,
+        open_mode: Dword,
+        pipe_mode: Dword,
+        max_instances: Dword,
+        out_buffer_size: Dword,
+        in_buffer_size: Dword,
+        default_timeout: Dword,
+        attributes: *mut SecurityAttributes,
+    ) -> Handle;
+    pub fn ConnectNamedPipe(pipe: Handle, overlapped: *mut Overlapped) -> Bool;
+    pub fn DisconnectNamedPipe(pipe: Handle) -> Bool;
+    pub fn GetNamedPipeServerProcessId(pipe: Handle, process_id: *mut Dword) -> Bool;
+    pub fn GetNamedPipeClientProcessId(pipe: Handle, process_id: *mut Dword) -> Bool;
 
-        pub fn CreatePipe(
-            read: *mut Handle,
-            write: *mut Handle,
-            attributes: *mut SecurityAttributes,
-            size: Dword,
-        ) -> Bool;
-        pub fn CreateNamedPipeW(
-            name: *const u16,
-            open_mode: Dword,
-            pipe_mode: Dword,
-            max_instances: Dword,
-            out_buffer_size: Dword,
-            in_buffer_size: Dword,
-            default_timeout: Dword,
-            attributes: *mut SecurityAttributes,
-        ) -> Handle;
-        pub fn ConnectNamedPipe(pipe: Handle, overlapped: *mut Overlapped) -> Bool;
-        pub fn DisconnectNamedPipe(pipe: Handle) -> Bool;
-        pub fn GetNamedPipeServerProcessId(pipe: Handle, process_id: *mut Dword) -> Bool;
-        pub fn GetNamedPipeClientProcessId(pipe: Handle, process_id: *mut Dword) -> Bool;
-
-        pub fn CreateFileW(
-            name: *const u16,
-            access: Dword,
-            share: Dword,
-            attributes: *mut SecurityAttributes,
-            disposition: Dword,
-            flags: Dword,
-            template: Handle,
-        ) -> Handle;
-        pub fn ReadFile(
-            file: Handle,
-            buffer: *mut c_void,
-            to_read: Dword,
-            read: *mut Dword,
-            overlapped: *mut Overlapped,
-        ) -> Bool;
-        pub fn WriteFile(
-            file: Handle,
-            buffer: *const c_void,
-            to_write: Dword,
-            written: *mut Dword,
-            overlapped: *mut Overlapped,
-        ) -> Bool;
-        pub fn FlushFileBuffers(file: Handle) -> Bool;
-        pub fn MoveFileExW(existing: *const u16, new: *const u16, flags: Dword) -> Bool;
-        pub fn LocalFree(memory: *mut c_void) -> *mut c_void;
-    }
-
-    #[link(name = "advapi32")]
-    extern "system" {
-        pub fn ImpersonateNamedPipeClient(pipe: Handle) -> Bool;
-        pub fn RevertToSelf() -> Bool;
-        pub fn OpenProcessToken(process: Handle, access: Dword, token: *mut Handle) -> Bool;
-        pub fn OpenThreadToken(
-            thread: Handle,
-            access: Dword,
-            open_as_self: Bool,
-            token: *mut Handle,
-        ) -> Bool;
-        pub fn GetTokenInformation(
-            token: Handle,
-            class: Dword,
-            information: *mut c_void,
-            length: Dword,
-            returned: *mut Dword,
-        ) -> Bool;
-        pub fn InitializeSecurityDescriptor(descriptor: *mut c_void, revision: Dword) -> Bool;
-        pub fn SetSecurityDescriptorDacl(
-            descriptor: *mut c_void,
-            present: Bool,
-            acl: *mut c_void,
-            defaulted: Bool,
-        ) -> Bool;
-        pub fn InitializeAcl(acl: *mut c_void, length: Dword, revision: Dword) -> Bool;
-        pub fn AddAccessAllowedAce(
-            acl: *mut c_void,
-            revision: Dword,
-            access: Dword,
-            sid: *mut c_void,
-        ) -> Bool;
-        pub fn GetLengthSid(sid: *mut c_void) -> Dword;
-        pub fn CopySid(length: Dword, destination: *mut c_void, source: *mut c_void) -> Bool;
-        pub fn EqualSid(left: *mut c_void, right: *mut c_void) -> Bool;
-        pub fn ConvertSidToStringSidW(sid: *mut c_void, text: *mut *mut u16) -> Bool;
-        pub fn GetSecurityInfo(
-            handle: Handle,
-            object_type: Dword,
-            information: Dword,
-            owner: *mut *mut c_void,
-            group: *mut *mut c_void,
-            dacl: *mut *mut c_void,
-            sacl: *mut *mut c_void,
-            descriptor: *mut *mut c_void,
-        ) -> Dword;
-        pub fn GetNamedSecurityInfoW(
-            name: *const u16,
-            object_type: Dword,
-            information: Dword,
-            owner: *mut *mut c_void,
-            group: *mut *mut c_void,
-            dacl: *mut *mut c_void,
-            sacl: *mut *mut c_void,
-            descriptor: *mut *mut c_void,
-        ) -> Dword;
-        /// `RtlGenRandom`. The only randomness source in this crate.
-        pub fn SystemFunction036(buffer: *mut c_void, length: Dword) -> Boolean;
-    }
-
-    #[link(name = "ntdll")]
-    extern "system" {
-        pub fn NtQuerySystemInformation(
-            class: Dword,
-            information: *mut c_void,
-            length: Dword,
-            returned: *mut Dword,
-        ) -> NtStatus;
-    }
+    pub fn CreateFileW(
+        name: *const u16,
+        access: Dword,
+        share: Dword,
+        attributes: *mut SecurityAttributes,
+        disposition: Dword,
+        flags: Dword,
+        template: Handle,
+    ) -> Handle;
+    pub fn ReadFile(
+        file: Handle,
+        buffer: *mut c_void,
+        to_read: Dword,
+        read: *mut Dword,
+        overlapped: *mut Overlapped,
+    ) -> Bool;
+    pub fn WriteFile(
+        file: Handle,
+        buffer: *const c_void,
+        to_write: Dword,
+        written: *mut Dword,
+        overlapped: *mut Overlapped,
+    ) -> Bool;
+    pub fn FlushFileBuffers(file: Handle) -> Bool;
+    pub fn MoveFileExW(existing: *const u16, new: *const u16, flags: Dword) -> Bool;
+    pub fn LocalFree(memory: *mut c_void) -> *mut c_void;
 }
 
-pub mod ffi_trace {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Mutex;
-
-    pub const NAMES: [&str; 56] = [
-        "kernel32::CreateJobObjectW",
-        "kernel32::SetInformationJobObject",
-        "kernel32::QueryInformationJobObject",
-        "kernel32::TerminateJobObject",
-        "kernel32::IsProcessInJob",
-        "kernel32::CreateIoCompletionPort",
-        "kernel32::GetQueuedCompletionStatus",
-        "kernel32::PostQueuedCompletionStatus",
-        "kernel32::CreateProcessW",
-        "kernel32::InitializeProcThreadAttributeList",
-        "kernel32::UpdateProcThreadAttribute",
-        "kernel32::DeleteProcThreadAttributeList",
-        "kernel32::ResumeThread",
-        "kernel32::OpenProcess",
-        "kernel32::GetProcessTimes",
-        "kernel32::GetExitCodeProcess",
-        "kernel32::TerminateProcess",
-        "kernel32::GetCurrentProcess",
-        "kernel32::GetCurrentProcessId",
-        "kernel32::GetCurrentThread",
-        "kernel32::WaitForSingleObject",
-        "kernel32::CreateEventW",
-        "kernel32::GetOverlappedResult",
-        "kernel32::CloseHandle",
-        "kernel32::DuplicateHandle",
-        "kernel32::SetHandleInformation",
-        "kernel32::GetHandleInformation",
-        "kernel32::CreatePipe",
-        "kernel32::CreateNamedPipeW",
-        "kernel32::ConnectNamedPipe",
-        "kernel32::DisconnectNamedPipe",
-        "kernel32::GetNamedPipeServerProcessId",
-        "kernel32::GetNamedPipeClientProcessId",
-        "kernel32::CreateFileW",
-        "kernel32::ReadFile",
-        "kernel32::WriteFile",
-        "kernel32::FlushFileBuffers",
-        "kernel32::MoveFileExW",
-        "kernel32::LocalFree",
-        "advapi32::ImpersonateNamedPipeClient",
-        "advapi32::RevertToSelf",
-        "advapi32::OpenProcessToken",
-        "advapi32::OpenThreadToken",
-        "advapi32::GetTokenInformation",
-        "advapi32::InitializeSecurityDescriptor",
-        "advapi32::SetSecurityDescriptorDacl",
-        "advapi32::InitializeAcl",
-        "advapi32::AddAccessAllowedAce",
-        "advapi32::GetLengthSid",
-        "advapi32::CopySid",
-        "advapi32::EqualSid",
-        "advapi32::ConvertSidToStringSidW",
-        "advapi32::GetSecurityInfo",
-        "advapi32::GetNamedSecurityInfoW",
-        "advapi32::SystemFunction036",
-        "ntdll::NtQuerySystemInformation",
-    ];
-
-    const NOT_HIT: AtomicBool = AtomicBool::new(false);
-    static HIT: [AtomicBool; 56] = [NOT_HIT; 56];
-    static SINK: Mutex<Option<std::fs::File>> = Mutex::new(None);
-
-    /// Append on first call only. The guardian is force-killed in several rows, so anything
-    /// buffered until exit would be lost for exactly the process that matters most.
-    ///
-    /// Two recorder defects had to be removed before this measurement meant anything, and both
-    /// were found by the measurement disagreeing with the code rather than by inspection.
-    ///
-    /// 1. Opening the file per record dropped records silently: several guardian threads open
-    ///    the same path concurrently, Windows refuses the second open with a sharing violation,
-    ///    and the HIT bit was already set -- so the item was lost forever and read as "never
-    ///    called".
-    /// 2. Opening the file per record was **blind inside the impersonation window**. Between
-    ///    'ImpersonateNamedPipeClient' and 'RevertToSelf' the thread carries an
-    ///    identification-level token, which permits identity queries and no file access at all,
-    ///    so every open in that window fails. Exactly the three items called there read as
-    ///    unexercised.
-    ///
-    /// The sink is therefore opened **once**, on the first record, and reused: the access check
-    /// happens at open time, so writes through an already-open handle survive impersonation.
-    pub fn record(index: usize) {
-        if HIT[index].load(Ordering::SeqCst) {
-            return;
-        }
-        let directory = match std::env::var("RWPA_FFI_TRACE") {
-            Ok(value) => value,
-            Err(_) => return,
-        };
-        let mut sink = match SINK.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        if HIT[index].load(Ordering::SeqCst) {
-            return;
-        }
-        if sink.is_none() {
-            let path = std::path::Path::new(&directory).join(format!("{}.txt", std::process::id()));
-            let mut attempt = 0;
-            while attempt < 200 && sink.is_none() {
-                match std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-                    Ok(file) => *sink = Some(file),
-                    Err(_) => {
-                        attempt += 1;
-                        std::thread::sleep(std::time::Duration::from_millis(2));
-                    }
-                }
-            }
-        }
-        use std::io::Write;
-        if let Some(file) = sink.as_mut() {
-            if writeln!(file, "{}", NAMES[index]).is_ok() && file.flush().is_ok() {
-                HIT[index].store(true, Ordering::SeqCst);
-            }
-        }
-    }
+#[link(name = "advapi32")]
+extern "system" {
+    pub fn ImpersonateNamedPipeClient(pipe: Handle) -> Bool;
+    pub fn RevertToSelf() -> Bool;
+    pub fn OpenProcessToken(process: Handle, access: Dword, token: *mut Handle) -> Bool;
+    pub fn OpenThreadToken(
+        thread: Handle,
+        access: Dword,
+        open_as_self: Bool,
+        token: *mut Handle,
+    ) -> Bool;
+    pub fn GetTokenInformation(
+        token: Handle,
+        class: Dword,
+        information: *mut c_void,
+        length: Dword,
+        returned: *mut Dword,
+    ) -> Bool;
+    pub fn InitializeSecurityDescriptor(descriptor: *mut c_void, revision: Dword) -> Bool;
+    pub fn SetSecurityDescriptorDacl(
+        descriptor: *mut c_void,
+        present: Bool,
+        acl: *mut c_void,
+        defaulted: Bool,
+    ) -> Bool;
+    pub fn InitializeAcl(acl: *mut c_void, length: Dword, revision: Dword) -> Bool;
+    pub fn AddAccessAllowedAce(
+        acl: *mut c_void,
+        revision: Dword,
+        access: Dword,
+        sid: *mut c_void,
+    ) -> Bool;
+    pub fn GetLengthSid(sid: *mut c_void) -> Dword;
+    pub fn CopySid(length: Dword, destination: *mut c_void, source: *mut c_void) -> Bool;
+    pub fn EqualSid(left: *mut c_void, right: *mut c_void) -> Bool;
+    pub fn ConvertSidToStringSidW(sid: *mut c_void, text: *mut *mut u16) -> Bool;
+    pub fn GetSecurityInfo(
+        handle: Handle,
+        object_type: Dword,
+        information: Dword,
+        owner: *mut *mut c_void,
+        group: *mut *mut c_void,
+        dacl: *mut *mut c_void,
+        sacl: *mut *mut c_void,
+        descriptor: *mut *mut c_void,
+    ) -> Dword;
+    pub fn GetNamedSecurityInfoW(
+        name: *const u16,
+        object_type: Dword,
+        information: Dword,
+        owner: *mut *mut c_void,
+        group: *mut *mut c_void,
+        dacl: *mut *mut c_void,
+        sacl: *mut *mut c_void,
+        descriptor: *mut *mut c_void,
+    ) -> Dword;
+    /// `RtlGenRandom`. The only randomness source in this crate.
+    pub fn SystemFunction036(buffer: *mut c_void, length: Dword) -> Boolean;
 }
 
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn CreateJobObjectW(attributes: *mut SecurityAttributes, name: *const u16) -> Handle {
-    ffi_trace::record(0);
-    imports::CreateJobObjectW(attributes, name)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn SetInformationJobObject(job: Handle, class: Dword, information: *const c_void, length: Dword) -> Bool {
-    ffi_trace::record(1);
-    imports::SetInformationJobObject(job, class, information, length)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn QueryInformationJobObject(job: Handle, class: Dword, information: *mut c_void, length: Dword, returned: *mut Dword) -> Bool {
-    ffi_trace::record(2);
-    imports::QueryInformationJobObject(job, class, information, length, returned)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn TerminateJobObject(job: Handle, exit_code: Dword) -> Bool {
-    ffi_trace::record(3);
-    imports::TerminateJobObject(job, exit_code)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn IsProcessInJob(process: Handle, job: Handle, result: *mut Bool) -> Bool {
-    ffi_trace::record(4);
-    imports::IsProcessInJob(process, job, result)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn CreateIoCompletionPort(file: Handle, existing_port: Handle, completion_key: UlongPtr, concurrent_threads: Dword) -> Handle {
-    ffi_trace::record(5);
-    imports::CreateIoCompletionPort(file, existing_port, completion_key, concurrent_threads)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn GetQueuedCompletionStatus(port: Handle, bytes: *mut Dword, completion_key: *mut UlongPtr, overlapped: *mut *mut Overlapped, milliseconds: Dword) -> Bool {
-    ffi_trace::record(6);
-    imports::GetQueuedCompletionStatus(port, bytes, completion_key, overlapped, milliseconds)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn PostQueuedCompletionStatus(port: Handle, bytes: Dword, completion_key: UlongPtr, overlapped: *mut Overlapped) -> Bool {
-    ffi_trace::record(7);
-    imports::PostQueuedCompletionStatus(port, bytes, completion_key, overlapped)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn CreateProcessW(application: *const u16, command_line: *mut u16, process_attributes: *mut SecurityAttributes, thread_attributes: *mut SecurityAttributes, inherit_handles: Bool, creation_flags: Dword, environment: *mut c_void, current_directory: *const u16, startup: *mut StartupInfoW, information: *mut ProcessInformation) -> Bool {
-    ffi_trace::record(8);
-    imports::CreateProcessW(application, command_line, process_attributes, thread_attributes, inherit_handles, creation_flags, environment, current_directory, startup, information)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn InitializeProcThreadAttributeList(list: *mut c_void, count: Dword, flags: Dword, size: *mut usize) -> Bool {
-    ffi_trace::record(9);
-    imports::InitializeProcThreadAttributeList(list, count, flags, size)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn UpdateProcThreadAttribute(list: *mut c_void, flags: Dword, attribute: usize, value: *mut c_void, size: usize, previous: *mut c_void, returned: *mut usize) -> Bool {
-    ffi_trace::record(10);
-    imports::UpdateProcThreadAttribute(list, flags, attribute, value, size, previous, returned)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn DeleteProcThreadAttributeList(list: *mut c_void) {
-    ffi_trace::record(11);
-    imports::DeleteProcThreadAttributeList(list)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn ResumeThread(thread: Handle) -> Dword {
-    ffi_trace::record(12);
-    imports::ResumeThread(thread)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn OpenProcess(access: Dword, inherit: Bool, process_id: Dword) -> Handle {
-    ffi_trace::record(13);
-    imports::OpenProcess(access, inherit, process_id)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn GetProcessTimes(process: Handle, creation: *mut FileTime, exit: *mut FileTime, kernel: *mut FileTime, user: *mut FileTime) -> Bool {
-    ffi_trace::record(14);
-    imports::GetProcessTimes(process, creation, exit, kernel, user)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn GetExitCodeProcess(process: Handle, exit_code: *mut Dword) -> Bool {
-    ffi_trace::record(15);
-    imports::GetExitCodeProcess(process, exit_code)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn TerminateProcess(process: Handle, exit_code: Dword) -> Bool {
-    ffi_trace::record(16);
-    imports::TerminateProcess(process, exit_code)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn GetCurrentProcess() -> Handle {
-    ffi_trace::record(17);
-    imports::GetCurrentProcess()
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn GetCurrentProcessId() -> Dword {
-    ffi_trace::record(18);
-    imports::GetCurrentProcessId()
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn GetCurrentThread() -> Handle {
-    ffi_trace::record(19);
-    imports::GetCurrentThread()
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn WaitForSingleObject(handle: Handle, milliseconds: Dword) -> Dword {
-    ffi_trace::record(20);
-    imports::WaitForSingleObject(handle, milliseconds)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn CreateEventW(attributes: *mut SecurityAttributes, manual_reset: Bool, initial_state: Bool, name: *const u16) -> Handle {
-    ffi_trace::record(21);
-    imports::CreateEventW(attributes, manual_reset, initial_state, name)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn GetOverlappedResult(file: Handle, overlapped: *mut Overlapped, transferred: *mut Dword, wait: Bool) -> Bool {
-    ffi_trace::record(22);
-    imports::GetOverlappedResult(file, overlapped, transferred, wait)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn CloseHandle(handle: Handle) -> Bool {
-    ffi_trace::record(23);
-    imports::CloseHandle(handle)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn DuplicateHandle(source_process: Handle, source: Handle, target_process: Handle, target: *mut Handle, access: Dword, inherit: Bool, options: Dword) -> Bool {
-    ffi_trace::record(24);
-    imports::DuplicateHandle(source_process, source, target_process, target, access, inherit, options)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn SetHandleInformation(handle: Handle, mask: Dword, flags: Dword) -> Bool {
-    ffi_trace::record(25);
-    imports::SetHandleInformation(handle, mask, flags)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn GetHandleInformation(handle: Handle, flags: *mut Dword) -> Bool {
-    ffi_trace::record(26);
-    imports::GetHandleInformation(handle, flags)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn CreatePipe(read: *mut Handle, write: *mut Handle, attributes: *mut SecurityAttributes, size: Dword) -> Bool {
-    ffi_trace::record(27);
-    imports::CreatePipe(read, write, attributes, size)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn CreateNamedPipeW(name: *const u16, open_mode: Dword, pipe_mode: Dword, max_instances: Dword, out_buffer_size: Dword, in_buffer_size: Dword, default_timeout: Dword, attributes: *mut SecurityAttributes) -> Handle {
-    ffi_trace::record(28);
-    imports::CreateNamedPipeW(name, open_mode, pipe_mode, max_instances, out_buffer_size, in_buffer_size, default_timeout, attributes)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn ConnectNamedPipe(pipe: Handle, overlapped: *mut Overlapped) -> Bool {
-    ffi_trace::record(29);
-    imports::ConnectNamedPipe(pipe, overlapped)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn DisconnectNamedPipe(pipe: Handle) -> Bool {
-    ffi_trace::record(30);
-    imports::DisconnectNamedPipe(pipe)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn GetNamedPipeServerProcessId(pipe: Handle, process_id: *mut Dword) -> Bool {
-    ffi_trace::record(31);
-    imports::GetNamedPipeServerProcessId(pipe, process_id)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn GetNamedPipeClientProcessId(pipe: Handle, process_id: *mut Dword) -> Bool {
-    ffi_trace::record(32);
-    imports::GetNamedPipeClientProcessId(pipe, process_id)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn CreateFileW(name: *const u16, access: Dword, share: Dword, attributes: *mut SecurityAttributes, disposition: Dword, flags: Dword, template: Handle) -> Handle {
-    ffi_trace::record(33);
-    imports::CreateFileW(name, access, share, attributes, disposition, flags, template)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn ReadFile(file: Handle, buffer: *mut c_void, to_read: Dword, read: *mut Dword, overlapped: *mut Overlapped) -> Bool {
-    ffi_trace::record(34);
-    imports::ReadFile(file, buffer, to_read, read, overlapped)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn WriteFile(file: Handle, buffer: *const c_void, to_write: Dword, written: *mut Dword, overlapped: *mut Overlapped) -> Bool {
-    ffi_trace::record(35);
-    imports::WriteFile(file, buffer, to_write, written, overlapped)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn FlushFileBuffers(file: Handle) -> Bool {
-    ffi_trace::record(36);
-    imports::FlushFileBuffers(file)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn MoveFileExW(existing: *const u16, new: *const u16, flags: Dword) -> Bool {
-    ffi_trace::record(37);
-    imports::MoveFileExW(existing, new, flags)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn LocalFree(memory: *mut c_void) -> *mut c_void {
-    ffi_trace::record(38);
-    imports::LocalFree(memory)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn ImpersonateNamedPipeClient(pipe: Handle) -> Bool {
-    ffi_trace::record(39);
-    imports::ImpersonateNamedPipeClient(pipe)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn RevertToSelf() -> Bool {
-    ffi_trace::record(40);
-    imports::RevertToSelf()
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn OpenProcessToken(process: Handle, access: Dword, token: *mut Handle) -> Bool {
-    ffi_trace::record(41);
-    imports::OpenProcessToken(process, access, token)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn OpenThreadToken(thread: Handle, access: Dword, open_as_self: Bool, token: *mut Handle) -> Bool {
-    ffi_trace::record(42);
-    imports::OpenThreadToken(thread, access, open_as_self, token)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn GetTokenInformation(token: Handle, class: Dword, information: *mut c_void, length: Dword, returned: *mut Dword) -> Bool {
-    ffi_trace::record(43);
-    imports::GetTokenInformation(token, class, information, length, returned)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn InitializeSecurityDescriptor(descriptor: *mut c_void, revision: Dword) -> Bool {
-    ffi_trace::record(44);
-    imports::InitializeSecurityDescriptor(descriptor, revision)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn SetSecurityDescriptorDacl(descriptor: *mut c_void, present: Bool, acl: *mut c_void, defaulted: Bool) -> Bool {
-    ffi_trace::record(45);
-    imports::SetSecurityDescriptorDacl(descriptor, present, acl, defaulted)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn InitializeAcl(acl: *mut c_void, length: Dword, revision: Dword) -> Bool {
-    ffi_trace::record(46);
-    imports::InitializeAcl(acl, length, revision)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn AddAccessAllowedAce(acl: *mut c_void, revision: Dword, access: Dword, sid: *mut c_void) -> Bool {
-    ffi_trace::record(47);
-    imports::AddAccessAllowedAce(acl, revision, access, sid)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn GetLengthSid(sid: *mut c_void) -> Dword {
-    ffi_trace::record(48);
-    imports::GetLengthSid(sid)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn CopySid(length: Dword, destination: *mut c_void, source: *mut c_void) -> Bool {
-    ffi_trace::record(49);
-    imports::CopySid(length, destination, source)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn EqualSid(left: *mut c_void, right: *mut c_void) -> Bool {
-    ffi_trace::record(50);
-    imports::EqualSid(left, right)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn ConvertSidToStringSidW(sid: *mut c_void, text: *mut *mut u16) -> Bool {
-    ffi_trace::record(51);
-    imports::ConvertSidToStringSidW(sid, text)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn GetSecurityInfo(handle: Handle, object_type: Dword, information: Dword, owner: *mut *mut c_void, group: *mut *mut c_void, dacl: *mut *mut c_void, sacl: *mut *mut c_void, descriptor: *mut *mut c_void) -> Dword {
-    ffi_trace::record(52);
-    imports::GetSecurityInfo(handle, object_type, information, owner, group, dacl, sacl, descriptor)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn GetNamedSecurityInfoW(name: *const u16, object_type: Dword, information: Dword, owner: *mut *mut c_void, group: *mut *mut c_void, dacl: *mut *mut c_void, sacl: *mut *mut c_void, descriptor: *mut *mut c_void) -> Dword {
-    ffi_trace::record(53);
-    imports::GetNamedSecurityInfoW(name, object_type, information, owner, group, dacl, sacl, descriptor)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn SystemFunction036(buffer: *mut c_void, length: Dword) -> Boolean {
-    ffi_trace::record(54);
-    imports::SystemFunction036(buffer, length)
-}
-
-#[inline]
-#[allow(non_snake_case)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn NtQuerySystemInformation(class: Dword, information: *mut c_void, length: Dword, returned: *mut Dword) -> NtStatus {
-    ffi_trace::record(55);
-    imports::NtQuerySystemInformation(class, information, length, returned)
+#[link(name = "ntdll")]
+extern "system" {
+    pub fn NtQuerySystemInformation(
+        class: Dword,
+        information: *mut c_void,
+        length: Dword,
+        returned: *mut Dword,
+    ) -> NtStatus;
 }
 
 #[cfg(test)]

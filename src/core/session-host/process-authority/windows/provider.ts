@@ -21,6 +21,8 @@ import { WINDOWS_PROCESS_AUTHORITY_DESCRIPTOR } from './contracts.js';
 import {
   createWindowsPrivateAuthorityReference,
   decodeWindowsPrivateAuthorityReference,
+  WINDOWS_BOOT_IDENTITY_SOURCES,
+  WINDOWS_EXPECTED_JOB_LIMIT_MASK,
   type WindowsPrivateAuthorityReference,
   type WindowsPrivateAuthorityReferenceInput,
 } from './private-reference.js';
@@ -353,6 +355,90 @@ function decodeForProvider(
   }
 }
 
+/**
+ * Task 4.8. `design.md:202-204` enumerates the Windows unavailability causes and
+ * promises each returns typed `authority-unavailable`. Section 8's census
+ * measured what the helper actually emits for them — `reference-invalid`,
+ * `native-uncertain`, and in one case a raw localized OS error — and **no probe
+ * produced `authority-unavailable`** (`S8-F3`). This is the mapping that makes
+ * the promise true, and it lives here rather than in the helper because the
+ * helper's job is to report what it observed, not to decide the common contract's
+ * verdict.
+ *
+ * The set is closed. An unrecognised code is *not* silently widened into
+ * unavailable — it stays malformed, so a new native failure mode surfaces as a
+ * loud rejection rather than as a quiet "prerequisites unavailable".
+ */
+const WINDOWS_UNAVAILABLE_PREREQUISITES: ReadonlyMap<string, string> = new Map([
+  ['ambient-job-refuses-nesting', 'the host process is inside an ambient Job that refuses nesting'],
+  ['job-limit-mask-differs', 'the Job limit mask could not be set to the exact expected value'],
+  ['completion-port-associated-late', 'the completion port could not be associated on an empty Job'],
+  ['boot-identity-unobtainable', 'no exact boot identity source is obtainable'],
+  ['endpoint-not-first-instance', 'the control endpoint name could not be created as a first instance'],
+  ['state-root-untrusted', 'the trusted state root is missing, wrongly owned, or reached through a reparse point'],
+  ['artifact-unavailable', 'the resolved native artifact failed its manifest identity check'],
+  ['native-unavailable', 'a native prerequisite is denied or unsupported on this host'],
+]);
+
+function unavailablePrerequisite(code: string): ProviderPreparationUnavailable {
+  const cause = WINDOWS_UNAVAILABLE_PREREQUISITES.get(code);
+  return Object.freeze({
+    state: 'authority-unavailable',
+    // Bounded: one sentence, a closed cause, and the code. No path, no SID, no
+    // scope id, no capability, and nothing carried through from a native string.
+    diagnostic: cause
+      ? `selected provider prerequisites unavailable: ${cause} (${code})`
+      : 'selected provider prerequisites unavailable',
+  });
+}
+
+/**
+ * Task 4.8's other half: revalidate every attested fact before `prepared-inert`
+ * is returned. `SetInformationJobObject` succeeding is not evidence and neither
+ * is a helper saying `inert` — the attested values are re-checked here against
+ * the contract's expected constants, and a mismatch is typed unavailable rather
+ * than a thrown malformation, because a mask that came back different is a
+ * prerequisite this host did not meet, not a corrupt message.
+ *
+ * It runs on the **raw attestation**, before the private-reference codec. That
+ * ordering is load-bearing and was not obvious: the codec already rejects a
+ * wrong mask and a non-zero port count, but it rejects them by throwing
+ * "private reference is malformed" — which is the wrong verdict. A host whose
+ * Job would not take the exact mask has not sent us a corrupt message; it has
+ * failed a prerequisite, and the contract says that is typed unavailable. The
+ * first version of this function ran after the codec and was unreachable dead
+ * code; the tests caught it.
+ */
+function revalidateAttestedFacts(
+  record: Record<string, unknown>
+): ProviderPreparationUnavailable | undefined {
+  // Each check fires only when the field is PRESENT AND WRONG. An absent or
+  // wrongly-typed field is a malformed message, not a failed prerequisite, and
+  // must keep reaching the codec's rejection — otherwise a helper that simply
+  // omitted a value would be reported as a host that cannot run the authority.
+  if (
+    typeof record.jobLimitMask === 'number' &&
+    record.jobLimitMask !== WINDOWS_EXPECTED_JOB_LIMIT_MASK
+  ) {
+    return unavailablePrerequisite('job-limit-mask-differs');
+  }
+  if (
+    typeof record.activeProcessCountAtPortAssociation === 'number' &&
+    record.activeProcessCountAtPortAssociation !== 0
+  ) {
+    return unavailablePrerequisite('completion-port-associated-late');
+  }
+  if (
+    typeof record.bootIdentitySource === 'string' &&
+    !WINDOWS_BOOT_IDENTITY_SOURCES.includes(
+      record.bootIdentitySource as (typeof WINDOWS_BOOT_IDENTITY_SOURCES)[number]
+    )
+  ) {
+    return unavailablePrerequisite('boot-identity-unobtainable');
+  }
+  return undefined;
+}
+
 function createPreparedReference(
   identity: Pick<WindowsAuthorityNativePrepareRequest, 'preparationOperationId' | 'launchDigest'>,
   expectedArtifact: WindowsAuthorityExpectedArtifactIdentity,
@@ -365,12 +451,11 @@ function createPreparedReference(
   if (
     result.state === 'authority-unavailable' &&
     exactKeys(result, ['state', 'diagnosticCode']) &&
-    result.diagnosticCode === 'prepare-unavailable'
+    typeof result.diagnosticCode === 'string' &&
+    (result.diagnosticCode === 'prepare-unavailable' ||
+      WINDOWS_UNAVAILABLE_PREREQUISITES.has(result.diagnosticCode))
   ) {
-    return Object.freeze({
-      state: 'authority-unavailable',
-      diagnostic: 'selected provider prerequisites unavailable',
-    });
+    return unavailablePrerequisite(result.diagnosticCode);
   }
   if (result.state !== 'inert' || !exactKeys(result, ['state', 'attestation'])) {
     throw new TypeError('Windows process-authority prepare outcome is malformed.');
@@ -389,6 +474,10 @@ function createPreparedReference(
   ) {
     throw new TypeError('Windows process-authority prepare attestation identity binding differs.');
   }
+  // Task 4.8: revalidate the attested authority facts BEFORE the codec, so a
+  // failed prerequisite is typed unavailable rather than "malformed reference".
+  const unavailable = revalidateAttestedFacts(record);
+  if (unavailable) return unavailable;
   // The scope id, generation and both capabilities are carried through exactly
   // as attested. Nothing here invents or backfills one.
   const reference = createWindowsPrivateAuthorityReference(

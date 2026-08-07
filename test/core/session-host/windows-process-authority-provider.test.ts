@@ -540,3 +540,125 @@ describe('Windows production provider entry point', () => {
     expect(runtime.stdin).toBeInstanceOf(PassThrough);
   });
 });
+
+describe('the Windows availability transaction (task 4.8)', () => {
+  // `design.md:202-204` enumerates the unavailability causes and promises each returns typed
+  // `authority-unavailable`. Section 8's census measured that no probe produced that code
+  // (`S8-F3`), and before this transaction existed every input below threw "prepare outcome is
+  // malformed" instead. Each row is therefore a RED that was real, not a hypothetical one.
+  const UNAVAILABLE_CAUSES = [
+    ['ambient-job-refuses-nesting', /ambient Job that refuses nesting/u],
+    ['job-limit-mask-differs', /exact expected value/u],
+    ['completion-port-associated-late', /associated on an empty Job/u],
+    ['boot-identity-unobtainable', /no exact boot identity source/u],
+    ['endpoint-not-first-instance', /first instance/u],
+    ['state-root-untrusted', /reparse point/u],
+    ['artifact-unavailable', /manifest identity check/u],
+    ['native-unavailable', /denied or unsupported/u],
+  ] as const;
+
+  function bundleWith(prepareResult: unknown, aborts: string[] = []) {
+    const stateRoot = temporaryRoot('rasen-windows-availability-');
+    const transport = {
+      async prepare() { return prepareResult; },
+      async probeIdentity() { return undefined; },
+      async activate() { return { state: 'live' }; },
+      async inspect() { return { state: 'live' }; },
+      async attemptGraceful() { return { state: 'not-observed' }; },
+      async terminate() { return { state: 'exact-scope-empty' }; },
+      async abort(_reference: unknown, reason: string) {
+        aborts.push(reason);
+        return { state: 'exact-scope-empty' };
+      },
+    } as unknown as WindowsAuthorityNativeTransport;
+    return createWindowsProcessAuthorityProviderBundleWithTransport({
+      transport,
+      runtimeOpener: { open() { throw new TypeError('not used'); } },
+      ledger: createWindowsAuthorityPublicationLedger({ root: stateRoot }),
+      artifactIdentity: WINDOWS_FIXTURE_ARTIFACT_IDENTITY,
+    });
+  }
+
+  it.each(UNAVAILABLE_CAUSES)(
+    'maps the enumerated cause %s to typed unavailable with a bounded diagnostic',
+    async (code, expected) => {
+      const bundle = bundleWith({ state: 'authority-unavailable', diagnosticCode: code });
+      const result = await bundle.provider.prepare(INPUT, context('prepare', `unavailable-${code}`));
+      expect(result).toEqual({
+        state: 'authority-unavailable',
+        diagnostic: expect.stringMatching(expected),
+      });
+      expect('reference' in result).toBe(false);
+      // Bounded: one sentence, and nothing sensitive carried through from the native side.
+      expect((result as { diagnostic: string }).diagnostic.length).toBeLessThan(160);
+      expect((result as { diagnostic: string }).diagnostic).toContain(code);
+    }
+  );
+
+  it('does NOT widen an unrecognised native code into unavailable', async () => {
+    // The discriminating half. If the mapping were a blanket `state === 'authority-unavailable'`
+    // check, a native failure mode nobody has enumerated would arrive as "prerequisites
+    // unavailable" and be indistinguishable from a host that genuinely cannot host an authority.
+    const bundle = bundleWith({
+      state: 'authority-unavailable',
+      diagnosticCode: 'something-nobody-enumerated',
+    });
+    await expect(bundle.provider.prepare(INPUT, context('prepare', 'unavailable-unknown')))
+      .rejects.toThrow(/prepare outcome is malformed/u);
+  });
+
+  it('revalidates the attested limit mask before the codec, not after it', async () => {
+    // The ordering is the whole point. The private-reference codec already rejects a wrong
+    // mask -- but it rejects it by throwing "private reference is malformed", which is the
+    // wrong verdict: a host whose Job would not take the exact mask has not sent a corrupt
+    // message, it has failed a prerequisite. Revalidating after the codec is unreachable dead
+    // code, which is exactly what the first version of this was.
+    const request = {
+      preparationOperationId: 'revalidate-mask',
+      launchDigest: digestWindowsAuthorityLaunch(INPUT),
+    };
+    const bundle = bundleWith({
+      state: 'inert',
+      attestation: windowsPrepareAttestation(request, 7, { jobLimitMask: 0x2001 }),
+    });
+    const result = await bundle.provider.prepare(INPUT, context('prepare', 'revalidate-mask'));
+    expect(result).toEqual({
+      state: 'authority-unavailable',
+      diagnostic: expect.stringMatching(/exact expected value/u),
+    });
+    expect((result as { diagnostic: string }).diagnostic).not.toMatch(/malformed/u);
+  });
+
+  it('revalidates that the completion port was associated on an empty Job', async () => {
+    const request = {
+      preparationOperationId: 'revalidate-port',
+      launchDigest: digestWindowsAuthorityLaunch(INPUT),
+    };
+    const bundle = bundleWith({
+      state: 'inert',
+      attestation: windowsPrepareAttestation(request, 8, {
+        activeProcessCountAtPortAssociation: 1,
+      }),
+    });
+    const result = await bundle.provider.prepare(INPUT, context('prepare', 'revalidate-port'));
+    expect(result).toEqual({
+      state: 'authority-unavailable',
+      diagnostic: expect.stringMatching(/associated on an empty Job/u),
+    });
+  });
+
+  it('GREEN: an attestation whose facts all revalidate still prepares', async () => {
+    // Without this the assertions above would not distinguish "revalidation rejects a bad fact"
+    // from "revalidation rejects everything".
+    const request = {
+      preparationOperationId: 'revalidate-ok',
+      launchDigest: digestWindowsAuthorityLaunch(INPUT),
+    };
+    const bundle = bundleWith({
+      state: 'inert',
+      attestation: windowsPrepareAttestation(request, 9),
+    });
+    const result = await bundle.provider.prepare(INPUT, context('prepare', 'revalidate-ok'));
+    expect('reference' in result).toBe(true);
+  });
+});

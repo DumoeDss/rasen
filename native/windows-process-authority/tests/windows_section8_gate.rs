@@ -817,18 +817,31 @@ fn actual_controller_replacement_authenticates_rereads_inspects_and_terminates()
     //
     // Consequence: a replacement controller's `terminate` against a live authority always
     // returns an error, so the caller retains uncertainty for an authority that is in fact
-    // empty. Fixing it is a `src/**` change and would break the `2b3fabd9` freeze, so it is
+    // empty. **Fixed** in the post-freeze wave: `cli.rs` now drains frames in a loop. It is
     // reported as a finding, not fixed here.
     //
-    // The assertion below is deliberately written against the **current** behaviour so the
-    // defect cannot silently change shape; the load-bearing assertion is the one after it,
-    // which proves the authority did converge.
+    // **Rewritten under task 9.9.** This assertion previously asserted the *defect* -- that the
+    // verb fails with `unexpected frame root-exited`. That is a restatement of observed
+    // behaviour, it states nothing the contract requires, and it was measured to be unstable:
+    // over 7 runs of this row on the identical packaged helper, identical crate source and an
+    // identical test file, the defect reproduced **once**. The old assertion was therefore red
+    // six times in seven, for a product that was behaving *better* than the assertion demanded.
+    //
+    // What the contract requires (`design.md` Decision 8, and the Record-must-not-lie
+    // invariant): terminate drives the authority to its own `ACTIVE_PROCESS_ZERO` and returns
+    // that receipt; deadline expiry returns typed `timeout` with the authority retained. An
+    // ad-hoc `unexpected frame <name>` is neither, and it is returned for a termination that
+    // actually converged -- so the caller retains uncertainty about an authority that is empty.
+    //
+    // This is `S9-F1`. The underlying race is that `guardian.rs:673 deliver_root_exit`
+    // broadcasts on the shared session writer while `guardian.rs:1218` sends `ExactScopeEmpty`
+    // on the same writer, and `cli.rs:643` reads exactly one frame.
     let terminate = run_helper_retrying(&reference.control("terminate", "30000"));
     assert!(
-        !terminate.ok && terminate.stderr.contains("unexpected frame root-exited"),
-        "the recorded replacement-terminate defect did not reproduce; if it has been fixed, \
-         restore the positive assertion (ok, and RWA1-OBSERVATION in stdout). stdout={} \
-         stderr={}",
+        terminate.ok && terminate.stdout.contains("RWA1-OBSERVATION "),
+        "terminate did not return the authority's own exact-empty receipt. If this says \
+         `unexpected frame root-exited`, S9-F1 has reproduced: the authority converged and the \
+         receipt was lost to a frame race. stdout={} stderr={}",
         terminate.stdout,
         terminate.stderr
     );
