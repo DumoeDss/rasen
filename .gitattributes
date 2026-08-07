@@ -27,3 +27,12 @@ native/windows-process-authority/tests/** text eol=lf
 # Windows checkout converted it to 442e8743, which the package-CI guard asserts against
 # and the windows-latest workflow runs. This pin changes no file under that crate.
 native/linux-process-authority/** text eol=lf
+
+# The Linux WSL-oracle test and its fixture live OUTSIDE the crate, so the rule above
+# does not reach them -- but the Linux freeze marker records their digests. Unpinned,
+# a Windows checkout under the Git-for-Windows default autocrlf=true converts them to
+# CRLF and those recorded digests stop reproducing: 4c7f84c8 -> 40085f6d and
+# 8d7821b9 -> 3dbc766f. That is the same defect the crate pins above exist to remove,
+# reappearing inside a marker. Both files are LF in the index; this pin changes neither.
+test/core/session-host/linux-process-authority-wsl-oracles.test.ts text eol=lf
+test/fixtures/linux-process-authority-wsl-controller.mjs text eol=lf
