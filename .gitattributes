@@ -36,3 +36,19 @@ native/linux-process-authority/** text eol=lf
 # reappearing inside a marker. Both files are LF in the index; this pin changes neither.
 test/core/session-host/linux-process-authority-wsl-oracles.test.ts text eol=lf
 test/fixtures/linux-process-authority-wsl-controller.mjs text eol=lf
+
+# Every file whose sha256 is byte-pinned by a guard. None of these had its line
+# endings pinned: on a fresh Windows checkout under the Git-for-Windows default
+# autocrlf=true, every recorded hash changes and the guards go red on first clone --
+# reporting a digest mismatch against files nobody touched, i.e. as tampering rather
+# than as a line-ending convention. FROZEN_COMMON_INPUTS and
+# LEGACY_PROCESS_CAPSULE_INPUTS both read these.
+rasen/specs/process-authority-provider/spec.md text eol=lf
+test/helpers/process-authority-provider-conformance.ts text eol=lf
+native/process-capsule/src/main.rs text eol=lf
+native/process-capsule/Cargo.lock text eol=lf
+scripts/build-process-capsule.mjs text eol=lf
+src/core/session-host/process-capsule/resolver.ts text eol=lf
+src/core/session-host/process-capsule/native-process-scope.ts text eol=lf
+test/core/session-host/process-capsule-package.test.ts text eol=lf
+test/core/session-host/process-capsule-posix-replacement.test.ts text eol=lf
