@@ -163,7 +163,8 @@ export function createWin32BestEffortProcessScope(
   const capsule = createNativeProcessScope(options);
   // Scopes this daemon lifetime prepared. A ref absent from this map either
   // belongs to a previous daemon lifetime or was never ours; either way it is
-  // reconciled through the capsule's one-shot probe and never reattached.
+  // reconciled through the capsule's one-shot probe, never adopted as a live
+  // scope of this daemon and never re-derived into a control capability.
   const scopes = new Map<ProcessRef, ScopeState>();
 
   function createState(): ScopeState {
