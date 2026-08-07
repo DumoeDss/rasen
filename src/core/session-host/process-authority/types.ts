@@ -23,13 +23,11 @@ export const RECURSIVE_PROCESS_SCOPE_CAPABILITY_ID =
   'rasen-recursive-process-scope/1' as const;
 
 export const RECURSIVE_PROCESS_SCOPE_SEMANTICS = Object.freeze([
-  'workload-non-escape',
-  'publish-before-activate',
+  'forked-descendant-non-escape',
   'root-exit-distinct',
   'natural-exact-empty',
   'recursive-terminate',
   'recursive-abort',
-  'replacement-recovery',
   'bounded-controls',
   'identity-drift-detection',
   'event-completeness',

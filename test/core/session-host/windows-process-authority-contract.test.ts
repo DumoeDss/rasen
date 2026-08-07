@@ -61,13 +61,11 @@ describe('Windows process-authority provider tuple', () => {
     expect(WINDOWS_PROCESS_AUTHORITY_PROTOCOL_VERSION).toBe(1);
     expect(WINDOWS_PROCESS_AUTHORITY_REFERENCE_VERSION).toBe(1);
     expect([...WINDOWS_PROCESS_AUTHORITY_DESCRIPTOR.semantics]).toEqual([
-      'workload-non-escape',
-      'publish-before-activate',
+      'forked-descendant-non-escape',
       'root-exit-distinct',
       'natural-exact-empty',
       'recursive-terminate',
       'recursive-abort',
-      'replacement-recovery',
       'bounded-controls',
       'identity-drift-detection',
       'event-completeness',

@@ -52,13 +52,11 @@ function cargoConfigFor(identity) {
   ].join('\n');
 }
 const semantics = Object.freeze([
-  'workload-non-escape',
-  'publish-before-activate',
+  'forked-descendant-non-escape',
   'root-exit-distinct',
   'natural-exact-empty',
   'recursive-terminate',
   'recursive-abort',
-  'replacement-recovery',
   'bounded-controls',
   'identity-drift-detection',
   'event-completeness',

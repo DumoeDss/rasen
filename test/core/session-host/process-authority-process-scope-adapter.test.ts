@@ -129,6 +129,27 @@ describe('opt-in provider-backed ProcessScope compatibility', () => {
     await expect(live.rootExited).resolves.toEqual({ state: 'root-exited', code: 0, signal: null });
   });
 
+  it('refuses a repeated activation before any publication or provider dispatch', async () => {
+    const value = fixture();
+    const prepared = await value.scope.prepare({
+      command: 'fixture-command',
+      args: [],
+      cwd: 'fixture',
+      env: {},
+    });
+
+    await prepared.activate();
+    expect(value.publications()).toBe(1);
+    expect(value.provider.activationCalls).toBe(1);
+
+    // Activation discipline is enforced by the adapter itself, independently of
+    // the deferred publish-before-activate semantic: the second call must fail
+    // before it reaches the publisher or the provider.
+    await expect(prepared.activate()).rejects.toMatchObject({ code: 'activation-failed' });
+    expect(value.publications()).toBe(1);
+    expect(value.provider.activationCalls).toBe(1);
+  });
+
   it('retains every non-exact common outcome and releases only a coordinator receipt', async () => {
     const value = fixture();
     const prepared = await value.scope.prepare({ command: 'fixture', args: [], cwd: '.', env: {} });

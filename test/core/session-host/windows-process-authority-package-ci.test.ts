@@ -36,7 +36,7 @@ const FROZEN_COMMON_INPUTS = Object.freeze({
   'rasen/specs/process-authority-provider/spec.md':
     '05257eb1860aa40ce06a2289b63348e21a81187f4df4fd4aff346e7e8ac57d5a',
   'test/helpers/process-authority-provider-conformance.ts':
-    '2e952cde167a72e195e437e45cfa870c5130e29de2cd09c8341ca5c0b93f8b60',
+    'b9d8bd4fb63910ed1626c0d9f2bda258803a8f3a191f98c57509e837cc58d2f0',
 });
 
 function posix(relativePath: string): string {

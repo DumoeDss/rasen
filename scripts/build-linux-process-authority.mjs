@@ -40,13 +40,11 @@ const remappedCrateRoot = '/rasen-linux-process-authority/crate';
 const remappedCargoRoot = '/rasen-linux-process-authority/cargo';
 const remappedTargetRoot = '/rasen-linux-process-authority/target';
 const semantics = Object.freeze([
-  'workload-non-escape',
-  'publish-before-activate',
+  'forked-descendant-non-escape',
   'root-exit-distinct',
   'natural-exact-empty',
   'recursive-terminate',
   'recursive-abort',
-  'replacement-recovery',
   'bounded-controls',
   'identity-drift-detection',
   'event-completeness',
