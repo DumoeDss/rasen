@@ -534,7 +534,7 @@ than this change's evidence directory:
 
 | File | Kind | Action |
 | --- | --- | --- |
-| `evidence/win-crate-freeze-marker.md` | the authoritative marker | **owed**: new digest, lineage entry `fc49a7c2`, new helper hash, fourth `testFiles` entry for `windows_section9_discrimination.rs` |
+| `evidence/win-crate-freeze-marker.md` | the authoritative marker | **owed**: new digest, lineage entry `fc49a7c2`, new helper hash, fourth `testFiles` entry for `windows_section9_discrimination.rs` -- **landed 2026-08-08** as a dated superseded-by amendment at the top of the marker (upgrade-path asset audit finding A1) |
 | `evidence/section-8-actual-kernel-gate.md` | 21 rows bound to the old pair | **re-taken**: the full native suite passes at the new pair (124/124). Its recorded `120 passed, 0 failed` is superseded twice over -- see 9.9 |
 | `evidence/section-9-oracle-discrimination.md` | this file | re-bound in place; every row states which digest it used |
 | `evidence/win-crate-lf-refreeze.md` | historical record of how `2b3fabd9` was derived | **not rewritten** -- it records an event, and rewriting it would falsify that record. Owes a superseded-by note |

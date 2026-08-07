@@ -1,5 +1,46 @@
 # Windows native crate: freeze marker
 
+## AMENDMENT 2026-08-08: the freeze recorded below is SUPERSEDED
+
+Everything below this section is preserved as the 2026-08-07 historical record and is no
+longer the current freeze. As of 2026-08-08 the authoritative Windows freeze is:
+
+```text
+crate sourceSha256   fc49a7c2c5f9642fa976d16f06e167a39bdbe3c751686f417722273aea891c27   (22 files)
+  supersedes         2b3fabd916dd0106038557ea54b694b4cb76e4d73ff785dcd0584e6b92a45377   (recorded below)
+packaged helper      367666f6d4151b5092b528abd2c8256d48fd96d73436184b54ae1897e55d8a6b   258560 B
+  supersedes         2aebab6987f6b59b7ffef95d61681165082e9f5b039beb3a095ecc0260dd9cf0   (recorded below)
+```
+
+- The `2b3fabd9` / `2aebab69` pair below was replaced by the LEAD-authorised post-freeze fix
+  wave (break once, fix, re-freeze once): Fix 1 landed `S8-F1`/`S9-F1` (the lost termination
+  receipt) and Fix 2 landed task 4.8 (the availability transaction). The full record of the
+  new freeze - including its own supersedes lineage and the 124/124 native re-bind - is
+  `evidence/section-9-oracle-discrimination.md` ("The new freeze"); this amendment closes the
+  "owed" marker update its re-bind sweep table listed.
+- The crate digest `fc49a7c2` is reproducible from COMMITTED bytes (same convention as below:
+  sorted Cargo.lock, Cargo.toml, THIRD_PARTY.md, src/**, each `path NUL bytes NUL`),
+  independently verified by the 2026-08-08 upgrade-path asset audit
+  (`rasen/work/issue-centered-automation-platform/executable-composite-pipelines/slices/`
+  `session-execution-and-self-hosting/upgrade-path-asset-audit.md`).
+- The helper hash is a build-artifact RECEIPT, not a git asset: `dist/` is untracked, and
+  cross-machine Windows build reproducibility remains OPEN (recorded below). A restart
+  rebuilds through `scripts/build-windows-process-authority.mjs` and re-receipts; it must not
+  expect to reproduce `367666f6` byte-identically on another machine.
+- Fourth `testFiles` entry, owed by the re-bind sweep and recorded here:
+  `native/windows-process-authority/tests/windows_section9_discrimination.rs` =
+  `b919bad901b23424ad0a61023a41624a57be3bf3c9ad60a2b6a1bd3aedfad34c` (committed bytes;
+  `tests/**` is eol=lf-pinned, so the checkout hash matches). Per the map's own rule, an
+  added `testFiles` entry means `tests/` grew; `sourceSha256` is what says whether the
+  freeze moved - and it did move, to `fc49a7c2`, for the two src fixes above.
+- Decision-13 context: both crates are parked upgrade-path assets; the pair a restart must
+  bind is `fc49a7c2` / `367666f6`, as cited by Target State locked decision 13, Architecture
+  Replan 6, and the parent roadmap.
+
+Nothing below this line was edited; it is the freeze marker as written on 2026-08-07.
+
+---
+
 Date: 2026-08-07
 Written by: implementer (win-refreeze)
 Supersedes: the freeze at `b44c5e253042a4f30669b36e6fa4dba1561dfba8ecf6cd8a0ee8d6f3f85c433b`, which
