@@ -99,33 +99,31 @@ describe('pipeline messages', () => {
   // "c-omp-atibility", so a substring check passes even when `{host}` is
   // never interpolated. `test/locales/catalog.test.ts` already guards key and
   // placeholder parity, so the value this test alone can defend is the COPY —
-  // specifically that it does not promise the probe reports the forced
-  // runtime (it does not: the override feeds host detection only, so an
-  // implicit `--latest` still resolves the Claude store).
+  // specifically that it makes no claim at all about the context probe. It used
+  // to promise that forcing the override "also lifts the context-probe
+  // refusal"; Oh My Pi is the only host that can trigger this warning today and
+  // it now has its own context reader, so there is no refusal for the override
+  // to lift and the sentence was false exactly where it was read.
   it.each([
     {
       locale: 'en',
       expected:
         'Warning: LEAD host runtime omp has no dispatch adapter; using the legacy compatibility route. ' +
-        'Set RASEN_AGENT_RUNTIME=claude|codex for deterministic dispatch — that also lifts the context-probe refusal, ' +
-        "after which `rasen agent context --latest` reads the Claude transcript store instead of this host's own session.",
+        'Set RASEN_AGENT_RUNTIME=claude|codex for deterministic dispatch.',
     },
     {
       locale: 'ja',
       expected:
         '警告: LEADのホストruntime omp にはdispatchアダプタがないため、legacy互換ルートを使用します。' +
-        '決定的なdispatchには RASEN_AGENT_RUNTIME=claude|codex を設定してください。' +
-        'この設定はcontextの計測の拒否も解除するため、以降 `rasen agent context --latest` は' +
-        'このホスト自身のセッションではなくClaudeのtranscript storeを読みます。',
+        '決定的なdispatchには RASEN_AGENT_RUNTIME=claude|codex を設定してください。',
     },
     {
       locale: 'zh-cn',
       expected:
         '警告：LEAD 工具宿主 omp 没有派发适配器，正在使用旧版兼容路由。' +
-        '设置 RASEN_AGENT_RUNTIME=claude|codex 可获得确定的派发行为，同时也会解除上下文探测的拒绝，' +
-        '此后 `rasen agent context --latest` 读取的是 Claude 的 transcript 存储，而不是本宿主自己的会话。',
+        '设置 RASEN_AGENT_RUNTIME=claude|codex 可获得确定的派发行为。',
     },
-  ] as const)('names the host without promising a redirected probe in $locale', (row) => {
+  ] as const)('names the host and makes no context-probe claim in $locale', (row) => {
     const rendered = formatPipelineExecutionNotice(
       {
         kind: 'host-runtime-without-dispatch-adapter',
@@ -136,6 +134,7 @@ describe('pipeline messages', () => {
     );
     expect(rendered).toBe(row.expected);
     expect(rendered, row.locale).not.toMatch(/\{\w+\}/);
+    expect(rendered, row.locale).not.toMatch(/context|コンテキスト|context の|上下文/i);
   });
 
   it('formats the inheriting-store-config and unavailable-store notices', () => {

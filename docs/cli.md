@@ -113,9 +113,14 @@ rasen init [path] [options]
 
 An explicit `--profile` value other than `custom` is persisted as the project's **locked profile** (`profile:` in `rasen/config.yaml`): later `rasen update` runs keep resolving the project's workflows from that profile instead of the user-wide one. `--profile custom` uses whatever workflows are currently selected in global config (`rasen profile`) for this run only and is never persisted. Saved profile names come from `rasen profile new`/`import`; note that saved definitions live per machine (`<global-config-dir>/profiles/`), so a teammate without the named profile sees a warning and falls back to their user-wide profile until they import it.
 
-**Supported tool IDs (`--tools`):** `amazon-q`, `antigravity`, `auggie`, `bob`, `claude`, `cline`, `codex`, `forgecode`, `codebuddy`, `continue`, `costrict`, `crush`, `cursor`, `factory`, `gemini`, `github-copilot`, `iflow`, `junie`, `kilocode`, `kimi`, `kiro`, `lingma`, `vibe`, `opencode`, `pi`, `qoder`, `qwen`, `roocode`, `trae`, `windsurf`
+**Installable tool IDs (`--tools`):** `claude`, `codex`, `hermes`, `omp` — the agents
+Rasen has adapted its orchestration for. `--tools all` expands to exactly these four.
 
-> This list mirrors `AI_TOOLS` in `src/core/config.ts`. See [Supported Tools](supported-tools.md) for each tool's skill and command paths.
+> The installable set is the `adapted: true` entries of `AI_TOOLS` in
+> `src/core/config.ts`. Every other agent in that registry stays defined but is not
+> offered; naming one explicitly fails with a "recognized but not yet adapted"
+> message rather than the unrecognized-token error. See
+> [Supported Tools](supported-tools.md) for each tool's skills path.
 
 **Examples:**
 
