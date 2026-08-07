@@ -47,7 +47,7 @@ export const RUNTIME_ADAPTERS = {
     canDispatch: false,
   },
   omp: {
-    canProbeContext: false,
+    canProbeContext: true,
     canAudit: false,
     canDispatch: false,
   },

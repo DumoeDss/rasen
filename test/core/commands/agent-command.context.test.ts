@@ -354,12 +354,85 @@ describe('AgentCommand.context — Codex rollout support', () => {
     });
   });
 
-  // detect-omp-host-runtime: an implicit --latest probe must refuse rather
-  // than report an unrelated Claude session's occupancy as this session's.
-  describe('implicit --latest on a host with no context-probe adapter', () => {
+  // Oh My Pi now has a context reader, so an implicit `--latest` reports its own
+  // session instead of refusing. The refusal itself is not gone: it narrows to a
+  // harness Rasen still ships no reader for, which the second block covers.
+  describe('implicit --latest on an Oh My Pi host', () => {
+    let agentDir: string;
+
     beforeEach(() => {
       process.env.OMPCODE = '1';
       process.env.CLAUDECODE = '1';
+      agentDir = path.join(dir, 'omp-agent');
+      process.env.PI_CODING_AGENT_DIR = agentDir;
+    });
+
+    function writeOmpSession(bucket: string, name: string, cwd: string): string {
+      const file = path.join(agentDir, 'sessions', bucket, name);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(
+        file,
+        [
+          JSON.stringify({ type: 'title', v: 1, title: '', pad: ' '.repeat(64) }),
+          JSON.stringify({ type: 'session', version: 3, id: 'abc', cwd }),
+          JSON.stringify({
+            type: 'message',
+            message: {
+              role: 'assistant',
+              model: 'claude-opus-5',
+              usage: { input: 2, output: 263, cacheRead: 122_824, cacheWrite: 1_275 },
+            },
+          }),
+        ].join('\n') + '\n',
+        'utf-8'
+      );
+      return file;
+    }
+
+    it('--json reports this session own occupancy, not another store reading', async () => {
+      const session = writeOmpSession('-legacy-bucket', 'live.jsonl', process.cwd());
+
+      const logs: string[] = [];
+      const orig = console.log;
+      console.log = (msg?: unknown) => logs.push(String(msg));
+      try {
+        await expect(cmd.context({ latest: true, json: true })).resolves.toBeUndefined();
+      } finally {
+        console.log = orig;
+      }
+
+      expect(logs).toHaveLength(1);
+      const parsed = JSON.parse(logs[0]);
+      expect(parsed.available).toBe(true);
+      expect(parsed.runtime).toBe('omp');
+      expect(parsed.contextTokens).toBe(124_101);
+      expect(parsed.transcript).toBe(session);
+    });
+
+    it('reports the ordinary absence line when this directory has no session', async () => {
+      fs.mkdirSync(path.join(agentDir, 'sessions'), { recursive: true });
+
+      const logs: string[] = [];
+      const orig = console.log;
+      console.log = (msg?: unknown) => logs.push(String(msg));
+      try {
+        await expect(cmd.context({ latest: true })).resolves.toBeUndefined();
+      } finally {
+        console.log = orig;
+      }
+
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatch(/^context unavailable: /);
+      expect(logs[0]).not.toMatch(/no context probe exists/i);
+      expect(logs[0]).not.toMatch(/\d+%/);
+    });
+  });
+
+  describe('implicit --latest on a host with no context-probe adapter', () => {
+    beforeEach(() => {
+      // `zed` is registered without a context reader and carries no host
+      // fingerprint, so the explicit override is the only route to the refusal.
+      process.env.RASEN_AGENT_RUNTIME = 'zed';
     });
 
     it('--json exits 0 with the unavailable shape and no occupancy fields', async () => {
@@ -377,7 +450,7 @@ describe('AgentCommand.context — Codex rollout support', () => {
       expect(parsed).toEqual({
         available: false,
         reason: 'unsupported-host',
-        detail: expect.stringContaining('omp'),
+        detail: expect.stringContaining('zed'),
       });
     });
 
@@ -393,7 +466,7 @@ describe('AgentCommand.context — Codex rollout support', () => {
 
       expect(logs).toHaveLength(1);
       expect(logs[0]).toMatch(/^context unavailable: /);
-      expect(logs[0]).toMatch(/omp/);
+      expect(logs[0]).toMatch(/zed/);
       expect(logs[0]).not.toMatch(/\d+%/);
     });
 
