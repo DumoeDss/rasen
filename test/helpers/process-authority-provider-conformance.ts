@@ -247,7 +247,7 @@ export function processAuthorityProviderConformanceSuite(
     });
 
     it.each(['prepared-inert', 'published-inert'] as const)(
-      'preserves %s during replacement recovery',
+      'preserves %s under inspection through the same coordinator',
       async (state) => {
         const fixture = factory();
         let operation = 0;
