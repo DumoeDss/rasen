@@ -123,7 +123,7 @@ Every task in this section produces a RED/GREEN pair. A green assertion with no 
 - [ ] 10.4 Add Windows arm64 cross-build and package-shape evidence using Node path APIs and the installed Rust target, labelling every such result non-runtime and leaving the arm64 runtime gate open.
 - [x] 10.5 Add a Windows CI job that builds the provider natively and runs the non-interactive portion of the actual-kernel matrix, reporting any runner-policy restriction as an open gate rather than a pass.
 - [x] 10.6 Verify the existing ProcessCapsule build, manifest, package, provenance, native, replacement, migration, and deadline tests remain unchanged in meaning until closure owns atomic migration.
-- [x] 10.7 Verify no file under `native/linux-process-authority/**` or `rasen/changes/ecp-linux-process-authority-provider/**` changed, and that the recorded frozen source digest still matches.
+- [x] 10.7 Verify that **this Change contributes no byte** to `native/linux-process-authority/**` or `rasen/changes/ecp-linux-process-authority-provider/**`, and that the Linux tree stands at the digest recorded by its own Change. Reworded 2026-08-07: the original "no file changed" wording became false once the authorised Section 12 wave changed the Linux crate legitimately, and a bare digest repoint would have kept the test green while its stated meaning went stale. The guarded constant is `LINUX_CRATE_SOURCE_DIGEST`, lineage `087d87a5 -> 89f6c1d5`, so any future move must arrive with its own lineage.
 
 ## 11. Verification, Review, and Closure Handoff
 
