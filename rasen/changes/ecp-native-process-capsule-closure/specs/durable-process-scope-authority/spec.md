@@ -1,8 +1,41 @@
 ## ADDED Requirements
 
+> **Decision-13 / Architecture Replan 6 re-scope (2026-08-08).** After the two
+> earlier re-gradings (locked decisions 11 and 12), locked decision 13 converges
+> the 0.2.0 `hosted` backend on all three supported OSes to an explicitly declared
+> best-effort process scope (`exactCancel: false`, `scopeEmptyProof: false`,
+> terminal `cancelled | completed | never-activated / emptiness-unproven`) and
+> moves kernel-enforced exact scope-empty and exact recursive termination WHOLE to
+> the upgrade path together with the two frozen authority crates (Linux
+> `89f6c1d5`, Windows `fc49a7c2` / helper `367666f6`). Closure's rewritten
+> acceptance is therefore "replace the legacy capsule's disproven exact claim with
+> the shipped best-effort tier and finish the ProcessScope/host integration", NOT
+> kernel-enforced authority. The best-effort tier itself is specified and already
+> projected by the shipped, archived `ecp-hosted-best-effort-cutover`
+> (`rasen/specs/hosted-best-effort-process-scope/`); this delta keeps closure's
+> retained-authority, bounded-control, helper-integrity, and existing-containment
+> obligations and re-scopes the exact-authority ones in place. Each requirement
+> below carries an in-body marker where decision 13 changed its acceptance; no
+> requirement heading is renamed and no scenario is deleted, so the retained exact
+> and macOS contracts stay on record as upgrade-path resumption evidence. Full
+> per-finding accounting: `evidence/decision13-regrade.md` and
+> `evidence/decision13-rescope-input.md`.
+
 ### Requirement: Durable Sessions use one opaque exact process-scope authority
 
 A durable hosted Session SHALL bind each process generation to one opaque process-scope reference that is established while the backend remains inert, durably published before activation, and used for all later inspection and termination. Numeric process ids and platform containment details MAY be projected for diagnostics but SHALL NOT authorize control outside the native process-scope boundary. Missing, foreign, malformed, unsupported, or uncertain native authority SHALL fail closed before new work or signalling.
+
+**Decision-13 re-scope.** "Exact" here names the opaque-reference control seam -
+one integrity-bound `ProcessRef` as the sole control capability - which is
+retained and remains 0.2.0 acceptance. It does NOT claim a kernel-proven
+whole-scope emptiness: the 0.2.0 hosted tiers declare best-effort and mint a
+declared-unproven terminal (see `rasen/specs/hosted-best-effort-process-scope/`),
+while kernel-enforced exact containment and scope-empty are parked to the upgrade
+path. The legacy capsule's internal exact vocabulary below this seam is permitted
+by design (cutover D3): honesty is enforced at the scope seam that re-declares
+those terminals as unproven, not by rewriting the frozen helper. The
+published-before-activation, activate-at-most-once, foreign-zero-signal, and
+fail-closed-on-unavailable properties below hold on every tier.
 
 #### Scenario: Published authority precedes backend work
 - **WHEN** a new hosted generation is prepared
@@ -42,6 +75,16 @@ The macOS adapter SHALL call the kernel unique-identifier interface with the com
 ### Requirement: Backend-root exit is distinct from whole-scope closure
 
 The native protocol and ProcessScope contract SHALL report backend-root exit separately from exact whole-scope empty. A hosted generation SHALL retain its opaque reference, writer ownership, capacity, and termination ability while its controller, supervisor, or any descendant remains in scope. Only an observed scope-empty terminal receipt SHALL authorize clean detachment, authority removal, restart admission, or a clean shutdown result.
+
+**Decision-13 re-scope.** The root-exit-distinct-from-terminal invariant and the
+control-loss-retains-authority property (SEC-001) hold on every 0.2.0 tier. On the
+shipped hosted best-effort tiers the terminal is declared-unproven
+(`completed | cancelled / emptiness-unproven`), not a kernel-proven scope-empty;
+the "scope-empty terminal" the scenarios below name is the retained exact tier's
+form and travels to the upgrade path with the parked crates. Release stays gated:
+only a proven scope-empty (exact tier) or a declared-unproven terminal whose
+best-effort declaration was published before start (hosted tier) authorizes
+detachment - `receiptAuthorizesRelease` refuses `uncertain` regardless of tier.
 
 #### Scenario: Root exits with a detached descendant
 - **WHEN** the backend root exits after creating a detached descendant that remains in the process scope
@@ -125,6 +168,13 @@ Every supported helper artifact SHALL be resolved adjacent to the installed pack
 
 The closure SHALL preserve Windows suspended Job-at-create with one non-inherited last-handle owner, the publish-before-activate discriminator, registry v2 opaque references, and fail-closed treatment of live or uncertain v1 PID records. Production resolution SHALL use only the verified packaged helper; runtime compile, download, PATH lookup, shell, PowerShell Job assignment, generic PID-tree termination, and `ps lstart` signal authority SHALL remain unavailable for durable hosted generations.
 
+**Decision-13 note.** The Windows suspended Job-at-create / kill-on-last-handle
+containment named below is retained as the win32 best-effort tier's mechanism -
+its terminals are now re-declared unproven at the scope seam, but the Job
+mechanics and the daemon-death teardown are unchanged and receipted (cutover
+7.1/7.2). The migration, publish-before-activate, and no-weak-fallback
+obligations are unchanged 0.2.0 acceptance.
+
 #### Scenario: Windows controller dies after activation
 - **WHEN** only the native Windows controller is killed after a root and detached descendant are active
 - **THEN** closing the unique Job handle kernel-terminates every contained member while an unrelated process remains alive
@@ -149,6 +199,18 @@ The closure SHALL preserve Windows suspended Job-at-create with one non-inherite
 
 The common authority foundation MAY complete before any macOS architecture decision and the Linux and Windows provider Changes MAY proceed after that common contract is terminal. This Change SHALL remain non-terminal until the Linux, Windows, and explicitly selected macOS provider Changes are all terminal. It SHALL then integrate those providers, close every retained security/lifecycle Blocker and Major through fresh independent security plus code/spec review, and only then local-ship/archive without a child push or PR. Cross-target and injected results SHALL be labelled compile-only or deterministic evidence. ECP-8 SHALL execute the first clean-branch real Windows/Linux/macOS acceptance matrix and SHALL block release and corresponding platform-support claims if any real-OS oracle is absent or fails.
 
+**Decision-13 / Replan-6 re-scope.** The "integrate the three providers' frozen
+contracts" acceptance is revised: decision 13 parks the Linux/Windows/macOS
+authority crates WHOLE to the upgrade path and ships instead the declared
+best-effort tier (`ecp-hosted-best-effort-cutover`, archived). Closure depends on
+Linux and Windows only (`dependsOn: [linux, windows]`, Replan 4); the macOS edge
+is not re-added. Closure's delivered integration is the best-effort ProcessScope
+plus the host wiring plus closing the retained security/lifecycle findings, not a
+kernel-enforced provider integration. The three-OS ECP-8 acceptance matrix and the
+"no support claim from cross-compilation" rule are unchanged; the Windows Job
+daemon-death teardown receipt is delivered, and the Linux zero-orphan leg is
+superseded into declared best-effort honesty (decision 11 revised).
+
 #### Scenario: macOS decision remains deferred
 - **WHEN** the common foundation and Linux/Windows provider work are complete but no macOS authority has been explicitly selected
 - **THEN** this Change remains non-terminal and non-runnable, records the exact unresolved provider frontier, and makes no macOS support claim
@@ -170,6 +232,18 @@ The common authority foundation MAY complete before any macOS architecture decis
 ### Requirement: Supported platforms use a non-escapable recoverable process authority
 
 The system SHALL activate durable backend work only after a platform `ProcessAuthorityProvider` has published an opaque reference to a boundary that descendants cannot leave using workload-accessible APIs. The authority SHALL provide exact inspect, natural-empty, recursive terminate and abort outcomes; SHALL remain recoverable or independently retained after one controller/daemon authority death; and SHALL report unavailable, identity-drift, event-gap and timeout outcomes as typed uncertainty while retaining the reference. PID/PGID sampling SHALL NOT be a fallback.
+
+**Parked to the upgrade path by decision 13.** This kernel-enforced authority
+contract - a non-escapable boundary with exact inspect / natural-empty / recursive
+terminate / abort and one-authority-death recovery - is NOT 0.2.0 acceptance. It
+moves WHOLE to the upgrade path with the two frozen authority crates (Linux
+`89f6c1d5`, Windows `fc49a7c2` / helper `367666f6`) and their evidence, and is
+retained here verbatim as the resumption contract. The 0.2.0 hosted backend
+instead declares best-effort on all three OSes (`scopeEmptyProof: false`,
+`exactCancel: false`); the `setsid()`/`setpgid()` escape this requirement's Linux
+scenario proves is the declared, known limitation of that tier, not a defect the
+0.2.0 tier must close (its disproof is load-bearing for the declaration and is
+preserved, not archived away). No scenario below is a 0.2.0 gate.
 
 #### Scenario: Linux descendant creates a new session and process group
 
@@ -208,6 +282,13 @@ The system SHALL activate durable backend work only after a platform `ProcessAut
 ### Requirement: Architecture and distribution decisions precede implementation closure
 
 The platform-neutral authority contract SHALL be owned by `ecp-platform-process-authority-foundation`; Linux, Windows, and macOS implementations SHALL be owned by separate provider Changes. The common foundation SHALL NOT make an OS support claim. Linux and Windows providers MAY become runnable only after the common foundation is terminal. The macOS provider SHALL remain decision-gated until the product owner records a later explicit architecture/distribution choice. The current Change SHALL depend on all three providers and remain non-terminal until each is terminal. ECP-8 SHALL still run the first clean-branch actual Windows/Linux/macOS acceptance matrix; cross-compilation and injected events SHALL NOT establish platform support.
+
+**Decision-13 / Replan-6 re-scope.** The provider-ownership graph above stands,
+but the Linux/Windows/macOS authority implementations it names are frozen and
+parked to the upgrade path (decision 13); the 0.2.0 acceptance they were to
+satisfy is met by the shipped best-effort tier, not by their kernel-enforced
+authority. Closure depends on Linux and Windows only; macOS stays decision-gated.
+The common foundation and the ECP-8 three-OS acceptance matrix are unchanged.
 
 #### Scenario: No macOS distribution decision exists
 
