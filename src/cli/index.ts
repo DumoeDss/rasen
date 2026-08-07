@@ -61,6 +61,7 @@ import type {
 } from '../core/completions/types.js';
 import type { CliLocale } from '../utils/locale.js';
 import { applyCliPresentation } from './commander-presentation.js';
+import { formatCliVersion } from '../core/shared/build-info.js';
 
 // Deliberate rejection path: --store-path stays registered (hidden) so the
 // resolver can explain that registering the path is the supported route,
@@ -141,7 +142,7 @@ const createCompletionCommand = (): CompletionCommand =>
 program
   .name('rasen')
   .description('')
-  .version(version, '-V, --version', '');
+  .version(formatCliVersion(version), '-V, --version', '');
 
 // Global options
 program.option('--no-color', '');
