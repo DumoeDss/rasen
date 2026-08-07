@@ -42,8 +42,16 @@ const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
     '4117b109bbe524ccd9423e9e4ef1da8f52cfc1a27e818871ae71c653f599ef92',
   'src/core/session-host/process-capsule/resolver.ts':
     'a1df4e2ed63167231c0207dbd4d5a5d8c8aa5bb4e44665e7b4cbe3d5624bbf91',
+  // Rebaselined 0848c77b... -> a070733c...: review round 1 finding F1 (RC-004
+  // parser containment) wrapped the one-shot probe's stdout callback so a
+  // malformed frame becomes typed uncertainty instead of a throw escaping an
+  // EventEmitter callback. The cutover Change made that path production-
+  // reachable via design D4, which is why the parked finding came due here.
+  // TypeScript adapter only - the Rust crate and every other pinned digest in
+  // this list are unchanged. Committed bytes re-hashed via
+  // `git show 8e48ce45:<path>`. LEAD-authorized rebaseline, 2026-08-08.
   'src/core/session-host/process-capsule/native-process-scope.ts':
-    '0848c77b55d405afdf02b43c797986cb15193cca453b61fa7aa03d07209588fa',
+    'a070733cc338730258f5725c962c70f2284ead3601a2bc49b24c5c5d75211977',
 });
 
 const FROZEN_COMMON_INPUTS = Object.freeze({
