@@ -28,8 +28,9 @@ describe('rasen-direction template contract', () => {
 
   it('resolves the planning root through CLI JSON and guards cross-platform references', () => {
     expect(body).toContain('rasen context --json');
-    expect(body).toContain('planningHome.root');
-    expect(body).toContain('planningHome.changesDir');
+    expect(body).toContain('root.scope.paths["project-work"]');
+    expect(body).toContain('Require a project scope');
+    expect(body).not.toContain('sibling of the CLI-resolved changes directory');
     expect(body).toContain('platform-native path');
     expect(body).toContain('remains inside the selected planning root');
     expect(body).toContain('absolute-outside-root');

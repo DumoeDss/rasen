@@ -38,6 +38,14 @@ import { isInteractive } from '../utils/interactive.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
 import { runAdopt, runEject } from './store-migration.js';
 import {
+  runStoreMigrateLayout,
+  type StoreMigrateLayoutOptions,
+} from './store-migrate-layout.js';
+import { registerStoreTargetLineCommand } from './store-target-line.js';
+import { registerStoreIssueCommand } from './store-issue.js';
+import { registerStoreAggregateCommands } from './store-aggregate.js';
+import { registerWorkspaceCommand } from './workspace.js';
+import {
   diagnoseMigrationDrift,
   migrateStoreMembership,
   type MigrateMembershipResult,
@@ -1490,10 +1498,28 @@ export function registerStoreCommand(program: Command): void {
     });
 
   store
+    .command('migrate-layout <store-id>')
+    .description('')
+    .option('--mapping <path>', '')
+    .option('--default-target-line <id>', '')
+    .option('--include-untracked', '')
+    .option('--dry-run', '')
+    .option('--apply', '')
+    .option('--status', '')
+    .option('--resume', '')
+    .option('--rollback', '')
+    .option('--retire-flat', '')
+    .option('--json', '')
+    .action(async (storeId: string, options: StoreMigrateLayoutOptions) => {
+      await runStoreMigrateLayout(storeId, options);
+    });
+
+  store
     .command('adopt [path]')
     .description('')
     .option('--to <store-id>', '')
     .option('--archive <mode>', '')
+    .option('--target-line <id>', '')
     .option('--dry-run', '')
     .option('--verify-hash', '')
     .option('--json', '')
@@ -1561,6 +1587,19 @@ export function registerStoreCommand(program: Command): void {
     .action(async (id: string | undefined, options: StoreDoctorOptions) => {
       await storeCommand.doctor(id, options);
     });
+
+  registerStoreTargetLineCommand(store);
+  // The bound planning/execution worktree PAIR is Store content — a standalone
+  // project has no pair — and `workspace` is a retired top-level group name
+  // that must stay retired, so the group lives here rather than at the root.
+  registerWorkspaceCommand(store);
+  // A Store-level Issue is cross-project intent that references project Changes
+  // and owns none of them, so its group takes --store and refuses to require a
+  // project or a target line.
+  registerStoreIssueCommand(store);
+  // The aggregate reads. They answer questions that span more than one project,
+  // which is exactly what no other surface can do.
+  registerStoreAggregateCommands(store);
 
   const lifecycleRedirects = new Set(
     (COMMAND_REGISTRY.subcommands ?? []).filter(

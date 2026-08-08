@@ -568,7 +568,12 @@ describe('rasen work migrate', () => {
     expect(fs.existsSync(path.join(tempDir, 'data', 'rasen', 'projects'))).toBe(false);
   });
 
-  it('routes Store planning artifacts to the Store and terminal state to the invocation member', async () => {
+  // DELIBERATE BREAKING CHANGE (proposal.md BREAKING bullet): a legacy flat
+  // Store's planning tree is read-only until it is migrated, and `work migrate`
+  // writes planning-owned files (evidence, handoff, design docs) INTO it. The
+  // refusal is the designed behavior, not a missing capability, and it names
+  // the real cause and repair.
+  it('deliberately refuses legacy flat Store migration as read-only and moves nothing', async () => {
     const storeRoot = path.join(tempDir, 'team-store');
     createOpenSpecRoot(storeRoot);
     const storeId = 'team-store';
@@ -605,32 +610,26 @@ describe('rasen work migrate', () => {
       { cwd: memberRoot, env }
     );
 
-    expect(result.exitCode).toBe(0);
-    expect(parseJson(result).summary.moved).toBe(5);
-    expect(
-      fs.existsSync(path.join(storeChange, 'evidence', 'review-report.md'))
-    ).toBe(true);
-    expect(
-      fs.existsSync(path.join(storeChange, 'handoff', 'implementer-1.md'))
-    ).toBe(true);
-    expect(
-      fs.existsSync(path.join(storeRoot, 'rasen', 'design-docs', 'routing.md'))
-    ).toBe(true);
-    expect(
-      fs.existsSync(
-        path.join(memberRoot, '.rasen', 'changes', 'foo', 'ephemera', 'auto-run.json')
-      )
-    ).toBe(true);
-    expect(fs.existsSync(path.join(memberRoot, '.rasen', 'probes', 'driver', 'run.ts'))).toBe(
-      true
-    );
+    expect(result.exitCode).toBe(1);
+    expect(parseJson(result)).toMatchObject({
+      changes: [],
+      summary: null,
+      status: [{ code: 'legacy_flat_store_requires_migration' }],
+    });
+    expect(fs.existsSync(path.join(workDir, 'review-report.md'))).toBe(true);
+    expect(fs.existsSync(path.join(workDir, 'handoff', 'implementer-1.md'))).toBe(true);
+    expect(fs.existsSync(path.join(workDir, 'auto-run.json'))).toBe(true);
+    expect(fs.existsSync(path.join(memberHome, 'design-docs', 'routing.md'))).toBe(true);
+    expect(fs.existsSync(path.join(memberHome, 'probe', 'driver', 'run.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(storeChange, 'evidence'))).toBe(false);
     expect(fs.existsSync(path.join(storeRoot, '.rasen'))).toBe(false);
-    expect(fs.existsSync(path.join(memberRoot, 'rasen', 'design-docs', 'routing.md'))).toBe(
-      false
-    );
+    expect(fs.existsSync(path.join(memberRoot, '.rasen'))).toBe(false);
   });
 
-  it('freezes main and linked worktrees independently across consecutive Store migrations', async () => {
+  // Same DELIBERATE refusal from both a main checkout and a linked worktree:
+  // the read-only legacy Store decides it, so neither member worktree can
+  // migrate into the Store and neither writes anything.
+  it('deliberately refuses legacy flat Store migration from both member worktrees', async () => {
     const storeRoot = path.join(tempDir, 'worktree-store');
     createOpenSpecRoot(storeRoot);
     await registerStore({
@@ -686,15 +685,16 @@ describe('rasen work migrate', () => {
       ['work', 'migrate', '--store', 'worktree-store', '--json', '--yes'],
       { cwd: mainRoot, env }
     );
-    expect(mainResult.exitCode).toBe(0);
-    expect(
-      fs.existsSync(
-        path.join(mainRoot, '.rasen', 'changes', 'main-change', 'ephemera', 'auto-run.json')
-      )
-    ).toBe(true);
-    expect(
-      fs.existsSync(path.join(mainRoot, '.rasen', 'probes', 'driver-main', 'run.ts'))
-    ).toBe(true);
+    expect(mainResult.exitCode).toBe(1);
+    expect(parseJson(mainResult)).toMatchObject({
+      changes: [],
+      summary: null,
+      status: [{ code: 'legacy_flat_store_requires_migration' }],
+    });
+    expect(fs.existsSync(path.join(sharedHome, 'changes', 'main-change', 'work', 'review-report.md'))).toBe(true);
+    expect(fs.existsSync(path.join(sharedHome, 'changes', 'main-change', 'work', 'auto-run.json'))).toBe(true);
+    expect(fs.existsSync(path.join(sharedHome, 'probe', 'driver-main', 'run.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(mainRoot, '.rasen'))).toBe(false);
     expect(fs.existsSync(path.join(linkedRoot, '.rasen'))).toBe(false);
 
     seedLegacy('linked-change', 'driver-linked');
@@ -702,27 +702,17 @@ describe('rasen work migrate', () => {
       ['work', 'migrate', '--store', 'worktree-store', '--json', '--yes'],
       { cwd: linkedRoot, env }
     );
-    expect(linkedResult.exitCode).toBe(0);
-    expect(
-      fs.existsSync(
-        path.join(
-          linkedRoot,
-          '.rasen',
-          'changes',
-          'linked-change',
-          'ephemera',
-          'auto-run.json'
-        )
-      )
-    ).toBe(true);
-    expect(
-      fs.existsSync(path.join(linkedRoot, '.rasen', 'probes', 'driver-linked', 'run.ts'))
-    ).toBe(true);
-    expect(
-      fs.existsSync(
-        path.join(mainRoot, '.rasen', 'changes', 'linked-change', 'ephemera', 'auto-run.json')
-      )
-    ).toBe(false);
+    expect(linkedResult.exitCode).toBe(1);
+    expect(parseJson(linkedResult)).toMatchObject({
+      changes: [],
+      summary: null,
+      status: [{ code: 'legacy_flat_store_requires_migration' }],
+    });
+    expect(fs.existsSync(path.join(sharedHome, 'changes', 'linked-change', 'work', 'review-report.md'))).toBe(true);
+    expect(fs.existsSync(path.join(sharedHome, 'changes', 'linked-change', 'work', 'auto-run.json'))).toBe(true);
+    expect(fs.existsSync(path.join(sharedHome, 'probe', 'driver-linked', 'run.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(mainRoot, '.rasen'))).toBe(false);
+    expect(fs.existsSync(path.join(linkedRoot, '.rasen'))).toBe(false);
     for (const name of ['main-change', 'linked-change']) {
       expect(
         fs.existsSync(
@@ -735,7 +725,7 @@ describe('rasen work migrate', () => {
             'review-report.md'
           )
         )
-      ).toBe(true);
+      ).toBe(false);
     }
     expect(fs.existsSync(path.join(storeRoot, '.rasen'))).toBe(false);
   });

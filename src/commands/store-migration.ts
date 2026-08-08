@@ -27,6 +27,8 @@ import { findRepoPlanningRootSync } from '../core/planning-home.js';
 interface AdoptOptions {
   to?: string;
   archive?: string;
+  /** Required with `--archive move`: layout v2 partitions archives by line. */
+  targetLine?: string;
   dryRun?: boolean;
   json?: boolean;
   verifyHash?: boolean;
@@ -45,6 +47,8 @@ interface EjectOptions {
 
 interface RelocateOptions {
   to?: string;
+  /** Required for `--to store` against a layout v2 store. */
+  targetLine?: string;
   dryRun?: boolean;
   json?: boolean;
   verifyHash?: boolean;
@@ -114,6 +118,7 @@ export async function runAdopt(sourcePath: string | undefined, options: AdoptOpt
       sourcePath: resolvedSource,
       storeId: options.to,
       archive: archiveMode,
+      ...(options.targetLine === undefined ? {} : { targetLine: options.targetLine }),
       ...(options.dryRun ? { dryRun: true } : {}),
       ...(options.verifyHash ? { verifyHash: true } : {}),
     });
@@ -320,6 +325,7 @@ export async function runRelocate(options: RelocateOptions): Promise<void> {
     const result = await relocateArchive({
       projectRoot: findRepoPlanningRootSync(process.cwd()) ?? process.cwd(),
       to: to as RelocateTarget,
+      ...(options.targetLine === undefined ? {} : { targetLine: options.targetLine }),
       ...(options.dryRun ? { dryRun: true } : {}),
       ...(options.verifyHash ? { verifyHash: true } : {}),
     });
@@ -443,6 +449,7 @@ export function registerArchiveRelocateSubcommand(archiveCommand: Command): void
     .command('relocate')
     .description('')
     .requiredOption('--to <dest>', '')
+    .option('--target-line <id>', '')
     .option('--dry-run', '')
     .option('--verify-hash', '')
     .option('--json', '')

@@ -140,6 +140,8 @@ export interface StoreMetadataStateV1 {
   id: string;
   /** Canonical clone source, team-authored. Optional (slice 3.3). */
   remote?: string;
+  /** Store planning layout declaration, independent from metadata schema version. */
+  layoutVersion?: 2;
 }
 
 export interface StoreMetadataStateV2 {
@@ -148,6 +150,8 @@ export interface StoreMetadataStateV2 {
   uid: string;
   id: string;
   remote?: string;
+  /** Store planning layout declaration, independent from metadata schema version. */
+  layoutVersion?: 2;
 }
 
 /** Version-discriminated Store metadata; both forms stay fully readable. */
@@ -298,12 +302,14 @@ const MetadataStateSchema = z.discriminatedUnion('version', [
     version: z.literal(1),
     id: z.string(),
     remote: nonEmptyOptionalString(),
+    layoutVersion: z.literal(2).optional(),
   }).strict(),
   z.object({
     version: z.literal(2),
     uid: z.string().min(1),
     id: z.string(),
     remote: nonEmptyOptionalString(),
+    layoutVersion: z.literal(2).optional(),
   }).strict(),
 ]);
 
@@ -458,6 +464,9 @@ export function parseStoreMetadataState(content: string): StoreMetadataState {
       uid: result.data.uid,
       id: result.data.id,
       ...(result.data.remote !== undefined ? { remote: result.data.remote } : {}),
+      ...(result.data.layoutVersion !== undefined
+        ? { layoutVersion: result.data.layoutVersion }
+        : {}),
     };
   }
 
@@ -465,6 +474,9 @@ export function parseStoreMetadataState(content: string): StoreMetadataState {
     version: 1,
     id: result.data.id,
     ...(result.data.remote !== undefined ? { remote: result.data.remote } : {}),
+    ...(result.data.layoutVersion !== undefined
+      ? { layoutVersion: result.data.layoutVersion }
+      : {}),
   };
 }
 
@@ -512,6 +524,9 @@ export function serializeStoreMetadataState(state: StoreMetadataState): string {
       uid: result.data.uid,
       id: result.data.id,
       ...(result.data.remote !== undefined ? { remote: result.data.remote } : {}),
+      ...(result.data.layoutVersion !== undefined
+        ? { layoutVersion: result.data.layoutVersion }
+        : {}),
     });
   }
 
@@ -519,6 +534,9 @@ export function serializeStoreMetadataState(state: StoreMetadataState): string {
     version: 1,
     id: result.data.id,
     ...(result.data.remote !== undefined ? { remote: result.data.remote } : {}),
+    ...(result.data.layoutVersion !== undefined
+      ? { layoutVersion: result.data.layoutVersion }
+      : {}),
   });
 }
 

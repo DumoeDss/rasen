@@ -301,7 +301,7 @@ export function TaskDetailPage() {
     );
   }
 
-  const { task, children, errors } = detail;
+  const { task, children, errors, archiveNarrowing } = detail;
   const isPortfolio = task.kind === 'portfolio';
   const doneCount = children.filter((c) => childColumn(c) === 'done').length;
 
@@ -358,6 +358,11 @@ export function TaskDetailPage() {
                 </p>
               ))}
             </div>
+          )}
+          {archiveNarrowing && (
+            <p class="task-detail__archive-narrowed" data-testid="archive-narrowed">
+              {archiveNarrowing.reason}
+            </p>
           )}
         </section>
 

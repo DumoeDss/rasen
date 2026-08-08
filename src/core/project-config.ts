@@ -754,6 +754,28 @@ export function readProjectConfig(
 }
 
 /**
+ * Reads a scope-resolved planning config file directly. Store v2 project
+ * configs live at `<projectHome>/config.yaml`, so forcing them through the
+ * legacy `<projectRoot>/rasen/config.yaml` lookup would recreate a second
+ * root-routing algorithm in every consumer.
+ */
+export function readProjectConfigAtPath(
+  configPath: string,
+  options: { reporter?: ConfigDiagnosticReporter } = {}
+): ProjectConfig | null {
+  try {
+    if (!existsSync(configPath)) return null;
+    return parseProjectConfigContent(
+      readFileSync(configPath, 'utf-8'),
+      path.dirname(configPath),
+      options.reporter
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resilient field-by-field parse of raw YAML config content into a
  * `ProjectConfig`, shared by `readProjectConfig` (reads the file from disk)
  * and `updateProjectConfigKey`'s post-write sanity check (parses the

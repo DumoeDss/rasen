@@ -192,7 +192,7 @@ export const PREAMBLE_LITE = PREAMBLE_BASE;
  * design-consultation, design-review, qa, qa-only). Single shared constant so
  * one edit covers all five.
  *
- * Design docs are ROOT-LEVEL in the PLANNING root (`file-placement`
+ * Design docs use the project-design-docs typed location (`file-placement`
  * capability): they belong to no single change (they pre-date any change and
  * outlive it through `Supersedes:` lineage), so they never land under a change
  * directory — and never under the machine root, where they are invisible to
@@ -205,10 +205,18 @@ export const PREAMBLE_LITE = PREAMBLE_BASE;
  * and reports rather than guessing a location.
  */
 export const PROJECT_DOCS_DIR_RESOLUTION = `\`\`\`bash
-DOCS_ROOT=$(rasen context --json 2>/dev/null | jq -r '.root.path // empty')
-[ -n "$DOCS_ROOT" ] || DOCS_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-[ -n "$DOCS_ROOT" ] || { echo "Cannot resolve a planning root for design docs — stop and report this rather than writing to the current directory." >&2; exit 1; }
-DOCS_DIR="$DOCS_ROOT/rasen/design-docs"
+CONTEXT_JSON=$(rasen context --json 2>/dev/null || true)
+DOCS_DIR=$(printf '%s' "$CONTEXT_JSON" | jq -r '.root.scope.paths["project-design-docs"] // empty')
+SCOPE_KIND=$(printf '%s' "$CONTEXT_JSON" | jq -r '.root.scope.kind // empty')
+if [ -z "$DOCS_DIR" ] && [ -n "$SCOPE_KIND" ]; then
+  echo "The selected planning scope does not expose project-design-docs — stop and report the scope diagnostic." >&2
+  exit 1
+fi
+if [ -z "$DOCS_DIR" ]; then
+  DOCS_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+  [ -n "$DOCS_ROOT" ] || { echo "Cannot resolve an unbound standalone root for design docs — stop and report this rather than writing to the current directory." >&2; exit 1; }
+  DOCS_DIR="$DOCS_ROOT/rasen/design-docs"
+fi
 mkdir -p "$DOCS_DIR"
 \`\`\``;
 

@@ -1,0 +1,45 @@
+{
+  "change": "store-finalization-outcomes-v2",
+  "archivedAt": "2026-08-08T08:40:48.094Z",
+  "codeCommit": "3b1676fa5093c81b963d9cb15ef7f0dac4403c02",
+  "planningBranch": "feat/store-project-partitions-planning-worktrees",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/archive-preconditions.md",
+      "sha256": "64203a2a85b29432e465df34fd475e247d3e1a06fb4acf210d5c24df747905f8"
+    },
+    {
+      "path": "evidence/fix-report-r1.md",
+      "sha256": "9373d2320cd0c53fa7bf63eb51615296339e9929f98565b085e23eb0513e85f9"
+    },
+    {
+      "path": "evidence/implementation-report-2.md",
+      "sha256": "236f2d76d652cdcbc2447c0135eb4b39e2232f8336904ddf494484ac8681dc6e"
+    },
+    {
+      "path": "evidence/implementation-report.md",
+      "sha256": "cad9b424fdb0c389c27ba0cf50fcf47c0407e07e4ba8b974b8fc012c722e350f"
+    },
+    {
+      "path": "evidence/review-report-r2.md",
+      "sha256": "c27c36e8c253ecc1928a45ac0354a1b92773fc34eb501a520ba27cc944231321"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "d0940104437f2a50ae8e5b68a9795f3e57c0f2d3c6b2b8364def0c39be9284a5"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "ac9e085715a18997a2187e34dde875b06929a6bbc4f6fe3bdadae6fbf13f4c1c"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

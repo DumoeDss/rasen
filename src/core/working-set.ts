@@ -26,6 +26,8 @@ export interface WorkingSet {
     path: string;
     source: ResolvedOpenSpecRoot['source'];
     store_id?: string;
+    /** Scope description and typed local locators; diagnostic data, never replayable authority. */
+    scope?: ReturnType<typeof toRootOutput>['scope'];
     role: 'openspec_root';
     /** The registered machine home for this root (design `change-work-dir`,
      * D3); probe-only, omitted for an unregistered project. */
@@ -40,6 +42,44 @@ export interface WorkingSet {
   };
   members: WorkingSetMember[];
   status: StoreDiagnostic[];
+  /**
+   * The resolved Store-planning / project-execution worktree pair, when the
+   * scope has one (`store-planning-worktree-bindings`, "Machine-readable
+   * context reports the workspace pair as inert locators"). These are INERT
+   * locators: serializing or replaying them confers no mutation authority, and
+   * producing the report writes nothing under either repository or the machine
+   * data directory.
+   */
+  workspace?: WorkingSetWorkspace;
+}
+
+export interface WorkingSetWorktree {
+  root: string;
+  worktreeInstanceId?: string;
+  ref?: string;
+  headOid?: string;
+  /** False when the recorded worktree is gone. */
+  exists: boolean;
+}
+
+export interface WorkingSetWorkspace {
+  bindingState: 'unbound' | 'prepared' | 'bound' | 'drifted';
+  prepared: boolean;
+  storeUid?: string;
+  projectId?: string;
+  targetLineId?: string;
+  changeId?: string;
+  changeInstanceId?: string;
+  workspacePairId?: string;
+  planning?: WorkingSetWorktree;
+  execution?: WorkingSetWorktree;
+  findings: Array<{
+    code: string;
+    severity: 'info' | 'warning' | 'error';
+    message: string;
+    expected?: string;
+    actual?: string;
+  }>;
 }
 
 export interface AssembleWorkingSetInput {

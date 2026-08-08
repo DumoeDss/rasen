@@ -118,7 +118,74 @@ describe('vocabulary sweep', () => {
     // RootSelectionError code `legacy_workspace_detected`, emitted when root
     // resolution finds a legacy openspec/ workspace but no rasen/ one and points
     // the user at `rasen migrate` (rasen-full-rebrand slice 1.4). Deliberate.
-    const allowed = new Set(['initiative_option_removed', 'workspace_detected']);
+    //
+    // `store-planning-worktree-bindings` adds 31 more, and they are a
+    // DELIBERATE RE-USE of the word, not regrowth of the deleted surface.
+    //
+    // A WORKSPACE in these codes is the bound Store-planning / project-execution
+    // worktree PAIR — the concept the accepted design names `WorkspacePairId` /
+    // `planChangeWorkspace`. It has nothing to do with the retired editor-view
+    // `workspace` command group, which was replaced by `workset`. That GROUP
+    // stays dead: it is not registered at the top level, and
+    // `test/commands/legacy-groups-removed.test.ts` pins both halves of the
+    // retirement (unknown command, and absent from `--help`). The new surface is
+    // `rasen store workspace`, a subcommand of `store`, chosen precisely so the
+    // retired top-level name is not re-issued for a different concept.
+    //
+    // They are enumerated one by one rather than admitted by a `workspace_`
+    // prefix rule, so that a 33rd unexpected token still fails this gate.
+    const allowed = new Set([
+      'initiative_option_removed',
+      'workspace_detected',
+      // The closed refusal taxonomy (`STORE_WORKSPACE_ERROR_CODES`). The other
+      // four members — `planning_*`, `target_line_*` — do not match this
+      // pattern and are not listed here.
+      'workspace_already_bound',
+      'workspace_binding_ambiguous',
+      'workspace_cleanup_unsafe',
+      'workspace_destination_exists',
+      'workspace_dirty_tree',
+      'workspace_lock_unavailable',
+      'workspace_marker_conflict',
+      'workspace_plan_stale',
+      'workspace_ref_mismatch',
+      // Operational codes outside the closed taxonomy
+      // (`STORE_WORKSPACE_OPERATIONAL_ERROR_CODES`).
+      'workspace_git_failed',
+      'workspace_identity_unavailable',
+      'workspace_layout_version_unsupported',
+      'workspace_plan_missing',
+      'workspace_plan_not_applicable',
+      'workspace_project_unresolved',
+      'workspace_repository_unavailable',
+      'workspace_store_unresolved',
+      'workspace_target_line_unknown',
+      // Verification FINDINGS reported by `describe` and `rasen context`. These
+      // are reported, never thrown, and never repaired silently.
+      'workspace_execution_side_unknown',
+      'workspace_not_prepared',
+      'workspace_planning_identity_unavailable',
+      'workspace_ref_drift',
+      'workspace_repository_identity_drift',
+      'workspace_unresolved',
+      'workspace_worktree_absent',
+      'workspace_worktree_identity_drift',
+      'workspace_worktree_not_a_repository',
+      // Consumer-adapter fallbacks in `src/commands/workspace.ts`, used only
+      // when a thrown error is not already a coded `StoreError`.
+      'workspace_apply_failed',
+      'workspace_cleanup_failed',
+      'workspace_plan_failed',
+      'workspace_show_failed',
+      // `store-finalization-outcomes-v2` adds exactly ONE more, in its closed
+      // refusal taxonomy (`FINALIZATION_ERROR_CODES`). Archive v2 requires a
+      // VERIFIED `workspacePairId` on every record, including a passive one, so
+      // a finalization that cannot obtain one REFUSES rather than minting a
+      // well-formed placeholder. Same re-use of the word as child 4's codes:
+      // the workspace is the bound planning/execution worktree PAIR, not the
+      // retired editor-view command group.
+      'workspace_pair_unavailable',
+    ]);
     const found = new Set<string>();
     const pattern = /(workspace|initiative)_[a-z_]+/g;
 
@@ -130,5 +197,15 @@ describe('vocabulary sweep', () => {
     }
 
     expect([...found].filter((token) => !allowed.has(token)).sort()).toEqual([]);
+
+    // The ledger is checked for STALENESS too, exactly as `ALLOWED_IDENTIFIERS`
+    // is above. Without this the gate is one-directional: deleting a token from
+    // `src/` leaves it silently allowed, and a later, unrelated feature can
+    // reintroduce the same spelling with a different meaning and still pass —
+    // which is precisely the drift this ledger exists to record.
+    const stale = [...allowed].filter((token) => !found.has(token)).sort();
+    expect(stale, `allow-list entries no longer present in src/:\n${stale.join('\n')}`).toEqual(
+      []
+    );
   });
 });

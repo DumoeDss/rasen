@@ -22,6 +22,8 @@ const SHIP_INSTRUCTIONS = `Release workflow — commit, resolve the delivery mod
 
 ${STORE_SELECTION_GUIDANCE}
 
+**Store finalization hard gate:** inspect the first resolved Change/status payload before tests, commits, delivery, spec sync, or Archive work. If root.scope.kind is 'store-project' and the resolved archive timing is 'in-ship', pass \`--outcome landed\` explicitly to the archive command. Delivery having happened is NOT sufficient on its own: if the delivered commit is not yet reachable from the code ref the change's target line declares for its project, the CLI refuses — report the unfinalized state and why, leave the change active, and NEVER retry by choosing another outcome, by adding \`--skip-specs\`, or by supplying a different commit. A change whose committed metadata declares no implementation finalizes as landed with no commit; do not fabricate one. If root.scope.kind is 'legacy-store', REFUSE with 'legacy_flat_store_requires_migration' — the legacy flat Store planning tree is read-only until 'rasen store migrate-layout <store-id>' has migrated it. Any other scope proceeds as before, with no outcome required or recorded.
+
 PR body comes from proposal summary. Ship log recorded to the change's evidence directory (\`evidenceDir\` from \`rasen status --change <name> --json\`; sticky-legacy: a file that already lives in the legacy \`workDir\` or the change directory is used in place) — it is evidence, so it travels with the change and is delivered with the Archive.
 
 Resolve \`archive.timing\` from the same status payload (\`archive.timing\`, default \`on-merge\` when absent). Under **in-ship** timing, also resolve \`archive.archiveDir\` (the planning root's archive directory, always present) from the same payload — the engine-owned plan/apply transaction in step 4.5 publishes there unconditionally, exactly like \`rasen-archive-change\`'s engine-owned publication. **There is no destination axis:** a legacy \`archive.destination\` in the config changes nothing, and ship never moves a change to the machine home nor deletes one. Recorded ship-log facts (delivery mode, PR URL, archived-in-ship marker) for a delivery that already happened always outrank a later re-resolved config value — the timing axis is consulted only for decisions not yet taken.
@@ -49,7 +51,7 @@ Run all checks before shipping:
 - Prompt user to confirm proceeding without verification
 
 **b. Task Completion**
-- Read \`rasen/changes/<name>/tasks.md\`
+- Read the tasks artifact from \`artifactPaths.tasks.existingOutputPaths\` in the same status payload; do not assume its filename or reconstruct a Change path
 - Verify all tasks are marked complete (\`- [x]\`)
 - If incomplete tasks exist, list them and prompt for confirmation
 
@@ -138,7 +140,7 @@ but when in doubt treat it as blocking).
 
 **PR Body Generation (pr mode):**
 
-Read the proposal from \`<changeRoot>/proposal.md\` — the CLI-resolved change root from the status JSON already fetched for the landing directories (step 2a / step (b)), never the repo-relative literal \`rasen/changes/<name>/proposal.md\`. \`changeRoot\` resolves store-side for a registered store, closing a latent bug where a store-rooted change's PR body silently fell back to "no proposal was available" even though the proposal existed in the store.
+Read the proposal from \`artifactPaths.proposal.existingOutputPaths\` in the status JSON already fetched for the landing directories (step 2a / step (b)). That scope-resolved artifact path works for standalone and Store-backed Changes without a root-relative fallback.
 
 Under **in-ship** timing, the change remains active until delivery facts and the ship log are final, so read the proposal from \`<changeRoot>\` normally before the later engine invocation.
 

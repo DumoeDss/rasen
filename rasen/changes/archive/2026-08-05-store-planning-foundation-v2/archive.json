@@ -1,0 +1,29 @@
+{
+  "change": "store-planning-foundation-v2",
+  "archivedAt": "2026-08-05T21:52:21.688Z",
+  "codeCommit": "a7135669b0b85b9e7adb993d6d5f19eb6f22cdc1",
+  "planningBranch": "feat/store-project-partitions-planning-worktrees",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "cd888a489f3847d2400caa7a1fe91e9364438b224073a6542a3d16bc95750704"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "f4fcab190c65575f4d5b6a8c2001c749241733cdcb521e061ea2814a63ecb1f7"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "ef00995c8af3f512d03d13ed557ca199ab5b08248feecc5a0738e05d140904dc"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

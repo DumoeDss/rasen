@@ -4,51 +4,79 @@
 Define the planning-space addressing model — two explicitly-prefixed namespaces (project and store), a single working-directory derivation rule, read-only fallback to the launch project, and a space-agnostic daemon — so every API read resolves the same space the same way, including live worktree inventory.
 ## Requirements
 ### Requirement: Planning spaces span two explicitly-prefixed namespaces
-The management platform SHALL address planning spaces through a single selector string with a mandatory namespace prefix: `project:<selector>` addresses the machine project registry (the selector portion accepted as a project id or an absolute root path, resolved exactly like the config API's existing project addressing), and `store:<id>` addresses a registered store by id in the store namespace. A `project:` selector carrying an absolute path that is not itself a registered root but is a linked git worktree of a registered project SHALL resolve to that project's identity (its registered `projectId` and name) with the requested worktree path as the answering root, so a worktree's branch-local planning state is addressable without the worktree becoming a separate space; this resolution SHALL remain read-only (no registration, identity minting, or directory creation). A selector without a recognized prefix SHALL be rejected with 400 `invalid_space` — never guessed into a namespace — because a project and a store may legitimately share an id. A selector whose namespace lookup finds nothing SHALL yield 404 `space_not_found` naming the namespace searched; a `store:` selector whose registration exists but fails read-only health inspection (missing or mismatched identity metadata, unhealthy planning root) SHALL yield 409 `space_unavailable` carrying the inspection reason.
+
+The management platform SHALL address planning spaces through a selector string with a mandatory namespace prefix: `project:<selector>` addresses a project's effective planning scope, while `store:<id>` addresses a registered Store aggregate scope. A project selector SHALL first resolve the machine project registry exactly as the config API's existing project addressing does, including canonical absolute-root and linked-worktree resolution, and SHALL then follow the project's verified planning binding: an unbound project answers from its local planning tree and a Store-bound project answers from its project partition in the bound Store. A Store selector SHALL NOT imply any one project's Changes or specs. An endpoint that requires project content and receives only a Store aggregate scope SHALL return 400 `project_scope_required`. A selector without a recognized prefix SHALL be rejected with 400 `invalid_space`; a lookup that finds nothing SHALL yield 404 `space_not_found` naming the namespace; a registration or binding that cannot form a healthy scope SHALL yield 409 `space_unavailable` carrying the reason. Resolution SHALL remain read-only.
 
 #### Scenario: Project space addressed by id
-- **WHEN** a management request carries `space=project:<projectId>` for a project present in the machine project registry
-- **THEN** the request answers for that project's planning root
+
+- **WHEN** a management request carries `space=project:<projectId>` for an unbound project present in the machine project registry
+- **THEN** the request SHALL answer from that project's local planning scope
+
+#### Scenario: Bound project space follows its Store partition
+
+- **WHEN** a management request carries `space=project:<projectId>` and that project's verified planning binding names a Store v2 project partition
+- **THEN** the request SHALL answer from that project partition
+- **AND** it SHALL NOT read the execution checkout's local planning directory or the Store's flat root
 
 #### Scenario: Store space addressed by id
-- **WHEN** a management request carries `space=store:<id>` for a healthy registered store
-- **THEN** the request answers for that store's planning root
+
+- **WHEN** a management request carries `space=store:<id>` for a healthy registered Store
+- **THEN** the request SHALL resolve that Store's aggregate planning scope
+- **AND** an endpoint requiring one project's Changes or specs SHALL respond with `project_scope_required` rather than selecting a project implicitly
 
 #### Scenario: Prefix is mandatory
+
 - **WHEN** a request carries a space selector with no `project:` or `store:` prefix
-- **THEN** the response is 400 with error code `invalid_space` and no namespace is guessed
+- **THEN** the response SHALL be 400 with error code `invalid_space`
+- **AND** no namespace SHALL be guessed
 
 #### Scenario: Same id in both namespaces is unambiguous
-- **WHEN** a store and a project share the id `elftia` and a request carries `space=store:elftia`
-- **THEN** the store's planning root is selected, never the project's
+
+- **WHEN** a Store and a project share the id `elftia` and a request carries `space=store:elftia`
+- **THEN** the Store aggregate SHALL be selected, never the project's effective planning scope
 
 #### Scenario: Unknown space
+
 - **WHEN** a request carries a selector matching nothing in its namespace
-- **THEN** the response is 404 with error code `space_not_found` and a message naming the namespace searched
+- **THEN** the response SHALL be 404 with error code `space_not_found`
+- **AND** the message SHALL name the namespace searched
 
 #### Scenario: Unhealthy store space
-- **WHEN** a request addresses a registered store whose identity metadata is missing or whose planning root is unhealthy
-- **THEN** the response is 409 with error code `space_unavailable` and the inspection reason
+
+- **WHEN** a registered Store or project binding cannot produce one healthy planning scope because identity metadata is missing, the Store root is unhealthy, or scope facts conflict
+- **THEN** the response SHALL be 409 with error code `space_unavailable`
+- **AND** it SHALL carry the stable underlying planning diagnostic
 
 #### Scenario: Windows root-path selector resolves canonically
+
 - **WHEN** a `project:` selector carries an absolute Windows root path differing from the registered key only by case or separator form
-- **THEN** it resolves to the same registry entry via canonical path comparison
+- **THEN** it SHALL resolve to the same project registry entry and effective planning scope via canonical path comparison
 
 #### Scenario: Worktree root path resolves to the owning project's space
-- **WHEN** a `project:` selector carries the absolute root path of a linked git worktree whose main checkout is a registered project
-- **THEN** the request resolves to that project's identity and answers from the worktree's own planning root
-- **AND** no registry entry, identity, or directory is created as a side effect
+
+- **WHEN** a `project:` selector carries the absolute root of a linked Git worktree whose main checkout is a registered project
+- **THEN** the request SHALL resolve that project's identity and effective planning binding while retaining the requested worktree as execution context
+- **AND** no registry entry, identity, binding, or directory SHALL be created as a side effect
 
 ### Requirement: Space selection falls back to the launch project and stays read-only
-Every space-parameterized management endpoint SHALL treat a missing or empty space selector as addressing the server's launch project (the root resolved from the daemon's own cwd at startup), so existing clients keep working unchanged. Server-side space resolution SHALL be non-mutating: answering a request never registers a project, mints identity, writes store metadata, or creates directories, in either namespace.
+
+When a space-parameterized management endpoint receives no selector, the daemon SHALL use its launch project as an identity and execution-context hint, then resolve that project's current effective planning scope through the same read-only resolver. The fallback SHALL NOT assume the launch checkout is the planning root. If the project is now Store-bound, the request SHALL use its Store project partition; if the binding is unavailable or inconsistent, the endpoint SHALL return the corresponding planning error rather than reading stale local content.
 
 #### Scenario: Omitted selector keeps today's behavior
-- **WHEN** a client sends `GET /api/v1/changes` with no space selector on a daemon launched inside a project
-- **THEN** the response is identical to the pre-space behavior for that launch project
+
+- **WHEN** the daemon launched in an unbound standalone project and a request omits `space`
+- **THEN** the request SHALL answer from that project's local planning scope as before
+
+#### Scenario: Bound launch project follows Store planning
+
+- **WHEN** the daemon launched in a project whose verified planning truth is now Store-backed and a request omits `space`
+- **THEN** the request SHALL answer from that project's Store partition
+- **AND** the launch checkout SHALL remain only the execution-context hint
 
 #### Scenario: Resolution has no side effects
-- **WHEN** any management request addresses a space (explicitly or by fallback)
-- **THEN** no registry file, project identity, store metadata, or directory is created or modified as a side effect of answering it
+
+- **WHEN** any management request addresses a space explicitly or through launch-project fallback
+- **THEN** no registry file, project identity, Store metadata, planning binding, or directory SHALL be created or modified as a side effect
 
 ### Requirement: The daemon is space-agnostic; the launch project is only a default hint
 The resident daemon SHALL serve any addressable planning space regardless of the directory it was started from. The launch project SHALL survive only as a default hint: reported by `/api/v1/health` and `/api/v1/status` as today, and used as the fallback when a request omits the space selector. No management data endpoint SHALL require the daemon to have been started inside the space it is asked about.
@@ -62,19 +90,37 @@ The resident daemon SHALL serve any addressable planning space regardless of the
 - **THEN** the response carries the launch project reference (or null) exactly as before
 
 ### Requirement: A working directory derives its planning space one way, everywhere
-The platform SHALL derive the planning space of a directory by one shared rule: the nearest qualifying `rasen/` root wins; a root with planning shape is a project space (identified by its registered project id); a config-only root whose `store:` pointer names a registered store is that store's space; a malformed pointer or an unregistered store yields no space, degrading gracefully (no error, no space attribution). `rasen ui` URL emission and session space attribution SHALL both use this rule, so a session launched from a directory and a UI opened from that directory always agree on the space.
 
-#### Scenario: Pointer repo derives its store's space
-- **WHEN** the derivation runs in a repo whose `rasen/` holds only a config with `store: team-store` and `team-store` is registered
-- **THEN** the derived space is `store:team-store` with the store's planning root
+The platform SHALL derive a directory's planning scope through the shared Store-planning resolver. A qualifying local planning tree owned by an unbound project yields that standalone project scope, including configuration-only Store inheritance. A checkout with verified Store-owned planning yields its Store project scope, not the Store aggregate. A Store planning checkout yields the project scope recorded by its Change/worktree facts when complete and otherwise yields only a Store aggregate scope. Malformed, unavailable, split-truth, or conflicting facts SHALL produce the corresponding planning diagnostic rather than a guessed attribution. `rasen ui` URL emission and session space attribution SHALL consume the same result, so a session launched from a directory and a UI opened from it agree on planning ownership.
+
+#### Scenario: Bound project checkout derives its Store project scope
+
+- **WHEN** derivation runs in project P's checkout and its verified planning binding names Store S
+- **THEN** the derived planning scope SHALL identify Store S and project P
+- **AND** it SHALL not collapse to `store:S` aggregate scope
 
 #### Scenario: Planning-shaped repo derives its own project space
-- **WHEN** the derivation runs in a repo whose `rasen/` has specs or changes directories
-- **THEN** the derived space is that repo's project space, even if a stray store pointer is also present
 
-#### Scenario: Unresolvable pointer degrades to no space
-- **WHEN** the derivation runs where the `store:` pointer is malformed or names an unregistered store
-- **THEN** no space is derived and the caller proceeds without space attribution rather than failing
+- **WHEN** derivation runs in an unbound project whose local planning tree declares a Store only for configuration inheritance
+- **THEN** the derived planning scope SHALL remain that standalone project scope
+- **AND** the Store SHALL appear only as inherited configuration context
+
+#### Scenario: Store planning worktree uses recorded scope
+
+- **WHEN** derivation runs in a Store planning worktree carrying complete verified project and target-line facts
+- **THEN** it SHALL derive that Store project scope without parsing the branch name or neighboring directory
+
+#### Scenario: Store checkout without project facts is aggregate only
+
+- **WHEN** derivation runs in a healthy Store checkout with no complete project scope facts
+- **THEN** it SHALL derive the Store aggregate scope
+- **AND** project operations SHALL still require an explicit or recorded project
+
+#### Scenario: Unresolvable or conflicting facts do not guess
+
+- **WHEN** derivation encounters an unavailable Store, malformed declaration, split planning truth, or conflicting binding facts
+- **THEN** it SHALL return the stable diagnostic for that state
+- **AND** UI and session callers SHALL NOT attribute the directory to another available root
 
 ### Requirement: Space listing returns both namespaces with type tags, dead entries filtered, store members included
 The management API SHALL provide `GET /api/v1/spaces` returning every addressable planning space: in-repo projects from the machine project registry as `{ type: "project", id, name, root }`, and registered stores as `{ type: "store", id, name, root, members }`. The listing SHALL present ONE project entry per project identity: legacy registry entries that are worktree duplicates of one project (same `projectId`, same shared home) SHALL collapse into a single entry presented at the main checkout's root when that can be determined live from git, without modifying the registry. A project entry SHALL carry a live worktree count (`worktreeCount`) when its root is a git repository with more than one worktree; the count is derived from git at read time and never persisted. Entries whose root no longer exists on disk SHALL be filtered out (read-only filtering; registry pruning remains `rasen doctor --gc`'s job). A registry entry for a repo whose planning is externalized to a store SHALL appear as that store's member — never as a top-level space — and a project-registry entry whose canonical root is a registered store's own root SHALL be presented as the store space only, not duplicated as a project. Each store's `members` SHALL be the union of two sources, presented once per project identity: the store's own membership records (see `store-project-membership`), and the machine registry's pointer-repo entries validated at read time against each member repo's own current `store:` declaration. Members whose root no longer exists SHALL be filtered out, and a member recorded by the store but with no live checkout on this machine SHALL be listed without a root rather than omitted. Answering the request SHALL write nothing.

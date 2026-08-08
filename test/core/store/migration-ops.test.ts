@@ -25,15 +25,17 @@ import {
   writeStoreProjectRecord,
 } from '../../../src/core/store/project-records.js';
 import { writeMembershipRecord } from '../../../src/core/store/membership.js';
+import { writeStoreMetadataState } from '../../../src/core/store/foundation.js';
+import { readStoreMembership } from '../../../src/core/store/membership-layout.js';
 import {
   ensureProjectIdInConfig,
   readStorePointer,
   readProjectConfig,
+  updateProjectConfigKey,
 } from '../../../src/core/project-config.js';
 import {
   moveTreeVerified,
   upsertAdoptionEntry,
-  readAdoptionEntry,
 } from '../../../src/core/store/migration.js';
 import { createOpenSpecRoot, writeSpec } from '../../helpers/rasen-fixtures.js';
 
@@ -99,15 +101,68 @@ describe('store migration ops', () => {
     return root;
   }
 
+  const TARGET_LINE = 'line-0.2';
+
+  /**
+   * Declares planning layout v2 on the fixture store, and gives it the one
+   * target-line catalog `--archive move` requires there.
+   *
+   * `layoutVersion` is optional on BOTH metadata schema versions
+   * (`StoreMetadataStateV1`/`V2` in `foundation.ts`) and the migration flips it
+   * by spreading whatever metadata it found (`layout-migration/apply.ts`), so a
+   * store that predates permanent identities and declares layout v2 is a state
+   * the migration really produces — and keeping `version: 1` here preserves the
+   * "no identity to record" property the adopt-pointer case asserts.
+   *
+   * Opt-in per test rather than in `beforeEach`: eject, `archive relocate --to
+   * in-repo`, membership migration and the drift diagnostics all still run
+   * against a LEGACY FLAT store, and the cases below that cover them have to
+   * keep meeting one.
+   */
+  async function declareLayoutV2(): Promise<void> {
+    await writeStoreMetadataState(storeRoot, {
+      version: 1,
+      id: 'team-store',
+      layoutVersion: 2,
+    });
+    const lines = path.join(storeRoot, '.rasen-store', 'target-lines');
+    fs.mkdirSync(lines, { recursive: true });
+    fs.writeFileSync(
+      path.join(lines, `${TARGET_LINE}.yaml`),
+      `version: 1\nid: ${TARGET_LINE}\nstoreRef: refs/heads/main\nprojects: {}\n`
+    );
+  }
+
+  /**
+   * A project's layout v2 partition address, spelled out rather than computed
+   * through the production layout contract: a destination assertion that asks
+   * the code under test where it put something proves nothing.
+   */
+  function partition(projectId: string, ...segments: string[]): string {
+    return path.join(storeRoot, 'rasen', 'projects', projectId, ...segments);
+  }
+
   it('adopts an in-repo project into the store and converts it to a pointer', async () => {
+    await declareLayoutV2();
     const source = makeSource();
-    const result = await adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir });
+    const result = await adoptProject({
+      sourcePath: source,
+      storeId: 'team-store',
+      globalDataDir,
+      targetLine: TARGET_LINE,
+    });
 
     expect(result.specs).toEqual(['billing']);
     expect(result.changes).toEqual(['add-thing']);
-    // Content moved into the store, removed from source.
-    expect(ls(path.join(storeRoot, 'rasen', 'specs'))).toContain('billing');
-    expect(ls(path.join(storeRoot, 'rasen', 'changes'))).toContain('add-thing');
+    // Content moved into the project's PARTITION, removed from source (spec
+    // store-adopt, "No flat store planning path is created").
+    expect(ls(partition(result.projectId, 'specs'))).toContain('billing');
+    expect(ls(partition(result.projectId, 'changes'))).toContain('add-thing');
+    // The flat namespace gained nothing: `rasen/changes/archive` is the empty
+    // shell `createOpenSpecRoot` scaffolds, not something the adoption wrote.
+    expect(ls(path.join(storeRoot, 'rasen', 'specs'))).toEqual([]);
+    expect(ls(path.join(storeRoot, 'rasen', 'changes'))).toEqual(['archive']);
+    expect(ls(path.join(storeRoot, 'rasen', 'changes', 'archive'))).toEqual([]);
     expect(ls(path.join(source, 'rasen', 'specs'))).toEqual([]);
     // Pointer written, planning shape gone.
     expect(readStorePointer(source).value).toBe('team-store');
@@ -120,41 +175,62 @@ describe('store migration ops', () => {
   });
 
   it('fails closed on a case-insensitive name collision, moving nothing', async () => {
+    await declareLayoutV2();
     const source = makeSource();
-    // Store already has a spec whose name collides case-insensitively.
-    writeSpec(storeRoot, 'BILLING', '## Purpose\n\np\n\n## Requirements\n\n- r\n');
+    // The collision precheck is scoped to THIS project's partition, so the
+    // colliding name has to be planted there rather than in the retired flat
+    // namespace (spec store-adopt, "Name collision aborts with a full list").
+    const projectId = await ensureProjectIdInConfig(source, { globalDataDir });
+    fs.mkdirSync(partition(projectId, 'specs', 'BILLING'), { recursive: true });
+    fs.writeFileSync(partition(projectId, 'specs', 'BILLING', 'spec.md'), '# billing\n');
 
     await expect(
-      adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir })
+      adoptProject({
+        sourcePath: source,
+        storeId: 'team-store',
+        globalDataDir,
+        targetLine: TARGET_LINE,
+      })
     ).rejects.toThrow(/collision/i);
     // Source untouched.
     expect(ls(path.join(source, 'rasen', 'specs'))).toEqual(['billing']);
   });
 
   it('rejects a source that already declares a store pointer', async () => {
+    await declareLayoutV2();
     const source = makeSource();
     fs.appendFileSync(path.join(source, 'rasen', 'config.yaml'), 'store: other\n');
 
     await expect(
-      adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir })
+      adoptProject({
+        sourcePath: source,
+        storeId: 'team-store',
+        globalDataDir,
+        targetLine: TARGET_LINE,
+      })
     ).rejects.toThrow(/pointer/i);
   });
 
   it('dry-run changes nothing', async () => {
+    await declareLayoutV2();
     const source = makeSource();
     const result = await adoptProject({
       sourcePath: source,
       storeId: 'team-store',
       globalDataDir,
+      targetLine: TARGET_LINE,
       dryRun: true,
     });
     expect(result.dryRun).toBe(true);
     expect(ls(path.join(source, 'rasen', 'specs'))).toEqual(['billing']);
     expect(readStorePointer(source).value).toBeUndefined();
+    // Nothing landed in the store, at either address.
+    expect(ls(path.join(storeRoot, 'rasen', 'projects'))).toEqual([]);
     expect(ls(path.join(storeRoot, 'rasen', 'specs'))).toEqual([]);
   });
 
   it('dry-run leaves the tracked config byte-identical (mints no projectId)', async () => {
+    await declareLayoutV2();
     const source = makeSource();
     const configPath = path.join(source, 'rasen', 'config.yaml');
     const before = fs.readFileSync(configPath, 'utf-8');
@@ -163,6 +239,7 @@ describe('store migration ops', () => {
       sourcePath: source,
       storeId: 'team-store',
       globalDataDir,
+      targetLine: TARGET_LINE,
       dryRun: true,
     });
 
@@ -175,21 +252,53 @@ describe('store migration ops', () => {
       sourcePath: source,
       storeId: 'team-store',
       globalDataDir,
+      targetLine: TARGET_LINE,
       dryRun: true,
     });
     expect(second.projectId).toBe(projectId);
   });
 
+  // A preview must report the refusal the real run reports. The target-line
+  // check used to sit behind "the project already has an identity", so a first
+  // adoption — the case where it never does — previewed clean and then refused
+  // for real once the identity had been minted (spec store-adopt, "Archive move
+  // without a target line is refused").
+  it('refuses an archive move with no target line even before an identity exists', async () => {
+    await declareLayoutV2();
+    const source = makeSource();
+    expect(readProjectConfig(source)?.projectId).toBeUndefined();
+
+    await expect(
+      adoptProject({
+        sourcePath: source,
+        storeId: 'team-store',
+        globalDataDir,
+        dryRun: true,
+      })
+    ).rejects.toThrow(/--target-line/);
+    // And the real run refuses identically.
+    await expect(
+      adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir })
+    ).rejects.toThrow(/--target-line/);
+  });
+
   it('dry-run previews the real archive move count without moving anything', async () => {
+    await declareLayoutV2();
     const source = makeSource();
     writeArchived(source, '2026-07-01-old');
     writeArchived(source, '2026-07-02-older');
+    // The destination is inside the project's partition, so the preview can
+    // only address it once the project has its permanent identity. Minted here
+    // rather than by the preview: a dry run deliberately mints nothing (see
+    // "dry-run leaves the tracked config byte-identical").
+    await ensureProjectIdInConfig(source, { globalDataDir });
 
     const preview = await adoptProject({
       sourcePath: source,
       storeId: 'team-store',
       archive: 'move',
       globalDataDir,
+      targetLine: TARGET_LINE,
       dryRun: true,
     });
 
@@ -197,12 +306,12 @@ describe('store migration ops', () => {
       '2026-07-01-old',
       '2026-07-02-older',
     ]);
-    // Inert: the entries are still in the repo and the store archive is empty.
+    // Inert: the entries are still in the repo and the store holds nothing.
     expect(ls(path.join(source, 'rasen', 'changes', 'archive'))).toEqual([
       '2026-07-01-old',
       '2026-07-02-older',
     ]);
-    expect(ls(path.join(storeRoot, 'rasen', 'changes', 'archive'))).toEqual([]);
+    expect(ls(path.join(storeRoot, 'rasen', 'projects'))).toEqual([]);
     expect(readStorePointer(source).value).toBeUndefined();
   });
 
@@ -229,6 +338,7 @@ describe('store migration ops', () => {
   });
 
   it('--archive move consolidates into the store and writes no destination config', async () => {
+    await declareLayoutV2();
     const source = makeSource();
     writeArchived(source, '2026-07-01-old');
 
@@ -237,26 +347,43 @@ describe('store migration ops', () => {
       storeId: 'team-store',
       archive: 'move',
       globalDataDir,
+      targetLine: TARGET_LINE,
     });
 
     expect(result.archiveMoves.map((m) => m.name)).toEqual(['2026-07-01-old']);
-    expect(ls(path.join(storeRoot, 'rasen', 'changes', 'archive'))).toEqual(['2026-07-01-old']);
+    // Under the project's stable target-line archive directory, keeping its
+    // existing name (spec store-adopt, "Default moves the archive").
+    expect(ls(partition(result.projectId, 'changes', 'archive', TARGET_LINE))).toEqual([
+      '2026-07-01-old',
+    ]);
     expect(readProjectConfig(source)?.archive?.destination).toBeUndefined();
   });
 
   it('still moves the full archive on a real adopt after the dry-run preview', async () => {
+    await declareLayoutV2();
     const source = makeSource();
     writeArchived(source, '2026-07-01-old');
     writeArchived(source, '2026-07-02-older');
 
-    await adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir, dryRun: true });
-    const result = await adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir });
+    await adoptProject({
+      sourcePath: source,
+      storeId: 'team-store',
+      globalDataDir,
+      targetLine: TARGET_LINE,
+      dryRun: true,
+    });
+    const result = await adoptProject({
+      sourcePath: source,
+      storeId: 'team-store',
+      globalDataDir,
+      targetLine: TARGET_LINE,
+    });
 
     expect(result.archiveMoves.map((m) => m.name).sort()).toEqual([
       '2026-07-01-old',
       '2026-07-02-older',
     ]);
-    expect(ls(path.join(storeRoot, 'rasen', 'changes', 'archive'))).toEqual([
+    expect(ls(partition(result.projectId, 'changes', 'archive', TARGET_LINE))).toEqual([
       '2026-07-01-old',
       '2026-07-02-older',
     ]);
@@ -264,8 +391,14 @@ describe('store migration ops', () => {
   });
 
   it('round-trips adopt -> eject restoring the same content', async () => {
+    await declareLayoutV2();
     const source = makeSource();
-    const adopt = await adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir });
+    const adopt = await adoptProject({
+      sourcePath: source,
+      storeId: 'team-store',
+      globalDataDir,
+      targetLine: TARGET_LINE,
+    });
 
     const eject = await ejectProject({
       projectId: adopt.projectId,
@@ -277,13 +410,18 @@ describe('store migration ops', () => {
     expect(ls(path.join(source, 'rasen', 'specs'))).toContain('billing');
     expect(ls(path.join(source, 'rasen', 'changes'))).toContain('add-thing');
     expect(readStorePointer(source).value).toBeUndefined();
-    // Store no longer holds the content.
+    // Store no longer holds the content: the partition itself is gone.
+    expect(fs.existsSync(partition(adopt.projectId))).toBe(false);
     expect(ls(path.join(storeRoot, 'rasen', 'specs'))).toEqual([]);
   });
 
-  it('eject refuses without a manifest unless --all', async () => {
-    const source = makeSource();
-    await adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir });
+  // The `--all` consent path is deliberately LEGACY-FLAT ONLY (spec
+  // store-eject, "Missing manifest without --all"): a layout v2 store answers
+  // the same question from the project's partition and rejects `--all`
+  // outright, so this store stays flat on purpose. Seeded directly rather than
+  // by adopting, because adopt into a flat store is now refused.
+  it('eject from a legacy flat store refuses without a manifest unless --all', async () => {
+    writeSpec(storeRoot, 'billing', '## Purpose\n\np\n\n## Requirements\n\n- r\n');
     // Eject a project id the store has no manifest entry for.
     await expect(
       ejectProject({ projectId: 'ghost-id', storeId: 'team-store', globalDataDir })
@@ -333,8 +471,14 @@ describe('store migration ops', () => {
 
   it('home prune reports dangling entries and applies removal', async () => {
     // Register a project home, then delete its path so it becomes dangling.
+    await declareLayoutV2();
     const ghost = makeSource('ghost-project');
-    await adoptProject({ sourcePath: ghost, storeId: 'team-store', globalDataDir });
+    await adoptProject({
+      sourcePath: ghost,
+      storeId: 'team-store',
+      globalDataDir,
+      targetLine: TARGET_LINE,
+    });
     fs.rmSync(ghost, { recursive: true, force: true });
 
     const report = await homePrune({ globalDataDir });
@@ -355,56 +499,116 @@ describe('store migration ops', () => {
   });
 
   // --- Task 2.7: interrupted-adopt resume (guards findings #1 and #2) ---
-  it('resumes an interrupted adopt without a collision error and preserves the full manifest', async () => {
+  it('resumes an interrupted adopt without a collision error and preserves the full partition', async () => {
+    await declareLayoutV2();
     const source = path.join(tempDir, 'resume-app');
     createOpenSpecRoot(source);
     writeSpec(source, 'billing', '## Purpose\n\np\n\n## Requirements\n\n- r\n');
     writeSpec(source, 'auth', '## Purpose\n\np\n\n## Requirements\n\n- r\n');
     writeChange(source, 'add-thing');
-    // Establish the project's stable id in the manifest key. Minted directly:
-    // a dry-run adopt is inert and deliberately mints nothing.
+    // Establish the project's stable id, which keys its partition. Minted
+    // directly: a dry-run adopt is inert and deliberately mints nothing.
     const projectId = await ensureProjectIdInConfig(source, { globalDataDir });
 
-    // Simulate a crash AFTER the manifest write and AFTER 'billing' moved, but
-    // before the rest: billing lives in the store, the manifest records the
-    // FULL set, and auth + the change are still at the source with no pointer.
+    // Simulate a crash AFTER the ownership record was written and AFTER
+    // 'billing' moved, but before the rest: billing lives in the partition,
+    // the catalog records the binding, and auth + the change are still at the
+    // source with no pointer. In layout v2 the resume marker is the BOUND
+    // CATALOG rather than an adoption name list, because no name list is
+    // written any more (spec store-adopt, "Manifest written before source
+    // deletion" and "The partition is the ownership record").
+    await moveTreeVerified(
+      path.join(source, 'rasen', 'specs', 'billing'),
+      partition(projectId, 'specs', 'billing')
+    );
+    fs.mkdirSync(path.join(storeRoot, '.rasen-store', 'projects'), { recursive: true });
+    fs.writeFileSync(
+      path.join(storeRoot, '.rasen-store', 'projects', `${projectId}.yaml`),
+      [
+        'version: 2',
+        `projectId: ${projectId}`,
+        'roles:',
+        '  planning: true',
+        '  knowledge: false',
+        'planningBinding:',
+        '  state: bound',
+        "  boundAt: '2026-07-25T10:00:00.000Z'",
+        '',
+      ].join('\n')
+    );
+
+    // Rerun: must NOT fail the collision precheck on 'billing' (already moved).
+    const result = await adoptProject({
+      sourcePath: source,
+      storeId: 'team-store',
+      globalDataDir,
+      targetLine: TARGET_LINE,
+    });
+    expect(result.resumed).toBe(true);
+    expect(ls(partition(projectId, 'specs'))).toEqual(['auth', 'billing']);
+    expect(ls(path.join(source, 'rasen', 'specs'))).toEqual([]);
+    expect(readStorePointer(source).value).toBe('team-store');
+    // The binding the interrupted run recorded survives verbatim — the resume
+    // neither re-stamps it nor invents a name list to replace it (finding #2).
+    const read = await readStoreMembership(storeRoot, projectId, 'team-store');
+    expect(read.entry?.layout).toBe(2);
+    expect(read.entry?.layout === 2 ? read.entry.catalog.planningBinding : null).toEqual({
+      state: 'bound',
+      boundAt: '2026-07-25T10:00:00.000Z',
+    });
+    const serialized = fs.readFileSync(
+      path.join(storeRoot, '.rasen-store', 'projects', `${projectId}.yaml`),
+      'utf-8'
+    );
+    expect(serialized).not.toContain('adoption');
+    expect(serialized).not.toContain('billing');
+  });
+
+  // --- Task 3.5: eject drift block + --force, eject dry-run ---
+  // Manifest drift is a LEGACY FLAT store state by construction: layout v2
+  // reads the partition itself, so there is no recorded name list for the store
+  // to drift away from (spec store-eject, "Missing files block eject", whose
+  // requirement scopes the recorded-content rule to the pre-v2 read path). The
+  // store here therefore stays flat, and the adoption is seeded directly
+  // because adopt into a flat store is now refused.
+  it('eject from a legacy flat store fails closed on manifest drift and proceeds with --force', async () => {
+    const source = makeSource();
+    const projectId = await ensureProjectIdInConfig(source, { globalDataDir });
     await moveTreeVerified(
       path.join(source, 'rasen', 'specs', 'billing'),
       path.join(storeRoot, 'rasen', 'specs', 'billing')
     );
-    await upsertAdoptionEntry(storeRoot, projectId, {
-      specs: ['auth', 'billing'],
-      changes: ['add-thing'],
-      sourcePath: source,
-      timestamp: new Date().toISOString(),
+    await moveTreeVerified(
+      path.join(source, 'rasen', 'changes', 'add-thing'),
+      path.join(storeRoot, 'rasen', 'changes', 'add-thing')
+    );
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId,
+      roles: { planning: true, knowledge: false },
+      adoption: {
+        specs: ['billing'],
+        changes: ['add-thing'],
+        adoptedAt: '2026-07-25T10:00:00.000Z',
+      },
     });
-
-    // Rerun: must NOT fail the collision precheck on 'billing' (already moved).
-    const result = await adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir });
-    expect(result.resumed).toBe(true);
-    expect(ls(path.join(storeRoot, 'rasen', 'specs'))).toEqual(['auth', 'billing']);
-    expect(ls(path.join(source, 'rasen', 'specs'))).toEqual([]);
-    expect(readStorePointer(source).value).toBe('team-store');
-    // The manifest keeps the ALREADY-MOVED 'billing' (finding #2).
-    const entry = await readAdoptionEntry(storeRoot, projectId);
-    expect(entry?.specs.sort()).toEqual(['auth', 'billing']);
-  });
-
-  // --- Task 3.5: eject drift block + --force, eject dry-run ---
-  it('eject fails closed on manifest drift and proceeds with --force', async () => {
-    const source = makeSource();
-    const adopt = await adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir });
-    // Drift: remove a manifest-listed spec from the store.
+    // Drift: remove a recorded spec from the store.
     fs.rmSync(path.join(storeRoot, 'rasen', 'specs', 'billing'), { recursive: true, force: true });
 
     await expect(
-      ejectProject({ projectId: adopt.projectId, storeId: 'team-store', globalDataDir })
+      ejectProject({
+        projectId,
+        storeId: 'team-store',
+        globalDataDir,
+        destinationPath: source,
+      })
     ).rejects.toThrow(/missing manifest-listed/i);
 
     const forced = await ejectProject({
-      projectId: adopt.projectId,
+      projectId,
       storeId: 'team-store',
       globalDataDir,
+      destinationPath: source,
       force: true,
     });
     expect(forced.missing).toContain('billing');
@@ -412,8 +616,14 @@ describe('store migration ops', () => {
   });
 
   it('eject dry-run previews without moving anything', async () => {
+    await declareLayoutV2();
     const source = makeSource();
-    const adopt = await adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir });
+    const adopt = await adoptProject({
+      sourcePath: source,
+      storeId: 'team-store',
+      globalDataDir,
+      targetLine: TARGET_LINE,
+    });
     const preview = await ejectProject({
       projectId: adopt.projectId,
       storeId: 'team-store',
@@ -422,13 +632,19 @@ describe('store migration ops', () => {
     });
     expect(preview.specs).toEqual(['billing']);
     // Store still holds the content; source still a pointer.
-    expect(ls(path.join(storeRoot, 'rasen', 'specs'))).toContain('billing');
+    expect(ls(partition(adopt.projectId, 'specs'))).toContain('billing');
     expect(readStorePointer(source).value).toBe('team-store');
   });
 
   it('eject warns on a destination collision rather than silently overwriting', async () => {
+    await declareLayoutV2();
     const source = makeSource();
-    const adopt = await adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir });
+    const adopt = await adoptProject({
+      sourcePath: source,
+      storeId: 'team-store',
+      globalDataDir,
+      targetLine: TARGET_LINE,
+    });
     // Re-create a same-name spec at the source repo before ejecting back.
     writeSpec(source, 'billing', '## Purpose\n\nlocal\n\n## Requirements\n\n- r\n');
     const result = await ejectProject({
@@ -477,8 +693,14 @@ describe('store migration ops', () => {
 
   // --- Task 5.3: live/worktree-referenced homes survive prune ---
   it('home prune never lists a registered project whose path still exists', async () => {
+    await declareLayoutV2();
     const source = makeSource();
-    await adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir });
+    await adoptProject({
+      sourcePath: source,
+      storeId: 'team-store',
+      globalDataDir,
+      targetLine: TARGET_LINE,
+    });
     const report = await homePrune({ globalDataDir });
     // The live project is neither dangling nor an unreferenced home.
     expect(report.danglingEntries.some((e) => e.path.includes('my-app'))).toBe(false);
@@ -495,10 +717,33 @@ describe('store migration ops', () => {
     expect(diagnostics.some((d) => d.code === 'drift_shape_and_pointer')).toBe(true);
   });
 
-  it('diagnoses a manifest referencing content missing from the store', async () => {
+  // `drift_manifest_missing_content` compares a RECORDED name list against the
+  // store's flat content. Layout v2 records no name list — the partition is the
+  // ownership record — so this drift state belongs to the legacy flat store,
+  // and its v2 counterpart is the `store_layout_partition_orphan` diagnostic.
+  it('diagnoses a legacy ownership record referencing content missing from the store', async () => {
     const source = makeSource();
-    await adoptProject({ sourcePath: source, storeId: 'team-store', globalDataDir });
-    // Remove an adopted change from the store: manifest now over-claims.
+    const projectId = await ensureProjectIdInConfig(source, { globalDataDir });
+    await moveTreeVerified(
+      path.join(source, 'rasen', 'specs', 'billing'),
+      path.join(storeRoot, 'rasen', 'specs', 'billing')
+    );
+    await moveTreeVerified(
+      path.join(source, 'rasen', 'changes', 'add-thing'),
+      path.join(storeRoot, 'rasen', 'changes', 'add-thing')
+    );
+    await writeStoreProjectRecord(storeRoot, {
+      version: 1,
+      projectId,
+      roles: { planning: true, knowledge: false },
+      adoption: {
+        specs: ['billing'],
+        changes: ['add-thing'],
+        adoptedAt: '2026-07-25T10:00:00.000Z',
+      },
+    });
+    updateProjectConfigKey(source, 'store', 'team-store');
+    // Remove an adopted change from the store: the record now over-claims.
     fs.rmSync(path.join(storeRoot, 'rasen', 'changes', 'add-thing'), { recursive: true, force: true });
     const diagnostics = await diagnoseMigrationDrift(source, { globalDataDir });
     expect(diagnostics.some((d) => d.code === 'drift_manifest_missing_content')).toBe(true);

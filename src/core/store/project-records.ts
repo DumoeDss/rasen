@@ -33,6 +33,9 @@ import {
   storeProjectRecordKeyMismatch,
 } from './identity-diagnostics.js';
 import { assertCredentialFreeRemote } from './remote.js';
+import { isWindowsReservedDeviceName } from './planning-validation.js';
+
+export { WINDOWS_RESERVED_DEVICE_NAMES } from './planning-validation.js';
 
 const fs = nodeFs.promises;
 
@@ -52,33 +55,6 @@ export const STORE_PROJECT_RECORD_EXTENSION = '.yaml';
  * The list is enforced on EVERY platform, not just Windows: a record written
  * on Linux travels through git to a Windows checkout.
  */
-export const WINDOWS_RESERVED_DEVICE_NAMES: readonly string[] = [
-  'con',
-  'prn',
-  'aux',
-  'nul',
-  'com1',
-  'com2',
-  'com3',
-  'com4',
-  'com5',
-  'com6',
-  'com7',
-  'com8',
-  'com9',
-  'lpt1',
-  'lpt2',
-  'lpt3',
-  'lpt4',
-  'lpt5',
-  'lpt6',
-  'lpt7',
-  'lpt8',
-  'lpt9',
-];
-
-const RESERVED_DEVICE_NAME_SET = new Set(WINDOWS_RESERVED_DEVICE_NAMES);
-
 /**
  * Any RFC 4122 textual form. `projectId` is typed as a plain string in
  * `project-config.ts`, so hand-written values exist in the wild; this is one of
@@ -129,7 +105,7 @@ export function projectIdentityRecordProblem(projectId: string): string | null {
   if (!PROJECT_UUID_PATTERN.test(normalized) && !isKebabId(normalized)) {
     return 'it is neither a UUID nor a kebab-case id';
   }
-  if (RESERVED_DEVICE_NAME_SET.has(normalized)) {
+  if (isWindowsReservedDeviceName(normalized)) {
     return `'${normalized}' is a name Windows reserves for a device`;
   }
   // Defence in depth: neither accepted grammar can produce a separator, a

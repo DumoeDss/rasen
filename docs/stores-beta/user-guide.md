@@ -70,14 +70,14 @@ Share this store by committing and pushing it like any Git repo.
 ```
 
 ```bash
-rasen new change add-login --store team-plans
+rasen new change add-login --store team-plans --project api-server
 ```
 
 ```
 Using Rasen root: team-plans (/Users/you/rasen-stores/team-plans)
-Created change 'add-login' at /Users/you/rasen-stores/team-plans/rasen/changes/add-login/
+Created change 'add-login' at /Users/you/rasen-stores/team-plans/rasen/projects/api-server/changes/add-login/
 Schema: spec-driven
-Next: rasen status --change add-login --store team-plans
+Next: rasen status --change add-login --store team-plans --project api-server
 ```
 
 That's the whole model. From here the lifecycle is exactly what you know —
@@ -158,14 +158,14 @@ relationship without moving anyone's work.
    platform-reqs (store)                 api-server (code repo)
    owned by the platform team            owned by a product team
    ┌──────────────────────────┐          ┌──────────────────────────┐
-   │ rasen/specs/          │ ◀────────│ rasen/config.yaml     │
-   │   payments/spec.md       │ reads    │   references:            │
-   │   auth/spec.md           │          │     - platform-reqs      │
-   │                          │          │ rasen/specs/          │
-   │ rasen/changes/        │          │   (their own designs)    │
-   │   platform work          │          │ rasen/changes/        │
-   │                          │          │   (their own work)       │
-   │                          │          └──────────────────────────┘
+   │ rasen/projects/platform/  │ ◀────────│ rasen/config.yaml     │
+   │   specs/                  │ reads    │   references:            │
+   │     payments/spec.md      │          │     - platform-reqs      │
+   │     auth/spec.md          │          │ rasen/specs/          │
+   │   changes/                │          │   (their own designs)    │
+   │     platform work         │          │ rasen/changes/        │
+   │                           │          │   (their own work)       │
+   │                           │          └──────────────────────────┘
    └──────────────────────────┘
 ```
 

@@ -56,17 +56,17 @@ Share this store by committing and pushing it like any Git repo.
 ```
 
 ```bash
-rasen new change add-login --store team-plans
+rasen new change add-login --store team-plans --project api-server
 ```
 
 ```
-Using OpenSpec root: team-plans (/Users/you/openspec/team-plans)
-Created change 'add-login' at /Users/you/openspec/team-plans/rasen/changes/add-login/
+Using Rasen root: team-plans (/Users/you/rasen-stores/team-plans)
+Created change 'add-login' at /Users/you/rasen-stores/team-plans/rasen/projects/api-server/changes/add-login/
 Schema: spec-driven
-Next: rasen status --change add-login --store team-plans
+Next: rasen status --change add-login --store team-plans --project api-server
 ```
 
-这就是全部模型。从这里开始，生命周期正是你所熟悉的 —— `status`、`instructions`、`validate`、`archive` —— 每条命令都加上 `--store team-plans`，而每一条打印出来的提示都会替你带上这个 flag。`Using OpenSpec root:` 这一行总会告诉你命令正作用在哪里。
+这就是全部模型。从这里开始，生命周期正是你所熟悉的 —— `status`、`instructions`、`validate`、`archive` —— 每条命令都加上 `--store team-plans --project api-server`，而每一条打印出来的提示都会替你带上这些 flag。`Using Rasen root:` 这一行总会告诉你命令正作用在哪里。
 
 ## 案例：一个团队，一个规划仓库
 
@@ -127,12 +127,12 @@ Using OpenSpec root: team-plans (/Users/you/openspec/team-plans)
    platform-reqs (store)                 api-server (code repo)
    owned by the platform team            owned by a product team
    ┌──────────────────────────┐          ┌──────────────────────────┐
-   │ rasen/specs/          │ ◀────────│ rasen/config.yaml     │
+   │ rasen/projects/platform/  │ ◀────────│ rasen/config.yaml     │
    │   payments/spec.md       │ reads    │   references:            │
    │   auth/spec.md           │          │     - platform-reqs      │
    │                          │          │ rasen/specs/          │
    │ rasen/changes/        │          │   (their own designs)    │
-   │   platform work          │          │ rasen/changes/        │
+   │     platform work         │          │ rasen/changes/        │
    │                          │          │   (their own work)       │
    │                          │          └──────────────────────────┘
    └──────────────────────────┘

@@ -59,6 +59,8 @@ export interface ChangeContext {
   changeDir: string;
   /** Project root directory */
   projectRoot: string;
+  /** Scope-owned project-local schemas collection, when separately addressed. */
+  projectSchemasDir?: string;
   /** Resolved planning home for this change */
   planningHome?: PlanningHome;
   /** Parsed change metadata, when present */
@@ -68,6 +70,8 @@ export interface ChangeContext {
 export interface LoadChangeContextOptions {
   changeDir?: string;
   planningHome?: PlanningHome;
+  projectSchemasDir?: string;
+  projectConfig?: ProjectConfig | null;
 }
 
 /**
@@ -197,9 +201,10 @@ export interface ArtifactPathSummary {
 export function loadTemplate(
   schemaName: string,
   templatePath: string,
-  projectRoot?: string
+  projectRoot?: string,
+  projectSchemasDir?: string
 ): string {
-  const schemaDir = getSchemaDir(schemaName, projectRoot);
+  const schemaDir = getSchemaDir(schemaName, projectRoot, projectSchemasDir);
   if (!schemaDir) {
     throw new TemplateLoadError(
       `Schema '${schemaName}' not found`,
@@ -252,12 +257,18 @@ export function loadChangeContext(
     options.changeDir ?? path.join(projectRoot, WORKSPACE_DIR_NAME, 'changes', changeName)
   );
 
-  const metadata = readChangeMetadata(changeDir, projectRoot) ?? undefined;
+  const metadata = readChangeMetadata(changeDir, projectRoot, options.projectSchemasDir) ?? undefined;
   const resolvedSchemaName = resolveSchemaForChange(changeDir, schemaName, projectRoot, {
     metadata: metadata ?? null,
+    ...(options.projectSchemasDir === undefined
+      ? {}
+      : { projectSchemasDir: options.projectSchemasDir }),
+    ...(options.projectConfig === undefined
+      ? {}
+      : { projectConfig: options.projectConfig }),
   });
 
-  const schema = resolveSchema(resolvedSchemaName, projectRoot);
+  const schema = resolveSchema(resolvedSchemaName, projectRoot, options.projectSchemasDir);
   const graph = ArtifactGraph.fromSchema(schema);
   const completed = detectCompleted(graph, changeDir);
 
@@ -268,6 +279,9 @@ export function loadChangeContext(
     changeName,
     changeDir,
     projectRoot,
+    ...(options.projectSchemasDir === undefined
+      ? {}
+      : { projectSchemasDir: options.projectSchemasDir }),
     ...(options.planningHome ? { planningHome: options.planningHome } : {}),
     ...(metadata ? { metadata } : {}),
   };
@@ -309,7 +323,12 @@ export function generateInstructions(
     throw new Error(`Artifact '${artifactId}' not found in schema '${context.schemaName}'`);
   }
 
-  const templateContent = loadTemplate(context.schemaName, artifact.template, context.projectRoot);
+  const templateContent = loadTemplate(
+    context.schemaName,
+    artifact.template,
+    context.projectRoot,
+    context.projectSchemasDir
+  );
   const dependencies = getDependencyInfo(artifact, context.graph, context.completed);
   const unlocks = getUnlockedArtifacts(context.graph, artifactId);
 
@@ -452,6 +471,11 @@ export function formatChangeStatus(
   options: {
     storeId?: string;
     storeType?: 'store' | 'project';
+    followupSelection?: {
+      store?: string;
+      project?: string;
+      targetLine?: string;
+    };
     /**
      * Set `false` to skip `nextWorkflows` resolution (review round 1 m1):
      * it costs two uncached fs reads (`getGlobalConfig`, `loadWorkflowCatalog`)
@@ -476,7 +500,11 @@ export function formatChangeStatus(
       ? requireSessionRuntimeContext()
       : options.sessionContext;
   // Load schema to get apply phase configuration
-  const schema = resolveSchema(context.schemaName, context.projectRoot);
+  const schema = resolveSchema(
+    context.schemaName,
+    context.projectRoot,
+    context.projectSchemasDir
+  );
   const applyRequires = schema.apply?.requires ?? schema.artifacts.map(a => a.id);
 
   const artifacts = context.graph.getAllArtifacts();
@@ -536,6 +564,7 @@ export function formatChangeStatus(
       allArtifactsComplete: isComplete,
       ...(options.storeId ? { storeId: options.storeId } : {}),
       ...(options.storeType ? { storeType: options.storeType } : {}),
+      ...(options.followupSelection ? { followupSelection: options.followupSelection } : {}),
     }),
     // Runtime-resolved next workflow(s) (design D4): status only observes
     // artifact completion, not task state, so it maps onto `propose`'s

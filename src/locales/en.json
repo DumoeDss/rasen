@@ -1209,7 +1209,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             }
           }
         },
@@ -1250,7 +1253,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             }
           }
         },
@@ -1285,7 +1291,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             }
           }
         },
@@ -1327,7 +1336,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             },
             "keep-ephemera": {
               "description": "Preserve all ephemera files while retaining complete safety inspection"
@@ -1346,6 +1358,21 @@
             },
             "intent-file": {
               "description": "Read a complete, strictly validated archive intent from the specified file"
+            },
+            "outcome": {
+              "description": "Store v2 only: the one explicitly declared terminal state (landed | superseded | cancelled | abandoned). Required there; there is no default"
+            },
+            "reason": {
+              "description": "Store v2 only: why the change ended. Required by every non-landed outcome and refused for landed"
+            },
+            "by": {
+              "description": "Store v2 only: the successor change instance id a superseded outcome names. Resolved to committed scope evidence, never to an alias"
+            },
+            "by-target-line": {
+              "description": "Store v2 only: narrows the successor search to one target line. Never a substitute for successor verification"
+            },
+            "commit": {
+              "description": "Store v2 only: the candidate commit for a landed proof. Never a bypass for it"
             }
           },
           "commands": {
@@ -1354,6 +1381,9 @@
               "options": {
                 "to": {
                   "description": "Target: in-repo or store (external is retired)"
+                },
+                "target-line": {
+                  "description": "Stable target line the archive entries land under in a layout version 2 store"
                 },
                 "dry-run": {
                   "description": "Print the move plan and change nothing"
@@ -1384,7 +1414,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             }
           }
         },
@@ -1404,7 +1437,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             }
           }
         },
@@ -1455,7 +1491,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             }
@@ -1577,6 +1616,41 @@
                 }
               }
             },
+            "migrate-layout": {
+              "description": "Migrate a legacy flat store to planning layout version 2, previewing every item first",
+              "options": {
+                "mapping": {
+                  "description": "Committed mapping file inside the store worktree that resolves unknown ownership, shared specs, design docs, and target lines"
+                },
+                "default-target-line": {
+                  "description": "Target line to assert for every item that does not declare its own; no line is ever derived"
+                },
+                "include-untracked": {
+                  "description": "Acknowledge untracked files inside moved trees, which Git cannot restore"
+                },
+                "dry-run": {
+                  "description": "Preview the complete item table and change nothing (default)"
+                },
+                "apply": {
+                  "description": "Stage, verify, and publish the previewed plan"
+                },
+                "status": {
+                  "description": "Report the recorded phase of any migration run for this store and ref"
+                },
+                "resume": {
+                  "description": "Continue an interrupted run from its recorded phase"
+                },
+                "rollback": {
+                  "description": "Remove only the paths the run created and restore the previous store metadata"
+                },
+                "retire-flat": {
+                  "description": "Remove the flat planning tree as a separate step after a completed publication"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
             "adopt": {
               "description": "Migrate an in-repo project's planning content into a store and convert the repo to a pointer",
               "options": {
@@ -1585,6 +1659,9 @@
                 },
                 "archive": {
                   "description": "Archive handling: move (default) or leave"
+                },
+                "target-line": {
+                  "description": "Stable target line the archive lands under in a layout version 2 store"
                 },
                 "dry-run": {
                   "description": "Print the full move plan and change nothing"
@@ -1644,6 +1721,300 @@
                   "description": "Output as JSON"
                 }
               }
+            },
+            "target-line": {
+              "description": "Author and re-point the stable release lines a store's changes and archives are partitioned by",
+              "commands": {
+                "add": {
+                  "description": "Author a new target line with its store ref locator; no line is ever inferred from a branch name",
+                  "options": {
+                    "store": {
+                      "description": "Store that gains the target line"
+                    },
+                    "store-ref": {
+                      "description": "Full store ref the line currently points at, for example refs/heads/release/0.2"
+                    },
+                    "project": {
+                      "description": "Project whose code ref locator is recorded alongside the line"
+                    },
+                    "code-ref": {
+                      "description": "Full code ref for the selected project in its own repository"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "set-ref": {
+                  "description": "Re-point a locator in place; the line identity never changes and is never renamed",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the target line"
+                    },
+                    "store-ref": {
+                      "description": "New full store ref for the line"
+                    },
+                    "project": {
+                      "description": "Project whose code ref locator is being edited"
+                    },
+                    "code-ref": {
+                      "description": "New full code ref for the selected project"
+                    },
+                    "remove-code-ref": {
+                      "description": "Remove the selected project's code locator, refused while an active change depends on it"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "list": {
+                  "description": "List every target line recorded in the store, including ones whose refs do not currently resolve",
+                  "options": {
+                    "store": {
+                      "description": "Store to list target lines from"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "Show one target line and resolve its locators to concrete refs and commit ids",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the target line"
+                    },
+                    "project": {
+                      "description": "Project whose code ref is resolved alongside the store ref"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                }
+              }
+            },
+            "issue": {
+              "description": "Store-level cross-project intent: an issue references project changes and owns none of them",
+              "commands": {
+                "new": {
+                  "description": "Open a store-level issue; it needs only the store, never a project or a target line",
+                  "options": {
+                    "store": {
+                      "description": "Store that holds the issue; no project or target line is required"
+                    },
+                    "title": {
+                      "description": "What this cross-project work is"
+                    },
+                    "readme": {
+                      "description": "Also write an optional narrative scaffold that is never parsed for facts"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "list": {
+                  "description": "List the store issues with their operator-declared state",
+                  "options": {
+                    "store": {
+                      "description": "Store that holds the issue; no project or target line is required"
+                    },
+                    "state": {
+                      "description": "open, resolved, or dropped"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "Show one issue with its latest execution plan revision and each node state",
+                  "options": {
+                    "store": {
+                      "description": "Store that holds the issue; no project or target line is required"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "plan": {
+                  "description": "Publish a new immutable execution plan revision, or read the latest one",
+                  "options": {
+                    "store": {
+                      "description": "Store that holds the issue; no project or target line is required"
+                    },
+                    "project": {
+                      "description": "The NODE's owning project, never the issue's scope"
+                    },
+                    "target-line": {
+                      "description": "The NODE's target line, never the issue's scope"
+                    },
+                    "add-change": {
+                      "description": "Add a node referencing an existing change instance: node=ci_...[,alias]"
+                    },
+                    "add-intent": {
+                      "description": "Add a node declaring work not created yet: node=summary"
+                    },
+                    "depends-on": {
+                      "description": "Declare a node dependency: node:dependency"
+                    },
+                    "from-file": {
+                      "description": "Read the node list from a YAML file with a top-level nodes: list"
+                    },
+                    "revision": {
+                      "description": "Read this revision instead of the latest one"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "state": {
+                  "description": "Declare the issue state; readiness derived from the plan informs it and never sets it",
+                  "options": {
+                    "store": {
+                      "description": "Store that holds the issue; no project or target line is required"
+                    },
+                    "state": {
+                      "description": "open, resolved, or dropped"
+                    },
+                    "reason": {
+                      "description": "Why the issue was dropped; required for dropped"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                }
+              }
+            },
+            "changes": {
+              "description": "Every change in a store, grouped by project and target line; a flat listing is deliberately not offered",
+              "options": {
+                "store": {
+                  "description": "Store to aggregate"
+                },
+                "project": {
+                  "description": "Narrow to these projects"
+                },
+                "target-line": {
+                  "description": "Narrow to these target lines"
+                },
+                "outcome": {
+                  "description": "Narrow archived entries to these finalization outcomes"
+                },
+                "state": {
+                  "description": "active or archived"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "projects": {
+              "description": "The store's project and target-line rollup with per-line change counts",
+              "options": {
+                "store": {
+                  "description": "Store to aggregate"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "workspace": {
+              "description": "Prepare, inspect, and remove the bound store-planning and project-execution worktree pair (unrelated to rasen workset, which is a personal editor view)",
+              "commands": {
+                "plan": {
+                  "description": "Preview the worktree pair a change needs, as an immutable plan that writes nothing and reports every unsatisfied precondition",
+                  "options": {
+                    "store": {
+                      "description": "Store that owns the planning worktree"
+                    },
+                    "project": {
+                      "description": "Project that owns the change"
+                    },
+                    "target-line": {
+                      "description": "Stable target line the pair is prepared on"
+                    },
+                    "change": {
+                      "description": "Change alias the pair is prepared for"
+                    },
+                    "planning-worktree": {
+                      "description": "Destination for the store planning worktree; defaults beside the store checkout"
+                    },
+                    "execution-worktree": {
+                      "description": "Destination for the project execution worktree; defaults beside the code checkout"
+                    },
+                    "existing-change": {
+                      "description": "Bind an already created change to a newly prepared pair instead of reserving a new one"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "apply": {
+                  "description": "Apply a previewed plan by its id, revalidating every frozen commit id before the first write",
+                  "options": {
+                    "apply-plan": {
+                      "description": "Plan id produced by rasen store workspace plan"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "Report the resolved pair, its binding state, and every verification finding, as inert locators",
+                  "options": {
+                    "store": {
+                      "description": "Store that owns the planning worktree"
+                    },
+                    "project": {
+                      "description": "Project that owns the change"
+                    },
+                    "target-line": {
+                      "description": "Stable target line the pair belongs to"
+                    },
+                    "change": {
+                      "description": "Change alias whose pair is reported"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "cleanup": {
+                  "description": "Preview and perform a removal that is provably lossless; there is no force and no partial removal",
+                  "options": {
+                    "store": {
+                      "description": "Store that owns the planning worktree"
+                    },
+                    "project": {
+                      "description": "Project that owns the change"
+                    },
+                    "target-line": {
+                      "description": "Stable target line the pair belongs to"
+                    },
+                    "change": {
+                      "description": "Change alias whose pair is removed"
+                    },
+                    "include-untracked": {
+                      "description": "Accept the untracked files the plan listed, which Git cannot restore"
+                    },
+                    "apply-plan": {
+                      "description": "Cleanup plan id produced by a previous preview"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                }
+              }
             }
           }
         },
@@ -1657,7 +2028,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             },
             "code-workspace": {
               "description": "Also write a VS Code workspace file for the set"
@@ -1703,7 +2077,10 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             },
             "gc": {
               "description": "Remove dangling machine-home registry entries and their orphaned home directories — this deletes ANY external archives inside those homes too (archive-destination's 'external' archives share the home's lifecycle; git history remains the durable record)"
@@ -2283,7 +2660,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2315,7 +2695,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2344,7 +2727,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2358,7 +2744,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2372,7 +2761,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2389,7 +2781,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2403,7 +2798,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2420,7 +2818,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2437,7 +2838,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2457,7 +2861,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             },
@@ -2477,7 +2884,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 }
               }
             }
@@ -2501,7 +2911,10 @@
                   "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
                 },
                 "project": {
-                  "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+                  "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 },
                 "owner-store": {
                   "description": "Select a store knowledge owner independently from the planning root"
@@ -2551,6 +2964,9 @@
                 },
                 "project": {
                   "description": "Use the selected registered project as every migration root"
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 },
                 "json": {
                   "description": "Output as JSON (non-interactive; requires --yes to execute)"

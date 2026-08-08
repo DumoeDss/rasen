@@ -517,7 +517,7 @@ rasen-archive-change [change-name]
 - Checks artifact completion status
 - Checks task completion (warns if incomplete)
 - Offers to sync delta specs if not already synced
-- Moves change folder to `rasen/changes/archive/YYYY-MM-DD-<name>/`
+- Moves change folder to `rasen/changes/archive/YYYY-MM-DD-<name>/` (standalone; in a Store v2 project scope, into `rasen/projects/<projectId>/changes/archive/<targetLineId>/`)
 - Preserves all artifacts for audit trail
 
 **Example:**

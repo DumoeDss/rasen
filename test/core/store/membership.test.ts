@@ -29,6 +29,7 @@ import {
   machineLockPath,
   releaseOwnerAwareFileLock,
 } from '../../../src/core/file-state.js';
+import { writeStoreMetadataState } from '../../../src/core/store/foundation.js';
 import { upsertAdoptionEntry } from '../../../src/core/store/migration.js';
 import { appendStoreReference } from '../../../src/core/project-config.js';
 import { registerExistingStore } from '../../../src/core/store/operations.js';
@@ -642,6 +643,108 @@ describe('store membership provider', () => {
       // paths. The assertion guards against accidentally over-locking at the
       // Store-dir level.
       expect(elapsed).toBeLessThan(3_000);
+    });
+  });
+
+  /**
+   * Task 7.3 — "every membership reader dispatches on the Store's declared
+   * layout version". Every other fixture in this file is a legacy flat Store,
+   * which is why the two widest readers could ship reading the v1 parser
+   * directly: against a Store this portfolio's own migration produces, they
+   * answered "no members" and raised `invalid_store_project_record` against the
+   * catalogs the migration had just written.
+   */
+  describe('reads dispatch on the declared planning layout', () => {
+    async function declareLayoutV2(): Promise<void> {
+      await writeStoreMetadataState(storeRoot, {
+        version: 2,
+        uid: '11111111-2222-4333-8444-555555555555',
+        id: 'team-store',
+        layoutVersion: 2,
+      });
+    }
+
+    it('lists a layout v2 project catalog as a member, with no error finding', async () => {
+      await declareLayoutV2();
+      await writeMembershipRecord({
+        projectRoot: makeProject('elftia', PROJECT_A),
+        projectId: PROJECT_A,
+        projectDisplayId: 'elftia',
+        store,
+        roles: { planning: true, knowledge: true },
+        globalDataDir,
+      });
+      // The writer chose the schema from the declared layout, so what is on
+      // disk really is a v2 catalog and not a v1 record wearing the same name.
+      expect(fs.readFileSync(getStoreProjectRecordPath(storeRoot, PROJECT_A), 'utf-8')).toContain(
+        'version: 2'
+      );
+
+      const listing = await listStoreMembers(store, { globalDataDir });
+
+      expect(listing.members).toHaveLength(1);
+      expect(listing.members[0]).toMatchObject({
+        projectId: PROJECT_A,
+        id: 'elftia',
+        roles: { planning: true, knowledge: true },
+        provenance: 'project-catalog',
+      });
+      expect(
+        listing.diagnostics.filter((entry) => entry.severity === 'error')
+      ).toEqual([]);
+      expect(
+        (await resolveProjectMembership(store, PROJECT_A, { globalDataDir }))?.provenance
+      ).toBe('project-catalog');
+    });
+
+    it('reports a legacy v1 record inside a layout v2 Store rather than accepting it as membership', async () => {
+      // Written BEFORE the layout flip, exactly as an interrupted or partial
+      // migration leaves it.
+      await writeStoreProjectRecord(storeRoot, {
+        version: 1,
+        projectId: PROJECT_A,
+        id: 'elftia',
+        roles: { planning: true, knowledge: true },
+      });
+      await declareLayoutV2();
+
+      const listing = await listStoreMembers(store, { globalDataDir });
+
+      expect(listing.members).toEqual([]);
+      expect(listing.diagnostics.map((entry) => entry.code)).toContain(
+        'store_layout_legacy_membership_record'
+      );
+      // The narrowed reader is the one that matters here: reading the file's
+      // own `version:` field would hand this back as a valid member, which
+      // spec store-project-membership forbids ("not silently accepted as a
+      // second valid membership schema").
+      expect(await resolveProjectMembership(store, PROJECT_A, { globalDataDir })).toBeNull();
+    });
+
+    it('refuses a membership write into a half-migrated Store instead of branching on the declaration alone', async () => {
+      // A migration interrupted after the layout flip but before the receipt
+      // lands. Task 9.1 puts `assertStoreLayoutForWrite` in front of membership
+      // record writes for exactly this: branching on `.declared === 2` alone
+      // never consults `.mixed`, so a concurrent `add-project` wrote a v2
+      // catalog into a Store mid-migration and the operator was then left
+      // diagnosing the `migration_plan_stale` it caused.
+      await declareLayoutV2();
+      const flatSpec = path.join(storeRoot, 'rasen', 'specs', 'billing');
+      fs.mkdirSync(flatSpec, { recursive: true });
+      fs.writeFileSync(path.join(flatSpec, 'spec.md'), '# billing\n');
+
+      await expect(
+        writeMembershipRecord({
+          projectRoot: makeProject('elftia-mixed', PROJECT_B),
+          projectId: PROJECT_B,
+          store,
+          roles: { planning: true, knowledge: true },
+          globalDataDir,
+        })
+      ).rejects.toMatchObject({ diagnostic: { code: 'store_layout_mixed_residue' } });
+
+      // Refused BEFORE the write, so the half-migrated Store gains nothing.
+      expect(fs.existsSync(getStoreProjectRecordPath(storeRoot, PROJECT_B))).toBe(false);
     });
   });
 });

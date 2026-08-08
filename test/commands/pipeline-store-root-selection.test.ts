@@ -2,8 +2,19 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
-import { getGlobalDataDir, registerStore } from '../../src/core/index.js';
+import {
+  deriveChangeInstanceId,
+  derivePlanningScopeId,
+  getGlobalDataDir,
+  parseChangeInstanceSeed,
+  parseProjectId,
+  parseTargetLineId,
+  registerStore,
+  writeStoreMetadataState,
+  writeStoreRegistryState,
+} from '../../src/core/index.js';
 import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
 
 const BUILTIN_NAMES = [
@@ -61,6 +72,88 @@ describe('pipeline command store root selection', () => {
     return fs.realpathSync.native(root);
   }
 
+  async function promoteStoreToV2Project(
+    storeId: string,
+    projectId: string,
+    targetLineId: string
+  ): Promise<string> {
+    const storeUid = randomUUID();
+    await writeStoreRegistryState(
+      {
+        version: 2,
+        stores: {
+          [storeUid]: {
+            id: storeId,
+            backend: { type: 'git', local_path: storeRoot },
+          },
+        },
+      },
+      { globalDataDir }
+    );
+    await writeStoreMetadataState(storeRoot, {
+      version: 2,
+      uid: storeUid,
+      id: storeId,
+      layoutVersion: 2,
+    });
+    const projectCatalog = path.join(
+      storeRoot,
+      '.rasen-store',
+      'projects',
+      `${projectId}.yaml`
+    );
+    fs.mkdirSync(path.dirname(projectCatalog), { recursive: true });
+    fs.writeFileSync(
+      projectCatalog,
+      `version: 2\nprojectId: ${projectId}\nid: ${projectId}\nroles:\n  planning: true\n  knowledge: false\nplanningBinding:\n  state: bound\n  boundAt: 2026-08-06T00:00:00.000Z\n`,
+      'utf8'
+    );
+    const targetLineCatalog = path.join(
+      storeRoot,
+      '.rasen-store',
+      'target-lines',
+      `${targetLineId}.yaml`
+    );
+    fs.mkdirSync(path.dirname(targetLineCatalog), { recursive: true });
+    fs.writeFileSync(
+      targetLineCatalog,
+      `version: 1\nid: ${targetLineId}\nstoreRef: refs/heads/release/0.2\nprojects:\n  ${projectId}:\n    codeRef: refs/heads/release/0.2\n`,
+      'utf8'
+    );
+    return storeUid;
+  }
+
+  function writeV2ChangeMetadata(
+    changeDir: string,
+    storeUid: string,
+    projectId: string,
+    targetLineId: string
+  ): void {
+    const instanceSeed = parseChangeInstanceSeed('11'.repeat(16));
+    const planningScopeId = derivePlanningScopeId({
+      storeUid,
+      projectId: parseProjectId(projectId),
+      targetLineId: parseTargetLineId(targetLineId),
+    });
+    const instanceId = deriveChangeInstanceId({ planningScopeId, instanceSeed });
+    fs.writeFileSync(
+      path.join(changeDir, '.openspec.yaml'),
+      [
+        'schema: spec-driven',
+        'created: 2026-08-06',
+        'identity:',
+        '  version: 2',
+        `  instanceSeed: ${JSON.stringify(instanceSeed)}`,
+        `  instanceId: ${JSON.stringify(instanceId)}`,
+        `  storeUid: ${JSON.stringify(storeUid)}`,
+        `  projectId: ${JSON.stringify(projectId)}`,
+        `  targetLineId: ${JSON.stringify(targetLineId)}`,
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+  }
+
   function writeStorePipeline(name: string, content: string): void {
     const dir = path.join(storeRoot, 'rasen', 'pipelines', name);
     fs.mkdirSync(dir, { recursive: true });
@@ -103,6 +196,138 @@ describe('pipeline command store root selection', () => {
 
     // No local openspec/ was scaffolded in the unrelated cwd.
     expect(fs.existsSync(path.join(appRepo, 'rasen'))).toBe(false);
+  });
+
+  it('resume routes Store v2 Change lookup through the selected project partition', async () => {
+    const storeUid = await promoteStoreToV2Project(
+      'team-context',
+      'project-a',
+      'line-0.2'
+    );
+    const changeDir = path.join(
+      storeRoot,
+      'rasen',
+      'projects',
+      'project-a',
+      'changes',
+      'wip-change'
+    );
+    fs.mkdirSync(changeDir, { recursive: true });
+    writeV2ChangeMetadata(changeDir, storeUid, 'project-a', 'line-0.2');
+    fs.mkdirSync(path.join(appRepo, 'rasen'), { recursive: true });
+    fs.writeFileSync(
+      path.join(appRepo, 'rasen', 'config.yaml'),
+      `schema: spec-driven\nprojectId: project-a\nstore:\n  uid: ${storeUid}\n  id: team-context\n`,
+      'utf8'
+    );
+    fs.mkdirSync(path.join(appRepo, '.rasen'), { recursive: true });
+    fs.writeFileSync(
+      path.join(appRepo, '.rasen', 'planning-binding.json'),
+      JSON.stringify({
+        version: 1,
+        storeUid,
+        storeId: 'team-context',
+        projectId: 'project-a',
+        targetLineId: 'line-0.2',
+        planningWorktree: storeRoot,
+        executionRoot: appRepo,
+      }) + '\n',
+      'utf8'
+    );
+    const executionStateDir = path.join(
+      appRepo,
+      '.rasen',
+      'changes',
+      'wip-change',
+      'ephemera'
+    );
+    fs.mkdirSync(executionStateDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(executionStateDir, 'auto-run.json'),
+      JSON.stringify({ pipeline: 'bug-fix', completed: ['propose', 'apply'] }, null, 2),
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(changeDir, 'auto-run.json'),
+      JSON.stringify({ pipeline: 'full-feature', completed: ['propose'] }, null, 2),
+      'utf8'
+    );
+
+    const result = await runCLI(
+      [
+        'pipeline',
+        'resume',
+        'wip-change',
+        '--store',
+        'team-context',
+        '--project',
+        'project-a',
+        '--target-line',
+        'line-0.2',
+        '--json',
+      ],
+      { cwd: appRepo, env }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(parseJson(result)).toMatchObject({
+      change: 'wip-change',
+      hasRunState: true,
+      pipeline: 'bug-fix',
+      completed: ['propose', 'apply'],
+      next: 'verify',
+      runStateDir: fs.realpathSync.native(executionStateDir),
+    });
+    expect(fs.readFileSync(path.join(changeDir, 'auto-run.json'), 'utf8')).toContain(
+      'full-feature'
+    );
+  });
+
+  // `store-planning-worktree-bindings`, "A Change cannot be re-pointed at
+  // another target line": a disagreement about the LINE is its own refusal and
+  // must name both lines, rather than collapsing into the generic identity
+  // mismatch that also covers a wrong Store or project. The constraint itself
+  // is unchanged — the Change is still refused and nothing is read or written.
+  it('resume refuses a Change frozen against another target line, naming both lines', async () => {
+    const storeUid = await promoteStoreToV2Project(
+      'team-context',
+      'project-a',
+      'line-0.2'
+    );
+    const changeDir = path.join(
+      storeRoot,
+      'rasen',
+      'projects',
+      'project-a',
+      'changes',
+      'wip-change'
+    );
+    fs.mkdirSync(changeDir, { recursive: true });
+    writeV2ChangeMetadata(changeDir, storeUid, 'project-a', 'other-line');
+
+    const result = await runCLI(
+      [
+        'pipeline',
+        'resume',
+        'wip-change',
+        '--store',
+        'team-context',
+        '--project',
+        'project-a',
+        '--target-line',
+        'line-0.2',
+        '--json',
+      ],
+      { cwd: appRepo, env }
+    );
+
+    expect(result.exitCode).toBe(1);
+    const payload = parseJson(result);
+    expect(payload).toMatchObject({
+      status: [{ code: 'target_line_mismatch' }],
+    });
+    expect(payload.status[0].message).toContain('other-line');
+    expect(payload.status[0].message).toContain('line-0.2');
   });
 
   it('list and validate --pipelines report the same store pipeline set', async () => {

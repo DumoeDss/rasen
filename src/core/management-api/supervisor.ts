@@ -31,6 +31,7 @@ import {
   RASEN_SESSION_CONTEXT_ENV,
   type SessionContextPathOptions,
 } from '../session-runtime-context.js';
+import { resolveFrozenWorkspacePair } from '../store/workspace/module.js';
 import type { SessionExecution, SessionKind, SessionRecord, SessionRegistry, SessionSpace, TerminationReason } from './session-registry.js';
 
 const IS_WINDOWS = process.platform === 'win32';
@@ -292,10 +293,31 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
     // reader falls through to the pre-existing cwd derivation, which is the
     // documented "no session context" arm rather than a broken one.
     let contextFilePath: string | undefined;
+    // The COMPLETE pair is frozen here, not just the two roots: a command
+    // inside the session then uses the frozen pair instead of re-deriving one
+    // from its working directory. Resolution is best-effort — an unprepared or
+    // drifted pair records nothing, which is the explicit "no pair" state a
+    // mutation needing the pair refuses on.
+    const workspacePair = await resolveFrozenWorkspacePair({
+      ...(input.space?.planning?.storeUid === undefined
+        ? {}
+        : { storeUid: input.space.planning.storeUid }),
+      ...(input.space?.planning?.projectId === undefined
+        ? {}
+        : { projectId: input.space.planning.projectId }),
+      ...(input.space?.planning?.targetLineId === undefined
+        ? {}
+        : { targetLineId: input.space.planning.targetLineId }),
+      ...(input.execution?.kind === 'project' ? { executionRoot: input.execution.root } : {}),
+      ...(sessionContextPaths.globalDataDir === undefined
+        ? {}
+        : { globalDataDir: sessionContextPaths.globalDataDir }),
+    }).catch(() => undefined);
     const runtimeContext = buildRuntimeContext({
       sessionId: record.id,
       ...(input.space !== undefined ? { space: input.space } : {}),
       ...(input.execution !== undefined ? { execution: input.execution } : {}),
+      ...(workspacePair === undefined ? {} : { workspace: workspacePair }),
     });
     if (runtimeContext) {
       try {

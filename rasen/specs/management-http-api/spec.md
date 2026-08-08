@@ -5,7 +5,7 @@ Provide a loopback-bound, bearer-secured HTTP API exposing project status, activ
 ## Requirements
 ### Requirement: Loopback and bearer security across the CLI-backed mutation surface
 
-The management API SHALL serve `GET /api/v1/status`, `GET /api/v1/changes`, `GET /api/v1/runs`, `POST /api/v1/changes`, and the sessions route group (`POST /api/v1/sessions`, `GET /api/v1/sessions`, `GET /api/v1/sessions/:id`, `DELETE /api/v1/sessions/:id`), bound to 127.0.0.1 only, requiring a per-session bearer token minted at server startup. The server SHALL never write workspace files itself: every endpoint that mutates a workspace, creates planning state, or modifies a user-wide library — `POST /api/v1/changes` (change submission), `POST /api/v1/sessions` (session launch), `POST /api/v1/spaces` (space creation), `POST /api/v1/workflows` (workflow library mutation), and `POST /api/v1/pipelines` (pipeline library mutation) — SHALL mutate exclusively by spawning the existing CLI as a subprocess under its capability's admission whitelist. Any other method on a management path SHALL be rejected with 405 `method_not_allowed` without modifying any file; DELETE SHALL be admitted only on `/api/v1/sessions/:id`. Every read response SHALL be computed from a fresh filesystem read at request time, except session listings, whose process facts come from the live in-memory registry (their joined run-state is still read fresh from disk). Each management path SHALL also answer when addressed with a single trailing slash (e.g. `/api/v1/status/`), identically to its canonical form; `/api/v1/sessions/:id` SHALL match exactly one additional path segment, and deeper suffixes are not management paths and fall through to the rest of the server's routing.
+The management API SHALL serve `GET /api/v1/status`, `GET /api/v1/changes`, `GET /api/v1/runs`, `POST /api/v1/changes`, the sessions route group (`POST /api/v1/sessions`, `GET /api/v1/sessions`, `GET /api/v1/sessions/:id`, `DELETE /api/v1/sessions/:id`), the Store change-finalization path (`POST /api/v1/stores/:storeUid/projects/:projectId/lines/:targetLineId/changes/:instance/finalize`), and the Store aggregate route family (`GET /api/v1/stores/:storeUid/issues`, `GET /api/v1/stores/:storeUid/issues/:issueId`, `GET /api/v1/stores/:storeUid/issues/:issueId/plans/:revisionId`, `GET /api/v1/stores/:storeUid/projects`, `GET /api/v1/stores/:storeUid/projects/:projectId/lines/:targetLineId/changes`, `POST /api/v1/stores/:storeUid/issues`, `POST /api/v1/stores/:storeUid/issues/:issueId/plans`, and `POST /api/v1/stores/:storeUid/projects/:projectId/lines/:targetLineId/changes`), bound to 127.0.0.1 only, requiring a per-session bearer token minted at server startup. The server SHALL never write workspace files itself: every endpoint that mutates a workspace, creates planning state, or modifies a user-wide library — `POST /api/v1/changes` (change submission), `POST /api/v1/sessions` (session launch), `POST /api/v1/spaces` (space creation), `POST /api/v1/workflows` (workflow library mutation), `POST /api/v1/pipelines` (pipeline library mutation), the Store change-finalization path (change finalization), the Store Issue paths (Issue creation and Execution Plan revision publication), and the Store scoped change-creation path — SHALL mutate exclusively by spawning the existing CLI as a subprocess under its capability's admission whitelist. Any other method on a management path SHALL be rejected with 405 `method_not_allowed` without modifying any file; DELETE SHALL be admitted only on `/api/v1/sessions/:id`. Every read response SHALL be computed from a fresh filesystem read at request time, except session listings, whose process facts come from the live in-memory registry (their joined run-state is still read fresh from disk). Each management path SHALL also answer when addressed with a single trailing slash (e.g. `/api/v1/status/`), identically to its canonical form; `/api/v1/sessions/:id` SHALL match exactly one additional path segment, and deeper suffixes are not management paths and fall through to the rest of the server's routing.
 
 #### Scenario: Authorized status request
 
@@ -23,7 +23,7 @@ The management API SHALL serve `GET /api/v1/status`, `GET /api/v1/changes`, `GET
 
 #### Scenario: Every mutating endpoint routes through a CLI subprocess
 
-- **WHEN** any admitted mutating request (`POST /api/v1/changes`, `POST /api/v1/sessions`, `POST /api/v1/spaces`, `POST /api/v1/workflows`, `POST /api/v1/pipelines`) is fulfilled
+- **WHEN** any admitted mutating request (`POST /api/v1/changes`, `POST /api/v1/sessions`, `POST /api/v1/spaces`, `POST /api/v1/workflows`, `POST /api/v1/pipelines`, the Store change-finalization path, a Store Issue path, or the Store scoped change-creation path) is fulfilled
 - **THEN** the mutation is performed by a spawned CLI subprocess and the server process itself writes no workspace or library file
 
 #### Scenario: Sessions endpoints share the write security posture
@@ -410,3 +410,69 @@ and deeper path suffixes SHALL not be admitted as theme operations.
   path, GET to the import path, or addresses a deeper theme suffix
 - **THEN** the request is rejected or falls through according to the management
   router's exact-depth contract without modifying the theme library
+
+### Requirement: The change-finalization endpoint requires a complete scope and one explicit outcome
+
+`POST /api/v1/stores/:storeUid/projects/:projectId/lines/:targetLineId/changes/:instance/finalize` SHALL finalize exactly one Change and SHALL require its complete scope — Store, project, stable target line, and Change instance — in the path, plus the outcome and the reason or successor that outcome requires in the body. The server SHALL NOT complete a missing or ambiguous scope field from a query filter, a session, a launch project, or a previously viewed selection, and SHALL reject the request instead. It SHALL mutate only by spawning the CLI, SHALL produce the same finalization plan the command-line and workflow surfaces produce for the same inputs, and SHALL return the recorded outcome, the published entry path, and whether spec synchronization was applied. A request whose path scope disagrees with the Change's committed identity SHALL be rejected with the finalization diagnostic rather than reinterpreted, and a failed finalization SHALL surface the CLI's diagnostic code unchanged.
+
+#### Scenario: An incomplete scope is rejected, not inferred
+
+- **WHEN** a finalization request omits the target line or the Change instance, or names one that disagrees with the Change's committed identity
+- **THEN** the server responds with an error naming the disagreement
+- **AND** no CLI subprocess that would mutate is spawned and no file is modified
+
+#### Scenario: A finalization is fulfilled by the CLI and reported
+
+- **WHEN** an authorized finalization request supplies a complete scope and a valid outcome
+- **THEN** the mutation is performed by a spawned CLI subprocess
+- **AND** the response reports the recorded outcome, the published entry path, and whether spec synchronization was applied
+
+#### Scenario: A refused finalization surfaces its diagnostic unchanged
+
+- **WHEN** the CLI refuses the finalization because the outcome is invalid, the landed commit is unreachable, or the successor cannot be verified
+- **THEN** the response carries that diagnostic code and message unchanged
+- **AND** no partial archive entry, spec write, or record file exists afterward
+
+### Requirement: The Store aggregate paths serve Issue, project, and grouped-change reads
+
+The Store aggregate read family SHALL report a Store's Issues, one Issue with its latest Execution Plan revision, one addressed revision, the Store's project and target-line rollup, and one project-and-line group of Changes. `:storeUid` SHALL be resolved as the Store's stable identity and SHALL NOT be interpreted as the local Store id carried by a `store:<id>` space selector; a UID resolving to no registered Store SHALL be rejected. Every response SHALL carry the query module's per-node states, its unsearched-ref list, and its completeness flag unchanged, so a partial answer is visible to the client. Absolute paths in a response SHALL be inert local locators. These paths SHALL be reads: no admitted read SHALL create, modify, or delete any file, and their content SHALL equal the corresponding CLI `--json` output for the same inputs.
+
+#### Scenario: A partial aggregate is reported as partial
+
+- **WHEN** one of the Store's target-line refs cannot be read while an aggregate read is served
+- **THEN** the response SHALL list that ref as unsearched and report completeness as false
+- **AND** no reference SHALL be reported as unresolved on the strength of that ref being unreadable
+
+#### Scenario: The Store is addressed by stable identity
+
+- **WHEN** a client sends a Store aggregate request whose `:storeUid` is a local Store id rather than the Store's stable identity, or a UID no registered Store carries
+- **THEN** the server SHALL reject the request
+- **AND** it SHALL NOT fall back to the launch project, a recent space, or the only registered Store
+
+#### Scenario: API and CLI report the same aggregate
+
+- **WHEN** the same Store, filters, and Issue are addressed through the aggregate API and through the CLI's JSON output
+- **THEN** the two SHALL carry identical grouping, entry facts, node states, unsearched refs, and completeness
+
+### Requirement: A Store-scoped project mutation requires its complete scope and never infers one
+
+A project mutation reached through the Store route family SHALL carry its complete scope — Store, project, and stable target line — in the path, and SHALL carry the rest of its intent in the body. The server SHALL NOT complete a missing or ambiguous scope segment from a query filter, a session, the launch project, a recently viewed selection, or the Store's only project, and SHALL reject the request instead. It SHALL reject a project or target line the Store's own catalogs do not declare, before spawning any subprocess and before touching any file. A Store-level Issue mutation SHALL require the Store and SHALL NOT require a project or a target line, so the rule is that the scope an operation needs is complete rather than that a project is always named. A refused mutation SHALL surface the CLI's diagnostic code unchanged.
+
+#### Scenario: A missing scope segment is rejected, not filled in
+
+- **WHEN** a project mutation request omits the project or the target line while the client has both as an active board filter
+- **THEN** the server SHALL reject the request
+- **AND** no scope segment SHALL be taken from the filter, the session, the launch project, or a previous selection
+
+#### Scenario: An undeclared project or line is refused before any spawn
+
+- **WHEN** a scoped mutation names a project or target line for which the Store has no catalog
+- **THEN** the server SHALL refuse naming the undeclared value
+- **AND** no CLI subprocess SHALL be spawned and no file SHALL be modified
+
+#### Scenario: A Store Issue mutation needs no project
+
+- **WHEN** a client creates an Issue or publishes an Execution Plan revision with only the Store in the path
+- **THEN** the request SHALL be admitted
+- **AND** the server SHALL NOT require, infer, or invent a project or target line for it
+

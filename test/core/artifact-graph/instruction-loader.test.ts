@@ -113,6 +113,31 @@ describe('instruction-loader', () => {
       expect(context.graph.getName()).toBe('spec-driven');
     });
 
+    it('loads project schemas from an explicit scope-owned collection', () => {
+      const planningCheckout = path.join(tempDir, 'store-checkout');
+      const projectHome = path.join(planningCheckout, 'rasen', 'projects', 'project-a');
+      const projectSchemasDir = path.join(projectHome, 'schemas');
+      const schemaDir = path.join(projectSchemasDir, 'routed-schema');
+      const changeDir = path.join(projectHome, 'changes', 'my-change');
+      fs.mkdirSync(schemaDir, { recursive: true });
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(schemaDir, 'schema.yaml'),
+        'name: routed-schema\nversion: 1\nartifacts:\n  - id: proposal\n    generates: proposal.md\n    description: Proposal\n    template: proposal.md\n'
+      );
+      fs.writeFileSync(path.join(changeDir, '.openspec.yaml'), 'schema: routed-schema\n');
+
+      const context = loadChangeContext(planningCheckout, 'my-change', undefined, {
+        changeDir,
+        projectSchemasDir,
+        projectConfig: { schema: 'routed-schema' },
+      });
+
+      expect(context.schemaName).toBe('routed-schema');
+      expect(context.graph.getName()).toBe('routed-schema');
+      expect(context.projectSchemasDir).toBe(projectSchemasDir);
+    });
+
     it('should fall back to default when no metadata and no explicit schema', () => {
       // Create change directory without metadata file
       const changeDir = path.join(tempDir, 'rasen', 'changes', 'my-change');

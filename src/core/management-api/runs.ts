@@ -13,8 +13,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { WORKSPACE_DIR_NAME } from '../config.js';
-import { resolveProjectHome, type ProjectHome } from '../project-home.js';
+import type { ProjectHome } from '../project-home.js';
 import { getActiveChangeIds } from '../../utils/item-discovery.js';
 import {
   readRunStateDetailed,
@@ -22,7 +21,6 @@ import {
   stateFileSearchChain,
   type StateFileLocationOptions,
 } from '../pipeline-registry/run-state.js';
-import { ephemeraDir } from '../file-placement.js';
 import {
   readPortfolioStateDetailed,
   resolvePortfolioStateLocation,
@@ -30,6 +28,17 @@ import {
 import type { RunState } from '../pipeline-registry/run-state.js';
 import type { PortfolioState } from '../pipeline-registry/portfolio-state.js';
 import type { ChangeRunEntry, GoalRunRaw, RunFileResult, RunsResponse } from './wire-types.js';
+import {
+  changeStateLocations,
+  resolveActiveChangeDir,
+  resolveExecutionHome,
+  resolveProjectContentSpace,
+  type ProjectSpaceInput,
+} from './project-space.js';
+
+export type RunsResult =
+  | { ok: true; response: RunsResponse }
+  | { ok: false; status: number; code: string; message: string };
 
 /** No typed reader module exists for this file (design D5); read as opaque raw JSON. */
 const GOAL_RUN_STATE_FILENAME = 'goal-run.json';
@@ -89,35 +98,37 @@ function readGoalRunDetailed(
  * server-driven path always passes its cached resolution instead, so a
  * board load resolves the home once, not once per endpoint.
  */
-export async function handleRuns(root: string, home?: ProjectHome | null): Promise<RunsResponse> {
-  const changesDir = path.join(root, WORKSPACE_DIR_NAME, 'changes');
-  const changeIds = await getActiveChangeIds(root);
+export function handleRuns(root: string, home?: ProjectHome | null): Promise<RunsResponse>;
+export function handleRuns(input: Exclude<ProjectSpaceInput, string>, home?: ProjectHome | null): Promise<RunsResult>;
+export async function handleRuns(
+  input: ProjectSpaceInput,
+  home?: ProjectHome | null
+): Promise<RunsResponse | RunsResult> {
+  const resolved = resolveProjectContentSpace(input);
+  if (!resolved.ok) return resolved;
+  const space = resolved.space;
+  const changeIds = await getActiveChangeIds(space.planningCheckoutRoot, space.changesDir);
+  const resolvedHome = await resolveExecutionHome(space, home);
 
-  let resolvedHome: ProjectHome | null;
-  if (home !== undefined) {
-    resolvedHome = home;
-  } else {
-    // Resolved once for the whole project — `ensure: false` is documented
-    // non-mutating (design D5): a project with no identity/registry entry
-    // yet simply resolves to null, and every change falls back to its
-    // changeDir's legacy location.
+  const runs: ChangeRunEntry[] = [];
+  for (const name of changeIds) {
     try {
-      resolvedHome = await resolveProjectHome(root, { ensure: false });
-    } catch {
-      resolvedHome = null;
+      runs.push(buildChangeRunEntry(
+        name,
+        await resolveActiveChangeDir(space, name),
+        changeStateLocations(space, resolvedHome, name)
+      ));
+    } catch (error) {
+      runs.push({
+        name,
+        kind: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
-  // The selected space's root IS the execution root for a server-driven read
-  // (the board reads the checkout it was launched against).
-  const runs: ChangeRunEntry[] = changeIds.map((name) =>
-    buildChangeRunEntry(name, path.join(changesDir, name), {
-      ephemeraDir: ephemeraDir(root, name),
-      workDir: resolvedHome ? resolvedHome.workDir(name) : null,
-    })
-  );
-
-  return { runs };
+  const response = { runs };
+  return typeof input === 'string' ? response : { ok: true, response };
 }
 
 /**

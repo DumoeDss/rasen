@@ -12,15 +12,18 @@ const ARCHIVE_DIR = 'archive';
 export class ChangeCommand {
   private converter: JsonConverter;
   private rootPath?: string;
+  private changesDir?: string;
 
   // rootPath is set only by root-aware callers (top-level `show`).
-  constructor(rootPath?: string) {
+  constructor(rootPath?: string, changesDir?: string) {
     this.converter = new JsonConverter();
     this.rootPath = rootPath;
+    this.changesDir = changesDir;
   }
 
   private getChangesPath(): string {
-    return path.join(this.rootPath ?? process.cwd(), WORKSPACE_DIR_NAME, 'changes');
+    return this.changesDir ??
+      path.join(this.rootPath ?? process.cwd(), WORKSPACE_DIR_NAME, 'changes');
   }
 
   /**
