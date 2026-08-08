@@ -3,6 +3,7 @@ import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import type {
   ArchivedChangeSummary,
+  ArchiveNarrowing,
   SessionListEntry,
   SpaceEntry,
   SpaceMember,
@@ -30,6 +31,7 @@ export function ArchivePage() {
   const space = useSpace();
   const selector = space?.selector;
   const [changes, setChanges] = useState<ArchivedChangeSummary[] | null>(null);
+  const [narrowing, setNarrowing] = useState<ArchiveNarrowing | null>(null);
   const [sessions, setSessions] = useState<SessionListEntry[]>([]);
   const [spaces, setSpaces] = useState<SpaceEntry[]>([]);
   const [pageError, setPageError] = useState<{ message: string; fix?: string } | null>(null);
@@ -46,6 +48,7 @@ export function ArchivePage() {
     setPageError(null);
     setSelectedMember(null);
     setQuery('');
+    setNarrowing(null);
     // Sessions are fetched for member-provenance attribution (design D4); an
     // archived Task with no live session degrades to "All" — the documented
     // ceiling, not a bug.
@@ -53,6 +56,7 @@ export function ArchivePage() {
       .then(([archiveRes, sessionsRes]) => {
         if (cancelled) return;
         setChanges(archiveRes.changes);
+        setNarrowing(archiveRes.narrowing ?? null);
         setSessions(sessionsRes.sessions);
       })
       .catch((err) => {
@@ -119,7 +123,11 @@ export function ArchivePage() {
     return (
       <div class="archive-page__empty" data-testid="archive-empty">
         <h2>{t('archive.title')}</h2>
-        <p>{t('archive.empty')}</p>
+        {narrowing ? (
+          <p data-testid="archive-narrowed">{narrowing.reason}</p>
+        ) : (
+          <p>{t('archive.empty')}</p>
+        )}
       </div>
     );
   }

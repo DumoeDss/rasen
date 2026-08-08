@@ -1710,8 +1710,8 @@ rasen archive update-ci-config --skip-specs
 
 1. Validates the change (unless `--no-validate`)
 2. Prompts for confirmation (unless `--yes`)
-3. Merges delta specs into `rasen/specs/`
-4. Moves change folder to `rasen/changes/archive/YYYY-MM-DD-<name>/`
+3. Merges delta specs into `rasen/specs/` (standalone; in a Store v2 project scope, into `rasen/projects/<projectId>/specs/`)
+4. Moves change folder to `rasen/changes/archive/YYYY-MM-DD-<name>/` (standalone; in a Store v2 project scope, into `rasen/projects/<projectId>/changes/archive/<targetLineId>/`)
 5. Captures a quality summary (scanned files + metric-line counts) into the archive's metadata
 
 In the full delivery flow, archive runs **after** the profile's retention step (`ship → retain → archive`). It preserves whatever retention produced — a report-mode `retro.md` is moved with the rest of the change — but archive itself performs no reporting or codification.
@@ -2198,7 +2198,8 @@ contract you are reading:
   so a consumer expecting only the older form stops instead of inheriting a
   root it never asked for.
 
-Inside a Store session that works on a project checkout:
+Inside a Store session that works on a project checkout (standalone mode;
+Store v2 uses per-project partitions — see the Store user guide):
 
 ```json
 {

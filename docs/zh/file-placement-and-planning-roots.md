@@ -144,6 +144,12 @@ machine root 不作为 Archive 的权威位置。
 
 因此 Store 模式下：
 
+> **SUPERSEDED in part** — In Store layout v2, planning content lives under
+> per-project partitions (`rasen/projects/<projectId>/`) rather than a flat
+> Store-wide tree. Design docs are per-project, not shared Store-wide. See
+> [`docs/zh/store-project-partitions-and-planning-worktrees.md`](store-project-partitions-and-planning-worktrees.md).
+> The probe and ephemera conclusions below remain in force.
+
 - proposal、design、specs、design-docs、evidence、handoff、Archive 位于 Store；
 - probe 代码和 ephemera 位于选中的代码 project/worktree；
 - Store 不得因为自己的切片或 DAG 结构决定用户代码目录。
@@ -165,7 +171,12 @@ test plan 与 design audit。
 
 这一类的作用域是 **root 级而非 Change 级**：它在 Change 尚不存在时就已
 产出，后续多个 Change 引用它，并通过 `Supersedes:` 字段形成跨 Change 的
-修订链。同一 Store 下的多个 execution project 共享同一批设计文档。
+修订链。
+
+> **SUPERSEDED** — "同一 Store 下的多个 execution project 共享同一批设计文档"
+> is no longer accurate for Store layout v2: design docs are partitioned
+> per-project. See
+> [`docs/zh/store-project-partitions-and-planning-worktrees.md`](store-project-partitions-and-planning-worktrees.md).
 
 落点：
 
@@ -448,6 +459,12 @@ root 可记录 `planningBranch: null` 与已定义 tree state；Git、evidence�
 
 ## Store 路径
 
+> **SUPERSEDED** — The flat Store tree below describes the pre-v2 layout.
+> Store layout v2 partitions planning content under
+> `rasen/projects/<projectId>/`. See
+> [`docs/zh/store-project-partitions-and-planning-worktrees.md`](store-project-partitions-and-planning-worktrees.md)
+> for the current design. The tree is retained as historical reference.
+
 ```text
 <Store>/
 └─ rasen/
@@ -473,6 +490,13 @@ root 可记录 `planningBranch: null` 与已定义 tree state；Git、evidence�
 
 Store-aware consumer 在入口冻结上述两棵树：Store 只拥有 planning paths，
 当前选中的 member checkout/worktree 拥有 execution paths 与 legacy-home lookup。
+
+> **SUPERSEDED** — `--store` and `--project` are no longer mutually exclusive.
+> In Store layout v2 they are orthogonal selectors: `--store` selects the Store,
+> `--project` selects the project partition within it. See
+> [`docs/zh/store-project-partitions-and-planning-worktrees.md`](store-project-partitions-and-planning-worktrees.md).
+> The Store-aware consumer freezing rule above remains in force.
+
 `rasen work migrate --store <id>` 与 `--project <id>` 使用共享且互斥的 selector；
 preview 后 cwd、注册表或 Store membership 改变也不能重新解析。Sessions 的
 planning filter 继续使用记录的 space，但 ephemera 和 legacy work join 只使用

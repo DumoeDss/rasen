@@ -3,6 +3,8 @@ import { isKebabId } from '../id.js';
 declare const projectIdBrand: unique symbol;
 declare const targetLineIdBrand: unique symbol;
 declare const changeIdBrand: unique symbol;
+declare const issueIdBrand: unique symbol;
+declare const executionPlanRevisionIdBrand: unique symbol;
 declare const gitRefBrand: unique symbol;
 declare const gitOidBrand: unique symbol;
 declare const sha256DigestBrand: unique symbol;
@@ -11,6 +13,10 @@ declare const portableRelativePathBrand: unique symbol;
 export type ProjectId = string & { readonly [projectIdBrand]: true };
 export type TargetLineId = string & { readonly [targetLineIdBrand]: true };
 export type ChangeId = string & { readonly [changeIdBrand]: true };
+export type IssueId = string & { readonly [issueIdBrand]: true };
+export type ExecutionPlanRevisionId = string & {
+  readonly [executionPlanRevisionIdBrand]: true;
+};
 export type FullGitRef = string & { readonly [gitRefBrand]: true };
 export type GitOid = string & { readonly [gitOidBrand]: true };
 export type Sha256Digest = string & { readonly [sha256DigestBrand]: true };
@@ -24,6 +30,8 @@ export type StorePlanningValidationErrorCode =
   | 'invalid_target_line_catalog'
   | 'invalid_planning_identity'
   | 'invalid_archive_v2'
+  | 'invalid_issue_record'
+  | 'invalid_execution_plan'
   | 'planning_path_escape';
 
 export class StorePlanningValidationError extends Error {
@@ -161,6 +169,91 @@ export function isChangeId(value: unknown): value is ChangeId {
   } catch {
     return false;
   }
+}
+
+/**
+ * A Store-level Issue identifier, on exactly the portable canonical-segment
+ * contract a v2 project id satisfies. An Issue directory is a real path
+ * segment on every platform this ships to, so it inherits the same rejections
+ * — traversal, separators, control characters, trailing dot or space, Windows
+ * device names, and non-canonical case — and NEVER sanitizes an invalid value
+ * into a different identifier.
+ */
+export function parseIssueId(value: string, field = 'issueId'): IssueId {
+  assertPortableSegment(value, field);
+  if (!isKebabId(value)) {
+    throw invalid(field, 'must be a canonical lowercase kebab id');
+  }
+  return value as IssueId;
+}
+
+export function isIssueId(value: unknown): value is IssueId {
+  if (typeof value !== 'string') return false;
+  try {
+    parseIssueId(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The fixed width of an Execution Plan revision ordinal. */
+export const EXECUTION_PLAN_REVISION_WIDTH = 4;
+
+const EXECUTION_PLAN_REVISION_PATTERN = /^[0-9]{4}$/u;
+
+/**
+ * An Execution Plan revision identifier: a canonical zero-padded decimal
+ * ordinal of fixed width. An ordinal answers "which is latest" without opening
+ * every file, which a content digest cannot. `0000` is rejected because there
+ * is no zeroth revision, and any spelling that is not the canonical rendering
+ * of its own number is rejected rather than normalized — two spellings of one
+ * ordinal would be two addresses for one revision.
+ */
+export function parseExecutionPlanRevisionId(
+  value: string,
+  field = 'revisionId'
+): ExecutionPlanRevisionId {
+  assertPortableSegment(value, field);
+  if (!EXECUTION_PLAN_REVISION_PATTERN.test(value)) {
+    throw invalid(
+      field,
+      `must be a ${EXECUTION_PLAN_REVISION_WIDTH}-digit zero-padded decimal ordinal`
+    );
+  }
+  const ordinal = Number.parseInt(value, 10);
+  if (ordinal < 1) throw invalid(field, 'must be an ordinal of at least 1');
+  if (formatExecutionPlanRevisionId(ordinal) !== value) {
+    throw invalid(field, 'must be the canonical spelling of its own ordinal');
+  }
+  return value as ExecutionPlanRevisionId;
+}
+
+export function isExecutionPlanRevisionId(
+  value: unknown
+): value is ExecutionPlanRevisionId {
+  if (typeof value !== 'string') return false;
+  try {
+    parseExecutionPlanRevisionId(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The canonical rendering of an ordinal. The only way a revision id is minted. */
+export function formatExecutionPlanRevisionId(ordinal: number): ExecutionPlanRevisionId {
+  if (!Number.isSafeInteger(ordinal) || ordinal < 1) {
+    throw invalid('revisionOrdinal', 'must be a positive safe integer');
+  }
+  const rendered = String(ordinal).padStart(EXECUTION_PLAN_REVISION_WIDTH, '0');
+  if (rendered.length > EXECUTION_PLAN_REVISION_WIDTH) {
+    throw invalid(
+      'revisionOrdinal',
+      `exceeds the ${EXECUTION_PLAN_REVISION_WIDTH}-digit revision width`
+    );
+  }
+  return rendered as ExecutionPlanRevisionId;
 }
 
 /** Conservative, pure subset of `git check-ref-format` for full refs. */

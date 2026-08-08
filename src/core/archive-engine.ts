@@ -27,6 +27,14 @@ import {
   type ResolveArchiveAccountingInput,
 } from './archive-accounting.js';
 import {
+  resolveArchiveV2Accounting,
+  verifyArchiveV2Accounting,
+  writeArchiveV2Json,
+  type ArchiveV2IdentityPreimages,
+  type ArchiveV2RecordDraft,
+  type PreparedArchiveV2Accounting,
+} from './archive-accounting-v2.js';
+import {
   NATIVE_PATH_IDENTITY_FLAVOR,
   pathIdentityEquals,
   type PathIdentityFlavor,
@@ -70,6 +78,7 @@ export type ArchiveBlockerOperation =
   | 'spec'
   | 'publish'
   | 'accounting'
+  | 'association'
   | 'cleaner-apply'
   | 'source-remove'
   | 'journal';
@@ -195,6 +204,112 @@ export interface ArchiveQualityInput {
   sha256: string;
 }
 
+/**
+ * One semantic lock a Store v2 finalization holds while it applies. The engine
+ * neither derives nor acquires these — it carries them so the plan records
+ * which locks the operation ran under and the finalization Module can take them
+ * in its own fixed order.
+ */
+export interface ArchiveFinalizationLockKey {
+  kind: 'scope' | 'workspace' | 'change' | 'integration';
+  material: Record<string, string>;
+  label: string;
+}
+
+/**
+ * What the `association-finalized` phase must reach. A scope with no workspace
+ * pair declares the phase a no-op IN ADVANCE, so "nothing to do" is a planned
+ * outcome rather than a silent skip.
+ */
+export interface ArchiveAssociationPlan {
+  noop: boolean;
+  /** Why the phase is a no-op; present only when `noop` is true. */
+  reason?: string;
+  planningScopeId?: string;
+  changeId?: string;
+  changeInstanceId?: string;
+  workspacePairId?: string;
+  /** Absolute `.rasen/planning-binding.json` on the execution side. */
+  executionAssociationPath?: string;
+  /** Machine data directory holding the workspace index. */
+  globalDataDir?: string;
+  /** What a repair may write, all of it already true on disk at plan time. */
+  expected?: {
+    storeUid: string;
+    storeId: string;
+    projectId: string;
+    targetLineId: string;
+    planning: {
+      root: string;
+      repositoryIdentity: string;
+      worktreeInstanceId: string;
+      ref: string;
+      headOid: string;
+    };
+    execution: {
+      root: string;
+      repositoryIdentity: string;
+      worktreeInstanceId: string;
+      ref: string;
+      headOid: string;
+    };
+  };
+}
+
+/**
+ * The frozen facts a finalization re-proves under its locks before the first
+ * write, for the preconditions the record itself does not carry.
+ *
+ * They live on the PLAN and not on the plan token deliberately. `rasen archive
+ * --apply-plan` is the only surface a saved plan is ever applied through, and
+ * it is the mutating half of the management-API bridge — and it carries no
+ * token. A precondition reachable only from a token is a precondition the
+ * shipping surface does not have.
+ */
+export interface ArchiveFinalizationRevalidation {
+  /** The target-line catalog this plan's address and refs were frozen from. */
+  targetLine: {
+    catalogPath: string;
+    /** sha256 of the catalog text at plan time; re-read and compared at apply. */
+    catalogDigest: string;
+  };
+  /**
+   * The committed blob a `superseded` outcome's successor was resolved from.
+   * Absent for every other outcome. Re-read at apply so a record can never
+   * name a successor that has since been removed from the ref it was found at.
+   */
+  successor?: {
+    changeInstanceId: string;
+    foundAtRef: string;
+    blobPath: string;
+    digest: string;
+  };
+}
+
+/**
+ * The optional Store v2 finalization block. Absent for standalone and legacy
+ * flat Store archives, which behave exactly as they did before this field
+ * existed: no outcome, no v2 record, no destination override, no association
+ * phase, no locks.
+ */
+export interface ArchivePlanFinalization {
+  outcome: 'landed' | 'superseded' | 'cancelled' | 'abandoned';
+  /** Everything the record holds except the facts only the published tree supplies. */
+  record: ArchiveV2RecordDraft;
+  identity: ArchiveV2IdentityPreimages;
+  /** The Foundation-computed entry address; equals `paths.final`. */
+  destination: string;
+  association: ArchiveAssociationPlan;
+  /**
+   * Required, not optional: an optional field is one an apply path can find
+   * absent and skip, which is the shape of the defect this exists to close.
+   * Every producer of a finalization block is in this same change, so there is
+   * no stored plan that predates it.
+   */
+  revalidation: ArchiveFinalizationRevalidation;
+  lockKeys: ArchiveFinalizationLockKey[];
+}
+
 export interface ArchivePlan {
   schemaVersion: typeof ARCHIVE_PLAN_VERSION;
   transactionId: string;
@@ -217,6 +332,12 @@ export interface ArchivePlan {
     storeUid?: string;
     projectId?: string;
   };
+  /**
+   * Present only for a Store v2 finalization. Its presence — never a path
+   * substring and never the content of an existing `archive.json` — is what
+   * selects the Archive v2 accounting writer and the association phase.
+   */
+  finalization?: ArchivePlanFinalization;
   paths: {
     active: string;
     archiveParent: string;
@@ -278,6 +399,7 @@ export interface ArchivePlan {
       | 'publish'
       | 'clean-ephemera'
       | 'write-accounting'
+      | 'finalize-association'
       | 'remove-active'
       | 'complete-journal';
     path: string;
@@ -295,6 +417,7 @@ export type ArchiveJournalPhase =
   | 'published'
   | 'cleaner-progress'
   | 'accounting-finalized'
+  | 'association-finalized'
   | 'source-removed'
   | 'complete'
   | 'failed';
@@ -489,6 +612,30 @@ export interface ArchiveEngineAdapters {
     accounting: ArchiveAccounting
   ): Promise<void>;
   writeArchiveJson(archivedDir: string, accounting: ArchiveAccounting): Promise<void>;
+  /**
+   * The Archive v2 trio, dispatched on `plan.finalization` rather than on the
+   * content of any file. Standalone and legacy flat archives never reach them.
+   */
+  resolveArchiveV2Accounting(input: {
+    archivedDir: string;
+    draft: ArchiveV2RecordDraft;
+    identity: ArchiveV2IdentityPreimages;
+  }): Promise<PreparedArchiveV2Accounting>;
+  verifyArchiveV2Accounting(
+    archivedDir: string,
+    prepared: PreparedArchiveV2Accounting
+  ): Promise<void>;
+  writeArchiveV2Json(
+    archivedDir: string,
+    prepared: PreparedArchiveV2Accounting
+  ): Promise<void>;
+  /**
+   * Completes the workspace association inside the transaction. The default
+   * refuses rather than silently skipping, because the engine cannot reach the
+   * machine workspace index without importing the finalization Module (which
+   * imports the engine). The Module supplies the real implementation.
+   */
+  finalizeArchiveAssociation(input: { plan: ArchivePlan }): Promise<void>;
 }
 
 export const defaultArchiveEngineAdapters: ArchiveEngineAdapters = {
@@ -534,6 +681,15 @@ export const defaultArchiveEngineAdapters: ArchiveEngineAdapters = {
   resolveArchiveAccounting,
   verifyArchiveAccounting,
   writeArchiveJson,
+  resolveArchiveV2Accounting,
+  verifyArchiveV2Accounting,
+  writeArchiveV2Json,
+  finalizeArchiveAssociation: async ({ plan }) => {
+    if (plan.finalization === undefined || plan.finalization.association.noop) return;
+    throw new Error(
+      'Archive association completion requires the finalization Module adapter; the default engine adapter cannot reach the machine workspace index.'
+    );
+  },
 };
 
 function errorCode(error: unknown): string | undefined {
@@ -916,19 +1072,38 @@ export interface ArchiveTransactionPaths {
   publishedJournal: string;
 }
 
+export interface ResolveArchiveTransactionPathsOptions {
+  /**
+   * An explicit final destination, supplied by a Store v2 finalization from the
+   * Foundation layout contract. It must be a direct child of `archiveParent` so
+   * publication stays a same-volume rename from the sibling stage directory.
+   */
+  finalPath?: string;
+}
+
 export function resolveArchiveTransactionPaths(
   archiveParent: string,
   date: string,
   change: string,
   transactionId: string,
-  pathApi: ArchivePathApi = path
+  pathApi: ArchivePathApi = path,
+  options: ResolveArchiveTransactionPathsOptions = {}
 ): ArchiveTransactionPaths {
   const resolvedParent = pathApi.resolve(archiveParent);
   const stage = pathApi.join(
     resolvedParent,
     `.rasen-archive-stage-${transactionId}`
   );
-  const final = pathApi.join(resolvedParent, `${date}-${change}`);
+  let final = pathApi.join(resolvedParent, `${date}-${change}`);
+  if (options.finalPath !== undefined) {
+    const override = pathApi.resolve(options.finalPath);
+    if (pathApi.dirname(override) !== resolvedParent) {
+      throw new Error(
+        `Archive destination override ${override} is not a direct child of the archive parent ${resolvedParent}; publication must stay a same-volume rename from its sibling stage directory.`
+      );
+    }
+    final = override;
+  }
   return {
     archiveParent: resolvedParent,
     stage,
@@ -938,13 +1113,24 @@ export function resolveArchiveTransactionPaths(
   };
 }
 
+/**
+ * A published entry name for `change`, in either shape: the flat
+ * `YYYY-MM-DD-<change>` a standalone or legacy archive writes, or the Store v2
+ * `YYYY-MM-DD-<change>--<instanceShort>` a finalization writes. The instance
+ * suffix is a lowercase hex digest prefix, so the split is unambiguous even for
+ * a Change alias that itself contains a double hyphen.
+ */
 export function archiveDatePrefixedNameMatches(
   candidate: string,
   change: string,
   flavor: PathIdentityFlavor = NATIVE_PATH_IDENTITY_FLAVOR
 ): boolean {
   const match = candidate.match(/^\d{4}-\d{2}-\d{2}-(.+)$/);
-  return !!match && pathIdentityEquals(match[1], change, flavor);
+  if (!match) return false;
+  const rest = match[1];
+  if (pathIdentityEquals(rest, change, flavor)) return true;
+  const suffixed = rest.match(/^(.+)--([0-9a-f]+)$/);
+  return !!suffixed && pathIdentityEquals(suffixed[1], change, flavor);
 }
 
 export function isArchiveContainedPath(
@@ -1309,6 +1495,11 @@ export interface CreateArchivePlanInput {
   executionRoot: string;
   /** The planning scope the plan is created under; see `ArchivePlan['scope']`. */
   scope?: ArchivePlan['scope'];
+  /**
+   * The Store v2 finalization block. Absent for standalone and legacy flat
+   * archives, whose behavior is unchanged by this seam.
+   */
+  finalization?: ArchivePlanFinalization;
   activePath: string;
   archiveParent: string;
   ephemeraPath: string;
@@ -1516,7 +1707,11 @@ export async function createArchivePlan(
     input.archiveParent,
     input.date,
     input.change,
-    transactionId
+    transactionId,
+    path,
+    input.finalization === undefined
+      ? {}
+      : { finalPath: input.finalization.destination }
   );
   let sourceFingerprint: ArchiveTreeFingerprint | null = null;
   let source: ArchivePlan['preconditions']['source'] = 'missing';
@@ -1695,6 +1890,14 @@ export async function createArchivePlan(
     ['publish', finalPath],
     ['clean-ephemera', input.ephemeraPath],
     ['write-accounting', path.join(finalPath, 'archive.json')],
+    ...(input.finalization === undefined
+      ? []
+      : ([
+          [
+            'finalize-association',
+            input.finalization.association.executionAssociationPath ?? finalPath,
+          ],
+        ] as const)),
     ['remove-active', input.activePath],
     ['complete-journal', path.join(finalPath, ARCHIVE_JOURNAL_FILENAME)],
   ] as const) {
@@ -1711,6 +1914,7 @@ export async function createArchivePlan(
       execution: path.resolve(input.executionRoot),
     },
     ...(input.scope === undefined ? {} : { scope: input.scope }),
+    ...(input.finalization === undefined ? {} : { finalization: input.finalization }),
     paths: {
       active: path.resolve(input.activePath),
       archiveParent: transactionPaths.archiveParent,
@@ -2072,8 +2276,9 @@ const JOURNAL_PHASE_ORDER: Record<ArchiveJournalPhase, number> = {
   published: 5,
   'cleaner-progress': 6,
   'accounting-finalized': 7,
-  'source-removed': 8,
-  complete: 9,
+  'association-finalized': 8,
+  'source-removed': 9,
+  complete: 10,
   failed: -1,
 };
 
@@ -3515,8 +3720,8 @@ export async function applyArchive(
     }
   }
 
-  async function projectAccountingTransform(
-    accounting: ArchiveAccounting
+  async function projectAccountingContentTransform(
+    content: string
   ): Promise<ArchiveTreeFingerprint> {
     const projection = path.join(
       plan.paths.archiveParent,
@@ -3527,13 +3732,19 @@ export async function applyArchive(
       await copyArchivePayload(plan.paths.final, projection, adapters);
       await adapters.fs.writeFile(
         path.join(projection, 'archive.json'),
-        serializeArchiveAccounting(accounting),
+        content,
         { flag: 'wx' }
       );
       return await fingerprintArchiveTree(projection, adapters);
     } finally {
       await adapters.fs.rm(projection, { recursive: true, force: true });
     }
+  }
+
+  async function projectAccountingTransform(
+    accounting: ArchiveAccounting
+  ): Promise<ArchiveTreeFingerprint> {
+    return projectAccountingContentTransform(serializeArchiveAccounting(accounting));
   }
 
   async function verifyRecordedPayloadForResume(): Promise<void> {
@@ -4352,26 +4563,44 @@ export async function applyArchive(
     if (!phaseAtLeast(currentPhase, 'accounting-finalized')) {
       currentOperation = 'accounting';
       currentOperationPath = path.join(plan.paths.final, 'archive.json');
-      const accounting = await adapters.resolveArchiveAccounting({
-        changeName: plan.change,
-        archivedDir: plan.paths.final,
-        executionRoot: plan.roots.execution,
-        planningRoot: plan.roots.planning,
-        ephemeraDiscarded: ephemeraDisposed,
-        handoffAbsorbed: handoffAccounting(plan),
-        probes: plan.sidecar.probes,
-        archivedAt: plan.createdAt,
-        gitFacts: {
-          codeCommit: plan.git.execution.codeCommit,
-          planningBranch: plan.git.planning.branch,
-          planningTreeState: plan.git.planning.treeState,
-        },
-      });
+      // Which record schema is written is decided from the plan's recorded
+      // finalization block, never from the content of any file at the
+      // destination and never from a path substring.
+      const finalization = plan.finalization;
+      const preparedV2 =
+        finalization === undefined
+          ? undefined
+          : await adapters.resolveArchiveV2Accounting({
+              archivedDir: plan.paths.final,
+              draft: finalization.record,
+              identity: finalization.identity,
+            });
+      const accounting =
+        finalization !== undefined
+          ? undefined
+          : await adapters.resolveArchiveAccounting({
+              changeName: plan.change,
+              archivedDir: plan.paths.final,
+              executionRoot: plan.roots.execution,
+              planningRoot: plan.roots.planning,
+              ephemeraDiscarded: ephemeraDisposed,
+              handoffAbsorbed: handoffAccounting(plan),
+              probes: plan.sidecar.probes,
+              archivedAt: plan.createdAt,
+              gitFacts: {
+                codeCommit: plan.git.execution.codeCommit,
+                planningBranch: plan.git.planning.branch,
+                planningTreeState: plan.git.planning.treeState,
+              },
+            });
       const beforeAccounting = await fingerprintArchiveTree(
         plan.paths.final,
         adapters
       );
-      const expectedAccounting = await projectAccountingTransform(accounting);
+      const expectedAccounting =
+        preparedV2 === undefined
+          ? await projectAccountingTransform(accounting!)
+          : await projectAccountingContentTransform(preparedV2.content);
       await recordIntentFingerprint(
         'accounting-finalized',
         'final',
@@ -4379,7 +4608,11 @@ export async function applyArchive(
         expectedAccounting,
         journalPath
       );
-      await adapters.writeArchiveJson(plan.paths.final, accounting);
+      if (preparedV2 === undefined) {
+        await adapters.writeArchiveJson(plan.paths.final, accounting!);
+      } else {
+        await adapters.writeArchiveV2Json(plan.paths.final, preparedV2);
+      }
       currentOperation = 'journal';
       currentOperationPath = journalPath;
       const accountingFingerprint = await fingerprintArchiveTree(
@@ -4408,10 +4641,37 @@ export async function applyArchive(
       currentPhase = 'accounting-finalized';
     }
 
+    // The binding's terminal state is a phase of THIS transaction, ordered
+    // after the record is durable and before the active source is removed. A
+    // failure here leaves the entry published and the journal naming this
+    // phase, so re-applying the same token completes it once the disagreement
+    // is repaired. A scope with no workspace pair declared the phase a no-op in
+    // advance, and the adapter honours that declaration rather than inventing a
+    // binding.
+    if (
+      plan.finalization !== undefined &&
+      !phaseAtLeast(currentPhase, 'association-finalized')
+    ) {
+      currentOperation = 'association';
+      currentOperationPath =
+        plan.finalization.association.executionAssociationPath ?? plan.paths.final;
+      await adapters.finalizeArchiveAssociation({ plan });
+      currentOperation = 'journal';
+      currentOperationPath = journalPath;
+      await persistJournalPhase(journalPath, 'association-finalized');
+      currentPhase = 'association-finalized';
+    }
+
     currentOperation = 'source-remove';
     if (!journalSnapshot) {
       throw new Error('Archive source deletion requires a durable journal.');
     }
+    // The phase the journal holds while source removal is in flight. It is the
+    // last COMPLETED phase, which gains an entry for a Store v2 finalization;
+    // persisting the v1 literal there would regress a v2 journal below the
+    // association phase it has already passed.
+    const sourceRemovalJournalPhase: ArchiveJournalPhase =
+      plan.finalization === undefined ? 'accounting-finalized' : 'association-finalized';
     const sourceQuarantine = journalSnapshot.sourceProgress.quarantine;
     const sourceClaimRoot = path.dirname(sourceQuarantine);
     if (!sourceClaimedAtStart) {
@@ -4434,7 +4694,7 @@ export async function applyArchive(
       }
       journalSnapshot.sourceProgress.state = 'delete-intent';
       currentOperationPath = plan.paths.active;
-      await persistJournalPhase(journalPath, 'accounting-finalized');
+      await persistJournalPhase(journalPath, sourceRemovalJournalPhase);
       try {
         await adapters.fs.mkdir(sourceClaimRoot);
       } catch (error) {
@@ -4469,7 +4729,7 @@ export async function applyArchive(
         journalSnapshot.sourceProgress.state = 'conflict';
         journalSnapshot.sourceProgress.error =
           'Claimed source does not match planned deletion authority.';
-        await persistJournalPhase(journalPath, 'accounting-finalized');
+        await persistJournalPhase(journalPath, sourceRemovalJournalPhase);
         const conflict = new Error(
           `Claimed source identity mismatch; retained at ${sourceQuarantine}`
         );
@@ -4477,9 +4737,9 @@ export async function applyArchive(
         throw conflict;
       }
       journalSnapshot.sourceProgress.state = 'claimed';
-      await persistJournalPhase(journalPath, 'accounting-finalized');
+      await persistJournalPhase(journalPath, sourceRemovalJournalPhase);
       journalSnapshot.sourceProgress.state = 'removing';
-      await persistJournalPhase(journalPath, 'accounting-finalized');
+      await persistJournalPhase(journalPath, sourceRemovalJournalPhase);
       await removeClaimedArchiveTreeGuarded(
         sourceQuarantine,
         plan.sourceFingerprint,

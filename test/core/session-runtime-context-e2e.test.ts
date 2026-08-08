@@ -13,6 +13,7 @@ import { registerStore } from '../../src/core/store/registry.js';
 import { writeStoreProjectRecord } from '../../src/core/store/project-records.js';
 import {
   RASEN_SESSION_CONTEXT_ENV,
+  RUNTIME_CONTEXT_VERSION,
   buildRuntimeContext,
   readSessionRuntimeContext,
   writeSessionRuntimeContext,
@@ -309,7 +310,9 @@ describe('session runtime context end to end', () => {
     const withContext = await resolveFrozenExecutionBinding({
       frozen: { kind: 'project', projectId: 'twin-project' },
       sessionContext: {
-        version: 1,
+        // Tracks the current context-file version rather than pinning a
+        // literal, which `store-planning-worktree-bindings` raised to 2.
+        version: RUNTIME_CONTEXT_VERSION,
         sessionId: 'session-twin',
         planning: { type: 'project', projectId: 'twin-project', root: cloneB },
         execution: { kind: 'project', projectId: 'twin-project', root: cloneB },

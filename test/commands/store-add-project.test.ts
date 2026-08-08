@@ -6,7 +6,11 @@ import * as path from 'node:path';
 import { getGlobalDataDir, registerStore } from '../../src/core/index.js';
 import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
 import { snapshotDirectory as snapshot } from '../helpers/fs-snapshot.js';
-import { createOpenSpecRoot, writeSpec } from '../helpers/rasen-fixtures.js';
+import {
+  createOpenSpecRoot,
+  seedFlatStoreChange,
+  writeSpec,
+} from '../helpers/rasen-fixtures.js';
 
 describe('store add-project', () => {
   let tempDir: string;
@@ -169,11 +173,10 @@ describe('store add-project', () => {
     );
     expect(add.exitCode).toBe(0);
 
-    const changeResult = await runCLI(
-      ['new', 'change', 'store-scoped', '--json', '--store', 'team-context'],
-      { cwd: tempDir, env }
-    );
-    expect(changeResult.exitCode).toBe(0);
+    // Seeded rather than created: this case's subject is the reference index,
+    // and a legacy flat store now refuses `new change` (see
+    // `seedFlatStoreChange`).
+    seedFlatStoreChange(targetStoreRoot, 'store-scoped');
 
     const instructions = await runCLI(
       ['instructions', 'proposal', '--change', 'store-scoped', '--store', 'team-context', '--json'],

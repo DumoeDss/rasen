@@ -17,7 +17,7 @@ This is an **agent-driven** operation - you will read delta specs and directly e
 
 ${STORE_SELECTION_GUIDANCE}
 
-**Store spec-sync hard gate:** inspect the first resolved CLI payload before editing any spec. If root.scope.kind is 'store-project', REFUSE with 'store_v2_finalization_unavailable' — Store project spec locators stay read-only until landed-only sync is available. Any other scope, including 'legacy-store', proceeds normally.
+**Store spec-sync hard gate:** inspect the first resolved CLI payload before editing any spec. If root.scope.kind is 'store-project', REFUSE to write that project's canonical specs and report that Store v2 canonical specs change ONLY as part of a landed change finalization: name \`rasen archive <change> --outcome landed\` as the route, and apply no delta. This is the out-of-band path being closed — a delta must not reach a partition's canonical specs without an outcome, a reachability proof, and an Archive v2 record. If root.scope.kind is 'legacy-store', REFUSE with 'legacy_flat_store_requires_migration' — the legacy flat Store planning tree is read-only until 'rasen store migrate-layout <store-id>' has migrated it. Any other scope proceeds normally.
 
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 

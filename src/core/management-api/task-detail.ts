@@ -37,6 +37,7 @@ import {
   resolveProjectContentSpace,
   type ProjectSpaceInput,
 } from './project-space.js';
+import type { ArchiveNarrowing } from './archive.js';
 import type {
   ChangeLoadError,
   TaskChildDetail,
@@ -44,7 +45,7 @@ import type {
 } from './wire-types.js';
 
 export type TaskDetailResult =
-  | { ok: true; response: TaskDetailResponse }
+  | { ok: true; response: TaskDetailResponse; narrowing?: ArchiveNarrowing }
   | { ok: false; status: number; code: string; message: string };
 
 /**
@@ -73,6 +74,16 @@ export async function handleTaskDetail(
   }
 
   const archiveDir = space.archiveDir ?? null;
+  // Same narrowing as `handleArchive`: a Store v2 project scope with no
+  // resolved target line supplies no archive-line path. Archived children are
+  // still enumerable from the machine-home union, but the result states which
+  // dimension was not addressed so the caller does not read a partial roster as
+  // the complete one.
+  const narrowedByTargetLine =
+    typeof input !== 'string' &&
+    input !== undefined &&
+    input.type === 'project' &&
+    input.archiveDir === undefined;
   const containers = findPortfolioContainers(space.changesDir);
 
   const activeIds = await getActiveChangeIds(space.planningCheckoutRoot, space.changesDir);
@@ -222,5 +233,17 @@ export async function handleTaskDetail(
     }
   }
 
-  return { ok: true, response: { task: { id, kind, label: id }, children, errors } };
+  return {
+    ok: true,
+    response: { task: { id, kind, label: id }, children, errors },
+    ...(narrowedByTargetLine
+      ? {
+          narrowing: {
+            dimension: 'target-line' as const,
+            reason:
+              'No target line was addressed; archived children for this project are organized per target line. Resolve a target line to see them.',
+          } satisfies ArchiveNarrowing,
+        }
+      : {}),
+  };
 }

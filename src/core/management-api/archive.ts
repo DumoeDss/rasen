@@ -25,8 +25,22 @@ import {
 } from './project-space.js';
 
 export type ArchiveResult =
-  | { ok: true; response: ArchiveResponse }
+  | { ok: true; response: ArchiveResponse; narrowing?: ArchiveNarrowing }
   | { ok: false; status: number; code: string; message: string };
+
+/**
+ * When the scope could not supply a dimension the archive listing is organized
+ * by (today: target line), the result carries this alongside the response so the
+ * caller can present the narrowing rather than rendering a partial list as the
+ * complete one. An empty list plus "no target line addressed" is a true answer;
+ * an empty list alone is a false one.
+ */
+export interface ArchiveNarrowing {
+  /** Which scope dimension was not addressed. */
+  dimension: 'target-line';
+  /** Human-readable reason the dimension was absent. */
+  reason: string;
+}
 
 /**
  * Lists the space's archived changes (design D1). Read-only: enumerates via
@@ -49,6 +63,18 @@ export async function handleArchive(
   const resolvedHome = await resolveExecutionHome(space, home);
   const archiveDir = space.archiveDir ?? null;
   const containers = findPortfolioContainers(space.changesDir);
+
+  // A Store v2 project scope with no resolved target line supplies no
+  // `archive-line` path, so `archiveDir` is absent. Rather than degrade to an
+  // empty listing indistinguishable from "this project has no archived changes",
+  // the result states the dimension that was not addressed. Standalone and
+  // legacy-flat spaces always supply `archiveDir`, so the narrowing never fires
+  // for them and their output is byte-identical to the pre-change behavior.
+  const narrowedByTargetLine =
+    typeof input !== 'string' &&
+    input !== undefined &&
+    input.type === 'project' &&
+    input.archiveDir === undefined;
 
   const changes: ArchivedChangeSummary[] = [];
   for (const dated of await getArchivedChangeIds(space.planningCheckoutRoot, {
@@ -74,5 +100,17 @@ export async function handleArchive(
     });
   }
 
-  return { ok: true, response: { changes } };
+  return {
+    ok: true,
+    response: { changes },
+    ...(narrowedByTargetLine
+      ? {
+          narrowing: {
+            dimension: 'target-line' as const,
+            reason:
+              'No target line was addressed; archived changes for this project are organized per target line. Resolve a target line to see them.',
+          },
+        }
+      : {}),
+  };
 }

@@ -283,7 +283,12 @@ describe('pipeline command store root selection', () => {
     );
   });
 
-  it('resume treats Store v2 Change metadata as a scope constraint', async () => {
+  // `store-planning-worktree-bindings`, "A Change cannot be re-pointed at
+  // another target line": a disagreement about the LINE is its own refusal and
+  // must name both lines, rather than collapsing into the generic identity
+  // mismatch that also covers a wrong Store or project. The constraint itself
+  // is unchanged — the Change is still refused and nothing is read or written.
+  it('resume refuses a Change frozen against another target line, naming both lines', async () => {
     const storeUid = await promoteStoreToV2Project(
       'team-context',
       'project-a',
@@ -317,9 +322,12 @@ describe('pipeline command store root selection', () => {
     );
 
     expect(result.exitCode).toBe(1);
-    expect(parseJson(result)).toMatchObject({
-      status: [{ code: 'change_identity_mismatch' }],
+    const payload = parseJson(result);
+    expect(payload).toMatchObject({
+      status: [{ code: 'target_line_mismatch' }],
     });
+    expect(payload.status[0].message).toContain('other-line');
+    expect(payload.status[0].message).toContain('line-0.2');
   });
 
   it('list and validate --pipelines report the same store pipeline set', async () => {

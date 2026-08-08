@@ -4,6 +4,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
 
+import { diagnoseLayoutMigration } from './layout-migration/diagnostics.js';
+import { diagnoseConsistency } from './consistency-gates.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { WORKSPACE_DIR_NAME } from '../config.js';
 import {
@@ -2007,6 +2009,72 @@ export async function doctorStores(
           }
         }
       }
+    }
+  }
+
+  // Store-side planning-layout health (`store-layout-v2-migration` task 10.4):
+  // flat refs, mixed residue, an unfinished run, unresolved ownership and
+  // shared specs, partition/catalog disagreement, a legacy membership record
+  // inside a v2 Store, legacy Archive records, and retained design docs. Every
+  // one of these is READ-ONLY and names its repair.
+  for (const store of inspected) {
+    if (store.type !== 'store') continue;
+    if (!store.openspecRoot.healthy) continue;
+    try {
+      diagnostics.push(
+        ...(await diagnoseLayoutMigration({
+          storeId: store.id,
+          ...(store.uid !== undefined ? { storeUid: store.uid } : {}),
+          storeRoot: store.root,
+        }))
+      );
+    } catch (failure) {
+      // A Store whose layout cannot be diagnosed is NOT a Store with no layout
+      // findings. `.catch(() => [])` reported the one state doctor exists to
+      // make loud as perfect health.
+      diagnostics.push(
+        makeStoreDiagnostic(
+          'warning',
+          'store_layout_diagnosis_failed',
+          `Planning-layout diagnosis for store '${store.id}' failed: ${
+            failure instanceof Error ? failure.message : String(failure)
+          }`,
+          {
+            target: 'store.layout',
+            fix: `Inspect ${store.root} and rerun 'rasen store doctor ${store.id}'.`,
+          }
+        )
+      );
+    }
+
+    // Store-side consistency gates (`store-v2-compat-hardening` task 5):
+    // target-line/project mismatches between an Archive entry's recorded
+    // facts and its holding partition, and entries naming undeclared target
+    // lines. Read-only, never repairs. Parity with `rasen doctor`'s
+    // `gatherStoreLayoutFindings` (task 4.9) — both doctors report the same
+    // findings.
+    try {
+      diagnostics.push(
+        ...(await diagnoseConsistency({
+          storeId: store.id,
+          ...(store.uid !== undefined ? { storeUid: store.uid } : {}),
+          storeRoot: store.root,
+        }))
+      );
+    } catch (failure) {
+      diagnostics.push(
+        makeStoreDiagnostic(
+          'warning',
+          'store_consistency_diagnosis_failed',
+          `Consistency diagnosis for store '${store.id}' failed: ${
+            failure instanceof Error ? failure.message : String(failure)
+          }`,
+          {
+            target: 'store.consistency',
+            fix: `Inspect ${store.root} and rerun 'rasen store doctor ${store.id}'.`,
+          }
+        )
+      );
     }
   }
 

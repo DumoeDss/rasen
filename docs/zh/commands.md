@@ -517,7 +517,7 @@ rasen-archive-change [change-name]
 - 检查产物完成状态
 - 检查任务完成情况（未完成时发出警告）
 - 如果增量规格尚未同步，提供同步选项
-- 将变更文件夹移至 `rasen/changes/archive/YYYY-MM-DD-<name>/`
+- 将变更文件夹移至 `rasen/changes/archive/YYYY-MM-DD-<name>/`（standalone 模式；Store v2 项目作用域下为 `rasen/projects/<projectId>/changes/archive/<targetLineId>/`）
 - 保留所有产物以供审计追溯
 
 **示例：**

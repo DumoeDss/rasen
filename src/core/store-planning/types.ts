@@ -7,7 +7,12 @@ import type {
 declare const scopedLocationBrand: unique symbol;
 declare const scopeCapabilityBrand: unique symbol;
 
-export type PlanningIntent = 'store-read' | 'project-read' | 'create-change';
+export type PlanningIntent =
+  | 'store-read'
+  | 'project-read'
+  | 'create-change'
+  | 'finalize-change'
+  | 'store-issue';
 export type PlanningPathFlavor = 'native' | 'win32' | 'posix';
 
 export interface PlanningSelection {
@@ -42,11 +47,61 @@ export interface OpenChangeCreation extends OpenBase {
   readonly intent: 'create-change';
 }
 
-export type OpenPlanningScope = OpenStoreRead | OpenProjectRead | OpenChangeCreation;
+/**
+ * Finalizing an existing Change. A distinct intent from `create-change`
+ * because its authority requirements differ: the Change must already exist,
+ * its committed v2 identity must verify, and the resolved stable target line
+ * must be the one frozen in that identity — none of which creation checks.
+ */
+export interface OpenChangeFinalization extends OpenBase {
+  readonly intent: 'finalize-change';
+  readonly change: ChangeSelector;
+}
+
+/**
+ * A Store-level Issue or Execution Plan operation.
+ *
+ * A distinct intent from `store-read` because its authority requirements
+ * differ in BOTH directions: it requires no project and no target line — an
+ * Issue spans projects by construction, so demanding one would contradict the
+ * resource — and it must resolve the Store even when the start path is an
+ * execution worktree whose binding names one project, without resolving that
+ * binding's planning worktree as the write location.
+ *
+ * Opening it confers no project authority: a project read or mutation attempted
+ * from it still needs its own unambiguous project scope.
+ */
+export interface OpenStoreIssue extends OpenBase {
+  readonly intent: 'store-issue';
+}
+
+export type OpenPlanningScope =
+  | OpenStoreRead
+  | OpenProjectRead
+  | OpenChangeCreation
+  | OpenChangeFinalization
+  | OpenStoreIssue;
+
+/**
+ * Store-level cross-project Issue content. Each of the directory, the record,
+ * the revisions directory, and ONE revision is its own address, so no caller
+ * appends a filename to a returned directory. None of them takes a project or a
+ * target line.
+ */
+export type StoreIssueAddress =
+  | { readonly kind: 'issue'; readonly issueId: string }
+  | { readonly kind: 'issue-record'; readonly issueId: string }
+  | { readonly kind: 'execution-plans'; readonly issueId: string }
+  | {
+      readonly kind: 'execution-plan';
+      readonly issueId: string;
+      readonly revisionId: string;
+    };
 
 export type StoreReadAddress =
   | { readonly kind: 'store-metadata' }
-  | { readonly kind: 'store-design-docs' };
+  | { readonly kind: 'store-design-docs' }
+  | StoreIssueAddress;
 
 export type ProjectReadAddress =
   | { readonly kind: 'project-home' }
@@ -58,7 +113,19 @@ export type ProjectReadAddress =
   | { readonly kind: 'project-design-docs' }
   | { readonly kind: 'active-changes' }
   | { readonly kind: 'active-change'; readonly changeId: string }
-  | { readonly kind: 'archive-line' };
+  | { readonly kind: 'archive-line' }
+  /**
+   * The addressed Archive entry for one Change attempt. In a Store v2 project
+   * scope the verified Change instance is required and the address comes from
+   * the layout contract; a standalone project or a legacy flat Store composes
+   * its existing flat `YYYY-MM-DD-<changeId>` name and mints no v2 identity.
+   */
+  | {
+      readonly kind: 'archive-entry';
+      readonly changeId: string;
+      readonly archiveDate: string;
+      readonly changeInstanceId?: string;
+    };
 
 export type PlanningAddressKind = StoreReadAddress['kind'] | ProjectReadAddress['kind'];
 
@@ -179,6 +246,23 @@ export interface StoreAggregateReadScope extends ScopeCapability {
   locate(address: StoreReadAddress): ScopedReadLocation;
 }
 
+/**
+ * A Store-level Issue scope. It exposes ONLY Issue addresses — not
+ * `store-metadata`, not `store-design-docs`, and no project address — so the
+ * capability a caller holds says exactly what it may reach.
+ *
+ * `storeCheckoutRoot` is the Store checkout a Git-tracked Issue write would
+ * land in. It is the Store's registered checkout, never a planning worktree
+ * bound to a Change: that worktree's branch carries one Change's unmerged line,
+ * and a cross-line resource written there is invisible from every other line.
+ */
+export interface StoreIssueScope extends ScopeCapability {
+  readonly kind: 'store-issue';
+  readonly ref: StoreAggregateRef;
+  readonly storeCheckoutRoot: string;
+  locate(address: StoreIssueAddress): ScopedReadLocation;
+}
+
 export interface ProjectReadScope extends ScopeCapability {
   readonly kind: 'project';
   readonly ref: StandaloneProjectRef | LegacyStoreReadRef | StoreProjectRef;
@@ -213,10 +297,27 @@ export interface ChangeCreationScope extends ScopeCapability {
   createChange(input: CreateScopedChangeInput): Promise<ScopedAuthoredChange>;
 }
 
+/**
+ * The finalization scope: an existing Change whose committed v2 identity
+ * verified, on the stable target line frozen in that identity, with verified
+ * planning-worktree authority. It exposes the project's canonical specs, the
+ * applicable Archive line, and the addressed Archive entry as scope-owned
+ * typed locations. `workspacePairId` is present only when the machine
+ * workspace index supplies one; finalization refuses rather than minting it.
+ */
+export interface ChangeFinalizationScope extends ScopeCapability {
+  readonly kind: 'change-finalization';
+  readonly ref: StandaloneProjectRef | LegacyStoreReadRef | StoreProjectRef;
+  readonly change: ScopedReadChange;
+  locate(address: ProjectReadAddress): ScopedReadLocation;
+}
+
 export interface StorePlanning {
   open(input: OpenStoreRead): Promise<StoreAggregateReadScope>;
   open(input: OpenProjectRead): Promise<ProjectReadScope>;
   open(input: OpenChangeCreation): Promise<ChangeCreationScope>;
+  open(input: OpenChangeFinalization): Promise<ChangeFinalizationScope>;
+  open(input: OpenStoreIssue): Promise<StoreIssueScope>;
 }
 
 /** Deprecated read-only bridge. It is not accepted by mutation APIs. */

@@ -6,7 +6,11 @@ import * as path from 'node:path';
 import { getGlobalDataDir, registerStore } from '../../src/core/index.js';
 import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
 import { snapshotDirectory as snapshot } from '../helpers/fs-snapshot.js';
-import { createOpenSpecRoot, writeSpec } from '../helpers/rasen-fixtures.js';
+import {
+  createOpenSpecRoot,
+  seedFlatStoreChange,
+  writeSpec,
+} from '../helpers/rasen-fixtures.js';
 
 describe('declared store fallback (3.2)', () => {
   let tempDir: string;
@@ -53,29 +57,31 @@ describe('declared store fallback (3.2)', () => {
   it('runs the externalized-planning journey without --store anywhere', async () => {
     const pointerBefore = snapshot(pointerRepo);
 
+    // Creating is the one step this store can no longer serve: a legacy flat
+    // store refuses `new change` with `legacy_flat_store_requires_migration`
+    // and names the migration (change `store-layout-v2-migration`,
+    // `proposal.md` BREAKING bullet 2, task 10b.1). The refusal is asserted
+    // HERE, in the declared-pointer journey, because that is where a user
+    // meets it: resolution still lands on the store, and the refusal comes
+    // from the store's layout rather than from the pointer.
     const created = await runCLI(['new', 'change', 'billing-rework', '--json'], {
       cwd: pointerRepo,
       env,
     });
-    expect(created.exitCode).toBe(0);
-    // The established compatibility fields are unchanged. `scope` is additive
-    // and REQUIRED: "Root and planning-context JSON SHALL identify whether the
-    // result is standalone, legacy Store, Store aggregate, or Store project
-    // scope" (specs/store-planning-scope-routing "Machine-readable context
-    // describes scope without granting authority"). Asserting it here is
-    // stronger than the old strict shape, not weaker.
-    expect(parseJson(created).root).toMatchObject({
-      path: fs.realpathSync.native(storeRoot),
-      source: 'declared',
-      store_id: 'team-context',
-      scope: { kind: 'legacy-store', ref: { mode: 'legacy-store', storeId: 'team-context' } },
-    });
-    expect(Object.keys(parseJson(created).root).sort()).toEqual([
-      'path',
-      'scope',
-      'source',
-      'store_id',
-    ]);
+    expect(created.exitCode).toBe(1);
+    expect(`${created.stdout}${created.stderr}`).toContain(
+      'legacy_flat_store_requires_migration'
+    );
+    expect(`${created.stdout}${created.stderr}`).toContain('store migrate-layout');
+
+    // Everything downstream still resolves through the declared pointer, so
+    // the Change is seeded into the store the pointer names (see
+    // `seedFlatStoreChange`) and the journey continues unchanged.
+    seedFlatStoreChange(
+      storeRoot,
+      'billing-rework',
+      '## Why\n\nBilling rework.\n\n## What Changes\n\n- **billing:** Rework billing\n'
+    );
 
     const statusHuman = await runCLI(['status', '--change', 'billing-rework'], {
       cwd: pointerRepo,
@@ -91,6 +97,22 @@ describe('declared store fallback (3.2)', () => {
       env,
     });
     expect(parseJson(statusJson).nextSteps.join(' ')).toContain('--store team-context');
+    // The established compatibility fields for a DECLARED root are unchanged.
+    // The additive `scope` block is not asserted here: only the authoring
+    // resolution attaches one, and authoring against a legacy flat store is
+    // now refused. It is asserted where a scope is actually produced —
+    // `test/commands/store-v2-planning-scope-journey.test.ts` for
+    // `store-project` and `store-aggregate`.
+    expect(parseJson(statusJson).root).toMatchObject({
+      path: fs.realpathSync.native(storeRoot),
+      source: 'declared',
+      store_id: 'team-context',
+    });
+    expect(Object.keys(parseJson(statusJson).root).sort()).toEqual([
+      'path',
+      'source',
+      'store_id',
+    ]);
 
     const instructions = await runCLI(
       ['instructions', 'proposal', '--change', 'billing-rework', '--json'],
@@ -99,10 +121,6 @@ describe('declared store fallback (3.2)', () => {
     expect(instructions.exitCode).toBe(0);
 
     const changeDir = path.join(storeRoot, 'rasen', 'changes', 'billing-rework');
-    fs.writeFileSync(
-      path.join(changeDir, 'proposal.md'),
-      '## Why\n\nBilling rework.\n\n## What Changes\n\n- **billing:** Rework billing\n'
-    );
     const deltaDir = path.join(changeDir, 'specs', 'billing');
     fs.mkdirSync(deltaDir, { recursive: true });
     fs.writeFileSync(
@@ -125,13 +143,29 @@ describe('declared store fallback (3.2)', () => {
     });
     expect(show.exitCode).toBe(0);
 
-    const archive = await runCLI(['archive', 'billing-rework', '--yes', '--json'], {
+    // Archiving is the other step this store can no longer serve, and this is
+    // the resolution that proves the refusal is REACHABLE. Only the authoring
+    // resolution attaches a planning scope; a declared pointer to a legacy flat
+    // Store comes back through the frozen compatibility adapter with none, so
+    // for a while `rasen new change` refused here while `rasen archive` wrote
+    // into the flat tree anyway. `storeFinalizationDiagnostic()` now classifies
+    // the resolved root's own Store declaration when no scope is attached
+    // (change `store-layout-v2-migration`, task 10b.1).
+    const archived = await runCLI(['archive', 'billing-rework', '--yes', '--json'], {
       cwd: pointerRepo,
       env,
     });
-    expect(archive.exitCode).toBe(0);
-    const archived = fs.readdirSync(path.join(storeRoot, 'rasen', 'changes', 'archive'));
-    expect(archived.some((name) => name.endsWith('billing-rework'))).toBe(true);
+    expect(archived.exitCode).toBe(1);
+    expect(parseJson(archived).status[0]).toMatchObject({
+      code: 'legacy_flat_store_requires_migration',
+      fix: "Run 'rasen store migrate-layout team-context' to migrate this Store, then retry.",
+    });
+    // Refused before moving anything: the Change is still active and the flat
+    // archive directory is still empty.
+    expect(
+      fs.existsSync(path.join(storeRoot, 'rasen', 'changes', 'billing-rework', 'proposal.md'))
+    ).toBe(true);
+    expect(fs.readdirSync(path.join(storeRoot, 'rasen', 'changes', 'archive'))).toEqual([]);
 
     // The pointer repo is byte-identical: no specs/, no changes/, nothing.
     expect(snapshot(pointerRepo)).toEqual(pointerBefore);
@@ -149,11 +183,10 @@ describe('declared store fallback (3.2)', () => {
       'schema: spec-driven\nreferences:\n  - upstream-context\n'
     );
 
-    const created = await runCLI(['new', 'change', 'ref-check', '--json'], {
-      cwd: pointerRepo,
-      env,
-    });
-    expect(created.exitCode).toBe(0);
+    // Seeded rather than created: this case's subject is the reference index,
+    // and a legacy flat store now refuses `new change` (see
+    // `seedFlatStoreChange`).
+    seedFlatStoreChange(storeRoot, 'ref-check');
 
     const instructions = await runCLI(
       ['instructions', 'proposal', '--change', 'ref-check', '--json'],

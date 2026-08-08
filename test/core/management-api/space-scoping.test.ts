@@ -193,23 +193,225 @@ describe('management API space scoping (planning-space-addressing design D2/D6)'
   });
 
   describe('submission lands in the selected space (change-submission spec)', () => {
-    it('POST /api/v1/changes with body space=store:<id> creates the change under the store root', async () => {
+    const STORE_ID = 'submit-team';
+    const PROJECT_ID = 'submit-app';
+    const TARGET_LINE = 'line-0.2';
+
+    /**
+     * A layout v2 Store with one bound project, its planning worktree, and a
+     * code repo that records the binding — the shape `store-layout-v2-migration`
+     * leaves behind, built here because the management API is the second
+     * surface that submits Changes and it has to be exercised against the same
+     * product state the CLI is.
+     */
+    function seedMigratedStore(): {
+      storeRoot: string;
+      planningRoot: string;
+      codeRepo: string;
+      storeUid: string;
+    } {
+      const gitEnv = { ...process.env, ...isolatedGitEnv(tempDir) };
       const storeRoot = path.join(tempDir, 'submit-store');
-      createOpenSpecRoot(storeRoot);
-      await registerStore({ id: 'submit-team', localPath: storeRoot, globalDataDir: dataDir });
+      const storeUid = randomUUID();
+
+      const write = (target: string, content: string): void => {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, content, 'utf-8');
+      };
+
+      fs.mkdirSync(storeRoot, { recursive: true });
+      execFileSync('git', ['init', '-b', 'main'], { cwd: storeRoot, env: gitEnv, stdio: 'ignore' });
+      write(path.join(storeRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+      write(
+        path.join(storeRoot, '.rasen-store', 'store.yaml'),
+        `version: 2\nuid: ${storeUid}\nid: ${STORE_ID}\nlayoutVersion: 2\n`
+      );
+      write(
+        path.join(storeRoot, '.rasen-store', 'projects', `${PROJECT_ID}.yaml`),
+        [
+          'version: 2',
+          `projectId: ${PROJECT_ID}`,
+          `id: ${PROJECT_ID}`,
+          'roles:',
+          '  planning: true',
+          '  knowledge: false',
+          'planningBinding:',
+          '  state: bound',
+          '  boundAt: 2026-08-06T00:00:00.000Z',
+          '',
+        ].join('\n')
+      );
+      write(
+        path.join(storeRoot, '.rasen-store', 'target-lines', `${TARGET_LINE}.yaml`),
+        [
+          'version: 1',
+          `id: ${TARGET_LINE}`,
+          'storeRef: refs/heads/main',
+          'projects:',
+          `  ${PROJECT_ID}:`,
+          '    codeRef: refs/heads/main',
+          '',
+        ].join('\n')
+      );
+      execFileSync('git', ['add', '-A'], { cwd: storeRoot, env: gitEnv, stdio: 'ignore' });
+      execFileSync('git', ['commit', '-m', 'seed migrated store'], {
+        cwd: storeRoot,
+        env: gitEnv,
+        stdio: 'ignore',
+      });
+
+      // Store v2 Change creation requires a VERIFIED planning worktree; the
+      // integration checkout is read-only (`store-planning-scope-routing`).
+      const planningPath = path.join(tempDir, 'submit-planning-line');
+      execFileSync('git', ['worktree', 'add', '-b', 'planning-line-0-2', planningPath], {
+        cwd: storeRoot,
+        env: gitEnv,
+        stdio: 'ignore',
+      });
+      const planningRoot = fs.realpathSync.native(planningPath);
+      write(
+        path.join(planningRoot, '.rasen', 'planning-line.json'),
+        JSON.stringify(
+          { version: 1, storeUid, storeId: STORE_ID, projectId: PROJECT_ID, targetLineId: TARGET_LINE },
+          null,
+          2
+        ) + '\n'
+      );
+
+      // The member checkout: a pointer plus the binding its adoption recorded.
+      const codeRepo = path.join(tempDir, 'submit-app-repo');
+      write(
+        path.join(codeRepo, 'rasen', 'config.yaml'),
+        `schema: spec-driven\nprojectId: ${PROJECT_ID}\nstore:\n  uid: ${storeUid}\n  id: ${STORE_ID}\n`
+      );
+      write(
+        path.join(codeRepo, '.rasen', 'planning-binding.json'),
+        JSON.stringify(
+          {
+            version: 1,
+            storeUid,
+            storeId: STORE_ID,
+            projectId: PROJECT_ID,
+            targetLineId: TARGET_LINE,
+            planningWorktree: planningRoot,
+            executionRoot: codeRepo,
+          },
+          null,
+          2
+        ) + '\n'
+      );
+
+      return { storeRoot, planningRoot, codeRepo, storeUid };
+    }
+
+    it('POST /api/v1/changes with body space=project:<bound project> creates the change in its Store partition', async () => {
+      // This case used to submit `space=store:<id>` into a legacy flat Store's
+      // `rasen/changes`. That namespace is read-only now
+      // (`legacy_flat_store_requires_migration`; change
+      // `store-layout-v2-migration` task 10b.1) and a layout v2 Store cannot be
+      // addressed as `store:` for a submission at all — a Store aggregate
+      // cannot select a project implicitly, which the case below asserts. So
+      // the SUBJECT — a submission lands in the selected space rather than the
+      // launch project, and that space can be a Store — is preserved by
+      // selecting the bound project, which is how layout v2 addresses Store
+      // planning.
+      const { storeRoot, planningRoot, codeRepo } = seedMigratedStore();
+      await registerStore({ id: STORE_ID, localPath: storeRoot, globalDataDir: dataDir });
+      await registerProject(
+        { projectRoot: codeRepo, projectId: PROJECT_ID, mode: 'store' },
+        { globalDataDir: dataDir }
+      );
 
       const h = await startServer();
       const res = await req(h.port, {
         method: 'POST',
         path: '/api/v1/changes',
         headers: { ...authed(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'store-submitted-change', description: 'From a store-scoped submission', space: 'store:submit-team' }),
+        body: JSON.stringify({
+          name: 'store-submitted-change',
+          description: 'From a store-scoped submission',
+          space: `project:${PROJECT_ID}`,
+        }),
       });
-      expect(res.status).toBe(201);
-      // The change landed under the STORE root, not the launch project.
-      expect(fs.existsSync(path.join(storeRoot, 'rasen', 'changes', 'store-submitted-change', 'proposal.md'))).toBe(true);
+
+      expect(res.status, res.body).toBe(201);
+      // The layout v2 address, spelled out rather than read back from the
+      // payload: asking the code where it put something proves nothing.
+      const partitionChange = path.join(
+        planningRoot,
+        'rasen',
+        'projects',
+        PROJECT_ID,
+        'changes',
+        'store-submitted-change'
+      );
+      expect(fs.existsSync(path.join(partitionChange, 'proposal.md'))).toBe(true);
+      expect((res.json() as any).change.path).toBe(partitionChange);
+      // Not the launch project, and not the retired flat Store namespace.
       expect(fs.existsSync(path.join(launchRoot, 'rasen', 'changes', 'store-submitted-change'))).toBe(false);
+      expect(fs.existsSync(path.join(planningRoot, 'rasen', 'changes'))).toBe(false);
+      // The member checkout grew no planning state of its own.
+      expect(fs.readdirSync(path.join(codeRepo, 'rasen'))).toEqual(['config.yaml']);
+    }, 30_000);
+
+    it('POST /api/v1/changes with body space=store:<layout v2 store> refuses rather than picking a project', async () => {
+      const { storeRoot, planningRoot } = seedMigratedStore();
+      await registerStore({ id: STORE_ID, localPath: storeRoot, globalDataDir: dataDir });
+
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/changes',
+        headers: { ...authed(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'aggregate-submitted-change',
+          description: 'desc',
+          space: `store:${STORE_ID}`,
+        }),
+      });
+
+      expect(res.status).toBe(400);
+      expect((res.json() as any).error.code).toBe('project_scope_required');
+      // Refused before spawning anything: no change anywhere.
+      expect(
+        fs.existsSync(path.join(planningRoot, 'rasen', 'projects', PROJECT_ID, 'changes', 'aggregate-submitted-change'))
+      ).toBe(false);
+      expect(fs.existsSync(path.join(launchRoot, 'rasen', 'changes', 'aggregate-submitted-change'))).toBe(false);
     }, 15_000);
+
+    it('POST /api/v1/changes with body space=store:<legacy flat store> reports the migration repair', async () => {
+      // The management API is a SECOND submission surface, and task 10b.4's
+      // enumeration only covered the CLI one. A legacy flat Store must refuse
+      // here for the same reason it refuses there
+      // (`specs/store-planning-scope-routing`, "Legacy flat Store refuses
+      // planning writes until it is migrated"): equivalent entry points
+      // resolve identically.
+      const flatStoreRoot = path.join(tempDir, 'flat-submit-store');
+      createOpenSpecRoot(flatStoreRoot);
+      await registerStore({ id: 'flat-team', localPath: flatStoreRoot, globalDataDir: dataDir });
+
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/changes',
+        headers: { ...authed(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'flat-submitted-change',
+          description: 'desc',
+          space: 'store:flat-team',
+        }),
+      });
+
+      expect(res.status).toBe(422);
+      const error = (res.json() as any).error;
+      expect(error.code).toBe('cli_error');
+      expect(error.message).toContain('legacy flat planning layout');
+      expect(error.message).toContain('layout v2');
+      // Refused before writing: neither the Store nor the launch project grew
+      // a change.
+      expect(fs.existsSync(path.join(flatStoreRoot, 'rasen', 'changes', 'flat-submitted-change'))).toBe(false);
+      expect(fs.existsSync(path.join(launchRoot, 'rasen', 'changes', 'flat-submitted-change'))).toBe(false);
+    }, 30_000);
 
     it('POST /api/v1/changes with an unresolvable space rejects before spawning', async () => {
       const h = await startServer();
@@ -283,6 +485,52 @@ describe('management API space scoping (planning-space-addressing design D2/D6)'
 
       // Read-only: the request left the registry byte-for-byte unchanged.
       expect(fs.readFileSync(registryPath, 'utf-8')).toBe(registryBefore);
+    });
+
+    it('lists a layout v2 Store member from its project catalog, with no live checkout here', async () => {
+      // The pointer half of the member union is covered above. This is the
+      // OTHER half — the Store's own membership records — against a Store in
+      // the layout this portfolio's migration produces. `listStoreMembers` read
+      // the v1 parser, so every catalogued member of a migrated Store vanished
+      // from the space listing, and no fixture in this file declared
+      // `layoutVersion: 2` for it.
+      const storeRoot = path.join(tempDir, 'catalog-store');
+      createOpenSpecRoot(storeRoot);
+      await registerStore({ id: 'catalog-team', localPath: storeRoot, globalDataDir: dataDir });
+      fs.mkdirSync(path.join(storeRoot, '.rasen-store', 'projects'), { recursive: true });
+      fs.writeFileSync(
+        path.join(storeRoot, '.rasen-store', 'store.yaml'),
+        `version: 2\nuid: 33333333-4444-4555-8666-777777777777\nid: catalog-team\nlayoutVersion: 2\n`
+      );
+      fs.writeFileSync(
+        path.join(storeRoot, '.rasen-store', 'projects', 'elftia.yaml'),
+        [
+          'version: 2',
+          'projectId: elftia',
+          'id: elftia-app',
+          'roles:',
+          '  planning: true',
+          '  knowledge: true',
+          'planningBinding:',
+          '  state: bound',
+          "  boundAt: '2026-01-02T03:04:05.000Z'",
+          '',
+        ].join('\n')
+      );
+
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/spaces', headers: authed() });
+      expect(res.status).toBe(200);
+      const team = ((res.json() as any).spaces as Array<any>).find(
+        (s) => s.type === 'store' && s.id === 'catalog-team'
+      );
+
+      expect(team).toBeDefined();
+      expect(team.members.map((m: any) => m.projectId)).toEqual(['elftia']);
+      // The catalog's display id is used, and no root is invented for a member
+      // that has no checkout on this machine.
+      expect(team.members[0].name).toBe('elftia-app');
+      expect(team.members[0].root).toBeUndefined();
     });
 
     it('401s /api/v1/spaces without a token', async () => {

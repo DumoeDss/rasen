@@ -121,12 +121,40 @@ export function summarizePlanningHome(
  * Planning writes are narrowed to the planning directories rather than
  * granting a whole repository root (design D5): a session that may write
  * specs and changes has no business rewriting the repository around them.
+ *
+ * For standalone and legacy-flat layouts this is `<root>/rasen/specs` and
+ * `<root>/rasen/changes`, which is correct. For a Store v2 project scope,
+ * those root-level paths are exactly what layout v2 forbids — the project's
+ * planning content lives under `<root>/rasen/projects/<projectId>/`. The
+ * scope-derived form (`buildResolvedPlanningActionContext`, which receives
+ * `[root.specsDir, root.changesDir]` from the resolved scope) already does
+ * this correctly; this function is the straggler used by `buildActionContext`,
+ * which sees only the raw `RuntimePlanningRef`.
  */
 function planningDirectoriesOf(root: string): string[] {
   return [
     path.join(root, WORKSPACE_DIR_NAME, 'specs'),
     path.join(root, WORKSPACE_DIR_NAME, 'changes'),
   ];
+}
+
+/**
+ * The planning write grant for a session's resolved planning scope. For a
+ * Store v2 project scope (type `'store'` with a `projectId`), the grant is
+ * the project partition's own planning locations — `rasen/projects/<id>/specs`
+ * and `rasen/projects/<id>/changes` — not the root-level Store paths layout v2
+ * forbids. For every other shape (standalone, project-type, store-aggregate
+ * without a project), the legacy `planningDirectoriesOf` is correct.
+ */
+function planningWriteRootsForRef(ref: RuntimePlanningRef): string[] {
+  if (ref.type === 'store' && ref.projectId !== undefined) {
+    const projectBase = path.join(ref.root, WORKSPACE_DIR_NAME, 'projects', ref.projectId);
+    return [
+      path.join(projectBase, 'specs'),
+      path.join(projectBase, 'changes'),
+    ];
+  }
+  return planningDirectoriesOf(ref.root);
 }
 
 function normalizeRoot(root: string): string {
@@ -223,7 +251,11 @@ export function buildActionContext(input: ActionContextInput): ActionContext {
   const planningRoot = planningRootOf(input);
 
   const planningWriteRoots = withoutHomeDirectory(
-    dedupeRoots(planningDirectoriesOf(planningRoot))
+    dedupeRoots(
+      input.session
+        ? planningWriteRootsForRef(input.session.planning)
+        : planningDirectoriesOf(planningRoot)
+    )
   );
   // Exactly one checkout, always the session's own. Other member checkouts of
   // the same Store are never added here — that is the point of recording which

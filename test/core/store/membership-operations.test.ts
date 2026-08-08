@@ -16,6 +16,9 @@ import {
   getStoreProjectRecordPath,
   readStoreProjectRecord,
 } from '../../../src/core/store/project-records.js';
+import { writeStoreMetadataState } from '../../../src/core/store/foundation.js';
+import { readStoreMembership } from '../../../src/core/store/membership-layout.js';
+import type { StoreProjectCatalogV2 } from '../../../src/core/store/planning-catalogs.js';
 import {
   getAdoptionsManifestPath,
   readAdoptionsManifest,
@@ -92,6 +95,39 @@ describe('membership across add-project, adopt, eject, and the migration', () =>
     writeSpec(root, 'billing', '## Purpose\n\np\n\n## Requirements\n\n- r\n');
     writeChange(root, 'add-thing');
     return root;
+  }
+
+  const TARGET_LINE = 'line-0.2';
+
+  /**
+   * Declares planning layout v2 on the fixture store, with the one target-line
+   * catalog `--archive move` requires there. Opt-in per test: `add-project`,
+   * the destination rules and `store migrate-membership` are all exercised
+   * against a legacy flat store, which is still a supported state.
+   */
+  async function declareLayoutV2(): Promise<void> {
+    await writeStoreMetadataState(storeRoot, {
+      version: 1,
+      id: 'team-store',
+      layoutVersion: 2,
+    });
+    const lines = path.join(storeRoot, '.rasen-store', 'target-lines');
+    fs.mkdirSync(lines, { recursive: true });
+    fs.writeFileSync(
+      path.join(lines, `${TARGET_LINE}.yaml`),
+      `version: 1\nid: ${TARGET_LINE}\nstoreRef: refs/heads/main\nprojects: {}\n`
+    );
+  }
+
+  /** A project's layout v2 partition address, spelled out rather than computed. */
+  function partition(projectId: string, ...segments: string[]): string {
+    return path.join(storeRoot, 'rasen', 'projects', projectId, ...segments);
+  }
+
+  /** The project's catalog in a layout v2 store, or null when it is not one. */
+  async function catalogOf(projectId: string): Promise<StoreProjectCatalogV2 | null> {
+    const read = await readStoreMembership(storeRoot, projectId, 'team-store');
+    return read.entry?.layout === 2 ? read.entry.catalog : null;
   }
 
   async function otherStore(id: string): Promise<string> {
@@ -255,23 +291,32 @@ describe('membership across add-project, adopt, eject, and the migration', () =>
   });
 
   describe('store adopt', () => {
-    it('records ownership in the membership record with no source path', async () => {
+    it('records ownership in the project catalog with no source path', async () => {
+      await declareLayoutV2();
       const projectRoot = makeProject();
 
       const result = await adoptProject({
         sourcePath: projectRoot,
         storeId: 'team-store',
         globalDataDir,
+        targetLine: TARGET_LINE,
       });
 
-      const read = await readStoreProjectRecord(storeRoot, result.projectId);
+      const catalog = await catalogOf(result.projectId);
       // Adopt proves PLANNING membership and nothing else (design D2). It runs
       // add-project's registration and reference work, and roles OR-widen on
       // write, so inheriting add-project's `knowledge: true` durably recorded
       // a role nobody established — in a Git-committed file child D will read.
-      expect(read.record?.roles).toEqual({ planning: true, knowledge: false });
-      expect(read.record?.adoption).toMatchObject({ specs: ['billing'], changes: ['add-thing'] });
-      expect(read.record?.adoption?.adoptedAt).toBeTruthy();
+      expect(catalog?.roles).toEqual({ planning: true, knowledge: false });
+      // Ownership is the bound binding plus the partition itself. Layout v2
+      // records no adopted spec or change name list at all (spec store-adopt,
+      // "The partition is the ownership record").
+      expect(catalog?.planningBinding.state).toBe('bound');
+      expect(
+        catalog?.planningBinding.state === 'bound' ? catalog.planningBinding.boundAt : undefined
+      ).toBeTruthy();
+      expect(fs.readdirSync(partition(result.projectId, 'specs')).sort()).toEqual(['billing']);
+      expect(fs.readdirSync(partition(result.projectId, 'changes')).sort()).toEqual(['add-thing']);
 
       const serialized = fs.readFileSync(
         getStoreProjectRecordPath(storeRoot, result.projectId),
@@ -279,6 +324,7 @@ describe('membership across add-project, adopt, eject, and the migration', () =>
       );
       expect(serialized).not.toContain('sourcePath');
       expect(serialized).not.toContain(projectRoot);
+      expect(serialized).not.toContain('adoption');
 
       // The legacy manifest is no longer written at all.
       expect(fs.existsSync(getAdoptionsManifestPath(storeRoot))).toBe(false);
@@ -286,9 +332,18 @@ describe('membership across add-project, adopt, eject, and the migration', () =>
       expect(readProjectConfig(projectRoot)?.storeMemberships).toEqual([{ id: 'team-store' }]);
     });
 
-    it('resumes an interrupted adopt from the record', async () => {
+    it('resumes an interrupted adopt from the bound catalog', async () => {
+      await declareLayoutV2();
       const projectRoot = makeProject();
-      await adoptProject({ sourcePath: projectRoot, storeId: 'team-store', globalDataDir });
+      const first = await adoptProject({
+        sourcePath: projectRoot,
+        storeId: 'team-store',
+        globalDataDir,
+        targetLine: TARGET_LINE,
+      });
+      const firstBinding = (await catalogOf(first.projectId))?.planningBinding;
+      const boundAt = firstBinding?.state === 'bound' ? firstBinding.boundAt : undefined;
+      expect(boundAt).toBeTruthy();
 
       // Re-create planning shape at the source, as an interrupted run leaves it.
       writeChange(projectRoot, 'second-change');
@@ -296,11 +351,22 @@ describe('membership across add-project, adopt, eject, and the migration', () =>
         sourcePath: projectRoot,
         storeId: 'team-store',
         globalDataDir,
+        targetLine: TARGET_LINE,
       });
 
       expect(resumed.resumed).toBe(true);
-      const read = await readStoreProjectRecord(storeRoot, resumed.projectId);
-      expect(read.record?.adoption?.changes.sort()).toEqual(['add-thing', 'second-change']);
+      // What the project owns is readable from its partition alone.
+      expect(fs.readdirSync(partition(resumed.projectId, 'changes')).sort()).toEqual([
+        'add-thing',
+        'second-change',
+      ]);
+      // The binding the first run recorded is preserved, not re-stamped: the
+      // catalog is the resume MARKER, so a resume that rewrote it would erase
+      // the fact it resumed from (spec store-adopt, "Manifest written before
+      // source deletion").
+      expect(await catalogOf(resumed.projectId)).toMatchObject({
+        planningBinding: { state: 'bound', boundAt },
+      });
     });
 
     it('reads ownership from the legacy manifest while one still exists', async () => {
@@ -403,11 +469,13 @@ describe('membership across add-project, adopt, eject, and the migration', () =>
     });
 
     it('never follows a legacy recorded source path', async () => {
+      await declareLayoutV2();
       const projectRoot = makeProject('adopted');
       const result = await adoptProject({
         sourcePath: projectRoot,
         storeId: 'team-store',
         globalDataDir,
+        targetLine: TARGET_LINE,
       });
 
       // Plant a legacy manifest pointing at a directory from another machine.
@@ -447,12 +515,14 @@ describe('membership across add-project, adopt, eject, and the migration', () =>
       expect(fs.realpathSync(resolved.destinationPath)).toBe(fs.realpathSync(projectRoot));
     });
 
-    it('clears ownership from the record and restores the project', async () => {
+    it('releases the planning binding and restores the project', async () => {
+      await declareLayoutV2();
       const projectRoot = makeProject('round-trip');
       const adopted = await adoptProject({
         sourcePath: projectRoot,
         storeId: 'team-store',
         globalDataDir,
+        targetLine: TARGET_LINE,
       });
 
       await ejectProject({
@@ -462,17 +532,23 @@ describe('membership across add-project, adopt, eject, and the migration', () =>
         destinationPath: projectRoot,
       });
 
-      const read = await readStoreProjectRecord(storeRoot, adopted.projectId);
-      // Adopt asserted PLANNING and nothing else, so ejecting ends the only
-      // role the record ever carried and the record goes with it rather than
-      // lingering as an empty file. (It used to survive here carrying
-      // `knowledge: true` — a role no command in this sequence established,
-      // inherited from the composed `add-project` call.)
-      expect(read.record).toBeNull();
+      const catalog = await catalogOf(adopted.projectId);
+      // Eject ends where the project PLANS, not the roster it belongs to, so
+      // in layout v2 the catalog survives with its binding released rather
+      // than being deleted (spec store-eject, "Manifest-driven eject": the
+      // catalog "records an unbound planning binding with its roles
+      // preserved"). The original guard still holds in the new shape: adopt
+      // asserted PLANNING and nothing else, so no `knowledge: true` leaked in
+      // from the composed `add-project` call.
+      expect(catalog?.planningBinding).toEqual({ state: 'unbound' });
+      expect(catalog?.roles).toEqual({ planning: true, knowledge: false });
       expect(fs.existsSync(path.join(projectRoot, 'rasen', 'specs', 'billing'))).toBe(true);
+      // The partition it owned is gone with it.
+      expect(fs.existsSync(partition(adopted.projectId))).toBe(false);
     });
 
     it('keeps a knowledge role that eject did not end', async () => {
+      await declareLayoutV2();
       const projectRoot = makeProject('knowledge-survivor');
       // `add-project` establishes knowledge membership; adopt then adds
       // planning. Ejecting ends planning only — dropping the knowledge role
@@ -483,6 +559,7 @@ describe('membership across add-project, adopt, eject, and the migration', () =>
         sourcePath: projectRoot,
         storeId: 'team-store',
         globalDataDir,
+        targetLine: TARGET_LINE,
       });
 
       await ejectProject({
@@ -492,9 +569,12 @@ describe('membership across add-project, adopt, eject, and the migration', () =>
         destinationPath: projectRoot,
       });
 
-      const read = await readStoreProjectRecord(storeRoot, adopted.projectId);
-      expect(read.record?.adoption).toBeUndefined();
-      expect(read.record?.roles).toEqual({ planning: false, knowledge: true });
+      const catalog = await catalogOf(adopted.projectId);
+      // Layout v2 preserves roles VERBATIM and releases the binding instead
+      // (spec store-eject), so what ends here is the binding — and the
+      // knowledge role the user established separately still stands.
+      expect(catalog?.planningBinding).toEqual({ state: 'unbound' });
+      expect(catalog?.roles).toEqual({ planning: true, knowledge: true });
     });
   });
 

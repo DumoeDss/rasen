@@ -1,7 +1,15 @@
 import { StoreError } from '../store/errors.js';
 import { StorePlanningValidationError } from '../store/planning-foundation.js';
+import type { StoreWorkspaceErrorCode } from '../store/workspace/types.js';
 
+/**
+ * The scope resolver raises the workspace taxonomy's codes directly — a target
+ * line disagreement or a marker conflict is the same refusal wherever it is
+ * detected — so the union is extended rather than shadowed by a second set of
+ * near-identical names.
+ */
 export type PlanningScopeErrorCode =
+  | StoreWorkspaceErrorCode
   | 'invalid_start_path'
   | 'store_path_not_supported'
   | 'store_alias_ambiguous'

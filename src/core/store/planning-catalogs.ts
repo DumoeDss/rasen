@@ -7,7 +7,6 @@ import {
   StorePlanningValidationError,
   isCanonicalIsoTimestamp,
   parseFullGitRef,
-  parseChangeId,
   parsePortableRelativePath,
   parseProjectId,
   parseTargetLineId,
@@ -30,6 +29,11 @@ export type StoreProjectPlanningBindingV2 =
 export interface StoreProjectCatalogV2 {
   readonly version: 2;
   readonly projectId: ProjectId;
+  /**
+   * Human display name, for reading only — never an identifier, never a path
+   * segment. `projectId` is the identity. Accepts exactly what the v1
+   * membership record accepts, so migration cannot block on it.
+   */
   readonly id?: string;
   readonly remote?: string;
   readonly knowledgeBundle?: PortableRelativePath;
@@ -262,11 +266,23 @@ export function validateStoreProjectCatalogV2(
   });
   if (filePath !== undefined) validateProjectCatalogFilename(projectId, filePath);
 
-  if (result.data.id !== undefined) {
-    rethrowCatalogValidation('invalid_project_catalog', 'id', () => {
-      parseChangeId(result.data.id as string, 'id');
-    });
-  }
+  // `id` is NOT validated as an identifier, deliberately.
+  //
+  // It is the project's human display name — that is what `StoreProjectRecord`,
+  // `StoreMembershipRecord` and `MembershipMutationInput.projectDisplayId` all
+  // document it as, and what every consumer does with it (a rendered name, or an
+  // exact-match selector alongside `projectId`). `projectId` above is the
+  // identity, and it alone names the file.
+  //
+  // It used to be run through `parseChangeId` — the CHANGE id validator, the
+  // only place in the tree that function was applied to something that is not a
+  // change, capability or node id. That made the v2 catalog reject values the v1
+  // record accepts (`Elftia`, `my app`), and since `catalog-upgrade.ts` carries
+  // `record.id` forward verbatim, any Store whose membership record held what
+  // the field is documented to hold could not be migrated at all until someone
+  // hand-edited the YAML. A migration must never block on data the schema it
+  // migrates FROM accepted; `layout-migration-catalog-receipt.test.ts` pins that
+  // as an invariant over the v1 schema's own accepted set.
 
   if (result.data.remote !== undefined) validatePortableProjectRemote(result.data.remote);
   if (

@@ -34,6 +34,18 @@ import { createLocalPathChooser } from './local-path-chooser.js';
 import { createSessionRegistry } from './session-registry.js';
 import { createAgentCliResolver, createSessionSupervisor, type SessionSupervisor } from './supervisor.js';
 import { createChangeSubmitter } from './submit.js';
+import {
+  createChangeFinalizer,
+  type FinalizeChangePathScope,
+  type FinalizeChangeRequestBody,
+} from './finalize.js';
+import {
+  createStoreMutator,
+  matchStoreRoute,
+  serveStoreRead,
+  storeRouteAdmitsMethod,
+  type StoreMutationBody,
+} from './stores.js';
 import { createSpaceCreator } from './create-space.js';
 import {
   handleWorkflowDependenciesRead,
@@ -126,6 +138,57 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/themes',
   '/api/v1/themes/import',
 ]);
+
+/**
+ * The Store change-finalization path
+ * (`store-finalization-outcomes-v2` decision 10). It carries four path
+ * parameters, so it cannot live in `MANAGEMENT_PATHS`; it is matched
+ * structurally instead, exactly like the session-id path, and every scope field
+ * comes from the URL. Nothing here is completed from a query filter, a session,
+ * or the launch project.
+ */
+const STORE_PATH_PREFIX = '/api/v1/stores/';
+
+function decodeSegment(segment: string): string | null {
+  if (segment.length === 0) return null;
+  try {
+    const decoded = decodeURIComponent(segment);
+    return decoded.length === 0 ? null : decoded;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Matches
+ * `/api/v1/stores/<storeUid>/projects/<projectId>/lines/<targetLineId>/changes/<instance>/finalize`
+ * and nothing shorter, longer, or differently shaped. A partial prefix is not a
+ * management path and falls through to the rest of the server's routing, so an
+ * incomplete scope can never be answered by this route group at all.
+ */
+function matchStoreFinalizePath(pathname: string): FinalizeChangePathScope | null {
+  if (!pathname.startsWith(STORE_PATH_PREFIX)) return null;
+  const parts = pathname.slice(STORE_PATH_PREFIX.length).split('/');
+  if (parts.length !== 8) return null;
+  const [storeUid, projects, projectId, lines, targetLineId, changes, instance, finalize] =
+    parts as [string, string, string, string, string, string, string, string];
+  if (
+    projects !== 'projects' ||
+    lines !== 'lines' ||
+    changes !== 'changes' ||
+    finalize !== 'finalize'
+  ) {
+    return null;
+  }
+  const decoded = [storeUid, projectId, targetLineId, instance].map(decodeSegment);
+  if (decoded.some(value => value === null)) return null;
+  return {
+    storeUid: decoded[0] as string,
+    projectId: decoded[1] as string,
+    targetLineId: decoded[2] as string,
+    changeInstanceId: decoded[3] as string,
+  };
+}
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
 const TASK_ID_PATH_PREFIX = '/api/v1/tasks/';
@@ -233,6 +296,13 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
   if (pathname === '/api/v1/local-paths/choose') return method === 'POST';
   if (pathname === '/api/v1/themes') return method === 'GET';
   if (pathname === '/api/v1/themes/import') return method === 'POST';
+  // POST only: finalization is a mutation and has no read shape here. GET, PUT,
+  // and DELETE on the finalize path are all 405.
+  if (matchStoreFinalizePath(pathname) !== null) return method === 'POST';
+  // The Store aggregate family: GET everywhere, POST on the three mutation
+  // shapes, everything else 405 without touching a file.
+  const storeRoute = matchStoreRoute(pathname);
+  if (storeRoute !== null) return storeRouteAdmitsMethod(storeRoute, method);
   if (matchAuditIdPath(pathname) !== null) return method === 'GET';
   if (pathname === '/api/v1/audits') return method === 'GET' || method === 'POST';
   if (pathname === '/api/v1/audits/sessions') return method === 'GET';
@@ -371,6 +441,8 @@ export function isManagementPath(pathname: string): boolean {
   const stripped = stripOneTrailingSlash(pathname);
   return (
     MANAGEMENT_PATHS.has(stripped) ||
+    matchStoreFinalizePath(stripped) !== null ||
+    matchStoreRoute(stripped) !== null ||
     matchSessionIdPath(stripped) !== null ||
     matchTaskIdPath(stripped) !== null ||
     matchWorkflowIdPath(stripped) !== null ||
@@ -412,6 +484,16 @@ export function createManagementRouter(
   // One submitter per server instance (design D3's cap-1 concurrency is
   // per-server state, closed over here rather than module-scoped).
   const submitChange = createChangeSubmitter(context);
+
+  // The Store change-finalization bridge, with its own cap-1 state independent
+  // of change submission's. It admits only the `finalize-change` bounded-cli op
+  // and mutates exclusively by spawning the CLI.
+  const finalizeChange = createChangeFinalizer(context);
+
+  // The Store aggregate family's mutation bridge, with its own cap-1 state. It
+  // admits only the three Store-scoped bounded-cli ops and, like every other
+  // management mutation, writes exclusively by spawning the CLI.
+  const mutateStore = createStoreMutator(context);
 
   // One space creator per server instance (space-creation design D5): its own
   // cap-1 concurrency, independent of change submission's cap.
@@ -696,6 +778,87 @@ export function createManagementRouter(
       return;
     }
 
+    const finalizeScope = matchStoreFinalizePath(pathname);
+    if (finalizeScope !== null && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      // The complete scope comes from the PATH and from nowhere else — no
+      // `space` selector, no query filter, no session, no launch-project
+      // fallback for any scope field.
+      const result = await finalizeChange(
+        finalizeScope,
+        (body.value ?? {}) as FinalizeChangeRequestBody
+      );
+      if (!result.ok) {
+        res.writeHead(result.status, JSON_HEADERS);
+        res.end(
+          JSON.stringify({
+            error: {
+              code: result.code,
+              message: result.message,
+              ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
+              ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+            },
+          })
+        );
+        return;
+      }
+      sendJson(res, result.status, result.response);
+      return;
+    }
+
+    const storeRoute = matchStoreRoute(pathname);
+    if (storeRoute !== null) {
+      // Every scope segment comes from the PATH. The `space` selector, the
+      // query filters, the session, and the launch project are all read from
+      // nowhere for scope here — the only query parameters consulted are the
+      // aggregate read's own narrowing filters, which never reach a mutation.
+      const sendStoreResult = (result: Awaited<ReturnType<typeof serveStoreRead>>): void => {
+        if (!result.ok) {
+          res.writeHead(result.status, JSON_HEADERS);
+          res.end(
+            JSON.stringify({
+              error: {
+                code: result.code,
+                message: result.message,
+                ...(result.fix === undefined ? {} : { fix: result.fix }),
+                ...(result.cliExitCode === undefined
+                  ? {}
+                  : { cliExitCode: result.cliExitCode }),
+                ...(result.stderr === undefined ? {} : { stderr: result.stderr }),
+              },
+            })
+          );
+          return;
+        }
+        sendJson(res, result.status, result.response);
+      };
+
+      if (req.method === 'GET') {
+        const outcomes = url.searchParams.getAll('outcome');
+        const state = url.searchParams.get('state');
+        sendStoreResult(
+          await serveStoreRead(storeRoute, {
+            ...(outcomes.length === 0 ? {} : { outcomes }),
+            ...(state === null ? {} : { state }),
+          })
+        );
+        return;
+      }
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      sendStoreResult(await mutateStore(storeRoute, (body.value ?? {}) as StoreMutationBody));
+      return;
+    }
+
     if (pathname === '/api/v1/workflows' && req.method === 'POST') {
       const body = await readJsonBody(req);
       if (!body.ok) {
@@ -825,7 +988,10 @@ export function createManagementRouter(
         sendError(res, result.status, result.code, result.message);
         return;
       }
-      sendJson(res, 200, result.response);
+      sendJson(res, 200, {
+        ...result.response,
+        ...(result.narrowing ? { narrowing: result.narrowing } : {}),
+      });
       return;
     }
 
@@ -1061,7 +1227,10 @@ export function createManagementRouter(
         sendError(res, result.status, result.code, result.message);
         return;
       }
-      sendJson(res, 200, result.response);
+      sendJson(res, 200, {
+        ...result.response,
+        ...(result.narrowing ? { archiveNarrowing: result.narrowing } : {}),
+      });
       return;
     }
 

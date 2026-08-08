@@ -609,8 +609,8 @@ rasen archive update-ci-config --skip-specs
 
 1. 校验该变更（除非 `--no-validate`）
 2. 提示确认（除非 `--yes`）
-3. 将增量 spec 合并进 `rasen/specs/`
-4. 把变更文件夹移动到 `rasen/changes/archive/YYYY-MM-DD-<name>/`
+3. 将增量 spec 合并进 `rasen/specs/`（standalone 模式；Store v2 项目作用域下为 `rasen/projects/<projectId>/specs/`）
+4. 把变更文件夹移动到 `rasen/changes/archive/YYYY-MM-DD-<name>/`（standalone 模式；Store v2 项目作用域下为 `rasen/projects/<projectId>/changes/archive/<targetLineId>/`）
 
 ---
 

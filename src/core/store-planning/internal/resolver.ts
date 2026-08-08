@@ -10,6 +10,7 @@ import {
   deriveChangeInstanceId,
   derivePlanningScopeId,
   parseChangeId,
+  parseChangeInstanceId,
   parseProjectId,
   parseStoreProjectCatalogV2,
   parseStoreTargetLineCatalogV1,
@@ -32,9 +33,11 @@ import { readChangeMetadata } from '../../../utils/change-metadata.js';
 import { asPlanningScopeError, PlanningScopeError } from '../diagnostics.js';
 import type {
   ChangeCreationScope,
+  ChangeFinalizationScope,
   ChangeSelector,
   CreateScopedChangeInput,
   OpenChangeCreation,
+  OpenChangeFinalization,
   OpenPlanningScope,
   OpenProjectRead,
   OpenStoreRead,
@@ -51,14 +54,19 @@ import type {
   ScopedAuthoredChange,
   ScopedReadChange,
   ScopedReadLocation,
+  OpenStoreIssue,
+  PlanningIntent,
   StablePlanningRef,
   StoreAggregateReadScope,
   StoreAggregateRef,
+  StoreIssueAddress,
+  StoreIssueScope,
   StorePlanning,
   StoreProjectAuthoringRef,
   StoreProjectRef,
   StoreReadAddress,
 } from '../types.js';
+import type { ChangeBindingInput } from '../../store/workspace/index.js';
 import type {
   CheckoutRole,
   ProjectRegistrySnapshotEntry,
@@ -80,6 +88,15 @@ interface AssociationFact {
   readonly targetLineId?: string;
   readonly planningWorktree?: string;
   readonly executionRoot?: string;
+  /**
+   * The Change this checkout's binding records as FINALIZED, written inside the
+   * archive transaction by `store-finalization-outcomes-v2`. It is deliberately
+   * not scope evidence — the Store, project, and target line are unchanged by a
+   * finalization — but it must be admitted, because refusing it would make
+   * every command run from an execution checkout fail after its Change is
+   * archived.
+   */
+  readonly finalizedChangeId?: string;
 }
 
 interface StoreState {
@@ -257,6 +274,9 @@ function parseAssociation(text: string, source: string): AssociationFact {
       { target: `${source}.version` }
     );
   }
+  // The allow-list is EXTENDED by enumerating each admitted field with its
+  // reason, never relaxed to a prefix rule — that would keep the gate passing
+  // while destroying the precision it exists for.
   const allowed = new Set([
     'version',
     'storeUid',
@@ -265,6 +285,11 @@ function parseAssociation(text: string, source: string): AssociationFact {
     'targetLineId',
     'planningWorktree',
     'executionRoot',
+    // Written by the archive transaction's `association-finalized` phase
+    // (`store-finalization-outcomes-v2` §8.2). Refusing it here would make
+    // every subsequent command from this checkout fail with a selection
+    // conflict the moment its Change is archived.
+    'finalizedChange',
   ]);
   const unknown = Object.keys(value).filter((key) => !allowed.has(key));
   if (unknown.length > 0) {
@@ -293,7 +318,19 @@ function parseAssociation(text: string, source: string): AssociationFact {
     ...(optionalString(value.executionRoot, 'executionRoot', source) === undefined
       ? {}
       : { executionRoot: optionalString(value.executionRoot, 'executionRoot', source) }),
+    // Read but NOT treated as scope evidence: a finalization changes no Store,
+    // project, or target line, and the archived Change is no longer an active
+    // one to select.
+    ...(finalizedChangeId(value.finalizedChange) === undefined
+      ? {}
+      : { finalizedChangeId: finalizedChangeId(value.finalizedChange) }),
   });
+}
+
+function finalizedChangeId(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const changeId = (value as { changeId?: unknown }).changeId;
+  return typeof changeId === 'string' && changeId.length > 0 ? changeId : undefined;
 }
 
 function parseLooseProjectConfig(text: string, source: string): LooseProjectConfig {
@@ -386,6 +423,16 @@ function primarySource(evidence: readonly ScopeEvidence[]): PlanningScopeSource 
     'nearest-standalone';
 }
 
+/**
+ * The intents that address a STORE rather than one project. Both resolve a
+ * Store aggregate and neither may be refused for having no project selected.
+ * `store-issue` additionally tolerates a project-shaped resolution, which
+ * `resolve` handles separately.
+ */
+function isStoreLevelIntent(intent: PlanningIntent): boolean {
+  return intent === 'store-read' || intent === 'store-issue';
+}
+
 function followupSelection(ref: StablePlanningRef): PlanningSelection {
   if (ref.mode === 'standalone') return freeze({});
   if (ref.mode === 'legacy-store' || ref.mode === 'store-aggregate') {
@@ -404,14 +451,43 @@ export class StorePlanningResolver implements StorePlanning {
   open(input: OpenStoreRead): Promise<StoreAggregateReadScope>;
   open(input: OpenProjectRead): Promise<ProjectReadScope>;
   open(input: OpenChangeCreation): Promise<ChangeCreationScope>;
+  open(input: OpenChangeFinalization): Promise<ChangeFinalizationScope>;
+  open(input: OpenStoreIssue): Promise<StoreIssueScope>;
   async open(
     input: OpenPlanningScope
-  ): Promise<StoreAggregateReadScope | ProjectReadScope | ChangeCreationScope> {
+  ): Promise<
+    | StoreAggregateReadScope
+    | ProjectReadScope
+    | ChangeCreationScope
+    | ChangeFinalizationScope
+    | StoreIssueScope
+  > {
     try {
       const resolved = await this.resolve(input);
-      if (input.intent === 'store-read') return this.aggregateCapability(resolved);
-      if (input.intent === 'project-read') return this.readCapability(resolved);
-      return this.creationCapability(resolved);
+      // Every intent is dispatched EXPLICITLY. The fallback below is
+      // `create-change` and nothing else, so a new intent added to the union
+      // without an arm here would silently authorize Change creation; the
+      // exhaustive check keeps that from compiling.
+      switch (input.intent) {
+        case 'store-read':
+          return this.aggregateCapability(resolved);
+        case 'store-issue':
+          return this.issueCapability(resolved);
+        case 'project-read':
+          return this.readCapability(resolved);
+        case 'finalize-change':
+          return this.finalizationCapability(resolved, input.change);
+        case 'create-change':
+          return this.creationCapability(resolved);
+        default: {
+          const unreachable: never = input;
+          throw new PlanningScopeError(
+            'invalid_start_path',
+            `Unknown planning intent: ${JSON.stringify(unreachable)}.`,
+            { target: 'intent' }
+          );
+        }
+      }
     } catch (error) {
       throw asPlanningScopeError(error);
     }
@@ -691,6 +767,22 @@ export class StorePlanningResolver implements StorePlanning {
       );
     }
     const context = parsed.data;
+    // A frozen worktree is USED, not re-derived. When the live worktree
+    // disagrees — removed, moved, or switched to another ref — the command
+    // fails naming both values instead of continuing in whatever the working
+    // directory happens to resolve to.
+    await this.assertFrozenWorktreeStillLive(
+      context.planning.worktree,
+      'session planning worktree',
+      contextPath
+    );
+    if (context.execution.kind === 'project') {
+      await this.assertFrozenWorktreeStillLive(
+        context.execution.worktree,
+        'session execution worktree',
+        contextPath
+      );
+    }
     return freeze({
       source: 'session' as const,
       ...(context.planning.type === 'store'
@@ -716,6 +808,63 @@ export class StorePlanningResolver implements StorePlanning {
           }
         : {}),
     });
+  }
+
+  /**
+   * Fails closed when a worktree the session froze no longer is that worktree.
+   * A frozen side with no recorded worktree is simply not checked — absence is
+   * an explicit state, and a mutation that needs the pair refuses separately on
+   * that absence rather than on a fabricated comparison.
+   */
+  private async assertFrozenWorktreeStillLive(
+    frozen: { root: string; worktreeInstanceId: string; ref?: string } | undefined,
+    label: string,
+    contextPath: string
+  ): Promise<void> {
+    if (frozen === undefined) return;
+    const probe = await this.dependencies.probePlanningWorktree({
+      planningRoot: frozen.root,
+    });
+    if (!probe.isWorktree || probe.worktreeInstanceId === undefined) {
+      throw new PlanningScopeError(
+        'planning_execution_binding_mismatch',
+        `The ${label} frozen by this session (${frozen.root}) is no longer a worktree on this machine.`,
+        {
+          target: contextPath,
+          fix: 'End the session and start a new one; a session never falls back to the working directory.',
+          details: freeze({
+            frozenRoot: frozen.root,
+            frozenWorktreeInstanceId: frozen.worktreeInstanceId,
+            liveWorktreeInstanceId: null,
+          }),
+        }
+      );
+    }
+    if (probe.worktreeInstanceId !== frozen.worktreeInstanceId) {
+      throw new PlanningScopeError(
+        'planning_execution_binding_mismatch',
+        `The ${label} frozen by this session (${frozen.root}) no longer re-derives its recorded worktree identity.`,
+        {
+          target: contextPath,
+          fix: 'End the session and start a new one.',
+          details: freeze({
+            frozenWorktreeInstanceId: frozen.worktreeInstanceId,
+            liveWorktreeInstanceId: probe.worktreeInstanceId,
+          }),
+        }
+      );
+    }
+    if (frozen.ref !== undefined && probe.ref !== frozen.ref) {
+      throw new PlanningScopeError(
+        'planning_execution_binding_mismatch',
+        `The ${label} frozen by this session (${frozen.root}) is on '${probe.ref ?? '(detached HEAD)'}', not the frozen '${frozen.ref}'.`,
+        {
+          target: contextPath,
+          fix: `Switch it back to ${frozen.ref}, or end the session and start a new one.`,
+          details: freeze({ frozenRef: frozen.ref, liveRef: probe.ref ?? null }),
+        }
+      );
+    }
   }
 
   private async readAssociationFact(
@@ -893,6 +1042,73 @@ export class StorePlanningResolver implements StorePlanning {
     return match.catalog.planningBinding.state === 'bound' && match.catalog.roles.planning === true;
   }
 
+  /**
+   * A planning worktree is VERIFIED, not assumed.
+   *
+   * Marker presence used to be the whole gate. It now has to hold together:
+   * the worktree must be a linked worktree of the selected Store repository
+   * (the integration checkout is never authorized), its marker must declare the
+   * resolved Store, project, AND target line, that target line must resolve to
+   * an existing Store ref in this repository, and the worktree's identity must
+   * re-derive from live Git. Each failure is reported by name, because
+   * "unverified" with no reason is the diagnostic this gate used to give.
+   *
+   * A healthy hand-assembled pair satisfies every condition and keeps working;
+   * an inconsistent one that used to pass now fails closed.
+   */
+  private async verifyPlanningWorktree(input: {
+    readonly store: StoreState;
+    readonly projectId: string;
+    readonly targetLineId?: string;
+    readonly targetLineCatalog?: StoreTargetLineCatalogV1;
+    readonly marker?: FactCandidate;
+  }): Promise<{ verified: boolean; findings: readonly string[] }> {
+    const findings: string[] = [];
+    if (input.targetLineId === undefined || input.targetLineCatalog === undefined) {
+      findings.push('target_line_required');
+      return { verified: false, findings: freeze(findings) };
+    }
+    if (input.store.checkoutRole !== 'linked-worktree') {
+      findings.push(`checkout_role:${input.store.checkoutRole}`);
+    }
+    const marker = input.marker;
+    if (marker === undefined) {
+      findings.push('planning_marker_absent');
+    } else {
+      if (marker.storeUid === undefined && marker.storeId === undefined) {
+        findings.push('planning_marker_declares_no_store');
+      } else if (
+        marker.storeUid !== undefined &&
+        input.store.uid !== undefined &&
+        !storeUidsMatch(marker.storeUid, input.store.uid)
+      ) {
+        findings.push('planning_marker_store_mismatch');
+      }
+      if (marker.projectId === undefined) {
+        findings.push('planning_marker_declares_no_project');
+      } else if (marker.projectId !== input.projectId) {
+        findings.push('planning_marker_project_mismatch');
+      }
+      if (marker.targetLineId === undefined) {
+        findings.push('planning_marker_declares_no_target_line');
+      } else if (marker.targetLineId !== input.targetLineId) {
+        findings.push('planning_marker_target_line_mismatch');
+      }
+    }
+
+    const probe = await this.dependencies.probePlanningWorktree({
+      planningRoot: input.store.planningRoot,
+      storeRef: input.targetLineCatalog.storeRef,
+    });
+    if (!probe.isWorktree || probe.worktreeInstanceId === undefined) {
+      findings.push('planning_worktree_identity_unavailable');
+    }
+    if (!probe.linked) findings.push('planning_worktree_not_linked');
+    if (probe.storeRefOid === undefined) findings.push('target_line_store_ref_unresolved');
+
+    return { verified: findings.length === 0, findings: freeze(findings) };
+  }
+
   private async targetLineCatalog(
     storeRoot: string,
     targetLineId: string,
@@ -991,13 +1207,29 @@ export class StorePlanningResolver implements StorePlanning {
       }
       if (
         !storeUidsMatch(identity.storeUid, ref.storeUid) ||
-        identity.projectId !== ref.projectId ||
-        identity.targetLineId !== ref.targetLineId
+        identity.projectId !== ref.projectId
       ) {
         throw new PlanningScopeError(
           'change_identity_mismatch',
-          `Change '${changeId}' identity conflicts with the selected Store/project/target-line scope.`,
+          `Change '${changeId}' identity conflicts with the selected Store/project scope.`,
           { target: metadataPath }
+        );
+      }
+      // A target line disagreement is its OWN refusal, named after the thing
+      // that disagrees, and it names both lines: a Change's line is frozen at
+      // creation and no weaker source re-points it.
+      if (identity.targetLineId !== ref.targetLineId) {
+        throw new PlanningScopeError(
+          'target_line_mismatch',
+          `Change '${changeId}' is frozen against target line '${identity.targetLineId}', but this command resolved '${ref.targetLineId}'.`,
+          {
+            target: metadataPath,
+            fix: `Address the Change on its own line: --target-line ${identity.targetLineId}.`,
+            details: freeze({
+              frozenTargetLineId: identity.targetLineId,
+              resolvedTargetLineId: ref.targetLineId,
+            }),
+          }
         );
       }
     } else if (identity) {
@@ -1333,6 +1565,7 @@ export class StorePlanningResolver implements StorePlanning {
     let targetLineCatalog: StoreTargetLineCatalogV1 | undefined;
     let splitTruth = false;
     let planningWorktreeVerified = false;
+    let planningWorktreeFindings: readonly string[] = [];
     let ref: StablePlanningRef;
 
     if (store) {
@@ -1451,12 +1684,16 @@ export class StorePlanningResolver implements StorePlanning {
               message: `Project '${projectCatalog.projectId}' is Store-bound but still has local planning content; reads use Store truth and mutations are blocked.`,
             }));
           }
-          planningWorktreeVerified =
-            targetLineId !== undefined &&
-            store.checkoutRole === 'linked-worktree' &&
-            Boolean(
-              association?.candidate.planningRoot || marker?.candidate.planningRoot
-            );
+          const verification = await this.verifyPlanningWorktree({
+            store,
+            projectId: projectCatalog.projectId,
+            ...(targetLineId === undefined ? {} : { targetLineId }),
+            ...(targetLineCatalog === undefined ? {} : { targetLineCatalog }),
+            ...(marker === null ? {} : { marker: marker.candidate }),
+          });
+          planningWorktreeVerified = verification.verified;
+          planningWorktreeFindings = verification.findings;
+          fingerprintParts.push(verification.findings);
           ref = freeze({
             mode: 'store-project',
             storeUid: store.uid,
@@ -1488,7 +1725,7 @@ export class StorePlanningResolver implements StorePlanning {
         projectRoot: selectedProjectRoot,
       });
     } else {
-      if (input.intent === 'store-read' || input.selection?.store !== undefined) {
+      if (isStoreLevelIntent(input.intent) || input.selection?.store !== undefined) {
         throw new PlanningScopeError(
           'unknown_store',
           'No Store scope can be resolved from the supplied selection and start path.',
@@ -1514,7 +1751,25 @@ export class StorePlanningResolver implements StorePlanning {
         );
       }
     }
-    if (input.intent !== 'store-read' && ref.mode === 'store-aggregate') {
+    // A Store-level Issue operation is the one intent that must SUCCEED from a
+    // project-shaped resolution. Standing in an execution worktree whose
+    // binding names one project is the ordinary case — the operator should not
+    // have to change directory to open a cross-project Issue — so a
+    // `store-project` ref is projected down to its Store in `issueCapability`
+    // rather than refused here. It gains no project authority by doing so: the
+    // capability exposes only Issue addresses, and every project surface still
+    // demands its own scope.
+    if (input.intent === 'store-issue' && ref.mode === 'standalone') {
+      throw new PlanningScopeError(
+        'unknown_store',
+        'A Store-level Issue belongs to a Store; this start path resolves a standalone project.',
+        {
+          target: 'selection.store',
+          fix: 'Add --store <store-id>, or run the command inside a Store checkout.',
+        }
+      );
+    }
+    if (!isStoreLevelIntent(input.intent) && ref.mode === 'store-aggregate') {
       throw new PlanningScopeError(
         'project_scope_required',
         'This operation requires one project; --store alone selects only the Store aggregate.',
@@ -1526,13 +1781,60 @@ export class StorePlanningResolver implements StorePlanning {
         await this.validateSelectedChange(ref, input.change, flavor)
       );
     }
+    if (input.intent === 'finalize-change' && ref.mode === 'store-project') {
+      // Finalization needs strictly more authority than a project read: the
+      // Change already exists, its identity is frozen, and the entry it
+      // publishes is Git-tracked Store content. The integration checkout is
+      // never a fallback. A standalone project and a legacy flat Store reach
+      // their existing flat archive location through the same intent, so they
+      // deliberately fall through this block without minting any v2 identity.
+      if (splitTruth) {
+        throw new PlanningScopeError(
+          'split_planning_truth',
+          'Store and project-local planning both exist; Change finalization is blocked.',
+          { target: 'project.planning' }
+        );
+      }
+      if (!ref.targetLineId) {
+        throw new PlanningScopeError(
+          'target_line_required',
+          'Store v2 Change finalization requires a stable target-line id.',
+          { target: 'selection.targetLine', fix: 'Add --target-line <id>.' }
+        );
+      }
+      if (!planningWorktreeVerified) {
+        throw new PlanningScopeError(
+          'planning_worktree_required',
+          `Store v2 Change finalization requires a verified planning worktree; the integration checkout is read-only. Unsatisfied: ${
+            planningWorktreeFindings.length === 0
+              ? 'no verification evidence'
+              : planningWorktreeFindings.join(', ')
+          }.`,
+          {
+            target: 'planning.worktree',
+            fix: `Prepare one with 'rasen store workspace plan --store ${ref.storeId} --project ${ref.projectId} --target-line ${ref.targetLineId} --change <change-id>' and apply it.`,
+            details: freeze({ findings: planningWorktreeFindings }),
+          }
+        );
+      }
+    }
     if (input.intent === 'create-change') {
-      // A legacy flat Store still authors into its own frozen flat layout. The
-      // read-only refusal belongs to `store-layout-v2-migration`, which ships
-      // the migration that makes it survivable — enforcing it here would strand
-      // every existing Store for the rest of the portfolio. Store v2 is
-      // unaffected: a v2 Store never classifies as `legacy-store`, so no flat
-      // v2 destination becomes writable through this path.
+      // A legacy flat Store's planning tree is READ-ONLY. Layout v2 has no
+      // writable flat Store namespace, so authoring a new Change into one would
+      // write content the migration must then move again — and would keep
+      // producing content in a layout the portfolio is retiring. This refusal
+      // ships together with the migration that makes it survivable
+      // (`store-layout-v2-migration`, tasks 10b.1-10b.3).
+      if (ref.mode === 'legacy-store') {
+        throw new PlanningScopeError(
+          'legacy_flat_store_requires_migration',
+          'This Store still uses the legacy flat planning layout, which is read-only; Change creation requires layout v2.',
+          {
+            target: 'store.layout',
+            fix: `Run 'rasen store migrate-layout ${ref.storeId}' to migrate this Store, then retry.`,
+          }
+        );
+      }
       if (splitTruth) {
         throw new PlanningScopeError(
           'split_planning_truth',
@@ -1551,8 +1853,16 @@ export class StorePlanningResolver implements StorePlanning {
         if (!planningWorktreeVerified) {
           throw new PlanningScopeError(
             'planning_worktree_required',
-            'Store v2 Change creation requires a verified planning worktree; the integration checkout is read-only.',
-            { target: 'planning.worktree' }
+            `Store v2 Change creation requires a verified planning worktree; the integration checkout is read-only. Unsatisfied: ${
+              planningWorktreeFindings.length === 0
+                ? 'no verification evidence'
+                : planningWorktreeFindings.join(', ')
+            }.`,
+            {
+              target: 'planning.worktree',
+              fix: `Prepare one with 'rasen store workspace plan --store ${ref.storeId} --project ${ref.projectId} --target-line ${ref.targetLineId ?? '<id>'} --change <change-id>' and apply it.`,
+              details: freeze({ findings: planningWorktreeFindings }),
+            }
           );
         }
       }
@@ -1698,6 +2008,35 @@ export class StorePlanningResolver implements StorePlanning {
         );
       }
       absolutePath = resolved.pathApi.join(ref.storeRoot, 'rasen', 'design-docs');
+    } else if (
+      address.kind === 'issue' ||
+      address.kind === 'issue-record' ||
+      address.kind === 'execution-plans' ||
+      address.kind === 'execution-plan'
+    ) {
+      // Store-level Issue content. A project scope must NOT reach it: an Issue
+      // is not project-planning content, and a project capability that could
+      // address one would be a project scope with Store-level write reach.
+      if (ref.mode !== 'store-aggregate' && ref.mode !== 'legacy-store') {
+        throw new PlanningScopeError(
+          'planning_address_not_available',
+          'Store-level Issue content requires a Store-level capability, not a project one.',
+          { target: address.kind }
+        );
+      }
+      // Every path comes from the layout contract, which validates the
+      // identifiers and containment-checks the result; nothing is joined here.
+      absolutePath = resolveStorePlanningLayoutV2Path(
+        ref.storeRoot,
+        address.kind === 'execution-plan'
+          ? {
+              kind: 'execution-plan',
+              issueId: address.issueId,
+              revisionId: address.revisionId,
+            }
+          : { kind: address.kind, issueId: address.issueId },
+        resolved.flavor
+      );
     } else {
       if (ref.mode === 'store-aggregate') {
         throw new PlanningScopeError(
@@ -1743,6 +2082,58 @@ export class StorePlanningResolver implements StorePlanning {
           }
           absolutePath = paths['archive-line'];
           break;
+        case 'archive-entry': {
+          const changeId = parseChangeId(address.changeId);
+          if (ref.mode === 'store-project') {
+            if (ref.targetLineId === undefined) {
+              throw new PlanningScopeError(
+                'target_line_required',
+                'A Store v2 Archive entry address requires a proven stable target line.',
+                { target: address.kind }
+              );
+            }
+            if (address.changeInstanceId === undefined) {
+              throw new PlanningScopeError(
+                'change_identity_mismatch',
+                'A Store v2 Archive entry address requires the Change instance it belongs to.',
+                { target: address.kind }
+              );
+            }
+            // Rejected BEFORE any path is returned, so a malformed instance can
+            // never reach the filesystem as a candidate location.
+            const instanceId = parseChangeInstanceId(
+              address.changeInstanceId,
+              'changeInstanceId'
+            ) as VerifiedChangeInstanceId;
+            absolutePath = resolveStorePlanningLayoutV2Path(
+              ref.storeRoot,
+              {
+                kind: 'archive-entry',
+                projectId: ref.projectId,
+                targetLineId: ref.targetLineId,
+                changeId,
+                archiveDate: address.archiveDate,
+                changeInstanceId: instanceId,
+              },
+              resolved.flavor
+            );
+            break;
+          }
+          // Standalone and legacy flat Stores keep their established flat entry
+          // name. No v2 identity is minted and no v2 address is computed.
+          if (paths['archive-line'] === undefined) {
+            throw new PlanningScopeError(
+              'target_line_required',
+              'The Archive line is unavailable until target line is proven.',
+              { target: address.kind }
+            );
+          }
+          absolutePath = resolved.pathApi.join(
+            paths['archive-line'],
+            `${address.archiveDate}-${changeId}`
+          );
+          break;
+        }
       }
     }
     return freeze({
@@ -1778,6 +2169,68 @@ export class StorePlanningResolver implements StorePlanning {
     }) as unknown as StoreAggregateReadScope;
   }
 
+  /**
+   * A Store-level Issue scope.
+   *
+   * Two things it does that no other capability does:
+   *
+   *   - It PROJECTS a project-shaped resolution down to its Store. Opening an
+   *     Issue from an execution worktree bound to one project is the ordinary
+   *     case, and requiring a `cd` would make the cross-project resource the
+   *     hardest one to reach.
+   *   - It reports the Store's REGISTERED checkout as the write location, never
+   *     `planningRoot`. `planningRoot` may be a planning worktree bound to one
+   *     Change, whose branch carries that Change's unmerged line; an Issue
+   *     written there is invisible from every other target line. The Issue
+   *     Module refuses such a checkout outright, and this makes sure the scope
+   *     never hands it one to begin with.
+   */
+  private issueCapability(resolved: InternalResolved): StoreIssueScope {
+    const ref = resolved.ref;
+    if (ref.mode === 'standalone') {
+      throw new PlanningScopeError(
+        'unknown_store',
+        'A Store-level Issue belongs to a Store; this scope resolved a standalone project.',
+        { target: 'selection.store' }
+      );
+    }
+    const aggregateRef: StoreAggregateRef = ref.mode === 'store-aggregate'
+      ? ref
+      : freeze({
+          mode: 'store-aggregate',
+          ...(ref.storeUid === undefined ? {} : { storeUid: ref.storeUid }),
+          storeId: ref.storeId,
+          storeRoot: ref.storeRoot,
+          ...(ref.mode === 'store-project' ? { layoutVersion: 2 as const } : {}),
+        });
+    const storeCheckoutRoot = resolved.store?.registeredRoot ?? aggregateRef.storeRoot;
+    const issueResolved: InternalResolved = {
+      ...resolved,
+      ref: aggregateRef,
+      description: freeze({
+        ...resolved.description,
+        kind: 'store-aggregate',
+        ref: aggregateRef,
+        // Recomputed from the AGGREGATE ref. Carrying the project-shaped
+        // follow-up forward would have this scope advertise `--project` to the
+        // next command — for the one resource that must never require one.
+        followupSelection: followupSelection(aggregateRef),
+        // Issue content is Store-level, so a description of this scope must not
+        // keep advertising the project paths the underlying resolution found.
+        paths: this.describePaths(aggregateRef, resolved.flavor),
+      }),
+    };
+    return freeze({
+      kind: 'store-issue' as const,
+      ref: aggregateRef,
+      storeCheckoutRoot,
+      [CAPABILITY]: true,
+      locate: (address: StoreIssueAddress) =>
+        this.location({ ...issueResolved, ref: freeze({ ...aggregateRef, storeRoot: storeCheckoutRoot }) }, address),
+      describe: () => issueResolved.description,
+    }) as unknown as StoreIssueScope;
+  }
+
   private readCapability(resolved: InternalResolved): ProjectReadScope {
     if (resolved.ref.mode === 'store-aggregate') {
       throw new PlanningScopeError(
@@ -1811,14 +2264,29 @@ export class StorePlanningResolver implements StorePlanning {
           }
           if (
             !storeUidsMatch(metadata.identity.storeUid, resolved.ref.storeUid) ||
-            metadata.identity.projectId !== resolved.ref.projectId ||
-            (resolved.ref.targetLineId !== undefined &&
-              metadata.identity.targetLineId !== resolved.ref.targetLineId)
+            metadata.identity.projectId !== resolved.ref.projectId
           ) {
             throw new PlanningScopeError(
               'change_identity_mismatch',
-              `Change '${changeId}' identity does not match the selected Store/project/target-line scope.`,
+              `Change '${changeId}' identity does not match the selected Store/project scope.`,
               { target: location.absolutePath }
+            );
+          }
+          if (
+            resolved.ref.targetLineId !== undefined &&
+            metadata.identity.targetLineId !== resolved.ref.targetLineId
+          ) {
+            throw new PlanningScopeError(
+              'target_line_mismatch',
+              `Change '${changeId}' is frozen against target line '${metadata.identity.targetLineId}', but this command resolved '${resolved.ref.targetLineId}'.`,
+              {
+                target: location.absolutePath,
+                fix: `Address the Change on its own line: --target-line ${metadata.identity.targetLineId}.`,
+                details: freeze({
+                  frozenTargetLineId: metadata.identity.targetLineId,
+                  resolvedTargetLineId: resolved.ref.targetLineId,
+                }),
+              }
             );
           }
           if (resolved.ref.targetLineId === undefined) {
@@ -1869,6 +2337,36 @@ export class StorePlanningResolver implements StorePlanning {
       createChange: (input: CreateScopedChangeInput) => this.createChange(resolved, input),
       describe: () => resolved.description,
     }) as unknown as ChangeCreationScope;
+  }
+
+  /**
+   * The finalization capability. Authority was already required by `resolve`
+   * (target line and planning worktree for a Store v2 project); what remains
+   * here is opening the Change itself, which re-verifies its committed v2
+   * identity against the resolved scope and refuses a target-line disagreement
+   * before any address is computed.
+   */
+  private async finalizationCapability(
+    resolved: InternalResolved,
+    selector: ChangeSelector
+  ): Promise<ChangeFinalizationScope> {
+    if (resolved.ref.mode === 'store-aggregate') {
+      throw new PlanningScopeError(
+        'project_scope_required',
+        'Change finalization requires one selected project.',
+        { target: 'selection.project' }
+      );
+    }
+    const change = await this.readCapability(resolved).openChange(selector);
+    const capability = {
+      kind: 'change-finalization' as const,
+      ref: resolved.ref,
+      change,
+      [CAPABILITY]: true,
+      locate: (address: ProjectReadAddress) => this.location(resolved, address),
+      describe: () => resolved.description,
+    };
+    return freeze(capability) as unknown as ChangeFinalizationScope;
   }
 
   private async revalidate(resolved: InternalResolved): Promise<void> {
@@ -2068,6 +2566,32 @@ export class StorePlanningResolver implements StorePlanning {
     }
   }
 
+  /**
+   * The two-phase binding's input, or null when this scope has no pair to bind
+   * (standalone and legacy-flat authoring mint no Store v2 identity).
+   */
+  private changeBindingInput(
+    resolved: InternalResolved,
+    changeId: string
+  ): ChangeBindingInput | null {
+    const ref = resolved.ref;
+    if (ref.mode !== 'store-project' || ref.targetLineId === undefined) return null;
+    if (ref.planningScopeId === undefined) return null;
+    return {
+      storeUid: ref.storeUid,
+      storeId: ref.storeId,
+      projectId: ref.projectId,
+      targetLineId: ref.targetLineId,
+      planningScopeId: ref.planningScopeId,
+      changeId,
+      planningRoot: ref.storeRoot,
+      ...(resolved.input.globalDataDir === undefined
+        ? {}
+        : { globalDataDir: resolved.input.globalDataDir }),
+      ...(resolved.flavor === 'native' ? {} : { pathFlavor: resolved.flavor }),
+    };
+  }
+
   private async createChange(
     resolved: InternalResolved,
     input: CreateScopedChangeInput
@@ -2121,6 +2645,21 @@ export class StorePlanningResolver implements StorePlanning {
     // Revalidate before the first mkdir/lock write. Mutation methods never
     // silently reopen into a different scope.
     await this.revalidate(resolved);
+    // One planning worktree carries exactly one active Change. The refusal is
+    // decided from the RECORDED binding, before any Change directory exists —
+    // a directory scan of the planning tree would have to guess which Change is
+    // current, which is exactly what the binding rules forbid.
+    const binding = this.changeBindingInput(resolved, changeId);
+    if (binding !== null) {
+      try {
+        await this.dependencies.assertPlanningWorktreeUnbound(binding);
+      } catch (error) {
+        // The workspace taxonomy's codes are the diagnostic; re-wrapping keeps
+        // `workspace_already_bound` (and its two disagreeing values) all the way
+        // out to `--json`, instead of collapsing to the caller's fallback code.
+        throw asPlanningScopeError(error);
+      }
+    }
     await this.ensureCreationParents(resolved);
     let lock: Awaited<ReturnType<StorePlanningDependencies['fs']['openExclusive']>>;
     let lockIdentity: StorePlanningFileIdentity | null = null;
@@ -2271,6 +2810,13 @@ export class StorePlanningResolver implements StorePlanning {
       // hidden `<pid>.<random>` file into every published Change, the Store's
       // history, and later Archive digest accounting.
       await this.removePublicationOwnerToken(resolved, target, publication);
+      // Phase two of the pair: the Change instance now exists, so the binding
+      // can complete. This writes machine-local state only, and a pair the
+      // operator assembled by hand is indexed here from what is already true on
+      // disk.
+      if (binding !== null && instanceId !== undefined) {
+        await this.dependencies.completeChangeBinding({ ...binding, changeInstanceId: instanceId });
+      }
       return freeze({
         changeId,
         schema,

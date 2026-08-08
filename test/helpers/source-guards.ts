@@ -57,6 +57,90 @@ export function sourceFiles(repoRoot: string): string[] {
   return found.sort();
 }
 
+/**
+ * The three flat-layout path constructors. `specsDir(x)`, `changesDir(x)` and
+ * `inRepoArchiveDir(x)` ARE `<x>/rasen/{specs,changes,changes/archive}`, so a
+ * call on a Store root is a flat Store address even though no literal segment
+ * appears in the source.
+ */
+export const FLAT_PATH_HELPERS = ['specsDir', 'changesDir', 'inRepoArchiveDir'] as const;
+
+/**
+ * Every call of a flat path helper in this source, keyed `helper(argument)`.
+ *
+ * Inverted for the same reason `propertyReceivers` is (see the docblock above):
+ * the guard this replaced matched four literal argument spellings —
+ * `storeRoot`, `store.root`, `store.storeRoot`, `input.storeRoot` — and
+ * therefore saw 7 of the 23 calls that existed the day it was written. Every
+ * other spelling, and a call with a second argument, passed straight through a
+ * census the caller inventory called "the enforcement".
+ *
+ * This finds every CALL, whatever the argument is called, and hands the caller
+ * the argument token so it can allowlist per file. A spelling nobody enumerated
+ * lands in the offender map instead of disappearing from it. A declaration
+ * (`function specsDir(...)`) is reported as `helper(declaration)` — a call site
+ * can never be preceded by the `function` keyword, so the two cannot be
+ * confused. An optional call (`changesDir?.(x)`) is a call and is counted.
+ *
+ * KNOWN HOLES — three, all needing symbol resolution this deliberately does not
+ * do, and neither appearing against a flat-path helper today:
+ *
+ *   import { changesDir as cd } from '…'; cd(storeRoot)   // 50 files use `{ X as Y }`
+ *   const f = changesDir; f(storeRoot)                     // rebinding
+ *   helpers['changesDir'](storeRoot)                       // computed property
+ *
+ * Recorded as three shapes rather than one, because a hole believed to be one
+ * item wide does not get audited the way a three-item hole does. Closing them
+ * needs a real parse (ts-morph or the TypeScript AST), which is the right fix if
+ * a fourth ever appears — not another regex.
+ */
+export function flatPathHelperCalls(source: string): Record<string, number> {
+  const code = withoutComments(source);
+  const occurrence = new RegExp(String.raw`\b(${FLAT_PATH_HELPERS.join('|')})\b`, 'gu');
+  const found: Record<string, number> = {};
+
+  for (const match of code.matchAll(occurrence)) {
+    const start = match.index ?? 0;
+    let open = start + match[0].length;
+    while (open < code.length && /\s/u.test(code[open] as string)) open += 1;
+    // An OPTIONAL call is still a call. `?.(` is idiomatic here — 39 sites in
+    // `src/` — so skipping it would have left a flat-Store address one keystroke
+    // away from invisible.
+    if (code[open] === '?' && code[open + 1] === '.') {
+      open += 2;
+      while (open < code.length && /\s/u.test(code[open] as string)) open += 1;
+    }
+    // A bare reference is not a call. `changesDir` is also a widely used local
+    // variable and property name in this repo, so only a real call counts.
+    if (code[open] !== '(') continue;
+
+    let before = start - 1;
+    while (before >= 0 && /\s/u.test(code[before] as string)) before -= 1;
+    const isDeclaration = /\bfunction$/u.test(code.slice(Math.max(0, before - 9), before + 1));
+
+    let depth = 1;
+    let argument = '';
+    for (let i = open + 1; i < code.length && depth > 0; i += 1) {
+      const ch = code[i] as string;
+      if (ch === '(') depth += 1;
+      else if (ch === ')') {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+      // Only the FIRST argument identifies the address; a second argument must
+      // not be able to hide the call, which is how the old regex was defeated.
+      if (depth === 1 && ch === ',') break;
+      argument += ch;
+    }
+
+    const token = isDeclaration ? 'declaration' : argument.trim().replace(/\s+/gu, ' ');
+    const key = `${match[1]}(${token})`;
+    found[key] = (found[key] ?? 0) + 1;
+  }
+
+  return found;
+}
+
 const IDENT = /[\w$]/u;
 
 /**

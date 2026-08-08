@@ -47,11 +47,18 @@ export type SubmitResult =
 
 /** Resolved project scope from the router; string is the legacy direct-call adapter. */
 /**
- * A legacy flat Store space is a valid submission target: it has no project
- * catalog, so its flat `rasen/changes` IS the content a `store:` space
- * addresses, and `rasen new change --store <id>` writes exactly there. Only a
- * Store v2 aggregate cannot select a project implicitly; the router screens
- * that with `isStoreAggregateSpace()`.
+ * No `store:` space is a submission target any more, and this bridge needs no
+ * gate of its own for either reason.
+ *
+ * A legacy flat Store is REFUSED: `store-layout-v2-migration` made the flat
+ * planning tree read-only, so `rasen new change --store <id>` answers
+ * `legacy_flat_store_requires_migration`. This endpoint spawns that same CLI
+ * rather than reimplementing creation, so the refusal arrives here as a
+ * `422 cli_error` carrying the CLI's own message — structurally, not by
+ * duplication. A Store v2 aggregate is refused earlier still: it cannot select
+ * a project implicitly, and the router screens it with `isStoreAggregateSpace()`
+ * before anything is spawned. The submission target that WORKS in layout v2 is
+ * the bound project, which is how v2 addresses Store planning.
  */
 export type ChangeSubmissionTarget = ResolvedSpace | string | undefined;
 

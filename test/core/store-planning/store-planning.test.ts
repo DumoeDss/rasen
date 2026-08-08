@@ -11,7 +11,10 @@ import {
   type StorePlanningDependencies,
 } from '../../../src/core/store-planning/testing.js';
 import { PlanningScopeError } from '../../../src/core/store-planning/index.js';
-import { parseChangeInstanceSeed } from '../../../src/core/store/planning-foundation.js';
+import {
+  deriveWorktreeInstanceId,
+  parseChangeInstanceSeed,
+} from '../../../src/core/store/planning-foundation.js';
 
 const STORE_UID = '123e4567-e89b-42d3-a456-426614174000';
 const tempRoots: string[] = [];
@@ -68,6 +71,29 @@ function storeFixture(options: { marker?: boolean; localPlanning?: boolean } = {
   return { storeRoot, projectRoot };
 }
 
+/**
+ * A healthy planning worktree, as live Git would report one.
+ *
+ * These fixtures stub Git the same way they stub `checkoutRole`: there is no
+ * real repository behind the temporary directories, so the probe that
+ * `store-planning-worktree-bindings` added has to be supplied here too. The
+ * DEFAULT is healthy — a linked worktree whose identity re-derives and whose
+ * target-line Store ref resolves — so every case that predates the probe keeps
+ * asserting what it always asserted. The cases that exercise the tightened gate
+ * override it explicitly.
+ */
+function healthyPlanningProbe(): StorePlanningDependencies['probePlanningWorktree'] {
+  return async ({ planningRoot }) => ({
+    isWorktree: true,
+    linked: true,
+    worktreeInstanceId: deriveWorktreeInstanceId({
+      repositoryIdentity: `${planningRoot}/.git`,
+      worktreeIdentity: planningRoot,
+    }),
+    storeRefOid: 'a'.repeat(40),
+  });
+}
+
 function resolver(
   roots: { storeRoot: string; projectRoot: string },
   role: StorePlanningDependencies['checkoutRole'] = () => 'linked-worktree',
@@ -75,6 +101,11 @@ function resolver(
 ) {
   const dependencies: StorePlanningDependencies = {
     fs: overrides.fs ?? nodeStorePlanningFileSystem,
+    probePlanningWorktree: overrides.probePlanningWorktree ?? healthyPlanningProbe(),
+    assertPlanningWorktreeUnbound: overrides.assertPlanningWorktreeUnbound ?? (async () => {}),
+    completeChangeBinding:
+      overrides.completeChangeBinding ??
+      (async () => ({ bindingState: 'prepared' as const, entry: null, findings: [] })),
     snapshotStores: async () => [
       { id: 'team-store', uid: STORE_UID, type: 'store', root: roots.storeRoot },
       { id: 'project-a', type: 'project', root: roots.projectRoot },
@@ -766,6 +797,209 @@ describe('StorePlanning.open', () => {
         selection: { store: STORE_UID, project: 'project-a', targetLine: 'line-0.2' },
       })
     ).rejects.toMatchObject({ diagnostic: { code: 'planning_selection_conflict' } });
+  });
+});
+
+/**
+ * `store-planning-worktree-bindings` tasks 8.4, 8.5, and 12.4.
+ *
+ * A command inside a session USES the frozen pair. It does not re-derive it
+ * from the working directory, and when the live worktree disagrees with what
+ * the session froze — removed, replaced, or on another ref — it fails closed
+ * naming both values rather than continuing in whatever the directory happens
+ * to be.
+ */
+describe('a session freezes the worktree pair', () => {
+  const PLANNING_INSTANCE = deriveWorktreeInstanceId({
+    repositoryIdentity: '/store/.git',
+    worktreeIdentity: '/store--fix-a',
+  });
+
+  function sessionContextFile(
+    roots: { storeRoot: string; projectRoot: string },
+    worktree?: { root: string; worktreeInstanceId: string; ref?: string }
+  ): string {
+    const contextPath = path.join(path.dirname(roots.storeRoot), 'session-context.json');
+    write(
+      contextPath,
+      JSON.stringify({
+        version: 2,
+        sessionId: 'session-frozen',
+        planning: {
+          type: 'store',
+          uid: STORE_UID,
+          id: 'team-store',
+          projectId: 'project-a',
+          targetLineId: 'line-0.2',
+          root: roots.storeRoot,
+          ...(worktree === undefined ? {} : { worktree }),
+        },
+        execution: { kind: 'project', projectId: 'project-a', root: roots.projectRoot },
+      })
+    );
+    return contextPath;
+  }
+
+  function filesUnder(root: string): string[] {
+    const out: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const absolute = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(absolute);
+          continue;
+        }
+        out.push(`${path.relative(root, absolute)}:${fs.readFileSync(absolute, 'utf8')}`);
+      }
+    };
+    walk(root);
+    return out.sort();
+  }
+
+  it('resolves the frozen planning root from a completely unrelated directory', async () => {
+    const roots = storeFixture();
+    const elsewhere = path.join(path.dirname(roots.storeRoot), 'somewhere-else');
+    fs.mkdirSync(elsewhere, { recursive: true });
+    const contextPath = sessionContextFile(roots, {
+      root: roots.storeRoot,
+      worktreeInstanceId: PLANNING_INSTANCE,
+    });
+    const planning = resolver(roots, () => 'linked-worktree', {
+      sessionContextPath: () => contextPath,
+      probePlanningWorktree: async () => ({
+        isWorktree: true,
+        linked: true,
+        worktreeInstanceId: PLANNING_INSTANCE,
+        storeRefOid: 'a'.repeat(40),
+      }),
+    });
+
+    const scope = await planning.open({ intent: 'project-read', startPath: elsewhere });
+
+    expect(scope.describe().paths['planning-checkout']).toBe(roots.storeRoot);
+    expect(scope.locate({ kind: 'active-changes' }).absolutePath).toBe(
+      path.join(roots.storeRoot, 'rasen', 'projects', 'project-a', 'changes')
+    );
+  });
+
+  it('fails closed when the frozen planning worktree is no longer a worktree', async () => {
+    const roots = storeFixture();
+    const contextPath = sessionContextFile(roots, {
+      root: roots.storeRoot,
+      worktreeInstanceId: PLANNING_INSTANCE,
+    });
+    const planning = resolver(roots, () => 'linked-worktree', {
+      sessionContextPath: () => contextPath,
+      probePlanningWorktree: async () => ({ isWorktree: false, linked: false }),
+    });
+
+    await expect(
+      planning.open({ intent: 'project-read', startPath: roots.storeRoot })
+    ).rejects.toMatchObject({
+      diagnostic: {
+        code: 'planning_execution_binding_mismatch',
+        details: { frozenWorktreeInstanceId: PLANNING_INSTANCE, liveWorktreeInstanceId: null },
+      },
+    });
+  });
+
+  it('fails closed when the frozen worktree no longer re-derives its identity', async () => {
+    const roots = storeFixture();
+    const contextPath = sessionContextFile(roots, {
+      root: roots.storeRoot,
+      worktreeInstanceId: PLANNING_INSTANCE,
+    });
+    const live = deriveWorktreeInstanceId({
+      repositoryIdentity: '/other/.git',
+      worktreeIdentity: '/other--fix-a',
+    });
+    const planning = resolver(roots, () => 'linked-worktree', {
+      sessionContextPath: () => contextPath,
+      probePlanningWorktree: async () => ({
+        isWorktree: true,
+        linked: true,
+        worktreeInstanceId: live,
+        storeRefOid: 'a'.repeat(40),
+      }),
+    });
+
+    await expect(
+      planning.open({ intent: 'project-read', startPath: roots.storeRoot })
+    ).rejects.toMatchObject({
+      diagnostic: {
+        code: 'planning_execution_binding_mismatch',
+        details: { frozenWorktreeInstanceId: PLANNING_INSTANCE, liveWorktreeInstanceId: live },
+      },
+    });
+  });
+
+  it('fails closed when the frozen worktree has been switched to another ref, naming both', async () => {
+    const roots = storeFixture();
+    const contextPath = sessionContextFile(roots, {
+      root: roots.storeRoot,
+      worktreeInstanceId: PLANNING_INSTANCE,
+      ref: 'refs/heads/change/line-0.2/project-a/fix-a',
+    });
+    const planning = resolver(roots, () => 'linked-worktree', {
+      sessionContextPath: () => contextPath,
+      probePlanningWorktree: async () => ({
+        isWorktree: true,
+        linked: true,
+        worktreeInstanceId: PLANNING_INSTANCE,
+        ref: 'refs/heads/user-moved-me',
+        storeRefOid: 'a'.repeat(40),
+      }),
+    });
+
+    await expect(
+      planning.open({ intent: 'project-read', startPath: roots.storeRoot })
+    ).rejects.toMatchObject({
+      diagnostic: {
+        code: 'planning_execution_binding_mismatch',
+        details: {
+          frozenRef: 'refs/heads/change/line-0.2/project-a/fix-a',
+          liveRef: 'refs/heads/user-moved-me',
+        },
+      },
+    });
+  });
+
+  it('refuses a mutation the frozen root cannot authorize instead of falling back to the directory', async () => {
+    // The session records NO pair, and the frozen planning root is the Store
+    // integration checkout. A session never re-derives its scope from the
+    // working directory, so the refusal stands whatever the directory is.
+    const roots = storeFixture();
+    const contextPath = sessionContextFile(roots);
+    const planning = resolver(roots, () => 'integration', {
+      sessionContextPath: () => contextPath,
+    });
+
+    await expect(
+      planning.open({
+        intent: 'create-change',
+        startPath: roots.storeRoot,
+        selection: { store: STORE_UID, project: 'project-a', targetLine: 'line-0.2' },
+      })
+    ).rejects.toMatchObject({ diagnostic: { code: 'planning_worktree_required' } });
+  });
+
+  it('leaves the Store integration checkout byte-identical when a mutation is refused', async () => {
+    const roots = storeFixture();
+    const planning = resolver(roots, () => 'integration');
+    const before = filesUnder(roots.storeRoot);
+
+    await expect(
+      planning.open({
+        intent: 'create-change',
+        startPath: roots.storeRoot,
+        selection: { store: STORE_UID, project: 'project-a', targetLine: 'line-0.2' },
+      })
+    ).rejects.toMatchObject({ diagnostic: { code: 'planning_worktree_required' } });
+
+    expect(filesUnder(roots.storeRoot)).toEqual(before);
+    expect(
+      fs.existsSync(path.join(roots.storeRoot, 'rasen', 'projects', 'project-a', 'changes'))
+    ).toBe(false);
   });
 });
 

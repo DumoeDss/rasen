@@ -11,7 +11,10 @@ import { registerProject } from '../../../src/core/project-registry.js';
 import { FileSystemUtils } from '../../../src/utils/file-system.js';
 import { createOpenSpecRoot } from '../../helpers/rasen-fixtures.js';
 import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
-import type { RuntimeContext } from '../../../src/core/session-runtime-context.js';
+import {
+  RUNTIME_CONTEXT_VERSION,
+  type RuntimeContext,
+} from '../../../src/core/session-runtime-context.js';
 
 const FROZEN_PROJECT = 'frozen-project-id';
 
@@ -47,7 +50,9 @@ describe('frozen-resume execution binding', () => {
 
   function sessionContextFor(projectId: string, root: string): RuntimeContext {
     return {
-      version: 1,
+      // Tracks the current context-file version rather than pinning a
+      // literal, which `store-planning-worktree-bindings` raised to 2.
+      version: RUNTIME_CONTEXT_VERSION,
       sessionId: 'session-1',
       planning: { type: 'store', id: 'team-store', root: path.join(tempDir, 'store') },
       execution: { kind: 'project', projectId, root },
@@ -131,7 +136,7 @@ describe('frozen-resume execution binding', () => {
     const result = await resolveFrozenExecutionBinding({
       frozen: { kind: 'project', projectId: FROZEN_PROJECT },
       sessionContext: {
-        version: 1,
+        version: RUNTIME_CONTEXT_VERSION,
         sessionId: 'session-2',
         planning: { type: 'store', id: 'team-store', root: path.join(tempDir, 'store') },
         execution: { kind: 'planning-only' },

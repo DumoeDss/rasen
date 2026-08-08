@@ -46,6 +46,7 @@ import { createSessionSupervisor } from '../../../src/core/management-api/superv
 import { createSessionRegistry } from '../../../src/core/management-api/session-registry.js';
 import {
   RASEN_SESSION_CONTEXT_ENV,
+  RUNTIME_CONTEXT_VERSION,
   RuntimeContextSchema,
   sessionRuntimeContextDir,
   sessionRuntimeContextPath,
@@ -221,7 +222,9 @@ describe('session context handover (unified-session-runtime-context D3)', () => 
     // A context file from a session id that no longer exists.
     writeSessionRuntimeContext(
       {
-        version: 1,
+        // Tracks the current context-file version rather than pinning a
+        // literal, which `store-planning-worktree-bindings` raised to 2.
+        version: RUNTIME_CONTEXT_VERSION,
         sessionId: 'crashed-session',
         planning: { type: 'store', id: 'other-store', root: '/elsewhere' },
         execution: { kind: 'project', projectId: 'other-project', root: '/elsewhere/checkout' },

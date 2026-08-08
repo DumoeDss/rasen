@@ -18,7 +18,7 @@ This skill allows you to batch-archive changes, handling spec conflicts intellig
 
 ${STORE_SELECTION_GUIDANCE}
 
-**Store finalization hard gate:** inspect the first resolved CLI payload before selecting or mutating Changes. If root.scope.kind is 'store-project', REFUSE the entire batch with 'store_v2_finalization_unavailable' and create or apply no per-change stored plans. Any other scope, including 'legacy-store', proceeds normally.
+**Store finalization hard gate:** inspect the first resolved CLI payload before selecting or mutating Changes. If root.scope.kind is 'store-project', every change in the batch is FINALIZED and carries its OWN explicitly declared \`--outcome\` ('landed', 'superseded', 'cancelled', or 'abandoned') plus the \`--reason\` or \`--by <changeInstanceId>\` that outcome requires. An outcome is NEVER inferred from a sibling, reused across changes, or defaulted; if any member has none, REFUSE the entire batch naming that change and create or apply no per-change stored plans. If root.scope.kind is 'legacy-store', REFUSE with 'legacy_flat_store_requires_migration' — the legacy flat Store planning tree is read-only until 'rasen store migrate-layout <store-id>' has migrated it. Any other scope archives as before, with no outcome required or recorded.
 
 **Input**: None required (prompts for selection)
 

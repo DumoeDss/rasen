@@ -146,6 +146,18 @@ export function statusFromError(error: unknown): ChangeCommandStatus {
     return { ...error.diagnostic };
   }
 
+  // Root SELECTION is not the only place a coded diagnostic comes from. A
+  // refusal raised after the root resolves — `workspace_already_bound` from the
+  // planning/execution binding, or any other planning-scope or Store error —
+  // carries the same `{ severity, code, message, target?, fix? }` envelope
+  // without sharing a class, and collapsing it to `change_error` throws away
+  // the taxonomy code the caller is told to branch on. `asStatus` in
+  // `shared-output.ts` already duck-types it this way.
+  const diagnostic = (error as { diagnostic?: ChangeCommandStatus }).diagnostic;
+  if (diagnostic && typeof diagnostic.code === 'string' && diagnostic.severity === 'error') {
+    return { ...diagnostic };
+  }
+
   return {
     severity: 'error',
     code: 'change_error',

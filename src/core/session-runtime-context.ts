@@ -29,8 +29,19 @@ import { getGlobalDataDir } from './global-config.js';
 /** The environment variable carrying the context FILE PATH (design D3). */
 export const RASEN_SESSION_CONTEXT_ENV = 'RASEN_SESSION_CONTEXT';
 
-/** Current context-file schema version. */
-export const RUNTIME_CONTEXT_VERSION = 1;
+/**
+ * Current context-file schema version.
+ *
+ * Raised to 2 by `store-planning-worktree-bindings`, which freezes the COMPLETE
+ * Store-planning / project-execution worktree pair rather than just the two
+ * roots. The version is raised rather than the fields added optionally because
+ * these schemas are `.strict()`: an older reader would reject the new keys
+ * anyway, and raising the version turns that into the plain "unsupported
+ * version" report the capability already requires instead of a parse error at
+ * an arbitrary call site. The file is machine-local and dies with its session,
+ * so the repair is to restart the session and nothing durable is affected.
+ */
+export const RUNTIME_CONTEXT_VERSION = 2;
 
 const SESSIONS_DIR_NAME = 'sessions';
 const CONTEXT_FILE_NAME = 'context.json';
@@ -41,8 +52,20 @@ const CONTEXT_FILE_NAME = 'context.json';
  * `ResolvedStoreRef`: a Store whose metadata predates permanent identities
  * resolves legitimately with no identity yet.
  */
+/**
+ * One frozen side of the worktree pair. The instance identity is what makes a
+ * later command able to tell "the same worktree, addressed through another
+ * spelling" from "a different worktree", which a root alone cannot.
+ */
+export interface RuntimeWorktreeRef {
+  root: string;
+  worktreeInstanceId: string;
+  ref?: string;
+  headOid?: string;
+}
+
 export type RuntimePlanningRef =
-  | { type: 'project'; projectId: string; root: string }
+  | { type: 'project'; projectId: string; root: string; worktree?: RuntimeWorktreeRef }
   | {
       type: 'store';
       uid?: string;
@@ -50,6 +73,7 @@ export type RuntimePlanningRef =
       projectId?: string;
       targetLineId?: string;
       root: string;
+      worktree?: RuntimeWorktreeRef;
     };
 
 /**
@@ -58,14 +82,32 @@ export type RuntimePlanningRef =
  */
 export type RuntimeExecutionRef =
   | { kind: 'planning-only' }
-  | { kind: 'project'; projectId: string; root: string; home?: string };
+  | {
+      kind: 'project';
+      projectId: string;
+      root: string;
+      home?: string;
+      worktree?: RuntimeWorktreeRef;
+    };
 
 export interface RuntimeContext {
   version: typeof RUNTIME_CONTEXT_VERSION;
   sessionId: string;
   planning: RuntimePlanningRef;
   execution: RuntimeExecutionRef;
+  /** Present only when the workspace is bound. Absent is an explicit state. */
+  changeInstanceId?: string;
+  workspacePairId?: string;
 }
+
+export const RuntimeWorktreeRefSchema = z
+  .object({
+    root: z.string().min(1),
+    worktreeInstanceId: z.string().min(1),
+    ref: z.string().min(1).optional(),
+    headOid: z.string().min(1).optional(),
+  })
+  .strict();
 
 export const RuntimePlanningRefSchema = z.discriminatedUnion('type', [
   z
@@ -73,6 +115,7 @@ export const RuntimePlanningRefSchema = z.discriminatedUnion('type', [
       type: z.literal('project'),
       projectId: z.string().min(1),
       root: z.string().min(1),
+      worktree: RuntimeWorktreeRefSchema.optional(),
     })
     .strict(),
   z
@@ -83,6 +126,7 @@ export const RuntimePlanningRefSchema = z.discriminatedUnion('type', [
       projectId: z.string().min(1).optional(),
       targetLineId: z.string().min(1).optional(),
       root: z.string().min(1),
+      worktree: RuntimeWorktreeRefSchema.optional(),
     })
     .strict(),
 ]);
@@ -95,6 +139,7 @@ export const RuntimeExecutionRefSchema = z.discriminatedUnion('kind', [
       projectId: z.string().min(1),
       root: z.string().min(1),
       home: z.string().min(1).optional(),
+      worktree: RuntimeWorktreeRefSchema.optional(),
     })
     .strict(),
 ]);
@@ -105,6 +150,8 @@ export const RuntimeContextSchema = z
     sessionId: z.string().min(1),
     planning: RuntimePlanningRefSchema,
     execution: RuntimeExecutionRefSchema,
+    changeInstanceId: z.string().min(1).optional(),
+    workspacePairId: z.string().min(1).optional(),
   })
   .strict();
 
@@ -156,6 +203,18 @@ export function planningRefFor(space: {
  * behavior. This is the "no session context" arm of design D4's ladder, not a
  * broken context.
  */
+/**
+ * The complete pair a session freezes, resolved before the session starts.
+ * Facts that do not exist are ABSENT: a planning-only session records no pair,
+ * and an unbound workspace records no pair identity.
+ */
+export interface FrozenWorkspacePair {
+  planning?: RuntimeWorktreeRef;
+  execution?: RuntimeWorktreeRef;
+  changeInstanceId?: string;
+  workspacePairId?: string;
+}
+
 export function buildRuntimeContext(input: {
   sessionId: string;
   space?: {
@@ -170,16 +229,29 @@ export function buildRuntimeContext(input: {
     };
   };
   execution?: RuntimeExecutionRef;
+  workspace?: FrozenWorkspacePair;
 }): RuntimeContext | undefined {
   if (!input.space || !input.execution) return undefined;
   if (input.execution.kind === 'project' && input.execution.projectId.length === 0) {
     return undefined;
   }
+  const planning = planningRefFor(input.space);
+  const pair = input.workspace;
   return {
     version: RUNTIME_CONTEXT_VERSION,
     sessionId: input.sessionId,
-    planning: planningRefFor(input.space),
-    execution: input.execution,
+    planning:
+      pair?.planning === undefined ? planning : { ...planning, worktree: pair.planning },
+    execution:
+      pair?.execution === undefined || input.execution.kind !== 'project'
+        ? input.execution
+        : { ...input.execution, worktree: pair.execution },
+    ...(pair?.changeInstanceId === undefined
+      ? {}
+      : { changeInstanceId: pair.changeInstanceId }),
+    ...(pair?.workspacePairId === undefined
+      ? {}
+      : { workspacePairId: pair.workspacePairId }),
   };
 }
 

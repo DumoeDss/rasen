@@ -241,12 +241,23 @@ async function resolvePlanningGitFacts(
   };
 }
 
-function resolveMissing(evidenceEntries: EvidenceEntry[]): string[] {
+/**
+ * The missing-evidence names, shared by the v1 accounting record and the
+ * Archive v2 record so both writers report the same absences. Exported rather
+ * than duplicated: two independent copies of this rule would drift.
+ */
+export function resolveMissingEvidenceNames(
+  evidenceEntries: readonly EvidenceEntry[]
+): string[] {
   const paths = new Set(evidenceEntries.map(entry => entry.path));
   const missing: string[] = [];
   if (!paths.has('evidence/ship-log.md')) missing.push('ship-log');
   if (!paths.has('evidence/verification-report.md')) missing.push('verification-report');
   return missing;
+}
+
+function resolveMissing(evidenceEntries: EvidenceEntry[]): string[] {
+  return resolveMissingEvidenceNames(evidenceEntries);
 }
 
 /**

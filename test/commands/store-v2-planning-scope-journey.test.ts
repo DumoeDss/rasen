@@ -156,6 +156,12 @@ describe('Store v2 planning-scope CLI journey', () => {
     write(path.join(integrationRoot, 'README.md'), '# Store fixture\n');
     runGit(integrationRoot, ['add', '.']);
     runGit(integrationRoot, ['commit', '-m', 'seed Store v2 planning fixture']);
+    // The target line's Store ref has to EXIST for the planning worktree to be
+    // verified: `store-planning-worktree-bindings` made marker presence
+    // insufficient, and an unresolvable line disqualifies the worktree. The
+    // catalog above already names refs/heads/release/0.2, so the fixture now
+    // creates it rather than the gate accepting a line that names no commit.
+    runGit(integrationRoot, ['branch', 'release/0.2']);
     runGit(integrationRoot, [
       'worktree',
       'add',
@@ -358,8 +364,31 @@ describe('Store v2 planning-scope CLI journey', () => {
       ],
       { cwd: planningRoot, env }
     );
-    const blockedFinalization = await runCLI(
+    // `store-finalization-outcomes-v2` task 11.5. This used to assert the
+    // `store_v2_finalization_unavailable` deferral by name so it would fail
+    // loudly the moment finalization landed. It has landed, so the journey now
+    // asserts what replaced the deferral: an outcome is REQUIRED and archiving
+    // with one finalizes into the project's stable target-line Archive.
+    const missingOutcomeFinalization = await runCLI(
       ['archive', EXISTING_CHANGE, '--json', '--yes', ...selectors],
+      { cwd: executionRoot, env }
+    );
+    // A declared outcome is not enough on its own: Archive v2 requires a
+    // VERIFIED workspace pair on every record, and this journey's execution
+    // checkout is deliberately not a Git worktree, so no pair identity can be
+    // derived. Finalization refuses rather than minting one.
+    const unpairedFinalization = await runCLI(
+      [
+        'archive',
+        'journey-created',
+        '--json',
+        '--yes',
+        '--outcome',
+        'abandoned',
+        '--reason',
+        'The journey proves a passive finalization is still gated on a verified pair.',
+        ...selectors,
+      ],
       { cwd: executionRoot, env }
     );
     const blockedPlanningWork = await runCLI(
@@ -423,7 +452,8 @@ describe('Store v2 planning-scope CLI journey', () => {
     const createdJson = parseJson(created);
     const aggregateContextJson = parseJson(aggregateContext);
     const aggregateDoctorJson = parseJson(aggregateDoctor);
-    const blockedFinalizationJson = parseJson(blockedFinalization);
+    const missingOutcomeFinalizationJson = parseJson(missingOutcomeFinalization);
+    const unpairedFinalizationJson = parseJson(unpairedFinalization);
     const blockedPlanningWorkJson = parseJson(blockedPlanningWork);
     const blockedPlanningRetainJson = parseJson(blockedPlanningRetain);
     const blockedUnrelatedWorkJson = parseJson(blockedUnrelatedWork);
@@ -491,11 +521,37 @@ describe('Store v2 planning-scope CLI journey', () => {
     expect(aggregateDoctorJson.project).toBeNull();
     expect(aggregateDoctorHuman.stdout).toContain('Store aggregate');
     expect(aggregateDoctorHuman.stdout).toContain('requires an explicit project scope');
-    expect(blockedFinalization.exitCode).toBe(1);
-    expect(blockedFinalizationJson).toMatchObject({
+    // An implicit outcome would be an implicit spec sync, so a Store v2
+    // archive with no `--outcome` refuses and writes nothing.
+    expect(missingOutcomeFinalization.exitCode).toBe(1);
+    expect(missingOutcomeFinalizationJson).toMatchObject({
       archive: null,
-      status: [{ code: 'store_v2_finalization_unavailable' }],
+      status: [{ code: 'finalization_outcome_required' }],
     });
+    expect(missingOutcomeFinalizationJson.status[0].message).toContain('landed');
+    expect(missingOutcomeFinalizationJson.status[0].message).toContain('superseded');
+    expect(missingOutcomeFinalizationJson.status[0].message).toContain('cancelled');
+    expect(missingOutcomeFinalizationJson.status[0].message).toContain('abandoned');
+
+    // A declared outcome does not buy past the identity requirement: Archive
+    // v2 requires a verified workspace pair on EVERY record, so an execution
+    // side with no derivable worktree identity refuses instead of minting one.
+    // (A complete finalize-and-assert-the-record journey lives in
+    // `store-v2-finalization-journey.test.ts`, which builds a real execution
+    // repository. It cannot live here: this journey's central invariant is
+    // that the execution checkout is byte-identical afterwards, and a
+    // successful finalization deliberately updates its planning binding.)
+    expect(unpairedFinalization.exitCode).toBe(1);
+    expect(unpairedFinalizationJson).toMatchObject({
+      archive: null,
+      status: [{ code: 'workspace_pair_unavailable' }],
+    });
+    expect(fs.existsSync(path.join(selectedChangesDir, 'journey-created'))).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(selectedProjectHome, 'changes', 'archive', TARGET_LINE_ID)
+      )
+    ).toBe(false);
     expect(blockedPlanningWork.exitCode).toBe(1);
     expect(blockedPlanningWorkJson).toMatchObject({
       changes: [],
@@ -582,6 +638,36 @@ describe('Store v2 planning-scope CLI journey', () => {
       projectId: PROJECT_ID,
       targetLineId: TARGET_LINE_ID,
     });
+
+    // `store-planning-worktree-bindings`: "A healthy hand-assembled pair is
+    // accepted AND the machine index SHALL be populated from what is already
+    // true on disk." Nothing prepared this pair — the fixture wrote the marker
+    // and the worktree by hand — so the entry can only have come from the
+    // marker plus live Git, and it must name the literal planning root rather
+    // than anything the code under test was asked where it put.
+    const indexPath = path.join(
+      globalDataDir,
+      'planning-workspaces',
+      'index',
+      `${planningScopeId}.json`
+    );
+    expect(fs.existsSync(indexPath), `expected an index entry at ${indexPath}`).toBe(true);
+    const indexDocument = JSON.parse(fs.readFileSync(indexPath, 'utf8')) as {
+      entries: Array<{
+        changeId: string;
+        changeInstanceId?: string;
+        planning: { root: string; ref: string };
+        execution: { root: string };
+      }>;
+    };
+    const indexed = indexDocument.entries.find((entry) => entry.changeId === 'journey-created');
+    expect(indexed?.planning.root).toBe(planningRoot);
+    expect(indexed?.planning.ref).toBe('refs/heads/planning-line-0-2');
+    expect(indexed?.changeInstanceId).toBe(createdMetadata.identity.instanceId);
+    // The Change was created from the planning worktree with no execution
+    // checkout in scope, so the execution side stays EMPTY rather than being
+    // inferred from an adjacent directory.
+    expect(indexed?.execution.root).toBe('');
     expect(fs.readFileSync(path.join(existingChangeDir, 'auto-run.json'), 'utf8')).toContain(
       'full-feature'
     );

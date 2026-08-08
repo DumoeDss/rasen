@@ -33,6 +33,8 @@ import {
   writeStoreMetadataState,
 } from '../../../src/core/store/foundation.js';
 import { mintStoreUid } from '../../../src/core/store/identity-types.js';
+import { writeStoreProjectCatalog } from '../../../src/core/store/membership-layout.js';
+import type { StoreProjectCatalogV2 } from '../../../src/core/store/planning-catalogs.js';
 import { writeStoreProjectRecord } from '../../../src/core/store/project-records.js';
 import type { LearnedSkillManifestV2 } from '../../../src/core/learned-skills/types.js';
 import { createOpenSpecRoot } from '../../helpers/rasen-fixtures.js';
@@ -331,6 +333,93 @@ describe('bootstrap declared bundle integration', () => {
       cwd: store.root,
       encoding: 'utf8',
     })).toBe(beforeRemotes);
+  });
+
+  it('reads a layout v2 project catalog: the declared bundle survives and membership is confirmed', async () => {
+    // Task 7.3 in bootstrap. Both readers here went to the v1 parser directly,
+    // so against a Store this portfolio's migration produces the catalog fails
+    // to parse and bootstrap (a) DROPS the project's declared knowledge bundle
+    // and (b) reports a perfectly healthy catalog as an unreadable record,
+    // which short-circuits the membership question entirely.
+    const project = makeProject('v2-declared-project');
+    const store = await makeStore('team-store');
+    await writeStoreMetadataState(store.root, {
+      version: 2,
+      uid: store.uid,
+      id: store.id,
+      layoutVersion: 2,
+    });
+    writeBundle(path.join(store.root, 'rasen', 'knowledge-bundles', 'carry.bundle.json'));
+    await writeStoreProjectCatalog(store.root, {
+      version: 2,
+      projectId: PROJECT_ID,
+      knowledgeBundle: 'rasen/knowledge-bundles/carry.bundle.json',
+      roles: { planning: true, knowledge: true },
+      planningBinding: { state: 'bound', boundAt: CREATED_AT },
+    } as StoreProjectCatalogV2);
+    await appendStoreMembershipHint(project, { uid: store.uid, id: store.id });
+
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'check',
+      globalDataDir,
+    });
+
+    expect(report.bundleImports).toEqual([
+      expect.objectContaining({
+        trust: 'store-record-only',
+        locator: 'rasen/knowledge-bundles/carry.bundle.json',
+        sources: [
+          expect.objectContaining({
+            kind: 'store-record',
+            storeId: 'team-store',
+            locator: 'rasen/knowledge-bundles/carry.bundle.json',
+          }),
+        ],
+      }),
+    ]);
+    const entry = report.stores.find((candidate) => candidate.id === 'team-store');
+    expect(entry?.membership.state).toBe('confirmed');
+    // Nothing about a healthy catalog may be reported as unreadable.
+    expect(JSON.stringify(report)).not.toContain('invalid_store_project_record');
+  });
+
+  it('a broken v2 project catalog degrades and reports invalid_project_catalog, not invalid_store_project_record', async () => {
+    // Task 2.3 four-state: v2 broken. The v1 broken and v2 healthy states
+    // are tested above; this test completes the fourth state.
+    const project = makeProject('v2-broken-catalog-project');
+    const store = await makeStore('v2-broken-store');
+    await writeStoreMetadataState(store.root, {
+      version: 2,
+      uid: store.uid,
+      id: store.id,
+      layoutVersion: 2,
+    });
+    await appendStoreMembershipHint(project, { uid: store.uid, id: store.id });
+
+    // Write invalid content directly to the catalog path — not parseable as
+    // a v2 catalog, and not a v1 record either. This is the same pattern as
+    // the v1 broken test above, but for a layout v2 Store.
+    const catalogPath = path.join(
+      store.root,
+      '.rasen-store',
+      'projects',
+      `${PROJECT_ID}.yaml`
+    );
+    fs.mkdirSync(path.dirname(catalogPath), { recursive: true });
+    fs.writeFileSync(catalogPath, 'version: 2\nprojectId: [broken\nroles: {}\n');
+
+    const report = await buildBootstrapReport({
+      cwd: project,
+      mode: 'check',
+      globalDataDir,
+    });
+
+    expect(report.state).toBe('degraded');
+    // The diagnostic MUST be invalid_project_catalog, NOT invalid_store_project_record
+    // (which is the v1-era code). The v2 dispatcher names the catalog-specific error.
+    expect(JSON.stringify(report)).toContain('invalid_project_catalog');
+    expect(JSON.stringify(report)).not.toContain('invalid_store_project_record');
   });
 
   it('missing, unreadable, unsafe, malformed, wrong-project, and conflicting actions degrade while hydration continues', async () => {

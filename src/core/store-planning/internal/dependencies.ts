@@ -20,6 +20,16 @@ import {
   mintChangeInstanceSeed,
   type ChangeInstanceSeed,
 } from '../../store/planning-foundation.js';
+import {
+  assertPlanningWorktreeUnbound,
+  completeChangeBinding,
+  probePlanningWorktree,
+  type ChangeBindingInput,
+  type CompleteChangeBindingInput,
+  type CompletedChangeBinding,
+  type PlanningWorktreeProbeInput,
+  type PlanningWorktreeProbeResult,
+} from '../../store/workspace/index.js';
 
 export interface StoreRegistrySnapshotEntry {
   readonly id: string;
@@ -66,6 +76,27 @@ export interface StorePlanningDependencies {
   ): Promise<ProjectRegistrySnapshotEntry | null>;
   sessionContextPath(): string | undefined;
   checkoutRole(root: string): CheckoutRole;
+  /**
+   * Live Git evidence for the planning-worktree gate: is the candidate a linked
+   * worktree, does its identity re-derive, and does the target line's Store ref
+   * resolve to a commit there. Marker PRESENCE is no longer verification
+   * (`store-planning-worktree-bindings`, "A planning worktree is verified
+   * rather than assumed").
+   */
+  probePlanningWorktree(
+    input: PlanningWorktreeProbeInput
+  ): Promise<PlanningWorktreeProbeResult>;
+  /**
+   * Refuses a second Change in one planning worktree, decided from the recorded
+   * binding rather than a directory scan. Runs before any Change directory is
+   * created.
+   */
+  assertPlanningWorktreeUnbound(input: ChangeBindingInput): Promise<void>;
+  /**
+   * Completes the two-phase binding once `createChange` has minted the Change
+   * instance. Machine-local only; it writes nothing into either repository.
+   */
+  completeChangeBinding(input: CompleteChangeBindingInput): Promise<CompletedChangeBinding>;
   now(): Date;
   mintInstanceSeed(): ChangeInstanceSeed;
   randomSuffix(): string;
@@ -217,6 +248,11 @@ export const productionStorePlanningDependencies: StorePlanningDependencies = {
   },
   sessionContextPath: () => process.env[RASEN_SESSION_CONTEXT_ENV],
   checkoutRole,
+  probePlanningWorktree: (input) => probePlanningWorktree(input),
+  assertPlanningWorktreeUnbound: async (input) => {
+    await assertPlanningWorktreeUnbound(input);
+  },
+  completeChangeBinding: (input) => completeChangeBinding(input),
   now: () => new Date(),
   mintInstanceSeed: () => mintChangeInstanceSeed(),
   randomSuffix: () => `${process.pid}.${randomBytes(16).toString('hex')}`,

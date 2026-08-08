@@ -58,6 +58,12 @@ import type {
   WorkflowMutationResponse,
   WorkflowValidationResponse,
   WriteConfigKeyResponse,
+  StoreAggregateChangesResponse,
+  StoreIssueListResponse,
+  StoreIssueDetailResponse,
+  StoreProjectRollupResponse,
+  StoreCreateIssueRequest,
+  StoreCreateScopedChangeRequest,
 } from './types.js';
 
 export class ApiError extends Error {
@@ -532,4 +538,74 @@ export function mutateProfile(body: ProfileMutationRequest): Promise<ProfileMuta
     json: true,
     body: JSON.stringify(body),
   });
+}
+
+// ---- Store aggregate (store-scoped-issues-management) ----
+// Every Store-scoped call addresses the Store by its STABLE UID, never by the
+// local id a `store:<id>` space selector carries. The scope comes from the
+// path segments, never from a filter, a session, or the launch project.
+
+/** Grouped Changes for one project/line, or the whole Store when omitted. */
+export function storeChanges(
+  storeUid: string,
+  scope?: { projectId?: string; targetLineId?: string }
+): Promise<StoreAggregateChangesResponse> {
+  const base = `/api/v1/stores/${encodeURIComponent(storeUid)}`;
+  const path = scope?.projectId && scope?.targetLineId
+    ? `${base}/projects/${encodeURIComponent(scope.projectId)}/lines/${encodeURIComponent(scope.targetLineId)}/changes`
+    : `${base}/projects`;
+  // When narrowing by project + line, we hit the line-changes route.
+  // Without narrowing, we read the full rollup — but for the board we always
+  // narrow. Without a scope, return the projects listing instead.
+  if (scope?.projectId && scope?.targetLineId) {
+    return request<StoreAggregateChangesResponse>(path);
+  }
+  // Fallback: the projects route returns a rollup, not grouped changes.
+  // The board always calls with a scope, so this path is a type-level fallback.
+  return request<StoreAggregateChangesResponse>(`${base}/projects/${scope?.projectId ?? ''}/lines/${scope?.targetLineId ?? ''}/changes`);
+}
+
+/** All Issues in a Store. */
+export function storeIssues(storeUid: string): Promise<StoreIssueListResponse> {
+  return request<StoreIssueListResponse>(`/api/v1/stores/${encodeURIComponent(storeUid)}/issues`);
+}
+
+/** One Issue's detail with its latest plan. */
+export function storeIssueDetail(
+  storeUid: string,
+  issueId: string
+): Promise<StoreIssueDetailResponse> {
+  return request<StoreIssueDetailResponse>(
+    `/api/v1/stores/${encodeURIComponent(storeUid)}/issues/${encodeURIComponent(issueId)}`
+  );
+}
+
+/** The project and target-line rollup. */
+export function storeProjects(storeUid: string): Promise<StoreProjectRollupResponse> {
+  return request<StoreProjectRollupResponse>(`/api/v1/stores/${encodeURIComponent(storeUid)}/projects`);
+}
+
+/** Create a Store-level Issue. */
+export function createStoreIssue(
+  storeUid: string,
+  body: StoreCreateIssueRequest
+): Promise<unknown> {
+  return request(`/api/v1/stores/${encodeURIComponent(storeUid)}/issues`, {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
+}
+
+/** Create a scoped Change under a project and target line. */
+export function createStoreScopedChange(
+  storeUid: string,
+  projectId: string,
+  targetLineId: string,
+  body: StoreCreateScopedChangeRequest
+): Promise<unknown> {
+  return request(
+    `/api/v1/stores/${encodeURIComponent(storeUid)}/projects/${encodeURIComponent(projectId)}/lines/${encodeURIComponent(targetLineId)}/changes`,
+    { method: 'POST', json: true, body: JSON.stringify(body) }
+  );
 }

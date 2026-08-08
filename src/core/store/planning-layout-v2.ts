@@ -8,9 +8,13 @@ import {
 import {
   StorePlanningValidationError,
   parseChangeId,
+  parseExecutionPlanRevisionId,
+  parseIssueId,
   parseProjectId,
   parseTargetLineId,
   type ChangeId,
+  type ExecutionPlanRevisionId,
+  type IssueId,
   type ProjectId,
   type TargetLineId,
 } from './planning-validation.js';
@@ -27,6 +31,22 @@ export type StorePlanningLayoutV2Address =
   | { readonly kind: 'project-home'; readonly projectId: string | ProjectId }
   | { readonly kind: 'project-specs'; readonly projectId: string | ProjectId }
   | { readonly kind: 'store-design-docs' }
+  /**
+   * Store-level cross-project Issue content. These four addresses are the only
+   * ones in this contract that take neither a project nor a target line: an
+   * Issue spans projects by construction, so requiring either would contradict
+   * the resource. Each of the directory, the record file, the revisions
+   * directory, and ONE revision file is its own address, so no caller appends a
+   * filename to a returned directory.
+   */
+  | { readonly kind: 'issue'; readonly issueId: string | IssueId }
+  | { readonly kind: 'issue-record'; readonly issueId: string | IssueId }
+  | { readonly kind: 'execution-plans'; readonly issueId: string | IssueId }
+  | {
+      readonly kind: 'execution-plan';
+      readonly issueId: string | IssueId;
+      readonly revisionId: string | ExecutionPlanRevisionId;
+    }
   | { readonly kind: 'project-design-docs'; readonly projectId: string | ProjectId }
   | {
       readonly kind: 'active-change';
@@ -162,6 +182,33 @@ export function resolveStorePlanningLayoutV2Path(
     }
     case 'store-design-docs':
       return containedPath(api, root, ['rasen', 'design-docs'], address.kind);
+    case 'issue': {
+      const issueId = parseIssueId(address.issueId);
+      return containedPath(api, root, ['rasen', 'issues', issueId], address.kind);
+    }
+    case 'issue-record': {
+      const issueId = parseIssueId(address.issueId);
+      return containedPath(
+        api,
+        root,
+        ['rasen', 'issues', issueId, 'issue.yaml'],
+        address.kind
+      );
+    }
+    case 'execution-plans': {
+      const issueId = parseIssueId(address.issueId);
+      return containedPath(api, root, ['rasen', 'issues', issueId, 'plans'], address.kind);
+    }
+    case 'execution-plan': {
+      const issueId = parseIssueId(address.issueId);
+      const revisionId = parseExecutionPlanRevisionId(address.revisionId);
+      return containedPath(
+        api,
+        root,
+        ['rasen', 'issues', issueId, 'plans', `${revisionId}.yaml`],
+        address.kind
+      );
+    }
     case 'project-home': {
       const projectId = validatedProjectId(address);
       return containedPath(api, root, ['rasen', 'projects', projectId], address.kind);

@@ -141,13 +141,43 @@ export interface ArchivedRef {
   date: string;
   /** The un-dated change name. */
   name: string;
+  /**
+   * The verified-Change-instance digest prefix a Store v2 entry carries, which
+   * is what makes a same-day retry a different entry. Absent for a standalone
+   * or legacy flat entry, which has no instance dimension at all.
+   */
+  instanceShort?: string;
 }
 
-/** Splits a `YYYY-MM-DD-<name>` archived directory name into its {@link ArchivedRef} parts, or `null` when it does not match. */
+/**
+ * A Store v2 entry name's instance suffix: `--<lowercase hex>` at the very end.
+ * A Change alias is a lowercase kebab id and can itself contain `--`, so the
+ * split anchors at the LAST such group and requires hex, which a kebab segment
+ * ending in a non-hex letter cannot satisfy.
+ */
+const ARCHIVED_INSTANCE_SUFFIX_PATTERN = /^(.+)--([0-9a-f]+)$/;
+
+/**
+ * Splits an archived directory name into its {@link ArchivedRef} parts, or
+ * `null` when it does not match. Both published shapes are recognized: the flat
+ * `YYYY-MM-DD-<name>` a standalone or legacy archive writes, and the Store v2
+ * `YYYY-MM-DD-<name>--<instanceShort>` a finalization writes below its stable
+ * target-line Archive directory.
+ */
 export function parseArchivedRef(dated: string): ArchivedRef | null {
   const match = ARCHIVED_NAME_PATTERN.exec(dated);
   if (!match) return null;
-  return { dated, date: match[1]!, name: match[2]! };
+  const rest = match[2]!;
+  const suffixed = ARCHIVED_INSTANCE_SUFFIX_PATTERN.exec(rest);
+  if (suffixed) {
+    return {
+      dated,
+      date: match[1]!,
+      name: suffixed[1]!,
+      instanceShort: suffixed[2]!,
+    };
+  }
+  return { dated, date: match[1]!, name: rest };
 }
 
 /**
