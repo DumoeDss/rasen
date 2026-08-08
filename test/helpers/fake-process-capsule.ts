@@ -199,15 +199,20 @@ export interface CapsuleSeam {
 
 export function capsuleSeam(
   script: CapsuleScript = {},
-  nativeRef = 'win32-fake-scope-00000001'
+  nativeRef: string | ((controllerIndex: number) => string) = 'win32-fake-scope-00000001'
 ): CapsuleSeam {
   const controllers: FakeCapsuleProcess[] = [];
   const probes: FakeCapsuleProcess[] = [];
   let nextPid = 9100;
+  // A function form gives each controller a distinct native ref, so a suite can
+  // prepare several scopes whose ProcessRefs do not collide.
+  const nativeRefAt = (index: number): string =>
+    typeof nativeRef === 'function' ? nativeRef(index) : nativeRef;
   const fake = (_command: string, args: readonly string[]) => {
     nextPid += 1;
     const mode = args[0];
-    const child = new FakeCapsuleProcess(nextPid, mode, script, nativeRef);
+    const index = mode === '--controller' ? controllers.length : probes.length;
+    const child = new FakeCapsuleProcess(nextPid, mode, script, nativeRefAt(index));
     if (mode === '--controller') controllers.push(child);
     else probes.push(child);
     return child as unknown as ChildProcess;

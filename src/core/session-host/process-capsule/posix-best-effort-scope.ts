@@ -20,6 +20,7 @@ import {
   type TerminationIntent,
   type TerminationReceipt,
 } from '../process-scope.js';
+import { sweepSettledTerminals, type RetentionProbe } from './scope-retention.js';
 
 /**
  * Declared best-effort process scope for POSIX hosted sessions - one
@@ -98,6 +99,8 @@ export interface PosixBestEffortProcessScopeOptions {
   controlTimeoutMs?: number;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  /** Test-only introspection of the retention map; never set in production. */
+  retentionProbe?: RetentionProbe;
 }
 
 type ScopePhase = 'prepared' | 'live' | 'root-exited' | 'terminal';
@@ -175,6 +178,11 @@ export function createPosixBestEffortProcessScope(
   const sleep =
     options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const scopes = new Map<ProcessRef, ScopeState>();
+  // Retention lifecycle (RC-005): a settled declared-unproven terminal makes an
+  // entry releasable; a scope still live / control-lost carries no terminal and
+  // is retained for reconciliation. See scope-retention.ts for the shared rule.
+  const isSettledTerminal = (state: ScopeState): boolean => state.terminal !== undefined;
+  options.retentionProbe?.(() => [...scopes.keys()]);
 
   async function withPhaseDeadline<T>(
     phase: ProcessControlPhase,
@@ -407,6 +415,10 @@ export function createPosixBestEffortProcessScope(
 
   return {
     async prepare(input): Promise<PreparedProcessScope> {
+      // Release predecessor scopes that already settled a definite terminal;
+      // the successor Session's prepare is the point past which no earlier
+      // terminal still needs an in-map replay.
+      sweepSettledTerminals(scopes, isSettledTerminal);
       if (input.signal?.aborted) {
         throw new ProcessScopeError(
           'containment-prepare-failed',

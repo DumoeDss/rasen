@@ -17,6 +17,7 @@ import {
   createNativeProcessScope,
   type NativeProcessScopeOptions,
 } from './native-process-scope.js';
+import { sweepSettledTerminals, type RetentionProbe } from './scope-retention.js';
 
 /**
  * Declared best-effort process scope for win32 hosted sessions.
@@ -79,7 +80,10 @@ export const WIN32_BEST_EFFORT_DECLARATION: BestEffortScopeDeclaration = Object.
   semantics: WIN32_BEST_EFFORT_SCOPE_SEMANTICS,
 });
 
-export type Win32BestEffortProcessScopeOptions = NativeProcessScopeOptions;
+export type Win32BestEffortProcessScopeOptions = NativeProcessScopeOptions & {
+  /** Test-only introspection of the win32 retention map; never set in production. */
+  retentionProbe?: RetentionProbe;
+};
 
 interface ScopeState {
   activated: boolean;
@@ -190,12 +194,21 @@ function uncertainObservationFromError(
 export function createWin32BestEffortProcessScope(
   options: Win32BestEffortProcessScopeOptions = {}
 ): ProcessScope {
-  const capsule = createNativeProcessScope(options);
+  // The retention probe observes THIS wrapper's `scopes` map; it is stripped
+  // before delegation so the capsule never re-binds the same callback to its own
+  // (separately swept) `clients` map.
+  const { retentionProbe, ...capsuleOptions } = options;
+  const capsule = createNativeProcessScope(capsuleOptions);
   // Scopes this daemon lifetime prepared. A ref absent from this map either
   // belongs to a previous daemon lifetime or was never ours; either way it is
   // reconciled through the capsule's one-shot probe, never adopted as a live
   // scope of this daemon and never re-derived into a control capability.
   const scopes = new Map<ProcessRef, ScopeState>();
+  // Retention lifecycle (RC-005): a settled declared-unproven terminal makes an
+  // entry releasable; a transport-lost / uncertain scope carries no terminal and
+  // is retained for reconciliation. See scope-retention.ts for the shared rule.
+  const isSettledTerminal = (state: ScopeState): boolean => state.terminal !== undefined;
+  retentionProbe?.(() => [...scopes.keys()]);
 
   function createState(): ScopeState {
     let settle!: (value: DeclaredUnprovenReceipt) => void;
@@ -301,6 +314,9 @@ export function createWin32BestEffortProcessScope(
 
   return {
     async prepare(input): Promise<PreparedProcessScope> {
+      // Release predecessor scopes that already settled a definite terminal;
+      // transport-lost / uncertain entries carry no terminal and are retained.
+      sweepSettledTerminals(scopes, isSettledTerminal);
       // Prepare failures propagate as the capsule typed them: no scope exists,
       // so there is nothing to declare and nothing to translate.
       const prepared = await capsule.prepare(input);

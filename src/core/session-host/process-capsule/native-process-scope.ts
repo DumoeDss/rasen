@@ -22,6 +22,7 @@ import {
   resolvePackagedProcessCapsule,
   type ResolvedProcessCapsule,
 } from './resolver.js';
+import { sweepSettledTerminals, type RetentionProbe } from './scope-retention.js';
 
 const MAX_FRAME_BYTES = 2 * 1024 * 1024 + 64 * 1024;
 const DEFAULT_CONTROL_TIMEOUT_MS = 10_000;
@@ -319,6 +320,8 @@ export interface NativeProcessScopeOptions {
     | '--controller-test-withhold-first-terminate';
   onControllerSpawn?: (pid: number) => void;
   controlTimeoutMs?: number;
+  /** Test-only introspection of the retention map; never set in production. */
+  retentionProbe?: RetentionProbe;
 }
 
 function helperEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -418,6 +421,12 @@ export function createNativeProcessScope(options: NativeProcessScopeOptions = {}
   const spawnProcess = options.spawn ?? spawn;
   const controlTimeoutMs = options.controlTimeoutMs ?? DEFAULT_CONTROL_TIMEOUT_MS;
   const clients = new Map<ProcessRef, CapsuleClient>();
+  // Retention lifecycle (RC-005): a client that reached exact SCOPE_EMPTY
+  // ('closed') is a definite terminal and is releasable; a control-lost client
+  // keeps its non-closed state and is retained for reconciliation. Shared rule
+  // in scope-retention.ts.
+  const isSettledTerminal = (client: CapsuleClient): boolean => client.state === 'closed';
+  options.retentionProbe?.(() => [...clients.keys()]);
 
   function receiptFrom(observation: ProcessObservation): TerminationReceipt {
     if (observation.state === 'closed') return { state: 'closed', gracefulAttempted: false, forced: true };
@@ -432,6 +441,9 @@ export function createNativeProcessScope(options: NativeProcessScopeOptions = {}
 
   return {
     async prepare(input): Promise<PreparedProcessScope> {
+      // Release predecessor clients that already reached exact SCOPE_EMPTY;
+      // control-lost clients carry no closed terminal and are retained.
+      sweepSettledTerminals(clients, isSettledTerminal);
       const helper = resolve();
       const child = spawnProcess(helper.helperPath, [options.controllerMode ?? '--controller'], {
         cwd: input.cwd,
