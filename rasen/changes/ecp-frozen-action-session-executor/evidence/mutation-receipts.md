@@ -118,8 +118,34 @@ execution-lost) (task 4.1)
 | cross-authority reuse permitted (6.2) | 1 | yes |
 | completion field written to registry (8.2) | 1 | yes |
 | stale-version / wrong-workspace / duplicate dispatch accepted (2.2) | covered by authority.ts guards; the same mutation class REDs them (the validateGrantedAction branches are independent guards, each with its own test in authority.test.ts that does not require a separate mutation receipt to prove the branch exists) | n/a |
-| **total RED** | **15** | |
+| **total RED (waves 1 + 2)** | **15 + 6 = 21** | |
 
 The two LEAD-named highest-value targets both have demonstrated RED
 counterparts: the transactional half-set guard (receipt 4) and the
 never-reroute guard (receipt 2).
+
+## Receipt 9 - per-field completion-binding mismatch (task 5.4, 7.1 wave)
+
+Five per-field mutations in `authority.ts` (each isolates one binding field);
+each was mutated, the matching per-field test run RED, and the mutation
+reverted byte-exactly (`git diff --numstat` empty vs `ab9c6560`).
+
+- **invocationId** (`sameActionIdentity`): `granted.invocationId === committed.invocationId` -> `true`. RED: `authority.test.ts > an invocationId mismatch fails closed receipt_conflict`.
+- **runId** (`sameActionIdentity`): `granted.runId === committed.runId` -> `true`. RED: `> a runId mismatch fails closed receipt_conflict`.
+- **policyDigest** (`sameAuthority`): -> `true`. RED: `> a policyDigest mismatch fails closed receipt_conflict`.
+- **capability.contractDigest** (`sameAuthority`): -> `true`. RED: `> a capability contractDigest mismatch fails closed receipt_conflict` (and the receipt-1 authority-differs test, which uses a contractDigest mismatch — expected cascade).
+- **expectedBeforeWorkspace** (`sameAuthority`, the workspace-revision binding): -> `true`. RED: `> an expectedBeforeWorkspace (workspace-revision) mismatch fails closed receipt_conflict` (the outcome shifts to `workspace-scope-mismatch` because the executor-workspace check then catches the same mismatch — proving the workspace-revision binding is defended in depth).
+
+Combined RED run: **6 tests** (5 per-field + 1 cascade). The `actionId` per-field
+test stayed GREEN under the `sameActionIdentity` mutations because the actionId
+binding is enforced earlier by the admission check (`record.actions[actionId]`
+must exist -> `not-currently-executable`), not by `sameActionIdentity`; that is
+the correct, in-depth binding structure, recorded in the per-field test.
+
+The ActorRef-binding leg of task 5.4 is the Facade completion path's
+`verifyAttestedCompletion` (it checks `canonicalJson(request.actor) !==
+canonicalJson(completionAuthority.actor)`), covered by the existing
+`attestation.test.ts` / `completion.test.ts` regression suite (task 9.3); the
+executor's pre-dispatch authority layer binds Action/invocation/runId/workspace/
+capability/profile/evidence/policy, and the Facade binds the actor at
+completion.

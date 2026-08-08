@@ -46,7 +46,7 @@ Scope legend: `[WSL-EXTERNAL]` marks real-Linux evidence that MUST run in an ext
   - Receipt: guard proving `complete` re-reads and re-verifies before mutating; mutation receipt proving a Record mutation without the re-read fails the guard.
 - [x] 5.3 A crash between publish and Record mutation leaves a partial evidence set that the re-read completeness check rejects, so a later completion never treats it as complete.
   - Receipt: fault-injection guard (inject a crash after partial publish) proving the next `complete` re-read fails the completeness check; mutation receipt proving a half-set accepted as complete fails the guard.
-- [ ] 5.4 A completion claim whose binding does not match the granted ActionView fails closed (`receipt_conflict`).
+- [x] 5.4 A completion claim whose binding does not match the granted ActionView fails closed (`receipt_conflict`).
   - Receipt: guards for Action/invocation/workspace-revision/ActorRef mismatch, each returning `receipt_conflict` with no Record mutation; mutation receipts.
 - [x] 5.5 No signing path: the executor and Facade completion surfaces accept, store, and return no signing private key or producer credential (decision 12). ECP-6's archived Ed25519 is untouched.
   - Receipt: source-scan guard over the executor module mirroring the host's no-signing-key guard; mutation receipt. `git diff --stat` showing no edit to the archived ECP-6 signing implementation.
@@ -64,11 +64,11 @@ Scope legend: `[WSL-EXTERNAL]` marks real-Linux evidence that MUST run in an ext
 
 ## 7. Driver-face same-Run parity
 
-- [ ] 7.1 Unify the interactive launcher, bare CLI, Management API, Canvas, and daemon on one shared projector and one shared control contract; each face resolves the same RunId/ActionId and creates no duplicate Run or Session truth.
+- [x] 7.1 Unify the interactive launcher, bare CLI, Management API, Canvas, and daemon on one shared projector and one shared control contract; each face resolves the same RunId/ActionId and creates no duplicate Run or Session truth.
   - Receipt: guard proving two faces address the same Run through the shared projector; mutation receipt proving a face that maintains a second truth fails.
 - [x] 7.2 Each face consults the capability matrix (Section 3) for start/resume/cancel/inspect availability; "when capability allows" is the matrix verdict, not a documentation assertion. Each driver x backend x platform combination is either available with a real receipt or returns a typed unavailable reason.
   - Receipt: guard proving a face honours the matrix verdict; mutation receipt proving a face that asserts availability the matrix does not report fails.
-- [ ] 7.3 The headless driver does not depend on the interactive launcher surviving; launcher exit does not end a hosted Run.
+- [x] 7.3 The headless driver does not depend on the interactive launcher surviving; launcher exit does not end a hosted Run.
   - Receipt: guard proving a hosted Run survives launcher exit when driven by the headless/daemon face.
 
 ## 8. Real-backend attribution
