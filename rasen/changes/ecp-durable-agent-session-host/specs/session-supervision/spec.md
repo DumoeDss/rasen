@@ -30,9 +30,13 @@ The server SHALL maintain a Session registry holding, per Session: the server-mi
 ### Requirement: The server remains a reader and launcher — never a second source of truth
 All durable pipeline and workspace state produced by a supervised Session SHALL be written by the spawned agent side only (run-state files, change artifacts, workspace files). The server MAY persist owner-restricted hosted Session lifecycle facts needed for single-flight, restart, recovery, and retirement, but those records SHALL contain no prompt/result body, executable Action, completion claim, canonical Run/Record state, EvidenceStore claim, credential, or signing private key. The server SHALL NOT write workspace files or run-state files. Restarting the server SHALL preserve hosted lifecycle projections and pipeline truth independently: on-disk run-state remains authoritative through existing run-state endpoints, and the Session registry never upgrades its own lifecycle facts into execution truth.
 
-#### Scenario: Session activity writes only bounded host lifecycle state
-- **WHEN** a hosted Session is created, woken, cancelled, restarted, or retired
-- **THEN** server-owned durable writes are limited to the machine-local host registry/locks and bounded sanitized diagnostics, while workspace and pipeline artifacts remain agent-side writes
+#### Scenario: Session activity writes no server-side persistent state
+- **WHEN** a Session is created, runs, is cancelled, restarted, or retired
+- **THEN** the server persists only owner-restricted hosted-Session lifecycle bookkeeping (live identity, owner, lifecycle state, process generation, request-state metadata, and recovery/retirement diagnostics) in the machine-local host registry, and writes no server-side persistent copy of session-activity content or completion truth — prompt/result bodies, canonical Run/Record state, and EvidenceStore claims remain agent-side only
+
+#### Scenario: Hosted lifecycle bookkeeping is owner-restricted and activity-free
+- **WHEN** a hosted Session is prepared, owned, retired, or reconciled on daemon restart
+- **THEN** the machine-local host registry accepts only owner-restricted lifecycle keys and refuses prompt/result bodies, executable Actions, completion claims, credentials, or signing material, so the server stays a reader and launcher rather than a second source of execution truth
 
 #### Scenario: Pipeline truth survives the registry
 - **WHEN** the server restarts after a Session wrote run-state to disk
