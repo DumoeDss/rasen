@@ -75,40 +75,6 @@ Commands SHALL declare whether they need a Store aggregate read, a project read,
 - **THEN** a project mutation SHALL fail with `planning_worktree_required`
 - **AND** the integration checkout SHALL remain unchanged
 
-### Requirement: Layout and planning binding states fail closed
-
-Scope resolution SHALL distinguish standalone planning, legacy flat Store planning, Store v2 aggregate planning, and Store v2 project planning from explicit metadata and verified catalogs rather than directory inference. A legacy flat Store SHALL keep its existing read and write behavior through one frozen legacy adapter, and no Store v2 destination SHALL ever be written through it; withdrawing legacy flat write capability is owned by the layout migration slice, which delivers the migration in the same release. A project recorded as Store-bound SHALL use only its Store project partition; a remaining local planning tree SHALL be reported as `split_planning_truth`, SHALL NOT be merged into Store reads, and SHALL block mutation.
-
-#### Scenario: Legacy flat Store remains inspectable
-
-- **WHEN** a Store has no v2 layout declaration and contains legacy flat planning content
-- **THEN** supported list, show, validate, status, instructions, export, doctor, and migration inspection SHALL read that legacy content from one frozen legacy scope
-- **AND** no read SHALL upgrade or copy the Store
-
-#### Scenario: Legacy flat Store keeps writing its own flat layout
-
-- **WHEN** new, archive, or another planning mutation targets a legacy flat Store
-- **THEN** it SHALL resolve that Store's existing flat planning location through the frozen legacy adapter
-- **AND** no Store v2 project destination SHALL be written, and no Store v2 Change identity SHALL be minted
-
-#### Scenario: A Store v2 destination is never written through the legacy adapter
-
-- **WHEN** a Store declares `layoutVersion: 2` and any planning mutation would resolve a flat root-level `rasen/changes` or `rasen/specs` destination inside it
-- **THEN** the mutation SHALL fail rather than write that flat destination
-- **AND** no project partition SHALL be written without the required project, target-line, and planning-worktree authority
-
-#### Scenario: Legacy flat Store refuses work migration
-
-- **WHEN** `rasen work migrate` resolves a legacy flat Store as its planning root
-- **THEN** it SHALL fail with `legacy_flat_store_requires_migration` before moving any file
-- **AND** neither the Store nor the member checkout SHALL be modified
-
-#### Scenario: Bound project has residual local planning
-
-- **WHEN** project P is verified as bound to Store S but P's checkout still has a local planning tree
-- **THEN** ordinary Store-backed reads SHALL use only S as planning truth and report `split_planning_truth`
-- **AND** every project planning mutation SHALL fail until migration or repair removes the conflict
-
 ### Requirement: Store v2 Change creation publishes portable identity
 
 Creating a Change in an authorized Store v2 project scope SHALL validate the Change id and schema, mint one Foundation v2 instance seed, derive and verify the planning-scope and Change-instance identities, and publish `.openspec.yaml` together with the minimal Change scaffold at the scope-resolved active-Change location. The metadata SHALL record the verified Store, project, and target-line facts. Creation SHALL use no-clobber semantics and revalidate the scope before its first write; a stale scope SHALL fail with `scope_stale`, and failure SHALL not leave a partial Change. Standalone creation SHALL preserve its current metadata compatibility and SHALL NOT fabricate Store v2 identity.
@@ -174,3 +140,46 @@ All supported planning-path consumers—including CLI workflow commands, list/sh
 - **WHEN** Store v2 project content is accessed through any supported consumer
 - **THEN** the consumer SHALL use the project partition returned by scope resolution
 - **AND** no root-level Store `rasen/changes` or `rasen/specs` path SHALL be treated as that project's planning location
+
+### Requirement: Layout and planning binding states fail closed with a read-only legacy layout
+
+Scope resolution SHALL distinguish standalone planning, legacy flat Store planning, Store v2 aggregate planning, and Store v2 project planning from explicit metadata and verified catalogs rather than directory inference. A legacy flat Store SHALL remain fully readable through one frozen legacy adapter, and its planning tree SHALL be read-only: Change creation, archiving, and adoption into it SHALL fail with `legacy_flat_store_requires_migration`, naming the layout migration command. No Store v2 destination SHALL ever be written through the legacy adapter. A project recorded as Store-bound SHALL use only its Store project partition; a remaining local planning tree SHALL be reported as `split_planning_truth`, SHALL NOT be merged into Store reads, and SHALL block mutation.
+
+#### Scenario: Legacy flat Store remains inspectable
+
+- **WHEN** a Store has no v2 layout declaration and contains legacy flat planning content
+- **THEN** supported list, show, validate, status, instructions, export, doctor, and migration inspection SHALL read that legacy content from one frozen legacy scope
+- **AND** no read SHALL upgrade or copy the Store
+
+#### Scenario: Legacy flat Store refuses planning writes until it is migrated
+
+- **WHEN** Change creation, archiving, or adoption targets a legacy flat Store
+- **THEN** it SHALL fail with `legacy_flat_store_requires_migration` before writing, moving, or deleting anything
+- **AND** the diagnostic SHALL name the layout migration command as the repair
+- **AND** no Store v2 project destination SHALL be written, and no Store v2 Change identity SHALL be minted
+
+#### Scenario: A migrated Store regains planning writes
+
+- **WHEN** the same Store has been migrated to layout version 2 and a project scope is selected
+- **THEN** Change creation SHALL proceed against that project's partition
+- **AND** archiving SHALL no longer report `legacy_flat_store_requires_migration`, and SHALL report `store_v2_finalization_unavailable` until the Store v2 finalization owner activates it
+- **AND** no root-level Store `rasen/changes` or `rasen/specs` path SHALL be written
+
+#### Scenario: A Store v2 destination is never written through the legacy adapter
+
+- **WHEN** a Store declares `layoutVersion: 2` and any planning mutation would resolve a flat root-level `rasen/changes` or `rasen/specs` destination inside it
+- **THEN** the mutation SHALL fail rather than write that flat destination
+- **AND** no project partition SHALL be written without the required project, target-line, and planning-worktree authority
+
+#### Scenario: Legacy flat Store refuses work migration
+
+- **WHEN** `rasen work migrate` resolves a legacy flat Store as its planning root
+- **THEN** it SHALL fail with `legacy_flat_store_requires_migration` before moving any file
+- **AND** neither the Store nor the member checkout SHALL be modified
+
+#### Scenario: Bound project has residual local planning
+
+- **WHEN** project P is verified as bound to Store S but P's checkout still has a local planning tree
+- **THEN** ordinary Store-backed reads SHALL use only S as planning truth and report `split_planning_truth`
+- **AND** every project planning mutation SHALL fail until migration or repair removes the conflict
+
