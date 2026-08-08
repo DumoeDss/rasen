@@ -1,0 +1,110 @@
+{
+  "change": "ecp-native-process-capsule-closure",
+  "archivedAt": "2026-08-08T06:44:46.468Z",
+  "codeCommit": "d17795b8669aa5d31f8be54826a62c59290877c0",
+  "planningBranch": "wip/ecp-shared-bounded-loop-lifecycle-resume",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/architecture-replan.md",
+      "sha256": "1d8196dc7e71e415e483a007b6bea6bd1a726361b58594599f53610f23d99a75"
+    },
+    {
+      "path": "evidence/closure-integration-disposition.md",
+      "sha256": "6eceb984fe85dd814022036da1f111f8ccb2b9e15fcb3ef0c95555998a984f8b"
+    },
+    {
+      "path": "evidence/cso-report.md",
+      "sha256": "4d7a83f908726183b3f15370e6ff0cd5348572881f5a2f595bf23650a876a1fd"
+    },
+    {
+      "path": "evidence/decision13-regrade.md",
+      "sha256": "57166a5a4ba2b6bf6fc8be58ba51c4998fe0ffd461a77950505d7fbb36fa2f49"
+    },
+    {
+      "path": "evidence/decision13-rescope-input.md",
+      "sha256": "4a30b5969d4279562404bf58a75c3a90dc96c2eda9ed53f9f81af6f29face955"
+    },
+    {
+      "path": "evidence/fix-round-1.md",
+      "sha256": "4e72a168cdc32df9a1030c949a639aded11bc944515d808aa2191d85460174dc"
+    },
+    {
+      "path": "evidence/handoff/fixer-1.md",
+      "sha256": "dacad6bd4c3f4064929cf0e8e1e4043a7353c06ab4e0ebf07b5d907743765522"
+    },
+    {
+      "path": "evidence/handoff/implementer-1.md",
+      "sha256": "16f6abe0e023ea128ca9f83d877b6444be37c7a8d4625a45f9c16f7871890fb9"
+    },
+    {
+      "path": "evidence/handoff/implementer-2.md",
+      "sha256": "386a7bc04aa0953e4fec86e97f4c91f3036918e5507888cd5b9a2d4ded32048e"
+    },
+    {
+      "path": "evidence/handoff/lead-1.md",
+      "sha256": "a43f6e5f83b67ec5401b690665a02f15e38feab997b9ab615cc09b3f6f656f2d"
+    },
+    {
+      "path": "evidence/implementation-baseline.md",
+      "sha256": "311a2eca9d74ce16c2cefe92471e0293186d07224b0148ef0311e205406a7866"
+    },
+    {
+      "path": "evidence/implementation-report.md",
+      "sha256": "a3b978c1d187f910e9ed6e40f7ad723562748b50f8ee307340451b415f342286"
+    },
+    {
+      "path": "evidence/platform-obligations.md",
+      "sha256": "525579f7e5a226844344dc90bcc956fd34bf543a2e19bf277d0a608947c0e8c0"
+    },
+    {
+      "path": "evidence/provenance-audit.md",
+      "sha256": "bd689db38f4d087c6c9754166660263bae6cc8494a43dbc6c96721a65c83ab19"
+    },
+    {
+      "path": "evidence/red-baseline.md",
+      "sha256": "84c0c3bfab8f0d27f81fab0bfaf267a09d09ea35e9e54bf77e23378d161dccbf"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "e7bbceeb21e1fe6eb861bae369ebc7028240962db7b09de0c597478051ef44f8"
+    },
+    {
+      "path": "evidence/review-round-2.md",
+      "sha256": "c162d89aff2caccfe6793811a04f5422a94db2c4850293d6bc7b1934bf09f3f0"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "153e0c095fc6f0207513cade305d9b59ef7a30a2741f496b16d27072f810a823"
+    },
+    {
+      "path": "evidence/step1-scope-reconciliation.md",
+      "sha256": "ba5f25ba12090c37384927056b9204cd6a90bf2468655e85b94431ba4ed0eb1e"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [
+    {
+      "file": "handoff/fixer-1.md",
+      "outcome": "preserved"
+    },
+    {
+      "file": "handoff/implementer-1.md",
+      "outcome": "preserved"
+    },
+    {
+      "file": "handoff/implementer-2.md",
+      "outcome": "preserved"
+    },
+    {
+      "file": "handoff/lead-1.md",
+      "outcome": "preserved"
+    }
+  ],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

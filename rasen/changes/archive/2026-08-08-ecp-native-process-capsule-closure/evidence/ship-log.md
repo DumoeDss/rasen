@@ -69,3 +69,9 @@ SEC-002/003 and RC-001/002/003 carry honest dispositions (superseded by threat-m
   CI, updates release truth, and opens the unique 0.2.0 PR (task 9.10 boundary preserved).
 - Branch tip at ship: `896966a0` (77 commits ahead of `origin/wip/ecp-shared-bounded-loop-lifecycle-resume`;
   the portfolio owns the single remote push).
+
+## Archive
+**Date:** 2026-08-08T06:44:46.468Z
+**Ship commit:** 896966a0a474a942e83a6be244a78e7efe5d1969
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle\rasen\changes\archive\2026-08-08-ecp-native-process-capsule-closure
+**Transaction:** 0c25d0a7-126d-40b9-8134-a4031c467146
