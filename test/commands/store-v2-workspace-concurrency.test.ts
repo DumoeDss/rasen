@@ -265,9 +265,9 @@ describe('Store v2 workspace: two lines, and a renamed branch', () => {
         path.join(planningRoot, 'rasen', 'projects', PROJECT, 'changes', 'alpha', '.openspec.yaml'),
         'utf8'
       );
-      expect(metadata).toContain(`instanceId: ${seeded.instanceId}`);
-      expect(metadata).toContain(`targetLineId: ${LINE_02}`);
-      expect(metadata).toContain(`projectId: ${PROJECT}`);
+      expect(metadata).toContain(`instanceId: ${JSON.stringify(seeded.instanceId)}`);
+      expect(metadata).toContain(`targetLineId: ${JSON.stringify(LINE_02)}`);
+      expect(metadata).toContain(`projectId: ${JSON.stringify(PROJECT)}`);
 
       // The machine index still resolves the same Change instance and pair, in
       // the scope it was always in.

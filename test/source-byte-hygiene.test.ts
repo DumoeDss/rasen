@@ -72,16 +72,6 @@ const EXCEPTIONS: readonly Exception[] = Object.freeze([
     reason: "child 3's file, same cause as the entry above.",
   },
   {
-    file: 'src/locales/ja.json',
-    defect: 'replacement-char',
-    reason: 'predates this branch; byte-identical to the HEAD blob.',
-  },
-  {
-    file: 'src/locales/zh-cn.json',
-    defect: 'replacement-char',
-    reason: 'predates this branch; byte-identical to the HEAD blob.',
-  },
-  {
     file: 'test/core/pipeline-registry/run-state.test.ts',
     defect: 'replacement-char',
     reason: 'predates this branch; byte-identical to the HEAD blob.',
