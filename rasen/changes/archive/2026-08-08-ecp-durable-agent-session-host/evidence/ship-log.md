@@ -62,3 +62,9 @@ Local mode: commit only. No push, no per-child PR. Delivery is deferred to the
 ECP-7 portfolio / ECP-8, which alone owns the unique remote PR, the clean-branch
 0.2.0 transfer, the actual Windows/Linux/macOS CI matrix, and the remote
 merge/archive bookkeeping (task 10.6).
+
+## Archive
+**Date:** 2026-08-08T07:12:07.903Z
+**Ship commit:** f5b011a30c066688c3611716e1686c98c2547d2b
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle\rasen\changes\archive\2026-08-08-ecp-durable-agent-session-host
+**Transaction:** 79d7d881-60ec-4013-b6bc-e9ed69d93473

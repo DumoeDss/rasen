@@ -1,0 +1,15 @@
+schema: spec-driven
+created: 2026-08-03
+quality:
+  files:
+    - evidence/cso-report.md
+    - evidence/implementation-report.md
+    - evidence/review-cycle-report.md
+    - evidence/review-report.md
+    - evidence/verification-report.md
+  metrics:
+    evidence/cso-report.md: 1
+    evidence/implementation-report.md: 0
+    evidence/review-cycle-report.md: 1
+    evidence/review-report.md: 2
+    evidence/verification-report.md: 0
