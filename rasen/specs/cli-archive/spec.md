@@ -47,6 +47,8 @@ The command SHALL verify task completion status before archiving to prevent prem
 
 The archive command SHALL expose one authoritative plan/apply operation used by direct CLI, single archive, bulk archive, and in-ship consumers. Planning SHALL complete validation, spec-update preparation, sidecar/handoff and probe validation, cleaner disposition, quality/evidence discovery, target selection, and blockers without mutation. Apply SHALL consume that exact plan without reclassifying paths or changing planned actions.
 
+In a Store v2 project scope that operation SHALL be the change-finalization plan/apply, which additionally carries the declared outcome, the successor or reason it requires, the landed reachability proof, and the Archive v2 record, and whose published address is the project partition's stable target-line entry rather than a flat date-prefixed name. Standalone projects and legacy flat Stores SHALL keep the existing operation, address, and record unchanged, dispatched from the resolved scope rather than from a path shape.
+
 A successful apply SHALL stage and verify the archive, publish it without clobbering, finalize cleaner outcomes and `archive.json`, and remove the active change last. A failed apply SHALL preserve the active source or leave a transaction journal that reports the recoverable state. Generated consumers SHALL invoke this operation and SHALL NOT move a change directory directly.
 
 #### Scenario: Performing archive
@@ -54,7 +56,7 @@ A successful apply SHALL stage and verify the archive, publish it without clobbe
 - **WHEN** archiving a change
 - **THEN** the command SHALL derive a complete archive plan before mutation
 - **AND** SHALL apply the confirmed plan through the authoritative archive engine
-- **AND** SHALL publish to `YYYY-MM-DD-<change-name>` in the planning root without overwrite
+- **AND** SHALL publish without overwrite to `YYYY-MM-DD-<change-name>` in the planning root, or, in a Store v2 project scope, to `YYYY-MM-DD-<change-name>--<instance-short>` below that project's stable target-line archive directory
 
 #### Scenario: Archive already exists
 
@@ -83,7 +85,7 @@ A successful apply SHALL stage and verify the archive, publish it without clobbe
 
 ### Requirement: Spec Update Process
 
-Before moving the change to archive, the command SHALL apply delta changes to main specs to reflect the deployed reality.
+Before moving the change to archive, the command SHALL apply delta changes to main specs to reflect the deployed reality. In a Store v2 project scope that application SHALL be conditional on the declared outcome: only `landed` SHALL apply deltas, and `superseded`, `cancelled`, and `abandoned` SHALL apply none. Standalone projects and legacy flat Stores SHALL continue to apply deltas unconditionally as they do today.
 
 #### Scenario: Applying delta changes
 
@@ -118,6 +120,12 @@ Before moving the change to archive, the command SHALL apply delta changes to ma
 - **THEN** the command SHALL abort the spec rebuild with an error naming the requirement and the missing scenario(s), instructing the author to refresh the change spec before archiving
 - **AND** SHALL NOT overwrite the main spec (no scenarios are silently dropped)
 - **AND** the change SHALL remain unarchived
+
+#### Scenario: A non-landed Store v2 outcome applies no delta
+
+- **WHEN** a Store v2 project change carrying delta specs is archived with outcome `superseded`, `cancelled`, or `abandoned`
+- **THEN** no delta SHALL be parsed for application and no main spec SHALL be created, updated, or deleted
+- **AND** every file under that project's canonical specs SHALL remain byte-identical
 
 ### Requirement: Confirmation Behavior
 
@@ -319,7 +327,7 @@ Because the CLI never invokes `gh`, and uses git only for local read-only status
 
 ### Requirement: Archive command always lands in the planning root
 
-`rasen archive <change>` SHALL plan, stage, verify, and publish the change to the planning root's archive directory unconditionally — no configuration is consulted and no destination is resolved (`archive-destination` capability). A project whose config still carries `archive.destination: external` or `prune` SHALL archive in-repo exactly as a project with no such key; the deprecated value produces only a parse-time warning (`config-loading` capability). The engine SHALL neither publish to the machine home nor remove the active source before the archive and recovery/accounting state are durable, and its JSON output SHALL report the archived name and absolute archived path.
+`rasen archive <change>` SHALL plan, stage, verify, and publish the change to the planning root's archive directory unconditionally — no configuration is consulted and no destination is resolved (`archive-destination` capability). In a Store v2 project scope the entry's address within that planning root SHALL be computed from the change's frozen stable target line and verified change instance through the layout contract; that is an address derivation from frozen scope facts, not a configurable destination, and no configuration participates in it. A project whose config still carries `archive.destination: external` or `prune` SHALL archive in-repo exactly as a project with no such key; the deprecated value produces only a parse-time warning (`config-loading` capability). The engine SHALL neither publish to the machine home nor remove the active source before the archive and recovery/accounting state are durable, and its JSON output SHALL report the archived name and absolute archived path.
 
 #### Scenario: Legacy destination config does not redirect the CLI
 
@@ -450,3 +458,42 @@ The archive engine SHALL finalize `archive.json` from confirmed Git facts, the f
 - **THEN** the active change SHALL remain
 - **AND** the archive-local journal SHALL identify the failed phase and planned accounting
 - **AND** completion SHALL NOT be reported
+
+### Requirement: Store v2 archiving declares its outcome on the command line
+
+`rasen archive` SHALL accept `--outcome <landed|superseded|cancelled|abandoned>`, `--reason <text>`, `--by <changeInstanceId>`, `--by-target-line <id>`, and `--commit <oid>`. In a Store v2 project scope `--outcome` SHALL be required; its absence SHALL fail with `finalization_outcome_required` before any mutation, naming all four outcomes and their reason and successor requirements. `--reason` SHALL be required by every non-landed outcome and refused for `landed`; `--by` SHALL be required by `superseded` and refused otherwise; `--by-target-line` SHALL only narrow the successor search and SHALL never substitute for successor verification; `--commit` SHALL only supply the candidate commit for a landed proof and SHALL never bypass it. There SHALL be no flag that declares a change planning-only at archive time. Outside a Store v2 project scope these options SHALL be rejected as inapplicable rather than silently ignored.
+
+#### Scenario: Missing outcome refuses before mutation
+
+- **WHEN** `rasen archive <change> --yes --json` runs in a Store v2 project scope with no `--outcome`
+- **THEN** the command SHALL exit non-zero with `finalization_outcome_required` and name the four outcomes
+- **AND** no spec, change directory, or archive entry SHALL be written
+
+#### Scenario: Outcome options outside Store v2 are rejected, not ignored
+
+- **WHEN** `--outcome` is supplied in a standalone project or a legacy flat Store
+- **THEN** the command SHALL reject the option explaining where it applies
+- **AND** it SHALL NOT archive while discarding the option
+
+#### Scenario: A supplied commit still has to prove reachability
+
+- **WHEN** `--outcome landed --commit <oid>` names a commit that is not an ancestor of the target line's code ref
+- **THEN** the command SHALL refuse naming the commit and the ref
+- **AND** the change SHALL remain active
+
+### Requirement: Store v2 archive output reports the finalization record
+
+In a Store v2 project scope, `rasen archive --json` SHALL report the declared outcome, the change instance, the workspace pair, the stable target line, the absolute published entry path, whether spec synchronization was applied and how many actions it carried, and, for a code-backed landed archive, the proven commit and the target code ref with its commit identifier at proof time. `--dry-run` SHALL emit the same immutable finalization plan that apply consumes, including the record draft and every blocker, and SHALL write nothing. The human output SHALL state the same facts.
+
+#### Scenario: A landed JSON result is auditable
+
+- **WHEN** a Store v2 change is archived with `--outcome landed --json`
+- **THEN** the payload SHALL name the outcome, the change instance, the workspace pair, the target line, the published entry path, the applied spec-sync action count, the proven commit, and the target code ref
+- **AND** the human form SHALL state the same facts
+
+#### Scenario: Dry-run previews the finalization plan and writes nothing
+
+- **WHEN** `rasen archive <change> --outcome abandoned --reason <text> --dry-run --json` runs in a Store v2 project scope
+- **THEN** the output SHALL contain the immutable finalization plan including the record draft and every blocker
+- **AND** no archive entry, spec write, journal, or record file SHALL be created
+
