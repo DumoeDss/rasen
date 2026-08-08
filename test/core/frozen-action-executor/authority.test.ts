@@ -206,6 +206,78 @@ describe('the four illegal-dispatch cases fail closed with typed outcomes', () =
   });
 });
 
+describe('per-field completion-binding mismatch (task 5.4)', () => {
+  // Each binding field is checked independently: mismatching exactly one field
+  // fails closed with a typed outcome. These per-field tests are the
+  // discrimination targets for the per-field mutation receipts (task 5.4 /
+  // evidence/mutation-receipts.md receipt 9): mutating one field's comparison
+  // in sameActionIdentity/sameAuthority makes exactly its test go RED.
+  function validateWith(overrides: Partial<ReturnType<typeof makeRecordAction>>) {
+    const committed = grantedCommitted();
+    const record = recordWith(committed);
+    return validateGrantedAction({
+      runRef,
+      grantedAction: makeRecordAction(overrides),
+      record,
+      expectedRecordVersion: 3,
+      workspaceRevision: recordRevision,
+    });
+  }
+
+  it('an actionId not admitted in the Record fails closed not-currently-executable (the actionId binding)', () => {
+    // The actionId is bound by admission: a granted actionId that is not a key
+    // in record.actions is not admitted, so the dispatch fails closed before
+    // the identity check. (The other identity fields are bound by
+    // sameActionIdentity -> receipt_conflict, covered below.)
+    const result = validateWith({ actionId: branded(`action:${'b'.repeat(58)}bb`) });
+    expect(result.kind).toBe('rejected');
+    if (result.kind === 'rejected') expect(result.code).toBe('not-currently-executable');
+  });
+
+  it('an invocationId mismatch fails closed receipt_conflict', () => {
+    const result = validateWith({ invocationId: branded(`invocation:${'b'.repeat(53)}bbb`) });
+    expect(result.kind).toBe('rejected');
+    if (result.kind === 'rejected') expect(result.code).toBe('receipt_conflict');
+  });
+
+  it('a runId mismatch fails closed receipt_conflict', () => {
+    const result = validateWith({ runId: branded(`run:${'b'.repeat(64)}`) });
+    expect(result.kind).toBe('rejected');
+    if (result.kind === 'rejected') expect(result.code).toBe('receipt_conflict');
+  });
+
+  it('an expectedBeforeWorkspace (workspace-revision) mismatch fails closed receipt_conflict', () => {
+    // The frozen workspace expectation on the granted ActionView must match the
+    // committed Action's. (The executor's actual cwd vs the granted expectation
+    // is the separate workspace-scope-mismatch check tested above.)
+    const wrongRevision = {
+      ...recordRevision,
+      treeDigest: branded(`sha256:${'f'.repeat(64)}`),
+    };
+    const result = validateWith({ expectedBeforeWorkspace: wrongRevision });
+    expect(result.kind).toBe('rejected');
+    if (result.kind === 'rejected') expect(result.code).toBe('receipt_conflict');
+  });
+
+  it('a capability contractDigest mismatch fails closed receipt_conflict', () => {
+    const base = makeRecordAction();
+    const result = validateWith({
+      capability: {
+        ...base.capability,
+        contractDigest: branded(`sha256:${'e'.repeat(64)}`),
+      },
+    });
+    expect(result.kind).toBe('rejected');
+    if (result.kind === 'rejected') expect(result.code).toBe('receipt_conflict');
+  });
+
+  it('a policyDigest mismatch fails closed receipt_conflict', () => {
+    const result = validateWith({ policyDigest: branded(`sha256:${'d'.repeat(64)}`) });
+    expect(result.kind).toBe('rejected');
+    if (result.kind === 'rejected') expect(result.code).toBe('receipt_conflict');
+  });
+});
+
 describe('authority is rebuilt from no non-granted source (source-scan property)', () => {
   it('the validator accepts no chat / Definition / caller-authority parameter', () => {
     // The function signature is the guard: validateGrantedAction takes only the

@@ -99,3 +99,15 @@ export {
   type RegistryGuardErrorCode,
   type RegistryLifecycleFacts,
 } from './attribution.js';
+
+export {
+  actionExecuteRequestId,
+  createHostedBackendSeamFromSessionHost,
+  createInToolBackendSeamFromLauncherLiveness,
+  createProductionExecutor,
+  turnResultFromHostOutcome,
+  type HostedBackendSeamOptions,
+  type LauncherLivenessProbe,
+  type ProductionExecutor,
+  type ProductionExecutorOptions,
+} from './production-executor.js';

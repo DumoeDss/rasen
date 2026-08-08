@@ -28,6 +28,9 @@ describe('execution-lost reconciliation - hosted backend', () => {
       },
     });
     expect(outcome.kind).toBe('execution-lost');
+    // The daemon process may still be alive; the audit label is the lost
+    // generation, not a literal daemon death (review round-1 Minor).
+    expect(outcome.source).toBe('lost-generation');
   });
 
   it('a settled succeeded turn is succeeded, NOT execution-lost', () => {

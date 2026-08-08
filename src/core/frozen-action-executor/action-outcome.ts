@@ -34,13 +34,15 @@ export interface ActionOutcome {
   readonly backend: ExecutionBackendId;
   /**
    * The host-layer signal the executor composed to reach this outcome. One of:
-   * `daemon-death` / `launcher-disappearance` (the death that mints
-   * execution-lost), `host-turn` (a settled host turn), `host-ambiguous`
-   * (turn-outcome-unknown without a death), or `host-failure` (a non-death
-   * host failure). Recorded so the mapping is auditable and a mutation that
-   * relabels an outcome is detectable.
+   * `daemon-death` / `launcher-disappearance` (the owning-process death that
+   * mints execution-lost), `lost-generation` (a hosted lost generation — the
+   * scope is no longer controllable even though the daemon process may still be
+   * alive; distinct from a literal daemon death), `host-turn` (a settled host
+   * turn), `host-ambiguous` (turn-outcome-unknown without a death or lost
+   * generation), or `host-failure` (a non-death host failure). Recorded so the
+   * mapping is auditable and a mutation that relabels an outcome is detectable.
    */
-  readonly source: 'daemon-death' | 'launcher-disappearance' | 'host-turn' | 'host-ambiguous' | 'host-failure';
+  readonly source: 'daemon-death' | 'launcher-disappearance' | 'lost-generation' | 'host-turn' | 'host-ambiguous' | 'host-failure';
   readonly message: string;
 }
 
@@ -170,8 +172,8 @@ export function reconcileActionOutcome(
   if (turn.ambiguous && turn.requestUnfinished && backend === 'hosted') {
     return deathOutcome(
       backend,
-      'daemon-death',
-      `The host reported ${turn.code} for an unfinished request on a lost generation; the hosted scope is no longer controllable. The in-flight Action is execution-lost.`
+      'lost-generation',
+      `The host reported ${turn.code} for an unfinished request on a lost generation; the hosted scope is no longer controllable (the daemon process may still be alive). The in-flight Action is execution-lost.`
     );
   }
 
