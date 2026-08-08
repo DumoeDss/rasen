@@ -40,6 +40,37 @@ export async function setup() {
   xdgDataNet = mkdtempSync(path.join(os.tmpdir(), 'rasen-test-xdg-data-'));
   process.env.XDG_DATA_HOME = xdgDataNet;
 
+  // Third net layer: host-runtime detection (src/core/runtime-adapters.ts)
+  // reads harness fingerprints straight off the environment. Scrubbing EVERY
+  // input detectHostRuntime reads makes the default host `unknown` everywhere,
+  // matching CI.
+  delete process.env.RASEN_AGENT_RUNTIME;
+  delete process.env.CODEX_THREAD_ID;
+  delete process.env.CODEX_SANDBOX;
+  delete process.env.OMPCODE;
+  delete process.env.CLAUDECODE;
+
+  // OMP agent dir resolution: scrub every ambient variable it reads.
+  delete process.env.OMP_PROFILE;
+  delete process.env.PI_PROFILE;
+  delete process.env.PI_CONFIG_DIR;
+  delete process.env.PI_CODING_AGENT_DIR;
+
+  // Git: fixture repos in temp fall outside any includeIf scope, so they
+  // inherit the global config. Pin identity and config to deterministic values.
+  process.env.GIT_CONFIG_GLOBAL = path.join(machineRoot, 'absent-gitconfig');
+  process.env.GIT_CONFIG_NOSYSTEM = '1';
+  process.env.GIT_AUTHOR_NAME = 'Rasen Test';
+  process.env.GIT_AUTHOR_EMAIL = 'test@rasen.invalid';
+  process.env.GIT_COMMITTER_NAME = 'Rasen Test';
+  process.env.GIT_COMMITTER_EMAIL = 'test@rasen.invalid';
+
+  // Locale: pin to en_US so suites asserting English output match CI.
+  delete process.env.RASEN_LANG;
+  process.env.LC_ALL = 'en_US.UTF-8';
+  process.env.LC_MESSAGES = 'en_US.UTF-8';
+  process.env.LANG = 'en_US.UTF-8';
+
   // Verify the shared bundle matches the current sources, compiling only when
   // it does not. Never an unconditional clean+rebuild: two Vitest processes in
   // one checkout would otherwise remove or half-overwrite the `dist/` the other

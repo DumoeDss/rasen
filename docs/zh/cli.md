@@ -105,9 +105,9 @@ rasen init [path] [options]
 
 显式传入 `custom` 以外的 `--profile` 值时，该值会作为项目的**锁定配置方案**写入 `rasen/config.yaml` 的 `profile:` 键：之后的 `rasen update` 会持续按该配置方案（而非用户全局配置方案）解析此项目的工作流。`--profile custom` 仅本次运行使用全局配置中当前选中的 workflows（`rasen profile`），不会被持久化。
 
-**支持的工具 ID（`--tools`）：** `amazon-q`, `antigravity`, `auggie`, `bob`, `claude`, `cline`, `codex`, `forgecode`, `codebuddy`, `continue`, `costrict`, `crush`, `cursor`, `factory`, `gemini`, `github-copilot`, `iflow`, `junie`, `kilocode`, `kimi`, `kiro`, `lingma`, `vibe`, `opencode`, `pi`, `qoder`, `qwen`, `roocode`, `trae`, `windsurf`
+**可安装的工具 ID（`--tools`）：** `claude`、`codex`、`hermes`、`omp`——rasen 已完成 orchestration 适配的 agent。`--tools all` 恰好展开为这四个。
 
-> 此列表与 `src/core/config.ts` 中的 `AI_TOOLS` 对应。各工具的 skill 和命令路径参见[支持的工具](supported-tools.md)。
+> 可安装集合对应 `src/core/config.ts` 中 `AI_TOOLS` 里标记了 `adapted: true` 的条目。注册表中的其他 agent 仍有定义但不提供安装；显式指定时会失败并提示"已识别但尚未适配"，而不是"无法识别的 ID"错误。各工具的 skills 路径参见[支持的工具](supported-tools.md)。
 
 **示例：**
 
@@ -118,8 +118,8 @@ rasen init
 # 在指定目录初始化
 rasen init ./my-project
 
-# 非交互式：为 Claude 和 Cursor 配置
-rasen init --tools claude,cursor
+# 非交互式：为 Claude 和 Oh My Pi 配置
+rasen init --tools claude,omp
 
 # 为所有支持的工具配置
 rasen init --tools all

@@ -166,6 +166,12 @@ opencode.json
 # installed from (src/core/workflow-artifact-ledger.ts).
 /rasen/.workflow-artifacts.json
 
+# Per-checkout state, not shared content: the learned-skill ledger records
+# which learned skills this checkout materialized into the gitignored
+# `.claude/skills/`, keyed by this machine's project identity
+# (src/core/project-learned-skill-ledger.ts).
+/rasen/.learned-skill-materializations.json
+
 openspec/changes/**/auto-run.json
 openspec/changes/**/portfolio-run.json
 

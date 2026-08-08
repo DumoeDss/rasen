@@ -238,6 +238,18 @@ stages:
       bridge: 'claude-print',
     });
   });
+
+  it('falls back to the annotated legacy default for a host with no dispatch adapter', () => {
+    const resolved = resolvePipelineRoleRuntimes(PIPELINE, emptyOverrides, {
+      runtime: 'omp',
+      source: 'omp-code',
+    });
+    expect(resolved.planner).toEqual({
+      runtime: 'claude',
+      source: 'legacy-default',
+      dispatchMode: 'legacy-fallback',
+    });
+  });
 });
 
 describe('resolvePipelineExecutionPlan bridge routing by config scope', () => {

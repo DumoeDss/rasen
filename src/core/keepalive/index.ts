@@ -250,11 +250,16 @@ export type { AgentRuntime };
  * Detect the hosting agent runtime from environment fingerprints.
  *
  * Priority: an explicit `RASEN_AGENT_RUNTIME` (deterministic override for
- * harnesses whose fingerprints drift) > Codex (`CODEX_SANDBOX`, set per exec
- * by codex-cli for its shell tools) > Claude Code (`CLAUDECODE`). Codex wins
- * over Claude because a codex-exec run nested under a Claude session inherits
- * `CLAUDECODE` from the parent environment. Anything else is `unknown`,
- * which the gate treats as off (fail-safe: no keepalive, current-day cost).
+ * harnesses whose fingerprints drift) > Codex (`CODEX_THREAD_ID`,
+ * `CODEX_SANDBOX`, set per exec by codex-cli for its shell tools) > Oh My Pi
+ * (`OMPCODE`) > Claude Code (`CLAUDECODE`). Codex wins over the rest because
+ * a codex-exec run nested under another harness inherits that harness's
+ * variables; Oh My Pi wins over Claude because it sets `CLAUDECODE` itself.
+ * Anything else is `unknown`.
+ *
+ * The gate treats every runtime other than claude/codex as off — `unknown`
+ * and any recognized host with no keepalive cost model (Oh My Pi) alike
+ * (fail-safe: no keepalive, current-day cost). See {@link isRuntimeGated}.
  */
 export function detectAgentRuntime(env: NodeJS.ProcessEnv = process.env): AgentRuntime {
   return detectHostRuntime(env).runtime;

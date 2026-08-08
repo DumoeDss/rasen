@@ -430,6 +430,7 @@
       "selectedProjectRoot": "使用 Rasen 根目录：项目 {project}（{path}）",
       "staleProfileWorkflowsWarning": "警告：已从存储的配置方案中忽略未知工作流 ID：{workflows}",
       "unknownHostRuntimeWarning": "警告：无法识别 LEAD 工具宿主，正在使用旧版兼容路由。设置 {override}=claude|codex 可获得确定的派发行为。",
+      "hostRuntimeWithoutDispatchAdapterWarning": "警告：LEAD 工具宿主 {host} 没有派发适配器，正在使用旧版兼容路由。设置 {override}=claude|codex 可获得确定的派发行为。但该 override 同时会把 `rasen agent context --latest` 的读取目标从本宿主自己的会话切换走，此后报告的将是另一个会话的占用率。",
       "noPipelinesFound": "未找到流水线。",
       "availablePipelinesHeading": "可用流水线：",
       "pipelineTableEntry": "  {name}  [{source}]",
@@ -1003,6 +1004,10 @@
       "userWideProfileUnresolvable": "警告：无法解析用户全局配置方案 '{profile}'（{detail}）；将改用默认的 'full' 配置方案。",
       "deprecatedArchiveDestination": "'archive.destination' 已废弃，不再选择归档去向：归档簿记始终落在规划根。请删除该键；运行 'rasen archive relocate --to in-repo' 可把已有归档收拢回规划根。"
     }
+  },
+  "ompProjectContext": {
+    "nestedInstallCaptureWarning": "{installDir} 现在包含 Oh My Pi 配置，因此 Oh My Pi 会从这里而不是外层目录读取项目指令与常驻规则。以下文件将不再加载：{files}",
+    "nestedInstallCaptureFix": "若要保留它们，请改在 {boundary} 安装，或把上述文件复制到 {installDir}。已安装的技能不受影响——Oh My Pi 会扫描所有上层目录来发现技能。"
   },
   "storeIdentityMigration": {
     "upgraded": "已升级 {count} 个 store：",
@@ -3018,19 +3023,19 @@
               "description": "根据已记录的使用量报告 transcript 的上下文窗口占用率",
               "options": {
                 "transcript": {
-                  "description": "Claude Code transcript 或 Codex rollout jsonl 的路径"
+                  "description": "Claude Code transcript 或 Codex rollout jsonl 的路径；来自其他已识别 harness 的会话文件会指名拒绝，而不是被测量"
                 },
                 "latest": {
                   "description": "使用当前目录最新的 main-session transcript"
                 },
                 "dir": {
-                  "description": "覆盖 --latest 使用的 Claude projects 目录"
+                  "description": "覆盖 --latest 搜索的会话存储目录（按解析出的 runtime，可为 Claude projects 目录、Codex 的 sessions 根目录或 Oh My Pi 的 sessions 根目录）"
                 },
                 "limit": {
                   "description": "覆盖解析后的上下文窗口限制"
                 },
                 "runtime": {
-                  "description": "强制检测为 \"claude\" 或 \"codex\"，而不分析文件"
+                  "description": "强制指定 runtime 而不分析文件：\"claude\"、\"codex\" 或 \"omp\""
                 },
                 "json": {
                   "description": "输出为 JSON"
@@ -3058,7 +3063,7 @@
               }
             },
             "audit": {
-              "description": "根据 Claude transcript、Codex rollout 或 Zed 线程数据库分析一次会话的 token 花费（实验性功能：解析内部未公开的格式，harness 或 Zed 升级可能导致失效）",
+              "description": "根据 Claude transcript、Codex rollout 或 Zed 线程数据库分析一次会话的 token 花费；来自其他已识别 harness 的会话文件会指名拒绝，而不是报告为 0（实验性功能：解析内部未公开的格式，harness 或 Zed 升级可能导致失效）",
               "options": {
                 "projects-dir": {
                   "description": "覆盖用于解析 session id 的 Claude projects 目录"

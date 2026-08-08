@@ -28,6 +28,7 @@
  *    parallel dispatch, so resume always requires an explicit thread id.
  */
 import { CODEX_CLI_VERSION_PREMISE } from './codex-home.js';
+import { runtimeIdentityEnv, type RuntimeIdentityEnv } from '../runtime-adapters.js';
 import { inlineCommandTemplate, type TemplateInliner } from './template-inline.js';
 
 export type CodexSandboxMode = 'read-only' | 'workspace-write';
@@ -104,6 +105,20 @@ export interface CodexExecInvocation {
   stdin: 'ignore';
   /** The fully assembled prompt (inlined template + task prompt + flat guard). */
   prompt: string;
+  /**
+   * Environment the caller MUST set on the process, in addition to whatever it
+   * inherits: this worker's own Rasen identity.
+   *
+   * Rasen does not own this spawn, so it cannot apply the identity itself —
+   * but a process inherits its whole ancestry's environment, and
+   * `RASEN_AGENT_RUNTIME` outranks every host fingerprint. A `codex exec`
+   * started beneath a bridged Claude worker inherits that worker's `claude`
+   * identity and would report `claude` to every Rasen command it runs while
+   * holding Codex's own fingerprints. Setting this pair overwrites it.
+   * {@link formatShellInvocation} renders it; an argv-form caller must apply
+   * it to the child environment.
+   */
+  env: RuntimeIdentityEnv<'codex'>;
   /** Non-fatal notices, e.g. an effort clamp. Empty array when none apply. */
   warnings: string[];
 }
@@ -227,6 +242,7 @@ export function buildCodexExecInvocation(
     args,
     stdin: 'ignore',
     prompt,
+    env: runtimeIdentityEnv('codex'),
     warnings,
   };
 }
@@ -277,6 +293,11 @@ export function formatShellInvocation(
       'Rendered a Windows shell command from an argument containing a newline; cmd.exe cannot quote newlines, so this command will not run correctly. Use the argv (command/args/stdin) form instead.'
     );
   }
+  // The identity prefix is part of the command, not decoration: a rendered
+  // command pasted without it inherits the spawning worker's identity.
+  const assignments = Object.entries(invocation.env).map(([key, value]) =>
+    shell === 'windows' ? `set "${key}=${value}" &&` : `${key}=${quote(value)}`
+  );
   const parts = [invocation.command, ...invocation.args].map(quote);
-  return `${parts.join(' ')} ${redirect}`;
+  return `${[...assignments, ...parts].join(' ')} ${redirect}`;
 }

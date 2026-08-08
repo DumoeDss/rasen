@@ -88,6 +88,8 @@ import {
   migrateIfNeeded as migrateIfNeededShared,
 } from './migration.js';
 import { reconcileCodexProjectConfig, formatCodexConfigSummary, type CodexConfigReconcileResult } from './codex/index.js';
+import { detectOmpNestedInstallCapture, type OmpNestedInstallCapture } from './omp/project-context.js';
+import { ompNestedInstallCaptureReport } from './omp/project-context-locale.js';
 
 const require = createRequire(import.meta.url);
 const { version: OPENSPEC_VERSION } = require('../../package.json');
@@ -313,6 +315,25 @@ export class UpdateCommand {
       console.log(chalk.dim(`Seeded tools: ${configuredTools.join(', ')}`));
     }
     const commandConfiguredSet = new Set(commandConfiguredTools);
+
+    // Oh My Pi reads its project instructions and sticky rules from the nearest
+    // NON-EMPTY `.omp/` and does not continue upward, so newly populating one in
+    // a nested package takes over the enclosing tree's (design D5). `update`
+    // reaches that state too, not just `init`: the `tools:` manifest above is
+    // authoritative, so a project whose manifest lists `omp` while `.omp/` is
+    // absent has the directory created by the skill-generation loop below —
+    // exactly the event `init` discloses.
+    //
+    // Detected HERE, ahead of every write into `<resolvedProjectPath>/.omp/`
+    // (the retired-artifact prune, the learned-skill reconcile, and the skill
+    // loop). Afterwards the directory is populated either way and the "newly"
+    // half of the detector's contract is unanswerable. The detector itself
+    // returns `undefined` for an already-populated `.omp/`, so the ordinary
+    // refresh of an existing Oh My Pi install stays silent.
+    const ompCapture: OmpNestedInstallCapture | undefined =
+      configuredTools.includes('omp')
+        ? detectOmpNestedInstallCapture(resolvedProjectPath)
+        : undefined;
 
     // Retired-boundary cleanup precedes every short circuit and does not
     // depend on a retired skill being selected or installed.
@@ -543,6 +564,20 @@ export class UpdateCommand {
               ? chalk.yellow(`  ⚠ ${line.text}`)
               : chalk.white(`  ${line.text}`);
         console.log(rendered);
+      }
+    }
+
+    // Oh My Pi nested install (omp-integration spec): this run newly populated
+    // `<project>/.omp/`, and these enclosing context files stopped loading as a
+    // consequence. Same detector and same rendering as `init`'s success message,
+    // so the two commands cannot word or style the disclosure differently.
+    // Advisory by design — the alternative is taking over the enclosing tree
+    // silently.
+    if (ompCapture) {
+      for (const line of ompNestedInstallCaptureReport(ompCapture)) {
+        console.log(
+          line.tone === 'warn' ? chalk.yellow(`  ⚠ ${line.text}`) : chalk.dim(`  ${line.text}`)
+        );
       }
     }
 

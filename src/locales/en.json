@@ -430,6 +430,7 @@
       "selectedProjectRoot": "Using Rasen root: project {project} ({path})",
       "staleProfileWorkflowsWarning": "Warning: dropping unknown workflow id(s) from stored profile: {workflows}",
       "unknownHostRuntimeWarning": "Warning: LEAD host runtime is unknown; using the legacy compatibility route. Set {override}=claude|codex for deterministic dispatch.",
+      "hostRuntimeWithoutDispatchAdapterWarning": "Warning: LEAD host runtime {host} has no dispatch adapter; using the legacy compatibility route. Set {override}=claude|codex for deterministic dispatch — note that the same override also redirects `rasen agent context --latest` away from this host's own session, so what gets reported is another conversation's occupancy.",
       "noPipelinesFound": "No pipelines found.",
       "availablePipelinesHeading": "Available pipelines:",
       "pipelineTableEntry": "  {name}  [{source}]",
@@ -1003,6 +1004,10 @@
       "userWideProfileUnresolvable": "Warning: user-wide profile '{profile}' could not be resolved ({detail}); using the default 'full' profile instead.",
       "deprecatedArchiveDestination": "'archive.destination' is deprecated and no longer selects a destination: archive bookkeeping always lands in the planning root. Remove the key; run 'rasen archive relocate --to in-repo' to consolidate existing archives."
     }
+  },
+  "ompProjectContext": {
+    "nestedInstallCaptureWarning": "{installDir} now holds Oh My Pi configuration, so Oh My Pi reads its project instructions and sticky rules from there instead of the enclosing directory. These files stop loading: {files}",
+    "nestedInstallCaptureFix": "To keep them, install at {boundary} instead, or copy the listed files into {installDir}. Installed skills are unaffected — Oh My Pi scans every ancestor for skills."
   },
   "storeIdentityMigration": {
     "upgraded": "Upgraded {count} store(s):",
@@ -3018,19 +3023,19 @@
               "description": "Report context-window occupancy of a transcript from its recorded usage",
               "options": {
                 "transcript": {
-                  "description": "Path to a Claude Code transcript or Codex rollout jsonl"
+                  "description": "Path to a Claude Code transcript or Codex rollout jsonl; a session file from another recognized harness is refused by name rather than measured"
                 },
                 "latest": {
                   "description": "Use the newest main-session transcript for the current directory"
                 },
                 "dir": {
-                  "description": "Override the Claude projects directory used by --latest"
+                  "description": "Override the session store directory --latest searches (the Claude projects directory, Codex's sessions root, or Oh My Pi's sessions root, per the resolved runtime)"
                 },
                 "limit": {
                   "description": "Override the resolved context-window limit"
                 },
                 "runtime": {
-                  "description": "Force detection to \"claude\" or \"codex\" instead of sniffing the file"
+                  "description": "Force the runtime instead of sniffing the file: \"claude\", \"codex\", or \"omp\""
                 },
                 "json": {
                   "description": "Output as JSON"
@@ -3058,7 +3063,7 @@
               }
             },
             "audit": {
-              "description": "Analyze a session's token spend from its Claude transcript, Codex rollout, or Zed thread database (experimental: parses internal, undocumented formats that may change with harness or Zed updates)",
+              "description": "Analyze a session's token spend from its Claude transcript, Codex rollout, or Zed thread database; a session file from another recognized harness is refused by name rather than reported as zero (experimental: parses internal, undocumented formats that may change with harness or Zed updates)",
               "options": {
                 "projects-dir": {
                   "description": "Override the Claude projects directory a session id is resolved against"

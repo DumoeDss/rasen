@@ -30,10 +30,34 @@ If you use bun to install rasen, note that rasen still *runs* on Node, so you ne
 Init asks which tools to set up. If you skipped your tool or want to add another, just run it again, or use the non-interactive form:
 
 ```bash
-rasen init --tools claude,cursor
+rasen init --tools claude,codex
 ```
 
 The full list of tool IDs is in [Supported Tools](supported-tools.md). Use `--tools all` for everything, `--tools none` to skip tool setup.
+
+### Oh My Pi stopped loading my repo's `AGENTS.md` after `rasen init`
+
+You ran `rasen init --tools omp` in a subdirectory (a monorepo package, most
+often), which created `<that directory>/.omp/`. Oh My Pi reads its project
+instructions (`.omp/AGENTS.md`) and its always-apply project rules
+(`.omp/RULES.md`) from the **nearest non-empty `.omp/` directory** it finds
+walking up from where you started it, and it stops there — so the new directory
+takes over from the one nearer the repository root. Init prints a warning naming
+the files that stop loading; this entry is for when you hit it without reading
+that output.
+
+Installed skills are not affected: Oh My Pi scans every ancestor's `.omp/skills`,
+so the `rasen-*` skills stay discoverable either way.
+
+Pick whichever fits:
+
+- **Install at the repository root instead.** Run `rasen init --tools omp` there;
+  remove the nested `.omp/skills` directory if you no longer want it.
+- **Copy the context files down.** Copy `AGENTS.md` / `RULES.md` from the
+  enclosing `.omp/` into the nested one. They are yours to maintain — Rasen never
+  writes context files for any tool.
+- **Start Oh My Pi from the repository root.** Discovery is relative to the
+  working directory you launch in.
 
 ## Commands don't show up
 

@@ -221,4 +221,33 @@ describe('CLI: agent audit', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toMatch(/zed/i);
   });
+
+  // A refused audit must leave nothing on disk: a zeroed report attributed to
+  // the wrong runtime is worse than no report, because a viewer or management
+  // surface reads it as a real measurement.
+  it('refuses a session file from a harness with no auditor and writes no report', async () => {
+    const ompPath = path.join(workDir, 'omp-session.jsonl');
+    fs.writeFileSync(
+      ompPath,
+      [
+        JSON.stringify({ type: 'title', v: 1, title: 'x', source: 'auto', pad: ' '.repeat(64) }),
+        JSON.stringify({ type: 'session', version: 3, id: 'abc', cwd: workDir }),
+        JSON.stringify({
+          type: 'message',
+          message: { role: 'assistant', usage: { input: 87_848, cacheRead: 0 } },
+        }),
+      ].join('\n') + '\n',
+      'utf-8'
+    );
+    const outPath = path.join(workDir, 'refused.json');
+
+    const result = await runCLI(['agent', 'audit', ompPath, '--out', outPath, '--json'], {
+      cwd: workDir,
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toContain('"omp"');
+    expect(`${result.stdout}${result.stderr}`).toMatch(/no token auditor/i);
+    expect(fs.existsSync(outPath)).toBe(false);
+  });
 });

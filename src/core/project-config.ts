@@ -1365,7 +1365,10 @@ function parseProjectConfigContent(
           ) {
             const runtimesRaw = keepaliveRaw.runtimes as Record<string, unknown>;
             const runtimes: NonNullable<NonNullable<ProjectConfig['keepalive']>['runtimes']> = {};
-            for (const runtime of ['claude', 'codex'] as const) {
+            // Derived, not hand-copied: a runtime that gains dispatch
+            // capability gets its keepalive key read instead of silently
+            // dropped.
+            for (const runtime of DISPATCH_RUNTIMES) {
               if (runtimesRaw[runtime] === undefined) continue;
               if (typeof runtimesRaw[runtime] === 'boolean') {
                 runtimes[runtime] = runtimesRaw[runtime];

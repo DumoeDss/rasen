@@ -23,6 +23,7 @@ import {
   spawnAgentCli,
 } from '../agent-cli-process.js';
 import { killProcessTree } from './kill-tree.js';
+import { bridgeChildEnv } from '../runtimes/dispatch-adapters.js';
 import {
   buildRuntimeContext,
   removeSessionRuntimeContext,
@@ -341,9 +342,15 @@ export function createSessionSupervisor(options: CreateSessionSupervisorOptions)
     try {
       child = spawnAgentCli(claudeBin, argv, {
         cwd: input.cwd,
-        env: contextFilePath
-          ? { ...process.env, [RASEN_SESSION_CONTEXT_ENV]: contextFilePath }
-          : process.env,
+        // A supervisor worker is a rasen-owned Claude print process that runs
+        // Rasen commands of its own, so it needs the same identity every
+        // bridged worker gets. `daemon.ts` spawns the daemon detached with no
+        // env override, so without this merge a daemon started from a Codex
+        // session hands every Claude worker a Codex identity (design D7).
+        env: bridgeChildEnv('claude', {
+          ...process.env,
+          ...(contextFilePath ? { [RASEN_SESSION_CONTEXT_ENV]: contextFilePath } : {}),
+        }),
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: !IS_WINDOWS,
         windowsHide: IS_WINDOWS,
