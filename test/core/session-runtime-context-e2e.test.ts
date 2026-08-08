@@ -65,6 +65,15 @@ describe('session runtime context end to end', () => {
     ];
   }
 
+  /** Project-partitioned planning dirs (layout v2): the grant a Store session
+   *  with a projectId receives, replacing the legacy flat paths. */
+  function partitionDirs(root: string, projectId: string): string[] {
+    return [
+      path.join(root, WORKSPACE_DIR_NAME, 'projects', projectId, 'specs'),
+      path.join(root, WORKSPACE_DIR_NAME, 'projects', projectId, 'changes'),
+    ];
+  }
+
   /** Store S planning, project P checked out at B. */
   async function storeSessionFixture(): Promise<{
     storeRoot: string;
@@ -144,7 +153,7 @@ describe('session runtime context end to end', () => {
       artifactIds: ['proposal'],
       session: { planning: read.context.planning, execution: read.context.execution },
     });
-    expect(capability.planningWriteRoots).toEqual(planningDirs(fixture.storeRoot));
+    expect(capability.planningWriteRoots).toEqual(partitionDirs(fixture.storeRoot, 'project-p'));
     expect(capability.codeWriteRoots).toEqual([fixture.checkout]);
   });
 
