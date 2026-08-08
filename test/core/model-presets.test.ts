@@ -79,6 +79,26 @@ describe('model-presets', () => {
       expect(resolveModelLimit(null)).toBe(DEFAULT_CONTEXT_LIMIT);
     });
 
+    it('defaults an unrecognized model id to a 1M window, not 200K', () => {
+      // Pinned as a LITERAL on purpose: asserting against DEFAULT_CONTEXT_LIMIT
+      // is tautological and passed just as happily when the default was 200000.
+      expect(DEFAULT_CONTEXT_LIMIT).toBe(1_000_000);
+
+      // The test ids are chosen to not match any preset in the registry.
+      // any preset (`claude-opus-99` is a future id absent from the registry; `glm` has no
+      // entry), so both ride the default — the exact case that reported every
+      // session as 5x more occupied than it was.
+      expect(resolveModelPreset('claude-opus-99')).toBeUndefined();
+      expect(resolveModelPreset('glm-5.2')).toBeUndefined();
+      expect(resolveModelLimit('claude-opus-99')).toBe(1_000_000);
+      expect(resolveModelLimit('glm-5.2')).toBe(1_000_000);
+    });
+
+    it('keeps haiku at 200K — the default does not swallow explicit presets', () => {
+      expect(resolveModelLimit('claude-haiku-4-5-20251001')).toBe(200_000);
+      expect(resolveModelLimit('gpt-5.6-sol')).toBe(272_000);
+    });
+
     it('now also resolves gpt-5 family windows via the registry', () => {
       expect(resolveModelLimit('gpt-5.6-sol')).toBe(272_000);
     });

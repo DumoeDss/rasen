@@ -105,7 +105,7 @@ The probe SHALL distinguish two failure classes. **Environmental absence**—rea
 - **AND** SHALL reject any other `--runtime` value with an actionable error
 
 ### Requirement: Context-limit resolution
-The probe SHALL resolve the context-window limit per transcript kind: for Claude transcripts, from the transcript's model id via the built-in model-preset registry (the single source of context-window sizes) with a conservative default; for Codex rollouts, from the exact `model_context_window` the rollout's token-count event carries inline (no registry lookup). An explicit `--limit <n>` override SHALL win on both kinds, with `pct` and `remainingTokens` recomputed against it.
+The probe SHALL resolve the context-window limit per transcript kind: for Claude transcripts, from the transcript's model id via the built-in model-preset registry (the single source of context-window sizes) with a large-window default for ids the registry does not know; for Codex rollouts, from the exact `model_context_window` the rollout's token-count event carries inline (no registry lookup). An explicit `--limit <n>` override SHALL win on both kinds, with `pct` and `remainingTokens` recomputed against it.
 
 #### Scenario: Known model
 - **WHEN** the transcript's latest usage entry names a model with a known context window in the model-preset registry
@@ -114,7 +114,7 @@ The probe SHALL resolve the context-window limit per transcript kind: for Claude
 #### Scenario: Unknown model with override
 - **WHEN** the model is not in the registry and `--limit <n>` is provided
 - **THEN** the CLI SHALL use `<n>` as the limit
-- **AND** without an override it SHALL fall back to the conservative default of 200000
+- **AND** without an override it SHALL fall back to the default of 1000000
 
 #### Scenario: Codex inline window
 - **WHEN** a Codex rollout's last valid current-context token-count snapshot carries a model context window
