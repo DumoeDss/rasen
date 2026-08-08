@@ -206,7 +206,7 @@
     "unreadableNext": "次の手順: レコードが作成された時点の内容にファイルを戻すか、`rasen knowledge apply <candidate>` で知識を記録し直してレコードを一致させてください。",
     "degradedHeading": "カタログ劣化 — 復元可能なバックアップの残骸:",
     "degradedRow": "  [{scope}] {dirs}",
-    "degradedRepair": "  学習スキルの変更���作(例: rasen knowledge apply)を実行してバックアップを復元してください。",
+    "degradedRepair": "  学習スキルの変更操作(例: rasen knowledge apply)を実行してバックアップを復元してください。",
     "showDegradedSuffix": " カタログは復元可能なバックアップの残骸({dirs})により劣化状態です。学習スキルの変更操作を実行して復元してください。",
     "showUnreadable": "学習スキル「{id}」は {scope} スコープに存在しますが読み取れません: {reason}",
     "showNotFound": "{scope} スコープに学習スキル「{id}」がありません。",
