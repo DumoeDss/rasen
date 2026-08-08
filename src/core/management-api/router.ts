@@ -46,6 +46,7 @@ import {
   handleHostedSessionDispatch,
   hostedSessionToWire,
 } from './hosted-sessions.js';
+import { handleFrozenActionDispatch } from './frozen-action-executor.js';
 import { createChangeSubmitter } from './submit.js';
 import { createSpaceCreator } from './create-space.js';
 import {
@@ -251,6 +252,7 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/audits/import',
   '/api/v1/themes',
   '/api/v1/themes/import',
+  '/api/v1/frozen-action-executor/dispatch',
 ]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
@@ -450,6 +452,7 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
   }
   if (pathname === '/api/v1/hosted-sessions') return method === 'GET';
   if (pathname === '/api/v1/hosted-sessions/execute') return method === 'POST';
+  if (pathname === '/api/v1/frozen-action-executor/dispatch') return method === 'POST';
   if (pathname === '/api/v1/pipelines') {
     return method === 'GET' || method === 'POST';
   }
@@ -1315,6 +1318,26 @@ export function createManagementRouter(
         op: 'execute',
       } as SessionHostCommand);
       sendJson(res, result.status, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/frozen-action-executor/dispatch' && req.method === 'POST') {
+      const body = await readJsonBody(req, MAX_HOSTED_BODY_BYTES);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const result = await handleFrozenActionDispatch({
+        host: sessionHost,
+        hostPlatform: process.platform,
+        body: body.value,
+      });
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, result.status, result.result);
       return;
     }
 
