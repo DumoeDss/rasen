@@ -50,8 +50,14 @@ const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
   // TypeScript adapter only - the Rust crate and every other pinned digest in
   // this list are unchanged. Committed bytes re-hashed via
   // `git show 8e48ce45:<path>`. LEAD-authorized rebaseline, 2026-08-08.
+  // Rebaselined a070733c... -> 3e74b2c2...: closure task 12.8 (RC-005
+  // clients-map retention lifecycle) added the shared scope-retention sweep
+  // call into the native adapter's prepare(). TypeScript adapter only - the
+  // Rust crate and every other pinned digest in this list are unchanged.
+  // Committed bytes re-hashed via `git show efe834ba:<path>`. Second
+  // LEAD-authorized rebaseline of this file, 2026-08-08.
   'src/core/session-host/process-capsule/native-process-scope.ts':
-    'a070733cc338730258f5725c962c70f2284ead3601a2bc49b24c5c5d75211977',
+    '3e74b2c25bfde89a9db300301b7010f2a7c9521be37283ed73169be4f111b828',
 });
 
 const FROZEN_COMMON_INPUTS = Object.freeze({
