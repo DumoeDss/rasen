@@ -30,6 +30,8 @@ describe('store v2 acceptance matrix', () => {
   const projectIdA = 'project-a';
   const projectIdB = 'project-b';
   const changeName = 'add-feature';
+  const rootFor = (flavor: StorePlanningPathFlavor): string =>
+    flavor === 'win32' ? 'C:\\test\\store' : storeRoot;
 
   // ---------------------------------------------------------------------------
   // §9.2: Same Change name in two projects — distinct directories, distinct
@@ -38,13 +40,14 @@ describe('store v2 acceptance matrix', () => {
   describe('project-partition axis: same Change name in two projects', () => {
     it('produces distinct directories for the same Change name under different projects', () => {
       for (const flavor of ['posix', 'win32'] as const) {
+        const root = rootFor(flavor);
         const dirA = resolveStorePlanningLayoutV2Path(
-          storeRoot,
+          root,
           { kind: 'active-change', projectId: projectIdA, changeId: changeName },
           flavor
         );
         const dirB = resolveStorePlanningLayoutV2Path(
-          storeRoot,
+          root,
           { kind: 'active-change', projectId: projectIdB, changeId: changeName },
           flavor
         );
@@ -58,13 +61,14 @@ describe('store v2 acceptance matrix', () => {
 
     it('produces distinct specs directories for two projects', () => {
       for (const flavor of ['posix', 'win32'] as const) {
+        const root = rootFor(flavor);
         const specsA = resolveStorePlanningLayoutV2Path(
-          storeRoot,
+          root,
           { kind: 'project-specs', projectId: projectIdA },
           flavor
         );
         const specsB = resolveStorePlanningLayoutV2Path(
-          storeRoot,
+          root,
           { kind: 'project-specs', projectId: projectIdB },
           flavor
         );
@@ -105,7 +109,7 @@ describe('store v2 acceptance matrix', () => {
 
     it.each(flavors)('constructs valid project-home paths in %s flavor', (flavor) => {
       const result = resolveStorePlanningLayoutV2Path(
-        storeRoot,
+        rootFor(flavor),
         { kind: 'project-home', projectId: projectIdA },
         flavor
       );
@@ -115,7 +119,7 @@ describe('store v2 acceptance matrix', () => {
 
     it.each(flavors)('constructs valid active-change paths in %s flavor', (flavor) => {
       const result = resolveStorePlanningLayoutV2Path(
-        storeRoot,
+        rootFor(flavor),
         { kind: 'active-change', projectId: projectIdA, changeId: changeName },
         flavor
       );
@@ -125,7 +129,7 @@ describe('store v2 acceptance matrix', () => {
 
     it.each(flavors)('constructs valid archive-line paths in %s flavor', (flavor) => {
       const result = resolveStorePlanningLayoutV2Path(
-        storeRoot,
+        rootFor(flavor),
         { kind: 'archive-line', projectId: projectIdA, targetLineId: 'line-0.1' },
         flavor
       );
@@ -141,7 +145,7 @@ describe('store v2 acceptance matrix', () => {
         'posix'
       );
       const win32Path = resolveStorePlanningLayoutV2Path(
-        storeRoot,
+        rootFor('win32'),
         { kind: 'project-home', projectId: projectIdA },
         'win32'
       );

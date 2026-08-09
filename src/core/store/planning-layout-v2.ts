@@ -97,6 +97,22 @@ function pathApi(flavor: StorePlanningPathFlavor): path.PlatformPath {
   return path;
 }
 
+function isAbsoluteStoreRoot(
+  storeRoot: string,
+  flavor: StorePlanningPathFlavor
+): boolean {
+  const api = pathApi(flavor);
+  if (!api.isAbsolute(storeRoot)) return false;
+  const usesWindowsSemantics =
+    flavor === 'win32' || (flavor === 'native' && process.platform === 'win32');
+  if (!usesWindowsSemantics) return true;
+
+  // `path.win32.isAbsolute('/store')` is true because Windows accepts a
+  // current-drive-rooted path. Such a path is not self-contained: the drive is
+  // supplied by process state. Require a drive, UNC share, or device root.
+  return path.win32.parse(storeRoot).root.length > 1;
+}
+
 function pathError(
   code: 'invalid_store_layout_v2' | 'planning_path_escape',
   field: string,
@@ -150,7 +166,7 @@ export function resolveStorePlanningLayoutV2Path(
   flavor: StorePlanningPathFlavor = 'native'
 ): StorePlanningPath {
   const api = pathApi(flavor);
-  if (storeRoot.length === 0 || !api.isAbsolute(storeRoot)) {
+  if (storeRoot.length === 0 || !isAbsoluteStoreRoot(storeRoot, flavor)) {
     throw pathError(
       'invalid_store_layout_v2',
       'storeRoot',

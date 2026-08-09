@@ -83,9 +83,12 @@ describe('store layout v2 migration — Windows and POSIX destination constructi
     expect(() =>
       resolveStorePlanningLayoutV2Path('stores/team', { kind: 'store-metadata' }, 'posix')
     ).toThrow();
-    // A POSIX root is not an absolute win32 path.
+    // Neither explicit flavor accepts a root spelled for the other one.
     expect(() =>
       resolveStorePlanningLayoutV2Path('C:\\stores\\team', { kind: 'store-metadata' }, 'posix')
+    ).toThrow();
+    expect(() =>
+      resolveStorePlanningLayoutV2Path('/stores/team', { kind: 'store-metadata' }, 'win32')
     ).toThrow();
   });
 
