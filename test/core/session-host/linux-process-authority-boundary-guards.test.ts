@@ -60,8 +60,12 @@ const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
   // to an exact locally owned ref, and preserves typed uncertainty when a
   // live controller is lost during termination. LF delivery bytes re-hashed
   // by the LEAD, 2026-08-09.
+  // Rebaselined d485c503... -> 4493068e...: PR 147's macOS CI follow-up
+  // preserves a locally observed exact SCOPE_EMPTY terminal instead of
+  // replacing it with a weaker one-shot probe after the controller exits.
+  // Staged LF delivery bytes re-hashed by the LEAD, 2026-08-10.
   'src/core/session-host/process-capsule/native-process-scope.ts':
-    'd485c50313ea2791fc6e777865b0484c0dcff37ed8d235beed7cb3cea561466f',
+    '4493068e6d284b96e3f2368509709326cc570c03f05b3474caa2b2614e291ecd',
   'test/core/session-host/process-capsule-package.test.ts':
     '3ed5945c5b17b711c783534281c4288242ab9b680e498135db3f344528a759e1',
   'test/core/session-host/process-capsule-posix-replacement.test.ts':

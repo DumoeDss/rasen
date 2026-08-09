@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawn as spawnChild } from 'node:child_process';
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -61,7 +62,16 @@ describe('ProcessScope authority after backend-root exit', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-scope-natural-empty-'));
     roots.push(root);
     const marker = path.join(root, 'root-ran');
+    let replacementProbeSpawned = false;
+    const spawnProcess = ((command, args, options) => {
+      if (args?.[0] === '--inspect') {
+        replacementProbeSpawned = true;
+        throw new Error('closed local authority must not launch a replacement probe');
+      }
+      return spawnChild(command, args, options);
+    }) as typeof spawnChild;
     const scope = createNativeProcessScope({
+      spawn: spawnProcess,
       onControllerSpawn(pid) { exactPids.add(pid); },
     });
     const prepared = await scope.prepare({
@@ -80,6 +90,7 @@ describe('ProcessScope authority after backend-root exit', () => {
     await expect(scope.inspect(live.ref)).resolves.toEqual({
       state: 'closed', controllable: false,
     });
+    expect(replacementProbeSpawned).toBe(false);
     expect(fs.existsSync(marker)).toBe(true);
     exactPids.delete(prepared.displayPid!);
   }, 30_000);
@@ -98,6 +109,7 @@ describe('ProcessScope authority after backend-root exit', () => {
       "const fs = require('node:fs');",
       `const child = spawn(process.execPath, ['-e', ${JSON.stringify(descendantScript)}], { detached: process.platform === 'win32', stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true });`,
       'child.unref();',
+      "child.once('error', (error) => { console.error('descendant spawn failed: ' + (error && error.code || 'unknown')); process.exit(72); });",
       `child.once('message', (message) => { if (message !== 'ready') process.exit(71); fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify({ root: process.pid, descendant: child.pid })); process.exit(23); });`,
     ].join('');
     const scope = createNativeProcessScope({
@@ -114,7 +126,10 @@ describe('ProcessScope authority after backend-root exit', () => {
     });
     exactPids.add(prepared.displayPid!);
     const live = await prepared.activate();
-    await expect(live.rootExited).resolves.toMatchObject({
+    let diagnostic = '';
+    live.stderr.on('data', (chunk) => { diagnostic += chunk.toString('utf8'); });
+    const rootExit = await live.rootExited;
+    expect(rootExit, `backend stderr: ${diagnostic.slice(0, 512)}`).toMatchObject({
       state: 'root-exited',
       code: 23,
     });

@@ -527,7 +527,10 @@ export function createNativeProcessScope(options: NativeProcessScopeOptions = {}
     },
     async inspect(ref) {
       const local = clients.get(ref);
-      if (local && local.state !== 'closed' && local.controlAvailable) {
+      if (local?.state === 'closed') {
+        return { state: 'closed', controllable: false };
+      }
+      if (local && local.controlAvailable) {
         const state = local.state === 'preparing' || local.state === 'prepared'
           ? 'prepared'
           : local.state;

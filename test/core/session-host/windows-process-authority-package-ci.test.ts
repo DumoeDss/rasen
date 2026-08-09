@@ -82,8 +82,12 @@ const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
   // the same-request owned-ref fallback after controller loss because it
   // erased the required typed uncertainty receipt. LF delivery bytes
   // re-hashed by the LEAD, 2026-08-09.
+  // Rebaselined d485c503... -> 4493068e...: PR 147's macOS CI follow-up
+  // preserves a locally observed exact SCOPE_EMPTY terminal instead of
+  // replacing it with a weaker one-shot probe after the controller exits.
+  // Staged LF delivery bytes re-hashed by the LEAD, 2026-08-10.
   'src/core/session-host/process-capsule/native-process-scope.ts':
-    'd485c50313ea2791fc6e777865b0484c0dcff37ed8d235beed7cb3cea561466f',
+    '4493068e6d284b96e3f2368509709326cc570c03f05b3474caa2b2614e291ecd',
 });
 
 const FROZEN_COMMON_INPUTS = Object.freeze({
