@@ -50,6 +50,8 @@ export interface ProjectIdentityClaimantSnapshot {
   readonly root: string;
   readonly entry: ProjectRegistryEntryState;
   readonly live: boolean;
+  readonly aliases: ProjectIdentityClaimant['aliases'];
+  readonly fixedMetadataConflict: boolean;
 }
 
 export type CheckoutRole = 'integration' | 'linked-worktree' | 'not-git' | 'unavailable';
@@ -262,6 +264,8 @@ export const productionStorePlanningDependencies: StorePlanningDependencies = {
       root: claimant.path,
       entry: claimant.entry,
       live: claimant.live,
+      aliases: claimant.aliases,
+      fixedMetadataConflict: claimant.fixedMetadataConflict,
     }));
   },
   async findRegisteredProject(projectRoot, globalDataDir) {

@@ -23,6 +23,8 @@ import { PlanningScopeError } from '../../../src/core/store-planning/index.js';
 import {
   createStorePlanningResolverForTesting,
   nodeStorePlanningFileSystem,
+  type ProjectIdentityClaimantSnapshot,
+  type ProjectRegistrySnapshotEntry,
   type StorePlanningDependencies,
 } from '../../../src/core/store-planning/testing.js';
 import {
@@ -179,6 +181,26 @@ function resolver(
   roots: { storeRoot?: string; projectRoot: string },
   overrides: Partial<StorePlanningDependencies> = {}
 ) {
+  const projectEntry: ProjectRegistrySnapshotEntry['entry'] = {
+    projectId: PROJECT,
+    name: PROJECT,
+    mode: roots.storeRoot === undefined ? 'in-repo' : 'store',
+    home: `${PROJECT}-home`,
+    lastSeen: '2026-08-06T00:00:00.000Z',
+  };
+  const projectClaimant: ProjectIdentityClaimantSnapshot = {
+    root: roots.projectRoot,
+    entry: projectEntry,
+    live: true,
+    aliases: [{
+      registryPath: roots.projectRoot,
+      canonicalPath: roots.projectRoot,
+      entry: projectEntry,
+      live: true,
+      direct: true,
+    }],
+    fixedMetadataConflict: false,
+  };
   const dependencies: StorePlanningDependencies = {
     fs: nodeStorePlanningFileSystem,
     probePlanningWorktree: overrides.probePlanningWorktree ?? healthyPlanningProbe(),
@@ -195,28 +217,10 @@ function resolver(
     snapshotProjects: async () => [
       {
         root: roots.projectRoot,
-        entry: {
-          projectId: PROJECT,
-          name: PROJECT,
-          mode: roots.storeRoot === undefined ? 'standalone' : 'store',
-          home: `${PROJECT}-home`,
-          lastSeen: '2026-08-06T00:00:00.000Z',
-        },
+        entry: projectEntry,
       },
     ],
-    findProjectIdentityClaimants: async () => [
-      {
-        root: roots.projectRoot,
-        entry: {
-          projectId: PROJECT,
-          name: PROJECT,
-          mode: roots.storeRoot === undefined ? 'standalone' : 'store',
-          home: `${PROJECT}-home`,
-          lastSeen: '2026-08-06T00:00:00.000Z',
-        },
-        live: true,
-      },
-    ],
+    findProjectIdentityClaimants: async () => [projectClaimant],
     findRegisteredProject: async () => null,
     sessionContextPath: () => undefined,
     checkoutRole: overrides.checkoutRole ?? (() => 'linked-worktree'),

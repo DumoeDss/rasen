@@ -334,7 +334,10 @@ async function resolveMachineProjectById(
     id,
     pathOptions(globalDataDir)
   );
-  if (matches.length > 1) {
+  if (
+    matches.length > 1 ||
+    matches.some(match => match.fixedMetadataConflict)
+  ) {
     fail(
       'knowledge_owner_ambiguous',
       formatProjectIdentityAmbiguity(id, matches),

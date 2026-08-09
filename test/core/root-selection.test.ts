@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -20,9 +21,13 @@ import {
 import { getGlobalDataDir } from '../../src/core/global-config.js';
 import {
   readProjectRegistryState,
+  getProjectHomeDir,
   registerProject,
+  updateProjectRegistryState,
 } from '../../src/core/project-registry.js';
 import { FileSystemUtils } from '../../src/utils/file-system.js';
+import { writeLastWarnedVersionPair } from '../../src/core/version-guard-state.js';
+import { isolatedGitEnv } from '../helpers/store-git.js';
 
 describe('resolveOpenSpecRoot', () => {
   let tempDir: string;
@@ -975,6 +980,78 @@ describe('resolveOpenSpecRoot', () => {
       } finally {
         warnSpy.mockRestore();
       }
+    });
+
+    it('uses the canonical main home for a worktree command without touching legacy state', async () => {
+      const repoRoot = mkdir('version-guard-worktree-main');
+      createOpenSpecRoot(repoRoot);
+      const projectId = randomUUID();
+      fs.writeFileSync(
+        path.join(repoRoot, 'rasen', 'config.yaml'),
+        `schema: spec-driven\nprojectId: ${projectId}\n`
+      );
+      writeStaleSkill(repoRoot, STALE_VERSION);
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(tempDir) };
+      execFileSync('git', ['init'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      execFileSync('git', ['commit', '-m', 'initial'], {
+        cwd: repoRoot,
+        env: gitExecEnv,
+        stdio: 'ignore',
+      });
+      const worktreeRoot = path.join(tempDir, 'version-guard-worktree-linked');
+      execFileSync('git', ['worktree', 'add', worktreeRoot], {
+        cwd: repoRoot,
+        env: gitExecEnv,
+        stdio: 'ignore',
+      });
+      const main = await registerProject(
+        { projectRoot: repoRoot, projectId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+      const legacyHome = 'version-guard-legacy-worktree-home';
+      await updateProjectRegistryState(
+        current => ({
+          version: 1,
+          projects: {
+            ...current!.projects,
+            [FileSystemUtils.canonicalizeExistingPath(worktreeRoot)]: {
+              ...main.entry,
+              name: 'legacy-worktree-cache',
+              home: legacyHome,
+            },
+          },
+        }),
+        { globalDataDir }
+      );
+      const mainHomeDir = getProjectHomeDir(main.entry.home, { globalDataDir });
+      const legacyHomeDir = getProjectHomeDir(legacyHome, { globalDataDir });
+      fs.mkdirSync(legacyHomeDir, { recursive: true });
+      writeLastWarnedVersionPair(mainHomeDir, {
+        stampVersion: STALE_VERSION,
+        cliVersion: await currentCliVersion(),
+      });
+      const registryPath = path.join(globalDataDir, 'projects', 'registry.json');
+      const registryBefore = fs.readFileSync(registryPath);
+      const configBefore = fs.readFileSync(path.join(worktreeRoot, 'rasen', 'config.yaml'));
+      const mainInventoryBefore = fs.readdirSync(mainHomeDir).sort();
+      const legacyInventoryBefore = fs.readdirSync(legacyHomeDir).sort();
+      const previousCwd = process.cwd();
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        process.chdir(worktreeRoot);
+        const resolved = await resolveRootForCommand({}, { globalDataDir, reporter: false });
+        expect(resolved?.path).toBe(FileSystemUtils.canonicalizeExistingPath(worktreeRoot));
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        process.chdir(previousCwd);
+        warnSpy.mockRestore();
+      }
+
+      expect(fs.readFileSync(registryPath)).toEqual(registryBefore);
+      expect(fs.readFileSync(path.join(worktreeRoot, 'rasen', 'config.yaml'))).toEqual(configBefore);
+      expect(fs.readdirSync(mainHomeDir).sort()).toEqual(mainInventoryBefore);
+      expect(fs.readdirSync(legacyHomeDir).sort()).toEqual(legacyInventoryBefore);
     });
 
     it('renders the mismatch warning in the resolved CLI locale (locale-diagnostic-reporter)', async () => {

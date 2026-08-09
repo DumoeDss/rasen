@@ -692,7 +692,8 @@ export class StorePlanningResolver implements StorePlanning {
     const comparisons: Record<keyof ReducedFacts, (left: string, right: string) => boolean> = {
       storeUid: (left, right) => storeUidsMatch(left, right),
       storeId: (left, right) => left === right,
-      projectId: (left, right) => left === right,
+      projectId: (left, right) =>
+        normalizeProjectIdentity(left) === normalizeProjectIdentity(right),
       targetLineId: (left, right) => left === right,
       planningRoot: (left, right) =>
         normalizePathForComparison(left, flavor) === normalizePathForComparison(right, flavor),
@@ -1290,7 +1291,10 @@ export class StorePlanningResolver implements StorePlanning {
     if (input.selection?.store !== undefined) {
       validateStoreSelector(input.selection.store);
     }
-    if (input.selection?.project !== undefined) {
+    if (
+      input.selection?.project !== undefined &&
+      !api.isAbsolute(input.selection.project)
+    ) {
       parseProjectId(input.selection.project, 'selection.project');
     }
     if (input.selection?.targetLine !== undefined) {
@@ -1327,6 +1331,9 @@ export class StorePlanningResolver implements StorePlanning {
     let selectedProjectConfigPath = projectConfigRead.path;
     let selectedProjectConfigText = projectConfigRead.text;
     let selectedProjectRegistry: ProjectRegistrySnapshotEntry | undefined;
+    let selectedProjectRegistryIdentity:
+      | { readonly raw: string; readonly normalized: string }
+      | undefined;
     let explicitStoreEntry: StoreRegistrySnapshotEntry | undefined;
     let explicitProjectSelector = input.selection?.project;
 
@@ -1353,18 +1360,53 @@ export class StorePlanningResolver implements StorePlanning {
       let machineNamespace = projects.filter((entry) =>
         projectRegistryMatches(entry, input.selection!.project!, flavor)
       );
+      const canonicalProjectRootKey = async (projectRoot: string): Promise<string> => {
+        if (flavor !== 'native') {
+          return normalizePathForComparison(projectRoot, flavor);
+        }
+        const registered = await this.dependencies.findRegisteredProject(
+          projectRoot,
+          input.globalDataDir
+        );
+        const canonicalRoot = registered?.root ??
+          this.dependencies.fs.canonicalizeExisting(projectRoot);
+        return normalizePathForComparison(canonicalRoot, flavor);
+      };
+      const selectorMatches = [...legacyNamespace, ...machineNamespace];
+      if (selectorMatches.length > 0 && projects.length > 0) {
+        const selectedRootKeys = new Set(
+          await Promise.all(
+            selectorMatches.map(entry => canonicalProjectRootKey(entry.root))
+          )
+        );
+        const groupedProjects = await Promise.all(
+          projects.map(async entry => ({
+            entry,
+            rootKey: await canonicalProjectRootKey(entry.root),
+          }))
+        );
+        machineNamespace = groupedProjects
+          .filter(candidate => selectedRootKeys.has(candidate.rootKey))
+          .map(candidate => candidate.entry);
+      }
       const machineProjectIds = new Set(
         machineNamespace.map(entry =>
           normalizeProjectIdentity(entry.entry.projectId)
         )
       );
-      if (machineNamespace.length > 1 && machineProjectIds.size === 1) {
+      if (machineNamespace.length > 0 && machineProjectIds.size === 1) {
         const [projectId] = machineProjectIds;
         const claimants = await this.dependencies.findProjectIdentityClaimants(
           projectId!,
           input.globalDataDir
         );
-        if (claimants.length > 1) {
+        const fixedMetadataConflict = claimants.some(
+          claimant => claimant.fixedMetadataConflict
+        );
+        if (
+          claimants.length > 1 ||
+          fixedMetadataConflict
+        ) {
           throw new PlanningScopeError(
             'planning_selection_conflict',
             formatProjectIdentityAmbiguity(
@@ -1373,13 +1415,17 @@ export class StorePlanningResolver implements StorePlanning {
                 path: claimant.root,
                 entry: claimant.entry,
                 live: claimant.live,
+                aliases: claimant.aliases,
+                fixedMetadataConflict: claimant.fixedMetadataConflict,
               }))
             ),
             {
               target: 'selection.project',
-              fix: claimants.some(claimant => !claimant.live)
-                ? 'Run rasen home prune to preview, then rasen home prune --apply and retry.'
-                : 'Repair the copied projectId metadata, then retry.',
+              fix: fixedMetadataConflict
+                ? 'Repair the conflicting machine project registry projectId or home metadata, then retry.'
+                : claimants.some(claimant => !claimant.live)
+                  ? 'Run rasen home prune to preview, then rasen home prune --apply and retry.'
+                  : 'Repair the copied projectId metadata, then retry.',
             }
           );
         }
@@ -1409,18 +1455,9 @@ export class StorePlanningResolver implements StorePlanning {
       }
       if (legacyNamespace.length + machineNamespace.length > 1) {
         const canonicalRoots = await Promise.all(
-          [...legacyNamespace, ...machineNamespace].map(async (entry) => {
-            if (flavor !== 'native') {
-              return normalizePathForComparison(entry.root, flavor);
-            }
-            const registered = await this.dependencies.findRegisteredProject(
-              entry.root,
-              input.globalDataDir
-            );
-            const canonicalRoot = registered?.root ??
-              this.dependencies.fs.canonicalizeExisting(entry.root);
-            return normalizePathForComparison(canonicalRoot, flavor);
-          })
+          [...legacyNamespace, ...machineNamespace].map(entry =>
+            canonicalProjectRootKey(entry.root)
+          )
         );
         if (new Set(canonicalRoots).size > 1) {
           throw new PlanningScopeError(
@@ -1430,18 +1467,64 @@ export class StorePlanningResolver implements StorePlanning {
           );
         }
       }
+      const unifiedRegistryIdentities = new Map<string, string>();
+      for (const match of machineNamespace) {
+        const raw = match.entry.projectId;
+        unifiedRegistryIdentities.set(normalizeProjectIdentity(raw), raw);
+      }
+      if (unifiedRegistryIdentities.size > 1) {
+        const identities = [...unifiedRegistryIdentities.values()].sort((left, right) =>
+          left.localeCompare(right)
+        );
+        throw new PlanningScopeError(
+          'planning_selection_conflict',
+          `Project selector '${input.selection.project}' resolves one checkout with conflicting registry identities: ${identities.join(', ')}.`,
+          {
+            target: 'selection.project',
+            fix: 'Repair the conflicting machine project registry aliases, then retry.',
+          }
+        );
+      }
       const projectRoot = legacyNamespace[0]?.root ?? machineNamespace[0]!.root;
       selectedProjectRoot = flavor === 'native'
         ? this.dependencies.fs.canonicalizeExisting(projectRoot)
         : api.resolve(projectRoot);
       selectedProjectRegistry = machineNamespace[0];
+      if (selectedProjectRegistry) {
+        selectedProjectRegistryIdentity = {
+          raw: selectedProjectRegistry.entry.projectId,
+          normalized: normalizeProjectIdentity(selectedProjectRegistry.entry.projectId),
+        };
+      }
       const configRead = await this.projectConfig(selectedProjectRoot, api);
       selectedProjectConfig = configRead.config;
       selectedProjectConfigPath = configRead.path;
       selectedProjectConfigText = configRead.text;
+      if (
+        selectedProjectRegistryIdentity !== undefined &&
+        selectedProjectConfig?.projectId !== undefined
+      ) {
+        const configIdentity = normalizeProjectIdentity(
+          selectedProjectConfig.projectId
+        );
+        if (configIdentity !== selectedProjectRegistryIdentity.normalized) {
+          const target = selectedProjectConfigPath ?? 'selection.project';
+          throw new PlanningScopeError(
+            'planning_selection_conflict',
+            `Selected registry identity '${selectedProjectRegistryIdentity.raw}' conflicts with config identity '${selectedProjectConfig.projectId}' at ${target}.`,
+            {
+              target,
+              details: freeze({
+                registryProjectId: selectedProjectRegistryIdentity.raw,
+                configProjectId: selectedProjectConfig.projectId,
+              }),
+            }
+          );
+        }
+      }
       explicitProjectSelector =
+        selectedProjectRegistryIdentity?.normalized ??
         selectedProjectConfig?.projectId ??
-        selectedProjectRegistry?.entry.projectId ??
         input.selection.project;
     }
 
