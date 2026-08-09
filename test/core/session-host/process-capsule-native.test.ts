@@ -46,10 +46,12 @@ function launch(root: string, descendant = false) {
   const facts = path.join(root, 'facts.json');
   const marker = path.join(root, 'activated');
   const script = descendant
-    ? `const{spawn}=require('node:child_process'),fs=require('node:fs');fs.writeFileSync(${JSON.stringify(marker)},'1');const d=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',windowsHide:true});d.unref();d.once('error',e=>{const x={code:e&&e.code,errno:e&&e.errno,syscall:e&&e.syscall,path:e&&e.path,execPath:process.execPath,execExists:fs.existsSync(process.execPath)};try{x.cwd=process.cwd();x.cwdExists=fs.existsSync(x.cwd)}catch(c){x.cwdError=c&&c.code}console.error('descendant spawn failed: '+JSON.stringify(x));process.exit(72)});d.once('spawn',()=>fs.writeFileSync(${JSON.stringify(facts)},JSON.stringify({root:process.pid,descendant:d.pid})));setInterval(()=>{},1000);`
+    ? `const{spawn}=require('node:child_process'),fs=require('node:fs');fs.writeFileSync(${JSON.stringify(marker)},'1');const d=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',windowsHide:true});d.unref();d.once('error',e=>{console.error('descendant spawn failed: '+(e&&e.code||'unknown'));process.exit(72)});d.once('spawn',()=>fs.writeFileSync(${JSON.stringify(facts)},JSON.stringify({root:process.pid,descendant:d.pid})));setInterval(()=>{},1000);`
     : `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(marker)},'1');fs.writeFileSync(${JSON.stringify(facts)},JSON.stringify({root:process.pid}));process.stdin.pipe(process.stdout);setInterval(()=>{},1000);`;
+  // Node 20.19 bundles libuv 1.46, whose Windows spawn path rejects an
+  // absent PATH even when the executable is absolute (libuv c97017dd).
   const env = Object.fromEntries(
-    ['SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'HOME', 'USERPROFILE']
+    ['SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'PATH']
       .map((key) => [key, process.env[key]])
       .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
   );
@@ -129,8 +131,7 @@ describe('source-built native ProcessCapsule', () => {
       waitFor(() => fs.existsSync(input.facts)),
       live.closed.then((receipt) => {
         throw new Error(
-          `scope closed before facts: ${JSON.stringify(receipt)} rootExists=${fs.existsSync(root)}`
-          + ` commandExists=${fs.existsSync(input.command)} ${diagnostic.slice(0, 512)}`,
+          `scope closed before facts: ${JSON.stringify(receipt)} ${diagnostic.slice(0, 512)}`,
         );
       }),
     ]);
@@ -174,9 +175,7 @@ describe('source-built native ProcessCapsule', () => {
         waitFor(() => fs.existsSync(input.facts)),
         live.rootExited.then((exit) => {
           throw new Error(
-            `backend root exited before descendant spawn: ${JSON.stringify(exit)}`
-            + ` rootExists=${fs.existsSync(root)} commandExists=${fs.existsSync(input.command)}`
-            + ` ${diagnostic.slice(0, 512)}`,
+            `backend root exited before descendant spawn: ${JSON.stringify(exit)} ${diagnostic.slice(0, 512)}`,
           );
         }),
       ]);

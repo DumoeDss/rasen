@@ -109,7 +109,7 @@ describe('ProcessScope authority after backend-root exit', () => {
       "const fs = require('node:fs');",
       `const child = spawn(process.execPath, ['-e', ${JSON.stringify(descendantScript)}], { detached: process.platform === 'win32', stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true });`,
       'child.unref();',
-      "child.once('error', (error) => { const detail = { code: error && error.code, errno: error && error.errno, syscall: error && error.syscall, path: error && error.path, execPath: process.execPath, execExists: fs.existsSync(process.execPath) }; try { detail.cwd = process.cwd(); detail.cwdExists = fs.existsSync(detail.cwd); } catch (cwdError) { detail.cwdError = cwdError && cwdError.code; } console.error('descendant spawn failed: ' + JSON.stringify(detail)); process.exit(72); });",
+      "child.once('error', (error) => { console.error('descendant spawn failed: ' + (error && error.code || 'unknown')); process.exit(72); });",
       `child.once('message', (message) => { if (message !== 'ready') process.exit(71); fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify({ root: process.pid, descendant: child.pid })); process.exit(23); });`,
     ].join('');
     const scope = createNativeProcessScope({
@@ -119,8 +119,10 @@ describe('ProcessScope authority after backend-root exit', () => {
       command: process.execPath,
       args: ['-e', script],
       cwd: root,
+      // Node 20.19/libuv 1.46 needs PATH to spawn the descendant even though
+      // process.execPath is absolute; libuv c97017dd fixed that later.
       env: Object.fromEntries(
-        ['SystemRoot', 'WINDIR', 'TMP', 'TEMP', 'HOME', 'USERPROFILE']
+        ['SystemRoot', 'WINDIR', 'TMP', 'TEMP', 'HOME', 'USERPROFILE', 'PATH']
           .flatMap((key) => process.env[key] ? [[key, process.env[key]!]] : []),
       ),
     });
@@ -129,11 +131,7 @@ describe('ProcessScope authority after backend-root exit', () => {
     let diagnostic = '';
     live.stderr.on('data', (chunk) => { diagnostic += chunk.toString('utf8'); });
     const rootExit = await live.rootExited;
-    expect(
-      rootExit,
-      `rootExists=${fs.existsSync(root)} commandExists=${fs.existsSync(process.execPath)}`
-      + ` backend stderr: ${diagnostic.slice(0, 512)}`,
-    ).toMatchObject({
+    expect(rootExit, `backend stderr: ${diagnostic.slice(0, 512)}`).toMatchObject({
       state: 'root-exited',
       code: 23,
     });
