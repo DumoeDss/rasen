@@ -185,6 +185,7 @@ export class Validator {
           const snapshot = await fs.readFile(specFile);
           deltaSnapshots.set(specFile, snapshot);
           content = snapshot.toString('utf8');
+        } catch (error) {
           issues.push({
             level: 'ERROR',
             path: FileSystemUtils.toPosixPath(
@@ -521,7 +522,7 @@ export class Validator {
           }
           issues.push({
             path: FileSystemUtils.toPosixPath(
-              path.relative(changeSpecsDir, prepared.update.source)
+              path.relative(specsDir, prepared.update.source)
             ),
             level: 'ERROR',
             code: 'spec_target_validation_failed',
@@ -550,7 +551,7 @@ export class Validator {
         }
         issues.push({
           path: FileSystemUtils.toPosixPath(
-            path.relative(changeSpecsDir, issue.source)
+            path.relative(specsDir, issue.source)
           ),
           level: preservationFailure
             ? this.strictMode

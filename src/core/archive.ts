@@ -99,7 +99,6 @@ export function formatArchiveAbortBlockedLines(
     | 'retainedPaths'
     | 'associationPhase'
     | 'manualRecoveryAction'
-    | 'abortCommand'
     | 'recoveryCommand'
   >,
   locale: Parameters<typeof getLocaleCatalog>[0] = getCliLocale()
