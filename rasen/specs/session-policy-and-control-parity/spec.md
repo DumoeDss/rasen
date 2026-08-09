@@ -1,7 +1,7 @@
 # session-policy-and-control-parity Specification
 
 ## Purpose
-TBD - created by archiving change ecp-session-policy-and-control-parity. Update Purpose after archive.
+Guarantee that every driver face — the interactive launcher, the CLI, the Management API, Canvas, Operations/audit, and the daemon — addresses the same canonical Run through the one shared frozen-Action dispatch contract, so no face can maintain a second Run or Session truth or project a Run/Action/completion fact the canonical Record does not back. It owns the exhaustive cancel/restart/ack-loss fault matrix (every failure mode recovers only the uncommitted frontier with no re-send, no re-execution, and fail-closed on unprovable state, composing typed `execution-lost`), and it makes session reuse/handoff/touch/retire policy authoritative and face-invariant: one configured, provenance-stamped policy block resolved once governs every face, and no configured limit can disable the cross-authority or past-limit safety decisions.
 ## Requirements
 ### Requirement: Every driver face routes every operation to the same Run through the shared contract
 
