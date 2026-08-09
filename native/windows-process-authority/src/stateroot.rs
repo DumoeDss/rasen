@@ -189,7 +189,11 @@ impl TrustedStateRoot {
     /// actually holds.
     pub fn record_sole_handle(&self, scope_id: &str, token: &[u8; 32]) -> io::Result<()> {
         let path = self.sole_handle_path(scope_id)?;
-        write_durably(&path, crate::sha256::hex(token).as_bytes())
+        write_durably(
+            &path,
+            crate::sha256::hex(token).as_bytes(),
+            &self.owner,
+        )
     }
 
     /// Withdraw the corroboration. Called the moment the Job handle stops being solely held,
@@ -239,7 +243,7 @@ impl TrustedStateRoot {
 /// Write bytes with Decision 10's Windows durability recipe: temporary file in the same
 /// directory, flush the file handle, atomic replace with write-through, then flush a directory
 /// handle opened with backup semantics. This is not the POSIX recipe and Node cannot express it.
-pub fn write_durably(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub fn write_durably(path: &Path, bytes: &[u8], owner: &OwnedSid) -> io::Result<()> {
     use std::io::Write;
     use std::os::windows::io::AsRawHandle;
 
@@ -255,6 +259,11 @@ pub fn write_durably(path: &Path, bytes: &[u8]) -> io::Result<()> {
     ));
     {
         let mut file = std::fs::File::create(&temporary)?;
+        // Elevated Windows tokens may default new filesystem objects to the
+        // Administrators group even when the process token belongs to one user.
+        // Pin the durable record to the same owner as its trusted root before
+        // publishing it; corroboration deliberately rejects any other owner.
+        win::set_file_owner_sid(&temporary.to_string_lossy(), owner)?;
         file.write_all(bytes)?;
         file.flush()?;
         win::flush_file(file.as_raw_handle() as crate::sys::Handle)?;
@@ -362,6 +371,22 @@ mod tests {
         let directory = opened.create_scope_directory(scope).expect("scope dir");
         assert!(directory.starts_with(&root));
         assert!(directory.ends_with(scope));
+        let token = [7_u8; 32];
+        opened.record_sole_handle(scope, &token).expect("record");
+        let record_owner = win::file_owner_sid(
+            &opened
+                .sole_handle_path(scope)
+                .expect("sole-handle path")
+                .to_string_lossy(),
+        )
+        .expect("record owner");
+        assert!(record_owner.equals(&mine));
+        assert_eq!(
+            opened
+                .corroborate_sole_handle(scope, &token)
+                .expect("corroborate"),
+            Some(crate::sha256::hex(&token))
+        );
         assert!(opened.journal_path(scope).expect("journal").starts_with(&root));
         assert!(opened
             .terminal_record_path(scope)

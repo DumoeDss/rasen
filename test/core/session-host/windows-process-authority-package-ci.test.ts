@@ -34,8 +34,14 @@ const LINUX_CRATE_SOURCE_DIGEST =
   '89f6c1d5270c3ad301f84edde1ae1f67541ac81ca271eb8eaef7871715aba643';
 
 const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
+  // Rebaselined 79dc1ad0... -> a4c80875...: PR 147's cross-platform
+  // CI follow-up added exact native process-birth probing, POSIX owned-ref
+  // replacement termination, zombie reaping, and a stable leaked-Job-handle
+  // mutation oracle. These are shared ProcessCapsule correctness fixes, not
+  // reinterpretation by the Windows provider. Committed bytes re-hashed via
+  // `git show d20a2fce:<path>`. LEAD-authorized rebaseline, 2026-08-09.
   'native/process-capsule/src/main.rs':
-    '79dc1ad0f19e5f1d087083707c5307d8523002c557995a6658146c64f0f41c8d',
+    'a4c80875752d1ebee0e6e3cd1e5532d025f43e208c6d3c3f1a3a1bea50b68383',
   'native/process-capsule/Cargo.lock':
     'f00e64114e06f06b623880947c4ec4d33953218d901abdba3b2b2f1d32db8793',
   'scripts/build-process-capsule.mjs':
@@ -56,8 +62,12 @@ const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
   // Rust crate and every other pinned digest in this list are unchanged.
   // Committed bytes re-hashed via `git show efe834ba:<path>`. Second
   // LEAD-authorized rebaseline of this file, 2026-08-08.
+  // Rebaselined 3e74b2c2... -> fd3b3840...: the same PR 147 follow-up
+  // classifies pre-PREPARED native errors by phase and restricts orphan-group
+  // termination to the exact locally owned ref. Committed bytes re-hashed via
+  // `git show d20a2fce:<path>`. LEAD-authorized rebaseline, 2026-08-09.
   'src/core/session-host/process-capsule/native-process-scope.ts':
-    '3e74b2c25bfde89a9db300301b7010f2a7c9521be37283ed73169be4f111b828',
+    'fd3b384082491c53c9a0c9fadd20a65b41c53f8a646d667e057473f6c4604fb0',
 });
 
 const FROZEN_COMMON_INPUTS = Object.freeze({
@@ -329,7 +339,7 @@ describe('Windows Change boundary guards', () => {
     )).toBe(LINUX_CRATE_SOURCE_DIGEST);
   });
 
-  it('leaves the legacy ProcessCapsule implementation unchanged in meaning', () => {
+  it('pins the authorized shared ProcessCapsule follow-up inputs', () => {
     expect(Object.fromEntries(
       Object.keys(LEGACY_PROCESS_CAPSULE_INPUTS).map((file) => [file, sha256File(file)])
     )).toEqual(LEGACY_PROCESS_CAPSULE_INPUTS);
