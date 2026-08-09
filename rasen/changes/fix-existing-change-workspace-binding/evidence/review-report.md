@@ -148,3 +148,55 @@ Prior evidence only (not independently rerun here): implementer reported **46/46
 - A stored create-disposition token needs recorded repository/worktree identity revalidation on retry; the Round 1 fix now enforces it before writes, because matching ref text is not identity.
 - Keep archive eligibility coverage through the real CLI: the current dry-run test genuinely reaches finalization preflight and should remain.
 - Treat the incomplete repository-wide runs as Minor accepted-known process uncertainty unless a reproducible assertion failure appears.
+
+## CI-fix addendum
+
+### Verdict
+
+**CLEAN.** Independent non-author review of the PR #149 CI-fix delta found no new or remaining Blocker/Major issue. The current canonical severity ledger remains **Blocker 0 · Major 0 · Minor 1 · Trivial 0**; `AK-1` is preserved as the sole **Minor accepted-known** item.
+
+- Review mode: dispatched, report-only, ONE_SHOT.
+- Base/head: `dev/0.1.7` → `fix/existing-change-workspace-binding` (PR #149).
+- Author != verifier: **CONFIRMED.** This addendum was produced by an independent reviewer who did not author the CI-fix delta.
+- Reviewed scope: only `git diff HEAD -- src/core/store/layout-migration/evidence.ts` (nine changed lines replacing the `record.id ?? record.projectId` key with `record.projectId` and correcting its contract comment).
+- Scope check: **CLEAN.** No product/test file was edited by this reviewer; unrelated untracked `.rasen/` and `evidence/ship-log.md` were excluded. No frontend/design surface or dependency change is present.
+- Greptile: PR #149 has no Greptile comments to triage.
+- Adversarial pass: skipped for this small bounded delta, as directed.
+
+### Identity and mapping review
+
+The fix restores the documented identity boundary. A v1 membership record's `projectId` is “the authority for which project this record describes,” while `id` is a display name that “Never keys anything” (`src/core/store/project-records.ts:183-187`). V2 preserves the same contract: `projectId` is the identity and the display name is never an identifier or path segment (`src/core/store/planning-catalogs.ts:29-37`). The normative membership spec likewise requires permanent identity to name membership and treats the display id as reading-only; it explicitly permits human labels such as `Elftia` (`rasen/changes/archive/2026-08-08-store-layout-v2-migration/specs/store-project-membership/spec.md:3-9,13-15,53-57`). Permanent project identities may validly be UUIDs or portable kebab ids, so the earlier assumption that every v1 `projectId` was a UUID was unsound.
+
+The changed `projectKey` now remains canonical across every record-derived consumer: the `members` inventory, adoption lists, E2 spec/Change ownership evidence (`src/core/store/layout-migration/evidence.ts:160-188`), and the E3 registry-membership filter (`src/core/store/layout-migration/evidence.ts:232-249`). Mapping project values are validated as project identities and then checked against that member inventory (`src/core/store/layout-migration/mapping.ts:165-215,245-315`). Consequently, an operator mapping must name the permanent `projectId`—UUID or kebab—not the human display alias. Keying these paths by `id` would permit display-name collision/ambiguity and would contradict both schemas' permanent-identity contract.
+
+The two CI failures were at exactly this boundary. Both fixtures distinguish `projectId: elftia` from `id: Elftia` and map ownership to the permanent identity `elftia` (`test/core/store/layout-migration-catalog-receipt.test.ts:132-174,206-233`). Using the display value made the mapping appear to name a non-member; restoring `projectId` makes the membership comparison correct without weakening the stricter remote-field or human-display-name behaviors those tests pin.
+
+### Coverage and supplied verification
+
+```text
+v1 membership record
+├── projectId (permanent UUID or kebab identity)
+│   └── projectKey
+│       ├── members ───────────────> mapping membership validation
+│       ├── adoption lists ────────> E2 spec/Change ownership evidence
+│       └── member set ────────────> E3 project-registry association filter
+└── id (human display label) ──────> carried for reading only; never keys above
+
+Regression seam: projectId `elftia` + display id `Elftia` + mapping `elftia`
+                  └── both previously failing catalog-receipt cases now pass
+```
+
+Verification evidence was supplied by the CI-fix implementer/LEAD and was **not rerun by this reviewer**, per dispatch constraints:
+
+- Each previously failing catalog-receipt case: **1/1 passed**.
+- Full `layout-migration-catalog-receipt` file: **8/8 passed**.
+- Layout-migration provenance tests: **10/10 passed**.
+- Lint: **passed**.
+
+This is sufficient coverage for the bounded identity-key correction. `AK-1` remains Minor accepted-known because this supplied focused evidence does not change the earlier repository-wide-suite evidence boundary.
+
+### CI-fix durable findings
+
+- Membership, ownership evidence, mapping assertions, and machine associations must all compare the permanent `projectId`; a display label is never a safe join key.
+- Do not infer identity format from schema generation: both UUID and portable kebab project identities are canonical.
+- Keep at least one regression fixture where permanent identity and display name differ in spelling/case; it exposes accidental alias-keying at the mapping-membership boundary.

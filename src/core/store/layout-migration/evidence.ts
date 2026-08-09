@@ -157,11 +157,10 @@ async function collectStoreRecords(
     } catch {
       continue;
     }
-    // v1 records carry a UUID in `projectId` and a kebab-case name in `id`.
-    // The v2 system keys everything on the kebab-case id, so use `record.id`
-    // when available, falling back to `projectId` only for records that
-    // predate the `id` field.
-    const projectKey = record.id ?? record.projectId;
+    // `projectId` is the record's membership authority and may canonically be
+    // either a UUID or a kebab id. `id` is only a display name and never keys
+    // membership, evidence, or a v2 mapping.
+    const projectKey = record.projectId;
     members.push(projectKey);
     if (record.adoption === undefined) continue;
     adoptionLists.set(projectKey, {
