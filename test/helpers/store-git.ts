@@ -22,15 +22,26 @@ export function createHealthyOpenSpecRoot(root: string, configName = 'config.yam
  * classic Windows MAX_PATH budget. It does not relax the separate constraint
  * that `git -C` and `git init <path>` keep the Store root itself under that
  * budget — those entry points chdir before git reads any config.
+ *
+ * `gc.auto` and `maintenance.auto` are disabled so a read-only pass (e.g. an
+ * inventory fingerprint) never triggers background maintenance that writes
+ * `commit-graph`/`maintenance.lock` under `.git` — which would both race the
+ * lock (ENOENT on macOS CI) and break tests that assert inventory leaves the
+ * Store untouched.
  */
 export function isolatedGitEnv(tempDir: string): NodeJS.ProcessEnv {
-  const emptyConfig = path.join(tempDir, 'gitconfig-empty');
-  if (!fs.existsSync(emptyConfig)) {
-    fs.writeFileSync(emptyConfig, '[core]\n\tlongpaths = true\n');
+  const isolatedConfig = path.join(tempDir, 'gitconfig-isolated');
+  if (!fs.existsSync(isolatedConfig)) {
+    fs.writeFileSync(
+      isolatedConfig,
+      ['[core]', '\tlongpaths = true', '[gc]', '\tauto = 0', '[maintenance]', '\tauto = false', ''].join(
+        '\n'
+      )
+    );
   }
   return {
-    GIT_CONFIG_GLOBAL: emptyConfig,
-    GIT_CONFIG_SYSTEM: emptyConfig,
+    GIT_CONFIG_GLOBAL: isolatedConfig,
+    GIT_CONFIG_SYSTEM: isolatedConfig,
     GIT_AUTHOR_NAME: 'Store Tester',
     GIT_AUTHOR_EMAIL: 'tester@example.com',
     GIT_COMMITTER_NAME: 'Store Tester',
