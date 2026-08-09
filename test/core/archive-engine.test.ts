@@ -23,6 +23,7 @@ import {
 } from '../../src/core/archive-engine.js';
 import { hashArchiveEvidence } from '../../src/core/archive-accounting.js';
 import { hashDirectoryTree } from '../../src/core/ephemera-cleaner.js';
+import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
 describe('archive plan/apply engine', () => {
   let root: string;
@@ -47,7 +48,11 @@ describe('archive plan/apply engine', () => {
   });
 
   afterEach(async () => {
-    await fs.rm(root, { recursive: true, force: true });
+    // The published archive destination holds freshly closed file handles; on
+    // Windows its removal can race a delete-pending child and surface ENOTEMPTY
+    // from a bare `fs.rm`. `cleanupTempPathAsync` backs off and retries that
+    // transient class instead of failing the whole shard.
+    await cleanupTempPathAsync(root);
   });
 
   async function plan(

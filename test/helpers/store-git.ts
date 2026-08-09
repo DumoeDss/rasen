@@ -16,11 +16,17 @@ export function createHealthyOpenSpecRoot(root: string, configName = 'config.yam
 /**
  * Isolates real git invocations from the host's gitconfig (signing, hooks,
  * templates) and provides a deterministic commit identity.
+ *
+ * `core.longpaths` is enabled so git's own file operations (object writes,
+ * index updates) succeed when a Store root is intentionally pushed past the
+ * classic Windows MAX_PATH budget. It does not relax the separate constraint
+ * that `git -C` and `git init <path>` keep the Store root itself under that
+ * budget — those entry points chdir before git reads any config.
  */
 export function isolatedGitEnv(tempDir: string): NodeJS.ProcessEnv {
   const emptyConfig = path.join(tempDir, 'gitconfig-empty');
   if (!fs.existsSync(emptyConfig)) {
-    fs.writeFileSync(emptyConfig, '');
+    fs.writeFileSync(emptyConfig, '[core]\n\tlongpaths = true\n');
   }
   return {
     GIT_CONFIG_GLOBAL: emptyConfig,
