@@ -6,6 +6,14 @@
 # reviewers must see.
 openspec/changes/** linguist-generated=true
 
+# Built-in workflow/expert sidecars participate in catalog capability digests.
+# Keep their source bytes stable across checkout platforms; the runtime also
+# canonicalizes legacy CRLF worktrees before hashing them.
+skills/**/*.md text eol=lf
+skills/**/*.sh text eol=lf
+skills/**/*.mjs text eol=lf
+skills/**/*.js text eol=lf
+
 # This fixture is spawned directly through its shebang on POSIX.
 test/fixtures/management-api/session-fake-cli.mjs text eol=lf
 

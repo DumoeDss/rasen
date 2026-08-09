@@ -61,4 +61,3 @@ All five Major findings from `review-report.md` are resolved locally and covered
 ## Remaining external gate
 
 Task 9.5 remains open for the parent portfolio PR: required Windows CI and normal Linux/macOS lanes must be green. No local finding from the five-item review remains open.
-

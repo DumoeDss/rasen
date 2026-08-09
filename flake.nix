@@ -68,6 +68,10 @@
             buildPhase = ''
               runHook preBuild
 
+              # stdenv injects these toolchain selectors. Rasen's reproducible
+              # authority builders deliberately reject inherited overrides and
+              # resolve their pinned tools themselves.
+              unset AR CC CXX LD
               pnpm run build
 
               runHook postBuild

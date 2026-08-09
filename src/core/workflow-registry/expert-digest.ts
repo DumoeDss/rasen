@@ -33,6 +33,15 @@ export interface HashedSidecarFile {
 }
 
 /**
+ * Sidecars are text-only by contract. Canonicalize their line endings before
+ * assigning a catalog identity so Git's checkout policy cannot make one
+ * built-in workflow resolve to different digests on Windows and POSIX.
+ */
+export function canonicalizeSidecarText(content: string): string {
+  return content.replace(/\r\n?/g, '\n');
+}
+
+/**
  * Resolves an expert's sidecar source directory (`skills/experts/<sourceId>`)
  * relative to the package root. Same depth convention as
  * `copySkillSidecars` in `../shared/skill-generation.ts`.
@@ -65,7 +74,7 @@ export function readSidecarTree(sourceDir: string): WorkflowFileEntry[] {
         continue;
       }
       if (!entry.isFile() || !isSidecarFile(entry.name)) continue;
-      const content = fs.readFileSync(entryPath, 'utf8');
+      const content = canonicalizeSidecarText(fs.readFileSync(entryPath, 'utf8'));
       results.push({ path: logicalPath, content, sha256: sha256(content) });
     }
   };

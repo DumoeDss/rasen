@@ -9,7 +9,7 @@ const FROZEN_COMMON_INPUTS = Object.freeze({
   // Purpose placeholder in the accepted spec (docs-only edit; committed bytes
   // re-hashed via `git show`). LEAD-authorized rebaseline, 2026-08-08.
   'rasen/specs/process-authority-provider/spec.md':
-    '359db6d9f268700bce6591cc26067c6b79025a87e99d3fc48042f76e71452ef9',
+    'e376f5a77f8934a0ada5e07213c495f377b3279d6b1e76d7d1c101dfa0f69430',
   'test/helpers/process-authority-provider-conformance.ts':
     'b9d8bd4fb63910ed1626c0d9f2bda258803a8f3a191f98c57509e837cc58d2f0',
 });

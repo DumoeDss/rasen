@@ -57,6 +57,7 @@
 //! | `GetTokenInformation` | advapi32 | `securitybaseapi.h` |
 //! | `InitializeSecurityDescriptor` | advapi32 | `securitybaseapi.h` |
 //! | `SetSecurityDescriptorDacl` | advapi32 | `securitybaseapi.h` |
+//! | `SetSecurityDescriptorOwner` | advapi32 | `securitybaseapi.h` |
 //! | `InitializeAcl` | advapi32 | `securitybaseapi.h` |
 //! | `AddAccessAllowedAce` | advapi32 | `securitybaseapi.h` |
 //! | `GetLengthSid` | advapi32 | `securitybaseapi.h` |
@@ -65,6 +66,7 @@
 //! | `ConvertSidToStringSidW` | advapi32 | `sddl.h` |
 //! | `GetSecurityInfo` | advapi32 | `aclapi.h` |
 //! | `GetNamedSecurityInfoW` | advapi32 | `aclapi.h` |
+//! | `SetNamedSecurityInfoW` | advapi32 | `aclapi.h` |
 //! | `SystemFunction036` | advapi32 | `ntsecapi.h` (`RtlGenRandom`) |
 //! | `NtQuerySystemInformation` | ntdll | `winternl.h` / `ntexapi.h` |
 //!
@@ -91,7 +93,7 @@ pub const INVALID_HANDLE_VALUE: Handle = usize::MAX as Handle;
 /// The complete list of foreign items declared in this module. Task 9.6 requires each entry to
 /// be exercised by at least one real call against the real Windows kernel; the real-call test
 /// asserts against this exact list so that adding a declaration without exercising it fails.
-pub const DECLARED_FOREIGN_ITEMS: [&str; 56] = [
+pub const DECLARED_FOREIGN_ITEMS: [&str; 58] = [
     "AddAccessAllowedAce",
     "CloseHandle",
     "ConnectNamedPipe",
@@ -141,7 +143,9 @@ pub const DECLARED_FOREIGN_ITEMS: [&str; 56] = [
     "RevertToSelf",
     "SetHandleInformation",
     "SetInformationJobObject",
+    "SetNamedSecurityInfoW",
     "SetSecurityDescriptorDacl",
+    "SetSecurityDescriptorOwner",
     "SystemFunction036",
     "TerminateJobObject",
     "TerminateProcess",
@@ -657,6 +661,11 @@ extern "system" {
         acl: *mut c_void,
         defaulted: Bool,
     ) -> Bool;
+    pub fn SetSecurityDescriptorOwner(
+        descriptor: *mut c_void,
+        owner: *mut c_void,
+        defaulted: Bool,
+    ) -> Bool;
     pub fn InitializeAcl(acl: *mut c_void, length: Dword, revision: Dword) -> Bool;
     pub fn AddAccessAllowedAce(
         acl: *mut c_void,
@@ -687,6 +696,15 @@ extern "system" {
         dacl: *mut *mut c_void,
         sacl: *mut *mut c_void,
         descriptor: *mut *mut c_void,
+    ) -> Dword;
+    pub fn SetNamedSecurityInfoW(
+        name: *mut u16,
+        object_type: Dword,
+        information: Dword,
+        owner: *mut c_void,
+        group: *mut c_void,
+        dacl: *mut c_void,
+        sacl: *mut c_void,
     ) -> Dword;
     /// `RtlGenRandom`. The only randomness source in this crate.
     pub fn SystemFunction036(buffer: *mut c_void, length: Dword) -> Boolean;

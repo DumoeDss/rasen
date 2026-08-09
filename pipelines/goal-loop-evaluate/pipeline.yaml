@@ -67,7 +67,7 @@ root:
     - { id: gate:ship, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: ship }
     - id: retain
       kind: AtomicStage
-      capability: { id: skill:rasen-retain, version: sha256:09cb7888f4d6240f4181b4e4bbaafa0c3d6d1c499004bc617395750a8d7721e7 }
+      capability: { id: skill:rasen-retain, version: sha256:4b28b97d4cefc2e3b9fed896439e5360d1697d7da39df109f9f3d6d06b2d8bd4 }
       execution: { version: 1, role: reviewer, workspace: { access: write }, model: sonnet }
     - id: archive
       kind: AtomicStage

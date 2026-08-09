@@ -1,7 +1,7 @@
 # Review remediation round 6 - bounded cleanup lifecycle repair
 
-Date: 2026-08-04  
-Role: implementer / review-loop fixer  
+Date: 2026-08-04\
+Role: implementer / review-loop fixer\
 Scope: repair the sole failure in the independent Round 5 full-root run. This
 round does not perform the independent re-review, run the complete root suite,
 ship, archive, or mark tasks 9.8-9.10 complete.

@@ -270,4 +270,3 @@ When the resolved planning-space root differs from the resolved execution cwd, t
 #### Scenario: Windows shim receives the attached root literally
 - **WHEN** a Windows session launches through an npm `.cmd` or `.bat` shim and the canonical planning root contains command-interpreter metacharacters valid in a path
 - **THEN** the entire root reaches Claude as the single literal value of the server-built additional-directory option and no injected command or extra argv token is executed
-

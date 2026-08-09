@@ -1,8 +1,13 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
   digestExpert,
   hashSidecarTree,
+  readSidecarTree,
   resolveExpertSidecarDir,
 } from '../../../src/core/workflow-registry/expert-digest.js';
 import { getBuiltInExpertDefinitions } from '../../../src/core/workflow-registry/index.js';
@@ -39,6 +44,25 @@ describe('expert digest preimage', () => {
     const reviewSidecars = hashSidecarTree(resolveExpertSidecarDir('review'));
     for (const file of reviewSidecars) {
       expect(file.sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+    }
+  });
+
+  it('assigns the same sidecar identity to LF and CRLF checkouts', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-sidecar-eol-'));
+    const lfRoot = path.join(root, 'lf');
+    const crlfRoot = path.join(root, 'crlf');
+    try {
+      fs.mkdirSync(lfRoot);
+      fs.mkdirSync(crlfRoot);
+      fs.writeFileSync(path.join(lfRoot, 'notes.md'), 'first\nsecond\n', 'utf8');
+      fs.writeFileSync(path.join(crlfRoot, 'notes.md'), 'first\r\nsecond\r\n', 'utf8');
+
+      const lf = readSidecarTree(lfRoot);
+      const crlf = readSidecarTree(crlfRoot);
+      expect(crlf).toEqual(lf);
+      expect(crlf[0]?.content).toBe('first\nsecond\n');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
     }
   });
 

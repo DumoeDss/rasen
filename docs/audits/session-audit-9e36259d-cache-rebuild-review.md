@@ -1,10 +1,10 @@
 # Session 9e36259d 缓存重建缓解方案审查报告
 
-> 审查对象：`C:\Users\Sayo\.rasen\analytics\session-audit-9e36259d.json`  
-> Session：`9e36259d-e6a3-4ac1-862d-2a3e32d6e7da`  
-> Runtime：Claude Code  
-> 会话时间：2026-07-25 13:54:31 至 2026-07-26 12:58:03（Asia/Shanghai），23.06 小时  
-> 报告日期：2026-07-26  
+> 审查对象：`C:\Users\Sayo\.rasen\analytics\session-audit-9e36259d.json`\
+> Session：`9e36259d-e6a3-4ac1-862d-2a3e32d6e7da`\
+> Runtime：Claude Code\
+> 会话时间：2026-07-25 13:54:31 至 2026-07-26 12:58:03（Asia/Shanghai），23.06 小时\
+> 报告日期：2026-07-26\
 > 结论置信度：机制与执行证据高；反事实节省估算中等
 
 ## 1. 执行摘要
@@ -60,13 +60,13 @@
 
 本文使用 Claude audit 的术语：
 
-- **billed input equivalent**  
+- **billed input equivalent**\
   `raw input + cache-write × TTL 系数 + cache-read × 0.1`。主会话 cache write 系数为 2，子代理为 1.25。
-- **TTL expiry**  
+- **TTL expiry**\
   空闲超过该 agent 的缓存 TTL；主会话为 60 分钟，子代理为 5 分钟。
-- **rebase**  
+- **rebase**\
   会话前缀发生分叉、变基或消息注入后，原缓存前缀无法继续使用。
-- **resume HIT/MISS**  
+- **resume HIT/MISS**\
   burst 恢复时是否继续命中旧缓存。
 
 用户所说的 `rasen await` 在当前代码中的实际命令名是 **`rasen agent wait`**；未发现 `rasen await` CLI alias。
@@ -411,13 +411,13 @@ Timeline 上最健康的三行是 #2、#3，以及 #4 在 07-25 20:05 beat-cap �
 
 按时间轴看，问题并不是均匀发生的，而是集中在四种形态：
 
-1. **规则生效区**  
+1. **规则生效区**\
    implementer A、reviewer A、fixer A 的 active wait 区间全部 warm；这是方案的正证据。
-2. **review-loop 未 park 区**  
+2. **review-loop 未 park 区**\
    rereviewer A、fixer B、reviewer D 产生 15 个短/中 gap TTL event，是最大的可治理部分。
-3. **消息驱动 rebase 区**  
+3. **消息驱动 rebase 区**\
    persistent planner、MAIN、reviewer D 在 teammate message 后形成宽 critical 条；需要 signal/线性收集边界，而不仅是 beat。
-4. **超出 keepalive 适用域**  
+4. **超出 keepalive 适用域**\
    机器休眠、MAIN 60 分钟 TTL、跨 child 数小时复用，应由 handoff/cold successor 解决。
 
 因此，viewer timeline 支持与汇总指标相同的结论：**beat cadence 已经可靠，剩余收益取决于编排器能否把正确的 worker 放入 park、在正确的时刻 signal resume/standDown，并拒绝复用 retired handle。**
@@ -601,7 +601,7 @@ billed input equivalent
 三次 warm resume 的估算：
 
 - 避免重写：1,453,656 token
-- 按子代理 cold write 1.25× 与 warm read 0.1× 的差额，避免 premium：  
+- 按子代理 cold write 1.25× 与 warm read 0.1× 的差额，避免 premium：\
   `1,453,656 × 1.15 = 1,671,704 billed-input-equivalent`
 - 这三个 episode 的重复 beat 开销：625,782 billed-input-equivalent
 - 估算净节省：**1,045,922 billed-input-equivalent**
@@ -765,15 +765,15 @@ exit 1
 
 本次剩余缓存重建可以归为五类：
 
-1. **编排覆盖缺失**  
+1. **编排覆盖缺失**\
    多个真正被复用的 reviewer、fixer 和 planner 没有进入 wait。
-2. **生命周期状态未强制，且 cap 策略缺少成本输入**  
+2. **生命周期状态未强制，且 cap 策略缺少成本输入**\
    beat-cap 后的 retired worker 仍可被消息重新激活；对于仍确定有后续任务的 worker，编排器也没有根据 implementer ETA、上下文大小和 successor 成本选择默认 cap、延长或 handoff。
-3. **通信通道未统一**  
+3. **通信通道未统一**\
    非 park 或错误生命周期下仍通过 teammate message 重新接触大上下文 worker，产生 rebase。
-4. **长阻塞与环境停顿**  
+4. **长阻塞与环境停顿**\
    6.2 分钟前台测试、8 小时机器休眠、主会话超过 60 分钟空闲均不受当前 active beat 覆盖。
-5. **命令和可观测性缺口**  
+5. **命令和可观测性缺口**\
    Store unavailable 会让 wait 在 outcome 前失败；audit 不直接标注 wait episode，必须手工 join transcript 才能计算收益。
 
 因此，当前问题的中心已经从“是否有可行 keepalive 原语”转移为“编排器是否可靠地选择、驱动和终止 keepalive 生命周期”。
@@ -782,24 +782,24 @@ exit 1
 
 ### P0：先修正编排正确性
 
-1. **把 reuse horizon 和 park 状态写入 run-state 并机器校验。**  
+1. **把 reuse horizon 和 park 状态写入 run-state 并机器校验。**\
    每个 worker 明确记录 `ONE_SHOT | LOOP_BOUND | MILESTONE_BOUND`、`active | parked | retired`。LEAD 在复用前必须检查状态；retired handle 禁止再次 SendMessage。
 
-2. **对 eligible worker 强制执行 park。**  
+2. **对 eligible worker 强制执行 park。**\
    apply implementer 等待首轮 verdict、review-loop reviewer/fixer 等待下一轮、短间隔 persistent planner 都应由模板自动生成 wait loop 指令，而不是依赖 LEAD 临场记忆。
 
-3. **禁止向 parked 或 retired worker 投递 teammate message。**  
+3. **禁止向 parked 或 retired worker 投递 teammate message。**\
    parked 只能使用 signal；retired 必须用 handoff 冷启动 successor。对未 park 但预计很快复用的 worker，应先完成当前轮并进入 park，再投递下一任务。
 
-4. **把 beat cap 变成显式成本决策，而不是单向追求主动 standDown。**  
+4. **把 beat cap 变成显式成本决策，而不是单向追求主动 standDown。**\
    park 开始时记录 implementer ETA、worker 当前 context、successor 启动成本和预期复审请求数。已知不再需要时由 LEAD 立即 `standDown`；仍有后续任务但 ETA 超过默认窗口时，在“12-beat + handoff”与有限延长之间选择。延长必须同时设置 deadline，ETA 再次滑移时由 LEAD signal standDown；正常到 cap 且已写 handoff 不是失败。
 
-5. **落实长命令 warming。**  
+5. **落实长命令 warming。**\
    对预计超过 2 分钟的测试/build，统一使用后台进程和不超过 270 秒的前台轮询。最好由 helper 封装，而不是只写在 playbook 文本中。
 
 ### P1：补齐命令原语和容错
 
-6. **新增 `rasen agent signal`。**  
+6. **新增 `rasen agent signal`。**\
    例如：
 
    ```text
@@ -809,21 +809,21 @@ exit 1
 
    由 CLI 负责 JSON 编码、同目录临时文件、原子 rename、Windows 路径和 BOM，消除手工 shell 写信号。
 
-7. **支持不重置 episode 的 cap 延长。**  
+7. **支持不重置 episode 的 cap 延长。**\
    当前 `maxBeats` 改变会让 `loadBeatState()` 重置计数，无法在第 12 beat 根据新 ETA 安全地从 12 提高到 19。应新增有上限、只允许单调增加的 `rasen agent extend` / signal 字段，保留 `beats` 与 `startedAt`，并把 extension reason、旧/新 cap 和 LEAD deadline 写入状态及 audit。
 
-8. **让 wait 对 Store unavailable fail-soft。**  
+8. **让 wait 对 Store unavailable fail-soft。**\
    `agent wait` 应尽量按本地 change root 工作，或把 planning-home 解析失败映射为明确的结构化 standDown reason；至少增加命令级回归测试，防止叶子代理收到非 JSON 异常。
 
-9. **为机器休眠建立明确降级策略。**  
+9. **为机器休眠建立明确降级策略。**\
    不应提高默认 beat cap 来覆盖数小时休眠。检测到超长 gap 后，直接将旧 worker 视为 cold/retired，使用 handoff 启动 successor。
 
-10. **主会话使用 handoff 而非 keepalive。**  
+10. **主会话使用 handoff 而非 keepalive。**\
    对预计超过 60 分钟的停顿或睡眠，主动完成 session handoff；不要试图把 subagent 的 5 分钟 keepalive 模式扩展成主会话常驻 ping。
 
 ### P2：让收益可直接审计
 
-11. **在 audit 中原生识别 keepalive episode。**  
+11. **在 audit 中原生识别 keepalive episode。**\
     报告应直接提供：
     - wait calls / timed beats / cadence；
     - resumed / lead-stand-down / beat-cap；
@@ -832,7 +832,7 @@ exit 1
     - cap 后 handoff、successor 启动和 extend 反事实；
     - beat 后的异常 rebase。
 
-12. **区分环境性 TTL 与编排性 TTL。**  
+12. **区分环境性 TTL 与编排性 TTL。**\
     将机器休眠、主会话 60 分钟空闲、长命令、eligible worker 未 park 分开，否则总体 TTL 数字会掩盖 keepalive 本身是否退化。
 
 ## 11. 下一轮验收标准
@@ -1132,9 +1132,9 @@ Claude background session 默认在第一次写文件前移动到 `.claude/workt
 
 这会与 Rasen 当前工作流产生两种相反风险：
 
-1. **保留默认隔离**  
+1. **保留默认隔离**\
    reviewer 可能在自己的 worktree 看不到 implementer 尚未合并的改动；run-state 必须记录 branch/commit/worktree，并建立显式集成分支。
-2. **关闭隔离**  
+2. **关闭隔离**\
    所有独立 session 都直接写当前 working copy；如果两个完整 session 并行编辑同一文件，会出现覆盖、测试污染和状态误判。
 
 建议分阶段处理：
@@ -1221,21 +1221,21 @@ OR expected idle < 20–30 min
 
 ### 13.9 Plan B 仍然无法消除的缓存重建
 
-1. **超过 60 分钟的 TTL expiry**  
+1. **超过 60 分钟的 TTL expiry**\
    supervisor 保持进程运行、pin session 或保存 transcript，都不等于服务端 prompt cache 仍然存在。官方说明 completed background process 空闲约 1 小时后会被停止，但下次可从 transcript 重启；重启 conversation 与恢复热 cache 是两件事。
-2. **消息注入导致的 rebase**  
+2. **消息注入导致的 rebase**\
    正常的 follow-up 应是前缀追加并命中缓存，但 Channel event、执行中 interrupt、queued message、lead epoch 切换是否被当前 audit 判为 rebase，需要实测。
-3. **模型/工具/system prompt 改变**  
+3. **模型/工具/system prompt 改变**\
    worker 运行中更换 model、permission、MCP/plugin、role prompt，可能改变缓存前缀。
-4. **context compaction**  
+4. **context compaction**\
    完整主会话持续更久，context 也更容易膨胀和 compact；1 小时 TTL 不解决上下文增长。
-5. **worker 内再次使用 subagent**  
+5. **worker 内再次使用 subagent**\
    如果独立 worker 自己又启动内置 subagent，后者仍回到 5 分钟 tier。Plan B role prompt 应默认禁止二次委派，除非单独审计。
-6. **广播成本放大**  
+6. **广播成本放大**\
    一个 40 万 token worker 收到一次无关广播，温读成本约 4 万 input equivalent；N 个 worker 会线性放大。
-7. **机器休眠和超长任务**  
+7. **机器休眠和超长任务**\
    transcript 可以恢复，但睡眠期间没有 API 请求刷新 prompt cache；醒来后的首次模型请求仍可能 cold write。
-8. **跨工作区 resume 失败**  
+8. **跨工作区 resume 失败**\
    官方 SDK 文档指出 session transcript 按 encoded cwd 存放；`resume` 使用不同 cwd 时可能找不到预期历史。worker registry 必须固定 cwd/worktree。
 
 ### 13.10 审计模型也必须改为 run 级多 session 聚合

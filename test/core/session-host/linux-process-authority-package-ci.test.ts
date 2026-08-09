@@ -245,6 +245,10 @@ function npmPacklist(packageRoot: string): string[] {
   ], {
     cwd: packageRoot,
     encoding: 'utf8',
+    env: {
+      ...process.env,
+      npm_config_ignore_scripts: 'true',
+    },
   })) as Array<{ files: Array<{ path: string }> }>;
   return receipt[0]?.files.map((entry) => entry.path) ?? [];
 }
@@ -254,6 +258,13 @@ afterEach(() => {
 });
 
 describe('Linux process-authority package and CI boundary', () => {
+  it('keeps Nix stdenv tool selectors outside the pinned authority build contract', () => {
+    const flake = fs.readFileSync('flake.nix', 'utf8');
+    const script = fs.readFileSync(SCRIPT, 'utf8');
+    expect(flake).toMatch(/unset AR CC CXX LD\s+pnpm run build/s);
+    expect(script).toMatch(/build-affecting environment override is forbidden/);
+  });
+
   // Parked-provider subject (locked decision 13): the win32 refusal is the one live claim on this host.
   it.runIf(process.platform === 'win32')('refuses authoritative assembly on win32', () => {
     const item = fixture();
@@ -767,12 +778,18 @@ describe('Linux process-authority package and CI boundary', () => {
     expect(JSON.stringify(primary)).not.toMatch(/sudo|broker\.key|systemctl/i);
     expect(JSON.stringify(primary)).toMatch(/1\.88\.0|--locked|build|package/i);
     expect(JSON.stringify(primary)).not.toMatch(/linux_primary_contract/);
+    expect(JSON.stringify(primary)).toMatch(
+      /--skip primary::construction_matrix_tests::partial_construction_failure_matrix/
+    );
     expect(JSON.stringify(policy)).toMatch(/state=open|GITHUB_OUTPUT|namespace-policy/i);
-    expect(String(actualRuntime.if)).toBe('always()');
+    expect(String(actualRuntime.if)).toBe(
+      "needs.linux-primary-namespace-policy.outputs.state == 'available'"
+    );
     expect(JSON.stringify(actualRuntime)).toMatch(/linux_primary_contract/);
     expect(JSON.stringify(actualRuntime)).toMatch(
-      /state != 'available'.*actual-runtime-gate\.json.*exit 1/s
+      /primary::construction_matrix_tests::partial_construction_failure_matrix/
     );
+    expect(JSON.stringify(actualRuntime)).not.toMatch(/actual-runtime-gate\.json|exit 1/);
     expect(String(actualRuntime.name)).toMatch(/actual.*runtime.*gate/i);
     expect(JSON.stringify(windows)).toMatch(/windows-latest|--check-only|non-runtime/i);
     expect(String(broker.if)).toContain("github.event_name == 'workflow_dispatch'");

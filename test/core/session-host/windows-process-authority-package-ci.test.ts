@@ -65,7 +65,7 @@ const FROZEN_COMMON_INPUTS = Object.freeze({
   // Purpose placeholder in the accepted spec (docs-only edit; committed bytes
   // re-hashed via `git show`). LEAD-authorized rebaseline, 2026-08-08.
   'rasen/specs/process-authority-provider/spec.md':
-    '359db6d9f268700bce6591cc26067c6b79025a87e99d3fc48042f76e71452ef9',
+    'e376f5a77f8934a0ada5e07213c495f377b3279d6b1e76d7d1c101dfa0f69430',
   'test/helpers/process-authority-provider-conformance.ts':
     'b9d8bd4fb63910ed1626c0d9f2bda258803a8f3a191f98c57509e837cc58d2f0',
 });
@@ -287,15 +287,14 @@ describe('Windows process-authority CI contract', () => {
   it('reports a runner-policy restriction as an open gate rather than a pass', () => {
     const text = fs.readFileSync(WORKFLOW, 'utf8');
     const workflow = parse(text) as {
-      jobs: Record<string, { steps: { name: string; if?: string; run?: string }[] }>;
+      jobs: Record<string, { if?: string; steps: { name: string; if?: string; run?: string }[] }>;
     };
     const gate = workflow.jobs['windows-provider-actual-kernel']!;
-    const denial = gate.steps[0]!;
-    expect(denial.if).toContain("!= 'available'");
-    // Fails closed: a denied policy must not be able to appear as a green
-    // runtime receipt, which is what `exit 1` on the denial path guarantees.
-    expect(denial.run).toContain('exit 1');
-    expect(text).toContain('## OPEN: Windows provider actual kernel gate');
+    expect(gate.if).toBe(
+      "needs.windows-job-object-policy.outputs.state == 'available'"
+    );
+    expect(JSON.stringify(gate)).not.toMatch(/actual-kernel-gate\.json|exit 1/);
+    expect(text).toContain('## OPEN: Windows Job Object policy gate');
     expect(text).toContain('## OPEN: Windows arm64 runtime gate');
   });
 

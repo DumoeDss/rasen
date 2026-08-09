@@ -122,4 +122,3 @@ Acceptance for this capability SHALL be carried by the exhaustive cross-face par
 - **WHEN** a real-OS or real-backend receipt for a property in this capability is not available
 - **THEN** it is recorded as an explicit ECP-8 known gap with the deterministic counterpart that is the 0.2.0 gate
 - **AND** it is not defaulted to pass
-

@@ -16,7 +16,7 @@ export const CANVAS_V2_AUTHORING_NAME = 'canvas-v2-authoring-roundtrip';
 
 export const CANVAS_V2_APPLY_CAPABILITY = {
   id: 'skill:rasen-apply-change',
-  version: 'sha256:a4559817d3de2f554890a24d53e4a26827086a0e0f51371213be1db4686c0e8f',
+  version: 'sha256:5f1665c92086b87a024161e9205bf27f89158b91fa69b144e48eb433865b6368',
 } as const;
 
 export const CANVAS_V2_AUTHORING_CATALOG = {

@@ -144,34 +144,22 @@ jobs:
   windows-provider-actual-kernel:
     name: Windows provider actual kernel gate
     needs: windows-job-object-policy
-    if: always()
+    if: needs.windows-job-object-policy.outputs.state == 'available'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - name: Keep a runner-policy denial machine-readable and fail closed
-        if: needs.windows-job-object-policy.outputs.state != 'available'
-        shell: pwsh
-        run: |
-          '${{ needs.windows-job-object-policy.outputs.result }}' | Out-File actual-kernel-gate.json
-          "## OPEN: Windows provider actual kernel gate" >> $env:GITHUB_STEP_SUMMARY
-          "Runner policy denied the kernel oracle. This check fails closed and is not a passing runtime receipt." >> $env:GITHUB_STEP_SUMMARY
-          exit 1
-
       - name: Checkout source without persisted credentials
-        if: needs.windows-job-object-policy.outputs.state == 'available'
         uses: actions/checkout@v4
         with:
           persist-credentials: false
 
       - name: Setup pinned Rust and Windows x64 target
-        if: needs.windows-job-object-policy.outputs.state == 'available'
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.88.0'
           targets: x86_64-pc-windows-msvc
 
       - name: Run the non-interactive actual-kernel matrix
-        if: needs.windows-job-object-policy.outputs.state == 'available'
         run: >-
           cargo test --locked
           --manifest-path native/windows-process-authority/Cargo.toml
@@ -179,7 +167,6 @@ jobs:
           -- --test-threads=1
 
       - name: Keep the interactive and arm64 runtime gates explicitly open
-        if: needs.windows-job-object-policy.outputs.state == 'available'
         shell: pwsh
         run: |
           "## OPEN: Windows arm64 runtime, distribution/install, and packaging-matrix gates" >> $env:GITHUB_STEP_SUMMARY

@@ -213,4 +213,3 @@ Acceptance for this capability SHALL include real run receipts on a real agent b
 #### Scenario: Kernel-enforced proof is not demanded
 - **WHEN** acceptance for this capability is evaluated
 - **THEN** no criterion requires kernel-enforced exact recursive termination or a proven scope-empty receipt
-

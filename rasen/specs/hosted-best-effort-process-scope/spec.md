@@ -96,4 +96,3 @@ Acceptance evidence for this capability SHALL include receipts taken on a real L
 #### Scenario: Kernel-enforced proof is not demanded
 - **WHEN** acceptance for this capability is evaluated
 - **THEN** no criterion requires exact recursive termination or a proven scope-empty receipt
-
