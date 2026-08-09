@@ -22,4 +22,4 @@
 
 - [x] 4.1 Run the focused workspace apply, pairing, CLI, and Store v2 journey test files and resolve every failure at the narrowest owning layer.
 - [x] 4.2 Run `pnpm run build` and `pnpm run lint` once after the focused tests pass.
-- [ ] 4.3 Run the full `pnpm test` suite once after integration and confirm no Store v2 finalization or cleanup regression remains.
+- [x] 4.3 Run the full `pnpm test` suite once after integration and confirm no Store v2 finalization or cleanup regression remains.
