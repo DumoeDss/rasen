@@ -64,7 +64,7 @@
 
 - [x] 7.1 Run the focused definition, pipeline-registry, runtime-plan, lowerer, lifecycle reducer, ReviewCycle, GoalLoop, reconciler, projector, CLI, API, and Operations test files serially after one build.
 - [x] 7.2 Run repository typecheck, lint, and the full applicable unit/integration suite serially, recording any pre-existing failures separately from this Change.
-- [ ] 7.3 Run the affected path-sensitive CLI/API tests on Windows and the Windows CI lane, using `path.join()` or `path.resolve()` in new cross-platform expectations; confirm the normal Linux/macOS CI lanes remain green.
+- [x] 7.3 Run the affected path-sensitive CLI/API tests on Windows and the Windows CI lane, using `path.join()` or `path.resolve()` in new cross-platform expectations; confirm the normal Linux/macOS CI lanes remain green.
 - [x] 7.4 Audit the final diff to confirm no Canvas authoring, built-in v2/default migration, Session executor, Issue/Dispatch/portfolio, release-audit, or writable auto-run/goal-run lifecycle state entered this Change.
 
 ## Verification evidence (2026-08-01, Windows)
