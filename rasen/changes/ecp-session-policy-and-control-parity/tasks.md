@@ -42,9 +42,9 @@ Scope legend: this change is the enforcement/completeness/config layer over the 
 
 ## 5. Face-invariant policy decisions (acceptance 5)
 
-- [ ] 5.1 Build the face-invariance harness: dispatch the same granted Action from each driver face in turn and assert the resolved policy and the reuse/handoff/touch/retire decision are identical across faces.
+- [x] 5.1 Build the face-invariance harness: dispatch the same granted Action from each driver face in turn and assert the resolved policy and the reuse/handoff/touch/retire decision are identical across faces.
   - Receipt: face-invariance harness green across all faces; mutation receipt proving a face-specific policy source fails the harness (and the parity drift gate).
-- [ ] 5.2 Assert policy is resolved at one point consuming one configured block (no face carries its own policy source). The drift-prevention gate (2.3) catches a bypass.
+- [x] 5.2 Assert policy is resolved at one point consuming one configured block (no face carries its own policy source). The drift-prevention gate (2.3) catches a bypass.
   - Receipt: guard proving a single resolution point; cross-reference to the 2.3 drift gate.
 
 ## 6. Deterministic guards and mutation receipts
