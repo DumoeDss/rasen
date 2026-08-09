@@ -22,13 +22,13 @@ Scope legend: this change is the enforcement/completeness/config layer over the 
 
 ## 3. Exhaustive cancel/restart/ack-loss fault matrix (acceptance 4)
 
-- [ ] 3.1 Build the data-driven fault-injection matrix over the executor's injectable `HostedBackendSeam`/`InToolBackendSeam` covering the seven named failure modes the slice acceptance 4 enumerates: cancel-before-start, cancel-in-flight, host/daemon restart (exercised for both the host process and the daemon process), worker process loss, completion ack loss, duplicate completion, and stale control. Each entry injects its fault at the shipped seam.
+- [x] 3.1 Build the data-driven fault-injection matrix over the executor's injectable `HostedBackendSeam`/`InToolBackendSeam` covering the seven named failure modes the slice acceptance 4 enumerates: cancel-before-start, cancel-in-flight, host/daemon restart (exercised for both the host process and the daemon process), worker process loss, completion ack loss, duplicate completion, and stale control. Each entry injects its fault at the shipped seam.
   - Receipt: matrix harness green over all eight modes; a coverage guard flags any uncovered mode; guard asserting the injection point is the shipped seam (not a parallel fixture).
-- [ ] 3.2 For each matrix entry, assert the recovery invariants: recovery continues only the uncommitted frontier; already-committed invocations/effects are not re-executed; an input whose commitment is unknown is not resent; unprovable state is typed-waited or escalated (fail-closed).
+- [x] 3.2 For each matrix entry, assert the recovery invariants: recovery continues only the uncommitted frontier; already-committed invocations/effects are not re-executed; an input whose commitment is unknown is not resent; unprovable state is typed-waited or escalated (fail-closed).
   - Receipt: per-mode invariant guards (committed-frontier-only via `partitionCommittedFrontier`/`isCommittedInvocation`; no-resend; fail-closed-on-unprovable); mutation receipt per invariant.
-- [ ] 3.3 For daemon restart (hosted) and launcher disappearance (in-tool), assert composition into typed `execution-lost` via `reconcileActionOutcome` and resume from the committed frontier with no reattach and no identity revalidation.
+- [x] 3.3 For daemon restart (hosted) and launcher disappearance (in-tool), assert composition into typed `execution-lost` via `reconcileActionOutcome` and resume from the committed frontier with no reattach and no identity revalidation.
   - Receipt: execution-lost composition guards for both backends; mutation receipt proving a normally-completed Action is not execution-lost.
-- [ ] 3.4 For completion ack loss, duplicate completion, and stale control, assert no double-settle, no advance from an unprovable state, and a typed outcome.
+- [x] 3.4 For completion ack loss, duplicate completion, and stale control, assert no double-settle, no advance from an unprovable state, and a typed outcome.
   - Receipt: three guards; mutation receipts.
 
 ## 4. Configurable provenance-bearing policy source (acceptance 5)
