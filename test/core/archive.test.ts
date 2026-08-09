@@ -492,6 +492,25 @@ describe('ArchiveCommand', () => {
           )
         )
       ).resolves.toBeUndefined();
+      vi.mocked(console.log).mockClear();
+      await archiveCommand.execute(undefined, {
+        applyPlan: preview.archive.planToken,
+        yes: true,
+        json: true,
+      });
+      const blockedApply = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(blockedApply.archive.result.status).toBe('blocked');
+      expect(blockedApply.archive.result.recoveryCommand).toBeUndefined();
+      vi.mocked(console.log).mockClear();
+      await archiveCommand.execute(undefined, {
+        applyPlan: preview.archive.planToken,
+        yes: true,
+      });
+      expect(console.log).not.toHaveBeenCalledWith(
+        expect.stringContaining('Recovery:')
+      );
     });
 
     it('preserves a structured recoverable JSON result and same-token retry command', async () => {

@@ -748,7 +748,10 @@ export class ArchiveCommand {
         assertions: { mergeConfirmed: options.yes === true },
       });
       if (result.status !== 'complete') {
-        if (!result.manualRecoveryAction && !result.abortCommand) {
+        if (
+          result.status === 'blocked' &&
+          inspectArchiveApplyPlan(plan, { mergeConfirmed: true }).applicable
+        ) {
           result.recoveryCommand =
             `rasen archive --apply-plan ${options.applyPlan} --yes` +
             (json ? ' --json' : '');
@@ -775,7 +778,7 @@ export class ArchiveCommand {
           console.log(`Manual recovery: ${result.manualRecoveryAction.guidance}`);
         } else if (result.abortCommand) {
           console.log(`Abort: ${result.abortCommand}`);
-        } else {
+        } else if (result.recoveryCommand) {
           console.log(`Recovery: ${result.recoveryCommand}`);
         }
       }
