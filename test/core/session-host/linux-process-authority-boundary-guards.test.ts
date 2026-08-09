@@ -28,8 +28,13 @@ const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
   // This remains shared ProcessCapsule correctness, not Linux-provider
   // reinterpretation. Staged LF delivery bytes re-hashed via `git show
   // :<path>`. LEAD-authorized rebaseline, 2026-08-09.
+  // Rebaselined f6c00b73... -> 6f242be9...: the next CI discovery pass
+  // proved Windows can report controller death as broken-pipe rather than
+  // EOF. The acknowledged mutation now retains its validated Job handle for
+  // both control-loss outcomes. LF delivery bytes re-hashed by the LEAD,
+  // 2026-08-09.
   'native/process-capsule/src/main.rs':
-    'f6c00b734c769eb210c5b6e13fc6c46295c0f976ebb98bd26f44f186ca0e3c1c',
+    '6f242be9e48bb24aa5b8130de9785fb25b514adee35c043f4d9a7638a5c52d24',
   'native/process-capsule/Cargo.lock':
     'f00e64114e06f06b623880947c4ec4d33953218d901abdba3b2b2f1d32db8793',
   'scripts/build-process-capsule.mjs':

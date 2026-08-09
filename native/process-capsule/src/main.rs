@@ -215,6 +215,17 @@ fn stream_child_output<R: Read + Send + 'static>(
     });
 }
 
+fn hold_duplicated_job_handle(leaked_job_handle: Option<u64>) -> io::Result<()> {
+    // The mutation oracle deliberately keeps this independently owned Job
+    // handle open after either EOF or a broken-pipe read from the controller.
+    // Windows may report controller death through either outcome.
+    let _retained_job_handle = leaked_job_handle
+        .ok_or_else(|| io::Error::other("duplicated Job handle was not acknowledged"))?;
+    loop {
+        thread::sleep(Duration::from_secs(60));
+    }
+}
+
 fn supervisor_main(hold_on_control_loss: bool) -> io::Result<()> {
     let mut controller_input = io::stdin().lock();
     let leaked_job_handle = if hold_on_control_loss {
@@ -331,7 +342,14 @@ fn supervisor_main(hold_on_control_loss: bool) -> io::Result<()> {
     });
 
     loop {
-        match read_frame(&mut controller_input)? {
+        let command = match read_frame(&mut controller_input) {
+            Ok(command) => command,
+            Err(_error) if hold_on_control_loss => {
+                return hold_duplicated_job_handle(leaked_job_handle);
+            }
+            Err(error) => return Err(error),
+        };
+        match command {
             Some((INPUT, bytes)) => child_input.write_all(&bytes)?,
             Some((TERMINATE, _)) => {
                 let _ = child.lock().map(|mut item| item.kill());
@@ -345,16 +363,7 @@ fn supervisor_main(hold_on_control_loss: bool) -> io::Result<()> {
             }
             None => {
                 if hold_on_control_loss {
-                    // This branch is the mutation oracle: the supervisor has
-                    // validated that this exact raw handle names its own Job.
-                    // Keeping the process alive keeps that independently owned
-                    // handle open after controller death.
-                    let _retained_job_handle = leaked_job_handle.ok_or_else(|| {
-                        io::Error::other("duplicated Job handle was not acknowledged")
-                    })?;
-                    loop {
-                        thread::sleep(Duration::from_secs(60));
-                    }
+                    return hold_duplicated_job_handle(leaked_job_handle);
                 }
                 terminate_contained_group(pid);
                 let _ = child.lock().map(|mut item| item.kill());

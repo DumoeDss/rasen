@@ -270,7 +270,7 @@ describe('planning:<full-id> exact Run authority over real HTTP', () => {
     expect(detail.json.sections[0].allowedControls).not.toHaveLength(0);
     expect(control.status).toBe(200);
     expect(spawnCalls).toHaveLength(1);
-    expect(spawnCalls[0]!.cwd).toBe(selectedRoot);
+    expect(spawnCalls[0]!.cwd).toBe(FileSystemUtils.canonicalizeExistingPath(selectedRoot));
   });
 
   it('keeps an exact other-worktree Run read-only and rejects control without spawning', async () => {
