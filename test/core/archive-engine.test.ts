@@ -1449,8 +1449,14 @@ describe('archive plan/apply engine', () => {
     const archivePlan = await plan();
     const globalDataDir = path.join(root, 'global-data');
     await persistArchivePlan(archivePlan, globalDataDir);
-    const applyGate = Promise.withResolvers<void>();
-    const applyEntered = Promise.withResolvers<void>();
+    let releaseApply!: () => void;
+    const applyGate = new Promise<void>((resolve) => {
+      releaseApply = resolve;
+    });
+    let markApplyEntered!: () => void;
+    const applyEntered = new Promise<void>((resolve) => {
+      markApplyEntered = resolve;
+    });
     const order: string[] = [];
 
     const applying = withStoredArchivePlanOperation(
@@ -1459,12 +1465,12 @@ describe('archive plan/apply engine', () => {
       'apply',
       async () => {
         order.push('apply-entered');
-        applyEntered.resolve();
-        await applyGate.promise;
+        markApplyEntered();
+        await applyGate;
         order.push('apply-released');
       }
     );
-    await applyEntered.promise;
+    await applyEntered;
     const aborting = withStoredArchivePlanOperation(
       archivePlan,
       globalDataDir,
@@ -1483,7 +1489,7 @@ describe('archive plan/apply engine', () => {
     );
     expect(order).toEqual(['apply-entered']);
 
-    applyGate.resolve();
+    releaseApply();
     await Promise.all([applying, aborting]);
     expect(order).toEqual([
       'apply-entered',
