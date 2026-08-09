@@ -32,6 +32,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   finalizationLockKeys,
   finalizationPlanId,
+  inspectFinalizationApplyPlan,
   unheldIntegrationLockKey,
   withFinalizationLocks,
   type ChangeFinalizationError,
@@ -140,6 +141,54 @@ describe('the finalization plan identifier', () => {
     expect(plan.token?.changeInstanceId).toBe(bound.changeInstanceId);
     expect(plan.token?.workspacePairId).toBe(bound.workspacePairId);
   }, 180_000);
+
+  it('applies a stored plan when merge confirmation satisfies only the timing gate', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT_A,
+      targetLineId: LINE_02,
+      changeId: 'stored-merge-confirmation',
+    });
+    const archive = f.preparation(bound, {
+      timing: {
+        mode: 'on-merge',
+        deliveryMode: 'pr',
+        override: false,
+      },
+    });
+    const plan = await f
+      .finalization()
+      .plan(
+        f.planInput(
+          bound,
+          { outcome: 'abandoned', reason: 'Dropped.' },
+          { archive }
+        )
+      );
+
+    expect(plan.applicable).toBe(false);
+    expect(plan.blockers).toEqual([
+      expect.objectContaining({
+        archiveBlocker: expect.objectContaining({
+          code: 'archive_merge_confirmation_required',
+          operation: 'timing',
+        }),
+      }),
+    ]);
+    expect(
+      inspectFinalizationApplyPlan(plan, { mergeConfirmed: true })
+    ).toEqual({
+      applicable: true,
+      blockers: [],
+    });
+
+    const result = await f
+      .finalization()
+      .applyStoredPlan(plan.archivePlan, plan.token, {
+        mergeConfirmed: true,
+      });
+    expect(result.status).toBe('complete');
+    expect(fs.existsSync(bound.changeDir)).toBe(false);
+  }, 240_000);
 });
 
 describe('revalidation invalidates rather than repairs', () => {

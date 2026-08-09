@@ -1,5 +1,16 @@
 {
   "locale": "en",
+  "archiveAbort": {
+    "optionConflict": "--abort-plan cannot be combined with a change name or any other archive option except --yes and --json.",
+    "confirmationRequired": "Aborting an archive transaction requires explicit confirmation.",
+    "confirmationFix": "Rerun with 'rasen archive --abort-plan {token} --yes'.",
+    "applyAborted": "This archive plan was aborted and cannot be applied.",
+    "aborted": "Archive plan {transactionId} was aborted. Its engine-owned stage and transaction journal were removed.",
+    "alreadyAborted": "Archive plan {transactionId} was already aborted; no further changes were needed.",
+    "blocked": "Archive plan {transactionId} was not aborted.",
+    "blocker": "{code}: protected {path}",
+    "recovery": "The transaction remains recoverable. Repair the reported blocker or resume the exact plan with --apply-plan."
+  },
   "bootstrap": {
     "headingProject": "Bootstrap {mode} for the project at {path}",
     "headingStore": "Bootstrap {mode} for store {store} at {path}",
@@ -1352,6 +1363,9 @@
             },
             "apply-plan": {
               "description": "Apply or resume the exact saved archive plan without replanning"
+            },
+            "abort-plan": {
+              "description": "Abort the exact saved archive plan before it crosses a durable mutation boundary"
             },
             "intent-template": {
               "description": "Output a complete archive intent template as JSON without changing files"

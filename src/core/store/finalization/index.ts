@@ -17,6 +17,7 @@ export {
   ChangeFinalization,
   ChangeFinalizationModuleInstance,
   finalizationPlanId,
+  inspectFinalizationApplyPlan,
   type ChangeFinalizationOptions,
 } from './module.js';
 export {

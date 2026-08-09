@@ -293,7 +293,7 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
     const { adapters, calls } = recordingAdapters();
     const archivePlan = await plan(false);
 
-    expect((await applyArchive(archivePlan, adapters)).status).toBe('complete');
+    expect((await applyArchive(archivePlan, { adapters: adapters })).status).toBe('complete');
     expect(calls.filter(call => call.startsWith('v2-'))).toEqual([]);
     expect(calls).toContain('v1-write');
     // The association phase is not reached at all for a plan with no block.
@@ -314,7 +314,7 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
     expect(archivePlan.paths.final).toBe(
       path.join(archiveParent, `${DATE}-${CHANGE}--${changeInstanceDigestPrefix(INSTANCE)}`)
     );
-    expect((await applyArchive(archivePlan, adapters)).status).toBe('complete');
+    expect((await applyArchive(archivePlan, { adapters: adapters })).status).toBe('complete');
     expect(calls.filter(call => call.startsWith('v1-'))).toEqual([]);
     expect(calls).toContain('v2-write');
     expect(calls).toContain('association');
@@ -343,7 +343,7 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
     );
     const { adapters, calls } = recordingAdapters();
 
-    expect((await applyArchive(await plan(false), adapters)).status).toBe('complete');
+    expect((await applyArchive(await plan(false), { adapters: adapters })).status).toBe('complete');
     expect(calls.filter(call => call.startsWith('v2-'))).toEqual([]);
     expect(calls).toContain('v1-write');
   });
@@ -362,7 +362,7 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
       },
     });
 
-    expect((await applyArchive(await plan(true), adapters)).status).toBe('complete');
+    expect((await applyArchive(await plan(true), { adapters: adapters })).status).toBe('complete');
     expect(order).toEqual(['accounting', 'association(sourcePresent=true)']);
     expect(await exists(active)).toBe(false);
   });
@@ -375,7 +375,7 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
       },
     });
 
-    const failed = await applyArchive(archivePlan, adapters);
+    const failed = await applyArchive(archivePlan, { adapters: adapters });
     expect(failed.status).not.toBe('complete');
     // Published and staying published; the active source is NOT removed.
     expect(await exists(archivePlan.paths.final)).toBe(true);
@@ -401,10 +401,10 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
         throw new Error('binding disagrees');
       },
     });
-    expect((await applyArchive(archivePlan, failing.adapters)).status).not.toBe('complete');
+    expect((await applyArchive(archivePlan, { adapters: failing.adapters })).status).not.toBe('complete');
 
     const retry = recordingAdapters();
-    const second = await applyArchive(archivePlan, retry.adapters);
+    const second = await applyArchive(archivePlan, { adapters: retry.adapters });
 
     expect(second.status).toBe('complete');
     // The resumed run re-runs the association (it is idempotent by
@@ -418,7 +418,7 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
     const archivePlan = await plan(true);
     // The bare engine cannot reach the machine workspace index, so a v2 plan
     // applied through it fails closed instead of silently skipping the phase.
-    const result = await applyArchive(archivePlan, defaultArchiveEngineAdapters);
+    const result = await applyArchive(archivePlan, { adapters: defaultArchiveEngineAdapters });
     expect(result.status).not.toBe('complete');
     expect(
       result.blockers.some(blocker =>

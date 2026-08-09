@@ -42,6 +42,7 @@ export interface GeneratedArchiveConsumerArgv {
   intentTemplate: string[];
   savedPreview: string[];
   apply: string[];
+  abort: string[];
 }
 
 export interface GeneratedArchiveIntentInput {
@@ -56,6 +57,7 @@ export const GENERATED_ARCHIVE_COMMAND_EXAMPLES = {
   savedPreview:
     'rasen archive "<name>" --intent-file "<intent-path>" --dry-run --save-plan --json',
   apply: 'rasen archive --apply-plan "<planToken>" --json --yes',
+  abort: 'rasen archive --abort-plan "<planToken>" --json --yes',
   /** The Store v2 preview, which additionally declares its one terminal state. */
   storeFinalizationPreview:
     'rasen archive "<name>" --intent-file "<intent-path>" --outcome <landed|superseded|cancelled|abandoned> --dry-run --save-plan --json',
@@ -140,6 +142,13 @@ export function createGeneratedArchiveConsumerArgv(
     apply: [
       'archive',
       '--apply-plan',
+      input.planToken,
+      '--json',
+      '--yes',
+    ],
+    abort: [
+      'archive',
+      '--abort-plan',
       input.planToken,
       '--json',
       '--yes',

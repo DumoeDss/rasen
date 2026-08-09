@@ -1,5 +1,16 @@
 {
   "locale": "zh-cn",
+  "archiveAbort": {
+    "optionConflict": "--abort-plan 不能与变更名称或除 --yes 和 --json 之外的任何归档选项同时使用。",
+    "confirmationRequired": "中止归档事务需要显式确认。",
+    "confirmationFix": "请重新运行 'rasen archive --abort-plan {token} --yes'。",
+    "applyAborted": "此归档计划已中止，无法应用。",
+    "aborted": "归档计划 {transactionId} 已中止。引擎拥有的暂存目录和事务日志已删除。",
+    "alreadyAborted": "归档计划 {transactionId} 已经中止，无需进一步更改。",
+    "blocked": "归档计划 {transactionId} 未中止。",
+    "blocker": "{code}：已保护 {path}",
+    "recovery": "事务仍可恢复。请修复报告的阻止项，或使用 --apply-plan 恢复同一计划。"
+  },
   "bootstrap": {
     "headingProject": "对 {path} 处项目执行 bootstrap {mode}",
     "headingStore": "对 {path} 处 store {store} 执行 bootstrap {mode}",
@@ -1352,6 +1363,9 @@
             },
             "apply-plan": {
               "description": "不重新规划，按保存的令牌应用或恢复精确计划"
+            },
+            "abort-plan": {
+              "description": "在跨越持久变更边界前，中止保存令牌所对应的精确归档计划"
             },
             "intent-template": {
               "description": "以 JSON 输出完整的归档意图模板，且不修改文件"

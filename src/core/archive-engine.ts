@@ -35,6 +35,10 @@ import {
   type PreparedArchiveV2Accounting,
 } from './archive-accounting-v2.js';
 import {
+  makeLockErrorFactory,
+  withOwnerAwareFileLock,
+} from './file-state.js';
+import {
   NATIVE_PATH_IDENTITY_FLAVOR,
   pathIdentityEquals,
   type PathIdentityFlavor,
@@ -52,6 +56,18 @@ export const ARCHIVE_CONTROL_FILENAMES = new Set([
   ARCHIVE_PUBLISHED_MARKER_FILENAME,
 ]);
 export const ARCHIVE_PLAN_TOKEN_PREFIX = 'archive-v1';
+export const ARCHIVE_STORED_PLAN_APPLY_OPERATION = 'apply' as const;
+export const ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE =
+  'archive_merge_confirmation_required';
+export const ARCHIVE_MERGE_CONFIRMATION_BLOCKER_MESSAGE =
+  'A recorded PR delivery requires explicit merge confirmation.';
+export const ARCHIVE_SHIP_LOG_RESERVED_HEADING = '## Archive';
+export const ARCHIVE_SHIP_LOG_RESERVED_SECTION_CODE =
+  'archive_ship_log_reserved_section';
+
+export function hasReservedArchiveShipLogSection(content: string): boolean {
+  return /^## Archive[ \t]*$/m.test(content);
+}
 
 export type ArchiveBlockerOperation =
   | 'source-lstat'
@@ -385,6 +401,7 @@ export interface ArchivePlan {
     source: string | null;
     sha256: string | null;
     recordedCommit: string | null;
+    reservedSection: boolean;
   };
   actions: Array<{
     order: number;
@@ -406,6 +423,20 @@ export interface ArchivePlan {
   }>;
   blockers: ArchiveBlocker[];
   complete: boolean;
+}
+
+export interface ArchiveApplyAssertions {
+  mergeConfirmed?: boolean;
+}
+
+export interface ArchiveApplyOptions {
+  adapters?: ArchiveEngineAdapters;
+  assertions?: ArchiveApplyAssertions;
+}
+
+export interface ArchiveApplyInspection {
+  applicable: boolean;
+  blockers: ArchiveBlocker[];
 }
 
 export type ArchiveJournalPhase =
@@ -520,7 +551,7 @@ export interface ArchiveJournal {
 }
 
 export interface ArchiveApplyResult {
-  status: 'complete' | 'blocked' | 'recoverable';
+  status: 'complete' | 'blocked' | 'recoverable' | 'abort-required';
   transactionId: string;
   planHash: string;
   change: string;
@@ -538,7 +569,34 @@ export interface ArchiveApplyResult {
   ephemeraPreserved: string[];
   blockers: ArchiveBlocker[];
   recoveryCommand?: string;
+  abortCommand?: string;
   manualRecoveryAction?: ArchiveIntegrityFailure['safeAction'];
+}
+
+export interface ArchiveAbortResult {
+  status: 'aborted' | 'already-aborted' | 'blocked';
+  transactionId: string;
+  planHash: string;
+  change: string;
+  stagePath: string;
+  journalPath: string;
+  tombstonePath: string;
+  blockers: ArchiveBlocker[];
+}
+
+interface StoredArchiveAbortV1 {
+  schemaVersion: 1;
+  kind: 'rasen.archive-abort';
+  transactionId: string;
+  planHash: string;
+  change: string;
+  stagePath: string;
+  journalPath: string;
+  stageIdentity: ArchiveStatIdentity | null;
+  stageAuthority: ArchiveTreeFingerprint | null;
+  status: 'aborting' | 'aborted';
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface StoredArchivePlanV1 {
@@ -1320,81 +1378,184 @@ export async function resolveArchiveSidecar(
     };
   }
 
+  const issue = (
+    location: string,
+    code: string,
+    message: string
+  ): void => {
+    blockers.push({
+      operation: 'sidecar-validate',
+      path: `${sidecarPath}#${location}`,
+      code,
+      message,
+    });
+  };
+  const reportUnexpectedKeys = (
+    value: Record<string, unknown>,
+    allowed: readonly string[],
+    location: string
+  ): void => {
+    const allowedSet = new Set(allowed);
+    for (const key of Object.keys(value)
+      .filter(candidate => !allowedSet.has(candidate))
+      .sort()) {
+      issue(
+        `${location}/${key}`,
+        'archive_intent_unexpected_key',
+        `Unexpected key '${key}' at ${location || '/'}; accepted keys are: ${allowed.join(', ')}.`
+      );
+    }
+  };
+
   let parsed: unknown;
+  let parsedSuccessfully = true;
   try {
     parsed = JSON.parse(content);
   } catch (error) {
-    blockers.push(blocker('sidecar-validate', sidecarPath, error));
+    parsedSuccessfully = false;
+    issue(
+      '/',
+      'archive_intent_json_invalid',
+      `Archive intent is not valid JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
   }
   const root = isPlainRecord(parsed) ? parsed : undefined;
-  if (
-    !root ||
-    !hasOnlyKeys(root, ['schemaVersion', 'change', 'handoff', 'probes']) ||
-    root.schemaVersion !== 1 ||
-    root.change !== change ||
-    !isPlainRecord(root.handoff) ||
-    !hasOnlyKeys(root.handoff, ['complete', 'decisions']) ||
-    root.handoff.complete !== true ||
-    !Array.isArray(root.handoff.decisions) ||
-    !Array.isArray(root.probes)
-  ) {
-    blockers.push({
-      operation: 'sidecar-validate',
-      path: sidecarPath,
-      message:
-        'Archive input must be schemaVersion 1, bound to this change, and contain complete handoff decisions plus probes.',
-    });
+  if (parsedSuccessfully && root === undefined) {
+    issue(
+      '/',
+      'archive_intent_root_invalid',
+      'Archive intent root must be a JSON object.'
+    );
+  }
+  if (root !== undefined) {
+    reportUnexpectedKeys(
+      root,
+      ['schemaVersion', 'change', 'handoff', 'probes'],
+      ''
+    );
+    if (root.schemaVersion !== 1) {
+      issue(
+        '/schemaVersion',
+        'archive_intent_schema_version_invalid',
+        `schemaVersion must be 1; received ${JSON.stringify(root.schemaVersion)}.`
+      );
+    }
+    if (root.change !== change) {
+      issue(
+        '/change',
+        'archive_intent_change_mismatch',
+        `Archive intent change must be '${change}'; received ${JSON.stringify(root.change)}.`
+      );
+    }
   }
 
+  const handoff = root && isPlainRecord(root.handoff) ? root.handoff : undefined;
+  if (root !== undefined) {
+    if (handoff === undefined) {
+      issue(
+        '/handoff',
+        'archive_intent_handoff_invalid',
+        'handoff must be an object with complete and decisions fields.'
+      );
+    } else {
+      reportUnexpectedKeys(handoff, ['complete', 'decisions'], '/handoff');
+      if (handoff.complete !== true) {
+        issue(
+          '/handoff/complete',
+          'archive_intent_handoff_incomplete',
+          'Set handoff.complete to true after judging every handoff file.'
+        );
+      }
+      if (!Array.isArray(handoff.decisions)) {
+        issue(
+          '/handoff/decisions',
+          'archive_intent_handoff_decisions_invalid',
+          'Set handoff.decisions to an array; an empty array is valid when there are no handoff files.'
+        );
+      }
+    }
+    if (!Array.isArray(root.probes)) {
+      issue(
+        '/probes',
+        'archive_intent_probes_missing',
+        'Add a probes array to archive input; use an empty array when there are no probes.'
+      );
+    }
+  }
   const decisions: ArchiveHandoffDecision[] = [];
   const decisionPaths = new Set<string>();
-  if (root && isPlainRecord(root.handoff) && Array.isArray(root.handoff.decisions)) {
-    for (const value of root.handoff.decisions) {
-      if (
-        !isPlainRecord(value) ||
-        !hasOnlyKeys(value, ['path', 'outcome']) ||
-        typeof value.path !== 'string' ||
-        (value.outcome !== 'absorbed' && value.outcome !== 'preserved') ||
-        !validArchiveIntentRelativePath(value.path, 'handoff')
-      ) {
-        blockers.push({
-          operation: 'sidecar-validate',
-          path: sidecarPath,
-          message: 'Every handoff decision needs a contained handoff/ path and an allowed outcome.',
-        });
+  if (handoff && Array.isArray(handoff.decisions)) {
+    for (const [index, value] of handoff.decisions.entries()) {
+      const location = `/handoff/decisions/${index}`;
+      if (!isPlainRecord(value)) {
+        issue(
+          location,
+          'archive_intent_handoff_decision_invalid',
+          'Each handoff decision must be an object with path and outcome fields.'
+        );
         continue;
       }
-      const absolute = path.resolve(changeRoot, ...value.path.split('/'));
+      reportUnexpectedKeys(value, ['path', 'outcome'], location);
+      const validPath =
+        typeof value.path === 'string' &&
+        validArchiveIntentRelativePath(value.path, 'handoff');
+      if (!validPath) {
+        issue(
+          `${location}/path`,
+          'archive_intent_handoff_path_invalid',
+          'Handoff decision path must be a contained handoff/ relative path.'
+        );
+      }
+      const validOutcome =
+        value.outcome === 'absorbed' || value.outcome === 'preserved';
+      if (!validOutcome) {
+        issue(
+          `${location}/outcome`,
+          'archive_intent_handoff_outcome_invalid',
+          "Handoff decision outcome must be 'absorbed' or 'preserved'."
+        );
+      }
+      if (!validPath || !validOutcome) continue;
+
+      const decisionPath = value.path as string;
+      const absolute = path.resolve(changeRoot, ...decisionPath.split('/'));
       if (!isArchiveContainedPath(path.join(changeRoot, 'handoff'), absolute)) {
-        blockers.push({
-          operation: 'sidecar-validate',
-          path: value.path,
-          message: 'Handoff decision escapes the handoff directory.',
-        });
-      } else if (decisionPaths.has(value.path)) {
-        blockers.push({
-          operation: 'sidecar-validate',
-          path: value.path,
-          message: 'Duplicate handoff decision.',
-        });
+        issue(
+          `${location}/path`,
+          'archive_intent_handoff_path_escape',
+          'Handoff decision escapes the handoff directory.'
+        );
+      } else if (decisionPaths.has(decisionPath)) {
+        issue(
+          `${location}/path`,
+          'archive_intent_handoff_duplicate',
+          `Duplicate handoff decision for '${decisionPath}'.`
+        );
       } else {
-        decisionPaths.add(value.path);
-        decisions.push({ path: value.path, outcome: value.outcome });
+        decisionPaths.add(decisionPath);
+        decisions.push({
+          path: decisionPath,
+          outcome: value.outcome as ArchiveHandoffDecision['outcome'],
+        });
       }
     }
   }
   decisions.sort((left, right) => left.path.localeCompare(right.path));
 
   if (
-    decisions.length !== inventory.length ||
-    inventory.some(relativePath => !decisionPaths.has(relativePath)) ||
-    decisions.some(decision => !inventory.includes(decision.path))
+    handoff &&
+    Array.isArray(handoff.decisions) &&
+    (decisions.length !== inventory.length ||
+      inventory.some(relativePath => !decisionPaths.has(relativePath)) ||
+      decisions.some(decision => !inventory.includes(decision.path)))
   ) {
-    blockers.push({
-      operation: 'sidecar-validate',
-      path: sidecarPath,
-      message: 'Handoff decisions must exactly cover the current regular-file inventory.',
-    });
+    issue(
+      '/handoff/decisions',
+      'archive_intent_handoff_inventory_mismatch',
+      'Handoff decisions must exactly cover the current regular-file inventory.'
+    );
   }
 
   const probes: ArchiveProbeDecision[] = [];
@@ -1408,38 +1569,57 @@ export async function resolveArchiveSidecar(
     }
   }
   if (root && Array.isArray(root.probes)) {
-    for (const value of root.probes) {
-      if (
-        !isPlainRecord(value) ||
-        !hasOnlyKeys(value, ['path', 'codeCommit']) ||
-        typeof value.path !== 'string' ||
-        typeof value.codeCommit !== 'string' ||
-        !validArchiveIntentRelativePath(value.path) ||
-        !/^[0-9a-f]{40}$/i.test(value.codeCommit)
-      ) {
-        blockers.push({
-          operation: 'sidecar-validate',
-          path: sidecarPath,
-          message: 'Every probe needs a contained relative path and a full 40-hex commit id.',
-        });
+    for (const [index, value] of root.probes.entries()) {
+      const location = `/probes/${index}`;
+      if (!isPlainRecord(value)) {
+        issue(
+          location,
+          'archive_intent_probe_invalid',
+          'Each probe must be an object with path and codeCommit fields.'
+        );
         continue;
       }
-      if (probePaths.has(value.path)) {
-        blockers.push({
-          operation: 'sidecar-validate',
-          path: value.path,
-          message: 'Duplicate probe path.',
-        });
+      reportUnexpectedKeys(value, ['path', 'codeCommit'], location);
+      const validPath =
+        typeof value.path === 'string' &&
+        validArchiveIntentRelativePath(value.path);
+      if (!validPath) {
+        issue(
+          `${location}/path`,
+          'archive_intent_probe_path_invalid',
+          'Probe path must be a contained relative path.'
+        );
+      }
+      const validCommit =
+        typeof value.codeCommit === 'string' &&
+        /^[0-9a-f]{40}$/i.test(value.codeCommit);
+      if (!validCommit) {
+        issue(
+          `${location}/codeCommit`,
+          'archive_intent_probe_commit_invalid',
+          'Probe codeCommit must be a full 40-hex commit id.'
+        );
+      }
+      if (!validPath || !validCommit) continue;
+
+      const probePath = value.path as string;
+      const codeCommit = value.codeCommit as string;
+      if (probePaths.has(probePath)) {
+        issue(
+          `${location}/path`,
+          'archive_intent_probe_duplicate',
+          `Duplicate probe path '${probePath}'.`
+        );
         continue;
       }
-      probePaths.add(value.path);
-      const absolute = path.resolve(executionRoot, ...value.path.split('/'));
+      probePaths.add(probePath);
+      const absolute = path.resolve(executionRoot, ...probePath.split('/'));
       if (!isArchiveContainedPath(executionRoot, absolute)) {
-        blockers.push({
-          operation: 'probe-realpath',
-          path: value.path,
-          message: 'Probe path escapes the execution root lexically.',
-        });
+        issue(
+          `${location}/path`,
+          'archive_intent_probe_path_escape',
+          'Probe path escapes the execution root lexically.'
+        );
         continue;
       }
       try {
@@ -1452,20 +1632,24 @@ export async function resolveArchiveSidecar(
           throw new Error('Probe resolves outside the execution root.');
         }
       } catch (error) {
-        blockers.push(blocker('probe-lstat', absolute, error));
+        const probeBlocker = blocker('probe-lstat', absolute, error);
+        probeBlocker.code = 'archive_intent_probe_path_unavailable';
+        blockers.push(probeBlocker);
         continue;
       }
       try {
         await adapters.git.exec(executionRoot, [
           'cat-file',
           '-e',
-          `${value.codeCommit}^{commit}`,
+          `${codeCommit}^{commit}`,
         ]);
       } catch (error) {
-        blockers.push(blocker('probe-git', value.path, error));
+        const probeBlocker = blocker('probe-git', probePath, error);
+        probeBlocker.code = 'archive_intent_probe_commit_unavailable';
+        blockers.push(probeBlocker);
         continue;
       }
-      probes.push({ path: value.path, codeCommit: value.codeCommit.toLowerCase() });
+      probes.push({ path: probePath, codeCommit: codeCommit.toLowerCase() });
     }
   }
   probes.sort((left, right) => left.path.localeCompare(right.path));
@@ -1698,9 +1882,26 @@ export async function createArchivePlan(
   input: CreateArchivePlanInput,
   adapters: ArchiveEngineAdapters = defaultArchiveEngineAdapters
 ): Promise<ArchivePlan> {
+  const shipLog: ArchivePlan['shipLog'] = input.shipLog ?? {
+    source: null,
+    sha256: null,
+    recordedCommit: null,
+    reservedSection: false,
+  };
   const blockers: ArchiveBlocker[] = [
     ...input.sidecar.blockers,
     ...(input.preparationBlockers ?? []),
+    ...(shipLog.reservedSection
+      ? [
+          {
+            operation: 'evidence' as const,
+            path: shipLog.source ?? input.activePath,
+            code: ARCHIVE_SHIP_LOG_RESERVED_SECTION_CODE,
+            message:
+              'Remove or rename the change-authored "## Archive" section; that heading is reserved for archive transaction evidence.',
+          },
+        ]
+      : []),
   ];
   const transactionId = input.transactionId ?? adapters.transactionId();
   const transactionPaths = resolveArchiveTransactionPaths(
@@ -1797,9 +1998,10 @@ export async function createArchivePlan(
     !input.timing.override
   ) {
     blockers.push({
+      code: ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE,
       operation: 'timing',
       path: input.activePath,
-      message: 'A recorded PR delivery requires explicit merge confirmation.',
+      message: ARCHIVE_MERGE_CONFIRMATION_BLOCKER_MESSAGE,
     });
   }
 
@@ -1939,11 +2141,7 @@ export async function createArchivePlan(
       left.path.localeCompare(right.path)
     ),
     evidenceInputs: [...(input.evidenceInputs ?? discoveredInputs.evidenceInputs)].sort(),
-    shipLog: input.shipLog ?? {
-      source: null,
-      sha256: null,
-      recordedCommit: null,
-    },
+    shipLog,
     actions,
     blockers,
     complete:
@@ -2096,6 +2294,716 @@ export async function loadStoredArchivePlan(
   }
   assertStoredArchivePlanPaths(plan);
   return plan;
+}
+
+function storedArchiveTransactionDirectory(
+  globalDataDir: string,
+  transactionId: string
+): string {
+  return path.join(
+    path.resolve(globalDataDir, 'archive-transactions'),
+    transactionId
+  );
+}
+
+const archivePlanOperationLockError = makeLockErrorFactory({
+  createSubject: 'the archive plan operation lock file',
+  busyMessage: 'Archive plan operation is busy.',
+  code: 'archive_plan_operation_busy',
+  target: 'archive.plan',
+});
+
+export async function withStoredArchivePlanOperation<T>(
+  plan: ArchivePlan,
+  globalDataDir: string,
+  holder: 'apply' | 'abort',
+  operation: () => Promise<T>
+): Promise<T> {
+  const transactionDirectory = storedArchiveTransactionDirectory(
+    globalDataDir,
+    plan.transactionId
+  );
+  return withOwnerAwareFileLock(
+    {
+      lockPath: path.join(transactionDirectory, 'operation.lock'),
+      errorFor: archivePlanOperationLockError,
+      holder: `archive-${holder}:${plan.transactionId}`,
+      deadlineMs: 30_000,
+    },
+    async () => {
+      if (holder === 'apply') {
+        const tombstonePath = path.join(transactionDirectory, 'abort.json');
+        const tombstone = await readArchiveAbortTombstone(
+          tombstonePath,
+          defaultArchiveEngineAdapters
+        );
+        if (tombstone !== null) {
+          const identityMatches =
+            tombstone.transactionId === plan.transactionId &&
+            tombstone.planHash === plan.planHash;
+          const error = new Error(
+            identityMatches
+              ? tombstone.status === 'aborted'
+                ? 'This archive plan was aborted and cannot be applied.'
+                : 'This archive plan has an incomplete abort intent; resume the abort before applying.'
+              : 'The archive abort tombstone does not belong to this plan.'
+          );
+          (error as NodeJS.ErrnoException).code = identityMatches
+            ? tombstone.status === 'aborted'
+              ? 'archive_plan_aborted'
+              : 'archive_plan_abort_in_progress'
+            : 'archive_abort_ownership_unverified';
+          throw error;
+        }
+      }
+      return operation();
+    }
+  );
+}
+
+function isArchiveStatIdentityRecord(
+  value: unknown
+): value is ArchiveStatIdentity {
+  return (
+    isPlainRecord(value) &&
+    hasOnlyKeys(value, ['dev', 'ino', 'mode', 'size', 'mtimeNs', 'ctimeNs']) &&
+    typeof value.dev === 'string' &&
+    typeof value.ino === 'string' &&
+    typeof value.mode === 'string' &&
+    typeof value.size === 'string' &&
+    typeof value.mtimeNs === 'string' &&
+    typeof value.ctimeNs === 'string'
+  );
+}
+
+function isSafeArchiveAuthorityPath(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length === 0 || path.isAbsolute(value)) {
+    return false;
+  }
+  const parts = value.split('/');
+  return (
+    normalizeRelative(value) === value &&
+    parts.every(part => part.length > 0 && part !== '.' && part !== '..')
+  );
+}
+
+function isArchiveAbortStageAuthority(
+  value: unknown,
+  adapters: ArchiveEngineAdapters
+): value is ArchiveTreeFingerprint {
+  if (
+    !isPlainRecord(value) ||
+    !hasOnlyKeys(value, [
+      'algorithm',
+      'digest',
+      'entries',
+      'rootIdentity',
+      'authorityDigest',
+      'authorityEntries',
+    ]) ||
+    value.algorithm !== 'sha256' ||
+    typeof value.digest !== 'string' ||
+    !/^[0-9a-f]{64}$/i.test(value.digest) ||
+    !Array.isArray(value.entries) ||
+    !isArchiveStatIdentityRecord(value.rootIdentity) ||
+    typeof value.authorityDigest !== 'string' ||
+    !/^[0-9a-f]{64}$/i.test(value.authorityDigest) ||
+    !Array.isArray(value.authorityEntries)
+  ) {
+    return false;
+  }
+  const entriesValid = value.entries.every(
+    entry =>
+      isPlainRecord(entry) &&
+      hasOnlyKeys(entry, [
+        'path',
+        'kind',
+        'mode',
+        'executable',
+        'size',
+        'sha256',
+        'linkTarget',
+      ]) &&
+      isSafeArchiveAuthorityPath(entry.path) &&
+      (entry.kind === 'file' ||
+        entry.kind === 'directory' ||
+        entry.kind === 'symlink') &&
+      (entry.mode === undefined || typeof entry.mode === 'number') &&
+      (entry.executable === undefined || typeof entry.executable === 'boolean') &&
+      (entry.size === undefined || typeof entry.size === 'string') &&
+      (entry.sha256 === undefined ||
+        (typeof entry.sha256 === 'string' &&
+          /^[0-9a-f]{64}$/i.test(entry.sha256))) &&
+      (entry.linkTarget === undefined || typeof entry.linkTarget === 'string')
+  );
+  if (!entriesValid) return false;
+  const authorityPaths = new Set<string>();
+  const authorityEntriesValid = value.authorityEntries.every(entry => {
+    if (
+      !isPlainRecord(entry) ||
+      !hasOnlyKeys(entry, ['path', 'kind', 'identity']) ||
+      !isSafeArchiveAuthorityPath(entry.path) ||
+      (entry.kind !== 'file' &&
+        entry.kind !== 'directory' &&
+        entry.kind !== 'symlink') ||
+      !isArchiveStatIdentityRecord(entry.identity) ||
+      authorityPaths.has(entry.path)
+    ) {
+      return false;
+    }
+    authorityPaths.add(entry.path);
+    return true;
+  });
+  return (
+    authorityEntriesValid &&
+    value.digest === adapters.sha256(stableArchiveJson(value.entries)) &&
+    value.authorityDigest ===
+      adapters.sha256(
+        stableArchiveJson({
+          rootIdentity: value.rootIdentity,
+          entries: value.authorityEntries,
+        })
+      )
+  );
+}
+
+async function readArchiveAbortTombstone(
+  tombstonePath: string,
+  adapters: ArchiveEngineAdapters
+): Promise<StoredArchiveAbortV1 | null> {
+  let content: string;
+  try {
+    content = (
+      await readStableArchiveFile(tombstonePath, adapters)
+    ).content.toString('utf8');
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') return null;
+    throw error;
+  }
+  const parsed = JSON.parse(content) as unknown;
+  if (
+    !isPlainRecord(parsed) ||
+    !hasOnlyKeys(parsed, [
+      'schemaVersion',
+      'kind',
+      'transactionId',
+      'planHash',
+      'status',
+      'change',
+      'stagePath',
+      'journalPath',
+      'stageIdentity',
+      'stageAuthority',
+      'createdAt',
+      'updatedAt',
+    ]) ||
+    parsed.schemaVersion !== 1 ||
+    parsed.kind !== 'rasen.archive-abort' ||
+    typeof parsed.transactionId !== 'string' ||
+    typeof parsed.planHash !== 'string' ||
+    typeof parsed.change !== 'string' ||
+    typeof parsed.stagePath !== 'string' ||
+    typeof parsed.journalPath !== 'string' ||
+    (parsed.stageIdentity !== null &&
+      !isArchiveStatIdentityRecord(parsed.stageIdentity)) ||
+    (parsed.stageAuthority !== null &&
+      !isArchiveAbortStageAuthority(parsed.stageAuthority, adapters)) ||
+    (parsed.stageIdentity === null) !== (parsed.stageAuthority === null) ||
+    (parsed.stageIdentity !== null &&
+      parsed.stageAuthority !== null &&
+      stableArchiveJson(parsed.stageIdentity) !==
+        stableArchiveJson(parsed.stageAuthority.rootIdentity)) ||
+    (parsed.status !== 'aborting' && parsed.status !== 'aborted') ||
+    typeof parsed.createdAt !== 'string' ||
+    typeof parsed.updatedAt !== 'string' ||
+    parsed.change.length === 0 ||
+    !/^[0-9a-f]{64}$/i.test(parsed.planHash) ||
+    !path.isAbsolute(parsed.stagePath) ||
+    !path.isAbsolute(parsed.journalPath) ||
+    parsed.journalPath !== path.join(parsed.stagePath, ARCHIVE_JOURNAL_FILENAME) ||
+    path.basename(parsed.stagePath) !==
+      `.rasen-archive-stage-${parsed.transactionId}` ||
+    !Number.isFinite(Date.parse(parsed.createdAt)) ||
+    !Number.isFinite(Date.parse(parsed.updatedAt))
+  ) {
+    throw new Error(`Invalid archive abort tombstone: ${tombstonePath}`);
+  }
+  return parsed as unknown as StoredArchiveAbortV1;
+}
+
+async function retireStoredArchivePlan(
+  plan: ArchivePlan,
+  globalDataDir: string,
+  adapters: ArchiveEngineAdapters
+): Promise<void> {
+  const transactionDirectory = storedArchiveTransactionDirectory(
+    globalDataDir,
+    plan.transactionId
+  );
+  const planPath = path.join(transactionDirectory, 'plan.json');
+  let stored: unknown;
+  try {
+    stored = JSON.parse(
+      (await readStableArchiveFile(planPath, adapters)).content.toString('utf8')
+    ) as unknown;
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') return;
+    throw error;
+  }
+  if (
+    !isPlainRecord(stored) ||
+    stored.schemaVersion !== 1 ||
+    stored.kind !== 'rasen.archive-plan' ||
+    stored.transactionId !== plan.transactionId ||
+    stored.planHash !== plan.planHash ||
+    stableArchiveJson(stored.plan) !== stableArchiveJson(plan)
+  ) {
+    const error = new Error(
+      'The stored archive plan changed before abort could retire it.'
+    );
+    (error as NodeJS.ErrnoException).code =
+      'archive_abort_ownership_unverified';
+    throw error;
+  }
+  await adapters.fs.unlink(planPath);
+  await flushArchiveDirectory(transactionDirectory, adapters);
+}
+
+export async function loadCompletedArchiveAbort(
+  token: string,
+  globalDataDir: string,
+  adapters: ArchiveEngineAdapters = defaultArchiveEngineAdapters
+): Promise<ArchiveAbortResult | null> {
+  const parsedToken = parseArchivePlanToken(token);
+  const transactionDirectory = storedArchiveTransactionDirectory(
+    globalDataDir,
+    parsedToken.transactionId
+  );
+  const tombstonePath = path.join(transactionDirectory, 'abort.json');
+  if ((await pathExists(tombstonePath, adapters)) === 'absent') return null;
+  return withOwnerAwareFileLock(
+    {
+      lockPath: path.join(transactionDirectory, 'operation.lock'),
+      errorFor: archivePlanOperationLockError,
+      holder: `archive-abort:${parsedToken.transactionId}`,
+      deadlineMs: 30_000,
+    },
+    async () => {
+      const tombstone = await readArchiveAbortTombstone(
+        tombstonePath,
+        adapters
+      );
+      if (tombstone === null) return null;
+      if (
+        tombstone.transactionId !== parsedToken.transactionId ||
+        tombstone.planHash !== parsedToken.planHash
+      ) {
+        const error = new Error(
+          'The archive abort tombstone does not belong to this token.'
+        );
+        (error as NodeJS.ErrnoException).code =
+          'archive_abort_ownership_unverified';
+        throw error;
+      }
+      if (tombstone.status !== 'aborted') {
+        const error = new Error(
+          'The archive abort intent is incomplete and its stored plan is unavailable.'
+        );
+        (error as NodeJS.ErrnoException).code =
+          'archive_plan_abort_in_progress';
+        throw error;
+      }
+      return {
+        status: 'already-aborted',
+        transactionId: tombstone.transactionId,
+        planHash: tombstone.planHash,
+        change: tombstone.change,
+        stagePath: tombstone.stagePath,
+        journalPath: tombstone.journalPath,
+        tombstonePath,
+        blockers: [],
+      };
+    }
+  );
+}
+
+/**
+ * Aborts one operation-locked, token-owned transaction before any durable
+ * canonical, publication, cleaner, association, or source mutation.
+ */
+export async function abortArchivePlan(
+  plan: ArchivePlan,
+  globalDataDir: string,
+  adapters: ArchiveEngineAdapters = defaultArchiveEngineAdapters
+): Promise<ArchiveAbortResult> {
+  const transactionDirectory = storedArchiveTransactionDirectory(
+    globalDataDir,
+    plan.transactionId
+  );
+  const tombstonePath = path.join(transactionDirectory, 'abort.json');
+  const base = {
+    transactionId: plan.transactionId,
+    planHash: plan.planHash,
+    change: plan.change,
+    stagePath: plan.paths.stage,
+    journalPath: plan.paths.journal,
+    tombstonePath,
+  };
+  const blocked = (
+    operation: ArchiveBlockerOperation,
+    target: string,
+    code: string,
+    message: string
+  ): ArchiveAbortResult => ({
+    ...base,
+    status: 'blocked',
+    blockers: [{ operation, path: target, code, message }],
+  });
+
+  if (!planIdentityValid(plan, adapters)) {
+    return blocked(
+      'validation',
+      plan.paths.active,
+      'archive_abort_plan_invalid',
+      'The stored archive plan identity is invalid.'
+    );
+  }
+  assertStoredArchivePlanPaths(plan);
+
+  const existingTombstone = await readArchiveAbortTombstone(
+    tombstonePath,
+    adapters
+  );
+  if (
+    existingTombstone !== null &&
+    (existingTombstone.transactionId !== plan.transactionId ||
+      existingTombstone.planHash !== plan.planHash ||
+      existingTombstone.change !== plan.change ||
+      path.resolve(existingTombstone.stagePath) !== path.resolve(plan.paths.stage) ||
+      path.resolve(existingTombstone.journalPath) !==
+        path.resolve(plan.paths.journal))
+  ) {
+    return blocked(
+      'journal',
+      tombstonePath,
+      'archive_abort_ownership_unverified',
+      'The abort tombstone does not belong to this exact archive plan.'
+    );
+  }
+  if (existingTombstone?.status === 'aborted') {
+    await retireStoredArchivePlan(plan, globalDataDir, adapters);
+    return { ...base, status: 'already-aborted', blockers: [] };
+  }
+
+  const finalState = await pathExists(plan.paths.final, adapters);
+  const publishedJournalState = await pathExists(
+    plan.paths.publishedJournal,
+    adapters
+  );
+  if (finalState === 'present' || publishedJournalState === 'present') {
+    return blocked(
+      'publish',
+      finalState === 'present'
+        ? plan.paths.final
+        : plan.paths.publishedJournal,
+      'archive_abort_phase_unsafe',
+      'Abort is unavailable after archive publication or final reservation.'
+    );
+  }
+
+  const stageState = await pathExists(plan.paths.stage, adapters);
+  let stageIdentity: ArchiveFsStat | null = null;
+  let stageAbortIdentity: ArchiveStatIdentity | null =
+    existingTombstone?.stageIdentity ?? null;
+  let stageAbortAuthority: ArchiveTreeFingerprint | null =
+    existingTombstone?.stageAuthority ?? null;
+  let journal: ArchiveJournal | null = null;
+  if (stageState === 'present') {
+    stageIdentity = await adapters.fs.lstat(plan.paths.stage);
+    if (
+      !stageIdentity.isDirectory() ||
+      stageIdentity.isSymbolicLink()
+    ) {
+      return blocked(
+        'journal',
+        plan.paths.stage,
+        'archive_abort_ownership_unverified',
+        'The claimed archive stage is not a real directory.'
+      );
+    }
+    const observedStageIdentity = archiveDeletionIdentity(
+      stageIdentity,
+      'directory'
+    );
+    if (
+      existingTombstone !== null &&
+      (existingTombstone.stageIdentity === null ||
+        stableArchiveJson(existingTombstone.stageIdentity) !==
+          stableArchiveJson(observedStageIdentity))
+    ) {
+      return blocked(
+        'journal',
+        plan.paths.stage,
+        'archive_abort_ownership_unverified',
+        'The archive stage identity does not match the durable abort intent.'
+      );
+    }
+    stageAbortIdentity = observedStageIdentity;
+    try {
+      journal = await readJournal(plan.paths.journal, adapters);
+    } catch (error) {
+      return blocked(
+        'journal',
+        plan.paths.journal,
+        'archive_abort_journal_invalid',
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+    if (
+      (journal === null && existingTombstone?.status !== 'aborting') ||
+      (journal !== null &&
+        (journal.transactionId !== plan.transactionId ||
+          journal.planHash !== plan.planHash ||
+          journal.change !== plan.change ||
+          path.resolve(journal.activePath) !== path.resolve(plan.paths.active) ||
+          path.resolve(journal.stagePath) !== path.resolve(plan.paths.stage) ||
+          path.resolve(journal.finalPath) !== path.resolve(plan.paths.final)))
+    ) {
+      return blocked(
+        'journal',
+        plan.paths.journal,
+        'archive_abort_ownership_unverified',
+        'The archive stage lacks a journal owned by this exact plan.'
+      );
+    }
+  } else if (existingTombstone?.status !== 'aborting') {
+    const journalState = await pathExists(plan.paths.journal, adapters);
+    if (journalState === 'present') {
+      return blocked(
+        'journal',
+        plan.paths.journal,
+        'archive_abort_ownership_unverified',
+        'The transaction journal exists without its claimed archive stage.'
+      );
+    }
+  }
+
+  if (journal !== null) {
+    const effectivePhase =
+      journal.phase === 'failed'
+        ? journal.failure?.resumePhase ?? 'planned'
+        : journal.phase;
+    const durableMutationObserved =
+      phaseAtLeast(effectivePhase, 'published') ||
+      journal.ephemeraDisposed.length > 0 ||
+      journal.specProgress.some(progress => progress.state !== 'pending') ||
+      journal.cleanerProgress.some(progress => progress.state !== 'pending') ||
+      journal.sourceProgress.state !== 'pending' ||
+      journal.finalReservation.identity !== null ||
+      journal.finalReservation.entries.length > 0 ||
+      Object.values(journal.phaseFingerprints).some(
+        fingerprint => fingerprint.scope === 'final'
+      );
+    if (durableMutationObserved) {
+      return blocked(
+        'journal',
+        plan.paths.journal,
+        'archive_abort_phase_unsafe',
+        'Abort is unavailable because the transaction crossed a durable mutation boundary.'
+      );
+    }
+  }
+
+  if (stageIdentity !== null && existingTombstone === null) {
+    stageAbortAuthority = await fingerprintArchiveTree(
+      plan.paths.stage,
+      adapters
+    );
+  }
+  if (
+    stageIdentity !== null &&
+    (stageAbortAuthority === null ||
+      stageAbortIdentity === null ||
+      stableArchiveJson(stageAbortAuthority.rootIdentity) !==
+        stableArchiveJson(stageAbortIdentity))
+  ) {
+    return blocked(
+      'journal',
+      plan.paths.stage,
+      'archive_abort_ownership_unverified',
+      'The archive stage lacks a durable deletion authority.'
+    );
+  }
+
+  const currentAuthorityMatchesRecordedSubset = (
+    current: ArchiveTreeFingerprint,
+    recorded: ArchiveTreeFingerprint
+  ): boolean => {
+    if (
+      stableArchiveJson(current.rootIdentity) !==
+      stableArchiveJson(recorded.rootIdentity)
+    ) {
+      return false;
+    }
+    const recordedEntries = new Map(
+      recorded.authorityEntries.map(entry => [entry.path, entry] as const)
+    );
+    return current.authorityEntries.every(entry => {
+      const expected = recordedEntries.get(entry.path);
+      return (
+        expected !== undefined &&
+        expected.kind === entry.kind &&
+        stableArchiveJson(expected.identity) ===
+          stableArchiveJson(entry.identity)
+      );
+    });
+  };
+
+  const startedAt =
+    existingTombstone?.createdAt ?? adapters.now().toISOString();
+  const intent: StoredArchiveAbortV1 = {
+    schemaVersion: 1,
+    kind: 'rasen.archive-abort',
+    transactionId: plan.transactionId,
+    planHash: plan.planHash,
+    change: plan.change,
+    stagePath: plan.paths.stage,
+    journalPath: plan.paths.journal,
+    stageIdentity: stageAbortIdentity,
+    stageAuthority: stageAbortAuthority,
+    status: 'aborting',
+    createdAt: startedAt,
+    updatedAt: adapters.now().toISOString(),
+  };
+  await atomicWriteJson(
+    tombstonePath,
+    intent,
+    plan.transactionId,
+    adapters
+  );
+  if (stageIdentity !== null) {
+    const claimed = await adapters.fs.lstat(plan.paths.stage);
+    if (
+      stageAbortIdentity === null ||
+      !identityMatches(stageIdentity, claimed) ||
+      stableArchiveJson(archiveDeletionIdentity(claimed, 'directory')) !==
+        stableArchiveJson(stageAbortIdentity)
+    ) {
+      return blocked(
+        'journal',
+        plan.paths.stage,
+        'archive_abort_ownership_unverified',
+        'The archive stage identity changed before guarded cleanup.'
+      );
+    }
+
+    const authority = stageAbortAuthority;
+    if (
+      authority === null ||
+      stableArchiveJson(authority.rootIdentity) !==
+        stableArchiveJson(stageAbortIdentity)
+    ) {
+      return blocked(
+        'journal',
+        plan.paths.stage,
+        'archive_abort_ownership_unverified',
+        'The archive stage fingerprint is not bound to the durable abort intent.'
+      );
+    }
+    const currentAuthority = await fingerprintArchiveTree(
+      plan.paths.stage,
+      adapters
+    );
+    if (!currentAuthorityMatchesRecordedSubset(currentAuthority, authority)) {
+      return blocked(
+        'journal',
+        plan.paths.stage,
+        'archive_abort_ownership_unverified',
+        'The archive stage contains an object outside the durable deletion authority.'
+      );
+    }
+    await removeClaimedArchiveEntriesGuarded(
+      plan.paths.stage,
+      authority,
+      adapters,
+      true
+    );
+
+    const journalState = await pathExists(plan.paths.journal, adapters);
+    if (journalState === 'present') {
+      const stableJournal = await readStableArchiveFile(
+        plan.paths.journal,
+        adapters
+      );
+      let observedJournal: unknown;
+      try {
+        observedJournal = JSON.parse(stableJournal.content.toString('utf8'));
+      } catch {
+        throw staleArchiveObject(
+          plan.paths.journal,
+          'Archive abort journal changed before guarded cleanup'
+        );
+      }
+      if (
+        !isPlainRecord(observedJournal) ||
+        observedJournal.transactionId !== plan.transactionId ||
+        observedJournal.planHash !== plan.planHash ||
+        observedJournal.change !== plan.change ||
+        observedJournal.activePath !== plan.paths.active ||
+        observedJournal.stagePath !== plan.paths.stage ||
+        observedJournal.finalPath !== plan.paths.final ||
+        (journal !== null &&
+          stableArchiveJson(observedJournal) !== stableArchiveJson(journal))
+      ) {
+        throw staleArchiveObject(
+          plan.paths.journal,
+          'Archive abort journal ownership changed before guarded cleanup'
+        );
+      }
+      await adapters.fs.unlink(plan.paths.journal);
+    }
+
+    const remaining = await adapters.fs.readdir(plan.paths.stage, {
+      withFileTypes: true,
+    });
+    if (remaining.length > 0) {
+      return blocked(
+        'journal',
+        plan.paths.stage,
+        'archive_abort_ownership_unverified',
+        `Archive abort stage contains unclaimed entries: ${remaining
+          .map(entry => entry.name)
+          .sort()
+          .join(', ')}`
+      );
+    }
+    const emptiedStage = await adapters.fs.lstat(plan.paths.stage);
+    if (
+      !emptiedStage.isDirectory() ||
+      emptiedStage.isSymbolicLink() ||
+      stableArchiveJson(archiveDeletionIdentity(emptiedStage, 'directory')) !==
+        stableArchiveJson(stageAbortIdentity)
+    ) {
+      throw staleArchiveObject(
+        plan.paths.stage,
+        'Archive stage identity changed before final abort removal'
+      );
+    }
+    await adapters.fs.rmdir(plan.paths.stage);
+    await flushArchiveDirectory(path.dirname(plan.paths.stage), adapters);
+  }
+  await atomicWriteJson(
+    tombstonePath,
+    {
+      ...intent,
+      status: 'aborted',
+      updatedAt: adapters.now().toISOString(),
+    } satisfies StoredArchiveAbortV1,
+    plan.transactionId,
+    adapters
+  );
+  await retireStoredArchivePlan(plan, globalDataDir, adapters);
+  return { ...base, status: 'aborted', blockers: [] };
 }
 
 async function pathExists(
@@ -2300,8 +3208,10 @@ function applyFailure(
   totals: ArchiveApplyResult['totals']
 ): ArchiveApplyResult {
   const code = errorCode(error);
+  const abortRequired =
+    code === ARCHIVE_SHIP_LOG_RESERVED_SECTION_CODE;
   return {
-    status: 'recoverable',
+    status: abortRequired ? 'abort-required' : 'recoverable',
     transactionId: plan.transactionId,
     planHash: plan.planHash,
     change: plan.change,
@@ -2320,7 +3230,13 @@ function applyFailure(
         message: error instanceof Error ? error.message : String(error),
       },
     ],
-    recoveryCommand: `rasen archive --apply-plan ${archivePlanToken(plan)} --yes`,
+    ...(abortRequired
+      ? {
+          abortCommand: `rasen archive --abort-plan ${archivePlanToken(plan)} --yes`,
+        }
+      : {
+          recoveryCommand: `rasen archive --apply-plan ${archivePlanToken(plan)} --yes`,
+        }),
   };
 }
 
@@ -2759,15 +3675,11 @@ function identityForAuthorityEntry(
   return archiveDeletionIdentity(stat, kind);
 }
 
-/**
- * Delete only the exact objects represented by a previously verified
- * deletion authority. Every leaf is revalidated immediately before unlink;
- * directories are removed bottom-up without recursive rm.
- */
-export async function removeClaimedArchiveTreeGuarded(
+async function removeClaimedArchiveEntriesGuarded(
   claimedRoot: string,
   authority: ArchiveTreeFingerprint,
-  adapters: ArchiveEngineAdapters = defaultArchiveEngineAdapters
+  adapters: ArchiveEngineAdapters,
+  allowMissing = false
 ): Promise<void> {
   const ordered = [...authority.authorityEntries].sort(
     (left, right) =>
@@ -2776,7 +3688,13 @@ export async function removeClaimedArchiveTreeGuarded(
   );
   for (const entry of ordered) {
     const absolute = path.join(claimedRoot, ...entry.path.split('/'));
-    const stat = await adapters.fs.lstat(absolute);
+    let stat: ArchiveFsStat;
+    try {
+      stat = await adapters.fs.lstat(absolute);
+    } catch (error) {
+      if (allowMissing && errorCode(error) === 'ENOENT') continue;
+      throw error;
+    }
     const kind: ArchiveAuthorityEntry['kind'] = stat.isSymbolicLink()
       ? 'symlink'
       : stat.isDirectory()
@@ -2798,6 +3716,19 @@ export async function removeClaimedArchiveTreeGuarded(
     if (kind === 'directory') await adapters.fs.rmdir(absolute);
     else await adapters.fs.unlink(absolute);
   }
+}
+
+/**
+ * Delete only the exact objects represented by a previously verified
+ * deletion authority. Every leaf is revalidated immediately before unlink;
+ * directories are removed bottom-up without recursive rm.
+ */
+export async function removeClaimedArchiveTreeGuarded(
+  claimedRoot: string,
+  authority: ArchiveTreeFingerprint,
+  adapters: ArchiveEngineAdapters = defaultArchiveEngineAdapters
+): Promise<void> {
+  await removeClaimedArchiveEntriesGuarded(claimedRoot, authority, adapters);
   const rootStat = await adapters.fs.lstat(claimedRoot);
   if (
     !rootStat.isDirectory() ||
@@ -2912,10 +3843,14 @@ async function finalizeStagedShipLog(
     }
   }
 
-  const archiveHeading = /^## Archive\s*$/im;
-  if (archiveHeading.test(content)) {
+  if (hasReservedArchiveShipLogSection(content)) {
     if (!content.includes(`**Transaction:** ${plan.transactionId}`)) {
-      throw new Error('Ship log already has an archive section for another transaction.');
+      const collision = new Error(
+        'Ship log already has an archive section for another transaction.'
+      );
+      (collision as NodeJS.ErrnoException).code =
+        ARCHIVE_SHIP_LOG_RESERVED_SECTION_CODE;
+      throw collision;
     }
     return;
   }
@@ -3576,6 +4511,43 @@ async function revalidateArchiveProbes(
   }
 }
 
+function isMergeConfirmationBlocker(
+  plan: ArchivePlan,
+  blocker: ArchiveBlocker
+): boolean {
+  if (
+    plan.decisions.timing.mode !== 'on-merge' ||
+    plan.decisions.timing.deliveryMode !== 'pr' ||
+    plan.decisions.timing.override
+  ) {
+    return false;
+  }
+  if (blocker.operation !== 'timing') return false;
+  if (blocker.code === ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE) return true;
+  return (
+    blocker.code === undefined &&
+    blocker.message === ARCHIVE_MERGE_CONFIRMATION_BLOCKER_MESSAGE
+  );
+}
+
+export function inspectArchiveApplyPlan(
+  plan: ArchivePlan,
+  assertions: ArchiveApplyAssertions = {}
+): ArchiveApplyInspection {
+  const blockers =
+    assertions.mergeConfirmed === true
+      ? plan.blockers.filter(
+          blocker => !isMergeConfirmationBlocker(plan, blocker)
+        )
+      : [...plan.blockers];
+  const assertionSatisfied = blockers.length < plan.blockers.length;
+  return {
+    applicable:
+      blockers.length === 0 && (plan.complete || assertionSatisfied),
+    blockers,
+  };
+}
+
 /**
  * Apply the exact immutable plan. The active source is copied and verified,
  * all archive-local transformations happen in the stage, publication is one
@@ -3584,8 +4556,9 @@ async function revalidateArchiveProbes(
  */
 export async function applyArchive(
   plan: ArchivePlan,
-  adapters: ArchiveEngineAdapters = defaultArchiveEngineAdapters
+  options: ArchiveApplyOptions = {}
 ): Promise<ArchiveApplyResult> {
+  const adapters = options.adapters ?? defaultArchiveEngineAdapters;
   if (!planIdentityValid(plan, adapters)) {
     return {
       status: 'blocked',
@@ -3608,7 +4581,8 @@ export async function applyArchive(
       ],
     };
   }
-  if (!plan.complete || plan.blockers.length > 0) {
+  const inspection = inspectArchiveApplyPlan(plan, options.assertions);
+  if (!inspection.applicable) {
     return {
       status: 'blocked',
       transactionId: plan.transactionId,
@@ -3621,7 +4595,7 @@ export async function applyArchive(
       totals: { added: 0, modified: 0, removed: 0, renamed: 0 },
       ephemeraDiscarded: [],
       ephemeraPreserved: plan.cleaner.effectivePreserve,
-      blockers: plan.blockers,
+      blockers: inspection.blockers,
     };
   }
 

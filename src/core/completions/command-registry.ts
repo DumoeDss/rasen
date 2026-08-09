@@ -200,6 +200,10 @@ const COMMANDS: readonly CommandDefinition[] = [
         takesValue: true,
       },
       {
+        name: 'abort-plan',
+        takesValue: true,
+      },
+      {
         name: 'intent-template',
       },
       {

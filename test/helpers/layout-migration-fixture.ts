@@ -81,6 +81,21 @@ export interface LayoutMigrationFixtureOptions {
    * identities, which is the state `blocked:store-identity-missing` describes.
    */
   readonly storeIdentity?: 'permanent' | 'legacy-v1';
+  /**
+   * Optional nested segment below the short `mkdtemp` root. Tests use this to
+   * cross Windows' classic MAX_PATH budget without asking `mkdtemp` itself to
+   * create an over-budget path.
+   */
+  readonly storeRootPadding?: string;
+  /**
+   * Derive the nested padding segment so the Store root lands at exactly this
+   * length, regardless of where the host's temp directory lives. Use this (not
+   * `storeRootPadding`) when the test wants a path that is long enough for a
+   * partition destination to cross MAX_PATH while keeping the Store root itself
+   * under it: `git -C` and `git init <path>` chdir before git reads any config,
+   * so the root must stay below 260 even with `core.longpaths` enabled.
+   */
+  readonly storeRootTargetLength?: number;
 }
 
 export async function createLayoutMigrationFixture(
@@ -94,7 +109,24 @@ export async function createLayoutMigrationFixture(
   process.env.XDG_DATA_HOME = path.join(tempDir, 'data');
   const globalDataDir = getGlobalDataDir({ env: process.env });
   const gitEnv = isolatedGitEnv(tempDir);
-  const storeRoot = path.join(tempDir, MIGRATION_FIXTURE_STORE_ID);
+  const paddingSegment =
+    options.storeRootTargetLength !== undefined
+      ? 'd'.repeat(
+          Math.max(
+            0,
+            options.storeRootTargetLength -
+              tempDir.length -
+              path.sep.length -
+              MIGRATION_FIXTURE_STORE_ID.length -
+              path.sep.length
+          )
+        )
+      : options.storeRootPadding;
+  const storeRoot = path.join(
+    tempDir,
+    ...(paddingSegment === undefined ? [] : [paddingSegment]),
+    MIGRATION_FIXTURE_STORE_ID
+  );
 
   createOpenSpecRoot(storeRoot);
   await writeStoreMetadataState(

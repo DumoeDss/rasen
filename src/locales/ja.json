@@ -1,5 +1,16 @@
 {
   "locale": "ja",
+  "archiveAbort": {
+    "optionConflict": "--abort-plan は、change 名、または --yes と --json 以外の archive オプションと同時に指定できません。",
+    "confirmationRequired": "アーカイブトランザクションを中止するには明示的な確認が必要です。",
+    "confirmationFix": "'rasen archive --abort-plan {token} --yes' を再実行してください。",
+    "applyAborted": "このアーカイブ計画は中止済みのため、適用できません。",
+    "aborted": "アーカイブ計画 {transactionId} を中止しました。エンジンが所有するステージとトランザクションジャーナルを削除しました。",
+    "alreadyAborted": "アーカイブ計画 {transactionId} はすでに中止済みです。追加の変更は不要でした。",
+    "blocked": "アーカイブ計画 {transactionId} は中止されませんでした。",
+    "blocker": "{code}: {path} は保護されています",
+    "recovery": "トランザクションは復旧可能なままです。報告されたブロッカーを修復するか、--apply-plan で同じ計画を再開してください。"
+  },
   "bootstrap": {
     "headingProject": "{path} のプロジェクトに対する bootstrap {mode}",
     "headingStore": "{path} にある store {store} に対する bootstrap {mode}",
@@ -1352,6 +1363,9 @@
             },
             "apply-plan": {
               "description": "再計画せず、保存済みトークンの正確な計画を適用または再開します"
+            },
+            "abort-plan": {
+              "description": "永続的な変更境界を越える前に、保存済みトークンの正確なアーカイブ計画を中止します"
             },
             "intent-template": {
               "description": "ファイルを変更せずに、完全なアーカイブ意図テンプレートを JSON で出力します"

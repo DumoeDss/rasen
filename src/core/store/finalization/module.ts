@@ -20,12 +20,18 @@ import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 
 import {
+  ARCHIVE_STORED_PLAN_APPLY_OPERATION,
+  abortArchivePlan,
   applyArchive,
+  inspectArchiveApplyPlan,
   createArchivePlan,
   defaultArchiveEngineAdapters,
   fingerprintArchiveTree,
   loadStoredArchivePlan,
   persistArchivePlan,
+  withStoredArchivePlanOperation,
+  type ArchiveApplyAssertions,
+  type ArchiveAbortResult,
   type ArchiveAssociationPlan,
   type ArchivePlan,
   type ArchivePlanFinalization,
@@ -86,6 +92,7 @@ import type {
   ChangeFinalizationModule,
   DescribeFinalizationInput,
   FinalizationBlocker,
+  FinalizationApplyInspection,
   FinalizationDescription,
   FinalizationLandedProof,
   FinalizationPlanToken,
@@ -120,6 +127,34 @@ interface ResolvedFinalizationContext {
   readonly projectIds: readonly string[];
   readonly executionAssociationFile: string | null;
 }
+export function inspectFinalizationApplyPlan(
+  plan: ImmutableFinalizationPlan,
+  assertions: ArchiveApplyAssertions = {}
+): FinalizationApplyInspection {
+  const archiveInspection = inspectArchiveApplyPlan(
+    plan.archivePlan,
+    assertions
+  );
+  const blockers = plan.blockers.filter(blocker => {
+    const source = blocker.archiveBlocker;
+    if (source === undefined) return true;
+    return archiveInspection.blockers.some(
+      candidate =>
+        candidate.operation === source.operation &&
+        candidate.path === source.path &&
+        candidate.code === source.code &&
+        candidate.message === source.message
+    );
+  });
+  return {
+    applicable:
+      !plan.alreadyComplete &&
+      blockers.length === 0 &&
+      archiveInspection.applicable,
+    blockers,
+  };
+}
+
 
 export class ChangeFinalization implements ChangeFinalizationModule {
   private readonly dependencies: FinalizationDependencies;
@@ -286,11 +321,14 @@ export class ChangeFinalization implements ChangeFinalizationModule {
     });
 
     for (const item of archivePlan.blockers) {
-      blockers.push(
-        finalizationBlocker('finalization_record_invalid', `${item.operation}: ${item.message}`, {
-          target: item.path,
-        })
-      );
+      blockers.push({
+        ...finalizationBlocker(
+          'finalization_record_invalid',
+          `${item.operation}: ${item.message}`,
+          { target: item.path }
+        ),
+        archiveBlocker: item,
+      });
     }
 
     const base = {
@@ -348,10 +386,21 @@ export class ChangeFinalization implements ChangeFinalizationModule {
     return Object.freeze({ ...withOutcome, planId, token }) as ImmutableFinalizationPlan;
   }
 
-  async apply(token: FinalizationPlanToken): Promise<FinalizationResult> {
-    const dataDir = getGlobalDataDir();
-    const archivePlan = await loadStoredArchivePlan(token.archivePlanToken, dataDir);
-    return this.applyStoredPlan(archivePlan, token);
+  async apply(
+    token: FinalizationPlanToken,
+    assertions: ArchiveApplyAssertions = {}
+  ): Promise<FinalizationResult> {
+    const globalDataDir = getGlobalDataDir();
+    const archivePlan = await loadStoredArchivePlan(
+      token.archivePlanToken,
+      globalDataDir
+    );
+    return withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      ARCHIVE_STORED_PLAN_APPLY_OPERATION,
+      () => this.applyStoredPlan(archivePlan, token, assertions)
+    );
   }
 
   /**
@@ -361,7 +410,8 @@ export class ChangeFinalization implements ChangeFinalizationModule {
    */
   async applyStoredPlan(
     archivePlan: ArchivePlan,
-    token?: FinalizationPlanToken
+    token?: FinalizationPlanToken,
+    assertions: ArchiveApplyAssertions = {}
   ): Promise<FinalizationResult> {
     const finalization = archivePlan.finalization;
     if (finalization === undefined) {
@@ -398,9 +448,12 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       async () => {
         await this.revalidate(archivePlan, token);
         return applyArchive(archivePlan, {
-          ...defaultArchiveEngineAdapters,
-          finalizeArchiveAssociation: async ({ plan }) =>
-            void (await completeFinalizationAssociation(this.dependencies, plan)),
+          adapters: {
+            ...defaultArchiveEngineAdapters,
+            finalizeArchiveAssociation: async ({ plan }) =>
+              void (await completeFinalizationAssociation(this.dependencies, plan)),
+          },
+          assertions,
         });
       },
       {
@@ -430,12 +483,63 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       status: result.status,
       transactionId: result.transactionId,
       journalPath: result.journalPath,
-      blockers: result.blockers.map(item =>
-        finalizationBlocker('finalization_record_invalid', `${item.operation}: ${item.message}`, {
-          target: item.path,
-        })
-      ),
+      blockers: result.blockers.map(item => ({
+        ...finalizationBlocker(
+          'finalization_record_invalid',
+          `${item.operation}: ${item.message}`,
+          { target: item.path }
+        ),
+        archiveBlocker: item,
+      })),
     };
+  }
+
+  async abortStoredPlan(
+    archivePlan: ArchivePlan,
+    globalDataDir: string
+  ): Promise<ArchiveAbortResult> {
+    const finalization = archivePlan.finalization;
+    if (finalization === undefined) {
+      throw finalizationError(
+        'finalization_scope_unsupported',
+        'This stored archive plan carries no finalization block, so it is not a Store v2 finalization.',
+        { target: archivePlan.paths.final }
+      );
+    }
+    const record = finalization.record as unknown as {
+      storeUid: string;
+      projectId: string;
+      targetLineId: string;
+      changeInstanceId: string;
+    };
+    const scope = {
+      storeUid: record.storeUid,
+      projectId: record.projectId,
+      targetLineId: record.targetLineId,
+      changeInstanceId: record.changeInstanceId,
+    };
+    const coordination = this.dependencies.coordination(
+      finalization.association.globalDataDir
+    );
+    return withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      () =>
+        withFinalizationLocks(
+          coordination,
+          scope,
+          () => abortArchivePlan(archivePlan, globalDataDir),
+          {
+            ...(this.options.lockDeadlineMs === undefined
+              ? {}
+              : { deadlineMs: this.options.lockDeadlineMs }),
+            ...(this.options.lockPollMs === undefined
+              ? {}
+              : { pollMs: this.options.lockPollMs }),
+          }
+        )
+    );
   }
 
   async describe(input: DescribeFinalizationInput): Promise<FinalizationDescription> {
@@ -1229,7 +1333,12 @@ function emptyPreparation(
       probes: [],
       blockers: [],
     },
-    shipLog: { source: null, sha256: null, recordedCommit: null },
+    shipLog: {
+      source: null,
+      sha256: null,
+      recordedCommit: null,
+      reservedSection: false,
+    },
     scope: { kind: 'store-project' },
   };
 }

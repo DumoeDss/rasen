@@ -15,6 +15,8 @@ import type {
   ArchiveSidecarProjection,
   ArchiveBlocker,
   PreparedArchiveSpecAction,
+  ArchiveApplyAssertions,
+  ArchiveAbortResult,
 } from '../../archive-engine.js';
 import type {
   ArchiveV2IdentityPreimages,
@@ -118,6 +120,12 @@ export interface FinalizationBlocker {
   readonly expected?: string;
   readonly actual?: string;
   readonly fix?: string;
+  readonly archiveBlocker?: ArchiveBlocker;
+}
+
+export interface FinalizationApplyInspection {
+  readonly applicable: boolean;
+  readonly blockers: readonly FinalizationBlocker[];
 }
 
 export interface FinalizationScopeFacts {
@@ -335,11 +343,22 @@ export interface FinalizationResult {
   readonly blockers: readonly FinalizationBlocker[];
 }
 
-export type ArchivePlanApplyStatus = 'complete' | 'blocked' | 'recoverable';
+export type ArchivePlanApplyStatus =
+  | 'complete'
+  | 'blocked'
+  | 'recoverable'
+  | 'abort-required';
 
 export interface ChangeFinalizationModule {
   plan(input: FinalizeChangeInput): Promise<ImmutableFinalizationPlan>;
-  apply(token: FinalizationPlanToken): Promise<FinalizationResult>;
+  apply(
+    token: FinalizationPlanToken,
+    assertions?: ArchiveApplyAssertions
+  ): Promise<FinalizationResult>;
+  abortStoredPlan(
+    archivePlan: ArchivePlan,
+    globalDataDir: string
+  ): Promise<ArchiveAbortResult>;
   describe(input: DescribeFinalizationInput): Promise<FinalizationDescription>;
 }
 

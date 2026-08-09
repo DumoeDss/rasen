@@ -1,4 +1,3 @@
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { FileSystemUtils } from '../../utils/file-system.js';
@@ -21,9 +20,9 @@ import {
   type RuntimeExecutionRef,
 } from '../session-runtime-context.js';
 import {
+  findProjectIdentityClaimants,
   findProjectRegistryEntry,
-  readProjectRegistryState,
-  type ProjectRegistryEntryState,
+  formatProjectIdentityAmbiguity,
 } from '../project-registry.js';
 import {
   findQualifyingRootSync,
@@ -126,13 +125,6 @@ function pathsEqual(left: string, right: string): boolean {
   return process.platform === 'win32' ? a.toLocaleLowerCase() === b.toLocaleLowerCase() : a === b;
 }
 
-function pathExistsAsDirectory(target: string): boolean {
-  try {
-    return fs.statSync(target).isDirectory();
-  } catch {
-    return false;
-  }
-}
 
 /**
  * The DISPLAY form of a resolved owner: what a diagnostic names, and what a
@@ -338,22 +330,21 @@ async function resolveMachineProjectById(
   id: string,
   globalDataDir: string | undefined
 ): Promise<Extract<ResolvedKnowledgeOwnerRef, { type: 'project' }> | null> {
-  const state = await readProjectRegistryState(pathOptions(globalDataDir));
-  if (!state) return null;
-  const matches = Object.entries(state.projects).filter(([, entry]) =>
-    sameProjectIdentity(entry.projectId, id)
+  const matches = await findProjectIdentityClaimants(
+    id,
+    pathOptions(globalDataDir)
   );
   if (matches.length > 1) {
     fail(
       'knowledge_owner_ambiguous',
-      `Project owner '${id}' resolves to more than one registered project root. Repair the project registry before retrying.`,
+      formatProjectIdentityAmbiguity(id, matches),
       { owner: { type: 'project', id }, selectorGuidance }
     );
   }
   if (matches.length === 0) return null;
-  const [root, entry] = matches[0] as [string, ProjectRegistryEntryState];
+  const [{ path: root, entry, live }] = matches;
   if (
-    !pathExistsAsDirectory(root) ||
+    !live ||
     !sameProjectIdentity(readProjectConfig(root)?.projectId, entry.projectId)
   ) {
     fail(

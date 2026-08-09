@@ -670,6 +670,15 @@ export class StorePlanningResolver implements StorePlanning {
     });
   }
 
+  private canonicalizeFactPath(
+    value: string,
+    flavor: PlanningPathFlavor
+  ): string {
+    return flavor === 'native'
+      ? this.dependencies.fs.canonicalizeExisting(value)
+      : value;
+  }
+
   private mergeFacts(
     candidates: readonly FactCandidate[],
     flavor: PlanningPathFlavor
@@ -697,8 +706,12 @@ export class StorePlanningResolver implements StorePlanning {
     };
     for (const candidate of candidates) {
       for (const field of Object.keys(comparisons) as Array<keyof ReducedFacts>) {
-        const incoming = candidate[field];
-        if (incoming === undefined) continue;
+        const rawIncoming = candidate[field];
+        if (rawIncoming === undefined) continue;
+        const incoming =
+          field === 'planningRoot' || field === 'executionRoot'
+            ? this.canonicalizeFactPath(rawIncoming, flavor)
+            : rawIncoming;
         const existing = facts[field];
         if (existing !== undefined && !comparisons[field](existing, incoming)) {
           throw new PlanningScopeError(
@@ -869,7 +882,8 @@ export class StorePlanningResolver implements StorePlanning {
 
   private async readAssociationFact(
     projectRoot: string | null,
-    api: path.PlatformPath
+    api: path.PlatformPath,
+    flavor: PlanningPathFlavor
   ): Promise<{ candidate: FactCandidate; text: string } | null> {
     if (!projectRoot) return null;
     const associationPath = api.join(projectRoot, '.rasen', 'planning-binding.json');
@@ -886,15 +900,24 @@ export class StorePlanningResolver implements StorePlanning {
         ...(fact.targetLineId === undefined ? {} : { targetLineId: fact.targetLineId }),
         ...(fact.planningWorktree === undefined
           ? {}
-          : { planningRoot: api.resolve(fact.planningWorktree) }),
-        executionRoot: api.resolve(fact.executionRoot ?? projectRoot),
+          : {
+              planningRoot: this.canonicalizeFactPath(
+                api.resolve(fact.planningWorktree),
+                flavor
+              ),
+            }),
+        executionRoot: this.canonicalizeFactPath(
+          api.resolve(fact.executionRoot ?? projectRoot),
+          flavor
+        ),
       }),
     };
   }
 
   private async readMarkerFact(
     storeRoot: string | null,
-    api: path.PlatformPath
+    api: path.PlatformPath,
+    flavor: PlanningPathFlavor
   ): Promise<{ candidate: FactCandidate; text: string } | null> {
     if (!storeRoot) return null;
     const markerPath = api.join(storeRoot, '.rasen', 'planning-line.json');
@@ -909,10 +932,15 @@ export class StorePlanningResolver implements StorePlanning {
         ...(fact.storeId === undefined ? {} : { storeId: fact.storeId }),
         ...(fact.projectId === undefined ? {} : { projectId: fact.projectId }),
         ...(fact.targetLineId === undefined ? {} : { targetLineId: fact.targetLineId }),
-        planningRoot: api.resolve(storeRoot),
+        planningRoot: this.canonicalizeFactPath(api.resolve(storeRoot), flavor),
         ...(fact.executionRoot === undefined
           ? {}
-          : { executionRoot: api.resolve(fact.executionRoot) }),
+          : {
+              executionRoot: this.canonicalizeFactPath(
+                api.resolve(fact.executionRoot),
+                flavor
+              ),
+            }),
       }),
     };
   }
@@ -1368,7 +1396,8 @@ export class StorePlanningResolver implements StorePlanning {
     const sessionFact = await this.readSessionFact(flavor);
     const association = await this.readAssociationFact(
       selectedProjectRoot ?? discoveredProjectRoot,
-      api
+      api,
+      flavor
     );
 
     let bindingStoreEntry: StoreRegistrySnapshotEntry | undefined;
@@ -1400,7 +1429,8 @@ export class StorePlanningResolver implements StorePlanning {
         (nearestStoreRootIsSelected ? nearestStoreRoot : null) ??
         explicitStoreEntry?.root ??
         null,
-      api
+      api,
+      flavor
     );
 
     if (explicitStoreEntry && bindingStoreEntry) {

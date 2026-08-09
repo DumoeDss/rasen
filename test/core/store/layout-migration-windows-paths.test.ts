@@ -83,9 +83,12 @@ describe('store layout v2 migration — Windows and POSIX destination constructi
     expect(() =>
       resolveStorePlanningLayoutV2Path('stores/team', { kind: 'store-metadata' }, 'posix')
     ).toThrow();
-    // A POSIX root is not an absolute win32 path.
+    // Neither explicit flavor accepts a root spelled for the other one.
     expect(() =>
       resolveStorePlanningLayoutV2Path('C:\\stores\\team', { kind: 'store-metadata' }, 'posix')
+    ).toThrow();
+    expect(() =>
+      resolveStorePlanningLayoutV2Path('/stores/team', { kind: 'store-metadata' }, 'win32')
     ).toThrow();
   });
 
@@ -177,9 +180,14 @@ describe('store layout v2 migration — Windows and POSIX destination constructi
 
   it('plans and applies a Store whose path is long enough to cross the classic MAX_PATH budget', async () => {
     f.cleanup();
-    // The nested partition destination below is what actually gets long; the
-    // prefix only pushes the root far enough that it matters.
-    f = await createLayoutMigrationFixture(`rasen-${'d'.repeat(60)}-`);
+    // Keep mkdtemp's own path short and target a Store root that is itself
+    // below the classic MAX_PATH budget — `git -C` and `git init <path>` chdir
+    // before git reads `core.longpaths`, so a root near or past 260 aborts the
+    // fixture before the migration runs. The nested partition destination still
+    // lands past MAX_PATH, which is the shape the migration must survive.
+    f = await createLayoutMigrationFixture('rasen-layout-long-', {
+      storeRootTargetLength: 235,
+    });
 
     await f.member('elftia', { specs: [], changes: ['fix-a'] });
     f.writeChange('fix-a');
@@ -188,7 +196,7 @@ describe('store layout v2 migration — Windows and POSIX destination constructi
 
     const plan = await f.migration().plan(f.input({ mappingPath: MAPPING }));
     const destination = plan.items.find((item) => item.name === 'fix-a')?.destination as string;
-    expect(destination.length).toBeGreaterThan(150);
+    expect(destination.length).toBeGreaterThan(260);
     expect(plan.applicable).toBe(true);
 
     await f.migration().apply(plan.token!);

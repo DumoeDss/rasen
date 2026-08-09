@@ -386,6 +386,7 @@ const archiveCommand = program
   .option('--dry-run', '')
   .option('--save-plan', '')
   .option('--apply-plan <token>', '')
+  .option('--abort-plan <token>', '')
   .option('--intent-template', '')
   .option('--intent-file <path>', '')
   .addOption(hiddenStorePathOption())

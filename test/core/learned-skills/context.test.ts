@@ -10,6 +10,7 @@ import {
   type FrozenKnowledgeContext,
 } from '../../../src/core/learned-skills/index.js';
 import { resolveProjectHome } from '../../../src/core/project-home.js';
+import { registerProject } from '../../../src/core/project-registry.js';
 import {
   getStoreMetadataPath,
   writeStoreMetadataState,
@@ -122,6 +123,76 @@ describe('learned-skill execution context', () => {
     ).rejects.toMatchObject({
       diagnostic: { code: 'knowledge_owner_ambiguous' },
     });
+  });
+
+  it('names every live project claimant and refuses to recommend stale pruning', async () => {
+    const original = await createProject('owner-original');
+    const copyRoot = createHealthyRoot(
+      path.join(tempDir, 'owner-copy'),
+      fs.readFileSync(path.join(original.root, 'rasen', 'config.yaml'), 'utf8')
+    );
+    await registerProject(
+      {
+        projectRoot: copyRoot,
+        projectId: original.id,
+        mode: 'in-repo',
+      },
+      { globalDataDir }
+    );
+
+    let thrown: unknown;
+    try {
+      await resolveLearnedSkillExecutionContext({
+        launchDirectory: original.root,
+        selector: { project: original.id },
+        requestedScope: 'project',
+        globalDataDir,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(KnowledgeContextError);
+    const message = (thrown as KnowledgeContextError).diagnostic.message;
+    expect(message).toContain(`${original.root} (live)`);
+    expect(message).toContain(`${copyRoot} (live)`);
+    expect(message).toContain('Rasen refuses to choose an owner');
+    expect(message).not.toContain('rasen home prune');
+  });
+
+  it('names missing project claimants and recommends registry pruning', async () => {
+    const original = await createProject('stale-owner-original');
+    const copyRoot = createHealthyRoot(
+      path.join(tempDir, 'stale-owner-copy'),
+      fs.readFileSync(path.join(original.root, 'rasen', 'config.yaml'), 'utf8')
+    );
+    await registerProject(
+      {
+        projectRoot: copyRoot,
+        projectId: original.id,
+        mode: 'in-repo',
+      },
+      { globalDataDir }
+    );
+    fs.rmSync(copyRoot, { recursive: true, force: true });
+
+    let thrown: unknown;
+    try {
+      await resolveLearnedSkillExecutionContext({
+        launchDirectory: original.root,
+        selector: { project: original.id },
+        requestedScope: 'project',
+        globalDataDir,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(KnowledgeContextError);
+    const message = (thrown as KnowledgeContextError).diagnostic.message;
+    expect(message).toContain(`${original.root} (live)`);
+    expect(message).toContain(`${copyRoot} (missing)`);
+    expect(message).toContain('rasen home prune --apply');
   });
 
   it('keeps identical bare ids distinct across typed namespaces', async () => {

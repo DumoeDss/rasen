@@ -107,6 +107,7 @@ ${STORE_SELECTION_GUIDANCE}
 3.6. **Check delivery precondition (soft)**
 
    Read \`ship-log.md\` from the change's evidence directory (\`evidenceDir\` from status JSON; sticky-legacy: a ship log that already lives in the legacy \`workDir\` or in the change directory — \`changeRoot\` — is read in place):
+   - **Present with a level-two \`## Archive\` heading** → HARD GATE before intent or saved-plan creation. The heading is reserved for archive transaction evidence; require the operator to remove or rename the change-authored section. Do not accept or preserve a token from this state.
    - **Absent** → soft-warn "This change has no ship log — archive without delivering?" with an explicit escape for changes that legitimately do not ship (e.g. spec-only); proceed on confirm.
    - **Present and its \`Status:\` line contains "delivery deferred to portfolio level"** (the marker ship writes in local mode) → soft note that parent-level portfolio delivery is still pending and archiving the child now may lose track of it; confirm to proceed. Minimal cross-reference only — no portfolio graph or parent lookup.
    - **Present and delivery completed** (PR created / branch pushed) → proceed without a delivery warning.
@@ -141,7 +142,7 @@ ${STORE_SELECTION_GUIDANCE}
 
    Run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.savedPreview}\` with the resolved store selector and \`--skip-specs\` only when step 4 chose not to sync. Inspect the immutable plan, require no blockers, and capture the exact \`planToken\`.
 
-   After confirmation, run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.apply}\`. This is the only bookkeeping invocation. A blocked result stops before mutation. On a recoverable result, rerun that exact token command; never regenerate intent, resync specs, or replan.
+   After confirmation, run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.apply}\`. This is the only bookkeeping invocation. Branch on the structured disposition, in this order: a result with \`manualRecoveryAction\` follows only that verified manual guidance (never replay, abort, or invent cleanup); \`recoverable\` reruns only its returned exact-token recovery command; \`abort-required\` runs only its returned \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.abort}\`, verifies completion, corrects the active change, and creates a fresh plan; \`blocked\` stops before mutation. Never regenerate intent or replan a recoverable transaction, and never loop \`--apply-plan\` for a deterministic plan-bound conflict.
 
    Never create the archive directory, move the change, recursively remove the source, hand-write \`archive.json\`, or repair an engine journal in this workflow.
 

@@ -162,7 +162,13 @@ describe('management StorePlanning scope routing', () => {
       { projectRoot, projectId, mode: 'store' },
       { globalDataDir: dataDir }
     );
-    return { projectRoot, storeRoot, projectId, storeId, partitionChanges };
+    return {
+      projectRoot,
+      storeRoot,
+      projectId,
+      storeId,
+      partitionChanges: fs.realpathSync.native(partitionChanges),
+    };
   }
 
   async function standaloneFixture(projectId = 'standalone-project'): Promise<string> {
@@ -200,7 +206,13 @@ describe('management StorePlanning scope routing', () => {
     expect(standalone.ok).toBe(true);
     if (!standalone.ok || standalone.space.type !== 'project') return;
     expect(standalone.space.planningScope.ref.mode).toBe('standalone');
-    expect(standalone.space.changesDir).toBe(path.join(standaloneRoot, 'rasen', 'changes'));
+    expect(standalone.space.changesDir).toBe(
+      path.join(
+        fs.realpathSync.native(standaloneRoot),
+        'rasen',
+        'changes'
+      )
+    );
 
     const project = await resolveSpaceSelector(`project:${bound.projectId}`);
     expect(project.ok).toBe(true);
@@ -214,6 +226,34 @@ describe('management StorePlanning scope routing', () => {
     expect(project.space.changesDir).toBe(bound.partitionChanges);
     expect(project.space.executionRoot).toBe(fs.realpathSync.native(bound.projectRoot));
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'treats a symlinked association execution root as the same project',
+    async () => {
+      const bound = await boundFixture();
+      const aliasRoot = path.join(tempDir, 'project-alias');
+      fs.symlinkSync(bound.projectRoot, aliasRoot, 'dir');
+      const bindingPath = path.join(
+        bound.projectRoot,
+        '.rasen',
+        'planning-binding.json'
+      );
+      const binding = JSON.parse(fs.readFileSync(bindingPath, 'utf8')) as Record<
+        string,
+        unknown
+      >;
+      binding.executionRoot = aliasRoot;
+      write(bindingPath, `${JSON.stringify(binding)}\n`);
+
+      const result = await resolveProjectPlanningSpaceFromRoot(bound.projectRoot);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok || result.space.type !== 'project') return;
+      expect(result.space.executionRoot).toBe(
+        fs.realpathSync.native(bound.projectRoot)
+      );
+    }
+  );
 
   it('keeps same-id Store and project namespaces distinct', async () => {
     const bound = await boundFixture({ projectId: 'shared-id', storeId: 'shared-id' });

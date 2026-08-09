@@ -331,118 +331,147 @@ export async function registerProject(
   input: RegisterProjectInput,
   options: ProjectPathOptions = {}
 ): Promise<RegisterProjectResult> {
-  // Pierce to the main checkout (D1): a linked worktree registers/refreshes the
-  // MAIN entry, never a separate worktree entry. Every case below (path-exact,
-  // worktree-share fallback, moved rebind, clone fork) operates on the pierced
-  // key, and the display name derives from it (never the worktree's basename).
+  const result = await registerProjectWithPolicy(input, options, true);
+  if (result === null) {
+    throw new Error('Project registration unexpectedly produced no entry.');
+  }
+  return result;
+}
+
+/**
+ * Refreshes only an identity that the registry can already prove belongs to
+ * this path: path-exact, linked-worktree, or one unambiguous moved entry.
+ * Unknown live paths never become owners as a side effect of root resolution.
+ */
+export async function refreshRegisteredProject(
+  input: RegisterProjectInput,
+  options: ProjectPathOptions = {}
+): Promise<RegisterProjectResult | null> {
+  return registerProjectWithPolicy(input, options, false);
+}
+
+async function registerProjectWithPolicy(
+  input: RegisterProjectInput,
+  options: ProjectPathOptions,
+  allowCreate: boolean
+): Promise<RegisterProjectResult | null> {
   const canonicalInput = FileSystemUtils.canonicalizeExistingPath(input.projectRoot);
   const canonicalPath = await resolveRegistrationRoot(canonicalInput);
   const name = deriveProjectDisplayName(canonicalPath);
   const now = () => new Date().toISOString();
-
   let resolvedEntry: ProjectRegistryEntryState | undefined;
 
-  await updateProjectRegistryState(async (current) => {
-    const projects: Record<string, ProjectRegistryEntryState> = { ...(current?.projects ?? {}) };
+  await withProjectRegistryLock(async () => {
+    const current = await readProjectRegistryState(options);
+    const projects: Record<string, ProjectRegistryEntryState> = {
+      ...(current?.projects ?? {}),
+    };
 
-    /**
-     * Places an entry at `canonicalPath`. The cache fields
-     * (`tools`/`installedVersion`/`lastUpdated`) follow these rules:
-     * - When `input` supplies them, they are written onto the entry.
-     * - When `input` omits them and a `previousEntry` is supplied, the
-     *   previous entry's cache fields are preserved (never reset).
-     * - On a fresh entry (no previous), omitted cache fields stay absent.
-     */
     async function place(
       home: string,
       projectId: string,
       previousEntry?: ProjectRegistryEntryState
     ): Promise<void> {
-      const base: Pick<ProjectRegistryEntryState, 'projectId' | 'name' | 'mode' | 'home' | 'lastSeen'> =
-        { projectId, name, mode: input.mode, home, lastSeen: now() };
+      const base: Pick<
+        ProjectRegistryEntryState,
+        'projectId' | 'name' | 'mode' | 'home' | 'lastSeen'
+      > = {
+        projectId,
+        name,
+        mode: input.mode,
+        home,
+        lastSeen: now(),
+      };
       resolvedEntry = {
         ...base,
-        ...(previousEntry?.tools !== undefined ? { tools: previousEntry.tools } : {}),
+        ...(previousEntry?.tools !== undefined
+          ? { tools: previousEntry.tools }
+          : {}),
         ...(previousEntry?.installedVersion !== undefined
           ? { installedVersion: previousEntry.installedVersion }
           : {}),
-        ...(previousEntry?.lastUpdated !== undefined ? { lastUpdated: previousEntry.lastUpdated } : {}),
+        ...(previousEntry?.lastUpdated !== undefined
+          ? { lastUpdated: previousEntry.lastUpdated }
+          : {}),
       };
-      // Caller-supplied cache fields override preserved ones.
       if (input.tools !== undefined) resolvedEntry.tools = input.tools;
-      if (input.installedVersion !== undefined) resolvedEntry.installedVersion = input.installedVersion;
-      if (input.lastUpdated !== undefined) resolvedEntry.lastUpdated = input.lastUpdated;
+      if (input.installedVersion !== undefined) {
+        resolvedEntry.installedVersion = input.installedVersion;
+      }
+      if (input.lastUpdated !== undefined) {
+        resolvedEntry.lastUpdated = input.lastUpdated;
+      }
       projects[canonicalPath] = resolvedEntry;
       await FileSystemUtils.createDirectory(getProjectHomeDir(home, options));
-      // Prune sibling worktree duplicates (D5): any OTHER same-projectId entry
-      // whose path is a live linked worktree of the placed entry is a
-      // guaranteed duplicate sharing this home — collapse it in the same write
-      // so active projects converge to one entry without waiting for gc. A
-      // worktree path already gone from disk is not a live sibling here; it
-      // stays a dangling entry for gc (matches the "live" wording in D5).
-      // Identity is normalized on BOTH sides: an uppercase entry from a
-      // pre-normalization registry and a lowercase placed projectId are the
-      // same project, and leaving the case-different duplicate alive would
-      // resurrect a stale entry until gc (the sameIdEntries filter above
-      // already recognizes them as same-project via the same normalization).
+
       for (const otherPath of Object.keys(projects)) {
         if (otherPath === canonicalPath) continue;
         if (
           normalizeProjectIdentity(projects[otherPath].projectId) !==
           normalizeProjectIdentity(projectId)
-        )
+        ) {
           continue;
+        }
         if (await isGitWorktreeSibling(canonicalPath, otherPath)) {
           delete projects[otherPath];
         }
       }
     }
 
-    // 1. Path-exact match: update in place. home/projectId never change.
     const existingAtPath = projects[canonicalPath];
     if (existingAtPath) {
       await place(existingAtPath.home, existingAtPath.projectId, existingAtPath);
-      return { version: 1, projects };
+      await writeProjectRegistryState({ version: 1, projects }, options);
+      return;
     }
 
     const sameIdEntries = Object.entries(projects).filter(
       ([, entry]) =>
-        normalizeProjectIdentity(entry.projectId) === normalizeProjectIdentity(input.projectId)
+        normalizeProjectIdentity(entry.projectId) ===
+        normalizeProjectIdentity(input.projectId)
     );
 
-    // 2a. Worktree share: an entry with the same projectId whose path still
-    // exists and is a Git worktree of the same repository. Checked BEFORE
-    // the moved-repo rebind below (MINOR-1): a dangling same-id entry left
-    // by a deleted clone must not hijack a genuine worktree of a DIFFERENT,
-    // still-live same-id entry onto the dead clone's home. Paths that no
-    // longer exist on disk never match here (isGitWorktreeSibling shells to
-    // git, which fails for a missing directory), so this loop cannot
-    // accidentally consume a moved-repo candidate.
     for (const [otherPath, entry] of sameIdEntries) {
       if (await isGitWorktreeSibling(canonicalPath, otherPath)) {
         await place(entry.home, entry.projectId, entry);
-        return { version: 1, projects };
+        await writeProjectRegistryState({ version: 1, projects }, options);
+        return;
       }
     }
 
-    // 2b. Moved repo: an entry with the same projectId whose path no longer
-    // exists on disk. Rebind it to the new path, reusing its home.
+    if (!allowCreate) {
+      const liveClaimants = (
+        await Promise.all(
+          sameIdEntries.map(async ([otherPath]) => ({
+            otherPath,
+            live: await pathIsDirectory(otherPath),
+          }))
+        )
+      ).filter(claimant => claimant.live);
+      if (liveClaimants.length > 0 || sameIdEntries.length !== 1) {
+        return;
+      }
+    }
+
     for (const [oldPath, entry] of sameIdEntries) {
       if (!(await pathIsDirectory(oldPath))) {
         delete projects[oldPath];
         await place(entry.home, entry.projectId, entry);
-        return { version: 1, projects };
+        await writeProjectRegistryState({ version: 1, projects }, options);
+        return;
       }
     }
 
-    // 2c. Clone fork (also the fresh-projectId path): distinct home, first
-    // free integer suffix when the base name collides. The base name derives
-    // from the MAIN repo when this path is a worktree (D3) — otherwise a
-    // `.claude/worktrees/<branch>` registering before the main repo would
-    // permanently name the shared home after the branch instead of the repo.
+    if (!allowCreate) return;
+
     const mainRepoDir = await resolveMainRepoDir(canonicalPath);
-    const baseHome = deriveHomeBaseName(mainRepoDir ?? canonicalPath, input.projectId);
-    const usedHomes = new Set(Object.values(projects).map((entry) => entry.home));
+    const baseHome = deriveHomeBaseName(
+      mainRepoDir ?? canonicalPath,
+      input.projectId
+    );
+    const usedHomes = new Set(
+      Object.values(projects).map(entry => entry.home)
+    );
     let home = baseHome;
     if (usedHomes.has(home)) {
       let suffix = 2;
@@ -450,10 +479,68 @@ export async function registerProject(
       home = `${baseHome}-${suffix}`;
     }
     await place(home, input.projectId);
-    return { version: 1, projects };
+    await writeProjectRegistryState({ version: 1, projects }, options);
   }, options);
 
-  return { entry: resolvedEntry!, canonicalPath };
+  return resolvedEntry === undefined
+    ? null
+    : { entry: resolvedEntry, canonicalPath };
+}
+
+export interface ProjectIdentityClaimant {
+  path: string;
+  entry: ProjectRegistryEntryState;
+  live: boolean;
+}
+
+/**
+ * Returns every machine-registry claim for one normalized project identity.
+ * Claimants are path-sorted so every consumer reports the same ambiguity.
+ */
+export async function findProjectIdentityClaimants(
+  projectId: string,
+  options: ProjectPathOptions = {}
+): Promise<ProjectIdentityClaimant[]> {
+  const state = await readProjectRegistryState(options);
+  if (state === null) return [];
+  const normalized = normalizeProjectIdentity(projectId);
+  const matching = Object.entries(state.projects)
+    .filter(
+      ([, entry]) =>
+        normalizeProjectIdentity(entry.projectId) === normalized
+    )
+    .sort(([left], [right]) => left.localeCompare(right));
+  return Promise.all(
+    matching.map(async ([claimPath, entry]) => ({
+      path: claimPath,
+      entry,
+      live: await pathIsDirectory(claimPath),
+    }))
+  );
+}
+
+/**
+ * Shared refusal text for a project identity claimed by multiple roots. Prune
+ * is recommended only when it can help: at least one claimant is missing.
+ */
+export function formatProjectIdentityAmbiguity(
+  projectId: string,
+  claimants: readonly ProjectIdentityClaimant[]
+): string {
+  const ordered = [...claimants].sort((left, right) =>
+    left.path.localeCompare(right.path)
+  );
+  const inventory = ordered
+    .map(claimant => `  - ${claimant.path} (${claimant.live ? 'live' : 'missing'})`)
+    .join('\n');
+  const hasMissing = ordered.some(claimant => !claimant.live);
+  const repair = hasMissing
+    ? 'Run `rasen home prune --apply` to remove missing claims, then retry. If multiple live claims remain, repair their projectId metadata before retrying.'
+    : 'All claimants are live. Assign distinct projectId metadata to independent copies or repair the registry before retrying; Rasen refuses to choose an owner.';
+  return (
+    `Project owner '${projectId}' resolves to more than one registered project root:\n` +
+    `${inventory}\n${repair}`
+  );
 }
 
 // -----------------------------------------------------------------------------

@@ -13,6 +13,7 @@ import {
 import { parseDeltaSpec, normalizeRequirementName, extractRequirementsSection } from '../parsers/requirement-blocks.js';
 import { findMainSpecStructureIssues } from '../parsers/spec-structure.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
+import { analyzeSpecUpdates, findSpecUpdates } from '../specs-apply.js';
 
 export class Validator {
   private strictMode: boolean;
@@ -112,7 +113,10 @@ export class Validator {
    * - RENAMED: pairs well-formed
    * - No duplicates within sections; no cross-section conflicts per spec
    */
-  async validateChangeDeltaSpecs(changeDir: string): Promise<ValidationReport> {
+  async validateChangeDeltaSpecs(
+    changeDir: string,
+    canonicalSpecsDir?: string
+  ): Promise<ValidationReport> {
     const issues: ValidationIssue[] = [];
     const specsDir = path.join(changeDir, 'specs');
     let totalDeltas = 0;
@@ -250,6 +254,35 @@ export class Validator {
       }
     } catch {
       // If no specs dir, treat as no deltas
+    }
+
+    if (canonicalSpecsDir !== undefined) {
+      const updates = await findSpecUpdates(changeDir, canonicalSpecsDir);
+      const analysis = await analyzeSpecUpdates(
+        updates,
+        path.basename(changeDir),
+        { silent: true }
+      );
+      const changeSpecsDir = path.join(changeDir, 'specs');
+      for (const issue of analysis.issues) {
+        if (issue.code !== 'spec_modified_scenarios_missing') continue;
+        issues.push({
+          path: FileSystemUtils.toPosixPath(path.relative(changeSpecsDir, issue.source)),
+          level: this.strictMode ? 'ERROR' : 'WARNING',
+          code: issue.code,
+          source: issue.source,
+          capability: issue.capability,
+          ...(issue.requirement === undefined
+            ? {}
+            : { requirement: issue.requirement }),
+          ...(issue.missingScenarios === undefined
+            ? {}
+            : { missingScenarios: issue.missingScenarios }),
+          message:
+            `${issue.message} MODIFIED replaces the complete requirement; ` +
+            'include every scenario that should survive.',
+        });
+      }
     }
 
     for (const { path: specPath, sections } of emptySectionSpecs) {
