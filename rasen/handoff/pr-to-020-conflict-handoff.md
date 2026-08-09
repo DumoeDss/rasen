@@ -20,6 +20,8 @@ Another session is ACTIVELY developing this branch right now (the `ecp-session-p
 
 If either is false, policy-parity isn't finished — WAIT and re-check. (If you must proceed earlier, coordinate with the live session; do not assume.)
 
+**Status as of 2026-08-09:** policy-parity IS archived (`ca0939f8` → `rasen/changes/archive/2026-08-09-ecp-session-policy-and-control-parity/`); the active dir is gone. **The precondition is MET — proceed.** All seven ECP-7 implementation children are terminal (foundation/prepare-unavailability/cutover/closure/host/executor/policy-parity). The live ECP session has STOPPED touching the branch. Local is 113 commits ahead of `origin/wip/...` (this session's work, not yet pushed — your job).
+
 ## Step 0 — work on a SEPARATE PR branch in a separate worktree (no collision, no merge-back)
 
 **Topology (important — this is how the two sessions integrate):**
