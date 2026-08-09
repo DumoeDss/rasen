@@ -1,7 +1,7 @@
 # frozen-action-session-executor Specification
 
 ## Purpose
-TBD - created by archiving change ecp-frozen-action-session-executor. Update Purpose after archive.
+The execution layer that actually runs a reconciler-granted agent Action through a real, recoverable, auditable Session instead of the launcher implicitly acting as the worker manager. The executor consumes only committed, plan-frozen, currently-executable Actions and rebuilds no authority; a computed, queryable OS-by-backend capability matrix (exactly two 0.2.0 tiers — `in-tool`, where the host tool owns the worker and rasen makes no process-authority claim, and `hosted best-effort`, where the rasen daemon owns a daemon-lifetime process behind the shipped best-effort ProcessScope tiers) decides what each driver face can do before start, and a hosted request the platform cannot serve returns typed `authority-unavailable` rather than silently rerouting. Daemon or launcher death composes into a typed `execution-lost` Action outcome at the executor's reconciliation point, and the Run resumes only from the last committed frontier with no reattach or identity revalidation. Completion is written with transactional integrity (complete-set verification before publish, re-read and re-verification before Record mutation) and no cryptographic signing, and every driver face routes the same granted Action through one contract so no face maintains a second Run or Session truth.
 ## Requirements
 ### Requirement: The executor consumes only granted frozen Actions and rebuilds no authority
 
