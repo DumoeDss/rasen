@@ -182,7 +182,7 @@ describe('store layout v2 migration — Windows and POSIX destination constructi
     f.cleanup();
     // The nested partition destination below is what actually gets long; the
     // prefix only pushes the root far enough that it matters.
-    f = await createLayoutMigrationFixture(`rasen-${'d'.repeat(60)}-`);
+    f = await createLayoutMigrationFixture(`rasen-${'d'.repeat(200)}-`);
 
     await f.member('elftia', { specs: [], changes: ['fix-a'] });
     f.writeChange('fix-a');
@@ -191,7 +191,7 @@ describe('store layout v2 migration — Windows and POSIX destination constructi
 
     const plan = await f.migration().plan(f.input({ mappingPath: MAPPING }));
     const destination = plan.items.find((item) => item.name === 'fix-a')?.destination as string;
-    expect(destination.length).toBeGreaterThan(150);
+    expect(destination.length).toBeGreaterThan(260);
     expect(plan.applicable).toBe(true);
 
     await f.migration().apply(plan.token!);
