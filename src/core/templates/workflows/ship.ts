@@ -60,7 +60,12 @@ Run all checks before shipping:
 - Uncommitted changes do NOT block — committing them is the ship phase's own job (step 3b)
 - If on detached HEAD, warn and suggest creating a branch
 
-**d. All Checks Pass**
+**d. Reserved ship-log heading**
+- Resolve the sticky-legacy ship-log candidate in the same order archive uses: \`evidenceDir/ship-log.md\`, then an existing legacy \`workDir/ship-log.md\`, then \`changeRoot/ship-log.md\`
+- If the selected existing log contains a level-two \`## Archive\` heading, **STOP before commit, delivery, deployment, or any evidence write**. Report that the heading is reserved for the archive engine and require the operator to remove or rename the change-authored section.
+- Never add an \`## Archive\` heading or placeholder when creating/updating the ship log; the archive engine adds the section only inside its verified transaction.
+
+**e. All Checks Pass**
 - If all checks pass, proceed directly to ship phase
 
 ### 3. Ship Phase
@@ -175,7 +180,7 @@ Repo-mode PR bodies are unchanged beyond the store-safe proposal read above.
 
 ### 4. Write Ship Log
 
-After successful delivery in ANY mode, write \`ship-log.md\` while the change is still active, to its evidence directory (\`evidenceDir\` from status JSON; sticky-legacy: update an existing legacy \`workDir\` or change-root log in place). Under in-ship timing this must contain every final delivery fact, PR URL, and optional deployment outcome before the engine runs.
+After successful delivery in ANY mode, write \`ship-log.md\` while the change is still active, to its evidence directory (\`evidenceDir\` from status JSON; sticky-legacy: update an existing legacy \`workDir\` or change-root log in place). Under in-ship timing this must contain every final delivery fact, PR URL, and optional deployment outcome before the engine runs. The generated log MUST omit the engine-reserved \`## Archive\` section and every placeholder for it.
 
 \`\`\`markdown
 # Ship Log: <change-name>
@@ -207,9 +212,9 @@ Status: Pending (run rasen-ship --deploy to continue)   (pr mode only)
 
 ### 4.5 In-ship archive engine (in-ship timing only)
 
-If deployment was requested, complete step 5 and write its final outcome before continuing. Then run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.intentTemplate}\`, complete an external intent including empty-handoff or probe-only intent, and run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.savedPreview}\`. Inspect the immutable plan and require no blockers, capture its exact \`planToken\`, then run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.apply}\`. Retry recoverable outcomes only with the same token. This is the only archive bookkeeping path: never invoke an external spec-sync command, directly create an archive directory, move/delete the active change, write \`archive.json\`, or append evidence afterward.
+If deployment was requested, complete step 5 and write its final outcome before continuing. Then run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.intentTemplate}\`, complete an external intent including empty-handoff or probe-only intent, and run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.savedPreview}\`. Inspect the immutable plan and require no blockers, capture its exact \`planToken\`, then run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.apply}\`. Branch on structured disposition: if \`manualRecoveryAction\` exists, follow only that verified manual guidance; otherwise \`recoverable\` uses only its returned exact-token recovery command, \`abort-required\` uses only its returned \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.abort}\` before correction and a fresh plan, and \`blocked\` stops before mutation. Never replay a deterministic conflict or replan a recoverable transaction. This is the only archive bookkeeping path: never invoke an external spec-sync command, directly move/remove the change, create an archive directory, write \`archive.json\`, or repair a journal.
 
-The engine stages and verifies the payload, adds the archive section to the staged ship log, captures quality, publishes source-last, and returns the final path/journal/accounting result. Stage and commit the engine-produced planning-root archive delta with a path-scoped conventional archive message that may reference the already-recorded ship short SHA, then non-force push that follow-up commit when the selected delivery mode requires the remote to receive it. A recoverable result is not success; report its journal.
+The engine stages and verifies the payload, adds the archive section to the staged ship log, captures quality, publishes source-last, and returns the final path/journal/accounting result. Stage and commit the engine-produced planning-root archive delta with a path-scoped conventional archive message that may reference the already-recorded ship short SHA, then non-force push that follow-up commit when the selected delivery mode requires the remote to receive it. A recoverable or \`abort-required\` result is not success; report its journal and disposition.
 
 ### 5. Optional: Land and Deploy (pr mode only)
 

@@ -170,6 +170,45 @@ describe('touchProjectRegistry (self-healing)', () => {
     expect(fs.existsSync(path.join(globalDataDir, 'projects'))).toBe(false);
   });
 
+  it('does not first-register an unknown path that merely carries a projectId', async () => {
+    fs.writeFileSync(
+      path.join(projectRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nprojectId: 11111111-1111-4111-8111-111111111111\n'
+    );
+
+    await touchProjectRegistry(projectRoot, { globalDataDir });
+
+    expect(fs.existsSync(getProjectRegistryPath({ globalDataDir }))).toBe(false);
+  });
+
+  it('does not register a copied config while its original owner is live', async () => {
+    await resolveProjectHome(projectRoot, { globalDataDir });
+    const copiedRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'rasen-self-heal-copy-')
+    );
+    try {
+      fs.mkdirSync(path.join(copiedRoot, 'rasen'), { recursive: true });
+      fs.copyFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        path.join(copiedRoot, 'rasen', 'config.yaml')
+      );
+      const registryPath = getProjectRegistryPath({ globalDataDir });
+      const before = fs.readFileSync(registryPath, 'utf8');
+      const beforeMtime = fs.statSync(registryPath).mtimeMs;
+
+      await touchProjectRegistry(copiedRoot, { globalDataDir });
+
+      expect(fs.readFileSync(registryPath, 'utf8')).toBe(before);
+      expect(fs.statSync(registryPath).mtimeMs).toBe(beforeMtime);
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(Object.keys(state?.projects ?? {})).toEqual([
+        FileSystemUtils.canonicalizeExistingPath(projectRoot),
+      ]);
+    } finally {
+      fs.rmSync(copiedRoot, { recursive: true, force: true });
+    }
+  });
+
   it('refreshes lastSeen when the entry is current but stale (> 24h)', async () => {
     const home = await resolveProjectHome(projectRoot, { globalDataDir });
     const canonicalPath = FileSystemUtils.canonicalizeExistingPath(projectRoot);

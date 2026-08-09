@@ -104,7 +104,7 @@ describe('association completion inside the transaction', () => {
     });
     const plan = await planFor(bound);
 
-    const result = await applyArchive(plan.archivePlan, adapters());
+    const result = await applyArchive(plan.archivePlan, { adapters: adapters() });
     expect(result.status).toBe('complete');
 
     const entry = await indexEntry(bound);
@@ -141,14 +141,11 @@ describe('association completion inside the transaction', () => {
     const before = association(bound);
     const entryBefore = await indexEntry(bound);
 
-    const result = await applyArchive(
-      plan.archivePlan,
-      adapters({
-        writeArchiveV2Json: async () => {
-          throw new Error('injected accounting failure');
-        },
-      })
-    );
+    const result = await applyArchive(plan.archivePlan, { adapters: adapters({
+      writeArchiveV2Json: async () => {
+        throw new Error('injected accounting failure');
+      },
+    }) });
 
     expect(result.status).not.toBe('complete');
     // Untouched, field for field — a stronger claim than "not 'complete'",
@@ -171,14 +168,11 @@ describe('association completion inside the transaction', () => {
     const plan = await planFor(bound);
     const entryBefore = await indexEntry(bound);
 
-    const failed = await applyArchive(
-      plan.archivePlan,
-      adapters({
-        finalizeArchiveAssociation: async () => {
-          throw new Error('injected binding failure');
-        },
-      })
-    );
+    const failed = await applyArchive(plan.archivePlan, { adapters: adapters({
+      finalizeArchiveAssociation: async () => {
+        throw new Error('injected binding failure');
+      },
+    }) });
 
     expect(failed.status).not.toBe('complete');
     // Published and staying published; the journal names the unfinished phase.
@@ -188,7 +182,7 @@ describe('association completion inside the transaction', () => {
     expect(await indexEntry(bound)).toEqual(entryBefore);
 
     // Re-applying the SAME plan completes rather than duplicating.
-    const retried = await applyArchive(plan.archivePlan, adapters());
+    const retried = await applyArchive(plan.archivePlan, { adapters: adapters() });
     expect(retried.status).toBe('complete');
     expect(fs.readdirSync(bound.archiveLine)).toHaveLength(1);
     expect((await indexEntry(bound))?.phase).toBe('bound');
@@ -204,21 +198,18 @@ describe('association completion inside the transaction', () => {
     const plan = await planFor(bound);
 
     let failSourceRemoval = true;
-    const failed = await applyArchive(
-      plan.archivePlan,
-      adapters({
-        fs: {
-          ...defaultArchiveEngineAdapters.fs,
-          rename: async (source: string, target: string) => {
-            if (failSourceRemoval && source === plan.archivePlan.paths.active) {
-              failSourceRemoval = false;
-              throw new Error('injected source-removal failure');
-            }
-            return defaultArchiveEngineAdapters.fs.rename(source, target);
-          },
+    const failed = await applyArchive(plan.archivePlan, { adapters: adapters({
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        rename: async (source: string, target: string) => {
+          if (failSourceRemoval && source === plan.archivePlan.paths.active) {
+            failSourceRemoval = false;
+            throw new Error('injected source-removal failure');
+          }
+          return defaultArchiveEngineAdapters.fs.rename(source, target);
         },
-      })
-    );
+      },
+    }) });
 
     expect(failed.status).not.toBe('complete');
     // The binding was already completed, because the phase precedes removal.
@@ -226,7 +217,7 @@ describe('association completion inside the transaction', () => {
     expect(afterFailure.finalizedChange).toMatchObject({ changeId: bound.changeId });
     expect((await indexEntry(bound))?.phase).toBe('bound');
 
-    const retried = await applyArchive(plan.archivePlan, adapters());
+    const retried = await applyArchive(plan.archivePlan, { adapters: adapters() });
     expect(retried.status).toBe('complete');
     // Idempotent by construction: the same derived value, so the retry writes
     // the same bytes rather than appending a second record.
@@ -250,7 +241,7 @@ describe('association completion inside the transaction', () => {
       workspacePairId: `wp_${'9'.repeat(64)}`,
     });
 
-    const failed = await applyArchive(plan.archivePlan, adapters());
+    const failed = await applyArchive(plan.archivePlan, { adapters: adapters() });
     expect(failed.status).not.toBe('complete');
     expect(
       failed.blockers.some(blocker => blocker.message.includes('disagrees with the finalized pair'))
@@ -260,7 +251,7 @@ describe('association completion inside the transaction', () => {
     expect(fs.existsSync(bound.changeDir)).toBe(true);
 
     await writeWorkspaceIndexEntry(coordination, recorded);
-    const retried = await applyArchive(plan.archivePlan, adapters());
+    const retried = await applyArchive(plan.archivePlan, { adapters: adapters() });
     expect(retried.status).toBe('complete');
     expect((await indexEntry(bound))?.phase).toBe('bound');
     expect(association(bound).finalizedChange).toMatchObject({ changeId: bound.changeId });
@@ -282,7 +273,7 @@ describe('association completion inside the transaction', () => {
     // The entry disappeared — the ordinary way machine state is lost.
     fs.rmSync(indexPath, { force: true });
 
-    const result = await applyArchive(plan.archivePlan, adapters());
+    const result = await applyArchive(plan.archivePlan, { adapters: adapters() });
     expect(result.status).toBe('complete');
 
     const repaired = await indexEntry(bound);
@@ -365,7 +356,7 @@ describe('association completion inside the transaction', () => {
     });
     const plan = await planFor(bound);
 
-    expect((await applyArchive(plan.archivePlan, adapters())).status).toBe('complete');
+    expect((await applyArchive(plan.archivePlan, { adapters: adapters() })).status).toBe('complete');
     expect(await indexEntry(bound)).not.toBeNull();
 
     // Compared by directory NAME, so the assertion does not depend on how Git

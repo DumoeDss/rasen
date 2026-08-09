@@ -203,7 +203,12 @@ export async function createStoreFinalizationFixture(
           probes: [],
           blockers: [],
         },
-        shipLog: { source: null, sha256: null, recordedCommit: null },
+        shipLog: {
+          source: null,
+          sha256: null,
+          recordedCommit: null,
+          reservedSection: false,
+        },
         scope: { kind: 'store-project', storeUid: base.storeUid, projectId: bound.projectId },
         ...overrides,
       } as FinalizationArchivePreparation;

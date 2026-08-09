@@ -225,6 +225,83 @@ describe('store add-project', () => {
     ).toBe(false);
   });
 
+  it('compares deltas with canonical specs in a selected registered project', async () => {
+    await registerTargetStore();
+    const projectRoot = makeProject('my-project');
+    const add = await runCLI(
+      ['store', 'add-project', projectRoot, '--to', 'team-context', '--json'],
+      { cwd: tempDir, env }
+    );
+    expect(add.exitCode).toBe(0);
+    writeSpec(
+      projectRoot,
+      'billing',
+      [
+        '# Billing',
+        '',
+        '## Purpose',
+        'Billing behavior remains deterministic.',
+        '',
+        '## Requirements',
+        '',
+        '### Requirement: Billing SHALL work',
+        'The system SHALL create bills.',
+        '',
+        '#### Scenario: Creates bills',
+        '- **WHEN** a billing period ends',
+        '- **THEN** a bill is created',
+        '',
+        '#### Scenario: Exports bills',
+        '- **WHEN** a bill is exported',
+        '- **THEN** an export is created',
+      ].join('\n')
+    );
+    const deltaDir = path.join(
+      projectRoot,
+      'rasen',
+      'changes',
+      'project-scenario-loss',
+      'specs',
+      'billing'
+    );
+    fs.mkdirSync(deltaDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(deltaDir, 'spec.md'),
+      [
+        '## MODIFIED Requirements',
+        '',
+        '### Requirement: Billing SHALL work',
+        'The system SHALL create bills differently.',
+        '',
+        '#### Scenario: Creates bills',
+        '- **WHEN** a billing period ends',
+        '- **THEN** a bill is created',
+      ].join('\n')
+    );
+
+    const result = await runCLI(
+      [
+        'validate',
+        'project-scenario-loss',
+        '--project',
+        'my-project',
+        '--json',
+      ],
+      { cwd: tempDir, env }
+    );
+
+    expect(result.exitCode).toBe(0);
+    const payload = parseJson(result);
+    expect(payload.root.path).toBe(fs.realpathSync.native(projectRoot));
+    expect(payload.items[0].issues).toContainEqual(
+      expect.objectContaining({
+        level: 'WARNING',
+        code: 'spec_modified_scenarios_missing',
+        missingScenarios: ['Exports bills'],
+      })
+    );
+  });
+
   it('rejects an unknown target store with a setup hint', async () => {
     const projectRoot = makeProject('my-project');
 

@@ -5,14 +5,20 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  abortArchivePlan,
   applyArchive,
   createArchiveIntentTemplate,
   createArchivePlan,
+  inspectArchiveApplyPlan,
   defaultArchiveEngineAdapters,
   loadStoredArchivePlan,
+  loadCompletedArchiveAbort,
   persistArchivePlan,
   resolveArchiveSidecar,
   stableArchiveJson,
+  withStoredArchivePlanOperation,
+  type ArchiveBlocker,
+  type ArchivePlan,
   type PreparedArchiveSpecAction,
 } from '../../src/core/archive-engine.js';
 import { hashArchiveEvidence } from '../../src/core/archive-accounting.js';
@@ -48,6 +54,9 @@ describe('archive plan/apply engine', () => {
     options: {
       keepEphemera?: boolean;
       specActions?: PreparedArchiveSpecAction[];
+      timing?: ArchivePlan['decisions']['timing'];
+      preparationBlockers?: ArchiveBlocker[];
+      shipLog?: ArchivePlan['shipLog'];
     } = {}
   ) {
     const sidecar = await resolveArchiveSidecar(active, root, 'sample');
@@ -62,9 +71,17 @@ describe('archive plan/apply engine', () => {
       keepEphemera: options.keepEphemera ?? false,
       validation: 'passed',
       tasks: { total: 1, completed: 1, override: false },
-      timing: { mode: 'on-merge', deliveryMode: 'local', override: false },
+      timing: options.timing ?? {
+        mode: 'on-merge',
+        deliveryMode: 'local',
+        override: false,
+      },
       specActions: options.specActions ?? [],
       sidecar,
+      ...(options.shipLog === undefined ? {} : { shipLog: options.shipLog }),
+      ...(options.preparationBlockers === undefined
+        ? {}
+        : { preparationBlockers: options.preparationBlockers }),
       transactionId: '11111111-1111-4111-8111-111111111111',
       createdAt: '2026-07-31T00:00:00.000Z',
     });
@@ -203,6 +220,115 @@ describe('archive plan/apply engine', () => {
       await fs.readFile(archivePlan.paths.publishedJournal, 'utf8')
     );
     expect(journal.phase).toBe('complete');
+  });
+
+  it('consumes merge confirmation at apply without changing the saved plan', async () => {
+    const archivePlan = await plan({
+      timing: {
+        mode: 'on-merge',
+        deliveryMode: 'pr',
+        override: false,
+      },
+    });
+
+    expect(archivePlan.complete).toBe(false);
+    expect(archivePlan.blockers).toEqual([
+      expect.objectContaining({
+        code: 'archive_merge_confirmation_required',
+        operation: 'timing',
+      }),
+    ]);
+    expect(inspectArchiveApplyPlan(archivePlan).applicable).toBe(false);
+    expect(
+      inspectArchiveApplyPlan(archivePlan, { mergeConfirmed: true })
+    ).toEqual({
+      applicable: true,
+      blockers: [],
+    });
+
+    const result = await applyArchive(archivePlan, {
+      assertions: { mergeConfirmed: true },
+    });
+
+    expect(result.status).toBe('complete');
+    expect(archivePlan.complete).toBe(false);
+    expect(archivePlan.decisions.timing.override).toBe(false);
+  });
+
+  it('applies a legacy saved merge plan whose timing blocker predates stable codes', async () => {
+    const currentPlan = await plan({
+      timing: {
+        mode: 'on-merge',
+        deliveryMode: 'pr',
+        override: false,
+      },
+    });
+    const legacyPlan = structuredClone(currentPlan);
+    delete legacyPlan.blockers[0]?.code;
+    const { planHash: _planHash, ...withoutHash } = legacyPlan;
+    legacyPlan.planHash = defaultArchiveEngineAdapters.sha256(
+      stableArchiveJson(withoutHash)
+    );
+    const globalDataDir = path.join(root, 'global-data');
+    const token = await persistArchivePlan(legacyPlan, globalDataDir);
+    const stored = await loadStoredArchivePlan(token, globalDataDir);
+    expect(stored.blockers).toEqual([
+      expect.objectContaining({
+        operation: 'timing',
+      }),
+    ]);
+    expect(stored.blockers[0]).not.toHaveProperty('code');
+    expect(
+      (
+        await applyArchive(stored, {
+          assertions: { mergeConfirmed: true },
+        })
+      ).status
+    ).toBe('complete');
+  });
+
+  it('merge confirmation cannot bypass an unrelated plan blocker', async () => {
+    const archivePlan = await plan({
+      timing: {
+        mode: 'on-merge',
+        deliveryMode: 'pr',
+        override: false,
+      },
+      preparationBlockers: [
+        {
+          operation: 'validation',
+          path: active,
+          code: 'validation_failed',
+          message: 'injected validation failure',
+        },
+      ],
+    });
+
+    expect(
+      inspectArchiveApplyPlan(archivePlan, { mergeConfirmed: true })
+    ).toEqual({
+      applicable: false,
+      blockers: [
+        expect.objectContaining({
+          operation: 'validation',
+          code: 'validation_failed',
+        }),
+      ],
+    });
+    const result = await applyArchive(archivePlan, {
+      assertions: { mergeConfirmed: true },
+    });
+    expect(result.status).toBe('blocked');
+    expect(result.blockers).toEqual([
+      expect.objectContaining({
+        operation: 'validation',
+        code: 'validation_failed',
+      }),
+    ]);
+    await expect(fs.access(active)).resolves.toBeUndefined();
+    await expect(fs.access(archivePlan.paths.stage)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
   });
 
   it('appends archive facts without changing any existing ship-log prefix byte', async () => {
@@ -368,6 +494,120 @@ describe('archive plan/apply engine', () => {
     expect(projection.handoff.complete).toBe(true);
   });
 
+  it('reports incomplete handoff and missing probes with distinct stable codes', async () => {
+    const sidecarPath = path.join(active, '.rasen-archive-input.json');
+    await fs.writeFile(
+      sidecarPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        change: 'sample',
+        handoff: { complete: false, decisions: [] },
+        probes: [],
+      })
+    );
+
+    const incompleteHandoff = await resolveArchiveSidecar(
+      active,
+      root,
+      'sample'
+    );
+    expect(incompleteHandoff.status).toBe('invalid');
+    expect(incompleteHandoff.blockers).toEqual([
+      expect.objectContaining({
+        code: 'archive_intent_handoff_incomplete',
+        message: expect.stringContaining('handoff.complete'),
+      }),
+    ]);
+
+    await fs.writeFile(
+      sidecarPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        change: 'sample',
+        handoff: { complete: true, decisions: [] },
+      })
+    );
+    const missingProbes = await resolveArchiveSidecar(active, root, 'sample');
+    expect(missingProbes.status).toBe('invalid');
+    expect(missingProbes.blockers).toEqual([
+      expect.objectContaining({
+        code: 'archive_intent_probes_missing',
+        message: expect.stringContaining('empty array'),
+      }),
+    ]);
+  });
+
+  it('names an unexpected root intent key and lists the accepted root fields', async () => {
+    const sidecarPath = path.join(active, '.rasen-archive-input.json');
+    await fs.writeFile(
+      sidecarPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        change: 'sample',
+        handoff: { complete: true, decisions: [] },
+        probes: [],
+        mergeConfirmed: true,
+      })
+    );
+
+    const projection = await resolveArchiveSidecar(active, root, 'sample');
+
+    expect(projection.status).toBe('invalid');
+    expect(projection.blockers).toEqual([
+      expect.objectContaining({
+        code: 'archive_intent_unexpected_key',
+        path: `${sidecarPath}#/mergeConfirmed`,
+        message: expect.stringMatching(
+          /Unexpected key 'mergeConfirmed'.*schemaVersion, change, handoff, probes/
+        ),
+      }),
+    ]);
+  });
+
+  it('reports independent intent constraints in deterministic structured order', async () => {
+    const sidecarPath = path.join(active, '.rasen-archive-input.json');
+    await fs.writeFile(
+      sidecarPath,
+      JSON.stringify({
+        schemaVersion: 2,
+        change: 'different-change',
+        handoff: {
+          complete: true,
+          decisions: [],
+          mergeConfirmed: true,
+        },
+        probes: [],
+      })
+    );
+
+    const projection = await resolveArchiveSidecar(active, root, 'sample');
+
+    expect(
+      projection.blockers.map(({ code, path: issuePath, message }) => ({
+        code,
+        path: issuePath,
+        message,
+      }))
+    ).toEqual([
+      {
+        code: 'archive_intent_change_mismatch',
+        path: `${sidecarPath}#/change`,
+        message: "Archive intent change must be 'sample'; received \"different-change\".",
+      },
+      {
+        code: 'archive_intent_unexpected_key',
+        path: `${sidecarPath}#/handoff/mergeConfirmed`,
+        message:
+          "Unexpected key 'mergeConfirmed' at /handoff; accepted keys are: complete, decisions.",
+      },
+      {
+        code: 'archive_intent_schema_version_invalid',
+        path: `${sidecarPath}#/schemaVersion`,
+        message: 'schemaVersion must be 1; received 2.',
+      },
+    ]);
+  });
+
   it('treats a malformed or incomplete sidecar as blocking without mutation', async () => {
     await fs.mkdir(path.join(active, 'handoff'), { recursive: true });
     await fs.writeFile(path.join(active, 'handoff', 'missing-decision.md'), 'keep');
@@ -507,7 +747,7 @@ describe('archive plan/apply engine', () => {
       },
     };
 
-    const first = await applyArchive(archivePlan, failingAdapters);
+    const first = await applyArchive(archivePlan, { adapters: failingAdapters });
     expect(first.status).toBe('recoverable');
     expect(publishAttempts).toBe(1);
     await expect(fs.access(active)).resolves.toBeUndefined();
@@ -580,7 +820,7 @@ describe('archive plan/apply engine', () => {
       },
     };
 
-    const first = await applyArchive(archivePlan, failingAdapters);
+    const first = await applyArchive(archivePlan, { adapters: failingAdapters });
     expect(first.status).toBe('recoverable');
     expect(first.specsUpdated).toBe(true);
     expect(first.totals).toEqual({
@@ -655,7 +895,7 @@ describe('archive plan/apply engine', () => {
         },
       };
 
-      const first = await applyArchive(archivePlan, adapters);
+      const first = await applyArchive(archivePlan, { adapters: adapters });
       expect(first.status).toBe('recoverable');
       expect(await fs.readFile(target, 'utf8')).toBe(rebuilt);
       await expect(fs.access(active)).resolves.toBeUndefined();
@@ -717,7 +957,7 @@ describe('archive plan/apply engine', () => {
       },
     };
 
-    const first = await applyArchive(archivePlan, adapters);
+    const first = await applyArchive(archivePlan, { adapters: adapters });
     expect(first.status).toBe('recoverable');
     expect(await fs.readFile(target, 'utf8')).toBe(rebuilt);
     await expect(fs.access(backup)).rejects.toMatchObject({ code: 'ENOENT' });
@@ -763,7 +1003,7 @@ describe('archive plan/apply engine', () => {
       },
     };
 
-    const result = await applyArchive(archivePlan, adapters);
+    const result = await applyArchive(archivePlan, { adapters: adapters });
     expect(result.status).toBe('recoverable');
     expect(result.blockers).toEqual(
       expect.arrayContaining([
@@ -813,7 +1053,7 @@ describe('archive plan/apply engine', () => {
       },
     };
 
-    const result = await applyArchive(archivePlan, adapters);
+    const result = await applyArchive(archivePlan, { adapters: adapters });
     expect(result.status).toBe('recoverable');
     expect(await fs.readFile(target, 'utf8')).toBe('# Concurrent\n');
     const journal = JSON.parse(await fs.readFile(archivePlan.paths.journal, 'utf8'));
@@ -864,7 +1104,7 @@ describe('archive plan/apply engine', () => {
       },
     };
 
-    const result = await applyArchive(archivePlan, adapters);
+    const result = await applyArchive(archivePlan, { adapters: adapters });
     expect(result.status).toBe('recoverable');
     const journal = JSON.parse(await fs.readFile(archivePlan.paths.journal, 'utf8'));
     const quarantine = journal.specProgress[0].backupOrQuarantine as string;
@@ -872,5 +1112,383 @@ describe('archive plan/apply engine', () => {
     expect(await fs.readFile(path.join(quarantine, 'spec.md'), 'utf8')).toBe(
       '# Original\n'
     );
+  });
+
+  it('retires an unapplied stored plan and rejects later apply idempotently', async () => {
+    const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'global-data');
+    const token = await persistArchivePlan(archivePlan, globalDataDir);
+    const activeBefore = await hashDirectoryTree(active);
+    const ephemeraBefore = await hashDirectoryTree(ephemera);
+
+    const aborted = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      () => abortArchivePlan(archivePlan, globalDataDir)
+    );
+
+    expect(aborted.status).toBe('aborted');
+    expect(await hashDirectoryTree(active)).toBe(activeBefore);
+    expect(await hashDirectoryTree(ephemera)).toBe(ephemeraBefore);
+    await expect(fs.access(archivePlan.paths.final)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(
+      fs.access(
+        path.join(
+          globalDataDir,
+          'archive-transactions',
+          archivePlan.transactionId,
+          'plan.json'
+        )
+      )
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+
+    await expect(
+      withStoredArchivePlanOperation(
+        archivePlan,
+        globalDataDir,
+        'apply',
+        () => applyArchive(archivePlan)
+      )
+    ).rejects.toMatchObject({ code: 'archive_plan_aborted' });
+    await expect(
+      loadCompletedArchiveAbort(token, globalDataDir)
+    ).resolves.toMatchObject({
+      status: 'already-aborted',
+      transactionId: archivePlan.transactionId,
+      blockers: [],
+    });
+  });
+
+  it('records a reserved ship-log section as a typed planning blocker', async () => {
+    const source = path.join(active, 'evidence', 'ship-log.md');
+    const content = '# Ship Log\n\n## Archive\nchange-authored placeholder\n';
+    await fs.writeFile(source, content);
+
+    const archivePlan = await plan({
+      shipLog: {
+        source,
+        sha256: defaultArchiveEngineAdapters.sha256(content),
+        recordedCommit: null,
+        reservedSection: true,
+      },
+    });
+
+    expect(archivePlan.complete).toBe(false);
+    expect(archivePlan.blockers).toEqual([
+      expect.objectContaining({
+        operation: 'evidence',
+        code: 'archive_ship_log_reserved_section',
+        path: source,
+        message: expect.stringContaining('Remove or rename'),
+      }),
+    ]);
+    await expect(fs.access(archivePlan.paths.stage)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(fs.access(archivePlan.paths.journal)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('classifies a plan-bound ship-log collision as abort-required and removes its owned early stage', async () => {
+    await fs.writeFile(
+      path.join(active, 'evidence', 'ship-log.md'),
+      '# Ship Log\n\n## Archive\nold transaction\n'
+    );
+    const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'global-data');
+    const token = await persistArchivePlan(archivePlan, globalDataDir);
+    const activeBefore = await hashDirectoryTree(active);
+
+    const failed = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'apply',
+      () => applyArchive(archivePlan)
+    );
+    expect(failed).toMatchObject({
+      status: 'abort-required',
+      abortCommand: `rasen archive --abort-plan ${token} --yes`,
+      blockers: [
+        expect.objectContaining({
+          code: 'archive_ship_log_reserved_section',
+        }),
+      ],
+    });
+    expect(failed.recoveryCommand).toBeUndefined();
+    await expect(fs.access(archivePlan.paths.stage)).resolves.toBeUndefined();
+
+    const aborted = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      () => abortArchivePlan(archivePlan, globalDataDir)
+    );
+    expect(aborted.status).toBe('aborted');
+    await expect(fs.access(archivePlan.paths.stage)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(fs.access(archivePlan.paths.journal)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    expect(await hashDirectoryTree(active)).toBe(activeBefore);
+    await expect(
+      loadCompletedArchiveAbort(token, globalDataDir)
+    ).resolves.toMatchObject({ status: 'already-aborted' });
+  });
+
+  it('resumes a torn guarded abort from its durable stage authority', async () => {
+    await fs.writeFile(
+      path.join(active, 'evidence', 'ship-log.md'),
+      '# Ship Log\n\n## Archive\nold transaction\n'
+    );
+    const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'global-data');
+    await persistArchivePlan(archivePlan, globalDataDir);
+    expect((await applyArchive(archivePlan)).status).toBe('abort-required');
+
+    let failStageRemoval = true;
+    const adapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        rmdir: async (target: string) => {
+          if (target === archivePlan.paths.stage && failStageRemoval) {
+            failStageRemoval = false;
+            throw Object.assign(new Error('simulated stage rmdir failure'), {
+              code: 'EIO',
+            });
+          }
+          await defaultArchiveEngineAdapters.fs.rmdir(target);
+        },
+      },
+    };
+    await expect(
+      withStoredArchivePlanOperation(
+        archivePlan,
+        globalDataDir,
+        'abort',
+        () => abortArchivePlan(archivePlan, globalDataDir, adapters)
+      )
+    ).rejects.toMatchObject({ code: 'EIO' });
+
+    const tombstonePath = path.join(
+      globalDataDir,
+      'archive-transactions',
+      archivePlan.transactionId,
+      'abort.json'
+    );
+    const aborting = JSON.parse(await fs.readFile(tombstonePath, 'utf8'));
+    expect(aborting).toMatchObject({
+      status: 'aborting',
+      stageIdentity: expect.any(Object),
+      stageAuthority: expect.objectContaining({
+        algorithm: 'sha256',
+        authorityEntries: expect.any(Array),
+      }),
+    });
+    await expect(fs.access(archivePlan.paths.stage)).resolves.toBeUndefined();
+    await expect(fs.access(archivePlan.paths.journal)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+
+    const resumed = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      () => abortArchivePlan(archivePlan, globalDataDir)
+    );
+    expect(resumed.status).toBe('aborted');
+    await expect(fs.access(archivePlan.paths.stage)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(loadCompletedArchiveAbort(
+      `archive-v1:${archivePlan.transactionId}:${archivePlan.planHash}`,
+      globalDataDir
+    )).resolves.toMatchObject({ status: 'already-aborted' });
+  });
+
+  it('never recursively deletes an entry injected after abort ownership is recorded', async () => {
+    await fs.writeFile(
+      path.join(active, 'evidence', 'ship-log.md'),
+      '# Ship Log\n\n## Archive\nold transaction\n'
+    );
+    const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'global-data');
+    await persistArchivePlan(archivePlan, globalDataDir);
+    expect((await applyArchive(archivePlan)).status).toBe('abort-required');
+
+    let injected = false;
+    const tombstonePath = path.join(
+      globalDataDir,
+      'archive-transactions',
+      archivePlan.transactionId,
+      'abort.json'
+    );
+    const intruder = path.join(archivePlan.paths.stage, 'unclaimed.txt');
+    const adapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        rename: async (source: string, destination: string) => {
+          await defaultArchiveEngineAdapters.fs.rename(source, destination);
+          if (destination === tombstonePath && !injected) {
+            injected = true;
+            await fs.writeFile(intruder, 'must survive\n');
+          }
+        },
+      },
+    };
+
+    const refused = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      () => abortArchivePlan(archivePlan, globalDataDir, adapters)
+    );
+    expect(refused).toMatchObject({
+      status: 'blocked',
+      blockers: [
+        expect.objectContaining({
+          code: 'archive_abort_ownership_unverified',
+        }),
+      ],
+    });
+    const repeated = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      () => abortArchivePlan(archivePlan, globalDataDir)
+    );
+    expect(repeated).toMatchObject({
+      status: 'blocked',
+      blockers: [
+        expect.objectContaining({
+          code: 'archive_abort_ownership_unverified',
+        }),
+      ],
+    });
+    await expect(fs.readFile(intruder, 'utf8')).resolves.toBe('must survive\n');
+    await expect(fs.access(archivePlan.paths.stage)).resolves.toBeUndefined();
+    expect(
+      JSON.parse(await fs.readFile(tombstonePath, 'utf8')).status
+    ).toBe('aborting');
+  });
+
+  it('refuses abort after canonical spec progress and preserves all recovery state', async () => {
+    const delta = path.join(active, 'specs', 'created', 'spec.md');
+    const target = path.join(root, 'rasen', 'specs', 'created', 'spec.md');
+    const rebuilt = '# Created\n';
+    await fs.mkdir(path.dirname(delta), { recursive: true });
+    await fs.writeFile(delta, rebuilt);
+    const archivePlan = await plan({
+      specActions: [
+        {
+          capability: 'created',
+          action: 'create',
+          source: delta,
+          target,
+          sourceSha256: defaultArchiveEngineAdapters.sha256(rebuilt),
+          targetPrecondition: { state: 'absent' },
+          rebuilt,
+          counts: { added: 1, modified: 0, removed: 0, renamed: 0 },
+        },
+      ],
+    });
+    const globalDataDir = path.join(root, 'global-data');
+    await persistArchivePlan(archivePlan, globalDataDir);
+    const failingAdapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        mkdir: async (
+          targetPath: string,
+          options?: { recursive?: boolean }
+        ): Promise<string | undefined> => {
+          if (targetPath === archivePlan.paths.final) {
+            const error = new Error('injected final reservation failure');
+            (error as NodeJS.ErrnoException).code = 'EACCES';
+            throw error;
+          }
+          return defaultArchiveEngineAdapters.fs.mkdir(targetPath, options);
+        },
+      },
+    };
+    const failed = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'apply',
+      () => applyArchive(archivePlan, { adapters: failingAdapters })
+    );
+    expect(failed.status).toBe('recoverable');
+    expect(await fs.readFile(target, 'utf8')).toBe(rebuilt);
+
+    const refused = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      () => abortArchivePlan(archivePlan, globalDataDir)
+    );
+    expect(refused).toMatchObject({
+      status: 'blocked',
+      blockers: [
+        expect.objectContaining({
+          code: 'archive_abort_phase_unsafe',
+        }),
+      ],
+    });
+    await expect(fs.access(archivePlan.paths.stage)).resolves.toBeUndefined();
+    await expect(fs.access(archivePlan.paths.journal)).resolves.toBeUndefined();
+    expect(await fs.readFile(target, 'utf8')).toBe(rebuilt);
+  });
+
+  it('serializes apply and abort for the same stored transaction', async () => {
+    const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'global-data');
+    await persistArchivePlan(archivePlan, globalDataDir);
+    const applyGate = Promise.withResolvers<void>();
+    const applyEntered = Promise.withResolvers<void>();
+    const order: string[] = [];
+
+    const applying = withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'apply',
+      async () => {
+        order.push('apply-entered');
+        applyEntered.resolve();
+        await applyGate.promise;
+        order.push('apply-released');
+      }
+    );
+    await applyEntered.promise;
+    const aborting = withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      async () => {
+        order.push('abort-entered');
+      }
+    );
+    await fs.access(
+      path.join(
+        globalDataDir,
+        'archive-transactions',
+        archivePlan.transactionId,
+        'operation.lock'
+      )
+    );
+    expect(order).toEqual(['apply-entered']);
+
+    applyGate.resolve();
+    await Promise.all([applying, aborting]);
+    expect(order).toEqual([
+      'apply-entered',
+      'apply-released',
+      'abort-entered',
+    ]);
   });
 });

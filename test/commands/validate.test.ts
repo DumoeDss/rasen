@@ -11,6 +11,25 @@ describe('top-level validate command', () => {
   const changesDir = path.join(testDir, 'rasen', 'changes');
   const specsDir = path.join(testDir, 'rasen', 'specs');
 
+  async function writeScenarioLossChange(changeId: string): Promise<void> {
+    const deltaDir = path.join(changesDir, changeId, 'specs', 'alpha');
+    await fs.mkdir(deltaDir, { recursive: true });
+    await fs.writeFile(
+      path.join(deltaDir, 'spec.md'),
+      [
+        '## MODIFIED Requirements',
+        '',
+        '### Requirement: Alpha module SHALL produce deterministic output',
+        'The alpha module SHALL produce refreshed deterministic output.',
+        '',
+        '#### Scenario: Replacement alpha run',
+        '- **WHEN** the replacement flow runs',
+        '- **THEN** refreshed output is returned',
+      ].join('\n'),
+      'utf8'
+    );
+  }
+
   beforeEach(async () => {
     await fs.mkdir(changesDir, { recursive: true });
     await fs.mkdir(specsDir, { recursive: true });
@@ -80,6 +99,70 @@ describe('top-level validate command', () => {
     expect(Array.isArray(json.items)).toBe(true);
     expect(json.summary?.totals?.items).toBeDefined();
     expect(json.version).toBe('1.0');
+  });
+
+  it('reports scenario-preservation warnings without failing direct validation', async () => {
+    await writeScenarioLossChange('scenario-loss-direct');
+
+    const result = await runCLI(
+      ['validate', 'scenario-loss-direct', '--type', 'change'],
+      { cwd: testDir }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Change 'scenario-loss-direct' is valid");
+    expect(result.stderr).toContain('[WARNING]');
+    expect(result.stderr).toContain('Deterministic alpha run');
+  });
+
+  it('fails strict validation and emits structured scenario-loss metadata', async () => {
+    await writeScenarioLossChange('scenario-loss-strict');
+
+    const result = await runCLI(
+      [
+        'validate',
+        'scenario-loss-strict',
+        '--type',
+        'change',
+        '--strict',
+        '--json',
+      ],
+      { cwd: testDir }
+    );
+
+    expect(result.exitCode).toBe(1);
+    const json = JSON.parse(result.stdout);
+    expect(json.items[0]).toMatchObject({ valid: false });
+    expect(json.items[0].issues).toContainEqual(
+      expect.objectContaining({
+        level: 'ERROR',
+        code: 'spec_modified_scenarios_missing',
+        capability: 'alpha',
+        missingScenarios: ['Deterministic alpha run'],
+      })
+    );
+  });
+
+  it('includes advisory scenario-loss issues in bulk change validation', async () => {
+    await writeScenarioLossChange('scenario-loss-bulk');
+
+    const result = await runCLI(
+      ['validate', '--changes', '--json', '--concurrency', '1'],
+      { cwd: testDir }
+    );
+
+    expect(result.exitCode).toBe(0);
+    const json = JSON.parse(result.stdout);
+    const item = json.items.find(
+      (candidate: { id: string }) => candidate.id === 'scenario-loss-bulk'
+    );
+    expect(item).toMatchObject({ type: 'change', valid: true });
+    expect(item.issues).toContainEqual(
+      expect.objectContaining({
+        level: 'WARNING',
+        code: 'spec_modified_scenarios_missing',
+      })
+    );
   });
 
   it('validates only specs with --specs and respects --concurrency', async () => {

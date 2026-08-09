@@ -243,6 +243,21 @@ describe('artifact-workflow CLI commands', () => {
       expect(result.stdout).toContain('<template>');
     });
 
+    it('instructs MODIFIED specs as complete scenario-preserving replacements', async () => {
+      await createTestChange('spec-instructions', ['proposal']);
+
+      const result = await runCLI(
+        ['instructions', 'specs', '--change', 'spec-instructions', '--json'],
+        { cwd: tempDir }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.instruction).toContain('complete inventory of scenarios');
+      expect(json.instruction).toContain('unchanged scenario blocks verbatim');
+      expect(json.instruction).toContain('whole-requirement replacement');
+    });
+
     it('shows blocked warning for artifact with unmet dependencies', async () => {
       // tasks depends on design and specs, which are not done yet
       await createTestChange('blocked-change');

@@ -188,7 +188,7 @@ describe('archive apply named fault and recovery matrix', () => {
   }
 
   async function expectRetryCompletes(plan: ArchivePlan): Promise<void> {
-    const retry = await applyArchive(plan, baseAdapters);
+    const retry = await applyArchive(plan, { adapters: baseAdapters });
     expect(retry.status, JSON.stringify(retry)).toBe('complete');
     expect(retry.resumed).toBe(true);
     expect((await readJournal(plan.paths.publishedJournal)).phase).toBe('complete');
@@ -201,7 +201,7 @@ describe('archive apply named fault and recovery matrix', () => {
     const activeWithDrift = await snapshotTree(active);
     const ephemeraBefore = await snapshotTree(ephemera);
 
-    const first = await applyArchive(plan, baseAdapters);
+    const first = await applyArchive(plan, { adapters: baseAdapters });
     expectFailureReport(first, plan, {
       operation: 'source-inventory',
       path: active,
@@ -213,12 +213,12 @@ describe('archive apply named fault and recovery matrix', () => {
     expect(await snapshotTree(plan.paths.stage)).toBeNull();
     expect(await snapshotTree(plan.paths.final)).toBeNull();
 
-    const second = await applyArchive(plan, baseAdapters);
+    const second = await applyArchive(plan, { adapters: baseAdapters });
     expect(second).toEqual(first);
     expect(await snapshotTree(active)).toEqual(activeWithDrift);
 
     await fs.rm(path.join(active, 'after-plan.txt'));
-    const recovered = await applyArchive(plan, baseAdapters);
+    const recovered = await applyArchive(plan, { adapters: baseAdapters });
     expect(recovered.status).toBe('complete');
   });
 
@@ -231,7 +231,7 @@ describe('archive apply named fault and recovery matrix', () => {
     const replacementTree = await snapshotTree(active);
     const ephemeraBefore = await snapshotTree(ephemera);
 
-    const result = await applyArchive(plan, baseAdapters);
+    const result = await applyArchive(plan, { adapters: baseAdapters });
     expectFailureReport(result, plan, {
       operation: 'source-inventory',
       path: active,
@@ -312,7 +312,7 @@ describe('archive apply named fault and recovery matrix', () => {
     );
     expect(await snapshotTree(active)).toEqual(originalTree);
 
-    const result = await applyArchive(plan, baseAdapters);
+    const result = await applyArchive(plan, { adapters: baseAdapters });
     expectFailureReport(result, plan, {
       operation: 'source-inventory',
       path: active,
@@ -354,7 +354,7 @@ describe('archive apply named fault and recovery matrix', () => {
       },
     };
 
-    const result = await applyArchive(plan, adapters);
+    const result = await applyArchive(plan, { adapters: adapters });
     expect(result.status).toBe('recoverable');
     expect(result.blockers).toEqual(
       expect.arrayContaining([
@@ -376,7 +376,7 @@ describe('archive apply named fault and recovery matrix', () => {
     await fs.writeFile(path.join(plan.paths.final, 'sentinel.bin'), Buffer.from([0, 1, 2, 255]));
     const unrelatedBefore = await snapshotTree(plan.paths.final);
 
-    const first = await applyArchive(plan, baseAdapters);
+    const first = await applyArchive(plan, { adapters: baseAdapters });
     expectFailureReport(first, plan, {
       operation: 'publish',
       path: plan.paths.final,
@@ -388,12 +388,12 @@ describe('archive apply named fault and recovery matrix', () => {
     expect(await snapshotTree(ephemera)).toEqual(ephemeraBefore);
     expect(await snapshotTree(plan.paths.stage)).toBeNull();
 
-    const second = await applyArchive(plan, baseAdapters);
+    const second = await applyArchive(plan, { adapters: baseAdapters });
     expect(second).toEqual(first);
     expect(await snapshotTree(plan.paths.final)).toEqual(unrelatedBefore);
 
     await fs.rm(plan.paths.final, { recursive: true, force: false });
-    expect((await applyArchive(plan, baseAdapters)).status).toBe('complete');
+    expect((await applyArchive(plan, { adapters: baseAdapters })).status).toBe('complete');
   });
 
   it('a final target created at the reservation boundary is never replaced', async () => {
@@ -415,7 +415,7 @@ describe('archive apply named fault and recovery matrix', () => {
       },
     };
 
-    const result = await applyArchive(plan, adapters);
+    const result = await applyArchive(plan, { adapters: adapters });
     expectFailureReport(result, plan, {
       operation: 'publish',
       path: plan.paths.final,
@@ -456,7 +456,7 @@ describe('archive apply named fault and recovery matrix', () => {
       },
     };
 
-    const first = await applyArchive(plan, adapters);
+    const first = await applyArchive(plan, { adapters: adapters });
     expect(injected).toBe(true);
     expect(first.status).toBe('recoverable');
     expect(first.blockers).toEqual(
@@ -469,7 +469,7 @@ describe('archive apply named fault and recovery matrix', () => {
     );
     await expect(fs.access(active)).resolves.toBeUndefined();
 
-    const retry = await applyArchive(plan, baseAdapters);
+    const retry = await applyArchive(plan, { adapters: baseAdapters });
     expect(retry.status).toBe('recoverable');
     expect(retry.blockers).toEqual(
       expect.arrayContaining([
@@ -511,7 +511,7 @@ describe('archive apply named fault and recovery matrix', () => {
         },
       };
 
-      const result = await applyArchive(plan, adapters);
+      const result = await applyArchive(plan, { adapters: adapters });
       expectFailureReport(result, plan, {
         operation: 'publish',
         path: path.join(plan.paths.final, '.rasen-archive-published.json'),
@@ -552,7 +552,7 @@ describe('archive apply named fault and recovery matrix', () => {
         },
       },
     };
-    expect((await applyArchive(plan, adapters)).status).toBe('recoverable');
+    expect((await applyArchive(plan, { adapters: adapters })).status).toBe('recoverable');
     await fs.writeFile(path.join(plan.paths.stage, 'proposal.md'), '# corrupt\n');
 
     const resumed = await applyArchive(plan);
@@ -578,7 +578,7 @@ describe('archive apply named fault and recovery matrix', () => {
         return baseAdapters.writeArchiveJson(...args);
       },
     };
-    expect((await applyArchive(plan, adapters)).status).toBe('recoverable');
+    expect((await applyArchive(plan, { adapters: adapters })).status).toBe('recoverable');
     await fs.writeFile(path.join(plan.paths.final, 'proposal.md'), '# corrupt\n');
 
     const resumed = await applyArchive(plan);
@@ -608,7 +608,7 @@ describe('archive apply named fault and recovery matrix', () => {
       },
     };
 
-    const result = await applyArchive(plan, adapters);
+    const result = await applyArchive(plan, { adapters: adapters });
     expectFailureReport(result, plan, {
       operation: 'copy',
       path: plan.paths.stage,
@@ -648,7 +648,7 @@ describe('archive apply named fault and recovery matrix', () => {
       },
     };
 
-    const result = await applyArchive(plan, adapters);
+    const result = await applyArchive(plan, { adapters: adapters });
     expectFailureReport(result, plan, {
       operation: 'copy',
       path: plan.paths.stage,
@@ -699,8 +699,8 @@ describe('archive apply named fault and recovery matrix', () => {
         }),
       ])
     );
-    const first = await applyArchive(plan, adapters);
-    const second = await applyArchive(plan, adapters);
+    const first = await applyArchive(plan, { adapters: adapters });
+    const second = await applyArchive(plan, { adapters: adapters });
     expect(second).toEqual(first);
     expect(first.status).toBe('blocked');
     expect(await snapshotTree(active)).toEqual(activeBefore);
@@ -709,7 +709,7 @@ describe('archive apply named fault and recovery matrix', () => {
     expect(await snapshotTree(plan.paths.final)).toBeNull();
 
     const remediated = await makePlan();
-    expect((await applyArchive(remediated, baseAdapters)).status).toBe('complete');
+    expect((await applyArchive(remediated, { adapters: baseAdapters })).status).toBe('complete');
   });
 
   it('sidecar schema failure is a stable blocker with byte-identical intent until explicitly fixed', async () => {
@@ -721,22 +721,39 @@ describe('archive apply named fault and recovery matrix', () => {
 
     expect(plan.complete).toBe(false);
     expect(plan.sidecar.status).toBe('invalid');
-    const first = await applyArchive(plan, baseAdapters);
-    const second = await applyArchive(plan, baseAdapters);
+    const first = await applyArchive(plan, { adapters: baseAdapters });
+    const second = await applyArchive(plan, { adapters: baseAdapters });
     expect(second).toEqual(first);
     expect(first.status).toBe('blocked');
-    expect(first.blockers).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ operation: 'sidecar-validate', path: sidecarPath }),
-      ])
-    );
+    expect(first.blockers).toEqual([
+      expect.objectContaining({
+        operation: 'sidecar-validate',
+        code: 'archive_intent_change_mismatch',
+        path: `${sidecarPath}#/change`,
+      }),
+      expect.objectContaining({
+        operation: 'sidecar-validate',
+        code: 'archive_intent_handoff_invalid',
+        path: `${sidecarPath}#/handoff`,
+      }),
+      expect.objectContaining({
+        operation: 'sidecar-validate',
+        code: 'archive_intent_probes_missing',
+        path: `${sidecarPath}#/probes`,
+      }),
+      expect.objectContaining({
+        operation: 'sidecar-validate',
+        code: 'archive_intent_schema_version_invalid',
+        path: `${sidecarPath}#/schemaVersion`,
+      }),
+    ]);
     expect(await snapshotTree(active)).toEqual(activeBefore);
     expect(await snapshotTree(ephemera)).toEqual(ephemeraBefore);
     expect(await snapshotTree(plan.paths.final)).toBeNull();
 
     await fs.rm(sidecarPath);
     const remediated = await makePlan();
-    expect((await applyArchive(remediated, baseAdapters)).status).toBe('complete');
+    expect((await applyArchive(remediated, { adapters: baseAdapters })).status).toBe('complete');
   });
 
   it('Git failure blocks planning without guessed facts or mutation and replans deterministically', async () => {
@@ -762,14 +779,14 @@ describe('archive apply named fault and recovery matrix', () => {
         expect.objectContaining({ operation: 'git', code: 'EIO' }),
       ])
     );
-    expect((await applyArchive(firstPlan, adapters)).status).toBe('blocked');
+    expect((await applyArchive(firstPlan, { adapters: adapters })).status).toBe('blocked');
     expect(await snapshotTree(active)).toEqual(activeBefore);
     expect(await snapshotTree(ephemera)).toEqual(ephemeraBefore);
     expect(await snapshotTree(firstPlan.paths.stage)).toBeNull();
     expect(await snapshotTree(firstPlan.paths.final)).toBeNull();
 
     const remediated = await makePlan();
-    expect((await applyArchive(remediated, baseAdapters)).status).toBe('complete');
+    expect((await applyArchive(remediated, { adapters: baseAdapters })).status).toBe('complete');
   });
 
   it.each([
@@ -801,7 +818,7 @@ describe('archive apply named fault and recovery matrix', () => {
       const ephemeraBefore = await snapshotTree(ephemera);
 
       dirty = applyDirty;
-      const result = await applyArchive(plan, adapters);
+      const result = await applyArchive(plan, { adapters: adapters });
       expectFailureReport(result, plan, {
         operation: 'git',
         path: root,
@@ -814,7 +831,7 @@ describe('archive apply named fault and recovery matrix', () => {
       expect(await snapshotTree(plan.paths.final)).toBeNull();
 
       dirty = plannedDirty;
-      expect((await applyArchive(plan, adapters)).status).toBe('complete');
+      expect((await applyArchive(plan, { adapters: adapters })).status).toBe('complete');
     }
   );
 
@@ -834,7 +851,7 @@ describe('archive apply named fault and recovery matrix', () => {
       },
     };
 
-    const result = await applyArchive(plan, adapters);
+    const result = await applyArchive(plan, { adapters: adapters });
     expectFailureReport(result, plan, {
       operation: 'evidence',
       path: path.join(plan.paths.final, 'evidence', 'ship-log.md'),
@@ -879,7 +896,7 @@ describe('archive apply named fault and recovery matrix', () => {
       },
     };
 
-    const result = await applyArchive(plan, adapters);
+    const result = await applyArchive(plan, { adapters: adapters });
     expectFailureReport(result, plan, {
       operation: 'journal',
       path: plan.paths.journal,
@@ -936,7 +953,7 @@ describe('archive apply named fault and recovery matrix', () => {
       },
     };
 
-    const result = await applyArchive(plan, adapters);
+    const result = await applyArchive(plan, { adapters: adapters });
     expectFailureReport(result, plan, {
       operation: 'accounting',
       path: path.join(plan.paths.final, 'archive.json'),
@@ -979,7 +996,7 @@ describe('archive apply named fault and recovery matrix', () => {
       },
     };
 
-    const result = await applyArchive(plan, adapters);
+    const result = await applyArchive(plan, { adapters: adapters });
     expectFailureReport(result, plan, {
       operation: 'cleaner-apply',
       path: path.join(ephemera, 'trace-b.log'),
@@ -1023,7 +1040,7 @@ describe('archive apply named fault and recovery matrix', () => {
       },
     };
 
-    const first = await applyArchive(plan, adapters);
+    const first = await applyArchive(plan, { adapters: adapters });
     expect(first.status).toBe('recoverable');
     expect(first.ephemeraDiscarded).toEqual([]);
     await expect(fs.access(path.join(ephemera, 'trace-a.log'))).rejects.toMatchObject({
@@ -1071,7 +1088,7 @@ describe('archive apply named fault and recovery matrix', () => {
       },
     };
 
-    const result = await applyArchive(plan, adapters);
+    const result = await applyArchive(plan, { adapters: adapters });
     expectFailureReport(result, plan, {
       operation: 'source-remove',
       path: active,
@@ -1097,12 +1114,12 @@ describe('archive apply named fault and recovery matrix', () => {
 
   it('rejects corruption instead of trusting a completed journal fast path', async () => {
     const plan = await makePlan();
-    const first = await applyArchive(plan, baseAdapters);
+    const first = await applyArchive(plan, { adapters: baseAdapters });
     expect(first.status).toBe('complete');
     const proposal = path.join(plan.paths.final, 'proposal.md');
     await fs.writeFile(proposal, '# corrupt after completion\n');
 
-    const retry = await applyArchive(plan, baseAdapters);
+    const retry = await applyArchive(plan, { adapters: baseAdapters });
 
     expect(retry).toMatchObject({
       status: 'recoverable',
@@ -1141,7 +1158,7 @@ describe('archive apply named fault and recovery matrix', () => {
       },
     });
     const durableJournal = await fs.readFile(plan.paths.publishedJournal, 'utf8');
-    const repeated = await applyArchive(plan, baseAdapters);
+    const repeated = await applyArchive(plan, { adapters: baseAdapters });
     expect(repeated).toEqual(retry);
     expect(await fs.readFile(plan.paths.publishedJournal, 'utf8')).toBe(durableJournal);
     expect(await fs.readFile(proposal, 'utf8')).toBe(
@@ -1151,7 +1168,7 @@ describe('archive apply named fault and recovery matrix', () => {
 
   it('keeps completed corruption manual-only when its first integrity journal sync fails', async () => {
     const plan = await makePlan();
-    const first = await applyArchive(plan, baseAdapters);
+    const first = await applyArchive(plan, { adapters: baseAdapters });
     expect(first.status).toBe('complete');
     const proposal = path.join(plan.paths.final, 'proposal.md');
     await fs.writeFile(proposal, '# corrupt after completion\n');
@@ -1198,7 +1215,7 @@ describe('archive apply named fault and recovery matrix', () => {
       },
     };
 
-    const persistenceFailure = await applyArchive(plan, adapters);
+    const persistenceFailure = await applyArchive(plan, { adapters: adapters });
 
     expect(persistenceFailure).toMatchObject({
       status: 'recoverable',
@@ -1229,7 +1246,7 @@ describe('archive apply named fault and recovery matrix', () => {
       '# corrupt after completion\n'
     );
 
-    const retry = await applyArchive(plan, baseAdapters);
+    const retry = await applyArchive(plan, { adapters: baseAdapters });
     expect(retry).toMatchObject({
       status: 'recoverable',
       resumed: true,
@@ -1260,7 +1277,7 @@ describe('archive apply named fault and recovery matrix', () => {
       'utf8'
     );
 
-    const repeated = await applyArchive(plan, baseAdapters);
+    const repeated = await applyArchive(plan, { adapters: baseAdapters });
     expect(repeated).toEqual(retry);
     expect(await fs.readFile(plan.paths.publishedJournal, 'utf8')).toBe(
       durableJournalBytes
@@ -1285,7 +1302,7 @@ describe('archive apply named fault and recovery matrix', () => {
       plan.paths.publishedJournal,
       'utf8'
     );
-    const dominated = await applyArchive(plan, baseAdapters);
+    const dominated = await applyArchive(plan, { adapters: baseAdapters });
     expect(dominated).toEqual(retry);
     expect(dominated.recoveryCommand).toBeUndefined();
     expect(await fs.readFile(plan.paths.publishedJournal, 'utf8')).toBe(

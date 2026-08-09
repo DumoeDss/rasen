@@ -53,11 +53,13 @@ artifacts:
 
       MODIFIED requirements workflow:
       1. Locate the existing requirement in rasen/specs/<capability>/spec.md
-      2. Copy the ENTIRE requirement block (from `### Requirement:` through all scenarios)
-      3. Paste under `## MODIFIED Requirements` and edit to reflect new behavior
-      4. Ensure header text matches exactly (whitespace-insensitive)
+      2. Copy the ENTIRE requirement block (from `### Requirement:` through every scenario)
+      3. Paste it under `## MODIFIED Requirements`, then edit the copied block to reflect the new behavior
+      4. Keep the requirement header text matched to the canonical heading (whitespace-insensitive)
+      5. Include the complete inventory of scenarios that should survive the change; omission means deletion and validation will report it
+      6. Preserve behaviorally unchanged scenario blocks verbatim and keep their `#### Scenario:` headings stable
 
-      Common pitfall: Using MODIFIED with partial content loses detail at archive time.
+      Common pitfall: `MODIFIED` is whole-requirement replacement, not an additive scenario merge. Partial content loses detail at archive time.
       If adding new concerns without changing existing behavior, use ADDED instead.
 
       Example:

@@ -30,6 +30,8 @@ const GENERATED_PLAN_COMMAND =
   GENERATED_ARCHIVE_COMMAND_EXAMPLES.savedPreview;
 const GENERATED_APPLY_COMMAND =
   GENERATED_ARCHIVE_COMMAND_EXAMPLES.apply;
+const GENERATED_ABORT_COMMAND =
+  GENERATED_ARCHIVE_COMMAND_EXAMPLES.abort;
 
 interface ConsumerSnapshot {
   cleaner: {
@@ -169,6 +171,10 @@ describe('direct and generated archive consumers share one engine transaction', 
         generatedInstructions,
         `${label} must prescribe the authoritative apply command`
       ).toContain(GENERATED_APPLY_COMMAND);
+      expect(
+        generatedInstructions,
+        `${label} must prescribe the authoritative abort command`
+      ).toContain(GENERATED_ABORT_COMMAND);
       expect(generatedInstructions).toContain(GENERATED_INTENT_COMMAND);
       expect(generatedInstructions).toContain(GENERATED_PLAN_COMMAND);
     }

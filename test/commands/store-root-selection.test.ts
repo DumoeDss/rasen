@@ -8,6 +8,10 @@ import {
   registerStore,
 } from '../../src/core/index.js';
 import { writeStoreMetadataState } from '../../src/core/store/foundation.js';
+import {
+  getProjectRegistryPath,
+  registerProject,
+} from '../../src/core/project-registry.js';
 import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
 import { cleanupTempPath } from '../helpers/temp-cleanup.js';
 
@@ -275,6 +279,59 @@ describe('store root selection for normal commands', () => {
       expect(validateJson.items[0]).toMatchObject({ id: 'store-change', valid: true });
       expect(validateJson.root.store_id).toBe('team-context');
 
+      expectNoLocalOpenSpec();
+    });
+
+    it('compares change deltas with canonical specs in the selected store', async () => {
+      const canonicalDir = path.join(storeRoot, 'rasen', 'specs', 'billing');
+      fs.mkdirSync(canonicalDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(canonicalDir, 'spec.md'),
+        [
+          '# Billing',
+          '',
+          '## Purpose',
+          'Billing behavior remains deterministic.',
+          '',
+          '## Requirements',
+          '',
+          '### Requirement: Billing SHALL work',
+          'The system SHALL create bills.',
+          '',
+          '#### Scenario: Creates bills',
+          '- **WHEN** a billing period ends',
+          '- **THEN** a bill is created',
+          '',
+          '#### Scenario: Exports bills',
+          '- **WHEN** a bill is exported',
+          '- **THEN** an export is created',
+        ].join('\n')
+      );
+      createChange(storeRoot, 'store-scenario-loss', {
+        deltaSpec: MODIFIED_ONLY_DELTA_SPEC,
+      });
+
+      const result = await runCLI(
+        [
+          'validate',
+          'store-scenario-loss',
+          '--store',
+          'team-context',
+          '--json',
+        ],
+        { cwd: appRepo, env }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const json = parseJson(result);
+      expect(json.root.store_id).toBe('team-context');
+      expect(json.items[0].issues).toContainEqual(
+        expect.objectContaining({
+          level: 'WARNING',
+          code: 'spec_modified_scenarios_missing',
+          missingScenarios: ['Exports bills'],
+        })
+      );
       expectNoLocalOpenSpec();
     });
 
@@ -742,7 +799,7 @@ describe('store root selection for normal commands', () => {
       expect(json.status[0]).toEqual({
         severity: 'error',
         code: 'archive_spec_update_failed',
-        message: 'billing: target spec does not exist; only ADDED requirements are allowed for new specs. MODIFIED and RENAMED operations require an existing spec.',
+        message: 'billing: target spec does not exist; MODIFIED for "### Requirement: Billing SHALL work" requires an existing spec. Only ADDED requirements are allowed for new specs.',
         fix: 'Fix the change delta specs and rerun. No files were changed.',
       });
       expectBlockedPlanWithNoWrites(json);
@@ -750,7 +807,7 @@ describe('store root selection for normal commands', () => {
         expect.arrayContaining([
           expect.objectContaining({
             operation: 'spec',
-            code: 'archive_spec_update_failed',
+            code: 'spec_existing_target_required',
           }),
         ])
       );
@@ -825,6 +882,41 @@ describe('store root selection for normal commands', () => {
       const help = await runCLI(['--help'], { cwd: localRepo, env });
       expect(help.stdout).not.toContain('Set checked-in Rasen metadata');
       expect(help.stdout).not.toMatch(/^\s*set\s/m);
+    });
+  });
+
+  describe('read-only root resolution', () => {
+    it('validates a copied project config without registering the copy', async () => {
+      const projectId = '11111111-1111-4111-8111-111111111111';
+      const ownerRoot = path.join(tempDir, 'project-owner');
+      createOpenSpecRoot(ownerRoot);
+      fs.writeFileSync(
+        path.join(ownerRoot, 'rasen', 'config.yaml'),
+        `schema: spec-driven\nprojectId: ${projectId}\n`
+      );
+      await registerProject(
+        { projectRoot: ownerRoot, projectId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      const copiedRoot = path.join(tempDir, 'project-copy');
+      createOpenSpecRoot(copiedRoot);
+      fs.writeFileSync(
+        path.join(copiedRoot, 'rasen', 'config.yaml'),
+        `schema: spec-driven\nprojectId: ${projectId}\n`
+      );
+      createChange(copiedRoot, 'copied-change');
+      const registryPath = getProjectRegistryPath({ globalDataDir });
+      const registryBefore = fs.readFileSync(registryPath, 'utf8');
+
+      const result = await runCLI(
+        ['validate', 'copied-change', '--json'],
+        { cwd: copiedRoot, env }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(parseJson(result).items[0].valid).toBe(true);
+      expect(fs.readFileSync(registryPath, 'utf8')).toBe(registryBefore);
     });
   });
 

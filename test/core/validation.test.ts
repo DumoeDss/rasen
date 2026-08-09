@@ -707,6 +707,154 @@ The system MUST support mixed case delta headers.
       expect(report.valid).toBe(true);
       expect(report.summary.errors).toBe(0);
     });
+
+    async function writeModifiedScenarioFixture(
+      changeName: string,
+      deltaScenarios: string[]
+    ): Promise<{ changeDir: string; canonicalSpecsDir: string }> {
+      const changeDir = path.join(testDir, changeName);
+      const deltaDir = path.join(changeDir, 'specs', 'inventory');
+      const canonicalSpecsDir = path.join(testDir, `${changeName}-canonical`);
+      const canonicalDir = path.join(canonicalSpecsDir, 'inventory');
+      await fs.mkdir(deltaDir, { recursive: true });
+      await fs.mkdir(canonicalDir, { recursive: true });
+      const scenario = (name: string, outcome: string): string =>
+        [
+          `#### Scenario: ${name}`,
+          '- **WHEN** inventory is checked',
+          `- **THEN** ${outcome}`,
+        ].join('\n');
+      await fs.writeFile(
+        path.join(canonicalDir, 'spec.md'),
+        [
+          '# Inventory',
+          '',
+          '## Purpose',
+          'The inventory specification defines stable stock behavior.',
+          '',
+          '## Requirements',
+          '',
+          '### Requirement: Inventory lookup',
+          'The system SHALL return inventory.',
+          '',
+          scenario('Alpha remains', 'alpha is returned'),
+          '',
+          scenario('Beta remains', 'beta is returned'),
+        ].join('\n')
+      );
+      await fs.writeFile(
+        path.join(deltaDir, 'spec.md'),
+        [
+          '## MODIFIED Requirements',
+          '',
+          '### Requirement: Inventory lookup',
+          'The system SHALL return refreshed inventory.',
+          '',
+          ...deltaScenarios,
+        ].join('\n')
+      );
+      return { changeDir, canonicalSpecsDir };
+    }
+
+    it('warns when a MODIFIED requirement omits canonical scenarios', async () => {
+      const fixture = await writeModifiedScenarioFixture(
+        'scenario-preservation-warning',
+        [
+          '#### Scenario: Alpha remains',
+          '- **WHEN** inventory is refreshed',
+          '- **THEN** updated alpha is returned',
+        ]
+      );
+
+      const report = await new Validator().validateChangeDeltaSpecs(
+        fixture.changeDir,
+        fixture.canonicalSpecsDir
+      );
+
+      expect(report.valid).toBe(true);
+      expect(report.summary).toMatchObject({ errors: 0, warnings: 1 });
+      expect(report.issues).toContainEqual(
+        expect.objectContaining({
+          level: 'WARNING',
+          path: 'inventory/spec.md',
+          code: 'spec_modified_scenarios_missing',
+          capability: 'inventory',
+          requirement: 'Inventory lookup',
+          missingScenarios: ['Beta remains'],
+        })
+      );
+      expect(report.issues[0].message).toContain(
+        'include every scenario that should survive'
+      );
+    });
+
+    it('promotes scenario-preservation warnings to errors in strict mode', async () => {
+      const fixture = await writeModifiedScenarioFixture(
+        'scenario-preservation-strict',
+        [
+          '#### Scenario: Alpha remains',
+          '- **WHEN** inventory is refreshed',
+          '- **THEN** updated alpha is returned',
+        ]
+      );
+
+      const report = await new Validator(true).validateChangeDeltaSpecs(
+        fixture.changeDir,
+        fixture.canonicalSpecsDir
+      );
+
+      expect(report.valid).toBe(false);
+      expect(report.summary).toMatchObject({ errors: 1, warnings: 0 });
+      expect(report.issues).toContainEqual(
+        expect.objectContaining({
+          level: 'ERROR',
+          code: 'spec_modified_scenarios_missing',
+          missingScenarios: ['Beta remains'],
+        })
+      );
+    });
+
+    it('accepts a complete MODIFIED scenario inventory and new capabilities', async () => {
+      const fixture = await writeModifiedScenarioFixture(
+        'scenario-preservation-complete',
+        [
+          '#### Scenario: Alpha remains',
+          '- **WHEN** inventory is refreshed',
+          '- **THEN** updated alpha is returned',
+          '',
+          '#### Scenario: Beta remains',
+          '- **WHEN** inventory is checked',
+          '- **THEN** beta is returned',
+        ]
+      );
+      const newCapabilityDir = path.join(
+        fixture.changeDir,
+        'specs',
+        'new-capability'
+      );
+      await fs.mkdir(newCapabilityDir, { recursive: true });
+      await fs.writeFile(
+        path.join(newCapabilityDir, 'spec.md'),
+        [
+          '## ADDED Requirements',
+          '',
+          '### Requirement: New behavior',
+          'The system SHALL add new behavior.',
+          '',
+          '#### Scenario: New behavior works',
+          '- **WHEN** the new behavior runs',
+          '- **THEN** it succeeds',
+        ].join('\n')
+      );
+
+      const report = await new Validator(true).validateChangeDeltaSpecs(
+        fixture.changeDir,
+        fixture.canonicalSpecsDir
+      );
+
+      expect(report.valid).toBe(true);
+      expect(report.issues).toEqual([]);
+    });
   });
 
   // #1156 — the SHALL/MUST body-keyword hint applies to main specs too, with the

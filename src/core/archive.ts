@@ -4,18 +4,27 @@ import * as path from 'node:path';
 import chalk from 'chalk';
 
 import { getTaskProgressForChange, formatTaskStatus } from '../utils/task-progress.js';
+import { formatLocaleMessage, getLocaleCatalog } from '../locales/index.js';
 import {
   applyArchive,
+  abortArchivePlan,
+  inspectArchiveApplyPlan,
+  hasReservedArchiveShipLogSection,
   createArchiveIntentTemplate,
   createArchivePlan,
   loadStoredArchivePlan,
+  loadCompletedArchiveAbort,
   persistArchivePlan,
   resolveArchiveSidecar,
+  type ArchiveApplyOptions,
   type ArchiveApplyResult,
+  type ArchiveAbortResult,
+  withStoredArchivePlanOperation,
   type ArchiveIntentV1,
   type ArchivePlan,
   type PreparedArchiveSpecAction,
 } from './archive-engine.js';
+import { getCliLocale } from './cli-locale.js';
 import { getGlobalDataDir } from './global-config.js';
 import { resolveChangeWorkDir } from './change-work.js';
 import { ephemeraDir, evidenceDir } from './file-placement.js';
@@ -30,11 +39,16 @@ import {
   withStoreFlag,
   type ResolvedOpenSpecRoot,
 } from './root-selection.js';
-import { buildUpdatedSpec, findSpecUpdates } from './specs-apply.js';
+import {
+  analyzeSpecUpdates,
+  findSpecUpdates,
+  SpecReconciliationError,
+} from './specs-apply.js';
 import { classifyStoreRootLayout } from './store/layout-write-guard.js';
 import {
   ChangeFinalizationModuleInstance,
   isChangeFinalizationError,
+  inspectFinalizationApplyPlan,
   resolveFinalizationOutcomeRequest,
   type FinalizationResult,
   type ImmutableFinalizationPlan,
@@ -82,6 +96,7 @@ export interface ArchiveOptions {
   dryRun?: boolean;
   savePlan?: boolean;
   applyPlan?: string;
+  abortPlan?: string;
   intentTemplate?: boolean;
   intentFile?: string;
 }
@@ -334,45 +349,23 @@ function toArchiveDiagnostic(error: unknown): ArchiveDiagnostic {
       ...(error.diagnostic.fix === undefined ? {} : { fix: error.diagnostic.fix }),
     };
   }
+  const code = errorCode(error);
   return {
     severity: 'error',
-    code: 'archive_error',
+    code: code?.startsWith('archive_') ? code : 'archive_error',
     message: error instanceof Error ? error.message : String(error),
   };
 }
 
-async function readShipLogDeliveryMode(
-  workDir: string | null,
-  changeDir: string
-): Promise<'pr' | 'push' | 'local' | null> {
-  const candidates = [
-    path.join(evidenceDir(changeDir), 'ship-log.md'),
-    ...(workDir ? [path.join(workDir, 'ship-log.md')] : []),
-    path.join(changeDir, 'ship-log.md'),
-  ];
-  for (const candidate of candidates) {
-    let content: string;
-    try {
-      content = await fs.readFile(candidate, 'utf8');
-    } catch (error) {
-      if (isMissingPathError(error)) continue;
-      throw new ArchiveBlockedError(
-        'archive_ship_log_read_failed',
-        `Unable to read ship log at ${candidate}: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-    }
-    const match = content.match(/\*\*Mode:\*\*\s*(pr|push|local)\b/);
-    return match ? (match[1] as 'pr' | 'push' | 'local') : null;
-  }
-  return null;
+interface ShipLogInspection {
+  shipLog: ArchivePlan['shipLog'];
+  deliveryMode: ArchivePlan['decisions']['timing']['deliveryMode'];
 }
 
-async function resolveShipLogPlan(
+async function inspectShipLog(
   workDir: string | null,
   changeDir: string
-): Promise<ArchivePlan['shipLog']> {
+): Promise<ShipLogInspection> {
   const candidates = [
     path.join(evidenceDir(changeDir), 'ship-log.md'),
     ...(workDir ? [path.join(workDir, 'ship-log.md')] : []),
@@ -381,13 +374,20 @@ async function resolveShipLogPlan(
   for (const candidate of candidates) {
     try {
       const content = await fs.readFile(candidate);
+      const text = content.toString('utf8');
+      const modeMatch = text.match(/\*\*Mode:\*\*\s*(pr|push|local)\b/);
       return {
-        source: candidate,
-        sha256: createHash('sha256').update(content).digest('hex'),
-        recordedCommit:
-          content
-            .toString('utf8')
-            .match(/^\*\*Commit:\*\*\s*([0-9a-f]{7,64})\s*$/im)?.[1] ?? null,
+        shipLog: {
+          source: candidate,
+          sha256: createHash('sha256').update(content).digest('hex'),
+          recordedCommit:
+            text.match(/^\*\*Commit:\*\*\s*([0-9a-f]{7,64})\s*$/im)?.[1] ??
+            null,
+          reservedSection: hasReservedArchiveShipLogSection(text),
+        },
+        deliveryMode: modeMatch
+          ? (modeMatch[1] as 'pr' | 'push' | 'local')
+          : null,
       };
     } catch (error) {
       if (isMissingPathError(error)) continue;
@@ -399,12 +399,24 @@ async function resolveShipLogPlan(
       );
     }
   }
-  return { source: null, sha256: null, recordedCommit: null };
+  return {
+    shipLog: {
+      source: null,
+      sha256: null,
+      recordedCommit: null,
+      reservedSection: false,
+    },
+    deliveryMode: null,
+  };
 }
 
 export class ArchiveCommand {
   async execute(changeName?: string, options: ArchiveOptions = {}): Promise<void> {
     const json = !!options.json;
+    if (options.abortPlan !== undefined) {
+      await this.abortStoredPlan(changeName, options, json);
+      return;
+    }
     if (options.applyPlan !== undefined) {
       await this.applyStoredPlan(changeName, options, json);
       return;
@@ -510,6 +522,137 @@ export class ArchiveCommand {
     await this.run(changeName, options, root, false);
   }
 
+  private async abortStoredPlan(
+    changeName: string | undefined,
+    options: ArchiveOptions,
+    json: boolean
+  ): Promise<void> {
+    const messages = getLocaleCatalog(getCliLocale()).archiveAbort;
+    const conflictingOptions = [
+      changeName !== undefined,
+      options.applyPlan !== undefined,
+      !!options.dryRun,
+      !!options.savePlan,
+      !!options.intentTemplate,
+      options.intentFile !== undefined,
+      !!options.skipSpecs,
+      !!options.noValidate,
+      options.validate === false,
+      options.outcome !== undefined,
+      options.reason !== undefined,
+      options.by !== undefined,
+      options.byTargetLine !== undefined,
+      options.commit !== undefined,
+      options.store !== undefined,
+      options.project !== undefined,
+      options.targetLine !== undefined,
+      options.storePath !== undefined,
+      !!options.keepEphemera,
+    ];
+    if (conflictingOptions.some(Boolean)) {
+      const diagnostic = new ArchiveBlockedError(
+        'archive_option_conflict',
+        messages.optionConflict
+      ).diagnostic;
+      if (json) {
+        this.printJsonFailure(undefined, diagnostic);
+        return;
+      }
+      throw new ArchiveBlockedError(diagnostic.code, diagnostic.message);
+    }
+    if (options.yes !== true) {
+      const diagnostic = new ArchiveBlockedError(
+        'archive_abort_confirmation_required',
+        messages.confirmationRequired,
+        formatLocaleMessage(messages.confirmationFix, {
+          token: options.abortPlan!,
+        })
+      ).diagnostic;
+      if (json) {
+        this.printJsonFailure(undefined, diagnostic);
+        return;
+      }
+      throw new ArchiveBlockedError(
+        diagnostic.code,
+        diagnostic.message,
+        diagnostic.fix
+      );
+    }
+
+    try {
+      const globalDataDir = getGlobalDataDir();
+      let result: ArchiveAbortResult;
+      try {
+        const plan = await loadStoredArchivePlan(
+          options.abortPlan!,
+          globalDataDir
+        );
+        result =
+          plan.finalization === undefined
+            ? await withStoredArchivePlanOperation(
+                plan,
+                globalDataDir,
+                'abort',
+                () => abortArchivePlan(plan, globalDataDir)
+              )
+            : await ChangeFinalizationModuleInstance.abortStoredPlan(
+                plan,
+                globalDataDir
+              );
+      } catch (error) {
+        if (errorCode(error) !== 'ENOENT') throw error;
+        const completed = await loadCompletedArchiveAbort(
+          options.abortPlan!,
+          globalDataDir
+        );
+        if (completed === null) throw error;
+        result = completed;
+      }
+      if (result.status === 'blocked') process.exitCode = 1;
+      if (json) {
+        console.log(
+          JSON.stringify({ archive: { mode: 'abort', result } }, null, 2)
+        );
+        return;
+      }
+      if (result.status === 'aborted') {
+        console.log(
+          formatLocaleMessage(messages.aborted, {
+            transactionId: result.transactionId,
+          })
+        );
+      } else if (result.status === 'already-aborted') {
+        console.log(
+          formatLocaleMessage(messages.alreadyAborted, {
+            transactionId: result.transactionId,
+          })
+        );
+      } else {
+        console.log(
+          formatLocaleMessage(messages.blocked, {
+            transactionId: result.transactionId,
+          })
+        );
+        for (const blocker of result.blockers) {
+          console.log(
+            formatLocaleMessage(messages.blocker, {
+              code: blocker.code ?? blocker.operation,
+              path: blocker.path,
+            })
+          );
+        }
+        console.log(messages.recovery);
+      }
+    } catch (error) {
+      const diagnostic = toArchiveDiagnostic(error);
+      if (json) {
+        this.printJsonFailure(undefined, diagnostic);
+        return;
+      }
+      throw error;
+    }
+  }
+
   private async applyStoredPlan(
     changeName: string | undefined,
     options: ArchiveOptions,
@@ -524,8 +667,14 @@ export class ArchiveCommand {
       !!options.skipSpecs,
       !!options.noValidate,
       options.validate === false,
+      options.outcome !== undefined,
+      options.reason !== undefined,
+      options.by !== undefined,
+      options.byTargetLine !== undefined,
+      options.commit !== undefined,
       options.store !== undefined,
       options.project !== undefined,
+      options.targetLine !== undefined,
       options.storePath !== undefined,
       !!options.keepEphemera,
     ];
@@ -542,15 +691,42 @@ export class ArchiveCommand {
     }
 
     try {
-      const plan = await loadStoredArchivePlan(
-        options.applyPlan!,
-        getGlobalDataDir()
-      );
+      const globalDataDir = getGlobalDataDir();
+      let plan: ArchivePlan;
+      try {
+        plan = await loadStoredArchivePlan(
+          options.applyPlan!,
+          globalDataDir
+        );
+      } catch (error) {
+        if (errorCode(error) !== 'ENOENT') throw error;
+        const completedAbort = await loadCompletedArchiveAbort(
+          options.applyPlan!,
+          globalDataDir
+        );
+        if (completedAbort === null) throw error;
+        const aborted = new Error(
+          getLocaleCatalog(getCliLocale()).archiveAbort.applyAborted
+        );
+        (aborted as NodeJS.ErrnoException).code = 'archive_plan_aborted';
+        throw aborted;
+      }
+      await withStoredArchivePlanOperation(
+        plan,
+        globalDataDir,
+        'apply',
+        async () => {
       // A stored Store v2 plan is REVALIDATED and applied, not refused. The
       // plan carries the finalization block, so the invoking directory and the
       // selectors that produced it cannot influence the outcome.
       if (plan.finalization !== undefined) {
-        const finalization = await ChangeFinalizationModuleInstance.applyStoredPlan(plan);
+        const finalization = await ChangeFinalizationModuleInstance.applyStoredPlan(
+          plan,
+          undefined,
+          {
+            mergeConfirmed: options.yes === true,
+          }
+        );
         if (finalization.status !== 'complete') process.exitCode = 1;
         if (json) {
           console.log(
@@ -568,9 +744,11 @@ export class ArchiveCommand {
         }
         return;
       }
-      const result = await this.applyPlannedArchive(plan);
+      const result = await this.applyPlannedArchive(plan, {
+        assertions: { mergeConfirmed: options.yes === true },
+      });
       if (result.status !== 'complete') {
-        if (!result.manualRecoveryAction) {
+        if (!result.manualRecoveryAction && !result.abortCommand) {
           result.recoveryCommand =
             `rasen archive --apply-plan ${options.applyPlan} --yes` +
             (json ? ' --json' : '');
@@ -595,10 +773,14 @@ export class ArchiveCommand {
         }
         if (result.manualRecoveryAction) {
           console.log(`Manual recovery: ${result.manualRecoveryAction.guidance}`);
+        } else if (result.abortCommand) {
+          console.log(`Abort: ${result.abortCommand}`);
         } else {
           console.log(`Recovery: ${result.recoveryCommand}`);
         }
       }
+        }
+      );
     } catch (error) {
       const diagnostic = toArchiveDiagnostic(error);
       if (json) {
@@ -629,8 +811,11 @@ export class ArchiveCommand {
     process.exitCode = 1;
   }
 
-  protected applyPlannedArchive(plan: ArchivePlan): Promise<ArchiveApplyResult> {
-    return applyArchive(plan);
+  protected applyPlannedArchive(
+    plan: ArchivePlan,
+    options: ArchiveApplyOptions = {}
+  ): Promise<ArchiveApplyResult> {
+    return applyArchive(plan, options);
   }
 
   private async failHuman(message: string, abort = true): Promise<null> {
@@ -733,17 +918,28 @@ export class ArchiveCommand {
         message: error instanceof Error ? error.message : String(error),
       });
     }
-    let deliveryMode: ArchivePlan['decisions']['timing']['deliveryMode'] = null;
-    try {
-      deliveryMode = await readShipLogDeliveryMode(workDir, changeDir);
-    } catch (error) {
-      planningBlockers.push({
-        operation: 'timing',
-        path: changeDir,
-        ...(errorCode(error) ? { code: errorCode(error) } : {}),
-        message: error instanceof Error ? error.message : String(error),
-      });
+    let shipLogInspection: ShipLogInspection = {
+      shipLog: {
+        source: null,
+        sha256: null,
+        recordedCommit: null,
+        reservedSection: false,
+      },
+      deliveryMode: null,
+    };
+    if (sourceAvailable) {
+      try {
+        shipLogInspection = await inspectShipLog(workDir, changeDir);
+      } catch (error) {
+        planningBlockers.push({
+          operation: 'evidence',
+          path: changeDir,
+          ...(errorCode(error) ? { code: errorCode(error) } : {}),
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
+    const deliveryMode = shipLogInspection.deliveryMode;
     if (
       !options.yes &&
       timing === 'on-merge' &&
@@ -765,7 +961,11 @@ export class ArchiveCommand {
       validationDecision = 'blocked';
     } else if (!skipValidation) {
       try {
-        const validationPassed = await this.validateActiveChange(changeDir, json);
+        const validationPassed = await this.validateActiveChange(
+          changeDir,
+          root.specsDir,
+          json
+        );
         if (!validationPassed) {
           validationDecision = 'blocked';
           compatibilityDiagnostic ??= new ArchiveBlockedError(
@@ -869,18 +1069,36 @@ export class ArchiveCommand {
         );
       }
     } catch (error) {
-      const diagnostic = toArchiveDiagnostic(error);
-      preparationBlockers.push({
-        operation: 'spec',
-        path: changeDir,
-        code: diagnostic.code,
-        message:
-          diagnostic.code === 'archive_spec_validation_failed'
-            ? diagnostic.message.replace(/ No files were changed\.$/, '')
-            : diagnostic.message,
-      });
-      if (error instanceof ArchiveBlockedError) {
-        compatibilityDiagnostic ??= diagnostic;
+      if (error instanceof SpecReconciliationError) {
+        for (const issue of error.issues) {
+          preparationBlockers.push({
+            operation: 'spec',
+            path: issue.source,
+            code: issue.code,
+            message: issue.message,
+          });
+        }
+        const [firstIssue] = error.issues;
+        compatibilityDiagnostic ??= {
+          severity: 'error',
+          code: 'archive_spec_update_failed',
+          message: firstIssue?.message ?? error.message,
+          fix: 'Fix the change delta specs and rerun. No files were changed.',
+        };
+      } else {
+        const diagnostic = toArchiveDiagnostic(error);
+        preparationBlockers.push({
+          operation: 'spec',
+          path: changeDir,
+          code: diagnostic.code,
+          message:
+            diagnostic.code === 'archive_spec_validation_failed'
+              ? diagnostic.message.replace(/ No files were changed\.$/, '')
+              : diagnostic.message,
+        });
+        if (error instanceof ArchiveBlockedError) {
+          compatibilityDiagnostic ??= diagnostic;
+        }
       }
       specActions = [];
     }
@@ -914,23 +1132,7 @@ export class ArchiveCommand {
           probes: [],
           blockers: [],
         };
-    let shipLog: ArchivePlan['shipLog'] = {
-      source: null,
-      sha256: null,
-      recordedCommit: null,
-    };
-    if (sourceAvailable) {
-      try {
-        shipLog = await resolveShipLogPlan(workDir, changeDir);
-      } catch (error) {
-        preparationBlockers.push({
-          operation: 'evidence',
-          path: changeDir,
-          ...(errorCode(error) ? { code: errorCode(error) } : {}),
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
+    const shipLog = shipLogInspection.shipLog;
     const planInputs = {
       change: changeName,
       planningRoot: root.path,
@@ -950,7 +1152,7 @@ export class ArchiveCommand {
       timing: {
         mode: timing,
         deliveryMode,
-        override: !!options.yes,
+        override: false,
       },
       specActions,
       preparationBlockers,
@@ -972,17 +1174,28 @@ export class ArchiveCommand {
     const plan = await createArchivePlan(planInputs);
 
     if (options.dryRun) {
-      const planToken = options.savePlan
-        ? await persistArchivePlan(plan, getGlobalDataDir())
-        : undefined;
+      const canSave = !plan.blockers.some(
+        blocker => blocker.code === 'archive_ship_log_reserved_section'
+      );
+      const planToken =
+        options.savePlan && canSave
+          ? await persistArchivePlan(plan, getGlobalDataDir())
+          : undefined;
       return this.renderDryRun(plan, json, planToken);
     }
-    if (!plan.complete || plan.blockers.length > 0) {
-      const message = plan.blockers
+    const applyOptions: ArchiveApplyOptions = {
+      assertions: { mergeConfirmed: options.yes === true },
+    };
+    const applyInspection = inspectArchiveApplyPlan(
+      plan,
+      applyOptions.assertions
+    );
+    if (!applyInspection.applicable) {
+      const message = applyInspection.blockers
         .map(item => `${item.operation}: ${item.message}`)
         .join('; ');
       if (!json) {
-        const targetBlocker = plan.blockers.find(
+        const targetBlocker = applyInspection.blockers.find(
           item => item.operation === 'target-lstat' && item.code === 'EEXIST'
         );
         if (targetBlocker) {
@@ -1010,13 +1223,13 @@ export class ArchiveCommand {
         transactionId: plan.transactionId,
         planHash: plan.planHash,
         journalPath: plan.paths.journal,
-        blockers: plan.blockers,
+        blockers: applyInspection.blockers,
         status: 'blocked',
         ...(compatibilityDiagnostic ? { compatibilityDiagnostic } : {}),
       };
     }
 
-    const result = await this.applyPlannedArchive(plan);
+    const result = await this.applyPlannedArchive(plan, applyOptions);
     if (result.status !== 'complete') {
       const message =
         result.blockers.map(item => `${item.operation}: ${item.message}`).join('; ') ||
@@ -1156,9 +1369,16 @@ export class ArchiveCommand {
     });
 
     if (options.dryRun) {
-      const planToken = options.savePlan
-        ? await persistArchivePlan(finalizationPlan.archivePlan, getGlobalDataDir())
-        : undefined;
+      const canSave = !finalizationPlan.archivePlan.blockers.some(
+        blocker => blocker.code === 'archive_ship_log_reserved_section'
+      );
+      const planToken =
+        options.savePlan && canSave
+          ? await persistArchivePlan(
+              finalizationPlan.archivePlan,
+              getGlobalDataDir()
+            )
+          : undefined;
       return this.renderFinalizationDryRun(finalizationPlan, json, planToken);
     }
 
@@ -1193,8 +1413,13 @@ export class ArchiveCommand {
       };
     }
 
-    if (!finalizationPlan.applicable) {
-      const first = finalizationPlan.blockers[0];
+    const finalizationInspection = inspectFinalizationApplyPlan(
+      finalizationPlan,
+      { mergeConfirmed: options.yes === true }
+    );
+
+    if (!finalizationInspection.applicable) {
+      const first = finalizationInspection.blockers[0];
       const diagnostic: ArchiveDiagnostic = {
         severity: 'error',
         code: first?.code ?? 'archive_plan_blocked',
@@ -1205,7 +1430,7 @@ export class ArchiveCommand {
         this.printJsonFailure(root, diagnostic, finalizationPlan.archivePlan);
         return null;
       }
-      for (const blocker of finalizationPlan.blockers) {
+      for (const blocker of finalizationInspection.blockers) {
         console.log(`${blocker.code}: ${blocker.message}`);
       }
       throw new ArchiveBlockedError(diagnostic.code, diagnostic.message, diagnostic.fix);
@@ -1213,7 +1438,8 @@ export class ArchiveCommand {
 
     const result = await ChangeFinalizationModuleInstance.applyStoredPlan(
       finalizationPlan.archivePlan,
-      finalizationPlan.token
+      finalizationPlan.token,
+      { mergeConfirmed: options.yes === true }
     );
     if (result.status !== 'complete') process.exitCode = 1;
     const facts = finalizationFacts(result);
@@ -1300,7 +1526,11 @@ export class ArchiveCommand {
     };
   }
 
-  private async validateActiveChange(changeDir: string, json: boolean): Promise<boolean> {
+  private async validateActiveChange(
+    changeDir: string,
+    canonicalSpecsDir: string,
+    json: boolean
+  ): Promise<boolean> {
     const validator = new Validator();
     if (!json) {
       const proposal = path.join(changeDir, 'proposal.md');
@@ -1343,7 +1573,10 @@ export class ArchiveCommand {
       if (!isMissingPathError(error)) throw error;
     }
     if (!hasDeltaSpecs) return true;
-    const report = await validator.validateChangeDeltaSpecs(changeDir);
+    const report = await validator.validateChangeDeltaSpecs(
+      changeDir,
+      canonicalSpecsDir
+    );
     if (report.valid) return true;
     if (!json) {
       console.log(chalk.red('\nValidation errors in change delta specs:'));
@@ -1393,6 +1626,7 @@ export class ArchiveCommand {
       }
     }
 
+
     if (!options.dryRun && !options.yes) {
       if (json) {
         throw new ArchiveBlockedError(
@@ -1411,11 +1645,15 @@ export class ArchiveCommand {
         return [];
       }
     }
+    const analysis = await analyzeSpecUpdates(updates, changeName, { silent: json });
+    if (analysis.issues.length > 0) {
+      throw new SpecReconciliationError(analysis.issues);
+    }
 
     const actions: PreparedArchiveSpecAction[] = [];
     try {
-      for (const update of updates) {
-        const built = await buildUpdatedSpec(update, changeName, { silent: json });
+      for (const built of analysis.prepared) {
+        const update = built.update;
         const capability = path.basename(path.dirname(update.target));
         if (!skipValidation && !built.emptied) {
           const report = await new Validator().validateSpecContent(

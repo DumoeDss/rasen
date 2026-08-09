@@ -56,6 +56,11 @@ ${STORE_SELECTION_GUIDANCE}
       - List which capability specs exist
       - For each, extract requirement names (lines matching \`### Requirement: <name>\`)
 
+   d. **Reserved ship-log heading** - Resolve the selected sticky-legacy ship log for the change (\`evidenceDir\`, then an existing legacy work directory, then \`changeRoot\`)
+      - If it contains a level-two \`## Archive\` heading, mark that change BLOCKED before intent or saved-plan creation
+      - Explain that the heading is reserved for archive transaction evidence and require the operator to remove or rename the change-authored section
+      - Do not retain or apply a token for that change; other independently clean batch items may continue
+
 4. **Detect spec conflicts**
 
    Build a map of \`capability -> [changes that touch it]\`:
@@ -129,13 +134,13 @@ ${STORE_SELECTION_GUIDANCE}
    Process changes in the determined order (respecting conflict resolution):
 
    a. **Sync specs** if delta specs exist:
-      - Let the archive engine prepare and apply the intelligent spec merge
-      - For conflicts, apply in resolved order
+      - Let the archive engine run the shared deterministic reconciliation analysis and apply only complete, clean requirement replacements
+      - Stop that change before any mutation when the result contains a reconciliation blocker
+      - For conflicts, apply clean plans in the resolved order
       - Track if sync was done
 
    b. **Invoke the authoritative archive engine once per confirmed change**:
-
-      For every change, run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.intentTemplate}\`, write and complete its intent (including empty-handoff and probe-only cases), then run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.savedPreview}\` with the resolved selector and frozen \`--skip-specs\` choice. Capture each exact \`planToken\` and apply with \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.apply}\`. Retry recoverable items with the same token; never replan. Use each structured JSON result for partial-success reporting. Never invoke an external spec-sync command, create an archive directory, move a change, recursively remove a source, or hand-write \`archive.json\`.
+      For every change, run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.intentTemplate}\`, write and complete its intent (including empty-handoff and probe-only cases), then run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.savedPreview}\` with the resolved selector and frozen \`--skip-specs\` choice. Capture each exact \`planToken\` and apply with \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.apply}\`. Branch on structured disposition per item: \`manualRecoveryAction\` means follow only that verified manual guidance; otherwise \`recoverable\` uses only the returned exact-token recovery command, \`abort-required\` uses only the returned \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.abort}\` before correction and a fresh plan, and \`blocked\` stops before mutation. Never replay a deterministic conflict or replan a recoverable transaction. Use each structured JSON result for partial-success reporting. Never invoke an external spec-sync command, create an archive directory, move/remove a change, recursively delete a source, hand-write \`archive.json\`, or repair a journal.
 
       **Post-bookkeeping commit guidance** (per change, same as \`rasen-archive-change\`, including its CONDITIONAL ship-referencing commit-message form — the "specs synced" clause included only when that change actually had delta specs synced this run, dropped entirely when it had none or sync was skipped; the ship suffix omitted, never invented, when that change's own ship log records no \`Commit:\`; four resulting forms, same as \`rasen-archive-change\` step 5): use the exact \`changeRoot\`, \`archive.archiveDir\`, and \`root.scope.paths.specs\` values from that change's status payload in both \`git add --\` and path-scoped \`git commit --\` (substituting the message form that matches this change's actual sync/ship state) — the \`add\` step matters because the newly archived directory, and a spec sync that created a new capability directory, are both untracked and would otherwise be silently left out of a bare \`git commit --\`.
 

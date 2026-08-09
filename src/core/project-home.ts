@@ -9,6 +9,7 @@ import {
   deriveProjectDisplayName,
   getProjectHomeDir,
   readProjectRegistryState,
+  refreshRegisteredProject,
   registerProject,
   resolveRegistrationRoot,
   type ProjectMode,
@@ -256,7 +257,7 @@ export async function touchProjectRegistry(
     }
 
     const cacheChanged = cacheInputs.tools !== undefined || cacheInputs.installedVersion !== undefined;
-    await registerProject(
+    await refreshRegisteredProject(
       {
         projectRoot,
         projectId: config.projectId,

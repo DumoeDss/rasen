@@ -286,6 +286,58 @@ describe('rasen archive: the Store v2 outcome surface', () => {
     expect(fs.existsSync(bound.changeDir)).toBe(false);
   }, 240_000);
 
+  it('aborts a saved Store finalization under its recorded coordination locks', async () => {
+    const bound = await bind('stored-finalization-abort');
+    const changeBefore = hashTree(bound.changeDir);
+    const preview = expectOk(
+      await runCLI(
+        archiveArgs(
+          bound,
+          '--outcome',
+          'abandoned',
+          '--reason',
+          'Retire this uncommitted plan.',
+          '--dry-run',
+          '--save-plan',
+          '--json'
+        ),
+        { cwd: bound.executionWorktree, env: f.env }
+      )
+    );
+    const payload = parseJson(preview).archive;
+    const token = payload.planToken as string;
+
+    const aborted = expectOk(
+      await runCLI(['archive', '--abort-plan', token, '--json', '--yes'], {
+        cwd: f.tempDir,
+        env: f.env,
+      })
+    );
+    expect(parseJson(aborted).archive.result).toMatchObject({
+      status: 'aborted',
+      change: bound.changeId,
+      blockers: [],
+    });
+    expect(hashTree(bound.changeDir)).toEqual(changeBefore);
+    expect(fs.existsSync(bound.archiveLine)).toBe(false);
+
+    const repeated = expectOk(
+      await runCLI(['archive', '--abort-plan', token, '--json', '--yes'], {
+        cwd: f.tempDir,
+        env: f.env,
+      })
+    );
+    expect(parseJson(repeated).archive.result.status).toBe('already-aborted');
+
+    const reapplied = await runCLI(
+      ['archive', '--apply-plan', token, '--json', '--yes'],
+      { cwd: f.tempDir, env: f.env }
+    );
+    expect(reapplied.exitCode).toBe(1);
+    expect(parseJson(reapplied).status[0].code).toBe('archive_plan_aborted');
+    expect(hashTree(bound.changeDir)).toEqual(changeBefore);
+  }, 240_000);
+
   it('refuses an unverifiable successor with the SPECIFIC diagnostic, not a shape complaint', async () => {
     const bound = await bind('no-such-successor');
 
