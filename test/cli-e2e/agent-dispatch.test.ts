@@ -379,7 +379,7 @@ describe('rasen agent dispatch --runtime claude', () => {
 
   it.each([
     [
-      ['--runtime', 'codex', '--contract', 'leaf', '--sandbox', 'read-only'],
+      ['--runtime', 'other', '--contract', 'leaf', '--sandbox', 'read-only'],
       /runtime/,
     ],
     [

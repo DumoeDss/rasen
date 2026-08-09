@@ -393,9 +393,12 @@
   "pipelines.threshold.feedback.write_failed": "未保存更改。请检查当前作用域和服务器详情后重试。",
 
   "pipelines.threshold.defaults.title": "默认设置",
-  "pipelines.threshold.defaults.description": "模型默认值与 keepalive 生命周期控制位于此处。常规交接策略通过阈值方案配置。",
+  "pipelines.threshold.defaults.description": "模型与推理强度默认值以及 keepalive 生命周期控制位于此处。常规交接策略通过阈值方案配置。",
   "pipelines.threshold.defaults.role": "角色",
   "pipelines.threshold.defaults.model": "模型",
+  "pipelines.effort.label": "推理强度",
+  "pipelines.effort.effective": "有效值",
+  "pipelines.effort.runtime_default": "运行时默认值",
   "pipelines.keepalive.lifecycle_description": "运行时门控与上下文下限控制停驻 worker 的生命周期和缓存行为，独立于阈值绑定。",
   "pipelines.keepalive.runtime_description": "允许 {runtime} 运行时使用 keepalive 心跳",
   "pipelines.keepalive.context_floor_description": "允许 keepalive 停驻所需的最少上下文 token 数",

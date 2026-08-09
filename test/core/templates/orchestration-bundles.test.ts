@@ -267,9 +267,10 @@ describe('selective orchestration bundles', () => {
       expect(playbook).toContain(
         'do NOT use `SendMessage`, `rasen agent wait`, or the signal-file parking protocol'
       );
-      expect(playbook).toContain('codex exec --json --output-schema');
-      expect(playbook).toContain('< /dev/null');
-      expect(playbook).toContain('codex exec resume <threadId>');
+      expect(playbook).toContain('rasen agent dispatch --runtime codex');
+      expect(playbook).toContain('bounded stdin and closes stdin with EOF');
+      expect(playbook).toContain('--resume <exact-thread-id>');
+      expect(playbook).toContain('There is no latest-thread lookup');
       expect(playbook).toContain('Codex exec mode yields NO turn id');
       expect(playbook).toContain('Claude host → Claude worker `native`');
       expect(playbook).toContain('Claude host → Codex worker `exec-bridge`');
@@ -288,9 +289,11 @@ describe('selective orchestration bundles', () => {
       expect(reviewLoop).toContain('Claude-native uses `SendMessage` by agentId');
       expect(reviewLoop).toContain('Codex-native uses `followup_task` by agent id');
       expect(reviewLoop).toContain(
-        'Claude exec-bridge uses `rasen agent dispatch --resume <sessionId> --cwd <cwd>`'
+        'Claude exec-bridge uses `rasen agent dispatch --runtime claude --resume <sessionId> --cwd <cwd>`'
       );
-      expect(reviewLoop).toContain('Codex exec-bridge uses `codex exec resume <threadId>`');
+      expect(reviewLoop).toContain(
+        'Codex exec-bridge uses `rasen agent dispatch --runtime codex --resume <threadId> --cwd <cwd>`'
+      );
       expect(reviewLoop).toContain('A finding is resolved ONLY after a non-author confirms it');
     }
 
@@ -302,9 +305,11 @@ describe('selective orchestration bundles', () => {
       expect(goalLoop).toContain('Claude-native uses `SendMessage` on the same implementer agentId');
       expect(goalLoop).toContain('Codex-native uses `followup_task` on the same idle implementer agent');
       expect(goalLoop).toContain(
-        'Claude exec-bridge uses `rasen agent dispatch --resume <sessionId> --cwd <cwd>`'
+        'Claude exec-bridge uses `rasen agent dispatch --runtime claude --resume <sessionId> --cwd <cwd>`'
       );
-      expect(goalLoop).toContain('Codex exec-bridge uses `codex exec resume <threadId>`');
+      expect(goalLoop).toContain(
+        'Codex exec-bridge uses `rasen agent dispatch --runtime codex --resume <threadId> --cwd <cwd>`'
+      );
       expect(goalLoop).toContain('author ≠ verifier');
     }
 

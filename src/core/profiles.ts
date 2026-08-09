@@ -17,10 +17,10 @@ import { readProjectConfig } from './project-config.js';
 import {
   BUILT_IN_WORKFLOW_IDS,
   CORE_WORKFLOW_IDS,
-  RETENTION_RUNNER_WORKFLOW_ID,
   filterKnownWorkflowRoots,
   getBuiltInWorkflowDefinitions,
   getExpertSkillDefinitions,
+  isInternalBuiltInWorkflowId,
   resolveEffectiveWorkflowInstallSelection,
   WorkflowCatalog,
   type BuiltInWorkflowId,
@@ -76,7 +76,7 @@ export function getCurrentBuiltInWorkflowIds(): string[] {
         definition.kind !== 'expert' &&
         // The retention runner is internal and non-selectable — never part of
         // the selectable-workflow baseline.
-        definition.id !== RETENTION_RUNNER_WORKFLOW_ID
+        !isInternalBuiltInWorkflowId(definition.id)
     )
     .map((definition) => definition.id);
 }

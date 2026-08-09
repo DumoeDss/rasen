@@ -167,6 +167,20 @@ describe('KNOWN_MODEL_IDS preset parity', () => {
       expect(resolveModelPreset(id), `suggestion '${id}' must match a MODEL_PRESETS entry`).toBeDefined();
     }
   });
+
+  it('keeps Luna and Terra as additive suggestions alongside the existing ids', () => {
+    expect(KNOWN_MODEL_IDS).toEqual(expect.arrayContaining([
+      'sonnet-5',
+      'sonnet-4-6',
+      'opus-4',
+      'fable',
+      'mythos',
+      'haiku',
+      'gpt-5',
+      'gpt-5.6-luna',
+      'gpt-5.6-terra',
+    ]));
+  });
 });
 
 describe('validateThresholdValue', () => {

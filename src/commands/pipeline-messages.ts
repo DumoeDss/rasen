@@ -18,6 +18,7 @@ export const BUILT_IN_PIPELINE_IDS = [
   'goal-loop-measure',
   'goal-loop-research',
   'small-feature',
+  'task-loop',
 ] as const;
 
 export type BuiltInPipelineId = (typeof BUILT_IN_PIPELINE_IDS)[number];
@@ -315,6 +316,18 @@ export const PIPELINE_ERROR_KEYS = [
   'engine_disabled_by_config',
   'engine_unsupported',
   'engine_owner_conflict',
+  'launch_request_conflict',
+  'task_loop_input_missing',
+  'task_loop_input_invalid',
+  'task_loop_bar_unprovable',
+  'task_loop_critic_reused',
+  'task_loop_bar_mismatch',
+  'task_loop_evidence_missing',
+  'task_loop_false_satisfaction',
+  'task_loop_reconciler_required',
+  'task_loop_blocked',
+  'task_loop_exhausted',
+  'task_loop_delivery_guard',
   'pipeline_command_error',
 ] as const;
 
@@ -478,12 +491,32 @@ function errorDetail(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+const TASK_LOOP_ERROR_CODES = new Set<string>([
+  'launch_request_conflict',
+  'task_loop_input_missing',
+  'task_loop_input_invalid',
+  'task_loop_bar_unprovable',
+  'task_loop_critic_reused',
+  'task_loop_bar_mismatch',
+  'task_loop_evidence_missing',
+  'task_loop_false_satisfaction',
+  'task_loop_reconciler_required',
+  'task_loop_blocked',
+  'task_loop_exhausted',
+  'task_loop_delivery_guard',
+]);
+
 export function formatPipelineErrorDetail(
   error: unknown,
   locale: CliLocale = getCliLocale()
 ): string {
   if (error instanceof PipelineMessageError) {
     return getPipelineMessages(locale).formatDescriptor(error.key, error.values);
+  }
+  const code = errorCode(error);
+  if (TASK_LOOP_ERROR_CODES.has(code)) {
+    const messages = getPipelineMessages(locale);
+    return `${code}: ${messages.errorSummary(code)} ${errorDetail(error)}`;
   }
   return errorDetail(error);
 }
@@ -500,6 +533,13 @@ export function formatPipelineError(
   }
 
   const detail = errorDetail(error);
+  const code = errorCode(error);
+  if (TASK_LOOP_ERROR_CODES.has(code)) {
+    const localized = messages.errorSummary(code);
+    return messages.format('errorWithDetail', {
+      detail: `${code}: ${detail === localized ? localized : `${localized} ${detail}`}`,
+    });
+  }
   if (locale === 'en') {
     return messages.format('errorWithDetail', { detail });
   }

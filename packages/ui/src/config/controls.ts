@@ -45,6 +45,8 @@ export const KNOWN_MODEL_IDS = [
   'mythos',
   'haiku',
   'gpt-5',
+  'gpt-5.6-luna',
+  'gpt-5.6-terra',
 ] as const;
 
 /** True for the `models.default` / `models.roles.<role>` key family — the only `string`-typed keys that render as a model control instead of plain text. */

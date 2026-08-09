@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as http from 'node:http';
 
-import { probeDaemon, probeDaemonPort, resolveDefaultDaemonPort } from '../../../src/core/management-api/daemon-probe.js';
+import {
+  DAEMON_PORT_FREE_OBSERVATION_MS,
+  IDENTIFIED_DAEMON_KILL_GRACE_MS,
+  probeDaemon,
+  probeDaemonPort,
+  resolveDefaultDaemonPort,
+} from '../../../src/core/management-api/daemon-probe.js';
 
 function listen(server: http.Server): Promise<number> {
   return new Promise((resolve) => {
@@ -38,7 +44,35 @@ describe('daemon-probe (design D3, task 2.2)', () => {
     await close(probe);
 
     const result = await probeDaemonPort(port);
-    expect(result).toEqual({ kind: 'no-listener' });
+    expect(result).toEqual({
+      kind: 'no-listener',
+      reason: 'connection-refused',
+    });
+  });
+
+  it('classifies a listener that never responds as ambiguous timeout', async () => {
+    server = http.createServer();
+    server.on('connection', () => {
+      // Keep the accepted socket open past the bounded probe timeout.
+    });
+    const port = await listen(server);
+
+    expect(await probeDaemonPort(port)).toEqual({
+      kind: 'no-listener',
+      reason: 'timeout',
+    });
+  });
+
+  it('classifies a listener that drops the socket without HTTP as network ambiguity', async () => {
+    server = http.createServer();
+    server.on('connection', (socket) => socket.destroy());
+    const port = await listen(server);
+
+    const result = await probeDaemonPort(port);
+    expect(result.kind).toBe('no-listener');
+    if (result.kind === 'no-listener') {
+      expect(['network-error', 'non-response']).toContain(result.reason);
+    }
   });
 
   it('classifies foreign when a listener answers without rasen identity headers', async () => {
@@ -117,5 +151,15 @@ describe('daemon-probe (design D3, task 2.2)', () => {
     expect(resolveDefaultDaemonPort({ RASEN_DAEMON_PORT: '9999' })).toBe(9999);
     expect(resolveDefaultDaemonPort({ RASEN_DAEMON_PORT: 'not-a-number' })).toBe(8791);
     expect(resolveDefaultDaemonPort({ RASEN_DAEMON_PORT: '-1' })).toBe(8791);
+  });
+
+  it('keeps the outer daemon grace above composed shutdown and observes ports for at least 25 seconds', () => {
+    expect(IDENTIFIED_DAEMON_KILL_GRACE_MS).toBe(20_000);
+    expect(IDENTIFIED_DAEMON_KILL_GRACE_MS).toBeGreaterThan(
+      5_000 + 8_000 + 2_000 + 1_000
+    );
+    expect(DAEMON_PORT_FREE_OBSERVATION_MS).toBeGreaterThanOrEqual(25_000);
+    expect(DAEMON_PORT_FREE_OBSERVATION_MS)
+      .toBeGreaterThan(IDENTIFIED_DAEMON_KILL_GRACE_MS);
   });
 });

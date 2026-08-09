@@ -29,6 +29,9 @@ import {
   resolveStageHandoffConfig,
   resolveStageRuntimeConfig,
   type HandoffConfigLayers,
+  type EffortConfigLayers,
+  type EffortSource,
+  type LeafEffort,
   type ModelConfigLayers,
   type ModelSource,
   type PipelineYaml,
@@ -63,6 +66,7 @@ export type { StageOverride, StageOverrideScope };
 export interface PipelineStageOverrides {
   gates: Map<string, StageOverride<'on' | 'off'>>;
   models: Map<string, StageOverride<string>>;
+  efforts?: Map<string, StageOverride<LeafEffort>>;
   handoff: Map<string, StageOverride<ThresholdValue>>;
   runtimes: Map<string, StageOverride<AgentRuntime>>;
 }
@@ -100,6 +104,7 @@ export interface PipelineExecutionPlanInputs {
   host: DetectedHostRuntime;
   overrides: PipelineStageOverrides;
   modelLayers?: ModelConfigLayers;
+  effortLayers?: EffortConfigLayers;
   /** Ephemeral role choices supplied for this run. These top persisted
    * config and pipeline declarations but are never written back. */
   roleRuntimeOverrides?: Partial<Record<StageRole, AgentRuntime>>;
@@ -123,7 +128,8 @@ export function resolvePipelineExecutionPlan(
         pipeline,
         inputs.modelLayers,
         stageConfigOverridesFor(stage, inputs.overrides),
-        { host: inputs.host }
+        { host: inputs.host },
+        inputs.effortLayers
       );
       const invocationRuntime = stage.role
         ? inputs.roleRuntimeOverrides?.[stage.role]
@@ -236,6 +242,7 @@ export function bucketPipelineStageOverrides(
   const overrides: PipelineStageOverrides = {
     gates: new Map(),
     models: new Map(),
+    efforts: new Map(),
     handoff: new Map(),
     runtimes: new Map(),
   };
@@ -260,6 +267,17 @@ export function bucketPipelineStageOverrides(
       case 'models':
         if (typeof entry.value === 'string' && entry.value.length > 0) {
           overrides.models.set(leaf, { value: entry.value, scope });
+        }
+        break;
+      case 'efforts':
+        if (
+          entry.value === 'low' ||
+          entry.value === 'medium' ||
+          entry.value === 'high' ||
+          entry.value === 'xhigh' ||
+          entry.value === 'max'
+        ) {
+          overrides.efforts!.set(leaf, { value: entry.value, scope });
         }
         break;
       case 'handoff':
@@ -359,6 +377,7 @@ export interface EffectiveStageConfig {
   declaredGate: boolean;
   gate: MaskedStageGate;
   model: { value: string | null; source: ModelSource };
+  effort: { value: LeafEffort | null; source: EffortSource };
   handoff: {
     threshold: ThresholdValue;
     source: ResolvedStageHandoffConfig['source'];
@@ -376,6 +395,7 @@ export interface EffectiveStageInputs {
   basePolicy: ResolvedGatePolicy;
   configLayers?: HandoffConfigLayers;
   modelLayers?: ModelConfigLayers;
+  effortLayers?: EffortConfigLayers;
   thresholdContext?: ThresholdResolutionContext;
   host?: DetectedHostRuntime;
 }
@@ -387,6 +407,7 @@ export function stageConfigOverridesFor(
 ): StageConfigOverrides {
   return {
     model: overrides.models.get(stage.id),
+    effort: overrides.efforts?.get(stage.id),
     handoff: overrides.handoff.get(stage.id),
     runtime: stage.role ? overrides.runtimes.get(stage.role) : undefined,
   };
@@ -410,7 +431,8 @@ export function resolveEffectiveStage(
     pipeline,
     inputs.modelLayers,
     stageOverrides,
-    { host }
+    { host },
+    inputs.effortLayers
   );
   const handoff = resolveStageHandoffConfig(
     stage,
@@ -433,6 +455,7 @@ export function resolveEffectiveStage(
     declaredGate: stage.gate,
     gate,
     model: { value: runtime.model ?? null, source: runtime.modelSource },
+    effort: { value: runtime.effort ?? null, source: runtime.effortSource },
     handoff: {
       threshold: handoff.threshold,
       source: handoff.source,

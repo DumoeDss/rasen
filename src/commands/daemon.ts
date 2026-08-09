@@ -34,12 +34,52 @@ import {
   waitForDaemonPortFree,
   type DaemonProbeResult,
 } from '../core/management-api/daemon-probe.js';
+import {
+  SESSION_TOUCH_STOP_DRAIN_MS,
+  createLoopbackReusableSessionTouchClient,
+  createSessionTouchScheduler,
+  type SessionTouchScheduler,
+} from '../core/management-api/session-touch-scheduler.js';
 
 const require = createRequire(import.meta.url);
 const IS_WINDOWS = process.platform === 'win32';
 
 const READINESS_POLL_ATTEMPTS = 20;
 const READINESS_POLL_INTERVAL_MS = 250;
+
+export const DAEMON_COORDINATOR_SHUTDOWN_GUARD_MS = 8_000;
+export const DAEMON_SERVER_CLOSE_GUARD_MS = 2_000;
+export const DAEMON_SHUTDOWN_OVERHEAD_MS = 1_000;
+export const DAEMON_GRACEFUL_SHUTDOWN_BUDGET_MS =
+  SESSION_TOUCH_STOP_DRAIN_MS
+  + DAEMON_COORDINATOR_SHUTDOWN_GUARD_MS
+  + DAEMON_SERVER_CLOSE_GUARD_MS
+  + DAEMON_SHUTDOWN_OVERHEAD_MS;
+
+export interface DaemonShutdownBudget {
+  identifiedKillGraceMs: number;
+  gracefulShutdownBudgetMs: number;
+  safe: boolean;
+}
+
+export function daemonShutdownBudget(): DaemonShutdownBudget {
+  return {
+    identifiedKillGraceMs: IDENTIFIED_DAEMON_KILL_GRACE_MS,
+    gracefulShutdownBudgetMs: DAEMON_GRACEFUL_SHUTDOWN_BUDGET_MS,
+    safe:
+      IDENTIFIED_DAEMON_KILL_GRACE_MS
+      > DAEMON_GRACEFUL_SHUTDOWN_BUDGET_MS,
+  };
+}
+
+function assertDaemonShutdownBudget(): void {
+  const budget = daemonShutdownBudget();
+  if (!budget.safe) {
+    throw new Error(
+      `Identified-daemon kill grace (${budget.identifiedKillGraceMs}ms) must exceed the composed graceful shutdown budget (${budget.gracefulShutdownBudgetMs}ms).`
+    );
+  }
+}
 
 export function ownVersion(): string {
   const { version } = require('../../package.json') as { version: string };
@@ -84,25 +124,73 @@ function parsePortOption(raw: string | undefined, fallback: number): number | { 
 // `daemon run` — the resident daemon itself (task 2.3)
 // ---------------------------------------------------------------------------
 
-async function runDaemonRun(options: { port?: string }): Promise<void> {
+export interface DaemonRunController {
+  port: number;
+  token: string;
+  shutdown(): Promise<void>;
+}
+
+export interface DaemonRunDependencies {
+  startServer?: typeof startManagementServer;
+  resolveContext?: () => Promise<{
+    launchProjectRoot: string;
+    launchProjectRef: Awaited<ReturnType<typeof resolveLaunchProjectRef>>;
+    uiAssetsDir: string;
+  }>;
+  tokenFactory?: () => string;
+  createTouchScheduler?: (options: {
+    port: number;
+    token: string;
+  }) => SessionTouchScheduler;
+  writeState?: typeof writeDaemonState;
+  deleteState?: typeof deleteDaemonState;
+  onSignal?: (
+    signal: 'SIGINT' | 'SIGTERM',
+    listener: () => void
+  ) => void;
+  exit?: (code: number) => void;
+  log?: (message: string) => void;
+}
+
+export async function runDaemonRun(
+  options: { port?: string },
+  dependencies: DaemonRunDependencies = {}
+): Promise<DaemonRunController | undefined> {
+  assertDaemonShutdownBudget();
   const port = parsePortOption(options.port, resolveDefaultDaemonPort());
   if (typeof port === 'object') {
     console.error(`Error: ${port.error}`);
     process.exitCode = 1;
-    return;
+    return undefined;
   }
 
-  const launchProjectRoot = findRepoPlanningRootSync(process.cwd());
-  const launchProjectRef = await resolveLaunchProjectRef(launchProjectRoot);
-  const uiAssetsDir = resolveUiPackageDir();
-  const token = crypto.randomBytes(32).toString('hex');
+  const context =
+    dependencies.resolveContext === undefined
+      ? await (async () => {
+          const launchProjectRoot = findRepoPlanningRootSync(process.cwd());
+          return {
+            launchProjectRoot,
+            launchProjectRef: await resolveLaunchProjectRef(launchProjectRoot),
+            uiAssetsDir: resolveUiPackageDir(),
+          };
+        })()
+      : await dependencies.resolveContext();
+  const token =
+    dependencies.tokenFactory?.() ?? crypto.randomBytes(32).toString('hex');
   const version = ownVersion();
+  const startServer = dependencies.startServer ?? startManagementServer;
 
   let handle: Awaited<ReturnType<typeof startManagementServer>>;
   try {
-    handle = await startManagementServer({
+    handle = await startServer({
       port,
-      context: { token, launchProjectRoot, launchProjectRef, version, uiAssetsDir },
+      context: {
+        token,
+        launchProjectRoot: context.launchProjectRoot,
+        launchProjectRef: context.launchProjectRef,
+        version,
+        uiAssetsDir: context.uiAssetsDir,
+      },
     });
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
@@ -112,25 +200,55 @@ async function runDaemonRun(options: { port?: string }): Promise<void> {
       console.error(`Error: could not start the daemon (${error instanceof Error ? error.message : String(error)}).`);
     }
     process.exitCode = 1;
-    return;
+    return undefined;
   }
 
-  writeDaemonState({ version, pid: process.pid, port: handle.port, token, startedAt: Date.now() });
-  console.log(`Rasen daemon listening on http://127.0.0.1:${handle.port} (pid ${process.pid}).`);
+  const scheduler =
+    dependencies.createTouchScheduler?.({ port: handle.port, token })
+    ?? createSessionTouchScheduler({
+      client: createLoopbackReusableSessionTouchClient({
+        port: handle.port,
+        token,
+      }),
+    });
+  scheduler.start();
+
+  (dependencies.writeState ?? writeDaemonState)({
+    version,
+    pid: process.pid,
+    port: handle.port,
+    token,
+    startedAt: Date.now(),
+  });
+  (dependencies.log ?? console.log)(
+    `Rasen daemon listening on http://127.0.0.1:${handle.port} (pid ${process.pid}).`
+  );
 
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return;
     shuttingDown = true;
-    // `stopServer` already reaps every live supervised session via
-    // `supervisor.shutdownAll('server-shutdown')` before resolving (server.ts)
-    // — the daemon's clean-shutdown reap requirement is inherited for free.
-    await handle.stopServer();
-    deleteDaemonState();
-    process.exit(0);
+    // The scheduler must drain while its authenticated loopback owner still
+    // exists; `stopServer` then reaps every supervised session.
+    try {
+      await scheduler.stop();
+    } finally {
+      try {
+        await handle.stopServer();
+      } finally {
+        (dependencies.deleteState ?? deleteDaemonState)();
+        (dependencies.exit ?? process.exit)(0);
+      }
+    }
   };
-  process.on('SIGINT', () => void shutdown());
-  process.on('SIGTERM', () => void shutdown());
+  const onSignal =
+    dependencies.onSignal
+    ?? ((signal: 'SIGINT' | 'SIGTERM', listener: () => void) => {
+      process.on(signal, listener);
+    });
+  onSignal('SIGINT', () => void shutdown());
+  onSignal('SIGTERM', () => void shutdown());
+  return { port: handle.port, token, shutdown };
 }
 
 // ---------------------------------------------------------------------------

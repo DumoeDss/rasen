@@ -43,6 +43,11 @@ If a change name is provided, use it. Otherwise:
 
 Run all checks before shipping:
 
+**Task Loop delivery precondition (when status contains a \`task-loop/1\` section)**
+- Read the canonical status projection, not editable Markdown, and require \`outcome === satisfied\` for the current frozen contract digest.
+- Require the digest-stamped \`task-loop-report.md\` in \`evidenceDir\`. A missing or stale report may be regenerated from the canonical Record, but its text can never backdrive or override that Record.
+- Otherwise REFUSE before delivery with \`task_loop_delivery_guard\`. This is a mechanical safety and evidence precondition: \`--no-gate\`, an ordinary confirmation, or a manual report edit cannot override it.
+
 **a. Verification Status**
 - Check if \`verification-report.md\` (from \`rasen-verify-change\`), \`review-report.md\`, \`review-cycle-report.md\` (from the review loop), or any other expert \`*-report.md\` exists in the change's evidence directory (\`evidenceDir\` from \`rasen status --change <name> --json\`; sticky-legacy: a file that already lives in the legacy \`workDir\` or the change directory is used in place) — any of these counts as verification evidence
 - If no verification report found, warn: "No verification report found. Run rasen-verify-change first."
@@ -52,6 +57,7 @@ Run all checks before shipping:
 - Read \`rasen/changes/<name>/tasks.md\`
 - Verify all tasks are marked complete (\`- [x]\`)
 - If incomplete tasks exist, list them and prompt for confirmation
+- If no tasks file exists, proceed without a task warning; Task Loop intentionally creates none.
 
 **c. Working Tree State**
 - Run \`git status --porcelain\`

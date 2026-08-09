@@ -14,6 +14,7 @@ const BUILTIN_NAMES = [
   'goal-loop-measure',
   'goal-loop-research',
   'small-feature',
+  'task-loop',
 ] as const;
 
 // The pipeline command group resolves its root through the same store-selection

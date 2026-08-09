@@ -35,6 +35,12 @@ import { resolveLocalPath } from './local-path-resolver.js';
 import { createLocalPathChooser } from './local-path-chooser.js';
 import { createSessionRegistry } from './session-registry.js';
 import { createAgentCliResolver, createSessionSupervisor, type SessionSupervisor } from './supervisor.js';
+import {
+  createReusableSessionService,
+  reusableSessionHttpStatus,
+  type ReusableSessionOwnerShutdownResult,
+  type ReusableSessionService,
+} from './reusable-session-api.js';
 import { createChangeSubmitter } from './submit.js';
 import { createSpaceCreator } from './create-space.js';
 import {
@@ -52,7 +58,12 @@ import {
   handleThresholdSchemeMutation,
 } from './threshold-schemes.js';
 import { createPipelineSubmitter } from './pipeline-submit.js';
-import type { LaunchSessionRequest, StatusResponse, SubmitChangeRequest } from './wire-types.js';
+import {
+  REUSABLE_SESSION_API_SCHEMA,
+  type LaunchSessionRequest,
+  type StatusResponse,
+  type SubmitChangeRequest,
+} from './wire-types.js';
 import {
   installTheme,
   listImportedThemes,
@@ -134,16 +145,21 @@ export interface ManagementRouterOptions {
    * canned receipt.
    */
   runControlSpawner?: RunControlSpawner;
+  /** Test-only replacement for the durable reusable-session service. */
+  reusableSessionService?: ReusableSessionService;
 }
 
 export interface ManagementRouterHandle {
   handle: (req: http.IncomingMessage, res: http.ServerResponse, pathname: string) => Promise<void>;
   supervisor: SessionSupervisor;
+  reusableSessionService: ReusableSessionService;
+  shutdownReusableSessions: () => Promise<ReusableSessionOwnerShutdownResult>;
   shutdownPathChooser: () => Promise<void>;
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 const MAX_BODY_BYTES = 64 * 1024;
+const MAX_REUSABLE_SESSION_BODY_BYTES = 2 * 1024 * 1024;
 
 /** The management endpoints with no path parameter, canonical (no trailing slash) form. */
 const MANAGEMENT_PATHS = new Set([
@@ -152,6 +168,10 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/archive',
   '/api/v1/runs',
   '/api/v1/sessions',
+  '/api/v1/reusable-sessions',
+  '/api/v1/reusable-sessions/wake',
+  '/api/v1/reusable-sessions/retire',
+  '/api/v1/reusable-sessions/touch-policy',
   '/api/v1/spaces',
   '/api/v1/spaces/worktrees',
   '/api/v1/local-paths',
@@ -312,6 +332,14 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
   if (pathname === '/api/v1/audits') return method === 'GET' || method === 'POST';
   if (pathname === '/api/v1/audits/sessions') return method === 'GET';
   if (pathname === '/api/v1/audits/import') return method === 'POST';
+  if (pathname === '/api/v1/reusable-sessions') return method === 'GET';
+  if (
+    pathname === '/api/v1/reusable-sessions/wake'
+    || pathname === '/api/v1/reusable-sessions/retire'
+    || pathname === '/api/v1/reusable-sessions/touch-policy'
+  ) {
+    return method === 'POST';
+  }
   if (matchSessionIdPath(pathname) !== null) {
     return method === 'GET' || method === 'DELETE';
   }
@@ -395,7 +423,10 @@ type BodyReadResult =
   | { ok: false; status: number; code: string; message: string };
 
 /** Reads and JSON-parses the request body, capped like the config API's own reader. */
-function readJsonBody(req: http.IncomingMessage): Promise<BodyReadResult> {
+function readJsonBody(
+  req: http.IncomingMessage,
+  maxBytes = MAX_BODY_BYTES
+): Promise<BodyReadResult> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
     let total = 0;
@@ -409,12 +440,12 @@ function readJsonBody(req: http.IncomingMessage): Promise<BodyReadResult> {
     req.on('data', (chunk: Buffer) => {
       if (settled) return;
       total += chunk.length;
-      if (total > MAX_BODY_BYTES) {
+      if (total > maxBytes) {
         finish({
           ok: false,
           status: 413,
           code: 'payload_too_large',
-          message: `Request body exceeds ${MAX_BODY_BYTES} bytes.`,
+          message: `Request body exceeds ${maxBytes} bytes.`,
         });
       } else {
         chunks.push(chunk);
@@ -431,6 +462,13 @@ function readJsonBody(req: http.IncomingMessage): Promise<BodyReadResult> {
     });
     req.on('error', () => {
       finish({ ok: false, status: 400, code: 'bad_request', message: 'Failed to read the request body.' });
+    });
+    req.on('aborted', () => {
+      finish({ ok: false, status: 400, code: 'bad_request', message: 'The request body was aborted.' });
+    });
+    req.on('close', () => {
+      if (req.complete) return;
+      finish({ ok: false, status: 400, code: 'bad_request', message: 'The request body closed before completion.' });
     });
   });
 }
@@ -466,6 +504,22 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
 
 function sendError(res: http.ServerResponse, status: number, code: string, message: string, fix?: string): void {
   sendJson(res, status, { error: { code, message, ...(fix ? { fix } : {}) } });
+}
+
+function sendReusableSessionError(
+  res: http.ServerResponse,
+  status: number,
+  operation: 'wake' | 'list' | 'retire' | 'touch-policy',
+  code: string,
+  message: string
+): void {
+  sendJson(res, status, {
+    schema: REUSABLE_SESSION_API_SCHEMA,
+    ok: false,
+    operation,
+    code,
+    message,
+  });
 }
 
 function isAuthorized(req: http.IncomingMessage, token: string): boolean {
@@ -525,6 +579,9 @@ export function createManagementRouter(
     maxConcurrent: options.maxConcurrentSessions,
     killGraceMs: options.sessionKillGraceMs,
   });
+  const reusableSessionService =
+    options.reusableSessionService
+    ?? createReusableSessionService({ supervisor });
 
   // Resolves a request's optional `space` selector to a planning-space root
   // (design D2): an explicit selector resolves through the machine registries,
@@ -1192,6 +1249,81 @@ export function createManagementRouter(
       return;
     }
 
+    if (pathname === '/api/v1/reusable-sessions' && req.method === 'GET') {
+      const queryKeys = [...url.searchParams.keys()];
+      if (
+        queryKeys.some((key) => key !== 'runId' && key !== 'scope')
+        || url.searchParams.getAll('runId').length > 1
+        || url.searchParams.getAll('scope').length > 1
+      ) {
+        sendReusableSessionError(
+          res,
+          400,
+          'list',
+          'invalid_request',
+          'Reusable-session list accepts only one runId or scope=all.'
+        );
+        return;
+      }
+      const runId = url.searchParams.get('runId') ?? undefined;
+      const rawScope = url.searchParams.get('scope') ?? undefined;
+      if (rawScope !== undefined && rawScope !== 'all') {
+        sendReusableSessionError(
+          res,
+          400,
+          'list',
+          'invalid_request',
+          'Reusable-session scope must be all.'
+        );
+        return;
+      }
+      const result = await reusableSessionService.list({
+        ...(runId !== undefined ? { runId } : {}),
+        ...(rawScope === 'all' ? { scope: 'all' as const } : {}),
+      });
+      sendJson(res, reusableSessionHttpStatus(result), result);
+      return;
+    }
+
+    if (
+      (
+        pathname === '/api/v1/reusable-sessions/wake'
+        || pathname === '/api/v1/reusable-sessions/retire'
+        || pathname === '/api/v1/reusable-sessions/touch-policy'
+      )
+      && req.method === 'POST'
+    ) {
+      const body = await readJsonBody(
+        req,
+        MAX_REUSABLE_SESSION_BODY_BYTES
+      );
+      if (!body.ok) {
+        const operation =
+          pathname.endsWith('/wake')
+            ? 'wake'
+            : pathname.endsWith('/retire')
+              ? 'retire'
+              : 'touch-policy';
+        sendReusableSessionError(
+          res,
+          body.status,
+          operation,
+          body.code,
+          body.message
+        );
+        req.destroy();
+        return;
+      }
+      const result =
+        pathname === '/api/v1/reusable-sessions/wake'
+          ? await reusableSessionService.wake(body.value)
+          : pathname === '/api/v1/reusable-sessions/retire'
+            ? await reusableSessionService.retire(body.value)
+            : await reusableSessionService.updateTouchPolicy(body.value);
+      sendJson(res, reusableSessionHttpStatus(result), result);
+      return;
+    }
+
     if (pathname === '/api/v1/sessions' && req.method === 'GET') {
       // A `space` selector filters the listing to that space (design D3); an
       // omitted selector returns every session (compat), so — unlike the
@@ -1352,5 +1484,11 @@ export function createManagementRouter(
     }
   };
 
-  return { handle, supervisor, shutdownPathChooser: pathChooser.shutdown };
+  return {
+    handle,
+    supervisor,
+    reusableSessionService,
+    shutdownReusableSessions: () => reusableSessionService.ownerShutdown(),
+    shutdownPathChooser: pathChooser.shutdown,
+  };
 }

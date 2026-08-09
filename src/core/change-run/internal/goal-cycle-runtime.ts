@@ -195,7 +195,12 @@ export function projectGoalCycleProgress(
   const state =
     events.length === 0
       ? initialGoalCycleState(variant)
-      : reduceGoalCycleEvents(events, loop.maxIterations, variant);
+      : reduceGoalCycleEvents(
+          events,
+          loop.maxIterations,
+          variant,
+          plan.pipeline === 'task-loop' ? 'task-loop' : 'strict'
+        );
   if (state.outcome === 'satisfied') {
     return Object.freeze({ kind: 'satisfied', state });
   }
@@ -290,7 +295,8 @@ export function validateGoalCycleCompletion(
       result: request.result,
       evidence: request.evidence,
     },
-    descriptor.loop.maxIterations
+    descriptor.loop.maxIterations,
+    plan.pipeline === 'task-loop' ? 'task-loop' : 'strict'
   );
 }
 

@@ -4,6 +4,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
+import { createOutsideProjectTempDir } from '../helpers/outside-project-temp.js';
+
 async function runConfigCommand(args: string[]): Promise<void> {
   const { registerConfigCommand } = await import('../../src/commands/config.js');
   const program = new Command();
@@ -451,9 +453,7 @@ describe('config command --scope project and promoted keys', () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    tempDir = fs.realpathSync.native(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-config-scope-test-'))
-    );
+    tempDir = createOutsideProjectTempDir('rasen-config-scope-test-');
     projectDir = path.join(tempDir, 'project');
     fs.mkdirSync(path.join(projectDir, 'rasen'), { recursive: true });
     fs.writeFileSync(path.join(projectDir, 'rasen', 'config.yaml'), 'schema: spec-driven\n');

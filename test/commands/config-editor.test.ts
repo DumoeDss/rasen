@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Command } from 'commander';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
+
+import { createOutsideProjectTempDir } from '../helpers/outside-project-temp.js';
 
 // Mock @inquirer/prompts for the interactive config editor (task 7.4).
 // `Separator` must stay a real constructable class — `runInteractiveConfigEditor`
@@ -60,9 +61,7 @@ describe('config editor (interactive, --no-arg TTY) (task 7.4)', () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    tempDir = fs.realpathSync(
-      fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'rasen-config-editor-test-'))
-    );
+    tempDir = createOutsideProjectTempDir('rasen-config-editor-test-');
 
     originalEnv = { ...process.env };
     originalCwd = process.cwd();

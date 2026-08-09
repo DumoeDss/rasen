@@ -7,8 +7,13 @@ import type {
   CompleteRunAction,
   ExactChangeRunRef,
   RunAction,
+  WorkspaceRevision,
 } from '../contracts.js';
-import type { ChangePipelineRuntime, RuntimeMutationContext } from '../facade.js';
+import {
+  ChangeRunRuntimeError,
+  type ChangePipelineRuntime,
+  type RuntimeMutationContext,
+} from '../facade.js';
 import type { RuntimePlan } from './runtime-plan.js';
 import type { CanonicalRunRecord } from './record.js';
 import { digestCanonicalRunRecord } from './record.js';
@@ -22,13 +27,23 @@ import { reconcile, type ReconcilerNextAction } from './reconciler.js';
 import { projectRunView } from './projector.js';
 import { verifyCompletion } from './completion.js';
 import { createCanonicalWait, type CanonicalWait } from './waits.js';
-import { deriveInvocationId } from './identity.js';
+import { deriveInvocationId, digestLaunchIntent } from './identity.js';
 import type { WorkspaceReservationRegistry } from './reservations.js';
 import { validateReviewCycleCompletion, projectReviewCycleProgress } from './review-cycle-runtime.js';
-import { validateGoalCycleCompletion, projectGoalCycleProgress } from './goal-cycle-runtime.js';
+import {
+  locateGoalCycleInvocation,
+  validateGoalCycleCompletion,
+  projectGoalCycleProgress,
+} from './goal-cycle-runtime.js';
 import { assertReviewCycleMayShip } from './review-cycle.js';
 import { assertGoalCycleMayShip } from './goal-cycle.js';
 import { projectCompositeBodyProgress } from './composite-runtime.js';
+import {
+  assertTaskLoopMayDeliver,
+  isTaskLoopRun,
+  validateTaskLoopCompletion,
+  writeTaskLoopReport,
+} from './task-loop.js';
 
 export interface RuntimeDeps {
   readonly store: RunStore;
@@ -82,6 +97,10 @@ export interface RuntimeDeps {
    * default for pre-registry Runs and test fixtures).
    */
   readonly resolveSourceState?: (record: CanonicalRunRecord) => 'active' | 'archived' | 'missing';
+  /** Derived task-loop report destination; never authoritative for replay. */
+  readonly taskLoopEvidenceDir?: string;
+  /** Trusted live workspace observation used by TaskLoop evidence guards. */
+  readonly observeWorkspace?: () => WorkspaceRevision;
 }
 
 function asPromise<T>(value: T): Promise<T> {
@@ -148,6 +167,89 @@ function capabilityUnavailableWait(
  * through the canonical commit path.
  */
 export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRuntime {
+  const launchConflict = (record: CanonicalRunRecord): never => {
+    throw new ChangeRunRuntimeError(
+      'launch_request_conflict',
+      'An existing Run has a different Pipeline or canonical launch input.',
+      projectRunView(
+        record,
+        deps.resolveSourceState?.(record) ?? 'active',
+        deps.plan
+      )
+    );
+  };
+
+  const verifyLaunchIntent = (
+    request: Parameters<ChangePipelineRuntime['start']>[0],
+    record: CanonicalRunRecord
+  ): void => {
+    const pipeline = request.pipeline ?? deps.initialRecord.pipeline;
+    const engine = request.engine ?? 'reconciler';
+    const inputs = request.inputs ?? Object.freeze({});
+    const requestedDigest = digestLaunchIntent({ pipeline, engine, inputs });
+    const initialDigest = digestLaunchIntent({
+      pipeline: deps.initialRecord.pipeline,
+      engine: 'reconciler',
+      inputs: deps.initialRecord.inputs,
+    });
+    const recordDigest = digestLaunchIntent({
+      pipeline: record.pipeline,
+      engine: 'reconciler',
+      inputs: record.inputs,
+    });
+
+    // The independently supplied digest is only a consistency assertion. It
+    // never substitutes for deriving identity from the normalized request.
+    if (
+      request.launchRequestDigest !== undefined &&
+      request.launchRequestDigest !== requestedDigest
+    ) {
+      launchConflict(record);
+    }
+    if (requestedDigest !== initialDigest || requestedDigest !== recordDigest) {
+      launchConflict(record);
+    }
+
+    // Pre-launch-input Records used sha256(launchKey). Preserve only their
+    // empty-input compatibility. Any non-empty canonical input must carry the
+    // versioned launch-intent digest and therefore cannot use this exception.
+    const legacyEmptyInput = Object.keys(record.inputs).length === 0;
+    if (
+      record.launchRequestDigest !== recordDigest &&
+      !legacyEmptyInput
+    ) {
+      launchConflict(record);
+    }
+  };
+
+  const observeTaskLoopWorkspace = (
+    record: CanonicalRunRecord
+  ): WorkspaceRevision | undefined => {
+    if (!isTaskLoopRun(deps.plan, record)) return undefined;
+    const observed = deps.observeWorkspace?.();
+    if (observed === undefined) {
+      throw new ChangeRunRuntimeError(
+        'workspace-scope-mismatch',
+        'Task Loop requires a trusted live workspace observer.'
+      );
+    }
+    return observed;
+  };
+
+  const regenerateTaskLoopReport = (record: CanonicalRunRecord): void => {
+    if (
+      deps.taskLoopEvidenceDir === undefined ||
+      !isTaskLoopRun(deps.plan, record)
+    ) return;
+    try {
+      writeTaskLoopReport(deps.taskLoopEvidenceDir, deps.plan, record);
+    } catch (error) {
+      throw new ChangeRunRuntimeError(
+        'run_store_unavailable',
+        `task_loop_report_unavailable: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  };
   /**
    * Collect the stimuli that settle a reconciler candidate batch against
    * `workingRecord`, WITHOUT applying them. `complete` uses this to fold the
@@ -390,11 +492,14 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
   };
 
   return {
-    start(_request, context: RuntimeMutationContext) {
+    start(request, context: RuntimeMutationContext) {
       if (deps.store.has(deps.plan.runId)) {
         const record = deps.store.load(deps.plan.runId);
+        verifyLaunchIntent(request, record);
+        regenerateTaskLoopReport(record);
         return asPromise(receipt(record, 'reused', [], deps.resolveSourceState, deps.plan));
       }
+      verifyLaunchIntent(request, deps.initialRecord);
       const reconciled = reconcile(deps.plan, deps.initialRecord);
       if (!reconciled.ok) {
         throw new Error(`facade reconcile failed: ${reconciled.failure.message}`);
@@ -409,6 +514,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       // (management API, operations) can project the review-cycle section
       // without access to the launch context (Major-2).
       deps.store.writePlan?.(deps.plan.runId, deps.plan);
+      regenerateTaskLoopReport(settled.record);
       return asPromise(receipt(settled.record, 'created', settled.granted, deps.resolveSourceState, deps.plan));
     },
     resume(_request, context: RuntimeMutationContext) {
@@ -425,6 +531,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       if (settled.record !== record) {
         deps.store.commit(deps.plan.runId, settled.record);
       }
+      regenerateTaskLoopReport(settled.record);
       const disposition: ChangeRunReceipt['disposition'] =
         settled.record.terminal !== undefined
           ? 'terminal'
@@ -459,6 +566,24 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       // fail closed without Record mutation.
       validateReviewCycleCompletion(deps.plan, record, request);
       validateGoalCycleCompletion(deps.plan, record, request);
+      const observedTaskLoopWorkspace = observeTaskLoopWorkspace(record);
+      validateTaskLoopCompletion(
+        deps.plan,
+        record,
+        request,
+        observedTaskLoopWorkspace ?? record.currentWorkspaceRevision
+      );
+      const goalDescriptor = locateGoalCycleInvocation(
+        deps.plan,
+        committed.action.nodeId as import('../contracts.js').NodeId
+      );
+      if (isTaskLoopRun(deps.plan, record) && goalDescriptor === null) {
+        assertTaskLoopMayDeliver(
+          deps.plan,
+          record,
+          observedTaskLoopWorkspace
+        );
+      }
       // ECP-4: validate choice/fan-out condition results before committing.
       validateChoiceCompletion(deps.plan, record, request);
       validateFanOutConditionCompletion(deps.plan, record, request);
@@ -553,9 +678,21 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
             finalRecord
           );
           assertGoalCycleMayShip(progress.state);
+          assertTaskLoopMayDeliver(
+            deps.plan,
+            finalRecord,
+            observeTaskLoopWorkspace(finalRecord)
+          );
         }
       }
       deps.store.commit(deps.plan.runId, finalRecord);
+      if (
+        deps.taskLoopEvidenceDir !== undefined &&
+        isTaskLoopRun(deps.plan, finalRecord) &&
+        request.status === 'succeeded'
+      ) {
+        regenerateTaskLoopReport(finalRecord);
+      }
       const disposition: ChangeRunReceipt['disposition'] =
         finalRecord.terminal !== undefined
           ? 'terminal'
@@ -568,6 +705,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
     },
     inspect(_ref: ExactChangeRunRef) {
       const record = deps.store.load(deps.plan.runId);
+      regenerateTaskLoopReport(record);
       const sourceState = deps.resolveSourceState?.(record) ?? 'active';
       return asPromise(projectRunView(record, sourceState, deps.plan));
     },

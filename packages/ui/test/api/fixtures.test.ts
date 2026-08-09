@@ -104,12 +104,14 @@ describe('fixture ↔ mirror-type drift tripwire', () => {
         expect(typeof stage.gate).toBe('boolean');
         expect(typeof stage.effectiveGate.value).toBe('boolean');
         expect(typeof stage.effectiveGate.source).toBe('string');
+        expect(typeof stage.effectiveEffort.source).toBe('string');
         expect(typeof stage.effectiveRuntime.source).toBe('string');
       }
     }
     // A built-in with a project-scope override on every axis of one stage.
     const impl = pipelinesFixture.pipelines[0]!.stages.find((s) => s.id === 'implement')!;
     expect(impl.effectiveModel.source).toBe('stage-override-project');
+    expect(impl.effectiveEffort).toEqual({ value: 'max', source: 'stage-override-project' });
     expect(impl.effectiveRuntime.value).toBe('codex');
     expect('binding' in impl.effectiveHandoff && impl.effectiveHandoff.binding).toEqual({
       scope: 'store',
@@ -137,6 +139,7 @@ describe('fixture ↔ mirror-type drift tripwire', () => {
     const review = pipelinesFixture.pipelines[0]!.stages.find((s) => s.id === 'gate-review')!;
     expect(review.gate).toBe(true);
     expect(review.effectiveGate.value).toBe(true);
+    expect(review.effectiveEffort).toEqual({ value: null, source: 'default' });
   });
 
   it('threshold catalog fixture pins both catalog variants, preset seeds, and binding metadata', () => {

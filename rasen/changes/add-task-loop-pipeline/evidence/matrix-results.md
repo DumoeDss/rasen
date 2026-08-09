@@ -1,0 +1,34 @@
+# Full-suite matrix (32-way vitest shards, single worker, TEMP=C:\Windows\Temp)
+| shard 7/32 | exit=0 | 34s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 8/32 | exit=0 | 38s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 9/32 | exit=0 | 44s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 10/32 | exit=0 | 33s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 11/32 | exit=0 | 55s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 12/32 | exit=0 | 26s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 13/32 | exit=0 | 89s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 14/32 | exit=0 | 92s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 15/32 | exit=1 | 177s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 16/32 | exit=0 | 139s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 17/32 | exit=0 | 78s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 18/32 | exit=0 | 31s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 19/32 | exit=0 | 327s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 20/32 | exit=0 | 28s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 21/32 | exit=0 | 52s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 22/32 | exit=0 | 97s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 23/32 | exit=0 | 36s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 24/32 | exit=0 | 62s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 25/32 | exit=0 | 90s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 26/32 | exit=1 | 90s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 27/32 | exit=0 | 58s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 28/32 | exit=0 | 155s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 29/32 | exit=1 | 86s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 30/32 | exit=1 | 44s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 31/32 | exit=0 | 10s | files: passed[39m[22m[90m (3)[39m | tests:  |
+MATRIX RUNNER COMPLETE 00:17:02
+| shard 1/32 | exit=0 | 58s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 2/32 | exit=0 | 183s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 3/32 | exit=0 | 54s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 4/32 | exit=0 | 228s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 5/32 | exit=0 | 117s | files: passed[39m[22m[90m (14)[39m | tests:  |
+| shard 6/32 | exit=0 | 155s | files: passed[39m[22m[90m (14)[39m | tests:  |
+MATRIX 1-6 RUNNER COMPLETE 00:35:16

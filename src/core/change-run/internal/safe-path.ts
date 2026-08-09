@@ -38,6 +38,46 @@ function normalize(path: string): string {
   return path.split('\\').join('/').replace(/\/+$/, '');
 }
 
+function comparable(value: string): string {
+  const normalized = normalize(value);
+  return process.platform === 'win32' ? normalized.toLocaleLowerCase('en-US') : normalized;
+}
+
+function isContained(root: string, target: string): boolean {
+  const comparableRoot = comparable(root);
+  const comparableTarget = comparable(target);
+  return (
+    comparableTarget === comparableRoot ||
+    comparableTarget.startsWith(`${comparableRoot}/`)
+  );
+}
+
+/** Real filesystem plumbing shared by runtime path consumers. */
+export function createNodeSafePathPlumbing(): SafePathPlumbing {
+  return Object.freeze({
+    lstat(candidate: string): SafePathStat | null {
+      try {
+        const stat = lstatSync(candidate);
+        const symbolic = stat.isSymbolicLink();
+        return Object.freeze({
+          isSymbolicLink: symbolic,
+          // Node exposes Windows junctions through isSymbolicLink(); it has no
+          // portable API for arbitrary non-link reparse tags. Keep the field
+          // explicit so injected platform adapters can reject those too.
+          isReparsePoint: process.platform === 'win32' && symbolic,
+          isRegularFile: stat.isFile(),
+          isDirectory: stat.isDirectory(),
+        });
+      } catch {
+        return null;
+      }
+    },
+    realpath(candidate: string): string {
+      return realpathSync.native(candidate);
+    },
+  });
+}
+
 /**
  * Bounded SafeRunPath containment check (tasks 9.3/9.4). The target's resolved
  * real path must stay under the root's real path, and no component walked from
@@ -51,28 +91,54 @@ export function assertSafeRunPath(
   target: string,
   plumbing: SafePathPlumbing
 ): void {
-  const rootReal = normalize(plumbing.realpath(root));
-  if (plumbing.lstat(root) === null) {
+  const normalizedRoot = normalize(root);
+  const normalizedTarget = normalize(target);
+  const rootStat = plumbing.lstat(normalizedRoot);
+  if (rootStat === null) {
     throw new SafePathError('unsafe_missing_root', 'Safe path root does not exist.');
   }
-  const targetReal = normalize(plumbing.realpath(target));
-  if (
-    targetReal !== rootReal &&
-    !targetReal.startsWith(rootReal + '/')
-  ) {
+  if (!rootStat.isDirectory) {
+    throw new SafePathError('unsafe_nonregular', 'Safe path root is not a directory.');
+  }
+  if (rootStat.isSymbolicLink) {
     throw new SafePathError(
-      'unsafe_path_escape',
-      'Target realpath escapes the safe root.'
+      'unsafe_symlink_component',
+      'Safe path root must not be a symbolic link.'
     );
   }
-  // Walk every component strictly inside the root and reject traversal hazards.
-  const relative = targetReal === rootReal ? '' : targetReal.slice(rootReal.length + 1);
+  if (rootStat.isReparsePoint) {
+    throw new SafePathError(
+      'unsafe_reparse_point',
+      'Safe path root must not be a reparse point.'
+    );
+  }
+  if (!isContained(normalizedRoot, normalizedTarget)) {
+    throw new SafePathError(
+      'unsafe_path_escape',
+      'Target lexical path escapes the safe root.'
+    );
+  }
+
+  const rootReal = normalize(plumbing.realpath(normalizedRoot));
+  const relative = comparable(normalizedTarget) === comparable(normalizedRoot)
+    ? ''
+    : normalizedTarget.slice(normalizedRoot.length + 1);
   const segments = relative.split('/').filter((segment) => segment.length > 0);
-  let prefix = rootReal;
-  for (const segment of segments) {
+  let prefix = normalizedRoot;
+  let missingAncestor = false;
+  for (const [index, segment] of segments.entries()) {
     prefix = `${prefix}/${segment}`;
     const stat = plumbing.lstat(prefix);
-    if (stat === null) continue;
+    if (stat === null) {
+      missingAncestor = true;
+      continue;
+    }
+    if (missingAncestor) {
+      throw new SafePathError(
+        'unsafe_parent_replacement',
+        'A descendant appeared below a missing path ancestor.'
+      );
+    }
     if (stat.isSymbolicLink) {
       throw new SafePathError(
         'unsafe_symlink_component',
@@ -83,6 +149,20 @@ export function assertSafeRunPath(
       throw new SafePathError(
         'unsafe_reparse_point',
         `Path component ${segment} is a reparse point.`
+      );
+    }
+    const isLeaf = index === segments.length - 1;
+    if ((!isLeaf && !stat.isDirectory) || (isLeaf && !stat.isDirectory && !stat.isRegularFile)) {
+      throw new SafePathError(
+        'unsafe_nonregular',
+        `Path component ${segment} has an unsafe file type.`
+      );
+    }
+    const prefixReal = normalize(plumbing.realpath(prefix));
+    if (!isContained(rootReal, prefixReal)) {
+      throw new SafePathError(
+        'unsafe_path_escape',
+        `Path component ${segment} resolves outside the safe root.`
       );
     }
   }
@@ -114,3 +194,4 @@ export function assertSafeSameParentCreate(
     throw new SafePathError('unsafe_path_escape', 'Same-parent target already exists.');
   }
 }
+import { lstatSync, realpathSync } from 'node:fs';

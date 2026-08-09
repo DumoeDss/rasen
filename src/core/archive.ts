@@ -19,6 +19,10 @@ import {
 import { getGlobalDataDir } from './global-config.js';
 import { resolveArchiveDestination, resolveChangeWorkDir } from './change-work.js';
 import { ephemeraDir, evidenceDir, resolveExecutionRoot } from './file-placement.js';
+import {
+  formatWhitespaceViolations,
+  scanDirectoryForWhitespaceViolations,
+} from './whitespace-hygiene.js';
 import { readProjectConfig, resolveArchiveTiming } from './project-config.js';
 import {
   emitStoreRootBanner,
@@ -66,6 +70,8 @@ export interface ArchiveOptions {
   project?: string;
   storePath?: string;
   keepEphemera?: boolean;
+  /** `--no-whitespace-check` sets this to false; the preflight is on by default. */
+  whitespaceCheck?: boolean;
   dryRun?: boolean;
   savePlan?: boolean;
   applyPlan?: string;
@@ -90,6 +96,8 @@ interface ArchiveResult {
   ephemeraPreserved?: string[];
   ephemeraAborted?: boolean;
   ephemeraAbortReason?: string;
+  /** Present only when `--no-whitespace-check` disabled the preflight. */
+  whitespaceCheckSkipped?: boolean;
   dryRun?: boolean;
   specSyncPlan?: Array<{ capability: string; status: string }>;
   plan?: ArchivePlan;
@@ -457,6 +465,21 @@ export class ArchiveCommand {
         mode: 'intent-template',
         intent,
       };
+    }
+
+    // Whitespace preflight. Runs here — after the change is known, before any
+    // staging, copy, or evidence hash — because the archive engine preserves
+    // bytes on purpose and records a sha256 per evidence file. Once artifacts
+    // are absorbed, fixing one means re-running the whole archive to keep the
+    // accounting self-consistent. Report only; never rewrite.
+    if (sourceAvailable && options.whitespaceCheck !== false) {
+      const violations = await scanDirectoryForWhitespaceViolations(changeDir);
+      if (violations.length > 0) {
+        throw new ArchiveBlockedError(
+          'archive_whitespace_errors',
+          formatWhitespaceViolations(violations)
+        );
+      }
     }
 
     const archiveParent = resolveArchiveDestination(root.path).archiveDir;
@@ -851,6 +874,7 @@ export class ArchiveCommand {
       archivedAs: path.basename(result.path),
       path: result.path,
       specsUpdated: result.specsUpdated,
+      ...(options.whitespaceCheck === false ? { whitespaceCheckSkipped: true } : {}),
       totals: result.totals,
       ephemeraDiscarded: result.ephemeraDiscarded,
       ephemeraPreserved: result.ephemeraPreserved,

@@ -47,6 +47,9 @@ import {
   type ThresholdValue,
   type StageRole,
   type ModelConfigLayers,
+  type EffortConfigLayers,
+  LEAF_EFFORTS,
+  type LeafEffort,
 } from './pipeline-registry/types.js';
 import { parseCliLocale } from '../utils/locale.js';
 import { FileSystemUtils } from '../utils/file-system.js';
@@ -724,5 +727,55 @@ export function resolveModelConfigLayers(
     storeDefault: storeConfig?.models?.default,
     globalRoles: validateGlobalModelRoles(globalConfig.models?.roles),
     globalDefault: validateGlobalModelDefault(globalConfig.models?.default),
+  };
+}
+
+function isLeafEffort(value: unknown): value is LeafEffort {
+  return typeof value === 'string' && LEAF_EFFORTS.includes(value as LeafEffort);
+}
+
+function validateGlobalEffortDefault(raw: unknown): LeafEffort | undefined {
+  if (raw === undefined) return undefined;
+  if (isLeafEffort(raw)) return raw;
+  console.warn(
+    `Invalid 'efforts.default' in the global config (must be one of ${LEAF_EFFORTS.join(', ')}, got ${JSON.stringify(raw)}); ignoring it.`
+  );
+  return undefined;
+}
+
+function validateGlobalEffortRoles(
+  raw: Partial<Record<StageRole, unknown>> | undefined
+): Partial<Record<StageRole, LeafEffort>> | undefined {
+  if (!raw) return undefined;
+  const result: Partial<Record<StageRole, LeafEffort>> = {};
+  for (const role of STAGE_ROLES) {
+    const rawValue = raw[role];
+    if (rawValue === undefined) continue;
+    if (isLeafEffort(rawValue)) {
+      result[role] = rawValue;
+    } else {
+      console.warn(
+        `Invalid 'efforts.roles.${role}' in the global config (must be one of ${LEAF_EFFORTS.join(', ')}, got ${JSON.stringify(rawValue)}); ignoring it.`
+      );
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+/** Resolves generic leaf reasoning-effort policy without inventing a runtime default. */
+export function resolveEffortConfigLayers(
+  projectRoot?: string | null,
+  storeRoot?: string | null
+): EffortConfigLayers {
+  const globalConfig = getGlobalConfig();
+  const projectConfig = projectRoot ? readProjectConfig(projectRoot) : null;
+  const storeConfig = storeRoot ? readProjectConfig(storeRoot) : null;
+  return {
+    projectRoles: projectConfig?.efforts?.roles,
+    projectDefault: projectConfig?.efforts?.default,
+    storeRoles: storeConfig?.efforts?.roles,
+    storeDefault: storeConfig?.efforts?.default,
+    globalRoles: validateGlobalEffortRoles(globalConfig.efforts?.roles),
+    globalDefault: validateGlobalEffortDefault(globalConfig.efforts?.default),
   };
 }

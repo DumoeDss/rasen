@@ -20,6 +20,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { promises as fs, readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 
 import { runCLI } from '../helpers/run-cli.js';
 
@@ -34,6 +35,13 @@ import { decodeCanonicalRunRecord } from '../../src/core/change-run/internal/rec
 import { computeCompletionReceiptDigest } from '../../src/core/change-run/internal/completion.js';
 import { buildAgentActor } from '../../src/core/change-run/internal/actors.js';
 import { buildEvidenceRef } from '../../src/core/change-run/internal/evidence.js';
+import { observeGitWorkspace } from '../../src/core/change-run/internal/workspace-git.js';
+import { deriveWorkspaceRevision } from '../../src/core/change-run/internal/workspace.js';
+import {
+  TASK_LOOP_ACTOR_ATTESTATION_SCHEMA,
+  TASK_LOOP_CRITERION_EVIDENCE_SCHEMA,
+  TASK_LOOP_WORK_EVIDENCE_SCHEMA,
+} from '../../src/core/change-run/internal/task-loop.js';
 import type { RuntimePlan } from '../../src/core/change-run/internal/runtime-plan.js';
 import type { CanonicalRunRecord } from '../../src/core/change-run/internal/record.js';
 import type { RunStimulus } from '../../src/core/change-run/internal/reducer.js';
@@ -195,15 +203,28 @@ function buildCompletionBody(
   changeId: string,
   projectRoot: string,
   actionId: string,
-  invocationId: string
+  invocationId: string,
+  options: {
+    role?: string;
+    principalPair?: string;
+    sessionPair?: string;
+    result?: (evidence: ReturnType<typeof buildEvidenceRef>) => Record<string, unknown>;
+    evidenceSchema?: string;
+    attestationSchema?: string;
+    treeDigest?: Digest;
+  } = {}
 ): { completion: Record<string, unknown>; uploads: Array<{ contentDigest: string; contentBase64: string }> } {
   const evidenceContent = new TextEncoder().encode('{"result":"ok"}');
   const attestationContent = new TextEncoder().encode('{"signed":true}');
   const evidenceDigest = `sha256:${createHash('sha256').update(evidenceContent).digest('hex')}`;
   const attestationDigest = `sha256:${createHash('sha256').update(attestationContent).digest('hex')}`;
 
-  const principalDigest = branded<Digest>(`sha256:${'a1'.repeat(32)}`);
-  const sessionDigest = branded<Digest>(`sha256:${'b2'.repeat(32)}`);
+  const principalDigest = branded<Digest>(
+    `sha256:${(options.principalPair ?? 'a1').repeat(32)}`
+  );
+  const sessionDigest = branded<Digest>(
+    `sha256:${(options.sessionPair ?? 'b2').repeat(32)}`
+  );
 
   const evidenceRef = buildEvidenceRef({
     content: evidenceContent,
@@ -221,7 +242,8 @@ function buildCompletionBody(
       changeId,
       runId: branded(runId),
       actionId: branded(actionId),
-      schema: 'evidence/1',
+      schema: options.evidenceSchema ?? 'evidence/1',
+      ...(options.treeDigest === undefined ? {} : { treeDigest: options.treeDigest }),
     },
   });
   const attestationRef = buildEvidenceRef({
@@ -240,14 +262,19 @@ function buildCompletionBody(
       changeId,
       runId: branded(runId),
       actionId: branded(actionId),
-      schema: 'attestation/1',
+      schema: options.attestationSchema ?? 'attestation/1',
+      ...(options.treeDigest === undefined ? {} : { treeDigest: options.treeDigest }),
     },
   });
 
+  const admitted = record.actions[actionId]?.action;
+  if (admitted?.kind !== 'agent') {
+    throw new Error(`Action ${actionId} is not an admitted agent Action.`);
+  }
   const actor = buildAgentActor({
-    role: 'implementer',
+    role: options.role ?? admitted.agent.role,
     provider: 'anthropic',
-    runtime: 'claude',
+    runtime: admitted.agent.runtime,
     principalIdentityDigest: principalDigest,
     sessionIdentityDigest: sessionDigest,
     adapter: {
@@ -268,7 +295,7 @@ function buildCompletionBody(
     actorAttestation: attestationRef,
     evidence: [evidenceRef],
     status: 'succeeded',
-    result: { ok: true },
+    result: options.result?.(evidenceRef) ?? { ok: true },
   };
   const receiptDigest = computeCompletionReceiptDigest(base as never);
 
@@ -473,6 +500,227 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     expect(root4.waits[0].kind).toBe('gate');
     expect(status4Json.view.recordVersion).toBeGreaterThan(expectedVersion);
   }, 300_000); // 5-minute timeout for multi-spawn E2E
+
+  it('drives a spec-free Task Loop through builder, fresh critic, ship, and archive', async () => {
+    const changeId = 'e2e-task-loop';
+    const changeDir = path.join(testDir, 'rasen', 'changes', changeId);
+    const evidenceDir = path.join(changeDir, 'evidence');
+    const env = { XDG_DATA_HOME: dataDir, RASEN_AGENT_RUNTIME: 'codex' };
+    execFileSync('git', ['init', '--quiet'], { cwd: testDir, windowsHide: true });
+    execFileSync('git', ['config', 'user.email', 'task-loop@example.test'], {
+      cwd: testDir,
+      windowsHide: true,
+    });
+    execFileSync('git', ['config', 'user.name', 'Task Loop Test'], {
+      cwd: testDir,
+      windowsHide: true,
+    });
+    await fs.writeFile(
+      path.join(testDir, '.gitignore'),
+      ['rasen/', '.rasen/', 'global-data/'].join('\n') + '\n',
+      'utf8'
+    );
+    await fs.mkdir(path.join(testDir, 'src'), { recursive: true });
+    await fs.writeFile(path.join(testDir, 'src', 'feature.ts'), 'export const value = 0;\n');
+    execFileSync('git', ['add', '.gitignore', 'src/feature.ts'], {
+      cwd: testDir,
+      windowsHide: true,
+    });
+    execFileSync('git', ['commit', '--quiet', '-m', 'task-loop baseline'], {
+      cwd: testDir,
+      windowsHide: true,
+    });
+    await fs.mkdir(changeDir, { recursive: true });
+
+    const ephemeraDir = path.join(
+      testDir,
+      '.rasen',
+      'changes',
+      changeId,
+      'ephemera'
+    );
+    await fs.mkdir(ephemeraDir, { recursive: true });
+    const inputFile = path.join(ephemeraDir, 'task-loop-input.json');
+    await fs.writeFile(
+      inputFile,
+      JSON.stringify({
+        taskLoop: {
+          format: 'task-loop-input/1',
+          goal: 'Make the focused result observable.',
+          artifactTargets: ['src/feature.ts'],
+          bar: [
+            {
+              id: 'focused-check',
+              criterion: 'The focused check passes.',
+              evidenceHint: 'Run pnpm exec vitest run test/feature.test.ts.',
+            },
+          ],
+          constraints: ['Do not create planning artifacts.'],
+        },
+        gatePolicy: { effective: 'off', source: 'flag' },
+      })
+    );
+
+    const start = await runCLI(
+      [
+        'pipeline',
+        'start',
+        changeId,
+        'task-loop',
+        '--input-file',
+        inputFile,
+        '--json',
+      ],
+      { cwd: testDir, env, timeoutMs: 60_000 }
+    );
+    expect(start.exitCode, start.stderr).toBe(0);
+    const runId = JSON.parse(start.stdout.trim()).runId as string;
+
+    const grantedAction = async () => {
+      const status = await runCLI(
+        ['pipeline', 'status', changeId, 'task-loop', '--json'],
+        { cwd: testDir, env, timeoutMs: 60_000 }
+      );
+      expect(status.exitCode, status.stderr).toBe(0);
+      const payload = JSON.parse(status.stdout.trim());
+      const root = payload.view.sections.find(
+        (section: { kind: string }) => section.kind === 'root-dag'
+      );
+      return root.actions.find(
+        (action: { deliveryState: string }) => action.deliveryState === 'granted'
+      ) as { actionId: string; invocationId: string; nodeId: string } | undefined;
+    };
+
+    const completeGranted = async (
+      fileName: string,
+      role: string,
+      principalPair: string,
+      sessionPair: string,
+      result: (evidence: ReturnType<typeof buildEvidenceRef>) => Record<string, unknown>,
+      evidenceOptions: {
+        evidenceSchema?: string;
+        attestationSchema?: string;
+        treeDigest?: Digest;
+      } = {}
+    ) => {
+      const action = await grantedAction();
+      expect(action).toBeDefined();
+      observeAdmittedEffects(storeRoot, runId);
+      const body = buildCompletionBody(
+        loadHeadRecord(storeRoot, runId),
+        runId,
+        changeId,
+        testDir,
+        action!.actionId,
+        action!.invocationId,
+        { role, principalPair, sessionPair, result, ...evidenceOptions }
+      );
+      const completionFile = path.join(ephemeraDir, fileName);
+      writeFileSync(completionFile, JSON.stringify(body));
+      const completed = await runCLI(
+        [
+          'pipeline',
+          'complete',
+          changeId,
+          '--run',
+          runId,
+          '--from',
+          completionFile,
+          '--json',
+        ],
+        { cwd: testDir, env, timeoutMs: 60_000 }
+      );
+      expect(completed.exitCode, completed.stderr).toBe(0);
+      return JSON.parse(completed.stdout.trim());
+    };
+
+    const work = await grantedAction();
+    expect(work).toBeDefined();
+    const workRecord = loadHeadRecord(storeRoot, runId);
+    const admittedWork = workRecord.actions[work!.actionId]!.action;
+    const beforeTree = admittedWork.expectedBeforeWorkspace.treeDigest;
+    await fs.rm(path.join(evidenceDir, 'task-loop-report.md'), { force: true });
+    await fs.writeFile(
+      path.join(testDir, 'src', 'feature.ts'),
+      'export const value = 1;\n'
+    );
+    const afterRevision = deriveWorkspaceRevision(observeGitWorkspace(testDir));
+    await completeGranted(
+      'task-loop-work.json',
+      'implementer',
+      'a1',
+      'b2',
+      (evidence) => ({
+        contract: 'goal-cycle/work-result/1',
+        workDescription: 'Implemented the focused result.',
+        beforeTree,
+        afterTree: afterRevision.treeDigest,
+        delta: evidence,
+      }),
+      {
+        evidenceSchema: TASK_LOOP_WORK_EVIDENCE_SCHEMA,
+        attestationSchema: TASK_LOOP_ACTOR_ATTESTATION_SCHEMA,
+        treeDigest: afterRevision.treeDigest,
+      }
+    );
+
+    const judge = await grantedAction();
+    expect(judge).toBeDefined();
+    await completeGranted(
+      'task-loop-judge.json',
+      'reviewer',
+      'c3',
+      'd4',
+      (evidence) => ({
+        contract: 'goal-cycle/evaluate-judge/1',
+        satisfied: true,
+        gaps: [],
+        criteria: [
+          {
+            id: 'focused-check',
+            satisfied: true,
+            evidence: 'src/feature.ts: focused vitest output passed',
+            evidenceDigests: [evidence.evidenceDigest],
+          },
+        ],
+      }),
+      {
+        evidenceSchema: TASK_LOOP_CRITERION_EVIDENCE_SCHEMA,
+        attestationSchema: TASK_LOOP_ACTOR_ATTESTATION_SCHEMA,
+        treeDigest: afterRevision.treeDigest,
+      }
+    );
+    expect(await fs.readFile(path.join(evidenceDir, 'task-loop-report.md'), 'utf8'))
+      .toContain('Contract digest: sha256:');
+
+    const ship = await grantedAction();
+    expect(ship).toBeDefined();
+    await completeGranted('task-loop-ship.json', 'shipper', 'e5', 'f6', () => ({
+      delivered: true,
+    }));
+
+    const archive = await grantedAction();
+    expect(archive).toBeDefined();
+    const archived = await completeGranted(
+      'task-loop-archive.json',
+      'shipper',
+      'a7',
+      'b8',
+      () => ({ archived: true })
+    );
+    expect(archived.status).toBe('completed');
+
+    for (const planningArtifact of [
+      'proposal.md',
+      'design.md',
+      'tasks.md',
+      'planning-context.md',
+      'goal-plan.md',
+    ]) {
+      await expect(fs.stat(path.join(changeDir, planningArtifact))).rejects.toThrow();
+    }
+    await expect(fs.stat(path.join(changeDir, 'specs'))).rejects.toThrow();
+  }, 300_000);
 
   it('proves the Run survives a fresh process at every lifecycle step (cross-process store integrity)', async () => {
     // This test verifies that the filesystem store is consistent across

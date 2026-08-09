@@ -10,6 +10,7 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..', '..');
 const cliEntry = path.join(projectRoot, 'dist', 'cli', 'index.js');
 const DEFAULT_CLI_TIMEOUT_MS = 30_000;
+const ACTIVE_CLI_TERMINATION_TIMEOUT_MS = 10_000;
 
 // Isolate global-config / data reads from the developer's machine. Otherwise a
 // spawned CLI reads ~/.config|%APPDATA%/rasen/config.json, so a local custom
@@ -127,10 +128,39 @@ function formatOutputTail(output: string): string {
   return lines.slice(-20).join('\n');
 }
 
-export function terminateActiveCliChildren(): void {
-  for (const child of activeCliChildren) {
-    terminateProcessTree(child);
+function terminateProcessTreeAndWait(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve();
   }
+
+  return new Promise<void>((resolve, reject) => {
+    const finish = (error?: Error) => {
+      clearTimeout(timeout);
+      child.off('close', onClose);
+      child.off('error', onError);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onClose = () => finish();
+    const onError = () => finish();
+    const timeout = setTimeout(() => {
+      finish(
+        new Error(
+          `Timed out waiting for active CLI process ${child.pid ?? 'unknown'} to close`
+        )
+      );
+    }, ACTIVE_CLI_TERMINATION_TIMEOUT_MS);
+
+    child.once('close', onClose);
+    child.once('error', onError);
+    terminateProcessTree(child);
+  });
+}
+
+export async function terminateActiveCliChildren(): Promise<void> {
+  await Promise.all(
+    [...activeCliChildren].map((child) => terminateProcessTreeAndWait(child))
+  );
 }
 
 export async function ensureCliBuilt() {

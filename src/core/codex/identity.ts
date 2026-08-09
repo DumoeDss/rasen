@@ -24,9 +24,11 @@ import type { RunStateWorker } from '../pipeline-registry/run-state.js';
 
 export interface BuildCodexWorkerRecordOptions {
   threadId: string;
-  model: string;
+  /** Canonical creation/resume cwd returned by the process bridge receipt. */
+  cwd: string;
+  model?: string;
   sandbox: AgentRuntimeSandbox;
-  effort: CodexReasoningEffort;
+  effort?: CodexReasoningEffort;
   /** Rollout JSONL path, if known — recorded in the record's `transcript` pointer. */
   rolloutPath?: string;
   role?: string;
@@ -43,14 +45,15 @@ export interface BuildNativeCodexWorkerRecordOptions {
  * dispatch. Conforms to `RunStateWorkerSchema`; `turnId` is never set.
  */
 export function buildCodexWorkerRecord(options: BuildCodexWorkerRecordOptions): RunStateWorker {
-  const { effort } = clampLeafEffort(options.effort);
+  const effort = options.effort ? clampLeafEffort(options.effort).effort : undefined;
   const record: RunStateWorker = {
     runtime: 'codex',
     dispatchMode: 'exec-bridge',
     threadId: options.threadId,
-    model: options.model,
+    cwd: options.cwd,
     sandbox: options.sandbox,
-    effort,
+    ...(options.model ? { model: options.model } : {}),
+    ...(effort ? { effort } : {}),
     updatedAt: new Date().toISOString(),
   };
   if (options.rolloutPath) record.transcript = options.rolloutPath;

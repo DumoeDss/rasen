@@ -7,6 +7,7 @@ import type {
   ExactChangeRunRef,
   JsonValue,
   LaunchRequestId,
+  Digest,
   RunId,
 } from './contracts.js';
 
@@ -18,6 +19,7 @@ export interface StartChangePipeline {
   readonly change: ChangeRef;
   readonly pipeline: string;
   readonly launchRequestId: LaunchRequestId;
+  readonly launchRequestDigest?: Digest;
   readonly inputs?: Readonly<Record<string, JsonValue>>;
   readonly engine?: 'reconciler';
 }

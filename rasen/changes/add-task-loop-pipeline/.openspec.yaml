@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-08-02
+goal: Add a built-in rasen-auto task-loop pipeline that is independent from spec
+  artifacts, follows Gauntlet Loop builder-versus-fresh-critic iteration, never
+  converts to a spec pipeline, supports no-gate execution, and is fully
+  integrated, localized, tested, shippable, and archivable.

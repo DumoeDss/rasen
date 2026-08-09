@@ -52,12 +52,13 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
     "test:postinstall": "node scripts/postinstall.js",
-    "prepare": "pnpm run build",
+    "prepare": "pnpm run build && node scripts/repo-hygiene/install-git-hooks.mjs",
     "prepublishOnly": "pnpm run build",
     "postinstall": "node scripts/postinstall.js",
     "check:pack-version": "node scripts/pack-version-check.mjs",
     "check:paired-pack": "node scripts/paired-pack-check.mjs",
-    "check:release": "node scripts/release-contract.mjs"
+    "check:release": "node scripts/release-contract.mjs",
+    "hooks:install": "node scripts/repo-hygiene/install-git-hooks.mjs"
   },
   "engines": {
     "node": ">=20.19.0"

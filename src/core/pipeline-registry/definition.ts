@@ -2143,7 +2143,13 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
         : gateKind === 'measure'
           ? 'measure'
           : 'evaluate';
-      const iterateCapability = { id: 'skill:rasen-goal-iterate', version: 'legacy' };
+      if (stage.skill === undefined) {
+        throw new Error(`Goal-loop stage ${stage.id} must declare a skill capability.`);
+      }
+      const iterateCapability = {
+        id: `skill:${stage.skill}`,
+        version: 'legacy',
+      };
 
       declarations.push({
         id: bodyId,

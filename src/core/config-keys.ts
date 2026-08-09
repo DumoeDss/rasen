@@ -30,6 +30,7 @@ import {
   listValidThresholdSchemeNames,
   validateThresholdSchemeName,
 } from './threshold-schemes.js';
+import { LEAF_EFFORTS } from './pipeline-registry/types.js';
 
 export type ConfigScope = 'global' | 'store' | 'project';
 /**
@@ -472,6 +473,26 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     description: 'Per-role model override for the shipper role (wins over models.default at the same scope); any model id is accepted',
     group: 'Workflow',
   },
+  {
+    key: 'efforts.default',
+    scopes: ['global', 'store', 'project'],
+    type: 'enum',
+    enumValues: LEAF_EFFORTS,
+    defaultValue: undefined,
+    description: 'Base reasoning effort for every leaf role (independent of model selection)',
+    group: 'Workflow',
+  },
+  ...(['planner', 'implementer', 'reviewer', 'fixer', 'shipper'] as const).map(
+    (role): ConfigKeyDefinition => ({
+      key: `efforts.roles.${role}`,
+      scopes: ['global', 'store', 'project'],
+      type: 'enum',
+      enumValues: LEAF_EFFORTS,
+      defaultValue: undefined,
+      description: `Per-role reasoning effort override for the ${role} role`,
+      group: 'Workflow',
+    })
+  ),
   // ---- global scope (UI-managed) ----
   {
     key: 'ui.theme',
@@ -519,6 +540,17 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     validate: validateModelId,
     defaultValue: undefined,
     description: 'Per-pipeline, per-stage model override (any non-empty model id)',
+    group: 'Pipelines',
+  },
+  {
+    key: 'pipelines.<name>.efforts.<stage>',
+    scopes: ['global', 'store', 'project'],
+    type: 'enum',
+    enumValues: LEAF_EFFORTS,
+    wildcard: true,
+    pattern: 'pipelines.<name>.efforts.<stage>',
+    defaultValue: undefined,
+    description: 'Per-pipeline, per-stage leaf reasoning-effort override',
     group: 'Pipelines',
   },
   {

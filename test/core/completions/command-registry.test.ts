@@ -171,6 +171,18 @@ describe('root-inclusive CLI structure', () => {
     const type = command('validate')?.flags.find((flag) => flag.name === 'type');
     expect(type?.acceptedValues).toBeUndefined();
     expect(type?.completionValues).toEqual(['change', 'spec']);
+
+    const touch = command('session', 'exec')?.flags.find(
+      (flag) => flag.name === 'touch'
+    );
+    const deadlineAction = command('session', 'exec')?.flags.find(
+      (flag) => flag.name === 'deadline-action'
+    );
+    expect(touch?.acceptedValues).toBeUndefined();
+    expect(touch?.completionValues).toEqual(['auto', 'never']);
+    expect(deadlineAction?.acceptedValues).toBeUndefined();
+    expect(deadlineAction?.completionValues)
+      .toEqual(['stop', 'retire-silent']);
   });
 
   it('tracks top-level workflow commands and machine-facing flags', () => {

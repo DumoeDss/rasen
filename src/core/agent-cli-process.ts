@@ -132,15 +132,62 @@ export interface SpawnAgentCliOptions extends SpawnOptions {
   platform?: NodeJS.Platform;
 }
 
-function validateStdinPayload(
+export function validateAgentCliStdinPayload(
   payload: string | Buffer | undefined,
-  maxBytes: number
+  maxBytes = DEFAULT_AGENT_STDIN_LIMIT_BYTES
 ): void {
   if (payload === undefined) return;
   const bytes = Buffer.isBuffer(payload) ? payload.byteLength : Buffer.byteLength(payload, 'utf8');
   if (bytes > maxBytes) {
     throw new Error(`Agent CLI stdin payload is ${bytes} bytes; limit is ${maxBytes} bytes.`);
   }
+}
+
+/**
+ * Writes one bounded payload and closes stdin while observing asynchronous
+ * pipe failures. Callers that own a child lifecycle must await this result
+ * before classifying `close`; an early child exit then becomes a normal
+ * bounded failure instead of an unhandled EPIPE/EOF exception.
+ */
+export function endAgentCliStdin(
+  child: ChildProcess,
+  payload: string | Buffer,
+  maxBytes = DEFAULT_AGENT_STDIN_LIMIT_BYTES
+): Promise<void> {
+  validateAgentCliStdinPayload(payload, maxBytes);
+  const stdin = child.stdin;
+  if (!stdin) {
+    return Promise.reject(
+      new Error('Agent CLI stdin is not writable; spawn with stdin set to pipe.')
+    );
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      stdin.off('error', onError);
+      stdin.off('finish', onFinish);
+      child.off('close', onChildClose);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onError = (error: Error) => finish(error);
+    const onFinish = () => finish();
+    const onChildClose = () => finish(
+      new Error('Agent CLI exited before the stdin payload was fully written.')
+    );
+
+    stdin.once('error', onError);
+    stdin.once('finish', onFinish);
+    child.once('close', onChildClose);
+    try {
+      stdin.end(payload);
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
 }
 
 export function spawnAgentCli(
@@ -154,7 +201,7 @@ export function spawnAgentCli(
     platform = process.platform,
     ...spawnOptions
   } = options;
-  validateStdinPayload(stdinPayload, maxStdinBytes);
+  validateAgentCliStdinPayload(stdinPayload, maxStdinBytes);
   const prepared = prepareAgentCliSpawn(binary, argv, platform, spawnOptions.env ?? process.env);
   const child = spawn(prepared.command, prepared.args, {
     ...spawnOptions,
@@ -162,11 +209,12 @@ export function spawnAgentCli(
     windowsHide: true,
   });
   if (stdinPayload !== undefined) {
-    if (!child.stdin) {
-      child.kill();
-      throw new Error('Agent CLI stdin is not writable; spawn with stdin set to pipe.');
-    }
-    child.stdin.end(stdinPayload);
+    // Surface a write-side failure through the ChildProcess error channel,
+    // where normal spawn consumers already listen. The stdin stream itself
+    // always has an error listener before the write begins.
+    void endAgentCliStdin(child, stdinPayload, maxStdinBytes).catch((error) => {
+      child.emit('error', error);
+    });
   }
   return child;
 }

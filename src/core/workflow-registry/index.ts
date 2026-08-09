@@ -2,6 +2,7 @@ export {
   BUILT_IN_WORKFLOW_IDS,
   CORE_WORKFLOW_IDS,
   INTERNAL_BUILTIN_WORKFLOW_IDS,
+  isInternalBuiltInWorkflowId,
   RETENTION_RUNNER_WORKFLOW_ID,
   RETAIN_SKILL_DIR_NAME,
   computeBuiltInWorkflowDigest,

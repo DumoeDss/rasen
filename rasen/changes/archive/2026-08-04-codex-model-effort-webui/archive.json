@@ -1,0 +1,29 @@
+{
+  "change": "codex-model-effort-webui",
+  "archivedAt": "2026-08-04T03:23:53.296Z",
+  "codeCommit": "2122b581ee092f11486c0dbcce552f978a94b4a0",
+  "planningBranch": "feat/codex-luna-thread-dispatch",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "3199890c193dbf5b650655fdcb2ded767b3cfa55fba2716f497e829b53228b0e"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "9aab72764f08e61889d37252df8fad81f7b64a70bfec5ea779b91c67f163dc4e"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "1040f3beb89dc06eece309c7ae2844317acff53bebc4bab9528d41f3cdceeaa4"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

@@ -17,6 +17,7 @@ import { FeedbackCommand } from '../commands/feedback.js';
 import { registerConfigCommand } from '../commands/config.js';
 import { registerUiCommand } from '../commands/ui.js';
 import { registerDaemonCommand } from '../commands/daemon.js';
+import { registerSessionCommand } from '../commands/session.js';
 import { registerProfileCommand } from '../commands/profile.js';
 import { registerSchemeCommand } from '../commands/scheme.js';
 import { registerKnowledgeCommand } from '../commands/knowledge.js';
@@ -371,6 +372,7 @@ const archiveCommand = program
   .option('--store <id>', '')
   .option('--project <id>', '')
   .option('--keep-ephemera', '')
+  .option('--no-whitespace-check', '')
   .option('--dry-run', '')
   .option('--save-plan', '')
   .option('--apply-plan <token>', '')
@@ -395,6 +397,7 @@ registerHomeCommand(program);
 registerConfigCommand(program);
 registerUiCommand(program);
 registerDaemonCommand(program);
+registerSessionCommand(program, locale);
 registerProfileCommand(program);
 registerSchemeCommand(program);
 registerKnowledgeCommand(program);
@@ -708,6 +711,7 @@ pipelineCmd
   .option('--store <id>', '')
   .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
+  .addOption(new Option('--input-file <path>', '').hideHelp())
   .action(async (
     change: string,
     pipeline: string,
@@ -717,6 +721,7 @@ pipelineCmd
       store?: string;
       project?: string;
       storePath?: string;
+      inputFile?: string;
     }
   ) => {
     try {

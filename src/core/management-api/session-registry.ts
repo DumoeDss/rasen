@@ -205,3 +205,9 @@ export function createSessionRegistry(): SessionRegistry {
     },
   };
 }
+
+// Durable reusable-session state is deliberately separate from the one-shot
+// in-memory record model above. Re-exporting it here keeps this module as the
+// single management-layer registry boundary without changing the established
+// `createSessionRegistry()` API.
+export * from './durable-session-registry.js';

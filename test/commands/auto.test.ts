@@ -54,6 +54,22 @@ describe('auto workflow (orchestrated autopilot)', () => {
       expect(skillText.toLowerCase()).toContain('always wins');
     });
 
+    it('supports task-loop only by explicit selector with a frozen spec-free input bridge', () => {
+      expect(skillText).toContain('rasen-auto task-loop <task>');
+      expect(skillText).toContain('rasen-auto --pipeline task-loop <task>');
+      expect(skillText).toContain('task-loop-input/1');
+      expect(skillText).toContain('task-loop-input.json');
+      expect(skillText).toContain('--input-file');
+      expect(skillText).toContain('task_loop_reconciler_required');
+      expect(skillText).toContain('proposal.md');
+      expect(skillText).toContain('goal-plan.md');
+      expect(skillText.toLowerCase()).toContain('never classify or suggest `task-loop`');
+      expect(skillText.toLowerCase()).toContain('never convert, upgrade, or fall back');
+      expect(skillText).toContain('task_loop_exhausted');
+      expect(skillText).toContain('launch_request_conflict');
+      expect(skillText).toContain('no-gate cannot bypass');
+    });
+
     it('supports opt-in automatic pipeline selection via --auto-select / autopilot.selection', () => {
       expect(skillText).toContain('--auto-select');
       expect(skillText).toContain('autopilot.selection');

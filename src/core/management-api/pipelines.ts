@@ -344,6 +344,7 @@ export async function handleListPipelines(
           gate: eff.declaredGate,
           effectiveGate: { value: eff.gate.effective, source: eff.gate.source },
           effectiveModel: { value: eff.model.value, source: eff.model.source },
+          effectiveEffort: { value: eff.effort.value, source: eff.effort.source },
           effectiveHandoff: {
             value: eff.handoff.threshold,
             source: eff.handoff.source,
@@ -512,6 +513,7 @@ export async function handlePipelineDetail(
         gate: eff.declaredGate,
         effectiveGate: { value: eff.gate.effective, source: eff.gate.source },
         effectiveModel: { value: eff.model.value, source: eff.model.source },
+        effectiveEffort: { value: eff.effort.value, source: eff.effort.source },
         effectiveHandoff: {
           value: eff.handoff.threshold,
           source: eff.handoff.source,

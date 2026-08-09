@@ -212,9 +212,9 @@ export interface WireEffectiveReuse {
 /**
  * A pipeline stage for `GET /api/v1/pipelines` (pipeline-http-api). Beside its
  * declared identity and its declared `gate` value (a boolean), it reports each
- * EFFECTIVE per-stage value — gate (after the mask), model, handoff threshold,
- * and runtime — with the layer that supplied it, so the UI renders resolution
- * without reimplementing it.
+ * EFFECTIVE per-stage value — gate (after the mask), model, reasoning effort,
+ * handoff threshold, and runtime — with the layer that supplied it, so the UI
+ * renders resolution without reimplementing it.
  */
 export interface WirePipelineStage {
   id: string;
@@ -225,6 +225,7 @@ export interface WirePipelineStage {
   /** The effective gate after the mask: `true` pauses, `false` auto-approves. */
   effectiveGate: WireEffectiveValue<boolean>;
   effectiveModel: WireEffectiveValue<string | null>;
+  effectiveEffort: WireEffectiveValue<string | null>;
   effectiveHandoff: WireEffectiveThreshold;
   effectiveRuntime: WireEffectiveValue<'claude' | 'codex'>;
 }

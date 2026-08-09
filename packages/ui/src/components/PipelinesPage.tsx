@@ -36,7 +36,7 @@ import type { LocalPathSelectionController } from '../store/use-local-path-selec
 /**
  * The Pipelines page (pipelines-ui spec). A space-PREFIXED route
  * (`/p/:id/pipelines`, `/s/:id/pipelines`) where a pipeline's shape is
- * inspected and its per-stage gate / model and per-role runtime are tuned
+ * inspected and its per-stage gate / model / effort and per-role runtime are tuned
  * through the ordinary config scope chain. Durable stage handoff exceptions
  * belong to the Canvas definition editor. The page opens with the Defaults
  * table (the role-matrix config keys and keepalive lifecycle controls,
@@ -50,17 +50,17 @@ import type { LocalPathSelectionController } from '../store/use-local-path-selec
 
 /**
  * The role matrix (design D5): one row per role containing that role's model
- * key. Handoff policy is authored through Threshold Schemes instead of legacy
+ * and effort keys. Handoff policy is authored through Threshold Schemes instead of legacy
  * machine keys. Rendered as a compact table rather than one full-width config
  * row per key.
  */
-const MATRIX_ROLES: ReadonlyArray<{ role: string; modelKey: string }> = [
-  { role: 'default', modelKey: 'models.default' },
-  { role: 'planner', modelKey: 'models.roles.planner' },
-  { role: 'implementer', modelKey: 'models.roles.implementer' },
-  { role: 'reviewer', modelKey: 'models.roles.reviewer' },
-  { role: 'fixer', modelKey: 'models.roles.fixer' },
-  { role: 'shipper', modelKey: 'models.roles.shipper' },
+const MATRIX_ROLES: ReadonlyArray<{ role: string; modelKey: string; effortKey: string }> = [
+  { role: 'default', modelKey: 'models.default', effortKey: 'efforts.default' },
+  { role: 'planner', modelKey: 'models.roles.planner', effortKey: 'efforts.roles.planner' },
+  { role: 'implementer', modelKey: 'models.roles.implementer', effortKey: 'efforts.roles.implementer' },
+  { role: 'reviewer', modelKey: 'models.roles.reviewer', effortKey: 'efforts.roles.reviewer' },
+  { role: 'fixer', modelKey: 'models.roles.fixer', effortKey: 'efforts.roles.fixer' },
+  { role: 'shipper', modelKey: 'models.roles.shipper', effortKey: 'efforts.roles.shipper' },
 ];
 const AUTOPILOT_KEYS = ['autopilot.gates', 'autopilot.selection'];
 const KEEPALIVE_LIFECYCLE_KEYS = [
@@ -158,9 +158,19 @@ export function PipelinesPage() {
   }
 
   function updateEntry(updated: WireConfigEntry) {
-    setEntries((current) =>
-      current ? current.map((e) => (e.definition.key === updated.definition.key ? updated : e)) : current
-    );
+    setEntries((current) => {
+      if (!current) return current;
+      let found = false;
+      const next = current.map((entry) => {
+        const sameIdentity = updated.instanceKey !== undefined
+          ? entry.instanceKey === updated.instanceKey
+          : entry.instanceKey === undefined && entry.definition.key === updated.definition.key;
+        if (!sameIdentity) return entry;
+        found = true;
+        return updated;
+      });
+      return found ? next : [...next, updated];
+    });
   }
 
   if (!selector) {
@@ -344,8 +354,10 @@ export function PipelinesPage() {
             pipeline={pipeline}
             scope={writeScope}
             selector={selector}
+            configEntries={entries ?? []}
             graphHref={space ? spaceHref(space, 'pipelines', pipeline.name) : undefined}
             onWrite={refreshPipelines}
+            onEntryUpdated={updateEntry}
             onExport={(name) => setDialog({ kind: 'export', name })}
             onDelete={(name) => setDialog({ kind: 'delete', name })}
           />
@@ -429,7 +441,7 @@ function AssembleDialog({ onClose, onStart }: { onClose: () => void; onStart: (n
 
 // ── Defaults matrix ──────────────────────────────────────────────────────────
 // A compact role-first table (design D5): one row per role, columns Model and
-// Handoff threshold. Each cell is the bare control plus a source badge — the
+// Effort. Each cell is the bare control plus a source badge — the
 // dot-path and description ride a title tooltip, not a per-row paragraph, so the
 // whole section fits roughly one screen. Every write rides the ordinary config
 // scope chain via `putKey` / `deleteKey`, exactly as the full ConfigEntryRow
@@ -452,30 +464,37 @@ function DefaultsMatrix({
   const rows = MATRIX_ROLES.map((role) => ({
     role,
     model: entryFor(role.modelKey),
-  })).filter((r) => r.model !== undefined);
+    effort: entryFor(role.effortKey),
+  })).filter((r) => r.model !== undefined || r.effort !== undefined);
   if (rows.length === 0) return null;
 
   return (
-    <table class="defaults-matrix" data-testid="defaults-matrix">
-      <thead>
-        <tr>
-          <th scope="col">{t('pipelines.threshold.defaults.role')}</th>
-          <th scope="col">{t('pipelines.threshold.defaults.model')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map(({ role, model }) => (
-          <tr key={role.role} class="defaults-matrix__row" data-role={role.role}>
-            <th scope="row" class="defaults-matrix__role">
-              {t(`pipelines.threshold.role.${role.role}`)}
-            </th>
-            <td class="defaults-matrix__cell">
-              {model ? <ModelCell entry={model} {...ctx} /> : <span class="defaults-matrix__empty">—</span>}
-            </td>
+    <div class="defaults-matrix-scroll" data-testid="defaults-matrix-scroll">
+      <table class="defaults-matrix" data-testid="defaults-matrix">
+        <thead>
+          <tr>
+            <th scope="col">{t('pipelines.threshold.defaults.role')}</th>
+            <th scope="col">{t('pipelines.threshold.defaults.model')}</th>
+            <th scope="col">{t('pipelines.effort.label')}</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.map(({ role, model, effort }) => (
+            <tr key={role.role} class="defaults-matrix__row" data-role={role.role}>
+              <th scope="row" class="defaults-matrix__role">
+                {t(`pipelines.threshold.role.${role.role}`)}
+              </th>
+              <td class="defaults-matrix__cell">
+                {model ? <ModelCell entry={model} {...ctx} /> : <span class="defaults-matrix__empty">—</span>}
+              </td>
+              <td class="defaults-matrix__cell">
+                {effort ? <EffortCell entry={effort} {...ctx} /> : <span class="defaults-matrix__empty">—</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -568,6 +587,49 @@ function ModelCell({ entry, ...ctx }: { entry: WireConfigEntry } & DefaultsCellC
   );
 }
 
+function EffortCell({ entry, ...ctx }: { entry: WireConfigEntry } & DefaultsCellCtx) {
+  const t = useT();
+  const key = entry.definition.key;
+  const w = useDefaultsCell(key, ctx);
+  const options = entry.definition.constraints.enumValues ?? [];
+  const scopedValue = entry.scopeValues[w.writeScope];
+  const selectValue = typeof scopedValue === 'string' && options.includes(scopedValue)
+    ? scopedValue
+    : 'inherit';
+
+  if (cellStoreInherited(entry, ctx)) {
+    return <StoreInheritedCell entry={entry} storeRef={ctx.storeRef!} />;
+  }
+
+  return (
+    <div class="defaults-cell defaults-cell--effort" data-key={key} title={entry.definition.description}>
+      <select
+        class="defaults-cell__input"
+        data-testid="defaults-effort-select"
+        value={selectValue}
+        disabled={w.pending}
+        onChange={(event) => {
+          const value = (event.target as HTMLSelectElement).value;
+          if (value === 'inherit') w.unset();
+          else w.commit(value);
+        }}
+      >
+        <option value="inherit">{t('pipelines.threshold.action.inherit')}</option>
+        {options.map((value) => (
+          <option key={value} value={value}>{value}</option>
+        ))}
+      </select>
+      <span class="defaults-cell__effective" data-testid="defaults-effort-effective">
+        {t('pipelines.effort.effective')}: {entry.value == null
+          ? t('pipelines.effort.runtime_default')
+          : String(entry.value)}
+      </span>
+      <ConfigSourceBadge source={entry.source} />
+      {w.error && <span class="defaults-cell__error" role="alert">{w.error}</span>}
+    </div>
+  );
+}
+
 /** A store-inherited key: read-only value plus an edit-in-store link (design D3), the compact analogue of ConfigEntryRow's store handling. */
 function StoreInheritedCell({ entry, storeRef }: { entry: WireConfigEntry; storeRef: StoreLayerRef }) {
   return (
@@ -591,17 +653,21 @@ function PipelineSection({
   pipeline,
   scope,
   selector,
+  configEntries,
   graphHref,
   onWrite,
+  onEntryUpdated,
   onExport,
   onDelete,
 }: {
   pipeline: WirePipeline;
   scope: 'global' | 'store' | 'project';
   selector: string;
+  configEntries: WireConfigEntry[];
   /** The pipeline's graph-view route (pipeline-canvas-view), or undefined when no space is resolved. */
   graphHref?: string;
   onWrite: () => Promise<void>;
+  onEntryUpdated: (entry: WireConfigEntry) => void;
   onExport: (name: string) => void;
   onDelete: (name: string) => void;
 }) {
@@ -707,7 +773,7 @@ function PipelineSection({
             </div>
           )}
 
-          {/* Per-stage gate / model overrides. Durable stage handoff values are
+          {/* Per-stage gate / model / effort overrides. Durable stage handoff values are
               authored in the Canvas pipeline definition editor. */}
           <div class="pipeline-stages" data-testid="pipeline-stages">
             {pipeline.stages.map((stage) => (
@@ -717,7 +783,9 @@ function PipelineSection({
                 stage={stage}
                 scope={scope}
                 selector={selector}
+                configEntries={configEntries}
                 onWrite={onWrite}
+                onEntryUpdated={onEntryUpdated}
               />
             ))}
           </div>
@@ -734,13 +802,17 @@ function StageOverrideRow({
   stage,
   scope,
   selector,
+  configEntries,
   onWrite,
+  onEntryUpdated,
 }: {
   pipeline: string;
   stage: WirePipelineStage;
   scope: 'global' | 'store' | 'project';
   selector: string;
+  configEntries: WireConfigEntry[];
   onWrite: () => Promise<void>;
+  onEntryUpdated: (entry: WireConfigEntry) => void;
 }) {
   return (
     <div class="stage-row" data-testid="stage-row" data-stage={stage.id}>
@@ -750,6 +822,15 @@ function StageOverrideRow({
       </div>
       <StageGateControl pipeline={pipeline} stage={stage} scope={scope} selector={selector} onWrite={onWrite} />
       <StageModelControl pipeline={pipeline} stage={stage} scope={scope} selector={selector} onWrite={onWrite} />
+      <StageEffortControl
+        pipeline={pipeline}
+        stage={stage}
+        scope={scope}
+        selector={selector}
+        configEntries={configEntries}
+        onWrite={onWrite}
+        onEntryUpdated={onEntryUpdated}
+      />
     </div>
   );
 }
@@ -759,16 +840,18 @@ function useInstanceWriter(
   instanceKey: string,
   scope: 'global' | 'store' | 'project',
   selector: string,
-  onWrite: () => Promise<void>
+  onWrite: () => Promise<void>,
+  onEntryUpdated?: (entry: WireConfigEntry) => void
 ) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function run(fn: () => Promise<unknown>) {
+  async function run(fn: () => Promise<{ entry: WireConfigEntry }>) {
     setPending(true);
     setError(null);
     try {
-      await fn();
+      const result = await fn();
+      onEntryUpdated?.(result.entry);
       await onWrite();
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return;
@@ -884,6 +967,72 @@ function StageModelControl({
           Inherit
         </button>
       )}
+      {w.error && <span class="stage-control__error" role="alert">{w.error}</span>}
+    </div>
+  );
+}
+
+function StageEffortControl({
+  pipeline,
+  stage,
+  scope,
+  selector,
+  configEntries,
+  onWrite,
+  onEntryUpdated,
+}: {
+  pipeline: string;
+  stage: WirePipelineStage;
+  scope: 'global' | 'store' | 'project';
+  selector: string;
+  configEntries: WireConfigEntry[];
+  onWrite: () => Promise<void>;
+  onEntryUpdated: (entry: WireConfigEntry) => void;
+}) {
+  const t = useT();
+  const key = `pipelines.${pipeline}.efforts.${stage.id}`;
+  const template = configEntries.find(
+    (entry) => entry.instanceKey === undefined
+      && entry.definition.key === 'pipelines.<name>.efforts.<stage>'
+  );
+  const instance = configEntries.find((entry) => entry.instanceKey === key);
+  const options = template?.definition.constraints.enumValues ?? [];
+  const scopedValue = instance?.scopeValues[scope];
+  const selectValue = typeof scopedValue === 'string' && options.includes(scopedValue)
+    ? scopedValue
+    : 'inherit';
+  const effective = stage.effectiveEffort;
+  const w = useInstanceWriter(key, scope, selector, onWrite, onEntryUpdated);
+
+  return (
+    <div
+      class="stage-control stage-control--effort"
+      data-testid="stage-effort"
+      data-pipeline={pipeline}
+      data-stage={stage.id}
+    >
+      <span class="stage-control__label">{t('pipelines.effort.label')}</span>
+      <select
+        data-testid="stage-effort-select"
+        value={selectValue}
+        disabled={w.pending || options.length === 0}
+        onChange={(event) => {
+          const value = (event.target as HTMLSelectElement).value;
+          if (value === 'inherit') w.clear();
+          else w.set(value);
+        }}
+      >
+        <option value="inherit">{t('pipelines.threshold.action.inherit')}</option>
+        {options.map((value) => (
+          <option key={value} value={value}>{value}</option>
+        ))}
+      </select>
+      <span class="stage-control__effective" data-testid="stage-effort-effective">
+        {t('pipelines.effort.effective')}: {effective.value == null
+          ? t('pipelines.effort.runtime_default')
+          : effective.value}
+      </span>
+      <SourceBadge source={effective.source} />
       {w.error && <span class="stage-control__error" role="alert">{w.error}</span>}
     </div>
   );
