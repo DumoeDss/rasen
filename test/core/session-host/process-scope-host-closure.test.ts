@@ -88,13 +88,13 @@ describe('ProcessScope authority after backend-root exit', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-scope-root-exit-'));
     roots.push(root);
     const factsPath = path.join(root, 'facts.json');
+    const descendantReady = path.join(root, 'descendant-ready');
     const script = [
       "const { spawn } = require('node:child_process');",
       "const fs = require('node:fs');",
-      "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: process.platform === 'win32', stdio: 'ignore', windowsHide: true });",
+      `const child = spawn(process.execPath, ['-e', ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(descendantReady)}, '1');setInterval(() => {}, 1000)`)}], { detached: process.platform === 'win32', stdio: 'ignore', windowsHide: true });`,
       'child.unref();',
-      `fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify({ root: process.pid, descendant: child.pid }));`,
-      'process.exit(23);',
+      `const ready = setInterval(() => { if (!fs.existsSync(${JSON.stringify(descendantReady)})) return; clearInterval(ready); fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify({ root: process.pid, descendant: child.pid })); process.exit(23); }, 5);`,
     ].join('');
     const scope = createNativeProcessScope({
       onControllerSpawn(pid) { exactPids.add(pid); },

@@ -187,6 +187,7 @@ interface LedgerRootIdentity {
   readonly realPath: string;
   readonly device: bigint;
   readonly inode: bigint;
+  readonly birthtimeNs: bigint;
 }
 
 function sha256(value: string | Uint8Array): string {
@@ -475,14 +476,15 @@ function flushCommittedFile(target: string): void {
 }
 
 function directoryIdentity(candidate: string): LedgerRootIdentity {
-  const stat = fs.lstatSync(candidate);
+  const stat = fs.lstatSync(candidate, { bigint: true });
   if (!stat.isDirectory() || stat.isSymbolicLink()) {
     throw new TypeError('Windows authority publication ledger root provenance is invalid.');
   }
   return Object.freeze({
     realPath: fs.realpathSync.native(candidate),
-    device: BigInt(stat.dev),
-    inode: BigInt(stat.ino),
+    device: stat.dev,
+    inode: stat.ino,
+    birthtimeNs: stat.birthtimeNs,
   });
 }
 
@@ -499,7 +501,8 @@ function validateRoot(realRoot: string, expected: LedgerRootIdentity): void {
   if (
     identity.realPath !== expected.realPath ||
     identity.device !== expected.device ||
-    identity.inode !== expected.inode
+    identity.inode !== expected.inode ||
+    identity.birthtimeNs !== expected.birthtimeNs
   ) {
     throw new TypeError('Windows authority publication ledger root identity changed.');
   }

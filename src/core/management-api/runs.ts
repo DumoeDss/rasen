@@ -376,23 +376,24 @@ async function discoverReconcilerRuns(
     }
   }
 
-  // Filter: when a planningSpaceId override is set (from `planning:<id>`
-  // selector), filter by change.planningSpaceId match. Otherwise, filter by
-  // the derived WorkspaceInstanceId (linked-worktree isolation). When neither
-  // is derivable (no root, no override), all Runs are included.
-  const filtered = planningFilter
+  // A planning selector constrains the planning identity. When it also resolves
+  // to a live root, retain the normal WorkspaceInstanceId filter so a linked
+  // worktree's Runs remain read-only detail targets rather than appearing in
+  // the selected worktree's list.
+  const planningRuns = planningFilter
     ? validRuns.filter((run) => (run.record.change.planningSpaceId as string) === planningFilter)
-    : root
-      ? validRuns.filter((run) => {
-          const workspaceResolution = deriveRunWorkspaceIds(
-            root,
-            home,
-            run.record.change.changeId
-          );
-          return workspaceResolution.ok &&
-            workspaceResolution.workspaceIds.includes(run.record.workspaceInstanceId);
-        })
-      : validRuns;
+    : validRuns;
+  const filtered = root
+    ? planningRuns.filter((run) => {
+        const workspaceResolution = deriveRunWorkspaceIds(
+          root,
+          home,
+          run.record.change.changeId
+        );
+        return workspaceResolution.ok &&
+          workspaceResolution.workspaceIds.includes(run.record.workspaceInstanceId);
+      })
+    : planningRuns;
 
   // Stable-sort by runId (deterministic ordering across requests).
   filtered.sort((a, b) => (a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0));

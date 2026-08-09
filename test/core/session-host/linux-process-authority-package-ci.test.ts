@@ -261,6 +261,7 @@ describe('Linux process-authority package and CI boundary', () => {
   it('keeps Nix stdenv tool selectors outside the pinned authority build contract', () => {
     const flake = fs.readFileSync('flake.nix', 'utf8');
     const script = fs.readFileSync(SCRIPT, 'utf8');
+    expect(flake).toMatch(/nativeBuildInputs = with pkgs; \[[\s\S]*?\bwhich\b[\s\S]*?\];/);
     expect(flake).toMatch(/unset AR CC CXX LD\s+pnpm run build/s);
     expect(script).toMatch(/build-affecting environment override is forbidden/);
   });
@@ -446,7 +447,14 @@ describe('Linux process-authority package and CI boundary', () => {
     const packageRoot = path.join(item.root, 'packlist');
     const distRoot = path.join(packageRoot, 'dist', 'native', 'linux-x64');
     fs.mkdirSync(distRoot, { recursive: true });
-    fs.copyFileSync('package.json', path.join(packageRoot, 'package.json'));
+    const packMetadata = { ...packageMetadata } as typeof packageMetadata & {
+      scripts?: Record<string, string>;
+    };
+    delete packMetadata.scripts;
+    fs.writeFileSync(
+      path.join(packageRoot, 'package.json'),
+      `${JSON.stringify(packMetadata, null, 2)}\n`
+    );
     for (const name of [
       'rasen-linux-process-authority-broker',
       'broker.key',

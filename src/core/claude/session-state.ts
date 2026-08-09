@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { getGlobalDataDir } from '../global-config.js';
 import { isNodeErrorCode } from '../file-state.js';
+import { resolvePackagedProcessCapsule } from '../session-host/process-capsule/resolver.js';
 
 const fs = nodeFs.promises;
 const SESSION_STATE_VERSION = 1;
@@ -705,28 +706,39 @@ export async function isClaudeSessionWriterClaimed(
   }
 }
 
-function captureWindowsProcessInstance(pid: number): string | undefined {
-  const command = [
-    '$ErrorActionPreference = "Stop";',
-    `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}";`,
-    'if ($null -eq $p) { exit 3 };',
-    '[Console]::Out.Write($p.CreationDate.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture))',
-  ].join(' ');
-  const result = spawnSync(
-    'powershell.exe',
-    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command],
-    {
+function captureNativeProcessInstance(
+  pid: number,
+  platform: 'win32' | 'darwin',
+  pattern: RegExp,
+  prefix: string
+): string | undefined {
+  try {
+    const helper = resolvePackagedProcessCapsule({ platform });
+    const result = spawnSync(helper.helperPath, ['--process-birth', String(pid)], {
+      cwd: process.cwd(),
+      env: {},
       encoding: 'utf8',
       windowsHide: true,
       shell: false,
       timeout: 5_000,
       maxBuffer: 64 * 1024,
-    }
+    });
+    const value = result.stdout.trim().toLowerCase();
+    return !result.error && result.status === 0 && pattern.test(value)
+      ? `${prefix}:${value}`
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function captureWindowsProcessInstance(pid: number): string | undefined {
+  return captureNativeProcessInstance(
+    pid,
+    'win32',
+    /^[0-9a-f]{16}$/,
+    'windows-filetime'
   );
-  const value = result.stdout.trim();
-  return !result.error && result.status === 0 && /^\d+$/.test(value)
-    ? `windows-cim:${value}`
-    : undefined;
 }
 
 function captureLinuxProcessInstance(pid: number): string | undefined {
@@ -748,6 +760,15 @@ function captureLinuxProcessInstance(pid: number): string | undefined {
   }
 }
 
+function captureMacProcessInstance(pid: number): string | undefined {
+  return captureNativeProcessInstance(
+    pid,
+    'darwin',
+    /^[0-9a-f]{16}-[0-9a-f]{8}$/,
+    'darwin-proc'
+  );
+}
+
 function defaultProcessInstanceProbe(
   platform: NodeJS.Platform = process.platform
 ): ProcessInstanceProbe {
@@ -755,9 +776,7 @@ function defaultProcessInstanceProbe(
     if (!Number.isInteger(pid) || pid <= 0) return undefined;
     if (platform === 'win32') return captureWindowsProcessInstance(pid);
     if (platform === 'linux') return captureLinuxProcessInstance(pid);
-    // Durable hosted Sessions use ProcessCapsule's native macOS birth source.
-    // This legacy claim module has no exact remaining-POSIX source and fails
-    // closed instead of sampling second-resolution `ps lstart` authority.
+    if (platform === 'darwin') return captureMacProcessInstance(pid);
     return undefined;
   };
   return {

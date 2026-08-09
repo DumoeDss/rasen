@@ -45,6 +45,7 @@ describe('macOS ProcessCapsule kernel birth identity', () => {
     expect(source).toMatch(/size_of::<ProcUniqIdentifierInfo>\(\)\s*==\s*56/);
     expect(source).toMatch(/align_of::<ProcUniqIdentifierInfo>\(\)\s*==\s*8/);
     expect(source).toContain('--controller-test-macos-birth-unavailable');
+    expect(source).toContain('[mode, pid] if mode == "--process-birth"');
   });
 
   it.runIf(process.platform === 'darwin')(

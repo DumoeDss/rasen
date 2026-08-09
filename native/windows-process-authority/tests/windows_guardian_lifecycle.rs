@@ -92,7 +92,12 @@ fn state_root(tag: &str) -> PathBuf {
         win::current_process_id()
     ));
     let _ = std::fs::remove_dir_all(&base);
-    std::fs::create_dir_all(&base).expect("state root");
+    // Leave the leaf absent so the production provider creates it and pins its owner to the
+    // current user SID. An elevated Hosted Runner can assign a directory created by this test
+    // process to the Administrators group, which the provider must continue to reject as an
+    // already-existing root with foreign ownership.
+    std::fs::create_dir_all(base.parent().expect("state root parent"))
+        .expect("state root parent");
     base
 }
 

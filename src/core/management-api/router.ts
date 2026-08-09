@@ -1718,6 +1718,7 @@ export function createManagementRouter(
       const runsResponse = await handleRuns(space.root, home, {
         ...(cursor !== undefined ? { cursor } : {}),
         ...(limit !== undefined && Number.isFinite(limit) ? { limit } : {}),
+        ...(space.planningSpaceId ? { planningSpaceId: space.planningSpaceId } : {}),
       });
       sendJson(res, 200, runsResponse);
       return;

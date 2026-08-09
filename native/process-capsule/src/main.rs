@@ -214,7 +214,7 @@ fn stream_child_output<R: Read + Send + 'static>(
     });
 }
 
-fn supervisor_main() -> io::Result<()> {
+fn supervisor_main(hold_on_control_loss: bool) -> io::Result<()> {
     let mut controller_input = io::stdin().lock();
     let (kind, payload) = read_frame(&mut controller_input)?.ok_or_else(|| {
         io::Error::new(io::ErrorKind::UnexpectedEof, "missing supervisor prepare")
@@ -314,6 +314,11 @@ fn supervisor_main() -> io::Result<()> {
                 ))
             }
             None => {
+                if hold_on_control_loss {
+                    loop {
+                        thread::sleep(Duration::from_secs(60));
+                    }
+                }
                 terminate_contained_group(pid);
                 let _ = child.lock().map(|mut item| item.kill());
                 break;
@@ -564,7 +569,7 @@ mod platform {
         }
     }
     impl WindowsContainment {
-        pub fn is_empty(&self) -> io::Result<bool> {
+        pub fn is_empty(&mut self) -> io::Result<bool> {
             unsafe {
                 if self.job.is_null() {
                     return Ok(true);
@@ -721,7 +726,15 @@ mod platform {
 
             let exe = env::current_exe()?;
             let app = wide(exe.as_os_str());
-            let mut command = wide(OsStr::new(&format!("\"{}\" --supervisor", exe.display())));
+            let supervisor_mode = if duplicate_job {
+                "--supervisor-test-leaked-job-handle"
+            } else {
+                "--supervisor"
+            };
+            let mut command = wide(OsStr::new(&format!(
+                "\"{}\" {supervisor_mode}",
+                exe.display()
+            )));
             let mut startup: StartupInfoExW = zeroed();
             startup.startup.cb = size_of::<StartupInfoExW>() as u32;
             startup.startup.flags = STARTF_USESTDHANDLES;
@@ -797,6 +810,7 @@ mod platform {
         supervisor_birth: &str,
         _reserved_pgid: u32,
         terminate: bool,
+        _allow_absent_controller: bool,
     ) -> u8 {
         unsafe {
             let process = OpenProcess(
@@ -956,7 +970,8 @@ mod platform {
         4
     }
     impl PosixContainment {
-        pub fn is_empty(&self) -> io::Result<bool> {
+        pub fn is_empty(&mut self) -> io::Result<bool> {
+            let _ = self.child.try_wait()?;
             Ok(!process_group_exists(self.child.id()))
         }
 
@@ -1143,6 +1158,7 @@ mod platform {
         supervisor_birth: &str,
         reserved_pgid: u32,
         terminate: bool,
+        allow_absent_controller: bool,
     ) -> u8 {
         extern "C" {
             fn syscall(number: i64, ...) -> i64;
@@ -1158,8 +1174,10 @@ mod platform {
             Some(_) => {}
             None if process_exists(pid) => return 4,
             None => {
-                return if terminate && group_state == 1 {
+                return if terminate && group_state == 1 && allow_absent_controller {
                     terminate_reserved_group(supervisor_pid, supervisor_birth, reserved_pgid)
+                } else if terminate && group_state == 1 {
+                    4
                 } else {
                     group_state
                 };
@@ -1247,6 +1265,7 @@ mod platform {
         supervisor_birth: &str,
         reserved_pgid: u32,
         terminate: bool,
+        allow_absent_controller: bool,
     ) -> u8 {
         let group_state = inspect_reserved_group(supervisor_pid, supervisor_birth, reserved_pgid);
         if group_state == 3 || group_state == 4 {
@@ -1258,8 +1277,10 @@ mod platform {
             Some(_) => {}
             None if process_exists(pid) => return 4,
             None => {
-                return if terminate && group_state == 1 {
+                return if terminate && group_state == 1 && allow_absent_controller {
                     terminate_reserved_group(supervisor_pid, supervisor_birth, reserved_pgid)
+                } else if terminate && group_state == 1 {
+                    4
                 } else {
                     group_state
                 };
@@ -1315,7 +1336,7 @@ enum Containment {
     Posix(platform::PosixContainment),
 }
 impl Containment {
-    fn is_empty(&self) -> io::Result<bool> {
+    fn is_empty(&mut self) -> io::Result<bool> {
         match self {
             #[cfg(windows)]
             Self::Windows(value) => value.is_empty(),
@@ -1465,7 +1486,7 @@ fn controller_main(
                         let empty = containment_clone
                             .lock()
                             .map_err(|_| ())
-                            .and_then(|item| item.is_empty().map_err(|_| ()))
+                            .and_then(|mut item| item.is_empty().map_err(|_| ()))
                             .unwrap_or_else(|_| process::exit(74));
                         if empty {
                             if !scope_empty_clone.swap(true, Ordering::AcqRel) {
@@ -1530,7 +1551,7 @@ fn controller_main(
     }
 }
 
-fn probe_main(terminate: bool) -> io::Result<()> {
+fn probe_main(terminate: bool, allow_absent_controller: bool) -> io::Result<()> {
     let (kind, payload) = read_frame(&mut io::stdin().lock())?
         .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "missing ProcessRef"))?;
     if kind != INSPECT {
@@ -1561,6 +1582,7 @@ fn probe_main(terminate: bool) -> io::Result<()> {
             supervisor_birth,
             reserved_pgid,
             terminate,
+            allow_absent_controller,
         )
     };
     write_frame(&mut io::stdout().lock(), OBSERVATION, &[state])
@@ -1572,10 +1594,24 @@ fn pipe_holder_main() -> io::Result<()> {
     }
 }
 
+fn process_birth_main(pid: &str) -> io::Result<()> {
+    let pid = pid
+        .parse::<u32>()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "process PID is invalid"))?;
+    let birth = platform::process_birth(pid).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "exact process birth is unavailable",
+        )
+    })?;
+    io::stdout().lock().write_all(birth.as_bytes())
+}
+
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let result = match args.as_slice() {
-        [mode] if mode == "--supervisor" => supervisor_main(),
+        [mode] if mode == "--supervisor" => supervisor_main(false),
+        [mode] if mode == "--supervisor-test-leaked-job-handle" => supervisor_main(true),
         [mode] if mode == "--controller" => {
             controller_main(false, false, false, false, false, false)
         }
@@ -1598,8 +1634,10 @@ fn main() {
             controller_main(false, false, false, false, false, true)
         }
         [mode] if mode == "--pipe-holder" => pipe_holder_main(),
-        [mode] if mode == "--inspect" => probe_main(false),
-        [mode] if mode == "--terminate" => probe_main(true),
+        [mode, pid] if mode == "--process-birth" => process_birth_main(pid),
+        [mode] if mode == "--inspect" => probe_main(false, false),
+        [mode] if mode == "--terminate" => probe_main(true, false),
+        [mode] if mode == "--terminate-owned" => probe_main(true, true),
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "unsupported ProcessCapsule mode",

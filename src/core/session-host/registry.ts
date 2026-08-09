@@ -245,7 +245,9 @@ function parseSession(
     typeof record.backend !== 'string' ||
     !record.backend ||
     typeof record.cwd !== 'string' ||
-    !path.isAbsolute(record.cwd) ||
+    !(platform === 'win32'
+      ? path.win32.isAbsolute(record.cwd)
+      : path.posix.isAbsolute(record.cwd)) ||
     typeof record.cwdDigest !== 'string' ||
     typeof record.hostState !== 'string' ||
     !HOST_STATES.has(record.hostState as HostedSessionState) ||

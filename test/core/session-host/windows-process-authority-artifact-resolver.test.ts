@@ -347,7 +347,7 @@ describe('Windows process-authority artifact resolution', () => {
 
   it('has an empty production build-authority table until packaging generates one', () => {
     expect(WINDOWS_PROCESS_AUTHORITY_BUILD_IDENTITIES).toEqual([]);
-    const staged = stage();
+    const staged = stage({}, { arch: HOST_ARCH });
     expect(() => inspectWindowsProcessAuthorityArtifact({
       packageRoot: staged.packageRoot,
       artifactPath: HELPER_RELATIVE,

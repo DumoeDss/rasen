@@ -63,6 +63,7 @@
               pnpm_9
               cargo
               rustc
+              which
             ];
 
             buildPhase = ''

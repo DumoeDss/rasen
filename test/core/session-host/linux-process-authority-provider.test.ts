@@ -309,6 +309,7 @@ describe('Linux process-authority provider bundle', () => {
   it.skipIf(process.platform === 'win32')('rejects writable or special-mode ancestors instead of accepting an arbitrary 0700 leaf', () => {
     const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-linux-production-unapproved-'));
     tempRoots.push(parent);
+    fs.chmodSync(parent, 0o770);
     const stateRoot = path.join(parent, 'state');
     fs.mkdirSync(stateRoot, { mode: 0o700 });
     expect(() => createLinuxPrimaryProcessAuthorityProviderBundle({ stateRoot }))
