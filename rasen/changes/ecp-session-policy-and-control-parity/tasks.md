@@ -49,20 +49,20 @@ Scope legend: this change is the enforcement/completeness/config layer over the 
 
 ## 6. Deterministic guards and mutation receipts
 
-- [ ] 6.1 Deterministic counterparts for every parity, fault-matrix, and policy path, driven through the shipped `dispatchGrantedAction` contract and injectable seams (no network, no credentials, no specific OS).
+- [x] 6.1 Deterministic counterparts for every parity, fault-matrix, and policy path, driven through the shipped `dispatchGrantedAction` contract and injectable seams (no network, no credentials, no specific OS).
   - Receipt: deterministic guard suite green; each guard named with the property it proves.
-- [ ] 6.2 Mutation receipts in `evidence/mutation-receipts.md`, each showing its guard RED against the defect it names, reverted byte-exactly. At minimum: a divergent face projection; a face asserting availability the matrix does not report; a matrix entry exercised against a parallel fixture; a committed invocation re-executed; an unknown-commitment input resent; an unprovable state silently completed; a duplicate/double-settle; a safety-disabling config accepted; a placeholder stamped authored; a per-face policy source.
+- [x] 6.2 Mutation receipts in `evidence/mutation-receipts.md`, each showing its guard RED against the defect it names, reverted byte-exactly. At minimum: a divergent face projection; a face asserting availability the matrix does not report; a matrix entry exercised against a parallel fixture; a committed invocation re-executed; an unknown-commitment input resent; an unprovable state silently completed; a duplicate/double-settle; a safety-disabling config accepted; a placeholder stamped authored; a per-face policy source.
   - Receipt: `evidence/mutation-receipts.md` with RED counts and byte-exact reverts (`git diff --numstat` empty).
-- [ ] 6.3 Regression: the shipped executor guard suite (65 guards), the 7.1 production-executor parity suite, the session-host suites, and the configuration/runtime-adapter suites pass unchanged.
+- [x] 6.3 Regression: the shipped executor guard suite (65 guards), the 7.1 production-executor parity suite, the session-host suites, and the configuration/runtime-adapter suites pass unchanged.
   - Receipt: regression suite counts before/after, 0 new failures.
 
 ## 7. Verification and ship
 
-- [ ] 7.1 `rasen validate --strict ecp-session-policy-and-control-parity` green; whitespace gate verified on committed bytes (LF-only, no trailing whitespace, no trailing blank line at EOF) for every file this change adds or edits.
+- [x] 7.1 `rasen validate --strict ecp-session-policy-and-control-parity` green; whitespace gate verified on committed bytes (LF-only, no trailing whitespace, no trailing blank line at EOF) for every file this change adds or edits.
   - Receipt: validate output and the whitespace-gate result on `git show HEAD:<file>` bytes (committed, not working-tree, because `core.autocrlf=true` rewrites the working tree).
-- [ ] 7.2 Confirm the DAG: this change depends on `ecp-frozen-action-session-executor` (archived); it blocks `ecp-session-self-hosting-vertical-proof` (operator-owned); no edge to/from the parked provider changes or archived changes; the executor module's public contract and the frozen crates are untouched by this change's diff.
+- [x] 7.2 Confirm the DAG: this change depends on `ecp-frozen-action-session-executor` (archived); it blocks `ecp-session-self-hosting-vertical-proof` (operator-owned); no edge to/from the parked provider changes or archived changes; the executor module's public contract and the frozen crates are untouched by this change's diff.
   - Receipt: portfolio DAG read from `.rasen/.../portfolio-run.json`; `git diff --stat -- native/` and over `src/core/frozen-action-executor/executor.ts` empty.
-- [ ] 7.3 typecheck (`tsc --noEmit`), lint (`eslint` over changed paths), and root suites green on this host; all new paths built with `node:path`.
+- [x] 7.3 typecheck (`tsc --noEmit`), lint (`eslint` over changed paths), and root suites green on this host; all new paths built with `node:path`.
   - Receipt: command exit codes and suite counts.
-- [ ] 7.4 Record the ECP-8-deferred environment-gated receipts (real-OS/real-backend proofs of the parity, fault-matrix, and face-invariance properties) as explicit known gaps with their deterministic counterparts named; do not default them to pass. Record that acceptance 7 (self-hosting toy-Change proof) stays operator-owned and this change leaves the executor's `SELF_HOSTING_PROOF_SEAM` untouched.
+- [x] 7.4 Record the ECP-8-deferred environment-gated receipts (real-OS/real-backend proofs of the parity, fault-matrix, and face-invariance properties) as explicit known gaps with their deterministic counterparts named; do not default them to pass. Record that acceptance 7 (self-hosting toy-Change proof) stays operator-owned and this change leaves the executor's `SELF_HOSTING_PROOF_SEAM` untouched.
   - Receipt: `evidence/ecp8-deferred-receipts.md` + handoff `planner-1.md` "Deferred to ECP-8 / operator" section.

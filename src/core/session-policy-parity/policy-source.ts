@@ -337,7 +337,11 @@ export function readSessionPolicyLayers(input: Readonly<{
   const projectConfig = input.projectRoot ? readProjectConfig(input.projectRoot) : null;
   const storeConfig = input.storeRoot ? readProjectConfig(input.storeRoot) : null;
   const globalConfig = getGlobalConfig();
-  const layers: SessionPolicyConfigLayers = {};
+  const layers: {
+    project?: SessionPolicyConfig;
+    store?: SessionPolicyConfig;
+    global?: SessionPolicyConfig;
+  } = {};
   if (projectConfig?.sessionPolicy) {
     layers.project = projectConfig.sessionPolicy;
   }
