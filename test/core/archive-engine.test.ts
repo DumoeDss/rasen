@@ -20,12 +20,21 @@ import {
   stableArchiveJson,
   withStoredArchivePlanOperation,
   type ArchiveBlocker,
+  type ArchiveEngineAdapters,
   type ArchivePlan,
+  type ArchivePlanFinalization,
   type PreparedArchiveSpecAction,
   type ArchiveSpecSyncPreparation,
 } from '../../src/core/archive-engine.js';
 import { hashArchiveEvidence } from '../../src/core/archive-accounting.js';
 import { hashDirectoryTree } from '../../src/core/ephemera-cleaner.js';
+import {
+  deriveChangeInstanceId,
+  derivePlanningScopeId,
+  deriveWorkspacePairId,
+  deriveWorktreeInstanceId,
+} from '../../src/core/store/planning-identity.js';
+import { resolveStorePlanningLayoutV2Path } from '../../src/core/store/planning-layout-v2.js';
 import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
 describe('archive plan/apply engine', () => {
@@ -66,9 +75,16 @@ describe('archive plan/apply engine', () => {
       timing?: ArchivePlan['decisions']['timing'];
       preparationBlockers?: ArchiveBlocker[];
       shipLog?: ArchivePlan['shipLog'];
+      adapters?: ArchiveEngineAdapters;
     } = {}
   ) {
-    const sidecar = await resolveArchiveSidecar(active, root, 'sample');
+    const adapters = options.adapters ?? defaultArchiveEngineAdapters;
+    const sidecar = await resolveArchiveSidecar(
+      active,
+      root,
+      'sample',
+      adapters
+    );
     return createArchivePlan({
       change: 'sample',
       planningRoot: root,
@@ -94,7 +110,7 @@ describe('archive plan/apply engine', () => {
         : { preparationBlockers: options.preparationBlockers }),
       transactionId: '11111111-1111-4111-8111-111111111111',
       createdAt: '2026-07-31T00:00:00.000Z',
-    });
+    }, adapters);
   }
 
   it('serializes a stable complete plan without mutating the tree', async () => {
@@ -129,6 +145,22 @@ describe('archive plan/apply engine', () => {
     expect(await hashDirectoryTree(ephemera)).toBe(ephemeraBefore);
     await expect(fs.access(archivePlan.paths.stage)).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(fs.access(archivePlan.paths.final)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('persists mixed-case cleaner authority in the planner order', async () => {
+    await fs.unlink(path.join(ephemera, 'trace.log'));
+    await fs.writeFile(path.join(ephemera, 'Z.log'), 'upper\n');
+    await fs.writeFile(path.join(ephemera, 'a.log'), 'lower\n');
+    const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'mixed-case-cleaner-global');
+
+    expect(archivePlan.cleaner.effectiveDelete).toEqual(['Z.log', 'a.log']);
+    expect(archivePlan.cleaner.deletionAuthority?.map(entry => entry.path)).toEqual(
+      archivePlan.cleaner.effectiveDelete
+    );
+    await expect(
+      persistArchivePlan(archivePlan, globalDataDir)
+    ).resolves.toMatch(/^archive-v1:/u);
   });
 
   it('blocks planning when prepared delta bytes no longer match reconciliation', async () => {
@@ -999,6 +1031,523 @@ describe('archive plan/apply engine', () => {
     expect(await fs.readFile(path.join(ephemera, 'trace.log'), 'utf8')).toBe('temporary\n');
   });
 
+  it('authorizes an unchanged cleaner candidate with exact stat identity beyond the safe integer range', async () => {
+    const candidatePath = path.join(ephemera, 'trace.log');
+    const largeDev = 9_007_199_254_740_993n;
+    const largeIno = 18_446_744_073_709_551_615n;
+    const transactionId = '11111111-1111-4111-8111-111111111111';
+    const claimObject = path.join(
+      ephemera,
+      `.rasen-archive-claim-${transactionId}-${defaultArchiveEngineAdapters
+        .sha256('cleaner:trace.log')
+        .slice(0, 16)}`,
+      'object'
+    );
+    const carriesSyntheticIdentity = (target: string): boolean =>
+      target === candidatePath || target === claimObject;
+    const exactStat = <T extends object>(stat: T): T =>
+      new Proxy(stat, {
+        get(target, property) {
+          if (property === 'dev') return largeDev;
+          if (property === 'ino') return largeIno;
+          const value = Reflect.get(target, property, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    const adapters: ArchiveEngineAdapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        lstat: async target => {
+          const stat = await defaultArchiveEngineAdapters.fs.lstat(target);
+          return carriesSyntheticIdentity(target) ? exactStat(stat) : stat;
+        },
+        open: async (target, flags, mode) => {
+          const handle = await defaultArchiveEngineAdapters.fs.open(
+            target,
+            flags,
+            mode
+          );
+          if (!carriesSyntheticIdentity(target)) return handle;
+          return new Proxy(handle, {
+            get(opened, property) {
+              if (property === 'stat') {
+                return async () => exactStat(await opened.stat({ bigint: true }));
+              }
+              const value = Reflect.get(opened, property, opened);
+              return typeof value === 'function' ? value.bind(opened) : value;
+            },
+          });
+        },
+      },
+      classifyEphemera: async directory => {
+        const classification = await defaultArchiveEngineAdapters.classifyEphemera(
+          directory
+        );
+        return {
+          ...classification,
+          candidates: classification.candidates?.map(candidate =>
+            candidate.relativePath === 'trace.log'
+              ? {
+                  ...candidate,
+                  dev: Number(largeDev),
+                  ino: Number(largeIno),
+                }
+              : candidate
+          ),
+        };
+      },
+      applyEphemeraDeletion: async (directory, classification) => {
+        expect(classification.candidates).toEqual([
+          expect.objectContaining({
+            relativePath: 'object',
+            dev: Number(largeDev),
+            ino: Number(largeIno),
+          }),
+        ]);
+        await fs.unlink(path.join(directory, 'object'));
+        return ['object'];
+      },
+    };
+
+    const archivePlan = await plan({ adapters });
+    expect(archivePlan.cleaner.deletionAuthority).toEqual([
+      expect.objectContaining({
+        path: 'trace.log',
+        identity: expect.objectContaining({
+          dev: largeDev.toString(),
+          ino: largeIno.toString(),
+        }),
+        contentDigest: defaultArchiveEngineAdapters.sha256('temporary\n'),
+      }),
+    ]);
+
+    const result = await applyArchive(archivePlan, { adapters });
+
+    expect(result.status).toBe('complete');
+    expect(result.ephemeraDiscarded).toEqual(['trace.log']);
+    await expect(fs.access(candidatePath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('accepts signed exact timestamps but rejects signed non-time identity fields', async () => {
+    const candidatePath = path.join(ephemera, 'trace.log');
+    const preEpochMtimeNs = '-1000000';
+    const signedTimestampStat = <T extends object>(stat: T): T =>
+      new Proxy(stat, {
+        get(target, property) {
+          if (property === 'mtimeNs') return BigInt(preEpochMtimeNs);
+          const value = Reflect.get(target, property, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    const adapters: ArchiveEngineAdapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        lstat: async target => {
+          const stat = await defaultArchiveEngineAdapters.fs.lstat(target);
+          return target === candidatePath ? signedTimestampStat(stat) : stat;
+        },
+        open: async (target, flags, mode) => {
+          const handle = await defaultArchiveEngineAdapters.fs.open(
+            target,
+            flags,
+            mode
+          );
+          if (target !== candidatePath) return handle;
+          return new Proxy(handle, {
+            get(opened, property) {
+              if (property === 'stat') {
+                return async () =>
+                  signedTimestampStat(await opened.stat({ bigint: true }));
+              }
+              const value = Reflect.get(opened, property, opened);
+              return typeof value === 'function' ? value.bind(opened) : value;
+            },
+          });
+        },
+      },
+    };
+    const archivePlan = await plan({ adapters });
+    const globalDataDir = path.join(root, 'signed-time-cleaner-global');
+
+    expect(archivePlan.cleaner.deletionAuthority?.[0]?.identity.mtimeNs).toBe(
+      preEpochMtimeNs
+    );
+    await expect(
+      persistArchivePlan(archivePlan, globalDataDir, adapters)
+    ).resolves.toMatch(/^archive-v1:/u);
+
+    const invalidDevPlan = structuredClone(archivePlan);
+    invalidDevPlan.cleaner.deletionAuthority![0]!.identity.dev = '-1';
+    const { planHash: _planHash, ...withoutHash } = invalidDevPlan;
+    invalidDevPlan.planHash = hashArchivePlan(withoutHash, adapters);
+    await expect(
+      persistArchivePlan(
+        invalidDevPlan,
+        path.join(root, 'signed-dev-cleaner-global'),
+        adapters
+      )
+    ).rejects.toThrow(
+      'Stored archive plan path containment or transaction binding is invalid.'
+    );
+  });
+
+  it('blocks planning when cleaner content changes before exact authority capture', async () => {
+    const candidatePath = path.join(ephemera, 'trace.log');
+    const adapters: ArchiveEngineAdapters = {
+      ...defaultArchiveEngineAdapters,
+      classifyEphemera: async directory => {
+        const classification = await defaultArchiveEngineAdapters.classifyEphemera(
+          directory
+        );
+        await fs.writeFile(candidatePath, 'changed after classification\n');
+        return classification;
+      },
+    };
+
+    const archivePlan = await plan({ adapters });
+
+    expect(archivePlan.complete).toBe(false);
+    expect(archivePlan.cleaner.deletionAuthority).toEqual([]);
+    expect(archivePlan.blockers).toContainEqual(
+      expect.objectContaining({
+        operation: 'cleaner',
+        path: candidatePath,
+        code: 'ESTALE',
+      })
+    );
+    await expect(fs.access(archivePlan.paths.stage)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('retains a changed cleaner candidate that no longer matches exact authority', async () => {
+    const archivePlan = await plan();
+    const candidatePath = path.join(ephemera, 'trace.log');
+    await fs.writeFile(candidatePath, 'replacement bytes\n');
+
+    const result = await applyArchive(archivePlan);
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        expect.objectContaining({
+          operation: 'cleaner-apply',
+          path: candidatePath,
+          code: 'archive_cleaner_ownership_unverified',
+        }),
+      ],
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+    });
+    expect(result.recoveryCommand).toBeUndefined();
+    await expect(fs.readFile(candidatePath, 'utf8')).resolves.toBe(
+      'replacement bytes\n'
+    );
+  });
+
+  it('retains a same-byte cleaner candidate whose exact metadata changed after planning', async () => {
+    const archivePlan = await plan();
+    const candidatePath = path.join(ephemera, 'trace.log');
+    const replacementTime = new Date('2035-01-02T03:04:05.000Z');
+    await fs.utimes(candidatePath, replacementTime, replacementTime);
+
+    const result = await applyArchive(archivePlan);
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        expect.objectContaining({
+          operation: 'cleaner-apply',
+          path: candidatePath,
+          code: 'archive_cleaner_ownership_unverified',
+        }),
+      ],
+    });
+    await expect(fs.readFile(candidatePath, 'utf8')).resolves.toBe('temporary\n');
+  });
+
+  it('retains an inode-reuse-style same-byte candidate when only exact timestamps differ', async () => {
+    const archivePlan = await plan();
+    const candidatePath = path.join(ephemera, 'trace.log');
+    const plannedIdentity = archivePlan.cleaner.deletionAuthority![0]!.identity;
+    const changedStat = <T extends object>(stat: T): T =>
+      new Proxy(stat, {
+        get(target, property) {
+          if (property === 'mtimeNs') return BigInt(plannedIdentity.mtimeNs) + 1n;
+          if (property === 'ctimeNs') return BigInt(plannedIdentity.ctimeNs) + 1n;
+          const value = Reflect.get(target, property, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    const adapters: ArchiveEngineAdapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        lstat: async target => {
+          const stat = await defaultArchiveEngineAdapters.fs.lstat(target);
+          return target === candidatePath ? changedStat(stat) : stat;
+        },
+        open: async (target, flags, mode) => {
+          const handle = await defaultArchiveEngineAdapters.fs.open(
+            target,
+            flags,
+            mode
+          );
+          if (target !== candidatePath) return handle;
+          return new Proxy(handle, {
+            get(opened, property) {
+              if (property === 'stat') {
+                return async () => changedStat(await opened.stat({ bigint: true }));
+              }
+              const value = Reflect.get(opened, property, opened);
+              return typeof value === 'function' ? value.bind(opened) : value;
+            },
+          });
+        },
+      },
+    };
+
+    const result = await applyArchive(archivePlan, { adapters });
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        expect.objectContaining({
+          operation: 'cleaner-apply',
+          path: candidatePath,
+          code: 'archive_cleaner_ownership_unverified',
+        }),
+      ],
+    });
+    await expect(fs.readFile(candidatePath, 'utf8')).resolves.toBe('temporary\n');
+  });
+
+  it('retains a same-byte private claim whose exact identity changes after the verified rename', async () => {
+    const archivePlan = await plan();
+    const candidatePath = path.join(ephemera, 'trace.log');
+    const claimObject = path.join(
+      ephemera,
+      `.rasen-archive-claim-${archivePlan.transactionId}-${defaultArchiveEngineAdapters
+        .sha256('cleaner:trace.log')
+        .slice(0, 16)}`,
+      'object'
+    );
+    let movedIntoClaim = false;
+    const changedStat = <T extends object>(stat: T): T =>
+      new Proxy(stat, {
+        get(target, property) {
+          const value = Reflect.get(target, property, target);
+          if (property === 'mtimeNs' && typeof value === 'bigint') {
+            return value + 1n;
+          }
+          if (property === 'ctimeNs' && typeof value === 'bigint') {
+            return value + 1n;
+          }
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    const adapters: ArchiveEngineAdapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        rename: async (source, target) => {
+          await defaultArchiveEngineAdapters.fs.rename(source, target);
+          if (source === candidatePath && target === claimObject) {
+            movedIntoClaim = true;
+          }
+        },
+        open: async (target, flags, mode) => {
+          const handle = await defaultArchiveEngineAdapters.fs.open(
+            target,
+            flags,
+            mode
+          );
+          if (target !== claimObject || !movedIntoClaim) return handle;
+          return new Proxy(handle, {
+            get(opened, property) {
+              if (property === 'stat') {
+                return async () => changedStat(await opened.stat({ bigint: true }));
+              }
+              const value = Reflect.get(opened, property, opened);
+              return typeof value === 'function' ? value.bind(opened) : value;
+            },
+          });
+        },
+      },
+    };
+
+    const result = await applyArchive(archivePlan, { adapters });
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        expect.objectContaining({
+          operation: 'cleaner-apply',
+          path: claimObject,
+          code: 'archive_cleaner_ownership_unverified',
+        }),
+      ],
+      retainedPaths: expect.arrayContaining([claimObject]),
+    });
+    await expect(fs.readFile(claimObject, 'utf8')).resolves.toBe('temporary\n');
+  });
+
+  it('retains a legacy delete plan without exact cleaner authority', async () => {
+    const archivePlan = await plan();
+    const legacyPlan = structuredClone(archivePlan);
+    delete legacyPlan.cleaner.deletionAuthority;
+    const { planHash: _planHash, ...withoutHash } = legacyPlan;
+    legacyPlan.planHash = hashArchivePlan(withoutHash);
+    const globalDataDir = path.join(root, 'legacy-delete-global');
+    await persistArchivePlan(legacyPlan, globalDataDir);
+
+    const result = await withStoredArchivePlanOperation(
+      legacyPlan,
+      globalDataDir,
+      'apply',
+      () => applyArchive(legacyPlan)
+    );
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        expect.objectContaining({
+          operation: 'cleaner-apply',
+          code: 'archive_cleaner_ownership_unverified',
+        }),
+      ],
+      retainedPaths: expect.arrayContaining([
+        legacyPlan.paths.final,
+        legacyPlan.paths.publishedJournal,
+      ]),
+    });
+    await expect(fs.readFile(path.join(ephemera, 'trace.log'), 'utf8')).resolves.toBe(
+      'temporary\n'
+    );
+  });
+
+  it('retains a legacy delete plan before treating a missing candidate as progress', async () => {
+    const archivePlan = await plan();
+    const legacyPlan = structuredClone(archivePlan);
+    delete legacyPlan.cleaner.deletionAuthority;
+    const { planHash: _planHash, ...withoutHash } = legacyPlan;
+    legacyPlan.planHash = hashArchivePlan(withoutHash);
+    const globalDataDir = path.join(root, 'legacy-missing-delete-global');
+    await persistArchivePlan(legacyPlan, globalDataDir);
+
+    const first = await withStoredArchivePlanOperation(
+      legacyPlan,
+      globalDataDir,
+      'apply',
+      () => applyArchive(legacyPlan)
+    );
+    expect(first.status).toBe('recoverable');
+    await fs.unlink(path.join(ephemera, 'trace.log'));
+
+    const retry = await withStoredArchivePlanOperation(
+      legacyPlan,
+      globalDataDir,
+      'apply',
+      () => applyArchive(legacyPlan)
+    );
+
+    expect(retry).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        expect.objectContaining({
+          operation: 'cleaner-apply',
+          code: 'archive_cleaner_ownership_unverified',
+        }),
+      ],
+    });
+    const retainedJournal = JSON.parse(
+      await fs.readFile(retry.journalPath, 'utf8')
+    ) as { cleanerProgress: Array<{ state: string }> };
+    expect(retainedJournal.cleanerProgress[0]?.state).toBe('pending');
+  });
+
+  it.each(['deleted', 'deleted-after-intent'] as const)(
+    'retains a legacy delete plan before trusting pre-existing %s progress',
+    async recordedState => {
+      const archivePlan = await plan();
+      const legacyPlan = structuredClone(archivePlan);
+      delete legacyPlan.cleaner.deletionAuthority;
+      const { planHash: _planHash, ...withoutHash } = legacyPlan;
+      legacyPlan.planHash = hashArchivePlan(withoutHash);
+      const globalDataDir = path.join(
+        root,
+        `legacy-${recordedState}-delete-global`
+      );
+      await persistArchivePlan(legacyPlan, globalDataDir);
+
+      const first = await withStoredArchivePlanOperation(
+        legacyPlan,
+        globalDataDir,
+        'apply',
+        () => applyArchive(legacyPlan)
+      );
+      expect(first.status).toBe('recoverable');
+      const journal = JSON.parse(
+        await fs.readFile(first.journalPath, 'utf8')
+      ) as {
+        cleanerProgress: Array<{ state: string }>;
+        ephemeraDisposed: string[];
+      };
+      journal.cleanerProgress[0]!.state = recordedState;
+      journal.ephemeraDisposed = ['trace.log'];
+      await fs.writeFile(
+        first.journalPath,
+        `${JSON.stringify(journal, null, 2)}\n`
+      );
+      await fs.unlink(path.join(ephemera, 'trace.log'));
+
+      const retry = await withStoredArchivePlanOperation(
+        legacyPlan,
+        globalDataDir,
+        'apply',
+        () => applyArchive(legacyPlan)
+      );
+
+      expect(retry).toMatchObject({
+        status: 'recoverable',
+        blockers: [
+          expect.objectContaining({
+            operation: 'cleaner-apply',
+            code: 'archive_cleaner_ownership_unverified',
+          }),
+        ],
+      });
+      const retainedJournal = JSON.parse(
+        await fs.readFile(retry.journalPath, 'utf8')
+      ) as { cleanerProgress: Array<{ state: string }> };
+      expect(retainedJournal.cleanerProgress[0]?.state).toBe(recordedState);
+    }
+  );
+
+  it('replays a legacy no-delete plan without exact cleaner authority', async () => {
+    const archivePlan = await plan({ keepEphemera: true });
+    const legacyPlan = structuredClone(archivePlan);
+    delete legacyPlan.cleaner.deletionAuthority;
+    const { planHash: _planHash, ...withoutHash } = legacyPlan;
+    legacyPlan.planHash = hashArchivePlan(withoutHash);
+    const globalDataDir = path.join(root, 'legacy-no-delete-global');
+    await persistArchivePlan(legacyPlan, globalDataDir);
+
+    const result = await withStoredArchivePlanOperation(
+      legacyPlan,
+      globalDataDir,
+      'apply',
+      () => applyArchive(legacyPlan)
+    );
+
+    expect(result.status).toBe('complete');
+    expect(result.ephemeraDiscarded).toEqual([]);
+    await expect(fs.readFile(path.join(ephemera, 'trace.log'), 'utf8')).resolves.toBe(
+      'temporary\n'
+    );
+  });
+
   it('validates and applies complete handoff intent only inside the stage', async () => {
     await fs.mkdir(path.join(active, 'handoff'), { recursive: true });
     await fs.writeFile(path.join(active, 'handoff', 'absorbed.md'), 'already durable');
@@ -1834,8 +2383,16 @@ describe('archive plan/apply engine', () => {
                 ? { added: 1, modified: 0, removed: 0, renamed: 0 }
                 : { added: 0, modified: 1, removed: 0, renamed: 0 },
           },
-        ],
-      });
+          ],
+        });
+      const globalDataDir = path.join(root, `crash-link-${actionKind}-global`);
+      const token = await persistArchivePlan(archivePlan, globalDataDir);
+      const storedPlanPath = path.join(
+        globalDataDir,
+        'archive-transactions',
+        archivePlan.transactionId,
+        'plan.json'
+      );
       let crashAfterLink = true;
       const adapters = {
         ...defaultArchiveEngineAdapters,
@@ -1853,12 +2410,67 @@ describe('archive plan/apply engine', () => {
         },
       };
 
-      const first = await applyArchive(archivePlan, { adapters: adapters });
+      const first = await withStoredArchivePlanOperation(
+        archivePlan,
+        globalDataDir,
+        'apply',
+        () => applyArchive(archivePlan, { adapters })
+      );
       expect(first.status).toBe('recoverable');
       expect(await fs.readFile(target, 'utf8')).toBe(rebuilt);
       await expect(fs.access(active)).resolves.toBeUndefined();
 
-      const retry = await applyArchive(archivePlan);
+      const protectedBytes = new Map(
+        await Promise.all(
+          [
+            target,
+            delta,
+            path.join(archivePlan.paths.stage, 'proposal.md'),
+            archivePlan.paths.journal,
+            storedPlanPath,
+          ].map(async protectedPath => [
+            protectedPath,
+            await fs.readFile(protectedPath),
+          ] as const)
+        )
+      );
+      const activeTreeBeforeAbort = await hashDirectoryTree(active);
+      const stageTreeBeforeAbort = await hashDirectoryTree(
+        archivePlan.paths.stage
+      );
+      const refused = await withStoredArchivePlanOperation(
+        archivePlan,
+        globalDataDir,
+        'abort',
+        () => abortArchivePlan(archivePlan, globalDataDir)
+      );
+      expect(refused).toMatchObject({
+        status: 'blocked',
+        blockers: [
+          expect.objectContaining({ code: 'archive_abort_phase_unsafe' }),
+        ],
+        recoveryCommand: `rasen archive --apply-plan ${token} --yes`,
+        retainedPaths: expect.arrayContaining([
+          target,
+          active,
+          archivePlan.paths.stage,
+          archivePlan.paths.journal,
+        ]),
+      });
+      for (const [protectedPath, before] of protectedBytes) {
+        await expect(fs.readFile(protectedPath)).resolves.toEqual(before);
+      }
+      expect(await hashDirectoryTree(active)).toBe(activeTreeBeforeAbort);
+      expect(await hashDirectoryTree(archivePlan.paths.stage)).toBe(
+        stageTreeBeforeAbort
+      );
+
+      const retry = await withStoredArchivePlanOperation(
+        archivePlan,
+        globalDataDir,
+        'apply',
+        () => applyArchive(archivePlan)
+      );
       expect(retry.status).toBe('complete');
       expect(retry.resumed).toBe(true);
       expect(await fs.readFile(target, 'utf8')).toBe(rebuilt);
@@ -2972,6 +3584,535 @@ describe('archive plan/apply engine', () => {
     ).resolves.toMatchObject({ status: 'already-aborted' });
   });
 
+  describe.runIf(process.platform === 'win32')(
+    'native Windows stored-abort path identity',
+    () => {
+      async function prepareEarlyAbort(): Promise<{
+        archivePlan: ArchivePlan;
+        globalDataDir: string;
+      }> {
+        await fs.writeFile(
+          path.join(active, 'evidence', 'ship-log.md'),
+          '# Ship Log\r\n\r\n## Archive\r\nold transaction\r\n'
+        );
+        const archivePlan = await plan();
+        const globalDataDir = path.join(root, 'windows-abort-global');
+        await persistArchivePlan(archivePlan, globalDataDir);
+        const failed = await withStoredArchivePlanOperation(
+          archivePlan,
+          globalDataDir,
+          'apply',
+          () => applyArchive(archivePlan)
+        );
+        expect(failed.status).toBe('abort-required');
+        return { archivePlan, globalDataDir };
+      }
+
+      async function prepareStoreEarlyAbort(): Promise<{
+        archivePlan: ArchivePlan;
+        globalDataDir: string;
+        planningScopeId: string;
+        associationPath: string;
+      }> {
+        const storeUid = '6f7d4d70-3d2c-4a37-9f8a-0f4c1b2e3d55';
+        const projectId = 'app-a';
+        const targetLineId = 'line-0.2';
+        const planningScopeId = derivePlanningScopeId({
+          storeUid,
+          projectId,
+          targetLineId,
+        });
+        const changeInstanceId = deriveChangeInstanceId({
+          planningScopeId,
+          instanceSeed: 'a'.repeat(32),
+        });
+        const planningWorktreeInstanceId = deriveWorktreeInstanceId({
+          repositoryIdentity: 'store-repo',
+          worktreeIdentity: 'planning',
+        });
+        const executionWorktreeInstanceId = deriveWorktreeInstanceId({
+          repositoryIdentity: 'code-repo',
+          worktreeIdentity: 'execution',
+        });
+        const workspacePairId = deriveWorkspacePairId({
+          changeInstanceId,
+          planningWorktreeInstanceId,
+          executionWorktreeInstanceId,
+        });
+        const storeArchiveParent = resolveStorePlanningLayoutV2Path(root, {
+          kind: 'archive-line',
+          projectId,
+          targetLineId,
+        });
+        const destination = resolveStorePlanningLayoutV2Path(root, {
+          kind: 'archive-entry',
+          projectId,
+          targetLineId,
+          changeId: 'sample',
+          archiveDate: '2026-07-31',
+          changeInstanceId,
+        });
+        const associationPath = path.join(
+          root,
+          '.rasen',
+          'planning-binding.json'
+        );
+        const finalization: ArchivePlanFinalization = {
+          outcome: 'abandoned',
+          record: {
+            schemaVersion: 2,
+            implementation: 'code',
+            storeUid,
+            projectId,
+            targetLineId,
+            changeId: 'sample',
+            changeInstanceId,
+            workspacePairId,
+            outcome: 'abandoned',
+            reason: 'Not pursued.',
+            supersededBy: null,
+            planning: {
+              worktreeInstanceId: planningWorktreeInstanceId,
+              sourceRef: 'refs/heads/change/line-0.2/app-a/sample',
+              sourceHead: 'a'.repeat(40),
+              targetRef: 'refs/heads/release/0.2',
+            },
+            codeMerge: null,
+            specSync: { applied: false, actions: [] },
+            archivedAt: '2026-07-31T00:00:00.000Z',
+          },
+          identity: {
+            planningScopeId,
+            instanceSeed: 'a'.repeat(32),
+            planningWorktreeInstanceId,
+            executionWorktreeInstanceId,
+          },
+          destination,
+          association: {
+            noop: false,
+            planningScopeId,
+            changeId: 'sample',
+            executionAssociationPath: associationPath,
+            globalDataDir: path.join(root, 'association-global'),
+          },
+          revalidation: {
+            targetLine: {
+              catalogPath: path.join(
+                root,
+                '.rasen-store',
+                'target-lines',
+                `${targetLineId}.yaml`
+              ),
+              catalogDigest: 'b'.repeat(64),
+              codeRef: null,
+              codeRefOid: null,
+            },
+            archive: {
+              root: storeArchiveParent,
+              archiveDate: '2026-07-31',
+              destination,
+            },
+          },
+          lockKeys: [],
+        };
+        await fs.writeFile(
+          path.join(active, 'evidence', 'ship-log.md'),
+          '# Ship Log\r\n\r\n## Archive\r\nold transaction\r\n'
+        );
+        const sidecar = await resolveArchiveSidecar(
+          active,
+          root,
+          'sample'
+        );
+        const archivePlan = await createArchivePlan({
+          change: 'sample',
+          planningRoot: root,
+          executionRoot: root,
+          scope: { kind: 'store-project', storeUid, projectId },
+          activePath: active,
+          archiveParent: storeArchiveParent,
+          ephemeraPath: ephemera,
+          date: '2026-07-31',
+          keepEphemera: false,
+          validation: 'passed',
+          tasks: { total: 1, completed: 1, override: false },
+          timing: {
+            mode: 'on-merge',
+            deliveryMode: 'local',
+            override: false,
+          },
+          specActions: [],
+          sidecar,
+          transactionId: '11111111-1111-4111-8111-111111111111',
+          createdAt: '2026-07-31T00:00:00.000Z',
+          finalization,
+        });
+        const globalDataDir = path.join(root, 'store-windows-abort-global');
+        await persistArchivePlan(archivePlan, globalDataDir);
+        const failed = await withStoredArchivePlanOperation(
+          archivePlan,
+          globalDataDir,
+          'apply',
+          () => applyArchive(archivePlan)
+        );
+        expect(failed.status).toBe('abort-required');
+        return {
+          archivePlan,
+          globalDataDir,
+          planningScopeId,
+          associationPath,
+        };
+      }
+
+      it.each([
+        [
+          'drive-letter case',
+          'activePath',
+          (value: string) => {
+            const drive = value[0]!;
+            const alias =
+              drive === drive.toUpperCase()
+                ? drive.toLowerCase()
+                : drive.toUpperCase();
+            return `${alias}${value.slice(1)}`;
+          },
+        ],
+        [
+          'mixed separators',
+          'stagePath',
+          (value: string) => value.replace('\\', '/'),
+        ],
+        [
+          'dot segments',
+          'finalPath',
+          (value: string) =>
+            `${path.dirname(value)}${path.sep}.${path.sep}${path.basename(value)}`,
+        ],
+        [
+          'case-only stage basename',
+          'stagePath',
+          (value: string) =>
+            value.replace(
+              '.rasen-archive-stage-',
+              '.RASEN-ARCHIVE-STAGE-'
+            ),
+        ],
+      ] as const)(
+        'accepts equivalent %s evidence but cleans only plan-derived targets',
+        async (_label, field, alias) => {
+          const { archivePlan, globalDataDir } = await prepareEarlyAbort();
+          const journal = JSON.parse(
+            await fs.readFile(archivePlan.paths.journal, 'utf8')
+          ) as Record<string, unknown>;
+          journal[field] = alias(journal[field] as string);
+          await fs.writeFile(
+            archivePlan.paths.journal,
+            `${JSON.stringify(journal, null, 2)}\n`
+          );
+          const sibling = `${archivePlan.paths.stage}-sibling`;
+          const sentinel = path.join(sibling, 'sentinel.txt');
+          await fs.mkdir(sibling);
+          await fs.writeFile(sentinel, 'outside survives\n');
+
+          const result = await withStoredArchivePlanOperation(
+            archivePlan,
+            globalDataDir,
+            'abort',
+            () => abortArchivePlan(archivePlan, globalDataDir)
+          );
+
+          expect(result).toMatchObject({ status: 'aborted', blockers: [] });
+          await expect(fs.access(archivePlan.paths.stage)).rejects.toMatchObject({
+            code: 'ENOENT',
+          });
+          await expect(fs.readFile(sentinel, 'utf8')).resolves.toBe(
+            'outside survives\n'
+          );
+          const tombstone = JSON.parse(
+            await fs.readFile(result.tombstonePath, 'utf8')
+          );
+          expect(tombstone.stagePath).toBe(archivePlan.paths.stage);
+          expect(tombstone.journalPath).toBe(archivePlan.paths.journal);
+        }
+      );
+
+      it('accepts a case-only source-progress carrier through actual abort dispatch', async () => {
+        const { archivePlan, globalDataDir } = await prepareEarlyAbort();
+        const journal = JSON.parse(
+          await fs.readFile(archivePlan.paths.journal, 'utf8')
+        ) as {
+          sourceProgress: { quarantine: string };
+        };
+        journal.sourceProgress.quarantine = journal.sourceProgress.quarantine.replace(
+          `${path.sep}sample`,
+          `${path.sep}SAMPLE`
+        );
+        await fs.writeFile(
+          archivePlan.paths.journal,
+          `${JSON.stringify(journal, null, 2)}\n`
+        );
+
+        const result = await withStoredArchivePlanOperation(
+          archivePlan,
+          globalDataDir,
+          'abort',
+          () => abortArchivePlan(archivePlan, globalDataDir)
+        );
+
+        expect(result).toMatchObject({ status: 'aborted', blockers: [] });
+      });
+
+      it.each(['sibling', 'traversal'] as const)(
+        'refuses a %s source-progress carrier and preserves the outside sentinel',
+        async spelling => {
+          const { archivePlan, globalDataDir } = await prepareEarlyAbort();
+          const outside = path.join(
+            path.dirname(active),
+            `source-progress-${spelling}`
+          );
+          const sentinel = path.join(outside, 'sentinel.txt');
+          await fs.mkdir(outside);
+          await fs.writeFile(sentinel, 'outside survives\n');
+          const journal = JSON.parse(
+            await fs.readFile(archivePlan.paths.journal, 'utf8')
+          ) as {
+            sourceProgress: { quarantine: string };
+          };
+          journal.sourceProgress.quarantine =
+            spelling === 'sibling'
+              ? outside
+              : `${active}${path.sep}..${path.sep}${path.basename(outside)}`;
+          await fs.writeFile(
+            archivePlan.paths.journal,
+            `${JSON.stringify(journal, null, 2)}\n`
+          );
+
+          const result = await withStoredArchivePlanOperation(
+            archivePlan,
+            globalDataDir,
+            'abort',
+            () => abortArchivePlan(archivePlan, globalDataDir)
+          );
+
+          expect(result).toMatchObject({
+            status: 'blocked',
+            blockers: [
+              expect.objectContaining({
+                code: 'archive_abort_journal_plan_mismatch',
+              }),
+            ],
+          });
+          await expect(fs.readFile(sentinel, 'utf8')).resolves.toBe(
+            'outside survives\n'
+          );
+        }
+      );
+
+      it('accepts case-only association carriers through actual abort dispatch', async () => {
+        const {
+          archivePlan,
+          globalDataDir,
+          planningScopeId,
+          associationPath,
+        } = await prepareStoreEarlyAbort();
+        const journal = JSON.parse(
+          await fs.readFile(archivePlan.paths.journal, 'utf8')
+        ) as {
+          associationProgress: {
+            path: string;
+            state: string;
+            carriers?: unknown[];
+          };
+          sourceProgress: { quarantine: string };
+        };
+        const indexTarget = path.join(
+          root,
+          'association-global',
+          'INDEX',
+          `${planningScopeId.toUpperCase()}.JSON`
+        );
+        const carrierIdentity = {
+          dev: '1',
+          ino: '2',
+          mode: 0o100600,
+          size: '1',
+        };
+        journal.associationProgress.path = associationPath.replace(
+          'planning-binding.json',
+          'PLANNING-BINDING.JSON'
+        );
+        journal.associationProgress.state = 'intent-durable';
+        journal.associationProgress.carriers = [
+          {
+            target: indexTarget,
+            contentDigest: 'c'.repeat(64),
+            directory: {
+              path: path.dirname(indexTarget),
+              identity: carrierIdentity,
+            },
+            intent: {
+              path: `${indexTarget}.INTENT`,
+              identity: carrierIdentity,
+            },
+            claim: {
+              path: `${indexTarget}.CLAIM`,
+              identity: carrierIdentity,
+            },
+          },
+        ];
+        journal.sourceProgress.quarantine = journal.sourceProgress.quarantine.replace(
+          `${path.sep}sample`,
+          `${path.sep}SAMPLE`
+        );
+        await fs.writeFile(
+          archivePlan.paths.journal,
+          `${JSON.stringify(journal, null, 2)}\n`
+        );
+
+        const result = await withStoredArchivePlanOperation(
+          archivePlan,
+          globalDataDir,
+          'abort',
+          () => abortArchivePlan(archivePlan, globalDataDir)
+        );
+
+        expect(result).toMatchObject({
+          status: 'blocked',
+          blockers: [
+            expect.objectContaining({ code: 'archive_abort_phase_unsafe' }),
+          ],
+        });
+      });
+
+      it.each(['sibling', 'traversal'] as const)(
+        'refuses a %s association carrier and preserves the outside sentinel',
+        async spelling => {
+          const {
+            archivePlan,
+            globalDataDir,
+            planningScopeId,
+          } = await prepareStoreEarlyAbort();
+          const outside = path.join(
+            root,
+            `association-carrier-${spelling}`
+          );
+          const sentinel = path.join(outside, 'sentinel.txt');
+          await fs.mkdir(outside);
+          await fs.writeFile(sentinel, 'outside survives\n');
+          const journal = JSON.parse(
+            await fs.readFile(archivePlan.paths.journal, 'utf8')
+          ) as {
+            associationProgress: {
+              state: string;
+              carriers?: unknown[];
+            };
+          };
+          const indexRoot = path.join(root, 'association-global', 'index');
+          const carrierTarget =
+            spelling === 'sibling'
+              ? path.join(indexRoot, `${planningScopeId}-sibling.json`)
+              : `${indexRoot}${path.sep}nested${path.sep}..${path.sep}..${path.sep}${path.basename(outside)}${path.sep}sentinel.txt`;
+          const carrierIdentity = {
+            dev: '1',
+            ino: '2',
+            mode: 0o100600,
+            size: '1',
+          };
+          journal.associationProgress.state = 'intent-durable';
+          journal.associationProgress.carriers = [
+            {
+              target: carrierTarget,
+              contentDigest: 'c'.repeat(64),
+              directory: {
+                path: path.dirname(carrierTarget),
+                identity: carrierIdentity,
+              },
+              intent: {
+                path: `${carrierTarget}.intent`,
+                identity: carrierIdentity,
+              },
+              claim: {
+                path: `${carrierTarget}.claim`,
+                identity: carrierIdentity,
+              },
+            },
+          ];
+          await fs.writeFile(
+            archivePlan.paths.journal,
+            `${JSON.stringify(journal, null, 2)}\n`
+          );
+
+          const result = await withStoredArchivePlanOperation(
+            archivePlan,
+            globalDataDir,
+            'abort',
+            () => abortArchivePlan(archivePlan, globalDataDir)
+          );
+
+          expect(result).toMatchObject({
+            status: 'blocked',
+            blockers: [
+              expect.objectContaining({
+                code: 'archive_abort_journal_plan_mismatch',
+              }),
+            ],
+          });
+          await expect(fs.readFile(sentinel, 'utf8')).resolves.toBe(
+            'outside survives\n'
+          );
+        }
+      );
+
+      it.each(['sibling', 'traversal'] as const)(
+        'refuses a %s journal binding and preserves the outside sentinel bytes',
+        async spelling => {
+          const { archivePlan, globalDataDir } = await prepareEarlyAbort();
+          const outside = path.join(
+            path.dirname(active),
+            `outside-${spelling}`
+          );
+          const sentinel = path.join(outside, 'sentinel.txt');
+          await fs.mkdir(outside);
+          await fs.writeFile(sentinel, 'outside survives\n');
+          const journal = JSON.parse(
+            await fs.readFile(archivePlan.paths.journal, 'utf8')
+          ) as Record<string, unknown>;
+          journal.activePath =
+            spelling === 'sibling'
+              ? outside
+              : `${active}${path.sep}..${path.sep}${path.basename(outside)}`;
+          const journalBytes = Buffer.from(`${JSON.stringify(journal, null, 2)}\n`);
+          await fs.writeFile(archivePlan.paths.journal, journalBytes);
+
+          const result = await withStoredArchivePlanOperation(
+            archivePlan,
+            globalDataDir,
+            'abort',
+            () => abortArchivePlan(archivePlan, globalDataDir)
+          );
+
+          expect(result).toMatchObject({
+            status: 'blocked',
+            blockers: [
+              expect.objectContaining({
+                code: expect.stringMatching(
+                  /^archive_abort_(?:ownership_unverified|journal_plan_mismatch)$/u
+                ),
+              }),
+            ],
+          });
+          await expect(fs.readFile(sentinel, 'utf8')).resolves.toBe(
+            'outside survives\n'
+          );
+          await expect(fs.readFile(archivePlan.paths.journal)).resolves.toEqual(
+            journalBytes
+          );
+          await expect(fs.access(archivePlan.paths.stage)).resolves.toBeUndefined();
+        }
+      );
+    }
+  );
+
   it('resumes a torn guarded abort from its durable stage authority', async () => {
     await fs.writeFile(
       path.join(active, 'evidence', 'ship-log.md'),
@@ -3049,19 +4190,103 @@ describe('archive plan/apply engine', () => {
       code: 'ENOENT',
     });
 
+    const canonicalStageClaim = {
+      root: aborting.stageClaim.root as string,
+      claimed: aborting.stageClaim.claimed as string,
+      sentinel: aborting.stageClaim.sentinel as string,
+    };
+    const canonicalStageClaimIdentities = Object.fromEntries(
+      await Promise.all(
+        Object.entries(canonicalStageClaim).map(async ([label, target]) => [
+          label,
+          await fs.realpath(target),
+        ])
+      )
+    ) as Record<keyof typeof canonicalStageClaim, string>;
+    const equivalentAlias = (target: string): string =>
+      `${path.dirname(target)}${path.sep}.${path.sep}${path.basename(target)}`;
+    if (process.platform === 'win32') {
+      aborting.stagePath = (aborting.stagePath as string).replace(
+        '.rasen-archive-stage-',
+        '.RASEN-ARCHIVE-STAGE-'
+      );
+    }
+    aborting.stageClaim.root = equivalentAlias(canonicalStageClaim.root);
+    aborting.stageClaim.claimed = `${aborting.stageClaim.root}${path.sep}object`;
+    aborting.stageClaim.sentinel =
+      `${aborting.stageClaim.root}${path.sep}.rasen-claim-owner`;
+    await fs.writeFile(
+      tombstonePath,
+      `${JSON.stringify(aborting, null, 2)}\n`
+    );
+
+    const mutationOperands: Array<{
+      operation: 'rename' | 'rmdir' | 'unlink';
+      target: string;
+      canonicalTarget: string;
+    }> = [];
+    const recordMutation = async (
+      operation: 'rename' | 'rmdir' | 'unlink',
+      target: string
+    ): Promise<void> => {
+      let canonicalTarget: string;
+      try {
+        canonicalTarget = await fs.realpath(target);
+      } catch {
+        canonicalTarget = path.resolve(target);
+      }
+      mutationOperands.push({ operation, target, canonicalTarget });
+    };
+    const resumeAdapters: ArchiveEngineAdapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        rename: async (source, target) => {
+          await recordMutation('rename', source);
+          await recordMutation('rename', target);
+          await defaultArchiveEngineAdapters.fs.rename(source, target);
+        },
+        rmdir: async target => {
+          await recordMutation('rmdir', target);
+          await defaultArchiveEngineAdapters.fs.rmdir(target);
+        },
+        unlink: async target => {
+          await recordMutation('unlink', target);
+          await defaultArchiveEngineAdapters.fs.unlink(target);
+        },
+      },
+    };
+
     const resumed = await withStoredArchivePlanOperation(
       archivePlan,
       globalDataDir,
       'abort',
-      () => abortArchivePlan(archivePlan, globalDataDir)
+      () => abortArchivePlan(archivePlan, globalDataDir, resumeAdapters)
     );
     expect(resumed.status).toBe('aborted');
     await expect(fs.access(archivePlan.paths.stage)).rejects.toMatchObject({
       code: 'ENOENT',
     });
-    await expect(fs.access(aborting.stageClaim.root)).rejects.toMatchObject({
+    await expect(fs.access(canonicalStageClaim.root)).rejects.toMatchObject({
       code: 'ENOENT',
     });
+    const identityKey = (target: string): string => {
+      const resolved = path.resolve(target);
+      return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    };
+    for (const [label, expected] of Object.entries(canonicalStageClaim)) {
+      const matching = mutationOperands.filter(
+        call =>
+          identityKey(call.canonicalTarget) ===
+          identityKey(
+            canonicalStageClaimIdentities[
+              label as keyof typeof canonicalStageClaim
+            ]
+          )
+      );
+      expect(matching.length).toBeGreaterThan(0);
+      expect(matching.every(call => call.target === expected)).toBe(true);
+    }
     await expect(
       fs.access(
         path.join(

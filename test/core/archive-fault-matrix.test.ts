@@ -9,7 +9,9 @@ import {
   applyArchive,
   createArchivePlan,
   defaultArchiveEngineAdapters,
+  persistArchivePlan,
   resolveArchiveSidecar,
+  withStoredArchivePlanOperation,
   type ArchiveApplyResult,
   type ArchiveEngineAdapters,
   type ArchiveFileSystem,
@@ -186,6 +188,24 @@ describe('archive apply named fault and recovery matrix', () => {
         resumePhase: expected.resumePhase,
       },
     });
+    if (expected.disposed !== undefined) {
+      const disposedProgress = journal.cleanerProgress
+        .filter(progress => expected.disposed!.includes(progress.path))
+        .map(progress => ({ path: progress.path, state: progress.state }));
+      expect(disposedProgress).toEqual(
+        expected.disposed.map(disposedPath => ({
+          path: disposedPath,
+          state: expect.stringMatching(
+            /^(?:deleted|deleted-after-intent|already-absent)$/u
+          ),
+        }))
+      );
+      for (const disposedPath of expected.disposed) {
+        await expect(
+          fs.access(path.join(plan.paths.ephemera, disposedPath))
+        ).rejects.toMatchObject({ code: 'ENOENT' });
+      }
+    }
   }
 
   async function expectRetryCompletes(plan: ArchivePlan): Promise<void> {
@@ -1856,6 +1876,14 @@ describe('archive apply named fault and recovery matrix', () => {
   it('cleaner partial failure records only actual progress, retains active bytes, and resumes the untouched candidate', async () => {
     const plan = await makePlan();
     expect(plan.cleaner.effectiveDelete).toEqual(['trace-a.log', 'trace-b.log']);
+    expect(plan.cleaner.deletionAuthority?.map(entry => entry.path)).toEqual(
+      plan.cleaner.effectiveDelete
+    );
+    expect(
+      plan.cleaner.deletionAuthority?.every(entry =>
+        Object.values(entry.identity).every(value => typeof value === 'string')
+      )
+    ).toBe(true);
     const activeBefore = await snapshotTree(active);
     let cleanerCalls = 0;
     const adapters: ArchiveEngineAdapters = {
@@ -1901,6 +1929,70 @@ describe('archive apply named fault and recovery matrix', () => {
     });
     await expectRetryCompletes(plan);
   });
+
+  it(
+    'promotes a restored cleaner retry whose claim was deleted before the retry error',
+    async () => {
+      const plan = await makePlan();
+      const failBeforeDelete: ArchiveEngineAdapters = {
+        ...baseAdapters,
+        applyEphemeraDeletion: async () => {
+          throw injectedError('injected cleaner failure before unlink', 'EIO');
+        },
+      };
+
+      const restored = await applyArchive(plan, { adapters: failBeforeDelete });
+      expect(restored.status).toBe('recoverable');
+      const restoredJournal = await readJournal(plan.paths.publishedJournal);
+      expect(restoredJournal.cleanerProgress).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: 'trace-a.log',
+            state: 'delete-intent',
+            restoredIdentity: expect.objectContaining({
+              dev: expect.any(String),
+              ino: expect.any(String),
+              mtimeNs: expect.any(String),
+              ctimeNs: expect.any(String),
+            }),
+          }),
+        ])
+      );
+
+      let failAfterDelete = true;
+      const deleteThenFail: ArchiveEngineAdapters = {
+        ...baseAdapters,
+        applyEphemeraDeletion: async (...args) => {
+          const deleted = await baseAdapters.applyEphemeraDeletion(...args);
+          if (failAfterDelete) {
+            failAfterDelete = false;
+            throw injectedError('injected cleaner failure after unlink', 'EIO');
+          }
+          return deleted;
+        },
+      };
+      const deletedBeforeError = await applyArchive(plan, {
+        adapters: deleteThenFail,
+      });
+      expect(deletedBeforeError.status).toBe('recoverable');
+      const deleteIntentJournal = await readJournal(plan.paths.publishedJournal);
+      const deleteIntent = deleteIntentJournal.cleanerProgress.find(
+        progress => progress.path === 'trace-a.log'
+      );
+      expect(deleteIntent).toEqual(
+        expect.objectContaining({ path: 'trace-a.log', state: 'delete-intent' })
+      );
+      expect(deleteIntent).not.toHaveProperty('restoredIdentity');
+      await expect(
+        fs.access(path.join(ephemera, 'trace-a.log'))
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+
+      const retry = await applyArchive(plan, { adapters: baseAdapters });
+      expect(retry.status).toBe('complete');
+      expect(retry.ephemeraDiscarded).toEqual(['trace-a.log', 'trace-b.log']);
+    },
+    120_000
+  );
 
   it('recovers a cleaner deletion that crashed after unlink from durable intent', async () => {
     const plan = await makePlan();
@@ -2050,6 +2142,8 @@ describe('archive apply named fault and recovery matrix', () => {
 
   it('active-source removal failure retains exact active bytes and finalized accounting, then resumes source-last', async () => {
     const plan = await makePlan();
+    const globalDataDir = path.join(root, 'source-removal-global');
+    const token = await persistArchivePlan(plan, globalDataDir, baseAdapters);
     const activeBefore = await snapshotTree(active);
     let failOnce = true;
     const adapters: ArchiveEngineAdapters = {
@@ -2066,7 +2160,12 @@ describe('archive apply named fault and recovery matrix', () => {
       },
     };
 
-    const result = await applyArchive(plan, { adapters: adapters });
+    const result = await withStoredArchivePlanOperation(
+      plan,
+      globalDataDir,
+      'apply',
+      () => applyArchive(plan, { adapters })
+    );
     expectFailureReport(result, plan, {
       operation: 'source-remove',
       path: path.join(
@@ -2077,6 +2176,9 @@ describe('archive apply named fault and recovery matrix', () => {
       journalPath: plan.paths.publishedJournal,
     });
     expect(result.ephemeraDiscarded).toEqual(['trace-a.log', 'trace-b.log']);
+    expect(result.recoveryCommand).toBe(
+      `rasen archive --apply-plan ${token} --yes`
+    );
     expect(await snapshotTree(active)).toEqual(activeBefore);
     expect(
       JSON.parse(await fs.readFile(path.join(plan.paths.final, 'archive.json'), 'utf8'))
@@ -2093,7 +2195,16 @@ describe('archive apply named fault and recovery matrix', () => {
       resumePhase: 'accounting-finalized',
       disposed: ['trace-a.log', 'trace-b.log'],
     });
-    await expectRetryCompletes(plan);
+    const retry = await withStoredArchivePlanOperation(
+      plan,
+      globalDataDir,
+      'apply',
+      () => applyArchive(plan, { adapters: baseAdapters })
+    );
+    expect(retry.status).toBe('complete');
+    expect(retry.resumed).toBe(true);
+    expect((await readJournal(plan.paths.publishedJournal)).phase).toBe('complete');
+    expect(await snapshotTree(active)).toBeNull();
   });
 
   it('retains a descendant injected after stage verification and blocks terminal completion', async () => {

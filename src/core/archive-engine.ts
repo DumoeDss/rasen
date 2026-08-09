@@ -276,6 +276,19 @@ export interface ArchiveCleanerProjection {
   };
   effectiveDelete: string[];
   effectivePreserve: string[];
+  /**
+   * Lossless deletion authority captured from the exact opened candidate.
+   * Absent only on plans created before this authority existed. The numeric
+   * classification fingerprint remains adapter compatibility data and MUST NOT
+   * authorize deletion.
+   */
+  deletionAuthority?: ArchiveCleanerDeletionAuthority[];
+}
+
+export interface ArchiveCleanerDeletionAuthority {
+  path: string;
+  identity: ArchiveStatIdentity;
+  contentDigest: string;
 }
 
 export interface ArchiveQualityInput {
@@ -604,6 +617,8 @@ export interface ArchiveJournal {
   }>;
   cleanerProgress: Array<{
     path: string;
+    /** Complete identity after an engine-verified failed-claim restoration. */
+    restoredIdentity?: ArchiveStatIdentity;
     state:
       | 'pending'
       | 'delete-intent'
@@ -1249,7 +1264,7 @@ export function projectArchiveCleaner(
   keepEphemera: boolean
 ): ArchiveCleanerProjection {
   const candidates = [...(classification.candidates ?? [])].sort((left, right) =>
-    left.relativePath.localeCompare(right.relativePath)
+    compareArchiveAuthorityPaths(left.relativePath, right.relativePath)
   );
   const preservedEntries = [...(classification.preservedEntries ?? [])].sort(
     (left, right) =>
@@ -1283,9 +1298,15 @@ export function projectArchiveCleaner(
       complete,
     },
     effectiveDelete:
-      keepEphemera || classification.aborted || !complete ? [] : [...classification.discarded].sort(),
+      keepEphemera || classification.aborted || !complete
+        ? []
+        : [...classification.discarded].sort(compareArchiveAuthorityPaths),
     effectivePreserve,
   };
+}
+
+function compareArchiveAuthorityPaths(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 export interface ArchivePathApi {
@@ -1378,6 +1399,24 @@ export function archiveAbortPathBindingEquals(
     pathApi.resolve(right),
     flavor
   );
+}
+
+function archivePathBasenameEquals(
+  candidate: string,
+  expected: string,
+  flavor: PathIdentityFlavor
+): boolean {
+  const pathApi = flavor === 'win32' ? path.win32 : path.posix;
+  return pathIdentityEquals(pathApi.basename(candidate), expected, flavor);
+}
+
+function archivePathIdentityKey(
+  candidate: string,
+  flavor: PathIdentityFlavor
+): string {
+  const pathApi = flavor === 'win32' ? path.win32 : path.posix;
+  const resolved = pathApi.resolve(candidate);
+  return flavor === 'win32' ? resolved.toLowerCase() : resolved;
 }
 
 export function isArchiveContainedPath(
@@ -2679,6 +2718,60 @@ async function assertArchiveSpecActionFilesystemPaths(
   }
 }
 
+async function captureArchiveCleanerDeletionAuthority(
+  cleaner: ArchiveCleanerProjection,
+  ephemeraRoot: string,
+  adapters: ArchiveEngineAdapters
+): Promise<{
+  authority: ArchiveCleanerDeletionAuthority[];
+  blockers: ArchiveBlocker[];
+}> {
+  const authority: ArchiveCleanerDeletionAuthority[] = [];
+  const blockers: ArchiveBlocker[] = [];
+  for (const relativePath of cleaner.effectiveDelete) {
+    if (!isSafeArchiveAuthorityPath(relativePath)) {
+      blockers.push({
+        operation: 'cleaner',
+        path: path.join(ephemeraRoot, relativePath),
+        code: 'archive_cleaner_authority_incomplete',
+        message: `Cleaner deletion path is not a normalized safe relative path: ${relativePath}.`,
+      });
+      continue;
+    }
+    const candidateMatches = cleaner.classification.candidates.filter(
+      candidate => candidate.relativePath === relativePath
+    );
+    const target = path.join(ephemeraRoot, relativePath);
+    if (candidateMatches.length !== 1) {
+      blockers.push({
+        operation: 'cleaner',
+        path: target,
+        code: 'archive_cleaner_authority_incomplete',
+        message: `Cleaner classification has ${candidateMatches.length} fingerprints for planned deletion ${relativePath}; exact authority was not captured.`,
+      });
+      continue;
+    }
+    try {
+      const stable = await readStableArchiveFile(target, adapters);
+      const contentDigest = adapters.sha256(stable.content);
+      if (contentDigest !== candidateMatches[0]!.sha256) {
+        throw staleArchiveObject(
+          target,
+          'Cleaner candidate content changed between classification and authority capture'
+        );
+      }
+      authority.push({
+        path: relativePath,
+        identity: archiveDeletionIdentity(stable.stat, 'file'),
+        contentDigest,
+      });
+    } catch (error) {
+      blockers.push(blocker('cleaner', target, error));
+    }
+  }
+  return { authority, blockers };
+}
+
 /**
  * First mutation-free planner seam. Validation/spec preparation and strict
  * sidecar resolution are supplied as already-read facts so adapters can be
@@ -2774,7 +2867,20 @@ export async function createArchivePlan(
   }
 
   const cleanerClassification = await adapters.classifyEphemera(input.ephemeraPath);
-  const cleaner = projectArchiveCleaner(cleanerClassification, input.keepEphemera);
+  const projectedCleaner = projectArchiveCleaner(
+    cleanerClassification,
+    input.keepEphemera
+  );
+  const cleanerAuthority = await captureArchiveCleanerDeletionAuthority(
+    projectedCleaner,
+    input.ephemeraPath,
+    adapters
+  );
+  const cleaner: ArchiveCleanerProjection = {
+    ...projectedCleaner,
+    deletionAuthority: cleanerAuthority.authority,
+  };
+  blockers.push(...cleanerAuthority.blockers);
   for (const cleanerBlocker of cleaner.classification.blockers) {
     blockers.push({
       operation: 'cleaner',
@@ -3313,8 +3419,11 @@ function assertStoredArchivePlanPaths(plan: ArchivePlan): void {
         archiveAuthorityPaths.add(entry.path);
         return true;
       }));
+  const cleanerDeletionAuthorityValid =
+    isArchiveCleanerDeletionAuthorityValid(plan);
   if (
     !archivePathAuthorityValid ||
+    !cleanerDeletionAuthorityValid ||
     !finalizationScopeConsistent ||
     !isArchiveContainedPath(plan.roots.planning, plan.paths.active) ||
     !archiveParentAllowed ||
@@ -3487,11 +3596,13 @@ export async function withStoredArchivePlanOperation<T>(
       deadlineMs: 30_000,
     },
     async () => {
+      const operationPathIdentityFlavor = NATIVE_PATH_IDENTITY_FLAVOR;
       const planPath = path.join(transactionDirectory, 'plan.json');
       const tombstonePath = path.join(transactionDirectory, 'abort.json');
       const tombstone = await readArchiveAbortTombstone(
         tombstonePath,
-        defaultArchiveEngineAdapters
+        defaultArchiveEngineAdapters,
+        operationPathIdentityFlavor
       );
       try {
         const storedPlan = await readStoredArchivePlanEnvelope(
@@ -3514,8 +3625,16 @@ export async function withStoredArchivePlanOperation<T>(
           tombstone.transactionId === plan.transactionId &&
           tombstone.planHash === plan.planHash &&
           tombstone.change === plan.change &&
-          archiveAbortPathBindingEquals(tombstone.stagePath, plan.paths.stage) &&
-          archiveAbortPathBindingEquals(tombstone.journalPath, plan.paths.journal);
+          archiveAbortPathBindingEquals(
+            tombstone.stagePath,
+            plan.paths.stage,
+            operationPathIdentityFlavor
+          ) &&
+          archiveAbortPathBindingEquals(
+            tombstone.journalPath,
+            plan.paths.journal,
+            operationPathIdentityFlavor
+          );
         if (!missingForCompletedAbort) throw error;
       }
       if (holder === 'apply' && tombstone !== null) {
@@ -3555,6 +3674,20 @@ function isArchiveStatIdentityRecord(
     typeof value.ctimeNs === 'string'
   );
 }
+
+function isExactDecimalArchiveStatIdentity(
+  value: unknown
+): value is ArchiveStatIdentity {
+  const unsignedDecimal = /^(?:0|[1-9]\d*)$/u;
+  const signedDecimal = /^(?:0|-?[1-9]\d*)$/u;
+  return (
+    isArchiveStatIdentityRecord(value) &&
+    [value.dev, value.ino, value.mode, value.size].every(field =>
+      unsignedDecimal.test(field)
+    ) &&
+    [value.mtimeNs, value.ctimeNs].every(field => signedDecimal.test(field))
+  );
+}
 function isArchiveAssociationCarrierIdentityRecord(
   value: unknown
 ): value is ArchiveAssociationCarrierIdentity {
@@ -3579,6 +3712,59 @@ function isSafeArchiveAuthorityPath(value: unknown): value is string {
     normalizeRelative(value) === value &&
     parts.every(part => part.length > 0 && part !== '.' && part !== '..')
   );
+}
+
+function isArchiveCleanerDeletionAuthorityValid(plan: ArchivePlan): boolean {
+  const deletionAuthority = (
+    plan.cleaner as ArchiveCleanerProjection & {
+      deletionAuthority?: unknown;
+    }
+  ).deletionAuthority;
+  if (deletionAuthority === undefined) return true;
+  if (!Array.isArray(deletionAuthority)) return false;
+
+  const effectiveDeletePaths = plan.cleaner.effectiveDelete;
+  if (
+    effectiveDeletePaths.some(
+      (entry, index) =>
+        !isSafeArchiveAuthorityPath(entry) ||
+        (index > 0 &&
+          compareArchiveAuthorityPaths(
+            effectiveDeletePaths[index - 1]!,
+            entry
+          ) >= 0)
+    )
+  ) {
+    return false;
+  }
+  const effectiveDelete = new Set(effectiveDeletePaths);
+  const seen = new Set<string>();
+  for (const [index, entry] of deletionAuthority.entries()) {
+    if (
+      !isPlainRecord(entry) ||
+      !hasOnlyKeys(entry, ['path', 'identity', 'contentDigest']) ||
+      !isSafeArchiveAuthorityPath(entry.path) ||
+      entry.path !== effectiveDeletePaths[index] ||
+      !effectiveDelete.has(entry.path) ||
+      seen.has(entry.path) ||
+      !isExactDecimalArchiveStatIdentity(entry.identity) ||
+      typeof entry.contentDigest !== 'string' ||
+      !/^[0-9a-f]{64}$/i.test(entry.contentDigest)
+    ) {
+      return false;
+    }
+    const candidateMatches = plan.cleaner.classification.candidates.filter(
+      candidate => candidate.relativePath === entry.path
+    );
+    if (
+      candidateMatches.length !== 1 ||
+      candidateMatches[0]!.sha256 !== entry.contentDigest
+    ) {
+      return false;
+    }
+    seen.add(entry.path);
+  }
+  return !plan.complete || deletionAuthority.length === plan.cleaner.effectiveDelete.length;
 }
 
 function isArchiveTreeEntryRecord(value: unknown): value is ArchiveTreeEntry {
@@ -3751,8 +3937,10 @@ function invalidArchiveJournal(
 function parseArchiveJournalV2(
   value: unknown,
   journalPath: string,
-  adapters: ArchiveEngineAdapters
+  adapters: ArchiveEngineAdapters,
+  flavor: PathIdentityFlavor = NATIVE_PATH_IDENTITY_FLAVOR
 ): ArchiveJournal {
+  const bindingPathApi = flavor === 'win32' ? path.win32 : path.posix;
   if (
     !isPlainRecord(value) ||
     !hasOnlyKeys(value, [
@@ -3784,13 +3972,16 @@ function parseArchiveJournalV2(
     value.change.length === 0 ||
     !isArchiveJournalPhaseValue(value.phase) ||
     typeof value.activePath !== 'string' ||
-    !path.isAbsolute(value.activePath) ||
+    !bindingPathApi.isAbsolute(value.activePath) ||
     typeof value.stagePath !== 'string' ||
-    !path.isAbsolute(value.stagePath) ||
-    path.basename(value.stagePath) !==
-      `.rasen-archive-stage-${value.transactionId}` ||
+    !bindingPathApi.isAbsolute(value.stagePath) ||
+    !archivePathBasenameEquals(
+      value.stagePath,
+      `.rasen-archive-stage-${value.transactionId}`,
+      flavor
+    ) ||
     typeof value.finalPath !== 'string' ||
-    !path.isAbsolute(value.finalPath) ||
+    !bindingPathApi.isAbsolute(value.finalPath) ||
     typeof value.updatedAt !== 'string' ||
     !Number.isFinite(Date.parse(value.updatedAt)) ||
     !Array.isArray(value.ephemeraDisposed) ||
@@ -3853,7 +4044,7 @@ function parseArchiveJournalV2(
           !isPlainRecord(fingerprint.temporary) ||
           !hasOnlyKeys(fingerprint.temporary, ['path', 'identity']) ||
           typeof fingerprint.temporary.path !== 'string' ||
-          !path.isAbsolute(fingerprint.temporary.path) ||
+          !bindingPathApi.isAbsolute(fingerprint.temporary.path) ||
           !isArchiveStatIdentityRecord(fingerprint.temporary.identity))) ||
       (fingerprint.state === 'intent' &&
         fingerprint.observedAfter !== undefined) ||
@@ -3950,13 +4141,13 @@ function parseArchiveJournalV2(
         progress.action !== 'update' &&
         progress.action !== 'delete') ||
       typeof progress.target !== 'string' ||
-      !path.isAbsolute(progress.target) ||
+      !bindingPathApi.isAbsolute(progress.target) ||
       (progress.backupOrQuarantine !== null &&
         (typeof progress.backupOrQuarantine !== 'string' ||
-          !path.isAbsolute(progress.backupOrQuarantine))) ||
+          !bindingPathApi.isAbsolute(progress.backupOrQuarantine))) ||
       (progress.temporary !== null &&
         (typeof progress.temporary !== 'string' ||
-          !path.isAbsolute(progress.temporary))) ||
+          !bindingPathApi.isAbsolute(progress.temporary))) ||
       (progress.claimIdentity !== undefined &&
         !isArchiveStatIdentityRecord(progress.claimIdentity)) ||
       (progress.temporaryIdentity !== undefined &&
@@ -4036,9 +4227,11 @@ function parseArchiveJournalV2(
   for (const progress of value.cleanerProgress) {
     if (
       !isPlainRecord(progress) ||
-      !hasOnlyKeys(progress, ['path', 'state', 'error']) ||
+      !hasOnlyKeys(progress, ['path', 'restoredIdentity', 'state', 'error']) ||
       !isSafeArchiveAuthorityPath(progress.path) ||
       cleanerPaths.has(progress.path) ||
+      (progress.restoredIdentity !== undefined &&
+        !isExactDecimalArchiveStatIdentity(progress.restoredIdentity)) ||
       typeof progress.state !== 'string' ||
       !cleanerProgressStates.has(progress.state) ||
       (progress.error !== undefined && typeof progress.error !== 'string')
@@ -4049,7 +4242,9 @@ function parseArchiveJournalV2(
       typeof progress.error === 'string' && progress.error.length > 0;
     if (
       hasError !==
-      (progress.state === 'conflict' || progress.state === 'failed')
+        (progress.state === 'conflict' || progress.state === 'failed') ||
+      (progress.restoredIdentity !== undefined &&
+        progress.state !== 'delete-intent')
     ) {
       return invalidArchiveJournal(journalPath, value);
     }
@@ -4066,7 +4261,7 @@ function parseArchiveJournalV2(
         'error',
       ]) ||
       typeof value.associationProgress.path !== 'string' ||
-      !path.isAbsolute(value.associationProgress.path) ||
+      !bindingPathApi.isAbsolute(value.associationProgress.path) ||
       (value.associationProgress.state !== 'pending' &&
         value.associationProgress.state !== 'intent-durable' &&
         value.associationProgress.state !== 'complete' &&
@@ -4081,6 +4276,10 @@ function parseArchiveJournalV2(
     const carriers = value.associationProgress.carriers ?? [];
     const carrierTargets = new Set<string>();
     for (const carrier of carriers) {
+      const carrierTargetKey =
+        isPlainRecord(carrier) && typeof carrier.target === 'string'
+          ? archivePathIdentityKey(carrier.target, flavor)
+          : '';
       if (
         !isPlainRecord(carrier) ||
         !hasOnlyKeys(carrier, [
@@ -4091,31 +4290,31 @@ function parseArchiveJournalV2(
           'claim',
         ]) ||
         typeof carrier.target !== 'string' ||
-        !path.isAbsolute(carrier.target) ||
-        carrierTargets.has(carrier.target) ||
+        !bindingPathApi.isAbsolute(carrier.target) ||
+        carrierTargets.has(carrierTargetKey) ||
         typeof carrier.contentDigest !== 'string' ||
         !/^[0-9a-f]{64}$/i.test(carrier.contentDigest) ||
         !isPlainRecord(carrier.directory) ||
         !hasOnlyKeys(carrier.directory, ['path', 'identity']) ||
         typeof carrier.directory.path !== 'string' ||
-        !path.isAbsolute(carrier.directory.path) ||
+        !bindingPathApi.isAbsolute(carrier.directory.path) ||
         !isArchiveAssociationCarrierIdentityRecord(
           carrier.directory.identity
         ) ||
         !isPlainRecord(carrier.intent) ||
         !hasOnlyKeys(carrier.intent, ['path', 'identity']) ||
         typeof carrier.intent.path !== 'string' ||
-        !path.isAbsolute(carrier.intent.path) ||
+        !bindingPathApi.isAbsolute(carrier.intent.path) ||
         !isArchiveAssociationCarrierIdentityRecord(carrier.intent.identity) ||
         !isPlainRecord(carrier.claim) ||
         !hasOnlyKeys(carrier.claim, ['path', 'identity']) ||
         typeof carrier.claim.path !== 'string' ||
-        !path.isAbsolute(carrier.claim.path) ||
+        !bindingPathApi.isAbsolute(carrier.claim.path) ||
         !isArchiveAssociationCarrierIdentityRecord(carrier.claim.identity)
       ) {
         return invalidArchiveJournal(journalPath, value);
       }
-      carrierTargets.add(carrier.target);
+      carrierTargets.add(carrierTargetKey);
     }
     const hasError =
       typeof value.associationProgress.error === 'string' &&
@@ -4149,7 +4348,7 @@ function parseArchiveJournalV2(
     typeof value.sourceProgress.state !== 'string' ||
     !sourceProgressStates.has(value.sourceProgress.state) ||
     typeof value.sourceProgress.quarantine !== 'string' ||
-    !path.isAbsolute(value.sourceProgress.quarantine) ||
+    !bindingPathApi.isAbsolute(value.sourceProgress.quarantine) ||
     (value.sourceProgress.claimIdentity !== undefined &&
       !isArchiveStatIdentityRecord(value.sourceProgress.claimIdentity)) ||
     (value.sourceProgress.error !== undefined &&
@@ -4299,7 +4498,8 @@ function isStoredArchiveAbortClaim(
   value: unknown,
   stagePath: string,
   transactionId: string,
-  adapters: ArchiveEngineAdapters
+  adapters: ArchiveEngineAdapters,
+  flavor: PathIdentityFlavor = NATIVE_PATH_IDENTITY_FLAVOR
 ): value is ArchivePrivateClaim {
   if (
     !isPlainRecord(value) ||
@@ -4326,21 +4526,50 @@ function isStoredArchiveAbortClaim(
     'abort-stage',
     adapters
   );
+  const bindingPathApi = flavor === 'win32' ? path.win32 : path.posix;
   return (
-    pathIdentityEquals(value.root, expectedRoot) &&
-    pathIdentityEquals(value.claimed, path.join(expectedRoot, 'object')) &&
-    pathIdentityEquals(
+    archiveAbortPathBindingEquals(value.root, expectedRoot, flavor) &&
+    archiveAbortPathBindingEquals(
+      value.claimed,
+      bindingPathApi.join(expectedRoot, 'object'),
+      flavor
+    ) &&
+    archiveAbortPathBindingEquals(
       value.sentinel,
-      path.join(expectedRoot, '.rasen-claim-owner')
+      bindingPathApi.join(expectedRoot, '.rasen-claim-owner'),
+      flavor
     ) &&
     value.nonce.startsWith(`${transactionId}:`) &&
     value.nonce.endsWith('\n')
   );
 }
 
+function reconstructArchiveAbortClaimFromPlan(
+  stagePath: string,
+  transactionId: string,
+  evidence: ArchivePrivateClaim,
+  adapters: Pick<ArchiveEngineAdapters, 'sha256'>
+): ArchivePrivateClaim {
+  const root = archivePrivateClaimRoot(
+    stagePath,
+    transactionId,
+    'abort-stage',
+    adapters
+  );
+  return {
+    root,
+    claimed: path.join(root, 'object'),
+    sentinel: path.join(root, '.rasen-claim-owner'),
+    nonce: evidence.nonce,
+    rootIdentity: evidence.rootIdentity,
+    sentinelIdentity: evidence.sentinelIdentity,
+  };
+}
+
 async function readArchiveAbortTombstone(
   tombstonePath: string,
-  adapters: ArchiveEngineAdapters
+  adapters: ArchiveEngineAdapters,
+  flavor: PathIdentityFlavor = NATIVE_PATH_IDENTITY_FLAVOR
 ): Promise<StoredArchiveAbortV1 | null> {
   let content: string;
   try {
@@ -4364,6 +4593,7 @@ async function readArchiveAbortTombstone(
       'archive_transaction_store_ownership_unverified';
     throw invalid;
   }
+  const bindingPathApi = flavor === 'win32' ? path.win32 : path.posix;
   if (
     !isPlainRecord(parsed) ||
     !hasOnlyKeys(parsed, [
@@ -4405,7 +4635,8 @@ async function readArchiveAbortTombstone(
         parsed.stageClaim,
         parsed.stagePath as string,
         parsed.transactionId as string,
-        adapters
+        adapters,
+        flavor
       )) ||
     (parsed.stageClaim !== undefined && parsed.stageIdentity === null) ||
     (parsed.status === 'aborted' && parsed.stageClaim !== undefined) ||
@@ -4414,11 +4645,18 @@ async function readArchiveAbortTombstone(
     typeof parsed.updatedAt !== 'string' ||
     parsed.change.length === 0 ||
     !/^[0-9a-f]{64}$/i.test(parsed.planHash) ||
-    !path.isAbsolute(parsed.stagePath) ||
-    !path.isAbsolute(parsed.journalPath) ||
-    parsed.journalPath !== path.join(parsed.stagePath, ARCHIVE_JOURNAL_FILENAME) ||
-    path.basename(parsed.stagePath) !==
-      `.rasen-archive-stage-${parsed.transactionId}` ||
+    !bindingPathApi.isAbsolute(parsed.stagePath) ||
+    !bindingPathApi.isAbsolute(parsed.journalPath) ||
+    !archiveAbortPathBindingEquals(
+      parsed.journalPath,
+      bindingPathApi.join(parsed.stagePath, ARCHIVE_JOURNAL_FILENAME),
+      flavor
+    ) ||
+    !archivePathBasenameEquals(
+      parsed.stagePath,
+      `.rasen-archive-stage-${parsed.transactionId}`,
+      flavor
+    ) ||
     !Number.isFinite(Date.parse(parsed.createdAt)) ||
     !Number.isFinite(Date.parse(parsed.updatedAt))
   ) {
@@ -4605,6 +4843,7 @@ export async function abortArchivePlan(
   globalDataDir: string,
   adapters: ArchiveEngineAdapters = defaultArchiveEngineAdapters
 ): Promise<ArchiveAbortResult> {
+  const abortPathIdentityFlavor = NATIVE_PATH_IDENTITY_FLAVOR;
   const transactionDirectory = storedArchiveTransactionDirectory(
     globalDataDir,
     plan.transactionId
@@ -4726,7 +4965,8 @@ export async function abortArchivePlan(
   try {
     existingTombstone = await readArchiveAbortTombstone(
       tombstonePath,
-      adapters
+      adapters,
+      abortPathIdentityFlavor
     );
   } catch (error) {
     if (
@@ -4753,11 +4993,21 @@ export async function abortArchivePlan(
       }
     );
   }
+  const existingStageClaim =
+    existingTombstone?.stageClaim === undefined
+      ? undefined
+      : reconstructArchiveAbortClaimFromPlan(
+          plan.paths.stage,
+          plan.transactionId,
+          existingTombstone.stageClaim,
+          adapters
+        );
   try {
     await assertNoArchiveTransactionDebris(
       plan,
       adapters,
-      existingTombstone?.stageClaim?.root
+      existingStageClaim?.root,
+      abortPathIdentityFlavor
     );
   } catch (error) {
     if (errorCode(error) !== ARCHIVE_TRANSACTION_TEMP_OWNERSHIP_CODE) {
@@ -4815,11 +5065,13 @@ export async function abortArchivePlan(
       existingTombstone.change === plan.change &&
       archiveAbortPathBindingEquals(
         existingTombstone.stagePath,
-        plan.paths.stage
+        plan.paths.stage,
+        abortPathIdentityFlavor
       ) &&
       archiveAbortPathBindingEquals(
         existingTombstone.journalPath,
-        plan.paths.journal
+        plan.paths.journal,
+        abortPathIdentityFlavor
       );
     if (!completedAbortOwnsMissingPlan) {
       return blocked(
@@ -4855,11 +5107,13 @@ export async function abortArchivePlan(
       existingTombstone.change !== plan.change ||
       !archiveAbortPathBindingEquals(
         existingTombstone.stagePath,
-        plan.paths.stage
+        plan.paths.stage,
+        abortPathIdentityFlavor
       ) ||
       !archiveAbortPathBindingEquals(
         existingTombstone.journalPath,
-        plan.paths.journal
+        plan.paths.journal,
+        abortPathIdentityFlavor
       ))
   ) {
     return blocked(
@@ -4894,11 +5148,16 @@ export async function abortArchivePlan(
       unownedReservationRace = true;
     } else {
       try {
-        const reservationState = await inspectArchiveJournalState(plan, adapters);
+        const reservationState = await inspectArchiveJournalState(
+          plan,
+          adapters,
+          abortPathIdentityFlavor
+        );
         unownedReservationRace =
           archiveAbortPathBindingEquals(
             reservationState.journalPath,
-            plan.paths.journal
+            plan.paths.journal,
+            abortPathIdentityFlavor
           ) &&
           reservationState.journal?.finalReservation.state ===
             'intent-durable' &&
@@ -4915,7 +5174,11 @@ export async function abortArchivePlan(
   ) {
     let publishedState: ArchiveJournalState;
     try {
-      publishedState = await inspectArchiveJournalState(plan, adapters);
+      publishedState = await inspectArchiveJournalState(
+        plan,
+        adapters,
+        abortPathIdentityFlavor
+      );
     } catch (error) {
       return blocked(
         'journal',
@@ -5043,7 +5306,11 @@ export async function abortArchivePlan(
     }
     stageAbortIdentity = observedStageIdentity;
     try {
-      journal = await readJournal(plan.paths.journal, adapters);
+      journal = await readJournal(
+        plan.paths.journal,
+        adapters,
+        abortPathIdentityFlavor
+      );
     } catch (error) {
       return blocked(
         'journal',
@@ -5058,9 +5325,21 @@ export async function abortArchivePlan(
         (journal.transactionId !== plan.transactionId ||
           journal.planHash !== plan.planHash ||
           journal.change !== plan.change ||
-          !archiveAbortPathBindingEquals(journal.activePath, plan.paths.active) ||
-          !archiveAbortPathBindingEquals(journal.stagePath, plan.paths.stage) ||
-          !archiveAbortPathBindingEquals(journal.finalPath, plan.paths.final)))
+          !archiveAbortPathBindingEquals(
+            journal.activePath,
+            plan.paths.active,
+            abortPathIdentityFlavor
+          ) ||
+          !archiveAbortPathBindingEquals(
+            journal.stagePath,
+            plan.paths.stage,
+            abortPathIdentityFlavor
+          ) ||
+          !archiveAbortPathBindingEquals(
+            journal.finalPath,
+            plan.paths.final,
+            abortPathIdentityFlavor
+          )))
     ) {
       return blocked(
         'journal',
@@ -5107,7 +5386,11 @@ export async function abortArchivePlan(
           expected !== undefined &&
           progress.actionId === expected.actionId &&
           progress.action === expected.action &&
-          archiveAbortPathBindingEquals(progress.target, expected.target)
+          archiveAbortPathBindingEquals(
+            progress.target,
+            expected.target,
+            abortPathIdentityFlavor
+          )
         );
       });
     const cleanerCorresponds =
@@ -5121,11 +5404,18 @@ export async function abortArchivePlan(
         : journal.associationProgress !== undefined &&
           archiveAbortPathBindingEquals(
             journal.associationProgress.path,
-            expectedAssociationPath
+            expectedAssociationPath,
+            abortPathIdentityFlavor
           );
     const sourceCorresponds = archiveAbortPathBindingEquals(
       journal.sourceProgress.quarantine,
-      expectedSourceQuarantine
+      expectedSourceQuarantine,
+      abortPathIdentityFlavor
+    );
+    const allProgressBindingsCorrespond = archiveJournalProgressAgreesWithPlan(
+      journal,
+      plan,
+      abortPathIdentityFlavor
     );
     const retainedPaths = [
       plan.paths.active,
@@ -5156,7 +5446,8 @@ export async function abortArchivePlan(
       !specCorresponds ||
       !cleanerCorresponds ||
       !associationCorresponds ||
-      !sourceCorresponds
+      !sourceCorresponds ||
+      !allProgressBindingsCorrespond
     ) {
       return blocked(
         'journal',
@@ -5326,9 +5617,9 @@ export async function abortArchivePlan(
     journalPath: plan.paths.journal,
     stageIdentity: stageAbortIdentity,
     stageAuthority: stageAbortAuthority,
-    ...(existingTombstone?.stageClaim === undefined
+    ...(existingStageClaim === undefined
       ? {}
-      : { stageClaim: existingTombstone.stageClaim }),
+      : { stageClaim: existingStageClaim }),
     ...associationResult,
     status: 'aborting',
     createdAt: startedAt,
@@ -5499,9 +5790,24 @@ export async function abortArchivePlan(
               observedJournal.transactionId !== plan.transactionId ||
               observedJournal.planHash !== plan.planHash ||
               observedJournal.change !== plan.change ||
-              observedJournal.activePath !== plan.paths.active ||
-              observedJournal.stagePath !== plan.paths.stage ||
-              observedJournal.finalPath !== plan.paths.final ||
+              typeof observedJournal.activePath !== 'string' ||
+              !archiveAbortPathBindingEquals(
+                observedJournal.activePath,
+                plan.paths.active,
+                abortPathIdentityFlavor
+              ) ||
+              typeof observedJournal.stagePath !== 'string' ||
+              !archiveAbortPathBindingEquals(
+                observedJournal.stagePath,
+                plan.paths.stage,
+                abortPathIdentityFlavor
+              ) ||
+              typeof observedJournal.finalPath !== 'string' ||
+              !archiveAbortPathBindingEquals(
+                observedJournal.finalPath,
+                plan.paths.final,
+                abortPathIdentityFlavor
+              ) ||
               (journal !== null &&
                 stableArchiveJson(observedJournal) !== stableArchiveJson(journal))
             ) {
@@ -5663,7 +5969,8 @@ async function assertNoAtomicWriteTemporary(
 async function assertNoArchiveTransactionDebris(
   plan: ArchivePlan,
   adapters: ArchiveEngineAdapters,
-  allowedClaimRoot?: string
+  allowedClaimRoot?: string,
+  flavor: PathIdentityFlavor = NATIVE_PATH_IDENTITY_FLAVOR
 ): Promise<void> {
   const transactionId = plan.transactionId;
   const claimDirectories = [
@@ -5714,7 +6021,7 @@ async function assertNoArchiveTransactionDebris(
     ).find(candidate =>
       allowedClaimRoot === undefined
         ? true
-        : !pathIdentityEquals(candidate, allowedClaimRoot)
+        : !archiveAbortPathBindingEquals(candidate, allowedClaimRoot, flavor)
     );
     if (!temporary) continue;
     const error = archiveTransactionTempOwnershipError(
@@ -6152,7 +6459,8 @@ async function writeJournal(
 
 async function readJournal(
   journalPath: string,
-  adapters: ArchiveEngineAdapters
+  adapters: ArchiveEngineAdapters,
+  flavor: PathIdentityFlavor = NATIVE_PATH_IDENTITY_FLAVOR
 ): Promise<ArchiveJournal | null> {
   let content: string;
   let stable: { content: Buffer; stat: ArchiveFsStat };
@@ -6180,7 +6488,7 @@ async function readJournal(
   }
   let journal: ArchiveJournal;
   try {
-    journal = parseArchiveJournalV2(parsed, journalPath, adapters);
+    journal = parseArchiveJournalV2(parsed, journalPath, adapters, flavor);
   } catch (error) {
     throw withArchiveFailureLocation(error, 'journal', journalPath);
   }
@@ -6193,8 +6501,10 @@ async function readJournal(
 }
 function archiveJournalProgressAgreesWithPlan(
   journal: ArchiveJournal,
-  plan: ArchivePlan
+  plan: ArchivePlan,
+  flavor: PathIdentityFlavor = NATIVE_PATH_IDENTITY_FLAVOR
 ): boolean {
+  const bindingPathApi = flavor === 'win32' ? path.win32 : path.posix;
   const expectedSpecs = plan.specActions.map(action => ({
     actionId:
       action.actionId ??
@@ -6210,7 +6520,7 @@ function archiveJournalProgressAgreesWithPlan(
         expected !== undefined &&
         progress.actionId === expected.actionId &&
         progress.action === expected.action &&
-        archiveAbortPathBindingEquals(progress.target, expected.target)
+        archiveAbortPathBindingEquals(progress.target, expected.target, flavor)
       );
     }) ||
     journal.cleanerProgress.length !== plan.cleaner.effectiveDelete.length ||
@@ -6229,7 +6539,8 @@ function archiveJournalProgressAgreesWithPlan(
       : journal.associationProgress === undefined ||
         !archiveAbortPathBindingEquals(
           journal.associationProgress.path,
-          expectedAssociationPath
+          expectedAssociationPath,
+          flavor
         )
   ) {
     return false;
@@ -6240,7 +6551,11 @@ function archiveJournalProgressAgreesWithPlan(
       journal.associationProgress.carriers.some(carrier => {
         if (
           expectedAssociationPath !== undefined &&
-          archiveAbortPathBindingEquals(carrier.target, expectedAssociationPath)
+          archiveAbortPathBindingEquals(
+            carrier.target,
+            expectedAssociationPath,
+            flavor
+          )
         ) {
           return false;
         }
@@ -6248,8 +6563,16 @@ function archiveJournalProgressAgreesWithPlan(
           plan.finalization?.association.planningScopeId;
         return (
           planningScopeId === undefined ||
-          path.basename(carrier.target) !== `${planningScopeId}.json` ||
-          path.basename(path.dirname(carrier.target)) !== 'index'
+          !archivePathBasenameEquals(
+            carrier.target,
+            `${planningScopeId}.json`,
+            flavor
+          ) ||
+          !archivePathBasenameEquals(
+            bindingPathApi.dirname(carrier.target),
+            'index',
+            flavor
+          )
         );
       }))
   ) {
@@ -6263,7 +6586,8 @@ function archiveJournalProgressAgreesWithPlan(
   if (
     !archiveAbortPathBindingEquals(
       journal.sourceProgress.quarantine,
-      expectedSourceQuarantine
+      expectedSourceQuarantine,
+      flavor
     )
   ) {
     return false;
@@ -6298,25 +6622,27 @@ function archiveJournalProgressAgreesWithPlan(
 
 function archiveJournalBelongsToPlan(
   journal: ArchiveJournal | null,
-  plan: ArchivePlan
+  plan: ArchivePlan,
+  flavor: PathIdentityFlavor = NATIVE_PATH_IDENTITY_FLAVOR
 ): journal is ArchiveJournal {
   return (
     journal !== null &&
     journal.transactionId === plan.transactionId &&
     journal.planHash === plan.planHash &&
     journal.change === plan.change &&
-    archiveAbortPathBindingEquals(journal.activePath, plan.paths.active) &&
-    archiveAbortPathBindingEquals(journal.stagePath, plan.paths.stage) &&
-    archiveAbortPathBindingEquals(journal.finalPath, plan.paths.final) &&
-    archiveJournalProgressAgreesWithPlan(journal, plan)
+    archiveAbortPathBindingEquals(journal.activePath, plan.paths.active, flavor) &&
+    archiveAbortPathBindingEquals(journal.stagePath, plan.paths.stage, flavor) &&
+    archiveAbortPathBindingEquals(journal.finalPath, plan.paths.final, flavor) &&
+    archiveJournalProgressAgreesWithPlan(journal, plan, flavor)
   );
 }
 
 export async function inspectArchiveJournalState(
   plan: ArchivePlan,
-  adapters: ArchiveEngineAdapters = defaultArchiveEngineAdapters
+  adapters: ArchiveEngineAdapters = defaultArchiveEngineAdapters,
+  flavor: PathIdentityFlavor = NATIVE_PATH_IDENTITY_FLAVOR
 ): Promise<ArchiveJournalState> {
-  await assertNoArchiveTransactionDebris(plan, adapters);
+  await assertNoArchiveTransactionDebris(plan, adapters, undefined, flavor);
   const [stageState, finalState, stageJournalState, publishedJournalState] =
     await Promise.all([
       pathExists(plan.paths.stage, adapters),
@@ -6363,18 +6689,18 @@ export async function inspectArchiveJournalState(
   ) {
     return { journalPath, journal: null, effectivePhase: null };
   }
-  const journal = await readJournal(journalPath, adapters);
+  const journal = await readJournal(journalPath, adapters, flavor);
   const hasSupersededStageJournal =
     stageJournalState === 'present' && publishedJournalState === 'present';
   const supersededStageJournal = hasSupersededStageJournal
-    ? await readJournal(plan.paths.journal, adapters)
+    ? await readJournal(plan.paths.journal, adapters, flavor)
     : null;
   if (
-    !archiveJournalBelongsToPlan(journal, plan) ||
+    !archiveJournalBelongsToPlan(journal, plan, flavor) ||
     (durableReservationIntentPlacement &&
       journal.finalReservation.state !== 'intent-durable') ||
     (hasSupersededStageJournal &&
-      !archiveJournalBelongsToPlan(supersededStageJournal, plan))
+      !archiveJournalBelongsToPlan(supersededStageJournal, plan, flavor))
   ) {
     const error = new Error(
       'Archive journal does not belong to the supplied immutable plan.'
@@ -8805,6 +9131,43 @@ function sameArchiveObject(
   );
 }
 
+/**
+ * Exact identity for an object that has not crossed a name-changing mutation.
+ * Cleaner authority uses this predicate at the plan-derived source path so a
+ * same-byte metadata replacement or inode-reuse lookalike cannot be claimed.
+ */
+function sameExactArchiveObject(
+  stat: ArchiveFsStat,
+  planned: ArchiveStatIdentity,
+  kind: ArchiveAuthorityEntry['kind']
+): boolean {
+  return (
+    stableArchiveJson(archiveDeletionIdentity(stat, kind)) ===
+    stableArchiveJson(planned)
+  );
+}
+
+/**
+ * A verified rename preserves object, mode, size, and mtime identity, but on
+ * Windows it may advance ctime. Callers may use this only after an exact
+ * source check immediately before their own rename, then bind the claimed
+ * object to the complete post-rename identity they observe.
+ */
+function sameArchiveObjectAcrossVerifiedRename(
+  stat: ArchiveFsStat,
+  sourceIdentity: ArchiveStatIdentity,
+  kind: ArchiveAuthorityEntry['kind']
+): boolean {
+  const claimed = archiveDeletionIdentity(stat, kind);
+  return (
+    claimed.dev === sourceIdentity.dev &&
+    claimed.ino === sourceIdentity.ino &&
+    claimed.mode === sourceIdentity.mode &&
+    claimed.size === sourceIdentity.size &&
+    claimed.mtimeNs === sourceIdentity.mtimeNs
+  );
+}
+
 async function writeFlushedExclusiveFile(
   target: string,
   bytes: string | Uint8Array,
@@ -8829,6 +9192,11 @@ interface ArchivePrivateClaim {
   rootIdentity: ArchiveStatIdentity;
   sentinelIdentity: ArchiveStatIdentity;
 }
+
+const archivePrivateClaimedObjectIdentities = new WeakMap<
+  ArchivePrivateClaim,
+  ArchiveStatIdentity
+>();
 
 async function requireArchivePrivateClaim(
   claim: ArchivePrivateClaim,
@@ -8940,12 +9308,15 @@ async function moveArchiveObjectToPrivateClaim(
   kind: ArchiveAuthorityEntry['kind'],
   transactionId: string,
   operation: string,
-  adapters: ArchiveEngineAdapters
+  adapters: ArchiveEngineAdapters,
+  identityContract: 'stable' | 'exact-source-rename-stable' = 'stable'
 ): Promise<ArchivePrivateClaim> {
   const before = await adapters.fs.lstat(source);
   if (
     (kind !== 'symlink' && before.isSymbolicLink()) ||
-    !sameArchiveObject(before, expectedIdentity, kind)
+    !(identityContract === 'exact-source-rename-stable'
+      ? sameExactArchiveObject(before, expectedIdentity, kind)
+      : sameArchiveObject(before, expectedIdentity, kind))
   ) {
     throw archiveClaimOwnershipError(
       source,
@@ -8967,12 +9338,27 @@ async function moveArchiveObjectToPrivateClaim(
       [source, claim.claimed]
     );
   }
+  const atRename = await adapters.fs.lstat(source);
+  if (
+    (kind !== 'symlink' && atRename.isSymbolicLink()) ||
+    !(identityContract === 'exact-source-rename-stable'
+      ? sameExactArchiveObject(atRename, expectedIdentity, kind)
+      : sameArchiveObject(atRename, expectedIdentity, kind))
+  ) {
+    throw archiveClaimOwnershipError(
+      source,
+      'Archive object changed at the private-claim rename boundary.',
+      [source, claim.claimed]
+    );
+  }
   await adapters.fs.rename(source, claim.claimed);
   await requireArchivePrivateClaim(claim, adapters);
   const moved = await adapters.fs.lstat(claim.claimed);
   if (
     (kind !== 'symlink' && moved.isSymbolicLink()) ||
-    !sameArchiveObject(moved, expectedIdentity, kind)
+    !(identityContract === 'exact-source-rename-stable'
+      ? sameArchiveObjectAcrossVerifiedRename(moved, expectedIdentity, kind)
+      : sameArchiveObject(moved, expectedIdentity, kind))
   ) {
     throw archiveClaimOwnershipError(
       claim.root,
@@ -8980,6 +9366,10 @@ async function moveArchiveObjectToPrivateClaim(
       [source, claim.claimed]
     );
   }
+  archivePrivateClaimedObjectIdentities.set(
+    claim,
+    archiveDeletionIdentity(moved, kind)
+  );
   return claim;
 }
 
@@ -9016,12 +9406,15 @@ async function restoreArchivePrivateFileClaim(
   source: string,
   expectedIdentity: ArchiveStatIdentity,
   expectedSha256: string,
-  adapters: ArchiveEngineAdapters
-): Promise<void> {
+  adapters: ArchiveEngineAdapters,
+  claimedIdentity?: ArchiveStatIdentity
+): Promise<ArchiveStatIdentity> {
   await requireArchivePrivateClaim(claim, adapters);
   const claimed = await readStableArchiveFile(claim.claimed, adapters);
   if (
-    !sameArchiveObject(claimed.stat, expectedIdentity, 'file') ||
+    !(claimedIdentity === undefined
+      ? sameArchiveObject(claimed.stat, expectedIdentity, 'file')
+      : sameExactArchiveObject(claimed.stat, claimedIdentity, 'file')) ||
     adapters.sha256(claimed.content) !== expectedSha256
   ) {
     throw archiveClaimOwnershipError(
@@ -9043,9 +9436,22 @@ async function restoreArchivePrivateFileClaim(
     readStableArchiveFile(source, adapters),
     adapters.fs.lstat(claim.claimed),
   ]);
+  const linkSourceIdentity = claimedIdentity ?? expectedIdentity;
   if (
-    !sameArchiveObject(restored.stat, expectedIdentity, 'file') ||
-    !sameArchiveObject(claimedAfterLink, expectedIdentity, 'file') ||
+    !(claimedIdentity === undefined
+      ? sameArchiveObject(restored.stat, expectedIdentity, 'file')
+      : sameArchiveObjectAcrossVerifiedRename(
+          restored.stat,
+          linkSourceIdentity,
+          'file'
+        )) ||
+    !(claimedIdentity === undefined
+      ? sameArchiveObject(claimedAfterLink, expectedIdentity, 'file')
+      : sameArchiveObjectAcrossVerifiedRename(
+          claimedAfterLink,
+          linkSourceIdentity,
+          'file'
+        )) ||
     adapters.sha256(restored.content) !== expectedSha256
   ) {
     throw archiveClaimOwnershipError(
@@ -9054,10 +9460,17 @@ async function restoreArchivePrivateFileClaim(
       [source, claim.claimed]
     );
   }
+  const linkedIdentity = archiveDeletionIdentity(restored.stat, 'file');
   await adapters.fs.unlink(claim.claimed);
   const durable = await readStableArchiveFile(source, adapters);
   if (
-    !sameArchiveObject(durable.stat, expectedIdentity, 'file') ||
+    !(claimedIdentity === undefined
+      ? sameArchiveObject(durable.stat, expectedIdentity, 'file')
+      : sameArchiveObjectAcrossVerifiedRename(
+          durable.stat,
+          linkedIdentity,
+          'file'
+        )) ||
     adapters.sha256(durable.content) !== expectedSha256
   ) {
     throw archiveClaimOwnershipError(
@@ -9067,6 +9480,7 @@ async function restoreArchivePrivateFileClaim(
     );
   }
   await retireArchivePrivateClaim(claim, adapters);
+  return archiveDeletionIdentity(durable.stat, 'file');
 }
 
 async function applySpecActions(
@@ -9733,9 +10147,45 @@ async function applySpecActions(
   return totalsFromSpecProgress(plan, journal);
 }
 
+function requireCompleteArchiveCleanerDeletionAuthority(
+  plan: ArchivePlan
+): ReadonlyMap<string, ArchiveCleanerDeletionAuthority> {
+  if (plan.cleaner.effectiveDelete.length === 0) return new Map();
+  const authority = plan.cleaner.deletionAuthority;
+  const completeAuthority =
+    Array.isArray(authority) &&
+    authority.length === plan.cleaner.effectiveDelete.length &&
+    authority.every(
+      (entry, index) =>
+        entry.path === plan.cleaner.effectiveDelete[index] &&
+        isExactDecimalArchiveStatIdentity(entry.identity) &&
+        /^[0-9a-f]{64}$/i.test(entry.contentDigest) &&
+        plan.cleaner.classification.candidates.filter(
+          candidate => candidate.relativePath === entry.path
+        ).length === 1 &&
+        plan.cleaner.classification.candidates.find(
+          candidate => candidate.relativePath === entry.path
+        )!.sha256 === entry.contentDigest
+    );
+  if (!completeAuthority) {
+    const relativePath = plan.cleaner.effectiveDelete[0]!;
+    throw archiveCleanerOwnershipError(
+      path.join(plan.paths.ephemera, relativePath),
+      plan,
+      'Archive plan has no complete trustworthy exact cleaner deletion authority for its planned deletions.'
+    );
+  }
+  return new Map(authority.map(entry => [entry.path, entry] as const));
+}
+
 async function claimAndDeleteCleanerCandidate(
   plan: ArchivePlan,
   relativePath: string,
+  authority: ArchiveCleanerDeletionAuthority,
+  sourceIdentity: ArchiveStatIdentity,
+  recordIdentityTransition: (
+    identity: ArchiveStatIdentity | undefined
+  ) => Promise<void>,
   adapters: ArchiveEngineAdapters
 ): Promise<string[]> {
   const candidate = plan.cleaner.classification.candidates.find(
@@ -9752,11 +10202,8 @@ async function claimAndDeleteCleanerCandidate(
   const stable = await readStableArchiveFile(source, adapters);
   const stat = stable.stat;
   if (
-    statScalar(stat.dev) !== String(candidate.dev) ||
-    statScalar(stat.ino) !== String(candidate.ino) ||
-    statScalar(stat.mode) !== String(candidate.mode) ||
-    statScalar(stat.size) !== String(candidate.size) ||
-    adapters.sha256(stable.content) !== candidate.sha256
+    !sameExactArchiveObject(stat, sourceIdentity, 'file') ||
+    adapters.sha256(stable.content) !== authority.contentDigest
   ) {
     throw archiveCleanerOwnershipError(
       source,
@@ -9766,27 +10213,61 @@ async function claimAndDeleteCleanerCandidate(
   }
   const claim = await moveArchiveObjectToPrivateClaim(
     source,
-    archiveDeletionIdentity(stat, 'file'),
+    sourceIdentity,
     'file',
     plan.transactionId,
     `cleaner:${relativePath}`,
-    adapters
+    adapters,
+    'exact-source-rename-stable'
   );
-  const claimedStable = await readStableArchiveFile(claim.claimed, adapters);
-  if (
-    !sameArchiveObject(
-      claimedStable.stat,
-      archiveDeletionIdentity(stat, 'file'),
-      'file'
-    ) ||
-    adapters.sha256(claimedStable.content) !== candidate.sha256
-  ) {
+  const transitionedClaimIdentity =
+    archivePrivateClaimedObjectIdentities.get(claim);
+  if (transitionedClaimIdentity === undefined) {
     throw archiveCleanerOwnershipError(
       claim.claimed,
       plan,
-      `Cleaner candidate changed inside its private claim: ${relativePath}.`
+      `Cleaner claim has no verified rename-transition identity: ${relativePath}.`
     );
   }
+  let claimedStable: { content: Buffer; stat: ArchiveFsStat };
+  try {
+    claimedStable = await readStableArchiveFile(claim.claimed, adapters);
+  } catch (error) {
+    const ownership = archiveCleanerOwnershipError(
+      claim.claimed,
+      plan,
+      `Cleaner claim could not be re-read after its verified rename: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    ) as Error & { retainedPaths: string[] };
+    ownership.retainedPaths = [
+      ...new Set([...ownership.retainedPaths, claim.root, source]),
+    ];
+    throw ownership;
+  }
+  if (
+    !sameExactArchiveObject(
+      claimedStable.stat,
+      transitionedClaimIdentity,
+      'file'
+    ) ||
+    adapters.sha256(claimedStable.content) !== authority.contentDigest
+  ) {
+    const ownership = archiveCleanerOwnershipError(
+      claim.claimed,
+      plan,
+      `Cleaner candidate changed inside its private claim: ${relativePath}.`
+    ) as Error & { retainedPaths: string[] };
+    ownership.retainedPaths = [
+      ...new Set([...ownership.retainedPaths, claim.root, source]),
+    ];
+    throw ownership;
+  }
+  // The exact post-rename identity is the claimed-object authority. It is
+  // derived only after the plan-time source identity and rename transition
+  // were both verified, so later claim recovery never falls back to the
+  // weaker plan-time predicate.
+  const claimedIdentity = archiveDeletionIdentity(claimedStable.stat, 'file');
   const claimedCandidate: EphemeraCandidateFingerprint = {
     relativePath: 'object',
     size: Number(claimedStable.stat.size),
@@ -9795,7 +10276,7 @@ async function claimAndDeleteCleanerCandidate(
     dev: Number(claimedStable.stat.dev),
     ino: Number(claimedStable.stat.ino),
     mode: Number(claimedStable.stat.mode),
-    sha256: candidate.sha256,
+    sha256: authority.contentDigest,
   };
   const classification: EphemeraClassification = {
     discarded: ['object'],
@@ -9807,20 +10288,29 @@ async function claimAndDeleteCleanerCandidate(
     blockers: [],
     complete: true,
   };
-  const expectedIdentity = archiveDeletionIdentity(stat, 'file');
+  const expectedIdentity = authority.identity;
   let deleted: string[];
   try {
+    // Once a previously restored source has crossed a newly verified private
+    // claim boundary, its old restored-path identity is no longer the retry
+    // authority. Persist that transition before deletion so an absent claim
+    // after an adapter error can advance the durable delete intent. If the
+    // claim is restored again below, its new complete source identity replaces
+    // this cleared value before the failure is returned.
+    await recordIdentityTransition(undefined);
     deleted = await adapters.applyEphemeraDeletion(claim.root, classification);
   } catch (error) {
     try {
       if ((await pathExists(claim.claimed, adapters)) === 'present') {
-        await restoreArchivePrivateFileClaim(
+        const restoredIdentity = await restoreArchivePrivateFileClaim(
           claim,
           source,
           expectedIdentity,
-          candidate.sha256,
-          adapters
+          authority.contentDigest,
+          adapters,
+          claimedIdentity
         );
+        await recordIdentityTransition(restoredIdentity);
       } else {
         await retireArchivePrivateClaim(claim, adapters);
       }
@@ -9843,13 +10333,15 @@ async function claimAndDeleteCleanerCandidate(
   }
   if ((await pathExists(claim.claimed, adapters)) === 'present') {
     try {
-      await restoreArchivePrivateFileClaim(
+      const restoredIdentity = await restoreArchivePrivateFileClaim(
         claim,
         source,
         expectedIdentity,
-        candidate.sha256,
-        adapters
+        authority.contentDigest,
+        adapters,
+        claimedIdentity
       );
+      await recordIdentityTransition(restoredIdentity);
     } catch (error) {
       const ownership = archiveCleanerOwnershipError(
         source,
@@ -11706,6 +12198,24 @@ export async function applyArchive(
       currentPhase = 'published';
     }
 
+    let cleanerDeletionAuthority: ReadonlyMap<
+      string,
+      ArchiveCleanerDeletionAuthority
+    > = new Map();
+    if (plan.cleaner.effectiveDelete.length > 0) {
+      currentOperation = 'cleaner-apply';
+      currentOperationPath = path.join(
+        plan.paths.ephemera,
+        plan.cleaner.effectiveDelete[0]!
+      );
+      // This complete-plan gate deliberately precedes every cleaner progress
+      // interpretation and filesystem absence check. Legacy delete plans
+      // therefore cannot acquire authority from disappearance or old journal
+      // claims, while legacy no-delete plans remain replayable.
+      cleanerDeletionAuthority =
+        requireCompleteArchiveCleanerDeletionAuthority(plan);
+    }
+
     for (const relativePath of plan.cleaner.effectiveDelete) {
       if (!journalSnapshot) {
         throw new Error('Archive cleaner requires a durable journal.');
@@ -11729,6 +12239,16 @@ export async function applyArchive(
       currentOperation = 'cleaner-apply';
       currentOperationPath = path.join(plan.paths.ephemera, relativePath);
       const candidateState = await pathExists(currentOperationPath, adapters);
+      if (
+        progress.restoredIdentity !== undefined &&
+        candidateState === 'absent'
+      ) {
+        throw archiveCleanerOwnershipError(
+          currentOperationPath,
+          plan,
+          `A previously restored cleaner candidate disappeared outside the verified deletion transition: ${relativePath}.`
+        );
+      }
       if (progress.state === 'pending' && candidateState === 'absent') {
         progress.state = 'already-absent';
         await persistJournalPhase(journalPath, 'cleaner-progress');
@@ -11749,9 +12269,28 @@ export async function applyArchive(
       }
       let deleted: string[];
       try {
+        const authority = cleanerDeletionAuthority.get(relativePath);
+        if (authority === undefined) {
+          throw archiveCleanerOwnershipError(
+            currentOperationPath,
+            plan,
+            `Archive plan exact cleaner authority lookup failed for ${relativePath}.`
+          );
+        }
         deleted = await claimAndDeleteCleanerCandidate(
           plan,
           relativePath,
+          authority,
+          progress.restoredIdentity ?? authority.identity,
+          async restoredIdentity => {
+            if (restoredIdentity === undefined) {
+              if (progress.restoredIdentity === undefined) return;
+              delete progress.restoredIdentity;
+            } else {
+              progress.restoredIdentity = restoredIdentity;
+            }
+            await persistJournalPhase(journalPath, 'cleaner-progress');
+          },
           adapters
         );
       } catch (error) {
@@ -11769,10 +12308,12 @@ export async function applyArchive(
         throw error;
       }
       if (deleted.includes(relativePath)) {
+        delete progress.restoredIdentity;
         progress.state = 'deleted';
       } else if (
         (await pathExists(currentOperationPath, adapters)) === 'absent'
       ) {
+        delete progress.restoredIdentity;
         progress.state = 'deleted-after-intent';
       } else {
         throw archiveCleanerOwnershipError(
