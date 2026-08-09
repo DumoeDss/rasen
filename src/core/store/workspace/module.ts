@@ -174,10 +174,45 @@ export class StoreWorkspace implements StoreWorkspaceModule {
           changeId: plan.changeId,
         }),
       ],
-      async () =>
-        applyWorkspacePlan(this.dependencies, plan, token, {
+      async () => {
+        const prepared = await applyWorkspacePlan(this.dependencies, plan, token, {
           ...(this.globalDataDir === undefined ? {} : { globalDataDir: this.globalDataDir }),
-        })
+        });
+        if (plan.changeInstanceId === undefined) return prepared;
+
+        const completed = await completeChangeBinding(
+          {
+            storeUid: plan.scope.storeUid,
+            storeId: plan.scope.storeId,
+            projectId: plan.scope.projectId,
+            targetLineId: plan.scope.targetLineId,
+            planningScopeId: plan.scope.planningScopeId,
+            changeId: plan.changeId,
+            changeInstanceId: plan.changeInstanceId,
+            planningRoot: plan.planning.root,
+            ...(this.globalDataDir === undefined
+              ? {}
+              : { globalDataDir: this.globalDataDir }),
+            pathFlavor: plan.pathFlavor,
+          },
+          this.dependencies
+        );
+        const {
+          changeInstanceId: _preparedChangeInstanceId,
+          workspacePairId: _preparedWorkspacePairId,
+          ...result
+        } = prepared;
+        return {
+          ...result,
+          bindingState: completed.bindingState,
+          ...(completed.entry?.changeInstanceId === undefined
+            ? {}
+            : { changeInstanceId: completed.entry.changeInstanceId }),
+          ...(completed.workspacePairId === undefined
+            ? {}
+            : { workspacePairId: completed.workspacePairId }),
+        };
+      }
     );
   }
 
