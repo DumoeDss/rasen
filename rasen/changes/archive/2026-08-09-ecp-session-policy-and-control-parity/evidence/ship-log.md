@@ -24,3 +24,8 @@ All ticked (23 leaf tasks across 7 sections; the "28" in some docs was a section
 ## Delivery
 
 Local (commit only). A separate session (see `rasen/handoff/pr-to-020-conflict-handoff.md`) reconciles the branch with dev/0.2.0 and opens the PR.
+
+## Archive
+**Date:** 2026-08-09T09:02:01.731Z
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle\rasen\changes\archive\2026-08-09-ecp-session-policy-and-control-parity
+**Transaction:** 096e9220-866d-485d-a95c-237d6898de04
