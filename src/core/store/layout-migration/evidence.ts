@@ -157,9 +157,14 @@ async function collectStoreRecords(
     } catch {
       continue;
     }
-    members.push(record.projectId);
+    // v1 records carry a UUID in `projectId` and a kebab-case name in `id`.
+    // The v2 system keys everything on the kebab-case id, so use `record.id`
+    // when available, falling back to `projectId` only for records that
+    // predate the `id` field.
+    const projectKey = record.id ?? record.projectId;
+    members.push(projectKey);
     if (record.adoption === undefined) continue;
-    adoptionLists.set(record.projectId, {
+    adoptionLists.set(projectKey, {
       specs: [...record.adoption.specs],
       changes: [...record.adoption.changes],
       adoptedAt: record.adoption.adoptedAt,
@@ -169,7 +174,7 @@ async function collectStoreRecords(
       push(target, evidenceKey('spec', specName), {
         class: 'E2-store-records',
         source,
-        projectId: record.projectId,
+        projectId: projectKey,
         nature: 'derived',
         detail: 'adoption.specs name list',
       });
@@ -178,7 +183,7 @@ async function collectStoreRecords(
       push(target, evidenceKey('change', changeName), {
         class: 'E2-store-records',
         source,
-        projectId: record.projectId,
+        projectId: projectKey,
         nature: 'derived',
         detail: 'adoption.changes name list',
       });
