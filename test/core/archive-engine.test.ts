@@ -10,6 +10,8 @@ import {
   createArchiveIntentTemplate,
   createArchivePlan,
   inspectArchiveApplyPlan,
+  hasReservedArchiveShipLogSection,
+  hashArchivePlan,
   defaultArchiveEngineAdapters,
   loadStoredArchivePlan,
   loadCompletedArchiveAbort,
@@ -20,6 +22,7 @@ import {
   type ArchiveBlocker,
   type ArchivePlan,
   type PreparedArchiveSpecAction,
+  type ArchiveSpecSyncPreparation,
 } from '../../src/core/archive-engine.js';
 import { hashArchiveEvidence } from '../../src/core/archive-accounting.js';
 import { hashDirectoryTree } from '../../src/core/ephemera-cleaner.js';
@@ -59,6 +62,7 @@ describe('archive plan/apply engine', () => {
     options: {
       keepEphemera?: boolean;
       specActions?: PreparedArchiveSpecAction[];
+      specSync?: ArchiveSpecSyncPreparation;
       timing?: ArchivePlan['decisions']['timing'];
       preparationBlockers?: ArchiveBlocker[];
       shipLog?: ArchivePlan['shipLog'];
@@ -82,6 +86,7 @@ describe('archive plan/apply engine', () => {
         override: false,
       },
       specActions: options.specActions ?? [],
+      ...(options.specSync === undefined ? {} : { specSync: options.specSync }),
       sidecar,
       ...(options.shipLog === undefined ? {} : { shipLog: options.shipLog }),
       ...(options.preparationBlockers === undefined
@@ -126,6 +131,444 @@ describe('archive plan/apply engine', () => {
     await expect(fs.access(archivePlan.paths.final)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  it('blocks planning when prepared delta bytes no longer match reconciliation', async () => {
+    const capability = 'source-drift';
+    const source = path.join(active, 'specs', capability, 'spec.md');
+    const target = path.join(
+      root,
+      'rasen',
+      'specs',
+      capability,
+      'spec.md'
+    );
+    const analyzed = '# Original delta\n';
+    await fs.mkdir(path.dirname(source), { recursive: true });
+    await fs.writeFile(source, '# Replaced delta\n');
+
+    const archivePlan = await plan({
+      specActions: [
+        {
+          capability,
+          action: 'create',
+          source,
+          target,
+          sourceSha256: defaultArchiveEngineAdapters.sha256(analyzed),
+          targetPrecondition: { state: 'absent' },
+          rebuilt: '# Planned canonical\n',
+          counts: { added: 1, modified: 0, removed: 0, renamed: 0 },
+        },
+      ],
+    });
+
+    expect(archivePlan.complete).toBe(false);
+    expect(archivePlan.specActions).toEqual([]);
+    expect(archivePlan.blockers).toContainEqual({
+      operation: 'spec',
+      path: source,
+      code: 'ESTALE',
+      message: `Delta spec changed after reconciliation: ${source}`,
+    });
+    await expect(fs.access(target)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.access(archivePlan.paths.stage)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('blocks when a new recursive delta appears after action preparation', async () => {
+    const preparedSource = path.join(active, 'specs', 'alpha', 'spec.md');
+    const addedSource = path.join(
+      active,
+      'specs',
+      'platform',
+      'beta',
+      'spec.md'
+    );
+    const target = path.join(root, 'rasen', 'specs', 'alpha', 'spec.md');
+    const delta = '# Prepared delta\n';
+    await fs.mkdir(path.dirname(preparedSource), { recursive: true });
+    await fs.mkdir(path.dirname(addedSource), { recursive: true });
+    await fs.writeFile(preparedSource, delta);
+    await fs.writeFile(addedSource, '# Added after preparation\n');
+
+    const archivePlan = await plan({
+      specSync: { mode: 'apply', deltaSources: [preparedSource] },
+      specActions: [
+        {
+          capability: 'alpha',
+          action: 'create',
+          source: preparedSource,
+          target,
+          sourceSha256: defaultArchiveEngineAdapters.sha256(delta),
+          targetPrecondition: { state: 'absent' },
+          rebuilt: '# Alpha\n',
+          counts: { added: 1, modified: 0, removed: 0, renamed: 0 },
+        },
+      ],
+    });
+
+    expect(archivePlan.complete).toBe(false);
+    expect(archivePlan.blockers).toContainEqual(
+      expect.objectContaining({
+        operation: 'spec',
+        code: 'archive_spec_manifest_stale',
+        message: 'Delta spec set changed after spec action preparation.',
+      })
+    );
+    await expect(fs.access(target)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.access(archivePlan.paths.stage)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('blocks delete-last-requirement planning when the canonical target drifted', async () => {
+    const capability = 'delete-last-target-drift';
+    const source = path.join(active, 'specs', capability, 'spec.md');
+    const target = path.join(
+      root,
+      'rasen',
+      'specs',
+      capability,
+      'spec.md'
+    );
+    const delta = [
+      '## REMOVED Requirements',
+      '',
+      `- ${capability}`,
+      '',
+    ].join('\n');
+    const analyzedTarget = '# Canonical before reconciliation\n';
+    const driftedTarget = '# Canonical changed after reconciliation\n';
+    await fs.mkdir(path.dirname(source), { recursive: true });
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(source, delta);
+    await fs.writeFile(target, driftedTarget);
+
+    const archivePlan = await plan({
+      specActions: [
+        {
+          capability,
+          action: 'delete',
+          source,
+          target,
+          sourceSha256: defaultArchiveEngineAdapters.sha256(delta),
+          targetPrecondition: {
+            state: 'file',
+            sha256: defaultArchiveEngineAdapters.sha256(analyzedTarget),
+          },
+          rebuilt: '',
+          counts: { added: 0, modified: 0, removed: 1, renamed: 0 },
+        },
+      ],
+    });
+
+    expect(archivePlan.complete).toBe(false);
+    expect(archivePlan.specActions).toEqual([]);
+    expect(archivePlan.blockers).toContainEqual(
+      expect.objectContaining({
+        operation: 'spec',
+        path: target,
+        code: 'ESTALE',
+        message: `Canonical spec changed after reconciliation: ${target}`,
+      })
+    );
+    await expect(fs.readFile(target, 'utf8')).resolves.toBe(driftedTarget);
+    await expect(fs.access(archivePlan.paths.stage)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('rejects spec actions outside their exact delta and canonical capability paths', async () => {
+    const capability = 'authorized-paths';
+    const source = path.join(active, 'specs', capability, 'spec.md');
+    const target = path.join(root, 'rasen', 'specs', capability, 'spec.md');
+    const outsideSource = path.join(root, 'outside-delta.md');
+    const outsideTarget = path.join(root, 'outside-canonical.md');
+    const delta = '# Delta\n';
+    await fs.mkdir(path.dirname(source), { recursive: true });
+    await fs.writeFile(source, delta);
+    await fs.writeFile(outsideSource, delta);
+    await fs.writeFile(outsideTarget, 'must survive\n');
+    const action = {
+      capability,
+      action: 'create' as const,
+      source,
+      target,
+      sourceSha256: defaultArchiveEngineAdapters.sha256(delta),
+      targetPrecondition: { state: 'absent' as const },
+      rebuilt: '# Rebuilt\n',
+      counts: { added: 1, modified: 0, removed: 0, renamed: 0 },
+    };
+
+    for (const unauthorized of [
+      { ...action, source: outsideSource },
+      { ...action, target: outsideTarget },
+      {
+        ...action,
+        capability: '..',
+        source: path.join(active, 'specs', '..', 'spec.md'),
+        target: path.join(root, 'rasen', 'specs', '..', 'spec.md'),
+      },
+    ]) {
+      const rejected = await plan({ specActions: [unauthorized] });
+      expect(rejected.complete).toBe(false);
+      expect(rejected.specActions).toEqual([]);
+      expect(rejected.blockers).toContainEqual(
+        expect.objectContaining({
+          operation: 'spec',
+          code: 'archive_spec_path_unauthorized',
+        })
+      );
+    }
+
+    const authorized = await plan({ specActions: [action] });
+    expect(authorized.complete, JSON.stringify(authorized.blockers)).toBe(true);
+    for (const [field, maliciousPath] of [
+      ['source', outsideSource],
+      ['target', outsideTarget],
+    ] as const) {
+      const forged = structuredClone(authorized);
+      forged.specActions[0]![field] = maliciousPath;
+      const { planHash: _ignored, ...withoutHash } = forged;
+      forged.planHash = hashArchivePlan(withoutHash);
+
+      await expect(
+        persistArchivePlan(forged, path.join(root, `global-${field}`))
+      ).rejects.toThrow(/spec action outside its authorized/u);
+      const result = await applyArchive(forged);
+      expect(result).toMatchObject({
+        status: 'blocked',
+        blockers: [
+          expect.objectContaining({
+            operation: 'validation',
+            code: 'archive_plan_path_unauthorized',
+          }),
+        ],
+      });
+      await expect(fs.readFile(outsideTarget, 'utf8')).resolves.toBe(
+        'must survive\n'
+      );
+      await expect(fs.access(authorized.paths.stage)).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    }
+
+    const traversal = structuredClone(authorized);
+    traversal.specActions[0]!.capability = '..';
+    traversal.specActions[0]!.source = path.join(
+      active,
+      'specs',
+      '..',
+      'spec.md'
+    );
+    traversal.specActions[0]!.target = path.join(
+      root,
+      'rasen',
+      'specs',
+      '..',
+      'spec.md'
+    );
+    const { planHash: _ignored, ...traversalWithoutHash } = traversal;
+    traversal.planHash = hashArchivePlan(traversalWithoutHash);
+    await expect(
+      persistArchivePlan(traversal, path.join(root, 'global-traversal'))
+    ).rejects.toThrow(/spec action outside its authorized/u);
+    await expect(applyArchive(traversal)).resolves.toMatchObject({
+      status: 'blocked',
+      blockers: [
+        expect.objectContaining({
+          operation: 'validation',
+          code: 'archive_plan_path_unauthorized',
+        }),
+      ],
+    });
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'rejects source and canonical capability parent symlink escapes at plan and stored apply',
+    async () => {
+      async function actionPlan(capability: string): Promise<ArchivePlan> {
+        const source = path.join(active, 'specs', capability, 'spec.md');
+        const target = path.join(root, 'rasen', 'specs', capability, 'spec.md');
+        const delta = '# Delta\n';
+        const canonical = '# Canonical\n';
+        await fs.mkdir(path.dirname(source), { recursive: true });
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await fs.writeFile(source, delta);
+        await fs.writeFile(target, canonical);
+        return plan({
+          specActions: [
+            {
+              capability,
+              action: 'update',
+              source,
+              target,
+              sourceSha256: defaultArchiveEngineAdapters.sha256(delta),
+              targetPrecondition: {
+                state: 'file',
+                sha256: defaultArchiveEngineAdapters.sha256(canonical),
+              },
+              rebuilt: '# Updated\n',
+              counts: { added: 0, modified: 1, removed: 0, renamed: 0 },
+            },
+          ],
+        });
+      }
+
+      for (const side of ['source', 'target'] as const) {
+        const capability = `symlink-${side}`;
+        const authorized = await actionPlan(capability);
+        expect(authorized.complete, JSON.stringify(authorized.blockers)).toBe(
+          true
+        );
+        const capabilityDirectory =
+          side === 'source'
+            ? path.dirname(authorized.specActions[0]!.source)
+            : path.dirname(authorized.specActions[0]!.target);
+        const outsideDirectory = path.join(root, `outside-${side}-capability`);
+        await fs.rename(capabilityDirectory, outsideDirectory);
+        await fs.symlink(outsideDirectory, capabilityDirectory, 'dir');
+
+        const result = await applyArchive(authorized);
+        expect(result).toMatchObject({
+          status: 'blocked',
+          blockers: [
+            expect.objectContaining({
+              operation: 'validation',
+              code: 'archive_plan_path_unauthorized',
+            }),
+          ],
+        });
+        await expect(
+          fs.readFile(path.join(outsideDirectory, 'spec.md'), 'utf8')
+        ).resolves.toMatch(/^(# Delta|# Canonical)\n$/u);
+        await expect(fs.access(authorized.paths.stage)).rejects.toMatchObject({
+          code: 'ENOENT',
+        });
+
+        const replannedAction = { ...authorized.specActions[0]! };
+        delete replannedAction.actionId;
+        const rejectedAtPlan = await plan({
+          specActions: [replannedAction],
+        });
+        expect(rejectedAtPlan.complete).toBe(false);
+        expect(rejectedAtPlan.blockers).toContainEqual(
+          expect.objectContaining({
+            operation: 'spec',
+            code: 'archive_spec_path_unauthorized',
+          })
+        );
+      }
+    }
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'does not follow a capability parent symlink inserted during create',
+    async () => {
+      const capability = 'platform/routing';
+      const source = path.join(active, 'specs', 'platform', 'routing', 'spec.md');
+      const canonicalRoot = path.join(root, 'rasen', 'specs');
+      const target = path.join(canonicalRoot, 'platform', 'routing', 'spec.md');
+      const targetParent = path.join(canonicalRoot, 'platform');
+      const outside = path.join(root, 'outside-create-race');
+      const delta = '# Delta\n';
+      await fs.mkdir(path.dirname(source), { recursive: true });
+      await fs.mkdir(canonicalRoot, { recursive: true });
+      await fs.mkdir(outside, { recursive: true });
+      await fs.writeFile(source, delta);
+      await fs.writeFile(path.join(outside, 'marker.txt'), 'must survive\n');
+      const archivePlan = await plan({
+        specSync: { mode: 'apply', deltaSources: [source] },
+        specActions: [
+          {
+            capability,
+            action: 'create',
+            source,
+            target,
+            sourceSha256: defaultArchiveEngineAdapters.sha256(delta),
+            targetPrecondition: { state: 'absent' },
+            rebuilt: '# Created\n',
+            counts: { added: 1, modified: 0, removed: 0, renamed: 0 },
+          },
+        ],
+      });
+      expect(archivePlan.complete, JSON.stringify(archivePlan.blockers)).toBe(
+        true
+      );
+
+      const mkdir = defaultArchiveEngineAdapters.fs.mkdir;
+      let injected = false;
+      const result = await applyArchive(archivePlan, {
+        adapters: {
+          ...defaultArchiveEngineAdapters,
+          fs: {
+            ...defaultArchiveEngineAdapters.fs,
+            mkdir: async (targetPath, options) => {
+              if (targetPath === targetParent && !injected) {
+                injected = true;
+                await fs.symlink(outside, targetParent, 'dir');
+              }
+              return mkdir(targetPath, options);
+            },
+          },
+        },
+      });
+
+      expect(injected).toBe(true);
+      expect(result).toMatchObject({
+        status: 'recoverable',
+        blockers: [
+          expect.objectContaining({
+            operation: 'spec',
+            code: 'archive_spec_path_unauthorized',
+          }),
+        ],
+      });
+      await expect(fs.readdir(outside)).resolves.toEqual(['marker.txt']);
+      await expect(fs.access(target)).rejects.toMatchObject({ code: 'ENOENT' });
+    }
+  );
+
+  it('creates a missing canonical specs root through its bound parent', async () => {
+    const capability = 'first-capability';
+    const source = path.join(active, 'specs', capability, 'spec.md');
+    const target = path.join(
+      root,
+      'rasen',
+      'specs',
+      capability,
+      'spec.md'
+    );
+    const delta = '# Delta\n';
+    await fs.mkdir(path.dirname(source), { recursive: true });
+    await fs.writeFile(source, delta);
+    const archivePlan = await plan({
+      specSync: { mode: 'apply', deltaSources: [source] },
+      specActions: [
+        {
+          capability,
+          action: 'create',
+          source,
+          target,
+          sourceSha256: defaultArchiveEngineAdapters.sha256(delta),
+          targetPrecondition: { state: 'absent' },
+          rebuilt: '# First canonical spec\n',
+          counts: { added: 1, modified: 0, removed: 0, renamed: 0 },
+        },
+      ],
+    });
+    expect(archivePlan.complete, JSON.stringify(archivePlan.blockers)).toBe(
+      true
+    );
+
+    await expect(applyArchive(archivePlan)).resolves.toMatchObject({
+      status: 'complete',
+      specsUpdated: true,
+    });
+    await expect(fs.readFile(target, 'utf8')).resolves.toBe(
+      '# First canonical spec\n'
+    );
+  });
+
   it('round-trips a saved canonical plan token and rejects one-byte plan tampering', async () => {
     const archivePlan = await plan();
     const globalData = path.join(root, 'global-data');
@@ -148,6 +591,40 @@ describe('archive plan/apply engine', () => {
     await expect(loadStoredArchivePlan(token, globalData)).rejects.toThrow(
       'identity mismatch'
     );
+    await expect(fs.access(active)).resolves.toBeUndefined();
+    await expect(fs.access(archivePlan.paths.stage)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('re-verifies the exact stored envelope under the operation lock before invoking apply or abort', async () => {
+    const archivePlan = await plan();
+    const globalData = path.join(root, 'global-data');
+    await persistArchivePlan(archivePlan, globalData);
+    const planPath = path.join(
+      globalData,
+      'archive-transactions',
+      archivePlan.transactionId,
+      'plan.json'
+    );
+    const envelope = JSON.parse(await fs.readFile(planPath, 'utf8'));
+    envelope.createdAt = '2026-08-01T00:00:00.000Z';
+    await fs.writeFile(planPath, `${JSON.stringify(envelope, null, 2)}\n`);
+    const invoked: string[] = [];
+
+    for (const holder of ['apply', 'abort'] as const) {
+      await expect(
+        withStoredArchivePlanOperation(
+          archivePlan,
+          globalData,
+          holder,
+          async () => {
+            invoked.push(holder);
+          }
+        )
+      ).rejects.toMatchObject({ code: 'archive_plan_envelope_invalid' });
+    }
+    expect(invoked).toEqual([]);
     await expect(fs.access(active)).resolves.toBeUndefined();
     await expect(fs.access(archivePlan.paths.stage)).rejects.toMatchObject({
       code: 'ENOENT',
@@ -260,7 +737,7 @@ describe('archive plan/apply engine', () => {
     expect(archivePlan.decisions.timing.override).toBe(false);
   });
 
-  it('applies a legacy saved merge plan whose timing blocker predates stable codes', async () => {
+  it('applies an unchanged schema-v1 saved merge plan with its original token identity', async () => {
     const currentPlan = await plan({
       timing: {
         mode: 'on-merge',
@@ -268,15 +745,39 @@ describe('archive plan/apply engine', () => {
         override: false,
       },
     });
-    const legacyPlan = structuredClone(currentPlan);
+    type HistoricalPlanV1 = Omit<
+      ArchivePlan,
+      'archivePathAuthority' | 'decisions'
+    > & {
+      archivePathAuthority?: ArchivePlan['archivePathAuthority'];
+      decisions: Omit<ArchivePlan['decisions'], 'specSync'> & {
+        specSync?: ArchiveSpecSyncPreparation;
+      };
+    };
+    const legacyPlan = structuredClone(
+      currentPlan
+    ) as unknown as HistoricalPlanV1;
+    legacyPlan.schemaVersion = 1;
+    delete legacyPlan.archivePathAuthority;
+    delete legacyPlan.decisions.specSync;
     delete legacyPlan.blockers[0]?.code;
     const { planHash: _planHash, ...withoutHash } = legacyPlan;
     legacyPlan.planHash = defaultArchiveEngineAdapters.sha256(
       stableArchiveJson(withoutHash)
     );
+    const originalBytes = stableArchiveJson(legacyPlan);
+    const originalHash = legacyPlan.planHash;
     const globalDataDir = path.join(root, 'global-data');
-    const token = await persistArchivePlan(legacyPlan, globalDataDir);
+    const token = await persistArchivePlan(
+      legacyPlan as ArchivePlan,
+      globalDataDir
+    );
+    expect(token).toBe(
+      `archive-v1:${legacyPlan.transactionId}:${originalHash}`
+    );
     const stored = await loadStoredArchivePlan(token, globalDataDir);
+    expect(stableArchiveJson(stored)).toBe(originalBytes);
+    expect(stored.schemaVersion).toBe(1);
     expect(stored.blockers).toEqual([
       expect.objectContaining({
         operation: 'timing',
@@ -290,6 +791,62 @@ describe('archive plan/apply engine', () => {
         })
       ).status
     ).toBe('complete');
+    expect(stored.planHash).toBe(originalHash);
+  });
+
+  it('rejects a schema-v2 plan that omits its spec sync manifest', async () => {
+    const currentPlan = await plan();
+    const invalidPlan = structuredClone(currentPlan) as ArchivePlan & {
+      decisions: Omit<ArchivePlan['decisions'], 'specSync'> & {
+        specSync?: ArchiveSpecSyncPreparation;
+      };
+    };
+    delete invalidPlan.decisions.specSync;
+    const { planHash: _planHash, ...withoutHash } = invalidPlan;
+    invalidPlan.planHash = defaultArchiveEngineAdapters.sha256(
+      stableArchiveJson(withoutHash)
+    );
+    const globalDataDir = path.join(root, 'global-data');
+    const transactionDir = path.join(
+      globalDataDir,
+      'archive-transactions',
+      invalidPlan.transactionId
+    );
+    await fs.mkdir(transactionDir, { recursive: true });
+    await fs.writeFile(
+      path.join(transactionDir, 'plan.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        kind: 'rasen.archive-plan',
+        transactionId: invalidPlan.transactionId,
+        planHash: invalidPlan.planHash,
+        createdAt: invalidPlan.createdAt,
+        plan: invalidPlan,
+      })
+    );
+    const token = `archive-v1:${invalidPlan.transactionId}:${invalidPlan.planHash}`;
+    await expect(
+      loadStoredArchivePlan(token, globalDataDir)
+    ).rejects.toThrow('identity mismatch');
+  });
+
+  it('rejects a schema-v2 plan that omits archive path authority', async () => {
+    const currentPlan = await plan();
+    const invalidPlan = structuredClone(currentPlan) as Omit<
+      ArchivePlan,
+      'archivePathAuthority'
+    > & {
+      archivePathAuthority?: ArchivePlan['archivePathAuthority'];
+    };
+    delete invalidPlan.archivePathAuthority;
+    const { planHash: _planHash, ...withoutHash } = invalidPlan;
+    invalidPlan.planHash = defaultArchiveEngineAdapters.sha256(
+      stableArchiveJson(withoutHash)
+    );
+    const globalDataDir = path.join(root, 'global-data');
+    await expect(
+      persistArchivePlan(invalidPlan as ArchivePlan, globalDataDir)
+    ).rejects.toThrow('invalid canonical hash');
   });
 
   it('merge confirmation cannot bypass an unrelated plan blocker', async () => {
@@ -468,6 +1025,321 @@ describe('archive plan/apply engine', () => {
       { file: 'handoff/absorbed.md', outcome: 'absorbed' },
       { file: 'handoff/preserved.md', outcome: 'preserved' },
     ]);
+  });
+
+  it('preserves an injected handoff destination at the no-replace boundary', async () => {
+    const relative = 'handoff/preserved.md';
+    await fs.mkdir(path.join(active, 'handoff'), { recursive: true });
+    await fs.writeFile(path.join(active, ...relative.split('/')), 'planned handoff\n');
+    await fs.writeFile(
+      path.join(active, '.rasen-archive-input.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        change: 'sample',
+        handoff: {
+          complete: true,
+          decisions: [{ path: relative, outcome: 'preserved' }],
+        },
+        probes: [],
+      })
+    );
+    const archivePlan = await plan();
+    const stagedSource = path.join(archivePlan.paths.stage, ...relative.split('/'));
+    const stagedDestination = path.join(
+      archivePlan.paths.stage,
+      'evidence',
+      'handoff',
+      'preserved.md'
+    );
+    let inject = true;
+    const adapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        link: async (source: string, destination: string) => {
+          if (destination === stagedDestination && inject) {
+            inject = false;
+            await fs.writeFile(destination, 'unrelated destination\n');
+          }
+          return defaultArchiveEngineAdapters.fs.link(source, destination);
+        },
+      },
+    };
+
+    const result = await applyArchive(archivePlan, { adapters });
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+      retainedPaths: expect.arrayContaining([
+        stagedSource,
+        stagedDestination,
+        archivePlan.paths.stage,
+        archivePlan.paths.journal,
+      ]),
+      blockers: [
+        expect.objectContaining({
+          operation: 'handoff',
+          code: 'archive_handoff_ownership_unverified',
+        }),
+      ],
+    });
+    expect(await fs.readFile(stagedSource, 'utf8')).toBe('planned handoff\n');
+    expect(await fs.readFile(stagedDestination, 'utf8')).toBe(
+      'unrelated destination\n'
+    );
+    await expect(fs.access(active)).resolves.toBeUndefined();
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'rejects an injected handoff destination-parent symlink before publication',
+    async () => {
+      const relative = 'handoff/ancestor-symlink.md';
+      await fs.mkdir(path.join(active, 'handoff'), { recursive: true });
+      await fs.writeFile(
+        path.join(active, ...relative.split('/')),
+        'planned handoff\n'
+      );
+      await fs.writeFile(
+        path.join(active, '.rasen-archive-input.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          change: 'sample',
+          handoff: {
+            complete: true,
+            decisions: [{ path: relative, outcome: 'preserved' }],
+          },
+          probes: [],
+        })
+      );
+      const archivePlan = await plan();
+      const stagedSource = path.join(
+        archivePlan.paths.stage,
+        ...relative.split('/')
+      );
+      const stagedParent = path.join(
+        archivePlan.paths.stage,
+        'evidence',
+        'handoff'
+      );
+      const outside = path.join(root, 'outside-handoff-symlink');
+      await fs.mkdir(outside);
+      let inject = true;
+      const adapters = {
+        ...defaultArchiveEngineAdapters,
+        fs: {
+          ...defaultArchiveEngineAdapters.fs,
+          mkdir: async (
+            candidate: string,
+            options?: Parameters<typeof fs.mkdir>[1]
+          ) => {
+            if (candidate === stagedParent && inject) {
+              inject = false;
+              await fs.symlink(outside, stagedParent, 'dir');
+              return undefined;
+            }
+            return defaultArchiveEngineAdapters.fs.mkdir(candidate, options);
+          },
+        },
+      };
+
+      const result = await applyArchive(archivePlan, { adapters });
+
+      expect(result).toMatchObject({
+        status: 'recoverable',
+        manualRecoveryAction: { kind: 'manual-recovery-required' },
+        blockers: [
+          expect.objectContaining({
+            operation: 'handoff',
+            code: 'archive_handoff_ownership_unverified',
+          }),
+        ],
+      });
+      expect(await fs.readFile(stagedSource, 'utf8')).toBe('planned handoff\n');
+      await expect(
+        fs.access(path.join(outside, 'ancestor-symlink.md'))
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+    }
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'rejects a handoff destination-parent identity swap before publication',
+    async () => {
+      const relative = 'handoff/ancestor-swap.md';
+      await fs.mkdir(path.join(active, 'handoff'), { recursive: true });
+      await fs.writeFile(
+        path.join(active, ...relative.split('/')),
+        'planned handoff\n'
+      );
+      await fs.writeFile(
+        path.join(active, '.rasen-archive-input.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          change: 'sample',
+          handoff: {
+            complete: true,
+            decisions: [{ path: relative, outcome: 'preserved' }],
+          },
+          probes: [],
+        })
+      );
+      const archivePlan = await plan();
+      const stagedSource = path.join(
+        archivePlan.paths.stage,
+        ...relative.split('/')
+      );
+      const stagedParent = path.join(
+        archivePlan.paths.stage,
+        'evidence',
+        'handoff'
+      );
+      const displaced = `${stagedParent}.displaced`;
+      let parentStats = 0;
+      const adapters = {
+        ...defaultArchiveEngineAdapters,
+        fs: {
+          ...defaultArchiveEngineAdapters.fs,
+          lstat: async (candidate: string) => {
+            if (candidate === stagedParent) {
+              parentStats += 1;
+              if (parentStats === 3) {
+                await fs.rename(stagedParent, displaced);
+                await fs.mkdir(stagedParent);
+              }
+            }
+            return defaultArchiveEngineAdapters.fs.lstat(candidate);
+          },
+        },
+      };
+
+      const result = await applyArchive(archivePlan, { adapters });
+
+      expect(result).toMatchObject({
+        status: 'recoverable',
+        manualRecoveryAction: { kind: 'manual-recovery-required' },
+        blockers: [
+          expect.objectContaining({
+            operation: 'handoff',
+            code: 'archive_handoff_ownership_unverified',
+          }),
+        ],
+      });
+      expect(await fs.readFile(stagedSource, 'utf8')).toBe('planned handoff\n');
+      await expect(
+        fs.access(path.join(stagedParent, 'ancestor-swap.md'))
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+    }
+  );
+
+  it('resumes a preserved handoff after the exclusive link succeeds before source unlink', async () => {
+    const relative = 'handoff/resume.md';
+    await fs.mkdir(path.join(active, 'handoff'), { recursive: true });
+    await fs.writeFile(path.join(active, ...relative.split('/')), 'planned handoff\n');
+    await fs.writeFile(
+      path.join(active, '.rasen-archive-input.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        change: 'sample',
+        handoff: {
+          complete: true,
+          decisions: [{ path: relative, outcome: 'preserved' }],
+        },
+        probes: [],
+      })
+    );
+    const archivePlan = await plan();
+    const stagedSource = path.join(archivePlan.paths.stage, ...relative.split('/'));
+    const stagedDestination = path.join(
+      archivePlan.paths.stage,
+      'evidence',
+      'handoff',
+      'resume.md'
+    );
+    let crash = true;
+    const adapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        link: async (source: string, destination: string) => {
+          await defaultArchiveEngineAdapters.fs.link(source, destination);
+          if (destination === stagedDestination && crash) {
+            crash = false;
+            const error = new Error('crash after exclusive handoff link');
+            (error as NodeJS.ErrnoException).code = 'EIO';
+            throw error;
+          }
+        },
+      },
+    };
+
+    expect((await applyArchive(archivePlan, { adapters })).status).toBe(
+      'recoverable'
+    );
+    const [sourceStat, destinationStat] = await Promise.all([
+      fs.lstat(stagedSource),
+      fs.lstat(stagedDestination),
+    ]);
+    expect(sourceStat.ino).toBe(destinationStat.ino);
+
+    const retry = await applyArchive(archivePlan);
+
+    expect(retry.status).toBe('complete');
+    expect(retry.resumed).toBe(true);
+    expect(
+      await fs.readFile(
+        path.join(archivePlan.paths.final, 'evidence', 'handoff', 'resume.md'),
+        'utf8'
+      )
+    ).toBe('planned handoff\n');
+  });
+
+  it('retains an absorbed handoff source whose durable identity is swapped before unlink', async () => {
+    const relative = 'handoff/absorbed.md';
+    await fs.mkdir(path.join(active, 'handoff'), { recursive: true });
+    await fs.writeFile(path.join(active, ...relative.split('/')), 'planned handoff\n');
+    await fs.writeFile(
+      path.join(active, '.rasen-archive-input.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        change: 'sample',
+        handoff: {
+          complete: true,
+          decisions: [{ path: relative, outcome: 'absorbed' }],
+        },
+        probes: [],
+      })
+    );
+    const archivePlan = await plan();
+    const stagedSource = path.join(archivePlan.paths.stage, ...relative.split('/'));
+    const displaced = `${stagedSource}.displaced`;
+    let sourceStats = 0;
+    const adapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        lstat: async (target: string) => {
+          if (target === stagedSource) {
+            sourceStats += 1;
+            if (sourceStats === 7) {
+              await fs.rename(stagedSource, displaced);
+              await fs.writeFile(stagedSource, 'replacement handoff\n');
+            }
+          }
+          return defaultArchiveEngineAdapters.fs.lstat(target);
+        },
+      },
+    };
+
+    const result = await applyArchive(archivePlan, { adapters });
+
+    expect(result.status).toBe('recoverable');
+    expect(result.blockers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ operation: 'handoff', code: 'ESTALE' }),
+      ])
+    );
+    expect(await fs.readFile(stagedSource, 'utf8')).toBe('replacement handoff\n');
+    expect(await fs.readFile(displaced, 'utf8')).toBe('planned handoff\n');
   });
 
   it('builds complete empty and multi-handoff intent templates outside the active change', async () => {
@@ -846,6 +1718,65 @@ describe('archive plan/apply engine', () => {
     expect(await fs.readFile(targetTwo, 'utf8')).toBe(rebuiltTwo);
   });
 
+  it('rejects forged complete spec progress without publication identities', async () => {
+    const capability = 'forged-complete';
+    const delta = path.join(active, 'specs', capability, 'spec.md');
+    const target = path.join(root, 'rasen', 'specs', capability, 'spec.md');
+    const rebuilt = '# Durable spec\n';
+    await fs.mkdir(path.dirname(delta), { recursive: true });
+    await fs.writeFile(delta, rebuilt);
+    const archivePlan = await plan({
+      specActions: [
+        {
+          capability,
+          action: 'create',
+          source: delta,
+          target,
+          sourceSha256: defaultArchiveEngineAdapters.sha256(rebuilt),
+          targetPrecondition: { state: 'absent' },
+          rebuilt,
+          counts: { added: 1, modified: 0, removed: 0, renamed: 0 },
+        },
+      ],
+    });
+    expect((await applyArchive(archivePlan)).status).toBe('complete');
+
+    const journal = JSON.parse(
+      await fs.readFile(archivePlan.paths.publishedJournal, 'utf8')
+    ) as {
+      specProgress: Array<Record<string, unknown>>;
+    };
+    delete journal.specProgress[0]!.claimIdentity;
+    delete journal.specProgress[0]!.temporaryIdentity;
+    delete journal.specProgress[0]!.publishedIdentity;
+    await fs.writeFile(
+      archivePlan.paths.publishedJournal,
+      `${JSON.stringify(journal, null, 2)}\n`
+    );
+
+    const retry = await applyArchive(archivePlan);
+
+    expect(retry).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        expect.objectContaining({ code: 'archive_journal_invalid' }),
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    expect(retry.recoveryCommand).toBeUndefined();
+    expect(retry.retainedPaths).toEqual(
+      expect.arrayContaining([
+        archivePlan.paths.active,
+        archivePlan.paths.stage,
+        archivePlan.paths.final,
+        archivePlan.paths.publishedJournal,
+      ])
+    );
+    expect(await fs.readFile(target, 'utf8')).toBe(rebuilt);
+  });
+
   it.each(['create', 'update'] as const)(
     'reconciles an exact %s target after a crash between hard-link publication and progress flush',
     async actionKind => {
@@ -972,7 +1903,196 @@ describe('archive plan/apply engine', () => {
     expect(retry.resumed).toBe(true);
     expect(await fs.readFile(target, 'utf8')).toBe(rebuilt);
     await expect(fs.access(claimRoot)).rejects.toMatchObject({ code: 'ENOENT' });
-  });
+  }, 120_000);
+
+  it('keeps verified spec claim intruders on manual recovery across exact retries', async () => {
+    const capability = 'verified-claim-intruder';
+    const delta = path.join(active, 'specs', capability, 'spec.md');
+    const target = path.join(root, 'rasen', 'specs', capability, 'spec.md');
+    await fs.mkdir(path.dirname(delta), { recursive: true });
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(delta, '# Delta\n');
+    await fs.writeFile(target, '# Original\n');
+    const archivePlan = await plan({
+      specActions: [
+        {
+          capability,
+          action: 'update',
+          source: delta,
+          target,
+          sourceSha256: defaultArchiveEngineAdapters.sha256('# Delta\n'),
+          targetPrecondition: {
+            state: 'file',
+            sha256: defaultArchiveEngineAdapters.sha256('# Original\n'),
+          },
+          rebuilt: '# Rebuilt\n',
+          counts: { added: 0, modified: 1, removed: 0, renamed: 0 },
+        },
+      ],
+    });
+    const actionId = archivePlan.specActions[0].actionId!;
+    const claimRoot = path.join(
+      path.dirname(target),
+      `.rasen-archive-spec-${archivePlan.transactionId}-${actionId.slice(0, 12)}`
+    );
+    const backup = path.join(claimRoot, 'original');
+    const intruder = path.join(claimRoot, 'intruder');
+    let inject = true;
+    const adapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        unlink: async (candidate: string) => {
+          await defaultArchiveEngineAdapters.fs.unlink(candidate);
+          if (candidate === backup && inject) {
+            inject = false;
+            await fs.writeFile(intruder, 'unrelated\n');
+          }
+        },
+      },
+    };
+
+    const first = await applyArchive(archivePlan, { adapters });
+    const retry = await applyArchive(archivePlan);
+
+    for (const result of [first, retry]) {
+      expect(result).toMatchObject({
+        status: 'recoverable',
+        manualRecoveryAction: { kind: 'manual-recovery-required' },
+        retainedPaths: expect.arrayContaining([
+          claimRoot,
+          intruder,
+          delta,
+          target,
+          archivePlan.paths.journal,
+        ]),
+        blockers: [
+          expect.objectContaining({
+            operation: 'spec',
+            code: 'archive_claim_ownership_unverified',
+          }),
+        ],
+      });
+      expect(result.recoveryCommand).toBeUndefined();
+      expect(result.abortCommand).toBeUndefined();
+    }
+    expect(await fs.readFile(intruder, 'utf8')).toBe('unrelated\n');
+    expect(await fs.readFile(target, 'utf8')).toBe('# Rebuilt\n');
+  }, 120_000);
+
+  it('completes an exact update retry after claim-root removal wins before the journal flush', async () => {
+    const capability = 'claim-rmdir-update';
+    const delta = path.join(active, 'specs', capability, 'spec.md');
+    const target = path.join(root, 'rasen', 'specs', capability, 'spec.md');
+    await fs.mkdir(path.dirname(delta), { recursive: true });
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(delta, '# Delta\n');
+    await fs.writeFile(target, '# Original\n');
+    const archivePlan = await plan({
+      specActions: [
+        {
+          capability,
+          action: 'update',
+          source: delta,
+          target,
+          sourceSha256: defaultArchiveEngineAdapters.sha256('# Delta\n'),
+          targetPrecondition: {
+            state: 'file',
+            sha256: defaultArchiveEngineAdapters.sha256('# Original\n'),
+          },
+          rebuilt: '# Rebuilt\n',
+          counts: { added: 0, modified: 1, removed: 0, renamed: 0 },
+        },
+      ],
+    });
+    const actionId = archivePlan.specActions[0].actionId!;
+    const claimRoot = path.join(
+      path.dirname(target),
+      `.rasen-archive-spec-${archivePlan.transactionId}-${actionId.slice(0, 12)}`
+    );
+    let crash = true;
+    const adapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        rmdir: async (candidate: string) => {
+          await defaultArchiveEngineAdapters.fs.rmdir(candidate);
+          if (candidate === claimRoot && crash) {
+            crash = false;
+            const error = new Error('crash after update claim-root removal');
+            (error as NodeJS.ErrnoException).code = 'EIO';
+            throw error;
+          }
+        },
+      },
+    };
+
+    const first = await applyArchive(archivePlan, { adapters });
+    expect(first.status).toBe('recoverable');
+    await expect(fs.access(claimRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const retry = await applyArchive(archivePlan);
+    expect(retry).toMatchObject({ status: 'complete', resumed: true });
+    expect(await fs.readFile(target, 'utf8')).toBe('# Rebuilt\n');
+  }, 120_000);
+
+  it('completes an exact delete retry after claim-root removal wins before the journal flush', async () => {
+    const capability = 'claim-rmdir-delete';
+    const delta = path.join(active, 'specs', capability, 'spec.md');
+    const target = path.join(root, 'rasen', 'specs', capability, 'spec.md');
+    await fs.mkdir(path.dirname(delta), { recursive: true });
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(delta, '# Delete\n');
+    await fs.writeFile(target, '# Original\n');
+    const archivePlan = await plan({
+      specActions: [
+        {
+          capability,
+          action: 'delete',
+          source: delta,
+          target,
+          sourceSha256: defaultArchiveEngineAdapters.sha256('# Delete\n'),
+          targetPrecondition: {
+            state: 'file',
+            sha256: defaultArchiveEngineAdapters.sha256('# Original\n'),
+          },
+          rebuilt: '',
+          counts: { added: 0, modified: 0, removed: 1, renamed: 0 },
+        },
+      ],
+    });
+    const actionId = archivePlan.specActions[0].actionId!;
+    const claimRoot = path.join(
+      path.dirname(path.dirname(target)),
+      `.rasen-archive-spec-${archivePlan.transactionId}-${actionId.slice(0, 12)}`
+    );
+    let crash = true;
+    const adapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        rmdir: async (candidate: string) => {
+          await defaultArchiveEngineAdapters.fs.rmdir(candidate);
+          if (candidate === claimRoot && crash) {
+            crash = false;
+            const error = new Error('crash after delete claim-root removal');
+            (error as NodeJS.ErrnoException).code = 'EIO';
+            throw error;
+          }
+        },
+      },
+    };
+
+    const first = await applyArchive(archivePlan, { adapters });
+    expect(first.status).toBe('recoverable');
+    await expect(fs.access(claimRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const retry = await applyArchive(archivePlan);
+    expect(retry).toMatchObject({ status: 'complete', resumed: true });
+    await expect(fs.access(path.dirname(target))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  }, 120_000);
 
   it('preserves a concurrent spec create at the no-replace publication boundary', async () => {
     const delta = path.join(active, 'specs', 'race-create', 'spec.md');
@@ -1119,6 +2239,424 @@ describe('archive plan/apply engine', () => {
     );
   });
 
+  it.skipIf(process.platform === 'win32')(
+    'rejects a precreated symlink at the deterministic spec-delete claim root',
+    async () => {
+      const capability = 'delete-claim-symlink';
+      const delta = path.join(active, 'specs', capability, 'spec.md');
+      const target = path.join(root, 'rasen', 'specs', capability, 'spec.md');
+      await fs.mkdir(path.dirname(delta), { recursive: true });
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(delta, '# Delta\n');
+      await fs.writeFile(target, '# Original\n');
+      const archivePlan = await plan({
+        specActions: [
+          {
+            capability,
+            action: 'delete',
+            source: delta,
+            target,
+            sourceSha256: defaultArchiveEngineAdapters.sha256('# Delta\n'),
+            targetPrecondition: {
+              state: 'file',
+              sha256: defaultArchiveEngineAdapters.sha256('# Original\n'),
+            },
+            rebuilt: '',
+            counts: { added: 0, modified: 0, removed: 1, renamed: 0 },
+          },
+        ],
+      });
+      const actionId = archivePlan.specActions[0].actionId!;
+      const claimRoot = path.join(
+        path.dirname(path.dirname(target)),
+        `.rasen-archive-spec-${archivePlan.transactionId}-${actionId.slice(0, 12)}`
+      );
+      const unrelated = path.join(root, 'unrelated-spec-claim');
+      await fs.mkdir(unrelated);
+      await fs.writeFile(path.join(unrelated, 'keep.txt'), 'keep\n');
+      await fs.symlink(unrelated, claimRoot, 'dir');
+
+      const result = await applyArchive(archivePlan);
+
+      expect(result).toMatchObject({
+        status: 'recoverable',
+        manualRecoveryAction: { kind: 'manual-recovery-required' },
+        retainedPaths: expect.arrayContaining([claimRoot]),
+        blockers: [
+          expect.objectContaining({
+            operation: 'spec',
+            code: 'archive_claim_ownership_unverified',
+          }),
+        ],
+      });
+      expect(await fs.readFile(target, 'utf8')).toBe('# Original\n');
+      expect(await fs.readFile(path.join(unrelated, 'keep.txt'), 'utf8')).toBe(
+        'keep\n'
+      );
+    }
+  );
+
+  it('retains a spec-delete payload when its durable claim root is replaced after a crash', async () => {
+    const capability = 'delete-claim-swap';
+    const delta = path.join(active, 'specs', capability, 'spec.md');
+    const target = path.join(root, 'rasen', 'specs', capability, 'spec.md');
+    await fs.mkdir(path.dirname(delta), { recursive: true });
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(delta, '# Delta\n');
+    await fs.writeFile(target, '# Original\n');
+    const archivePlan = await plan({
+      specActions: [
+        {
+          capability,
+          action: 'delete',
+          source: delta,
+          target,
+          sourceSha256: defaultArchiveEngineAdapters.sha256('# Delta\n'),
+          targetPrecondition: {
+            state: 'file',
+            sha256: defaultArchiveEngineAdapters.sha256('# Original\n'),
+          },
+          rebuilt: '',
+          counts: { added: 0, modified: 0, removed: 1, renamed: 0 },
+        },
+      ],
+    });
+    const actionId = archivePlan.specActions[0].actionId!;
+    const claimRoot = path.join(
+      path.dirname(path.dirname(target)),
+      `.rasen-archive-spec-${archivePlan.transactionId}-${actionId.slice(0, 12)}`
+    );
+    const quarantine = path.join(claimRoot, capability);
+    let crash = true;
+    const crashingAdapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        rename: async (source: string, destination: string) => {
+          await defaultArchiveEngineAdapters.fs.rename(source, destination);
+          if (source === path.dirname(target) && crash) {
+            crash = false;
+            const error = new Error('crash after spec delete claim');
+            (error as NodeJS.ErrnoException).code = 'EIO';
+            throw error;
+          }
+        },
+      },
+    };
+    expect((await applyArchive(archivePlan, { adapters: crashingAdapters })).status).toBe(
+      'recoverable'
+    );
+    const displaced = `${claimRoot}.displaced`;
+    await fs.rename(claimRoot, displaced);
+    await fs.mkdir(claimRoot);
+    await fs.writeFile(path.join(claimRoot, 'unrelated.txt'), 'unrelated\n');
+
+    const retry = await applyArchive(archivePlan);
+
+    expect(retry).toMatchObject({
+      status: 'recoverable',
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+      retainedPaths: expect.arrayContaining([claimRoot]),
+      blockers: [
+        expect.objectContaining({
+          operation: 'spec',
+          code: 'archive_claim_ownership_unverified',
+        }),
+      ],
+    });
+    expect(
+      await fs.readFile(path.join(displaced, capability, 'spec.md'), 'utf8')
+    ).toBe('# Original\n');
+    expect(await fs.readFile(path.join(claimRoot, 'unrelated.txt'), 'utf8')).toBe(
+      'unrelated\n'
+    );
+    await expect(fs.access(quarantine)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('preserves an injected update backup at the exclusive claim boundary', async () => {
+    const capability = 'update-backup-race';
+    const delta = path.join(active, 'specs', capability, 'spec.md');
+    const target = path.join(root, 'rasen', 'specs', capability, 'spec.md');
+    await fs.mkdir(path.dirname(delta), { recursive: true });
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(delta, '# Delta\n');
+    await fs.writeFile(target, '# Original\n');
+    const archivePlan = await plan({
+      specActions: [
+        {
+          capability,
+          action: 'update',
+          source: delta,
+          target,
+          sourceSha256: defaultArchiveEngineAdapters.sha256('# Delta\n'),
+          targetPrecondition: {
+            state: 'file',
+            sha256: defaultArchiveEngineAdapters.sha256('# Original\n'),
+          },
+          rebuilt: '# Rebuilt\n',
+          counts: { added: 0, modified: 1, removed: 0, renamed: 0 },
+        },
+      ],
+    });
+    const actionId = archivePlan.specActions[0].actionId!;
+    const claimRoot = path.join(
+      path.dirname(target),
+      `.rasen-archive-spec-${archivePlan.transactionId}-${actionId.slice(0, 12)}`
+    );
+    const backup = path.join(claimRoot, 'original');
+    let inject = true;
+    const adapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        link: async (source: string, destination: string) => {
+          if (destination === backup && inject) {
+            inject = false;
+            await fs.writeFile(backup, '# Injected\n');
+          }
+          return defaultArchiveEngineAdapters.fs.link(source, destination);
+        },
+      },
+    };
+
+    const result = await applyArchive(archivePlan, { adapters });
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+      retainedPaths: expect.arrayContaining([target, backup]),
+      blockers: [
+        expect.objectContaining({
+          operation: 'spec',
+          code: 'archive_claim_ownership_unverified',
+        }),
+      ],
+    });
+    expect(await fs.readFile(target, 'utf8')).toBe('# Original\n');
+    expect(await fs.readFile(backup, 'utf8')).toBe('# Injected\n');
+  });
+
+  it('resumes an update crash with target and backup hard-linked to the same claimed object', async () => {
+    const capability = 'update-backup-resume';
+    const delta = path.join(active, 'specs', capability, 'spec.md');
+    const target = path.join(root, 'rasen', 'specs', capability, 'spec.md');
+    await fs.mkdir(path.dirname(delta), { recursive: true });
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(delta, '# Delta\n');
+    await fs.writeFile(target, '# Original\n');
+    const archivePlan = await plan({
+      specActions: [
+        {
+          capability,
+          action: 'update',
+          source: delta,
+          target,
+          sourceSha256: defaultArchiveEngineAdapters.sha256('# Delta\n'),
+          targetPrecondition: {
+            state: 'file',
+            sha256: defaultArchiveEngineAdapters.sha256('# Original\n'),
+          },
+          rebuilt: '# Rebuilt\n',
+          counts: { added: 0, modified: 1, removed: 0, renamed: 0 },
+        },
+      ],
+    });
+    const actionId = archivePlan.specActions[0].actionId!;
+    const claimRoot = path.join(
+      path.dirname(target),
+      `.rasen-archive-spec-${archivePlan.transactionId}-${actionId.slice(0, 12)}`
+    );
+    const backup = path.join(claimRoot, 'original');
+    let crash = true;
+    const adapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        link: async (source: string, destination: string) => {
+          await defaultArchiveEngineAdapters.fs.link(source, destination);
+          if (destination === backup && crash) {
+            crash = false;
+            const error = new Error('crash after exclusive update backup claim');
+            (error as NodeJS.ErrnoException).code = 'EIO';
+            throw error;
+          }
+        },
+      },
+    };
+
+    expect((await applyArchive(archivePlan, { adapters })).status).toBe('recoverable');
+    const [targetStat, backupStat] = await Promise.all([
+      fs.lstat(target),
+      fs.lstat(backup),
+    ]);
+    expect(targetStat.ino).toBe(backupStat.ino);
+
+    const retry = await applyArchive(archivePlan);
+
+    expect(retry.status).toBe('complete');
+    expect(retry.resumed).toBe(true);
+    expect(await fs.readFile(target, 'utf8')).toBe('# Rebuilt\n');
+    await expect(fs.access(claimRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'rejects an update target-parent symlink swap immediately after recursive mkdir',
+    async () => {
+      const capability = 'update-parent-swap';
+      const delta = path.join(active, 'specs', capability, 'spec.md');
+      const target = path.join(root, 'rasen', 'specs', capability, 'spec.md');
+      const targetParent = path.dirname(target);
+      await fs.mkdir(path.dirname(delta), { recursive: true });
+      await fs.mkdir(targetParent, { recursive: true });
+      await fs.writeFile(delta, '# Delta\n');
+      await fs.writeFile(target, '# Original\n');
+      const archivePlan = await plan({
+        specActions: [
+          {
+            capability,
+            action: 'update',
+            source: delta,
+            target,
+            sourceSha256: defaultArchiveEngineAdapters.sha256('# Delta\n'),
+            targetPrecondition: {
+              state: 'file',
+              sha256: defaultArchiveEngineAdapters.sha256('# Original\n'),
+            },
+            rebuilt: '# Rebuilt\n',
+            counts: { added: 0, modified: 1, removed: 0, renamed: 0 },
+          },
+        ],
+      });
+      const displaced = `${targetParent}.displaced`;
+      const external = path.join(root, 'external-update-parent');
+      await fs.mkdir(external);
+      await fs.writeFile(path.join(external, 'unrelated.txt'), 'unrelated\n');
+      let swap = true;
+      const adapters = {
+        ...defaultArchiveEngineAdapters,
+        fs: {
+          ...defaultArchiveEngineAdapters.fs,
+          mkdir: async (
+            targetPath: string,
+            options?: { recursive?: boolean }
+          ) => {
+            const result = await defaultArchiveEngineAdapters.fs.mkdir(
+              targetPath,
+              options
+            );
+            if (targetPath === targetParent && options?.recursive && swap) {
+              swap = false;
+              await fs.rename(targetParent, displaced);
+              await fs.symlink(external, targetParent, 'dir');
+            }
+            return result;
+          },
+        },
+      };
+
+      const result = await applyArchive(archivePlan, { adapters });
+
+      expect(result).toMatchObject({
+        status: 'recoverable',
+        blockers: [
+          expect.objectContaining({
+            operation: 'spec',
+            code: 'archive_spec_path_unauthorized',
+          }),
+        ],
+      });
+      expect(await fs.readFile(path.join(displaced, 'spec.md'), 'utf8')).toBe(
+        '# Original\n'
+      );
+      expect(await fs.readFile(path.join(external, 'unrelated.txt'), 'utf8')).toBe(
+        'unrelated\n'
+      );
+      await expect(fs.access(path.join(external, 'result.tmp'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    }
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'rejects a delete claim-parent symlink swap before the capability rename',
+    async () => {
+      const capability = 'delete-parent-swap';
+      const delta = path.join(active, 'specs', capability, 'spec.md');
+      const target = path.join(root, 'rasen', 'specs', capability, 'spec.md');
+      const claimParent = path.dirname(path.dirname(target));
+      await fs.mkdir(path.dirname(delta), { recursive: true });
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(delta, '# Delta\n');
+      await fs.writeFile(target, '# Original\n');
+      const archivePlan = await plan({
+        specActions: [
+          {
+            capability,
+            action: 'delete',
+            source: delta,
+            target,
+            sourceSha256: defaultArchiveEngineAdapters.sha256('# Delta\n'),
+            targetPrecondition: {
+              state: 'file',
+              sha256: defaultArchiveEngineAdapters.sha256('# Original\n'),
+            },
+            rebuilt: '',
+            counts: { added: 0, modified: 0, removed: 1, renamed: 0 },
+          },
+        ],
+      });
+      const actionId = archivePlan.specActions[0].actionId!;
+      const claimRoot = path.join(
+        claimParent,
+        `.rasen-archive-spec-${archivePlan.transactionId}-${actionId.slice(0, 12)}`
+      );
+      const displaced = `${claimParent}.displaced`;
+      const external = path.join(root, 'external-delete-parent');
+      await fs.mkdir(external);
+      await fs.writeFile(path.join(external, 'unrelated.txt'), 'unrelated\n');
+      let swap = true;
+      const adapters = {
+        ...defaultArchiveEngineAdapters,
+        fs: {
+          ...defaultArchiveEngineAdapters.fs,
+          mkdir: async (
+            targetPath: string,
+            options?: { recursive?: boolean }
+          ) => {
+            const result = await defaultArchiveEngineAdapters.fs.mkdir(
+              targetPath,
+              options
+            );
+            if (targetPath === claimRoot && !options?.recursive && swap) {
+              swap = false;
+              await fs.rename(claimParent, displaced);
+              await fs.symlink(external, claimParent, 'dir');
+            }
+            return result;
+          },
+        },
+      };
+
+      const result = await applyArchive(archivePlan, { adapters });
+
+      expect(result.status).toBe('recoverable');
+      expect(result.blockers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            operation: 'spec',
+            code: 'archive_claim_ownership_unverified',
+          }),
+        ])
+      );
+      expect(
+        await fs.readFile(path.join(displaced, capability, 'spec.md'), 'utf8')
+      ).toBe('# Original\n');
+      expect(await fs.readFile(path.join(external, 'unrelated.txt'), 'utf8')).toBe(
+        'unrelated\n'
+      );
+    }
+  );
+
   it('retires an unapplied stored plan and rejects later apply idempotently', async () => {
     const archivePlan = await plan();
     const globalDataDir = path.join(root, 'global-data');
@@ -1167,9 +2705,69 @@ describe('archive plan/apply engine', () => {
     });
   });
 
+  it('retains malformed and unknown-field abort tombstones as transaction-store ownership conflicts', async () => {
+    const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'global-data');
+    const token = await persistArchivePlan(archivePlan, globalDataDir);
+    const transactionDirectory = path.join(
+      globalDataDir,
+      'archive-transactions',
+      archivePlan.transactionId
+    );
+    const tombstonePath = path.join(transactionDirectory, 'abort.json');
+    const storedPlanPath = path.join(transactionDirectory, 'plan.json');
+    await fs.writeFile(tombstonePath, '{not-json\n');
+
+    const malformed = await loadCompletedArchiveAbort(token, globalDataDir);
+    expect(malformed).toMatchObject({
+      status: 'blocked',
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+      blockers: [
+        expect.objectContaining({
+          operation: 'journal',
+          path: tombstonePath,
+          code: 'archive_transaction_store_ownership_unverified',
+        }),
+      ],
+    });
+    expect(malformed).not.toHaveProperty('recoveryCommand');
+    expect(malformed?.retainedPaths).toEqual(
+      expect.arrayContaining([
+        tombstonePath,
+        storedPlanPath,
+        archivePlan.paths.stage,
+        archivePlan.paths.final,
+      ])
+    );
+
+    await fs.writeFile(
+      tombstonePath,
+      `${JSON.stringify({ schemaVersion: 1, unexpected: true })}\n`
+    );
+    const unknownField = await abortArchivePlan(archivePlan, globalDataDir);
+    expect(unknownField).toMatchObject({
+      status: 'blocked',
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+      blockers: [
+        expect.objectContaining({
+          operation: 'journal',
+          path: tombstonePath,
+          code: 'archive_transaction_store_ownership_unverified',
+        }),
+      ],
+    });
+    expect(unknownField).not.toHaveProperty('recoveryCommand');
+    await expect(fs.readFile(tombstonePath, 'utf8')).resolves.toContain(
+      '"unexpected":true'
+    );
+    await expect(fs.access(storedPlanPath)).resolves.toBeUndefined();
+  });
+
   it('records a reserved ship-log section as a typed planning blocker', async () => {
     const source = path.join(active, 'evidence', 'ship-log.md');
-    const content = '# Ship Log\n\n## Archive\nchange-authored placeholder\n';
+    const content =
+      '# Ship Log\r\n\r\n## Archive\r\nchange-authored placeholder\r\n';
+    expect(hasReservedArchiveShipLogSection(content)).toBe(true);
     await fs.writeFile(source, content);
 
     const archivePlan = await plan({
@@ -1198,10 +2796,114 @@ describe('archive plan/apply engine', () => {
     });
   });
 
+  it('blocks abort on same-transaction archive scratch debris without cleanup', async () => {
+    const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'global-data');
+    await persistArchivePlan(archivePlan, globalDataDir);
+    await fs.mkdir(archivePlan.paths.archiveParent, { recursive: true });
+    const scratch = path.join(
+      archivePlan.paths.archiveParent,
+      `.rasen-archive-projection-${archivePlan.transactionId}-orphan`
+    );
+    await fs.writeFile(scratch, 'unowned scratch\n');
+    const storedPlanPath = path.join(
+      globalDataDir,
+      'archive-transactions',
+      archivePlan.transactionId,
+      'plan.json'
+    );
+
+    const result = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      () => abortArchivePlan(archivePlan, globalDataDir)
+    );
+
+    expect(result).toMatchObject({
+      status: 'blocked',
+      blockers: [
+        {
+          operation: 'journal',
+          path: scratch,
+          code: 'archive_transaction_temp_ownership_unverified',
+        },
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+      retainedPaths: expect.arrayContaining([
+        scratch,
+        archivePlan.paths.stage,
+        archivePlan.paths.journal,
+        storedPlanPath,
+      ]),
+    });
+    expect(result.recoveryCommand).toBeUndefined();
+    await expect(fs.readFile(scratch, 'utf8')).resolves.toBe(
+      'unowned scratch\n'
+    );
+    await expect(fs.access(storedPlanPath)).resolves.toBeUndefined();
+  });
+
+  it('maps a preexisting abort temporary to structured manual recovery', async () => {
+    const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'global-data');
+    await persistArchivePlan(archivePlan, globalDataDir);
+    const transactionDirectory = path.join(
+      globalDataDir,
+      'archive-transactions',
+      archivePlan.transactionId
+    );
+    const tombstonePath = path.join(transactionDirectory, 'abort.json');
+    const abortTemporary = path.join(
+      transactionDirectory,
+      `.abort.json.tmp-${archivePlan.transactionId}-orphan`
+    );
+    const storedPlanPath = path.join(transactionDirectory, 'plan.json');
+    await fs.writeFile(abortTemporary, '{"partial":true}\n');
+
+    const result = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      () => abortArchivePlan(archivePlan, globalDataDir)
+    );
+
+    expect(result).toMatchObject({
+      status: 'blocked',
+      blockers: [
+        {
+          operation: 'journal',
+          path: abortTemporary,
+          code: 'archive_transaction_temp_ownership_unverified',
+        },
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+      retainedPaths: expect.arrayContaining([
+        abortTemporary,
+        tombstonePath,
+        archivePlan.paths.stage,
+        archivePlan.paths.journal,
+        storedPlanPath,
+      ]),
+    });
+    expect(result.recoveryCommand).toBeUndefined();
+    await expect(fs.readFile(abortTemporary, 'utf8')).resolves.toBe(
+      '{"partial":true}\n'
+    );
+    await expect(fs.access(storedPlanPath)).resolves.toBeUndefined();
+    await expect(fs.access(tombstonePath)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
   it('classifies a plan-bound ship-log collision as abort-required and removes its owned early stage', async () => {
     await fs.writeFile(
       path.join(active, 'evidence', 'ship-log.md'),
-      '# Ship Log\n\n## Archive\nold transaction\n'
+      '# Ship Log\r\n\r\n## Archive\r\nold transaction\r\n'
     );
     const archivePlan = await plan();
     const globalDataDir = path.join(root, 'global-data');
@@ -1314,6 +3016,168 @@ describe('archive plan/apply engine', () => {
       `archive-v1:${archivePlan.transactionId}:${archivePlan.planHash}`,
       globalDataDir
     )).resolves.toMatchObject({ status: 'already-aborted' });
+  });
+
+  it('refuses to adopt a stage payload injected before abort starts', async () => {
+    await fs.writeFile(
+      path.join(active, 'evidence', 'ship-log.md'),
+      '# Ship Log\n\n## Archive\nold transaction\n'
+    );
+    const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'global-data');
+    await persistArchivePlan(archivePlan, globalDataDir);
+    expect((await applyArchive(archivePlan)).status).toBe('abort-required');
+
+    const intruder = path.join(archivePlan.paths.stage, 'unclaimed.txt');
+    await fs.writeFile(intruder, 'must survive\n');
+    const refused = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      () => abortArchivePlan(archivePlan, globalDataDir)
+    );
+
+    expect(refused).toMatchObject({
+      status: 'blocked',
+      blockers: [
+        expect.objectContaining({
+          code: 'archive_abort_ownership_unverified',
+        }),
+      ],
+    });
+    await expect(fs.readFile(intruder, 'utf8')).resolves.toBe('must survive\n');
+    await expect(fs.access(archivePlan.paths.stage)).resolves.toBeUndefined();
+  });
+
+  it('fails closed when nested journal recovery state is malformed', async () => {
+    await fs.writeFile(
+      path.join(active, 'evidence', 'ship-log.md'),
+      '# Ship Log\n\n## Archive\nold transaction\n'
+    );
+    const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'global-data');
+    await persistArchivePlan(archivePlan, globalDataDir);
+    expect((await applyArchive(archivePlan)).status).toBe('abort-required');
+
+    const journal = JSON.parse(
+      await fs.readFile(archivePlan.paths.journal, 'utf8')
+    );
+    journal.phaseFingerprints['payload-copied'].scope = 'final';
+    await fs.writeFile(
+      archivePlan.paths.journal,
+      `${JSON.stringify(journal, null, 2)}\n`
+    );
+    const refused = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      () => abortArchivePlan(archivePlan, globalDataDir)
+    );
+
+    expect(refused).toMatchObject({
+      status: 'blocked',
+      blockers: [
+        expect.objectContaining({
+          code: 'archive_abort_journal_invalid',
+        }),
+      ],
+    });
+    expect(refused.effectivePhase).toBeUndefined();
+    expect(refused.retainedPaths).toContain(archivePlan.paths.journal);
+    expect(refused.recoveryCommand).toBeUndefined();
+    expect(refused.manualRecoveryAction).toEqual(
+      expect.objectContaining({ kind: 'manual-recovery-required' })
+    );
+    await expect(fs.access(archivePlan.paths.stage)).resolves.toBeUndefined();
+  });
+
+  it('omits exact-token retry for failed journals without a resume phase', async () => {
+    await fs.writeFile(
+      path.join(active, 'evidence', 'ship-log.md'),
+      '# Ship Log\n\n## Archive\nold transaction\n'
+    );
+    const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'global-data');
+    await persistArchivePlan(archivePlan, globalDataDir);
+    expect((await applyArchive(archivePlan)).status).toBe('abort-required');
+    const journal = JSON.parse(
+      await fs.readFile(archivePlan.paths.journal, 'utf8')
+    );
+    delete journal.failure.resumePhase;
+    await fs.writeFile(
+      archivePlan.paths.journal,
+      `${JSON.stringify(journal, null, 2)}\n`
+    );
+
+    const retry = await applyArchive(archivePlan);
+    expect(retry).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        expect.objectContaining({ code: 'archive_journal_invalid' }),
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    expect(retry.recoveryCommand).toBeUndefined();
+    const refused = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      () => abortArchivePlan(archivePlan, globalDataDir)
+    );
+    expect(refused).toMatchObject({
+      status: 'blocked',
+      blockers: [
+        expect.objectContaining({ code: 'archive_abort_journal_invalid' }),
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    expect(refused.recoveryCommand).toBeUndefined();
+    await expect(fs.access(archivePlan.paths.stage)).resolves.toBeUndefined();
+  });
+
+  it('refuses abort when a plan-owned cleaner progress record is omitted', async () => {
+    await fs.writeFile(
+      path.join(active, 'evidence', 'ship-log.md'),
+      '# Ship Log\n\n## Archive\nold transaction\n'
+    );
+    const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'global-data');
+    await persistArchivePlan(archivePlan, globalDataDir);
+    expect((await applyArchive(archivePlan)).status).toBe('abort-required');
+    const journal = JSON.parse(
+      await fs.readFile(archivePlan.paths.journal, 'utf8')
+    );
+    expect(journal.cleanerProgress.length).toBeGreaterThan(0);
+    journal.cleanerProgress = [];
+    await fs.writeFile(
+      archivePlan.paths.journal,
+      `${JSON.stringify(journal, null, 2)}\n`
+    );
+
+    const refused = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      () => abortArchivePlan(archivePlan, globalDataDir)
+    );
+    expect(refused).toMatchObject({
+      status: 'blocked',
+      effectivePhase: expect.any(String),
+      blockers: [
+        expect.objectContaining({
+          code: 'archive_abort_journal_plan_mismatch',
+        }),
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    expect(refused.recoveryCommand).toBeUndefined();
+    await expect(fs.access(archivePlan.paths.stage)).resolves.toBeUndefined();
   });
 
   it('never recursively deletes an entry injected after abort ownership is recorded', async () => {
@@ -1439,6 +3303,63 @@ describe('archive plan/apply engine', () => {
     );
     expect(refused).toMatchObject({
       status: 'blocked',
+      effectivePhase: 'specs-applied',
+      retainedPaths: expect.arrayContaining([
+        archivePlan.paths.active,
+        archivePlan.paths.stage,
+        archivePlan.paths.journal,
+        target,
+      ]),
+      recoveryCommand: `rasen archive --apply-plan archive-v1:${archivePlan.transactionId}:${archivePlan.planHash} --yes`,
+      blockers: [
+        expect.objectContaining({
+          code: 'archive_abort_phase_unsafe',
+        }),
+      ],
+    });
+    expect(refused.manualRecoveryAction).toBeUndefined();
+    await expect(fs.access(archivePlan.paths.stage)).resolves.toBeUndefined();
+    await expect(fs.access(archivePlan.paths.journal)).resolves.toBeUndefined();
+    expect(await fs.readFile(target, 'utf8')).toBe(rebuilt);
+  });
+
+  it('refuses abort at specs-applied even when the plan has no spec actions', async () => {
+    const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'global-data');
+    await persistArchivePlan(archivePlan, globalDataDir);
+    const failingAdapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        mkdir: async (
+          targetPath: string,
+          options?: { recursive?: boolean }
+        ): Promise<string | undefined> => {
+          if (targetPath === archivePlan.paths.final) {
+            const error = new Error('injected final reservation failure');
+            (error as NodeJS.ErrnoException).code = 'EACCES';
+            throw error;
+          }
+          return defaultArchiveEngineAdapters.fs.mkdir(targetPath, options);
+        },
+      },
+    };
+    const failed = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'apply',
+      () => applyArchive(archivePlan, { adapters: failingAdapters })
+    );
+    expect(failed.status).toBe('recoverable');
+
+    const refused = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      () => abortArchivePlan(archivePlan, globalDataDir)
+    );
+    expect(refused).toMatchObject({
+      status: 'blocked',
       blockers: [
         expect.objectContaining({
           code: 'archive_abort_phase_unsafe',
@@ -1447,7 +3368,6 @@ describe('archive plan/apply engine', () => {
     });
     await expect(fs.access(archivePlan.paths.stage)).resolves.toBeUndefined();
     await expect(fs.access(archivePlan.paths.journal)).resolves.toBeUndefined();
-    expect(await fs.readFile(target, 'utf8')).toBe(rebuilt);
   });
 
   it('serializes apply and abort for the same stored transaction', async () => {

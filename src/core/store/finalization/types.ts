@@ -15,8 +15,10 @@ import type {
   ArchiveSidecarProjection,
   ArchiveBlocker,
   PreparedArchiveSpecAction,
+  ArchiveSpecSyncPreparation,
   ArchiveApplyAssertions,
   ArchiveAbortResult,
+  ArchiveApplyResult,
 } from '../../archive-engine.js';
 import type {
   ArchiveV2IdentityPreimages,
@@ -79,6 +81,7 @@ export interface FinalizationArchivePreparation {
   readonly tasks: ArchivePlan['decisions']['tasks'];
   readonly timing: ArchivePlan['decisions']['timing'];
   readonly specActionCandidates: readonly PreparedArchiveSpecAction[];
+  readonly specSync?: ArchiveSpecSyncPreparation;
   /** True when the change carries delta specs, whether or not they were prepared. */
   readonly hasDeltaSpecs: boolean;
   readonly sidecar: ArchiveSidecarProjection;
@@ -336,11 +339,18 @@ export interface FinalizationResult {
   readonly provenCommit: string | null;
   readonly codeRef: string | null;
   readonly codeRefOid: string | null;
-  readonly associationPhase: 'applied' | 'no-op';
+  readonly associationPhase: 'applied' | 'no-op' | 'pending';
   readonly status: ArchivePlanApplyStatus;
   readonly transactionId: string;
   readonly journalPath: string;
+  readonly effectivePhase?: NonNullable<ArchiveApplyResult['effectivePhase']>;
+  readonly retainedPaths?: readonly string[];
   readonly blockers: readonly FinalizationBlocker[];
+  readonly recoveryCommand?: string;
+  readonly abortCommand?: string;
+  readonly manualRecoveryAction?: NonNullable<
+    ArchiveApplyResult['manualRecoveryAction']
+  >;
 }
 
 export type ArchivePlanApplyStatus =

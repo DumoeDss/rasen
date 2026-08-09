@@ -92,7 +92,7 @@ interface BulkItemResult {
   id: string;
   type: ItemType;
   valid: boolean;
-  issues: { level: 'ERROR' | 'WARNING' | 'INFO'; path: string; message: string }[];
+  issues: ValidationIssue[];
   durationMs: number;
 }
 
@@ -479,11 +479,20 @@ export class ValidateCommand {
         if (res.valid) console.log(`✓ ${res.type}/${res.id}`);
         else console.error(`✗ ${res.type}/${res.id}`);
         for (const issue of res.issues) {
-          if (issue.level === 'ERROR') continue;
-          const prefix = issue.level === 'WARNING' ? '⚠' : 'ℹ';
-          console.warn(
-            `${prefix} [${issue.level}] ${res.type}/${res.id} ${issue.path}: ${issue.message}`
-          );
+          const prefix =
+            issue.level === 'ERROR'
+              ? '✗'
+              : issue.level === 'WARNING'
+                ? '⚠'
+                : 'ℹ';
+          const detail =
+            `${prefix} [${issue.level}] ${res.type}/${res.id} ` +
+            `${issue.path}: ${issue.message}`;
+          if (issue.level === 'ERROR') {
+            console.error(detail);
+          } else {
+            console.warn(detail);
+          }
         }
       }
       console.log(`Totals: ${summary.totals.passed} passed, ${summary.totals.failed} failed (${summary.totals.items} items)`);

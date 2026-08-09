@@ -19,6 +19,8 @@ export interface FinalizationDisagreement {
 
 export class ChangeFinalizationError extends StoreError {
   readonly finalizationCode: FinalizationErrorCode;
+  /** Node-style machine code retained when the error crosses Module adapters. */
+  readonly code: FinalizationErrorCode;
   readonly expected?: string;
   readonly actual?: string;
 
@@ -33,6 +35,7 @@ export class ChangeFinalizationError extends StoreError {
     });
     this.name = 'ChangeFinalizationError';
     this.finalizationCode = code;
+    this.code = code;
     if (disagreement.expected !== undefined) this.expected = disagreement.expected;
     if (disagreement.actual !== undefined) this.actual = disagreement.actual;
     if (disagreement.cause !== undefined) {
@@ -75,7 +78,11 @@ export function finalizationRefusal(
     disagreement.expected === undefined && disagreement.actual === undefined
       ? ''
       : ` (expected: ${disagreement.expected ?? '(none)'}; actual: ${disagreement.actual ?? '(none)'})`;
-  return new ChangeFinalizationError(code, `${message}${values}`, disagreement);
+  return new ChangeFinalizationError(
+    code,
+    `${message}${values} Fix: ${disagreement.fix}`,
+    disagreement
+  );
 }
 
 export function finalizationBlocker(

@@ -15,6 +15,10 @@ import { INSTALLER_MESSAGE_KEYS } from '../../src/core/completions/factory.js';
 import { CONFIG_DIAGNOSTIC_KEYS } from '../../src/core/config-diagnostics.js';
 import { SUPPORTED_CLI_LOCALES } from '../../src/utils/locale.js';
 import {
+  formatArchiveAbortBlockedLines,
+  formatArchiveDispositionLine,
+} from '../../src/core/archive.js';
+import {
   COMMAND_REGISTRY,
   COMPATIBILITY_COMMAND_REGISTRY,
 } from '../../src/core/completions/command-registry.js';
@@ -59,6 +63,84 @@ describe('locale catalogs', () => {
         );
       }
     }
+  });
+
+  it.each([
+    {
+      locale: 'ja',
+      expected: [
+        '手動復旧: 所有権を確認してください',
+        '中止: rasen archive --abort-plan token --yes',
+        '復旧: rasen archive --apply-plan token --yes',
+      ],
+      aborted:
+        'アーカイブ計画 tx-1 を中止しました。永続化済みのアーカイブ変更は取り消していません。',
+    },
+    {
+      locale: 'zh-cn',
+      expected: [
+        '手动恢复：请验证所有权',
+        '中止：rasen archive --abort-plan token --yes',
+        '恢复：rasen archive --apply-plan token --yes',
+      ],
+      aborted: '归档计划 tx-1 已中止。未撤销任何已持久化的归档更改。',
+    },
+  ] as const)(
+    'renders archive dispositions and neutral never-applied abort wording in $locale',
+    ({ locale, expected, aborted }) => {
+      const messages = getLocaleCatalog(locale).archiveAbort;
+      const manualAction =
+        locale === 'ja' ? '所有権を確認してください' : '请验证所有权';
+
+      expect([
+        formatArchiveDispositionLine(
+          { manualRecoveryAction: { guidance: manualAction } },
+          locale
+        ),
+        formatArchiveDispositionLine(
+          { abortCommand: 'rasen archive --abort-plan token --yes' },
+          locale
+        ),
+        formatArchiveDispositionLine(
+          { recoveryCommand: 'rasen archive --apply-plan token --yes' },
+          locale
+        ),
+      ]).toEqual(expected);
+      expect(
+        formatLocaleMessage(messages.aborted, { transactionId: 'tx-1' })
+      ).toBe(aborted);
+    }
+  );
+
+  it('renders blocked abort durable state before the typed disposition', () => {
+    const lines = formatArchiveAbortBlockedLines(
+      {
+        blockers: [
+          {
+            operation: 'journal',
+            code: 'archive_abort_phase_unsafe',
+            message: 'Canonical spec publication has already begun.',
+            path: '/store/transaction/journal.json',
+          },
+        ],
+        effectivePhase: 'specs-applied',
+        retainedPaths: ['/store/change', '/store/transaction/journal.json'],
+        manualRecoveryAction: {
+          kind: 'manual-recovery-required',
+          guidance: 'Verify ownership before taking any further action.',
+        },
+      },
+      'en'
+    );
+
+    expect(lines).toEqual([
+      'Blocker archive_abort_phase_unsafe: Canonical spec publication has already begun. (/store/transaction/journal.json)',
+      'Effective phase: specs-applied',
+      'Retained path: /store/change',
+      'Retained path: /store/transaction/journal.json',
+      'Manual recovery: Verify ownership before taking any further action.',
+    ]);
+    expect(lines.join('\n')).not.toContain('resume the exact plan');
   });
 
   it('keeps every CLI presentation leaf non-empty', () => {

@@ -110,6 +110,23 @@ describe('the digest mapping table', () => {
       ['delete', 'beta'],
     ]);
   });
+  it('preserves a nested capability path without collapsing its identity', () => {
+    expect(
+      archiveSpecActionFor(
+        action({
+          capability: 'platform/routing',
+          source: '/change/specs/platform/routing/spec.md',
+          target: '/store/specs/platform/routing/spec.md',
+        })
+      )
+    ).toEqual({
+      action: 'update',
+      capabilityId: 'platform/routing',
+      beforeSha256: digest('before'),
+      afterSha256: digest('after'),
+    });
+  });
+
 });
 
 describe('the precondition blocks', () => {
@@ -467,4 +484,43 @@ describe('a real finalization against real delta specs', () => {
     expect(codeOf(thrown)).toBe('finalization_spec_skip_conflict');
     expect(hashTree(canonical)).toEqual(before);
   }, 180_000);
+  it('refuses an effective prompt-decline skip on a landed Change with deltas', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeId: 'effective-skip-conflict-change',
+    });
+    seedDeltas(bound);
+    const canonical = specsDir(bound.planningWorktree);
+    const before = hashTree(canonical);
+
+    let thrown: unknown;
+    try {
+      await f.finalization().plan(
+        f.planInput(
+          bound,
+          { outcome: 'landed', commit: f.refOid(bound.executionWorktree, 'HEAD') },
+          {
+            archive: f.preparation(bound, {
+              specActionCandidates: [],
+              specSync: {
+                mode: 'skip',
+                deltaSources: [
+                  path.join(bound.changeDir, 'specs', 'alpha', 'spec.md'),
+                  path.join(bound.changeDir, 'specs', 'beta', 'spec.md'),
+                ],
+              },
+              hasDeltaSpecs: true,
+            }),
+          }
+        )
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(codeOf(thrown)).toBe('finalization_spec_skip_conflict');
+    expect(hashTree(canonical)).toEqual(before);
+  }, 180_000);
+
 });

@@ -13,6 +13,9 @@ A machine-local SkillMount defect report from 2026-08-07/08 identified six failu
 - Add a confirmed, ownership-verified archive-plan abort path for an unapplied or early failed transaction. It may retire only engine-owned plan, stage, and journal state before canonical specs, publication, cleaner actions, or source removal; later transactions remain resumable and cannot be reset destructively.
 - Document that a `MODIFIED` block replaces the complete requirement: every scenario that should survive must remain present, and behavior edits retain the scenario name unless deletion plus addition is intended.
 - Preserve the existing safety contracts: archive still blocks scenario loss, merge timing is still gated on recorded delivery facts, immutable mutation plans are still content-bound, and foreign archive evidence is never overwritten.
+- Keep generated single and bulk archive workflows aligned with the canonical PR gate: independently verify first, retain the blocker-naming interactive override for a known open PR and interactive merge-confirmation fallback when verification is unavailable, and refuse both paths in dispatched or non-interactive runs.
+- Make human abort refusals enumerate blocker messages, the effective transaction phase, every retained path, and then the exact localized recovery or manual disposition, without generic replay advice for ownership or integrity disputes.
+- Extend the canonical management finalization request with the explicit `mergeConfirmed` assertion and preserve nested structured finalization dispositions in the standard error envelope.
 
 ## Capabilities
 
@@ -30,11 +33,13 @@ A machine-local SkillMount defect report from 2026-08-07/08 identified six failu
 - `opsx-ship-command`: Ship evidence must leave the `## Archive` section exclusively to the archive engine.
 - `project-registry`: Read-only root resolution must not enroll copied roots, and duplicate-identity diagnostics must identify conflicting paths and repair commands.
 - `change-finalization-transaction`: Stored-plan retirement must be ownership-verified, phase-limited, and incapable of undoing durable finalization effects.
+- `management-http-api`: The Store finalization request accepts an explicit verified `mergeConfirmed` assertion, and refused finalizations preserve their nested blocker and recovery disposition.
 
 ## Impact
 
 - Archive planning/application and transaction code in `src/core/archive.ts`, `src/core/archive-engine.ts`, generated-consumer invocation helpers, and Store v2 finalization wrappers.
 - Delta parsing/reconciliation and validation in `src/core/specs-apply.ts`, `src/core/validation/validator.ts`, and `src/commands/validate.ts`.
 - Project registry self-healing and owner-resolution diagnostics in `src/core/project-home.ts`, `src/core/project-registry.ts`, and learned-skill owner resolution.
-- Archive/ship/sync workflow templates, spec-driven artifact instructions, command/completion metadata, and all three CLI locale catalogs.
-- Focused regression coverage for saved-plan confirmation, multi-error preservation reports, strict validation, intent-key diagnostics, copied-root registration, reserved headings, recovery classification, and phase-safe abort on macOS, Linux, and Windows path semantics. No new runtime dependency is required.
+- Archive/ship/sync workflow templates, spec-driven artifact instructions, command/completion metadata, all three CLI locale catalogs, and human abort refusal rendering.
+- The management finalization HTTP bridge and its request/error contract.
+- Focused regression coverage for saved-plan confirmation, multi-error preservation reports, strict validation, intent-key diagnostics, copied-root registration, reserved headings, recovery classification, canonical workflow PR overrides, localized abort disposition, management API finalization errors, and phase-safe abort on macOS, Linux, and Windows path semantics. No new runtime dependency is required.

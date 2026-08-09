@@ -574,6 +574,11 @@ describe('project-registry', () => {
       expect(result.canonicalPath).toBe(FileSystemUtils.canonicalizeExistingPath(worktreePath));
       const state = await readProjectRegistryState({ globalDataDir });
       expect(state?.projects[result.canonicalPath]).toBeDefined();
+      const found = await findProjectRegistryEntry(worktreePath, {
+        globalDataDir,
+      });
+      expect(found?.canonicalPath).toBe(result.canonicalPath);
+      expect(found?.entry.projectId).toBe(projectId);
 
       fs.rmSync(worktreePath, { recursive: true, force: true });
     });
@@ -621,10 +626,26 @@ describe('project-registry', () => {
 
       const projectId = randomUUID();
       const main = await registerProject({ projectRoot: repoRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+      const canonicalWorktree = FileSystemUtils.canonicalizeExistingPath(worktreePath);
+      await updateProjectRegistryState(
+        current => ({
+          version: 1,
+          projects: {
+            ...(current?.projects ?? {}),
+            [canonicalWorktree]: {
+              ...main.entry,
+              name: 'legacy-worktree-copy',
+              home: 'legacy-worktree-home',
+            },
+          },
+        }),
+        { globalDataDir }
+      );
 
       const found = await findProjectRegistryEntry(worktreePath, { globalDataDir });
       expect(found?.canonicalPath).toBe(main.canonicalPath);
       expect(found?.entry.home).toBe(main.entry.home);
+      expect(found?.entry.name).toBe(main.entry.name);
 
       execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
       fs.rmSync(repoRoot, { recursive: true, force: true });

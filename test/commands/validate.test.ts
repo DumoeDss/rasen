@@ -165,6 +165,49 @@ describe('top-level validate command', () => {
     );
   });
 
+  it('renders strict scenario-preservation failures in human bulk output', async () => {
+    await writeScenarioLossChange('scenario-loss-bulk-strict');
+
+    const result = await runCLI(
+      ['validate', '--changes', '--strict', '--concurrency', '1'],
+      { cwd: testDir }
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('change/scenario-loss-bulk-strict');
+    expect(result.stderr).toContain('[ERROR]');
+    expect(result.stderr).toContain('Deterministic alpha run');
+  });
+
+  it('renders every reconciliation error in human bulk output', async () => {
+    const changeId = 'missing-canonical-requirement';
+    const deltaDir = path.join(changesDir, changeId, 'specs', 'alpha');
+    await fs.mkdir(deltaDir, { recursive: true });
+    await fs.writeFile(
+      path.join(deltaDir, 'spec.md'),
+      [
+        '## MODIFIED Requirements',
+        '',
+        '### Requirement: Missing canonical rule',
+        'The system SHALL update a canonical rule.',
+        '',
+        '#### Scenario: Missing rule',
+        '- **WHEN** validation runs',
+        '- **THEN** the missing canonical rule is reported',
+      ].join('\n')
+    );
+
+    const result = await runCLI(
+      ['validate', '--changes', '--concurrency', '1'],
+      { cwd: testDir }
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(
+      'MODIFIED failed for header "### Requirement: Missing canonical rule"'
+    );
+  });
+
   it('validates only specs with --specs and respects --concurrency', async () => {
     const result = await runCLI(['validate', '--specs', '--json', '--concurrency', '1'], { cwd: testDir });
     expect(result.exitCode).toBe(0);

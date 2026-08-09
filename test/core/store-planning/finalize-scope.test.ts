@@ -204,6 +204,19 @@ function resolver(
         },
       },
     ],
+    findProjectIdentityClaimants: async () => [
+      {
+        root: roots.projectRoot,
+        entry: {
+          projectId: PROJECT,
+          name: PROJECT,
+          mode: roots.storeRoot === undefined ? 'standalone' : 'store',
+          home: `${PROJECT}-home`,
+          lastSeen: '2026-08-06T00:00:00.000Z',
+        },
+        live: true,
+      },
+    ],
     findRegisteredProject: async () => null,
     sessionContextPath: () => undefined,
     checkoutRole: overrides.checkoutRole ?? (() => 'linked-worktree'),

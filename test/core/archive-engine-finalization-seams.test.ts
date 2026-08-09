@@ -220,6 +220,24 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
       },
       destination,
       association: { noop: false, planningScopeId: scopeId, changeId: CHANGE },
+      revalidation: {
+        targetLine: {
+          catalogPath: path.join(
+            root,
+            '.rasen-store',
+            'target-lines',
+            `${LINE}.yaml`
+          ),
+          catalogDigest: 'b'.repeat(64),
+          codeRef: null,
+          codeRefOid: null,
+        },
+        archive: {
+          root: archiveParent,
+          archiveDate: DATE,
+          destination,
+        },
+      },
       lockKeys: [],
     };
   }
@@ -234,6 +252,15 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
       change: CHANGE,
       planningRoot: root,
       executionRoot: root,
+      ...(withFinalization
+        ? {
+            scope: {
+              kind: 'store-project' as const,
+              storeUid: STORE_UID,
+              projectId: PROJECT,
+            },
+          }
+        : {}),
       activePath: active,
       archiveParent,
       ephemeraPath: ephemera,

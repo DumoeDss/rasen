@@ -802,6 +802,9 @@ export function createManagementRouter(
               message: result.message,
               ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
               ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+              ...(result.finalization !== undefined
+                ? { finalization: result.finalization }
+                : {}),
             },
           })
         );

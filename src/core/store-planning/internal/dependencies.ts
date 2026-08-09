@@ -10,8 +10,11 @@ import {
 } from '../../store/foundation.js';
 import { getStoreRootForBackend } from '../../store/registry.js';
 import {
+  findProjectIdentityClaimants as findMachineProjectIdentityClaimants,
   findProjectRegistryEntry,
+  resolveRegistrationRoot,
   readProjectRegistryState,
+  type ProjectIdentityClaimant,
   type ProjectRegistryEntryState,
 } from '../../project-registry.js';
 import { FileSystemUtils } from '../../../utils/file-system.js';
@@ -43,6 +46,12 @@ export interface ProjectRegistrySnapshotEntry {
   readonly entry: ProjectRegistryEntryState;
 }
 
+export interface ProjectIdentityClaimantSnapshot {
+  readonly root: string;
+  readonly entry: ProjectRegistryEntryState;
+  readonly live: boolean;
+}
+
 export type CheckoutRole = 'integration' | 'linked-worktree' | 'not-git' | 'unavailable';
 
 export interface StorePlanningFileIdentity {
@@ -70,6 +79,10 @@ export interface StorePlanningDependencies {
   readonly fs: StorePlanningFileSystem;
   snapshotStores(globalDataDir?: string): Promise<readonly StoreRegistrySnapshotEntry[]>;
   snapshotProjects(globalDataDir?: string): Promise<readonly ProjectRegistrySnapshotEntry[]>;
+  findProjectIdentityClaimants(
+    projectId: string,
+    globalDataDir?: string
+  ): Promise<readonly ProjectIdentityClaimantSnapshot[]>;
   findRegisteredProject(
     projectRoot: string,
     globalDataDir?: string
@@ -239,12 +252,31 @@ export const productionStorePlanningDependencies: StorePlanningDependencies = {
       .map(([root, entry]) => ({ root, entry }))
       .sort((left, right) => left.root.localeCompare(right.root));
   },
+  async findProjectIdentityClaimants(projectId, globalDataDir) {
+    const claimants: ProjectIdentityClaimant[] =
+      await findMachineProjectIdentityClaimants(
+        projectId,
+        globalDataDir === undefined ? {} : { globalDataDir }
+      );
+    return claimants.map(claimant => ({
+      root: claimant.path,
+      entry: claimant.entry,
+      live: claimant.live,
+    }));
+  },
   async findRegisteredProject(projectRoot, globalDataDir) {
-    const found = await findProjectRegistryEntry(
-      projectRoot,
-      globalDataDir === undefined ? {} : { globalDataDir }
-    );
-    return found === null ? null : { root: found.canonicalPath, entry: found.entry };
+    const options =
+      globalDataDir === undefined ? {} : { globalDataDir };
+    const canonical = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+    const registrationRoot = await resolveRegistrationRoot(canonical);
+    const found =
+      (await findProjectRegistryEntry(registrationRoot, options)) ??
+      (registrationRoot === canonical
+        ? null
+        : await findProjectRegistryEntry(canonical, options));
+    return found === null
+      ? null
+      : { root: found.canonicalPath, entry: found.entry };
   },
   sessionContextPath: () => process.env[RASEN_SESSION_CONTEXT_ENV],
   checkoutRole,

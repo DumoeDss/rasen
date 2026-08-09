@@ -10,7 +10,12 @@ import {
   type FrozenKnowledgeContext,
 } from '../../../src/core/learned-skills/index.js';
 import { resolveProjectHome } from '../../../src/core/project-home.js';
-import { registerProject } from '../../../src/core/project-registry.js';
+import {
+  findProjectIdentityClaimants,
+  readProjectRegistryState,
+  registerProject,
+  writeProjectRegistryState,
+} from '../../../src/core/project-registry.js';
 import {
   getStoreMetadataPath,
   writeStoreMetadataState,
@@ -122,6 +127,52 @@ describe('learned-skill execution context', () => {
       })
     ).rejects.toMatchObject({
       diagnostic: { code: 'knowledge_owner_ambiguous' },
+    });
+  });
+
+  it('deduplicates aliases that claim one canonical project root', async () => {
+    const original = await createProject('owner-canonical');
+    const aliasRoot = path.join(tempDir, 'owner-alias');
+    fs.symlinkSync(
+      original.root,
+      aliasRoot,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+    const registry = await readProjectRegistryState({ globalDataDir });
+    const entry = registry?.projects[original.root];
+    expect(entry).toBeDefined();
+    await writeProjectRegistryState(
+      {
+        version: 1,
+        projects: {
+          ...registry?.projects,
+          [aliasRoot]: {
+            ...entry!,
+            projectId: original.id.toUpperCase(),
+          },
+        },
+      },
+      { globalDataDir }
+    );
+
+    await expect(
+      findProjectIdentityClaimants(original.id, { globalDataDir })
+    ).resolves.toEqual([
+      expect.objectContaining({
+        path: original.root,
+        live: true,
+      }),
+    ]);
+    const context = await resolveLearnedSkillExecutionContext({
+      launchDirectory: original.root,
+      selector: { project: original.id },
+      requestedScope: 'project',
+      globalDataDir,
+    });
+    expect(context.owner).toMatchObject({
+      type: 'project',
+      id: original.id,
+      root: original.root,
     });
   });
 

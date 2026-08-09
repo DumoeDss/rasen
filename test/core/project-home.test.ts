@@ -250,6 +250,47 @@ describe('touchProjectRegistry (self-healing)', () => {
     fs.rmSync(movedRoot, { recursive: true, force: true });
   });
 
+  it('rebinds one moved root recorded through duplicate path aliases', async () => {
+    const original = await resolveProjectHome(projectRoot, { globalDataDir });
+    const state = await readProjectRegistryState({ globalDataDir });
+    const canonical = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+    const entry = state!.projects[canonical];
+    const aliasPath = [
+      path.dirname(canonical),
+      'registry-alias',
+      '..',
+      path.basename(canonical),
+    ].join(path.sep);
+    await writeProjectRegistryState(
+      {
+        version: 1,
+        projects: {
+          ...state!.projects,
+          [aliasPath]: {
+            ...entry,
+            projectId: entry.projectId.toUpperCase(),
+          },
+        },
+      },
+      { globalDataDir }
+    );
+    const movedRoot = path.join(
+      path.dirname(projectRoot),
+      `rasen-self-heal-aliased-move-${Date.now()}`
+    );
+    fs.renameSync(projectRoot, movedRoot);
+
+    await touchProjectRegistry(movedRoot, { globalDataDir });
+
+    const refreshed = await readProjectRegistryState({ globalDataDir });
+    const movedCanonical = FileSystemUtils.canonicalizeExistingPath(movedRoot);
+    expect(Object.keys(refreshed!.projects)).toEqual([movedCanonical]);
+    expect(refreshed!.projects[movedCanonical].home).toBe(
+      path.basename(original!.homeDir)
+    );
+    fs.rmSync(movedRoot, { recursive: true, force: true });
+  });
+
   it('does not rewrite the registry when the entry is current and recently seen', async () => {
     await resolveProjectHome(projectRoot, { globalDataDir });
     const registryPath = getProjectRegistryPath({ globalDataDir });

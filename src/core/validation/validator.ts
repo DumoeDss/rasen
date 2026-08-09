@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { z, ZodError } from 'zod';
 import { readFileSync, promises as fs } from 'fs';
 import path from 'path';
@@ -13,7 +14,12 @@ import {
 import { parseDeltaSpec, normalizeRequirementName, extractRequirementsSection } from '../parsers/requirement-blocks.js';
 import { findMainSpecStructureIssues } from '../parsers/spec-structure.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
-import { analyzeSpecUpdates, findSpecUpdates } from '../specs-apply.js';
+import {
+  analyzeSpecUpdates,
+  discoverDeltaSpecFiles,
+  findSpecUpdates,
+  type DeltaSpecDiscovery,
+} from '../specs-apply.js';
 
 export class Validator {
   private strictMode: boolean;
@@ -115,27 +121,73 @@ export class Validator {
    */
   async validateChangeDeltaSpecs(
     changeDir: string,
-    canonicalSpecsDir?: string
+    canonicalSpecsDir?: string,
+    discoveredDeltaSpecs?: DeltaSpecDiscovery
   ): Promise<ValidationReport> {
     const issues: ValidationIssue[] = [];
     const specsDir = path.join(changeDir, 'specs');
     let totalDeltas = 0;
-    const missingHeaderSpecs: string[] = [];
-    const emptySectionSpecs: Array<{ path: string; sections: string[] }> = [];
+    const deltaSnapshots = new Map<string, Buffer>();
+    const reconciliationIssueKey = (
+      source: string,
+      code: string,
+      requirement?: string
+    ): string =>
+      `${source}\0${code}\0${
+        requirement === undefined ? '' : normalizeRequirementName(requirement)
+      }`;
+    const independentlyReported = new Set<string>();
+    const shapeInvalidSources = new Set<string>();
+    const deltaDiscovery =
+      discoveredDeltaSpecs ?? (await discoverDeltaSpecFiles(changeDir));
+    let deltaInputUnavailable = deltaDiscovery.issues.length > 0;
+    for (const issue of deltaDiscovery.issues) {
+      issues.push({
+        level: 'ERROR',
+        path: FileSystemUtils.toPosixPath(
+          path.relative(specsDir, issue.source)
+        ),
+        code: issue.code,
+        source: issue.source,
+        capability: issue.capability,
+        message: issue.message,
+      });
+      independentlyReported.add(
+        reconciliationIssueKey(issue.source, issue.code, issue.requirement)
+      );
+    }
+    const discovery =
+      canonicalSpecsDir === undefined
+        ? null
+        : await findSpecUpdates(
+            changeDir,
+            canonicalSpecsDir,
+            deltaDiscovery
+          );
 
     try {
-      // Discover delta specs at any depth so the nested multi-area layout
-      // (specs/<area>/<capability>/spec.md) is validated, not just the
-      // one-level specs/<capability>/spec.md layout (#1182b). The spec-driven
-      // specs glob is specs/**/*.md; delta files are always named spec.md.
-      const specFiles = await this.findDeltaSpecFiles(specsDir);
-      for (const specFile of specFiles) {
-        let content: string | undefined;
+      for (const specFile of deltaDiscovery.files) {
+        let content: string;
         try {
-          content = await fs.readFile(specFile, 'utf-8');
-        } catch {
+          const snapshot = await fs.readFile(specFile);
+          deltaSnapshots.set(specFile, snapshot);
+          content = snapshot.toString('utf8');
+        } catch (error) {
+          issues.push({
+            level: 'ERROR',
+            path: FileSystemUtils.toPosixPath(
+              path.relative(specsDir, specFile)
+            ),
+            code: 'spec_delta_read_failed',
+            source: specFile,
+            message: `Cannot read delta spec ${specFile}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          });
+          deltaInputUnavailable = true;
           continue;
         }
+        const issuesBeforeShapeValidation = issues.length;
 
         const plan = parseDeltaSpec(content);
         const entryPath = FileSystemUtils.toPosixPath(path.relative(specsDir, specFile));
@@ -147,8 +199,18 @@ export class Validator {
         const hasSections = sectionNames.length > 0;
         const hasEntries = plan.added.length + plan.modified.length + plan.removed.length + plan.renamed.length > 0;
         if (!hasEntries) {
-          if (hasSections) emptySectionSpecs.push({ path: entryPath, sections: sectionNames });
-          else missingHeaderSpecs.push(entryPath);
+          issues.push({
+            level: 'ERROR',
+            path: entryPath,
+            code: 'spec_delta_no_operations',
+            source: specFile,
+            message: hasSections
+              ? `Delta sections ${this.formatSectionList(sectionNames)} were found, but no requirement entries parsed. Ensure each section includes at least one "### Requirement:" block (REMOVED may use bullet list syntax).`
+              : 'No delta sections found. Add headers such as "## ADDED Requirements" or move non-delta notes outside specs/.',
+          });
+          independentlyReported.add(
+            reconciliationIssueKey(specFile, 'spec_delta_no_operations')
+          );
         }
 
         const addedNames = new Set<string>();
@@ -163,6 +225,13 @@ export class Validator {
           totalDeltas++;
           if (addedNames.has(key)) {
             issues.push({ level: 'ERROR', path: entryPath, message: `Duplicate requirement in ADDED: "${block.name}"` });
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_duplicate_added',
+                block.name
+              )
+            );
           } else {
             addedNames.add(key);
           }
@@ -184,6 +253,13 @@ export class Validator {
           totalDeltas++;
           if (modifiedNames.has(key)) {
             issues.push({ level: 'ERROR', path: entryPath, message: `Duplicate requirement in MODIFIED: "${block.name}"` });
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_duplicate_modified',
+                block.name
+              )
+            );
           } else {
             modifiedNames.add(key);
           }
@@ -205,6 +281,13 @@ export class Validator {
           totalDeltas++;
           if (removedNames.has(key)) {
             issues.push({ level: 'ERROR', path: entryPath, message: `Duplicate requirement in REMOVED: "${name}"` });
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_duplicate_removed',
+                name
+              )
+            );
           } else {
             removedNames.add(key);
           }
@@ -217,11 +300,25 @@ export class Validator {
           totalDeltas++;
           if (renamedFrom.has(fromKey)) {
             issues.push({ level: 'ERROR', path: entryPath, message: `Duplicate FROM in RENAMED: "${from}"` });
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_duplicate_renamed_from',
+                from
+              )
+            );
           } else {
             renamedFrom.add(fromKey);
           }
           if (renamedTo.has(toKey)) {
             issues.push({ level: 'ERROR', path: entryPath, message: `Duplicate TO in RENAMED: "${to}"` });
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_duplicate_renamed_to',
+                to
+              )
+            );
           } else {
             renamedTo.add(toKey);
           }
@@ -231,14 +328,35 @@ export class Validator {
         for (const n of modifiedNames) {
           if (removedNames.has(n)) {
             issues.push({ level: 'ERROR', path: entryPath, message: `Requirement present in both MODIFIED and REMOVED: "${n}"` });
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_cross_section_conflict',
+                n
+              )
+            );
           }
           if (addedNames.has(n)) {
             issues.push({ level: 'ERROR', path: entryPath, message: `Requirement present in both MODIFIED and ADDED: "${n}"` });
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_cross_section_conflict',
+                n
+              )
+            );
           }
         }
         for (const n of addedNames) {
           if (removedNames.has(n)) {
             issues.push({ level: 'ERROR', path: entryPath, message: `Requirement present in both ADDED and REMOVED: "${n}"` });
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_cross_section_conflict',
+                n
+              )
+            );
           }
         }
         for (const { from, to } of plan.renamed) {
@@ -246,29 +364,125 @@ export class Validator {
           const toKey = normalizeRequirementName(to);
           if (modifiedNames.has(fromKey)) {
             issues.push({ level: 'ERROR', path: entryPath, message: `MODIFIED references old name from RENAMED. Use new header for "${to}"` });
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_modified_uses_renamed_source',
+                from
+              )
+            );
           }
           if (addedNames.has(toKey)) {
             issues.push({ level: 'ERROR', path: entryPath, message: `RENAMED TO collides with ADDED for "${to}"` });
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_renamed_target_conflicts_added',
+                to
+              )
+            );
+          }
+        }
+        if (issues.length > issuesBeforeShapeValidation) {
+          shapeInvalidSources.add(specFile);
+        }
+      }
+    } catch (error) {
+      deltaInputUnavailable = true;
+      issues.push({
+        level: 'ERROR',
+        path: 'specs',
+        code: 'spec_delta_discovery_failed',
+        source: specsDir,
+        message: `Cannot inspect delta specs under ${specsDir}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      });
+    }
+
+    const analyzedTargets = new Map<
+      string,
+      { state: 'absent' } | { state: 'file'; sha256: string }
+    >();
+
+    const targetSnapshots = new Map<string, Buffer | null>();
+    if (discovery !== null) {
+      for (const update of discovery.updates) {
+        try {
+          const snapshot = await fs.readFile(update.target);
+          targetSnapshots.set(update.target, snapshot);
+          analyzedTargets.set(update.target, {
+            state: 'file',
+            sha256: createHash('sha256').update(snapshot).digest('hex'),
+          });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            targetSnapshots.set(update.target, null);
+            analyzedTargets.set(update.target, { state: 'absent' });
           }
         }
       }
-    } catch {
-      // If no specs dir, treat as no deltas
     }
 
-    if (canonicalSpecsDir !== undefined) {
-      const updates = await findSpecUpdates(changeDir, canonicalSpecsDir);
+    if (discovery !== null) {
+      const analysisDiscovery = {
+        issues: discovery.issues,
+        updates: discovery.updates.flatMap(update => {
+          const sourceSnapshot = deltaSnapshots.get(update.source);
+          if (sourceSnapshot === undefined) return [];
+          const hasTargetSnapshot = targetSnapshots.has(update.target);
+          return [
+            {
+              ...update,
+              sourceSnapshot,
+              ...(hasTargetSnapshot
+                ? { targetSnapshot: targetSnapshots.get(update.target) ?? null }
+                : {}),
+            },
+          ];
+        }),
+      };
       const analysis = await analyzeSpecUpdates(
-        updates,
+        analysisDiscovery,
         path.basename(changeDir),
-        { silent: true }
+        { silent: true, validateTarget: true }
       );
+      for (const prepared of analysis.prepared) {
+        analyzedTargets.set(
+          prepared.update.target,
+          prepared.targetPrecondition
+        );
+      }
       const changeSpecsDir = path.join(changeDir, 'specs');
       for (const issue of analysis.issues) {
-        if (issue.code !== 'spec_modified_scenarios_missing') continue;
+        const preservationFailure =
+          issue.code === 'spec_modified_scenarios_missing';
+        if (
+          issue.code === 'spec_target_validation_failed' &&
+          shapeInvalidSources.has(issue.source)
+        ) {
+          continue;
+        }
+        if (
+          independentlyReported.has(
+            reconciliationIssueKey(
+              issue.source,
+              issue.code,
+              issue.requirement
+            )
+          )
+        ) {
+          continue;
+        }
         issues.push({
-          path: FileSystemUtils.toPosixPath(path.relative(changeSpecsDir, issue.source)),
-          level: this.strictMode ? 'ERROR' : 'WARNING',
+          path: FileSystemUtils.toPosixPath(
+            path.relative(changeSpecsDir, issue.source)
+          ),
+          level: preservationFailure
+            ? this.strictMode
+              ? 'ERROR'
+              : 'WARNING'
+            : 'ERROR',
           code: issue.code,
           source: issue.source,
           capability: issue.capability,
@@ -278,62 +492,147 @@ export class Validator {
           ...(issue.missingScenarios === undefined
             ? {}
             : { missingScenarios: issue.missingScenarios }),
-          message:
-            `${issue.message} MODIFIED replaces the complete requirement; ` +
-            'include every scenario that should survive.',
+          message: preservationFailure
+            ? `${issue.message} MODIFIED replaces the complete requirement; include every scenario that should survive.`
+            : issue.message,
         });
       }
     }
 
-    for (const { path: specPath, sections } of emptySectionSpecs) {
-      issues.push({
-        level: 'ERROR',
-        path: specPath,
-        message: `Delta sections ${this.formatSectionList(sections)} were found, but no requirement entries parsed. Ensure each section includes at least one "### Requirement:" block (REMOVED may use bullet list syntax).`,
-      });
-    }
-    for (const path of missingHeaderSpecs) {
-      issues.push({
-        level: 'ERROR',
-        path,
-        message: 'No delta sections found. Add headers such as "## ADDED Requirements" or move non-delta notes outside specs/.',
-      });
+
+    for (const [target, precondition] of analyzedTargets) {
+      try {
+        const current = await fs.readFile(target);
+        if (
+          precondition.state === 'absent' ||
+          createHash('sha256').update(current).digest('hex') !==
+            precondition.sha256
+        ) {
+          issues.push({
+            level: 'ERROR',
+            path: target,
+            code: 'spec_target_source_changed',
+            source: target,
+            message: `Canonical spec changed during validation: ${target}. Rerun validation against the current baseline.`,
+          });
+        }
+      } catch (error) {
+        if (
+          precondition.state === 'absent' &&
+          (error as NodeJS.ErrnoException).code === 'ENOENT'
+        ) {
+          continue;
+        }
+        issues.push({
+          level: 'ERROR',
+          path: target,
+          code: 'spec_target_read_failed',
+          source: target,
+          message: `Cannot confirm canonical spec snapshot ${target}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        });
+      }
     }
 
-    if (totalDeltas === 0) {
+    const unreadableDeltaSnapshots = new Set<string>();
+    for (const [specFile, snapshot] of deltaSnapshots) {
+      try {
+        const current = await fs.readFile(specFile);
+        if (!current.equals(snapshot)) {
+          issues.push({
+            level: 'ERROR',
+            path: FileSystemUtils.toPosixPath(
+              path.relative(specsDir, specFile)
+            ),
+            code: 'spec_delta_source_changed',
+            source: specFile,
+            message: `Delta spec changed during validation: ${specFile}. Rerun validation against the current bytes.`,
+          });
+          deltaInputUnavailable = true;
+        }
+      } catch (error) {
+        issues.push({
+          level: 'ERROR',
+          path: FileSystemUtils.toPosixPath(
+            path.relative(specsDir, specFile)
+          ),
+          code: 'spec_delta_read_failed',
+          source: specFile,
+          message: `Cannot confirm delta spec snapshot ${specFile}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        });
+        unreadableDeltaSnapshots.add(path.resolve(specFile));
+        deltaInputUnavailable = true;
+      }
+    }
+    const finalDeltaDiscovery = await discoverDeltaSpecFiles(changeDir);
+    for (const issue of finalDeltaDiscovery.issues) {
+      const key = reconciliationIssueKey(
+        issue.source,
+        issue.code,
+        issue.requirement
+      );
+      if (independentlyReported.has(key)) continue;
+      issues.push({
+        level: 'ERROR',
+        path: FileSystemUtils.toPosixPath(
+          path.relative(specsDir, issue.source)
+        ),
+        code: issue.code,
+        source: issue.source,
+        capability: issue.capability,
+        message: issue.message,
+      });
+      independentlyReported.add(key);
+      deltaInputUnavailable = true;
+    }
+    const admittedDeltaFiles = new Set(
+      deltaDiscovery.files.map(file => path.resolve(file))
+    );
+    const finalDeltaFiles = new Set(
+      finalDeltaDiscovery.files.map(file => path.resolve(file))
+    );
+    for (const specFile of admittedDeltaFiles) {
+      if (
+        finalDeltaFiles.has(specFile) ||
+        unreadableDeltaSnapshots.has(specFile)
+      ) {
+        continue;
+      }
+      issues.push({
+        level: 'ERROR',
+        path: FileSystemUtils.toPosixPath(
+          path.relative(specsDir, specFile)
+        ),
+        code: 'spec_delta_set_changed',
+        source: specFile,
+        message: `Admitted delta spec is no longer a discoverable regular file: ${specFile}. Rerun validation against the complete current delta set.`,
+      });
+      deltaInputUnavailable = true;
+    }
+    for (const specFile of finalDeltaDiscovery.files) {
+      if (admittedDeltaFiles.has(path.resolve(specFile))) continue;
+      issues.push({
+        level: 'ERROR',
+        path: FileSystemUtils.toPosixPath(
+          path.relative(specsDir, specFile)
+        ),
+        code: 'spec_delta_set_changed',
+        source: specFile,
+        message: `Delta spec appeared during validation: ${specFile}. Rerun validation against the complete current delta set.`,
+      });
+      deltaInputUnavailable = true;
+    }
+
+    if (totalDeltas === 0 && !deltaInputUnavailable) {
       issues.push({ level: 'ERROR', path: 'file', message: this.enrichTopLevelError('change', VALIDATION_MESSAGES.CHANGE_NO_DELTAS) });
     }
 
     return this.createReport(issues);
   }
 
-  /**
-   * Recursively collect every delta `spec.md` under a change's specs directory,
-   * so both the one-level (specs/<capability>/spec.md) and nested multi-area
-   * (specs/<area>/<capability>/spec.md) layouts are discovered (#1182b).
-   * Returns absolute paths, sorted for deterministic issue ordering.
-   */
-  private async findDeltaSpecFiles(specsDir: string): Promise<string[]> {
-    const results: string[] = [];
-    const walk = async (dir: string): Promise<void> => {
-      let entries;
-      try {
-        entries = await fs.readdir(dir, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const entry of entries) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          await walk(full);
-        } else if (entry.isFile() && entry.name === 'spec.md') {
-          results.push(full);
-        }
-      }
-    };
-    await walk(specsDir);
-    return results.sort();
-  }
 
   private convertZodErrors(error: ZodError): ValidationIssue[] {
     return error.issues.map(err => {

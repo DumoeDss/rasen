@@ -5,11 +5,18 @@
     "confirmationRequired": "Aborting an archive transaction requires explicit confirmation.",
     "confirmationFix": "Rerun with 'rasen archive --abort-plan {token} --yes'.",
     "applyAborted": "This archive plan was aborted and cannot be applied.",
-    "aborted": "Archive plan {transactionId} was aborted. Its engine-owned stage and transaction journal were removed.",
+    "aborted": "Archive plan {transactionId} was aborted. No durable archive changes were reversed.",
     "alreadyAborted": "Archive plan {transactionId} was already aborted; no further changes were needed.",
+    "associationPending": "The Store workspace association remains pending.",
     "blocked": "Archive plan {transactionId} was not aborted.",
-    "blocker": "{code}: protected {path}",
-    "recovery": "The transaction remains recoverable. Repair the reported blocker or resume the exact plan with --apply-plan."
+    "blocker": "Blocker {code}: {message} ({path})",
+    "effectivePhase": "Effective phase: {phase}",
+    "effectivePhaseUnknown": "not established",
+    "retainedPath": "Retained path: {path}",
+    "retainedPathsNone": "Retained paths: none reported",
+    "manualRecoveryAction": "Manual recovery: {action}",
+    "abortAction": "Abort: {action}",
+    "recoveryAction": "Recovery: {action}"
   },
   "bootstrap": {
     "headingProject": "Bootstrap {mode} for the project at {path}",

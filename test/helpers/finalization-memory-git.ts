@@ -89,6 +89,10 @@ export function createMemoryFinalizationGit(seed: MemoryGitSeed = {}): MemoryGit
       const entries = trees[`${ref}:${portablePath}`];
       return entries === undefined ? null : [...entries];
     },
+    async repositoryPaths(root) {
+      calls.push(`repositoryPaths ${root}`);
+      return null;
+    },
     async checkedOutRef(root) {
       calls.push(`checkedOutRef ${root}`);
       return checkedOut[root] ?? null;

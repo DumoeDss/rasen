@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { parse as parseYaml } from 'yaml';
@@ -8,6 +9,7 @@ import { parse as parseYaml } from 'yaml';
 import {
   createStorePlanningResolverForTesting,
   nodeStorePlanningFileSystem,
+  productionStorePlanningDependencies,
   type StorePlanningDependencies,
 } from '../../../src/core/store-planning/testing.js';
 import { PlanningScopeError } from '../../../src/core/store-planning/index.js';
@@ -15,6 +17,11 @@ import {
   deriveWorktreeInstanceId,
   parseChangeInstanceSeed,
 } from '../../../src/core/store/planning-foundation.js';
+import {
+  registerProject,
+  updateProjectRegistryState,
+} from '../../../src/core/project-registry.js';
+import { isolatedGitEnv } from '../../helpers/store-git.js';
 
 const STORE_UID = '123e4567-e89b-42d3-a456-426614174000';
 const tempRoots: string[] = [];
@@ -120,6 +127,19 @@ function resolver(
           home: 'project-a-home',
           lastSeen: '2026-08-06T00:00:00.000Z',
         },
+      },
+    ],
+    findProjectIdentityClaimants: async () => [
+      {
+        root: roots.projectRoot,
+        entry: {
+          projectId: 'project-a',
+          name: 'project-a',
+          mode: 'store',
+          home: 'project-a-home',
+          lastSeen: '2026-08-06T00:00:00.000Z',
+        },
+        live: true,
       },
     ],
     findRegisteredProject: async () => null,
@@ -766,6 +786,145 @@ describe('StorePlanning.open', () => {
         selection: { project: 'project-a', targetLine: 'line-0.2' },
       })
     ).rejects.toMatchObject({ diagnostic: { code: 'split_planning_truth' } });
+  });
+
+  it('reports every project claimant and actionable pruning for duplicate identities', async () => {
+    const roots = storeFixture();
+    const missingRoot = path.join(
+      path.dirname(roots.projectRoot),
+      'missing-project-copy'
+    );
+    const entry = {
+      projectId: 'project-a',
+      name: 'project-a',
+      mode: 'store' as const,
+      home: 'project-a-home',
+      lastSeen: '2026-08-06T00:00:00.000Z',
+    };
+    const aliasEntry = {
+      ...entry,
+      projectId: entry.projectId.toUpperCase(),
+    };
+    const planning = resolver(roots, () => 'linked-worktree', {
+      snapshotProjects: async () => [
+        { root: roots.projectRoot, entry },
+        { root: missingRoot, entry: aliasEntry },
+      ],
+      findProjectIdentityClaimants: async () => [
+        { root: roots.projectRoot, entry, live: true },
+        { root: missingRoot, entry: aliasEntry, live: false },
+      ],
+    });
+
+    let thrown: unknown;
+    try {
+      await planning.open({
+        intent: 'project-read',
+        startPath: roots.projectRoot,
+        selection: { project: 'project-a' },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(PlanningScopeError);
+    const diagnostic = (thrown as PlanningScopeError).diagnostic;
+    const message = (thrown as PlanningScopeError).message;
+    expect(message).toContain(`${roots.projectRoot} (live)`);
+    expect(message).toContain(`${missingRoot} (missing)`);
+    expect(message).toContain('Run `rasen home prune` to preview');
+    expect(message).toContain('then `rasen home prune --apply`');
+    expect(diagnostic.fix).toBe(
+      'Run rasen home prune to preview, then rasen home prune --apply and retry.'
+    );
+  });
+
+  it('unifies a legacy worktree root with its machine-registered main checkout', async () => {
+    const roots = storeFixture();
+    const mainRoot = path.join(path.dirname(roots.projectRoot), 'project-a-main');
+    fs.mkdirSync(mainRoot, { recursive: true });
+    const entry = {
+      projectId: 'project-a',
+      name: 'project-a',
+      mode: 'store' as const,
+      home: 'project-a-home',
+      lastSeen: '2026-08-06T00:00:00.000Z',
+    };
+    const planning = resolver(roots, () => 'linked-worktree', {
+      snapshotProjects: async () => [{ root: mainRoot, entry }],
+      findRegisteredProject: async () => ({ root: mainRoot, entry }),
+    });
+
+    const scope = await planning.open({
+      intent: 'project-read',
+      startPath: roots.projectRoot,
+      selection: { project: 'project-a', targetLine: 'line-0.2' },
+    });
+
+    expect(scope.describe().kind).toBe('store-project');
+    expect(scope.describe().paths['execution-root']).toBe(roots.projectRoot);
+  });
+
+  it('pierces a legacy worktree registry duplicate to its registered main checkout', async () => {
+    const root = temporaryRoot();
+    const mainRoot = path.join(root, 'registry-main');
+    const worktreeRoot = path.join(root, 'registry-linked');
+    const globalDataDir = path.join(root, 'machine-home');
+    fs.mkdirSync(mainRoot, { recursive: true });
+    const gitEnv = { ...process.env, ...isolatedGitEnv(root) };
+    execFileSync('git', ['init'], {
+      cwd: mainRoot,
+      env: gitEnv,
+      stdio: 'ignore',
+    });
+    write(path.join(mainRoot, 'README.md'), 'main\n');
+    execFileSync('git', ['add', 'README.md'], {
+      cwd: mainRoot,
+      env: gitEnv,
+      stdio: 'ignore',
+    });
+    execFileSync('git', ['commit', '-m', 'initial'], {
+      cwd: mainRoot,
+      env: gitEnv,
+      stdio: 'ignore',
+    });
+    execFileSync('git', ['worktree', 'add', worktreeRoot], {
+      cwd: mainRoot,
+      env: gitEnv,
+      stdio: 'ignore',
+    });
+
+    const main = await registerProject(
+      {
+        projectRoot: mainRoot,
+        projectId: STORE_UID,
+        mode: 'in-repo',
+      },
+      { globalDataDir }
+    );
+    const canonicalWorktree = fs.realpathSync.native(worktreeRoot);
+    await updateProjectRegistryState(
+      current => ({
+        version: 1,
+        projects: {
+          ...(current?.projects ?? {}),
+          [canonicalWorktree]: {
+            ...main.entry,
+            name: 'registry-linked',
+          },
+        },
+      }),
+      { globalDataDir }
+    );
+
+    const found =
+      await productionStorePlanningDependencies.findRegisteredProject(
+        worktreeRoot,
+        globalDataDir
+      );
+
+    expect(found?.root).toBe(main.canonicalPath);
+    expect(found?.entry.projectId).toBe(main.entry.projectId);
   });
 
   it('rejects conflicts instead of letting explicit evidence rewrite a marker', async () => {

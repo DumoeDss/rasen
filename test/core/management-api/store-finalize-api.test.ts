@@ -23,6 +23,11 @@ import {
   type ManagementServerHandle,
 } from '../../../src/core/management-api/server.js';
 import type { ManagementApiContext } from '../../../src/core/management-api/router.js';
+import {
+  decodeFinalizationDisposition,
+  finalizationOptions,
+  inspectFinalizationPreviewBlockers,
+} from '../../../src/core/management-api/finalize.js';
 
 const TOKEN = 'test-token-finalize-abc123';
 const PROJECT = 'app-a';
@@ -66,6 +71,117 @@ function req(
     request.end(options.body);
   });
 }
+
+describe('the Store change-finalization bridge contract', () => {
+  const mergeBlocker = {
+    code: 'finalization_record_invalid',
+    message: 'archive: A recorded PR delivery requires explicit merge confirmation.',
+    archiveBlocker: {
+      code: 'archive_merge_confirmation_required',
+      operation: 'timing',
+      path: '/tmp/change',
+    },
+  };
+  const otherBlocker = {
+    code: 'finalization_record_invalid',
+    message: 'archive: Tasks are incomplete.',
+    archiveBlocker: {
+      code: 'archive_tasks_incomplete',
+      operation: 'tasks',
+      path: '/tmp/change/tasks.md',
+    },
+  };
+
+  it('admits only the sole typed merge blocker after explicit verified confirmation', () => {
+    expect(
+      inspectFinalizationPreviewBlockers([mergeBlocker], true)
+    ).toMatchObject({
+      applicable: true,
+      mergeBlockerAdmitted: true,
+      blockers: [mergeBlocker],
+    });
+    expect(
+      inspectFinalizationPreviewBlockers([mergeBlocker], false)
+    ).toMatchObject({
+      applicable: false,
+      mergeBlockerAdmitted: false,
+    });
+    expect(
+      inspectFinalizationPreviewBlockers(
+        [mergeBlocker, otherBlocker],
+        true
+      )
+    ).toMatchObject({
+      applicable: false,
+      mergeBlockerAdmitted: false,
+    });
+    expect(
+      inspectFinalizationPreviewBlockers([otherBlocker], true)
+    ).toMatchObject({
+      applicable: false,
+      mergeBlockerAdmitted: false,
+    });
+  });
+
+  it('requires mergeConfirmed to be an explicit boolean assertion', () => {
+    expect(
+      finalizationOptions({
+        outcome: 'abandoned',
+        mergeConfirmed: 'yes',
+      })
+    ).toEqual({
+      ok: false,
+      message:
+        'mergeConfirmed must be a boolean and may be true only after independently verifying the recorded PR merge.',
+    });
+    expect(
+      finalizationOptions({
+        outcome: 'abandoned',
+        mergeConfirmed: true,
+      })
+    ).toEqual({
+      ok: true,
+      argv: ['--outcome', 'abandoned'],
+    });
+  });
+
+  it.each([
+    {
+      status: 'recoverable',
+      field: 'recoveryCommand',
+      value: 'rasen archive --apply-plan exact-token --yes',
+    },
+    {
+      status: 'abort-required',
+      field: 'abortCommand',
+      value: 'rasen archive --abort-plan exact-token --yes',
+    },
+    {
+      status: 'blocked',
+      field: 'manualRecoveryAction',
+      value: { guidance: 'Inspect the verified journal and preserve it.' },
+    },
+  ] as const)(
+    'decodes nested $status blockers and $field without generic cli_error fallback',
+    ({ status, field, value }) => {
+      const disposition = decodeFinalizationDisposition({
+        archive: {
+          finalization: {
+            status,
+            blockers: [otherBlocker],
+            [field]: value,
+          },
+        },
+      });
+
+      expect(disposition).toMatchObject({
+        status,
+        blockers: [otherBlocker],
+        [field]: value,
+      });
+    }
+  );
+});
 
 describe('the Store change-finalization route', () => {
   let f: StoreFinalizationFixture;

@@ -28,6 +28,8 @@ import {
   type RegistryEntryType,
 } from '../../store/foundation.js';
 import { normalizeStoreUid, storeUidsMatch } from '../../store/identity-types.js';
+import { formatProjectIdentityAmbiguity } from '../../project-registry.js';
+import { normalizeProjectIdentity } from '../../store/project-records.js';
 import { RuntimeContextSchema } from '../../session-runtime-context.js';
 import { readChangeMetadata } from '../../../utils/change-metadata.js';
 import { asPlanningScopeError, PlanningScopeError } from '../diagnostics.js';
@@ -403,7 +405,8 @@ function projectRegistryMatches(
   selector: string,
   flavor: PlanningPathFlavor
 ): boolean {
-  return candidate.entry.projectId === selector ||
+  return normalizeProjectIdentity(candidate.entry.projectId) ===
+    normalizeProjectIdentity(selector) ||
     candidate.entry.name === selector ||
     (pathApi(flavor).isAbsolute(selector) &&
       normalizePathForComparison(candidate.root, flavor) ===
@@ -1347,9 +1350,48 @@ export class StorePlanningResolver implements StorePlanning {
         // registry is its sole source of truth.
         if (legacyNamespace.length === 0) throw error;
       }
-      const machineNamespace = projects.filter((entry) =>
+      let machineNamespace = projects.filter((entry) =>
         projectRegistryMatches(entry, input.selection!.project!, flavor)
       );
+      const machineProjectIds = new Set(
+        machineNamespace.map(entry =>
+          normalizeProjectIdentity(entry.entry.projectId)
+        )
+      );
+      if (machineNamespace.length > 1 && machineProjectIds.size === 1) {
+        const [projectId] = machineProjectIds;
+        const claimants = await this.dependencies.findProjectIdentityClaimants(
+          projectId!,
+          input.globalDataDir
+        );
+        if (claimants.length > 1) {
+          throw new PlanningScopeError(
+            'planning_selection_conflict',
+            formatProjectIdentityAmbiguity(
+              input.selection.project,
+              claimants.map(claimant => ({
+                path: claimant.root,
+                entry: claimant.entry,
+                live: claimant.live,
+              }))
+            ),
+            {
+              target: 'selection.project',
+              fix: claimants.some(claimant => !claimant.live)
+                ? 'Run rasen home prune to preview, then rasen home prune --apply and retry.'
+                : 'Repair the copied projectId metadata, then retry.',
+            }
+          );
+        }
+        if (claimants.length === 1) {
+          machineNamespace = [
+            {
+              root: claimants[0]!.root,
+              entry: claimants[0]!.entry,
+            },
+          ];
+        }
+      }
       if (legacyNamespace.length + machineNamespace.length === 0) {
         const registeredIds = [...new Set([
           ...stores.filter((entry) => entry.type === 'project').map((entry) => entry.id),
@@ -1366,11 +1408,21 @@ export class StorePlanningResolver implements StorePlanning {
         );
       }
       if (legacyNamespace.length + machineNamespace.length > 1) {
-        const canonical = new Set([
-          ...legacyNamespace.map((entry) => normalizePathForComparison(entry.root, flavor)),
-          ...machineNamespace.map((entry) => normalizePathForComparison(entry.root, flavor)),
-        ]);
-        if (canonical.size > 1) {
+        const canonicalRoots = await Promise.all(
+          [...legacyNamespace, ...machineNamespace].map(async (entry) => {
+            if (flavor !== 'native') {
+              return normalizePathForComparison(entry.root, flavor);
+            }
+            const registered = await this.dependencies.findRegisteredProject(
+              entry.root,
+              input.globalDataDir
+            );
+            const canonicalRoot = registered?.root ??
+              this.dependencies.fs.canonicalizeExisting(entry.root);
+            return normalizePathForComparison(canonicalRoot, flavor);
+          })
+        );
+        if (new Set(canonicalRoots).size > 1) {
           throw new PlanningScopeError(
             'planning_selection_conflict',
             `Project selector '${input.selection.project}' matches more than one checkout. Use a permanent projectId or absolute root.`,

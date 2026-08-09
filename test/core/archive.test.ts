@@ -5,6 +5,12 @@ import type {
   ArchiveApplyResult,
   ArchivePlan,
 } from '../../src/core/archive-engine.js';
+import {
+  applyArchive,
+  defaultArchiveEngineAdapters,
+  loadStoredArchivePlan,
+} from '../../src/core/archive-engine.js';
+import { getGlobalDataDir } from '../../src/core/global-config.js';
 import { Validator } from '../../src/core/validation/validator.js';
 import { promises as fs } from 'fs';
 import { execFileSync } from 'node:child_process';
@@ -110,6 +116,120 @@ describe('ArchiveCommand', () => {
         return super.applyPlannedArchive(plan, options);
       }
     }
+
+    it('persists an incomplete direct plan before exposing token recovery', async () => {
+      const changeName = 'durable-direct-recovery';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] done\n');
+
+      class RecoverableApplyCommand extends ArchiveCommand {
+        failedPlan?: ArchivePlan;
+        gateObserved = false;
+
+        protected override async applyPlannedArchive(
+          plan: ArchivePlan,
+          options: ArchiveApplyOptions = {}
+        ): Promise<ArchiveApplyResult> {
+          this.failedPlan = plan;
+          await fs.access(
+            path.join(
+              getGlobalDataDir(),
+              'archive-transactions',
+              plan.transactionId,
+              'operation.lock'
+            )
+          );
+          this.gateObserved = true;
+          return applyArchive(plan, {
+            ...options,
+            adapters: {
+              ...defaultArchiveEngineAdapters,
+              fs: {
+                ...defaultArchiveEngineAdapters.fs,
+                mkdir: async (
+                  targetPath: string,
+                  mkdirOptions?: { recursive?: boolean }
+                ): Promise<string | undefined> => {
+                  if (targetPath === plan.paths.final) {
+                    const error = new Error('injected final reservation failure');
+                    (error as NodeJS.ErrnoException).code = 'EACCES';
+                    throw error;
+                  }
+                  return defaultArchiveEngineAdapters.fs.mkdir(
+                    targetPath,
+                    mkdirOptions
+                  );
+                },
+              },
+            },
+          });
+        }
+      }
+
+      const command = new RecoverableApplyCommand();
+      await command.execute(changeName, { yes: true, json: true });
+      const output = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(output.archive.status).toBe('recoverable');
+      expect(output.archive.recoveryCommand).toMatch(
+        /^rasen archive --apply-plan archive-v1:/
+      );
+      const plan = command.failedPlan;
+      expect(plan).toBeDefined();
+      expect(command.gateObserved).toBe(true);
+      const token = `archive-v1:${plan!.transactionId}:${plan!.planHash}`;
+      await expect(
+        loadStoredArchivePlan(token, getGlobalDataDir())
+      ).resolves.toEqual(plan);
+    });
+
+    it('does not mutate a direct archive when plan persistence fails', async () => {
+      const changeName = 'direct-persistence-failure';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
+      const canonical = path.join(
+        tempDir,
+        'rasen',
+        'specs',
+        'existing',
+        'spec.md'
+      );
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.mkdir(path.dirname(canonical), { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] done\n');
+      await fs.writeFile(canonical, '# Canonical\n');
+      const sourceBefore = await fs.readFile(
+        path.join(changeDir, 'tasks.md'),
+        'utf8'
+      );
+      const canonicalBefore = await fs.readFile(canonical, 'utf8');
+      process.env.XDG_DATA_HOME = path.join(tempDir, 'isolated-data-home');
+      const transactionStore = path.join(
+        getGlobalDataDir(),
+        'archive-transactions'
+      );
+      await fs.mkdir(getGlobalDataDir(), { recursive: true });
+      await fs.writeFile(transactionStore, 'not a directory\n');
+      const command = new TrackingArchiveCommand();
+
+      await command.execute(changeName, { yes: true, json: true });
+
+      const output = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(output.archive).toBeNull();
+      expect(process.exitCode).toBe(1);
+      expect(command.applyCalls).toBe(0);
+      await expect(
+        fs.readFile(path.join(changeDir, 'tasks.md'), 'utf8')
+      ).resolves.toBe(sourceBefore);
+      await expect(fs.readFile(canonical, 'utf8')).resolves.toBe(
+        canonicalBefore
+      );
+      await expect(fs.readdir(archiveDir)).resolves.toEqual([]);
+    });
 
     it('applies an immutable token and never presents completed corruption as auto-resumable', async () => {
       const changeName = 'durable-plan';
@@ -859,6 +979,46 @@ New feature description.
       expect(archives.length).toBe(1);
     });
 
+    it('applies a recursively nested capability to the matching canonical path', async () => {
+      const changeName = 'nested-spec-feature';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      const deltaPath = path.join(
+        changeDir,
+        'specs',
+        'platform',
+        'routing',
+        'spec.md'
+      );
+      await fs.mkdir(path.dirname(deltaPath), { recursive: true });
+      await fs.writeFile(
+        deltaPath,
+        [
+          '## ADDED Requirements',
+          '',
+          '### Requirement: Nested routing',
+          'The system SHALL support nested routing.',
+          '',
+          '#### Scenario: Route is resolved',
+          '- **WHEN** a nested route is requested',
+          '- **THEN** the route is resolved',
+        ].join('\n')
+      );
+
+      await archiveCommand.execute(changeName, { yes: true });
+
+      const canonicalPath = path.join(
+        tempDir,
+        'rasen',
+        'specs',
+        'platform',
+        'routing',
+        'spec.md'
+      );
+      await expect(fs.readFile(canonicalPath, 'utf8')).resolves.toContain(
+        '### Requirement: Nested routing'
+      );
+    });
+
     it('should skip spec updates when --skip-specs flag is used', async () => {
       const changeName = 'skip-specs-feature';
       const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
@@ -937,20 +1097,17 @@ The system will log all events.
       const changeSpecDir = path.join(changeDir, 'specs', 'test-capability');
       await fs.mkdir(changeSpecDir, { recursive: true });
       
-      // Create valid spec in change
+      // Create a valid delta spec in the change.
       const specContent = `# Test Capability Spec
 
-## Purpose
-This is a test capability specification.
+## ADDED Requirements
 
-## Requirements
-
-### The system SHALL provide test capability
+### Requirement: Test capability
+The system SHALL provide a test capability.
 
 #### Scenario: Basic test
-Given a test condition
-When an action occurs
-Then expected result happens`;
+- **WHEN** an action occurs
+- **THEN** the expected result happens`;
       await fs.writeFile(path.join(changeSpecDir, 'spec.md'), specContent);
       
       // Mock confirm to return false (decline spec updates)
@@ -2062,6 +2219,42 @@ The system SHALL do the thing differently.
             operation: 'timing',
           }),
         ])
+      );
+
+      class PreciseRecoveryCommand extends ArchiveCommand {
+        protected override applyPlannedArchive(
+          plan: ArchivePlan
+        ): Promise<ArchiveApplyResult> {
+          return Promise.resolve({
+            status: 'blocked',
+            transactionId: plan.transactionId,
+            planHash: plan.planHash,
+            change: plan.change,
+            path: plan.paths.final,
+            journalPath: plan.paths.journal,
+            resumed: false,
+            specsUpdated: false,
+            totals: { added: 0, modified: 0, removed: 0, renamed: 0 },
+            ephemeraDiscarded: [],
+            ephemeraPreserved: plan.cleaner.effectivePreserve,
+            blockers: [
+              {
+                operation: 'timing',
+                path: plan.paths.active,
+                message: 'Injected retry disposition.',
+              },
+            ],
+            recoveryCommand:
+              `rasen archive --apply-plan ${preview.archive.planToken}` +
+              ' --yes --json',
+          });
+        }
+      }
+      await new PreciseRecoveryCommand().execute(undefined, {
+        applyPlan: preview.archive.planToken,
+      });
+      expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain(
+        `rasen archive --apply-plan ${preview.archive.planToken} --yes --json`
       );
 
       vi.mocked(console.log).mockClear();

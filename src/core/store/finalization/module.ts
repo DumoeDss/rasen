@@ -20,22 +20,26 @@ import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 
 import {
-  ARCHIVE_STORED_PLAN_APPLY_OPERATION,
+  ARCHIVE_PLAN_VERSION,
   abortArchivePlan,
   applyArchive,
-  inspectArchiveApplyPlan,
   createArchivePlan,
   defaultArchiveEngineAdapters,
   fingerprintArchiveTree,
+  inspectArchiveApplyPlan,
+  inspectArchiveJournalState,
   loadStoredArchivePlan,
   persistArchivePlan,
   withStoredArchivePlanOperation,
   type ArchiveApplyAssertions,
   type ArchiveAbortResult,
+  type ArchiveApplyResult,
+  type ArchiveJournal,
   type ArchiveAssociationPlan,
   type ArchivePlan,
   type ArchivePlanFinalization,
   type PreparedArchiveSpecAction,
+  type ArchiveSpecSyncPreparation,
 } from '../../archive-engine.js';
 import { canonicalBytes } from '../../canonical-json.js';
 import { getGlobalDataDir } from '../../global-config.js';
@@ -46,6 +50,7 @@ import {
   parseStoreTargetLineCatalogV1,
   type StoreTargetLineCatalogV1,
 } from '../planning-catalogs.js';
+import { resolveStorePlanningLayoutV2Path } from '../planning-layout-v2.js';
 import {
   derivePlanningScopeId,
   verifyWorkspacePairId,
@@ -107,6 +112,44 @@ import type {
 
 const ARCHIVE_RECORD_FILENAME = 'archive.json';
 
+function isDelegatedArchiveRecoveryError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return (
+    typeof code === 'string' &&
+    (code === 'archive_journal_invalid' ||
+      code === 'archive_journal_ownership_mismatch' ||
+      code === 'archive_stage_ownership_unverified' ||
+      code === 'archive_transaction_temp_ownership_unverified' ||
+      code === 'archive_reservation_ownership_unverified' ||
+      code === 'archive_destination_ancestry_ownership_unverified')
+  );
+}
+function finalizationHasSemanticProgress(journal: ArchiveJournal): boolean {
+  const phase =
+    journal.phase === 'failed' ? journal.failure!.resumePhase : journal.phase;
+  return (
+    [
+      'specs-applied',
+      'published',
+      'cleaner-progress',
+      'accounting-finalized',
+      'association-finalized',
+      'source-removed',
+      'complete',
+    ].includes(phase) ||
+    journal.specProgress.some(progress => progress.state !== 'pending') ||
+    journal.cleanerProgress.some(progress => progress.state !== 'pending') ||
+    (journal.associationProgress !== undefined &&
+      journal.associationProgress.state !== 'pending') ||
+    journal.sourceProgress.state !== 'pending' ||
+    journal.ephemeraDisposed.length > 0 ||
+    journal.finalReservation.identity !== null ||
+    journal.finalReservation.entries.length > 0
+  );
+}
+
+
+
 export interface ChangeFinalizationOptions {
   readonly dependencies?: FinalizationDependencies;
   readonly lockDeadlineMs?: number;
@@ -120,6 +163,8 @@ interface ResolvedFinalizationContext {
   readonly instanceSeed: string;
   readonly implementation: 'code' | 'none';
   readonly workspacePairId: string;
+  readonly workspaceIndexPlanId: string;
+  readonly workspaceIndexPhase: string;
   readonly planning: FinalizationWorktreeFacts;
   readonly execution: FinalizationWorktreeFacts;
   readonly targetLine: FinalizationTargetLineFacts;
@@ -207,13 +252,31 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       );
     }
 
+    const preparedSpecSync: ArchiveSpecSyncPreparation = input.archive.specSync ?? {
+      mode:
+        input.archive.specActionCandidates.length > 0
+          ? 'apply'
+          : input.archive.hasDeltaSpecs
+            ? 'passive'
+            : 'no-deltas',
+      deltaSources: input.archive.specActionCandidates.map(action => action.source),
+    };
+
     let landedProof: FinalizationLandedProof | null = null;
     let specActions: readonly PreparedArchiveSpecAction[] = [];
     if (request.outcome === 'landed') {
-      if (input.skipSpecs === true && input.archive.hasDeltaSpecs) {
+      if (
+        input.archive.hasDeltaSpecs &&
+        (input.skipSpecs === true ||
+          preparedSpecSync.mode !== 'apply' ||
+          input.archive.specActionCandidates.length === 0)
+      ) {
         throw specSkipConflict(context.changeId);
       }
-      specActions = input.skipSpecs === true ? [] : input.archive.specActionCandidates;
+      specActions =
+        preparedSpecSync.mode === 'apply'
+          ? input.archive.specActionCandidates
+          : [];
       landedProof = await this.proveLanded(input, context, request, blockers);
       if (landedProof === null && context.implementation === 'code') {
         // The proof IS the precondition for a code-backed landed record, and
@@ -277,6 +340,21 @@ export class ChangeFinalization implements ChangeFinalizationModule {
         targetLine: {
           catalogPath: context.targetLine.catalogPath,
           catalogDigest: context.targetLine.catalogDigest,
+          codeRef: context.targetLine.codeRef,
+          codeRefOid: context.targetLine.codeRefOid,
+        },
+        archive: {
+          root: resolveStorePlanningLayoutV2Path(
+            context.scope.storeRoot,
+            {
+              kind: 'archive-line',
+              projectId: context.scope.projectId,
+              targetLineId: context.scope.targetLineId,
+            },
+            input.pathFlavor ?? 'native'
+          ),
+          archiveDate: input.archive.date,
+          destination,
         },
         ...(successor === null
           ? {}
@@ -309,6 +387,10 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       // The ONE call site that decides whether spec actions reach the engine.
       // A passive plan variant has no field that could supply them.
       specActions: request.outcome === 'landed' ? [...specActions] : [],
+      specSync:
+        request.outcome === 'landed'
+          ? preparedSpecSync
+          : { ...preparedSpecSync, mode: 'passive' },
       sidecar: input.archive.sidecar,
       shipLog: input.archive.shipLog,
       ...(input.archive.preparationBlockers === undefined
@@ -370,7 +452,7 @@ export class ChangeFinalization implements ChangeFinalizationModule {
               reason: request.reason as string,
             };
 
-    const planId = finalizationPlanId(withOutcome);
+    const planId = finalizationPlanId({ archivePlan });
     const token: FinalizationPlanToken = {
       planId,
       archivePlanToken: `archive-v1:${archivePlan.transactionId}:${archivePlan.planHash}`,
@@ -395,24 +477,32 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       token.archivePlanToken,
       globalDataDir
     );
-    return withStoredArchivePlanOperation(
-      archivePlan,
-      globalDataDir,
-      ARCHIVE_STORED_PLAN_APPLY_OPERATION,
-      () => this.applyStoredPlan(archivePlan, token, assertions)
-    );
+    return this.applyStoredPlan(archivePlan, token, assertions);
   }
 
   /**
    * Applies an already-loaded plan. This is the seam `rasen archive
    * --apply-plan` uses: the stored plan carries the finalization block, so the
    * invoking directory and selectors cannot influence the outcome.
+   *
+   * A direct plan first passes a mutation-free revalidation under the Store
+   * locks. Only then is its exact archive plan persisted. The transaction
+   * operation lock serializes apply with abort, and a second revalidation under
+   * the Store locks closes the interval between persistence and the engine's
+   * first archive/canonical/source mutation.
    */
   async applyStoredPlan(
     archivePlan: ArchivePlan,
     token?: FinalizationPlanToken,
     assertions: ArchiveApplyAssertions = {}
   ): Promise<FinalizationResult> {
+    if (archivePlan.schemaVersion !== ARCHIVE_PLAN_VERSION) {
+      throw finalizationError(
+        'finalization_scope_unsupported',
+        `Store v2 finalization requires archive plan schema version ${ARCHIVE_PLAN_VERSION}.`,
+        { target: archivePlan.paths.final }
+      );
+    }
     const finalization = archivePlan.finalization;
     if (finalization === undefined) {
       throw finalizationError(
@@ -431,6 +521,38 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       specSync: { applied: boolean; actions: readonly unknown[] };
       codeMerge: { commit: string; targetRef: string } | null;
     };
+    const recomputedPlanId = finalizationPlanId({ archivePlan });
+    const expectedArchivePlanToken =
+      `archive-v1:${archivePlan.transactionId}:${archivePlan.planHash}`;
+    if (token !== undefined) {
+      const expectedToken = {
+        planId: recomputedPlanId,
+        archivePlanToken: expectedArchivePlanToken,
+        storeUid: record.storeUid,
+        projectId: record.projectId,
+        targetLineId: record.targetLineId,
+        changeInstanceId: record.changeInstanceId,
+        workspacePairId: record.workspacePairId,
+        planningHeadOid: (
+          finalization.record as unknown as {
+            planning: { sourceHead: string };
+          }
+        ).planning.sourceHead,
+        codeRefOid: finalization.revalidation.targetLine.codeRefOid,
+        sourceFingerprint: archivePlan.sourceFingerprint?.digest ?? '',
+      };
+      for (const [field, expectedValue] of Object.entries(expectedToken)) {
+        const actualValue = token[field as keyof FinalizationPlanToken];
+        if (actualValue !== expectedValue) {
+          throw staleRefusal(
+            `the supplied finalization token field ${field}`,
+            String(expectedValue),
+            String(actualValue),
+            archivePlan.paths.final
+          );
+        }
+      }
+    }
 
     const scope = {
       storeUid: record.storeUid,
@@ -438,60 +560,268 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       targetLineId: record.targetLineId,
       changeInstanceId: record.changeInstanceId,
     };
-    const coordination = this.dependencies.coordination(
-      finalization.association.globalDataDir
-    );
+    const transactionDataDir =
+      finalization.association.globalDataDir ?? getGlobalDataDir();
+    const coordination = this.dependencies.coordination(transactionDataDir);
+    const lockOptions = {
+      ...(this.options.lockDeadlineMs === undefined
+        ? {}
+        : { deadlineMs: this.options.lockDeadlineMs }),
+      ...(this.options.lockPollMs === undefined
+        ? {}
+        : { pollMs: this.options.lockPollMs }),
+    };
+    const underFinalizationLocks = <T>(operation: () => Promise<T>) =>
+      withFinalizationLocks(coordination, scope, operation, lockOptions);
 
-    const result = await withFinalizationLocks(
-      coordination,
-      scope,
-      async () => {
-        await this.revalidate(archivePlan, token);
-        return applyArchive(archivePlan, {
-          adapters: {
-            ...defaultArchiveEngineAdapters,
-            finalizeArchiveAssociation: async ({ plan }) =>
-              void (await completeFinalizationAssociation(this.dependencies, plan)),
+    type ProgressedStaleDisposition = {
+      error: ChangeFinalizationError;
+      result: ArchiveApplyResult;
+    };
+    const classifyProgressedStale = async (
+      error: unknown
+    ): Promise<ProgressedStaleDisposition | null> => {
+      if (!isChangeFinalizationError(error)) return null;
+      const state = await inspectArchiveJournalState(archivePlan);
+      if (
+        state.journal === null ||
+        state.effectivePhase === null ||
+        !finalizationHasSemanticProgress(state.journal)
+      ) {
+        return null;
+      }
+      const sourceClaimRoot = path.join(
+        path.dirname(archivePlan.paths.active),
+        `.rasen-archive-source-${archivePlan.transactionId}`
+      );
+      const retainedPaths = [
+        archivePlan.paths.active,
+        archivePlan.paths.stage,
+        archivePlan.paths.final,
+        archivePlan.paths.journal,
+        archivePlan.paths.publishedJournal,
+        state.journal.sourceProgress.quarantine,
+        sourceClaimRoot,
+        ...state.journal.specProgress.flatMap(progress => {
+          if (progress.state === 'pending') return [];
+          const action = archivePlan.specActions.find(
+            candidate => candidate.actionId === progress.actionId
+          );
+          return [
+            progress.target,
+            ...(progress.temporary === null ? [] : [progress.temporary]),
+            ...(progress.backupOrQuarantine === null
+              ? []
+              : [progress.backupOrQuarantine]),
+            ...(action === undefined
+              ? []
+              : [
+                  path.join(
+                    path.dirname(action.target),
+                    `.rasen-archive-spec-${archivePlan.transactionId}-${progress.actionId.slice(0, 12)}`
+                  ),
+                ]),
+          ];
+        }),
+        ...state.journal.cleanerProgress
+          .filter(progress => progress.state !== 'pending')
+          .map(progress =>
+            path.join(archivePlan.paths.ephemera, progress.path)
+          ),
+        ...(state.journal.associationProgress === undefined
+          ? []
+          : [state.journal.associationProgress.path]),
+      ];
+      return {
+        error,
+        result: {
+          status: 'recoverable',
+          transactionId: archivePlan.transactionId,
+          planHash: archivePlan.planHash,
+          change: archivePlan.change,
+          path: archivePlan.paths.final,
+          journalPath: state.journalPath,
+          resumed: true,
+          effectivePhase: state.effectivePhase,
+          specsUpdated: state.journal.specProgress.some(progress =>
+            ['published', 'verified', 'complete'].includes(progress.state)
+          ),
+          totals: { added: 0, modified: 0, removed: 0, renamed: 0 },
+          ephemeraDiscarded: [...state.journal.ephemeraDisposed].sort(),
+          ephemeraPreserved: archivePlan.cleaner.effectivePreserve,
+          blockers: [
+            {
+              operation: 'validation',
+              path: state.journalPath,
+              code: error.finalizationCode,
+              message: error.message,
+            },
+          ],
+          retainedPaths,
+          manualRecoveryAction: {
+            kind: 'manual-recovery-required',
+            guidance:
+              `The exact archive transaction has durable phase '${state.effectivePhase}' and an external frozen fact is now stale. ` +
+              `Preserve the retained transaction paths and journal at ${state.journalPath}; do not abort, re-plan, or change the immutable token. ` +
+              'Restore the external catalog/ref/successor fact to the plan-bound value, or complete a verified manual recovery from the retained journal.',
           },
-          assertions,
-        });
-      },
-      {
-        ...(this.options.lockDeadlineMs === undefined
-          ? {}
-          : { deadlineMs: this.options.lockDeadlineMs }),
-        ...(this.options.lockPollMs === undefined ? {} : { pollMs: this.options.lockPollMs }),
+        },
+      };
+    };
+
+    // Before persistence, reject stale fresh transactions without producing a
+    // misleading recovery token. A verified terminal journal has already
+    // consumed external catalog/ref facts and is rechecked by the engine.
+    let terminalComplete = false;
+    try {
+      const terminalState = await inspectArchiveJournalState(archivePlan);
+      terminalComplete = terminalState.effectivePhase === 'complete';
+    } catch (error) {
+      if (!isDelegatedArchiveRecoveryError(error)) throw error;
+    }
+    let revalidationState: 'valid' | 'journal-invalid' = 'valid';
+    let staleProgress: ProgressedStaleDisposition | null = null;
+    if (!terminalComplete) {
+      try {
+        revalidationState = await underFinalizationLocks(() =>
+          this.revalidate(archivePlan, token)
+        );
+      } catch (error) {
+        staleProgress = await classifyProgressedStale(error);
+        if (staleProgress === null) throw error;
+      }
+    }
+
+    let persistedPlanToken: string | undefined;
+    let persistenceFailure: unknown;
+    try {
+      persistedPlanToken = await persistArchivePlan(
+        archivePlan,
+        transactionDataDir
+      );
+    } catch (error) {
+      persistenceFailure = error;
+    }
+
+    const operationHolder = 'apply' as const;
+    return withStoredArchivePlanOperation(
+      archivePlan,
+      transactionDataDir,
+      operationHolder,
+      async () => {
+        // Enter the tombstone/operation gate even after persistence failed.
+        // An already-aborted held plan must report terminality rather than
+        // leaking through as a generic missing-plan persistence error.
+        if (persistenceFailure !== undefined) throw persistenceFailure;
+        if (persistedPlanToken === undefined) {
+          throw new Error('Archive plan persistence completed without a plan token.');
+        }
+
+        const result =
+          staleProgress?.result ??
+          (await underFinalizationLocks(async () => {
+            if (!terminalComplete && revalidationState === 'valid') {
+              try {
+                await this.revalidate(archivePlan, token);
+              } catch (error) {
+                staleProgress = await classifyProgressedStale(error);
+                if (staleProgress === null) throw error;
+                return staleProgress.result;
+              }
+            }
+            return applyArchive(archivePlan, {
+              adapters: {
+                ...defaultArchiveEngineAdapters,
+                finalizeArchiveAssociation: async ({
+                  plan,
+                  requireComplete,
+                  carriers,
+                  carrierPrepared,
+                }) =>
+                  void (await completeFinalizationAssociation(
+                    this.dependencies,
+                    plan,
+                    { requireComplete, carriers, carrierPrepared }
+                  )),
+              },
+              assertions,
+            });
+          }));
+        const associationFinalized =
+          result.effectivePhase === 'association-finalized' ||
+          result.effectivePhase === 'source-removed' ||
+          result.effectivePhase === 'complete';
+        const associationPhase: FinalizationResult['associationPhase'] =
+          associationFinalized
+            ? finalization.association.noop
+              ? 'no-op'
+              : 'applied'
+            : 'pending';
+        const exactRecoveryCommand = `rasen archive --apply-plan ${persistedPlanToken}`;
+        const assertedRecoveryCommand =
+          exactRecoveryCommand + (assertions.mergeConfirmed === true ? ' --yes' : '');
+        const recoveryCommand =
+          result.recoveryCommand ??
+          (result.status === 'recoverable' &&
+          result.manualRecoveryAction === undefined
+            ? assertedRecoveryCommand
+            : result.status === 'blocked' &&
+                inspectArchiveApplyPlan(archivePlan, {
+                  mergeConfirmed: true,
+                }).applicable
+              ? `${exactRecoveryCommand} --yes`
+              : undefined);
+        return {
+          planId: recomputedPlanId,
+          outcome: record.outcome,
+          changeId: archivePlan.change,
+          changeInstanceId: record.changeInstanceId,
+          workspacePairId: record.workspacePairId,
+          storeUid: record.storeUid,
+          projectId: record.projectId,
+          targetLineId: record.targetLineId,
+          publishedEntry: archivePlan.paths.final,
+          specSyncApplied:
+            result.status === 'complete'
+              ? record.specSync.applied
+              : result.specsUpdated,
+          specSyncActionCount: record.specSync.actions.length,
+          provenCommit: record.codeMerge?.commit ?? null,
+          codeRef: record.codeMerge?.targetRef ?? null,
+          codeRefOid: finalization.revalidation.targetLine.codeRefOid,
+          associationPhase,
+          status: result.status,
+          transactionId: result.transactionId,
+          journalPath: result.journalPath,
+          blockers:
+            staleProgress === null
+              ? result.blockers.map(item => ({
+                  ...finalizationBlocker(
+                    'finalization_record_invalid',
+                    `${item.operation}: ${item.message}`,
+                    { target: item.path }
+                  ),
+                  archiveBlocker: item,
+                }))
+              : [staleProgress.error.toBlocker()],
+          ...(result.effectivePhase === undefined
+            ? {}
+            : { effectivePhase: result.effectivePhase }),
+          ...(result.retainedPaths === undefined
+            ? {}
+            : { retainedPaths: result.retainedPaths }),
+          ...(recoveryCommand === undefined
+            ? {}
+            : { recoveryCommand }),
+          ...(result.abortCommand === undefined
+            ? {}
+            : { abortCommand: result.abortCommand }),
+          ...(result.manualRecoveryAction === undefined
+            ? {}
+            : { manualRecoveryAction: result.manualRecoveryAction }),
+        };
       }
     );
-
-    return {
-      planId: token?.planId ?? archivePlan.planHash,
-      outcome: record.outcome,
-      changeId: archivePlan.change,
-      changeInstanceId: record.changeInstanceId,
-      workspacePairId: record.workspacePairId,
-      storeUid: record.storeUid,
-      projectId: record.projectId,
-      targetLineId: record.targetLineId,
-      publishedEntry: archivePlan.paths.final,
-      specSyncApplied: record.specSync.applied,
-      specSyncActionCount: record.specSync.actions.length,
-      provenCommit: record.codeMerge?.commit ?? null,
-      codeRef: record.codeMerge?.targetRef ?? null,
-      codeRefOid: token?.codeRefOid ?? null,
-      associationPhase: finalization.association.noop ? 'no-op' : 'applied',
-      status: result.status,
-      transactionId: result.transactionId,
-      journalPath: result.journalPath,
-      blockers: result.blockers.map(item => ({
-        ...finalizationBlocker(
-          'finalization_record_invalid',
-          `${item.operation}: ${item.message}`,
-          { target: item.path }
-        ),
-        archiveBlocker: item,
-      })),
-    };
   }
 
   async abortStoredPlan(
@@ -644,7 +974,7 @@ export class ChangeFinalization implements ChangeFinalizationModule {
     };
 
     const catalog = await this.readTargetLineCatalog(scope, input.pathFlavor);
-    const targetLine = await this.resolveTargetLineFacts(
+    let targetLine = await this.resolveTargetLineFacts(
       scope,
       catalog,
       input.archive.planningRoot,
@@ -695,6 +1025,25 @@ export class ChangeFinalization implements ChangeFinalizationModule {
         error instanceof Error ? error.message : String(error)
       );
     }
+    if (targetLine.codeRef !== null) {
+      const codeRefOid = await this.dependencies.git.resolveCommit(
+        index.execution.root,
+        targetLine.codeRef
+      );
+      if (codeRefOid === null) {
+        throw finalizationRefusal(
+          'target_line_ref_unresolved',
+          `Target-line code ref '${targetLine.codeRef}' names no commit in the execution checkout (${index.execution.root}).`,
+          {
+            expected: targetLine.codeRef,
+            actual: '(unresolved)',
+            target: index.execution.root,
+            fix: `Create '${targetLine.codeRef}' locally, or repair the project locator. Resolution never falls back to HEAD.`,
+          }
+        );
+      }
+      targetLine = { ...targetLine, codeRefOid };
+    }
 
     const planning: FinalizationWorktreeFacts = {
       root: index.planning.root,
@@ -733,6 +1082,8 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       instanceSeed: identity.instanceSeed,
       implementation: scopeCapability.change.metadata?.implementation ?? 'code',
       workspacePairId: index.workspacePairId,
+      workspaceIndexPlanId: index.planId,
+      workspaceIndexPhase: index.phase,
       planning,
       execution,
       targetLine,
@@ -946,6 +1297,8 @@ export class ChangeFinalization implements ChangeFinalizationModule {
         storeId: context.scope.storeId,
         projectId: context.scope.projectId,
         targetLineId: context.scope.targetLineId,
+        indexPlanId: context.workspaceIndexPlanId,
+        indexPhase: context.workspaceIndexPhase,
         planning: {
           root: context.planning.root,
           repositoryIdentity: context.planning.repositoryIdentity,
@@ -1026,14 +1379,27 @@ export class ChangeFinalization implements ChangeFinalizationModule {
   private async revalidate(
     archivePlan: ArchivePlan,
     token: FinalizationPlanToken | undefined
-  ): Promise<void> {
+  ): Promise<'valid' | 'journal-invalid'> {
     const finalization = archivePlan.finalization;
-    if (finalization === undefined) return;
+    if (finalization === undefined) return 'valid';
     const association = finalization.association;
     const expected = association.expected;
     const revalidation = finalization.revalidation;
+    let fresh = false;
+    try {
+      const journalState = await inspectArchiveJournalState(archivePlan);
+      fresh =
+        journalState.journal === null ||
+        !finalizationHasSemanticProgress(journalState.journal);
+    } catch (error) {
+      if (!isDelegatedArchiveRecoveryError(error)) throw error;
+      // The engine is the authoritative parser and result seam for owned
+      // recovery state. Avoid additional module preflight parses, then let the
+      // engine return the structured manual-only disposition.
+      return 'journal-invalid';
+    }
 
-    if (expected !== undefined) {
+    if (fresh && expected !== undefined) {
       // The frozen HEAD is read from the RECORD, which every surface carries,
       // rather than from the token, which only the direct command path has.
       // `record.planning.sourceHead` and `token.planningHeadOid` are the same
@@ -1061,44 +1427,118 @@ export class ChangeFinalization implements ChangeFinalizationModule {
     }
 
     const record = finalization.record as unknown as {
+      storeUid: string;
+      projectId: string;
+      targetLineId: string;
+      changeId: string;
+      changeInstanceId: string;
       codeMerge: { commit: string; targetRef: string } | null;
     };
-    if (record.codeMerge !== null) {
-      const current = await this.dependencies.git.resolveCommit(
-        archivePlan.roots.execution,
-        record.codeMerge.targetRef
+    const archiveAuthority = revalidation.archive;
+    const authorizedDestination = (
+      ['native', 'posix', 'win32'] as const
+    ).some(flavor => {
+      try {
+        const authorizedRoot = resolveStorePlanningLayoutV2Path(
+          archivePlan.roots.planning,
+          {
+            kind: 'archive-line',
+            projectId: record.projectId,
+            targetLineId: record.targetLineId,
+          },
+          flavor
+        );
+        if (archiveAuthority.root !== authorizedRoot) return false;
+        return (
+          archiveAuthority.destination ===
+          archiveEntryAddress({
+            storeRoot: archivePlan.roots.planning,
+            projectId: record.projectId,
+            frozenTargetLineId: record.targetLineId,
+            changeId: record.changeId,
+            archiveDate: archiveAuthority.archiveDate,
+            changeInstanceId:
+              record.changeInstanceId as VerifiedChangeInstanceId,
+            flavor,
+          })
+        );
+      } catch {
+        return false;
+      }
+    });
+    const scopeAuthorizesRecord =
+      archivePlan.scope?.kind === 'store-project' &&
+      archivePlan.scope.storeUid === record.storeUid &&
+      archivePlan.scope.projectId === record.projectId;
+    if (
+      !authorizedDestination ||
+      !scopeAuthorizesRecord ||
+      finalization.destination !== archiveAuthority.destination ||
+      archivePlan.paths.archiveParent !== archiveAuthority.root ||
+      archivePlan.paths.final !== archiveAuthority.destination
+    ) {
+      throw staleRefusal(
+        'the Store archive destination authorized by Foundation',
+        `${archiveAuthority.root} -> ${archiveAuthority.destination}`,
+        `${archivePlan.paths.archiveParent} -> ${archivePlan.paths.final}`,
+        archivePlan.paths.final
       );
-      if (current === null) {
+    }
+    const frozenCodeRef = finalization.revalidation.targetLine.codeRef;
+    const frozenCodeRefOid =
+      finalization.revalidation.targetLine.codeRefOid;
+    let currentCodeRefOid: string | null = null;
+    if (frozenCodeRef !== null) {
+      currentCodeRefOid = await this.dependencies.git.resolveCommit(
+        archivePlan.roots.execution,
+        frozenCodeRef
+      );
+      if (currentCodeRefOid === null) {
         throw staleRefusal(
-          `the target line code ref ${record.codeMerge.targetRef}`,
-          token?.codeRefOid ?? '(resolvable)',
+          `the target line code ref ${frozenCodeRef}`,
+          frozenCodeRefOid ?? '(resolvable)',
           '(unresolved)',
           archivePlan.roots.execution
         );
       }
-      // The stricter, token-only assertion: the ref must not have moved AT
-      // ALL. It runs first so the direct path keeps naming the more specific
-      // cause. It is not the safety property — the re-proof below is, and that
-      // one runs on every surface.
-      if (token?.codeRefOid != null && current !== token.codeRefOid) {
+      if (
+        frozenCodeRefOid === null ||
+        currentCodeRefOid !== frozenCodeRefOid
+      ) {
         throw staleRefusal(
-          `the target line code ref ${record.codeMerge.targetRef}`,
-          token.codeRefOid,
-          current,
+          `the target line code ref ${frozenCodeRef}`,
+          frozenCodeRefOid ?? '(missing frozen identity)',
+          currentCodeRefOid,
+          archivePlan.roots.execution
+        );
+      }
+    } else if (frozenCodeRefOid !== null) {
+      throw staleRefusal(
+        'the target line code ref',
+        '(absent ref and oid)',
+        `unexpected frozen oid ${frozenCodeRefOid}`,
+        archivePlan.roots.execution
+      );
+    }
+    if (record.codeMerge !== null) {
+      if (
+        frozenCodeRef === null ||
+        record.codeMerge.targetRef !== frozenCodeRef ||
+        currentCodeRefOid === null
+      ) {
+        throw staleRefusal(
+          'the landed target code ref',
+          frozenCodeRef ?? '(absent)',
+          record.codeMerge.targetRef,
           archivePlan.roots.execution
         );
       }
       // Re-prove rather than trust the earlier answer. The record asserts
-      // `reachable: true` for this commit from this ref, and that claim
-      // survives a fast-forward but not a revert, a reset, or a force-push
-      // landing between plan and apply. Publishing a `landed` record — and,
-      // for a landed outcome, synchronizing the canonical specs — on the
-      // strength of a proof that no longer holds is what this prevents, so it
-      // is NOT gated on the token.
+      // `reachable: true` for this commit from this ref.
       const reachable = await this.dependencies.git.isAncestor(
         archivePlan.roots.execution,
         record.codeMerge.commit,
-        current
+        currentCodeRefOid
       );
       if (reachable !== true) {
         throw staleRefusal(
@@ -1110,56 +1550,49 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       }
     }
 
-    // Every canonical-spec target digest the plan froze.
-    for (const action of archivePlan.specActions) {
-      const precondition = action.targetPrecondition;
-      const text = await this.dependencies.fs.readText(action.target);
-      if (precondition.state === 'absent') {
-        if (text !== null) {
+    // Original canonical-spec target digests are fresh-plan preconditions.
+    // Once an owned journal exists, the engine's per-action progress and
+    // recovery verification own targets that may already have been changed by
+    // this exact transaction.
+    if (fresh) {
+      for (const action of archivePlan.specActions) {
+        const precondition = action.targetPrecondition;
+        const text = await this.dependencies.fs.readText(action.target);
+        if (precondition.state === 'absent') {
+          if (text !== null) {
+            throw staleRefusal(
+              `the canonical spec ${action.target}`,
+              '(absent)',
+              '(present)',
+              action.target
+            );
+          }
+          continue;
+        }
+        if (text === null) {
           throw staleRefusal(
             `the canonical spec ${action.target}`,
+            precondition.sha256,
             '(absent)',
-            '(present)',
             action.target
           );
         }
-        continue;
-      }
-      if (text === null) {
-        throw staleRefusal(
-          `the canonical spec ${action.target}`,
-          precondition.sha256,
-          '(absent)',
-          action.target
-        );
-      }
-      const digest = createHash('sha256').update(text, 'utf8').digest('hex');
-      if (digest !== precondition.sha256) {
-        throw staleRefusal(
-          `the canonical spec ${action.target}`,
-          precondition.sha256,
-          digest,
-          action.target
-        );
+        const digest = createHash('sha256').update(text, 'utf8').digest('hex');
+        if (digest !== precondition.sha256) {
+          throw staleRefusal(
+            `the canonical spec ${action.target}`,
+            precondition.sha256,
+            digest,
+            action.target
+          );
+        }
       }
     }
 
-    // The Change source, compared BEFORE the transaction starts.
-    //
-    // The engine also fingerprints the active tree, but measurement says that
-    // check does not refuse a source edited between plan and apply: a test that
-    // rewrote a file in the Change directory and then applied the stored plan
-    // published the entry and reported success. The engine's comparison exists
-    // to protect a DELETION (may this tree be removed), which is a different
-    // question from the one the spec asks here (is the plan still describing
-    // the Change it was made for) — and the answer it gives is reached at
-    // source removal, after publication, which is too late to invalidate a
-    // plan.
-    //
-    // So the finalization Module asks its own question, in its own scope. Only
-    // a Store v2 finalization reaches this; the standalone and legacy flat
-    // archive paths keep the engine's semantics exactly as they were.
-    const plannedSource = archivePlan.sourceFingerprint;
+    // Likewise, the original Change source digest invalidates only a fresh
+    // plan. During resume the engine's durable stage/source authority decides
+    // whether the transaction-owned progressed state may advance.
+    const plannedSource = fresh ? archivePlan.sourceFingerprint : null;
     if (plannedSource !== null) {
       const currentSource = await fingerprintArchiveTree(archivePlan.paths.active);
       if (currentSource.digest !== plannedSource.digest) {
@@ -1172,15 +1605,16 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       }
     }
 
-    // The target-line catalog text. The plan's destination address, its
-    // `planning.targetRef`, and the ref set the successor search ran over are
-    // all derived from this file, so a `store target-line set-ref` between plan
-    // and apply would publish a record naming a ref the line no longer uses.
-    // The digest exists precisely to catch that; it is compared here rather
-    // than merely carried.
+    // Target-line catalog and successor evidence are external facts, not
+    // transaction-owned progress. Revalidate them on both fresh apply and
+    // resume.
     const catalogText =
-      (await this.dependencies.fs.readText(revalidation.targetLine.catalogPath)) ?? '';
-    const catalogDigest = createHash('sha256').update(catalogText, 'utf8').digest('hex');
+      (await this.dependencies.fs.readText(
+        revalidation.targetLine.catalogPath
+      )) ?? '';
+    const catalogDigest = createHash('sha256')
+      .update(catalogText, 'utf8')
+      .digest('hex');
     if (catalogDigest !== revalidation.targetLine.catalogDigest) {
       throw staleRefusal(
         `the target-line catalog ${revalidation.targetLine.catalogPath}`,
@@ -1190,12 +1624,6 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       );
     }
 
-    // The successor evidence. A `superseded` record names another Change
-    // INSTANCE, and the only thing that made that name true was a committed
-    // blob at a Store ref. Re-read it: if the successor's Change directory was
-    // deleted and the deletion committed between plan and apply, publishing
-    // `supersededBy` would fabricate exactly the pointer the successor search
-    // exists to prevent.
     const successor = revalidation.successor;
     if (successor !== undefined) {
       const text = await this.dependencies.git.showBlob(
@@ -1221,6 +1649,7 @@ export class ChangeFinalization implements ChangeFinalizationModule {
         );
       }
     }
+    return 'valid';
   }
 }
 

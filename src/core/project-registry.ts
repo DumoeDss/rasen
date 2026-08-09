@@ -412,51 +412,97 @@ async function registerProjectWithPolicy(
         ) {
           continue;
         }
-        if (await isGitWorktreeSibling(canonicalPath, otherPath)) {
+        const sameRoot =
+          projectClaimPathKey(
+            FileSystemUtils.canonicalizeExistingPath(otherPath)
+          ) === projectClaimPathKey(canonicalPath);
+        if (
+          sameRoot ||
+          (await isGitWorktreeSibling(canonicalPath, otherPath))
+        ) {
           delete projects[otherPath];
         }
       }
     }
 
+    const forgetClaimant = (
+      claimant: CanonicalProjectIdentityClaimant
+    ): void => {
+      for (const registeredPath of claimant.registryPaths) {
+        delete projects[registeredPath];
+      }
+    };
+
     const existingAtPath = projects[canonicalPath];
     if (existingAtPath) {
-      await place(existingAtPath.home, existingAtPath.projectId, existingAtPath);
+      const existingClaimants = await canonicalProjectIdentityClaimants(
+        projects,
+        existingAtPath.projectId
+      );
+      const existingClaim = existingClaimants.find(
+        claimant =>
+          projectClaimPathKey(claimant.path) ===
+          projectClaimPathKey(canonicalPath)
+      );
+      if (existingClaim) forgetClaimant(existingClaim);
+      await place(
+        existingAtPath.home,
+        existingAtPath.projectId,
+        existingAtPath
+      );
       await writeProjectRegistryState({ version: 1, projects }, options);
       return;
     }
 
-    const sameIdEntries = Object.entries(projects).filter(
-      ([, entry]) =>
-        normalizeProjectIdentity(entry.projectId) ===
-        normalizeProjectIdentity(input.projectId)
+    const sameIdClaimants = await canonicalProjectIdentityClaimants(
+      projects,
+      input.projectId
     );
+    const canonicalClaim = sameIdClaimants.find(
+      claimant =>
+        projectClaimPathKey(claimant.path) ===
+        projectClaimPathKey(canonicalPath)
+    );
+    if (canonicalClaim) {
+      forgetClaimant(canonicalClaim);
+      await place(
+        canonicalClaim.entry.home,
+        canonicalClaim.entry.projectId,
+        canonicalClaim.entry
+      );
+      await writeProjectRegistryState({ version: 1, projects }, options);
+      return;
+    }
 
-    for (const [otherPath, entry] of sameIdEntries) {
-      if (await isGitWorktreeSibling(canonicalPath, otherPath)) {
-        await place(entry.home, entry.projectId, entry);
+    for (const claimant of sameIdClaimants) {
+      if (await isGitWorktreeSibling(canonicalPath, claimant.path)) {
+        forgetClaimant(claimant);
+        await place(
+          claimant.entry.home,
+          claimant.entry.projectId,
+          claimant.entry
+        );
         await writeProjectRegistryState({ version: 1, projects }, options);
         return;
       }
     }
 
-    if (!allowCreate) {
-      const liveClaimants = (
-        await Promise.all(
-          sameIdEntries.map(async ([otherPath]) => ({
-            otherPath,
-            live: await pathIsDirectory(otherPath),
-          }))
-        )
-      ).filter(claimant => claimant.live);
-      if (liveClaimants.length > 0 || sameIdEntries.length !== 1) {
-        return;
-      }
+    if (
+      !allowCreate &&
+      (sameIdClaimants.some(claimant => claimant.live) ||
+        sameIdClaimants.length !== 1)
+    ) {
+      return;
     }
 
-    for (const [oldPath, entry] of sameIdEntries) {
-      if (!(await pathIsDirectory(oldPath))) {
-        delete projects[oldPath];
-        await place(entry.home, entry.projectId, entry);
+    for (const claimant of sameIdClaimants) {
+      if (!claimant.live) {
+        forgetClaimant(claimant);
+        await place(
+          claimant.entry.home,
+          claimant.entry.projectId,
+          claimant.entry
+        );
         await writeProjectRegistryState({ version: 1, projects }, options);
         return;
       }
@@ -493,6 +539,64 @@ export interface ProjectIdentityClaimant {
   live: boolean;
 }
 
+interface CanonicalProjectIdentityClaimant
+  extends ProjectIdentityClaimant {
+  registryPaths: string[];
+  direct: boolean;
+}
+
+function projectClaimPathKey(value: string): string {
+  const resolved = path.resolve(value);
+  return process.platform === 'win32'
+    ? resolved.toLowerCase()
+    : resolved;
+}
+
+async function canonicalProjectIdentityClaimants(
+  projects: Readonly<Record<string, ProjectRegistryEntryState>>,
+  projectId: string
+): Promise<CanonicalProjectIdentityClaimant[]> {
+  const normalized = normalizeProjectIdentity(projectId);
+  const matching = Object.entries(projects)
+    .filter(
+      ([, entry]) =>
+        normalizeProjectIdentity(entry.projectId) === normalized
+    )
+    .sort(([left], [right]) => left.localeCompare(right));
+  const byRoot = new Map<string, CanonicalProjectIdentityClaimant>();
+  for (const [claimPath, entry] of matching) {
+    const live = await pathIsDirectory(claimPath);
+    const canonicalPath = FileSystemUtils.canonicalizeExistingPath(claimPath);
+    const root = live
+      ? await resolveRegistrationRoot(canonicalPath)
+      : canonicalPath;
+    const key = projectClaimPathKey(root);
+    const direct =
+      projectClaimPathKey(claimPath) === projectClaimPathKey(root);
+    const existing = byRoot.get(key);
+    if (existing === undefined) {
+      byRoot.set(key, {
+        path: root,
+        entry,
+        live,
+        registryPaths: [claimPath],
+        direct,
+      });
+      continue;
+    }
+    existing.registryPaths.push(claimPath);
+    existing.live ||= live;
+    if (direct && !existing.direct) {
+      existing.entry = entry;
+      existing.direct = true;
+    }
+  }
+  return [...byRoot.values()].sort((left, right) =>
+    left.path.localeCompare(right.path)
+  );
+}
+
+
 /**
  * Returns every machine-registry claim for one normalized project identity.
  * Claimants are path-sorted so every consumer reports the same ambiguity.
@@ -503,19 +607,12 @@ export async function findProjectIdentityClaimants(
 ): Promise<ProjectIdentityClaimant[]> {
   const state = await readProjectRegistryState(options);
   if (state === null) return [];
-  const normalized = normalizeProjectIdentity(projectId);
-  const matching = Object.entries(state.projects)
-    .filter(
-      ([, entry]) =>
-        normalizeProjectIdentity(entry.projectId) === normalized
-    )
-    .sort(([left], [right]) => left.localeCompare(right));
-  return Promise.all(
-    matching.map(async ([claimPath, entry]) => ({
-      path: claimPath,
-      entry,
-      live: await pathIsDirectory(claimPath),
-    }))
+  return (await canonicalProjectIdentityClaimants(state.projects, projectId)).map(
+    claimant => ({
+      path: claimant.path,
+      entry: claimant.entry,
+      live: claimant.live,
+    })
   );
 }
 
@@ -535,7 +632,7 @@ export function formatProjectIdentityAmbiguity(
     .join('\n');
   const hasMissing = ordered.some(claimant => !claimant.live);
   const repair = hasMissing
-    ? 'Run `rasen home prune --apply` to remove missing claims, then retry. If multiple live claims remain, repair their projectId metadata before retrying.'
+    ? 'Run `rasen home prune` to preview missing claims, then `rasen home prune --apply` to remove them and retry. If multiple live claims remain, repair their projectId metadata before retrying.'
     : 'All claimants are live. Assign distinct projectId metadata to independent copies or repair the registry before retrying; Rasen refuses to choose an owner.';
   return (
     `Project owner '${projectId}' resolves to more than one registered project root:\n` +
@@ -549,10 +646,10 @@ export function formatProjectIdentityAmbiguity(
 
 /**
  * Read-only lookup of this project's own registry entry, for doctor/probe use.
- * Path-exact first (a fallback-registered worktree entry is keyed at the
- * worktree path), then a pierced-root retry (D1): a run inside a linked
- * worktree finds the MAIN checkout's entry even though no entry is keyed at the
- * worktree path. Non-mutating.
+ * A linked worktree first pierces to the MAIN checkout entry so a legacy
+ * worktree-keyed duplicate cannot shadow the canonical registration. If the
+ * main checkout or its entry is gone, the direct worktree entry remains the
+ * surviving-worktree fallback. Non-mutating.
  */
 export async function findProjectRegistryEntry(
   projectRoot: string,
@@ -562,15 +659,14 @@ export async function findProjectRegistryEntry(
   const state = await readProjectRegistryState(options);
   if (!state) return null;
 
-  const direct = state.projects[canonicalPath];
-  if (direct) return { canonicalPath, entry: direct };
-
   const pierced = await resolveRegistrationRoot(canonicalPath);
   if (pierced !== canonicalPath) {
     const entry = state.projects[pierced];
     if (entry) return { canonicalPath: pierced, entry };
   }
-  return null;
+
+  const direct = state.projects[canonicalPath];
+  return direct ? { canonicalPath, entry: direct } : null;
 }
 
 export interface DanglingProjectEntry {

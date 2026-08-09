@@ -731,12 +731,11 @@ describe('store root selection for normal commands', () => {
       expect(json.archive.change).toBe('removed-change');
     });
 
-    it('writes no spec when any rebuilt spec fails validation', async () => {
+    it('writes no spec when a canonical baseline fails validation', async () => {
       // Two delta specs in one change: 'aaa-good' targets a new spec and
       // rebuilds cleanly; 'zzz-bad' targets an existing spec whose current
-      // requirement has no scenarios, so its rebuilt content fails the
-      // validator only at the late rebuilt-validation pass (the prepare-time
-      // structure check does not catch missing scenarios).
+      // requirement has no scenarios. Canonical-aware change validation
+      // rejects that baseline before archive planning or mutation begins.
       const changeDir = createChange(standaloneRoot, 'two-spec-change', { deltaSpec: null });
       for (const capability of ['aaa-good', 'zzz-bad']) {
         const specDir = path.join(changeDir, 'specs', capability);
@@ -758,9 +757,9 @@ describe('store root selection for normal commands', () => {
       expect(json.archive).toBeNull();
       expect(json.status[0]).toEqual({
         severity: 'error',
-        code: 'archive_spec_validation_failed',
-        message: "Rebuilt spec for 'zzz-bad' failed validation. No files were changed.",
-        fix: 'Run rasen validate zzz-bad after fixing the change deltas.',
+        code: 'archive_validation_failed',
+        message: "Validation failed for change 'two-spec-change'.",
+        fix: 'Run rasen validate two-spec-change for details, fix the errors, or rerun with --no-validate.',
       });
       expectBlockedPlanWithNoWrites(json);
       expect(json.plan.blockers).toEqual(

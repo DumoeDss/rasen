@@ -27,7 +27,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   finalizationLockKeys,
@@ -37,10 +37,17 @@ import {
   withFinalizationLocks,
   type ChangeFinalizationError,
 } from '../../../src/core/store/finalization/index.js';
+import {
+  applyArchive,
+  defaultArchiveEngineAdapters,
+  hashArchivePlan,
+  loadStoredArchivePlan,
+} from '../../../src/core/archive-engine.js';
 import { createNodeWorkspaceCoordination } from '../../../src/core/store/workspace/dependencies.js';
 import { lockIsHeld } from '../../../src/core/store/workspace/locks.js';
 import {
   createStoreFinalizationFixture,
+  hashTree,
   prepareSpecActions,
   type StoreFinalizationFixture,
 } from '../../helpers/store-finalization-fixture.js';
@@ -180,6 +187,17 @@ describe('the finalization plan identifier', () => {
       applicable: true,
       blockers: [],
     });
+    const blocked = await f
+      .finalization()
+      .applyStoredPlan(plan.archivePlan, plan.token);
+    expect(blocked).toMatchObject({
+      status: 'blocked',
+      associationPhase: 'pending',
+      recoveryCommand:
+        `rasen archive --apply-plan ${plan.token?.archivePlanToken} --yes`,
+    });
+    expect(fs.existsSync(bound.changeDir)).toBe(true);
+
 
     const result = await f
       .finalization()
@@ -188,7 +206,378 @@ describe('the finalization plan identifier', () => {
       });
     expect(result.status).toBe('complete');
     expect(fs.existsSync(bound.changeDir)).toBe(false);
+    const refusedAbort = await f
+      .finalization()
+      .abortStoredPlan(plan.archivePlan, f.globalDataDir);
+    expect(refusedAbort).toMatchObject({
+      status: 'blocked',
+      effectivePhase: 'complete',
+      journalPath: plan.archivePlan.paths.publishedJournal,
+      associationPhase: 'applied',
+      retainedPaths: expect.arrayContaining([
+        plan.destination,
+        plan.archivePlan.paths.publishedJournal,
+      ]),
+      recoveryCommand:
+        `rasen archive --apply-plan ${plan.token?.archivePlanToken} --yes`,
+      blockers: [
+        expect.objectContaining({ code: 'archive_abort_phase_unsafe' }),
+      ],
+    });
+    expect(refusedAbort.manualRecoveryAction).toBeUndefined();
   }, 240_000);
+
+  it('preserves merge confirmation in a recoverable replay command and advances on retry', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT_A,
+      targetLineId: LINE_02,
+      changeId: 'merge-confirmed-recovery',
+    });
+    const plan = await f
+      .finalization()
+      .plan(
+        f.planInput(
+          bound,
+          { outcome: 'abandoned', reason: 'Dropped.' },
+          {
+            archive: f.preparation(bound, {
+              timing: {
+                mode: 'on-merge',
+                deliveryMode: 'pr',
+                override: false,
+              },
+            }),
+          }
+        )
+      );
+    const writeArchiveV2Json = defaultArchiveEngineAdapters.writeArchiveV2Json;
+    let refused = false;
+    const writeSpy = vi
+      .spyOn(defaultArchiveEngineAdapters, 'writeArchiveV2Json')
+      .mockImplementation(async (archivedDir, prepared) => {
+        if (!refused) {
+          refused = true;
+          const failure = new Error('injected accounting persistence failure');
+          (failure as NodeJS.ErrnoException).code = 'EIO';
+          throw failure;
+        }
+        return writeArchiveV2Json(archivedDir, prepared);
+      });
+
+    let failed;
+    try {
+      failed = await f
+        .finalization()
+        .applyStoredPlan(plan.archivePlan, plan.token, {
+          mergeConfirmed: true,
+        });
+    } finally {
+      writeSpy.mockRestore();
+    }
+    expect(failed).toMatchObject({
+      status: 'recoverable',
+      recoveryCommand:
+        `rasen archive --apply-plan ${plan.token?.archivePlanToken} --yes`,
+    });
+    expect(failed.manualRecoveryAction).toBeUndefined();
+
+    const retry = await f
+      .finalization()
+      .applyStoredPlan(plan.archivePlan, plan.token, {
+        mergeConfirmed: true,
+      });
+    expect(retry.status).toBe('complete');
+    expect(fs.existsSync(bound.changeDir)).toBe(false);
+  }, 240_000);
+
+  it('returns manual-only structured recovery for a corrupt owned journal', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT_A,
+      targetLineId: LINE_02,
+      changeId: 'corrupt-owned-journal',
+    });
+    const plan = await f
+      .finalization()
+      .plan(f.planInput(bound, { outcome: 'abandoned', reason: 'Dropped.' }));
+    fs.mkdirSync(plan.archivePlan.paths.stage, { recursive: true });
+    fs.writeFileSync(plan.archivePlan.paths.journal, '{corrupt journal');
+
+    const result = await f
+      .finalization()
+      .applyStoredPlan(plan.archivePlan, plan.token);
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      associationPhase: 'pending',
+      blockers: [
+        expect.objectContaining({
+          archiveBlocker: expect.objectContaining({
+            code: 'archive_journal_invalid',
+          }),
+        }),
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    expect(result.recoveryCommand).toBeUndefined();
+    expect(fs.existsSync(bound.changeDir)).toBe(true);
+    expect(fs.existsSync(plan.destination)).toBe(false);
+  }, 240_000);
+  it('does not mutate source, canonical specs, or Archive when direct-plan persistence fails', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT_A,
+      targetLineId: LINE_02,
+      changeId: 'persistence-zero-write',
+    });
+    const plan = await f
+      .finalization()
+      .plan(f.planInput(bound, { outcome: 'abandoned', reason: 'Dropped.' }));
+    const canonical = path.join(
+      bound.planningWorktree,
+      'rasen',
+      'projects',
+      PROJECT_A,
+      'specs'
+    );
+    const beforeSource = hashTree(bound.changeDir);
+    const beforeCanonical = hashTree(canonical);
+    const beforeArchive = fs.existsSync(bound.archiveLine)
+      ? hashTree(bound.archiveLine)
+      : {};
+
+    fs.writeFileSync(
+      path.join(f.globalDataDir, 'archive-transactions'),
+      'not a transaction directory\n'
+    );
+
+    await expect(
+      f.finalization().applyStoredPlan(plan.archivePlan, plan.token)
+    ).rejects.toBeDefined();
+    expect(hashTree(bound.changeDir)).toEqual(beforeSource);
+    expect(hashTree(canonical)).toEqual(beforeCanonical);
+    expect(
+      fs.existsSync(bound.archiveLine) ? hashTree(bound.archiveLine) : {}
+    ).toEqual(beforeArchive);
+    expect(fs.existsSync(plan.destination)).toBe(false);
+  }, 240_000);
+
+  it('preserves abort guidance and leaves association pending on an early collision', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT_A,
+      targetLineId: LINE_02,
+      changeId: 'stored-abort-guidance',
+    });
+    f.write(
+      path.join(bound.changeDir, 'evidence', 'ship-log.md'),
+      '# Ship Log\n\n## Archive\nreserved by another transaction\n'
+    );
+    const plan = await f
+      .finalization()
+      .plan(
+        f.planInput(bound, {
+          outcome: 'abandoned',
+          reason: 'Dropped.',
+        })
+      );
+    expect(plan.applicable, JSON.stringify(plan.blockers)).toBe(true);
+
+    const result = await f
+      .finalization()
+      .applyStoredPlan(plan.archivePlan, plan.token);
+
+    expect(result).toMatchObject({
+      status: 'abort-required',
+      associationPhase: 'pending',
+      specSyncApplied: false,
+      abortCommand:
+        `rasen archive --abort-plan ${plan.token?.archivePlanToken} --yes`,
+    });
+    expect(result.recoveryCommand).toBeUndefined();
+    await expect(
+      loadStoredArchivePlan(plan.token!.archivePlanToken, f.globalDataDir)
+    ).resolves.toEqual(plan.archivePlan);
+    const aborted = await f
+      .finalization()
+      .abortStoredPlan(plan.archivePlan, f.globalDataDir);
+    expect(aborted.status).toBe('aborted');
+    expect(fs.existsSync(bound.changeDir)).toBe(true);
+    expect(fs.existsSync(plan.destination)).toBe(false);
+    await expect(
+      f.finalization().applyStoredPlan(plan.archivePlan, plan.token)
+    ).rejects.toMatchObject({ code: 'archive_plan_aborted' });
+  }, 240_000);
+
+  it('resumes after durable spec progress without rechecking consumed fresh-plan inputs', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT_A,
+      targetLineId: LINE_02,
+      changeId: 'resume-after-spec-progress',
+    });
+    const canonical = path.join(
+      bound.planningWorktree,
+      'rasen',
+      'projects',
+      PROJECT_A,
+      'specs'
+    );
+    const target = path.join(canonical, 'alpha', 'spec.md');
+    f.write(
+      target,
+      '# alpha Specification\n\n## Purpose\nAlpha.\n\n## Requirements\n\n### Requirement: Rule\nDetails.\n\n#### Scenario: One\n- **WHEN** a\n- **THEN** b\n'
+    );
+    f.write(
+      path.join(bound.changeDir, 'specs', 'alpha', 'spec.md'),
+      '# alpha - Changes\n\n## MODIFIED Requirements\n\n### Requirement: Rule\nUpdated details.\n\n#### Scenario: One\n- **WHEN** a\n- **THEN** c\n'
+    );
+    const actions = await prepareSpecActions(
+      bound.changeDir,
+      canonical,
+      bound.changeId
+    );
+    const plan = await f.finalization().plan(
+      f.planInput(
+        bound,
+        {
+          outcome: 'landed',
+          commit: f.refOid(bound.executionWorktree, 'HEAD'),
+        },
+        {
+          archive: f.preparation(bound, {
+            specActionCandidates: actions,
+            hasDeltaSpecs: true,
+          }),
+        }
+      )
+    );
+    expect(plan.applicable, JSON.stringify(plan.blockers)).toBe(true);
+
+    const mkdir = defaultArchiveEngineAdapters.fs.mkdir;
+    let destinationRefused = false;
+    const first = await applyArchive(plan.archivePlan, {
+      adapters: {
+        ...defaultArchiveEngineAdapters,
+        fs: {
+          ...defaultArchiveEngineAdapters.fs,
+          mkdir: async (targetPath, options) => {
+            if (
+              targetPath === plan.destination &&
+              destinationRefused === false
+            ) {
+              destinationRefused = true;
+              const failure = new Error('injected destination reservation failure');
+              (failure as NodeJS.ErrnoException).code = 'EACCES';
+              throw failure;
+            }
+            return mkdir(targetPath, options);
+          },
+        },
+      },
+    });
+    expect(first).toMatchObject({
+      status: 'recoverable',
+      specsUpdated: true,
+      totals: { modified: 1 },
+    });
+    expect(fs.readFileSync(target, 'utf8')).toContain('Updated details.');
+    expect(fs.existsSync(bound.changeDir)).toBe(true);
+    const catalogPath =
+      plan.archivePlan.finalization!.revalidation.targetLine.catalogPath;
+    const catalogText = fs.readFileSync(catalogPath, 'utf8');
+    f.write(
+      catalogPath,
+      `${catalogText}\n# external drift after durable spec progress\n`
+    );
+
+    const stale = await f
+      .finalization()
+      .applyStoredPlan(plan.archivePlan, plan.token);
+    expect(stale).toMatchObject({
+      status: 'recoverable',
+      effectivePhase: 'specs-applied',
+      associationPhase: 'pending',
+      retainedPaths: expect.arrayContaining([
+        plan.archivePlan.paths.stage,
+        plan.archivePlan.paths.journal,
+        bound.changeDir,
+      ]),
+      blockers: [
+        expect.objectContaining({ code: 'finalization_plan_stale' }),
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    expect(stale.recoveryCommand).toBeUndefined();
+    expect(stale.abortCommand).toBeUndefined();
+
+    f.write(catalogPath, catalogText);
+
+    const retry = await f
+      .finalization()
+      .applyStoredPlan(plan.archivePlan, plan.token);
+    expect(retry).toMatchObject({
+      status: 'complete',
+      associationPhase: 'applied',
+      specSyncApplied: true,
+    });
+    expect(fs.existsSync(bound.changeDir)).toBe(false);
+    expect(fs.existsSync(plan.destination)).toBe(true);
+  }, 240_000);
+
+  it('reports an applied association after a durable post-removal failure', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT_A,
+      targetLineId: LINE_02,
+      changeId: 'post-removal-recovery',
+    });
+    const plan = await f
+      .finalization()
+      .plan(f.planInput(bound, { outcome: 'abandoned', reason: 'Dropped.' }));
+    const remove = defaultArchiveEngineAdapters.fs.rm;
+    let cleanupRefused = false;
+    const removeSpy = vi
+      .spyOn(defaultArchiveEngineAdapters.fs, 'rm')
+      .mockImplementation(async (targetPath, options) => {
+        if (
+          targetPath === plan.archivePlan.paths.stage &&
+          cleanupRefused === false
+        ) {
+          cleanupRefused = true;
+          const failure = new Error('injected stage cleanup failure');
+          (failure as NodeJS.ErrnoException).code = 'EACCES';
+          throw failure;
+        }
+        return remove(targetPath, options);
+      });
+
+    let failed;
+    try {
+      failed = await f
+        .finalization()
+        .applyStoredPlan(plan.archivePlan, plan.token);
+    } finally {
+      removeSpy.mockRestore();
+    }
+
+    expect(failed).toMatchObject({
+      status: 'recoverable',
+      associationPhase: 'applied',
+      recoveryCommand:
+        `rasen archive --apply-plan ${plan.token?.archivePlanToken} --yes`,
+    });
+    expect(fs.existsSync(bound.changeDir)).toBe(false);
+    expect(fs.existsSync(plan.destination)).toBe(true);
+
+    const retry = await f
+      .finalization()
+      .applyStoredPlan(plan.archivePlan, plan.token);
+    expect(retry, JSON.stringify(retry, null, 2)).toMatchObject({
+      status: 'complete',
+      associationPhase: 'applied',
+    });
+  }, 240_000);
+
 });
 
 describe('revalidation invalidates rather than repairs', () => {
@@ -495,6 +884,76 @@ describe('revalidation invalidates rather than repairs', () => {
     expect((thrown as Error).message).toContain('the target-line catalog');
     expect(fs.existsSync(plan.destination)).toBe(false);
   }, 240_000);
+  it('rejects a self-consistent plan outside the Foundation-authorized archive root', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT_A,
+      targetLineId: LINE_02,
+      changeId: 'unauthorized-archive-root',
+    });
+    const plan = await f
+      .finalization()
+      .plan(f.planInput(bound, { outcome: 'abandoned', reason: 'Dropped.' }));
+    const originalFinalization = plan.archivePlan.finalization!;
+    const unauthorizedRoot = f.beside('attacker-selected-archive');
+    const unauthorizedDestination = path.join(
+      unauthorizedRoot,
+      path.basename(plan.destination)
+    );
+    const unauthorizedStage = path.join(
+      unauthorizedRoot,
+      path.basename(plan.archivePlan.paths.stage)
+    );
+    const { planHash: _originalHash, ...originalWithoutHash } = plan.archivePlan;
+    const alteredWithoutHash = {
+      ...originalWithoutHash,
+      paths: {
+        ...originalWithoutHash.paths,
+        archiveParent: unauthorizedRoot,
+        stage: unauthorizedStage,
+        final: unauthorizedDestination,
+        journal: path.join(
+          unauthorizedStage,
+          path.basename(originalWithoutHash.paths.journal)
+        ),
+        publishedJournal: path.join(
+          unauthorizedDestination,
+          path.basename(originalWithoutHash.paths.publishedJournal)
+        ),
+      },
+      finalization: {
+        ...originalFinalization,
+        destination: unauthorizedDestination,
+        revalidation: {
+          ...originalFinalization.revalidation,
+          archive: {
+            ...originalFinalization.revalidation.archive,
+            root: unauthorizedRoot,
+            destination: unauthorizedDestination,
+          },
+        },
+      },
+    };
+    const alteredPlan = {
+      ...alteredWithoutHash,
+      planHash: hashArchivePlan(alteredWithoutHash),
+    };
+    const sourceBefore = hashTree(bound.changeDir);
+
+    let thrown: unknown;
+    try {
+      await f.finalization().applyStoredPlan(alteredPlan);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(codeOf(thrown)).toBe('finalization_plan_stale');
+    expect((thrown as Error).message).toContain(
+      'the Store archive destination authorized by Foundation'
+    );
+    expect(hashTree(bound.changeDir)).toEqual(sourceBefore);
+    expect(fs.existsSync(unauthorizedRoot)).toBe(false);
+    expect(fs.existsSync(bound.archiveLine)).toBe(false);
+  }, 240_000);
+
 });
 
 describe('revalidating the successor a superseded record names', () => {
@@ -576,6 +1035,64 @@ describe('revalidating the successor a superseded record names', () => {
     expect((thrown as Error).message).toContain('the successor Change metadata');
     expect((thrown as Error).message).toContain('refs/heads/release/0.3');
     expect(fs.existsSync(plan.destination)).toBe(false);
+  }, 240_000);
+
+  it('finishes exact recovery after an owned reservation despite later catalog drift', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT_A,
+      targetLineId: LINE_02,
+      changeId: 'reserved-before-progress',
+    });
+    const plan = await f
+      .finalization()
+      .plan(f.planInput(bound, { outcome: 'abandoned', reason: 'Dropped.' }));
+    expect(plan.applicable, JSON.stringify(plan.blockers)).toBe(true);
+
+    const copyFile = defaultArchiveEngineAdapters.fs.copyFile;
+    let finalCopyRefused = false;
+    const first = await applyArchive(plan.archivePlan, {
+      adapters: {
+        ...defaultArchiveEngineAdapters,
+        fs: {
+          ...defaultArchiveEngineAdapters.fs,
+          copyFile: async (source, target, flags) => {
+            if (
+              target.startsWith(`${plan.destination}${path.sep}`) &&
+              !finalCopyRefused
+            ) {
+              finalCopyRefused = true;
+              const failure = new Error('injected post-reservation copy failure');
+              (failure as NodeJS.ErrnoException).code = 'EIO';
+              throw failure;
+            }
+            return copyFile(source, target, flags);
+          },
+        },
+      },
+    });
+    expect(first).toMatchObject({
+      status: 'recoverable',
+      effectivePhase: 'specs-applied',
+    });
+    expect(finalCopyRefused).toBe(true);
+    expect(fs.existsSync(plan.destination)).toBe(true);
+
+    const catalogPath =
+      plan.archivePlan.finalization!.revalidation.targetLine.catalogPath;
+    f.write(
+      catalogPath,
+      `${fs.readFileSync(catalogPath, 'utf8')}\n# drift after reservation\n`
+    );
+
+    const retry = await f
+      .finalization()
+      .applyStoredPlan(plan.archivePlan, plan.token);
+    expect(retry).toMatchObject({
+      status: 'complete',
+      associationPhase: 'applied',
+    });
+    expect(fs.existsSync(bound.changeDir)).toBe(false);
+    expect(fs.existsSync(plan.destination)).toBe(true);
   }, 240_000);
 });
 

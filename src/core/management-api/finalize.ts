@@ -14,7 +14,9 @@
  *      --dry-run --save-plan --json` — READ-ONLY. It produces the same
  *      immutable finalization plan every other surface produces, and that plan
  *      names the Change's committed `changeInstanceId`.
- *   2. only if that instance equals the one in the PATH,
+ *   2. only if that instance equals the one in the PATH and the preview has no
+ *      blockers — except the sole typed merge blocker after the caller's
+ *      explicit independently-verified assertion —
  *      `archive --apply-plan <token> --json --yes` — the mutation.
  *
  * A path scope that disagrees with the Change's committed identity is therefore
@@ -28,6 +30,7 @@ import { createRequire } from 'node:module';
 import * as path from 'node:path';
 
 import { validateChangeName } from '../../utils/change-utils.js';
+import { ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE } from '../archive-engine.js';
 import { isChangeInstanceId } from '../store/planning-identity.js';
 import type { ManagementApiContext } from './router.js';
 import { getBoundedCliEntry } from './whitelist.js';
@@ -70,6 +73,23 @@ export interface FinalizeChangeResponse {
   };
 }
 
+export interface FinalizationCliBlocker {
+  readonly code: string;
+  readonly message: string;
+  readonly expected?: string;
+  readonly actual?: string;
+  readonly fix?: string;
+  readonly archiveBlocker?: Readonly<Record<string, unknown>>;
+}
+
+export interface FinalizationCliDisposition {
+  readonly status: 'complete' | 'blocked' | 'recoverable' | 'abort-required';
+  readonly blockers: readonly FinalizationCliBlocker[];
+  readonly recoveryCommand?: string;
+  readonly abortCommand?: string;
+  readonly manualRecoveryAction?: Readonly<Record<string, unknown>>;
+}
+
 export type FinalizeResult =
   | { ok: true; status: 200; response: FinalizeChangeResponse }
   | {
@@ -79,6 +99,7 @@ export type FinalizeResult =
       message: string;
       cliExitCode?: number;
       stderr?: string;
+      finalization?: FinalizationCliDisposition;
     };
 
 function resolveCliEntry(): string {
@@ -124,6 +145,8 @@ export interface FinalizeChangeRequestBody {
   by?: unknown;
   byTargetLine?: unknown;
   commit?: unknown;
+  /** Caller assertion made only after independently verifying the recorded PR merge. */
+  mergeConfirmed?: unknown;
 }
 
 /**
@@ -140,6 +163,16 @@ export function finalizationOptions(
       ok: false,
       message:
         'outcome is required: a Store v2 Change ends in exactly one explicitly declared outcome (landed, superseded, cancelled, abandoned) and there is no default.',
+    };
+  }
+  if (
+    body.mergeConfirmed !== undefined &&
+    typeof body.mergeConfirmed !== 'boolean'
+  ) {
+    return {
+      ok: false,
+      message:
+        'mergeConfirmed must be a boolean and may be true only after independently verifying the recorded PR merge.',
     };
   }
   const argv: string[] = [];
@@ -267,15 +300,133 @@ function parseJsonPayload(stdout: string): Record<string, unknown> | null {
   }
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function decodeFinalizationBlockers(
+  value: unknown
+): FinalizationCliBlocker[] | null {
+  if (!Array.isArray(value)) return null;
+  const blockers: FinalizationCliBlocker[] = [];
+  for (const valueBlocker of value) {
+    const blocker = asRecord(valueBlocker);
+    if (
+      blocker === null ||
+      typeof blocker.code !== 'string' ||
+      typeof blocker.message !== 'string'
+    ) {
+      return null;
+    }
+    const archiveBlocker = asRecord(blocker.archiveBlocker);
+    blockers.push({
+      code: blocker.code,
+      message: blocker.message,
+      ...(typeof blocker.expected === 'string'
+        ? { expected: blocker.expected }
+        : {}),
+      ...(typeof blocker.actual === 'string' ? { actual: blocker.actual } : {}),
+      ...(typeof blocker.fix === 'string' ? { fix: blocker.fix } : {}),
+      ...(archiveBlocker === null ? {} : { archiveBlocker }),
+    });
+  }
+  return blockers;
+}
+
+export function decodeFinalizationDisposition(
+  payload: Record<string, unknown> | null
+): FinalizationCliDisposition | null {
+  const archive = asRecord(payload?.archive);
+  const finalization = asRecord(archive?.finalization);
+  if (
+    finalization === null ||
+    !['complete', 'blocked', 'recoverable', 'abort-required'].includes(
+      String(finalization.status)
+    )
+  ) {
+    return null;
+  }
+  const blockers = decodeFinalizationBlockers(finalization.blockers);
+  if (blockers === null) return null;
+  const manualRecoveryAction = asRecord(finalization.manualRecoveryAction);
+  return {
+    status: finalization.status as FinalizationCliDisposition['status'],
+    blockers,
+    ...(typeof finalization.recoveryCommand === 'string'
+      ? { recoveryCommand: finalization.recoveryCommand }
+      : {}),
+    ...(typeof finalization.abortCommand === 'string'
+      ? { abortCommand: finalization.abortCommand }
+      : {}),
+    ...(manualRecoveryAction === null ? {} : { manualRecoveryAction }),
+  };
+}
+
+function blockerArchiveCode(blocker: FinalizationCliBlocker): string | null {
+  const archiveCode = blocker.archiveBlocker?.['code'];
+  return typeof archiveCode === 'string' ? archiveCode : null;
+}
+
+function isSoleMergeConfirmationBlocker(
+  blockers: readonly FinalizationCliBlocker[]
+): boolean {
+  return (
+    blockers.length === 1 &&
+    (blockers[0]?.code === ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE ||
+      blockerArchiveCode(blockers[0]!) ===
+        ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE)
+  );
+}
+
+export interface FinalizationPreviewBlockerInspection {
+  readonly blockers: readonly FinalizationCliBlocker[];
+  readonly applicable: boolean;
+  readonly mergeBlockerAdmitted: boolean;
+}
+
+export function inspectFinalizationPreviewBlockers(
+  value: unknown,
+  mergeConfirmed: unknown
+): FinalizationPreviewBlockerInspection | null {
+  const blockers = decodeFinalizationBlockers(value);
+  if (blockers === null) return null;
+  const mergeBlockerAdmitted =
+    isSoleMergeConfirmationBlocker(blockers) && mergeConfirmed === true;
+  return {
+    blockers,
+    applicable: blockers.length === 0 || mergeBlockerAdmitted,
+    mergeBlockerAdmitted,
+  };
+}
+
 /**
- * The CLI's `--json` failure envelope, surfaced UNCHANGED: whatever diagnostic
- * the finalization Module refused with is what the client sees.
+ * Decodes both the top-level CLI failure envelope and the Store finalization
+ * result nested under `archive.finalization`.
  */
 function cliDiagnostic(
-  stdout: string,
+  payload: Record<string, unknown> | null,
   stderr: string
-): { code: string; message: string } {
-  const payload = parseJsonPayload(stdout);
+): {
+  code: string;
+  message: string;
+  finalization?: FinalizationCliDisposition;
+} {
+  const finalization = decodeFinalizationDisposition(payload);
+  if (finalization !== null && finalization.status !== 'complete') {
+    const first = finalization.blockers[0];
+    return {
+      code:
+        (first === undefined ? null : blockerArchiveCode(first)) ??
+        first?.code ??
+        `archive_${finalization.status.replace('-', '_')}`,
+      message:
+        first?.message ??
+        `Finalization did not complete (${finalization.status}).`,
+      finalization,
+    };
+  }
   const status = payload?.status;
   if (Array.isArray(status) && status.length > 0) {
     const first = status[0] as { code?: unknown; message?: unknown };
@@ -389,31 +540,39 @@ export function createChangeFinalizer(
           message: 'The CLI subprocess timed out while planning the finalization.',
         };
       }
-      if (preview.exitCode !== 0) {
-        const diagnostic = cliDiagnostic(preview.stdout, preview.stderr);
-        return {
-          ok: false,
-          status: 422,
-          code: diagnostic.code,
-          message: diagnostic.message,
-          ...(preview.exitCode === null ? {} : { cliExitCode: preview.exitCode }),
-          stderr: preview.stderr,
-        };
-      }
+      // A blocked saved preview is still a structured plan response. Parse it
+      // before using the process exit code so the one runtime-satisfiable merge
+      // assertion can be evaluated without weakening any other blocker.
       const previewPayload = parseJsonPayload(preview.stdout);
-      const archive = previewPayload?.archive as
-        | {
-            planToken?: unknown;
-            finalizationPlan?: { changeInstanceId?: unknown; blockers?: unknown[] };
-          }
-        | undefined;
-      const plan = archive?.finalizationPlan;
+      const archive = asRecord(previewPayload?.archive);
+      const plan = asRecord(archive?.finalizationPlan);
+      const previewInspection = inspectFinalizationPreviewBlockers(
+        plan?.blockers,
+        body.mergeConfirmed
+      );
       if (
-        archive === undefined ||
+        archive === null ||
         typeof archive.planToken !== 'string' ||
-        plan === undefined ||
-        typeof plan.changeInstanceId !== 'string'
+        plan === null ||
+        typeof plan.changeInstanceId !== 'string' ||
+        previewInspection === null
       ) {
+        if (preview.exitCode !== 0) {
+          const diagnostic = cliDiagnostic(previewPayload, preview.stderr);
+          return {
+            ok: false,
+            status: 422,
+            code: diagnostic.code,
+            message: diagnostic.message,
+            ...(preview.exitCode === null
+              ? {}
+              : { cliExitCode: preview.exitCode }),
+            stderr: preview.stderr,
+            ...(diagnostic.finalization === undefined
+              ? {}
+              : { finalization: diagnostic.finalization }),
+          };
+        }
         return {
           ok: false,
           status: 500,
@@ -429,6 +588,50 @@ export function createChangeFinalizer(
           status: 409,
           code: 'change_identity_mismatch',
           message: `The path names Change instance '${scope.changeInstanceId}', but Change '${body.changeId}' in ${scope.projectId}/${scope.targetLineId} is committed as '${plan.changeInstanceId}'. Nothing was finalized and no file was modified.`,
+        };
+      }
+
+      const previewBlockers = previewInspection.blockers;
+      const soleMergeBlocker =
+        isSoleMergeConfirmationBlocker(previewBlockers);
+      const mergeBlockerAdmitted =
+        previewInspection.mergeBlockerAdmitted &&
+        preview.exitCode !== null;
+      if (previewBlockers.length > 0 && !mergeBlockerAdmitted) {
+        const first = previewBlockers[0]!;
+        const disposition: FinalizationCliDisposition = {
+          status: 'blocked',
+          blockers: previewBlockers,
+        };
+        return {
+          ok: false,
+          status: 422,
+          code: blockerArchiveCode(first) ?? first.code,
+          message:
+            soleMergeBlocker && body.mergeConfirmed !== true
+              ? `${first.message} Set mergeConfirmed to true only after independently verifying the recorded PR merge.`
+              : first.message,
+          ...(preview.exitCode === null
+            ? {}
+            : { cliExitCode: preview.exitCode }),
+          stderr: preview.stderr,
+          finalization: disposition,
+        };
+      }
+      if (preview.exitCode !== 0 && !mergeBlockerAdmitted) {
+        const diagnostic = cliDiagnostic(previewPayload, preview.stderr);
+        return {
+          ok: false,
+          status: 422,
+          code: diagnostic.code,
+          message: diagnostic.message,
+          ...(preview.exitCode === null
+            ? {}
+            : { cliExitCode: preview.exitCode }),
+          stderr: preview.stderr,
+          ...(diagnostic.finalization === undefined
+            ? {}
+            : { finalization: diagnostic.finalization }),
         };
       }
 
@@ -448,21 +651,37 @@ export function createChangeFinalizer(
           message: 'The CLI subprocess timed out while applying the finalization.',
         };
       }
-      if (applied.exitCode !== 0) {
-        const diagnostic = cliDiagnostic(applied.stdout, applied.stderr);
+      const appliedPayload = parseJsonPayload(applied.stdout);
+      const appliedDisposition =
+        decodeFinalizationDisposition(appliedPayload);
+      if (
+        applied.exitCode !== 0 ||
+        (appliedDisposition !== null &&
+          appliedDisposition.status !== 'complete')
+      ) {
+        const diagnostic = cliDiagnostic(appliedPayload, applied.stderr);
         return {
           ok: false,
           status: 422,
           code: diagnostic.code,
           message: diagnostic.message,
-          ...(applied.exitCode === null ? {} : { cliExitCode: applied.exitCode }),
+          ...(applied.exitCode === null
+            ? {}
+            : { cliExitCode: applied.exitCode }),
           stderr: applied.stderr,
+          ...(diagnostic.finalization === undefined
+            ? {}
+            : { finalization: diagnostic.finalization }),
         };
       }
-      const appliedPayload = parseJsonPayload(applied.stdout);
-      const result = (appliedPayload?.archive as { finalization?: unknown } | undefined)
-        ?.finalization as FinalizeChangeResponse['finalization'] | undefined;
-      if (result === undefined || typeof result.publishedEntry !== 'string') {
+      const result = asRecord(asRecord(appliedPayload?.archive)?.finalization) as
+        | (FinalizeChangeResponse['finalization'] & { status?: unknown })
+        | null;
+      if (
+        result === null ||
+        result.status !== 'complete' ||
+        typeof result.publishedEntry !== 'string'
+      ) {
         return {
           ok: false,
           status: 500,
