@@ -22,31 +22,35 @@ If either is false, policy-parity isn't finished — WAIT and re-check. (If you 
 
 **Status as of 2026-08-09:** policy-parity IS archived (`ca0939f8` → `rasen/changes/archive/2026-08-09-ecp-session-policy-and-control-parity/`); the active dir is gone. **The precondition is MET — proceed.** All seven ECP-7 implementation children are terminal (foundation/prepare-unavailability/cutover/closure/host/executor/policy-parity). The live ECP session has STOPPED touching the branch. Local is 113 commits ahead of `origin/wip/...` (this session's work, not yet pushed — your job).
 
-## Step 0 — work on a SEPARATE PR branch in a separate worktree (no collision, no merge-back)
+## Step 0 — REUSE this worktree (the live ECP session is done)
 
-**Topology (important — this is how the two sessions integrate):**
-- The LIVE ECP session owns `wip/ecp-shared-bounded-loop-lifecycle-resume` in its worktree. It finishes `ecp-session-policy-and-control-parity` (ship+archive) and then STOPS touching the branch.
-- YOU create a **new PR branch** off the policy-parity-archived tip and do the dev/0.2.0 reconciliation THERE. You never commit to `wip/...`, so the two sessions never share a branch → **no in-flight merge-back is needed**. The PR itself (merged into dev/0.2.0) is the integration point.
+The live ECP session has STOPPED touching the branch (all seven ECP-7 implementation children are terminal). So you do NOT need a separate worktree — **reuse this one directly**:
+
+```
+E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle
+```
 
 ```powershell
 cd E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle
 git fetch origin
-# PRECONDITION: confirm policy-parity is archived (see ⚠️ above) before proceeding.
-git worktree add -b pr/ecp7-to-020 E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-pr-020 wip/ecp-shared-bounded-loop-lifecycle-resume
-cd E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-pr-020
+# PRECONDITION: confirm policy-parity is archived (see ⚠️ above). It IS (ca0939f8) — proceed.
+git status      # confirm clean working tree, on wip/ecp-shared-bounded-loop-lifecycle-resume
 ```
 
-`pr/ecp7-to-020` starts identical to the `wip/...` tip (all ECP-7 + v2 work including policy-parity). You do the dev/0.2.0 merge, push, and PR from this branch. The `wip/...` branch stays untouched (the live session keeps it).
+### Branch choice (pick one — both work in this worktree)
 
-> Why a separate branch: git forbids the same branch checked out in two worktrees at once. Operating on `wip/...` directly would conflict with the live session's worktree. A PR branch also matches normal PR workflow (PR from a feature branch, not a long-lived WIP branch).
+- **PRIMARY — PR the `wip` branch directly (simplest; literal "整分支 PR"):** stay on `wip/ecp-shared-bounded-loop-lifecycle-resume`. Merge dev/0.2.0 in, push `wip/...`, PR `wip/... → dev/0.2.0`. No new branch. **This is the recommended path.**
+- **OPTIONAL — a PR branch (if you want to keep `wip/...` pristine):** `git checkout -b pr/ecp7-to-020`, then merge/push/PR from `pr/ecp7-to-020`. Only bother if you specifically want `wip/...` left unchanged.
 
-## How the two sessions integrate (merge-back)
+The steps below are written for the PRIMARY path (work on `wip/...`). If you chose the PR branch, substitute your branch name — the commands are identical otherwise.
 
-- **Sequential (recommended):** you start AFTER policy-parity is archived. `pr/ecp7-to-020` = the full `wip/...` tip at that moment. Nothing to merge back — your PR branch already contains everything. When your PR merges to dev/0.2.0, integration is complete. Future work (self-hosting / ECP-8, both operator-owned) branches from dev/0.2.0 post-merge.
-- **If you start before policy-parity is done (parallel):** your `pr/ecp7-to-020` would miss policy-parity. To absorb it later, once the live session signals policy-parity is archived: `git fetch`/pull `wip/...` and `git merge wip/ecp-shared-bounded-loop-lifecycle-resume` into your PR branch, resolve any conflicts, then push. That single merge IS the "merge-back." Still prefer waiting — it's one fewer merge.
-- **Conflicts needing ECP-7 judgment:** if a dev/0.2.0 conflict touches ECP-7-owned semantics and you can't resolve confidently, STOP and surface it (don't guess). That's the coordination valve.
+## How the two sessions integrate (no merge-back needed)
 
-## Step 1 — re-measure the divergence (numbers shift as work lands)
+The live ECP session is DONE with the branch. You take over this worktree. There is no in-flight merge-back — you start from the branch tip (which already contains all ECP-7 + v2 work + policy-parity) and the dev/0.2.0 merge you do IS the integration. When your PR merges to dev/0.2.0, future work (self-hosting / ECP-8, both operator-owned) branches from dev/0.2.0 post-merge.
+
+**Coordination valve:** if a dev/0.2.0 conflict touches ECP-7-owned semantics and you can't resolve confidently, STOP and surface it (don't guess). The ECP-7 author is not actively watching — escalate to the operator.
+
+## Step 1 — re-measure the divergence
 
 ```powershell
 $ahead  = (git log --oneline dev/0.2.0..HEAD | Measure-Object).Count
@@ -54,11 +58,11 @@ $behind = (git log --oneline HEAD..dev/0.2.0 | Measure-Object).Count
 "ahead of dev/0.2.0: $ahead; behind: $behind"
 ```
 
-At handoff time: ahead ~102+, behind 66. `behind` is the count of dev/0.2.0 commits the branch must reconcile. Record the final numbers for the PR body.
+At handoff time: ahead ~114+, behind 66. `behind` is the count of dev/0.2.0 commits the branch must reconcile. Record the final numbers for the PR body.
 
 ## Step 2 — reconcile by MERGING dev/0.2.0 INTO the branch (recommended; not rebase)
 
-Rationale: the branch is already pushed (`origin/wip/...`); a rebase rewrites 100+ commits' history and needs a force-push (risky, and any other session's worktree breaks). A **merge** of dev/0.2.0 in preserves history, resolves conflicts locally where you can test, and pushes as a normal commit.
+Rationale: the branch is already pushed (`origin/wip/...`); a rebase rewrites 100+ commits' history and needs a force-push (risky). A **merge** of dev/0.2.0 in preserves history, resolves conflicts locally where you can test, and pushes as a normal commit.
 
 ```powershell
 # Probe first — see if there are conflicts WITHOUT committing:
@@ -89,19 +93,19 @@ npx vitest run                 # FULL suite this time (this is the merge gate); 
 ```
 If tsc/vitest fail after the merge, the conflict resolution broke something — fix before pushing. Do NOT push a red merge.
 
-## Step 3 — push the PR branch
+## Step 3 — push the branch
 
 ```powershell
-git push -u origin pr/ecp7-to-020
+git push origin wip/ecp-shared-bounded-loop-lifecycle-resume
 ```
-(Regular push of the new PR branch — the merge commit + all ECP-7/v2 work go up. No force-push needed since you merged dev/0.2.0 in, not rebased.)
+(Regular push — the merge commit + this session's 113+ local commits go up. No force-push needed since you merged dev/0.2.0 in, not rebased. If you chose the OPTIONAL `pr/ecp7-to-020` branch, push that instead: `git push -u origin pr/ecp7-to-020`.)
 
-If the live ECP session pushed more to `wip/...` in the meantime (e.g. policy-parity landed after you branched): `git merge wip/ecp-shared-bounded-loop-lifecycle-resume` into your PR branch (resolve conflicts), then push.
+If origin rejected because someone else pushed to `wip/...` in the meantime: `git pull --rebase origin wip/...` (or merge) to absorb, resolve any new conflicts, then push.
 
 ## Step 4 — open the PR to dev/0.2.0
 
 ```powershell
-gh pr create --base dev/0.2.0 --head pr/ecp7-to-020 `
+gh pr create --base dev/0.2.0 --head wip/ecp-shared-bounded-loop-lifecycle-resume `
   --title "ECP-7 session execution + self-hosting portfolio (decision-13 best-effort cutover) + v2-authoring" `
   --body-file pr-body.md
 ```
