@@ -125,6 +125,7 @@ describe('locale catalogs', () => {
         ],
         effectivePhase: 'specs-applied',
         retainedPaths: ['/store/change', '/store/transaction/journal.json'],
+        associationPhase: 'pending',
         manualRecoveryAction: {
           kind: 'manual-recovery-required',
           guidance: 'Verify ownership before taking any further action.',
@@ -138,8 +139,13 @@ describe('locale catalogs', () => {
       'Effective phase: specs-applied',
       'Retained path: /store/change',
       'Retained path: /store/transaction/journal.json',
+      'The Store workspace association remains pending.',
       'Manual recovery: Verify ownership before taking any further action.',
     ]);
+    expect(lines[0]).toMatch(/^Blocker /u);
+    expect(lines.findIndex(line => line.startsWith('Blocker '))).toBeLessThan(
+      lines.findIndex(line => line.includes('association remains pending'))
+    );
     expect(lines.join('\n')).not.toContain('resume the exact plan');
   });
 

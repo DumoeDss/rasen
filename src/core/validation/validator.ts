@@ -12,7 +12,10 @@ import {
   VALIDATION_MESSAGES
 } from './constants.js';
 import { parseDeltaSpec, normalizeRequirementName, extractRequirementsSection } from '../parsers/requirement-blocks.js';
-import { findMainSpecStructureIssues } from '../parsers/spec-structure.js';
+import {
+  findMainSpecStructureIssues,
+  stripFencedCodeBlocksPreservingLines,
+} from '../parsers/spec-structure.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import {
   analyzeSpecUpdates,
@@ -137,7 +140,13 @@ export class Validator {
         requirement === undefined ? '' : normalizeRequirementName(requirement)
       }`;
     const independentlyReported = new Set<string>();
-    const shapeInvalidSources = new Set<string>();
+    const shapeIssueKeys = new Set<string>();
+    const shapeIssueKey = (
+      source: string,
+      kind: 'requirement-keyword' | 'scenario',
+      requirement: string
+    ): string =>
+      `${source}\0${kind}\0${normalizeRequirementName(requirement)}`;
     const deltaDiscovery =
       discoveredDeltaSpecs ?? (await discoverDeltaSpecFiles(changeDir));
     let deltaInputUnavailable = deltaDiscovery.issues.length > 0;
@@ -167,12 +176,15 @@ export class Validator {
 
     try {
       for (const specFile of deltaDiscovery.files) {
+        const entryPath = FileSystemUtils.toPosixPath(
+          path.relative(specsDir, specFile)
+        );
+        const capability = path.posix.dirname(entryPath);
         let content: string;
         try {
           const snapshot = await fs.readFile(specFile);
           deltaSnapshots.set(specFile, snapshot);
           content = snapshot.toString('utf8');
-        } catch (error) {
           issues.push({
             level: 'ERROR',
             path: FileSystemUtils.toPosixPath(
@@ -180,6 +192,7 @@ export class Validator {
             ),
             code: 'spec_delta_read_failed',
             source: specFile,
+            capability,
             message: `Cannot read delta spec ${specFile}: ${
               error instanceof Error ? error.message : String(error)
             }`,
@@ -190,7 +203,6 @@ export class Validator {
         const issuesBeforeShapeValidation = issues.length;
 
         const plan = parseDeltaSpec(content);
-        const entryPath = FileSystemUtils.toPosixPath(path.relative(specsDir, specFile));
         const sectionNames: string[] = [];
         if (plan.sectionPresence.added) sectionNames.push('## ADDED Requirements');
         if (plan.sectionPresence.modified) sectionNames.push('## MODIFIED Requirements');
@@ -238,12 +250,21 @@ export class Validator {
           const requirementText = this.extractRequirementText(block.raw);
           if (!requirementText) {
             issues.push({ level: 'ERROR', path: entryPath, message: `ADDED "${block.name}" is missing requirement text` });
+            shapeIssueKeys.add(
+              shapeIssueKey(specFile, 'requirement-keyword', block.name)
+            );
           } else if (!this.containsShallOrMust(requirementText)) {
             issues.push({ level: 'ERROR', path: entryPath, message: this.buildMissingShallOrMustMessage(`ADDED "${block.name}"`, block.name) });
+            shapeIssueKeys.add(
+              shapeIssueKey(specFile, 'requirement-keyword', block.name)
+            );
           }
           const scenarioCount = this.countScenarios(block.raw);
           if (scenarioCount < 1) {
             issues.push({ level: 'ERROR', path: entryPath, message: `ADDED "${block.name}" must include at least one scenario` });
+            shapeIssueKeys.add(
+              shapeIssueKey(specFile, 'scenario', block.name)
+            );
           }
         }
 
@@ -266,12 +287,21 @@ export class Validator {
           const requirementText = this.extractRequirementText(block.raw);
           if (!requirementText) {
             issues.push({ level: 'ERROR', path: entryPath, message: `MODIFIED "${block.name}" is missing requirement text` });
+            shapeIssueKeys.add(
+              shapeIssueKey(specFile, 'requirement-keyword', block.name)
+            );
           } else if (!this.containsShallOrMust(requirementText)) {
             issues.push({ level: 'ERROR', path: entryPath, message: this.buildMissingShallOrMustMessage(`MODIFIED "${block.name}"`, block.name) });
+            shapeIssueKeys.add(
+              shapeIssueKey(specFile, 'requirement-keyword', block.name)
+            );
           }
           const scenarioCount = this.countScenarios(block.raw);
           if (scenarioCount < 1) {
             issues.push({ level: 'ERROR', path: entryPath, message: `MODIFIED "${block.name}" must include at least one scenario` });
+            shapeIssueKeys.add(
+              shapeIssueKey(specFile, 'scenario', block.name)
+            );
           }
         }
 
@@ -383,9 +413,7 @@ export class Validator {
             );
           }
         }
-        if (issues.length > issuesBeforeShapeValidation) {
-          shapeInvalidSources.add(specFile);
-        }
+        void issuesBeforeShapeValidation;
       }
     } catch (error) {
       deltaInputUnavailable = true;
@@ -445,24 +473,70 @@ export class Validator {
       const analysis = await analyzeSpecUpdates(
         analysisDiscovery,
         path.basename(changeDir),
-        { silent: true, validateTarget: true }
+        { silent: true }
       );
       for (const prepared of analysis.prepared) {
         analyzedTargets.set(
           prepared.update.target,
           prepared.targetPrecondition
         );
+        if (prepared.emptied) continue;
+
+        const projectedReport = await this.validateSpecContent(
+          prepared.update.capability,
+          prepared.rebuilt
+        );
+        const projectedBlocks = extractRequirementsSection(
+          prepared.rebuilt
+        ).bodyBlocks;
+        for (const projectedIssue of projectedReport.issues) {
+          if (projectedIssue.level !== 'ERROR') continue;
+          const requirementIndexMatch = projectedIssue.path.match(
+            /^requirements(?:\.|\[)(\d+)/
+          );
+          const requirement =
+            requirementIndexMatch === null
+              ? undefined
+              : projectedBlocks[Number(requirementIndexMatch[1])]?.name;
+          const projectedKind = projectedIssue.message.includes(
+            'SHALL or MUST'
+          )
+            ? 'requirement-keyword'
+            : projectedIssue.path.includes('scenarios') ||
+                /\bscenario/i.test(projectedIssue.message)
+              ? 'scenario'
+              : undefined;
+          if (
+            requirement !== undefined &&
+            projectedKind !== undefined &&
+            shapeIssueKeys.has(
+              shapeIssueKey(
+                prepared.update.source,
+                projectedKind,
+                requirement
+              )
+            )
+          ) {
+            continue;
+          }
+          issues.push({
+            path: FileSystemUtils.toPosixPath(
+              path.relative(changeSpecsDir, prepared.update.source)
+            ),
+            level: 'ERROR',
+            code: 'spec_target_validation_failed',
+            source: prepared.update.source,
+            capability: prepared.update.capability,
+            ...(requirement === undefined ? {} : { requirement }),
+            message:
+              `${prepared.update.capability}: rebuilt canonical spec is invalid:\n` +
+              `${projectedIssue.path}: ${projectedIssue.message}`,
+          });
+        }
       }
-      const changeSpecsDir = path.join(changeDir, 'specs');
       for (const issue of analysis.issues) {
         const preservationFailure =
           issue.code === 'spec_modified_scenarios_missing';
-        if (
-          issue.code === 'spec_target_validation_failed' &&
-          shapeInvalidSources.has(issue.source)
-        ) {
-          continue;
-        }
         if (
           independentlyReported.has(
             reconciliationIssueKey(
@@ -559,6 +633,9 @@ export class Validator {
           ),
           code: 'spec_delta_read_failed',
           source: specFile,
+          capability: path.posix.dirname(
+            FileSystemUtils.toPosixPath(path.relative(specsDir, specFile))
+          ),
           message: `Cannot confirm delta spec snapshot ${specFile}: ${
             error instanceof Error ? error.message : String(error)
           }`,
@@ -842,7 +919,10 @@ export class Validator {
   }
 
   private countScenarios(blockRaw: string): number {
-    const matches = blockRaw.match(/^####\s+/gm);
+    const visible = stripFencedCodeBlocksPreservingLines(
+      blockRaw.replace(/\r\n?/g, '\n')
+    );
+    const matches = visible.match(/^####\s+/gm);
     return matches ? matches.length : 0;
   }
 

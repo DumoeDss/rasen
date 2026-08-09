@@ -464,7 +464,50 @@ describe('archive apply named fault and recovery matrix', () => {
     await expect(fs.access(quarantine)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('reads an older source-removal journal without claim identity but refuses destructive resume', async () => {
+  it('retains an occupant injected at the active-source claim-root removal boundary', async () => {
+    const plan = await makePlan();
+    const claimRoot = path.join(
+      path.dirname(active),
+      `.rasen-archive-source-${plan.transactionId}`
+    );
+    const intruder = path.join(claimRoot, 'unrelated.txt');
+    let inject = true;
+    const adapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        rmdir: async target => {
+          if (target === claimRoot && inject) {
+            inject = false;
+            await fs.writeFile(intruder, 'unrelated\n');
+          }
+          await baseAdapters.fs.rmdir(target);
+        },
+      },
+    };
+
+    const result = await applyArchive(plan, { adapters });
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+      retainedPaths: expect.arrayContaining([
+        claimRoot,
+        intruder,
+        plan.paths.publishedJournal,
+      ]),
+      blockers: [
+        expect.objectContaining({
+          operation: 'source-remove',
+          code: 'archive_claim_ownership_unverified',
+        }),
+      ],
+    });
+    await expect(fs.access(active)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.readFile(intruder, 'utf8')).toBe('unrelated\n');
+  });
+
+  it('reads an older claimed source-removal journal without claim identity but refuses destructive resume', async () => {
     const plan = await makePlan();
     let crash = true;
     const adapters: ArchiveEngineAdapters = {
@@ -482,6 +525,7 @@ describe('archive apply named fault and recovery matrix', () => {
     };
     expect((await applyArchive(plan, { adapters })).status).toBe('recoverable');
     const legacyJournal = await readJournal(plan.paths.publishedJournal);
+    legacyJournal.sourceProgress.state = 'claimed';
     delete legacyJournal.sourceProgress.claimIdentity;
     await fs.writeFile(
       plan.paths.publishedJournal,
@@ -591,11 +635,18 @@ describe('archive apply named fault and recovery matrix', () => {
     const unrelatedBefore = await snapshotTree(plan.paths.final);
 
     const first = await applyArchive(plan, { adapters: baseAdapters });
-    expectFailureReport(first, plan, {
-      operation: 'publish',
-      path: plan.paths.final,
-      code: 'EEXIST',
-      journalPath: plan.paths.journal,
+    expect(first).toMatchObject({
+      status: 'abort-required',
+      transactionId: plan.transactionId,
+      planHash: plan.planHash,
+      blockers: [
+        {
+          operation: 'publish',
+          path: plan.paths.archiveParent,
+          code: 'archive_destination_ancestry_invalid',
+        },
+      ],
+      abortCommand: expect.stringContaining('--abort-plan'),
     });
     expect(await snapshotTree(plan.paths.final)).toEqual(unrelatedBefore);
     expect(await snapshotTree(active)).toEqual(activeBefore);
@@ -607,6 +658,7 @@ describe('archive apply named fault and recovery matrix', () => {
     expect(await snapshotTree(plan.paths.final)).toEqual(unrelatedBefore);
 
     await fs.rm(plan.paths.final, { recursive: true, force: false });
+    await fs.rmdir(plan.paths.archiveParent);
     expect((await applyArchive(plan, { adapters: baseAdapters })).status).toBe('complete');
   });
 
@@ -678,6 +730,9 @@ describe('archive apply named fault and recovery matrix', () => {
         expect.objectContaining({
           operation: 'journal',
           code: 'archive_claim_ownership_unverified',
+          message: expect.stringContaining(
+            'Original archive failure at journal'
+          ),
         }),
       ],
       manualRecoveryAction: { kind: 'manual-recovery-required' },
@@ -830,7 +885,9 @@ describe('archive apply named fault and recovery matrix', () => {
     expect(retry.status).toBe('recoverable');
     expect(retry.blockers).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: 'EEXIST' }),
+        expect.objectContaining({
+          code: 'archive_reservation_ownership_unverified',
+        }),
       ])
     );
     expect(await fs.readFile(concurrent, 'utf8')).toBe(
@@ -942,7 +999,11 @@ describe('archive apply named fault and recovery matrix', () => {
     expect(resumed.status).toBe('recoverable');
     expect(resumed.blockers).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ operation: 'publish', code: 'ESTALE' }),
+        expect.objectContaining({
+          operation: 'accounting',
+          path: path.join(plan.paths.final, 'archive.json'),
+          code: 'archive_journal_invalid',
+        }),
       ])
     );
     await expect(fs.access(active)).resolves.toBeUndefined();
@@ -1366,6 +1427,7 @@ describe('archive apply named fault and recovery matrix', () => {
     );
 
     await fs.unlink(stagedMetadata);
+    await fs.unlink(path.join(plan.paths.stage, 'evidence', 'ship-log.md'));
     await expectRetryCompletes(plan);
   });
 
@@ -1893,7 +1955,7 @@ describe('archive apply named fault and recovery matrix', () => {
       applyEphemeraDeletion: async (directory, classification, fileSystem) => {
         if (!raceInjected) {
           raceInjected = true;
-          await fs.unlink(path.join(directory, 'trace-a.log'));
+          await fs.unlink(path.join(directory, classification.discarded[0]!));
           return [];
         }
         return baseAdapters.applyEphemeraDeletion(
@@ -2007,7 +2069,10 @@ describe('archive apply named fault and recovery matrix', () => {
     const result = await applyArchive(plan, { adapters: adapters });
     expectFailureReport(result, plan, {
       operation: 'source-remove',
-      path: active,
+      path: path.join(
+        path.dirname(active),
+        `.rasen-archive-source-${plan.transactionId}`
+      ),
       code: 'EACCES',
       journalPath: plan.paths.publishedJournal,
     });
@@ -2020,7 +2085,10 @@ describe('archive apply named fault and recovery matrix', () => {
     await expectFailedJournal(plan, {
       target: plan.paths.publishedJournal,
       operation: 'source-remove',
-      path: active,
+      path: path.join(
+        path.dirname(active),
+        `.rasen-archive-source-${plan.transactionId}`
+      ),
       code: 'EACCES',
       resumePhase: 'accounting-finalized',
       disposed: ['trace-a.log', 'trace-b.log'],
@@ -2169,7 +2237,7 @@ describe('archive apply named fault and recovery matrix', () => {
         expect.objectContaining({
           operation: 'accounting',
           path: plan.paths.final,
-          code: 'ESTALE',
+          code: 'archive_reservation_ownership_unverified',
         }),
       ],
       manualRecoveryAction: {
@@ -2187,9 +2255,9 @@ describe('archive apply named fault and recovery matrix', () => {
         detectedAt: '2026-07-31T00:00:00.000Z',
         operation: 'accounting',
         path: plan.paths.final,
-        code: 'ESTALE',
+        code: 'archive_reservation_ownership_unverified',
         message: expect.stringContaining(
-          'Completed archive payload differs from its verified phase fingerprint'
+          'Recorded reserved archive entry no longer matches its durable identity'
         ),
         safeAction: {
           kind: 'manual-recovery-required',
@@ -2295,7 +2363,7 @@ describe('archive apply named fault and recovery matrix', () => {
         expect.objectContaining({
           operation: 'accounting',
           path: plan.paths.final,
-          code: 'ESTALE',
+          code: 'archive_reservation_ownership_unverified',
         }),
       ],
       manualRecoveryAction: {
@@ -2309,7 +2377,7 @@ describe('archive apply named fault and recovery matrix', () => {
       integrityFailure: {
         operation: 'accounting',
         path: plan.paths.final,
-        code: 'ESTALE',
+        code: 'archive_reservation_ownership_unverified',
       },
     });
     const durableJournalBytes = await fs.readFile(

@@ -515,10 +515,9 @@ function assertIndexEntryAgrees(
       fix: `Repair the binding, then re-apply the SAME plan token. The Archive entry at ${publishedEntry} is published and stays published; the journal names the unfinished phase.`,
     }
   );
-  (error as Error & { retainedPaths: string[] }).retainedPaths = [
-    indexPath,
-    publishedEntry,
-  ];
+  Object.assign(error, {
+    retainedPaths: [indexPath, publishedEntry],
+  });
   throw error;
 }
 
@@ -566,8 +565,9 @@ function compareSide(
     expected.worktreeInstanceId,
     actual.worktreeInstanceId
   );
-  compareRequired(disagreements, `${label}.ref`, expected.ref, actual.ref);
-  compareRequired(disagreements, `${label}.headOid`, expected.headOid, actual.headOid);
+  // A binding index records the pair's immutable identity. Branch/ref movement
+  // and later commits are revalidated live against the frozen plan below, but
+  // do not make the already-bound pair a different pair.
 }
 
 function bindingMismatch(
@@ -587,10 +587,9 @@ function bindingMismatch(
       fix: `Repair ${target}, then re-apply the SAME plan token. The Archive entry at ${publishedEntry} stays published and the disagreeing binding is never overwritten.`,
     }
   );
-  (error as Error & { retainedPaths: string[] }).retainedPaths = [
-    target,
-    publishedEntry,
-  ];
+  Object.assign(error, {
+    retainedPaths: [target, publishedEntry],
+  });
   return error;
 }
 

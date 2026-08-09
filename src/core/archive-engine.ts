@@ -46,7 +46,10 @@ import {
   type PathIdentityFlavor,
 } from './path-identity.js';
 import { isConfirmedGitWorkTree } from './store/git.js';
-import { parseChangeInstanceId } from './store/planning-identity.js';
+import {
+  parseChangeInstanceId,
+  type VerifiedChangeInstanceId,
+} from './store/planning-identity.js';
 import { parseChangeId } from './store/planning-validation.js';
 import { resolveStorePlanningLayoutV2Path } from './store/planning-layout-v2.js';
 
@@ -64,6 +67,15 @@ const ARCHIVE_CONTROL_FILENAMES = new Set([
   ARCHIVE_JOURNAL_FILENAME,
   ARCHIVE_PUBLISHED_MARKER_FILENAME,
 ]);
+const ARCHIVE_ACCOUNTING_TEMPORARY_PATTERN =
+  /^\.archive\.json\.rasen-intent-[0-9a-f]{64}$/i;
+
+function isArchivePayloadControlName(name: string): boolean {
+  return (
+    ARCHIVE_CONTROL_FILENAMES.has(name) ||
+    ARCHIVE_ACCOUNTING_TEMPORARY_PATTERN.test(name)
+  );
+}
 export const ARCHIVE_PLAN_TOKEN_PREFIX = 'archive-v1';
 export const ARCHIVE_STORED_PLAN_APPLY_OPERATION = 'apply' as const;
 export const ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE =
@@ -688,6 +700,7 @@ interface StoredArchiveAbortV1 {
   journalPath: string;
   stageIdentity: ArchiveStatIdentity | null;
   stageAuthority: ArchiveTreeFingerprint | null;
+  stageClaim?: ArchivePrivateClaim;
   associationPhase?: 'pending';
   status: 'aborting' | 'aborted';
   createdAt: string;
@@ -861,6 +874,38 @@ export const defaultArchiveEngineAdapters: ArchiveEngineAdapters = {
 function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | undefined)?.code;
 }
+interface ArchiveFailureLocation {
+  archiveOperation: ArchiveBlockerOperation;
+  archivePath: string;
+}
+
+function withArchiveFailureLocation(
+  error: unknown,
+  operation: ArchiveBlockerOperation,
+  target: string
+): unknown {
+  if (typeof error !== 'object' || error === null) return error;
+  const located = error as Partial<ArchiveFailureLocation>;
+  located.archiveOperation = operation;
+  located.archivePath = target;
+  return error;
+}
+
+function archiveFailureLocation(
+  error: unknown
+): ArchiveFailureLocation | undefined {
+  if (
+    typeof error !== 'object' ||
+    error === null ||
+    typeof (error as Partial<ArchiveFailureLocation>).archiveOperation !==
+      'string' ||
+    typeof (error as Partial<ArchiveFailureLocation>).archivePath !== 'string'
+  ) {
+    return undefined;
+  }
+  return error as ArchiveFailureLocation;
+}
+
 
 function blocker(
   operation: ArchiveBlockerOperation,
@@ -914,6 +959,21 @@ function statNanoseconds(
     return (milliseconds * 1_000_000n).toString();
   }
   return BigInt(Math.trunc(milliseconds * 1_000_000)).toString();
+}
+
+function statMilliseconds(
+  stat: ArchiveFsStat,
+  nanosecondField: 'mtimeNs' | 'ctimeNs',
+  millisecondField: 'mtimeMs' | 'ctimeMs'
+): number {
+  const nanoseconds = (stat as BigIntStats)[nanosecondField];
+  if (typeof nanoseconds === 'bigint') {
+    return (
+      Number(nanoseconds / 1_000_000n) +
+      Number(nanoseconds % 1_000_000n) / 1_000_000
+    );
+  }
+  return Number(stat[millisecondField]);
 }
 
 function archiveStatIdentity(stat: ArchiveFsStat): ArchiveStatIdentity {
@@ -1017,7 +1077,7 @@ export async function fingerprintArchiveTree(
   ): Promise<void> {
     const dirents = await adapters.fs.readdir(directory, { withFileTypes: true });
     const filtered = dirents
-      .filter(dirent => prefix || !ARCHIVE_CONTROL_FILENAMES.has(dirent.name))
+      .filter(dirent => prefix || !isArchivePayloadControlName(dirent.name))
       .sort((left, right) => left.name.localeCompare(right.name));
     if (!prefix) {
       for (const controlName of [
@@ -1118,7 +1178,7 @@ export async function fingerprintArchiveTree(
     }
 
     const namesAfter = (await adapters.fs.readdir(directory, { withFileTypes: true }))
-      .filter(dirent => prefix || !ARCHIVE_CONTROL_FILENAMES.has(dirent.name))
+      .filter(dirent => prefix || !isArchivePayloadControlName(dirent.name))
       .map(dirent => dirent.name)
       .sort((left, right) => left.localeCompare(right));
     if (
@@ -1305,6 +1365,19 @@ export function archiveDatePrefixedNameMatches(
   if (pathIdentityEquals(rest, change, flavor)) return true;
   const suffixed = rest.match(/^(.+)--([0-9a-f]+)$/);
   return !!suffixed && pathIdentityEquals(suffixed[1], change, flavor);
+}
+
+export function archiveAbortPathBindingEquals(
+  left: string,
+  right: string,
+  flavor: PathIdentityFlavor = NATIVE_PATH_IDENTITY_FLAVOR
+): boolean {
+  const pathApi = flavor === 'win32' ? path.win32 : path.posix;
+  return pathIdentityEquals(
+    pathApi.resolve(left),
+    pathApi.resolve(right),
+    flavor
+  );
 }
 
 export function isArchiveContainedPath(
@@ -3156,7 +3229,7 @@ function assertStoredArchivePlanPaths(plan: ArchivePlan): void {
       const record = plan.finalization.record;
       const changeInstanceId = parseChangeInstanceId(
         record.changeInstanceId
-      );
+      ) as VerifiedChangeInstanceId;
       expectedStoreArchiveRoot = resolveStorePlanningLayoutV2Path(
         plan.roots.planning,
         {
@@ -3441,8 +3514,8 @@ export async function withStoredArchivePlanOperation<T>(
           tombstone.transactionId === plan.transactionId &&
           tombstone.planHash === plan.planHash &&
           tombstone.change === plan.change &&
-          pathIdentityEquals(tombstone.stagePath, plan.paths.stage) &&
-          pathIdentityEquals(tombstone.journalPath, plan.paths.journal);
+          archiveAbortPathBindingEquals(tombstone.stagePath, plan.paths.stage) &&
+          archiveAbortPathBindingEquals(tombstone.journalPath, plan.paths.journal);
         if (!missingForCompletedAbort) throw error;
       }
       if (holder === 'apply' && tombstone !== null) {
@@ -3562,7 +3635,11 @@ function isArchiveAbortStageAuthority(
   }
   const entryPaths = new Set<string>();
   const entriesValid = value.entries.every(entry => {
-    if (!isArchiveTreeEntryRecord(entry) || entryPaths.has(entry.path)) {
+    if (
+      !isArchiveTreeEntryRecord(entry) ||
+      (!entry.path.includes('/') && isArchivePayloadControlName(entry.path)) ||
+      entryPaths.has(entry.path)
+    ) {
       return false;
     }
     entryPaths.add(entry.path);
@@ -3586,7 +3663,15 @@ function isArchiveAbortStageAuthority(
     authorityPaths.add(entry.path);
     return true;
   });
-  if (!authorityEntriesValid || authorityPaths.size !== entryPaths.size) {
+  if (
+    !authorityEntriesValid ||
+    [...authorityPaths].some(
+      authorityPath =>
+        !entryPaths.has(authorityPath) &&
+        authorityPath !== '.rasen-archive-input.json' &&
+        authorityPath !== ARCHIVE_STAGE_OWNER_FILENAME
+    )
+  ) {
     return false;
   }
   const authorityKinds = new Map(
@@ -3765,6 +3850,9 @@ function parseArchiveJournalV2(
       (fingerprint.temporary !== undefined &&
         (name !== 'accounting-finalized' ||
           fingerprint.state !== 'intent' ||
+          !isPlainRecord(fingerprint.temporary) ||
+          !hasOnlyKeys(fingerprint.temporary, ['path', 'identity']) ||
+          typeof fingerprint.temporary.path !== 'string' ||
           !path.isAbsolute(fingerprint.temporary.path) ||
           !isArchiveStatIdentityRecord(fingerprint.temporary.identity))) ||
       (fingerprint.state === 'intent' &&
@@ -4078,14 +4166,7 @@ function parseArchiveJournalV2(
   if (
     sourceHasError !== sourceErrorState ||
     (value.sourceProgress.state === 'pending' &&
-      value.sourceProgress.claimIdentity !== undefined) ||
-    (value.sourceProgress.state === 'delete-intent' &&
-      value.sourceProgress.claimIdentity !== undefined &&
-      !isArchiveStatIdentityRecord(value.sourceProgress.claimIdentity)) ||
-    ((value.sourceProgress.state === 'claimed' ||
-      value.sourceProgress.state === 'removing' ||
-      value.sourceProgress.state === 'removed') &&
-      value.sourceProgress.claimIdentity === undefined)
+      value.sourceProgress.claimIdentity !== undefined)
   ) {
     return invalidArchiveJournal(journalPath, value);
   }
@@ -4214,6 +4295,49 @@ function parseArchiveJournalV2(
   return value as unknown as ArchiveJournal;
 }
 
+function isStoredArchiveAbortClaim(
+  value: unknown,
+  stagePath: string,
+  transactionId: string,
+  adapters: ArchiveEngineAdapters
+): value is ArchivePrivateClaim {
+  if (
+    !isPlainRecord(value) ||
+    !hasOnlyKeys(value, [
+      'root',
+      'claimed',
+      'sentinel',
+      'nonce',
+      'rootIdentity',
+      'sentinelIdentity',
+    ]) ||
+    typeof value.root !== 'string' ||
+    typeof value.claimed !== 'string' ||
+    typeof value.sentinel !== 'string' ||
+    typeof value.nonce !== 'string' ||
+    !isArchiveStatIdentityRecord(value.rootIdentity) ||
+    !isArchiveStatIdentityRecord(value.sentinelIdentity)
+  ) {
+    return false;
+  }
+  const expectedRoot = archivePrivateClaimRoot(
+    stagePath,
+    transactionId,
+    'abort-stage',
+    adapters
+  );
+  return (
+    pathIdentityEquals(value.root, expectedRoot) &&
+    pathIdentityEquals(value.claimed, path.join(expectedRoot, 'object')) &&
+    pathIdentityEquals(
+      value.sentinel,
+      path.join(expectedRoot, '.rasen-claim-owner')
+    ) &&
+    value.nonce.startsWith(`${transactionId}:`) &&
+    value.nonce.endsWith('\n')
+  );
+}
+
 async function readArchiveAbortTombstone(
   tombstonePath: string,
   adapters: ArchiveEngineAdapters
@@ -4254,6 +4378,7 @@ async function readArchiveAbortTombstone(
       'associationPhase',
       'stageIdentity',
       'stageAuthority',
+      'stageClaim',
       'createdAt',
       'updatedAt',
     ]) ||
@@ -4275,6 +4400,15 @@ async function readArchiveAbortTombstone(
       parsed.stageAuthority !== null &&
       stableArchiveJson(parsed.stageIdentity) !==
         stableArchiveJson(parsed.stageAuthority.rootIdentity)) ||
+    (parsed.stageClaim !== undefined &&
+      !isStoredArchiveAbortClaim(
+        parsed.stageClaim,
+        parsed.stagePath as string,
+        parsed.transactionId as string,
+        adapters
+      )) ||
+    (parsed.stageClaim !== undefined && parsed.stageIdentity === null) ||
+    (parsed.status === 'aborted' && parsed.stageClaim !== undefined) ||
     (parsed.status !== 'aborting' && parsed.status !== 'aborted') ||
     typeof parsed.createdAt !== 'string' ||
     typeof parsed.updatedAt !== 'string' ||
@@ -4546,39 +4680,6 @@ export async function abortArchivePlan(
       blockers: [{ operation, path: target, code, message }],
     };
   };
-  try {
-    await assertNoArchiveTransactionDebris(plan, adapters);
-  } catch (error) {
-    if (errorCode(error) !== ARCHIVE_TRANSACTION_TEMP_OWNERSHIP_CODE) {
-      throw error;
-    }
-    const reported =
-      error instanceof Error &&
-      Array.isArray(
-        (error as Error & { retainedPaths?: unknown }).retainedPaths
-      )
-        ? (error as Error & { retainedPaths: string[] }).retainedPaths
-        : [];
-    const target = reported[0] ?? plan.paths.archiveParent;
-    return blocked(
-      'journal',
-      target,
-      ARCHIVE_TRANSACTION_TEMP_OWNERSHIP_CODE,
-      error instanceof Error ? error.message : String(error),
-      {
-        disposition: 'manual',
-        retainedPaths: [
-          ...reported,
-          plan.paths.stage,
-          plan.paths.final,
-          plan.paths.journal,
-          plan.paths.publishedJournal,
-          tombstonePath,
-          path.join(transactionDirectory, 'plan.json'),
-        ],
-      }
-    );
-  }
   const writeAbortState = async (
     state: StoredArchiveAbortV1
   ): Promise<ArchiveAbortResult | null> => {
@@ -4652,6 +4753,43 @@ export async function abortArchivePlan(
       }
     );
   }
+  try {
+    await assertNoArchiveTransactionDebris(
+      plan,
+      adapters,
+      existingTombstone?.stageClaim?.root
+    );
+  } catch (error) {
+    if (errorCode(error) !== ARCHIVE_TRANSACTION_TEMP_OWNERSHIP_CODE) {
+      throw error;
+    }
+    const reported =
+      error instanceof Error &&
+      Array.isArray(
+        (error as Error & { retainedPaths?: unknown }).retainedPaths
+      )
+        ? (error as Error & { retainedPaths: string[] }).retainedPaths
+        : [];
+    const target = reported[0] ?? plan.paths.archiveParent;
+    return blocked(
+      'journal',
+      target,
+      ARCHIVE_TRANSACTION_TEMP_OWNERSHIP_CODE,
+      error instanceof Error ? error.message : String(error),
+      {
+        disposition: 'manual',
+        retainedPaths: [
+          ...reported,
+          plan.paths.stage,
+          plan.paths.final,
+          plan.paths.journal,
+          plan.paths.publishedJournal,
+          tombstonePath,
+          path.join(transactionDirectory, 'plan.json'),
+        ],
+      }
+    );
+  }
   const storedPlanPath = path.join(transactionDirectory, 'plan.json');
   try {
     const storedPlan = await readStoredArchivePlanEnvelope(
@@ -4675,8 +4813,14 @@ export async function abortArchivePlan(
       existingTombstone.transactionId === plan.transactionId &&
       existingTombstone.planHash === plan.planHash &&
       existingTombstone.change === plan.change &&
-      pathIdentityEquals(existingTombstone.stagePath, plan.paths.stage) &&
-      pathIdentityEquals(existingTombstone.journalPath, plan.paths.journal);
+      archiveAbortPathBindingEquals(
+        existingTombstone.stagePath,
+        plan.paths.stage
+      ) &&
+      archiveAbortPathBindingEquals(
+        existingTombstone.journalPath,
+        plan.paths.journal
+      );
     if (!completedAbortOwnsMissingPlan) {
       return blocked(
         'validation',
@@ -4709,9 +4853,14 @@ export async function abortArchivePlan(
     (existingTombstone.transactionId !== plan.transactionId ||
       existingTombstone.planHash !== plan.planHash ||
       existingTombstone.change !== plan.change ||
-      path.resolve(existingTombstone.stagePath) !== path.resolve(plan.paths.stage) ||
-      path.resolve(existingTombstone.journalPath) !==
-        path.resolve(plan.paths.journal))
+      !archiveAbortPathBindingEquals(
+        existingTombstone.stagePath,
+        plan.paths.stage
+      ) ||
+      !archiveAbortPathBindingEquals(
+        existingTombstone.journalPath,
+        plan.paths.journal
+      ))
   ) {
     return blocked(
       'journal',
@@ -4735,7 +4884,35 @@ export async function abortArchivePlan(
     plan.paths.publishedJournal,
     adapters
   );
-  if (finalState === 'present' || publishedJournalState === 'present') {
+  let unownedReservationRace = false;
+  if (finalState === 'present' && publishedJournalState === 'absent') {
+    const [abortStageState, abortJournalState] = await Promise.all([
+      pathExists(plan.paths.stage, adapters),
+      pathExists(plan.paths.journal, adapters),
+    ]);
+    if (abortStageState === 'absent' && abortJournalState === 'absent') {
+      unownedReservationRace = true;
+    } else {
+      try {
+        const reservationState = await inspectArchiveJournalState(plan, adapters);
+        unownedReservationRace =
+          archiveAbortPathBindingEquals(
+            reservationState.journalPath,
+            plan.paths.journal
+          ) &&
+          reservationState.journal?.finalReservation.state ===
+            'intent-durable' &&
+          reservationState.journal.finalReservation.identity === null &&
+          reservationState.journal.finalReservation.entries.length === 0;
+      } catch {
+        // The structured ownership failure is returned by the branch below.
+      }
+    }
+  }
+  if (
+    (finalState === 'present' || publishedJournalState === 'present') &&
+    !unownedReservationRace
+  ) {
     let publishedState: ArchiveJournalState;
     try {
       publishedState = await inspectArchiveJournalState(plan, adapters);
@@ -4881,9 +5058,9 @@ export async function abortArchivePlan(
         (journal.transactionId !== plan.transactionId ||
           journal.planHash !== plan.planHash ||
           journal.change !== plan.change ||
-          path.resolve(journal.activePath) !== path.resolve(plan.paths.active) ||
-          path.resolve(journal.stagePath) !== path.resolve(plan.paths.stage) ||
-          path.resolve(journal.finalPath) !== path.resolve(plan.paths.final)))
+          !archiveAbortPathBindingEquals(journal.activePath, plan.paths.active) ||
+          !archiveAbortPathBindingEquals(journal.stagePath, plan.paths.stage) ||
+          !archiveAbortPathBindingEquals(journal.finalPath, plan.paths.final)))
     ) {
       return blocked(
         'journal',
@@ -4930,7 +5107,7 @@ export async function abortArchivePlan(
           expected !== undefined &&
           progress.actionId === expected.actionId &&
           progress.action === expected.action &&
-          pathIdentityEquals(progress.target, expected.target)
+          archiveAbortPathBindingEquals(progress.target, expected.target)
         );
       });
     const cleanerCorresponds =
@@ -4942,11 +5119,11 @@ export async function abortArchivePlan(
       expectedAssociationPath === undefined
         ? journal.associationProgress === undefined
         : journal.associationProgress !== undefined &&
-          pathIdentityEquals(
+          archiveAbortPathBindingEquals(
             journal.associationProgress.path,
             expectedAssociationPath
           );
-    const sourceCorresponds = pathIdentityEquals(
+    const sourceCorresponds = archiveAbortPathBindingEquals(
       journal.sourceProgress.quarantine,
       expectedSourceQuarantine
     );
@@ -5139,7 +5316,7 @@ export async function abortArchivePlan(
 
   const startedAt =
     existingTombstone?.createdAt ?? adapters.now().toISOString();
-  const intent: StoredArchiveAbortV1 = {
+  let intent: StoredArchiveAbortV1 = {
     schemaVersion: 1,
     kind: 'rasen.archive-abort',
     transactionId: plan.transactionId,
@@ -5149,6 +5326,9 @@ export async function abortArchivePlan(
     journalPath: plan.paths.journal,
     stageIdentity: stageAbortIdentity,
     stageAuthority: stageAbortAuthority,
+    ...(existingTombstone?.stageClaim === undefined
+      ? {}
+      : { stageClaim: existingTombstone.stageClaim }),
     ...associationResult,
     status: 'aborting',
     createdAt: startedAt,
@@ -5156,21 +5336,9 @@ export async function abortArchivePlan(
   };
   const abortingWriteBlocked = await writeAbortState(intent);
   if (abortingWriteBlocked) return abortingWriteBlocked;
-  if (stageIdentity !== null) {
-    let privateClaim: ArchivePrivateClaim | null = null;
+  if (stageAbortIdentity !== null) {
+    let privateClaim = intent.stageClaim ?? null;
     try {
-      const claimed = await adapters.fs.lstat(plan.paths.stage);
-      if (
-        stageAbortIdentity === null ||
-        !identityMatches(stageIdentity, claimed) ||
-        stableArchiveJson(archiveDeletionIdentity(claimed, 'directory')) !==
-          stableArchiveJson(stageAbortIdentity)
-      ) {
-        throw archiveStageOwnershipError(
-          plan.paths.stage,
-          'The archive stage identity changed before abort claim.'
-        );
-      }
       const authority = stageAbortAuthority;
       if (
         authority === null ||
@@ -5182,107 +5350,232 @@ export async function abortArchivePlan(
           'The archive stage fingerprint is not bound to the durable abort intent.'
         );
       }
-      const currentAuthority = await fingerprintArchiveTree(
-        plan.paths.stage,
-        adapters
-      );
-      if (!currentAuthorityMatchesRecordedSubset(currentAuthority, authority)) {
-        throw archiveStageOwnershipError(
+
+      if (privateClaim === null) {
+        const source = await adapters.fs.lstat(plan.paths.stage);
+        if (
+          !source.isDirectory() ||
+          source.isSymbolicLink() ||
+          !sameArchiveObject(source, stageAbortIdentity, 'directory')
+        ) {
+          throw archiveStageOwnershipError(
+            plan.paths.stage,
+            'The archive stage identity changed before abort claim.'
+          );
+        }
+        const currentAuthority = await fingerprintArchiveTree(
           plan.paths.stage,
-          'The archive stage contains an object outside the durable deletion authority.'
-        );
-      }
-      privateClaim = await moveArchiveObjectToPrivateClaim(
-        plan.paths.stage,
-        stageAbortIdentity,
-        'directory',
-        plan.transactionId,
-        'abort-stage',
-        adapters
-      );
-      const movedAuthority = await fingerprintArchiveTree(
-        privateClaim.claimed,
-        adapters
-      );
-      if (!archiveDeletionAuthorityMatches(movedAuthority, currentAuthority)) {
-        throw archiveClaimOwnershipError(
-          privateClaim.root,
-          'Abort-claimed stage differs from its pre-claim authority.',
-          [plan.paths.stage, privateClaim.claimed]
-        );
-      }
-      const claimedJournal = path.join(
-        privateClaim.claimed,
-        ARCHIVE_JOURNAL_FILENAME
-      );
-      const journalState = await pathExists(claimedJournal, adapters);
-      if (journalState === 'present') {
-        const stableJournal = await readStableArchiveFile(
-          claimedJournal,
           adapters
         );
-        let observedJournal: unknown;
-        try {
-          observedJournal = JSON.parse(stableJournal.content.toString('utf8'));
-        } catch {
-          throw archiveClaimOwnershipError(
-            privateClaim.root,
-            'Abort-claimed journal is not valid JSON.',
-            [claimedJournal]
+        if (!archiveDeletionAuthorityMatches(currentAuthority, authority)) {
+          throw archiveStageOwnershipError(
+            plan.paths.stage,
+            'The archive stage contains an object outside the durable deletion authority.'
           );
         }
-        if (
-          !isPlainRecord(observedJournal) ||
-          observedJournal.transactionId !== plan.transactionId ||
-          observedJournal.planHash !== plan.planHash ||
-          observedJournal.change !== plan.change ||
-          observedJournal.activePath !== plan.paths.active ||
-          observedJournal.stagePath !== plan.paths.stage ||
-          observedJournal.finalPath !== plan.paths.final ||
-          (journal !== null &&
-            stableArchiveJson(observedJournal) !== stableArchiveJson(journal))
-        ) {
-          throw archiveClaimOwnershipError(
-            privateClaim.root,
-            'Abort-claimed journal ownership does not match the transaction.',
-            [claimedJournal]
-          );
-        }
-      }
-      await removeClaimedArchiveEntriesGuarded(
-        privateClaim.claimed,
-        currentAuthority,
-        adapters
-      );
-      if (journalState === 'present') {
-        await adapters.fs.unlink(claimedJournal);
-      }
-      await requireArchivePrivateClaim(privateClaim, adapters);
-      const emptiedStage = await adapters.fs.lstat(privateClaim.claimed);
-      if (
-        !emptiedStage.isDirectory() ||
-        emptiedStage.isSymbolicLink() ||
-        !sameArchiveObject(emptiedStage, stageAbortIdentity, 'directory')
-      ) {
-        throw archiveClaimOwnershipError(
-          privateClaim.root,
-          'Abort-claimed stage root changed before final removal.',
-          [privateClaim.claimed]
+        privateClaim = await createArchivePrivateClaim(
+          plan.paths.stage,
+          plan.transactionId,
+          'abort-stage',
+          adapters
         );
+        intent = {
+          ...intent,
+          stageClaim: privateClaim,
+          updatedAt: adapters.now().toISOString(),
+        };
+        const claimWriteBlocked = await writeAbortState(intent);
+        if (claimWriteBlocked) return claimWriteBlocked;
       }
-      await adapters.fs.rmdir(privateClaim.claimed);
-      await retireArchivePrivateClaim(privateClaim, adapters);
-    } catch (error) {
-      const retained =
-        privateClaim === null
-          ? [plan.paths.stage, plan.paths.journal, tombstonePath]
-          : [
-              plan.paths.stage,
-              plan.paths.journal,
+
+      const claimRootState = await pathExists(privateClaim.root, adapters);
+      const sourceState = await pathExists(plan.paths.stage, adapters);
+      if (claimRootState === 'absent') {
+        if (sourceState === 'present') {
+          throw archiveClaimOwnershipError(
+            privateClaim.root,
+            'The durable abort claim was retired while its source stage still exists.',
+            [plan.paths.stage, privateClaim.claimed]
+          );
+        }
+      } else {
+        await requireArchivePrivateClaim(privateClaim, adapters);
+        let claimedState = await pathExists(privateClaim.claimed, adapters);
+        if (sourceState === 'present') {
+          const source = await adapters.fs.lstat(plan.paths.stage);
+          if (
+            !source.isDirectory() ||
+            source.isSymbolicLink() ||
+            !sameArchiveObject(source, stageAbortIdentity, 'directory')
+          ) {
+            throw archiveClaimOwnershipError(
               privateClaim.root,
-              privateClaim.claimed,
-              tombstonePath,
-            ];
+              'An unrecorded or replaced stage occupies the abort source path.',
+              [plan.paths.stage, privateClaim.claimed]
+            );
+          }
+          const sourceAuthority = await fingerprintArchiveTree(
+            plan.paths.stage,
+            adapters
+          );
+          if (!archiveDeletionAuthorityMatches(sourceAuthority, authority)) {
+            throw archiveClaimOwnershipError(
+              privateClaim.root,
+              'The source stage no longer matches the durable abort authority.',
+              [plan.paths.stage, privateClaim.claimed]
+            );
+          }
+          if (claimedState === 'present') {
+            throw archiveClaimOwnershipError(
+              privateClaim.root,
+              'Both the abort source and private claim are occupied.',
+              [plan.paths.stage, privateClaim.claimed]
+            );
+          }
+          await adapters.fs.rename(plan.paths.stage, privateClaim.claimed);
+          await requireArchivePrivateClaim(privateClaim, adapters);
+          const moved = await adapters.fs.lstat(privateClaim.claimed);
+          if (
+            !moved.isDirectory() ||
+            moved.isSymbolicLink() ||
+            !sameArchiveObject(moved, stageAbortIdentity, 'directory')
+          ) {
+            throw archiveClaimOwnershipError(
+              privateClaim.root,
+              'The stage moved into the abort claim with an unrecognized identity.',
+              [plan.paths.stage, privateClaim.claimed]
+            );
+          }
+          claimedState = 'present';
+        }
+
+        if (claimedState === 'present') {
+          await requireArchivePrivateClaim(privateClaim, adapters);
+          const claimedRoot = await adapters.fs.lstat(privateClaim.claimed);
+          if (
+            !claimedRoot.isDirectory() ||
+            claimedRoot.isSymbolicLink() ||
+            !sameArchiveObject(claimedRoot, stageAbortIdentity, 'directory')
+          ) {
+            throw archiveClaimOwnershipError(
+              privateClaim.root,
+              'The abort-claimed stage root was replaced.',
+              [privateClaim.claimed]
+            );
+          }
+          const currentAuthority = await fingerprintArchiveTree(
+            privateClaim.claimed,
+            adapters
+          );
+          if (!currentAuthorityMatchesRecordedSubset(currentAuthority, authority)) {
+            throw archiveClaimOwnershipError(
+              privateClaim.root,
+              'The abort-claimed stage contains an unrecorded or replaced occupant.',
+              [privateClaim.claimed]
+            );
+          }
+          const claimedJournal = path.join(
+            privateClaim.claimed,
+            ARCHIVE_JOURNAL_FILENAME
+          );
+          const journalState = await pathExists(claimedJournal, adapters);
+          if (journalState === 'present') {
+            let observedJournal: unknown;
+            try {
+              observedJournal = JSON.parse(
+                (
+                  await readStableArchiveFile(claimedJournal, adapters)
+                ).content.toString('utf8')
+              ) as unknown;
+            } catch {
+              throw archiveClaimOwnershipError(
+                privateClaim.root,
+                'Abort-claimed journal is not valid JSON.',
+                [claimedJournal]
+              );
+            }
+            if (
+              !isPlainRecord(observedJournal) ||
+              observedJournal.transactionId !== plan.transactionId ||
+              observedJournal.planHash !== plan.planHash ||
+              observedJournal.change !== plan.change ||
+              observedJournal.activePath !== plan.paths.active ||
+              observedJournal.stagePath !== plan.paths.stage ||
+              observedJournal.finalPath !== plan.paths.final ||
+              (journal !== null &&
+                stableArchiveJson(observedJournal) !== stableArchiveJson(journal))
+            ) {
+              throw archiveClaimOwnershipError(
+                privateClaim.root,
+                'Abort-claimed journal ownership does not match the transaction.',
+                [claimedJournal]
+              );
+            }
+          }
+          await removeClaimedArchiveEntriesGuarded(
+            privateClaim.claimed,
+            authority,
+            adapters,
+            true
+          );
+          if (journalState === 'present') {
+            await adapters.fs.unlink(claimedJournal);
+          }
+          await requireArchivePrivateClaim(privateClaim, adapters);
+          const emptiedStage = await adapters.fs.lstat(privateClaim.claimed);
+          if (
+            !emptiedStage.isDirectory() ||
+            emptiedStage.isSymbolicLink() ||
+            !sameArchiveObject(emptiedStage, stageAbortIdentity, 'directory')
+          ) {
+            throw archiveClaimOwnershipError(
+              privateClaim.root,
+              'Abort-claimed stage root changed before final removal.',
+              [privateClaim.claimed]
+            );
+          }
+          const remaining = await adapters.fs.readdir(privateClaim.claimed, {
+            withFileTypes: true,
+          });
+          const retainedClaimedPath = privateClaim.claimed;
+          if (remaining.length > 0) {
+            throw archiveClaimOwnershipError(
+              privateClaim.root,
+              'Abort-claimed stage retains an unrecorded occupant.',
+              remaining.map(entry =>
+                path.join(retainedClaimedPath, entry.name)
+              )
+            );
+          }
+          await adapters.fs.rmdir(privateClaim.claimed);
+        }
+        await retireArchivePrivateClaim(privateClaim, adapters);
+      }
+
+      const { stageClaim: _retiredClaim, ...claimCleared } = intent;
+      intent = {
+        ...claimCleared,
+        updatedAt: adapters.now().toISOString(),
+      };
+      const clearedWriteBlocked = await writeAbortState(intent);
+      if (clearedWriteBlocked) return clearedWriteBlocked;
+    } catch (error) {
+      const code = errorCode(error);
+      if (
+        code !== ARCHIVE_CLAIM_OWNERSHIP_CODE &&
+        code !== ARCHIVE_STAGE_OWNERSHIP_CODE &&
+        code !== 'ESTALE'
+      ) {
+        throw error;
+      }
+      const retained = [
+        plan.paths.stage,
+        plan.paths.journal,
+        ...(privateClaim === null
+          ? []
+          : [privateClaim.root, privateClaim.claimed, privateClaim.sentinel]),
+        tombstonePath,
+      ];
       return blocked(
         'journal',
         privateClaim?.root ?? plan.paths.stage,
@@ -5369,7 +5662,8 @@ async function assertNoAtomicWriteTemporary(
 
 async function assertNoArchiveTransactionDebris(
   plan: ArchivePlan,
-  adapters: ArchiveEngineAdapters
+  adapters: ArchiveEngineAdapters,
+  allowedClaimRoot?: string
 ): Promise<void> {
   const transactionId = plan.transactionId;
   const claimDirectories = [
@@ -5411,10 +5705,16 @@ async function assertNoArchiveTransactionDebris(
     })),
   ];
   for (const group of groups) {
-    const [temporary] = await transactionTemporaryPaths(
-      group.directory,
-      group.prefixes,
-      adapters
+    const temporary = (
+      await transactionTemporaryPaths(
+        group.directory,
+        group.prefixes,
+        adapters
+      )
+    ).find(candidate =>
+      allowedClaimRoot === undefined
+        ? true
+        : !pathIdentityEquals(candidate, allowedClaimRoot)
     );
     if (!temporary) continue;
     const error = archiveTransactionTempOwnershipError(
@@ -5516,8 +5816,11 @@ async function writeJournalCas(
   const expected = previous
     ? archiveJournalCarrierSnapshots.get(previous)
     : undefined;
-  let oldClaim: ArchivePrivateClaim | null = null;
-  if (expected?.path === journalPath) {
+
+  async function readExpectedCarrier(): Promise<{
+    content: Buffer;
+    stat: ArchiveFsStat;
+  }> {
     let current: { content: Buffer; stat: ArchiveFsStat };
     try {
       current = await readStableArchiveFile(journalPath, adapters);
@@ -5531,6 +5834,7 @@ async function writeJournalCas(
       );
     }
     if (
+      expected?.path !== journalPath ||
       current.content.toString('utf8') !== expected.content ||
       stableArchiveJson(archiveDeletionIdentity(current.stat, 'file')) !==
         stableArchiveJson(expected.identity)
@@ -5541,6 +5845,124 @@ async function writeJournalCas(
         [journalPath]
       );
     }
+    return current;
+  }
+
+  if (expected?.path === journalPath) {
+    await readExpectedCarrier();
+  } else if ((await pathExists(journalPath, adapters)) === 'present') {
+    throw archiveClaimOwnershipError(
+      journalPath,
+      'Archive journal appeared before its first exclusive publication.',
+      [journalPath]
+    );
+  }
+
+  const content = `${JSON.stringify(journal, null, 2)}\n`;
+  const temporary = path.join(
+    path.dirname(journalPath),
+    `.${path.basename(journalPath)}.tmp-${journal.transactionId}`
+  );
+  await assertNoAtomicWriteTemporary(
+    journalPath,
+    journal.transactionId,
+    adapters
+  );
+
+  let handle: FileHandle;
+  try {
+    handle = await adapters.fs.open(temporary, 'wx', 0o600);
+  } catch (error) {
+    if ((await pathExists(temporary, adapters)) === 'present') {
+      throw archiveTransactionTempOwnershipError(
+        temporary,
+        journalPath,
+        `Archive journal CAS temporary creation failed after the path became occupied (${
+          error instanceof Error ? error.message : String(error)
+        }).`
+      );
+    }
+    throw error;
+  }
+
+  try {
+    await handle.writeFile(content, 'utf8');
+    await handle.sync();
+    await handle.close();
+  } catch (error) {
+    let failedIdentity: ArchiveStatIdentity | undefined;
+    try {
+      const handleStat = await handle.stat({ bigint: true });
+      const pathStat = await adapters.fs.lstat(temporary);
+      if (
+        handleStat.isFile() &&
+        pathStat.isFile() &&
+        !pathStat.isSymbolicLink() &&
+        identityMatches(handleStat, pathStat)
+      ) {
+        failedIdentity = archiveDeletionIdentity(pathStat, 'file');
+      }
+    } catch {
+      failedIdentity = undefined;
+    }
+    await handle.close().catch(() => undefined);
+    if (failedIdentity !== undefined) {
+      try {
+        const cleanupClaim = await moveArchiveObjectToPrivateClaim(
+          temporary,
+          failedIdentity,
+          'file',
+          journal.transactionId,
+          `journal-write-failed:${path.basename(journalPath)}`,
+          adapters
+        );
+        await requireArchivePrivateClaim(cleanupClaim, adapters);
+        await adapters.fs.unlink(cleanupClaim.claimed);
+        await retireArchivePrivateClaim(cleanupClaim, adapters);
+      } catch (cleanupError) {
+        if (errorCode(cleanupError) === ARCHIVE_CLAIM_OWNERSHIP_CODE) {
+          throw cleanupError;
+        }
+        throw archiveTransactionTempOwnershipError(
+          temporary,
+          journalPath,
+          `Archive journal CAS temporary cleanup failed after a write error (${
+            cleanupError instanceof Error
+              ? cleanupError.message
+              : String(cleanupError)
+          }); original write error: ${
+            error instanceof Error ? error.message : String(error)
+          }.`
+        );
+      }
+      throw error;
+    }
+    if ((await pathExists(temporary, adapters)) === 'absent') throw error;
+    throw archiveTransactionTempOwnershipError(
+      temporary,
+      journalPath,
+      `Archive journal CAS temporary write failed without a safe cleanup capability (${
+        error instanceof Error ? error.message : String(error)
+      }).`
+    );
+  }
+
+  const temporaryStable = await readStableArchiveFile(temporary, adapters);
+  const temporaryIdentity = archiveDeletionIdentity(
+    temporaryStable.stat,
+    'file'
+  );
+  if (temporaryStable.content.toString('utf8') !== content) {
+    throw archiveTransactionTempOwnershipError(
+      temporary,
+      journalPath,
+      'Archive journal CAS temporary changed before publication.'
+    );
+  }
+
+  let oldClaim: ArchivePrivateClaim | null = null;
+  if (expected?.path === journalPath) {
+    await readExpectedCarrier();
     oldClaim = await moveArchiveObjectToPrivateClaim(
       journalPath,
       expected.identity,
@@ -5561,52 +5983,26 @@ async function writeJournalCas(
     throw archiveClaimOwnershipError(
       journalPath,
       'Archive journal appeared before its first exclusive publication.',
-      [journalPath]
+      [temporary, journalPath]
     );
   }
 
-  const content = `${JSON.stringify(journal, null, 2)}\n`;
-  const temporary = path.join(
-    path.dirname(journalPath),
-    `.${path.basename(journalPath)}.tmp-${journal.transactionId}`
-  );
-  await assertNoAtomicWriteTemporary(
-    journalPath,
-    journal.transactionId,
-    adapters
-  );
-  let handle: FileHandle;
-  try {
-    handle = await adapters.fs.open(temporary, 'wx', 0o600);
-  } catch (error) {
-    throw archiveTransactionTempOwnershipError(
-      temporary,
-      journalPath,
-      `Archive journal CAS temporary cannot be created (${
-        error instanceof Error ? error.message : String(error)
-      }).`
-    );
-  }
-  try {
-    await handle.writeFile(content, 'utf8');
-    await handle.sync();
-    await handle.close();
-    const temporaryStable = await readStableArchiveFile(temporary, adapters);
-    await adapters.fs.link(temporary, journalPath);
-    const published = await readStableArchiveFile(journalPath, adapters);
+  async function discardTemporary(): Promise<void> {
+    if ((await pathExists(temporary, adapters)) === 'absent') return;
+    const retained = await readStableArchiveFile(temporary, adapters);
     if (
-      published.content.toString('utf8') !== content ||
-      !identityMatches(temporaryStable.stat, published.stat)
+      retained.content.toString('utf8') !== content ||
+      !sameArchiveObject(retained.stat, temporaryIdentity, 'file')
     ) {
-      throw archiveClaimOwnershipError(
+      throw archiveTransactionTempOwnershipError(
+        temporary,
         journalPath,
-        'Exclusively published journal carrier failed identity verification.',
-        [temporary, journalPath]
+        'Archive journal CAS temporary changed before cleanup.'
       );
     }
     const temporaryClaim = await moveArchiveObjectToPrivateClaim(
       temporary,
-      archiveDeletionIdentity(temporaryStable.stat, 'file'),
+      temporaryIdentity,
       'file',
       journal.transactionId,
       `journal-temporary:${path.basename(journalPath)}`,
@@ -5615,33 +6011,130 @@ async function writeJournalCas(
     await requireArchivePrivateClaim(temporaryClaim, adapters);
     await adapters.fs.unlink(temporaryClaim.claimed);
     await retireArchivePrivateClaim(temporaryClaim, adapters);
-    if (oldClaim) {
-      await requireArchivePrivateClaim(oldClaim, adapters);
-      await adapters.fs.unlink(oldClaim.claimed);
-      await retireArchivePrivateClaim(oldClaim, adapters);
-    }
+  }
+
+  async function discardOldClaim(): Promise<void> {
+    if (!oldClaim) return;
+    await requireArchivePrivateClaim(oldClaim, adapters);
+    await adapters.fs.unlink(oldClaim.claimed);
+    await retireArchivePrivateClaim(oldClaim, adapters);
+    oldClaim = null;
+  }
+
+  async function recordPublishedCarrier(
+    publishedIdentity: ArchiveStatIdentity
+  ): Promise<void> {
     await flushArchiveDirectory(path.dirname(journalPath), adapters);
+    const durablePublished = await readStableArchiveFile(journalPath, adapters);
+    if (
+      durablePublished.content.toString('utf8') !== content ||
+      !sameArchiveObject(durablePublished.stat, publishedIdentity, 'file')
+    ) {
+      throw archiveClaimOwnershipError(
+        journalPath,
+        'Archive journal carrier changed while retiring its publication claim.',
+        [journalPath]
+      );
+    }
     archiveJournalCarrierSnapshots.set(journal, {
       path: journalPath,
       content,
-      identity: archiveDeletionIdentity(published.stat, 'file'),
+      identity: archiveDeletionIdentity(durablePublished.stat, 'file'),
     });
-  } catch (error) {
-    await handle.close().catch(() => undefined);
-    if (
-      errorCode(error) === ARCHIVE_CLAIM_OWNERSHIP_CODE ||
-      errorCode(error) === ARCHIVE_TRANSACTION_TEMP_OWNERSHIP_CODE
-    ) {
-      throw error;
-    }
-    throw archiveTransactionTempOwnershipError(
-      temporary,
-      journalPath,
-      `Archive journal CAS publication did not complete (${
-        error instanceof Error ? error.message : String(error)
-      }).`
-    );
   }
+
+  let publicationError: unknown;
+  try {
+    await adapters.fs.link(temporary, journalPath);
+    const published = await readStableArchiveFile(journalPath, adapters);
+    if (
+      published.content.toString('utf8') !== content ||
+      !sameArchiveObject(published.stat, temporaryIdentity, 'file')
+    ) {
+      throw archiveClaimOwnershipError(
+        journalPath,
+        'Exclusively published journal carrier failed identity verification.',
+        [temporary, journalPath]
+      );
+    }
+    await discardTemporary();
+    await discardOldClaim();
+    await recordPublishedCarrier(
+      archiveDeletionIdentity(published.stat, 'file')
+    );
+    return;
+  } catch (error) {
+    publicationError = error;
+  }
+
+  if (
+    errorCode(publicationError) === ARCHIVE_CLAIM_OWNERSHIP_CODE ||
+    errorCode(publicationError) === ARCHIVE_TRANSACTION_TEMP_OWNERSHIP_CODE
+  ) {
+    throw publicationError;
+  }
+
+  let published: { content: Buffer; stat: ArchiveFsStat } | null = null;
+  try {
+    published = await readStableArchiveFile(journalPath, adapters);
+  } catch (error) {
+    if (errorCode(error) !== 'ENOENT') {
+      throw archiveTransactionTempOwnershipError(
+        temporary,
+        journalPath,
+        `Archive journal destination could not be reconciled (${
+          error instanceof Error ? error.message : String(error)
+        }).`
+      );
+    }
+  }
+
+  if (
+    published !== null &&
+    published.content.toString('utf8') === content &&
+    sameArchiveObject(published.stat, temporaryIdentity, 'file')
+  ) {
+    await discardTemporary();
+    await discardOldClaim();
+    await recordPublishedCarrier(
+      archiveDeletionIdentity(published.stat, 'file')
+    );
+    return;
+  }
+
+  if (published === null) {
+    if (oldClaim && expected?.path === journalPath) {
+      await restoreArchivePrivateFileClaim(
+        oldClaim,
+        journalPath,
+        expected.identity,
+        adapters.sha256(expected.content),
+        adapters
+      );
+      if (previous === null) {
+        throw archiveClaimOwnershipError(
+          journalPath,
+          'Restored journal carrier has no previous snapshot owner.',
+          [journalPath]
+        );
+      }
+      const restored = await readStableArchiveFile(journalPath, adapters);
+      archiveJournalCarrierSnapshots.set(previous, {
+        path: journalPath,
+        content: restored.content.toString('utf8'),
+        identity: archiveDeletionIdentity(restored.stat, 'file'),
+      });
+      oldClaim = null;
+    }
+    await discardTemporary();
+    throw publicationError;
+  }
+
+  throw archiveTransactionTempOwnershipError(
+    temporary,
+    journalPath,
+    'Archive journal destination is occupied by an unverified object after compare-and-swap publication failed.'
+  );
 }
 
 async function writeJournal(
@@ -5650,7 +6143,11 @@ async function writeJournal(
   previous: ArchiveJournal | null,
   adapters: ArchiveEngineAdapters
 ): Promise<void> {
-  await writeJournalCas(journalPath, journal, previous, adapters);
+  try {
+    await writeJournalCas(journalPath, journal, previous, adapters);
+  } catch (error) {
+    throw withArchiveFailureLocation(error, 'journal', journalPath);
+  }
 }
 
 async function readJournal(
@@ -5664,16 +6161,29 @@ async function readJournal(
     content = stable.content.toString('utf8');
   } catch (error) {
     if (errorCode(error) === 'ENOENT') return null;
-    throw error;
+    throw withArchiveFailureLocation(error, 'journal', journalPath);
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(content) as unknown;
 
-  } catch {
-    return invalidArchiveJournal(journalPath, content);
+  } catch (error) {
+    try {
+      invalidArchiveJournal(journalPath, content);
+    } catch (invalidError) {
+      throw withArchiveFailureLocation(
+        invalidError,
+        'journal',
+        journalPath
+      );
+    }
   }
-  const journal = parseArchiveJournalV2(parsed, journalPath, adapters);
+  let journal: ArchiveJournal;
+  try {
+    journal = parseArchiveJournalV2(parsed, journalPath, adapters);
+  } catch (error) {
+    throw withArchiveFailureLocation(error, 'journal', journalPath);
+  }
   archiveJournalCarrierSnapshots.set(journal, {
     path: journalPath,
     content,
@@ -5700,7 +6210,7 @@ function archiveJournalProgressAgreesWithPlan(
         expected !== undefined &&
         progress.actionId === expected.actionId &&
         progress.action === expected.action &&
-        pathIdentityEquals(progress.target, expected.target)
+        archiveAbortPathBindingEquals(progress.target, expected.target)
       );
     }) ||
     journal.cleanerProgress.length !== plan.cleaner.effectiveDelete.length ||
@@ -5717,7 +6227,7 @@ function archiveJournalProgressAgreesWithPlan(
     expectedAssociationPath === undefined
       ? journal.associationProgress !== undefined
       : journal.associationProgress === undefined ||
-        !pathIdentityEquals(
+        !archiveAbortPathBindingEquals(
           journal.associationProgress.path,
           expectedAssociationPath
         )
@@ -5730,7 +6240,7 @@ function archiveJournalProgressAgreesWithPlan(
       journal.associationProgress.carriers.some(carrier => {
         if (
           expectedAssociationPath !== undefined &&
-          pathIdentityEquals(carrier.target, expectedAssociationPath)
+          archiveAbortPathBindingEquals(carrier.target, expectedAssociationPath)
         ) {
           return false;
         }
@@ -5751,7 +6261,7 @@ function archiveJournalProgressAgreesWithPlan(
     plan.change
   );
   if (
-    !pathIdentityEquals(
+    !archiveAbortPathBindingEquals(
       journal.sourceProgress.quarantine,
       expectedSourceQuarantine
     )
@@ -5795,9 +6305,9 @@ function archiveJournalBelongsToPlan(
     journal.transactionId === plan.transactionId &&
     journal.planHash === plan.planHash &&
     journal.change === plan.change &&
-    pathIdentityEquals(journal.activePath, plan.paths.active) &&
-    pathIdentityEquals(journal.stagePath, plan.paths.stage) &&
-    pathIdentityEquals(journal.finalPath, plan.paths.final) &&
+    archiveAbortPathBindingEquals(journal.activePath, plan.paths.active) &&
+    archiveAbortPathBindingEquals(journal.stagePath, plan.paths.stage) &&
+    archiveAbortPathBindingEquals(journal.finalPath, plan.paths.final) &&
     archiveJournalProgressAgreesWithPlan(journal, plan)
   );
 }
@@ -6013,9 +6523,13 @@ function applyFailure(
   const deterministicAbortEligible =
     deterministicInputFailure &&
     !phaseAtLeast(effectivePhase, 'evidence-finalized');
+  const reservationAbortEligible =
+    code === 'archive_reservation_ownership_unverified' &&
+    !phaseAtLeast(effectivePhase, 'specs-applied');
   const abortRequired =
     code === ARCHIVE_SHIP_LOG_RESERVED_SECTION_CODE ||
-    deterministicAbortEligible;
+    deterministicAbortEligible ||
+    reservationAbortEligible;
   const deterministicManualRecovery =
     deterministicInputFailure && !deterministicAbortEligible;
   const reportedRetainedPaths =
@@ -6039,6 +6553,7 @@ function applyFailure(
       ? [
           ...new Set([
             ...reportedRetainedPaths,
+            operationPath,
             plan.paths.active,
             plan.paths.stage,
             plan.paths.final,
@@ -6063,6 +6578,7 @@ function applyFailure(
               plan.paths.stage,
               plan.paths.final,
               journalPath,
+              operationPath,
               ...(code === 'planning_execution_binding_mismatch'
                 ? [
                     plan.paths.active,
@@ -6313,7 +6829,7 @@ async function copyArchivePayload(
   const entries = await adapters.fs.readdir(source, { withFileTypes: true });
   entries.sort((left, right) => left.name.localeCompare(right.name));
   for (const entry of entries) {
-    if (topLevel && ARCHIVE_CONTROL_FILENAMES.has(entry.name)) continue;
+    if (topLevel && isArchivePayloadControlName(entry.name)) continue;
     const from = path.join(source, entry.name);
     const to = path.join(target, entry.name);
     const stat = await adapters.fs.lstat(from);
@@ -6472,11 +6988,12 @@ async function publishArchiveMarker(
     archivePath: plan.paths.final,
     payloadDigest: payload.digest,
   };
+  const content = `${stableArchiveJson(marker)}\n`;
   let handle: FileHandle;
   try {
     handle = await adapters.fs.open(temporary, 'wx', 0o600);
   } catch (error) {
-    if (errorCode(error) === 'EEXIST') {
+    if ((await pathExists(temporary, adapters)) === 'present') {
       throw archiveTransactionTempOwnershipError(
         temporary,
         target,
@@ -6486,9 +7003,33 @@ async function publishArchiveMarker(
     throw error;
   }
   try {
-    await handle.writeFile(`${stableArchiveJson(marker)}\n`, 'utf8');
+    await handle.writeFile(content, 'utf8');
     await handle.sync();
     await handle.close();
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    if ((await pathExists(temporary, adapters)) === 'present') {
+      throw archiveTransactionTempOwnershipError(
+        temporary,
+        target,
+        `Archive marker temporary write did not complete (${
+          error instanceof Error ? error.message : String(error)
+        }).`
+      );
+    }
+    throw error;
+  }
+
+  const temporaryStable = await readStableArchiveFile(temporary, adapters);
+  const temporaryIdentity = archiveDeletionIdentity(temporaryStable.stat, 'file');
+  if (temporaryStable.content.toString('utf8') !== content) {
+    throw archiveTransactionTempOwnershipError(
+      temporary,
+      target,
+      'The archive marker temporary changed before publication.'
+    );
+  }
+  try {
     await publishArchiveFileNoReplace(
       temporary,
       target,
@@ -6497,12 +7038,74 @@ async function publishArchiveMarker(
       plan.transactionId
     );
   } catch (error) {
-    await handle.close().catch(() => undefined);
-    throw archiveTransactionTempOwnershipError(
+    const claimRoot = archivePrivateClaimRoot(
       temporary,
-      target,
-      `Archive marker publication did not complete (${error instanceof Error ? error.message : String(error)}).`
+      plan.transactionId,
+      `publication-temporary:${path.basename(target)}`,
+      adapters
     );
+    if ((await pathExists(claimRoot, adapters)) === 'present') {
+      throw archiveClaimOwnershipError(
+        claimRoot,
+        `Archive marker publication failed with a private cleanup claim still present (${
+          error instanceof Error ? error.message : String(error)
+        }).`,
+        [temporary, target]
+      );
+    }
+
+    let published: { content: Buffer; stat: ArchiveFsStat } | null = null;
+    try {
+      published = await readStableArchiveFile(target, adapters);
+    } catch (readError) {
+      if (errorCode(readError) !== 'ENOENT') {
+        throw archiveTransactionTempOwnershipError(
+          temporary,
+          target,
+          `Archive marker destination could not be reconciled (${
+            readError instanceof Error ? readError.message : String(readError)
+          }).`
+        );
+      }
+    }
+    if (
+      published !== null &&
+      (published.content.toString('utf8') !== content ||
+        !sameArchiveObject(published.stat, temporaryIdentity, 'file'))
+    ) {
+      throw archiveTransactionTempOwnershipError(
+        temporary,
+        target,
+        'Archive marker destination is occupied by an unverified object after publication failed.'
+      );
+    }
+
+    if ((await pathExists(temporary, adapters)) === 'present') {
+      const retained = await readStableArchiveFile(temporary, adapters);
+      if (
+        retained.content.toString('utf8') !== content ||
+        !sameArchiveObject(retained.stat, temporaryIdentity, 'file')
+      ) {
+        throw archiveTransactionTempOwnershipError(
+          temporary,
+          target,
+          'Archive marker temporary changed while reconciling a failed publication.'
+        );
+      }
+      const cleanupClaim = await moveArchiveObjectToPrivateClaim(
+        temporary,
+        temporaryIdentity,
+        'file',
+        plan.transactionId,
+        `publication-recovery:${path.basename(target)}`,
+        adapters
+      );
+      await requireArchivePrivateClaim(cleanupClaim, adapters);
+      await adapters.fs.unlink(cleanupClaim.claimed);
+      await retireArchivePrivateClaim(cleanupClaim, adapters);
+      await flushArchiveDirectory(path.dirname(target), adapters);
+    }
+    throw error;
   }
 }
 
@@ -6751,12 +7354,24 @@ async function assertOwnedArchiveReservation(
     journal.finalReservation.entries.map(entry => entry.path)
   );
   const effectivePhase =
-    journal.phase === 'failed' ? journal.resumePhase : journal.phase;
+    journal.phase === 'failed' ? journal.failure!.resumePhase : journal.phase;
   if (phaseAtLeast(effectivePhase, 'published')) {
     accounted.add(ARCHIVE_PUBLISHED_MARKER_FILENAME);
   }
   if (phaseAtLeast(effectivePhase, 'accounting-finalized')) {
     accounted.add('archive.json');
+  }
+  const accountingIntent =
+    journal.phaseFingerprints['accounting-finalized'];
+  const accountingTemporary = accountingIntent?.temporary?.path;
+  if (
+    accountingIntent?.state === 'intent' &&
+    accountingTemporary !== undefined &&
+    path.dirname(path.resolve(accountingTemporary)) ===
+      path.resolve(plan.paths.final) &&
+    ARCHIVE_ACCOUNTING_TEMPORARY_PATTERN.test(path.basename(accountingTemporary))
+  ) {
+    accounted.add(path.basename(accountingTemporary));
   }
   const current = await listReservedArchivePayloadPaths(plan.paths.final, adapters);
   const unaccounted = current.filter(relative => !accounted.has(relative));
@@ -7016,7 +7631,11 @@ function archiveCleanerOwnershipError(
     plan.paths.final,
     plan.paths.publishedJournal,
   ];
-  return error;
+  return withArchiveFailureLocation(
+    error,
+    'cleaner-apply',
+    candidate
+  ) as Error;
 }
 
 
@@ -7104,12 +7723,21 @@ async function removeVerifiedEmptyClaimRoot(
   try {
     await adapters.fs.rmdir(claimRoot);
   } catch (error) {
+    let observedOccupants: string[] = [];
+    try {
+      observedOccupants = (
+        await adapters.fs.readdir(claimRoot, { withFileTypes: true })
+      ).map(entry => path.join(claimRoot, entry.name));
+    } catch (inventoryError) {
+      if (errorCode(inventoryError) === 'ENOENT') throw error;
+      observedOccupants = [claimRoot];
+    }
     throw archiveClaimOwnershipError(
       claimRoot,
       `Claim root changed at the removal boundary: ${
         error instanceof Error ? error.message : String(error)
       }.`,
-      retainedPaths
+      [...retainedPaths, ...observedOccupants]
     );
   }
 }
@@ -7601,6 +8229,22 @@ async function applyStagedHandoff(
     return bindings;
   }
 
+  async function requireHandoffDirectoryBindings(
+    bindings: readonly ArchiveDirectoryIdentityBinding[],
+    retainedPaths: string[]
+  ): Promise<void> {
+    try {
+      await requireArchiveRealDirectoryChain(bindings, adapters);
+    } catch (error) {
+      throw handoffOwnershipConflict(
+        `Handoff directory identity changed before mutation (${
+          error instanceof Error ? error.message : String(error)
+        })`,
+        retainedPaths
+      );
+    }
+  }
+
   async function claimAndRemoveHandoffFile(
     source: string,
     relativePath: string
@@ -7716,7 +8360,7 @@ async function applyStagedHandoff(
     if (decision.outcome === 'absorbed') {
       if ((await pathExists(source, adapters)) === 'present') {
         await requireDurableHandoffFile(source, decision.path);
-        await requireArchiveRealDirectoryChain(sourceParentBindings, adapters);
+        await requireHandoffDirectoryBindings(sourceParentBindings, [source]);
         await claimAndRemoveHandoffFile(source, decision.path);
       }
       continue;
@@ -7747,11 +8391,11 @@ async function applyStagedHandoff(
     }
     if (sourceState === 'present' && destinationState === 'absent') {
       await requireDurableHandoffFile(source, decision.path);
-      await requireArchiveRealDirectoryChain(sourceParentBindings, adapters);
-      await requireArchiveRealDirectoryChain(
-        destinationParentBindings,
-        adapters
-      );
+      await requireHandoffDirectoryBindings(sourceParentBindings, [source]);
+      await requireHandoffDirectoryBindings(destinationParentBindings, [
+        source,
+        destination,
+      ]);
       try {
         await adapters.fs.link(source, destination);
       } catch (error) {
@@ -7777,11 +8421,11 @@ async function applyStagedHandoff(
           [source, destination]
         );
       }
-      await requireArchiveRealDirectoryChain(sourceParentBindings, adapters);
-      await requireArchiveRealDirectoryChain(
-        destinationParentBindings,
-        adapters
-      );
+      await requireHandoffDirectoryBindings(sourceParentBindings, [source]);
+      await requireHandoffDirectoryBindings(destinationParentBindings, [
+        source,
+        destination,
+      ]);
       await claimAndRemoveHandoffFile(source, decision.path);
       continue;
     }
@@ -7796,11 +8440,11 @@ async function applyStagedHandoff(
       }
       await requireDurableHandoffFile(destination, decision.path);
       await requireDurableHandoffFile(source, decision.path);
-      await requireArchiveRealDirectoryChain(sourceParentBindings, adapters);
-      await requireArchiveRealDirectoryChain(
-        destinationParentBindings,
-        adapters
-      );
+      await requireHandoffDirectoryBindings(sourceParentBindings, [source]);
+      await requireHandoffDirectoryBindings(destinationParentBindings, [
+        source,
+        destination,
+      ]);
       await claimAndRemoveHandoffFile(source, decision.path);
       continue;
     }
@@ -7809,6 +8453,78 @@ async function applyStagedHandoff(
     );
   }
   await removeAuthorizedHandoffDirectories();
+}
+
+function handoffIntermediateMatchesDurableIntent(
+  plan: ArchivePlan,
+  current: ArchiveTreeFingerprint,
+  before: ArchiveTreeFingerprint,
+  expected: ArchiveTreeFingerprint
+): boolean {
+  const currentEntries = new Map(current.entries.map(entry => [entry.path, entry]));
+  const beforeEntries = new Map(before.entries.map(entry => [entry.path, entry]));
+  const expectedEntries = new Map(expected.entries.map(entry => [entry.path, entry]));
+  const currentAuthority = new Map(
+    current.authorityEntries.map(entry => [entry.path, entry])
+  );
+  const beforeAuthority = new Map(
+    before.authorityEntries.map(entry => [entry.path, entry])
+  );
+  const allowedPaths = new Set([
+    ...beforeEntries.keys(),
+    ...expectedEntries.keys(),
+  ]);
+  for (const entry of current.entries) {
+    if (!allowedPaths.has(entry.path)) return false;
+    const durable = beforeEntries.get(entry.path) ?? expectedEntries.get(entry.path);
+    if (!durable || stableArchiveJson(entry) !== stableArchiveJson(durable)) {
+      return false;
+    }
+  }
+  const decisionSources = new Set(
+    plan.sidecar.handoff.decisions.map(decision => decision.path)
+  );
+  for (const pathName of beforeEntries.keys()) {
+    if (
+      expectedEntries.has(pathName) &&
+      !decisionSources.has(pathName) &&
+      !currentEntries.has(pathName)
+    ) {
+      return false;
+    }
+  }
+  let sawIntermediate = false;
+  for (const decision of plan.sidecar.handoff.decisions) {
+    const source = decision.path;
+    const destination = normalizeRelative(
+      path.join(
+        'evidence',
+        'handoff',
+        ...decision.path.split('/').slice(1)
+      )
+    );
+    const sourceEntry = currentEntries.get(source);
+    if (decision.outcome === 'absorbed') continue;
+    const destinationEntry = currentEntries.get(destination);
+    if (!sourceEntry && !destinationEntry) return false;
+    const sourceDurableAuthority = beforeAuthority.get(source);
+    if (!sourceDurableAuthority) return false;
+    for (const candidate of [source, destination]) {
+      if (!currentEntries.has(candidate)) continue;
+      const candidateAuthority = currentAuthority.get(candidate);
+      if (
+        !candidateAuthority ||
+        candidateAuthority.identity.dev !== sourceDurableAuthority.identity.dev ||
+        candidateAuthority.identity.ino !== sourceDurableAuthority.identity.ino ||
+        candidateAuthority.identity.mode !== sourceDurableAuthority.identity.mode ||
+        candidateAuthority.identity.size !== sourceDurableAuthority.identity.size
+      ) {
+        return false;
+      }
+    }
+    if (sourceEntry && destinationEntry) sawIntermediate = true;
+  }
+  return sawIntermediate;
 }
 
 function extractRecordedShipCommit(content: string): string | null {
@@ -8143,6 +8859,19 @@ async function requireArchivePrivateClaim(
   }
 }
 
+function archivePrivateClaimRoot(
+  source: string,
+  transactionId: string,
+  operation: string,
+  adapters: Pick<ArchiveEngineAdapters, 'sha256'>
+): string {
+  const label = adapters.sha256(operation).slice(0, 16);
+  return path.join(
+    path.dirname(source),
+    `.rasen-archive-claim-${transactionId}-${label}`
+  );
+}
+
 async function createArchivePrivateClaim(
   source: string,
   transactionId: string,
@@ -8150,10 +8879,11 @@ async function createArchivePrivateClaim(
   adapters: ArchiveEngineAdapters
 ): Promise<ArchivePrivateClaim> {
   const parent = path.dirname(source);
-  const label = adapters.sha256(operation).slice(0, 16);
-  const root = path.join(
-    parent,
-    `.rasen-archive-claim-${transactionId}-${label}`
+  const root = archivePrivateClaimRoot(
+    source,
+    transactionId,
+    operation,
+    adapters
   );
   if ((await pathExists(root, adapters)) === 'present') {
     throw archiveClaimOwnershipError(
@@ -8279,6 +9009,64 @@ async function retireArchivePrivateClaim(
   await adapters.fs.unlink(claim.sentinel);
   await adapters.fs.rmdir(claim.root);
   await flushArchiveDirectory(path.dirname(claim.root), adapters);
+}
+
+async function restoreArchivePrivateFileClaim(
+  claim: ArchivePrivateClaim,
+  source: string,
+  expectedIdentity: ArchiveStatIdentity,
+  expectedSha256: string,
+  adapters: ArchiveEngineAdapters
+): Promise<void> {
+  await requireArchivePrivateClaim(claim, adapters);
+  const claimed = await readStableArchiveFile(claim.claimed, adapters);
+  if (
+    !sameArchiveObject(claimed.stat, expectedIdentity, 'file') ||
+    adapters.sha256(claimed.content) !== expectedSha256
+  ) {
+    throw archiveClaimOwnershipError(
+      claim.root,
+      'Private file claim changed before restoration.',
+      [source, claim.claimed]
+    );
+  }
+  if ((await pathExists(source, adapters)) === 'present') {
+    throw archiveClaimOwnershipError(
+      claim.root,
+      'Original file path became occupied before claim restoration.',
+      [source, claim.claimed]
+    );
+  }
+  await adapters.fs.link(claim.claimed, source);
+  await requireArchivePrivateClaim(claim, adapters);
+  const [restored, claimedAfterLink] = await Promise.all([
+    readStableArchiveFile(source, adapters),
+    adapters.fs.lstat(claim.claimed),
+  ]);
+  if (
+    !sameArchiveObject(restored.stat, expectedIdentity, 'file') ||
+    !sameArchiveObject(claimedAfterLink, expectedIdentity, 'file') ||
+    adapters.sha256(restored.content) !== expectedSha256
+  ) {
+    throw archiveClaimOwnershipError(
+      claim.root,
+      'Restored file does not match the identity-bound private claim.',
+      [source, claim.claimed]
+    );
+  }
+  await adapters.fs.unlink(claim.claimed);
+  const durable = await readStableArchiveFile(source, adapters);
+  if (
+    !sameArchiveObject(durable.stat, expectedIdentity, 'file') ||
+    adapters.sha256(durable.content) !== expectedSha256
+  ) {
+    throw archiveClaimOwnershipError(
+      claim.root,
+      'Restored file changed before claim retirement.',
+      [source, claim.claimed]
+    );
+  }
+  await retireArchivePrivateClaim(claim, adapters);
 }
 
 async function applySpecActions(
@@ -8679,13 +9467,16 @@ async function applySpecActions(
       await flush();
       if ((await pathExists(temporary, adapters)) === 'present') {
         const temporaryStat = await adapters.fs.lstat(temporary);
+        const temporaryIdentity = durableProgress.temporaryIdentity;
+        if (!temporaryIdentity) {
+          return await conflict(
+            durableProgress,
+            `Spec temporary has no durable identity: ${temporary}`,
+            'ESTALE'
+          );
+        }
         if (
-          !durableProgress.temporaryIdentity ||
-          !sameArchiveObject(
-            temporaryStat,
-            durableProgress.temporaryIdentity,
-            'file'
-          ) ||
+          !sameArchiveObject(temporaryStat, temporaryIdentity, 'file') ||
           !sameArchiveObject(temporaryStat, currentIdentity, 'file')
         ) {
           await conflict(
@@ -8697,10 +9488,10 @@ async function applySpecActions(
         await requireSpecClaimRoot();
         const temporaryClaim = await moveArchiveObjectToPrivateClaim(
           temporary,
-          durableProgress.temporaryIdentity,
+          temporaryIdentity,
           'file',
           plan.transactionId,
-          `spec-temporary:${progress.actionId}`,
+          `spec-temporary:${durableProgress.actionId}`,
           adapters
         );
         await requireArchivePrivateClaim(temporaryClaim, adapters);
@@ -8751,7 +9542,8 @@ async function applySpecActions(
           }
           await requireSpecClaimRoot();
           try {
-            await adapters.fs.rename(action.target, backup);
+            await adapters.fs.link(action.target, backup);
+            await flushArchiveDirectory(claimRoot, adapters);
           } catch (error) {
             if (errorCode(error) === 'EEXIST') {
               await claimOwnershipConflict(
@@ -8903,17 +9695,22 @@ async function applySpecActions(
           );
         }
         await requireSpecClaimRoot();
-        const backupClaim = await moveArchiveObjectToPrivateClaim(
-          backup,
-          archiveDeletionIdentity(backupFile.stat, 'file'),
-          'file',
-          plan.transactionId,
-          `spec-backup:${progress.actionId}`,
-          adapters
-        );
-        await requireArchivePrivateClaim(backupClaim, adapters);
-        await adapters.fs.unlink(backupClaim.claimed);
-        await retireArchivePrivateClaim(backupClaim, adapters);
+        const backupBeforeUnlink = await adapters.fs.lstat(backup);
+        if (
+          backupBeforeUnlink.isSymbolicLink() ||
+          !sameArchiveObject(
+            backupBeforeUnlink,
+            archiveDeletionIdentity(backupFile.stat, 'file'),
+            'file'
+          )
+        ) {
+          await conflict(
+            progress,
+            `Spec backup identity changed at the removal boundary: ${backup}`,
+            'ESTALE'
+          );
+        }
+        await adapters.fs.unlink(backup);
         await flushArchiveDirectory(claimRoot, adapters);
       } else if (!verifiedBeforeAttempt) {
         await conflict(
@@ -8975,9 +9772,30 @@ async function claimAndDeleteCleanerCandidate(
     `cleaner:${relativePath}`,
     adapters
   );
+  const claimedStable = await readStableArchiveFile(claim.claimed, adapters);
+  if (
+    !sameArchiveObject(
+      claimedStable.stat,
+      archiveDeletionIdentity(stat, 'file'),
+      'file'
+    ) ||
+    adapters.sha256(claimedStable.content) !== candidate.sha256
+  ) {
+    throw archiveCleanerOwnershipError(
+      claim.claimed,
+      plan,
+      `Cleaner candidate changed inside its private claim: ${relativePath}.`
+    );
+  }
   const claimedCandidate: EphemeraCandidateFingerprint = {
-    ...candidate,
     relativePath: 'object',
+    size: Number(claimedStable.stat.size),
+    mtimeMs: statMilliseconds(claimedStable.stat, 'mtimeNs', 'mtimeMs'),
+    ctimeMs: statMilliseconds(claimedStable.stat, 'ctimeNs', 'ctimeMs'),
+    dev: Number(claimedStable.stat.dev),
+    ino: Number(claimedStable.stat.ino),
+    mode: Number(claimedStable.stat.mode),
+    sha256: candidate.sha256,
   };
   const classification: EphemeraClassification = {
     discarded: ['object'],
@@ -8989,22 +9807,70 @@ async function claimAndDeleteCleanerCandidate(
     blockers: [],
     complete: true,
   };
-  const deleted = await adapters.applyEphemeraDeletion(
-    claim.root,
-    classification
-  );
-  if (
-    !deleted.includes('object') ||
-    (await pathExists(claim.claimed, adapters)) === 'present'
-  ) {
+  const expectedIdentity = archiveDeletionIdentity(stat, 'file');
+  let deleted: string[];
+  try {
+    deleted = await adapters.applyEphemeraDeletion(claim.root, classification);
+  } catch (error) {
+    try {
+      if ((await pathExists(claim.claimed, adapters)) === 'present') {
+        await restoreArchivePrivateFileClaim(
+          claim,
+          source,
+          expectedIdentity,
+          candidate.sha256,
+          adapters
+        );
+      } else {
+        await retireArchivePrivateClaim(claim, adapters);
+      }
+    } catch (recoveryError) {
+      const ownership = archiveCleanerOwnershipError(
+        source,
+        plan,
+        `Cleaner failed and its private claim could not be safely restored: ${
+          recoveryError instanceof Error
+            ? recoveryError.message
+            : String(recoveryError)
+        }`
+      ) as Error & { retainedPaths: string[] };
+      ownership.retainedPaths = [
+        ...new Set([...ownership.retainedPaths, claim.root, claim.claimed]),
+      ];
+      throw ownership;
+    }
+    throw error;
+  }
+  if ((await pathExists(claim.claimed, adapters)) === 'present') {
+    try {
+      await restoreArchivePrivateFileClaim(
+        claim,
+        source,
+        expectedIdentity,
+        candidate.sha256,
+        adapters
+      );
+    } catch (error) {
+      const ownership = archiveCleanerOwnershipError(
+        source,
+        plan,
+        `Cleaner left its private claim in an unverified state: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      ) as Error & { retainedPaths: string[] };
+      ownership.retainedPaths = [
+        ...new Set([...ownership.retainedPaths, claim.root, claim.claimed]),
+      ];
+      throw ownership;
+    }
     throw archiveCleanerOwnershipError(
-      claim.claimed,
+      source,
       plan,
       'Cleaner did not remove the identity-bound private claim.'
     );
   }
   await retireArchivePrivateClaim(claim, adapters);
-  return [relativePath];
+  return deleted.includes('object') ? [relativePath] : [];
 }
 
 function handoffAccounting(plan: ArchivePlan): HandoffAbsorbedEntry[] | null {
@@ -9254,7 +10120,7 @@ export async function applyArchive(
     failure?: ArchiveJournal['failure']
   ): Promise<void> {
     const previous = journalSnapshot;
-    journalSnapshot = journalFor(
+    const next = journalFor(
       plan,
       phase,
       ephemeraDisposed,
@@ -9268,7 +10134,8 @@ export async function applyArchive(
       adapters,
       { recoveryOwned: ownsRecoveryState, allowUnbound: ownsRecoveryState }
     );
-    await writeJournal(target, journalSnapshot, previous, adapters);
+    await writeJournal(target, next, previous, adapters);
+    journalSnapshot = next;
   }
 
   async function recordVerifiedFingerprint(
@@ -9317,6 +10184,28 @@ export async function applyArchive(
     };
     await persistJournalPhase(targetJournal, currentPhase);
   }
+  async function fingerprintOwnedStage(
+    operation: 'handoff' | 'quality',
+    target: string
+  ): Promise<ArchiveTreeFingerprint> {
+    currentOperation = operation;
+    currentOperationPath = target;
+    try {
+      return await fingerprintArchiveTree(plan.paths.stage, adapters);
+    } catch (error) {
+      throw withArchiveFailureLocation(
+        archiveStageOwnershipError(
+          plan.paths.stage,
+          `The owned archive stage changed while preparing ${operation} (${
+            error instanceof Error ? error.message : String(error)
+          }).`
+        ),
+        operation,
+        target
+      );
+    }
+  }
+
 
   async function createBoundProjection(
     projection: string
@@ -9572,7 +10461,21 @@ export async function applyArchive(
       const matchesBefore =
         latest[1].state === 'intent' &&
         archivePayloadFingerprintMatches(current, latest[1].before);
-      if (!matchesExpected && !matchesBefore) {
+      const matchesHandoffIntermediate =
+        scope === 'stage' &&
+        latest[0] === 'handoff-finalized' &&
+        latest[1].state === 'intent' &&
+        handoffIntermediateMatchesDurableIntent(
+          plan,
+          current,
+          latest[1].before,
+          latest[1].expectedAfter
+        );
+      if (
+        !matchesExpected &&
+        !matchesBefore &&
+        !matchesHandoffIntermediate
+      ) {
         if (scope === 'stage' && latest[1].state === 'intent') {
           throw archiveStageOwnershipError(
             plan.paths.stage,
@@ -10110,6 +11013,17 @@ export async function applyArchive(
     currentOperationPath = plan.paths.stage;
     const stageState = await pathExists(plan.paths.stage, adapters);
     const finalState = await pathExists(plan.paths.final, adapters);
+    if (stageState === 'present' && finalState === 'absent') {
+      await requireArchiveStageOwner(plan, adapters);
+      const stageJournal = await readJournal(plan.paths.journal, adapters);
+      if (!archiveJournalBelongsToPlan(stageJournal, plan)) {
+        throw archiveStageOwnershipError(
+          plan.paths.stage,
+          'Archive stage exists without a matching durable transaction journal.',
+          [plan.paths.journal, plan.paths.final]
+        );
+      }
+    }
     currentOperation = 'publish';
     currentOperationPath = plan.paths.archiveParent;
     if (archivePathAuthority.length === 0) {
@@ -10160,23 +11074,35 @@ export async function applyArchive(
             'Archive target has neither an owned published journal nor a matching durable reservation intent'
           );
         }
+        resumed = true;
+        journalSnapshot = reservationIntent;
+        ownsRecoveryState = true;
+        currentPhase =
+          reservationIntent.phase === 'failed'
+            ? reservationIntent.failure!.resumePhase
+            : reservationIntent.phase;
         const reservationStat = await adapters.fs.lstat(plan.paths.final);
         const occupants =
           reservationStat.isDirectory() && !reservationStat.isSymbolicLink()
             ? await listArchiveReservationOccupants(plan.paths.final, adapters)
             : ['(non-directory target)'];
+        const emptyReservation = occupants.length === 0;
+        const ownerOnlyReservation =
+          stableArchiveJson(occupants) ===
+          stableArchiveJson([ARCHIVE_FINAL_OWNER_FILENAME]);
         if (
           !reservationStat.isDirectory() ||
           reservationStat.isSymbolicLink() ||
-          stableArchiveJson(occupants) !==
-            stableArchiveJson([ARCHIVE_FINAL_OWNER_FILENAME])
+          (!emptyReservation && !ownerOnlyReservation)
         ) {
           throw archiveReservationOwnershipError(
             plan.paths.final,
             `Archive target cannot be adopted from its reservation intent; occupants: ${occupants.join(', ')}`
           );
         }
-        const adoptedOwner = await verifyArchiveFinalOwner(plan, adapters);
+        const adoptedOwner = emptyReservation
+          ? await createArchiveFinalOwner(plan, adapters)
+          : await verifyArchiveFinalOwner(plan, adapters);
         archivePathAuthority = await assertArchivePathAuthority(
           plan,
           archivePathAuthority,
@@ -10225,6 +11151,7 @@ export async function applyArchive(
           );
         }
         await persistJournalPhase(journalPath, currentPhase);
+        existing = journalSnapshot!;
       }
       resumed = true;
       journalSnapshot = existing;
@@ -10241,19 +11168,41 @@ export async function applyArchive(
             finalPayload,
             accountingIntent.expectedAfter
           );
-        if (finalPayload.digest !== marker.payloadDigest &&
-            !matchesAccountingIntent &&
-            !phaseAtLeast(
-              existing.phase === 'failed'
-                ? existing.failure!.resumePhase
-                : existing.phase,
-              'accounting-finalized'
-            )) {
-          const conflict = new Error(
-            'Published archive payload no longer matches its commit marker.'
-          );
-          (conflict as NodeJS.ErrnoException).code = 'ESTALE';
-          throw conflict;
+        if (finalPayload.digest !== marker.payloadDigest) {
+          if (accountingIntent?.state === 'intent') {
+            const accountingPath = path.join(plan.paths.final, 'archive.json');
+            if (marker.payloadDigest !== accountingIntent.before.digest) {
+              throw withArchiveFailureLocation(
+                invalidCompletedProgress(
+                  accountingPath,
+                  'the publication marker disagrees with the durable accounting intent'
+                ),
+                'accounting',
+                accountingPath
+              );
+            }
+            if (!matchesAccountingIntent) {
+              throw withArchiveFailureLocation(
+                invalidCompletedProgress(
+                  accountingPath,
+                  'the current accounting payload matches neither side of its durable transform intent'
+                ),
+                'accounting',
+                accountingPath
+              );
+            }
+          } else if (!phaseAtLeast(
+            existing.phase === 'failed'
+              ? existing.failure!.resumePhase
+              : existing.phase,
+            'accounting-finalized'
+          )) {
+            const conflict = new Error(
+              'Published archive payload no longer matches its commit marker.'
+            );
+            (conflict as NodeJS.ErrnoException).code = 'ESTALE';
+            throw conflict;
+          }
         }
       }
       ownsRecoveryState = true;
@@ -10438,7 +11387,10 @@ export async function applyArchive(
 
     if (!published) {
       if (!phaseAtLeast(currentPhase, 'handoff-finalized')) {
-        const before = await fingerprintArchiveTree(plan.paths.stage, adapters);
+        const before = await fingerprintOwnedStage(
+          'handoff',
+          path.join(plan.paths.stage, 'handoff')
+        );
         const recordedHandoffIntent =
           journalSnapshot?.phaseFingerprints['handoff-finalized'];
         const handoffAuthority =
@@ -10466,9 +11418,12 @@ export async function applyArchive(
         currentOperation = 'handoff';
         currentOperationPath = path.join(plan.paths.stage, 'handoff');
         await applyStagedHandoff(plan, adapters, handoffAuthority);
+        const after = await fingerprintOwnedStage(
+          'handoff',
+          currentOperationPath
+        );
         currentOperation = 'journal';
         currentOperationPath = plan.paths.journal;
-        const after = await fingerprintArchiveTree(plan.paths.stage, adapters);
         if (!archivePayloadFingerprintMatches(after, expected)) {
           const mismatch = new Error(
             'Handoff transform did not match its durable expected payload.'
@@ -10486,7 +11441,10 @@ export async function applyArchive(
         currentPhase = 'handoff-finalized';
       }
       if (!phaseAtLeast(currentPhase, 'evidence-finalized')) {
-        const before = await fingerprintArchiveTree(plan.paths.stage, adapters);
+        const before = await fingerprintOwnedStage(
+          'quality',
+          path.join(plan.paths.stage, 'evidence')
+        );
         const expected = await projectStageTransform(async projectionPlan => {
           await finalizeStagedShipLog(projectionPlan, adapters);
           await captureArchiveQuality(projectionPlan.paths.stage, adapters);
@@ -10522,9 +11480,12 @@ export async function applyArchive(
             throw mismatch;
           }
         }
+        const after = await fingerprintOwnedStage(
+          'quality',
+          path.join(plan.paths.stage, 'evidence')
+        );
         currentOperation = 'journal';
         currentOperationPath = plan.paths.journal;
-        const after = await fingerprintArchiveTree(plan.paths.stage, adapters);
         if (!archivePayloadFingerprintMatches(after, expected)) {
           const mismatch = new Error(
             'Evidence transform did not match its durable expected payload.'
@@ -11143,10 +12104,12 @@ export async function applyArchive(
             [plan.paths.active, sourceQuarantine]
           );
         }
-        await requireSourceClaimRootIdentity(
-          journalSnapshot.sourceProgress.claimIdentity
+        await removeVerifiedEmptyClaimRoot(
+          sourceClaimRoot,
+          journalSnapshot.sourceProgress.claimIdentity,
+          adapters,
+          [plan.paths.active, sourceQuarantine]
         );
-        await adapters.fs.rmdir(sourceClaimRoot);
         journalSnapshot.sourceProgress.state = 'removed';
         await persistJournalPhase(journalPath, 'source-removed');
       }
@@ -11190,10 +12153,13 @@ export async function applyArchive(
         plan.sourceFingerprint,
         adapters
       );
-      await requireSourceClaimRootIdentity(
-        journalSnapshot.sourceProgress.claimIdentity
+      currentOperationPath = sourceClaimRoot;
+      await removeVerifiedEmptyClaimRoot(
+        sourceClaimRoot,
+        journalSnapshot.sourceProgress.claimIdentity,
+        adapters,
+        [plan.paths.active, sourceQuarantine]
       );
-      await adapters.fs.rmdir(sourceClaimRoot);
       journalSnapshot.sourceProgress.state = 'removed';
       await persistJournalPhase(journalPath, 'source-removed');
     }
@@ -11231,15 +12197,22 @@ export async function applyArchive(
   } catch (error) {
     const accountingError =
       error instanceof ArchiveAccountingErrorLike ? error : undefined;
+    const locatedError = archiveFailureLocation(error);
     let resultOperation: ArchiveBlockerOperation = accountingError
       ? accountingError.operation.startsWith('evidence')
         ? 'evidence'
         : 'accounting'
-      : currentOperation;
-    let resultPath = accountingError?.path ?? currentOperationPath;
+      : locatedError?.archiveOperation ?? currentOperation;
+    let resultPath =
+      accountingError?.path ??
+      locatedError?.archivePath ??
+      currentOperationPath;
     let resultError: unknown = error;
     const failure = {
-      operation: accountingError?.operation ?? currentOperation,
+      operation:
+        accountingError?.operation ??
+        locatedError?.archiveOperation ??
+        currentOperation,
       path: resultPath,
       ...(errorCode(error) ? { code: errorCode(error) } : {}),
       message: error instanceof Error ? error.message : String(error),

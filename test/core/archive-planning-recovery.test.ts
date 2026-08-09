@@ -382,7 +382,10 @@ describe('archive deterministic planning and reservation recovery', () => {
       },
     });
     const resumed = await applyArchive(archivePlan);
-    expect(resumed).toMatchObject({ status: 'complete', resumed: true });
+    expect(resumed).toMatchObject({
+      status: 'complete',
+      resumed: true,
+    });
     await expect(fs.access(path.join(archivePlan.paths.final, 'archive.json'))).resolves.toBeUndefined();
   });
 
@@ -399,29 +402,35 @@ describe('archive deterministic planning and reservation recovery', () => {
         await fs.symlink('proposal.md', source);
       }
       const archivePlan = await plan();
-      let crashWrites = false;
+      let injected = false;
+      const target = path.join(archivePlan.paths.final, relative);
+      const failAfterCreation = (candidate: string): void => {
+        if (candidate !== target || injected) return;
+        injected = true;
+        throw Object.assign(
+          new Error('injected crash after reserved entry creation'),
+          { code: 'EIO' }
+        );
+      };
       const adapters: ArchiveEngineAdapters = {
         ...defaultArchiveEngineAdapters,
         fs: {
           ...defaultArchiveEngineAdapters.fs,
-          rename: async (from, to) => {
-            if (to === archivePlan.paths.publishedJournal) {
-              const pending = JSON.parse(await fs.readFile(from, 'utf8'));
-              const progress = pending.finalReservation.entries.find(
-                (entry: { path: string }) => entry.path === relative
-              );
-              if (
-                crashWrites ||
-                (progress?.state === 'copied' &&
-                  await fs.lstat(path.join(archivePlan.paths.final, relative)))
-              ) {
-                crashWrites = true;
-                const error = new Error('injected crash before copied flush');
-                (error as NodeJS.ErrnoException).code = 'EIO';
-                throw error;
-              }
-            }
-            await defaultArchiveEngineAdapters.fs.rename(from, to);
+          copyFile: async (from, to, flags) => {
+            await defaultArchiveEngineAdapters.fs.copyFile(from, to, flags);
+            if (kind === 'file') failAfterCreation(to);
+          },
+          mkdir: async (candidate, options) => {
+            await defaultArchiveEngineAdapters.fs.mkdir(candidate, options);
+            if (kind === 'directory') failAfterCreation(candidate);
+          },
+          symlink: async (linkTarget, candidate, type) => {
+            await defaultArchiveEngineAdapters.fs.symlink(
+              linkTarget,
+              candidate,
+              type
+            );
+            if (kind === 'symlink') failAfterCreation(candidate);
           },
         },
       };
@@ -449,23 +458,21 @@ describe('archive deterministic planning and reservation recovery', () => {
     const relative = 'resume-mismatch.txt';
     await fs.writeFile(path.join(active, relative), 'planned\n');
     const archivePlan = await plan();
-    let crashWrites = false;
+    let injected = false;
+    const target = path.join(archivePlan.paths.final, relative);
     const adapters: ArchiveEngineAdapters = {
       ...defaultArchiveEngineAdapters,
       fs: {
         ...defaultArchiveEngineAdapters.fs,
-        rename: async (from, to) => {
-          if (to === archivePlan.paths.publishedJournal) {
-            const pending = JSON.parse(await fs.readFile(from, 'utf8'));
-            const progress = pending.finalReservation.entries.find(
-              (entry: { path: string }) => entry.path === relative
+        copyFile: async (from, to, flags) => {
+          await defaultArchiveEngineAdapters.fs.copyFile(from, to, flags);
+          if (to === target && !injected) {
+            injected = true;
+            throw Object.assign(
+              new Error('injected crash after reserved file creation'),
+              { code: 'EIO' }
             );
-            if (crashWrites || progress?.state === 'copied') {
-              crashWrites = true;
-              throw Object.assign(new Error('injected crash'), { code: 'EIO' });
-            }
           }
-          await defaultArchiveEngineAdapters.fs.rename(from, to);
         },
       },
     };
@@ -530,24 +537,28 @@ describe('archive deterministic planning and reservation recovery', () => {
     ['initial', 1],
     ['update', 2],
   ] as const)(
-    'classifies an unjournaled %s journal temporary as manual recovery',
-    async (_boundary, failingRename) => {
+    'cleans a failed %s journal publication and resumes from durable state',
+    async (_boundary, failingPublication) => {
       const archivePlan = await plan();
-      let journalRenames = 0;
+      const journalTemporary = path.join(
+        path.dirname(archivePlan.paths.journal),
+        `.${path.basename(archivePlan.paths.journal)}.tmp-${archivePlan.transactionId}`
+      );
+      let journalPublications = 0;
       const adapters: ArchiveEngineAdapters = {
         ...defaultArchiveEngineAdapters,
         fs: {
           ...defaultArchiveEngineAdapters.fs,
-          rename: async (from, to) => {
+          link: async (from, to) => {
             if (
               to === archivePlan.paths.journal &&
-              ++journalRenames === failingRename
+              ++journalPublications === failingPublication
             ) {
-              throw Object.assign(new Error('injected journal rename crash'), {
+              throw Object.assign(new Error('injected journal link crash'), {
                 code: 'EIO',
               });
             }
-            await defaultArchiveEngineAdapters.fs.rename(from, to);
+            await defaultArchiveEngineAdapters.fs.link(from, to);
           },
         },
       };
@@ -557,25 +568,23 @@ describe('archive deterministic planning and reservation recovery', () => {
         status: 'recoverable',
         blockers: [
           expect.objectContaining({
-            code: ARCHIVE_TRANSACTION_TEMP_OWNERSHIP_CODE,
+            operation: 'journal',
+            code: 'EIO',
           }),
         ],
-        manualRecoveryAction: { kind: 'manual-recovery-required' },
       });
-      expect(failed).not.toHaveProperty('recoveryCommand');
-      expect(await applyArchive(archivePlan)).toMatchObject({
-        blockers: [
-          expect.objectContaining({
-            code: ARCHIVE_TRANSACTION_TEMP_OWNERSHIP_CODE,
-          }),
-        ],
-        manualRecoveryAction: { kind: 'manual-recovery-required' },
+      expect(failed).not.toHaveProperty('manualRecoveryAction');
+      await expect(fs.access(journalTemporary)).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      await expect(applyArchive(archivePlan)).resolves.toMatchObject({
+        status: 'complete',
       });
     }
   );
 
   it.each(['pre-link', 'post-link'] as const)(
-    'classifies a marker %s crash temporary as manual recovery',
+    'classifies a marker %s publication crash by retained ownership state',
     async boundary => {
       const archivePlan = await plan();
       const marker = path.join(
@@ -598,13 +607,13 @@ describe('archive deterministic planning and reservation recovery', () => {
             }
             await defaultArchiveEngineAdapters.fs.link(from, to);
           },
-          unlink: async target => {
-            if (boundary === 'post-link' && target === markerTemporary) {
-              throw Object.assign(new Error('injected marker unlink crash'), {
+          rename: async (from, to) => {
+            if (boundary === 'post-link' && from === markerTemporary) {
+              throw Object.assign(new Error('injected marker claim crash'), {
                 code: 'EIO',
               });
             }
-            await defaultArchiveEngineAdapters.fs.unlink(target);
+            await defaultArchiveEngineAdapters.fs.rename(from, to);
           },
         },
       };
@@ -613,22 +622,41 @@ describe('archive deterministic planning and reservation recovery', () => {
       expect(failed).toMatchObject({
         status: 'recoverable',
         blockers: [
-          expect.objectContaining({
-            code: ARCHIVE_TRANSACTION_TEMP_OWNERSHIP_CODE,
-          }),
+          expect.objectContaining(
+            boundary === 'pre-link'
+              ? { operation: 'publish', code: 'EIO' }
+              : {
+                  operation: 'publish',
+                  code: 'archive_claim_ownership_unverified',
+                }
+          ),
         ],
-        manualRecoveryAction: { kind: 'manual-recovery-required' },
+        ...(boundary === 'post-link'
+          ? {
+              manualRecoveryAction: { kind: 'manual-recovery-required' },
+            }
+          : {}),
       });
-      await expect(fs.access(markerTemporary)).resolves.toBeUndefined();
-      expect(failed).not.toHaveProperty('recoveryCommand');
-      expect(await applyArchive(archivePlan)).toMatchObject({
-        blockers: [
-          expect.objectContaining({
-            code: ARCHIVE_TRANSACTION_TEMP_OWNERSHIP_CODE,
-          }),
-        ],
-        manualRecoveryAction: { kind: 'manual-recovery-required' },
-      });
+      if (boundary === 'pre-link') {
+        expect(failed).not.toHaveProperty('manualRecoveryAction');
+        await expect(fs.access(markerTemporary)).rejects.toMatchObject({
+          code: 'ENOENT',
+        });
+        await expect(applyArchive(archivePlan)).resolves.toMatchObject({
+          status: 'complete',
+        });
+      } else {
+        await expect(fs.access(markerTemporary)).resolves.toBeUndefined();
+        expect(failed).not.toHaveProperty('recoveryCommand');
+        await expect(applyArchive(archivePlan)).resolves.toMatchObject({
+          blockers: [
+            expect.objectContaining({
+              code: ARCHIVE_TRANSACTION_TEMP_OWNERSHIP_CODE,
+            }),
+          ],
+          manualRecoveryAction: { kind: 'manual-recovery-required' },
+        });
+      }
     }
   );
 
@@ -705,6 +733,8 @@ describe('archive deterministic planning and reservation recovery', () => {
 
   it('never adopts or deletes non-empty final contents left beside matching intent', async () => {
     const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'occupied-reservation-global');
+    await persistArchivePlan(archivePlan, globalDataDir);
     const intruder = path.join(archivePlan.paths.final, 'unrelated.txt');
     let injected = false;
     const adapters: ArchiveEngineAdapters = {
@@ -753,6 +783,16 @@ describe('archive deterministic planning and reservation recovery', () => {
       }),
     });
     expect(retry).not.toHaveProperty('recoveryCommand');
+    expect(retry).not.toHaveProperty('abortCommand');
+    expect(await fs.readFile(intruder, 'utf8')).toBe('must survive\n');
+    await expect(
+      abortArchivePlan(archivePlan, globalDataDir)
+    ).resolves.toMatchObject({
+      status: 'blocked',
+      blockers: [
+        expect.objectContaining({ code: 'archive_abort_phase_unsafe' }),
+      ],
+    });
     expect(await fs.readFile(intruder, 'utf8')).toBe('must survive\n');
   });
 });

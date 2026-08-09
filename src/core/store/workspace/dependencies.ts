@@ -21,6 +21,7 @@
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import * as nodeFs from 'node:fs';
+import type { FileHandle } from 'node:fs/promises';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
 
@@ -170,9 +171,21 @@ function atomicWorkspaceIdentity(
   return {
     dev: String(stat.dev),
     ino: String(stat.ino),
-    mode: stat.mode,
+    mode: Number(stat.mode),
     size: String(stat.size),
   };
+}
+
+/**
+ * Directory entry count/size is expected to change as this transaction creates
+ * and retires its own intent carriers. Ownership is the canonical directory
+ * object itself, so retain the stable object fields and normalize only the
+ * directory-size field that those ordinary writes mutate.
+ */
+function atomicWorkspaceDirectoryIdentity(
+  stat: Awaited<ReturnType<typeof fs.lstat>>
+): AtomicWorkspaceIdentity {
+  return { ...atomicWorkspaceIdentity(stat), size: '0' };
 }
 
 function sameAtomicWorkspaceIdentity(
@@ -181,6 +194,28 @@ function sameAtomicWorkspaceIdentity(
 ): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
+
+function isAtomicWorkspaceIdentity(
+  value: unknown
+): value is AtomicWorkspaceIdentity {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<AtomicWorkspaceIdentity>;
+  return (
+    typeof candidate.dev === 'string' &&
+    typeof candidate.ino === 'string' &&
+    typeof candidate.mode === 'number' &&
+    Number.isFinite(candidate.mode) &&
+    typeof candidate.size === 'string'
+  );
+}
+
+const UNSUPPORTED_DIRECTORY_SYNC_CODES: Readonly<Record<string, true>> = {
+  EISDIR: true,
+  EINVAL: true,
+  EPERM: true,
+  ENOTSUP: true,
+  EACCES: true,
+};
 
 async function stableAtomicWorkspaceFile(target: string): Promise<{
   readonly content: string;
@@ -258,7 +293,7 @@ async function atomicWorkspaceWriteText(
   const directory = path.dirname(target);
   await fs.mkdir(directory, { recursive: true });
   const canonicalDirectory = await fs.realpath(directory);
-  const directoryIdentity = atomicWorkspaceIdentity(
+  const directoryIdentity = atomicWorkspaceDirectoryIdentity(
     await fs.lstat(canonicalDirectory)
   );
   const requireDirectoryIdentity = async () => {
@@ -270,7 +305,7 @@ async function atomicWorkspaceWriteText(
       current.isSymbolicLink() ||
       !sameAtomicWorkspaceIdentity(
         directoryIdentity,
-        atomicWorkspaceIdentity(current)
+        atomicWorkspaceDirectoryIdentity(current)
       )
     ) {
       throw new AtomicWorkspaceWriteConflictError(
@@ -281,11 +316,16 @@ async function atomicWorkspaceWriteText(
   };
   const syncDirectory = async () => {
     await requireDirectoryIdentity();
-    const handle = await fs.open(canonicalDirectory, 'r');
+    let handle: FileHandle | undefined;
     try {
+      handle = await fs.open(canonicalDirectory, 'r');
       await handle.sync();
+    } catch (error) {
+      if (UNSUPPORTED_DIRECTORY_SYNC_CODES[nodeErrorCode(error) ?? ''] !== true) {
+        throw error;
+      }
     } finally {
-      await handle.close();
+      await handle?.close();
     }
   };
 
@@ -349,9 +389,11 @@ async function atomicWorkspaceWriteText(
   }
 
   let claim: {
-    readonly version: 1;
+    readonly version: 2;
     readonly target: string;
     readonly contentDigest: string;
+    readonly directoryPath: string;
+    readonly directoryIdentity: AtomicWorkspaceIdentity;
     readonly beforeDigest: string | null;
     readonly beforeIdentity: AtomicWorkspaceIdentity | null;
     readonly intentIdentity: AtomicWorkspaceIdentity;
@@ -382,9 +424,11 @@ async function atomicWorkspaceWriteText(
       );
     }
     claim = {
-      version: 1,
+      version: 2,
       target,
       contentDigest: digest,
+      directoryPath: canonicalDirectory,
+      directoryIdentity,
       beforeDigest:
         current === null
           ? null
@@ -420,20 +464,20 @@ async function atomicWorkspaceWriteText(
   } else {
     const authority = expectedBefore?.authority;
     if (
-      authority === undefined ||
-      authority.target !== target ||
-      authority.contentDigest !== digest ||
-      authority.directory.path !== canonicalDirectory ||
-      !sameAtomicWorkspaceIdentity(
-        authority.directory.identity,
-        directoryIdentity
-      ) ||
-      authority.intent.path !== intentPath ||
-      authority.claim.path !== claimPath ||
-      !sameAtomicWorkspaceIdentity(
-        authority.claim.identity,
-        existingClaim.identity
-      )
+      authority !== undefined &&
+      (authority.target !== target ||
+        authority.contentDigest !== digest ||
+        authority.directory.path !== canonicalDirectory ||
+        !sameAtomicWorkspaceIdentity(
+          authority.directory.identity,
+          directoryIdentity
+        ) ||
+        authority.intent.path !== intentPath ||
+        authority.claim.path !== claimPath ||
+        !sameAtomicWorkspaceIdentity(
+          authority.claim.identity,
+          existingClaim.identity
+        ))
     ) {
       throw new AtomicWorkspaceWriteConflictError(
         target,
@@ -448,12 +492,24 @@ async function atomicWorkspaceWriteText(
         'the durable ownership claim is corrupt and retained'
       );
     }
+    const beforeStateIsValid =
+      claim.beforeIdentity === null
+        ? claim.beforeDigest === null
+        : isAtomicWorkspaceIdentity(claim.beforeIdentity) &&
+          typeof claim.beforeDigest === 'string' &&
+          /^[0-9a-f]{64}$/u.test(claim.beforeDigest);
     if (
-      claim.version !== 1 ||
+      claim.version !== 2 ||
       claim.target !== target ||
       claim.contentDigest !== digest ||
-      typeof claim.intentIdentity !== 'object' ||
-      claim.intentIdentity === null
+      claim.directoryPath !== canonicalDirectory ||
+      !isAtomicWorkspaceIdentity(claim.directoryIdentity) ||
+      !sameAtomicWorkspaceIdentity(
+        claim.directoryIdentity,
+        directoryIdentity
+      ) ||
+      !beforeStateIsValid ||
+      !isAtomicWorkspaceIdentity(claim.intentIdentity)
     ) {
       throw new AtomicWorkspaceWriteConflictError(
         target,
@@ -463,19 +519,6 @@ async function atomicWorkspaceWriteText(
   }
 
   const intent = await stableAtomicWorkspaceFile(intentPath);
-  if (
-    expectedBefore?.authority !== undefined &&
-    (intent === null ||
-      !sameAtomicWorkspaceIdentity(
-        intent.identity,
-        expectedBefore.authority.intent.identity
-      ))
-  ) {
-    throw new AtomicWorkspaceWriteConflictError(
-      target,
-      'the retained intent no longer matches journal-bound authority'
-    );
-  }
   const targetNow = await stableAtomicWorkspaceFile(target);
   const backup = await stableAtomicWorkspaceFile(backupPath);
   const targetIsPublishedIntent =
@@ -483,6 +526,19 @@ async function atomicWorkspaceWriteText(
     targetNow.content === content &&
     sameAtomicWorkspaceIdentity(targetNow.identity, claim.intentIdentity);
   if (!targetIsPublishedIntent) {
+    if (
+      expectedBefore?.authority !== undefined &&
+      (intent === null ||
+        !sameAtomicWorkspaceIdentity(
+          intent.identity,
+          expectedBefore.authority.intent.identity
+        ))
+    ) {
+      throw new AtomicWorkspaceWriteConflictError(
+        target,
+        'the retained intent no longer matches journal-bound authority'
+      );
+    }
     if (
       intent === null ||
       intent.content !== content ||
@@ -499,25 +555,37 @@ async function atomicWorkspaceWriteText(
         sameAtomicWorkspaceIdentity(targetNow.identity, claim.beforeIdentity) &&
         createHash('sha256').update(targetNow.content, 'utf8').digest('hex') ===
           claim.beforeDigest;
-      if (!beforeMatches || backup !== null) {
+      if (!beforeMatches) {
         throw new AtomicWorkspaceWriteConflictError(
           target,
           'the previous carrier changed before its no-clobber claim'
         );
       }
-      await requireDirectoryIdentity();
-      try {
-        await fs.link(target, backupPath);
-      } catch (error) {
-        if (nodeErrorCode(error) === 'EEXIST') {
+      if (backup !== null) {
+        if (
+          claim.beforeIdentity === null ||
+          !sameAtomicWorkspaceIdentity(backup.identity, claim.beforeIdentity)
+        ) {
           throw new AtomicWorkspaceWriteConflictError(
             target,
             'the exclusive backup claim is already occupied'
           );
         }
-        throw error;
+      } else {
+        await requireDirectoryIdentity();
+        try {
+          await fs.link(target, backupPath);
+        } catch (error) {
+          if (nodeErrorCode(error) === 'EEXIST') {
+            throw new AtomicWorkspaceWriteConflictError(
+              target,
+              'the exclusive backup claim is already occupied'
+            );
+          }
+          throw error;
+        }
+        await syncDirectory();
       }
-      await syncDirectory();
       const targetBeforeRemoval = await stableAtomicWorkspaceFile(target);
       if (
         targetBeforeRemoval === null ||

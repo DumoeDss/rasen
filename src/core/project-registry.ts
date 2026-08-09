@@ -402,7 +402,9 @@ async function registerProjectWithPolicy(
         resolvedEntry.lastUpdated = input.lastUpdated;
       }
       projects[canonicalPath] = resolvedEntry;
-      await FileSystemUtils.createDirectory(getProjectHomeDir(home, options));
+      if (allowCreate) {
+        await FileSystemUtils.createDirectory(getProjectHomeDir(home, options));
+      }
 
       for (const otherPath of Object.keys(projects)) {
         if (otherPath === canonicalPath) continue;
@@ -464,6 +466,7 @@ async function registerProjectWithPolicy(
         projectClaimPathKey(canonicalPath)
     );
     if (canonicalClaim) {
+      if (!allowCreate && canonicalClaim.fixedMetadataConflict) return;
       forgetClaimant(canonicalClaim);
       await place(
         canonicalClaim.entry.home,
@@ -543,6 +546,9 @@ interface CanonicalProjectIdentityClaimant
   extends ProjectIdentityClaimant {
   registryPaths: string[];
   direct: boolean;
+  entryLive: boolean;
+  liveAliasHomes: Set<string>;
+  fixedMetadataConflict: boolean;
 }
 
 function projectClaimPathKey(value: string): string {
@@ -581,15 +587,27 @@ async function canonicalProjectIdentityClaimants(
         live,
         registryPaths: [claimPath],
         direct,
+        entryLive: live,
+        liveAliasHomes: new Set(live && !direct ? [entry.home] : []),
+        fixedMetadataConflict: false,
       });
       continue;
     }
     existing.registryPaths.push(claimPath);
     existing.live ||= live;
+    if (live && !direct) existing.liveAliasHomes.add(entry.home);
     if (direct && !existing.direct) {
       existing.entry = entry;
       existing.direct = true;
+      existing.entryLive = live;
+    } else if (!existing.direct && live && !existing.entryLive) {
+      existing.entry = entry;
+      existing.entryLive = true;
     }
+  }
+  for (const claimant of byRoot.values()) {
+    claimant.fixedMetadataConflict =
+      !claimant.direct && claimant.liveAliasHomes.size > 1;
   }
   return [...byRoot.values()].sort((left, right) =>
     left.path.localeCompare(right.path)

@@ -69,8 +69,17 @@ describe('association completion inside the transaction', () => {
   function adapters(overrides: Partial<ArchiveEngineAdapters> = {}): ArchiveEngineAdapters {
     return {
       ...defaultArchiveEngineAdapters,
-      finalizeArchiveAssociation: async ({ plan }: { plan: ArchivePlan }) =>
-        void (await completeFinalizationAssociation(f.dependenciesFor(), plan)),
+      finalizeArchiveAssociation: async ({
+        plan,
+        requireComplete,
+        carriers,
+        carrierPrepared,
+      }) =>
+        void (await completeFinalizationAssociation(f.dependenciesFor(), plan, {
+          requireComplete,
+          carriers,
+          carrierPrepared,
+        })),
       ...overrides,
     };
   }
@@ -133,6 +142,81 @@ describe('association completion inside the transaction', () => {
     // pair does NOT point at a directory that is no longer there.
     expect(fs.existsSync(bound.changeDir)).toBe(false);
     expect(fs.existsSync(plan.destination)).toBe(true);
+  }, 240_000);
+
+  it('completes a binding after normal commits advance both worktrees', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeId: 'association-after-commits',
+    });
+    const recordedBefore = (await indexEntry(bound)) as WorkspaceIndexEntry;
+    fs.writeFileSync(path.join(bound.planningWorktree, 'planning-note.md'), 'later\n');
+    f.git(bound.planningWorktree, ['add', 'planning-note.md']);
+    f.git(bound.planningWorktree, ['commit', '-m', 'record later planning work']);
+    fs.writeFileSync(path.join(bound.executionWorktree, 'implementation.txt'), 'later\n');
+    f.git(bound.executionWorktree, ['add', 'implementation.txt']);
+    f.git(bound.executionWorktree, ['commit', '-m', 'record later implementation work']);
+
+    const plan = await planFor(bound);
+    const expected = plan.archivePlan.finalization?.association.expected;
+    expect(expected?.planning.headOid).not.toBe(recordedBefore.planning.headOid);
+    expect(expected?.execution.headOid).not.toBe(recordedBefore.execution.headOid);
+
+    const result = await applyArchive(plan.archivePlan, { adapters: adapters() });
+
+    expect(result.status, JSON.stringify(result.blockers)).toBe('complete');
+    expect(association(bound).finalizedChange).toMatchObject({
+      changeId: bound.changeId,
+      publishedEntry: plan.destination,
+    });
+    expect(fs.existsSync(bound.changeDir)).toBe(false);
+  }, 240_000);
+
+  it('refuses planning a bound pair whose execution association is missing', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeId: 'association-missing-before-plan',
+    });
+    const associationPath = path.join(
+      bound.executionWorktree,
+      '.rasen',
+      'planning-binding.json'
+    );
+    const associationBefore = fs.readFileSync(associationPath, 'utf8');
+    const indexBefore = await indexEntry(bound);
+    const changeMetadataPath = path.join(bound.changeDir, '.openspec.yaml');
+    const changeBefore = fs.readFileSync(changeMetadataPath, 'utf8');
+    fs.unlinkSync(associationPath);
+
+    let thrown: unknown;
+    try {
+      await f
+        .finalization()
+        .plan(f.planInput(bound, { outcome: 'abandoned', reason: 'Dropped.' }));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toMatchObject({
+      code: 'planning_execution_binding_mismatch',
+      expected: associationPath,
+      actual: '(missing)',
+    });
+    expect(await indexEntry(bound)).toEqual(indexBefore);
+    expect(fs.readFileSync(changeMetadataPath, 'utf8')).toBe(changeBefore);
+    expect(fs.existsSync(bound.archiveLine)).toBe(false);
+
+    fs.writeFileSync(associationPath, associationBefore);
+    const recoveredPlan = await f
+      .finalization()
+      .plan(f.planInput(bound, { outcome: 'abandoned', reason: 'Dropped.' }));
+    expect(recoveredPlan.applicable, JSON.stringify(recoveredPlan.blockers)).toBe(true);
+    const recovered = await applyArchive(recoveredPlan.archivePlan, {
+      adapters: adapters(),
+    });
+    expect(recovered.status, JSON.stringify(recovered.blockers)).toBe('complete');
   }, 240_000);
 
   it('injected failure BEFORE the phase leaves the binding untouched', async () => {
@@ -455,14 +539,14 @@ describe('association completion inside the transaction', () => {
     expect(result.status).toBe('complete');
 
     const repaired = await indexEntry(bound);
-    // The repair DERIVES the lifecycle phase, and derives it by child 4's own
-    // bind rule (a pair with a `workspacePairId` is `bound`) rather than
-    // stamping a phase this operation did not reach.
-    expect(repaired?.phase).toBe('bound');
-    // `planId` names a WORKSPACE plan. There is none to name here, so the
-    // repair writes what child 4's repair writes rather than borrowing the
-    // archive transaction id from a different id space.
-    expect(repaired?.planId).toBe('');
+    // The repair uses the exact lifecycle phase and workspace plan identity
+    // frozen from the pre-loss entry rather than deriving a new binding fact.
+    expect(repaired?.phase).toBe(
+      plan.archivePlan.finalization?.association.expected?.indexPhase
+    );
+    expect(repaired?.planId).toBe(
+      plan.archivePlan.finalization?.association.expected?.indexPlanId
+    );
     expect(repaired?.workspacePairId).toBe(bound.workspacePairId);
     expect(repaired?.planning.root).toBe(bound.planningWorktree);
     expect(repaired?.execution.root).toBe(bound.executionWorktree);
@@ -509,6 +593,21 @@ describe('association completion inside the transaction', () => {
     });
     expect(fs.readFileSync(target, 'utf8')).toBe(intended);
     expect(fs.readFileSync(partialIntent, 'utf8')).toBe('{"state":');
+  });
+
+  it('publishes a fresh carrier without treating its own directory entries as ancestry drift', async () => {
+    const directory = path.join(f.globalDataDir, 'fresh-atomic-carrier');
+    const target = path.join(directory, 'binding.json');
+    const intended = '{"state":"fresh"}\n';
+
+    await atomicWorkspaceWriteText(target, intended);
+
+    expect(fs.readFileSync(target, 'utf8')).toBe(intended);
+    expect(
+      fs
+        .readdirSync(directory)
+        .filter(name => name.startsWith(`.${path.basename(target)}.rasen-write-`))
+    ).toEqual([]);
   });
 
   it('is a recorded NO-OP, declared in advance, for a plan with no workspace pair', async () => {

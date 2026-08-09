@@ -18,7 +18,10 @@ import {
   normalizeRequirementName,
   type RequirementBlock,
 } from './parsers/requirement-blocks.js';
-import { findMainSpecStructureIssues } from './parsers/spec-structure.js';
+import {
+  findMainSpecStructureIssues,
+  stripFencedCodeBlocksPreservingLines,
+} from './parsers/spec-structure.js';
 import { isKebabId } from './id.js';
 import { Validator } from './validation/validator.js';
 
@@ -522,12 +525,43 @@ async function buildUpdatedSpecCore(
   }
 
 
-  // Extract requirements section and build name->block map
+  // A canonical requirement inventory must be one-to-one before it can be
+  // simulated. Building the map first would collapse normalized duplicates and
+  // could incorrectly classify a single REMOVED operation as deleting the
+  // entire capability.
   const parts = extractRequirementsSection(targetContent);
-  const nameToBlock = new Map<string, RequirementBlock>();
+  const canonicalBlocks = new Map<string, RequirementBlock>();
+  const duplicateCanonicalNames = new Set<string>();
   for (const block of parts.bodyBlocks) {
-    nameToBlock.set(normalizeRequirementName(block.name), block);
+    const key = normalizeRequirementName(block.name);
+    if (canonicalBlocks.has(key)) {
+      duplicateCanonicalNames.add(key);
+    } else {
+      canonicalBlocks.set(key, block);
+    }
   }
+  if (duplicateCanonicalNames.size > 0) {
+    const duplicates = [...duplicateCanonicalNames].sort();
+    throw new SpecReconciliationError([
+      ...preflightIssues,
+      reconciliationIssue(
+        update,
+        'spec_target_structure_invalid',
+        `${specName}: target spec is structurally invalid and cannot be updated until fixed:\n` +
+          duplicates
+            .map(
+              name =>
+                `duplicate canonical requirement header "### Requirement: ${name}"`
+            )
+            .join('\n')
+      ),
+    ]);
+  }
+
+  // Clone the canonical inventory for mutation. canonicalBlocks remains
+  // immutable so every MODIFIED block is diagnosed against the admitted
+  // baseline, including duplicate blocks whose mutation is ambiguous.
+  const nameToBlock = new Map(canonicalBlocks);
 
   // Simulate operations in order: RENAMED → REMOVED → MODIFIED → ADDED.
   // Invalid operations do not mutate the simulation, but do not stop
@@ -593,7 +627,7 @@ async function buildUpdatedSpecCore(
 
   for (const mod of plan.modified) {
     const key = normalizeRequirementName(mod.name);
-    if (skippedModified.has(key)) continue;
+    const canonicalBlock = canonicalBlocks.get(key);
     const currentBlock = nameToBlock.get(key);
     if (!currentBlock) {
       operationIssues.push(
@@ -620,7 +654,8 @@ async function buildUpdatedSpecCore(
       );
       continue;
     }
-    const missingScenarios = findMissingCurrentScenarios(currentBlock, mod);
+    const diagnosticBlock = canonicalBlock ?? currentBlock;
+    const missingScenarios = findMissingCurrentScenarios(diagnosticBlock, mod);
     if (missingScenarios.length > 0) {
       operationIssues.push(
         reconciliationIssue(
@@ -636,6 +671,7 @@ async function buildUpdatedSpecCore(
       );
       continue;
     }
+    if (skippedModified.has(key)) continue;
     nameToBlock.set(key, mod);
   }
 
@@ -870,12 +906,18 @@ function findMissingCurrentScenarios(
 }
 
 function parseScenarioBlocks(requirementRaw: string): ScenarioBlock[] {
-  const lines = requirementRaw.replace(/\r\n?/g, '\n').split('\n');
+  const normalized = requirementRaw.replace(/\r\n?/g, '\n');
+  const lines = normalized.split('\n');
+  const visibleLines = stripFencedCodeBlocksPreservingLines(normalized).split(
+    '\n'
+  );
   const scenarios: ScenarioBlock[] = [];
   let index = 0;
 
-  while (index < lines.length) {
-    const headerMatch = lines[index].match(/^####\s*Scenario:\s*(.+)\s*$/);
+  while (index < visibleLines.length) {
+    const headerMatch = visibleLines[index].match(
+      /^####\s*Scenario:\s*(.+)\s*$/
+    );
     if (!headerMatch) {
       index++;
       continue;
@@ -884,7 +926,10 @@ function parseScenarioBlocks(requirementRaw: string): ScenarioBlock[] {
     const start = index;
     const name = headerMatch[1].trim();
     index++;
-    while (index < lines.length && !/^####\s*Scenario:\s*(.+)\s*$/.test(lines[index])) {
+    while (
+      index < visibleLines.length &&
+      !/^####\s*Scenario:\s*(.+)\s*$/.test(visibleLines[index])
+    ) {
       index++;
     }
 

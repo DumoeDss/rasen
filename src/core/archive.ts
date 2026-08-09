@@ -97,7 +97,9 @@ export function formatArchiveAbortBlockedLines(
     | 'blockers'
     | 'effectivePhase'
     | 'retainedPaths'
+    | 'associationPhase'
     | 'manualRecoveryAction'
+    | 'abortCommand'
     | 'recoveryCommand'
   >,
   locale: Parameters<typeof getLocaleCatalog>[0] = getCliLocale()
@@ -125,6 +127,9 @@ export function formatArchiveAbortBlockedLines(
         })
       );
     }
+  }
+  if (result.associationPhase === 'pending') {
+    lines.push(messages.associationPending);
   }
   const disposition = formatArchiveDispositionLine(result, locale);
   if (disposition !== null) lines.push(disposition);
@@ -712,9 +717,6 @@ export class ArchiveCommand {
             transactionId: result.transactionId,
           })
         );
-        if (result.associationPhase === 'pending') {
-          console.log(messages.associationPending);
-        }
         for (const line of formatArchiveAbortBlockedLines(result)) {
           console.log(line);
         }

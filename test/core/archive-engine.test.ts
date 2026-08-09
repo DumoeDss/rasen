@@ -922,6 +922,7 @@ describe('archive plan/apply engine', () => {
   });
 
   it('projects keep-ephemera from a complete discovery and blocks target races', async () => {
+    await fs.mkdir(archiveParent, { recursive: true });
     const keepPlan = await plan({ keepEphemera: true });
     expect(keepPlan.cleaner.classification.complete).toBe(true);
     expect(keepPlan.cleaner.effectiveDelete).toEqual([]);
@@ -969,13 +970,31 @@ describe('archive plan/apply engine', () => {
       ])
     );
 
+    const globalDataDir = path.join(root, 'reservation-race-global');
+    await persistArchivePlan(keepPlan, globalDataDir);
     await fs.mkdir(keepPlan.paths.final, { recursive: true });
     await fs.writeFile(path.join(keepPlan.paths.final, 'unrelated.txt'), 'do not clobber');
     const result = await applyArchive(keepPlan);
-    expect(result.status).toBe('recoverable');
+    expect(result).toMatchObject({
+      status: 'abort-required',
+      blockers: [
+        expect.objectContaining({
+          code: 'archive_reservation_ownership_unverified',
+        }),
+      ],
+      abortCommand: expect.stringContaining('--abort-plan'),
+    });
     expect(await fs.readFile(path.join(keepPlan.paths.final, 'unrelated.txt'), 'utf8')).toBe(
       'do not clobber'
     );
+    const aborted = await abortArchivePlan(keepPlan, globalDataDir);
+    expect(aborted).toMatchObject({ status: 'aborted', blockers: [] });
+    expect(
+      await fs.readFile(
+        path.join(keepPlan.paths.final, 'unrelated.txt'),
+        'utf8'
+      )
+    ).toBe('do not clobber');
     await expect(fs.access(active)).resolves.toBeUndefined();
     expect(await fs.readFile(path.join(ephemera, 'trace.log'), 'utf8')).toBe('temporary\n');
   });
@@ -1283,8 +1302,11 @@ describe('archive plan/apply engine', () => {
 
     const retry = await applyArchive(archivePlan);
 
-    expect(retry.status).toBe('complete');
-    expect(retry.resumed).toBe(true);
+    expect(retry).toMatchObject({
+      status: 'complete',
+      resumed: true,
+      blockers: [],
+    });
     expect(
       await fs.readFile(
         path.join(archivePlan.paths.final, 'evidence', 'handoff', 'resume.md'),
@@ -1899,8 +1921,11 @@ describe('archive plan/apply engine', () => {
     await expect(fs.access(backup)).rejects.toMatchObject({ code: 'ENOENT' });
 
     const retry = await applyArchive(archivePlan);
-    expect(retry.status).toBe('complete');
-    expect(retry.resumed).toBe(true);
+    expect(retry).toMatchObject({
+      status: 'complete',
+      resumed: true,
+      blockers: [],
+    });
     expect(await fs.readFile(target, 'utf8')).toBe(rebuilt);
     await expect(fs.access(claimRoot)).rejects.toMatchObject({ code: 'ENOENT' });
   }, 120_000);
@@ -1942,12 +1967,12 @@ describe('archive plan/apply engine', () => {
       ...defaultArchiveEngineAdapters,
       fs: {
         ...defaultArchiveEngineAdapters.fs,
-        unlink: async (candidate: string) => {
-          await defaultArchiveEngineAdapters.fs.unlink(candidate);
-          if (candidate === backup && inject) {
+        rmdir: async (candidate: string) => {
+          if (candidate === claimRoot && inject) {
             inject = false;
             await fs.writeFile(intruder, 'unrelated\n');
           }
+          return defaultArchiveEngineAdapters.fs.rmdir(candidate);
         },
       },
     };
@@ -2045,6 +2070,7 @@ describe('archive plan/apply engine', () => {
     await fs.writeFile(delta, '# Delete\n');
     await fs.writeFile(target, '# Original\n');
     const archivePlan = await plan({
+      keepEphemera: true,
       specActions: [
         {
           capability,
@@ -2088,7 +2114,11 @@ describe('archive plan/apply engine', () => {
     await expect(fs.access(claimRoot)).rejects.toMatchObject({ code: 'ENOENT' });
 
     const retry = await applyArchive(archivePlan);
-    expect(retry).toMatchObject({ status: 'complete', resumed: true });
+    expect(retry).toMatchObject({
+      status: 'complete',
+      resumed: true,
+      blockers: [],
+    });
     await expect(fs.access(path.dirname(target))).rejects.toMatchObject({
       code: 'ENOENT',
     });
@@ -2531,25 +2561,20 @@ describe('archive plan/apply engine', () => {
       const external = path.join(root, 'external-update-parent');
       await fs.mkdir(external);
       await fs.writeFile(path.join(external, 'unrelated.txt'), 'unrelated\n');
-      let swap = true;
+      let targetParentStats = 0;
       const adapters = {
         ...defaultArchiveEngineAdapters,
         fs: {
           ...defaultArchiveEngineAdapters.fs,
-          mkdir: async (
-            targetPath: string,
-            options?: { recursive?: boolean }
-          ) => {
-            const result = await defaultArchiveEngineAdapters.fs.mkdir(
-              targetPath,
-              options
-            );
-            if (targetPath === targetParent && options?.recursive && swap) {
-              swap = false;
-              await fs.rename(targetParent, displaced);
-              await fs.symlink(external, targetParent, 'dir');
+          lstat: async (targetPath: string) => {
+            if (targetPath === targetParent) {
+              targetParentStats += 1;
+              if (targetParentStats === 2) {
+                await fs.rename(targetParent, displaced);
+                await fs.symlink(external, targetParent, 'dir');
+              }
             }
-            return result;
+            return defaultArchiveEngineAdapters.fs.lstat(targetPath);
           },
         },
       };
@@ -2958,16 +2983,27 @@ describe('archive plan/apply engine', () => {
     expect((await applyArchive(archivePlan)).status).toBe('abort-required');
 
     let failStageRemoval = true;
+    let claimedStagePath: string | null = null;
     const adapters = {
       ...defaultArchiveEngineAdapters,
       fs: {
         ...defaultArchiveEngineAdapters.fs,
         rmdir: async (target: string) => {
-          if (target === archivePlan.paths.stage && failStageRemoval) {
+          if (
+            path.basename(target) === 'object' &&
+            path
+              .basename(path.dirname(target))
+              .startsWith(
+                `.rasen-archive-claim-${archivePlan.transactionId}-`
+              ) &&
+            failStageRemoval
+          ) {
+            claimedStagePath = target;
             failStageRemoval = false;
-            throw Object.assign(new Error('simulated stage rmdir failure'), {
-              code: 'EIO',
-            });
+            throw Object.assign(
+              new Error('simulated claimed-stage rmdir failure'),
+              { code: 'EIO' }
+            );
           }
           await defaultArchiveEngineAdapters.fs.rmdir(target);
         },
@@ -2996,8 +3032,19 @@ describe('archive plan/apply engine', () => {
         algorithm: 'sha256',
         authorityEntries: expect.any(Array),
       }),
+      stageClaim: expect.objectContaining({
+        claimed: claimedStagePath,
+        root: expect.any(String),
+        sentinel: expect.any(String),
+        rootIdentity: expect.any(Object),
+        sentinelIdentity: expect.any(Object),
+      }),
     });
-    await expect(fs.access(archivePlan.paths.stage)).resolves.toBeUndefined();
+    expect(claimedStagePath).not.toBeNull();
+    await expect(fs.readdir(claimedStagePath!)).resolves.toEqual([]);
+    await expect(fs.access(archivePlan.paths.stage)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
     await expect(fs.access(archivePlan.paths.journal)).rejects.toMatchObject({
       code: 'ENOENT',
     });
@@ -3012,10 +3059,81 @@ describe('archive plan/apply engine', () => {
     await expect(fs.access(archivePlan.paths.stage)).rejects.toMatchObject({
       code: 'ENOENT',
     });
+    await expect(fs.access(aborting.stageClaim.root)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(
+      fs.access(
+        path.join(
+          globalDataDir,
+          'archive-transactions',
+          archivePlan.transactionId,
+          'plan.json'
+        )
+      )
+    ).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(loadCompletedArchiveAbort(
       `archive-v1:${archivePlan.transactionId}:${archivePlan.planHash}`,
       globalDataDir
     )).resolves.toMatchObject({ status: 'already-aborted' });
+  });
+
+  it('preserves a substituted abort claim occupant for manual recovery', async () => {
+    await fs.writeFile(
+      path.join(active, 'evidence', 'ship-log.md'),
+      '# Ship Log\n\n## Archive\nold transaction\n'
+    );
+    const archivePlan = await plan();
+    const globalDataDir = path.join(root, 'global-data');
+    await persistArchivePlan(archivePlan, globalDataDir);
+    expect((await applyArchive(archivePlan)).status).toBe('abort-required');
+
+    let replacementPath: string | null = null;
+    let displacedPath: string | null = null;
+    const adapters = {
+      ...defaultArchiveEngineAdapters,
+      fs: {
+        ...defaultArchiveEngineAdapters.fs,
+        rename: async (source: string, destination: string) => {
+          await defaultArchiveEngineAdapters.fs.rename(source, destination);
+          if (source === archivePlan.paths.stage) {
+            replacementPath = destination;
+            displacedPath = `${destination}-displaced`;
+            await fs.rename(destination, displacedPath);
+            await fs.mkdir(destination);
+            await fs.writeFile(
+              path.join(destination, 'intruder.txt'),
+              'must survive\n'
+            );
+          }
+        },
+      },
+    };
+
+    const refused = await withStoredArchivePlanOperation(
+      archivePlan,
+      globalDataDir,
+      'abort',
+      () => abortArchivePlan(archivePlan, globalDataDir, adapters)
+    );
+    expect(refused).toMatchObject({
+      status: 'blocked',
+      blockers: [
+        expect.objectContaining({
+          code: 'archive_abort_ownership_unverified',
+        }),
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    expect(refused.recoveryCommand).toBeUndefined();
+    expect(replacementPath).not.toBeNull();
+    expect(displacedPath).not.toBeNull();
+    await expect(
+      fs.readFile(path.join(replacementPath!, 'intruder.txt'), 'utf8')
+    ).resolves.toBe('must survive\n');
+    await expect(fs.access(displacedPath!)).resolves.toBeUndefined();
   });
 
   it('refuses to adopt a stage payload injected before abort starts', async () => {

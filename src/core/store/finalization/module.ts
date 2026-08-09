@@ -170,7 +170,7 @@ interface ResolvedFinalizationContext {
   readonly targetLine: FinalizationTargetLineFacts;
   readonly catalog: StoreTargetLineCatalogV1;
   readonly projectIds: readonly string[];
-  readonly executionAssociationFile: string | null;
+  readonly executionAssociationFile: string;
 }
 export function inspectFinalizationApplyPlan(
   plan: ImmutableFinalizationPlan,
@@ -265,11 +265,13 @@ export class ChangeFinalization implements ChangeFinalizationModule {
     let landedProof: FinalizationLandedProof | null = null;
     let specActions: readonly PreparedArchiveSpecAction[] = [];
     if (request.outcome === 'landed') {
+      const preparationBlockers = input.archive.preparationBlockers ?? [];
       if (
         input.archive.hasDeltaSpecs &&
         (input.skipSpecs === true ||
           preparedSpecSync.mode !== 'apply' ||
-          input.archive.specActionCandidates.length === 0)
+          input.archive.specActionCandidates.length === 0) &&
+        preparationBlockers.length === 0
       ) {
         throw specSkipConflict(context.changeId);
       }
@@ -1072,8 +1074,18 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       index.execution.root,
       input.pathFlavor ?? 'native'
     );
-    const associationExists =
-      (await this.dependencies.fs.statKind(associationFile)) === 'file';
+    if ((await this.dependencies.fs.statKind(associationFile)) !== 'file') {
+      throw finalizationRefusal(
+        'planning_execution_binding_mismatch',
+        'The bound workspace pair has no execution association document to complete.',
+        {
+          expected: associationFile,
+          actual: '(missing)',
+          target: associationFile,
+          fix: 'Restore the exact execution association document for this pair before planning finalization.',
+        }
+      );
+    }
 
     return {
       scope,
@@ -1089,7 +1101,7 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       targetLine,
       catalog,
       projectIds: await this.listProjectIds(scope, input.pathFlavor),
-      executionAssociationFile: associationExists ? associationFile : null,
+      executionAssociationFile: associationFile,
     };
   }
 
@@ -1288,9 +1300,7 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       changeId: context.changeId,
       changeInstanceId: context.changeInstanceId,
       workspacePairId: context.workspacePairId,
-      ...(context.executionAssociationFile === null
-        ? {}
-        : { executionAssociationPath: context.executionAssociationFile }),
+      executionAssociationPath: context.executionAssociationFile,
       ...(input.globalDataDir === undefined ? {} : { globalDataDir: input.globalDataDir }),
       expected: {
         storeUid: context.scope.storeUid,
