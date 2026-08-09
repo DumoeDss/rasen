@@ -1,0 +1,41 @@
+{
+  "change": "ecp-frozen-action-session-executor",
+  "archivedAt": "2026-08-09T07:58:53.713Z",
+  "codeCommit": "ade38535957b6fbccc4f1be2cad2fb415ec24bc8",
+  "planningBranch": "wip/ecp-shared-bounded-loop-lifecycle-resume",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/implementation-baseline.md",
+      "sha256": "a29b9b53cf60ce8b7e422745ad1c482ba9bc9b5a9540109f58e72c9499bfd26d"
+    },
+    {
+      "path": "evidence/mutation-receipts.md",
+      "sha256": "bc074c6dea1c9b18f5ad7df3779e0c369fc383b59567a8d24298c7f2888c4015"
+    },
+    {
+      "path": "evidence/real-receipts-status.md",
+      "sha256": "dffe51073f828b7b57a16610b44685a05082f0f6500c54a510fe7a08a585d72d"
+    },
+    {
+      "path": "evidence/review-round-1.md",
+      "sha256": "740424312919735bb22cd636625e9a329848016574d67e3efe7a6e116de9307d"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "f1de726c2a54612d3a74da8353e574f7e5c14d5f176ac24faf2e76a2a94f413e"
+    },
+    {
+      "path": "evidence/win32-daemon-death-receipt.md",
+      "sha256": "28865108a5062ef07390f1e6d8b84c99b50445e1121bdc4a059e3a0445fd5853"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

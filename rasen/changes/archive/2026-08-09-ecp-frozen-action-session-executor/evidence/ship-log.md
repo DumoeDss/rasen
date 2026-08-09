@@ -24,3 +24,8 @@ The frozen-action session executor: consumes only granted frozen Actions and reb
 ## Delivery
 
 Local (commit only). ECP-8 owns the unified 0.2.0 PR, remote CI matrix, version/changelog/tag, and the deferred real-OS/real-backend receipts (executor 8.1/10.1/10.2/10.4; macOS Section 7).
+
+## Archive
+**Date:** 2026-08-09T07:58:53.713Z
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle\rasen\changes\archive\2026-08-09-ecp-frozen-action-session-executor
+**Transaction:** 31e80d88-f654-48a3-9a5b-027158924582
