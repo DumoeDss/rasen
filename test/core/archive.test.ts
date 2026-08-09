@@ -13,6 +13,7 @@ import {
 import { getGlobalDataDir } from '../../src/core/global-config.js';
 import { Validator } from '../../src/core/validation/validator.js';
 import { promises as fs } from 'fs';
+import { writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'path';
 import os from 'os';
@@ -305,7 +306,7 @@ describe('ArchiveCommand', () => {
         phase: 'complete',
         integrityFailure: {
           operation: 'accounting',
-          code: 'ESTALE',
+          code: 'archive_reservation_ownership_unverified',
         },
       });
       expect(await fs.readFile(archivedTask, 'utf8')).toBe(
@@ -2041,6 +2042,7 @@ The system SHALL do the thing differently.
         process.env[key] = env[key];
       }
       execFileSync('git', ['init'], { cwd: tempDir });
+      writeFileSync(path.join(tempDir, '.gitignore'), 'xdg-data/\n');
     }
 
     function commitAll(message: string): void {

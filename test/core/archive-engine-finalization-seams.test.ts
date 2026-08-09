@@ -288,9 +288,13 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
         calls.push('v1-resolve');
         return defaultArchiveEngineAdapters.resolveArchiveAccounting(input);
       },
-      writeArchiveJson: async (dir, accounting) => {
+      writeArchiveJson: async (dir, accounting, temporaryIdentity) => {
         calls.push('v1-write');
-        return defaultArchiveEngineAdapters.writeArchiveJson(dir, accounting);
+        return defaultArchiveEngineAdapters.writeArchiveJson(
+          dir,
+          accounting,
+          temporaryIdentity
+        );
       },
       verifyArchiveAccounting: async (dir, accounting) => {
         calls.push('v1-verify');
@@ -300,9 +304,13 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
         calls.push('v2-resolve');
         return defaultArchiveEngineAdapters.resolveArchiveV2Accounting(input);
       },
-      writeArchiveV2Json: async (dir, prepared) => {
+      writeArchiveV2Json: async (dir, prepared, temporaryIdentity) => {
         calls.push('v2-write');
-        return defaultArchiveEngineAdapters.writeArchiveV2Json(dir, prepared);
+        return defaultArchiveEngineAdapters.writeArchiveV2Json(
+          dir,
+          prepared,
+          temporaryIdentity
+        );
       },
       verifyArchiveV2Accounting: async (dir, prepared) => {
         calls.push('v2-verify');
@@ -320,7 +328,7 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
     const { adapters, calls } = recordingAdapters();
     const archivePlan = await plan(false);
 
-    expect((await applyArchive(archivePlan, { adapters: adapters })).status).toBe('complete');
+    expect((await applyArchive(archivePlan, { adapters })).status).toBe('complete');
     expect(calls.filter(call => call.startsWith('v2-'))).toEqual([]);
     expect(calls).toContain('v1-write');
     // The association phase is not reached at all for a plan with no block.
@@ -341,7 +349,7 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
     expect(archivePlan.paths.final).toBe(
       path.join(archiveParent, `${DATE}-${CHANGE}--${changeInstanceDigestPrefix(INSTANCE)}`)
     );
-    expect((await applyArchive(archivePlan, { adapters: adapters })).status).toBe('complete');
+    expect((await applyArchive(archivePlan, { adapters })).status).toBe('complete');
     expect(calls.filter(call => call.startsWith('v1-'))).toEqual([]);
     expect(calls).toContain('v2-write');
     expect(calls).toContain('association');
@@ -378,9 +386,13 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
   it('orders the association phase AFTER accounting and BEFORE source removal', async () => {
     const order: string[] = [];
     const { adapters } = recordingAdapters({
-      writeArchiveV2Json: async (dir, prepared) => {
+      writeArchiveV2Json: async (dir, prepared, temporaryIdentity) => {
         order.push('accounting');
-        return defaultArchiveEngineAdapters.writeArchiveV2Json(dir, prepared);
+        return defaultArchiveEngineAdapters.writeArchiveV2Json(
+          dir,
+          prepared,
+          temporaryIdentity
+        );
       },
       finalizeArchiveAssociation: async () => {
         // The active source still exists at this point, which is the whole

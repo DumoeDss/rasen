@@ -152,6 +152,7 @@ describe('vocabulary sweep', () => {
       // Operational codes outside the closed taxonomy
       // (`STORE_WORKSPACE_OPERATIONAL_ERROR_CODES`).
       'workspace_git_failed',
+      'workspace_atomic_write_conflict',
       'workspace_identity_unavailable',
       'workspace_layout_version_unsupported',
       'workspace_plan_missing',

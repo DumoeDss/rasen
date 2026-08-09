@@ -476,6 +476,16 @@ describe('spec reconciliation analysis', () => {
       }),
       expect.objectContaining({
         code: 'spec_modified_scenarios_missing',
+        requirement: 'Rule A',
+        missingScenarios: ['A survives'],
+      }),
+      expect.objectContaining({
+        code: 'spec_modified_scenarios_missing',
+        requirement: 'Rule A',
+        missingScenarios: ['A survives'],
+      }),
+      expect.objectContaining({
+        code: 'spec_modified_scenarios_missing',
         requirement: 'Rule B',
         missingScenarios: ['B survives'],
       }),
