@@ -11,13 +11,13 @@ Scope legend: this change is the enforcement/completeness/config layer over the 
 
 ## 2. Exhaustive cross-driver parity (acceptance 6)
 
-- [ ] 2.1 Build the data-driven cross-face parity harness enumerating {interactive launcher, bare CLI, Management API, Canvas, Operations/audit, daemon} x {start, resume, cancel, inspect, audit}, asserting each cell routes through the shared `dispatchGrantedAction` contract to the same canonical RunId/ActionId and honours the capability matrix's typed availability verdict. The enumeration is table-driven so adding a face or operation is one row.
+- [x] 2.1 Build the data-driven cross-face parity harness enumerating {interactive launcher, bare CLI, Management API, Canvas, Operations/audit, daemon} x {start, resume, cancel, inspect, audit}, asserting each cell routes through the shared `dispatchGrantedAction` contract to the same canonical RunId/ActionId and honours the capability matrix's typed availability verdict. The enumeration is table-driven so adding a face or operation is one row.
   - Receipt: parity harness green over the full faces-x-operations table; a coverage guard flags any uncovered face or operation.
-- [ ] 2.2 Add the audit operation to the Operations/projector surface as an additive read-only operation (no Record mutation) and include it in the parity harness.
+- [x] 2.2 Add the audit operation to the Operations/projector surface as an additive read-only operation (no Record mutation) and include it in the parity harness.
   - Receipt: audit operation wired; guard asserting it performs no Record mutation and resolves to the same Run/Action.
-- [ ] 2.3 Install the parity drift-prevention gate: every face's projected Run/Action identity and completion state must be backed by the canonical Record; a divergent projection fails closed with a typed drift outcome.
+- [x] 2.3 Install the parity drift-prevention gate: every face's projected Run/Action identity and completion state must be backed by the canonical Record; a divergent projection fails closed with a typed drift outcome.
   - Receipt: drift gate green for backed projections; mutation receipt proving a divergent projection fails closed.
-- [ ] 2.4 Assert the headless-driver-independent-of-launcher property per face on a platform where the hosted backend is available: launcher exit does not end the Run.
+- [x] 2.4 Assert the headless-driver-independent-of-launcher property per face on a platform where the hosted backend is available: launcher exit does not end the Run.
   - Receipt: guard asserting a hosted Run survives launcher exit when driven through the daemon face.
 
 ## 3. Exhaustive cancel/restart/ack-loss fault matrix (acceptance 4)
