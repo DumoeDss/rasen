@@ -262,10 +262,15 @@ describe('Linux process-authority package and CI boundary', () => {
     const flake = fs.readFileSync('flake.nix', 'utf8');
     const script = fs.readFileSync(SCRIPT, 'utf8');
     expect(flake).toContain('rust-overlay.overlays.default');
+    expect(flake).toContain('pkgs.rustPlatform.importCargoLock');
+    expect(flake).toMatch(/lockFile = \.\/native\/linux-process-authority\/Cargo\.lock;/);
     expect(flake).toContain('rustToolchainSource = pkgs.rust-bin.stable."1.88.0".minimal');
     expect(flake).toMatch(/pkgs\.runCommand "rust-toolchain-1\.88\.0-exact"/);
     expect(flake).toMatch(/cp -RL "\$\{rustToolchainSource\}\/\." "\$out\/"/);
-    expect(flake).toMatch(/chmod u\+w "\$out\/bin" "\$out\/bin\/rustc"/);
+    expect(flake).toMatch(/chmod u\+w "\$out\/bin" "\$out\/bin\/cargo" "\$out\/bin\/rustc"/);
+    expect(flake).toMatch(/wrapProgram "\$out\/bin\/cargo"[\s\S]*?--add-flags '--offline'/);
+    expect(flake).toContain('source.crates-io.replace-with=\\"vendored-sources\\"');
+    expect(flake).toContain('source.vendored-sources.directory=\\"${cargoVendor}\\"');
     expect(flake).toMatch(/wrapProgram "\$out\/bin\/rustc" --add-flags "--sysroot \$out"/);
     expect(flake).toMatch(/nativeBuildInputs = with pkgs; \[[\s\S]*?\brustToolchain\b[\s\S]*?\];/);
     expect(flake).toMatch(/nativeBuildInputs = with pkgs; \[[\s\S]*?\bwhich\b[\s\S]*?\];/);

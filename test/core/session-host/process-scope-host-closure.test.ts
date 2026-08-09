@@ -88,13 +88,17 @@ describe('ProcessScope authority after backend-root exit', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-scope-root-exit-'));
     roots.push(root);
     const factsPath = path.join(root, 'facts.json');
-    const descendantReady = path.join(root, 'descendant-ready');
+    const descendantScript = [
+      "if (typeof process.send !== 'function') process.exit(70);",
+      'setInterval(() => {}, 1000);',
+      "process.send('ready', () => process.disconnect());",
+    ].join('');
     const script = [
       "const { spawn } = require('node:child_process');",
       "const fs = require('node:fs');",
-      `const child = spawn(process.execPath, ['-e', ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(descendantReady)}, '1');setInterval(() => {}, 1000)`)}], { detached: process.platform === 'win32', stdio: 'ignore', windowsHide: true });`,
+      `const child = spawn(process.execPath, ['-e', ${JSON.stringify(descendantScript)}], { detached: process.platform === 'win32', stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true });`,
       'child.unref();',
-      `const ready = setInterval(() => { if (!fs.existsSync(${JSON.stringify(descendantReady)})) return; clearInterval(ready); fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify({ root: process.pid, descendant: child.pid })); process.exit(23); }, 5);`,
+      `child.once('message', (message) => { if (message !== 'ready') process.exit(71); fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify({ root: process.pid, descendant: child.pid })); process.exit(23); });`,
     ].join('');
     const scope = createNativeProcessScope({
       onControllerSpawn(pid) { exactPids.add(pid); },
@@ -110,7 +114,10 @@ describe('ProcessScope authority after backend-root exit', () => {
     });
     exactPids.add(prepared.displayPid!);
     const live = await prepared.activate();
-    await waitFor(() => fs.existsSync(factsPath));
+    await expect(live.rootExited).resolves.toMatchObject({
+      state: 'root-exited',
+      code: 23,
+    });
     const facts = JSON.parse(fs.readFileSync(factsPath, 'utf8')) as {
       root: number;
       descendant: number;
@@ -118,10 +125,6 @@ describe('ProcessScope authority after backend-root exit', () => {
     exactPids.add(facts.root);
     exactPids.add(facts.descendant);
 
-    await expect(live.rootExited).resolves.toMatchObject({
-      state: 'root-exited',
-      code: 23,
-    });
     await expect(Promise.race([
       live.closed.then(() => 'scope-empty'),
       new Promise<string>((resolve) => setTimeout(() => resolve('still-live'), 150)),

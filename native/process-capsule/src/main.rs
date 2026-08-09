@@ -31,6 +31,7 @@ const ERROR: u8 = 0x86;
 const SCOPE_EMPTY: u8 = 0x87;
 const OBSERVATION: u8 = 0x88;
 const SUPERVISOR_READY: u8 = 0x90;
+const SUPERVISOR_JOB_HANDLE: u8 = 0x91;
 
 #[derive(Clone)]
 struct LaunchSpec {
@@ -216,6 +217,27 @@ fn stream_child_output<R: Read + Send + 'static>(
 
 fn supervisor_main(hold_on_control_loss: bool) -> io::Result<()> {
     let mut controller_input = io::stdin().lock();
+    let leaked_job_handle = if hold_on_control_loss {
+        let (kind, payload) = read_frame(&mut controller_input)?.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "missing duplicated Job-handle mutation",
+            )
+        })?;
+        if kind != SUPERVISOR_JOB_HANDLE || payload.len() != std::mem::size_of::<u64>() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "supervisor expected duplicated Job-handle mutation",
+            ));
+        }
+        let mut raw = [0u8; std::mem::size_of::<u64>()];
+        raw.copy_from_slice(&payload);
+        let raw = u64::from_be_bytes(raw);
+        platform::validate_duplicated_job_handle(raw)?;
+        Some(raw)
+    } else {
+        None
+    };
     let (kind, payload) = read_frame(&mut controller_input)?.ok_or_else(|| {
         io::Error::new(io::ErrorKind::UnexpectedEof, "missing supervisor prepare")
     })?;
@@ -226,7 +248,15 @@ fn supervisor_main(hold_on_control_loss: bool) -> io::Result<()> {
         ));
     }
     let spec = parse_launch(&payload)?;
-    write_frame(&mut io::stdout().lock(), SUPERVISOR_READY, &[])?;
+    write_frame(
+        &mut io::stdout().lock(),
+        SUPERVISOR_READY,
+        if leaked_job_handle.is_some() {
+            &[1]
+        } else {
+            &[]
+        },
+    )?;
     let (kind, _) = read_frame(&mut controller_input)?.ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::UnexpectedEof,
@@ -315,6 +345,13 @@ fn supervisor_main(hold_on_control_loss: bool) -> io::Result<()> {
             }
             None => {
                 if hold_on_control_loss {
+                    // This branch is the mutation oracle: the supervisor has
+                    // validated that this exact raw handle names its own Job.
+                    // Keeping the process alive keeps that independently owned
+                    // handle open after controller death.
+                    let _retained_job_handle = leaked_job_handle.ok_or_else(|| {
+                        io::Error::other("duplicated Job handle was not acknowledged")
+                    })?;
                     loop {
                         thread::sleep(Duration::from_secs(60));
                     }
@@ -347,6 +384,7 @@ struct SupervisorScope {
     output: File,
     pid: u32,
     birth: String,
+    duplicated_job_handle: Option<u64>,
     containment: Containment,
 }
 
@@ -653,6 +691,23 @@ mod platform {
         unsafe { GetCurrentProcessId() }
     }
 
+    pub fn validate_duplicated_job_handle(raw: u64) -> io::Result<()> {
+        unsafe {
+            let job = raw as usize as Handle;
+            if job.is_null() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "duplicated Job handle is null",
+                ));
+            }
+            let mut in_job = FALSE;
+            if IsProcessInJob(GetCurrentProcess(), job, &mut in_job) == FALSE || in_job == FALSE {
+                return Err(os_error("duplicated Job handle validation"));
+            }
+            Ok(())
+        }
+    }
+
     pub fn spawn_supervisor(duplicate_job: bool) -> io::Result<SupervisorScope> {
         unsafe {
             let mut attrs = SecurityAttributes {
@@ -769,7 +824,7 @@ mod platform {
                 TerminateProcess(info.process, 74);
                 return Err(os_error("supervisor is not in Job"));
             }
-            if duplicate_job {
+            let duplicated_job_handle = if duplicate_job {
                 let mut duplicated: Handle = null_mut();
                 if DuplicateHandle(
                     GetCurrentProcess(),
@@ -783,7 +838,10 @@ mod platform {
                 {
                     return Err(os_error("DuplicateHandle mutation"));
                 }
-            }
+                Some(duplicated as usize as u64)
+            } else {
+                None
+            };
             if ResumeThread(info.thread) == u32::MAX {
                 return Err(os_error("ResumeThread"));
             }
@@ -795,6 +853,7 @@ mod platform {
                 output: File::from_raw_handle(output_read),
                 pid: info.process_id,
                 birth,
+                duplicated_job_handle,
                 containment: Containment::Windows(WindowsContainment {
                     job,
                     process: info.process,
@@ -1109,6 +1168,13 @@ mod platform {
         unsafe { getpid() as u32 }
     }
 
+    pub fn validate_duplicated_job_handle(_raw: u64) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "duplicated Job-handle mutation is Windows-only",
+        ))
+    }
+
     pub fn spawn_supervisor(_duplicate_job: bool) -> io::Result<SupervisorScope> {
         let exe = env::current_exe()?;
         let mut command = Command::new(exe);
@@ -1146,6 +1212,7 @@ mod platform {
             output,
             pid,
             birth,
+            duplicated_job_handle: None,
             containment: Containment::Posix(PosixContainment { child, pidfd }),
         })
     }
@@ -1428,9 +1495,24 @@ fn controller_main(
         ));
     }
     let mut supervisor = platform::spawn_supervisor(duplicate_job)?;
+    if duplicate_job {
+        let raw = supervisor.duplicated_job_handle.ok_or_else(|| {
+            io::Error::other("duplicated Job-handle mutation was not established")
+        })?;
+        write_frame(
+            &mut supervisor.input,
+            SUPERVISOR_JOB_HANDLE,
+            &raw.to_be_bytes(),
+        )?;
+    }
     write_frame(&mut supervisor.input, PREPARE, &payload)?;
     let ready = read_frame(&mut supervisor.output)?;
-    if ready.as_ref().map(|item| item.0) != Some(SUPERVISOR_READY) {
+    let expected_ready_payload: &[u8] = if duplicate_job { &[1] } else { &[] };
+    if !matches!(
+        ready.as_ref(),
+        Some((kind, payload))
+            if *kind == SUPERVISOR_READY && payload.as_slice() == expected_ready_payload
+    ) {
         let _ = supervisor.containment.terminate();
         return Err(io::Error::other("supervisor readiness not observed"));
     }

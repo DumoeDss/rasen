@@ -29,6 +29,7 @@ import type {
   RunId,
   WorkspaceInstanceId,
 } from '../../../src/core/change-run/contracts.js';
+import { FileSystemUtils } from '../../../src/utils/file-system.js';
 
 const TOKEN = 'planning-selector-token';
 const branded = <T>(value: string): T => value as T;
@@ -88,6 +89,15 @@ function workspaceId(root: string, home: string): WorkspaceInstanceId {
   );
 }
 
+function legacyWorkspaceId(root: string): WorkspaceInstanceId {
+  const canonicalRoot = FileSystemUtils.canonicalizeExistingPath(root);
+  const legacyHome = `project-${createHash('sha256')
+    .update(canonicalRoot)
+    .digest('hex')
+    .slice(0, 12)}`;
+  return workspaceId(canonicalRoot, legacyHome);
+}
+
 function registryEntry(projectId: string, home: string): ProjectRegistryEntryState {
   return {
     projectId,
@@ -109,10 +119,7 @@ function publishRun(
   home: string,
   runId: RunId,
   runsRoot: string,
-  workspaceInstanceId: WorkspaceInstanceId = workspaceId(
-    root,
-    `project-${createHash('sha256').update(root).digest('hex').slice(0, 12)}`
-  )
+  workspaceInstanceId: WorkspaceInstanceId = legacyWorkspaceId(root)
 ) {
   const plan = createRuntimePlan({
     runId,

@@ -21,8 +21,15 @@ const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
   // mutation oracle. These are shared ProcessCapsule correctness fixes, not
   // reinterpretation by the Linux provider. LF delivery bytes re-hashed by
   // the LEAD, 2026-08-09.
+  // Rebaselined a4c80875... -> f6c00b73...: PR 147's CI fix-forward makes
+  // the leaked-Job-handle mutation an acknowledged protocol step. The
+  // supervisor validates its remotely duplicated handle against the kernel
+  // before the controller publishes PREPARED, removing the full-suite race.
+  // This remains shared ProcessCapsule correctness, not Linux-provider
+  // reinterpretation. Staged LF delivery bytes re-hashed via `git show
+  // :<path>`. LEAD-authorized rebaseline, 2026-08-09.
   'native/process-capsule/src/main.rs':
-    'a4c80875752d1ebee0e6e3cd1e5532d025f43e208c6d3c3f1a3a1bea50b68383',
+    'f6c00b734c769eb210c5b6e13fc6c46295c0f976ebb98bd26f44f186ca0e3c1c',
   'native/process-capsule/Cargo.lock':
     'f00e64114e06f06b623880947c4ec4d33953218d901abdba3b2b2f1d32db8793',
   'scripts/build-process-capsule.mjs':

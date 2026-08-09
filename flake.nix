@@ -30,6 +30,9 @@
             overlays = [ rust-overlay.overlays.default ];
           };
           inherit (pkgs) lib;
+          cargoVendor = pkgs.rustPlatform.importCargoLock {
+            lockFile = ./native/linux-process-authority/Cargo.lock;
+          };
           rustToolchainSource = pkgs.rust-bin.stable."1.88.0".minimal;
           # rust-overlay's combined toolchain is a symlink tree. The native
           # authority build intentionally rejects symlinked compiler inputs,
@@ -43,7 +46,11 @@
             # rustc's upstream RUNPATH still locates rustc_driver in the
             # overlay component store. Force sysroot discovery back to this
             # materialized tree for both direct calls and Cargo subprocesses.
-            chmod u+w "$out/bin" "$out/bin/rustc"
+            chmod u+w "$out/bin" "$out/bin/cargo" "$out/bin/rustc"
+            wrapProgram "$out/bin/cargo" \
+              --add-flags '--offline' \
+              --add-flags '--config=source.crates-io.replace-with=\"vendored-sources\"' \
+              --add-flags '--config=source.vendored-sources.directory=\"${cargoVendor}\"'
             wrapProgram "$out/bin/rustc" --add-flags "--sysroot $out"
           '';
         in
