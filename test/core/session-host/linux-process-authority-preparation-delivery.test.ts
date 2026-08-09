@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   AuthorityOperationContext,
@@ -1078,5 +1078,33 @@ describe('Linux broker controller preparation-delivery ledger', () => {
       digestLinuxAuthorityLaunch(launch()),
       operation('prepare-replaced-delivery-root')
     )).toThrow(/root identity changed/i);
+  });
+
+  it('compares delivery root inode identities without unsafe-number truncation', () => {
+    const stateRoot = roots();
+    fs.mkdirSync(stateRoot.delivery, { mode: 0o700 });
+    const trustedRoot = fs.realpathSync.native(stateRoot.delivery);
+    const originalLstat = fs.lstatSync.bind(fs);
+    const initialInode = 1n << 54n;
+    const replacementInode = initialInode + 1n;
+    let rootReads = 0;
+    const lstat = vi.spyOn(fs, 'lstatSync').mockImplementation(((target, options) => {
+      const stat = options === undefined
+        ? originalLstat(target)
+        : originalLstat(target, options);
+      if (typeof target !== 'string' || path.resolve(target) !== trustedRoot) return stat;
+      const inode = rootReads++ === 0 ? initialInode : replacementInode;
+      Object.defineProperty(stat, 'ino', {
+        configurable: true,
+        value: typeof stat.ino === 'bigint' ? inode : Number(inode),
+      });
+      return stat;
+    }) as typeof fs.lstatSync);
+    try {
+      const ledger = createLinuxBrokerPreparationDeliveryLedger({ root: stateRoot.delivery });
+      expect(() => ledger.discoverPendingOrphans()).toThrow(/root identity changed/i);
+    } finally {
+      lstat.mockRestore();
+    }
   });
 });
