@@ -406,6 +406,9 @@
       },
       "small-feature": {
         "description": "轻量功能流水线：依次提出变更、实施、执行一次带审查循环的标准验证，然后交付并归档。"
+      },
+      "task-loop": {
+        "description": "仅支持显式选择、且不生成 spec 的任务循环：构建者改进真实产物，每轮由全新评审者依据冻结标杆与原始证据检查；只有满足标杆后才能交付和归档。"
       }
     },
     "messages": {
@@ -562,6 +565,18 @@
       "engine_disabled_by_config": "配置已禁用调和器引擎。",
       "engine_unsupported": "该流水线不支持所选引擎。",
       "engine_owner_conflict": "该变更被多个引擎主张所有权。",
+      "launch_request_conflict": "现有 Run 使用了不同的冻结输入；本次操作未修改它。",
+      "task_loop_input_missing": "Task Loop 开始工作前必须提供冻结输入契约。",
+      "task_loop_input_invalid": "Task Loop 输入契约无效。",
+      "task_loop_bar_unprovable": "无法从声明的证据中机械验证 Task Loop 质量标杆。",
+      "task_loop_critic_reused": "Task Loop 的每一轮判定都必须使用全新评审者。",
+      "task_loop_bar_mismatch": "评审结论未完整覆盖冻结的质量标杆。",
+      "task_loop_evidence_missing": "评审结论缺少声明产物目标的原始证据。",
+      "task_loop_false_satisfaction": "冻结标准仍有未通过项，但评审者错误地报告为已满足。",
+      "task_loop_reconciler_required": "Task Loop 必须使用调和器引擎，不能回退到旧执行引擎。",
+      "task_loop_blocked": "构建者或评审者受阻或失败，Task Loop 已停止。",
+      "task_loop_exhausted": "Task Loop 已耗尽轮次预算，但仍未满足冻结的质量标杆。",
+      "task_loop_delivery_guard": "只有规范 Run 被机械判定为已满足后，Task Loop 才能交付或归档。",
       "pipeline_command_error": "流水线操作失败（{code}）。"
     }
   },
@@ -957,8 +972,8 @@
       "invalidKnowledgeBundle": "配置中的 'knowledgeBundle' 字段无效（必须是非空字符串）",
       "invalidWorkflows": "配置中的 'workflows' 字段无效（必须是字符串数组）",
       "invalidProfile": "配置中的 'profile' 字段无效（必须是非空的配置方案名称字符串）",
-      "invalidTools": "配置中的 'tools' 字段无效（必��是工具 id 字符串数组）",
-      "invalidToolsEntries": "部分 'tools' 条目无效（必��是非空字符串）；已忽略",
+      "invalidTools": "配置中的 'tools' 字段无效（必须是工具 id 字符串数组）",
+      "invalidToolsEntries": "部分 'tools' 条目无效（必须是非空字符串）；已忽略",
       "invalidUpdate": "配置中的 'update' 字段无效（必须是对象）",
       "invalidUpdatePin": "配置中的 'update.pin' 字段无效（必须是布尔值）",
       "invalidArchiveTiming": "配置中的 'archive.timing' 字段无效（必须是 'on-merge' 或 'in-ship'）",
@@ -969,6 +984,11 @@
       "invalidAutopilot": "配置中的 'autopilot' 字段无效（必须是对象）",
       "invalidRunsEngine": "配置中的 'runs.engine' 字段无效（必须是 'auto'、'reconciler' 或 'legacy'）",
       "invalidRuns": "配置中的 'runs' 字段无效（必须是对象）",
+      "invalidSessionPolicy": "配置中的 'sessionPolicy' 字段无效（必须是对象）",
+      "invalidSessionPolicyHandoffTokenLimit": "配置中的 'sessionPolicy.handoffTokenLimit' 无效（必须是正整数）",
+      "invalidSessionPolicyReuseRoundLimit": "配置中的 'sessionPolicy.reuseRoundLimit' 无效（必须是正整数）",
+      "invalidSessionPolicyTouchMaxIdleMs": "配置中的 'sessionPolicy.touchMaxIdleMs' 无效（必须是正整数）",
+      "invalidSessionPolicyRetireReasonLabel": "配置中的 'sessionPolicy.retireReasonLabel' 无效（必须是非空字符串）",
       "invalidHandoffThreshold": "配置中的 'handoff.threshold' 字段无效（必须是 (0, 1] 内的数字，或对象 { remainingTokens: <positive integer> }）",
       "invalidHandoff": "配置中的 'handoff' 字段无效（必须是对象）",
       "expertSelectionMigration": "提示：现在可以单独选择专家。暂时保留以前安装的所有专家——请运行 `rasen profile` 选择要安装的专家。",
@@ -1090,6 +1110,79 @@
       "skipAhead": "{original} 未安装，因此下一步是 {workflow}。"
     },
     "hint": "下一步：{workflow} — {reason}"
+  },
+  "session": {
+    "messages": {
+      "foregroundNotice": "正在使用前台会话所有者。正确性不受影响，但本命令退出后缓存驻留也会结束。",
+      "completed": "会话轮次已完成。",
+      "duplicateCompleted": "该消息此前已完成；已直接复用持久结果，没有再次派发。",
+      "duplicatePreDeliveryFailed": "该消息此前在投递前失败，本次没有重新派发。",
+      "duplicateUncertain": "该消息已有投递不确定的终态，本次没有重放。",
+      "listedHeading": "可复用会话（{count}）：",
+      "listEmpty": "此 Run 下没有可复用会话。",
+      "sessionLine": "  {session} [{role}] {status} — {cwd}",
+      "retired": "可复用会话已退役。",
+      "failure": "会话命令失败 [{code}]：{message}",
+      "shutdownDiagnostic": "所有者关闭诊断（{run}）[{code}]：{message}",
+      "sharedOwner": "共享监督器",
+      "daemonForeign": "守护进程端口由外部监听器占用；未启动前台所有者。",
+      "daemonVersionMismatch": "常驻守护进程版本（{actual}）与当前 Rasen 安装（{expected}）不一致。",
+      "daemonIdentityAmbiguous": "实时守护进程响应与记录的身份不完全一致；未发送会话请求。",
+      "transportUncertain": "守护进程请求可能已经准入；只能使用同一个稳定消息 ID 重试。"
+    },
+    "examples": {
+      "exec": "示例：\n  rasen session exec --run <run-id> --session reviewer --action action.json --cwd . --touch never",
+      "list": "示例：\n  rasen session list --run <run-id>",
+      "retire": "示例：\n  rasen session retire --run <run-id> --session reviewer"
+    },
+    "outcomes": {
+      "generic": "无法完成会话操作。",
+      "invalid_request": "会话请求格式不正确。",
+      "invalid_action": "action 或 touch 策略无效。",
+      "bad_request": "会话请求不是有效的 JSON。",
+      "payload_too_large": "会话请求超过协议大小限制。",
+      "run_not_found": "未找到精确的 canonical Run。",
+      "run_record_invalid": "canonical Run 记录无效或无法读取。",
+      "run_identity_mismatch": "Run 目录内包含另一个精确身份。",
+      "run_directory_invalid": "canonical Run 目录不可用或不可信。",
+      "run_mismatch": "持久注册表属于另一个 Run。",
+      "registry_absent": "该 Run 尚无持久会话注册表。",
+      "session_conflict": "持久会话的不变身份信息不一致。",
+      "invalid_transition": "持久会话无法执行所请求的状态转换。",
+      "wake_busy": "另一个所有者正持有此会话的 wake lease。",
+      "host_busy": "可复用 host 已有一个活动轮次。",
+      "busy": "可复用 host 的进程容量已满。",
+      "idempotency_capacity_exhausted": "会话的持久幂等容量已满。",
+      "session_not_found": "未找到可复用会话。",
+      "session_retired": "可复用会话已退役。",
+      "session_stale": "可复用会话的恢复身份已过期。",
+      "session_unrecoverable": "无法安全恢复可复用会话。",
+      "host_not_found": "未找到可复用 host。",
+      "host_retired": "可复用 host 已退役。",
+      "host_unrecoverable": "无法安全恢复可复用 host。",
+      "conditional_wake_stale": "会话在观察后发生了变化；条件 wake 未获准入。",
+      "duplicate_message": "该稳定消息身份已经结算。",
+      "transport_uncertain": "守护进程请求可能已准入。只能使用同一个稳定消息 ID 重试。",
+      "delivery_uncertain": "投递可能已到达智能体，本次没有重放。",
+      "turn_timeout": "已准入轮次超时，投递结果不确定。",
+      "no_output_timeout": "已准入轮次停止输出，投递结果不确定。",
+      "registry_corrupt": "持久会话注册表已损坏，系统未对其进行改写。",
+      "unsupported_schema": "持久会话注册表使用了不支持的 schema。",
+      "registry_lock_timeout": "未能在期限内获取持久注册表锁。",
+      "registry_lock_permission": "无法访问持久注册表锁。",
+      "registry_write_failed": "无法持久化会话注册表。",
+      "wake_lock_malformed": "持久 wake 锁格式无效。",
+      "wake_lock_permission": "无法访问持久 wake 锁。",
+      "wake_lock_timeout": "未能在期限内获取持久 wake 锁。",
+      "wake_lock_error": "无法安全检查持久 wake 锁。",
+      "write_failed": "智能体请求在投递前失败。",
+      "owner_shutdown_failed": "可复用会话所有者未能正常关闭。",
+      "agent_cli_unavailable": "智能体 CLI 不可用。",
+      "shutting_down": "可复用会话所有者正在关闭。",
+      "daemon_foreign": "守护进程端口由外部监听器占用。",
+      "daemon_version_mismatch": "常驻守护进程版本与当前 Rasen 安装不一致。",
+      "daemon_identity_ambiguous": "实时守护进程与记录的身份不完全一致。"
+    }
   },
   "cli": {
     "chrome": {
@@ -1303,6 +1396,9 @@
             },
             "keep-ephemera": {
               "description": "保留所有 ephemera 文件，同时继续执行完整安全检查"
+            },
+            "no-whitespace-check": {
+              "description": "跳过空白预检（该预检会拦下 CI 将会拒绝的归档产物）"
             },
             "dry-run": {
               "description": "预演所有计划中的归档操作，不执行任何实际更改"
@@ -2181,6 +2277,133 @@
             }
           }
         },
+        "session": {
+          "description": "执行、查看和退役持久可复用的智能体会话",
+          "commands": {
+            "exec": {
+              "description": "通过持久可复用会话执行一个已准入的智能体 action",
+              "options": {
+                "backend": {
+                  "description": "服务端支持的具名智能体后端"
+                },
+                "prompt-file": {
+                  "description": "从此有界文件读取回合输入"
+                },
+                "run": {
+                  "description": "精确的 canonical Run ID"
+                },
+                "session": {
+                  "description": "稳定的可复用会话键"
+                },
+                "action": {
+                  "description": "一个 change-run-action/1 JSON 文件的路径，或用 - 表示标准输入"
+                },
+                "cwd": {
+                  "description": "显式执行目录；准入前会进行 canonical 化"
+                },
+                "message-id": {
+                  "description": "稳定操作 ID；默认使用 action ID"
+                },
+                "request-id": {
+                  "description": "托管回合的幂等 UUID"
+                },
+                "timeout-ms": {
+                  "description": "回合墙钟时间上限（毫秒）"
+                },
+                "touch": {
+                  "description": "touch 策略模式：auto 或 never"
+                },
+                "touch-deadline": {
+                  "description": "auto touch 必需的未来 ISO-8601 截止时间"
+                },
+                "max-touches": {
+                  "description": "auto touch 必需的正数上限"
+                },
+                "deadline-action": {
+                  "description": "截止行为：stop 或 retire-silent"
+                },
+                "json": {
+                  "description": "输出一个 rasen-session-command/1 JSON 文档"
+                }
+              }
+            },
+            "list": {
+              "description": "列出一个精确 canonical Run 下的安全持久会话信息",
+              "options": {
+                "run": {
+                  "description": "精确的 canonical Run ID"
+                },
+                "json": {
+                  "description": "输出一个 rasen-session-command/1 JSON 文档"
+                }
+              }
+            },
+            "inspect": {
+              "description": "查看一个持久托管会话",
+              "positionals": {
+                "id": {
+                  "description": "Rasen 会话 UUID"
+                }
+              },
+              "options": {
+                "json": {
+                  "description": "输出 JSON"
+                }
+              }
+            },
+            "cancel": {
+              "description": "取消精确的活动会话世代",
+              "positionals": {
+                "id": {
+                  "description": "Rasen 会话 UUID"
+                }
+              },
+              "options": {
+                "reason": {
+                  "description": "有界取消原因"
+                },
+                "json": {
+                  "description": "输出 JSON"
+                }
+              }
+            },
+            "restart": {
+              "description": "打开一个精确恢复的会话世代",
+              "positionals": {
+                "id": {
+                  "description": "Rasen 会话 UUID"
+                }
+              },
+              "options": {
+                "json": {
+                  "description": "输出 JSON"
+                }
+              }
+            },
+            "retire": {
+              "description": "将一个持久可复用会话终态退役",
+              "positionals": {
+                "id": {
+                  "description": "托管 Rasen 会话 UUID"
+                }
+              },
+              "options": {
+                "run": {
+                  "description": "精确的 canonical Run ID"
+                },
+                "session": {
+                  "description": "稳定的可复用会话键"
+                },
+                "reason": {
+                  "description": "写入持久生命周期的有界退役原因"
+                },
+                "json": {
+                  "description": "输出一个 rasen-session-command/1 JSON 文档"
+                }
+              }
+            }
+          }
+        },
         "schema": {
           "description": "管理工作流模式（schema）",
           "commands": {
@@ -2710,103 +2933,6 @@
                 },
                 "open": {
                   "description": "在默认浏览器中打开随包分发的 viewer，并预加载本次生成的报告"
-                }
-              }
-            }
-          }
-        },
-        "session": {
-          "description": "Execute and control durable hosted agent Sessions through the resident daemon",
-          "commands": {
-            "exec": {
-              "description": "Create or wake one hosted Session turn",
-              "options": {
-                "backend": {
-                  "description": "Named server-supported agent backend"
-                },
-                "prompt-file": {
-                  "description": "Read the turn input from this bounded file"
-                },
-                "cwd": {
-                  "description": "Bind or verify the Session working directory"
-                },
-                "session": {
-                  "description": "Wake this existing Rasen Session UUID"
-                },
-                "request-id": {
-                  "description": "Idempotency UUID for this turn"
-                },
-                "timeout-ms": {
-                  "description": "Bound the turn wall-clock time in milliseconds"
-                },
-                "json": {
-                  "description": "Output exactly one JSON receipt"
-                }
-              }
-            },
-            "list": {
-              "description": "List durable hosted Sessions",
-              "options": {
-                "json": {
-                  "description": "Output as JSON"
-                }
-              }
-            },
-            "inspect": {
-              "description": "Inspect one durable hosted Session",
-              "positionals": {
-                "id": {
-                  "description": "Rasen Session UUID"
-                }
-              },
-              "options": {
-                "json": {
-                  "description": "Output as JSON"
-                }
-              }
-            },
-            "cancel": {
-              "description": "Cancel the exact live Session generation",
-              "positionals": {
-                "id": {
-                  "description": "Rasen Session UUID"
-                }
-              },
-              "options": {
-                "reason": {
-                  "description": "Bounded cancellation reason"
-                },
-                "json": {
-                  "description": "Output as JSON"
-                }
-              }
-            },
-            "restart": {
-              "description": "Open an exact-resume Session generation",
-              "positionals": {
-                "id": {
-                  "description": "Rasen Session UUID"
-                }
-              },
-              "options": {
-                "json": {
-                  "description": "Output as JSON"
-                }
-              }
-            },
-            "retire": {
-              "description": "Permanently retire a hosted Session",
-              "positionals": {
-                "id": {
-                  "description": "Rasen Session UUID"
-                }
-              },
-              "options": {
-                "reason": {
-                  "description": "Bounded retirement reason"
-                },
-                "json": {
-                  "description": "Output as JSON"
                 }
               }
             }

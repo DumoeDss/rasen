@@ -6,6 +6,8 @@ import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
 import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
+import { cleanupTempPath } from '../helpers/temp-cleanup.js';
+
 const repositoryRoot = path.resolve(import.meta.dirname, '..', '..');
 const runtimeScript = path.join(
   repositoryRoot,
@@ -99,14 +101,43 @@ function createPackableSource(sourceRoot: string, version = '0.2.0-fixture.1'): 
   fs.writeFileSync(path.join(uiRoot, 'dist', 'index.html'), '<main>fixture UI</main>\n');
 }
 
+function createIsolatedNodeExecutable(root: string, withBundledCorepack: boolean): string {
+  const nodeRoot = path.join(root, withBundledCorepack ? 'node with corepack' : 'node without corepack');
+  const nodeExecutable = path.join(nodeRoot, 'node.exe');
+  fs.mkdirSync(nodeRoot, { recursive: true });
+  fs.copyFileSync(process.execPath, nodeExecutable);
+  writeJson(path.join(nodeRoot, 'node_modules', 'npm', 'package.json'), {
+    name: 'npm',
+    version: '10.0.0-test',
+  });
+  if (withBundledCorepack) {
+    const bundledPnpm = path.join(nodeRoot, 'node_modules', 'corepack', 'dist', 'pnpm.js');
+    fs.mkdirSync(path.dirname(bundledPnpm), { recursive: true });
+    fs.writeFileSync(
+      bundledPnpm,
+      "process.stderr.write('unexpected bundled Corepack invocation\\n'); process.exitCode = 1;\n",
+    );
+  }
+  return nodeExecutable;
+}
+
 function runPrepare(
   sourceRoot: string,
   projectRoot: string,
   cacheRoot: string,
-  scriptPath = runtimeScript,
+  options: {
+    scriptPath?: string;
+    nodeExecutable?: string;
+    environment?: NodeJS.ProcessEnv;
+  } = {},
 ) {
+  const {
+    scriptPath = runtimeScript,
+    nodeExecutable = process.execPath,
+    environment = {},
+  } = options;
   return spawnSync(
-    process.execPath,
+    nodeExecutable,
     [
       scriptPath,
       'prepare',
@@ -121,6 +152,7 @@ function runPrepare(
       encoding: 'utf8',
       env: {
         ...process.env,
+        ...environment,
         RASEN_LOCAL_HARNESS_ROOT: cacheRoot,
       },
     },
@@ -217,7 +249,7 @@ describe('local version prepare command', () => {
       sourceRoot,
       projectRoot,
       cacheRoot,
-      path.join(scriptAlias, 'local-runtime.mjs'),
+      { scriptPath: path.join(scriptAlias, 'local-runtime.mjs') },
     );
 
     expect(result.status).toBe(1);
@@ -255,6 +287,44 @@ describe('local version prepare command', () => {
     });
     expect(fs.existsSync(path.join(cacheRoot, 'runtimes'))).toBe(false);
   }, 30_000);
+
+  for (const withBundledCorepack of [true, false]) {
+    test.runIf(process.platform === 'win32')(
+      `preserves a failed build exit code when bundled Corepack is ${withBundledCorepack ? 'present' : 'absent'}`,
+      () => {
+        const root = makeTemporaryRoot();
+        const sourceRoot = path.join(root, 'failing source');
+        const projectRoot = path.join(root, 'empty project');
+        const cacheRoot = path.join(root, 'cache');
+        createPackableSource(sourceRoot);
+        const manifestPath = path.join(sourceRoot, 'package.json');
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+        writeJson(manifestPath, {
+          ...manifest,
+          scripts: { build: 'node -e "process.exit(7)"' },
+        });
+        fs.mkdirSync(projectRoot, { recursive: true });
+
+        const result = runPrepare(sourceRoot, projectRoot, cacheRoot, {
+          nodeExecutable: createIsolatedNodeExecutable(root, withBundledCorepack),
+          environment: { npm_config_user_agent: 'pnpm/9.15.9' },
+        });
+
+        expect(result.status).toBe(1);
+        const diagnostic = JSON.parse(result.stderr.trim().split(/\r?\n/).at(-1)!);
+        expect(diagnostic).toMatchObject({
+          error: {
+            code: 'COMMAND_FAILED',
+            phase: 'build',
+            exitCode: 7,
+          },
+        });
+        expect(result.stderr).not.toContain('unexpected bundled Corepack invocation');
+        expect(fs.existsSync(path.join(cacheRoot, 'runtimes'))).toBe(false);
+      },
+      30_000,
+    );
+  }
 
   test('materializes a paired runtime without mutating the target and reuses it warm', () => {
     const root = makeTemporaryRoot();

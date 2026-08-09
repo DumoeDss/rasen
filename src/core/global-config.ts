@@ -9,6 +9,7 @@ import {
   type ProjectRegistryState,
 } from './project-registry.js';
 import type { ThresholdValue } from './model-presets.js';
+import type { LeafEffort } from './pipeline-registry/types.js';
 import type { ProbeRuntime } from './runtime-adapters.js';
 import {
   SUPPORTED_CLI_LOCALES,
@@ -201,6 +202,17 @@ export interface GlobalConfig {
       shipper?: string;
     };
   };
+  /** Generic leaf reasoning effort; independent from the selected model id. */
+  efforts?: {
+    default?: LeafEffort;
+    roles?: {
+      planner?: LeafEffort;
+      implementer?: LeafEffort;
+      reviewer?: LeafEffort;
+      fixer?: LeafEffort;
+      shipper?: LeafEffort;
+    };
+  };
   /**
    * UI-managed preferences. `pinnedSpaces` is the user's pinned planning
    * spaces as `<type>:<id>` selectors, written from the web Spaces page (or
@@ -227,6 +239,7 @@ export interface GlobalConfig {
     {
       gates?: Record<string, 'on' | 'off'>;
       models?: Record<string, string>;
+      efforts?: Record<string, LeafEffort>;
       handoff?: Record<string, ThresholdValue>;
       runtimes?: Record<string, DispatchRuntime>;
     }

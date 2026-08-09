@@ -11,6 +11,7 @@ import type {
   PlanningSpaceId,
   RunId,
   WorkspaceInstanceId,
+  WorkspaceRevision,
 } from '../contracts.js';
 import type { CanonicalRecordLimits, CanonicalRunRecord } from './record.js';
 import { createCanonicalRunRecord } from './record.js';
@@ -26,10 +27,13 @@ import { lowerRuntimePlan } from './lowerer.js';
 import { openRuntimePlan, type RuntimePlan } from './runtime-plan.js';
 import { buildAgentAction } from './actions.js';
 import { observeGitWorkspace } from './workspace-git.js';
+import type { WorkspaceManifest } from './workspace.js';
 import { deriveWorkspaceRevision } from './workspace.js';
 import { createChangePipelineRuntime } from './facade-runtime.js';
 import type { ChangePipelineRuntime } from '../facade.js';
 import type { JsonValue, NodeId, RunAction } from '../contracts.js';
+import path from 'node:path';
+import { WORKSPACE_DIR_NAME } from '../../config.js';
 
 export interface RuntimeContextInput {
   readonly projectRoot: string;
@@ -150,9 +154,46 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
       'Persisted RuntimePlan has no usable frozen execution profile for this Run.'
     );
   }
-  const workspaceRevision = deriveWorkspaceRevision(
-    observeGitWorkspace(input.projectRoot)
+  const taskLoopEvidenceDir = path.join(
+    input.projectRoot,
+    WORKSPACE_DIR_NAME,
+    'changes',
+    input.changeId,
+    'evidence'
   );
+  const taskLoopReportPath = path
+    .relative(
+      input.projectRoot,
+      path.join(taskLoopEvidenceDir, 'task-loop-report.md')
+    )
+    .split(path.sep)
+    .join('/');
+  const taskLoopEphemeraPrefix = `.rasen/changes/${input.changeId}/ephemera/`;
+  const omitTaskLoopRuntimeProjection = (
+    manifest: WorkspaceManifest
+  ): WorkspaceManifest => {
+    if (plan.pipeline !== 'task-loop') return manifest;
+    const keep = (entry: { readonly path: string }) => {
+      const normalized = entry.path.split('\\').join('/');
+      return (
+        normalized !== taskLoopReportPath &&
+        !normalized.startsWith(taskLoopEphemeraPrefix)
+      );
+    };
+    return Object.freeze({
+      ...manifest,
+      headTree: manifest.headTree.filter(keep),
+      index: manifest.index.filter(keep),
+      trackedWorking: manifest.trackedWorking.filter(keep),
+      untracked: manifest.untracked.filter(keep),
+      symlinks: manifest.symlinks.filter(keep),
+    });
+  };
+  const observeWorkspace = (): WorkspaceRevision =>
+    deriveWorkspaceRevision(
+      omitTaskLoopRuntimeProjection(observeGitWorkspace(input.projectRoot))
+    );
+  const workspaceRevision = observeWorkspace();
   const initialRecord = createCanonicalRunRecord({
     runId: plan.runId,
     runOrdinal: 1,
@@ -221,7 +262,8 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
         nodeId: descriptor.nodeId as NodeId,
         occurrence: descriptor.occurrence,
         attemptOrdinal: 0,
-        expectedBeforeWorkspace: workspaceRevision,
+        expectedBeforeWorkspace:
+          plan.pipeline === 'task-loop' ? observeWorkspace() : workspaceRevision,
       },
       {
         input: (descriptor.input ?? {
@@ -238,6 +280,11 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
     evidenceStore,
     buildAction,
     resolveSourceState: input.resolveSourceState,
+    taskLoopEvidenceDir:
+      plan.pipeline === 'task-loop'
+        ? taskLoopEvidenceDir
+        : undefined,
+    observeWorkspace: plan.pipeline === 'task-loop' ? observeWorkspace : undefined,
   });
 
   const hostEvidenceWriter = createHostEvidenceWriter({

@@ -109,9 +109,11 @@
 
 **内核授予，调用方执行。** 内核在 `deliveryMode: 'grant'` 下把一个 admit 变成一个已授予的
 `RunAction` 并交给调用方 —— 它**不**运行 agent、不开 session、不管 worker 生命周期。谁真的去
-执行那个 action、用哪个 runtime、复用还是新开会话，全部在 Run owner 之外：当前由 LEAD
-（playbook Step B/C）承担，独立的 **session execution layer 是后续切片**。committed action 里
-的 `session` 块因此是为那一层预留的记录位，不是本版本的行为契约（见 §7 的占位说明）。
+执行那个 action、用哪个 runtime、复用还是新开会话，仍在 Run owner 之外。已交付的
+**session execution layer** 只接受 canonical Run head 中精确相等、仍为 active + granted 的
+冻结 action，并把 Run/action/session/workspace/execution binding 一并交给 durable coordinator。
+该层拥有可复用的 stream-json 进程、恢复和退休；Run reconciler 仍只授予 action，不获得进程、
+消息或 worker 生命周期所有权（历史字段解释见 §7）。
 
 ---
 
@@ -286,12 +288,13 @@ waits.ts               WaitId 分配 · variant 编解码器 · workspace-reserv
   篡改/重贴标签/TOCTOU/缺失全部 fail closed。
 - **确定性（Determinism）** —— reconciler 在打乱插入顺序、毒化的时钟/随机/env/文件系统以及
   replay 下均确定性。稳定的 identity/顺序。
-- **会话字段是占位（Session fields are placeholders）** —— committed action 的
-  `session.handoffTokenLimit` / `session.reuseRoundLimit` 在当前实现中**没有任何配置或创作入口**，
-  因此现有 Record 记下的值按定义都是占位值：未来的读者**不得**把它们当作操作者或
-  作者的选择，也**不得**据以约束 session（尤其 `reuseRoundLimit: 1` 一旦被执行，会禁止评审者跨
-  轮复用 —— 恰恰是主要的复用形态）。作者真正表达过的复用意图以附加字段 `sessionReuseAuthored`
-  原样保留。真实取值是 session execution layer 那一层的设计产出。
+- **历史会话字段不是策略授权（Historical session fields are not policy grants）** ——
+  committed action 的 `session.handoffTokenLimit` / `session.reuseRoundLimit` 在 0.1.6
+  没有配置或创作入口，因此 0.1.6 时代 Record 中的默认值仅是历史占位，不得解释为操作者选择，
+  也不得据此限制现有 session（尤其不能把 `reuseRoundLimit: 1` 追溯解释为复用上限）。
+  作者当时真正表达的意图仍由 `sessionReuseAuthored` 保留。当前复用资格来自冻结 action 的
+  `session.reuse` 与 session execution layer 的显式 touch/deadline 策略；durable registry
+  只保存并比较策略，scheduler 才解释 cadence、cold gap 和 deadline。
 
 ---
 
@@ -390,17 +393,20 @@ legacy owner 与规范 Record 并存时，`pipeline start` 以及 `complete` / `
 - `auto-decompose` 的 reconciler 执行 —— capability discovery 对它 fail-closed 报
   `execution_profile_unavailable`，属 0.3.0 的 portfolio 编排领域。
 - nested loop、递归 Composite call、任意控制流脚本、分布式调度（研究文档 §15.3 非目标）。
-
 **0.2.0 尚未完成但必须在发布前关闭**
 
 - v2 作为新建 Pipeline 与空白 Canvas 的默认 authored format；
 - FanOut/Join、GoalLoop 与完整 BoundedLoop policy 的 Canvas authoring；
 - stalled/blocked/strategy-exhausted/human-escalation 的公共 loop lifecycle；
-- **session execution layer**：已授予 action 的实际执行、session 复用语义
-  （`review-thread` / `stage` / `run-planner`）、以及 `handoffTokenLimit` /
-  `reuseRoundLimit` 的真实取值与配置入口。当前只**记录**这些字段并声明其为占位（§7），
-  执行仍由调用方承担；
 - 一个后续真实 Change 的 ECP 自宿主和最终 completion/release audit。
+
+- session execution layer 已交付，但仍保持调用方边界：它执行精确的 admitted action，
+  由现有 supervisor 持有可复用 Claude stream-json 进程，由 canonical Run 旁的 durable
+  registry 保存 logical session、digest-only 幂等结果、dispatch fence 和 single-flight lease，
+  并在 owner/process 丢失后以精确 transcript + canonical cwd 恢复。`rasen session` 与 daemon
+  scheduler 共享同一 coordinator；daemon 只提高约 50 分钟 touch 的缓存效率，缺席时前台 owner
+  仍保持正确性。历史 `handoffTokenLimit` / `reuseRoundLimit` 默认值仍按 §7 的占位规则解释，
+  不构成当前 operator policy。
 
 ---
 

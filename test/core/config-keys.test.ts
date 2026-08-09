@@ -384,14 +384,14 @@ describe('config-keys registry', () => {
           'workflows',
         ]);
       expect(storeProject.length).toBe(2);
-      // 15 = 14 plus `runs.engine` (ECP-5 engine selection policy: the
+      // 21 includes six generic effort keys plus `runs.engine` (ECP-5 engine selection policy: the
       // `ecp-change-run-runtime` delta requires it to resolve project > store
       // > global, so it MUST carry all three scopes).
-      expect(allThree.length).toBe(15);
-      // Six wildcard families: featureFlags, four pipelines families, and
+      expect(allThree.length).toBe(21);
+      // Seven wildcard families: featureFlags, five pipelines families, and
       // runtime threshold bindings.
       const wildcards = CONFIG_KEY_REGISTRY.filter((def) => def.wildcard);
-      expect(wildcards.length).toBe(6);
+      expect(wildcards.length).toBe(7);
       // featureFlags is the sole global-only wildcard; the pipelines families
       // are settable in all three scopes.
       expect(wildcards.filter((def) => def.scopes.join(',') === 'global').length).toBe(1);

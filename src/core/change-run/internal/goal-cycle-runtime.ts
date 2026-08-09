@@ -229,7 +229,12 @@ export function projectGoalCycleProgress(
   const state =
     events.length === 0
       ? initialGoalCycleState(variant)
-      : reduceGoalCycleEvents(events, iterationLimit, variant);
+      : reduceGoalCycleEvents(
+          events,
+          iterationLimit,
+          variant,
+          plan.pipeline === 'task-loop' ? 'task-loop' : 'strict'
+        );
   if (state.outcome === 'satisfied') {
     return Object.freeze({ kind: 'satisfied', state });
   }
@@ -286,14 +291,21 @@ export function projectGoalCycleDomainSnapshot(
   const variant = loopVariant(loop);
   const events = eventsFromRecord(plan, loop, record);
   const iterationLimit = effectiveIterationLimit(plan, loop, record);
+  const decodeMode = plan.pipeline === 'task-loop' ? 'task-loop' : 'strict';
   let state = initialGoalCycleState(variant);
   const progressHistory: LoopProgressEntry[] = [];
   for (const event of events) {
-    const decoded = decodeGoalCycleResult(event.phase, variant, event.result);
+    const decoded = decodeGoalCycleResult(
+      event.phase,
+      variant,
+      event.result,
+      decodeMode
+    );
     state = applyGoalCycleEvent(
       state,
       event,
-      iterationLimit
+      iterationLimit,
+      decodeMode
     );
     if (event.phase === 'judge') {
       progressHistory.push({
@@ -447,7 +459,8 @@ export function validateGoalCycleCompletion(
       result: request.result,
       evidence: request.evidence,
     },
-    effectiveIterationLimit(plan, descriptor.loop, record)
+    effectiveIterationLimit(plan, descriptor.loop, record),
+    plan.pipeline === 'task-loop' ? 'task-loop' : 'strict'
   );
 }
 

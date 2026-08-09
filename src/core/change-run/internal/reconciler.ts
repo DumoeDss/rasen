@@ -23,6 +23,7 @@ import {
   projectGoalCycleDomainSnapshot,
 } from './goal-cycle-runtime.js';
 import {
+  latestAttemptForDomainInvocation,
   reduceBoundedLoopLifecycle,
   type LoopDomainInvocation,
   type LoopDomainSnapshot,
@@ -32,6 +33,7 @@ import {
   type CanonicalWait,
 } from './waits.js';
 import { deriveInvocationId } from './identity.js';
+import { taskLoopActionInput } from './task-loop.js';
 
 export type ReconcilerAdmissionKind = 'agent' | 'command' | 'host';
 
@@ -68,6 +70,7 @@ export type ReconcilerNextAction =
           iteration: number;
           phase: string;
         }>;
+        taskLoop?: JsonValue;
         fanOutCondition?: Readonly<{ fanOutPath: string }>;
       }>;
       /**
@@ -343,16 +346,43 @@ export function reconcile(
         });
         break;
       case 'failed':
-        actions.push({
-          kind: 'fail',
-          code: lifecycle.decision.outcome,
-          reason: lifecycle.decision.reason,
-        });
+        if (
+          record.pipeline === 'task-loop' &&
+          lifecycle.decision.reason === 'action-failed'
+        ) {
+          actions.push({
+            kind: 'escalate',
+            code: 'task_loop_blocked',
+            reason: 'A task-loop phase failed before satisfaction.',
+          });
+        } else {
+          actions.push({
+            kind: 'fail',
+            code: lifecycle.decision.outcome,
+            reason: lifecycle.decision.reason,
+          });
+        }
         break;
       case 'cancelled':
         actions.push({ kind: 'cancel', reason: 'bounded-loop-cancelled' });
         break;
       case 'waiting':
+        if (record.pipeline === 'task-loop' && domain.nextInvocation !== undefined) {
+          const latest = latestAttemptForDomainInvocation(
+            plan,
+            loop,
+            record,
+            domain.nextInvocation.nodeId,
+            domain.nextInvocation.hierarchicalPath
+          );
+          if (latest?.result?.status === 'blocked') {
+            actions.push({
+              kind: 'escalate',
+              code: 'task_loop_blocked',
+              reason: 'A task-loop phase reported a blocking condition.',
+            });
+          }
+        }
         break;
     }
   }
@@ -654,6 +684,32 @@ export function reconcile(
           },
         });
       } else if (boundedLoopOriginal.bodyKind === 'goal-cycle') {
+        const goalInput = {
+          goalCycle: {
+            loopPath: boundedLoopOriginal.loopPath,
+            round: boundedLoopOriginal.descriptor.round,
+            phase: boundedLoopOriginal.descriptor.phase,
+          },
+          ...(record.pipeline === 'task-loop'
+            ? taskLoopActionInput({
+                plan,
+                record,
+                loop: boundedLoopOriginal.loop,
+                round: boundedLoopOriginal.descriptor.round,
+                phase: boundedLoopOriginal.descriptor.phase as 'work' | 'judge',
+              })
+            : {}),
+          ...(boundedLoopOriginal.descriptor.recoveryAttempt === undefined
+            ? {}
+            : {
+                boundedLoopRecovery: {
+                  loopPath: boundedLoopOriginal.loopPath,
+                  strategyAttempt: boundedLoopOriginal.descriptor.recoveryAttempt,
+                  iteration: boundedLoopOriginal.descriptor.round,
+                  phase: boundedLoopOriginal.descriptor.phase,
+                },
+              }),
+        };
         actions.push({
           kind: 'admit',
           nodeId: candidate.nodeId,
@@ -661,24 +717,7 @@ export function reconcile(
           admissionKind: candidate.admissionKind,
           access: candidate.access,
           profilePath: boundedLoopOriginal.descriptor.profilePath,
-          input: {
-            goalCycle: {
-              loopPath: boundedLoopOriginal.loopPath,
-              round: boundedLoopOriginal.descriptor.round,
-              phase: boundedLoopOriginal.descriptor.phase,
-            },
-            ...(boundedLoopOriginal.descriptor.recoveryAttempt === undefined
-              ? {}
-              : {
-                  boundedLoopRecovery: {
-                    loopPath: boundedLoopOriginal.loopPath,
-                    strategyAttempt:
-                      boundedLoopOriginal.descriptor.recoveryAttempt,
-                    iteration: boundedLoopOriginal.descriptor.round,
-                    phase: boundedLoopOriginal.descriptor.phase,
-                  },
-                }),
-          },
+          input: goalInput,
         });
       } else if (boundedLoopOriginal.bodyKind === 'composite') {
         // Composite-body admit: carry the profile path and composite payload.

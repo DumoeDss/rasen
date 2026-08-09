@@ -73,7 +73,7 @@ root:
         strategy:
           maxAttempts: 1
           requireMaterialChange: true
-          capability: { id: skill:rasen-review-cycle, version: sha256:982739146524b2359637c37564890799aa700905baf67f4825fcfc93e2b73427 }
+          capability: { id: skill:rasen-review-cycle, version: sha256:e5af856986fb791a4200a9fdb3eabddce3d7e49cb0b0c13ace0f74bed171c1f5 }
         exits:
           iterationLimit: { action: strategy }
           actionLimit: { action: fail, outcome: review-action-limit }
@@ -86,12 +86,12 @@ root:
         needs_fix: { action: continue }
     - id: ship
       kind: AtomicStage
-      capability: { id: skill:rasen-ship, version: sha256:9614107d356f7d4f9ecc5e3108638f249b1298861592ded8912d422627cc6529 }
+      capability: { id: skill:rasen-ship, version: sha256:a2c069c2051ba9957df1f9cffea17f3ed93683a8ed5f7b29f5cf443a90e47450 }
       execution: { version: 1, role: shipper, workspace: { access: write }, model: sonnet }
     - { id: gate:ship, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: ship }
     - id: archive
       kind: AtomicStage
-      capability: { id: skill:rasen-archive-change, version: sha256:1bda9aaba614276d832d5cf50e422aa3e71292d05aee9f0e3c0a36a4942dcb67 }
+      capability: { id: skill:rasen-archive-change, version: sha256:76c36f451797c28fc0c5b78ccdd83cc2a26f194564f86c5f509841fb5b98b178 }
       execution: { version: 1, role: shipper, workspace: { access: write }, model: sonnet }
     - { id: finish, kind: Finish, outcome: completed }
   connections:

@@ -206,7 +206,7 @@
     "unreadableNext": "次の手順: レコードが作成された時点の内容にファイルを戻すか、`rasen knowledge apply <candidate>` で知識を記録し直してレコードを一致させてください。",
     "degradedHeading": "カタログ劣化 — 復元可能なバックアップの残骸:",
     "degradedRow": "  [{scope}] {dirs}",
-    "degradedRepair": "  学習スキルの変更���作(例: rasen knowledge apply)を実行してバックアップを復元してください。",
+    "degradedRepair": "  学習スキルの変更操作(例: rasen knowledge apply)を実行してバックアップを復元してください。",
     "showDegradedSuffix": " カタログは復元可能なバックアップの残骸({dirs})により劣化状態です。学習スキルの変更操作を実行して復元してください。",
     "showUnreadable": "学習スキル「{id}」は {scope} スコープに存在しますが読み取れません: {reason}",
     "showNotFound": "{scope} スコープに学習スキル「{id}」がありません。",
@@ -406,6 +406,9 @@
       },
       "small-feature": {
         "description": "軽量な機能パイプラインです。提案、実装、レビューサイクルを伴う標準検証、リリース、アーカイブの順に進みます。"
+      },
+      "task-loop": {
+        "description": "明示選択専用で spec を生成しないタスクループです。ビルダーが実成果物を改善し、各ラウンドで新しい批評者が固定基準と生の証拠を検査します。満足と判定された Run だけが出荷・アーカイブできます。"
       }
     },
     "messages": {
@@ -562,6 +565,18 @@
       "engine_disabled_by_config": "設定によりリコンサイラエンジンが無効化されています。",
       "engine_unsupported": "このパイプラインは選択されたエンジンをサポートしていません。",
       "engine_owner_conflict": "このチェンジは複数のエンジンから所有を主張されています。",
+      "launch_request_conflict": "既存の Run は異なる固定入力で開始されています。既存 Run は変更されませんでした。",
+      "task_loop_input_missing": "Task Loop を開始する前に固定入力契約が必要です。",
+      "task_loop_input_invalid": "Task Loop の入力契約が無効です。",
+      "task_loop_bar_unprovable": "宣言された証拠から Task Loop の品質基準を機械的に検証できません。",
+      "task_loop_critic_reused": "Task Loop の各判定ラウンドには新しい批評者が必要です。",
+      "task_loop_bar_mismatch": "批評者の判定が固定された品質基準を正確に網羅していません。",
+      "task_loop_evidence_missing": "批評者の判定に、宣言された成果物対象の生の証拠がありません。",
+      "task_loop_false_satisfaction": "固定基準に未達項目があるのに、満足と誤判定されました。",
+      "task_loop_reconciler_required": "Task Loop にはリコンサイラエンジンが必要で、レガシー実行へフォールバックできません。",
+      "task_loop_blocked": "ビルダーまたは批評者がブロックまたは失敗したため、Task Loop は停止しました。",
+      "task_loop_exhausted": "Task Loop はラウンド上限に達しましたが、固定された品質基準を満たせませんでした。",
+      "task_loop_delivery_guard": "正規 Run が機械的に満足と判定されるまで、Task Loop は出荷もアーカイブもできません。",
       "pipeline_command_error": "パイプライン操作に失敗しました（{code}）。"
     }
   },
@@ -969,6 +984,11 @@
       "invalidAutopilot": "設定の'autopilot'フィールドが無効です（オブジェクトを指定してください）",
       "invalidRunsEngine": "設定の'runs.engine'フィールドが無効です（'auto'、'reconciler'、または'legacy'を指定してください）",
       "invalidRuns": "設定の'runs'フィールドが無効です（オブジェクトを指定してください）",
+      "invalidSessionPolicy": "設定の 'sessionPolicy' フィールドが無効です（オブジェクトを指定してください）",
+      "invalidSessionPolicyHandoffTokenLimit": "設定の 'sessionPolicy.handoffTokenLimit' が無効です（正の整数を指定してください）",
+      "invalidSessionPolicyReuseRoundLimit": "設定の 'sessionPolicy.reuseRoundLimit' が無効です（正の整数を指定してください）",
+      "invalidSessionPolicyTouchMaxIdleMs": "設定の 'sessionPolicy.touchMaxIdleMs' が無効です（正の整数を指定してください）",
+      "invalidSessionPolicyRetireReasonLabel": "設定の 'sessionPolicy.retireReasonLabel' が無効です（空でない文字列を指定してください）",
       "invalidHandoffThreshold": "設定の'handoff.threshold'フィールドが無効です（(0, 1]の数値、または{ remainingTokens: <正の整数> }を指定してください）",
       "invalidHandoff": "設定の'handoff'フィールドが無効です（オブジェクトを指定してください）",
       "expertSelectionMigration": "注: エキスパートを個別に選択できるようになりました。これまでインストール済みのエキスパートは当面すべて維持されます — インストールするものを選ぶには `rasen profile` を実行してください。",
@@ -1090,6 +1110,79 @@
       "skipAhead": "{original} はインストールされていないため、次は {workflow} です。"
     },
     "hint": "次のステップ: {workflow} — {reason}"
+  },
+  "session": {
+    "messages": {
+      "foregroundNotice": "フォアグラウンドのセッション所有者を使用します。正しさは維持されますが、このコマンドの終了時にキャッシュ常駐も終了します。",
+      "completed": "セッションのターンが完了しました。",
+      "duplicateCompleted": "このメッセージは既に完了しています。再送信せず、永続化された結果を再利用しました。",
+      "duplicatePreDeliveryFailed": "このメッセージは以前に配信前に失敗しており、再送信されませんでした。",
+      "duplicateUncertain": "このメッセージの配信結果は不確実な終端状態であり、再実行されませんでした。",
+      "listedHeading": "再利用可能なセッション（{count}）:",
+      "listEmpty": "この Run に再利用可能なセッションはありません。",
+      "sessionLine": "  {session} [{role}] {status} — {cwd}",
+      "retired": "再利用可能なセッションを終了しました。",
+      "failure": "セッションコマンドが失敗しました [{code}]: {message}",
+      "shutdownDiagnostic": "所有者のシャットダウン診断 ({run}) [{code}]: {message}",
+      "sharedOwner": "共有スーパーバイザー",
+      "daemonForeign": "デーモンのポートは別のリスナーが使用しています。フォアグラウンド所有者は開始しませんでした。",
+      "daemonVersionMismatch": "常駐デーモンのバージョン（{actual}）は、この Rasen インストール（{expected}）と一致しません。",
+      "daemonIdentityAmbiguous": "稼働中デーモンの応答が記録済みの識別情報と完全には一致しないため、セッション要求を送信しませんでした。",
+      "transportUncertain": "デーモン要求は受理された可能性があります。同じ安定したメッセージ ID でのみ再試行してください。"
+    },
+    "examples": {
+      "exec": "例:\n  rasen session exec --run <run-id> --session reviewer --action action.json --cwd . --touch never",
+      "list": "例:\n  rasen session list --run <run-id>",
+      "retire": "例:\n  rasen session retire --run <run-id> --session reviewer"
+    },
+    "outcomes": {
+      "generic": "セッション操作を完了できませんでした。",
+      "invalid_request": "セッション要求の形式が正しくありません。",
+      "invalid_action": "アクションまたはタッチポリシーが無効です。",
+      "bad_request": "セッション要求は有効な JSON ではありません。",
+      "payload_too_large": "セッション要求がプロトコルのサイズ上限を超えています。",
+      "run_not_found": "正確な canonical Run が見つかりません。",
+      "run_record_invalid": "canonical Run レコードが無効か読み取れません。",
+      "run_identity_mismatch": "Run ディレクトリに別の正確な識別情報があります。",
+      "run_directory_invalid": "canonical Run ディレクトリを信頼して利用できません。",
+      "run_mismatch": "永続レジストリは別の Run に属しています。",
+      "registry_absent": "この Run には永続セッションレジストリがありません。",
+      "session_conflict": "永続セッションの不変な識別情報が一致しません。",
+      "invalid_transition": "永続セッションは要求された遷移を実行できません。",
+      "wake_busy": "別の所有者がこのセッションの wake lease を保持しています。",
+      "host_busy": "再利用ホストには既に実行中のターンがあります。",
+      "busy": "再利用ホストのプロセス容量が上限です。",
+      "idempotency_capacity_exhausted": "セッションの永続的な冪等性容量が上限です。",
+      "session_not_found": "再利用セッションが見つかりません。",
+      "session_retired": "再利用セッションは終了済みです。",
+      "session_stale": "再利用セッションの復旧識別情報が古くなっています。",
+      "session_unrecoverable": "再利用セッションを安全に復旧できません。",
+      "host_not_found": "再利用ホストが見つかりません。",
+      "host_retired": "再利用ホストは終了済みです。",
+      "host_unrecoverable": "再利用ホストを安全に復旧できません。",
+      "conditional_wake_stale": "観測後にセッションが変化したため、条件付き wake は受理されませんでした。",
+      "duplicate_message": "安定したメッセージ識別子は既に確定済みです。",
+      "transport_uncertain": "デーモン要求は受理された可能性があります。同じ安定したメッセージ ID でのみ再試行してください。",
+      "delivery_uncertain": "配信はエージェントに届いた可能性があり、再実行されませんでした。",
+      "turn_timeout": "受理済みターンがタイムアウトし、配信結果は不確実です。",
+      "no_output_timeout": "受理済みターンの出力が停止し、配信結果は不確実です。",
+      "registry_corrupt": "永続セッションレジストリが破損しているため、変更せず保持しました。",
+      "unsupported_schema": "永続セッションレジストリのスキーマは未対応です。",
+      "registry_lock_timeout": "期限内に永続レジストリロックを取得できませんでした。",
+      "registry_lock_permission": "永続レジストリロックにアクセスできません。",
+      "registry_write_failed": "永続レジストリを保存できませんでした。",
+      "wake_lock_malformed": "永続 wake ロックが無効です。",
+      "wake_lock_permission": "永続 wake ロックにアクセスできません。",
+      "wake_lock_timeout": "期限内に永続 wake ロックを取得できませんでした。",
+      "wake_lock_error": "永続 wake ロックを安全に検査できませんでした。",
+      "write_failed": "エージェント要求は配信前に失敗しました。",
+      "owner_shutdown_failed": "再利用セッション所有者を正常に終了できませんでした。",
+      "agent_cli_unavailable": "エージェント CLI を利用できません。",
+      "shutting_down": "再利用セッション所有者は終了処理中です。",
+      "daemon_foreign": "デーモンポートは別のリスナーが使用しています。",
+      "daemon_version_mismatch": "常駐デーモンのバージョンがこの Rasen インストールと一致しません。",
+      "daemon_identity_ambiguous": "稼働中デーモンが記録済みの識別情報と完全には一致しません。"
+    }
   },
   "cli": {
     "chrome": {
@@ -1303,6 +1396,9 @@
             },
             "keep-ephemera": {
               "description": "完全な安全検査を維持しながら、すべての ephemera ファイルを保持します"
+            },
+            "no-whitespace-check": {
+              "description": "CI が拒否する成果物のアーカイブを止める空白事前チェックをスキップする"
             },
             "dry-run": {
               "description": "計画されたすべてのアーカイブ操作をプレビューし、何も実行しません"
@@ -2181,6 +2277,133 @@
             }
           }
         },
+        "session": {
+          "description": "永続的に再利用可能なエージェントセッションを実行、確認、終了します",
+          "commands": {
+            "exec": {
+              "description": "許可済みのエージェントアクションを永続的な再利用セッションで1件実行します",
+              "options": {
+                "backend": {
+                  "description": "サーバーが対応する名前付きエージェントバックエンド"
+                },
+                "prompt-file": {
+                  "description": "この上限付きファイルからターン入力を読み込みます"
+                },
+                "run": {
+                  "description": "正確な canonical Run ID"
+                },
+                "session": {
+                  "description": "安定した再利用セッションキー"
+                },
+                "action": {
+                  "description": "1件の change-run-action/1 JSON ファイル、または標準入力を表す -"
+                },
+                "cwd": {
+                  "description": "受理前に canonical 化される明示的な実行ディレクトリ"
+                },
+                "message-id": {
+                  "description": "安定した操作 ID。省略時はアクション ID"
+                },
+                "request-id": {
+                  "description": "ホスト型ターンの冪等性 UUID"
+                },
+                "timeout-ms": {
+                  "description": "ターンの実行時間上限（ミリ秒）"
+                },
+                "touch": {
+                  "description": "タッチポリシー: auto または never"
+                },
+                "touch-deadline": {
+                  "description": "auto タッチに必要な将来の ISO-8601 期限"
+                },
+                "max-touches": {
+                  "description": "auto タッチに必要な正の上限"
+                },
+                "deadline-action": {
+                  "description": "期限時の動作: stop または retire-silent"
+                },
+                "json": {
+                  "description": "rasen-session-command/1 JSON 文書を1件出力"
+                }
+              }
+            },
+            "list": {
+              "description": "1つの正確な canonical Run の安全な永続セッション情報を一覧表示します",
+              "options": {
+                "run": {
+                  "description": "正確な canonical Run ID"
+                },
+                "json": {
+                  "description": "rasen-session-command/1 JSON 文書を1件出力"
+                }
+              }
+            },
+            "inspect": {
+              "description": "永続ホスト型セッションを1件確認します",
+              "positionals": {
+                "id": {
+                  "description": "Rasen セッション UUID"
+                }
+              },
+              "options": {
+                "json": {
+                  "description": "JSON として出力"
+                }
+              }
+            },
+            "cancel": {
+              "description": "正確な実行中セッション世代をキャンセルします",
+              "positionals": {
+                "id": {
+                  "description": "Rasen セッション UUID"
+                }
+              },
+              "options": {
+                "reason": {
+                  "description": "長さ制限付きのキャンセル理由"
+                },
+                "json": {
+                  "description": "JSON として出力"
+                }
+              }
+            },
+            "restart": {
+              "description": "正確な再開セッション世代を開きます",
+              "positionals": {
+                "id": {
+                  "description": "Rasen セッション UUID"
+                }
+              },
+              "options": {
+                "json": {
+                  "description": "JSON として出力"
+                }
+              }
+            },
+            "retire": {
+              "description": "永続的な再利用セッションを終端状態として終了します",
+              "positionals": {
+                "id": {
+                  "description": "ホスト型 Rasen セッション UUID"
+                }
+              },
+              "options": {
+                "run": {
+                  "description": "正確な canonical Run ID"
+                },
+                "session": {
+                  "description": "安定した再利用セッションキー"
+                },
+                "reason": {
+                  "description": "永続ライフサイクルに保存する長さ制限付きの終了理由"
+                },
+                "json": {
+                  "description": "rasen-session-command/1 JSON 文書を1件出力"
+                }
+              }
+            }
+          }
+        },
         "schema": {
           "description": "ワークフロースキーマを管理します",
           "commands": {
@@ -2710,103 +2933,6 @@
                 },
                 "open": {
                   "description": "生成したレポートを読み込んだ状態で、同梱のviewerをデフォルトブラウザで開きます"
-                }
-              }
-            }
-          }
-        },
-        "session": {
-          "description": "Execute and control durable hosted agent Sessions through the resident daemon",
-          "commands": {
-            "exec": {
-              "description": "Create or wake one hosted Session turn",
-              "options": {
-                "backend": {
-                  "description": "Named server-supported agent backend"
-                },
-                "prompt-file": {
-                  "description": "Read the turn input from this bounded file"
-                },
-                "cwd": {
-                  "description": "Bind or verify the Session working directory"
-                },
-                "session": {
-                  "description": "Wake this existing Rasen Session UUID"
-                },
-                "request-id": {
-                  "description": "Idempotency UUID for this turn"
-                },
-                "timeout-ms": {
-                  "description": "Bound the turn wall-clock time in milliseconds"
-                },
-                "json": {
-                  "description": "Output exactly one JSON receipt"
-                }
-              }
-            },
-            "list": {
-              "description": "List durable hosted Sessions",
-              "options": {
-                "json": {
-                  "description": "Output as JSON"
-                }
-              }
-            },
-            "inspect": {
-              "description": "Inspect one durable hosted Session",
-              "positionals": {
-                "id": {
-                  "description": "Rasen Session UUID"
-                }
-              },
-              "options": {
-                "json": {
-                  "description": "Output as JSON"
-                }
-              }
-            },
-            "cancel": {
-              "description": "Cancel the exact live Session generation",
-              "positionals": {
-                "id": {
-                  "description": "Rasen Session UUID"
-                }
-              },
-              "options": {
-                "reason": {
-                  "description": "Bounded cancellation reason"
-                },
-                "json": {
-                  "description": "Output as JSON"
-                }
-              }
-            },
-            "restart": {
-              "description": "Open an exact-resume Session generation",
-              "positionals": {
-                "id": {
-                  "description": "Rasen Session UUID"
-                }
-              },
-              "options": {
-                "json": {
-                  "description": "Output as JSON"
-                }
-              }
-            },
-            "retire": {
-              "description": "Permanently retire a hosted Session",
-              "positionals": {
-                "id": {
-                  "description": "Rasen Session UUID"
-                }
-              },
-              "options": {
-                "reason": {
-                  "description": "Bounded retirement reason"
-                },
-                "json": {
-                  "description": "Output as JSON"
                 }
               }
             }

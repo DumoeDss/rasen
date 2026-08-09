@@ -1,0 +1,58 @@
+#!/bin/sh
+# Rasen pre-commit guard.
+#
+# Mirrors the two fast checks CI's lint job runs, so the class of failure that
+# only ever shows up after a push is caught before the commit object exists.
+# Deliberately does NOT run `tsc --noEmit` or the test suite: a type check here
+# costs tens of seconds per commit and pushes people toward `--no-verify`,
+# which is worse than the failures it would catch. CI still runs both.
+#
+# Skip once:      git commit --no-verify
+# Skip always:    git config core.hooksPath ''   (or set RASEN_SKIP_GIT_HOOKS=1)
+
+set -e
+
+if [ -n "$RASEN_SKIP_GIT_HOOKS" ]; then
+  exit 0
+fi
+
+# 1. Whitespace. Uses git's own staged check — the same rules, the same
+# `core.whitespace` configuration, and the same `.gitattributes` handling as
+# the `git diff --check` step in CI. Reimplementing them here would create a
+# second definition that drifts from the one that actually gates the branch.
+if ! git diff --cached --check; then
+  cat >&2 <<'MESSAGE'
+
+pre-commit: staged content has whitespace errors (listed above).
+
+These almost always come from a file authored outside this repository —
+an evidence report or handoff document written into the artifact store and
+then copied in. Fix the source file, not just the copy.
+
+A line ending in two spaces is a Markdown hard break. Either
+  - drop the trailing spaces (the following line joins the paragraph), or
+  - replace them with a trailing backslash (identical rendering, no whitespace).
+
+To commit anyway: git commit --no-verify
+MESSAGE
+  exit 1
+fi
+
+# 2. Lint the staged sources that fall inside the repository's lint scope.
+staged_sources=$(
+  git diff --cached --name-only --diff-filter=ACMR \
+    -- 'src/*' 'test/*' 'vitest.config.ts' 'vitest.setup.ts' \
+  | grep -E '\.(ts|tsx|js|mjs|cjs)$' || true
+)
+
+if [ -n "$staged_sources" ]; then
+  # shellcheck disable=SC2086
+  if ! npx --no-install eslint $staged_sources; then
+    echo "" >&2
+    echo "pre-commit: ESLint rejected the staged sources listed above." >&2
+    echo "To commit anyway: git commit --no-verify" >&2
+    exit 1
+  fi
+fi
+
+exit 0

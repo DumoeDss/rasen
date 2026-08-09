@@ -14,7 +14,14 @@ import {
   withOwnerAwareFileLock,
 } from './file-state.js';
 import { isKebabId } from './id.js';
-import { thresholdSchema, type ThresholdValue } from './pipeline-registry/types.js';
+import {
+  LEAF_EFFORTS,
+  LeafEffortSchema,
+  thresholdSchema,
+  type LeafEffort,
+  type ThresholdValue,
+} from './pipeline-registry/types.js';
+import { THRESHOLD_ROLES } from './threshold-values.js';
 import {
   DISPATCH_RUNTIMES,
   PROBE_RUNTIMES,
@@ -286,6 +293,22 @@ export const ProjectConfigSchema = z.object({
     .optional()
     .describe('Per-agent model configuration'),
 
+  efforts: z
+    .object({
+      default: LeafEffortSchema.optional(),
+      roles: z
+        .object({
+          planner: LeafEffortSchema.optional(),
+          implementer: LeafEffortSchema.optional(),
+          reviewer: LeafEffortSchema.optional(),
+          fixer: LeafEffortSchema.optional(),
+          shipper: LeafEffortSchema.optional(),
+        })
+        .optional(),
+    })
+    .optional()
+    .describe('Generic per-agent reasoning-effort configuration'),
+
   // Optional: per-pipeline config overrides keyed by pipeline name — the
   // planning-root storage side of the
   // `pipelines.<name>.{gates,models,handoff}.<stage>` and
@@ -302,6 +325,7 @@ export const ProjectConfigSchema = z.object({
         .object({
           gates: z.record(z.string(), z.enum(['on', 'off'])).optional(),
           models: z.record(z.string(), z.string().min(1)).optional(),
+          efforts: z.record(z.string(), LeafEffortSchema).optional(),
           handoff: z.record(z.string(), thresholdSchema('threshold')).optional(),
           runtimes: z.record(z.string(), z.enum(DISPATCH_RUNTIMES)).optional(),
         })
@@ -674,9 +698,9 @@ function parsePipelinesBlock(raw: unknown): ProjectConfig['pipelines'] | undefin
     const entry: PipelineEntry = {};
 
     for (const [axis, axisRaw] of Object.entries(pipelineRaw as Record<string, unknown>)) {
-      if (axis !== 'gates' && axis !== 'models' && axis !== 'handoff' && axis !== 'runtimes') {
+      if (axis !== 'gates' && axis !== 'models' && axis !== 'efforts' && axis !== 'handoff' && axis !== 'runtimes') {
         console.warn(
-          `Unknown 'pipelines.${pipelineName}.${axis}' field in config (expected gates, models, handoff, or runtimes); ignoring it.`
+          `Unknown 'pipelines.${pipelineName}.${axis}' field in config (expected gates, models, efforts, handoff, or runtimes); ignoring it.`
         );
         continue;
       }
@@ -687,6 +711,7 @@ function parsePipelinesBlock(raw: unknown): ProjectConfig['pipelines'] | undefin
 
       const gates: Record<string, 'on' | 'off'> = {};
       const models: Record<string, string> = {};
+      const efforts: Record<string, LeafEffort> = {};
       const handoff: Record<string, ThresholdValue> = {};
       const runtimes: Record<string, DispatchRuntime> = {};
       // `gates`/`models`/`handoff` leaves are keyed by stage; `runtimes` by role.
@@ -698,6 +723,12 @@ function parsePipelinesBlock(raw: unknown): ProjectConfig['pipelines'] | undefin
         } else if (axis === 'models') {
           if (typeof leaf === 'string' && leaf.length > 0) models[leafKey] = leaf;
           else console.warn(`Invalid '${label}' field in config (must be a non-empty string)`);
+        } else if (axis === 'efforts') {
+          if (typeof leaf === 'string' && LEAF_EFFORTS.includes(leaf as LeafEffort)) {
+            efforts[leafKey] = leaf as LeafEffort;
+          } else {
+            console.warn(`Invalid '${label}' field in config (must be one of ${LEAF_EFFORTS.join(', ')})`);
+          }
         } else if (axis === 'runtimes') {
           if (hasRuntimeCapability(leaf, 'canDispatch')) runtimes[leafKey] = leaf;
           else {
@@ -715,6 +746,7 @@ function parsePipelinesBlock(raw: unknown): ProjectConfig['pipelines'] | undefin
       }
       if (axis === 'gates' && Object.keys(gates).length > 0) entry.gates = gates;
       if (axis === 'models' && Object.keys(models).length > 0) entry.models = models;
+      if (axis === 'efforts' && Object.keys(efforts).length > 0) entry.efforts = efforts;
       if (axis === 'handoff' && Object.keys(handoff).length > 0) entry.handoff = handoff;
       if (axis === 'runtimes' && Object.keys(runtimes).length > 0) entry.runtimes = runtimes;
     }
@@ -1587,6 +1619,36 @@ function parseProjectConfigContent(
         config.models = models;
       } else {
         console.warn(`Invalid 'models' field in config (must be an object)`);
+      }
+    }
+
+    if (raw.efforts !== undefined) {
+      if (raw.efforts && typeof raw.efforts === 'object' && !Array.isArray(raw.efforts)) {
+        const effortsRaw = raw.efforts as Record<string, unknown>;
+        const efforts: ProjectConfig['efforts'] = {};
+        if (effortsRaw.default !== undefined) {
+          const parsed = LeafEffortSchema.safeParse(effortsRaw.default);
+          if (parsed.success) efforts.default = parsed.data;
+          else console.warn(`Invalid 'efforts.default' field in config (must be one of ${LEAF_EFFORTS.join(', ')})`);
+        }
+        if (effortsRaw.roles !== undefined) {
+          if (effortsRaw.roles && typeof effortsRaw.roles === 'object' && !Array.isArray(effortsRaw.roles)) {
+            const rolesRaw = effortsRaw.roles as Record<string, unknown>;
+            const roles: NonNullable<ProjectConfig['efforts']>['roles'] = {};
+            for (const role of THRESHOLD_ROLES) {
+              if (rolesRaw[role] === undefined) continue;
+              const parsed = LeafEffortSchema.safeParse(rolesRaw[role]);
+              if (parsed.success) roles[role] = parsed.data;
+              else console.warn(`Invalid 'efforts.roles.${role}' field in config (must be one of ${LEAF_EFFORTS.join(', ')})`);
+            }
+            if (Object.keys(roles).length > 0) efforts.roles = roles;
+          } else {
+            console.warn(`Invalid 'efforts.roles' field in config (must be an object)`);
+          }
+        }
+        config.efforts = efforts;
+      } else {
+        console.warn(`Invalid 'efforts' field in config (must be an object)`);
       }
     }
 

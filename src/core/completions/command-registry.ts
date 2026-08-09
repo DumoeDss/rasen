@@ -186,6 +186,9 @@ const COMMANDS: readonly CommandDefinition[] = [
         name: 'keep-ephemera',
       },
       {
+        name: 'no-whitespace-check',
+      },
+      {
         name: 'dry-run',
       },
       {
@@ -1092,21 +1095,42 @@ const COMMANDS: readonly CommandDefinition[] = [
         flags: [
           { name: 'backend', takesValue: true, completionValues: ['claude'] },
           { name: 'prompt-file', takesValue: true },
-          { name: 'cwd', takesValue: true },
-          { name: 'session', takesValue: true },
           { name: 'request-id', takesValue: true },
           { name: 'timeout-ms', takesValue: true },
+          { name: 'run', takesValue: true },
+          { name: 'session', takesValue: true },
+          { name: 'action', takesValue: true },
+          { name: 'cwd', takesValue: true },
+          { name: 'message-id', takesValue: true },
+          {
+            name: 'touch',
+            takesValue: true,
+            completionValues: ['auto', 'never'],
+          },
+          { name: 'touch-deadline', takesValue: true },
+          { name: 'max-touches', takesValue: true },
+          {
+            name: 'deadline-action',
+            takesValue: true,
+            completionValues: ['stop', 'retire-silent'],
+          },
           COMMON_FLAGS.json,
         ],
       },
-      { name: 'list', flags: [COMMON_FLAGS.json] },
+      {
+        name: 'list',
+        flags: [
+          { name: 'run', takesValue: true },
+          COMMON_FLAGS.json,
+        ],
+      },
       {
         name: 'inspect',
         acceptsPositional: true,
         positionals: [{ name: 'id' }],
         flags: [COMMON_FLAGS.json],
       },
-      ...(['cancel', 'restart', 'retire'] as const).map((name) => ({
+      ...(['cancel', 'restart'] as const).map((name) => ({
         name,
         acceptsPositional: true,
         positionals: [{ name: 'id' }],
@@ -1115,6 +1139,17 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
         ],
       })),
+      {
+        name: 'retire',
+        acceptsPositional: true,
+        positionals: [{ name: 'id', optional: true }],
+        flags: [
+          { name: 'run', takesValue: true },
+          { name: 'session', takesValue: true },
+          { name: 'reason', takesValue: true },
+          COMMON_FLAGS.json,
+        ],
+      },
     ],
   },
   {

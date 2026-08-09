@@ -1119,6 +1119,7 @@ metadata:
 
       const entries = await fs.readdir(skillsRoot);
       expect(entries.filter((entry) => entry === 'rasen-retain')).toEqual(['rasen-retain']);
+      expect(entries).toContain('rasen-task-loop');
       for (const fileName of ['SKILL.md', 'report.md', 'codify.md']) {
         expect(await FileSystemUtils.fileExists(
           path.join(skillsRoot, 'rasen-retain', fileName)

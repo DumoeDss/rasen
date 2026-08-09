@@ -4,6 +4,8 @@
  * unified envelope (unify-pipeline-http-api design D6): `config-api/wire-types.ts`
  * re-exports it rather than declaring its own — one shape, one definition.
  */
+import { z } from 'zod';
+
 import type { RunState } from '../pipeline-registry/run-state.js';
 import type { PortfolioChildStatus } from '../pipeline-registry/portfolio-state.js';
 import type { PortfolioState } from '../pipeline-registry/portfolio-state.js';
@@ -112,6 +114,7 @@ export interface WirePipelineStage {
   /** The effective gate after the mask: `true` pauses, `false` auto-approves. */
   effectiveGate: WireEffectiveValue<boolean>;
   effectiveModel: WireEffectiveValue<string | null>;
+  effectiveEffort: WireEffectiveValue<string | null>;
   effectiveHandoff: WireEffectiveThreshold;
   effectiveRuntime: WireEffectiveValue<DispatchRuntime>;
   /** Concrete route selected for the server's available host context. */
@@ -1030,3 +1033,355 @@ export type ProfileMutationRequest =
 
 /** `POST /api/v1/profiles` success response: the normalized entry for create/update, or the deleted name. */
 export type ProfileMutationResponse = { profile: WireProfileEntry } | { deleted: string };
+
+// -----------------------------------------------------------------------
+// Durable reusable sessions (`rasen-reusable-session-api/1`).
+// -----------------------------------------------------------------------
+
+export const REUSABLE_SESSION_API_SCHEMA = 'rasen-reusable-session-api/1' as const;
+
+export interface ReusableSessionTouchPolicyWire {
+  mode: 'auto' | 'never';
+  deadlineAt?: string;
+  maxTouches: number;
+  touchesUsed: number;
+  deadlineAction: 'stop' | 'retire-silent';
+}
+
+export interface ReusableSessionTerminalWire {
+  admittedAt: string;
+  dispatchFenceAt?: string;
+  settledAt: string;
+  outcome: 'completed' | 'pre_delivery_failed' | 'delivery_uncertain';
+  kind?: 'interactive' | 'touch';
+  touchOrdinal?: number;
+  touchAttempt?: number;
+  code?: string;
+}
+
+export interface ReusableSessionProjectionWire {
+  runId: string;
+  sessionKey: string;
+  role: string;
+  status: 'starting' | 'idle' | 'waking' | 'lost' | 'stale' | 'retiring' | 'retired';
+  cwd: string;
+  lifecycle: {
+    createdAt: string;
+    updatedAt: string;
+    lastWakeAt?: string;
+    lostAt?: string;
+    recoveredAt?: string;
+    retirementRequestedAt?: string;
+    retiredAt?: string;
+    reason?: string;
+  };
+  touchPolicy: ReusableSessionTouchPolicyWire;
+  wakes: ReusableSessionTerminalWire[];
+}
+
+export interface ReusableSessionInteractiveWakeRequest {
+  schema: typeof REUSABLE_SESSION_API_SCHEMA;
+  op: 'wake';
+  kind: 'interactive';
+  runId: string;
+  sessionKey: string;
+  action: unknown;
+  cwd: string;
+  messageId?: string;
+  touchPolicy: Omit<ReusableSessionTouchPolicyWire, 'touchesUsed'>;
+}
+
+export interface ReusableSessionTouchWakeRequest {
+  schema: typeof REUSABLE_SESSION_API_SCHEMA;
+  op: 'wake';
+  kind: 'touch';
+  runId: string;
+  sessionKey: string;
+  messageId: string;
+  message: string;
+  expectedLastWakeAt: string;
+  touchOrdinal: number;
+  touchAttempt: number;
+  timeoutMs?: number;
+  noOutputTimeoutMs?: number;
+}
+
+export type ReusableSessionWakeRequest =
+  | ReusableSessionInteractiveWakeRequest
+  | ReusableSessionTouchWakeRequest;
+
+export interface ReusableSessionRetireRequest {
+  schema: typeof REUSABLE_SESSION_API_SCHEMA;
+  op: 'retire';
+  runId: string;
+  sessionKey: string;
+  reason: string;
+}
+
+export interface ReusableSessionTouchPolicyRequest {
+  schema: typeof REUSABLE_SESSION_API_SCHEMA;
+  op: 'touch-policy';
+  runId: string;
+  sessionKey: string;
+  expectedLastWakeAt?: string;
+  policy: ReusableSessionTouchPolicyWire;
+}
+
+export interface ReusableSessionApiSuccess {
+  schema: typeof REUSABLE_SESSION_API_SCHEMA;
+  ok: true;
+  operation: 'wake' | 'list' | 'retire' | 'touch-policy';
+  code: string;
+  runId?: string;
+  sessionKey?: string;
+  disposition?: 'completed' | 'duplicate';
+  terminalDisposition?: 'completed' | 'pre_delivery_failed' | 'delivery_uncertain';
+  session?: ReusableSessionProjectionWire;
+  sessions?: ReusableSessionProjectionWire[];
+}
+
+export interface ReusableSessionOwnerShutdownDiagnosticWire {
+  runId?: string;
+  code: string;
+  message: string;
+}
+
+export interface ReusableSessionApiFailure {
+  schema: typeof REUSABLE_SESSION_API_SCHEMA;
+  ok: false;
+  operation: 'wake' | 'list' | 'retire' | 'touch-policy';
+  code: string;
+  message: string;
+  runId?: string;
+  sessionKey?: string;
+  session?: ReusableSessionProjectionWire;
+  failures?: ReusableSessionOwnerShutdownDiagnosticWire[];
+}
+
+export type ReusableSessionApiResponse =
+  | ReusableSessionApiSuccess
+  | ReusableSessionApiFailure;
+
+const ReusableSessionTimestampSchema = z.string().refine((value) => {
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.valueOf()) && parsed.toISOString() === value;
+});
+
+const ReusableSessionTouchPolicyResponseSchema = z
+  .object({
+    mode: z.enum(['auto', 'never']),
+    deadlineAt: ReusableSessionTimestampSchema.optional(),
+    maxTouches: z.number().int().nonnegative(),
+    touchesUsed: z.number().int().nonnegative(),
+    deadlineAction: z.enum(['stop', 'retire-silent']),
+  })
+  .strict();
+
+const ReusableSessionTerminalResponseSchema = z
+  .object({
+    admittedAt: ReusableSessionTimestampSchema,
+    dispatchFenceAt: ReusableSessionTimestampSchema.optional(),
+    settledAt: ReusableSessionTimestampSchema,
+    outcome: z.enum([
+      'completed',
+      'pre_delivery_failed',
+      'delivery_uncertain',
+    ]),
+    kind: z.enum(['interactive', 'touch']).optional(),
+    touchOrdinal: z.number().int().positive().optional(),
+    touchAttempt: z.number().int().positive().optional(),
+    code: z.string().min(1).optional(),
+  })
+  .strict();
+
+const ReusableSessionProjectionResponseSchema = z
+  .object({
+    runId: z.string().min(1),
+    sessionKey: z.string().min(1),
+    role: z.string().min(1),
+    status: z.enum([
+      'starting',
+      'idle',
+      'waking',
+      'lost',
+      'stale',
+      'retiring',
+      'retired',
+    ]),
+    cwd: z.string().min(1),
+    lifecycle: z
+      .object({
+        createdAt: ReusableSessionTimestampSchema,
+        updatedAt: ReusableSessionTimestampSchema,
+        lastWakeAt: ReusableSessionTimestampSchema.optional(),
+        lostAt: ReusableSessionTimestampSchema.optional(),
+        recoveredAt: ReusableSessionTimestampSchema.optional(),
+        retirementRequestedAt: ReusableSessionTimestampSchema.optional(),
+        retiredAt: ReusableSessionTimestampSchema.optional(),
+        reason: z.string().optional(),
+      })
+      .strict(),
+    touchPolicy: ReusableSessionTouchPolicyResponseSchema,
+    wakes: z.array(ReusableSessionTerminalResponseSchema),
+  })
+  .strict();
+
+const ReusableSessionWakeSuccessResponseSchema = z
+  .object({
+    schema: z.literal(REUSABLE_SESSION_API_SCHEMA),
+    ok: z.literal(true),
+    operation: z.literal('wake'),
+    code: z.string().min(1),
+    runId: z.string().min(1),
+    sessionKey: z.string().min(1),
+    disposition: z.enum(['completed', 'duplicate']),
+    terminalDisposition: z.enum([
+      'completed',
+      'pre_delivery_failed',
+      'delivery_uncertain',
+    ]),
+    session: ReusableSessionProjectionResponseSchema,
+  })
+  .strict();
+
+const ReusableSessionListSuccessResponseSchema = z
+  .object({
+    schema: z.literal(REUSABLE_SESSION_API_SCHEMA),
+    ok: z.literal(true),
+    operation: z.literal('list'),
+    code: z.string().min(1),
+    runId: z.string().min(1).optional(),
+    sessions: z.array(ReusableSessionProjectionResponseSchema),
+  })
+  .strict();
+
+const ReusableSessionMutationSuccessResponseSchema = z
+  .object({
+    schema: z.literal(REUSABLE_SESSION_API_SCHEMA),
+    ok: z.literal(true),
+    operation: z.enum(['retire', 'touch-policy']),
+    code: z.string().min(1),
+    runId: z.string().min(1),
+    sessionKey: z.string().min(1),
+    session: ReusableSessionProjectionResponseSchema,
+  })
+  .strict();
+
+const ReusableSessionOwnerShutdownDiagnosticResponseSchema = z
+  .object({
+    runId: z.string().min(1).optional(),
+    code: z.string().min(1).max(64),
+    message: z.string().min(1).max(512),
+  })
+  .strict();
+
+const ReusableSessionFailureResponseSchema = z
+  .object({
+    schema: z.literal(REUSABLE_SESSION_API_SCHEMA),
+    ok: z.literal(false),
+    operation: z.enum(['wake', 'list', 'retire', 'touch-policy']),
+    code: z.string().min(1),
+    message: z.string(),
+    runId: z.string().min(1).optional(),
+    sessionKey: z.string().min(1).optional(),
+    session: ReusableSessionProjectionResponseSchema.optional(),
+    failures: z
+      .array(ReusableSessionOwnerShutdownDiagnosticResponseSchema)
+      .optional(),
+  })
+  .strict();
+
+const ReusableSessionApiResponseSchema = z.union([
+  ReusableSessionWakeSuccessResponseSchema,
+  ReusableSessionListSuccessResponseSchema,
+  ReusableSessionMutationSuccessResponseSchema,
+  ReusableSessionFailureResponseSchema,
+]);
+
+export type ReusableSessionApiResponseExpectation =
+  | {
+      operation: 'list';
+      runId: string;
+    }
+  | {
+      operation: 'list';
+      scope: 'all';
+    }
+  | {
+      operation: 'wake' | 'retire' | 'touch-policy';
+      runId: string;
+      sessionKey: string;
+    };
+
+function responseIdentityMatchesExpectation(
+  response: ReusableSessionApiResponse,
+  expectation: ReusableSessionApiResponseExpectation
+): boolean {
+  const projections = [
+    ...(response.session === undefined ? [] : [response.session]),
+    ...('sessions' in response ? (response.sessions ?? []) : []),
+  ];
+
+  if ('scope' in expectation) {
+    return response.runId === undefined && response.sessionKey === undefined;
+  }
+
+  if (
+    (response.runId !== undefined && response.runId !== expectation.runId)
+    || projections.some(
+      (projection) => projection.runId !== expectation.runId
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    response.ok
+    && response.operation === 'list'
+    && response.runId !== expectation.runId
+  ) {
+    return false;
+  }
+
+  if ('sessionKey' in expectation) {
+    return (
+      (
+        response.sessionKey === undefined
+        || response.sessionKey === expectation.sessionKey
+      )
+      && projections.every(
+        (projection) => projection.sessionKey === expectation.sessionKey
+      )
+    );
+  }
+
+  return (
+    response.sessionKey === undefined
+    || projections.every(
+      (projection) => projection.sessionKey === response.sessionKey
+    )
+  );
+}
+
+/**
+ * The one runtime trust boundary for reusable-session HTTP responses.
+ * Unknown keys and operation/projection drift are rejected before callers
+ * render or forward any daemon-provided value.
+ */
+export function decodeReusableSessionApiResponse(
+  value: unknown,
+  expectation: ReusableSessionApiResponseExpectation
+): ReusableSessionApiResponse | null {
+  const decoded = ReusableSessionApiResponseSchema.safeParse(value);
+  if (
+    !decoded.success
+    || decoded.data.operation !== expectation.operation
+    || !responseIdentityMatchesExpectation(
+      decoded.data as ReusableSessionApiResponse,
+      expectation
+    )
+  ) {
+    return null;
+  }
+  return decoded.data as ReusableSessionApiResponse;
+}

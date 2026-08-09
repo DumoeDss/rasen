@@ -2,6 +2,7 @@ import {
   AgentRuntimeSchema,
   AgentRuntimeSandboxSchema,
   AgentRuntimeSessionReuseSchema,
+  LeafEffortSchema,
   PipelineYamlSchema,
   StageHandoffConfigSchema,
   StageRoleSchema,
@@ -9,6 +10,7 @@ import {
   type AgentRuntime,
   type AgentRuntimeSandbox,
   type AgentRuntimeSessionReuse,
+  type LeafEffort,
   type PipelineYaml,
   type StageHandoffConfig,
   type StageRole,
@@ -76,7 +78,7 @@ export interface AtomicStageExecutionV1 {
   readonly verifyPolicy?: VerifyPolicy;
   readonly runtime?: AgentRuntime;
   readonly model?: string;
-  readonly effort?: string;
+  readonly effort?: LeafEffort;
   readonly sandbox?: AgentRuntimeSandbox;
   readonly sessionReuse?: AgentRuntimeSessionReuse;
   readonly handoff?: StageHandoffConfig;
@@ -1093,6 +1095,7 @@ function readAtomicStageExecution(
   const enumFields = [
     ['verifyPolicy', VerifyPolicySchema],
     ['runtime', AgentRuntimeSchema],
+    ['effort', LeafEffortSchema],
     ['sandbox', AgentRuntimeSandboxSchema],
     ['sessionReuse', AgentRuntimeSessionReuseSchema],
   ] as const;
@@ -1105,7 +1108,7 @@ function readAtomicStageExecution(
       );
     }
   }
-  for (const key of ['model', 'effort'] as const) {
+  for (const key of ['model'] as const) {
     if (
       value[key] !== undefined &&
       (typeof value[key] !== 'string' || value[key].trim().length === 0)
@@ -3483,7 +3486,13 @@ function normalizeV1(pipeline: PipelineYaml): DefinitionSourceV2 {
         : gateKind === 'measure'
           ? 'measure'
           : 'evaluate';
-      const iterateCapability = { id: 'skill:rasen-goal-iterate', version: 'legacy' };
+      if (stage.skill === undefined) {
+        throw new Error(`Goal-loop stage ${stage.id} must declare a skill capability.`);
+      }
+      const iterateCapability = {
+        id: `skill:${stage.skill}`,
+        version: 'legacy',
+      };
 
       declarations.push({
         id: bodyId,

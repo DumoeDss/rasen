@@ -27,6 +27,7 @@ import {
   type LoopLifecycleDecision,
 } from './bounded-loop-lifecycle.js';
 import { deriveNodeId } from './identity.js';
+import { projectTaskLoopSection } from './task-loop.js';
 
 function actionView(committed: CommittedAction) {
   const action = committed.action;
@@ -244,9 +245,13 @@ function buildSections(
         );
       }
       if (loop.body.kind === 'goal-cycle') {
+        const progress = projectGoalCycleProgress(plan, loop, record);
         sections.push(
-          buildGoalSection(loop, projectGoalCycleProgress(plan, loop, record))
+          buildGoalSection(loop, progress)
         );
+        if (record.pipeline === 'task-loop') {
+          sections.push(projectTaskLoopSection(plan, record, loop, progress));
+        }
       }
     }
     // Emit composite drill-down for composite-body loops or inlined CompositeRef nodes.

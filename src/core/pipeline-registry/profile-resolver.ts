@@ -574,7 +574,7 @@ function resolveAuthoredAtomicPolicyStage(
     nodeId,
     role: execution.role,
     model: effective.model.value ?? 'default',
-    effort: execution.effort ?? 'default',
+    effort: effective.effort.value ?? 'default',
     runtime,
     sandbox,
     gate: effective.gate.effective,
@@ -592,7 +592,7 @@ function resolveAuthoredAtomicPolicyStage(
     provenance: {
       role: 'definition',
       model: effective.model.source,
-      effort: execution.effort === undefined ? 'default' : 'definition',
+      effort: effective.effort.source,
       runtime: runtimeSource,
       sandbox: 'definition',
       gate: effective.gate.source,

@@ -27,7 +27,7 @@ const AUTO_DECOMPOSE_GIT_BLOB =
 
 const EXACT_CAPABILITY_PINS = {
   'skill:rasen-apply-change': 'sha256:a4559817d3de2f554890a24d53e4a26827086a0e0f51371213be1db4686c0e8f',
-  'skill:rasen-archive-change': 'sha256:1bda9aaba614276d832d5cf50e422aa3e71292d05aee9f0e3c0a36a4942dcb67',
+  'skill:rasen-archive-change': 'sha256:76c36f451797c28fc0c5b78ccdd83cc2a26f194564f86c5f509841fb5b98b178',
   'skill:rasen-benchmark': 'sha256:de4886394ef59b50e82cd36b85edbd6525359b8bd0f166f664836bf6c62c5844',
   'skill:rasen-cso': 'sha256:d0cd6e299998b3c4608bfad49d0c830ae6a7cbd62d15506b62741706430472bb',
   'skill:rasen-design-review': 'sha256:c754f0ce59670186ceab07c6ba648f330d5d28a1cc0ab40283b1fbb735a543f2',
@@ -41,8 +41,8 @@ const EXACT_CAPABILITY_PINS = {
   'skill:rasen-retain': 'sha256:09cb7888f4d6240f4181b4e4bbaafa0c3d6d1c499004bc617395750a8d7721e7',
   'skill:rasen-review': 'sha256:be24b6d38f17e9068cd7dd114cf2239c464af01c4b3ad13f746371b6efe16ffd',
   'skill:rasen-review-fix': 'sha256:737e61418515fb67d0bdf46626f80b0e0c418a38d7b931b9bf69d320a520cad0',
-  'skill:rasen-review-cycle': 'sha256:982739146524b2359637c37564890799aa700905baf67f4825fcfc93e2b73427',
-  'skill:rasen-ship': 'sha256:9614107d356f7d4f9ecc5e3108638f249b1298861592ded8912d422627cc6529',
+  'skill:rasen-review-cycle': 'sha256:e5af856986fb791a4200a9fdb3eabddce3d7e49cb0b0c13ace0f74bed171c1f5',
+  'skill:rasen-ship': 'sha256:a2c069c2051ba9957df1f9cffea17f3ed93683a8ed5f7b29f5cf443a90e47450',
 } as const;
 
 function authoredDefinition(name: string): Record<string, unknown> {

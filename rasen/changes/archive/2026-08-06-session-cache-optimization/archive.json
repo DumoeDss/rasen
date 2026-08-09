@@ -1,0 +1,25 @@
+{
+  "change": "session-cache-optimization",
+  "archivedAt": "2026-08-06T09:00:47.671Z",
+  "codeCommit": "275c8469fc8c07a5a9b99761411c1a85d1ddb346",
+  "planningBranch": "chore/archive-session-cache-optimization",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/delivery-log.md",
+      "sha256": "5fba24590ba178c539ac2ab9c5d453ee50b953d9e95794595a51ac9b1357982e"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "5d7b516c72c40c56501b6d62eccfdc186181cc76c5d2164ff77ba5c7cd2b8850"
+    },
+    {
+      "path": "evidence/verification-report.md",
+      "sha256": "857223a450b7be231b8b8c21266dbf140d61afdc25205945335c0cb60efafe20"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [],
+  "missing": []
+}

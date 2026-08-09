@@ -26,6 +26,9 @@ import {
   type ManagementApiContext,
   type ManagementRouterOptions,
 } from './router.js';
+import type {
+  ReusableSessionOwnerShutdownDiagnostic,
+} from './reusable-session-api.js';
 
 export interface StartManagementServerOptions {
   context: ManagementApiContext;
@@ -42,10 +45,25 @@ export interface ManagementServerHandle {
   stopServer: () => Promise<void>;
 }
 
+export class ManagementServerOwnerShutdownError extends Error {
+  readonly code = 'owner_shutdown_failed';
+  readonly failures: ReusableSessionOwnerShutdownDiagnostic[];
+
+  constructor(
+    message: string,
+    failures: ReusableSessionOwnerShutdownDiagnostic[]
+  ) {
+    super(message);
+    this.name = 'ManagementServerOwnerShutdownError';
+    this.failures = failures.map((failure) => ({ ...failure }));
+  }
+}
+
 /** Backstop so shutdown can never hang past this, even if `server.close()`'s callback never fires. */
 const SHUTDOWN_GUARD_MS = 2000;
 
 /** Backstop on reaping live sessions (design D6) — bounds the wait past the supervisor's own SIGTERM-then-SIGKILL grace period. */
+const SESSION_SHUTDOWN_GUARD_MS = 8000;
 
 const LOOPBACK_HOST = '127.0.0.1';
 export const AUDIT_VIEWER_ASSET_PATH = '/assets/audit-viewer.html';
@@ -94,8 +112,8 @@ export function startManagementServer(
   const configHandler = createConfigRouter(context);
   const {
     handle: managementHandler,
-    supervisor,
     sessionHost,
+    shutdownReusableSessions,
     shutdownPathChooser,
   } = createManagementRouter(context, resolveHomeForRoot, options.sessions);
 
@@ -179,13 +197,54 @@ export function startManagementServer(
       // (`ui-launch.ts` calls this same `stopServer`), bounded so a
       // SIGTERM-resistant session can never hang shutdown indefinitely.
       // Each supervisor/host tree cleanup owns a bounded graceful/forced
-      // deadline. Do not layer a shorter outer race over that contract: a
-      // clean return must mean every known tree has published its outcome.
-      await Promise.all([
-        supervisor.shutdownAll('server-shutdown'),
-        sessionHost.shutdown('server-shutdown'),
-        shutdownPathChooser(),
+      // deadline. Bound only the reusable coordinator override here; the
+      // hosted Session tree keeps its own full close-authority contract.
+      let reusableGuard: NodeJS.Timeout | undefined;
+      const reusableDrain = Promise.race([
+        shutdownReusableSessions(),
+        new Promise<never>((_resolve, reject) => {
+          reusableGuard = setTimeout(
+            () => reject(new Error('Reusable-session owner shutdown exceeded the bounded server drain.')),
+            SESSION_SHUTDOWN_GUARD_MS
+          );
+          reusableGuard.unref?.();
+        }),
+      ]).finally(() => {
+        if (reusableGuard !== undefined) clearTimeout(reusableGuard);
+      });
+      const hostedDrain = sessionHost.shutdown('server-shutdown');
+      const pathChooserDrain = shutdownPathChooser();
+      const drain = Promise.allSettled([
+        reusableDrain,
+        hostedDrain,
+        pathChooserDrain,
       ]);
+      const drainOutcome = await drain;
+      let shutdownError: Error | undefined;
+      const [reusableResult, hostedResult, pathChooserResult] = drainOutcome;
+      if (reusableResult.status === 'rejected') {
+        shutdownError =
+          reusableResult.reason instanceof Error
+            ? reusableResult.reason
+            : new Error(String(reusableResult.reason));
+      } else if (!reusableResult.value.ok) {
+        shutdownError = new ManagementServerOwnerShutdownError(
+          reusableResult.value.message,
+          reusableResult.value.failures
+        );
+      }
+      if (shutdownError === undefined && hostedResult.status === 'rejected') {
+        shutdownError =
+          hostedResult.reason instanceof Error
+            ? hostedResult.reason
+            : new Error(String(hostedResult.reason));
+      }
+      if (shutdownError === undefined && pathChooserResult.status === 'rejected') {
+        shutdownError =
+          pathChooserResult.reason instanceof Error
+            ? pathChooserResult.reason
+            : new Error(String(pathChooserResult.reason));
+      }
 
       await new Promise<void>((resolve) => {
         const guard = setTimeout(resolve, SHUTDOWN_GUARD_MS);
@@ -202,6 +261,7 @@ export function startManagementServer(
           socket.destroy();
         }
       });
+      if (shutdownError) throw shutdownError;
       stopped = true;
     })().finally(() => {
       if (!stopped) stopPromise = undefined;

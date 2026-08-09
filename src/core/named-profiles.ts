@@ -29,7 +29,7 @@ import {
 } from './workflow-package/index.js';
 import { formatZodIssues } from './zod-issues.js';
 import {
-  RETENTION_RUNNER_WORKFLOW_ID,
+  isInternalBuiltInWorkflowId,
   WorkflowCatalog,
   loadWorkflowCatalog,
   resolveWorkflowSelection,
@@ -215,8 +215,8 @@ export function normalizeProfileDefinition(
   // never a profile member, so drop it even though `auto-command`'s
   // `requires.workflows` pulls it into the dependency-resolved order.
   const expanded = resolveWorkflowSelection(catalog, withoutRetired)
-    .map((workflow) => workflow.id)
-    .filter((id) => id !== RETENTION_RUNNER_WORKFLOW_ID);
+    .filter((workflow) => !isInternalBuiltInWorkflowId(workflow.id))
+    .map((workflow) => workflow.id);
   return {
     version: PROFILE_DEFINITION_VERSION,
     workflows: expanded,
