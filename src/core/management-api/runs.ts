@@ -315,6 +315,8 @@ export interface ReconcilerListOptions {
    * state defaults to "missing" since no change directory can be checked.
    */
   planningSpaceId?: string;
+  /** Server-lifetime Run store root; avoids re-reading mutable process env per request. */
+  runsRoot?: string;
 }
 
 /**
@@ -340,12 +342,14 @@ async function discoverReconcilerRuns(
   home: ProjectHome | null,
   options: ReconcilerListOptions = {}
 ): Promise<ReconcilerListResult> {
-  let storeRoot: string;
-  try {
-    const { getGlobalDataDir } = await import('../global-config.js');
-    storeRoot = path.join(getGlobalDataDir(), 'runs');
-  } catch {
-    return { summaries: [], hasMore: false };
+  let storeRoot = options.runsRoot;
+  if (!storeRoot) {
+    try {
+      const { getGlobalDataDir } = await import('../global-config.js');
+      storeRoot = path.join(getGlobalDataDir(), 'runs');
+    } catch {
+      return { summaries: [], hasMore: false };
+    }
   }
 
   const planningFilter = options.planningSpaceId ?? null;
@@ -445,14 +449,17 @@ export async function handleRunDetail(
   changeId: string,
   runId: string,
   root: string | undefined,
-  home: ProjectHome | null
+  home: ProjectHome | null,
+  runsRoot?: string
 ): Promise<RunDetailResult> {
-  let storeRoot: string;
-  try {
-    const { getGlobalDataDir } = await import('../global-config.js');
-    storeRoot = path.join(getGlobalDataDir(), 'runs');
-  } catch {
-    return { ok: false, status: 500, code: 'run_store_unavailable', message: 'Machine data directory is not available.' };
+  let storeRoot = runsRoot;
+  if (!storeRoot) {
+    try {
+      const { getGlobalDataDir } = await import('../global-config.js');
+      storeRoot = path.join(getGlobalDataDir(), 'runs');
+    } catch {
+      return { ok: false, status: 500, code: 'run_store_unavailable', message: 'Machine data directory is not available.' };
+    }
   }
 
   if (!fs.existsSync(storeRoot)) {

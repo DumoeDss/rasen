@@ -192,21 +192,29 @@ function windowsProcessTreeIsAlive(rootPid: number): boolean {
   }
 }
 
+function posixProcessGroupIsAlive(
+  rootPid: number,
+  options: ClaudeSessionStateOptions
+): boolean {
+  if (options.processTreeProbe) return options.processTreeProbe(rootPid);
+  try {
+    // Claude/Codex workers are detached process-group leaders on POSIX. The
+    // group can outlive that leader, so its PGID remains authority after the
+    // exact root process has exited.
+    process.kill(-rootPid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
+
 function processTreeIsAlive(
   rootPid: number,
   options: ClaudeSessionStateOptions
 ): boolean {
   if (options.processTreeProbe) return options.processTreeProbe(rootPid);
   if ((options.platform ?? process.platform) !== 'win32') {
-    try {
-      // Claude workers are detached process-group leaders on POSIX. Probe the
-      // whole group so a surviving descendant keeps the session busy even if
-      // the original CLI process has exited.
-      process.kill(-rootPid, 0);
-      return true;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') return true;
-    }
+    if (posixProcessGroupIsAlive(rootPid, options)) return true;
   } else if (windowsProcessTreeIsAlive(rootPid)) {
     return true;
   }
@@ -311,7 +319,14 @@ async function claimIsLiveOrUncertain(
     worker.rootPid,
     worker.processInstanceId
   );
-  if (workerInstance === 'different') return false;
+  if (workerInstance === 'different') {
+    // A POSIX process group can retain descendants after its exact leader is
+    // gone (or after the numeric PID has been reused). Only a proven-empty
+    // group permits reclaim; the different root identity alone is not proof
+    // that the durable writer tree is empty.
+    return (options.platform ?? process.platform) !== 'win32' &&
+      posixProcessGroupIsAlive(worker.rootPid, options);
+  }
   if (workerInstance === 'uncertain') return true;
   return processTreeIsAlive(worker.rootPid, options);
 }

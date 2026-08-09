@@ -15,8 +15,14 @@ const FROZEN_COMMON_INPUTS = Object.freeze({
 });
 
 const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
+  // Rebaselined 79dc1ad0... -> a4c80875...: PR 147's cross-platform
+  // CI follow-up added exact native process-birth probing, POSIX owned-ref
+  // replacement termination, zombie reaping, and a stable leaked-Job-handle
+  // mutation oracle. These are shared ProcessCapsule correctness fixes, not
+  // reinterpretation by the Linux provider. LF delivery bytes re-hashed by
+  // the LEAD, 2026-08-09.
   'native/process-capsule/src/main.rs':
-    '79dc1ad0f19e5f1d087083707c5307d8523002c557995a6658146c64f0f41c8d',
+    'a4c80875752d1ebee0e6e3cd1e5532d025f43e208c6d3c3f1a3a1bea50b68383',
   'native/process-capsule/Cargo.lock':
     'f00e64114e06f06b623880947c4ec4d33953218d901abdba3b2b2f1d32db8793',
   'scripts/build-process-capsule.mjs':
@@ -37,8 +43,13 @@ const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
   // Rust crate and every other pinned digest in this list are unchanged.
   // Committed bytes re-hashed via `git show efe834ba:<path>`. Second
   // LEAD-authorized rebaseline of this file, 2026-08-08.
+  // Rebaselined 3e74b2c2... -> d485c503...: the PR 147 follow-up classifies
+  // pre-PREPARED native errors by phase, restricts orphan-group termination
+  // to an exact locally owned ref, and preserves typed uncertainty when a
+  // live controller is lost during termination. LF delivery bytes re-hashed
+  // by the LEAD, 2026-08-09.
   'src/core/session-host/process-capsule/native-process-scope.ts':
-    '3e74b2c25bfde89a9db300301b7010f2a7c9521be37283ed73169be4f111b828',
+    'd485c50313ea2791fc6e777865b0484c0dcff37ed8d235beed7cb3cea561466f',
   'test/core/session-host/process-capsule-package.test.ts':
     '3ed5945c5b17b711c783534281c4288242ab9b680e498135db3f344528a759e1',
   'test/core/session-host/process-capsule-posix-replacement.test.ts':

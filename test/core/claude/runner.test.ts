@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import {
   buildClaudePrintInvocation,
   claimClaudeSessionWriter,
+  ClaudeSessionBusyError,
   getClaudeSessionStatePaths,
   isClaudeSessionWriterClaimed,
   parseClaudeResultEnvelope,
@@ -427,6 +428,34 @@ describe('bounded Claude process runner', () => {
     expect(claim.cwd).toBe(fs.realpathSync.native(cwd));
     await claim.release();
     expect(fs.existsSync(paths.writerPath)).toBe(false);
+  });
+
+  it('keeps a POSIX writer busy when its exact root changed but its process group survives', async () => {
+    const sessionId = 'surviving-posix-group';
+    const workerPid = 2_147_483_646;
+    const stateOptions = {
+      stateDir: sessionStateDir(),
+      platform: 'darwin' as const,
+      processTreeProbe: (rootPid: number) => rootPid === workerPid,
+      processInstanceProbe: {
+        capture: (pid: number) => `test-process:${pid}`,
+        inspect: (pid: number) =>
+          pid === workerPid ? ('different' as const) : ('absent' as const),
+      },
+    };
+    const paths = getClaudeSessionStatePaths(sessionId, stateOptions);
+    const staleClaim = await claimClaudeSessionWriter(sessionId, cwd, stateOptions);
+    staleClaim.bindWorker(workerPid);
+    const staleToken = JSON.parse(
+      fs.readFileSync(paths.writerPath, 'utf8')
+    ) as Record<string, unknown>;
+    staleToken.bridgePid = 2_147_483_647;
+    fs.writeFileSync(paths.writerPath, `${JSON.stringify(staleToken)}\n`, 'utf8');
+
+    await expect(
+      claimClaudeSessionWriter(sessionId, cwd, stateOptions)
+    ).rejects.toBeInstanceOf(ClaudeSessionBusyError);
+    expect(fs.existsSync(paths.writerPath)).toBe(true);
   });
 
   it('serializes multi-contender stale recovery without displacing the replacement owner', async () => {

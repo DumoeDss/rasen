@@ -108,6 +108,7 @@ function publishRun(
   root: string,
   home: string,
   runId: RunId,
+  runsRoot: string,
   workspaceInstanceId: WorkspaceInstanceId = workspaceId(
     root,
     `project-${createHash('sha256').update(root).digest('hex').slice(0, 12)}`
@@ -165,7 +166,7 @@ function publishRun(
       limitOutcome: 'escalated',
     },
   });
-  const store = createFilesystemRunStore(path.join(getGlobalDataDir(), 'runs'));
+  const store = createFilesystemRunStore(runsRoot);
   store.create(runId, record);
   store.writePlan?.(runId, plan);
   return record;
@@ -178,6 +179,7 @@ describe('planning:<full-id> exact Run authority over real HTTP', () => {
   let originalEnv: NodeJS.ProcessEnv;
   let server: ManagementServerHandle | undefined;
   let spawnCalls: RunControlSpawnCall[];
+  let runsRoot: string;
 
   beforeEach(() => {
     base = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-planning-http-'));
@@ -190,6 +192,7 @@ describe('planning:<full-id> exact Run authority over real HTTP', () => {
     delete process.env.RASEN_HOME;
     process.env.XDG_CONFIG_HOME = path.join(base, 'config');
     process.env.XDG_DATA_HOME = path.join(base, 'data');
+    runsRoot = path.join(getGlobalDataDir(), 'runs');
     spawnCalls = [];
   });
 
@@ -216,7 +219,10 @@ describe('planning:<full-id> exact Run authority over real HTTP', () => {
         timedOut: false,
       };
     });
-    server = await startManagementServer({ context, sessions: { runControlSpawner: fake } });
+    server = await startManagementServer({
+      context,
+      sessions: { runControlSpawner: fake, runsRoot },
+    });
     return server;
   }
 
@@ -226,7 +232,7 @@ describe('planning:<full-id> exact Run authority over real HTTP', () => {
     writeRegistry({ [selectedRoot]: registryEntry('selector-project', home) });
     const planningSpaceId = derivePlanningSpaceId(home);
     const runId = branded<RunId>(`run:${'9'.repeat(64)}`);
-    const record = publishRun(selectedRoot, home, runId);
+    const record = publishRun(selectedRoot, home, runId, runsRoot);
     const h = await start();
     const selector = encodeURIComponent(`planning:${planningSpaceId}`);
 
@@ -270,6 +276,7 @@ describe('planning:<full-id> exact Run authority over real HTTP', () => {
       selectedRoot,
       home,
       runId,
+      runsRoot,
       branded<WorkspaceInstanceId>(`workspace-instance:${'f'.repeat(64)}`)
     );
     const h = await start();

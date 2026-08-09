@@ -547,16 +547,6 @@ export function createNativeProcessScope(options: NativeProcessScopeOptions = {}
             Math.max(controlTimeoutMs, intent.graceMs + controlTimeoutMs),
           );
         } catch (error) {
-          if (error instanceof ProcessScopeError && !local.controlAvailable) {
-            const observation = await oneShotProbe(
-              resolve(),
-              '--terminate-owned',
-              ref,
-              spawnProcess,
-              controlTimeoutMs,
-            );
-            return receiptFrom(observation);
-          }
           if (error instanceof ProcessScopeError) {
             return {
               state: 'uncertain',

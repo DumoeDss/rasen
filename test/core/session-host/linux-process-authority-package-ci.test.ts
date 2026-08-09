@@ -258,12 +258,20 @@ afterEach(() => {
 });
 
 describe('Linux process-authority package and CI boundary', () => {
-  it('keeps Nix stdenv tool selectors outside the pinned authority build contract', () => {
+  it('gives Nix a dereferenced pinned Rust sysroot without inherited stdenv selectors', () => {
     const flake = fs.readFileSync('flake.nix', 'utf8');
     const script = fs.readFileSync(SCRIPT, 'utf8');
+    expect(flake).toContain('rust-overlay.overlays.default');
+    expect(flake).toContain('rustToolchainSource = pkgs.rust-bin.stable."1.88.0".minimal');
+    expect(flake).toMatch(/pkgs\.runCommand "rust-toolchain-1\.88\.0-exact"/);
+    expect(flake).toMatch(/cp -RL "\$\{rustToolchainSource\}\/\." "\$out\/"/);
+    expect(flake).toMatch(/chmod u\+w "\$out\/bin" "\$out\/bin\/rustc"/);
+    expect(flake).toMatch(/wrapProgram "\$out\/bin\/rustc" --add-flags "--sysroot \$out"/);
+    expect(flake).toMatch(/nativeBuildInputs = with pkgs; \[[\s\S]*?\brustToolchain\b[\s\S]*?\];/);
     expect(flake).toMatch(/nativeBuildInputs = with pkgs; \[[\s\S]*?\bwhich\b[\s\S]*?\];/);
     expect(flake).toMatch(/unset AR CC CXX LD\s+pnpm run build/s);
     expect(script).toMatch(/build-affecting environment override is forbidden/);
+    expect(script).toMatch(/!stat\.isFile\(\) \|\| stat\.isSymbolicLink\(\)/);
   });
 
   // Parked-provider subject (locked decision 13): the win32 refusal is the one live claim on this host.

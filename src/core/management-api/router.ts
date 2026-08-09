@@ -89,6 +89,7 @@ import {
   type AuditManagementOptions,
 } from '../token-audit/management.js';
 import { hasRuntimeCapability } from '../runtime-adapters.js';
+import { getGlobalDataDir } from '../global-config.js';
 
 /**
  * Extended resolution for the runs endpoints, which additionally accept a
@@ -222,6 +223,8 @@ export interface ManagementRouterOptions {
    * canned receipt.
    */
   runControlSpawner?: RunControlSpawner;
+  /** Test/daemon override captured once for every Run list/detail/control request. */
+  runsRoot?: string;
   /** Test-only replacement for the durable reusable-session service. */
   reusableSessionService?: ReusableSessionService;
 }
@@ -647,6 +650,7 @@ export function createManagementRouter(
   resolveHomeForRoot: (root: string | null) => Promise<ProjectHome | null>,
   options: ManagementRouterOptions = {}
 ): ManagementRouterHandle {
+  const runsRoot = options.runsRoot ?? path.join(getGlobalDataDir(), 'runs');
   // One submitter per server instance (design D3's cap-1 concurrency is
   // per-server state, closed over here rather than module-scoped).
   const submitChange = createChangeSubmitter(context);
@@ -1633,7 +1637,8 @@ export function createManagementRouter(
         space.root,
         home,
         body.value,
-        runControlSpawner
+        runControlSpawner,
+        { runsRoot }
       );
       if (!result.ok) {
         res.writeHead(result.status, JSON_HEADERS);
@@ -1667,7 +1672,13 @@ export function createManagementRouter(
         return;
       }
       const home = space.root ? await resolveHomeForRoot(space.root) : null;
-      const result = await handleRunDetail(runDetail.changeId, runDetail.runId, space.root, home);
+      const result = await handleRunDetail(
+        runDetail.changeId,
+        runDetail.runId,
+        space.root,
+        home,
+        runsRoot
+      );
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
@@ -1699,6 +1710,7 @@ export function createManagementRouter(
           ...(cursor !== undefined ? { cursor } : {}),
           ...(limit !== undefined && Number.isFinite(limit) ? { limit } : {}),
           planningSpaceId: space.planningSpaceId,
+          runsRoot,
         });
         sendJson(res, 200, runsResponse);
         return;
@@ -1719,6 +1731,7 @@ export function createManagementRouter(
         ...(cursor !== undefined ? { cursor } : {}),
         ...(limit !== undefined && Number.isFinite(limit) ? { limit } : {}),
         ...(space.planningSpaceId ? { planningSpaceId: space.planningSpaceId } : {}),
+        runsRoot,
       });
       sendJson(res, 200, runsResponse);
       return;

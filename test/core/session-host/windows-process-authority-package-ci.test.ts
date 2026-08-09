@@ -66,8 +66,12 @@ const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
   // classifies pre-PREPARED native errors by phase and restricts orphan-group
   // termination to the exact locally owned ref. Committed bytes re-hashed via
   // `git show d20a2fce:<path>`. LEAD-authorized rebaseline, 2026-08-09.
+  // Rebaselined fd3b3840... -> d485c503...: the final CI correction removes
+  // the same-request owned-ref fallback after controller loss because it
+  // erased the required typed uncertainty receipt. LF delivery bytes
+  // re-hashed by the LEAD, 2026-08-09.
   'src/core/session-host/process-capsule/native-process-scope.ts':
-    'fd3b384082491c53c9a0c9fadd20a65b41c53f8a646d667e057473f6c4604fb0',
+    'd485c50313ea2791fc6e777865b0484c0dcff37ed8d235beed7cb3cea561466f',
 });
 
 const FROZEN_COMMON_INPUTS = Object.freeze({

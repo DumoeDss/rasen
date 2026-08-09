@@ -424,6 +424,8 @@ export interface HandleRunControlOptions {
   timeoutMs?: number;
   /** SIGTERM → SIGKILL grace (default 2s). */
   killGraceMs?: number;
+  /** Server-lifetime Run store root; avoids re-reading mutable process env per request. */
+  runsRoot?: string;
 }
 
 /**
@@ -449,12 +451,14 @@ export async function handleRunControl(
   options: HandleRunControlOptions = {}
 ): Promise<RunControlResult> {
   // --- Resolve the store root ---
-  let storeRoot: string;
-  try {
-    const { getGlobalDataDir } = await import('../global-config.js');
-    storeRoot = path.join(getGlobalDataDir(), 'runs');
-  } catch {
-    return { ok: false, status: 500, code: 'run_store_unavailable', message: 'Machine data directory is not available.' };
+  let storeRoot = options.runsRoot;
+  if (!storeRoot) {
+    try {
+      const { getGlobalDataDir } = await import('../global-config.js');
+      storeRoot = path.join(getGlobalDataDir(), 'runs');
+    } catch {
+      return { ok: false, status: 500, code: 'run_store_unavailable', message: 'Machine data directory is not available.' };
+    }
   }
 
   // --- Pre-spawn admission ---

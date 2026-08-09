@@ -3,10 +3,14 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    { self, nixpkgs }:
+    { self, nixpkgs, rust-overlay }:
     let
       supportedSystems = [
         "x86_64-linux"
@@ -21,8 +25,27 @@
       packages = forAllSystems (
         system:
         let
-          pkgs = nixpkgs.legacyPackages.${system};
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ rust-overlay.overlays.default ];
+          };
           inherit (pkgs) lib;
+          rustToolchainSource = pkgs.rust-bin.stable."1.88.0".minimal;
+          # rust-overlay's combined toolchain is a symlink tree. The native
+          # authority build intentionally rejects symlinked compiler inputs,
+          # so materialize a self-contained sysroot whose binaries are exact
+          # regular files without weakening that boundary.
+          rustToolchain = pkgs.runCommand "rust-toolchain-1.88.0-exact" {
+            nativeBuildInputs = [ pkgs.makeWrapper ];
+          } ''
+            mkdir -p "$out"
+            cp -RL "${rustToolchainSource}/." "$out/"
+            # rustc's upstream RUNPATH still locates rustc_driver in the
+            # overlay component store. Force sysroot discovery back to this
+            # materialized tree for both direct calls and Cargo subprocesses.
+            chmod u+w "$out/bin" "$out/bin/rustc"
+            wrapProgram "$out/bin/rustc" --add-flags "--sysroot $out"
+          '';
         in
         {
           default = pkgs.stdenv.mkDerivation (finalAttrs: {
@@ -61,8 +84,7 @@
               npmHooks.npmInstallHook
               pnpmConfigHook
               pnpm_9
-              cargo
-              rustc
+              rustToolchain
               which
             ];
 
