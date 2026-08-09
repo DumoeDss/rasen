@@ -180,9 +180,12 @@ describe('store layout v2 migration — Windows and POSIX destination constructi
 
   it('plans and applies a Store whose path is long enough to cross the classic MAX_PATH budget', async () => {
     f.cleanup();
-    // The nested partition destination below is what actually gets long; the
-    // prefix only pushes the root far enough that it matters.
-    f = await createLayoutMigrationFixture(`rasen-${'d'.repeat(200)}-`);
+    // Keep mkdtemp's own path short: Windows rejects an over-budget mkdtemp
+    // prefix before the fixture can exercise the Store migration. A nested
+    // component pushes the Store and its partition destination past MAX_PATH.
+    f = await createLayoutMigrationFixture('rasen-layout-long-', {
+      storeRootPadding: 'd'.repeat(200),
+    });
 
     await f.member('elftia', { specs: [], changes: ['fix-a'] });
     f.writeChange('fix-a');

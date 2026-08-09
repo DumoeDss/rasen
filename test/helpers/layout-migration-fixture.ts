@@ -81,6 +81,12 @@ export interface LayoutMigrationFixtureOptions {
    * identities, which is the state `blocked:store-identity-missing` describes.
    */
   readonly storeIdentity?: 'permanent' | 'legacy-v1';
+  /**
+   * Optional nested segment below the short `mkdtemp` root. Tests use this to
+   * cross Windows' classic MAX_PATH budget without asking `mkdtemp` itself to
+   * create an over-budget path.
+   */
+  readonly storeRootPadding?: string;
 }
 
 export async function createLayoutMigrationFixture(
@@ -94,7 +100,13 @@ export async function createLayoutMigrationFixture(
   process.env.XDG_DATA_HOME = path.join(tempDir, 'data');
   const globalDataDir = getGlobalDataDir({ env: process.env });
   const gitEnv = isolatedGitEnv(tempDir);
-  const storeRoot = path.join(tempDir, MIGRATION_FIXTURE_STORE_ID);
+  const storeRoot = path.join(
+    tempDir,
+    ...(options.storeRootPadding === undefined
+      ? []
+      : [options.storeRootPadding]),
+    MIGRATION_FIXTURE_STORE_ID
+  );
 
   createOpenSpecRoot(storeRoot);
   await writeStoreMetadataState(
