@@ -199,6 +199,188 @@ describe('spec reconciliation analysis', () => {
     );
   });
 
+  it.each([
+    { label: 'backtick', fence: '```' },
+    { label: 'tilde', fence: '~~~' },
+  ])(
+    'ignores $label-fenced canonical scenario examples during apply',
+    async ({ label, fence }) => {
+      const changeName = `canonical-${label}-fence`;
+      const target = path.join(
+        root,
+        'rasen',
+        'specs',
+        'fenced-scenarios',
+        'spec.md'
+      );
+      const source = path.join(
+        root,
+        'rasen',
+        'changes',
+        changeName,
+        'specs',
+        'fenced-scenarios',
+        'spec.md'
+      );
+      const canonicalRequirement = [
+        '### Requirement: Visible scenario inventory',
+        'The system SHALL preserve visible scenarios only.',
+        '',
+        '#### Scenario: Visible behavior',
+        '- **WHEN** visible behavior runs',
+        '- **THEN** it remains visible',
+        '',
+        fence,
+        '#### Scenario: Documentation example only',
+        '- **WHEN** an example is quoted',
+        '- **THEN** it is not canonical behavior',
+        fence,
+      ].join('\n');
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.mkdir(path.dirname(source), { recursive: true });
+      await fs.writeFile(target, mainSpec(canonicalRequirement));
+      await fs.writeFile(
+        source,
+        modifiedDelta(
+          requirement('Visible scenario inventory', 'Visible behavior')
+        )
+      );
+
+      const result = await applySpecs(root, changeName, { silent: true });
+
+      expect(result.capabilities).toEqual([
+        expect.objectContaining({
+          capability: 'fenced-scenarios',
+          modified: 1,
+        }),
+      ]);
+      await expect(fs.readFile(target, 'utf8')).resolves.toContain(
+        '#### Scenario: Visible behavior'
+      );
+    }
+  );
+
+  it.each([
+    { label: 'backtick', fence: '```' },
+    { label: 'tilde', fence: '~~~' },
+  ])(
+    'does not let a $label-fenced incoming heading preserve a visible canonical scenario',
+    async ({ label, fence }) => {
+      const changeName = `incoming-${label}-fence`;
+      const target = path.join(
+        root,
+        'rasen',
+        'specs',
+        'fenced-scenarios',
+        'spec.md'
+      );
+      const source = path.join(
+        root,
+        'rasen',
+        'changes',
+        changeName,
+        'specs',
+        'fenced-scenarios',
+        'spec.md'
+      );
+      const original = mainSpec(
+        requirement('Visible scenario inventory', 'Visible behavior')
+      );
+      const incomingRequirement = [
+        '### Requirement: Visible scenario inventory',
+        'The system SHALL preserve visible scenarios only.',
+        '',
+        fence,
+        '#### Scenario: Visible behavior',
+        '- **WHEN** the example runs',
+        '- **THEN** it remains documentation only',
+        fence,
+        '',
+        '#### Scenario: Replacement behavior',
+        '- **WHEN** replacement behavior runs',
+        '- **THEN** it remains visible',
+      ].join('\n');
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.mkdir(path.dirname(source), { recursive: true });
+      await fs.writeFile(target, original);
+      await fs.writeFile(source, modifiedDelta(incomingRequirement));
+
+      let caught: unknown;
+      try {
+        await applySpecs(root, changeName, { silent: true });
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(SpecReconciliationError);
+      expect((caught as SpecReconciliationError).issues).toEqual([
+        expect.objectContaining({
+          code: 'spec_modified_scenarios_missing',
+          capability: 'fenced-scenarios',
+          requirement: 'Visible scenario inventory',
+          missingScenarios: ['Visible behavior'],
+        }),
+      ]);
+      await expect(fs.readFile(target, 'utf8')).resolves.toBe(original);
+    }
+  );
+
+  it('rejects duplicate normalized canonical headers before capability deletion', async () => {
+    const changeName = 'duplicate-canonical-delete';
+    const capabilityDir = path.join(
+      root,
+      'rasen',
+      'specs',
+      'ambiguous-canonical'
+    );
+    const target = path.join(capabilityDir, 'spec.md');
+    const source = path.join(
+      root,
+      'rasen',
+      'changes',
+      changeName,
+      'specs',
+      'ambiguous-canonical',
+      'spec.md'
+    );
+    const original = mainSpec(
+      requirement('Only rule', 'First canonical behavior'),
+      requirement('Only rule', 'Second canonical behavior').replace(
+        '### Requirement: Only rule',
+        '###   Requirement:   Only rule   '
+      )
+    );
+    await fs.mkdir(capabilityDir, { recursive: true });
+    await fs.mkdir(path.dirname(source), { recursive: true });
+    await fs.writeFile(target, original);
+    await fs.writeFile(
+      source,
+      ['## REMOVED Requirements', '', '### Requirement: Only rule', ''].join(
+        '\n'
+      )
+    );
+
+    let caught: unknown;
+    try {
+      await applySpecs(root, changeName, { silent: true });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(SpecReconciliationError);
+    expect((caught as SpecReconciliationError).issues).toEqual([
+      expect.objectContaining({
+        code: 'spec_target_structure_invalid',
+        capability: 'ambiguous-canonical',
+        message: expect.stringContaining(
+          'duplicate canonical requirement header "### Requirement: Only rule"'
+        ),
+      }),
+    ]);
+    await expect(fs.readFile(target, 'utf8')).resolves.toBe(original);
+    expect((await fs.stat(capabilityDir)).isDirectory()).toBe(true);
+  });
+
   it('binds prepared fingerprints to the exact analyzed bytes', async () => {
     const target = path.join(root, 'specs', 'snapshot', 'spec.md');
     const source = path.join(
@@ -444,18 +626,30 @@ describe('spec reconciliation analysis', () => {
     );
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.mkdir(path.dirname(source), { recursive: true });
+    const ruleAWithTwoScenarios = [
+      '### Requirement: Rule A',
+      'The system SHALL implement Rule A.',
+      '',
+      '#### Scenario: A first survives',
+      '- **WHEN** the first behavior is exercised',
+      '- **THEN** it succeeds',
+      '',
+      '#### Scenario: A second survives',
+      '- **WHEN** the second behavior is exercised',
+      '- **THEN** it succeeds',
+    ].join('\n');
     await fs.writeFile(
       target,
       mainSpec(
-        requirement('Rule A', 'A survives'),
+        ruleAWithTwoScenarios,
         requirement('Rule B', 'B survives')
       )
     );
     await fs.writeFile(
       source,
       modifiedDelta(
-        requirement('Rule A', 'A replacement one'),
-        requirement('Rule A', 'A replacement two'),
+        requirement('Rule A', 'A first survives'),
+        requirement('Rule A', 'A second survives'),
         requirement('Rule B', 'B replacement')
       )
     );
@@ -469,6 +663,7 @@ describe('spec reconciliation analysis', () => {
       { silent: true }
     );
 
+    expect(analysis.prepared).toEqual([]);
     expect(analysis.issues).toEqual([
       expect.objectContaining({
         code: 'spec_delta_duplicate_modified',
@@ -477,12 +672,12 @@ describe('spec reconciliation analysis', () => {
       expect.objectContaining({
         code: 'spec_modified_scenarios_missing',
         requirement: 'Rule A',
-        missingScenarios: ['A survives'],
+        missingScenarios: ['A second survives'],
       }),
       expect.objectContaining({
         code: 'spec_modified_scenarios_missing',
         requirement: 'Rule A',
-        missingScenarios: ['A survives'],
+        missingScenarios: ['A first survives'],
       }),
       expect.objectContaining({
         code: 'spec_modified_scenarios_missing',
