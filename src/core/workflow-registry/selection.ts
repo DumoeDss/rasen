@@ -1,5 +1,6 @@
 import { RETENTION_RUNNER_WORKFLOW_ID } from './builtins.js';
 import type { WorkflowCatalog } from './catalog.js';
+import { collectWorkflowPipelineCapabilityOwnerIds } from './dependency-graph.js';
 import { portablePathCollisionKey } from './path-policy.js';
 import type { WorkflowDefinition } from './types.js';
 
@@ -85,23 +86,42 @@ export function resolveWorkflowSelection(
 
 /**
  * Resolves the effective artifact install set shared by init, update, drift,
- * removal, and execution enablement. While the temporary `rasen-retro`
- * wrapper is generated for every configured tool, its exact canonical runner
- * is an additional compatibility root. Set-based closure deduplicates it when
- * ship or auto already requires the same workflow.
+ * removal, and execution enablement. In addition to workflow and skill
+ * dependencies, this closes over the owners of every skill capability that
+ * can be reached through a selected workflow's required pipelines. The
+ * closure is repeated because a newly selected owner can introduce more
+ * workflow, skill, or pipeline dependencies.
+ *
+ * While the temporary `rasen-retro` wrapper is generated for every configured
+ * tool, its exact canonical runner is an additional compatibility root.
+ * Set-based closure deduplicates it when ship or auto already requires the
+ * same workflow.
  *
  * Profile normalization intentionally uses {@link resolveWorkflowSelection}
  * instead so this compatibility-only root never becomes stored membership.
  */
 export function resolveEffectiveWorkflowInstallSelection(
   catalog: WorkflowCatalog,
-  roots: readonly string[]
+  roots: readonly string[],
+  options: { projectRoot?: string } = {}
 ): WorkflowDefinition[] {
-  return resolveWorkflowSelection(
-    catalog,
-    [...roots, RETENTION_RUNNER_WORKFLOW_ID],
-    { includeSkillDependencies: true }
-  );
+  const effectiveRoots = new Set([...roots, RETENTION_RUNNER_WORKFLOW_ID]);
+
+  while (true) {
+    const selected = resolveWorkflowSelection(catalog, [...effectiveRoots], {
+      includeSkillDependencies: true,
+    });
+    const pipelineOwners = collectWorkflowPipelineCapabilityOwnerIds(
+      catalog,
+      selected.map((definition) => definition.id),
+      options.projectRoot
+    );
+    const missingOwners = pipelineOwners.filter((id) =>
+      selected.every((definition) => definition.id !== id)
+    );
+    if (missingOwners.length === 0) return selected;
+    for (const ownerId of missingOwners) effectiveRoots.add(ownerId);
+  }
 }
 
 /**

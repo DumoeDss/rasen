@@ -34,6 +34,7 @@ import {
 } from './reconciler-fixture.js';
 import type { CanonicalRunRecord } from '../../../src/core/change-run/internal/record.js';
 import type { JsonValue, RunAction } from '../../../src/core/change-run/contracts.js';
+import { fixtureRuntimeLoop } from './bounded-loop-fixture.js';
 
 const projectRoot = path.resolve('temporary task-loop workspace', '项目');
 
@@ -338,7 +339,7 @@ function canonicalTaskLoopFixture() {
         kind: 'bounded-loop',
         hierarchicalPath: 'root/iterate',
         requires: [],
-        maxIterations: 2,
+        ...fixtureRuntimeLoop(2, 16, 'task_loop_exhausted'),
         body: {
           kind: 'goal-cycle',
           variant: 'evaluate',
@@ -571,7 +572,13 @@ function commitTerminalPhase(
     actionId: action.actionId,
     status,
     receiptDigest: fixtureDigests.receiptDigest,
-    result: { reasonCode: 'fixture_blocked' },
+    result: status === 'blocked'
+      ? {
+          contract: 'bounded-loop/blocked/1',
+          reasonCode: 'fixture_blocked',
+          blockerKey: 'fixture-blocker',
+        }
+      : { reasonCode: 'fixture_failed' },
     evidence,
   });
 }

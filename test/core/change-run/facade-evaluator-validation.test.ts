@@ -14,9 +14,12 @@ import { describe, expect, it } from 'vitest';
 import { createChangePipelineRuntime } from '../../../src/core/change-run/internal/facade-runtime.js';
 import { createInMemoryRunStore } from '../../../src/core/change-run/internal/run-store.js';
 import { createRuntimePlan } from '../../../src/core/change-run/internal/runtime-plan.js';
-import { buildEvidenceRef } from '../../../src/core/change-run/internal/evidence.js';
+import {
+  buildEvidenceRef,
+  createBoundedEvidenceStore,
+  type BoundedEvidenceStore,
+} from '../../../src/core/change-run/internal/evidence.js';
 import { computeCompletionReceiptDigest } from '../../../src/core/change-run/internal/completion.js';
-import { buildAgentActor } from '../../../src/core/change-run/internal/actors.js';
 import { reduceCanonicalRunRecord } from '../../../src/core/change-run/internal/reducer.js';
 import {
   agentAction,
@@ -36,13 +39,14 @@ import type {
   RunAction,
   RunId,
 } from '../../../src/core/change-run/index.js';
+import {
+  attestTestCompletion,
+  stageTestCompletion,
+} from '../../fixtures/trusted-completion.js';
 
 const branded = <T>(value: string): T => value as T;
 
 const RUN_ID = branded<RunId>(`run:${'a'.repeat(64)}`);
-const IDENTITY = branded<Digest>(`sha256:${'d'.repeat(64)}`);
-const SESSION = branded<Digest>(`sha256:${'b'.repeat(64)}`);
-const PRINCIPAL = branded<Digest>(`sha256:${'c'.repeat(64)}`);
 const PLANNING_SPACE = branded<PlanningSpaceId>(`planning-space:${'1'.repeat(64)}`);
 const CHANGE_INSTANCE = branded<ChangeInstanceId>(`change-instance:${'2'.repeat(64)}`);
 
@@ -142,12 +146,18 @@ function fanOutPlan(): RuntimePlan {
 interface Harness {
   plan: RuntimePlan;
   facade: ReturnType<typeof createChangePipelineRuntime>;
+  store: ReturnType<typeof createInMemoryRunStore>;
   granted: RunAction;
+  evidenceStore: BoundedEvidenceStore;
 }
 
 /** Start the Run so the evaluator is granted, then observe its effect. */
 async function startAt(plan: RuntimePlan, evaluatorPath: string): Promise<Harness> {
   const store = createInMemoryRunStore();
+  const evidenceStore = createBoundedEvidenceStore({
+    maxRunBytes: 1024 * 1024,
+    maxEntries: 64,
+  });
   const facade = createChangePipelineRuntime({
     store,
     plan,
@@ -156,6 +166,7 @@ async function startAt(plan: RuntimePlan, evaluatorPath: string): Promise<Harnes
       const node = plan.nodes.find((n) => n.nodeId === d.nodeId)!;
       return agentAction(plan, node.hierarchicalPath, d.occurrence);
     },
+    evidenceStore,
   });
   const receipt = await facade.start(
     {
@@ -189,56 +200,46 @@ async function startAt(plan: RuntimePlan, evaluatorPath: string): Promise<Harnes
   if (!observed.ok) throw new Error('fixture: effect observation failed');
   store.commit(plan.runId, observed.record);
 
-  return { plan, facade, granted };
+  return { plan, facade, store, granted, evidenceStore };
 }
 
-function evidenceRefFor(actionId: ActionId, kind: string, schema: string): EvidenceRef {
+function evidenceRefFor(
+  granted: RunAction,
+  kind: string,
+  schema: string,
+  producer: EvidenceRef['producer']
+): EvidenceRef {
   return buildEvidenceRef({
     content: Buffer.from('{"result":"ok"}'),
     mediaType: 'application/json',
     observationKind: kind,
-    producer: { id: 'fixture-producer', version: '1', identityDigest: IDENTITY },
+    producer,
     binding: {
       planningSpaceId: PLANNING_SPACE,
       changeInstanceId: CHANGE_INSTANCE,
       projectId: 'project-fixture',
       changeId: 'fixture-change',
       runId: RUN_ID,
-      actionId,
+      actionId: granted.actionId as ActionId,
       schema,
+      treeDigest: granted.expectedBeforeWorkspace.treeDigest,
     },
   });
 }
 
 function completionWith(
-  granted: RunAction,
+  harness: Harness,
   result: JsonValue,
   status: 'succeeded' | 'failed' = 'succeeded'
 ): CompleteRunAction {
-  const base = {
-    format: 'change-run-completion/1' as const,
-    kind: 'domain-action-result' as const,
+  const submission = attestTestCompletion({
     change: { projectRoot: '/root', changeId: 'fixture-change' },
-    runId: granted.runId,
-    actionId: granted.actionId,
-    invocationId: granted.invocationId,
-    actor: buildAgentActor({
-      role: 'reviewer',
-      provider: 'anthropic',
-      runtime: 'claude',
-      principalIdentityDigest: PRINCIPAL,
-      sessionIdentityDigest: SESSION,
-      adapter: { id: 'adapter:fixture', version: '1', artifactDigest: SESSION },
-    }),
-    actorAttestation: evidenceRefFor(granted.actionId, 'actor-attestation', 'attestation/1'),
-    evidence: [evidenceRefFor(granted.actionId, 'completion-evidence', 'evidence/1')],
-    status,
-    result,
-  };
-  return {
-    ...base,
-    receiptDigest: computeCompletionReceiptDigest(base as CompleteRunAction),
-  } as CompleteRunAction;
+    record: harness.store.load(harness.plan.runId),
+    action: harness.granted,
+    completion: { kind: 'domain-action-result', status, result },
+    evidenceContent: Buffer.from(JSON.stringify({ result })),
+  });
+  return stageTestCompletion(harness.evidenceStore, submission);
 }
 
 const grant = { deliveryMode: 'grant' } as const;
@@ -247,7 +248,7 @@ describe('ECP-4 facade validation: Choice evaluator completions (7.4)', () => {
   it('accepts a well-formed choice result naming a declared outcome', async () => {
     const h = await startAt(choicePlan(), 'root:pick');
     const receipt = await h.facade.complete(
-      completionWith(h.granted, { outcome: 'simple', rationale: 'trivial' }),
+      completionWith(h, { outcome: 'simple', rationale: 'trivial' }),
       grant
     );
     expect(receipt.view.runId).toBe(RUN_ID);
@@ -256,14 +257,14 @@ describe('ECP-4 facade validation: Choice evaluator completions (7.4)', () => {
   it('rejects an outcome that is not one of the choice declared outcomes', async () => {
     const h = await startAt(choicePlan(), 'root:pick');
     expect(() =>
-      h.facade.complete(completionWith(h.granted, { outcome: 'medium' }), grant)
+      h.facade.complete(completionWith(h, { outcome: 'medium' }), grant)
     ).toThrow(/has invalid outcome "medium"/);
   });
 
   it('rejects a result object with no outcome field', async () => {
     const h = await startAt(choicePlan(), 'root:pick');
     expect(() =>
-      h.facade.complete(completionWith(h.granted, { rationale: 'forgot the outcome' }), grant)
+      h.facade.complete(completionWith(h, { rationale: 'forgot the outcome' }), grant)
     ).toThrow(/has invalid outcome/);
   });
 
@@ -272,14 +273,14 @@ describe('ECP-4 facade validation: Choice evaluator completions (7.4)', () => {
     // precondition for validating at all, so the Run stalled with no selection.
     const h = await startAt(choicePlan(), 'root:pick');
     expect(() =>
-      h.facade.complete(completionWith(h.granted, 'simple'), grant)
+      h.facade.complete(completionWith(h, 'simple'), grant)
     ).toThrow(/must be an object carrying an outcome; received a string/);
   });
 
   it('rejects an array result', async () => {
     const h = await startAt(choicePlan(), 'root:pick');
     expect(() =>
-      h.facade.complete(completionWith(h.granted, ['simple']), grant)
+      h.facade.complete(completionWith(h, ['simple']), grant)
     ).toThrow(/must be an object carrying an outcome; received an array/);
   });
 });
@@ -288,7 +289,7 @@ describe('ECP-4 facade validation: FanOut condition completions (7.4)', () => {
   it('accepts a well-formed condition result that activates the required member', async () => {
     const h = await startAt(fanOutPlan(), 'root:experts');
     const receipt = await h.facade.complete(
-      completionWith(h.granted, {
+      completionWith(h, {
         activeMembers: ['root:experts/review'],
         inactiveMembers: ['root:experts/cso'],
         rationale: {},
@@ -301,7 +302,7 @@ describe('ECP-4 facade validation: FanOut condition completions (7.4)', () => {
   it('rejects a result with no activeMembers array', async () => {
     const h = await startAt(fanOutPlan(), 'root:experts');
     expect(() =>
-      h.facade.complete(completionWith(h.granted, { inactiveMembers: [] }), grant)
+      h.facade.complete(completionWith(h, { inactiveMembers: [] }), grant)
     ).toThrow(/must include activeMembers array/);
   });
 
@@ -309,7 +310,7 @@ describe('ECP-4 facade validation: FanOut condition completions (7.4)', () => {
     const h = await startAt(fanOutPlan(), 'root:experts');
     expect(() =>
       h.facade.complete(
-        completionWith(h.granted, {
+        completionWith(h, {
           activeMembers: ['root:experts/cso'],
           inactiveMembers: ['root:experts/review'],
         }),
@@ -321,7 +322,7 @@ describe('ECP-4 facade validation: FanOut condition completions (7.4)', () => {
   it('rejects a NON-OBJECT result instead of silently skipping validation', async () => {
     const h = await startAt(fanOutPlan(), 'root:experts');
     expect(() =>
-      h.facade.complete(completionWith(h.granted, 'all'), grant)
+      h.facade.complete(completionWith(h, 'all'), grant)
     ).toThrow(/must be an object carrying activeMembers; received a string/);
   });
 });
@@ -332,7 +333,7 @@ describe('ECP-4 facade validation: failed evaluator completions', () => {
     // make the failure unrecordable.
     const h = await startAt(choicePlan(), 'root:pick');
     const receipt = await h.facade.complete(
-      completionWith(h.granted, { error: 'evaluator crashed' }, 'failed'),
+      completionWith(h, { error: 'evaluator crashed' }, 'failed'),
       grant
     );
     expect(receipt.view.runId).toBe(RUN_ID);
@@ -341,7 +342,7 @@ describe('ECP-4 facade validation: failed evaluator completions', () => {
   it('does not demand activeMembers from a FAILED fan-out evaluator', async () => {
     const h = await startAt(fanOutPlan(), 'root:experts');
     const receipt = await h.facade.complete(
-      completionWith(h.granted, { error: 'dispatch failed' }, 'failed'),
+      completionWith(h, { error: 'dispatch failed' }, 'failed'),
       grant
     );
     expect(receipt.view.runId).toBe(RUN_ID);

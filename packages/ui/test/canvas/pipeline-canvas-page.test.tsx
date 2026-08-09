@@ -8,7 +8,7 @@
  * so this file mocks the flow component and asserts on what `layoutGraph`
  * fed it, not on canvas pixels.
  */
-import { render } from 'preact';
+import { render, type FunctionComponent } from 'preact';
 import { act } from 'preact/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -48,20 +48,49 @@ vi.mock('@xyflow/react', () => ({
   ReactFlow: (props: {
     nodes: MockNode[];
     edges: MockEdge[];
+    nodeTypes?: Record<
+      string,
+      FunctionComponent<{ data: MockNode['data'] }>
+    >;
     onNodeClick?: (e: unknown, n: MockNode) => void;
     onPaneClick?: () => void;
     onConnect?: (connection: {
       source: string;
-      sourceHandle: string;
+      sourceHandle: string | null;
       target: string;
-      targetHandle: string;
+      targetHandle: string | null;
     }) => void;
     onNodesChange?: (changes: { type: 'remove'; id: string }[]) => void;
     onEdgesChange?: (changes: { type: 'remove'; id: string }[]) => void;
     proOptions?: { hideAttribution?: boolean };
-  }) => (
+  }) => {
+    const atomicNodes = props.nodes.filter(
+      (node) => node.data?.definitionKind === 'AtomicStage'
+    );
+    const sourceAtomic = atomicNodes[0];
+    const targetAtomic = atomicNodes[1];
+    const authoredRoute = [
+      ['composite-ref', 'body-report', 'bounded-loop', 'brief'],
+      ['bounded-loop', 'done', 'choice', 'input'],
+      ['choice', 'default', 'fan-out', 'input'],
+      ['choice', 'parallel', 'fan-out', 'input'],
+      ['fan-out', 'atomic-stage', 'atomic-stage', 'input'],
+      ['atomic-stage', 'done', 'join', 'atomic-stage'],
+      ['join', 'done', 'finish', 'input'],
+    ] as const;
+    return (
     <div data-testid="mock-reactflow-wrapper" data-hide-attribution={String(props.proOptions?.hideAttribution)}>
       <div data-testid="mock-reactflow">{props.nodes.map((n) => n.id).join(',')}</div>
+      <div data-testid="mock-rendered-node-types">
+        {props.nodes
+          .filter((node) => node.type === 'stage')
+          .map((node) => {
+            const NodeComponent = props.nodeTypes?.stage;
+            return NodeComponent ? (
+              <NodeComponent key={node.id} data={node.data} />
+            ) : null;
+          })}
+      </div>
       <div data-testid="mock-reactflow-edges">
         {props.edges.map((edge) => (
           <span
@@ -130,16 +159,65 @@ vi.mock('@xyflow/react', () => ({
         >
           connect atomic to gate
         </button>
+        <button
+          type="button"
+          data-testid="mock-connect-production-atomics"
+          disabled={!sourceAtomic || !targetAtomic}
+          onClick={() => {
+            if (!sourceAtomic || !targetAtomic) return;
+            props.onConnect?.({
+              source: sourceAtomic.id,
+              sourceHandle: sourceAtomic.data?.outputPorts?.[0]?.id ?? null,
+              target: targetAtomic.id,
+              targetHandle: targetAtomic.data?.inputPorts?.[0]?.id ?? null,
+            });
+          }}
+        >
+          connect production-shaped AtomicStages
+        </button>
+        {authoredRoute.map(([source, sourceHandle, target, targetHandle]) => {
+          const sourceNode = props.nodes.find((node) => node.id === source);
+          const targetNode = props.nodes.find((node) => node.id === target);
+          const hasRenderedSource = sourceNode?.data?.outputPorts?.some(
+            (port) => port.id === sourceHandle
+          );
+          const hasRenderedTarget = targetNode?.data?.inputPorts?.some(
+            (port) => port.id === targetHandle
+          );
+          return (
+            <button
+              key={`${source}:${sourceHandle}->${target}:${targetHandle}`}
+              type="button"
+              data-testid={`mock-connect-authored-route-${source}-${sourceHandle}-${target}-${targetHandle}`}
+              disabled={!hasRenderedSource || !hasRenderedTarget}
+              onClick={() => props.onConnect?.({
+                source,
+                sourceHandle,
+                target,
+                targetHandle,
+              })}
+            >
+              connect {source} to {target}
+            </button>
+          );
+        })}
         <button type="button" data-testid="mock-pane-click" onClick={() => props.onPaneClick?.()}>
           pane
         </button>
       </div>
     </div>
-  ),
+    );
+  },
   Background: () => null,
   Controls: () => null,
   ReactFlowProvider: ({ children }: { children: unknown }) => <>{children}</>,
-  Handle: () => null,
+  Handle: (props: { id?: string; type: string }) => (
+    <span
+      data-testid="mock-handle"
+      data-handle-id={props.id ?? ''}
+      data-handle-type={props.type}
+    />
+  ),
   Position: { Left: 'left', Right: 'right' },
   // pipeline-canvas-edit additions: the editor's connect/drag/drop wiring.
   useReactFlow: () => ({ screenToFlowPosition: (p: { x: number; y: number }) => p }),
@@ -149,16 +227,24 @@ vi.mock('@xyflow/react', () => ({
 }));
 
 import { LocationProvider, Router, Route } from 'preact-iso';
+import { DefinitionContractPanel } from '../../src/canvas/DefinitionContractPanel.js';
 import { PipelineCanvasPage } from '../../src/canvas/PipelineCanvasPage.js';
 import { V2NodePanel } from '../../src/canvas/V2NodePanel.js';
 import * as client from '../../src/api/client.js';
 import { ApiError } from '../../src/api/client.js';
 import { pipelineDetailFixture } from '../fixtures/pipelines.js';
+import {
+  CANVAS_V2_AUTHORING_CATALOG,
+  CANVAS_V2_AUTHORING_DEFINITION,
+  CANVAS_V2_AUTHORING_NAME,
+} from '../fixtures/canvas-v2-authoring.js';
 import type {
   PipelineCatalogResponse,
   PipelineDetailResponse,
   ThresholdValue,
+  WireBoundedLoopNode,
   WirePipelineDefinition,
+  WirePipelineDefinitionV2,
 } from '../../src/api/types.js';
 import {
   __resetLocaleForTesting,
@@ -220,12 +306,19 @@ const v2Definition = {
         id: 'atomic',
         kind: 'AtomicStage' as const,
         capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+        execution: {
+          version: 1 as const,
+          role: 'implementer' as const,
+          workspace: { access: 'write' as const },
+        },
         retained: { authorNote: 'keep me' },
       },
       {
         id: 'gate',
         kind: 'Gate' as const,
+        target: 'atomic',
         outcomes: ['approved', 'rejected'],
+        dispositions: { approved: 'proceed' as const, rejected: 'escalate' as const },
         retained: { branchNote: 'keep gate metadata' },
       },
       {
@@ -245,11 +338,46 @@ const v2Definition = {
         id: 'loop',
         kind: 'BoundedLoop' as const,
         body: 'composite:review',
-        limits: { maxIterations: 2 },
+        limits: { maxIterations: 2, maxActions: 8, budget: 8 },
+        lifecycle: {
+          version: 1 as const,
+          thresholds: { stallIterations: 2, sameBlockerAttempts: 2 },
+          strategy: { maxAttempts: 0, requireMaterialChange: true as const },
+          exits: {
+            iterationLimit: { action: 'exit' as const, outcome: 'iteration-limit' },
+            actionLimit: { action: 'fail' as const, outcome: 'action-limit' },
+            budgetLimit: { action: 'fail' as const, outcome: 'budget-limit' },
+            stalled: { action: 'escalate' as const, outcome: 'stalled' },
+            blocked: { action: 'human-required' as const, outcome: 'blocked' },
+            strategyExhausted: { action: 'fail' as const, outcome: 'strategy-exhausted' },
+          },
+        },
         exits: { done: { action: 'exit' as const, outcome: 'done' } },
       },
-      { id: 'fanout', kind: 'FanOut' as const, branches: ['a', 'b'] },
-      { id: 'join', kind: 'Join' as const, inputs: ['a', 'b'] },
+      {
+        id: 'fanout',
+        kind: 'FanOut' as const,
+        branches: ['atomic'],
+        concurrencyCap: 1,
+        budget: 1,
+        joinNodeId: 'join',
+        members: [
+          {
+            id: 'atomic',
+            hierarchicalPath: 'atomic',
+            required: true,
+            condition: 'always',
+          },
+        ],
+      },
+      {
+        id: 'join',
+        kind: 'Join' as const,
+        inputs: ['atomic'],
+        requiredMembers: ['atomic'],
+        optionalMembers: [],
+        outcomes: { proceed: 'done', failed: 'rejected' },
+      },
     ],
     connections: [
       {
@@ -519,6 +647,88 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(container.querySelector('[data-testid="stage-panel-handoff"]')).not.toBeNull();
   });
 
+  it('keeps an authored-v1 duplicate on the compatibility path through edit, save, and detail reload', async () => {
+    let saved: WirePipelineDefinition | null = null;
+    vi.mocked(client.getPipelineDetail)
+      .mockResolvedValueOnce(pipelineDetailFixture)
+      .mockImplementation(async () => ({
+        ...pipelineDetailFixture,
+        pipeline: {
+          ...pipelineDetailFixture.pipeline,
+          name: 'small-feature-v1-copy',
+          provenance: 'user',
+          sourceLayer: 'user',
+        },
+        definition: saved ?? pipelineDetailFixture.definition,
+        editable: true,
+      } as PipelineDetailResponse));
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    vi.mocked(client.mutatePipeline).mockImplementation(async (request) => {
+      if (request.op === 'save') saved = structuredClone(request.definition) as WirePipelineDefinition;
+      return {
+        pipeline: {
+          name: 'small-feature-v1-copy',
+          path: '/pipelines/small-feature-v1-copy',
+        },
+        created: true,
+      };
+    });
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-duplicate"]'));
+    await setValueAndFlush(
+      container.querySelector('[data-testid="pipeline-canvas-duplicate-name"]'),
+      'small-feature-v1-copy',
+      'input'
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="pipeline-canvas-duplicate-submit"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="propose"]')
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="stage-panel-handoff-form"]'),
+      'remaining'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="stage-panel-handoff-remaining"]'),
+      '42000',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+    expect(saved).toMatchObject({
+      version: 1,
+      name: 'small-feature-v1-copy',
+      origin: 'ui',
+    });
+    const persisted = saved as unknown as WirePipelineDefinition;
+    if (persisted.version !== 1) throw new Error('expected saved v1 definition');
+    expect(persisted.stages).toHaveLength(pipelineDetailFixture.definition.stages.length);
+    expect(persisted.stages.find((stage) => stage.id === 'propose')).toMatchObject({
+      id: 'propose',
+      kind: 'standard',
+      skill: 'rasen-propose',
+      handoff: { threshold: { remainingTokens: 42_000 } },
+    });
+    expect(saved).not.toHaveProperty('id');
+    expect(saved).not.toHaveProperty('sourceId');
+    expect(saved).not.toHaveProperty('declarations');
+    expect(saved).not.toHaveProperty('root');
+    expect(vi.mocked(client.validatePipeline).mock.calls.at(-1)![0]).toEqual(saved);
+
+    await enterEdit();
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="propose"]')
+    );
+    expect(
+      (container.querySelector(
+        '[data-testid="stage-panel-handoff-remaining"]'
+      ) as HTMLInputElement).value
+    ).toBe('42000');
+  });
+
   it.each([
     {
       form: 'fraction',
@@ -743,10 +953,11 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(panel.textContent).toContain('ステージの引き継ぎしきい値');
   });
 
-  it('offers a Start-assembling recovery affordance on the not-found view and enters edit mode with an empty draft', async () => {
+  it('starts not-found recovery from the canonical empty v2 draft', async () => {
     vi.mocked(client.getPipelineDetail).mockRejectedValue(
       new ApiError(404, { error: { code: 'not_found', message: 'No pipeline named "brand-new".' } })
     );
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
     await mountAt(container, '/p/proj_x/pipelines/brand-new');
     expect(container.querySelector('[data-testid="pipeline-canvas-not-found"]')).not.toBeNull();
 
@@ -755,6 +966,215 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(container.querySelector('.pipeline-canvas__name')?.textContent).toBe('brand-new');
     // No stages yet — the mock flow renders an empty node-id string.
     expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toBe('');
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    expect(client.validatePipeline).toHaveBeenCalledWith(
+      {
+        version: 2,
+        id: 'pipeline:brand-new',
+        sourceId: 'canvas:brand-new',
+        name: 'brand-new',
+        inputs: [],
+        artifacts: [],
+        outcomes: [],
+        declarations: [],
+        root: { nodes: [], connections: [] },
+      },
+      'project:proj_x'
+    );
+  });
+
+  it('authors the shared all-eight v2 request from a real blank Canvas and submits it unchanged to validate and save', async () => {
+    const notFound = new ApiError(404, {
+      error: {
+        code: 'not_found',
+        message: `No pipeline named "${CANVAS_V2_AUTHORING_NAME}".`,
+      },
+    });
+    const reloaded = {
+      ...v2EditableDetail,
+      pipeline: {
+        ...v2EditableDetail.pipeline,
+        name: CANVAS_V2_AUTHORING_NAME,
+      },
+      definition: CANVAS_V2_AUTHORING_DEFINITION,
+    } as PipelineDetailResponse;
+    vi.mocked(client.getPipelineDetail)
+      .mockRejectedValueOnce(notFound)
+      .mockResolvedValue(reloaded);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(
+      CANVAS_V2_AUTHORING_CATALOG
+    );
+    vi.mocked(client.validatePipeline).mockResolvedValue({
+      valid: true,
+      issues: [],
+      preparation: v2Preparation,
+    });
+    vi.mocked(client.mutatePipeline).mockResolvedValue({
+      pipeline: {
+        name: CANVAS_V2_AUTHORING_NAME,
+        path: `/pipelines/${CANVAS_V2_AUTHORING_NAME}`,
+      },
+      created: true,
+      preparation: v2Preparation,
+    });
+
+    await mountAt(
+      container,
+      `/p/proj_x/pipelines/${CANVAS_V2_AUTHORING_NAME}`
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="pipeline-canvas-start-assembling"]')
+    );
+
+    await clickAndFlush(container.querySelector('[data-testid="definition-input-add"]'));
+    await setValueAndFlush(
+      container.querySelector('[data-testid="definition-input-name"]'),
+      'request',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="definition-artifact-add"]'));
+    await setValueAndFlush(
+      container.querySelector('[data-testid="definition-artifact-name"]'),
+      'report',
+      'input'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="definition-outcomes"]'),
+      CANVAS_V2_AUTHORING_DEFINITION.outcomes.join(',')
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="definition-limit-max-actions"]'),
+      '32',
+      'input'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="definition-limit-budget"]'),
+      '32',
+      'input'
+    );
+
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-new-id"]'),
+      'work-body',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-create"]'));
+    await clickAndFlush(container.querySelector('[data-testid="declaration-input-add"]'));
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-input-name"]'),
+      'brief',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-artifact-add"]'));
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-artifact-name"]'),
+      'body-report',
+      'input'
+    );
+    const declarationOutcomes = container.querySelector(
+      '[data-testid="declaration-outcomes"]'
+    ) as HTMLInputElement;
+    declarationOutcomes.focus();
+    await setValueAndFlush(declarationOutcomes, 'done', 'input');
+    await act(async () => {
+      declarationOutcomes.blur();
+      await flushMicrotasks();
+    });
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]')
+    );
+
+    for (const kind of [
+      'AtomicStage',
+      'CompositeRef',
+      'BoundedLoop',
+      'Choice',
+      'Gate',
+      'Finish',
+      'FanOut',
+    ]) {
+      await clickAndFlush(
+        container.querySelector(`[data-testid="v2-palette-add-${kind}"]`)
+      );
+    }
+
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="mock-node-click"][data-node-id="choice"]'
+      )
+    );
+    const choiceOutcomes = container.querySelector(
+      '[data-testid="v2-node-panel-outcomes"]'
+    ) as HTMLInputElement;
+    choiceOutcomes.focus();
+    await setValueAndFlush(choiceOutcomes, 'default,parallel', 'input');
+    await act(async () => {
+      choiceOutcomes.blur();
+      await flushMicrotasks();
+    });
+
+    for (const [source, sourceHandle, target, targetHandle] of [
+      ['composite-ref', 'body-report', 'bounded-loop', 'brief'],
+      ['bounded-loop', 'done', 'choice', 'input'],
+      ['choice', 'default', 'fan-out', 'input'],
+      ['choice', 'parallel', 'fan-out', 'input'],
+      ['fan-out', 'atomic-stage', 'atomic-stage', 'input'],
+      ['atomic-stage', 'done', 'join', 'atomic-stage'],
+      ['join', 'done', 'finish', 'input'],
+    ] as const) {
+      expect(
+        container.querySelector(
+          `[data-testid="stage-node"][data-stage="${source}"] [data-testid="mock-handle"][data-handle-type="source"][data-handle-id="${sourceHandle}"]`
+        ),
+        `missing rendered source handle ${source}:${sourceHandle}`
+      ).not.toBeNull();
+      expect(
+        container.querySelector(
+          `[data-testid="stage-node"][data-stage="${target}"] [data-testid="mock-handle"][data-handle-type="target"][data-handle-id="${targetHandle}"]`
+        ),
+        `missing rendered target handle ${target}:${targetHandle}`
+      ).not.toBeNull();
+      const connect = container.querySelector(
+        `[data-testid="mock-connect-authored-route-${source}-${sourceHandle}-${target}-${targetHandle}"]`
+      ) as HTMLButtonElement;
+      expect(connect.disabled).toBe(false);
+      await clickAndFlush(connect);
+    }
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="pipeline-canvas-validate"]')
+    );
+    expect(vi.mocked(client.validatePipeline).mock.calls.at(-1)).toEqual([
+      CANVAS_V2_AUTHORING_DEFINITION,
+      'project:proj_x',
+    ]);
+    expect(
+      (vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2)
+        .root.nodes.map((node) => node.kind)
+    ).toEqual([
+      'AtomicStage',
+      'CompositeRef',
+      'BoundedLoop',
+      'Choice',
+      'Gate',
+      'Finish',
+      'FanOut',
+      'Join',
+    ]);
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+    expect(vi.mocked(client.mutatePipeline).mock.calls.at(-1)![0]).toEqual({
+      op: 'save',
+      name: CANVAS_V2_AUTHORING_NAME,
+      definition: CANVAS_V2_AUTHORING_DEFINITION,
+      force: false,
+    });
+    expect(
+      CANVAS_V2_AUTHORING_DEFINITION.root.nodes.find(
+        (node) => node.id === 'atomic-stage'
+      )
+    ).not.toHaveProperty('execution.gate');
   });
 
   it('blocks save on an error-severity issue, passes on warnings only, and stamps origin: ui on the save body', async () => {
@@ -1092,7 +1512,7 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(container.querySelector('[data-testid="pipeline-canvas-dirty-chip"]')).toBeNull();
   });
 
-  it('renders the closed v2 vocabulary with exact typed handles and preserves unsupported kinds as read-only cards', async () => {
+  it('renders the closed v2 vocabulary with exact typed handles and all eight kinds authorable', async () => {
     vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
     vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
     await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
@@ -1139,26 +1559,182 @@ describe('PipelineCanvasPage — edit mode', () => {
       expect(card.getAttribute('data-connectable')).toBe('true');
     }
 
-    // FanOut/Join stay read-only cards. ECP-4's `executable-parallel-pipelines`
-    // delta, "Canvas provides parallel authoring with legality feedback",
-    // promises that the Canvas DISPLAYS them with their structural details and
-    // validates their legality — it does not promise root-graph authoring, and
-    // `draft.test.ts` pins `['FanOut','Join'].some(isV2EditableNodeKind)` false.
+    // FanOut/Join are selectable, connectable, and editable as one paired
+    // parallel contract. Individual node deletion remains disabled so the
+    // Canvas cannot leave behind a structurally incomplete half-pair.
     for (const id of ['fanout', 'join']) {
       const card = container.querySelector(`[data-testid="mock-node"][data-node-id="${id}"]`)!;
-      expect(card.getAttribute('data-editor-supported')).toBe('false');
+      expect(card.getAttribute('data-editor-supported')).toBe('true');
       expect(card.getAttribute('data-deletable')).toBe('false');
-      expect(card.getAttribute('data-connectable')).toBe('false');
+      expect(card.getAttribute('data-connectable')).toBe('true');
     }
   });
 
-  it('shows the FanOut and Join structural details on the read-only panel', async () => {
+  it('preserves unexposed v2 fields when saving an unrelated description edit', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    vi.mocked(client.mutatePipeline).mockResolvedValue({
+      pipeline: { name: 'v2-canvas', path: '/pipelines/v2-canvas' },
+      created: false,
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    await setValueAndFlush(
+      container.querySelector('[data-testid="pipeline-canvas-description"]'),
+      'Edited description',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+    const posted = vi.mocked(client.mutatePipeline).mock.calls.at(-1)![0] as {
+      definition: typeof v2Definition;
+    };
+    expect(posted.definition.description).toBe('Edited description');
+    expect(posted.definition.id).toBe(v2Definition.id);
+    expect(posted.definition.sourceId).toBe(v2Definition.sourceId);
+    expect(posted.definition.declarations).toEqual(v2Definition.declarations);
+    expect(posted.definition.root.nodes).toEqual(v2Definition.root.nodes);
+    expect(posted.definition.root.connections).toEqual(v2Definition.root.connections);
+    expect(posted.definition.root.nodes[0]).toHaveProperty(
+      'retained.authorNote',
+      'keep me'
+    );
+  });
+
+  it('preserves definition, graph, node, declaration, execution, and lifecycle sentinels through mounted controls and reload', async () => {
+    const sentinel = structuredClone(v2Definition) as unknown as WirePipelineDefinitionV2;
+    Object.assign(sentinel, { futureDefinition: { revision: 3 } });
+    Object.assign(sentinel.root, { futureGraph: { layout: 'retained' } });
+    const atomic = sentinel.root.nodes.find((node) => node.id === 'atomic');
+    const loop = sentinel.root.nodes.find((node) => node.id === 'loop');
+    if (!atomic || atomic.kind !== 'AtomicStage' || !atomic.execution) {
+      throw new Error('atomic sentinel fixture missing');
+    }
+    if (!loop || loop.kind !== 'BoundedLoop' || !loop.lifecycle) {
+      throw new Error('loop sentinel fixture missing');
+    }
+    Object.assign(atomic, { futureNode: { owner: 'root' } });
+    Object.assign(atomic.execution, { futureExecution: { policy: 'retained' } });
+    Object.assign(loop.lifecycle, { futureLifecycle: { reducer: 'retained' } });
+    const declaration = sentinel.declarations[0]!;
+    Object.assign(declaration, { futureDeclaration: { provenance: 'retained' } });
+    Object.assign(declaration.graph, { futureBodyGraph: { display: 'retained' } });
+    declaration.graph.nodes.push({
+      id: 'body-work',
+      kind: 'AtomicStage',
+      capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+      execution: {
+        version: 1,
+        role: 'implementer',
+        workspace: { access: 'write' },
+        futureExecution: { owner: 'body' },
+      },
+      futureNode: { owner: 'body' },
+    } as never);
+
+    let saved: WirePipelineDefinitionV2 | null = null;
+    vi.mocked(client.getPipelineDetail)
+      .mockResolvedValueOnce({
+        ...v2EditableDetail,
+        definition: sentinel,
+      } as PipelineDetailResponse)
+      .mockImplementation(async () => ({
+        ...v2EditableDetail,
+        definition: saved ?? sentinel,
+      } as PipelineDetailResponse));
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    vi.mocked(client.mutatePipeline).mockImplementation(async (request) => {
+      if (request.op === 'save') {
+        saved = structuredClone(request.definition) as WirePipelineDefinitionV2;
+      }
+      return {
+        pipeline: { name: 'v2-canvas', path: '/pipelines/v2-canvas' },
+        created: false,
+      };
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    await setValueAndFlush(
+      container.querySelector('[data-testid="definition-limit-budget"]'),
+      '43',
+      'input'
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="atomic"]')
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-execution-role"]'),
+      'reviewer'
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="loop"]')
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-stall-iterations"]'),
+      '3',
+      'input'
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="declaration-select"][data-declaration-id="composite:review"]')
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-body-execution-role"]'),
+      'reviewer'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+    expect(saved).toMatchObject({
+      futureDefinition: { revision: 3 },
+      limits: { budget: 43 },
+      root: { futureGraph: { layout: 'retained' } },
+    });
+    const savedAtomic = saved!.root.nodes.find((node) => node.id === 'atomic') as never;
+    const savedLoop = saved!.root.nodes.find((node) => node.id === 'loop') as never;
+    expect(savedAtomic).toMatchObject({
+      futureNode: { owner: 'root' },
+      execution: {
+        role: 'reviewer',
+        futureExecution: { policy: 'retained' },
+      },
+    });
+    expect(savedLoop).toMatchObject({
+      lifecycle: {
+        thresholds: { stallIterations: 3 },
+        futureLifecycle: { reducer: 'retained' },
+      },
+    });
+    expect(saved!.declarations[0]).toMatchObject({
+      futureDeclaration: { provenance: 'retained' },
+      graph: {
+        futureBodyGraph: { display: 'retained' },
+        nodes: [
+          expect.objectContaining({
+            futureNode: { owner: 'body' },
+            execution: expect.objectContaining({
+              role: 'reviewer',
+              futureExecution: { owner: 'body' },
+            }),
+          }),
+        ],
+      },
+    });
+
+    await enterEdit();
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    expect(vi.mocked(client.validatePipeline).mock.calls.at(-1)![0]).toEqual(saved);
+  });
+
+  it('shows FanOut and Join structural details on their selectable panels', async () => {
     // The other half of ECP-4's Canvas requirement: "#### Scenario: FanOut
     // panel shows members and limits — WHEN a FanOut node is selected in the
     // Canvas — THEN the panel SHALL show the member list ... AND SHALL show
-    // concurrency cap and budget". The renderers shipped with ECP-4 but were
-    // gated behind the editable-kind check, so no selection could ever reach
-    // them; this pins them to the read-only panel where FanOut/Join land.
+    // concurrency cap and budget". The paired editor keeps that structural
+    // summary visible while exposing member, concurrency, budget, and join
+    // controls.
     vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
     vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
     await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
@@ -1167,19 +1743,19 @@ describe('PipelineCanvasPage — edit mode', () => {
     await clickAndFlush(
       container.querySelector('[data-testid="mock-node-click"][data-node-id="fanout"]')
     );
-    expect(container.querySelector('[data-testid="v2-node-panel-unsupported"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="v2-node-panel-fanout"]')).not.toBeNull();
-    // No editable stable-id field: display does not imply authoring.
-    expect(container.querySelector('[data-testid="v2-node-panel-id"]')).toBeNull();
+    expect(container.querySelector('[data-testid="v2-node-panel-unsupported"]')).toBeNull();
+    expect(container.querySelector('[data-testid="v2-parallel-editor"]')).not.toBeNull();
+    // The paired contract is now structurally editable while retaining its summary.
+    expect(container.querySelector('[data-testid="v2-node-panel-id"]')).not.toBeNull();
 
     await clickAndFlush(
       container.querySelector('[data-testid="mock-node-click"][data-node-id="join"]')
     );
-    expect(container.querySelector('[data-testid="v2-node-panel-join"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="v2-node-panel-id"]')).toBeNull();
+    expect(container.querySelector('[data-testid="v2-parallel-editor"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="v2-node-panel-id"]')).not.toBeNull();
   });
 
-  it('creates, selects, edits, renames, and deletes only the enabled v2 root node kinds', async () => {
+  it('creates, selects, edits, renames, and deletes representative v2 root node kinds', async () => {
     vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
     vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
     await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
@@ -1242,9 +1818,9 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).not.toContain(
       'composite'
     );
-    // A FanOut is NOT deletable — the editable vocabulary still excludes it
-    // (ECP-4 promises display + legality feedback, not root authoring), so the
-    // removal is refused and the node survives.
+    // A FanOut is not independently deletable because its Join belongs to the
+    // same paired parallel contract. The pair-level removal action owns that
+    // structural edit, so this single-node removal is refused.
     await clickAndFlush(
       container.querySelector('[data-testid="mock-node-remove"][data-node-id="fanout"]')
     );
@@ -1257,6 +1833,54 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).not.toContain(
       'choice,'
     );
+  });
+
+  it('authors execution-complete AtomicStage and lifecycle-complete BoundedLoop shapes from visible palette actions', async () => {
+    const detail = structuredClone(v2EditableDetail) as PipelineDetailResponse;
+    if (detail.definition.version !== 2) throw new Error('expected v2 fixture');
+    detail.definition.declarations[0]!.graph.nodes.push({
+      id: 'body-work',
+      kind: 'AtomicStage',
+      capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+      execution: {
+        version: 1,
+        role: 'implementer',
+        workspace: { access: 'write' },
+      },
+    });
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(detail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-add-AtomicStage"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-add-BoundedLoop"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+
+    const submitted = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    if (submitted.version !== 2) throw new Error('expected v2 submission');
+    const atomic = submitted.root.nodes.find((node) => node.id === 'atomic-stage');
+    expect(atomic).toMatchObject({
+      kind: 'AtomicStage',
+      capability: { id: 'skill:rasen-propose', version: 'digest-propose' },
+      execution: {
+        version: 1,
+        role: 'implementer',
+        workspace: { access: 'write' },
+      },
+    });
+    const loop = submitted.root.nodes.find((node) => node.id === 'bounded-loop');
+    expect(loop).toMatchObject({
+      kind: 'BoundedLoop',
+      body: 'composite:review',
+      limits: { maxIterations: 3, maxActions: 12, budget: 12 },
+      lifecycle: {
+        version: 1,
+        thresholds: { stallIterations: 2, sameBlockerAttempts: 2 },
+        strategy: { maxAttempts: 0, requireMaterialChange: true },
+      },
+    });
   });
 
   // --- ECP-2 tasks 8.5/8.6, delivered by ECP-5 (user-approved scope) -------
@@ -1815,8 +2439,8 @@ describe('PipelineCanvasPage — edit mode', () => {
       (container.querySelector('[data-testid="v2-palette-add-BoundedLoop"]') as HTMLButtonElement)
         .disabled
     ).toBe(true);
-    expect(container.querySelector('[data-testid="v2-palette-add-FanOut"]')).toBeNull();
-    expect(container.querySelector('[data-testid="v2-palette-add-Join"]')).toBeNull();
+    expect(container.querySelector('[data-testid="v2-palette-add-FanOut"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="v2-palette-add-Join"]')).not.toBeNull();
   });
 
   it('keeps the v2 stable-id editor focused across multiple keystrokes and commits the rename on blur', async () => {
@@ -2213,7 +2837,7 @@ describe('PipelineCanvasPage — edit mode', () => {
     );
     expect(
       container.querySelector(
-        '[data-testid="issues-drawer-item"][data-path="/declarations/0/outcomes/0"] [data-testid="issues-drawer-unmapped"]'
+        '[data-testid="issues-drawer-item"][data-path="/declarations/0/outcomes/0"] [data-testid="issues-drawer-path"]'
       )?.textContent
     ).toContain('/declarations/0/outcomes/0');
   });
@@ -2394,5 +3018,1033 @@ describe('PipelineCanvasPage — edit mode', () => {
       name: 'v2-canvas',
       path: 'C:\\exports\\v2-canvas.rasenpkg',
     });
+  });
+
+  it('renders and uses real control handles for production-shaped input-less AtomicStages through save and reload', async () => {
+    const productionDefinition = structuredClone(
+      CANVAS_V2_AUTHORING_DEFINITION
+    ) as WirePipelineDefinitionV2;
+    const firstAtomic = productionDefinition.root.nodes.find(
+      (node) => node.kind === 'AtomicStage'
+    );
+    if (!firstAtomic || firstAtomic.kind !== 'AtomicStage') {
+      throw new Error('production-shaped AtomicStage fixture missing');
+    }
+    productionDefinition.root.nodes.push({
+      ...structuredClone(firstAtomic),
+      id: 'atomic-stage-2',
+    });
+    let saved: WirePipelineDefinitionV2 | null = null;
+    const productionDetail = {
+      ...v2EditableDetail,
+      definition: productionDefinition,
+    } as PipelineDetailResponse;
+    vi.mocked(client.getPipelineDetail)
+      .mockResolvedValueOnce(productionDetail)
+      .mockImplementation(async () => ({
+        ...productionDetail,
+        definition: saved ?? productionDefinition,
+      }));
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(
+      CANVAS_V2_AUTHORING_CATALOG
+    );
+    vi.mocked(client.validatePipeline).mockResolvedValue({
+      valid: true,
+      issues: [],
+      preparation: v2Preparation,
+    });
+    vi.mocked(client.mutatePipeline).mockImplementation(async (request) => {
+      if (request.op === 'save') {
+        saved = structuredClone(request.definition) as WirePipelineDefinitionV2;
+      }
+      return {
+        pipeline: { name: productionDefinition.name, path: '/pipelines/v2-canvas' },
+        created: false,
+      };
+    });
+
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    expect(
+      container.querySelector(
+        '[data-testid="stage-node"][data-stage="atomic-stage-2"] [data-testid="mock-handle"][data-handle-type="target"][data-handle-id="input"]'
+      )
+    ).not.toBeNull();
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-connect-production-atomics"]')
+    );
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+    expect(saved!.root.connections).toContainEqual({
+      id: 'atomic-stage:done->atomic-stage-2:input',
+      from: { node: 'atomic-stage', port: 'done' },
+      to: { node: 'atomic-stage-2', port: 'input' },
+    });
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    expect(
+      (vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2)
+        .root.connections
+    ).toContainEqual({
+      id: 'atomic-stage:done->atomic-stage-2:input',
+      from: { node: 'atomic-stage', port: 'done' },
+      to: { node: 'atomic-stage-2', port: 'input' },
+    });
+  });
+
+  it('keeps invalid non-empty definition limits raw and blocks validation/save until repaired', async () => {
+    const definition = structuredClone(
+      CANVAS_V2_AUTHORING_DEFINITION
+    ) as WirePipelineDefinitionV2;
+    vi.mocked(client.getPipelineDetail).mockResolvedValue({
+      ...v2EditableDetail,
+      definition,
+    } as PipelineDetailResponse);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(
+      CANVAS_V2_AUTHORING_CATALOG
+    );
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    const budget = () =>
+      container.querySelector(
+        '[data-testid="definition-limit-budget"]'
+      ) as HTMLInputElement;
+
+    for (const invalid of ['0', '-2', '1.5']) {
+      await setValueAndFlush(budget(), invalid, 'input');
+      expect(budget().value).toBe(invalid);
+      expect(budget().getAttribute('aria-invalid')).toBe('true');
+      expect(
+        container.querySelector(
+          '[data-testid="definition-limit-error"][data-limit="budget"]'
+        )?.textContent
+      ).toContain('positive integer');
+      expect(
+        (container.querySelector(
+          '[data-testid="pipeline-canvas-save"]'
+        ) as HTMLButtonElement).disabled
+      ).toBe(true);
+      await clickAndFlush(
+        container.querySelector('[data-testid="pipeline-canvas-validate"]')
+      );
+      expect(client.validatePipeline).not.toHaveBeenCalled();
+      expect(client.mutatePipeline).not.toHaveBeenCalled();
+      await setValueAndFlush(budget(), '32', 'input');
+    }
+
+    await setValueAndFlush(budget(), '31', 'input');
+    expect(budget().getAttribute('aria-invalid')).toBe('false');
+    expect(
+      (container.querySelector(
+        '[data-testid="pipeline-canvas-save"]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(false);
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    expect(
+      (vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2)
+        .limits?.budget
+    ).toBe(31);
+
+    await setValueAndFlush(budget(), '', 'input');
+    expect(budget().getAttribute('aria-invalid')).toBe('false');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    expect(
+      (vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2)
+        .limits
+    ).not.toHaveProperty('budget');
+  });
+
+  it('resets a mounted positive-limit field when its authoritative draft is replaced', async () => {
+    const onPatch = vi.fn();
+    const onInvalidChange = vi.fn();
+    const first = structuredClone(v2Definition) as WirePipelineDefinitionV2;
+    first.limits = { budget: 32 };
+
+    const renderPanel = async (definition: WirePipelineDefinitionV2) => {
+      await act(async () => {
+        render(
+          <DefinitionContractPanel
+            definition={definition}
+            focusedField={null}
+            onPatch={onPatch}
+            onInvalidChange={onInvalidChange}
+          />,
+          container
+        );
+        await flushMicrotasks();
+      });
+    };
+
+    await renderPanel(first);
+    const budget = () =>
+      container.querySelector(
+        '[data-testid="definition-limit-budget"]'
+      ) as HTMLInputElement;
+    await setValueAndFlush(budget(), '0', 'input');
+    expect(budget().value).toBe('0');
+    expect(budget().getAttribute('aria-invalid')).toBe('true');
+
+    await renderPanel({
+      ...first,
+      name: 'replacement-definition',
+      limits: { budget: 64 },
+    });
+    expect(budget().value).toBe('64');
+    expect(budget().getAttribute('aria-invalid')).toBe('false');
+    expect(container.querySelector('[data-testid="definition-limit-error"]')).toBeNull();
+    expect(onInvalidChange).toHaveBeenLastCalledWith('limits/budget', null);
+  });
+
+  it('keeps invalid loop, lifecycle, and paired-parallel integers raw and blocks every action until repair', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    const field = (testId: string) =>
+      container.querySelector(`[data-testid="${testId}"]`) as HTMLInputElement;
+    const expectBlocked = async (testId: string, invalid: string) => {
+      await setValueAndFlush(field(testId), invalid, 'input');
+      expect(field(testId).value).toBe(invalid);
+      expect(field(testId).getAttribute('aria-invalid')).toBe('true');
+      expect(field(testId).getAttribute('aria-describedby')).not.toBeNull();
+      expect(
+        (container.querySelector(
+          '[data-testid="pipeline-canvas-save"]'
+        ) as HTMLButtonElement).disabled
+      ).toBe(true);
+      expect(
+        (container.querySelector(
+          '[data-testid="pipeline-canvas-export"]'
+        ) as HTMLButtonElement).disabled
+      ).toBe(true);
+      await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+      expect(client.validatePipeline).not.toHaveBeenCalled();
+    };
+    const exerciseRequired = async (
+      testId: string,
+      invalidValues: readonly string[],
+      repair: string
+    ) => {
+      for (const invalid of invalidValues) {
+        await expectBlocked(testId, invalid);
+        await setValueAndFlush(field(testId), repair, 'input');
+        expect(field(testId).getAttribute('aria-invalid')).toBe('false');
+      }
+    };
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="loop"]')
+    );
+    await expectBlocked('v2-node-panel-max-rounds', '0');
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="fanout"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="loop"]')
+    );
+    expect(field('v2-node-panel-max-rounds').value).toBe('0');
+    expect(field('v2-node-panel-max-rounds').getAttribute('aria-invalid')).toBe('true');
+    await setValueAndFlush(field('v2-node-panel-max-rounds'), '3', 'input');
+    await exerciseRequired('v2-node-panel-max-rounds', ['-2', '1.5', ''], '3');
+    await exerciseRequired('v2-loop-stall-iterations', ['0', '-2', '1.5', ''], '3');
+    await exerciseRequired('v2-loop-blocker-attempts', ['0', '-2', '1.5', ''], '3');
+    await exerciseRequired('v2-loop-strategy-attempts', ['-2', '1.5', ''], '0');
+    expect(field('v2-loop-strategy-attempts').value).toBe('0');
+
+    await setValueAndFlush(field('v2-loop-max-actions'), '', 'input');
+    expect(field('v2-loop-max-actions').getAttribute('aria-invalid')).toBe('false');
+    await setValueAndFlush(field('v2-loop-budget'), '', 'input');
+    expect(field('v2-loop-budget').getAttribute('aria-invalid')).toBe('false');
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="fanout"]')
+    );
+    await exerciseRequired('v2-parallel-concurrency-cap', ['0', '-2', '1.5', ''], '2');
+    await exerciseRequired('v2-parallel-budget', ['0', '-2', '1.5', ''], '3');
+
+    expect(
+      (container.querySelector(
+        '[data-testid="pipeline-canvas-save"]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(false);
+    expect(
+      (container.querySelector(
+        '[data-testid="pipeline-canvas-export"]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(false);
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    const submitted = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    expect(submitted.root.nodes.find((node) => node.id === 'loop')).toMatchObject({
+      limits: { maxIterations: 3 },
+      lifecycle: {
+        thresholds: { stallIterations: 3, sameBlockerAttempts: 3 },
+        strategy: { maxAttempts: 0 },
+      },
+    });
+    expect(
+      (submitted.root.nodes.find((node) => node.id === 'loop') as { limits: object })
+        .limits
+    ).not.toHaveProperty('maxActions');
+    expect(
+      (submitted.root.nodes.find((node) => node.id === 'loop') as { limits: object })
+        .limits
+    ).not.toHaveProperty('budget');
+    expect(submitted.root.nodes.find((node) => node.id === 'fanout')).toMatchObject({
+      concurrencyCap: 2,
+      budget: 3,
+    });
+  });
+
+  it('switches BoundedLoop bodies with an atomically visible and saveable exit map', async () => {
+    const definition = structuredClone(v2Definition) as WirePipelineDefinitionV2;
+    definition.declarations[0]!.outcomes = ['retry', 'done'];
+    definition.declarations.push({
+      id: 'alternate-body',
+      kind: 'Composite',
+      provenance: 'custom',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done', 'partial'],
+      graph: { nodes: [], connections: [] },
+    });
+    const loop = definition.root.nodes.find((node) => node.id === 'loop');
+    if (!loop || loop.kind !== 'BoundedLoop') throw new Error('loop fixture missing');
+    loop.exits = {
+      retry: { action: 'continue' },
+      done: { action: 'exit', outcome: 'done' },
+    };
+    let saved: WirePipelineDefinitionV2 | null = null;
+    const detail = { ...v2EditableDetail, definition } as PipelineDetailResponse;
+    vi.mocked(client.getPipelineDetail)
+      .mockResolvedValueOnce(detail)
+      .mockImplementation(async () => ({ ...detail, definition: saved ?? definition }));
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    vi.mocked(client.mutatePipeline).mockImplementation(async (request) => {
+      if (request.op === 'save') {
+        saved = structuredClone(request.definition) as WirePipelineDefinitionV2;
+      }
+      return { pipeline: { name: 'v2-canvas', path: '/pipelines/v2-canvas' }, created: false };
+    });
+
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="loop"]')
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-body"]'),
+      'alternate-body'
+    );
+
+    expect(
+      Array.from(
+        container.querySelectorAll('[data-testid="v2-loop-domain-action"]')
+      ).map((element) => element.getAttribute('data-outcome'))
+    ).toEqual(['done', 'partial']);
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+    expect(saved!.root.nodes.find((node) => node.id === 'loop')).toMatchObject({
+      body: 'alternate-body',
+      exits: {
+        done: { action: 'exit', outcome: 'done' },
+        partial: { action: 'continue' },
+      },
+    });
+    expect(
+      (saved!.root.nodes.find((node) => node.id === 'loop') as { exits: object })
+        .exits
+    ).not.toHaveProperty('retry');
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="loop"]')
+    );
+    expect(
+      Array.from(
+        container.querySelectorAll('[data-testid="v2-loop-domain-action"]')
+      ).map((element) => element.getAttribute('data-outcome'))
+    ).toEqual(['done', 'partial']);
+  });
+
+  it('reconciles a referencing BoundedLoop when declaration outcomes are edited and reloads it', async () => {
+    const definition = structuredClone(v2Definition) as WirePipelineDefinitionV2;
+    definition.declarations[0]!.outcomes = ['retry', 'done'];
+    const loop = definition.root.nodes.find((node) => node.id === 'loop');
+    if (!loop || loop.kind !== 'BoundedLoop') throw new Error('loop fixture missing');
+    loop.exits = {
+      retry: { action: 'continue' },
+      done: { action: 'exit', outcome: 'done' },
+    };
+    let saved: WirePipelineDefinitionV2 | null = null;
+    const detail = { ...v2EditableDetail, definition } as PipelineDetailResponse;
+    vi.mocked(client.getPipelineDetail)
+      .mockResolvedValueOnce(detail)
+      .mockImplementation(async () => ({ ...detail, definition: saved ?? definition }));
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    vi.mocked(client.mutatePipeline).mockImplementation(async (request) => {
+      if (request.op === 'save') {
+        saved = structuredClone(request.definition) as WirePipelineDefinitionV2;
+      }
+      return { pipeline: { name: 'v2-canvas', path: '/pipelines/v2-canvas' }, created: false };
+    });
+
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="declaration-select"][data-declaration-id="composite:review"]'
+      )
+    );
+    const outcomes = container.querySelector(
+      '[data-testid="declaration-outcomes"]'
+    ) as HTMLInputElement;
+    outcomes.focus();
+    await setValueAndFlush(outcomes, 'done,partial', 'input');
+    await act(async () => {
+      outcomes.blur();
+      await flushMicrotasks();
+    });
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="loop"]')
+    );
+    expect(
+      Array.from(
+        container.querySelectorAll('[data-testid="v2-loop-domain-action"]')
+      ).map((element) => element.getAttribute('data-outcome'))
+    ).toEqual(['done', 'partial']);
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+    expect(saved!.declarations[0]!.outcomes).toEqual(['done', 'partial']);
+    expect(
+      (saved!.root.nodes.find((node) => node.id === 'loop') as WireBoundedLoopNode)
+        .exits
+    ).toEqual({
+      done: { action: 'exit', outcome: 'done' },
+      partial: { action: 'continue' },
+    });
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="loop"]')
+    );
+    expect(
+      Array.from(
+        container.querySelectorAll('[data-testid="v2-loop-domain-action"]')
+      ).map((element) => element.getAttribute('data-outcome'))
+    ).toEqual(['done', 'partial']);
+  });
+
+  it('authors definition, AtomicStage, Gate, loop lifecycle, and parallel fields through mounted controls', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({
+      valid: true,
+      issues: [],
+      preparation: v2Preparation,
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    await clickAndFlush(container.querySelector('[data-testid="definition-input-add"]'));
+    await setValueAndFlush(
+      container.querySelector('[data-testid="definition-input-name"]'),
+      'brief',
+      'input'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="definition-limit-budget"]'),
+      '42',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="definition-artifact-add"]'));
+    await setValueAndFlush(
+      container.querySelector('[data-testid="definition-artifact-name"]'),
+      'report',
+      'input'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="definition-outcomes"]'),
+      'done,partial'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="definition-limit-max-actions"]'),
+      '24',
+      'input'
+    );
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="atomic"]')
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-execution-role"]'),
+      'reviewer'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-execution-workspace"]'),
+      'read'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-execution-runtime"]'),
+      'codex'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-execution-model"]'),
+      'gpt-test',
+      'input'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-execution-lead-review"]'),
+      'true'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-execution-verify-policy"]'),
+      'standard'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-execution-effort"]'),
+      'high',
+      'input'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-execution-sandbox"]'),
+      'workspace-write'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-execution-session-reuse"]'),
+      'stage'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-execution-handoff-max-relays"]'),
+      '3',
+      'input'
+    );
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="gate"]')
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-gate-disposition"][data-decision="rejected"]'),
+      'fail'
+    );
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="loop"]')
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-max-actions"]'),
+      '13',
+      'input'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-strategy-attempts"]'),
+      '1',
+      'input'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-strategy-capability"]'),
+      'skill:rasen-propose\0digest-propose'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-goal-variant"]'),
+      'research'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-domain-action"][data-outcome="done"]'),
+      'continue'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-lifecycle-outcome"][data-trigger="iterationLimit"]'),
+      'max-rounds-exhausted',
+      'input'
+    );
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="fanout"]')
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-parallel-condition"][data-member-id="atomic"]'),
+      'changed',
+      'input'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-parallel-budget"]'),
+      '9',
+      'input'
+    );
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    const submitted = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    expect(submitted.inputs).toEqual([{ name: 'brief', type: 'artifact/text', required: false }]);
+    expect(submitted.artifacts).toEqual([{ name: 'report', type: 'artifact/text' }]);
+    expect(submitted.outcomes).toEqual(['done', 'partial']);
+    expect(submitted.limits?.maxActions).toBe(24);
+    expect(submitted.limits?.budget).toBe(42);
+    expect(submitted.root.nodes.find((node) => node.id === 'atomic')).toMatchObject({
+      execution: {
+        role: 'reviewer',
+        workspace: { access: 'read' },
+        runtime: 'codex',
+        model: 'gpt-test',
+        leadReview: true,
+        verifyPolicy: 'standard',
+        effort: 'high',
+        sandbox: 'workspace-write',
+        sessionReuse: 'stage',
+        handoff: { maxRelays: 3 },
+      },
+    });
+    expect(submitted.root.nodes.find((node) => node.id === 'atomic')).not.toHaveProperty('execution.gate');
+    expect(submitted.root.nodes.find((node) => node.id === 'gate')).toMatchObject({
+      dispositions: { rejected: 'fail' },
+    });
+    expect(submitted.root.nodes.find((node) => node.id === 'loop')).toMatchObject({
+      limits: { maxActions: 13 },
+      lifecycle: {
+        strategy: {
+          maxAttempts: 1,
+          capability: { id: 'skill:rasen-propose', version: 'digest-propose' },
+        },
+        exits: {
+          iterationLimit: { action: 'exit', outcome: 'max-rounds-exhausted' },
+        },
+      },
+      goalCycleVariant: 'research',
+      exits: { done: { action: 'continue' } },
+    });
+    expect(submitted.root.nodes.find((node) => node.id === 'fanout')).toMatchObject({
+      budget: 9,
+      members: [{ id: 'atomic', condition: 'changed' }],
+    });
+  });
+
+  it('renames a custom declaration and authors body execution plus phase without losing references', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    await clickAndFlush(
+      container.querySelector('[data-testid="declaration-select"][data-declaration-id="composite:review"]')
+    );
+
+    const declarationId = container.querySelector('[data-testid="declaration-id"]') as HTMLInputElement;
+    declarationId.focus();
+    await setValueAndFlush(declarationId, 'review-body', 'input');
+    await act(async () => {
+      declarationId.blur();
+      await flushMicrotasks();
+    });
+    await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-body-execution-role"]'),
+      'reviewer'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-body-execution-workspace"]'),
+      'read'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-body-execution-review-phase"]'),
+      'review'
+    );
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    const submitted = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    const declaration = submitted.declarations.find((item) => item.id === 'review-body')!;
+    expect(declaration.graph.nodes[0]).toMatchObject({
+      execution: { version: 1, role: 'reviewer', workspace: { access: 'read' } },
+      reviewCyclePhase: 'review',
+    });
+    expect(submitted.root.nodes.find((node) => node.id === 'composite')).toMatchObject({
+      declarationId: 'review-body',
+    });
+    expect(submitted.root.nodes.find((node) => node.id === 'loop')).toMatchObject({
+      body: 'review-body',
+    });
+  });
+
+  it('removes FanOut and Join only through the explicit paired action', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="join"]')
+    );
+    await clickAndFlush(container.querySelector('[data-testid="v2-parallel-delete-pair"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    const submitted = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    expect(submitted.root.nodes.some((node) => node.kind === 'FanOut')).toBe(false);
+    expect(submitted.root.nodes.some((node) => node.kind === 'Join')).toBe(false);
+  });
+
+  it('keeps paired membership, partitions, conditions, limits, and outcomes equal after save and detail reload', async () => {
+    let saved: WirePipelineDefinitionV2 | null = null;
+    vi.mocked(client.getPipelineDetail)
+      .mockResolvedValueOnce(v2EditableDetail)
+      .mockImplementation(async () => ({
+        ...v2EditableDetail,
+        definition: saved ?? v2Definition,
+      } as PipelineDetailResponse));
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    vi.mocked(client.mutatePipeline).mockImplementation(async (request) => {
+      if (request.op === 'save') saved = structuredClone(request.definition) as WirePipelineDefinitionV2;
+      return { pipeline: { name: 'v2-canvas', path: '/pipelines/v2-canvas' }, created: false };
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-add-AtomicStage"]'));
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="fanout"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-parallel-member-select"][data-member-id="atomic-stage"]')
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-parallel-condition"][data-member-id="atomic-stage"]'),
+      'changed',
+      'input'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-parallel-concurrency-cap"]'),
+      '2',
+      'input'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-parallel-budget"]'),
+      '7',
+      'input'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-parallel-failed-outcome"]'),
+      'partial',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+    const savedFanOut = saved!.root.nodes.find((node) => node.kind === 'FanOut');
+    const savedJoin = saved!.root.nodes.find((node) => node.kind === 'Join');
+    expect(savedFanOut).toMatchObject({
+      branches: ['atomic', 'atomic-stage'],
+      concurrencyCap: 2,
+      budget: 7,
+      members: [
+        { id: 'atomic', required: true },
+        { id: 'atomic-stage', required: false, condition: 'changed' },
+      ],
+    });
+    expect(savedJoin).toMatchObject({
+      inputs: ['atomic', 'atomic-stage'],
+      requiredMembers: ['atomic'],
+      optionalMembers: ['atomic-stage'],
+      outcomes: { proceed: 'done', failed: 'partial' },
+    });
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    expect(vi.mocked(client.validatePipeline).mock.calls.at(-1)![0]).toEqual(saved);
+  });
+
+  it('repairs an incomplete lifecycle and keeps strategy capability absent at zero attempts', async () => {
+    const incomplete = structuredClone(v2Definition) as unknown as WirePipelineDefinitionV2;
+    const loop = incomplete.root.nodes.find((node) => node.kind === 'BoundedLoop');
+    if (!loop || loop.kind !== 'BoundedLoop') throw new Error('loop fixture missing');
+    delete loop.lifecycle;
+    vi.mocked(client.getPipelineDetail).mockResolvedValue({
+      ...v2EditableDetail,
+      definition: incomplete,
+    } as PipelineDetailResponse);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline)
+      .mockResolvedValueOnce({
+        valid: false,
+        issues: [{
+          severity: 'error',
+          code: 'STRATEGY_CAPABILITY_REQUIRED',
+          path: '/root/nodes/5/lifecycle/strategy/capability',
+          message: 'Positive attempts require an exact capability.',
+        }],
+      })
+      .mockResolvedValueOnce({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="loop"]')
+    );
+    expect(container.querySelector('[data-testid="v2-loop-lifecycle"]')?.textContent).toContain('Incomplete lifecycle');
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-strategy-attempts"]'),
+      '1',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    const mismatched = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    expect(mismatched.root.nodes.find((node) => node.kind === 'BoundedLoop')).toMatchObject({
+      lifecycle: { strategy: { maxAttempts: 1, requireMaterialChange: true } },
+    });
+    expect(
+      (mismatched.root.nodes.find((node) => node.kind === 'BoundedLoop') as { lifecycle: { strategy: object } }).lifecycle.strategy
+    ).not.toHaveProperty('capability');
+    expect(container.querySelector('[data-testid="issues-drawer-item"]')?.textContent).toContain('STRATEGY_CAPABILITY_REQUIRED');
+
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-strategy-capability"]'),
+      'skill:rasen-propose\0digest-propose'
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-strategy-attempts"]'),
+      '0',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    const zero = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    const zeroLoop = zero.root.nodes.find((node) => node.kind === 'BoundedLoop');
+    expect(zeroLoop).toMatchObject({ lifecycle: { strategy: { maxAttempts: 0 } } });
+    expect((zeroLoop as { lifecycle: { strategy: object } }).lifecycle.strategy).not.toHaveProperty('capability');
+  });
+
+  it('navigates definition, declaration, body, and nested node diagnostics while preserving unknown detail', async () => {
+    const definitionWithBody = structuredClone(v2Definition) as unknown as WirePipelineDefinitionV2;
+    definitionWithBody.declarations[0]!.graph.nodes.push({
+      id: 'review',
+      kind: 'AtomicStage',
+      capability: { id: 'skill:rasen-propose', version: 'digest-propose' },
+      execution: { version: 1, role: 'reviewer', workspace: { access: 'read' } },
+    });
+    definitionWithBody.declarations[0]!.graph.nodes.push({
+      id: 'apply',
+      kind: 'AtomicStage',
+      capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+      execution: { version: 1, role: 'implementer', workspace: { access: 'write' } },
+    });
+    definitionWithBody.declarations[0]!.graph.connections.push({
+      id: 'review-to-apply',
+      from: { node: 'review', port: 'done' },
+      to: { node: 'apply', port: 'input' },
+    });
+    vi.mocked(client.getPipelineDetail).mockResolvedValue({
+      ...v2EditableDetail,
+      definition: definitionWithBody,
+    } as PipelineDetailResponse);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({
+      valid: false,
+      issues: [
+        { severity: 'error', code: 'BUDGET', path: '/limits/budget', message: 'Budget invalid.' },
+        { severity: 'warning', code: 'DECL', path: '/declarations/0/outcomes/0', message: 'Outcome warning.' },
+        { severity: 'warning', code: 'BODY_ROLE', path: '/declarations/0/graph/nodes/0/execution/role', message: 'Role deserves review.' },
+        { severity: 'error', code: 'BODY_CAPABILITY', path: '/declarations/0/graph/nodes/0/capability/version', message: 'Capability incompatible.' },
+        { severity: 'error', code: 'BODY_ACCESS', path: '/declarations/0/graph/nodes/0/execution/workspace/access', message: 'Workspace access incompatible.' },
+        { severity: 'warning', code: 'BODY_CONNECTION_WARNING', path: '/declarations/0/graph/connections/0/to/port', message: 'Target port deserves review.' },
+        { severity: 'error', code: 'BODY_CONNECTION_ERROR', path: '/declarations/0/graph/connections/0/to/port', message: 'Target port is invalid.' },
+        { severity: 'error', code: 'LOOP_EXIT', path: '/root/nodes/5/lifecycle/exits/blocked/action', message: 'Blocked exit invalid.' },
+        { severity: 'error', code: 'PARALLEL_PARTITION', path: '/root/nodes/7/requiredMembers/0', message: 'Join partition mismatch.' },
+        { severity: 'error', code: 'PARALLEL_JOIN', path: '/root/nodes/6/joinNodeId', message: 'Join reference missing.' },
+        {
+          severity: 'warning',
+          code: 'FUTURE',
+          path: '/future/field',
+          message: 'Future field.',
+          related: [{ path: '/future/source', message: 'Future source.' }],
+        },
+      ],
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+
+    const select = async (path: string) =>
+      clickAndFlush(
+        container.querySelector(
+          `[data-testid="issues-drawer-item"][data-path="${path}"] [data-testid="issues-drawer-select"]`
+        )
+      );
+    await select('/limits/budget');
+    expect(container.querySelector('[data-testid="definition-contract-panel"]')?.getAttribute('data-focused-field')).toBe('limits/budget');
+    await select('/declarations/0/outcomes/0');
+    expect(container.querySelector('[data-testid="declaration-editor"]')?.getAttribute('data-focused-field')).toBe('outcomes/0');
+    await select('/declarations/0/graph/nodes/0/execution/role');
+    expect(container.querySelector('[data-testid="declaration-body-stage"][data-stage-id="review"]')?.getAttribute('data-focused-field')).toBe('execution/role');
+    const roleControl = container.querySelector(
+      '[data-testid="declaration-body-execution-role"]'
+    );
+    expect(roleControl?.closest('label')?.classList).toContain(
+      'stage-panel__field--issue-warning'
+    );
+    expect(roleControl?.closest('label')?.classList).not.toContain(
+      'stage-panel__field--issue-error'
+    );
+
+    const connectionIssueButtons = container.querySelectorAll(
+      '[data-testid="issues-drawer-item"][data-path="/declarations/0/graph/connections/0/to/port"] [data-testid="issues-drawer-select"]'
+    );
+    await clickAndFlush(connectionIssueButtons[0] ?? null);
+    const connectionRow = container.querySelector(
+      '[data-testid="declaration-body-connection"][data-connection-id="review-to-apply"]'
+    );
+    const targetEndpoint = connectionRow?.querySelector(
+      '[data-testid="declaration-body-connection-endpoint"][data-endpoint="to"]'
+    );
+    expect(connectionRow?.getAttribute('data-focused-field')).toBe('to/port');
+    expect(connectionRow?.getAttribute('data-issue')).toBe('warning');
+    expect(targetEndpoint?.getAttribute('data-focused-field')).toBe('to/port');
+    expect(targetEndpoint?.getAttribute('data-issue')).toBe('warning');
+    expect(
+      connectionRow
+        ?.querySelector('[data-testid="declaration-body-connection-endpoint"][data-endpoint="from"]')
+        ?.getAttribute('data-issue')
+    ).toBeNull();
+
+    await clickAndFlush(connectionIssueButtons[1] ?? null);
+    expect(connectionRow?.getAttribute('data-issue')).toBe('error');
+    expect(targetEndpoint?.getAttribute('data-issue')).toBe('error');
+    await select('/root/nodes/5/lifecycle/exits/blocked/action');
+    expect(container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')).toBe('loop');
+    expect(container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-focused-field')).toBe('lifecycle/exits/blocked/action');
+
+    const unknown = container.querySelector('[data-testid="issues-drawer-item"][data-path="/future/field"]')!;
+    expect(unknown.querySelector('[data-testid="issues-drawer-unmapped"]')?.textContent).toContain('/future/field');
+    expect(unknown.textContent).toContain('FUTURE');
+    expect(unknown.textContent).toContain('/future/source');
+    expect(container.querySelector('[data-testid="issues-drawer-item"][data-path="/declarations/0/graph/nodes/0/capability/version"] [data-testid="issues-drawer-select"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="issues-drawer-item"][data-path="/declarations/0/graph/nodes/0/execution/workspace/access"] [data-testid="issues-drawer-select"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="issues-drawer-item"][data-path="/root/nodes/7/requiredMembers/0"] [data-testid="issues-drawer-select"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="issues-drawer-item"][data-path="/root/nodes/6/joinNodeId"] [data-testid="issues-drawer-select"]')).not.toBeNull();
+
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-max-actions"]'),
+      '15',
+      'input'
+    );
+    expect(container.querySelector('[data-testid="issues-drawer"]')).toBeNull();
+    expect(container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-focused-field')).toBe('');
+    expect(
+      container.querySelector('[data-testid="mock-node"][data-node-id="loop"]')?.getAttribute('data-issue')
+    ).toBeNull();
+  });
+
+  it('never redirects a body diagnostic to another declaration with the same local ids', async () => {
+    const definition = structuredClone(v2Definition) as WirePipelineDefinitionV2;
+    const sharedBody = {
+      nodes: [
+        {
+          id: 'review',
+          kind: 'AtomicStage' as const,
+          capability: { id: 'skill:rasen-propose', version: 'digest-propose' },
+          execution: {
+            version: 1 as const,
+            role: 'reviewer' as const,
+            workspace: { access: 'read' as const },
+          },
+        },
+        {
+          id: 'apply',
+          kind: 'AtomicStage' as const,
+          capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+          execution: {
+            version: 1 as const,
+            role: 'implementer' as const,
+            workspace: { access: 'write' as const },
+          },
+        },
+      ],
+      connections: [
+        {
+          id: 'review-to-apply',
+          from: { node: 'review', port: 'done' },
+          to: { node: 'apply', port: 'input' },
+        },
+      ],
+    };
+    definition.declarations[0] = {
+      ...definition.declarations[0]!,
+      graph: structuredClone(sharedBody),
+    };
+    definition.declarations.push({
+      id: 'composite:alternate',
+      kind: 'Composite',
+      provenance: 'custom',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      graph: structuredClone(sharedBody),
+    });
+    vi.mocked(client.getPipelineDetail).mockResolvedValue({
+      ...v2EditableDetail,
+      definition,
+    } as PipelineDetailResponse);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({
+      valid: false,
+      issues: [
+        {
+          severity: 'warning',
+          code: 'OWNER_NODE',
+          path: '/declarations/0/graph/nodes/0/execution/role',
+          message: 'Only declaration zero owns this node issue.',
+        },
+        {
+          severity: 'error',
+          code: 'OWNER_CONNECTION',
+          path: '/declarations/0/graph/connections/0/to/port',
+          message: 'Only declaration zero owns this connection issue.',
+        },
+      ],
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+
+    const selectIssue = async (path: string) =>
+      clickAndFlush(
+        container.querySelector(
+          `[data-testid="issues-drawer-item"][data-path="${path}"] [data-testid="issues-drawer-select"]`
+        )
+      );
+    const selectAlternate = async () =>
+      clickAndFlush(
+        container.querySelector(
+          '[data-testid="declaration-select"][data-declaration-id="composite:alternate"]'
+        )
+      );
+
+    await selectIssue('/declarations/0/graph/nodes/0/execution/role');
+    expect(
+      container.querySelector('[data-testid="declaration-editor"]')?.getAttribute('data-declaration-id')
+    ).toBe('composite:review');
+    await selectAlternate();
+    expect(
+      container.querySelector('[data-testid="declaration-editor"]')?.getAttribute('data-focused-field')
+    ).toBe('');
+    expect(
+      container
+        .querySelector('[data-testid="declaration-body-stage"][data-stage-id="review"]')
+        ?.getAttribute('data-focused-field')
+    ).toBe('');
+
+    await selectIssue('/declarations/0/graph/connections/0/to/port');
+    expect(
+      container
+        .querySelector('[data-testid="declaration-body-connection"][data-connection-id="review-to-apply"]')
+        ?.getAttribute('data-issue')
+    ).toBe('error');
+    await selectAlternate();
+    expect(
+      container.querySelector('[data-testid="declaration-editor"]')?.getAttribute('data-focused-field')
+    ).toBe('');
+    expect(
+      container
+        .querySelector('[data-testid="declaration-body-connection"][data-connection-id="review-to-apply"]')
+        ?.getAttribute('data-issue')
+    ).toBeNull();
   });
 });

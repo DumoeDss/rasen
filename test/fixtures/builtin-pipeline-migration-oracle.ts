@@ -1,0 +1,63 @@
+export const BUILTIN_PIPELINE_MIGRATION_ORACLE = {
+  'bug-fix': {
+    order: ['propose', 'apply', 'verify', 'ship', 'archive'],
+    roles: ['planner', 'implementer', 'reviewer', 'shipper', 'shipper'],
+    gates: ['propose', 'apply', 'ship'],
+    verification: { verify: 'adaptive' },
+    review: { id: 'verify', maxIterations: 3, phases: ['review', 'triage', 'fix', 're-review'] },
+    tail: ['ship', 'archive'],
+  },
+  'small-feature': {
+    order: ['propose', 'apply', 'verify', 'review-loop', 'ship', 'archive'],
+    roles: ['planner', 'implementer', 'reviewer', 'fixer', 'shipper', 'shipper'],
+    gates: ['propose', 'apply', 'ship'],
+    verification: { verify: 'standard' },
+    review: { id: 'review-loop', maxIterations: 3, phases: ['review', 'triage', 'fix', 're-review'] },
+    tail: ['ship', 'archive'],
+  },
+  'full-feature': {
+    order: [
+      'office-hours', 'propose', 'apply', 'review', 'cso', 'benchmark',
+      'design-review', 'qa', 'qa-report-only', 'review-loop', 'ship', 'retain', 'archive',
+    ],
+    roles: [
+      'planner', 'planner', 'implementer', 'reviewer', 'reviewer', 'reviewer',
+      'reviewer', 'reviewer', 'reviewer', 'fixer', 'shipper', 'reviewer', 'shipper',
+    ],
+    gates: ['office-hours', 'propose', 'apply', 'ship'],
+    verification: {},
+    review: { id: 'review-loop', maxIterations: 3, phases: ['review', 'triage', 'fix', 're-review'] },
+    experts: {
+      members: ['review', 'cso', 'benchmark', 'design-review', 'qa', 'qa-report-only'],
+      required: ['review'],
+      optional: ['cso', 'benchmark', 'design-review', 'qa', 'qa-report-only'],
+      conditions: ['always', 'security-relevant', 'performance-sensitive', 'ui', 'ui', 'non-ui'],
+      concurrencyCap: 3,
+      budget: 6,
+      joinMode: 'collect-all',
+    },
+    tail: ['ship', 'retain', 'archive'],
+  },
+  'goal-loop-measure': {
+    order: ['define-goal', 'iterate', 'ship', 'retain', 'archive'],
+    roles: ['planner', 'implementer', 'shipper', 'reviewer', 'shipper'],
+    gates: ['define-goal', 'ship'],
+    goal: { variant: 'measure', maxIterations: 5, stallIterations: 2, sameBlockerAttempts: 3 },
+    tail: ['ship', 'retain', 'archive'],
+  },
+  'goal-loop-evaluate': {
+    order: ['define-goal', 'iterate', 'ship', 'retain', 'archive'],
+    roles: ['planner', 'implementer', 'shipper', 'reviewer', 'shipper'],
+    gates: ['define-goal', 'ship'],
+    goal: { variant: 'evaluate', maxIterations: 5, stallIterations: 2, sameBlockerAttempts: 3 },
+    tail: ['ship', 'retain', 'archive'],
+  },
+  'goal-loop-research': {
+    order: ['define-goal', 'iterate', 'report'],
+    roles: ['planner', 'implementer', 'shipper'],
+    gates: ['define-goal'],
+    goal: { variant: 'research', maxIterations: 5, stallIterations: 2, sameBlockerAttempts: 3 },
+    implementerHandoffThreshold: 0.35,
+    tail: ['report'],
+  },
+} as const;

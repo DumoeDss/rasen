@@ -401,7 +401,7 @@ export function hasWorkflowArtifactLedgerDrift(
     (toolId) => ledger?.tools[toolId]?.workflows[RETENTION_RUNNER_WORKFLOW_ID] !== undefined
   );
   const desiredDefinitions = tracksEffectiveInstallSet
-    ? resolveEffectiveWorkflowInstallSelection(catalog, desiredWorkflows)
+    ? resolveEffectiveWorkflowInstallSelection(catalog, desiredWorkflows, { projectRoot })
     : resolveWorkflowSelection(catalog, desiredWorkflows);
 
   // Projects installed before built-in sidecars joined the ledger have no

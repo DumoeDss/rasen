@@ -80,7 +80,9 @@ function resolveClosureDesiredWorkflows(
   base ??= workflows;
   const catalog = loadWorkflowCatalog();
   const { known } = filterKnownWorkflowRoots(catalog, base);
-  return resolveEffectiveWorkflowInstallSelection(catalog, known).map(
+  return resolveEffectiveWorkflowInstallSelection(catalog, known, {
+    projectRoot: projectPath,
+  }).map(
     (definition) => definition.id
   );
 }
@@ -115,9 +117,9 @@ export function getConfiguredToolsForProfileSync(projectPath: string): string[] 
 
 /**
  * Detects if a single tool has profile drift against the desired state:
- * required skills missing for selected workflows, or skill artifacts for
- * workflows (or, since the expert install-semantics flip, experts) that
- * were deselected from the current profile.
+ * required skills missing for selected workflows or reachable pipelines, or
+ * skill artifacts for workflows/experts that were deselected from the current
+ * profile.
  *
  * `desiredWorkflows` is treated as a selection to be closed over
  * internally: callers may pass either the raw stored selection (e.g. a
@@ -126,7 +128,7 @@ export function getConfiguredToolsForProfileSync(projectPath: string): string[] 
  * get the same result — this function resolves the dependency closure
  * itself via the same primitive the install path (`getSkillTemplates`) and
  * the removal seam (`removeUnselectedSkillDirs`) use, so drift, install,
- * and removal never disagree about experts.
+ * and removal never disagree about effective capability owners.
  */
 export function hasToolProfileDrift(
   projectPath: string,

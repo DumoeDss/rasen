@@ -76,7 +76,25 @@ const WorkspaceRevisionSchema = z.strictObject({
 
 export type WorkspaceRevision = Readonly<z.infer<typeof WorkspaceRevisionSchema>>;
 
-const EvidenceRefSchema = z.strictObject({
+const EvidenceProducerSchema = z.strictObject({
+  id: z.string().min(1).max(256),
+  version: z.string().min(1).max(128),
+  identityDigest: DigestSchema,
+});
+
+const EvidenceBindingSchema = z.strictObject({
+  planningSpaceId: PlanningSpaceIdSchema,
+  changeInstanceId: ChangeInstanceIdSchema,
+  projectId: z.string().min(1).max(256),
+  changeId: z.string().min(1).max(128),
+  runId: RunIdSchema,
+  actionId: ActionIdSchema,
+  effectId: EffectIdSchema.optional(),
+  treeDigest: DigestSchema.optional(),
+  schema: z.string().min(1).max(256),
+});
+
+const LegacyEvidenceRefV1Schema = z.strictObject({
   format: z.literal('change-run-evidence-ref/1'),
   store: z.literal('change-run'),
   evidenceDigest: DigestSchema,
@@ -84,25 +102,57 @@ const EvidenceRefSchema = z.strictObject({
   mediaType: z.string().min(1).max(256),
   size: SafeIntegerSchema,
   observationKind: z.string().min(1).max(256),
-  producer: z.strictObject({
-    id: z.string().min(1).max(256),
-    version: z.string().min(1).max(128),
-    identityDigest: DigestSchema,
-  }),
-  binding: z.strictObject({
-    planningSpaceId: PlanningSpaceIdSchema,
-    changeInstanceId: ChangeInstanceIdSchema,
-    projectId: z.string().min(1).max(256),
-    changeId: z.string().min(1).max(128),
-    runId: RunIdSchema,
-    actionId: ActionIdSchema,
-    effectId: EffectIdSchema.optional(),
-    treeDigest: DigestSchema.optional(),
-    schema: z.string().min(1).max(256),
+  producer: EvidenceProducerSchema,
+  binding: EvidenceBindingSchema,
+});
+
+const EvidenceProofV1Schema = z.strictObject({
+  format: z.literal('change-run-evidence-proof/1'),
+  authorityDigest: DigestSchema,
+  signature: z.string().min(1).max(256),
+});
+
+const AttestedEvidenceRefV2Schema = z.strictObject({
+  format: z.literal('change-run-evidence-ref/2'),
+  evidenceDigest: DigestSchema,
+  contentDigest: DigestSchema,
+  mediaType: z.string().min(1).max(256),
+  sizeBytes: SafeIntegerSchema,
+  observationKind: z.string().min(1).max(256),
+  producer: EvidenceProducerSchema,
+  binding: EvidenceBindingSchema,
+  proof: EvidenceProofV1Schema,
+});
+
+const EvidenceRefSchema = z.discriminatedUnion('format', [
+  LegacyEvidenceRefV1Schema,
+  AttestedEvidenceRefV2Schema,
+]);
+
+export type LegacyEvidenceRefV1 = Readonly<
+  z.infer<typeof LegacyEvidenceRefV1Schema>
+>;
+export type AttestedEvidenceRefV2 = Readonly<
+  z.infer<typeof AttestedEvidenceRefV2Schema>
+>;
+export type EvidenceRef = Readonly<z.infer<typeof EvidenceRefSchema>>;
+
+const AttestationAuthoritySchema = z.strictObject({
+  format: z.literal('change-run-attestation-authority/1'),
+  algorithm: z.literal('ed25519'),
+  keyId: z.string().min(1).max(256),
+  keyVersion: z.string().min(1).max(128),
+  publicKey: z.strictObject({
+    format: z.literal('spki-der'),
+    encoding: z.literal('base64'),
+    value: z.string().min(1).max(4096),
+    digest: DigestSchema,
   }),
 });
 
-export type EvidenceRef = Readonly<z.infer<typeof EvidenceRefSchema>>;
+export type AttestationAuthority = Readonly<
+  z.infer<typeof AttestationAuthoritySchema>
+>;
 
 const AdapterSchema = z.strictObject({
   id: z.string().min(1).max(256),
@@ -143,6 +193,38 @@ const ActorRefSchema = z.discriminatedUnion('kind', [
 
 export type ActorRef = Readonly<z.infer<typeof ActorRefSchema>>;
 
+const EvidenceUseAuthoritySchema = z.strictObject({
+  producer: EvidenceProducerSchema,
+  observationKind: z.string().min(1).max(256),
+  schema: z.string().min(1).max(256),
+  mediaType: z.string().min(1).max(256),
+});
+
+/**
+ * Immutable completion authority copied into every newly admitted Action.
+ * The field is optional only so pre-authority Records remain decodable and
+ * inspectable; every completion mutation fails closed when an old Action lacks it.
+ */
+const CompletionAuthoritySchema = z.strictObject({
+  format: z.literal('change-run-completion-authority/1'),
+  actor: ActorRefSchema,
+  actorAttestation: EvidenceUseAuthoritySchema,
+  observations: z.strictObject({
+    domainActionResult: EvidenceUseAuthoritySchema,
+    effectObservation: EvidenceUseAuthoritySchema,
+    infrastructureObservation: EvidenceUseAuthoritySchema,
+  }),
+  /**
+   * Additive for legacy decoding. Newly admitted executable Actions always
+   * carry this frozen public trust root; completion fails closed when absent.
+   */
+  attestationAuthority: AttestationAuthoritySchema.optional(),
+});
+
+export type CompletionAuthority = Readonly<
+  z.infer<typeof CompletionAuthoritySchema>
+>;
+
 const EffectDescriptorSchema = z.strictObject({
   slot: z.string().min(1).max(128),
   effectId: EffectIdSchema,
@@ -181,6 +263,7 @@ const RunActionBaseShape = {
   capability: CapabilityBindingSchema,
   resultContractDigest: DigestSchema,
   evidenceContractDigest: DigestSchema,
+  completionAuthority: CompletionAuthoritySchema.optional(),
   policyDigest: DigestSchema,
   workspace: z.strictObject({
     access: z.enum(['none', 'read', 'write']),
@@ -398,6 +481,23 @@ const WaitViewSchema = z.discriminatedUnion('kind', [
   }),
   z.strictObject({
     ...WaitBaseShape,
+    kind: z.literal('human-required'),
+    nodeId: NodeIdSchema,
+    invocationId: InvocationIdSchema,
+    occurrence: SafeIntegerSchema,
+    attemptId: AttemptIdSchema,
+    actionId: ActionIdSchema,
+    effectIds: z.array(EffectIdSchema).max(64),
+    loopPath: z.string().min(1).max(1024),
+    phase: z.string().min(1).max(256),
+    blockerFingerprint: DigestSchema,
+    reasonCode: z.string().min(1).max(256),
+    outcome: z.string().min(1).max(256),
+    evidence: z.array(EvidenceRefSchema).max(64),
+    decisionIds: z.tuple([z.literal('retry'), z.literal('escalate')]),
+  }),
+  z.strictObject({
+    ...WaitBaseShape,
     kind: z.literal('infrastructure'),
     nodeId: NodeIdSchema,
     invocationId: InvocationIdSchema,
@@ -505,6 +605,8 @@ const RunActionViewSchema = z.strictObject({
     contractDigest: DigestSchema,
     artifactDigest: DigestSchema,
   }),
+  completionAuthority: CompletionAuthoritySchema.optional(),
+  expectedBeforeWorkspace: WorkspaceRevisionSchema.optional(),
   effects: z.array(EffectViewSchema).max(64),
 });
 
@@ -569,9 +671,89 @@ const ReviewCycleViewSectionSchema = z.strictObject({
 export type ReviewCycleViewSection = Readonly<
   z.infer<typeof ReviewCycleViewSectionSchema>
 >;
+
+const GoalViewSectionSchema = z.strictObject({
+  kind: z.literal('goal'),
+  version: z.literal(1),
+  loopPath: z.string().min(1).max(1024),
+  variant: z.enum(['measure', 'evaluate', 'research']),
+  round: SafeIntegerSchema,
+  phase: z.enum(['work', 'judge']),
+  outcome: z.enum(['satisfied', 'exhausted']).optional(),
+  lastScore: z.number().finite().optional(),
+  lastGaps: z.array(z.string().min(1).max(4096)).max(1024),
+  waitReason: z.string().min(1).max(256).optional(),
+});
+
+export type GoalViewSection = Readonly<z.infer<typeof GoalViewSectionSchema>>;
+
+const UsedMaxSchema = z.strictObject({
+  used: SafeIntegerSchema,
+  max: SafeIntegerSchema,
+});
+
+const BoundedLoopLifecycleViewSectionSchema = z.strictObject({
+  kind: z.literal('bounded-loop-lifecycle'),
+  version: z.literal(1),
+  loopPath: z.string().min(1).max(1024),
+  bodyKind: z.enum(['review-cycle', 'goal-cycle', 'composite']),
+  state: z.enum([
+    'running',
+    'waiting',
+    'strategizing',
+    'human-required',
+    'terminal',
+  ]),
+  iteration: SafeIntegerSchema,
+  phase: z.string().min(1).max(256),
+  limits: z.strictObject({
+    iterations: UsedMaxSchema,
+    actions: UsedMaxSchema,
+    budget: UsedMaxSchema,
+  }),
+  progressFingerprint: DigestSchema.optional(),
+  stallStreak: SafeIntegerSchema,
+  blockerFingerprint: DigestSchema.optional(),
+  blockedStreak: SafeIntegerSchema,
+  strategy: z.strictObject({
+    attempts: SafeIntegerSchema,
+    maxAttempts: SafeIntegerSchema,
+    active: SafeIntegerSchema.optional(),
+  }),
+  wait: z
+    .strictObject({
+      waitId: WaitIdSchema,
+      kind: z.string().min(1).max(256),
+      reasonCode: z.string().min(1).max(256).optional(),
+    })
+    .optional(),
+  outcome: z
+    .strictObject({
+      kind: z.enum([
+        'completed',
+        'iteration-limit',
+        'action-limit',
+        'budget-limit',
+        'stalled',
+        'blocked',
+        'strategy-exhausted',
+        'failed',
+        'cancelled',
+      ]),
+      disposition: z.enum(['exit', 'escalate', 'fail', 'cancel']),
+      value: z.string().min(1).max(256).optional(),
+    })
+    .optional(),
+});
+
+export type BoundedLoopLifecycleViewSection = Readonly<
+  z.infer<typeof BoundedLoopLifecycleViewSectionSchema>
+>;
 export type ChangeRunViewSection =
   | RootDagViewSection
   | ReviewCycleViewSection
+  | GoalViewSection
+  | BoundedLoopLifecycleViewSection
   | Readonly<Record<string, unknown>>;
 
 const DriftStateSchema = z.enum(['unchanged', 'changed', 'unavailable']);
@@ -865,12 +1047,26 @@ export function decodeWorkspaceRevision(value: unknown): WorkspaceRevision {
 }
 
 export function decodeEvidenceRef(value: unknown): EvidenceRef {
-  assertMajor(
-    value,
-    'change-run-evidence-ref/1',
-    'unsupported_contract_version'
-  );
+  const format =
+    value !== null && typeof value === 'object'
+      ? (value as { format?: unknown }).format
+      : undefined;
+  if (
+    format !== 'change-run-evidence-ref/1' &&
+    format !== 'change-run-evidence-ref/2'
+  ) {
+    throw new ChangeRunContractError(
+      'unsupported_contract_version',
+      `Unsupported contract format ${JSON.stringify(format)}; expected change-run-evidence-ref/1 or change-run-evidence-ref/2.`
+    );
+  }
   return decode(EvidenceRefSchema, value);
+}
+
+export function decodeAttestationAuthority(
+  value: unknown
+): AttestationAuthority {
+  return decode(AttestationAuthoritySchema, value);
 }
 
 export function decodeActorRef(value: unknown): ActorRef {
@@ -922,6 +1118,26 @@ export function decodeChangeRunView(value: unknown): ChangeRunView {
       (section as { kind?: unknown }).kind === 'review-cycle'
     ) {
       return decode(ReviewCycleViewSectionSchema, section);
+    }
+    if (
+      section !== null &&
+      typeof section === 'object' &&
+      'kind' in section &&
+      (section as { kind?: unknown }).kind === 'goal' &&
+      'version' in section &&
+      (section as { version?: unknown }).version === 1
+    ) {
+      return decode(GoalViewSectionSchema, section);
+    }
+    if (
+      section !== null &&
+      typeof section === 'object' &&
+      'kind' in section &&
+      (section as { kind?: unknown }).kind === 'bounded-loop-lifecycle' &&
+      'version' in section &&
+      (section as { version?: unknown }).version === 1
+    ) {
+      return decode(BoundedLoopLifecycleViewSectionSchema, section);
     }
     const additive = z
       .object({

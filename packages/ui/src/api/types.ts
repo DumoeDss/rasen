@@ -246,6 +246,10 @@ export interface WirePipeline {
   >;
   effectiveReuse?: WireEffectiveReuse;
   stages: WirePipelineStage[];
+  buildOrder?: string[];
+  capabilityPaths?: readonly WirePreparedExecutionCapabilityPath[];
+  policyPaths?: readonly WirePreparedExecutionPolicyPath[];
+  boundedLoops?: readonly WirePreparedBoundedLoopPolicy[];
   authoredVersion?: number;
   normalizedVersion?: 2;
   definitionValid?: boolean;
@@ -253,6 +257,8 @@ export interface WirePipeline {
   executable?: boolean;
   executionMode?: 'legacy' | 'reconciler' | 'unavailable';
   unavailableReason?: string;
+  /** Named migration boundary for an intentionally retained package v1 fixture. */
+  compatibilityBoundary?: 'issue-dispatch-0.3.0';
   diagnostics?: PipelineValidationIssue[];
   /**
    * Additive engine support analysis (task 14.7/14.8): present on the detail
@@ -266,6 +272,35 @@ export interface WirePipeline {
     reason: ReconcilerSupportReason;
     profileDigest: string;
   };
+}
+
+export interface WirePreparedExecutionCapabilityPath {
+  profilePath: string;
+  capability: { id: string; version: string };
+  workspace: 'none' | 'read' | 'write';
+}
+
+export interface WirePreparedExecutionPolicyPath {
+  profilePath: string;
+  role: string;
+  runtime: WireEffectiveValue<'claude' | 'codex'>;
+  model: WireEffectiveValue<string | null>;
+  effort: WireEffectiveValue<string | null>;
+  sandbox: 'read-only' | 'workspace-write';
+  effectiveGate: WireEffectiveValue<boolean>;
+  sessionReuse: {
+    effective: 'never' | 'same-invocation';
+    authored?: 'none' | 'stage' | 'run-planner' | 'review-thread';
+    source: string;
+  };
+  handoffTokenLimit: WireEffectiveValue<number>;
+  reuseRoundLimit: WireEffectiveValue<number>;
+}
+
+export interface WirePreparedBoundedLoopPolicy {
+  nodeId: string;
+  limits: { maxIterations: number; maxActions?: number; budget?: number };
+  lifecycle: WireBoundedLoopLifecyclePolicyV1;
 }
 
 export interface ThresholdPresetSeed {
@@ -1124,7 +1159,12 @@ export interface PipelineHandoffConfig {
 }
 
 /** Per-stage handoff overrides — same shape as `PipelineHandoffConfig` minus `roles` (pipeline-level only). */
-export type PipelineStageHandoffConfig = Omit<PipelineHandoffConfig, 'roles'>;
+export interface PipelineStageHandoffConfig {
+  threshold?: ThresholdValue;
+  maxRelays?: number;
+  stallLimit?: number;
+  [key: string]: unknown;
+}
 
 export type PipelineReuseMode = 'auto' | 'never';
 
@@ -1232,6 +1272,45 @@ export interface WireDefinitionArtifact {
   type: string;
 }
 
+export interface WireDefinitionLimits {
+  maxActions?: number;
+  budget?: number;
+  [key: string]: unknown;
+}
+
+export type WireStageRole =
+  | 'planner'
+  | 'implementer'
+  | 'reviewer'
+  | 'fixer'
+  | 'shipper';
+
+export type WireReviewCyclePhase = 'review' | 'triage' | 'fix' | 're-review';
+export type WireGoalCyclePhase = 'work' | 'judge';
+export type WireGoalCycleVariant = 'measure' | 'evaluate' | 'research';
+
+export interface WireAtomicStageWorkspaceV1 {
+  access: 'none' | 'read' | 'write';
+  [key: string]: unknown;
+}
+
+/** Complete authored v2 AtomicStage execution declaration. */
+export interface WireAtomicStageExecutionV1 {
+  version: 1;
+  role: WireStageRole;
+  workspace: WireAtomicStageWorkspaceV1;
+  leadReview?: boolean;
+  verifyPolicy?: PipelineVerifyPolicy;
+  runtime?: PipelineAgentRuntime;
+  model?: string;
+  effort?: string;
+  sandbox?: PipelineAgentRuntimeSandbox;
+  sessionReuse?: PipelineAgentRuntimeSessionReuse;
+  handoff?: PipelineStageHandoffConfig;
+  /** Forward-compatible authored fields survive unrelated edits. */
+  [key: string]: unknown;
+}
+
 export interface WireDefinitionNodeBase {
   id: string;
   kind:
@@ -1249,6 +1328,10 @@ export interface WireDefinitionNodeBase {
 export interface WireAtomicStageNode extends WireDefinitionNodeBase {
   kind: 'AtomicStage';
   capability: { id: string; version: string };
+  /** Optional on the wire so an invalid draft can still render its diagnostics; required for valid authored v2. */
+  execution?: WireAtomicStageExecutionV1;
+  reviewCyclePhase?: WireReviewCyclePhase;
+  goalCyclePhase?: WireGoalCyclePhase;
 }
 
 export interface WireCompositeRefNode extends WireDefinitionNodeBase {
@@ -1260,10 +1343,51 @@ export interface WireBoundedLoopNode extends WireDefinitionNodeBase {
   kind: 'BoundedLoop';
   body: string;
   limits: { maxIterations: number; maxActions?: number; budget?: number };
+  /** Read-side compatibility is optional; current authored v2 requires v1. */
+  lifecycle?: WireBoundedLoopLifecyclePolicyV1;
   exits: Record<
     string,
     { action: 'continue' } | { action: 'exit'; outcome: string }
   >;
+  goalCycleVariant?: WireGoalCycleVariant;
+}
+
+export type WireLoopLifecycleTerminalExit = {
+  action: 'exit' | 'escalate' | 'fail';
+  outcome: string;
+};
+
+export type WireLoopLifecycleExit =
+  | WireLoopLifecycleTerminalExit
+  | { action: 'strategy' };
+
+export type WireLoopLifecycleBlockedExit =
+  | WireLoopLifecycleExit
+  | { action: 'human-required'; outcome: string };
+
+export interface WireBoundedLoopLifecyclePolicyV1 {
+  version: 1;
+  thresholds: {
+    stallIterations: number;
+    sameBlockerAttempts: number;
+    [key: string]: unknown;
+  };
+  strategy: {
+    maxAttempts: number;
+    requireMaterialChange: true;
+    capability?: { id: string; version: string };
+    [key: string]: unknown;
+  };
+  exits: {
+    iterationLimit: WireLoopLifecycleExit;
+    actionLimit: WireLoopLifecycleTerminalExit;
+    budgetLimit: WireLoopLifecycleTerminalExit;
+    stalled: WireLoopLifecycleExit;
+    blocked: WireLoopLifecycleBlockedExit;
+    strategyExhausted: WireLoopLifecycleTerminalExit;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
 }
 
 export interface WireChoiceNode extends WireDefinitionNodeBase {
@@ -1274,16 +1398,31 @@ export interface WireChoiceNode extends WireDefinitionNodeBase {
 export interface WireFanOutNode extends WireDefinitionNodeBase {
   kind: 'FanOut';
   branches: string[];
+  concurrencyCap: number;
+  budget: number;
+  joinNodeId: string;
+  members: Array<{
+    id: string;
+    hierarchicalPath: string;
+    required: boolean;
+    condition: string;
+    [key: string]: unknown;
+  }>;
 }
 
 export interface WireJoinNode extends WireDefinitionNodeBase {
   kind: 'Join';
   inputs: string[];
+  requiredMembers: string[];
+  optionalMembers: string[];
+  outcomes: { proceed: string; failed: string; [key: string]: unknown };
 }
 
 export interface WireGateNode extends WireDefinitionNodeBase {
   kind: 'Gate';
+  target: string;
   outcomes: string[];
+  dispositions: Record<string, 'proceed' | 'fail' | 'escalate'>;
 }
 
 export interface WireFinishNode extends WireDefinitionNodeBase {
@@ -1336,7 +1475,7 @@ export interface WirePipelineDefinitionV2 {
   outcomes: string[];
   declarations: WireCompositeDeclaration[];
   root: WireDefinitionGraph;
-  limits?: { maxActions?: number; budget?: number };
+  limits?: WireDefinitionLimits;
   /** Authored extension fields are retained losslessly even when unexposed. */
   [key: string]: any;
 }
@@ -1466,10 +1605,34 @@ export interface RunActionView {
   effects: EffectView[];
 }
 
+/** A canonical evidence reference rendered for lifecycle waits. */
+export interface RunEvidenceRef {
+  format: 'change-run-evidence-ref/1';
+  store: 'change-run';
+  evidenceDigest: string;
+  contentDigest: string;
+  mediaType: string;
+  size: number;
+  observationKind: string;
+  producer: { id: string; version: string; identityDigest: string };
+  binding: {
+    planningSpaceId: string;
+    changeInstanceId: string;
+    projectId: string;
+    changeId: string;
+    runId: string;
+    actionId: string;
+    effectId?: string;
+    treeDigest?: string;
+    schema: string;
+  };
+}
+
 /** A discriminated wait reason projected from committed Record truth. */
 export type WaitView =
   | { waitId: string; kind: 'gate'; nodeId: string; invocationId: string; occurrence: number; gateId: string; decisionIds: string[] }
   | { waitId: string; kind: 'domain-blocked'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; reasonCode: string }
+  | { waitId: string; kind: 'human-required'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; loopPath: string; phase: string; blockerFingerprint: string; reasonCode: string; outcome: string; evidence: readonly RunEvidenceRef[]; decisionIds: readonly ['retry', 'escalate'] }
   | { waitId: string; kind: 'infrastructure'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; code: string; retryable: boolean }
   | { waitId: string; kind: 'uncertain-effect'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[] }
   | { waitId: string; kind: 'capability-unavailable'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; code: string }
@@ -1614,6 +1777,46 @@ export interface ReviewCycleViewSection {
   maxRounds: number;
 }
 
+/** Goal domain truth, intentionally separate from shared lifecycle counters. */
+export interface GoalViewSection {
+  kind: 'goal';
+  version: 1;
+  loopPath: string;
+  variant: 'measure' | 'evaluate' | 'research';
+  round: number;
+  phase: 'work' | 'judge';
+  outcome?: 'satisfied' | 'exhausted';
+  lastScore?: number;
+  lastGaps: readonly string[];
+  waitReason?: string;
+}
+
+export interface BoundedLoopLifecycleViewSection {
+  kind: 'bounded-loop-lifecycle';
+  version: 1;
+  loopPath: string;
+  bodyKind: 'review-cycle' | 'goal-cycle' | 'composite';
+  state: 'running' | 'waiting' | 'strategizing' | 'human-required' | 'terminal';
+  iteration: number;
+  phase: string;
+  limits: {
+    iterations: { used: number; max: number };
+    actions: { used: number; max: number };
+    budget: { used: number; max: number };
+  };
+  progressFingerprint?: string;
+  stallStreak: number;
+  blockerFingerprint?: string;
+  blockedStreak: number;
+  strategy: { attempts: number; maxAttempts: number; active?: number };
+  wait?: { waitId: string; kind: string; reasonCode?: string };
+  outcome?: {
+    kind: 'completed' | 'iteration-limit' | 'action-limit' | 'budget-limit' | 'stalled' | 'blocked' | 'strategy-exhausted' | 'failed' | 'cancelled';
+    disposition: 'exit' | 'escalate' | 'fail' | 'cancel';
+    value?: string;
+  };
+}
+
 // --- ECP-4 parallel/1 and choice/1 sections ---
 //
 // Mirror of the server-projected `parallel/1` and `choice/1` sections. Source
@@ -1690,6 +1893,8 @@ export interface AdditiveViewSection {
 export type ChangeRunViewSection =
   | RootDagViewSection
   | ReviewCycleViewSection
+  | GoalViewSection
+  | BoundedLoopLifecycleViewSection
   | ParallelViewSection
   | ChoiceViewSection
   | AdditiveViewSection;
@@ -1755,6 +1960,36 @@ export function getReviewCycleSection(view: ChangeRunView): ReviewCycleViewSecti
     }
   }
   return null;
+}
+
+/** Extracts recognized goal/1 domain truth without inferring lifecycle state. */
+export function getGoalSection(view: ChangeRunView): GoalViewSection | null {
+  for (const section of view.sections) {
+    if (section.kind === 'goal' && section.version === 1) {
+      return section as GoalViewSection;
+    }
+  }
+  return null;
+}
+
+/** Returns every recognized lifecycle/1 section; unknown future versions stay additive. */
+export function getBoundedLoopLifecycleSections(
+  view: ChangeRunView
+): readonly BoundedLoopLifecycleViewSection[] {
+  return view.sections.filter(
+    (section): section is BoundedLoopLifecycleViewSection =>
+      section.kind === 'bounded-loop-lifecycle' && section.version === 1
+  );
+}
+
+/** Future lifecycle versions remain visible but are never actionable. */
+export function getUnsupportedBoundedLoopLifecycleSections(
+  view: ChangeRunView
+): readonly AdditiveViewSection[] {
+  return view.sections.filter(
+    (section): section is AdditiveViewSection =>
+      section.kind === 'bounded-loop-lifecycle' && section.version !== 1
+  );
 }
 
 /**

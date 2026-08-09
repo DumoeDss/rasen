@@ -1,0 +1,9 @@
+You are the successor session (generation 2) for the user's A–D2 stabilization request.
+
+1. Read the predecessor distillate at:
+   E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\rasen\handoff\a-d2-stabilization.md
+   Do not re-litigate its locked scope, exclusions, evidence, or dirty-worktree warnings.
+2. From the repository root, invoke the `rasen-auto` skill with the explicit `small-feature` selector:
+   Create exactly one new Rasen change for A–D2 stabilization. Do not implement Phase E or F.
+3. Drive the full small-feature pipeline with role-isolated workers. The parent portfolio's current `pipeline resume` output is known unsafe and must not be used to jump to ship.
+4. Workers from the predecessor session do not exist; start with a fresh planner worker after the new change is created.

@@ -21,6 +21,7 @@ import type {
 } from '../../../src/core/management-api/supervisor.js';
 import { freezeProductionPreparedPipelineRegistry } from '../../../src/core/pipeline-registry/prepared-registry.js';
 import { resolveRuntimeExecutionProfile } from '../../../src/core/pipeline-registry/profile-resolver.js';
+import { createRuntimeExecutionProfile } from '../../../src/core/pipeline-registry/execution-plan-internal.js';
 import {
   startRecord,
 } from '../../core/change-run/reconciler-fixture.js';
@@ -106,15 +107,19 @@ export async function createCanonicalAcceptanceRun(
       verifyPolicy?: string;
     }>;
   };
+  const isV2Authored = prepared.authoredVersion === 2;
+  const sourceDisplayName = isV2Authored
+    ? prepared.definition.name
+    : authored.name;
   const digest = `sha256:${prepared.digests.source}` as const;
   const sourceRevision = {
     layer: resolution.source,
     kind: 'pipeline-yaml' as const,
-    sourceId: `${resolution.source}:${authored.name}`,
+    sourceId: `${resolution.source}:${sourceDisplayName}`,
     authoredContentDigest: digest,
     semanticDigest: digest,
   };
-  const policyStages = authored.stages.map((stage) => ({
+  const policyStages = isV2Authored ? [] : authored.stages.map((stage) => ({
     nodeId: `stage:${stage.id}`,
     role: stage.role ?? 'implementer',
     model: stage.model ?? 'default',
@@ -140,13 +145,34 @@ export async function createCanonicalAcceptanceRun(
       reuseRoundLimit: 'acceptance',
     },
   }));
-  const profile = resolveRuntimeExecutionProfile(
+  const resolvedProfile = resolveRuntimeExecutionProfile(
     prepared,
     registry.catalog,
     policyStages,
     sourceRevision,
     { maxAttempts: 32, maxActions: 128 }
   );
+  const profile = isV2Authored
+    ? createRuntimeExecutionProfile({
+        sourceRevision: resolvedProfile.sourceRevision,
+        capabilities: resolvedProfile.capabilities,
+        policy: {
+          ...resolvedProfile.policy,
+          stages: resolvedProfile.policy.stages.map((stage) => ({
+            ...stage,
+            sessionReuse: 'same-invocation' as const,
+            handoffTokenLimit: 10_000,
+            reuseRoundLimit: 8,
+            provenance: {
+              ...stage.provenance,
+              sessionReuse: 'acceptance',
+              handoffTokenLimit: 'acceptance',
+              reuseRoundLimit: 'acceptance',
+            },
+          })),
+        },
+      })
+    : resolvedProfile;
   const plan = lowerRuntimePlan(prepared, profile, exactRunId(pipeline));
   let record = startRecord(plan);
   let action: Extract<RunAction, { kind: 'agent' }> | undefined;

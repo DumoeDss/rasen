@@ -438,6 +438,7 @@
       "pipelineTableStages": "    stages: {stages}",
       "pipelineLabel": "Pipeline: {name}",
       "definitionVersionLabel": "Definition version: {version}",
+      "compatibilityBoundaryLabel": "Compatibility input boundary: {boundary}",
       "hostRuntimeLabel": "Host runtime: {runtime} ({source})",
       "pipelineNotFound": "Pipeline '{name}' not found. Available pipelines:\n  {available}",
       "originLabel": "Origin: {origin}",
@@ -518,6 +519,8 @@
       "createdDraft": "Created pipeline draft at {path}",
       "pipelineValid": "Pipeline is valid.",
       "pipelineInvalid": "Pipeline is invalid.",
+      "boundedLoopPoliciesHeading": "Normalized bounded-loop lifecycle policies:",
+      "boundedLoopPolicyLine": "  {node}: limits={limits}; lifecycle={policy}",
       "validationDiagnostic": "  [{severity}] {code}: {message}",
       "importedHeading": "Imported pipeline(s) from {path}:",
       "importedEntry": "  {name} (digest {digest})",
@@ -981,6 +984,11 @@
       "invalidAutopilot": "Invalid 'autopilot' field in config (must be an object)",
       "invalidRunsEngine": "Invalid 'runs.engine' field in config (must be 'auto', 'reconciler', or 'legacy')",
       "invalidRuns": "Invalid 'runs' field in config (must be an object)",
+      "invalidSessionPolicy": "Invalid 'sessionPolicy' field in config (must be an object)",
+      "invalidSessionPolicyHandoffTokenLimit": "Invalid 'sessionPolicy.handoffTokenLimit' in config (must be a positive integer)",
+      "invalidSessionPolicyReuseRoundLimit": "Invalid 'sessionPolicy.reuseRoundLimit' in config (must be a positive integer)",
+      "invalidSessionPolicyTouchMaxIdleMs": "Invalid 'sessionPolicy.touchMaxIdleMs' in config (must be a positive integer)",
+      "invalidSessionPolicyRetireReasonLabel": "Invalid 'sessionPolicy.retireReasonLabel' in config (must be a non-empty string)",
       "invalidHandoffThreshold": "Invalid 'handoff.threshold' field in config (must be a number in (0, 1], or an object { remainingTokens: <positive integer> })",
       "invalidHandoff": "Invalid 'handoff' field in config (must be an object)",
       "expertSelectionMigration": "Note: experts are now individually selectable. All previously installed experts are kept for now — run `rasen profile` to choose which ones to install.",
@@ -2270,11 +2278,29 @@
           }
         },
         "session": {
-          "description": "Execute, inspect, and retire durable reusable agent sessions",
+          "description": "Execute and control durable hosted and Run-bound reusable agent Sessions",
           "commands": {
             "exec": {
-              "description": "Execute one admitted agent action through a durable reusable session",
+              "description": "Execute an admitted reusable action, or create/wake a hosted Session turn",
               "options": {
+                "backend": {
+                  "description": "Named server-supported agent backend"
+                },
+                "prompt-file": {
+                  "description": "Read the turn input from this bounded file"
+                },
+                "cwd": {
+                  "description": "Bind or verify the Session working directory"
+                },
+                "session": {
+                  "description": "Wake this existing Rasen Session UUID"
+                },
+                "request-id": {
+                  "description": "Idempotency UUID for this turn"
+                },
+                "timeout-ms": {
+                  "description": "Bound the turn wall-clock time in milliseconds"
+                },
                 "run": {
                   "description": "Exact canonical Run id"
                 },
@@ -2303,26 +2329,73 @@
                   "description": "Deadline behavior: stop or retire-silent"
                 },
                 "json": {
-                  "description": "Output one rasen-session-command/1 JSON document"
+                  "description": "Output exactly one JSON receipt"
                 }
               }
             },
             "list": {
-              "description": "List safe durable session facts for one exact canonical Run",
+              "description": "List hosted Sessions, or reusable Sessions for one exact Run",
               "options": {
                 "run": {
-                  "description": "Exact canonical Run id"
+                  "description": "Exact canonical Run id; omit to list hosted Sessions"
                 },
                 "json": {
-                  "description": "Output one rasen-session-command/1 JSON document"
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "inspect": {
+              "description": "Inspect one durable hosted Session",
+              "positionals": {
+                "id": {
+                  "description": "Rasen Session UUID"
+                }
+              },
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "cancel": {
+              "description": "Cancel the exact live Session generation",
+              "positionals": {
+                "id": {
+                  "description": "Rasen Session UUID"
+                }
+              },
+              "options": {
+                "reason": {
+                  "description": "Bounded cancellation reason"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "restart": {
+              "description": "Open an exact-resume Session generation",
+              "positionals": {
+                "id": {
+                  "description": "Rasen Session UUID"
+                }
+              },
+              "options": {
+                "json": {
+                  "description": "Output as JSON"
                 }
               }
             },
             "retire": {
-              "description": "Terminally retire one durable reusable session",
+              "description": "Permanently retire a hosted or reusable Session",
+              "positionals": {
+                "id": {
+                  "description": "Hosted Rasen Session UUID"
+                }
+              },
               "options": {
                 "run": {
-                  "description": "Exact canonical Run id"
+                  "description": "Exact canonical Run id for reusable retirement"
                 },
                 "session": {
                   "description": "Stable reusable-session key"
@@ -2331,7 +2404,7 @@
                   "description": "Bounded retirement reason stored with the durable lifecycle"
                 },
                 "json": {
-                  "description": "Output one rasen-session-command/1 JSON document"
+                  "description": "Output exactly one JSON receipt"
                 }
               }
             }

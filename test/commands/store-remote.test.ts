@@ -13,7 +13,7 @@ import {
 } from '../../src/core/index.js';
 import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
 import { createHealthyOpenSpecRoot, isolatedGitEnv } from '../helpers/store-git.js';
-import { cleanupTempPath } from '../helpers/temp-cleanup.js';
+import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
 const TEST_NET_URL = 'https://192.0.2.1/acme/team-context.git';
 const GIT_JOURNEY_TIMEOUT_MS = 60_000;
@@ -35,8 +35,8 @@ describe('store canonical remote (3.3)', () => {
     globalDataDir = getGlobalDataDir({ env });
   });
 
-  afterEach(() => {
-    cleanupTempPath(tempDir);
+  afterEach(async () => {
+    await cleanupTempPathAsync(tempDir);
   });
 
   function git(cwd: string, ...args: string[]): string {

@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { TEST_ATTESTATION_AUTHORITY } from '../../fixtures/trusted-completion.js';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -8,7 +10,10 @@ import {
   EcpDefinitionModule,
   createCapabilityCatalogSnapshot,
 } from '../../../src/core/pipeline-registry/index.js';
-import { createRuntimeExecutionProfile } from '../../../src/core/pipeline-registry/execution-plan-internal.js';
+import {
+  createRuntimeExecutionProfile,
+  sealRuntimeExecutionPlan,
+} from '../../../src/core/pipeline-registry/execution-plan-internal.js';
 import { prepareRuntimeContext } from '../../../src/core/change-run/internal/runtime-context.js';
 import {
   deriveChangeInstanceId,
@@ -61,7 +66,10 @@ const V2_NODES = [
   { path: 'declaration:review-cycle-body:verify/node:verify:re-review', skill: 'rasen-review', role: 'reviewer', gate: false, access: 'read' as const, model: 'default' as const },
 ] as const;
 
-function profileFor(prepared: { authoredSource: { stages: { id: string; skill: string }[] } }) {
+function profileFor(
+  prepared: { authoredSource: { stages: { id: string; skill: string }[] } },
+  authority = TEST_ATTESTATION_AUTHORITY
+) {
   return createRuntimeExecutionProfile({
     sourceRevision: {
       layer: 'package',
@@ -85,7 +93,12 @@ function profileFor(prepared: { authoredSource: { stages: { id: string; skill: s
       effects: [
         { slot: 'workspace', kind: 'workspace' as const, resource: 'worktree', recovery: 'suspend-if-ambiguous' as const },
       ],
-      adapter: { id: `adapter:${node.skill}`, version: '1', contentDigest: `sha256:${'6'.repeat(64)}` },
+      adapter: {
+        id: `adapter:${node.skill}`,
+        version: '1',
+        contentDigest: `sha256:${'6'.repeat(64)}`,
+        attestationAuthority: authority,
+      },
     })),
     policy: {
       format: 'effective-run-policy/1',
@@ -191,5 +204,85 @@ describe('prepareRuntimeContext (launch wiring, real fs + git)', () => {
     // committed by the facade's settle and no active actions, the status is
     // 'waiting' (design §5.6: settle to quiescence commits durable waits).
     expect(ctx.store.load(runId).status).toBe('waiting');
+    const sealed = sealRuntimeExecutionPlan(prepared.value.plan, profile);
+    expect(ctx.plan.planDigest).toBe(`sha256:${sealed.digest}`);
+    expect(ctx.plan.planDigest).not.toBe(`sha256:${prepared.value.digests.plan}`);
+    expect(ctx.plan.executionProfile).toEqual(profile);
+    expect(ctx.store.loadPlan?.(runId)).toEqual(ctx.plan);
+  });
+
+  it('uses the persisted public execution profile when the host catalog rotates', async () => {
+    const prepared = EcpDefinitionModule.prepare(
+      BUG_FIX,
+      createCapabilityCatalogSnapshot([])
+    );
+    if (!prepared.ok) throw prepared.error;
+    const frozenProfile = profileFor(prepared.value);
+
+    const physical: PhysicalIdentity = {
+      format: 'physical-identity/1',
+      platform: 'posix',
+      device: 1n,
+      fileIndex: 2n,
+      birthIdentity: 3n,
+    };
+    const planningSpaceId = derivePlanningSpaceId('fixture-home') as PlanningSpaceId;
+    const changeInstanceId = deriveChangeInstanceId(
+      planningSpaceId,
+      'fixture-change',
+      physical
+    ) as ChangeInstanceId;
+    const workspaceInstanceId = deriveWorkspaceInstanceId(
+      planningSpaceId,
+      physical
+    ) as WorkspaceInstanceId;
+    const runId = deriveRunId(
+      planningSpaceId,
+      changeInstanceId,
+      'fixture-change',
+      'launch-fixture'
+    ) as RunId;
+    const baseInput = {
+      projectRoot: repo,
+      prepared: prepared.value,
+      runId,
+      planningSpaceId,
+      workspaceInstanceId,
+      changeInstanceId,
+      changeId: 'fixture-change',
+      projectId: 'project-fixture',
+      launchRequestDigest: branded(`sha256:${'9'.repeat(64)}`) as Digest,
+      storeRoot,
+    };
+    const launched = prepareRuntimeContext({ ...baseInput, profile: frozenProfile });
+    await launched.facade.start(
+      {
+        change: { projectRoot: repo, changeId: 'fixture-change' },
+        pipeline: 'bug-fix',
+        launchRequestId: branded('launch-fixture') as never,
+      },
+      { deliveryMode: 'grant' }
+    );
+
+    const { publicKey } = generateKeyPairSync('ed25519');
+    const der = publicKey.export({ format: 'der', type: 'spki' });
+    const rotatedProfile = profileFor(prepared.value, {
+      ...TEST_ATTESTATION_AUTHORITY,
+      keyVersion: 'rotated',
+      publicKey: {
+        ...TEST_ATTESTATION_AUTHORITY.publicKey,
+        value: Buffer.from(der).toString('base64'),
+        digest: `sha256:${createHash('sha256').update(der).digest('hex')}` as Digest,
+      },
+    });
+    const resumed = prepareRuntimeContext({
+      ...baseInput,
+      profile: rotatedProfile,
+      frozenPlan: launched.store.loadPlan?.(runId),
+    });
+
+    expect(resumed.plan).toEqual(launched.plan);
+    expect(resumed.plan.executionProfile).toEqual(frozenProfile);
+    expect(resumed.plan.profileDigest).not.toBe(rotatedProfile.profileDigest);
   });
 });

@@ -1,6 +1,6 @@
 ## Why
 
-`ecp-run-spine` shipped (PR #92, 0.1.6) with the distinct-ChangeInstance promise
+`ecp-run-spine` shipped (PR #92, 0.2.0) with the distinct-ChangeInstance promise
 **specified but not deployed**: the kernel's association registry implements
 archive-then-recreate as a NEW instance, but production never calls it. The CLI
 derives `ChangeInstanceId` from `statSync(projectRoot)` — the project root — so

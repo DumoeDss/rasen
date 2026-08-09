@@ -1,40 +1,82 @@
-version: 1
+version: 2
+id: builtin:goal-loop-measure
+sourceId: package:goal-loop-measure
 name: goal-loop-measure
 description: >-
-  Goal-driven iteration for measurable code targets (perf, scores, latency).
-  define-goal -> iterate (measure gate) -> ship -> retain -> archive. The LEAD
-  injects the concrete measure command/threshold from goal-plan.md before round 1.
-stages:
-  - id: define-goal
-    skill: rasen-goal-plan
-    role: planner
-    requires: []
-    gate: true
-
-  - id: iterate
-    skill: rasen-goal-iterate
-    role: implementer
-    requires: [define-goal]
-    loop:
-      kind: goal
-      gate: { kind: measure }
-      runArtifact: goal-run.json
-
-  - id: ship
-    skill: rasen-ship
-    role: shipper
-    requires: [iterate]
-    gate: true
-    model: sonnet
-
-  - id: retain
-    skill: rasen-retain
-    role: reviewer
-    requires: [ship]
-    model: sonnet
-
-  - id: archive
-    skill: rasen-archive-change
-    role: shipper
-    requires: [retain]
-    model: sonnet
+  Goal-driven iteration for measurable code targets. A typed measure GoalLoop
+  must satisfy its gate before the ship, retain, and archive tail is admitted.
+inputs: []
+artifacts: []
+outcomes: [approved, rejected, completed]
+limits: { maxActions: 64, budget: 64 }
+declarations:
+  - id: goal-cycle-body
+    kind: Composite
+    provenance: built-in
+    inputs:
+      - { name: start, type: ecp/control }
+    artifacts: []
+    outcomes: [clean, needs_fix]
+    graph:
+      nodes:
+        - id: work
+          kind: AtomicStage
+          capability: { id: skill:rasen-goal-iterate, version: sha256:9522e1108c941534a888d5a0230ba29f1b7719a75949411b36e05f664d95331b }
+          execution: { version: 1, role: implementer, workspace: { access: write } }
+          goalCyclePhase: work
+        - id: judge
+          kind: AtomicStage
+          capability: { id: skill:rasen-goal-judge, version: sha256:944c21e977d795c1ee2c67f5a0ad0534e8b40a8c1f746ecd83ae89a4e51de40c }
+          execution: { version: 1, role: reviewer, workspace: { access: read } }
+          goalCyclePhase: judge
+      connections:
+        - { id: work-to-judge, from: { node: work, port: ready }, to: { node: judge, port: start } }
+root:
+  nodes:
+    - id: define-goal
+      kind: AtomicStage
+      capability: { id: skill:rasen-goal-plan, version: sha256:2c24bd2b0f8661f24bf94553aa15926ace8fa36c71900953e5a68c8c34606ce2 }
+      execution: { version: 1, role: planner, workspace: { access: write } }
+    - { id: gate:define-goal, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: define-goal }
+    - id: iterate
+      kind: BoundedLoop
+      body: goal-cycle-body
+      goalCycleVariant: measure
+      limits: { maxIterations: 5, maxActions: 40, budget: 40 }
+      lifecycle:
+        version: 1
+        thresholds: { stallIterations: 2, sameBlockerAttempts: 3 }
+        strategy:
+          maxAttempts: 1
+          requireMaterialChange: true
+          capability: { id: skill:rasen-goal-iterate, version: sha256:9522e1108c941534a888d5a0230ba29f1b7719a75949411b36e05f664d95331b }
+        exits:
+          iterationLimit: { action: strategy }
+          actionLimit: { action: fail, outcome: goal-action-limit }
+          budgetLimit: { action: fail, outcome: goal-budget-limit }
+          stalled: { action: strategy }
+          blocked: { action: human-required, outcome: goal-human-required }
+          strategyExhausted: { action: fail, outcome: goal-strategy-exhausted }
+      exits:
+        clean: { action: exit, outcome: goal-satisfied }
+        needs_fix: { action: continue }
+    - id: ship
+      kind: AtomicStage
+      capability: { id: skill:rasen-ship, version: sha256:a2c069c2051ba9957df1f9cffea17f3ed93683a8ed5f7b29f5cf443a90e47450 }
+      execution: { version: 1, role: shipper, workspace: { access: write }, model: sonnet }
+    - { id: gate:ship, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: ship }
+    - id: retain
+      kind: AtomicStage
+      capability: { id: skill:rasen-retain, version: sha256:4b28b97d4cefc2e3b9fed896439e5360d1697d7da39df109f9f3d6d06b2d8bd4 }
+      execution: { version: 1, role: reviewer, workspace: { access: write }, model: sonnet }
+    - id: archive
+      kind: AtomicStage
+      capability: { id: skill:rasen-archive-change, version: sha256:76c36f451797c28fc0c5b78ccdd83cc2a26f194564f86c5f509841fb5b98b178 }
+      execution: { version: 1, role: shipper, workspace: { access: write }, model: sonnet }
+    - { id: finish, kind: Finish, outcome: completed }
+  connections:
+    - { id: define-goal-to-iterate, from: { node: define-goal, port: done }, to: { node: iterate, port: start } }
+    - { id: iterate-to-ship, from: { node: iterate, port: goal-satisfied }, to: { node: ship, port: start } }
+    - { id: ship-to-retain, from: { node: ship, port: done }, to: { node: retain, port: start } }
+    - { id: retain-to-archive, from: { node: retain, port: done }, to: { node: archive, port: start } }
+    - { id: archive-to-finish, from: { node: archive, port: done }, to: { node: finish, port: start } }

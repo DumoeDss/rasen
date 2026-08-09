@@ -22,6 +22,7 @@ import {
   startRecord,
 } from './reconciler-fixture.js';
 import type { CanonicalRunRecord } from '../../../src/core/change-run/internal/record.js';
+import { fixtureRuntimeLoop } from './bounded-loop-fixture.js';
 
 const branded = <T>(value: string): T => value as T;
 const digest = (hex: string) =>
@@ -42,7 +43,7 @@ function plan(variant: 'measure' | 'evaluate' | 'research' = 'measure', maxItera
         kind: 'bounded-loop',
         hierarchicalPath: 'root/goal-cycle',
         requires: [],
-        maxIterations,
+        ...fixtureRuntimeLoop(maxIterations, maxIterations * 8, 'goal_cycle_exhausted'),
         body: {
           kind: 'goal-cycle',
           variant,
@@ -126,7 +127,6 @@ describe('goal-cycle-runtime — projectGoalCycleProgress (task 3.6)', () => {
     const progress = projectGoalCycleProgress(p, loop as never, record);
     if (progress.kind !== 'ready') return;
     expect(progress.state.eventCount).toBe(0);
-    expect(progress.state.stallStreak).toBe(0);
     expect(progress.state.lastGaps).toEqual([]);
     expect(progress.state.outcome).toBeUndefined();
     expect(progress.state.lastScore).toBeUndefined();

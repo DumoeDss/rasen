@@ -19,7 +19,6 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { promises as fs, readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
 import { runCLI } from '../helpers/run-cli.js';
@@ -32,20 +31,16 @@ import { resolveRuntimeExecutionProfile } from '../../src/core/pipeline-registry
 import { lowerRuntimePlan } from '../../src/core/change-run/internal/lowerer.js';
 import { reduceCanonicalRunRecord } from '../../src/core/change-run/internal/reducer.js';
 import { decodeCanonicalRunRecord } from '../../src/core/change-run/internal/record.js';
-import { computeCompletionReceiptDigest } from '../../src/core/change-run/internal/completion.js';
-import { buildAgentActor } from '../../src/core/change-run/internal/actors.js';
-import { buildEvidenceRef } from '../../src/core/change-run/internal/evidence.js';
 import { observeGitWorkspace } from '../../src/core/change-run/internal/workspace-git.js';
 import { deriveWorkspaceRevision } from '../../src/core/change-run/internal/workspace.js';
-import {
-  TASK_LOOP_ACTOR_ATTESTATION_SCHEMA,
-  TASK_LOOP_CRITERION_EVIDENCE_SCHEMA,
-  TASK_LOOP_WORK_EVIDENCE_SCHEMA,
-} from '../../src/core/change-run/internal/task-loop.js';
 import type { RuntimePlan } from '../../src/core/change-run/internal/runtime-plan.js';
 import type { CanonicalRunRecord } from '../../src/core/change-run/internal/record.js';
 import type { RunStimulus } from '../../src/core/change-run/internal/reducer.js';
-import type { Digest, RunId } from '../../src/core/change-run/index.js';
+import type { Digest, EvidenceRef, RunId } from '../../src/core/change-run/index.js';
+import {
+  attestTestCompletion,
+  provisionTestTrustedExecutionAdaptersForPipeline,
+} from '../fixtures/trusted-completion.js';
 
 // ---------------------------------------------------------------------------
 // Helpers: in-process plan building (mirrors the CLI's resolveRuntime)
@@ -63,56 +58,22 @@ async function buildBugFixPlan(projectRoot: string, runId: string): Promise<Runt
   const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, { reporter: false });
   const execution = await registry.selectForExecution('bug-fix', { reporter: false });
   const prepared = execution.resolution.prepared;
-  const pipeline = prepared.authoredSource as {
-    name: string;
-    stages: Array<{
-      id: string;
-      role?: string;
-      model?: string;
-      gate?: boolean;
-      verifyPolicy?: string;
-    }>;
-  };
 
   const sourceRevision = {
     layer: execution.resolution.source,
     kind: 'pipeline-yaml' as const,
-    sourceId: `${execution.resolution.source}:${pipeline.name}`,
+    sourceId: `${execution.resolution.source}:${prepared.definition.name}`,
     authoredContentDigest: branded(`sha256:${prepared.digests.source}`),
     semanticDigest: branded(`sha256:${prepared.digests.source}`),
   };
-  const policyStages = pipeline.stages.map((stage) => ({
-    nodeId: `stage:${stage.id}`,
-    role: stage.role ?? 'implementer',
-    model: stage.model ?? 'default',
-    effort: 'default',
-    runtime: 'codex',
-    sandbox:
-      stage.verifyPolicy === 'adaptive' || stage.id === 'verify'
-        ? ('read-only' as const)
-        : ('workspace-write' as const),
-    gate: stage.gate ?? false,
-    sessionReuse: 'never' as const,
-    handoffTokenLimit: 10_000,
-    reuseRoundLimit: 1,
-    provenance: {
-      role: 'stage',
-      model: stage.model ? 'stage' : 'default',
-      effort: 'default',
-      runtime: 'host',
-      sandbox: 'default',
-      gate: 'stage',
-      sessionReuse: 'default',
-      handoffTokenLimit: 'default',
-      reuseRoundLimit: 'default',
-    },
-  }));
   const profile = resolveRuntimeExecutionProfile(
     prepared,
     registry.catalog,
-    policyStages,
+    [],
     sourceRevision,
-    { maxAttempts: 3, maxActions: 64 }
+    { maxAttempts: 3, maxActions: 64 },
+    undefined,
+    registry.trustedExecutionAdapters
   );
   return lowerRuntimePlan(prepared, profile, branded(runId));
 }
@@ -199,113 +160,40 @@ function observeAdmittedEffects(storeRoot: string, runId: string): void {
 
 function buildCompletionBody(
   record: CanonicalRunRecord,
-  runId: string,
   changeId: string,
   projectRoot: string,
   actionId: string,
-  invocationId: string,
-  options: {
-    role?: string;
-    principalPair?: string;
-    sessionPair?: string;
-    result?: (evidence: ReturnType<typeof buildEvidenceRef>) => Record<string, unknown>;
-    evidenceSchema?: string;
-    attestationSchema?: string;
-    treeDigest?: Digest;
-  } = {}
-): { completion: Record<string, unknown>; uploads: Array<{ contentDigest: string; contentBase64: string }> } {
-  const evidenceContent = new TextEncoder().encode('{"result":"ok"}');
-  const attestationContent = new TextEncoder().encode('{"signed":true}');
-  const evidenceDigest = `sha256:${createHash('sha256').update(evidenceContent).digest('hex')}`;
-  const attestationDigest = `sha256:${createHash('sha256').update(attestationContent).digest('hex')}`;
-
-  const principalDigest = branded<Digest>(
-    `sha256:${(options.principalPair ?? 'a1').repeat(32)}`
-  );
-  const sessionDigest = branded<Digest>(
-    `sha256:${(options.sessionPair ?? 'b2').repeat(32)}`
-  );
-
-  const evidenceRef = buildEvidenceRef({
-    content: evidenceContent,
-    mediaType: 'application/json',
-    observationKind: 'completion-evidence',
-    producer: {
-      id: 'e2e-producer',
-      version: '1',
-      identityDigest: principalDigest,
-    },
-    binding: {
-      planningSpaceId: record.change.planningSpaceId,
-      changeInstanceId: record.change.instanceId,
-      projectId: record.change.projectId,
-      changeId,
-      runId: branded(runId),
-      actionId: branded(actionId),
-      schema: options.evidenceSchema ?? 'evidence/1',
-      ...(options.treeDigest === undefined ? {} : { treeDigest: options.treeDigest }),
-    },
-  });
-  const attestationRef = buildEvidenceRef({
-    content: attestationContent,
-    mediaType: 'application/json',
-    observationKind: 'actor-attestation',
-    producer: {
-      id: 'e2e-actor',
-      version: '1',
-      identityDigest: sessionDigest,
-    },
-    binding: {
-      planningSpaceId: record.change.planningSpaceId,
-      changeInstanceId: record.change.instanceId,
-      projectId: record.change.projectId,
-      changeId,
-      runId: branded(runId),
-      actionId: branded(actionId),
-      schema: options.attestationSchema ?? 'attestation/1',
-      ...(options.treeDigest === undefined ? {} : { treeDigest: options.treeDigest }),
-    },
-  });
-
-  const admitted = record.actions[actionId]?.action;
-  if (admitted?.kind !== 'agent') {
-    throw new Error(`Action ${actionId} is not an admitted agent Action.`);
+  result?: (evidence: EvidenceRef) => Record<string, unknown>
+) {
+  const committed = record.actions[actionId];
+  if (committed === undefined) {
+    throw new Error(`No committed action ${actionId} exists in the Run.`);
   }
-  const actor = buildAgentActor({
-    role: options.role ?? admitted.agent.role,
-    provider: 'anthropic',
-    runtime: admitted.agent.runtime,
-    principalIdentityDigest: principalDigest,
-    sessionIdentityDigest: sessionDigest,
-    adapter: {
-      id: 'adapter:e2e',
-      version: '1',
-      artifactDigest: sessionDigest,
-    },
-  });
-
-  const base = {
-    format: 'change-run-completion/1',
-    kind: 'domain-action-result',
+  const evidenceContent = new TextEncoder().encode('{"result":"ok"}');
+  const attest = (completionResult: Record<string, unknown>) => attestTestCompletion({
     change: { projectRoot, changeId },
-    runId,
-    actionId,
-    invocationId,
-    actor,
-    actorAttestation: attestationRef,
-    evidence: [evidenceRef],
-    status: 'succeeded',
-    result: options.result?.(evidenceRef) ?? { ok: true },
-  };
-  const receiptDigest = computeCompletionReceiptDigest(base as never);
+    record,
+    action: committed.action,
+    completion: {
+      kind: 'domain-action-result',
+      status: 'succeeded',
+      result: completionResult,
+    },
+    evidenceContent,
+  });
+  if (result === undefined) {
+    return attest({ ok: true });
+  }
 
-  return {
-    completion: { ...base, receiptDigest },
-    uploads: [
-      { contentDigest: evidenceDigest, contentBase64: Buffer.from(evidenceContent).toString('base64') },
-      { contentDigest: attestationDigest, contentBase64: Buffer.from(attestationContent).toString('base64') },
-    ],
-  };
+  // The signed evidence ref is deterministic for an Action and byte payload.
+  // Build it once so task-loop result payloads can cite its exact digest, then
+  // attest the final semantic completion (whose actor claim covers that result).
+  const preliminary = attest({ ok: true });
+  const evidence = preliminary.completion.evidence[0];
+  if (evidence === undefined) {
+    throw new Error(`Trusted completion for Action ${actionId} has no evidence ref.`);
+  }
+  return attest(result(evidence));
 }
 
 // ---------------------------------------------------------------------------
@@ -313,18 +201,25 @@ function buildCompletionBody(
 // ---------------------------------------------------------------------------
 
 describe('fresh-process simple bug-fix E2E (15.3)', () => {
-  const projectRoot = process.cwd();
+  const repoRoot = process.cwd();
   let testDir: string;
   let dataDir: string;
   let storeRoot: string;
 
   beforeEach(async () => {
-    testDir = path.join(projectRoot, 'test-pipeline-e2e-bugfix-tmp');
+    testDir = await fs.mkdtemp(
+      path.join(repoRoot, '.rasen-e2e-bugfix-')
+    );
     dataDir = path.join(testDir, 'global-data');
     storeRoot = storeRootFor(dataDir);
     // A qualifying Rasen root needs specs + changes directories.
     await fs.mkdir(path.join(testDir, 'rasen', 'specs'), { recursive: true });
     await fs.mkdir(path.join(testDir, 'rasen', 'changes'), { recursive: true });
+    await provisionTestTrustedExecutionAdaptersForPipeline(
+      testDir,
+      path.join(dataDir, 'rasen'),
+      ['bug-fix', 'task-loop']
+    );
   });
 
   afterEach(async () => {
@@ -343,7 +238,10 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
       ['pipeline', 'start', changeId, 'bug-fix', '--json'],
       { cwd: testDir, env, timeoutMs: 60_000 }
     );
-    expect(startResult.exitCode).toBe(0);
+    expect(
+      startResult.exitCode,
+      `${startResult.stderr}\n${startResult.stdout}`
+    ).toBe(0);
     const startJson = JSON.parse(startResult.stdout.trim());
     expect(startJson.disposition).toBe('created');
     expect(startJson.engine).toBe('reconciler');
@@ -392,8 +290,8 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
         command: {
           kind: 'decision',
           waitId,
-          decisionId: 'approve',
-          outcome: 'approve',
+          decisionId: 'approved',
+          outcome: 'approved',
         },
       },
     };
@@ -407,20 +305,19 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     const controlJson = JSON.parse(controlResult.stdout.trim());
     expect(controlJson.disposition).toBe('advanced');
 
-    // ---- 4. GRANT: pipeline resume-run ----
-    // After the gate is decided, the propose node becomes admissible. resume-run
-    // reconciles and grants the action.
+    // ---- 4. IDEMPOTENT RESUME: the control settle already granted propose ----
+    // Native-v2 Gate targets are settled in the same atomic facade batch as
+    // the decision, so a fresh resume process must not grant a duplicate.
     const resumeResult = await runCLI(
       ['pipeline', 'resume-run', changeId, 'bug-fix', '--json'],
       { cwd: testDir, env, timeoutMs: 60_000 }
     );
     expect(resumeResult.exitCode).toBe(0);
     const resumeJson = JSON.parse(resumeResult.stdout.trim());
-    // The propose action is now granted.
-    expect(resumeJson.actions.length).toBe(1);
-    expect(resumeJson.actions[0].kind).toBe('agent');
+    expect(resumeJson.disposition).toBe('advanced');
+    expect(resumeJson.actions).toEqual([]);
 
-    // ---- 5. QUIESCENT POINT #2: pipeline status (action granted) ----
+    // ---- 5. QUIESCENT POINT #2: pipeline status (one action granted) ----
     const status3 = await runCLI(
       ['pipeline', 'status', changeId, 'bug-fix', '--json'],
       { cwd: testDir, env, timeoutMs: 60_000 }
@@ -431,7 +328,6 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     expect(root3.actions.length).toBe(1);
     expect(root3.actions[0].deliveryState).toBe('granted');
     const actionId = root3.actions[0].actionId;
-    const invocationId = root3.actions[0].invocationId;
 
     // ---- 6. KERNEL-INTERNAL: observe the workspace effect ----
     // The reducer requires all effects observed before a successful
@@ -448,11 +344,9 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     const recordBeforeComplete = loadHeadRecord(storeRoot, runId);
     const { completion, uploads } = buildCompletionBody(
       recordBeforeComplete,
-      runId,
       changeId,
       testDir,
-      actionId,
-      invocationId
+      actionId
     );
     const completionFile = path.join(testDir, 'completion.json');
     writeFileSync(completionFile, JSON.stringify({ completion, uploads }));
@@ -460,7 +354,7 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
       ['pipeline', 'complete', changeId, '--run', runId, '--from', completionFile, '--json'],
       { cwd: testDir, env, timeoutMs: 60_000 }
     );
-    expect(completeResult.exitCode).toBe(0);
+    expect(completeResult.exitCode, completeResult.stderr).toBe(0);
     const completeJson = JSON.parse(completeResult.stdout.trim());
     // The complete-time settle commits the apply-gate wait in the same
     // revision — disposition is 'waiting' (no actions granted, one wait).
@@ -593,27 +487,17 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
 
     const completeGranted = async (
       fileName: string,
-      role: string,
-      principalPair: string,
-      sessionPair: string,
-      result: (evidence: ReturnType<typeof buildEvidenceRef>) => Record<string, unknown>,
-      evidenceOptions: {
-        evidenceSchema?: string;
-        attestationSchema?: string;
-        treeDigest?: Digest;
-      } = {}
+      result: (evidence: EvidenceRef) => Record<string, unknown>
     ) => {
       const action = await grantedAction();
       expect(action).toBeDefined();
       observeAdmittedEffects(storeRoot, runId);
       const body = buildCompletionBody(
         loadHeadRecord(storeRoot, runId),
-        runId,
         changeId,
         testDir,
         action!.actionId,
-        action!.invocationId,
-        { role, principalPair, sessionPair, result, ...evidenceOptions }
+        result
       );
       const completionFile = path.join(ephemeraDir, fileName);
       writeFileSync(completionFile, JSON.stringify(body));
@@ -647,30 +531,19 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     const afterRevision = deriveWorkspaceRevision(observeGitWorkspace(testDir));
     await completeGranted(
       'task-loop-work.json',
-      'implementer',
-      'a1',
-      'b2',
       (evidence) => ({
         contract: 'goal-cycle/work-result/1',
         workDescription: 'Implemented the focused result.',
         beforeTree,
         afterTree: afterRevision.treeDigest,
         delta: evidence,
-      }),
-      {
-        evidenceSchema: TASK_LOOP_WORK_EVIDENCE_SCHEMA,
-        attestationSchema: TASK_LOOP_ACTOR_ATTESTATION_SCHEMA,
-        treeDigest: afterRevision.treeDigest,
-      }
+      })
     );
 
     const judge = await grantedAction();
     expect(judge).toBeDefined();
     await completeGranted(
       'task-loop-judge.json',
-      'reviewer',
-      'c3',
-      'd4',
       (evidence) => ({
         contract: 'goal-cycle/evaluate-judge/1',
         satisfied: true,
@@ -683,19 +556,14 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
             evidenceDigests: [evidence.evidenceDigest],
           },
         ],
-      }),
-      {
-        evidenceSchema: TASK_LOOP_CRITERION_EVIDENCE_SCHEMA,
-        attestationSchema: TASK_LOOP_ACTOR_ATTESTATION_SCHEMA,
-        treeDigest: afterRevision.treeDigest,
-      }
+      })
     );
     expect(await fs.readFile(path.join(evidenceDir, 'task-loop-report.md'), 'utf8'))
       .toContain('Contract digest: sha256:');
 
     const ship = await grantedAction();
     expect(ship).toBeDefined();
-    await completeGranted('task-loop-ship.json', 'shipper', 'e5', 'f6', () => ({
+    await completeGranted('task-loop-ship.json', () => ({
       delivered: true,
     }));
 
@@ -703,9 +571,6 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     expect(archive).toBeDefined();
     const archived = await completeGranted(
       'task-loop-archive.json',
-      'shipper',
-      'a7',
-      'b8',
       () => ({ archived: true })
     );
     expect(archived.status).toBe('completed');
@@ -736,7 +601,10 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
       ['pipeline', 'start', changeId, 'bug-fix', '--json'],
       { cwd: testDir, env, timeoutMs: 60_000 }
     );
-    expect(startResult.exitCode).toBe(0);
+    expect(
+      startResult.exitCode,
+      `${startResult.stderr}\n${startResult.stdout}`
+    ).toBe(0);
     const startJson = JSON.parse(startResult.stdout.trim());
     const runId = startJson.runId as string;
 

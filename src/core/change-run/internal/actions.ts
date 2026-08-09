@@ -3,6 +3,7 @@ import {
   decodeRunAction,
   type ActionId,
   type AttemptId,
+  type CompletionAuthority,
   type Digest,
   type EffectId,
   type InvocationId,
@@ -22,7 +23,14 @@ import {
   deriveAttemptId,
   deriveEffectId,
   deriveInvocationId,
+  domainDigest,
 } from './identity.js';
+import {
+  buildAgentActor,
+  buildCommandActor,
+  buildHostActor,
+  type TrustedAdapter,
+} from './actors.js';
 
 export type ActionBuildErrorCode =
   | 'action_kind_mismatch'
@@ -161,13 +169,123 @@ function commonActionFields(
       contractId: ctx.capability.contract.id,
       contractVersion: ctx.capability.contract.version,
       contractDigest: ctx.capability.contract.digest,
-      artifact: ctx.capability.adapter,
+      artifact: {
+        id: ctx.capability.adapter.id,
+        version: ctx.capability.adapter.version,
+        contentDigest: ctx.capability.adapter.contentDigest,
+      },
     },
     resultContractDigest: ctx.capability.resultContract.digest,
     evidenceContractDigest: ctx.capability.evidenceContract.digest,
     policyDigest: ctx.policyDigest,
     workspace: ctx.capability.workspace,
     expectedBeforeWorkspace: identity.expectedBeforeWorkspace,
+  };
+}
+
+function actionAdapter(ctx: ActionBuildContext): TrustedAdapter {
+  return {
+    id: ctx.capability.adapter.id,
+    version: ctx.capability.adapter.version,
+    artifactDigest: ctx.capability.adapter.contentDigest as Digest,
+  };
+}
+
+function completionAuthority(
+  ctx: ActionBuildContext,
+  identity: ActionIdentity,
+  kind: 'agent' | 'command' | 'host',
+  commandExecutable?: CommandActionInput['executable']
+): CompletionAuthority {
+  if (ctx.capability.adapter.attestationAuthority === undefined) {
+    throw new ActionBuildError(
+      'invalid_action_input',
+      'Executable Action requires a host-frozen attestation authority.'
+    );
+  }
+  const adapter = actionAdapter(ctx);
+  const principalIdentityDigest = domainDigest(
+    'change-run-completion-principal/1',
+    {
+      kind,
+      capability: ctx.capability.authoredCapability,
+      contract: ctx.capability.contract,
+      adapter,
+    }
+  );
+  const sessionIdentityDigest = domainDigest(
+    'change-run-completion-session/1',
+    {
+      principalIdentityDigest,
+      runId: identity.runId,
+      nodeId: identity.nodeId,
+      occurrence: identity.occurrence,
+      attemptOrdinal: identity.attemptOrdinal,
+    }
+  );
+  const stage = ctx.stage as EffectiveRunPolicy['stages'][number];
+  const actor =
+    kind === 'agent'
+      ? buildAgentActor({
+          role: stage.role,
+          provider: stage.runtime,
+          runtime: stage.runtime,
+          principalIdentityDigest,
+          sessionIdentityDigest,
+          adapter,
+        })
+      : kind === 'command'
+        ? buildCommandActor({
+            adapter,
+            executable: {
+              id: commandExecutable?.identity ?? 'unavailable',
+              artifactDigest:
+                commandExecutable?.contentDigest ?? adapter.artifactDigest,
+            },
+          })
+        : buildHostActor({ adapter, principalIdentityDigest });
+  const attestationProducer = {
+    id: ctx.capability.adapter.id,
+    version: ctx.capability.adapter.version,
+    identityDigest: ctx.capability.adapter.contentDigest,
+  };
+  const evidenceProducer = {
+    id: ctx.capability.evidenceContract.id,
+    version: ctx.capability.evidenceContract.version,
+    identityDigest: ctx.capability.evidenceContract.digest,
+  };
+  const evidenceSchema = (suffix: string): string =>
+    `${ctx.capability.evidenceContract.id}/${suffix}/${ctx.capability.evidenceContract.version}`;
+  return {
+    format: 'change-run-completion-authority/1',
+    attestationAuthority: ctx.capability.adapter.attestationAuthority,
+    actor,
+    actorAttestation: {
+      producer: attestationProducer,
+      observationKind: 'actor-attestation',
+      schema: evidenceSchema('actor-attestation'),
+      mediaType: 'application/json',
+    },
+    observations: {
+      domainActionResult: {
+        producer: evidenceProducer,
+        observationKind: 'domain-action-result',
+        schema: evidenceSchema('domain-action-result'),
+        mediaType: 'application/json',
+      },
+      effectObservation: {
+        producer: evidenceProducer,
+        observationKind: 'effect-observation',
+        schema: evidenceSchema('effect-observation'),
+        mediaType: 'application/json',
+      },
+      infrastructureObservation: {
+        producer: evidenceProducer,
+        observationKind: 'infrastructure-observation',
+        schema: evidenceSchema('infrastructure-observation'),
+        mediaType: 'application/json',
+      },
+    },
   };
 }
 
@@ -195,6 +313,7 @@ export function buildAgentAction(
   const stage = ctx.stage as Extract<EffectiveRunPolicy['stages'][number], unknown>;
   return finish({
     ...commonActionFields(ctx, identity, 'agent'),
+    completionAuthority: completionAuthority(ctx, identity, 'agent'),
     agent: {
       role: stage.role,
       model: stage.model,
@@ -281,8 +400,18 @@ export function buildCommandAction(
   }
   return finish({
     ...commonActionFields(ctx, identity, 'command'),
+    completionAuthority: completionAuthority(
+      ctx,
+      identity,
+      'command',
+      command.executable
+    ),
     command: {
-      artifact: ctx.capability.adapter,
+      artifact: {
+        id: ctx.capability.adapter.id,
+        version: ctx.capability.adapter.version,
+        contentDigest: ctx.capability.adapter.contentDigest,
+      },
       executable: command.executable,
       argv: [...command.argv],
       env: { ...command.env },
@@ -302,6 +431,7 @@ export function buildHostAction(
   assertKind(ctx.capability, 'host');
   return finish({
     ...commonActionFields(ctx, identity, 'host'),
+    completionAuthority: completionAuthority(ctx, identity, 'host'),
     host: {
       operation: host.operation,
       input: host.input,

@@ -1,94 +1,161 @@
-version: 1
+version: 2
+id: builtin:full-feature
+sourceId: package:full-feature
 name: full-feature
 description: >-
-  Full feature delivery pipeline: office hours validation, proposal with lead
-  review, apply, a parallel fan-out of conditional expert reviews, a review
-  cycle to drive fixes, then ship, retention, and archive.
-stages:
-  - id: office-hours
-    skill: rasen-office-hours-command
-    role: planner
-    requires: []
-    gate: true
-
-  - id: propose
-    skill: rasen-propose
-    role: planner
-    requires: [office-hours]
-    leadReview: true
-    gate: true
-
-  - id: apply
-    skill: rasen-apply-change
-    role: implementer
-    requires: [propose]
-    gate: true
-
-  - id: review
-    skill: rasen-review
-    role: reviewer
-    requires: [apply]
-    parallelGroup: experts
-    condition: always
-
-  - id: cso
-    skill: rasen-cso
-    role: reviewer
-    requires: [apply]
-    parallelGroup: experts
-    condition: security-relevant
-
-  - id: benchmark
-    skill: rasen-benchmark
-    role: reviewer
-    requires: [apply]
-    parallelGroup: experts
-    condition: performance-sensitive
-
-  - id: design-review
-    skill: rasen-design-review
-    role: reviewer
-    requires: [apply]
-    parallelGroup: experts
-    condition: ui
-
-  - id: qa
-    skill: rasen-qa
-    role: reviewer
-    requires: [apply]
-    parallelGroup: experts
-    condition: ui
-
-  - id: qa-report-only
-    skill: rasen-qa
-    role: reviewer
-    requires: [apply]
-    parallelGroup: experts
-    condition: non-ui
-
-  - id: review-loop
-    skill: rasen-review-cycle
-    role: fixer
-    requires: [review, cso, benchmark, design-review, qa, qa-report-only]
-    loop:
-      kind: review-cycle
-      maxRounds: 3
-
-  - id: ship
-    skill: rasen-ship
-    role: shipper
-    requires: [review-loop]
-    gate: true
-    model: sonnet
-
-  - id: retain
-    skill: rasen-retain
-    role: reviewer
-    requires: [ship]
-    model: sonnet
-
-  - id: archive
-    skill: rasen-archive-change
-    role: shipper
-    requires: [retain]
-    model: sonnet
+  Full feature delivery: office hours, proposal, apply, a conditional six-member
+  expert FanOut/Join, bounded ReviewCycle, then ship, retain, and archive.
+inputs: []
+artifacts: []
+outcomes: [approved, rejected, experts-failed, completed]
+limits: { maxActions: 128, budget: 128 }
+declarations:
+  - id: review-cycle-body
+    kind: Composite
+    provenance: built-in
+    inputs:
+      - { name: start, type: ecp/control }
+    artifacts: []
+    outcomes: [clean, needs_fix]
+    graph:
+      nodes:
+        - id: review
+          kind: AtomicStage
+          capability: { id: skill:rasen-review, version: sha256:06a80842145868a2ffb43b9017225ec15c06b0b946e490c8daa6cb7a68b8e049 }
+          execution: { version: 1, role: reviewer, workspace: { access: read } }
+          reviewCyclePhase: review
+        - id: triage
+          kind: AtomicStage
+          capability: { id: skill:rasen-review, version: sha256:06a80842145868a2ffb43b9017225ec15c06b0b946e490c8daa6cb7a68b8e049 }
+          execution: { version: 1, role: reviewer, workspace: { access: read } }
+          reviewCyclePhase: triage
+        - id: fix
+          kind: AtomicStage
+          capability: { id: skill:rasen-review-fix, version: sha256:737e61418515fb67d0bdf46626f80b0e0c418a38d7b931b9bf69d320a520cad0 }
+          execution: { version: 1, role: fixer, workspace: { access: write } }
+          reviewCyclePhase: fix
+        - id: re-review
+          kind: AtomicStage
+          capability: { id: skill:rasen-review, version: sha256:06a80842145868a2ffb43b9017225ec15c06b0b946e490c8daa6cb7a68b8e049 }
+          execution: { version: 1, role: reviewer, workspace: { access: read } }
+          reviewCyclePhase: re-review
+      connections:
+        - { id: review-to-triage, from: { node: review, port: findings }, to: { node: triage, port: start } }
+        - { id: triage-to-fix, from: { node: triage, port: ready }, to: { node: fix, port: start } }
+        - { id: fix-to-re-review, from: { node: fix, port: fixed }, to: { node: re-review, port: start } }
+root:
+  nodes:
+    - id: office-hours
+      kind: AtomicStage
+      capability: { id: skill:rasen-office-hours-command, version: sha256:887b1f2c918539a1e087d257ad75458d38a38f5f83fbe66f584d54bf539c5ff3 }
+      execution: { version: 1, role: planner, workspace: { access: write } }
+    - { id: gate:office-hours, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: office-hours }
+    - id: propose
+      kind: AtomicStage
+      capability: { id: skill:rasen-propose, version: sha256:f7948291bd23ca25d1856a828f62261698207025d1f8dd0929455fbc52ca41e0 }
+      execution: { version: 1, role: planner, workspace: { access: write }, leadReview: true }
+    - { id: gate:propose, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: propose }
+    - id: apply
+      kind: AtomicStage
+      capability: { id: skill:rasen-apply-change, version: sha256:5f1665c92086b87a024161e9205bf27f89158b91fa69b144e48eb433865b6368 }
+      execution: { version: 1, role: implementer, workspace: { access: write } }
+    - { id: gate:apply, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: apply }
+    - id: experts
+      kind: FanOut
+      branches: [review, cso, benchmark, design-review, qa, qa-report-only]
+      concurrencyCap: 3
+      budget: 6
+      joinNodeId: experts-join
+      members:
+        - { id: review, hierarchicalPath: review, required: true, condition: always }
+        - { id: cso, hierarchicalPath: cso, required: false, condition: security-relevant }
+        - { id: benchmark, hierarchicalPath: benchmark, required: false, condition: performance-sensitive }
+        - { id: design-review, hierarchicalPath: design-review, required: false, condition: ui }
+        - { id: qa, hierarchicalPath: qa, required: false, condition: ui }
+        - { id: qa-report-only, hierarchicalPath: qa-report-only, required: false, condition: non-ui }
+    - id: review
+      kind: AtomicStage
+      capability: { id: skill:rasen-review, version: sha256:06a80842145868a2ffb43b9017225ec15c06b0b946e490c8daa6cb7a68b8e049 }
+      execution: { version: 1, role: reviewer, workspace: { access: read } }
+    - id: cso
+      kind: AtomicStage
+      capability: { id: skill:rasen-cso, version: sha256:d0cd6e299998b3c4608bfad49d0c830ae6a7cbd62d15506b62741706430472bb }
+      execution: { version: 1, role: reviewer, workspace: { access: read } }
+    - id: benchmark
+      kind: AtomicStage
+      capability: { id: skill:rasen-benchmark, version: sha256:de4886394ef59b50e82cd36b85edbd6525359b8bd0f166f664836bf6c62c5844 }
+      execution: { version: 1, role: reviewer, workspace: { access: read } }
+    - id: design-review
+      kind: AtomicStage
+      capability: { id: skill:rasen-design-review, version: sha256:c754f0ce59670186ceab07c6ba648f330d5d28a1cc0ab40283b1fbb735a543f2 }
+      execution: { version: 1, role: reviewer, workspace: { access: read } }
+    - id: qa
+      kind: AtomicStage
+      capability: { id: skill:rasen-qa, version: sha256:a922a0bae2a70d3c7713dcc75f204e2a3c12cb68c23746d632f7eea53390601b }
+      execution: { version: 1, role: reviewer, workspace: { access: read } }
+    - id: qa-report-only
+      kind: AtomicStage
+      capability: { id: skill:rasen-qa, version: sha256:a922a0bae2a70d3c7713dcc75f204e2a3c12cb68c23746d632f7eea53390601b }
+      execution: { version: 1, role: reviewer, workspace: { access: read } }
+    - id: experts-join
+      kind: Join
+      inputs: [review, cso, benchmark, design-review, qa, qa-report-only]
+      requiredMembers: [review]
+      optionalMembers: [cso, benchmark, design-review, qa, qa-report-only]
+      outcomes: { proceed: experts-ready, failed: experts-failed }
+    - id: review-loop
+      kind: BoundedLoop
+      body: review-cycle-body
+      limits: { maxIterations: 3, maxActions: 48, budget: 48 }
+      lifecycle:
+        version: 1
+        thresholds: { stallIterations: 2, sameBlockerAttempts: 3 }
+        strategy:
+          maxAttempts: 1
+          requireMaterialChange: true
+          capability: { id: skill:rasen-review-cycle, version: sha256:e5af856986fb791a4200a9fdb3eabddce3d7e49cb0b0c13ace0f74bed171c1f5 }
+        exits:
+          iterationLimit: { action: strategy }
+          actionLimit: { action: fail, outcome: review-action-limit }
+          budgetLimit: { action: fail, outcome: review-budget-limit }
+          stalled: { action: strategy }
+          blocked: { action: human-required, outcome: review-human-required }
+          strategyExhausted: { action: fail, outcome: review-strategy-exhausted }
+      exits:
+        clean: { action: exit, outcome: review-clean }
+        needs_fix: { action: continue }
+    - id: ship
+      kind: AtomicStage
+      capability: { id: skill:rasen-ship, version: sha256:a2c069c2051ba9957df1f9cffea17f3ed93683a8ed5f7b29f5cf443a90e47450 }
+      execution: { version: 1, role: shipper, workspace: { access: write }, model: sonnet }
+    - { id: gate:ship, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: ship }
+    - id: retain
+      kind: AtomicStage
+      capability: { id: skill:rasen-retain, version: sha256:4b28b97d4cefc2e3b9fed896439e5360d1697d7da39df109f9f3d6d06b2d8bd4 }
+      execution: { version: 1, role: reviewer, workspace: { access: write }, model: sonnet }
+    - id: archive
+      kind: AtomicStage
+      capability: { id: skill:rasen-archive-change, version: sha256:76c36f451797c28fc0c5b78ccdd83cc2a26f194564f86c5f509841fb5b98b178 }
+      execution: { version: 1, role: shipper, workspace: { access: write }, model: sonnet }
+    - { id: finish, kind: Finish, outcome: completed }
+  connections:
+    - { id: office-hours-to-propose, from: { node: office-hours, port: done }, to: { node: propose, port: start } }
+    - { id: propose-to-apply, from: { node: propose, port: done }, to: { node: apply, port: start } }
+    - { id: apply-to-experts, from: { node: apply, port: done }, to: { node: experts, port: start } }
+    - { id: experts-to-review, from: { node: experts, port: review }, to: { node: review, port: start } }
+    - { id: experts-to-cso, from: { node: experts, port: cso }, to: { node: cso, port: start } }
+    - { id: experts-to-benchmark, from: { node: experts, port: benchmark }, to: { node: benchmark, port: start } }
+    - { id: experts-to-design-review, from: { node: experts, port: design-review }, to: { node: design-review, port: start } }
+    - { id: experts-to-qa, from: { node: experts, port: qa }, to: { node: qa, port: start } }
+    - { id: experts-to-qa-report-only, from: { node: experts, port: qa-report-only }, to: { node: qa-report-only, port: start } }
+    - { id: review-to-experts-join, from: { node: review, port: done }, to: { node: experts-join, port: review } }
+    - { id: cso-to-experts-join, from: { node: cso, port: done }, to: { node: experts-join, port: cso } }
+    - { id: benchmark-to-experts-join, from: { node: benchmark, port: done }, to: { node: experts-join, port: benchmark } }
+    - { id: design-review-to-experts-join, from: { node: design-review, port: done }, to: { node: experts-join, port: design-review } }
+    - { id: qa-to-experts-join, from: { node: qa, port: done }, to: { node: experts-join, port: qa } }
+    - { id: qa-report-only-to-experts-join, from: { node: qa-report-only, port: done }, to: { node: experts-join, port: qa-report-only } }
+    - { id: experts-join-to-review-loop, from: { node: experts-join, port: experts-ready }, to: { node: review-loop, port: start } }
+    - { id: review-loop-to-ship, from: { node: review-loop, port: review-clean }, to: { node: ship, port: start } }
+    - { id: ship-to-retain, from: { node: ship, port: done }, to: { node: retain, port: start } }
+    - { id: retain-to-archive, from: { node: retain, port: done }, to: { node: archive, port: start } }
+    - { id: archive-to-finish, from: { node: archive, port: done }, to: { node: finish, port: start } }

@@ -112,6 +112,7 @@ export function startManagementServer(
   const configHandler = createConfigRouter(context);
   const {
     handle: managementHandler,
+    sessionHost,
     shutdownReusableSessions,
     shutdownPathChooser,
   } = createManagementRouter(context, resolveHomeForRoot, options.sessions);
@@ -183,10 +184,11 @@ export function startManagementServer(
   });
 
   let stopped = false;
+  let stopPromise: Promise<void> | undefined;
   const stopServer = (): Promise<void> => {
     if (stopped) return Promise.resolve();
-    stopped = true;
-    return (async () => {
+    if (stopPromise) return stopPromise;
+    stopPromise = (async () => {
       // Reap every live supervised session before the process actually
       // exits (design D6): the in-memory registry has no adopter in this
       // child-1 world, so anything still running past this point would be
@@ -194,49 +196,54 @@ export function startManagementServer(
       // Covers both a clean `server.close()` and the SIGINT/SIGTERM path
       // (`ui-launch.ts` calls this same `stopServer`), bounded so a
       // SIGTERM-resistant session can never hang shutdown indefinitely.
-      const reusableDrain = shutdownReusableSessions();
+      // Each supervisor/host tree cleanup owns a bounded graceful/forced
+      // deadline. Bound only the reusable coordinator override here; the
+      // hosted Session tree keeps its own full close-authority contract.
+      let reusableGuard: NodeJS.Timeout | undefined;
+      const reusableDrain = Promise.race([
+        shutdownReusableSessions(),
+        new Promise<never>((_resolve, reject) => {
+          reusableGuard = setTimeout(
+            () => reject(new Error('Reusable-session owner shutdown exceeded the bounded server drain.')),
+            SESSION_SHUTDOWN_GUARD_MS
+          );
+          reusableGuard.unref?.();
+        }),
+      ]).finally(() => {
+        if (reusableGuard !== undefined) clearTimeout(reusableGuard);
+      });
+      const hostedDrain = sessionHost.shutdown('server-shutdown');
       const pathChooserDrain = shutdownPathChooser();
       const drain = Promise.allSettled([
         reusableDrain,
+        hostedDrain,
         pathChooserDrain,
       ]);
-      const drainOutcome = await Promise.race([
-        drain.then((results) => ({ kind: 'settled' as const, results })),
-        new Promise<{ kind: 'timeout' }>((resolve) => {
-          const t = setTimeout(
-            () => resolve({ kind: 'timeout' }),
-            SESSION_SHUTDOWN_GUARD_MS
-          );
-          t.unref?.();
-        }),
-      ]);
+      const drainOutcome = await drain;
       let shutdownError: Error | undefined;
-      if (drainOutcome.kind === 'timeout') {
-        shutdownError = new Error(
-          'Reusable-session owner shutdown exceeded the bounded server drain.'
+      const [reusableResult, hostedResult, pathChooserResult] = drainOutcome;
+      if (reusableResult.status === 'rejected') {
+        shutdownError =
+          reusableResult.reason instanceof Error
+            ? reusableResult.reason
+            : new Error(String(reusableResult.reason));
+      } else if (!reusableResult.value.ok) {
+        shutdownError = new ManagementServerOwnerShutdownError(
+          reusableResult.value.message,
+          reusableResult.value.failures
         );
-      } else {
-        const [reusableResult, pathChooserResult] = drainOutcome.results;
-        if (reusableResult.status === 'rejected') {
-          shutdownError =
-            reusableResult.reason instanceof Error
-              ? reusableResult.reason
-              : new Error(String(reusableResult.reason));
-        } else if (!reusableResult.value.ok) {
-          shutdownError = new ManagementServerOwnerShutdownError(
-            reusableResult.value.message,
-            reusableResult.value.failures
-          );
-        }
-        if (
-          shutdownError === undefined
-          && pathChooserResult.status === 'rejected'
-        ) {
-          shutdownError =
-            pathChooserResult.reason instanceof Error
-              ? pathChooserResult.reason
-              : new Error(String(pathChooserResult.reason));
-        }
+      }
+      if (shutdownError === undefined && hostedResult.status === 'rejected') {
+        shutdownError =
+          hostedResult.reason instanceof Error
+            ? hostedResult.reason
+            : new Error(String(hostedResult.reason));
+      }
+      if (shutdownError === undefined && pathChooserResult.status === 'rejected') {
+        shutdownError =
+          pathChooserResult.reason instanceof Error
+            ? pathChooserResult.reason
+            : new Error(String(pathChooserResult.reason));
       }
 
       await new Promise<void>((resolve) => {
@@ -255,17 +262,29 @@ export function startManagementServer(
         }
       });
       if (shutdownError) throw shutdownError;
-    })();
+      stopped = true;
+    })().finally(() => {
+      if (!stopped) stopPromise = undefined;
+    });
+    return stopPromise;
   };
 
-  return new Promise((resolve, reject) => {
-    const onError = (error: Error) => reject(error);
-    server.once('error', onError);
-    server.listen(options.port ?? 0, LOOPBACK_HOST, () => {
-      server.removeListener('error', onError);
-      const address = server.address();
-      const port = typeof address === 'object' && address ? address.port : (options.port ?? 0);
-      resolve({ server, port, stopServer });
+  return (async () => {
+    const recovery = await sessionHost.reconcileOnStart();
+    if (!recovery.ready) {
+      throw new Error(
+        `Hosted Session registry reconciliation failed${recovery.diagnostics.length ? `: ${recovery.diagnostics.join('; ')}` : '.'}`
+      );
+    }
+    return new Promise((resolve, reject) => {
+      const onError = (error: Error) => reject(error);
+      server.once('error', onError);
+      server.listen(options.port ?? 0, LOOPBACK_HOST, () => {
+        server.removeListener('error', onError);
+        const address = server.address();
+        const port = typeof address === 'object' && address ? address.port : (options.port ?? 0);
+        resolve({ server, port, stopServer });
+      });
     });
-  });
+  })();
 }

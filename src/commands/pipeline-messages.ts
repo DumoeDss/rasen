@@ -50,10 +50,13 @@ export interface PipelineMessageValues {
   pipelineTableStages: { stages: string };
   pipelineLabel: { name: string };
   definitionVersionLabel: { version: number };
+  compatibilityBoundaryLabel: { boundary: string };
   hostRuntimeLabel: { runtime: string; source: string };
   pipelineNotFound: { name: string; available: string };
   originLabel: { origin: string };
   buildOrderHeading: undefined;
+  boundedLoopPoliciesHeading: undefined;
+  boundedLoopPolicyLine: { node: string; limits: string; policy: string };
   // ECP-5 (task 6.1): engine support rendered as PRODUCT LANGUAGE in the human
   // `pipeline show` output. Every reason the analyzer can emit has copy here;
   // the reason CODE stays beside the copy because the CLI, the management API
@@ -187,10 +190,13 @@ export const PIPELINE_MESSAGE_KEYS = [
   'pipelineTableStages',
   'pipelineLabel',
   'definitionVersionLabel',
+  'compatibilityBoundaryLabel',
   'hostRuntimeLabel',
   'pipelineNotFound',
   'originLabel',
   'buildOrderHeading',
+  'boundedLoopPoliciesHeading',
+  'boundedLoopPolicyLine',
   'engineSupportHeading',
   'engineSupportEngines',
   'engineSupportSupported',

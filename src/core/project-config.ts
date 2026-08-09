@@ -193,6 +193,23 @@ export const ProjectConfigSchema = z.object({
     .optional()
     .describe('Run engine policy configuration'),
 
+  // Optional: session reuse/handoff/touch/retire policy
+  // (session-policy-and-control-parity). Supplies the frozen-action executor's
+  // policy block numeric limits with `authored` provenance through the existing
+  // config chain (project > store > global > the shipped
+  // DEFAULT_EXECUTOR_POLICY_BLOCK default). Mirrors the runs/handoff precedent.
+  // Each numeric value is a positive bounded integer; the source resolver
+  // re-validates and rejects a safety-disabling value.
+  sessionPolicy: z
+    .object({
+      handoffTokenLimit: z.number().int().positive().max(1_000_000).optional(),
+      reuseRoundLimit: z.number().int().positive().max(1_000_000).optional(),
+      touchMaxIdleMs: z.number().int().positive().max(24 * 60 * 60 * 1000).optional(),
+      retireReasonLabel: z.string().min(1).max(200).optional(),
+    })
+    .optional()
+    .describe('Session reuse/handoff/touch/retire policy configuration'),
+
   // Optional: context-handoff threshold. Project scope wins over the global
   // config value of the same name (see effective-config.ts); both fall back
   // to the built-in default (0.5) when absent. Dual-form (a bare fraction in
@@ -1305,6 +1322,96 @@ function parseProjectConfigContent(
           {
             key: 'invalidRuns',
             fallback: `Invalid 'runs' field in config (must be an object)`,
+          },
+          reporter
+        );
+      }
+    }
+
+    // Parse sessionPolicy field (session-policy-and-control-parity): an optional
+    // map supplying the executor policy block numeric limits. Resilient exactly
+    // like `runs` — a non-map drops the whole block with a warning; an obviously
+    // malformed leaf (non-integer, non-positive, non-string) is dropped with a
+    // warning and siblings still parse. The authoritative bounded validation
+    // (and the safety-disabling rejection) lives in `resolveSessionPolicySource`
+    // (`src/core/session-policy-parity/policy-source.ts`), which re-validates
+    // the selected value; this parser only drops what is clearly malformed so a
+    // hand-edited config never fails parsing.
+    if (raw.sessionPolicy !== undefined) {
+      if (
+        raw.sessionPolicy &&
+        typeof raw.sessionPolicy === 'object' &&
+        !Array.isArray(raw.sessionPolicy)
+      ) {
+        const spRaw = raw.sessionPolicy as Record<string, unknown>;
+        const sessionPolicy: ProjectConfig['sessionPolicy'] = {};
+        if (spRaw.handoffTokenLimit !== undefined) {
+          if (
+            Number.isInteger(spRaw.handoffTokenLimit) &&
+            (spRaw.handoffTokenLimit as number) > 0
+          ) {
+            sessionPolicy.handoffTokenLimit = spRaw.handoffTokenLimit as number;
+          } else {
+            warnConfig(
+              {
+                key: 'invalidSessionPolicyHandoffTokenLimit',
+                fallback: `Invalid 'sessionPolicy.handoffTokenLimit' in config (must be a positive integer)`,
+              },
+              reporter
+            );
+          }
+        }
+        if (spRaw.reuseRoundLimit !== undefined) {
+          if (
+            Number.isInteger(spRaw.reuseRoundLimit) &&
+            (spRaw.reuseRoundLimit as number) > 0
+          ) {
+            sessionPolicy.reuseRoundLimit = spRaw.reuseRoundLimit as number;
+          } else {
+            warnConfig(
+              {
+                key: 'invalidSessionPolicyReuseRoundLimit',
+                fallback: `Invalid 'sessionPolicy.reuseRoundLimit' in config (must be a positive integer)`,
+              },
+              reporter
+            );
+          }
+        }
+        if (spRaw.touchMaxIdleMs !== undefined) {
+          if (
+            Number.isInteger(spRaw.touchMaxIdleMs) &&
+            (spRaw.touchMaxIdleMs as number) > 0
+          ) {
+            sessionPolicy.touchMaxIdleMs = spRaw.touchMaxIdleMs as number;
+          } else {
+            warnConfig(
+              {
+                key: 'invalidSessionPolicyTouchMaxIdleMs',
+                fallback: `Invalid 'sessionPolicy.touchMaxIdleMs' in config (must be a positive integer)`,
+              },
+              reporter
+            );
+          }
+        }
+        if (spRaw.retireReasonLabel !== undefined) {
+          if (typeof spRaw.retireReasonLabel === 'string' && spRaw.retireReasonLabel.length > 0) {
+            sessionPolicy.retireReasonLabel = spRaw.retireReasonLabel;
+          } else {
+            warnConfig(
+              {
+                key: 'invalidSessionPolicyRetireReasonLabel',
+                fallback: `Invalid 'sessionPolicy.retireReasonLabel' in config (must be a non-empty string)`,
+              },
+              reporter
+            );
+          }
+        }
+        config.sessionPolicy = sessionPolicy;
+      } else {
+        warnConfig(
+          {
+            key: 'invalidSessionPolicy',
+            fallback: `Invalid 'sessionPolicy' field in config (must be an object)`,
           },
           reporter
         );

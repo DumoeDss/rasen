@@ -6,5 +6,57 @@
 # reviewers must see.
 openspec/changes/** linguist-generated=true
 
+# Built-in workflow/expert sidecars participate in catalog capability digests.
+# Keep their source bytes stable across checkout platforms; the runtime also
+# canonicalizes legacy CRLF worktrees before hashing them.
+skills/**/*.md text eol=lf
+skills/**/*.sh text eol=lf
+skills/**/*.mjs text eol=lf
+skills/**/*.js text eol=lf
+
 # This fixture is spawned directly through its shebang on POSIX.
 test/fixtures/management-api/session-fake-cli.mjs text eol=lf
+
+# The Windows process-authority crate is digest-frozen: its build script hashes these
+# exact bytes, so a working tree whose line endings depend on the checkout platform gives
+# the crate a different source digest on every machine and the frozen digest reproduces
+# nowhere. Pinning them to LF makes it reproduce on any clone. The set below is exactly
+# the build script's closed source-input set (Cargo.lock, Cargo.toml, THIRD_PARTY.md,
+# src/**) plus tests/**, which the freeze marker records separately because the source
+# digest excludes it.
+native/windows-process-authority/Cargo.lock text eol=lf
+native/windows-process-authority/Cargo.toml text eol=lf
+native/windows-process-authority/THIRD_PARTY.md text eol=lf
+native/windows-process-authority/src/** text eol=lf
+native/windows-process-authority/tests/** text eol=lf
+
+# The Linux sibling crate is digest-frozen the same way and had the same exposure: its
+# frozen digest 087d87a5 held only because this working tree happens to be all-LF. A
+# Windows checkout converted it to 442e8743, which the package-CI guard asserts against
+# and the windows-latest workflow runs. This pin changes no file under that crate.
+native/linux-process-authority/** text eol=lf
+
+# The Linux WSL-oracle test and its fixture live OUTSIDE the crate, so the rule above
+# does not reach them -- but the Linux freeze marker records their digests. Unpinned,
+# a Windows checkout under the Git-for-Windows default autocrlf=true converts them to
+# CRLF and those recorded digests stop reproducing: 4c7f84c8 -> 40085f6d and
+# 8d7821b9 -> 3dbc766f. That is the same defect the crate pins above exist to remove,
+# reappearing inside a marker. Both files are LF in the index; this pin changes neither.
+test/core/session-host/linux-process-authority-wsl-oracles.test.ts text eol=lf
+test/fixtures/linux-process-authority-wsl-controller.mjs text eol=lf
+
+# Every file whose sha256 is byte-pinned by a guard. None of these had its line
+# endings pinned: on a fresh Windows checkout under the Git-for-Windows default
+# autocrlf=true, every recorded hash changes and the guards go red on first clone --
+# reporting a digest mismatch against files nobody touched, i.e. as tampering rather
+# than as a line-ending convention. FROZEN_COMMON_INPUTS and
+# LEGACY_PROCESS_CAPSULE_INPUTS both read these.
+rasen/specs/process-authority-provider/spec.md text eol=lf
+test/helpers/process-authority-provider-conformance.ts text eol=lf
+native/process-capsule/src/main.rs text eol=lf
+native/process-capsule/Cargo.lock text eol=lf
+scripts/build-process-capsule.mjs text eol=lf
+src/core/session-host/process-capsule/resolver.ts text eol=lf
+src/core/session-host/process-capsule/native-process-scope.ts text eol=lf
+test/core/session-host/process-capsule-package.test.ts text eol=lf
+test/core/session-host/process-capsule-posix-replacement.test.ts text eol=lf

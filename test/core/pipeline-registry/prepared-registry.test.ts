@@ -112,6 +112,11 @@ describe('frozen production prepared pipeline registry', () => {
                 id: 'skill:rasen-propose',
                 version: propose.digest,
               },
+              execution: {
+                version: 1,
+                role: 'planner',
+                workspace: { access: 'write' },
+              },
             },
           ],
           connections: [],
@@ -325,6 +330,11 @@ describe('frozen production prepared pipeline registry', () => {
                 id: 'skill:rasen-alternate',
                 version: alternate.digest,
               },
+              execution: {
+                version: 1,
+                role: 'implementer',
+                workspace: { access: 'write' },
+              },
             },
           ],
           connections: [],
@@ -389,5 +399,63 @@ describe('frozen production prepared pipeline registry', () => {
     });
 
     expect(nestedValid).toBeInstanceOf(PipelineValidationError);
+  });
+
+  it.each([
+    {
+      name: 'native-claude-on-codex',
+      target: 'claude' as const,
+      host: { runtime: 'codex' as const, source: 'codex-thread-id' as const },
+      bridge: 'claude-print',
+    },
+    {
+      name: 'native-codex-on-claude',
+      target: 'codex' as const,
+      host: { runtime: 'claude' as const, source: 'claude-code' as const },
+      bridge: 'codex-exec',
+    },
+  ])('preflights unavailable $bridge for authored v2 before selection', async ({ name, target, host }) => {
+    const projectRoot = path.join(temporaryRoot, name);
+    const workflow = loadWorkflowCatalog().definitions.find(
+      (definition) => definition.skill.template.name === 'rasen-propose'
+    )!;
+    writePipeline(projectRoot, name, JSON.stringify({
+      version: 2,
+      id: name,
+      sourceId: `fixture:${name}`,
+      name,
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [
+          {
+            id: 'propose',
+            kind: 'AtomicStage',
+            capability: { id: 'skill:rasen-propose', version: workflow.digest },
+            execution: {
+              version: 1,
+              role: 'planner',
+              workspace: { access: 'write' },
+              runtime: target,
+            },
+          },
+          { id: 'finish', kind: 'Finish', outcome: 'done' },
+        ],
+        connections: [
+          { id: 'propose-finish', from: { node: 'propose', port: 'done' }, to: { node: 'finish', port: 'start' } },
+        ],
+      },
+    }));
+    const registry = await freezeProductionPreparedPipelineRegistry(projectRoot);
+    const probeClaude = vi.fn(() => false);
+    const probeCodex = vi.fn(() => false);
+
+    await expect(
+      registry.selectForExecution(name, { host, probeClaude, probeCodex })
+    ).rejects.toMatchObject({ code: 'pipeline_runtime_unavailable' });
+    expect(target === 'claude' ? probeClaude : probeCodex).toHaveBeenCalledTimes(1);
+    expect(target === 'claude' ? probeCodex : probeClaude).not.toHaveBeenCalled();
   });
 });

@@ -1,0 +1,29 @@
+[Unit]
+Description=Rasen Linux Process Authority Broker
+Documentation=https://github.com/Fission-AI/OpenSpec
+After=local-fs.target
+ConditionPathIsMountPoint=/sys/fs/cgroup
+
+[Service]
+Type=simple
+User=root
+Group=rasen-authority
+UMask=0007
+RuntimeDirectory=rasen/linux-process-authority
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+ExecStart=/usr/libexec/rasen/rasen-linux-process-authority-broker serve
+Restart=on-failure
+RestartSec=1s
+NoNewPrivileges=no
+PrivateUsers=no
+PrivateMounts=no
+ProtectSystem=strict
+ProtectHome=yes
+ProtectControlGroups=no
+ReadWritePaths=/var/lib/rasen/linux-process-authority /run/rasen/linux-process-authority /sys/fs/cgroup/rasen-linux-process-authority
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER
+AmbientCapabilities=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER
+
+[Install]
+WantedBy=multi-user.target

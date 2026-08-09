@@ -83,6 +83,9 @@ out
 
 # Build output
 dist/
+native/process-capsule/target/
+.native-helper-staging/
+.native-helper-export/
 
 # Gatsby files
 .cache/
@@ -166,3 +169,10 @@ openspec/changes/**/portfolio-run.json
 
 # token-audit generated output
 session-audit-*.json
+
+# Isolated cargo target roots from native build/measurement waves. These are build
+# output, but they were never ignored -- 5534 untracked files, some with paths git
+# status itself cannot read ("Filename too long"). That made `git status` unusable
+# for spotting a genuinely untracked receipt, which is how an uncommitted test file
+# cited as a receipt's evidence stayed invisible until a reviewer checked `git log`.
+.cargo-target-*/

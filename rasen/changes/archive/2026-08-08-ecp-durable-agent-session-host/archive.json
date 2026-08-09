@@ -1,0 +1,71 @@
+{
+  "change": "ecp-durable-agent-session-host",
+  "archivedAt": "2026-08-08T07:12:07.903Z",
+  "codeCommit": "4a167bfa1c3085585a9c063d72aa1e69d3eff766",
+  "planningBranch": "wip/ecp-shared-bounded-loop-lifecycle-resume",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/apply-gates.json",
+      "sha256": "20140c344d24354267465fb242b9fe4dfbd4c7cf8b06f9457b84ecf0ce555f94"
+    },
+    {
+      "path": "evidence/claude-protocol-premise.md",
+      "sha256": "1f71045120dc6b9282f05b0eb7ed0fae2f98191df691fe40f9eaaf5df0743e4f"
+    },
+    {
+      "path": "evidence/cso-report.md",
+      "sha256": "7044a529c1ff09ca19287816868e14ab03edd003a2c249f6590ef1a06b4c02f8"
+    },
+    {
+      "path": "evidence/decision13-regrade.md",
+      "sha256": "726dbb45ec58726dfb4aa7d556d6a205e1a75fd7ed170b169c38d608f2cd062d"
+    },
+    {
+      "path": "evidence/implementation-report.md",
+      "sha256": "92597ec5c4ae619373c0aed345069140996e791888abb4bef7380099025bceec"
+    },
+    {
+      "path": "evidence/mutation-discriminator.md",
+      "sha256": "ec9cf3e3e7162ac0db62c6f533339dc41b49fe95ba1f0dfb5ab36cf79a7b2d27"
+    },
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "978bedf51e8106fbafa0e3169af469fcd9cce96e9b58135e3a52e0414632be47"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "f186712285a62cca71de3e18a9abcede7c7c1ff4e786997ffcb4911a581de7d6"
+    },
+    {
+      "path": "evidence/review-round-4.md",
+      "sha256": "0dcfa1e744aff397c9e03889eb4b6851d85e642374253c75e8ebe9a2bcba9d96"
+    },
+    {
+      "path": "evidence/scenario-test-map.md",
+      "sha256": "48b6d7629095f9411cdd7fd5f9a3f8767d4f263442e7da1ebcd992a20031bca7"
+    },
+    {
+      "path": "evidence/security-boundary.md",
+      "sha256": "bfd4d49d7400edab079bcdfcb73d1af68e3f2855043b0535e88ecdba1915c36f"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "8e007edffeaf34da22f47ead87cdc73e8bfd0288d7f7e710eb2088ae21cbfd8f"
+    },
+    {
+      "path": "evidence/strategy-attempt-1.md",
+      "sha256": "d508dcc3e49012e4e4178c8adb9e8a2173fb2aea433db8cdc645621a15d6c43e"
+    },
+    {
+      "path": "evidence/verification-report.md",
+      "sha256": "5c0e52089db4bbf663e19235ace5f516cb7f3af28969f4a8b61c623bac3914c2"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": []
+}

@@ -122,7 +122,7 @@ describe('ECP-5 section 6: `pipeline show` reports a truthful support reason', (
     expect(result.exitCode, result.stderr).toBe(0);
     const payload = JSON.parse(result.stdout.trim());
     expect(payload.reconcilerSupport.supported).toBe(true);
-    expect(payload.reconcilerSupport.reason).toBe('supported_v2_review_cycle');
+    expect(payload.reconcilerSupport.reason).toBe('supported_v2_executable');
     // The regression this file exists for: `null` used to make EVERY pipeline
     // report this, whatever its shape.
     expect(payload.reconcilerSupport.reason).not.toBe(
@@ -155,9 +155,9 @@ describe('ECP-5 section 6: `pipeline show` reports a truthful support reason', (
     });
     expect(result.exitCode, result.stderr).toBe(0);
     // The reason CODE (the token the API and Canvas print) AND product copy.
-    expect(result.stdout).toContain('supported_v2_review_cycle');
+    expect(result.stdout).toContain('supported_v2_executable');
     expect(result.stdout).toContain(
-      'a review-cycle loop the reconciler drives round by round'
+      'a v2 definition whose Composite bodies and stages all resolve'
     );
     // Task 6.2: the effective engine and its deciding layer, in the terminal
     // rather than only in `--json`.

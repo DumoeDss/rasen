@@ -1,31 +1,77 @@
-version: 1
+version: 2
+id: builtin:goal-loop-research
+sourceId: package:goal-loop-research
 name: goal-loop-research
 description: >-
-  Goal-driven iteration for autoresearch-style research and writing. The
-  implementer researches inline and writes/refines a document; an evaluate gate
-  (fresh reviewer per round) judges satisfaction against the goal. The tail is a
-  report stage (no code to ship). A lower implementer handoff threshold (0.35)
-  triggers earlier relay because research is context-heavy.
-handoff:
-  roles:
-    implementer: 0.35
-stages:
-  - id: define-goal
-    skill: rasen-goal-plan
-    role: planner
-    requires: []
-    gate: true
-
-  - id: iterate
-    skill: rasen-goal-iterate
-    role: implementer
-    requires: [define-goal]
-    loop:
-      kind: goal
-      gate: { kind: evaluate }
-      runArtifact: goal-run.json
-
-  - id: report
-    skill: rasen-goal-report
-    role: shipper
-    requires: [iterate]
+  Goal-driven research and writing with a typed research GoalLoop. Satisfaction,
+  max-round exhaustion, and strategy exhaustion enter one truthful report tail.
+inputs: []
+artifacts: []
+outcomes: [approved, rejected, reported]
+limits: { maxActions: 56, budget: 56 }
+declarations:
+  - id: goal-cycle-body
+    kind: Composite
+    provenance: built-in
+    inputs:
+      - { name: start, type: ecp/control }
+    artifacts: []
+    outcomes: [clean, needs_fix]
+    graph:
+      nodes:
+        - id: work
+          kind: AtomicStage
+          capability: { id: skill:rasen-goal-iterate, version: sha256:9522e1108c941534a888d5a0230ba29f1b7719a75949411b36e05f664d95331b }
+          execution:
+            version: 1
+            role: implementer
+            workspace: { access: write }
+            handoff: { threshold: 0.35 }
+          goalCyclePhase: work
+        - id: judge
+          kind: AtomicStage
+          capability: { id: skill:rasen-goal-judge, version: sha256:944c21e977d795c1ee2c67f5a0ad0534e8b40a8c1f746ecd83ae89a4e51de40c }
+          execution: { version: 1, role: reviewer, workspace: { access: read } }
+          goalCyclePhase: judge
+      connections:
+        - { id: work-to-judge, from: { node: work, port: ready }, to: { node: judge, port: start } }
+root:
+  nodes:
+    - id: define-goal
+      kind: AtomicStage
+      capability: { id: skill:rasen-goal-plan, version: sha256:2c24bd2b0f8661f24bf94553aa15926ace8fa36c71900953e5a68c8c34606ce2 }
+      execution: { version: 1, role: planner, workspace: { access: write } }
+    - { id: gate:define-goal, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: define-goal }
+    - id: iterate
+      kind: BoundedLoop
+      body: goal-cycle-body
+      goalCycleVariant: research
+      limits: { maxIterations: 5, maxActions: 40, budget: 40 }
+      lifecycle:
+        version: 1
+        thresholds: { stallIterations: 2, sameBlockerAttempts: 3 }
+        strategy:
+          maxAttempts: 1
+          requireMaterialChange: true
+          capability: { id: skill:rasen-goal-iterate, version: sha256:9522e1108c941534a888d5a0230ba29f1b7719a75949411b36e05f664d95331b }
+        exits:
+          iterationLimit: { action: exit, outcome: max-rounds-exhausted }
+          actionLimit: { action: fail, outcome: goal-action-limit }
+          budgetLimit: { action: fail, outcome: goal-budget-limit }
+          stalled: { action: strategy }
+          blocked: { action: human-required, outcome: goal-human-required }
+          strategyExhausted: { action: exit, outcome: strategy-exhausted }
+      exits:
+        clean: { action: exit, outcome: goal-satisfied }
+        needs_fix: { action: continue }
+    - id: report
+      kind: AtomicStage
+      capability: { id: skill:rasen-goal-report, version: sha256:f881d6f5379f1c8e1a4508eac7c25078a5fc69c0c3b1b2dee2fe9a72cf46bf35 }
+      execution: { version: 1, role: shipper, workspace: { access: write } }
+    - { id: finish, kind: Finish, outcome: reported }
+  connections:
+    - { id: define-goal-to-iterate, from: { node: define-goal, port: done }, to: { node: iterate, port: start } }
+    - { id: satisfied-to-report, from: { node: iterate, port: goal-satisfied }, to: { node: report, port: start } }
+    - { id: exhausted-to-report, from: { node: iterate, port: max-rounds-exhausted }, to: { node: report, port: start } }
+    - { id: strategy-exhausted-to-report, from: { node: iterate, port: strategy-exhausted }, to: { node: report, port: start } }
+    - { id: report-to-finish, from: { node: report, port: done }, to: { node: finish, port: start } }

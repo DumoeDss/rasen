@@ -11,7 +11,7 @@ This document lists every CI check that the maintainer must mark **required** in
 | `main` | Production release line |
 | `dev/0.1.5` | Active development release line |
 
-When a new release branch is cut (e.g. `dev/0.1.6`), add it to:
+When a new release branch is cut (e.g. `dev/0.2.0`), add it to:
 1. `.github/workflows/ci.yml` trigger stanzas (`pull_request.branches`, `merge_group.branches`, `push.branches`).
 2. GitHub branch protection rules for the new branch.
 

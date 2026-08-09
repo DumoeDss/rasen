@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TEST_ATTESTATION_AUTHORITY } from '../../fixtures/trusted-completion.js';
 
 import {
   EcpDefinitionModule,
@@ -103,7 +104,12 @@ function profileFor(prepared: PreparedDefinition) {
       effects: [
         { slot: 'workspace', kind: 'workspace' as const, resource: 'worktree', recovery: 'suspend-if-ambiguous' as const },
       ],
-      adapter: { id: `adapter:${node.skill}`, version: '1', contentDigest: `sha256:${'6'.repeat(64)}` },
+      adapter: {
+        id: `adapter:${node.skill}`,
+        version: '1',
+        contentDigest: `sha256:${'6'.repeat(64)}`,
+        attestationAuthority: TEST_ATTESTATION_AUTHORITY,
+      },
     })),
     policy: {
       format: 'effective-run-policy/1',

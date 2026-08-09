@@ -295,7 +295,7 @@ No action can execute before steps 1-6 commit.
   are projections of committed transitions.
 - Root DAG, Composite body, and Composite call graph remain acyclic.
 - Feedback exists only in a bounded `BoundedLoop` with complete exits.
-- No recursive Composite calls and no nested loops in 0.1.6.
+- No recursive Composite calls and no nested loops in 0.2.0.
 - Root and Composite execution share one Pipeline Reconciler and one Record.
 - Only a validated result committed at the expected Record version can advance
   state.
@@ -490,7 +490,7 @@ not every caller.
   legacy input uses legacy behavior; canonical input calls
   `ChangePipelineRuntime.resume`.
 - `auto-decompose` and portfolio state stay on the legacy/Issue-planning side
-  in 0.1.6 and never enter this Change-level facade.
+  in 0.2.0 and never enter this Change-level facade.
 
 ### Product compatibility
 

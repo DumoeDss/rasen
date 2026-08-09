@@ -3,6 +3,12 @@ import type {
   NodeId,
   RunId,
 } from '../contracts.js';
+import {
+  openRuntimeExecutionProfile,
+  type RuntimeExecutionProfile,
+} from '../../pipeline-registry/execution-plan-internal.js';
+import { isDeepStrictEqual } from 'node:util';
+import type { BoundedLoopLifecyclePolicyV1 } from '../../pipeline-registry/definition.js';
 import { deriveNodeId } from './identity.js';
 
 export type RuntimePlanAdmissionKind = 'agent' | 'command' | 'host';
@@ -94,7 +100,13 @@ export interface RuntimePlanBoundedLoopNode {
   readonly nodeId: NodeId;
   readonly hierarchicalPath: string;
   readonly requires: readonly NodeId[];
-  readonly maxIterations: number;
+  readonly limits: Readonly<{
+    maxIterations: number;
+    maxActions: number;
+    budget: number;
+  }>;
+  readonly lifecycle: BoundedLoopLifecyclePolicyV1;
+  readonly strategyProfilePath?: string;
   readonly body:
     | RuntimePlanReviewCycleBody
     | RuntimePlanCompositeBody
@@ -176,6 +188,12 @@ export interface RuntimePlan {
   readonly sourceRevisionDigest: Digest;
   readonly capabilityDigest: Digest;
   readonly policyDigest: Digest;
+  /**
+   * Public-only launch-time execution authority. New Runs always persist it so
+   * resume never rebinds an existing Run to the mutable host catalog. Optional
+   * only for decoding pre-attestation RuntimePlan/1 files.
+   */
+  readonly executionProfile?: RuntimeExecutionProfile;
   readonly nodes: readonly RuntimePlanNode[];
   readonly implicitFinishOutcome?: string;
   readonly finishNode?: RuntimePlanFinishNode;
@@ -261,7 +279,13 @@ export interface RuntimePlanNodeInput {
   readonly adaptiveVerify?: boolean;
   readonly gate?: RuntimePlanGateInput;
   readonly outcome?: string;
-  readonly maxIterations?: number;
+  readonly limits?: Readonly<{
+    maxIterations: number;
+    maxActions: number;
+    budget: number;
+  }>;
+  readonly lifecycle?: BoundedLoopLifecyclePolicyV1;
+  readonly strategyProfilePath?: string;
   readonly body?:
     | RuntimePlanReviewCycleBodyInput
     | RuntimePlanCompositeBodyInput
@@ -295,6 +319,7 @@ export interface RuntimePlanInput {
   readonly sourceRevisionDigest: Digest;
   readonly capabilityDigest: Digest;
   readonly policyDigest: Digest;
+  readonly executionProfile?: RuntimeExecutionProfile;
   readonly nodes: readonly RuntimePlanNodeInput[];
   readonly implicitFinishOutcome?: string;
 }
@@ -412,6 +437,24 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
   }
   if (input.nodes.length === 0) {
     reject('invalid_runtime_plan', 'Runtime plan must declare at least one node.');
+  }
+
+  const executionProfile =
+    input.executionProfile === undefined
+      ? undefined
+      : openRuntimeExecutionProfile(input.executionProfile);
+  if (
+    executionProfile !== undefined &&
+    (executionProfile.profileDigest !== input.profileDigest ||
+      executionProfile.sourceRevision.semanticDigest !==
+        input.sourceRevisionDigest ||
+      executionProfile.capabilityProfileDigest !== input.capabilityDigest ||
+      executionProfile.policyDigest !== input.policyDigest)
+  ) {
+    reject(
+      'invalid_runtime_plan',
+      'Runtime plan execution profile does not match its frozen digest fields.'
+    );
   }
 
   const paths = new Set<string>();
@@ -578,7 +621,11 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
           nodeId,
           hierarchicalPath: node.hierarchicalPath,
           requires,
-          maxIterations: node.maxIterations!,
+          limits: { ...node.limits! },
+          lifecycle: structuredClone(node.lifecycle!),
+          ...(node.strategyProfilePath !== undefined
+            ? { strategyProfilePath: node.strategyProfilePath }
+            : {}),
           body: {
             kind: 'review-cycle',
             phases: body.phases.map((phase) => ({
@@ -602,7 +649,11 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
           nodeId,
           hierarchicalPath: node.hierarchicalPath,
           requires,
-          maxIterations: node.maxIterations!,
+          limits: { ...node.limits! },
+          lifecycle: structuredClone(node.lifecycle!),
+          ...(node.strategyProfilePath !== undefined
+            ? { strategyProfilePath: node.strategyProfilePath }
+            : {}),
           body: {
             kind: 'goal-cycle',
             variant: body.variant,
@@ -631,7 +682,11 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
         nodeId,
         hierarchicalPath: node.hierarchicalPath,
         requires,
-        maxIterations: node.maxIterations!,
+        limits: { ...node.limits! },
+        lifecycle: structuredClone(node.lifecycle!),
+        ...(node.strategyProfilePath !== undefined
+          ? { strategyProfilePath: node.strategyProfilePath }
+          : {}),
         body: {
           kind: 'composite',
           declarationId: body.declarationId,
@@ -770,12 +825,220 @@ export function createRuntimePlan(input: RuntimePlanInput): RuntimePlan {
     sourceRevisionDigest: input.sourceRevisionDigest,
     capabilityDigest: input.capabilityDigest,
     policyDigest: input.policyDigest,
+    ...(executionProfile === undefined ? {} : { executionProfile }),
     nodes: builtNodes,
     ...(input.implicitFinishOutcome === undefined
       ? {}
       : { implicitFinishOutcome: input.implicitFinishOutcome }),
     ...(finishNode === undefined ? {} : { finishNode }),
   } as RuntimePlan);
+}
+
+/**
+ * Re-open the already-lowered RuntimePlan representation written beside a Run.
+ * `createRuntimePlan` consumes path-based input, while persisted dependencies
+ * are NodeIds, so decoding first reverses those derived identities and then
+ * rebuilds the plan through the one structural validator. Exact deep equality
+ * rejects unknown keys and non-canonical derived fields.
+ */
+export function openRuntimePlan(value: unknown): RuntimePlan {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    reject('invalid_runtime_plan', 'Stored RuntimePlan must be an object.');
+  }
+  const stored = structuredClone(value) as RuntimePlan;
+  if (
+    stored.format !== 'change-run-runtime-plan/1' ||
+    typeof stored.runId !== 'string' ||
+    typeof stored.pipeline !== 'string' ||
+    !Array.isArray(stored.nodes)
+  ) {
+    reject('invalid_runtime_plan', 'Stored RuntimePlan envelope is malformed.');
+  }
+
+  const rootPathById = new Map<string, string>();
+  for (const node of stored.nodes) {
+    if (
+      node === null ||
+      typeof node !== 'object' ||
+      typeof node.nodeId !== 'string' ||
+      typeof node.hierarchicalPath !== 'string' ||
+      !Array.isArray(node.requires)
+    ) {
+      reject('invalid_runtime_plan', 'Stored RuntimePlan node is malformed.');
+    }
+    rootPathById.set(node.nodeId, node.hierarchicalPath);
+  }
+  const rootPath = (nodeId: NodeId): string => {
+    const path = rootPathById.get(nodeId);
+    if (path === undefined) {
+      reject(
+        'invalid_runtime_plan',
+        `Stored RuntimePlan references unknown NodeId ${JSON.stringify(nodeId)}.`
+      );
+    }
+    return path;
+  };
+
+  const nodes: RuntimePlanNodeInput[] = stored.nodes.map((node) => {
+    const common = {
+      hierarchicalPath: node.hierarchicalPath,
+      requires: node.requires.map(rootPath),
+    };
+    if (node.kind === 'atomic') {
+      return {
+        kind: 'atomic',
+        ...common,
+        admissionKind: node.admissionKind,
+        workspace: { ...node.workspace },
+        adaptiveVerify: node.adaptiveVerify,
+        ...(node.profilePath === undefined ? {} : { profilePath: node.profilePath }),
+        ...(node.gate === undefined
+          ? {}
+          : {
+              gate: {
+                gateId: node.gate.gateId,
+                decisionIds: [...node.gate.decisionIds],
+                outcomes: { ...node.gate.outcomes },
+              },
+            }),
+        ...(node.fanOut === undefined
+          ? {}
+          : {
+              fanOutTag: {
+                nodeId: rootPath(node.fanOut.nodeId),
+                required: node.fanOut.required,
+              },
+            }),
+      };
+    }
+    if (node.kind === 'bounded-loop') {
+      const body = node.body;
+      const decodedBody: RuntimePlanNodeInput['body'] =
+        body.kind === 'composite'
+          ? (() => {
+              const bodyPathById = new Map<NodeId, string>(
+                body.stages.map((stage: RuntimePlanCompositeStage) => [
+                  stage.nodeId,
+                  stage.hierarchicalPath,
+                ])
+              );
+              const bodyPath = (nodeId: NodeId): string => {
+                const path = bodyPathById.get(nodeId);
+                if (path === undefined) {
+                  reject(
+                    'invalid_runtime_plan',
+                    `Stored composite body references unknown NodeId ${JSON.stringify(nodeId)}.`
+                  );
+                }
+                return path;
+              };
+              return {
+                kind: 'composite' as const,
+                declarationId: body.declarationId,
+                stages: body.stages.map((stage: RuntimePlanCompositeStage) => ({
+                  hierarchicalPath: stage.hierarchicalPath,
+                  profilePath: stage.profilePath,
+                  admissionKind: stage.admissionKind,
+                  workspace: { ...stage.workspace },
+                  requires: stage.requires.map(bodyPath),
+                })),
+                outcomes: { ...body.outcomes },
+              };
+            })()
+          : {
+              kind: body.kind,
+              ...(body.kind === 'goal-cycle' ? { variant: body.variant } : {}),
+              phases: body.phases.map((phase: RuntimePlanReviewCyclePhase | RuntimePlanGoalCyclePhase) => ({
+                phase: phase.phase,
+                profilePath: phase.profilePath,
+                admissionKind: phase.admissionKind,
+                workspace: { ...phase.workspace },
+              })),
+            } as RuntimePlanNodeInput['body'];
+      return {
+        kind: 'bounded-loop',
+        ...common,
+        limits: { ...node.limits },
+        lifecycle: structuredClone(node.lifecycle),
+        ...(node.strategyProfilePath === undefined
+          ? {}
+          : { strategyProfilePath: node.strategyProfilePath }),
+        body: decodedBody,
+        outcomes: { ...node.outcomes },
+      };
+    }
+    if (node.kind === 'finish') {
+      return { kind: 'finish', ...common, outcome: node.outcome };
+    }
+    if (node.kind === 'choice') {
+      return {
+        kind: 'choice',
+        ...common,
+        profilePath: node.profilePath,
+        admissionKind: node.admissionKind,
+        workspace: { ...node.workspace },
+        choice: { outcomes: [...node.outcomes], branches: { ...node.branches } },
+      };
+    }
+    if (node.kind === 'fan-out') {
+      return {
+        kind: 'fan-out',
+        ...common,
+        profilePath: node.profilePath,
+        admissionKind: node.admissionKind,
+        workspace: { ...node.workspace },
+        fanOut: {
+          members: node.members.map((member: RuntimePlanFanOutMember) => ({
+            hierarchicalPath: member.hierarchicalPath,
+            required: member.required,
+            condition: member.condition,
+          })),
+          concurrencyCap: node.concurrencyCap,
+          budget: node.budget,
+          joinNodeId: rootPath(node.joinNodeId),
+        },
+      };
+    }
+    if (node.kind === 'join') {
+      return {
+        kind: 'join',
+        ...common,
+        join: {
+          requiredMembers: node.requiredMembers.map(rootPath),
+          optionalMembers: node.optionalMembers.map(rootPath),
+          outcomes: { ...node.outcomes },
+        },
+      };
+    }
+    reject(
+      'unsupported_runtime_plan',
+      `Stored RuntimePlan has unsupported node kind ${JSON.stringify((node as { kind?: unknown }).kind)}.`
+    );
+  });
+
+  const rebuilt = createRuntimePlan({
+    runId: stored.runId,
+    pipeline: stored.pipeline,
+    planDigest: stored.planDigest,
+    profileDigest: stored.profileDigest,
+    sourceRevisionDigest: stored.sourceRevisionDigest,
+    capabilityDigest: stored.capabilityDigest,
+    policyDigest: stored.policyDigest,
+    ...(stored.executionProfile === undefined
+      ? {}
+      : { executionProfile: stored.executionProfile }),
+    nodes,
+    ...(stored.implicitFinishOutcome === undefined
+      ? {}
+      : { implicitFinishOutcome: stored.implicitFinishOutcome }),
+  });
+  if (!isDeepStrictEqual(rebuilt, stored)) {
+    reject(
+      'invalid_runtime_plan',
+      'Stored RuntimePlan contains non-canonical or unknown fields.'
+    );
+  }
+  return rebuilt;
 }
 
 function validateChoice(
@@ -891,17 +1154,21 @@ function validateBoundedLoop(
   path: string,
   node: RuntimePlanNodeInput
 ): void {
-  if (
-    !Number.isSafeInteger(node.maxIterations) ||
-    node.maxIterations === undefined ||
-    node.maxIterations < 1 ||
-    node.maxIterations > 100
-  ) {
+  if (node.limits === undefined || node.lifecycle === undefined) {
     reject(
-      'invalid_runtime_plan',
-      `Bounded loop ${path} maxIterations must be between 1 and 100.`
+      'unsupported_runtime_plan',
+      `Bounded loop ${path} uses a policy-free runtime-plan format that cannot be resumed safely.`
     );
   }
+  for (const [name, value] of Object.entries(node.limits)) {
+    if (!Number.isSafeInteger(value) || value < 1) {
+      reject(
+        'invalid_runtime_plan',
+        `Bounded loop ${path} ${name} must be a positive safe integer.`
+      );
+    }
+  }
+  validateBoundedLoopLifecycle(path, node.lifecycle, node.strategyProfilePath);
   if (node.body?.kind === 'review-cycle') {
     validateReviewCycleBody(path, node);
   } else if (node.body?.kind === 'composite') {
@@ -933,6 +1200,75 @@ function validateBoundedLoop(
       'invalid_runtime_plan',
       `Bounded loop ${path} must not declare atomic, gate, or finish fields.`
     );
+  }
+}
+
+function validateBoundedLoopLifecycle(
+  path: string,
+  lifecycle: BoundedLoopLifecyclePolicyV1,
+  strategyProfilePath: string | undefined
+): void {
+  if (lifecycle.version !== 1) {
+    reject(
+      'unsupported_runtime_plan',
+      `Bounded loop ${path} uses unsupported lifecycle version ${JSON.stringify(lifecycle.version)}.`
+    );
+  }
+  if (
+    !Number.isSafeInteger(lifecycle.thresholds.stallIterations) ||
+    lifecycle.thresholds.stallIterations < 1 ||
+    !Number.isSafeInteger(lifecycle.thresholds.sameBlockerAttempts) ||
+    lifecycle.thresholds.sameBlockerAttempts < 1 ||
+    !Number.isSafeInteger(lifecycle.strategy.maxAttempts) ||
+    lifecycle.strategy.maxAttempts < 0 ||
+    lifecycle.strategy.requireMaterialChange !== true
+  ) {
+    reject(
+      'invalid_runtime_plan',
+      `Bounded loop ${path} lifecycle thresholds and strategy bounds are invalid.`
+    );
+  }
+  const exits = lifecycle.exits;
+  const entries = Object.entries(exits);
+  if (entries.length !== 6) {
+    reject(
+      'invalid_runtime_plan',
+      `Bounded loop ${path} lifecycle must declare exactly six trigger dispositions.`
+    );
+  }
+  const strategySelected = entries.some(([, disposition]) => disposition.action === 'strategy');
+  if (
+    strategySelected &&
+    (lifecycle.strategy.maxAttempts < 1 ||
+      lifecycle.strategy.capability === undefined ||
+      strategyProfilePath === undefined)
+  ) {
+    reject(
+      'invalid_runtime_plan',
+      `Bounded loop ${path} selects strategy without a positive budget, capability, and frozen profile path.`
+    );
+  }
+  if (
+    !strategySelected &&
+    (lifecycle.strategy.capability !== undefined || strategyProfilePath !== undefined)
+  ) {
+    reject(
+      'invalid_runtime_plan',
+      `Bounded loop ${path} carries an unreachable strategy binding.`
+    );
+  }
+  for (const [trigger, disposition] of entries) {
+    if (
+      disposition.action !== 'strategy' &&
+      (!('outcome' in disposition) ||
+        typeof disposition.outcome !== 'string' ||
+        disposition.outcome.length === 0)
+    ) {
+      reject(
+        'invalid_runtime_plan',
+        `Bounded loop ${path} lifecycle trigger ${trigger} lacks a typed outcome.`
+      );
+    }
   }
 }
 

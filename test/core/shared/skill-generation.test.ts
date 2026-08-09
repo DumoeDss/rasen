@@ -11,9 +11,9 @@ import {
 
 describe('skill-generation', () => {
   describe('getSkillTemplates', () => {
-    it('should return all skill templates (25 workflow + 12 expert)', () => {
+    it('should return all skill templates (27 workflow/internal + 12 expert)', () => {
       const templates = getSkillTemplates();
-      expect(templates).toHaveLength(37);
+      expect(templates).toHaveLength(39);
     });
 
     it('should include the opt-in review-cycle workflow skill', () => {
@@ -48,8 +48,10 @@ describe('skill-generation', () => {
       expect(dirNames).toContain('rasen-direction');
       expect(dirNames).toContain('rasen-goal-plan');
       expect(dirNames).toContain('rasen-goal-iterate');
+      expect(dirNames).toContain('rasen-goal-judge');
       expect(dirNames).toContain('rasen-goal-report');
       expect(dirNames).toContain('rasen-goal');
+      expect(dirNames).toContain('rasen-review-fix');
       expect(dirNames).toContain('rasen-task-loop');
     });
 

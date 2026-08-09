@@ -69,6 +69,14 @@ const CONTROL_USAGE_FIELDS = Object.freeze([
   'outputTokens',
 ]);
 export const MIN_CONTROL_CONTEXT_TOKENS = 30_000;
+const WINDOWS_ATOMIC_RENAME_RETRY_CODES = new Set([
+  'EPERM',
+  'EACCES',
+  'EBUSY',
+]);
+const WINDOWS_ATOMIC_RENAME_RETRY_MS = 1_000;
+const WINDOWS_ATOMIC_RENAME_POLL_MS = 25;
+const atomicRenameWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
 
 export function classifyControlUsage(usage, contextBaselineTokens) {
   if (
@@ -934,6 +942,33 @@ function assertCanonicalDirectory(directory) {
   return resolved;
 }
 
+function replaceAtomicFile(temporary, resolved) {
+  const deadline = Date.now() + WINDOWS_ATOMIC_RENAME_RETRY_MS;
+  while (true) {
+    try {
+      fs.renameSync(temporary, resolved);
+      return;
+    } catch (error) {
+      if (
+        process.platform !== 'win32'
+        || !WINDOWS_ATOMIC_RENAME_RETRY_CODES.has(error?.code ?? '')
+        || Date.now() >= deadline
+      ) {
+        throw error;
+      }
+      // A reader or virus scanner can briefly hold the destination open on
+      // Windows. Match the durable-session registry's bounded 1s/25ms retry
+      // policy without weakening create-once publication or non-Windows IO.
+      Atomics.wait(
+        atomicRenameWaitBuffer,
+        0,
+        0,
+        WINDOWS_ATOMIC_RENAME_POLL_MS
+      );
+    }
+  }
+}
+
 function atomicWriteText(filePath, body, createOnce) {
   const resolved = path.resolve(filePath);
   const directory = path.dirname(resolved);
@@ -954,7 +989,7 @@ function atomicWriteText(filePath, body, createOnce) {
       fs.linkSync(temporary, resolved);
       fs.unlinkSync(temporary);
     } else {
-      fs.renameSync(temporary, resolved);
+      replaceAtomicFile(temporary, resolved);
     }
     try {
       const directoryHandle = fs.openSync(directory, 'r');

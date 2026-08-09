@@ -1,0 +1,76 @@
+{
+  "change": "ecp-hosted-best-effort-cutover",
+  "archivedAt": "2026-08-07T18:24:16.761Z",
+  "codeCommit": "cb0b4ce47b87731677412f0fe231c3e75e178c4e",
+  "planningBranch": "wip/ecp-shared-bounded-loop-lifecycle-resume",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/fix-round-1.md",
+      "sha256": "bbfc935334e9ac9f59f0e5a0a192e5131eedb128617cf4240429fe62bb023833"
+    },
+    {
+      "path": "evidence/implementation-baseline.md",
+      "sha256": "06a0285e84b8d22bc4f8ceb82f092bf87e15eb0ced0a14a4f3641d830f4b9e3a"
+    },
+    {
+      "path": "evidence/legacy-freeze-integrity.md",
+      "sha256": "712f4d7d0479675733cc23f1a97123d6789f4b8469eaecf1023cfc9ad269de7b"
+    },
+    {
+      "path": "evidence/linux-real-kernel-receipts.md",
+      "sha256": "8b73f505094969925f13b26ba1294f2d5eb4f422970bdf71141f8c1da1124276"
+    },
+    {
+      "path": "evidence/mutation-receipts.md",
+      "sha256": "d3abf228e6bf8b8abb1c8d799fc085a6ff282313d560c0e086acb5bc80ff7f4f"
+    },
+    {
+      "path": "evidence/posix-move-equivalence.md",
+      "sha256": "9b823efbdadacac18c8ce9ba9f47e2b91c96011b25697a6b71773419b539a995"
+    },
+    {
+      "path": "evidence/review-round-1.md",
+      "sha256": "b1d1d8272d173046b86dc23101fe9772428498a232cc318bc03338d14e22f954"
+    },
+    {
+      "path": "evidence/review-round-2.md",
+      "sha256": "87596177754851d2a2e2ae7efec82f96c926bfc0858b47f058e5f4cd2e261911"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "e39d099b38f2e02b5183f655eac7a3f826be296ea2533b1331c57d8c53235bcc"
+    },
+    {
+      "path": "evidence/win32-daemon-death-driver.mjs",
+      "sha256": "fe3f756f516832e9cdd209e8296763287ba84f33f079ac9ef1f55d36608a6191"
+    },
+    {
+      "path": "evidence/win32-daemon-death-probe.mjs",
+      "sha256": "a3e2fa8d2dbd9c3c878cab65c65601a17033fbb16f5c663653ca59f20a860eca"
+    },
+    {
+      "path": "evidence/win32-real-host-receipts.md",
+      "sha256": "5a848531e690805343afad7a9d67a092557b9ef61288023ab1a750fc14999b90"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [
+    {
+      "file": "handoff/implementer-1.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/lead-1.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/planner-1.md",
+      "outcome": "absorbed"
+    }
+  ],
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

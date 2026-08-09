@@ -1,5 +1,6 @@
 import type {
   CompleteRunAction,
+  JsonValue,
   NodeId,
 } from '../contracts.js';
 import { deriveNodeId } from './identity.js';
@@ -21,6 +22,13 @@ import type {
   RuntimePlanBoundedLoopNode,
   RuntimePlanReviewCyclePhase,
 } from './runtime-plan.js';
+import {
+  latestAttemptForDomainInvocation,
+  strategyIterationLimitAllowance,
+  strategyRecoveryInvocationPath,
+  type LoopDomainSnapshot,
+  type LoopProgressEntry,
+} from './bounded-loop-lifecycle.js';
 
 export interface ReviewCycleInvocationDescriptor
   extends RuntimePlanReviewCyclePhase {
@@ -28,6 +36,7 @@ export interface ReviewCycleInvocationDescriptor
   readonly round: number;
   readonly hierarchicalPath: string;
   readonly nodeId: NodeId;
+  readonly recoveryAttempt?: number;
 }
 
 export type ReviewCycleProgress =
@@ -81,12 +90,40 @@ export function reviewCycleInvocation(
   });
 }
 
-function actionForNode(
+function actionForInvocation(
+  plan: RuntimePlan,
+  loop: RuntimePlanBoundedLoopNode,
   record: CanonicalRunRecord,
-  nodeId: NodeId
+  descriptor: ReviewCycleInvocationDescriptor
 ): CommittedAction | undefined {
-  return Object.values(record.actions).find(
-    (action) => action.action.nodeId === nodeId
+  return latestAttemptForDomainInvocation(
+    plan,
+    loop,
+    record,
+    deriveNodeId(
+      plan.runId,
+      reviewCycleInvocationPath(
+        loop.hierarchicalPath,
+        descriptor.round,
+        descriptor.phase
+      )
+    ),
+    reviewCycleInvocationPath(
+      loop.hierarchicalPath,
+      descriptor.round,
+      descriptor.phase
+    )
+  );
+}
+
+function effectiveIterationLimit(
+  plan: RuntimePlan,
+  loop: RuntimePlanBoundedLoopNode,
+  record: CanonicalRunRecord
+): number {
+  return (
+    loop.limits.maxIterations +
+    strategyIterationLimitAllowance(plan, loop, record)
   );
 }
 
@@ -123,10 +160,11 @@ function eventsFromRecord(
 ): readonly ReviewCycleEvent[] {
   if (loop.body.kind !== 'review-cycle') return Object.freeze([]);
   const events: ReviewCycleEvent[] = [];
-  for (let round = 1; round <= loop.maxIterations; round += 1) {
+  const iterationLimit = effectiveIterationLimit(plan, loop, record);
+  for (let round = 1; round <= iterationLimit; round += 1) {
     for (const phase of loop.body.phases) {
       const descriptor = reviewCycleInvocation(plan, loop, round, phase);
-      const action = actionForNode(record, descriptor.nodeId);
+      const action = actionForInvocation(plan, loop, record, descriptor);
       if (action === undefined) continue;
       const event = successfulEvent(round, phase.phase, action);
       if (event !== null) events.push(event);
@@ -161,10 +199,11 @@ export function projectReviewCycleProgress(
   record: CanonicalRunRecord
 ): ReviewCycleProgress {
   const events = eventsFromRecord(plan, loop, record);
+  const iterationLimit = effectiveIterationLimit(plan, loop, record);
   const state =
     events.length === 0
       ? initialReviewCycleState()
-      : reduceReviewCycleEvents(events, loop.maxIterations);
+      : reduceReviewCycleEvents(events, iterationLimit);
   if (state.outcome === 'clean') {
     return Object.freeze({ kind: 'clean', state });
   }
@@ -177,7 +216,7 @@ export function projectReviewCycleProgress(
     state.round,
     phaseFor(loop, state.phase)
   );
-  const action = actionForNode(record, next.nodeId);
+  const action = actionForInvocation(plan, loop, record, next);
   if (action === undefined) {
     return Object.freeze({ kind: 'ready', state, next });
   }
@@ -187,17 +226,129 @@ export function projectReviewCycleProgress(
   return Object.freeze({ kind: 'waiting', state, next, action });
 }
 
+function reviewProgressMaterial(state: ReviewCycleState): JsonValue {
+  return {
+    unresolved: state.findings
+      .filter(
+        (finding) =>
+          finding.status === 'open' &&
+          (finding.severity === 'blocker' || finding.severity === 'major')
+      )
+      .map((finding) => ({
+        id: finding.id,
+        severity: finding.severity,
+        status: finding.status,
+      })),
+    acceptedKnown: state.findings
+      .filter((finding) => finding.status === 'accepted_known')
+      .map((finding) => ({ id: finding.id, severity: finding.severity })),
+  };
+}
+
+/** Domain adapter for the shared bounded-loop lifecycle reducer. */
+export function projectReviewCycleDomainSnapshot(
+  plan: RuntimePlan,
+  loop: RuntimePlanBoundedLoopNode,
+  record: CanonicalRunRecord
+): LoopDomainSnapshot {
+  if (loop.body.kind !== 'review-cycle') {
+    throw new ReviewCycleDomainError(
+      'invalid_review_cycle_transition',
+      'Review lifecycle snapshot requires a review-cycle body.'
+    );
+  }
+  const events = eventsFromRecord(plan, loop, record);
+  const iterationLimit = effectiveIterationLimit(plan, loop, record);
+  let state = initialReviewCycleState();
+  const progressHistory: LoopProgressEntry[] = [];
+  for (const event of events) {
+    state = applyReviewCycleEvent(state, event, iterationLimit);
+    if (event.phase === 're-review' || state.outcome === 'clean') {
+      progressHistory.push({
+        iteration: event.round,
+        material: reviewProgressMaterial(state),
+      });
+    }
+  }
+  const progress = projectReviewCycleProgress(plan, loop, record);
+  const ownedNodeIds = new Set<NodeId>();
+  const ownedInvocations: LoopDomainSnapshot['ownedInvocations'][number][] = [];
+  for (let round = 1; round <= iterationLimit; round += 1) {
+    for (const phase of loop.body.phases) {
+      const invocation = reviewCycleInvocation(plan, loop, round, phase);
+      ownedNodeIds.add(invocation.nodeId);
+      ownedInvocations.push({
+        nodeId: invocation.nodeId,
+        hierarchicalPath: invocation.hierarchicalPath,
+        profilePath: invocation.profilePath,
+        admissionKind: invocation.admissionKind,
+        access: invocation.workspace.access,
+        iteration: invocation.round,
+        phase: invocation.phase,
+      });
+    }
+  }
+  const next = 'next' in progress ? progress.next : undefined;
+  return Object.freeze({
+    bodyKind: 'review-cycle',
+    iteration: state.round,
+    phase: next?.phase ?? state.phase,
+    ...(state.outcome === 'clean' ? { completionOutcome: loop.outcomes.clean } : {}),
+    continueRequested:
+      state.outcome === 'exhausted' ||
+      (events.at(-1)?.phase === 're-review' && state.outcome !== 'clean'),
+    progressHistory: Object.freeze(progressHistory),
+    ...(next === undefined
+      ? {}
+      : {
+          nextInvocation: {
+            nodeId: next.nodeId,
+            hierarchicalPath: next.hierarchicalPath,
+            profilePath: next.profilePath,
+            admissionKind: next.admissionKind,
+            access: next.workspace.access,
+            iteration: next.round,
+            phase: next.phase,
+          },
+        }),
+    ownedNodeIds,
+    ownedInvocations: Object.freeze(ownedInvocations),
+  });
+}
+
 export function locateReviewCycleInvocation(
   plan: RuntimePlan,
+  record: CanonicalRunRecord,
   nodeId: NodeId
 ): ReviewCycleInvocationDescriptor | null {
   for (const node of plan.nodes) {
     if (node.kind !== 'bounded-loop') continue;
     if (node.body.kind !== 'review-cycle') continue;
-    for (let round = 1; round <= node.maxIterations; round += 1) {
+    const iterationLimit = effectiveIterationLimit(plan, node, record);
+    for (let round = 1; round <= iterationLimit; round += 1) {
       for (const phase of node.body.phases) {
         const descriptor = reviewCycleInvocation(plan, node, round, phase);
         if (descriptor.nodeId === nodeId) return descriptor;
+        for (
+          let attempt = 1;
+          attempt <= node.lifecycle.strategy.maxAttempts;
+          attempt += 1
+        ) {
+          const hierarchicalPath = strategyRecoveryInvocationPath(
+            node.hierarchicalPath,
+            attempt,
+            descriptor.hierarchicalPath
+          );
+          const recoveryDescriptor = Object.freeze({
+            ...descriptor,
+            hierarchicalPath,
+            nodeId: deriveNodeId(plan.runId, hierarchicalPath),
+            recoveryAttempt: attempt,
+          });
+          if (recoveryDescriptor.nodeId === nodeId) {
+            return recoveryDescriptor;
+          }
+        }
       }
     }
   }
@@ -218,6 +369,7 @@ export function validateReviewCycleCompletion(
   if (committed === undefined) return;
   const descriptor = locateReviewCycleInvocation(
     plan,
+    record,
     committed.action.nodeId as NodeId
   );
   if (descriptor === null) return;
@@ -228,12 +380,14 @@ export function validateReviewCycleCompletion(
     );
   }
   const progress = projectReviewCycleProgress(plan, descriptor.loop, record);
-  if (
-    (progress.kind !== 'waiting' && progress.kind !== 'ready') ||
-    progress.next.nodeId !== descriptor.nodeId ||
-    progress.next.round !== descriptor.round ||
-    progress.next.phase !== descriptor.phase
-  ) {
+  const addressesExpectedInvocation =
+    (progress.kind === 'ready' || progress.kind === 'waiting') &&
+    progress.next.round === descriptor.round &&
+    progress.next.phase === descriptor.phase &&
+    (progress.kind === 'ready'
+      ? progress.next.nodeId === descriptor.nodeId
+      : progress.action.action.nodeId === descriptor.nodeId);
+  if (!addressesExpectedInvocation) {
     throw new ReviewCycleDomainError(
       'invalid_review_cycle_transition',
       'Completion does not address the currently expected ReviewCycle phase.'
@@ -251,6 +405,6 @@ export function validateReviewCycleCompletion(
       result: request.result,
       evidence: request.evidence,
     },
-    descriptor.loop.maxIterations
+    effectiveIterationLimit(plan, descriptor.loop, record)
   );
 }

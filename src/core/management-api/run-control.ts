@@ -22,7 +22,6 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { createHash } from 'node:crypto';
 
 import type { ProjectHome } from '../project-home.js';
 import {
@@ -30,14 +29,10 @@ import {
   type ChangeRunControlRequest,
   type ChangeRunView,
 } from '../change-run/index.js';
-import {
-  derivePlanningSpaceId,
-  deriveWorkspaceInstanceId,
-  readPhysicalIdentity,
-} from '../change-run/internal/identity.js';
 import { projectRunView } from '../change-run/internal/projector.js';
 import { decodeCanonicalRunRecord, type CanonicalRunRecord } from '../change-run/internal/record.js';
 import type { RuntimePlan } from '../change-run/internal/runtime-plan.js';
+import { deriveRunWorkspaceIds } from './run-workspace-identity.js';
 
 const require = createRequire(import.meta.url);
 
@@ -185,29 +180,6 @@ function resolveCliEntry(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Workspace identity (same read-only chain as runs.ts).
-// ---------------------------------------------------------------------------
-
-function deriveWorkspaceIdFromRoot(root: string): string | null {
-  try {
-    const planningSpaceHome = `project-${createHash('sha256')
-      .update(root)
-      .digest('hex')
-      .slice(0, 12)}`;
-    const planningSpaceId = derivePlanningSpaceId(planningSpaceHome);
-    const st = fs.statSync(root, { bigint: true });
-    const physical = readPhysicalIdentity({
-      device: st.dev,
-      ino: st.ino,
-      birthtimeMs: st.birthtimeMs,
-    });
-    return deriveWorkspaceInstanceId(planningSpaceId, physical) as string;
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Pre-spawn admission: read-only Record load + validation.
 // ---------------------------------------------------------------------------
 
@@ -227,6 +199,7 @@ function admitControlRequest(
   changeId: string,
   runId: string,
   root: string | undefined,
+  home: ProjectHome | null,
   body: unknown,
   storeRoot: string
 ): PreSpawnAdmission | { ok: false; status: number; code: string; message: string } {
@@ -332,8 +305,16 @@ function admitControlRequest(
 
   // --- Workspace scope: mutations are rejected from other worktrees ---
   if (root) {
-    const expectedWorkspace = deriveWorkspaceIdFromRoot(root);
-    if (expectedWorkspace !== null && record.workspaceInstanceId !== expectedWorkspace) {
+    const workspaceResolution = deriveRunWorkspaceIds(root, home, changeId);
+    if (!workspaceResolution.ok) {
+      return {
+        ok: false,
+        status: 503,
+        code: workspaceResolution.code,
+        message: `${workspaceResolution.message} Control is rejected until workspace authority can be established.`,
+      };
+    }
+    if (!workspaceResolution.workspaceIds.includes(record.workspaceInstanceId)) {
       return {
         ok: false,
         status: 403,
@@ -443,6 +424,8 @@ export interface HandleRunControlOptions {
   timeoutMs?: number;
   /** SIGTERM → SIGKILL grace (default 2s). */
   killGraceMs?: number;
+  /** Server-lifetime Run store root; avoids re-reading mutable process env per request. */
+  runsRoot?: string;
 }
 
 /**
@@ -468,16 +451,25 @@ export async function handleRunControl(
   options: HandleRunControlOptions = {}
 ): Promise<RunControlResult> {
   // --- Resolve the store root ---
-  let storeRoot: string;
-  try {
-    const { getGlobalDataDir } = await import('../global-config.js');
-    storeRoot = path.join(getGlobalDataDir(), 'runs');
-  } catch {
-    return { ok: false, status: 500, code: 'run_store_unavailable', message: 'Machine data directory is not available.' };
+  let storeRoot = options.runsRoot;
+  if (!storeRoot) {
+    try {
+      const { getGlobalDataDir } = await import('../global-config.js');
+      storeRoot = path.join(getGlobalDataDir(), 'runs');
+    } catch {
+      return { ok: false, status: 500, code: 'run_store_unavailable', message: 'Machine data directory is not available.' };
+    }
   }
 
   // --- Pre-spawn admission ---
-  const admission = admitControlRequest(changeId, runId, root, body, storeRoot);
+  const admission = admitControlRequest(
+    changeId,
+    runId,
+    root,
+    home,
+    body,
+    storeRoot
+  );
   if (!('record' in admission)) {
     return admission;
   }

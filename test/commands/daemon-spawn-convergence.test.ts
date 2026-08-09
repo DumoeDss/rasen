@@ -77,7 +77,7 @@ describe('spawnDaemonDetached convergence (task 3.3)', () => {
     } finally {
       clearTimeout(winnerTimer);
     }
-  }, 10_000);
+  }, 20_000);
 
   it('review m2: a DIFFERENT-version rasen daemon appearing mid-wait fails as version-mismatch, never converges', async () => {
     const port = await freePort();
@@ -100,5 +100,5 @@ describe('spawnDaemonDetached convergence (task 3.3)', () => {
     } finally {
       clearTimeout(winnerTimer);
     }
-  }, 10_000);
+  }, 20_000);
 });

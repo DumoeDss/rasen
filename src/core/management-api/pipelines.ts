@@ -19,6 +19,7 @@ import {
   resolvePipelineReuseConfig,
   resolvePipelineRoleRuntimes,
   resolvePipelineExecutionSkillSets,
+  projectPreparedPipelineExecutionView,
   collectLegacyPipelineSkillIssues,
   PipelineYamlSchema,
   StageRoleSchema,
@@ -33,10 +34,9 @@ import {
   type PipelineExecutionOptions,
   type PipelineYaml,
   type PreparedDefinition,
+  type PreparedPipelineExecutionView,
   type StageRole,
 } from '../pipeline-registry/index.js';
-import { analyzeReconcilerSupport } from '../pipeline-registry/execution-plan-internal.js';
-import { resolveDiscoveryReconcilerSupportProfile } from '../pipeline-registry/profile-resolver.js';
 import { isPortableWorkflowId, loadWorkflowCatalog } from '../workflow-registry/index.js';
 import {
   resolveConfigContext,
@@ -54,12 +54,78 @@ import type {
   WireDefinitionPreparation,
   WirePipeline,
 } from './wire-types.js';
-import type { DetectedHostRuntime } from '../runtime-adapters.js';
+import { detectHostRuntime, type DetectedHostRuntime } from '../runtime-adapters.js';
 
-const MANAGEMENT_HOST: DetectedHostRuntime = {
-  runtime: 'unknown',
-  source: 'unknown',
-};
+function managementHost(context: ConfigApiContext): DetectedHostRuntime {
+  return context.hostRuntime ?? detectHostRuntime();
+}
+
+function compatibilityBoundaryFields(info: {
+  compatibilityBoundary?: WirePipeline['compatibilityBoundary'];
+}): Pick<WirePipeline, 'compatibilityBoundary'> {
+  return info.compatibilityBoundary
+    ? { compatibilityBoundary: info.compatibilityBoundary }
+    : {};
+}
+
+function wireStagesFromPreparedView(
+  view: PreparedPipelineExecutionView
+): WirePipeline['stages'] {
+  return view.stages.map((stage) => ({
+    id: stage.id,
+    role: stage.role,
+    skill: stage.capability.id.startsWith('skill:')
+      ? stage.capability.id.slice('skill:'.length)
+      : stage.capability.id,
+    gate: stage.gate,
+    effectiveGate: stage.effectiveGate,
+    effectiveModel: stage.model,
+    effectiveEffort: stage.effort,
+    effectiveHandoff: {
+      value: stage.handoff.threshold,
+      source: stage.handoff.source,
+      ...(stage.handoff.binding ? { binding: stage.handoff.binding } : {}),
+      ...(stage.handoff.diagnostics
+        ? { diagnostics: stage.handoff.diagnostics }
+        : {}),
+    },
+    effectiveRuntime: stage.runtime,
+    dispatchMode: stage.dispatchMode,
+    bridge: stage.bridge,
+    nodePath: stage.nodePath,
+    profilePath: stage.profilePath,
+    requires: [...stage.requires],
+    capability: { ...stage.capability },
+    workspace: stage.workspace,
+    verifyPolicy: stage.verifyPolicy,
+    leadReview: stage.leadReview,
+    effectiveSandbox: stage.sandbox,
+    sessionReuse: stage.sessionReuse,
+  }));
+}
+
+function wireExecutionViewFields(
+  view: PreparedPipelineExecutionView
+): Pick<
+  WirePipeline,
+  | 'stages'
+  | 'buildOrder'
+  | 'capabilityPaths'
+  | 'policyPaths'
+  | 'boundedLoops'
+  | 'availableEngines'
+  | 'reconcilerSupport'
+> {
+  return {
+    stages: wireStagesFromPreparedView(view),
+    buildOrder: [...view.buildOrder],
+    capabilityPaths: view.capabilityPaths,
+    policyPaths: view.policyPaths,
+    boundedLoops: view.boundedLoops,
+    availableEngines: view.availableEngines,
+    reconcilerSupport: view.reconcilerSupport,
+  };
+}
 
 function diagnosticForWire(
   diagnostic: DefinitionDiagnostic
@@ -262,6 +328,7 @@ export async function handleListPipelines(
   }
 
   const bundle = pipelineResolutionBundle(ctx.context);
+  const host = managementHost(context);
   const registry = await freezeProductionPreparedPipelineRegistry(
     bundle.pipelineRoot,
     { reporter: false }
@@ -277,6 +344,7 @@ export async function handleListPipelines(
         description: info.description,
         provenance: info.source === 'package' ? 'built-in' : 'user',
         sourceLayer: info.source,
+        ...compatibilityBoundaryFields(info),
         stages: [],
         authoredVersion: info.authoredVersion ?? 1,
         normalizedVersion: 2,
@@ -290,12 +358,22 @@ export async function handleListPipelines(
     }
     const preparation = preparationForWire(prepared);
     if (prepared.authoredVersion === 2) {
+      const overrides = resolvePipelineStageOverrides(
+        prepared.authoredSource.name,
+        bundle.effOptions
+      );
+      const view = projectPreparedPipelineExecutionView(
+        prepared,
+        registry.catalog,
+        { ...bundle.inputsBase, overrides, host }
+      );
       pipelines.push({
         name: prepared.authoredSource.name,
         description: prepared.authoredSource.description ?? '',
         provenance: info.source === 'package' ? 'built-in' : 'user',
         sourceLayer: info.source,
-        stages: [],
+        ...compatibilityBoundaryFields(info),
+        ...wireExecutionViewFields(view),
         ...preparationFields(preparation),
       });
       continue;
@@ -305,15 +383,20 @@ export async function handleListPipelines(
     const inputs: EffectiveStageInputs = {
       ...bundle.inputsBase,
       overrides,
-      host: MANAGEMENT_HOST,
+      host,
     };
+    const view = projectPreparedPipelineExecutionView(
+      prepared,
+      registry.catalog,
+      inputs
+    );
     const effectiveStages = pipeline.stages.map((stage) =>
       resolveEffectiveStage(stage, pipeline, inputs)
     );
     const resolvedRoleRuntimes = resolvePipelineRoleRuntimes(
       pipeline,
       overrides,
-      MANAGEMENT_HOST
+      host
     );
     const runtimes = Object.fromEntries(
       Object.entries(resolvedRoleRuntimes).map(([role, resolved]) => [
@@ -326,6 +409,8 @@ export async function handleListPipelines(
       description: pipeline.description ?? '',
       provenance: info.source === 'package' ? 'built-in' : 'user',
       sourceLayer: info.source,
+      ...compatibilityBoundaryFields(info),
+      ...wireExecutionViewFields(view),
       roleRuntimes: Object.fromEntries(
         Object.entries(resolvedRoleRuntimes).map(([role, resolved]) => [
           role,
@@ -399,6 +484,7 @@ export async function handlePipelineDetail(
   }
 
   const bundle = pipelineResolutionBundle(ctx.context);
+  const host = managementHost(context);
   const registry = await freezeProductionPreparedPipelineRegistry(
     bundle.pipelineRoot,
     { reporter: false }
@@ -442,6 +528,7 @@ export async function handlePipelineDetail(
         description: info.description,
         provenance: info.source === 'package' ? 'built-in' : 'user',
         sourceLayer: info.source,
+        ...compatibilityBoundaryFields(info),
         stages: [],
         ...preparationFields(preparation),
         diagnostics,
@@ -458,12 +545,22 @@ export async function handlePipelineDetail(
   const preparation = preparationForWire(prepared);
   let resolvedView: WirePipeline;
   if (prepared.authoredVersion === 2) {
+    const overrides = resolvePipelineStageOverrides(
+      prepared.authoredSource.name,
+      bundle.effOptions
+    );
+    const view = projectPreparedPipelineExecutionView(
+      prepared,
+      registry.catalog,
+      { ...bundle.inputsBase, overrides, host }
+    );
     resolvedView = {
       name: prepared.authoredSource.name,
       description: prepared.authoredSource.description ?? '',
       provenance: info.source === 'package' ? 'built-in' : 'user',
       sourceLayer: info.source,
-      stages: [],
+      ...compatibilityBoundaryFields(info),
+      ...wireExecutionViewFields(view),
       ...preparationFields(preparation),
     };
   } else {
@@ -475,15 +572,20 @@ export async function handlePipelineDetail(
     const inputs: EffectiveStageInputs = {
       ...bundle.inputsBase,
       overrides,
-      host: MANAGEMENT_HOST,
+      host,
     };
+    const view = projectPreparedPipelineExecutionView(
+      prepared,
+      registry.catalog,
+      inputs
+    );
     const effectiveStages = pipeline.stages.map((stage) =>
       resolveEffectiveStage(stage, pipeline, inputs)
     );
     const resolvedRoleRuntimes = resolvePipelineRoleRuntimes(
       pipeline,
       overrides,
-      MANAGEMENT_HOST
+      host
     );
     const runtimes = Object.fromEntries(
       Object.entries(resolvedRoleRuntimes).map(([role, resolved]) => [
@@ -496,6 +598,8 @@ export async function handlePipelineDetail(
       description: pipeline.description ?? '',
       provenance: info.source === 'package' ? 'built-in' : 'user',
       sourceLayer: info.source,
+      ...compatibilityBoundaryFields(info),
+      ...wireExecutionViewFields(view),
       roleRuntimes: Object.fromEntries(
         Object.entries(resolvedRoleRuntimes).map(([role, resolved]) => [
           role,
@@ -538,16 +642,8 @@ export async function handlePipelineDetail(
   // `execution_profile_unavailable` for EVERY pipeline — a panel that shipped,
   // was unit-tested, and could never display a supported verdict. Discovery
   // resolves the same capability bindings the launch profile resolves.
-  const support = analyzeReconcilerSupport(
-    prepared,
-    resolveDiscoveryReconcilerSupportProfile(prepared, registry.catalog)
-  );
   const response = {
-    pipeline: {
-      ...resolvedView,
-      availableEngines: support.availableEngines,
-      reconcilerSupport: support.reconcilerSupport,
-    },
+    pipeline: resolvedView,
     definition: prepared.authoredSource,
     preparation,
     editable: info.source !== 'package',

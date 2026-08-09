@@ -7,12 +7,14 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  createBlankPipelineDefinitionV2,
   deletePipeline,
   exportPipeline,
   importPipelinePackage,
   PipelineLibraryError,
   savePipeline,
   scaffoldPipeline,
+  serializeAuthoredPipelineDefinition,
   validatePipelineInput,
 } from '../../src/core/pipeline-library.js';
 import {
@@ -34,6 +36,12 @@ import {
 } from '../../src/core/pipeline-registry/index.js';
 import { loadWorkflowCatalog } from '../../src/core/workflow-registry/index.js';
 import { scaffoldWorkflow, importWorkflow } from '../../src/core/workflow-library.js';
+
+const TEST_ATOMIC_EXECUTION = {
+  version: 1 as const,
+  role: 'implementer' as const,
+  workspace: { access: 'write' as const },
+};
 
 function pipelineInput(name: string, extra: string[] = []): PipelinePackageInput {
   return {
@@ -177,14 +185,180 @@ describe('pipeline library lifecycle', () => {
     expect(listPipelines()).not.toContain('validate-only');
   });
 
-  it('scaffolds a canonical v1 Pipeline definition', () => {
-    const draftParent = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-pipeline-v1-scaffold-'));
+  it('scaffolds the canonical blank v2 envelope without a hidden stage', () => {
+    const draftParent = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-pipeline-v2-scaffold-'));
     cleanup.push(draftParent);
-    const draft = scaffoldPipeline('v1-draft', path.join(draftParent, 'v1-draft'));
+    const draft = scaffoldPipeline('v2-draft', path.join(draftParent, 'v2-draft'));
     const manifest = fs.readFileSync(path.join(draft, 'pipeline.yaml'), 'utf8');
 
-    expect(manifest).toMatch(/^version: 1$/m);
-    expect(parsePipeline(manifest).version).toBe(PIPELINE_DEFINITION_VERSION);
+    expect(manifest).not.toContain('\r');
+    expect(manifest.endsWith('\n')).toBe(true);
+    const prepared = EcpDefinitionModule.prepare(
+      manifest,
+      createCapabilityCatalogSnapshot([])
+    );
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) return;
+    expect(prepared.value.authoredSource).toEqual(
+      createBlankPipelineDefinitionV2('v2-draft', 'pipeline-init')
+    );
+    expect(prepared.value.authoredSource).toMatchObject({
+      version: 2,
+      id: 'pipeline:v2-draft',
+      sourceId: 'pipeline-init:v2-draft',
+      name: 'v2-draft',
+      inputs: [],
+      artifacts: [],
+      outcomes: [],
+      declarations: [],
+      root: { nodes: [], connections: [] },
+    });
+  });
+
+  it('canonically serializes equivalent JSON/YAML v2 sources with digest parity', () => {
+    const source = {
+      version: 2 as const,
+      id: 'pipeline:canonical-v2',
+      sourceId: 'fixture:canonical-v2',
+      name: 'canonical-v2',
+      inputs: [
+        { name: 'zeta', type: 'text/plain' },
+        { name: 'alpha', type: 'text/plain', required: true },
+      ],
+      artifacts: [
+        { name: 'gamma', type: 'artifact/gamma' },
+        { name: 'delta', type: 'artifact/delta' },
+      ],
+      outcomes: ['zeta', 'alpha'],
+      declarations: [],
+      root: {
+        nodes: [
+          { id: 'zeta', kind: 'Finish' as const, outcome: 'zeta' },
+          { id: 'alpha', kind: 'Finish' as const, outcome: 'alpha' },
+        ],
+        connections: [],
+        unexposedGraphField: { retained: true },
+      },
+      unexposedDefinitionField: { retained: true },
+    };
+    const jsonPrepared = EcpDefinitionModule.prepare(
+      JSON.stringify(source),
+      createCapabilityCatalogSnapshot([])
+    );
+    const yamlPrepared = EcpDefinitionModule.prepare(
+      [
+        'version: 2',
+        'name: canonical-v2',
+        'sourceId: fixture:canonical-v2',
+        'id: pipeline:canonical-v2',
+        'outcomes: [zeta, alpha]',
+        'artifacts:',
+        '  - { name: gamma, type: artifact/gamma }',
+        '  - { name: delta, type: artifact/delta }',
+        'inputs:',
+        '  - { name: zeta, type: text/plain }',
+        '  - { name: alpha, type: text/plain, required: true }',
+        'declarations: []',
+        'root:',
+        '  unexposedGraphField: { retained: true }',
+        '  connections: []',
+        '  nodes:',
+        '    - { id: zeta, kind: Finish, outcome: zeta }',
+        '    - { id: alpha, kind: Finish, outcome: alpha }',
+        'unexposedDefinitionField: { retained: true }',
+        '',
+      ].join('\r\n'),
+      createCapabilityCatalogSnapshot([])
+    );
+    expect(jsonPrepared.ok).toBe(true);
+    expect(yamlPrepared.ok).toBe(true);
+    if (!jsonPrepared.ok || !yamlPrepared.ok) return;
+
+    const jsonSerialized = serializeAuthoredPipelineDefinition(jsonPrepared.value);
+    const yamlSerialized = serializeAuthoredPipelineDefinition(yamlPrepared.value);
+    expect(jsonSerialized).toBe(yamlSerialized);
+    expect(jsonSerialized).not.toContain('\r');
+    expect(jsonSerialized.endsWith('\n')).toBe(true);
+
+    const roundTrip = EcpDefinitionModule.prepare(
+      jsonSerialized,
+      createCapabilityCatalogSnapshot([])
+    );
+    expect(roundTrip.ok).toBe(true);
+    if (!roundTrip.ok) return;
+    expect(roundTrip.value.authoredSource).toMatchObject({
+      inputs: [{ name: 'alpha' }, { name: 'zeta' }],
+      artifacts: [{ name: 'delta' }, { name: 'gamma' }],
+      outcomes: ['alpha', 'zeta'],
+      root: {
+        nodes: [{ id: 'alpha' }, { id: 'zeta' }],
+        unexposedGraphField: { retained: true },
+      },
+      unexposedDefinitionField: { retained: true },
+    });
+    expect(roundTrip.value.digests).toEqual(jsonPrepared.value.digests);
+  });
+
+  it('keeps LF/CRLF v2 meaning and package content identical through native path helpers', async () => {
+    const name = 'cross-platform-v2';
+    const definition = {
+      version: 2 as const,
+      id: `pipeline:${name}`,
+      sourceId: `fixture:${name}`,
+      name,
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [{ id: 'finish', kind: 'Finish' as const, outcome: 'done' }],
+        connections: [],
+      },
+    };
+    const fixtureDirectory = path.resolve(home, 'path-fixtures');
+    fs.mkdirSync(fixtureDirectory, { recursive: true });
+    const lfPath = path.join(fixtureDirectory, 'posix-lf.yaml');
+    const crlfPath = path.resolve(fixtureDirectory, 'windows-crlf.yaml');
+    const canonical = serializeAuthoredPipelineDefinition(definition);
+    fs.writeFileSync(lfPath, canonical, 'utf8');
+    fs.writeFileSync(crlfPath, canonical.replace(/\n/g, '\r\n'), 'utf8');
+
+    const catalog = createCapabilityCatalogSnapshot([]);
+    const lf = EcpDefinitionModule.prepare(fs.readFileSync(lfPath, 'utf8'), catalog);
+    const crlf = EcpDefinitionModule.prepare(fs.readFileSync(crlfPath, 'utf8'), catalog);
+    expect(lf.ok).toBe(true);
+    expect(crlf.ok).toBe(true);
+    if (!lf.ok || !crlf.ok) return;
+    expect(serializeAuthoredPipelineDefinition(lf.value)).toBe(canonical);
+    expect(serializeAuthoredPipelineDefinition(crlf.value)).toBe(canonical);
+    expect(crlf.value.authoredSource).toEqual(lf.value.authoredSource);
+    expect(crlf.value.digests).toEqual(lf.value.digests);
+
+    await savePipeline(name, crlfPath);
+    const packageDestination = path.resolve(
+      home,
+      'packages',
+      '..',
+      'packages',
+      `${name}.rasenpkg`
+    );
+    await exportPipeline(name, packageDestination);
+    const packageValue = decodePackage(
+      fs.readFileSync(packageDestination),
+      'pipeline'
+    ) as PipelinePackage;
+    const packagedManifest = packageValue.pipelines[0]!.files.find(
+      (file) => file.path === 'pipeline.yaml'
+    )!;
+    expect(packagedManifest.content).toBe(canonical);
+    expect(packagedManifest.content).not.toContain('\r');
+    const packaged = EcpDefinitionModule.prepare(packagedManifest.content, catalog);
+    expect(packaged.ok).toBe(true);
+    if (packaged.ok) {
+      expect(packaged.value.authoredSource).toEqual(lf.value.authoredSource);
+      expect(packaged.value.digests).toEqual(lf.value.digests);
+    }
+    expect(path.resolve(packageDestination)).toBe(packageDestination);
   });
 
   it('refuses to export a pipeline that is not in the user layer', async () => {
@@ -695,6 +869,7 @@ describe('pipeline library lifecycle', () => {
                 id: 'skill:rasen-propose',
                 version: propose.digest,
               },
+              execution: TEST_ATOMIC_EXECUTION,
             },
           ],
           connections: [],
@@ -764,6 +939,7 @@ describe('pipeline library lifecycle', () => {
                 id: 'skill:rasen-codex',
                 version: codex.digest,
               },
+              execution: TEST_ATOMIC_EXECUTION,
             },
           ],
           connections: [],
@@ -864,6 +1040,7 @@ describe('pipeline library lifecycle', () => {
                 id: 'skill:rasen-alternate',
                 version: alternate.digest,
               },
+              execution: TEST_ATOMIC_EXECUTION,
             },
           ],
           connections: [],
@@ -945,6 +1122,7 @@ describe('pipeline library lifecycle', () => {
                   id: capabilityId,
                   version: resolvedVersion,
                 },
+                execution: TEST_ATOMIC_EXECUTION,
               },
             ],
             connections: [],

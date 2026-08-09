@@ -16,7 +16,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -27,11 +27,13 @@ import { createRuntimePlan } from '../../../src/core/change-run/internal/runtime
 import {
   buildEvidenceRef,
   computeEvidenceContentDigest,
+  createBoundedEvidenceStore,
+  type BoundedEvidenceStore,
 } from '../../../src/core/change-run/internal/evidence.js';
+import { createFilesystemEvidenceStore } from '../../../src/core/change-run/internal/evidence-store-fs.js';
 import {
   computeCompletionReceiptDigest,
 } from '../../../src/core/change-run/internal/completion.js';
-import { buildAgentActor } from '../../../src/core/change-run/internal/actors.js';
 import {
   agentAction,
   startRecord,
@@ -46,12 +48,15 @@ import type {
   CompleteRunAction,
   Digest,
   EvidenceRef,
+  EffectId,
   InvocationId,
   PlanningSpaceId,
   RunAction,
   RunId,
 } from '../../../src/core/change-run/index.js';
 import { InputReaderError } from '../../../src/core/change-run/internal/input-reader.js';
+import { createHostEvidenceWriter } from '../../../src/core/change-run/internal/host-evidence-writer.js';
+import { attestTestCompletion } from '../../fixtures/trusted-completion.js';
 
 const branded = <T>(value: string): T => value as T;
 
@@ -61,8 +66,6 @@ const branded = <T>(value: string): T => value as T;
 // ---------------------------------------------------------------------------
 
 const LINEAR_RUN_ID = branded<RunId>(`run:${'a'.repeat(64)}`);
-const LINEAR_DIGEST = branded<Digest>(`sha256:${'b'.repeat(64)}`);
-const LINEAR_ATTESTATION = branded<Digest>(`sha256:${'c'.repeat(64)}`);
 const LINEAR_IDENTITY = branded<Digest>(`sha256:${'d'.repeat(64)}`);
 const PLANNING_SPACE = branded<PlanningSpaceId>(`planning-space:${'1'.repeat(64)}`);
 const CHANGE_INSTANCE = branded<ChangeInstanceId>(`change-instance:${'2'.repeat(64)}`);
@@ -95,13 +98,21 @@ interface TestRuntime {
   plan: RuntimePlan;
   store: ReturnType<typeof createInMemoryRunStore>;
   facade: ReturnType<typeof createChangePipelineRuntime>;
+  evidenceStore: ReturnType<typeof createBoundedEvidenceStore>;
   grantedAction: RunAction;
 }
 
-async function buildStartedRuntime(): Promise<TestRuntime> {
+async function buildStartedRuntime(
+  observeEffect = true,
+  providedEvidenceStore?: BoundedEvidenceStore
+): Promise<TestRuntime> {
   const plan = linearPlan();
   const store = createInMemoryRunStore();
   const initial = startRecord(plan);
+  const evidenceStore = providedEvidenceStore ?? createBoundedEvidenceStore({
+    maxRunBytes: 1024 * 1024,
+    maxEntries: 64,
+  });
   // Do NOT store.create() — facade.start() checks store.has() and creates
   // the record itself on the created path (with granted admits). Pre-creating
   // would make start return 'reused' with zero actions.
@@ -111,6 +122,7 @@ async function buildStartedRuntime(): Promise<TestRuntime> {
     plan,
     initialRecord: initial,
     buildAction: (d) => agentAction(plan, 'root/a', d.occurrence),
+    evidenceStore,
   });
 
   // Start grants the single non-gated action immediately.
@@ -129,23 +141,25 @@ async function buildStartedRuntime(): Promise<TestRuntime> {
   // close (the reducer requires all effects observed before a successful
   // result). This goes through the reducer directly — effect observation is
   // an internal kernel operation, NOT a CLI command path.
-  const record = store.load(plan.runId);
-  const effectId = grantedAction.effects[0]!.effectId;
-  const observeResult = reduceCanonicalRunRecord(record, {
-    kind: 'observe-effect',
-    actionId: grantedAction.actionId,
-    effectId,
-    status: 'succeeded',
-    receiptDigest: fixtureDigests.receiptDigest,
-    observation: { ok: true },
-    evidence: evidenceFor(plan, grantedAction.actionId),
-  });
-  if (!observeResult.ok) {
-    throw new Error('fixture: effect observation failed');
+  if (observeEffect) {
+    const record = store.load(plan.runId);
+    const effectId = grantedAction.effects[0]!.effectId;
+    const observeResult = reduceCanonicalRunRecord(record, {
+      kind: 'observe-effect',
+      actionId: grantedAction.actionId,
+      effectId,
+      status: 'succeeded',
+      receiptDigest: fixtureDigests.receiptDigest,
+      observation: { ok: true },
+      evidence: evidenceFor(plan, grantedAction.actionId),
+    });
+    if (!observeResult.ok) {
+      throw new Error('fixture: effect observation failed');
+    }
+    store.commit(plan.runId, observeResult.record);
   }
-  store.commit(plan.runId, observeResult.record);
 
-  return { plan, store, facade, grantedAction };
+  return { plan, store, facade, evidenceStore, grantedAction };
 }
 
 // ---------------------------------------------------------------------------
@@ -157,12 +171,17 @@ function makeEvidence(
   actionId: ActionId,
   observationKind: string,
   schema: string,
+  effectId?: EffectId,
+  authority?: Readonly<{
+    producer: EvidenceRef['producer'];
+    treeDigest: Digest;
+  }>,
 ): EvidenceRef {
   return buildEvidenceRef({
     content,
     mediaType: 'application/json',
     observationKind,
-    producer: {
+    producer: authority?.producer ?? {
       id: 'fixture-producer',
       version: '1',
       identityDigest: LINEAR_IDENTITY,
@@ -175,47 +194,80 @@ function makeEvidence(
       runId: LINEAR_RUN_ID,
       actionId,
       schema,
+      ...(authority === undefined ? {} : { treeDigest: authority.treeDigest }),
+      ...(effectId === undefined ? {} : { effectId }),
     },
   });
 }
 
-function makeCompletion(
-  grantedAction: RunAction,
+function makeObservationCompletion(
+  rt: TestRuntime,
+  kind: 'effect-observation' | 'infrastructure-observation',
   evidenceContent: Uint8Array,
-  attestationContent: Uint8Array,
+  _attestationContent: Uint8Array,
 ): { completion: CompleteRunAction; evidenceRef: EvidenceRef; attestationRef: EvidenceRef } {
+  const grantedAction = rt.grantedAction;
   const actionId = grantedAction.actionId;
-  const evidenceRef = makeEvidence(evidenceContent, actionId, 'completion-evidence', 'evidence/1');
-  const attestationRef = makeEvidence(attestationContent, actionId, 'actor-attestation', 'attestation/1');
-
-  const actor = buildAgentActor({
-    role: 'implementer',
-    provider: 'anthropic',
-    runtime: 'claude',
-    principalIdentityDigest: LINEAR_ATTESTATION,
-    sessionIdentityDigest: LINEAR_DIGEST,
-    adapter: { id: 'adapter:fixture', version: '1', artifactDigest: LINEAR_DIGEST },
-  });
-
-  const base = {
-    format: 'change-run-completion/1' as const,
-    kind: 'domain-action-result' as const,
+  const effectId = grantedAction.effects[0]!.effectId as EffectId;
+  const semantic = kind === 'effect-observation'
+    ? ({
+        kind,
+        effectId,
+        status: 'succeeded' as const,
+        observation: { workspaceRevision: 'cli-observed' },
+      } as const)
+    : ({
+        kind,
+        status: 'infrastructure_failed' as const,
+        error: {
+          code: 'adapter_unavailable',
+          retryable: true,
+          adapterArtifactDigest: grantedAction.capability.artifact.contentDigest,
+        },
+      } as const);
+  const submission = attestTestCompletion({
     change: { projectRoot: '/root', changeId: 'fixture-change' },
-    runId: grantedAction.runId,
-    actionId,
-    invocationId: grantedAction.invocationId,
-    actor,
-    actorAttestation: attestationRef,
-    evidence: [evidenceRef],
-    status: 'succeeded' as const,
-    result: { ok: true },
-  };
-  const receiptDigest = computeCompletionReceiptDigest(base as CompleteRunAction);
+    record: rt.store.load(rt.plan.runId),
+    action: grantedAction,
+    completion: semantic,
+    evidenceContent,
+  });
+  rememberTrustedUploads(submission.uploads);
   return {
-    completion: { ...base, receiptDigest } as CompleteRunAction,
-    evidenceRef,
-    attestationRef,
+    completion: submission.completion,
+    evidenceRef: submission.completion.evidence[0]!,
+    attestationRef: submission.completion.actorAttestation,
   };
+}
+
+function makeCompletion(
+  rt: TestRuntime,
+  evidenceContent: Uint8Array,
+  _attestationContent: Uint8Array,
+): { completion: CompleteRunAction; evidenceRef: EvidenceRef; attestationRef: EvidenceRef } {
+  const submission = attestTestCompletion({
+    change: { projectRoot: '/root', changeId: 'fixture-change' },
+    record: rt.store.load(rt.plan.runId),
+    action: rt.grantedAction,
+    completion: { kind: 'domain-action-result', status: 'succeeded', result: { ok: true } },
+    evidenceContent,
+  });
+  rememberTrustedUploads(submission.uploads);
+  return {
+    completion: submission.completion,
+    evidenceRef: submission.completion.evidence[0]!,
+    attestationRef: submission.completion.actorAttestation,
+  };
+}
+
+const trustedUploadByDigest = new Map<string, string>();
+
+function rememberTrustedUploads(
+  uploads: readonly Readonly<{ contentDigest: string; contentBase64: string }>[]
+): void {
+  for (const upload of uploads) {
+    trustedUploadByDigest.set(upload.contentDigest, upload.contentBase64);
+  }
 }
 
 function uploadsFor(
@@ -227,11 +279,13 @@ function uploadsFor(
   return [
     {
       contentDigest: evidenceRef.contentDigest,
-      contentBase64: Buffer.from(evidenceContent).toString('base64'),
+      contentBase64: trustedUploadByDigest.get(evidenceRef.contentDigest)
+        ?? Buffer.from(evidenceContent).toString('base64'),
     },
     {
       contentDigest: attestationRef.contentDigest,
-      contentBase64: Buffer.from(attestationContent).toString('base64'),
+      contentBase64: trustedUploadByDigest.get(attestationRef.contentDigest)
+        ?? Buffer.from(attestationContent).toString('base64'),
     },
   ];
 }
@@ -244,6 +298,12 @@ function commandForRuntime(rt: TestRuntime): PipelineCommand {
       store: rt.store,
       plan: rt.plan,
       initialRecord: rt.store.load(rt.plan.runId),
+      evidenceStore: rt.evidenceStore,
+      hostEvidenceWriter: createHostEvidenceWriter({
+        runId: rt.plan.runId,
+        runStore: rt.store,
+        evidenceStore: rt.evidenceStore,
+      }),
     },
     pipeline: { name: 'linear' } as never,
     runId: rt.plan.runId as string,
@@ -285,7 +345,7 @@ describe('CLI complete handler (12.5/12.6)', () => {
     const evidenceContent = new TextEncoder().encode('{"result":"ok"}');
     const attestationContent = new TextEncoder().encode('{"signed":true}');
     const { completion, evidenceRef, attestationRef } = makeCompletion(
-      rt.grantedAction,
+      rt,
       evidenceContent,
       attestationContent,
     );
@@ -307,6 +367,136 @@ describe('CLI complete handler (12.5/12.6)', () => {
     // in the SAME revision as the completion (design §5.6).
     expect(result.disposition).toBe('terminal');
     expect(result.status).toBe('completed');
+  });
+
+  it('submits an effect observation from bounded JSON with trusted uploads', async () => {
+    const rt = await buildStartedRuntime(false);
+    const evidenceContent = new TextEncoder().encode('{"effect":"applied"}');
+    const attestationContent = new TextEncoder().encode('{"signed":true}');
+    const { completion, evidenceRef, attestationRef } = makeObservationCompletion(
+      rt,
+      'effect-observation',
+      evidenceContent,
+      attestationContent,
+    );
+    const file = join(dir, 'effect-observation.json');
+    writeFileSync(file, JSON.stringify({
+      completion,
+      uploads: uploadsFor(
+        evidenceRef,
+        attestationRef,
+        evidenceContent,
+        attestationContent,
+      ),
+    }));
+
+    const output = await captureLog(() =>
+      commandForRuntime(rt).complete(
+        'fixture-change',
+        rt.plan.runId as string,
+        file,
+        { json: true },
+      ),
+    );
+    expect(JSON.parse(output)).toMatchObject({
+      disposition: 'advanced',
+      status: 'running',
+    });
+    const committed = rt.store.load(rt.plan.runId).actions[rt.grantedAction.actionId]!;
+    expect(committed.result).toBeUndefined();
+    expect(committed.effects[0]).toMatchObject({
+      state: 'succeeded',
+      receiptDigest: completion.receiptDigest,
+      evidence: [evidenceRef],
+    });
+  });
+
+  it('publishes retained observation bytes that a fresh runtime store can reopen', async () => {
+    const evidenceRoot = join(dir, 'persistent-run-store');
+    mkdirSync(evidenceRoot, { recursive: true });
+    const persistent = createFilesystemEvidenceStore(evidenceRoot, LINEAR_RUN_ID, {
+      maxRunBytes: 1024 * 1024,
+      maxEntries: 64,
+    });
+    const rt = await buildStartedRuntime(false, persistent);
+    const evidenceContent = new TextEncoder().encode('{"effect":"persisted"}');
+    const attestationContent = new TextEncoder().encode('{"signed":true}');
+    const { completion, evidenceRef, attestationRef } = makeObservationCompletion(
+      rt,
+      'effect-observation',
+      evidenceContent,
+      attestationContent,
+    );
+    const file = join(dir, 'persistent-effect.json');
+    writeFileSync(file, JSON.stringify({
+      completion,
+      uploads: uploadsFor(
+        evidenceRef,
+        attestationRef,
+        evidenceContent,
+        attestationContent,
+      ),
+    }));
+
+    await commandForRuntime(rt).complete(
+      'fixture-change',
+      rt.plan.runId as string,
+      file,
+      { json: true },
+    );
+
+    const fresh = createFilesystemEvidenceStore(evidenceRoot, LINEAR_RUN_ID, {
+      maxRunBytes: 1024 * 1024,
+      maxEntries: 64,
+    });
+    expect(Buffer.from(fresh.read(evidenceRef))).toEqual(Buffer.from(evidenceContent));
+    expect(Buffer.from(fresh.read(attestationRef))).toEqual(
+      Buffer.from(trustedUploadByDigest.get(attestationRef.contentDigest)!, 'base64')
+    );
+  });
+
+  it('submits an infrastructure observation without rewriting it as domain failure', async () => {
+    const rt = await buildStartedRuntime(false);
+    const evidenceContent = new TextEncoder().encode('{"adapter":"offline"}');
+    const attestationContent = new TextEncoder().encode('{"signed":true}');
+    const { completion, evidenceRef, attestationRef } = makeObservationCompletion(
+      rt,
+      'infrastructure-observation',
+      evidenceContent,
+      attestationContent,
+    );
+    const file = join(dir, 'infrastructure-observation.json');
+    writeFileSync(file, JSON.stringify({
+      completion,
+      uploads: uploadsFor(
+        evidenceRef,
+        attestationRef,
+        evidenceContent,
+        attestationContent,
+      ),
+    }));
+
+    const output = await captureLog(() =>
+      commandForRuntime(rt).complete(
+        'fixture-change',
+        rt.plan.runId as string,
+        file,
+        { json: true },
+      ),
+    );
+    expect(JSON.parse(output)).toMatchObject({
+      disposition: 'waiting',
+      status: 'waiting',
+    });
+    const committed = rt.store.load(rt.plan.runId).actions[rt.grantedAction.actionId]!;
+    expect(committed.result).toBeUndefined();
+    expect(committed.infrastructure).toMatchObject({
+      code: 'adapter_unavailable',
+      retryable: true,
+      artifactDigest: rt.grantedAction.capability.artifact.contentDigest,
+      receiptDigest: completion.receiptDigest,
+      evidence: [evidenceRef],
+    });
   });
 
   it('rejects a symlink receipt body (no-follow)', async () => {
@@ -360,7 +550,7 @@ describe('CLI complete handler (12.5/12.6)', () => {
     const evidenceContent = new TextEncoder().encode('{"result":"ok"}');
     const attestationContent = new TextEncoder().encode('{"signed":true}');
     const { completion, evidenceRef, attestationRef } = makeCompletion(
-      rt.grantedAction,
+      rt,
       evidenceContent,
       attestationContent,
     );
@@ -397,7 +587,7 @@ describe('CLI transport upload staging (7.9)', () => {
     const evidenceContent = new TextEncoder().encode('{"result":"ok"}');
     const attestationContent = new TextEncoder().encode('{"signed":true}');
     const { completion, evidenceRef, attestationRef } = makeCompletion(
-      rt.grantedAction,
+      rt,
       evidenceContent,
       attestationContent,
     );
@@ -424,7 +614,7 @@ describe('CLI transport upload staging (7.9)', () => {
       computeEvidenceContentDigest(evidenceContent),
     );
     expect(received.actorAttestation.contentDigest).toBe(
-      computeEvidenceContentDigest(attestationContent),
+      attestationRef.contentDigest,
     );
     // The receipt was produced — staging + facade both succeeded.
     const result = JSON.parse(output);
@@ -436,7 +626,7 @@ describe('CLI transport upload staging (7.9)', () => {
     const evidenceContent = new TextEncoder().encode('{"result":"secret"}');
     const attestationContent = new TextEncoder().encode('{"signed":"secret"}');
     const { completion, evidenceRef, attestationRef } = makeCompletion(
-      rt.grantedAction,
+      rt,
       evidenceContent,
       attestationContent,
     );
@@ -469,7 +659,7 @@ describe('CLI transport upload staging (7.9)', () => {
     const evidenceContent = new TextEncoder().encode('{"result":"ok"}');
     const attestationContent = new TextEncoder().encode('{"signed":true}');
     const { completion, evidenceRef, attestationRef } = makeCompletion(
-      rt.grantedAction,
+      rt,
       evidenceContent,
       attestationContent,
     );
@@ -487,7 +677,7 @@ describe('CLI transport upload staging (7.9)', () => {
     const command = commandForRuntime(rt);
     await expect(
       command.complete('fixture-change', rt.plan.runId as string, file, { json: true }),
-    ).rejects.toThrowError(/orphan/i);
+    ).rejects.toThrowError(/not referenced|orphan/i);
   });
 
   it('rejects when an evidence ref has no staged upload content', async () => {
@@ -495,7 +685,7 @@ describe('CLI transport upload staging (7.9)', () => {
     const evidenceContent = new TextEncoder().encode('{"result":"ok"}');
     const attestationContent = new TextEncoder().encode('{"signed":true}');
     const { completion, evidenceRef, attestationRef } = makeCompletion(
-      rt.grantedAction,
+      rt,
       evidenceContent,
       attestationContent,
     );
@@ -505,7 +695,7 @@ describe('CLI transport upload staging (7.9)', () => {
       uploads: [
         {
           contentDigest: attestationRef.contentDigest,
-          contentBase64: Buffer.from(attestationContent).toString('base64'),
+          contentBase64: trustedUploadByDigest.get(attestationRef.contentDigest)!,
         },
       ],
     };
@@ -515,7 +705,7 @@ describe('CLI transport upload staging (7.9)', () => {
     const command = commandForRuntime(rt);
     await expect(
       command.complete('fixture-change', rt.plan.runId as string, file, { json: true }),
-    ).rejects.toThrowError(/no staged upload/i);
+    ).rejects.toThrowError(/has no upload|no staged upload/i);
   });
 
   it('rejects an upload whose contentDigest does not match its bytes', async () => {
@@ -523,7 +713,7 @@ describe('CLI transport upload staging (7.9)', () => {
     const evidenceContent = new TextEncoder().encode('{"result":"ok"}');
     const attestationContent = new TextEncoder().encode('{"signed":true}');
     const { completion, evidenceRef, attestationRef } = makeCompletion(
-      rt.grantedAction,
+      rt,
       evidenceContent,
       attestationContent,
     );
@@ -536,7 +726,7 @@ describe('CLI transport upload staging (7.9)', () => {
       },
       {
         contentDigest: attestationRef.contentDigest,
-        contentBase64: Buffer.from(attestationContent).toString('base64'),
+        contentBase64: trustedUploadByDigest.get(attestationRef.contentDigest)!,
       },
     ];
     const body = { completion, uploads };
@@ -663,10 +853,9 @@ describe('CLI control handler (12.5/12.6)', () => {
 // ---------------------------------------------------------------------------
 
 describe('Legacy resume byte-shape parity (12.7)', () => {
-  it('control with cancel dispatches through facade.control as a cancel stimulus', async () => {
-    // The design says "cancel is only typed sugar over control." Verify that
-    // the control command path converts a cancel control request into the
-    // matching RunStimulus and dispatches through facade.control.
+  it('control with cancel dispatches the public envelope through facade.control', async () => {
+    // The facade owns public-control translation so every caller gets the same
+    // optimistic identity checks and wait-kind-specific decision routing.
     const rt = await buildStartedRuntime();
     const controlSpy = vi.spyOn(rt.facade, 'control');
 
@@ -692,8 +881,12 @@ describe('Legacy resume byte-shape parity (12.7)', () => {
       });
 
       expect(controlSpy).toHaveBeenCalledTimes(1);
-      const stimulus = controlSpy.mock.calls[0]![0] as { kind: string };
-      expect(stimulus.kind).toBe('cancel');
+      const envelope = controlSpy.mock.calls[0]![0];
+      expect(envelope).toMatchObject({
+        format: 'change-run-control/1',
+        expectedRecordVersion: record.recordVersion,
+        command: { kind: 'cancel' },
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

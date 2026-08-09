@@ -27,6 +27,7 @@ import {
 import {
   goalCycleInvocation,
   locateGoalCycleInvocation,
+  projectGoalCycleDomainSnapshot,
   projectGoalCycleProgress,
   type GoalCycleProgress,
 } from './goal-cycle-runtime.js';
@@ -34,6 +35,7 @@ import type {
   RuntimePlan,
   RuntimePlanBoundedLoopNode,
 } from './runtime-plan.js';
+import { reduceBoundedLoopLifecycle } from './bounded-loop-lifecycle.js';
 import {
   assertSafeRunPath,
   createNodeSafePathPlumbing,
@@ -249,9 +251,20 @@ export interface ValidateTaskLoopJudgmentInput {
 function verifyTaskLoopEvidenceRef(
   ref: EvidenceRef,
   context: NonNullable<ValidateTaskLoopJudgmentInput['evidenceContext']>,
-  schema: string
+  legacySchema: string,
+  trustedUse: 'domainActionResult' | 'actorAttestation' = 'domainActionResult'
 ): void {
   try {
+    const action = context.record.actions[context.actionId]?.action;
+    const frozenUse = trustedUse === 'actorAttestation'
+      ? action?.completionAuthority?.actorAttestation
+      : action?.completionAuthority?.observations.domainActionResult;
+    const trusted = ref.format === 'change-run-evidence-ref/2';
+    if (trusted && frozenUse === undefined) {
+      throw new Error(
+        `Action ${context.actionId} has no frozen ${trustedUse} evidence authority.`
+      );
+    }
     verifyEvidenceRefIdentity(ref);
     verifyEvidenceBinding(ref, {
       planningSpaceId: context.record.change.planningSpaceId,
@@ -260,8 +273,10 @@ function verifyTaskLoopEvidenceRef(
       changeId: context.record.change.changeId,
       runId: context.record.runId,
       actionId: context.actionId as EvidenceRef['binding']['actionId'],
-      schema,
-      treeDigest: context.treeDigest,
+      schema: trusted ? frozenUse!.schema : legacySchema,
+      treeDigest: trusted
+        ? action!.expectedBeforeWorkspace.treeDigest as Digest
+        : context.treeDigest,
     });
   } catch (error) {
     throw new TaskLoopDomainError(
@@ -512,6 +527,7 @@ function priorCriticSessions(
     .filter((committed) => {
       const descriptor = locateGoalCycleInvocation(
         plan,
+        record,
         committed.action.nodeId as NodeId
       );
       return (
@@ -535,6 +551,7 @@ function latestAcceptedJudgment(
   for (const committed of Object.values(record.actions)) {
     const descriptor = locateGoalCycleInvocation(
       plan,
+      record,
       committed.action.nodeId as NodeId
     );
     if (
@@ -656,7 +673,8 @@ function verifyActorAttestation(
       actionId: committed.action.actionId,
       treeDigest,
     },
-    TASK_LOOP_ACTOR_ATTESTATION_SCHEMA
+    TASK_LOOP_ACTOR_ATTESTATION_SCHEMA,
+    'actorAttestation'
   );
 }
 
@@ -791,6 +809,7 @@ export function validateTaskLoopCompletion(
   if (committed === undefined) return;
   const descriptor = locateGoalCycleInvocation(
     plan,
+    record,
     committed.action.nodeId as NodeId
   );
   if (descriptor === null || request.status !== 'succeeded') {
@@ -934,6 +953,12 @@ export function projectTaskLoopSection(
   progress: GoalCycleProgress
 ): Readonly<Record<string, unknown>> {
   const contract = taskLoopContract(record);
+  const lifecycle = reduceBoundedLoopLifecycle(
+    plan,
+    loop,
+    record,
+    projectGoalCycleDomainSnapshot(plan, loop, record)
+  );
   const judgment = latestAcceptedJudgment(plan, record);
   const actors = Array.from({ length: progress.state.round }, (_, index) => {
     const round = index + 1;
@@ -972,8 +997,8 @@ export function projectTaskLoopSection(
     phase,
     budget: {
       used: progress.state.eventCount,
-      max: loop.maxIterations * 2,
-      remainingRounds: Math.max(0, loop.maxIterations - round + 1),
+      max: loop.limits.maxIterations * 2,
+      remainingRounds: Math.max(0, loop.limits.maxIterations - round + 1),
     },
     actors,
     criteria: judgment?.criteria ?? [],
@@ -997,7 +1022,7 @@ export function projectTaskLoopSection(
     ...(judgment?.passCondition === undefined
       ? {}
       : { passCondition: judgment.passCondition }),
-    stallStreak: progress.state.stallStreak,
+    stallStreak: lifecycle.stallStreak,
     outcome: terminalOutcome ?? progress.state.outcome,
     nextAction,
     ...(record.inputs.gatePolicy === undefined

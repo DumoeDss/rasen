@@ -3,10 +3,14 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    { self, nixpkgs }:
+    { self, nixpkgs, rust-overlay }:
     let
       supportedSystems = [
         "x86_64-linux"
@@ -21,8 +25,34 @@
       packages = forAllSystems (
         system:
         let
-          pkgs = nixpkgs.legacyPackages.${system};
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ rust-overlay.overlays.default ];
+          };
           inherit (pkgs) lib;
+          cargoVendor = pkgs.rustPlatform.importCargoLock {
+            lockFile = ./native/linux-process-authority/Cargo.lock;
+          };
+          rustToolchainSource = pkgs.rust-bin.stable."1.88.0".minimal;
+          # rust-overlay's combined toolchain is a symlink tree. The native
+          # authority build intentionally rejects symlinked compiler inputs,
+          # so materialize a self-contained sysroot whose binaries are exact
+          # regular files without weakening that boundary.
+          rustToolchain = pkgs.runCommand "rust-toolchain-1.88.0-exact" {
+            nativeBuildInputs = [ pkgs.makeWrapper ];
+          } ''
+            mkdir -p "$out"
+            cp -RL "${rustToolchainSource}/." "$out/"
+            # rustc's upstream RUNPATH still locates rustc_driver in the
+            # overlay component store. Force sysroot discovery back to this
+            # materialized tree for both direct calls and Cargo subprocesses.
+            chmod u+w "$out/bin" "$out/bin/cargo" "$out/bin/rustc"
+            wrapProgram "$out/bin/cargo" \
+              --add-flags '--offline' \
+              --add-flags '--config=source.crates-io.replace-with=\"vendored-sources\"' \
+              --add-flags '--config=source.vendored-sources.directory=\"${cargoVendor}\"'
+            wrapProgram "$out/bin/rustc" --add-flags "--sysroot $out"
+          '';
         in
         {
           default = pkgs.stdenv.mkDerivation (finalAttrs: {
@@ -36,11 +66,13 @@
                 ./bin
                 ./schemas
                 ./scripts
+                ./native
                 ./test
                 ./package.json
                 ./pnpm-lock.yaml
                 ./tsconfig.json
                 ./build.js
+                ./rust-toolchain.toml
                 ./vitest.config.ts
                 ./vitest.setup.ts
                 ./eslint.config.js
@@ -59,11 +91,17 @@
               npmHooks.npmInstallHook
               pnpmConfigHook
               pnpm_9
+              rustToolchain
+              which
             ];
 
             buildPhase = ''
               runHook preBuild
 
+              # stdenv injects these toolchain selectors. Rasen's reproducible
+              # authority builders deliberately reject inherited overrides and
+              # resolve their pinned tools themselves.
+              unset AR CC CXX LD
               pnpm run build
 
               runHook postBuild
@@ -99,6 +137,8 @@
             buildInputs = with pkgs; [
               nodejs_20
               pnpm_9
+              cargo
+              rustc
             ];
 
             shellHook = ''

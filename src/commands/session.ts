@@ -6,10 +6,6 @@ import { Readable } from 'node:stream';
 
 import { Command } from 'commander';
 
-import {
-  decodeRunAction,
-  type RunAction,
-} from '../core/change-run/index.js';
 import { getCliLocale } from '../core/cli-locale.js';
 import {
   probeDaemon,
@@ -18,6 +14,8 @@ import {
 import { readDaemonState } from '../core/management-api/daemon-state.js';
 import {
   createReusableSessionService,
+  decodeReusableSessionCommandAction,
+  type ReusableSessionCommandAction,
   type ReusableSessionService,
 } from '../core/management-api/reusable-session-api.js';
 import { createSessionRegistry } from '../core/management-api/session-registry.js';
@@ -39,6 +37,12 @@ import {
   getLocaleCatalog,
 } from '../locales/index.js';
 import type { CliLocale } from '../utils/locale.js';
+import {
+  runHostedSessionControl,
+  runHostedSessionExec,
+  runHostedSessionRead,
+  type HostedSessionExecOptions,
+} from './hosted-session.js';
 
 const require = createRequire(import.meta.url);
 const { version: OWN_VERSION } = require('../../package.json') as {
@@ -202,7 +206,7 @@ function readBoundedActionStream(
 export async function readSessionActionSource(
   source: string,
   stdin: Readable = process.stdin
-): Promise<RunAction | { error: string }> {
+): Promise<ReusableSessionCommandAction | { error: string }> {
   try {
     let stream: Readable;
     let destroyOnFinish = false;
@@ -221,7 +225,7 @@ export async function readSessionActionSource(
     }
     const raw = await readBoundedActionStream(stream, destroyOnFinish);
     if ('error' in raw) return raw;
-    return decodeRunAction(JSON.parse(raw.toString('utf-8')));
+    return decodeReusableSessionCommandAction(JSON.parse(raw.toString('utf-8')));
   } catch (error) {
     return {
       error:
@@ -1223,13 +1227,34 @@ export function registerSessionCommand(
     .option('--action <file|->', '')
     .option('--cwd <path>', '')
     .option('--message-id <id>', '')
+    .option('--backend <id>', '')
+    .option('--prompt-file <path>', '')
+    .option('--request-id <id>', '')
+    .option('--timeout-ms <n>', '')
     .option('--touch <mode>', '')
     .option('--touch-deadline <timestamp>', '')
     .option('--max-touches <n>', '')
     .option('--deadline-action <action>', '')
     .option('--json', '')
     .addHelpText('after', `\n${examples.exec}`)
-    .action(async (options: ExecOptions) => {
+    .action(async (options: ExecOptions & Partial<HostedSessionExecOptions>) => {
+      const hosted =
+        options.backend !== undefined ||
+        options.promptFile !== undefined ||
+        options.requestId !== undefined ||
+        options.timeoutMs !== undefined;
+      if (hosted) {
+        await runHostedSessionExec({
+          backend: options.backend ?? '',
+          promptFile: options.promptFile ?? '',
+          cwd: options.cwd ?? '',
+          ...(options.session === undefined ? {} : { session: options.session }),
+          ...(options.requestId === undefined ? {} : { requestId: options.requestId }),
+          timeoutMs: options.timeoutMs ?? '1800000',
+          json: options.json,
+        });
+        return;
+      }
       await runExec(options, ownerSelector);
     });
 
@@ -1240,18 +1265,58 @@ export function registerSessionCommand(
     .option('--json', '')
     .addHelpText('after', `\n${examples.list}`)
     .action(async (options: ListOptions) => {
+      if (options.run === undefined) {
+        await runHostedSessionRead('list', undefined, options.json ?? false);
+        return;
+      }
       await runList(options, ownerSelector);
     });
 
   session
-    .command('retire')
+    .command('retire [id]')
     .description('')
     .option('--run <run-id>', '')
     .option('--session <session-key>', '')
     .option('--reason <text>', '')
     .option('--json', '')
     .addHelpText('after', `\n${examples.retire}`)
-    .action(async (options: RetireOptions) => {
+    .action(async (id: string | undefined, options: RetireOptions) => {
+      if (id !== undefined) {
+        await runHostedSessionControl(
+          'retire',
+          id,
+          options.reason,
+          options.json ?? false
+        );
+        return;
+      }
       await runRetire(options, ownerSelector);
     });
+
+  session
+    .command('inspect <id>')
+    .description('')
+    .option('--json', '')
+    .action(async (id: string, options: { json?: boolean }) =>
+      runHostedSessionRead('inspect', id, options.json ?? false)
+    );
+
+  for (const operation of ['cancel', 'restart'] as const) {
+    const command = session.command(`${operation} <id>`).description('');
+    if (operation !== 'restart') command.option('--reason <text>', '');
+    command
+      .option('--json', '')
+      .action(
+        async (
+          id: string,
+          options: { reason?: string; json?: boolean }
+        ) =>
+          runHostedSessionControl(
+            operation,
+            id,
+            options.reason,
+            options.json ?? false
+          )
+      );
+  }
 }

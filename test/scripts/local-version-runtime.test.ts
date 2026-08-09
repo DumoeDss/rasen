@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { afterEach, describe, expect, test } from 'vitest';
+import { cleanupTempPathAsync } from '../helpers/temp-cleanup.js';
 
 import { cleanupTempPath } from '../helpers/temp-cleanup.js';
 
@@ -187,9 +188,9 @@ function runPrepareAsync(sourceRoot: string, projectRoot: string, cacheRoot: str
   });
 }
 
-afterEach(() => {
+afterEach(async () => {
   for (const root of temporaryRoots.splice(0)) {
-    cleanupTempPath(root);
+    await cleanupTempPathAsync(root);
   }
 });
 

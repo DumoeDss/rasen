@@ -15,7 +15,10 @@ import type {
   WireEffectiveValue,
   WirePipelineDefinition,
 } from '../api/types.js';
-import { isV2EditableNodeKind } from './draft.js';
+import {
+  CONTROL_TARGET_PORT,
+  isV2EditableNodeKind,
+} from './draft.js';
 
 export const NODE_WIDTH = 200;
 export const NODE_HEIGHT = 92;
@@ -99,10 +102,27 @@ function lookupDeclarationPorts(
         type: typeof p.type === 'string' ? p.type : undefined,
       }));
   }
+  const artifacts = Array.isArray(declRecord.artifacts)
+    ? declRecord.artifacts
+    : [];
+  const artifactPorts = artifacts
+    .filter(
+      (artifact): artifact is Record<string, unknown> =>
+        artifact !== null &&
+        typeof artifact === 'object' &&
+        !Array.isArray(artifact) &&
+        typeof (artifact as Record<string, unknown>).name === 'string'
+    )
+    .map((artifact) => ({
+      id: artifact.name as string,
+      type:
+        typeof artifact.type === 'string' ? artifact.type : undefined,
+    }));
   const outcomes = Array.isArray(declRecord.outcomes) ? declRecord.outcomes : [];
-  return outcomes
+  const outcomePorts = outcomes
     .filter((o): o is string => typeof o === 'string')
     .map((o) => ({ id: o, type: `outcome/${o}` }));
+  return [...artifactPorts, ...outcomePorts];
 }
 
 function v2NodeCardData(
@@ -148,10 +168,14 @@ function v2NodeCardData(
       : undefined;
   const inputPorts: DefinitionHandleDescriptor[] =
     kind === 'AtomicStage'
-      ? (capability?.inputs ?? []).map((port) => ({
-          id: port.name,
-          type: port.type,
-        }))
+      ? capability
+        ? capability.inputs.length > 0
+          ? capability.inputs.map((port) => ({
+              id: port.name,
+              type: port.type,
+            }))
+          : [{ id: CONTROL_TARGET_PORT }]
+        : []
       : kind === 'Gate' || kind === 'Choice' || kind === 'Finish'
         ? Array.from(
             new Set(
@@ -180,7 +204,7 @@ function v2NodeCardData(
                 .concat('input')
             )
           ).map((id) => ({ id }))
-        : kind === 'CompositeRef' || kind === 'BoundedLoop'
+      : kind === 'CompositeRef' || kind === 'BoundedLoop'
           ? lookupDeclarationPorts(
               declarations,
               kind === 'CompositeRef'
@@ -188,6 +212,12 @@ function v2NodeCardData(
                 : record.body,
               'input'
             )
+          : kind === 'FanOut'
+            ? [{ id: CONTROL_TARGET_PORT }]
+            : kind === 'Join' && Array.isArray(record.inputs)
+              ? record.inputs
+                  .filter((input): input is string => typeof input === 'string')
+                  .map((input) => ({ id: input }))
           : [];
   const outputPorts: DefinitionHandleDescriptor[] =
     kind === 'AtomicStage'
@@ -211,7 +241,7 @@ function v2NodeCardData(
             id: outcome,
             type: `outcome/${outcome}`,
           }))
-        : kind === 'CompositeRef' || kind === 'BoundedLoop'
+      : kind === 'CompositeRef' || kind === 'BoundedLoop'
           ? lookupDeclarationPorts(
               declarations,
               kind === 'CompositeRef'
@@ -219,6 +249,23 @@ function v2NodeCardData(
                 : record.body,
               'output'
             )
+          : kind === 'FanOut' && Array.isArray(record.branches)
+            ? record.branches
+                .filter((branch): branch is string => typeof branch === 'string')
+                .map((branch) => ({ id: branch, type: `outcome/${branch}` }))
+            : kind === 'Join' &&
+                record.outcomes !== null &&
+                typeof record.outcomes === 'object' &&
+                !Array.isArray(record.outcomes)
+              ? Array.from(
+                  new Set(
+                    Object.values(record.outcomes as Record<string, unknown>)
+                      .filter((outcome): outcome is string => typeof outcome === 'string')
+                  )
+                ).map((outcome) => ({
+                  id: outcome,
+                  type: `outcome/${outcome}`,
+                }))
           : [];
   const editorSupported = isV2EditableNodeKind(kind);
   const definitionKind = [
@@ -350,12 +397,27 @@ function isSafelyEditableV2Node(node: unknown): boolean {
         return false;
       }
       const capability = record.capability as Record<string, unknown>;
+      const execution = record.execution;
       return (
         typeof capability.id === 'string' &&
-        typeof capability.version === 'string'
+        typeof capability.version === 'string' &&
+        execution !== null &&
+        typeof execution === 'object' &&
+        !Array.isArray(execution) &&
+        (execution as Record<string, unknown>).version === 1
       );
     }
-    case 'Gate':
+    case 'Gate': {
+      const dispositions = record.dispositions;
+      return (
+        typeof record.target === 'string' &&
+        Array.isArray(record.outcomes) &&
+        record.outcomes.every((outcome) => typeof outcome === 'string') &&
+        dispositions !== null &&
+        typeof dispositions === 'object' &&
+        !Array.isArray(dispositions)
+      );
+    }
     case 'Choice':
       return (
         Array.isArray(record.outcomes) &&
@@ -372,9 +434,31 @@ function isSafelyEditableV2Node(node: unknown): boolean {
     case 'CompositeRef':
       return typeof record.declarationId === 'string';
     case 'BoundedLoop':
-      return typeof record.body === 'string';
-    // Everything else — FanOut, Join, and any kind a later slice introduces —
-    // stays a read-only card.
+      return (
+        typeof record.body === 'string' &&
+        record.lifecycle !== null &&
+        typeof record.lifecycle === 'object' &&
+        !Array.isArray(record.lifecycle)
+      );
+    case 'FanOut':
+      return (
+        Array.isArray(record.branches) &&
+        Array.isArray(record.members) &&
+        typeof record.concurrencyCap === 'number' &&
+        typeof record.budget === 'number' &&
+        typeof record.joinNodeId === 'string'
+      );
+    case 'Join':
+      return (
+        Array.isArray(record.inputs) &&
+        Array.isArray(record.requiredMembers) &&
+        Array.isArray(record.optionalMembers) &&
+        record.outcomes !== null &&
+        typeof record.outcomes === 'object' &&
+        !Array.isArray(record.outcomes)
+      );
+    // Any kind outside the current closed eight-kind vocabulary stays a
+    // preserved read-only card until a later Definition version enables it.
     default:
       return false;
   }
@@ -457,6 +541,8 @@ export function draftToGraph(
       nodes: rawNodes.map((node, index) => {
         const projected = projectedV2Node(node, index);
         const safelyEditable = isSafelyEditableV2Node(projected.value);
+        const pairedStructuralNode =
+          projected.kind === 'FanOut' || projected.kind === 'Join';
         return {
         id: projected.id,
         data: {
@@ -471,7 +557,7 @@ export function draftToGraph(
         },
         draggable: safelyEditable,
         connectable: safelyEditable,
-        deletable: safelyEditable,
+        deletable: safelyEditable && !pairedStructuralNode,
       };
       }),
       edges: rawConnections

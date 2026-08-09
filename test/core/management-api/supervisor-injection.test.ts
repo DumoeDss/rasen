@@ -34,6 +34,18 @@ describe.skipIf(!IS_WINDOWS)('spawnAgentCli command-injection hardening (Windows
   const ARGV_DUMP = 'argv-dump.json';
   const CANARY = 'PWNED.txt';
 
+  async function waitFor(
+    description: string,
+    predicate: () => boolean,
+    timeoutMs = 7000
+  ): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${description}`);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
   beforeEach(() => {
     workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-inj-cwd-'));
     shimDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-inj-shim-'));
@@ -106,8 +118,10 @@ describe.skipIf(!IS_WINDOWS)('spawnAgentCli command-injection hardening (Windows
       expect(result.ok).toBe(true);
       if (!result.ok) return;
 
-      // Wait for the child to run and close.
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      await waitFor(
+        'the injection fixture to exit',
+        () => supervisor.getRecord(result.record.id)?.state === 'exited'
+      );
       expect(supervisor.getRecord(result.record.id)!.state).toBe('exited');
 
       // 1. No injected command ran — the canary never appeared in the session cwd.
@@ -151,7 +165,10 @@ describe.skipIf(!IS_WINDOWS)('spawnAgentCli command-injection hardening (Windows
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    await waitFor(
+      'the attached-root fixture to exit',
+      () => supervisor.getRecord(result.record.id)?.state === 'exited'
+    );
 
     expect(fs.existsSync(path.join(workDir, attachedCanary))).toBe(false);
     const dumped = JSON.parse(fs.readFileSync(path.join(shimDir, ARGV_DUMP), 'utf-8')) as string[];

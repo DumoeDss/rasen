@@ -1,11 +1,26 @@
 import { useEffect, useState } from 'preact/hooks';
 import type {
+  PipelineCatalogResponse,
+  WireAtomicStageNode,
   WireCompositeDeclaration,
   WireDefinitionArtifact,
   WireDefinitionPort,
+  WireGoalCyclePhase,
   WirePipelineDefinitionV2,
+  WireReviewCyclePhase,
 } from '../api/types.js';
-import { V2_BODY_PALETTE_KINDS } from './draft.js';
+import {
+  V2_BODY_PALETTE_KINDS,
+  type AtomicStageExecutionPatch,
+} from './draft.js';
+import { V2ExecutionEditor } from './V2ExecutionEditor.js';
+
+interface SelectedBodyConnectionIssue {
+  declarationId: string;
+  id: string;
+  field: string | null;
+  severity: 'error' | 'warning';
+}
 
 /**
  * Custom Composite declaration authoring (ECP-2 tasks 8.5 and 8.6, delivered
@@ -35,29 +50,42 @@ import { V2_BODY_PALETTE_KINDS } from './draft.js';
 export function DeclarationsPanel({
   definition,
   selectedId,
-  capabilities,
+  selectedIssueDeclarationId,
+  selectedBodyStageId,
+  selectedBodyStageSeverity,
+  selectedBodyConnectionIssue,
+  focusedField,
+  catalog,
   onSelect,
   onCreate,
   onDelete,
+  onRename,
   onPatch,
   onAddBodyStage,
   onRemoveBodyStage,
   onPatchBodyStage,
+  onPatchBodyExecution,
   onAddBodyConnection,
   onRemoveBodyConnection,
 }: {
   definition: WirePipelineDefinitionV2;
   selectedId: string | null;
+  selectedIssueDeclarationId?: string | null;
+  selectedBodyStageId?: string | null;
+  selectedBodyStageSeverity?: 'error' | 'warning' | null;
+  selectedBodyConnectionIssue?: SelectedBodyConnectionIssue | null;
+  focusedField?: string | null;
   /**
    * The trusted catalog's enabled exact capability revisions — the same list
    * the root graph's node panel offers. Whether a body stage CAN be added and
    * which capability it may carry are one fact, so they read from one prop:
    * `capabilities.length > 0` is exactly "the catalog can supply a revision".
    */
-  capabilities: readonly Readonly<{ id: string; version: string }>[];
+  catalog: PipelineCatalogResponse | null;
   onSelect: (id: string | null) => void;
   onCreate: (id: string) => void;
   onDelete: (id: string) => void;
+  onRename: (id: string, nextId: string) => void;
   onPatch: (
     id: string,
     patch: Partial<{
@@ -71,13 +99,26 @@ export function DeclarationsPanel({
   onPatchBodyStage: (
     declarationId: string,
     stageId: string,
-    patch: Partial<{ id: string; capability: { id: string; version: string } }>
+    patch: Partial<{
+      id: string;
+      capability: { id: string; version: string };
+      reviewCyclePhase?: WireReviewCyclePhase;
+      goalCyclePhase?: WireGoalCyclePhase;
+    }>
+  ) => void;
+  onPatchBodyExecution: (
+    declarationId: string,
+    stageId: string,
+    patch: AtomicStageExecutionPatch
   ) => void;
   onAddBodyConnection: (declarationId: string, from: string, to: string) => void;
   onRemoveBodyConnection: (declarationId: string, connectionId: string) => void;
 }) {
   const [newId, setNewId] = useState('');
   const declarations = definition.declarations ?? [];
+  const capabilities = (catalog?.skills ?? [])
+    .filter((skill) => skill.enabled && skill.capability)
+    .map((skill) => skill.capability!);
   const selected = declarations.find((d) => d.id === selectedId) ?? null;
 
   return (
@@ -136,6 +177,7 @@ export function DeclarationsPanel({
               class="declarations-panel__delete"
               data-testid="declaration-delete"
               data-declaration-id={declaration.id}
+              disabled={declaration.provenance === 'built-in'}
               onClick={() => onDelete(declaration.id)}
             >
               Delete
@@ -153,11 +195,21 @@ export function DeclarationsPanel({
         <DeclarationEditor
           key={selected.id}
           declaration={selected}
+          selectedIssueDeclarationId={selectedIssueDeclarationId ?? null}
+          selectedBodyStageId={selectedBodyStageId ?? null}
+          selectedBodyStageSeverity={selectedBodyStageSeverity ?? null}
+          selectedBodyConnectionIssue={selectedBodyConnectionIssue ?? null}
+          focusedField={focusedField ?? null}
+          catalog={catalog}
           capabilities={capabilities}
+          onRename={(nextId) => onRename(selected.id, nextId)}
           onPatch={(patch) => onPatch(selected.id, patch)}
           onAddBodyStage={() => onAddBodyStage(selected.id)}
           onRemoveBodyStage={(stageId) => onRemoveBodyStage(selected.id, stageId)}
           onPatchBodyStage={(stageId, patch) => onPatchBodyStage(selected.id, stageId, patch)}
+          onPatchBodyExecution={(stageId, patch) =>
+            onPatchBodyExecution(selected.id, stageId, patch)
+          }
           onAddBodyConnection={(from, to) => onAddBodyConnection(selected.id, from, to)}
           onRemoveBodyConnection={(connectionId) =>
             onRemoveBodyConnection(selected.id, connectionId)
@@ -174,16 +226,18 @@ function NameListField({
   testId,
   value,
   onCommit,
+  focused = false,
 }: {
   label: string;
   testId: string;
   value: readonly string[];
   onCommit: (next: string[]) => void;
+  focused?: boolean;
 }) {
   const authoritative = value.join(',');
   const [draft, setDraft] = useState(authoritative);
   return (
-    <label class="declaration-editor__field">
+    <label class={`declaration-editor__field${focused ? ' declaration-editor__field--focused' : ''}`}>
       <span>{label}</span>
       <input
         type="text"
@@ -219,14 +273,16 @@ function PortListEditor({
   testIdPrefix,
   ports,
   onCommit,
+  focused = false,
 }: {
   label: string;
   testIdPrefix: string;
   ports: readonly { name: string; type: string }[];
   onCommit: (next: { name: string; type: string }[]) => void;
+  focused?: boolean;
 }) {
   return (
-    <div class="declaration-editor__field" data-testid={`${testIdPrefix}-list`}>
+    <div class={`declaration-editor__field${focused ? ' declaration-editor__field--focused' : ''}`} data-testid={`${testIdPrefix}-list`}>
       <span>
         {label} ({ports.length})
       </span>
@@ -334,6 +390,7 @@ function BodyStageIdField({
 function BodyConnections({
   stageIds,
   connections,
+  selectedIssue,
   onAdd,
   onRemove,
 }: {
@@ -343,6 +400,7 @@ function BodyConnections({
     from: { node: string; port: string };
     to: { node: string; port: string };
   }[];
+  selectedIssue: SelectedBodyConnectionIssue | null;
   onAdd: (from: string, to: string) => void;
   onRemove: (connectionId: string) => void;
 }) {
@@ -354,27 +412,62 @@ function BodyConnections({
     <div class="declaration-editor__connections" data-testid="declaration-connections">
       <span>Body connections ({connections.length})</span>
       <ul class="declaration-editor__connection-list">
-        {connections.map((connection) => (
-          <li
-            key={connection.id}
-            data-testid="declaration-body-connection"
-            data-connection-id={connection.id}
-            data-from={connection.from.node}
-            data-to={connection.to.node}
-          >
-            <span class="declaration-editor__connection-label">
-              {connection.from.node} → {connection.to.node}
-            </span>
-            <button
-              type="button"
-              data-testid="declaration-body-connection-remove"
+        {connections.map((connection) => {
+          const issue =
+            selectedIssue?.id === connection.id ? selectedIssue : null;
+          const endpointIssue = (endpoint: 'from' | 'to') =>
+            issue?.field === endpoint || issue?.field?.startsWith(`${endpoint}/`)
+              ? issue.severity
+              : undefined;
+          return (
+            <li
+              key={connection.id}
+              class={`declaration-editor__connection-row${
+                issue
+                  ? ` declaration-editor__connection-row--issue-${issue.severity}`
+                  : ''
+              }`}
+              data-testid="declaration-body-connection"
               data-connection-id={connection.id}
-              onClick={() => onRemove(connection.id)}
+              data-from={connection.from.node}
+              data-to={connection.to.node}
+              data-focused-field={issue?.field ?? undefined}
+              data-issue={issue?.severity}
             >
-              Remove
-            </button>
-          </li>
-        ))}
+              <span class="declaration-editor__connection-label">
+                <span
+                  data-testid="declaration-body-connection-endpoint"
+                  data-endpoint="from"
+                  data-focused-field={
+                    endpointIssue('from') ? issue?.field ?? undefined : undefined
+                  }
+                  data-issue={endpointIssue('from')}
+                >
+                  {connection.from.node}:{connection.from.port}
+                </span>
+                {' → '}
+                <span
+                  data-testid="declaration-body-connection-endpoint"
+                  data-endpoint="to"
+                  data-focused-field={
+                    endpointIssue('to') ? issue?.field ?? undefined : undefined
+                  }
+                  data-issue={endpointIssue('to')}
+                >
+                  {connection.to.node}:{connection.to.port}
+                </span>
+              </span>
+              <button
+                type="button"
+                data-testid="declaration-body-connection-remove"
+                data-connection-id={connection.id}
+                onClick={() => onRemove(connection.id)}
+              >
+                Remove
+              </button>
+            </li>
+          );
+        })}
       </ul>
       <div class="declaration-editor__connection-add">
         <select
@@ -421,16 +514,31 @@ function BodyConnections({
  */
 function DeclarationEditor({
   declaration,
+  selectedIssueDeclarationId,
+  selectedBodyStageId,
+  selectedBodyStageSeverity,
+  selectedBodyConnectionIssue,
+  focusedField,
+  catalog,
   capabilities,
+  onRename,
   onPatch,
   onAddBodyStage,
   onRemoveBodyStage,
   onPatchBodyStage,
+  onPatchBodyExecution,
   onAddBodyConnection,
   onRemoveBodyConnection,
 }: {
   declaration: WireCompositeDeclaration;
+  selectedIssueDeclarationId: string | null;
+  selectedBodyStageId: string | null;
+  selectedBodyStageSeverity: 'error' | 'warning' | null;
+  selectedBodyConnectionIssue: SelectedBodyConnectionIssue | null;
+  focusedField: string | null;
+  catalog: PipelineCatalogResponse | null;
   capabilities: readonly Readonly<{ id: string; version: string }>[];
+  onRename: (nextId: string) => void;
   onPatch: (
     patch: Partial<{
       inputs: WireDefinitionPort[];
@@ -442,50 +550,86 @@ function DeclarationEditor({
   onRemoveBodyStage: (stageId: string) => void;
   onPatchBodyStage: (
     stageId: string,
-    patch: Partial<{ id: string; capability: { id: string; version: string } }>
+    patch: Partial<{
+      id: string;
+      capability: { id: string; version: string };
+      reviewCyclePhase?: WireReviewCyclePhase;
+      goalCyclePhase?: WireGoalCyclePhase;
+    }>
   ) => void;
+  onPatchBodyExecution: (stageId: string, patch: AtomicStageExecutionPatch) => void;
   onAddBodyConnection: (from: string, to: string) => void;
   onRemoveBodyConnection: (connectionId: string) => void;
 }) {
   const inputs = declaration.inputs ?? [];
   const artifacts = declaration.artifacts ?? [];
   const outcomes = declaration.outcomes ?? [];
-  const bodyNodes = (declaration.graph?.nodes ?? []) as ReadonlyArray<{
-    id: string;
-    kind: string;
-    capability?: { id: string; version: string };
-  }>;
+  const bodyNodes = (declaration.graph?.nodes ?? []).filter(
+    (node): node is WireAtomicStageNode => node.kind === 'AtomicStage'
+  );
   const bodyConnections = (declaration.graph?.connections ?? []) as ReadonlyArray<{
     id: string;
     from: { node: string; port: string };
     to: { node: string; port: string };
   }>;
+  const [idDraft, setIdDraft] = useState(declaration.id);
+  const ownsSelectedIssue = selectedIssueDeclarationId === declaration.id;
+  const ownedFocusedField = ownsSelectedIssue ? focusedField : null;
+  const ownedSelectedBodyStageId = ownsSelectedIssue
+    ? selectedBodyStageId
+    : null;
+  const ownedSelectedBodyConnectionIssue =
+    ownsSelectedIssue &&
+    selectedBodyConnectionIssue?.declarationId === declaration.id
+      ? selectedBodyConnectionIssue
+      : null;
 
   return (
     <div
       class="declaration-editor"
       data-testid="declaration-editor"
       data-declaration-id={declaration.id}
+      data-focused-field={ownedFocusedField ?? ''}
     >
       <h4 class="declaration-editor__title">{declaration.id}</h4>
+      <label class={`declaration-editor__field${ownedFocusedField === 'id' ? ' declaration-editor__field--focused' : ''}`}>
+        <span>Stable declaration id</span>
+        <input
+          data-testid="declaration-id"
+          value={idDraft}
+          disabled={declaration.provenance === 'built-in'}
+          onInput={(event) => setIdDraft((event.target as HTMLInputElement).value)}
+          onBlur={() => {
+            const next = idDraft.trim();
+            if (next && next !== declaration.id) onRename(next);
+            setIdDraft(declaration.id);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') (event.currentTarget as HTMLInputElement).blur();
+          }}
+        />
+      </label>
 
       <PortListEditor
         label="Inputs"
         testIdPrefix="declaration-input"
         ports={inputs}
         onCommit={(next) => onPatch({ inputs: next as WireDefinitionPort[] })}
+        focused={ownedFocusedField === 'inputs' || ownedFocusedField?.startsWith('inputs/')}
       />
       <PortListEditor
         label="Artifacts"
         testIdPrefix="declaration-artifact"
         ports={artifacts}
         onCommit={(next) => onPatch({ artifacts: next as WireDefinitionArtifact[] })}
+        focused={ownedFocusedField === 'artifacts' || ownedFocusedField?.startsWith('artifacts/')}
       />
       <NameListField
         label="Outcomes"
         testId="declaration-outcomes"
         value={outcomes}
         onCommit={(next) => onPatch({ outcomes: next })}
+        focused={ownedFocusedField === 'outcomes' || ownedFocusedField?.startsWith('outcomes/')}
       />
 
       {/* Body graph navigator + the constrained body palette (task 8.6). */}
@@ -498,6 +642,7 @@ function DeclarationEditor({
               data-testid="declaration-body-stage"
               data-stage-id={node.id}
               data-stage-kind={node.kind}
+              data-focused-field={ownedSelectedBodyStageId === node.id ? ownedFocusedField ?? '' : ''}
             >
               {/* The spec's "edit" verb. Committed on blur like every other id
                   editor in this canvas, so an intermediate keystroke never
@@ -508,34 +653,23 @@ function DeclarationEditor({
                 onCommit={(next) => onPatchBodyStage(node.id, { id: next })}
               />
               <span class="declaration-editor__body-stage-kind">{node.kind}</span>
-              {node.capability && (
-                <select
-                  class="declaration-editor__body-stage-capability"
-                  data-testid="declaration-body-stage-capability"
-                  data-stage-id={node.id}
-                  value={`${node.capability.id}\0${node.capability.version}`}
-                  onChange={(event) => {
-                    const selected = (event.target as HTMLSelectElement).value;
-                    const capability = capabilities.find(
-                      (candidate) => `${candidate.id}\0${candidate.version}` === selected
-                    );
-                    if (capability) {
-                      onPatchBodyStage(node.id, {
-                        capability: { id: capability.id, version: capability.version },
-                      });
-                    }
-                  }}
-                >
-                  {capabilities.map((capability) => (
-                    <option
-                      key={`${capability.id}\0${capability.version}`}
-                      value={`${capability.id}\0${capability.version}`}
-                    >
-                      {capability.id} @ {capability.version}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <V2ExecutionEditor
+                node={node}
+                catalog={catalog}
+                fieldIssues={
+                  ownedSelectedBodyStageId === node.id && ownedFocusedField
+                    ? { [ownedFocusedField]: selectedBodyStageSeverity ?? 'error' }
+                    : {}
+                }
+                testIdPrefix="declaration-body-execution"
+                capabilityTestId="declaration-body-stage-capability"
+                showPhases
+                onCapabilityPatch={(capability) =>
+                  onPatchBodyStage(node.id, { capability })
+                }
+                onExecutionPatch={(patch) => onPatchBodyExecution(node.id, patch)}
+                onPhasePatch={(patch) => onPatchBodyStage(node.id, patch)}
+              />
               <button
                 type="button"
                 data-testid="declaration-body-stage-remove"
@@ -556,6 +690,7 @@ function DeclarationEditor({
         <BodyConnections
           stageIds={bodyNodes.map((node) => node.id)}
           connections={bodyConnections}
+          selectedIssue={ownedSelectedBodyConnectionIssue}
           onAdd={onAddBodyConnection}
           onRemove={onRemoveBodyConnection}
         />

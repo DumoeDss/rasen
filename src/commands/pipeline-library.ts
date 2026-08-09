@@ -106,6 +106,18 @@ export class PipelineLibraryCommand {
             ? messages.format('pipelineValid')
             : messages.format('pipelineInvalid')
         );
+        if (validation.boundedLoops && validation.boundedLoops.length > 0) {
+          console.log(messages.format('boundedLoopPoliciesHeading'));
+          for (const loop of validation.boundedLoops) {
+            console.log(
+              messages.format('boundedLoopPolicyLine', {
+                node: loop.nodeId,
+                limits: JSON.stringify(loop.limits),
+                policy: JSON.stringify(loop.lifecycle),
+              })
+            );
+          }
+        }
         for (const diagnostic of validation.diagnostics) {
           console.log(messages.format('validationDiagnostic', diagnostic));
         }

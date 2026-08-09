@@ -1682,6 +1682,22 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .stage-panel__field--checkbox { flex-direction: row; align-items: center; }
 .stage-panel__field--issue-error { outline: 2px solid var(--danger-fg); border-radius: var(--radius); padding: var(--space-1); }
 .stage-panel__field--issue-warning { outline: 2px solid var(--warn-fg); border-radius: var(--radius); padding: var(--space-1); }
+.definition-contract__field--invalid {
+  outline: 2px solid var(--danger-fg); border-radius: var(--radius); padding: var(--space-1);
+}
+.definition-contract__error { color: var(--danger-fg); font-size: var(--text-xs); }
+.declaration-editor__connection-row--issue-error { outline: 2px solid var(--danger-fg); }
+.declaration-editor__connection-row--issue-warning { outline: 2px solid var(--warn-fg); }
+.declaration-editor__connection-row--issue-error,
+.declaration-editor__connection-row--issue-warning {
+  border-radius: var(--radius); padding: var(--space-1);
+}
+.declaration-editor__connection-label [data-issue='error'] {
+  color: var(--danger-fg); font-weight: 700;
+}
+.declaration-editor__connection-label [data-issue='warning'] {
+  color: var(--warn-fg); font-weight: 700;
+}
 .stage-panel__handoff {
   margin: 0; padding: var(--space-2); border: 1px solid var(--border);
   border-radius: var(--radius); background: var(--surface-muted);

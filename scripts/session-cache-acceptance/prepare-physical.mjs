@@ -162,11 +162,13 @@ export async function createAdmittedAction(input) {
   const [
     registryModule,
     profileModule,
+    executionProfileModule,
     runtimeModule,
     identityModule,
   ] = await Promise.all([
     import(dist('core', 'pipeline-registry', 'prepared-registry.js')),
     import(dist('core', 'pipeline-registry', 'profile-resolver.js')),
+    import(dist('core', 'pipeline-registry', 'execution-plan-internal.js')),
     import(dist('core', 'change-run', 'internal', 'runtime-context.js')),
     import(dist('core', 'change-run', 'internal', 'identity.js')),
   ]);
@@ -177,15 +179,19 @@ export async function createAdmittedAction(input) {
   const resolution = registry.load('bug-fix');
   const prepared = resolution.prepared;
   const authored = prepared.authoredSource;
+  const isV2Authored = prepared.authoredVersion === 2;
+  const sourceDisplayName = isV2Authored
+    ? prepared.definition.name
+    : authored.name;
   const sourceDigest = `sha256:${prepared.digests.source}`;
   const sourceRevision = {
     layer: resolution.source,
     kind: 'pipeline-yaml',
-    sourceId: `${resolution.source}:${authored.name}`,
+    sourceId: `${resolution.source}:${sourceDisplayName}`,
     authoredContentDigest: sourceDigest,
     semanticDigest: sourceDigest,
   };
-  const policyStages = authored.stages.map((stage) => ({
+  const policyStages = isV2Authored ? [] : authored.stages.map((stage) => ({
     nodeId: `stage:${stage.id}`,
     role: stage.role ?? 'implementer',
     model: stage.model ?? 'default',
@@ -211,13 +217,38 @@ export async function createAdmittedAction(input) {
       reuseRoundLimit: 'acceptance',
     },
   }));
-  const profile = profileModule.resolveRuntimeExecutionProfile(
+  const resolvedProfile = profileModule.resolveRuntimeExecutionProfile(
     prepared,
     registry.catalog,
     policyStages,
     sourceRevision,
     { maxAttempts: 32, maxActions: 128 }
   );
+  // The physical cache portfolio deliberately exercises reusable turns. The
+  // old v1 helper supplied this acceptance policy through policyStages; native
+  // v2 profiles resolve authored stages internally, so recreate the sealed
+  // profile with the same test-only policy and fresh canonical digests.
+  const profile = isV2Authored
+    ? executionProfileModule.createRuntimeExecutionProfile({
+        sourceRevision: resolvedProfile.sourceRevision,
+        capabilities: resolvedProfile.capabilities,
+        policy: {
+          ...resolvedProfile.policy,
+          stages: resolvedProfile.policy.stages.map((stage) => ({
+            ...stage,
+            sessionReuse: 'same-invocation',
+            handoffTokenLimit: 10_000,
+            reuseRoundLimit: 8,
+            provenance: {
+              ...stage.provenance,
+              sessionReuse: 'acceptance',
+              handoffTokenLimit: 'acceptance',
+              reuseRoundLimit: 'acceptance',
+            },
+          })),
+        },
+      })
+    : resolvedProfile;
   // The workspace belongs in the Run identity, not just in the launch request.
   // Deriving the Run from candidate+arm alone made two isolated workspaces
   // collide on one Run id while their launch digests differed, which the
@@ -278,10 +309,15 @@ export async function createAdmittedAction(input) {
     const decisionId = gate.decisionIds[0];
     await context.facade.control(
       {
-        kind: 'decide-gate',
-        waitId: gate.waitId,
-        decisionId,
-        outcome: decisionId,
+        format: 'change-run-control/1',
+        ref: { change, runId },
+        expectedRecordVersion: record.recordVersion,
+        command: {
+          kind: 'decision',
+          waitId: gate.waitId,
+          decisionId,
+          outcome: decisionId,
+        },
       },
       { deliveryMode: 'grant' }
     );

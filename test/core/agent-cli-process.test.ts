@@ -95,4 +95,5 @@ describe('shared agent CLI process helper', () => {
       })
     ).toThrow(/limit is 4 bytes/);
   });
+
 });

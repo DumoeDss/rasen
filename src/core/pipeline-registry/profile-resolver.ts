@@ -4,7 +4,18 @@ import type {
   BoundedLoopNode,
   PreparedDefinition,
   CompositeDeclaration,
+  DefinitionGraph,
 } from './definition.js';
+import {
+  resolveEffectiveStage,
+  type EffectiveStageInputs,
+} from './stage-overrides.js';
+import type {
+  AgentRuntime,
+  PipelineYaml,
+  Stage,
+  StageRole,
+} from './types.js';
 import type { CapabilityCatalogSnapshot } from './definition.js';
 import {
   definitionRequiresV2Lowering,
@@ -19,6 +30,10 @@ import type {
 } from './execution-plan-internal.js';
 import { createRuntimeExecutionProfile } from './execution-plan-internal.js';
 import { domainDigest } from '../change-run/internal/identity.js';
+import {
+  resolveTrustedExecutionAdapterAuthority,
+  type TrustedExecutionAdapterCatalog,
+} from './trusted-execution-adapters.js';
 
 /**
  * Resolve a prepared v1 Definition's stages into frozen RuntimeCapabilityBindings
@@ -38,12 +53,13 @@ import { domainDigest } from '../change-run/internal/identity.js';
  */
 export function resolveCapabilityBindings(
   prepared: PreparedDefinition,
-  catalog: CapabilityCatalogSnapshot
+  catalog: CapabilityCatalogSnapshot,
+  trustedAdapters?: TrustedExecutionAdapterCatalog
 ): readonly RuntimeCapabilityBinding[] {
   if (prepared.authoredVersion !== 1) {
     // ECP-2: resolve capability bindings for v2 authored definitions with
     // CompositeRef and composite-body BoundedLoop nodes.
-    return resolveV2AuthoredCapabilityBindings(prepared, catalog);
+    return resolveV2AuthoredCapabilityBindings(prepared, catalog, trustedAdapters);
   }
 
   // ECP-5 (D4): a v1 definition whose NORMALIZED form carries any v2 construct
@@ -54,7 +70,7 @@ export function resolveCapabilityBindings(
   // bindings the v2 lowerer could not find (`supported_v2_parallel` was
   // production-unreachable).
   if (definitionRequiresV2Lowering(prepared)) {
-    return resolveV2MigrationCapabilityBindings(prepared, catalog);
+    return resolveV2MigrationCapabilityBindings(prepared, catalog, trustedAdapters);
   }
 
   const descriptorById = new Map(
@@ -96,7 +112,10 @@ export function resolveCapabilityBindings(
           recovery: 'suspend-if-ambiguous',
         },
       ],
-      adapter: { id: `adapter:${stage.skill}`, version: '1', contentDigest: skillDigest },
+      adapter: trustedAdapter(
+        { id: `adapter:${stage.skill}`, version: '1', contentDigest: skillDigest },
+        trustedAdapters
+      ),
     };
     return binding;
   });
@@ -116,7 +135,8 @@ export function resolveCapabilityBindings(
  */
 function resolveV2MigrationCapabilityBindings(
   prepared: PreparedDefinition,
-  catalog: CapabilityCatalogSnapshot
+  catalog: CapabilityCatalogSnapshot,
+  trustedAdapters?: TrustedExecutionAdapterCatalog
 ): readonly RuntimeCapabilityBinding[] {
   const descriptorById = new Map(
     catalog.descriptors.map((descriptor) => [descriptor.id, descriptor] as const)
@@ -128,7 +148,7 @@ function resolveV2MigrationCapabilityBindings(
     // Gate/Choice metadata carriers do not.
     const evaluator = orchestrationEvaluatorCapabilityFor(node);
     if (evaluator !== null) {
-      bindings.push(buildEvaluatorBinding(`root:${node.id}`, evaluator));
+      bindings.push(buildEvaluatorBinding(`root:${node.id}`, evaluator, trustedAdapters));
       continue;
     }
     if (node.kind === 'Gate' || node.kind === 'Choice') continue;
@@ -144,7 +164,7 @@ function resolveV2MigrationCapabilityBindings(
       }
       const skillDigest = descriptor.version as Digest;
       const skillName = skillId.startsWith('skill:') ? skillId.slice('skill:'.length) : skillId;
-      bindings.push(buildBinding(path, skillName, descriptor.version, skillDigest, inferAccess(node)));
+      bindings.push(buildBinding(path, skillName, descriptor.version, skillDigest, inferAccess(node), trustedAdapters));
       continue;
     }
 
@@ -176,7 +196,7 @@ function resolveV2MigrationCapabilityBindings(
           ? (phaseNode as unknown as Readonly<{ goalCyclePhase: string }>).goalCyclePhase
           : null;
         const isWrite = rcPhase === 'fix' || gcPhase === 'work';
-        bindings.push(buildBinding(path, skillName, descriptor.version, skillDigest, isWrite ? 'write' : 'read'));
+        bindings.push(buildBinding(path, skillName, descriptor.version, skillDigest, isWrite ? 'write' : 'read', trustedAdapters));
       }
       continue;
     }
@@ -202,7 +222,8 @@ function resolveV2MigrationCapabilityBindings(
  */
 function buildEvaluatorBinding(
   path: string,
-  capabilityName: 'parallel-dispatch' | 'choice-select'
+  capabilityName: 'parallel-dispatch' | 'choice-select',
+  trustedAdapters?: TrustedExecutionAdapterCatalog
 ): RuntimeCapabilityBinding {
   const digest = domainDigest(
     'ecp4-orchestration-evaluator/1',
@@ -223,7 +244,10 @@ function buildEvaluatorBinding(
     // `workspace: { access: 'none' }` the lowerer gives the plan node.
     workspace: { access: 'none', resources: [] },
     effects: [],
-    adapter: { id: `adapter:${capabilityName}`, version: '1', contentDigest: digest },
+    adapter: trustedAdapter(
+      { id: `adapter:${capabilityName}`, version: '1', contentDigest: digest },
+      trustedAdapters
+    ),
   };
 }
 
@@ -282,8 +306,10 @@ function buildBinding(
   skillName: string,
   version: string,
   skillDigest: Digest,
-  access: 'read' | 'write'
+  access: 'none' | 'read' | 'write',
+  trustedAdapters?: TrustedExecutionAdapterCatalog
 ): RuntimeCapabilityBinding {
+  const reservesWorkspace = access !== 'none';
   return {
     nodeId,
     authoredCapability: { id: `skill:${skillName}`, version },
@@ -292,16 +318,34 @@ function buildBinding(
     resultContract: { id: `${skillName}-result`, version: '1', digest: skillDigest },
     evidenceContract: { id: `${skillName}-evidence`, version: '1', digest: skillDigest },
     recovery: 'suspend-if-ambiguous',
-    workspace: { access, resources: ['worktree'] },
-    effects: [
-      {
-        slot: 'workspace',
-        kind: 'workspace',
-        resource: 'worktree',
-        recovery: 'suspend-if-ambiguous',
-      },
-    ],
-    adapter: { id: `adapter:${skillName}`, version: '1', contentDigest: skillDigest },
+    workspace: { access, resources: reservesWorkspace ? ['worktree'] : [] },
+    effects: reservesWorkspace
+      ? [
+          {
+            slot: 'workspace',
+            kind: 'workspace',
+            resource: 'worktree',
+            recovery: 'suspend-if-ambiguous',
+          },
+        ]
+      : [],
+    adapter: trustedAdapter(
+      { id: `adapter:${skillName}`, version: '1', contentDigest: skillDigest },
+      trustedAdapters
+    ),
+  };
+}
+
+function trustedAdapter(
+  adapter: Readonly<{ id: string; version: string; contentDigest: Digest }>,
+  trustedAdapters?: TrustedExecutionAdapterCatalog
+): RuntimeCapabilityBinding['adapter'] {
+  return {
+    ...adapter,
+    attestationAuthority: resolveTrustedExecutionAdapterAuthority(
+      adapter,
+      trustedAdapters
+    ),
   };
 }
 
@@ -313,20 +357,35 @@ function buildBinding(
  */
 function resolveV2AuthoredCapabilityBindings(
   prepared: PreparedDefinition,
-  catalog: CapabilityCatalogSnapshot
+  catalog: CapabilityCatalogSnapshot,
+  trustedAdapters?: TrustedExecutionAdapterCatalog
 ): readonly RuntimeCapabilityBinding[] {
   const descriptorById = new Map(
     catalog.descriptors.map((descriptor) => [descriptor.id, descriptor] as const)
   );
   const definition = prepared.definition;
   const bindings: RuntimeCapabilityBinding[] = [];
+  const addBinding = (binding: RuntimeCapabilityBinding): void => {
+    const existing = bindings.find(
+      (candidate) => candidate.nodeId === binding.nodeId
+    );
+    if (existing === undefined) {
+      bindings.push(binding);
+      return;
+    }
+    if (JSON.stringify(existing) !== JSON.stringify(binding)) {
+      throw new Error(
+        `Conflicting capability bindings resolved for ${binding.nodeId}.`
+      );
+    }
+  };
 
   for (const node of definition.root.nodes) {
     // ECP-4: FanOut/Choice evaluators get a synthetic binding (see
     // buildEvaluatorBinding) — no authored stage backs them.
     const evaluator = orchestrationEvaluatorCapabilityFor(node);
     if (evaluator !== null) {
-      bindings.push(buildEvaluatorBinding(`root:${node.id}`, evaluator));
+      addBinding(buildEvaluatorBinding(`root:${node.id}`, evaluator, trustedAdapters));
       continue;
     }
 
@@ -341,7 +400,16 @@ function resolveV2AuthoredCapabilityBindings(
       }
       const skillDigest = descriptor.version as Digest;
       const skillName = skillId.startsWith('skill:') ? skillId.slice('skill:'.length) : skillId;
-      bindings.push(buildBinding(path, skillName, descriptor.version, skillDigest, 'write'));
+      addBinding(
+        buildBinding(
+          path,
+          skillName,
+          descriptor.version,
+          skillDigest,
+          node.execution!.workspace.access,
+          trustedAdapters
+        )
+      );
     }
 
     if (node.kind === 'CompositeRef') {
@@ -361,7 +429,16 @@ function resolveV2AuthoredCapabilityBindings(
         }
         const skillDigest = descriptor.version as Digest;
         const skillName = skillId.startsWith('skill:') ? skillId.slice('skill:'.length) : skillId;
-        bindings.push(buildBinding(path, skillName, descriptor.version, skillDigest, 'write'));
+        addBinding(
+          buildBinding(
+            path,
+            skillName,
+            descriptor.version,
+            skillDigest,
+            bodyNode.execution!.workspace.access,
+            trustedAdapters
+          )
+        );
       }
     }
 
@@ -382,8 +459,38 @@ function resolveV2AuthoredCapabilityBindings(
         }
         const skillDigest = descriptor.version as Digest;
         const skillName = skillId.startsWith('skill:') ? skillId.slice('skill:'.length) : skillId;
-        const access = typeof bodyNode.reviewCyclePhase === 'string' && bodyNode.reviewCyclePhase === 'fix' ? 'write' : 'read';
-        bindings.push(buildBinding(path, skillName, descriptor.version, skillDigest, access));
+        addBinding(
+          buildBinding(
+            path,
+            skillName,
+            descriptor.version,
+            skillDigest,
+            bodyNode.execution!.workspace.access,
+            trustedAdapters
+          )
+        );
+      }
+      const strategy = node.lifecycle.strategy.capability;
+      if (strategy !== undefined) {
+        const descriptor = descriptorById.get(strategy.id);
+        if (descriptor === undefined || descriptor.version !== strategy.version) {
+          throw new Error(
+            `Capability descriptor for ${strategy.id}@${strategy.version} is not in the production catalog.`
+          );
+        }
+        const skillName = strategy.id.startsWith('skill:')
+          ? strategy.id.slice('skill:'.length)
+          : strategy.id;
+        addBinding(
+          buildBinding(
+            `root:${node.id}/strategy`,
+            skillName,
+            descriptor.version,
+            descriptor.version as Digest,
+            'write',
+            trustedAdapters
+          )
+        );
       }
     }
   }
@@ -395,33 +502,176 @@ function resolveV2AuthoredCapabilityBindings(
  * Remap policy stages for a v2 authored definition. Generates one policy stage
  * per capability binding path.
  */
-function remapPolicyStagesForV2Authored(
-  prepared: PreparedDefinition
+export interface NativeV2ExecutionResolutionInputs extends EffectiveStageInputs {
+  /** Ephemeral launch-only role choices; these top persisted config. */
+  roleRuntimeOverrides?: Partial<Record<StageRole, AgentRuntime>>;
+}
+
+const EMPTY_NATIVE_V2_EXECUTION_INPUTS: NativeV2ExecutionResolutionInputs = {
+  overrides: {
+    gates: new Map(),
+    models: new Map(),
+    handoff: new Map(),
+    runtimes: new Map(),
+  },
+  basePolicy: { effective: 'on', source: 'default' },
+};
+
+function authoredAtomicStage(
+  node: AtomicStageNode,
+  gate: boolean
+): Stage {
+  const execution = node.execution!;
+  const skill = node.capability.id.startsWith('skill:')
+    ? node.capability.id.slice('skill:'.length)
+    : node.capability.id;
+  return {
+    id: node.id,
+    kind: 'standard',
+    skill,
+    role: execution.role,
+    requires: [],
+    gate,
+    leadReview: execution.leadReview ?? false,
+    ...(execution.verifyPolicy !== undefined
+      ? { verifyPolicy: execution.verifyPolicy }
+      : {}),
+    ...(execution.runtime !== undefined ? { runtime: execution.runtime } : {}),
+    ...(execution.sessionReuse !== undefined
+      ? { sessionReuse: execution.sessionReuse }
+      : {}),
+    ...(execution.sandbox !== undefined ? { sandbox: execution.sandbox } : {}),
+    ...(execution.model !== undefined ? { model: execution.model } : {}),
+    ...(execution.effort !== undefined ? { effort: execution.effort } : {}),
+    ...(execution.handoff !== undefined ? { handoff: execution.handoff } : {}),
+  };
+}
+
+function resolveAuthoredAtomicPolicyStage(
+  definitionName: string,
+  nodeId: string,
+  node: AtomicStageNode,
+  gate: boolean,
+  inputs: NativeV2ExecutionResolutionInputs
+): EffectiveRunPolicy['stages'][number] {
+  const execution = node.execution!;
+  const stage = authoredAtomicStage(node, gate);
+  const pipeline: PipelineYaml = {
+    version: 1,
+    name: definitionName,
+    stages: [stage],
+  };
+  const effective = resolveEffectiveStage(stage, pipeline, inputs);
+  const invocationRuntime = inputs.roleRuntimeOverrides?.[execution.role];
+  const runtime = invocationRuntime ?? effective.runtime.value;
+  const runtimeSource = invocationRuntime === undefined
+    ? effective.runtime.source
+    : 'invocation';
+  const sandbox = execution.sandbox ??
+    (execution.workspace.access === 'write' ? 'workspace-write' : 'read-only');
+
+  return {
+    nodeId,
+    role: execution.role,
+    model: effective.model.value ?? 'default',
+    effort: effective.effort.value ?? 'default',
+    runtime,
+    sandbox,
+    gate: effective.gate.effective,
+    sessionReuse:
+      execution.sessionReuse === undefined || execution.sessionReuse === 'none'
+        ? 'never'
+        : 'same-invocation',
+    ...(execution.sessionReuse !== undefined
+      ? { sessionReuseAuthored: execution.sessionReuse }
+      : {}),
+    // ECP-7 owns the authoritative session limits. Keep the existing truthful
+    // placeholder values/provenance while preserving authored reuse intent.
+    handoffTokenLimit: 10_000,
+    reuseRoundLimit: 1,
+    provenance: {
+      role: 'definition',
+      model: effective.model.source,
+      effort: effective.effort.source,
+      runtime: runtimeSource,
+      sandbox: 'definition',
+      gate: effective.gate.source,
+      sessionReuse:
+        execution.sessionReuse === undefined ? 'default' : 'definition',
+      handoffTokenLimit: 'default',
+      reuseRoundLimit: 'default',
+    },
+  };
+}
+
+/**
+ * Resolve native-v2 AtomicStage declarations through the ordinary
+ * project/store/global stage override chain. This is exported so inspection
+ * and launch can consume the same pure policy projection.
+ */
+export function resolveNativeV2PolicyStages(
+  prepared: PreparedDefinition,
+  inputs: NativeV2ExecutionResolutionInputs = EMPTY_NATIVE_V2_EXECUTION_INPUTS
 ): readonly EffectiveRunPolicy['stages'][number][] {
   const definition = prepared.definition;
   const stages: EffectiveRunPolicy['stages'][number][] = [];
+  const addStage = (
+    stage: EffectiveRunPolicy['stages'][number]
+  ): void => {
+    const existing = stages.find(
+      (candidate) => candidate.nodeId === stage.nodeId
+    );
+    if (existing === undefined) {
+      stages.push(stage);
+      return;
+    }
+    if (JSON.stringify(existing) !== JSON.stringify(stage)) {
+      throw new Error(`Conflicting policy stages resolved for ${stage.nodeId}.`);
+    }
+  };
+  const gateTargets = (graph: DefinitionGraph): ReadonlySet<string> =>
+    new Set(
+      graph.nodes
+        .filter((candidate) => candidate.kind === 'Gate')
+        .map((candidate) => candidate.target)
+    );
+  const rootGateTargets = gateTargets(definition.root);
 
   for (const node of definition.root.nodes) {
     // ECP-4: mirror the synthetic evaluator capability bindings.
     const evaluator = orchestrationEvaluatorCapabilityFor(node);
     if (evaluator !== null) {
-      stages.push(synthesizeEvaluatorPolicyStage(`root:${node.id}`, evaluator));
+      addStage(synthesizeEvaluatorPolicyStage(`root:${node.id}`, evaluator));
       continue;
     }
     if (node.kind === 'AtomicStage') {
-      stages.push(synthesizeReviewCyclePolicyStage(`root:${node.id}`, 'review'));
+      addStage(
+        resolveAuthoredAtomicPolicyStage(
+          definition.name,
+          `root:${node.id}`,
+          node,
+          rootGateTargets.has(node.id),
+          inputs
+        )
+      );
     }
     if (node.kind === 'CompositeRef') {
       const declaration = definition.declarations.find(
         (d) => d.id === node.declarationId
       );
       if (declaration === undefined) continue;
+      const declarationGateTargets = gateTargets(declaration.graph);
       for (const bodyNode of declaration.graph.nodes) {
         if (bodyNode.kind !== 'AtomicStage') continue;
-        stages.push(synthesizeReviewCyclePolicyStage(
-          `declaration:${declaration.id}/node:${bodyNode.id}`,
-          'fix'
-        ));
+        addStage(
+          resolveAuthoredAtomicPolicyStage(
+            definition.name,
+            `declaration:${declaration.id}/node:${bodyNode.id}`,
+            bodyNode,
+            declarationGateTargets.has(bodyNode.id),
+            inputs
+          )
+        );
       }
     }
     if (node.kind === 'BoundedLoop') {
@@ -429,13 +679,23 @@ function remapPolicyStagesForV2Authored(
         (d) => d.id === node.body
       );
       if (declaration === undefined) continue;
+      const declarationGateTargets = gateTargets(declaration.graph);
       for (const bodyNode of declaration.graph.nodes) {
         if (bodyNode.kind !== 'AtomicStage') continue;
-        const phase = typeof bodyNode.reviewCyclePhase === 'string' ? bodyNode.reviewCyclePhase : 'fix';
-        stages.push(synthesizeReviewCyclePolicyStage(
-          `declaration:${declaration.id}/node:${bodyNode.id}`,
-          phase
-        ));
+        addStage(
+          resolveAuthoredAtomicPolicyStage(
+            definition.name,
+            `declaration:${declaration.id}/node:${bodyNode.id}`,
+            bodyNode,
+            declarationGateTargets.has(bodyNode.id),
+            inputs
+          )
+        );
+      }
+      if (node.lifecycle.strategy.capability !== undefined) {
+        addStage(
+          synthesizeReviewCyclePolicyStage(`root:${node.id}/strategy`, 'fix')
+        );
       }
     }
   }
@@ -459,15 +719,17 @@ export function resolveRuntimeExecutionProfile(
   catalog: CapabilityCatalogSnapshot,
   policyStages: readonly EffectiveRunPolicy['stages'][number][],
   sourceRevision: RuntimeExecutionProfileInput['sourceRevision'],
-  limits: Readonly<{ maxAttempts: number; maxActions: number }>
+  limits: Readonly<{ maxAttempts: number; maxActions: number }>,
+  nativeV2Inputs: NativeV2ExecutionResolutionInputs = EMPTY_NATIVE_V2_EXECUTION_INPUTS,
+  trustedAdapters?: TrustedExecutionAdapterCatalog
 ): RuntimeExecutionProfile {
-  const capabilities = resolveCapabilityBindings(prepared, catalog);
+  const capabilities = resolveCapabilityBindings(prepared, catalog, trustedAdapters);
   // ECP-2: v2 authored definitions need their own policy stage mapping.
   // ECP-5 (D4): the v1 remap is gated by the SAME shared predicate as the
   // bindings above, so policy stages and capability bindings are always keyed
   // alike — an Action is built by looking BOTH up under one hierarchical path.
   const finalPolicyStages = prepared.authoredVersion === 2
-    ? remapPolicyStagesForV2Authored(prepared)
+    ? resolveNativeV2PolicyStages(prepared, nativeV2Inputs)
     : definitionRequiresV2Lowering(prepared)
       ? remapPolicyStagesForV2(prepared, policyStages)
       : [...policyStages];
@@ -514,11 +776,12 @@ export function resolveRuntimeExecutionProfile(
  */
 export function resolveDiscoveryReconcilerSupportProfile(
   prepared: PreparedDefinition,
-  catalog: CapabilityCatalogSnapshot
+  catalog: CapabilityCatalogSnapshot,
+  trustedAdapters?: TrustedExecutionAdapterCatalog
 ): ReconcilerSupportProfile | null {
   let capabilities: readonly RuntimeCapabilityBinding[];
   try {
-    capabilities = resolveCapabilityBindings(prepared, catalog);
+    capabilities = resolveCapabilityBindings(prepared, catalog, trustedAdapters);
   } catch {
     return null;
   }

@@ -902,7 +902,14 @@ describe('InitCommand - profile and detection features', () => {
     // No mode deletes skill directories anymore — the goal-loop's skill-only
     // stage workflows AND workflows that used to have a command counterpart
     // (e.g. apply) all keep their skill dirs.
-    for (const skillDir of ['rasen-goal-plan', 'rasen-goal-iterate', 'rasen-goal-report', 'rasen-task-loop', 'rasen-apply-change']) {
+    for (const skillDir of [
+      'rasen-goal-plan',
+      'rasen-goal-iterate',
+      'rasen-goal-judge',
+      'rasen-goal-report',
+      'rasen-task-loop',
+      'rasen-apply-change',
+    ]) {
       expect(await fileExists(path.join(skillsDir, skillDir, 'SKILL.md'))).toBe(true);
     }
 

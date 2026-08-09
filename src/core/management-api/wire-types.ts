@@ -14,9 +14,13 @@ import type {
   DefinitionPort,
   DefinitionSourceV2,
   PipelineYaml,
+  PreparedExecutionCapabilityPathView,
+  PreparedExecutionPolicyPathView,
+  PreparedBoundedLoopPolicy,
   StageRole,
   ThresholdValue,
 } from '../pipeline-registry/index.js';
+import type { ReconcilerSupportAnalysis } from '../pipeline-registry/execution-plan-internal.js';
 import type {
   AuditRuntime,
   DispatchBridge,
@@ -117,6 +121,20 @@ export interface WirePipelineStage {
   dispatchMode: DispatchMode;
   /** Named executable bridge when `dispatchMode` is `exec-bridge`. */
   bridge: DispatchBridge | null;
+  /** Native-v2 additive inspection identity; absent on older v1-only clients. */
+  nodePath?: string;
+  profilePath?: string;
+  requires?: string[];
+  capability?: { id: string; version: string };
+  workspace?: 'none' | 'read' | 'write';
+  verifyPolicy?: string | null;
+  leadReview?: boolean;
+  effectiveSandbox?: 'read-only' | 'workspace-write';
+  sessionReuse?: {
+    effective: 'never' | 'same-invocation';
+    authored?: 'none' | 'stage' | 'run-planner' | 'review-thread';
+    source: string;
+  };
 }
 
 /**
@@ -133,6 +151,16 @@ export interface WirePipeline {
   roleRuntimes?: Record<StageRole, WireEffectiveValue<DispatchRuntime>>;
   effectiveReuse?: WireEffectiveReuse;
   stages: WirePipelineStage[];
+  /** Shared prepared execution order; paths remain distinct across root/declaration scopes. */
+  buildOrder?: string[];
+  /** Every adapter-free capability path frozen by a native-v2 launch profile. */
+  capabilityPaths?: readonly PreparedExecutionCapabilityPathView[];
+  /** Every effective policy path frozen by a native-v2 launch profile. */
+  policyPaths?: readonly PreparedExecutionPolicyPathView[];
+  /** Exact lifecycle policies sealed by preparation. */
+  boundedLoops?: readonly PreparedBoundedLoopPolicy[];
+  availableEngines?: ReconcilerSupportAnalysis['availableEngines'];
+  reconcilerSupport?: ReconcilerSupportAnalysis['reconcilerSupport'];
   authoredVersion: number;
   normalizedVersion: 2;
   definitionValid: boolean;
@@ -140,6 +168,8 @@ export interface WirePipeline {
   executable: boolean;
   executionMode: 'legacy' | 'reconciler' | 'unavailable';
   unavailableReason?: string;
+  /** Named migration boundary for an intentionally retained package v1 fixture. */
+  compatibilityBoundary?: 'issue-dispatch-0.3.0';
   /** Present when the authoritative winning source failed preparation. */
   diagnostics?: PipelineValidationIssue[];
 }
@@ -637,7 +667,7 @@ export interface CreateSpaceResponse {
 /** Mirrors `SessionRecord` (session-registry.ts) as sent over the wire. */
 export interface SessionRecordWire {
   id: string;
-  kind: 'auto' | 'goal';
+  kind: 'auto' | 'goal' | 'hosted';
   task: string;
   cwd: string;
   /** Planning-space attribution frozen at launch (design D3); absent when the cwd yielded no derivable space. */
@@ -657,8 +687,22 @@ export interface SessionRecordWire {
     | 'no-output-timeout'
     | 'killed'
     | 'server-shutdown'
-    | 'spawn-error';
+    | 'spawn-error'
+    | 'retired'
+    | 'host-failed';
   changeName?: string;
+  /** Additive durable-host lifecycle facts. Existing one-shot records omit them. */
+  hostState?: import('../session-host/contracts.js').HostedSessionState;
+  backend?: string;
+  backendSessionId?: string;
+  generation?: number;
+  currentRequest?: import('../session-host/contracts.js').SessionHostView['currentRequest'];
+  /** Best-effort tier limits published before the workload started; absent means the exact tier. */
+  processDeclaration?: import('../session-host/contracts.js').HostedProcessDeclaration;
+  /** Permanent honest terminal of a declared best-effort scope, e.g. `cancelled / emptiness-unproven`. */
+  processTerminal?: import('../session-host/contracts.js').HostedProcessTerminal;
+  recoveryReason?: string;
+  retirementReason?: string;
 }
 
 /** `POST /api/v1/sessions` request body (design D1/D4). */

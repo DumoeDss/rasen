@@ -9,6 +9,7 @@ import {
   getExploreSkillTemplate,
   getGoalCommandSkillTemplate,
   getGoalIterateSkillTemplate,
+  getGoalJudgeSkillTemplate,
   getGoalPlanSkillTemplate,
   getGoalReportSkillTemplate,
   getTaskLoopSkillTemplate,
@@ -21,6 +22,7 @@ import {
   getOpsxProposeSkillTemplate,
   getRetainCommandSkillTemplate,
   getReviewCycleSkillTemplate,
+  getReviewFixSkillTemplate,
   getShipCommandSkillTemplate,
   getSyncSpecsSkillTemplate,
   getVerifyChangeSkillTemplate,
@@ -79,7 +81,12 @@ export const BUILT_IN_WORKFLOW_IDS = [
  * strong workflow dependencies and the temporary retro-wrapper compatibility
  * install root; the retention radio is its only profile control.
  */
-export const INTERNAL_BUILTIN_WORKFLOW_IDS = ['retain-command', 'task-loop'] as const;
+export const INTERNAL_BUILTIN_WORKFLOW_IDS = [
+  'retain-command',
+  'review-fix',
+  'goal-judge',
+  'task-loop',
+] as const;
 
 /** True for dependency-only built-ins that never appear in profile roots. */
 export function isInternalBuiltInWorkflowId(id: string): boolean {
@@ -151,11 +158,18 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
     id: 'review-cycle',
     dirName: 'rasen-review-cycle',
     skill: getReviewCycleSkillTemplate,
-    requires: { skills: ['rasen-review'] },
+    requires: { workflows: ['review-fix'], skills: ['rasen-review'] },
+  },
+  {
+    id: 'review-fix',
+    dirName: 'rasen-review-fix',
+    skill: getReviewFixSkillTemplate,
+    kind: 'internal',
   },
   { id: 'handoff', dirName: 'rasen-handoff', skill: getHandoffSkillTemplate },
   { id: 'goal-plan', dirName: 'rasen-goal-plan', skill: getGoalPlanSkillTemplate, kind: 'internal' },
   { id: 'goal-iterate', dirName: 'rasen-goal-iterate', skill: getGoalIterateSkillTemplate, kind: 'internal' },
+  { id: 'goal-judge', dirName: 'rasen-goal-judge', skill: getGoalJudgeSkillTemplate, kind: 'internal' },
   { id: 'task-loop', dirName: 'rasen-task-loop', skill: getTaskLoopSkillTemplate, kind: 'internal' },
   { id: 'goal-report', dirName: 'rasen-goal-report', skill: getGoalReportSkillTemplate, kind: 'internal' },
   {
@@ -164,6 +178,7 @@ const BUILT_IN_ADAPTERS: readonly BuiltInWorkflowAdapter[] = [
     skill: getGoalCommandSkillTemplate,
     kind: 'driver',
     requires: {
+      workflows: ['goal-judge'],
       pipelines: ['goal-loop-measure', 'goal-loop-evaluate', 'goal-loop-research'],
     },
   },

@@ -5,6 +5,7 @@ import type {
   ChangeRunReceipt,
   ChangeRunView,
   CompleteRunAction,
+  Digest,
   ExactChangeRunRef,
   RunAction,
   WorkspaceRevision,
@@ -25,12 +26,18 @@ import {
 } from './reducer.js';
 import { reconcile, type ReconcilerNextAction } from './reconciler.js';
 import { projectRunView } from './projector.js';
-import { verifyCompletion } from './completion.js';
+import {
+  classifyCompletionSlot,
+  verifyCompletion,
+} from './completion.js';
+import { type EvidenceStore } from './evidence.js';
+import { verifyAttestedCompletion } from './attestation.js';
 import { createCanonicalWait, type CanonicalWait } from './waits.js';
 import { deriveInvocationId, digestLaunchIntent } from './identity.js';
 import type { WorkspaceReservationRegistry } from './reservations.js';
 import { validateReviewCycleCompletion, projectReviewCycleProgress } from './review-cycle-runtime.js';
 import {
+  projectGoalCycleDomainSnapshot,
   locateGoalCycleInvocation,
   validateGoalCycleCompletion,
   projectGoalCycleProgress,
@@ -38,6 +45,11 @@ import {
 import { assertReviewCycleMayShip } from './review-cycle.js';
 import { assertGoalCycleMayShip } from './goal-cycle.js';
 import { projectCompositeBodyProgress } from './composite-runtime.js';
+import {
+  decodeBoundedLoopStrategyResult,
+  reduceBoundedLoopLifecycle,
+  strategyTriggerForAction,
+} from './bounded-loop-lifecycle.js';
 import {
   assertTaskLoopMayDeliver,
   isTaskLoopRun,
@@ -49,6 +61,12 @@ export interface RuntimeDeps {
   readonly store: RunStore;
   readonly plan: RuntimePlan;
   readonly initialRecord: CanonicalRunRecord;
+  /**
+   * Run-scoped immutable evidence bytes. Observation mutation requires this
+   * verifier seam; omitting it keeps legacy/domain-only fixtures inspectable
+   * but fails every observation closed.
+   */
+  readonly evidenceStore?: EvidenceStore;
   /**
    * Build a full RunAction for a reconciler admit candidate. The caller binds
    * the frozen capability + policy; the facade never invents action identity.
@@ -101,6 +119,29 @@ export interface RuntimeDeps {
   readonly taskLoopEvidenceDir?: string;
   /** Trusted live workspace observation used by TaskLoop evidence guards. */
   readonly observeWorkspace?: () => WorkspaceRevision;
+}
+
+/**
+ * Every completion variant crosses the same trusted public boundary. Verify
+ * its frozen Action authority and the actual Run-scoped stored bytes before
+ * slot classification or any Record mutation. A receipt is self-consistent,
+ * not self-authorizing: its caller-supplied actor and EvidenceRefs must match
+ * the authority frozen when the Action was admitted.
+ */
+function verifyCompletionAuthority(
+  request: CompleteRunAction,
+  record: CanonicalRunRecord,
+  action: RunAction,
+  evidenceStore: EvidenceStore | undefined
+): void {
+  if (evidenceStore === undefined) {
+    throw new Error(
+      'facade complete failed: no persistent EvidenceStore is bound to this Run.'
+    );
+  }
+  verifyAttestedCompletion(record, action, request, (ref) =>
+    evidenceStore.read(ref)
+  );
 }
 
 function asPromise<T>(value: T): Promise<T> {
@@ -339,6 +380,15 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
               break;
             }
           }
+          if (candidate.consumesDomainBlockedWait !== undefined) {
+            stimuli.push({
+              kind: 'consume-domain-blocked-wait-for-strategy',
+              waitId: candidate.consumesDomainBlockedWait.waitId,
+              actionId: candidate.consumesDomainBlockedWait.actionId,
+              strategyNodeId: candidate.nodeId,
+              trigger: candidate.consumesDomainBlockedWait.trigger,
+            });
+          }
           stimuli.push({
             kind: 'admit-action',
             action,
@@ -370,6 +420,9 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
           }
           break;
         }
+        case 'await-human-required':
+          stimuli.push({ kind: 'await-human-required', wait: candidate.wait });
+          break;
         case 'suspend-unsupported': {
           const wait = capabilityUnavailableWait(
             workingRecord,
@@ -387,6 +440,15 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         case 'escalate':
           stimuli.push({
             kind: 'escalate',
+            code: candidate.code,
+            ...(candidate.reason !== undefined
+              ? { reason: candidate.reason }
+              : {}),
+          });
+          break;
+        case 'fail':
+          stimuli.push({
+            kind: 'fail',
             code: candidate.code,
             ...(candidate.reason !== undefined
               ? { reason: candidate.reason }
@@ -470,7 +532,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
    * they do not grant executable actions) so HTTP/CLI receipts never carry
    * non-admit actions.
    *
-   * deliveryMode semantics (��5.6): `grant` commits admits as `granted` and
+   * deliveryMode semantics (§5.6): `grant` commits admits as `granted` and
    * returns them; `defer` commits admits as `admitted_undelivered` (the
    * management/browser path) and returns `actions: []`. Both modes commit
    * all durable waits and terminal transitions.
@@ -555,10 +617,86 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       // reducer's commit-action-result stimulus (the completion envelope is NOT
       // itself a RunStimulus).
       verifyCompletion(request, committed.action);
-      if (request.kind !== 'domain-action-result') {
+      verifyCompletionAuthority(
+        request,
+        record,
+        committed.action,
+        deps.evidenceStore
+      );
+      const slot = classifyCompletionSlot(request, committed);
+      if (slot === 'conflict') {
         throw new Error(
-          'facade complete failed: only domain-action-result completions are supported by this facade path.'
+          `facade complete failed: completion conflicts with the committed ${request.kind} slot.`
         );
+      }
+      if (slot === 'idempotent') {
+        return asPromise(
+          receipt(
+            record,
+            'reused',
+            [],
+            deps.resolveSourceState,
+            deps.plan
+          )
+        );
+      }
+      if (request.kind === 'effect-observation') {
+        const observed = reduceCanonicalRunRecord(record, {
+          kind: 'observe-effect',
+          actionId: request.actionId,
+          effectId: request.effectId,
+          status: request.status,
+          receiptDigest: request.receiptDigest as Digest,
+          observation: request.observation,
+          evidence: request.evidence,
+        });
+        if (!observed.ok) {
+          throw new Error(`facade complete failed: ${observed.failure.message}`);
+        }
+        deps.store.commit(deps.plan.runId, observed.record);
+        return asPromise(
+          receipt(
+            observed.record,
+            'advanced',
+            [],
+            deps.resolveSourceState,
+            deps.plan
+          )
+        );
+      }
+      if (request.kind === 'infrastructure-observation') {
+        const observed = reduceCanonicalRunRecord(record, {
+          kind: 'observe-infrastructure',
+          actionId: request.actionId,
+          receiptDigest: request.receiptDigest as Digest,
+          code: request.error.code,
+          retryable: request.error.retryable,
+          artifactDigest: request.error.adapterArtifactDigest as Digest,
+          evidence: request.evidence,
+        });
+        if (!observed.ok) {
+          throw new Error(`facade complete failed: ${observed.failure.message}`);
+        }
+        deps.store.commit(deps.plan.runId, observed.record);
+        deps.reservationRegistry?.release(
+          deps.plan.runId,
+          request.actionId as ActionId
+        );
+        return asPromise(
+          receipt(
+            observed.record,
+            'waiting',
+            [],
+            deps.resolveSourceState,
+            deps.plan
+          )
+        );
+      }
+      if (
+        request.status === 'succeeded' &&
+        strategyTriggerForAction(committed) !== undefined
+      ) {
+        decodeBoundedLoopStrategyResult(request.result);
       }
       // Pre-commit ReviewCycle validation (D3): validate the completion against
       // the exact mechanically expected phase BEFORE committing. Malformed
@@ -575,6 +713,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       );
       const goalDescriptor = locateGoalCycleInvocation(
         deps.plan,
+        record,
         committed.action.nodeId as import('../contracts.js').NodeId
       );
       if (isTaskLoopRun(deps.plan, record) && goalDescriptor === null) {
@@ -648,41 +787,64 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         throw new Error(`facade complete settle failed: ${result.failure.message}`);
       }
       const finalRecord = result.record;
-      // Defense-in-depth ship guard (Minor-3): when the plan has a bounded-loop
-      // and the Run reaches a SUCCESSFUL terminal state, assert the ReviewCycle
-      // state is clean before committing. Escalated/exhausted terminals are NOT
-      // guarded here — the escalation IS the rejection. This is an explicit
-      // guard mandated by the spec, in addition to the DAG dependency.
-      const boundedLoop = deps.plan.nodes.find(
-        (node) => node.kind === 'bounded-loop'
-      );
-      if (
-        boundedLoop !== undefined &&
-        boundedLoop.kind === 'bounded-loop' &&
-        (boundedLoop.body.kind === 'review-cycle' ||
-          boundedLoop.body.kind === 'goal-cycle') &&
-        finalRecord.terminal !== undefined &&
-        finalRecord.status === 'completed'
-      ) {
-        if (boundedLoop.body.kind === 'review-cycle') {
-          const progress = projectReviewCycleProgress(
-            deps.plan,
-            boundedLoop,
-            finalRecord
-          );
-          assertReviewCycleMayShip(progress.state);
-        } else {
-          const progress = projectGoalCycleProgress(
-            deps.plan,
-            boundedLoop,
-            finalRecord
-          );
-          assertGoalCycleMayShip(progress.state);
-          assertTaskLoopMayDeliver(
-            deps.plan,
-            finalRecord,
-            observeTaskLoopWorkspace(finalRecord)
-          );
+      // Defense-in-depth delivery guard: domain-success delivery still
+      // requires ReviewCycle clean / GoalCycle satisfied. A research loop may
+      // separately complete through a sealed non-success lifecycle exit so an
+      // authored report-only tail can settle truthfully. The exception below
+      // is derived only from the frozen plan and canonical Record.
+      if (finalRecord.terminal !== undefined && finalRecord.status === 'completed') {
+        for (const boundedLoop of deps.plan.nodes) {
+          if (boundedLoop.kind !== 'bounded-loop') continue;
+          if (boundedLoop.body.kind === 'review-cycle') {
+            const progress = projectReviewCycleProgress(
+              deps.plan,
+              boundedLoop,
+              finalRecord
+            );
+            assertReviewCycleMayShip(progress.state);
+          } else if (boundedLoop.body.kind === 'goal-cycle') {
+            const progress = projectGoalCycleProgress(
+              deps.plan,
+              boundedLoop,
+              finalRecord
+            );
+            const lifecycle = reduceBoundedLoopLifecycle(
+              deps.plan,
+              boundedLoop,
+              finalRecord,
+              projectGoalCycleDomainSnapshot(
+                deps.plan,
+                boundedLoop,
+                finalRecord
+              )
+            );
+            const completedResearchTail = deps.plan.nodes.some(
+              (node) =>
+                node.kind === 'atomic' &&
+                node.requires.includes(boundedLoop.nodeId) &&
+                Object.values(finalRecord.actions).some(
+                  (action) =>
+                    action.action.nodeId === node.nodeId &&
+                    action.result?.status === 'succeeded'
+                )
+            );
+            const truthfulResearchExit =
+              boundedLoop.body.variant === 'research' &&
+              lifecycle.decision.kind === 'completed' &&
+              lifecycle.decision.disposition === 'exit' &&
+              lifecycle.decision.reason !== 'domain-complete' &&
+              completedResearchTail;
+            if (!truthfulResearchExit) {
+              assertGoalCycleMayShip(progress.state);
+            }
+            if (isTaskLoopRun(deps.plan, finalRecord)) {
+              assertTaskLoopMayDeliver(
+                deps.plan,
+                finalRecord,
+                observeTaskLoopWorkspace(finalRecord)
+              );
+            }
+          }
         }
       }
       deps.store.commit(deps.plan.runId, finalRecord);
@@ -709,17 +871,137 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       const sourceState = deps.resolveSourceState?.(record) ?? 'active';
       return asPromise(projectRunView(record, sourceState, deps.plan));
     },
-    control(request: ChangeRunControlRequest, _context: RuntimeMutationContext) {
+    control(request: ChangeRunControlRequest, context: RuntimeMutationContext) {
       const record = deps.store.load(deps.plan.runId);
       deps.assertMutationAllowed?.(record);
-      const result = reduceCanonicalRunRecord(record, request as unknown as RunStimulus);
+
+      if (
+        request.ref.runId !== record.runId ||
+        request.ref.change.changeId !== record.change.changeId
+      ) {
+        throw new ChangeRunRuntimeError(
+          'invalid_run_request',
+          'Control must address the exact Run and Change identity.'
+        );
+      }
+      if (request.expectedRecordVersion !== record.recordVersion) {
+        throw new ChangeRunRuntimeError(
+          'record_version_conflict',
+          `expectedRecordVersion ${request.expectedRecordVersion} does not match current Record version ${record.recordVersion}.`,
+          projectRunView(
+            record,
+            deps.resolveSourceState?.(record) ?? 'active',
+            deps.plan
+          )
+        );
+      }
+
+      const stimulus = controlStimulus(record, request);
+      const intermediate = reduceCanonicalRunRecord(record, stimulus);
+      if (!intermediate.ok) {
+        throw new Error(`facade control failed: ${intermediate.failure.message}`);
+      }
+
+      let collected: ReturnType<typeof collectSettleStimuli> = {
+        stimuli: [],
+        granted: [],
+      };
+      if (intermediate.record.terminal === undefined) {
+        const reconciled = reconcile(deps.plan, intermediate.record);
+        if (!reconciled.ok) {
+          throw new Error(
+            `facade control reconcile failed: ${reconciled.failure.message}`
+          );
+        }
+        collected = collectSettleStimuli(
+          intermediate.record,
+          reconciled.actions,
+          context.deliveryMode
+        );
+      }
+
+      const result = reduceCandidateBatch(record, [
+        stimulus,
+        ...collected.stimuli,
+      ]);
       if (!result.ok) {
-        throw new Error(`facade control failed: ${result.failure.message}`);
+        throw new Error(`facade control settle failed: ${result.failure.message}`);
       }
       deps.store.commit(deps.plan.runId, result.record);
-      return asPromise(receipt(result.record, 'advanced', [], deps.resolveSourceState, deps.plan));
+      const disposition: ChangeRunReceipt['disposition'] =
+        result.record.terminal !== undefined
+          ? 'terminal'
+          : result.record.waits.length > 0 && collected.granted.length === 0
+            ? 'waiting'
+            : 'advanced';
+      return asPromise(
+        receipt(
+          result.record,
+          disposition,
+          collected.granted,
+          deps.resolveSourceState,
+          deps.plan
+        )
+      );
     },
   };
+}
+
+function controlStimulus(
+  record: CanonicalRunRecord,
+  request: ChangeRunControlRequest
+): RunStimulus {
+  const command = request.command;
+  switch (command.kind) {
+    case 'resume':
+      return { kind: 'resume-wait', waitId: command.waitId };
+    case 'decision': {
+      const wait = record.waits.find(
+        (candidate) => candidate.waitId === command.waitId
+      );
+      if (wait?.kind === 'human-required') {
+        if (
+          command.decisionId !== 'retry' &&
+          command.decisionId !== 'escalate'
+        ) {
+          throw new Error(
+            'facade control failed: human-required decisions must be retry or escalate.'
+          );
+        }
+        return {
+          kind: 'decide-human',
+          waitId: command.waitId,
+          decisionId: command.decisionId,
+          outcome: command.outcome,
+          evidence: command.evidence ?? [],
+        };
+      }
+      return {
+        kind: 'decide-gate',
+        waitId: command.waitId,
+        decisionId: command.decisionId,
+        outcome: command.outcome,
+      };
+    }
+    case 'accept-workspace-revision':
+      return {
+        kind: 'accept-workspace-revision',
+        waitId: command.waitId,
+        revision: command.revision,
+        evidence: command.evidence,
+      };
+    case 'escalate':
+      return {
+        kind: 'escalate',
+        code: 'user_escalated',
+        reason: command.reason,
+      };
+    case 'cancel':
+      return {
+        kind: 'cancel',
+        ...(command.reason === undefined ? {} : { reason: command.reason }),
+      };
+  }
 }
 
 export { asPromise };

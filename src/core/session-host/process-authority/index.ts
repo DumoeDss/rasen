@@ -1,0 +1,78 @@
+export {
+  PROCESS_AUTHORITY_COMMON_CONTRACT_VERSION,
+  RECURSIVE_PROCESS_SCOPE_CAPABILITY_ID,
+  RECURSIVE_PROCESS_SCOPE_SEMANTICS,
+} from './types.js';
+export type {
+  AuthorityOperationContext,
+  AuthorityOperationPhase,
+  AuthorityPrepareInput,
+  AuthorityTerminationIntent,
+  ProcessAuthorityProvider,
+  ProcessAuthorityProviderDescriptor,
+  ProcessAuthorityProviderSelectionResult,
+  ProcessAuthorityReference,
+  ProcessAuthoritySelection,
+  ProcessAuthorityUnavailableSelection,
+  ProviderAuthorityReference,
+  ProviderControlOutcome,
+  ProviderObservation,
+  ProviderPreparedAuthority,
+  ProviderPreparationResult,
+  ProviderPreparationUnavailable,
+  ProviderRetainedOutcome,
+  ProviderRootExited,
+  RecursiveProcessScopeSemantic,
+  SelectedProcessAuthorityProvider,
+} from './types.js';
+export {
+  ProcessAuthorityProviderRegistry,
+  createEmptyProcessAuthorityProviderRegistry,
+} from './registry.js';
+export {
+  PROCESS_AUTHORITY_PUBLICATION_VERSION,
+  PROCESS_AUTHORITY_OPERATION_LEDGER_LIMIT,
+  PROCESS_AUTHORITY_RECEIPT_CACHE_LIMIT,
+  PROCESS_AUTHORITY_REFERENCE_TOMBSTONE_LIMIT,
+  createProcessAuthorityCoordinator,
+  createProcessAuthorityPublicationAcknowledgement,
+  isExactScopeEmptyReceipt,
+  type AuthorityScheduler,
+  type AuthorityOperationDiagnostic,
+  type ExactScopeEmptyReceipt,
+  type LiveProcessAuthority,
+  type InertProcessAuthorityObservation,
+  type MonotonicClock,
+  type PreparedProcessAuthority,
+  type ProcessAuthorityLifecycleOutcome,
+  type ProcessAuthorityOrderingConflict,
+  type ProcessAuthorityPreparationResult,
+  type ProcessAuthorityPublicationAcknowledgement,
+  type ProcessAuthorityPublicationBinding,
+  type ProcessAuthorityPublisher,
+  type ProcessAuthorityCoordinator,
+  type ProcessAuthorityCoordinatorOptions,
+  type PublishedProcessAuthority,
+  type RetainedProcessAuthorityFailure,
+  type RootExitedProcessAuthority,
+} from './coordinator.js';
+export {
+  toProcessAuthorityReferenceView,
+  type ProcessAuthorityReferenceView,
+} from './reference-codec.js';
+export {
+  PROCESS_AUTHORITY_PROVIDER_MANIFEST_SCHEMA,
+  validateProcessAuthorityProviderManifest,
+  type ProcessAuthorityProviderManifest,
+  type ProcessAuthorityProviderManifestEntry,
+  type ValidatedProcessAuthorityProviderManifest,
+  type ValidatedProcessAuthorityProviderManifestEntry,
+} from './manifest.js';
+export {
+  acknowledgePublishedProcessAuthority,
+  createProviderBackedProcessScope,
+  mapProcessAuthorityControlOutcome,
+  mapProcessAuthorityObservation,
+  type ProviderBackedProcessRuntime,
+  type ProviderBackedProcessScopeOptions,
+} from './process-scope-adapter.js';

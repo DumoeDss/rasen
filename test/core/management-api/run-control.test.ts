@@ -33,6 +33,7 @@ import {
 } from '../../../src/core/change-run/internal/identity.js';
 import { canonicalJson } from '../../../src/core/change-run/internal/identity.js';
 import type { CanonicalRunRecord } from '../../../src/core/change-run/internal/record.js';
+import type { ProjectHome } from '../../../src/core/project-home.js';
 
 // ---------------------------------------------------------------------------
 // Branded-ID helper (kernel records use branded string types).
@@ -240,6 +241,20 @@ function cancelBody(fixture: Fixture): unknown {
   };
 }
 
+function projectHomeWithArchive(archiveDir: string): ProjectHome {
+  const homeDir = path.dirname(archiveDir);
+  return {
+    projectId: 'run-control-test-project',
+    name: 'run-control-test-home',
+    mode: 'in-repo',
+    homeDir,
+    archiveDir,
+    workDir: (changeName) => path.join(homeDir, 'changes', changeName, 'work'),
+    archivedWorkDir: (archivedName) =>
+      path.join(homeDir, 'changes', 'archive', archivedName, 'work'),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Tests.
 // ---------------------------------------------------------------------------
@@ -438,6 +453,38 @@ describe('POST /api/v1/runs/<changeId>/<runId> control bridge (task 13.7/13.8)',
         expect(result.code).toBe('workspace-scope-mismatch');
       }
       expect(spawner.calls.length).toBe(0);
+    });
+
+    it('rejects with typed unavailable and preserves the Record when workspace authority cannot be established', async () => {
+      const archiveFile = path.join(baseTempDir, 'archive-is-not-a-directory');
+      fs.writeFileSync(archiveFile, 'not a directory');
+      const beforeBytes = fs.readFileSync(fixture.recordPath, 'utf-8');
+      const beforeDigest = digestCanonicalRunRecord(fixture.record);
+      const spawner = createFakeSpawner(() => ({
+        exitCode: 0,
+        stdout: successReceipt(fixture.runId),
+        stderr: '',
+        timedOut: false,
+      }));
+
+      const result = await handleRunControl(
+        fixture.changeId,
+        fixture.runId,
+        fixture.projectRoot,
+        projectHomeWithArchive(archiveFile),
+        cancelBody(fixture),
+        spawner
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.status).toBe(503);
+        expect(result.code).toBe('workspace_identity_unavailable');
+      }
+      expect(spawner.calls).toHaveLength(0);
+      expect(fs.readFileSync(fixture.recordPath, 'utf-8')).toBe(beforeBytes);
+      expect(digestCanonicalRunRecord(fixture.record)).toBe(beforeDigest);
+      expect(fixture.record.recordVersion).toBe(fixture.recordVersion);
     });
 
     it('rejects a terminal Run with 409 run_terminal', async () => {

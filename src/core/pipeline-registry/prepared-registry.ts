@@ -12,6 +12,7 @@ import {
   preflightPreparedDefinitionExecution,
   resolvePipelineExecutionSkillSets,
   validatePipelineForExecution,
+  validatePreparedPipelineForExecution,
   type PipelineExecutionOptions,
   type PipelineExecutionSkillSets,
 } from './execution-validation.js';
@@ -24,6 +25,11 @@ import {
 } from './resolver.js';
 import { pipelineValidationErrorFromDefinitionReadError } from './pipeline.js';
 import type { PipelineYaml } from './types.js';
+import { getGlobalDataDir } from '../global-config.js';
+import {
+  loadTrustedExecutionAdapterCatalog,
+  type TrustedExecutionAdapterCatalog,
+} from './trusted-execution-adapters.js';
 
 export interface PreparedPipelineExecution {
   readonly resolution: PreparedPipelineResolution;
@@ -34,6 +40,7 @@ export interface ProductionPreparedPipelineRegistry {
   readonly projectRoot: string | undefined;
   readonly workflowCatalog: WorkflowCatalog;
   readonly catalog: CapabilityCatalogSnapshot;
+  readonly trustedExecutionAdapters: TrustedExecutionAdapterCatalog | undefined;
   readonly skillSets: PipelineExecutionSkillSets;
   load(name: string): PreparedPipelineResolution;
   list(): PipelineInfo[];
@@ -51,6 +58,10 @@ export interface FreezePreparedPipelineRegistryOptions {
   readonly workflowCatalogLoader?: (
     options?: WorkflowRegistryOptions
   ) => WorkflowCatalog;
+  /** Host/test seam. Project Definitions never supply this catalog. */
+  readonly trustedExecutionAdapterCatalogLoader?: (
+    hostStateRoot: string
+  ) => TrustedExecutionAdapterCatalog | undefined;
 }
 
 /**
@@ -82,6 +93,10 @@ export async function freezeProductionPreparedPipelineRegistry(
     skillSets.enabledSkillNames,
     options.forbiddenSkillNames
   );
+  const trustedExecutionAdapters = (
+    options.trustedExecutionAdapterCatalogLoader ??
+    loadTrustedExecutionAdapterCatalog
+  )(getGlobalDataDir());
   const preparation = { catalog };
   const resolutions = new Map<
     string,
@@ -113,6 +128,7 @@ export async function freezeProductionPreparedPipelineRegistry(
     projectRoot,
     workflowCatalog,
     catalog,
+    trustedExecutionAdapters,
     skillSets,
     load,
     list: (): PipelineInfo[] =>
@@ -138,14 +154,19 @@ export async function freezeProductionPreparedPipelineRegistry(
       const selection = preflightPreparedDefinitionExecution(
         resolution.prepared
       );
-      // v2-authored definitions are fully validated during prepare and have
-      // no legacy PipelineYaml; skip the legacy execution-plan validation.
       if (resolution.prepared.authoredVersion === 1) {
         await validatePipelineForExecution(selection.pipeline, projectRoot, {
           ...executionOptions,
           skillSets,
           loadPrepared: load,
         });
+      } else {
+        await validatePreparedPipelineForExecution(
+          resolution.prepared,
+          catalog,
+          projectRoot,
+          executionOptions
+        );
       }
       return {
         resolution,

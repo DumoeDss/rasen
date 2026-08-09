@@ -135,6 +135,23 @@ export type CommittedTransition =
         outcome: string;
       }>)
   | (TransitionBase &
+      Readonly<{
+        kind: 'HumanDecisionCommitted';
+        waitId: string;
+        actionId: string;
+        decisionId: 'retry' | 'escalate';
+        outcome: string;
+        evidence: readonly Digest[];
+      }>)
+  | (TransitionBase &
+      Readonly<{
+        kind: 'DomainBlockedWaitConsumedByStrategy';
+        waitId: string;
+        actionId: string;
+        strategyNodeId: string;
+        trigger: string;
+      }>)
+  | (TransitionBase &
       Readonly<{ kind: 'WorkspaceRevisionAccepted'; waitId: string }>)
   | (TransitionBase &
       Readonly<{ kind: 'RunSuspended'; waitId: string }>)
@@ -203,6 +220,39 @@ export interface CanonicalRunRecord {
   readonly terminal?: RunTerminalOutcome;
 }
 
+/**
+ * Derive the invocation occurrence of one committed Action from canonical
+ * admission chronology. InvocationId, rather than attemptOrdinal, is the
+ * occurrence boundary: retries within one invocation keep the same ordinal
+ * domain while a resumed bounded-loop phase receives a fresh InvocationId.
+ */
+export function committedActionOccurrence(
+  record: CanonicalRunRecord,
+  action: CommittedAction
+): number {
+  const invocationIds: string[] = [];
+  for (const transition of record.transitions) {
+    if (transition.kind !== 'ActionAdmitted') continue;
+    const admitted = record.actions[transition.actionId];
+    if (
+      admitted === undefined ||
+      admitted.action.nodeId !== action.action.nodeId ||
+      invocationIds.includes(admitted.action.invocationId)
+    ) {
+      continue;
+    }
+    invocationIds.push(admitted.action.invocationId);
+  }
+  const occurrence = invocationIds.indexOf(action.action.invocationId);
+  if (occurrence < 0) {
+    throw new CanonicalRecordError(
+      'invalid_record_invariant',
+      `Action ${action.action.actionId} has no canonical ActionAdmitted occurrence.`
+    );
+  }
+  return occurrence;
+}
+
 export interface CreateCanonicalRunRecord {
   readonly runId: RunId;
   readonly runOrdinal: number;
@@ -229,6 +279,7 @@ const ActionIdSchema = identity('action');
 const AttemptIdSchema = identity('attempt');
 const EffectIdSchema = identity('effect');
 const WaitIdSchema = identity('wait');
+const NodeIdSchema = identity('node');
 
 const TerminalSchema = z.discriminatedUnion('kind', [
   z.strictObject({
@@ -295,6 +346,23 @@ const TransitionSchema = z.discriminatedUnion('kind', [
     waitId: WaitIdSchema,
     decisionId: z.string().min(1).max(256),
     outcome: z.string().min(1).max(256),
+  }),
+  z.strictObject({
+    ...TransitionOrdinal,
+    kind: z.literal('HumanDecisionCommitted'),
+    waitId: WaitIdSchema,
+    actionId: ActionIdSchema,
+    decisionId: z.enum(['retry', 'escalate']),
+    outcome: z.string().min(1).max(256),
+    evidence: z.array(DigestSchema).max(64),
+  }),
+  z.strictObject({
+    ...TransitionOrdinal,
+    kind: z.literal('DomainBlockedWaitConsumedByStrategy'),
+    waitId: WaitIdSchema,
+    actionId: ActionIdSchema,
+    strategyNodeId: NodeIdSchema,
+    trigger: z.string().min(1).max(256),
   }),
   z.strictObject({
     ...TransitionOrdinal,

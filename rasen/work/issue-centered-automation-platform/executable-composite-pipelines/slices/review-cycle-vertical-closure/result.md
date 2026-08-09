@@ -1,6 +1,9 @@
 # ReviewCycle Vertical Closure Result
 
-> 当前状态：candidate，尚未激活，尚未进行 terminal classification。
+> Direction reconciliation（2026-08-01）：**passed**。本文件保留下方交付过程；
+> 12 项 acceptance 的实现证据和后续 fresh-process scenario D 已证明完整
+> review → fix → independent re-review → clean → ship/archive 路径。该结论只适用
+> ReviewCycle Slice，不代表整个 ECP Target State 已通过。
 
 ## Baseline At Establishment
 
@@ -134,4 +137,4 @@ plan. RunId: `run:aaaa...aaaa` (fixture identity).
 
 ## Current Classification
 
-未分类。候选 Slice 尚待确认。
+**passed**（2026-08-01 Direction calibration）。

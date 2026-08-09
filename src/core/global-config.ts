@@ -171,6 +171,22 @@ export interface GlobalConfig {
     engine?: 'auto' | 'reconciler' | 'legacy';
   };
   /**
+   * Machine-wide session reuse/handoff/touch/retire policy defaults
+   * (session-policy-and-control-parity). Project and store config of the same
+   * name win over this (see `resolveSessionPolicySource` in
+   * `src/core/session-policy-parity/policy-source.ts`, which takes this block
+   * as its `global` layer). A set value carries `authored` provenance; an unset
+   * value falls through to the next layer and ultimately the shipped
+   * `DEFAULT_EXECUTOR_POLICY_BLOCK` at `default` provenance. Values are
+   * positive bounded integers validated by the source resolver.
+   */
+  sessionPolicy?: {
+    handoffTokenLimit?: number;
+    reuseRoundLimit?: number;
+    touchMaxIdleMs?: number;
+    retireReasonLabel?: string;
+  };
+  /**
    * Machine-wide per-agent model defaults; project config of the same name
    * wins over this. `default` is the base model for every role; `roles`
    * overrides it per role (planner/implementer/reviewer/fixer/shipper).

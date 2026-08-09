@@ -56,6 +56,7 @@ describe('computeWorkflowDependencyGraph (design D7) — shipped built-ins', () 
     for (const id of [
       'goal-plan',
       'goal-iterate',
+      'goal-judge',
       'goal-report',
       'ship-command',
       'retain-command',
@@ -64,6 +65,12 @@ describe('computeWorkflowDependencyGraph (design D7) — shipped built-ins', () 
       expect(entry.requires).toContain(id);
     }
     expect(new Set(entry.requires).size).toBe(entry.requires.length);
+  });
+
+  it('the review-cycle strong closure includes its separate write-capable fix phase', () => {
+    const entry = entryMap().get('review-cycle')!;
+
+    expect(entry.requires).toEqual(expect.arrayContaining(['review', 'review-fix']));
   });
 
   it('the enhanced-verify workflow strongly requires its four expert identities', () => {

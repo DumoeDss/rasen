@@ -1093,6 +1093,10 @@ const COMMANDS: readonly CommandDefinition[] = [
       {
         name: 'exec',
         flags: [
+          { name: 'backend', takesValue: true, completionValues: ['claude'] },
+          { name: 'prompt-file', takesValue: true },
+          { name: 'request-id', takesValue: true },
+          { name: 'timeout-ms', takesValue: true },
           { name: 'run', takesValue: true },
           { name: 'session', takesValue: true },
           { name: 'action', takesValue: true },
@@ -1121,7 +1125,24 @@ const COMMANDS: readonly CommandDefinition[] = [
         ],
       },
       {
+        name: 'inspect',
+        acceptsPositional: true,
+        positionals: [{ name: 'id' }],
+        flags: [COMMON_FLAGS.json],
+      },
+      ...(['cancel', 'restart'] as const).map((name) => ({
+        name,
+        acceptsPositional: true,
+        positionals: [{ name: 'id' }],
+        flags: [
+          ...(name === 'restart' ? [] : [{ name: 'reason', takesValue: true }]),
+          COMMON_FLAGS.json,
+        ],
+      })),
+      {
         name: 'retire',
+        acceptsPositional: true,
+        positionals: [{ name: 'id', optional: true }],
         flags: [
           { name: 'run', takesValue: true },
           { name: 'session', takesValue: true },
